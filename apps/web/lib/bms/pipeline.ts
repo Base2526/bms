@@ -52,6 +52,7 @@ import {
   getApprovedAssessmentCheckoutDraftByConversation,
   markAssessmentOrderCreated,
 } from "./pharmacy/assessments";
+import { isPharmacistReviewableBasket } from "./pharmacy/productPolicyDecision";
 import {
   checkoutDetailsFromReply,
   checkoutNextStepReply,
@@ -3009,7 +3010,10 @@ export async function runPipeline(
       );
       if (
         convId &&
-        (order.status === "PHARMACY_REVIEW_REQUIRED" || order.status === "PHARMACY_SAFETY_CHECK_REQUIRED")
+        // เกณฑ์เดียวกับ tools/catalog.ts — อยู่ที่ productPolicyDecision.ts ที่เดียว
+        // และดู blockers ทั้งชุด ไม่ใช่แค่ตัวแรก (ตะกร้าที่มีตัวที่เภสัชกรตัดสินไม่ได้
+        // ปนอยู่ ต้องไม่เปิดเคสที่อนุมัติแล้วใช้จริงไม่ได้)
+        isPharmacistReviewableBasket(order.status, "blockers" in order ? order.blockers : null)
       ) {
         try {
           const review = await createProductReviewAssessmentOnce({

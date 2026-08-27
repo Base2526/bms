@@ -23,6 +23,7 @@
 
 import type { PoolClient } from "pg";
 import { checkPharmacistDraftPolicyInTx } from "./productPolicy";
+import type { PharmacySaleChannel } from "./productPolicyDecision";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { getVariantBasePriceInTx } from "../productPacks";
@@ -371,6 +372,130 @@ export async function markAssessmentOrderCreatedInTx(
      VALUES ($1, $2, $3, 'assessment.checkout_order_created', NULL, NULL, $4::jsonb)`,
     [tenantId, assessmentId, actor, JSON.stringify({ orderId })]
   );
+}
+
+export type CounterSupersedeOutcome =
+  | "CLOSED"
+  | "NOT_FOUND"
+  | "NOT_THIS_REGISTERS_CASE"
+  | "NOT_THIS_BASKET"
+  | "ALREADY_SPENT"
+  | "NOT_CLOSABLE";
+
+/**
+ * ปิดเคสในคิวที่ถูกแทนที่ด้วยการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29)
+ *
+ * ร้านยาจริงเกิดเรื่องนี้ทุกวัน: แคชเชียร์ส่งเคสเข้าคิวไว้ แล้วเภสัชกรเดินมาที่เครื่อง
+ * ดูของแล้วกด PIN อนุมัติเลย — เคสในคิวจึงไม่มีความหมายอีก **และต้องไม่เหลือไว้**
+ * เพราะถ้ามีคนไปกดอนุมัติเคสนั้นทีหลัง จะได้ใบอนุมัติที่ยังใช้ขายตะกร้าเดิมได้อีกใบ
+ * ทั้งที่ของออกจากร้านไปแล้ว
+ *
+ * เรียก **ก่อนไปแตะ `bms_inventory`** เหมือนการประทับเภสัชกรประจำกะ: แถวเคสถูกล็อก
+ * (`FOR UPDATE`) และ `checkPharmacySaleInTx()` ก็ล็อกแถวเคสก่อนสต็อกอยู่แล้ว การล็อก
+ * เคส→สต็อก ให้เหมือนกันทุกเส้นทางคือสิ่งที่กัน deadlock ข้ามคำขอ
+ *
+ * อยู่ใน **ทรานแซกชันเดียวกับบิล** โดยตั้งใจ (เดิมเป็น best-effort หลัง commit ซึ่งมี
+ * ช่องแข่ง: คิวอนุมัติเคสคาบเกี่ยวกับการขาย แล้ว `closeAssessment()` ปิดไม่ได้เพราะไม่รับ
+ * สถานะ APPROVED → ใบอนุมัติที่ยังใช้ได้ค้างอยู่เงียบ ๆ) · ที่นี่จึงรับ **APPROVED ด้วย**
+ * แต่ไม่รับใบที่ถูกใช้สร้างบิลไปแล้ว (`ORDER_CREATED`) เพราะนั่นเป็นหลักฐานของบิลอื่น
+ *
+ * ผู้เรียกส่ง id มาจากหน้าจอ จึงตรวจสามชั้นก่อนแตะแถว — ห้ามเชื่อว่า id ที่ส่งมาคือเคส
+ * ของบิลนี้จริง ไม่งั้นเครื่องหนึ่งเครื่องปิดเคสของลูกค้าคนอื่นในร้านเดียวกันได้:
+ *   1. ต้องเป็นเคสที่เกิดจากเครื่องขาย (`channel_id = 'pos'`)
+ *   2. ต้องเป็นเคสของกะที่กำลังขายอยู่ (`complaint.sourceMeta.shiftId`)
+ *   3. รายการใน draft ของเคสต้องอยู่ในตะกร้าใบนี้ครบทุกบรรทัด (ต่อ sku+ไซซ์)
+ */
+export async function closeAssessmentSupersededByCounterInTx(
+  client: PoolClient,
+  tenantId: string,
+  assessmentId: string,
+  args: {
+    posShiftId: string | null;
+    basket: Array<{ sku: string; size: string; qty: number }>;
+    pharmacistUserId: string;
+  }
+): Promise<CounterSupersedeOutcome> {
+  const CLOSABLE_FROM = [
+    "DRAFT",
+    "COLLECTING_INFORMATION",
+    "WAITING_FOR_PHARMACIST",
+    "PHARMACIST_REVIEWING",
+    "NEED_MORE_INFORMATION",
+    // ตัวที่ closeAssessment() เดิมไม่รับ — คือช่องแข่งที่ทำให้ใบอนุมัติค้าง
+    "APPROVED",
+  ];
+
+  const cur = await client.query<{
+    status: string;
+    channel_id: string | null;
+    complaint: any;
+    checkout_order_draft: any;
+  }>(
+    `SELECT status, channel_id, complaint, checkout_order_draft
+       FROM bms_pharmacy_assessments
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+      FOR UPDATE`,
+    [tenantId, assessmentId]
+  );
+  const row = cur.rows[0];
+  if (!row) return "NOT_FOUND";
+
+  // ช่องทางอ่านจาก `channel_id` ไม่ใช่ `complaint.sourceMeta` — คอลัมน์นั้นเป็นค่าคงที่
+  // ตอนสร้างเคส ส่วน complaint เป็น JSONB ที่ updateAnswers() เขียนทับได้ทั้งก้อน
+  if (String(row.channel_id ?? "") !== "pos") return "NOT_THIS_REGISTERS_CASE";
+  const caseShiftId = String(row.complaint?.sourceMeta?.shiftId ?? "");
+  if (!args.posShiftId || caseShiftId !== args.posShiftId) return "NOT_THIS_REGISTERS_CASE";
+
+  const draft = normalizeCheckoutOrderDraft(row.checkout_order_draft);
+  if (!draft) return "NOT_THIS_BASKET";
+  if (draft.status === "ORDER_CREATED") return "ALREADY_SPENT";
+
+  const keyOf = (sku: string, size: unknown) => `${sku}\u0000${String(size ?? "")}`;
+  const basketQty = new Map<string, number>();
+  for (const line of args.basket) {
+    const key = keyOf(line.sku, line.size);
+    basketQty.set(key, (basketQty.get(key) ?? 0) + line.qty);
+  }
+  const draftQty = new Map<string, number>();
+  for (const item of draft.items) {
+    const key = keyOf(item.sku, item.size);
+    draftQty.set(key, (draftQty.get(key) ?? 0) + item.qty);
+  }
+  if (draftQty.size === 0) return "NOT_THIS_BASKET";
+  for (const [key, qty] of draftQty) {
+    if ((basketQty.get(key) ?? 0) < qty) return "NOT_THIS_BASKET";
+  }
+
+  const closed = await client.query(
+    `UPDATE bms_pharmacy_assessments
+        SET status = 'CLOSED',
+            decision_reason = 'dispensed_at_counter_with_pharmacist_authorization',
+            closed_at = now(),
+            updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+        AND status = ANY($3::text[])`,
+    [tenantId, assessmentId, CLOSABLE_FROM]
+  );
+  if (!closed.rowCount) return "NOT_CLOSABLE";
+
+  // Inlined for the same reason as markAssessmentOrderCreatedInTx(): the trail
+  // must commit with the sale it describes, not on its own connection.
+  await client.query(
+    `INSERT INTO bms_pharmacy_assessment_events
+       (tenant_id, assessment_id, actor, action, previous_state, next_state, meta)
+     VALUES ($1, $2, $3, 'assessment.closed', $4, 'CLOSED', $5::jsonb)`,
+    [
+      tenantId,
+      assessmentId,
+      `user:${args.pharmacistUserId}`,
+      row.status,
+      // ไม่มี orderId ที่นี่โดยตั้งใจ — ตอนล็อกแถวเคส บิลยังไม่ถูกสร้าง (ดูเหตุผลเรื่อง
+      // ลำดับการล็อกใน createOrder) · ทางกลับ: audit `pharmacy.counter_authorization`
+      // ของบิลนั้นถือ `supersededAssessmentId` ไว้ให้ไล่ต่อได้
+      JSON.stringify({ reason: "dispensed_at_counter_with_pharmacist_authorization" }),
+    ]
+  );
+  return "CLOSED";
 }
 
 export async function markAssessmentOrderCreated(
@@ -1691,7 +1816,7 @@ export async function approveAssessment(
   ctx?: any
 ): Promise<PharmacistDecisionResult> {
   const trimmedResponse = (pharmacistResponse || "").trim();
-  const normalizedOrderDraft = normalizeCheckoutOrderDraft(orderDraft);
+  const suppliedOrderDraft = normalizeCheckoutOrderDraft(orderDraft);
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorUserId });
@@ -1705,9 +1830,12 @@ export async function approveAssessment(
       completeness_status: CompletenessStatus;
       customer_confirmation_status: CustomerConfirmationStatus;
       has_manual_override: boolean;
+      checkout_order_draft: any;
+      channel_id: string | null;
     }>(
       `SELECT a.status, a.version, a.expires_at, a.missing_fields, a.conflicting_fields,
               a.anomalies, a.completeness_status, a.customer_confirmation_status,
+              a.checkout_order_draft, a.channel_id,
               EXISTS (
                 SELECT 1 FROM bms_pharmacy_assessment_events e
                  WHERE e.tenant_id = a.tenant_id AND e.assessment_id = a.id
@@ -1770,11 +1898,33 @@ export async function approveAssessment(
       return { status: "NOT_A_LICENSED_PHARMACIST" };
     }
 
+    // A caller that supplies no draft must not ERASE one the case already
+    // carries. A counter case (createProductReviewAssessmentOnce) is born with
+    // the scanned basket already in checkout_order_draft, and that draft is what
+    // checkPharmacySaleInTx() reads to clear the parked bill. Overwriting it with
+    // NULL used to leave the case APPROVED but unusable: the cashier resumed the
+    // bill, pressed Pay, and got PHARMACY_REVIEW_REQUIRED again — with no way
+    // back, because an APPROVED case cannot be approved a second time.
+    // A draft the caller DOES supply still wins: reducing or editing the basket
+    // is a pharmacist's decision to make.
+    const existingOrderDraft = normalizeCheckoutOrderDraft(row.checkout_order_draft);
+    const normalizedOrderDraft =
+      suppliedOrderDraft ??
+      (existingOrderDraft?.status === "AWAITING_CUSTOMER_CONFIRMATION" ? existingOrderDraft : null);
+
+    // A case raised by a register is handed over at the counter, not shipped.
+    // Read `channel_id` — a plain column stamped once when the case was created —
+    // not `complaint.sourceMeta`: complaint is a JSONB blob that updateAnswers()
+    // replaces wholesale, so a future intake write could silently turn a counter
+    // case into an "online" one and make its prescription items unapprovable.
+    const draftChannel: PharmacySaleChannel = row.channel_id === "pos" ? "counter" : "online";
+
     if (normalizedOrderDraft) {
       const productPolicy = await checkPharmacistDraftPolicyInTx(
         client,
         tenantId,
-        normalizedOrderDraft.items.map((item) => ({ sku: item.sku, qty: item.qty }))
+        normalizedOrderDraft.items.map((item) => ({ sku: item.sku, qty: item.qty })),
+        draftChannel
       );
       if (!productPolicy.allowed) {
         await client.query("ROLLBACK");

@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import {
   PHARMACY_PRODUCT_TYPES,
   PHARMACY_SALE_POLICIES,
+  approvedSkusFromCheckoutDraft,
   evaluatePharmacySale,
   type PharmacySaleChannel,
   type PharmacyProductPolicyStatus,
@@ -74,7 +75,16 @@ const REGULATORY_CLASSES_BY_FRAMEWORK: Record<PharmacyRegulatoryFramework, reado
 export async function checkPharmacistDraftPolicyInTx(
   client: PoolClient,
   tenantId: string,
-  items: Array<{ sku: string; qty: number }>
+  items: Array<{ sku: string; qty: number }>,
+  /**
+   * Where the basket in this draft will be handed over. A case that came from
+   * the counter must be judged as "counter": ONLINE_SALE_PROHIBITED means the
+   * product may not be sold over the internet, and judging a counter case as
+   * "online" makes it unapprovable — the pharmacist is standing next to the
+   * customer and still cannot say yes. Default stays "online" so a caller that
+   * has not been taught about channels keeps the strict behaviour.
+   */
+  channel: PharmacySaleChannel = "online"
 ): Promise<PharmacySaleDecision> {
   const skus = [...new Set(items.map((item) => item.sku))];
   if (skus.length === 0) return { allowed: true };
@@ -97,7 +107,8 @@ export async function checkPharmacistDraftPolicyInTx(
       status: row.status,
       maxQuantity: row.max_quantity == null ? null : Number(row.max_quantity),
     })),
-    new Set(skus)
+    new Set(skus),
+    channel
   );
 }
 
@@ -380,8 +391,28 @@ export async function checkPharmacySaleInTx(
   tenantId: string,
   items: Array<{ sku: string; size?: string; qty: number }>,
   approvedAssessmentId?: string | null,
-  channel: PharmacySaleChannel = "online"
+  channel: PharmacySaleChannel = "online",
+  /**
+   * The customer this basket is being sold to, when one is attached. A
+   * pharmacist's safety check is about a specific person, so an approval that
+   * names a patient must not be spent on a different named patient's identical
+   * basket. A sale with no customer attached (a walk-in) is not treated as a
+   * mismatch — the counter is allowed to sell anonymously, it just cannot swap
+   * one named patient's approval onto another's.
+   */
+  saleCustomerId?: string | null,
+  /**
+   * A licensed pharmacist standing at the register taking responsibility for
+   * this hand-over (`9.29`). The PIN was already verified by the route — the
+   * same shape as a manual discount's approver — and the licence fact is
+   * re-checked here, inside the transaction that moves the stock.
+   */
+  counterAuthorization?: { pharmacistUserId: string; note?: string | null } | null
 ): Promise<PharmacySaleDecision> {
+  // อ่านแค่ archetype ที่นี่ **โดยตั้งใจ** — คำสั่งนี้รันกับ *ทุกบิลของทุกร้าน* ในระบบ
+  // ถ้าใส่คอลัมน์ของ 9.29 ลงมาด้วย ฐานที่ยังไม่ apply migration จะทำให้ร้านที่ไม่ใช่
+  // ร้านยาขายไม่ได้ทั้งหมด ซึ่งเป็นความเสียหายที่ไม่เกี่ยวกับฟีเจอร์นี้เลย
+  // (ค่าตั้งของ 9.29 อ่านทีหลัง เฉพาะตอนที่มีคนใช้การอนุมัติที่เคาน์เตอร์จริง)
   const profile = await client.query<{ business_archetype: string | null }>(
     `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
@@ -406,8 +437,8 @@ export async function checkPharmacySaleInTx(
     // FOR UPDATE: the caller is about to sell against this approval inside the
     // same transaction. Two registers scanning the same case code at once would
     // otherwise both read it as unused and both be allowed through.
-    const assessment = await client.query<{ checkout_order_draft: any }>(
-      `SELECT checkout_order_draft
+    const assessment = await client.query<{ checkout_order_draft: any; customer_id: string | null }>(
+      `SELECT checkout_order_draft, customer_id
          FROM bms_pharmacy_assessments
         WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED' AND deleted_at IS NULL
         FOR UPDATE`,
@@ -419,33 +450,60 @@ export async function checkPharmacySaleInTx(
     // that markAssessmentOrderCreated() writes. Anything already consumed
     // contributes no approved skus, so the basket falls back to needing a fresh
     // review rather than silently passing.
-    const draft = assessment.rows[0]?.checkout_order_draft;
+    const row = assessment.rows[0];
+    const draft = row?.checkout_order_draft;
     const alreadyConsumed = String(draft?.status ?? "") === "ORDER_CREATED";
-    const draftItems = !alreadyConsumed && Array.isArray(draft?.items)
+    // An approval that names a patient authorises that patient's basket only.
+    const patientMismatch = Boolean(
+      row?.customer_id && saleCustomerId && row.customer_id !== saleCustomerId
+    );
+    const draftItems = !alreadyConsumed && !patientMismatch && Array.isArray(draft?.items)
       ? draft.items
       : [];
-    for (const sku of skus) {
-      const requestedForSku = items.filter((item) => item.sku === sku);
-      const fullyCovered = requestedForSku.every((requested) => {
-        const approved = draftItems.find((item: any) =>
-          item?.sku === requested.sku &&
-          String(item?.size ?? "") === String(requested.size ?? "")
-        );
-        return approved && Number(approved.qty) >= requested.qty;
-      });
-      if (fullyCovered) approvedSkus.add(sku);
+    for (const sku of approvedSkusFromCheckoutDraft(items, draftItems)) {
+      approvedSkus.add(sku);
     }
   }
 
-  return evaluatePharmacySale(
-    items,
-    policyRows.rows.map((row) => ({
-      productSku: row.product_sku,
-      salePolicy: row.sale_policy,
-      status: row.status,
-      maxQuantity: row.max_quantity == null ? null : Number(row.max_quantity),
-    })),
-    approvedSkus,
-    channel
+  const policies = policyRows.rows.map((row) => ({
+    productSku: row.product_sku,
+    salePolicy: row.sale_policy,
+    status: row.status,
+    maxQuantity: row.max_quantity == null ? null : Number(row.max_quantity),
+  }));
+
+  const decision = evaluatePharmacySale(items, policies, approvedSkus, channel);
+  if (decision.allowed) return decision;
+
+  // ---- เภสัชกรอนุมัติที่เครื่อง (9.29) ----------------------------------
+  // ประเมินรอบแรกก่อนเสมอ เพื่อรู้ว่า "รายการไหนต้องใช้การอนุมัติจริง" — จะได้บันทึก
+  // หลักฐานเฉพาะรายการนั้น ไม่ใช่เหมาทั้งบิล และตะกร้าที่ผ่านอยู่แล้วก็ไม่ถูกแตะ
+  if (!counterAuthorization || channel !== "counter") return decision;
+  const counterSetting = await client.query<{ enabled: boolean | null }>(
+    `SELECT pharmacy_counter_authorization AS enabled
+       FROM bms_store_profile WHERE tenant_id = $1`,
+    [tenantId]
   );
+  if (counterSetting.rows[0]?.enabled === false) return decision;
+
+  // ใบอนุญาตเป็นข้อเท็จจริงเรื่องคน ไม่ใช่ permission — ตรวจซ้ำในทรานแซกชันที่ขยับ
+  // สต็อกจริง เผื่อสิทธิ์ถูกถอนหลัง route ตรวจ PIN ไปแล้ว · ตรวจไม่ผ่าน = ตกกลับไป
+  // เป็นคำตอบเดิม (บล็อก) ไม่ใช่ error ใหม่ที่แคชเชียร์อ่านไม่รู้เรื่อง
+  const licensed = await client.query<{ ok: boolean }>(
+    `SELECT public.bms_is_licensed_pharmacist($1, $2) AS ok`,
+    [tenantId, counterAuthorization.pharmacistUserId]
+  );
+  if (licensed.rows[0]?.ok !== true) return decision;
+
+  // เพดานจำนวนต่อครั้งปลดด้วย PIN ไม่ได้ (ดู 9.29) — SKU ที่ติดเรื่องนี้ไม่เข้าชุด
+  const authorizable = new Set(
+    decision.blockers
+      .filter((blocker) => blocker.status !== "PHARMACY_QUANTITY_LIMIT_EXCEEDED")
+      .map((blocker) => blocker.sku)
+  );
+  if (authorizable.size === 0) return decision;
+
+  const authorized = evaluatePharmacySale(items, policies, approvedSkus, channel, authorizable);
+  if (!authorized.allowed) return authorized;
+  return { allowed: true, counterAuthorizedSkus: [...authorizable] };
 }

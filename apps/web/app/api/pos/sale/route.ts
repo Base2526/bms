@@ -97,6 +97,42 @@ async function handlePOST(req: NextRequest) {
     approval = { amount: requestedDiscount, userId: approver.userId, reason };
   }
 
+  // ---- เภสัชกรอนุมัติจ่ายยาที่เครื่อง (9.29) --------------------------
+  // ต่างจากผู้อนุมัติส่วนลดตรงที่ **ไม่บังคับว่าต้องเป็นคนละคนกับคนขาย** — ร้านยา
+  // เล็กมีเภสัชกรคนเดียวที่ยืนขายเองด้วย บังคับสองคนคือบังคับให้ร้านโกงระบบตัวเอง
+  // สิ่งที่บังคับคือ "คนนี้มีใบอนุญาตจริง" ซึ่งเป็นข้อเท็จจริงเรื่องคน ไม่ใช่ permission
+  // (`is_licensed_pharmacist` — Administrator ไม่ได้มาฟรีเหมือน permission อื่น)
+  let pharmacistAuthorization: { pharmacistUserId: string; note?: string | null } | null = null;
+  const pharmacistId =
+    typeof body.pharmacistAuthorizerUserId === "string" ? body.pharmacistAuthorizerUserId.trim() : "";
+  const pharmacistPin =
+    typeof body.pharmacistAuthorizerPin === "string" ? body.pharmacistAuthorizerPin : "";
+  if (pharmacistId) {
+    if (!pharmacistPin) return badRequest("การอนุมัติของเภสัชกรต้องกด PIN");
+    const note = typeof body.pharmacistAuthorizationNote === "string"
+      ? body.pharmacistAuthorizationNote.trim()
+      : "";
+    if (note.length > 500) return badRequest("บันทึกของเภสัชกรยาวเกินไป");
+    // ผู้อนุมัติคือคนขายเอง = ใช้ PIN ที่ตรวจไปแล้วได้ ไม่ต้องให้พิมพ์ซ้ำ
+    const authorizer = pharmacistId === auth.userId
+      ? auth
+      : await verifyCashierPin(device.tenantId, pharmacistId, pharmacistPin);
+    if (!authorizer.ok) {
+      const message =
+        authorizer.reason === "NO_PIN" ? "เภสัชกรยังไม่ได้ตั้ง PIN — ตั้งจากหน้าแอดมินก่อน"
+        : authorizer.reason === "LOCKED" ? "เภสัชกรใส่ PIN ผิดหลายครั้ง ถูกล็อกชั่วคราว"
+        : "PIN ของเภสัชกรไม่ถูกต้อง";
+      return NextResponse.json({ error: message, reason: authorizer.reason }, { status: 403 });
+    }
+    if (!authorizer.isPharmacist) {
+      return NextResponse.json(
+        { error: "คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต — ตั้งค่าที่หน้าผู้ใช้ก่อน" },
+        { status: 403 }
+      );
+    }
+    pharmacistAuthorization = { pharmacistUserId: authorizer.userId, note: note || null };
+  }
+
   const result = await recordPosSale({
     tenantId: device.tenantId,
     deviceId: device.id,
@@ -124,6 +160,14 @@ async function handlePOST(req: NextRequest) {
     pharmacyApprovedAssessmentId:
       typeof body.pharmacyApprovedAssessmentId === "string" && body.pharmacyApprovedAssessmentId.trim()
         ? body.pharmacyApprovedAssessmentId.trim()
+        : null,
+    // ผ่านการตรวจ PIN + ใบอนุญาตข้างบนแล้วเท่านั้น (ห้ามส่ง id ดิบจาก body ลงไป)
+    pharmacistCounterAuthorization: pharmacistAuthorization,
+    // เคสในคิวที่ถูกแทนด้วยการอนุมัติที่เคาน์เตอร์ — ปิดหลังขายจบ · เชื่อจาก body ได้
+    // เพราะใช้เมื่อมีการอนุมัติของเภสัชกรที่ผ่าน PIN แล้วเท่านั้น และปิดได้แค่เคสของร้านนี้
+    pharmacyReviewAssessmentId:
+      typeof body.pharmacyReviewAssessmentId === "string" && body.pharmacyReviewAssessmentId.trim()
+        ? body.pharmacyReviewAssessmentId.trim()
         : null,
   });
 
