@@ -36,6 +36,39 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
 - เนื้อที่ไม่พอ: `du -sh apps/web/.next apps/web/node_modules` + docker volumes — โปรเจกต์นี้จงใจมี
   cache สองชุด (host + docker)
 
+## ประตูก่อน merge/deploy (gate) — 2026-08-27
+
+```bash
+cd apps/web && npm run gate      # typecheck → เทส pure 171 ตัว (~6 วิ) → production build
+```
+
+- **`npm run test:pure`** รันเทส 19 ไฟล์ที่ไม่ต้องมี DB · **`npm run test:db`** รันชุด `-db-contract`
+  25 ไฟล์ · **`npm run test:all`** ทั้งหมด — ทั้งสามผ่าน `scripts/run-contract-tests.mjs` ตัวเดียว
+  (ค้นไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือเหมือนคำสั่งยาว ๆ ที่จดไว้ใน § ก่อน production)
+- **`test:db` ปฏิเสธ host ที่ไม่ใช่เครื่องท้องถิ่น** (ต้องตั้ง `BMS_TEST_ALLOW_REMOTE_DB=1` ถ้าจงใจ)
+  — ชุดนี้เขียนจริงลงฐานและบางตัวแก้ค่าของร้านจริง การกันไว้ในโค้ดดีกว่าพึ่งคนพิมพ์คำสั่ง
+- **CI**: `.github/workflows/gate.yml` รัน typecheck + pure + build ทุก PR และทุก push เข้า
+  `main`/`develop` · **ยังไม่มี job สำหรับเทส DB** เพราะสร้างฐานใหม่จาก `db/migrations` ไม่ได้ (ดูข้อ
+  ถัดไป) — จงใจไม่เพิ่ม job ที่รู้อยู่แล้วว่าแดง
+- **⚠️ `db/migrations` สร้างฐานใหม่ตามลำดับเลขไม่ได้** — `1.24__roles.sql` กับ
+  `001_normalize_roles_phase1.sql` นิยามตาราง `roles` คนละแบบที่อยู่ร่วมกันไม่ได้
+  (`key`/`is_system` กับ `is_active`/`updated_at`) แอปใช้ของ `001` (ดู `graphql/resolvers.ts`)
+  แต่ `1.24` มีเลขน้อยกว่าจึงรันก่อน แล้ว `001` เป็น `IF NOT EXISTS` จึงข้ามตัวเองเงียบ ๆ →
+  **ฐานสร้างเสร็จโดยไม่มี error แต่หน้า users/roles พังทั้งหมด** · `scam_phones_summary` (1.20 vs
+  1.27) เป็นแบบเดียวกันในฟีเจอร์ชุมชนยุคก่อน BMS · **ยังไม่ได้ตัดสินใจว่าจะจัดการยังไง**
+- `scripts/migration-order-contract.test.mts` (3 เทส ไม่ต้องมี DB) กัน 3 อย่าง: เลขซ้ำ ·
+  ไฟล์ `.sql` ที่ไม่มีเลขต้องถูกประกาศว่ารันหรือข้าม (ตอนนี้ 4 ไฟล์ — `001`, `001 ROLLBACK`, `002`,
+  `tenant+cough+diarrhea.sql` ซึ่งเป็น template ที่ยังมี `YOUR_TENANT_ID` ค้าง) · และตารางที่ถูก
+  นิยามด้วยคอลัมน์ที่ขัดกันจากสองไฟล์ (เทียบกับลิสต์ที่รู้แล้วแบบ **ตรงเป๊ะ** ไม่ใช่ allowlist —
+  แก้ต้นเหตุจบแล้วต้องลบบรรทัดออกด้วย) · ยืนยันแล้วว่า **แดงจริง** เมื่อใส่ไฟล์ทดสอบเข้าไป
+- **ตอนตั้ง gate ครั้งแรกพบว่าชุด pure แดงอยู่ 2 ตัวโดยไม่มีใครรู้** — แก้ไปพร้อมกัน:
+  1. `inventory-tenant-scope-contract` เทียบ path จาก `path.relative()` (`\` บน Windows) กับ
+     allowlist ที่เขียนด้วย `/` → แดงทุกครั้งบนเครื่องนี้ ตอนนี้ normalize ด้วย `relPosix()`
+  2. `data-integrity-contract` ยัง assert `verifyAdminSession()` ในสาม route ของ payment ที่ย้ายไป
+     ใช้ `authorizeAdminRoute()` ตั้งแต่ 2026-08-24 → เปลี่ยนเป็นตรวจว่า route เรียก helper ด้วย
+     สิทธิ์ที่ถูก **และตรวจที่ตัว helper เองว่ายังทำ verifyAdminSession + verifyActTenant +
+     requirePermission จริง** (การันตีเดิมย้ายที่ ไม่ได้หายไป)
+
 ## เฉพาะเครื่อง/โปรเจกต์นี้
 
 - **drill-down เข้าร้าน** = cookie `BMS_ACT_TENANT` (signed, ผูก `admin.id`) override tenant ใน
