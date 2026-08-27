@@ -854,6 +854,15 @@ two rows to `bms_pos_refund_allocations`. The return-count and refund-total quer
 through a subquery instead of joining it onto the per-return aggregate — joining multiplied both
 numbers by the allocation count on any split refund.
 
+For a bill paid through several methods, the return form lists the still-refundable amount for each
+original method and requires the operator to choose which one is used first. The server never trusts
+an amount chosen by the browser: it caps the allocation at the unrefunded amount of that original
+payment and sends any excess through a fixed fallback order. Migration `9.31` records the preferred
+method on `bms_pos_returns` so an idempotent replay with a different choice is a conflict. The bill
+card displays every allocation together — cash marked completed immediately and card/QR/wallet
+marked pending until its real external reference is confirmed — rather than hiding the completed
+leg and making the pending method look like the whole refund.
+
 ## Counter screen layout
 
 A till is typically 768px tall, so vertical space is the scarce axis. Work that happens a few times

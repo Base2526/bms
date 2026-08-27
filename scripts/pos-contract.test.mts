@@ -13,6 +13,7 @@ import {
 import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRounding.ts";
 import { calculatePettyCashSettlement } from "../apps/web/lib/pos/pettyCash.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
+import { orderRefundPaymentsForAllocation } from "../apps/web/lib/pos/refundAllocation.ts";
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
   const lines = parsePosSaleLines([
@@ -66,6 +67,24 @@ test("POS payment parser accepts valid methods and rejects bad inputs", () => {
     { method: "CASH", amount: 100, cashTendered: 120 },
     { method: "CARD", amount: 50, ref: "EDC-001" },
   ]).ok, true);
+});
+
+test("split-payment refunds honor the chosen channel instead of UUID order", () => {
+  const payments = [
+    { id: "0000", method: "QR" as const },
+    { id: "ffff", method: "CARD" as const },
+    { id: "1111", method: "CASH" as const },
+  ];
+  assert.deepEqual(
+    orderRefundPaymentsForAllocation(payments, "CARD").map((payment) => payment.method),
+    ["CARD", "QR", "CASH"],
+    "ช่องทางที่พนักงานเลือกต้องมาก่อนแม้ UUID จะเรียงไว้ท้ายสุด"
+  );
+  assert.deepEqual(
+    orderRefundPaymentsForAllocation(payments).map((payment) => payment.method),
+    ["CARD", "QR", "CASH"],
+    "client รุ่นเก่า/void ต้องใช้ fallback คงที่ ไม่กลับไปใช้ UUID เป็นลำดับช่องทาง"
+  );
 });
 
 test("POS sale parser treats browser price fields as optional transport data", () => {

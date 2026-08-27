@@ -23,6 +23,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
+import { orderRefundPaymentsForAllocation } from "@/lib/pos/refundAllocation";
 import { recordMovement, recordOrderMovements } from "./movements";
 import {
   isFixedPricePack,
@@ -2923,6 +2924,7 @@ export type PosReturnResult =
   | { status: "ORDER_NOT_POS" }
   | { status: "INVALID_ORDER_STATUS"; current: string }
   | { status: "NO_CONFIRMED_PAYMENTS" }
+  | { status: "REFUND_METHOD_UNAVAILABLE"; method: PaymentMethod }
   | { status: "IDEMPOTENCY_CONFLICT" }
   | { status: "EMPTY" }
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
@@ -2966,6 +2968,7 @@ export type PosPartialReturnResult =
   | { status: "ORDER_NOT_POS" }
   | { status: "INVALID_ORDER_STATUS"; current: string }
   | { status: "NO_CONFIRMED_PAYMENTS" }
+  | { status: "REFUND_METHOD_UNAVAILABLE"; method: PaymentMethod }
   | { status: "IDEMPOTENCY_CONFLICT" }
   | { status: "EMPTY" }
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
@@ -2999,6 +3002,7 @@ export async function returnPosSale(input: {
   actorUserId: string;
   note?: string | null;
   approvedByUserId?: string | null;
+  preferredRefundMethod?: PaymentMethod | null;
   idempotencyKey: string;
 }): Promise<PosReturnResult> {
   const result = await processPosReturn({ ...input, mode: "FULL", lines: [] });
@@ -3027,6 +3031,7 @@ export async function partiallyReturnPosSale(input: {
   lines: Array<{ orderItemId: number; packQty: number }>;
   note?: string | null;
   approvedByUserId?: string | null;
+  preferredRefundMethod?: PaymentMethod | null;
   idempotencyKey: string;
 }): Promise<PosPartialReturnResult> {
   return processPosReturn({ ...input, mode: "PARTIAL" });
@@ -3077,6 +3082,7 @@ async function processPosReturn(input: {
   lines: Array<{ orderItemId: number; packQty: number }>;
   note?: string | null;
   approvedByUserId?: string | null;
+  preferredRefundMethod?: PaymentMethod | null;
   idempotencyKey: string;
   /**
    * true = การยกเลิกบิลที่กดผิด ไม่ใช่ลูกค้าเอาของมาคืน (7.97)
@@ -3110,9 +3116,11 @@ async function processPosReturn(input: {
       created_at: unknown;
       pricing_adjustment_amount: string;
       remaining_amount_after_return: string | null;
+      preferred_refund_method: PaymentMethod | null;
     }>(
       `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status,
-              created_at, pricing_adjustment_amount, remaining_amount_after_return
+              created_at, pricing_adjustment_amount, remaining_amount_after_return,
+              preferred_refund_method
          FROM bms_pos_returns
         WHERE tenant_id = $1 AND idempotency_key = $2
         LIMIT 1`,
@@ -3122,7 +3130,8 @@ async function processPosReturn(input: {
       const existing = replay.rows[0];
       if (existing.order_id !== input.orderId
           || existing.pos_device_id !== input.deviceId
-          || existing.return_mode !== input.mode) {
+          || existing.return_mode !== input.mode
+          || existing.preferred_refund_method !== (input.preferredRefundMethod ?? null)) {
         await client.query("ROLLBACK");
         return { status: "IDEMPOTENCY_CONFLICT" };
       }
@@ -3448,12 +3457,13 @@ async function processPosReturn(input: {
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, returned_by, approved_by, return_mode,
           refund_amount, settlement_status, idempotency_key, note, is_void,
-          pricing_adjustment_amount, remaining_amount_after_return)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10, $11, $12)
+          pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10, $11, $12, $13)
        RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
-        input.isVoid === true, pricingAdjustmentAmount, remainingAmount]
+        input.isVoid === true, pricingAdjustmentAmount, remainingAmount,
+        input.preferredRefundMethod ?? null]
     );
     const posReturnId = ret.rows[0].id;
 
@@ -3543,7 +3553,7 @@ async function processPosReturn(input: {
          FROM bms_payments p
         WHERE p.tenant_id = $1 AND p.order_id = $2
           AND p.status IN ('CONFIRMED','REFUNDED')
-        ORDER BY p.created_at, p.id
+        ORDER BY p.id
         FOR UPDATE`,
       [input.tenantId, input.orderId]
     );
@@ -3552,11 +3562,21 @@ async function processPosReturn(input: {
       return { status: "NO_CONFIRMED_PAYMENTS" };
     }
 
+    const preferredRefundMethod = input.preferredRefundMethod ?? null;
+    if (preferredRefundMethod && !payments.rows.some((payment) =>
+      payment.method === preferredRefundMethod
+      && Number(payment.amount) - Number(payment.allocated) > 0.001
+    )) {
+      await client.query("ROLLBACK");
+      return { status: "REFUND_METHOD_UNAVAILABLE", method: preferredRefundMethod };
+    }
+    const orderedPayments = orderRefundPaymentsForAllocation(payments.rows, preferredRefundMethod);
+
     let remainingRefund = roundedRefundAmount;
     /** ส่วนที่หักออกจากหนี้แทนการจ่ายเงินคืน (9.30) */
     let arRefundAmount = 0;
     const refunds: PosRefundAllocation[] = [];
-    for (const payment of payments.rows) {
+    for (const payment of orderedPayments) {
       if (remainingRefund <= 0.001) break;
       const available = Math.max(0, Number(payment.amount) - Number(payment.allocated));
       const amount = Math.round(Math.min(available, remainingRefund) * 100) / 100;
