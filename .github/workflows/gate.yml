@@ -1,0 +1,60 @@
+name: Gate
+
+# ประตูก่อน merge — คำสั่งเดียวกับที่คนรันในเครื่อง (npm run gate ที่ apps/web)
+#
+# ทำไมต้องมี: repo นี้มีเทส 43 ไฟล์ที่เขียนไว้ดีมาก แต่ไม่มีที่ไหนรันมันเลย ผลคือเทส
+# กลายเป็นเอกสาร ไม่ใช่ตัวกัน regression — ตอนตั้ง workflow นี้ ชุด pure ที่ควรเขียว
+# กลับแดงอยู่ 2 ตัวโดยไม่มีใครรู้ (ตัวหนึ่งแดงเฉพาะบน Windows อีกตัวตรวจชื่อฟังก์ชันที่
+# ไม่มีใครเรียกแล้วตั้งแต่ refactor 2026-08-24)
+#
+# ชั้นที่ยังไม่อยู่ในนี้: เทส DB 25 ไฟล์ ต้องมี Postgres ที่สร้างจาก db/migrations ทั้งชุด
+# ซึ่งวันนี้สร้างไม่ได้ — scripts/migration-order-contract.test.mts อธิบายไว้ว่าทำไม
+# (ตาราง roles มีสองนิยามที่ขัดกัน ฐานใหม่จะได้สคีมาผิดโดยไม่มี error) แก้เรื่องนั้นก่อน
+# แล้วค่อยเพิ่ม job ที่สอง — อย่าเพิ่ม job ที่รู้อยู่แล้วว่าแดง เพราะจะกลายเป็น CI ที่ทุกคน
+# เรียนรู้ที่จะไม่อ่าน
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# PR ที่ push ซ้ำระหว่างรอบเก่ายังไม่จบ ให้ทิ้งรอบเก่า
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # ห้ามใช้ pnpm — repo ลงด้วย npm (ดู CLAUDE.local.md § รันในเครื่อง)
+      - name: Install
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: apps/web
+        run: npm run typecheck
+
+      # เร็วสุด (~6 วิ) จึงรันก่อน build เพื่อให้คนที่ทำพังรู้ตัวไว
+      - name: Contract tests (ไม่ต้องมี DB)
+        working-directory: apps/web
+        run: npm run test:pure
+
+      # ไม่ตั้ง JWT_SECRET/BMS_SECRET_KEY โดยตั้งใจ — ความลับถูกอ่านตอนรัน ไม่ใช่ตอน
+      # คอมไพล์ (แก้ไว้แล้ว 2026-08-27) ถ้า build เริ่มพังเพราะไม่มี env แปลว่ามีใคร
+      # เอา fallback ระดับโมดูลกลับมา ซึ่งเป็นสิ่งที่ต้องรู้ ไม่ใช่สิ่งที่ควรกลบด้วยค่าปลอม
+      - name: Build
+        working-directory: apps/web
+        run: npm run build

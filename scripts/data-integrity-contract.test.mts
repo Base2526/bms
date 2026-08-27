@@ -24,6 +24,10 @@ const paymentRefundRoute = readFileSync(
   new URL("../apps/web/app/api/bms/payment/[id]/refund/route.ts", import.meta.url),
   "utf8"
 );
+const adminRouteAuth = readFileSync(
+  new URL("../apps/web/lib/bms/adminRouteAuth.ts", import.meta.url),
+  "utf8"
+);
 
 test("order validation rejects every malformed quantity instead of dropping a line", () => {
   for (const qty of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
@@ -50,14 +54,25 @@ test("payment confirmation and lifecycle dates are atomic and explicit", () => {
 });
 
 test("legacy payment REST mutations require signed tenant-scoped RBAC", () => {
+  // 2026-08-24 สาม route นี้ย้ายจากการเขียน verifyAdminSession/verifyActTenant เองมาใช้
+  // authorizeAdminRoute() แต่เทสไม่ได้ตามไปด้วย จึงแดงค้างโดยที่ route ถูกต้องอยู่แล้ว
+  // แยกเป็นสองส่วน: route เรียก helper ด้วยสิทธิ์ที่ถูก และ helper ยังทำสิ่งที่การันตี
+  // เดิมพูดถึงจริง — ไม่งั้นการรวมโค้ดครั้งหน้าจะเหลือเทสที่ตรวจแค่ชื่อฟังก์ชัน
   for (const route of [paymentConfirmRoute, paymentRejectRoute, paymentRefundRoute]) {
-    assert.match(route, /verifyAdminSession\(\)/);
-    assert.match(route, /verifyActTenant/);
+    assert.match(route, /authorizeAdminRoute\(/);
+    // tenant ต้องมาจากผลการยืนยันตัวตน ไม่ใช่ค่าคงที่ของยุคร้านเดียว
+    assert.match(route, /auth\.tenantId/);
     assert.doesNotMatch(route, /confirmPayment\(DEFAULT_TENANT_ID|rejectPayment\(DEFAULT_TENANT_ID|refundPayment\(DEFAULT_TENANT_ID/);
   }
-  assert.match(paymentConfirmRoute, /"payment\.confirm"/);
-  assert.match(paymentRejectRoute, /"payment\.confirm"/);
-  assert.match(paymentRefundRoute, /"payment\.refund"/);
+  assert.match(paymentConfirmRoute, /authorizeAdminRoute\("payment\.confirm"\)/);
+  assert.match(paymentRejectRoute, /authorizeAdminRoute\("payment\.confirm"\)/);
+  assert.match(paymentRefundRoute, /authorizeAdminRoute\("payment\.refund"\)/);
+
+  assert.match(adminRouteAuth, /verifyAdminSession\(\)/);
+  assert.match(adminRouteAuth, /verifyActTenant\(/);
+  assert.match(adminRouteAuth, /requirePermission\(/);
+  // drill-down ต้องผูกกับแอดมินที่ถือ session จริง ไม่ใช่รับ actTenantId มาใช้ดื้อ ๆ
+  assert.match(adminRouteAuth, /String\(acting\.by\) === String\(admin\.id\)/);
 });
 
 test("reports attribute late events to Bangkok business dates", () => {

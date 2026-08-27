@@ -6,6 +6,11 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test:pure": "node ../../scripts/run-contract-tests.mjs pure",
+    "test:db": "node ../../scripts/run-contract-tests.mjs db",
+    "test:all": "node ../../scripts/run-contract-tests.mjs all",
+    "gate": "npm run typecheck && npm run test:pure && npm run build",
     "test:user-admin": "tsx --test ../../scripts/auth-identity-contract.test.mts ../../scripts/user-admin-contract.test.mts",
     "test:pos": "tsx --test ../../scripts/pos-contract.test.mts"
   },

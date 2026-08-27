@@ -29,6 +29,13 @@ import path from "node:path";
 
 const WEB = path.resolve(import.meta.dirname, "../apps/web");
 
+/**
+ * path.relative() คืน separator ของ OS — บน Windows จึงได้ `app\api\...` แล้วไม่มีวัน
+ * ตรงกับ allowlist ที่เขียนด้วย `/` ผลคือเทสนี้แดงตลอดบนเครื่อง Windows ทั้งที่ route
+ * ถูกต้อง และเทสที่แดงเสมอคือเทสที่เลิกมีคนอ่าน — เทียบด้วยรูปแบบเดียวเสมอ
+ */
+const relPosix = (file: string): string => path.relative(WEB, file).split(path.sep).join("/");
+
 /** ตารางที่ผูกกับร้าน และการลืม tenant_id คือการแตะข้อมูลร้านอื่นเงียบ ๆ */
 const TENANT_SCOPED_TABLES = ["bms_inventory", "bms_product_price_tiers", "bms_product_packs"];
 
@@ -86,7 +93,7 @@ test("every SQL statement touching a tenant-scoped stock table filters by tenant
       while ((m = re.exec(src))) {
         if (isInComment(src, m.index)) continue;
         const sql = enclosingSql(src, m.index);
-        const where = `${path.relative(WEB, file)}:${src.slice(0, m.index).split("\n").length}`;
+        const where = `${relPosix(file)}:${src.slice(0, m.index).split("\n").length}`;
         if (sql == null) {
           unparsed.push(where);
           continue;
@@ -143,10 +150,8 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
   const unguarded: string[] = [];
   const unlimited: string[] = [];
   for (const file of routes) {
-    // path.relative() คืน `\` บน Windows แต่ PUBLIC_BY_DESIGN เขียนด้วย `/` —
-    // ไม่ normalize แล้วเทสจะแดงบนเครื่อง Windows ทุกครั้งโดยที่ route ถูกต้องอยู่แล้ว
-    // (เทสที่แดงเสมอ = เทสที่ทุกคนเลิกอ่าน ซึ่งอันตรายกว่าไม่มีเทส)
-    const rel = path.relative(WEB, file).split(path.sep).join("/");
+    // ต้องเทียบด้วยรูปแบบเดียวกับ PUBLIC_BY_DESIGN เสมอ — ดูเหตุผลที่ relPosix()
+    const rel = relPosix(file);
     const src = readFileSync(file, "utf8");
     const reason = PUBLIC_BY_DESIGN.get(rel);
     if (reason) {
@@ -186,7 +191,7 @@ test("no route treats a missing secret as permission to run", () => {
         .replace(/^\s*\/\/.*$/gm, "");
       // `if (<secretVar> && ...)` — ตัวแปรความลับเป็นเงื่อนไขนำ = ข้ามได้เมื่อว่าง
       for (const m of src.matchAll(/if \(\s*(secret|expected|token|adminToken)\s*&&/g)) {
-        offenders.push(`${path.relative(WEB, full)}  →  ${m[0]}`);
+        offenders.push(`${relPosix(full)}  →  ${m[0]}`);
       }
     }
   };
