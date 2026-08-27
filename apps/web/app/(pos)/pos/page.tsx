@@ -681,6 +681,17 @@ function baht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * ชื่อที่ใช้ทุกจุดซึ่งพนักงานต้องแยกบรรทัดสินค้าในบิลเก่า
+ *
+ * receiptName อย่างเดียวไม่พอ: SKU เดียวกันหลายไซส์มี orderItemId คนละตัว และการกดคืน
+ * ผิดแถวจะรับ stock กลับเข้าไซส์ของแถวนั้นจริง ๆ จึงต้องเห็น variant ก่อนกด +/−
+ */
+function receiptVariantLabel(line: Pick<CartLine, "receiptName" | "size">) {
+  const size = String(line.size ?? "").trim();
+  return `${line.receiptName}${size && size !== "-" ? ` (${size})` : ""}`;
+}
+
 /** ปุ่ม "ทั้งหมด" หมายถึงแต้มที่แลกได้จริง เศษที่ไม่ครบหน่วยต้องคงอยู่ในบัญชี */
 function maxWholeRedeemPoints(pointsUsable: number, pointsPerUnit: number): number {
   const usable = Math.max(0, Math.floor(pointsUsable));
@@ -6174,7 +6185,7 @@ export default function PosPage() {
                         {/* ย่อเหลือบรรทัดเดียว — รายการบิลมีไว้ให้ "หาบิลเจอ" ไม่ใช่ให้อ่านทั้งใบ
                             เลขอ้างอิงการชำระเงินอ่านได้ในใบเสร็จ ไม่ต้องกินที่ตรงนี้ */}
                         <div style={{ fontSize: 12, color: "#666", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {row.at} · {row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${line.receiptName}`).join(" · ")}
+                          {row.at} · {row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${receiptVariantLabel(line)}`).join(" · ")}
                           {row.lines.length > 2 ? ` · +${row.lines.length - 2}` : ""}
                         </div>
                         {(row.memberNo || row.memberName || row.memberPhone) && (
@@ -6238,15 +6249,15 @@ export default function PosPage() {
                                 style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", gap: 8, alignItems: "center" }}
                               >
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontSize: 12 }}>{line.receiptName}</div>
+                                  <div style={{ fontSize: 12, fontWeight: 600 }}>{receiptVariantLabel(line)}</div>
                                   <div style={{ fontSize: 11, color: "#777" }}>
-                                    คืนได้อีก {maxQty} / คืนแล้ว {line.returnedPackQty ?? 0}
+                                    SKU {line.sku} · ขาย {line.packQty} {line.unitName} · คืนได้อีก {maxQty} / คืนแล้ว {line.returnedPackQty ?? 0}
                                   </div>
                                 </div>
                                 <button
                                   onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected - 1, maxQty)}
                                   style={{ padding: "6px 12px", fontSize: 14, minHeight: 34 }}
-                                  aria-label={`ลดจำนวนคืน ${line.receiptName}`}
+                                  aria-label={`ลดจำนวนคืน ${receiptVariantLabel(line)} SKU ${line.sku}`}
                                 >
                                   −
                                 </button>
@@ -6254,7 +6265,7 @@ export default function PosPage() {
                                 <button
                                   onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected + 1, maxQty)}
                                   style={{ padding: "6px 12px", fontSize: 14, minHeight: 34 }}
-                                  aria-label={`เพิ่มจำนวนคืน ${line.receiptName}`}
+                                  aria-label={`เพิ่มจำนวนคืน ${receiptVariantLabel(line)} SKU ${line.sku}`}
                                 >
                                   +
                                 </button>
