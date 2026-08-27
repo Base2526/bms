@@ -1,6 +1,6 @@
 'use client';
 import { gql, useQuery } from "@apollo/client";
-import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input, Button } from "antd";
+import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input, Button, Card } from "antd";
 import { ReadOutlined, ReloadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -21,6 +21,127 @@ const Q = gql`
     }
   }
 `;
+
+/**
+ * บันทึกการจ่ายยาที่เคาน์เตอร์ (9.29)
+ *
+ * ตารางหลักฐานถูกเขียนพร้อมบิลตั้งแต่ 9.29 แต่ไม่มีที่ไหนอ่าน — หลักฐานที่ต้องเปิด psql
+ * เพื่อดู เท่ากับตอบคำถามของคนไม่ได้ · วางไว้หน้าคิวเพราะนี่คือหน้าที่เภสัชกรอยู่จริง
+ * · สิทธิ์ pharmacy.audit.read (Pharmacist + Manager) เกณฑ์เดียวกับ audit ของเคส
+ */
+const Q_COUNTER_LOG = gql`
+  query PharmacyCounterLog($from: String) {
+    bmsPharmacistCounterAuthorizations(from: $from, limit: 100) {
+      total
+      items {
+        id orderId orderCode taxDocNo productSku productName size qty
+        salePolicy policyStatus pharmacistName cashierName note createdAt
+      }
+    }
+  }
+`;
+
+/** ป้ายนโยบายที่ถูกปลด — สีเดียวกับความหมายที่หน้า POS ใช้ */
+const POLICY_COLOR: Record<string, string> = {
+  PRESCRIPTION_REQUIRED: "volcano",
+  ONLINE_SALE_PROHIBITED: "magenta",
+  PHARMACIST_APPROVAL: "orange",
+  SHORT_SAFETY_CHECK: "gold",
+  UNKNOWN: "default",
+};
+
+function CounterAuthorizationLog({ timeRange }: { timeRange: string }) {
+  const { t } = useI18n();
+  const { data, loading } = useQuery(Q_COUNTER_LOG, {
+    variables: { from: createdAfterFor(timeRange) },
+    fetchPolicy: "cache-and-network",
+  });
+  const page = data?.bmsPharmacistCounterAuthorizations;
+  const rows = page?.items ?? [];
+
+  return (
+    <Card
+      size="small"
+      style={{ marginTop: 16 }}
+      title={t("admin_pharmacy_queue.counter_log_title")}
+      extra={
+        <Text type="secondary">
+          {t("admin_pharmacy_queue.counter_log_total", { count: page?.total ?? 0 })}
+        </Text>
+      }
+    >
+      <Text type="secondary" style={{ display: "block", marginBottom: 10 }}>
+        {t("admin_pharmacy_queue.counter_log_hint")}
+      </Text>
+      <Table
+        rowKey="id"
+        size="small"
+        loading={loading}
+        dataSource={rows}
+        pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
+        locale={{ emptyText: t("admin_pharmacy_queue.counter_log_empty") }}
+        columns={[
+          {
+            title: t("admin_pharmacy_queue.counter_col_time"),
+            dataIndex: "createdAt",
+            key: "createdAt",
+            render: (v: string) => new Date(v).toLocaleString(),
+          },
+          {
+            title: t("admin_pharmacy_queue.counter_col_bill"),
+            key: "bill",
+            render: (_: unknown, row: any) => (
+              <Space direction="vertical" size={0}>
+                <Text code>{row.orderCode}</Text>
+                {row.taxDocNo ? <Text type="secondary">{row.taxDocNo}</Text> : null}
+              </Space>
+            ),
+          },
+          {
+            title: t("admin_pharmacy_queue.counter_col_drug"),
+            key: "product",
+            render: (_: unknown, row: any) => (
+              <Space direction="vertical" size={0}>
+                <Text>{row.productName || row.productSku}</Text>
+                <Text type="secondary">{row.productSku} · {row.size}</Text>
+              </Space>
+            ),
+          },
+          { title: t("admin_pharmacy_queue.counter_col_qty"), dataIndex: "qty", key: "qty" },
+          {
+            title: t("admin_pharmacy_queue.counter_col_policy"),
+            key: "salePolicy",
+            render: (_: unknown, row: any) => (
+              <Space direction="vertical" size={0}>
+                <Tag color={POLICY_COLOR[row.salePolicy] ?? "default"}>{row.salePolicy}</Tag>
+                <Text type="secondary">{row.policyStatus}</Text>
+              </Space>
+            ),
+          },
+          {
+            title: t("admin_pharmacy_queue.counter_col_pharmacist"),
+            dataIndex: "pharmacistName",
+            key: "pharmacistName",
+            render: (v: string | null) => v || "—",
+          },
+          {
+            title: t("admin_pharmacy_queue.counter_col_cashier"),
+            dataIndex: "cashierName",
+            key: "cashierName",
+            render: (v: string | null) => v || "—",
+          },
+          {
+            title: t("admin_pharmacy_queue.counter_col_note"),
+            dataIndex: "note",
+            key: "note",
+            render: (v: string | null) => v || "—",
+          },
+        ]}
+      />
+    </Card>
+  );
+}
 
 const RISK_COLOR: Record<string, string> = {
   EMERGENCY: "red",
@@ -289,6 +410,8 @@ export default function PharmacyQueuePage() {
         <Select style={{ width: 160 }} options={timeOptions(t)} value={timeRange} onChange={(v) => setTimeRange(v)} />
       </Space>
       <Table rowKey="id" loading={loading} dataSource={rows} columns={buildColumns(t)} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />
+      {/* ตัวกรองช่วงเวลาเดียวกับคิว — คนที่ถามว่า "วันนี้จ่ายอะไรออกไป" ไม่ต้องตั้งค่าสองที่ */}
+      {can("pharmacy.audit.read") && <CounterAuthorizationLog timeRange={timeRange} />}
     </div>
   );
 }

@@ -47,6 +47,7 @@ import {
 import { resolveSellablePack } from "../productPacks";
 import { orderQuoteFingerprint, type OrderQuoteLine } from "../orderQuote";
 import { createProductReviewAssessmentOnce } from "../pharmacy/assessments";
+import { isPharmacistReviewableBasket } from "../pharmacy/productPolicyDecision";
 import { submitPayment, submitPaymentOnce, verifyPaymentSlip, listPayments, PAYMENT_METHODS } from "../payments";
 import {
   createShipment,
@@ -1238,12 +1239,10 @@ const createOrderTool: BmsTool = {
       preferredCarrier: requestedCarrier ?? null,
     });
     const pharmacyBlockers = "blockers" in r && Array.isArray(r.blockers) ? r.blockers : [];
-    const reviewablePharmacyBasket = pharmacyBlockers.length > 0
-      ? pharmacyBlockers.every((blocker) =>
-          blocker.status === "PHARMACY_REVIEW_REQUIRED" ||
-          blocker.status === "PHARMACY_SAFETY_CHECK_REQUIRED"
-        )
-      : r.status === "PHARMACY_REVIEW_REQUIRED" || r.status === "PHARMACY_SAFETY_CHECK_REQUIRED";
+    // เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" อยู่ที่ productPolicyDecision.ts ที่เดียว —
+    // เดิมสามจุดเขียนรายการสถานะเองแยกกัน ซึ่งเป็นเหตุที่ยาต้องมีใบสั่งขายไม่ได้เลย
+    // (ตัวประเมินยอมให้เคสที่ approve แล้วผ่าน แต่ไม่มีใครเปิดเคสให้ตั้งแต่แรก)
+    const reviewablePharmacyBasket = isPharmacistReviewableBasket(r.status, pharmacyBlockers);
     if (
       ec.surface === "customer" &&
       ec.conversationId &&

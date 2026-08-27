@@ -870,6 +870,39 @@ export const typeDefs = /* GraphQL */ `
     draft: Int!
     missing: Int!
     ready: Boolean!
+    "9.29 — เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขายได้"
+    counterAuthorization: Boolean!
+    "9.29 — TRUE = เปิดกะไม่ได้ถ้ารีวิว policy ยังไม่ครบ"
+    blockShiftOnUnreviewed: Boolean!
+  }
+
+  "9.29 — หนึ่งแถวต่อ (บิล, สินค้า, ไซซ์) ที่เภสัชกรกด PIN อนุมัติจ่ายที่เคาน์เตอร์"
+  type BmsPharmacistCounterAuthorization {
+    id: ID!
+    orderId: ID!
+    "รหัสสั้นที่พนักงานใช้เรียกบิล (ตรงกับที่หน้า POS โชว์ตอนขายจบ)"
+    orderCode: String!
+    "เลขใบกำกับ/ใบเสร็จถ้าออกแล้ว — บิลมัดจำที่ยังไม่ส่งของยังไม่มี"
+    taxDocNo: String
+    productSku: String!
+    productName: String
+    size: String!
+    qty: Int!
+    "policy ที่ถูกปลด ณ เวลานั้น (snapshot ไม่ใช่ค่าปัจจุบันของสินค้า)"
+    salePolicy: String!
+    policyStatus: String!
+    pharmacistUserId: ID!
+    pharmacistName: String
+    cashierName: String
+    note: String
+    createdAt: String!
+  }
+
+  type BmsPharmacistCounterAuthorizationPage {
+    items: [BmsPharmacistCounterAuthorization!]!
+    total: Int!
+    limit: Int!
+    offset: Int!
   }
 
   type BmsUnreviewedProduct {
@@ -1087,6 +1120,8 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
     bmsPharmacyAssessmentConversationHistory(assessmentId: ID!, limit: Int): BmsPharmacyConversationHistory
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
+    "บันทึกการจ่ายยาที่เภสัชกรอนุมัติที่เคาน์เตอร์ (9.29) — สิทธิ์ pharmacy.audit.read"
+    bmsPharmacistCounterAuthorizations(from: String, to: String, limit: Int, offset: Int): BmsPharmacistCounterAuthorizationPage!
     bmsPharmacyCatalog(search: String, limit: Int): [BmsPharmacyCatalogItem!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
@@ -3657,6 +3692,8 @@ export const typeDefs = /* GraphQL */ `
     "posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย"
     bmsSetCashierAccountMode(userId: ID!, posOnly: Boolean!): Boolean!
     bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
+    "ตั้งค่าการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29) — ไม่ส่งฟิลด์ไหน = ไม่แตะฟิลด์นั้น"
+    bmsSetPharmacyCounterSettings(counterAuthorization: Boolean, blockShiftOnUnreviewed: Boolean): BmsPharmacyPolicyReadiness!
     bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login
     login(input: LoginInput!): LoginResult!

@@ -150,6 +150,7 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
   const unguarded: string[] = [];
   const unlimited: string[] = [];
   for (const file of routes) {
+    // ต้องเทียบด้วยรูปแบบเดียวกับ PUBLIC_BY_DESIGN เสมอ — ดูเหตุผลที่ relPosix()
     const rel = relPosix(file);
     const src = readFileSync(file, "utf8");
     const reason = PUBLIC_BY_DESIGN.get(rel);

@@ -12,11 +12,17 @@
 //   1. how far along is the review?          → getPharmacyPolicyReadiness()
 //   2. may this shop open a till right now?  → assertPharmacyPolicyReadyToOpenShift()
 //
+// 9.29 made that shift-open block opt-in. An unreviewed SKU no longer dead-ends
+// mid-queue: it asks for a licensed pharmacist's PIN at the register, the way an
+// ordinary pharmacy already works. Blocking the whole till is therefore a choice
+// a shop makes, not the only way to avoid selling something unreviewed.
+//
 // Nothing here decides whether a product may be sold — evaluatePharmacySale()
 // remains the single gate for that, unchanged.
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "../tenant";
 
 export type PharmacyPolicyReadiness = {
   /** false → this shop is not a pharmacy; every count is 0 and ready is true. */
@@ -30,6 +36,10 @@ export type PharmacyPolicyReadiness = {
   missing: number;
   /** approved === totalProducts */
   ready: boolean;
+  /** 9.29 — เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขายได้ */
+  counterAuthorization: boolean;
+  /** 9.29 — TRUE = เปิดกะไม่ได้ถ้ายังรีวิว policy ไม่ครบ (พฤติกรรมเดิม) */
+  blockShiftOnUnreviewed: boolean;
 };
 
 export type UnreviewedProduct = {
@@ -39,17 +49,15 @@ export type UnreviewedProduct = {
   policyStatus: "MISSING" | "DRAFT" | "PENDING_REVIEW" | "RETIRED";
 };
 
-async function isPharmacyTenant(tenantId: string): Promise<boolean> {
-  const res = await query<{ business_archetype: string | null }>(
+export async function getPharmacyPolicyReadiness(tenantId: string): Promise<PharmacyPolicyReadiness> {
+  // อ่าน archetype ก่อน แล้วค่อยอ่านคอลัมน์ของ 9.29 เฉพาะร้านยา — ร้านที่ไม่ใช่ร้านยา
+  // เปิดหน้าความพร้อม/เปิดกะได้ตามปกติแม้ฐานยังไม่ได้ apply 9.29 (ร้านยาจะได้ error
+  // ดัง ๆ ซึ่งถูกต้อง: ฟีเจอร์ของมันต้องมีคอลัมน์นั้นจริง)
+  const archetype = await query<{ business_archetype: string | null }>(
     `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
-  return res.rows[0]?.business_archetype === "pharmacy";
-}
-
-export async function getPharmacyPolicyReadiness(tenantId: string): Promise<PharmacyPolicyReadiness> {
-  const pharmacyArchetype = await isPharmacyTenant(tenantId);
-  if (!pharmacyArchetype) {
+  if (archetype.rows[0]?.business_archetype !== "pharmacy") {
     return {
       pharmacyArchetype: false,
       totalProducts: 0,
@@ -58,8 +66,19 @@ export async function getPharmacyPolicyReadiness(tenantId: string): Promise<Phar
       draft: 0,
       missing: 0,
       ready: true,
+      counterAuthorization: true,
+      blockShiftOnUnreviewed: false,
     };
   }
+
+  const settings = await query<{ counter: boolean | null; blocks: boolean | null }>(
+    `SELECT pharmacy_counter_authorization AS counter,
+            pharmacy_block_shift_on_unreviewed_policy AS blocks
+       FROM bms_store_profile WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  const counterAuthorization = settings.rows[0]?.counter !== false;
+  const blockShiftOnUnreviewed = settings.rows[0]?.blocks === true;
 
   const res = await query<{
     total: string;
@@ -92,6 +111,8 @@ export async function getPharmacyPolicyReadiness(tenantId: string): Promise<Phar
     draft: Number(row?.draft ?? 0),
     missing: Number(row?.missing ?? 0),
     ready: totalProducts === approved,
+    counterAuthorization,
+    blockShiftOnUnreviewed,
   };
 }
 
@@ -134,10 +155,75 @@ export async function assertPharmacyPolicyReadyToOpenShift(tenantId: string): Pr
   const readiness = await getPharmacyPolicyReadiness(tenantId);
   if (readiness.ready) return;
 
+  // Opt-in since 9.29 (see the header). The readiness numbers are still reported
+  // either way — a shop should watch its review backlog shrink even when the till
+  // opens regardless.
+  if (!readiness.blockShiftOnUnreviewed) return;
+
   const outstanding = readiness.totalProducts - readiness.approved;
   throw new Error(
     `เปิดกะไม่ได้: ยังมีสินค้า ${outstanding} จาก ${readiness.totalProducts} รายการที่เภสัชกรยังไม่ได้อนุมัตินโยบายการขาย ` +
       `(ยังไม่เริ่ม ${readiness.missing} · ร่าง ${readiness.draft} · รอตรวจ ${readiness.pendingReview}) ` +
       `— ถ้าเปิดขายตอนนี้ สินค้าเหล่านี้จะขายไม่ได้กลางคิวลูกค้า`
   );
+}
+
+/**
+ * ตั้งค่าการอนุมัติที่เคาน์เตอร์ของร้าน (9.29)
+ *
+ * ส่งเฉพาะค่าที่ต้องการเปลี่ยน — ไม่ส่ง = ไม่แตะ (กฎเดียวกับ `vat_category` ใน
+ * `upsertProduct`) เพื่อไม่ให้ฟอร์มที่รู้จักฟิลด์เดียวไปล้างอีกฟิลด์เป็นค่าปริยาย
+ *
+ * สองค่านี้ตอบว่า "ใครปล่อยยาออกจากร้านได้บ้าง" จึงเขียน audit **ในทรานแซกชันเดียวกับ
+ * การเขียน** ไม่ใช่ยิงต่อท้ายจาก resolver (กฎเดียวกับ setCashierPin หลัง 9.5) — ค่าที่
+ * เปลี่ยนแล้วไม่มีร่องรอยว่าใครเปลี่ยนคือช่องที่อธิบายย้อนหลังไม่ได้
+ *
+ * และปฏิเสธถ้าร้านไม่ได้ตั้งประเภทเป็นร้านขายยา: คอลัมน์ของ 9.29 ไม่มีความหมายกับร้าน
+ * อื่นเลย การยอมให้ตั้งได้เท่ากับเก็บค่าที่ไม่มีใครอ่านแล้วดูเหมือนมีผล
+ */
+export async function setPharmacyCounterSettings(
+  tenantId: string,
+  input: { counterAuthorization?: boolean | null; blockShiftOnUnreviewed?: boolean | null },
+  actor?: string | null
+): Promise<PharmacyPolicyReadiness> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const profile = await client.query<{ business_archetype: string | null }>(
+      `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1 FOR UPDATE`,
+      [tenantId]
+    );
+    if (profile.rows[0]?.business_archetype !== "pharmacy") {
+      await client.query("ROLLBACK");
+      throw new Error("ตั้งค่านี้ได้เฉพาะร้านที่ตั้งประเภทธุรกิจเป็นร้านขายยา");
+    }
+    // ร้านยาต้องมีแถวโปรไฟล์อยู่แล้ว (archetype อยู่ในแถวนั้น) จึงเป็น UPDATE ล้วน
+    const updated = await client.query<{ counter: boolean; blocks: boolean }>(
+      `UPDATE bms_store_profile
+          SET pharmacy_counter_authorization =
+                COALESCE($2, pharmacy_counter_authorization),
+              pharmacy_block_shift_on_unreviewed_policy =
+                COALESCE($3, pharmacy_block_shift_on_unreviewed_policy),
+              updated_at = now()
+        WHERE tenant_id = $1
+        RETURNING pharmacy_counter_authorization AS counter,
+                  pharmacy_block_shift_on_unreviewed_policy AS blocks`,
+      [tenantId, input.counterAuthorization ?? null, input.blockShiftOnUnreviewed ?? null]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pharmacy.counter_settings_set', $1::text, $3::jsonb)`,
+      [tenantId, actor || "system", JSON.stringify({
+        counterAuthorization: updated.rows[0]?.counter ?? null,
+        blockShiftOnUnreviewed: updated.rows[0]?.blocks ?? null,
+      })]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+  return getPharmacyPolicyReadiness(tenantId);
 }

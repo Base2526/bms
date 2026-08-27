@@ -28,7 +28,16 @@ export type PharmacySaleBlocker = {
 };
 
 export type PharmacySaleDecision =
-  | { allowed: true }
+  | {
+      allowed: true;
+      /**
+       * SKUs that only cleared because a licensed pharmacist authorised them at
+       * the register (`9.29`). The caller writes one evidence row per line in
+       * the same transaction as the bill — an empty/absent list means the basket
+       * passed on its own policies and there is nothing to record.
+       */
+      counterAuthorizedSkus?: string[];
+    }
   | (PharmacySaleBlocker & {
       allowed: false;
       /**
@@ -42,6 +51,74 @@ export type PharmacySaleDecision =
        */
       blockers: PharmacySaleBlocker[];
     });
+
+/**
+ * Blocks a pharmacist's review of this basket can resolve — the set every caller
+ * that decides "should I open a queue case for this?" must agree on.
+ *
+ * Three call sites used to hardcode their own pair of statuses (`pipeline.ts`,
+ * `tools/catalog.ts`, `pos.ts`), which is how PRESCRIPTION_REQUIRED ended up
+ * unsellable everywhere: `evaluatePharmacySale()` would have cleared it for an
+ * approved case, but nothing would open the case in the first place.
+ *
+ * **ชุดนี้ขึ้นกับช่องทาง** เพราะใบสั่งแพทย์เป็นกระดาษที่ร้านยารับไว้ในมือ: เภสัชกรอ่านใบสั่ง
+ * เก็บสำเนาไว้กับเคส แล้วส่งยาข้ามเคาน์เตอร์ให้คนไข้ · การอนุมัติจากห้องแชทแล้วส่งของออกไป
+ * ไม่ใช่วิธีที่ร้านขายยาจ่ายยาที่ต้องมีใบสั่ง จึงให้ `PRESCRIPTION_REQUIRED` เป็นเรื่องที่เภสัชกร
+ * ตัดสินได้ **ที่เคาน์เตอร์เท่านั้น** · ตะกร้าออนไลน์ที่มียากลุ่มนี้ถูกปฏิเสธไปเลยและไม่เปิดเคส
+ * (ไม่เปิดเคส = ไม่มีใบอนุมัติที่อนุมัติแล้วใช้ไม่ได้ค้างอยู่ในระบบ)
+ *
+ * Deliberately NOT in either set:
+ *   - PHARMACY_POLICY_UNKNOWN — an unreviewed product policy is fixed by
+ *     reviewing the policy (or a pharmacist's PIN at the register), not by
+ *     approving one basket. Its whole point is that nobody has classified the
+ *     product yet, so there is nothing for a case to be about.
+ *   - PHARMACY_ONLINE_SALE_PROHIBITED — the classification says this product may
+ *     not travel over the internet at all. A pharmacist can hand it over in
+ *     person (the counter path turns it into PHARMACY_REVIEW_REQUIRED), but no
+ *     approval makes an online order of it legitimate.
+ *   - PHARMACY_QUANTITY_LIMIT_EXCEEDED — a cap the shop set for itself.
+ */
+export const PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL: Record<
+  PharmacySaleChannel,
+  readonly PharmacySaleBlockStatus[]
+> = {
+  online: ["PHARMACY_REVIEW_REQUIRED", "PHARMACY_SAFETY_CHECK_REQUIRED"],
+  counter: [
+    "PHARMACY_REVIEW_REQUIRED",
+    "PHARMACY_SAFETY_CHECK_REQUIRED",
+    "PHARMACY_PRESCRIPTION_REQUIRED",
+  ],
+};
+
+export function isPharmacistReviewableBlock(
+  status: string,
+  channel: PharmacySaleChannel = "online"
+): boolean {
+  // ช่องทางที่ไม่รู้จัก = ใช้ชุดที่เข้มกว่า (ออนไลน์) ไม่ใช่ crash และไม่ใช่ปล่อยผ่าน
+  const statuses =
+    PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL[channel] ??
+    PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL.online;
+  return (statuses as readonly string[]).includes(status);
+}
+
+/**
+ * True when EVERY reason this basket was refused is something a pharmacist's
+ * review can resolve **on this channel**. All-or-nothing on purpose: the basket
+ * is reserved and paid for as one order, so opening a case for a basket that also
+ * contains an unreviewable item would produce an approval that can never be
+ * spent. The channel defaults to "online" so a caller that has not been taught
+ * about channels keeps the stricter set.
+ */
+export function isPharmacistReviewableBasket(
+  status: string,
+  blockers?: ReadonlyArray<{ status: string }> | null,
+  channel: PharmacySaleChannel = "online"
+): boolean {
+  if (blockers && blockers.length > 0) {
+    return blockers.every((blocker) => isPharmacistReviewableBlock(blocker.status, channel));
+  }
+  return isPharmacistReviewableBlock(status, channel);
+}
 
 export type PharmacyPolicyForDecision = {
   productSku: string;
@@ -65,9 +142,29 @@ export function evaluatePharmacySale(
   items: Array<{ sku: string; qty: number }>,
   policies: PharmacyPolicyForDecision[],
   approvedAssessmentSkus: ReadonlySet<string> = new Set(),
-  channel: PharmacySaleChannel = "online"
+  channel: PharmacySaleChannel = "online",
+  /**
+   * SKUs a licensed pharmacist authorised **in person at the register**
+   * (`9.29`). This is how an ordinary pharmacy works: the pharmacist is
+   * standing at the counter, looks at the box, asks the customer two questions
+   * and says yes — the evidence worth keeping is who authorised what, not a
+   * transcript.
+   *
+   * Ignored unless `channel === "counter"`: there is nobody at a register on an
+   * online order, so an online caller can never gain this exemption even by
+   * passing a set.
+   *
+   * It clears the policy-driven blocks, PRESCRIPTION_REQUIRED included — a
+   * pharmacist reading the prescription is exactly who is meant to decide that.
+   * It deliberately does NOT clear PHARMACY_QUANTITY_LIMIT_EXCEEDED: that cap is
+   * a number the shop configured for itself, and selling past it is a policy
+   * edit, not a counter decision.
+   */
+  counterPharmacistAuthorizedSkus: ReadonlySet<string> = new Set()
 ): PharmacySaleDecision {
   const bySku = new Map(policies.map((policy) => [policy.productSku, policy]));
+  const counterAuthorized = (sku: string) =>
+    channel === "counter" && counterPharmacistAuthorizedSkus.has(sku);
   const quantityBySku = new Map<string, number>();
   for (const item of items) quantityBySku.set(item.sku, (quantityBySku.get(item.sku) ?? 0) + item.qty);
 
@@ -80,6 +177,10 @@ export function evaluatePharmacySale(
   for (const [sku, qty] of quantityBySku) {
     const policy = bySku.get(sku);
     if (!policy || policy.status !== "APPROVED") {
+      // An unreviewed SKU is not a dead end at the counter any more: a licensed
+      // pharmacist may take responsibility for this one hand-over. The policy
+      // row still has to be reviewed before the product sells itself.
+      if (counterAuthorized(sku)) continue;
       blockers.push({ status: "PHARMACY_POLICY_UNKNOWN", sku, salePolicy: "UNKNOWN" });
       continue;
     }
@@ -94,9 +195,21 @@ export function evaluatePharmacySale(
       continue;
     }
     if (policy.salePolicy === "DIRECT_SALE") continue;
+    // The pharmacist at the register clears every policy-driven block below,
+    // including PRESCRIPTION_REQUIRED. The quantity cap above is already past.
+    if (counterAuthorized(sku)) continue;
     if (
       (policy.salePolicy === "PHARMACIST_APPROVAL" ||
         policy.salePolicy === "SHORT_SAFETY_CHECK" ||
+        // A prescription is a document the pharmacist reads and takes
+        // responsibility for, **at the counter**. Their approval of this exact
+        // basket IS that decision (the case carries the prescription image or
+        // reference in bms_pharmacy_clinical_evidence), so it clears the block
+        // when the hand-over happens in person. Online it clears nothing: an
+        // ordinary pharmacy does not ship a prescription drug on the strength of
+        // a chat thread, and the reviewable-block set above refuses to open a
+        // case for one, so no unspendable approval is created either.
+        (policy.salePolicy === "PRESCRIPTION_REQUIRED" && channel === "counter") ||
         // Counter-only: the fall-through below turns this policy into
         // "needs a pharmacist", so its approval has to clear it here too or the
         // case would be approved and the sale still refused, forever.
@@ -125,4 +238,60 @@ export function evaluatePharmacySale(
 
   if (blockers.length > 0) return { allowed: false, ...blockers[0], blockers };
   return { allowed: true };
+}
+
+/**
+ * Which SKUs a pharmacist's checkout draft actually authorises for THIS basket.
+ *
+ * Pure on purpose: this is the quantity boundary of a clinical approval, so it
+ * has to be testable without a database. checkPharmacySaleInTx() only supplies
+ * the two lists.
+ *
+ * **Both sides are summed per (sku, size) before comparing.** The previous
+ * version compared each requested line on its own against the first matching
+ * draft item, which is wrong in two directions now that `9.21` lets one bill
+ * carry the same SKU+size in two selling units ("1 box + 3 tablets"):
+ *   - over-dispensing: an approval for 10 tablets cleared a bill holding
+ *     10 (box) + 10 (loose) — 20 units handed over on a 10-unit approval,
+ *     because each line satisfied the `>=` check by itself;
+ *   - under-dispensing: a draft the pharmacist built as two rows of the same
+ *     product only ever counted the first row.
+ *
+ * Size is compared as text because that is how both the order line and the
+ * draft store it — an approval for one size never authorises another.
+ */
+export function approvedSkusFromCheckoutDraft(
+  items: Array<{ sku: string; size?: string; qty: number }>,
+  draftItems: Array<{ sku?: unknown; size?: unknown; qty?: unknown }>
+): Set<string> {
+  const keyOf = (sku: string, size: unknown) => `${sku}\u0000${String(size ?? "")}`;
+
+  const approvedQty = new Map<string, number>();
+  for (const item of draftItems) {
+    const sku = String(item?.sku ?? "").trim();
+    if (!sku) continue;
+    const qty = Number(item?.qty);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const key = keyOf(sku, item?.size);
+    approvedQty.set(key, (approvedQty.get(key) ?? 0) + qty);
+  }
+
+  const requestedQty = new Map<string, number>();
+  for (const item of items) {
+    const key = keyOf(item.sku, item.size);
+    requestedQty.set(key, (requestedQty.get(key) ?? 0) + item.qty);
+  }
+
+  // A sku clears only when EVERY (sku, size) total it appears in is covered.
+  const requestedSkus = new Set<string>();
+  const blocked = new Set<string>();
+  for (const item of items) {
+    requestedSkus.add(item.sku);
+    const key = keyOf(item.sku, item.size);
+    if ((approvedQty.get(key) ?? 0) < (requestedQty.get(key) ?? 0)) blocked.add(item.sku);
+  }
+
+  const approved = new Set<string>();
+  for (const sku of requestedSkus) if (!blocked.has(sku)) approved.add(sku);
+  return approved;
 }

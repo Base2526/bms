@@ -19,6 +19,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { query } from "@/lib/db";
 import { audit } from "@/lib/bms/audit";
 import { isPharmacyAiEnabled, isPharmacyIntakeEnabled } from "@/lib/bms/pharmacy/config";
+import { listPharmacistCounterAuthorizations } from "@/lib/bms/pharmacy/counterAuthorizations";
 import { AnthropicCompatiblePharmacyIntakeAI, filterMedicationSuggestionsAgainstAllergies } from "@/lib/bms/pharmacy/ai";
 import {
   approveAssessment,
@@ -195,6 +196,26 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.assessment.read");
       const limit = Math.min(Math.max(args.limit ?? 100, 1), 300);
       return getAssessmentConversationHistory(getTenantId(ctx), args.assessmentId, limit);
+    },
+    /**
+     * บันทึกการจ่ายยาที่เภสัชกรอนุมัติที่เคาน์เตอร์ (9.29)
+     *
+     * `pharmacy.audit.read` (Pharmacist + Manager) — เกณฑ์เดียวกับ audit timeline
+     * ของเคส: นี่คือร่องรอยว่าใครปล่อยยาออกจากร้าน ไม่ใช่ข้อมูลคลินิกของคนไข้
+     * · ไม่ต้อง seed permission ใหม่
+     */
+    async bmsPharmacistCounterAuthorizations(
+      _p: unknown,
+      args: { from?: string | null; to?: string | null; limit?: number | null; offset?: number | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.audit.read");
+      return listPharmacistCounterAuthorizations(getTenantId(ctx), {
+        from: args.from ?? null,
+        to: args.to ?? null,
+        limit: args.limit ?? undefined,
+        offset: args.offset ?? undefined,
+      });
     },
     async bmsPharmacyAssessmentEvents(_p: unknown, args: { assessmentId: string; limit?: number }, ctx: any) {
       await requirePermission(ctx, "pharmacy.audit.read");
