@@ -305,6 +305,72 @@ test("approve โดยไม่ส่ง draft ต้องคง draft เด�
   if (sale.status === "CREATED") createdOrders.push(sale.orderId);
 });
 
+// ---------------------------------------------------------------
+// ยาที่ต้องมีใบสั่งแพทย์: ขายออนไลน์ได้เมื่อเภสัชกรอนุมัติเคสนั้น
+// ---------------------------------------------------------------
+// ก่อนหน้านี้กลุ่มนี้เป็นทางตัน: ตัวประเมินไม่ยอมให้ใบอนุมัติปลด และไม่มีใครเปิดเคสให้
+// (`isPharmacistReviewableBasket` ไม่รับสถานะนี้) — จ่ายไม่ได้เลยทั้งออนไลน์และหน้าร้าน
+test("ยาที่ต้องมีใบสั่ง: ไม่มีใบอนุมัติ = บล็อก · เภสัชกรอนุมัติเคสแล้ว = ขายออนไลน์ได้", async () => {
+  const RX_SKU = `FAKE-${TAG}-RX`;
+  await query(
+    `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
+     VALUES ($1,$2,$3,120,TRUE,'V')`,
+    [tenantId, RX_SKU, `FAKE ${TAG} prescription drug`]
+  );
+  await query(
+    `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+     VALUES ($1,$2,$3,$4,50,0)`,
+    [tenantId, locationId, RX_SKU, SIZE]
+  );
+  await query(
+    `INSERT INTO bms_pharmacy_product_policies (tenant_id, product_sku, sale_policy, status)
+     VALUES ($1,$2,'PRESCRIPTION_REQUIRED','APPROVED')`,
+    [tenantId, RX_SKU]
+  );
+
+  const online = (approvedAssessmentId: string | null) =>
+    createOrder({
+      tenantId,
+      channel: "line",
+      locationId,
+      items: [{ sku: RX_SKU, size: SIZE, qty: 1 }],
+      pharmacyApprovedAssessmentId: approvedAssessmentId,
+    } as any);
+
+  const blocked = await online(null);
+  assert.equal(blocked.status, "PHARMACY_PRESCRIPTION_REQUIRED", JSON.stringify(blocked));
+
+  const draft = {
+    status: "AWAITING_CUSTOMER_CONFIRMATION",
+    items: [{ sku: RX_SKU, size: SIZE, qty: 1, unitPrice: 120, productName: `FAKE ${TAG} prescription drug` }],
+    estimatedTotal: 120,
+    createdOrderId: null,
+    approvedAt: new Date().toISOString(),
+  };
+  const caseId = (
+    await query<{ id: string }>(
+      `INSERT INTO bms_pharmacy_assessments
+         (tenant_id, channel_id, patient_relationship, consent_status, status,
+          needs_manual_intake, risk_level, complaint, structured_answers,
+          missing_fields, conflicting_fields, completeness_status,
+          customer_confirmation_status, checkout_order_draft, expires_at)
+       VALUES ($1,'line','SELF','GRANTED','APPROVED',FALSE,'LOW',
+               '{}'::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
+               'CONFIRMED',$2::jsonb, now() + interval '1 day')
+       RETURNING id`,
+      [tenantId, JSON.stringify(draft)]
+    )
+  ).rows[0].id;
+
+  const sold = await online(caseId);
+  assert.equal(sold.status, "CREATED", `เคสที่เภสัชกรอนุมัติต้องขายได้ แต่ได้ ${JSON.stringify(sold)}`);
+  if (sold.status === "CREATED") createdOrders.push(sold.orderId);
+
+  // ใบเดียวใช้ครั้งเดียวยังเป็นกฎเดิม แม้จะเป็นยาที่ต้องมีใบสั่ง
+  const again = await online(caseId);
+  assert.equal(again.status, "PHARMACY_PRESCRIPTION_REQUIRED", JSON.stringify(again));
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   // ลบตามลำดับ FK เอง ไม่พึ่ง cascade — bms_products_tenant_fk ไม่ใช่ ON DELETE
   // CASCADE (เจอตอนเขียนเทสนี้) เทนแนนต์เป็นของทิ้งอยู่แล้วจึงลบตาม tenant_id

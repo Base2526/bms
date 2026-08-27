@@ -15,6 +15,8 @@ import test from "node:test";
 import {
   approvedSkusFromCheckoutDraft,
   evaluatePharmacySale,
+  isPharmacistReviewableBasket,
+  isPharmacistReviewableBlock,
   type PharmacyPolicyForDecision,
 } from "../apps/web/lib/bms/pharmacy/productPolicyDecision.ts";
 
@@ -422,4 +424,82 @@ test("อนุมัติเฉพาะ SKU ที่ระบุ — ตั�
   if (decision.allowed) return;
   assert.equal(decision.blockers.length, 1);
   assert.equal(decision.blockers[0].sku, "OTHER");
+});
+
+// ---------------------------------------------------------------
+// ใบอนุมัติของเภสัชกรปลดยาที่ต้องมีใบสั่งแพทย์ได้ (ทั้งสองช่องทาง)
+// ---------------------------------------------------------------
+// ใบสั่งยาเป็นเอกสารที่เภสัชกรอ่านและรับผิดชอบ การอนุมัติเคสนี้คือการตัดสินนั้นเอง
+// (รูป/เลขใบสั่งเก็บใน bms_pharmacy_clinical_evidence ของเคส) · สิ่งที่ยังเป็นไปไม่ได้
+// คือจ่ายยากลุ่มนี้โดยไม่มีเคสหรือไม่มีเภสัชกรเลย
+test("เคสที่เภสัชกรอนุมัติแล้ว ปลดยาที่ต้องมีใบสั่งได้ทั้งออนไลน์และเคาน์เตอร์", () => {
+  for (const channel of ["online", "counter"] as const) {
+    const decision = evaluatePharmacySale(
+      [{ sku: "TRAMADOL", qty: 1 }],
+      [policy("TRAMADOL", "PRESCRIPTION_REQUIRED")],
+      new Set(["TRAMADOL"]),
+      channel
+    );
+    assert.equal(decision.allowed, true, channel);
+  }
+});
+
+test("ไม่มีใบอนุมัติ = ยาที่ต้องมีใบสั่งยังบล็อกเหมือนเดิม", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "TRAMADOL", qty: 1 }],
+    [policy("TRAMADOL", "PRESCRIPTION_REQUIRED")],
+    new Set(["SOMETHING_ELSE"]),
+    "online"
+  );
+  assert.equal(decision.allowed, false);
+  if (decision.allowed) return;
+  assert.equal(decision.status, "PHARMACY_PRESCRIPTION_REQUIRED");
+});
+
+test("ใบอนุมัติยังปลด ONLINE_SALE_PROHIBITED ฝั่งออนไลน์ไม่ได้ (คนละเรื่องกับใบสั่งยา)", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")],
+    new Set(["OFFLINE_ONLY"]),
+    "online"
+  );
+  assert.equal(decision.allowed, false);
+});
+
+// ---------------------------------------------------------------
+// เกณฑ์ "เปิดเคสให้เภสัชกรได้ไหม" ต้องเป็นชุดเดียวกันทุกจุด
+// ---------------------------------------------------------------
+// เดิม pipeline.ts / tools/catalog.ts / pos.ts เขียนรายการสถานะเองแยกกัน ซึ่งเป็นเหตุ
+// ที่ยาต้องมีใบสั่งขายไม่ได้เลย: ตัวประเมินยอมให้เคสที่อนุมัติแล้วผ่าน แต่ไม่มีใครเปิด
+// เคสให้ตั้งแต่แรก
+test("สถานะที่เภสัชกรตัดสินได้ = 3 ตัว รวมยาที่ต้องมีใบสั่ง", () => {
+  assert.equal(isPharmacistReviewableBlock("PHARMACY_REVIEW_REQUIRED"), true);
+  assert.equal(isPharmacistReviewableBlock("PHARMACY_SAFETY_CHECK_REQUIRED"), true);
+  assert.equal(isPharmacistReviewableBlock("PHARMACY_PRESCRIPTION_REQUIRED"), true);
+  assert.equal(isPharmacistReviewableBlock("PHARMACY_POLICY_UNKNOWN"), false);
+  assert.equal(isPharmacistReviewableBlock("PHARMACY_ONLINE_SALE_PROHIBITED"), false);
+  assert.equal(isPharmacistReviewableBlock("PHARMACY_QUANTITY_LIMIT_EXCEEDED"), false);
+});
+
+test("ตะกร้าที่มีตัวที่เภสัชกรตัดสินไม่ได้ปนอยู่ = ไม่เปิดเคส (อนุมัติแล้วก็ใช้ไม่ได้)", () => {
+  assert.equal(
+    isPharmacistReviewableBasket("PHARMACY_PRESCRIPTION_REQUIRED", [
+      { status: "PHARMACY_PRESCRIPTION_REQUIRED" },
+      { status: "PHARMACY_POLICY_UNKNOWN" },
+    ]),
+    false
+  );
+  assert.equal(
+    isPharmacistReviewableBasket("PHARMACY_PRESCRIPTION_REQUIRED", [
+      { status: "PHARMACY_PRESCRIPTION_REQUIRED" },
+      { status: "PHARMACY_SAFETY_CHECK_REQUIRED" },
+    ]),
+    true
+  );
+});
+
+test("ไม่มี blockers มาให้ (ผู้เรียกเก่า) ให้ตัดสินจาก status ตัวเดียว", () => {
+  assert.equal(isPharmacistReviewableBasket("PHARMACY_PRESCRIPTION_REQUIRED", null), true);
+  assert.equal(isPharmacistReviewableBasket("PHARMACY_QUANTITY_LIMIT_EXCEEDED", []), false);
+  assert.equal(isPharmacistReviewableBasket("CREATED", null), false);
 });

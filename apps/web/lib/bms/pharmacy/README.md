@@ -363,6 +363,40 @@ Three further boundaries of the same approval, all found in a later recheck of t
   raised from a register was unapprovable: the pharmacist standing next to the customer still could
   not say yes.
 
+## Prescription items
+
+`PRESCRIPTION_REQUIRED` used to be a dead end everywhere in the system, in a way that was easy
+to miss: `evaluatePharmacySale()` would have cleared it for an approved case, but no caller
+would ever open the case — each of `pipeline.ts`, `tools/catalog.ts` and `pos.ts` kept its own
+hardcoded pair of "reviewable" statuses. So the block was reachable and the resolution was not.
+
+Now a pharmacist's decision resolves it on both surfaces:
+
+- **A prescription is a document a pharmacist reads and takes responsibility for.** Their
+  approval of that exact basket *is* the decision, so `approvedAssessmentSkus` clears the block
+  online and at the counter alike. The prescription itself lives on the case as
+  `PRESCRIPTION_IMAGE` / `PRESCRIPTION_REF` clinical evidence (`9.25`).
+- **`PHARMACIST_REVIEWABLE_BLOCK_STATUSES`** in `productPolicyDecision.ts` is now the single
+  list every "should I open a case for this?" caller reads, and it includes
+  `PHARMACY_PRESCRIPTION_REQUIRED`. `isPharmacistReviewableBasket()` is all-or-nothing: a
+  basket that also holds an unreviewable item does not get a case, because the resulting
+  approval could never be spent.
+- **The queue detail lets a pharmacist pick a prescription item into the checkout draft**, tags
+  it `ต้องมีใบสั่งแพทย์` in the picker, and warns — without blocking — when the case carries no
+  prescription evidence yet. Whether the evidence is sufficient is the pharmacist's judgement,
+  which is exactly the kind of thing code should not decide.
+- **At the counter there are two routes**, and a shop can use either: the pharmacist's PIN at
+  the register (`9.29`, below) or the same queue case.
+
+What is still impossible: dispensing a prescription item with no pharmacist involved at all,
+and `PHARMACY_ONLINE_SALE_PROHIBITED` over the internet — that classification is about the
+channel itself, not about who is willing to vouch for the sale, so no approval clears it
+online. `PHARMACY_POLICY_UNKNOWN` also stays outside the reviewable set: nobody has classified
+the product yet, so there is nothing for a case to be about.
+
+Covered by `scripts/pharmacy-policy-decision-contract.test.mts` and the online prescription
+case in `scripts/pharmacy-approval-reuse-db-contract.test.mts`.
+
 ## The pharmacist at the register (9.29)
 
 The rest of this module is built around an online intake: the customer types, the rule
@@ -433,11 +467,10 @@ Covered by `scripts/pharmacy-policy-decision-contract.test.mts` (pure) and
 
 ### What this deliberately does not do
 
-The queue path is unchanged: prescription items still cannot be pulled into a pharmacist's
-online checkout draft, because a prescription cannot be verified over chat. Returning
-medicine to sellable stock still has no pharmacy-specific gate, and nothing requires a
-pharmacist to be on duty for an ordinary OTC sale — the shift stamp above records who was
-there, it does not enforce presence.
+Returning medicine to sellable stock still has no pharmacy-specific gate, and nothing
+requires a pharmacist to be on duty for an ordinary OTC sale — the shift stamp above records
+who was there, it does not enforce presence. (The queue path used to be listed here as
+unable to handle prescription items; that is what § Prescription items above changed.)
 
 ## Clinical evidence at the counter (9.25)
 
@@ -492,9 +525,11 @@ Covered by `scripts/pharmacy-clinical-evidence-db-contract.test.mts`.
 - The queue detail's manual medication picker reads through the pharmacy-scoped
   `bmsPharmacyCatalog` query. It reuses `listSellableProducts()` and returns only this tenant's
   active, in-stock products, so a pharmacist reviewing a case does not also need the broader
-  `product.view` permission. It also returns Product Policy status; missing/draft,
-  prescription-required, and online-prohibited products cannot be selected into an approval draft.
-  The service checks the policy again during approval and order creation.
+  `product.view` permission. It also returns Product Policy status. Products whose policy is
+  missing or not yet approved cannot be selected into an approval draft — that is fixed by
+  reviewing the policy, not by approving one basket. Prescription-required products **can** be
+  selected (see § Prescription items below), and online-prohibited ones only for a case that came
+  from the counter. The service checks the policy again during approval and order creation.
 
 - **Plain-text delivery only, no custom chat widget.** LINE/Facebook/Instagram render their
   own native chat UI (this repo cannot ship custom interactive widgets into them), and there

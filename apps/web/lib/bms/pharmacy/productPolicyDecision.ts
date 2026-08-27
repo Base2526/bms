@@ -52,6 +52,52 @@ export type PharmacySaleDecision =
       blockers: PharmacySaleBlocker[];
     });
 
+/**
+ * Blocks a pharmacist's review of this basket can resolve — the set every caller
+ * that decides "should I open a queue case for this?" must agree on.
+ *
+ * Three call sites used to hardcode their own pair of statuses (`pipeline.ts`,
+ * `tools/catalog.ts`, `pos.ts`), which is how PRESCRIPTION_REQUIRED ended up
+ * unsellable everywhere: `evaluatePharmacySale()` would have cleared it for an
+ * approved case, but nothing would open the case in the first place.
+ *
+ * Deliberately NOT in the set:
+ *   - PHARMACY_POLICY_UNKNOWN — an unreviewed product policy is fixed by
+ *     reviewing the policy (or a pharmacist's PIN at the register), not by
+ *     approving one basket. Its whole point is that nobody has classified the
+ *     product yet, so there is nothing for a case to be about.
+ *   - PHARMACY_ONLINE_SALE_PROHIBITED — the classification says this product may
+ *     not travel over the internet at all. A pharmacist can hand it over in
+ *     person (the counter path turns it into PHARMACY_REVIEW_REQUIRED), but no
+ *     approval makes an online order of it legitimate.
+ *   - PHARMACY_QUANTITY_LIMIT_EXCEEDED — a cap the shop set for itself.
+ */
+export const PHARMACIST_REVIEWABLE_BLOCK_STATUSES: readonly PharmacySaleBlockStatus[] = [
+  "PHARMACY_REVIEW_REQUIRED",
+  "PHARMACY_SAFETY_CHECK_REQUIRED",
+  "PHARMACY_PRESCRIPTION_REQUIRED",
+];
+
+export function isPharmacistReviewableBlock(status: string): boolean {
+  return (PHARMACIST_REVIEWABLE_BLOCK_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * True when EVERY reason this basket was refused is something a pharmacist's
+ * review can resolve. All-or-nothing on purpose: the basket is reserved and paid
+ * for as one order, so opening a case for a basket that also contains an
+ * unreviewable item would produce an approval that can never be spent.
+ */
+export function isPharmacistReviewableBasket(
+  status: string,
+  blockers?: ReadonlyArray<{ status: string }> | null
+): boolean {
+  if (blockers && blockers.length > 0) {
+    return blockers.every((blocker) => isPharmacistReviewableBlock(blocker.status));
+  }
+  return isPharmacistReviewableBlock(status);
+}
+
 export type PharmacyPolicyForDecision = {
   productSku: string;
   salePolicy: PharmacySalePolicy;
@@ -133,6 +179,12 @@ export function evaluatePharmacySale(
     if (
       (policy.salePolicy === "PHARMACIST_APPROVAL" ||
         policy.salePolicy === "SHORT_SAFETY_CHECK" ||
+        // A prescription is a document a pharmacist reads and takes
+        // responsibility for. Their approval of this exact basket IS that
+        // decision, so it clears the block on both surfaces — the case carries
+        // the prescription image/reference in bms_pharmacy_clinical_evidence.
+        // What stays impossible is dispensing one with no case at all.
+        policy.salePolicy === "PRESCRIPTION_REQUIRED" ||
         // Counter-only: the fall-through below turns this policy into
         // "needs a pharmacist", so its approval has to clear it here too or the
         // case would be approved and the sale still refused, forever.

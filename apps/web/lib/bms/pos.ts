@@ -41,6 +41,7 @@ import {
 } from "./storeCredit";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import { checkPharmacySaleInTx } from "./pharmacy/productPolicy";
+import { isPharmacistReviewableBlock } from "./pharmacy/productPolicyDecision";
 import {
   createProductReviewAssessmentOnce,
 } from "./pharmacy/assessments";
@@ -4162,9 +4163,10 @@ export async function requestPosPharmacyReview(input: {
     await client.query("ROLLBACK");
     if (pharmacySale.allowed) return { status: "NOT_REQUIRED" };
     const blockers = pharmacySale.blockers ?? [];
-    const reviewable = blockers.filter((blocker) =>
-      blocker.status === "PHARMACY_REVIEW_REQUIRED" || blocker.status === "PHARMACY_SAFETY_CHECK_REQUIRED"
-    );
+    // เกณฑ์เดียวกับฝั่งออนไลน์ (productPolicyDecision.ts) — รวมยาที่ต้องมีใบสั่งแพทย์
+    // ด้วย เพราะเภสัชกรตัดสินเรื่องนั้นได้ · หน้าร้านมีสองทางเลือกได้พร้อมกัน:
+    // กด PIN ที่เครื่อง (9.29) หรือส่งเข้าคิวถ้าต้องซักประวัติยาว/เภสัชกรไม่อยู่
+    const reviewable = blockers.filter((blocker) => isPharmacistReviewableBlock(blocker.status));
     if (reviewable.length === 0 || reviewable.length !== blockers.length) {
       const blocker = blockers.find((candidate): candidate is typeof candidate & {
         status:
@@ -4172,7 +4174,7 @@ export async function requestPosPharmacyReview(input: {
           | "PHARMACY_PRESCRIPTION_REQUIRED"
           | "PHARMACY_ONLINE_SALE_PROHIBITED"
           | "PHARMACY_QUANTITY_LIMIT_EXCEEDED";
-      } => candidate.status !== "PHARMACY_REVIEW_REQUIRED" && candidate.status !== "PHARMACY_SAFETY_CHECK_REQUIRED");
+      } => !isPharmacistReviewableBlock(candidate.status));
       if (!blocker) return { status: "NOT_REQUIRED" };
       return {
         status: blocker.status,

@@ -1059,8 +1059,9 @@ then press Pay again. The authorisation belongs to that bill only; clearing the 
 finishing the sale drops it, and the PIN is never written to browser storage.
 
 It clears an unreviewed product policy, a short safety check, a pharmacist-approval item, an
-online-prohibited item, and a prescription item. It does not clear a product's per-sale
-quantity cap — that number is the shop's own setting, so exceeding it means editing the
+online-prohibited item, and a prescription item. (A prescription item can also go the other
+route — the pharmacist queue now accepts it, so a shop whose pharmacist is not at the counter
+is no longer stuck.) It does not clear a product's per-sale quantity cap — that number is the shop's own setting, so exceeding it means editing the
 policy, not pressing a key at the counter.
 
 Every authorisation writes a row naming the pharmacist, the item, the quantity, and the

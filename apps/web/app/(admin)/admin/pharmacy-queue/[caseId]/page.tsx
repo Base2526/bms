@@ -57,6 +57,7 @@ const Q = gql`
       customerConfirmationStatus customerConfirmationSummary customerConfirmedAt
       structuredAnswers rawMessages aiSummary aiSummaryVersion
       pharmacistDecisionNotes needsManualIntake protocolId medicationSuggestions checkoutOrderDraft
+      complaint
       createdAt updatedAt expiresAt
     }
     bmsPharmacyAssessmentConversationHistory(assessmentId: $id, limit: 100) {
@@ -332,9 +333,25 @@ export default function PharmacyCaseDetailPage() {
     setPharmacistResponse((current) => current || savedDraft);
   }, [c?.id, c?.pharmacistDecisionNotes]);
 
+  // เคสที่เกิดจากเครื่องขายหน้าร้าน — ของถูกส่งมือต่อมือ ไม่ได้ส่งออกไปทางอินเทอร์เน็ต
+  const caseFromCounter = String((c?.complaint as any)?.sourceMeta?.source ?? "") === "pos";
+
+  /**
+   * สินค้าที่เภสัชกรหยิบเข้า draft ได้
+   *
+   * - **ยาที่ต้องมีใบสั่งแพทย์เลือกได้** — ใบสั่งเป็นเอกสารที่เภสัชกรอ่านและรับผิดชอบ
+   *   การอนุมัติเคสนี้คือการตัดสินนั้นเอง (แนบรูป/เลขใบสั่งไว้ในการ์ดหลักฐานของเคส)
+   * - **`ONLINE_SALE_PROHIBITED` เลือกได้เฉพาะเคสจากหน้าร้าน** — ป้ายนี้บอกว่าห้ามส่ง
+   *   ออกไปทางออนไลน์ ไม่ใช่ห้ามเภสัชกรจ่ายเมื่อเจอตัว · service ตรวจซ้ำด้วย channel
+   *   ของเคสตอน approve อยู่แล้ว ที่นี่แค่ไม่ยื่นตัวเลือกที่ยังไงก็ถูกปฏิเสธ
+   * - **สินค้าที่ policy ยังไม่ APPROVED เลือกไม่ได้** — แก้ที่การรีวิว policy ไม่ใช่ที่นี่
+   */
   const isPolicyEligibleForPharmacistDraft = (item: any) =>
     item?.policyStatus === "APPROVED" &&
-    !["PRESCRIPTION_REQUIRED", "ONLINE_SALE_PROHIBITED"].includes(String(item?.salePolicy || ""));
+    (caseFromCounter || String(item?.salePolicy || "") !== "ONLINE_SALE_PROHIBITED");
+
+  const isPrescriptionItem = (item: any) =>
+    String(item?.salePolicy || "") === "PRESCRIPTION_REQUIRED";
 
   const normalizedAiMedicationRows = useMemo(
     () =>
@@ -406,6 +423,27 @@ export default function PharmacyCaseDetailPage() {
         return !draft.selectedSku || !draft.selectedSize;
       }),
     [allMedicationRows, medicationDrafts]
+  );
+
+  /**
+   * เตือน ไม่บล็อก
+   *
+   * ยาที่ต้องมีใบสั่งแพทย์อนุมัติได้แล้ว (ตัวเภสัชกรคือคนตัดสิน) แต่เคสที่ไม่มีรูป/เลข
+   * ใบสั่งแนบไว้เลยคือเคสที่อธิบายย้อนหลังไม่ได้ · จงใจไม่ทำเป็นเงื่อนไขบังคับ เพราะ
+   * "หลักฐานพอหรือยัง" เป็นวิจารณญาณของเภสัชกร ไม่ใช่กฎที่โค้ดตัดสินแทนได้
+   */
+  const draftHasPrescriptionItem = useMemo(
+    () =>
+      allMedicationRows.some((row: any) => {
+        const draft = medicationDrafts[row.rowKey];
+        if (!draft?.enabled) return false;
+        const selectedMatch = findSelectedMatch(row, draft);
+        return selectedMatch ? isPrescriptionItem(selectedMatch) : false;
+      }),
+    [allMedicationRows, medicationDrafts]
+  );
+  const hasPrescriptionEvidence = evidence.some(
+    (item: any) => item?.kind === "PRESCRIPTION_IMAGE" || item?.kind === "PRESCRIPTION_REF"
   );
 
   const selectedOrderDraft = useMemo(() => {
@@ -946,6 +984,10 @@ export default function PharmacyCaseDetailPage() {
                                     {primaryMatch?.name || row.drugName || t("admin_pharmacy_case.unknown_product")}
                                   </Text>
                                   <Tag color={row.manual ? "cyan" : "purple"}>{row.manual ? "manual" : "ai"}</Tag>
+                                  {/* ป้ายนี้ต้องเห็นก่อนกดอนุมัติ ไม่ใช่ไปรู้ตอนบิลถูกปฏิเสธ */}
+                                  {primaryMatch && isPrescriptionItem(primaryMatch) ? (
+                                    <Tag color="volcano">ต้องมีใบสั่งแพทย์</Tag>
+                                  ) : null}
                                   {row.excluded ? <Tag color="red">{t("admin_pharmacy_case.tag_excluded")}</Tag> : null}
                                 </Space>
                                 <Text type="secondary">
@@ -1255,6 +1297,23 @@ export default function PharmacyCaseDetailPage() {
                 disabled={!canDecide}
               />
               <Input placeholder={t("admin_pharmacy_case.reason_placeholder")} value={reason} onChange={(e) => setReason(e.target.value)} disabled={!canDecide} />
+
+              {draftHasPrescriptionItem && (
+                <Alert
+                  type={hasPrescriptionEvidence ? "info" : "warning"}
+                  showIcon
+                  message={
+                    hasPrescriptionEvidence
+                      ? "รายการนี้มียาที่ต้องมีใบสั่งแพทย์ — มีหลักฐานใบสั่งแนบไว้ในเคสแล้ว"
+                      : "รายการนี้มียาที่ต้องมีใบสั่งแพทย์ แต่ยังไม่มีรูปหรือเลขใบสั่งแนบไว้ในเคส"
+                  }
+                  description={
+                    hasPrescriptionEvidence
+                      ? "การอนุมัติของคุณคือการตัดสินว่าใบสั่งนี้ใช้ได้ · ระบบไม่ตรวจเนื้อหาใบสั่งให้"
+                      : "อนุมัติได้ แต่เคสที่ไม่มีหลักฐานจะอธิบายย้อนหลังไม่ได้ — แนบได้ที่การ์ดหลักฐานทางคลินิกด้านล่าง"
+                  }
+                />
+              )}
 
               <Space wrap>
                 <Button
