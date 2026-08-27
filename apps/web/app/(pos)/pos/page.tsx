@@ -545,6 +545,7 @@ type Receipt = {
   paymentLabel: string;
   paymentRef: string | null;
   payments: Array<{
+    id?: string;
     method: string;
     label: string;
     amount: number;
@@ -741,6 +742,33 @@ function getReceiptRefundSummary(row: Pick<Receipt, "refunds" | "returnEvents" |
     remainingAfterRefund,
     hasReturnActivity: hasReturnedItems || returnEvents.length > 0 || refundedTotal > 0,
   };
+}
+
+/** ยอดที่ยังคืนได้ต่อช่องทาง โดยหักทั้ง allocation ที่สำเร็จแล้วและที่กำลังรอยืนยัน */
+function getRefundPaymentOptions(row: Pick<Receipt, "payments" | "refunds">) {
+  const allocatedByPayment = new Map<string, number>();
+  for (const refund of row.refunds ?? []) {
+    allocatedByPayment.set(
+      refund.paymentId,
+      Math.round(((allocatedByPayment.get(refund.paymentId) ?? 0) + Number(refund.amount ?? 0)) * 100) / 100
+    );
+  }
+  const availableByMethod = new Map<string, number>();
+  for (const payment of row.payments ?? []) {
+    if (!payment.id) continue;
+    const available = Math.max(
+      0,
+      Math.round((Number(payment.amount ?? 0) - (allocatedByPayment.get(payment.id) ?? 0)) * 100) / 100
+    );
+    if (available <= 0.001) continue;
+    availableByMethod.set(
+      payment.method,
+      Math.round(((availableByMethod.get(payment.method) ?? 0) + available) * 100) / 100
+    );
+  }
+  return [...availableByMethod.entries()]
+    .map(([method, available]) => ({ method, available }))
+    .sort((left, right) => posPaymentMethodLabel(left.method).localeCompare(posPaymentMethodLabel(right.method), "th"));
 }
 
 function posPaymentMethodLabel(method: string) {
@@ -1143,6 +1171,8 @@ export default function PosPage() {
   const [returnDrafts, setReturnDrafts] = useState<Record<string, ReturnDraft>>({});
   const [returnNotes, setReturnNotes] = useState<Record<string, string>>({});
   const [returnReasonCodes, setReturnReasonCodes] = useState<Record<string, string>>({});
+  // บิลจ่ายผสมต้องให้คนคืนเลือกช่องทางแรกเอง — ห้ามกลับไปอาศัยลำดับ UUID ของ payment
+  const [preferredRefundMethods, setPreferredRefundMethods] = useState<Record<string, string>>({});
   const [approvalUserId, setApprovalUserId] = useState("");
   const [approvalPin, setApprovalPin] = useState("");
   const [settlementRefs, setSettlementRefs] = useState<Record<string, string>>({});
@@ -3639,9 +3669,14 @@ export default function PosPage() {
     return labels.length === 1 ? `คืน${labels[0]}` : "คืนหลายช่องทาง";
   }
 
-  function returnIdempotencyKey(row: Receipt, mode: "FULL" | "PARTIAL", lines: Array<{ orderItemId: number; packQty: number }> = []) {
+  function returnIdempotencyKey(
+    row: Receipt,
+    mode: "FULL" | "PARTIAL",
+    lines: Array<{ orderItemId: number; packQty: number }> = [],
+    preferredRefundMethod: string | null = null
+  ) {
     const baseline = row.lines.map((line) => `${line.orderItemId ?? 0}:${line.returnedPackQty ?? 0}`).join(",");
-    const payload = `${row.orderId}:${mode}:${baseline}:${lines.map((line) => `${line.orderItemId}:${line.packQty}`).join(",")}`;
+    const payload = `${row.orderId}:${mode}:${baseline}:${lines.map((line) => `${line.orderItemId}:${line.packQty}`).join(",")}:${preferredRefundMethod ?? "AUTO"}`;
     let hash = 2166136261;
     for (let i = 0; i < payload.length; i += 1) {
       hash ^= payload.charCodeAt(i);
@@ -4233,6 +4268,17 @@ export default function PosPage() {
     }
     const matched = recentReceipts.find((row) => row.orderId === orderId);
     if (!matched) return;
+    const refundPaymentOptions = getRefundPaymentOptions(matched);
+    const selectedRefundMethod = preferredRefundMethods[orderId] ?? "";
+    const preferredRefundMethod = refundPaymentOptions.length === 1
+      ? refundPaymentOptions[0].method
+      : refundPaymentOptions.some((option) => option.method === selectedRefundMethod)
+        ? selectedRefundMethod
+        : null;
+    if (refundPaymentOptions.length > 1 && !preferredRefundMethod) {
+      setNotice({ type: "error", text: "บิลนี้จ่ายหลายช่องทาง — เลือกช่องทางคืนเงินก่อน" });
+      return;
+    }
     if (!window.confirm("ยืนยันคืนสินค้าที่เหลือทั้งบิล? เงินสดจะถือว่าคืนแล้ว ส่วนบัตร/QR/วอลเล็ทต้องยืนยัน settlement อีกครั้ง")) return;
     setBusy(true);
     setNotice(null);
@@ -4248,7 +4294,8 @@ export default function PosPage() {
           note,
           approvalUserId,
           approvalPin,
-          idempotencyKey: returnIdempotencyKey(matched, "FULL"),
+          preferredRefundMethod,
+          idempotencyKey: returnIdempotencyKey(matched, "FULL", [], preferredRefundMethod),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -4286,6 +4333,7 @@ export default function PosPage() {
         }
         setReturnNotes((cur) => ({ ...cur, [orderId]: "" }));
         setReturnReasonCodes((cur) => ({ ...cur, [orderId]: "" }));
+        setPreferredRefundMethods((cur) => ({ ...cur, [orderId]: "" }));
         setReturnPanelOrderId(null);
         void loadRecentReceipts(recentSalesQuery);
         return;
@@ -4295,6 +4343,7 @@ export default function PosPage() {
         :
         data?.status === "INVALID_ORDER_STATUS" ? `คืนบิลไม่ได้: สถานะปัจจุบันคือ ${data.current}`
         : data?.status === "NO_CONFIRMED_PAYMENTS" ? "คืนบิลไม่ได้: ไม่พบ payment ที่ยืนยันแล้ว"
+        : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
         : data?.error ?? `คืนบิลไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
     } catch (e: any) {
@@ -4320,6 +4369,17 @@ export default function PosPage() {
       setNotice({ type: "error", text: "ยังไม่ได้เลือกรายการที่จะคืน" });
       return;
     }
+    const refundPaymentOptions = getRefundPaymentOptions(row);
+    const selectedRefundMethod = preferredRefundMethods[row.orderId] ?? "";
+    const preferredRefundMethod = refundPaymentOptions.length === 1
+      ? refundPaymentOptions[0].method
+      : refundPaymentOptions.some((option) => option.method === selectedRefundMethod)
+        ? selectedRefundMethod
+        : null;
+    if (refundPaymentOptions.length > 1 && !preferredRefundMethod) {
+      setNotice({ type: "error", text: "บิลนี้จ่ายหลายช่องทาง — เลือกช่องทางคืนเงินก่อน" });
+      return;
+    }
     if (!window.confirm(`ยืนยันคืนบางรายการ? ระบบจะตรวจราคาส่ง/โปรจากจำนวนที่เหลือใหม่ แล้วคืนเฉพาะส่วนต่างจากยอดที่จ่ายเดิม`)) return;
     setBusy(true);
     setNotice(null);
@@ -4336,7 +4396,8 @@ export default function PosPage() {
           note,
           approvalUserId,
           approvalPin,
-          idempotencyKey: returnIdempotencyKey(row, "PARTIAL", lines),
+          preferredRefundMethod,
+          idempotencyKey: returnIdempotencyKey(row, "PARTIAL", lines, preferredRefundMethod),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -4376,6 +4437,7 @@ export default function PosPage() {
         setReturnDrafts((cur) => ({ ...cur, [row.orderId!]: {} }));
         setReturnNotes((cur) => ({ ...cur, [row.orderId!]: "" }));
         setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: "" }));
+        setPreferredRefundMethods((cur) => ({ ...cur, [row.orderId!]: "" }));
         setReturnPanelOrderId(null);
         void loadRecentReceipts(recentSalesQuery);
         return;
@@ -4388,6 +4450,7 @@ export default function PosPage() {
           ? `คืนรายการนี้ไม่ได้ในขั้นตอนคืนเงิน: เมื่อประเมินราคาตามจำนวนใหม่ ยอดสินค้าที่เหลือสูงกว่ายอดหลังคืน ฿${baht(Number(data.additionalAmount ?? 0))}`
         : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการคืน"
         : data?.status === "INVALID_ORDER_STATUS" ? `คืนบางรายการไม่ได้: สถานะปัจจุบันคือ ${data.current}`
+        : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
         : data?.error ?? `คืนบางรายการไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
     } catch (e: any) {
@@ -6144,6 +6207,14 @@ export default function PosPage() {
                     row.orderStatus !== "RETURNED" &&
                     row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
                   const panelOpen = canReturn && returnPanelOrderId === row.orderId;
+                  const refundPaymentOptions = getRefundPaymentOptions(row);
+                  const requestedRefundMethod = row.orderId
+                    ? preferredRefundMethods[row.orderId] ?? ""
+                    : "";
+                  const selectedRefundMethod = refundPaymentOptions.some((option) => option.method === requestedRefundMethod)
+                    ? requestedRefundMethod
+                    : "";
+                  const needsRefundMethodChoice = refundPaymentOptions.length > 1 && !selectedRefundMethod;
                   // void = ยางลบของกะนี้ ไม่ใช่ประตูลบยอดขายย้อนหลัง (server บังคับซ้ำอีกชั้น)
                   const canVoid =
                     soldOnThisDevice &&
@@ -6238,6 +6309,37 @@ export default function PosPage() {
                             style={{ width: "100%", padding: 8, fontSize: 12, minHeight: 38 }}
                           />
                         </div>
+                        {refundPaymentOptions.length > 0 && (
+                          <div style={{ border: "1px solid #b5d4f4", background: "#f0f7ff", borderRadius: 7, padding: 8 }}>
+                            <label style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, fontWeight: 600 }}>
+                              <span>คืนเงินจากช่องทางใดก่อน</span>
+                              {refundPaymentOptions.length === 1 ? (
+                                <span style={{ color: "#1e6b3a" }}>
+                                  {posPaymentMethodLabel(refundPaymentOptions[0].method)} · คืนได้อีก ฿{baht(refundPaymentOptions[0].available)}
+                                </span>
+                              ) : (
+                                <select
+                                  value={selectedRefundMethod}
+                                  onChange={(event) => setPreferredRefundMethods((cur) => ({
+                                    ...cur,
+                                    [row.orderId!]: event.target.value,
+                                  }))}
+                                  style={{ minWidth: 220, padding: 7, fontSize: 12 }}
+                                >
+                                  <option value="">เลือกช่องทางคืนเงินก่อน</option>
+                                  {refundPaymentOptions.map((option) => (
+                                    <option key={option.method} value={option.method}>
+                                      {posPaymentMethodLabel(option.method)} · คืนได้อีก ฿{baht(option.available)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </label>
+                            <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
+                              ระบบคืนได้ไม่เกินยอดที่รับผ่านช่องทางนั้น หากยอดคืนมากกว่า ระบบจะแบ่งส่วนที่เหลือไปยังช่องทางเดิมอื่นและแสดงให้ตรวจทุกรายการ
+                            </div>
+                          </div>
+                        )}
                         {row.lines
                           .filter((line) => (line.refundablePackQty ?? 0) > 0 && line.orderItemId)
                           .map((line) => {
@@ -6280,14 +6382,14 @@ export default function PosPage() {
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           <button
                             onClick={() => void partialReturnReceipt(row)}
-                            disabled={busy || getPartialRefundPreview(row) <= 0}
+                            disabled={busy || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
                             style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
                           >
                             คืนบางรายการ
                           </button>
                           <button
                             onClick={() => void returnReceipt(row.orderId!)}
-                            disabled={busy}
+                            disabled={busy || needsRefundMethodChoice}
                             style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
                           >
                             คืนทั้งบิล
@@ -6301,29 +6403,43 @@ export default function PosPage() {
                         </div>
                       </div>
                     )}
-                    {(row.refunds ?? []).some((refund) => refund.status === "PENDING") && (
+                    {(row.refunds ?? []).length > 0 && (
                       <div style={{ marginTop: 8, borderTop: "1px dashed #d48806", paddingTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "#8a6100" }}>
-                          รอยืนยันคืนเงินจริง
+                          รายละเอียดการคืนเงินจริงทุกช่องทาง
                         </div>
-                        {(row.refunds ?? []).filter((refund) => refund.status === "PENDING").map((refund) => (
+                        {(row.refunds ?? []).map((refund) => (
                           <div className="pos-refund-row" key={refund.id} style={{ display: "grid", gridTemplateColumns: "auto minmax(120px,1fr) auto", gap: 8, alignItems: "center" }}>
                             <div style={{ fontSize: 12 }}>
                               {posPaymentMethodLabel(refund.method)} · ฿{baht(refund.amount)}
+                              <span style={{ marginLeft: 6, color: refund.status === "COMPLETED" ? "#237804" : "#8a6100" }}>
+                                {refund.status === "COMPLETED" ? "คืนแล้ว" : "รอยืนยัน"}
+                              </span>
                             </div>
-                            <input
-                              value={settlementRefs[refund.id] ?? ""}
-                              onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
-                              placeholder="เลขอ้างอิงการคืนเงินจริง"
-                              style={{ padding: 7, fontSize: 12 }}
-                            />
-                            <button
-                              onClick={() => void completeRefundSettlement(row, refund)}
-                              disabled={busy}
-                              style={{ padding: "7px 10px", fontSize: 12 }}
-                            >
-                              ยืนยันคืนแล้ว
-                            </button>
+                            {refund.status === "PENDING" ? (
+                              <>
+                                <input
+                                  value={settlementRefs[refund.id] ?? ""}
+                                  onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
+                                  placeholder="เลขอ้างอิงการคืนเงินจริง"
+                                  style={{ padding: 7, fontSize: 12 }}
+                                />
+                                <button
+                                  onClick={() => void completeRefundSettlement(row, refund)}
+                                  disabled={busy}
+                                  style={{ padding: "7px 10px", fontSize: 12 }}
+                                >
+                                  ยืนยันคืนแล้ว
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <div style={{ fontSize: 11, color: "#666" }}>
+                                  {refund.externalRef ? `อ้างอิง ${refund.externalRef}` : "บันทึกคืนสำเร็จแล้ว"}
+                                </div>
+                                <span aria-hidden="true" />
+                              </>
+                            )}
                           </div>
                         ))}
                       </div>

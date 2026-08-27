@@ -321,7 +321,12 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   short/empty submission cannot complete a sale of serial-tracked goods with no serial recorded.
 - **Refunds split receiving goods from returning money.** `bms_pos_refund_allocations`: cash
   finishes immediately, non-cash stays `PENDING` until a user with `payment.refund` records the
-  external reference. A shift cannot close while any refund allocation from it is pending. A single
+  external reference. For a sale paid through several methods, the counter requires the operator to
+  choose which original method is consumed first; the service caps it at that payment's unrefunded
+  amount and uses a deterministic fallback for any excess. Never infer this order from
+  `created_at, id`: split rows share one transaction timestamp and UUID order is not business intent.
+  The counter shows completed and pending allocations together so an immediate cash refund cannot
+  disappear while only a QR/card remainder is visible. A shift cannot close while any refund allocation from it is pending. A single
   return with a split-payment refund (cash + card) must be counted once, not once per allocation row
   — the shift report reads allocation totals from a subquery rather than joining them onto the
   per-return aggregate, which used to multiply both the return count and refund amount by the number

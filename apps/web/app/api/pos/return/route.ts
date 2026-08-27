@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, partiallyReturnPosSale, returnPosSale, verifyCashierPin } from "@/lib/bms/pos";
+import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/bms/payments";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -48,6 +49,16 @@ async function handlePOST(req: NextRequest) {
   if (!idempotencyKey || idempotencyKey.length > 240) {
     return badRequest("idempotencyKey จำเป็นและต้องยาวไม่เกิน 240 ตัวอักษร");
   }
+  const preferredRefundMethodRaw = typeof body.preferredRefundMethod === "string"
+    ? body.preferredRefundMethod.trim().toUpperCase()
+    : "";
+  if (preferredRefundMethodRaw
+      && !PAYMENT_METHODS.includes(preferredRefundMethodRaw as PaymentMethod)) {
+    return badRequest("preferredRefundMethod ไม่ใช่วิธีชำระเงินที่รองรับ");
+  }
+  const preferredRefundMethod = preferredRefundMethodRaw
+    ? preferredRefundMethodRaw as PaymentMethod
+    : null;
 
   const approvalUserId = typeof body.approvalUserId === "string" ? body.approvalUserId.trim() : "";
   const approvalPin = typeof body.approvalPin === "string" ? body.approvalPin : "";
@@ -89,6 +100,7 @@ async function handlePOST(req: NextRequest) {
           lines: partialLines,
           note,
           approvedByUserId,
+          preferredRefundMethod,
           idempotencyKey,
         })
       : await returnPosSale({
@@ -98,6 +110,7 @@ async function handlePOST(req: NextRequest) {
           actorUserId: auth.userId,
           note,
           approvedByUserId,
+          preferredRefundMethod,
           idempotencyKey,
         });
 
@@ -108,6 +121,7 @@ async function handlePOST(req: NextRequest) {
     : result.status === "ORDER_NOT_POS" ? 409
     : result.status === "APPROVAL_REQUIRED" ? 403
     : result.status === "NO_CONFIRMED_PAYMENTS" ? 409
+    : result.status === "REFUND_METHOD_UNAVAILABLE" ? 409
     : result.status === "IDEMPOTENCY_CONFLICT" ? 409
     : 409;
 
