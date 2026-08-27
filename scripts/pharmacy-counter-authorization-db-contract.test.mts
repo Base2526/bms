@@ -23,6 +23,7 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
+import { closeAssessment } from "../apps/web/lib/bms/pharmacy/assessments.ts";
 
 const TAG = "rxcounter-test";
 const RX_SKU = `FAKE-${TAG}-RX`;      // PRESCRIPTION_REQUIRED, policy APPROVED
@@ -218,6 +219,44 @@ test("ช่องทางออนไลน์ไม่ได้รับอ�
   assert.equal(res.status, "PHARMACY_PRESCRIPTION_REQUIRED", JSON.stringify(res));
 });
 
+// ---------------------------------------------------------------
+// เคสในคิวที่ถูกแทนด้วยการอนุมัติที่เคาน์เตอร์ ต้องถูกปิด
+// ---------------------------------------------------------------
+// ถ้าปล่อยค้าง แล้วมีเภสัชกรไปกดอนุมัติในคิวทีหลัง จะได้ "ใบอนุมัติที่ใช้ขายได้อีกใบ"
+// ของตะกร้าที่ของออกจากร้านไปแล้ว (recordPosSale ปิดให้แบบ best-effort หลังบิลจบ)
+test("ปิดเคสในคิวเมื่อขายด้วยการอนุมัติที่เคาน์เตอร์แทน", async () => {
+  const caseId = (
+    await query<{ id: string }>(
+      `INSERT INTO bms_pharmacy_assessments
+         (tenant_id, channel_id, patient_relationship, consent_status, status,
+          needs_manual_intake, risk_level, complaint, structured_answers,
+          missing_fields, conflicting_fields, completeness_status,
+          customer_confirmation_status, expires_at)
+       VALUES ($1,'pos','SELF','GRANTED','WAITING_FOR_PHARMACIST',TRUE,'LOW',
+               $2::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
+               'CONFIRMED', now() + interval '1 day')
+       RETURNING id`,
+      [tenantId, JSON.stringify({ requestType: "PRODUCT_PURCHASE", sourceMeta: { source: "pos" } })]
+    )
+  ).rows[0].id;
+
+  const closed = await closeAssessment(
+    tenantId,
+    caseId,
+    "dispensed_at_counter_with_pharmacist_authorization"
+  );
+  assert.equal(closed, true, "เคสที่ยังเปิดต้องปิดได้");
+
+  const row = await query<{ status: string; reason: string | null }>(
+    `SELECT status, decision_reason AS reason
+       FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, caseId]
+  );
+  assert.equal(row.rows[0].status, "CLOSED");
+  assert.equal(row.rows[0].reason, "dispensed_at_counter_with_pharmacist_authorization",
+    "ต้องอ่านย้อนได้ว่าปิดเพราะขายหน้าเคาน์เตอร์ ไม่ใช่หมดอายุ");
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`,
@@ -227,6 +266,8 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
   if (ids.length === 0) return;
   for (const table of [
     "bms_pos_pharmacist_authorizations",
+    "bms_pharmacy_assessment_events",
+    "bms_pharmacy_assessments",
     "bms_order_items",
     "bms_order_discounts",
     "bms_orders",

@@ -43,6 +43,7 @@ import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness
 import { checkPharmacySaleInTx } from "./pharmacy/productPolicy";
 import { isPharmacistReviewableBlock } from "./pharmacy/productPolicyDecision";
 import {
+  closeAssessment,
   createProductReviewAssessmentOnce,
 } from "./pharmacy/assessments";
 import {
@@ -1250,6 +1251,14 @@ export type PosSaleInput = {
    * createOrder ตรวจใบอนุญาตซ้ำในทรานแซกชันและเขียนหลักฐานเอง
    */
   pharmacistCounterAuthorization?: { pharmacistUserId: string; note?: string | null } | null;
+  /**
+   * เคสในคิวเภสัชกรที่ผูกกับบิลใบนี้และ **ยังไม่ได้อนุมัติ** (9.29)
+   *
+   * ถ้าเภสัชกรเดินมาอนุมัติที่เครื่องแทนที่จะอนุมัติในคิว เคสนั้นต้องถูกปิด ไม่ใช่ค้างไว้ —
+   * เคสที่ค้างแล้วมีคนไปกดอนุมัติทีหลังจะกลายเป็นใบอนุมัติที่ใช้ขายได้อีกใบ ทั้งที่ของ
+   * ออกจากร้านไปแล้ว
+   */
+  pharmacyReviewAssessmentId?: string | null;
 };
 
 /** จำนวนและไซซ์ที่ resolve จาก catalog แล้ว; client มีหน้าที่ส่งเฉพาะเลข serial */
@@ -2013,6 +2022,24 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       console.error("[POS] ทบทวนชั้นสมาชิกหลังขายไม่สำเร็จ", input.customerId, e)
     );
   }
+  // ปิดเคสในคิวที่ถูกแทนที่ด้วยการอนุมัติที่เคาน์เตอร์ (9.29)
+  // best-effort เหมือนการทบทวนชั้นสมาชิก: การขายจบแล้ว ห้ามย้อน · ล้มแล้วเคสยังหมดอายุ
+  // เองตาม TTL อยู่ดี แต่ต้องมี log เพราะระหว่างนั้นมีโอกาสที่ใครไปอนุมัติเคสนั้น
+  if (
+    (sold.status === "SOLD" || sold.status === "DEPOSIT_TAKEN") &&
+    input.pharmacistCounterAuthorization &&
+    input.pharmacyReviewAssessmentId
+  ) {
+    void closeAssessment(
+      input.tenantId,
+      input.pharmacyReviewAssessmentId,
+      "dispensed_at_counter_with_pharmacist_authorization"
+    ).catch((e) =>
+      console.error("[POS] ปิดเคสเภสัชที่ถูกแทนด้วยการอนุมัติหน้าเคาน์เตอร์ไม่สำเร็จ",
+        input.pharmacyReviewAssessmentId, e)
+    );
+  }
+
   // การประทับว่าใบอนุมัติถูกใช้แล้ว ย้ายไปอยู่ในทรานแซกชันของ createOrder แล้ว
   // (markAssessmentOrderCreatedInTx) — ที่นี่เคยยิงแบบ fire-and-forget หลัง commit
   // ซึ่งถ้าล้ม ใบอนุมัติจะยังใช้ซ้ำได้ทั้งที่ของออกจากคลังไปแล้ว

@@ -2243,7 +2243,8 @@ export default function PosPage() {
 
   async function createDepositFromCart() {
     if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy || hasPendingSale) return;
-    if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED") {
+    // เหมือนหน้าขาย: เภสัชกรอนุมัติที่เครื่องแล้วไม่ต้องรอคิว (9.29)
+    if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED" && !pharmacistAuth) {
       setNotice({ type: "error", text: `รอเภสัชกรอนุมัติเคส ${pharmacyReviewLink.caseCode} ก่อนสร้างบิลมัดจำ` });
       return;
     }
@@ -2302,6 +2303,9 @@ export default function PosPage() {
             pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
             pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
             pharmacistAuthorizationNote: pharmacistAuth?.note || null,
+            pharmacyReviewAssessmentId: pharmacyReviewLink?.status !== "APPROVED"
+              ? pharmacyReviewLink?.assessmentId ?? null
+              : null,
             pharmacyApprovedAssessmentId: pharmacyReviewLink?.status === "APPROVED"
               ? pharmacyReviewLink.assessmentId
               : null,
@@ -2866,6 +2870,23 @@ export default function PosPage() {
     if (pharmacyReviewOffer) setPharmacyReviewOffer(null);
   }, [pharmacyReviewOfferCartKey]);
 
+  /**
+   * ตะกร้าเปลี่ยน = การอนุมัติของเภสัชกรหมดอายุ (9.29)
+   *
+   * เภสัชกรอนุมัติ "ตะกร้าใบนี้" ไม่ใช่ "เครื่องนี้ช่วงนี้" · ถ้าไม่ล้าง แคชเชียร์เพิ่มยาอีกตัว
+   * หลังเภสัชกรเดินไปแล้วก็จะถูกอนุมัติไปด้วยเงียบ ๆ (server อนุมัติทุก SKU ที่ติดกฎอยู่ใน
+   * บิลที่ยิงมา) แล้วหลักฐานจะบันทึกชื่อเภสัชกรกับยาที่เขาไม่เคยเห็น
+   */
+  useEffect(() => {
+    if (pharmacistAuth) {
+      setPharmacistAuth(null);
+      setNotice({
+        type: "error",
+        text: "ตะกร้าเปลี่ยนหลังเภสัชกรอนุมัติ — ให้เภสัชกรตรวจและกด PIN อนุมัติใหม่",
+      });
+    }
+  }, [pharmacyReviewOfferCartKey]);
+
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
   const cashChangePreview = (() => {
@@ -2908,7 +2929,9 @@ export default function PosPage() {
     if (!session?.shift) return "ยังไม่ได้เปิดกะ";
     if (!cashierId) return "เลือกผู้ขายก่อน";
     if (!pin) return "ใส่ PIN ของผู้ขาย";
-    if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED") {
+    // เคสในคิวยังไม่อนุมัติ = รอ · **แต่** ถ้าเภสัชกรเดินมาอนุมัติที่เครื่องแล้ว (9.29)
+    // ไม่ต้องรอคิวอีก ไม่งั้นบิลที่ส่งเข้าคิวไปแล้วจะติดค้างแม้เภสัชกรยืนอยู่ตรงนั้น
+    if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED" && !pharmacistAuth) {
       return `รอเภสัชกรอนุมัติเคส ${pharmacyReviewLink.caseCode}`;
     }
     const needsDiscountPreview = Boolean(member || pointsToRedeem || couponCode.trim() || approvedDiscount);
@@ -3827,7 +3850,12 @@ export default function PosPage() {
             cashierUserId: cashierId,
             pin,
             discountApproverPin: approvedDiscount?.approverPin ?? null,
+            // ผู้อนุมัติที่กด PIN รอบนี้ชนะของที่ค้างอยู่ใน body เดิม — คนที่มาอนุมัติซ้ำ
+            // อาจเป็นเภสัชกรคนละคนกับรอบแรก ถ้าส่ง id เดิมคู่ PIN ใหม่จะได้ 403 ที่
+            // อ่านแล้วไม่รู้ว่าต้องทำอะไร
+            pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
             pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
+            pharmacistAuthorizationNote: pharmacistAuth?.note || null,
           }
         : {
         shiftId: session.shift.id,
@@ -3850,6 +3878,11 @@ export default function PosPage() {
         pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
         pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
         pharmacistAuthorizationNote: pharmacistAuth?.note || null,
+        // เคสในคิวที่ยังไม่อนุมัติ ถ้าเภสัชกรมาอนุมัติที่เครื่องแทน server ปิดเคสให้หลังขายจบ
+        // ไม่ปิด = เคสค้างรอคิว แล้วถ้ามีคนไปกดอนุมัติทีหลังจะได้ใบอนุมัติที่ขายได้อีกใบ
+        pharmacyReviewAssessmentId: pharmacyReviewLink?.status !== "APPROVED"
+          ? pharmacyReviewLink?.assessmentId ?? null
+          : null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -7687,7 +7720,7 @@ function describeFailure(data: any): string {
     case "PHARMACY_POLICY_UNKNOWN":
       return `${data.sku}: ยังไม่มีนโยบายการขายที่อนุมัติไว้ — ให้เภสัชกรกด PIN อนุมัติที่เครื่องเพื่อจ่ายครั้งนี้`;
     case "PHARMACY_PRESCRIPTION_REQUIRED":
-      return `${data.sku}: ต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติที่เครื่องได้`;
+      return `${data.sku}: ต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติที่เครื่อง หรือส่งเคสเข้าคิวให้เภสัชกรอนุมัติก็ได้`;
     case "PHARMACY_ONLINE_SALE_PROHIBITED":
       return `${data.sku}: ห้ามขายออนไลน์ — ขายหน้าร้านได้เมื่อเภสัชกรกด PIN อนุมัติ`;
     case "PHARMACY_REVIEW_REQUIRED":

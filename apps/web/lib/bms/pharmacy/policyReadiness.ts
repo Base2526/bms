@@ -49,20 +49,14 @@ export type UnreviewedProduct = {
 };
 
 export async function getPharmacyPolicyReadiness(tenantId: string): Promise<PharmacyPolicyReadiness> {
-  const settings = await query<{
-    business_archetype: string | null;
-    counter: boolean | null;
-    blocks: boolean | null;
-  }>(
-    `SELECT business_archetype,
-            pharmacy_counter_authorization AS counter,
-            pharmacy_block_shift_on_unreviewed_policy AS blocks
-       FROM bms_store_profile WHERE tenant_id = $1`,
+  // อ่าน archetype ก่อน แล้วค่อยอ่านคอลัมน์ของ 9.29 เฉพาะร้านยา — ร้านที่ไม่ใช่ร้านยา
+  // เปิดหน้าความพร้อม/เปิดกะได้ตามปกติแม้ฐานยังไม่ได้ apply 9.29 (ร้านยาจะได้ error
+  // ดัง ๆ ซึ่งถูกต้อง: ฟีเจอร์ของมันต้องมีคอลัมน์นั้นจริง)
+  const archetype = await query<{ business_archetype: string | null }>(
+    `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
-  const counterAuthorization = settings.rows[0]?.counter !== false;
-  const blockShiftOnUnreviewed = settings.rows[0]?.blocks === true;
-  if (settings.rows[0]?.business_archetype !== "pharmacy") {
+  if (archetype.rows[0]?.business_archetype !== "pharmacy") {
     return {
       pharmacyArchetype: false,
       totalProducts: 0,
@@ -71,10 +65,19 @@ export async function getPharmacyPolicyReadiness(tenantId: string): Promise<Phar
       draft: 0,
       missing: 0,
       ready: true,
-      counterAuthorization,
-      blockShiftOnUnreviewed,
+      counterAuthorization: true,
+      blockShiftOnUnreviewed: false,
     };
   }
+
+  const settings = await query<{ counter: boolean | null; blocks: boolean | null }>(
+    `SELECT pharmacy_counter_authorization AS counter,
+            pharmacy_block_shift_on_unreviewed_policy AS blocks
+       FROM bms_store_profile WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  const counterAuthorization = settings.rows[0]?.counter !== false;
+  const blockShiftOnUnreviewed = settings.rows[0]?.blocks === true;
 
   const res = await query<{
     total: string;

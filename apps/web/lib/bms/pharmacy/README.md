@@ -450,6 +450,25 @@ released the drug. The authorising pharmacist is also stamped onto
 `bms_pos_shifts.pharmacist_user_id` when that column is still null — before this, a shift
 opened by a cashier recorded no pharmacist at all.
 
+### Scope of one authorisation
+
+Three things keep the PIN from meaning more than the pharmacist agreed to, all found while
+rechecking this feature:
+
+- **It covers the basket that was on screen.** The register drops the authorisation whenever
+  the cart changes, because the server authorises every blocked SKU in the bill it receives —
+  without that, a cashier could add another drug after the pharmacist walked away and the
+  evidence row would name them for a product they never saw.
+- **It ends with the bill.** Finishing or clearing a sale drops it; it is never a mode the
+  register stays in. The PIN is never written to browser storage, so a pending bill recovered
+  after a reload asks for it again (and the pharmacist who re-authorises may be a different
+  person — the fresh authoriser wins over the one recorded in the pending body).
+- **It supersedes the queue case instead of racing it.** A bill already sent to the pharmacist
+  queue can still be paid once a pharmacist authorises at the register, and `recordPosSale()`
+  then closes that case (`dispensed_at_counter_with_pharmacist_authorization`). Leaving it open
+  would let someone approve it afterwards and hold a spendable approval for goods that already
+  left the shop.
+
 ### Two shop-level switches
 
 Both live on `bms_store_profile` and are edited at `/admin/pos-readiness`

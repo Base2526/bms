@@ -409,12 +409,12 @@ export async function checkPharmacySaleInTx(
    */
   counterAuthorization?: { pharmacistUserId: string; note?: string | null } | null
 ): Promise<PharmacySaleDecision> {
-  const profile = await client.query<{
-    business_archetype: string | null;
-    pharmacy_counter_authorization: boolean | null;
-  }>(
-    `SELECT business_archetype, pharmacy_counter_authorization
-       FROM bms_store_profile WHERE tenant_id = $1`,
+  // อ่านแค่ archetype ที่นี่ **โดยตั้งใจ** — คำสั่งนี้รันกับ *ทุกบิลของทุกร้าน* ในระบบ
+  // ถ้าใส่คอลัมน์ของ 9.29 ลงมาด้วย ฐานที่ยังไม่ apply migration จะทำให้ร้านที่ไม่ใช่
+  // ร้านยาขายไม่ได้ทั้งหมด ซึ่งเป็นความเสียหายที่ไม่เกี่ยวกับฟีเจอร์นี้เลย
+  // (ค่าตั้งของ 9.29 อ่านทีหลัง เฉพาะตอนที่มีคนใช้การอนุมัติที่เคาน์เตอร์จริง)
+  const profile = await client.query<{ business_archetype: string | null }>(
+    `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
   if (profile.rows[0]?.business_archetype !== "pharmacy") return { allowed: true };
@@ -479,7 +479,12 @@ export async function checkPharmacySaleInTx(
   // ประเมินรอบแรกก่อนเสมอ เพื่อรู้ว่า "รายการไหนต้องใช้การอนุมัติจริง" — จะได้บันทึก
   // หลักฐานเฉพาะรายการนั้น ไม่ใช่เหมาทั้งบิล และตะกร้าที่ผ่านอยู่แล้วก็ไม่ถูกแตะ
   if (!counterAuthorization || channel !== "counter") return decision;
-  if (profile.rows[0]?.pharmacy_counter_authorization === false) return decision;
+  const counterSetting = await client.query<{ enabled: boolean | null }>(
+    `SELECT pharmacy_counter_authorization AS enabled
+       FROM bms_store_profile WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (counterSetting.rows[0]?.enabled === false) return decision;
 
   // ใบอนุญาตเป็นข้อเท็จจริงเรื่องคน ไม่ใช่ permission — ตรวจซ้ำในทรานแซกชันที่ขยับ
   // สต็อกจริง เผื่อสิทธิ์ถูกถอนหลัง route ตรวจ PIN ไปแล้ว · ตรวจไม่ผ่าน = ตกกลับไป

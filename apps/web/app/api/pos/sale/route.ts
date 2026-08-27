@@ -163,6 +163,12 @@ async function handlePOST(req: NextRequest) {
         : null,
     // ผ่านการตรวจ PIN + ใบอนุญาตข้างบนแล้วเท่านั้น (ห้ามส่ง id ดิบจาก body ลงไป)
     pharmacistCounterAuthorization: pharmacistAuthorization,
+    // เคสในคิวที่ถูกแทนด้วยการอนุมัติที่เคาน์เตอร์ — ปิดหลังขายจบ · เชื่อจาก body ได้
+    // เพราะใช้เมื่อมีการอนุมัติของเภสัชกรที่ผ่าน PIN แล้วเท่านั้น และปิดได้แค่เคสของร้านนี้
+    pharmacyReviewAssessmentId:
+      typeof body.pharmacyReviewAssessmentId === "string" && body.pharmacyReviewAssessmentId.trim()
+        ? body.pharmacyReviewAssessmentId.trim()
+        : null,
   });
 
   // ขายซ้ำด้วยคีย์เดิม → 200 พร้อม replayed: true (ไม่ใช่ error — เครื่องแค่ยิงซ้ำ)
