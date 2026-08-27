@@ -335,6 +335,34 @@ Covered by `scripts/pharmacy-approval-reuse-db-contract.test.mts`, which builds 
 tenant rather than borrowing the first one — flipping a shared shop's `business_archetype` to
 `pharmacy` changes gating for every product it sells.
 
+### What the approval covers (quantity, patient, survival)
+
+Three further boundaries of the same approval, all found in a later recheck of the counter flow:
+
+- **Quantity is a bill total per (sku, size), not a per-line ceiling.**
+  `approvedSkusFromCheckoutDraft()` in `productPolicyDecision.ts` sums both the requested lines and
+  the draft's items before comparing. `9.21` lets one bill carry the same SKU+size in two selling
+  units ("1 box + 3 tablets"), and the old per-line check compared each line on its own against the
+  first matching draft item — so an approval for 10 tablets cleared a bill holding 10 + 10. It also
+  under-counted a draft the pharmacist had built as two rows of the same product. A SKU clears only
+  when every size it appears in is covered; an approval for one size never authorises another.
+  The function is pure and covered by `scripts/pharmacy-policy-decision-contract.test.mts`.
+- **An approval that names a patient authorises that patient only.** When the case has a
+  `customer_id` and the sale is for a different customer, the approval contributes nothing. A sale
+  with no customer attached is not treated as a mismatch — the counter may sell anonymously; what it
+  may not do is move one named patient's safety check onto another's identical basket.
+- **`approveAssessment()` no longer erases a draft it was not given one to replace.** A counter case
+  is born with the scanned basket already in `checkout_order_draft`, and that draft is the only thing
+  that can clear the parked bill. Overwriting it with `NULL` left the case APPROVED but unusable —
+  the cashier resumed the bill, pressed Pay, and got `PHARMACY_REVIEW_REQUIRED` again with no way
+  back, because an APPROVED case cannot be approved twice. A draft the caller *does* supply still
+  wins: reducing the basket stays a pharmacist's decision.
+- **A counter case is judged as "counter" when its draft is re-checked at approval time.**
+  `checkPharmacistDraftPolicyInTx()` now takes the channel, derived from
+  `complaint.sourceMeta.source === "pos"`. Judged as "online", an `ONLINE_SALE_PROHIBITED` product
+  raised from a register was unapprovable: the pharmacist standing next to the customer still could
+  not say yes.
+
 ## Clinical evidence at the counter (9.25)
 
 `bms_pharmacy_clinical_evidence` holds three kinds of record against one case, and

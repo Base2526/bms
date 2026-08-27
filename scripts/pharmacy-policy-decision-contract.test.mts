@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  approvedSkusFromCheckoutDraft,
   evaluatePharmacySale,
   type PharmacyPolicyForDecision,
 } from "../apps/web/lib/bms/pharmacy/productPolicyDecision.ts";
@@ -227,4 +228,85 @@ test("เคาน์เตอร์ไม่ทำให้ policy ตัวอ
     if (decision.allowed) return;
     assert.equal(decision.status, expected, salePolicy);
   }
+});
+
+// ---------------------------------------------------------------
+// จำนวนที่เภสัชกรอนุมัติ = เพดานของบิล ไม่ใช่เพดานของบรรทัด
+// ---------------------------------------------------------------
+// ตั้งแต่ 9.21 บิลใบเดียวถือ SKU+ไซซ์เดียวกันได้สองหน่วยขาย ("1 กล่อง + 3 เม็ด")
+// เดิม checkPharmacySaleInTx เทียบทีละบรรทัดกับ draft item ตัวแรกที่เจอ จึงปล่อย
+// ให้จ่ายยาเกินใบอนุมัติได้โดยแต่ละบรรทัดดู "ไม่เกิน"
+test("รวมจำนวนต่อ sku+size ทั้งสองฝั่งก่อนเทียบ — สองบรรทัดหน่วยขายต่างกันบวกกัน", () => {
+  const approved = approvedSkusFromCheckoutDraft(
+    [
+      { sku: "AMOX", size: "500MG", qty: 10 },
+      { sku: "AMOX", size: "500MG", qty: 10 },
+    ],
+    [{ sku: "AMOX", size: "500MG", qty: 10 }]
+  );
+  assert.equal(approved.has("AMOX"), false, "อนุมัติ 10 เม็ด ห้ามเคลียร์บิลที่ถือ 20 เม็ด");
+});
+
+test("จำนวนพอดีตามที่อนุมัติ → ผ่าน", () => {
+  const approved = approvedSkusFromCheckoutDraft(
+    [
+      { sku: "AMOX", size: "500MG", qty: 4 },
+      { sku: "AMOX", size: "500MG", qty: 6 },
+    ],
+    [{ sku: "AMOX", size: "500MG", qty: 10 }]
+  );
+  assert.equal(approved.has("AMOX"), true);
+});
+
+test("draft ที่เภสัชกรใส่สินค้าเดียวกันสองแถว ต้องนับรวม ไม่ใช่นับแถวแรก", () => {
+  const approved = approvedSkusFromCheckoutDraft(
+    [{ sku: "AMOX", size: "500MG", qty: 10 }],
+    [
+      { sku: "AMOX", size: "500MG", qty: 6 },
+      { sku: "AMOX", size: "500MG", qty: 4 },
+    ]
+  );
+  assert.equal(approved.has("AMOX"), true, "6+4 ครอบ 10 ได้");
+});
+
+test("ใบอนุมัติของไซซ์หนึ่ง ไม่ครอบอีกไซซ์", () => {
+  const approved = approvedSkusFromCheckoutDraft(
+    [{ sku: "AMOX", size: "250MG", qty: 1 }],
+    [{ sku: "AMOX", size: "500MG", qty: 99 }]
+  );
+  assert.equal(approved.has("AMOX"), false);
+});
+
+test("ไซซ์ที่ไม่ผ่านตัวเดียว ทำให้ SKU นั้นไม่ผ่านทั้งตัว", () => {
+  const approved = approvedSkusFromCheckoutDraft(
+    [
+      { sku: "AMOX", size: "250MG", qty: 1 },
+      { sku: "AMOX", size: "500MG", qty: 1 },
+    ],
+    [{ sku: "AMOX", size: "250MG", qty: 1 }]
+  );
+  assert.equal(approved.has("AMOX"), false, "อนุมัติแค่ไซซ์เดียว ห้ามปล่อยอีกไซซ์ตามไปด้วย");
+});
+
+test("draft ว่าง/เคสที่ถูกใช้ไปแล้ว = ไม่มี SKU ไหนได้รับอนุมัติ", () => {
+  const approved = approvedSkusFromCheckoutDraft([{ sku: "AMOX", size: "500MG", qty: 1 }], []);
+  assert.equal(approved.size, 0);
+});
+
+test("แถวใน draft ที่ qty พัง (0/ลบ/ไม่ใช่ตัวเลข) ไม่นับเป็นการอนุมัติ", () => {
+  for (const qty of [0, -5, "มาก", null, undefined]) {
+    const approved = approvedSkusFromCheckoutDraft(
+      [{ sku: "AMOX", size: "500MG", qty: 1 }],
+      [{ sku: "AMOX", size: "500MG", qty }]
+    );
+    assert.equal(approved.has("AMOX"), false, String(qty));
+  }
+});
+
+test("ไซซ์ว่างของบิลจับคู่กับไซซ์ว่างของ draft ได้ (ทั้งคู่คือ 'ไม่ระบุไซซ์')", () => {
+  const approved = approvedSkusFromCheckoutDraft(
+    [{ sku: "GAUZE", qty: 2 }],
+    [{ sku: "GAUZE", qty: 2 }]
+  );
+  assert.equal(approved.has("GAUZE"), true);
 });

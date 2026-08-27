@@ -23,6 +23,7 @@
 
 import type { PoolClient } from "pg";
 import { checkPharmacistDraftPolicyInTx } from "./productPolicy";
+import type { PharmacySaleChannel } from "./productPolicyDecision";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { getVariantBasePriceInTx } from "../productPacks";
@@ -1691,7 +1692,7 @@ export async function approveAssessment(
   ctx?: any
 ): Promise<PharmacistDecisionResult> {
   const trimmedResponse = (pharmacistResponse || "").trim();
-  const normalizedOrderDraft = normalizeCheckoutOrderDraft(orderDraft);
+  const suppliedOrderDraft = normalizeCheckoutOrderDraft(orderDraft);
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorUserId });
@@ -1705,9 +1706,12 @@ export async function approveAssessment(
       completeness_status: CompletenessStatus;
       customer_confirmation_status: CustomerConfirmationStatus;
       has_manual_override: boolean;
+      checkout_order_draft: any;
+      complaint: any;
     }>(
       `SELECT a.status, a.version, a.expires_at, a.missing_fields, a.conflicting_fields,
               a.anomalies, a.completeness_status, a.customer_confirmation_status,
+              a.checkout_order_draft, a.complaint,
               EXISTS (
                 SELECT 1 FROM bms_pharmacy_assessment_events e
                  WHERE e.tenant_id = a.tenant_id AND e.assessment_id = a.id
@@ -1770,11 +1774,30 @@ export async function approveAssessment(
       return { status: "NOT_A_LICENSED_PHARMACIST" };
     }
 
+    // A caller that supplies no draft must not ERASE one the case already
+    // carries. A counter case (createProductReviewAssessmentOnce) is born with
+    // the scanned basket already in checkout_order_draft, and that draft is what
+    // checkPharmacySaleInTx() reads to clear the parked bill. Overwriting it with
+    // NULL used to leave the case APPROVED but unusable: the cashier resumed the
+    // bill, pressed Pay, and got PHARMACY_REVIEW_REQUIRED again — with no way
+    // back, because an APPROVED case cannot be approved a second time.
+    // A draft the caller DOES supply still wins: reducing or editing the basket
+    // is a pharmacist's decision to make.
+    const existingOrderDraft = normalizeCheckoutOrderDraft(row.checkout_order_draft);
+    const normalizedOrderDraft =
+      suppliedOrderDraft ??
+      (existingOrderDraft?.status === "AWAITING_CUSTOMER_CONFIRMATION" ? existingOrderDraft : null);
+
+    // A case raised by a register is handed over at the counter, not shipped.
+    const draftChannel: PharmacySaleChannel =
+      String(row.complaint?.sourceMeta?.source ?? "") === "pos" ? "counter" : "online";
+
     if (normalizedOrderDraft) {
       const productPolicy = await checkPharmacistDraftPolicyInTx(
         client,
         tenantId,
-        normalizedOrderDraft.items.map((item) => ({ sku: item.sku, qty: item.qty }))
+        normalizedOrderDraft.items.map((item) => ({ sku: item.sku, qty: item.qty })),
+        draftChannel
       );
       if (!productPolicy.allowed) {
         await client.query("ROLLBACK");

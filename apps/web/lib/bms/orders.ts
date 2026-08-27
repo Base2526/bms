@@ -425,7 +425,13 @@ export async function createOrder(
       tenantId,
       items,
       input.pharmacyApprovedAssessmentId,
-      input.channel === "pos" ? "counter" : "online"
+      input.channel === "pos" ? "counter" : "online",
+      // The customer row is resolved further down, but the id the caller
+      // supplied is the one the register/checkout is selling to, and it is all
+      // the gate needs: it only refuses when the approval names a DIFFERENT
+      // patient. Passing it here keeps the check inside the same locked read of
+      // the assessment row.
+      input.customerId ?? null
     );
     if (!pharmacySale.allowed) {
       await client.query("ROLLBACK");

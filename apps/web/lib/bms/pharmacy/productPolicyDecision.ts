@@ -126,3 +126,59 @@ export function evaluatePharmacySale(
   if (blockers.length > 0) return { allowed: false, ...blockers[0], blockers };
   return { allowed: true };
 }
+
+/**
+ * Which SKUs a pharmacist's checkout draft actually authorises for THIS basket.
+ *
+ * Pure on purpose: this is the quantity boundary of a clinical approval, so it
+ * has to be testable without a database. checkPharmacySaleInTx() only supplies
+ * the two lists.
+ *
+ * **Both sides are summed per (sku, size) before comparing.** The previous
+ * version compared each requested line on its own against the first matching
+ * draft item, which is wrong in two directions now that `9.21` lets one bill
+ * carry the same SKU+size in two selling units ("1 box + 3 tablets"):
+ *   - over-dispensing: an approval for 10 tablets cleared a bill holding
+ *     10 (box) + 10 (loose) — 20 units handed over on a 10-unit approval,
+ *     because each line satisfied the `>=` check by itself;
+ *   - under-dispensing: a draft the pharmacist built as two rows of the same
+ *     product only ever counted the first row.
+ *
+ * Size is compared as text because that is how both the order line and the
+ * draft store it — an approval for one size never authorises another.
+ */
+export function approvedSkusFromCheckoutDraft(
+  items: Array<{ sku: string; size?: string; qty: number }>,
+  draftItems: Array<{ sku?: unknown; size?: unknown; qty?: unknown }>
+): Set<string> {
+  const keyOf = (sku: string, size: unknown) => `${sku}\u0000${String(size ?? "")}`;
+
+  const approvedQty = new Map<string, number>();
+  for (const item of draftItems) {
+    const sku = String(item?.sku ?? "").trim();
+    if (!sku) continue;
+    const qty = Number(item?.qty);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const key = keyOf(sku, item?.size);
+    approvedQty.set(key, (approvedQty.get(key) ?? 0) + qty);
+  }
+
+  const requestedQty = new Map<string, number>();
+  for (const item of items) {
+    const key = keyOf(item.sku, item.size);
+    requestedQty.set(key, (requestedQty.get(key) ?? 0) + item.qty);
+  }
+
+  // A sku clears only when EVERY (sku, size) total it appears in is covered.
+  const requestedSkus = new Set<string>();
+  const blocked = new Set<string>();
+  for (const item of items) {
+    requestedSkus.add(item.sku);
+    const key = keyOf(item.sku, item.size);
+    if ((approvedQty.get(key) ?? 0) < (requestedQty.get(key) ?? 0)) blocked.add(item.sku);
+  }
+
+  const approved = new Set<string>();
+  for (const sku of requestedSkus) if (!blocked.has(sku)) approved.add(sku);
+  return approved;
+}

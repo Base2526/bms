@@ -30,6 +30,7 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
+import { approveAssessment } from "../apps/web/lib/bms/pharmacy/assessments.ts";
 
 const TAG = "rxapproval-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -158,6 +159,152 @@ test("รอบที่ถูกปฏิเสธต้องไม่กิ�
   assert.equal(Number(orders.rows[0].n), 1, "ต้องมีบิลเดียวเท่านั้นในร้านทดสอบนี้");
 });
 
+// ---------------------------------------------------------------
+// ใบอนุมัติที่ระบุตัวคนไข้ ใช้กับคนอื่นไม่ได้
+// ---------------------------------------------------------------
+// การซักถามความปลอดภัยของเภสัชกรเป็นเรื่องของ "คนนี้" ไม่ใช่ "ตะกร้านี้" ถ้าใบอนุมัติ
+// ของคนไข้ A ใช้ปลดบิลของคนไข้ B ที่ซื้อของเหมือนกันได้ การซักถามนั้นก็ไม่มีความหมาย
+test("ใบอนุมัติของคนไข้ A ใช้กับบิลของคนไข้ B ไม่ได้ · ของ A ใช้ได้", async () => {
+  const mk = async (name: string) =>
+    (
+      await query<{ id: string }>(
+        `INSERT INTO bms_customers (tenant_id, name) VALUES ($1,$2) RETURNING id`,
+        [tenantId, `FAKE ${TAG} ${name}`]
+      )
+    ).rows[0].id;
+  const customerA = await mk("patient A");
+  const customerB = await mk("patient B");
+
+  const draft = {
+    status: "AWAITING_CUSTOMER_CONFIRMATION",
+    items: [{ sku: SKU, size: SIZE, qty: 1, unitPrice: 100, productName: `FAKE ${TAG} drug` }],
+    estimatedTotal: 100,
+    createdOrderId: null,
+    approvedAt: new Date().toISOString(),
+  };
+  const forA = (
+    await query<{ id: string }>(
+      `INSERT INTO bms_pharmacy_assessments
+         (tenant_id, customer_id, channel_id, patient_relationship, consent_status, status,
+          needs_manual_intake, risk_level, complaint, structured_answers,
+          missing_fields, conflicting_fields, completeness_status,
+          customer_confirmation_status, checkout_order_draft, expires_at)
+       VALUES ($1,$2,'pos','SELF','GRANTED','APPROVED',FALSE,'LOW',
+               '{}'::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
+               'CONFIRMED',$3::jsonb, now() + interval '1 day')
+       RETURNING id`,
+      [tenantId, customerA, JSON.stringify(draft)]
+    )
+  ).rows[0].id;
+
+  const wrongPatient = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    customerId: customerB,
+    items: [{ sku: SKU, size: SIZE, qty: 1 }],
+    pharmacyApprovedAssessmentId: forA,
+  } as any);
+  assert.equal(
+    wrongPatient.status,
+    "PHARMACY_REVIEW_REQUIRED",
+    `ใบอนุมัติของคนอื่นต้องปลดบล็อกไม่ได้ แต่ได้ ${JSON.stringify(wrongPatient)}`
+  );
+
+  const rightPatient = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    customerId: customerA,
+    items: [{ sku: SKU, size: SIZE, qty: 1 }],
+    pharmacyApprovedAssessmentId: forA,
+  } as any);
+  assert.equal(rightPatient.status, "CREATED", JSON.stringify(rightPatient));
+  if (rightPatient.status === "CREATED") createdOrders.push(rightPatient.orderId);
+});
+
+// ---------------------------------------------------------------
+// approve ที่ไม่ได้ส่ง draft มา ต้องไม่ลบ draft ที่เคสถืออยู่
+// ---------------------------------------------------------------
+// เคสจากหน้าเคาน์เตอร์เกิดมาพร้อม checkout_order_draft ที่เป็นตะกร้าที่แคชเชียร์สแกน
+// (createProductReviewAssessmentOnce) และ draft นั้นคือสิ่งเดียวที่ปลดบิลที่พักไว้ได้
+// เดิม approveAssessment เขียนทับด้วย NULL ทุกครั้งที่ผู้เรียกไม่ส่ง draft → เคส APPROVED
+// แต่บิลที่พักไว้จบไม่ได้ และย้อนกลับไม่ได้เพราะเคสที่ APPROVED แล้ว approve ซ้ำไม่ได้
+test("approve โดยไม่ส่ง draft ต้องคง draft เดิมไว้ แล้วบิลหน้าร้านจบได้", async () => {
+  // คอลัมน์ที่ users บังคับ (role/role_id/username) ยกรูปแบบมาจาก provisionShopWithIdentity()
+  const email = `fake-${TAG}-rx-${process.pid}@example.invalid`;
+  const pharmacist = (
+    await query<{ id: string }>(
+      `INSERT INTO users (name, username, email, role, role_id, tenant_id, password_hash,
+                          fake_test, is_licensed_pharmacist, pharmacist_license_no)
+       SELECT $2, $3, $3, 'Administrator', r.id, $1, 'x', TRUE, TRUE, 'FAKE-LIC'
+         FROM roles r WHERE r.name = 'Administrator' LIMIT 1
+       RETURNING id`,
+      [tenantId, `FAKE ${TAG} pharmacist`, email]
+    )
+  ).rows[0].id;
+
+  const draft = {
+    status: "AWAITING_CUSTOMER_CONFIRMATION",
+    items: [{ sku: SKU, size: SIZE, qty: 2, unitPrice: 100, productName: `FAKE ${TAG} drug` }],
+    estimatedTotal: 200,
+    createdOrderId: null,
+    approvedAt: null,
+  };
+  const caseId = (
+    await query<{ id: string }>(
+      `INSERT INTO bms_pharmacy_assessments
+         (tenant_id, channel_id, patient_relationship, consent_status, status,
+          needs_manual_intake, risk_level, complaint, structured_answers,
+          missing_fields, conflicting_fields, completeness_status,
+          customer_confirmation_status, checkout_order_draft, expires_at)
+       VALUES ($1,'pos','SELF','GRANTED','PHARMACIST_REVIEWING',TRUE,'LOW',
+               $2::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
+               'CONFIRMED',$3::jsonb, now() + interval '1 day')
+       RETURNING id`,
+      [
+        tenantId,
+        JSON.stringify({ requestType: "PRODUCT_PURCHASE", sourceMeta: { source: "pos" } }),
+        JSON.stringify(draft),
+      ]
+    )
+  ).rows[0].id;
+  const version = (
+    await query<{ version: number }>(
+      `SELECT version FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, caseId]
+    )
+  ).rows[0].version;
+
+  const decision = await approveAssessment(
+    tenantId,
+    caseId,
+    pharmacist,
+    version,
+    "จ่ายยาได้ กินหลังอาหาร"
+    // ไม่ส่ง orderDraft — จุดที่เคยพัง
+  );
+  assert.equal(decision.status, "OK", JSON.stringify(decision));
+
+  const after = await query<{ status: string | null; items: string | null }>(
+    `SELECT checkout_order_draft->>'status' AS status,
+            checkout_order_draft->'items' AS items
+       FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, caseId]
+  );
+  assert.equal(after.rows[0].status, "AWAITING_CUSTOMER_CONFIRMATION", "draft เดิมต้องยังอยู่");
+
+  const sale = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [{ sku: SKU, size: SIZE, qty: 2 }],
+    pharmacyApprovedAssessmentId: caseId,
+  } as any);
+  assert.equal(sale.status, "CREATED", `บิลที่พักไว้ต้องจบได้ แต่ได้ ${JSON.stringify(sale)}`);
+  if (sale.status === "CREATED") createdOrders.push(sale.orderId);
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   // ลบตามลำดับ FK เอง ไม่พึ่ง cascade — bms_products_tenant_fk ไม่ใช่ ON DELETE
   // CASCADE (เจอตอนเขียนเทสนี้) เทนแนนต์เป็นของทิ้งอยู่แล้วจึงลบตาม tenant_id
@@ -173,6 +320,7 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
   if (ids.length === 0) return;
   for (const table of [
     "bms_order_items",
+    "bms_order_discounts",
     "bms_orders",
     "bms_pharmacy_assessment_events",
     "bms_pharmacy_assessments",
@@ -182,6 +330,8 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_products",
     "bms_store_profile",
     "bms_locations",
+    "bms_customers",
+    "users",
   ]) {
     await query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [ids]);
   }
