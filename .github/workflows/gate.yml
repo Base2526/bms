@@ -36,9 +36,18 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            packages/realtime/package-lock.json
 
       # ห้ามใช้ pnpm — repo ลงด้วย npm (ดู CLAUDE.local.md § รันในเครื่อง)
+      # apps/web import packages/realtime/src โดยตรง ดังนั้น TypeScript จะ resolve
+      # ioredis/graphql-redis-subscriptions จาก packages/realtime/node_modules ไม่ใช่
+      # node_modules ของ apps/web ที่เป็น sibling กัน
+      - name: Install realtime dependencies
+        working-directory: packages/realtime
+        run: npm ci --omit=dev
+
       - name: Install
         working-directory: apps/web
         run: npm ci
