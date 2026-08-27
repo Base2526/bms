@@ -400,10 +400,21 @@ export async function checkPharmacySaleInTx(
    * mismatch — the counter is allowed to sell anonymously, it just cannot swap
    * one named patient's approval onto another's.
    */
-  saleCustomerId?: string | null
+  saleCustomerId?: string | null,
+  /**
+   * A licensed pharmacist standing at the register taking responsibility for
+   * this hand-over (`9.29`). The PIN was already verified by the route — the
+   * same shape as a manual discount's approver — and the licence fact is
+   * re-checked here, inside the transaction that moves the stock.
+   */
+  counterAuthorization?: { pharmacistUserId: string; note?: string | null } | null
 ): Promise<PharmacySaleDecision> {
-  const profile = await client.query<{ business_archetype: string | null }>(
-    `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
+  const profile = await client.query<{
+    business_archetype: string | null;
+    pharmacy_counter_authorization: boolean | null;
+  }>(
+    `SELECT business_archetype, pharmacy_counter_authorization
+       FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
   if (profile.rows[0]?.business_archetype !== "pharmacy") return { allowed: true };
@@ -454,15 +465,40 @@ export async function checkPharmacySaleInTx(
     }
   }
 
-  return evaluatePharmacySale(
-    items,
-    policyRows.rows.map((row) => ({
-      productSku: row.product_sku,
-      salePolicy: row.sale_policy,
-      status: row.status,
-      maxQuantity: row.max_quantity == null ? null : Number(row.max_quantity),
-    })),
-    approvedSkus,
-    channel
+  const policies = policyRows.rows.map((row) => ({
+    productSku: row.product_sku,
+    salePolicy: row.sale_policy,
+    status: row.status,
+    maxQuantity: row.max_quantity == null ? null : Number(row.max_quantity),
+  }));
+
+  const decision = evaluatePharmacySale(items, policies, approvedSkus, channel);
+  if (decision.allowed) return decision;
+
+  // ---- เภสัชกรอนุมัติที่เครื่อง (9.29) ----------------------------------
+  // ประเมินรอบแรกก่อนเสมอ เพื่อรู้ว่า "รายการไหนต้องใช้การอนุมัติจริง" — จะได้บันทึก
+  // หลักฐานเฉพาะรายการนั้น ไม่ใช่เหมาทั้งบิล และตะกร้าที่ผ่านอยู่แล้วก็ไม่ถูกแตะ
+  if (!counterAuthorization || channel !== "counter") return decision;
+  if (profile.rows[0]?.pharmacy_counter_authorization === false) return decision;
+
+  // ใบอนุญาตเป็นข้อเท็จจริงเรื่องคน ไม่ใช่ permission — ตรวจซ้ำในทรานแซกชันที่ขยับ
+  // สต็อกจริง เผื่อสิทธิ์ถูกถอนหลัง route ตรวจ PIN ไปแล้ว · ตรวจไม่ผ่าน = ตกกลับไป
+  // เป็นคำตอบเดิม (บล็อก) ไม่ใช่ error ใหม่ที่แคชเชียร์อ่านไม่รู้เรื่อง
+  const licensed = await client.query<{ ok: boolean }>(
+    `SELECT public.bms_is_licensed_pharmacist($1, $2) AS ok`,
+    [tenantId, counterAuthorization.pharmacistUserId]
   );
+  if (licensed.rows[0]?.ok !== true) return decision;
+
+  // เพดานจำนวนต่อครั้งปลดด้วย PIN ไม่ได้ (ดู 9.29) — SKU ที่ติดเรื่องนี้ไม่เข้าชุด
+  const authorizable = new Set(
+    decision.blockers
+      .filter((blocker) => blocker.status !== "PHARMACY_QUANTITY_LIMIT_EXCEEDED")
+      .map((blocker) => blocker.sku)
+  );
+  if (authorizable.size === 0) return decision;
+
+  const authorized = evaluatePharmacySale(items, policies, approvedSkus, channel, authorizable);
+  if (!authorized.allowed) return authorized;
+  return { allowed: true, counterAuthorizedSkus: [...authorizable] };
 }

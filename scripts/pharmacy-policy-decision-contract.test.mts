@@ -310,3 +310,116 @@ test("ไซซ์ว่างของบิลจับคู่กับไ�
   );
   assert.equal(approved.has("GAUZE"), true);
 });
+
+// ---------------------------------------------------------------
+// เภสัชกรกด PIN อนุมัติที่เครื่อง (9.29)
+// ---------------------------------------------------------------
+// ร้านยาทั่วไปไม่ได้ส่งเคสเข้าคิวทุกครั้ง — เภสัชกรยืนอยู่ตรงนั้นแล้วอนุมัติเลย
+// เทสชุดนี้คุมขอบของอำนาจนั้น: ปลดอะไรได้ ปลดอะไรไม่ได้ และใช้ได้แค่ที่เคาน์เตอร์
+test("เคาน์เตอร์: เภสัชกรอนุมัติแล้วจ่ายยาที่ต้องมีใบสั่งแพทย์ได้", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "AMOX", qty: 1 }],
+    [policy("AMOX", "PRESCRIPTION_REQUIRED")],
+    new Set(),
+    "counter",
+    new Set(["AMOX"])
+  );
+  assert.equal(decision.allowed, true);
+});
+
+test("เคาน์เตอร์: สินค้าที่ยังไม่มี policy อนุมัติ ก็จ่ายได้เมื่อเภสัชกรรับผิดชอบ", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "NEWDRUG", qty: 1 }],
+    [],
+    new Set(),
+    "counter",
+    new Set(["NEWDRUG"])
+  );
+  assert.equal(decision.allowed, true, "SKU ที่ไม่มีแถว policy เลยต้องปลดได้ด้วย PIN เภสัชกร");
+});
+
+test("เคาน์เตอร์: policy ที่ยังเป็นร่าง/รอตรวจ ก็ปลดได้ด้วย PIN เภสัชกร", () => {
+  for (const status of ["DRAFT", "PENDING_REVIEW", "RETIRED"] as const) {
+    const decision = evaluatePharmacySale(
+      [{ sku: "X", qty: 1 }],
+      [policy("X", "DIRECT_SALE", { status })],
+      new Set(),
+      "counter",
+      new Set(["X"])
+    );
+    assert.equal(decision.allowed, true, status);
+  }
+});
+
+test("เคาน์เตอร์: ทุก policy ที่ต้องให้เภสัชกรดู ถูกปลดด้วย PIN ครบ", () => {
+  for (const salePolicy of [
+    "SHORT_SAFETY_CHECK",
+    "PHARMACIST_APPROVAL",
+    "ONLINE_SALE_PROHIBITED",
+    "PRESCRIPTION_REQUIRED",
+  ] as const) {
+    const decision = evaluatePharmacySale(
+      [{ sku: "X", qty: 1 }],
+      [policy("X", salePolicy)],
+      new Set(),
+      "counter",
+      new Set(["X"])
+    );
+    assert.equal(decision.allowed, true, salePolicy);
+  }
+});
+
+test("ออนไลน์: PIN เภสัชกรไม่มีผลเลย — ไม่มีใครยืนอยู่ที่เครื่อง", () => {
+  for (const salePolicy of ["PRESCRIPTION_REQUIRED", "PHARMACIST_APPROVAL"] as const) {
+    const decision = evaluatePharmacySale(
+      [{ sku: "X", qty: 1 }],
+      [policy("X", salePolicy)],
+      new Set(),
+      "online",
+      new Set(["X"])
+    );
+    assert.equal(decision.allowed, false, salePolicy);
+  }
+});
+
+test("ค่าปริยายของช่องทางยังเป็นออนไลน์ — ส่ง set มาเฉย ๆ ไม่ทำให้หลุด", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "X", qty: 1 }],
+    [policy("X", "PRESCRIPTION_REQUIRED")],
+    new Set(),
+    undefined as any,
+    new Set(["X"])
+  );
+  assert.equal(decision.allowed, false);
+});
+
+test("PIN เภสัชกรปลดเพดานจำนวนต่อครั้งไม่ได้ (ต้องไปแก้ policy)", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "X", qty: 5 }],
+    [policy("X", "DIRECT_SALE", { maxQuantity: 2 })],
+    new Set(),
+    "counter",
+    new Set(["X"])
+  );
+  assert.equal(decision.allowed, false);
+  if (decision.allowed) return;
+  assert.equal(decision.status, "PHARMACY_QUANTITY_LIMIT_EXCEEDED");
+  assert.equal(decision.requested, 5);
+});
+
+test("อนุมัติเฉพาะ SKU ที่ระบุ — ตัวอื่นในตะกร้ายังบล็อกตามเดิม", () => {
+  const decision = evaluatePharmacySale(
+    [
+      { sku: "OKAY", qty: 1 },
+      { sku: "OTHER", qty: 1 },
+    ],
+    [policy("OKAY", "PRESCRIPTION_REQUIRED"), policy("OTHER", "PHARMACIST_APPROVAL")],
+    new Set(),
+    "counter",
+    new Set(["OKAY"])
+  );
+  assert.equal(decision.allowed, false);
+  if (decision.allowed) return;
+  assert.equal(decision.blockers.length, 1);
+  assert.equal(decision.blockers[0].sku, "OTHER");
+});

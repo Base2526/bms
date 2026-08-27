@@ -363,6 +363,82 @@ Three further boundaries of the same approval, all found in a later recheck of t
   raised from a register was unapprovable: the pharmacist standing next to the customer still could
   not say yes.
 
+## The pharmacist at the register (9.29)
+
+The rest of this module is built around an online intake: the customer types, the rule
+engine asks the next question, a pharmacist reviews the case later and approves it. An
+ordinary pharmacy does not work like that. The pharmacist is standing at the counter, looks
+at the box, asks two questions and says yes — and the evidence worth keeping is **who
+authorised what**, not a transcript.
+
+Without that path two blocks were dead ends rather than gates:
+
+- `PRESCRIPTION_REQUIRED` could not be dispensed **anywhere**. `requestPosPharmacyReview()`
+  refused to even open a case for it, and the queue cannot pull a prescription item into an
+  approval draft, so there was no sequence of actions that sold it.
+- `PHARMACY_POLICY_UNKNOWN` (a SKU nobody has reviewed yet) stopped the sale mid-queue, and
+  a shop with a few thousand SKUs meets that constantly.
+
+### How it works
+
+`/api/pos/sale` accepts `pharmacistAuthorizerUserId` + `pharmacistAuthorizerPin` (+ an
+optional free-text `pharmacistAuthorizationNote`), verified exactly like a manual discount's
+approver. Two deliberate differences from the discount approver:
+
+- **The authoriser may be the cashier.** A small pharmacy has one pharmacist who also rings
+  up the sale; demanding a second person there just teaches the shop to work around its own
+  system. When the authoriser *is* the signed-in cashier, the cashier's own PIN counts.
+- **The boundary is the licence, not a permission.** `verifyCashierPin()` returns
+  `isLicensedPharmacist`, and `checkPharmacySaleInTx()` re-checks
+  `bms_is_licensed_pharmacist()` inside the transaction that moves the stock. An
+  `Administrator` does not get this by holding every permission — same rule as
+  `approveAssessment()`.
+
+`evaluatePharmacySale()` takes a fifth argument, the set of counter-authorised SKUs, honoured
+only when `channel === "counter"`. It clears `PHARMACY_POLICY_UNKNOWN`,
+`SHORT_SAFETY_CHECK`, `PHARMACIST_APPROVAL`, `ONLINE_SALE_PROHIBITED` and
+`PRESCRIPTION_REQUIRED`. It does **not** clear `PHARMACY_QUANTITY_LIMIT_EXCEEDED`: that cap
+is a number the shop configured for itself, so selling past it is a policy edit, not a
+counter decision.
+
+`checkPharmacySaleInTx()` evaluates the basket **without** the authorisation first. That is
+what tells it which SKUs actually needed it — only those get an evidence row, and a basket
+that was fine on its own records nothing at all.
+
+### Evidence
+
+`bms_pos_pharmacist_authorizations` holds one row per (order, sku, size): the quantity
+handed over, the pharmacist, the optional note, and a **snapshot of the policy that was
+cleared** (editing the product's policy later must not rewrite the meaning of evidence
+already issued). The rows and a `pharmacy.counter_authorization` audit entry are written in
+the same transaction as the order, so a committed bill can never lack the record of who
+released the drug. The authorising pharmacist is also stamped onto
+`bms_pos_shifts.pharmacist_user_id` when that column is still null — before this, a shift
+opened by a cashier recorded no pharmacist at all.
+
+### Two shop-level switches
+
+Both live on `bms_store_profile` and are edited at `/admin/pos-readiness`
+(`pharmacy.policy.review`):
+
+- `pharmacy_counter_authorization` (default **on**) — turn it off and everything goes back
+  through the queue, for a shop whose pharmacist is not at the counter.
+- `pharmacy_block_shift_on_unreviewed_policy` (default **off**) — the old behaviour, where
+  `assertPharmacyPolicyReadyToOpenShift()` refuses to open a till until every active SKU has
+  an approved policy. It is opt-in now precisely because an unreviewed SKU is no longer a
+  dead end; the readiness counters still report the backlog either way.
+
+Covered by `scripts/pharmacy-policy-decision-contract.test.mts` (pure) and
+`scripts/pharmacy-counter-authorization-db-contract.test.mts` (its own throwaway tenant).
+
+### What this deliberately does not do
+
+The queue path is unchanged: prescription items still cannot be pulled into a pharmacist's
+online checkout draft, because a prescription cannot be verified over chat. Returning
+medicine to sellable stock still has no pharmacy-specific gate, and nothing requires a
+pharmacist to be on duty for an ordinary OTC sale — the shift stamp above records who was
+there, it does not enforce presence.
+
 ## Clinical evidence at the counter (9.25)
 
 `bms_pharmacy_clinical_evidence` holds three kinds of record against one case, and

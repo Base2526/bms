@@ -870,6 +870,10 @@ export const typeDefs = /* GraphQL */ `
     draft: Int!
     missing: Int!
     ready: Boolean!
+    "9.29 — เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขายได้"
+    counterAuthorization: Boolean!
+    "9.29 — TRUE = เปิดกะไม่ได้ถ้ารีวิว policy ยังไม่ครบ"
+    blockShiftOnUnreviewed: Boolean!
   }
 
   type BmsUnreviewedProduct {
@@ -3657,6 +3661,8 @@ export const typeDefs = /* GraphQL */ `
     "posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย"
     bmsSetCashierAccountMode(userId: ID!, posOnly: Boolean!): Boolean!
     bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
+    "ตั้งค่าการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29) — ไม่ส่งฟิลด์ไหน = ไม่แตะฟิลด์นั้น"
+    bmsSetPharmacyCounterSettings(counterAuthorization: Boolean, blockShiftOnUnreviewed: Boolean): BmsPharmacyPolicyReadiness!
     bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login
     login(input: LoginInput!): LoginResult!

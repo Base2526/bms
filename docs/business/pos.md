@@ -1046,6 +1046,31 @@ holds every permission as a super-role) — a manager who can read the case stil
 prescription image. Details, including why images never travel through `/api/files/[id]`, are in
 [the pharmacy README](../../apps/web/lib/bms/pharmacy/README.md).
 
+### The pharmacist authorises at the register (9.29)
+
+A pharmacy counter does not queue every restricted item for a remote review. The pharmacist
+is standing there, so the register asks for that pharmacist's PIN and the sale continues.
+
+When a sale is refused by a pharmacy policy, the sell tab now offers the PIN panel beside
+the existing "send the case to the pharmacist" button: pick the pharmacist (only users
+recorded as licensed appear), enter their PIN — the cashier's own PIN counts when the
+cashier is the pharmacist — optionally type what was advised or the prescription's number,
+then press Pay again. The authorisation belongs to that bill only; clearing the cart or
+finishing the sale drops it, and the PIN is never written to browser storage.
+
+It clears an unreviewed product policy, a short safety check, a pharmacist-approval item, an
+online-prohibited item, and a prescription item. It does not clear a product's per-sale
+quantity cap — that number is the shop's own setting, so exceeding it means editing the
+policy, not pressing a key at the counter.
+
+Every authorisation writes a row naming the pharmacist, the item, the quantity, and the
+policy that was cleared, in the same transaction as the bill, plus an audit entry. The
+pharmacist is also recorded as the shift's pharmacist when none was recorded at open. Two
+switches at `/admin/pos-readiness` control the behaviour: whether counter authorisation is
+allowed at all (on by default), and whether an incomplete policy review blocks opening a
+till (off by default now — an unreviewed product asks for a PIN instead of stopping the
+queue). Details are in [the pharmacy README](../../apps/web/lib/bms/pharmacy/README.md).
+
 ## Failure and retry behavior
 
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery

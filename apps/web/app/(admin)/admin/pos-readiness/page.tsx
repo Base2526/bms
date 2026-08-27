@@ -1,9 +1,9 @@
 'use client';
 // หน้าเช็คความพร้อมก่อนเปิดขายหน้าร้าน
 // -------------------------------------------------------------
-// ร้านยาเลือกแนวทาง "รีวิว policy ให้ครบทุกสินค้าก่อนเปิดร้าน" → openPosShift()
-// จะบล็อกจนกว่าจะครบ หน้านี้คือที่ที่ตอบว่า "เหลืออีกกี่ตัว" ก่อนจะไปเจอ
-// PHARMACY_POLICY_UNKNOWN ตอนมีลูกค้ายืนรออยู่หน้าเคาน์เตอร์
+// ร้านยาเลือกแนวทาง "รีวิว policy ให้ครบทุกสินค้าก่อนเปิดร้าน" ได้ (สวิตช์ในหน้านี้)
+// แต่ค่าปริยายตั้งแต่ 9.29 คือเปิดกะได้เลย เพราะสินค้าที่ยังไม่รีวิวไม่ใช่ทางตันแล้ว —
+// เภสัชกรกด PIN อนุมัติที่เครื่องได้ · หน้านี้ยังเป็นที่ตอบว่า "เหลืออีกกี่ตัว"
 //
 // การแก้ policy รายตัวยังอยู่ที่ /admin/pharmacy-protocols (มี editor ครบอยู่แล้ว)
 // หน้านี้ตั้งใจไม่ทำซ้ำ — ทำหน้าที่เป็นตัวนับถอยหลังกับรายการงานที่เหลือ
@@ -30,6 +30,8 @@ const Q_READINESS = gql`
       draft
       missing
       ready
+      counterAuthorization
+      blockShiftOnUnreviewed
     }
     bmsProductsNeedingPolicyReview(limit: 200) {
       sku
@@ -49,6 +51,15 @@ const Q_READINESS = gql`
       size
       currentStock
       lotTotal
+    }
+  }
+`;
+
+const M_PHARMACY_COUNTER_SETTINGS = gql`
+  mutation SetPharmacyCounterSettings($counter: Boolean, $blockShift: Boolean) {
+    bmsSetPharmacyCounterSettings(counterAuthorization: $counter, blockShiftOnUnreviewed: $blockShift) {
+      counterAuthorization
+      blockShiftOnUnreviewed
     }
   }
 `;
@@ -147,6 +158,71 @@ function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => vo
  * ร้านต้องรัน SQL เอง · วางไว้หน้านี้เพราะเป็นหน้าที่ใช้ก่อนเปิดขายจริง
  * และ readiness ด้านบนก็เตือนเรื่องใบกำกับอย่างย่อจากค่าชุดเดียวกันนี้
  */
+/**
+ * สองสวิตช์ของ "ใครปล่อยยาออกจากร้านได้" (9.29)
+ *
+ * บันทึกทันทีที่สับสวิตช์ ไม่มีปุ่มบันทึกรวม — สองค่านี้ไม่ขึ้นแก่กันและเป็นค่าที่คน
+ * มาสับตอนกำลังยืนแก้ปัญหาหน้าร้าน ไม่ใช่ฟอร์มที่กรอกทีเดียวจบเหมือนค่าตั้งภาษี
+ */
+function PharmacyCounterSettingsCard({
+  counterAuthorization,
+  blockShiftOnUnreviewed,
+  onSaved,
+}: {
+  counterAuthorization: boolean;
+  blockShiftOnUnreviewed: boolean;
+  onSaved: () => void;
+}) {
+  const [save, { loading: saving }] = useMutation(M_PHARMACY_COUNTER_SETTINGS);
+
+  const set = async (variables: { counter?: boolean; blockShift?: boolean }) => {
+    try {
+      await save({ variables });
+      message.success("บันทึกแล้ว");
+      onSaved();
+    } catch (e: any) {
+      message.error(e?.message ?? "บันทึกไม่สำเร็จ");
+    }
+  };
+
+  return (
+    <Card title="การอนุมัติของเภสัชกรที่เคาน์เตอร์">
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Space align="start" size="middle">
+          <Switch
+            checked={counterAuthorization}
+            loading={saving}
+            onChange={(checked) => void set({ counter: checked })}
+          />
+          <div>
+            <Typography.Text strong>ให้เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขายได้</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              เปิดไว้ = ทำงานแบบร้านยาทั่วไป เภสัชกรที่ยืนอยู่หน้าร้านอนุมัติได้ทันที รวมถึงยาที่ต้องมี
+              ใบสั่งแพทย์และสินค้าที่ยังไม่ได้รีวิวนโยบาย · ทุกครั้งที่กดจะถูกบันทึกว่าใครอนุมัติยาอะไร
+              ให้บิลไหน · ปิด = ทุกอย่างต้องผ่านคิวเภสัชกรเท่านั้น (เหมาะกับร้านที่เภสัชกรไม่ได้อยู่หน้าร้าน)
+              · เพดานจำนวนต่อครั้งของสินค้ายังปลดด้วย PIN ไม่ได้ทั้งสองกรณี
+            </Typography.Paragraph>
+          </div>
+        </Space>
+        <Space align="start" size="middle">
+          <Switch
+            checked={blockShiftOnUnreviewed}
+            loading={saving}
+            onChange={(checked) => void set({ blockShift: checked })}
+          />
+          <div>
+            <Typography.Text strong>ห้ามเปิดกะถ้ายังรีวิวนโยบายสินค้าไม่ครบ</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              ปิดไว้ (ค่าปริยาย) = เปิดร้านขายได้เลย สินค้าที่ยังไม่รีวิวจะขอ PIN เภสัชกรเป็นครั้ง ๆ ·
+              เปิด = บังคับให้รีวิวครบก่อนเปิดร้าน (พฤติกรรมเดิมก่อน 9.29)
+            </Typography.Paragraph>
+          </div>
+        </Space>
+      </Space>
+    </Card>
+  );
+}
+
 function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
   const [form] = Form.useForm();
   const { data, loading } = useQuery(Q_TAX_SETTINGS, { fetchPolicy: "cache-and-network" });
@@ -328,6 +404,14 @@ export default function PosReadinessPage() {
         />
       )}
 
+      {readiness?.pharmacyArchetype && can("pharmacy.policy.review") && (
+        <PharmacyCounterSettingsCard
+          counterAuthorization={readiness.counterAuthorization}
+          blockShiftOnUnreviewed={readiness.blockShiftOnUnreviewed}
+          onSaved={() => void refetch()}
+        />
+      )}
+
       {readiness?.pharmacyArchetype && (
         <Card>
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
@@ -337,8 +421,16 @@ export default function PosReadinessPage() {
               <Alert closable
                 type="warning"
                 showIcon
-                message={`ยังเปิดกะไม่ได้ — เหลืออีก ${total - approved} รายการ`}
-                description="เภสัชกรต้องอนุมัตินโยบายการขายให้ครบทุกสินค้าที่ยังใช้งานอยู่ก่อน มิฉะนั้นสินค้าที่ยังไม่ผ่านจะขายไม่ได้กลางคิวลูกค้า"
+                message={
+                  readiness.blockShiftOnUnreviewed
+                    ? `ยังเปิดกะไม่ได้ — เหลืออีก ${total - approved} รายการ`
+                    : `เปิดกะได้ แต่ยังเหลือสินค้าที่ยังไม่รีวิว ${total - approved} รายการ`
+                }
+                description={
+                  readiness.blockShiftOnUnreviewed
+                    ? "เภสัชกรต้องอนุมัตินโยบายการขายให้ครบทุกสินค้าที่ยังใช้งานอยู่ก่อน มิฉะนั้นสินค้าที่ยังไม่ผ่านจะขายไม่ได้กลางคิวลูกค้า"
+                    : "สินค้าที่ยังไม่รีวิวขายได้เมื่อเภสัชกรกด PIN อนุมัติที่เครื่อง — ทุกครั้งที่ต้องกด แปลว่างานรีวิวยังค้างอยู่ตัวนั้น"
+                }
               />
             )}
             <Progress percent={percent} status={readiness.ready ? "success" : "active"} />

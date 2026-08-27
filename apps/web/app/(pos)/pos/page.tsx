@@ -966,6 +966,20 @@ export default function PosPage() {
   const [evidenceAdded, setEvidenceAdded] = useState(0);
   const [pharmacyReviewOffer, setPharmacyReviewOffer] = useState<{ requiresSafetyCheck: boolean } | null>(null);
   const [pharmacyReviewBusy, setPharmacyReviewBusy] = useState(false);
+  // ---- เภสัชกรอนุมัติที่เครื่อง (9.29) ----------------------------------
+  // ร้านยาทั่วไปไม่ได้ส่งเคสเข้าคิวทุกครั้ง — เภสัชกรยืนอยู่ตรงนั้น ดูของแล้วกด PIN
+  // อนุมัติเลย · เก็บ "ที่อนุมัติแล้ว" แยกจากช่องกรอกเหมือนส่วนลดมือ และ PIN อยู่ใน
+  // หน่วยความจำอย่างเดียว ไม่ลง localStorage (เครื่องหน้าร้านเปิดค้างทั้งวัน)
+  const [pharmacistAuthOffer, setPharmacistAuthOffer] = useState<
+    { status: string; sku: string | null } | null
+  >(null);
+  const [pharmacistAuthId, setPharmacistAuthId] = useState("");
+  const [pharmacistAuthPin, setPharmacistAuthPin] = useState("");
+  const [pharmacistAuthNote, setPharmacistAuthNote] = useState("");
+  const [pharmacistAuthError, setPharmacistAuthError] = useState<string | null>(null);
+  const [pharmacistAuth, setPharmacistAuth] = useState<
+    { userId: string; pin: string; name: string; note: string } | null
+  >(null);
   const [cashMoves, setCashMoves] = useState<CashMovement[]>([]);
   const [cashMoveDir, setCashMoveDir] = useState<"IN" | "OUT">("OUT");
   const [cashMoveAmount, setCashMoveAmount] = useState("");
@@ -1494,6 +1508,34 @@ export default function PosPage() {
     setPharmacyReviewLink(null);
     setPharmacyReviewOffer(null);
     pharmacyReviewRequestRef.current = null;
+    clearPharmacistAuthorization();
+  }
+
+  /**
+   * บิลติดกฎร้านยา — เสนอทางออกทั้งสองทางที่ร้านยาจริงใช้:
+   * ให้เภสัชกรที่ยืนอยู่กด PIN อนุมัติเลย (ทางหลัก) หรือส่งเคสเข้าคิวถ้าต้องซักประวัติ
+   * ยาว ๆ / เภสัชกรไม่อยู่ · เพดานจำนวนต่อครั้งไม่อยู่ในนี้เพราะ PIN ปลดไม่ได้ (9.29)
+   */
+  function notePharmacyBlock(data: any) {
+    const status = String(data?.status ?? "");
+    if (!status.startsWith("PHARMACY_")) return;
+    if (status === "PHARMACY_REVIEW_REQUIRED" || status === "PHARMACY_SAFETY_CHECK_REQUIRED") {
+      setPharmacyReviewOffer({ requiresSafetyCheck: status === "PHARMACY_SAFETY_CHECK_REQUIRED" });
+    }
+    if (status === "PHARMACY_QUANTITY_LIMIT_EXCEEDED") return;
+    setPharmacistAuthOffer({ status, sku: data?.sku ? String(data.sku) : null });
+  }
+
+  /**
+   * การอนุมัติของเภสัชกรผูกกับ "บิลใบนี้" เท่านั้น — ขายจบ/ล้างตะกร้าต้องหมดอายุทันที
+   * ไม่ใช่ token ค้างที่บิลใบถัดไปหยิบไปใช้ได้เอง
+   */
+  function clearPharmacistAuthorization() {
+    setPharmacistAuth(null);
+    setPharmacistAuthOffer(null);
+    setPharmacistAuthPin("");
+    setPharmacistAuthNote("");
+    setPharmacistAuthError(null);
   }
 
   /** ล้างทุกอย่างที่ผูกกับ "ลูกค้าคนนี้บิลนี้" — เรียกหลังขายจบทุกครั้ง */
@@ -2257,6 +2299,9 @@ export default function PosPage() {
             discountReason: approvedDiscount?.reason ?? null,
             discountApproverUserId: approvedDiscount?.approverId ?? null,
             discountApproverPin: approvedDiscount?.approverPin ?? null,
+            pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
+            pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
+            pharmacistAuthorizationNote: pharmacistAuth?.note || null,
             pharmacyApprovedAssessmentId: pharmacyReviewLink?.status === "APPROVED"
               ? pharmacyReviewLink.assessmentId
               : null,
@@ -2279,7 +2324,7 @@ export default function PosPage() {
       window.localStorage.setItem(
         PENDING_DEPOSIT_SALE_KEY,
         JSON.stringify({
-          body: { ...body, pin: undefined, discountApproverPin: undefined },
+          body: { ...body, pin: undefined, discountApproverPin: undefined, pharmacistAuthorizerPin: undefined },
           cart: buildParkedCartSnapshot(),
           pharmacyReviewLink,
         })
@@ -2318,9 +2363,7 @@ export default function PosPage() {
         window.localStorage.removeItem(PENDING_DEPOSIT_SALE_KEY);
         setHasPendingDepositSale(false);
       }
-      if (data?.status === "PHARMACY_REVIEW_REQUIRED" || data?.status === "PHARMACY_SAFETY_CHECK_REQUIRED") {
-        setPharmacyReviewOffer({ requiresSafetyCheck: data.status === "PHARMACY_SAFETY_CHECK_REQUIRED" });
-      }
+      notePharmacyBlock(data);
       setNotice({ type: "error", text: data?.reason ?? describeFailure(data) });
     } catch (error: any) {
       setNotice({
@@ -2602,6 +2645,33 @@ export default function PosPage() {
     });
     setDiscountOpen(false);
     setDiscountError(null);
+  }
+
+  /**
+   * เภสัชกรกด PIN อนุมัติจ่ายยาของบิลใบนี้ (9.29)
+   *
+   * จอไม่ยิง API ตรงนี้โดยตั้งใจ — เหตุผลเดียวกับส่วนลดมือ: การอนุมัติต้องผูกกับบิล
+   * ใบที่ขายจริงในทรานแซกชันเดียวกัน ไม่ใช่ token ลอย ๆ ที่เอาไปใช้กับบิลอื่นได้
+   * สิทธิ์/ใบอนุญาต/PIN ตรวจจริงที่ server ตอนกดรับเงิน
+   */
+  function applyPharmacistAuthorization() {
+    if (!pharmacistAuthId) { setPharmacistAuthError("เลือกเภสัชกรก่อน"); return; }
+    const isSelf = pharmacistAuthId === cashierId;
+    const usedPin = isSelf ? pin : pharmacistAuthPin;
+    if (!usedPin) { setPharmacistAuthError(isSelf ? "ใส่ PIN ของตัวเองที่ช่องด้านบน" : "ใส่ PIN ของเภสัชกร"); return; }
+    const who = (session?.cashiers ?? []).find((c) => c.id === pharmacistAuthId);
+    if (who && !who.isPharmacist) {
+      setPharmacistAuthError("คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต");
+      return;
+    }
+    setPharmacistAuth({
+      userId: pharmacistAuthId,
+      pin: usedPin,
+      name: who?.name ?? who?.email ?? "เภสัชกร",
+      note: pharmacistAuthNote.trim(),
+    });
+    setPharmacistAuthPin("");
+    setPharmacistAuthError(null);
   }
 
   /** ปรับจำนวนแต้มเป็นก้าวละ 1 หน่วยแลก — เศษแต้มไม่แปลงเป็นส่วนลดอยู่แล้ว */
@@ -3745,8 +3815,20 @@ export default function PosPage() {
         setDiscountOpen(true);
         return;
       }
+      // บิลค้างที่เคยมีเภสัชกรอนุมัติ: PIN ไม่ได้ถูกเก็บไว้เหมือนกัน ต้องให้กดใหม่
+      if (savedAttempt?.body?.pharmacistAuthorizerUserId && !pharmacistAuth) {
+        setNotice({ type: "error", text: "บิลค้างใบนี้มีการอนุมัติของเภสัชกร — ให้เภสัชกรกด PIN อนุมัติใหม่ก่อนกดรับเงิน" });
+        setPharmacistAuthOffer({ status: "PHARMACY_REVIEW_REQUIRED", sku: null });
+        return;
+      }
       const body = savedAttempt?.body
-        ? { ...savedAttempt.body, cashierUserId: cashierId, pin, discountApproverPin: approvedDiscount?.approverPin ?? null }
+        ? {
+            ...savedAttempt.body,
+            cashierUserId: cashierId,
+            pin,
+            discountApproverPin: approvedDiscount?.approverPin ?? null,
+            pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
+          }
         : {
         shiftId: session.shift.id,
         cashierUserId: cashierId,
@@ -3764,6 +3846,10 @@ export default function PosPage() {
         pharmacyApprovedAssessmentId: pharmacyReviewLink?.status === "APPROVED"
           ? pharmacyReviewLink.assessmentId
           : null,
+        // เภสัชกรอนุมัติที่เครื่อง (9.29) — server ตรวจ PIN + ใบอนุญาตซ้ำทุกครั้ง
+        pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
+        pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
+        pharmacistAuthorizationNote: pharmacistAuth?.note || null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -3790,7 +3876,7 @@ export default function PosPage() {
       window.localStorage.setItem(
         PENDING_SALE_KEY,
         JSON.stringify({
-          body: { ...body, pin: undefined, discountApproverPin: undefined },
+          body: { ...body, pin: undefined, discountApproverPin: undefined, pharmacistAuthorizerPin: undefined },
           cart: buildParkedCartSnapshot(),
           payments,
           pharmacyReviewLink,
@@ -3915,9 +4001,7 @@ export default function PosPage() {
             failureText += ` · ตรวจราคาล่าสุดอัตโนมัติไม่สำเร็จ (${String(refreshError?.message ?? refreshError)})`;
           }
         }
-        if (data?.status === "PHARMACY_REVIEW_REQUIRED" || data?.status === "PHARMACY_SAFETY_CHECK_REQUIRED") {
-          setPharmacyReviewOffer({ requiresSafetyCheck: data.status === "PHARMACY_SAFETY_CHECK_REQUIRED" });
-        }
+        notePharmacyBlock(data);
         setNotice({ type: "error", text: failureText });
       }
     } catch (e: any) {
@@ -6796,6 +6880,95 @@ export default function PosPage() {
             </div>
           )}
 
+          {/* เภสัชกรอนุมัติที่เครื่อง (9.29) — ทางหลักของร้านยาทั่วไป
+              โชว์เมื่อบิลติดกฎร้านยา หรือเมื่ออนุมัติไปแล้ว (ให้เห็นว่าใครอนุมัติ) */}
+          {(pharmacistAuthOffer || pharmacistAuth) && (
+            <div style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 10,
+              border: `1px solid ${pharmacistAuth ? "#b7eb8f" : "#91caff"}`,
+              background: pharmacistAuth ? "#f6ffed" : "#f0f7ff",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}>
+              {pharmacistAuth ? (
+                <>
+                  <div style={{ fontSize: 13, color: "#245", lineHeight: 1.5 }}>
+                    เภสัชกร <b>{pharmacistAuth.name}</b> อนุมัติจ่ายยาของบิลนี้แล้ว — กดชำระเงินได้เลย
+                    {pharmacistAuth.note ? <><br />บันทึก: {pharmacistAuth.note}</> : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearPharmacistAuthorization}
+                    style={{ padding: "6px 10px", fontSize: 12, alignSelf: "flex-start" }}
+                  >
+                    ยกเลิกการอนุมัติ
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: "#234", lineHeight: 1.5 }}>
+                    {pharmacistAuthOffer?.sku ? `${pharmacistAuthOffer.sku}: ` : ""}
+                    {pharmacistAuthOffer?.status === "PHARMACY_PRESCRIPTION_REQUIRED"
+                      ? "ยาต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติได้ที่นี่"
+                      : pharmacistAuthOffer?.status === "PHARMACY_POLICY_UNKNOWN"
+                        ? "สินค้านี้ยังไม่มีนโยบายการขายที่อนุมัติไว้ — เภสัชกรรับผิดชอบการจ่ายครั้งนี้ได้"
+                        : "รายการนี้ต้องให้เภสัชกรอนุมัติก่อนจ่าย"}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <select
+                      value={pharmacistAuthId}
+                      onChange={(e) => setPharmacistAuthId(e.target.value)}
+                      style={{ padding: "6px 8px", fontSize: 12, minWidth: 170 }}
+                    >
+                      <option value="">เลือกเภสัชกร…</option>
+                      {(session?.cashiers ?? [])
+                        .filter((c) => c.isPharmacist)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name ?? c.email}{c.id === cashierId ? " (ตัวเอง)" : ""}
+                          </option>
+                        ))}
+                    </select>
+                    {pharmacistAuthId && pharmacistAuthId !== cashierId && (
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        value={pharmacistAuthPin}
+                        onChange={(e) => setPharmacistAuthPin(e.target.value)}
+                        placeholder="PIN เภสัชกร"
+                        style={{ padding: "6px 8px", fontSize: 12, width: 120 }}
+                      />
+                    )}
+                    <input
+                      value={pharmacistAuthNote}
+                      onChange={(e) => setPharmacistAuthNote(e.target.value)}
+                      placeholder="บันทึก เช่น เลขใบสั่งยา / คำแนะนำที่ให้ (ไม่บังคับ)"
+                      style={{ flex: 1, minWidth: 180, padding: "6px 8px", fontSize: 12 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={applyPharmacistAuthorization}
+                      style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}
+                    >
+                      เภสัชกรอนุมัติ
+                    </button>
+                  </div>
+                  {(session?.cashiers ?? []).every((c) => !c.isPharmacist) && (
+                    <div style={{ fontSize: 11, color: "#a15" }}>
+                      ยังไม่มีใครถูกบันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาตในร้านนี้ — ตั้งค่าที่หน้าผู้ใช้ก่อน
+                    </div>
+                  )}
+                  {pharmacistAuthError && (
+                    <div style={{ fontSize: 12, color: "#c00" }}>{pharmacistAuthError}</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {pharmacyReviewOffer && !pharmacyReviewLink && (
             <div style={{
               marginTop: 10,
@@ -7512,16 +7685,17 @@ function describeFailure(data: any): string {
     case "INVALID_PACK":
       return `${data.sku}: ไม่พบหน่วยขาย ${data.packCode || "ที่เลือก"} — โหลดสินค้าใหม่แล้วลองอีกครั้ง`;
     case "PHARMACY_POLICY_UNKNOWN":
-      return `${data.sku}: เภสัชกรยังไม่ได้อนุมัตินโยบายการขายของสินค้านี้`;
+      return `${data.sku}: ยังไม่มีนโยบายการขายที่อนุมัติไว้ — ให้เภสัชกรกด PIN อนุมัติที่เครื่องเพื่อจ่ายครั้งนี้`;
     case "PHARMACY_PRESCRIPTION_REQUIRED":
-      return `${data.sku}: ต้องมีใบสั่งแพทย์ — ขายผ่านระบบไม่ได้`;
+      return `${data.sku}: ต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติที่เครื่องได้`;
     case "PHARMACY_ONLINE_SALE_PROHIBITED":
-      return `${data.sku}: สินค้านี้ถูกตั้งเป็นห้ามขายผ่านช่องทางนี้`;
+      return `${data.sku}: ห้ามขายออนไลน์ — ขายหน้าร้านได้เมื่อเภสัชกรกด PIN อนุมัติ`;
     case "PHARMACY_REVIEW_REQUIRED":
     case "PHARMACY_SAFETY_CHECK_REQUIRED":
-      return `${data.sku}: ต้องให้เภสัชกรซักประวัติและอนุมัติก่อน — ใช้ปุ่มส่งเคสให้เภสัชกรจากหน้า POS ได้`;
+      return `${data.sku}: ต้องให้เภสัชกรอนุมัติก่อน — ให้เภสัชกรกด PIN ที่เครื่อง หรือส่งเคสเข้าคิวถ้าต้องซักประวัติยาว`;
+    // เพดานจำนวนต่อครั้งเป็นค่าที่ร้านตั้งเอง PIN เภสัชกรปลดไม่ได้ (9.29) — ต้องไปแก้ policy
     case "PHARMACY_QUANTITY_LIMIT_EXCEEDED":
-      return `${data.sku}: เกินจำนวนสูงสุดต่อครั้ง (${data.maxQuantity})`;
+      return `${data.sku}: เกินจำนวนสูงสุดต่อครั้ง (${data.maxQuantity}) — ลดจำนวน หรือแก้นโยบายที่หน้าแอดมิน`;
     case "COUPON_INVALID":
       return `คูปองใช้ไม่ได้: ${data.reason}`;
     // สองตัวนี้เดิมตกไปที่ default แล้วโชว์ "ขายไม่สำเร็จ (POINTS_INVALID)" ซึ่งบอก

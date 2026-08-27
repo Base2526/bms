@@ -28,7 +28,16 @@ export type PharmacySaleBlocker = {
 };
 
 export type PharmacySaleDecision =
-  | { allowed: true }
+  | {
+      allowed: true;
+      /**
+       * SKUs that only cleared because a licensed pharmacist authorised them at
+       * the register (`9.29`). The caller writes one evidence row per line in
+       * the same transaction as the bill — an empty/absent list means the basket
+       * passed on its own policies and there is nothing to record.
+       */
+      counterAuthorizedSkus?: string[];
+    }
   | (PharmacySaleBlocker & {
       allowed: false;
       /**
@@ -65,9 +74,29 @@ export function evaluatePharmacySale(
   items: Array<{ sku: string; qty: number }>,
   policies: PharmacyPolicyForDecision[],
   approvedAssessmentSkus: ReadonlySet<string> = new Set(),
-  channel: PharmacySaleChannel = "online"
+  channel: PharmacySaleChannel = "online",
+  /**
+   * SKUs a licensed pharmacist authorised **in person at the register**
+   * (`9.29`). This is how an ordinary pharmacy works: the pharmacist is
+   * standing at the counter, looks at the box, asks the customer two questions
+   * and says yes — the evidence worth keeping is who authorised what, not a
+   * transcript.
+   *
+   * Ignored unless `channel === "counter"`: there is nobody at a register on an
+   * online order, so an online caller can never gain this exemption even by
+   * passing a set.
+   *
+   * It clears the policy-driven blocks, PRESCRIPTION_REQUIRED included — a
+   * pharmacist reading the prescription is exactly who is meant to decide that.
+   * It deliberately does NOT clear PHARMACY_QUANTITY_LIMIT_EXCEEDED: that cap is
+   * a number the shop configured for itself, and selling past it is a policy
+   * edit, not a counter decision.
+   */
+  counterPharmacistAuthorizedSkus: ReadonlySet<string> = new Set()
 ): PharmacySaleDecision {
   const bySku = new Map(policies.map((policy) => [policy.productSku, policy]));
+  const counterAuthorized = (sku: string) =>
+    channel === "counter" && counterPharmacistAuthorizedSkus.has(sku);
   const quantityBySku = new Map<string, number>();
   for (const item of items) quantityBySku.set(item.sku, (quantityBySku.get(item.sku) ?? 0) + item.qty);
 
@@ -80,6 +109,10 @@ export function evaluatePharmacySale(
   for (const [sku, qty] of quantityBySku) {
     const policy = bySku.get(sku);
     if (!policy || policy.status !== "APPROVED") {
+      // An unreviewed SKU is not a dead end at the counter any more: a licensed
+      // pharmacist may take responsibility for this one hand-over. The policy
+      // row still has to be reviewed before the product sells itself.
+      if (counterAuthorized(sku)) continue;
       blockers.push({ status: "PHARMACY_POLICY_UNKNOWN", sku, salePolicy: "UNKNOWN" });
       continue;
     }
@@ -94,6 +127,9 @@ export function evaluatePharmacySale(
       continue;
     }
     if (policy.salePolicy === "DIRECT_SALE") continue;
+    // The pharmacist at the register clears every policy-driven block below,
+    // including PRESCRIPTION_REQUIRED. The quantity cap above is already past.
+    if (counterAuthorized(sku)) continue;
     if (
       (policy.salePolicy === "PHARMACIST_APPROVAL" ||
         policy.salePolicy === "SHORT_SAFETY_CHECK" ||

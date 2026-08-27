@@ -143,7 +143,10 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
   const unguarded: string[] = [];
   const unlimited: string[] = [];
   for (const file of routes) {
-    const rel = path.relative(WEB, file);
+    // path.relative() คืน `\` บน Windows แต่ PUBLIC_BY_DESIGN เขียนด้วย `/` —
+    // ไม่ normalize แล้วเทสจะแดงบนเครื่อง Windows ทุกครั้งโดยที่ route ถูกต้องอยู่แล้ว
+    // (เทสที่แดงเสมอ = เทสที่ทุกคนเลิกอ่าน ซึ่งอันตรายกว่าไม่มีเทส)
+    const rel = path.relative(WEB, file).split(path.sep).join("/");
     const src = readFileSync(file, "utf8");
     const reason = PUBLIC_BY_DESIGN.get(rel);
     if (reason) {

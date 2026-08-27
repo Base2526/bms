@@ -1244,6 +1244,11 @@ export type PosSaleInput = {
   discountApprovedBy?: string | null;
   discountReason?: string | null;
   pharmacyApprovedAssessmentId?: string | null;
+  /**
+   * เภสัชกรที่กด PIN อนุมัติจ่ายยาที่เครื่อง (9.29) — route ตรวจ PIN + ใบอนุญาตมาแล้ว
+   * createOrder ตรวจใบอนุญาตซ้ำในทรานแซกชันและเขียนหลักฐานเอง
+   */
+  pharmacistCounterAuthorization?: { pharmacistUserId: string; note?: string | null } | null;
 };
 
 /** จำนวนและไซซ์ที่ resolve จาก catalog แล้ว; client มีหน้าที่ส่งเฉพาะเลข serial */
@@ -1917,6 +1922,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     discountApprovedBy: input.discountApprovedBy ?? null,
     discountReason: input.discountReason ?? null,
     pharmacyApprovedAssessmentId: input.pharmacyApprovedAssessmentId ?? null,
+    pharmacistCounterAuthorization: input.pharmacistCounterAuthorization ?? null,
   }).catch(async (err: any) => {
     // ชนคีย์กันบิลซ้ำ = อีกคำขอสร้างบิลเดียวกันไปแล้ว (23505 = unique_violation)
     if (err?.code === "23505") return null;

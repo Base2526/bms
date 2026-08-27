@@ -42,6 +42,7 @@ import {
 } from "@/lib/bms/productPacks";
 import {
   getPharmacyPolicyReadiness,
+  setPharmacyCounterSettings,
   listProductsNeedingPolicyReview,
 } from "@/lib/bms/pharmacy/policyReadiness";
 
@@ -366,6 +367,30 @@ export const bmsPosResolvers = {
         await audit(ctx, "pos.shift.open", result.shift.id, { deviceId: args.deviceId });
       }
       return result;
+    },
+
+    /**
+     * ตั้งค่าการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29)
+     *
+     * ใช้สิทธิ์ `pharmacy.policy.review` (สิทธิ์เดียวกับการอนุมัตินโยบายรายสินค้า)
+     * เพราะสองสวิตช์นี้คือ "ใครปล่อยยาออกจากร้านได้บ้าง" ในระดับร้าน ไม่ใช่ค่าตั้ง
+     * ของเครื่องขาย · แคชเชียร์เปิด-ปิดเองไม่ได้
+     */
+    async bmsSetPharmacyCounterSettings(
+      _p: unknown,
+      args: { counterAuthorization?: boolean | null; blockShiftOnUnreviewed?: boolean | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.policy.review");
+      const readiness = await setPharmacyCounterSettings(getTenantId(ctx), {
+        counterAuthorization: args.counterAuthorization ?? null,
+        blockShiftOnUnreviewed: args.blockShiftOnUnreviewed ?? null,
+      });
+      await audit(ctx, "pharmacy.counter_settings_set", getTenantId(ctx), {
+        counterAuthorization: readiness.counterAuthorization,
+        blockShiftOnUnreviewed: readiness.blockShiftOnUnreviewed,
+      });
+      return readiness;
     },
 
     async bmsClosePosShift(

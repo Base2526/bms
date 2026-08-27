@@ -104,6 +104,15 @@ export type CreateOrderInput = {
   preferredCarrier?: string | null;
   /** Server-derived only. A customer/model must never supply this id. */
   pharmacyApprovedAssessmentId?: string | null;
+  /**
+   * เภสัชกรที่กด PIN อนุมัติจ่ายยาที่เครื่องขาย (9.29) — POS เท่านั้น
+   *
+   * PIN ถูกตรวจที่ route แล้ว (รูปแบบเดียวกับผู้อนุมัติส่วนลด) ที่นี่ยังตรวจใบอนุญาต
+   * ซ้ำในทรานแซกชันเดียวกับที่ขยับสต็อก และเขียนหลักฐานลง
+   * `bms_pos_pharmacist_authorizations` ในทรานแซกชันเดียวกันนั้น
+   * · ห้ามรับ id นี้จาก client โดยไม่ตรวจ PIN
+   */
+  pharmacistCounterAuthorization?: { pharmacistUserId: string; note?: string | null } | null;
   /** สาขาที่ตัดสต็อก — ไม่ระบุ = สาขาเริ่มต้นของร้าน (7.84) */
   locationId?: string | null;
   /** POS เท่านั้น — เครื่อง/กะ/คนขาย และคีย์กันบิลซ้ำ (7.87) */
@@ -431,7 +440,10 @@ export async function createOrder(
       // the gate needs: it only refuses when the approval names a DIFFERENT
       // patient. Passing it here keeps the check inside the same locked read of
       // the assessment row.
-      input.customerId ?? null
+      input.customerId ?? null,
+      // การอนุมัติที่เคาน์เตอร์ใช้ได้กับช่องทาง POS เท่านั้น — ตัดที่นี่อีกชั้นหนึ่ง
+      // ไม่ต้องพึ่ง route ใดเลย (checkPharmacySaleInTx ก็ตัดด้วย channel เองอีกที)
+      input.channel === "pos" ? input.pharmacistCounterAuthorization ?? null : null
     );
     if (!pharmacySale.allowed) {
       await client.query("ROLLBACK");
@@ -854,6 +866,68 @@ export async function createOrder(
         orderId,
         "system:pharmacy-order"
       );
+    }
+
+    // ---- หลักฐานการอนุมัติที่เคาน์เตอร์ (9.29) --------------------------
+    // อยู่ในทรานแซกชันเดียวกับบิลที่มันอนุมัติ: บิลที่ commit แล้วจะไม่มีทางไม่มี
+    // หลักฐานว่าเภสัชกรคนไหนปล่อยยาออกไป (กฎเดียวกับ audit ของการเขียนที่สำคัญ)
+    const counterAuthorizedSkus = pharmacySale.allowed ? pharmacySale.counterAuthorizedSkus ?? [] : [];
+    if (counterAuthorizedSkus.length > 0 && input.pharmacistCounterAuthorization) {
+      const pharmacistUserId = input.pharmacistCounterAuthorization.pharmacistUserId;
+      const note = (input.pharmacistCounterAuthorization.note ?? "").trim() || null;
+      const authorizedSet = new Set(counterAuthorizedSkus);
+      // นโยบายที่ถูกปลด ณ เวลานั้น — อ่านสด ไม่ใช่ค่าที่ client ส่งมา และเก็บเป็น
+      // snapshot เพราะร้านแก้ policy ทีหลังต้องไม่เปลี่ยนความหมายของหลักฐานเดิม
+      const policyNow = await client.query<{ product_sku: string; sale_policy: string; status: string }>(
+        `SELECT product_sku, sale_policy, status
+           FROM bms_pharmacy_product_policies
+          WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
+        [tenantId, [...authorizedSet]]
+      );
+      const policyBySku = new Map(policyNow.rows.map((row) => [row.product_sku, row]));
+      // รวมจำนวนต่อ (sku, size) — บิลใบเดียวถือ SKU+ไซซ์เดียวกันได้หลายหน่วยขาย (9.21)
+      // และหลักฐานควรบอกว่า "จ่ายไปเท่าไร" ไม่ใช่บอกทีละบรรทัดของหน่วยขาย
+      const authorizedQty = new Map<string, { sku: string; size: string; qty: number }>();
+      for (const it of items) {
+        if (!authorizedSet.has(it.sku)) continue;
+        const key = `${it.sku}\u0000${it.size}`;
+        const cur = authorizedQty.get(key);
+        if (cur) cur.qty += it.qty;
+        else authorizedQty.set(key, { sku: it.sku, size: it.size, qty: it.qty });
+      }
+      for (const line of authorizedQty.values()) {
+        const policy = policyBySku.get(line.sku);
+        await client.query(
+          `INSERT INTO bms_pos_pharmacist_authorizations
+             (tenant_id, order_id, product_sku, size, qty, sale_policy, policy_status, pharmacist_user_id, note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (tenant_id, order_id, product_sku, size) DO NOTHING`,
+          [tenantId, orderId, line.sku, line.size, line.qty,
+            policy?.sale_policy ?? "UNKNOWN", policy?.status ?? "MISSING", pharmacistUserId, note]
+        );
+      }
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1, $2, 'pharmacy.counter_authorization', $3, $4)`,
+        [tenantId, `user:${pharmacistUserId}`, orderId, JSON.stringify({
+          items: [...authorizedQty.values()].map((line) => ({
+            sku: line.sku, size: line.size, qty: line.qty,
+            salePolicy: policyBySku.get(line.sku)?.sale_policy ?? "UNKNOWN",
+          })),
+          cashierUserId: input.cashierUserId ?? null,
+          hasNote: Boolean(note),
+        })]
+      );
+      // เภสัชกรที่อนุมัติคือเภสัชกรที่อยู่หน้าร้านจริงในกะนั้น · กะที่เปิดโดยแคชเชียร์
+      // เดิมไม่มีใครบันทึกไว้เลย (7.97 บันทึกเฉพาะกรณีคนเปิดกะเป็นเภสัชกรเอง)
+      // เขียนเฉพาะเมื่อยังว่าง — ไม่เขียนทับคนที่ลงเวรไว้ตอนเปิดกะ
+      if (input.posShiftId) {
+        await client.query(
+          `UPDATE bms_pos_shifts SET pharmacist_user_id = $3
+            WHERE tenant_id = $1 AND id = $2 AND pharmacist_user_id IS NULL`,
+          [tenantId, input.posShiftId, pharmacistUserId]
+        );
+      }
     }
 
     await reserveCustomerCouponInTx(client, tenantId, customerId, appliedCouponId, orderId);
