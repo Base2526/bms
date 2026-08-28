@@ -21,7 +21,7 @@ import {
 } from "@/lib/bms/pharmacy/testHarness";
 import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
 import { clarifyAmbiguousStaffRequest } from "@/lib/bms/staffAssistantClarification";
-import { searchAssistantKnowledge, type AssistantLocale } from "@/lib/bms/assistantKnowledge";
+import { SYSTEM_GUIDES, searchAssistantKnowledge, type AssistantLocale } from "@/lib/bms/assistantKnowledge";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 
 const STAFF_SYSTEM = [
@@ -33,7 +33,7 @@ const STAFF_SYSTEM = [
   "ถ้าคำขอกำกวมจนขอบเขตข้อมูล ช่วงเวลา เป้าหมาย หรือการกระทำอาจเปลี่ยน ห้ามเดาหรือเลือกค่า default ให้ถามยืนยันสั้น ๆ ก่อนเรียกทูล โดยเฉพาะคำว่า 'ทั้งหมด' ต้องแยกทุกช่วงเวลาออกจากทุกรายการ และ 'รายการขาย' ต้องแยกสินค้าออกจากออร์เดอร์",
   "เมื่อผู้ใช้ยืนยันว่าต้องการยอดขายหรือสินค้าขายดีตั้งแต่เริ่มขาย/เปิดร้าน/ทุกช่วงเวลา ให้เรียกทูลด้วย scope='all_time' และไม่ส่ง from/to",
   "เมื่อผู้ใช้ถามว่าระบบทำอะไรได้ ให้เรียก search_system_capabilities และแยกสถานะระบบออกจากการตั้งค่าจริงของร้านเสมอ",
-  "เมื่อผู้ใช้ถามวิธีใช้หน้า เมนู หรือ workflow ให้เรียก search_system_guides และตอบเฉพาะขั้นตอนที่ทูลยืนยันได้ พร้อมบอก route และสิทธิ์ที่ขาดถ้ามี",
+  "เมื่อผู้ใช้ถามวิธีใช้หน้า เมนู หรือ workflow ให้เรียก search_system_guides และตอบเฉพาะขั้นตอนที่ทูลยืนยันได้ เป็นลำดับเลข 1, 2, 3 ที่ทำตามได้ พร้อมบอก route และสิทธิ์ที่ขาดถ้ามี",
   "คำว่า 'คน' หรือชื่อบุคคลอาจหมายถึงพนักงานหรือลูกค้า ถ้าบริบทไม่ชัดให้ถามแยกก่อน ห้ามค้นทั้งสองกลุ่มหรือเปิดเผยว่าบัญชีมีอยู่หรือไม่โดยไม่มีสิทธิ์",
   "แยกเสมอว่า BMS รองรับสะสมแต้ม ร้านนี้เปิดโปรแกรมหรือยัง และลูกค้าคนหนึ่งมีแต้มเท่าไร: ใช้ capability, get_loyalty_program_status และ get_loyalty_points ตามลำดับ ห้ามแทนกัน",
   "คำถามคูปองต้องแยกคูปองที่ร้านเปิดอยู่จากคูปองที่ลูกค้าคนหนึ่งมีสิทธิ์ใช้จริง; ถ้ายังไม่ระบุลูกค้าหรือยอดตะกร้า ให้บอกข้อจำกัดหรือถามให้ชัดก่อน",
@@ -78,6 +78,7 @@ function deterministicKnowledgeReply(
   if (!knowledge.length) return null;
   const visible = knowledge.filter((entry) => entry.accessible).slice(0, 3);
   const selected = visible.length ? visible : knowledge.slice(0, 3);
+  const guideById = new Map(SYSTEM_GUIDES.map((guide) => [guide.id, guide]));
   // Page-context entries are labelled as page guidance, never as an answer to the question.
   const heading = matchedQuery
     ? locale === "en"
@@ -86,12 +87,19 @@ function deterministicKnowledgeReply(
     : locale === "en"
       ? "No verified entry matched that question. These guides cover the page you are on:"
       : "ยังไม่พบข้อมูลที่ยืนยันได้ตรงกับคำถามนี้ — คู่มือด้านล่างคือของหน้าที่คุณเปิดอยู่:";
-  const lines = selected.map((entry) => {
+  const lines = selected.flatMap((entry) => {
     const status = entry.capabilityStatus ? ` [${entry.capabilityStatus}]` : "";
     const access = entry.accessible
       ? ""
       : locale === "en" ? " (your account cannot open this page)" : " (บัญชีนี้เปิดหน้านี้ไม่ได้)";
-    return `- ${entry.title}${status}: ${entry.summary}${access}`;
+    const guide = entry.kind === "guide" ? guideById.get(entry.id) : null;
+    const steps = guide && entry.accessible
+      ? guide.steps[locale].map((step, index) => `  ${index + 1}. ${step}`)
+      : [];
+    const route = entry.accessible && entry.route
+      ? locale === "en" ? `  Open: ${entry.route}` : `  เปิดหน้าทำงาน: ${entry.route}`
+      : null;
+    return [`- ${entry.title}${status}: ${entry.summary}${access}`, ...steps, ...(route ? [route] : [])];
   });
   const ending = locale === "en"
     ? "Live shop data and actions still require an available AI provider and the relevant backend tool."

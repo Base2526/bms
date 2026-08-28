@@ -96,6 +96,30 @@ test("loyalty and coupon questions retrieve separate capability and guide knowle
   assert.ok(coupons.some((entry) => entry.id === "coupons.check-availability"));
 });
 
+test("common staff how-to questions resolve to actionable dedicated guides", () => {
+  const expected = new Map([
+    ["ร้านนี้คำนวณแต้มอย่างไร", "loyalty.calculate-points"],
+    ["แต้มคิดก่อนหรือหลังหักส่วนลด", "loyalty.calculate-points"],
+    ["สร้างคูปองและส่งให้ลูกค้ายังไง", "coupons.create-and-send"],
+    ["เพิ่มพนักงานและกำหนดสิทธิ์ยังไง", "users.add-and-authorize"],
+    ["ตั้งราคาส่งหรือโปรโมชันซื้อแถมยังไง", "products.pricing-promotions"],
+    ["ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", "inventory.stock-sale-blockers"],
+    ["สินค้าที่จองไว้เป็นของออเดอร์ไหน", "inventory.reservation-owners"],
+    ["ทำไมออเดอร์ยังเป็น Pending", "orders.pending-troubleshoot"],
+    ["แก้ที่อยู่จัดส่งของลูกค้ายังไง", "customers.manage-address"],
+    ["ส่งสินค้าและคูปองในแชทยังไง", "inbox.sell-from-conversation"],
+    ["ทำไมจองขนส่งไม่สำเร็จ", "shipping.booking-troubleshoot"],
+    ["ทำไมกดปุ่มนี้ไม่ได้", "permissions.action-unavailable"],
+    ["ถ้าทำรายการซ้ำ ระบบจะบันทึกซ้ำไหม", "assistant.retry-safely"],
+    ["ข้อมูลใน Dashboard อัปเดตล่าสุดเมื่อไร", "dashboard.data-freshness"],
+  ]);
+  for (const [query, guideId] of expected) {
+    const results = searchAssistantKnowledge(query, { locale: "th", kind: "guide", limit: 10 });
+    const hit = results.find((entry) => entry.id === guideId);
+    assert.ok(hit?.matchedQuery, `${query} did not match ${guideId}`);
+  }
+});
+
 test("search reports missing access instead of hiding product capability", () => {
   const denied = searchAssistantKnowledge("ค้นพนักงาน", { locale: "th", permissions: new Set() });
   const users = denied.find((entry) => entry.id === "users.access");
