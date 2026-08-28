@@ -1139,6 +1139,29 @@ export default function PosPage() {
   const settleApproverSelectRef = useRef<HTMLSelectElement>(null);
   const settleApproverPinRef = useRef<HTMLInputElement>(null);
   const noSaleReasonRef = useRef<HTMLInputElement>(null);
+  // เพิ่มทีหลัง (แก้ "message เด้งแต่ต้องกวาดตาหาช่องเอง") — ผู้ขาย+PIN แถบบนใช้ร่วมกัน
+  // ทุกแอ็กชันที่เช็ค cashierId/pin เป็นด่านแรก (12+ จุด) จึงมีแค่ ref เดียวของแต่ละช่อง
+  const cashierSelectRef = useRef<HTMLSelectElement>(null);
+  const pinRef = useRef<HTMLInputElement>(null);
+  const voidReasonRef = useRef<HTMLInputElement>(null);
+  const voidApproverSelectRef = useRef<HTMLSelectElement>(null);
+  const voidApproverPinRef = useRef<HTMLInputElement>(null);
+  const blindReasonRef = useRef<HTMLInputElement>(null);
+  const blindApproverSelectRef = useRef<HTMLSelectElement>(null);
+  const blindApproverPinRef = useRef<HTMLInputElement>(null);
+  const discountAmountRef = useRef<HTMLInputElement>(null);
+  const discountReasonRef = useRef<HTMLInputElement>(null);
+  const discountApproverSelectRef = useRef<HTMLSelectElement>(null);
+  const discountApproverPinRef = useRef<HTMLInputElement>(null);
+  const pharmacistAuthSelectRef = useRef<HTMLSelectElement>(null);
+  const pharmacistAuthPinRef = useRef<HTMLInputElement>(null);
+  // ฟอร์มคืนสินค้ากางได้ทีละใบเท่านั้น (returnPanelOrderId) — ref ชุดเดียวจึงพอ
+  // ใช้ร่วมกับทุกแถวได้ เพราะมีแค่ panel เดียวอยู่ใน DOM ณ เวลาใดเวลาหนึ่ง
+  const returnReasonSelectRef = useRef<HTMLSelectElement>(null);
+  const returnNoteInputRef = useRef<HTMLInputElement>(null);
+  const refundMethodSelectRef = useRef<HTMLSelectElement>(null);
+  const approvalUserSelectRef = useRef<HTMLSelectElement>(null);
+  const approvalPinRef = useRef<HTMLInputElement>(null);
   // ---- ส่งใบเสร็จ (8.6) ----
   // ---- ค่าบริการ/ค่าถุง (8.6) ----
   // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
@@ -1627,6 +1650,7 @@ export default function PosPage() {
     const phone = enrollPhone.trim();
     if (!phone || !cashierId || !pin) {
       setNotice({ type: "error", text: "ต้องเลือกพนักงาน + ใส่ PIN ก่อนสมัครสมาชิก" });
+      if (phone) focusCashierOrPin();
       return;
     }
     try {
@@ -1946,7 +1970,7 @@ export default function PosPage() {
       setNotice({ type: "error", text: "ตั้งชื่อบิลก่อน เช่น ชื่อลูกค้า" });
       return;
     }
-    if (!cashierId) { setNotice({ type: "error", text: "เลือกผู้ขายก่อน" }); return; }
+    if (!cashierId) { setNotice({ type: "error", text: "เลือกผู้ขายก่อน" }); focusLater(cashierSelectRef); return; }
     try {
       const res = await fetch("/api/pos/park", {
         method: "POST",
@@ -2047,7 +2071,7 @@ export default function PosPage() {
 
   async function requestPharmacyReviewFromPos() {
     if (!session?.shift) { setNotice({ type: "error", text: "ยังไม่ได้เปิดกะ" }); return; }
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     if (cart.length === 0) { setNotice({ type: "error", text: "ตะกร้าว่าง" }); return; }
     setPharmacyReviewBusy(true);
     setNotice(null);
@@ -2165,7 +2189,7 @@ export default function PosPage() {
   }
 
   async function doCashMovement() {
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     if (!cashMoveAmount) { setNotice({ type: "error", text: "ใส่จำนวนเงิน" }); focusLater(cashMoveAmountRef); return; }
     if (!cashMoveReason.trim()) { setNotice({ type: "error", text: "ใส่เหตุผล" }); focusLater(cashMoveReasonRef); return; }
     if (cashMoveDir === "IN" && !cashMoveExternalConfirmed) {
@@ -2278,7 +2302,7 @@ export default function PosPage() {
   }
 
   async function createExpense() {
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     if (!expenseDescription.trim()) {
       setNotice({ type: "error", text: "ใส่รายละเอียด" }); focusLater(expenseDescriptionRef); return;
     }
@@ -2640,7 +2664,7 @@ export default function PosPage() {
   }
 
   async function doDepositAction(action: "take" | "add" | "settle" | "close") {
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     if (!depositOrderId.trim()) { setNotice({ type: "error", text: "เลือกบิลที่ต้องการทำรายการมัดจำ" }); return; }
     const amount = Number(depositAmount);
     if (action !== "close" && (!Number.isFinite(amount) || amount <= 0)) {
@@ -2718,9 +2742,13 @@ export default function PosPage() {
 
   async function doVoidSale(orderId: string) {
     if (!confirmDiscardBlindReturnDraft("ยกเลิกบิลนี้")) return;
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); return; }
-    if (!voidReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่ยกเลิก" }); return; }
-    if (!voidApproverId || !voidApproverPin) { setNotice({ type: "error", text: "ยกเลิกบิลต้องมีหัวหน้าอนุมัติ" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
+    if (!voidReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่ยกเลิก" }); focusLater(voidReasonRef); return; }
+    if (!voidApproverId || !voidApproverPin) {
+      setNotice({ type: "error", text: "ยกเลิกบิลต้องมีหัวหน้าอนุมัติ" });
+      if (!voidApproverId) focusLater(voidApproverSelectRef); else focusLater(voidApproverPinRef);
+      return;
+    }
     try {
       const res = await fetch("/api/pos/void", {
         method: "POST",
@@ -2752,7 +2780,7 @@ export default function PosPage() {
   // ไม่สร้างเอกสารภาษีใบใหม่ — อ่านตัวเลขจากใบกำกับที่ออกไปแล้ว
   // ส่งไม่สำเร็จไม่กระทบการขายที่จบไปแล้ว จอแค่บอกว่าส่งไม่ได้
   async function doSendReceipt(orderId: string, channel: "email" | "line") {
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     setSendingReceipt(true);
     try {
       const res = await fetch("/api/pos/send-receipt", {
@@ -2782,9 +2810,13 @@ export default function PosPage() {
   // ไม่ต้องมีจอกรอกแยก · ราคาที่คืนใช้ราคาป้ายวันนี้ ซึ่ง server บังคับเป็นเพดานอีกชั้น
   async function doBlindReturn() {
     if (cart.length === 0) { setNotice({ type: "error", text: "ยิงของที่ลูกค้าเอามาคืนใส่ตะกร้าก่อน" }); return; }
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
-    if (!blindReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผล" }); return; }
-    if (!blindApproverId || !blindApproverPin) { setNotice({ type: "error", text: "ต้องมีหัวหน้าอนุมัติ" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
+    if (!blindReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผล" }); focusLater(blindReasonRef); return; }
+    if (!blindApproverId || !blindApproverPin) {
+      setNotice({ type: "error", text: "ต้องมีหัวหน้าอนุมัติ" });
+      if (!blindApproverId) focusLater(blindApproverSelectRef); else focusLater(blindApproverPinRef);
+      return;
+    }
     try {
       const signature = JSON.stringify({
         shiftId: session?.shift?.id ?? null,
@@ -2849,7 +2881,7 @@ export default function PosPage() {
   // ESC/POS ถ้าต่อเครื่องพิมพ์ไว้ · ต่อให้สั่งไม่ได้ บันทึกก็ต้องเกิด เพราะพนักงาน
   // จะเปิดด้วยคันโยกใต้ลิ้นชักอยู่ดี และเราต้องการร่องรอยมากกว่าต้องการการควบคุม
   async function doNoSale() {
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     if (!noSaleReason.trim()) {
       setNotice({ type: "error", text: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" });
       focusLater(noSaleReasonRef);
@@ -2875,7 +2907,7 @@ export default function PosPage() {
   // ---- สรุปกะ X/Z (7.97) ---------------------------------------------
 
   async function loadShiftReport() {
-    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     try {
       const qs = new URLSearchParams({ cashierUserId: cashierId, pin });
       const res = await fetch(`/api/pos/shift-report?${qs}`, { headers: authHeaders });
@@ -2894,11 +2926,11 @@ export default function PosPage() {
    */
   function applyManualDiscount() {
     const amount = Math.round(Number(discountDraft) * 100) / 100;
-    if (!Number.isFinite(amount) || amount <= 0) { setDiscountError("จำนวนเงินไม่ถูกต้อง"); return; }
-    if (amount > total) { setDiscountError("ส่วนลดเกินยอดสินค้า"); return; }
-    if (!discountReasonDraft.trim()) { setDiscountError("ต้องระบุเหตุผล"); return; }
-    if (!discountApproverId) { setDiscountError("เลือกผู้อนุมัติก่อน"); return; }
-    if (!discountApproverPin) { setDiscountError("ใส่ PIN ผู้อนุมัติ"); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { setDiscountError("จำนวนเงินไม่ถูกต้อง"); focusLater(discountAmountRef); return; }
+    if (amount > total) { setDiscountError("ส่วนลดเกินยอดสินค้า"); focusLater(discountAmountRef); return; }
+    if (!discountReasonDraft.trim()) { setDiscountError("ต้องระบุเหตุผล"); focusLater(discountReasonRef); return; }
+    if (!discountApproverId) { setDiscountError("เลือกผู้อนุมัติก่อน"); focusLater(discountApproverSelectRef); return; }
+    if (!discountApproverPin) { setDiscountError("ใส่ PIN ผู้อนุมัติ"); focusLater(discountApproverPinRef); return; }
     const approver = (session?.cashiers ?? []).find((c) => c.id === discountApproverId);
     setApprovedDiscount({
       amount,
@@ -2919,10 +2951,14 @@ export default function PosPage() {
    * สิทธิ์/ใบอนุญาต/PIN ตรวจจริงที่ server ตอนกดรับเงิน
    */
   function applyPharmacistAuthorization() {
-    if (!pharmacistAuthId) { setPharmacistAuthError("เลือกเภสัชกรก่อน"); return; }
+    if (!pharmacistAuthId) { setPharmacistAuthError("เลือกเภสัชกรก่อน"); focusLater(pharmacistAuthSelectRef); return; }
     const isSelf = pharmacistAuthId === cashierId;
     const usedPin = isSelf ? pin : pharmacistAuthPin;
-    if (!usedPin) { setPharmacistAuthError(isSelf ? "ใส่ PIN ของตัวเองที่ช่องด้านบน" : "ใส่ PIN ของเภสัชกร"); return; }
+    if (!usedPin) {
+      setPharmacistAuthError(isSelf ? "ใส่ PIN ของตัวเองที่ช่องด้านบน" : "ใส่ PIN ของเภสัชกร");
+      focusLater(isSelf ? pinRef : pharmacistAuthPinRef);
+      return;
+    }
     const who = (session?.cashiers ?? []).find((c) => c.id === pharmacistAuthId);
     if (who && !who.isPharmacist) {
       setPharmacistAuthError("คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต");
@@ -3653,7 +3689,11 @@ export default function PosPage() {
     setSplitMode(false);
   }
 
-  function focusLater<T extends HTMLElement>(ref: { current: T | null }) {
+  // ไม่ generic ตั้งใจ — focusCashierOrPin() ต้องเลือกระหว่าง ref ของ <select> กับ
+  // <input> ที่ runtime (แล้วแต่ว่าขาดช่องไหน) ผูก T เดียวจากค่าที่เลือกด้วย ternary
+  // ไม่ได้เพราะเป็นคนละชนิด element กัน — current เป็น readonly จึง covariant ลง
+  // HTMLElement ได้ปลอดภัยอยู่แล้วโดยไม่ต้องพึ่ง generic
+  function focusLater(ref: { current: HTMLElement | null }) {
     window.requestAnimationFrame(() => {
       const field = ref.current;
       if (!field) return;
@@ -3666,6 +3706,12 @@ export default function PosPage() {
     if (event.target instanceof HTMLElement) {
       event.target.removeAttribute("aria-invalid");
     }
+  }
+
+  // ผู้ขาย+PIN แถบบนเป็นด่านแรกของ 13+ แอ็กชัน — รวมไว้ที่เดียวกันหนึ่งจุด
+  // ไม่งั้นแก้ที่หนึ่งแล้วอีก 12 จุดยังลืมโฟกัสให้เหมือนเดิม
+  function focusCashierOrPin() {
+    focusLater(cashierId ? pinRef : cashierSelectRef);
   }
 
   function changeQty(key: string, delta: number) {
@@ -3748,6 +3794,13 @@ export default function PosPage() {
     return `[${reasonCode}] ${note}`;
   }
 
+  // มีฟอร์มคืนสินค้ากางได้ทีละใบ (returnPanelOrderId) — ref คู่นี้จึงชี้ไปที่ช่องของ
+  // ใบที่กำลังเปิดอยู่เสมอ ไม่ต้องมี ref แยกต่อบิล
+  function focusMissingReturnReason(orderId: string) {
+    if (!(returnReasonCodes[orderId] ?? "").trim()) focusLater(returnReasonSelectRef);
+    else focusLater(returnNoteInputRef);
+  }
+
   function ensureReturnOperatorReady(actionLabel: string): boolean {
     if (busy) return false;
     if (!cashierId || !pin) {
@@ -3755,6 +3808,7 @@ export default function PosPage() {
         type: "error",
         text: `เลือกพนักงานและใส่ PIN ก่อน${actionLabel}`,
       });
+      focusCashierOrPin();
       return false;
     }
     return true;
@@ -4369,6 +4423,7 @@ export default function PosPage() {
     const note = buildReturnNote(orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนคืนบิล" });
+      focusMissingReturnReason(orderId);
       return;
     }
     const refundPaymentOptions = getRefundPaymentOptions(row);
@@ -4380,6 +4435,7 @@ export default function PosPage() {
         : null;
     if (refundPaymentOptions.length > 1 && !preferredRefundMethod) {
       setNotice({ type: "error", text: "บิลนี้จ่ายหลายช่องทาง — เลือกช่องทางคืนเงินก่อน" });
+      focusLater(refundMethodSelectRef);
       return;
     }
     if (!window.confirm("ยืนยันคืนสินค้าที่เหลือทั้งบิล? เงินสดจะถือว่าคืนแล้ว ส่วนบัตร/QR/วอลเล็ทต้องยืนยัน settlement อีกครั้ง")) return;
@@ -4470,6 +4526,7 @@ export default function PosPage() {
     const note = buildReturnNote(row.orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนคืนรายการ" });
+      focusMissingReturnReason(row.orderId);
       return;
     }
     const lines = selectedReturnLines(row.lines, returnDrafts[row.orderId] ?? {});
@@ -4486,6 +4543,7 @@ export default function PosPage() {
         : null;
     if (refundPaymentOptions.length > 1 && !preferredRefundMethod) {
       setNotice({ type: "error", text: "บิลนี้จ่ายหลายช่องทาง — เลือกช่องทางคืนเงินก่อน" });
+      focusLater(refundMethodSelectRef);
       return;
     }
     if (!window.confirm(`ยืนยันคืนบางรายการ? ระบบจะตรวจราคาส่ง/โปรจากจำนวนที่เหลือใหม่ แล้วคืนเฉพาะส่วนต่างจากยอดที่จ่ายเดิม`)) return;
@@ -4577,6 +4635,9 @@ export default function PosPage() {
     const approverPin = approvalUserId ? approvalPin : pin;
     if (!approverId || !approverPin) {
       setNotice({ type: "error", text: "กรุณาระบุผู้มีสิทธิ์คืนเงินและ PIN" });
+      if (!approverId) focusLater(approvalUserSelectRef);
+      else if (approvalUserId) focusLater(approvalPinRef);
+      else focusLater(pinRef);
       return;
     }
     const externalRef = (settlementRefs[allocation.id] ?? "").trim();
@@ -4634,6 +4695,7 @@ export default function PosPage() {
     const note = buildReturnNote(row.orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนเปลี่ยนสินค้า" });
+      focusMissingReturnReason(row.orderId);
       return;
     }
     const lines = selectedReturnLines(row.lines, returnDrafts[row.orderId] ?? {});
@@ -4650,6 +4712,7 @@ export default function PosPage() {
         : null;
     if (refundPaymentOptions.length > 1 && !preferredRefundMethod) {
       setNotice({ type: "error", text: "บิลนี้จ่ายหลายช่องทาง — เลือกช่องทางคืนเงินก่อน" });
+      focusLater(refundMethodSelectRef);
       return;
     }
     if (replacingSaleCart && !window.confirm(
@@ -4985,6 +5048,7 @@ export default function PosPage() {
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <select
+            ref={cashierSelectRef}
             value={cashierId}
             onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
             /* 16px ไม่ใช่ 13px — iOS Safari ซูมหน้าจอเข้าเองตอนโฟกัสช่องที่ฟอนต์เล็กกว่า
@@ -5003,6 +5067,7 @@ export default function PosPage() {
             ))}
           </select>
           <input
+            ref={pinRef}
             type="password"
             inputMode="numeric"
             value={pin}
@@ -5116,6 +5181,7 @@ export default function PosPage() {
               </div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6100" }}>เหตุผลคืนไม่มีใบเสร็จ</div>
               <input
+                ref={blindReasonRef}
                 value={blindReason}
                 onChange={(e) => setBlindReason(e.target.value)}
                 maxLength={300}
@@ -5125,6 +5191,7 @@ export default function PosPage() {
               <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6100" }}>ผู้อนุมัติคืนไม่มีใบเสร็จ</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <select
+                  ref={blindApproverSelectRef}
                   value={blindApproverId}
                   onChange={(e) => setBlindApproverId(e.target.value)}
                   style={{ padding: 9, fontSize: 13, minWidth: 170 }}
@@ -5135,6 +5202,7 @@ export default function PosPage() {
                   ))}
                 </select>
                 <input
+                  ref={blindApproverPinRef}
                   type="password"
                   inputMode="numeric"
                   value={blindApproverPin}
@@ -5158,6 +5226,7 @@ export default function PosPage() {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
             <span style={{ color: "#666" }}>ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):</span>
             <select
+              ref={approvalUserSelectRef}
               value={approvalUserId}
               onChange={(e) => setApprovalUserId(e.target.value)}
               style={{ padding: 8, fontSize: 13, minWidth: 160 }}
@@ -5171,6 +5240,7 @@ export default function PosPage() {
               ))}
             </select>
             <input
+              ref={approvalPinRef}
               type="password"
               inputMode="numeric"
               value={approvalPin}
@@ -6614,6 +6684,7 @@ export default function PosPage() {
                       <div className="pos-ret-expand">
                         <div className="pos-ret-reason">
                           <select
+                            ref={returnReasonSelectRef}
                             value={returnReasonCodes[row.orderId!] ?? ""}
                             onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
                           >
@@ -6623,6 +6694,7 @@ export default function PosPage() {
                             ))}
                           </select>
                           <input
+                            ref={returnNoteInputRef}
                             value={returnNotes[row.orderId!] ?? ""}
                             onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
                             placeholder="รายละเอียดเหตุผล (บังคับ)"
@@ -6638,6 +6710,7 @@ export default function PosPage() {
                                 </span>
                               ) : (
                                 <select
+                                  ref={refundMethodSelectRef}
                                   value={selectedRefundMethod}
                                   onChange={(event) => setPreferredRefundMethods((cur) => ({
                                     ...cur,
@@ -6734,20 +6807,21 @@ export default function PosPage() {
                           (เลขใบยังอยู่ในลำดับ ไม่ได้ถูกลบ)
                         </div>
                         <input
+                          ref={voidReasonRef}
                           value={voidReason}
                           onChange={(e) => setVoidReason(e.target.value)}
                           maxLength={200}
                           placeholder="เหตุผล เช่น สแกนซ้ำ / กดผิดคน"
                         />
                         <div className="pos-ret-void-row">
-                          <select value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
+                          <select ref={voidApproverSelectRef} value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
                                   style={{ minWidth: 170 }}>
                             <option value="">— ผู้อนุมัติ —</option>
                             {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
                               <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
                             ))}
                           </select>
-                          <input type="password" inputMode="numeric" value={voidApproverPin}
+                          <input ref={voidApproverPinRef} type="password" inputMode="numeric" value={voidApproverPin}
                                  onChange={(e) => setVoidApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
                                  placeholder="PIN หัวหน้า" style={{ width: 120 }} />
                           <button className="pos-ret-btn pos-ret-btn--danger"
@@ -6875,6 +6949,7 @@ export default function PosPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input
+                      ref={discountAmountRef}
                       inputMode="decimal"
                       placeholder="จำนวนเงิน"
                       value={discountDraft}
@@ -6882,6 +6957,7 @@ export default function PosPage() {
                       style={{ width: 110 }}
                     />
                     <input
+                      ref={discountReasonRef}
                       placeholder="เหตุผล (บังคับ)"
                       value={discountReasonDraft}
                       maxLength={200}
@@ -6892,6 +6968,7 @@ export default function PosPage() {
                   <div style={{ display: "flex", gap: 8 }}>
                     {/* เฉพาะคนที่ตั้ง PIN แล้ว — คนที่ไม่มี PIN อนุมัติไม่ได้อยู่แล้วที่ server */}
                     <select
+                      ref={discountApproverSelectRef}
                       value={discountApproverId}
                       onChange={(e) => setDiscountApproverId(e.target.value)}
                       style={{ flex: 1, minWidth: 0 }}
@@ -6902,6 +6979,7 @@ export default function PosPage() {
                       ))}
                     </select>
                     <input
+                      ref={discountApproverPinRef}
                       type="password"
                       inputMode="numeric"
                       placeholder="PIN หัวหน้า"
@@ -7587,6 +7665,7 @@ export default function PosPage() {
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     <select
+                      ref={pharmacistAuthSelectRef}
                       value={pharmacistAuthId}
                       onChange={(e) => setPharmacistAuthId(e.target.value)}
                       style={{ padding: "6px 8px", fontSize: 12, minWidth: 170 }}
@@ -7602,6 +7681,7 @@ export default function PosPage() {
                     </select>
                     {pharmacistAuthId && pharmacistAuthId !== cashierId && (
                       <input
+                        ref={pharmacistAuthPinRef}
                         type="password"
                         inputMode="numeric"
                         value={pharmacistAuthPin}

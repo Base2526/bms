@@ -8,7 +8,9 @@ import {
   BarChartOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  FileProtectOutlined,
   FileTextOutlined,
+  MobileOutlined,
   RocketOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -316,6 +318,40 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Human-confirmed price recommendations and what-if scenarios with assumptions shown",
         ],
       },
+      {
+        id: "q5",
+        quarter: "Q5 - POS mobile",
+        title: "POS mobile app (iOS/Android)",
+        status: "planned",
+        tags: ["pos", "mobile", "cashier"],
+        goals: [
+          "Give cashiers a lightweight mobile POS that reuses the existing device-token + PIN authenticated REST API, with no new backend auth scheme",
+          "Extend counter hardware support (barcode scanning, receipt printing, cash drawer) to phones and tablets without duplicating pricing, tax, or inventory logic",
+        ],
+        deliverables: [
+          "React Native (Expo) app authenticated with the existing POS device-token + cashier PIN model, sharing the same sale/shift/return REST endpoints as the counter register",
+          "Camera-based and Bluetooth barcode scanning, ESC/POS receipt printing, and cash-drawer trigger verified against real hardware",
+          "Idempotency hardening for every money-moving action (including cash drawer movements) verified before rollout, since mobile networks retry more than counter LAN",
+          "Internal distribution (TestFlight / Play internal track) since this is a staff tool, not a public consumer app",
+        ],
+      },
+      {
+        id: "q6",
+        quarter: "Q6 - Insurance module",
+        title: "Insurance sales inbox (new BMS module)",
+        status: "planned",
+        tags: ["insurance", "inbox", "crm", "new-module"],
+        goals: [
+          "Add a new BMS module for selling insurance policies, reusing the existing omnichannel inbox, CRM, and AI pipeline instead of building a parallel system",
+          "Keep every policy-binding action human-confirmed by a licensed agent, matching BMS's existing sensitive-action guardrails",
+        ],
+        deliverables: [
+          "Policy, premium, payment-schedule, claim, and renewal schema with tenant-scoped RBAC and audit history, following the standard new-module checklist",
+          "LINE-first lead capture through the existing omnichannel inbox, with an AI assistant that proposes quotes and answers FAQs but never confirms coverage itself",
+          "Cross-channel customer identity matching hardened before go-live, since a wrong merge risks misattributing claims or beneficiaries",
+          "Renewal reminders on the existing follow-up automation engine, verified against a real database before it is relied on for premium due dates",
+        ],
+      },
     ],
   },
   th: {
@@ -549,6 +585,40 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "คำแนะนำราคาแบบให้คนยืนยัน และ What-if scenario ที่แสดงสมมติฐานชัดเจน",
         ],
       },
+      {
+        id: "q5",
+        quarter: "Q5 - POS มือถือ",
+        title: "แอป POS บนมือถือ (iOS/Android)",
+        status: "planned",
+        tags: ["pos", "mobile", "cashier"],
+        goals: [
+          "ให้พนักงานหน้าร้านมี POS บนมือถือ/แท็บเล็ตที่ใช้ Auth แบบเดิม (Device token + PIN) ผ่าน REST API ที่มีอยู่แล้ว ไม่ต้องสร้าง Auth scheme ใหม่ที่ Backend",
+          "ต่อยอด Hardware ที่เคาน์เตอร์ (สแกนบาร์โค้ด พิมพ์ใบเสร็จ เปิดลิ้นชักเงินสด) ให้ใช้งานบนมือถือ/แท็บเล็ตได้ โดยไม่ทำ Logic ราคา ภาษี และสต็อกซ้ำสอง",
+        ],
+        deliverables: [
+          "แอป React Native (Expo) ที่ Auth ด้วย Device token + Cashier PIN เดิม ใช้ Endpoint ขาย/กะ/คืนสินค้าเดียวกับเครื่องเคาน์เตอร์",
+          "สแกนบาร์โค้ดด้วยกล้อง/Bluetooth, พิมพ์ใบเสร็จ ESC/POS และเปิดลิ้นชักเงินสด ทดสอบกับ Hardware จริงแล้ว",
+          "เสริมความแข็งแรงของ Idempotency ทุก Action ที่เกี่ยวกับเงิน (รวมเงินเข้าออกลิ้นชัก) และ Verify ก่อนปล่อยใช้จริง เพราะเน็ตมือถือ Retry บ่อยกว่าสาย LAN หลังเคาน์เตอร์",
+          "กระจายแบบ Internal distribution (TestFlight / Play internal track) เพราะเป็นเครื่องมือพนักงาน ไม่ใช่แอปสาธารณะ",
+        ],
+      },
+      {
+        id: "q6",
+        quarter: "Q6 - โมดูลประกันภัย",
+        title: "Inbox ขายประกันภัย (โมดูลใหม่ใน BMS)",
+        status: "planned",
+        tags: ["insurance", "inbox", "crm", "new-module"],
+        goals: [
+          "เพิ่มโมดูลขายประกันภัยใน BMS โดยใช้ Omnichannel Inbox, CRM และ AI pipeline เดิมที่มีอยู่แล้ว ไม่สร้างระบบคู่ขนานแยกต่างหาก",
+          "Action ที่ผูกมัดกรมธรรม์ต้องให้ตัวแทนที่มีใบอนุญาตยืนยันเสมอ ตาม Guardrail เดิมของ BMS สำหรับ Action ที่อ่อนไหว",
+        ],
+        deliverables: [
+          "Schema กรมธรรม์ เบี้ยประกัน งวดชำระ การเคลม และวันต่ออายุ พร้อม RBAC ต่อ Tenant และ Audit history ตาม Checklist มาตรฐานของการเพิ่มโมดูลใหม่",
+          "รับ Lead ผ่าน LINE เป็นช่องทางหลักบน Inbox เดิม พร้อม AI ที่เสนอราคาและตอบคำถามได้ แต่ไม่ยืนยันความคุ้มครองเอง",
+          "ปิดช่องโหว่การ Dedup ลูกค้าข้ามช่องทางให้แข็งแรงก่อน Go-live เพราะ Merge ผิดคนหมายถึงข้อมูลเคลม/ผู้รับผลประโยชน์สลับกัน",
+          "ใช้ Follow-up Automation เดิมแจ้งเตือนต่ออายุกรมธรรม์ โดยต้อง Verify กับ Database จริงก่อนนำไปใช้กับกำหนดชำระเบี้ยประกัน",
+        ],
+      },
     ],
   },
 };
@@ -574,6 +644,8 @@ export default function RoadmapPage() {
     q2: <TeamOutlined />,
     q3: <ShareAltOutlined />,
     q4: <BarChartOutlined />,
+    q5: <MobileOutlined />,
+    q6: <FileProtectOutlined />,
   };
   const capabilityIconsById: Record<string, React.ReactNode> = {
     "channels-ai": <ShareAltOutlined />,
