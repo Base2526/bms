@@ -31,7 +31,7 @@ import {
   listLowStock,
   type SellableProduct,
 } from "../products";
-import { checkStock } from "../stock";
+import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
 import {
@@ -412,6 +412,7 @@ const getLoyaltyProgramStatusTool: BmsTool = {
         supported: true,
         enabled: settings.enabled,
         earnMode: settings.earnMode,
+        earnBase: settings.earnBase,
         earnPointsPerBaht: settings.earnPointsPerBaht,
         visitPoints: settings.visitPoints,
         earnMinSpend: settings.earnMinSpend,
@@ -811,6 +812,41 @@ const checkStockTool: BmsTool = {
   },
 };
 
+const getVariantReservationsTool: BmsTool = {
+  name: "get_variant_reservations",
+  description:
+    "List the active orders that explain reserved stock for one SKU and optional size. " +
+    "The result includes totals, bundle sources, branch context, unattributed holds, and over-attribution. " +
+    "Use this for 'which order is holding this stock'; never claim the order list explains the full hold when unattributed or overAttributed is non-zero.",
+  surfaces: ["staff"],
+  permission: "order.view",
+  whenToUse: "Staff asks who is holding reserved stock for a known SKU or size.",
+  whenNotToUse: "The SKU is unknown -> search_products first. Do not use this as a general stock check.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      sku: { type: "string", description: "Exact product SKU from a verified product result." },
+      size: { type: "string", description: "Optional size; omit to inspect every size for the SKU." },
+    },
+    required: ["sku"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const sku = reqString(args, "sku");
+    const size = optString(args, "size") ?? null;
+    const reservations = await listVariantReservations(ec.tenantId, sku, size);
+    return {
+      ok: true,
+      data: {
+        ...reservations,
+        // The page resolver may show phone/reference to an authorized human. The Assistant only
+        // needs the order and a display name to answer who holds stock, so omit extra PII here.
+        orders: reservations.orders.map(({ customerPhone: _phone, customerRef: _ref, ...order }) => order),
+        verifiedAt: new Date().toISOString(),
+      },
+    };
+  },
+};
+
 const subscribeRestockNotificationTool: BmsTool = {
   name: "subscribe_restock_notification",
   description:
@@ -1047,11 +1083,15 @@ const getTopProductsTool: BmsTool = {
 const getDashboardTool: BmsTool = {
   name: "get_dashboard",
   description:
-    "Today's overview: total and today's revenue, order count, products running low, orders broken down by status, and top products and customers.",
+    "Live-read store overview: total and today's revenue, order count, products running low, orders broken down by status, and top products and customers. " +
+    "Returns fetchedAt, which is the time this tool read the data; it is not the last-change timestamp of every underlying record.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: { type: "object", properties: {} },
-  execute: async (_args, ec): Promise<ToolResult> => ({ ok: true, data: await getDashboard(ec.tenantId) }),
+  execute: async (_args, ec): Promise<ToolResult> => ({
+    ok: true,
+    data: { ...(await getDashboard(ec.tenantId)), fetchedAt: new Date().toISOString(), source: "live_query" },
+  }),
 };
 
 const generateReportTool: BmsTool = {
@@ -2608,6 +2648,7 @@ export const ALL_TOOLS: BmsTool[] = [
   findAlternativesTool,
   getProduct,
   checkStockTool,
+  getVariantReservationsTool,
   subscribeRestockNotificationTool,
   listCustomerCouponsTool,
   listAvailableCouponsTool,

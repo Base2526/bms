@@ -33,6 +33,25 @@ test("verified help remains available without an AI provider and excluded routes
   assert.match(drawer, /skip: excluded/);
 });
 
+test("how-to replies remain numbered and actionable without an AI provider", () => {
+  const resolver = read("apps/web/graphql/bmsAssistant.ts");
+  assert.match(resolver, /SYSTEM_GUIDES/);
+  assert.match(resolver, /guide\.steps\[locale\]\.map/);
+  assert.match(resolver, /index \+ 1/);
+  assert.match(resolver, /เปิดหน้าทำงาน:/);
+  assert.match(resolver, /เป็นลำดับเลข 1, 2, 3 ที่ทำตามได้/);
+});
+
+test("live staff facts expose the missing grounding fields through approved tools", () => {
+  const catalog = read("apps/web/lib/bms/tools/catalog.ts");
+  assert.match(catalog, /name: "get_variant_reservations"[\s\S]*?permission: "order\.view"/);
+  assert.match(catalog, /listVariantReservations\(ec\.tenantId, sku, size\)/);
+  assert.match(catalog, /customerPhone: _phone, customerRef: _ref/);
+  assert.match(catalog, /earnBase: settings\.earnBase/);
+  assert.match(catalog, /name: "get_dashboard"[\s\S]*?fetchedAt: new Date\(\)\.toISOString\(\)/);
+  assert.match(catalog, /source: "live_query"/);
+});
+
 test("staff lookup is tenant-scoped and excludes platform and sensitive identity fields", () => {
   const service = read("apps/web/lib/bms/assistantAccess.ts");
   assert.match(service, /tenant_id = \$1/);
