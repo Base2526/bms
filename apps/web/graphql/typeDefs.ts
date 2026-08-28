@@ -3726,6 +3726,15 @@ export const typeDefs = /* GraphQL */ `
     role: String!
     text: String!
   }
+  input BmsWorkAssistantInput {
+    message: String!
+    history: [BmsAssistantTurn!]
+    currentPath: String
+    pageId: String
+    # UI language for retrieved guides/capabilities ("th" | "en"). Presentation only — it never
+    # affects authorization. users.language is not in the session JWT, so the client sends it.
+    locale: String
+  }
   input BmsPharmacyAssistantSessionInput {
     protocolKey: String
     phase: String
@@ -3747,6 +3756,30 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsAssistantResult {
     reply: String!
+    proposals: [BmsAssistantProposal!]!
+    trace: [BmsAssistantTrace!]!
+  }
+  type BmsAssistantCitation {
+    kind: String!
+    id: String!
+    title: String!
+    summary: String!
+    path: String
+    status: String
+    accessible: Boolean!
+    missingPermissions: [String!]!
+    accessRequirement: String!
+    accessNote: String
+  }
+  type BmsAssistantLink {
+    label: String!
+    path: String!
+  }
+  type BmsWorkAssistantResult {
+    reply: String!
+    answerType: String!
+    citations: [BmsAssistantCitation!]!
+    links: [BmsAssistantLink!]!
     proposals: [BmsAssistantProposal!]!
     trace: [BmsAssistantTrace!]!
   }
@@ -3993,6 +4026,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
+    bmsWorkAssistant(input: BmsWorkAssistantInput!): BmsWorkAssistantResult!
     bmsPharmacyAssistantTest(message: String!, session: BmsPharmacyAssistantSessionInput): BmsPharmacyAssistantResult!
     bmsCreatePharmacyLabOrder(items: [BmsPharmacyLabCartItemInput!]!): BmsReorderResult!
     bmsSeedPharmacyQueueDemo(protocolKey: String, answers: JSON, transcript: JSON): BmsSeedPharmacyQueueDemoResult!

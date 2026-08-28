@@ -35,9 +35,11 @@ wrong, and update the doc in the same change.
 | --- | --- |
 | `apps/web/lib/bms/` | Shared business services — the only BMS layer allowed to run SQL |
 | `apps/web/lib/bms/tools/` | AI tool catalog + runtime, shared by customer pipeline and staff assistant |
+| `apps/web/lib/bms/assistantKnowledge/` | Deterministic bilingual capability/guide catalog + retrieval (no DB, no network) |
 | `apps/web/lib/bms/pharmacy/` | Flag-gated pharmacy intake |
 | `apps/web/app/api/bms/` · `apps/web/graphql/` | REST/webhooks/cron · GraphQL schema + resolvers |
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
+| `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
 | `apps/ws/` · `packages/` | WebSocket gateway · shared GraphQL + Redis pub/sub |
 | `db/migrations/` · `docs/` · `scripts/` | Ordered idempotent migrations · docs · log triage, AI evals, load tests |
@@ -50,6 +52,12 @@ wrong, and update the doc in the same change.
   tools (refund, cancel, adjust stock, merge, confirm/reject payment, email a report) are
   **propose-only** — the UI's Confirm fires the pre-existing permission-gated mutation. Every attempt
   is audited as `ai.tool_call` without raw args. Quota is consumed once per loop, not per round-trip.
+  The same runtime serves `bmsWorkAssistant` (global admin Drawer + `/admin/assistant`): it adds
+  bounded `currentPath`/`pageId` retrieval hints and a client-supplied `locale`, none of which is
+  authorization — `users.language` is deliberately not a session claim, so it cannot be read from
+  the GraphQL context. **A Confirm button must show the mutation and its server-composed
+  arguments**, not just the model's summary; an outbound recipient is reviewed and validated
+  before send. See [docs/ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
 - **Multi-item customer requests** — one chat message can name several products at once.
   `requestedItems.ts` (`parseRequestedItems`) is the *only* splitter for "how many things did the
   customer ask for" — it never resolves a SKU, never converts a pack unit into a piece count, and
@@ -350,13 +358,18 @@ dumps. Never commit `.env*`, tokens, customer data, or credentials.
 
 ## Testing and verification
 
-No repository-wide test script. Use checks proportional to the change:
+One command runs the merge gate — typecheck, every database-free contract suite, then a
+production build:
 
 ```bash
-cd apps/web && npx tsc --noEmit && npm run build
+cd apps/web && npm run gate
 ```
 
-(`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
+`npm run test:pure` runs only the suites (fast, no database); `npm run test:db` runs the
+`-db-contract` suites and refuses a non-local host. The runner walks `scripts/` **and**
+`scripts/ai-eval/`, so a contract test placed in either directory runs in CI — a suite that only
+runs by hand does not run. `.github/workflows/gate.yml` runs typecheck + pure + build on every
+PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
 
 - Never claim a check passed unless it was run successfully.
 - Schema changes: migration ordering, idempotency, RLS, grants, tenant isolation.
@@ -374,6 +387,8 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `ai-eval/customer-policy-contract` · `customer-message-routing-contract` | customer reply policy and routing |
 | `ai-eval/checkout-token-contract` | signed checkout link scope/tamper/expiry |
 | `ai-eval/archetype-policy-contract` · `restock-lifecycle-contract` · `pharmacy-intake-contract` | archetype policy · restock consent · pharmacy intake |
+| `ai-eval/work-assistant-knowledge-contract` | catalog ids/bilingual fields, permissions resolve, every guide route renders, Sidebar + Admin page coverage, page context re-ranks but never fabricates a match, register surface excludes back-office guides, capability status honesty |
+| `ai-eval/work-assistant-surface-contract` | additive GraphQL surface, page context stays a hint, deterministic help without a provider, tenant-scoped staff lookup, Drawer shows mutation args and reviews an emailed recipient |
 | `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
 | `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
 | `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |

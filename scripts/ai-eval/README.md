@@ -13,7 +13,14 @@
 
 ## 1. Deterministic contract tests
 
-รันจาก `apps/web` เพื่อให้ใช้ `tsx` และ path aliases ของแอปได้:
+**ชุดนี้อยู่ใน `npm run test:pure` แล้ว** (และจึงอยู่ใน CI) — `scripts/run-contract-tests.mjs`
+เดินเข้ามาในโฟลเดอร์นี้ด้วย ไม่ต้องไล่รันทีละไฟล์เหมือนเดิม:
+
+```bash
+cd apps/web && npm run test:pure
+```
+
+รันทีละไฟล์จาก `apps/web` ก็ยังได้ (ตอนกำลังแก้ไฟล์ใดไฟล์หนึ่ง):
 
 ```bash
 cd apps/web

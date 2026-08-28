@@ -27,9 +27,26 @@ if (!["pure", "db", "all"].includes(mode)) {
   process.exit(2);
 }
 
-const all = readdirSync(SCRIPTS)
-  .filter((f) => f.endsWith(".test.mts"))
-  .sort();
+/**
+ * เดินทั้ง `scripts/` และ `scripts/ai-eval/`
+ *
+ * ชุด ai-eval (deterministic contract ไม่ต่อ provider/DB) เคยอยู่นอกประตูนี้ เพราะตัวเดินไฟล์
+ * อ่านเฉพาะชั้นบนสุด — README ของมันบอกให้ "รันมือทีละไฟล์" ซึ่งแปลว่าไม่มีใครรัน (บทเรียนเดียวกับ
+ * ตอนตั้ง gate ครั้งแรกที่พบว่าชุด pure แดงอยู่ 2 ตัวโดยไม่มีใครรู้) · ยืนยันแล้วว่าทั้งชุดเขียว
+ * และใช้เวลา ~6 วิ จึงอยู่ในโหมด pure ได้
+ * `run.mjs` (live-model eval) ไม่ใช่ `.test.mts` จึงไม่ถูกหยิบมา
+ */
+const collect = (dir, prefix = "") =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? entry.name === "ai-eval"
+        ? collect(path.join(dir, entry.name), `${entry.name}/`)
+        : []
+      : entry.name.endsWith(".test.mts")
+        ? [`${prefix}${entry.name}`]
+        : []
+  );
+const all = collect(SCRIPTS).sort();
 /** ชื่อไฟล์คือสัญญา: `-db-contract` = ต้องมี Postgres จริง ที่เหลือรันที่ไหนก็ได้ */
 const isDb = (f) => f.includes("-db-contract");
 const files = all.filter((f) => (mode === "all" ? true : mode === "db" ? isDb(f) : !isDb(f)));

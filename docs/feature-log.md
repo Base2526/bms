@@ -10,6 +10,41 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Global AI Work Assistant V1 (2026-08)
+
+- Added a server-safe bilingual capability/guide catalog with deterministic Unicode-normalized
+  retrieval, implementation status (`AVAILABLE`/`CONDITIONAL`/`BETA`/`MOCK`/`UNAVAILABLE`), routes,
+  prerequisites, warnings, and required permissions.
+- Added additive `bmsWorkAssistant`, reusing the staff runtime, quota, audit, RBAC re-check, and
+  propose-only confirmation path while returning structured citations and accessible deep links.
+- Mounted a global admin Drawer and shared its existing confirmation mutations with the full-page
+  assistant. Added tenant-scoped staff access lookup and tenant loyalty-program status tools.
+- Kept POS-only accounts outside `/admin`: `/pos` receives deterministic shared POS guide search
+  with no GraphQL/AI call and cannot read sales data or perform actions.
+
+**Recheck pass (2026-08-28)** — the first cut shipped four claims it could not keep, all fixed here.
+Page proximity added a larger bonus than any relevance floor, so *every* guide on the current page
+scored as an answer to *any* question: the register's "no verified guide matched" branch was
+unreachable and every message got page guides as "citations". Results now carry `matchedQuery`, and
+only query-matched entries become citations or links. Retrieval was always Thai because
+`users.language` is deliberately not a session claim, so `ctx.admin.language` is always undefined —
+the clients now send `locale` (presentation only, never authorization) and the dead `sectionId`
+input was removed. `get_my_access` reported `displayName: null` and `posOnly: false` from session
+fields that do not exist; both are read from `users` now. The Drawer's Confirm button showed only
+model prose, while the full-page assistant shows the mutation and its server-composed arguments and
+gates an emailed report on a reviewed recipient — the Drawer now does both. The register assistant
+served `/admin/pos-devices` and `/admin/pos-readiness` (they share the `pos.` id prefix) to cashiers
+who cannot open `/admin` at all; it is now restricted to `pageId === "pos"`. `platform.edit-post`
+linked to `/admin/post`, which has no index page and 404s. Capability status was corrected to match
+the real build state: shipping is `AVAILABLE` with a separate `MOCK` carrier-integration entry
+(one entry cannot say both), and e-Tax, Shopee/Lazada, and ESC/POS printing are `BETA` — written but
+never verified end to end. Four register workflows with live `/api/pos/*` routes had no guide at all
+(credit sale/collection, no-receipt return, store credit, pharmacist counter authorization); a
+cashier asking about them got an unrelated guide presented as the answer. Both contract suites moved
+into `npm run test:pure` — they lived in `scripts/ai-eval/`, which the gate's directory walk never
+entered, so they would only ever have run by hand.
+
+
 **REST surface hardening + reserved-stock attribution (2026-08-24)** — ✅ implemented, no migration.
 `middleware.ts` matches `/api/:path*` but only guards paths under `/admin`, so every REST route needs
 its own check; twenty-four written for a single-tenant BMS had none. `/api/bms/reserve` was the worst:

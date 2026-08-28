@@ -318,7 +318,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
 | `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/credit reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`, `bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
-| `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
+| `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing |
 | `bmsPos.ts` | POS back-office: locations, devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Actual counter selling never goes through GraphQL — see `/api/pos/*` above |
 
 Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →

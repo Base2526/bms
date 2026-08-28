@@ -567,7 +567,8 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "AI Assistant / AI Quality",
     desc: "ถามข้อมูลหลังบ้าน, สร้างคำขอให้คนกดยืนยัน, และตรวจคุณภาพคำตอบของ AI",
     bullets: [
-      "AI Assistant ใช้ถามรายงาน, สต็อก, ลูกค้า, หรือให้เตรียม export / quotation / invoice ด้วยภาษาพูด",
+      "เปิด AI Work Assistant ได้จากปุ่มลอยทุกหน้าหลังบ้าน เพื่อถามความสามารถของระบบ วิธีใช้เมนู หรือข้อมูลจริงที่สิทธิ์ของคุณอนุญาตให้ดูได้",
+      "Assistant ใช้บริบทหน้าปัจจุบันช่วยตอบ เช่น ขั้นตอนหน้า POS, รายงาน, สต็อก, ลูกค้า, แต้มสะสม และคูปอง พร้อมลิงก์ไปหน้าที่ผู้ใช้เข้าถึงได้",
       "งานที่กระทบเงิน/สต็อก/การลบข้อมูลจะเป็น propose-only และต้องกด Confirm เอง",
       "AI Quality ใช้ดู success / handoff / unresolved rates, sampled conversations, และ tool failures",
       "Playground เป็นพื้นที่ทดสอบ flow แชทและ stock สำหรับทีมที่มีสิทธิ์ด้าน AI quality",
@@ -1966,7 +1967,8 @@ const MENU_CARDS_EN: MenuCard[] = [
     title: "AI Assistant / AI Quality",
     desc: "Ask back-office questions, prepare requests that staff confirm, and review how well AI is performing",
     bullets: [
-      "AI Assistant answers questions about reports, stock, orders, and customers using real tenant data",
+      "Open AI Work Assistant from the floating button on any back-office page to ask about system capabilities, menu instructions, or live data your permissions allow",
+      "The assistant uses current-page context for topics such as POS steps, reports, stock, customers, loyalty, and coupons, and only links to pages you can access",
       "Anything affecting money, stock, or deletion remains propose-only until a person presses Confirm",
       "AI Quality shows success / handoff / unresolved rates, sampled conversations, and top failing tools",
       "Playground remains the controlled test space for AI/chat flows when a team has AI quality access",

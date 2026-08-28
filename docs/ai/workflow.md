@@ -27,6 +27,12 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
   a human confirms in the UI, which then fires the existing permission-gated mutation
   (`bmsRefundPayment`, `bmsAdjustStock`, …). AI never executes an A3 action itself.
+- **Global work-assistant surface** — additive `bmsWorkAssistant(input)` uses the same staff runtime,
+  tools, quota, audit, and proposal boundary. It additionally accepts bounded `currentPath`/`pageId`
+  retrieval hints and returns structured knowledge citations plus accessible deep links. The global
+  Drawer is mounted in `AdminLayoutClient`; `/admin/assistant` remains the full-page view. POS-only
+  accounts keep their separate device+PIN boundary and receive deterministic POS guide search rather
+  than being admitted to the admin GraphQL surface.
 
 ```
 Customer

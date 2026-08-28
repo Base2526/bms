@@ -50,6 +50,17 @@ export type ExecCtx = {
   pendingOrderQuote?: { fingerprint: string; lines: OrderQuoteLine[] };
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
+  /**
+   * Server-derived effective permissions for capability/guide explanations.
+   * Tools with a permission still pass requirePermission() before execution.
+   */
+  permissions?: ReadonlySet<string>;
+  /** Server-derived account class for help-link visibility; never grants tool execution. */
+  role?: string | null;
+  isPlatformAdmin?: boolean;
+  /** Server-derived retrieval hints. They never grant authorization. */
+  currentPath?: string | null;
+  pageId?: string | null;
 };
 
 /** JSON schema แบบ Anthropic tool (input_schema) */

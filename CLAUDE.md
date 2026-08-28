@@ -23,6 +23,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
+| [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) | Global staff assistant: capability/guide catalog, what each status word means, coverage + regression gates |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
 | [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine |
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
@@ -64,6 +65,14 @@ permission the step that consumes the file needs. `/admin/products` also gained 
 stock". Details: [business/inventory.md](docs/business/inventory.md) and
 [architecture/api.md](docs/architecture/api.md).
 
+**Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
+runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
+deterministic bilingual catalog (42 capabilities, 76 guides) covering every Sidebar destination and
+every routable Admin page. `/pos` gets the same catalog as offline guide search with no GraphQL/AI
+call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes anything a
+permission did not already allow. Coverage, status vocabulary and the regression gates:
+[ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
+
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
@@ -72,6 +81,21 @@ look done in code but need their migration first.
 ## AI rules (non-negotiable)
 
 - AI **never** writes SQL or touches the database — only approved tools in [ai/tools.md](docs/ai/tools.md).
+- **The staff assistant's knowledge catalog states product capability, never tenant state.**
+  `AVAILABLE`/`CONDITIONAL`/`BETA`/`MOCK` describe one capability, not a module — shipment
+  creation is `AVAILABLE` while carrier booking stays `MOCK`. A status that overstates what has
+  been verified end to end is a lie told to staff at a counter, so e-Tax, Shopee/Lazada and
+  ESC/POS printing are `BETA` until a real integration is proven.
+- **Standing on a page re-ranks its guides; it never turns them into an answer.** The
+  current-page bonus is larger than any relevance floor, so a result carries `matchedQuery` and
+  only query-matched entries become citations or links — otherwise every guide on the page is
+  cited for every message and "no verified guide matched" becomes unreachable. Page context is
+  retrieval only and never grants permission; a guide's `route` must be a page that renders,
+  because the assistant hands it to the user as a link.
+- **The register assistant stays inside the register.** `/pos` gets deterministic guide search
+  with no GraphQL/AI call, limited to guides performed at the register (`pageId === "pos"`) — a
+  `pos_only` account cannot open `/admin` at all, so answering a cashier with a back-office
+  guide is a dead end.
 - AI **never** fabricates stock/price/order numbers — facts come from a successful backend result.
 - AI **never** sets a price, a pack size, or a pieces-per-unit count — a pack code returned by
   `check_stock` reaches `create_order` as a name only; pieces-per-pack and pack price are always

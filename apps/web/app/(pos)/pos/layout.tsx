@@ -9,11 +9,12 @@
 // และแท็บเล็ตหน้าร้านมักเป็นเครื่องเก่า (ดูเหตุผลเต็มในหัวไฟล์ CSS)
 import type { ReactNode } from "react";
 import "./pos.css";
+import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 
 export const metadata = {
   title: "POS — ขายหน้าร้าน",
 };
 
 export default function PosLayout({ children }: { children: ReactNode }) {
-  return <div className="pos-root">{children}</div>;
+  return <div className="pos-root">{children}<PosGuideAssistant /></div>;
 }

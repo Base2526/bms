@@ -71,6 +71,13 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   executing, and the UI's Confirm button fires the pre-existing permission-gated GraphQL mutation
   (e.g. `bmsRefundPayment`). The model never executes a sensitive action itself.
 
+  The same staff boundary now also serves additive `bmsWorkAssistant` in the global admin Drawer.
+  It adds deterministic bilingual guide/capability retrieval, bounded current-page hints, citations,
+  and accessible deep links; it does not add a third tool runtime or a wider permission surface.
+  `currentPath`/`pageId` are retrieval context only. POS-only users remain outside `/admin` and get
+  deterministic POS guide search without GraphQL/AI access; device+cashier authorization stays on
+  `/api/pos/*`.
+
 Every tool attempt is centrally audited as `ai.tool_call` (success/error/denied/proposal) without raw
 arguments or prompt content. Successful A2 writes also keep their domain audit action, and confirmed
 A3 actions are audited by the existing mutation. Shared-key quota is consumed once before a loop,
