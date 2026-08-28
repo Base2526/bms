@@ -5,7 +5,6 @@ import path from "node:path";
 
 import { BMS_PERMISSIONS } from "../../apps/web/lib/bms/permissions.ts";
 import {
-  POS_REGISTER_SUGGESTIONS,
   SYSTEM_CAPABILITIES,
   SYSTEM_GUIDES,
   normalizeAssistantQuery,
@@ -15,6 +14,13 @@ import {
 const WEB = path.resolve(import.meta.dirname, "../../apps/web");
 const validPermissions = new Set<string>(BMS_PERMISSIONS);
 
+/**
+ * Question-level expectations live in `work-assistant-question-corpus.mts` and are asserted by
+ * `work-assistant-question-corpus.test.mts`: every question the product asks must be *led* by the
+ * entry that answers it, not merely contain it somewhere in the result list. The lists that used
+ * to sit here (staff how-to questions, POS menu questions, register chips, the loyalty/coupon
+ * split, the POS safety questions) moved there so there is one list to keep true, not two.
+ */
 test("assistant knowledge ids are unique and bilingual fields are complete", () => {
   const all = [...SYSTEM_CAPABILITIES, ...SYSTEM_GUIDES];
   const ids = all.map((entry) => entry.id);
@@ -86,40 +92,6 @@ test("capability search finds report formats and states the verified implementat
   assert.equal(report.accessible, true);
 });
 
-test("loyalty and coupon questions retrieve separate capability and guide knowledge", () => {
-  const loyalty = searchAssistantKnowledge("ระบบมีสะสมแต้มไหม", { locale: "th" });
-  assert.ok(loyalty.some((entry) => entry.id === "loyalty.points"));
-  assert.ok(loyalty.some((entry) => entry.id === "loyalty.check-program"));
-
-  const coupons = searchAssistantKnowledge("ตอนนี้มีคูปองอะไรใช้ได้บ้าง", { locale: "th" });
-  assert.ok(coupons.some((entry) => entry.id === "coupons.promotions"));
-  assert.ok(coupons.some((entry) => entry.id === "coupons.check-availability"));
-});
-
-test("common staff how-to questions resolve to actionable dedicated guides", () => {
-  const expected = new Map([
-    ["ร้านนี้คำนวณแต้มอย่างไร", "loyalty.calculate-points"],
-    ["แต้มคิดก่อนหรือหลังหักส่วนลด", "loyalty.calculate-points"],
-    ["สร้างคูปองและส่งให้ลูกค้ายังไง", "coupons.create-and-send"],
-    ["เพิ่มพนักงานและกำหนดสิทธิ์ยังไง", "users.add-and-authorize"],
-    ["ตั้งราคาส่งหรือโปรโมชันซื้อแถมยังไง", "products.pricing-promotions"],
-    ["ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", "inventory.stock-sale-blockers"],
-    ["สินค้าที่จองไว้เป็นของออเดอร์ไหน", "inventory.reservation-owners"],
-    ["ทำไมออเดอร์ยังเป็น Pending", "orders.pending-troubleshoot"],
-    ["แก้ที่อยู่จัดส่งของลูกค้ายังไง", "customers.manage-address"],
-    ["ส่งสินค้าและคูปองในแชทยังไง", "inbox.sell-from-conversation"],
-    ["ทำไมจองขนส่งไม่สำเร็จ", "shipping.booking-troubleshoot"],
-    ["ทำไมกดปุ่มนี้ไม่ได้", "permissions.action-unavailable"],
-    ["ถ้าทำรายการซ้ำ ระบบจะบันทึกซ้ำไหม", "assistant.retry-safely"],
-    ["ข้อมูลใน Dashboard อัปเดตล่าสุดเมื่อไร", "dashboard.data-freshness"],
-  ]);
-  for (const [query, guideId] of expected) {
-    const results = searchAssistantKnowledge(query, { locale: "th", kind: "guide", limit: 10 });
-    const hit = results.find((entry) => entry.id === guideId);
-    assert.ok(hit?.matchedQuery, `${query} did not match ${guideId}`);
-  }
-});
-
 test("search reports missing access instead of hiding product capability", () => {
   const denied = searchAssistantKnowledge("ค้นพนักงาน", { locale: "th", permissions: new Set() });
   const users = denied.find((entry) => entry.id === "users.access");
@@ -170,30 +142,6 @@ test("high-frequency system modules have at least one verified guide", () => {
   }
 });
 
-test("POS safety questions retrieve the matching verified workflow", () => {
-  const discount = searchAssistantKnowledge("ทำไมส่วนลดต้องใช้ PIN คนที่สอง", { locale: "th", pageId: "pos" });
-  assert.equal(discount[0]?.id, "pos.manual-discount");
-  const reversal = searchAssistantKnowledge("Void ต่างจาก Return ยังไง", { locale: "th", pageId: "pos" });
-  assert.equal(reversal[0]?.id, "pos.void-return");
-});
-
-test("every primary POS menu and setup question resolves to a dedicated guide", () => {
-  const expected = new Map([
-    ["เมนูขาย", "pos.build-sale"], ["รับชำระ", "pos.take-payment"],
-    ["คืนสินค้าและ Void", "pos.void-return"], ["เมนูรับของ", "pos.receive-purchase"],
-    ["เมนูมัดจำ", "pos.manage-deposit"], ["รายงานกะ", "pos.shift-reports"],
-    ["ตั้งค่า scanner", "pos.device-settings"],
-    // Register workflows that exist as /api/pos/* routes and must not be silently uncovered.
-    ["ขายเชื่อ", "pos.credit-sale"], ["บัตรของขวัญ", "pos.use-store-credit"],
-    ["คืนของไม่มีใบเสร็จ", "pos.blind-return"], ["ขายยา", "pos.pharmacist-authorization"],
-    ["เปิดลิ้นชัก", "pos.cash-movement"], ["ใบกำกับภาษี", "pos.receipt-display"],
-  ]);
-  for (const [query, guideId] of expected) {
-    const result = searchAssistantKnowledge(query, { locale: "th", pageId: "pos", currentPath: "/admin/pos-manual", kind: "guide" });
-    assert.equal(result[0]?.id, guideId, `${query} did not resolve to its dedicated guide`);
-  }
-});
-
 test("page context re-ranks but never fabricates a match", () => {
   // The current-page bonus (+10) is larger than the resolver's relevance floor, so without a
   // separate match signal every guide on the page answers every question — and both the POS
@@ -229,19 +177,5 @@ test("capability status tells the truth about what is not live yet", () => {
   // Built but never verified end to end — CONDITIONAL reads as "just switch it on".
   for (const id of ["tax.etax", "settings.marketplaces", "pos.hardware-printing"]) {
     assert.equal(byId.get(id)?.status, "BETA", `${id} should be reported as BETA`);
-  }
-});
-
-test("every register starter question resolves to a register guide in both languages", () => {
-  const registerIds = new Set(SYSTEM_GUIDES.filter((guide) => guide.pageId === "pos").map((guide) => guide.id));
-  for (const locale of ["th", "en"] as const) {
-    for (const question of POS_REGISTER_SUGGESTIONS[locale]) {
-      const hit = searchAssistantKnowledge(question, {
-        locale, currentPath: "/admin/pos-manual", pageId: "pos", kind: "guide", limit: 10,
-      }).find((entry) => registerIds.has(entry.id) && entry.matchedQuery);
-      // A chip that answers "no verified guide" is worse than no chip: the cashier reads it as
-      // "the register cannot do this".
-      assert.ok(hit, `register chip has no verified guide (${locale}): ${question}`);
-    }
   }
 });

@@ -105,6 +105,8 @@ import { getAssistantSelfProfile, getTenantStaffUserAccess, searchTenantStaffUse
 import {
   SYSTEM_CAPABILITIES,
   SYSTEM_GUIDES,
+  faqsForGuide,
+  limitsForGuide,
   groupPermissionDescriptions,
   searchAssistantKnowledge,
 } from "../assistantKnowledge";
@@ -254,7 +256,7 @@ const searchSystemCapabilitiesTool: BmsTool = {
 const searchSystemGuidesTool: BmsTool = {
   name: "search_system_guides",
   description:
-    "Search verified bilingual BMS usage guides. Returns prerequisites, steps, warnings, route, and current-actor access. Use this to answer how a page or workflow is used; never invent missing steps.",
+    "Search verified bilingual BMS usage guides. Returns prerequisites, steps, warnings, route, verified FAQ answers, and current-actor access. Use this to answer how a page or workflow is used; never invent missing steps, and prefer quoting a matching FAQ answer over composing one from the steps.",
   surfaces: ["staff"],
   whenToUse: "The user asks how to use a page, menu, workflow, button, or why a documented prerequisite is blocking them.",
   whenNotToUse: "Do not use guide text as live business data or proof that the actor is authorized; execution remains backend-gated.",
@@ -292,7 +294,7 @@ const searchSystemGuidesTool: BmsTool = {
       .filter((entry) => rank.has(entry.id))
       .sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99))
       .slice(0, limit)
-      .map((entry) => {
+      .map((entry, index) => {
         const match = resultById.get(entry.id);
         const missingPermissions = match?.missingPermissions ?? [];
         return {
@@ -309,6 +311,20 @@ const searchSystemGuidesTool: BmsTool = {
           accessible: match?.accessible === true,
           accessRequirement: entry.accessRequirement ?? "any_staff",
           accessNote: match?.accessNote ?? null,
+          // Verified question/answer pairs owned by this guide. Quote them; do not paraphrase a
+          // second version of an answer the shop already publishes in its manual.
+          faqs: faqsForGuide(entry.id).map((faq) => ({
+            question: faq.question[locale],
+            answer: faq.answer[locale],
+          })),
+          // Verified limits and traps for this workflow. Only the two best-ranked guides carry
+          // them: 97 rules across the catalog would crowd out the answer they exist to protect.
+          limits: index < 2
+            ? limitsForGuide(entry.id).map((group) => ({
+                title: group.title[locale],
+                items: group.items[locale],
+              }))
+            : [],
         };
       });
     return { ok: true, data: { guides } };

@@ -113,3 +113,23 @@ test("the register guide surface stays inside the register", () => {
   assert.match(posGuide, /guide\.pageId === "pos"/);
   assert.match(posGuide, /result\.matchedQuery/);
 });
+
+test("the Manual renders the catalog instead of keeping a second copy of it", () => {
+  const manual = read("apps/web/app/(admin)/admin/manual/page.tsx");
+  // Two copies of an answer drift, and only one of them was ever reachable from chat.
+  assert.match(manual, /import \{ SYSTEM_FAQ \} from "@\/lib\/bms\/assistantKnowledge\/faq"/);
+  assert.match(manual, /import \{ SYSTEM_LIMITS \} from "@\/lib\/bms\/assistantKnowledge\/limits"/);
+  assert.match(manual, /const HELP_ROWS_TH: HelpRow\[\] = SYSTEM_FAQ\.map/);
+  assert.match(manual, /const LIMIT_GROUPS_EN: LimitGroup\[\] = SYSTEM_LIMITS\.map/);
+  assert.doesNotMatch(manual, /const HELP_ROWS_(TH|EN): HelpRow\[\] = \[/, "the FAQ grew a second home");
+  assert.doesNotMatch(manual, /const LIMIT_GROUPS_(TH|EN): LimitGroup\[\] = \[/, "the limits grew a second home");
+});
+
+test("verified answers reach the model and the no-provider reply", () => {
+  const catalog = read("apps/web/lib/bms/tools/catalog.ts");
+  const resolver = read("apps/web/graphql/bmsAssistant.ts");
+  assert.match(catalog, /faqs: faqsForGuide\(entry\.id\)/);
+  // 97 rules across the catalog would crowd out the answer they exist to protect.
+  assert.match(catalog, /limits: index < 2/);
+  assert.match(resolver, /searchAssistantFaqs\(message, \{ locale, limit: 2 \}\)/);
+});

@@ -34,6 +34,27 @@ npx tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/customer-message-routing-contract.test.mts
 ```
 
+### ชุดของ Work Assistant (staff)
+
+`work-assistant-knowledge-contract` ตรวจรูปทรงของแคตตาล็อกและความครอบคลุมของหน้า ·
+`work-assistant-surface-contract` ตรวจขอบเขต GraphQL/UI · `work-assistant-question-corpus`
+ตรวจ **คำตอบ**: คำถามทุกข้อที่ระบบยื่นให้พนักงาน (ปุ่มตัวอย่างใน Drawer และที่หน้าขาย) และคำถามที่เคย
+ใช้ทดสอบไว้ ถูกปักไว้ใน `work-assistant-question-corpus.mts` ว่าต้องได้ entry ไหน **มาเป็นอันดับหนึ่ง**
+— เจอไกด์ที่ถูกต้องที่อันดับ 6 ถือว่าไม่ผ่าน เพราะนั่นคือวิธีที่คุณภาพการค้นเสื่อมโดยไม่มีใครเห็น ·
+คำถามที่ตอบได้เฉพาะจากข้อมูลจริง ปักชื่อทูลกับสิทธิ์ที่คุมทูลนั้นไว้ด้วย
+
+**สองไฟล์นี้ต้องแก้คู่กัน**: เพิ่มปุ่มตัวอย่างใหม่ที่ UI แล้วไม่ปักคำตอบ = เทสแดงทันที (ตั้งใจ —
+ปุ่มที่กดแล้วได้ "ไม่พบคู่มือ" แย่กว่าไม่มีปุ่ม) · และ **ไกด์/capability ทุกตัวต้องมีคำถามอย่างน้อยหนึ่งข้อ**
+เพิ่มหน้าใหม่เข้าแคตตาล็อกโดยไม่เขียนคำถามที่ควรพามาเจอ = แดงเช่นกัน
+
+```bash
+cd apps/web
+npx tsx --import ../../scripts/testing/next-runtime-shim.mjs --test --test-force-exit   ../../scripts/ai-eval/work-assistant-question-corpus.test.mts
+```
+
+ชุดนี้ import `lib/bms/tools/catalog.ts` จริงเพื่อตรวจสิทธิ์ของทูล จึงต้องใช้ shim ของ Next runtime
+(ตัวรัน gate ใส่ให้อยู่แล้ว)
+
 ถ้า `tsx` CLI ชนข้อจำกัด IPC ของเครื่องหรือ sandbox ให้ใช้ `node --import tsx --test ...`
 แทนได้:
 

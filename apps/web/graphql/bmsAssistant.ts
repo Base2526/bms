@@ -21,7 +21,12 @@ import {
 } from "@/lib/bms/pharmacy/testHarness";
 import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
 import { clarifyAmbiguousStaffRequest } from "@/lib/bms/staffAssistantClarification";
-import { SYSTEM_GUIDES, searchAssistantKnowledge, type AssistantLocale } from "@/lib/bms/assistantKnowledge";
+import {
+  SYSTEM_GUIDES,
+  searchAssistantFaqs,
+  searchAssistantKnowledge,
+  type AssistantLocale,
+} from "@/lib/bms/assistantKnowledge";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 
 const STAFF_SYSTEM = [
@@ -73,9 +78,11 @@ function safeContextId(value?: string | null): string | null {
 function deterministicKnowledgeReply(
   knowledge: ReturnType<typeof searchAssistantKnowledge>,
   locale: AssistantLocale,
-  matchedQuery: boolean
+  matchedQuery: boolean,
+  /** Verified FAQ answers matched by the same question — a sentence beats four numbered steps. */
+  faqs: ReturnType<typeof searchAssistantFaqs> = []
 ): string | null {
-  if (!knowledge.length) return null;
+  if (!knowledge.length && !faqs.length) return null;
   const visible = knowledge.filter((entry) => entry.accessible).slice(0, 3);
   const selected = visible.length ? visible : knowledge.slice(0, 3);
   const guideById = new Map(SYSTEM_GUIDES.map((guide) => [guide.id, guide]));
@@ -184,7 +191,8 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
     // With no provider, page-context guidance is still better than nothing — but it is labelled
     // as "guides for this page", never as an answer to the question.
     const fallbackKnowledge = matched.length ? matched : retrieved;
-    const deterministicReply = deterministicKnowledgeReply(fallbackKnowledge, locale, matched.length > 0);
+    const fallbackFaqs = searchAssistantFaqs(message, { locale, limit: 2 });
+    const deterministicReply = deterministicKnowledgeReply(fallbackKnowledge, locale, matched.length > 0, fallbackFaqs);
     return {
       reply: deterministicReply ?? (locale === "en"
         ? "AI is not configured for this shop or the monthly AI message quota is exhausted. Configure an API key in Settings."
