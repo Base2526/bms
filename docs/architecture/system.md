@@ -137,6 +137,34 @@ not report yet) and an admin page listing incidents (today they surface only as 
 finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
+**POS Mobile App (iOS/Android, planned)** — a React Native/Expo client for the counter register,
+built for staff (internal distribution, not a public-store consumer app). `/api/pos/*` already
+authenticates with a device token + cashier PIN instead of a browser cookie, so the existing REST
+surface can be reused as-is; the unbuilt parts are native, not backend: ESC/POS printing and
+cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap above — both need real hardware
+verification), barcode capture (`9.6`'s Scan Manager targets a Bluetooth-HID keyboard typing into a
+browser page, which does not translate to a native app — camera scan or native BLE/Classic pairing
+needs its own design), and the customer-facing display (`/pos/display` uses a same-browser
+`BroadcastChannel`, which does not reach a second device). Before shipping on a channel with weaker
+connectivity than the counter's LAN, apply and DB-verify `9.5__bms_pos_cash_movement_idempotency.sql`
+(written but not yet applied — see [CLAUDE.local.md](../../CLAUDE.local.md)), the one cash-movement
+path that still lacks an idempotency key ·
+**Insurance Sales Inbox (planned, new BMS module)** — policy/premium/claim domain sold primarily
+through LINE chat, built as a tenant module (not a separate product) so it inherits multi-tenant
+RLS/RBAC, the Omnichannel Inbox (`lib/bms/inbox.ts`, LINE webhook/reply/push already built), and the
+customer/staff AI pipeline's existing confirm-before-write pattern (`CONFIRMATION_REQUIRED` +
+server-composed summary — the same shape a quote/coverage explanation needs, since AI must never
+bind coverage on its own). New surface needed end-to-end: schema + migration + service +
+GraphQL module + permissions, following the standard checklist in
+[CLAUDE.local.md § การเพิ่มโมดูลใหม่](../../CLAUDE.local.md). Two existing gaps become higher-stakes
+here and are worth closing early rather than as a later cleanup: customer identity has no
+auto cross-channel dedup today (phone/LINE stay separate records until a human merges them — risky
+when one person holds multiple policies), and Follow-up Automation (`7.52`, renewal reminders'
+natural home) is still only `tsc`-checked, never DB-verified. Sensitive documents (ID card, health
+info) should reuse the `9.25` pharmacy clinical-evidence pattern (private per-file serving with its
+own permission, not the general file store). Regulatory scope (OIC/คปภ. rules on digital sales,
+licensed-agent sign-off, e-policy documents) needs legal review before the AI-assisted quote flow
+goes live — this is not a code gap the checklist above resolves ·
 a password/TLS for Redis before a real production deploy ·
 the two GitHub secrets that make the cron schedule real. `.github/workflows/bms-cron.yml` now points
 at all seven endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`,
