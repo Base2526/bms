@@ -1,6 +1,7 @@
 import { SYSTEM_CAPABILITIES } from "./capabilities";
 import { SYSTEM_FAQ, faqRetrievalAliases } from "./faq";
 import { SYSTEM_GUIDES } from "./guides";
+import { limitRetrievalAliases } from "./limits";
 import type { BmsPermission } from "../permissions";
 import type {
   AssistantKnowledgeContext,
@@ -48,7 +49,29 @@ function textScore(query: string, title: string, aliases: readonly string[], bod
   if (normalizedTitle === q) score += 30;
   else if (normalizedTitle.includes(q)) score += 18;
   if (normalizedAliases.some((alias) => alias === q)) score += 24;
-  else if (normalizedAliases.some((alias) => alias.includes(q) || q.includes(alias))) score += 12;
+  else {
+    /**
+     * Partial alias matches used to score a flat 12, so "ระบบโอนสต็อกข้ามสาขาได้ไหม" tied between
+     * the branch-inventory capability (matched on "โอนสาขา") and the transfer capability (matched
+     * on "โอนสต็อกข้ามสาขา") — and the tie was broken by alphabetical id, which is not an answer.
+     * The longest verified phrase found in the question is the stronger evidence, so it wins by a
+     * bounded margin: never enough to beat an exact alias or a title, always enough to beat a
+     * shorter phrase that happens to sit inside the same words. Thai supplies no word breaks, so
+     * this length signal is most of what separates two Thai aliases at all.
+     *
+     * The reverse direction is restricted: a query found *inside* an alias only counts when it is
+     * most of that alias. "ทำยังไง" sits inside "คิวเภสัชกรทำยังไง", but someone typing two generic
+     * words has not asked about the pharmacy queue — counting that as a match resurrects the exact
+     * failure this catalog exists to prevent.
+     */
+    const overlaps = normalizedAliases.filter(
+      (alias) => q.includes(alias) || (alias.includes(q) && q.length * 2 >= alias.length)
+    );
+    if (overlaps.length) {
+      const longest = Math.max(...overlaps.map((alias) => alias.length));
+      score += 12 + Math.min(8, Math.floor(longest / 3));
+    }
+  }
   for (const token of tokens(q)) {
     if (normalizedTitle.includes(token)) score += 5;
     if (normalizedAliases.some((alias) => alias.includes(token))) score += 4;
@@ -112,7 +135,11 @@ function guideResult(
 ): AssistantKnowledgeResult | null {
   // A guide inherits its FAQ's question and staff phrasings as retrieval keys, so "กดจัดส่งไม่ได้"
   // reaches the guide that owns that answer. FAQ answers stay out of scoring on purpose (faq.ts).
-  const aliasPool = [...entry.aliases[locale], ...faqRetrievalAliases(entry.id, locale)];
+  const aliasPool = [
+    ...entry.aliases[locale],
+    ...faqRetrievalAliases(entry.id, locale),
+    ...limitRetrievalAliases(entry.id, locale),
+  ];
   const queryScore = textScore(query, entry.title[locale], aliasPool, `${entry.summary[locale]} ${entry.steps[locale].join(" ")}`);
   let score = queryScore;
   if (context.currentPath && context.currentPath.startsWith(entry.route)) score += 10;

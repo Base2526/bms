@@ -6,6 +6,7 @@ import {
   SYSTEM_CAPABILITIES,
   SYSTEM_FAQ,
   SYSTEM_GUIDES,
+  SYSTEM_LIMITS,
   searchAssistantFaqs,
   searchAssistantKnowledge,
 } from "../../apps/web/lib/bms/assistantKnowledge/index.ts";
@@ -28,22 +29,34 @@ import type { CorpusCase } from "./work-assistant-question-corpus.mts";
 const knowledgeIds = new Set([...SYSTEM_CAPABILITIES, ...SYSTEM_GUIDES].map((entry) => entry.id));
 const guideIds = new Set(SYSTEM_GUIDES.map((guide) => guide.id));
 
-const retrieve = (item: CorpusCase) =>
-  searchAssistantKnowledge(item.q, {
+const registerGuideIds = new Set(
+  SYSTEM_GUIDES.filter((guide) => guide.pageId === "pos").map((guide) => guide.id)
+);
+
+const retrieve = (item: CorpusCase) => {
+  const results = searchAssistantKnowledge(item.q, {
     locale: item.locale,
     currentPath: item.context?.currentPath,
     pageId: item.context?.pageId,
     kind: item.context?.kind,
     limit: 10,
   });
+  // Mirror the register surface: PosGuideAssistant keeps only guides performed at the register,
+  // because a `pos_only` cashier cannot open /admin at all. Judging register questions against
+  // back-office guides would fail this suite for answers the cashier can never be shown.
+  return item.context?.pageId === "pos"
+    ? results.filter((entry) => registerGuideIds.has(entry.id))
+    : results;
+};
 
 const describe = (item: CorpusCase) =>
   `${item.locale}${item.context?.pageId ? `/${item.context.pageId}` : ""} "${item.q}"`;
 
 test("the pinned corpus still covers the questions it was written for", () => {
-  // 51 questions people actually ask + 2 guards that must stay unanswerable.
+  // 51 questions people actually ask (chips + hand-verified), plus coverage questions for the
+  // rest of the catalog, plus 2 guards that must stay unanswerable.
   assert.equal(CORPUS_REAL_QUESTIONS.length, 51, "a pinned question disappeared or was added without review");
-  assert.equal(WORK_ASSISTANT_QUESTION_CORPUS.length - CORPUS_REAL_QUESTIONS.length, 2, "empty-answer guards changed");
+  assert.equal(WORK_ASSISTANT_QUESTION_CORPUS.filter((item) => item.expect === "no-match").length, 2, "empty-answer guards changed");
 
   const seen = new Set<string>();
   for (const item of WORK_ASSISTANT_QUESTION_CORPUS) {
@@ -60,6 +73,22 @@ test("the pinned corpus still covers the questions it was written for", () => {
       assert.ok(knowledgeIds.has(also), `${describe(item)} pins an unknown entry ${also}`);
     }
   }
+});
+
+test("every catalog entry has a question someone would actually ask", () => {
+  // A guide or capability nobody ever asks about is unreachable in practice, and unreachable
+  // entries are where wrong text survives: nothing retrieves it, so nothing contradicts it.
+  const pinned = new Set(
+    WORK_ASSISTANT_QUESTION_CORPUS.flatMap((item) => [item.expectTop, ...(item.expectAlso ?? [])])
+      .filter((id): id is string => Boolean(id))
+  );
+  // A guide whose FAQ question is pinned is reachable by that question — the FAQ suite asserts it
+  // leads its own guide — so it does not need a second one written for it.
+  for (const faq of SYSTEM_FAQ) pinned.add(faq.guideId);
+  const missingGuides = SYSTEM_GUIDES.filter((guide) => !pinned.has(guide.id)).map((guide) => guide.id);
+  assert.deepEqual(missingGuides, [], "guides with no pinned question");
+  const missingCapabilities = SYSTEM_CAPABILITIES.filter((entry) => !pinned.has(entry.id)).map((entry) => entry.id);
+  assert.deepEqual(missingCapabilities, [], "capabilities with no pinned question");
 });
 
 test("every pinned question is led by the entry that actually answers it", () => {
@@ -91,6 +120,13 @@ test("every pinned question is led by the entry that actually answers it", () =>
       assert.ok(
         matched.some((entry) => entry.id === also),
         `${describe(item)} dropped ${also}, which is a separate answer the reply must not merge away`
+      );
+    }
+    if (item.expectStatus) {
+      assert.equal(
+        matched[0]?.capabilityStatus,
+        item.expectStatus,
+        `${describe(item)} would answer with status ${matched[0]?.capabilityStatus} — the shop repeats that promise to its own customers`
       );
     }
   }
@@ -183,6 +219,39 @@ test("the words staff actually type reach the FAQ that answers them", () => {
           faq.id,
           `"${alias}" (${locale}) resolves to ${hits[0]?.id ?? "nothing"} instead of ${faq.id} — ` +
             "an alias that answers a different question is worse than no alias"
+        );
+      }
+    }
+  }
+});
+
+test("every limit and trap moved out of the Manual reaches the workflow it constrains", () => {
+  assert.ok(SYSTEM_LIMITS.length >= 19, "limit coverage shrank");
+  const ids = SYSTEM_LIMITS.map((group) => group.id);
+  assert.equal(new Set(ids).size, ids.length, "duplicate limit group id");
+
+  for (const group of SYSTEM_LIMITS) {
+    assert.ok(group.guideIds.length > 0, `${group.id} constrains no workflow`);
+    for (const guideId of group.guideIds) {
+      assert.ok(guideIds.has(guideId), `${group.id} points at a guide that does not exist: ${guideId}`);
+    }
+    for (const locale of ["th", "en"] as const) {
+      assert.ok(group.title[locale].trim(), `${group.id} missing ${locale} title`);
+      assert.ok(group.items[locale].length > 0, `${group.id} has no ${locale} rules`);
+      // A rule that exists in one language only is a rule half the staff never sees.
+      assert.equal(
+        group.items[locale].length,
+        group.items[locale === "th" ? "en" : "th"].length,
+        `${group.id} has a different number of rules in th and en`
+      );
+
+      // The title and the phrasings staff use must both reach a guide this group constrains.
+      for (const query of [group.title[locale], ...group.aliases[locale]]) {
+        const matched = searchAssistantKnowledge(query, { locale, kind: "guide", limit: 10 })
+          .filter((entry) => entry.matchedQuery);
+        assert.ok(
+          matched.some((entry) => group.guideIds.includes(entry.id)),
+          `"${query}" (${locale}) reaches ${matched.map((m) => m.id).join(", ") || "nothing"}, none of which is constrained by ${group.id}`
         );
       }
     }

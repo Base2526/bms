@@ -1,7 +1,8 @@
 # Global Work Assistant — full-system V1 coverage
 
 Status: implemented and contract-checked. The deterministic catalog currently contains 42 verified
-capabilities, 90 bilingual guides, and 20 verified FAQ answers. Every literal Admin Sidebar
+capabilities, 90 bilingual guides, 20 verified FAQ answers, and 19 groups of limits and traps
+(97 rules). Every literal Admin Sidebar
 destination and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
 guide, either directly or through its parent detail route. POS has dedicated register guides for
 Sale, Payment, Return/Void, no-receipt return, Receive, Deposits, Shift reports, scanner/device
@@ -88,6 +89,20 @@ can I do on this page?" is built entirely from words that carry no topic; before
 filter it scored `pos.device-settings` as a real answer. On a page it becomes page guidance; with
 no page it reaches the honest empty answer.
 
+## Verified limits and traps
+
+`lib/bms/assistantKnowledge/limits.ts` holds the 19 groups (97 rules) that used to exist only in
+`/admin/manual`: the stock invariant and its movement types, barcode rules, which numbers are
+estimates, cancel vs return vs refund, coupon ordering, FEFO lots and snapshot counts, what is not
+supported yet, permissions by module, and the rest. A guide says what to do; these say what will
+bite, and without them the assistant could explain how to run a profit report while never
+mentioning that it applies today's cost to last month's revenue.
+
+Each group names the guides it constrains, the Manual renders the same array, and
+`search_system_guides` returns the groups belonging to its two best-ranked guides — only two,
+because 97 rules would crowd out the answer they exist to protect. Rules are payload and are never
+scored; group titles and staff phrasings are the retrieval keys, the same contract as the FAQ.
+
 ## Required ambiguity behavior
 
 - “ร้านมีคนชื่อ suprims ไหม” must distinguish staff from customer. Staff existence requires
@@ -129,13 +144,22 @@ All three suites run in `npm run test:pure` (and therefore in CI), not by hand:
 - An unmatched question at the register says so instead of showing the first page guide.
 - A proposal in the Drawer shows its mutation and server-composed arguments before Confirm, and an
   emailed report requires a reviewed, valid recipient with an unknown-recipient warning.
-- Every question the product asks — all 51 pinned in `work-assistant-question-corpus.mts`, plus 2
-  guards that must stay unanswerable — is *led* by the entry that answers it. Presence anywhere in
-  the result list is not a pass: a guide that slips to rank 6 behind unrelated entries fails, which
-  is the regression the earlier `.some(...)` assertions could not see.
+- Every question the product asks — the 51 chips and hand-verified questions, plus one coverage
+  question for every remaining catalog entry, plus 2 guards that must stay unanswerable (133 in
+  `work-assistant-question-corpus.mts`) — is *led* by the entry that answers it. Presence anywhere
+  in the result list is not a pass: a guide that slips to rank 6 behind unrelated entries fails,
+  which is the regression the earlier `.some(...)` assertions could not see.
+- Every guide and every capability has at least one pinned question or FAQ. An entry nobody can
+  ask about is unreachable in practice, and unreachable text is where wrong text survives — so a
+  new page fails the contract until someone writes the question that should find it.
 - Every starter chip the UI ships is a pinned question, so a new chip fails the contract until its
   answer is pinned.
 - Every question that can only be answered from live data names an approved tool that exists, is
   offered on the staff surface, and is still gated by the permission written next to it.
 - Every FAQ resolves to its own guide in both languages, and every FAQ alias resolves to its own
   FAQ — an alias that answers a different question is worse than no alias.
+- Every limit group reaches a guide it constrains, in both languages, and carries the same number
+  of rules in Thai and English — a rule that exists in one language is a rule half the staff never
+  sees.
+- The Manual imports the FAQ and limit catalogs and declares neither array itself, so the page and
+  the assistant cannot drift apart.

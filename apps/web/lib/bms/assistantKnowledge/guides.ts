@@ -129,7 +129,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "dashboard.daily-review", module: "dashboard", pageId: "dashboard", route: "/admin/dashboard",
     title: both("ตรวจภาพรวมร้านประจำวัน", "Review the daily store overview"),
     summary: both("ใช้ Dashboard เพื่อดูยอดขาย งานค้าง และสัญญาณที่ต้องจัดการต่อ", "Use Dashboard to review sales, pending work, and operational signals."),
-    aliases: aliases(["dashboard ใช้ยังไง", "ดูภาพรวมร้าน", "เช็กงานวันนี้"], ["how to use dashboard", "store overview", "today's work"]), requiredPermissions: ["report.view"],
+    aliases: aliases(["เปิดร้านมาต้องดูอะไรก่อน", "งานวันนี้ต้องทำอะไร", "เริ่มวันทำงาน", "dashboard ใช้ยังไง", "ดูภาพรวมร้าน", "เช็กงานวันนี้"], ["what to check first each day", "daily review", "how to use dashboard", "store overview", "today's work"]), requiredPermissions: ["report.view"],
     prerequisites: lists(["ข้อมูลต้องมาจากรายการจริงของร้าน"], ["Figures must come from the shop's live records."]),
     steps: lists(["เปิด Dashboard", "เลือกช่วงเวลาที่ต้องการ", "ตรวจตัวเลขและรายการค้าง", "เปิดหน้ารายละเอียดจากการ์ดที่เกี่ยวข้อง"], ["Open Dashboard.", "Choose the period.", "Review figures and pending items.", "Open the relevant detail page."]),
     warnings: lists(["อย่าใช้ตัวเลข placeholder เป็นข้อมูลจริง"], ["Never present placeholder figures as live data."]), relatedCapabilityIds: ["dashboard.overview"],
@@ -187,7 +187,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "inventory.transfer", module: "inventory", pageId: "stock-transfers", route: "/admin/stock-transfers",
     title: both("โอนสต็อกระหว่างสาขา", "Transfer stock between branches"),
     summary: both("ส่งออกจากต้นทางก่อน แล้วจึงรับเข้าที่ปลายทาง", "Send from the source first, then receive at the destination."),
-    aliases: aliases(["โอนสต็อก", "ย้ายของสาขา", "ของระหว่างทาง"], ["transfer stock", "move branch inventory", "in transit"]), requiredPermissions: ["inventory.transfer"],
+    aliases: aliases(["โอนของไปสาขาอื่น", "ส่งของไปอีกสาขา", "รับของที่โอนมา", "โอนสต็อก", "ย้ายของสาขา", "ของระหว่างทาง"], ["send stock to another branch", "receive a transfer", "transfer stock", "move branch inventory", "in transit"]), requiredPermissions: ["inventory.transfer"],
     prerequisites: lists(["มีสาขาต้นทางและปลายทาง", "สต็อกที่ส่งต้องไม่ใช่ของจอง"], ["Source and destination branches exist.", "Reserved stock cannot be sent."]),
     steps: lists(["สร้างใบโอน", "ตรวจจำนวนและส่งจากต้นทาง", "ปลายทางตรวจของจริง", "รับเข้าและบันทึกของขาดถ้ามี"], ["Create a transfer.", "Verify and send from the source.", "Inspect at destination.", "Receive and record any shortage."]),
     warnings: lists(["ของระหว่างทางไม่เป็นสต็อกของสาขาใด", "รับขาดต้องลงเป็นสูญหายระหว่างทาง"], ["In-transit goods belong to no branch.", "Short receipt records loss in transit."]), relatedCapabilityIds: ["inventory.branch"],
@@ -450,7 +450,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "pharmacy.case-flow", module: "pharmacy", pageId: "pharmacy", route: "/admin/pharmacy-manual",
     title: both("ติดตามเคสร้านขายยา", "Follow a pharmacy case"),
     summary: both("รับข้อมูล ส่งเข้าคิว และให้เภสัชกรผู้มีใบอนุญาตตัดสินใจ", "Collect intake, queue the case, and let a licensed pharmacist decide."),
-    aliases: aliases(["สถานะเคสยา", "คิวเภสัชกร", "ขอข้อมูลเพิ่ม"], ["pharmacy case status", "pharmacist queue", "request more information"]), requiredPermissions: ["pharmacy.assessment.read"],
+    aliases: aliases(["เคสร้านขายยาเดินยังไง", "เคสร้านขายยา", "สถานะเคสหมายถึงอะไร", "สถานะเคสยา", "คิวเภสัชกร", "ขอข้อมูลเพิ่ม"], ["pharmacy case flow", "what the case statuses mean", "pharmacy case status", "pharmacist queue", "request more information"]), requiredPermissions: ["pharmacy.assessment.read"],
     prerequisites: lists(["Pharmacy intake เปิดด้วย feature flag", "การตัดสินใจต้องเป็นเภสัชกรมีใบอนุญาต"], ["Pharmacy intake is feature-gated.", "Clinical decisions require a licensed pharmacist."]),
     steps: lists(["เปิดคิว", "เลือกเคสตามสถานะ", "ขอข้อมูลเพิ่มหรือ claim ตามสิทธิ์", "เภสัชกรตรวจและตัดสินใจผ่าน workflow"], ["Open the queue.", "Choose a case by status.", "Request information or claim according to access.", "A pharmacist reviews and decides through the workflow."]),
     warnings: lists(["AI ไม่วินิจฉัยหรืออนุมัติ", "Manager ที่อ่านเคสได้อาจไม่มีสิทธิ์ดูหลักฐาน"], ["AI does not diagnose or approve.", "A Manager who can read a case may still lack evidence access."]), relatedCapabilityIds: ["pharmacy.workflow"],
@@ -468,7 +468,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   {
     id: "receivables.review", module: "receivables", pageId: "receivables", route: "/admin/receivables",
     title: both("ตรวจลูกหนี้และรับชำระ", "Review and collect receivables"), summary: both("ตรวจวงเงิน หนี้คงค้าง และรับชำระด้วยสิทธิ์ที่เหมาะสม", "Review credit limit, outstanding debt, and collect with the proper access."),
-    aliases: aliases(["ดูหนี้ลูกค้า", "รับชำระหนี้", "ขายเชื่อ"], ["customer debt", "collect receivable", "credit sale"]), requiredPermissions: ["ar.view"],
+    aliases: aliases(["ยอดลูกหนี้ค้าง", "ลูกหนี้ทั้งร้าน", "ใครค้างชำระบ้าง", "อายุหนี้", "ดูหนี้ลูกค้า", "รับชำระหนี้", "ขายเชื่อ"], ["outstanding receivables", "who owes us money", "aging report", "customer debt", "collect receivable", "credit sale"]), requiredPermissions: ["ar.view"],
     prerequisites: lists(["รับชำระต้องมี ar.collect"], ["Collection requires ar.collect."]), steps: lists(["ค้นหาลูกหนี้", "ตรวจยอดและเอกสารอ้างอิง", "รับชำระตามช่องทาง", "ตรวจยอดคงเหลือ"], ["Find the account.", "Review balance and source documents.", "Collect through the selected method.", "Verify the remaining balance."]),
     warnings: lists(["ตัดหนี้สูญต้องมี ar.writeoff และเป็นการลดสินทรัพย์"], ["Write-off requires ar.writeoff and reduces an asset."]), relatedCapabilityIds: ["receivables.credit-sales"],
   },
@@ -557,6 +557,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "locations.manage-branches", module: "locations", route: "/admin/locations",
     title: ["จัดการสาขา", "Manage locations"], summary: ["เพิ่มหรือแก้สาขาที่ใช้กับสต็อก POS และการโอนของ", "Add or edit branches used by inventory, POS, and transfers."],
+    aliases: [["เพิ่มสาขา", "สร้างสาขาใหม่", "รหัสสาขา"], ["add a branch", "branch code"]],
     requiredPermissions: ["location.manage"], steps: [["เปิด Locations", "เพิ่มหรือแก้ชื่อและข้อมูลสาขา", "ผูกเครื่อง POS หรือใช้สาขากับงานคลัง"], ["Open Locations.", "Add or edit branch details.", "Assign POS devices or use the branch in inventory workflows."]],
     warnings: [["สต็อกและของจองเป็นข้อมูลระดับสาขา"], ["Stock and reservations are branch facts."]], relatedCapabilityIds: ["inventory.branch"],
   }),
@@ -569,18 +570,21 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "pharmacy.process-queue", module: "pharmacy", route: "/admin/pharmacy-queue",
     title: ["ทำงานจากคิวเภสัชกรรม", "Work the pharmacy queue"], summary: ["เปิดเคสตามสถานะ ขอข้อมูลเพิ่ม claim และส่งให้ผู้มีใบอนุญาตตัดสินใจ", "Open cases by status, request information, claim work, and route decisions to licensed staff."],
+    aliases: [["ทำงานจากคิวเภสัชกร", "คิวเภสัชกรทำยังไง", "อนุมัติเคสยา"], ["work the pharmacy queue", "approve a pharmacy case"]],
     requiredPermissions: ["pharmacy.assessment.read"], steps: [["กรองคิวตามความเร่งด่วนและสถานะ", "เปิดเคสและตรวจข้อมูลที่อนุญาตให้เห็น", "ขอข้อมูลเพิ่มหรือ claim ตามสิทธิ์", "ให้เภสัชกร approve หรือ reject"], ["Filter by urgency and status.", "Open the case and review authorized data.", "Request more information or claim it according to access.", "Have a pharmacist approve or reject."]],
     warnings: [["หลักฐานสุขภาพต้องมี pharmacy.evidence.read แยกต่างหาก"], ["Health evidence separately requires pharmacy.evidence.read."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
   menuGuide({
     id: "pharmacy.manage-protocols", module: "pharmacy", route: "/admin/pharmacy-protocols",
     title: ["จัดการ Pharmacy Protocols", "Manage pharmacy protocols"], summary: ["ดูแลคำถาม กฎ และเวอร์ชัน protocol ที่ workflow ร้านยาใช้", "Maintain the questions, rules, and versions used by the pharmacy workflow."],
+    aliases: [["แก้คำถามคัดกรอง", "โปรโตคอลร้านยา", "กฎคัดกรองยา"], ["pharmacy protocols", "screening questions"]],
     requiredPermissions: ["pharmacy.protocol.manage"], steps: [["เปิด Protocols", "เลือก protocol และแก้ข้อมูล", "ทบทวนผลกระทบ", "เผยแพร่ตาม workflow ของหน้า"], ["Open Protocols.", "Select and edit a protocol.", "Review the impact.", "Publish through the page workflow."]],
     warnings: [["ห้ามให้โมเดลสร้าง clinical decision แทน protocol และเภสัชกร"], ["Never let the model replace protocols or pharmacist decisions."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
   menuGuide({
     id: "pharmacy.manage-licenses", module: "pharmacy", route: "/admin/pharmacy-protocols/licenses",
     title: ["จัดการใบอนุญาตเภสัชกร", "Manage pharmacist licenses"], summary: ["ผูกและตรวจข้อมูลผู้มีใบอนุญาตที่ใช้ตัดสินใจใน pharmacy workflow", "Maintain licensed-pharmacist records used by the pharmacy workflow."],
+    aliases: [["ใบอนุญาตเภสัชกร", "บันทึกเลขใบอนุญาต", "ผูกเภสัชกรกับร้าน"], ["pharmacist license", "license records"]],
     accessRequirement: "tenant_administrator", steps: [["เปิด Pharmacist Licenses", "เพิ่มหรือแก้ข้อมูลจากหลักฐานจริง", "ตรวจความถูกต้องก่อนผูกกับ workflow"], ["Open Pharmacist Licenses.", "Add or edit details from real evidence.", "Verify them before using the account in the workflow."]],
     warnings: [["Assistant ห้ามเดาหรือรับรองสถานะใบอนุญาต"], ["The assistant must never infer or certify a license."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
@@ -599,6 +603,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "catalog.print-labels", module: "product-labels", route: "/admin/product-labels",
     title: ["พิมพ์ฉลากสินค้า", "Print product labels"], summary: ["สร้างสติกเกอร์บาร์โค้ดจากข้อมูลสินค้าและ pack ที่ตั้งไว้", "Print barcode labels from configured product and pack data."],
+    aliases: [["พิมพ์สติกเกอร์", "ฉลากราคา", "สติกเกอร์บาร์โค้ด"], ["print price labels", "barcode sticker"]],
     requiredPermissions: ["product.view"], steps: [["เปิด Product labels", "ค้นสินค้า/pack", "เลือกจำนวนและรูปแบบ", "ตรวจ preview แล้วพิมพ์"], ["Open Product labels.", "Find a product or pack.", "Choose quantity and layout.", "Review the preview and print."]],
     warnings: [["แก้ barcode ที่ข้อมูลสินค้า ไม่ใช่แก้เฉพาะฉลาก"], ["Fix a barcode in product data, not only on the printed label."]], relatedCapabilityIds: ["catalog.products", "catalog.product-packs"],
   }),
@@ -613,6 +618,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "commission.review", module: "commission", route: "/admin/commission",
     title: ["ตรวจคอมมิชชัน", "Review commission"], summary: ["ดู rule ตามช่วงเวลา ผลคำนวณ และ clawback จากการคืนสินค้า", "Review effective-dated rules, calculated results, and return clawbacks."],
+    aliases: [["ค่าคอมพนักงาน", "ดูค่าคอม", "คอมมิชชันเดือนนี้"], ["staff commission", "commission report"]],
     requiredPermissions: ["commission.view"], prerequisites: [["การแก้กฎต้องมี commission.manage"], ["Editing rules requires commission.manage."]],
     steps: [["เปิด Commission", "เลือกช่วงเวลา/พนักงาน", "ตรวจยอดและ rule ที่ใช้", "ตรวจรายการคืนที่หักกลับ"], ["Open Commission.", "Choose period or staff.", "Review totals and applied rules.", "Check return clawbacks."]],
     warnings: [["อย่าใช้ rule ปัจจุบันย้อนหลังแทน snapshot ตามช่วงมีผล"], ["Do not apply today's rule retroactively over effective-dated results."]], relatedCapabilityIds: ["commission.staff"],
@@ -644,18 +650,21 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "onboarding.getting-started", module: "onboarding", route: "/admin/getting-started",
     title: ["เริ่มตั้งค่าร้าน", "Complete Getting Started"], summary: ["ใช้ checklist ตรวจข้อมูลร้าน สินค้า ช่องทาง และ POS ที่ยังขาด", "Use the checklist to find missing shop, product, channel, and POS setup."],
+    aliases: [["เพิ่งเปิดร้านใหม่", "ตั้งค่าอะไรก่อน", "เริ่มใช้ระบบ"], ["just opened the shop", "first setup steps"]],
     steps: [["เปิด Getting Started", "เลือกงานที่ยังไม่ครบ", "ทำในหน้าที่ลิงก์ไป", "กลับมาตรวจ checklist"], ["Open Getting Started.", "Choose an incomplete item.", "Complete it on the linked page.", "Return and recheck the list."]],
     warnings: [["การข้าม checklist ไม่ได้ทำให้ dependency พร้อมใช้งาน"], ["Skipping a checklist item does not configure its dependency."]],
   }),
   menuGuide({
     id: "manual.find-instructions", module: "manual", route: "/admin/manual",
     title: ["ค้นคู่มือทั้งระบบ", "Find system instructions"], summary: ["ค้นตามเมนู งาน หรือคำถามที่พบบ่อย แล้วเปิดหน้าทำงานจริง", "Search by menu, task, or FAQ and jump to the real work page."],
+    aliases: [["คู่มือ", "คู่มือทั้งระบบ", "หาวิธีใช้"], ["manual", "handbook", "where are the instructions"]],
     steps: [["เปิด Manual", "ค้นคำหรือเลือกหมวด", "อ่าน prerequisites และข้อควรระวัง", "เปิดลิงก์ไปหน้าจริง"], ["Open Manual.", "Search or choose a section.", "Read prerequisites and warnings.", "Open the real work page."]],
     warnings: [["ข้อมูลร้าน ณ ตอนนี้ต้องตรวจจากหน้าธุรกิจหรือ Assistant tool ไม่ใช่ข้อความคู่มือ"], ["Live shop state must come from the business page or an Assistant tool, not manual prose."]],
   }),
   menuGuide({
     id: "pharmacy.review-mockup", module: "pharmacy", route: "/admin/pharmacy-review-mockup",
     title: ["ดู Pharmacy Review Mockup", "Review the pharmacy design mockup"], summary: ["หน้าจำลองสำหรับทบทวนหน้าตาและ flow review โดยใช้ข้อมูลตัวอย่าง", "A design mockup for reviewing the pharmacist-review UI with sample data."],
+    aliases: [["ตัวอย่างหน้าจอรีวิวของร้านยา", "mockup ร้านยา", "ตัวอย่างหน้าตรวจเคส"], ["pharmacy review mockup", "review screen example"]],
     accessRequirement: "tenant_administrator", steps: [["เปิดหน้าจำลอง", "ตรวจ layout และลำดับข้อมูล", "ส่งข้อสังเกตไปแก้ workflow จริงแยกต่างหาก"], ["Open the mockup.", "Review layout and information order.", "Apply feedback separately to the real workflow."]],
     warnings: [["ข้อมูลและปุ่มในหน้านี้เป็น mock ไม่ใช่เคสจริงและไม่ใช่คำตัดสินทางคลินิก"], ["This page is mock data and UI, not a real case or clinical decision."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
@@ -666,25 +675,34 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     coversRoutePrefixes: ["/admin/post"],
     pageId: "post",
     title: ["สร้างและแก้ไข Post", "Create and edit a post"], summary: ["ใช้ฟอร์ม Post สำหรับสร้าง แก้ และเปิดรายละเอียดเนื้อหาระดับแพลตฟอร์ม", "Use the Post form to create, edit, and view platform content."],
+    aliases: [["สร้างโพสต์", "แก้ไขโพสต์", "เขียนบทความ"], ["create a post", "edit a post"]],
     accessRequirement: "platform_administrator", steps: [["เปิด Posts", "เลือก New หรือรายการเดิม", "กรอกและตรวจเนื้อหา", "บันทึกแล้วเปิดหน้ารายละเอียด"], ["Open Posts.", "Choose New or an existing item.", "Edit and review the content.", "Save and open the detail page."]],
     warnings: [["การบันทึกเป็นการเผยแพร่/เปลี่ยนข้อมูลจริงตามสถานะของฟอร์ม ต้องตรวจ audience ก่อน"], ["Saving changes real content according to form status; verify the audience first."]],
   }),
-  ...[
-    ["platform.architecture", "architecture", "/admin/architecture", "ดูสถาปัตยกรรมระบบ", "Review system architecture", "อ่านโครงสร้าง dependency และขอบเขตระบบระดับแพลตฟอร์ม", "Review platform structure, dependencies, and boundaries."],
-    ["platform.tenants", "tenants", "/admin/tenants", "จัดการร้านทั้งหมด", "Manage tenants", "ตรวจร้านและสถานะระดับ fleet โดยไม่ปะปนกับมุมร้านปัจจุบัน", "Review fleet-wide shops without confusing them with current-tenant scope."],
-    ["platform.report-schedule", "report-schedule", "/admin/report-schedule", "จัดการตารางส่งรายงาน", "Manage report schedules", "ดูและตั้งงานส่งรายงานตามกำหนดสำหรับทีมส่วนกลาง", "Review and configure scheduled report delivery for central operations."],
-    ["platform.roles", "roles", "/admin/roles", "จัดการ Role กลาง", "Manage global roles", "ดูนิยาม role กลางของแพลตฟอร์ม", "Review platform-wide role definitions."],
-    ["platform.posts", "posts", "/admin/posts", "จัดการ Posts", "Manage posts", "ดูและจัดการเนื้อหาโพสต์ระดับแพลตฟอร์ม", "Review and manage platform post content."],
-    ["platform.files", "files", "/admin/files", "ตรวจไฟล์ในระบบ", "Review stored files", "ตรวจ metadata และ visibility ของไฟล์ตาม guard ที่กำหนด", "Review file metadata and visibility under the configured guards."],
-    ["platform.logs", "logs", "/admin/logs", "ตรวจ System logs", "Review system logs", "ค้น log เพื่อวินิจฉัยเหตุการณ์โดยไม่เปิดเผย secret หรือ PII เกินจำเป็น", "Search logs for diagnosis without exposing secrets or unnecessary PII."],
-    ["platform.mail-log", "mail-log", "/admin/mail-log", "ตรวจ Mail log", "Review mail logs", "ตรวจประวัติและสถานะการส่งอีเมล", "Review email delivery history and status."],
-    ["platform.support", "support-tickets", "/admin/support-tickets", "จัดการ Support tickets", "Manage support tickets", "คัดกรองและติดตามปัญหาที่ผู้ใช้รายงาน", "Triage and track reported user issues."],
-    ["platform.operations", "operations-schedule", "/admin/operations-schedule", "ตรวจ Batch และ Cron", "Review batch and cron jobs", "ดูสถานะงาน background และ scheduled jobs", "Review background and scheduled-job state."],
-    ["platform.env", "env", "/admin/env", "ตรวจ Environment", "Review environment status", "ตรวจความพร้อมของ config โดยไม่เปิดเผยค่าความลับ", "Review configuration readiness without exposing secret values."],
-    ["platform.sql-console", "dev", "/admin/dev/sql-console", "ใช้ Dev SQL Console", "Use the Dev SQL console", "เครื่องมือวินิจฉัยภายในสำหรับผู้ดูแลแพลตฟอร์ม", "Internal diagnostic tooling for platform administrators."],
-    ["platform.fake-data", "dev", "/admin/dev/fake", "สร้างข้อมูลทดสอบ", "Create test data", "สร้างข้อมูลสาธิตเฉพาะ environment และ tenant ที่ตั้งใจทดสอบ", "Create demo data only in the intended environment and tenant."],
-  ].map(([id, module, route, thTitle, enTitle, thSummary, enSummary]) => menuGuide({
+  /**
+   * Platform-only pages share one shape, so they share one table.
+   *
+   * The last two columns are not decoration: without them `menuGuide` defaults aliases to the
+   * page's own title, so the only question that reached "ตรวจ Mail log" was one that already
+   * contained the words "mail log" — nobody in a shop types that when an email did not arrive.
+   */
+  ...([
+    ["platform.architecture", "architecture", "/admin/architecture", "ดูสถาปัตยกรรมระบบ", "Review system architecture", "อ่านโครงสร้าง dependency และขอบเขตระบบระดับแพลตฟอร์ม", "Review platform structure, dependencies, and boundaries.", ["สถาปัตยกรรมระบบ", "โครงสร้างระบบ"], ["system architecture", "how the system fits together"]],
+    ["platform.tenants", "tenants", "/admin/tenants", "จัดการร้านทั้งหมด", "Manage tenants", "ตรวจร้านและสถานะระดับ fleet โดยไม่ปะปนกับมุมร้านปัจจุบัน", "Review fleet-wide shops without confusing them with current-tenant scope.", ["ร้านทั้งหมด", "ดูร้านค้าในระบบ", "เข้าไปดูร้านลูกค้า"], ["all shops", "tenant list"]],
+    ["platform.report-schedule", "report-schedule", "/admin/report-schedule", "จัดการตารางส่งรายงาน", "Manage report schedules", "ดูและตั้งงานส่งรายงานตามกำหนดสำหรับทีมส่วนกลาง", "Review and configure scheduled report delivery for central operations.", ["ตารางส่งรายงาน", "ส่งรายงานอัตโนมัติ", "digest"], ["report schedule", "automatic digest"]],
+    ["platform.roles", "roles", "/admin/roles", "จัดการ Role กลาง", "Manage global roles", "ดูนิยาม role กลางของแพลตฟอร์ม", "Review platform-wide role definitions.", ["role กลาง", "จัดการ role ของระบบ"], ["global roles", "platform roles"]],
+    ["platform.posts", "posts", "/admin/posts", "จัดการ Posts", "Manage posts", "ดูและจัดการเนื้อหาโพสต์ระดับแพลตฟอร์ม", "Review and manage platform post content.", ["รายการโพสต์", "โพสต์ทั้งหมด", "จัดการโพสต์"], ["all posts", "post list"]],
+    ["platform.files", "files", "/admin/files", "ตรวจไฟล์ในระบบ", "Review stored files", "ตรวจ metadata และ visibility ของไฟล์ตาม guard ที่กำหนด", "Review file metadata and visibility under the configured guards.", ["ไฟล์ในระบบ", "ดูไฟล์", "ดูไฟล์ที่อัปโหลด"], ["uploaded files", "file list"]],
+    ["platform.logs", "logs", "/admin/logs", "ตรวจ System logs", "Review system logs", "ค้น log เพื่อวินิจฉัยเหตุการณ์โดยไม่เปิดเผย secret หรือ PII เกินจำเป็น", "Search logs for diagnosis without exposing secrets or unnecessary PII.", ["ดู log ย้อนหลัง", "หาสาเหตุ error"], ["system logs", "error history"]],
+    ["platform.mail-log", "mail-log", "/admin/mail-log", "ตรวจ Mail log", "Review mail logs", "ตรวจประวัติและสถานะการส่งอีเมล", "Review email delivery history and status.", ["อีเมลส่งออก", "อีเมลไม่ถึง", "ประวัติการส่งอีเมล"], ["outgoing email", "email not delivered"]],
+    ["platform.support", "support-tickets", "/admin/support-tickets", "จัดการ Support tickets", "Manage support tickets", "คัดกรองและติดตามปัญหาที่ผู้ใช้รายงาน", "Triage and track reported user issues.", ["support ticket", "คิวปัญหาผู้ใช้"], ["support tickets", "reported issues"]],
+    ["platform.operations", "operations-schedule", "/admin/operations-schedule", "ตรวจ Batch และ Cron", "Review batch and cron jobs", "ดูสถานะงาน background และ scheduled jobs", "Review background and scheduled-job state.", ["งานตามเวลา", "cron รันหรือยัง", "batch job"], ["cron jobs", "scheduled jobs"]],
+    ["platform.env", "env", "/admin/env", "ตรวจ Environment", "Review environment status", "ตรวจความพร้อมของ config โดยไม่เปิดเผยค่าความลับ", "Review configuration readiness without exposing secret values.", ["ตัวแปร env", "ตั้งค่า env ครบไหม", "config ของระบบ"], ["environment variables", "config check"]],
+    ["platform.sql-console", "dev", "/admin/dev/sql-console", "ใช้ Dev SQL Console", "Use the Dev SQL console", "เครื่องมือวินิจฉัยภายในสำหรับผู้ดูแลแพลตฟอร์ม", "Internal diagnostic tooling for platform administrators.", ["รัน query", "SQL console", "ตรวจข้อมูลด้วย SQL"], ["run a query", "sql console"]],
+    ["platform.fake-data", "dev", "/admin/dev/fake", "สร้างข้อมูลทดสอบ", "Create test data", "สร้างข้อมูลสาธิตเฉพาะ environment และ tenant ที่ตั้งใจทดสอบ", "Create demo data only in the intended environment and tenant.", ["ข้อมูลทดสอบ", "สร้างข้อมูลปลอม", "seed ข้อมูล"], ["test data", "seed demo data"]],
+  ] as readonly (readonly [string, string, string, string, string, string, string, readonly string[], readonly string[]])[]).map(([id, module, route, thTitle, enTitle, thSummary, enSummary, thAliases, enAliases]) => menuGuide({
     id, module, route, title: [thTitle, enTitle], summary: [thSummary, enSummary],
+    aliases: [[...thAliases, thTitle], [...enAliases, enTitle]],
     accessRequirement: "platform_administrator",
     steps: [[`เปิด ${thTitle.replace(/^ดู|^ตรวจ|^จัดการ|^ใช้|^สร้าง/, "").trim() || thTitle}`, "ตรวจขอบเขตและข้อมูลก่อนดำเนินการ", "ใช้เฉพาะ action ที่หน้าและ server guard อนุญาต"], [`Open ${enTitle.replace(/^(Review|Manage|Use|Create)\s+/i, "") || enTitle}.`, "Confirm scope and evidence.", "Use only actions allowed by the page and server guard."]],
     warnings: [["เมนูนี้เป็น platform-only และอาจกระทบหลายร้าน"], ["This is platform-only and may affect multiple tenants."]],
@@ -692,6 +710,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "ai.use-playground", module: "ai-quality", route: "/admin/playground",
     title: ["ทดสอบ AI ใน Playground", "Test AI in Playground"], summary: ["ทดสอบ flow แชทและสต็อกในพื้นที่ควบคุม", "Test chat and stock flows in a controlled surface."],
+    aliases: [["ทดลองถาม AI", "ทดสอบ prompt", "ลองคำถามกับ AI"], ["try a prompt", "test the AI"]],
     requiredPermissions: ["ai_quality.view"], steps: [["เปิด Playground", "เลือก scenario ทดสอบ", "ใช้ข้อมูล sandbox", "ตรวจ trace และผลลัพธ์"], ["Open Playground.", "Choose a test scenario.", "Use sandbox data.", "Review trace and output."]],
     warnings: [["ห้ามใส่ production PII หรือใช้แทนการทดสอบ live-model ที่มีขั้นตอนเฉพาะ"], ["Do not enter production PII or treat this as the governed live-model suite."]], relatedCapabilityIds: ["ai.quality"],
   }),

@@ -44,6 +44,17 @@ export type CorpusCase = Readonly<{
   expectAlso?: readonly string[];
   /** Approved tool that must exist for the live half of the answer, and the permission gating it. */
   expectTool?: Readonly<{ name: string; permission: string | null }>;
+  /**
+   * For "does BMS actually do X yet" questions: the status the answer must carry. A capability
+   * that quietly turns CONDITIONAL is a promise made to someone standing at a counter.
+   */
+  expectStatus?: "AVAILABLE" | "CONDITIONAL" | "BETA" | "MOCK" | "UNAVAILABLE";
+  /**
+   * `coverage` = written to give an entry its first pinned question, so the catalog cannot grow
+   * a page nobody ever asks about. Anything without it is a question the product ships as a chip
+   * or that was verified by hand — those are the original 51 and their count is asserted.
+   */
+  origin?: "coverage";
   why?: string;
 }>;
 
@@ -51,6 +62,13 @@ export type CorpusCase = Readonly<{
 const REGISTER = { currentPath: "/admin/pos-manual", pageId: "pos", kind: "guide" } as const;
 /** The Drawer sends the page the user is standing on. Orders is used as a representative page. */
 const ON_ORDERS_PAGE = { currentPath: "/admin/orders", pageId: "orders" } as const;
+/**
+ * How the two knowledge tools actually search. `search_system_guides` asks for guides and
+ * `search_system_capabilities` asks for capabilities, so a "how do I" question is never judged
+ * against the capability that shares its subject, and vice versa.
+ */
+const GUIDES = { kind: "guide" } as const;
+const CAPABILITIES = { kind: "capability" } as const;
 
 export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   // ── What can this product do (capability, not tenant state) ───────────────────────────────
@@ -191,9 +209,133 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
     q: "ทำยังไง", locale: "th", context: REGISTER, expect: "no-match",
     why: "A verb with no object is not a question the catalog can honestly answer.",
   },
+
+  // ── Coverage: one pinned question per guide ───────────────────────────────────────────────
+  // Asked the way the two knowledge tools ask (`kind: "guide"`), so a guide question is judged
+  // against guides rather than losing a tie to the capability that shares its subject.
+  { q: "เปิดกะแล้วปิดกะยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.shift", origin: "coverage" },
+  { q: "ใช้แต้มสมาชิกที่หน้าร้านยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.member-coupon-points", origin: "coverage" },
+  { q: "พักบิลแล้วเรียกกลับมายังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.park-resume", origin: "coverage" },
+  { q: "บันทึกค่าใช้จ่ายเงินสดย่อยหน้าร้าน", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.expense-petty-cash", origin: "coverage" },
+  { q: "เปิดร้านมาต้องดูอะไรก่อน", locale: "th", context: GUIDES, expect: "answer", expectTop: "dashboard.daily-review", origin: "coverage" },
+  { q: "เพิ่มสินค้าใหม่ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "products.create", origin: "coverage" },
+  { q: "โอนของไปสาขาอื่นยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.transfer", origin: "coverage" },
+  { q: "นับสต็อกแล้วปรับยอดยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.count", origin: "coverage" },
+  {
+    q: "ตรวจสลิปแล้วยืนยันเงินยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "payments.review-payment",
+    expectTool: { name: "confirm_payment", permission: "payment.confirm" },
+    why: "Confirming money is propose-only; the tool exists but must stay behind payment.confirm.",
+    origin: "coverage",
+  },
+  { q: "สร้างพัสดุและใส่เลขติดตามยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "shipping.create", origin: "coverage" },
+  {
+    q: "รับของเข้าใบสั่งซื้อยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "purchase.receive",
+    expectTool: { name: "receive_purchase_order", permission: "purchase.receive" },
+    origin: "coverage",
+  },
+  { q: "คิวติดตามลูกค้าใช้ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "followup.review-queue", origin: "coverage" },
+  { q: "ตั้งกฎติดตามลูกค้ายังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "followup.configure-rules", origin: "coverage" },
+  { q: "เคสร้านขายยาเดินยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.case-flow", origin: "coverage" },
+  { q: "ทำงานจากคิวเภสัชกรยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.process-queue", origin: "coverage" },
+  { q: "แก้คำถามคัดกรองของร้านยายังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-protocols", origin: "coverage" },
+  { q: "บันทึกใบอนุญาตเภสัชกรยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-licenses", origin: "coverage" },
+  { q: "ดูตัวอย่างหน้าจอรีวิวของร้านยา", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.review-mockup", origin: "coverage" },
+  { q: "ดูยอดลูกหนี้ค้างทั้งร้าน", locale: "th", context: GUIDES, expect: "answer", expectTop: "receivables.review", origin: "coverage" },
+  { q: "AI ตอบผิดต้องดูที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "ai-quality.review", origin: "coverage" },
+  { q: "ทดลองคำถามกับ AI ก่อนใช้จริง", locale: "th", context: GUIDES, expect: "answer", expectTop: "ai.use-playground", origin: "coverage" },
+  { q: "ตั้งสิทธิ์ให้แต่ละ role ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "permissions.explain", origin: "coverage" },
+  { q: "เพิ่มสาขาใหม่ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "locations.manage-branches", origin: "coverage" },
+  { q: "พิมพ์สติกเกอร์บาร์โค้ดยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "catalog.print-labels", origin: "coverage" },
+  { q: "ดูค่าคอมพนักงานยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "commission.review", origin: "coverage" },
+  { q: "ดู audit log ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "access.review-audit", origin: "coverage" },
+  { q: "เพิ่งเปิดร้านใหม่ต้องตั้งค่าอะไรก่อน", locale: "th", context: GUIDES, expect: "answer", expectTop: "onboarding.getting-started", origin: "coverage" },
+  { q: "คู่มือทั้งระบบอยู่ที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "manual.find-instructions", origin: "coverage" },
+  { q: "สร้างโพสต์ใหม่ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.edit-post", origin: "coverage" },
+  { q: "ดูรายการโพสต์ทั้งหมด", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.posts", origin: "coverage" },
+  { q: "ดูสถาปัตยกรรมระบบที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.architecture", origin: "coverage" },
+  { q: "ดูร้านทั้งหมดในระบบ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.tenants", origin: "coverage" },
+  { q: "ตั้งตารางส่งรายงานอัตโนมัติ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.report-schedule", origin: "coverage" },
+  { q: "จัดการ role กลางของระบบ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.roles", origin: "coverage" },
+  { q: "ดูไฟล์ที่ระบบเก็บไว้", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.files", origin: "coverage" },
+  { q: "ดู system log ย้อนหลัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.logs", origin: "coverage" },
+  { q: "อีเมลส่งออกไม่ถึงต้องดูที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.mail-log", origin: "coverage" },
+  { q: "ดูคิว support ticket", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.support", origin: "coverage" },
+  { q: "งาน cron รันจริงหรือยัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.operations", origin: "coverage" },
+  { q: "เช็กว่า env ตั้งค่าไว้หรือยัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.env", origin: "coverage" },
+  { q: "รัน query ตรวจข้อมูลที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.sql-console", origin: "coverage" },
+  { q: "สร้างข้อมูลทดสอบยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.fake-data", origin: "coverage" },
+
+  // ── Coverage: one pinned question per capability ──────────────────────────────────────────
+  // "Does BMS do X" is a different question from "how do I do X", and the status it returns is
+  // the promise the shop repeats to its own customers — so the honest ones are pinned too.
+  { q: "ระบบมีหน้าสรุปภาพรวมร้านไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "dashboard.overview", origin: "coverage" },
+  { q: "ระบบรวมแชททุกช่องทางไว้ที่เดียวได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inbox.omnichannel", origin: "coverage" },
+  { q: "ระบบเก็บแคตตาล็อกสินค้าได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "catalog.products", origin: "coverage" },
+  { q: "ระบบแยกสต็อกตามสาขาได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.branch", origin: "coverage" },
+  { q: "ระบบจัดการออร์เดอร์ได้ถึงขั้นไหน", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "orders.lifecycle", origin: "coverage" },
+  { q: "ระบบตรวจสลิปโอนเงินได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "payments.review", origin: "coverage" },
+  { q: "ระบบออกเลขพัสดุได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "shipping.fulfillment", expectStatus: "AVAILABLE", origin: "coverage" },
+  {
+    q: "เชื่อมกับ Flash หรือ Kerry ได้จริงหรือยัง", locale: "th", context: CAPABILITIES, expect: "answer",
+    expectTop: "shipping.carrier-integrations", expectStatus: "MOCK",
+    why: "Shipment creation works; carrier booking does not. One entry cannot honestly say both.",
+    origin: "coverage",
+  },
+  { q: "ระบบทำใบสั่งซื้อได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "purchase.orders", origin: "coverage" },
+  { q: "ระบบมีประวัติลูกค้าแบบ Customer 360 ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "customers.crm", origin: "coverage" },
+  { q: "ระบบตามลูกค้าที่หายไปได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "followup.retention", origin: "coverage" },
+  {
+    q: "ระบบส่งรายงานเข้าอีเมลได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "reports.email",
+    expectTool: { name: "email_report", permission: "report.email" },
+    why: "Sending to a free-text recipient stays propose-only behind its own permission.",
+    origin: "coverage",
+  },
+  { q: "ระบบแยกสิทธิ์พนักงานได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "users.access", origin: "coverage" },
+  { q: "ระบบขายหน้าร้านได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.operations", origin: "coverage" },
+  { q: "ระบบรองรับร้านขายยาไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pharmacy.workflow", origin: "coverage" },
+  { q: "ระบบเก็บประวัติว่าใครแก้อะไรไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "audit.revisions", origin: "coverage" },
+  { q: "ระบบขายเชื่อได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "receivables.credit-sales", origin: "coverage" },
+  { q: "ระบบแจ้งลูกค้าเมื่อของเข้าได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restock.subscriptions", origin: "coverage" },
+  { q: "ระบบขายเป็นแพ็กหรือยกกล่องได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "catalog.product-packs", origin: "coverage" },
+  { q: "ระบบคิดค่าคอมพนักงานได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "commission.staff", origin: "coverage" },
+  { q: "ระบบเชื่อมช่องทางแชทได้กี่ช่องทาง", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "settings.channels", origin: "coverage" },
+  { q: "ระบบมีที่ตรวจคุณภาพคำตอบ AI ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "ai.quality", origin: "coverage" },
+  { q: "ระบบมีโควตาการใช้ AI ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "billing.plan", origin: "coverage" },
+  { q: "ระบบตั้งเวลาส่งรายงานอัตโนมัติได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "reports.schedule", origin: "coverage" },
+  { q: "ระบบมีตารางสิทธิ์ตาม role ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "access.matrix", origin: "coverage" },
+  { q: "ระบบโอนสต็อกข้ามสาขาได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.transfers", origin: "coverage" },
+  { q: "ระบบรองรับการตรวจนับสต็อกไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.snapshot-counts", origin: "coverage" },
+  { q: "ระบบพิมพ์บาร์โค้ดสินค้าได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "catalog.labels", origin: "coverage" },
+  { q: "ระบบรับมัดจำได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.deposits", origin: "coverage" },
+  { q: "ระบบมีเครดิตร้านหรือบัตรของขวัญไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.store-credit", origin: "coverage" },
+  { q: "ระบบบันทึกเงินสดย่อยหน้าร้านได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.expenses", origin: "coverage" },
+  { q: "ระบบคืนสินค้าหน้าร้านได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.returns", origin: "coverage" },
+  { q: "ระบบออกใบกำกับภาษีได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "tax.documents", origin: "coverage" },
+  {
+    q: "ส่ง e-Tax ให้สรรพากรได้จริงหรือยัง", locale: "th", context: CAPABILITIES, expect: "answer",
+    expectTop: "tax.etax", expectStatus: "BETA",
+    why: "Written but never proven against a real signing/submission provider.",
+    origin: "coverage",
+  },
+  {
+    q: "เชื่อม Shopee หรือ Lazada ได้จริงหรือยัง", locale: "th", context: CAPABILITIES, expect: "answer",
+    expectTop: "settings.marketplaces", expectStatus: "BETA", origin: "coverage",
+  },
+  {
+    q: "ต่อเครื่องพิมพ์สลิปกับลิ้นชักได้จริงหรือยัง", locale: "th", context: CAPABILITIES, expect: "answer",
+    expectTop: "pos.hardware-printing", expectStatus: "BETA",
+    why: "ESC/POS code exists but has never run against real hardware.",
+    origin: "coverage",
+  },
+  { q: "ใส่ API key ของ AI เองได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "settings.byok", origin: "coverage" },
+  { q: "แนบรูปใบสั่งยาเก็บไว้ได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pharmacy.evidence", origin: "coverage" },
 ];
 
-/** Questions asked by a person (the 51); the rest are deliberate empty-answer guards. */
+/**
+ * The original 51: every question the product ships as a chip plus everything verified by hand.
+ * Coverage questions (one per catalog entry) are excluded so this count keeps meaning what it
+ * meant when it was written.
+ */
 export const CORPUS_REAL_QUESTIONS = WORK_ASSISTANT_QUESTION_CORPUS.filter(
-  (item) => item.expect !== "no-match"
+  (item) => item.expect !== "no-match" && item.origin !== "coverage"
 );

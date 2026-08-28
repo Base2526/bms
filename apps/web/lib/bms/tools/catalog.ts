@@ -106,6 +106,7 @@ import {
   SYSTEM_CAPABILITIES,
   SYSTEM_GUIDES,
   faqsForGuide,
+  limitsForGuide,
   groupPermissionDescriptions,
   searchAssistantKnowledge,
 } from "../assistantKnowledge";
@@ -293,7 +294,7 @@ const searchSystemGuidesTool: BmsTool = {
       .filter((entry) => rank.has(entry.id))
       .sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99))
       .slice(0, limit)
-      .map((entry) => {
+      .map((entry, index) => {
         const match = resultById.get(entry.id);
         const missingPermissions = match?.missingPermissions ?? [];
         return {
@@ -316,6 +317,14 @@ const searchSystemGuidesTool: BmsTool = {
             question: faq.question[locale],
             answer: faq.answer[locale],
           })),
+          // Verified limits and traps for this workflow. Only the two best-ranked guides carry
+          // them: 97 rules across the catalog would crowd out the answer they exist to protect.
+          limits: index < 2
+            ? limitsForGuide(entry.id).map((group) => ({
+                title: group.title[locale],
+                items: group.items[locale],
+              }))
+            : [],
         };
       });
     return { ok: true, data: { guides } };
