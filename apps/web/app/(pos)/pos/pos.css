@@ -368,3 +368,328 @@
   .pos-total-value { font-size: 30px; }
   .pos-success-value { font-size: 38px; }
 }
+
+/* ---- แท็บคืนสินค้า: รายการบิล + ประวัติบิล -----------------------
+   เดิมบล็อกนี้เป็น inline style ล้วนและใช้สีดิบ (#fafafa/#eee/#8a6100)
+   ที่ไม่ผูกกับระบบสีของจอนี้เลย ผลคือทุกอย่างน้ำหนักเท่ากันหมด —
+   ยอดเงิน สถานะ และปุ่มแข่งความสำคัญกันจนตากวาดหาไม่เจอ
+
+   สิ่งที่โครงนี้บังคับ:
+   • สถานะอ่านได้ก่อนตัวหนังสือ — แถบสีข้างซ้าย + ป้ายกลม
+   • เลขเงินชิดขวาแนวเดียว tabular-nums เทียบข้ามบิลได้โดยไม่ต้องนับหลัก
+   • ปุ่มมีลำดับชั้น: หลัก(ทึบ) / รอง(โปร่ง) / อันตราย(แดง)
+   • ส่วนที่กางออก (ฟอร์มคืน, ประวัติ) แยกพื้นผิวด้วยเส้นประ + พื้นจม
+   ------------------------------------------------------------------- */
+.pos-ret {
+  /* เขียวของแท็บนี้มีอยู่เดิมแล้ว (กล่อง "ขั้นที่ 1") — ยกมาเป็นตัวแปรให้ทั้งบล็อกใช้ร่วม
+     แทนที่จะเขียนสีดิบซ้ำหลายที่แบบเดิม */
+  --ret-accent: #1f6f5c;
+  --ret-accent-ink: #0f4437;
+  --ret-accent-bg: #e2efe9;
+  --ret-accent-line: #bcdccd;
+  --ret-faint: #9aa1ab;
+  --ret-void: #6f7364;
+  --ret-void-bg: #ececeb;
+  /* ตัวเลขเรียงหลักเท่ากันโดยไม่โหลดเว็บฟอนต์ (จอนี้อยู่หน้าเคาน์เตอร์ เน็ตร้านหลุดได้)
+     ต่อท้ายด้วยฟอนต์ไทย เพราะสตริงพวกนี้มี ฿ และคำไทยปนอยู่ ถ้าไม่ใส่ เบราว์เซอร์จะตก
+     ไปที่ serif ปริยาย แล้วครึ่งบรรทัดกลายเป็นคนละแบบอักษรกับทั้งจอ */
+  --ret-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    "Noto Sans Thai", "Sarabun", "Leelawadee UI", system-ui, monospace;
+}
+
+/* ---- หัวแท็บ: กล่องบอกขั้นตอน + ช่องค้น ---- */
+.pos-ret-hint {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--ret-accent-bg); border: 1px solid var(--ret-accent-line);
+  color: var(--ret-accent-ink);
+  border-radius: var(--pos-radius); padding: 10px 12px; margin-bottom: 14px;
+}
+.pos-ret-hint-icon { font-size: 15px; line-height: 1.4; flex: none; }
+.pos-ret-hint-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.pos-ret-hint-body { font-size: 12.5px; line-height: 1.5; opacity: 0.92; }
+
+.pos-ret-search {
+  display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px;
+}
+.pos-ret-search-field {
+  flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 4px;
+}
+.pos-ret-search-field label {
+  font-size: 11.5px; font-weight: 700; color: var(--ret-accent-ink);
+}
+.pos-root .pos-ret-search-field input {
+  font-size: 13px; padding: 9px 12px; min-height: 40px; width: 100%; max-width: 100%;
+}
+.pos-root .pos-ret-toggle {
+  font-size: 12.5px; font-weight: 600; padding: 9px 13px; min-height: 40px;
+  border-radius: 8px; background: var(--pos-sunken); white-space: nowrap;
+}
+.pos-root .pos-ret-toggle:hover:not(:disabled) {
+  border-color: var(--ret-accent); color: var(--ret-accent-ink);
+}
+.pos-ret-help {
+  font-size: 12px; color: var(--ret-faint); line-height: 1.6; margin-bottom: 14px;
+}
+.pos-ret-empty { margin-top: 16px; font-size: 12.5px; color: var(--ret-faint); }
+
+/* ---- การ์ดบิล ---- */
+.pos-ret-list { display: flex; flex-direction: column; gap: 10px; }
+
+.pos-ret-card {
+  border: 1px solid var(--pos-line); border-left: 4px solid var(--pos-money);
+  border-radius: var(--pos-radius); background: var(--pos-surface);
+  text-align: left;
+}
+.pos-ret-card--returned { border-left-color: var(--pos-danger); }
+.pos-ret-card--void { border-left-color: var(--ret-void); }
+
+.pos-ret-head {
+  display: flex; justify-content: space-between; gap: 14px; padding: 13px 14px 10px;
+}
+.pos-ret-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pos-ret-docno {
+  font-family: var(--ret-mono); font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em;
+}
+.pos-ret-pill {
+  font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  line-height: 1.6; white-space: nowrap;
+}
+.pos-ret-pill--ok { background: var(--pos-money-bg); color: var(--pos-money); }
+.pos-ret-pill--returned { background: var(--pos-danger-bg); color: var(--pos-danger); }
+.pos-ret-pill--void { background: var(--ret-void-bg); color: var(--ret-void); }
+
+/* บรรทัดสรุปในการ์ดตัดท้ายด้วย ellipsis — การ์ดมีไว้ให้ "หาบิลเจอ" ไม่ใช่อ่านทั้งใบ */
+.pos-ret-meta,
+.pos-ret-store {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pos-ret-meta { font-size: 12.5px; color: var(--pos-muted); margin-top: 5px; }
+.pos-ret-store { font-size: 12px; color: var(--ret-faint); margin-top: 3px; }
+.pos-ret-store--offsite { color: var(--pos-warn); }
+
+.pos-ret-money { text-align: right; flex: none; }
+.pos-ret-money-label {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ret-faint);
+}
+.pos-ret-money-total {
+  font-family: var(--ret-mono); font-variant-numeric: tabular-nums;
+  font-size: 17px; font-weight: 600; margin-top: 1px;
+}
+.pos-ret-money-net {
+  font-family: var(--ret-mono); font-variant-numeric: tabular-nums;
+  font-size: 12.5px; font-weight: 600; color: var(--pos-money); margin-top: 3px;
+}
+
+/* แถบสรุปการคืน: สีส้มเพราะเป็นตัวเลขที่ "ต้องดู" ไม่ใช่ยอดขายปกติ */
+.pos-ret-summary {
+  margin: 0 14px 10px; padding: 8px 11px;
+  background: var(--pos-warn-bg); border: 1px solid #f2dfa8;
+  border-radius: 8px; color: var(--pos-warn);
+  font-family: var(--ret-mono); font-variant-numeric: tabular-nums; font-size: 12px;
+  display: flex; flex-wrap: wrap; gap: 5px 10px;
+}
+.pos-ret-summary b { font-weight: 700; }
+.pos-ret-summary .pos-ret-summary-ok { color: var(--pos-money); }
+.pos-ret-summary-sep { color: #dcc68d; }
+
+.pos-ret-refunds {
+  margin: 0 14px 10px; padding: 8px 11px;
+  background: var(--pos-sunken); border: 1px dashed var(--pos-line-strong);
+  border-radius: 8px; display: flex; flex-direction: column; gap: 8px;
+}
+.pos-ret-refund-row {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 12px;
+}
+.pos-ret-refund-method {
+  font-family: var(--ret-mono); font-variant-numeric: tabular-nums; font-weight: 600;
+}
+.pos-ret-refund-status { font-size: 11.5px; font-weight: 600; color: var(--pos-warn); }
+.pos-ret-refund-status--ok { color: var(--pos-money); }
+.pos-ret-refund-note { color: var(--ret-faint); }
+.pos-ret-refund-settle {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex: 1 1 240px;
+}
+.pos-root .pos-ret-refund-settle input {
+  flex: 1 1 160px; min-width: 0; font-size: 12px; padding: 7px 10px; min-height: 34px;
+}
+
+/* ---- ปุ่ม: สามน้ำหนัก ----
+   ปุ่มทั้งแถวเคยหน้าตาเหมือนกันหมด "ดู/พิมพ์" กับ "ยกเลิกบิล" จึงดึงสายตาเท่ากัน */
+.pos-ret-actions {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 13px;
+}
+.pos-root .pos-ret-btn {
+  font-size: 12.5px; font-weight: 600; padding: 8px 13px; min-height: 38px;
+  border-radius: 7px; border: 1px solid var(--pos-line-strong);
+  background: var(--pos-surface); color: var(--pos-text);
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.pos-root .pos-ret-btn:hover:not(:disabled) {
+  background: var(--pos-surface); border-color: var(--ret-accent); color: var(--ret-accent-ink);
+}
+.pos-root .pos-ret-btn--primary {
+  background: var(--ret-accent); border-color: var(--ret-accent); color: #fff;
+}
+.pos-root .pos-ret-btn--primary:hover:not(:disabled) {
+  background: #24806a; border-color: #24806a; color: #fff;
+}
+/* ปุ่มที่กางส่วนขยายอยู่ ต้องบอกตัวเองว่า "ของที่เปิดอยู่คือของฉัน" */
+.pos-root .pos-ret-btn--open {
+  background: var(--ret-accent-bg); border-color: var(--ret-accent); color: var(--ret-accent-ink);
+}
+.pos-root .pos-ret-btn--open:hover:not(:disabled) { background: var(--ret-accent-bg); }
+.pos-root .pos-ret-btn--warn { color: var(--pos-warn); }
+.pos-root .pos-ret-btn--danger { color: var(--pos-danger); border-color: #e8bdb8; }
+.pos-root .pos-ret-btn--danger:hover:not(:disabled) {
+  background: var(--pos-danger-bg); border-color: var(--pos-danger); color: var(--pos-danger);
+}
+/* คืนทั้งบิล = ปุ่มเดียวในฟอร์มที่จบงาน จึงเป็นตัวทึบ ที่เหลือเป็นขอบเปล่า */
+.pos-root .pos-ret-btn--solid {
+  background: var(--pos-text); border-color: var(--pos-text); color: var(--pos-surface);
+}
+.pos-root .pos-ret-btn--solid:hover:not(:disabled) {
+  background: #33363c; border-color: #33363c; color: var(--pos-surface);
+}
+.pos-root .pos-ret-btn--sm { font-size: 11.5px; padding: 6px 10px; min-height: 34px; }
+.pos-ret-note { font-size: 12px; color: var(--ret-faint); align-self: center; padding: 8px 2px; }
+
+/* ---- ส่วนที่กางออก (ฟอร์มคืน / ประวัติบิล) ----
+   เส้นประ + พื้นจม บอกว่า "นี่คือของที่กางออกมาจากการ์ดใบนี้"
+   ไม่ใช่เนื้อหาถัดไปที่ไหลต่อกันเป็นพรืด */
+.pos-ret-expand {
+  margin: 0 14px 14px; padding: 13px 14px; border-radius: 9px;
+  background: var(--pos-sunken); border: 1px dashed var(--pos-line-strong);
+}
+
+.pos-ret-reason {
+  display: grid; grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
+  gap: 8px; margin-bottom: 10px;
+}
+.pos-root .pos-ret-reason select,
+.pos-root .pos-ret-reason input {
+  font-size: 12.5px; padding: 8px 10px; min-height: 38px; border-radius: 7px;
+}
+
+.pos-ret-method {
+  border: 1px solid #b5d4f4; background: var(--pos-accent-bg);
+  border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
+}
+.pos-ret-method-label {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  font-size: 12px; font-weight: 600;
+}
+.pos-root .pos-ret-method select {
+  min-width: 220px; font-size: 12px; padding: 7px 10px; min-height: 36px; border-radius: 7px;
+}
+.pos-ret-method-hint { font-size: 11px; color: var(--pos-muted); margin-top: 4px; line-height: 1.5; }
+.pos-ret-method-single { color: var(--pos-money); }
+
+.pos-ret-line {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 9px 0; border-top: 1px solid var(--pos-line);
+}
+.pos-ret-line-info { min-width: 0; }
+.pos-ret-line-name { font-size: 12.5px; font-weight: 600; }
+.pos-ret-line-sub { font-size: 11.5px; color: var(--ret-faint); margin-top: 2px; }
+.pos-ret-step { display: flex; align-items: center; gap: 8px; flex: none; }
+/* 34px ไม่ใช่ 28px ตาม mockup — ปุ่มนี้ตัดสินว่าคืนเงินกี่ชิ้น และจอนี้กดด้วยนิ้วโป้ง */
+.pos-root .pos-ret-step button {
+  width: 34px; min-width: 34px; height: 34px; min-height: 34px;
+  padding: 0; font-size: 16px; line-height: 1; border-radius: 7px;
+}
+.pos-ret-step-value {
+  font-variant-numeric: tabular-nums; min-width: 20px; text-align: center;
+  font-weight: 600; font-size: 13px;
+}
+.pos-ret-form-note {
+  font-size: 11.5px; color: var(--pos-warn); line-height: 1.55; margin: 10px 0;
+}
+.pos-ret-form-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---- ประวัติบิล: ไทม์ไลน์ ----
+   เรียงตามเวลาจริง จุดสีบอกชนิดเหตุการณ์ (ขาย/คืน/ยกเลิก) และเส้นแนวตั้ง
+   บอกว่าทุกอย่างเป็นสายเดียวกันของบิลใบนี้ */
+.pos-ret-hist-head {
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--pos-line);
+}
+.pos-ret-hist-title { font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+.pos-ret-hist-sub { font-size: 11.5px; color: var(--ret-faint); margin-top: 2px; }
+.pos-ret-hist-money { text-align: right; font-size: 12.5px; }
+.pos-ret-hist-money b { font-variant-numeric: tabular-nums; }
+.pos-ret-hist-money-net { color: var(--pos-money); font-weight: 600; margin-top: 2px; }
+.pos-ret-hist-money-net--pending { color: var(--pos-warn); }
+
+.pos-ret-timeline { list-style: none; margin: 0; padding: 0; }
+.pos-ret-event { display: flex; gap: 12px; position: relative; padding-bottom: 16px; }
+.pos-ret-event:last-child { padding-bottom: 0; }
+.pos-ret-event::before {
+  content: ""; position: absolute; left: 5px; top: 16px; bottom: -2px;
+  width: 1.5px; background: var(--pos-line-strong);
+}
+.pos-ret-event:last-child::before { display: none; }
+.pos-ret-dot {
+  width: 11px; height: 11px; border-radius: 999px; margin-top: 4px; flex: none;
+  border: 2px solid var(--pos-sunken);
+  background: var(--pos-money); box-shadow: 0 0 0 1.5px var(--pos-money);
+}
+.pos-ret-event--return .pos-ret-dot {
+  background: var(--pos-warn); box-shadow: 0 0 0 1.5px var(--pos-warn);
+}
+.pos-ret-event--void .pos-ret-dot {
+  background: var(--pos-danger); box-shadow: 0 0 0 1.5px var(--pos-danger);
+}
+.pos-ret-event-body { flex: 1; min-width: 0; }
+.pos-ret-event-row {
+  display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px;
+}
+.pos-ret-event-row strong { font-weight: 700; color: var(--pos-money); }
+.pos-ret-event--return .pos-ret-event-row strong { color: var(--pos-warn); }
+.pos-ret-event--void .pos-ret-event-row strong { color: var(--pos-danger); }
+.pos-ret-event-time {
+  font-family: var(--ret-mono); font-variant-numeric: tabular-nums;
+  font-size: 11.5px; color: var(--ret-faint);
+}
+.pos-ret-event-detail {
+  font-size: 11.5px; color: var(--pos-muted); margin-top: 3px; overflow-wrap: anywhere;
+}
+.pos-ret-event-detail--warn { color: var(--pos-warn); }
+.pos-ret-event-items {
+  margin-top: 7px; padding: 7px 9px; border-radius: 7px;
+  background: var(--pos-surface); border: 1px solid var(--pos-line);
+}
+.pos-ret-event-item {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.pos-ret-event-item span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.pos-ret-event-item span:last-child { flex: none; }
+.pos-ret-event-refund {
+  display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap;
+  font-size: 11.5px; font-weight: 600; margin-top: 8px; color: var(--pos-warn);
+}
+.pos-ret-event-refund--ok { color: var(--pos-money); }
+.pos-ret-event-refund span { min-width: 0; overflow-wrap: anywhere; }
+.pos-ret-event-refund-by { font-weight: 400; color: var(--ret-faint); }
+.pos-ret-event-remaining { font-size: 11.5px; color: var(--ret-faint); margin-top: 4px; }
+.pos-ret-hist-none { font-size: 12px; color: var(--ret-faint); padding: 2px 0 8px; }
+
+/* ---- กล่องยกเลิกบิล ---- */
+.pos-ret-void {
+  margin: 0 14px 14px; padding: 11px 12px; border-radius: 9px;
+  background: var(--pos-danger-bg); border: 1px solid #f2d0d4;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.pos-ret-void-why { font-size: 12px; color: var(--pos-danger); line-height: 1.55; }
+.pos-ret-void-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pos-root .pos-ret-void input,
+.pos-root .pos-ret-void select {
+  font-size: 12.5px; padding: 8px 10px; min-height: 38px; border-radius: 7px;
+}
+
+@media (max-width: 480px) {
+  .pos-ret-head { flex-direction: column; }
+  .pos-ret-money { text-align: left; }
+  .pos-ret-reason { grid-template-columns: minmax(0, 1fr); }
+}
