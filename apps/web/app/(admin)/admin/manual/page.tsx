@@ -33,6 +33,9 @@ import {
   TruckOutlined,
   UserOutlined,
 } from "@ant-design/icons";
+// Imported from the FAQ module directly, not the catalog barrel: the barrel also pulls the
+// full guide/capability catalog into this page's client bundle for no benefit here.
+import { SYSTEM_FAQ } from "@/lib/bms/assistantKnowledge/faq";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
 import styles from "./manual.module.css";
@@ -757,98 +760,13 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
   },
 ];
 
-const HELP_ROWS_TH: HelpRow[] = [
-  {
-    title: "AI แนะนำคำตอบลงท้าย “ค่ะ” แต่ฉันเป็นผู้ชาย อยากได้ “ครับ”",
-    answer:
-      "ไปที่ โปรไฟล์ (/admin/profile) ตั้งช่อง “คำลงท้าย” เป็น ผู้ชาย — ครับ แล้วบันทึก · คำตอบแนะนำในหน้า Inbox (รวมปุ่ม ขอตรวจสอบ/ขอบคุณ) จะเปลี่ยนเป็น ครับ ให้อัตโนมัติ · ถ้าไม่ตั้ง ระบบใช้ ค่ะ เป็นค่าเริ่มต้น",
-  },
-  {
-    title: "อยากให้ธีมหน้าจอจำตามบัญชี ไม่ใช่เฉพาะเครื่องนี้",
-    answer:
-      "ไปที่ โปรไฟล์ (/admin/profile) เลือก “ธีมหน้าจอ” เป็น ตามระบบเครื่อง / โหมดสว่าง / โหมดมืด แล้วบันทึก · ระบบจะจำกับบัญชีของคุณและ sync ไปเครื่องอื่นหลังล็อกอิน",
-  },
-  {
-    title: "เพิ่มสินค้าแล้ว แต่ยังขายไม่ได้",
-    answer: "เช็กว่าตั้งราคา, เปิด active, และมี stock ในไซซ์ที่ต้องขายแล้วหรือยัง",
-  },
-  {
-    title: "ค้นหา order / payment / shipment ไม่เจอ",
-    answer: "ใช้ช่องค้นหาบนหน้า Orders / Payment / Shipping ได้โดยตรง ระบบค้นหาแบบพิมพ์แล้วทำงานเอง",
-  },
-  {
-    title: "ลูกค้าทักมา แต่ไม่รู้ต้องเปิดหน้าไหนต่อ",
-    answer: "เริ่มจาก Inbox แล้วดู Customer 360 ก่อน ถ้ามีสิทธิ์ order.create ให้กด สร้างออเดอร์ ใน Quick Actions ได้ทันที จากนั้นค่อยตามงานต่อที่ Orders / Payment / Shipping",
-  },
-  {
-    title: "แชร์สินค้าในแชทแล้วทำไมยังไม่ส่งทันที และลูกค้าเห็นรูปทั้งหมดที่ไหน",
-    answer: "ระบบใส่ชื่อ ราคา ไซซ์ สต็อก และ public link ไว้ในข้อความร่างก่อน เพื่อให้ตรวจแล้วค่อยกด ส่ง · เลือกได้ทั้ง ข้อความ + ลิงก์ และ ข้อความ + รูป + ลิงก์ · เมื่อส่งแล้ว Inbox จะแสดงเป็นการ์ดสินค้าและซ่อน URL ยาวไว้หลังปุ่ม ดูสินค้า · ในแชทส่งเฉพาะรูป cover 1 รูป ส่วนลูกค้ากด public link เพื่อดู gallery ทั้งหมดได้โดยไม่ต้อง login · ปุ่ม Products หลังบ้านเป็นแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า",
-  },
-  {
-    title: "รูปกับไฟล์ใน Inbox ใช้อย่างไร",
-    answer: "กด รูป หรือ ไฟล์ แล้วรอให้อัปโหลดเข้า draft จากนั้นตรวจ preview และกด ส่ง · แนบได้ครั้งละ 1 รายการตามรูปแบบข้อความปัจจุบัน ถ้าเลือกใหม่จะใช้รายการล่าสุด โดย loading ของปุ่มรูปและไฟล์แยกจากกัน",
-  },
-  {
-    title: "ปุ่มจัดส่งกดไม่ได้และขึ้นว่ายังไม่มีที่อยู่",
-    answer: "สำหรับ LINE / Facebook / Instagram / Web / TikTok Chat ให้เปิด Customers เพิ่มที่อยู่ชนิดจัดส่งให้ลูกค้าก่อน แล้วกลับมาจัดส่งใหม่ ส่วน Lazada / Shopee ใช้ที่อยู่จาก Seller Center และไม่ถูกบังคับให้เพิ่มซ้ำ",
-  },
-  {
-    title: "ใบแจ้งหนี้จาก Customer 360 บันทึกเป็นเอกสารหรือยืนยันยอดแล้วหรือยัง",
-    answer: "ยัง — ใบแจ้งหนี้นี้เป็น preview/print จากข้อมูลออเดอร์จริงและราคา ณ ตอนสั่ง ไม่ได้สร้าง record เอกสารใหม่ และไม่เปลี่ยนสถานะออเดอร์หรือการชำระเงิน",
-  },
-  {
-    title: "อยากเชื่อม LINE / Facebook / Website",
-    answer: "ไปที่ Settings แล้วทำตาม webhook/token guide ของแต่ละช่องทาง; LINE OA จะดึงชื่อ/รูปโปรไฟล์แบบ cache หลังข้อความเข้า ถ้ามีสิทธิ์และลูกค้ายังไม่บล็อก OA",
-  },
-  {
-    title: "อยากทดสอบว่าแชทเข้า Inbox ทันทีไหม",
-    answer: "เปิด Realtime Diagnostics: กด Emit เพื่อเช็กสัญญาณ realtime อย่างเดียว หรือกด Create Msg เพื่อสร้างข้อความทดสอบให้เห็นใน Inbox จริง",
-  },
-  {
-    title: "Mentions กับ Inbox ต่างกันอย่างไร",
-    answer:
-      "Inbox คือคิวแชทหลักทั้งหมด ส่วน Mentions คือคิวงานที่มีคนในทีม mention หาเราโดยตรงเพื่อให้รับช่วงต่อหรือช่วยตัดสินใจ ถ้ารับผิดชอบหลายบทบาท ควรเปิดทั้งสองหน้าเป็นประจำเพื่อไม่ให้งานตกหล่น",
-  },
-  {
-    title: "Restock subscriptions ใช้เมื่อไร และต่างจาก Follow-up Queue อย่างไร",
-    answer:
-      "Restock subscriptions ใช้กับลูกค้าที่กดยินยอมให้แจ้งเมื่อของกลับเข้าโดยเฉพาะ ส่วน Follow-up Queue คือคิวงานติดตามที่สร้างจากกติกาหลายแบบ เช่น retention, follow-up หรือ workflow อื่นของร้าน ถ้าจะตามลูกค้าเรื่องของกลับเข้า ให้เริ่มที่ Restock subscriptions ก่อน",
-  },
-  {
-    title: "Product packs กับ Product labels ต่างกันอย่างไร",
-    answer:
-      "Product packs ใช้เพิ่มหน่วยขายหรือบาร์โค้ดเสริม เช่น แพ็ก, หลายชิ้นต่อหน่วย, หรือ pack code ที่ใช้หน้าร้าน ส่วน Product labels ใช้พิมพ์สติกเกอร์บาร์โค้ดจากข้อมูลสินค้า/pack ที่ตั้งไว้แล้ว ถ้ายังไม่ได้ตั้ง pack ก่อน หน้า labels จะไม่มีข้อมูลเสริมให้พิมพ์",
-  },
-  {
-    title: "POS Readiness เอาไว้เช็กอะไร",
-    answer:
-      "ใช้เช็ก blocker ก่อนเปิดขายหน้าร้านจริง เช่น ภาษี, stock ยังไม่พร้อม, refund ค้าง, หรือเงื่อนไขเฉพาะธุรกิจที่ทำให้ POS ยังไม่ควรเปิด ถ้าหน้านี้ยังเตือนอยู่ ควรแก้จากต้นเหตุแล้วค่อยเริ่มกะ เพื่อไม่ให้ไปเจอปัญหาตอนรับเงินจริง",
-  },
-  {
-    title: "ปุ่มบางปุ่มไม่ขึ้น เป็นเพราะระบบพังหรือเพราะสิทธิ์",
-    answer:
-      "ส่วนใหญ่ให้เช็กสิทธิ์ก่อน โดยดูที่ Permissions เพื่อดู matrix ของ role และดู Users ว่าบัญชีนี้ถูกกำหนดบทบาทอะไร ถ้าต้องตรวจย้อนหลังว่าใครอนุมัติหรือใครแก้ข้อมูล ให้ต่อที่ Audit log และ Revision History",
-  },
-  {
-    title: "อยากรู้ว่าเครดิต AI หายไปกับงานไหน",
-    answer:
-      "เปิด Billing เพื่อดู usage breakdown และ ledger ของรอบบิล ระบบแยก charged credits, provider calls และ estimated cost ออกจากกัน ถ้าสงสัยว่าคำตอบ AI แปลกหรือใช้ tool ผิด ให้เปิด AI Quality ควบคู่กันเพื่อดูตัวอย่างงานและ failure cases",
-  },
-  {
-    title: "ร้านยาควรเริ่มจากหน้าไหนก่อน",
-    answer:
-      "ถ้ากำลังทดสอบหรือฝึกทีม ให้เริ่มที่ Pharmacy Intake Lab ก่อนเพื่อดูคำถามและเงื่อนไขคัดกรอง จากนั้นใช้ Pharmacy Intake Queue สำหรับเคสจริงที่ต้องตามต่อ และใช้ Pharmacy Protocols เมื่อจะปรับกฎหรือคำถามที่ workflow นี้อ้างอิง · การตัดสินใจทางคลินิกต้องเป็นผู้มีใบอนุญาต ไม่ใช่ AI",
-  },
-  {
-    title: "ใช้ ผู้ช่วย AI สั่งคืนเงิน/ปรับสต็อก/ยกเลิกออร์เดอร์แล้วทำไมยังไม่เกิดผล",
-    answer:
-      "ปกติแล้วครับ — งานกลุ่มนี้ AI จะเตรียม “คำขอ” เป็นการ์ดในแชทเท่านั้น ต้องกดปุ่ม ยืนยัน บนการ์ดนั้นก่อนระบบถึงจะทำจริง (เหมือนกดยืนยันในหน้า Payment/Orders ปกติ) ถ้าไม่เห็นปุ่มยืนยันหรือกดแล้วไม่ผ่าน ให้เช็กว่าบัญชีมีสิทธิ์ (permission) ของงานนั้นหรือไม่",
-  },
-  {
-    title: "อยากดูว่าใครแก้สินค้า/ออเดอร์ และเปลี่ยนอะไรบ้าง",
-    answer: "เปิด Revision History แล้วเลือกชนิดข้อมูล จากนั้นค้นหา SKU หรือ record id ได้เลย เลือก 2 แถวแล้วกด Compare เพื่อดู field ที่เปลี่ยน",
-  },
-];
+/**
+ * The FAQ now lives in the assistant's knowledge catalog (`lib/bms/assistantKnowledge/faq.ts`),
+ * not here. Two copies of the same answer drift, and only one of them was ever reachable from
+ * chat: staff who asked the assistant "กดจัดส่งไม่ได้" got generic steps while the real answer sat
+ * on this page. This renders that catalog; the catalog is what the assistant retrieves.
+ */
+const HELP_ROWS_TH: HelpRow[] = SYSTEM_FAQ.map((faq) => ({ title: faq.question.th, answer: faq.answer.th }));
 
 const LIMIT_GROUPS_TH: LimitGroup[] = [
   {
@@ -2161,106 +2079,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
   },
 ];
 
-const HELP_ROWS_EN: HelpRow[] = [
-  {
-    title: 'The AI suggests replies ending in "ค่ะ", but I am male and want "ครับ"',
-    answer: `Go to Profile (${ROUTES.profile}), set the polite-particle field to male — ครับ, and save. Suggested replies in Inbox (including the Checking and Thank you buttons) switch to ครับ automatically. If it is unset, the system defaults to ค่ะ.`,
-  },
-  {
-    title: "I want the theme to follow my account, not just this device",
-    answer: `Go to Profile (${ROUTES.profile}), set Theme to System / Light / Dark, and save. The system remembers it against your account and syncs it to other devices after you log in.`,
-  },
-  {
-    title: "I added a product but still cannot sell it",
-    answer: "Check that you have set a price, marked it active, and added stock for the size you want to sell.",
-  },
-  {
-    title: "I cannot find an order / payment / shipment",
-    answer:
-      "Use the search box on the Orders / Payment / Shipping page directly — it searches as you type.",
-  },
-  {
-    title: "A customer messaged me and I do not know which page to open next",
-    answer:
-      "Start from Inbox and check Customer 360 first. If you have the order.create permission you can press Create order in Quick Actions straight away, then follow the work through Orders / Payment / Shipping.",
-  },
-  {
-    title: "Why is a shared product not sent immediately, and where does the customer see all the images?",
-    answer:
-      "The system puts the name, price, sizes, stock, and public link into a draft message first so you can review it before pressing Send. You can choose text + link or text + image + link. Once sent, Inbox renders it as a product card and hides the long URL behind a View product button. Only one cover image is sent in chat — the customer opens the public link to see the whole gallery without logging in. The internal Products button opens in a new tab for staff and is never sent to the customer.",
-  },
-  {
-    title: "How do images and files work in Inbox?",
-    answer:
-      "Press Image or File, wait for the upload to land in the draft, then check the preview and press Send. The current message format allows one attachment at a time; selecting a new one replaces the previous. The image and file buttons have separate loading states.",
-  },
-  {
-    title: "The ship button is disabled and says there is no address",
-    answer:
-      "For LINE / Facebook / Instagram / Web / TikTok Chat, open Customers and add a shipping address for the customer first, then come back and ship. Lazada / Shopee use the address from Seller Center and are not required to add it again.",
-  },
-  {
-    title: "Does the invoice from Customer 360 save a document or confirm the amount?",
-    answer:
-      "No — this invoice is a preview/print built from the real order data and the prices at the time of ordering. It does not create a new document record, and it does not change the order or payment status.",
-  },
-  {
-    title: "I want to connect LINE / Facebook / Website",
-    answer:
-      "Go to Settings and follow the webhook/token guide for each channel. LINE OA caches the display name and profile picture after a message arrives, provided you have permission and the customer has not blocked the OA.",
-  },
-  {
-    title: "I want to test whether chats reach Inbox immediately",
-    answer:
-      "Open Realtime Diagnostics: press Emit to test the realtime signal alone, or press Create Msg to create a test message that actually appears in Inbox.",
-  },
-  {
-    title: "What is the difference between Mentions and Inbox?",
-    answer:
-      "Inbox is the main chat queue. Mentions is the handoff queue where teammates explicitly tagged you for help or a decision. If someone works across several responsibilities, they should check both regularly so escalated work does not get missed.",
-  },
-  {
-    title: "When should I use Restock subscriptions, and how is it different from Follow-up Queue?",
-    answer:
-      "Restock subscriptions is specifically for customers who opted in to be notified when an item is back in stock. Follow-up Queue is the broader queue of generated follow-up work from several shop rules. If the task is about notifying someone that stock returned, start with Restock subscriptions.",
-  },
-  {
-    title: "What is the difference between Product packs and Product labels?",
-    answer:
-      "Product packs defines extra selling units or alternate barcodes, such as packs or multi-unit sales. Product labels prints barcode stickers from product and pack data that already exists. If the pack is not configured first, labels has less data to print.",
-  },
-  {
-    title: "What does POS Readiness actually check?",
-    answer:
-      "It checks blockers before the counter opens for real, such as tax setup, stock readiness, pending refunds, and any business-specific prerequisites. If POS Readiness is still warning, resolve the root cause first so the shift does not hit preventable problems while taking real money.",
-  },
-  {
-    title: "A button is missing — is the system broken, or is it a permission issue?",
-    answer:
-      "Start by checking permissions. Open Permissions to see the role matrix, and Users to confirm what role this account actually has. If you then need to trace who approved or changed something, continue with Audit log and Revision History.",
-  },
-  {
-    title: "How do I see where AI credits were spent?",
-    answer:
-      "Open Billing to review the usage breakdown and billing ledger. The system separates charged credits, provider calls, and estimated cost. If the concern is about strange AI behavior or failed tools, open AI Quality alongside it to inspect samples and failure cases.",
-  },
-  {
-    title: "Where should a pharmacy team start?",
-    answer:
-      "If the team is practicing or checking the screening flow, start with Pharmacy Intake Lab. For live work, use Pharmacy Intake Queue to process the real cases that need follow-up, and open Pharmacy Protocols when you need to change the screening rules or question set. Clinical decisions still belong to a licensed pharmacist, not the AI.",
-  },
-  {
-    title:
-      "I asked the AI Assistant to refund / adjust stock / cancel an order, so why did nothing happen?",
-    answer:
-      "That is expected — for this group of tasks the AI only prepares a request as a card in the chat. You have to press Confirm on that card before the system does anything (the same as confirming on the Payment or Orders page). If you do not see a confirm button, or pressing it fails, check whether your account has the permission for that task.",
-  },
-  {
-    title: "I want to see who edited a product or order, and what changed",
-    answer:
-      "Open Revision History, pick the record type, then search by SKU or record id. Select two rows and press Compare to see which fields changed.",
-  },
-];
+const HELP_ROWS_EN: HelpRow[] = SYSTEM_FAQ.map((faq) => ({ title: faq.question.en, answer: faq.answer.en }));
 
 const LIMIT_GROUPS_EN: LimitGroup[] = [
   {

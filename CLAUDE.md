@@ -67,11 +67,14 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (42 capabilities, 76 guides) covering every Sidebar destination and
-every routable Admin page. `/pos` gets the same catalog as offline guide search with no GraphQL/AI
-call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes anything a
-permission did not already allow. Coverage, status vocabulary and the regression gates:
-[ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
+deterministic bilingual catalog (42 capabilities, 90 guides, 20 FAQ answers) covering every Sidebar
+destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
+no GraphQL/AI call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes
+anything a permission did not already allow. The FAQ moved out of `/admin/manual` into the catalog,
+so the page and the assistant read one array instead of two copies. Every question the product asks
+is pinned to the entry that must *lead* its answer (`scripts/ai-eval/work-assistant-question-corpus.mts`)
+— retrieving the right guide at rank 6 is a failure, not a pass. Coverage, status vocabulary and the
+regression gates: [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
@@ -92,6 +95,15 @@ look done in code but need their migration first.
   cited for every message and "no verified guide matched" becomes unreachable. Page context is
   retrieval only and never grants permission; a guide's `route` must be a page that renders,
   because the assistant hands it to the user as a link.
+- **A verified FAQ answer is a payload, not a retrieval key.** Each FAQ names the guide that owns
+  it; its question and the phrasings staff really type are folded into that guide's aliases, but
+  the answer text is never scored. Scoring long prose makes every answer a weak match for every
+  question — the "it found something" failure. The Manual renders the same array, so an answer has
+  one home, not two.
+- **A question is answered by the entry that leads the result, not by one buried in it.** Every
+  question the product ships (starter chips) or was verified against is pinned in
+  `scripts/ai-eval/work-assistant-question-corpus.mts` with the entry that must rank first, and
+  every question that needs live data is pinned to an approved tool plus the permission gating it.
 - **The register assistant stays inside the register.** `/pos` gets deterministic guide search
   with no GraphQL/AI call, limited to guides performed at the register (`pageId === "pos"`) — a
   `pos_only` account cannot open `/admin` at all, so answering a cashier with a back-office

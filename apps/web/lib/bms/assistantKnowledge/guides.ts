@@ -77,7 +77,9 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "coupons.check-availability", module: "coupons", pageId: "coupons", route: "/admin/coupons",
     title: both("ตรวจคูปองที่ใช้ได้", "Check available coupons"),
     summary: both("แยกคูปองที่ร้านเปิดจากคูปองที่ลูกค้ารายหนึ่งมีสิทธิ์ใช้", "Separate active shop coupons from customer-specific eligibility."),
-    aliases: aliases(["มีคูปองอะไร", "คูปองใช้ได้", "ส่วนลดลูกค้า"], ["what coupons", "available coupons", "customer discounts"]),
+    // The shop-wide question resolves here rather than to the capability: the answer people need
+    // is the separation between an active coupon and one customer's eligibility.
+    aliases: aliases(["มีคูปองอะไร", "คูปองใช้ได้", "ส่วนลดลูกค้า", "ตอนนี้มีคูปองอะไรใช้ได้บ้าง"], ["what coupons", "available coupons", "customer discounts", "what coupons can be used right now"]),
     requiredPermissions: ["coupon.view"],
     prerequisites: lists(["ถ้าตรวจสิทธิ์ลูกค้า ต้องระบุตัวตนลูกค้าและยอดตะกร้าถ้ามี"], ["Customer eligibility needs a resolved customer and cart subtotal when available."]),
     steps: lists(["เปิดหน้าคูปอง", "ตรวจสถานะและช่วงเวลา", "ถ้าตรวจให้ลูกค้า ให้ตรวจโควตา ยอดขั้นต่ำ และประวัติใช้"], ["Open Coupons.", "Check status and time window.", "For a customer, check quota, minimum spend, and redemption history."]),
@@ -518,6 +520,19 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     title: ["ตรวจข้อความที่กล่าวถึง", "Review Inbox mentions"], summary: ["รวมข้อความที่กล่าวถึงผู้ใช้เพื่อกลับไปตอบในบทสนทนาต้นทาง", "Review messages that mention the user and return to the source conversation."],
     requiredPermissions: ["inbox.view"], steps: [["เปิด Mentions", "เลือกข้อความ", "เปิดบทสนทนาต้นทางและดำเนินการตามสิทธิ์"], ["Open Mentions.", "Select a mention.", "Open the source conversation and act according to access."]],
     warnings: [["การเห็น mention ไม่ได้ให้สิทธิ์ตอบแทน inbox.reply"], ["Seeing a mention does not grant inbox.reply."]], relatedCapabilityIds: ["inbox.omnichannel"],
+  }),
+  menuGuide({
+    // The Drawer ships "บัญชีฉันทำอะไรได้บ้าง" as a starter chip, and it matched nothing: the only
+    // permission guides were "configure roles" (administrators) and "why is this button disabled"
+    // (troubleshooting). A chip that returns no verified guide reads as "the system cannot answer
+    // this", so the self-access question gets the guide it always needed.
+    id: "permissions.my-access", module: "permissions", route: "/admin/assistant", pageId: "assistant",
+    title: ["ดูว่าบัญชีของคุณทำอะไรได้บ้าง", "See what your own account can do"],
+    summary: ["อ่านบทบาทและสิทธิ์จริงของบัญชีที่ล็อกอินอยู่จากเซิร์ฟเวอร์ ไม่ใช่เดาจากเมนูที่มองเห็น", "Read the signed-in account's server-derived role and effective permissions instead of inferring them from visible menus."],
+    aliases: [["บัญชีฉันทำอะไรได้บ้าง", "ฉันมีสิทธิ์อะไรบ้าง", "ดูสิทธิ์ตัวเอง", "role ฉันคืออะไร"], ["what can my account access", "what are my permissions", "check my own access", "what is my role"]],
+    steps: [["เปิดผู้ช่วยการทำงานแล้วถามว่าบัญชีนี้มีสิทธิ์อะไรบ้าง", "อ่านบทบาทและรายการสิทธิ์ที่ได้จากทูล get_my_access", "ถ้าสิทธิ์ที่ต้องใช้ยังไม่มี ให้ผู้ดูแลร้านเพิ่มให้ที่หน้า Permissions"], ["Open the work assistant and ask what this account may do.", "Read the role and effective permission list returned by get_my_access.", "If a needed permission is missing, ask a shop administrator to grant it on Permissions."]],
+    warnings: [["เมนูที่มองเห็นไม่ใช่สิทธิ์ — การซ่อนเมนูไม่ใช่ authorization", "สิทธิ์ของ *คนอื่น* เป็นคนละคำถามและต้องมี user.view"], ["Visible menus are not access — hiding a menu is not authorization.", "Someone *else's* access is a different question and requires user.view."]],
+    relatedCapabilityIds: ["access.matrix", "users.access"],
   }),
   menuGuide({
     id: "assistant.use-work-assistant", module: "assistant", route: "/admin/assistant",

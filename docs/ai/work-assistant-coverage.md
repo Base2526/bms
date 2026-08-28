@@ -1,13 +1,13 @@
 # Global Work Assistant — full-system V1 coverage
 
 Status: implemented and contract-checked. The deterministic catalog currently contains 42 verified
-capabilities and 76 bilingual guides. Every literal Admin Sidebar destination and every routable
-Admin page except `/admin` (redirect) and `/admin/login` has a guide, either directly or through its
-parent detail route. POS has dedicated register guides for Sale, Payment, Return/Void, no-receipt
-return, Receive, Deposits, Shift reports, scanner/device settings, members/coupons/points, parked
-bills, receipts/display, expenses/petty cash, drawer movement and no-sale, credit sale and
-receivable collection, gift cards/store credit, and pharmacist counter authorization — one for each
-register workflow that has an `/api/pos/*` route.
+capabilities, 90 bilingual guides, and 20 verified FAQ answers. Every literal Admin Sidebar
+destination and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
+guide, either directly or through its parent detail route. POS has dedicated register guides for
+Sale, Payment, Return/Void, no-receipt return, Receive, Deposits, Shift reports, scanner/device
+settings, members/coupons/points, parked bills, receipts/display, expenses/petty cash, drawer
+movement and no-sale, credit sale and receivable collection, gift cards/store credit, and
+pharmacist counter authorization — one for each register workflow that has an `/api/pos/*` route.
 
 “Whole system” has three deliberately different coverage levels:
 
@@ -63,6 +63,31 @@ honestly say both.
 | Settings / Billing / AI | Channels, payment configuration, BYOK, billing, AI Quality and Playground | Secrets never appear in answers; provider choice never widens RBAC |
 | Platform / System | Architecture, tenants, roles, posts, files, logs, mail, support, cron, health, ENV, SQL console and fake-data guides | Links are visible only to platform administrators; System Health stays read-only |
 
+## Verified FAQ
+
+The short question/answer pairs staff ask most (`lib/bms/assistantKnowledge/faq.ts`) used to exist
+only inside `/admin/manual`, which meant the assistant could not answer them: someone who asked the
+Drawer "กดจัดส่งไม่ได้ ขึ้นว่าไม่มีที่อยู่" got generic guide steps while the exact answer sat on a page
+they did not have open. Each FAQ now names the guide that owns it, and:
+
+- `/admin/manual` renders the same array — there is no second copy of an answer to drift,
+- retrieval folds each FAQ's question and its staff phrasings into the owning guide's alias pool,
+  so real wording reaches the right guide,
+- `search_system_guides` returns them, so the model quotes a verified answer instead of composing
+  a second version of it out of the steps,
+- with no AI provider, a matched FAQ answer leads the deterministic reply.
+
+FAQ *answers* are deliberately excluded from retrieval scoring. They are long prose; scoring them
+would make every answer a weak match for every question, which is the "it found something" failure
+this catalog exists to prevent. Questions and aliases are the retrieval keys; the answer is the
+payload. The register surface is untouched: every FAQ today belongs to a back-office guide, and a
+cashier must not be handed one.
+
+Generic questions now match nothing rather than the first entry that shares a filler word. "What
+can I do on this page?" is built entirely from words that carry no topic; before the stopword
+filter it scored `pos.device-settings` as a real answer. On a page it becomes page guidance; with
+no page it reaches the honest empty answer.
+
 ## Required ambiguity behavior
 
 - “ร้านมีคนชื่อ suprims ไหม” must distinguish staff from customer. Staff existence requires
@@ -85,7 +110,9 @@ honestly say both.
 
 ## Completion and regression gates
 
-Both suites run in `npm run test:pure` (and therefore in CI), not by hand.
+All three suites run in `npm run test:pure` (and therefore in CI), not by hand:
+`work-assistant-knowledge-contract` (catalog shape and coverage), `work-assistant-surface-contract`
+(GraphQL/UI boundaries), and `work-assistant-question-corpus` (what each question must answer).
 
 - Knowledge IDs are unique and Thai/English fields are complete.
 - Every permission and alternative permission resolves to `BMS_PERMISSIONS`.
@@ -102,3 +129,13 @@ Both suites run in `npm run test:pure` (and therefore in CI), not by hand.
 - An unmatched question at the register says so instead of showing the first page guide.
 - A proposal in the Drawer shows its mutation and server-composed arguments before Confirm, and an
   emailed report requires a reviewed, valid recipient with an unknown-recipient warning.
+- Every question the product asks — all 51 pinned in `work-assistant-question-corpus.mts`, plus 2
+  guards that must stay unanswerable — is *led* by the entry that answers it. Presence anywhere in
+  the result list is not a pass: a guide that slips to rank 6 behind unrelated entries fails, which
+  is the regression the earlier `.some(...)` assertions could not see.
+- Every starter chip the UI ships is a pinned question, so a new chip fails the contract until its
+  answer is pinned.
+- Every question that can only be answered from live data names an approved tool that exists, is
+  offered on the staff surface, and is still gated by the permission written next to it.
+- Every FAQ resolves to its own guide in both languages, and every FAQ alias resolves to its own
+  FAQ — an alias that answers a different question is worse than no alias.

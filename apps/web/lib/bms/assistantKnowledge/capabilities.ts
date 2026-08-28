@@ -132,7 +132,9 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     id: "loyalty.points", module: "loyalty",
     title: both("สมาชิกและสะสมแต้ม", "Membership and loyalty points"),
     description: both("รองรับสมาชิก ระดับสมาชิก การรับแต้ม และการแลกแต้ม", "Supports membership, tiers, earning points, and point redemption."),
-    aliases: aliases(["สมาชิก", "สะสมแต้ม", "แต้ม", "แลกแต้ม"], ["membership", "loyalty", "points", "redeem points"]),
+    // "ระบบมีสะสมแต้มไหม" is a product-capability question and must not tie with the tenant-status
+    // guide it is deliberately kept separate from: capability first, live program status second.
+    aliases: aliases(["สมาชิก", "สะสมแต้ม", "แต้ม", "แลกแต้ม", "ระบบมีสะสมแต้มไหม", "มีระบบสมาชิกไหม"], ["membership", "loyalty", "points", "redeem points", "does the system have loyalty points"]),
     status: "CONDITIONAL", route: "/admin/loyalty", requiredPermissions: ["member.view"],
     configurationDependencies: ["The tenant loyalty program must be enabled and configured."],
     limitations: both("ระบบรองรับไม่ได้แปลว่าร้านเปิดใช้ ต้องอ่านสถานะร้านจริง", "Product support does not mean the shop enabled it; live configuration must be checked."),

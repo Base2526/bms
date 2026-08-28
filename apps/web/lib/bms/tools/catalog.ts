@@ -105,6 +105,7 @@ import { getAssistantSelfProfile, getTenantStaffUserAccess, searchTenantStaffUse
 import {
   SYSTEM_CAPABILITIES,
   SYSTEM_GUIDES,
+  faqsForGuide,
   groupPermissionDescriptions,
   searchAssistantKnowledge,
 } from "../assistantKnowledge";
@@ -254,7 +255,7 @@ const searchSystemCapabilitiesTool: BmsTool = {
 const searchSystemGuidesTool: BmsTool = {
   name: "search_system_guides",
   description:
-    "Search verified bilingual BMS usage guides. Returns prerequisites, steps, warnings, route, and current-actor access. Use this to answer how a page or workflow is used; never invent missing steps.",
+    "Search verified bilingual BMS usage guides. Returns prerequisites, steps, warnings, route, verified FAQ answers, and current-actor access. Use this to answer how a page or workflow is used; never invent missing steps, and prefer quoting a matching FAQ answer over composing one from the steps.",
   surfaces: ["staff"],
   whenToUse: "The user asks how to use a page, menu, workflow, button, or why a documented prerequisite is blocking them.",
   whenNotToUse: "Do not use guide text as live business data or proof that the actor is authorized; execution remains backend-gated.",
@@ -309,6 +310,12 @@ const searchSystemGuidesTool: BmsTool = {
           accessible: match?.accessible === true,
           accessRequirement: entry.accessRequirement ?? "any_staff",
           accessNote: match?.accessNote ?? null,
+          // Verified question/answer pairs owned by this guide. Quote them; do not paraphrase a
+          // second version of an answer the shop already publishes in its manual.
+          faqs: faqsForGuide(entry.id).map((faq) => ({
+            question: faq.question[locale],
+            answer: faq.answer[locale],
+          })),
         };
       });
     return { ok: true, data: { guides } };
