@@ -147,6 +147,18 @@ const TOKEN_KEY = "bms.pos.deviceToken";
 const LAST_RECEIPT_KEY = "bms.pos.lastReceipt";
 const PENDING_SALE_KEY = "bms.pos.pendingSale";
 const PENDING_DEPOSIT_SALE_KEY = "bms.pos.pendingDepositSale";
+// จำแท็บ + ตะกร้าที่กำลังขายไว้ข้ามการรีเฟรช/แท็บถูกดีดจาก memory (พบบ่อยบนแท็บเล็ต
+// หน้าร้าน) — ต่อท้ายด้วย token เพื่อผูกกับเครื่อง POS เครื่องนี้เท่านั้น เครื่องอื่น
+// ที่ share browser เดียวกันจะไม่เห็นของกันและกัน
+// ตั้งใจ "เก็บบางอย่าง" ไม่ใช่ "เก็บทั้งหมด": PIN ทุกตัว, ร่างรับของ PO, และการอนุมัติ
+// เภสัชกร ไม่ถูกเก็บ/คืนค่าอัตโนมัติเด็ดขาด — สิ่งเหล่านั้นผูกกับเวลา/สถานะที่เปลี่ยน
+// ได้ระหว่างที่ค้างไว้ (กะปิด, PO ถูกรับที่เครื่องอื่น, ตะกร้าที่เภสัชกรอนุมัติถูกแก้)
+// คืนค่าแบบเงียบ ๆ เสี่ยงกว่าไม่คืนเลย ส่วนตะกร้าขายปลอดภัยเพราะ createOrder คิดราคา
+// จาก catalog ปัจจุบันเสมอตอนกดจ่ายจริง (สูตรเดียวกับพักบิล 7.97)
+const LOCAL_TAB_KEY_PREFIX = "bms.pos.localTab.";
+const LOCAL_CART_DRAFT_KEY_PREFIX = "bms.pos.localCartDraft.";
+// ดราฟต์ที่ค้างนานกว่านี้ไม่คืนให้ — กันกะก่อนหน้าทิ้งตะกร้าไว้ข้ามคืนแล้วกะถัดไปเจอ
+const LOCAL_CART_DRAFT_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
 type ScanHit = {
   sku: string;
@@ -1387,6 +1399,11 @@ export default function PosPage() {
 
   function unpair() {
     window.localStorage.removeItem(TOKEN_KEY);
+    // เครื่องนี้เลิกจับคู่แล้ว — ดราฟต์ที่ผูกไว้กับ token เดิมไม่มีความหมายอีกต่อไป
+    if (token) {
+      window.localStorage.removeItem(LOCAL_TAB_KEY_PREFIX + token);
+      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+    }
     setToken("");
     setTokenInput("");
     setSession(null);
@@ -1397,6 +1414,77 @@ export default function PosPage() {
   useEffect(() => {
     void loadSession();
   }, [loadSession]);
+
+  // ครั้งเดียวหลัง mount: ต้องลองคืนดราฟต์เก่าก่อน แล้วสองเอฟเฟกต์ข้างล่างถึงจะเริ่ม
+  // เขียนทับได้ — สลับลำดับกัน (เขียนทับก่อนอ่าน) ดราฟต์เก่าจะถูกเขียนทับ/ลบทิ้งไป
+  // ตั้งแต่ก่อนที่ effect คืนค่าจะได้อ่านมันด้วยซ้ำ (ตะกร้า/แท็บว่างตอน mount = true
+  // เสมอ พอเขียนทับด้วยค่าว่างนั้นก็เท่ากับลบดราฟต์ทิ้งไปเลยโดยไม่มีใครทันอ่าน)
+  const localDraftRestoredRef = useRef(false);
+
+  // จำแท็บที่เลือกอยู่ไว้ข้ามการรีเฟรช — ไม่มีข้อมูลอ่อนไหว คืนค่าได้ตรง ๆ ไม่ต้องคิดอะไรต่อ
+  useEffect(() => {
+    if (!token || !localDraftRestoredRef.current) return;
+    window.localStorage.setItem(LOCAL_TAB_KEY_PREFIX + token, tab);
+  }, [tab, token]);
+
+  // จำตะกร้าที่กำลังขายไว้ข้ามการรีเฟรช/แท็บถูกดีดจาก memory — ปลอดภัยเพราะ
+  // createOrder คิดราคาจาก catalog ปัจจุบันเสมอตอนกดจ่ายจริง (สูตรเดียวกับพักบิล)
+  // ล้างทิ้งทันทีที่ตะกร้าว่าง ไม่ว่าจะว่างเพราะขายจบ/ล้าง/พักบิล/ยกเลิก — กันดราฟต์
+  // ค้างเกินอายุของบิลที่จบไปแล้ว โดยไม่ต้องไปตามแก้ทุกจุดที่ setCart([]) เก็บอยู่
+  useEffect(() => {
+    if (!token || !localDraftRestoredRef.current) return;
+    const key = LOCAL_CART_DRAFT_KEY_PREFIX + token;
+    if (cart.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    const snapshot: ParkedCartSnapshot & { savedAt: number; shiftId: string | null } = {
+      ...buildParkedCartSnapshot(),
+      // ไม่พ่วงการอนุมัติเภสัชกรไปด้วย — ดราฟต์นี้คืนค่าแบบเงียบ ๆ ตอน mount โดยไม่มีใคร
+      // มายืนยันว่า "ใช่ ฉันสานต่ออันนี้จริง" ต่างจากพักบิลที่ user กดเลือกเองชัดเจน
+      // การอนุมัติที่ผูกกับ fingerprint ตะกร้าเดิมจึงต้องให้ขอใหม่เสมอถ้าตะกร้าเปลี่ยนมือ
+      pharmacyReview: null,
+      savedAt: Date.now(),
+      shiftId: session?.shift?.id ?? null,
+    };
+    window.localStorage.setItem(key, JSON.stringify(snapshot));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, member, pointsToRedeem, couponCode, extraLines, token, session?.shift?.id]);
+
+  // คืนตะกร้า+แท็บที่ค้างไว้ — ครั้งเดียวหลัง session โหลดเสร็จ ไม่ใช่ทุกครั้งที่ตะกร้าว่าง
+  // (ไม่งั้นเคลียร์ตะกร้าเองก็จะโดนดึงดราฟต์เก่ากลับมาซ้ำ)
+  useEffect(() => {
+    if (!token || !session || localDraftRestoredRef.current) return;
+    localDraftRestoredRef.current = true;
+
+    const savedTab = window.localStorage.getItem(LOCAL_TAB_KEY_PREFIX + token);
+    if (savedTab && POS_TABS.some((item) => item.key === savedTab)) {
+      setTab(savedTab as PosTab);
+    }
+
+    if (cart.length > 0) return; // มีตะกร้าอยู่แล้ว (ไม่ควรเกิดตอน mount แต่กันไว้)
+    const raw = window.localStorage.getItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { savedAt?: number; shiftId?: string | null } & Record<string, unknown>;
+      const savedAt = Number(parsed.savedAt ?? 0);
+      const isFresh = savedAt > 0 && Date.now() - savedAt <= LOCAL_CART_DRAFT_MAX_AGE_MS;
+      // กะไม่ตรงกับตอนบันทึกไว้ (กะก่อนหน้าปิดไปแล้ว/ยังไม่เปิดกะ) = ไม่คืนให้
+      // กันตะกร้าของกะก่อนข้ามมาให้แคชเชียร์กะถัดไปเจอโดยไม่รู้ที่มา
+      const shiftMatches = (parsed.shiftId ?? null) === (session?.shift?.id ?? null);
+      if (!isFresh || !shiftMatches) {
+        window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+        return;
+      }
+      const snapshot = parseParkedCartSnapshot(parsed);
+      if (snapshot.lines.length === 0) return;
+      restoreBillFromSnapshot({ ...snapshot, pharmacyReview: null });
+      setNotice({ type: "ok", text: "กู้ตะกร้าที่ค้างไว้ก่อนหน้าคืนแล้ว — ตรวจรายการก่อนกดจ่ายอีกครั้ง" });
+    } catch {
+      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, session]);
 
   useEffect(() => {
     if (!token) return;
