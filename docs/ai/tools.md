@@ -73,6 +73,10 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 
 | Tools | Class | Customer | Staff permission | Execution |
 | --- | --- | --- | --- | --- |
+| `search_system_capabilities`, `search_system_guides` | A1/knowledge | no | — | deterministic read of the verified bilingual catalog; reports missing actor permissions but never grants access |
+| `get_my_access` | A1/access | no | — | server-derived current actor role and effective permission codes; display name and POS-only scope are read from `users` because they are not session claims |
+| `search_staff_users`, `get_staff_user_access` | A1/access | no | `user.view` | bounded current-tenant staff lookup / effective access; excludes platform identities and sensitive account fields |
+| `get_loyalty_program_status` | A1/config | no | `member.view` | tenant loyalty enablement and verified earning/redemption settings; not a customer balance |
 | `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_loyalty_points` | A1 | own `(channel, customer_ref)` only | `member.view` | read; never redeems |

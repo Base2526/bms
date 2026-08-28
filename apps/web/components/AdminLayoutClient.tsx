@@ -5,6 +5,7 @@ import { Button, Layout } from "antd";
 import { LogoutOutlined, EyeOutlined } from "@ant-design/icons";
 import AdminSidebar from "@/components/AdminSidebar";
 import { useI18n } from "@/lib/i18nContext";
+import WorkAssistantDrawer from "@/components/work-assistant/WorkAssistantDrawer";
 
 const { Content } = Layout;
 
@@ -52,6 +53,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
           <ImpersonationBanner />
           {children}
         </Content>
+        <WorkAssistantDrawer />
       </Layout>
     </Layout>
   );

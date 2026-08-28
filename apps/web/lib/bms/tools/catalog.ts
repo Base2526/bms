@@ -101,6 +101,13 @@ import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCo
 import { recordSynonymCandidate } from "../aiSynonyms";
 import { generateReport, REPORT_TYPES, REPORT_FORMATS } from "../reportEngine";
 import { isKnownReportRecipient } from "../reportEmail";
+import { getAssistantSelfProfile, getTenantStaffUserAccess, searchTenantStaffUsers } from "../assistantAccess";
+import {
+  SYSTEM_CAPABILITIES,
+  SYSTEM_GUIDES,
+  groupPermissionDescriptions,
+  searchAssistantKnowledge,
+} from "../assistantKnowledge";
 
 const CONV_STATUSES = ["OPEN", "PENDING", "CLOSED"] as const;
 const STAFF_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
@@ -177,6 +184,246 @@ function safeCoupon(c: any) {
 // =============================================================
 // A1 — read-only
 // =============================================================
+
+const searchSystemCapabilitiesTool: BmsTool = {
+  name: "search_system_capabilities",
+  description:
+    "Search verified BMS capabilities when staff ask whether the system supports something. Returns implementation status, limitations, route, and whether the current actor has the required permissions. Product support is not proof that this tenant enabled or configured the feature.",
+  surfaces: ["staff"],
+  whenToUse: "The user asks whether BMS can do something, which formats are supported, or whether a named integration is live, conditional, mock, or unavailable.",
+  whenNotToUse: "Do not use it for live shop figures, tenant configuration, customer eligibility, or record status; those require the relevant business/configuration tool.",
+  commonMistakes: [
+    "Do not report CONDITIONAL as enabled for this shop without a configuration tool result.",
+    "Do not report MOCK or BETA as live.",
+  ],
+  example: { input: { query: "export PDF Excel ได้ไหม" }, note: "Capability discovery, not a request to generate a report." },
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Capability question in Thai or English." },
+      locale: { type: "string", enum: ["th", "en"], description: "Response language (default th)." },
+      limit: { type: "integer", description: "Maximum results (default 5, max 10)." },
+    },
+    required: ["query"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const locale = enumVal(args, "locale", ["th", "en"] as const, false) ?? "th";
+    const ranked = searchAssistantKnowledge(reqString(args, "query"), {
+      locale,
+      currentPath: ec.currentPath,
+      pageId: ec.pageId,
+      permissions: ec.permissions,
+      role: ec.role,
+      isPlatformAdmin: ec.isPlatformAdmin,
+      kind: "capability",
+      limit: 20,
+    });
+    const rankedIds = ranked.map((result) => result.id);
+    const resultById = new Map(ranked.map((result) => [result.id, result]));
+    const rank = new Map(rankedIds.map((id, index) => [id, index]));
+    const limit = optInt(args, "limit", 1, 10) ?? 5;
+    const capabilities = SYSTEM_CAPABILITIES
+      .filter((entry) => rank.has(entry.id))
+      .sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99))
+      .slice(0, limit)
+      .map((entry) => {
+        const match = resultById.get(entry.id);
+        const missingPermissions = match?.missingPermissions ?? [];
+        return {
+          id: entry.id,
+          title: entry.title[locale],
+          description: entry.description[locale],
+          status: entry.status,
+          route: entry.route,
+          formats: entry.formats ?? [],
+          configurationRequired: entry.configurationDependencies.length > 0,
+          configurationDependencies: entry.configurationDependencies,
+          limitations: entry.limitations[locale],
+          requiredPermissions: entry.requiredPermissions,
+          anyOfPermissions: entry.anyOfPermissions ?? [],
+          missingPermissions,
+          accessible: match?.accessible === true,
+          accessRequirement: entry.accessRequirement ?? "any_staff",
+          accessNote: match?.accessNote ?? null,
+        };
+      });
+    return { ok: true, data: { capabilities } };
+  },
+};
+
+const searchSystemGuidesTool: BmsTool = {
+  name: "search_system_guides",
+  description:
+    "Search verified bilingual BMS usage guides. Returns prerequisites, steps, warnings, route, and current-actor access. Use this to answer how a page or workflow is used; never invent missing steps.",
+  surfaces: ["staff"],
+  whenToUse: "The user asks how to use a page, menu, workflow, button, or why a documented prerequisite is blocking them.",
+  whenNotToUse: "Do not use guide text as live business data or proof that the actor is authorized; execution remains backend-gated.",
+  commonMistakes: [
+    "Current page is only a retrieval hint and never grants permission.",
+    "If no verified guide matches, say coverage is unavailable instead of inventing steps.",
+  ],
+  example: { input: { query: "เปิดกะ POS อย่างไร" }, note: "Returns the verified POS shift guide." },
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "How-to question in Thai or English." },
+      locale: { type: "string", enum: ["th", "en"], description: "Response language (default th)." },
+      limit: { type: "integer", description: "Maximum results (default 5, max 10)." },
+    },
+    required: ["query"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const locale = enumVal(args, "locale", ["th", "en"] as const, false) ?? "th";
+    const ranked = searchAssistantKnowledge(reqString(args, "query"), {
+      locale,
+      currentPath: ec.currentPath,
+      pageId: ec.pageId,
+      permissions: ec.permissions,
+      role: ec.role,
+      isPlatformAdmin: ec.isPlatformAdmin,
+      kind: "guide",
+      limit: 20,
+    });
+    const rankedIds = ranked.map((result) => result.id);
+    const resultById = new Map(ranked.map((result) => [result.id, result]));
+    const rank = new Map(rankedIds.map((id, index) => [id, index]));
+    const limit = optInt(args, "limit", 1, 10) ?? 5;
+    const guides = SYSTEM_GUIDES
+      .filter((entry) => rank.has(entry.id))
+      .sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99))
+      .slice(0, limit)
+      .map((entry) => {
+        const match = resultById.get(entry.id);
+        const missingPermissions = match?.missingPermissions ?? [];
+        return {
+          id: entry.id,
+          title: entry.title[locale],
+          summary: entry.summary[locale],
+          route: entry.route,
+          prerequisites: entry.prerequisites[locale],
+          steps: entry.steps[locale],
+          warnings: entry.warnings[locale],
+          requiredPermissions: entry.requiredPermissions,
+          anyOfPermissions: entry.anyOfPermissions ?? [],
+          missingPermissions,
+          accessible: match?.accessible === true,
+          accessRequirement: entry.accessRequirement ?? "any_staff",
+          accessNote: match?.accessNote ?? null,
+        };
+      });
+    return { ok: true, data: { guides } };
+  },
+};
+
+const getMyAccessTool: BmsTool = {
+  name: "get_my_access",
+  description:
+    "Return the current signed-in staff actor's server-derived role, effective permission codes, and POS-only scope. Use it to explain what this actor can do or why a menu/action is unavailable. It does not grant or change access.",
+  surfaces: ["staff"],
+  inputSchema: {
+    type: "object",
+    properties: { locale: { type: "string", enum: ["th", "en"], description: "Response language (default th)." } },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const locale = enumVal(args, "locale", ["th", "en"] as const, false) ?? "th";
+    const permissions = [...(ec.permissions ?? [])].sort();
+    const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+    // name / username / pos_only are not session claims — read them, do not infer them from ctx.
+    const profile = actorId ? await getAssistantSelfProfile(actorId) : null;
+    return { ok: true, data: {
+      id: actorId,
+      displayName: profile?.displayName ?? null,
+      username: profile?.username ?? null,
+      role: ec.ctx?.admin?.role ?? null,
+      posOnly: profile?.posOnly ?? null,
+      permissions,
+      permissionGroups: groupPermissionDescriptions(permissions, locale),
+    } };
+  },
+};
+
+const searchStaffUsersTool: BmsTool = {
+  name: "search_staff_users",
+  description:
+    "Search staff accounts in the current tenant by name or username. Requires user.view. Returns bounded exact/similar matches without email, phone, PIN, tokens, sessions, or platform identities. If the word 'person' could mean staff or customer, clarify before calling.",
+  surfaces: ["staff"],
+  permission: "user.view",
+  whenToUse: "The user explicitly asks whether a named staff/user account exists in this shop or wants to select a staff account for a later access lookup.",
+  whenNotToUse: "Do not use for customers; use customer tools after clarifying. Do not infer that a similar match is the requested person.",
+  commonMistakes: ["If several or only similar matches return, present choices and do not pick one."],
+  example: { input: { query: "suprims", limit: 5 } },
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Staff display name or username." },
+      limit: { type: "integer", description: "Maximum matches (default 5, max 10)." },
+    },
+    required: ["query"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const users = await searchTenantStaffUsers(
+      ec.tenantId,
+      reqString(args, "query"),
+      optInt(args, "limit", 1, 10) ?? 5
+    );
+    return { ok: true, data: { users, count: users.length } };
+  },
+};
+
+const getStaffUserAccessTool: BmsTool = {
+  name: "get_staff_user_access",
+  description:
+    "Read one selected current-tenant staff account's role and effective permissions. Requires user.view. Call only with an id returned by search_staff_users; never guess an id from a name.",
+  surfaces: ["staff"],
+  permission: "user.view",
+  whenToUse: "After the user selected one unambiguous result from search_staff_users and asks what that account can do.",
+  whenNotToUse: "Do not call before resolving duplicate or similar name matches, and do not use it to modify access.",
+  commonMistakes: ["A role name alone is not the effective permission list; use this tool result."],
+  example: { input: { userId: "selected-user-id" } },
+  inputSchema: {
+    type: "object",
+    properties: {
+      userId: { type: "string", description: "Exact id returned by search_staff_users." },
+      locale: { type: "string", enum: ["th", "en"], description: "Response language (default th)." },
+    },
+    required: ["userId"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const user = await getTenantStaffUserAccess(ec.tenantId, reqString(args, "userId"));
+    const locale = enumVal(args, "locale", ["th", "en"] as const, false) ?? "th";
+    return user
+      ? { ok: true, data: { user: { ...user, permissionGroups: groupPermissionDescriptions(user.permissions, locale) } } }
+      : { ok: false, error: "ไม่พบบัญชีผู้ใช้ในร้านปัจจุบัน" };
+  },
+};
+
+const getLoyaltyProgramStatusTool: BmsTool = {
+  name: "get_loyalty_program_status",
+  description:
+    "Read whether this tenant has enabled its loyalty program and the verified earning/redemption settings. Product capability alone is not tenant enablement. Never use this tool as a customer's point balance.",
+  surfaces: ["staff"],
+  permission: "member.view",
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec): Promise<ToolResult> => {
+    const settings = await getLoyaltySettings(ec.tenantId);
+    return {
+      ok: true,
+      data: {
+        supported: true,
+        enabled: settings.enabled,
+        earnMode: settings.earnMode,
+        earnPointsPerBaht: settings.earnPointsPerBaht,
+        visitPoints: settings.visitPoints,
+        earnMinSpend: settings.earnMinSpend,
+        redeemPointsPerUnit: settings.redeemPointsPerUnit,
+        redeemBahtPerUnit: settings.redeemBahtPerUnit,
+        redeemMinPoints: settings.redeemMinPoints,
+        maxDiscountPct: settings.maxDiscountPct,
+        pointsExpireMonths: settings.pointsExpireMonths,
+      },
+    };
+  },
+};
 
 const searchProducts: BmsTool = {
   name: "search_products",
@@ -439,9 +686,11 @@ const getProduct: BmsTool = {
 const listAvailableCouponsTool: BmsTool = {
   name: "list_available_coupons",
   description:
-    "List active coupons this customer is genuinely still eligible for, after the time window, quota, per-customer limit and minimum have been checked. Call this before answering when the customer asks about coupons or requests a discount.",
+    "List coupons that are available now after time window, quota and known minimum-spend checks. Customer surface, or staff with channel+customerRef: returns that resolved customer's genuine eligibility/wallet rules. Staff with no customer identity: returns shop-wide generally available coupons only and must not be described as eligibility for a particular customer.",
   surfaces: ["customer", "staff"],
   permission: "coupon.view",
+  whenToUse: "Use without customer identity for 'what coupons does the shop have available now'; include channel+customerRef for one customer's eligibility.",
+  whenNotToUse: "Do not claim a shop-wide result is usable by a named customer; resolve the customer first.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2347,6 +2596,12 @@ const sendCustomerMessageTool: BmsTool = proposalTool({
 
 export const ALL_TOOLS: BmsTool[] = [
   // A1
+  searchSystemCapabilitiesTool,
+  searchSystemGuidesTool,
+  getMyAccessTool,
+  searchStaffUsersTool,
+  getStaffUserAccessTool,
+  getLoyaltyProgramStatusTool,
   searchProducts,
   browseCatalogTool,
   listNewArrivalsTool,

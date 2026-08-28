@@ -11,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import { useI18n } from "@/lib/i18nContext";
+import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "@/components/work-assistant/confirmMutations";
 
 const { Text, Paragraph } = Typography;
 
@@ -89,8 +90,8 @@ function renderAssistantText(text: string, t: TFn) {
 }
 
 const M_ASSISTANT = gql`
-  mutation BmsAssistant($message: String!, $history: [BmsAssistantTurn!]) {
-    bmsAssistant(message: $message, history: $history) {
+  mutation BmsWorkAssistant($input: BmsWorkAssistantInput!) {
+    bmsWorkAssistant(input: $input) {
       reply
       proposals { tool mutation args summary }
       trace { tool ok summary }
@@ -108,59 +109,7 @@ const Q_ME = gql`
 `;
 
 // A3 sensitive → ปุ่ม Confirm ยิง mutation เดิม (permission-gated ที่ backend อยู่แล้ว)
-const CONFIRM_MUTATIONS: Record<
-  string,
-  { doc: any; vars: (a: any) => Record<string, unknown> }
-> = {
-  bmsConfirmPayment: {
-    doc: gql`mutation($id: ID!) { bmsConfirmPayment(id: $id) { __typename } }`,
-    vars: (a) => ({ id: a.id }),
-  },
-  bmsRejectPayment: {
-    doc: gql`mutation($id: ID!, $note: String) { bmsRejectPayment(id: $id, note: $note) }`,
-    vars: (a) => ({ id: a.id, note: a.note ?? null }),
-  },
-  bmsRefundPayment: {
-    doc: gql`mutation($id: ID!) { bmsRefundPayment(id: $id) }`,
-    vars: (a) => ({ id: a.id }),
-  },
-  bmsCancelOrder: {
-    doc: gql`mutation($id: ID!) { bmsCancelOrder(id: $id) }`,
-    vars: (a) => ({ id: a.id }),
-  },
-  bmsReturnOrder: {
-    doc: gql`mutation($id: ID!) { bmsReturnOrder(id: $id) }`,
-    vars: (a) => ({ id: a.id }),
-  },
-  bmsAdjustStock: {
-    doc: gql`mutation($sku: String!, $size: String!, $delta: Int!, $note: String) {
-      bmsAdjustStock(sku: $sku, size: $size, delta: $delta, note: $note) { __typename }
-    }`,
-    vars: (a) => ({ sku: a.sku, size: a.size, delta: a.delta, note: a.note ?? null }),
-  },
-  bmsMergeCustomers: {
-    doc: gql`mutation($keepId: ID!, $mergeId: ID!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId) }`,
-    vars: (a) => ({ keepId: a.keepId, mergeId: a.mergeId }),
-  },
-  bmsCancelPurchaseOrder: {
-    doc: gql`mutation($id: ID!) { bmsCancelPurchaseOrder(id: $id) }`,
-    vars: (a) => ({ id: a.id }),
-  },
-  bmsCancelShipment: {
-    doc: gql`mutation($id: ID!) { bmsCancelShipment(id: $id) }`,
-    vars: (a) => ({ id: a.id }),
-  },
-  bmsSendMessage: {
-    doc: gql`mutation($id: ID!, $body: String) { bmsSendMessage(id: $id, body: $body) { status } }`,
-    vars: (a) => ({ id: a.id, body: a.body }),
-  },
-  bmsEmailReport: {
-    doc: gql`mutation($fileId: Int!, $to: String!, $subject: String) {
-      bmsEmailReport(fileId: $fileId, to: $to, subject: $subject) { fileId to reportType format }
-    }`,
-    vars: (a) => ({ fileId: a.fileId, to: a.to, subject: a.subject ?? null }),
-  },
-};
+const CONFIRM_MUTATIONS = WORK_ASSISTANT_CONFIRM_MUTATIONS;
 
 // key ของ map นี้คือค่า reportType ที่ backend ส่งมา (ห้ามแปล) — ส่วน value เป็น i18n key ที่ resolve ตอน render
 const REPORT_TYPE_LABEL_KEY: Record<string, string> = {
@@ -254,7 +203,7 @@ const QUICK_START: Array<{ labelKey: string; fillKey: string }> = [
 ];
 
 export default function Page() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const client = useApolloClient();
   const { data: meData, loading: meLoading } = useQuery(Q_ME);
   const isMobile = useIsMobile();
@@ -374,9 +323,9 @@ export default function Page() {
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { message: m, history },
+        variables: { input: { message: m, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
-      const res = data?.bmsAssistant;
+      const res = data?.bmsWorkAssistant;
       setChat((c) => [
         ...c,
         {
@@ -415,8 +364,11 @@ export default function Page() {
     // ประวัติที่ถูกต้องคือทุกอย่างก่อนข้อความผู้ใช้ที่ทำให้เกิด error นี้ (อยู่ตำแหน่ง idx-1 เสมอ ตาม send())
     const history = chat.slice(0, Math.max(idx - 1, 0)).filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
     try {
-      const { data } = await client.mutate({ mutation: M_ASSISTANT, variables: { message: m, history } });
-      const res = data?.bmsAssistant;
+      const { data } = await client.mutate({
+        mutation: M_ASSISTANT,
+        variables: { input: { message: m, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+      });
+      const res = data?.bmsWorkAssistant;
       setChat((c) =>
         c.map((b, i) =>
           i === idx

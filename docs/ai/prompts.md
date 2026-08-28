@@ -94,6 +94,9 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   handles this known sales-report ambiguity before quota consumption; the prompt covers other cases.
   Once the user explicitly confirms a lifetime period, the sales tools receive `scope: "all_time"`
   instead of omitted dates (which intentionally retain the ordinary 30-day default).
+  Capability questions call `search_system_capabilities`; how-to questions call
+  `search_system_guides`. Product capability is separate from tenant enablement/configuration, and
+  guide routes or current-page context never grant authorization.
 
 Reply-`max_tokens` for the tool loop is 1024 (vs 256 for the single-shot `generateResponse`), and the
 loop is bounded (≤5 rounds, 20s/call) with a deterministic fallback when no AI credentials exist.
