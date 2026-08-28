@@ -84,6 +84,7 @@ const Q_JOURNEY = gql`
       helpers { ${STAFF_F} }
       steps { status at actorName reached branch }
       events { kind at text actorName }
+      returnedTotal remainingAfterReturn pendingSettlementTotal
     }
   }
 `;
@@ -333,6 +334,9 @@ function useVisibleRowWidth() {
 function OrderDetails({ order: r }: { order: Order }) {
   const { t } = useI18n();
   const { ref: wrapRef, width: visibleWidth } = useVisibleRowWidth();
+  // ยอดคืนจาก journey (bmsOrderJourney) — คนละ query กับ order list ด้านบน
+  // journey โหลดทีหลัง เลยต้องบับเบิลค่าขึ้นมาแทนที่จะยิง query ซ้ำสองรอบ
+  const [returnSummary, setReturnSummary] = useState<{ returnedTotal: number; remainingAfterReturn: number } | null>(null);
   return (
     <div
       ref={wrapRef}
@@ -345,7 +349,7 @@ function OrderDetails({ order: r }: { order: Order }) {
         position: "sticky", left: 0,
       }}
     >
-      <OrderJourney orderId={r.id} />
+      <OrderJourney orderId={r.id} onReturnSummary={setReturnSummary} />
       <div>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.items_label")}</Typography.Text>
         <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={ITEM_COLUMNS} pagination={false} size="small" scroll={{ x: "max-content" }} />
@@ -380,6 +384,21 @@ function OrderDetails({ order: r }: { order: Order }) {
               <Typography.Text strong>{t("admin_orders.net_total")}</Typography.Text>
               <Typography.Text strong>{money(r.amount_due)}</Typography.Text>
             </div>
+            {/* ยอดขายเดิมข้างบนห้ามแก้ย้อนหลัง (เอกสารขายเดิม — ดูคอมเมนต์ที่
+                getOrderJourney) แต่บิลที่คืนไปแล้วต้องมีบรรทัดบอกว่าเหลือจริงเท่าไร
+                ไม่งั้นคนอ่านเข้าใจว่าลูกค้ายังติดหนี้/ร้านยังไม่ได้จ่ายคืนเต็มยอด */}
+            {returnSummary && returnSummary.returnedTotal > 0 && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                  <Typography.Text type="secondary">{t("admin_orders.returned_total")}</Typography.Text>
+                  <Typography.Text type="danger">-{money(returnSummary.returnedTotal)}</Typography.Text>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: "1px dashed var(--app-border, #eee)", paddingTop: 6 }}>
+                  <Typography.Text strong>{t("admin_orders.remaining_after_return")}</Typography.Text>
+                  <Typography.Text strong type="success">{money(returnSummary.remainingAfterReturn)}</Typography.Text>
+                </div>
+              </>
+            )}
           </Space>
         </div>
       </div>
@@ -475,11 +494,27 @@ function StaffChip({ s, size = 22 }: { s: StaffRef; size?: number }) {
   );
 }
 
-function OrderJourney({ orderId }: { orderId: string }) {
+function OrderJourney({
+  orderId,
+  onReturnSummary,
+}: {
+  orderId: string;
+  // ยอดคืน/คงเหลือของ journey ตัวนี้เป็นข้อมูลเดียวกับที่การ์ดสรุปรายการสินค้า
+  // (นอก component นี้) ต้องใช้ต่อ — บับเบิลขึ้นแทนยิง query ซ้ำ
+  onReturnSummary?: (v: { returnedTotal: number; remainingAfterReturn: number } | null) => void;
+}) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const { data, loading } = useQuery(Q_JOURNEY, { variables: { orderId }, fetchPolicy: "cache-and-network" });
   const j = data?.bmsOrderJourney;
+  useEffect(() => {
+    onReturnSummary?.(
+      j ? { returnedTotal: j.returnedTotal, remainingAfterReturn: j.remainingAfterReturn } : null
+    );
+    // เคลียร์ทิ้งตอน unmount (สลับไปดูออร์เดอร์อื่น) กันค่าของบิลก่อนหน้าค้าง
+    return () => onReturnSummary?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [j?.returnedTotal, j?.remainingAfterReturn]);
   if (loading && !j) return <div style={{ padding: 16, textAlign: "center" }}><Spin size="small" /></div>;
   if (!j) return <Empty description={t("admin_orders.no_journey")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
 
@@ -516,6 +551,27 @@ function OrderJourney({ orderId }: { orderId: string }) {
           </Space>
         )}
       </div>
+
+      {/* บิลที่คืน/ยกเลิกบางส่วนที่เคาน์เตอร์ไม่เปลี่ยนสถานะเป็น RETURNED (ดูคอมเมนต์
+          ที่ getOrderJourney) — ไม่มีแถบนี้ ยอดชำระสุทธิด้านล่างจะยังโชว์ยอดขายเต็ม
+          เหมือนไม่เคยมีการคืนเกิดขึ้นเลย ทั้งที่ timeline ด้านล่างมีรายการคืนอยู่แล้ว */}
+      {j.returnedTotal > 0 && (
+        <Space size={6} wrap style={{ padding: "8px 12px", background: "var(--app-surface-2, rgba(148,163,184,0.08))", borderRadius: 8 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.returned_total")}</Typography.Text>
+          <Typography.Text type="warning" strong style={{ fontSize: 12 }}>{money(j.returnedTotal)}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>·</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.remaining_after_return")}</Typography.Text>
+          <Typography.Text type="success" strong style={{ fontSize: 12 }}>{money(j.remainingAfterReturn)}</Typography.Text>
+          {j.pendingSettlementTotal > 0 && (
+            <>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>·</Typography.Text>
+              <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                {t("admin_orders.pending_settlement")} {money(j.pendingSettlementTotal)}
+              </Typography.Text>
+            </>
+          )}
+        </Space>
+      )}
 
       {/* stepper หลัก — 7 ขั้นเรียงนอนกว้างเกินจอมือถือ จึงพลิกเป็นแนวตั้ง
           โหมด labelPlacement="vertical" ของ AntD ตั้ง .ant-steps-item{overflow:visible},
