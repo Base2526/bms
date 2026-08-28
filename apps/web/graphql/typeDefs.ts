@@ -1351,6 +1351,10 @@ export const typeDefs = /* GraphQL */ `
     helpers: [BmsStaffRef!]!
     steps: [BmsOrderStep!]!
     events: [BmsOrderEvent!]!
+    # ยอดคืนสะสม/คงเหลือสุทธิ — 0 เมื่อบิลนี้ไม่เคยมีการคืน/ยกเลิกที่เคาน์เตอร์เลย
+    returnedTotal: Float!
+    remainingAfterReturn: Float!
+    pendingSettlementTotal: Float!
   }
 
   type BmsReorderResult {

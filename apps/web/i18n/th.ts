@@ -2934,6 +2934,9 @@ const th = {
     no_origin_chat: "ไม่มีแชทต้นทาง",
     assigned_staff_label: "ผู้ดูแล:",
     detailed_timeline: "ไทม์ไลน์ละเอียด",
+    returned_total: "คืนแล้ว",
+    remaining_after_return: "คงเหลือสุทธิ",
+    pending_settlement: "รอยืนยันคืนเงินจริง",
   },
   admin_reports: {
     report_type_sales: "ยอดขาย (Sales)",

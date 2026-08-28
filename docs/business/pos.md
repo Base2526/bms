@@ -64,8 +64,10 @@ bills rung up by mistake.
    only on this screen; receipt-based return and exchange controls open only for bills from the
    current register. Each bill in that list is one compact row; return, refund, and exchange
    controls open on demand for one bill at a time, and the reason code plus detail are shared by
-   the partial and full return actions. An exchange loads the remaining original items into a new
-   cart; it is a new sale, not a mutation of the old receipt.
+   the partial and full return actions. An exchange first commits a partial return for the exact
+   quantities selected by `orderItemId`, then seeds those returned variants into a fresh cart; the
+   replacement is a new sale, not a mutation of the old receipt. The new cart never inherits a
+   previous cart's coupon, points, manual discount, pharmacy approval, service lines, or credit account.
 8. Returns may be full or partial. A reason code plus detail is mandatory, returned quantities are
    cumulative and cannot exceed the sold quantity, net refund uses the original order-level discount,
    and stock/lot provenance is restored atomically.

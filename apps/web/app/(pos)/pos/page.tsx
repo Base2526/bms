@@ -33,6 +33,7 @@ import {
   type ScanSource,
 } from "@/lib/pos/scanManager";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
+import { selectedReturnLines, type ReturnDraft } from "@/lib/pos/returnDraft";
 import {
   findRememberedPrinter,
   isWebUsbSupported,
@@ -212,8 +213,6 @@ function addScanHitToCart(cart: CartLine[], hit: ScanHit, key: string): CartLine
   }
   return [...synced, { ...hit, packQty: 1, key }];
 }
-type ReturnDraft = Record<number, number>;
-
 /** สมาชิกที่ค้นเจอจาก /api/pos/member (7.96) */
 type PosMember = {
   customerId: string;
@@ -794,49 +793,49 @@ function BillHistoryPanel({
   let cumulativeRefund = 0;
 
   return (
-    <div style={{
-      marginTop: 10, padding: 12, borderRadius: 10,
-      border: "1px solid #d8e2dc", background: "#fff", fontSize: 12,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div className="pos-ret-expand">
+      <div className="pos-ret-hist-head">
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>
+          <div className="pos-ret-hist-title">
             ประวัติบิล {receipt.docNo ?? receipt.orderId ?? "POS"}
           </div>
-          <div style={{ color: "#666", marginTop: 2 }}>เรียงตามเวลาที่เกิดขึ้นจริง เอกสารขายเดิมจะไม่ถูกแก้ย้อนหลัง</div>
+          <div className="pos-ret-hist-sub">เรียงตามเวลาที่เกิดขึ้นจริง เอกสารขายเดิมจะไม่ถูกแก้ย้อนหลัง</div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div>ขายเดิม <strong>฿{baht(receipt.total)}</strong></div>
-          <div style={{ color: summary.pendingRefundTotal > 0 ? "#8a6100" : "#1e6b3a" }}>
+        <div className="pos-ret-hist-money">
+          <div>ขายเดิม <b>฿{baht(receipt.total)}</b></div>
+          <div className={`pos-ret-hist-money-net${summary.pendingRefundTotal > 0 ? " pos-ret-hist-money-net--pending" : ""}`}>
             คืนสะสม ฿{baht(summary.refundedTotal)} · คงเหลือ ฿{baht(summary.remainingAfterRefund)}
           </div>
         </div>
       </div>
 
-      <div style={{ borderLeft: "3px solid #9dc8ab", marginTop: 12, paddingLeft: 12 }}>
-        <div style={{ paddingBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-            <strong style={{ color: "#1e6b3a" }}>ขายสินค้า · ฿{baht(receipt.total)}</strong>
-            <span style={{ color: "#666" }}>{receipt.at}</span>
+      <ol className="pos-ret-timeline">
+        <li className="pos-ret-event">
+          <span className="pos-ret-dot" aria-hidden="true" />
+          <div className="pos-ret-event-body">
+            <div className="pos-ret-event-row">
+              <strong>ขายสินค้า · ฿{baht(receipt.total)}</strong>
+              <span className="pos-ret-event-time">{receipt.at}</span>
+            </div>
+            <div className="pos-ret-event-detail">
+              แคชเชียร์ {receipt.cashier || "ไม่พบข้อมูล"}
+              {receipt.posLabel ? ` · POS#${receipt.posLabel}` : ""}
+            </div>
+            <div className="pos-ret-event-detail">
+              {(receipt.payments.length > 0 ? receipt.payments : [{
+                method: "UNKNOWN", label: receipt.paymentLabel, amount: receipt.total,
+                ref: receipt.paymentRef, tendered: receipt.tendered, change: receipt.change,
+              }]).map((payment) => (
+                <span key={`${payment.method}-${payment.amount}-${payment.ref ?? ""}`} style={{ marginRight: 10 }}>
+                  {payment.label} ฿{baht(payment.amount)}{payment.ref ? ` (${payment.ref})` : ""}
+                </span>
+              ))}
+            </div>
           </div>
-          <div style={{ color: "#555", marginTop: 3, overflowWrap: "anywhere" }}>
-            แคชเชียร์ {receipt.cashier || "ไม่พบข้อมูล"}
-            {receipt.posLabel ? ` · POS#${receipt.posLabel}` : ""}
-          </div>
-          <div style={{ color: "#555", marginTop: 3 }}>
-            {(receipt.payments.length > 0 ? receipt.payments : [{
-              method: "UNKNOWN", label: receipt.paymentLabel, amount: receipt.total,
-              ref: receipt.paymentRef, tendered: receipt.tendered, change: receipt.change,
-            }]).map((payment) => (
-              <span key={`${payment.method}-${payment.amount}-${payment.ref ?? ""}`} style={{ marginRight: 10 }}>
-                {payment.label} ฿{baht(payment.amount)}{payment.ref ? ` (${payment.ref})` : ""}
-              </span>
-            ))}
-          </div>
-        </div>
+        </li>
 
         {returnEvents.length === 0 && (
-          <div style={{ color: "#777", padding: "2px 0 8px" }}>ยังไม่มีรายการคืนหรือยกเลิกบิล</div>
+          <li className="pos-ret-hist-none">ยังไม่มีรายการคืนหรือยกเลิกบิล</li>
         )}
 
         {returnEvents.map((event) => {
@@ -848,69 +847,67 @@ function BillHistoryPanel({
             ? "ยกเลิกบิล"
             : event.returnMode === "FULL" ? "คืนสินค้าทั้งบิล" : "คืนสินค้าบางรายการ";
           return (
-            <div key={event.id} style={{ borderTop: "1px dashed #d7d7d7", padding: "12px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                <strong style={{ color: event.isVoid ? "#8a3b3b" : "#8a6100" }}>
-                  {eventTitle} · ฿{baht(event.refundAmount)}
-                </strong>
-                <span style={{ color: "#666" }}>{new Date(event.returnedAt).toLocaleString("th-TH")}</span>
-              </div>
-              <div style={{ color: "#555", marginTop: 4 }}>
-                ผู้ทำรายการ {event.returnedByName ?? "ไม่พบข้อมูล"}
-                {event.approvedByName ? ` · ผู้อนุมัติ ${event.approvedByName}` : " · ผู้อนุมัติ —"}
-              </div>
-              {event.creditNoteNo && (
-                <div style={{ color: "#555", marginTop: 3, overflowWrap: "anywhere" }}>ใบลดหนี้ {event.creditNoteNo}</div>
-              )}
-              {event.note && <div style={{ color: "#555", marginTop: 3, overflowWrap: "anywhere" }}>เหตุผล: {event.note}</div>}
-              {event.pricingAdjustmentAmount > 0 && (
-                <div style={{ color: "#8a6100", marginTop: 3 }}>
-                  ปรับสิทธิ์ราคาตามจำนวน ฿{baht(event.pricingAdjustmentAmount)} · ยอดคงเหลือหลังประเมินราคาใหม่ ฿{baht(remaining)}
+            <li key={event.id} className={`pos-ret-event ${event.isVoid ? "pos-ret-event--void" : "pos-ret-event--return"}`}>
+              <span className="pos-ret-dot" aria-hidden="true" />
+              <div className="pos-ret-event-body">
+                <div className="pos-ret-event-row">
+                  <strong>{eventTitle} · ฿{baht(event.refundAmount)}</strong>
+                  <span className="pos-ret-event-time">{new Date(event.returnedAt).toLocaleString("th-TH")}</span>
                 </div>
-              )}
-              {event.items.length > 0 && (
-                <div style={{ marginTop: 6, padding: "7px 9px", borderRadius: 7, background: "#faf7ef" }}>
-                  {event.items.map((item) => (
-                    <div key={`${event.id}-${item.orderItemId}`} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-                        {item.packQty}× {item.receiptName}{item.size ? ` (${item.size})` : ""}
-                      </span>
-                      <span style={{ flexShrink: 0 }}>฿{baht(item.refundAmount)}</span>
-                    </div>
-                  ))}
+                <div className="pos-ret-event-detail">
+                  ผู้ทำรายการ {event.returnedByName ?? "ไม่พบข้อมูล"}
+                  {event.approvedByName ? ` · ผู้อนุมัติ ${event.approvedByName}` : " · ผู้อนุมัติ —"}
                 </div>
-              )}
-              {!event.isVoid && (
-                <button
-                  type="button"
-                  onClick={() => onOpenReturnReceipt(event)}
-                  style={{ marginTop: 8, padding: "6px 10px", fontSize: 12, minHeight: 34 }}
-                >
-                  ดูใบรับคืนรายการนี้
-                </button>
-              )}
-              <div style={{ marginTop: 6 }}>
+                {event.creditNoteNo && (
+                  <div className="pos-ret-event-detail">ใบลดหนี้ {event.creditNoteNo}</div>
+                )}
+                {event.note && <div className="pos-ret-event-detail">เหตุผล: {event.note}</div>}
+                {event.pricingAdjustmentAmount > 0 && (
+                  <div className="pos-ret-event-detail pos-ret-event-detail--warn">
+                    ปรับสิทธิ์ราคาตามจำนวน ฿{baht(event.pricingAdjustmentAmount)} · ยอดคงเหลือหลังประเมินราคาใหม่ ฿{baht(remaining)}
+                  </div>
+                )}
+                {event.items.length > 0 && (
+                  <div className="pos-ret-event-items">
+                    {event.items.map((item) => (
+                      <div key={`${event.id}-${item.orderItemId}`} className="pos-ret-event-item">
+                        <span>{item.packQty}× {item.receiptName}{item.size ? ` (${item.size})` : ""}</span>
+                        <span>฿{baht(item.refundAmount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!event.isVoid && (
+                  <button
+                    type="button"
+                    className="pos-ret-btn pos-ret-btn--sm"
+                    onClick={() => onOpenReturnReceipt(event)}
+                    style={{ marginTop: 8 }}
+                  >
+                    ดูใบรับคืนรายการนี้
+                  </button>
+                )}
                 {event.refunds.map((refund) => (
-                  <div key={refund.id} style={{
-                    display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap",
-                    color: refund.status === "COMPLETED" ? "#1e6b3a" : "#8a6100",
-                  }}>
-                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                  <div
+                    key={refund.id}
+                    className={`pos-ret-event-refund${refund.status === "COMPLETED" ? " pos-ret-event-refund--ok" : ""}`}
+                  >
+                    <span>
                       คืนเงิน {posPaymentMethodLabel(refund.method)} ฿{baht(refund.amount)} · {refund.status === "COMPLETED" ? "สำเร็จ" : "รอยืนยัน"}
                     </span>
-                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                    <span className="pos-ret-event-refund-by">
                       {refund.completedByName ? `ยืนยันโดย ${refund.completedByName}` : ""}
                       {refund.externalRef ? `${refund.completedByName ? " · " : ""}อ้างอิง ${refund.externalRef}` : ""}
                       {refund.completedAt ? `${refund.completedByName || refund.externalRef ? " · " : ""}${new Date(refund.completedAt).toLocaleString("th-TH")}` : ""}
                     </span>
                   </div>
                 ))}
+                <div className="pos-ret-event-remaining">ยอดคงเหลือหลังรายการนี้ ฿{baht(remaining)}</div>
               </div>
-              <div style={{ marginTop: 6, fontWeight: 600 }}>ยอดคงเหลือหลังรายการนี้ ฿{baht(remaining)}</div>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ol>
     </div>
   );
 }
@@ -3644,10 +3641,13 @@ export default function PosPage() {
 
   function getPartialRefundPreview(row: Receipt): number {
     const draft = row.orderId ? returnDrafts[row.orderId] ?? {} : {};
+    const selectedById = new Map(
+      selectedReturnLines(row.lines, draft).map((line) => [line.orderItemId, line.packQty])
+    );
     const gross = row.lines.reduce((sum, line) => sum + line.packQty * line.packPrice, 0);
     const netRatio = gross > 0 ? Math.min(1, row.total / gross) : 0;
     return row.lines.reduce((sum, line) => {
-      const qty = line.orderItemId ? Number(draft[line.orderItemId] ?? 0) : 0;
+      const qty = line.orderItemId ? Number(selectedById.get(line.orderItemId) ?? 0) : 0;
       const unit = line.packQty > 0 ? line.packPrice : 0;
       return sum + qty * unit * netRatio;
     }, 0);
@@ -3658,6 +3658,18 @@ export default function PosPage() {
     const note = (returnNotes[orderId] ?? "").trim();
     if (!reasonCode || !note) return null;
     return `[${reasonCode}] ${note}`;
+  }
+
+  function ensureReturnOperatorReady(actionLabel: string): boolean {
+    if (busy) return false;
+    if (!cashierId || !pin) {
+      setNotice({
+        type: "error",
+        text: `เลือกพนักงานและใส่ PIN ก่อน${actionLabel}`,
+      });
+      return false;
+    }
+    return true;
   }
 
   function getReturnPaymentLabel(receipt: Receipt): string | null {
@@ -4258,17 +4270,20 @@ export default function PosPage() {
     }
   }
 
-  async function returnReceipt(orderId: string) {
-    if (!cashierId || !pin || busy) return;
+  async function returnReceipt(row: Receipt) {
+    if (!ensureReturnOperatorReady("คืนทั้งบิล")) return;
+    if (!row.orderId) {
+      setNotice({ type: "error", text: "คืนทั้งบิลไม่ได้: ไม่พบรหัสบิลต้นทาง" });
+      return;
+    }
+    const orderId = row.orderId;
     if (!confirmDiscardBlindReturnDraft("คืนจากใบเสร็จใบนี้")) return;
     const note = buildReturnNote(orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนคืนบิล" });
       return;
     }
-    const matched = recentReceipts.find((row) => row.orderId === orderId);
-    if (!matched) return;
-    const refundPaymentOptions = getRefundPaymentOptions(matched);
+    const refundPaymentOptions = getRefundPaymentOptions(row);
     const selectedRefundMethod = preferredRefundMethods[orderId] ?? "";
     const preferredRefundMethod = refundPaymentOptions.length === 1
       ? refundPaymentOptions[0].method
@@ -4295,7 +4310,7 @@ export default function PosPage() {
           approvalUserId,
           approvalPin,
           preferredRefundMethod,
-          idempotencyKey: returnIdempotencyKey(matched, "FULL", [], preferredRefundMethod),
+          idempotencyKey: returnIdempotencyKey(row, "FULL", [], preferredRefundMethod),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -4306,23 +4321,23 @@ export default function PosPage() {
             ? `รับคืนและคืนเงินจริงครบแล้ว · ยอด ฿${baht(Number(data.refundAmount ?? 0))}`
             : `รับคืนสินค้าแล้ว · ยอด ฿${baht(Number(data.refundAmount ?? 0))} · ยังมีช่องทางที่ต้องยืนยันคืนเงินจริง`,
         });
-        if (matched) {
+        {
           const returnReceipt: Receipt = {
-            ...matched,
+            ...row,
             docNo: data.creditNoteNo ?? null,
-            referenceDocNo: matched.docNo ?? matched.orderId ?? null,
+            referenceDocNo: row.docNo ?? row.orderId ?? null,
             receiptType: "return",
             returnReason: note,
-            refundTotal: Number(data.refundAmount ?? matched.total),
+            refundTotal: Number(data.refundAmount ?? row.total),
             lines: buildReturnReceiptLines(
-              matched,
+              row,
               Array.isArray(data.returnedItems) ? data.returnedItems : []
             ),
             tendered: null,
             change: null,
             roundingAmount: null,
             at: new Date(data.returnedAt ?? Date.now()).toLocaleString("th-TH"),
-            cashier: currentCashierName || matched.cashier,
+            cashier: currentCashierName || row.cashier,
             paymentRef: null,
             payments: [],
             refunds: Array.isArray(data.refunds) ? data.refunds : [],
@@ -4333,6 +4348,7 @@ export default function PosPage() {
         }
         setReturnNotes((cur) => ({ ...cur, [orderId]: "" }));
         setReturnReasonCodes((cur) => ({ ...cur, [orderId]: "" }));
+        setReturnDrafts((cur) => ({ ...cur, [orderId]: {} }));
         setPreferredRefundMethods((cur) => ({ ...cur, [orderId]: "" }));
         setReturnPanelOrderId(null);
         void loadRecentReceipts(recentSalesQuery);
@@ -4347,24 +4363,28 @@ export default function PosPage() {
         : data?.error ?? `คืนบิลไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
     } catch (e: any) {
-      setNotice({ type: "error", text: `คืนบิลไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      setNotice({
+        type: "error",
+        text: `คืนบิลไม่สำเร็จ: ${String(e?.message ?? e)} — กดซ้ำได้ ระบบใช้คีย์เดิมและไม่คืนซ้ำ`,
+      });
     } finally {
       setBusy(false);
     }
   }
 
   async function partialReturnReceipt(row: Receipt) {
-    if (!cashierId || !pin || busy || !row.orderId) return;
+    if (!ensureReturnOperatorReady("คืนบางรายการ")) return;
+    if (!row.orderId) {
+      setNotice({ type: "error", text: "คืนบางรายการไม่ได้: ไม่พบรหัสบิลต้นทาง" });
+      return;
+    }
     if (!confirmDiscardBlindReturnDraft("คืนรายการจากใบเสร็จใบนี้")) return;
     const note = buildReturnNote(row.orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนคืนรายการ" });
       return;
     }
-    const draft = returnDrafts[row.orderId] ?? {};
-    const lines = row.lines
-      .filter((line) => line.orderItemId && Number(draft[line.orderItemId] ?? 0) > 0)
-      .map((line) => ({ orderItemId: line.orderItemId!, packQty: Number(draft[line.orderItemId!] ?? 0) }));
+    const lines = selectedReturnLines(row.lines, returnDrafts[row.orderId] ?? {});
     if (lines.length === 0) {
       setNotice({ type: "error", text: "ยังไม่ได้เลือกรายการที่จะคืน" });
       return;
@@ -4454,7 +4474,10 @@ export default function PosPage() {
         : data?.error ?? `คืนบางรายการไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
     } catch (e: any) {
-      setNotice({ type: "error", text: `คืนบางรายการไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      setNotice({
+        type: "error",
+        text: `คืนบางรายการไม่สำเร็จ: ${String(e?.message ?? e)} — กดซ้ำได้ ระบบใช้คีย์เดิมและไม่คืนซ้ำ`,
+      });
     } finally {
       setBusy(false);
     }
@@ -4507,54 +4530,180 @@ export default function PosPage() {
     }
   }
 
-  function startExchangeFromReceipt(row: Receipt) {
-    if (!confirmDiscardBlindReturnDraft("ทำบิลเปลี่ยนสินค้าจากใบเสร็จใบนี้")) return;
-    const nextCart = row.lines
-      .filter((line) => (line.refundablePackQty ?? line.packQty) > 0)
-      .map((line, idx) => ({
-        sku: line.sku,
-        productName: line.productName,
-        receiptName: line.receiptName,
-        size: line.size,
-        packCode: line.packCode,
-        unitName: line.unitName,
-        baseQty: line.baseQty,
-        packPrice: line.packPrice,
-        basePrice: line.basePrice,
-        available: 0,
-        packQty: Math.max(1, line.refundablePackQty ?? line.packQty),
-        key: `exchange-${row.orderId ?? "receipt"}-${idx}-${line.sku}`,
-      }));
-    setCart(nextCart);
-    setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
-    // ยกสมาชิกของบิลเดิมมาที่บิลใหม่ (7.96) — ลูกค้าคนเดิมยืนอยู่ตรงหน้า ถ้าไม่ยกมา
-    // พนักงานต้องค้นซ้ำและมักลืม แล้วลูกค้าเสียส่วนลด/แต้มของการเปลี่ยนสินค้า
-    // ดึงข้อมูลสดใหม่แทนที่จะใช้ค่าบนใบเสร็จ เพราะแต้ม/ชั้นเปลี่ยนไปแล้วได้
-    clearMember();
-    if (row.memberNo) {
-      void (async () => {
-        try {
-          const res = await fetch(`/api/pos/member?q=${encodeURIComponent(row.memberNo!)}`, {
-            headers: authHeaders, cache: "no-store",
-          });
-          const data = await res.json();
-          const hit = (Array.isArray(data.members) ? data.members : [])
-            .find((m: PosMember) => m.memberNo === row.memberNo);
-          if (hit) setMember(hit);
-        } catch { /* ยกสมาชิกไม่สำเร็จต้องไม่ขัดการเปลี่ยนสินค้า — ค้นเองได้ */ }
-      })();
+  async function startExchangeFromReceipt(row: Receipt) {
+    if (!ensureReturnOperatorReady("ทำบิลเปลี่ยนสินค้า")) return;
+    if (!row.orderId) {
+      setNotice({ type: "error", text: "ทำบิลเปลี่ยนสินค้าไม่ได้: ไม่พบรหัสบิลต้นทาง" });
+      return;
     }
-    // งานย้ายไปที่ตะกร้าแล้ว — ปล่อยฟอร์มคืนกางค้างไว้จะบังบิลอื่นเปล่า ๆ
-    setReturnPanelOrderId(null);
-    setReceipt({
-      ...row,
-      referenceDocNo: row.docNo ?? row.orderId ?? null,
-      receiptType: "exchange",
-      returnReason: null,
-      refundTotal: null,
-    });
-    setNotice({ type: "ok", text: "ดึงรายการเดิมมาเป็นบิลใหม่แล้ว — ปรับจำนวน/สแกนสินค้าใหม่ต่อได้เลย" });
-    scanRef.current?.focus();
+    if (hasPendingOrderWrite) {
+      setNotice({ type: "error", text: "มีบิลที่ผลลัพธ์ยังไม่แน่ชัด — กู้บิลนั้นให้เสร็จก่อนทำรายการเปลี่ยนสินค้า" });
+      return;
+    }
+    const replacingSaleCart = !blindOpen && cart.length > 0;
+    if (!confirmDiscardBlindReturnDraft("ทำบิลเปลี่ยนสินค้าจากใบเสร็จใบนี้")) return;
+
+    const note = buildReturnNote(row.orderId);
+    if (!note) {
+      setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนเปลี่ยนสินค้า" });
+      return;
+    }
+    const lines = selectedReturnLines(row.lines, returnDrafts[row.orderId] ?? {});
+    if (lines.length === 0) {
+      setNotice({ type: "error", text: "เลือกจำนวนสินค้าที่ต้องการเปลี่ยนอย่างน้อย 1 รายการ" });
+      return;
+    }
+    const refundPaymentOptions = getRefundPaymentOptions(row);
+    const selectedRefundMethod = preferredRefundMethods[row.orderId] ?? "";
+    const preferredRefundMethod = refundPaymentOptions.length === 1
+      ? refundPaymentOptions[0].method
+      : refundPaymentOptions.some((option) => option.method === selectedRefundMethod)
+        ? selectedRefundMethod
+        : null;
+    if (refundPaymentOptions.length > 1 && !preferredRefundMethod) {
+      setNotice({ type: "error", text: "บิลนี้จ่ายหลายช่องทาง — เลือกช่องทางคืนเงินก่อน" });
+      return;
+    }
+    if (replacingSaleCart && !window.confirm(
+      `ตะกร้าขายปัจจุบันมี ${cart.length} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า ต้องการทำต่อหรือไม่?`
+    )) return;
+    if (!window.confirm(
+      "ยืนยันรับคืนสินค้าที่เลือกก่อนเปิดบิลเปลี่ยน? เงินสดจะถือว่าคืนแล้ว ส่วนบัตร/QR/วอลเล็ทต้องยืนยันคืนเงินจริงอีกครั้ง"
+    )) return;
+
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/pos/return", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: "PARTIAL",
+          orderId: row.orderId,
+          cashierUserId: cashierId,
+          pin,
+          lines,
+          note,
+          approvalUserId,
+          approvalPin,
+          preferredRefundMethod,
+          idempotencyKey: returnIdempotencyKey(row, "PARTIAL", lines, preferredRefundMethod),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status !== "PARTIAL_RETURNED") {
+        const message =
+          data?.status === "APPROVAL_REQUIRED" ? `${data.reason} — ระบุผู้อนุมัติและ PIN ผู้อนุมัติด้านบน`
+          : data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่เปลี่ยนเกินกว่าที่ยังคืนได้"
+          : data?.status === "REPRICE_PAYMENT_REQUIRED"
+            ? `เปลี่ยนรายการนี้ไม่ได้: เมื่อประเมินราคาตามจำนวนใหม่ ต้องรับเงินเพิ่มก่อน ฿${baht(Number(data.additionalAmount ?? 0))}`
+          : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการเปลี่ยน"
+          : data?.status === "INVALID_ORDER_STATUS" ? `เปลี่ยนสินค้าไม่ได้: สถานะบิลปัจจุบันคือ ${data.current}`
+          : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
+          : data?.error ?? `เริ่มบิลเปลี่ยนสินค้าไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
+        setNotice({ type: "error", text: message });
+        return;
+      }
+
+      const returnedItems = Array.isArray(data.returnedItems)
+        ? data.returnedItems as Array<{ orderItemId: number; packQty: number; refundAmount: number }>
+        : [];
+      const returnedById = new Map(returnedItems.map((item) => [Number(item.orderItemId), Number(item.packQty)]));
+      const exchangeSeed = row.lines.flatMap((line, idx): CartLine[] => {
+        const packQty = line.orderItemId ? Number(returnedById.get(line.orderItemId) ?? 0) : 0;
+        if (packQty <= 0) return [];
+        return [{
+          sku: line.sku,
+          productName: line.productName,
+          receiptName: line.receiptName,
+          size: line.size,
+          packCode: line.packCode,
+          unitName: line.unitName,
+          baseQty: line.baseQty,
+          packPrice: line.packPrice,
+          basePrice: line.basePrice,
+          available: 0,
+          packQty,
+          key: `exchange-${row.orderId}-${idx}-${line.orderItemId}`,
+        }];
+      });
+
+      // หลังรับคืนสำเร็จ สต็อก/ราคาอาจเปลี่ยนแล้ว จึงดึง snapshot ล่าสุดก่อนวางในบิลใหม่
+      // ถ้าอ่านบางรายการไม่ได้ยังคง seed จากใบเดิมไว้ และ pay() จะ canonicalize/ตรวจซ้ำอีกครั้ง
+      const refreshedCart = await Promise.all(exchangeSeed.map(async (line): Promise<CartLine> => {
+        try {
+          const params = new URLSearchParams({ code: line.sku, size: line.size, packCode: line.packCode });
+          const scanRes = await fetch(`/api/pos/scan?${params.toString()}`, { headers: authHeaders, cache: "no-store" });
+          if (!scanRes.ok) return line;
+          const latest = await scanRes.json() as ScanHit;
+          return { ...line, ...latest, packQty: line.packQty, key: line.key, serials: undefined };
+        } catch {
+          return line;
+        }
+      }));
+
+      const returnReceipt: Receipt = {
+        ...row,
+        docNo: data.creditNoteNo ?? null,
+        referenceDocNo: row.docNo ?? row.orderId ?? null,
+        receiptType: "return",
+        returnReason: note,
+        refundTotal: Number(data.refundAmount ?? 0),
+        lines: buildReturnReceiptLines(row, returnedItems),
+        tendered: null,
+        change: null,
+        roundingAmount: null,
+        at: new Date(data.returnedAt ?? Date.now()).toLocaleString("th-TH"),
+        cashier: currentCashierName || row.cashier,
+        paymentRef: null,
+        payments: [],
+        refunds: Array.isArray(data.refunds) ? data.refunds : [],
+      };
+      window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(returnReceipt));
+      setReceipt(returnReceipt);
+      setReceiptModalOpen(false);
+
+      // บิลใหม่ต้องไม่รับช่วงคูปอง แต้ม ส่วนลดมือ การอนุมัติยา ค่าบริการ หรือบัญชีเครดิต
+      // จากตะกร้าก่อนหน้า จากนั้นค่อยยกสมาชิกเดิมกลับมาเพื่อคิดสิทธิ์ใหม่จากข้อมูลสด
+      clearBillCustomerState();
+      setCart(refreshedCart);
+      setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+      resetToSimpleCash();
+      if (row.memberNo) {
+        void (async () => {
+          try {
+            const memberRes = await fetch(`/api/pos/member?q=${encodeURIComponent(row.memberNo!)}`, {
+              headers: authHeaders, cache: "no-store",
+            });
+            const memberData = await memberRes.json();
+            const hit = (Array.isArray(memberData.members) ? memberData.members : [])
+              .find((candidate: PosMember) => candidate.memberNo === row.memberNo);
+            if (hit) setMember(hit);
+          } catch { /* สมาชิกหาใหม่ไม่สำเร็จไม่ควรย้อนการคืนที่ commit แล้ว — พนักงานค้นเองได้ */ }
+        })();
+      }
+      setReturnDrafts((cur) => ({ ...cur, [row.orderId!]: {} }));
+      setReturnNotes((cur) => ({ ...cur, [row.orderId!]: "" }));
+      setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: "" }));
+      setPreferredRefundMethods((cur) => ({ ...cur, [row.orderId!]: "" }));
+      setReturnPanelOrderId(null);
+      setTab("sell");
+      void loadRecentReceipts(recentSalesQuery);
+      const settlementNote = data.settlementStatus === "COMPLETED"
+        ? "คืนเงินจริงของเดิมครบแล้ว"
+        : "รับคืนของเดิมแล้ว แต่ยังมีช่องทางที่ต้องยืนยันคืนเงินจริง";
+      setNotice({
+        type: "ok",
+        text: `${settlementNote} · เปิดบิลใหม่จาก ${refreshedCart.length} รายการแล้ว — ปรับสินค้าและรับเงินใหม่ต่อได้เลย`,
+      });
+    } catch (e: any) {
+      setNotice({
+        type: "error",
+        text: `เริ่มบิลเปลี่ยนสินค้าไม่สำเร็จ: ${String(e?.message ?? e)} — กดซ้ำได้ ระบบใช้คีย์เดิมและไม่คืนซ้ำ`,
+      });
+    } finally {
+      setBusy(false);
+    }
   }
 
   const activeReceiptRefundSummary = receipt ? getReceiptRefundSummary(receipt) : null;
@@ -6164,36 +6313,34 @@ export default function PosPage() {
       {/* บิลเก่าอยู่แท็บ "คืน" — ตะกร้าที่กำลังขายไม่ถูกดันหาย และคอลัมน์ขวา
           (ยอด + ปุ่มชำระ) ยังอยู่ที่เดิม กดจ่ายให้ลูกค้าคนแรกได้ระหว่างค้นบิลคืนของ */}
       {tab === "returns" && (<>
-          <div style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
-            <div style={{ background: "#f6ffed", border: "1px solid #b7eb8f", color: "#237804", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 13 }}>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>ขั้นที่ 1 — ค้นหาใบเสร็จเดิมก่อน</div>
-              <div>พิมพ์หรือยิงข้อมูลในช่องค้นด้านล่างนี้ก่อนทุกครั้ง ถ้าเจอบิลแล้ว ให้คืนจากใบเสร็จแทนการคืนไม่มีใบเสร็จ</div>
+          <div className="pos-ret" style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
+            <div className="pos-ret-hint">
+              <span className="pos-ret-hint-icon" aria-hidden="true">🧾</span>
+              <div>
+                <div className="pos-ret-hint-title">ขั้นที่ 1 — ค้นหาใบเสร็จเดิมก่อน</div>
+                <div className="pos-ret-hint-body">พิมพ์หรือยิงข้อมูลในช่องค้นด้านล่างนี้ก่อนทุกครั้ง ถ้าเจอบิลแล้ว ให้คืนจากใบเสร็จแทนการคืนไม่มีใบเสร็จ</div>
+              </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-              <button
-                onClick={() => setRecentOpen((v) => !v)}
-                style={{ padding: "6px 12px", fontSize: 12, minHeight: 36 }}
-              >
+            <div className="pos-ret-search">
+              <button type="button" className="pos-ret-toggle" onClick={() => setRecentOpen((v) => !v)}>
                 {recentOpen ? "▾" : "▸"} บิลล่าสุด ({recentReceipts.length})
               </button>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 320px", minWidth: 0 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: "#237804" }}>
-                  ค้นบิลย้อนหลัง
-                </label>
+              <div className="pos-ret-search-field">
+                <label htmlFor="pos-recent-sales-query">ค้นบิลย้อนหลัง</label>
                 <input
+                  id="pos-recent-sales-query"
                   value={recentSalesQuery}
                   onChange={(e) => setRecentSalesQuery(e.target.value)}
                   placeholder="ค้นเลขบิล / barcode สินค้า / SKU / สมาชิก / เบอร์โทร"
-                  style={{ padding: "8px 10px", fontSize: 13, width: "100%", maxWidth: "100%" }}
                 />
               </div>
             </div>
-            <div style={{ fontSize: 12, color: "#777", marginBottom: 8 }}>
+            <div className="pos-ret-help">
               ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
               · เมื่อมีคำค้น ระบบจะค้นย้อนหลังข้ามเครื่อง POS ทั้งร้านให้
             </div>
             {recentReceipts.length > 0 && (
-              <div style={{ display: recentOpen ? "flex" : "none", flexDirection: "column", gap: 6 }}>
+              <div className="pos-ret-list" style={{ display: recentOpen ? "flex" : "none" }}>
                 {recentReceipts.map((row, idx) => {
                   const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
                   const refundSummary = getReceiptRefundSummary(row);
@@ -6207,6 +6354,7 @@ export default function PosPage() {
                     row.orderStatus !== "RETURNED" &&
                     row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
                   const panelOpen = canReturn && returnPanelOrderId === row.orderId;
+                  const historyOpen = historyOrderId === row.orderId;
                   const refundPaymentOptions = getRefundPaymentOptions(row);
                   const requestedRefundMethod = row.orderId
                     ? preferredRefundMethods[row.orderId] ?? ""
@@ -6223,269 +6371,137 @@ export default function PosPage() {
                     row.orderStatus !== "RETURNED" &&
                     Boolean(session?.shift) &&
                     row.shiftId === session?.shift?.id;
+                  // แถบสีข้างซ้าย + ป้ายกลม อ่านสถานะได้ก่อนอ่านตัวหนังสือ
+                  // ยกเลิก ≠ คืนแล้ว — คนอ่านรายงานต้องแยกออกตั้งแต่ตรงนี้
+                  const statusKind = row.voidedAt ? "void" : row.orderStatus === "RETURNED" ? "returned" : "ok";
+                  const statusLabel = row.voidedAt ? "ยกเลิกแล้ว" : row.orderStatus === "RETURNED" ? "คืนแล้ว" : "สำเร็จ";
                   return (
-                  <div
-                    key={row.orderId ?? `recent-${idx}`}
-                    style={{
-                      border: "1px solid #eee",
-                      borderRadius: 8,
-                      background: "#fafafa",
-                      padding: "10px 12px",
-                      textAlign: "left"
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontWeight: 500, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                          <span>{row.docNo ?? row.orderId ?? "บิล POS"}</span>
+                  <article key={row.orderId ?? `recent-${idx}`} className={`pos-ret-card pos-ret-card--${statusKind}`}>
+                    <div className="pos-ret-head">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="pos-ret-id">
+                          <span className="pos-ret-docno">{row.docNo ?? row.orderId ?? "บิล POS"}</span>
                           {row.orderStatus && (
-                            <span
-                              style={{
-                                fontSize: 11,
-                                padding: "2px 8px",
-                                borderRadius: 999,
-                                background: row.voidedAt ? "#f0f0f0" : row.orderStatus === "RETURNED" ? "#fdecea" : "#edf7ed",
-                                color: row.voidedAt ? "#555" : row.orderStatus === "RETURNED" ? "#611a15" : "#1e4620",
-                              }}
-                            >
-                              {/* ยกเลิก ≠ คืนแล้ว — คนอ่านรายงานต้องแยกออกตั้งแต่ตรงนี้ */}
-                              {row.voidedAt ? "ยกเลิกแล้ว" : row.orderStatus === "RETURNED" ? "คืนแล้ว" : "สำเร็จ"}
-                            </span>
+                            <span className={`pos-ret-pill pos-ret-pill--${statusKind}`}>{statusLabel}</span>
                           )}
                         </div>
                         {/* ย่อเหลือบรรทัดเดียว — รายการบิลมีไว้ให้ "หาบิลเจอ" ไม่ใช่ให้อ่านทั้งใบ
                             เลขอ้างอิงการชำระเงินอ่านได้ในใบเสร็จ ไม่ต้องกินที่ตรงนี้ */}
-                        <div style={{ fontSize: 12, color: "#666", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div className="pos-ret-meta">
                           {row.at} · {row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${receiptVariantLabel(line)}`).join(" · ")}
                           {row.lines.length > 2 ? ` · +${row.lines.length - 2}` : ""}
                         </div>
                         {(row.memberNo || row.memberName || row.memberPhone) && (
-                          <div style={{ fontSize: 12, color: "#555", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div className="pos-ret-store">
                             สมาชิก {row.memberNo ?? "—"} · {row.memberName ?? "ไม่ระบุชื่อ"}{row.memberPhone ? ` · ${row.memberPhone}` : ""}
                           </div>
                         )}
-                        <div style={{ fontSize: 12, color: soldOnThisDevice ? "#777" : "#8a6100", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div className={`pos-ret-store${soldOnThisDevice ? "" : " pos-ret-store--offsite"}`}>
                           ขายที่ {row.storeName ?? "ไม่ทราบสาขา"}{row.branchCode ? ` (${row.branchCode})` : ""}{row.posLabel ? ` · POS#${row.posLabel}` : ""}
                           {!soldOnThisDevice ? " · เครื่องนี้ดู/พิมพ์ซ้ำได้ แต่คืนหรือเปลี่ยนจากใบเสร็จนี้ไม่ได้" : ""}
                         </div>
-                        {refundSummary.hasReturnActivity && (
-                          <div style={{ fontSize: 12, color: "#8a6100", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            บิลขายเดิม ฿{baht(row.total)} · คืนแล้ว ฿{baht(refundSummary.refundedTotal)} · คงเหลือหลังคืน ฿{baht(refundSummary.remainingAfterRefund)}
-                            {refundSummary.pendingRefundTotal > 0 ? ` · รอยืนยันคืนเงินจริง ฿${baht(refundSummary.pendingRefundTotal)}` : ""}
-                          </div>
-                        )}
                       </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontSize: 11, color: "#777" }}>
+                      <div className="pos-ret-money">
+                        <div className="pos-ret-money-label">
                           {refundSummary.hasReturnActivity ? "ยอดขายเดิม" : "ยอดบิล"}
                         </div>
-                        <strong>฿{baht(row.total)}</strong>
+                        <div className="pos-ret-money-total">฿{baht(row.total)}</div>
                         {refundSummary.hasReturnActivity && (
-                          <div style={{ fontSize: 12, color: "#1e4620", fontWeight: 600, marginTop: 4 }}>
-                            เหลือสุทธิ ฿{baht(refundSummary.remainingAfterRefund)}
-                          </div>
+                          <div className="pos-ret-money-net">เหลือสุทธิ ฿{baht(refundSummary.remainingAfterRefund)}</div>
                         )}
                       </div>
                     </div>
-                    {/* ฟอร์มคืนสินค้ากางเฉพาะบิลที่กดเปิด และเปิดได้ทีละใบ
-                        เดิมกางทุกใบตลอดเวลา — 3 บิลก็เลื่อนจอหาไม่เจอแล้ว */}
-                    {panelOpen && (
-                      <div style={{ marginTop: 8, borderTop: "1px dashed #ddd", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 200px) minmax(0, 1fr)", gap: 6 }}>
-                          <select
-                            value={returnReasonCodes[row.orderId!] ?? ""}
-                            onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                            style={{ padding: 8, fontSize: 12, minHeight: 38 }}
-                          >
-                            <option value="">เลือกประเภทเหตุผล</option>
-                            {RETURN_REASON_OPTIONS.map((opt) => (
-                              <option key={opt.key} value={opt.key}>{opt.label}</option>
-                            ))}
-                          </select>
-                          <input
-                            value={returnNotes[row.orderId!] ?? ""}
-                            onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                            placeholder="รายละเอียดเหตุผล (บังคับ)"
-                            style={{ width: "100%", padding: 8, fontSize: 12, minHeight: 38 }}
-                          />
-                        </div>
-                        {refundPaymentOptions.length > 0 && (
-                          <div style={{ border: "1px solid #b5d4f4", background: "#f0f7ff", borderRadius: 7, padding: 8 }}>
-                            <label style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, fontWeight: 600 }}>
-                              <span>คืนเงินจากช่องทางใดก่อน</span>
-                              {refundPaymentOptions.length === 1 ? (
-                                <span style={{ color: "#1e6b3a" }}>
-                                  {posPaymentMethodLabel(refundPaymentOptions[0].method)} · คืนได้อีก ฿{baht(refundPaymentOptions[0].available)}
-                                </span>
-                              ) : (
-                                <select
-                                  value={selectedRefundMethod}
-                                  onChange={(event) => setPreferredRefundMethods((cur) => ({
-                                    ...cur,
-                                    [row.orderId!]: event.target.value,
-                                  }))}
-                                  style={{ minWidth: 220, padding: 7, fontSize: 12 }}
-                                >
-                                  <option value="">เลือกช่องทางคืนเงินก่อน</option>
-                                  {refundPaymentOptions.map((option) => (
-                                    <option key={option.method} value={option.method}>
-                                      {posPaymentMethodLabel(option.method)} · คืนได้อีก ฿{baht(option.available)}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </label>
-                            <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
-                              ระบบคืนได้ไม่เกินยอดที่รับผ่านช่องทางนั้น หากยอดคืนมากกว่า ระบบจะแบ่งส่วนที่เหลือไปยังช่องทางเดิมอื่นและแสดงให้ตรวจทุกรายการ
-                            </div>
-                          </div>
+
+                    {refundSummary.hasReturnActivity && (
+                      <div className="pos-ret-summary">
+                        <span>บิลขายเดิม <b>฿{baht(row.total)}</b></span>
+                        <span className="pos-ret-summary-sep">·</span>
+                        <span>คืนแล้ว <b>฿{baht(refundSummary.refundedTotal)}</b></span>
+                        <span className="pos-ret-summary-sep">·</span>
+                        <span>คงเหลือหลังคืน <b className="pos-ret-summary-ok">฿{baht(refundSummary.remainingAfterRefund)}</b></span>
+                        {refundSummary.pendingRefundTotal > 0 && (
+                          <>
+                            <span className="pos-ret-summary-sep">·</span>
+                            <span>รอยืนยันคืนเงินจริง <b>฿{baht(refundSummary.pendingRefundTotal)}</b></span>
+                          </>
                         )}
-                        {row.lines
-                          .filter((line) => (line.refundablePackQty ?? 0) > 0 && line.orderItemId)
-                          .map((line) => {
-                            const selected = Number(returnDrafts[row.orderId!]?.[line.orderItemId!] ?? 0);
-                            const maxQty = Number(line.refundablePackQty ?? 0);
-                            return (
-                              <div
-                                key={`${row.orderId}-${line.orderItemId}`}
-                                style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", gap: 8, alignItems: "center" }}
-                              >
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 600 }}>{receiptVariantLabel(line)}</div>
-                                  <div style={{ fontSize: 11, color: "#777" }}>
-                                    SKU {line.sku} · ขาย {line.packQty} {line.unitName} · คืนได้อีก {maxQty} / คืนแล้ว {line.returnedPackQty ?? 0}
-                                  </div>
-                                </div>
-                                <button
-                                  onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected - 1, maxQty)}
-                                  style={{ padding: "6px 12px", fontSize: 14, minHeight: 34 }}
-                                  aria-label={`ลดจำนวนคืน ${receiptVariantLabel(line)} SKU ${line.sku}`}
-                                >
-                                  −
-                                </button>
-                                <div style={{ minWidth: 24, textAlign: "center", fontSize: 13, fontWeight: 500 }}>{selected}</div>
-                                <button
-                                  onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected + 1, maxQty)}
-                                  style={{ padding: "6px 12px", fontSize: 14, minHeight: 34 }}
-                                  aria-label={`เพิ่มจำนวนคืน ${receiptVariantLabel(line)} SKU ${line.sku}`}
-                                >
-                                  +
-                                </button>
-                              </div>
-                            );
-                          })}
-                        <div style={{ fontSize: 12, color: "#8a6100" }}>
-                          ยอดคืนจริงจะคำนวณจากจำนวนที่เหลือใหม่ หากไม่ครบขั้นต่ำราคาส่ง/โปร ยอดคืนจะลดลงตามเงื่อนไขเดิมตอนขาย
-                        </div>
-                        {/* เหตุผล/หมายเหตุใช้ช่องเดียวกันทั้งคืนบางรายการและคืนทั้งบิล
-                            (เป็น state ตัวเดียวกันมาแต่แรก — เดิมวาดซ้ำสองชุดโดยไม่จำเป็น) */}
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button
-                            onClick={() => void partialReturnReceipt(row)}
-                            disabled={busy || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
-                            style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
-                          >
-                            คืนบางรายการ
-                          </button>
-                          <button
-                            onClick={() => void returnReceipt(row.orderId!)}
-                            disabled={busy || needsRefundMethodChoice}
-                            style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
-                          >
-                            คืนทั้งบิล
-                          </button>
-                          <button
-                            onClick={() => startExchangeFromReceipt(row)}
-                            style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
-                          >
-                            ทำบิลเปลี่ยนสินค้า
-                          </button>
-                        </div>
                       </div>
                     )}
+
                     {(row.refunds ?? []).length > 0 && (
-                      <div style={{ marginTop: 8, borderTop: "1px dashed #d48806", paddingTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "#8a6100" }}>
-                          รายละเอียดการคืนเงินจริงทุกช่องทาง
-                        </div>
+                      <div className="pos-ret-refunds">
                         {(row.refunds ?? []).map((refund) => (
-                          <div className="pos-refund-row" key={refund.id} style={{ display: "grid", gridTemplateColumns: "auto minmax(120px,1fr) auto", gap: 8, alignItems: "center" }}>
-                            <div style={{ fontSize: 12 }}>
+                          <div className="pos-ret-refund-row" key={refund.id}>
+                            <span className="pos-ret-refund-method">
                               {posPaymentMethodLabel(refund.method)} · ฿{baht(refund.amount)}
-                              <span style={{ marginLeft: 6, color: refund.status === "COMPLETED" ? "#237804" : "#8a6100" }}>
-                                {refund.status === "COMPLETED" ? "คืนแล้ว" : "รอยืนยัน"}
-                              </span>
-                            </div>
+                            </span>
+                            <span className={`pos-ret-refund-status${refund.status === "COMPLETED" ? " pos-ret-refund-status--ok" : ""}`}>
+                              {refund.status === "COMPLETED" ? "คืนแล้ว" : "รอยืนยัน"}
+                            </span>
                             {refund.status === "PENDING" ? (
-                              <>
+                              <span className="pos-ret-refund-settle">
                                 <input
                                   value={settlementRefs[refund.id] ?? ""}
                                   onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
                                   placeholder="เลขอ้างอิงการคืนเงินจริง"
-                                  style={{ padding: 7, fontSize: 12 }}
                                 />
                                 <button
+                                  className="pos-ret-btn pos-ret-btn--sm"
                                   onClick={() => void completeRefundSettlement(row, refund)}
                                   disabled={busy}
-                                  style={{ padding: "7px 10px", fontSize: 12 }}
                                 >
                                   ยืนยันคืนแล้ว
                                 </button>
-                              </>
+                              </span>
                             ) : (
-                              <>
-                                <div style={{ fontSize: 11, color: "#666" }}>
-                                  {refund.externalRef ? `อ้างอิง ${refund.externalRef}` : "บันทึกคืนสำเร็จแล้ว"}
-                                </div>
-                                <span aria-hidden="true" />
-                              </>
+                              <span className="pos-ret-refund-note">
+                                {refund.externalRef ? `อ้างอิง ${refund.externalRef}` : "บันทึกคืนสำเร็จแล้ว"}
+                              </span>
                             )}
                           </div>
                         ))}
                       </div>
                     )}
-                    <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+
+                    {/* ปุ่มมีลำดับชั้น: หลัก(ทึบ) = ดูใบ · รอง(โปร่ง) = กางส่วนขยาย · แดง = ยกเลิก */}
+                    <div className="pos-ret-actions">
                       <button
+                        className="pos-ret-btn pos-ret-btn--primary"
                         onClick={() => {
                           setReceipt(row);
                           setReceiptModalOpen(true);
                           window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(row));
                         }}
-                        style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
                       >
                         {refundSummary.hasReturnActivity ? "ดูใบขายเดิม" : "ดู/พิมพ์"}
                       </button>
                       {latestReturnEvent && (
                         <button
                           type="button"
+                          className="pos-ret-btn pos-ret-btn--warn"
                           onClick={() => openReturnEventReceipt(row, latestReturnEvent)}
-                          style={{ padding: "8px 12px", fontSize: 12, minHeight: 38, color: "#8a6100" }}
                         >
                           ดูใบรับคืนล่าสุด
                         </button>
                       )}
                       <button
+                        className={`pos-ret-btn${historyOpen ? " pos-ret-btn--open" : ""}`}
                         onClick={() => setHistoryOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
-                        style={{
-                          padding: "8px 12px", fontSize: 12, minHeight: 38,
-                          color: historyOrderId === row.orderId ? "#1e6b3a" : undefined,
-                          borderColor: historyOrderId === row.orderId ? "#79b78c" : undefined,
-                        }}
                       >
-                        {historyOrderId === row.orderId ? "▾ ซ่อนประวัติบิล" : `▸ ดูประวัติบิล (${1 + (row.returnEvents?.length ?? 0)})`}
+                        {historyOpen ? "▾ ซ่อนประวัติบิล" : `▸ ดูประวัติบิล (${1 + (row.returnEvents?.length ?? 0)})`}
                       </button>
                       {canReturn && (
                         <button
+                          className={`pos-ret-btn${panelOpen ? " pos-ret-btn--open" : ""}`}
                           onClick={() =>
                             setReturnPanelOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))
                           }
-                          style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
                         >
                           {panelOpen ? "▾ คืน/เปลี่ยนสินค้า" : "▸ คืน/เปลี่ยนสินค้า"}
                         </button>
                       )}
                       {!canReturn && (
-                        <span style={{ fontSize: 12, color: "#999", alignSelf: "center" }}>
+                        <span className="pos-ret-note">
                           {!soldOnThisDevice ? "ขายจาก POS เครื่องอื่น — ดู/พิมพ์ซ้ำได้เท่านั้น"
                             : row.voidedAt ? "ยกเลิกบิลแล้ว"
                             : row.orderStatus === "RETURNED" ? "คืนแล้วทั้งบิล"
@@ -6496,26 +6512,136 @@ export default function PosPage() {
                           บิลของกะที่ปิดไปแล้วต้องเดินทางการคืนสินค้าแทน เพราะเงินถูกนับส่งไปแล้ว */}
                       {canVoid && (
                         <button
+                          className={`pos-ret-btn pos-ret-btn--danger${voidTarget === row.orderId ? " pos-ret-btn--open" : ""}`}
                           onClick={() => setVoidTarget((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
-                          style={{ padding: "8px 12px", fontSize: 12, minHeight: 38, color: "#c9455a" }}
                         >
                           ยกเลิกบิล
                         </button>
                       )}
                     </div>
-                    {historyOrderId === row.orderId && (
+
+                    {/* ฟอร์มคืนสินค้ากางเฉพาะบิลที่กดเปิด และเปิดได้ทีละใบ
+                        เดิมกางทุกใบตลอดเวลา — 3 บิลก็เลื่อนจอหาไม่เจอแล้ว */}
+                    {panelOpen && (
+                      <div className="pos-ret-expand">
+                        <div className="pos-ret-reason">
+                          <select
+                            value={returnReasonCodes[row.orderId!] ?? ""}
+                            onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
+                          >
+                            <option value="">เลือกประเภทเหตุผล</option>
+                            {RETURN_REASON_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            value={returnNotes[row.orderId!] ?? ""}
+                            onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
+                            placeholder="รายละเอียดเหตุผล (บังคับ)"
+                          />
+                        </div>
+                        {refundPaymentOptions.length > 0 && (
+                          <div className="pos-ret-method">
+                            <label className="pos-ret-method-label">
+                              <span>คืนเงินจากช่องทางใดก่อน</span>
+                              {refundPaymentOptions.length === 1 ? (
+                                <span className="pos-ret-method-single">
+                                  {posPaymentMethodLabel(refundPaymentOptions[0].method)} · คืนได้อีก ฿{baht(refundPaymentOptions[0].available)}
+                                </span>
+                              ) : (
+                                <select
+                                  value={selectedRefundMethod}
+                                  onChange={(event) => setPreferredRefundMethods((cur) => ({
+                                    ...cur,
+                                    [row.orderId!]: event.target.value,
+                                  }))}
+                                >
+                                  <option value="">เลือกช่องทางคืนเงินก่อน</option>
+                                  {refundPaymentOptions.map((option) => (
+                                    <option key={option.method} value={option.method}>
+                                      {posPaymentMethodLabel(option.method)} · คืนได้อีก ฿{baht(option.available)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </label>
+                            <div className="pos-ret-method-hint">
+                              ระบบคืนได้ไม่เกินยอดที่รับผ่านช่องทางนั้น หากยอดคืนมากกว่า ระบบจะแบ่งส่วนที่เหลือไปยังช่องทางเดิมอื่นและแสดงให้ตรวจทุกรายการ
+                            </div>
+                          </div>
+                        )}
+                        {row.lines
+                          .filter((line) => (line.refundablePackQty ?? 0) > 0 && line.orderItemId)
+                          .map((line) => {
+                            const selected = Number(returnDrafts[row.orderId!]?.[line.orderItemId!] ?? 0);
+                            const maxQty = Number(line.refundablePackQty ?? 0);
+                            return (
+                              <div key={`${row.orderId}-${line.orderItemId}`} className="pos-ret-line">
+                                <div className="pos-ret-line-info">
+                                  <div className="pos-ret-line-name">{receiptVariantLabel(line)}</div>
+                                  <div className="pos-ret-line-sub">
+                                    SKU {line.sku} · ขาย {line.packQty} {line.unitName} · คืนได้อีก {maxQty} / คืนแล้ว {line.returnedPackQty ?? 0}
+                                  </div>
+                                </div>
+                                <div className="pos-ret-step">
+                                  <button
+                                    onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected - 1, maxQty)}
+                                    aria-label={`ลดจำนวนคืน ${receiptVariantLabel(line)} SKU ${line.sku}`}
+                                  >
+                                    −
+                                  </button>
+                                  <span className="pos-ret-step-value">{selected}</span>
+                                  <button
+                                    onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected + 1, maxQty)}
+                                    aria-label={`เพิ่มจำนวนคืน ${receiptVariantLabel(line)} SKU ${line.sku}`}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        <div className="pos-ret-form-note">
+                          ยอดคืนจริงจะคำนวณจากจำนวนที่เหลือใหม่ หากไม่ครบขั้นต่ำราคาส่ง/โปร ยอดคืนจะลดลงตามเงื่อนไขเดิมตอนขาย
+                        </div>
+                        {/* เหตุผล/หมายเหตุใช้ช่องเดียวกันทั้งคืนบางรายการและคืนทั้งบิล
+                            (เป็น state ตัวเดียวกันมาแต่แรก — เดิมวาดซ้ำสองชุดโดยไม่จำเป็น) */}
+                        <div className="pos-ret-form-actions">
+                          <button
+                            className="pos-ret-btn"
+                            onClick={() => void partialReturnReceipt(row)}
+                            disabled={busy || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
+                          >
+                            คืนบางรายการ
+                          </button>
+                          <button
+                            className="pos-ret-btn pos-ret-btn--solid"
+                            onClick={() => void returnReceipt(row)}
+                            disabled={busy || needsRefundMethodChoice}
+                          >
+                            คืนทั้งบิล
+                          </button>
+                          <button
+                            className="pos-ret-btn"
+                            onClick={() => void startExchangeFromReceipt(row)}
+                            disabled={busy || hasPendingOrderWrite || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
+                          >
+                            คืนที่เลือก + ทำบิลเปลี่ยน
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {historyOpen && (
                       <BillHistoryPanel
                         receipt={row}
                         onOpenReturnReceipt={(event) => openReturnEventReceipt(row, event)}
                       />
                     )}
+
                     {canVoid && voidTarget === row.orderId && (
-                      <div style={{
-                        marginTop: 8, padding: 10, borderRadius: 8,
-                        background: "#fff4f5", border: "1px solid #f2d0d4",
-                        display: "flex", flexDirection: "column", gap: 8,
-                      }}>
-                        <div style={{ fontSize: 12, color: "#611a15" }}>
+                      <div className="pos-ret-void">
+                        <div className="pos-ret-void-why">
                           ยกเลิกบิลนี้: ของกลับเข้าสต็อก เงินคืนลูกค้า แต้มถูกดึงคืน และใบกำกับถูกยกเลิก
                           (เลขใบยังอยู่ในลำดับ ไม่ได้ถูกลบ)
                         </div>
@@ -6524,11 +6650,10 @@ export default function PosPage() {
                           onChange={(e) => setVoidReason(e.target.value)}
                           maxLength={200}
                           placeholder="เหตุผล เช่น สแกนซ้ำ / กดผิดคน"
-                          style={{ padding: 9, fontSize: 13 }}
                         />
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <div className="pos-ret-void-row">
                           <select value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
-                                  style={{ padding: 9, fontSize: 13, minWidth: 170 }}>
+                                  style={{ minWidth: 170 }}>
                             <option value="">— ผู้อนุมัติ —</option>
                             {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
                               <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
@@ -6536,30 +6661,30 @@ export default function PosPage() {
                           </select>
                           <input type="password" inputMode="numeric" value={voidApproverPin}
                                  onChange={(e) => setVoidApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
-                                 placeholder="PIN หัวหน้า" style={{ padding: 9, fontSize: 13, width: 120 }} />
-                          <button onClick={() => void doVoidSale(row.orderId!)} disabled={busy}
-                                  style={{ padding: "9px 16px", fontSize: 13 }}>
+                                 placeholder="PIN หัวหน้า" style={{ width: 120 }} />
+                          <button className="pos-ret-btn pos-ret-btn--danger"
+                                  onClick={() => void doVoidSale(row.orderId!)} disabled={busy}>
                             ยืนยันยกเลิก
                           </button>
                         </div>
                       </div>
                     )}
-                  </div>
+                  </article>
                   );
                 })}
               </div>
             )}
+            {recentReceipts.length === 0 && recentSalesQuery.trim().length > 0 && (
+              <div className="pos-ret-empty">
+                ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
+              </div>
+            )}
+            {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (
+              <div className="pos-ret-empty">
+                ยังไม่มีบิลของเครื่องนี้ในกะนี้
+              </div>
+            )}
           </div>
-          {recentReceipts.length === 0 && recentSalesQuery.trim().length > 0 && (
-            <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
-              ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
-            </div>
-          )}
-          {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (
-            <div style={{ marginTop: 16, fontSize: 13, color: "#999" }}>
-              ยังไม่มีบิลของเครื่องนี้ในกะนี้
-            </div>
-          )}
       </>)}
         </section>
 
@@ -8042,36 +8167,54 @@ export default function PosPage() {
           </div>
           </div>
 
+          {/* ท้ายโมดัลแยกสองแถวโดยตั้งใจ: แถวบน = สิ่งที่แคชเชียร์กดทุกบิล (พิมพ์/ลิ้นชัก/ปิด)
+              แถวล่าง = ส่งสำเนาให้ลูกค้า ซึ่งมีช่องกรอกยาว · แถวเดียวบนจอเคาน์เตอร์แคบ
+              ทำให้ปุ่มพิมพ์ถูกบีบจนข้อความตกบรรทัดและปุ่มปิดหลุดขอบ */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 8,
+            display: "flex", flexDirection: "column", gap: 8,
             padding: "12px 14px", borderTop: "1px solid #e5e5e5",
           }}>
-            <button onClick={() => void printReceipt(false)} style={{ flex: 1, padding: "10px 16px" }}>
-              {receipt.receiptType === "return"
-                ? "พิมพ์ใบรับคืน"
-                : receipt.receiptType === "exchange" ? "พิมพ์ใบเตรียมเปลี่ยน" : "พิมพ์ใบเสร็จ"} <span style={{ fontSize: 11, color: "#888" }}>Enter</span>
-            </button>
-            {/* ปุ่มลิ้นชักโผล่เฉพาะตอนต่อเครื่องพิมพ์ ESC/POS ได้จริง — print dialog เปิดลิ้นชักไม่ได้ */}
-            {printerReady && (
-              <button onClick={() => void openCashDrawer()} style={{ padding: "10px 14px" }} title="เปิดลิ้นชักเงินสด">
-                ลิ้นชัก
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => void printReceipt(false)}
+                style={{ flex: "1 1 200px", minWidth: 160, padding: "10px 16px", whiteSpace: "nowrap" }}
+              >
+                {receipt.receiptType === "return"
+                  ? "พิมพ์ใบรับคืน"
+                  : receipt.receiptType === "exchange" ? "พิมพ์ใบเตรียมเปลี่ยน" : "พิมพ์ใบเสร็จ"} <span style={{ fontSize: 11, color: "#888" }}>Enter</span>
               </button>
-            )}
+              {/* ปุ่มลิ้นชักโผล่เฉพาะตอนต่อเครื่องพิมพ์ ESC/POS ได้จริง — print dialog เปิดลิ้นชักไม่ได้ */}
+              {printerReady && (
+                <button
+                  onClick={() => void openCashDrawer()}
+                  style={{ padding: "10px 14px", whiteSpace: "nowrap" }}
+                  title="เปิดลิ้นชักเงินสด"
+                >
+                  ลิ้นชัก
+                </button>
+              )}
+              <button
+                onClick={() => setReceiptModalOpen(false)}
+                style={{ padding: "10px 16px", whiteSpace: "nowrap", marginLeft: "auto" }}
+              >
+                ปิด <span style={{ fontSize: 11, color: "#888" }}>Esc</span>
+              </button>
+            </div>
             {/* ส่งสำเนาให้ลูกค้า (8.6) — ไม่ใช่เอกสารภาษีใบใหม่ อ่านเลขจากใบที่ออกแล้ว
                 ช่องกรอกชนะข้อมูลในระบบ เพราะพนักงานถามอีเมลปากเปล่าเป็นเรื่องปกติ
                 และบิลอาจไม่ผูกลูกค้าเลย */}
             {receipt?.orderId && (!receipt.receiptType || receipt.receiptType === "sale") && (
-              <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <input
                   value={receiptTo}
                   onChange={(e) => setReceiptTo(e.target.value)}
                   placeholder="อีเมลลูกค้า (เว้นว่าง = ใช้ของในระบบ)"
-                  style={{ flex: 1, minWidth: 150, padding: "10px 12px", fontSize: 13 }}
+                  style={{ flex: "1 1 220px", minWidth: 180, padding: "10px 12px", fontSize: 13 }}
                 />
                 <button
                   disabled={sendingReceipt}
                   onClick={() => void doSendReceipt(receipt.orderId!, "email")}
-                  style={{ padding: "10px 14px" }}
+                  style={{ padding: "10px 14px", whiteSpace: "nowrap" }}
                   title="ส่งใบเสร็จทางอีเมล"
                 >
                   ส่งอีเมล
@@ -8079,16 +8222,13 @@ export default function PosPage() {
                 <button
                   disabled={sendingReceipt}
                   onClick={() => void doSendReceipt(receipt.orderId!, "line")}
-                  style={{ padding: "10px 14px" }}
+                  style={{ padding: "10px 14px", whiteSpace: "nowrap" }}
                   title="ส่งใบเสร็จทาง LINE (ลูกค้าต้องผูก LINE กับร้านไว้)"
                 >
                   ส่ง LINE
                 </button>
-              </>
+              </div>
             )}
-            <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 16px" }}>
-              ปิด <span style={{ fontSize: 11, color: "#888" }}>Esc</span>
-            </button>
           </div>
           </div>
         </div>

@@ -2932,6 +2932,9 @@ const en = {
     no_origin_chat: "No originating chat",
     assigned_staff_label: "Assigned to:",
     detailed_timeline: "Detailed timeline",
+    returned_total: "Returned",
+    remaining_after_return: "Net after return",
+    pending_settlement: "Refund pending confirmation",
   },
   admin_reports: {
     report_type_sales: "Sales",

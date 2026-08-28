@@ -1604,6 +1604,12 @@ export type OrderJourney = {
   helpers: NonNullable<StaffRefRow>[];
   steps: OrderStep[];
   events: OrderEvent[];
+  // ยอดคืนสะสม/คงเหลือสุทธิ — คำนวณจาก bms_pos_returns เดียวกับ events ด้านบน
+  // ไม่ใช่ค่าใหม่: บิลที่คืนบางส่วนแล้วสถานะยังเป็น COMPLETED (ไม่เปลี่ยนเป็น RETURNED)
+  // ทำให้การ์ดสรุปเดิมโชว์ "ยอดชำระสุทธิ" เท่ายอดขายเต็ม เหมือนไม่มีอะไรถูกคืนเลย
+  returnedTotal: number;
+  remainingAfterReturn: number;
+  pendingSettlementTotal: number;
 };
 
 const MAIN_FLOW = ["PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
@@ -1622,15 +1628,22 @@ const STEP_LABEL: Record<string, string> = {
   PENDING: "สร้างออเดอร์ (รอชำระ)", PAID: "ชำระเงินแล้ว", PACKING: "แพ็คสินค้า",
   SHIPPED: "จัดส่งแล้ว", COMPLETED: "ปิดออเดอร์", CANCELLED: "ยกเลิก", RETURNED: "รับคืนสินค้า",
 };
+// ป้ายวิธีคืนเงิน — ชุดเดียวกับ posPaymentMethodLabel() ฝั่ง POS (app/(pos)/pos/page.tsx)
+// คนละไฟล์เพราะฝั่งนั้นเป็น client component แต่ต้องอ่านออกเหมือนกันทุกที่ที่โชว์วิธีชำระ
+const POS_REFUND_METHOD_LABEL: Record<string, string> = {
+  CASH: "เงินสด", QR: "QR", CARD: "บัตร", WALLET: "วอลเล็ท",
+  BANK_TRANSFER: "โอนเงิน", TIKTOK: "TikTok", CREDIT: "ขายเชื่อ", STORE_CREDIT: "เครดิตร้าน",
+};
 
 const jIso = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
 
 export async function getOrderJourney(tenantId: string, orderId: string): Promise<OrderJourney | null> {
   const o = await query<{
     channel: string; customer_ref: string | null; status: string; created_at: any; updated_at: any;
-    cashier_name: string | null;
+    cashier_name: string | null; total_amount: string; shipping_fee: string;
   }>(
     `SELECT o.channel, o.customer_ref, o.status, o.created_at, o.updated_at,
+            o.total_amount, o.shipping_fee,
             u.name AS cashier_name
        FROM bms_orders o
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
@@ -1654,6 +1667,59 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
         [tenantId, orderId]
       )).rows[0] ?? null
     : null;
+
+  // คืนสินค้า/ยกเลิกบิลที่เคาน์เตอร์ (7.91/7.97) เขียน audit เป็น pos.return/pos.void
+  // ไม่ใช่ order.% เลย จึงไม่เคยผ่านตัวกรองข้างล่างนี้ — บิลที่คืนไปแล้วดูเหมือนไม่มี
+  // อะไรเกิดขึ้นเลยในหน้านี้ ทั้งที่ POS มีประวัติเต็ม (BillHistoryPanel) อ่านจาก
+  // bms_pos_returns ตรง ๆ แทนการ parse audit meta — ตารางเดียวกับที่ฝั่ง POS ใช้
+  // จึงได้เหตุผล/ผู้อนุมัติ/ใบลดหนี้ครบเหมือนกัน ไม่ใช่แค่สรุปยอด
+  const posReturnRows = isPos
+    ? (await query<{
+        id: string; return_mode: string; is_void: boolean; refund_amount: string;
+        settlement_status: string;
+        note: string | null; created_at: any;
+        returned_by_name: string | null; approved_by_name: string | null;
+        credit_note_no: string | null;
+      }>(
+        `SELECT pr.id, pr.return_mode, pr.is_void, pr.refund_amount, pr.settlement_status, pr.note, pr.created_at,
+                COALESCE(returned_user.name, returned_user.email) AS returned_by_name,
+                COALESCE(approved_user.name, approved_user.email) AS approved_by_name,
+                credit.doc_no AS credit_note_no
+           FROM bms_pos_returns pr
+           LEFT JOIN users returned_user
+             ON returned_user.tenant_id = pr.tenant_id AND returned_user.id = pr.returned_by
+           LEFT JOIN users approved_user
+             ON approved_user.tenant_id = pr.tenant_id AND approved_user.id = pr.approved_by
+           LEFT JOIN LATERAL (
+             SELECT doc_no FROM bms_tax_documents
+              WHERE tenant_id = pr.tenant_id AND order_id = pr.order_id
+                AND doc_type = 'CREDIT_NOTE' AND cancelled_at IS NULL
+                AND credit_reason LIKE '%[' || pr.id::text || ']%'
+              ORDER BY issued_at DESC, id DESC LIMIT 1
+           ) credit ON TRUE
+          WHERE pr.tenant_id = $1 AND pr.order_id = $2
+          ORDER BY pr.created_at, pr.id`,
+        [tenantId, orderId]
+      )).rows
+    : [];
+
+  // ยืนยันคืนเงินจริงของช่องทางที่เดินเรื่องแยก (โอน/บัตร) เกิดทีหลัง pos.return ได้
+  // เป็นคนละเวลา ไม่ใช่บรรทัดเดียวกัน — ไม่งั้นดูเหมือนเงินยังไม่คืนทั้งที่ยืนยันแล้ว
+  const posRefundSettleRows = posReturnRows.length > 0
+    ? (await query<{
+        method: string; amount: string; external_ref: string | null; completed_at: any;
+        completed_by_name: string | null;
+      }>(
+        `SELECT a.method, a.amount, a.external_ref, a.completed_at,
+                COALESCE(u.name, u.email) AS completed_by_name
+           FROM bms_pos_refund_allocations a
+           JOIN bms_pos_returns pr ON pr.tenant_id = a.tenant_id AND pr.id = a.pos_return_id
+           LEFT JOIN users u ON u.tenant_id = a.tenant_id AND u.id = a.completed_by
+          WHERE a.tenant_id = $1 AND pr.order_id = $2 AND a.status = 'COMPLETED'
+          ORDER BY a.completed_at, a.id`,
+        [tenantId, orderId]
+      )).rows
+    : [];
 
   // audit เกี่ยวกับ order นี้ (target = orderId) — resolve ชื่อ actor จาก email
   const auditRows = (await query<{ actor: string | null; action: string; created_at: any }>(
@@ -1778,6 +1844,39 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
     const track = s.tracking_no ? ` · เลขพัสดุ ${s.tracking_no}` : "";
     events.push({ kind: "shipment", at: jIso(s.created_at)!, text: `สร้างพัสดุ ${s.carrier}${track}`, actorName: null });
   }
+  // คืนสินค้า/ยกเลิกบิลที่เคาน์เตอร์ — เดิมไม่โผล่ในหน้านี้เลยเพราะ audit action เป็น
+  // pos.return/pos.void ไม่ใช่ order.% (ดูคอมเมนต์ตอนดึง posReturnRows ด้านบน)
+  for (const r of posReturnRows) {
+    const amount = Number(r.refund_amount).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const reasonText = r.note ? ` · เหตุผล: ${r.note}` : "";
+    const creditText = r.credit_note_no ? ` · ใบลดหนี้ ${r.credit_note_no}` : "";
+    const actor = r.approved_by_name && r.approved_by_name !== r.returned_by_name
+      ? `${r.returned_by_name ?? "ไม่พบข้อมูล"} · อนุมัติโดย ${r.approved_by_name}`
+      : (r.returned_by_name ?? "ไม่พบข้อมูล");
+    const title = r.is_void
+      ? "ยกเลิกบิล"
+      : r.return_mode === "FULL" ? "คืนสินค้าทั้งบิล" : "คืนสินค้าบางรายการ";
+    events.push({
+      kind: r.is_void ? "pos_void" : "pos_return",
+      at: jIso(r.created_at)!,
+      text: `${title} · คืนเงิน ฿${amount}${reasonText}${creditText}`,
+      actorName: actor,
+    });
+  }
+  // ยืนยันคืนเงินจริงของช่องทางที่เดินเรื่องแยก (โอน/บัตร) — เกิดทีหลัง pos.return ได้
+  // เป็นคนละเวลา ไม่รวมเป็นบรรทัดเดียวกัน ไม่งั้นดูเหมือนเงินยังไม่คืนทั้งที่ยืนยันแล้ว
+  for (const s of posRefundSettleRows) {
+    if (!s.completed_at) continue;
+    const amount = Number(s.amount).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const method = POS_REFUND_METHOD_LABEL[s.method] ?? s.method;
+    const refText = s.external_ref ? ` (อ้างอิง ${s.external_ref})` : "";
+    events.push({
+      kind: "pos_refund_settle",
+      at: jIso(s.completed_at)!,
+      text: `ยืนยันคืนเงินจริง ${method} ฿${amount}${refText}`,
+      actorName: s.completed_by_name ?? "ไม่พบข้อมูล",
+    });
+  }
   // ปิดบิลหน้าร้านก็ไม่มี audit order.complete — ถ้าไม่เติมที่นี่ stepper จะติ๊ก COMPLETED
   // แต่ timeline ไม่มีบรรทัดปิดบิล อ่านแล้วขัดกันเอง
   if (isPos && ord.status === "COMPLETED" && !lastByStatus.get("COMPLETED")) {
@@ -1790,5 +1889,22 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   }
   events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
-  return { orderId, channel: ord.channel, status: ord.status, conversationId, assignedStaff, helpers, steps, events };
+  // ยอดคืนสะสม/คงเหลือสุทธิ — ตัวเลขเดียวกับที่ getReceiptRefundSummary() ฝั่ง POS คิด
+  // (sum ยอดคืนของทุก pos_return แล้ว clamp คงเหลือไม่ให้ติดลบ) แต่คำนวณที่นี่แทน
+  // เพราะหน้า Order ไม่มี state ของ POS ให้เรียกใช้ร่วม
+  const orderAmountDue = Number(ord.total_amount ?? 0) + Number(ord.shipping_fee ?? 0);
+  const returnedTotal = Math.round(
+    posReturnRows.reduce((sum, r) => sum + Number(r.refund_amount ?? 0), 0) * 100
+  ) / 100;
+  const pendingSettlementTotal = Math.round(
+    posReturnRows
+      .filter((r) => r.settlement_status === "PENDING")
+      .reduce((sum, r) => sum + Number(r.refund_amount ?? 0), 0) * 100
+  ) / 100;
+  const remainingAfterReturn = Math.max(0, Math.round((orderAmountDue - returnedTotal) * 100) / 100);
+
+  return {
+    orderId, channel: ord.channel, status: ord.status, conversationId, assignedStaff, helpers, steps, events,
+    returnedTotal, remainingAfterReturn, pendingSettlementTotal,
+  };
 }
