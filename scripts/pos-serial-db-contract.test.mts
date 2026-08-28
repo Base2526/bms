@@ -81,7 +81,7 @@ test("setup: one serial-tracked product and one ordinary one", async () => {
     `INSERT INTO bms_product_packs
        (tenant_id, product_sku, size, pack_code, unit_name, base_qty, price, active)
      VALUES ($1,$2,$3,'BOX10','กล่อง',10,10000,TRUE)
-     ON CONFLICT (tenant_id, product_sku, size, pack_code) DO UPDATE
+     ON CONFLICT (tenant_id, product_sku, size, pack_code) WHERE size IS NOT NULL DO UPDATE
        SET base_qty = 10, price = 10000, active = TRUE`,
     [tenantId, SKU, SIZE]
   );
