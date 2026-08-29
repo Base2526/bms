@@ -186,6 +186,8 @@ type ScanHit = {
     | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number }
     | null;
   available: number;
+  /** รูปหลัก — มีค่าเฉพาะการยิงโหมด "เช็คของ" (?withImage=1) เท่านั้น */
+  imageUrl?: string | null;
 };
 
 type CartLine = ScanHit & {
@@ -626,6 +628,8 @@ type SearchItem = {
   price: number;
   availableTotal: number;
   availableSizes: Array<{ size: string; available: number }>;
+  /** รูปหลัก (public) — null = ยังไม่ได้แปะรูปให้สินค้าตัวนี้ */
+  imageUrl?: string | null;
 };
 
 type PosPurchaseHeader = {
@@ -691,6 +695,59 @@ const RETURN_REASON_OPTIONS = [
 
 function baht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * รูปย่อของสินค้าในจุดที่แคชเชียร์ต้อง "เลือกด้วยตา" (ผลค้นหา + เช็คของ)
+ *
+ * ไม่มีรูป = แสดงกรอบว่างขนาดเท่ากัน ไม่ใช่ยุบหายไป — ผลค้นหาที่บางแถวมีรูป
+ * บางแถวไม่มีแล้วความกว้างของข้อความขยับตามกัน อ่านยากกว่าไม่มีรูปเลยทั้งชุด
+ *
+ * `onError` ซ่อนรูปที่โหลดไม่ขึ้น (ไฟล์ถูกลบ/สิทธิ์เปลี่ยน) แล้วเหลือกรอบว่าง
+ * แทนที่จะปล่อยไอคอนรูปแตกของเบราว์เซอร์ค้างอยู่หน้าเคาน์เตอร์
+ */
+function ProductThumb({ url, alt, size = 44 }: { url?: string | null; alt: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const show = typeof url === "string" && url.trim().length > 0 && !failed;
+  return (
+    <div
+      aria-hidden={show ? undefined : true}
+      style={{
+        width: size,
+        height: size,
+        flex: `0 0 ${size}px`,
+        borderRadius: 6,
+        border: "1px solid #eee",
+        background: "#fff",
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {show ? (
+        <img
+          src={url as string}
+          alt={alt}
+          onError={() => setFailed(true)}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          width={size * 0.5}
+          height={size * 0.5}
+          fill="none"
+          stroke="#d9d9d9"
+          strokeWidth="1.8"
+        >
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <circle cx="8.5" cy="10" r="1.6" />
+          <path d="M21 16l-5-5-4.5 4.5L9 13l-6 6" />
+        </svg>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -3269,6 +3326,8 @@ export default function PosPage() {
     try {
       const params = new URLSearchParams({ code: trimmed });
       if (size?.trim()) params.set("size", size.trim().toUpperCase());
+      // ขอรูปเฉพาะตอนเช็คของ — เส้นทางขายต้องไม่แบกคิวรีรูปทุกชิ้นที่ยิง
+      if (mode === "lookup") params.set("withImage", "1");
       const res = await fetch(`/api/pos/scan?${params.toString()}`, {
         headers: authHeaders,
         cache: "no-store",
@@ -6308,12 +6367,17 @@ export default function PosPage() {
                     textAlign: "left",
                   }}
                 >
-                  <div style={{ fontSize: 14, fontWeight: 500 }}>{item.name}</div>
-                  <div style={{ fontSize: 12, color: "#666" }}>
-                    {item.sku} · ฿{baht(item.price)} · เหลือ {item.availableTotal}
-                    {item.availableSizes.length > 0
-                      ? ` · ${item.availableSizes.map((v) => `${v.size}:${v.available}`).join(" / ")}`
-                      : ""}
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <ProductThumb url={item.imageUrl} alt={item.name} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500 }}>{item.name}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>
+                        {item.sku} · ฿{baht(item.price)} · เหลือ {item.availableTotal}
+                        {item.availableSizes.length > 0
+                          ? ` · ${item.availableSizes.map((v) => `${v.size}:${v.available}`).join(" / ")}`
+                          : ""}
+                      </div>
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                     {item.availableSizes.filter((v) => v.available > 0).map((variant) => (
@@ -6363,16 +6427,21 @@ export default function PosPage() {
 
           {lookup && (
             <div style={{ marginTop: 10, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, padding: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 500 }}>{lookup.productName}</div>
-              <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
-                {lookup.sku}
-                {lookup.size && lookup.size !== "-" ? ` · ไซซ์ ${lookup.size}` : ""} · {lookup.unitName}
-              </div>
-              <div style={{ marginTop: 8, display: "flex", gap: 20, alignItems: "baseline" }}>
-                <span style={{ fontSize: 20, fontWeight: 500 }}>฿{baht(lookup.packPrice)}</span>
-                <span style={{ fontSize: 15, color: lookup.available > 0 ? "#237804" : "#a8071a" }}>
-                  {lookup.available > 0 ? `เหลือ ${lookup.available}` : "หมด"}
-                </span>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <ProductThumb url={lookup.imageUrl} alt={lookup.productName} size={64} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 500 }}>{lookup.productName}</div>
+                  <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+                    {lookup.sku}
+                    {lookup.size && lookup.size !== "-" ? ` · ไซซ์ ${lookup.size}` : ""} · {lookup.unitName}
+                  </div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 20, alignItems: "baseline" }}>
+                    <span style={{ fontSize: 20, fontWeight: 500 }}>฿{baht(lookup.packPrice)}</span>
+                    <span style={{ fontSize: 15, color: lookup.available > 0 ? "#237804" : "#a8071a" }}>
+                      {lookup.available > 0 ? `เหลือ ${lookup.available}` : "หมด"}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 {lookup.available > 0 && (
