@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice } from "@/lib/bms/pos";
-import { listSellableProducts } from "@/lib/bms/products";
+import { listPrimaryProductImages, listSellableProducts } from "@/lib/bms/products";
 import { normalizePosSearchQuery } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -32,6 +32,14 @@ async function handleGET(req: NextRequest) {
     locationId: device.locationId,
   });
 
+  // รูปย่อสำหรับ "เลือกด้วยตา" — ผลค้นหาคือจุดที่แคชเชียร์ยังไม่รู้ว่าใช่ตัวไหน
+  // (ของที่ชื่อคล้ายกันคนละสูตร/คนละกลิ่น) ต่างจากการยิงบาร์โค้ดที่ยืนยันตัวสินค้า
+  // ได้แม่นกว่ารูปอยู่แล้ว · คิวรีเพิ่มหนึ่งครั้งต่อการค้น ไม่ใช่ต่อการยิงขาย
+  const imagesBySku = await listPrimaryProductImages(
+    device.tenantId,
+    items.map((item) => item.sku)
+  );
+
   return NextResponse.json({
     items: items.map((item) => ({
       sku: item.sku,
@@ -39,6 +47,7 @@ async function handleGET(req: NextRequest) {
       price: item.price,
       availableTotal: item.availableTotal,
       availableSizes: item.availableSizes,
+      imageUrl: imagesBySku.get(item.sku) ?? null,
     })),
   });
 }

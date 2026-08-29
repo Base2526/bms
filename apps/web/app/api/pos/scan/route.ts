@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, resolvePosScan } from "@/lib/bms/pos";
+import { listPrimaryProductImages } from "@/lib/bms/products";
 import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -46,9 +47,21 @@ async function handleGET(req: NextRequest) {
     [device.tenantId, device.locationId, hit.sku, hit.size]
   );
 
+  // รูปเฉพาะโหมด "เช็คของ" ที่คนกำลังดูว่าใช่ตัวไหน — การยิงเพื่อ "ขาย" ไม่ขอ
+  // เพราะเป็นเส้นทางที่ถูกเรียกทุกชิ้นของทุกบิล คิวรีที่เพิ่มมาตรงนั้นคือความหน่วง
+  // ที่แคชเชียร์รู้สึกได้ แลกกับรูปที่ไม่มีใครดูตอนกำลังยิงของเข้าตะกร้า
+  //
+  // ไม่ขอ = ไม่ส่งฟิลด์นี้เลย (ไม่ใช่ส่ง null) เพราะจอเอาผลการยิงไป spread ทับ
+  // บรรทัดในตะกร้าตอนตรวจราคาซ้ำก่อนรับเงิน — ส่ง null มาจะลบรูปที่บรรทัดนั้นถืออยู่
+  const wantImage = req.nextUrl.searchParams.get("withImage") === "1";
+  const imagePatch = wantImage
+    ? { imageUrl: (await listPrimaryProductImages(device.tenantId, [hit.sku])).get(hit.sku) ?? null }
+    : {};
+
   return NextResponse.json({
     ...hit,
     available: stock.rowCount ? Number(stock.rows[0].available) : 0,
+    ...imagePatch,
   });
 }
 

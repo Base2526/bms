@@ -733,6 +733,53 @@ export async function listProductImages(tenantId: string, sku: string): Promise<
 }
 
 /**
+ * รูปหลักของสินค้าหลาย SKU ในคำสั่งเดียว (ไว้ให้หน้าร้าน/POS แสดงรูปย่อ)
+ *
+ * ลำดับความสำคัญเหมือน mapPublicProductCards เป๊ะ ๆ: `bms_products.image_url`
+ * (คอลัมน์ปกเดิม) มาก่อน แล้วค่อยแกลเลอรี `bms_product_images` เรียงตาม
+ * sort_order, id — ถ้าสองที่เรียงไม่เหมือนกัน สินค้าตัวเดียวจะมีรูป "หลัก"
+ * คนละใบระหว่างหน้าร้านกับหน้าเคาน์เตอร์ ซึ่งอ่านเป็นสินค้าคนละตัวได้
+ *
+ * รูปสินค้าถูกอัปโหลดเป็น visibility `public` เสมอ (products/upload/route.ts)
+ * จึงเปิดผ่าน /api/files/:id ได้โดยไม่ต้องมี session — เครื่องขายที่ยืนยันตัวตน
+ * ด้วย device token จึงโหลดรูปได้ ไม่ต้องมี route เสิร์ฟรูปแยก
+ */
+export async function listPrimaryProductImages(
+  tenantId: string,
+  skus: string[]
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(skus.filter((sku) => sku.trim().length > 0)));
+  if (unique.length === 0) return new Map();
+
+  const res = await query<{ sku: string; image_url: string | null; file_id: number | null }>(
+    `SELECT p.sku,
+            p.image_url,
+            gallery.file_id
+       FROM bms_products p
+       LEFT JOIN LATERAL (
+         SELECT gi.file_id
+           FROM bms_product_images gi
+          WHERE gi.tenant_id = p.tenant_id AND gi.product_sku = p.sku
+          ORDER BY gi.sort_order, gi.id
+          LIMIT 1
+       ) gallery ON TRUE
+      WHERE p.tenant_id = $1 AND p.sku = ANY($2::text[])`,
+    [tenantId, unique]
+  );
+
+  const bySku = new Map<string, string>();
+  for (const row of res.rows) {
+    const legacy = typeof row.image_url === "string" && row.image_url.trim().length > 0
+      ? row.image_url.trim()
+      : null;
+    const gallery = row.file_id ? buildFileUrlById(row.file_id) : null;
+    const primary = legacy ?? gallery;
+    if (primary) bySku.set(row.sku, primary);
+  }
+  return bySku;
+}
+
+/**
  * Public, read-only product lookup by tenant slug.
  * Exposes sale-safe fields only and never returns inactive tenants/products,
  * cost price, reserved stock, or admin URLs.
