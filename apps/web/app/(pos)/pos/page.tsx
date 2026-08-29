@@ -706,12 +706,45 @@ function baht(n: number) {
  * `onError` ซ่อนรูปที่โหลดไม่ขึ้น (ไฟล์ถูกลบ/สิทธิ์เปลี่ยน) แล้วเหลือกรอบว่าง
  * แทนที่จะปล่อยไอคอนรูปแตกของเบราว์เซอร์ค้างอยู่หน้าเคาน์เตอร์
  */
-function ProductThumb({ url, alt, size = 44 }: { url?: string | null; alt: string; size?: number }) {
+function ProductThumb({
+  url,
+  alt,
+  size = 44,
+  onPreview,
+}: {
+  url?: string | null;
+  alt: string;
+  size?: number;
+  /** ให้มาแล้วรูปจะกดดูเต็มจอได้ — กรอบเปล่าไม่มีอะไรให้ดู จึงไม่กลายเป็นปุ่ม */
+  onPreview?: (url: string) => void;
+}) {
   const [failed, setFailed] = useState(false);
   const show = typeof url === "string" && url.trim().length > 0 && !failed;
+  const clickable = show && typeof onPreview === "function";
+  // span role="button" ไม่ใช่ <button> โดยตั้งใจ — การ์ดผลค้นหาที่หุ้มอยู่เป็น
+  // <button> อยู่แล้ว ปุ่มซ้อนปุ่มเป็น HTML ที่ไม่ถูกต้อง (เหตุผลเดียวกับที่
+  // ชิปเลือกไซซ์ในการ์ดเดียวกันใช้ span มาแต่เดิม)
+  const open = (e: { preventDefault: () => void; stopPropagation: () => void }) => {
+    // ไม่กันไว้ = กดดูรูปแล้วของเข้าตะกร้าไปด้วย เพราะการ์ดทั้งใบคือปุ่มเพิ่มสินค้า
+    e.preventDefault();
+    e.stopPropagation();
+    onPreview!(url as string);
+  };
   return (
     <div
       aria-hidden={show ? undefined : true}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-label={clickable ? `ดูรูป ${alt} เต็มจอ` : undefined}
+      title={clickable ? "กดเพื่อดูรูปเต็มจอ" : undefined}
+      onClick={clickable ? open : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") open(e);
+            }
+          : undefined
+      }
       style={{
         width: size,
         height: size,
@@ -723,6 +756,7 @@ function ProductThumb({ url, alt, size = 44 }: { url?: string | null; alt: strin
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        cursor: clickable ? "zoom-in" : undefined,
       }}
     >
       {show ? (
@@ -1041,6 +1075,9 @@ export default function PosPage() {
   // บอกให้เห็นว่ากำลังเตรียมอยู่ ไม่ใช่กล้องค้าง
   const [cameraPreparing, setCameraPreparing] = useState(false);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
+  // รูปสินค้าที่กางเต็มจอ — รูปย่อ 44px อ่านฉลากไม่ออก (กลิ่น/สูตร/ขนาดเป็น
+  // ตัวหนังสือบนแพ็ก) แต่เป็นข้อมูลที่ตัดสินว่าหยิบถูกตัวหรือไม่
+  const [imagePreview, setImagePreview] = useState<{ url: string; label: string } | null>(null);
 
   useEffect(() => {
     void findRememberedPrinter().then((d) => setPrinterReady(Boolean(d)));
@@ -1274,13 +1311,22 @@ export default function PosPage() {
   const scanRef = useRef<HTMLInputElement>(null);
   const stockScanRef = useRef<HTMLInputElement>(null);
   const hasPendingOrderWrite = hasPendingSale || hasPendingDepositSale;
+  /**
+   * หน้าต่างซ้อนที่ต้อง "พักการสแกน" — เดิมเขียนไว้สองที่ (ป้ายบอกสถานะกับตัว
+   * dispatchScan) แล้วไม่ตรงกัน ป้ายจึงบอกว่ายังสแกนได้ในจังหวะที่ตัวจริงปฏิเสธ
+   * รวมเป็นค่าเดียวเพื่อไม่ให้เพิ่มหน้าต่างใหม่แล้วลืมแก้ที่ใดที่หนึ่ง
+   *
+   * กล้องไม่อยู่ในนี้เพราะมันบล็อกเฉพาะการยิงจากเครื่องสแกน (source hid) ไม่ใช่
+   * ทุกทาง — ตัวกล้องเองก็ป้อนโค้ดเข้ามาทางนี้
+   */
+  const blockingOverlayOpen = receiptModalOpen || enrollOpen || imagePreview !== null;
   const currentScanContext = resolveScanContext({
     tab,
     lookupMode,
     blindReturnOpen: blindOpen,
     hasPendingSale: hasPendingOrderWrite,
     busy: busy || stockReceiving,
-    blockingOverlayOpen: receiptModalOpen || enrollOpen,
+    blockingOverlayOpen,
   });
 
   function replaceStockDraft(next: StockReceiveDraft) {
@@ -3638,7 +3684,7 @@ export default function PosPage() {
       blindReturnOpen: blindOpen,
       hasPendingSale: hasPendingOrderWrite,
       busy: busy || stockReceiving,
-      blockingOverlayOpen: receiptModalOpen || enrollOpen || (source === "hid" && cameraModalOpen),
+      blockingOverlayOpen: blockingOverlayOpen || (source === "hid" && cameraModalOpen),
     });
     const trimmed = code.trim();
     if (!trimmed) return;
@@ -4032,10 +4078,12 @@ export default function PosPage() {
 
   // FOCUS mode ยังต้องมีช่องรับโดยตรง; PREFIX mode ไม่พึ่ง focus แต่คงพฤติกรรม
   // นี้ไว้ให้เครื่องเดิมและการพิมพ์รหัสด้วยมือ
+  // imagePreview อยู่ใน deps เพื่อ "คืน" โฟกัสตอนปิดรูป — ตอนเปิดเงื่อนไขเป็นเท็จ
+  // จึงไม่แย่งโฟกัสกลับไปที่ช่องยิงขณะรูปยังบังจออยู่
   useEffect(() => {
-    if (tab === "sell" && !receiptModalOpen) scanRef.current?.focus();
-    if (tab === "stock" && !receiptModalOpen) stockScanRef.current?.focus();
-  }, [tab, receiptModalOpen]);
+    if (tab === "sell" && !receiptModalOpen && !imagePreview) scanRef.current?.focus();
+    if (tab === "stock" && !receiptModalOpen && !imagePreview) stockScanRef.current?.focus();
+  }, [tab, receiptModalOpen, imagePreview]);
 
   // แคชเชียร์คุมจอด้วยคีย์บอร์ดมือเดียว — Enter พิมพ์ / Esc ปิด
   // ดักแบบ capture เพราะช่องยิงบาร์โค้ดอาจยังโฟกัสค้างอยู่หลังบิล ถ้าปล่อยผ่าน
@@ -4068,6 +4116,20 @@ export default function PosPage() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [enrollOpen]);
+
+  // Esc ปิดรูปสินค้า — ต่างจากกล่องสมัครสมาชิกตรงที่แตะฉากหลังปิดได้ด้วย
+  // เพราะรูปไม่มีอะไรที่พิมพ์ค้างให้เสีย และมีลูกค้ายืนรออยู่ตรงหน้า
+  useEffect(() => {
+    if (!imagePreview) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setImagePreview(null);
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [imagePreview]);
 
   // เปิด/ปิดกล้องตาม modal — เจอโค้ดแรกแล้วปิด modal + ยิงเข้า handleScan
   // เหมือนพิมพ์เอง ไม่มีทางพิเศษ ไม่งั้นราคา/สต็อกจะหลุด "server เป็นคนคิดเท่านั้น"
@@ -6368,7 +6430,11 @@ export default function PosPage() {
                   }}
                 >
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <ProductThumb url={item.imageUrl} alt={item.name} />
+                    <ProductThumb
+                      url={item.imageUrl}
+                      alt={item.name}
+                      onPreview={(url) => setImagePreview({ url, label: item.name })}
+                    />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 500 }}>{item.name}</div>
                       <div style={{ fontSize: 12, color: "#666" }}>
@@ -6428,7 +6494,12 @@ export default function PosPage() {
           {lookup && (
             <div style={{ marginTop: 10, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, padding: 12 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <ProductThumb url={lookup.imageUrl} alt={lookup.productName} size={64} />
+                <ProductThumb
+                  url={lookup.imageUrl}
+                  alt={lookup.productName}
+                  size={64}
+                  onPreview={(url) => setImagePreview({ url, label: lookup.productName })}
+                />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{lookup.productName}</div>
                   <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
@@ -8050,6 +8121,58 @@ export default function PosPage() {
         </div>
       )}
 
+      {/* รูปสินค้าเต็มจอ — การสแกนถูกพักไว้ระหว่างนี้ (blockingOverlayOpen) ไม่งั้น
+          ของที่ยิงเข้ามาจะเข้าตะกร้าอยู่หลังรูปโดยไม่มีใครเห็น
+          ปิดได้ 3 ทาง: แตะฉากหลัง · ปุ่ม ✕ · Esc — มีลูกค้ายืนรออยู่ตรงหน้า */}
+      {imagePreview && (
+        <div
+          onClick={() => setImagePreview(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16, zIndex: 70,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`รูปสินค้า ${imagePreview.label}`}
+            style={{
+              background: "#111", color: "#fff", borderRadius: 12,
+              maxWidth: "min(560px, 100%)", overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 14px", fontSize: 13, fontWeight: 600,
+                borderBottom: "1px solid rgba(255,255,255,0.14)",
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
+              }}
+            >
+              <span>{imagePreview.label}</span>
+              <button
+                type="button"
+                onClick={() => setImagePreview(null)}
+                aria-label="ปิด"
+                style={{ background: "none", border: "none", color: "#fff", fontSize: 16, padding: 4, lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+            {/* contain ไม่ใช่ cover — รูปย่อครอบได้เพราะแค่ให้จำของ แต่ตรงนี้คนกำลัง
+                อ่านฉลาก การครอบตัดตัวหนังสือที่เขามาดูทิ้งพอดี */}
+            <img
+              src={imagePreview.url}
+              alt={imagePreview.label}
+              style={{
+                display: "block", width: "100%", maxHeight: "70vh",
+                objectFit: "contain", background: "#000",
+              }}
+            />
+          </div>
+        </div>
+      )}
       {cameraModalOpen && (
         <div
           onClick={() => setCameraModalOpen(false)}
