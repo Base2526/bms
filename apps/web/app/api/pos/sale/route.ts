@@ -181,6 +181,14 @@ async function handlePOST(req: NextRequest) {
     lines,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
+    // ป้ายชี้ตัวของบิลมัดจำ — เป็นข้อความที่พนักงานพิมพ์เพื่อหาใบนี้เจอทีหลัง ไม่ใช่ค่า
+    // ที่ตัดสินเงินหรือสิทธิ์ จึงเชื่อจาก body ได้ · ตัดความยาวกัน payload บวม
+    depositCustomerNote: typeof body.depositCustomerNote === "string"
+      ? body.depositCustomerNote.trim().slice(0, 200) || null
+      : null,
+    depositDueAt: typeof body.depositDueAt === "string" && body.depositDueAt.trim()
+      ? body.depositDueAt.trim()
+      : null,
     // สมาชิก (7.96): id ถูกตรวจว่าเป็นลูกค้าของร้านนี้ใน createOrder อีกชั้น
     // แต้มที่ขอแลกเชื่อจาก body ได้ เพราะยอดที่ใช้ได้จริงถูกล็อกและตรวจใน tx
     customerId: typeof body.customerId === "string" && body.customerId.trim() ? body.customerId.trim() : null,

@@ -32,6 +32,17 @@ export type Deposit = {
   createdAt: string;
   /** true = เลยกำหนดรับแล้ว — ของถูกจองค้างอยู่และขายให้คนอื่นไม่ได้ */
   overdue: boolean;
+  /**
+   * ข้อมูลที่ใช้ "ชี้ตัว" มัดจำใบหนึ่งในวันที่มีหลายใบ
+   *
+   * แถวที่บอกแค่ UUID 8 ตัวกับยอดเงิน แยกออกจากกันไม่ได้เมื่อมีสิบใบ — คำถามจริง
+   * ที่เคาน์เตอร์คือ "ใบไหนของลูกค้าคนนี้" และ "ใบไหนคือของสองกล่องนั้น"
+   */
+  customerName: string | null;
+  customerPhone: string | null;
+  memberNo: string | null;
+  itemQty: number;
+  items: Array<{ name: string; size: string | null; qty: number }>;
 };
 
 export type DepositCandidateOrder = {
@@ -62,6 +73,20 @@ function mapDeposit(r: any): Deposit {
     dueAt,
     createdAt: toISO(r.created_at),
     overdue: r.status === "OPEN" && Boolean(dueAt) && new Date(dueAt!).getTime() < Date.now(),
+    customerName: r.customer_name ?? null,
+    customerPhone: r.customer_phone ?? null,
+    memberNo: r.member_no ?? null,
+    itemQty: Number(r.item_qty ?? 0),
+    items: (() => {
+      const raw = typeof r.items === "string" ? JSON.parse(r.items) : r.items;
+      return Array.isArray(raw)
+        ? raw.map((line: any) => ({
+            name: String(line.name ?? ""),
+            size: line.size == null || line.size === "-" ? null : String(line.size),
+            qty: Number(line.qty ?? 0),
+          }))
+        : [];
+    })(),
   };
 }
 
@@ -71,11 +96,36 @@ export async function listDeposits(
   options: { locationId?: string | null } = {}
 ): Promise<Deposit[]> {
   const res = await query<any>(
-    `SELECT * FROM bms_pos_deposits
-      WHERE tenant_id = $1
-        AND ($2::text IS NULL OR status = $2)
-        AND ($3::uuid IS NULL OR location_id = $3)
-      ORDER BY due_at NULLS LAST, created_at DESC
+    // อ่าน bms_order_items ไม่ใช่ view bms_order_stock_lines โดยตั้งใจ — ตรงนี้เป็นการ
+    // แสดง "ลูกค้าซื้ออะไร" เซ็ต (8.8) จึงต้องอ่านว่าเป็นเซ็ต ไม่ใช่กางเป็นส่วนประกอบ
+    // (view นั้นมีไว้สำหรับการขยับสต็อกเท่านั้น)
+    `SELECT d.*,
+            cust.name AS customer_name,
+            cust.phone AS customer_phone,
+            cust.member_no,
+            items.item_qty,
+            items.items
+       FROM bms_pos_deposits d
+       LEFT JOIN bms_customers cust
+         ON cust.tenant_id = d.tenant_id AND cust.id = d.customer_id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(oi.qty), 0)::int AS item_qty,
+                COALESCE(
+                  jsonb_agg(
+                    jsonb_build_object('name', COALESCE(p.name, oi.product_sku), 'size', oi.size, 'qty', oi.qty)
+                    ORDER BY oi.product_sku, oi.size
+                  ),
+                  '[]'::jsonb
+                ) AS items
+           FROM bms_order_items oi
+           LEFT JOIN bms_products p
+             ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+          WHERE oi.tenant_id = d.tenant_id AND oi.order_id = d.order_id
+       ) items ON TRUE
+      WHERE d.tenant_id = $1
+        AND ($2::text IS NULL OR d.status = $2)
+        AND ($3::uuid IS NULL OR d.location_id = $3)
+      ORDER BY d.due_at NULLS LAST, d.created_at DESC
       LIMIT 200`,
     [tenantId, status, options.locationId ?? null]
   );

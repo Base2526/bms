@@ -443,6 +443,12 @@ type PosDeposit = {
   balanceDue: number;
   dueAt: string | null;
   overdue: boolean;
+  createdAt?: string;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  memberNo?: string | null;
+  itemQty?: number;
+  items?: Array<{ name: string; size: string | null; qty: number }>;
 };
 
 type PosDepositCandidateOrder = {
@@ -1215,6 +1221,9 @@ export default function PosPage() {
    * สองเลขนี้เป็นคนละจำนวนของคนละบิล การใช้ที่เก็บร่วมกันจึงผิดตั้งแต่ความหมาย
    */
   const [cartDepositAmount, setCartDepositAmount] = useState("");
+  /** ชื่อลูกค้า/โน้ต + วันรับของ ของบิลมัดจำใหม่ — คือสิ่งที่ทำให้หาใบนี้เจอทีหลัง */
+  const [cartDepositNote, setCartDepositNote] = useState("");
+  const [cartDepositDueAt, setCartDepositDueAt] = useState("");
   const [depositMethod, setDepositMethod] = useState("CASH");
   const [depositReason, setDepositReason] = useState("");
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
@@ -2693,6 +2702,10 @@ export default function PosPage() {
             pin,
             idempotencyKey: `deposit-cart-${session.device.code}-${session.shift.id.slice(0, 8)}-${crypto.randomUUID()}`,
             customerId: member?.customerId ?? null,
+            depositCustomerNote: cartDepositNote.trim() || null,
+            // input[type=date] ให้ "YYYY-MM-DD" = เที่ยงคืนตามโซนเวลาเครื่อง ซึ่งคือวันที่
+            // พนักงานเลือกจริง · ปล่อยว่างได้ (ร้านที่ไม่นัดวันรับ)
+            depositDueAt: cartDepositDueAt.trim() || null,
             pointsToRedeem: memberPreview?.pointsUsed ?? 0,
             couponCode: couponCode.trim() || null,
             manualDiscount: approvedDiscount?.amount ?? 0,
@@ -2748,6 +2761,8 @@ export default function PosPage() {
         const orderRef = String(data.orderId ?? "").slice(0, 8).toUpperCase();
         setDepositOrderId(data.orderId ?? "");
         setCartDepositAmount("");
+        setCartDepositNote("");
+        setCartDepositDueAt("");
         // ล้างช่องของกลุ่มบิลด้วย: select เพิ่งถูกชี้ไปที่บิลใหม่โดยโค้ด ซึ่งไม่ผ่าน
         // onChange จึงไม่มีใครเติมยอดค้างของบิลนั้นให้ ปล่อยค่าเดิมค้างไว้ = ยอดของ
         // บิลก่อนหน้านั่งรออยู่ในช่องที่ตอนนี้ผูกกับบิลใหม่แล้ว
@@ -5627,6 +5642,21 @@ export default function PosPage() {
                     <option value="WALLET">Wallet</option>
                   </select>
                 </label>
+                {/* ชื่อ/โน้ต คือสิ่งเดียวที่ทำให้แถวในรายการค้างชี้ตัวได้ — ไม่กรอกแล้วแถวนั้น
+                    เหลือแค่ UUID 8 ตัว · ไม่บังคับ เพราะบิลที่ลูกค้ายืนรออยู่ต้องจบได้ */}
+                <label style={{ display: "flex", flexDirection: "column", gap: 5, flex: "1 1 190px", minWidth: 170 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>ชื่อลูกค้า / โน้ต</span>
+                  <input
+                    value={cartDepositNote}
+                    onChange={(e) => setCartDepositNote(e.target.value.slice(0, 200))}
+                    placeholder="เช่น คุณสมชาย 081-234-5678"
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>วันรับของ</span>
+                  <input type="date" value={cartDepositDueAt}
+                         onChange={(e) => setCartDepositDueAt(e.target.value)} />
+                </label>
                 <button
                   className="pos-shift-btn-primary"
                   disabled={busy || (!hasPendingDepositSale && cartDepositBlockedReason !== null)}
@@ -5669,7 +5699,10 @@ export default function PosPage() {
                   <optgroup label="รายการมัดจำที่เปิดอยู่">
                     {deposits.map((deposit) => (
                       <option key={deposit.orderId} value={deposit.orderId}>
-                        {deposit.customerNote || `#${deposit.orderId.slice(0, 8).toUpperCase()}`} · ค้าง ฿{baht(deposit.balanceDue)}
+                        {deposit.customerNote?.trim()
+                          || deposit.customerName?.trim()
+                          || `#${deposit.orderId.slice(0, 8).toUpperCase()}`}
+                        {deposit.itemQty ? ` · ${deposit.itemQty} ชิ้น` : ""} · ค้าง ฿{baht(deposit.balanceDue)}
                       </option>
                     ))}
                   </optgroup>
@@ -5727,22 +5760,57 @@ export default function PosPage() {
             <div className="pos-block-title">รายการที่ยังเปิดอยู่ ({deposits.length})</div>
             {deposits.length === 0 ? (
               <div className="pos-block-hint">ไม่มีมัดจำค้างของสาขานี้</div>
-            ) : deposits.map((deposit) => (
-              <button key={deposit.id} type="button" className="pos-move-row"
-                      onClick={() => {
-                        setDepositOrderId(deposit.orderId);
-                        setDepositAmount(String(deposit.balanceDue));
-                      }}
-                      style={{ width: "100%", textAlign: "left", background: "transparent", border: 0 }}>
-                <span>
-                  <b>{deposit.customerNote || deposit.orderId.slice(0, 8)}</b>
-                  <span style={{ color: deposit.overdue ? "var(--pos-danger)" : "var(--pos-muted)", marginLeft: 8 }}>
-                    {deposit.overdue ? "เลยกำหนด" : deposit.dueAt ? `รับภายใน ${new Date(deposit.dueAt).toLocaleDateString("th-TH")}` : "ไม่กำหนดวันรับ"}
+            ) : deposits.map((deposit) => {
+              // ชื่อที่พิมพ์ไว้ชนะชื่อสมาชิก เพราะมันคือสิ่งที่พนักงานเลือกเขียนเพื่อหาใบนี้
+              // (บางทีคนวางมัดจำกับคนที่เป็นสมาชิกไม่ใช่คนเดียวกัน)
+              const orderRef = `#${deposit.orderId.slice(0, 8).toUpperCase()}`;
+              const named = deposit.customerNote?.trim() || deposit.customerName?.trim() || "";
+              const title = named || orderRef;
+              const contact = [deposit.customerPhone, deposit.memberNo ? `สมาชิก ${deposit.memberNo}` : null]
+                .filter(Boolean).join(" · ");
+              const items = deposit.items ?? [];
+              const itemText = items.slice(0, 3)
+                .map((line) => `${line.qty}× ${line.name}${line.size ? ` (${line.size})` : ""}`)
+                .join(" · ");
+              return (
+                <button key={deposit.id} type="button" className="pos-move-row"
+                        onClick={() => {
+                          setDepositOrderId(deposit.orderId);
+                          setDepositAmount(String(deposit.balanceDue));
+                        }}
+                        style={{ width: "100%", textAlign: "left", background: "transparent", border: 0, alignItems: "flex-start" }}>
+                  <span style={{ minWidth: 0 }}>
+                    <b>{title}</b>
+                    <span style={{ color: deposit.overdue ? "var(--pos-danger)" : "var(--pos-muted)", marginLeft: 8 }}>
+                      {deposit.overdue ? "เลยกำหนด" : deposit.dueAt ? `รับภายใน ${new Date(deposit.dueAt).toLocaleDateString("th-TH")}` : "ไม่กำหนดวันรับ"}
+                    </span>
+                    {/* บรรทัดของ "ของ" — คำถามที่เคาน์เตอร์คือใบไหนคือของสองกล่องนั้น
+                        ตัดที่ 3 รายการแล้วบอกจำนวนที่เหลือ ไม่ใช่ตัดเงียบ ๆ */}
+                    {items.length > 0 && (
+                      <span style={{ display: "block", fontSize: 12, color: "var(--pos-muted)", marginTop: 2 }}>
+                        {itemText}
+                        {items.length > 3 ? ` · อีก ${items.length - 3} รายการ` : ""}
+                      </span>
+                    )}
+                    {/* เลขบิลซ้ำกับหัวเรื่องเมื่อไม่มีชื่อ — ไม่ต้องพิมพ์สองรอบ */}
+                    <span style={{ display: "block", fontSize: 12, color: "var(--pos-muted)", marginTop: 2 }}>
+                      {[
+                        named ? orderRef : null,
+                        contact || null,
+                        deposit.createdAt
+                          ? `วางมัดจำ ${new Date(deposit.createdAt).toLocaleString("th-TH", {
+                              day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                            })}`
+                          : null,
+                      ].filter(Boolean).join(" · ")}
+                    </span>
                   </span>
-                </span>
-                <span className="pos-num">จ่ายแล้ว ฿{baht(deposit.depositPaid)} · ค้าง ฿{baht(deposit.balanceDue)}</span>
-              </button>
-            ))}
+                  <span className="pos-num" style={{ whiteSpace: "nowrap" }}>
+                    จ่ายแล้ว ฿{baht(deposit.depositPaid)} · ค้าง ฿{baht(deposit.balanceDue)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
