@@ -85,6 +85,7 @@ const Q_JOURNEY = gql`
       steps { status at actorName reached branch }
       events { kind at text actorName }
       returnedTotal remainingAfterReturn pendingSettlementTotal
+      amountDue paidTotal isDeposit depositStatus depositBalanceDue
     }
   }
 `;
@@ -551,6 +552,38 @@ function OrderJourney({
           </Space>
         )}
       </div>
+
+      {/* บิลมัดจำ (9.0) — หน้านี้เคยไม่มีอะไรบอกเลยว่าบิลนี้ต่างจากบิลค้างจ่ายธรรมดา
+          ทั้งที่เงินเข้ามาแล้วส่วนหนึ่งและของถูกจองไว้ · คอลัมน์ "ยอดชำระ" ในตารางแสดง
+          ยอดบิลเต็มเสมอ คนที่มาตรวจยอดจึงไม่มีทางรู้ว่าเก็บได้จริงเท่าไร */}
+      {j.isDeposit && (
+        <Space size={6} wrap style={{ padding: "8px 12px", background: "var(--app-surface-2, rgba(148,163,184,0.08))", borderRadius: 8 }}>
+          <Tag color="gold">{t("admin_orders.deposit_badge")}</Tag>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.deposit_received")}</Typography.Text>
+          <Typography.Text strong style={{ fontSize: 12 }}>{money(j.paidTotal)}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.of_amount_due")} {money(j.amountDue)}</Typography.Text>
+          {j.depositBalanceDue > 0 && (
+            <>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>·</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.deposit_balance_due")}</Typography.Text>
+              <Typography.Text type="warning" strong style={{ fontSize: 12 }}>{money(j.depositBalanceDue)}</Typography.Text>
+            </>
+          )}
+          {j.depositStatus === "OPEN" && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {t("admin_orders.deposit_hint")}</Typography.Text>
+          )}
+        </Space>
+      )}
+
+      {/* บิลที่ไม่ใช่มัดจำแต่เก็บเงินยังไม่ครบ — เกิดได้เมื่อ payment ล้มกลางทาง
+          ไม่มีแถบนี้จะดูเหมือนบิลปกติที่รอชำระ ทั้งที่มีเงินเข้ามาแล้วบางส่วน */}
+      {!j.isDeposit && j.paidTotal > 0 && j.paidTotal < j.amountDue - 0.005 && (
+        <Space size={6} wrap style={{ padding: "8px 12px", background: "var(--app-surface-2, rgba(148,163,184,0.08))", borderRadius: 8 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.collected_total")}</Typography.Text>
+          <Typography.Text strong style={{ fontSize: 12 }}>{money(j.paidTotal)}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.of_amount_due")} {money(j.amountDue)}</Typography.Text>
+        </Space>
+      )}
 
       {/* บิลที่คืน/ยกเลิกบางส่วนที่เคาน์เตอร์ไม่เปลี่ยนสถานะเป็น RETURNED (ดูคอมเมนต์
           ที่ getOrderJourney) — ไม่มีแถบนี้ ยอดชำระสุทธิด้านล่างจะยังโชว์ยอดขายเต็ม

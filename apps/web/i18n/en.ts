@@ -2935,6 +2935,12 @@ const en = {
     returned_total: "Returned",
     remaining_after_return: "Net after return",
     pending_settlement: "Refund pending confirmation",
+    deposit_badge: "Deposit bill",
+    deposit_received: "Deposit received",
+    deposit_balance_due: "Balance due",
+    deposit_hint: "Goods reserved, not handed over — collect the balance at pickup",
+    collected_total: "Collected",
+    of_amount_due: "of bill total",
   },
   admin_reports: {
     report_type_sales: "Sales",

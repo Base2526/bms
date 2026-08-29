@@ -22,6 +22,7 @@ import {
   closeDeposit,
   listDepositCandidateOrders,
   listDeposits,
+  searchDeposits,
   takeDeposit,
 } from "@/lib/bms/deposits";
 import { isPosUuid, parsePosPayments } from "@/lib/bms/posRouteHelpers";
@@ -33,13 +34,19 @@ export const dynamic = "force-dynamic";
 async function handleGET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
-  const [deposits, candidateOrders] = await Promise.all([
+  // ?q= ค้นทั้งร้าน (รวมสาขาอื่น) — ลูกค้าถือใบเสร็จมาแล้วพนักงานต้องหาใบนั้นให้เจอ
+  // ส่วนรายการปกติยังเป็นของสาขาเครื่องนี้เท่านั้น เพราะนั่นคือของที่ทำรายการได้จริง
+  const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
+  const [deposits, candidateOrders, searchResults] = await Promise.all([
     listDeposits(device.tenantId, "OPEN", { locationId: device.locationId }),
     listDepositCandidateOrders(device.tenantId, device.locationId),
+    q ? searchDeposits(device.tenantId, q, { locationId: device.locationId }) : Promise.resolve([]),
   ]);
   return NextResponse.json({
     deposits,
     candidateOrders,
+    searchResults,
+    searchQuery: q || null,
   });
 }
 

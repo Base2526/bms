@@ -447,6 +447,8 @@ type PosDeposit = {
   customerName?: string | null;
   customerPhone?: string | null;
   memberNo?: string | null;
+  locationName?: string | null;
+  isOtherLocation?: boolean;
   itemQty?: number;
   items?: Array<{ name: string; size: string | null; qty: number }>;
 };
@@ -1224,6 +1226,12 @@ export default function PosPage() {
   /** ชื่อลูกค้า/โน้ต + วันรับของ ของบิลมัดจำใหม่ — คือสิ่งที่ทำให้หาใบนี้เจอทีหลัง */
   const [cartDepositNote, setCartDepositNote] = useState("");
   const [cartDepositDueAt, setCartDepositDueAt] = useState("");
+  /** ค้นมัดจำจากสิ่งที่ลูกค้าถือมา — ค้นทั้งร้าน ไม่ใช่แค่สาขาของเครื่องนี้ */
+  const [depositSearch, setDepositSearch] = useState("");
+  const [depositSearchResults, setDepositSearchResults] = useState<PosDeposit[]>([]);
+  const [depositSearched, setDepositSearched] = useState(false);
+  /** บิลที่ค้นในแท็บคืนแล้วปรากฏว่าเป็นมัดจำ — ของยังไม่ได้ส่งมอบ จึงคืนไม่ได้ */
+  const [recentDepositMatches, setRecentDepositMatches] = useState<PosDeposit[]>([]);
   const [depositMethod, setDepositMethod] = useState("CASH");
   const [depositReason, setDepositReason] = useState("");
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
@@ -2624,16 +2632,91 @@ export default function PosPage() {
 
   // ---- มัดจำ / ค้างชำระ (9.0) --------------------------------------
 
-  async function refreshDeposits() {
+  async function refreshDeposits(searchTermOverride?: string) {
     if (!token) return;
+    const q = (searchTermOverride ?? depositSearch).trim();
     try {
-      const res = await fetch("/api/pos/deposit", { headers: authHeaders, cache: "no-store" });
+      const url = q ? `/api/pos/deposit?q=${encodeURIComponent(q)}` : "/api/pos/deposit";
+      const res = await fetch(url, { headers: authHeaders, cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setDeposits(data.deposits ?? []);
         setDepositCandidateOrders(data.candidateOrders ?? []);
+        setDepositSearchResults(q ? (data.searchResults ?? []) : []);
+        setDepositSearched(Boolean(q));
       }
     } catch { /* รายการโหลดใหม่ได้ ไม่ขัดจังหวะงานขาย */ }
+  }
+
+  /**
+   * แถวมัดจำหนึ่งใบ — ใช้ทั้งในรายการที่ค้างอยู่และในผลค้นหา เพื่อให้ทั้งสองที่แสดง
+   * ข้อมูลชุดเดียวกัน (ก่อนหน้านี้แถวบอกแค่ UUID 8 ตัวกับยอด ชี้ตัวไม่ได้)
+   */
+  function renderDepositRow(deposit: PosDeposit) {
+    // ชื่อที่พิมพ์ไว้ชนะชื่อสมาชิก เพราะมันคือสิ่งที่พนักงานเลือกเขียนเพื่อหาใบนี้
+    // (บางทีคนวางมัดจำกับคนที่เป็นสมาชิกไม่ใช่คนเดียวกัน)
+    const orderRef = `#${deposit.orderId.slice(0, 8).toUpperCase()}`;
+    const named = deposit.customerNote?.trim() || deposit.customerName?.trim() || "";
+    const title = named || orderRef;
+    const contact = [deposit.customerPhone, deposit.memberNo ? `สมาชิก ${deposit.memberNo}` : null]
+      .filter(Boolean).join(" · ");
+    const items = deposit.items ?? [];
+    const itemText = items.slice(0, 3)
+      .map((line) => `${line.qty}× ${line.name}${line.size ? ` (${line.size})` : ""}`)
+      .join(" · ");
+    // ของถูกจองไว้อีกสาขา — settleDepositSale ตรวจสาขาอยู่แล้วและจะปฏิเสธ
+    // ปิดปุ่มไว้ก่อนดีกว่าให้กดแล้วเจอ error ตอนลูกค้ายืนรอ
+    const elsewhere = deposit.isOtherLocation === true;
+    return (
+      <button key={deposit.id} type="button" className="pos-move-row"
+              disabled={elsewhere}
+              title={elsewhere ? "มัดจำใบนี้จองของไว้ที่สาขาอื่น ต้องไปทำรายการที่สาขานั้น" : undefined}
+              onClick={() => {
+                if (elsewhere) return;
+                setDepositOrderId(deposit.orderId);
+                setDepositAmount(String(deposit.balanceDue));
+              }}
+              style={{
+                width: "100%", textAlign: "left", background: "transparent", border: 0,
+                alignItems: "flex-start", opacity: elsewhere ? 0.65 : undefined,
+                cursor: elsewhere ? "not-allowed" : undefined,
+              }}>
+        <span style={{ minWidth: 0 }}>
+          <b>{title}</b>
+          <span style={{ color: deposit.overdue ? "var(--pos-danger)" : "var(--pos-muted)", marginLeft: 8 }}>
+            {deposit.overdue ? "เลยกำหนด" : deposit.dueAt ? `รับภายใน ${new Date(deposit.dueAt).toLocaleDateString("th-TH")}` : "ไม่กำหนดวันรับ"}
+          </span>
+          {elsewhere && (
+            <span style={{ color: "var(--pos-danger)", marginLeft: 8, fontSize: 12 }}>
+              อยู่สาขา {deposit.locationName || "อื่น"} — ทำรายการที่เครื่องนี้ไม่ได้
+            </span>
+          )}
+          {/* บรรทัดของ "ของ" — คำถามที่เคาน์เตอร์คือใบไหนคือของสองกล่องนั้น
+              ตัดที่ 3 รายการแล้วบอกจำนวนที่เหลือ ไม่ใช่ตัดเงียบ ๆ */}
+          {items.length > 0 && (
+            <span style={{ display: "block", fontSize: 12, color: "var(--pos-muted)", marginTop: 2 }}>
+              {itemText}
+              {items.length > 3 ? ` · อีก ${items.length - 3} รายการ` : ""}
+            </span>
+          )}
+          {/* เลขบิลซ้ำกับหัวเรื่องเมื่อไม่มีชื่อ — ไม่ต้องพิมพ์สองรอบ */}
+          <span style={{ display: "block", fontSize: 12, color: "var(--pos-muted)", marginTop: 2 }}>
+            {[
+              named ? orderRef : null,
+              contact || null,
+              deposit.createdAt
+                ? `วางมัดจำ ${new Date(deposit.createdAt).toLocaleString("th-TH", {
+                    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                  })}`
+                : null,
+            ].filter(Boolean).join(" · ")}
+          </span>
+        </span>
+        <span className="pos-num" style={{ whiteSpace: "nowrap" }}>
+          จ่ายแล้ว ฿{baht(deposit.depositPaid)} · ค้าง ฿{baht(deposit.balanceDue)}
+        </span>
+      </button>
+    );
   }
 
   async function createDepositFromCart() {
@@ -3665,6 +3748,8 @@ export default function PosPage() {
       const data = await res.json().catch(() => ({ sales: [] }));
       if (!res.ok) return;
       const sales = Array.isArray(data?.sales) ? data.sales : [];
+      // เจอเป็นบิลมัดจำแทน — ชี้ทางไปแท็บมัดจำ ไม่ใช่ตอบว่า "ไม่พบ"
+      setRecentDepositMatches(Array.isArray(data?.depositMatches) ? data.depositMatches : []);
       setRecentReceipts(
         sales.map((sale: any, saleIndex: number) => ({
           orderId: sale.orderId ?? null,
@@ -5756,61 +5841,42 @@ export default function PosPage() {
             </div>
           </div>
 
+          {/* ค้นหา — เหตุผลอันดับหนึ่งที่หาใบมัดจำไม่เจอคือมันอยู่คนละสาขา ช่องนี้จึงค้น
+              ทั้งร้าน แล้วบอกว่าใบนั้นอยู่สาขาไหน แทนที่จะตอบว่า "ไม่พบ" */}
+          <div className="pos-block">
+            <div className="pos-block-title">ค้นหามัดจำ</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input
+                value={depositSearch}
+                onChange={(e) => setDepositSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void refreshDeposits(); }}
+                placeholder="เลขบิล / ชื่อลูกค้า / เบอร์โทร / รหัสสมาชิก"
+                style={{ flex: 1, minWidth: 240 }}
+              />
+              <button onClick={() => void refreshDeposits()}>ค้นหา</button>
+              {depositSearched && (
+                <button onClick={() => { setDepositSearch(""); void refreshDeposits(""); }}>ล้าง</button>
+              )}
+            </div>
+            <div className="pos-block-hint" style={{ marginTop: 6 }}>
+              ค้นทุกสาขาของร้าน — ใบที่จองของไว้สาขาอื่นจะขึ้นให้เห็น แต่ทำรายการที่เครื่องนี้ไม่ได้
+            </div>
+            {depositSearched && (
+              depositSearchResults.length === 0 ? (
+                <div className="pos-block-hint" style={{ marginTop: 8 }}>ไม่พบมัดจำที่เปิดอยู่จากคำค้นนี้</div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  {depositSearchResults.map((deposit) => renderDepositRow(deposit))}
+                </div>
+              )
+            )}
+          </div>
+
           <div className="pos-block">
             <div className="pos-block-title">รายการที่ยังเปิดอยู่ ({deposits.length})</div>
             {deposits.length === 0 ? (
               <div className="pos-block-hint">ไม่มีมัดจำค้างของสาขานี้</div>
-            ) : deposits.map((deposit) => {
-              // ชื่อที่พิมพ์ไว้ชนะชื่อสมาชิก เพราะมันคือสิ่งที่พนักงานเลือกเขียนเพื่อหาใบนี้
-              // (บางทีคนวางมัดจำกับคนที่เป็นสมาชิกไม่ใช่คนเดียวกัน)
-              const orderRef = `#${deposit.orderId.slice(0, 8).toUpperCase()}`;
-              const named = deposit.customerNote?.trim() || deposit.customerName?.trim() || "";
-              const title = named || orderRef;
-              const contact = [deposit.customerPhone, deposit.memberNo ? `สมาชิก ${deposit.memberNo}` : null]
-                .filter(Boolean).join(" · ");
-              const items = deposit.items ?? [];
-              const itemText = items.slice(0, 3)
-                .map((line) => `${line.qty}× ${line.name}${line.size ? ` (${line.size})` : ""}`)
-                .join(" · ");
-              return (
-                <button key={deposit.id} type="button" className="pos-move-row"
-                        onClick={() => {
-                          setDepositOrderId(deposit.orderId);
-                          setDepositAmount(String(deposit.balanceDue));
-                        }}
-                        style={{ width: "100%", textAlign: "left", background: "transparent", border: 0, alignItems: "flex-start" }}>
-                  <span style={{ minWidth: 0 }}>
-                    <b>{title}</b>
-                    <span style={{ color: deposit.overdue ? "var(--pos-danger)" : "var(--pos-muted)", marginLeft: 8 }}>
-                      {deposit.overdue ? "เลยกำหนด" : deposit.dueAt ? `รับภายใน ${new Date(deposit.dueAt).toLocaleDateString("th-TH")}` : "ไม่กำหนดวันรับ"}
-                    </span>
-                    {/* บรรทัดของ "ของ" — คำถามที่เคาน์เตอร์คือใบไหนคือของสองกล่องนั้น
-                        ตัดที่ 3 รายการแล้วบอกจำนวนที่เหลือ ไม่ใช่ตัดเงียบ ๆ */}
-                    {items.length > 0 && (
-                      <span style={{ display: "block", fontSize: 12, color: "var(--pos-muted)", marginTop: 2 }}>
-                        {itemText}
-                        {items.length > 3 ? ` · อีก ${items.length - 3} รายการ` : ""}
-                      </span>
-                    )}
-                    {/* เลขบิลซ้ำกับหัวเรื่องเมื่อไม่มีชื่อ — ไม่ต้องพิมพ์สองรอบ */}
-                    <span style={{ display: "block", fontSize: 12, color: "var(--pos-muted)", marginTop: 2 }}>
-                      {[
-                        named ? orderRef : null,
-                        contact || null,
-                        deposit.createdAt
-                          ? `วางมัดจำ ${new Date(deposit.createdAt).toLocaleString("th-TH", {
-                              day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-                            })}`
-                          : null,
-                      ].filter(Boolean).join(" · ")}
-                    </span>
-                  </span>
-                  <span className="pos-num" style={{ whiteSpace: "nowrap" }}>
-                    จ่ายแล้ว ฿{baht(deposit.depositPaid)} · ค้าง ฿{baht(deposit.balanceDue)}
-                  </span>
-                </button>
-              );
-            })}
+            ) : deposits.map((deposit) => renderDepositRow(deposit))}
           </div>
         </div>
       )}
@@ -7116,7 +7182,36 @@ export default function PosPage() {
                 })}
               </div>
             )}
-            {recentReceipts.length === 0 && recentSalesQuery.trim().length > 0 && (
+            {/* บิลนี้มีอยู่จริง แต่เป็นมัดจำ — แท็บคืนค้นเฉพาะบิลที่ปิดแล้วโดยตั้งใจ
+                (ของที่ยังไม่ได้ส่งมอบจะคืนไม่ได้) แต่พนักงานที่ถือใบเสร็จมาย่อมมาที่นี่ก่อน
+                คำตอบที่ถูกคือบอกว่ามันอยู่ไหน ไม่ใช่ "ไม่พบ" */}
+            {recentReceipts.length === 0 && recentDepositMatches.length > 0 && (
+              <div className="pos-ret-empty" style={{ textAlign: "left" }}>
+                <b>บิลนี้เป็นมัดจำ — ของยังไม่ได้ส่งมอบ จึงยังคืนไม่ได้</b>
+                <div style={{ marginTop: 6 }}>
+                  {recentDepositMatches.map((deposit) => (
+                    <div key={deposit.id} style={{ fontSize: 13, marginTop: 4 }}>
+                      #{deposit.orderId.slice(0, 8).toUpperCase()}
+                      {deposit.customerNote?.trim() || deposit.customerName?.trim()
+                        ? ` · ${deposit.customerNote?.trim() || deposit.customerName?.trim()}`
+                        : ""}
+                      {" · "}จ่ายแล้ว ฿{baht(deposit.depositPaid)} · ค้าง ฿{baht(deposit.balanceDue)}
+                      {deposit.isOtherLocation ? ` · อยู่สาขา ${deposit.locationName || "อื่น"}` : ""}
+                    </div>
+                  ))}
+                </div>
+                <button style={{ marginTop: 10 }}
+                        onClick={() => {
+                          setTab("deposits");
+                          // พาคำค้นเดิมไปด้วย ไม่ให้พนักงานต้องพิมพ์ซ้ำที่แท็บใหม่
+                          setDepositSearch(recentSalesQuery);
+                          void refreshDeposits(recentSalesQuery);
+                        }}>
+                  ไปแท็บมัดจำ
+                </button>
+              </div>
+            )}
+            {recentReceipts.length === 0 && recentDepositMatches.length === 0 && recentSalesQuery.trim().length > 0 && (
               <div className="pos-ret-empty">
                 ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
               </div>
