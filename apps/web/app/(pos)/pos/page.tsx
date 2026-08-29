@@ -34,6 +34,7 @@ import {
 } from "@/lib/pos/scanManager";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
 import { selectedReturnLines, type ReturnDraft } from "@/lib/pos/returnDraft";
+import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import {
   findRememberedPrinter,
   isWebUsbSupported,
@@ -622,14 +623,6 @@ type Receipt = {
 
 type ReceiptReturnEvent = NonNullable<Receipt["returnEvents"]>[number];
 
-type PaymentDraft = {
-  id: string;
-  method: string;
-  amount: string;
-  tendered: string;
-  ref: string;
-};
-
 type SearchItem = {
   sku: string;
   name: string;
@@ -1048,7 +1041,7 @@ export default function PosPage() {
   }, []);
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [payments, setPayments] = useState<PaymentDraft[]>([
+  const [payments, setPayments] = useState<PosPaymentDraft[]>([
     { id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" },
   ]);
   // PIN อยู่ในหน่วยความจำเท่านั้น — ไม่ลง localStorage เพราะเครื่องหน้าร้าน
@@ -3965,7 +3958,7 @@ export default function PosPage() {
     );
   }
 
-  function updatePayment(id: string, patch: Partial<PaymentDraft>) {
+  function updatePayment(id: string, patch: Partial<PosPaymentDraft>) {
     if (hasPendingOrderWrite) return;
     setPayments((cur) => cur.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)));
   }
@@ -3985,13 +3978,11 @@ export default function PosPage() {
     if (hasPendingOrderWrite) return;
     // ออกจากฟอร์มย่อทันทีที่จะจ่ายผสม — ต้องเห็นยอดของแต่ละวิธี
     setSplitMode(true);
-    setPayments((cur) =>
-      cur.length === 1 && !cur[0].amount ? [{ ...cur[0], amount: String(amountDue) }] : cur
-    );
-    setPayments((cur) => [
-      ...cur,
-      { id: `pay-${Date.now()}-${cur.length + 1}`, method: "QR", amount: "", tendered: "", ref: "" },
-    ]);
+    setPayments((cur) => appendSplitPaymentRow(
+      cur,
+      amountDue,
+      `pay-${Date.now()}-${cur.length + 1}`,
+    ));
   }
 
   function removePaymentRow(id: string) {

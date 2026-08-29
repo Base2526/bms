@@ -14,6 +14,7 @@ import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRound
 import { calculatePettyCashSettlement } from "../apps/web/lib/pos/pettyCash.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
 import { orderRefundPaymentsForAllocation } from "../apps/web/lib/pos/refundAllocation.ts";
+import { appendSplitPaymentRow } from "../apps/web/lib/pos/paymentDraft.ts";
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
   const lines = parsePosSaleLines([
@@ -67,6 +68,34 @@ test("POS payment parser accepts valid methods and rejects bad inputs", () => {
     { method: "CASH", amount: 100, cashTendered: 120 },
     { method: "CARD", amount: 50, ref: "EDC-001" },
   ]).ok, true);
+});
+
+test("entering split payment clears a stale cash tender from the single-payment form", () => {
+  const next = appendSplitPaymentRow([
+    { id: "pay-1", method: "CASH", amount: "48300", tendered: "48300", ref: "" },
+  ], 48300, "pay-2");
+
+  assert.deepEqual(next, [
+    { id: "pay-1", method: "CASH", amount: "48300", tendered: "", ref: "" },
+    { id: "pay-2", method: "QR", amount: "", tendered: "", ref: "" },
+  ]);
+
+  // Reproduces the reported bill after the cashier assigns 15,000 to cash: an empty
+  // tender is sent as null and the server treats it as exact cash, not 33,300 change.
+  next[0].amount = "15000";
+  assert.equal(next[0].tendered, "");
+});
+
+test("adding another split-payment row preserves tenders already entered per cash row", () => {
+  const current = [
+    { id: "pay-1", method: "CASH", amount: "15000", tendered: "20000", ref: "" },
+    { id: "pay-2", method: "QR", amount: "5000", tendered: "", ref: "QR-001" },
+  ];
+
+  assert.deepEqual(appendSplitPaymentRow(current, 48300, "pay-3"), [
+    ...current,
+    { id: "pay-3", method: "QR", amount: "", tendered: "", ref: "" },
+  ]);
 });
 
 test("split-payment refunds honor the chosen channel instead of UUID order", () => {
