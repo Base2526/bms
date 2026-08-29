@@ -1291,6 +1291,7 @@ const TH: ManualContent = {
         "ถ้าเปิด blind close ยอดเงินสดที่ควรมีจะถูกซ่อนจนปิดกะ ให้พนักงานนับเงินจริงก่อนกรอก counted cash",
         "ปิดกะไม่ได้เมื่อมีสินค้าในตะกร้า เงินเบิกยังไม่ปิดยอด หรือ refund ไม่ใช่เงินสดยังค้าง; หลังปิดรายงานเดียวกันเป็น Z report และแสดง expected/counted/variance",
         "เมื่อยอดมีข้อสงสัย เปิด ประวัติกะของเครื่องนี้ แล้วกด ดาวน์โหลดรายละเอียดกะ เพื่อไล่จากบิล วิธีชำระ เงินเข้าออก คืนเงิน ค่าใช้จ่าย และ no-sale; การคืนบิลเก่าจะอยู่ในกะที่รับคืนจริง",
+        "ผู้จัดการที่มี pos.shift.report.all ดูภาพรวมทุกลิ้นชักที่ /admin/pos-shifts ได้ โดยกรองวันที่เปิดกะ สาขา เครื่อง คนเกี่ยวข้อง และสัญญาณผิดปกติ; หน้านี้เป็น read-only ไม่ใช้ปิดกะหรือแก้ยอดแทนหน้า POS และกะเปิดที่ใช้ blind close ต้องปิด/นับเงินก่อนจึงดาวน์โหลด Excel ได้",
         "ค่าภาษีที่ POS Readiness มีผลกับบิลใหม่เท่านั้น เอกสารที่ออกแล้วแก้ย้อนหลังไม่ได้; e-Tax เป็น queue แยกและไม่ได้ส่งอัตโนมัติจากการขาย",
         "รายงาน commission อยู่ /admin/commission ใช้อัตราตามวันที่มีผล สินค้าคืนจะดึง commission คืน และ void ไม่ได้ commission",
       ],
@@ -1299,7 +1300,7 @@ const TH: ManualContent = {
   posPermissionsTitle: "สิทธิ์ที่ควรตรวจตามหน้าที่",
   posPermissions: [
     "ตั้งเครื่อง/PIN/บัญชีเฉพาะหน้าร้าน: pos.device.manage, pos.pin.manage, pos.staff.manage",
-    "ขายและกะ: pos.sell, pos.shift.open, pos.shift.close, pos.shift.report",
+    "ขายและกะ: pos.sell, pos.shift.open, pos.shift.close, pos.shift.report; ภาพรวมทุกเครื่องหลังบ้าน: pos.shift.report.all",
     "สมาชิกและส่วนลด: member.view, member.manage, pos.discount.approve (ผู้อนุมัติต้องเป็นคนละคนกับผู้ขาย)",
     "คืนเงิน: order.return, payment.refund, pos.return.noreceipt, pos.void",
     "เงินและค่าใช้จ่าย: pos.cash.movement, pos.nosale, pos.expense.create, pos.expense.personal, pos.petty_cash.manage",
@@ -2426,6 +2427,7 @@ const EN: ManualContent = {
         "Close is blocked by cart items, open expense advances, or pending non-cash refunds. After close, the same report is the Z report with expected/count/variance.",
         "When a total is disputed, open this register's shift history and download the detailed workbook to trace bills, payment legs, drawer movements, refunds, expenses, and no-sales. An old receipt returned today belongs to today's receiving shift.",
         "Tax settings in POS Readiness affect new bills only. Issued documents are immutable, and e-Tax submission is a separate queue rather than an automatic sale action.",
+        "Managers with pos.shift.report.all can review every drawer at /admin/pos-shifts, filtering by shift-open date, location, till, involved person, and exception signal. It is read-only and does not replace POS close-shift/counting; an open blind-close shift must be closed and counted before its Excel export is available.",
         "The /admin/commission report uses effective-dated rules. Returns claw commission back and voids earn none.",
       ],
     },
@@ -2433,7 +2435,7 @@ const EN: ManualContent = {
   posPermissionsTitle: "Permissions to verify by role",
   posPermissions: [
     "Register/PIN/POS-only setup: pos.device.manage, pos.pin.manage, pos.staff.manage",
-    "Sales and shifts: pos.sell, pos.shift.open, pos.shift.close, pos.shift.report",
+    "Sales and shifts: pos.sell, pos.shift.open, pos.shift.close, pos.shift.report; back-office all-till overview: pos.shift.report.all",
     "Members and discounts: member.view, member.manage, pos.discount.approve (approver must differ from seller)",
     "Returns and refunds: order.return, payment.refund, pos.return.noreceipt, pos.void",
     "Cash and expenses: pos.cash.movement, pos.nosale, pos.expense.create, pos.expense.personal, pos.petty_cash.manage",

@@ -62,9 +62,25 @@ test("return/refund shift attribution is explicit and report queries prefer it",
   assert.match(migration, /bms_pos_returns[\s\S]*shift_id UUID REFERENCES bms_pos_shifts/);
   assert.match(migration, /completed_shift_id UUID REFERENCES bms_pos_shifts/);
   assert.match(service, /COALESCE\(pr\.shift_id, o\.pos_shift_id\)/);
+  assert.match(service, /COALESCE\(a\.completed_shift_id, pr2\.shift_id, o2\.pos_shift_id\)/);
   assert.match(service, /completed_shift_id = \$5/);
   assert.match(exportRoute, /cashierHasPermission[\s\S]*"pos\.shift\.report"/);
   assert.match(exportRoute, /getPosShiftExportData\(device\.tenantId, shiftId, device\.id\)/);
+});
+
+test("all-till overview keeps its permission boundary and blind-close export lock", async () => {
+  const permissionMigration = await readFile(new URL("db/migrations/9.33__bms_pos_shift_overview_permission.sql", ROOT), "utf8");
+  const listRoute = await readFile(new URL("apps/web/app/api/bms/pos-shifts/route.ts", ROOT), "utf8");
+  const adminExportRoute = await readFile(new URL("apps/web/app/api/bms/pos-shifts/export/route.ts", ROOT), "utf8");
+  const registerExportRoute = await readFile(new URL("apps/web/app/api/pos/shift-report/export/route.ts", ROOT), "utf8");
+
+  assert.match(permissionMigration, /'pos\.shift\.report\.all'/);
+  assert.match(listRoute, /authorizeAdminRoute\("pos\.shift\.report\.all"\)/);
+  assert.match(adminExportRoute, /authorizeAdminRoute\("pos\.shift\.report\.all"\)/);
+  assert.match(listRoute, /isPosShiftOverviewDate/);
+  assert.match(listRoute, /UUID_RE\.test/);
+  assert.match(adminExportRoute, /data\.report\.expectedCashHidden[\s\S]*status: 409/);
+  assert.match(registerExportRoute, /data\.report\.expectedCashHidden[\s\S]*409/);
 });
 
 test("shift print selects its own paper root instead of the hidden receipt", async () => {

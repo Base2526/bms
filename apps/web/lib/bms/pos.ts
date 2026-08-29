@@ -1073,6 +1073,535 @@ export async function listPosShiftHistory(
   }));
 }
 
+export type PosShiftOverviewFilters = {
+  openedFrom?: string | null;
+  openedTo?: string | null;
+  locationId?: string | null;
+  deviceId?: string | null;
+  status?: "OPEN" | "CLOSED" | "ALL" | null;
+  personId?: string | null;
+  signal?: "VARIANCE" | "STALE_OPEN" | "PENDING_REFUND" | "OPEN_EXPENSE" | "RETURN" | "VOID" | "NO_SALE" | "ALL" | null;
+  limit?: number | null;
+  offset?: number | null;
+};
+
+export type PosShiftOverviewRow = {
+  id: string;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  closedAt: string | null;
+  durationMinutes: number;
+  locationId: string;
+  locationName: string | null;
+  deviceId: string;
+  deviceCode: string;
+  deviceName: string | null;
+  openedByName: string | null;
+  closedByName: string | null;
+  pharmacistName: string | null;
+  cashierNames: string[];
+  cashierCount: number;
+  billCount: number;
+  salesTotal: number;
+  discountTotal: number;
+  voidCount: number;
+  voidTotal: number;
+  returnCount: number;
+  returnTotal: number;
+  cashIn: number;
+  cashOut: number;
+  cashRefunds: number;
+  openExpenseCount: number;
+  openExpenseAmount: number;
+  noSaleCount: number;
+  pendingRefundCount: number;
+  pendingRefundAmount: number;
+  expectedCash: number | null;
+  expectedCashHidden: boolean;
+  countedCash: number | null;
+  cashVariance: number | null;
+  isStaleOpen: boolean;
+};
+
+export type PosShiftOverviewSummary = {
+  totalShifts: number;
+  openShifts: number;
+  closedShifts: number;
+  staleOpenShifts: number;
+  salesTotal: number;
+  returnTotal: number;
+  voidTotal: number;
+  cashVarianceTotal: number;
+  shortageTotal: number;
+  overageTotal: number;
+  pendingRefundCount: number;
+  pendingRefundAmount: number;
+  openExpenseCount: number;
+  openExpenseAmount: number;
+  noSaleCount: number;
+};
+
+export type PosShiftOverview = {
+  rows: PosShiftOverviewRow[];
+  summary: PosShiftOverviewSummary;
+  total: number;
+  limit: number;
+  offset: number;
+  filters: {
+    locations: Array<{ id: string; name: string; branchCode: string | null }>;
+    devices: Array<{ id: string; locationId: string; code: string; name: string | null }>;
+    people: Array<{ id: string; label: string }>;
+  };
+};
+
+function clampPosShiftLimit(value: number | null | undefined) {
+  if (!Number.isFinite(Number(value))) return 30;
+  return Math.min(Math.max(Math.trunc(Number(value)), 1), 100);
+}
+
+function clampPosShiftOffset(value: number | null | undefined) {
+  if (!Number.isFinite(Number(value))) return 0;
+  return Math.max(Math.trunc(Number(value)), 0);
+}
+
+export function isPosShiftOverviewDate(value: string | null | undefined): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year
+    && parsed.getUTCMonth() === month - 1
+    && parsed.getUTCDate() === day;
+}
+
+function buildPosShiftOverviewWhere(filters: PosShiftOverviewFilters) {
+  const params: unknown[] = [];
+  const where = ["s.tenant_id = $1"];
+  params.push("");
+  if (isPosShiftOverviewDate(filters.openedFrom)) {
+    params.push(filters.openedFrom);
+    where.push(`s.opened_at >= ($${params.length}::date::timestamp AT TIME ZONE 'Asia/Bangkok')`);
+  }
+  if (isPosShiftOverviewDate(filters.openedTo)) {
+    params.push(filters.openedTo);
+    where.push(`s.opened_at < (($${params.length}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`);
+  }
+  if (typeof filters.locationId === "string" && filters.locationId) {
+    params.push(filters.locationId);
+    where.push(`s.location_id = $${params.length}::uuid`);
+  }
+  if (typeof filters.deviceId === "string" && filters.deviceId) {
+    params.push(filters.deviceId);
+    where.push(`s.device_id = $${params.length}::uuid`);
+  }
+  if (filters.status === "OPEN" || filters.status === "CLOSED") {
+    params.push(filters.status);
+    where.push(`s.status = $${params.length}`);
+  }
+  if (typeof filters.personId === "string" && filters.personId) {
+    params.push(filters.personId);
+    const personParam = `$${params.length}::uuid`;
+    where.push(`(
+      s.opened_by = ${personParam}
+      OR s.closed_by = ${personParam}
+      OR s.pharmacist_user_id = ${personParam}
+      OR EXISTS (
+        SELECT 1 FROM bms_orders po
+         WHERE po.tenant_id = s.tenant_id
+           AND po.pos_shift_id = s.id
+           AND po.cashier_user_id = ${personParam}
+      )
+      OR EXISTS (
+        SELECT 1
+          FROM bms_pos_returns prp
+          JOIN bms_orders pro ON pro.id = prp.order_id AND pro.tenant_id = prp.tenant_id
+         WHERE prp.tenant_id = s.tenant_id
+           AND COALESCE(prp.shift_id, pro.pos_shift_id) = s.id
+           AND (prp.returned_by = ${personParam} OR prp.approved_by = ${personParam})
+      )
+      OR EXISTS (
+        SELECT 1 FROM bms_pos_cash_movements m
+         WHERE m.tenant_id = s.tenant_id
+           AND m.shift_id = s.id
+           AND (m.actor_user_id = ${personParam} OR m.approved_by = ${personParam})
+      )
+      OR EXISTS (
+        SELECT 1 FROM bms_pos_refund_allocations a
+         WHERE a.tenant_id = s.tenant_id
+           AND a.completed_shift_id = s.id
+           AND a.completed_by = ${personParam}
+      )
+      OR EXISTS (
+        SELECT 1 FROM bms_pos_expenses e
+         WHERE e.tenant_id = s.tenant_id
+           AND e.shift_id = s.id
+           AND ${personParam} IN (e.actor_user_id, e.approved_by, e.settled_by, e.settlement_approved_by)
+      )
+      OR EXISTS (
+        SELECT 1 FROM bms_pos_no_sales n
+         WHERE n.tenant_id = s.tenant_id
+           AND n.shift_id = s.id
+           AND n.actor_user_id = ${personParam}
+      )
+    )`);
+  }
+  switch (filters.signal) {
+    case "VARIANCE":
+      where.push(`s.status = 'CLOSED' AND COALESCE(s.cash_variance, 0) <> 0`);
+      break;
+    case "STALE_OPEN":
+      where.push(`s.status = 'OPEN' AND s.opened_at < now() - interval '18 hours'`);
+      break;
+    case "PENDING_REFUND":
+      where.push(`EXISTS (
+        SELECT 1
+          FROM bms_pos_refund_allocations a
+          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+         WHERE a.tenant_id = s.tenant_id
+           AND COALESCE(pr.shift_id, o.pos_shift_id) = s.id
+           AND a.status = 'PENDING'
+      )`);
+      break;
+    case "OPEN_EXPENSE":
+      where.push(`EXISTS (
+        SELECT 1 FROM bms_pos_expenses e
+         WHERE e.tenant_id = s.tenant_id AND e.shift_id = s.id AND e.status = 'OPEN'
+      )`);
+      break;
+    case "RETURN":
+      where.push(`EXISTS (
+        SELECT 1
+          FROM bms_pos_returns pr
+          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+         WHERE pr.tenant_id = s.tenant_id
+           AND COALESCE(pr.shift_id, o.pos_shift_id) = s.id
+           AND pr.is_void = FALSE
+      )`);
+      break;
+    case "VOID":
+      where.push(`EXISTS (
+        SELECT 1 FROM bms_orders o
+         WHERE o.tenant_id = s.tenant_id AND o.pos_shift_id = s.id AND o.voided_at IS NOT NULL
+      )`);
+      break;
+    case "NO_SALE":
+      where.push(`EXISTS (
+        SELECT 1 FROM bms_pos_no_sales n
+         WHERE n.tenant_id = s.tenant_id AND n.shift_id = s.id
+      )`);
+      break;
+  }
+  return { whereSql: where.join("\n        AND "), params };
+}
+
+function posShiftOverviewBaseSql(whereSql: string) {
+  return `
+    WITH filtered AS (
+      SELECT s.*
+        FROM bms_pos_shifts s
+       WHERE ${whereSql}
+    ),
+    rows_with_metrics AS (
+      SELECT f.id, f.status, f.opened_at, f.closed_at, f.opening_float,
+             f.expected_cash, f.counted_cash, f.cash_variance,
+             f.location_id, f.device_id,
+             l.name AS location_name, l.branch_code,
+             d.code AS device_code, d.name AS device_name,
+             COALESCE(uo.name, uo.email) AS opened_by_name,
+             COALESCE(uc.name, uc.email) AS closed_by_name,
+             COALESCE(up.name, up.email) AS pharmacist_name,
+             COALESCE(o.bill_count, 0) AS bill_count,
+             COALESCE(o.sales_total, 0) AS sales_total,
+             COALESCE(o.discount_total, 0) AS discount_total,
+             COALESCE(o.void_count, 0) AS void_count,
+             COALESCE(o.void_total, 0) AS void_total,
+             COALESCE(o.cash_sales, 0) AS cash_sales,
+             COALESCE(r.return_count, 0) AS return_count,
+             COALESCE(r.return_total, 0) AS return_total,
+             COALESCE(r.cash_refunds, 0) AS cash_refunds,
+             COALESCE(r.pending_refund_count, 0) AS pending_refund_count,
+             COALESCE(r.pending_refund_amount, 0) AS pending_refund_amount,
+             COALESCE(m.cash_in, 0) AS cash_in,
+             COALESCE(m.cash_out, 0) AS cash_out,
+             COALESCE(e.open_expense_count, 0) AS open_expense_count,
+             COALESCE(e.open_expense_amount, 0) AS open_expense_amount,
+             COALESCE(n.no_sale_count, 0) AS no_sale_count,
+             COALESCE(c.cashier_names, ARRAY[]::text[]) AS cashier_names,
+             COALESCE(c.cashier_count, 0) AS cashier_count
+        FROM filtered f
+        JOIN bms_pos_devices d ON d.id = f.device_id AND d.tenant_id = f.tenant_id
+        LEFT JOIN bms_locations l ON l.id = f.location_id AND l.tenant_id = f.tenant_id
+        LEFT JOIN users uo ON uo.id = f.opened_by AND uo.tenant_id = f.tenant_id
+        LEFT JOIN users uc ON uc.id = f.closed_by AND uc.tenant_id = f.tenant_id
+        LEFT JOIN users up ON up.id = f.pharmacist_user_id AND up.tenant_id = f.tenant_id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*) FILTER (WHERE o.voided_at IS NULL)::int AS bill_count,
+                 COALESCE(SUM(o.total_amount) FILTER (WHERE o.voided_at IS NULL), 0) AS sales_total,
+                 COALESCE(SUM(o.discount_amount) FILTER (WHERE o.voided_at IS NULL), 0) AS discount_total,
+                 COUNT(*) FILTER (WHERE o.voided_at IS NOT NULL)::int AS void_count,
+                 COALESCE(SUM(o.total_amount) FILTER (WHERE o.voided_at IS NOT NULL), 0) AS void_total,
+                 COALESCE((
+                   SELECT SUM(pay.amount)
+                     FROM bms_payments pay
+                     JOIN bms_orders po ON po.id = pay.order_id AND po.tenant_id = pay.tenant_id
+                    WHERE pay.tenant_id = f.tenant_id
+                      AND po.pos_shift_id = f.id
+                      AND pay.method = 'CASH'
+                      AND pay.status IN ('CONFIRMED','REFUNDED')
+                 ), 0) AS cash_sales
+            FROM bms_orders o
+           WHERE o.tenant_id = f.tenant_id
+             AND o.pos_shift_id = f.id
+             AND o.status IN ('COMPLETED','RETURNED')
+        ) o ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT
+            (
+              SELECT COUNT(*)::int
+                FROM bms_pos_returns pr
+                JOIN bms_orders ro ON ro.id = pr.order_id AND ro.tenant_id = pr.tenant_id
+               WHERE pr.tenant_id = f.tenant_id
+                 AND COALESCE(pr.shift_id, ro.pos_shift_id) = f.id
+                 AND pr.is_void = FALSE
+            ) AS return_count,
+            (
+              SELECT COALESCE(SUM(pr.refund_amount), 0)
+                FROM bms_pos_returns pr
+                JOIN bms_orders ro ON ro.id = pr.order_id AND ro.tenant_id = pr.tenant_id
+               WHERE pr.tenant_id = f.tenant_id
+                 AND COALESCE(pr.shift_id, ro.pos_shift_id) = f.id
+                 AND pr.is_void = FALSE
+            ) AS return_total,
+            (
+              SELECT COALESCE(SUM(a.amount), 0)
+                FROM bms_pos_refund_allocations a
+                JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                JOIN bms_orders ro ON ro.id = pr.order_id AND ro.tenant_id = pr.tenant_id
+               WHERE a.tenant_id = f.tenant_id
+                 AND COALESCE(a.completed_shift_id, pr.shift_id, ro.pos_shift_id) = f.id
+                 AND a.method = 'CASH'
+                 AND a.status = 'COMPLETED'
+            ) AS cash_refunds,
+            (
+              SELECT COUNT(*)::int
+                FROM bms_pos_refund_allocations a
+                JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                JOIN bms_orders ro ON ro.id = pr.order_id AND ro.tenant_id = pr.tenant_id
+               WHERE a.tenant_id = f.tenant_id
+                 AND COALESCE(pr.shift_id, ro.pos_shift_id) = f.id
+                 AND a.status = 'PENDING'
+            ) AS pending_refund_count,
+            (
+              SELECT COALESCE(SUM(a.amount), 0)
+                FROM bms_pos_refund_allocations a
+                JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                JOIN bms_orders ro ON ro.id = pr.order_id AND ro.tenant_id = pr.tenant_id
+               WHERE a.tenant_id = f.tenant_id
+                 AND COALESCE(pr.shift_id, ro.pos_shift_id) = f.id
+                 AND a.status = 'PENDING'
+            ) AS pending_refund_amount
+        ) r ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(amount) FILTER (WHERE direction = 'IN'), 0) AS cash_in,
+                 COALESCE(SUM(amount) FILTER (WHERE direction = 'OUT'), 0) AS cash_out
+            FROM bms_pos_cash_movements
+           WHERE tenant_id = f.tenant_id AND shift_id = f.id
+        ) m ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*) FILTER (WHERE status = 'OPEN')::int AS open_expense_count,
+                 COALESCE(SUM(advanced_amount) FILTER (WHERE status = 'OPEN'), 0) AS open_expense_amount
+            FROM bms_pos_expenses
+           WHERE tenant_id = f.tenant_id AND shift_id = f.id
+        ) e ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS no_sale_count
+            FROM bms_pos_no_sales
+           WHERE tenant_id = f.tenant_id AND shift_id = f.id
+        ) n ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT ARRAY_AGG(label ORDER BY amount DESC, label) AS cashier_names,
+                 COUNT(*)::int AS cashier_count
+            FROM (
+              SELECT COALESCE(u.name, u.email, 'ไม่ทราบ') AS label,
+                     COALESCE(SUM(co.total_amount), 0) AS amount
+                FROM bms_orders co
+                LEFT JOIN users u ON u.id = co.cashier_user_id AND u.tenant_id = co.tenant_id
+               WHERE co.tenant_id = f.tenant_id
+                 AND co.pos_shift_id = f.id
+                 AND co.voided_at IS NULL
+                 AND co.status IN ('COMPLETED','RETURNED')
+               GROUP BY 1
+            ) cashiers
+        ) c ON TRUE
+    )`;
+}
+
+export async function listPosShiftOverview(
+  tenantId: string,
+  filters: PosShiftOverviewFilters = {}
+): Promise<PosShiftOverview> {
+  const limit = clampPosShiftLimit(filters.limit);
+  const offset = clampPosShiftOffset(filters.offset);
+  const where = buildPosShiftOverviewWhere(filters);
+  where.params[0] = tenantId;
+  const baseSql = posShiftOverviewBaseSql(where.whereSql);
+  const vat = await getVatSettings(tenantId);
+
+  const [rows, summary, options] = await Promise.all([
+    query<any>(
+      `${baseSql}
+       SELECT *, COUNT(*) OVER()::int AS total_count
+         FROM rows_with_metrics
+        ORDER BY opened_at DESC, id DESC
+        LIMIT $${where.params.length + 1} OFFSET $${where.params.length + 2}`,
+      [...where.params, limit, offset]
+    ),
+    query<any>(
+      `${baseSql}
+       SELECT COUNT(*)::int AS total_shifts,
+              COUNT(*) FILTER (WHERE status = 'OPEN')::int AS open_shifts,
+              COUNT(*) FILTER (WHERE status = 'CLOSED')::int AS closed_shifts,
+              COUNT(*) FILTER (WHERE status = 'OPEN' AND opened_at < now() - interval '18 hours')::int AS stale_open_shifts,
+              COALESCE(SUM(sales_total), 0) AS sales_total,
+              COALESCE(SUM(return_total), 0) AS return_total,
+              COALESCE(SUM(void_total), 0) AS void_total,
+              COALESCE(SUM(cash_variance) FILTER (WHERE status = 'CLOSED'), 0) AS cash_variance_total,
+              COALESCE(SUM(ABS(cash_variance)) FILTER (WHERE status = 'CLOSED' AND cash_variance < 0), 0) AS shortage_total,
+              COALESCE(SUM(cash_variance) FILTER (WHERE status = 'CLOSED' AND cash_variance > 0), 0) AS overage_total,
+              COALESCE(SUM(pending_refund_count), 0)::int AS pending_refund_count,
+              COALESCE(SUM(pending_refund_amount), 0) AS pending_refund_amount,
+              COALESCE(SUM(open_expense_count), 0)::int AS open_expense_count,
+              COALESCE(SUM(open_expense_amount), 0) AS open_expense_amount,
+              COALESCE(SUM(no_sale_count), 0)::int AS no_sale_count
+         FROM rows_with_metrics`,
+      where.params
+    ),
+    Promise.all([
+      query<any>(
+        `SELECT id, name, branch_code FROM bms_locations
+          WHERE tenant_id = $1 ORDER BY is_head_office DESC, name`,
+        [tenantId]
+      ),
+      query<any>(
+        `SELECT id, location_id, code, name FROM bms_pos_devices
+          WHERE tenant_id = $1 ORDER BY code`,
+        [tenantId]
+      ),
+      query<any>(
+        `SELECT DISTINCT u.id, COALESCE(u.name, u.email) AS label
+           FROM users u
+          WHERE u.tenant_id = $1
+            AND EXISTS (
+              SELECT 1 FROM bms_pos_shifts s
+               WHERE s.tenant_id = u.tenant_id
+                 AND (s.opened_by = u.id OR s.closed_by = u.id OR s.pharmacist_user_id = u.id)
+              UNION ALL
+              SELECT 1 FROM bms_orders o
+               WHERE o.tenant_id = u.tenant_id AND o.cashier_user_id = u.id
+              UNION ALL
+              SELECT 1 FROM bms_pos_returns pr
+               WHERE pr.tenant_id = u.tenant_id
+                 AND (pr.returned_by = u.id OR pr.approved_by = u.id)
+              UNION ALL
+              SELECT 1 FROM bms_pos_cash_movements m
+               WHERE m.tenant_id = u.tenant_id
+                 AND (m.actor_user_id = u.id OR m.approved_by = u.id)
+              UNION ALL
+              SELECT 1 FROM bms_pos_refund_allocations a
+               WHERE a.tenant_id = u.tenant_id AND a.completed_by = u.id
+              UNION ALL
+              SELECT 1 FROM bms_pos_expenses e
+               WHERE e.tenant_id = u.tenant_id
+                 AND u.id IN (e.actor_user_id, e.approved_by, e.settled_by, e.settlement_approved_by)
+              UNION ALL
+              SELECT 1 FROM bms_pos_no_sales n
+               WHERE n.tenant_id = u.tenant_id AND n.actor_user_id = u.id
+            )
+          ORDER BY label`,
+        [tenantId]
+      ),
+    ]),
+  ]);
+
+  const hidden = (row: any) => row.status === "OPEN" && vat.blindClose;
+  const expected = (row: any) => {
+    if (hidden(row)) return null;
+    if (row.expected_cash != null) return Number(row.expected_cash);
+    return Math.round((Number(row.opening_float) + Number(row.cash_sales)
+      - Number(row.cash_refunds) + Number(row.cash_in) - Number(row.cash_out)) * 100) / 100;
+  };
+  const total = Number(rows.rows[0]?.total_count ?? summary.rows[0]?.total_shifts ?? 0);
+  const s = summary.rows[0] ?? {};
+  return {
+    rows: rows.rows.map((row: any) => ({
+      id: row.id,
+      status: row.status,
+      openedAt: toISO(row.opened_at),
+      closedAt: row.closed_at ? toISO(row.closed_at) : null,
+      durationMinutes: Math.max(0, Math.round((new Date(row.closed_at ?? Date.now()).getTime() - new Date(row.opened_at).getTime()) / 60000)),
+      locationId: row.location_id,
+      locationName: row.location_name ?? null,
+      deviceId: row.device_id,
+      deviceCode: row.device_code,
+      deviceName: row.device_name ?? null,
+      openedByName: row.opened_by_name ?? null,
+      closedByName: row.closed_by_name ?? null,
+      pharmacistName: row.pharmacist_name ?? null,
+      cashierNames: Array.isArray(row.cashier_names) ? row.cashier_names.filter(Boolean) : [],
+      cashierCount: Number(row.cashier_count ?? 0),
+      billCount: Number(row.bill_count ?? 0),
+      salesTotal: Number(row.sales_total ?? 0),
+      discountTotal: Number(row.discount_total ?? 0),
+      voidCount: Number(row.void_count ?? 0),
+      voidTotal: Number(row.void_total ?? 0),
+      returnCount: Number(row.return_count ?? 0),
+      returnTotal: Number(row.return_total ?? 0),
+      cashIn: Number(row.cash_in ?? 0),
+      cashOut: Number(row.cash_out ?? 0),
+      cashRefunds: Number(row.cash_refunds ?? 0),
+      openExpenseCount: Number(row.open_expense_count ?? 0),
+      openExpenseAmount: Number(row.open_expense_amount ?? 0),
+      noSaleCount: Number(row.no_sale_count ?? 0),
+      pendingRefundCount: Number(row.pending_refund_count ?? 0),
+      pendingRefundAmount: Number(row.pending_refund_amount ?? 0),
+      expectedCash: expected(row),
+      expectedCashHidden: hidden(row),
+      countedCash: row.counted_cash == null ? null : Number(row.counted_cash),
+      cashVariance: row.cash_variance == null ? null : Number(row.cash_variance),
+      isStaleOpen: row.status === "OPEN" && new Date(row.opened_at).getTime() < Date.now() - 18 * 60 * 60 * 1000,
+    })),
+    summary: {
+      totalShifts: Number(s.total_shifts ?? 0),
+      openShifts: Number(s.open_shifts ?? 0),
+      closedShifts: Number(s.closed_shifts ?? 0),
+      staleOpenShifts: Number(s.stale_open_shifts ?? 0),
+      salesTotal: Number(s.sales_total ?? 0),
+      returnTotal: Number(s.return_total ?? 0),
+      voidTotal: Number(s.void_total ?? 0),
+      cashVarianceTotal: Number(s.cash_variance_total ?? 0),
+      shortageTotal: Number(s.shortage_total ?? 0),
+      overageTotal: Number(s.overage_total ?? 0),
+      pendingRefundCount: Number(s.pending_refund_count ?? 0),
+      pendingRefundAmount: Number(s.pending_refund_amount ?? 0),
+      openExpenseCount: Number(s.open_expense_count ?? 0),
+      openExpenseAmount: Number(s.open_expense_amount ?? 0),
+      noSaleCount: Number(s.no_sale_count ?? 0),
+    },
+    total,
+    limit,
+    offset,
+    filters: {
+      locations: options[0].rows.map((r: any) => ({ id: r.id, name: r.name, branchCode: r.branch_code ?? null })),
+      devices: options[1].rows.map((r: any) => ({ id: r.id, locationId: r.location_id, code: r.code, name: r.name ?? null })),
+      people: options[2].rows.map((r: any) => ({ id: r.id, label: r.label })),
+    },
+  };
+}
+
 export async function getPosShiftReturnSummary(tenantId: string, deviceId: string, shiftId: string) {
   const res = await query<any>(
     `SELECT COUNT(DISTINCT pr.id)::int AS return_count,
@@ -4978,7 +5507,7 @@ export async function getPosShiftReport(
                   JOIN bms_pos_returns pr2 ON pr2.id = a.pos_return_id AND pr2.tenant_id = a.tenant_id
                   JOIN bms_orders o2 ON o2.id = pr2.order_id AND o2.tenant_id = pr2.tenant_id
                  WHERE a.tenant_id = $1
-                   AND COALESCE(pr2.shift_id, o2.pos_shift_id) = $2
+                   AND COALESCE(a.completed_shift_id, pr2.shift_id, o2.pos_shift_id) = $2
                    AND pr2.is_void = FALSE
                    AND a.method = 'CASH' AND a.status = 'COMPLETED'
               ), 0) AS cash_refunds
@@ -5114,7 +5643,7 @@ export type PosShiftExportData = {
 export async function getPosShiftExportData(
   tenantId: string,
   shiftId: string,
-  deviceId: string
+  deviceId: string | null
 ): Promise<PosShiftExportData | null> {
   const report = await getPosShiftReport(tenantId, shiftId, deviceId);
   if (!report) return null;

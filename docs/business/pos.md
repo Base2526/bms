@@ -77,6 +77,14 @@ bills rung up by mistake.
 10. Closing a shift calculates expected cash from opening float + cash collected - completed cash
    refunds, then records counted cash and variance.
 
+Managers can review all drawers at `/admin/pos-shifts` with `pos.shift.report.all`. The page filters
+by shift-open date in Asia/Bangkok, location, device, status, involved person, and operational
+signals such as cash variance, stale open shifts, pending refunds, open expenses, voids, returns, and
+no-sale drawer opens. This does not widen the register route: `/api/pos/shift-report` still requires
+the device token plus cashier PIN and only returns the owning device's shift report. When blind close
+is enabled, an open shift cannot be exported because the workbook's component rows would reveal the
+hidden expected-cash figure; export becomes available after the shift is closed and counted.
+
 ### Pharmacy review from POS
 
 Counter pharmacy review deliberately reuses the same gate as every other channel: `checkPharmacySaleInTx()`

@@ -527,6 +527,7 @@ const en = {
     group_pharmacy: "Pharmacy",
     group_pos: "Point of sale",
     menu_pos_devices: "Tills and PINs",
+    menu_pos_shifts: "POS shift overview",
     menu_product_packs: "Units and barcodes",
     menu_commission: "Sales commission",
     menu_product_labels: "Print barcode labels",
