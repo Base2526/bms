@@ -733,6 +733,92 @@ test("expected cash agrees between the report and closePosShift", async () => {
   assert.equal(closed.shift.cashVariance, -50);
 });
 
+test("a pending POS sale recovers after UNKNOWN product VAT is classified", async () => {
+  const before = await getVatSettings(tenantId);
+  const opened = await openPosShift({
+    tenantId, deviceId, openedBy: cashierId, openingFloat: 0,
+  });
+  assert.ok(opened.status === "OPENED" || opened.status === "ALREADY_OPEN", JSON.stringify(opened));
+  if (opened.status !== "OPENED" && opened.status !== "ALREADY_OPEN") return;
+  const recoveryShiftId = opened.shift.id;
+  const input = {
+    tenantId, deviceId, shiftId: recoveryShiftId, cashierUserId: cashierId,
+    idempotencyKey: key("vat-recovery"),
+    lines: [{ sku: SKU, size: SIZE, packQty: 1 }],
+    payments: [{ method: "CASH", amount: 100, cashTendered: 100 }],
+  } as any;
+
+  try {
+    await updateVatSettings(tenantId, {
+      ...before,
+      vatRegistered: true,
+      abbreviatedApproved: true,
+      cashRounding: "NONE",
+    });
+    await query(
+      `UPDATE bms_products SET vat_category = 'UNKNOWN' WHERE tenant_id = $1 AND sku = $2`,
+      [tenantId, SKU]
+    );
+
+    const first = await recordPosSale(input);
+    assert.equal(first.status, "PAYMENT_FAILED", JSON.stringify(first));
+    assert.match(String((first as any).reason ?? ""), /ยังไม่ได้ระบุประเภท VAT/);
+
+    const pending = await query<{ id: string; status: string; vat_category: string }>(
+      `SELECT o.id, o.status, oi.vat_category
+         FROM bms_orders o
+         JOIN bms_order_items oi ON oi.tenant_id = o.tenant_id AND oi.order_id = o.id
+        WHERE o.tenant_id = $1 AND o.idempotency_key = $2`,
+      [tenantId, input.idempotencyKey]
+    );
+    assert.equal(pending.rows[0]?.status, "PENDING", "invoice failure must leave the reserved order retryable");
+    assert.equal(pending.rows[0]?.vat_category, "UNKNOWN", "the original order captured the unresolved VAT value");
+
+    await query(
+      `UPDATE bms_products SET vat_category = 'N' WHERE tenant_id = $1 AND sku = $2`,
+      [tenantId, SKU]
+    );
+    const retried = await recordPosSale(input);
+    assert.equal(retried.status, "SOLD", JSON.stringify(retried));
+    assert.equal(retried.status === "SOLD" ? retried.replayed : false, true,
+      "the retry must finish the original order rather than create another bill");
+
+    const repaired = await query<{
+      orders: string;
+      vat_category: string;
+      taxable_amount: string;
+      exempt_amount: string;
+    }>(
+      `SELECT COUNT(DISTINCT o.id)::text AS orders,
+              MIN(oi.vat_category) AS vat_category,
+              MIN(doc.taxable_amount)::text AS taxable_amount,
+              MIN(doc.exempt_amount)::text AS exempt_amount
+         FROM bms_orders o
+         JOIN bms_order_items oi ON oi.tenant_id = o.tenant_id AND oi.order_id = o.id
+         LEFT JOIN bms_tax_documents doc ON doc.tenant_id = o.tenant_id AND doc.order_id = o.id
+        WHERE o.tenant_id = $1 AND o.idempotency_key = $2`,
+      [tenantId, input.idempotencyKey]
+    );
+    assert.equal(Number(repaired.rows[0]?.orders), 1, "same key must still own exactly one order");
+    assert.equal(repaired.rows[0]?.vat_category, "N");
+    assert.equal(Number(repaired.rows[0]?.taxable_amount), 0);
+    assert.equal(Number(repaired.rows[0]?.exempt_amount), 100);
+  } finally {
+    await query(`UPDATE bms_products SET vat_category = 'V' WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
+    await updateVatSettings(tenantId, before);
+    const report = await getPosShiftReport(tenantId, recoveryShiftId);
+    if (report) {
+      await closePosShift({
+        tenantId,
+        shiftId: recoveryShiftId,
+        closedBy: cashierId,
+        countedCash: Number(report.expectedCash ?? 0),
+        note: `${TAG} VAT recovery close`,
+      });
+    }
+  }
+});
+
 test("expense retries return their committed result after the shift has closed", async () => {
   const directReplay = await createPosExpense({
     tenantId, deviceId, shiftId, kind: "DIRECT", category: "INGREDIENTS",

@@ -1815,6 +1815,36 @@ async function fulfilPosOrderInTx(
   );
 }
 
+/**
+ * Fill only unresolved VAT snapshots on a POS order that has not completed settlement yet.
+ *
+ * createOrder() commits the reserved PENDING order before finalizePosSale() takes payment and
+ * issues its abbreviated invoice. If invoice issuance then rejects an UNKNOWN category, the
+ * retry must keep the same order/idempotency key. A later product correction therefore has to
+ * reach that still-unresolved order row or the safe replay path can never recover.
+ *
+ * Never overwrite V/N: those are authoritative sale-time snapshots. Never touch an issued
+ * document either; this runs inside settlement before fulfilPosOrderInTx() issues one.
+ */
+async function refreshUnknownPosOrderVatInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string,
+): Promise<void> {
+  await client.query(
+    `UPDATE bms_order_items oi
+        SET vat_category = product.vat_category
+       FROM bms_products product
+      WHERE oi.tenant_id = $1
+        AND oi.order_id = $2
+        AND oi.vat_category = 'UNKNOWN'
+        AND product.tenant_id = oi.tenant_id
+        AND product.sku = oi.product_sku
+        AND product.vat_category IN ('V', 'N')`,
+    [tenantId, orderId]
+  );
+}
+
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
   const { tenantId } = input;
   const isDeposit = input.mode === "DEPOSIT";
@@ -2210,6 +2240,13 @@ async function finalizePosSale(args: {
     }
     const lockedDue = Number(current.total_amount) + Number(current.shipping_fee ?? 0) + roundingAmount;
     if (Math.abs(lockedDue - amountDue) > 0.01) throw new Error("ยอดบิลเปลี่ยนระหว่างรับชำระ");
+
+    // บิล retry ต้องใช้ order เดิมเพื่อกันรับเงิน/จองสต็อกซ้ำ แต่ UNKNOWN ที่ snapshot
+    // ไว้ก่อนผู้ดูแลแก้สินค้าไม่ควรทำให้ retry ติดตลอดกาล · เติมเฉพาะค่าที่ยังไม่รู้
+    // ภายใน transaction นี้ก่อนรับเงินและออกเอกสาร ส่วน V/N เดิมห้ามเปลี่ยนย้อนหลัง
+    if (vatSettings.vatRegistered) {
+      await refreshUnknownPosOrderVatInTx(client, input.tenantId, orderId);
+    }
 
     let cashTendered: number | null = null;
     let cashChange: number | null = null;

@@ -947,6 +947,12 @@ Three rules the write path enforces:
   and wrong invisibly the rest, on a field that ends up on filed tax documents.
 - **The bulk setter touches only `UNKNOWN` rows**, and only active ones by default. A shop that has
   already separated `V` from `N` correctly must not lose that to one button press.
+- **A failed POS settlement can recover after an `UNKNOWN` category is corrected.** The first
+  payment attempt may already have committed its reserved `PENDING` order before abbreviated-invoice
+  issuance detects the missing category. Retrying must reuse that order to preserve idempotency, so
+  settlement fills only its still-`UNKNOWN` item snapshots from the current product `V`/`N` values
+  inside the payment/stock/tax transaction. Existing `V`/`N` snapshots and issued documents are
+  never rewritten.
 
 The bulk mutation requires `tax.setting.manage`, not `product.edit`: classifying the whole shop's
 goods for tax is not the same decision as editing a product's name or price.
