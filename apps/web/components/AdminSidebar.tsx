@@ -417,13 +417,15 @@ export default function AdminSidebar() {
     }] : []),
     // ขายหน้าร้าน — แยกกลุ่มเพราะ audience คือแคชเชียร์/หัวหน้ากะ ไม่ใช่คนทำงานออนไลน์
     // และงานคือ "เตรียมจุดขาย" (เครื่อง/PIN/ความพร้อมก่อนเปิด) ไม่ใช่จัดการออร์เดอร์
-    ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') || can('pos.sell') ? [{
+    ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') || can('pos.sell') || can('pos.shift.report.all') ? [{
       key: 'g-pos',
       icon: <ShoppingOutlined />,
       label: t('admin.group_pos'),
       children: [
         ...(can('pos.device.manage') || can('pos.pin.manage')
           ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
+        ...(can('pos.shift.report.all')
+          ? [link('/admin/pos-shifts', t('admin.menu_pos_shifts'), <ProfileOutlined />)] : []),
         ...(can('product.view')
           ? [link('/admin/product-packs', t('admin.menu_product_packs'), <ScanOutlined />)] : []),
         ...(can('product.view')

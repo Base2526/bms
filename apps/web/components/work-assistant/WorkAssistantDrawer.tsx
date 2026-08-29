@@ -49,7 +49,7 @@ const PAGE_ID_BY_SEGMENT: Record<string, string> = {
   dashboard: "dashboard", inbox: "inbox", products: "products", orders: "orders",
   payment: "payments", shipment: "shipping", purchase: "purchase", customers: "customers",
   coupons: "coupons", loyalty: "loyalty", reports: "reports", users: "users",
-  "pos-manual": "pos", "pos-devices": "pos", "pos-readiness": "pos",
+  "pos-manual": "pos", "pos-devices": "pos", "pos-readiness": "pos", "pos-shifts": "pos",
   "pharmacy-manual": "pharmacy", "pharmacy-queue": "pharmacy",
   "system-health": "system-health",
 };

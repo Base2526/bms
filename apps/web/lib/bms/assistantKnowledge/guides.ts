@@ -595,6 +595,15 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: [["device token ระบุเครื่อง ไม่ใช่ตัวผู้ขาย", "PIN ต้องตรวจสิทธิ์ server-side ทุก action"], ["A device token identifies a register, not a cashier.", "Every action rechecks the PIN and permission server-side."]], relatedCapabilityIds: ["pos.operations"],
   }),
   menuGuide({
+    id: "pos.shift-overview", module: "pos", route: "/admin/pos-shifts",
+    title: ["ตรวจภาพรวมกะ POS", "Review POS shift overview"], summary: ["ดูทุกลิ้นชักตามวันที่เปิดกะ พร้อมยอดขาย คนเกี่ยวข้อง เงินขาด/เกิน และสัญญาณค้างปิดกะ", "Review every drawer by shift-open date, including totals, people, variance, and close blockers."],
+    aliases: [["ภาพรวมกะ", "กะทั้งหมด", "ยอดกะทุกเครื่อง", "เงินขาดเกิน POS"], ["all POS shifts", "shift overview", "drawer variance", "all tills"]],
+    requiredPermissions: ["pos.shift.report.all"],
+    steps: [["เปิด POS Shift Overview", "เลือกวันที่เปิดกะ สาขา เครื่อง คน หรือสัญญาณ", "ตรวจยอดขาย คืนสินค้า void no-sale และเงินขาด/เกิน", "เปิดรายละเอียดหรือดาวน์โหลด Excel รายกะเมื่อต้องไล่ยอด"], ["Open POS Shift Overview.", "Filter by shift-open date, location, till, person, or signal.", "Review sales, returns, voids, no-sales, and cash variance.", "Open the detail drawer or download the per-shift Excel workbook when reconciling."]],
+    warnings: [["วันที่คือวันที่เปิดกะตาม Asia/Bangkok ไม่ใช่ยอดขายรายวัน", "กะยังเปิดและ blind close จะซ่อน expected cash และยังดาวน์โหลด Excel ไม่ได้", "หน้านี้ read-only และไม่แทนการปิดกะด้วย PIN ที่เครื่อง POS"], ["Dates mean shift-open date in Asia/Bangkok, not calendar-day sales.", "Open shifts with blind close hide expected cash and cannot be exported yet.", "This page is read-only and does not replace PIN-based close shift at the register."]],
+    relatedCapabilityIds: ["pos.operations"],
+  }),
+  menuGuide({
     id: "catalog.configure-packs", module: "product-packs", route: "/admin/product-packs",
     title: ["ตั้งหน่วยขายและบาร์โค้ด Pack", "Configure selling packs"], summary: ["เพิ่มหน่วยขายหลายชิ้นและบาร์โค้ดเสริมโดยอ้างสินค้าแม่", "Add multi-piece selling units and alternate barcodes for a product."],
     requiredPermissions: ["product.view"], steps: [["เปิด Product packs", "เลือกสินค้า", "ระบุรหัส pack ชื่อหน่วย จำนวนชิ้นและราคา", "บันทึกแล้วทดสอบสแกน"], ["Open Product packs.", "Choose a product.", "Set pack code, unit name, piece count, and price.", "Save and test scanning."]],

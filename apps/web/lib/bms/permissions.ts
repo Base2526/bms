@@ -108,6 +108,7 @@ export const BMS_PERMISSIONS = [
   // เติม/ดูแลกระเป๋าเงินสดย่อยนอกลิ้นชักของแต่ละสาขา (9.9)
   "pos.petty_cash.manage",
   "pos.shift.report",
+  "pos.shift.report.all",
   "pos.nosale",
   // คืนสินค้าโดยไม่มีใบเสร็จ — seed ให้ Manager เท่านั้นที่ 8.2
   // แยกจาก order.return: การคืนที่อ้างบิลได้เป็นงานประจำ ส่วนการคืนที่ไม่มีบิล

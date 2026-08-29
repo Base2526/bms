@@ -41,6 +41,11 @@ async function handlePOST(req: NextRequest) {
 
   const data = await getPosShiftExportData(device.tenantId, shiftId, device.id);
   if (!data) return json("ไม่พบกะ", 404);
+  // ไฟล์มีเงินตั้งต้นและรายการเงินเข้า/ออกครบ จึงคำนวณ expected cash ย้อนกลับได้
+  // ห้าม export ระหว่าง blind close แม้ช่องสรุปใน workbook จะซ่อนเลขไว้แล้ว
+  if (data.report.expectedCashHidden) {
+    return json("ดาวน์โหลดรายงานได้หลังปิดกะและนับเงินเสร็จ", 409);
+  }
   const receivables = await getArShiftSummary(device.tenantId, shiftId);
   const workbook = buildPosShiftWorkbook(data, receivables);
   const opened = data.report.openedAt.slice(0, 10);

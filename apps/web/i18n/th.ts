@@ -529,6 +529,7 @@ const th = {
     group_pharmacy: "เภสัชกรรม",
     group_pos: "ขายหน้าร้าน",
     menu_pos_devices: "เครื่องขาย + PIN",
+    menu_pos_shifts: "ภาพรวมกะ POS",
     menu_product_packs: "หน่วยขาย + บาร์โค้ด",
     menu_commission: "ค่าคอมพนักงาน",
     menu_product_labels: "พิมพ์สติกเกอร์บาร์โค้ด",

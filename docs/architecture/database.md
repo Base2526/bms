@@ -140,7 +140,10 @@ from same-transaction timestamps or random UUID order. Migration `9.32` adds
 `bms_pos_returns.shift_id` (the shift that accepted the return) and
 `bms_pos_refund_allocations.completed_shift_id` (the shift that confirmed the money leg). Both are
 nullable only for legacy evidence gaps; new writes bind them from the authenticated device's open
-shift. All POS tables are tenant-owned, RLS-protected, and granted to `bms_app`. See
+shift. Migration `9.33` adds the separate `pos.shift.report.all` back-office permission plus a
+shift-list index; the register-scoped `pos.shift.report` still only answers for the owning device,
+while the admin overview can read shifts across devices for the same tenant. All POS tables are
+tenant-owned, RLS-protected, and granted to `bms_app`. See
 [../business/pos.md](../business/pos.md).
 
 **Cashier-only accounts (`7.92__bms_cashier_role_and_pos_only_accounts.sql`)** — adds `users.pos_only`;
