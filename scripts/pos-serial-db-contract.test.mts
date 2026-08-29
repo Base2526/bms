@@ -240,7 +240,7 @@ test("two simultaneous bills cannot both claim the same serial", async () => {
 
 test("returning the whole bill frees its serials to be sold again", async () => {
   const ret = await returnPosSale({
-    tenantId, deviceId, orderId: soldOrderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: soldOrderId, actorUserId: cashierId,
     approvedByUserId: cashierId, note: "ลูกค้าเปลี่ยนใจ",
     idempotencyKey: key("return"),
   });

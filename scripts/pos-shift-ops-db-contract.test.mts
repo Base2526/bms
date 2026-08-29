@@ -589,7 +589,7 @@ test("split-payment return is counted once, while pending/cancelled bills are no
   assert.equal(sale.status, "SOLD", JSON.stringify(sale));
   if (sale.status !== "SOLD") return;
   const returned = await returnPosSale({
-    tenantId, deviceId, orderId: sale.orderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: sale.orderId, actorUserId: cashierId,
     note: "ทดสอบ split refund", idempotencyKey: key("split-return"),
   });
   assert.equal(returned.status, "RETURNED", JSON.stringify(returned));
@@ -622,7 +622,7 @@ test("bill history follows a non-cash refund from pending to completed", async (
   if (sale.status !== "SOLD") return;
 
   const returned = await returnPosSale({
-    tenantId, deviceId, orderId: sale.orderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: sale.orderId, actorUserId: cashierId,
     note: "ทดสอบ pending card refund", idempotencyKey: key("card-return"),
   });
   assert.equal(returned.status, "RETURNED", JSON.stringify(returned));
@@ -637,7 +637,7 @@ test("bill history follows a non-cash refund from pending to completed", async (
   assert.equal(event?.refunds[0].completedAt, null);
 
   const settled = await completePosRefundAllocation({
-    tenantId, deviceId, allocationId: returned.refunds[0].id,
+    tenantId, deviceId, shiftId, allocationId: returned.refunds[0].id,
     actorUserId: approverId, externalRef: "CARD-REFUND-REF",
   });
   assert.equal(settled.status, "COMPLETED", JSON.stringify(settled));

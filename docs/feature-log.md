@@ -10,6 +10,18 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## POS shift reconciliation export (9.32, 2026-08-29)
+
+- Added device-scoped recent shift history and a PIN + `pos.shift.report` protected XLSX download.
+  The workbook includes the server X/Z summary and source sheets for bills, payments, drawer
+  movements, return/refund allocations, expenses, no-sales and credit activity; it omits customer PII.
+- Added explicit event-shift attribution: `bms_pos_returns.shift_id` records where goods were accepted
+  and immediate cash left the drawer, while refund allocations record the shift that confirmed their
+  external settlement. Shift close/report formulas prefer those event shifts and retain the original
+  order shift only as a legacy fallback.
+- Kept blind close intact in downloads: an open shift exports the contributing facts but not the
+  expected-cash answer. Closed reports continue to use the expected/count/variance snapshot stored at close.
+
 ## Global AI Work Assistant V1 (2026-08)
 
 - Added a server-safe bilingual capability/guide catalog with deterministic Unicode-normalized

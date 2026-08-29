@@ -277,6 +277,7 @@ test("partial return: half the bill reverses half the points both ways", async (
   const ret = await partiallyReturnPosSale({
     tenantId,
     deviceId,
+    shiftId,
     orderId: soldOrderId,
     actorUserId: cashierId,
     lines: [{ orderItemId: Number(items.rows[0].id), packQty: 5 }],
@@ -294,7 +295,7 @@ test("partial return: half the bill reverses half the points both ways", async (
 
   // ยิงคีย์เดิมซ้ำต้องได้ผลเดิมและไม่คิดแต้มใหม่
   const replay = await partiallyReturnPosSale({
-    tenantId, deviceId, orderId: soldOrderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: soldOrderId, actorUserId: cashierId,
     lines: [{ orderItemId: Number(items.rows[0].id), packQty: 5 }],
     idempotencyKey: key("ret-1"),
   });
@@ -368,6 +369,7 @@ test("partial return loses wholesale eligibility while the original receipt stay
   const returned = await partiallyReturnPosSale({
     tenantId,
     deviceId,
+    shiftId,
     orderId: sale.orderId,
     actorUserId: cashierId,
     lines: [{ orderItemId: Number(stored.rows[0].id), packQty: 1 }],
@@ -417,6 +419,7 @@ test("legacy bill without an exact sale-time snapshot keeps proportional refund"
   const returned = await partiallyReturnPosSale({
     tenantId,
     deviceId,
+    shiftId,
     orderId: sale.orderId,
     actorUserId: cashierId,
     lines: [{ orderItemId: Number(stored.rows[0].id), packQty: 1 }],

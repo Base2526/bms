@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
   completePosRefundAllocation,
+  getOpenPosShift,
   verifyCashierPin,
 } from "@/lib/bms/pos";
 import { withRouteErrorLog } from "@/lib/log/routeError";
@@ -26,15 +27,18 @@ async function handlePOST(req: NextRequest) {
   if (!auth.ok) {
     return NextResponse.json({ error: "PIN ผู้ยืนยันไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
   }
+  const shiftId = (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
   const result = await completePosRefundAllocation({
     tenantId: device.tenantId,
     deviceId: device.id,
+    shiftId,
     allocationId,
     actorUserId: auth.userId,
     externalRef: typeof body.externalRef === "string" ? body.externalRef : null,
   });
   const status = result.status === "COMPLETED" ? 200
     : result.status === "NOT_FOUND" ? 404
+    : result.status === "SHIFT_NOT_OPEN" ? 409
     : result.status === "REFERENCE_REQUIRED" ? 400
     : 403;
   return NextResponse.json(result, { status });

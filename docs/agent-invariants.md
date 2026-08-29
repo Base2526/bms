@@ -342,6 +342,12 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   goods are repriced and the refundable difference falls accordingly. Never read today's product
   rules for this calculation, never reprice a legacy row without an authoritative snapshot, and
   never rewrite the original sale/tax document.
+- **A return belongs to the shift that receives it, not the shift that sold the original bill.**
+  `bms_pos_returns.shift_id` names the open device shift that accepted the goods and paid any immediate
+  cash refund; `bms_pos_refund_allocations.completed_shift_id` names the shift that confirmed the
+  external refund. Legacy rows may fall back to the sale shift only when no event-shift evidence exists.
+  Closing, drawer math, X/Z totals and the detailed workbook all use the event shift first, so returning
+  yesterday's bill today neither rewrites yesterday's Z report nor hides today's cash outflow.
 - **Tax documents are immutable snapshots.** Rate and amounts are stored on the document row at
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
@@ -353,6 +359,9 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   `status IN ('COMPLETED','RETURNED') AND voided_at IS NULL` instead of summing every order on the
   shift and subtracting voids afterward, so a `PENDING` deposit or a `CANCELLED` order sharing the
   shift can no longer leak into `salesTotal`/`billCount`.
+  The same PIN + `pos.shift.report` guard protects the device's recent-shift list and XLSX detail export.
+  Export is assembled server-side from the same report plus source ledgers; an open blind-close shift
+  keeps the expected-cash result hidden in the workbook exactly as it is hidden on screen.
 - **e-Tax submission (`7.94`) is a separate, gated background queue** — issuing a tax document does
   not submit it to the Revenue Department by itself. `processEtaxQueue()` drives
   `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded retry/backoff, gated by
