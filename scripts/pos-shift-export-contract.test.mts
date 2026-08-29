@@ -66,3 +66,14 @@ test("return/refund shift attribution is explicit and report queries prefer it",
   assert.match(exportRoute, /cashierHasPermission[\s\S]*"pos\.shift\.report"/);
   assert.match(exportRoute, /getPosShiftExportData\(device\.tenantId, shiftId, device\.id\)/);
 });
+
+test("shift print selects its own paper root instead of the hidden receipt", async () => {
+  const page = await readFile(new URL("apps/web/app/(pos)/pos/page.tsx", ROOT), "utf8");
+  const css = await readFile(new URL("apps/web/app/globals.css", ROOT), "utf8");
+  assert.match(page, /function printBrowserTarget\(target: "receipt" \| "shift"/);
+  assert.match(page, /printBrowserTarget\("shift", "pos-open-shift-report"\)/);
+  assert.match(page, /printBrowserTarget\("shift", "pos-closed-shift-report"\)/);
+  assert.match(page, /data-pos-shift-print-root/);
+  assert.match(css, /body\[data-pos-print-target="shift"\] \[data-pos-shift-print-root\]/);
+  assert.match(css, /body\[data-pos-print-target="receipt"\] #pos-receipt/);
+});

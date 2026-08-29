@@ -4310,10 +4310,43 @@ export default function PosPage() {
     });
   }
 
+  /**
+   * หน้า POS เก็บใบเสร็จล่าสุดไว้ใน DOM และมีสรุปกะอยู่อีกส่วนหนึ่ง จึงต้องระบุ
+   * print target ก่อนเปิด dialog ไม่เช่นนั้น stylesheet ของใบเสร็จจะซ่อนสรุปกะ
+   * จนเหลือหน้าขาว หรือพิมพ์กระดาษสองชนิดทับกัน
+   */
+  function printBrowserTarget(target: "receipt" | "shift", shiftRootId?: string) {
+    document.querySelectorAll("[data-pos-shift-print-root]").forEach((node) => {
+      node.removeAttribute("data-pos-shift-print-root");
+    });
+    if (target === "shift") {
+      const root = shiftRootId ? document.getElementById(shiftRootId) : null;
+      if (!root) {
+        setNotice({ type: "error", text: "ไม่พบสรุปกะสำหรับพิมพ์ กรุณากดดูสรุปกะอีกครั้ง" });
+        return;
+      }
+      root.setAttribute("data-pos-shift-print-root", "");
+    }
+    document.body.setAttribute("data-pos-print-target", target);
+
+    let fallbackTimer = 0;
+    const cleanup = () => {
+      document.body.removeAttribute("data-pos-print-target");
+      document.querySelectorAll("[data-pos-shift-print-root]").forEach((node) => {
+        node.removeAttribute("data-pos-shift-print-root");
+      });
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    // รอให้ browser คำนวณ style จาก marker ก่อนเก็บ snapshot สำหรับ print preview
+    window.requestAnimationFrame(() => window.print());
+    fallbackTimer = window.setTimeout(cleanup, 30_000);
+  }
+
   /** พิมพ์จริง: ลอง ESC/POS ก่อน ถ้าไม่ได้ค่อยตกไป print dialog */
   async function printReceipt(openDrawer = true) {
     if (!receipt || !isWebUsbSupported() || !printerReady) {
-      window.print();
+      printBrowserTarget("receipt");
       return;
     }
     try {
@@ -4322,7 +4355,7 @@ export default function PosPage() {
     } catch (e: any) {
       // เครื่องพิมพ์มีปัญหาไม่ควรทำให้ขายไม่ได้ — บอกแล้วเปิด dialog ให้แทน
       setNotice({ type: "error", text: `พิมพ์ผ่านเครื่องไม่สำเร็จ: ${String(e?.message ?? e)}` });
-      window.print();
+      printBrowserTarget("receipt");
     }
   }
 
@@ -6604,7 +6637,7 @@ export default function PosPage() {
                   </button>
                   {shiftReport && (
                     <>
-                      <button onClick={() => window.print()} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
+                      <button onClick={() => printBrowserTarget("shift", "pos-open-shift-report")} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
                         พิมพ์
                       </button>
                       <button
@@ -6618,7 +6651,13 @@ export default function PosPage() {
                   )}
                 </div>
                 {shiftReport && (
-                  <div className="pos-report">
+                  <div id="pos-open-shift-report" className="pos-report">
+                    <div data-pos-print-only>
+                      <h1 style={{ margin: "0 0 4mm", fontSize: 22 }}>X Report · สรุปกะ</h1>
+                      <div style={{ marginBottom: "5mm", fontSize: 12 }}>
+                        กะ {shiftReport.shiftId} · เปิด {new Date(shiftReport.openedAt).toLocaleString("th-TH")}
+                      </div>
+                    </div>
                     <div className="pos-report-meta">
                       เครื่อง {shiftReport.deviceCode}{shiftReport.locationName ? ` · ${shiftReport.locationName}` : ""}
                     </div>
@@ -6796,7 +6835,7 @@ export default function PosPage() {
                     เครื่อง {shiftReport.deviceCode}{shiftReport.locationName ? ` · ${shiftReport.locationName}` : ""}
                   </div>
                 </div>
-                <button type="button" onClick={() => window.print()} style={{ padding: "6px 10px", fontSize: 12 }}>พิมพ์</button>
+                <button type="button" onClick={() => printBrowserTarget("shift", "pos-closed-shift-report")} style={{ padding: "6px 10px", fontSize: 12 }}>พิมพ์</button>
                 <button
                   type="button"
                   onClick={() => void downloadShiftReport(shiftReport.shiftId)}
@@ -6806,15 +6845,24 @@ export default function PosPage() {
                   ดาวน์โหลดรายละเอียดกะ
                 </button>
               </div>
-              <div className="pos-report-grid">
-                <span>ยอดขายสุทธิ · {shiftReport.billCount} บิล</span><span>฿{baht(shiftReport.salesTotal)}</span>
-                <span>คืนสินค้า · {shiftReport.returnCount} บิล</span><span>฿{baht(shiftReport.returnTotal)}</span>
-                <span>เงินสดที่ควรมี</span><span>฿{baht(shiftReport.expectedCash ?? 0)}</span>
-                <span>เงินสดที่นับได้</span><span>฿{baht(shiftReport.countedCash ?? 0)}</span>
-                <span>ส่วนต่าง</span>
-                <span style={{ color: (shiftReport.cashVariance ?? 0) < 0 ? "var(--pos-danger)" : "var(--pos-money)" }}>
-                  ฿{baht(shiftReport.cashVariance ?? 0)}
-                </span>
+              <div id="pos-closed-shift-report" className="pos-report">
+                <div data-pos-print-only>
+                  <h1 style={{ margin: "0 0 4mm", fontSize: 22 }}>Z Report · สรุปปิดกะ</h1>
+                  <div style={{ marginBottom: "5mm", fontSize: 12 }}>
+                    กะ {shiftReport.shiftId} · เปิด {new Date(shiftReport.openedAt).toLocaleString("th-TH")}
+                    {shiftReport.closedAt ? ` · ปิด ${new Date(shiftReport.closedAt).toLocaleString("th-TH")}` : ""}
+                  </div>
+                </div>
+                <div className="pos-report-grid">
+                  <span>ยอดขายสุทธิ · {shiftReport.billCount} บิล</span><span>฿{baht(shiftReport.salesTotal)}</span>
+                  <span>คืนสินค้า · {shiftReport.returnCount} บิล</span><span>฿{baht(shiftReport.returnTotal)}</span>
+                  <span>เงินสดที่ควรมี</span><span>฿{baht(shiftReport.expectedCash ?? 0)}</span>
+                  <span>เงินสดที่นับได้</span><span>฿{baht(shiftReport.countedCash ?? 0)}</span>
+                  <span>ส่วนต่าง</span>
+                  <span style={{ color: (shiftReport.cashVariance ?? 0) < 0 ? "var(--pos-danger)" : "var(--pos-money)" }}>
+                    ฿{baht(shiftReport.cashVariance ?? 0)}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -8895,14 +8943,6 @@ export default function PosPage() {
           {/* ใบเสร็จ: พิมพ์ผ่าน print dialog ของเบราว์เซอร์ก่อน — ใช้ได้กับเครื่องพิมพ์
               ที่ลง driver ไว้แล้วโดยไม่ต้องเขียน ESC/POS · ESC/POS ผ่าน WebUSB
               (พร้อมคำสั่งเปิดลิ้นชัก) ค่อยทำเมื่อได้เครื่องจริงมาทดสอบ */}
-          <style>{`
-            @media print {
-              body * { visibility: hidden; }
-              #pos-receipt, #pos-receipt * { visibility: visible; }
-              #pos-receipt { position: absolute !important; left: 0 !important; top: 0 !important; width: 72mm; }
-            }
-          `}</style>
-
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
             padding: "12px 14px", borderBottom: "1px solid #e5e5e5",
