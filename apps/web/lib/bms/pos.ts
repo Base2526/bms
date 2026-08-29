@@ -1233,6 +1233,16 @@ export type PosSaleInput = {
   lines: PosSaleLine[];
   /** SALE จ่ายผสมได้และต้องครบยอด; DEPOSIT รับงวดแรกด้วย 1 วิธีและต้องต่ำกว่ายอดบิล */
   payments: PosPaymentInput[];
+  /**
+   * ชื่อลูกค้า/โน้ต และวันรับของ ของบิลมัดจำ (DEPOSIT เท่านั้น)
+   *
+   * `takeDeposit` รองรับสองค่านี้มาตั้งแต่ 9.0 และ /api/pos/deposit ก็ส่งให้ แต่เส้นทาง
+   * "สร้างบิลจากตะกร้า" ไม่เคยส่งเลย มัดจำที่เปิดจากเครื่องขายทุกใบจึงมี customer_note
+   * และ due_at เป็น NULL — รายการที่ค้างอยู่เลยแสดงได้แค่ UUID 8 ตัวกับคำว่า
+   * "ไม่กำหนดวันรับ" ซึ่งชี้ตัวไม่ได้เมื่อวันหนึ่งมีหลายใบ
+   */
+  depositCustomerNote?: string | null;
+  depositDueAt?: string | null;
   couponCode?: string | null;
   /** สมาชิกที่พนักงานค้นเจอที่เคาน์เตอร์ — ได้ส่วนลดตามชั้นและสะสมแต้ม (7.96) */
   customerId?: string | null;
@@ -2098,6 +2108,8 @@ async function takeInitialPosDeposit(args: {
     deviceId: args.input.deviceId,
     shiftId: args.shift.id,
     expectedLocationId: args.shift.location_id,
+    customerNote: args.input.depositCustomerNote ?? null,
+    dueAt: args.input.depositDueAt ?? null,
     createdBy: args.input.cashierUserId,
     idempotencyKey: args.input.idempotencyKey,
   });

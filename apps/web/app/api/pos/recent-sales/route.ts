@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, listRecentPosSales } from "@/lib/bms/pos";
+import { searchDeposits } from "@/lib/bms/deposits";
 import { normalizePosSearchQuery } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -29,7 +30,15 @@ async function handleGET(req: NextRequest) {
     Number.isFinite(limit) ? limit : 5,
     { query: q || null, locationId: device.locationId }
   );
-  return NextResponse.json({ sales });
+  // แท็บคืนค้นได้เฉพาะบิลที่ปิดแล้ว (COMPLETED/RETURNED) ซึ่งถูกต้อง — ของที่ยังไม่ได้
+  // ส่งมอบจะ "คืน" ไม่ได้ · แต่พนักงานที่ถือใบเสร็จมาย่อมมาค้นที่นี่ก่อน แล้วเดิมได้
+  // คำตอบว่า "ไม่พบ" ทั้งที่บิลมีอยู่จริงในรูปของมัดจำ → บอกไปเลยว่าอยู่ที่ไหน
+  // นี่เป็นแค่การชี้ทาง ไม่ได้เปิดให้คืนของที่ยังไม่ได้ส่งมอบ
+  const depositMatches = sales.length === 0 && q
+    ? await searchDeposits(device.tenantId, q, { locationId: device.locationId, limit: 5 })
+    : [];
+
+  return NextResponse.json({ sales, depositMatches });
 }
 
 export const GET = withRouteErrorLog("GET /api/pos/recent-sales", handleGET);

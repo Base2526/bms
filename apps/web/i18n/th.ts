@@ -2937,6 +2937,12 @@ const th = {
     returned_total: "คืนแล้ว",
     remaining_after_return: "คงเหลือสุทธิ",
     pending_settlement: "รอยืนยันคืนเงินจริง",
+    deposit_badge: "บิลมัดจำ",
+    deposit_received: "รับมัดจำแล้ว",
+    deposit_balance_due: "ค้างรับ",
+    deposit_hint: "ของถูกจองไว้ ยังไม่ส่งมอบ — เก็บยอดคงเหลือตอนลูกค้ามารับของ",
+    collected_total: "เก็บเงินแล้ว",
+    of_amount_due: "จากยอดบิล",
   },
   admin_reports: {
     report_type_sales: "ยอดขาย (Sales)",

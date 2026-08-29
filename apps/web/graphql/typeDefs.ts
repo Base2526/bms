@@ -1355,6 +1355,12 @@ export const typeDefs = /* GraphQL */ `
     returnedTotal: Float!
     remainingAfterReturn: Float!
     pendingSettlementTotal: Float!
+    # ยอดที่ต้องเก็บ vs เก็บได้จริง — ต่างกันเมื่อบิลนี้เป็นมัดจำที่ยังรับไม่ครบ
+    amountDue: Float!
+    paidTotal: Float!
+    isDeposit: Boolean!
+    depositStatus: String        # OPEN / COMPLETED / CANCELLED / FORFEITED
+    depositBalanceDue: Float!
   }
 
   type BmsReorderResult {

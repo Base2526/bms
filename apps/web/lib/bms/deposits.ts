@@ -32,6 +32,20 @@ export type Deposit = {
   createdAt: string;
   /** true = เลยกำหนดรับแล้ว — ของถูกจองค้างอยู่และขายให้คนอื่นไม่ได้ */
   overdue: boolean;
+  /**
+   * ข้อมูลที่ใช้ "ชี้ตัว" มัดจำใบหนึ่งในวันที่มีหลายใบ
+   *
+   * แถวที่บอกแค่ UUID 8 ตัวกับยอดเงิน แยกออกจากกันไม่ได้เมื่อมีสิบใบ — คำถามจริง
+   * ที่เคาน์เตอร์คือ "ใบไหนของลูกค้าคนนี้" และ "ใบไหนคือของสองกล่องนั้น"
+   */
+  customerName: string | null;
+  customerPhone: string | null;
+  memberNo: string | null;
+  locationName: string | null;
+  /** true = ของถูกจองไว้สาขาอื่น ทำรายการที่เครื่องนี้ไม่ได้ */
+  isOtherLocation: boolean;
+  itemQty: number;
+  items: Array<{ name: string; size: string | null; qty: number }>;
 };
 
 export type DepositCandidateOrder = {
@@ -45,7 +59,7 @@ export type DepositCandidateOrder = {
 const toISO = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v ?? ""));
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function mapDeposit(r: any): Deposit {
+function mapDeposit(r: any, viewerLocationId: string | null = null): Deposit {
   const total = Number(r.total_amount);
   const paid = Number(r.deposit_paid);
   const dueAt = r.due_at ? toISO(r.due_at) : null;
@@ -62,8 +76,62 @@ function mapDeposit(r: any): Deposit {
     dueAt,
     createdAt: toISO(r.created_at),
     overdue: r.status === "OPEN" && Boolean(dueAt) && new Date(dueAt!).getTime() < Date.now(),
+    locationName: r.location_name ?? null,
+    // ของถูกจองไว้ที่สาขานั้น settleDepositSale ตรวจสาขาอยู่แล้ว — ธงนี้มีไว้ให้จอ
+    // บอกล่วงหน้าว่า "เจอแล้ว แต่ต้องไปทำที่สาขานั้น" แทนที่จะปล่อยให้กดแล้วโดนปฏิเสธ
+    isOtherLocation: Boolean(viewerLocationId) && r.location_id !== viewerLocationId,
+    customerName: r.customer_name ?? null,
+    customerPhone: r.customer_phone ?? null,
+    memberNo: r.member_no ?? null,
+    itemQty: Number(r.item_qty ?? 0),
+    items: (() => {
+      const raw = typeof r.items === "string" ? JSON.parse(r.items) : r.items;
+      return Array.isArray(raw)
+        ? raw.map((line: any) => ({
+            name: String(line.name ?? ""),
+            size: line.size == null || line.size === "-" ? null : String(line.size),
+            qty: Number(line.qty ?? 0),
+          }))
+        : [];
+    })(),
   };
 }
+
+/**
+ * คอลัมน์+join ที่ทุกมุมมองของมัดจำใช้ร่วมกัน — เขียนครั้งเดียวเพื่อให้รายการที่ค้าง
+ * กับผลการค้นหาแสดงข้อมูลชุดเดียวกันเสมอ
+ *
+ * อ่าน bms_order_items ไม่ใช่ view bms_order_stock_lines โดยตั้งใจ — ตรงนี้เป็นการ
+ * แสดง "ลูกค้าซื้ออะไร" เซ็ต (8.8) จึงต้องอ่านว่าเป็นเซ็ต ไม่ใช่กางเป็นส่วนประกอบ
+ * (view นั้นมีไว้สำหรับการขยับสต็อกเท่านั้น)
+ */
+const DEPOSIT_SELECT = `
+  SELECT d.*,
+         cust.name AS customer_name,
+         cust.phone AS customer_phone,
+         cust.member_no,
+         loc.name AS location_name,
+         items.item_qty,
+         items.items
+    FROM bms_pos_deposits d
+    LEFT JOIN bms_customers cust
+      ON cust.tenant_id = d.tenant_id AND cust.id = d.customer_id
+    LEFT JOIN bms_locations loc
+      ON loc.tenant_id = d.tenant_id AND loc.id = d.location_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(oi.qty), 0)::int AS item_qty,
+             COALESCE(
+               jsonb_agg(
+                 jsonb_build_object('name', COALESCE(p.name, oi.product_sku), 'size', oi.size, 'qty', oi.qty)
+                 ORDER BY oi.product_sku, oi.size
+               ),
+               '[]'::jsonb
+             ) AS items
+        FROM bms_order_items oi
+        LEFT JOIN bms_products p
+          ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+       WHERE oi.tenant_id = d.tenant_id AND oi.order_id = d.order_id
+    ) items ON TRUE`;
 
 export async function listDeposits(
   tenantId: string,
@@ -71,15 +139,54 @@ export async function listDeposits(
   options: { locationId?: string | null } = {}
 ): Promise<Deposit[]> {
   const res = await query<any>(
-    `SELECT * FROM bms_pos_deposits
-      WHERE tenant_id = $1
-        AND ($2::text IS NULL OR status = $2)
-        AND ($3::uuid IS NULL OR location_id = $3)
-      ORDER BY due_at NULLS LAST, created_at DESC
+    `${DEPOSIT_SELECT}
+      WHERE d.tenant_id = $1
+        AND ($2::text IS NULL OR d.status = $2)
+        AND ($3::uuid IS NULL OR d.location_id = $3)
+      ORDER BY d.due_at NULLS LAST, d.created_at DESC
       LIMIT 200`,
     [tenantId, status, options.locationId ?? null]
   );
-  return res.rows.map(mapDeposit);
+  return res.rows.map((row) => mapDeposit(row, options.locationId ?? null));
+}
+
+/**
+ * ค้นมัดจำจากสิ่งที่ลูกค้าถือมาได้จริง — เลขบิล ชื่อ/โน้ตที่พนักงานเขียนไว้ เบอร์โทร
+ * รหัสสมาชิก
+ *
+ * **ค้นทั้งร้าน ไม่ใช่เฉพาะสาขาของเครื่อง** ต่างจาก listDeposits โดยตั้งใจ: มัดจำที่
+ * วางไว้อีกสาขาเป็นเหตุผลอันดับต้น ๆ ที่หาไม่เจอ และคำตอบที่ถูกต้องคือ "ใบนี้อยู่สาขา X"
+ * ไม่ใช่ "ไม่พบ" · แถวจากสาขาอื่นถูกทำเครื่องหมาย isOtherLocation ไว้ให้จอบอกว่า
+ * ทำรายการที่นี่ไม่ได้ — ของถูกจองไว้ที่สาขานั้นและ settleDepositSale ตรวจสาขาอยู่แล้ว
+ */
+export async function searchDeposits(
+  tenantId: string,
+  q: string,
+  options: { locationId?: string | null; status?: Deposit["status"] | null; limit?: number } = {}
+): Promise<Deposit[]> {
+  const term = q.trim();
+  if (term.length < 2) return [];
+  const status = options.status === undefined ? "OPEN" : options.status;
+  const limit = Math.max(1, Math.min(50, options.limit ?? 20));
+  // ตัวเลขล้วนมักเป็นเบอร์โทรที่พิมพ์มาแบบมีขีด — เทียบเฉพาะหลักกันพลาด
+  const digits = term.replace(/\D/g, "");
+  const res = await query<any>(
+    `${DEPOSIT_SELECT}
+      WHERE d.tenant_id = $1
+        AND ($2::text IS NULL OR d.status = $2)
+        AND (
+          d.order_id::text ILIKE '%' || $3 || '%'
+          OR d.customer_note ILIKE '%' || $3 || '%'
+          OR cust.name ILIKE '%' || $3 || '%'
+          OR cust.member_no ILIKE '%' || $3 || '%'
+          OR ($4::text <> '' AND regexp_replace(COALESCE(cust.phone, ''), '\\D', '', 'g') ILIKE '%' || $4 || '%')
+          OR ($4::text <> '' AND regexp_replace(COALESCE(d.customer_note, ''), '\\D', '', 'g') ILIKE '%' || $4 || '%')
+        )
+      ORDER BY d.due_at NULLS LAST, d.created_at DESC
+      LIMIT $5`,
+    [tenantId, status, term, digits, limit]
+  );
+  return res.rows.map((row) => mapDeposit(row, options.locationId ?? null));
 }
 
 export async function listDepositCandidateOrders(

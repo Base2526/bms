@@ -1610,6 +1610,15 @@ export type OrderJourney = {
   returnedTotal: number;
   remainingAfterReturn: number;
   pendingSettlementTotal: number;
+  /**
+   * เงินที่เก็บได้จริง เทียบกับยอดที่ต้องเก็บ — หน้านี้เคยแสดงแต่ยอดบิล ทำให้บิลที่
+   * รับมัดจำไว้บางส่วนอ่านเหมือนเก็บครบแล้ว · isDeposit บอกว่าทำไมถึงยังไม่ครบ
+   */
+  amountDue: number;
+  paidTotal: number;
+  isDeposit: boolean;
+  depositStatus: string | null;
+  depositBalanceDue: number;
 };
 
 const MAIN_FLOW = ["PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
@@ -1636,6 +1645,9 @@ const POS_REFUND_METHOD_LABEL: Record<string, string> = {
 };
 
 const jIso = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const jBaht = (n: number) =>
+  Number(n).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export async function getOrderJourney(tenantId: string, orderId: string): Promise<OrderJourney | null> {
   const o = await query<{
@@ -1657,12 +1669,29 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   // POS ไม่เขียน audit order.pay (เขียน pos.sale แทน) จึงต้องอ่านการชำระเงินจาก
   // bms_payments ตรง ๆ ไม่งั้น stepper บอกว่า "ยังไม่ชำระ" ทั้งที่เก็บเงินไปแล้ว
   // และ timeline ก็ไม่มีบรรทัดไหนบอกว่ารับเงินมาเท่าไหร่
-  const posPayment = isPos
-    ? (await query<{ method: string; amount: string; created_at: any }>(
-        `SELECT method, amount, created_at
+  //
+  // อ่าน **ทุก** แถว ไม่ใช่ LIMIT 1 — บิลมัดจำ (9.0) รับเงินได้หลายงวด (รับเพิ่ม)
+  // และบิลจ่ายผสมมีหลายวิธีในครั้งเดียว การอ่านแถวแรกแถวเดียวทำให้งวดที่ 2 เป็นต้นไป
+  // ไม่เคยโผล่ใน timeline และยอดที่เก็บได้จริงถูกนับต่ำกว่าความจริง
+  const posPayments = isPos
+    ? (await query<{ method: string; amount: string; status: string; created_at: any }>(
+        `SELECT method, amount, status, created_at
            FROM bms_payments
           WHERE tenant_id = $1 AND order_id = $2 AND status IN ('CONFIRMED', 'REFUNDED')
-          ORDER BY created_at, id
+          ORDER BY created_at, id`,
+        [tenantId, orderId]
+      )).rows
+    : [];
+
+  // บิลนี้เป็นบิลมัดจำหรือเปล่า — หน้านี้ไม่เคยแตะตารางนี้เลย บิลที่รับมัดจำไว้จึงอ่าน
+  // เหมือนบิลค้างจ่ายธรรมดา ทั้งที่มีเงินเข้ามาแล้วส่วนหนึ่งและของถูกจองไว้ให้ลูกค้า
+  const depositRow = isPos
+    ? (await query<{
+        deposit_paid: string; total_amount: string; status: string; due_at: any; created_at: any;
+      }>(
+        `SELECT deposit_paid, total_amount, status, due_at, created_at
+           FROM bms_pos_deposits
+          WHERE tenant_id = $1 AND order_id = $2
           LIMIT 1`,
         [tenantId, orderId]
       )).rows[0] ?? null
@@ -1747,15 +1776,26 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
     if (st) lastByStatus.set(st, { at: jIso(r.created_at)!, actorName: actorName(r.actor) });
   }
 
+  const amountDue = round2(Number(ord.total_amount ?? 0) + Number(ord.shipping_fee ?? 0));
+  // เงินที่เก็บมาจริงทั้งหมด · นับ REFUNDED ด้วยเพราะแถวนั้นแปลว่า "เคยรับเงินก้อนนี้"
+  // การคืนเงินแสดงเป็นกิ่ง RETURNED กับบรรทัดคืนเงินของมันเอง ไม่ใช่การย้อนว่าไม่เคยจ่าย
+  const paidTotal = round2(posPayments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0));
+  // จ่ายครบ = ถึงขั้น PAID · เทียบด้วยสตางค์ ไม่ใช่ === เพราะยอดเป็นทศนิยม
+  const fullyPaid = posPayments.length > 0 && paidTotal >= amountDue - 0.005;
+
   // ---- steps (เส้นหลัก + กิ่ง cancel/return) ----
   const steps: OrderStep[] = (isPos ? POS_FLOW : MAIN_FLOW).map((st) => {
     const hit = lastByStatus.get(st);
     if (st === "PENDING") return { status: st, at: jIso(ord.created_at), actorName: hit?.actorName ?? "ระบบ", reached: true, branch: false };
     // ขายหน้าร้าน: การรับเงินยืนยันด้วยแถว payment ไม่ใช่ audit
-    if (isPos && st === "PAID" && posPayment) {
+    //
+    // **ต้องครบยอด** ไม่ใช่แค่มีแถว payment — เดิมเงื่อนไขคือ `posPayment` เฉย ๆ
+    // บิลมัดจำที่รับมา ฿900 จาก ฿1,648 จึงติ๊ก PAID ให้ ทั้งที่สถานะบิลยังเป็น PENDING
+    // หน้าจอเดียวเลยขัดกันเอง และคนที่มาตรวจยอดอ่านว่าเก็บเงินครบแล้ว
+    if (isPos && st === "PAID" && fullyPaid) {
       return {
         status: st,
-        at: jIso(posPayment.created_at),
+        at: jIso(posPayments[posPayments.length - 1]!.created_at),
         actorName: ord.cashier_name ?? "ระบบ",
         reached: true,
         branch: false,
@@ -1820,12 +1860,32 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   });
   // เงินที่รับมาต้องอยู่ใน timeline — ก่อนหน้านี้บิล POS ที่เก็บเงินแล้วมีแค่บรรทัด
   // "สร้างออเดอร์" บรรทัดเดียว คนที่เปิดดูเพื่อตรวจยอดจะไม่เห็นว่ารับเงินไปเท่าไหร่
-  if (posPayment) {
-    const amount = Number(posPayment.amount).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  //
+  // เดิมเขียน `→ PAID` ต่อท้ายแบบตายตัวจากแถวแรกแถวเดียว — บิลมัดจำที่รับมางวดแรก
+  // จึงมีบรรทัด "รับชำระ CASH ฿900.00 → PAID" ทั้งที่บิลยังไม่ถูกจ่าย และงวดถัดไป
+  // ไม่เคยปรากฏเลย · ตอนนี้ไล่ทุกงวดและบอกยอดค้างตามจริง ณ เวลาของงวดนั้น
+  let runningPaid = 0;
+  for (const p of posPayments) {
+    runningPaid = round2(runningPaid + Number(p.amount ?? 0));
+    const outstanding = round2(amountDue - runningPaid);
+    const tail = outstanding > 0.005
+      ? ` · ยังค้าง ฿${jBaht(outstanding)}`
+      : " → PAID";
     events.push({
       kind: "payment",
-      at: jIso(posPayment.created_at)!,
-      text: `รับชำระ ${posPayment.method} ฿${amount} → PAID`,
+      at: jIso(p.created_at)!,
+      text: `รับชำระ ${p.method} ฿${jBaht(Number(p.amount))}${tail}`,
+      actorName: ord.cashier_name ?? "ระบบ",
+    });
+  }
+  if (depositRow) {
+    const dueText = depositRow.due_at
+      ? ` · รับของภายใน ${new Date(jIso(depositRow.due_at)!).toLocaleDateString("th-TH")}`
+      : "";
+    events.push({
+      kind: "deposit",
+      at: jIso(depositRow.created_at)!,
+      text: `เปิดเป็นบิลมัดจำ — ของถูกจองไว้ ยังไม่ส่งมอบ${dueText}`,
       actorName: ord.cashier_name ?? "ระบบ",
     });
   }
@@ -1892,7 +1952,7 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   // ยอดคืนสะสม/คงเหลือสุทธิ — ตัวเลขเดียวกับที่ getReceiptRefundSummary() ฝั่ง POS คิด
   // (sum ยอดคืนของทุก pos_return แล้ว clamp คงเหลือไม่ให้ติดลบ) แต่คำนวณที่นี่แทน
   // เพราะหน้า Order ไม่มี state ของ POS ให้เรียกใช้ร่วม
-  const orderAmountDue = Number(ord.total_amount ?? 0) + Number(ord.shipping_fee ?? 0);
+  const orderAmountDue = amountDue;
   const returnedTotal = Math.round(
     posReturnRows.reduce((sum, r) => sum + Number(r.refund_amount ?? 0), 0) * 100
   ) / 100;
@@ -1906,5 +1966,14 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   return {
     orderId, channel: ord.channel, status: ord.status, conversationId, assignedStaff, helpers, steps, events,
     returnedTotal, remainingAfterReturn, pendingSettlementTotal,
+    amountDue,
+    paidTotal,
+    isDeposit: depositRow !== null,
+    depositStatus: depositRow?.status ?? null,
+    // ยอดค้างของมัดจำอ่านจากตารางมัดจำเอง ไม่ใช่คำนวณจาก payment — สองตัวเลขนี้ควร
+    // ตรงกัน ถ้าไม่ตรงคือมีทางเขียนที่ลืมอัปเดต ซึ่งต้องเห็น ไม่ใช่กลบด้วยการคำนวณใหม่
+    depositBalanceDue: depositRow
+      ? round2(Number(depositRow.total_amount ?? 0) - Number(depositRow.deposit_paid ?? 0))
+      : 0,
   };
 }
