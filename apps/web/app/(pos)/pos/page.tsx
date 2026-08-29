@@ -1202,7 +1202,19 @@ export default function PosPage() {
   const [deposits, setDeposits] = useState<PosDeposit[]>([]);
   const [depositCandidateOrders, setDepositCandidateOrders] = useState<PosDepositCandidateOrder[]>([]);
   const [depositOrderId, setDepositOrderId] = useState("");
+  /**
+   * ยอดของช่อง "จำนวนเงิน" ในกลุ่มบิลที่มีอยู่แล้ว (รับครั้งแรก/รับเพิ่ม/รับยอดคงเหลือ)
+   * — เลือกบิลแล้วค่านี้ถูกเขียนทับด้วยยอดค้างของบิลนั้นโดยตั้งใจ
+   */
   const [depositAmount, setDepositAmount] = useState("");
+  /**
+   * ยอดมัดจำของบิลใหม่ที่กำลังสร้างจากตะกร้า — แยกตัวแปรจากช่องข้างบนโดยตั้งใจ
+   *
+   * เดิมใช้ตัวเดียวกัน ผลคือการเลือกบิลในรายการไปล้างยอดที่แคชเชียร์พิมพ์ไว้สำหรับ
+   * ตะกร้าทิ้งเงียบ ๆ (และในทางกลับกัน ยอดของตะกร้าไหลไปโผล่ในปุ่มรับมัดจำของบิลอื่น)
+   * สองเลขนี้เป็นคนละจำนวนของคนละบิล การใช้ที่เก็บร่วมกันจึงผิดตั้งแต่ความหมาย
+   */
+  const [cartDepositAmount, setCartDepositAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState("CASH");
   const [depositReason, setDepositReason] = useState("");
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
@@ -2622,7 +2634,7 @@ export default function PosPage() {
       setNotice({ type: "error", text: `รอเภสัชกรอนุมัติเคส ${pharmacyReviewLink.caseCode} ก่อนสร้างบิลมัดจำ` });
       return;
     }
-    const amount = Math.round(Number(depositAmount) * 100) / 100;
+    const amount = Math.round(Number(cartDepositAmount) * 100) / 100;
     if (!Number.isFinite(amount) || amount <= 0) {
       setNotice({ type: "error", text: "ระบุยอดมัดจำให้ถูกต้อง" });
       return;
@@ -2735,6 +2747,10 @@ export default function PosPage() {
       if (res.ok && data.status === "DEPOSIT_TAKEN") {
         const orderRef = String(data.orderId ?? "").slice(0, 8).toUpperCase();
         setDepositOrderId(data.orderId ?? "");
+        setCartDepositAmount("");
+        // ล้างช่องของกลุ่มบิลด้วย: select เพิ่งถูกชี้ไปที่บิลใหม่โดยโค้ด ซึ่งไม่ผ่าน
+        // onChange จึงไม่มีใครเติมยอดค้างของบิลนั้นให้ ปล่อยค่าเดิมค้างไว้ = ยอดของ
+        // บิลก่อนหน้านั่งรออยู่ในช่องที่ตอนนี้ผูกกับบิลใหม่แล้ว
         setDepositAmount("");
         setCart([]);
         clearBillCustomerState();
@@ -3353,6 +3369,27 @@ export default function PosPage() {
     if (paymentSummary.remaining > 0.01) return `ยังรับเงินไม่ครบ — ขาด ฿${baht(paymentSummary.remaining)}`;
     if (paymentSummary.remaining < -0.01) return `ยอดรับเกินไป ฿${baht(Math.abs(paymentSummary.remaining))}`;
     if (!canSell) return "ยังขายไม่ได้";
+    return null;
+  })();
+
+  /**
+   * ทำไมปุ่ม "สร้างบิล + รับมัดจำ" ยังกดไม่ได้ — รูปแบบเดียวกับ payBlockedReason
+   *
+   * createDepositFromCart() คืนค่าเงียบ ๆ เมื่อไม่มีกะ/ผู้ขาย/PIN (กดแล้วไม่มีอะไร
+   * เกิดขึ้นเลย ไม่มีข้อความ) ส่วนกรณีไม่ได้ใส่ยอดจะเด้ง toast แดงหลังกด ทั้งสองแบบ
+   * บอกทีหลังทั้งคู่ ทั้งที่รู้ได้ตั้งแต่ก่อนกด — ที่เคาน์เตอร์มีลูกค้ายืนรออยู่
+   */
+  const cartDepositBlockedReason: string | null = (() => {
+    if (hasPendingDepositSale) return null; // ปุ่มเปลี่ยนหน้าที่เป็น "ตรวจรายการมัดจำเดิม"
+    if (hasPendingSale) return "มีบิลขายรอตรวจสอบ — ปิดให้จบก่อน";
+    if (cart.length === 0) return "ยังไม่มีสินค้าในบิล";
+    if (!session?.shift) return "ยังไม่ได้เปิดกะ";
+    if (!cashierId) return "เลือกผู้ขายก่อน";
+    if (!pin) return "ใส่ PIN ของผู้ขาย";
+    const amount = Number(cartDepositAmount);
+    if (!cartDepositAmount.trim() || !Number.isFinite(amount) || amount <= 0) return "ใส่ยอดมัดจำก่อน";
+    // ตรงกับด่านใน createDepositFromCart — รับเต็มยอดคือการขายปกติ ไม่ใช่มัดจำ
+    if (amount >= amountDue) return `ยอดมัดจำต้องน้อยกว่า ฿${baht(amountDue)}`;
     return null;
   })();
 
@@ -5563,20 +5600,55 @@ export default function PosPage() {
           <div className="pos-block">
             <div className="pos-block-title">ทำรายการ</div>
             <div style={{ background: "#f0f7ff", border: "1px solid #91caff", borderRadius: 8, padding: 10, marginBottom: 10 }}>
-              <b>ลูกค้าหน้าร้าน:</b> ใส่สินค้าในตะกร้าตามปกติ ระบุยอดมัดจำด้านล่าง แล้วกดสร้างบิล
+              <b>ลูกค้าหน้าร้าน:</b> ใส่สินค้าในตะกร้าตามปกติ ใส่ยอดมัดจำในช่องนี้ แล้วกดสร้างบิล
               ระบบจะสร้าง Order ID, คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ
-              <div style={{ marginTop: 8 }}>
+              {/* ช่องยอดอยู่ในกล่องนี้ ไม่ใช่กลุ่ม "บิลที่ต้องการทำรายการ" ข้างล่าง —
+                  ช่องนั้นเป็นของบิลที่มีอยู่แล้ว และการเลือกบิลจะเขียนทับค่าในช่องนั้น
+                  แคชเชียร์ที่พิมพ์ยอดของตะกร้าลงไปจึงเสียยอดทิ้งโดยไม่มีอะไรเตือน */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>ยอดมัดจำที่รับ</span>
+                  <input
+                    className="pos-num"
+                    inputMode="decimal"
+                    value={cartDepositAmount}
+                    onChange={(e) => setCartDepositAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                    placeholder="0.00"
+                    style={{ width: 150, textAlign: "right" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>วิธีรับเงิน</span>
+                  <select value={depositMethod} onChange={(e) => setDepositMethod(e.target.value)}>
+                    <option value="CASH">เงินสด</option>
+                    <option value="QR">QR</option>
+                    <option value="CARD">บัตร</option>
+                    <option value="BANK_TRANSFER">โอนเงิน</option>
+                    <option value="WALLET">Wallet</option>
+                  </select>
+                </label>
                 <button
                   className="pos-shift-btn-primary"
-                  disabled={busy || hasPendingSale || cart.length === 0}
+                  disabled={busy || (!hasPendingDepositSale && cartDepositBlockedReason !== null)}
                   onClick={() => void createDepositFromCart()}
                 >
-                  {busy ? "กำลังบันทึก…" : hasPendingDepositSale ? "ตรวจรายการมัดจำเดิม" : `สร้างบิล + รับมัดจำ (${cart.length} รายการ)`}
+                  {busy
+                    ? "กำลังบันทึก…"
+                    : hasPendingDepositSale
+                      ? "ตรวจรายการมัดจำเดิม"
+                      : cartDepositBlockedReason ?? `สร้างบิล + รับมัดจำ (${cart.length} รายการ)`}
                 </button>
               </div>
+              {cart.length > 0 && (
+                <div className="pos-block-hint" style={{ marginTop: 6 }}>
+                  ยอดบิล ฿{baht(amountDue)} — มัดจำต้องน้อยกว่านี้ ส่วนที่เหลือเก็บตอนลูกค้ามารับของ
+                </div>
+              )}
             </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>บิลที่ต้องการทำรายการ</span>
+              <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+                หรือทำรายการกับบิลที่มีอยู่แล้ว — เลือกบิล
+              </span>
               <select value={depositOrderId} onChange={(event) => {
                 const orderId = event.target.value;
                 const openDeposit = deposits.find((deposit) => deposit.orderId === orderId);
