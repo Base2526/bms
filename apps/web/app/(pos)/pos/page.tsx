@@ -622,6 +622,7 @@ type Receipt = {
 };
 
 type ReceiptReturnEvent = NonNullable<Receipt["returnEvents"]>[number];
+type ReturnReceiptFilter = "all" | "pending";
 
 type SearchItem = {
   sku: string;
@@ -1064,6 +1065,8 @@ export default function PosPage() {
   }, [session?.cashiers, cashierId]);
   const [recentOpen, setRecentOpen] = useState(false);
   const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
+  const [highlightedReceiptOrderId, setHighlightedReceiptOrderId] = useState<string | null>(null);
+  const receiptCardRefs = useRef<Record<string, HTMLElement | null>>({});
   // เครื่องพิมพ์ ESC/POS: จำที่เลือกไว้ ไม่ต้องเลือกใหม่ทุกเช้า
   // ถ้าไม่มี/เบราว์เซอร์ไม่รองรับ → กลับไปใช้ print dialog เหมือนเดิม
   const [printerReady, setPrinterReady] = useState(false);
@@ -1313,6 +1316,7 @@ export default function PosPage() {
   const stockReceiveRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const [recentSalesQuery, setRecentSalesQuery] = useState("");
   const [recentReceipts, setRecentReceipts] = useState<Receipt[]>([]);
+  const [returnReceiptFilter, setReturnReceiptFilter] = useState<ReturnReceiptFilter>("all");
   // เปิดฟอร์มคืนได้ทีละบิล — หน้าร้านทำทีละใบอยู่แล้ว และการกางทุกใบพร้อมกัน
   // ทำให้เลื่อนหาบิลที่ต้องการไม่เจอ
   const [returnPanelOrderId, setReturnPanelOrderId] = useState<string | null>(null);
@@ -1333,6 +1337,22 @@ export default function PosPage() {
   const scanRef = useRef<HTMLInputElement>(null);
   const stockScanRef = useRef<HTMLInputElement>(null);
   const hasPendingOrderWrite = hasPendingSale || hasPendingDepositSale;
+  const pendingRefundTasks = useMemo(() => recentReceipts.flatMap((row) => {
+    const refundSummary = getReceiptRefundSummary(row);
+    return (row.refunds ?? [])
+      .filter((refund) => refund.status === "PENDING")
+      .map((refund) => ({
+        row,
+        refund,
+        refundSummary,
+      }));
+  }), [recentReceipts]);
+  const visibleRecentReceipts = useMemo(() => (
+    returnReceiptFilter === "pending"
+      ? recentReceipts.filter((row) => (row.refunds ?? []).some((refund) => refund.status === "PENDING"))
+      : recentReceipts
+  ), [recentReceipts, returnReceiptFilter]);
+  const missingPendingTaskCount = Math.max(0, shiftReturnSummary.pendingCount - pendingRefundTasks.length);
   /**
    * หน้าต่างซ้อนที่ต้อง "พักการสแกน" — เดิมเขียนไว้สองที่ (ป้ายบอกสถานะกับตัว
    * dispatchScan) แล้วไม่ตรงกัน ป้ายจึงบอกว่ายังสแกนได้ในจังหวะที่ตัวจริงปฏิเสธ
@@ -2014,6 +2034,37 @@ export default function PosPage() {
       return;
     }
     setTab(nextTab);
+  }
+
+  function openPendingRefundQueue() {
+    setTab("returns");
+    setRecentOpen(true);
+    setReturnReceiptFilter("pending");
+    void loadRecentReceipts("");
+  }
+
+  function revealReceiptInReturnList(row: Receipt) {
+    const orderId = row.orderId ?? null;
+    setTab("returns");
+    setRecentOpen(true);
+    setReturnReceiptFilter("pending");
+    setHistoryOrderId(orderId);
+    const canReturnHere =
+      Boolean(orderId) &&
+      row.posDeviceId === session?.device.id &&
+      row.orderStatus !== "RETURNED" &&
+      row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
+    if (canReturnHere) setReturnPanelOrderId(orderId);
+    setHighlightedReceiptOrderId(orderId);
+    window.setTimeout(() => {
+      if (!orderId) return;
+      const card = receiptCardRefs.current[orderId];
+      if (!card) return;
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    window.setTimeout(() => {
+      setHighlightedReceiptOrderId((current) => (current === orderId ? null : current));
+    }, 2600);
   }
 
   function buildParkedCartSnapshot(): ParkedCartSnapshot {
@@ -3735,7 +3786,7 @@ export default function PosPage() {
   async function loadRecentReceipts(query = recentSalesQuery) {
     if (!token) return;
     try {
-      const params = new URLSearchParams({ limit: query.trim() ? "20" : "5" });
+      const params = new URLSearchParams({ limit: "20" });
       if (query.trim()) params.set("q", query.trim());
       const res = await fetch(`/api/pos/recent-sales?${params.toString()}`, { headers: authHeaders, cache: "no-store" });
       const data = await res.json().catch(() => ({ sales: [] }));
@@ -5212,6 +5263,41 @@ export default function PosPage() {
         .pos-rail .pos-rail-icon { line-height: 1; display: flex; }
         .pos-rail .pos-rail-icon svg { width: 19px; height: 19px; display: block; }
         .pos-pane { flex: 1; min-height: 0; overflow-y: auto; }
+        .pos-ret-pending-row {
+          display: grid;
+          grid-template-columns: minmax(0,1.4fr) minmax(160px,0.8fr) minmax(220px,1fr) auto;
+          gap: 8px;
+          align-items: center;
+        }
+        .pos-ret-pending-actions {
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
+          flex-wrap: wrap;
+        }
+        .pos-ret-card--highlight {
+          border-color: #faad14 !important;
+          box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.18);
+        }
+        .pos-rail-count {
+          font-size: 10px;
+          line-height: 1;
+          border-radius: 999px;
+          padding: 3px 6px;
+          font-weight: 700;
+          min-width: 20px;
+          text-align: center;
+        }
+        .pos-rail-count--pending {
+          background: #fff1b8;
+          color: #8a6100;
+          border: 1px solid #ffd666;
+        }
+        .pos-rail-count--normal {
+          background: #f0f0f0;
+          color: #595959;
+          border: 1px solid #d9d9d9;
+        }
         @media (max-width: 767px) {
           /* คงโครง app-shell เหมือนจอใหญ่ (height/overflow ตั้งไว้แล้วด้านบน) —
              สลับแค่ทิศ: แถบงานลงไปอยู่ล่างให้นิ้วโป้งถึง */
@@ -5240,6 +5326,10 @@ export default function PosPage() {
           .pos-pane { overflow: visible; }
           .pos-payment-row, .pos-refund-row { grid-template-columns: minmax(0, 1fr) !important; }
           .pos-payment-row > *, .pos-refund-row > * { width: 100%; min-width: 0 !important; }
+          .pos-ret-pending-row { grid-template-columns: minmax(0, 1fr) !important; }
+          .pos-ret-pending-actions { justify-content: stretch; }
+          .pos-ret-pending-actions > * { flex: 1 1 0; }
+          .pos-rail-count { margin-top: 2px; }
         }
       `}</style>
 
@@ -5253,8 +5343,15 @@ export default function PosPage() {
           >
             <span className="pos-rail-icon" aria-hidden="true"><PosTabIcon tab={item.key} /></span>
             <span>{item.label}</span>
-            {item.key === "returns" && shiftReturnSummary.count > 0 && (
-              <span style={{ fontSize: 10, color: "#8a6100" }}>{shiftReturnSummary.count}</span>
+            {item.key === "returns" && shiftReturnSummary.pendingCount > 0 && (
+              <span className="pos-rail-count pos-rail-count--pending">
+                ค้าง {shiftReturnSummary.pendingCount}
+              </span>
+            )}
+            {item.key === "returns" && shiftReturnSummary.pendingCount === 0 && shiftReturnSummary.count > 0 && (
+              <span className="pos-rail-count pos-rail-count--normal">
+                {shiftReturnSummary.count}
+              </span>
             )}
           </button>
         ))}
@@ -5388,6 +5485,16 @@ export default function PosPage() {
               กะนี้คืนแล้ว {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
             </span>
           )}
+          {shiftReturnSummary.pendingCount > 0 && (
+            <button
+              type="button"
+              className="pos-btn-ghost"
+              style={{ fontSize: 12 }}
+              onClick={openPendingRefundQueue}
+            >
+              รอยืนยันคืนเงินจริง {shiftReturnSummary.pendingCount} รายการ
+            </button>
+          )}
           <button
             onClick={() => setReturnPanelOpen((v) => !v)}
             style={{ padding: "4px 12px", fontSize: 13, marginLeft: "auto" }}
@@ -5502,6 +5609,102 @@ export default function PosPage() {
             </span>
           </div>
         )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+        <div style={{
+          border: shiftReturnSummary.pendingCount > 0 ? "1px solid #ffd591" : "1px solid var(--pos-line)",
+          background: shiftReturnSummary.pendingCount > 0 ? "#fff7e6" : "#f8fafc",
+          borderRadius: 12,
+          padding: 12,
+        }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#262626" }}>งานที่ต้องทำตอนนี้</div>
+              <div style={{ fontSize: 12, color: shiftReturnSummary.pendingCount > 0 ? "#8a6100" : "var(--pos-muted)" }}>
+                {shiftReturnSummary.pendingCount > 0
+                  ? `รอยืนยันคืนเงินจริง ${shiftReturnSummary.pendingCount} รายการ · ฿${baht(shiftReturnSummary.pendingTotal)}`
+                  : "ไม่มีรายการคืนเงินจริงค้างยืนยัน"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={returnReceiptFilter === "pending" ? "pos-ret-btn pos-ret-btn--solid" : "pos-ret-btn"}
+                onClick={() => {
+                  setReturnReceiptFilter("pending");
+                  setRecentOpen(true);
+                }}
+                disabled={shiftReturnSummary.pendingCount === 0}
+              >
+                ดูเฉพาะงานค้าง
+              </button>
+              <button
+                type="button"
+                className={returnReceiptFilter === "all" ? "pos-ret-btn pos-ret-btn--solid" : "pos-ret-btn"}
+                onClick={() => setReturnReceiptFilter("all")}
+              >
+                ดูทุกบิล
+              </button>
+            </div>
+          </div>
+          {pendingRefundTasks.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+              {pendingRefundTasks.map(({ row, refund, refundSummary }) => (
+                <div key={refund.id} className="pos-ret-pending-row" style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  background: "#fff",
+                  border: "1px solid #ffe7ba",
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>
+                      {row.docNo ?? row.orderId ?? "บิล POS"} · {posPaymentMethodLabel(refund.method)}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+                      คืนเมื่อ {row.at} · ค้างยืนยัน ฿{baht(refund.amount)}
+                      {refundSummary.remainingAfterRefund >= 0 ? ` · คงเหลือหลังคืน ฿${baht(refundSummary.remainingAfterRefund)}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#8a6100", fontWeight: 700 }}>
+                    รอยืนยันคืนเงินจริง
+                  </div>
+                  <input
+                    value={settlementRefs[refund.id] ?? ""}
+                    onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
+                    placeholder="เลขอ้างอิงการคืนเงินจริง"
+                    style={{ minWidth: 0 }}
+                  />
+                  <div className="pos-ret-pending-actions">
+                    <button
+                      type="button"
+                      className="pos-ret-btn"
+                      onClick={() => revealReceiptInReturnList(row)}
+                    >
+                      เปิดบิลนี้
+                    </button>
+                    <button
+                      type="button"
+                      className="pos-ret-btn pos-ret-btn--solid"
+                      onClick={() => void completeRefundSettlement(row, refund)}
+                      disabled={busy}
+                    >
+                      ยืนยันคืนแล้ว
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : shiftReturnSummary.pendingCount > 0 ? (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#8a6100" }}>
+              ยังไม่พบรายละเอียดครบทุกใบในรายการด้านล่าง ลองค้นเลขบิลหรือกดกลับมาที่แท็บนี้ใหม่เพื่อโหลดรายการล่าสุด
+            </div>
+          ) : null}
+          {missingPendingTaskCount > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#8a6100" }}>
+              ยังมีรายการค้างอีก {missingPendingTaskCount} รายการที่ยังไม่ได้โหลดขึ้นจอนี้
+            </div>
+          )}
+        </div>
       </div>
       </>)}
 
@@ -5904,8 +6107,18 @@ export default function PosPage() {
                     {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
                   </div>
                   {shiftReturnSummary.pendingCount > 0 ? (
-                    <div className="pos-stat-hint pos-stat-hint--warn">
-                      รอยืนยันคืนเงินจริง {shiftReturnSummary.pendingCount} รายการ ฿{baht(shiftReturnSummary.pendingTotal)}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+                      <div className="pos-stat-hint pos-stat-hint--warn">
+                        รอยืนยันคืนเงินจริง {shiftReturnSummary.pendingCount} รายการ ฿{baht(shiftReturnSummary.pendingTotal)}
+                      </div>
+                      <button
+                        type="button"
+                        className="pos-btn-ghost"
+                        style={{ fontSize: 12, padding: "5px 10px" }}
+                        onClick={openPendingRefundQueue}
+                      >
+                        ไปจัดการรายการค้าง
+                      </button>
                     </div>
                   ) : (
                     <div className="pos-stat-hint">ไม่มีรายการรอยืนยัน</div>
@@ -6818,7 +7031,7 @@ export default function PosPage() {
             </div>
             <div className="pos-ret-search">
               <button type="button" className="pos-ret-toggle" onClick={() => setRecentOpen((v) => !v)}>
-                {recentOpen ? "▾" : "▸"} บิลล่าสุด ({recentReceipts.length})
+                {recentOpen ? "▾" : "▸"} {returnReceiptFilter === "pending" ? "บิลที่ยังค้างยืนยัน" : "บิลล่าสุด"} ({visibleRecentReceipts.length})
               </button>
               <div className="pos-ret-search-field">
                 <label htmlFor="pos-recent-sales-query">ค้นบิลย้อนหลัง</label>
@@ -6834,9 +7047,9 @@ export default function PosPage() {
               ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
               · เมื่อมีคำค้น ระบบจะค้นย้อนหลังข้ามเครื่อง POS ทั้งร้านให้
             </div>
-            {recentReceipts.length > 0 && (
+            {visibleRecentReceipts.length > 0 && (
               <div className="pos-ret-list" style={{ display: recentOpen ? "flex" : "none" }}>
-                {recentReceipts.map((row, idx) => {
+                {visibleRecentReceipts.map((row, idx) => {
                   const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
                   const refundSummary = getReceiptRefundSummary(row);
                   const latestReturnEvent = [...(row.returnEvents ?? [])]
@@ -6871,7 +7084,14 @@ export default function PosPage() {
                   const statusKind = row.voidedAt ? "void" : row.orderStatus === "RETURNED" ? "returned" : "ok";
                   const statusLabel = row.voidedAt ? "ยกเลิกแล้ว" : row.orderStatus === "RETURNED" ? "คืนแล้ว" : "สำเร็จ";
                   return (
-                  <article key={row.orderId ?? `recent-${idx}`} className={`pos-ret-card pos-ret-card--${statusKind}`}>
+                  <article
+                    key={row.orderId ?? `recent-${idx}`}
+                    ref={(node) => {
+                      if (!row.orderId) return;
+                      receiptCardRefs.current[row.orderId] = node;
+                    }}
+                    className={`pos-ret-card pos-ret-card--${statusKind}${highlightedReceiptOrderId === row.orderId ? " pos-ret-card--highlight" : ""}`}
+                  >
                     <div className="pos-ret-head">
                       <div style={{ minWidth: 0 }}>
                         <div className="pos-ret-id">
@@ -7205,6 +7425,11 @@ export default function PosPage() {
             {recentReceipts.length === 0 && recentDepositMatches.length === 0 && recentSalesQuery.trim().length > 0 && (
               <div className="pos-ret-empty">
                 ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
+              </div>
+            )}
+            {recentReceipts.length > 0 && visibleRecentReceipts.length === 0 && returnReceiptFilter === "pending" && recentSalesQuery.trim().length === 0 && (
+              <div className="pos-ret-empty">
+                ไม่มีบิลที่ค้างยืนยันอยู่ในรายการล่าสุดของเครื่องนี้
               </div>
             )}
             {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (
