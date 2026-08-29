@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, cashierHasPermission, partiallyReturnPosSale, returnPosSale, verifyCashierPin } from "@/lib/bms/pos";
+import {
+  authenticatePosDevice,
+  cashierHasPermission,
+  getOpenPosShift,
+  partiallyReturnPosSale,
+  returnPosSale,
+  verifyCashierPin,
+} from "@/lib/bms/pos";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/bms/payments";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -90,11 +97,16 @@ async function handlePOST(req: NextRequest) {
     return badRequest("การคืนทั้งบิลต้องไม่ส่ง lines");
   }
 
+  // ส่ง null เข้า service ได้เพื่อให้ idempotent replay ของรายการที่ commit แล้ว
+  // ยังตอบเดิมหลังปิดกะ; คำขอใหม่จะถูก service ปฏิเสธด้วย SHIFT_NOT_OPEN
+  const shiftId = (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
+
   const result =
     mode === "PARTIAL"
       ? await partiallyReturnPosSale({
           tenantId: device.tenantId,
           deviceId: device.id,
+          shiftId,
           orderId,
           actorUserId: auth.userId,
           lines: partialLines,
@@ -106,6 +118,7 @@ async function handlePOST(req: NextRequest) {
       : await returnPosSale({
           tenantId: device.tenantId,
           deviceId: device.id,
+          shiftId,
           orderId,
           actorUserId: auth.userId,
           note,
@@ -123,6 +136,8 @@ async function handlePOST(req: NextRequest) {
     : result.status === "NO_CONFIRMED_PAYMENTS" ? 409
     : result.status === "REFUND_METHOD_UNAVAILABLE" ? 409
     : result.status === "IDEMPOTENCY_CONFLICT" ? 409
+    : result.status === "SHIFT_NOT_OPEN" ? 409
+    : result.status === "WOULD_OVERDRAW" ? 409
     : 409;
 
   return NextResponse.json(result, { status });

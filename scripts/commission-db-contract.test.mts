@@ -184,7 +184,7 @@ test("returned goods take their commission back", async () => {
     [tenantId, firstOrderId]
   );
   const ret = await partiallyReturnPosSale({
-    tenantId, deviceId, orderId: firstOrderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: firstOrderId, actorUserId: cashierId,
     approvedByUserId: cashierId, note: "คืน 1 ชิ้น",
     lines: [{ orderItemId: Number(items.rows[0].id), packQty: 1 }],
     idempotencyKey: key("ret"),

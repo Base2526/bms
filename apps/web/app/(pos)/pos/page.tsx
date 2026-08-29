@@ -498,6 +498,18 @@ type ShiftReport = {
   cashVariance: number | null;
 };
 
+type ShiftHistoryItem = {
+  id: string;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  closedAt: string | null;
+  openedByName: string | null;
+  closedByName: string | null;
+  expectedCash: number | null;
+  countedCash: number | null;
+  cashVariance: number | null;
+};
+
 type MemberPreview = {
   subtotal: number;
   tierDiscount: number;
@@ -1201,6 +1213,9 @@ export default function PosPage() {
   const [voidApproverId, setVoidApproverId] = useState("");
   const [voidApproverPin, setVoidApproverPin] = useState("");
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
+  const [shiftHistory, setShiftHistory] = useState<ShiftHistoryItem[]>([]);
+  const [shiftHistoryLoaded, setShiftHistoryLoaded] = useState(false);
+  const [shiftExportBusy, setShiftExportBusy] = useState(false);
   const [noSaleReason, setNoSaleReason] = useState("");
   // ---- มัดจำ / ค้างชำระ (9.0) ----
   const [deposits, setDeposits] = useState<PosDeposit[]>([]);
@@ -3167,16 +3182,72 @@ export default function PosPage() {
 
   // ---- สรุปกะ X/Z (7.97) ---------------------------------------------
 
-  async function loadShiftReport() {
+  async function loadShiftReport(shiftId?: string) {
     if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
     try {
       const qs = new URLSearchParams({ cashierUserId: cashierId, pin });
+      if (shiftId) qs.set("shiftId", shiftId);
       const res = await fetch(`/api/pos/shift-report?${qs}`, { headers: authHeaders });
       const data = await res.json();
       if (!res.ok) { setNotice({ type: "error", text: data.error ?? "ดูสรุปกะไม่ได้" }); return; }
       setShiftReport(data.report);
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  async function loadShiftHistory() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); return; }
+    try {
+      const res = await fetch("/api/pos/shifts", {
+        method: "POST",
+        headers: authHeaders,
+        cache: "no-store",
+        body: JSON.stringify({ cashierUserId: cashierId, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: data.error ?? "ดูประวัติกะไม่ได้" }); return; }
+      setShiftHistory(Array.isArray(data.shifts) ? data.shifts : []);
+      setShiftHistoryLoaded(true);
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  async function downloadShiftReport(shiftId?: string) {
+    if (!cashierId || !pin || shiftExportBusy) {
+      if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); focusCashierOrPin(); }
+      return;
+    }
+    setShiftExportBusy(true);
+    try {
+      const res = await fetch("/api/pos/shift-report/export", {
+        method: "POST",
+        headers: authHeaders,
+        cache: "no-store",
+        body: JSON.stringify({ cashierUserId: cashierId, pin, shiftId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setNotice({ type: "error", text: data.error ?? "ดาวน์โหลดรายละเอียดกะไม่ได้" });
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `pos-shift-${shiftId ?? "current"}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setNotice({ type: "ok", text: "ดาวน์โหลดรายละเอียดกะแล้ว" });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setShiftExportBusy(false);
     }
   }
 
@@ -4405,6 +4476,8 @@ export default function PosPage() {
           }`,
         });
         setCountedCash("");
+        await loadShiftReport(data.shift.id);
+        void loadShiftHistory();
       } else {
         setNotice({ type: "ok", text: action === "open" ? "เปิดกะแล้ว" : "ปิดกะแล้ว" });
         setOpeningFloat("");
@@ -4803,6 +4876,8 @@ export default function PosPage() {
         :
         data?.status === "INVALID_ORDER_STATUS" ? `คืนบิลไม่ได้: สถานะปัจจุบันคือ ${data.current}`
         : data?.status === "NO_CONFIRMED_PAYMENTS" ? "คืนบิลไม่ได้: ไม่พบ payment ที่ยืนยันแล้ว"
+        : data?.status === "SHIFT_NOT_OPEN" ? "ต้องเปิดกะของเครื่องนี้ก่อนรับคืนสินค้า"
+        : data?.status === "WOULD_OVERDRAW" ? `เงินสดในลิ้นชักไม่พอคืนลูกค้า${data.available == null ? "" : ` · มีตามระบบ ฿${baht(Number(data.available))}`}`
         : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
         : data?.error ?? `คืนบิลไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
@@ -4916,6 +4991,8 @@ export default function PosPage() {
           ? `คืนรายการนี้ไม่ได้ในขั้นตอนคืนเงิน: เมื่อประเมินราคาตามจำนวนใหม่ ยอดสินค้าที่เหลือสูงกว่ายอดหลังคืน ฿${baht(Number(data.additionalAmount ?? 0))}`
         : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการคืน"
         : data?.status === "INVALID_ORDER_STATUS" ? `คืนบางรายการไม่ได้: สถานะปัจจุบันคือ ${data.current}`
+        : data?.status === "SHIFT_NOT_OPEN" ? "ต้องเปิดกะของเครื่องนี้ก่อนรับคืนสินค้า"
+        : data?.status === "WOULD_OVERDRAW" ? `เงินสดในลิ้นชักไม่พอคืนลูกค้า${data.available == null ? "" : ` · มีตามระบบ ฿${baht(Number(data.available))}`}`
         : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
         : data?.error ?? `คืนบางรายการไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
@@ -4962,6 +5039,8 @@ export default function PosPage() {
       if (!res.ok) {
         const message = data?.status === "APPROVAL_REQUIRED"
           ? "ผู้ยืนยันไม่มีสิทธิ์ payment.refund"
+          : data?.status === "SHIFT_NOT_OPEN"
+            ? "ต้องเปิดกะของเครื่องนี้ก่อนยืนยันคืนเงินจริง"
           : data?.status === "REFERENCE_REQUIRED"
             ? "ต้องมีเลขอ้างอิงการคืนเงินจริง"
             : data?.error ?? `ยืนยันคืนเงินไม่สำเร็จ (HTTP ${res.status})`;
@@ -5050,6 +5129,8 @@ export default function PosPage() {
             ? `เปลี่ยนรายการนี้ไม่ได้: เมื่อประเมินราคาตามจำนวนใหม่ ต้องรับเงินเพิ่มก่อน ฿${baht(Number(data.additionalAmount ?? 0))}`
           : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการเปลี่ยน"
           : data?.status === "INVALID_ORDER_STATUS" ? `เปลี่ยนสินค้าไม่ได้: สถานะบิลปัจจุบันคือ ${data.current}`
+          : data?.status === "SHIFT_NOT_OPEN" ? "ต้องเปิดกะของเครื่องนี้ก่อนรับคืนเพื่อเริ่มบิลเปลี่ยนสินค้า"
+          : data?.status === "WOULD_OVERDRAW" ? `เงินสดในลิ้นชักไม่พอคืนก่อนเริ่มบิลเปลี่ยน${data.available == null ? "" : ` · มีตามระบบ ฿${baht(Number(data.available))}`}`
           : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
           : data?.error ?? `เริ่มบิลเปลี่ยนสินค้าไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
         setNotice({ type: "error", text: message });
@@ -6522,9 +6603,18 @@ export default function PosPage() {
                     ดูสรุปกะ
                   </button>
                   {shiftReport && (
-                    <button onClick={() => window.print()} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
-                      พิมพ์
-                    </button>
+                    <>
+                      <button onClick={() => window.print()} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
+                        พิมพ์
+                      </button>
+                      <button
+                        onClick={() => void downloadShiftReport(shiftReport.shiftId)}
+                        disabled={shiftExportBusy}
+                        style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}
+                      >
+                        {shiftExportBusy ? "กำลังสร้างไฟล์…" : "ดาวน์โหลดรายละเอียดกะ"}
+                      </button>
+                    </>
                   )}
                 </div>
                 {shiftReport && (
@@ -6638,6 +6728,95 @@ export default function PosPage() {
                 )}
               </div>
             </>
+          )}
+
+          <div className="pos-block">
+            <div className="pos-shift-head" style={{ marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div className="pos-block-title" style={{ marginBottom: 2 }}>ประวัติกะของเครื่องนี้</div>
+                <div className="pos-block-hint">ย้อนดู Z Report และดาวน์โหลดรายการต้นทางเมื่อต้องตรวจยอด</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadShiftHistory()}
+                style={{ padding: "6px 12px", fontSize: 12, minHeight: 34 }}
+              >
+                {shiftHistoryLoaded ? "โหลดใหม่" : "ดูกะย้อนหลัง"}
+              </button>
+            </div>
+            {shiftHistoryLoaded && shiftHistory.length === 0 && (
+              <div className="pos-block-hint">ยังไม่มีกะของเครื่องนี้</div>
+            )}
+            {shiftHistory.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {shiftHistory.map((row) => (
+                  <div
+                    key={row.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                      border: shiftReport?.shiftId === row.id ? "1px solid #91caff" : "1px solid var(--pos-line)",
+                      background: shiftReport?.shiftId === row.id ? "#e6f4ff" : "#fff",
+                      borderRadius: 10, padding: "9px 10px",
+                    }}
+                  >
+                    <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>
+                        {new Date(row.openedAt).toLocaleDateString("th-TH")} · {new Date(row.openedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                        {row.closedAt ? `–${new Date(row.closedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </div>
+                      <div className="pos-block-hint">
+                        {row.status === "CLOSED"
+                          ? `ปิดแล้ว${row.cashVariance == null ? "" : ` · ส่วนต่าง ฿${baht(row.cashVariance)}`}`
+                          : "กำลังเปิด"}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => void loadShiftReport(row.id)} style={{ padding: "6px 10px", fontSize: 12 }}>
+                      ดูสรุป
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void downloadShiftReport(row.id)}
+                      disabled={shiftExportBusy}
+                      style={{ padding: "6px 10px", fontSize: 12 }}
+                    >
+                      Excel รายละเอียด
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!session?.shift && shiftReport && (
+            <div className="pos-block">
+              <div className="pos-shift-head" style={{ marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div className="pos-block-title" style={{ marginBottom: 2 }}>Z Report ที่เลือก</div>
+                  <div className="pos-block-hint">
+                    เครื่อง {shiftReport.deviceCode}{shiftReport.locationName ? ` · ${shiftReport.locationName}` : ""}
+                  </div>
+                </div>
+                <button type="button" onClick={() => window.print()} style={{ padding: "6px 10px", fontSize: 12 }}>พิมพ์</button>
+                <button
+                  type="button"
+                  onClick={() => void downloadShiftReport(shiftReport.shiftId)}
+                  disabled={shiftExportBusy}
+                  style={{ padding: "6px 10px", fontSize: 12 }}
+                >
+                  ดาวน์โหลดรายละเอียดกะ
+                </button>
+              </div>
+              <div className="pos-report-grid">
+                <span>ยอดขายสุทธิ · {shiftReport.billCount} บิล</span><span>฿{baht(shiftReport.salesTotal)}</span>
+                <span>คืนสินค้า · {shiftReport.returnCount} บิล</span><span>฿{baht(shiftReport.returnTotal)}</span>
+                <span>เงินสดที่ควรมี</span><span>฿{baht(shiftReport.expectedCash ?? 0)}</span>
+                <span>เงินสดที่นับได้</span><span>฿{baht(shiftReport.countedCash ?? 0)}</span>
+                <span>ส่วนต่าง</span>
+                <span style={{ color: (shiftReport.cashVariance ?? 0) < 0 ? "var(--pos-danger)" : "var(--pos-money)" }}>
+                  ฿{baht(shiftReport.cashVariance ?? 0)}
+                </span>
+              </div>
+            </div>
           )}
         </div>
       )}

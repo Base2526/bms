@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to the payment/refund method checks for selling on account; preferred split-refund method) | `7.84`–`9.31` (`9.4` repair) |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution) | `7.84`–`9.32` (`9.4` repair) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
@@ -136,8 +136,12 @@ provider/terminal reference. Migration `9.31` adds nullable
 `bms_pos_returns.preferred_refund_method`: the counter records which original payment method the
 operator selected first for a split-payment return, and idempotent replay must match it. Allocation
 is capped by the original payment's remaining refundable amount and never derives method priority
-from same-transaction timestamps or random UUID order. All POS tables are tenant-owned, RLS-protected, and granted to
-`bms_app`. See [../business/pos.md](../business/pos.md).
+from same-transaction timestamps or random UUID order. Migration `9.32` adds
+`bms_pos_returns.shift_id` (the shift that accepted the return) and
+`bms_pos_refund_allocations.completed_shift_id` (the shift that confirmed the money leg). Both are
+nullable only for legacy evidence gaps; new writes bind them from the authenticated device's open
+shift. All POS tables are tenant-owned, RLS-protected, and granted to `bms_app`. See
+[../business/pos.md](../business/pos.md).
 
 **Cashier-only accounts (`7.92__bms_cashier_role_and_pos_only_accounts.sql`)** — adds `users.pos_only`;
 enforced as a hard login gate in `loginAdmin`, not just a hidden menu item. A `pos_only` account

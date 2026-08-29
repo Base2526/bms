@@ -841,6 +841,18 @@ would let a backdated data change make today's printout disagree with the paper 
 The DB contract suite asserts that the report and `closePosShift()` produce the same expected cash;
 two formulas drifting apart is exactly the failure that makes the signed sheet disagree with the till.
 
+The counter can list recent shifts from the same register and download an XLSX detail workbook. The
+summary remains the signed X/Z result; detail sheets expose bills and payment legs, drawer movements,
+return/refund allocations, expenses, no-sales and credit activity without customer PII. An open
+blind-close workbook still says the expected cash is hidden, so export is not a side door around counting.
+
+Migration `9.32` separates event time from sale time. `bms_pos_returns.shift_id` is the shift that
+physically accepted the goods and paid an immediate cash refund, while
+`bms_pos_refund_allocations.completed_shift_id` records where an external refund was confirmed. Reports
+and close checks prefer those fields and use the original order's shift only for legacy rows with no
+event-shift evidence. Returning yesterday's receipt today therefore affects today's drawer and return
+totals, not yesterday's already-signed Z report.
+
 **A device can only read its own shift's report.** `GET /api/pos/shift-report` passes the requesting
 device's id into `getPosShiftReport()`, which returns nothing if the shift belongs to a different
 device — knowing another register's shift UUID is not enough to read its numbers, even inside the

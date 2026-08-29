@@ -219,7 +219,7 @@ test("returning the whole bill puts the credit back on the card", async () => {
   assert.equal((await findStoreCredit(tenantId, cardCode))!.balance, 0);
 
   const ret = await returnPosSale({
-    tenantId, deviceId, orderId: sale.orderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: sale.orderId, actorUserId: cashierId,
     approvedByUserId: cashierId, note: "คืนทั้งบิลที่จ่ายด้วยบัตร",
     idempotencyKey: key("ret"),
   });

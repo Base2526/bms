@@ -101,6 +101,8 @@ person, so the acting human is a separate layer: `cashierUserId` + `pin` verifie
 Mutating routes verify both layers — `/api/pos/park` is the single deliberate exception:
 
 - `POST /api/pos/shift` — open/close the device drawer; close is blocked by pending refund settlement.
+- `POST /api/pos/shifts` — PIN + `pos.shift.report`; recent shifts belonging to the authenticated device. The PIN stays in the JSON body, never the URL.
+- `POST /api/pos/shift-report/export` — PIN + `pos.shift.report`; device-scoped XLSX source ledger for one X/Z report. The PIN stays in the JSON body.
 - `POST /api/pos/sale` — server-resolved product/pack prices, multi-payment, idempotent atomic close.
   A payment row with `method: "CREDIT"` (`9.30`) sells on account: the bill completes in full and a
   receivable is raised instead of money arriving. It requires a customer, and the seller must hold

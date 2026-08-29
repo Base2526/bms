@@ -1029,6 +1029,50 @@ export async function getOpenPosShift(tenantId: string, deviceId: string): Promi
   return res.rowCount ? mapShift(res.rows[0]) : null;
 }
 
+export type PosShiftHistoryItem = {
+  id: string;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  closedAt: string | null;
+  openedByName: string | null;
+  closedByName: string | null;
+  expectedCash: number | null;
+  countedCash: number | null;
+  cashVariance: number | null;
+};
+
+/** รายการกะย้อนหลังของเครื่องเดียวกัน — ใช้เลือกพิมพ์/ดาวน์โหลด Z report */
+export async function listPosShiftHistory(
+  tenantId: string,
+  deviceId: string,
+  limit = 12
+): Promise<PosShiftHistoryItem[]> {
+  const res = await query<any>(
+    `SELECT s.id, s.status, s.opened_at, s.closed_at,
+            s.expected_cash, s.counted_cash, s.cash_variance,
+            COALESCE(uo.name, uo.email) AS opened_by_name,
+            COALESCE(uc.name, uc.email) AS closed_by_name
+       FROM bms_pos_shifts s
+       LEFT JOIN users uo ON uo.id = s.opened_by AND uo.tenant_id = s.tenant_id
+       LEFT JOIN users uc ON uc.id = s.closed_by AND uc.tenant_id = s.tenant_id
+      WHERE s.tenant_id = $1 AND s.device_id = $2
+      ORDER BY s.opened_at DESC, s.id DESC
+      LIMIT $3`,
+    [tenantId, deviceId, Math.min(Math.max(limit, 1), 30)]
+  );
+  return res.rows.map((row: any) => ({
+    id: row.id,
+    status: row.status,
+    openedAt: toISO(row.opened_at),
+    closedAt: row.closed_at ? toISO(row.closed_at) : null,
+    openedByName: row.opened_by_name ?? null,
+    closedByName: row.closed_by_name ?? null,
+    expectedCash: row.expected_cash == null ? null : Number(row.expected_cash),
+    countedCash: row.counted_cash == null ? null : Number(row.counted_cash),
+    cashVariance: row.cash_variance == null ? null : Number(row.cash_variance),
+  }));
+}
+
 export async function getPosShiftReturnSummary(tenantId: string, deviceId: string, shiftId: string) {
   const res = await query<any>(
     `SELECT COUNT(DISTINCT pr.id)::int AS return_count,
@@ -1041,7 +1085,9 @@ export async function getPosShiftReturnSummary(tenantId: string, deviceId: strin
          ON pr.tenant_id = o.tenant_id AND pr.order_id = o.id AND pr.pos_device_id = $2
        LEFT JOIN bms_pos_refund_allocations a
          ON a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
-      WHERE o.tenant_id = $1 AND o.pos_shift_id = $3 AND o.pos_device_id = $2`,
+      WHERE o.tenant_id = $1
+        AND COALESCE(pr.shift_id, o.pos_shift_id) = $3
+        AND pr.pos_device_id = $2`,
     [tenantId, deviceId, shiftId]
   );
   const row = res.rows[0] ?? {};
@@ -1091,7 +1137,9 @@ export async function closePosShift(input: {
          FROM bms_pos_refund_allocations a
          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-        WHERE a.tenant_id = $1 AND o.pos_shift_id = $2 AND a.status = 'PENDING'`,
+        WHERE a.tenant_id = $1
+          AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
+          AND a.status = 'PENDING'`,
       [input.tenantId, input.shiftId]
     );
     if (Number(pendingRefunds.rows[0]?.count ?? 0) > 0) {
@@ -1134,7 +1182,7 @@ export async function closePosShift(input: {
          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
         WHERE a.tenant_id = $1
-          AND o.pos_shift_id = $2
+          AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
           AND a.method = 'CASH'
           AND a.status = 'COMPLETED'`,
       [input.tenantId, input.shiftId]
@@ -2979,6 +3027,8 @@ export type PosReturnResult =
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
   | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
   | { status: "REPRICE_PAYMENT_REQUIRED"; additionalAmount: number; remainingAmount: number }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "WOULD_OVERDRAW"; available: number | null }
   | { status: "APPROVAL_REQUIRED"; reason: string };
 
 export type PosRefundAllocation = {
@@ -3023,6 +3073,8 @@ export type PosPartialReturnResult =
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
   | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
   | { status: "REPRICE_PAYMENT_REQUIRED"; additionalAmount: number; remainingAmount: number }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "WOULD_OVERDRAW"; available: number | null }
   | { status: "APPROVAL_REQUIRED"; reason: string; refundAmount: number };
 
 function approvalRuleForRefundAmount(refundAmount: number): {
@@ -3047,6 +3099,8 @@ function approvalRuleForRefundAmount(refundAmount: number): {
 export async function returnPosSale(input: {
   tenantId: string;
   deviceId: string;
+  /** กะที่รับคืนจริง; null ยอมได้เฉพาะ replay ของคำขอที่ commit ไปแล้ว */
+  shiftId: string | null;
   orderId: string;
   actorUserId: string;
   note?: string | null;
@@ -3075,6 +3129,8 @@ export async function returnPosSale(input: {
 export async function partiallyReturnPosSale(input: {
   tenantId: string;
   deviceId: string;
+  /** กะที่รับคืนจริง; null ยอมได้เฉพาะ replay ของคำขอที่ commit ไปแล้ว */
+  shiftId: string | null;
   orderId: string;
   actorUserId: string;
   lines: Array<{ orderItemId: number; packQty: number }>;
@@ -3125,6 +3181,7 @@ async function ensurePosReturnCreditNote(input: {
 async function processPosReturn(input: {
   tenantId: string;
   deviceId: string;
+  shiftId: string | null;
   orderId: string;
   actorUserId: string;
   mode: "FULL" | "PARTIAL";
@@ -3166,10 +3223,11 @@ async function processPosReturn(input: {
       pricing_adjustment_amount: string;
       remaining_amount_after_return: string | null;
       preferred_refund_method: PaymentMethod | null;
+      shift_id: string | null;
     }>(
       `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status,
               created_at, pricing_adjustment_amount, remaining_amount_after_return,
-              preferred_refund_method
+              preferred_refund_method, shift_id
          FROM bms_pos_returns
         WHERE tenant_id = $1 AND idempotency_key = $2
         LIMIT 1`,
@@ -3235,6 +3293,23 @@ async function processPosReturn(input: {
         creditNoteNo,
         replayed: true,
       };
+    }
+
+    // เช็กหลัง replay เสมอ: คำตอบที่หายไปต้อง replay ได้แม้กะเดิมปิดแล้ว แต่คำขอ
+    // ใหม่ห้ามรับคืนโดยไม่มีกะที่ถือเงินจริง และห้ามใช้กะของเครื่องอื่นเป็น authority
+    if (!input.shiftId) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
+    const returnShift = await client.query<{ id: string; opening_float: string }>(
+      `SELECT id, opening_float FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
+    if (!returnShift.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
     }
 
     const orderRes = await client.query<{
@@ -3504,12 +3579,12 @@ async function processPosReturn(input: {
 
     const ret = await client.query<{ id: string; created_at: unknown }>(
       `INSERT INTO bms_pos_returns
-         (tenant_id, order_id, pos_device_id, returned_by, approved_by, return_mode,
+         (tenant_id, order_id, pos_device_id, shift_id, returned_by, approved_by, return_mode,
           refund_amount, settlement_status, idempotency_key, note, is_void,
           pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10, $11, $12, $13)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14)
        RETURNING id, created_at`,
-      [input.tenantId, input.orderId, input.deviceId, input.actorUserId, approvedBy,
+      [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
         input.isVoid === true, pricingAdjustmentAmount, remainingAmount,
         input.preferredRefundMethod ?? null]
@@ -3621,6 +3696,28 @@ async function processPosReturn(input: {
     }
     const orderedPayments = orderRefundPaymentsForAllocation(payments.rows, preferredRefundMethod);
 
+    // เงินสดคืนออกจากกะที่รับคืน ไม่ใช่กะขายเดิม และต้องมีเงินจริงตาม ledger พอ
+    // ก่อน commit; โหมดนับปิดตายังปฏิเสธได้แต่ห้ามเผยยอดที่ควรมีใน response
+    let previewRemaining = roundedRefundAmount;
+    let plannedCashRefund = 0;
+    for (const payment of orderedPayments) {
+      if (previewRemaining <= 0.001) break;
+      const available = Math.max(0, Number(payment.amount) - Number(payment.allocated));
+      const amount = Math.round(Math.min(available, previewRemaining) * 100) / 100;
+      if (payment.method === "CASH") plannedCashRefund = Math.round((plannedCashRefund + amount) * 100) / 100;
+      previewRemaining = Math.round((previewRemaining - amount) * 100) / 100;
+    }
+    if (plannedCashRefund > 0) {
+      const drawer = await drawerExpectedInTx(
+        client, input.tenantId, input.shiftId, Number(returnShift.rows[0].opening_float)
+      );
+      if (plannedCashRefund > drawer + 0.001) {
+        const blind = (await getVatSettings(input.tenantId)).blindClose;
+        await client.query("ROLLBACK");
+        return { status: "WOULD_OVERDRAW", available: blind ? null : drawer };
+      }
+    }
+
     let remainingRefund = roundedRefundAmount;
     /** ส่วนที่หักออกจากหนี้แทนการจ่ายเงินคืน (9.30) */
     let arRefundAmount = 0;
@@ -3638,12 +3735,14 @@ async function processPosReturn(input: {
       const allocation = await client.query<any>(
         `INSERT INTO bms_pos_refund_allocations
            (tenant_id, pos_return_id, payment_id, method, amount, status,
-            completed_by, completed_at)
+            completed_by, completed_at, completed_shift_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7,
-                 CASE WHEN $6 = 'COMPLETED' THEN now() ELSE NULL END)
+                 CASE WHEN $6 = 'COMPLETED' THEN now() ELSE NULL END,
+                 CASE WHEN $6 = 'COMPLETED' THEN $8::uuid ELSE NULL END)
          RETURNING id, payment_id, method, amount, status, external_ref`,
         [input.tenantId, posReturnId, payment.id, payment.method, amount,
-          completed ? "COMPLETED" : "PENDING", completed ? input.actorUserId : null]
+          completed ? "COMPLETED" : "PENDING", completed ? input.actorUserId : null,
+          input.shiftId]
       );
       refunds.push(mapRefundAllocation(allocation.rows[0]));
       remainingRefund = Math.round((remainingRefund - amount) * 100) / 100;
@@ -3730,6 +3829,7 @@ async function processPosReturn(input: {
        VALUES ($1, $2, 'pos.return', $3, $4)`,
       [input.tenantId, input.actorUserId, input.orderId, JSON.stringify({
         posReturnId,
+        shiftId: input.shiftId,
         mode: input.mode,
         refundAmount: roundedRefundAmount,
         approvedBy,
@@ -3847,6 +3947,7 @@ function mapRefundAllocation(row: any): PosRefundAllocation {
 export type CompletePosRefundResult =
   | { status: "COMPLETED"; allocation: PosRefundAllocation; returnSettlementStatus: "PENDING" | "COMPLETED"; replayed: boolean }
   | { status: "NOT_FOUND" }
+  | { status: "SHIFT_NOT_OPEN" }
   | { status: "APPROVAL_REQUIRED" }
   | { status: "REFERENCE_REQUIRED" };
 
@@ -3854,6 +3955,8 @@ export type CompletePosRefundResult =
 export async function completePosRefundAllocation(input: {
   tenantId: string;
   deviceId: string;
+  /** กะที่ยืนยันเงินจริง; null ยอมได้เฉพาะ replay ที่ allocation เสร็จแล้ว */
+  shiftId: string | null;
   allocationId: string;
   actorUserId: string;
   externalRef?: string | null;
@@ -3866,9 +3969,10 @@ export async function completePosRefundAllocation(input: {
       return { status: "APPROVAL_REQUIRED" };
     }
     const res = await client.query<any>(
-      `SELECT a.*, pr.order_id
+      `SELECT a.*, pr.order_id, pr.shift_id AS return_shift_id, o.pos_shift_id AS sale_shift_id
          FROM bms_pos_refund_allocations a
          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+         JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
         WHERE a.tenant_id = $1 AND a.id = $2 AND pr.pos_device_id = $3
         FOR UPDATE`,
       [input.tenantId, input.allocationId, input.deviceId]
@@ -3891,6 +3995,25 @@ export async function completePosRefundAllocation(input: {
         replayed: true,
       };
     }
+    if (!input.shiftId) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
+    const effectiveReturnShiftId = row.return_shift_id ?? row.sale_shift_id ?? null;
+    if (effectiveReturnShiftId !== input.shiftId) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND" };
+    }
+    const openShift = await client.query(
+      `SELECT 1 FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
+    if (!openShift.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
     const externalRef = input.externalRef?.trim() || null;
     if (row.method !== "CASH" && !externalRef) {
       await client.query("ROLLBACK");
@@ -3899,10 +4022,10 @@ export async function completePosRefundAllocation(input: {
     const updated = await client.query<any>(
       `UPDATE bms_pos_refund_allocations
           SET status = 'COMPLETED', external_ref = $3, completed_by = $4,
-              completed_at = now(), updated_at = now()
+              completed_at = now(), completed_shift_id = $5, updated_at = now()
         WHERE tenant_id = $1 AND id = $2
         RETURNING id, payment_id, method, amount, status, external_ref`,
-      [input.tenantId, input.allocationId, externalRef, input.actorUserId]
+      [input.tenantId, input.allocationId, externalRef, input.actorUserId, input.shiftId]
     );
     const paid = await client.query<{ amount: string; completed: string }>(
       `SELECT p.amount,
@@ -3937,7 +4060,12 @@ export async function completePosRefundAllocation(input: {
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'pos.refund.complete', $3, $4)`,
       [input.tenantId, input.actorUserId, row.order_id,
-        JSON.stringify({ allocationId: input.allocationId, method: row.method, amount: Number(row.amount) })]
+        JSON.stringify({
+          allocationId: input.allocationId,
+          method: row.method,
+          amount: Number(row.amount),
+          shiftId: input.shiftId,
+        })]
     );
     await client.query("COMMIT");
     return {
@@ -4624,7 +4752,7 @@ export async function drawerExpectedInTx(
           FROM bms_pos_refund_allocations a
           JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
           JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-         WHERE a.tenant_id = $1 AND o.pos_shift_id = $2
+         WHERE a.tenant_id = $1 AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
            AND a.method = 'CASH' AND a.status = 'COMPLETED') AS cash_refunds,
        (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
          WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'IN') AS cash_in,
@@ -4699,6 +4827,7 @@ export async function voidPosSale(input: {
   const result = await processPosReturn({
     tenantId: input.tenantId,
     deviceId: input.deviceId,
+    shiftId: input.shiftId,
     orderId: input.orderId,
     actorUserId: input.actorUserId,
     approvedByUserId: input.approvedByUserId,
@@ -4848,12 +4977,16 @@ export async function getPosShiftReport(
                   FROM bms_pos_refund_allocations a
                   JOIN bms_pos_returns pr2 ON pr2.id = a.pos_return_id AND pr2.tenant_id = a.tenant_id
                   JOIN bms_orders o2 ON o2.id = pr2.order_id AND o2.tenant_id = pr2.tenant_id
-                 WHERE a.tenant_id = $1 AND o2.pos_shift_id = $2 AND pr2.is_void = FALSE
+                 WHERE a.tenant_id = $1
+                   AND COALESCE(pr2.shift_id, o2.pos_shift_id) = $2
+                   AND pr2.is_void = FALSE
                    AND a.method = 'CASH' AND a.status = 'COMPLETED'
               ), 0) AS cash_refunds
          FROM bms_pos_returns pr
          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-        WHERE pr.tenant_id = $1 AND o.pos_shift_id = $2 AND pr.is_void = FALSE`,
+        WHERE pr.tenant_id = $1
+          AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
+          AND pr.is_void = FALSE`,
       [tenantId, shiftId]
     ),
     query<any>(
@@ -4932,6 +5065,227 @@ export async function getPosShiftReport(
     expectedCashHidden,
     countedCash: h.counted_cash == null ? null : Number(h.counted_cash),
     cashVariance: h.cash_variance == null ? null : Number(h.cash_variance),
+  };
+}
+
+export type PosShiftExportData = {
+  report: PosShiftReport;
+  bills: Array<{
+    orderId: string; receiptNo: string | null; soldAt: string; cashier: string | null;
+    status: string; itemCount: number; grossTotal: number; discountTotal: number;
+    roundingAmount: number; netTotal: number; voidedAt: string | null;
+  }>;
+  payments: Array<{
+    paymentId: string; orderId: string; receiptNo: string | null; paidAt: string;
+    method: string; status: string; amount: number; reference: string | null;
+    cashTendered: number | null; cashChange: number | null;
+  }>;
+  cashMovements: Array<{
+    movementId: string; createdAt: string; direction: "IN" | "OUT"; amount: number;
+    reason: string; actor: string | null; approvedBy: string | null;
+  }>;
+  refunds: Array<{
+    returnId: string; orderId: string; receiptNo: string | null; returnedAt: string;
+    kind: "RETURN" | "VOID"; returnMode: string; returnAmount: number; note: string | null;
+    returnedBy: string | null; approvedBy: string | null; settlementStatus: string;
+    allocationId: string | null; method: string | null; allocationAmount: number | null;
+    allocationStatus: string | null; externalRef: string | null;
+    completedAt: string | null; completedBy: string | null;
+  }>;
+  expenses: Array<{
+    expenseId: string; createdAt: string; settledAt: string | null; kind: string;
+    fundingSource: string; category: string; description: string; payee: string | null;
+    status: string; advancedAmount: number; actualAmount: number | null;
+    returnedAmount: number; extraCashOut: number; receiptRef: string | null;
+    actor: string | null; approvedBy: string | null;
+  }>;
+  noSales: Array<{ eventId: string; createdAt: string; reason: string; actor: string | null }>;
+  creditActivity: Array<{
+    activityType: "CREDIT_SALE" | "COLLECTION"; activityId: string; orderId: string | null;
+    createdAt: string; method: string | null; amount: number; reference: string | null;
+    actor: string | null;
+  }>;
+};
+
+/**
+ * รายการต้นทางของ X/Z report สำหรับไล่ยอดขาด/เกิน ไม่รวม PII ลูกค้าและไม่ให้
+ * browser ประกอบยอดเอง ทุก query ยืนยัน device เจ้าของกะผ่าน report ก่อนเสมอ
+ */
+export async function getPosShiftExportData(
+  tenantId: string,
+  shiftId: string,
+  deviceId: string
+): Promise<PosShiftExportData | null> {
+  const report = await getPosShiftReport(tenantId, shiftId, deviceId);
+  if (!report) return null;
+
+  const [bills, payments, movements, refunds, expenses, noSales, creditActivity] = await Promise.all([
+    query<any>(
+      `SELECT o.id AS order_id, doc.doc_no, o.created_at AS sold_at,
+              COALESCE(u.name, u.email) AS cashier, o.status, o.voided_at,
+              (SELECT COUNT(*) FROM bms_order_items oi
+                WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id)::int AS item_count,
+              (o.total_amount + COALESCE(o.discount_amount, 0)) AS gross_total,
+              COALESCE(o.discount_amount, 0) AS discount_total,
+              COALESCE(o.rounding_amount, 0) AS rounding_amount,
+              (o.total_amount + COALESCE(o.shipping_fee, 0) + COALESCE(o.rounding_amount, 0)) AS net_total
+         FROM bms_orders o
+         LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
+         LEFT JOIN LATERAL (
+           SELECT d.doc_no FROM bms_tax_documents d
+            WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+              AND d.doc_type = 'ABBREVIATED'
+            ORDER BY d.issued_at, d.id LIMIT 1
+         ) doc ON TRUE
+        WHERE o.tenant_id = $1 AND o.pos_shift_id = $2 AND o.channel = 'pos'
+        ORDER BY o.created_at, o.id`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT p.id AS payment_id, p.order_id, doc.doc_no,
+              COALESCE(p.confirmed_at, p.created_at) AS paid_at,
+              p.method, p.status, p.amount, p.slip_ref,
+              p.cash_tendered, p.cash_change
+         FROM bms_payments p
+         JOIN bms_orders o ON o.id = p.order_id AND o.tenant_id = p.tenant_id
+         LEFT JOIN LATERAL (
+           SELECT d.doc_no FROM bms_tax_documents d
+            WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+              AND d.doc_type = 'ABBREVIATED'
+            ORDER BY d.issued_at, d.id LIMIT 1
+         ) doc ON TRUE
+        WHERE p.tenant_id = $1 AND o.pos_shift_id = $2
+        ORDER BY COALESCE(p.confirmed_at, p.created_at), p.id`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT m.id, m.created_at, m.direction, m.amount, m.reason,
+              COALESCE(actor.name, actor.email) AS actor,
+              COALESCE(approver.name, approver.email) AS approved_by
+         FROM bms_pos_cash_movements m
+         LEFT JOIN users actor ON actor.id = m.actor_user_id AND actor.tenant_id = m.tenant_id
+         LEFT JOIN users approver ON approver.id = m.approved_by AND approver.tenant_id = m.tenant_id
+        WHERE m.tenant_id = $1 AND m.shift_id = $2
+        ORDER BY m.created_at, m.id`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT pr.id AS return_id, pr.order_id, doc.doc_no, pr.created_at AS returned_at,
+              pr.is_void, pr.return_mode, pr.refund_amount, pr.note,
+              COALESCE(returner.name, returner.email) AS returned_by,
+              COALESCE(approver.name, approver.email) AS approved_by,
+              pr.settlement_status,
+              a.id AS allocation_id, a.method, a.amount AS allocation_amount,
+              a.status AS allocation_status, a.external_ref, a.completed_at,
+              COALESCE(completer.name, completer.email) AS completed_by
+         FROM bms_pos_returns pr
+         JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+         LEFT JOIN bms_pos_refund_allocations a
+           ON a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
+         LEFT JOIN users returner ON returner.id = pr.returned_by AND returner.tenant_id = pr.tenant_id
+         LEFT JOIN users approver ON approver.id = pr.approved_by AND approver.tenant_id = pr.tenant_id
+         LEFT JOIN users completer ON completer.id = a.completed_by AND completer.tenant_id = a.tenant_id
+         LEFT JOIN LATERAL (
+           SELECT d.doc_no FROM bms_tax_documents d
+            WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+              AND d.doc_type = 'ABBREVIATED'
+            ORDER BY d.issued_at, d.id LIMIT 1
+         ) doc ON TRUE
+        WHERE pr.tenant_id = $1 AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
+        ORDER BY pr.created_at, pr.id, a.created_at, a.id`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT e.id, e.created_at, e.settled_at, e.kind,
+              COALESCE(e.funding_source, 'DRAWER') AS funding_source,
+              e.category, e.description, e.payee, e.status,
+              e.advanced_amount, e.actual_amount, e.returned_amount,
+              e.extra_cash_out, e.receipt_ref,
+              COALESCE(actor.name, actor.email) AS actor,
+              COALESCE(approver.name, approver.email) AS approved_by
+         FROM bms_pos_expenses e
+         LEFT JOIN users actor ON actor.id = e.actor_user_id AND actor.tenant_id = e.tenant_id
+         LEFT JOIN users approver ON approver.id = e.approved_by AND approver.tenant_id = e.tenant_id
+        WHERE e.tenant_id = $1 AND e.shift_id = $2
+        ORDER BY e.created_at, e.id`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT n.id, n.created_at, n.reason,
+              COALESCE(actor.name, actor.email) AS actor
+         FROM bms_pos_no_sales n
+         LEFT JOIN users actor ON actor.id = n.actor_user_id AND actor.tenant_id = n.tenant_id
+        WHERE n.tenant_id = $1 AND n.shift_id = $2
+        ORDER BY n.created_at, n.id`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT 'CREDIT_SALE'::text AS activity_type, i.id AS activity_id,
+              i.order_id, i.issued_at AS created_at, 'CREDIT'::text AS method,
+              i.amount, NULL::text AS reference, NULL::text AS actor
+         FROM bms_ar_invoices i
+        WHERE i.tenant_id = $1 AND i.shift_id = $2
+       UNION ALL
+       SELECT 'COLLECTION'::text, r.id, NULL::uuid, r.created_at, r.method,
+              r.amount, r.reference, COALESCE(u.name, u.email)
+         FROM bms_ar_receipts r
+         LEFT JOIN users u ON u.id = r.received_by AND u.tenant_id = r.tenant_id
+        WHERE r.tenant_id = $1 AND r.shift_id = $2
+        ORDER BY created_at, activity_id`,
+      [tenantId, shiftId]
+    ),
+  ]);
+
+  return {
+    report,
+    bills: bills.rows.map((r: any) => ({
+      orderId: r.order_id, receiptNo: r.doc_no ?? null, soldAt: toISO(r.sold_at),
+      cashier: r.cashier ?? null, status: r.status, itemCount: Number(r.item_count ?? 0),
+      grossTotal: Number(r.gross_total), discountTotal: Number(r.discount_total),
+      roundingAmount: Number(r.rounding_amount), netTotal: Number(r.net_total),
+      voidedAt: r.voided_at ? toISO(r.voided_at) : null,
+    })),
+    payments: payments.rows.map((r: any) => ({
+      paymentId: r.payment_id, orderId: r.order_id, receiptNo: r.doc_no ?? null,
+      paidAt: toISO(r.paid_at), method: r.method, status: r.status, amount: Number(r.amount),
+      reference: r.slip_ref ?? null,
+      cashTendered: r.cash_tendered == null ? null : Number(r.cash_tendered),
+      cashChange: r.cash_change == null ? null : Number(r.cash_change),
+    })),
+    cashMovements: movements.rows.map((r: any) => ({
+      movementId: r.id, createdAt: toISO(r.created_at), direction: r.direction,
+      amount: Number(r.amount), reason: r.reason, actor: r.actor ?? null,
+      approvedBy: r.approved_by ?? null,
+    })),
+    refunds: refunds.rows.map((r: any) => ({
+      returnId: r.return_id, orderId: r.order_id, receiptNo: r.doc_no ?? null,
+      returnedAt: toISO(r.returned_at), kind: r.is_void ? "VOID" : "RETURN",
+      returnMode: r.return_mode, returnAmount: Number(r.refund_amount), note: r.note ?? null,
+      returnedBy: r.returned_by ?? null, approvedBy: r.approved_by ?? null,
+      settlementStatus: r.settlement_status, allocationId: r.allocation_id ?? null,
+      method: r.method ?? null,
+      allocationAmount: r.allocation_amount == null ? null : Number(r.allocation_amount),
+      allocationStatus: r.allocation_status ?? null, externalRef: r.external_ref ?? null,
+      completedAt: r.completed_at ? toISO(r.completed_at) : null,
+      completedBy: r.completed_by ?? null,
+    })),
+    expenses: expenses.rows.map((r: any) => ({
+      expenseId: r.id, createdAt: toISO(r.created_at),
+      settledAt: r.settled_at ? toISO(r.settled_at) : null, kind: r.kind,
+      fundingSource: r.funding_source, category: r.category, description: r.description,
+      payee: r.payee ?? null, status: r.status, advancedAmount: Number(r.advanced_amount),
+      actualAmount: r.actual_amount == null ? null : Number(r.actual_amount),
+      returnedAmount: Number(r.returned_amount), extraCashOut: Number(r.extra_cash_out),
+      receiptRef: r.receipt_ref ?? null, actor: r.actor ?? null, approvedBy: r.approved_by ?? null,
+    })),
+    noSales: noSales.rows.map((r: any) => ({
+      eventId: r.id, createdAt: toISO(r.created_at), reason: r.reason, actor: r.actor ?? null,
+    })),
+    creditActivity: creditActivity.rows.map((r: any) => ({
+      activityType: r.activity_type, activityId: r.activity_id, orderId: r.order_id ?? null,
+      createdAt: toISO(r.created_at), method: r.method ?? null, amount: Number(r.amount),
+      reference: r.reference ?? null, actor: r.actor ?? null,
+    })),
   };
 }
 

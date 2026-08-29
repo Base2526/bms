@@ -408,7 +408,7 @@ test("คืนของบิลเชื่อ = ลดหนี้ ไม่�
   );
 
   const ret = await partiallyReturnPosSale({
-    tenantId, deviceId, orderId: sold.orderId, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: sold.orderId, actorUserId: cashierId,
     lines: [{ orderItemId: Number(items.rows[0].id), packQty: 1 }],
     note: "REASON:CUSTOMER_CHANGE ลูกค้าคืนของ",
     idempotencyKey: key("return-credit"),
@@ -442,7 +442,7 @@ test("คืนซ้ำด้วยคีย์เดิมต้องไม�
     [tenantId, sold]
   );
   await partiallyReturnPosSale({
-    tenantId, deviceId, orderId: sold, actorUserId: cashierId,
+    tenantId, deviceId, shiftId, orderId: sold, actorUserId: cashierId,
     lines: [{ orderItemId: Number(items.rows[0].id), packQty: 1 }],
     note: "REASON:CUSTOMER_CHANGE ลูกค้าคืนของ",
     idempotencyKey: key("return-credit"),
