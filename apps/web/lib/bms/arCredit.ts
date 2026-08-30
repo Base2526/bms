@@ -22,6 +22,18 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const baht = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+export function describeArAvailability(account: { creditLimit: number; balance: number }) {
+  const balance = round2(account.balance);
+  const creditLimit = round2(account.creditLimit);
+  const creditBalance = Math.max(0, round2(-balance));
+  const creditLineAvailable = Math.max(0, round2(creditLimit - Math.max(0, balance)));
+  return {
+    creditBalance,
+    creditLineAvailable,
+    availableCredit: round2(creditLineAvailable + creditBalance),
+  };
+}
+
 export function evaluateArCharge(
   account: { id: string; status: ArAccountStatus; creditLimit: number; balance: number },
   amount: number
@@ -56,6 +68,6 @@ export function evaluateArCharge(
     ok: true,
     accountId: account.id,
     // ยอดติดลบ (ร้านค้างลูกค้าจากการคืนของหลังจ่ายครบ) ถูกหักกลบไปแล้วใน `after`
-    availableCredit: Math.max(0, round2(account.creditLimit - after)),
+    availableCredit: describeArAvailability({ creditLimit: account.creditLimit, balance: after }).availableCredit,
   };
 }

@@ -37,7 +37,7 @@ const Q_ACCOUNTS = gql`
   query ($search: String, $withBalanceOnly: Boolean) {
     bmsArAccounts(search: $search, withBalanceOnly: $withBalanceOnly) {
       id customerId customerName customerPhone creditLimit termsDays status
-      balance availableCredit overdueAmount openInvoiceCount note
+      balance creditLineAvailable creditBalance availableCredit overdueAmount openInvoiceCount note
     }
   }
 `;
@@ -90,6 +90,8 @@ type Account = {
   termsDays: number;
   status: "ACTIVE" | "ON_HOLD" | "CLOSED";
   balance: number;
+  creditLineAvailable: number;
+  creditBalance: number;
   availableCredit: number;
   overdueAmount: number;
   openInvoiceCount: number;
@@ -323,10 +325,17 @@ export default function ReceivablesPage() {
               ),
             },
             {
-              title: "ใช้ได้อีก",
-              dataIndex: "availableCredit",
+              title: "วงเงินเหลือ",
+              dataIndex: "creditLineAvailable",
               align: "right",
               render: (v: number) => `฿${baht(v)}`,
+            },
+            {
+              title: "เครดิตคืนสินค้า",
+              dataIndex: "creditBalance",
+              align: "right",
+              render: (v: number) =>
+                v > 0 ? <Text type="success" strong>฿{baht(v)}</Text> : <Text type="secondary">—</Text>,
             },
             {
               title: "เลยกำหนด",

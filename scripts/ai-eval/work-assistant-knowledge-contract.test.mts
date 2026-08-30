@@ -7,12 +7,128 @@ import { BMS_PERMISSIONS } from "../../apps/web/lib/bms/permissions.ts";
 import {
   SYSTEM_CAPABILITIES,
   SYSTEM_GUIDES,
+  guideCoversCurrentPath,
+  isComprehensiveCurrentPageHelpRequest,
+  isCurrentPageHelpRequest,
   normalizeAssistantQuery,
   searchAssistantKnowledge,
 } from "../../apps/web/lib/bms/assistantKnowledge/index.ts";
 
 const WEB = path.resolve(import.meta.dirname, "../../apps/web");
 const validPermissions = new Set<string>(BMS_PERMISSIONS);
+
+test("current-page help is explicit and does not swallow named workflows", () => {
+  for (const message of [
+    "หน้านี้ใช้งานอย่างไร",
+    "หน้านี้ทำอะไร",
+    "หน้านี้มีไว้ทำอะไร",
+    "ช่วยอธิบายวิธีการใช้งานของหน้านี้ทั้งหมดแบบละเอียด",
+    "หน้าที่กำลังเปิดอยู่ใช้ทำอะไรได้บ้างครับ",
+    "อธิบายทั้งหมด วิธีใช้งานหน้านี้",
+    "What can I do on this page?",
+    "What does this page do?",
+    "Explain the current page",
+  ]) {
+    assert.equal(isCurrentPageHelpRequest(message), true, message);
+  }
+  for (const message of [
+    "ปิดกะ POS ยังไง",
+    "กะนี้ปิดได้หรือยัง",
+    "How do I close a POS shift?",
+    "I cannot use this page",
+    "หน้านี้ใช้งานไม่ได้",
+    "ทำไมหน้านี้โหลดช้า",
+    "What is wrong with this page?",
+    "Why is this page not working?",
+  ]) {
+    assert.equal(isCurrentPageHelpRequest(message), false, message);
+  }
+  assert.equal(isComprehensiveCurrentPageHelpRequest("หน้านี้ทำอะไร"), false);
+  assert.equal(isComprehensiveCurrentPageHelpRequest("อธิบายทุกเมนูในหน้านี้แบบละเอียด"), true);
+  assert.equal(isComprehensiveCurrentPageHelpRequest("Explain all features on this page in detail"), true);
+
+  const dashboardContext = {
+    locale: "th" as const,
+    currentPath: "/admin/dashboard",
+    pageId: "dashboard",
+    permissions: new Set(["report.view"]),
+    kind: "guide" as const,
+    limit: 5,
+  };
+  assert.equal(
+    searchAssistantKnowledge("หน้านี้ใช้งานอย่างไร", dashboardContext)[0]?.id,
+    "dashboard.daily-review",
+    "Dashboard page help must not inherit an earlier POS topic"
+  );
+  assert.equal(
+    searchAssistantKnowledge("ปิดกะ POS ยังไง", dashboardContext)[0]?.id,
+    "pos.shift",
+    "an explicitly named POS workflow must still outrank the open Dashboard page"
+  );
+
+  const inboxContext = {
+    ...dashboardContext,
+    currentPath: "/admin/inbox",
+    pageId: "inbox",
+    permissions: new Set(["inbox.view"]),
+  };
+  assert.equal(
+    searchAssistantKnowledge("หน้านี้ทำอะไร", inboxContext)[0]?.id,
+    "inbox.handle-conversation",
+    "the short wording used in the Inbox must resolve from its current route"
+  );
+});
+
+test("current-page route matching covers every catalog route and only declared detail prefixes", () => {
+  for (const guide of SYSTEM_GUIDES) {
+    assert.equal(guideCoversCurrentPath(guide, guide.route), true, `${guide.id} misses its own route`);
+    assert.equal(
+      guideCoversCurrentPath(guide, `${guide.route}/example-detail`),
+      true,
+      `${guide.id} misses a child route`
+    );
+    for (const prefix of guide.coversRoutePrefixes ?? []) {
+      assert.equal(guideCoversCurrentPath(guide, prefix), true, `${guide.id} misses prefix ${prefix}`);
+      assert.equal(
+        guideCoversCurrentPath(guide, `${prefix}/example-detail`),
+        true,
+        `${guide.id} misses child of prefix ${prefix}`
+      );
+    }
+    assert.equal(
+      guideCoversCurrentPath(guide, `${guide.route}-different`),
+      false,
+      `${guide.id} accepts a sibling route with the same text prefix`
+    );
+  }
+});
+
+test("current-page retrieval returns the complete declared guide set for every route", () => {
+  const permissions = new Set<string>(BMS_PERMISSIONS);
+  const routes = [...new Set(SYSTEM_GUIDES.map((guide) => guide.route))];
+  for (const currentPath of routes) {
+    const expected = SYSTEM_GUIDES
+      .filter((guide) => guideCoversCurrentPath(guide, currentPath))
+      .map((guide) => guide.id)
+      .sort();
+    for (const message of ["หน้านี้ทำอะไร", "อธิบายทุกเมนูในหน้านี้ทั้งหมดแบบละเอียด"]) {
+      const actual = searchAssistantKnowledge(message, {
+        locale: "th",
+        currentPath,
+        permissions,
+        kind: "guide",
+        limit: SYSTEM_GUIDES.length,
+      })
+        .filter((entry) => {
+          const guide = SYSTEM_GUIDES.find((candidate) => candidate.id === entry.id);
+          return guide ? guideCoversCurrentPath(guide, currentPath) : false;
+        })
+        .map((entry) => entry.id)
+        .sort();
+      assert.deepEqual(actual, expected, `${currentPath} lost guides for "${message}"`);
+    }
+  }
+});
 
 /**
  * Question-level expectations live in `work-assistant-question-corpus.mts` and are asserted by

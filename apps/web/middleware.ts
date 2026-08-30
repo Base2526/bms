@@ -22,10 +22,6 @@ export const config = {
 };
 
 export function middleware(req: NextRequest) {
-
-  // console.log("[middleware] =", req);
-
-  // console.log("[middleware]", req);
   const { pathname, search } = req.nextUrl;
   if (!pathname.startsWith("/admin")){
     const userToken = req.cookies.get(USER_COOKIE)?.value;
@@ -41,7 +37,6 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // console.log("middleware : Not yet /admin :", token, pathname);
     return NextResponse.next();
   } 
   if (PUBLIC.includes(pathname)) return NextResponse.next();
@@ -58,8 +53,6 @@ export function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-scope", is_admin ? "admin" : "web"); // <— ใส่ scope ให้ทุก request
 
-  console.log("middleware :", pathname, token, is_admin ? "Y" : "N");
-
   // return NextResponse.next({ request: { headers: requestHeaders } });
 
   // return NextResponse.next(); // verification ทำใน layout/route handler
@@ -74,7 +67,6 @@ export function middleware(req: NextRequest) {
   //    หมายเหตุ: cookie นี้จะใช้กับ request ถัดไป ไม่ใช่ตัวเดียวกัน
   // res.cookies.set("scope", isAdmin ? "admin" : "web", { path: "/", sameSite: "lax" });
 
-  console.log("[MW]", pathname, "→ x-scope:", is_admin ? "admin" : "web");
   return res;
 }
 

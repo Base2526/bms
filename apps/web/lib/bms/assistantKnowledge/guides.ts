@@ -130,9 +130,31 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     title: both("ตรวจภาพรวมร้านประจำวัน", "Review the daily store overview"),
     summary: both("ใช้ Dashboard เพื่อดูยอดขาย งานค้าง และสัญญาณที่ต้องจัดการต่อ", "Use Dashboard to review sales, pending work, and operational signals."),
     aliases: aliases(["เปิดร้านมาต้องดูอะไรก่อน", "งานวันนี้ต้องทำอะไร", "เริ่มวันทำงาน", "dashboard ใช้ยังไง", "ดูภาพรวมร้าน", "เช็กงานวันนี้"], ["what to check first each day", "daily review", "how to use dashboard", "store overview", "today's work"]), requiredPermissions: ["report.view"],
-    prerequisites: lists(["ข้อมูลต้องมาจากรายการจริงของร้าน"], ["Figures must come from the shop's live records."]),
-    steps: lists(["เปิด Dashboard", "เลือกช่วงเวลาที่ต้องการ", "ตรวจตัวเลขและรายการค้าง", "เปิดหน้ารายละเอียดจากการ์ดที่เกี่ยวข้อง"], ["Open Dashboard.", "Choose the period.", "Review figures and pending items.", "Open the relevant detail page."]),
-    warnings: lists(["อย่าใช้ตัวเลข placeholder เป็นข้อมูลจริง"], ["Never present placeholder figures as live data."]), relatedCapabilityIds: ["dashboard.overview"],
+    prerequisites: lists(["บัญชีต้องมี report.view เพื่ออ่าน Dashboard", "การรับทำ ปิด หรือยกเลิก Action ต้องมี action.manage เพิ่ม"], ["The account needs report.view to read Dashboard.", "Accepting, completing, or dismissing an Action additionally requires action.manage."]),
+    steps: lists(
+      [
+        "เริ่มที่สถานะระบบและช่องทางเชื่อมต่อ: ช่องทางที่ยังไม่ตั้งค่าหรือมีปัญหาให้เปิด Settings จากรายการนั้น",
+        "อ่านรายการต้องทำตอนนี้จากบนลงล่าง โดยจัดการ CRITICAL ก่อน แล้วค่อยงานเตือนและงานข้อมูล",
+        "ตรวจภาพรวมธุรกิจและป้ายช่วงเวลาของแต่ละตัวเลข เพราะยอดวันนี้ ยอดขาย 7 วัน สุขภาพ AI 7 วัน และ Action 30 วันไม่ใช่ช่วงเดียวกัน",
+        "ใช้รายการ Action เพื่อตรวจหลักฐาน ผลกระทบ ผู้รับผิดชอบ และกำหนดส่ง; การรับทำ ปิด หรือยกเลิกต้องมี action.manage",
+        "ตรวจ Action Center ด้านสต็อกสำหรับของใกล้หมด ความเสี่ยงหมดใน 7 วัน ข้อเสนอซื้อ ของเคลื่อนไหวช้า และ lot ใกล้หมดอายุ แล้วเปิดหน้าต้นทางก่อนตัดสินใจ",
+        "ตรวจ AI usage/AI failure คูปอง สินค้าขายดี และลูกค้าหลักเพื่อหาสัญญาณที่ต้องตามต่อ",
+        "กด Refresh เมื่อต้องการอ่านข้อมูลรอบใหม่ และใช้ลิงก์ในการ์ดหรือแถวเพื่อไปตรวจรายการต้นทาง",
+      ],
+      [
+        "Start with system and channel status. Open Settings from any channel that is unconfigured or unhealthy.",
+        "Read the action-now list from top to bottom: handle CRITICAL items before warnings and informational work.",
+        "Review the business overview and each figure's period label because today, seven-day sales, seven-day AI health, and 30-day Actions are different windows.",
+        "Use the Action list to inspect evidence, expected impact, owner, and due date; accepting, completing, or dismissing requires action.manage.",
+        "Review the inventory Action Center for low stock, seven-day stockout risk, purchase suggestions, slow stock, and expiring lots, then open the source page before deciding.",
+        "Review AI usage/failures, coupons, top products, and top customers for signals that need follow-up.",
+        "Use Refresh to read a new snapshot, and follow card or row links to verify the source records.",
+      ]
+    ),
+    warnings: lists(
+      ["คำแนะนำและ Action ไม่สร้าง PO ไม่ปรับสต็อก และไม่ติดต่อใครอัตโนมัติ", "ช่วงเวลาของแต่ละส่วนต่างกัน ต้องอ่านป้ายกำกับก่อนเปรียบเทียบ", "ข้อมูลสดต้องยืนยันจากรายการต้นทาง ไม่ใช่จากข้อความคู่มือ"],
+      ["Recommendations and Actions never create a PO, adjust stock, or contact anyone automatically.", "Sections use different time windows; read their labels before comparing them.", "Verify live facts in source records, not from guide text."]
+    ), relatedCapabilityIds: ["dashboard.overview"],
   },
   {
     id: "dashboard.data-freshness", module: "dashboard", pageId: "dashboard", route: "/admin/dashboard",

@@ -20,8 +20,8 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 // กติกาวงเงินอยู่ในไฟล์ pure ล้วน (ไม่ import อะไรเลย) เพื่อให้เทสรันได้โดยไม่ต้องมี DB
-export { evaluateArCharge } from "./arCredit";
-import { AR_ACCOUNT_STATUSES, evaluateArCharge } from "./arCredit";
+export { describeArAvailability, evaluateArCharge } from "./arCredit";
+import { AR_ACCOUNT_STATUSES, describeArAvailability, evaluateArCharge } from "./arCredit";
 import type { ArAccountStatus, ArChargeCheck } from "./arCredit";
 export type { ArAccountStatus, ArChargeCheck } from "./arCredit";
 export type ArInvoiceStatus = "OPEN" | "PARTIAL" | "PAID" | "VOID" | "WRITTEN_OFF";
@@ -40,7 +40,11 @@ export type ArAccount = {
   status: ArAccountStatus;
   /** ยอดหนี้คงค้าง · ติดลบ = ร้านค้างลูกค้า */
   balance: number;
-  /** วงเงินที่ยังใช้ได้ = credit_limit − balance (ไม่ต่ำกว่า 0) */
+  /** วงเงินที่ยังเหลือจากเพดานเครดิต ไม่รวมยอดร้านค้างลูกค้า */
+  creditLineAvailable: number;
+  /** เครดิตคงเหลือจากยอดติดลบ เช่น คืนของหลังจ่ายครบ */
+  creditBalance: number;
+  /** ยอดขายเชื่อที่ยังทำได้หลังรวมเครดิตคงเหลือจากการคืนของ */
   availableCredit: number;
   /** ยอดของใบที่เลยกำหนดชำระแล้ว */
   overdueAmount: number;
@@ -92,6 +96,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function mapAccount(r: any): ArAccount {
   const balance = Number(r.balance);
   const creditLimit = Number(r.credit_limit);
+  const availability = describeArAvailability({ creditLimit, balance });
   return {
     id: r.id,
     customerId: r.customer_id,
@@ -101,7 +106,9 @@ function mapAccount(r: any): ArAccount {
     termsDays: Number(r.terms_days),
     status: r.status,
     balance,
-    availableCredit: Math.max(0, round2(creditLimit - balance)),
+    creditLineAvailable: availability.creditLineAvailable,
+    creditBalance: availability.creditBalance,
+    availableCredit: availability.availableCredit,
     overdueAmount: Number(r.overdue_amount ?? 0),
     openInvoiceCount: Number(r.open_invoice_count ?? 0),
     note: r.note ?? null,

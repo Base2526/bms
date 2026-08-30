@@ -37,43 +37,6 @@ const server = new ApolloServer({
   plugins: [metricsPlugin()],
 });
 
-function getClientIp(req: NextRequest) {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  return (
-    req.headers.get("x-real-ip") ||
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("true-client-ip") ||
-    "unknown"
-  );
-}
-
-function isAndroidRequest(req: NextRequest) {
-  const ua = (req.headers.get("user-agent") || "").toLowerCase();
-  return ua.includes("android") || ua.includes("okhttp");
-}
-
-function logIncoming(req: NextRequest, extra?: Record<string, any>) {
-  const ip = getClientIp(req);
-  const ua = req.headers.get("user-agent") || "";
-  const scope = req.headers.get("x-scope") || "";
-  const ct = req.headers.get("content-type") || "";
-  const ref = req.headers.get("referer") || "";
-  const android = isAndroidRequest(req);
-
-  console.log(
-    `[GraphQL IN] ${new Date().toISOString()} ${req.method} ${req.nextUrl.pathname}` +
-      ` ip=${ip}` +
-      ` android=${android}` +
-      ` scope=${scope || "-"}` +
-      ` ct=${ct || "-"}` +
-      ` ref=${ref ? ref.slice(0, 120) : "-"}`
-  );
-
-  if (android) console.log("[Android UA]", ua);
-  if (extra) console.log("[GraphQL IN extra]", extra);
-}
-
 // ✅ createContext: รองรับ web/admin(cookie) + android(bearer)
 async function createContext(request: NextRequest) {
   let scope = (request.headers.get("x-scope") || "").trim().toLowerCase();
@@ -151,7 +114,6 @@ const handler = startServerAndCreateNextHandler<NextRequest>(server, {
 
 const requestHandler = async (request: NextRequest) => {
   const contentType = request.headers.get("content-type") || "";
-  logIncoming(request, { multipart: contentType.includes("multipart/form-data") });
 
   if (contentType.includes("multipart/form-data")) {
     const context = await createContext(request);

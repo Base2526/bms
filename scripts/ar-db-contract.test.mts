@@ -194,6 +194,8 @@ test("ขายเชื่อ: ของออกจากร้านจริ
 
   const account = await getArAccountByCustomer(tenantId, customerId);
   assert.equal(account!.balance, 2000);
+  assert.equal(account!.creditLineAvailable, 3000);
+  assert.equal(account!.creditBalance, 0);
   assert.equal(account!.availableCredit, 3000);
 });
 
@@ -503,6 +505,10 @@ test("ยอดเครดิตจากคืนของหลังจ่�
     -2000,
     "จ่ายครบแล้ว void ต้องกลายเป็นยอดที่ร้านค้างลูกค้า"
   );
+  const creditedAccount = await getArAccountByCustomer(tenantId, creditOffsetCustomerId);
+  assert.equal(creditedAccount!.creditLineAvailable, 5000);
+  assert.equal(creditedAccount!.creditBalance, 2000);
+  assert.equal(creditedAccount!.availableCredit, 7000);
 
   const next = await sell(
     "credit-offset-target",
