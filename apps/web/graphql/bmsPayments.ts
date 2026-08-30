@@ -126,6 +126,13 @@ export const bmsPaymentsResolvers = {
     rejectedAt: (p: any) => toISO(p.rejected_at),
     refundedAt: (p: any) => toISO(p.refunded_at),
     amount: (p: any) => Number(p.amount),
+    completedRefundAmount: (p: any) => Number(p.completed_refund_amount ?? 0),
+    pendingRefundAmount: (p: any) => Number(p.pending_refund_amount ?? 0),
+    netAmount: (p: any) => {
+      const amount = Number(p.amount ?? 0);
+      const completed = Number(p.completed_refund_amount ?? 0);
+      return Math.max(0, Math.round((amount - completed) * 100) / 100);
+    },
     verifyResult: (p: any) =>
       p.verify_result == null ? null : typeof p.verify_result === "string" ? p.verify_result : JSON.stringify(p.verify_result),
     createdAt: (p: any) => toISO(p.created_at),

@@ -538,7 +538,21 @@ export function refundPayment(tenantId: string, paymentId: string, actor?: strin
 export async function getPayment(tenantId: string, id: string) {
   const res = await query(
     `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
-            confirmed_at, rejected_at, refunded_at, created_at, updated_at
+            confirmed_at, rejected_at, refunded_at, created_at, updated_at,
+            COALESCE((
+              SELECT SUM(a.amount)
+                FROM bms_pos_refund_allocations a
+               WHERE a.tenant_id = bms_payments.tenant_id
+                 AND a.payment_id = bms_payments.id
+                 AND a.status = 'COMPLETED'
+            ), 0) AS completed_refund_amount,
+            COALESCE((
+              SELECT SUM(a.amount)
+                FROM bms_pos_refund_allocations a
+               WHERE a.tenant_id = bms_payments.tenant_id
+                 AND a.payment_id = bms_payments.id
+                 AND a.status = 'PENDING'
+            ), 0) AS pending_refund_amount
        FROM bms_payments WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
@@ -554,7 +568,21 @@ export async function listPayments(
   const search = opts.search?.trim() || null;
   const res = await query(
     `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
-            confirmed_at, rejected_at, refunded_at, created_at, updated_at
+            confirmed_at, rejected_at, refunded_at, created_at, updated_at,
+            COALESCE((
+              SELECT SUM(a.amount)
+                FROM bms_pos_refund_allocations a
+               WHERE a.tenant_id = bms_payments.tenant_id
+                 AND a.payment_id = bms_payments.id
+                 AND a.status = 'COMPLETED'
+            ), 0) AS completed_refund_amount,
+            COALESCE((
+              SELECT SUM(a.amount)
+                FROM bms_pos_refund_allocations a
+               WHERE a.tenant_id = bms_payments.tenant_id
+                 AND a.payment_id = bms_payments.id
+                 AND a.status = 'PENDING'
+            ), 0) AS pending_refund_amount
        FROM bms_payments
       WHERE tenant_id = $1
         AND ($2::uuid IS NULL OR order_id = $2)

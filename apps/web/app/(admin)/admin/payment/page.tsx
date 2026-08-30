@@ -20,6 +20,7 @@ type PayStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "REFUNDED";
 type PayMethod = "BANK_TRANSFER" | "QR" | "CARD" | "TIKTOK" | "CASH" | "WALLET" | "STORE_CREDIT" | "CREDIT";
 type Payment = {
   id: string; orderId: string; method: PayMethod; amount: number; status: PayStatus;
+  completedRefundAmount: number; pendingRefundAmount: number; netAmount: number;
   slipUrl: string | null; slipRef: string | null; verifyResult: string | null;
   note: string | null; verifiedBy: string | null; createdAt: string; updatedAt: string;
 };
@@ -28,7 +29,8 @@ type Payment = {
 const Q_PAYMENTS = gql`
   query BmsPayments($search: String, $status: BmsPaymentStatus, $limit: Int) {
     bmsPayments(search: $search, status: $status, limit: $limit) {
-      id orderId method amount status slipUrl slipRef verifyResult note verifiedBy createdAt updatedAt
+      id orderId method amount completedRefundAmount pendingRefundAmount netAmount
+      status slipUrl slipRef verifyResult note verifiedBy createdAt updatedAt
     }
   }
 `;
@@ -76,6 +78,34 @@ function methodLabels(t: (key: string) => string): Record<PayMethod, string> {
   };
 }
 const FILTERS = ["ALL", "PENDING", "CONFIRMED", "REJECTED", "REFUNDED"] as const;
+
+const baht = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
+
+function PaymentAmountBreakdown({ payment }: { payment: Payment }) {
+  const { t } = useI18n();
+  const completedRefund = Number(payment.completedRefundAmount || 0);
+  const pendingRefund = Number(payment.pendingRefundAmount || 0);
+  const hasRefund = completedRefund > 0 || pendingRefund > 0;
+  if (!hasRefund) return <Typography.Text>{baht(payment.amount)}</Typography.Text>;
+  return (
+    <Space direction="vertical" size={0} style={{ textAlign: "right" }}>
+      <Typography.Text>{t("admin_payment.amount_received")} {baht(payment.amount)}</Typography.Text>
+      {completedRefund > 0 && (
+        <Typography.Text type="danger" style={{ fontSize: 12 }}>
+          {t("admin_payment.amount_refunded")} {baht(completedRefund)}
+        </Typography.Text>
+      )}
+      {pendingRefund > 0 && (
+        <Typography.Text type="warning" style={{ fontSize: 12 }}>
+          {t("admin_payment.amount_pending_refund")} {baht(pendingRefund)}
+        </Typography.Text>
+      )}
+      <Typography.Text type="success" strong style={{ fontSize: 12 }}>
+        {t("admin_payment.amount_net")} {baht(payment.netAmount)}
+      </Typography.Text>
+    </Space>
+  );
+}
 
 function PaymentManagement() {
   const { t } = useI18n();
@@ -172,8 +202,8 @@ function PaymentManagement() {
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
       { title: t("admin_payment.col_method"), dataIndex: "method", key: "method", width: 130,
         render: (m: PayMethod) => METHOD_LABEL[m] || m },
-      { title: t("admin_payment.col_amount"), dataIndex: "amount", key: "amount", width: 110, align: "right" as const,
-        render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+      { title: t("admin_payment.col_amount"), dataIndex: "amount", key: "amount", width: 190, align: "right" as const,
+        render: (_v: number, r: Payment) => <PaymentAmountBreakdown payment={r} /> },
       { title: t("admin_payment.col_ref_slip"), key: "ref",
         render: (_: any, r: Payment) => r.slipUrl
           ? <a href={r.slipUrl} target="_blank" rel="noreferrer">{t("admin_payment.view_slip")}</a>
@@ -240,7 +270,7 @@ function PaymentManagement() {
               extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
               fields={[
                 { label: t("admin_payment.field_order"), value: <Typography.Text code>{r.orderId.slice(0, 8)}</Typography.Text> },
-                { label: t("admin_payment.col_amount"), value: <Typography.Text strong>{`${Number(r.amount).toLocaleString()} ฿`}</Typography.Text> },
+                { label: t("admin_payment.col_amount"), value: <PaymentAmountBreakdown payment={r} /> },
                 {
                   label: t("admin_payment.col_ref_slip"),
                   value: r.slipUrl

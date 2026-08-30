@@ -1302,6 +1302,7 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsOrderItem {
     product_sku: String!
+    product_name: String
     size: String!
     qty: Int!
     unit_price: Float!
@@ -1316,6 +1317,9 @@ export const typeDefs = /* GraphQL */ `
     discount_amount: Float!
     shipping_fee: Float!
     amount_due: Float!
+    deposit_paid: Float!
+    deposit_balance_due: Float!
+    deposit_status: String
     coupon_code: String
     preferred_carrier: BmsCarrier   # ขนส่งที่ลูกค้าแจ้งไว้ตอนสั่ง — เป็นความต้องการ ไม่ใช่ขนส่งจริงที่ใช้ส่ง (7.46)
     created_at: String!
@@ -1525,6 +1529,9 @@ export const typeDefs = /* GraphQL */ `
     orderId: ID!
     method: BmsPaymentMethod!
     amount: Float!
+    completedRefundAmount: Float!
+    pendingRefundAmount: Float!
+    netAmount: Float!
     status: BmsPaymentStatus!
     slipUrl: String
     slipRef: String

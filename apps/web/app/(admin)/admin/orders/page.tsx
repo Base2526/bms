@@ -41,7 +41,7 @@ import { useI18n } from "@/lib/i18nContext";
 type OrderStatus =
   | "PENDING" | "PAID" | "PACKING" | "SHIPPED" | "COMPLETED" | "CANCELLED" | "RETURNED";
 
-type OrderItem = { product_sku: string; size: string; qty: number; unit_price: number };
+type OrderItem = { product_sku: string; product_name: string | null; size: string; qty: number; unit_price: number };
 type Order = {
   id: string;
   channel: string;
@@ -52,6 +52,9 @@ type Order = {
   discountLines?: Array<{ source: string; label: string; amount: number; pointsUsed: number }>;
   shipping_fee: number;
   amount_due: number;
+  deposit_paid: number;
+  deposit_balance_due: number;
+  deposit_status: string | null;
   coupon_code: string | null;
   created_at: string;
   updated_at: string;
@@ -63,9 +66,9 @@ type Order = {
 const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
-      id channel customer_ref status total_amount discount_amount shipping_fee amount_due coupon_code created_at updated_at hasShippingAddress
+      id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code created_at updated_at hasShippingAddress
       discountLines { source label amount pointsUsed }
-      items { product_sku size qty unit_price }
+      items { product_sku product_name size qty unit_price }
     }
   }
 `;
@@ -229,6 +232,18 @@ function OrdersManagement() {
                 -{money(r.discount_amount)} {r.coupon_code ? `(${r.coupon_code})` : ""}
               </Typography.Text>
             )}
+            {Number(r.deposit_paid || 0) > 0 && (
+              <>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  {t("admin_orders.deposit_received")} {money(r.deposit_paid)}
+                </Typography.Text>
+                {Number(r.deposit_balance_due || 0) > 0 && (
+                  <Typography.Text type="warning" style={{ fontSize: 11 }}>
+                    {t("admin_orders.deposit_balance_due")} {money(r.deposit_balance_due)}
+                  </Typography.Text>
+                )}
+              </>
+            )}
           </Space>
         ) },
       { title: "Status", dataIndex: "status", key: "status", width: 130,
@@ -289,7 +304,15 @@ function OrdersManagement() {
 }
 
 const ITEM_COLUMNS = [
-  { title: "SKU", dataIndex: "product_sku", key: "sku" },
+  { title: "สินค้า / SKU", dataIndex: "product_sku", key: "sku",
+    render: (_: string, it: OrderItem) => (
+      <Space direction="vertical" size={0}>
+        <Typography.Text>{it.product_name || it.product_sku}</Typography.Text>
+        {it.product_name && it.product_name !== it.product_sku && (
+          <Typography.Text code style={{ fontSize: 12 }}>{it.product_sku}</Typography.Text>
+        )}
+      </Space>
+    ) },
   { title: "Size", dataIndex: "size", key: "size", width: 80 },
   { title: "Qty", dataIndex: "qty", key: "qty", width: 80, align: "right" as const },
   { title: "Unit Price", dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
@@ -438,6 +461,18 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
                 <Typography.Text type="danger" style={{ fontSize: 11, display: "block" }}>
                   -{money(r.discount_amount)} {r.coupon_code ? `(${r.coupon_code})` : ""}
                 </Typography.Text>
+              )}
+              {Number(r.deposit_paid || 0) > 0 && (
+                <>
+                  <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                    {t("admin_orders.deposit_received")} {money(r.deposit_paid)}
+                  </Typography.Text>
+                  {Number(r.deposit_balance_due || 0) > 0 && (
+                    <Typography.Text type="warning" style={{ fontSize: 11, display: "block" }}>
+                      {t("admin_orders.deposit_balance_due")} {money(r.deposit_balance_due)}
+                    </Typography.Text>
+                  )}
+                </>
               )}
             </>
           ),

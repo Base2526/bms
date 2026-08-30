@@ -1666,41 +1666,38 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   const ord = o.rows[0];
   const isPos = ord.channel === "pos";
 
-  // POS ไม่เขียน audit order.pay (เขียน pos.sale แทน) จึงต้องอ่านการชำระเงินจาก
-  // bms_payments ตรง ๆ ไม่งั้น stepper บอกว่า "ยังไม่ชำระ" ทั้งที่เก็บเงินไปแล้ว
+  // เงินที่ POS รับไว้ผูกกับ order_id ไม่ใช่ channel ของออเดอร์: ออเดอร์จาก web/Inbox
+  // สามารถถูกเลือกไปรับมัดจำที่หน้า POS ได้ แต่ channel ยังต้องเป็นต้นทางเดิมเพื่อ
+  // เก็บประวัติลูกค้าให้ถูกต้อง จึงอ่าน payment จากตารางเงินจริงเสมอ
   // และ timeline ก็ไม่มีบรรทัดไหนบอกว่ารับเงินมาเท่าไหร่
   //
   // อ่าน **ทุก** แถว ไม่ใช่ LIMIT 1 — บิลมัดจำ (9.0) รับเงินได้หลายงวด (รับเพิ่ม)
   // และบิลจ่ายผสมมีหลายวิธีในครั้งเดียว การอ่านแถวแรกแถวเดียวทำให้งวดที่ 2 เป็นต้นไป
   // ไม่เคยโผล่ใน timeline และยอดที่เก็บได้จริงถูกนับต่ำกว่าความจริง
-  const posPayments = isPos
-    ? (await query<{ method: string; amount: string; status: string; created_at: any }>(
-        `SELECT method, amount, status, created_at
-           FROM bms_payments
-          WHERE tenant_id = $1 AND order_id = $2 AND status IN ('CONFIRMED', 'REFUNDED')
-          ORDER BY created_at, id`,
-        [tenantId, orderId]
-      )).rows
-    : [];
+  const posPayments = (await query<{ method: string; amount: string; status: string; created_at: any }>(
+    `SELECT method, amount, status, created_at
+       FROM bms_payments
+      WHERE tenant_id = $1 AND order_id = $2 AND status IN ('CONFIRMED', 'REFUNDED')
+      ORDER BY created_at, id`,
+    [tenantId, orderId]
+  )).rows;
 
   // บิลนี้เป็นบิลมัดจำหรือเปล่า — หน้านี้ไม่เคยแตะตารางนี้เลย บิลที่รับมัดจำไว้จึงอ่าน
   // เหมือนบิลค้างจ่ายธรรมดา ทั้งที่มีเงินเข้ามาแล้วส่วนหนึ่งและของถูกจองไว้ให้ลูกค้า
-  const depositRow = isPos
-    ? (await query<{
-        deposit_paid: string; total_amount: string; status: string; due_at: any; created_at: any;
-        cancelled_at: any; cancel_reason: string | null; cancelled_by_name: string | null;
-      }>(
-        `SELECT d.deposit_paid, d.total_amount, d.status, d.due_at, d.created_at,
-                d.cancelled_at, d.cancel_reason,
-                COALESCE(cancelled_user.name, cancelled_user.email) AS cancelled_by_name
-           FROM bms_pos_deposits d
-           LEFT JOIN users cancelled_user
-             ON cancelled_user.tenant_id = d.tenant_id AND cancelled_user.id = d.cancelled_by
-          WHERE d.tenant_id = $1 AND d.order_id = $2
-          LIMIT 1`,
-        [tenantId, orderId]
-      )).rows[0] ?? null
-    : null;
+  const depositRow = (await query<{
+    deposit_paid: string; total_amount: string; status: string; due_at: any; created_at: any;
+    cancelled_at: any; cancel_reason: string | null; cancelled_by_name: string | null;
+  }>(
+    `SELECT d.deposit_paid, d.total_amount, d.status, d.due_at, d.created_at,
+            d.cancelled_at, d.cancel_reason,
+            COALESCE(cancelled_user.name, cancelled_user.email) AS cancelled_by_name
+       FROM bms_pos_deposits d
+       LEFT JOIN users cancelled_user
+         ON cancelled_user.tenant_id = d.tenant_id AND cancelled_user.id = d.cancelled_by
+      WHERE d.tenant_id = $1 AND d.order_id = $2
+      LIMIT 1`,
+    [tenantId, orderId]
+  )).rows[0] ?? null;
 
   // คืนสินค้า/ยกเลิกบิลที่เคาน์เตอร์ (7.91/7.97) เขียน audit เป็น pos.return/pos.void
   // ไม่ใช่ order.% เลย จึงไม่เคยผ่านตัวกรองข้างล่างนี้ — บิลที่คืนไปแล้วดูเหมือนไม่มี
@@ -1754,6 +1751,38 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
         [tenantId, orderId]
       )).rows
     : [];
+
+  const posReturnItemsByReturn = new Map<string, string[]>();
+  if (posReturnRows.length > 0) {
+    const returnItemRows = (await query<{
+      pos_return_id: string; product_sku: string; product_name: string | null;
+      size: string | null; pack_qty: string; refund_amount: string;
+    }>(
+      `SELECT pri.pos_return_id,
+              oi.product_sku,
+              oi.product_name,
+              oi.size,
+              pri.pack_qty,
+              pri.refund_amount
+         FROM bms_pos_return_items pri
+         JOIN bms_order_items oi
+           ON oi.tenant_id = pri.tenant_id AND oi.id = pri.order_item_id
+        WHERE pri.tenant_id = $1
+          AND pri.pos_return_id = ANY($2::uuid[])
+        ORDER BY pri.pos_return_id, pri.id`,
+      [tenantId, posReturnRows.map((row) => row.id)]
+    )).rows;
+    for (const item of returnItemRows) {
+      const existing = posReturnItemsByReturn.get(item.pos_return_id) ?? [];
+      const qty = Number(item.pack_qty ?? 0).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+      const amount = Number(item.refund_amount ?? 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const name = item.product_name?.trim() || item.product_sku;
+      const skuText = item.product_sku && item.product_sku !== name ? ` · SKU ${item.product_sku}` : "";
+      const sizeText = item.size ? ` (${item.size})` : "";
+      existing.push(`${qty}x ${name}${sizeText}${skuText} · ฿${amount}`);
+      posReturnItemsByReturn.set(item.pos_return_id, existing);
+    }
+  }
 
   // audit เกี่ยวกับ order นี้ (target = orderId) — resolve ชื่อ actor จาก email
   const auditRows = (await query<{ actor: string | null; action: string; created_at: any }>(
@@ -1942,10 +1971,14 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
     const title = r.is_void
       ? "ยกเลิกบิล"
       : r.return_mode === "FULL" ? "คืนสินค้าทั้งบิล" : "คืนสินค้าบางรายการ";
+    const returnedItems = posReturnItemsByReturn.get(r.id) ?? [];
+    const itemText = returnedItems.length > 0
+      ? ` · รายการ: ${returnedItems.slice(0, 3).join("; ")}${returnedItems.length > 3 ? `; +${returnedItems.length - 3} รายการ` : ""}`
+      : "";
     events.push({
       kind: r.is_void ? "pos_void" : "pos_return",
       at: jIso(r.created_at)!,
-      text: `${title} · คืนเงิน ฿${amount}${reasonText}${creditText}`,
+      text: `${title} · คืนเงิน ฿${amount}${itemText}${reasonText}${creditText}`,
       actorName: actor,
     });
   }
