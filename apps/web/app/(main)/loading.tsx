@@ -1,9 +1,12 @@
-import { Spin } from "antd";
+import { Skeleton } from "antd";
 
 export default function MainLoading() {
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-      <Spin size="large" />
+    <div
+      aria-hidden="true"
+      style={{ width: "min(100% - 32px, 1120px)", margin: "32px auto" }}
+    >
+      <Skeleton active title={{ width: "30%" }} paragraph={{ rows: 8 }} />
     </div>
   );
 }
