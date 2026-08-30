@@ -12,7 +12,7 @@ import { requireAuth } from "@/lib/auth";
 import { audit } from "@/lib/bms/audit";
 import { loadPermissions, requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
-import { runToolLoop } from "@/lib/bms/tools/runtime";
+import { runApprovedTool, runToolLoop } from "@/lib/bms/tools/runtime";
 import { staffTools } from "@/lib/bms/tools/catalog";
 import {
   runPharmacyTestHarness,
@@ -21,6 +21,11 @@ import {
 } from "@/lib/bms/pharmacy/testHarness";
 import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
 import { clarifyAmbiguousStaffRequest } from "@/lib/bms/staffAssistantClarification";
+import {
+  formatLoyaltyRedemptionReply,
+  isLoyaltyRedemptionCalculationRequest,
+  type LoyaltyProgramStatus,
+} from "@/lib/bms/assistantLoyaltyReply";
 import {
   SYSTEM_GUIDES,
   guideCoversCurrentPath,
@@ -228,6 +233,49 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
       links: pageLinks,
       proposals: [],
       trace: [],
+    };
+  }
+
+  if (isLoyaltyRedemptionCalculationRequest(message, currentPath, pageId)) {
+    await requirePermission(ctx, "member.view");
+    const loyaltyTool = staffTools(perms).find((tool) => tool.name === "get_loyalty_program_status");
+    if (!loyaltyTool) throw new Error("approved loyalty status tool is unavailable");
+    const { result, trace } = await runApprovedTool({
+      tool: loyaltyTool,
+      input: {},
+      execCtx: {
+        tenantId,
+        surface: "staff",
+        actor: ctx?.admin?.email || String(ctx?.admin?.id ?? "admin"),
+        ctx,
+        permissions: perms,
+        role,
+        isPlatformAdmin: platformAdmin,
+        currentPath,
+        pageId,
+        locale,
+      },
+    });
+    if (!result.ok) {
+      return {
+        reply: locale === "en"
+          ? "The current loyalty settings could not be read. No shop data was changed."
+          : "ยังอ่านค่าการสะสมแต้มปัจจุบันไม่ได้ โดยไม่มีข้อมูลร้านถูกเปลี่ยนแปลง",
+        answerType: "BUSINESS",
+        citations,
+        links,
+        proposals: [],
+        trace: [{ tool: trace.tool, ok: trace.ok, summary: trace.summary }],
+      };
+    }
+    const settings = result.data as LoyaltyProgramStatus;
+    return {
+      reply: formatLoyaltyRedemptionReply(settings, message, locale),
+      answerType: "BUSINESS",
+      citations,
+      links,
+      proposals: [],
+      trace: [{ tool: trace.tool, ok: trace.ok, summary: trace.summary }],
     };
   }
 

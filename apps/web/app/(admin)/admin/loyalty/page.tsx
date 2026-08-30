@@ -281,6 +281,8 @@ export default function LoyaltyPage() {
 
   // useWatch ต้องอยู่เหนือ early return ทุกตัว ไม่งั้นเป็น conditional hook
   const watchedEarnMode = Form.useWatch("earnMode", settingsForm);
+  const watchedRedeemPointsPerUnit = Form.useWatch("redeemPointsPerUnit", settingsForm);
+  const watchedRedeemBahtPerUnit = Form.useWatch("redeemBahtPerUnit", settingsForm);
 
   if (!permsLoading && !can("member.view")) {
     return <Alert closable type="warning" showIcon message={t("admin_loyalty.no_permission")} />;
@@ -291,6 +293,14 @@ export default function LoyaltyPage() {
   const tiers = data?.bmsMembershipTiers || [];
   const outstanding = data?.bmsLoyaltyOutstanding;
   const earnMode = watchedEarnMode ?? settings?.earnMode;
+  const redeemPointsPerUnit = Number(watchedRedeemPointsPerUnit ?? settings?.redeemPointsPerUnit ?? 0);
+  const redeemBahtPerUnit = Number(watchedRedeemBahtPerUnit ?? settings?.redeemBahtPerUnit ?? 0);
+  const redemptionPreview = redeemPointsPerUnit > 0 && redeemBahtPerUnit > 0
+    ? t("admin_loyalty.redeem_rate_preview", {
+        points: redeemPointsPerUnit.toLocaleString(),
+        baht: redeemBahtPerUnit.toLocaleString(),
+      })
+    : t("admin_loyalty.redeem_rate_preview_empty");
 
   return (
     <div>
@@ -402,12 +412,20 @@ export default function LoyaltyPage() {
                 <Divider style={{ margin: "4px 0 12px" }} />
                 <Row gutter={12}>
                   <Col xs={24} sm={12}>
-                    <Form.Item name="redeemPointsPerUnit" label={t("admin_loyalty.form_redeem_points")}>
+                    <Form.Item
+                      name="redeemPointsPerUnit"
+                      label={t("admin_loyalty.form_redeem_points")}
+                      extra={t("admin_loyalty.form_redeem_points_hint")}
+                    >
                       <InputNumber min={1} style={{ width: "100%" }} />
                     </Form.Item>
                   </Col>
                   <Col xs={24} sm={12}>
-                    <Form.Item name="redeemBahtPerUnit" label={t("admin_loyalty.form_redeem_baht")}>
+                    <Form.Item
+                      name="redeemBahtPerUnit"
+                      label={t("admin_loyalty.form_redeem_baht")}
+                      extra={redemptionPreview}
+                    >
                       <InputNumber min={0.01} style={{ width: "100%" }} />
                     </Form.Item>
                   </Col>

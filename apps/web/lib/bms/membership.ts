@@ -49,6 +49,7 @@ export type {
 } from "./loyaltyMath";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const PAID_ORDER_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
 
 // ---------------------------------------------------------------
 // ตั้งค่าโปรแกรม
@@ -1060,7 +1061,7 @@ export async function reviewMemberTier(
        COALESCE((
          SELECT SUM(o.total_amount) FROM bms_orders o
           WHERE o.tenant_id = $1 AND o.customer_id = $2
-            AND o.status NOT IN ('CANCELLED','RETURNED')
+            AND o.status = ANY($3::text[])
             AND o.created_at > now() - interval '12 months'
        ), 0) AS spend_12m,
        COALESCE((
@@ -1068,7 +1069,7 @@ export async function reviewMemberTier(
           WHERE l.tenant_id = $1 AND l.customer_id = $2 AND l.points > 0
        ), 0) AS lifetime_points,
        (SELECT tier_id FROM bms_customers WHERE tenant_id = $1 AND id = $2) AS tier_id`,
-    [tenantId, customerId]
+    [tenantId, customerId, PAID_ORDER_STATUSES]
   );
   const spend = Number(stats.rows[0]?.spend_12m ?? 0);
   const lifetime = Number(stats.rows[0]?.lifetime_points ?? 0);
@@ -1329,11 +1330,11 @@ export async function salesByTierReport(tenantId: string): Promise<SalesByTierRo
                                 AND c.member_no IS NOT NULL
        LEFT JOIN bms_membership_tiers t ON t.tenant_id = c.tenant_id AND t.id = c.tier_id
       WHERE o.tenant_id = $1
-        AND o.status NOT IN ('CANCELLED','RETURNED')
+        AND o.status = ANY($2::text[])
         AND o.created_at > now() - interval '12 months'
       GROUP BY t.code, t.name, t.sort_order
       ORDER BY t.sort_order NULLS FIRST`,
-    [tenantId]
+    [tenantId, PAID_ORDER_STATUSES]
   );
   return res.rows.map((r) => {
     const orders = Number(r.orders);
