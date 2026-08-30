@@ -85,6 +85,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `get_customer_checkout` | A1 | own `(channel, customer_ref)` only | — | completeness read; no raw PII |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
 | `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard`, `generate_report` | A1 | no | `report.view` | read / file export; dashboard results include the live-query fetch time, not a fabricated last-change time |
+| `analyze_pos_shift` | A1/POS | no | `pos.shift.report.all` | read-only shift/order/bill diagnostics from verified POS shift report + export ledgers; compares counted cash when supplied but never closes a shift or writes cash records |
 | `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read |
 | `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
 | `list_payments` | A1 | no | `payment.view` | read |

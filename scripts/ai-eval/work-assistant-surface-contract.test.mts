@@ -46,6 +46,12 @@ test("live staff facts expose the missing grounding fields through approved tool
   const catalog = read("apps/web/lib/bms/tools/catalog.ts");
   assert.match(catalog, /name: "get_variant_reservations"[\s\S]*?permission: "order\.view"/);
   assert.match(catalog, /listVariantReservations\(ec\.tenantId, sku, size\)/);
+  assert.match(catalog, /name: "analyze_pos_shift"[\s\S]*?permission: "pos\.shift\.report\.all"/);
+  assert.match(catalog, /getPosShiftExportData\(ec\.tenantId, selectedShiftId, null\)/);
+  assert.match(catalog, /findPosShiftOrderReference\(ec\.tenantId, \{ orderId, receiptNo \}\)/);
+  assert.match(catalog, /expectedCashHidden[\s\S]*hidden by blind-close/);
+  assert.match(catalog, /expectedCashHidden[\s\S]*ไม่เปิดเผย expected cash หรือรายการประกอบยอด/);
+  assert.match(catalog, /countedCashComparison/);
   assert.match(catalog, /customerPhone: _phone, customerRef: _ref/);
   assert.match(catalog, /earnBase: settings\.earnBase/);
   assert.match(catalog, /name: "get_dashboard"[\s\S]*?fetchedAt: new Date\(\)\.toISOString\(\)/);
@@ -72,9 +78,34 @@ test("global admin drawer shares proposal mutations and POS-only keeps a non-adm
   assert.match(adminLayout, /<WorkAssistantDrawer \/>/);
   assert.match(drawer, /WORK_ASSISTANT_CONFIRM_MUTATIONS/);
   assert.match(drawer, /currentPath: pathname, pageId/);
+  assert.match(drawer, /QuestionCircleOutlined/);
+  assert.match(drawer, /<Modal[\s\S]*ตัวอย่างการใช้งานผู้ช่วย/);
+  assert.match(drawer, /navigator\.clipboard\.writeText\(text\)/);
+  assert.match(drawer, /createdAt: new Date\(\)\.toISOString\(\)/);
+  assert.match(drawer, /dateTimeLabel\(item\.createdAt, en\)/);
+  assert.match(drawer, /<Popconfirm[\s\S]*onConfirm=\{clearChat\}/);
+  assert.match(drawer, /localStorage\.removeItem\(storageKey\)/);
+  assert.match(drawer, /DeleteOutlined/);
+  assert.match(drawer, /อ่านตัวอย่าง แล้วกดคัดลอกไปวาง\/แก้ในช่องพิมพ์เองก่อนส่ง/);
+  assert.match(drawer, /กะนี้ผิดตรงไหน/);
+  assert.match(drawer, /ยอด VAT\/tax document ตรงกับยอดขายไหม/);
+  assert.doesNotMatch(drawer, /suggestions\.map\(\(item\) => <Button key=\{item\} size="small" onClick=\{\(\) => send\(item\)\}/);
   assert.match(posLayout, /<PosGuideAssistant \/>/);
   assert.doesNotMatch(posGuide, /gql|\/graphql|bmsWorkAssistant/);
   assert.match(posGuide, /does not access sales data or perform actions/);
+});
+
+test("the full assistant examples teach POS shift reconciliation", () => {
+  const page = read("apps/web/app/(admin)/admin/assistant/page.tsx");
+  const th = read("apps/web/i18n/th.ts");
+  const en = read("apps/web/i18n/en.ts");
+  assert.match(page, /group_pos_reconcile/);
+  assert.match(page, /admin_assistant\.ex_pos_1/);
+  assert.match(page, /admin_assistant\.qs_pos_shift/);
+  assert.match(th, /group_pos_reconcile: "ตรวจยอด POS \/ กะ"/);
+  assert.match(th, /ex_pos_3: "นับเงินจริงได้ 188000 กะล่าสุดขาดหรือเกินเท่าไหร่"/);
+  assert.match(en, /group_pos_reconcile: "POS shift reconciliation"/);
+  assert.match(en, /ex_pos_3: "I counted 188000 cash in the latest shift\. Is it short or over\?"/);
 });
 
 test("a citation only claims relevance the question actually earned", () => {

@@ -167,6 +167,16 @@ const EXAMPLE_GROUPS: Array<{ labelKey: string; sensitive?: boolean; itemKeys: s
     ],
   },
   {
+    labelKey: "admin_assistant.group_pos_reconcile",
+    itemKeys: [
+      "admin_assistant.ex_pos_1",
+      "admin_assistant.ex_pos_2",
+      "admin_assistant.ex_pos_3",
+      "admin_assistant.ex_pos_4",
+      "admin_assistant.ex_pos_5",
+    ],
+  },
+  {
     labelKey: "admin_assistant.group_actions",
     itemKeys: [
       "admin_assistant.ex_action_1",
@@ -198,6 +208,7 @@ const EXAMPLE_COUNT = EXAMPLE_GROUPS.reduce((n, g) => n + g.itemKeys.length, 0);
 const QUICK_START: Array<{ labelKey: string; fillKey: string }> = [
   { labelKey: "admin_assistant.qs_sales_7d", fillKey: "admin_assistant.ex_read_1" },
   { labelKey: "admin_assistant.qs_low_stock", fillKey: "admin_assistant.ex_read_2" },
+  { labelKey: "admin_assistant.qs_pos_shift", fillKey: "admin_assistant.ex_pos_1" },
   { labelKey: "admin_assistant.qs_excel_report", fillKey: "admin_assistant.ex_report_1" },
   { labelKey: "admin_assistant.qs_email_report", fillKey: "admin_assistant.ex_confirm_6" },
 ];

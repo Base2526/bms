@@ -1,8 +1,8 @@
 'use client';
 
 import { gql, useApolloClient, useQuery } from "@apollo/client";
-import { Button, Drawer, Input, Space, Tag, Typography, message as toast } from "antd";
-import { CheckOutlined, CloseOutlined, LinkOutlined, RobotOutlined, SendOutlined } from "@ant-design/icons";
+import { Button, Drawer, Input, Modal, Popconfirm, Space, Tag, Tooltip, Typography, message as toast } from "antd";
+import { CheckOutlined, CloseOutlined, CopyOutlined, DeleteOutlined, LinkOutlined, QuestionCircleOutlined, RobotOutlined, SendOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +38,7 @@ type AssistantLink = { label: string; path: string };
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
+  createdAt?: string;
   answerType?: string;
   citations?: Citation[];
   links?: AssistantLink[];
@@ -60,7 +61,17 @@ function pageIdFromPath(pathname: string): string | null {
 }
 
 function persisted(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map(({ role, text, answerType, citations, links }) => ({ role, text, answerType, citations, links }));
+  return messages.map(({ role, text, createdAt, answerType, citations, links }) => ({ role, text, createdAt, answerType, citations, links }));
+}
+
+function dateTimeLabel(value: string | undefined, en: boolean): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat(en ? "en-US" : "th-TH", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }
 
 export default function WorkAssistantDrawer() {
@@ -76,6 +87,7 @@ export default function WorkAssistantDrawer() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const pageId = pageIdFromPath(pathname);
   const storageKey = useMemo(() => {
@@ -110,7 +122,7 @@ export default function WorkAssistantDrawer() {
     const text = String(preset ?? input).trim();
     if (!text || sending) return;
     const history = messages.map((item) => ({ role: item.role, text: item.text })).slice(-10);
-    setMessages((current) => [...current, { role: "user", text }]);
+    setMessages((current) => [...current, { role: "user", text, createdAt: new Date().toISOString() }]);
     setInput("");
     setSending(true);
     try {
@@ -122,6 +134,7 @@ export default function WorkAssistantDrawer() {
       setMessages((current) => [...current, {
         role: "assistant",
         text: result?.reply || "—",
+        createdAt: new Date().toISOString(),
         answerType: result?.answerType,
         citations: result?.citations || [],
         links: result?.links || [],
@@ -129,9 +142,20 @@ export default function WorkAssistantDrawer() {
       }]);
     } catch (error: any) {
       const fallback = error?.message || (en ? "The assistant is temporarily unavailable." : "ผู้ช่วยใช้งานไม่ได้ชั่วคราว");
-      setMessages((current) => [...current, { role: "assistant", text: fallback }]);
+      setMessages((current) => [...current, { role: "assistant", text: fallback, createdAt: new Date().toISOString() }]);
     } finally {
       setSending(false);
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    setEmailEdits({});
+    if (!storageKey) return;
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      // The visible chat is already cleared; storage cleanup is best-effort.
     }
   };
 
@@ -162,9 +186,74 @@ export default function WorkAssistantDrawer() {
     }
   };
 
-  const suggestions = en
-    ? ["What can I do on this page?", "What can my account access?", "Can BMS export PDF or Excel?"]
-    : ["หน้านี้ใช้งานอย่างไร", "บัญชีฉันทำอะไรได้บ้าง", "ระบบ export PDF หรือ Excel ได้ไหม"];
+  const copyExample = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(en ? "Copied" : "คัดลอกแล้ว");
+    } catch {
+      toast.error(en ? "Copy failed" : "คัดลอกไม่สำเร็จ");
+    }
+  };
+
+  const exampleGroups = en
+    ? [
+        {
+          title: "Most useful POS checks",
+          items: [
+            "What looks wrong in this shift?",
+            "How much cash should be in the drawer?",
+            "I counted 188000 cash. Is this shift short or over?",
+            "Which bill caused the variance?",
+            "Summarize whether this shift is correct, with reasons.",
+          ],
+        },
+        {
+          title: "Real shop questions",
+          items: [
+            "What cash in/out movements are in this drawer?",
+            "How many return bills affected cash?",
+            "Which bills were voided, and who approved them?",
+            "Which entries should a manager review?",
+            "Why are net sales and collected payments different?",
+            "Do payment methods add up correctly?",
+            "Can this shift be closed?",
+            "Are there any pending refunds?",
+            "Is there any cash out without evidence?",
+            "Which bills used a manual discount?",
+            "Do VAT/tax documents match sales?",
+          ],
+        },
+      ]
+    : [
+        {
+          title: "คำถามสำคัญสำหรับตรวจยอด POS",
+          items: [
+            "กะนี้ผิดตรงไหน",
+            "เงินสดควรมีเท่าไหร่",
+            "ถ้านับเงินจริงได้ 188000 ขาดหรือเกินเท่าไหร่",
+            "บิลไหนทำให้ยอดต่าง",
+            "สรุปว่าถูกหรือผิด พร้อมเหตุผล",
+          ],
+        },
+        {
+          title: "คำถามงานร้านจริงที่ควรรองรับ",
+          items: [
+            "ยอดที่ควรมีในลิ้นชักเท่าไหร่",
+            "เงินสดจริงนับได้ 188000 ขาด/เกินเท่าไหร่",
+            "รายการเงินเข้าออกลิ้นชักมีอะไรบ้าง",
+            "บิลคืนสินค้าเกี่ยวกับเงินสดกี่บิล",
+            "ยกเลิกบิลไหนบ้าง ใครอนุมัติ",
+            "รายการไหนต้องให้หัวหน้าตรวจ",
+            "ทำไมยอดขายสุทธิกับยอดรับชำระไม่เท่ากัน",
+            "ช่องทางจ่ายเงินรวมถูกไหม",
+            "กะนี้ปิดได้หรือยัง",
+            "มี refund pending ไหม",
+            "มี cash out ที่ไม่มีหลักฐานไหม",
+            "บิลไหนมีส่วนลด manual",
+            "ยอด VAT/tax document ตรงกับยอดขายไหม",
+          ],
+        },
+      ];
 
   return (
     <>
@@ -182,6 +271,37 @@ export default function WorkAssistantDrawer() {
         onClose={() => setOpen(false)}
         width="min(480px, 100vw)"
         title={en ? "Work Assistant" : "ผู้ช่วยการทำงาน"}
+        extra={
+          <Space size={4}>
+            <Tooltip title={en ? "Example questions" : "ตัวอย่างการใช้งาน"}>
+              <Button
+                type="text"
+                shape="circle"
+                icon={<QuestionCircleOutlined />}
+                aria-label={en ? "Open assistant examples" : "เปิดตัวอย่างการใช้งานผู้ช่วย"}
+                onClick={() => setExamplesOpen(true)}
+              />
+            </Tooltip>
+            <Popconfirm
+              title={en ? "Clear this chat?" : "ล้างแชทนี้?"}
+              description={en ? "This only clears the assistant history on this device." : "ล้างเฉพาะประวัติผู้ช่วยในเครื่องนี้"}
+              okText={en ? "Clear" : "ล้าง"}
+              cancelText={en ? "Cancel" : "ยกเลิก"}
+              onConfirm={clearChat}
+              disabled={messages.length === 0}
+            >
+              <Tooltip title={en ? "Clear chat" : "ล้างแชท"}>
+                <Button
+                  type="text"
+                  shape="circle"
+                  icon={<DeleteOutlined />}
+                  aria-label={en ? "Clear assistant chat" : "ล้างแชทผู้ช่วย"}
+                  disabled={messages.length === 0}
+                />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
+        }
         styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
       >
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: 16 }}>
@@ -190,13 +310,20 @@ export default function WorkAssistantDrawer() {
               <Typography.Text type="secondary">
                 {en ? "Ask how to use BMS, what the system supports, live shop information, or actions allowed by your access." : "ถามวิธีใช้ ความสามารถของระบบ ข้อมูลร้านจริง หรือสั่งงานตามสิทธิ์ของคุณได้จากจุดเดียว"}
               </Typography.Text>
-              <Space wrap>{suggestions.map((item) => <Button key={item} size="small" onClick={() => send(item)}>{item}</Button>)}</Space>
+              <Button size="small" icon={<QuestionCircleOutlined />} onClick={() => setExamplesOpen(true)}>
+                {en ? "Show example questions" : "ดูตัวอย่างการใช้งาน"}
+              </Button>
             </Space>
           ) : null}
           {messages.map((item, messageIndex) => (
             <div key={messageIndex} style={{ display: "flex", justifyContent: item.role === "user" ? "flex-end" : "flex-start", marginBottom: 12 }}>
               <div style={{ maxWidth: "92%", borderRadius: 14, padding: "10px 12px", background: item.role === "user" ? "var(--app-primary, #1677ff)" : "var(--app-surface-muted, #f5f5f5)", color: item.role === "user" ? "#fff" : "var(--app-text)", whiteSpace: "pre-wrap" }}>
                 <div>{item.text}</div>
+                {item.createdAt ? (
+                  <div style={{ marginTop: 6, fontSize: 11, opacity: item.role === "user" ? 0.78 : 0.65, textAlign: item.role === "user" ? "right" : "left" }}>
+                    {dateTimeLabel(item.createdAt, en)}
+                  </div>
+                ) : null}
                 {(item.citations?.length ?? 0) > 0 ? (
                   <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--app-border, #ddd)" }}>
                     {item.citations!.slice(0, 3).map((citation) => (
@@ -296,6 +423,51 @@ export default function WorkAssistantDrawer() {
           </Space.Compact>
         </div>
       </Drawer>
+      <Modal
+        open={examplesOpen}
+        onCancel={() => setExamplesOpen(false)}
+        footer={null}
+        title={en ? "Example questions" : "ตัวอย่างการใช้งานผู้ช่วย"}
+        width={640}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
+          {en
+            ? "Read these examples, copy one, then paste and edit it in the input box before sending."
+            : "อ่านตัวอย่าง แล้วกดคัดลอกไปวาง/แก้ในช่องพิมพ์เองก่อนส่ง"}
+        </Typography.Paragraph>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          {exampleGroups.map((group) => (
+            <div key={group.title}>
+              <Typography.Text strong>{group.title}</Typography.Text>
+              <Space direction="vertical" size={6} style={{ width: "100%", marginTop: 8 }}>
+                {group.items.map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      border: "1px solid var(--app-border, #ddd)",
+                      borderRadius: 8,
+                      background: "var(--app-surface, #fff)",
+                    }}
+                  >
+                    <Typography.Text style={{ flex: 1 }}>{item}</Typography.Text>
+                    <Button
+                      size="small"
+                      icon={<CopyOutlined />}
+                      onClick={() => copyExample(item)}
+                    >
+                      {en ? "Copy" : "คัดลอก"}
+                    </Button>
+                  </div>
+                ))}
+              </Space>
+            </div>
+          ))}
+        </Space>
+      </Modal>
     </>
   );
 }

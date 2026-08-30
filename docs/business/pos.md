@@ -84,6 +84,12 @@ no-sale drawer opens. This does not widen the register route: `/api/pos/shift-re
 the device token plus cashier PIN and only returns the owning device's shift report. When blind close
 is enabled, an open shift cannot be exported because the workbook's component rows would reveal the
 hidden expected-cash figure; export becomes available after the shift is closed and counted.
+The staff AI assistant uses the same back-office permission through the read-only `analyze_pos_shift`
+tool. Staff can ask about a specific shift, the latest/date-filtered shift, a POS order id, or a
+receipt number; the assistant resolves that to verified shift report/export facts and explains the
+drawer formula, cash movements, refunds, voids, no-sale events, pending refunds, and expenses. A
+counted-cash number in chat is only compared against expected cash; it is not written as a close
+count.
 
 ### Pharmacy review from POS
 

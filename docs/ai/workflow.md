@@ -27,6 +27,11 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
   a human confirms in the UI, which then fires the existing permission-gated mutation
   (`bmsRefundPayment`, `bmsAdjustStock`, …). AI never executes an A3 action itself.
+  POS reconciliation questions use the read-only `analyze_pos_shift` tool, gated by
+  `pos.shift.report.all`, so staff can ask for a shift, latest matching shift, POS order id, or
+  receipt number and get verified drawer math plus bounded source ledgers instead of screenshot
+  interpretation. Supplying a counted-cash figure compares it to expected cash only; it does not
+  write the shift close count.
 - **Global work-assistant surface** — additive `bmsWorkAssistant(input)` uses the same staff runtime,
   tools, quota, audit, and proposal boundary. It additionally accepts bounded `currentPath`/`pageId`
   retrieval hints and returns structured knowledge citations plus accessible deep links. The global

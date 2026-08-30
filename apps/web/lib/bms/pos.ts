@@ -5636,6 +5636,68 @@ export type PosShiftExportData = {
   }>;
 };
 
+export type PosShiftOrderReference = {
+  orderId: string;
+  receiptNo: string | null;
+  shiftId: string | null;
+  deviceCode: string | null;
+  status: string;
+  voidedAt: string | null;
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+
+/**
+ * Resolve a POS order/bill reference to its shift. The AI tool uses this read before loading the
+ * existing shift export data, so ledger math still comes from one POS reporting source.
+ */
+export async function findPosShiftOrderReference(
+  tenantId: string,
+  reference: { orderId?: string | null; receiptNo?: string | null }
+): Promise<PosShiftOrderReference | null> {
+  const orderId = typeof reference.orderId === "string" ? reference.orderId.trim() : "";
+  const receiptNo = typeof reference.receiptNo === "string" ? reference.receiptNo.trim() : "";
+  if (!orderId && !receiptNo) return null;
+  if (orderId && !UUID_RE.test(orderId)) return null;
+
+  const res = await query<any>(
+    `SELECT o.id AS order_id, o.pos_shift_id, o.status, o.voided_at,
+            d.code AS device_code,
+            doc.doc_no
+       FROM bms_orders o
+       LEFT JOIN bms_pos_devices d
+         ON d.id = o.pos_device_id AND d.tenant_id = o.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT td.doc_no
+           FROM bms_tax_documents td
+          WHERE td.tenant_id = o.tenant_id
+            AND td.order_id = o.id
+            AND td.doc_type = 'ABBREVIATED'
+          ORDER BY td.issued_at, td.id
+          LIMIT 1
+       ) doc ON TRUE
+      WHERE o.tenant_id = $1
+        AND o.channel = 'pos'
+        AND (
+          ($2::uuid IS NOT NULL AND o.id = $2::uuid)
+          OR ($3::text <> '' AND doc.doc_no = $3)
+        )
+      ORDER BY o.created_at DESC, o.id DESC
+      LIMIT 1`,
+    [tenantId, orderId || null, receiptNo]
+  );
+  if (!res.rowCount) return null;
+  const row = res.rows[0];
+  return {
+    orderId: row.order_id,
+    receiptNo: row.doc_no ?? null,
+    shiftId: row.pos_shift_id ?? null,
+    deviceCode: row.device_code ?? null,
+    status: row.status,
+    voidedAt: row.voided_at ? toISO(row.voided_at) : null,
+  };
+}
+
 /**
  * รายการต้นทางของ X/Z report สำหรับไล่ยอดขาด/เกิน ไม่รวม PII ลูกค้าและไม่ให้
  * browser ประกอบยอดเอง ทุก query ยืนยัน device เจ้าของกะผ่าน report ก่อนเสมอ
