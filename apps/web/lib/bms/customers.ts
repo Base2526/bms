@@ -513,6 +513,51 @@ export async function customerOrders(tenantId: string, customerId: string) {
   return res.rows;
 }
 
+/** Bounded purchase history for AI/read summaries; the Customer UI keeps the full resolver above. */
+export async function customerOrderHistory(
+  tenantId: string,
+  customerId: string,
+  limit = 5,
+  offset = 0
+) {
+  const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 10);
+  const boundedOffset = Math.min(Math.max(Math.trunc(offset), 0), 10_000);
+  const res = await query(
+    `SELECT page.id, page.channel, page.status, page.total_amount, page.created_at,
+            counts.total_count, counts.successful_count
+       FROM (
+         SELECT COUNT(*)::int AS total_count,
+                COUNT(*) FILTER (WHERE status = ANY($5))::int AS successful_count
+           FROM bms_orders
+          WHERE tenant_id = $1 AND customer_id = $2
+       ) counts
+       LEFT JOIN LATERAL (
+         SELECT id, channel, status, total_amount, created_at
+           FROM bms_orders
+          WHERE tenant_id = $1 AND customer_id = $2
+          ORDER BY created_at DESC, id DESC
+          LIMIT $3 OFFSET $4
+       ) page ON TRUE
+      ORDER BY page.created_at DESC, page.id DESC`,
+    [tenantId, customerId, boundedLimit, boundedOffset, PAID_STATUSES]
+  );
+  const totalCount = Number(res.rows[0]?.total_count ?? 0);
+  const successfulCount = Number(res.rows[0]?.successful_count ?? 0);
+  const orders = res.rows
+    .filter((row) => row.id != null)
+    .map(({ total_count: _totalCount, successful_count: _successfulCount, ...order }) => order);
+  const nextOffset = boundedOffset + orders.length;
+  return {
+    orders,
+    totalCount,
+    successfulCount,
+    shownCount: orders.length,
+    offset: boundedOffset,
+    nextOffset: nextOffset < totalCount ? nextOffset : null,
+    truncated: nextOffset < totalCount,
+  };
+}
+
 export async function customerAddresses(tenantId: string, customerId: string) {
   const res = await query(
     `SELECT id, label, address, is_default FROM bms_customer_addresses

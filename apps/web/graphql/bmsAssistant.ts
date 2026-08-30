@@ -45,6 +45,7 @@ const STAFF_SYSTEM = [
   "เมื่อผู้ใช้ถามตรวจยอดกะ POS, เงินสดขาด/เกิน, X/Z report, กะล่าสุด, order/bill/ใบเสร็จหน้าร้านที่ทำให้ยอดต่าง ให้ใช้ analyze_pos_shift เพื่อดึงข้อมูลจริงจากระบบก่อนตอบ; ถ้าผลทูลบอกพบหลายกะ ให้แสดงตัวเลือกสั้น ๆ และถามว่าจะตรวจกะไหน",
   "คำตอบตรวจยอด POS ต้องแยกตัวเลขที่ระบบยืนยันแล้ว สูตรที่ใช้คำนวณ และรายการต้นทางที่ควรตรวจต่อ เช่น cash movement, refund, void, no-sale, pending refund; ถ้า expectedCashHidden=true ห้ามบอกเลขเงินสดที่ควรมี",
   "คำว่า 'คน' หรือชื่อบุคคลอาจหมายถึงพนักงานหรือลูกค้า ถ้าบริบทไม่ชัดให้ถามแยกก่อน ห้ามค้นทั้งสองกลุ่มหรือเปิดเผยว่าบัญชีมีอยู่หรือไม่โดยไม่มีสิทธิ์",
+  "เมื่อถามประวัติการซื้อของลูกค้าที่ระบุชื่อ ให้ใช้ list_customers หา customerId ก่อน แล้วเรียก customer_orders; แสดงเฉพาะรายการที่ทูลคืนมา แยก totalCount (ทุกสถานะ) จาก successfulCount และบอกว่ามีรายการเพิ่มเติมเมื่อ truncated=true; ถ้าขอดูต่อ/เก่ากว่านี้ให้ส่ง nextOffset เดิมเป็น offset ห้ามสร้างตารางเปล่าหรืออ้างว่าไม่มีประวัติจากผล list_customers เพียงอย่างเดียว",
   "แยกเสมอว่า BMS รองรับสะสมแต้ม ร้านนี้เปิดโปรแกรมหรือยัง และลูกค้าคนหนึ่งมีแต้มเท่าไร: ใช้ capability, get_loyalty_program_status และ get_loyalty_points ตามลำดับ ห้ามแทนกัน",
   "คำถามคูปองต้องแยกคูปองที่ร้านเปิดอยู่จากคูปองที่ลูกค้าคนหนึ่งมีสิทธิ์ใช้จริง; ถ้ายังไม่ระบุลูกค้าหรือยอดตะกร้า ให้บอกข้อจำกัดหรือถามให้ชัดก่อน",
 ].join("\n");
@@ -256,6 +257,7 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
       isPlatformAdmin: platformAdmin,
       currentPath,
       pageId,
+      locale,
     },
   });
 
@@ -292,7 +294,9 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
         : "GENERAL";
 
   return {
-    reply: loop.reply || "—",
+    reply: loop.reply || (locale === "en"
+      ? "The assistant could not complete the verified answer. Please try again; no shop data was changed."
+      : "ผู้ช่วยประมวลผลคำตอบที่ยืนยันได้ไม่ครบ กรุณาลองอีกครั้ง โดยไม่มีข้อมูลร้านถูกเปลี่ยนแปลง"),
     answerType,
     citations,
     links,

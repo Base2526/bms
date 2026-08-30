@@ -1688,10 +1688,15 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   const depositRow = isPos
     ? (await query<{
         deposit_paid: string; total_amount: string; status: string; due_at: any; created_at: any;
+        cancelled_at: any; cancel_reason: string | null; cancelled_by_name: string | null;
       }>(
-        `SELECT deposit_paid, total_amount, status, due_at, created_at
-           FROM bms_pos_deposits
-          WHERE tenant_id = $1 AND order_id = $2
+        `SELECT d.deposit_paid, d.total_amount, d.status, d.due_at, d.created_at,
+                d.cancelled_at, d.cancel_reason,
+                COALESCE(cancelled_user.name, cancelled_user.email) AS cancelled_by_name
+           FROM bms_pos_deposits d
+           LEFT JOIN users cancelled_user
+             ON cancelled_user.tenant_id = d.tenant_id AND cancelled_user.id = d.cancelled_by
+          WHERE d.tenant_id = $1 AND d.order_id = $2
           LIMIT 1`,
         [tenantId, orderId]
       )).rows[0] ?? null
@@ -1814,7 +1819,12 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
     return { status: st, at: hit?.at ?? null, actorName: hit?.actorName ?? null, reached: !!hit, branch: false };
   });
   for (const b of ["CANCELLED", "RETURNED"]) {
-    const hit = lastByStatus.get(b);
+    // ปิดมัดจำเขียน pos.deposit.close ไม่ใช่ order.cancel จึงใช้หลักฐานจากแถวมัดจำ
+    // โดยตรง ไม่เช่นนั้นบิลเป็น CANCELLED แล้วแต่ stepper ไม่มีกิ่งยกเลิกให้เห็น
+    const depositCancellation = b === "CANCELLED" && depositRow?.cancelled_at
+      ? { at: jIso(depositRow.cancelled_at)!, actorName: depositRow.cancelled_by_name }
+      : null;
+    const hit = lastByStatus.get(b) ?? depositCancellation;
     if (hit) steps.push({ status: b, at: hit.at, actorName: hit.actorName, reached: true, branch: true });
   }
 
@@ -1888,6 +1898,22 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
       text: `เปิดเป็นบิลมัดจำ — ของถูกจองไว้ ยังไม่ส่งมอบ${dueText}`,
       actorName: ord.cashier_name ?? "ระบบ",
     });
+    // การปิดมัดจำเป็นเหตุการณ์ pos.deposit.close และเหตุผลหลักอยู่ใน
+    // bms_pos_deposits.cancel_reason จึงไม่ติด auditRows ที่อ่านเฉพาะ order.% ด้านล่าง
+    // แสดงจาก source of truth โดยตรงเพื่อให้ข้อความที่พนักงานกรอกไม่หายจากประวัติบิล
+    if (depositRow.cancelled_at && (depositRow.status === "CANCELLED" || depositRow.status === "FORFEITED")) {
+      const paid = jBaht(Number(depositRow.deposit_paid));
+      const decision = depositRow.status === "CANCELLED"
+        ? `คืนมัดจำเต็มจำนวน ฿${paid}`
+        : `ยึดมัดจำ ฿${paid}`;
+      const reasonText = depositRow.cancel_reason ? ` · เหตุผล: ${depositRow.cancel_reason}` : "";
+      events.push({
+        kind: "deposit_close",
+        at: jIso(depositRow.cancelled_at)!,
+        text: `ปิดบิลมัดจำ — ${decision}${reasonText}`,
+        actorName: depositRow.cancelled_by_name ?? "ไม่พบข้อมูล",
+      });
+    }
   }
   for (const e of sysEvents) {
     const text = e.kind === "assign" ? `มอบหมายแชทให้ ${e.targetName}`

@@ -1342,7 +1342,7 @@ export const typeDefs = /* GraphQL */ `
     branch: Boolean!        # true = กิ่งยกเลิก/คืน (ไม่ใช่เส้นหลัก)
   }
   type BmsOrderEvent {
-    kind: String!           # chat_start | order_status | assign | helper_add | helper_remove | shipment
+    kind: String!           # chat_start | order_status | deposit | deposit_close | payment | pos_return | pos_void | shipment | ...
     at: String!
     text: String!
     actorName: String
@@ -1510,6 +1510,7 @@ export const typeDefs = /* GraphQL */ `
     CASH
     WALLET
     STORE_CREDIT
+    CREDIT
   }
 
   enum BmsPaymentStatus {

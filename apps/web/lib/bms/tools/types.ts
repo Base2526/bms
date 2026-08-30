@@ -61,6 +61,8 @@ export type ExecCtx = {
   /** Server-derived retrieval hints. They never grant authorization. */
   currentPath?: string | null;
   pageId?: string | null;
+  /** Presentation locale only; never authorization. */
+  locale?: "th" | "en";
 };
 
 /** JSON schema แบบ Anthropic tool (input_schema) */
@@ -108,6 +110,16 @@ export type BmsTool = {
   commonMistakes?: string[];
   /** ตัวอย่าง args ที่ถูกต้อง 1 ชุด (+ note อธิบายบริบท) สำหรับ docs/registry */
   example?: { input: Record<string, unknown>; note?: string };
+  /**
+   * Server-composed, bounded reply from a successful verified read. The runtime uses it only when
+   * the provider fails to finish its prose after this tool has already returned data.
+   * This function is registry metadata and is never sent to the model/provider.
+   */
+  fallbackReply?: (
+    data: unknown,
+    execCtx: ExecCtx,
+    args: Record<string, any>
+  ) => string | null;
 };
 
 /** Fail fast when the authoritative registry drifts into an unsafe or unusable shape. */

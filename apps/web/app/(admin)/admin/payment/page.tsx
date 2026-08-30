@@ -17,7 +17,7 @@ import { useI18n } from "@/lib/i18nContext";
 
 // ---- Types --------------------------------------------------
 type PayStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "REFUNDED";
-type PayMethod = "BANK_TRANSFER" | "QR" | "CARD" | "TIKTOK" | "CASH";
+type PayMethod = "BANK_TRANSFER" | "QR" | "CARD" | "TIKTOK" | "CASH" | "WALLET" | "STORE_CREDIT" | "CREDIT";
 type Payment = {
   id: string; orderId: string; method: PayMethod; amount: number; status: PayStatus;
   slipUrl: string | null; slipRef: string | null; verifyResult: string | null;
@@ -62,7 +62,7 @@ function statusLabels(t: (key: string) => string): Record<PayStatus, string> {
     REFUNDED: t("admin_payment.status_refunded"),
   };
 }
-const METHODS: PayMethod[] = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH"];
+const SUBMIT_METHODS: Exclude<PayMethod, "CREDIT">[] = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"];
 function methodLabels(t: (key: string) => string): Record<PayMethod, string> {
   return {
     BANK_TRANSFER: t("admin_payment.method_bank_transfer"),
@@ -70,6 +70,9 @@ function methodLabels(t: (key: string) => string): Record<PayMethod, string> {
     CARD: t("admin_payment.method_card"),
     TIKTOK: "TikTok Pay",
     CASH: t("admin_payment.method_cash"),
+    WALLET: t("admin_payment.method_wallet"),
+    STORE_CREDIT: t("admin_payment.method_store_credit"),
+    CREDIT: t("admin_payment.method_credit"),
   };
 }
 const FILTERS = ["ALL", "PENDING", "CONFIRMED", "REJECTED", "REFUNDED"] as const;
@@ -306,7 +309,7 @@ function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose:
           />
         </Form.Item>
         <Form.Item name="method" label={t("admin_payment.method_label")} rules={[{ required: true, message: t("admin_payment.method_required") }]}>
-          <Select options={METHODS.map((m) => ({ value: m, label: methodLabelMap[m] }))} />
+          <Select options={SUBMIT_METHODS.map((m) => ({ value: m, label: methodLabelMap[m] }))} />
         </Form.Item>
         <Form.Item name="amount" label={t("admin_payment.amount_label")}>
           <InputNumber min={0} style={{ width: isMobile ? "100%" : 200 }} />

@@ -9,7 +9,8 @@
 //
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import { code39Bars } from "@/lib/pos/barcode";
 import {
   applyPromotion,
@@ -141,6 +142,63 @@ function ScanBarcodeIcon() {
       <rect x="15.2" y="5" width="2.2" height="14" rx=".6" />
       <rect x="18.8" y="5" width="2.7" height="14" rx=".6" />
     </svg>
+  );
+}
+
+/**
+ * คำอธิบายเฉพาะจุดสำหรับกฎที่มีผลต่อเงิน สต็อก หรือสถานะบิล
+ *
+ * ใช้ <details> เพื่อให้เปิดด้วย click/touch/keyboard ได้โดยไม่ผูกกับ hover ซึ่งใช้
+ * ไม่ได้บนแท็บเล็ตหน้าเคาน์เตอร์ โดยติด listener เฉพาะช่วงที่กล่องนั้นเปิดอยู่
+ */
+function PosHelp({ title, children, align = "left" }: {
+  title: string;
+  children: ReactNode;
+  align?: "left" | "right";
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const close = (restoreFocus = false) => {
+      const details = detailsRef.current;
+      if (!details) return;
+      details.open = false;
+      setOpen(false);
+      if (restoreFocus) details.querySelector<HTMLElement>("summary")?.focus();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !detailsRef.current?.contains(target)) close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close(true);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <details
+      ref={detailsRef}
+      className={`pos-help pos-help--${align}`}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary aria-label={`ดูคำอธิบาย: ${title}`} title={title}>
+        <InfoCircleOutlined aria-hidden="true" />
+      </summary>
+      <div className="pos-help-popover" role="note">
+        <strong>{title}</strong>
+        <span>{children}</span>
+      </div>
+    </details>
   );
 }
 
@@ -5395,6 +5453,20 @@ export default function PosPage() {
           border-color: #faad14 !important;
           box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.18);
         }
+        .pos-help { position: relative; display: inline-flex; margin-inline-start: 5px; vertical-align: middle; }
+        .pos-help > summary { list-style: none; width: 22px; height: 22px; display: inline-flex;
+          align-items: center; justify-content: center; border: 0; border-radius: 50%; cursor: pointer;
+          color: var(--pos-accent); background: #eef5ff; font-size: 15px; }
+        .pos-help > summary::-webkit-details-marker { display: none; }
+        .pos-help > summary:focus-visible { outline: 2px solid var(--pos-accent); outline-offset: 2px; }
+        .pos-help[open] > summary { color: #fff; background: var(--pos-accent); }
+        .pos-help-popover { position: absolute; z-index: 80; top: calc(100% + 7px); left: 0;
+          width: min(310px, calc(100vw - 32px)); padding: 11px 12px; border: 1px solid #b5d4f4;
+          border-radius: 8px; background: #fff; color: #263238; box-shadow: 0 8px 24px rgba(0,0,0,.16);
+          font-size: 12px; line-height: 1.55; font-weight: 400; text-align: left; }
+        .pos-help--right .pos-help-popover { left: auto; right: 0; }
+        .pos-help-popover strong, .pos-help-popover span { display: block; }
+        .pos-help-popover strong { margin-bottom: 3px; font-size: 13px; color: #163b66; }
         .pos-rail-count {
           font-size: 10px;
           line-height: 1;
@@ -5446,6 +5518,8 @@ export default function PosPage() {
           .pos-ret-pending-actions { justify-content: stretch; }
           .pos-ret-pending-actions > * { flex: 1 1 0; }
           .pos-rail-count { margin-top: 2px; }
+          .pos-help-popover { position: fixed; top: 88px; left: 16px !important; right: 16px !important;
+            width: auto; max-height: calc(100dvh - 176px); overflow: auto; }
         }
       `}</style>
 
@@ -5541,6 +5615,9 @@ export default function PosPage() {
             /* 78px พอสำหรับ 4 หลัก · fontSize 16 บังคับด้วยเหตุผลเดียวกับ select ด้านบน */
             style={{ width: 78, flex: "none", height: 44, fontSize: 16, padding: "0 10px", textAlign: "center" }}
           />
+          <PosHelp title="PIN ผู้ขาย" align="right">
+            ใช้ยืนยันตัวผู้ทำรายการและตรวจสิทธิ์ทุกครั้ง ไม่ใช่ PIN ของเครื่อง และจะไม่ถูกเก็บไว้หลังรีเฟรชหน้า
+          </PosHelp>
           {receipt && (
             <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
               พิมพ์บิลล่าสุด
@@ -5595,7 +5672,12 @@ export default function PosPage() {
       {tab === "returns" && (<>
       <div style={{ fontSize: 13 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 500 }}>คืนสินค้า</span>
+          <span style={{ fontWeight: 500, display: "inline-flex", alignItems: "center" }}>
+            คืนสินค้า
+            <PosHelp title="คืนสินค้าและคืนเงินจริง">
+              คืนสินค้าจะบันทึกของกลับก่อน เงินสดถือว่าคืนทันที ส่วน QR บัตร โอน และวอลเล็ทต้องกรอกเลขอ้างอิงเพื่อยืนยันคืนเงินจริงอีกครั้ง
+            </PosHelp>
+          </span>
           {session?.shift && (
             <span style={{ color: "#666" }}>
               กะนี้คืนแล้ว {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
@@ -5787,7 +5869,7 @@ export default function PosPage() {
                   <input
                     value={settlementRefs[refund.id] ?? ""}
                     onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
-                    placeholder="เลขอ้างอิงการคืนเงินจริง"
+                    placeholder="เลขอ้างอิงจากธนาคาร/เครื่องบัตร (บังคับ)"
                     style={{ minWidth: 0 }}
                   />
                   <div className="pos-ret-pending-actions">
@@ -5828,7 +5910,12 @@ export default function PosPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="pos-shift-head">
             <div>
-              <div className="pos-block-title" style={{ marginBottom: 2 }}>รับสินค้าจากใบสั่งซื้อ</div>
+              <div className="pos-block-title" style={{ marginBottom: 2, display: "flex", alignItems: "center" }}>
+                รับสินค้าจากใบสั่งซื้อ
+                <PosHelp title="การรับสินค้าเข้า">
+                  รายการที่สแกนยังเป็นร่างจนกดยืนยัน เมื่อยืนยันแล้วสต็อกของสาขานี้จะเพิ่มจริงและย้อนกลับจากหน้า POS ไม่ได้
+                </PosHelp>
+              </div>
               <div className="pos-block-hint">
                 รับเข้าที่สาขา {session?.location?.name ?? "ของเครื่องนี้"} · สแกนเป็นรายการร่างก่อน ยืนยันครั้งเดียวจึงขยับสต็อก
               </div>
@@ -5959,20 +6046,31 @@ export default function PosPage() {
                         </div>
                         {draft.qty > 0 && (
                           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(140px,1fr)", gap: 8, marginTop: 8 }}>
-                            <input
-                              value={draft.lotNo}
-                              maxLength={100}
-                              onChange={(event) => updateStockDraft(line, { lotNo: event.target.value })}
-                              placeholder="Lot ผู้ผลิต (ถ้ามี)"
-                              style={{ padding: 8, fontSize: 12 }}
-                            />
-                            <input
-                              type="date"
-                              value={draft.expiryDate}
-                              onChange={(event) => updateStockDraft(line, { expiryDate: event.target.value })}
-                              aria-label={`วันหมดอายุ ${line.sku} ${line.size}`}
-                              style={{ padding: 8, fontSize: 12 }}
-                            />
+                            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--pos-muted)" }}>
+                              Lot ผู้ผลิต (ถ้ามี)
+                              <input
+                                value={draft.lotNo}
+                                maxLength={100}
+                                onChange={(event) => updateStockDraft(line, { lotNo: event.target.value })}
+                                placeholder="เช่น LOT-240830"
+                                style={{ padding: 8, fontSize: 12 }}
+                              />
+                            </label>
+                            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--pos-muted)" }}>
+                              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                                วันหมดอายุ
+                                <PosHelp title="วันหมดอายุและ FEFO">
+                                  ระบบใช้วันหมดอายุเลือกล็อตที่ควรขายก่อน หากสินค้ามีวันหมดอายุควรกรอกให้ตรงฉลากทุกครั้ง
+                                </PosHelp>
+                              </span>
+                              <input
+                                type="date"
+                                value={draft.expiryDate}
+                                onChange={(event) => updateStockDraft(line, { expiryDate: event.target.value })}
+                                aria-label={`วันหมดอายุ ${line.sku} ${line.size}`}
+                                style={{ padding: 8, fontSize: 12 }}
+                              />
+                            </label>
                           </div>
                         )}
                       </div>
@@ -6001,7 +6099,12 @@ export default function PosPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="pos-shift-head">
             <div>
-              <div className="pos-block-title" style={{ marginBottom: 2 }}>มัดจำ / ยอดค้างรับ</div>
+              <div className="pos-block-title" style={{ marginBottom: 2, display: "flex", alignItems: "center" }}>
+                มัดจำ / ยอดค้างรับ
+                <PosHelp title="วงจรบิลมัดจำ">
+                  รับมัดจำแล้วสินค้ายังอยู่กับร้านแต่ถูกจองไว้ เมื่อลูกค้าจ่ายยอดคงเหลือ ระบบจึงตัดสต็อกและส่งมอบสินค้า
+                </PosHelp>
+              </div>
               <div className="pos-block-hint">แสดงเฉพาะบิลที่จองสินค้าของสาขาเครื่องนี้</div>
             </div>
             <button onClick={() => void refreshDeposits()} style={{ padding: "7px 12px" }}>โหลดใหม่</button>
@@ -6048,7 +6151,12 @@ export default function PosPage() {
                   />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>วันรับของ</span>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                    วันรับของ
+                    <PosHelp title="วันรับของ">
+                      ใช้ติดตามรายการที่เลยกำหนดและช่วยตัดสินใจว่าจะติดต่อลูกค้า คืนมัดจำ หรือยึดมัดจำ ไม่ได้ปิดบิลอัตโนมัติ
+                    </PosHelp>
+                  </span>
                   <input type="date" value={cartDepositDueAt}
                          onChange={(e) => setCartDepositDueAt(e.target.value)} />
                 </label>
@@ -6071,8 +6179,11 @@ export default function PosPage() {
               )}
             </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+              <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
                 หรือทำรายการกับบิลที่มีอยู่แล้ว — เลือกบิล
+                <PosHelp title="บิลที่มีอยู่แล้ว">
+                  ใช้กับออเดอร์ PENDING จาก Inbox หรือ Customer 360; บิลที่ยังไม่เคยรับเงินใช้รับมัดจำครั้งแรก ส่วนบิลมัดจำที่เปิดอยู่ใช้รับเพิ่มหรือรับยอดคงเหลือ
+                </PosHelp>
               </span>
               <select value={depositOrderId} onChange={(event) => {
                 const orderId = event.target.value;
@@ -6110,7 +6221,7 @@ export default function PosPage() {
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>จำนวนเงิน</span>
+                <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>ยอดที่จะรับครั้งนี้</span>
                 <input className="pos-num" inputMode="decimal" value={depositAmount}
                        onChange={(e) => setDepositAmount(e.target.value.replace(/[^0-9.]/g, ""))}
                        placeholder="0.00" style={{ width: 150, textAlign: "right" }} />
@@ -6126,22 +6237,38 @@ export default function PosPage() {
                 </select>
               </label>
               <button disabled={busy || !depositCandidateOrders.some((order) => order.orderId === depositOrderId)}
-                      onClick={() => void doDepositAction("take")}>รับมัดจำครั้งแรก</button>
+                      onClick={() => void doDepositAction("take")}>รับมัดจำครั้งแรกจากบิลที่เลือก</button>
               <button disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
-                      onClick={() => void doDepositAction("add")}>รับเพิ่ม (ยังไม่ครบ)</button>
+                      onClick={() => void doDepositAction("add")}>รับมัดจำเพิ่ม</button>
               <button className="pos-shift-btn-primary"
                       disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
                       onClick={() => void doDepositAction("settle")}>รับยอดคงเหลือ + ส่งของ</button>
             </div>
+            {!depositOrderId && (
+              <div className="pos-block-hint" style={{ marginTop: 6 }}>
+                เลือกบิลก่อน ระบบจะเปิดเฉพาะคำสั่งที่ใช้ได้กับสถานะของบิลนั้น
+              </div>
+            )}
             <div style={{ borderTop: "1px solid var(--pos-line)", marginTop: 12, paddingTop: 10 }}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <select value={depositOutcome}
-                        onChange={(e) => setDepositOutcome(e.target.value as "CANCELLED" | "FORFEITED")}>
-                  <option value="CANCELLED">ยกเลิกและต้องคืนมัดจำ</option>
-                  <option value="FORFEITED">ยึดมัดจำ</option>
-                </select>
-                <input value={depositReason} onChange={(e) => setDepositReason(e.target.value)}
-                       maxLength={300} placeholder="เหตุผลที่ปิดมัดจำ" style={{ flex: 1, minWidth: 220 }} />
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                    ผลการปิดมัดจำ
+                    <PosHelp title="ผลการปิดมัดจำ">
+                      ยกเลิกจะคืนของจองกลับสต็อกและบันทึกยอดที่ต้องคืนลูกค้า แต่การคืนเงินจริงต้องทำตามช่องทางเดิม; ยึดมัดจำจะไม่สร้างยอดคืน
+                    </PosHelp>
+                  </span>
+                  <select value={depositOutcome}
+                          onChange={(e) => setDepositOutcome(e.target.value as "CANCELLED" | "FORFEITED")}>
+                    <option value="CANCELLED">ยกเลิกและต้องคืนมัดจำ</option>
+                    <option value="FORFEITED">ยึดมัดจำ</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1, minWidth: 220 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เหตุผลที่ปิดมัดจำ</span>
+                  <input value={depositReason} onChange={(e) => setDepositReason(e.target.value)}
+                         maxLength={300} placeholder="ข้อความนี้จะแสดงในประวัติออเดอร์" />
+                </label>
                 <button disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
                         onClick={() => void doDepositAction("close")}>ปิดมัดจำ</button>
               </div>
@@ -6250,7 +6377,12 @@ export default function PosPage() {
               ) : (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เงินที่นับได้ในลิ้นชัก</span>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                      เงินที่นับได้ในลิ้นชัก
+                      <PosHelp title="ยอดนับปิดกะ">
+                        ให้นับเงินสดจริงทั้งหมดในลิ้นชัก ระบบจะเทียบกับเงินตั้งต้น ยอดขาย เงินคืน และเงินเข้าออกที่บันทึกไว้ หลังปิดกะจึงแสดงผลต่าง
+                      </PosHelp>
+                    </span>
                     <input
                       ref={countedCashRef}
                       value={countedCash}
@@ -6282,7 +6414,12 @@ export default function PosPage() {
                   ไม่ใช่ต้นทุน ส่วนเงินที่เข้าออกจริงยังลง movement ให้สูตรปิดกะ */}
               <div className="pos-block">
                 <div className="pos-shift-head" style={{ marginBottom: 8 }}>
-                  <div className="pos-block-title" style={{ marginBottom: 0, flex: 1 }}>ค่าใช้จ่ายหน้าร้าน</div>
+                  <div className="pos-block-title" style={{ marginBottom: 0, flex: 1, display: "flex", alignItems: "center" }}>
+                    ค่าใช้จ่ายหน้าร้าน
+                    <PosHelp title="ค่าใช้จ่ายหน้าร้าน">
+                      จ่ายทันทีคือยอดซื้อที่จบแล้ว เบิกไปซื้อก่อนต้องกลับมาปิดยอด เงินสดย่อยอยู่นอกลิ้นชัก และสำรองจ่ายส่วนตัวไม่ทำให้เงินในลิ้นชักลด
+                    </PosHelp>
+                  </div>
                   <button type="button" onClick={() => void refreshExpenses()}
                           style={{ padding: "6px 12px", fontSize: 12, minHeight: 34 }}>
                     โหลดรายการ
@@ -6293,7 +6430,12 @@ export default function PosPage() {
                 </div>
                 <div className="pos-expense-grid">
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>วิธีจ่าย</span>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                      วิธีจ่าย
+                      <PosHelp title="เลือกแหล่งเงิน">
+                        เลือกตามเงินที่ออกจริง เพราะแต่ละแบบกระทบลิ้นชัก เงินสดย่อย และขั้นตอนอนุมัติไม่เหมือนกัน
+                      </PosHelp>
+                    </span>
                     <select value={expenseMode} onChange={(e) => setExpenseMode(e.target.value as PosExpenseEntryMode)}>
                       <option value="DIRECT">จ่ายให้ผู้ขายทันที</option>
                       <option value="ADVANCE">เบิกเงินไปซื้อก่อน</option>
@@ -6527,7 +6669,12 @@ export default function PosPage() {
                   ก่อนมีส่วนนี้ การถอนเงินไปฝากกลางกะทำให้ปิดกะขึ้นเงินขาดทุกครั้ง
                   โดยไม่มีที่ให้อธิบาย · เงินออกต้องมีหัวหน้ากด PIN เงินเข้าไม่ต้อง */}
               <div className="pos-block">
-                <div className="pos-block-title">เงินเข้า–ออกลิ้นชัก</div>
+                <div className="pos-block-title" style={{ display: "flex", alignItems: "center" }}>
+                  เงินเข้า–ออกลิ้นชัก
+                  <PosHelp title="เงินเข้าออกที่ไม่ใช่ยอดขาย">
+                    ใช้กับนำส่งธนาคาร ย้ายเงิน หรือเติมเงินทอนจากภายนอกเท่านั้น ยอดขายเงินสดและเงินคืนจะลงลิ้นชักอัตโนมัติ ห้ามบันทึกซ้ำที่นี่
+                  </PosHelp>
+                </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <select value={cashMoveDir} onChange={(e) => {
                     setCashMoveDir(e.target.value as "IN" | "OUT");
@@ -6743,7 +6890,12 @@ export default function PosPage() {
               <div className="pos-block-title">กะขายของเครื่องนี้</div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เงินตั้งต้นในลิ้นชัก</span>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                    เงินตั้งต้นในลิ้นชัก
+                    <PosHelp title="เงินตั้งต้น">
+                      เงินสดจริงที่ใส่ไว้สำหรับทอนก่อนเริ่มขาย ไม่ใช่ยอดขายและไม่ใช่วงเงินค่าใช้จ่าย
+                    </PosHelp>
+                  </span>
                   <input
                     ref={openingFloatRef}
                     value={openingFloat}
@@ -7209,6 +7361,12 @@ export default function PosPage() {
                       ช่องที่ยังว่างเห็นได้ทันทีว่าเหลืออีกกี่กล่องต้องยิง */}
                   {l.serialTracked && (
                     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ fontSize: 11, color: "var(--pos-muted)", display: "flex", alignItems: "center" }}>
+                        เลขเครื่องของสินค้าทุกชิ้น
+                        <PosHelp title="เลขเครื่อง / Serial">
+                          ต้องกรอกให้ครบหนึ่งเลขต่อหนึ่งชิ้น เลขเดิมที่เคยขายแล้วหรือเลขซ้ำในบิลเดียวกันจะถูกปฏิเสธ
+                        </PosHelp>
+                      </div>
                       {Array.from({ length: l.packQty * l.baseQty }).map((_, i) => (
                         <input
                           key={i}
@@ -7387,7 +7545,7 @@ export default function PosPage() {
                                 <input
                                   value={settlementRefs[refund.id] ?? ""}
                                   onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
-                                  placeholder="เลขอ้างอิงการคืนเงินจริง"
+                                  placeholder="เลขอ้างอิงจากธนาคาร/เครื่องบัตร (บังคับ)"
                                 />
                                 <button
                                   className="pos-ret-btn pos-ret-btn--sm"
@@ -7483,13 +7641,18 @@ export default function PosPage() {
                             ref={returnNoteInputRef}
                             value={returnNotes[row.orderId!] ?? ""}
                             onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                            placeholder="รายละเอียดเหตุผล (บังคับ)"
+                            placeholder="รายละเอียดเหตุผล (บังคับและแสดงในประวัติ)"
                           />
                         </div>
                         {refundPaymentOptions.length > 0 && (
                           <div className="pos-ret-method">
                             <label className="pos-ret-method-label">
-                              <span>คืนเงินจากช่องทางใดก่อน</span>
+                              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                                คืนเงินจากช่องทางใดก่อน
+                                <PosHelp title="ลำดับช่องทางคืนเงิน">
+                                  ใช้เมื่อบิลเดิมจ่ายหลายวิธี เลือกว่าจะคืนจากยอดเงินสด QR บัตร หรือช่องทางใดก่อน ระบบจะไม่คืนเกินยอดที่เคยรับในแต่ละช่องทาง
+                                </PosHelp>
+                              </span>
                               {refundPaymentOptions.length === 1 ? (
                                 <span className="pos-ret-method-single">
                                   {posPaymentMethodLabel(refundPaymentOptions[0].method)} · คืนได้อีก ฿{baht(refundPaymentOptions[0].available)}
@@ -7589,7 +7752,12 @@ export default function PosPage() {
                     {canVoid && voidTarget === row.orderId && (
                       <div className="pos-ret-void">
                         <div className="pos-ret-void-why">
-                          ยกเลิกบิลนี้: ของกลับเข้าสต็อก เงินคืนลูกค้า แต้มถูกดึงคืน และใบกำกับถูกยกเลิก
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            ยกเลิกบิลนี้
+                            <PosHelp title="ยกเลิกบิลไม่ใช่คืนสินค้า">
+                              ใช้เมื่อบิลผิดและต้องย้อนทั้งรายการ โดยต้องเป็นบิลของกะที่ยังเปิดอยู่ การคืนสินค้าปกติควรใช้ปุ่มคืนบางรายการหรือคืนทั้งบิล
+                            </PosHelp>
+                          </span>: ของกลับเข้าสต็อก เงินคืนลูกค้า แต้มถูกดึงคืน และใบกำกับถูกยกเลิก
                           (เลขใบยังอยู่ในลำดับ ไม่ได้ถูกลบ)
                         </div>
                         <input
@@ -7742,6 +7910,12 @@ export default function PosPage() {
             {/* ส่วนลดหน้าร้าน — ชั้นที่ 4 ต่อจาก tier/คูปอง/แต้ม ทุกบาทต้องมีหัวหน้ากด PIN
                 ปุ่มยุบไว้เพราะบิลส่วนใหญ่ไม่มีส่วนลดมือ กางเฉพาะตอนจะใช้ */}
             <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", fontSize: 12, marginBottom: 6 }}>
+                ส่วนลดหน้าร้าน
+                <PosHelp title="ส่วนลดที่หัวหน้าอนุมัติ">
+                  ส่วนลดนี้หักต่อจากสิทธิ์สมาชิก คูปอง และแต้ม เหตุผลกับผู้อนุมัติจะถูกบันทึกกับบิล และผู้อนุมัติต้องเป็นคนละคนกับผู้ขาย
+                </PosHelp>
+              </div>
               {approvedDiscount ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
                   <span style={{ fontSize: 12 }}>
@@ -7778,7 +7952,7 @@ export default function PosPage() {
                     />
                     <input
                       ref={discountReasonRef}
-                      placeholder="เหตุผล (บังคับ)"
+                      placeholder="เหตุผล (บังคับและแสดงในประวัติ)"
                       value={discountReasonDraft}
                       maxLength={200}
                       onChange={(e) => setDiscountReasonDraft(e.target.value)}
@@ -8127,6 +8301,9 @@ export default function PosPage() {
               <button onClick={addPaymentRow} style={{ flex: "1 1 0", minWidth: 90, minHeight: 44, fontSize: 13 }}>
                 + จ่ายผสม
               </button>
+              <PosHelp title="จ่ายหลายวิธี" align="right">
+                แบ่งยอดบิลเป็นหลายช่องทาง เช่น เงินสดบางส่วนและบัตรส่วนที่เหลือ ยอดของทุกแถวต้องรวมกันเท่ากับยอดชำระ
+              </PosHelp>
             </div>
           )}
 
@@ -8145,6 +8322,9 @@ export default function PosPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                 <span>
                   <strong>เครดิตลูกค้า</strong>
+                  <PosHelp title="ขายเชื่อและเครดิตคืนสินค้า" align="right">
+                    ขายเชื่อจะตัดสต็อกและสร้างหนี้ลูกค้า แต่ไม่เพิ่มเงินสดในลิ้นชัก เครดิตคืนสินค้าใช้หักยอดขายเชื่อก่อน แล้วจึงใช้วงเงินที่เหลือ
+                  </PosHelp>
                   {arAccount.status !== "ACTIVE" && (
                     <span style={{ color: "#cf1322", marginInlineStart: 6 }}>
                       {arAccount.status === "ON_HOLD" ? "· ถูกระงับการขายเชื่อ" : "· ปิดบัญชีแล้ว"}
@@ -8180,6 +8360,12 @@ export default function PosPage() {
                     </button>
                   ) : (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, display: "inline-flex", alignItems: "center" }}>
+                        รับชำระหนี้
+                        <PosHelp title="รับชำระหนี้" align="right">
+                          เป็นการเก็บเงินจากหนี้เดิม ไม่ใช่การชำระตะกร้าปัจจุบัน เงินสดจะเข้าในลิ้นชักของกะนี้และระบบตัดใบค้างเก่าก่อน
+                        </PosHelp>
+                      </span>
                       <input
                         value={collectAmount}
                         onChange={(e) => setCollectAmount(e.target.value)}
@@ -8296,6 +8482,14 @@ export default function PosPage() {
           )}
 
           <div style={{ marginTop: 12, display: simpleCash || justSold ? "none" : "flex", flexDirection: "column", gap: 8 }}>
+            {payments.length > 1 && (
+              <div style={{ fontSize: 12, color: "var(--pos-muted)", display: "flex", alignItems: "center" }}>
+                แบ่งยอดชำระตามวิธีรับเงิน
+                <PosHelp title="ยอดแบ่งชำระ" align="right">
+                  “ยอดที่แบ่งให้วิธีนี้” คือส่วนของยอดบิล ส่วน “เงินสดที่ลูกค้ายื่นมา” ใช้คำนวณเงินทอน จึงอาจเป็นคนละจำนวนกัน
+                </PosHelp>
+              </div>
+            )}
             {payments.map((payment, index) => {
               const normalized = paymentSummary.normalized[index];
               return (
@@ -8328,7 +8522,8 @@ export default function PosPage() {
                       value={payment.amount}
                       onChange={(e) => updatePayment(payment.id, { amount: e.target.value })}
                       inputMode="decimal"
-                      placeholder="ยอดรับด้วยวิธีนี้"
+                      placeholder="ยอดที่แบ่งให้วิธีนี้"
+                      aria-label={`ยอดที่แบ่งให้ ${posPaymentMethodLabel(payment.method)}`}
                       style={{ width: "100%", padding: 10, fontSize: 14 }}
                     />
                     <button
@@ -8346,7 +8541,7 @@ export default function PosPage() {
                         value={payment.tendered}
                         onChange={(e) => updatePayment(payment.id, { tendered: e.target.value })}
                         inputMode="decimal"
-                        placeholder="รับเงินสดมา"
+                        placeholder="เงินสดที่ลูกค้ายื่นมา"
                         style={{ width: "100%", padding: 10, fontSize: 14 }}
                       />
                       {normalized?.numericTendered > 0 && (
@@ -8401,8 +8596,11 @@ export default function PosPage() {
               {/* แนบหลักฐาน — ไม่บังคับ ตามที่ตกลงว่าให้เภสัชกรเป็นคนตัดสิน
                   แนบแล้วไม่แสดงย้อนหลังที่เครื่องขายโดยตั้งใจ (ไม่มีสิทธิ์อ่าน) */}
               <div style={{ marginTop: 8, borderTop: "1px dashed #cfe6ff", paddingTop: 8 }}>
-                <div style={{ fontSize: 12, color: "#567", marginBottom: 6 }}>
+                <div style={{ fontSize: 12, color: "#567", marginBottom: 6, display: "flex", alignItems: "center" }}>
                   แนบหลักฐานให้เภสัชกร (ไม่บังคับ)
+                  <PosHelp title="หลักฐานสุขภาพ" align="right">
+                    รูปใบสั่งยาและบันทึกคำแนะนำเป็นข้อมูลสุขภาพ จำกัดสิทธิ์การเปิดดูและไม่แสดงไฟล์ย้อนหลังบนเครื่องขายทั่วไป
+                  </PosHelp>
                   {evidenceAdded > 0 ? ` · แนบแล้ว ${evidenceAdded} รายการ` : ""}
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -8483,6 +8681,12 @@ export default function PosPage() {
               ) : (
                 <>
                   <div style={{ fontSize: 13, color: "#234", lineHeight: 1.5 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center" }}>
+                      การอนุมัติของเภสัชกร
+                      <PosHelp title="อนุมัติเฉพาะบิลนี้" align="right">
+                        เภสัชกรต้องตรวจข้อมูลและรับผิดชอบการจ่ายครั้งนี้ การอนุมัติใช้กับบิลและรายการปัจจุบันเท่านั้น เมื่อแก้ตะกร้าหรือจบบิลต้องตรวจใหม่
+                      </PosHelp>
+                    </span><br />
                     {pharmacistAuthOffer?.sku ? `${pharmacistAuthOffer.sku}: ` : ""}
                     {pharmacistAuthOffer?.status === "PHARMACY_PRESCRIPTION_REQUIRED"
                       ? "ยาต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติได้ที่นี่"
@@ -8646,6 +8850,12 @@ export default function PosPage() {
           >
             + ค่าบริการ / ค่าถุง
           </button>
+          <div className="pos-block-hint" style={{ display: "flex", alignItems: "center", justifyContent: "center", marginTop: 4 }}>
+            ไม่ตัดสต็อก แต่รวมในยอดชำระและแสดงบนใบเสร็จ
+            <PosHelp title="ค่าบริการและค่าถุง" align="right">
+              ใช้กับรายการที่ไม่ใช่สินค้าในคลัง เช่น ค่าถุงหรือค่าบริการ ชื่อและยอดที่กรอกจะแสดงให้ลูกค้าเห็นบนใบเสร็จ
+            </PosHelp>
+          </div>
           </>)}
         </section>
       </div>
