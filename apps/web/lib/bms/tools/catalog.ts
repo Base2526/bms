@@ -7,6 +7,7 @@
 // =============================================================
 
 import { audit } from "../audit";
+import { formatCustomerOrderHistoryFallback, type CustomerOrderHistoryPage } from "../customerOrderHistoryPresentation";
 import type { Channel } from "../pipeline";
 import type { BmsPermission } from "../permissions";
 import {
@@ -69,7 +70,7 @@ import {
 import {
   listCustomers,
   getCustomer,
-  customerOrders,
+  customerOrderHistory,
   upsertCustomer,
   setCustomerTags,
   getCustomerCheckoutStatus,
@@ -1629,17 +1630,44 @@ const listCustomersTool: BmsTool = {
 
 const customerOrdersTool: BmsTool = {
   name: "customer_orders",
-  description: "List every order belonging to one customer, by customerId.",
+  description:
+    "List the latest purchase-history orders belonging to one customer by customerId. " +
+    "First resolve the customerId with list_customers. Returns a bounded page plus totalCount (all statuses), " +
+    "successfulCount, nextOffset and truncated. Summarize only the returned rows and state when more history " +
+    "exists instead of trying to print every order. For 'show more/older' use the previous nextOffset.",
   surfaces: ["staff"],
   permission: "customer.view",
   inputSchema: {
     type: "object",
-    properties: { customerId: { type: "string" } },
+    properties: {
+      customerId: { type: "string" },
+      limit: { type: "integer", minimum: 1, maximum: 10 },
+      offset: { type: "integer", minimum: 0, maximum: 10000 },
+    },
     required: ["customerId"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "customerId");
-    return { ok: true, data: { orders: await customerOrders(ec.tenantId, id) } };
+    const history = await customerOrderHistory(
+      ec.tenantId,
+      id,
+      optInt(args, "limit", 1, 10) ?? 5,
+      optInt(args, "offset", 0, 10_000) ?? 0
+    );
+    return { ok: true, data: history };
+  },
+  whenToUse: "A staff member asks what a named customer bought or asks for that customer's order history.",
+  commonMistakes: [
+    "Do not pass a customer name as customerId; resolve it with list_customers first.",
+    "If list_customers returns more than one plausible customer, ask staff to choose instead of guessing.",
+    "Do not claim all orders were shown when truncated is true.",
+    "Do not confuse totalCount (all statuses) with successfulCount.",
+  ],
+  fallbackReply: (data, ec) => {
+    return formatCustomerOrderHistoryFallback(
+      data && typeof data === "object" ? data as CustomerOrderHistoryPage : null,
+      ec.locale
+    );
   },
 };
 

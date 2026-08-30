@@ -72,6 +72,7 @@ function makeTool(
     surfaces: overrides.surfaces ?? ["customer"],
     permission: overrides.permission,
     sensitive: overrides.sensitive,
+    fallbackReply: overrides.fallbackReply,
     execute: overrides.execute ?? (async () => ({ ok: true, data: { ok: true } })),
   };
 }
@@ -352,7 +353,7 @@ test("shared DeepSeek timeout falls back once before tools under the same usage 
   );
 });
 
-test("registry-only tool metadata (whenToUse/whenNotToUse/commonMistakes/example) never reaches the provider payload", async () => {
+test("registry-only tool metadata never reaches the provider payload", async () => {
   // feat/function-registry (8480aeba) added these fields to BmsTool for docs/humans only — they
   // must never be serialized into the Anthropic tool schema, or every turn silently starts paying
   // token cost for them. This guards the invariant runtime.ts's serialization block currently
@@ -365,6 +366,7 @@ test("registry-only tool metadata (whenToUse/whenNotToUse/commonMistakes/example
     whenNotToUse: "must never leak into the provider payload",
     commonMistakes: ["must never leak into the provider payload"],
     example: { input: {}, note: "must never leak into the provider payload" },
+    fallbackReply: () => "must never leak into the provider payload",
     inputSchema: { type: "object", properties: {} },
     surfaces: ["customer"],
     execute: async () => ({ ok: true }),
@@ -379,7 +381,7 @@ test("registry-only tool metadata (whenToUse/whenNotToUse/commonMistakes/example
   );
   assert.equal(seenTools.length, 1);
   const keys = Object.keys(seenTools[0]);
-  for (const forbidden of ["whenToUse", "whenNotToUse", "commonMistakes", "example"]) {
+  for (const forbidden of ["whenToUse", "whenNotToUse", "commonMistakes", "example", "fallbackReply"]) {
     assert.ok(!keys.includes(forbidden), `"${forbidden}" must not be serialized into the provider tool schema`);
   }
   // ยืนยันบวก ไม่ใช่แค่ปฏิเสธ 4 field ที่รู้ชื่อไว้ก่อน — เผื่อมี field registry-only ใหม่ในอนาคต
@@ -480,6 +482,31 @@ test("malformed provider content is bounded and returned as an empty safe result
   assert.equal(usage[0]?.payload.providerCalls, 1);
   assert.equal(usage[0]?.payload.unpricedProviderCalls, 1);
   assert.equal(usage[0]?.payload.costMeasured, false);
+});
+
+test("verified tool data replaces a token-truncated provider reply with a bounded server fallback", async () => {
+  let call = 0;
+  const tool = makeTool({
+    name: "read_history",
+    fallbackReply: (data) => `verified:${(data as any).count}:ask show more`,
+    execute: async () => ({ ok: true, data: { count: 5 } }),
+  });
+  const result = await __toolLoopTest.run(
+    baseOptions([tool]),
+    depsFor(async () => {
+      call += 1;
+      return call === 1
+        ? toolResponse("read_history", {})
+        : {
+            stop_reason: "max_tokens",
+            content: [{ type: "text", text: "| # | Order ID |\n|---|---|\n| 1" }],
+            usage: { input_tokens: 4, output_tokens: 1 },
+          };
+    })
+  );
+  assert.equal(result.reply, "verified:5:ask show more");
+  assert.equal(result.systemFailure, "empty_reply");
+  assert.equal(result.trace[0]?.tool, "read_history");
 });
 
 test("partial provider usage keeps known cost while flagging the call as unpriced", async () => {

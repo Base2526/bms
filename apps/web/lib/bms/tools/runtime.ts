@@ -529,8 +529,10 @@ async function runToolLoopInternal(
       resultContent: string;
       outcome: "ok" | "proposal";
       summary: string;
+      fallbackReply?: string | null;
     }
   >();
+  let latestVerifiedFallback: string | null = null;
   let inputTokens = 0;
   let cacheCreationInputTokens = 0;
   let cacheReadInputTokens = 0;
@@ -658,9 +660,12 @@ async function runToolLoopInternal(
         // เดิมเคสนี้ถูกปิดเป็น status "completed" แล้วคืน reply ว่าง ทำให้ caller ไปใช้
         // ข้อความ "ช่วยพิมพ์ใหม่" — ลูกค้าพิมพ์ถูกแต่ถูกโทษ และ ops ไม่เห็นอะไรเลย
         // (เจอบน production 2026-08-19 ตะกร้า 3 รายการของร้านยา)
-        if (!reply) {
+        const hasBoundedFallbackForTruncation =
+          resp?.stop_reason === "max_tokens" && Boolean(latestVerifiedFallback);
+        if (!reply || hasBoundedFallbackForTruncation) {
           const stopReason = typeof resp?.stop_reason === "string" ? resp.stop_reason : "unknown";
-          const detail = `empty_model_reply (stop_reason=${stopReason}, tool_use_blocks=${toolUses.length}, round=${round + 1})`;
+          const failureKind = reply ? "truncated_model_reply" : "empty_model_reply";
+          const detail = `${failureKind} (stop_reason=${stopReason}, tool_use_blocks=${toolUses.length}, round=${round + 1})`;
           if (creds.usageEventId) {
             await finalizeUsage(creds.usageEventId, {
               status: "fallback",
@@ -675,8 +680,13 @@ async function runToolLoopInternal(
             maxTokens: maxTokensForSurface(opts.execCtx.surface),
             toolsCalled: trace.map((t) => t.tool),
           });
-          // reply ว่างไว้เหมือนเดิม แต่ติดธงให้ caller เลือกข้อความตามภาษาของบทสนทนา
-          return { reply: "", proposals, trace, usedAi: true, systemFailure: "empty_reply" };
+          return {
+            reply: latestVerifiedFallback ?? "",
+            proposals,
+            trace,
+            usedAi: true,
+            systemFailure: "empty_reply",
+          };
         }
         if (creds.usageEventId) {
           await finalizeUsage(creds.usageEventId, {
@@ -711,6 +721,7 @@ async function runToolLoopInternal(
             if (completed) {
               outcome = completed.outcome;
               resultContent = completed.resultContent;
+              if (completed.fallbackReply) latestVerifiedFallback = completed.fallbackReply;
               trace.push({
                 tool: toolName,
                 input: traceInput,
@@ -736,7 +747,23 @@ async function runToolLoopInternal(
                 if (tool.sensitive) throw new Error("sensitive tool must return a proposal");
                 outcome = "ok";
                 resultContent = JSON.stringify(r.data ?? { ok: true });
-                completedCalls.set(callKey, { resultContent, outcome, summary: "ok" });
+                let fallbackReply: string | null = null;
+                if (tool.fallbackReply) {
+                  try {
+                    const formatted = tool.fallbackReply(r.data, opts.execCtx, traceInput);
+                    fallbackReply = typeof formatted === "string"
+                      ? formatted.trim().slice(0, 4_000) || null
+                      : null;
+                  } catch (formatError) {
+                    console.error(`[BMS] tool ${toolName} fallback formatter failed:`, formatError);
+                    await reportToolFailure(reportFailure, "ai.tool_failed", opts.execCtx, formatError, {
+                      tool: toolName,
+                      route: "fallback_formatter",
+                    });
+                  }
+                }
+                if (fallbackReply) latestVerifiedFallback = fallbackReply;
+                completedCalls.set(callKey, { resultContent, outcome, summary: "ok", fallbackReply });
                 trace.push({ tool: toolName, input: traceInput, ok: true, summary: "ok" });
               } else {
                 outcome = "error";
@@ -781,7 +808,7 @@ async function runToolLoopInternal(
       { rounds: MAX_ROUNDS, toolsCalled: trace.map((t) => t.tool) }
     );
     return {
-      reply: "ขออภัยค่ะ ระบบประมวลผลนานเกินไป ลองใหม่อีกครั้งนะคะ 🙏",
+      reply: latestVerifiedFallback ?? "ขออภัยค่ะ ระบบประมวลผลนานเกินไป ลองใหม่อีกครั้งนะคะ",
       proposals,
       trace,
       usedAi: true,
@@ -801,7 +828,7 @@ async function runToolLoopInternal(
       toolsCalled: trace.map((t) => t.tool),
     });
     return {
-      reply: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ 🙏",
+      reply: latestVerifiedFallback ?? "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ",
       proposals,
       trace,
       usedAi: true,
