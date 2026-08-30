@@ -23,6 +23,10 @@ export type StockTransferItem = {
   size: string;
   qty: number;
   receivedQty: number | null;
+  damagedQty: number;
+  missingQty: number | null;
+  discrepancyReason: string | null;
+  discrepancyNote: string | null;
 };
 
 export type StockTransfer = {
@@ -34,6 +38,7 @@ export type StockTransfer = {
   toLocationName: string | null;
   status: StockTransferStatus;
   note: string | null;
+  receivingNote: string | null;
   createdByName: string | null;
   sentAt: string | null;
   receivedAt: string | null;
@@ -100,6 +105,12 @@ export async function listStockTransfers(
       id: Number(row.id), sku: row.product_sku, productName: row.product_name ?? null,
       size: row.size, qty: Number(row.qty),
       receivedQty: row.received_qty == null ? null : Number(row.received_qty),
+      damagedQty: Number(row.damaged_qty ?? 0),
+      missingQty: row.received_qty == null
+        ? null
+        : Math.max(0, Number(row.qty) - Number(row.received_qty) - Number(row.damaged_qty ?? 0)),
+      discrepancyReason: row.discrepancy_reason ?? null,
+      discrepancyNote: row.discrepancy_note ?? null,
     });
     byTransfer.set(row.transfer_id, list);
   }
@@ -113,6 +124,7 @@ export async function listStockTransfers(
     toLocationName: r.to_name ?? null,
     status: r.status,
     note: r.note ?? null,
+    receivingNote: r.receiving_note ?? null,
     createdByName: r.created_by_name ?? null,
     sentAt: r.sent_at ? toISO(r.sent_at) : null,
     receivedAt: r.received_at ? toISO(r.received_at) : null,
@@ -218,6 +230,7 @@ export async function createStockTransfer(input: {
 
 export type TransferActionResult =
   | { status: "OK" }
+  | { status: "INVALID"; reason: string }
   | { status: "NOT_FOUND" }
   | { status: "WRONG_STATE"; current: StockTransferStatus }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number };
@@ -308,7 +321,14 @@ export async function receiveStockTransfer(input: {
   tenantId: string;
   transferId: string;
   actorUserId: string;
-  received?: Array<{ itemId: number; qty: number }>;
+  received?: Array<{
+    itemId: number;
+    qty: number;
+    damagedQty?: number;
+    reason?: string | null;
+    note?: string | null;
+  }>;
+  receivingNote?: string | null;
 }): Promise<TransferActionResult> {
   const client = await getClient();
   try {
@@ -325,11 +345,7 @@ export async function receiveStockTransfer(input: {
 
     // Number("abc") = NaN แล้ว NaN ลอดทั้ง `> 0` และ `< qty` ไปถึง UPDATE ที่คอลัมน์
     // เป็น INTEGER CHECK (>= 0) → 500 · route รับ body.received มาดิบ ๆ จึงกันตรงนี้
-    const overrides = new Map(
-      (input.received ?? [])
-        .map((r) => [Number(r.itemId), Math.max(0, Math.trunc(Number(r.qty)))] as const)
-        .filter(([itemId, qty]) => Number.isFinite(itemId) && Number.isFinite(qty))
-    );
+    const overrides = new Map((input.received ?? []).map((r) => [Number(r.itemId), r] as const));
     const items = await client.query<{ id: number; product_sku: string; size: string; qty: number }>(
       `SELECT id, product_sku, size, qty FROM bms_stock_transfer_items
         WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
@@ -338,49 +354,96 @@ export async function receiveStockTransfer(input: {
 
     let totalSent = 0;
     let totalReceived = 0;
+    let totalDamaged = 0;
+    const discrepancyLines: Array<Record<string, unknown>> = [];
+    const allowedReasons = new Set([
+      "LOST_IN_TRANSIT", "SOURCE_SHORT_SHIP", "COUNT_ERROR", "DAMAGED", "OTHER",
+    ]);
 
     for (const item of items.rows) {
-      const requested = overrides.has(Number(item.id)) ? overrides.get(Number(item.id))! : item.qty;
-      const receivedQty = Math.min(requested, item.qty);
+      const override = overrides.get(Number(item.id));
+      const receivedQty = Math.max(0, Math.trunc(Number(override?.qty ?? item.qty)));
+      const damagedQty = Math.max(0, Math.trunc(Number(override?.damagedQty ?? 0)));
+      if (!Number.isFinite(receivedQty) || !Number.isFinite(damagedQty)
+          || receivedQty + damagedQty > item.qty) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: `จำนวนรับของรายการ ${item.product_sku}/${item.size} ไม่ถูกต้อง` };
+      }
+      const missing = item.qty - receivedQty - damagedQty;
+      const reason = String(override?.reason ?? "").trim().toUpperCase() || null;
+      const note = String(override?.note ?? "").trim() || null;
+      if ((missing > 0 || damagedQty > 0) && (!reason || !allowedReasons.has(reason) || !note)) {
+        await client.query("ROLLBACK");
+        return {
+          status: "INVALID",
+          reason: `รายการ ${item.product_sku}/${item.size} มีส่วนต่าง ต้องเลือกสาเหตุและกรอกหมายเหตุ`,
+        };
+      }
       totalSent += Number(item.qty);
       totalReceived += receivedQty;
+      totalDamaged += damagedQty;
 
-      if (receivedQty > 0) {
+      if (receivedQty > 0 || damagedQty > 0) {
         await client.query(
-          `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
-           VALUES ($1,$2,$3,$4,$5,0)
+          `INSERT INTO bms_inventory
+             (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, quarantine_stock)
+           VALUES ($1,$2,$3,$4,$5,0,$6)
            ON CONFLICT (tenant_id, location_id, product_sku, size)
-             DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock, updated_at = now()`,
-          [input.tenantId, t.to_location, item.product_sku, item.size, receivedQty]
+             DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock,
+                           quarantine_stock = bms_inventory.quarantine_stock + EXCLUDED.quarantine_stock,
+                           updated_at = now()`,
+          [input.tenantId, t.to_location, item.product_sku, item.size, receivedQty, damagedQty]
         );
+      }
+      if (receivedQty > 0) {
         await recordMovement(client, {
           tenantId: input.tenantId, locationId: t.to_location,
           sku: item.product_sku, size: item.size, type: "TRANSFER_IN", qty: receivedQty,
           note: `รับโอน ${t.transfer_no}`, actor: input.actorUserId,
         });
       }
+      if (damagedQty > 0) {
+        await recordMovement(client, {
+          tenantId: input.tenantId, locationId: t.to_location,
+          sku: item.product_sku, size: item.size, type: "QUARANTINE_IN", qty: damagedQty,
+          note: `ของเสียหายจากใบโอน ${t.transfer_no}: ${note}`, actor: input.actorUserId,
+        });
+      }
 
-      const missing = item.qty - receivedQty;
       if (missing > 0) {
         // ของหายระหว่างทาง — ต้องมีบรรทัดของตัวเอง ไม่ใช่หายเงียบจากผลต่างสองสาขา
         await recordMovement(client, {
           tenantId: input.tenantId, locationId: t.from_location,
           sku: item.product_sku, size: item.size, type: "STOCK_OUT", qty: missing,
-          note: `ของขาดระหว่างโอน ${t.transfer_no} (ส่ง ${item.qty} รับ ${receivedQty})`,
+          note: `ของขาดระหว่างโอน ${t.transfer_no} (ส่ง ${item.qty} รับดี ${receivedQty} เสียหาย ${damagedQty} ไม่พบ ${missing}; ${reason}: ${note})`,
           actor: input.actorUserId,
         });
       }
 
       await client.query(
-        `UPDATE bms_stock_transfer_items SET received_qty = $3 WHERE tenant_id = $1 AND id = $2`,
-        [input.tenantId, item.id, receivedQty]
+        `UPDATE bms_stock_transfer_items
+            SET received_qty = $3, damaged_qty = $4,
+                discrepancy_reason = $5, discrepancy_note = $6
+          WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, item.id, receivedQty, damagedQty,
+          missing > 0 || damagedQty > 0 ? reason : null,
+          missing > 0 || damagedQty > 0 ? note : null]
       );
+      if (missing > 0 || damagedQty > 0) {
+        discrepancyLines.push({
+          itemId: item.id, sku: item.product_sku, size: item.size,
+          sent: item.qty, received: receivedQty, damaged: damagedQty, missing, reason, note,
+        });
+      }
     }
 
     await client.query(
-      `UPDATE bms_stock_transfers SET status = 'RECEIVED', received_by = $3, received_at = now(), updated_at = now()
+      `UPDATE bms_stock_transfers
+          SET status = 'RECEIVED', received_by = $3, received_at = now(),
+              receiving_note = $4, updated_at = now()
         WHERE tenant_id = $1 AND id = $2`,
-      [input.tenantId, input.transferId, input.actorUserId]
+      [input.tenantId, input.transferId, input.actorUserId,
+        input.receivingNote?.trim() || null]
     );
     // ของขาดระหว่างทางเป็นตัวเลขที่ต้องมีคนตอบ — ใส่ไว้ใน audit ตรง ๆ ไม่ให้ต้อง
     // ไปหักลบเอาเองจากสองสาขา
@@ -390,7 +453,10 @@ export async function receiveStockTransfer(input: {
       toLocationId: t.to_location,
       unitsSent: totalSent,
       unitsReceived: totalReceived,
-      unitsMissing: totalSent - totalReceived,
+      unitsDamaged: totalDamaged,
+      unitsMissing: totalSent - totalReceived - totalDamaged,
+      receivingNote: input.receivingNote?.trim() || null,
+      discrepancies: discrepancyLines,
     });
     await client.query("COMMIT");
     return { status: "OK" };

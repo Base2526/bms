@@ -601,6 +601,10 @@ type ReceiptVat = {
 type Receipt = {
   orderId?: string | null;
   docNo: string | null;
+  sourceChannel?: string | null;
+  returnEligible?: boolean;
+  returnBlockedReason?: "MARKETPLACE_MANAGED" | null;
+  saleLocationId?: string | null;
   /** ใบรับคืน/ใบลดหนี้ต้องอ้างถึงใบขายเดิมให้ชัด — ไม่ใช้เลขเดียวกันแบบกำกวม */
   referenceDocNo?: string | null;
   posDeviceId?: string | null;
@@ -3929,6 +3933,10 @@ export default function PosPage() {
         sales.map((sale: any, saleIndex: number) => ({
           orderId: sale.orderId ?? null,
           docNo: sale.docNo ?? null,
+          sourceChannel: sale.sourceChannel ?? "pos",
+          returnEligible: sale.returnEligible !== false,
+          returnBlockedReason: sale.returnBlockedReason ?? null,
+          saleLocationId: sale.saleLocationId ?? null,
           posDeviceId: sale.posDeviceId ?? null,
           orderStatus: sale.orderStatus ?? null,
           voidedAt: sale.voidedAt ?? null,
@@ -3955,9 +3963,9 @@ export default function PosPage() {
           change: sale.cashChange == null ? null : Number(sale.cashChange),
           at: new Date(String(sale.soldAt ?? "")).toLocaleString("th-TH"),
           cashier: String(sale.cashierName ?? ""),
-          storeName: sale.locationName ?? session?.location?.name ?? null,
-          branchCode: sale.branchCode ?? session?.location?.branchCode ?? null,
-          posLabel: sale.posLabel ?? session?.device.registeredPosNo ?? session?.device.code ?? null,
+          storeName: sale.locationName ?? null,
+          branchCode: sale.branchCode ?? null,
+          posLabel: sale.posLabel ?? null,
           vatRegistered: Boolean(session?.vat.registered),
           taxId: session?.store?.taxId ?? null,
           vat: parseReceiptVat(sale.vat),
@@ -4904,7 +4912,8 @@ export default function PosPage() {
       focusLater(refundMethodSelectRef);
       return;
     }
-    if (!window.confirm("ยืนยันคืนสินค้าที่เหลือทั้งบิล? เงินสดจะถือว่าคืนแล้ว ส่วนบัตร/QR/วอลเล็ทต้องยืนยัน settlement อีกครั้ง")) return;
+    const isCrossBranch = Boolean(row.saleLocationId && session?.location?.id && row.saleLocationId !== session.location.id);
+    if (!window.confirm(`${isCrossBranch ? "รายการนี้เป็นการคืนข้ามสาขา สินค้าจะเข้าสต็อกสาขานี้และต้องใช้ผู้อนุมัติคนที่สอง\n\n" : ""}ยืนยันคืนสินค้าที่เหลือทั้งบิล? เงินสดจะถือว่าคืนแล้ว ส่วนบัตร/QR/วอลเล็ทต้องยืนยัน settlement อีกครั้ง`)) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -4966,6 +4975,9 @@ export default function PosPage() {
       }
       const message =
         data?.status === "APPROVAL_REQUIRED" ? `${data.reason} — ระบุผู้อนุมัติและ PIN ผู้อนุมัติด้านบน`
+        : data?.status === "CROSS_BRANCH_APPROVAL_REQUIRED" ? "คืนข้ามสาขาต้องใช้ PIN ของผู้อนุมัติคนที่สองที่มีสิทธิ์รับคืนข้ามสาขา"
+        : data?.status === "CHANNEL_RETURN_MANAGED_EXTERNALLY" ? `บิล ${data.channel} ต้องคืนผ่าน marketplace ต้นทาง`
+        : data?.status === "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" ? "สินค้ามี serial คืนข้ามสาขาแบบบางส่วนยังไม่ได้ ต้องคืนครบรายการ/ทั้งบิล"
         :
         data?.status === "INVALID_ORDER_STATUS" ? `คืนบิลไม่ได้: สถานะปัจจุบันคือ ${data.current}`
         : data?.status === "NO_CONFIRMED_PAYMENTS" ? "คืนบิลไม่ได้: ไม่พบ payment ที่ยืนยันแล้ว"
@@ -5078,6 +5090,9 @@ export default function PosPage() {
       }
       const message =
         data?.status === "APPROVAL_REQUIRED" ? `${data.reason} — ระบุผู้อนุมัติและ PIN ผู้อนุมัติด้านบน`
+        : data?.status === "CROSS_BRANCH_APPROVAL_REQUIRED" ? "คืนข้ามสาขาต้องใช้ PIN ของผู้อนุมัติคนที่สองที่มีสิทธิ์รับคืนข้ามสาขา"
+        : data?.status === "CHANNEL_RETURN_MANAGED_EXTERNALLY" ? `บิล ${data.channel} ต้องคืนผ่าน marketplace ต้นทาง`
+        : data?.status === "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" ? "สินค้ามี serial คืนข้ามสาขาแบบบางส่วนยังไม่ได้ ต้องคืนครบรายการ/ทั้งบิล"
         :
         data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่คืนเกินกว่าที่ยังคืนได้"
         : data?.status === "REPRICE_PAYMENT_REQUIRED"
@@ -5217,6 +5232,9 @@ export default function PosPage() {
       if (!res.ok || data.status !== "PARTIAL_RETURNED") {
         const message =
           data?.status === "APPROVAL_REQUIRED" ? `${data.reason} — ระบุผู้อนุมัติและ PIN ผู้อนุมัติด้านบน`
+          : data?.status === "CROSS_BRANCH_APPROVAL_REQUIRED" ? "คืนข้ามสาขาต้องใช้ PIN ของผู้อนุมัติคนที่สองที่มีสิทธิ์รับคืนข้ามสาขา"
+          : data?.status === "CHANNEL_RETURN_MANAGED_EXTERNALLY" ? `บิล ${data.channel} ต้องคืนผ่าน marketplace ต้นทาง`
+          : data?.status === "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" ? "สินค้ามี serial คืนข้ามสาขาแบบบางส่วนยังไม่ได้ ต้องคืนครบรายการ/ทั้งบิล"
           : data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่เปลี่ยนเกินกว่าที่ยังคืนได้"
           : data?.status === "REPRICE_PAYMENT_REQUIRED"
             ? `เปลี่ยนรายการนี้ไม่ได้: เมื่อประเมินราคาตามจำนวนใหม่ ต้องรับเงินเพิ่มก่อน ฿${baht(Number(data.additionalAmount ?? 0))}`
@@ -7432,20 +7450,23 @@ export default function PosPage() {
             </div>
             <div className="pos-ret-help">
               ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
-              · เมื่อมีคำค้น ระบบจะค้นย้อนหลังข้ามเครื่อง POS ทั้งร้านให้
+              · เมื่อมีคำค้น ระบบจะค้นย้อนหลังทุกช่องทางและทุกสาขาในร้านให้
             </div>
             {visibleRecentReceipts.length > 0 && (
               <div className="pos-ret-list" style={{ display: recentOpen ? "flex" : "none" }}>
                 {visibleRecentReceipts.map((row, idx) => {
                   const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
+                  const crossBranch = Boolean(
+                    row.saleLocationId && session?.location?.id && row.saleLocationId !== session.location.id
+                  );
                   const refundSummary = getReceiptRefundSummary(row);
                   const latestReturnEvent = [...(row.returnEvents ?? [])]
                     .filter((event) => !event.isVoid)
                     .sort((a, b) => new Date(b.returnedAt).getTime() - new Date(a.returnedAt).getTime())[0];
                   // บิลที่คืนครบทุกชิ้นแล้วแต่สถานะยังเป็น COMPLETED ก็ไม่มีอะไรให้คืนต่อ
                   const canReturn =
-                    soldOnThisDevice &&
                     Boolean(row.orderId) &&
+                    row.returnEligible !== false &&
                     row.orderStatus !== "RETURNED" &&
                     row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
                   const panelOpen = canReturn && returnPanelOrderId === row.orderId;
@@ -7498,9 +7519,15 @@ export default function PosPage() {
                             สมาชิก {row.memberNo ?? "—"} · {row.memberName ?? "ไม่ระบุชื่อ"}{row.memberPhone ? ` · ${row.memberPhone}` : ""}
                           </div>
                         )}
-                        <div className={`pos-ret-store${soldOnThisDevice ? "" : " pos-ret-store--offsite"}`}>
-                          ขายที่ {row.storeName ?? "ไม่ทราบสาขา"}{row.branchCode ? ` (${row.branchCode})` : ""}{row.posLabel ? ` · POS#${row.posLabel}` : ""}
-                          {!soldOnThisDevice ? " · เครื่องนี้ดู/พิมพ์ซ้ำได้ แต่คืนหรือเปลี่ยนจากใบเสร็จนี้ไม่ได้" : ""}
+                        <div className={`pos-ret-store${crossBranch ? " pos-ret-store--offsite" : ""}`}>
+                          ช่องทาง {row.sourceChannel ?? "pos"} · ขายที่ {row.storeName ?? "ไม่ทราบสาขา"}{row.branchCode ? ` (${row.branchCode})` : ""}{row.posLabel ? ` · POS#${row.posLabel}` : ""}
+                          {row.returnBlockedReason === "MARKETPLACE_MANAGED"
+                            ? " · ต้องคืนผ่าน marketplace ต้นทาง"
+                            : crossBranch
+                              ? " · คืนข้ามสาขาต้องให้ผู้มีสิทธิ์คนที่สองอนุมัติ"
+                              : !soldOnThisDevice && row.sourceChannel === "pos"
+                                ? " · เป็นบิลจาก POS เครื่องอื่นในสาขาเดียวกัน"
+                                : ""}
                         </div>
                       </div>
                       <div className="pos-ret-money">
@@ -7604,7 +7631,7 @@ export default function PosPage() {
                       )}
                       {!canReturn && (
                         <span className="pos-ret-note">
-                          {!soldOnThisDevice ? "ขายจาก POS เครื่องอื่น — ดู/พิมพ์ซ้ำได้เท่านั้น"
+                          {row.returnBlockedReason === "MARKETPLACE_MANAGED" ? "คืนผ่าน marketplace ต้นทาง"
                             : row.voidedAt ? "ยกเลิกบิลแล้ว"
                             : row.orderStatus === "RETURNED" ? "คืนแล้วทั้งบิล"
                             : "คืนครบทุกรายการแล้ว"}

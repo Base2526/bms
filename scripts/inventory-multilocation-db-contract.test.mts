@@ -27,7 +27,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
-import { adjustStock } from "../apps/web/lib/bms/products.ts";
+import { adjustStock, listVariants, setReorderPoint } from "../apps/web/lib/bms/products.ts";
 import {
   cancelStockTransfer,
   createStockTransfer,
@@ -118,6 +118,20 @@ test("adjustStock hits the branch it is told to, not always the default", async 
   assert.equal(await stockAt(branchLocation), 25);
 });
 
+test("branch variants stay separate and reorder targets the named branch", async () => {
+  const variants = await listVariants(tenantId, SKU);
+  const main = variants.find((row) => row.location_id === mainLocation && row.size === SIZE);
+  const branch = variants.find((row) => row.location_id === branchLocation && row.size === SIZE);
+  assert.equal(main?.current_stock, 105);
+  assert.equal(branch?.current_stock, 25);
+  assert.notEqual(main?.location_name, branch?.location_name);
+
+  await setReorderPoint(tenantId, SKU, SIZE, 7, actorId, branchLocation);
+  const after = await listVariants(tenantId, SKU);
+  assert.equal(after.find((row) => row.location_id === branchLocation)?.reorder_point, 7);
+  assert.notEqual(after.find((row) => row.location_id === mainLocation)?.reorder_point, 7);
+});
+
 test("adjustStock refuses a location that belongs to another shop", async () => {
   await assert.rejects(
     () => adjustStock(tenantId, SKU, SIZE, 1, null, "test", actorId,
@@ -160,12 +174,37 @@ test("receiving less than was sent records the shortfall instead of hiding it", 
   const itemId = transfer!.items[0].id;
 
   // ส่ง 10 ถึงจริง 8 — สองชิ้นหายระหว่างทาง
-  await receiveStockTransfer({
+  const invalid = await receiveStockTransfer({
     tenantId, transferId: created.transferId, actorUserId: actorId,
     received: [{ itemId, qty: 8 }],
   });
-  assert.equal(await stockAt(branchLocation), 63, "ปลายทางได้ 8 ไม่ใช่ 10");
+  assert.equal(invalid.status, "INVALID", "รับขาดต้องระบุสาเหตุและหมายเหตุ");
+
+  await receiveStockTransfer({
+    tenantId, transferId: created.transferId, actorUserId: actorId,
+    receivingNote: "ตรวจรับหน้ากล้องคลัง",
+    received: [{
+      itemId, qty: 7, damagedQty: 1,
+      reason: "LOST_IN_TRANSIT", note: "กล่องฉีก พบของดี 7 เสียหาย 1 ไม่พบ 2",
+    }],
+  });
+  assert.equal(await stockAt(branchLocation), 62, "ปลายทางเพิ่มเฉพาะของดี 7 ไม่ใช่ของเสียหาย");
   assert.equal(await stockAt(mainLocation), 65);
+
+  const detail = (await listStockTransfers(tenantId, "RECEIVED")).find((t) => t.id === created.transferId)!;
+  assert.equal(detail.items[0].receivedQty, 7);
+  assert.equal(detail.items[0].damagedQty, 1);
+  assert.equal(detail.items[0].missingQty, 2);
+  assert.equal(detail.items[0].discrepancyReason, "LOST_IN_TRANSIT");
+  assert.match(detail.items[0].discrepancyNote ?? "", /กล่องฉีก/);
+  assert.equal(detail.receivingNote, "ตรวจรับหน้ากล้องคลัง");
+
+  const quarantined = await query<{ n: number }>(
+    `SELECT quarantine_stock AS n FROM bms_inventory
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+    [tenantId, branchLocation, SKU, SIZE]
+  );
+  assert.equal(Number(quarantined.rows[0].n), 1);
 
   const missing = await query<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM bms_stock_movements

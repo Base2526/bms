@@ -96,9 +96,14 @@ export type PublicShop = {
 };
 
 export type VariantRow = {
+  location_id: string;
+  location_name: string;
+  branch_code: string;
   size: string;
   current_stock: number;
   reserved_stock: number;
+  quarantine_stock: number;
+  in_transit_qty: number;
   reorder_point: number;
   /** ราคาที่ขายจริงของไซซ์นี้: override ของ BASE pack แล้ว fallback เป็นราคาสินค้า */
   price: number;
@@ -582,27 +587,58 @@ export async function findAlternativeProducts(
 
 export async function listVariants(tenantId: string, sku: string): Promise<VariantRow[]> {
   const res = await query<VariantRow>(
-    `SELECT i.size, i.current_stock, i.reserved_stock, i.reorder_point,
+    `WITH variant_keys AS (
+       SELECT location_id, size
+         FROM bms_inventory
+        WHERE tenant_id = $1 AND product_sku = $2
+       UNION
+       SELECT tr.to_location AS location_id, ti.size
+         FROM bms_stock_transfer_items ti
+         JOIN bms_stock_transfers tr
+           ON tr.tenant_id = ti.tenant_id AND tr.id = ti.transfer_id
+        WHERE ti.tenant_id = $1 AND ti.product_sku = $2 AND tr.status = 'IN_TRANSIT'
+     )
+     SELECT keys.location_id, loc.name AS location_name, loc.branch_code,
+            keys.size, COALESCE(i.current_stock, 0)::integer AS current_stock,
+            COALESCE(i.reserved_stock, 0)::integer AS reserved_stock,
+            COALESCE(i.quarantine_stock, 0)::integer AS quarantine_stock,
+            COALESCE(inbound.qty, 0)::integer AS in_transit_qty,
+            COALESCE(i.reorder_point, 0)::integer AS reorder_point,
             COALESCE(sized.price, shared.price, p.price)::float8 AS price,
             sized.price::float8 AS price_override,
             sized.id::text AS base_pack_id
-       FROM bms_inventory i
-       JOIN bms_products p
-         ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+       FROM variant_keys keys
+       JOIN bms_products p ON p.tenant_id = $1 AND p.sku = $2
+       LEFT JOIN bms_inventory i
+         ON i.tenant_id = $1 AND i.product_sku = $2
+        AND i.location_id = keys.location_id AND i.size = keys.size
+       JOIN bms_locations loc
+         ON loc.tenant_id = $1 AND loc.id = keys.location_id
+       LEFT JOIN LATERAL (
+         SELECT SUM(ti.qty)::integer AS qty
+           FROM bms_stock_transfer_items ti
+           JOIN bms_stock_transfers tr
+             ON tr.tenant_id = ti.tenant_id AND tr.id = ti.transfer_id
+          WHERE ti.tenant_id = $1
+            AND ti.product_sku = $2
+            AND ti.size = keys.size
+            AND tr.to_location = keys.location_id
+            AND tr.status = 'IN_TRANSIT'
+       ) inbound ON TRUE
        LEFT JOIN bms_product_packs sized
-         ON sized.tenant_id = i.tenant_id
-        AND sized.product_sku = i.product_sku
-        AND sized.size = i.size
+         ON sized.tenant_id = $1
+            AND sized.product_sku = $2
+            AND sized.size = keys.size
         AND sized.is_base
         AND sized.active
        LEFT JOIN bms_product_packs shared
-         ON shared.tenant_id = i.tenant_id
-        AND shared.product_sku = i.product_sku
+         ON shared.tenant_id = $1
+        AND shared.product_sku = $2
         AND shared.size IS NULL
         AND shared.is_base
         AND shared.active
-      WHERE i.tenant_id = $1 AND i.product_sku = $2
-      ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], i.size), i.size`,
+      ORDER BY loc.is_head_office DESC, loc.name,
+               array_position(ARRAY['S','M','L','XL','XXL'], keys.size), keys.size`,
     [tenantId, sku]
   );
   return res.rows;
@@ -1327,20 +1363,30 @@ export async function setProductActive(
 
 export async function setReorderPoint(
   tenantId: string, sku: string, size: string, reorderPoint: number,
-  editorId?: string | number | null
+  editorId?: string | number | null,
+  locationIdArg?: string | null
 ): Promise<VariantRow> {
   const rp = Math.max(0, Math.floor(Number(reorderPoint) || 0));
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId });
-    const locationId = await resolveDefaultLocationIdInTx(client, tenantId);
+    const locationId = locationIdArg?.trim();
+    if (!locationId) throw new Error("ต้องระบุสาขาที่ตั้งจุดแจ้งเตือน");
+    const location = await client.query(
+      `SELECT 1 FROM bms_locations WHERE tenant_id = $1 AND id = $2 AND active`,
+      [tenantId, locationId]
+    );
+    if (!location.rowCount) throw new Error("ไม่พบสาขานี้ในร้าน หรือสาขาถูกปิดใช้งาน");
     const res = await client.query<VariantRow>(
-      `UPDATE bms_inventory SET reorder_point = $4, updated_at = now()
-        WHERE tenant_id = $1 AND location_id = $5 AND product_sku = $2 AND size = $3
-        RETURNING size, current_stock, reserved_stock, reorder_point`,
+      `INSERT INTO bms_inventory
+         (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
+       VALUES ($1, $5, $2, $3, 0, 0, $4)
+       ON CONFLICT (tenant_id, location_id, product_sku, size) DO UPDATE
+         SET reorder_point = EXCLUDED.reorder_point, updated_at = now()
+       RETURNING location_id, size, current_stock, reserved_stock, quarantine_stock,
+                 0::integer AS in_transit_qty, reorder_point`,
       [tenantId, sku, size.trim().toUpperCase(), rp, locationId]
     );
-    if (res.rowCount === 0) throw new Error("ไม่พบไซซ์นี้");
     await client.query("COMMIT");
     return res.rows[0];
   } catch (err) {
@@ -1355,14 +1401,17 @@ export async function listLowStock(tenantId: string): Promise<
   Array<VariantRow & { sku: string; name: string; available: number }>
 > {
   const res = await query<any>(
-    `SELECT p.sku, p.name, i.size, i.current_stock, i.reserved_stock, i.reorder_point,
+    `SELECT p.sku, p.name, i.location_id, loc.name AS location_name,
+            loc.branch_code, i.size, i.current_stock, i.reserved_stock,
+            i.quarantine_stock, 0::integer AS in_transit_qty, i.reorder_point,
             (i.current_stock - i.reserved_stock) AS available
        FROM bms_inventory i
        JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+       JOIN bms_locations loc ON loc.tenant_id = i.tenant_id AND loc.id = i.location_id
       WHERE i.tenant_id = $1
         AND (i.current_stock - i.reserved_stock) <= i.reorder_point
         AND p.active
-      ORDER BY available ASC, p.name`,
+      ORDER BY available ASC, loc.name, p.name`,
     [tenantId]
   );
   return res.rows;
@@ -1415,7 +1464,8 @@ export async function adjustStock(
     }
 
     const cur = await client.query<VariantRow>(
-      `SELECT size, current_stock, reserved_stock, reorder_point
+      `SELECT location_id, size, current_stock, reserved_stock, quarantine_stock,
+              0::integer AS in_transit_qty, reorder_point
          FROM bms_inventory
         WHERE tenant_id = $1 AND location_id = $4 AND product_sku = $2 AND size = $3 FOR UPDATE`,
       [tenantId, sku, sizeUp, locationId]
@@ -1430,7 +1480,8 @@ export async function adjustStock(
       const ins = await client.query<VariantRow>(
         `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
          VALUES ($1, $5, $2, $3, $4, 0)
-         RETURNING size, current_stock, reserved_stock, reorder_point`,
+         RETURNING location_id, size, current_stock, reserved_stock, quarantine_stock,
+                   0::integer AS in_transit_qty, reorder_point`,
         [tenantId, sku, sizeUp, delta, locationId]
       );
       row = ins.rows[0];
@@ -1443,7 +1494,8 @@ export async function adjustStock(
       const upd = await client.query<VariantRow>(
         `UPDATE bms_inventory SET current_stock = current_stock + $4, updated_at = now()
           WHERE tenant_id = $1 AND location_id = $5 AND product_sku = $2 AND size = $3
-          RETURNING size, current_stock, reserved_stock, reorder_point`,
+          RETURNING location_id, size, current_stock, reserved_stock, quarantine_stock,
+                    0::integer AS in_transit_qty, reorder_point`,
         [tenantId, sku, sizeUp, delta, locationId]
       );
       row = upd.rows[0];

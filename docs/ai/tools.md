@@ -110,7 +110,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `refund_payment` | A3 | no | `payment.refund` | proposal only |
 | `cancel_order` | A3 | no | `order.cancel` | proposal only |
 | `return_order` | A3 | no | `order.return` | proposal only |
-| `adjust_stock` | A3 | no | `stock.adjust` | proposal only |
+| `adjust_stock` | A3 | no | `stock.adjust` | proposal only; requires a verified `locationId` and must never guess a branch |
 | `merge_customers` | A3 | no | `customer.edit` | proposal only |
 | `cancel_purchase_order` | A3 | no | `purchase.cancel` | proposal only |
 | `cancel_shipment` | A3 | no | `shipping.update` | proposal only |

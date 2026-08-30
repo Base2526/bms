@@ -62,6 +62,7 @@ import {
 } from "./membership";
 
 export const POS_CHANNEL = "pos" as const;
+const COUNTER_RETURN_UNSUPPORTED_CHANNELS = new Set(["lazada", "shopee"]);
 
 // ---------------------------------------------------------------
 // เครื่องขาย + token ประจำเครื่อง
@@ -2047,6 +2048,11 @@ export type PosSaleResult =
 export type PosRecentReceipt = {
   orderId: string;
   docNo: string | null;
+  /** ช่องทางบิลต้นทาง; marketplace แสดงผลได้แต่ต้องคืนผ่านแพลตฟอร์ม */
+  sourceChannel: string;
+  returnEligible: boolean;
+  returnBlockedReason: "MARKETPLACE_MANAGED" | null;
+  saleLocationId: string;
   /** เครื่อง/สาขาต้นทางของบิลนี้ — ใช้แยก "ค้นเจอเพื่อดู/พิมพ์" ออกจาก "คืนได้ที่เครื่องนี้" */
   posDeviceId: string | null;
   locationName: string | null;
@@ -3120,6 +3126,8 @@ export async function listRecentPosSales(
   const matchedSize = matchedProduct?.size ?? null;
   const orderRes = await query<{
     id: string;
+    channel: string;
+    location_id: string;
     pos_device_id: string | null;
     pos_device_code: string | null;
     pos_registered_pos_no: string | null;
@@ -3150,6 +3158,8 @@ export async function listRecentPosSales(
     pos_shift_id: string | null;
   }>(
     `SELECT o.id,
+            o.channel,
+            o.location_id,
             o.pos_device_id,
             o.voided_at,
             o.pos_shift_id,
@@ -3180,7 +3190,7 @@ export async function listRecentPosSales(
             cust.phone AS member_phone
        FROM bms_orders o
        LEFT JOIN bms_pos_devices dev ON dev.tenant_id = o.tenant_id AND dev.id = o.pos_device_id
-       LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = dev.location_id
+       LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = o.location_id
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
        LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
        LEFT JOIN LATERAL (
@@ -3203,7 +3213,6 @@ export async function listRecentPosSales(
         AND doc.cancelled_at IS NULL
       WHERE o.tenant_id = $1
         AND ($5::boolean OR o.pos_device_id = $2)
-        AND o.channel = 'pos'
         AND o.status IN ('COMPLETED', 'RETURNED')
         AND (
           $4::text IS NULL
@@ -3499,6 +3508,12 @@ export async function listRecentPosSales(
   return orderRes.rows.map((row) => ({
     orderId: row.id,
     docNo: row.doc_no ?? null,
+    sourceChannel: row.channel,
+    returnEligible: !COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel),
+    returnBlockedReason: COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel)
+      ? "MARKETPLACE_MANAGED"
+      : null,
+    saleLocationId: row.location_id,
     posDeviceId: row.pos_device_id ?? null,
     locationName: row.location_name ?? null,
     branchCode: row.branch_code ?? null,
@@ -3544,10 +3559,16 @@ export type PosReturnResult =
       refunds: PosRefundAllocation[];
       pricingAdjustmentAmount: number;
       remainingAmount: number;
+      saleLocationId: string;
+      returnLocationId: string;
+      crossBranch: boolean;
       replayed: boolean;
     }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "ORDER_NOT_POS" }
+  | { status: "CHANNEL_RETURN_MANAGED_EXTERNALLY"; channel: string }
+  | { status: "CROSS_BRANCH_APPROVAL_REQUIRED" }
+  | { status: "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" }
   | { status: "INVALID_ORDER_STATUS"; current: string }
   | { status: "NO_CONFIRMED_PAYMENTS" }
   | { status: "REFUND_METHOD_UNAVAILABLE"; method: PaymentMethod }
@@ -3590,10 +3611,16 @@ export type PosPartialReturnResult =
       pointsReversed?: number;
       /** แต้มที่คืนให้ลูกค้าเพราะบิลเดิมใช้แต้มไป */
       pointsReturned?: number;
+      saleLocationId: string;
+      returnLocationId: string;
+      crossBranch: boolean;
       replayed: boolean;
     }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "ORDER_NOT_POS" }
+  | { status: "CHANNEL_RETURN_MANAGED_EXTERNALLY"; channel: string }
+  | { status: "CROSS_BRANCH_APPROVAL_REQUIRED" }
+  | { status: "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" }
   | { status: "INVALID_ORDER_STATUS"; current: string }
   | { status: "NO_CONFIRMED_PAYMENTS" }
   | { status: "REFUND_METHOD_UNAVAILABLE"; method: PaymentMethod }
@@ -3651,6 +3678,9 @@ export async function returnPosSale(input: {
     refunds: result.refunds,
     pricingAdjustmentAmount: result.pricingAdjustmentAmount,
     remainingAmount: result.remainingAmount,
+    saleLocationId: result.saleLocationId,
+    returnLocationId: result.returnLocationId,
+    crossBranch: result.crossBranch,
     replayed: result.replayed,
   };
 }
@@ -3753,10 +3783,13 @@ async function processPosReturn(input: {
       remaining_amount_after_return: string | null;
       preferred_refund_method: PaymentMethod | null;
       shift_id: string | null;
+      sale_location_id: string | null;
+      return_location_id: string | null;
+      cross_branch: boolean;
     }>(
       `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status,
               created_at, pricing_adjustment_amount, remaining_amount_after_return,
-              preferred_refund_method, shift_id
+              preferred_refund_method, shift_id, sale_location_id, return_location_id, cross_branch
          FROM bms_pos_returns
         WHERE tenant_id = $1 AND idempotency_key = $2
         LIMIT 1`,
@@ -3819,6 +3852,9 @@ async function processPosReturn(input: {
         refunds: refunds.rows.map(mapRefundAllocation),
         pricingAdjustmentAmount: Number(existing.pricing_adjustment_amount ?? 0),
         remainingAmount: Number(existing.remaining_amount_after_return ?? 0),
+        saleLocationId: existing.sale_location_id ?? "",
+        returnLocationId: existing.return_location_id ?? "",
+        crossBranch: existing.cross_branch,
         creditNoteNo,
         replayed: true,
       };
@@ -3830,9 +3866,16 @@ async function processPosReturn(input: {
       await client.query("ROLLBACK");
       return { status: "SHIFT_NOT_OPEN" };
     }
-    const returnShift = await client.query<{ id: string; opening_float: string }>(
-      `SELECT id, opening_float FROM bms_pos_shifts
-        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'
+    const returnShift = await client.query<{
+      id: string;
+      opening_float: string;
+      location_id: string;
+    }>(
+      `SELECT s.id, s.opening_float, d.location_id
+         FROM bms_pos_shifts s
+         JOIN bms_pos_devices d
+           ON d.tenant_id = s.tenant_id AND d.id = s.device_id
+        WHERE s.tenant_id = $1 AND s.id = $2 AND s.device_id = $3 AND s.status = 'OPEN'
         FOR UPDATE`,
       [input.tenantId, input.shiftId, input.deviceId]
     );
@@ -3846,12 +3889,15 @@ async function processPosReturn(input: {
       status: string;
       channel: string;
       pos_device_id: string | null;
+      location_id: string;
       total_amount: string;
       shipping_fee: string | null;
+      rounding_amount: string | null;
       discount_amount: string;
       extra_total: string;
     }>(
-      `SELECT id, status, channel, pos_device_id, total_amount, shipping_fee,
+      `SELECT id, status, channel, pos_device_id, location_id, total_amount, shipping_fee,
+              rounding_amount,
               discount_amount,
               COALESCE((
                 SELECT SUM(extra.qty * extra.unit_amount)
@@ -3869,17 +3915,33 @@ async function processPosReturn(input: {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
-    if (order.channel !== POS_CHANNEL) {
+    if (COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(order.channel)) {
       await client.query("ROLLBACK");
-      return { status: "ORDER_NOT_POS" };
+      return { status: "CHANNEL_RETURN_MANAGED_EXTERNALLY", channel: order.channel };
     }
-    if (order.pos_device_id !== input.deviceId) {
+    if (input.isVoid && order.pos_device_id !== input.deviceId) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
     if (order.status !== "COMPLETED") {
       await client.query("ROLLBACK");
       return { status: "INVALID_ORDER_STATUS", current: order.status };
+    }
+
+    const saleLocationId = order.location_id;
+    const returnLocationId = returnShift.rows[0].location_id;
+    const crossBranch = saleLocationId !== returnLocationId;
+    if (crossBranch) {
+      const approvedBy = input.approvedByUserId?.trim() || null;
+      const approved = approvedBy
+        && approvedBy !== input.actorUserId
+        && await cashierHasPermissionInTx(
+          client, input.tenantId, approvedBy, "pos.return.cross_branch"
+        );
+      if (!approved) {
+        await client.query("ROLLBACK");
+        return { status: "CROSS_BRANCH_APPROVAL_REQUIRED" };
+      }
     }
 
     const itemsRes = await client.query<{
@@ -3968,7 +4030,10 @@ async function processPosReturn(input: {
       }
     }
 
-    const orderAmount = Math.round((Number(order.total_amount) + Number(order.shipping_fee ?? 0)) * 100) / 100;
+    const roundingAmount = Number(order.rounding_amount ?? 0);
+    const orderAmount = Math.round((
+      Number(order.total_amount) + Number(order.shipping_fee ?? 0) + roundingAmount
+    ) * 100) / 100;
     const grossTotal = orderItems.reduce((sum, item) => {
       const packQty = item.pack_qty ?? item.qty;
       const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
@@ -4021,6 +4086,27 @@ async function processPosReturn(input: {
       requestedMap
     );
     const allReturned = remainingPricing.lines.every((line) => line.remainingPackQty === 0);
+    if (crossBranch && !allReturned) {
+      const serialSelection = await client.query(
+        `SELECT 1
+           FROM bms_product_serials serial
+           JOIN bms_order_items oi
+             ON oi.tenant_id = serial.tenant_id
+            AND oi.order_id = serial.order_id
+            AND oi.product_sku = serial.product_sku
+            AND oi.size = serial.size
+          WHERE serial.tenant_id = $1
+            AND serial.order_id = $2
+            AND serial.status = 'SOLD'
+            AND oi.id = ANY($3::bigint[])
+          LIMIT 1`,
+        [input.tenantId, input.orderId, [...requestedMap.keys()]]
+      );
+      if (serialSelection.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" };
+      }
+    }
     const hasExactSaleTimeRules = orderItems.every((item) =>
       isSaleTimePricingSnapshot(item.pricing_snapshot)
     );
@@ -4043,6 +4129,7 @@ async function processPosReturn(input: {
             Number(order.shipping_fee ?? 0)
             + extraTotal
             + remainingPricing.pricingSubtotal * orderDiscountRatio
+            + roundingAmount
           ) * 100) / 100
         : Math.max(0, Math.round((
             orderAmount - previousRefundAmount - rawRefundAmount
@@ -4110,13 +4197,16 @@ async function processPosReturn(input: {
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, shift_id, returned_by, approved_by, return_mode,
           refund_amount, settlement_status, idempotency_key, note, is_void,
-          pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14)
+          pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method,
+          source_channel, sale_location_id, return_location_id, cross_branch)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14,
+               $15, $16, $17, $18)
        RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
         input.isVoid === true, pricingAdjustmentAmount, remainingAmount,
-        input.preferredRefundMethod ?? null]
+        input.preferredRefundMethod ?? null, order.channel, saleLocationId, returnLocationId,
+        crossBranch]
     );
     const posReturnId = ret.rows[0].id;
 
@@ -4128,17 +4218,6 @@ async function processPosReturn(input: {
       const baseQtyPerPack = Math.max(1, Math.round(item.qty / Math.max(1, originalPackQty)));
       const baseQtyToReturn = line.packQty * baseQtyPerPack;
 
-      const inventory = await client.query(
-        `UPDATE bms_inventory
-            SET current_stock = current_stock + $2, updated_at = now()
-          WHERE tenant_id = $1
-            AND location_id = $3
-            AND product_sku = $4
-            AND size = $5`,
-        [input.tenantId, baseQtyToReturn, item.location_id, item.product_sku, item.size]
-      );
-      if (!inventory.rowCount) throw new Error(`ไม่พบสต็อก ${item.product_sku}/${item.size} สำหรับรับคืน`);
-
       const returnItem = await client.query<{ id: string }>(
         `INSERT INTO bms_pos_return_items
            (tenant_id, pos_return_id, order_item_id, qty, pack_qty, refund_amount)
@@ -4147,53 +4226,127 @@ async function processPosReturn(input: {
         [input.tenantId, posReturnId, item.id, baseQtyToReturn, line.packQty, line.refundAmount]
       );
 
-      let remainingBase = baseQtyToReturn;
-      const lotsRes = await client.query<{ lot_id: string; available_to_return: number }>(
-        `SELECT oil.lot_id,
-                (oil.qty - COALESCE((
-                  SELECT SUM(pril.qty)
-                    FROM bms_pos_return_item_lots pril
-                    JOIN bms_pos_return_items pri ON pri.id = pril.pos_return_item_id
-                   WHERE pril.tenant_id = oil.tenant_id
-                     AND pri.order_item_id = oil.order_item_id
-                     AND pril.lot_id = oil.lot_id
-                ), 0))::integer AS available_to_return
-           FROM bms_order_item_lots oil
-          WHERE oil.tenant_id = $1 AND oil.order_item_id = $2
-          ORDER BY id`,
-        [input.tenantId, item.id]
+      // คืนของที่ขยับจริงจาก expansion view: บิล bundle ต้องคืนส่วนประกอบ ไม่ใช่
+      // สร้าง stock ของ SKU แม่ที่ไม่เคยถูกตัดออกไป
+      const stockLines = await client.query<{
+        product_sku: string;
+        size: string;
+        qty: number;
+      }>(
+        `SELECT product_sku, size, qty
+           FROM bms_order_stock_lines
+          WHERE tenant_id = $1 AND order_id = $2 AND order_item_id = $3
+          ORDER BY product_sku, size`,
+        [input.tenantId, input.orderId, item.id]
       );
-      for (const lot of lotsRes.rows) {
-        if (remainingBase <= 0) break;
-        const giveBack = Math.min(remainingBase, Math.max(0, lot.available_to_return));
-        if (giveBack <= 0) continue;
+      if (!stockLines.rowCount) throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+
+      for (const stockLine of stockLines.rows) {
+        const exactQty = Number(stockLine.qty) * line.packQty / originalPackQty;
+        if (!Number.isInteger(exactQty) || exactQty <= 0) {
+          throw new Error(`จำนวนส่วนประกอบ ${stockLine.product_sku}/${stockLine.size} สำหรับรับคืนไม่ลงตัว`);
+        }
+
+        // สาขารับคืนอาจยังไม่เคยถือ SKU นี้มาก่อน สร้างยอดสาขาที่ศูนย์แล้วบวกของ
+        // ที่รับจริงได้ แต่ไม่แตะ reserved_stock ซึ่งเป็นของบิลค้าง ไม่ใช่ของคืน
         await client.query(
-          `UPDATE bms_inventory_lots
-              SET qty = qty + $3, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2`,
-          [input.tenantId, lot.lot_id, giveBack]
+          `INSERT INTO bms_inventory
+             (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+           VALUES ($1, $2, $3, $4, $5, 0)
+           ON CONFLICT (tenant_id, location_id, product_sku, size) DO UPDATE
+             SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock,
+                 updated_at = now()`,
+          [input.tenantId, returnLocationId, stockLine.product_sku, stockLine.size, exactQty]
         );
-        await client.query(
-          `INSERT INTO bms_pos_return_item_lots (tenant_id, pos_return_item_id, lot_id, qty)
-           VALUES ($1, $2, $3, $4)`,
-          [input.tenantId, returnItem.rows[0].id, lot.lot_id, giveBack]
+
+        let remainingBase = exactQty;
+        const lotsRes = await client.query<{
+          lot_id: string;
+          lot_no: string;
+          expiry_date: string | null;
+          received_at: string | Date;
+          supplier_id: string | null;
+          unit_cost: string | null;
+          note: string | null;
+          available_to_return: number;
+        }>(
+          `SELECT oil.lot_id, lot.lot_no, lot.expiry_date, lot.received_at,
+                  lot.supplier_id, lot.unit_cost, lot.note,
+                  (oil.qty - COALESCE((
+                    SELECT SUM(pril.qty)
+                      FROM bms_pos_return_item_lots pril
+                      JOIN bms_pos_return_items pri ON pri.id = pril.pos_return_item_id
+                     WHERE pril.tenant_id = oil.tenant_id
+                       AND pri.order_item_id = oil.order_item_id
+                       AND pril.lot_id = oil.lot_id
+                  ), 0))::integer AS available_to_return
+             FROM bms_order_item_lots oil
+             JOIN bms_inventory_lots lot
+               ON lot.tenant_id = oil.tenant_id AND lot.id = oil.lot_id
+            WHERE oil.tenant_id = $1
+              AND oil.order_item_id = $2
+              AND lot.product_sku = $3
+              AND lot.size = $4
+            ORDER BY oil.id`,
+          [input.tenantId, item.id, stockLine.product_sku, stockLine.size]
         );
-        remainingBase -= giveBack;
+        for (const lot of lotsRes.rows) {
+          if (remainingBase <= 0) break;
+          const giveBack = Math.min(remainingBase, Math.max(0, lot.available_to_return));
+          if (giveBack <= 0) continue;
+
+          let restockLotId = lot.lot_id;
+          if (crossBranch) {
+            const restocked = await client.query<{ id: string }>(
+              `INSERT INTO bms_inventory_lots
+                 (tenant_id, location_id, product_sku, size, lot_no, expiry_date,
+                  received_at, supplier_id, unit_cost, qty, note)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (tenant_id, location_id, product_sku, size, lot_no) DO UPDATE
+                 SET qty = bms_inventory_lots.qty + EXCLUDED.qty,
+                     updated_at = now()
+               WHERE bms_inventory_lots.expiry_date IS NOT DISTINCT FROM EXCLUDED.expiry_date
+               RETURNING id`,
+              [input.tenantId, returnLocationId, stockLine.product_sku, stockLine.size,
+                lot.lot_no, lot.expiry_date, lot.received_at, lot.supplier_id,
+                lot.unit_cost, giveBack, lot.note]
+            );
+            if (!restocked.rowCount) {
+              throw new Error(`lot ${lot.lot_no} ที่สาขารับคืนมีวันหมดอายุไม่ตรงกับต้นทาง`);
+            }
+            restockLotId = restocked.rows[0].id;
+          } else {
+            await client.query(
+              `UPDATE bms_inventory_lots
+                  SET qty = qty + $3, updated_at = now()
+                WHERE tenant_id = $1 AND id = $2`,
+              [input.tenantId, lot.lot_id, giveBack]
+            );
+          }
+          await client.query(
+            `INSERT INTO bms_pos_return_item_lots
+               (tenant_id, pos_return_item_id, lot_id, restock_lot_id, qty)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [input.tenantId, returnItem.rows[0].id, lot.lot_id, restockLotId, giveBack]
+          );
+          remainingBase -= giveBack;
+        }
+        if (lotsRes.rowCount && remainingBase > 0) {
+          throw new Error(`จำนวน lot ต้นทางของ ${stockLine.product_sku}/${stockLine.size} ไม่พอสำหรับรับคืน`);
+        }
+
+        await recordMovement(client, {
+          tenantId: input.tenantId,
+          locationId: returnLocationId,
+          sku: stockLine.product_sku,
+          size: stockLine.size,
+          type: "RETURN",
+          qty: exactQty,
+          refOrderId: input.orderId,
+          note: `POS return ${posReturnId}${crossBranch ? ` from ${saleLocationId}` : ""}`,
+          actor: input.actorUserId,
+        });
       }
-      if (lotsRes.rowCount && remainingBase > 0) {
-        throw new Error(`จำนวน lot ต้นทางของ ${item.product_sku}/${item.size} ไม่พอสำหรับรับคืน`);
-      }
-      await recordMovement(client, {
-        tenantId: input.tenantId,
-        locationId: item.location_id,
-        sku: item.product_sku,
-        size: item.size,
-        type: "RETURN",
-        qty: baseQtyToReturn,
-        refOrderId: input.orderId,
-        note: `POS return ${posReturnId}`,
-        actor: input.actorUserId,
-      });
       returnedItems.push({ orderItemId: item.id, packQty: line.packQty, refundAmount: line.refundAmount });
     }
 
@@ -4310,9 +4463,9 @@ async function processPosReturn(input: {
       // (ที่ปลดได้คือกรณีคืนทั้งบิล ซึ่งของทุกชิ้นกลับมาแน่นอน)
       await client.query(
         `UPDATE bms_product_serials
-            SET status = 'RETURNED', returned_at = now(), updated_at = now()
+            SET status = 'RETURNED', location_id = $3, returned_at = now(), updated_at = now()
           WHERE tenant_id = $1 AND order_id = $2 AND status = 'SOLD'`,
-        [input.tenantId, input.orderId]
+        [input.tenantId, input.orderId, returnLocationId]
       );
     }
     // แต้มสะสม (7.96) — ต้องอยู่ใน tx เดียวกับสต็อกและเงินที่คืน
@@ -4359,6 +4512,10 @@ async function processPosReturn(input: {
       [input.tenantId, input.actorUserId, input.orderId, JSON.stringify({
         posReturnId,
         shiftId: input.shiftId,
+        sourceChannel: order.channel,
+        saleLocationId,
+        returnLocationId,
+        crossBranch,
         mode: input.mode,
         refundAmount: roundedRefundAmount,
         approvedBy,
@@ -4450,6 +4607,9 @@ async function processPosReturn(input: {
       creditNoteNo,
       pointsReversed: loyaltyReversal.earnedReversed,
       pointsReturned: loyaltyReversal.redeemedReturned,
+      saleLocationId,
+      returnLocationId,
+      crossBranch,
       replayed: false,
     };
   } catch (err) {

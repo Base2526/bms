@@ -302,6 +302,14 @@ export default function Page() {
               columns={[
                 { title: "When", dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
                 { title: "Order", dataIndex: "orderId" },
+                { title: "Channel", dataIndex: "sourceChannel" },
+                {
+                  title: "Branch",
+                  key: "branch",
+                  render: (_: unknown, row: any) => row.crossBranch
+                    ? `${row.saleLocationName || "—"} → ${row.returnLocationName || "—"}`
+                    : row.returnLocationName || row.saleLocationName || "—",
+                },
                 { title: "Refund", dataIndex: "refundAmount", align: "right" as const, render: baht },
                 { title: "Mode", dataIndex: "returnMode" },
                 { title: "Settlement", dataIndex: "settlementStatus", render: (v: string) => <Tag color={v === "COMPLETED" ? "green" : "orange"}>{v}</Tag> },

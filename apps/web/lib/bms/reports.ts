@@ -413,8 +413,12 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
               pr.refund_amount,
               pr.return_mode,
               pr.settlement_status,
+              pr.source_channel,
+              pr.cross_branch,
               pr.note,
               pr.created_at,
+              sale_location.name AS sale_location_name,
+              return_location.name AS return_location_name,
               COALESCE(u.name, u.email, pr.returned_by::text) AS returned_by,
               COALESCE((SELECT SUM(a.amount) FROM bms_pos_refund_allocations a
                          WHERE a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
@@ -424,6 +428,14 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
                            AND a.status = 'PENDING'), 0) AS pending_amount
          FROM bms_pos_returns pr
          LEFT JOIN users u ON u.id = pr.returned_by
+         LEFT JOIN bms_orders source_order
+           ON source_order.tenant_id = pr.tenant_id AND source_order.id = pr.order_id
+         LEFT JOIN bms_locations sale_location
+           ON sale_location.tenant_id = pr.tenant_id
+          AND sale_location.id = COALESCE(pr.sale_location_id, source_order.location_id)
+         LEFT JOIN bms_locations return_location
+           ON return_location.tenant_id = pr.tenant_id
+          AND return_location.id = pr.return_location_id
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
           AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -455,6 +467,10 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
       orderId: row.order_id,
       refundAmount: Number(row.refund_amount ?? 0),
       returnMode: row.return_mode ?? "FULL",
+      sourceChannel: row.source_channel ?? "pos",
+      crossBranch: Boolean(row.cross_branch),
+      saleLocationName: row.sale_location_name ?? null,
+      returnLocationName: row.return_location_name ?? null,
       settlementStatus: row.settlement_status ?? "PENDING",
       settledAmount: Number(row.settled_amount ?? 0),
       pendingAmount: Number(row.pending_amount ?? 0),

@@ -132,6 +132,9 @@ async function handlePOST(req: NextRequest) {
     : result.status === "PARTIAL_RETURNED" ? 200
     : result.status === "ORDER_NOT_FOUND" ? 404
     : result.status === "ORDER_NOT_POS" ? 409
+    : result.status === "CHANNEL_RETURN_MANAGED_EXTERNALLY" ? 409
+    : result.status === "CROSS_BRANCH_APPROVAL_REQUIRED" ? 403
+    : result.status === "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" ? 409
     : result.status === "APPROVAL_REQUIRED" ? 403
     : result.status === "NO_CONFIRMED_PAYMENTS" ? 409
     : result.status === "REFUND_METHOD_UNAVAILABLE" ? 409

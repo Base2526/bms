@@ -1393,7 +1393,11 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
 
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
-        WHERE tenant_id = $2 AND id = $1 AND status IN ('SHIPPED','COMPLETED')`,
+        WHERE tenant_id = $2 AND id = $1 AND status IN ('SHIPPED','COMPLETED')
+          AND NOT EXISTS (
+            SELECT 1 FROM bms_pos_returns pr
+             WHERE pr.tenant_id = $2 AND pr.order_id = $1
+          )`,
       [orderId, tenantId]
     );
     if (ord.rowCount === 0) {

@@ -1078,6 +1078,31 @@ old proportional-refund behavior: a migration-time reconstruction is useful evid
 but is never trusted to alter a legacy customer's real refund. New rows carry `source: "SALE"` in
 their pricing snapshot and are the only rows eligible for retained-basket repricing.
 
+### Cross-branch and cross-channel returns (9.34)
+
+With a search term, the Returns tab searches completed bills across the tenant rather than only the
+current POS device. POS, web, and direct social-channel bills may be received at the counter;
+Lazada/Shopee remain marketplace-managed and are shown only to point the operator to the correct
+workflow. A bill from another register in the same branch is an ordinary receipt return. A bill from
+another branch requires a distinct second person's PIN and `pos.return.cross_branch`.
+
+The sale branch and receiving branch are never collapsed into one value. `bms_orders.location_id`
+and `bms_pos_returns.sale_location_id` retain where the goods were sold, while
+`bms_pos_returns.return_location_id` is derived from the authenticated register and its open shift.
+Sellable stock and the `RETURN` movement go to the receiving branch. Cash is paid from that branch's
+current shift, but the credit note continues to reference the immutable original sale document.
+
+For lot-tracked goods, `bms_pos_return_item_lots.lot_id` remains the source lot used by the sale and
+`restock_lot_id` identifies the receiving branch's lot row. The destination copies the original lot
+number, expiry, receipt provenance, supplier and unit cost; an existing destination lot with a
+different expiry is rejected rather than overwritten. Bundle returns restore the component rows
+from `bms_order_stock_lines`, not the bundle parent SKU. A full serial-tracked return moves the serial
+to the receiving branch. Partial cross-branch serial returns are deliberately refused until the
+counter captures the exact serial being handed back.
+
+This is a customer return, not a stock transfer: branch A is not incremented when branch B accepts
+the item. If operations later want the item back at A, create the ordinary two-step B → A transfer.
+
 ### Clinical evidence for a pharmacy case (9.25)
 
 Once a bill has been sent to the pharmacist queue, the counter can attach what makes the hand-over

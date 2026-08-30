@@ -30,6 +30,10 @@ type TransferItem = {
   size: string;
   qty: number;
   receivedQty: number | null;
+  damagedQty: number;
+  missingQty: number | null;
+  discrepancyReason: string | null;
+  discrepancyNote: string | null;
 };
 
 type Transfer = {
@@ -41,6 +45,7 @@ type Transfer = {
   toLocationName: string | null;
   status: TransferStatus;
   note: string | null;
+  receivingNote: string | null;
   createdByName: string | null;
   sentAt: string | null;
   receivedAt: string | null;
@@ -64,6 +69,15 @@ const STATUS_COLOR: Record<TransferStatus, string> = {
   IN_TRANSIT: "processing",
   RECEIVED: "success",
   CANCELLED: "error",
+};
+
+const REASON_LABELS: Record<string, string> = {
+  LOST_IN_TRANSIT: "สูญหายระหว่างทาง",
+  SOURCE_SHORT_SHIP: "ต้นทางส่งไม่ครบ",
+  COUNT_ERROR: "จำนวนนับไม่ตรง",
+  DAMAGED: "เสียหายระหว่างขนส่ง",
+  OTHER: "อื่น ๆ",
+  LEGACY_SHORT_RECEIPT: "รายการเก่าที่ไม่ได้เก็บสาเหตุ",
 };
 
 const fmtTime = (iso: string | null) =>
@@ -100,6 +114,10 @@ export default function StockTransfersPage() {
 
   const [receiving, setReceiving] = useState<Transfer | null>(null);
   const [receivedQty, setReceivedQty] = useState<Record<number, number>>({});
+  const [damagedQty, setDamagedQty] = useState<Record<number, number>>({});
+  const [discrepancyReason, setDiscrepancyReason] = useState<Record<number, string>>({});
+  const [discrepancyNote, setDiscrepancyNote] = useState<Record<number, string>>({});
+  const [receivingNote, setReceivingNote] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,6 +197,10 @@ export default function StockTransfersPage() {
   function openReceive(t: Transfer) {
     setReceiving(t);
     setReceivedQty(Object.fromEntries(t.items.map((i) => [i.id, i.qty])));
+    setDamagedQty(Object.fromEntries(t.items.map((i) => [i.id, 0])));
+    setDiscrepancyReason({});
+    setDiscrepancyNote({});
+    setReceivingNote("");
   }
 
   async function confirmReceive() {
@@ -186,13 +208,25 @@ export default function StockTransfersPage() {
     const ok = await post({
       action: "receive",
       transferId: receiving.id,
-      received: receiving.items.map((i) => ({ itemId: i.id, qty: receivedQty[i.id] ?? i.qty })),
+      receivingNote: receivingNote.trim() || null,
+      received: receiving.items.map((i) => ({
+        itemId: i.id,
+        qty: receivedQty[i.id] ?? i.qty,
+        damagedQty: damagedQty[i.id] ?? 0,
+        reason: discrepancyReason[i.id] || null,
+        note: discrepancyNote[i.id]?.trim() || null,
+      })),
     });
     if (!ok) return;
-    const missing = receiving.items.reduce((sum, i) => sum + (i.qty - (receivedQty[i.id] ?? i.qty)), 0);
+    const missing = receiving.items.reduce((sum, i) =>
+      sum + Math.max(0, i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0)), 0
+    );
+    const damaged = receiving.items.reduce((sum, i) => sum + (damagedQty[i.id] ?? 0), 0);
     message.success(
       missing > 0
-        ? `รับ ${receiving.transferNo} แล้ว — ของขาด ${missing} ชิ้น บันทึกเป็นของหายระหว่างทางที่ต้นทาง`
+        ? `รับ ${receiving.transferNo} แล้ว — ไม่พบ ${missing} ชิ้น${damaged ? ` · กักกัน ${damaged} ชิ้น` : ""}`
+        : damaged > 0
+          ? `รับ ${receiving.transferNo} แล้ว — กักกันของเสียหาย ${damaged} ชิ้น`
         : `รับ ${receiving.transferNo} ครบตามที่ส่ง`
     );
     setReceiving(null);
@@ -205,8 +239,20 @@ export default function StockTransfersPage() {
 
   const activeLocations = locations.filter((l) => l.active);
   const missingOnReceive = receiving
-    ? receiving.items.reduce((sum, i) => sum + (i.qty - (receivedQty[i.id] ?? i.qty)), 0)
+    ? receiving.items.reduce((sum, i) =>
+        sum + Math.max(0, i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0)), 0
+      )
     : 0;
+  const damagedOnReceive = receiving
+    ? receiving.items.reduce((sum, i) => sum + (damagedQty[i.id] ?? 0), 0)
+    : 0;
+  const invalidDiscrepancy = Boolean(receiving?.items.some((item) => {
+    const missing = Math.max(0,
+      item.qty - (receivedQty[item.id] ?? item.qty) - (damagedQty[item.id] ?? 0)
+    );
+    return (missing > 0 || (damagedQty[item.id] ?? 0) > 0)
+      && (!discrepancyReason[item.id] || !discrepancyNote[item.id]?.trim());
+  }));
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -265,6 +311,9 @@ export default function StockTransfersPage() {
                 size="small"
                 dataSource={t.items}
                 pagination={false}
+                title={t.receivingNote ? () => (
+                  <Typography.Text type="secondary">หมายเหตุการรับ: {t.receivingNote}</Typography.Text>
+                ) : undefined}
                 columns={[
                   { title: "SKU", dataIndex: "sku", width: 160 },
                   {
@@ -286,6 +335,20 @@ export default function StockTransfersPage() {
                       ) : (
                         <Tag color="green">{v}</Tag>
                       ),
+                  },
+                  {
+                    title: "เสียหาย", dataIndex: "damagedQty", width: 90,
+                    render: (value: number) => value > 0 ? <Tag color="red">{value}</Tag> : "0",
+                  },
+                  {
+                    title: "ไม่พบ", dataIndex: "missingQty", width: 90,
+                    render: (value: number | null) => value && value > 0 ? <Tag color="volcano">{value}</Tag> : value ?? "—",
+                  },
+                  {
+                    title: "สาเหตุ / หมายเหตุ", width: 260,
+                    render: (_: unknown, item) => item.discrepancyReason
+                      ? `${REASON_LABELS[item.discrepancyReason] ?? item.discrepancyReason}${item.discrepancyNote ? ` · ${item.discrepancyNote}` : ""}`
+                      : "—",
                   },
                 ]}
               />
@@ -453,6 +516,7 @@ export default function StockTransfersPage() {
         onCancel={() => setReceiving(null)}
         onOk={() => void confirmReceive()}
         confirmLoading={busy}
+        okButtonProps={{ disabled: invalidDiscrepancy }}
         okText="ยืนยันรับของ"
         cancelText="ยังไม่รับ"
         width={720}
@@ -466,17 +530,17 @@ export default function StockTransfersPage() {
             </Descriptions>
 
             <Alert closable
-              type={missingOnReceive > 0 ? "warning" : "info"}
+              type={missingOnReceive > 0 || damagedOnReceive > 0 ? "warning" : "info"}
               showIcon
               message={
-                missingOnReceive > 0
-                  ? `ของขาด ${missingOnReceive} ชิ้น`
+                missingOnReceive > 0 || damagedOnReceive > 0
+                  ? `ไม่พบ ${missingOnReceive} ชิ้น · เสียหาย ${damagedOnReceive} ชิ้น`
                   : "นับของจริงก่อนกดยืนยัน"
               }
               description={
-                missingOnReceive > 0
-                  ? "ส่วนต่างจะถูกบันทึกเป็นของหายระหว่างทางที่สาขาต้นทาง พร้อมเลขที่ใบโอน — ยืนยันแล้วแก้ไม่ได้"
-                  : "ค่าเริ่มต้นคือจำนวนที่ต้นทางส่งมา แก้ให้ตรงกับของที่นับได้จริง ถ้ารับไม่ครบ"
+                missingOnReceive > 0 || damagedOnReceive > 0
+                  ? "ของสภาพดีเข้าสต็อกขาย ของเสียหายเข้ากักกัน และของไม่พบถูกบันทึกเป็นส่วนต่าง — ต้องระบุเหตุผลและหมายเหตุก่อนยืนยัน"
+                  : "ค่าเริ่มต้นคือรับสภาพดีครบ แก้จำนวนให้ตรงกับของที่ตรวจจริง"
               }
             />
 
@@ -485,6 +549,7 @@ export default function StockTransfersPage() {
               size="small"
               dataSource={receiving.items}
               pagination={false}
+              scroll={{ x: "max-content" }}
               columns={[
                 { title: "SKU", dataIndex: "sku", width: 170 },
                 {
@@ -493,14 +558,14 @@ export default function StockTransfersPage() {
                   render: (v: string | null) => v ?? <span style={{ color: "#999" }}>—</span>,
                 },
                 { title: "ไซซ์", dataIndex: "size", width: 80 },
-                { title: "ส่งมา", dataIndex: "qty", width: 80 },
+                { title: "ส่งมา", dataIndex: "qty", width: 75 },
                 {
-                  title: "รับจริง",
-                  width: 130,
+                  title: "รับสภาพดี",
+                  width: 120,
                   render: (_: unknown, i) => (
                     <InputNumber
                       min={0}
-                      max={i.qty}
+                      max={Math.max(0, i.qty - (damagedQty[i.id] ?? 0))}
                       precision={0}
                       value={receivedQty[i.id] ?? i.qty}
                       onChange={(v) => setReceivedQty((prev) => ({ ...prev, [i.id]: Number(v ?? 0) }))}
@@ -508,7 +573,76 @@ export default function StockTransfersPage() {
                     />
                   ),
                 },
+                {
+                  title: "เสียหาย/กักกัน", width: 130,
+                  render: (_: unknown, i) => (
+                    <InputNumber
+                      min={0}
+                      max={Math.max(0, i.qty - (receivedQty[i.id] ?? i.qty))}
+                      precision={0}
+                      value={damagedQty[i.id] ?? 0}
+                      onChange={(value) => setDamagedQty((prev) => ({
+                        ...prev, [i.id]: Number(value ?? 0),
+                      }))}
+                      style={{ width: "100%" }}
+                    />
+                  ),
+                },
+                {
+                  title: "ไม่พบ", width: 80,
+                  render: (_: unknown, i) => (
+                    <Typography.Text strong type={
+                      i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0
+                        ? "danger" : undefined
+                    }>
+                      {Math.max(0, i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0))}
+                    </Typography.Text>
+                  ),
+                },
+                {
+                  title: "สาเหตุ", width: 180,
+                  render: (_: unknown, i) => {
+                    const hasDifference = (damagedQty[i.id] ?? 0) > 0
+                      || i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0;
+                    return (
+                      <Select
+                        disabled={!hasDifference}
+                        value={discrepancyReason[i.id]}
+                        placeholder="เลือกสาเหตุ"
+                        style={{ width: "100%" }}
+                        options={Object.entries(REASON_LABELS)
+                          .filter(([value]) => value !== "LEGACY_SHORT_RECEIPT")
+                          .map(([value, label]) => ({ value, label }))}
+                        onChange={(value) => setDiscrepancyReason((prev) => ({ ...prev, [i.id]: value }))}
+                      />
+                    );
+                  },
+                },
+                {
+                  title: "หมายเหตุส่วนต่าง", width: 240,
+                  render: (_: unknown, i) => {
+                    const hasDifference = (damagedQty[i.id] ?? 0) > 0
+                      || i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0;
+                    return (
+                      <Input
+                        disabled={!hasDifference}
+                        value={discrepancyNote[i.id] ?? ""}
+                        placeholder={hasDifference ? "บังคับกรอก" : "ไม่มีส่วนต่าง"}
+                        onChange={(event) => setDiscrepancyNote((prev) => ({
+                          ...prev, [i.id]: event.target.value,
+                        }))}
+                      />
+                    );
+                  },
+                },
               ]}
+            />
+            <Input.TextArea
+              value={receivingNote}
+              onChange={(event) => setReceivingNote(event.target.value)}
+              rows={2}
+              maxLength={1000}
+              placeholder="หมายเหตุการรับของรอบนี้ เช่น กล่องเปียก ซีลขาด หรือเลขพัสดุอ้างอิง (ไม่บังคับ)"
             />
           </Space>
         )}

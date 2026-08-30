@@ -71,12 +71,16 @@ async function handlePOST(req: NextRequest) {
     : action === "receive" ? await receiveStockTransfer({
         tenantId: auth.tenantId, transferId, actorUserId,
         received: Array.isArray(body.received) ? (body.received as any[]) : undefined,
+        receivingNote: typeof body.receivingNote === "string" ? body.receivingNote : null,
       })
     : action === "cancel" ? await cancelStockTransfer({ tenantId: auth.tenantId, transferId, actorUserId })
     : null;
 
   if (!result) return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });
-  const status = result.status === "OK" ? 200 : result.status === "NOT_FOUND" ? 404 : 409;
+  const status = result.status === "OK" ? 200
+    : result.status === "INVALID" ? 400
+    : result.status === "NOT_FOUND" ? 404
+    : 409;
   return NextResponse.json(result, { status });
 }
 
