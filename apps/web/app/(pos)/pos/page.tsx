@@ -251,6 +251,8 @@ type ArAccountView = {
   status: "ACTIVE" | "ON_HOLD" | "CLOSED";
   creditLimit: number;
   balance: number;
+  creditLineAvailable: number;
+  creditBalance: number;
   availableCredit: number;
   overdueAmount: number;
   openInvoiceCount: number;
@@ -8129,7 +8131,7 @@ export default function PosPage() {
           )}
 
           {/* ---- แผงลูกหนี้ของลูกค้าที่ผูกกับบิล (9.30) ------------------
-              ต้องเห็น "ค้างอยู่เท่าไร / ใช้ได้อีกเท่าไร" **ก่อน** ตัดสินใจปล่อยเชื่อ
+              ต้องเห็น "ค้างอยู่เท่าไร / วงเงินเหลือเท่าไร" **ก่อน** ตัดสินใจปล่อยเชื่อ
               ไม่ใช่หลังจาก server ปฏิเสธไปแล้ว — และยอดเลยกำหนดต้องเด่นกว่ายอดรวม
               เพราะนั่นคือสัญญาณเดียวที่บอกว่าไม่ควรปล่อยเพิ่ม */}
           {!justSold && arAccount && (
@@ -8153,11 +8155,18 @@ export default function PosPage() {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
                 <span>
-                  ค้างอยู่ <strong>฿{baht(arAccount.balance)}</strong>
+                  {arAccount.balance < 0 ? "ร้านค้าง" : "ค้างอยู่"}{" "}
+                  <strong>฿{baht(Math.abs(arAccount.balance))}</strong>
                   {arAccount.openInvoiceCount > 0 ? ` (${arAccount.openInvoiceCount} ใบ)` : ""}
                 </span>
-                <span>ใช้ได้อีก <strong>฿{baht(arAccount.availableCredit)}</strong></span>
+                <span>วงเงินเหลือ <strong>฿{baht(arAccount.creditLineAvailable)}</strong></span>
               </div>
+              {arAccount.creditBalance > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, flexWrap: "wrap", color: "#237804" }}>
+                  <span>เครดิตคืนสินค้า ฿{baht(arAccount.creditBalance)}</span>
+                  <span>ขายเชื่อได้รวม ฿{baht(arAccount.availableCredit)}</span>
+                </div>
+              )}
               {arAccount.overdueAmount > 0 && (
                 <div style={{ marginTop: 4, color: "#cf1322", fontWeight: 500 }}>
                   เลยกำหนดชำระ ฿{baht(arAccount.overdueAmount)}

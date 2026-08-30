@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { evaluateArCharge, type ArAccountStatus } from "../apps/web/lib/bms/arCredit.ts";
+import { describeArAvailability, evaluateArCharge, type ArAccountStatus } from "../apps/web/lib/bms/arCredit.ts";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8");
@@ -92,6 +92,13 @@ test("ยอดติดลบ (ร้านค้างลูกค้า) ถ�
   const verdict = evaluateArCharge(account({ creditLimit: 1_000, balance: -200 }), 1_100);
   assert.equal(verdict.ok, true);
   if (verdict.ok) assert.equal(verdict.availableCredit, 100);
+});
+
+test("บัญชีติดลบแยกวงเงินเหลือออกจากเครดิตคืนสินค้า", () => {
+  const availability = describeArAvailability({ creditLimit: 100_000, balance: -11_871.2 });
+  assert.equal(availability.creditLineAvailable, 100_000);
+  assert.equal(availability.creditBalance, 11_871.2);
+  assert.equal(availability.availableCredit, 111_871.2);
 });
 
 test("คู่ตัวเลขที่บวกกันแล้วเกินเพราะเลขทศนิยมของ JS ต้องยังผ่าน", () => {
