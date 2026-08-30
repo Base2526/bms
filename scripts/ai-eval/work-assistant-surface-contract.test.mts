@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  extractDesiredRedemptionSetup,
+  formatLoyaltyRedemptionReply,
+  isLoyaltyRedemptionCalculationRequest,
+} from "../../apps/web/lib/bms/assistantLoyaltyReply.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const read = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
@@ -37,6 +42,7 @@ test("explicit current-page help resolves before prior conversation history reac
   const resolver = read("apps/web/graphql/bmsAssistant.ts");
   const pageIntentHelper = read("apps/web/lib/bms/assistantKnowledge/pageIntent.ts");
   const pageIntent = resolver.indexOf("if (currentPath && isCurrentPageHelpRequest(message))");
+  const loyaltyIntent = resolver.indexOf("if (isLoyaltyRedemptionCalculationRequest(message, currentPath, pageId))");
   const ambiguityGuard = resolver.indexOf("const clarification = clarifyAmbiguousStaffRequest(message)");
   const priorHistory = resolver.indexOf("const priorTurns = history");
   const modelLoop = resolver.indexOf("const loop = await runToolLoop");
@@ -45,6 +51,9 @@ test("explicit current-page help resolves before prior conversation history reac
   assert.ok(pageIntent < priorHistory, "prior POS history can override the current route");
   assert.ok(pageIntent < modelLoop, "the model can override deterministic page guidance");
   assert.match(resolver, /kind: "guide"[\s\S]*?currentPageRequest: true/);
+  assert.match(resolver, /isLoyaltyRedemptionCalculationRequest/);
+  assert.match(resolver, /runApprovedTool/);
+  assert.match(resolver, /tool\.name === "get_loyalty_program_status"/);
   assert.match(pageIntentHelper, /coversRoutePrefixes/, "detail-page guide coverage was dropped");
   assert.match(resolver, /limit: SYSTEM_GUIDES\.length/);
   assert.match(
@@ -58,10 +67,49 @@ test("explicit current-page help resolves before prior conversation history reac
     "current-page help hides workflows that exist but require another permission"
   );
   assert.doesNotMatch(
-    resolver.slice(pageIntent, ambiguityGuard),
+    resolver.slice(pageIntent, loyaltyIntent),
     /\n\s*pageId,/,
     "a mismatched pageId can crowd validated currentPath guides out of the result"
   );
+});
+
+test("loyalty redemption examples use live settings and only apply a requested rate when stated", () => {
+  const settings = {
+    enabled: true,
+    redeemPointsPerUnit: 100,
+    redeemBahtPerUnit: 5,
+    redeemMinPoints: 100,
+  };
+  assert.equal(
+    isLoyaltyRedemptionCalculationRequest(
+      "ขอตัวอย่างการแลกแต้ม 5 บาท ต่อ 1 แต้ม ขั้นต่ำ 100 แต้ม ว่าต้องกรอกอย่างไร",
+      "/admin/loyalty",
+      "loyalty"
+    ),
+    true
+  );
+  assert.equal(
+    isLoyaltyRedemptionCalculationRequest("แต้มคิดก่อนหรือหลังหักส่วนลด", "/admin/loyalty", "loyalty"),
+    false,
+    "earning questions must stay with the general loyalty tool/guide flow"
+  );
+  assert.deepEqual(
+    extractDesiredRedemptionSetup("5 บาท ต่อ 1 แต้ม และแลกขั้นต่ำเมื่อครบ 100 แต้ม"),
+    { pointsPerUnit: 1, bahtPerUnit: 5, minPoints: 100 }
+  );
+
+  const genericReply = formatLoyaltyRedemptionReply(settings, "ร้านนี้แลกแต้มอย่างไร", "th");
+  assert.match(genericReply, /100 แต้ม = ส่วนลด 5 บาท/);
+  assert.doesNotMatch(genericReply, /ส่วนลด 500 บาท/);
+
+  const requestedReply = formatLoyaltyRedemptionReply(
+    settings,
+    "5 บาท ต่อ 1 แต้ม และแลกขั้นต่ำเมื่อครบ 100 แต้ม",
+    "th"
+  );
+  assert.match(requestedReply, /“แต้มที่ใช้ต่อ 1 หน่วยแลก” = 1/);
+  assert.match(requestedReply, /“ส่วนลดที่ได้ต่อหน่วยแลก” = 5/);
+  assert.match(requestedReply, /ส่วนลด 500 บาท/);
 });
 
 test("how-to replies remain numbered and actionable without an AI provider", () => {
