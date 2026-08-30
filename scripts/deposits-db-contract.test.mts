@@ -28,7 +28,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
-import { createOrder } from "../apps/web/lib/bms/orders.ts";
+import { createOrder, getOrderJourney } from "../apps/web/lib/bms/orders.ts";
 import {
   addToDeposit,
   closeDeposit,
@@ -323,6 +323,37 @@ test("closing a deposit records the decision without moving money on its own", a
   );
   assert.equal(order.rows[0].status, "CANCELLED");
   assert.equal((await stock()).reserved, reservedBefore - 2, "ปิดมัดจำต้องคืนของจองใน commit เดียวกัน");
+});
+
+test("a full deposit refund shows the operator comment in the order journey", async () => {
+  const order = await newOrder(1);
+  const taken = await takeDeposit({
+    tenantId, orderId: order.orderId, amount: 400, method: "CASH",
+    deviceId, shiftId, createdBy: cashierId, idempotencyKey: key("take-cancel-comment"),
+  });
+  assert.equal(taken.status, "TAKEN");
+
+  const reason = "ลูกค้าเปลี่ยนใจ คืนเงินมัดจำให้ครบแล้ว";
+  const closed = await closeDeposit({
+    tenantId, orderId: order.orderId, outcome: "CANCELLED", reason,
+    actorUserId: cashierId, locationId,
+  });
+  assert.deepEqual(closed, { status: "CANCELLED", refundable: 400 });
+
+  const stored = await query<{ cancel_reason: string | null }>(
+    `SELECT cancel_reason FROM bms_pos_deposits WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, order.orderId]
+  );
+  assert.equal(stored.rows[0].cancel_reason, reason);
+
+  const journey = await getOrderJourney(tenantId, order.orderId);
+  assert.ok(journey);
+  assert.ok(journey.steps.some((step) => step.status === "CANCELLED" && step.reached));
+  const closeEvent = journey.events.find((event) => event.kind === "deposit_close");
+  assert.ok(closeEvent);
+  assert.match(closeEvent.text, /คืนมัดจำเต็มจำนวน ฿400\.00/);
+  assert.match(closeEvent.text, new RegExp(reason));
+  assert.ok(closeEvent.actorName, "ประวัติต้องบอกผู้ที่ปิดมัดจำ");
 });
 
 test("overdue deposits are visible — reserved goods nobody can sell", async () => {

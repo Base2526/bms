@@ -472,6 +472,7 @@ export async function closeDeposit(input: {
 }): Promise<CancelDepositResult> {
   const reason = input.reason.trim();
   if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
+  if (reason.length > 300) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
 
   const client = await getClient();
   try {
