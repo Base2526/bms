@@ -84,6 +84,13 @@ import {
   getLifetimeSalesSummary,
   getLifetimeTopSellingProducts,
 } from "../reports";
+import {
+  findPosShiftOrderReference,
+  getPosShiftExportData,
+  isPosShiftOverviewDate,
+  listPosShiftOverview,
+  type PosShiftOverviewRow,
+} from "../pos";
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
@@ -1223,6 +1230,367 @@ const emailReportTool: BmsTool = {
           isKnownRecipient: known,
         },
         summary: `ส่งรายงาน${generated.reportType === "SALES" ? "ยอดขาย" : generated.reportType === "INVENTORY" ? "สต็อกสินค้า" : "กำไร"} (${generated.format}) ไปที่ ${to}`,
+      },
+    };
+  },
+};
+
+const POS_SHIFT_SIGNALS = [
+  "ALL",
+  "VARIANCE",
+  "STALE_OPEN",
+  "PENDING_REFUND",
+  "OPEN_EXPENSE",
+  "RETURN",
+  "VOID",
+  "NO_SALE",
+] as const;
+
+function requireValidDate(value: string | undefined, key: string): string | null {
+  if (!value) return null;
+  if (!isPosShiftOverviewDate(value)) throw new ToolArgError(`"${key}" ต้องเป็น YYYY-MM-DD`);
+  return value;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+
+function optUuid(args: Record<string, any>, key: string): string | undefined {
+  const value = optString(args, key);
+  if (!value) return undefined;
+  if (!UUID_RE.test(value)) throw new ToolArgError(`"${key}" ต้องเป็น UUID ที่ถูกต้อง`);
+  return value;
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+function summarizeShiftSignals(row: PosShiftOverviewRow) {
+  return {
+    hasCashVariance: row.cashVariance != null && Math.abs(row.cashVariance) >= 0.01,
+    hasPendingRefunds: row.pendingRefundCount > 0,
+    hasOpenExpenses: row.openExpenseCount > 0,
+    hasReturns: row.returnCount > 0,
+    hasVoids: row.voidCount > 0,
+    hasNoSales: row.noSaleCount > 0,
+    isStaleOpen: row.isStaleOpen,
+  };
+}
+
+function compactShiftRow(row: PosShiftOverviewRow) {
+  return {
+    shiftId: row.id,
+    shortShiftId: shortId(row.id),
+    status: row.status,
+    openedAt: row.openedAt,
+    closedAt: row.closedAt,
+    locationName: row.locationName,
+    deviceCode: row.deviceCode,
+    deviceName: row.deviceName,
+    openedByName: row.openedByName,
+    closedByName: row.closedByName,
+    cashierNames: row.cashierNames,
+    billCount: row.billCount,
+    salesTotal: row.salesTotal,
+    discountTotal: row.discountTotal,
+    voidCount: row.voidCount,
+    voidTotal: row.voidTotal,
+    returnCount: row.returnCount,
+    returnTotal: row.returnTotal,
+    cashIn: row.cashIn,
+    cashOut: row.cashOut,
+    cashRefunds: row.cashRefunds,
+    expectedCash: row.expectedCash,
+    expectedCashHidden: row.expectedCashHidden,
+    countedCash: row.countedCash,
+    cashVariance: row.cashVariance,
+    pendingRefundCount: row.pendingRefundCount,
+    pendingRefundAmount: row.pendingRefundAmount,
+    openExpenseCount: row.openExpenseCount,
+    openExpenseAmount: row.openExpenseAmount,
+    noSaleCount: row.noSaleCount,
+    signals: summarizeShiftSignals(row),
+  };
+}
+
+const analyzePosShiftTool: BmsTool = {
+  name: "analyze_pos_shift",
+  description:
+    "Analyze a POS shift from verified backend data for cash variance, returns, voids, drawer cash movements, pending refunds, expenses, no-sale events, and payment-method totals. Use when staff ask what is wrong in a shift, whether the drawer cash is correct, or which POS shift/order/bill evidence to inspect. If the user gives counted cash, pass countedCash to compare without saving it.",
+  surfaces: ["staff"],
+  permission: "pos.shift.report.all",
+  whenToUse:
+    "Staff asks about a POS shift, X/Z report, drawer cash, cash shortage/overage, refunds, voids, no-sales, or asks 'กะนี้ผิดตรงไหน'.",
+  whenNotToUse:
+    "Do not use for general sales summaries that do not mention POS shifts/drawers; use get_sales_summary. Do not close a shift, approve a refund, or change cash records.",
+  commonMistakes: [
+    "Do not infer a shift when multiple candidates match; show the candidates and ask which shift to inspect.",
+    "Do not reveal expectedCash when expectedCashHidden is true.",
+    "Do not treat personal-funded or petty-cash expenses as drawer cash out.",
+  ],
+  example: {
+    input: { openedFrom: "2026-08-29", openedTo: "2026-08-29", deviceCode: "001", latest: true },
+    note: "Inspect the latest matching POS shift using backend facts.",
+  },
+  inputSchema: {
+    type: "object",
+    properties: {
+      shiftId: { type: "string", description: "Exact POS shift UUID when known." },
+      orderId: { type: "string", description: "Exact POS order UUID when the user asks about one order/bill." },
+      receiptNo: { type: "string", description: "Receipt/tax document number shown on the POS receipt." },
+      openedFrom: { type: "string", description: "YYYY-MM-DD in Asia/Bangkok, inclusive." },
+      openedTo: { type: "string", description: "YYYY-MM-DD in Asia/Bangkok, inclusive." },
+      deviceCode: { type: "string", description: "POS device code shown on screen, e.g. 001." },
+      status: { type: "string", enum: ["OPEN", "CLOSED", "ALL"], description: "Shift status filter." },
+      signal: {
+        type: "string",
+        enum: POS_SHIFT_SIGNALS,
+        description: "Optional exception filter for finding candidate shifts.",
+      },
+      latest: { type: "boolean", description: "Use the newest matching shift when the user said latest/current/open shift." },
+      countedCash: { type: "number", description: "Cash physically counted by the user; compare only, do not save." },
+      detailLimit: { type: "integer", description: "Maximum ledger rows per evidence group (default 12, max 25)." },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const shiftId = optUuid(args, "shiftId");
+    const orderId = optUuid(args, "orderId");
+    const receiptNo = optString(args, "receiptNo");
+    const openedFrom = requireValidDate(optString(args, "openedFrom"), "openedFrom");
+    const openedTo = requireValidDate(optString(args, "openedTo"), "openedTo");
+    if (openedFrom && openedTo && openedFrom > openedTo) {
+      return { ok: false, error: "openedFrom ต้องไม่มากกว่า openedTo" };
+    }
+    const deviceCode = optString(args, "deviceCode");
+    const status = enumVal(args, "status", ["OPEN", "CLOSED", "ALL"] as const, false) ?? "ALL";
+    const signal = enumVal(args, "signal", POS_SHIFT_SIGNALS, false) ?? "ALL";
+    const latest = args.latest === true;
+    const countedCash = optMoney(args, "countedCash");
+    const detailLimit = optInt(args, "detailLimit", 1, 25) ?? 12;
+
+    let selectedShiftId = shiftId ?? null;
+    let candidateNote: unknown = null;
+
+    if (!selectedShiftId && (orderId || receiptNo)) {
+      const ref = await findPosShiftOrderReference(ec.tenantId, { orderId, receiptNo });
+      if (!ref) {
+        return {
+          ok: true,
+          data: {
+            needsSelection: true,
+            reason: "ไม่พบบิล POS ตาม orderId หรือเลขใบเสร็จที่ระบุ",
+            filters: { orderId, receiptNo },
+          },
+        };
+      }
+      if (!ref.shiftId) {
+        return {
+          ok: true,
+          data: {
+            needsSelection: true,
+            reason: "พบบิล POS แต่ไม่มีข้อมูลกะที่ผูกกับบิลนี้",
+            orderReference: ref,
+          },
+        };
+      }
+      selectedShiftId = ref.shiftId;
+      candidateNote = {
+        resolvedFrom: { orderId, receiptNo },
+        orderReference: ref,
+      };
+    }
+
+    if (!selectedShiftId) {
+      const firstPass = await listPosShiftOverview(ec.tenantId, {
+        openedFrom,
+        openedTo,
+        status,
+        signal,
+        limit: 25,
+        offset: 0,
+      });
+      const exactDevice = deviceCode
+        ? firstPass.filters.devices.find((device) => device.code.toLowerCase() === deviceCode.toLowerCase())
+        : null;
+      if (deviceCode && !exactDevice) {
+        return {
+          ok: true,
+          data: {
+            needsSelection: true,
+            reason: "ไม่พบเครื่อง POS ตาม deviceCode ที่ระบุ",
+            filters: { openedFrom, openedTo, deviceCode, status, signal },
+            availableDevices: firstPass.filters.devices.map((device) => ({
+              deviceId: device.id,
+              code: device.code,
+              name: device.name,
+            })),
+          },
+        };
+      }
+      const overview = await listPosShiftOverview(ec.tenantId, {
+        openedFrom,
+        openedTo,
+        deviceId: exactDevice?.id ?? null,
+        status,
+        signal,
+        limit: latest ? 1 : 6,
+        offset: 0,
+      });
+      if (overview.rows.length === 0) {
+        return {
+          ok: true,
+          data: {
+            needsSelection: true,
+            reason: "ไม่พบกะ POS ตามเงื่อนไขที่ระบุ",
+            filters: { openedFrom, openedTo, deviceCode, status, signal },
+            summary: overview.summary,
+          },
+        };
+      }
+      if (!latest && overview.rows.length !== 1) {
+        return {
+          ok: true,
+          data: {
+            needsSelection: true,
+            reason: "พบหลายกะ ต้องให้ผู้ใช้เลือก shiftId หรือบอกว่าเอากะล่าสุด",
+            filters: { openedFrom, openedTo, deviceCode, status, signal },
+            candidates: overview.rows.map(compactShiftRow),
+            totalMatches: overview.total,
+            summary: overview.summary,
+          },
+        };
+      }
+      selectedShiftId = overview.rows[0].id;
+      candidateNote = {
+        resolvedFrom: { openedFrom, openedTo, deviceCode, status, signal, latest },
+        totalMatches: overview.total,
+      };
+    }
+
+    const data = await getPosShiftExportData(ec.tenantId, selectedShiftId, null);
+    if (!data) return { ok: false, error: `ไม่พบกะ POS ${selectedShiftId}` };
+    const report = data.report;
+    if (report.expectedCashHidden) {
+      return {
+        ok: true,
+        data: {
+          source: "backend_pos_shift_report",
+          generatedAt: new Date().toISOString(),
+          candidateNote,
+          report: {
+            shiftId: report.shiftId,
+            shortShiftId: shortId(report.shiftId),
+            deviceCode: report.deviceCode,
+            locationName: report.locationName,
+            status: report.status,
+            openedAt: report.openedAt,
+            openedByName: report.openedByName,
+            closedAt: report.closedAt,
+            closedByName: report.closedByName,
+            expectedCash: null,
+            expectedCashHidden: true,
+            countedCash: report.countedCash,
+            cashVariance: report.cashVariance,
+          },
+          signals: {
+            expectedCashHidden: true,
+          },
+          note:
+            "กะนี้ยังเปิดอยู่และร้านใช้ blind close จึงไม่เปิดเผย expected cash หรือรายการประกอบยอดที่ทำให้คำนวณ expected cash ย้อนกลับได้ ต้องปิด/นับกะก่อนจึงวิเคราะห์ยอดเงินสดละเอียดได้",
+        },
+      };
+    }
+    const calculatedExpectedCash = report.expectedCashHidden
+      ? null
+      : Math.round((report.openingFloat + (report.byMethod.find((m) => m.method === "CASH")?.amount ?? 0)
+        - report.cashRefunds + report.cashIn - report.cashOut) * 100) / 100;
+    const countedCashComparison = countedCash == null || report.expectedCashHidden
+      ? null
+      : {
+          countedCash,
+          expectedCash: report.expectedCash,
+          difference: report.expectedCash == null
+            ? null
+            : Math.round((countedCash - report.expectedCash) * 100) / 100,
+        };
+
+    const topRefunds = data.refunds
+      .slice(0, detailLimit)
+      .map((refund) => ({
+        returnId: refund.returnId,
+        shortReturnId: shortId(refund.returnId),
+        orderId: refund.orderId,
+        shortOrderId: shortId(refund.orderId),
+        receiptNo: refund.receiptNo,
+        returnedAt: refund.returnedAt,
+        kind: refund.kind,
+        returnMode: refund.returnMode,
+        returnAmount: refund.returnAmount,
+        settlementStatus: refund.settlementStatus,
+        method: refund.method,
+        allocationAmount: refund.allocationAmount,
+        allocationStatus: refund.allocationStatus,
+        completedAt: refund.completedAt,
+        returnedBy: refund.returnedBy,
+        approvedBy: refund.approvedBy,
+      }));
+
+    return {
+      ok: true,
+      data: {
+        source: "backend_pos_shift_export",
+        generatedAt: new Date().toISOString(),
+        candidateNote,
+        report: {
+          ...report,
+          shortShiftId: shortId(report.shiftId),
+          calculatedExpectedCash,
+          countedCashComparison,
+        },
+        formulas: {
+          expectedCash: report.expectedCashHidden
+            ? "hidden by blind-close while shift is open"
+            : "openingFloat + CASH payments - completed cash refunds + drawer cash IN - drawer cash OUT",
+          countedCashDifference: "countedCash - expectedCash",
+          drawerCashExclusions: "personal-funded expenses and branch petty-cash expenses do not change drawer expected cash",
+        },
+        signals: {
+          hasCashVariance: report.cashVariance != null && Math.abs(report.cashVariance) >= 0.01,
+          hasPendingRefunds: data.refunds.some((refund) => refund.allocationStatus === "PENDING"),
+          hasOpenExpenses: report.openExpenseCount > 0,
+          hasReturns: report.returnCount > 0,
+          hasVoids: report.voidCount > 0,
+          hasNoSales: report.noSaleCount > 0,
+        },
+        evidence: {
+          paymentsByMethod: report.byMethod,
+          cashiers: report.byCashier,
+          cashMovements: data.cashMovements.slice(0, detailLimit),
+          refunds: topRefunds,
+          expenses: data.expenses.slice(0, detailLimit),
+          noSales: data.noSales.slice(0, detailLimit),
+          creditActivity: data.creditActivity.slice(0, detailLimit),
+          bills: data.bills.slice(0, detailLimit).map((bill) => ({
+            orderId: bill.orderId,
+            shortOrderId: shortId(bill.orderId),
+            receiptNo: bill.receiptNo,
+            soldAt: bill.soldAt,
+            cashier: bill.cashier,
+            status: bill.status,
+            itemCount: bill.itemCount,
+            netTotal: bill.netTotal,
+            discountTotal: bill.discountTotal,
+            voidedAt: bill.voidedAt,
+          })),
+          truncated: {
+            bills: Math.max(0, data.bills.length - detailLimit),
+            cashMovements: Math.max(0, data.cashMovements.length - detailLimit),
+            refunds: Math.max(0, data.refunds.length - detailLimit),
+            expenses: Math.max(0, data.expenses.length - detailLimit),
+            noSales: Math.max(0, data.noSales.length - detailLimit),
+            creditActivity: Math.max(0, data.creditActivity.length - detailLimit),
+          },
+        },
       },
     };
   },
@@ -2677,6 +3045,7 @@ export const ALL_TOOLS: BmsTool[] = [
   getSalesSummaryTool,
   getTopProductsTool,
   getDashboardTool,
+  analyzePosShiftTool,
   getCustomerTool,
   listCustomersTool,
   customerOrdersTool,

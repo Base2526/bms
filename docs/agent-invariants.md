@@ -77,6 +77,11 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   `currentPath`/`pageId` are retrieval context only. POS-only users remain outside `/admin` and get
   deterministic POS guide search without GraphQL/AI access; device+cashier authorization stays on
   `/api/pos/*`.
+  Back-office POS discrepancy questions are staff reads through `analyze_pos_shift` with
+  `pos.shift.report.all`: the tool may resolve a shift from `shiftId`, latest/date/device filters,
+  POS `orderId`, or receipt number, then returns the existing shift report/export facts. It compares
+  a user-supplied counted-cash amount without saving it, never calls the register device route, and
+  must not reveal hidden expected cash for an open blind-close shift.
 
 Every tool attempt is centrally audited as `ai.tool_call` (success/error/denied/proposal) without raw
 arguments or prompt content. Successful A2 writes also keep their domain audit action, and confirmed

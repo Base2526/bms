@@ -73,10 +73,15 @@ test("all-till overview keeps its permission boundary and blind-close export loc
   const listRoute = await readFile(new URL("apps/web/app/api/bms/pos-shifts/route.ts", ROOT), "utf8");
   const adminExportRoute = await readFile(new URL("apps/web/app/api/bms/pos-shifts/export/route.ts", ROOT), "utf8");
   const registerExportRoute = await readFile(new URL("apps/web/app/api/pos/shift-report/export/route.ts", ROOT), "utf8");
+  const catalog = await readFile(new URL("apps/web/lib/bms/tools/catalog.ts", ROOT), "utf8");
+  const service = await readFile(new URL("apps/web/lib/bms/pos.ts", ROOT), "utf8");
 
   assert.match(permissionMigration, /'pos\.shift\.report\.all'/);
   assert.match(listRoute, /authorizeAdminRoute\("pos\.shift\.report\.all"\)/);
   assert.match(adminExportRoute, /authorizeAdminRoute\("pos\.shift\.report\.all"\)/);
+  assert.match(catalog, /name: "analyze_pos_shift"[\s\S]*?permission: "pos\.shift\.report\.all"/);
+  assert.match(catalog, /getPosShiftExportData\(ec\.tenantId, selectedShiftId, null\)/);
+  assert.match(service, /export async function findPosShiftOrderReference/);
   assert.match(listRoute, /isPosShiftOverviewDate/);
   assert.match(listRoute, /UUID_RE\.test/);
   assert.match(adminExportRoute, /data\.report\.expectedCashHidden[\s\S]*status: 409/);
