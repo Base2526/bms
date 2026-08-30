@@ -23,6 +23,9 @@ import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
 import { clarifyAmbiguousStaffRequest } from "@/lib/bms/staffAssistantClarification";
 import {
   SYSTEM_GUIDES,
+  guideCoversCurrentPath,
+  isComprehensiveCurrentPageHelpRequest,
+  isCurrentPageHelpRequest,
   searchAssistantFaqs,
   searchAssistantKnowledge,
   type AssistantLocale,
@@ -80,16 +83,27 @@ function safeContextId(value?: string | null): string | null {
 function deterministicKnowledgeReply(
   knowledge: ReturnType<typeof searchAssistantKnowledge>,
   locale: AssistantLocale,
-  matchedQuery: boolean,
-  /** Verified FAQ answers matched by the same question — a sentence beats four numbered steps. */
-  faqs: ReturnType<typeof searchAssistantFaqs> = []
+  options: {
+    matchedQuery?: boolean;
+    currentPageRequest?: boolean;
+    maxEntries?: number;
+    /** Verified FAQ answers matched by the same question — a sentence beats four numbered steps. */
+    faqs?: ReturnType<typeof searchAssistantFaqs>;
+  } = {}
 ): string | null {
+  const { matchedQuery = false, currentPageRequest = false, maxEntries = 3, faqs = [] } = options;
   if (!knowledge.length && !faqs.length) return null;
-  const visible = knowledge.filter((entry) => entry.accessible).slice(0, 3);
-  const selected = visible.length ? visible : knowledge.slice(0, 3);
+  const visible = knowledge.filter((entry) => entry.accessible).slice(0, maxEntries);
+  const selected = currentPageRequest
+    ? knowledge.slice(0, maxEntries)
+    : visible.length ? visible : knowledge.slice(0, maxEntries);
   const guideById = new Map(SYSTEM_GUIDES.map((guide) => [guide.id, guide]));
   // Page-context entries are labelled as page guidance, never as an answer to the question.
-  const heading = matchedQuery
+  const heading = currentPageRequest
+    ? locale === "en"
+      ? "Verified guidance for the page you are viewing:"
+      : "คู่มือที่ยืนยันแล้วสำหรับหน้าที่คุณกำลังเปิดอยู่:"
+    : matchedQuery
     ? locale === "en"
       ? "Verified system guidance is available even though the AI provider is unavailable:"
       : "ยังใช้ข้อมูลระบบที่ยืนยันแล้วตอบได้ แม้ AI provider จะยังไม่พร้อม:"
@@ -110,9 +124,13 @@ function deterministicKnowledgeReply(
       : null;
     return [`- ${entry.title}${status}: ${entry.summary}${access}`, ...steps, ...(route ? [route] : [])];
   });
-  const ending = locale === "en"
-    ? "Live shop data and actions still require an available AI provider and the relevant backend tool."
-    : "การตรวจข้อมูลร้าน ณ ตอนนี้หรือการสั่งงาน ยังต้องรอ AI provider และทูลหลังบ้านที่เกี่ยวข้องพร้อมใช้งาน";
+  const ending = currentPageRequest
+    ? locale === "en"
+      ? "This explains verified usage guidance only; it did not read or change live shop data."
+      : "คำตอบนี้อธิบายวิธีใช้จากคู่มือที่ยืนยันแล้ว โดยไม่ได้อ่านหรือเปลี่ยนข้อมูลร้าน"
+    : locale === "en"
+      ? "Live shop data and actions still require an available AI provider and the relevant backend tool."
+      : "การตรวจข้อมูลร้าน ณ ตอนนี้หรือการสั่งงาน ยังต้องรอ AI provider และทูลหลังบ้านที่เกี่ยวข้องพร้อมใช้งาน";
   return [heading, ...lines, ending].join("\n");
 }
 
@@ -160,6 +178,58 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
     .map((entry) => ({ label: entry.title, path: entry.route }))
     .filter((entry, index, all) => all.findIndex((candidate) => candidate.path === entry.path) === index);
 
+  /**
+   * "This page" refers to the validated route in this request. Resolve it before conversation
+   * history reaches the model so a previous POS discussion cannot turn Dashboard help into a POS
+   * answer. This is deterministic guide retrieval only: it neither reads live data nor grants a
+   * permission, and it avoids spending an AI credit for a verified manual answer.
+   */
+  if (currentPath && isCurrentPageHelpRequest(message)) {
+    const comprehensive = isComprehensiveCurrentPageHelpRequest(message);
+    const pageGuides = searchAssistantKnowledge(message, {
+      locale,
+      currentPath,
+      permissions: perms,
+      role,
+      isPlatformAdmin: platformAdmin,
+      kind: "guide",
+      limit: SYSTEM_GUIDES.length,
+    }).filter((entry) => {
+      const guide = SYSTEM_GUIDES.find((candidate) => candidate.id === entry.id);
+      return guide ? guideCoversCurrentPath(guide, currentPath) : false;
+    });
+    const pageCitations = pageGuides.map((entry) => ({
+      kind: entry.kind,
+      id: entry.id,
+      title: entry.title,
+      summary: entry.summary,
+      path: entry.route,
+      status: entry.capabilityStatus ?? null,
+      accessible: entry.accessible,
+      missingPermissions: entry.missingPermissions,
+      accessRequirement: entry.accessRequirement,
+      accessNote: entry.accessNote,
+    }));
+    const pageLinks = pageGuides
+      .filter((entry) => entry.accessible && entry.route)
+      .map((entry) => ({ label: entry.title, path: entry.route! }))
+      .filter((entry, index, all) => all.findIndex((candidate) => candidate.path === entry.path) === index);
+    const pageReply = deterministicKnowledgeReply(pageGuides, locale, {
+      currentPageRequest: true,
+      maxEntries: comprehensive ? pageGuides.length : 3,
+    });
+    return {
+      reply: pageReply ?? (locale === "en"
+        ? "No verified usage guide is available for the page you are viewing."
+        : "ยังไม่มีคู่มือการใช้งานที่ยืนยันแล้วสำหรับหน้าที่คุณกำลังเปิดอยู่"),
+      answerType: pageGuides.length ? "GUIDE" : "GENERAL",
+      citations: pageCitations,
+      links: pageLinks,
+      proposals: [],
+      trace: [],
+    };
+  }
+
   const clarification = clarifyAmbiguousStaffRequest(message);
   if (clarification) {
     return { reply: clarification, answerType: "CLARIFICATION", citations, links, proposals: [], trace: [] };
@@ -194,7 +264,10 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
     // as "guides for this page", never as an answer to the question.
     const fallbackKnowledge = matched.length ? matched : retrieved;
     const fallbackFaqs = searchAssistantFaqs(message, { locale, limit: 2 });
-    const deterministicReply = deterministicKnowledgeReply(fallbackKnowledge, locale, matched.length > 0, fallbackFaqs);
+    const deterministicReply = deterministicKnowledgeReply(fallbackKnowledge, locale, {
+      matchedQuery: matched.length > 0,
+      faqs: fallbackFaqs,
+    });
     return {
       reply: deterministicReply ?? (locale === "en"
         ? "AI is not configured for this shop or the monthly AI message quota is exhausted. Configure an API key in Settings."

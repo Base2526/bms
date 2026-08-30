@@ -115,6 +115,13 @@ scored; group titles and staff phrasings are the retrieval keys, the same contra
 - Current path, page ID, role, and platform status are retrieval/access context only, and the
   first two are bounded and re-validated server-side. Tool execution still passes the normal
   permission guard.
+- An explicit page-deictic help request (for example “หน้านี้ใช้งานอย่างไร” or “What can I do on
+  this page?”) resolves deterministically from the validated current route before conversation
+  history reaches the model. A previous POS discussion therefore cannot turn Dashboard help into
+  a POS answer. Explicitly named workflows such as “ปิดกะ POS ยังไง” still follow normal retrieval
+  regardless of the open page. Troubleshooting wording such as “หน้านี้ใช้งานไม่ได้” stays in the
+  normal assistant flow, while “ทั้งหมด” / “all features” returns every guide declared for the
+  route and labels workflows the actor cannot access without exposing their steps or links.
 - Standing on a page re-ranks that page's guides; it never turns them into an answer. A result
   carries `matchedQuery`, and only query-matched entries become citations or links — otherwise
   every guide on the current page would be cited for every message, including "hello".

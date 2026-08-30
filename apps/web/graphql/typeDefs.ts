@@ -865,6 +865,11 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     "ยอดหนี้คงค้าง · ติดลบ = ร้านค้างลูกค้า (คืนของหลังจ่ายครบ)"
     balance: Float!
+    "วงเงินที่เหลือจากเพดานเครดิต ไม่รวมเครดิตคืนสินค้า"
+    creditLineAvailable: Float!
+    "เครดิตคงเหลือจากยอดติดลบ เช่น คืนสินค้า/void หลังจ่ายครบ"
+    creditBalance: Float!
+    "ยอดขายเชื่อที่ยังทำได้หลังรวมเครดิตคงเหลือ"
     availableCredit: Float!
     overdueAmount: Float!
     openInvoiceCount: Int!

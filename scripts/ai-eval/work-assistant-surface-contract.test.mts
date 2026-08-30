@@ -33,6 +33,37 @@ test("verified help remains available without an AI provider and excluded routes
   assert.match(drawer, /skip: excluded/);
 });
 
+test("explicit current-page help resolves before prior conversation history reaches the model", () => {
+  const resolver = read("apps/web/graphql/bmsAssistant.ts");
+  const pageIntentHelper = read("apps/web/lib/bms/assistantKnowledge/pageIntent.ts");
+  const pageIntent = resolver.indexOf("if (currentPath && isCurrentPageHelpRequest(message))");
+  const ambiguityGuard = resolver.indexOf("const clarification = clarifyAmbiguousStaffRequest(message)");
+  const priorHistory = resolver.indexOf("const priorTurns = history");
+  const modelLoop = resolver.indexOf("const loop = await runToolLoop");
+  assert.ok(pageIntent >= 0, "missing deterministic current-page branch");
+  assert.ok(pageIntent < ambiguityGuard, "report ambiguity handling can intercept explicit page help");
+  assert.ok(pageIntent < priorHistory, "prior POS history can override the current route");
+  assert.ok(pageIntent < modelLoop, "the model can override deterministic page guidance");
+  assert.match(resolver, /kind: "guide"[\s\S]*?currentPageRequest: true/);
+  assert.match(pageIntentHelper, /coversRoutePrefixes/, "detail-page guide coverage was dropped");
+  assert.match(resolver, /limit: SYSTEM_GUIDES\.length/);
+  assert.match(
+    resolver,
+    /maxEntries: comprehensive \? pageGuides\.length : 3/,
+    "a request for every current-page workflow is still truncated to the generic fallback limit"
+  );
+  assert.match(
+    resolver,
+    /currentPageRequest\s*\? knowledge\.slice\(0, maxEntries\)/,
+    "current-page help hides workflows that exist but require another permission"
+  );
+  assert.doesNotMatch(
+    resolver.slice(pageIntent, ambiguityGuard),
+    /\n\s*pageId,/,
+    "a mismatched pageId can crowd validated currentPath guides out of the result"
+  );
+});
+
 test("how-to replies remain numbered and actionable without an AI provider", () => {
   const resolver = read("apps/web/graphql/bmsAssistant.ts");
   assert.match(resolver, /SYSTEM_GUIDES/);
