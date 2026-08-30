@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   composeDiscounts,
@@ -38,6 +39,23 @@ const tier = (over: Partial<MembershipTier> = {}): MembershipTier => ({
   sortOrder: 1,
   active: true,
   ...over,
+});
+
+test("tier qualification and tier sales count paid orders only", () => {
+  const source = readFileSync(new URL("../apps/web/lib/bms/membership.ts", import.meta.url), "utf8");
+  assert.match(source, /const PAID_ORDER_STATUSES = \["PAID", "PACKING", "SHIPPED", "COMPLETED"\]/);
+
+  const reviewStart = source.indexOf("export async function reviewMemberTier(");
+  const reviewEnd = source.indexOf("export async function reviewMemberTierForOrder(");
+  const reviewSource = source.slice(reviewStart, reviewEnd);
+  assert.match(reviewSource, /o\.status = ANY\(\$3::text\[\]\)/);
+  assert.doesNotMatch(reviewSource, /status NOT IN/);
+
+  const reportStart = source.indexOf("export async function salesByTierReport(");
+  const reportEnd = source.indexOf("export async function loyaltyOutstandingReport(");
+  const reportSource = source.slice(reportStart, reportEnd);
+  assert.match(reportSource, /o\.status = ANY\(\$2::text\[\]\)/);
+  assert.doesNotMatch(reportSource, /status NOT IN/);
 });
 
 test("หลายไซซ์ + สมาชิก + คะแนน + ส่วนลดมือ ใช้ฐานเดียวกับ server", () => {

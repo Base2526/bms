@@ -139,6 +139,10 @@ Four independent discount layers can stack on one bill, applied in a fixed order
 | 3. Points redemption | `bms_loyalty_ledger`, at the shop's configured rate | yes |
 | 4. Manual discount | keyed at the counter, needs supervisor approval (below) | yes — trimmed first when the cap binds |
 
+Tier qualification and the sales-by-tier report count successful orders only: `PAID`, `PACKING`,
+`SHIPPED`, and `COMPLETED`. A `PENDING` order has not produced revenue and must not upgrade a
+customer; `CANCELLED` and `RETURNED` orders likewise do not count toward 12-month spend.
+
 ### Manual discount approval
 
 `composeDiscounts()` has carried a `manualDiscount` layer since `7.96`, but nothing reached it —
@@ -173,7 +177,7 @@ Point redemption always rounds down to a whole configured redemption unit. For e
 ledger and the cached balance. The POS "all" action displays and submits the 3,000 points actually
 used rather than presenting the full 3,045 as if the remainder would be lost.
 
-`scripts/loyalty-contract.test.mts` (17 tests, no database):
+`scripts/loyalty-contract.test.mts` (22 tests, no database):
 
 ```bash
 node --experimental-strip-types --test scripts/loyalty-contract.test.mts
