@@ -47,19 +47,24 @@ export const bmsOrdersResolvers = {
         args.status && ORDER_STATUSES.includes(args.status) ? args.status : null;
 
       const res = await query(
-        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, shipping_fee,
-                (total_amount + shipping_fee) AS amount_due,
-                coupon_code, preferred_carrier, created_at, updated_at
-           FROM bms_orders
-          WHERE tenant_id = $4
-            AND ($1::text IS NULL OR status = $1)
+        `SELECT o.id, o.channel, o.customer_ref, o.customer_id, o.status, o.total_amount, o.discount_amount, o.shipping_fee,
+                (o.total_amount + o.shipping_fee) AS amount_due,
+                COALESCE(d.deposit_paid, 0) AS deposit_paid,
+                CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
+                d.status AS deposit_status,
+                o.coupon_code, o.preferred_carrier, o.created_at, o.updated_at
+           FROM bms_orders o
+           LEFT JOIN bms_pos_deposits d
+             ON d.tenant_id = o.tenant_id AND d.order_id = o.id
+          WHERE o.tenant_id = $4
+            AND ($1::text IS NULL OR o.status = $1)
             AND (
               $5::text IS NULL
-              OR id::text ILIKE '%' || $5 || '%'
-              OR channel ILIKE '%' || $5 || '%'
-              OR COALESCE(customer_ref, '') ILIKE '%' || $5 || '%'
+              OR o.id::text ILIKE '%' || $5 || '%'
+              OR o.channel ILIKE '%' || $5 || '%'
+              OR COALESCE(o.customer_ref, '') ILIKE '%' || $5 || '%'
             )
-          ORDER BY created_at DESC
+          ORDER BY o.created_at DESC
           LIMIT $2 OFFSET $3`,
         [status, limit, offset, tid, search]
       );
@@ -69,10 +74,16 @@ export const bmsOrdersResolvers = {
     async bmsOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.view");
       const res = await query(
-        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, shipping_fee,
-                (total_amount + shipping_fee) AS amount_due,
-                coupon_code, preferred_carrier, created_at, updated_at
-           FROM bms_orders WHERE tenant_id = $2 AND id = $1`,
+        `SELECT o.id, o.channel, o.customer_ref, o.customer_id, o.status, o.total_amount, o.discount_amount, o.shipping_fee,
+                (o.total_amount + o.shipping_fee) AS amount_due,
+                COALESCE(d.deposit_paid, 0) AS deposit_paid,
+                CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
+                d.status AS deposit_status,
+                o.coupon_code, o.preferred_carrier, o.created_at, o.updated_at
+           FROM bms_orders o
+           LEFT JOIN bms_pos_deposits d
+             ON d.tenant_id = o.tenant_id AND d.order_id = o.id
+          WHERE o.tenant_id = $2 AND o.id = $1`,
         [args.id, getTenantId(ctx)]
       );
       return res.rows[0] ?? null;
@@ -192,12 +203,12 @@ export const bmsOrdersResolvers = {
 
   // field resolver: ดึงรายการสินค้าในออร์เดอร์
   BmsOrder: {
-    async items(parent: { id: string }) {
+    async items(parent: { id: string }, _args: unknown, ctx: any) {
       const res = await query(
-        `SELECT product_sku, size, qty, unit_price
-           FROM bms_order_items WHERE order_id = $1
+        `SELECT product_sku, product_name, size, qty, unit_price
+           FROM bms_order_items WHERE tenant_id = $2 AND order_id = $1
           ORDER BY id`,
-        [parent.id]
+        [parent.id, getTenantId(ctx)]
       );
       return res.rows;
     },
@@ -221,6 +232,9 @@ export const bmsOrdersResolvers = {
     discount_amount: (p: any) => Number(p.discount_amount ?? 0),
     shipping_fee: (p: any) => Number(p.shipping_fee ?? 0),
     amount_due: (p: any) => Number(p.amount_due ?? (Number(p.total_amount ?? 0) + Number(p.shipping_fee ?? 0))),
+    deposit_paid: (p: any) => Number(p.deposit_paid ?? 0),
+    deposit_balance_due: (p: any) => Number(p.deposit_balance_due ?? 0),
+    deposit_status: (p: any) => p.deposit_status ?? null,
     coupon_code: (p: any) => p.coupon_code ?? null,
     preferred_carrier: (p: any) => p.preferred_carrier ?? null,
     created_at: (p: any) =>
