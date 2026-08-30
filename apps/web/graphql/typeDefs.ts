@@ -1867,9 +1867,14 @@ export const typeDefs = /* GraphQL */ `
 
   # ===== BMS products & inventory =====
   type BmsVariant {
+    locationId: ID
+    locationName: String
+    branchCode: String
     size: String!
     current_stock: Int!
     reserved_stock: Int!
+    quarantine_stock: Int!
+    inTransitQty: Int!
     available: Int!
     reorder_point: Int!
     low: Boolean!
@@ -1992,6 +1997,9 @@ export const typeDefs = /* GraphQL */ `
   type BmsLowStockItem {
     sku: String!
     name: String!
+    locationId: ID!
+    locationName: String!
+    branchCode: String!
     size: String!
     available: Int!
     reorder_point: Int!
@@ -2041,6 +2049,9 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     type: String!
     qty: Int!
+    location_id: ID!
+    location_name: String
+    branch_code: String
     ref_order_id: String
     note: String
     actor: String
@@ -3993,8 +4004,8 @@ export const typeDefs = /* GraphQL */ `
     bmsCreateProductCategory(name: String!): BmsProductCategory!
     bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
     bmsDeleteProductCategory(id: ID!): Boolean!
-    bmsAdjustStock(sku: String!, size: String!, delta: Int!, note: String): BmsVariant!
-    bmsSetReorderPoint(sku: String!, size: String!, reorderPoint: Int!): BmsVariant!
+    bmsAdjustStock(sku: String!, size: String!, locationId: ID!, delta: Int!, note: String): BmsVariant!
+    bmsSetReorderPoint(sku: String!, size: String!, locationId: ID!, reorderPoint: Int!): BmsVariant!
 
     # ===== BMS purchase (admin) — PO lifecycle =====
     bmsCreatePurchaseOrder(supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!

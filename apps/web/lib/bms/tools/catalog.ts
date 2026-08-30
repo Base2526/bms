@@ -2618,7 +2618,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "adjust_stock",
-    description: "Adjust stock up or down for a sku and size.",
+    description: "Propose a stock adjustment for an exact branch, sku, and size. Never guess a branch id.",
     mutation: "bmsAdjustStock",
     permission: "stock.adjust",
     inputSchema: {
@@ -2626,18 +2626,20 @@ const A3_TOOLS: BmsTool[] = [
       properties: {
         sku: { type: "string" },
         size: { type: "string" },
+        locationId: { type: "string", description: "Verified branch UUID. Ask for clarification if unavailable." },
         delta: { type: "integer", description: "Amount to adjust by (+ to add / - to remove)." },
         note: { type: "string" },
       },
-      required: ["sku", "size", "delta"],
+      required: ["sku", "size", "locationId", "delta"],
     },
     buildArgs: (a) => ({
       sku: reqString(a, "sku"),
       size: reqString(a, "size"),
+      locationId: reqString(a, "locationId"),
       delta: reqInt(a, "delta", -1_000_000),
       note: optString(a, "note") ?? null,
     }),
-    summary: (a) => `ปรับสต็อก ${a.sku} ไซซ์ ${a.size} จำนวน ${a.delta}`,
+    summary: (a) => `ปรับสต็อก ${a.sku} ไซซ์ ${a.size} ที่สาขา ${String(a.locationId).slice(0, 8)} จำนวน ${a.delta}`,
   }),
   proposalTool({
     name: "merge_customers",

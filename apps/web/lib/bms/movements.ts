@@ -17,7 +17,8 @@ export type MovementType =
   // และของที่ขาดจากการนับเป็นตัวเลขที่บัญชีต้องเห็นแยกจากการตัดขายตามปกติ
   | "TRANSFER_IN"
   | "TRANSFER_OUT"
-  | "COUNT_ADJUST";
+  | "COUNT_ADJUST"
+  | "QUARANTINE_IN";
 
 export type MovementRow = {
   id: string;
@@ -25,6 +26,9 @@ export type MovementRow = {
   size: string;
   type: MovementType;
   qty: number;
+  location_id: string;
+  location_name: string | null;
+  branch_code: string | null;
   ref_order_id: string | null;
   note: string | null;
   actor: string | null;
@@ -90,11 +94,14 @@ export async function listMovements(
 ): Promise<MovementRow[]> {
   const lim = Math.min(Math.max(limit, 1), 200);
   const res = await query<MovementRow>(
-    `SELECT id, product_sku, size, type, qty, ref_order_id, note, actor, created_at
-       FROM bms_stock_movements
-      WHERE tenant_id = $1 AND product_sku = $2
-        AND ($3::text IS NULL OR size = $3)
-      ORDER BY created_at DESC, id DESC
+    `SELECT m.id, m.product_sku, m.size, m.type, m.qty, m.location_id,
+            loc.name AS location_name, loc.branch_code,
+            m.ref_order_id, m.note, m.actor, m.created_at
+       FROM bms_stock_movements m
+       LEFT JOIN bms_locations loc ON loc.tenant_id = m.tenant_id AND loc.id = m.location_id
+      WHERE m.tenant_id = $1 AND m.product_sku = $2
+        AND ($3::text IS NULL OR m.size = $3)
+      ORDER BY m.created_at DESC, m.id DESC
       LIMIT $4`,
     [tenantId, sku, size, lim]
   );

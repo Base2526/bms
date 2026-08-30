@@ -353,6 +353,13 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   external refund. Legacy rows may fall back to the sale shift only when no event-shift evidence exists.
   Closing, drawer math, X/Z totals and the detailed workbook all use the event shift first, so returning
   yesterday's bill today neither rewrites yesterday's Z report nor hides today's cash outflow.
+- **A cross-branch return restores the receiving branch, not the sale branch.** The authenticated POS
+  device and its open shift derive `return_location_id`; the immutable order supplies
+  `sale_location_id`. A different branch requires a distinct second person with
+  `pos.return.cross_branch`. Inventory, destination lot, serial location and the `RETURN` movement
+  land at the receiving branch, while source-lot provenance and the original tax document continue
+  to point at the sale. This is not `TRANSFER_IN`; a later movement back to the sale branch uses the
+  normal two-step transfer. Bundle returns expand through `bms_order_stock_lines`.
 - **Tax documents are immutable snapshots.** Rate and amounts are stored on the document row at
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
@@ -407,6 +414,12 @@ numbers, tiers, discounts, and points. Operator detail and the go-live checklist
 `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts`, the REST admin routes under
 `/api/bms/inventory/*`, and migration `7.98` own inter-branch transfers and shelf counts. Full state,
 audit, and rollout detail: [business/inventory.md](business/inventory.md#multiple-branches-transfers-and-counts-798).
+
+Since `9.35`, an inventory row also carries non-sellable `quarantine_stock`. Product administration
+must name the branch on every adjustment and reorder-point write. A transfer receive partitions sent
+units into sellable, damaged/quarantined and missing; a discrepancy needs a controlled reason plus
+an operator note, and the audit preserves those per-line facts. Never add damaged units to
+`current_stock`, and never hide in-transit units inside a branch's available quantity.
 
 - **A transfer is send then receive.** Sending removes only unreserved stock from the source and
   records `TRANSFER_OUT`; receiving adds the actual quantity at the destination as `TRANSFER_IN`.

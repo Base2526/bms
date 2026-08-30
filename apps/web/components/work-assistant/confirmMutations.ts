@@ -26,10 +26,13 @@ export const WORK_ASSISTANT_CONFIRM_MUTATIONS: Record<
     vars: (args) => ({ id: args.id }),
   },
   bmsAdjustStock: {
-    doc: gql`mutation($sku: String!, $size: String!, $delta: Int!, $note: String) {
-      bmsAdjustStock(sku: $sku, size: $size, delta: $delta, note: $note) { __typename }
+    doc: gql`mutation($sku: String!, $size: String!, $locationId: ID!, $delta: Int!, $note: String) {
+      bmsAdjustStock(sku: $sku, size: $size, locationId: $locationId, delta: $delta, note: $note) { __typename }
     }`,
-    vars: (args) => ({ sku: args.sku, size: args.size, delta: args.delta, note: args.note ?? null }),
+    vars: (args) => ({
+      sku: args.sku, size: args.size, locationId: args.locationId,
+      delta: args.delta, note: args.note ?? null,
+    }),
   },
   bmsMergeCustomers: {
     doc: gql`mutation($keepId: ID!, $mergeId: ID!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId) }`,

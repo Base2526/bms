@@ -276,8 +276,12 @@ base quantities before changing the stock row.
 
 Full and partial returns restore both the inventory total and the exact source-lot allocation.
 `bms_pos_return_item_lots` records what has already been restored so repeated partial returns cannot
-credit one lot twice. The stock movement ledger records `RETURN` with the POS order reference. See
-[pos.md](pos.md) for the counter workflow and opening checklist.
+credit one lot twice. Since `9.34`, a counter return restores stock at the authenticated receiving
+register's branch, which may differ from the sale branch. The row keeps the source lot and destination
+restock lot separately; bundle returns restore the actual component lines. The stock movement ledger
+records `RETURN` at the receiving branch with the original order reference. This is not a
+`TRANSFER_IN`: a later decision to send the returned item back to its sale branch uses the ordinary
+two-step transfer. See [pos.md](pos.md) for the counter workflow and opening checklist.
 
 
 ## Multiple branches: transfers and counts (7.98)
@@ -285,8 +289,11 @@ credit one lot twice. The stock movement ledger records `RETURN` with the POS or
 `7.84` gave every inventory row a `location_id`, but nothing could act on more than the default
 branch. `adjustStock()` resolved the default location and ignored its caller, so a two-branch shop
 could not correct the second branch's numbers at all — while its POS registers happily sold from it.
-`adjustStock()` now takes an optional `locationId` (omitted still means the default branch, so
-existing callers are unchanged) and verifies the branch belongs to the shop before touching a row.
+`adjustStock()` accepts a `locationId` and verifies the branch belongs to the shop before touching a
+row. The admin Products screen always supplies it; its rows are branch × size, never anonymous
+duplicate sizes. Reorder points use the same explicit branch rule. The summary keeps sellable stock,
+in-transit units and quarantined units separate so company-owned goods are visible without making
+them available to POS.
 
 ### Transfers are two steps
 
@@ -295,12 +302,13 @@ source when it is sent and arrives at the destination when it is received; in be
 no branch at all. That is not an accounting nicety — it is what makes a stock count at the source
 branch correct while the van is still moving.
 
-A send refuses to move more than the unreserved quantity: goods a customer already has on order at
-that branch must not be shipped elsewhere. A receive may record less than was sent (broken, lost,
-miscounted at packing); the shortfall gets its own `STOCK_OUT` movement at the source, noted as lost
-in transit, rather than evaporating into the difference between two branch totals. Cancelling is
-only possible before sending — once goods are off the shelf, the transfer has to be closed by
-receiving it.
+A send refuses to move more than the unreserved quantity. Since `9.35`, receiving splits every line
+into sellable received, damaged/quarantined, and missing. These must add up to the sent quantity.
+Any discrepancy requires a controlled reason and a written note. Sellable units enter
+`current_stock`; damaged units enter the destination's `quarantine_stock` with a `QUARANTINE_IN`
+movement; missing units get their own `STOCK_OUT` evidence tied to the source and transfer number.
+The immutable receive row and audit retain the per-line reason/note rather than calling every
+difference “lost”. Cancelling is only possible before sending.
 
 `TRANSFER_IN`/`TRANSFER_OUT` are separate movement types from `STOCK_IN`/`STOCK_OUT` because a
 transfer does not remove goods from the company, and a total-stock-value report must not treat it as
@@ -378,7 +386,7 @@ the convention `pos.ts` uses for `pos.sale`/`pos.return`:
 | --- | --- | --- |
 | `inventory.transfer.create` | transfer id | `transferNo`, both branches, `lines`, `units` |
 | `inventory.transfer.send` | transfer id | `units` that left the source branch |
-| `inventory.transfer.receive` | transfer id | `unitsSent`, `unitsReceived`, `unitsMissing` |
+| `inventory.transfer.receive` | transfer id | `unitsSent`, `unitsReceived`, `unitsDamaged`, `unitsMissing`, per-line reason/note |
 | `inventory.transfer.cancel` | transfer id | `transferNo` |
 | `inventory.count.create` | count id | `countNo`, branch |
 | `inventory.count.apply` | count id | `adjustedItems`, `varianceUnits` |

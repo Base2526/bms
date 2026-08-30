@@ -46,9 +46,14 @@ import ImportModal from "./ImportModal";
 
 // ---- Types --------------------------------------------------
 type Variant = {
+  locationId: string;
+  locationName: string | null;
+  branchCode: string | null;
   size: string;
   current_stock: number;
   reserved_stock: number;
+  quarantine_stock: number;
+  inTransitQty: number;
   available: number;
   reorder_point: number;
   low: boolean;
@@ -100,6 +105,8 @@ type Movement = {
   size: string;
   type: string;
   qty: number;
+  location_name: string | null;
+  branch_code: string | null;
   ref_order_id: string | null;
   note: string | null;
   actor: string | null;
@@ -109,6 +116,7 @@ type Movement = {
 // ---- GraphQL ------------------------------------------------
 const Q_PRODUCTS = gql`
   query BmsProducts($search: String, $category: String, $limit: Int, $offset: Int) {
+    bmsLocations { id code name branchCode active }
     bmsProducts(search: $search, category: $category, limit: $limit, offset: $offset) {
       total
       items {
@@ -128,9 +136,14 @@ const Q_PRODUCTS = gql`
         vatCategory
         priceTiers { minQty scope size unitPrice discountPct }
         variants {
+          locationId
+          locationName
+          branchCode
           size
           current_stock
           reserved_stock
+          quarantine_stock
+          inTransitQty
           available
           reorder_point
           low
@@ -143,7 +156,7 @@ const Q_PRODUCTS = gql`
   }
 `;
 const Q_CATEGORIES = gql`query { bmsProductCategories { id name } }`;
-const Q_LOW = gql`query { bmsLowStock { sku name size available reorder_point } }`;
+const Q_LOW = gql`query { bmsLowStock { sku name locationId locationName branchCode size available reorder_point } }`;
 const Q_MOVEMENTS = gql`
   query ($sku: String!) {
     bmsStockMovements(sku: $sku, limit: 30) {
@@ -151,6 +164,8 @@ const Q_MOVEMENTS = gql`
       size
       type
       qty
+      location_name
+      branch_code
       ref_order_id
       note
       actor
@@ -198,13 +213,13 @@ const M_GENERATE_BARCODE = gql`
 const M_UPSERT = gql`mutation ($input: BmsProductInput!) { bmsUpsertProduct(input: $input) { sku } }`;
 const M_SET_ACTIVE = gql`mutation ($sku: String!, $active: Boolean!) { bmsSetProductActive(sku: $sku, active: $active) }`;
 const M_ADJUST = gql`
-  mutation ($sku: String!, $size: String!, $delta: Int!) {
-    bmsAdjustStock(sku: $sku, size: $size, delta: $delta) { size available }
+  mutation ($sku: String!, $size: String!, $locationId: ID!, $delta: Int!) {
+    bmsAdjustStock(sku: $sku, size: $size, locationId: $locationId, delta: $delta) { size available }
   }
 `;
 const M_REORDER = gql`
-  mutation ($sku: String!, $size: String!, $rp: Int!) {
-    bmsSetReorderPoint(sku: $sku, size: $size, reorderPoint: $rp) { size low }
+  mutation ($sku: String!, $size: String!, $locationId: ID!, $rp: Int!) {
+    bmsSetReorderPoint(sku: $sku, size: $size, locationId: $locationId, reorderPoint: $rp) { size low }
   }
 `;
 const M_VARIANT_PRICE = gql`
@@ -236,6 +251,9 @@ const MOVE_COLOR: Record<string, string> = {
   RESERVE: "orange",
   RELEASE: "blue",
   FULFILL: "purple",
+  TRANSFER_IN: "cyan",
+  TRANSFER_OUT: "geekblue",
+  QUARANTINE_IN: "red",
 };
 
 const LOW_STOCK_EXPANDED_KEY = "bms_products_lowstock_expanded";
@@ -313,6 +331,8 @@ function ProductsManagement() {
   });
 
   const products: Product[] = data?.bmsProducts?.items || [];
+  const locations: Array<{ id: string; code: string; name: string; branchCode: string; active: boolean }> =
+    data?.bmsLocations || [];
   const total: number = data?.bmsProducts?.total || 0;
   const categories: { id: string; name: string }[] = catData?.bmsProductCategories || [];
   const lowItems: any[] = lowData?.bmsLowStock || [];
@@ -696,10 +716,10 @@ function ProductsManagement() {
                   <Space wrap size={6}>
                     {outOfStockItems.map((x: any) => (
                       <Tag
-                        color="error" key={`${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
+                        color="error" key={`${x.locationId}-${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
                         onClick={() => onSearchChange(x.sku)}
                       >
-                        {t("admin_products.low_item_tag", { name: x.name, size: x.size, available: x.available, rp: x.reorder_point })}
+                        {t("admin_products.low_item_tag", { branch: x.locationName, name: x.name, size: x.size, available: x.available, rp: x.reorder_point })}
                       </Tag>
                     ))}
                   </Space>
@@ -714,10 +734,10 @@ function ProductsManagement() {
                   <Space wrap size={6}>
                     {lowStockItems.map((x: any) => (
                       <Tag
-                        color="warning" key={`${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
+                        color="warning" key={`${x.locationId}-${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
                         onClick={() => onSearchChange(x.sku)}
                       >
-                        {t("admin_products.low_item_tag", { name: x.name, size: x.size, available: x.available, rp: x.reorder_point })}
+                        {t("admin_products.low_item_tag", { branch: x.locationName, name: x.name, size: x.size, available: x.available, rp: x.reorder_point })}
                       </Tag>
                     ))}
                   </Space>
@@ -738,6 +758,7 @@ function ProductsManagement() {
           expandedRowRender: (p: Product) => (
             <ProductDetail
               product={p}
+              locations={locations.filter((location) => location.active)}
               onChanged={refreshAll}
               canAdjust={can("stock.adjust")}
               canEdit={can("product.edit")}
@@ -1219,6 +1240,7 @@ function CategoryManagerModal({
 // ---- Expanded row: inventory editor + movement history ------
 function ProductDetail({
   product,
+  locations,
   onChanged,
   canAdjust,
   canEdit,
@@ -1228,6 +1250,7 @@ function ProductDetail({
   onToggleActive,
 }: {
   product: Product;
+  locations: Array<{ id: string; code: string; name: string; branchCode: string }>;
   onChanged: () => void;
   canAdjust: boolean;
   canEdit: boolean;
@@ -1257,6 +1280,7 @@ function ProductDetail({
   });
 
   const [newSize, setNewSize] = useState<string | undefined>();
+  const [newLocationId, setNewLocationId] = useState<string | undefined>();
   const [newQty, setNewQty] = useState<number>(1);
   const [manualVariant, setManualVariant] = useState<Variant | null>(null);
   const [manualDelta, setManualDelta] = useState<number>(1);
@@ -1275,6 +1299,18 @@ function ProductDetail({
     () => product.variants.reduce((sum, variant) => sum + variant.reserved_stock, 0),
     [product.variants]
   );
+  const totalOnHand = useMemo(
+    () => product.variants.reduce((sum, variant) => sum + variant.current_stock, 0),
+    [product.variants]
+  );
+  const totalQuarantine = useMemo(
+    () => product.variants.reduce((sum, variant) => sum + variant.quarantine_stock, 0),
+    [product.variants]
+  );
+  const totalInTransit = useMemo(
+    () => product.variants.reduce((sum, variant) => sum + variant.inTransitQty, 0),
+    [product.variants]
+  );
   const lowCount = useMemo(
     () => product.variants.filter((variant) => variant.low).length,
     [product.variants]
@@ -1291,9 +1327,11 @@ function ProductDetail({
     void loadReservations({ variables: { sku: product.sku, size } });
   }, [loadReservations, product.sku]);
 
-  const runAdjust = useCallback(async (size: string, delta: number, successText?: string) => {
+  const runAdjust = useCallback(async (
+    locationId: string, size: string, delta: number, successText?: string
+  ) => {
     if (!delta) return;
-    await adjustStockMut({ variables: { sku: product.sku, size, delta } });
+    await adjustStockMut({ variables: { sku: product.sku, locationId, size, delta } });
     message.success(successText || t("admin_products.stock_adjusted"));
     onChanged();
     if (movesCalled) void refetchMoves?.({ sku: product.sku });
@@ -1301,12 +1339,23 @@ function ProductDetail({
 
   const openBulkAdjust = () => {
     setBulkDraft(
-      Object.fromEntries(product.variants.map((variant) => [variant.size, 0]))
+      Object.fromEntries(product.variants.map((variant) => [`${variant.locationId}\u0000${variant.size}`, 0]))
     );
     setBulkOpen(true);
   };
 
   const variantCols = [
+    {
+      title: t("admin_products.col_branch"), key: "branch", width: 190,
+      render: (_: unknown, variant: Variant) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text strong>{variant.locationName || "—"}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {variant.branchCode || "—"}
+          </Typography.Text>
+        </Space>
+      ),
+    },
     {
       title: "Size",
       dataIndex: "size",
@@ -1437,6 +1486,16 @@ function ProductDetail({
       },
     },
     {
+      title: t("admin_products.col_in_transit"), dataIndex: "inTransitQty", width: 110,
+      align: "right" as const,
+      render: (value: number) => value > 0 ? <Tag color="processing">{value}</Tag> : "0",
+    },
+    {
+      title: t("admin_products.col_quarantine"), dataIndex: "quarantine_stock", width: 110,
+      align: "right" as const,
+      render: (value: number) => value > 0 ? <Tag color="error">{value}</Tag> : "0",
+    },
+    {
       title: t("admin_products.col_reorder"), key: "reorder", width: 130,
       render: (_: any, r: Variant) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1449,7 +1508,9 @@ function ProductDetail({
             onBlur={(e) => {
               const rp = Number((e.target as HTMLInputElement).value);
               if (rp !== r.reorder_point) {
-                setReorder({ variables: { sku: product.sku, size: r.size, rp } });
+                setReorder({ variables: {
+                  sku: product.sku, locationId: r.locationId, size: r.size, rp,
+                } });
               }
             }}
           />
@@ -1467,7 +1528,7 @@ function ProductDetail({
               size="small"
               style={{ minWidth: 52 }}
               loading={adjustingStock}
-              onClick={() => runAdjust(v.size, delta)}
+              onClick={() => runAdjust(v.locationId, v.size, delta)}
             >
               {delta > 0 ? `+${delta}` : `${delta}`}
             </Button>
@@ -1491,6 +1552,8 @@ function ProductDetail({
       render: (d: string) => new Date(d).toLocaleString() },
     { title: t("admin_products.col_type"), dataIndex: "type", key: "type", width: 110,
       render: (moveType: string) => <Tag color={MOVE_COLOR[moveType] || "default"}>{moveType}</Tag> },
+    { title: t("admin_products.col_branch"), key: "branch", width: 170,
+      render: (_: unknown, move: Movement) => move.location_name || move.branch_code || "—" },
     { title: "Size", dataIndex: "size", key: "size", width: 60 },
     { title: "Qty", dataIndex: "qty", key: "qty", width: 60, align: "right" as const },
     { title: "Order", dataIndex: "ref_order_id", key: "ref", width: 100,
@@ -1498,7 +1561,11 @@ function ProductDetail({
     { title: t("admin_products.col_actor"), dataIndex: "actor", key: "actor", render: (a: string | null) => a || "—" },
   ];
 
-  const SIZE_OPTS = ["S", "M", "L", "XL", "XXL"].filter((s) => !product.variants.some((v) => v.size === s));
+  const SIZE_OPTS = ["S", "M", "L", "XL", "XXL"].filter((size) =>
+    !newLocationId || !product.variants.some((variant) =>
+      variant.locationId === newLocationId && variant.size === size
+    )
+  );
 
   return (
     <div style={{ display: "grid", gap: 16, padding: 8 }}>
@@ -1551,7 +1618,7 @@ function ProductDetail({
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #d9f7be", borderRadius: 12, background: "#f6ffed" }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_products.stat_total_stock")}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_products.stat_total_available")}</Typography.Text>
               <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1, color: totalAvailable > 0 ? "#389e0d" : "#8c8c8c" }}>
                 {totalAvailable}
               </div>
@@ -1577,6 +1644,18 @@ function ProductDetail({
                   {t("admin_products.stat_reserved", { n: totalReserved })}
                 </Typography.Text>
               )}
+            </div>
+
+            <div style={{ minWidth: 150, padding: "10px 14px", border: "1px solid #bae0ff", borderRadius: 12, background: "#e6f4ff" }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_products.stat_company_stock")}</Typography.Text>
+              <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.1 }}>
+                {totalOnHand + totalQuarantine + totalInTransit}
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {t("admin_products.stat_stock_breakdown", {
+                  onHand: totalOnHand, transit: totalInTransit, quarantine: totalQuarantine,
+                })}
+              </Typography.Text>
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fff" }}>
@@ -1627,6 +1706,15 @@ function ProductDetail({
 
           <Space wrap size={8} style={{ display: canAdjust ? "inline-flex" : "none" }}>
             <Select
+              placeholder={t("admin_products.select_branch")}
+              style={{ width: 190 }}
+              value={newLocationId}
+              onChange={setNewLocationId}
+              options={locations.map((location) => ({
+                value: location.id, label: `${location.name} (${location.branchCode})`,
+              }))}
+            />
+            <Select
               placeholder="size"
               style={{ width: 96 }}
               value={newSize}
@@ -1636,10 +1724,10 @@ function ProductDetail({
             <InputNumber min={1} value={newQty} onChange={(v) => setNewQty(Number(v) || 1)} />
             <Button
               icon={<PlusOutlined />}
-              disabled={!newSize}
+              disabled={!newSize || !newLocationId}
               onClick={async () => {
-                if (!newSize) return;
-                await runAdjust(newSize, newQty, t("admin_products.size_added"));
+                if (!newSize || !newLocationId) return;
+                await runAdjust(newLocationId, newSize, newQty, t("admin_products.size_added"));
                 setNewSize(undefined);
                 setNewQty(1);
               }}
@@ -1653,7 +1741,7 @@ function ProductDetail({
         </div>
 
         <Table
-          rowKey="size"
+          rowKey={(variant: Variant) => `${variant.locationId}:${variant.size}`}
           dataSource={product.variants}
           columns={variantCols}
           pagination={false}
@@ -1716,7 +1804,7 @@ function ProductDetail({
         onCancel={() => setManualVariant(null)}
         onOk={async () => {
           if (!manualVariant || !manualDelta) return;
-          await runAdjust(manualVariant.size, manualDelta);
+          await runAdjust(manualVariant.locationId, manualVariant.size, manualDelta);
           setManualVariant(null);
           setManualDelta(1);
         }}
@@ -1751,8 +1839,11 @@ function ProductDetail({
           }
           setBulkApplying(true);
           try {
-            for (const [size, delta] of entries) {
-              await adjustStockMut({ variables: { sku: product.sku, size, delta: Number(delta) } });
+            for (const [key, delta] of entries) {
+              const [locationId, size] = key.split("\u0000");
+              await adjustStockMut({ variables: {
+                sku: product.sku, locationId, size, delta: Number(delta),
+              } });
             }
             message.success(t("admin_products.bulk_success", { n: entries.length }));
             setBulkOpen(false);
@@ -1771,21 +1862,25 @@ function ProductDetail({
           </Typography.Text>
           {product.variants.map((variant) => (
             <div
-              key={variant.size}
+              key={`${variant.locationId}:${variant.size}`}
               style={{
                 display: "grid",
-                gridTemplateColumns: "72px 1fr 140px",
+                gridTemplateColumns: "180px 72px 1fr 140px",
                 gap: 12,
                 alignItems: "center",
               }}
             >
+              <Typography.Text>{variant.locationName || variant.branchCode || "—"}</Typography.Text>
               <Typography.Text strong>{variant.size}</Typography.Text>
               <Typography.Text type="secondary">
                 {t("admin_products.bulk_row_info", { available: variant.available, reserved: variant.reserved_stock })}
               </Typography.Text>
               <InputNumber
-                value={bulkDraft[variant.size] ?? 0}
-                onChange={(value) => setBulkDraft((prev) => ({ ...prev, [variant.size]: Number(value) || 0 }))}
+                value={bulkDraft[`${variant.locationId}\u0000${variant.size}`] ?? 0}
+                onChange={(value) => setBulkDraft((prev) => ({
+                  ...prev,
+                  [`${variant.locationId}\u0000${variant.size}`]: Number(value) || 0,
+                }))}
                 style={{ width: "100%" }}
               />
             </div>

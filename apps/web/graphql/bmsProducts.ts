@@ -46,9 +46,14 @@ function toGqlError(err: any): never {
 }
 
 const shapeVariant = (r: {
+  location_id?: string;
+  location_name?: string;
+  branch_code?: string;
   size: string;
   current_stock: number;
   reserved_stock: number;
+  quarantine_stock?: number;
+  in_transit_qty?: number;
   reorder_point: number;
   price?: number;
   price_override?: number | null;
@@ -56,9 +61,14 @@ const shapeVariant = (r: {
 }) => {
   const available = Math.max(0, r.current_stock - r.reserved_stock);
   return {
+    locationId: r.location_id ?? null,
+    locationName: r.location_name ?? null,
+    branchCode: r.branch_code ?? null,
     size: r.size,
     current_stock: r.current_stock,
     reserved_stock: r.reserved_stock,
+    quarantine_stock: Number(r.quarantine_stock ?? 0),
+    inTransitQty: Number(r.in_transit_qty ?? 0),
     reorder_point: r.reorder_point,
     available,
     low: available <= r.reorder_point,
@@ -105,7 +115,13 @@ export const bmsProductsResolvers = {
     },
     async bmsLowStock(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
-      return listLowStock(getTenantId(ctx));
+      const rows = await listLowStock(getTenantId(ctx));
+      return rows.map((row) => ({
+        ...row,
+        locationId: row.location_id,
+        locationName: row.location_name,
+        branchCode: row.branch_code,
+      }));
     },
     async bmsStockMovements(
       _p: unknown,
@@ -262,7 +278,7 @@ export const bmsProductsResolvers = {
     },
     async bmsAdjustStock(
       _p: unknown,
-      args: { sku: string; size: string; delta: number; note?: string },
+      args: { sku: string; size: string; delta: number; note?: string; locationId: string },
       ctx: any
     ) {
       await requirePermission(ctx, "stock.adjust");
@@ -275,9 +291,12 @@ export const bmsProductsResolvers = {
           args.delta,
           args.note ?? null,
           `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
-          auth.author_id
+          auth.author_id,
+          args.locationId
         );
-        await audit(ctx, "stock.adjust", args.sku, { size: args.size, delta: args.delta });
+        await audit(ctx, "stock.adjust", args.sku, {
+          locationId: args.locationId, size: args.size, delta: args.delta,
+        });
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);
@@ -285,13 +304,15 @@ export const bmsProductsResolvers = {
     },
     async bmsSetReorderPoint(
       _p: unknown,
-      args: { sku: string; size: string; reorderPoint: number },
+      args: { sku: string; size: string; reorderPoint: number; locationId: string },
       ctx: any
     ) {
       await requirePermission(ctx, "stock.adjust");
       const auth = requireAuth(ctx);
       try {
-        const row = await setReorderPoint(getTenantId(ctx), args.sku, args.size, args.reorderPoint, auth.author_id);
+        const row = await setReorderPoint(
+          getTenantId(ctx), args.sku, args.size, args.reorderPoint, auth.author_id, args.locationId
+        );
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);
