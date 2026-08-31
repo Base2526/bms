@@ -9,7 +9,7 @@
  * no capability row, and an archetype chosen years ago (or none at all).
  *
  * These tests build exactly that shop and sell from it, then build the new ones and check the gates
- * they claim. Two throwaway tenants are created and dropped; no existing shop is touched, because a
+ * they claim. Throwaway tenants are created and dropped; no existing shop is touched, because a
  * test that flips `business_archetype` on a real shop can strand it as a pharmacy (see the note in
  * CLAUDE.local.md — it happened, and it took ten POS tests down with it).
  */
@@ -20,6 +20,11 @@ import { query } from "../apps/web/lib/db.ts";
 import { getClient } from "../apps/web/lib/db.ts";
 import { cancelOrder, createOrder } from "../apps/web/lib/bms/orders.ts";
 import { enqueueKitchenTicketsInTx } from "../apps/web/lib/bms/kitchen.ts";
+import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
+import {
+  getBusinessArchetypeLockState,
+  upsertStoreProfile,
+} from "../apps/web/lib/bms/storeProfile.ts";
 import {
   GATING_CAPABILITIES,
   STORE_CAPABILITIES,
@@ -209,47 +214,146 @@ test("pack conversion is per-product configuration, untouched by any capability"
   assert.equal(await cancelOrder(legacyTenant, order.orderId), true);
 });
 
-test("changing the archetype rewrites nothing a shop already sells with", async () => {
+test("products and fake orders stay editable; the first real order locks the archetype", async () => {
+  const sku = `FAKE-${TAG}-CHANGE`;
+  const [tenantId, locationId] = await makeShop("fashion", [sku]);
   const before = await query<{ current_stock: number; reserved_stock: number }>(
     `SELECT current_stock, reserved_stock FROM bms_inventory
       WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
-    [legacyTenant, LEGACY_SKU, SIZE]
+    [tenantId, sku, SIZE]
   );
-  await query(`UPDATE bms_store_profile SET business_archetype = 'restaurant' WHERE tenant_id = $1`,
-    [legacyTenant]);
+
+  await query(
+    `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, status, total_amount)
+     VALUES ($1, $2, 'test', $3, 'CANCELLED', 0)`,
+    [tenantId, locationId, `FAKE-${TAG}-SEED`]
+  );
+  assert.equal((await getBusinessArchetypeLockState(tenantId)).locked, false);
+  await upsertStoreProfile(tenantId, { businessArchetype: "restaurant" });
 
   // The archetype now says "restaurant", but the product never became a menu item, so it still
   // sells as an ordinary line. An archetype that silently reinterpreted existing stock would be a
   // dropdown that rewrites a shop's inventory meaning.
   assert.equal(
     Number((await query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM bms_product_stock_policies WHERE tenant_id = $1`, [legacyTenant]
+      `SELECT count(*)::text AS n FROM bms_product_stock_policies WHERE tenant_id = $1`, [tenantId]
     )).rows[0].n),
     0
   );
   const order = await createOrder({
-    tenantId: legacyTenant, channel: "web", locationId: legacyLocation,
-    items: [{ sku: LEGACY_SKU, size: SIZE, qty: 1 }],
+    tenantId, channel: "web", locationId,
+    items: [{ sku, size: SIZE, qty: 1 }],
   } as any);
   assert.equal(order.status, "CREATED", JSON.stringify(order));
   if (order.status !== "CREATED") return;
-  assert.equal(await cancelOrder(legacyTenant, order.orderId), true);
+  assert.equal(await cancelOrder(tenantId, order.orderId), true);
   const after = await query<{ current_stock: number; reserved_stock: number }>(
     `SELECT current_stock, reserved_stock FROM bms_inventory
       WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
-    [legacyTenant, LEGACY_SKU, SIZE]
+    [tenantId, sku, SIZE]
   );
   assert.deepEqual(after.rows[0], before.rows[0]);
 
   // …and the capability list still resolves for a shop that has no override rows.
-  const capabilities = await listStoreCapabilities(legacyTenant);
+  const capabilities = await listStoreCapabilities(tenantId);
   assert.equal(capabilities.length, STORE_CAPABILITIES.length);
   assert.ok(capabilities.every((row) => row.source === "PRESET"));
-  await query(`UPDATE bms_store_profile SET business_archetype = 'fashion' WHERE tenant_id = $1`,
-    [legacyTenant]);
+
+  assert.equal((await getBusinessArchetypeLockState(tenantId)).locked, true);
+
+  await assert.rejects(
+    () => upsertStoreProfile(tenantId, { businessArchetype: "fashion" }),
+    /มีออร์เดอร์จริงแล้ว|locked/i
+  );
+  await assert.rejects(
+    () => query(`UPDATE bms_store_profile SET business_archetype = 'fashion' WHERE tenant_id = $1`, [tenantId]),
+    /มีออร์เดอร์จริงแล้ว|locked/i
+  );
+
+  // Idempotent writes and unrelated profile edits remain valid after go-live.
+  await query(`UPDATE bms_store_profile SET business_archetype = 'restaurant' WHERE tenant_id = $1`, [tenantId]);
+
+  const updated = await upsertStoreProfile(tenantId, { businessType: "fashion" });
+  assert.equal(updated.businessType, "fashion");
 });
 
-test("teardown: drop both throwaway shops", async () => {
+test("a concurrent first real order cannot race past the database lock", async () => {
+  const sku = `FAKE-${TAG}-RACE`;
+  const [tenantId, locationId] = await makeShop("fashion", [sku]);
+  const orderClient = await getClient();
+  const profileClient = await getClient();
+  try {
+    await beginTenantTx(orderClient, tenantId);
+    await orderClient.query(
+      `INSERT INTO bms_orders (tenant_id, location_id, channel, status, total_amount)
+       VALUES ($1, $2, 'web', 'PENDING', 0)`,
+      [tenantId, locationId]
+    );
+
+    await beginTenantTx(profileClient, tenantId);
+    let changeSettled = false;
+    const change = profileClient
+      .query(`UPDATE bms_store_profile SET business_archetype = 'restaurant' WHERE tenant_id = $1`, [tenantId])
+      .then(
+        (result) => { changeSettled = true; return result; },
+        (error) => { changeSettled = true; throw error; }
+      );
+
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    assert.equal(changeSettled, false, "the archetype write must wait for the in-flight order transaction");
+    await orderClient.query("COMMIT");
+    await assert.rejects(change, /มีออร์เดอร์จริงแล้ว|locked/i);
+    await profileClient.query("ROLLBACK");
+
+    const profile = await query<{ business_archetype: string }>(
+      `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
+      [tenantId]
+    );
+    assert.equal(profile.rows[0].business_archetype, "fashion");
+  } finally {
+    try { await orderClient.query("ROLLBACK"); } catch {}
+    try { await profileClient.query("ROLLBACK"); } catch {}
+    orderClient.release();
+    profileClient.release();
+  }
+});
+
+test("a missing legacy profile cannot acquire an archetype after real orders exist", async () => {
+  const tenantId = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1, $2) RETURNING id`,
+    [`FAKE ${TAG} profileless`, `fake-${TAG}-profileless-${Date.now()}`]
+  )).rows[0].id;
+  const locationId = (await query<{ id: string }>(
+    `INSERT INTO bms_locations (tenant_id, code, name) VALUES ($1, 'MAIN', $2) RETURNING id`,
+    [tenantId, `FAKE ${TAG} profileless branch`]
+  )).rows[0].id;
+  await query(
+    `INSERT INTO bms_orders (tenant_id, location_id, channel, status, total_amount)
+     VALUES ($1, $2, 'web', 'PENDING', 0)`,
+    [tenantId, locationId]
+  );
+
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_store_profile (tenant_id, business_archetype) VALUES ($1, 'fashion')`,
+      [tenantId]
+    ),
+    /มีออร์เดอร์จริงแล้ว|locked/i
+  );
+  assert.equal(
+    Number((await query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM bms_store_profile WHERE tenant_id = $1`,
+      [tenantId]
+    )).rows[0].n),
+    0,
+    "the rejected AFTER INSERT trigger must roll the profile row back"
+  );
+
+  // Keeping the legacy profile unset is safe; only assigning a new meaning is blocked.
+  await query(`INSERT INTO bms_store_profile (tenant_id, business_archetype) VALUES ($1, NULL)`, [tenantId]);
+});
+
+test("teardown: drop every throwaway shop", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
   );

@@ -1089,7 +1089,7 @@ const TH: ManualContent = {
     "ใช้ส่วนนี้ตอนอธิบายทีม, demo ระบบ, หรือเช็กว่า AI ของร้านควรตอบและพาลูกค้าไปสู่ flow หลังบ้านแบบไหน",
   archetypeAlertMessage: "หลักคิดสำคัญ",
   archetypeAlertDesc:
-    "BMS ไม่ได้จบที่ตอบแชท แต่ต้องพาลูกค้าไปสู่การทำงานจริงของร้าน: รู้จักลูกค้า -> หา/แนะนำสินค้า -> เช็กสต็อก -> สร้างออเดอร์ -> รับชำระ -> ส่งของ -> ติดตามสถานะ และเมื่อของหมดควรเปลี่ยนบทสนทนาเป็น restock queue เพื่อเก็บโอกาสขายกลับมา",
+    "BMS ไม่ได้จบที่ตอบแชท แต่ต้องพาลูกค้าไปสู่การทำงานจริงของร้าน: รู้จักลูกค้า -> หา/แนะนำสินค้า -> เช็กสต็อก -> สร้างออเดอร์ -> รับชำระ -> ส่งของ -> ติดตามสถานะ และเมื่อของหมดควรเปลี่ยนบทสนทนาเป็น restock queue เพื่อเก็บโอกาสขายกลับมา ถ้าร้านเริ่มมีออร์เดอร์จริงแล้ว archetype จะถูกล็อกเพื่อกันคำแนะนำในอนาคตแกว่งตามหลังข้อมูลจริง (ออร์เดอร์ demo ที่มี marker FAKE-* ไม่นับ)",
   archetypeCustomerAskLabel: "ตัวอย่างคำถามลูกค้า",
   archetypeAiReplyLabel: "แนวตอบของ AI",
   archetypeBackendFlowLabel: "flow หลังบ้านที่ควรเกิด",
@@ -2230,7 +2230,7 @@ const EN: ManualContent = {
     "Use this section when briefing your team, demoing the system, or checking how your shop's AI should reply and route customers into the back-office flow.",
   archetypeAlertMessage: "The key principle",
   archetypeAlertDesc:
-    "BMS does not stop at answering a chat — it has to carry the customer into the shop's real work: know the customer -> find/recommend products -> check stock -> create the order -> take payment -> ship -> track status. And when something is out of stock, the conversation should turn into a restock queue so the sale can be recovered.",
+    "BMS does not stop at answering a chat — it has to carry the customer into the shop's real work: know the customer -> find/recommend products -> check stock -> create the order -> take payment -> ship -> track status. And when something is out of stock, the conversation should turn into a restock queue so the sale can be recovered. Once the shop has its first real order, the archetype is locked so future guidance does not drift away from sales history (demo orders marked FAKE-* do not count).",
   archetypeCustomerAskLabel: "Example customer question",
   archetypeAiReplyLabel: "How the AI should answer",
   archetypeBackendFlowLabel: "Back-office flow this should trigger",

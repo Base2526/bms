@@ -3510,6 +3510,7 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsStoreProfile {
     businessArchetype: String
+    businessArchetypeLocked: Boolean!
     businessType: String
     aiLanguage: String!
     aiOrderingStyle: String!

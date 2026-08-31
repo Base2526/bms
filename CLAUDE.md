@@ -76,6 +76,14 @@ is pinned to the entry that must *lead* its answer (`scripts/ai-eval/work-assist
 — retrieving the right guide at rank 6 is a failure, not a pass. Coverage, status vocabulary and the
 regression gates: [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
 
+**Shop archetype lock + bilingual labels (2026-08-31)** — the `9.40`–`9.43` archetype work expanded
+the catalog and now locks `business_archetype` after the tenant's first real order; the dropdown
+labels themselves now live in the shared `th`/`en` dictionary. Demo rows marked with `FAKE-*` stay
+editable, but real order history freezes the preset so AI guidance, onboarding checklists and
+capability defaults cannot drift behind the business record. See
+[ui/shop-signup-archetype-spec.md](docs/ui/shop-signup-archetype-spec.md) and
+[shop-archetype-guide.md](docs/shop-archetype-guide.md).
+
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features

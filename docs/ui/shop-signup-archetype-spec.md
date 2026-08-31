@@ -106,6 +106,9 @@ Use stable snake_case ids so UI labels can evolve without data migrations.
 | `restaurant` | Restaurant | recipes, modifiers, kitchen tickets, and wastage |
 | `other` | Other | no archetype-specific defaults |
 
+The signup UI renders these stable ids through the shared `shop_archetypes.*` labels in
+`apps/web/i18n/{th,en}.ts`, so the visible text can stay bilingual without changing data.
+
 ## Data model
 
 ### Pending signup
@@ -265,8 +268,11 @@ This signup field should not:
 - replace plan selection; or
 - encode multiple simultaneous business models per tenant.
 
-If a tenant later changes business direction, editing `business_archetype` should only affect
-future recommendations/onboarding helpers, not mutate historical orders or catalog data.
+Before a tenant has its first real order, editing `business_archetype` affects future
+recommendations, onboarding helpers and capability presets without mutating catalog or stock data.
+After that boundary it is immutable at both the service and database layers; a genuine business
+model migration needs an explicit, reviewed migration rather than an ordinary Settings edit.
+Demo-seed orders carrying the reserved `FAKE-*` customer marker do not establish the lock.
 
 ## Rollout plan
 
@@ -274,7 +280,8 @@ future recommendations/onboarding helpers, not mutate historical orders or catal
 2. Extend `bmsSignup` + `signupShop()` validation.
 3. Extend verification flow to write the initial store profile.
 4. Update `/shop-signup` UI with the optional field.
-5. Update Settings / Store Profile UI to display and edit the archetype.
+5. Update Settings / Store Profile UI to display and edit the archetype before its first real order,
+   then show the locked state.
 6. Wire onboarding/sample-data recommendations to the new field.
 
 ## Acceptance criteria
@@ -285,3 +292,5 @@ future recommendations/onboarding helpers, not mutate historical orders or catal
 - AI/store-profile behavior keeps its current broad `business_type` compatibility.
 - Onboarding can branch its tips/sample data from `business_archetype`.
 - `restock subscriptions` are explicitly highlighted for suitable archetypes.
+- Products, stock and `FAKE-*` demo orders do not lock the field; the first real order does.
+- The UI disables the field after locking, and both the service and database reject bypass attempts.

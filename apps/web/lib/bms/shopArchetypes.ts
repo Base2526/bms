@@ -16,6 +16,37 @@ export const SHOP_ARCHETYPE_OPTIONS = [
 
 export type ShopArchetype = typeof SHOP_ARCHETYPE_OPTIONS[number]["value"];
 
+type Translate = (key: string) => string;
+
+export function localizedShopArchetypeOptions(t: Translate): Array<{ value: ShopArchetype; label: string }> {
+  const labels: Record<ShopArchetype, string> = {
+    mini_mart: t("shop_archetypes.mini_mart"),
+    fashion: t("shop_archetypes.fashion"),
+    home_kitchen: t("shop_archetypes.home_kitchen"),
+    beauty_personal_care: t("shop_archetypes.beauty_personal_care"),
+    food_beverage: t("shop_archetypes.food_beverage"),
+    gadgets_accessories: t("shop_archetypes.gadgets_accessories"),
+    b2b_wholesale: t("shop_archetypes.b2b_wholesale"),
+    gifts_seasonal: t("shop_archetypes.gifts_seasonal"),
+    pharmacy: t("shop_archetypes.pharmacy"),
+    pet_supply: t("shop_archetypes.pet_supply"),
+    building_materials: t("shop_archetypes.building_materials"),
+    restaurant: t("shop_archetypes.restaurant"),
+    other: t("shop_archetypes.other"),
+  };
+  return SHOP_ARCHETYPE_OPTIONS.map(({ value }) => ({ value, label: labels[value] }));
+}
+
+export function localizedShopArchetypeLabel(
+  value: string | null | undefined,
+  t: Translate
+): string {
+  const archetype = normalizeShopArchetype(value);
+  if (!archetype) return t("shop_archetypes.general_not_set");
+  return localizedShopArchetypeOptions(t).find((option) => option.value === archetype)?.label
+    ?? t("shop_archetypes.general_not_set");
+}
+
 export const SHOP_ARCHETYPE_SET = new Set<string>(SHOP_ARCHETYPE_OPTIONS.map((x) => x.value));
 
 export function normalizeShopArchetype(value: string | null | undefined): ShopArchetype | null {

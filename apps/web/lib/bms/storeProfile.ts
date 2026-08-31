@@ -7,6 +7,7 @@
 // ชื่อร้าน = bms_tenants.name (ไม่ใช่ field ในนี้แล้ว — ดู migration 7.17)
 // =============================================================
 
+import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { getOrSetCache, invalidateCache } from "@/lib/cache";
 import { beginTenantTx } from "./tenant";
@@ -80,6 +81,11 @@ export type StoreProfile = {
   emailFooterText: string | null;  // ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (7.19/7.20)
 };
 
+export type BusinessArchetypeLockState = {
+  locked: boolean;
+  reason: string | null;
+};
+
 const EMPTY: StoreProfile = {
   businessType: null,
   businessArchetype: null,
@@ -113,7 +119,11 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
 }
 
 async function fetchStoreProfile(tenantId: string): Promise<StoreProfile> {
-  const res = await query<any>(
+  return fetchStoreProfileWithClient(tenantId);
+}
+
+async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient): Promise<StoreProfile> {
+  const sql =
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
             about, address, phone, contact_email, website, logo_url, tax_id,
@@ -123,9 +133,8 @@ async function fetchStoreProfile(tenantId: string): Promise<StoreProfile> {
             shipping_mode, shipping_origin_province, shipping_origin_postcode,
             shipping_zone_rates, shipping_weight_tiers,
             email_theme_color, email_footer_text
-       FROM bms_store_profile WHERE tenant_id = $1`,
-    [tenantId]
-  );
+       FROM bms_store_profile WHERE tenant_id = $1`;
+  const res = client ? await client.query<any>(sql, [tenantId]) : await query<any>(sql, [tenantId]);
   const r = res.rows[0];
   if (!r) return { ...EMPTY };
   return {
@@ -174,66 +183,104 @@ const AI_LANGUAGES = new Set(["th", "en", "th-en"]);
 const AI_ORDERING_STYLES = new Set(["catalog_variant", "simple_catalog", "inquiry_first"]);
 const AI_REQUIRED_FIELDS = new Set(["product", "size", "qty"]);
 const SHIPPING_MODES = new Set(["flat", "zone", "carrier"]);
+const ARCHETYPE_LOCK_REASON =
+  "ร้านนี้มีออร์เดอร์จริงแล้ว จึงล็อก Shop archetype ไว้เพื่อกัน AI / checklist / preset เปลี่ยนตามหลังข้อมูลจริง";
+const REAL_ORDER_EXISTS_SQL = `
+  SELECT EXISTS (
+    SELECT 1
+      FROM bms_orders
+     WHERE tenant_id = $1
+       AND (customer_ref IS NULL OR customer_ref NOT LIKE 'FAKE-%')
+  ) AS has_orders`;
+
+async function businessArchetypeLockState(
+  tenantId: string,
+  client?: PoolClient
+): Promise<BusinessArchetypeLockState> {
+  const result = client
+    ? await client.query<{ has_orders: boolean }>(REAL_ORDER_EXISTS_SQL, [tenantId])
+    : await query<{ has_orders: boolean }>(REAL_ORDER_EXISTS_SQL, [tenantId]);
+  const locked = Boolean(result.rows[0]?.has_orders);
+  return { locked, reason: locked ? ARCHETYPE_LOCK_REASON : null };
+}
+
+export async function getBusinessArchetypeLockState(tenantId: string): Promise<BusinessArchetypeLockState> {
+  return businessArchetypeLockState(tenantId);
+}
 
 export async function upsertStoreProfile(
   tenantId: string,
   input: StoreProfileInput,
   editorId?: string | null
 ): Promise<StoreProfile> {
-  const cur = await getStoreProfile(tenantId);
-  const merged: StoreProfile = { ...cur, ...input };
-
-  const rawBusinessArchetype = merged.businessArchetype?.trim?.() ?? merged.businessArchetype;
-  const normalizedBusinessArchetype = normalizeShopArchetype(rawBusinessArchetype);
-  if (rawBusinessArchetype && !normalizedBusinessArchetype) {
-    throw new Error("archetype ร้านไม่ถูกต้อง");
-  }
-  merged.businessArchetype = normalizedBusinessArchetype;
-  if (merged.businessType != null && !BUSINESS_TYPES.has(merged.businessType)) {
-    throw new Error("ประเภทร้านไม่ถูกต้อง");
-  }
-  if (!AI_LANGUAGES.has(merged.aiLanguage)) throw new Error("ภาษาหลักของ AI ไม่ถูกต้อง");
-  if (!isReceiptLanguageMode(merged.receiptLanguageMode)) throw new Error("ภาษาใบเสร็จไม่ถูกต้อง");
-  if (!AI_ORDERING_STYLES.has(merged.aiOrderingStyle)) throw new Error("รูปแบบการรับออร์เดอร์ไม่ถูกต้อง");
-  merged.aiRequiredFields = Array.from(new Set(merged.aiRequiredFields)).filter((field) => AI_REQUIRED_FIELDS.has(field));
-  if (!merged.aiRequiredFields.includes("product") || !merged.aiRequiredFields.includes("qty")) {
-    throw new Error("ข้อมูลที่ต้องถามต้องมีสินค้าและจำนวน");
-  }
-  merged.aiHandoffAfterFailedTurns = Math.trunc(Number(merged.aiHandoffAfterFailedTurns));
-  if (merged.aiHandoffAfterFailedTurns < 1 || merged.aiHandoffAfterFailedTurns > 10) {
-    throw new Error("จำนวนรอบก่อนส่งต่อแอดมินต้องอยู่ระหว่าง 1–10");
-  }
-  // Drop unknown carrier codes rather than throwing — same forgiving filter as aiRequiredFields.
-  merged.enabledCarriers = Array.from(new Set(merged.enabledCarriers ?? [])).filter(isCarrier);
-
-  if (!SHIPPING_MODES.has(merged.shippingMode)) throw new Error("รูปแบบการคิดค่าส่งไม่ถูกต้อง");
-  // Normalize/validate through the same parsers the rate engine uses, so what we store
-  // is exactly what quoteShipping() will accept — no silently-ignored rows in the DB.
-  merged.shippingZoneRates = parseZoneRates(merged.shippingZoneRates);
-  merged.shippingWeightTiers = parseWeightTiers(merged.shippingWeightTiers);
-  if (merged.shippingMode === "zone" && (merged.shippingZoneRates as unknown[]).length === 0) {
-    throw new Error("โหมดคิดค่าส่งตามโซน ต้องตั้งเรตอย่างน้อย 1 โซน");
-  }
-  merged.shippingOriginProvince = normalizeProvince(merged.shippingOriginProvince);
-  if (merged.shippingOriginPostcode != null) {
-    const pc = String(merged.shippingOriginPostcode).trim();
-    if (pc && !/^\d{5}$/.test(pc)) throw new Error("รหัสไปรษณีย์ต้นทางต้องเป็นเลข 5 หลัก");
-    merged.shippingOriginPostcode = pc || null;
-  }
-  if (merged.emailThemeColor != null) {
-    const color = merged.emailThemeColor.trim();
-    if (color && !HEX_COLOR_RE.test(color)) {
-      throw new Error("สีธีมอีเมลต้องเป็นรหัสสี hex แบบ #RRGGBB (เช่น #1677ff)");
-    }
-    merged.emailThemeColor = color || null;
-  }
-  if (merged.emailFooterText != null) {
-    merged.emailFooterText = merged.emailFooterText.trim().slice(0, 300) || null;
-  }
-
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
+    // The tenant row is also referenced by every order. FOR UPDATE serializes this
+    // decision with a concurrent order INSERT, so "first real order" is an exact boundary.
+    const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+    if (!tenant.rowCount) throw new Error("ไม่พบร้านที่ระบุ");
+
+    // Merge from the transaction's fresh row, never from the read-through cache. Otherwise
+    // an unrelated concurrent save can write a stale archetype back over the locked value.
+    const cur = await fetchStoreProfileWithClient(tenantId, client);
+    const merged: StoreProfile = { ...cur, ...input };
+
+    const rawBusinessArchetype = merged.businessArchetype?.trim?.() ?? merged.businessArchetype;
+    const normalizedBusinessArchetype = normalizeShopArchetype(rawBusinessArchetype);
+    if (rawBusinessArchetype && !normalizedBusinessArchetype) {
+      throw new Error("archetype ร้านไม่ถูกต้อง");
+    }
+    merged.businessArchetype = normalizedBusinessArchetype;
+    const currentArchetype = normalizeShopArchetype(cur.businessArchetype);
+    if (currentArchetype !== merged.businessArchetype) {
+      const archetypeLock = await businessArchetypeLockState(tenantId, client);
+      if (archetypeLock.locked) {
+        throw new Error(archetypeLock.reason ?? ARCHETYPE_LOCK_REASON);
+      }
+    }
+    if (merged.businessType != null && !BUSINESS_TYPES.has(merged.businessType)) {
+      throw new Error("ประเภทร้านไม่ถูกต้อง");
+    }
+    if (!AI_LANGUAGES.has(merged.aiLanguage)) throw new Error("ภาษาหลักของ AI ไม่ถูกต้อง");
+    if (!isReceiptLanguageMode(merged.receiptLanguageMode)) throw new Error("ภาษาใบเสร็จไม่ถูกต้อง");
+    if (!AI_ORDERING_STYLES.has(merged.aiOrderingStyle)) throw new Error("รูปแบบการรับออร์เดอร์ไม่ถูกต้อง");
+    merged.aiRequiredFields = Array.from(new Set(merged.aiRequiredFields)).filter((field) => AI_REQUIRED_FIELDS.has(field));
+    if (!merged.aiRequiredFields.includes("product") || !merged.aiRequiredFields.includes("qty")) {
+      throw new Error("ข้อมูลที่ต้องถามต้องมีสินค้าและจำนวน");
+    }
+    merged.aiHandoffAfterFailedTurns = Math.trunc(Number(merged.aiHandoffAfterFailedTurns));
+    if (merged.aiHandoffAfterFailedTurns < 1 || merged.aiHandoffAfterFailedTurns > 10) {
+      throw new Error("จำนวนรอบก่อนส่งต่อแอดมินต้องอยู่ระหว่าง 1–10");
+    }
+    // Drop unknown carrier codes rather than throwing — same forgiving filter as aiRequiredFields.
+    merged.enabledCarriers = Array.from(new Set(merged.enabledCarriers ?? [])).filter(isCarrier);
+
+    if (!SHIPPING_MODES.has(merged.shippingMode)) throw new Error("รูปแบบการคิดค่าส่งไม่ถูกต้อง");
+    // Normalize/validate through the same parsers the rate engine uses, so what we store
+    // is exactly what quoteShipping() will accept — no silently-ignored rows in the DB.
+    merged.shippingZoneRates = parseZoneRates(merged.shippingZoneRates);
+    merged.shippingWeightTiers = parseWeightTiers(merged.shippingWeightTiers);
+    if (merged.shippingMode === "zone" && (merged.shippingZoneRates as unknown[]).length === 0) {
+      throw new Error("โหมดคิดค่าส่งตามโซน ต้องตั้งเรตอย่างน้อย 1 โซน");
+    }
+    merged.shippingOriginProvince = normalizeProvince(merged.shippingOriginProvince);
+    if (merged.shippingOriginPostcode != null) {
+      const pc = String(merged.shippingOriginPostcode).trim();
+      if (pc && !/^\d{5}$/.test(pc)) throw new Error("รหัสไปรษณีย์ต้นทางต้องเป็นเลข 5 หลัก");
+      merged.shippingOriginPostcode = pc || null;
+    }
+    if (merged.emailThemeColor != null) {
+      const color = merged.emailThemeColor.trim();
+      if (color && !HEX_COLOR_RE.test(color)) {
+        throw new Error("สีธีมอีเมลต้องเป็นรหัสสี hex แบบ #RRGGBB (เช่น #1677ff)");
+      }
+      merged.emailThemeColor = color || null;
+    }
+    if (merged.emailFooterText != null) {
+      merged.emailFooterText = merged.emailFooterText.trim().slice(0, 300) || null;
+    }
+
     await client.query(
       `INSERT INTO bms_store_profile (
         tenant_id, business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,

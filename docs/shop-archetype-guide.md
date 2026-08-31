@@ -1,12 +1,12 @@
 # คู่มือประเภทร้าน (Business Archetype) — BMS
 
-> อัปเดตตาม `shopArchetypes.ts` + migration `7.42–7.44`, `9.40`
+> อัปเดตตาม `shopArchetypes.ts` + migration `7.42–7.44`, `9.40`, `9.43`
 
 ---
 
 ## ประเภทร้านคืออะไร
 
-**Business Archetype** คือประเภทร้านที่เลือกตอนสมัคร (หรือแก้ทีหลังในหน้า Settings)  
+**Business Archetype** คือประเภทร้านที่เลือกตอนสมัคร (หรือแก้ทีหลังในหน้า Settings)
 ระบบใช้ค่านี้เพื่อ:
 
 - เตรียม **onboarding checklist** ที่เหมาะกับร้าน
@@ -14,8 +14,10 @@
 - เลือก **capability preset** ที่ร้านต้องใช้ (เช่น lot, recipe, modifier, serial)
 - แนะนำฟีเจอร์ที่เหมาะสม เช่น restock subscriptions
 
-> **หมายเหตุสำคัญ:** ประเภทร้านเป็นแค่ "จุดเริ่มต้น" — ไม่ได้ล็อกสิทธิ์ ไม่ซ่อนฟีเจอร์  
-> เปลี่ยนประเภทร้านทีหลังไม่กระทบ order, stock, หรือข้อมูลเดิมแม้แต่รายการเดียว
+> **หมายเหตุสำคัญ:** ประเภทร้านเป็น "จุดเริ่มต้น" — ไม่ได้เขียนทับสินค้า stock หรือ order เดิม
+> แต่เมื่อร้านมีออร์เดอร์จริงรายการแรก ระบบจะล็อก archetype เพื่อไม่ให้ AI, checklist และ
+> capability preset เปลี่ยนความหมายตามหลังประวัติการขาย ข้อมูล demo ที่มี marker `FAKE-*`
+> ไม่นับเป็นออร์เดอร์จริงและไม่ทำให้ล็อก
 
 ---
 
@@ -28,8 +30,10 @@
 
 ### 2. แก้ทีหลัง (Settings → Store Profile)
 - ไปที่ **Admin → Settings → ข้อมูลร้าน (Store Profile)**
-- เปลี่ยนประเภทร้านได้เสมอ
-- การเปลี่ยนจะปรับ AI policy และ checklist เท่านั้น — ไม่แตะ catalog หรือ stock
+- เปลี่ยนประเภทร้านได้ตราบใดที่ร้านยังไม่มีออร์เดอร์จริง แม้จะเพิ่มสินค้าและ stock แล้วก็ตาม
+- หลังมีออร์เดอร์จริง ช่องนี้จะถูกปิด และ backend/ฐานข้อมูลจะปฏิเสธการเปลี่ยนด้วย
+- การเปลี่ยนก่อนล็อกจะปรับ AI policy, checklist และ capability preset แต่ไม่แตะ catalog หรือ stock
+- ถ้าเลือกผิดหลังล็อก ต้องแก้ผ่านกระบวนการ migration ที่ตรวจผลกระทบโดยผู้ดูแลระบบ ไม่ควรแก้ SQL ข้าม guard
 
 ---
 
@@ -331,21 +335,23 @@
 
 ## ตารางสรุปทุกประเภท
 
-| ประเภทร้าน | ID | business_type | Restock Emphasis | Sales Motion |
-|---|---|---|---|---|
-| Mini Mart / Grocery | `mini_mart` | general | ✅ | quick_replenishment |
-| Fashion & Apparel | `fashion` | fashion | ✅ | variant_fit |
-| Home & Kitchen | `home_kitchen` | home | ✅ | use_case_comparison |
-| Beauty & Personal Care | `beauty_personal_care` | beauty | ✅ | consultative_routine |
-| Food & Beverage | `food_beverage` | food | — | menu_fast_checkout |
-| Gadgets & Accessories | `gadgets_accessories` | electronics | ✅ | compatibility_bundle |
-| B2B / Wholesale | `b2b_wholesale` | general | — | bulk_quote_reorder |
-| Gifts & Seasonal | `gifts_seasonal` | general | — | occasion_budget |
-| Pharmacy | `pharmacy` | general | — | named_product_or_pharmacist |
-| Pet Supply | `pet_supply` | general | ✅ | pet_need_replenishment |
-| Building Materials | `building_materials` | home | ✅ | spec_quantity_quote |
-| Restaurant | `restaurant` | food | — | menu_kitchen_checkout |
-| Other | `other` | general | — | catalog_guided |
+ชื่อที่เห็นใน UI มาจาก shared i18n `shop_archetypes.*` ดังนั้นชื่อภาษาอังกฤษ/ไทยอาจเปลี่ยนได้ในอนาคต แต่ `ID` ด้านล่างต้องคงเดิมเสมอ
+
+| ประเภทร้าน | ชื่อภาษาไทยใน UI | ID | business_type | Restock Emphasis | Sales Motion |
+|---|---|---|---|---|---|
+| Mini Mart / Grocery | มินิมาร์ท / ร้านขายของชำ | `mini_mart` | general | ✅ | quick_replenishment |
+| Fashion & Apparel | แฟชั่นและเครื่องแต่งกาย | `fashion` | fashion | ✅ | variant_fit |
+| Home & Kitchen | ของใช้ในบ้านและเครื่องครัว | `home_kitchen` | home | ✅ | use_case_comparison |
+| Beauty & Personal Care | ความงามและของใช้ส่วนตัว | `beauty_personal_care` | beauty | ✅ | consultative_routine |
+| Food & Beverage | อาหารและเครื่องดื่ม | `food_beverage` | food | — | menu_fast_checkout |
+| Gadgets & Accessories | แก็ดเจ็ตและอุปกรณ์เสริม | `gadgets_accessories` | electronics | ✅ | compatibility_bundle |
+| B2B / Wholesale | ธุรกิจ B2B / ขายส่ง | `b2b_wholesale` | general | — | bulk_quote_reorder |
+| Gifts & Seasonal | ของขวัญและสินค้าตามเทศกาล | `gifts_seasonal` | general | — | occasion_budget |
+| Pharmacy | ร้านขายยา | `pharmacy` | general | — | named_product_or_pharmacist |
+| Pet Supply | สินค้าและอุปกรณ์สัตว์เลี้ยง | `pet_supply` | general | ✅ | pet_need_replenishment |
+| Building Materials | วัสดุก่อสร้าง | `building_materials` | home | ✅ | spec_quantity_quote |
+| Restaurant | ร้านอาหาร | `restaurant` | food | — | menu_kitchen_checkout |
+| Other | อื่น ๆ | `other` | general | — | catalog_guided |
 
 ---
 
@@ -366,7 +372,7 @@
 | `apps/web/lib/bms/shopArchetypes.ts` | ค่า archetype ทั้งหมด + commerce policy + checklist keys |
 | `docs/ui/shop-signup-archetype-spec.md` | spec ครบถ้วนของ feature นี้ |
 | `apps/web/lib/bms/storeCapabilities.ts` | capability preset ตามแต่ละ archetype |
-| `apps/web/i18n/th.ts` | ข้อความ checklist ภาษาไทย |
+| `apps/web/i18n/{th,en}.ts` | ข้อความ checklist และ labels ภาษาไทย/อังกฤษ |
 | `db/migrations/7.42–7.44, 9.40` | migration ที่เกี่ยวข้อง |
 | `apps/web/app/(auth)/shop-signup/page.tsx` | UI หน้าสมัครร้าน |
 | `apps/web/app/(admin)/admin/settings/StoreProfileCard.tsx` | UI แก้ store profile |
