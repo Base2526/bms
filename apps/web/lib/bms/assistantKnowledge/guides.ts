@@ -224,6 +224,109 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: lists(["ใช้ counted − snapshot ไม่ใช่เขียนยอด absolute", "ห้าม apply จนต่ำกว่าสต็อกที่จอง"], ["Apply counted minus snapshot, not an absolute overwrite.", "Cannot apply below reserved stock."]), relatedCapabilityIds: ["inventory.branch"],
   },
   {
+    id: "inventory.stock-models", module: "inventory", pageId: "stock-models", route: "/admin/stock-models",
+    title: both("ตั้งรูปแบบสต็อกของสินค้า", "Set a product's stock model"),
+    summary: both("เปิดความสามารถที่ร้านต้องใช้ แล้วบอกว่าสินค้าแต่ละตัวถูกตัดออกจากชั้นอย่างไร", "Turn on the capabilities this shop needs, then say how each product leaves the shelf."),
+    aliases: aliases([
+      "รูปแบบสต็อก", "สูตรอาหาร", "ตั้งสูตร", "ตัดวัตถุดิบ", "ตัวเลือกเมนู", "modifier", "หวานน้อย",
+      "ขายตามน้ำหนัก", "สินค้าชั่งขาย", "บาร์โค้ดเครื่องชั่ง", "หน่วยฐาน", "ความสามารถของร้าน",
+      "เปิดความสามารถ", "ตั้ง station ครัว",
+    ], [
+      "stock model", "recipe", "set a recipe", "ingredient deduction", "menu modifier", "modifier",
+      "sell by weight", "weighed product", "scale barcode", "base unit", "shop capabilities",
+      "enable capability", "kitchen station",
+    ]), requiredPermissions: ["product.view"],
+    prerequisites: lists(["สินค้ามีอยู่ในแคตตาล็อกแล้ว", "แก้ไขต้องมีสิทธิ์ product.edit"], ["The product already exists in the catalog.", "Editing needs the product.edit permission."]),
+    steps: lists([
+      "เปิดความสามารถที่ร้านต้องใช้ในการ์ดด้านบน (ค่าเริ่มต้นมาจากประเภทร้าน)",
+      "ค้นและเลือกสินค้า",
+      "เลือกวิธีตัดสต็อก หน่วยฐาน และการติดตามล็อต/วันหมดอายุ",
+      "ถ้าเป็นเมนู ให้เพิ่มสูตรต่อไซซ์ แล้วเพิ่มตัวเลือกที่เพิ่ม/ลดวัตถุดิบ",
+      "ถ้าขายตามน้ำหนัก ให้ผูกรหัสสินค้าบนเครื่องชั่งกับไซซ์ที่รับกรัม",
+    ], [
+      "Turn on the capabilities this shop needs in the top card (defaults follow the shop type).",
+      "Search and select the product.",
+      "Choose how stock leaves, the base unit, and lot/expiry tracking.",
+      "For a menu item, add a recipe per size, then modifiers that add or remove ingredients.",
+      "For a weighed product, map the scale item code to the size that receives the grams.",
+    ]),
+    warnings: lists([
+      "แก้สูตรมีผลกับบิลใหม่เท่านั้น บิลเดิมถือ snapshot ของส่วนประกอบที่ตัดจริงตอนขาย",
+      "สต็อกถือเป็นจำนวนเต็มหน่วยฐานเสมอ หน่วยที่แสดงเปลี่ยนแค่สิ่งที่พนักงานอ่าน",
+      "รหัสเครื่องชั่งซ้ำในร้านเดียวกันไม่ได้ และใช้ได้เฉพาะสินค้าที่ตัดแบบชั่งขายหน่วยฐานกรัม",
+    ], [
+      "Editing a recipe affects future bills only; an existing bill keeps the snapshot of what it actually consumed.",
+      "Stock is always held in whole base units; the display unit changes only what staff read.",
+      "A scale item code is unique per shop and only valid on a weighed product whose base unit is grams.",
+    ]), relatedCapabilityIds: ["inventory.stock-model"],
+  },
+  {
+    id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",
+    title: both("ตัดของเสียออกจากสต็อก", "Write off wasted stock"),
+    summary: both("ตัดของที่ขายต่อไม่ได้ พร้อมบันทึก movement และ audit ไว้ทุกครั้ง", "Write off stock that can no longer be sold, with a movement and an audit entry every time."),
+    aliases: aliases([
+      "ของเสีย", "ตัดของเสีย", "ของหมดอายุ", "ของเน่า", "ของแตก", "ของหาย", "ทิ้งของ", "ตัดทิ้ง",
+      "ของชำรุด",
+    ], [
+      "wastage", "write off stock", "expired goods", "spoiled stock", "broken stock", "damaged goods",
+      "throw away stock", "shrinkage",
+    ]), requiredPermissions: ["product.view"],
+    prerequisites: lists(["ตัดของเสียจริงต้องมีสิทธิ์ stock.adjust", "ของที่จะตัดต้องยังไม่ถูกจอง"], ["Writing anything off needs the stock.adjust permission.", "The stock being written off must not be reserved."]),
+    steps: lists([
+      "ค้นและเลือกสินค้า",
+      "เลือกสาขาและไซซ์ที่ของเสียอยู่",
+      "ใส่จำนวนและเหตุผล",
+      "ผูกเลขบิลถ้าของเสียเกิดจากบิลใดบิลหนึ่ง",
+      "กดตัดออกจากสต็อก แล้วตรวจในประวัติ",
+    ], [
+      "Search and select the product.",
+      "Pick the branch and size holding the wasted stock.",
+      "Enter the quantity and the reason.",
+      "Link an order id when the waste came from one bill.",
+      "Write it off, then check it in the history.",
+    ]),
+    warnings: lists([
+      "การตัดของเสียย้อนกลับเองไม่ได้ ถ้าใส่ผิดต้องปรับสต็อกกลับแล้วอธิบายในเหตุผล",
+      "ตัดของเสียไม่ใช่การคืนของ ของที่ลูกค้าคืนให้เดินเส้นทางคืนสินค้า",
+    ], [
+      "A write-off cannot undo itself; a wrong entry needs a compensating stock adjustment with the reason stated.",
+      "Wastage is not a return; goods a customer brings back go through the return flow.",
+    ]), relatedCapabilityIds: ["inventory.wastage-ledger"],
+  },
+  {
+    id: "kitchen.board", module: "kitchen", pageId: "kitchen", route: "/admin/kitchen",
+    title: both("เดินรายการบนกระดานครัว", "Move tickets on the kitchen board"),
+    summary: both("ดูรายการที่เครื่องขายส่งเข้าครัวแยกตาม station แล้วเลื่อนสถานะจนเสิร์ฟ", "See what the register sent to the kitchen by station, and move each ticket through to served."),
+    aliases: aliases([
+      "กระดานครัว", "คิวครัว", "รายการเข้าครัว", "ออเดอร์ครัว", "station ครัว", "ทำอาหาร",
+      "พร้อมเสิร์ฟ", "เสิร์ฟแล้ว", "ร้านอาหาร",
+    ], [
+      "kitchen board", "kitchen queue", "kitchen tickets", "kitchen orders", "kitchen station",
+      "preparing", "ready to serve", "served", "restaurant",
+    ]), requiredPermissions: ["order.view"],
+    prerequisites: lists(["ร้านเปิดความสามารถคิวครัว", "สินค้าที่ต้องเข้าครัวตั้ง station ไว้แล้วที่รูปแบบสต็อก"], ["The shop has the kitchen workflow capability on.", "Products that go to the kitchen have a station set in their stock model."]),
+    steps: lists([
+      "เลือก station ที่รับผิดชอบ หรือดูทุก station",
+      "รายการใหม่กด เริ่มทำ",
+      "ทำเสร็จกด พร้อมเสิร์ฟ",
+      "ส่งถึงลูกค้าแล้วกด เสิร์ฟแล้ว",
+    ], [
+      "Pick the station you cover, or watch all of them.",
+      "Press start on a new ticket.",
+      "Mark it ready when the food is done.",
+      "Mark it served once it reaches the customer.",
+    ]),
+    warnings: lists([
+      "การเลื่อนสถานะไม่ขยับสต็อก วัตถุดิบถูกตัดตั้งแต่ตอนเปิดบิลแล้ว",
+      "ยกเลิกรายการบนกระดานไม่ใช่การยกเลิกบิล เงินและสต็อกยังอยู่ที่บิลเดิม",
+      "เลื่อนสถานะต้องมีสิทธิ์ order.ship ไม่ใช่แค่ดูออร์เดอร์ได้",
+    ], [
+      "Moving a ticket never moves stock; ingredients left when the bill was created.",
+      "Cancelling a ticket is not cancelling the bill; the money and the stock stay with the bill.",
+      "Moving a ticket needs the order.ship permission, not just order.view.",
+    ]), relatedCapabilityIds: ["kitchen.workflow"],
+  },
+  {
     id: "orders.follow-lifecycle", module: "orders", pageId: "orders", route: "/admin/orders",
     title: both("ติดตามสถานะออร์เดอร์", "Follow an order lifecycle"),
     summary: both("ตรวจรายการ ราคา การชำระ แพ็ก และจัดส่งจากออร์เดอร์เดียว", "Review lines, price, payment, packing, and shipping from one order."),

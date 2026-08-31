@@ -13,6 +13,7 @@ import { getClient, query } from "@/lib/db";
 import type { Channel } from "./pipeline";
 import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
+import { cancelKitchenTicketsForOrderInTx } from "./kitchen";
 import { beginTenantTx } from "./tenant";
 import { resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
@@ -67,6 +68,11 @@ import {
   type CustomerChannelIdentity,
 } from "./customerIdentity";
 import { validateOrderItems } from "./orderValidation";
+import {
+  resolveStockConsumptionInTx,
+  snapshotOrderItemConsumptionInTx,
+  type ResolvedStockConsumption,
+} from "./stockConsumption";
 export { validateOrderItems } from "./orderValidation";
 
 /**
@@ -82,6 +88,8 @@ export type OrderItemInput = {
   packUnitName?: string | null;
   packQty?: number | null;
   packUnitPrice?: number | null;
+  /** Server-validated menu modifier codes. They affect stock, never price authority. */
+  modifierCodes?: string[] | null;
 };
 
 export type CreateOrderInput = {
@@ -163,6 +171,7 @@ export type CreatedLine = {
   packUnitName?: string | null;
   packQty?: number | null;
   packUnitPrice?: number | null;
+  modifierCodes?: string[] | null;
   /** snapshot ประเภท VAT ตอนขาย — สินค้าเปลี่ยนประเภททีหลังไม่กระทบใบที่ออกไปแล้ว */
   vatCategory?: string | null;
 };
@@ -216,7 +225,10 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   for (const it of items) {
     // DB ใช้ selling unit ที่ normalize แล้วเป็นส่วนหนึ่งของ unique key ด้วย
     // จึงต้องรวม BASE/null และ pack code ต่าง case ตั้งแต่ก่อน reserve/insert
-    const key = `${it.sku}__${it.size}__${normalizePackCode(it.packCode)}`;
+    const modifierCodes = Array.from(new Set(
+      (it.modifierCodes ?? []).map((code) => String(code).trim().toUpperCase()).filter(Boolean)
+    )).sort();
+    const key = `${it.sku}__${it.size}__${normalizePackCode(it.packCode)}__${modifierCodes.join(",")}`;
     const cur = map.get(key);
     if (cur) {
       cur.qty += it.qty;
@@ -232,6 +244,7 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
         packUnitName: it.packUnitName ?? null,
         packQty: it.packQty ?? null,
         packUnitPrice: it.packUnitPrice ?? null,
+        modifierCodes,
       });
     }
   }
@@ -291,6 +304,7 @@ async function revalidateOrderPacksInTx(
       packUnitPrice: pack.price == null
         ? (await getVariantBasePriceInTx(client, tenantId, item.sku, item.size) ?? Number(pack.base_price)) * baseQty
         : Number(pack.price),
+      modifierCodes: item.modifierCodes ?? [],
     });
   }
   return { ok: true, items: canonical };
@@ -420,6 +434,27 @@ export async function createOrder(
   try {
     await beginTenantTx(client, tenantId, { editorId: input.editorId });
 
+    // ---- ลำดับการล็อกของบิลหน้าร้าน: กะก่อน แล้วค่อยสต็อก ------------
+    //
+    // `finalizePosSale()` ล็อกแถวกะด้วย FOR UPDATE เป็นคำสั่งแรกของทรานแซกชัน แล้วค่อย
+    // ไปตัดสต็อก · ส่วนที่นี่จองสต็อกก่อน แล้วเพิ่งไปแตะแถวกะตอน INSERT bms_orders
+    // ซึ่ง FK `pos_shift_id` บังคับ FOR KEY SHARE ให้เอง = **ล็อกสองตัวคนละลำดับกัน**
+    //
+    // สองบิลที่เดินพร้อมกันบนกะเดียวกันจึงล็อกกันเอง: บิล B ถือสต็อกอยู่แล้วรอ KEY SHARE
+    // ของกะ ซึ่งบิล A ถือ FOR UPDATE ไว้ ส่วน A รอสต็อกที่ B ถือ → `40P01` กลางการขาย
+    // (เกิดจริงทุกครั้งที่เครื่องเดียวยิงสองคำขอพร้อมกัน เช่น retry ซ้อนกับคำขอเดิม —
+    // ไม่ใช่แค่ในเทส เทสแค่ทำให้มันเกิดแน่นอน)
+    //
+    // ขอล็อกโหมดเดียวกับที่ FK จะขอ (FOR KEY SHARE) ตั้งแต่ต้นทรานแซกชัน ทั้งสองเส้นทาง
+    // จึงเรียงเหมือนกันคือ กะ → สต็อก · ไม่ตรวจ `status` ที่นี่โดยตั้งใจ: การตัดสินว่ากะ
+    // เปิดอยู่ไหมเป็นหน้าที่ของ finalizePosSale ตามเดิม ที่นี่ทำแค่จัดลำดับล็อก
+    if (input.posShiftId) {
+      await client.query(
+        `SELECT 1 FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE`,
+        [tenantId, input.posShiftId]
+      );
+    }
+
     // Pack metadata may change after catalog lookup. Re-read it inside the
     // order transaction so active/baseQty/unit/price snapshots never come from
     // stale tool or POS payload data.
@@ -517,34 +552,26 @@ export async function createOrder(
     const lines: CreatedLine[] = [];
     let total = 0;
 
-    // ---- สินค้าชุด (8.8) ----------------------------------------
-    // เซ็ตไม่มีสต็อกของตัวเอง — จำนวนที่ขายได้มาจากส่วนประกอบ · โหลดสูตรของทุกเซ็ต
-    // ในบิลนี้ไว้ก่อน แล้วขั้นจองสต็อกจะไปจองที่ส่วนประกอบแทน
-    const bundleRows = await client.query<{
-      bundle_sku: string; component_sku: string; component_size: string; qty: number;
-    }>(
-      `SELECT b.bundle_sku, b.component_sku, b.component_size, b.qty
-         FROM bms_product_bundle_items b
-         JOIN bms_products p ON p.tenant_id = b.tenant_id AND p.sku = b.bundle_sku AND p.is_bundle
-        WHERE b.tenant_id = $1 AND b.bundle_sku = ANY($2::text[])`,
-      [tenantId, items.map((it) => it.sku)]
-    );
-    const bundleRecipe = new Map<string, Array<{ sku: string; size: string; qty: number }>>();
-    for (const row of bundleRows.rows) {
-      const list = bundleRecipe.get(row.bundle_sku) ?? [];
-      list.push({ sku: row.component_sku, size: row.component_size, qty: Number(row.qty) });
-      bundleRecipe.set(row.bundle_sku, list);
-    }
-    // เซ็ตที่ยังไม่ได้ใส่ส่วนประกอบขายไม่ได้ — ปล่อยผ่านคือขายของที่ไม่มีอะไรออกจากคลัง
-    for (const it of items) {
-      if (bundleRecipe.has(it.sku)) continue;
-      const flagged = await client.query(
-        `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2 AND is_bundle`,
-        [tenantId, it.sku]
-      );
-      if (flagged.rowCount) {
+    // Resolve every sold line to immutable base-unit stock effects once. Bundle,
+    // recipe and modifier expansion must not be reimplemented in reserve, FEFO,
+    // return and cancellation paths; all of them read bms_order_stock_lines.
+    const resolvedConsumption: ResolvedStockConsumption[] = [];
+    for (const item of items) {
+      try {
+        resolvedConsumption.push(await resolveStockConsumptionInTx(client, tenantId, {
+          sku: item.sku,
+          size: item.size,
+          qty: item.qty,
+          packCode: item.packCode,
+          modifierCodes: item.modifierCodes,
+        }));
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "คำนวณ Stock ไม่สำเร็จ";
         await client.query("ROLLBACK");
-        return { status: "BUNDLE_INCOMPLETE", sku: it.sku };
+        if (reason.startsWith("BUNDLE_INCOMPLETE:")) {
+          return { status: "BUNDLE_INCOMPLETE", sku: item.sku };
+        }
+        return { status: "INVALID_ITEM", index: resolvedConsumption.length, reason };
       }
     }
 
@@ -615,85 +642,66 @@ export async function createOrder(
     // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
     const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
 
-    for (const it of items) {
-      // สินค้าชุด (8.8) — จองที่ส่วนประกอบ ไม่ใช่ที่ตัวเซ็ต
-      //
-      // ทำก่อนขั้นจองปกติและ return ทันทีเมื่อของไม่พอ เพื่อให้ทั้งบิลล้มโดยไม่มี
-      // ส่วนประกอบตัวไหนถูกจองค้าง (ROLLBACK ครอบอยู่แล้ว แต่การ return ที่นี่ทำให้
-      // ข้อความบอกได้ว่าส่วนประกอบตัวไหนขาด ไม่ใช่บอกว่า "เซ็ตหมด" ซึ่งช่วยพนักงานไม่ได้)
-      const recipe = bundleRecipe.get(it.sku);
-      if (recipe) {
-        // bms_order_items มี FK ไป bms_inventory ทุกบรรทัดจึงต้องมีแถวสต็อกอยู่จริง
-        // เซ็ตได้แถวของตัวเองที่ค้างอยู่ที่ 0 ตลอด (จำนวนที่ขายได้มาจากส่วนประกอบ)
-        // — สร้างให้ที่นี่เพื่อไม่ให้ร้านต้องไปสร้างแถวสต็อกของเซ็ตด้วยมือก่อนขาย
-        await client.query(
-          `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
-           VALUES ($1,$2,$3,$4,0,0)
-           ON CONFLICT (tenant_id, location_id, product_sku, size) DO NOTHING`,
-          [tenantId, locationId, it.sku, it.size]
-        );
-        for (const part of recipe) {
-          const need = part.qty * it.qty;
-          const res = await client.query(
-            `UPDATE bms_inventory
-                SET reserved_stock = reserved_stock + $3, updated_at = now()
-              WHERE tenant_id = $4 AND location_id = $5 AND product_sku = $1 AND size = $2
-                AND (current_stock - reserved_stock) >= $3`,
-            [part.sku, part.size, need, tenantId, locationId]
-          );
-          if (res.rowCount === 0) {
-            const cur = await client.query<{ available: number }>(
-              `SELECT (current_stock - reserved_stock) AS available FROM bms_inventory
-                WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
-              [part.sku, part.size, tenantId, locationId]
-            );
-            await client.query("ROLLBACK");
-            if (cur.rowCount === 0) return { status: "NOT_FOUND", sku: part.sku, size: part.size };
-            return {
-              status: "INSUFFICIENT",
-              sku: part.sku,
-              size: part.size,
-              available: Number(cur.rows[0].available),
-              requested: need,
-            };
-          }
-        }
-      }
+    // Derived products (bundle/menu) are sold lines but hold no stock themselves.
+    // Keep their zero row for the historical order-item FK, then reserve only the
+    // globally sorted, aggregated component lines to keep lock order deterministic.
+    for (const [index, consumption] of resolvedConsumption.entries()) {
+      if (!consumption.derived) continue;
+      await client.query(
+        `INSERT INTO bms_inventory
+           (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+         VALUES ($1,$2,$3,$4,0,0)
+         ON CONFLICT (tenant_id, location_id, product_sku, size) DO NOTHING`,
+        [tenantId, locationId, items[index].sku, items[index].size]
+      );
+    }
 
-      // reserve แบบ atomic บน client ตัวเดียวกับทรานแซกชัน (ล็อกแถว inventory)
-      // เซ็ตข้ามขั้นนี้ไป — แถว bms_inventory ของเซ็ตค้างที่ 0 ตลอดตามการออกแบบ
-      const upd = recipe
-        ? { rowCount: 1, rows: [{ available_after: 0 }] }
-        : await client.query<{ available_after: number }>(
+    const stockNeeds = new Map<string, { sku: string; size: string; qty: number }>();
+    for (const consumption of resolvedConsumption) {
+      for (const stockLine of consumption.lines) {
+        const key = `${stockLine.sku}\u0000${stockLine.size}`;
+        const current = stockNeeds.get(key);
+        if (current) current.qty += stockLine.qty;
+        else stockNeeds.set(key, { sku: stockLine.sku, size: stockLine.size, qty: stockLine.qty });
+      }
+    }
+    const availableAfterByStockKey = new Map<string, number>();
+    const orderedStockNeeds = [...stockNeeds.values()].sort((a, b) =>
+      a.sku === b.sku ? a.size.localeCompare(b.size) : a.sku.localeCompare(b.sku)
+    );
+    for (const need of orderedStockNeeds) {
+      const reserved = await client.query<{ available_after: number }>(
         `UPDATE bms_inventory
             SET reserved_stock = reserved_stock + $3, updated_at = now()
           WHERE tenant_id = $4 AND location_id = $5 AND product_sku = $1 AND size = $2
             AND (current_stock - reserved_stock) >= $3
           RETURNING (current_stock - reserved_stock) AS available_after`,
-        [it.sku, it.size, it.qty, tenantId, locationId]
+        [need.sku, need.size, need.qty, tenantId, locationId]
       );
-
-      if (upd.rowCount === 0) {
-        // แยกสาเหตุ: ไม่พบ row หรือ ของไม่พอ
-        const cur = await client.query<{ available: number }>(
+      if (!reserved.rowCount) {
+        const current = await client.query<{ available: number }>(
           `SELECT (current_stock - reserved_stock) AS available
              FROM bms_inventory
             WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
-          [it.sku, it.size, tenantId, locationId]
+          [need.sku, need.size, tenantId, locationId]
         );
         await client.query("ROLLBACK");
-        if (cur.rowCount === 0) {
-          return { status: "NOT_FOUND", sku: it.sku, size: it.size };
-        }
+        if (!current.rowCount) return { status: "NOT_FOUND", sku: need.sku, size: need.size };
         return {
           status: "INSUFFICIENT",
-          sku: it.sku,
-          size: it.size,
-          available: Number(cur.rows[0].available),
-          requested: it.qty,
+          sku: need.sku,
+          size: need.size,
+          available: Number(current.rows[0].available),
+          requested: need.qty,
         };
       }
+      availableAfterByStockKey.set(
+        `${need.sku}\u0000${need.size}`,
+        Number(reserved.rows[0].available_after)
+      );
+    }
 
+    for (const [itemIndex, it] of items.entries()) {
       // ดึงราคา (สินค้าต้อง active)
       const prod = await client.query<{ price: string; name: string; vat_category: string }>(
         `SELECT price, name, vat_category FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
@@ -749,11 +757,16 @@ export async function createOrder(
           priceTiers: canonicalPriceTiers(tiersBySku.get(it.sku) ?? []),
           promotion: promo,
         },
-        availableAfter: Number(upd.rows[0].available_after),
+        availableAfter: resolvedConsumption[itemIndex].derived
+          ? Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
+              availableAfterByStockKey.get(`${line.sku}\u0000${line.size}`) ?? 0
+            ))
+          : availableAfterByStockKey.get(`${it.sku}\u0000${it.size}`) ?? 0,
         packCode: it.packCode ?? null,
         packUnitName: it.packUnitName ?? null,
         packQty,
         packUnitPrice,
+        modifierCodes: it.modifierCodes ?? [],
         vatCategory: prod.rows[0].vat_category ?? "UNKNOWN",
       });
     }
@@ -1035,14 +1048,23 @@ export async function createOrder(
       );
     }
 
-    for (const ln of lines) {
-      await client.query(
+    for (const [lineIndex, ln] of lines.entries()) {
+      const insertedItem = await client.query<{ id: string }>(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price,
-                                      receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price, vat_category)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $15, $9, $10, $11, $12, $13)`,
+                                      receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price,
+                                      vat_category, stock_modifier_codes, stock_consumption_version)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $15, $9, $10, $11, $12, $13, $16, 1)
+         RETURNING id`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
           locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
-          ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot)]
+          ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot),
+          ln.modifierCodes ?? []]
+      );
+      await snapshotOrderItemConsumptionInTx(
+        client,
+        tenantId,
+        insertedItem.rows[0].id,
+        resolvedConsumption[lineIndex]
       );
     }
 
@@ -1480,6 +1502,9 @@ export async function cancelOrderInTx(
     );
 
     await recordOrderMovements(client, [orderId], "RELEASE", "system");
+    // บิลที่ยกเลิกแล้วต้องไม่ค้างเป็นงานบนกระดานครัว (9.40) — ตั๋วที่เปิดอยู่หลังยกเลิก
+    // คืออาหารที่ยังถูกทำและถูกทิ้ง โดยไม่มีบิลไหนอธิบายได้ว่าทำเพื่อใคร
+    await cancelKitchenTicketsForOrderInTx(client, tenantId, orderId);
     await releaseCouponForOrdersInTx(client, [orderId]);
     await releaseCustomerCouponReservationsInTx(client, [orderId]);
     // แต้มต้องกลับสู่สถานะก่อนบิลนี้: คืนแต้มที่แลกไป + ดึงแต้มที่ได้กลับ (7.96)
@@ -1527,66 +1552,99 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
  * ทำทั้งหมดในทรานแซกชันเดียว + FOR UPDATE SKIP LOCKED กันชนกับ cron ที่รันซ้อน
  * หมายเหตุ: ปล่อยเฉพาะ PENDING (ยังไม่จ่าย) — PAID ขึ้นไปไม่แตะ
  */
+/**
+ * ปล่อยของที่จองไว้ของบิลที่หมดอายุ — **ทีละใบ ไม่ใช่ทั้งชุดในทรานแซกชันเดียว**
+ *
+ * เดิมทั้ง batch อยู่ใน transaction เดียวและ query นี้ครอบทุก tenant (cron ตัวเดียวกิน
+ * ทั้งแพลตฟอร์ม) ผลคือ **บิลใบเดียวที่ล้ม = ไม่มีร้านไหนถูกปล่อยเลย และเป็นแบบนั้นตลอดไป**
+ * เพราะรอบถัดไปก็เจอบิลใบเดิมอีก · เหตุที่ล้มมีจริงสองแบบ: บิลที่ถือของมากกว่ายอดจอง
+ * ที่บันทึกไว้ (data drift จะชน `CHECK (reserved_stock >= 0)`) และของที่เคยอ่าน
+ * `bms_order_items` ตรง ๆ กับบิลที่ซื้อเซ็ต/เมนู (แก้ไปแล้ว แต่คนละสาเหตุกัน)
+ *
+ * ฐาน dev ตอนเขียนโน้ตนี้มีบิลค้าง 21 ใบและ job ตัวนี้ throw ทุกครั้ง — ซึ่งแปลว่ามันหยุด
+ * ทำงานไปนานแล้วโดยไม่มีใครรู้ เพราะ endpoint ตอบ 500 เงียบ ๆ
+ *
+ * ตอนนี้แต่ละบิลมีทรานแซกชันของตัวเอง: ใบที่ล้มถูก rollback เฉพาะใบนั้นและถูกนับไว้ใน
+ * `failed` ส่วนใบที่เหลือยังถูกปล่อยตามปกติ · ผู้เรียกได้ตัวเลขที่บอกได้ว่ามีของค้างที่
+ * ต้องมีคนไปดู แทนที่จะได้ error ก้อนเดียวที่ไม่บอกว่าใบไหน
+ */
 export async function releaseExpiredOrders(
-  minutes: number
-): Promise<{ released: number; orderIds: string[] }> {
+  minutes: number,
+  /**
+   * จำกัดให้ร้านเดียว · cron เรียกโดยไม่ส่งค่านี้ (กวาดทั้งแพลตฟอร์มตามเดิม) — มีไว้ให้
+   * เทสและงานซ่อมรายร้านทำได้โดยไม่ไปแตะบิลของร้านอื่นในฐานเดียวกัน
+   */
+  tenantId?: string | null
+): Promise<{ released: number; orderIds: string[]; failed: Array<{ orderId: string; reason: string }> }> {
   const mins = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : 30;
-  const client = await getClient();
-  try {
-    await client.query("BEGIN");
+  const candidates = await query<{ id: string }>(
+    `SELECT id FROM bms_orders
+      WHERE status = 'PENDING'
+        AND created_at < now() - make_interval(mins => $1)
+        AND ($2::uuid IS NULL OR tenant_id = $2)`,
+    [mins, tenantId ?? null]
+  );
+  const released: string[] = [];
+  const failed: Array<{ orderId: string; reason: string }> = [];
 
-    const expired = await client.query<{ id: string }>(
-      `SELECT id FROM bms_orders
-        WHERE status = 'PENDING'
-          AND created_at < now() - make_interval(mins => $1)
-        FOR UPDATE SKIP LOCKED`,
-      [mins]
-    );
-    const ids = expired.rows.map((r) => r.id);
-    if (ids.length === 0) {
-      await client.query("COMMIT");
-      return { released: 0, orderIds: [] };
-    }
-
-    // คืน reserved_stock ของทุก order ที่หมดอายุ
-    await client.query(
-      `UPDATE bms_inventory inv
-          SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-         FROM (
-           SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_items WHERE order_id = ANY($1::uuid[])
-            GROUP BY tenant_id, location_id, product_sku, size
-         ) oi
-        WHERE TRUE
-          AND inv.tenant_id = oi.tenant_id
-          AND inv.location_id = oi.location_id
-          AND inv.product_sku = oi.product_sku
-          AND inv.size = oi.size`,
-      [ids]
-    );
-
-    await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
-    await releaseCouponForOrdersInTx(client, ids);
-    await releaseCustomerCouponReservationsInTx(client, ids);
-    await reopenRestockSubscriptionsForOrders({ orderIds: ids, client });
-
-    await client.query(
-      `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
-        WHERE id = ANY($1::uuid[])`,
-      [ids]
-    );
-
-    await client.query("COMMIT");
-    await markRestockSubscriptionsReadyForOrders(ids);
-    return { released: ids.length, orderIds: ids };
-  } catch (err) {
+  for (const row of candidates.rows) {
+    const client = await getClient();
     try {
-      await client.query("ROLLBACK");
-    } catch {}
-    throw err;
-  } finally {
-    client.release();
+      await client.query("BEGIN");
+      // ล็อกใบนี้ใบเดียว · SKIP LOCKED = อีก worker กำลังจัดการอยู่ ไม่ใช่ความผิดพลาด
+      // และตรวจสถานะซ้ำในล็อก เพราะบิลอาจถูกจ่ายเงินไประหว่างที่รอคิว
+      const locked = await client.query<{ id: string }>(
+        `SELECT id FROM bms_orders
+          WHERE id = $1 AND status = 'PENDING'
+          FOR UPDATE SKIP LOCKED`,
+        [row.id]
+      );
+      if (!locked.rowCount) {
+        await client.query("ROLLBACK");
+        continue;
+      }
+      const ids = [row.id];
+
+      await client.query(
+        `UPDATE bms_inventory inv
+            SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
+           FROM (
+             -- view ไม่ใช่ตารางตรง ๆ (8.8 / 9.40) — เซ็ตและเมนูจองที่ส่วนประกอบ
+             SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+               FROM bms_order_stock_lines WHERE order_id = ANY($1::uuid[])
+              GROUP BY tenant_id, location_id, product_sku, size
+           ) oi
+          WHERE inv.tenant_id = oi.tenant_id
+            AND inv.location_id = oi.location_id
+            AND inv.product_sku = oi.product_sku
+            AND inv.size = oi.size`,
+        [ids]
+      );
+
+      await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
+      await releaseCouponForOrdersInTx(client, ids);
+      await releaseCustomerCouponReservationsInTx(client, ids);
+      await reopenRestockSubscriptionsForOrders({ orderIds: ids, client });
+
+      await client.query(
+        `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
+          WHERE id = ANY($1::uuid[])`,
+        [ids]
+      );
+
+      await client.query("COMMIT");
+      released.push(row.id);
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      failed.push({ orderId: row.id, reason: error instanceof Error ? error.message : String(error) });
+      console.error("[orders] ปล่อยของบิลหมดอายุไม่สำเร็จ", row.id, error);
+    } finally {
+      client.release();
+    }
   }
+
+  if (released.length > 0) await markRestockSubscriptionsReadyForOrders(released);
+  return { released: released.length, orderIds: released, failed };
 }
 
 // =============================================================

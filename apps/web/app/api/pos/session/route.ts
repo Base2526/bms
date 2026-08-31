@@ -12,7 +12,7 @@ import {
   getOpenPosShift,
   getPosShiftReturnSummary,
   listPosCashiers,
-  listPosPurchaseReceivers,
+  listPosPurchaseReceivers, listPosApprovers,
 } from "@/lib/bms/pos";
 import { getLocation } from "@/lib/bms/locations";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
@@ -28,11 +28,12 @@ async function handleGET(req: NextRequest) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
   }
 
-  const [shift, location, cashiers, purchaseReceivers, vat, store] = await Promise.all([
+  const [shift, location, cashiers, purchaseReceivers, approvers, vat, store] = await Promise.all([
     getOpenPosShift(device.tenantId, device.id),
     getLocation(device.tenantId, device.locationId),
     listPosCashiers(device.tenantId),
     listPosPurchaseReceivers(device.tenantId),
+    listPosApprovers(device.tenantId),
     getVatSettings(device.tenantId),
     // เลขผู้เสียภาษีของร้าน — ใบกำกับภาษีอย่างย่อต้องมี ไม่ใช่ข้อมูลรายบิล
     // จึงส่งมากับ session แล้วจอขายใช้ซ้ำได้ทุกใบ (มี cache อยู่แล้วใน storeProfile)
@@ -68,6 +69,8 @@ async function handleGET(req: NextRequest) {
     shiftReturnSummary,
     cashiers,
     purchaseReceivers,
+    // ใครกด PIN อนุมัติงานไหนได้ — จอกรอง dropdown จากชุดนี้ ไม่ใช่จากรายชื่อคนขาย
+    approvers,
     store: { taxId: store.taxId, receiptLanguageMode: store.receiptLanguageMode },
     vat: {
       registered: vat.vatRegistered,

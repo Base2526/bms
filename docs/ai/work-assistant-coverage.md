@@ -1,7 +1,7 @@
 # Global Work Assistant — full-system V1 coverage
 
-Status: implemented and contract-checked. The deterministic catalog currently contains 42 verified
-capabilities, 90 bilingual guides, 20 verified FAQ answers, and 19 groups of limits and traps
+Status: implemented and contract-checked. The deterministic catalog currently contains 45 verified
+capabilities, 94 bilingual guides, 20 verified FAQ answers, and 19 groups of limits and traps
 (97 rules). Every literal Admin Sidebar
 destination and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
 guide, either directly or through its parent detail route. POS has dedicated register guides for

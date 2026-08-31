@@ -76,6 +76,11 @@ test("prefix นอกช่วง 20–29 ต้องสร้างไม่�
   assert.equal(inStoreBarcode(1, "29").startsWith("29"), true);
   // 885 = prefix ของไทยที่ GS1 ออกให้บริษัทจริง ห้ามให้ร้านสร้างทับ
   assert.throws(() => inStoreBarcode(1, "88"), /20–29/);
+  // 21/22 belong to the scale (9.41). Minting a piece-goods barcode there means its middle five
+  // digits can collide with a configured scale item code, and the register would read that piece
+  // as a weighed product with a weight taken from its own barcode — a wrong price that looks right.
+  assert.throws(() => inStoreBarcode(1, "21"), /เครื่องชั่ง/);
+  assert.throws(() => inStoreBarcode(1, "22"), /เครื่องชั่ง/);
   assert.throws(() => inStoreBarcode(1, "19"), /20–29/);
   assert.throws(() => inStoreBarcode(1, "2"), /20–29/);
   assert.throws(() => inStoreBarcode(-1), /ไม่ติดลบ/);

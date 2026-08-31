@@ -22,10 +22,10 @@ test("every signup archetype normalizes and has a complete commerce policy", () 
 });
 
 test("high-repeat and variant businesses emphasize restock while food and wholesale do not", () => {
-  for (const value of ["mini_mart", "fashion", "home_kitchen", "beauty_personal_care", "gadgets_accessories"]) {
+  for (const value of ["mini_mart", "fashion", "home_kitchen", "beauty_personal_care", "gadgets_accessories", "pet_supply", "building_materials"]) {
     assert.equal(archetypeNeedsRestockEmphasis(value), true, value);
   }
-  for (const value of ["food_beverage", "b2b_wholesale", "gifts_seasonal", "other"]) {
+  for (const value of ["food_beverage", "restaurant", "b2b_wholesale", "gifts_seasonal", "other"]) {
     assert.equal(archetypeNeedsRestockEmphasis(value), false, value);
   }
 });

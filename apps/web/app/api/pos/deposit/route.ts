@@ -9,6 +9,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -74,7 +75,7 @@ async function handlePOST(req: NextRequest) {
   // ยกเลิก/ยึดมัดจำเป็นการตัดสินใจเรื่องเงินของลูกค้า จึงใช้สิทธิ์ที่สูงกว่าการรับเงิน
   const needed = action === "close" ? "pos.deposit.cancel" : "pos.deposit.take";
   if (!(await cashierHasPermission(device.tenantId, auth.userId, needed))) {
-    return NextResponse.json({ error: "ไม่มีสิทธิ์ทำรายการนี้" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, needed) }, { status: 403 });
   }
 
   if (action === "take" || action === "add") {

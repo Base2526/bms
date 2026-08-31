@@ -53,8 +53,42 @@ test("POS sale line parser keeps only valid positive integer pack quantities", (
       baseQty: null,
       packPrice: null,
       serials: null,
+      modifierCodes: null,
+      scaleBarcode: null,
     },
   ]);
+});
+
+/**
+ * `parsePosSaleLines` is an allowlist, so a field the register sends but the parser does not name
+ * disappears between the screen and `recordPosSale` — with no error anywhere. That is exactly what
+ * happened to `9.40`/`9.41`: a menu sold with "extra egg" deducted the plain recipe (silently, with
+ * a kitchen ticket that never mentioned the option), and a weighed line was priced as one base unit
+ * instead of the grams on the label, so the bill died on PAYMENT_MISMATCH at the counter. The DB
+ * contracts passed the whole time because they call createOrder directly and never cross the route.
+ */
+test("POS sale parser carries menu modifiers and the raw scale label to the server", () => {
+  const [line] = parsePosSaleLines([
+    {
+      sku: "SKU-1", size: "M", packQty: 1,
+      modifierCodes: [" extra_egg ", "NO_SUGAR", "extra_egg", ""],
+      scaleBarcode: " 2212345007506 ",
+    },
+  ]);
+  // Normalised the same way the stock resolver normalises them, so the codes the customer chose
+  // and the codes checked against bms_product_modifiers cannot differ by case or duplication.
+  assert.deepEqual(line.modifierCodes, ["EXTRA_EGG", "NO_SUGAR"]);
+  assert.equal(line.scaleBarcode, "2212345007506");
+});
+
+test("POS sale parser bounds modifier codes and keeps absent ones null", () => {
+  const [flooded] = parsePosSaleLines([
+    { sku: "SKU-1", size: "M", packQty: 1, modifierCodes: Array.from({ length: 50 }, (_, i) => `M${i}`) },
+  ]);
+  assert.equal(flooded.modifierCodes?.length, 20);
+  const [plain] = parsePosSaleLines([{ sku: "SKU-1", size: "M", packQty: 1, scaleBarcode: "   " }]);
+  assert.equal(plain.modifierCodes, null);
+  assert.equal(plain.scaleBarcode, null, "a blank label must not become an empty scale line");
 });
 
 test("POS payment parser accepts valid methods and rejects bad inputs", () => {

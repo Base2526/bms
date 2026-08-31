@@ -548,13 +548,15 @@ explains the price.
 
 ### One expansion, not four
 
-Four separate places moved stock by reading `bms_order_items` directly: deduct at sale, restore on
-return, release reservations on cancel, and FEFO lot consumption. Each of them joining the recipe
+Separate places moved stock by reading `bms_order_items` directly: deduct at sale, restore on
+return, release reservations on cancel, FEFO lot consumption, shipment fulfilment, and the expiry
+sweep. Each of them joining the recipe
 itself would be four pieces of code that must be equally correct and would drift apart.
 
-`bms_order_stock_lines` is a view that does the expansion once — ordinary lines pass through, set lines
-become their components × set quantity — and all four read from it. **Anything new that moves stock
-must read the view, not the table.**
+`bms_order_stock_lines` is a view that does the expansion once — ordinary legacy lines pass through,
+legacy set lines become their components × set quantity, and orders created after `9.40` read their
+immutable `bms_order_item_stock_consumption` snapshot. **Anything new that moves stock must read the
+view, not the table.**
 
 Two failures that view prevents, both silent:
 
@@ -565,6 +567,17 @@ Two failures that view prevents, both silent:
 
 The view carries `order_item_id` so lot provenance still links back to the line that was sold.
 
+**Two more places were reading the table, and both failed closed** (found 2026-08-31, fixed with
+`9.42`): `createShipment()` deducted stock straight from `bms_order_items`, so a bill containing a
+set — and, after `9.40`, any menu item — could not be shipped at all; and `releaseExpiredOrders()`
+released reservations the same way, so one derived order anywhere in the batch rolled back the whole
+cron and **no tenant's expired holds were ever released**. Neither failure names bundles in its
+error, which is why both survived since `8.8`. The invariant is now enforced by
+`scripts/order-stock-lines-contract.test.mts`: any SQL statement in `lib/bms` that writes
+`bms_inventory` while naming `bms_order_items` fails the gate, and the four owning files must each
+still name the view. A prose rule that six call sites have to remember is one refactor away from
+being seven.
+
 A set with no components is refused (`BUNDLE_INCOMPLETE`) rather than sold, because selling it means
 nothing leaves the warehouse. A short component blocks the sale and the error names **the component**,
 not the set — "the set is out of stock" tells staff nothing they can act on.
@@ -573,6 +586,70 @@ Migration `9.3` idempotently repairs the bundle table, RLS/grants, and expansion
 deployments that received bundle-aware application code without migration `8.8`. Do not add a runtime
 fallback to ordinary order lines: a register that appears to recover while deducting the set row
 instead of its components would turn a visible schema error into silent inventory corruption.
+
+## Multi-store stock policies (`9.40`–`9.41`)
+
+An archetype is an onboarding preset, not a stock rule. `bms_store_capabilities` stores tenant
+overrides, while `bms_product_stock_policies` decides each product's authoritative behaviour:
+`DIRECT`, `PACK`, `BUNDLE`, `WEIGHTED`, `RECIPE`, or `SERIALIZED`. A mixed shop can keep a restaurant
+archetype and manually enable weighed products without moving tenant or inventory data.
+
+Inventory quantities remain integers. Measured goods choose the smallest useful base unit, such as
+gram, millilitre, or millimetre; display units and precision are presentation metadata. Existing
+`bms_product_packs.base_qty` remains the source of truth for piece/pack/carton conversion.
+
+`resolveStockConsumptionInTx()` expands a sold line once. Recipe versions and selected modifier codes
+become component quantities in `bms_order_item_stock_consumption` before the order commits. Reserve,
+cancel, ship, POS FEFO, return, and movement ledger all consume that snapshot through
+`bms_order_stock_lines`, so editing a recipe later cannot reinterpret an old bill.
+
+### Which capability flags are switches, and which are not
+
+`bms_store_capabilities` holds thirteen flags, but only five are read before anything happens:
+`RECIPE`, `MODIFIER`, `WEIGHTED_PRODUCT`, `KITCHEN_WORKFLOW`, `WASTAGE`. The other eight describe
+what the shop's data already looks like — packs exist because rows exist in `bms_product_packs`,
+expiry blocking and FEFO happen because rows exist in `bms_inventory_lots`, serial capture happens
+because `bms_products.serial_tracked` is set, and the pharmacy gate is `business_archetype`.
+
+They shipped as switches anyway, so a shop could turn `LOT_TRACKING` off and still be refused an
+expired lot, or read `SERIAL_TRACKING: off` while the register kept demanding serials. A switch that
+changes nothing is worse than no switch: it is read as a statement about the system's behaviour.
+Those eight now render as detected status, and `upsertStoreCapability()` refuses to write them —
+a stored override that means nothing is the same lie, one layer down.
+
+Making them real switches was rejected, not overlooked: an off position for `LOT_TRACKING`,
+`EXPIRY_TRACKING` or `FEFO` is a button that sells expired stock, and an off position for `PACK`
+would stop pack scanning at every restaurant, whose preset has no `PACK` at all while its products
+may still have packs configured. `scripts/store-capability-gates-contract.test.mts` keeps the
+switch list equal to the set of capabilities the source actually gates on, in both directions.
+
+Restaurant recipes are versioned in `bms_product_recipes`; one active version exists per SKU/size.
+Modifiers apply integer positive or negative component deltas, but the resolved total for any
+component may never be negative. Completed POS recipe lines create idempotent kitchen tickets **when
+the shop has `KITCHEN_WORKFLOW` on** — a shop that uses recipes only to deduct ingredients would
+otherwise accumulate tickets no page shows and nobody can clear. The sidebar entry for the board
+follows the same flag, so the menu and the tickets always appear together. A ticket may still carry
+no station: the board has an "unassigned" lane, and an empty board reads as a broken feature.
+Wastage is a separate tenant/location ledger and moves only unreserved stock, recording inventory,
+movement, audit **and lot** rows in one transaction. The lot step is not optional bookkeeping:
+`SUM(bms_inventory_lots.qty) = bms_inventory.current_stock` is enforced only by every write going
+through `lots.ts`, and throwing away expired goods is the main way lot-tracked stock leaves a shelf.
+Moving the summary row alone left the expired lot holding the quantity that was just binned, so FEFO
+offered it again on the next bill and `reconcileLotTotals()` reported drift with nothing to trace it
+to. A write-off consumes the soonest-expiring lot **first and does not skip expired ones** — the
+opposite of the sale path, because the expired unit is exactly the one being discarded — and a shop
+whose lot rows are short of the summary row is refused outright rather than half-applied.
+
+Cancelling or voiding a bill closes that bill's open kitchen tickets in the same transaction, and
+the board itself shows open work plus the last 12 hours of served tickets, newest first when the row
+cap bites. Both exist for the same reason: a ticket that outlives its bill, or a cap that hands a
+busy kitchen its 200 oldest served tickets forever, reads at the pass as "the register stopped
+sending orders".
+
+Scale mapping (`9.41`) supports EAN-13 prefix `22`: five item-code digits map to exactly one
+`WEIGHTED`/`GRAM` product variant and the embedded grams are re-parsed by the server both at scan and
+sale commit. Prefix `21` price-embedded labels remain refused because reversing a rounded price into
+stock quantity can silently move the wrong amount.
 
 ## Phase 1 inventory intelligence (9.12)
 

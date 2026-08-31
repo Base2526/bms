@@ -24,6 +24,9 @@ import {
   PartitionOutlined,
   ImportOutlined,
   SwapOutlined,
+  BuildOutlined,
+  CoffeeOutlined,
+  DeleteOutlined,
   ContainerOutlined,
   AuditOutlined,
   DollarOutlined,
@@ -81,6 +84,7 @@ const Q_SIDEBAR_BOOTSTRAP = gql`
     bmsStoreProfile {
       businessArchetype
     }
+    bmsKitchenBoardEnabled
   }
 `;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
@@ -284,6 +288,10 @@ export default function AdminSidebar() {
   });
   const pharmacyPendingConfirmationCount: number = pharmacyPendingConfirmationData?.bmsPharmacyAssessments?.length ?? 0;
   const isPharmacyShop = bootstrapData?.bmsStoreProfile?.businessArchetype === "pharmacy";
+  // กระดานครัวตามความสามารถที่ร้านเปิดจริง ไม่ใช่ตามประเภทร้าน — preset ของร้านอาหาร
+  // เปิด KITCHEN_WORKFLOW ให้อยู่แล้ว ส่วนร้านประเภทอื่นที่เปิดเองก็ต้องเห็นเมนูนี้ด้วย
+  // (เดิม gate ด้วย archetype === "restaurant" ร้านที่เปิดเองจึงมีตั๋วครัวแต่ไม่มีทางเปิดดู)
+  const kitchenBoardEnabled = bootstrapData?.bmsKitchenBoardEnabled === true;
 
   // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
   // platform-wide ไม่ผูก tenant จึงเช็คเฉพาะ platform admin (คนอื่น query นี้ก็ FORBIDDEN อยู่แล้ว)
@@ -396,6 +404,11 @@ export default function AdminSidebar() {
         // สิทธิ์คนละตัวกัน: คลังสินค้าเห็นสองเมนูนี้ได้โดยไม่ต้องมีสิทธิ์ดูออร์เดอร์
         ...(can('inventory.transfer') ? [link('/admin/stock-transfers', t('admin.menu_stock_transfers'), <SwapOutlined />)] : []),
         ...(can('inventory.count') ? [link('/admin/stock-counts', t('admin.menu_stock_counts'), <ContainerOutlined />)] : []),
+        // รูปแบบสต็อก (9.40) — ตั้งว่าร้านนี้ต้องติดตามอะไร และสินค้าแต่ละตัวถูกตัดออกจากชั้นยังไง
+        // (สูตร/ตัวเลือก/ชั่งขาย) · gate เท่ากับหน้าเอง: product.view อ่านได้ product.edit ถึงจะบันทึกได้
+        ...(can('product.view') ? [link('/admin/stock-models', t('admin.menu_stock_models'), <BuildOutlined />)] : []),
+        // ของเสีย (9.40) วางต่อจากงานคลังเพราะเป็นการตัดสต็อกเหมือนกัน แค่ไม่มีคนซื้อ
+        ...(can('product.view') ? [link('/admin/wastage', t('admin.menu_wastage'), <DeleteOutlined />)] : []),
       ],
     },
     // เภสัชกรรม — เฉพาะร้านยา (isPharmacyShop) แยกจาก "ร้านค้า" เพราะ permission set/audience
@@ -439,6 +452,11 @@ export default function AdminSidebar() {
           ? [link('/admin/pos-manual', 'Cashier Manual', <ReadOutlined />)] : []),
       ],
     }] : []),
+    // กระดานครัว (9.40) — ขึ้นเมื่อร้านเปิดความสามารถคิวครัวจริง ซึ่งเป็นเงื่อนไขเดียวกับที่
+    // enqueueKitchenTicketsInTx() ใช้สร้างตั๋ว · เมนูกับตั๋วจึงมาพร้อมกันเสมอ ไม่มีกรณี
+    // "มีตั๋วแต่ไม่มีที่เปิดดู" หรือ "มีเมนูแต่กระดานว่างตลอด"
+    ...(kitchenBoardEnabled && can('order.view')
+      ? [link('/admin/kitchen', t('admin.menu_kitchen'), <CoffeeOutlined />)] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
     ...(can('commission.view') ? [link('/admin/commission', t('admin.menu_commission'), <PercentageOutlined />)] : []),
     ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),

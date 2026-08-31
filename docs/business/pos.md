@@ -939,6 +939,17 @@ screen state: Sell adds to the cart, product lookup reads without adding, Return
 selected PO draft. Shift, Settings, sensitive overlays, busy writes, and an unresolved sale disable
 scanning. The scan context shown in the header is the routing authority; DOM focus is not.
 
+### Weighed-product labels (`9.41`)
+
+A product configured as `WEIGHTED` with base unit `GRAM`, a five-digit scale item code, and an exact
+inventory size can be sold from a prefix-`22` scale label. The cart retains the raw barcode and the
+sale service parses it again at commit; browser-supplied `baseQty` is ignored. Different labels stay
+on different cart keys, while scanning the exact same label twice increments that label count.
+
+Prefix `21` labels embed a price rather than a weight and are refused. Deriving grams by dividing a
+rounded label price by the current unit price would corrupt stock when price or rounding changes.
+Configure the physical scale to print prefix `22` labels for BMS.
+
 ### Receiving a purchase order at the register (`9.6`)
 
 The Receive tab is a thin POS workflow over the existing purchase service. A cashier selects an
@@ -1352,7 +1363,50 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 
 ## Known operating boundaries
 
-The implemented scope is a general-retail POS. It does not include restaurant table/floor plans,
-kitchen display/printer routing, modifiers/toppings, queue numbers, reservations, or offline-first
+The implemented scope is a general-retail POS plus the stock-side restaurant workflow added in
+`9.40`: menu items priced from a recipe, modifiers that change which ingredients are deducted, and a
+kitchen board at `/admin/kitchen` fed by completed sale lines. The board shows work that is still
+open plus what was served in the last 12 hours, newest first when the row cap bites, so a busy shop
+can never be shown a page of its oldest served tickets instead of today's queue; cancelled tickets
+leave the board entirely. Voiding or cancelling a bill closes its open tickets inside the same
+transaction as the refund — a ticket that outlives its bill is food cooked and thrown away with no
+record of why. It does not include table/floor plans,
+kitchen printer routing to a physical station printer, queue numbers, reservations, or offline-first
 sync. Hardware integrations are browser/OS driven. These are separate product modules, not hidden
 configuration switches in the current POS.
+
+### Who can approve this
+
+Ten counter actions need someone with the right permission, and six of them need a second person to
+walk over and type a PIN. Every one of those pickers used to filter the staff list on "has a PIN"
+alone — never on whether that person could actually approve *this* action. So the sequence at the
+counter was: pick a name, fetch them, they type their PIN in front of the customer, and only then
+the server answers "ไม่มีสิทธิ์". The system knew the answer before the name was picked.
+
+The session now carries `approvers`: everyone who holds at least one counter-approval permission,
+with the set they hold. This is deliberately **not** the same list as `cashiers`, which is filtered
+to `pos.sell` — a manager who never stands at a till has no `pos.sell` and would vanish from the
+approver list while being the only person in the shop who can approve. People who hold the
+permission but have not set a PIN are still listed, disabled, saying so; disappearing without a
+reason is what sends staff to ask why the right person is missing.
+
+A refusal now names the job in words a cashier uses and the roles in *this* shop that hold it —
+never the raw permission id, which means nothing at a counter. A job another person can approve ends
+with "ให้คนที่มีสิทธิ์เดินมากด PIN อนุมัติ"; a job that only a permission grant can unlock ends with
+where to grant it. Two rules the code keeps: `Administrator` holds every permission implicitly and
+has no rows in `bms_role_permissions`, so it must be added by name or the owner disappears from the
+answer; and the pharmacist gate is a **licence**, not a permission, so its refusal is worded
+separately — telling staff to "ask for the permission" would be untrue about dispensing medicine.
+
+**The filtered list is UX, not a gate.** Every route still re-checks the approver's permission
+server-side. `scripts/pos-approvals-contract.test.mts` keeps the screen and the counter reading the
+same permission, and fails if any picker goes back to filtering on a PIN alone.
+
+**A field the register sends is not a field the server receives.** `parsePosSaleLines()` is an
+allowlist, so anything it does not name is dropped between the screen and `recordPosSale` with no
+error on either side. That is how `9.40`/`9.41` shipped broken: `modifierCodes` was discarded, so a
+menu sold with an option deducted the plain recipe and produced a kitchen ticket that never mentioned
+the option, and `scaleBarcode` was discarded, so a weighed line was priced as one base unit and every
+such bill died on `PAYMENT_MISMATCH`. Adding a line field means adding it to that parser, and pinning
+it in `scripts/pos-contract.test.mts` — a DB contract that calls `createOrder()` directly never
+crosses the route and will not catch it.

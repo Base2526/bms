@@ -27,7 +27,7 @@ operators must resolve those records before retrying the migration.
 
 | Module | Tables | Key migration |
 | --- | --- | --- |
-| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair) |
+| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41` |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot), `9.24` (snapshot provenance) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
@@ -39,7 +39,7 @@ operators must resolve those records before retrying the migration.
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
-| Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language) |
+| Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split) |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
@@ -632,6 +632,15 @@ Migration `7.30` also adds validated AI language/ordering/required-field/short-r
 `bms_ai_synonym_candidates` stores bounded search misses for human review. Both have forced RLS and
 `bms_app` grants. `bms_conversations.ai_state` is non-authoritative conversation memory; orders and
 stock remain backend sources of truth.
+
+**Multi-store stock capabilities (`9.40`–`9.41`)** — `bms_store_capabilities` stores manual tenant
+overrides on top of archetype presets. `bms_product_stock_policies` stores product-level stock mode,
+integer base unit, lot/expiry/FEFO flags, kitchen station, and optional scale mapping. Versioned
+`bms_product_recipes`/items and product modifiers describe derived consumption. New orders snapshot
+the resolved component lines into `bms_order_item_stock_consumption`; `bms_order_stock_lines` prefers
+that snapshot and preserves direct/bundle fallback only for historical rows. `bms_kitchen_tickets`
+and `bms_inventory_wastage` are tenant-scoped operational ledgers. Every new table has forced RLS,
+`bms_app` grants, and composite tenant foreign keys.
 
 **`bms_ai_quality_reviews` (`7.31__bms_ai_quality_review.sql`)** — a tenant-scoped review queue that
 references the existing Inbox conversation and AI message. It stores only automatic outcome/reason

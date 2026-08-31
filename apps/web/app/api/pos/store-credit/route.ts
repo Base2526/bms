@@ -6,6 +6,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
@@ -27,7 +28,7 @@ async function handleGET(req: NextRequest) {
   const auth = await verifyCashierPin(device.tenantId, userId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "storecredit.redeem"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์รับบัตร" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "storecredit.redeem") }, { status: 403 });
   }
 
   const credit = await findStoreCredit(device.tenantId, code);

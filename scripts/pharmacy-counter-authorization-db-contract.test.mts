@@ -453,13 +453,16 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
   if (ids.length === 0) return;
   for (const table of [
     "bms_pos_pharmacist_authorizations",
-    "bms_pos_shifts",
-    "bms_pos_devices",
     "bms_pharmacy_assessment_events",
     "bms_pharmacy_assessments",
     "bms_order_items",
     "bms_order_discounts",
+    // bms_orders.pos_shift_id is NO ACTION, so the bills have to go before the shift they were
+    // rung on. Dropping the shift first failed every run and left this suite's rows in the
+    // database — a teardown that throws is a teardown nobody notices is not running.
     "bms_orders",
+    "bms_pos_shifts",
+    "bms_pos_devices",
     "bms_pharmacy_product_policies",
     "bms_stock_movements",
     "bms_inventory",

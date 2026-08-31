@@ -257,6 +257,7 @@ const MOVE_COLOR: Record<string, string> = {
   TRANSFER_OUT: "geekblue",
   QUARANTINE_IN: "red",
   TRANSFER_LOST: "volcano",
+  WASTAGE: "red",
 };
 
 const LOW_STOCK_EXPANDED_KEY = "bms_products_lowstock_expanded";

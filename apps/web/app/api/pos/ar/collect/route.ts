@@ -12,6 +12,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -48,7 +49,7 @@ async function handlePOST(req: NextRequest) {
   const auth = await verifyCashierPin(device.tenantId, cashierUserId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "ar.collect"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์รับชำระหนี้" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "ar.collect") }, { status: 403 });
   }
 
   // เงินสดต้องมีลิ้นชักรองรับ · วิธีอื่นรับได้แม้ยังไม่เปิดกะ (เงินไม่ได้เข้าลิ้นชัก)

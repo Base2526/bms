@@ -803,6 +803,80 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   sales directly off `COMPLETED`/`RETURNED` orders instead of subtracting voids after summing every
   status; and a split cash+card refund on one return no longer doubles its count and total.
 
+- **Multi-store stock capabilities (`9.40`–`9.41`, 2026-08-31)** — Added additive archetype presets
+  for pet supply, building materials, and restaurants; tenant capability overrides; product stock
+  policies; integer-base measured goods; versioned recipes/modifiers; immutable order consumption
+  snapshots; kitchen tickets; and audited wastage. `createOrder()` now resolves and reserves actual
+  component lines once, while every existing reserve/release/ship/return/FEFO/movement path continues
+  through `bms_order_stock_lines`. POS prefix-22 scale labels are mapped and re-parsed server-side;
+  price-embedded prefix-21 labels fail closed. Legacy direct/bundle orders keep their original view
+  fallback. Migrations were applied twice against local Postgres; pure and DB contracts cover preset,
+  snapshot, recipe/modifier reserve+cancel, and weighed-label mapping.
+  Three Admin pages ship with it — `/admin/stock-models` (capabilities + per-product model + recipes
+  and modifiers), `/admin/wastage`, and `/admin/kitchen` — all bilingual and reachable from the
+  sidebar. Stock Models and Wastage sit in the shop group behind `product.view`; the kitchen board
+  appears only for the restaurant archetype, the one preset that turns `KITCHEN_WORKFLOW` on. No new
+  permission: model edits reuse `product.edit`, ticket moves `order.ship`, write-offs `stock.adjust`.
+  A recheck then found three failures the feature tests had not touched: `9.42` widens
+  `bms_stock_movements_type_check` for `WASTAGE` (without it every write-off rolled back), and both
+  `createShipment()` and `releaseExpiredOrders()` were still moving stock straight from
+  `bms_order_items` — broken for bundles since `8.8`, and for every menu bill after `9.40`. The
+  view invariant is now enforced by `scripts/order-stock-lines-contract.test.mts` instead of prose.
+  A POS-focused pass then found the register half had never worked end to end: `parsePosSaleLines()`
+  is an allowlist and dropped both `modifierCodes` (options deducted nothing, silently) and
+  `scaleBarcode` (weighed lines priced as one base unit, so every such bill died on
+  `PAYMENT_MISMATCH`); a scale-shaped barcode that mapped to nothing made that product unscannable
+  instead of falling through to the ordinary lookup; `inStoreBarcode()` could mint codes in the two
+  prefixes the scale owns; and the cart line, the line amount and the customer display each computed
+  a weighed line differently from the bill total.
+  A follow-up pass on "does the register differ by shop type" answered mostly no — one code path,
+  six fixed tabs, and only the pharmacy archetype changes the sale itself — and closed what that
+  exposed: eight of the thirteen capability flags were switches nobody read (they now render as
+  detected status and refuse to be written, with `store-capability-gates-contract` keeping the
+  switch list equal to the real gates); kitchen tickets were created from `stock_policy` alone, so a
+  shop using recipes only to deduct ingredients accumulated tickets no page showed, and the sidebar
+  entry now follows the same `KITCHEN_WORKFLOW` flag that creates them; and the register now reports
+  how many lines went to the kitchen instead of leaving the cashier to walk over and ask.
+  A final audit of the three new shop types confirmed both database constraints, the signup and
+  settings pickers, and the `businessType` mapping already covered them, and that pre-`9.40` shops
+  are untouched — proven rather than argued, by a contract that builds a shop with an old archetype
+  and no `9.40` rows, sells from it, and flips its archetype without its stock changing meaning. It
+  also found three switch statements the new types had never been wired into (AI examples and the
+  onboarding checklist), plus two older gaps of the same shape: `b2b_wholesale` had four translated
+  checklist lines no case ever selected, and `pharmacy` had none of its own at all.
+  Clearing the last outstanding items turned up two failures older than this work. Two sales rung on
+  the same shift at the same moment deadlocked, because `createOrder()` reserved stock and only then
+  touched the shift row through the `pos_shift_id` foreign key, while `finalizePosSale()` locks the
+  shift first — opposite orders, so a retry racing its own original could take both down;
+  `createOrder()` now takes the shift lock the key check will need before it reserves anything. And
+  the unpaid-order cron ran as one transaction across every tenant, so a single unreleasable bill
+  rolled back the whole sweep and met the same bill again next run — it now sweeps one bill per
+  transaction and reports the ones a human has to look at.
+  One more pass over the operational half found four faults nothing had exercised. The kitchen board
+  asked for tickets oldest-first under a row cap, so a restaurant that had pushed more tickets than
+  the cap was served the oldest — all long since eaten — and no new ticket could ever appear again:
+  the board now shows open work plus the last 12 hours of served tickets, drops cancelled ones
+  entirely, and lets the cap discard history rather than today. Voiding or cancelling a bill left its
+  tickets open, so the kitchen cooked and binned food for a refunded bill with nothing on the board
+  saying why; both paths now close their tickets in the same transaction as the refund. The write-off
+  path moved `bms_inventory` without touching `bms_inventory_lots`, breaking the invariant `lots.ts`
+  depends on for exactly the flow discarded stock uses — a binned expired lot kept its quantity, FEFO
+  offered it again, and the reconcile job reported drift with nothing to trace it to; write-offs now
+  consume the soonest-expiring lot first without skipping expired ones, and refuse outright when the
+  lot rows are short of the summary row. Lastly the two capability mutations checked only for an
+  admin session while the screen hid their switches behind `product.edit` — a hidden button is not a
+  gate, and these switches change how every bill in the shop is deducted.
+- **Approver visibility at the counter (2026-08-31, no migration, no new permission)** — every
+  approver picker at `/pos` filtered the staff list on "has a PIN" alone, so a cashier could pick a
+  colleague who could not approve and only found out after that person had typed their PIN in front
+  of the customer. The session now carries `approvers` — everyone holding a counter-approval
+  permission, with the set they hold — kept deliberately separate from `cashiers` (filtered to
+  `pos.sell`), because a manager who never stands at a till would otherwise vanish from the one list
+  where they matter. Holders without a PIN stay listed and disabled, saying why. All 25 permission
+  refusals now name the job in words staff use plus the roles in that shop that hold it, never the
+  raw permission id, and end with the way forward. The filtered list is UX only: every route still
+  re-checks the approver server-side.
+
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
 sync" above; what's missing is the carrier-issued merchant contract and credentials, then following

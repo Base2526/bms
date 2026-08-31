@@ -1,0 +1,12 @@
+.page { display: grid; gap: 18px; }
+.hero { padding: 22px 24px; border-radius: 18px; color: #3c2817; background: radial-gradient(circle at 90% 5%, rgb(207 83 47 / 24%) 0 80px, transparent 82px), linear-gradient(120deg, #fff8e8, #f5e3c4); border: 1px solid #ead2aa; }
+.hero h1 { margin: 0 0 4px; font: 700 clamp(26px, 4vw, 40px)/1.1 Georgia, "Noto Serif Thai", serif; }
+.hero p { margin: 0; color: #785d45; }
+.board { display: grid; grid-template-columns: repeat(4, minmax(230px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.lane { min-height: 300px; padding: 12px; border-radius: 16px; background: #f7f5f0; border-top: 4px solid var(--lane-color); }
+.laneHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.ticket { margin-bottom: 10px; border: 1px solid #e1ded5; border-radius: 12px; padding: 13px; background: #fff; box-shadow: 0 5px 14px rgb(53 40 25 / 6%); }
+.ticketName { font-weight: 700; color: #33281d; }
+.ticketMeta { margin-top: 4px; font-size: 12px; color: #807264; }
+.ticketActions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+@media (max-width: 760px) { .board { grid-template-columns: repeat(4, 270px); } .hero { border-radius: 14px; } }

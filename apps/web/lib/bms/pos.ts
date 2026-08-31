@@ -22,6 +22,11 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
+import { resolveStockConsumptionInTx } from "./stockConsumption";
+import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
+import { parseScaleBarcode } from "./barcode";
+import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
+import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { type PaymentMethod } from "./payments";
 import { orderRefundPaymentsForAllocation } from "@/lib/pos/refundAllocation";
 import { recordMovement, recordOrderMovements } from "./movements";
@@ -414,6 +419,10 @@ export type PosScanHit = {
    * null = ไม่มีโปร หรือหมดช่วงเวลาไปแล้ว
    */
   promotion: Promotion | null;
+  /** Active stock modifiers for this exact menu variant. Names are display-only. */
+  modifiers: Array<{ code: string; name: string }>;
+  /** Raw prefix-22 label; the server re-parses this at commit. */
+  scaleBarcode?: string | null;
 };
 
 /**
@@ -431,13 +440,53 @@ export async function resolvePosScan(
   code: string,
   opts: { size?: string | null; locationId?: string | null; packCode?: string | null } = {}
 ): Promise<PosScanHit | null> {
-  const barcode = code.trim();
-  if (!barcode) return null;
+  const rawBarcode = code.trim();
+  if (!rawBarcode) return null;
   // ห้าม toUpperCase() — ไซซ์จริงมีตัวพิมพ์เล็ก ("150 ml", "60 ml") การแปลงเป็น
   // "150 ML" ทำให้เทียบกับ bms_inventory ไม่ตรงแล้วขายสินค้านั้นไม่ได้เลย
   // (เทียบแบบไม่สนตัวพิมพ์แทน แล้วคืนค่าไซซ์ตามที่เก็บไว้จริง)
-  const size = opts.size?.trim() || null;
-  const packCode = opts.packCode?.trim() || null;
+  let barcode = rawBarcode;
+  let size = opts.size?.trim() || null;
+  let packCode = opts.packCode?.trim() || null;
+  let embeddedBaseQty: number | null = null;
+  let scaleBarcode: string | null = null;
+  let scaleUnitName: string | null = null;
+
+  // Prefix 21/22 only *look* like scale labels. A shop can also have entered such a number as an
+  // ordinary product barcode — `checkBarcode()` warns but never blocks — and the in-store generator
+  // covers the whole 20–29 range. Returning null for every unresolved scale-shaped code would make
+  // those products unscannable at the register, so anything that does not resolve to a configured
+  // weighed variant falls through to the normal barcode lookup below. What never happens is
+  // deriving a quantity from a label: only the branch below sets `embeddedBaseQty`, and a
+  // price-embedded (prefix 21) label never reaches it, because reversing a rounded total back into
+  // grams moves the wrong amount of stock while everything on screen still looks right.
+  const scale = parseScaleBarcode(rawBarcode);
+  if (scale && scale.kind === "WEIGHT" && scale.grams > 0
+      && await isCapabilityEnabledInTx({ query }, tenantId, "WEIGHTED_PRODUCT")) {
+    const mapped = await query<{ sku: string; scale_size: string; display_unit: string | null }>(
+      `SELECT p.sku, sp.scale_size, sp.display_unit
+         FROM bms_product_stock_policies sp
+         JOIN bms_products p
+           ON p.tenant_id = sp.tenant_id AND p.sku = sp.product_sku AND p.active
+        WHERE sp.tenant_id = $1 AND sp.stock_policy = 'WEIGHTED'
+          AND sp.base_unit = 'GRAM' AND sp.scale_item_code = $2
+          AND EXISTS (
+            SELECT 1 FROM bms_inventory i
+             WHERE i.tenant_id = sp.tenant_id AND i.product_sku = sp.product_sku
+               AND i.size = sp.scale_size
+               AND ($3::uuid IS NULL OR i.location_id = $3)
+          )`,
+      [tenantId, scale.itemCode, opts.locationId ?? null]
+    );
+    if (mapped.rowCount === 1) {
+      barcode = mapped.rows[0].sku;
+      size = mapped.rows[0].scale_size;
+      packCode = "BASE";
+      embeddedBaseQty = scale.grams;
+      scaleBarcode = rawBarcode;
+      scaleUnitName = mapped.rows[0].display_unit || "กรัม";
+    }
+  }
 
   const res = await query<{
     sku: string;
@@ -530,12 +579,25 @@ export async function resolvePosScan(
     discountPct: t.discount_pct == null ? null : Number(t.discount_pct),
   }));
 
+  const modifierEnabled = await isCapabilityEnabledInTx({ query }, tenantId, "MODIFIER");
+  const modifierRes = modifierEnabled
+    ? await query<{ code: string; name: string }>(
+      `SELECT code, name
+         FROM bms_product_modifiers
+        WHERE tenant_id = $1 AND product_sku = $2 AND size = $3 AND active
+        ORDER BY name, code`,
+      [tenantId, row.sku, row.size]
+    )
+    : { rows: [] as Array<{ code: string; name: string }> };
+
   const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
   if (basePrice == null) return null;
-  const baseQty = row.base_qty ?? 1;
+  const baseQty = embeddedBaseQty ?? row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
   const resolvedPackCode = row.pack_code ?? "BASE";
-  const packPrice = resolvedPackCode === "BASE"
+  const packPrice = scaleBarcode
+    ? basePrice * baseQty
+    : resolvedPackCode === "BASE"
     ? basePrice
     : row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty;
 
@@ -545,13 +607,15 @@ export async function resolvePosScan(
     receiptName: row.name,
     size: row.size,
     packCode: resolvedPackCode,
-    unitName: row.unit_name ?? "ชิ้น",
+    unitName: scaleUnitName ?? row.unit_name ?? "ชิ้น",
     baseQty,
     packPrice,
     basePrice,
     priceTiers,
     serialTracked: (row as any).serial_tracked === true,
     promotion,
+    modifiers: modifierRes.rows,
+    scaleBarcode,
   };
 }
 
@@ -601,6 +665,59 @@ export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
     isPharmacist: Boolean(r.is_licensed_pharmacist),
     hasPin: Boolean(r.has_pin),
     posOnly: Boolean(r.pos_only),
+  }));
+}
+
+/**
+ * ผู้อนุมัติที่หน้าเคาน์เตอร์ — "ใครกด PIN อนุมัติงานนี้ได้"
+ *
+ * ⚠️ **ไม่ใช่ชุดเดียวกับคนขาย** · `listPosCashiers()` คัดเฉพาะคนที่มี `pos.sell` ซึ่งถูกสำหรับ
+ * dropdown "ใครกำลังขาย" แต่ผิดสำหรับผู้อนุมัติ: ผู้จัดการที่ไม่เคยยืนขายเองจะไม่มี `pos.sell`
+ * แล้วหายไปจากรายการทั้งที่เป็นคนเดียวในร้านที่อนุมัติได้
+ *
+ * คืน `approvals` เป็นชุดสิทธิ์ที่คนนั้นถือจริง เพื่อให้จอกรอง dropdown ต่องานได้เอง
+ * โดยไม่ต้องยิงถามทีละงาน · Administrator ได้ทุกสิทธิ์โดยปริยายเหมือน `cashierHasPermission`
+ *
+ * ⚠️ รายการนี้เป็น UX ไม่ใช่ด่าน — ทุก route ยังตรวจสิทธิ์ผู้อนุมัติซ้ำฝั่ง server เสมอ
+ */
+export async function listPosApprovers(
+  tenantId: string
+): Promise<Array<PosCashier & { approvals: string[] }>> {
+  const permissions = [...POS_APPROVAL_PERMISSIONS];
+  const res = await query<any>(
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist, u.pos_only,
+            r.name AS role_name,
+            (u.pos_pin_hash IS NOT NULL) AS has_pin,
+            CASE WHEN r.name = 'Administrator' THEN $2::text[]
+                 ELSE COALESCE(ARRAY(
+                   SELECT rp.permission FROM bms_role_permissions rp
+                    WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id
+                      AND rp.permission = ANY($2::text[])
+                 ), ARRAY[]::text[])
+            END AS approvals
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1
+        AND (
+          r.name = 'Administrator'
+          OR EXISTS (
+            SELECT 1 FROM bms_role_permissions rp
+             WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id
+               AND rp.permission = ANY($2::text[])
+          )
+        )
+      ORDER BY (u.pos_pin_hash IS NULL), u.name NULLS LAST, u.email`,
+    [tenantId, permissions]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    name: r.name ?? null,
+    email: r.email ?? null,
+    role: r.role_name ?? null,
+    isPharmacist: Boolean(r.is_licensed_pharmacist),
+    hasPin: Boolean(r.has_pin),
+    posOnly: Boolean(r.pos_only),
+    approvals: Array.isArray(r.approvals) ? r.approvals : [],
   }));
 }
 
@@ -1788,6 +1905,10 @@ export type PosSaleLine = {
   unitName?: string | null;
   baseQty?: number | null;
   packPrice?: number | null;
+  /** Menu modifier codes; createOrder resolves their stock effects server-side. */
+  modifierCodes?: string[] | null;
+  /** Raw scale label; baseQty from the browser is ignored and re-derived. */
+  scaleBarcode?: string | null;
 };
 
 export type PosPaymentInput = {
@@ -2003,6 +2124,11 @@ export type PosSaleResult =
       roundingAmount: number;
       /** ส่วนลดแยกตามที่มา สำหรับพิมพ์บนใบเสร็จ (7.96) */
       discountLines: PosReceiptDiscountLine[];
+      /**
+       * จำนวนรายการที่เข้าคิวครัวจากบิลนี้ (9.40) · 0 = ไม่มี
+       * หน้าขายต้องบอกแคชเชียร์ว่าครัวรับไปแล้วกี่รายการ ไม่งั้นไม่มีทางรู้ว่าตั๋วออกหรือยัง
+       */
+      kitchenTickets: number;
       /** แต้มที่ได้จากบิลนี้ · null = บิลนี้ไม่ผูกสมาชิก/ร้านปิดโปรแกรม */
       pointsEarned: number | null;
       /** แต้มคงเหลือของสมาชิกหลังบิลนี้ (พิมพ์บนใบเสร็จ) */
@@ -2169,6 +2295,28 @@ async function canonicalizePosSaleLines(
     const size = String(line.size ?? "").trim();
     const packQty = Number(line.packQty);
     if (!sku || !size || !Number.isInteger(packQty) || packQty <= 0) continue;
+    const rawScaleBarcode = String(line.scaleBarcode ?? "").trim();
+    if (rawScaleBarcode) {
+      const scaleHit = await resolvePosScan(tenantId, rawScaleBarcode, { locationId });
+      if (!scaleHit || !scaleHit.scaleBarcode || scaleHit.sku !== sku || scaleHit.size !== size) {
+        return { ok: false, sku, packCode: "SCALE" };
+      }
+      const baseQuantity = scaleHit.baseQty * packQty;
+      if (!Number.isSafeInteger(baseQuantity) || baseQuantity <= 0) {
+        return { ok: false, sku, packCode: "SCALE" };
+      }
+      items.push({
+        sku,
+        size,
+        qty: baseQuantity,
+        packCode: "BASE",
+        packUnitName: scaleHit.unitName,
+        packQty: baseQuantity,
+        packUnitPrice: null,
+        modifierCodes: line.modifierCodes ?? [],
+      });
+      continue;
+    }
     const packCode = String(line.packCode ?? "BASE").trim().toUpperCase() || "BASE";
     const res = await query<{
       base_price: string;
@@ -2190,6 +2338,8 @@ async function canonicalizePosSaleLines(
                   AND i.product_sku = p.sku AND upper(i.size) = upper($5)
                 LIMIT 1) AS stored_size
          FROM bms_products p
+         LEFT JOIN bms_product_stock_policies sp
+           ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
          LEFT JOIN LATERAL (
            SELECT pack_code, unit_name, base_qty, price
              FROM bms_product_packs
@@ -2214,13 +2364,13 @@ async function canonicalizePosSaleLines(
         WHERE p.tenant_id = $1
           AND p.sku = $2
           AND p.active
-          AND EXISTS (
+          AND (EXISTS (
             SELECT 1 FROM bms_inventory i
              WHERE i.tenant_id = p.tenant_id
                AND i.location_id = $3
                AND i.product_sku = p.sku
                AND upper(i.size) = upper($5)
-          )
+          ) OR p.is_bundle OR sp.stock_policy = 'RECIPE')
         LIMIT 1`,
       [tenantId, sku, locationId, packCode, size]
     );
@@ -2243,6 +2393,7 @@ async function canonicalizePosSaleLines(
       // BASE คือหน่วยฐานและต้องให้ createOrder ใช้ราคาส่ง/โปรโมชันได้
       // มีเพียง packCode ที่ตั้งชื่อแยกเท่านั้นที่ยึดราคาแพ็กคงที่
       packUnitPrice: isFixedPricePack(packCode) ? packPrice : null,
+      modifierCodes: line.modifierCodes ?? [],
     });
     if (row.serial_tracked) {
       serialLines.push({
@@ -2292,7 +2443,7 @@ async function fulfilPosOrderInTx(
   tenantId: string,
   orderId: string,
   taxArgs: { locationId: string; deviceId: string | null; issuedBy: string; settings: TenantVatSettings }
-): Promise<{ docNo: string | null; vat: PosReceiptVat | null; vatIssue: string | null }> {
+): Promise<{ docNo: string | null; vat: PosReceiptVat | null; vatIssue: string | null; kitchenTickets: number }> {
   const ord = await client.query(
     `UPDATE bms_orders SET status = 'COMPLETED', updated_at = now()
       WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'`,
@@ -2373,6 +2524,7 @@ async function fulfilPosOrderInTx(
   // ไม่เพิ่มชนิดใหม่เพราะทุกรายงานที่นับยอดจ่ายออกต้องแก้ตาม — แยกหน้าร้าน/ออนไลน์
   // ด้วย bms_orders.channel = 'pos' แทน
   await recordOrderMovements(client, [orderId], "SHIP", "pos");
+  const kitchenTickets = await enqueueKitchenTicketsInTx(client, tenantId, orderId);
 
   // ใบกำกับอย่างย่อออกในทรานแซกชันเดียวกับการปิดการขาย — บิลที่ตัดสต็อกแล้ว
   // แต่ไม่มีเลขเอกสารคือบิลที่อธิบายกับสรรพากรไม่ได้
@@ -2397,10 +2549,13 @@ async function fulfilPosOrderInTx(
         roundingAmount: doc.roundingAmount,
       },
       vatIssue: null,
+      kitchenTickets,
     };
   }
   // ร้านที่ยังไม่จด VAT ขายได้ตามปกติ แค่ไม่มีใบกำกับ — ไม่ใช่ error
-  if (issued.status === "NOT_VAT_REGISTERED") return { docNo: null, vat: null, vatIssue: null };
+  if (issued.status === "NOT_VAT_REGISTERED") {
+    return { docNo: null, vat: null, vatIssue: null, kitchenTickets };
+  }
   // ร้านจด VAT แล้วแต่สินค้ายังไม่ระบุประเภทภาษี = ออกใบไม่ได้ ต้องหยุดทั้งบิล
   throw new Error(
     issued.status === "VAT_CATEGORY_MISSING"
@@ -2577,11 +2732,31 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     });
   }
 
-  const lotCheck = await checkSellableLots(
-    tenantId,
-    shift.location_id,
-    items.map((it) => ({ sku: it.sku, size: it.size, qty: it.qty }))
-  );
+  let lotLines: Array<{ sku: string; size: string; qty: number }>;
+  try {
+    const effects = await Promise.all(items.map((item) =>
+      resolveStockConsumptionInTx({ query }, tenantId, {
+        sku: item.sku,
+        size: item.size,
+        qty: item.qty,
+        packCode: item.packCode,
+        modifierCodes: item.modifierCodes,
+      })
+    ));
+    const grouped = new Map<string, { sku: string; size: string; qty: number }>();
+    for (const effect of effects) {
+      for (const line of effect.lines) {
+        const lineKey = `${line.sku}\u0000${line.size}`;
+        const current = grouped.get(lineKey);
+        if (current) current.qty += line.qty;
+        else grouped.set(lineKey, { sku: line.sku, size: line.size, qty: line.qty });
+      }
+    }
+    lotLines = [...grouped.values()];
+  } catch (error) {
+    return { status: "PAYMENT_FAILED", reason: error instanceof Error ? error.message : "คำนวณ Stock ไม่สำเร็จ" };
+  }
+  const lotCheck = await checkSellableLots(tenantId, shift.location_id, lotLines);
   if (!lotCheck.ok) {
     return {
       status: "LOT_EXPIRED_OR_SHORT",
@@ -3013,6 +3188,9 @@ async function finalizePosSale(args: {
       receiptNo: fulfilled.docNo,
       billNo: fulfilled.docNo,
       vat: fulfilled.vat,
+      // จำนวนตั๋วที่เข้าครัวจริงในบิลนี้ — หน้าขายไม่มีทางรู้เองว่าเมนูไหนมีสูตร
+      // และร้านเปิดคิวครัวไว้ไหม · 0 = ไม่มีอะไรเข้าครัว (ไม่ต้องแสดงอะไร)
+      kitchenTickets: fulfilled.kitchenTickets,
       discountLines: receiptDiscountLines,
       pointsEarned: hasMember ? Number(loyaltyRow?.earned ?? 0) : null,
       pointsBalance: hasMember ? Number(loyaltyRow?.balance ?? 0) : null,
@@ -4573,6 +4751,9 @@ async function processPosReturn(input: {
           WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL`,
         [input.tenantId, input.orderId, `ยกเลิกบิล: ${voidReason}`]
       );
+      // ครัวต้องหยุดทำอาหารของบิลที่ยกเลิกไปแล้ว — ตั๋วที่ค้างบนกระดานหลัง void
+      // แปลว่าเงินคืนไปแล้วแต่ของยังถูกทำและถูกทิ้ง โดยไม่มีใครรู้ว่าทำไม
+      await cancelKitchenTicketsForOrderInTx(client, input.tenantId, input.orderId);
       // การลบยอดขายออกจากกะคือช่องทุจริตตรงที่สุดที่ POS มี — ต้องมีบรรทัดของตัวเอง
       // ใน audit log กลาง พร้อมชื่อผู้อนุมัติ ไม่ใช่แค่ voided_by บนบิล
       await client.query(

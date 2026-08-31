@@ -509,10 +509,11 @@ The answer is rebuilt from the bills that still hold stock, and three details ar
   invents a holder for units that are free to sell, and the cashier refuses a sale they could have
   made.
 - **Read the `bms_order_stock_lines` view, never `bms_order_items`.** A bundle reserves its
-  components (`8.8`), so a bill that bought a gift set holds stock of a product that does not appear
-  on its own lines. The raw table leaves those units looking unowned. The row carries the parent
-  sets' SKUs — plural, because one bill can hold the same component through two different sets, and
-  naming only the first sends staff looking for half of what the bill holds.
+  components (`8.8`), and a recipe/modifier order reserves its immutable consumption snapshot
+  (`9.40`), so a bill can hold stock of products that do not appear on its own sale lines. The raw
+  table leaves those units looking unowned. Historical rows retain direct/bundle fallback; new rows
+  prefer `bms_order_item_stock_consumption`, so changing a recipe never changes who owns an existing
+  reservation.
 - **Report the part no bill explains.** `/api/bms/reserve` can take a hold with no order behind it, a
   bill that failed midway can strand one, and a hand-edit can too. Showing only the explainable part
   tells the reader the list is complete while stock stays locked with no owner to chase. The

@@ -1,0 +1,69 @@
+.page {
+  --stock-ink: #17332c;
+  --stock-green: #126b50;
+  --stock-mint: #e8f5ef;
+  --stock-sand: #f7f1e3;
+  display: grid;
+  gap: 20px;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 26px;
+  border: 1px solid #cfe1d8;
+  border-radius: 20px;
+  color: var(--stock-ink);
+  background:
+    radial-gradient(circle at 88% 15%, rgb(237 176 75 / 28%) 0 90px, transparent 92px),
+    linear-gradient(120deg, #f3faf7 0%, #e1f0e9 62%, #f7f1e3 100%);
+}
+
+.hero h1 {
+  margin: 0 0 6px;
+  font-family: Georgia, "Noto Serif Thai", serif;
+  font-size: clamp(26px, 4vw, 42px);
+  line-height: 1.05;
+}
+
+.hero p { margin: 0; max-width: 760px; color: #49655c; }
+
+.capabilityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.capability {
+  min-height: 146px;
+  border: 1px solid #dce6e1;
+  border-radius: 16px;
+  padding: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(23 51 44 / 5%);
+}
+
+.capabilityEnabled { border-color: #9ccbb8; background: linear-gradient(150deg, #fff, var(--stock-mint)); }
+.capabilityTitle { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.capabilityTitle strong { color: var(--stock-ink); }
+.capability p { min-height: 42px; margin: 10px 0; color: #647a72; font-size: 13px; }
+.sectionTitle { margin: 0; color: var(--stock-ink); font-family: Georgia, "Noto Serif Thai", serif; }
+.modelGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr); gap: 16px; }
+.componentRow { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(100px, .7fr) 110px 36px; gap: 8px; align-items: start; }
+.emptyPanel { padding: 38px 18px; text-align: center; color: #74877f; border: 1px dashed #cbd8d2; border-radius: 14px; }
+
+@media (max-width: 900px) {
+  .modelGrid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .hero { padding: 20px; border-radius: 14px; }
+  .capabilityGrid { grid-template-columns: 1fr; }
+  .componentRow { grid-template-columns: 1fr 1fr; }
+}
+
+.capabilityNote {
+  margin-top: -4px;
+  font-size: 12px;
+  opacity: 0.72;
+}

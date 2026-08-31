@@ -10,6 +10,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
 import { isDistinctPosApprover, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
@@ -54,11 +55,11 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: message, reason: auth.reason, lockedUntil: auth.lockedUntil }, { status: 403 });
   }
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.sell"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ขายหน้าร้าน" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.sell") }, { status: 403 });
   }
   const mode = body.mode === "DEPOSIT" ? "DEPOSIT" : "SALE";
   if (mode === "DEPOSIT" && !(await cashierHasPermission(device.tenantId, auth.userId, "pos.deposit.take"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์รับมัดจำ" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.deposit.take") }, { status: 403 });
   }
 
   const lines = parsePosSaleLines(body.lines);
@@ -92,7 +93,7 @@ async function handlePOST(req: NextRequest) {
       return NextResponse.json({ error: message, reason: approver.reason }, { status: 403 });
     }
     if (!(await cashierHasPermission(device.tenantId, approver.userId, "pos.discount.approve"))) {
-      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์อนุมัติส่วนลด" }, { status: 403 });
+      return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.discount.approve", { secondPerson: true }) }, { status: 403 });
     }
     approval = { amount: requestedDiscount, userId: approver.userId, reason };
   }
@@ -116,7 +117,7 @@ async function handlePOST(req: NextRequest) {
       const approverPin = typeof body.creditApproverPin === "string" ? body.creditApproverPin : "";
       if (!approverId || !approverPin) {
         return NextResponse.json(
-          { error: "พนักงานคนนี้ไม่มีสิทธิ์ขายเชื่อ — ให้ผู้มีสิทธิ์กด PIN อนุมัติ", code: "AR_APPROVAL_REQUIRED" },
+          { error: await posPermissionDeniedMessage(device.tenantId, "ar.sell", { secondPerson: true }), code: "AR_APPROVAL_REQUIRED" },
           { status: 403 }
         );
       }
@@ -129,7 +130,7 @@ async function handlePOST(req: NextRequest) {
         return NextResponse.json({ error: message, reason: approver.reason }, { status: 403 });
       }
       if (!(await cashierHasPermission(device.tenantId, approver.userId, "ar.sell"))) {
-        return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์อนุมัติการขายเชื่อ" }, { status: 403 });
+        return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "ar.sell", { secondPerson: true }) }, { status: 403 });
       }
       creditApprovedBy = approver.userId;
     }
