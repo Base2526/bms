@@ -58,6 +58,7 @@ let deviceToken = "";
 let cashierId = "";
 let shiftId = "";
 let memberId = "";
+let attributedMemberId = "";
 let tierId = "";
 let soldOrderId = "";
 
@@ -167,6 +168,37 @@ test("open shift", async () => {
   const res = await openPosShift({ tenantId, deviceId, openedBy: cashierId, openingFloat: 1000 });
   assert.ok(res.status === "OPENED" || res.status === "ALREADY_OPEN", JSON.stringify(res));
   if (res.status === "OPENED" || res.status === "ALREADY_OPEN") shiftId = res.shift.id;
+});
+
+test("POS enrollment keeps its verified branch, register, shift, and employee", async () => {
+  const phone = `0944${String(Date.now()).slice(-6)}`;
+  const enrolled = await enrollMember(tenantId, {
+    phone,
+    name: `FAKE ${TAG} attributed member`,
+    actorUserId: cashierId,
+    enrollmentChannel: "POS",
+    enrolledLocationId: locationId,
+    enrolledPosDeviceId: deviceId,
+    enrolledShiftId: shiftId,
+  });
+  assert.equal(enrolled.status, "ENROLLED");
+  if (enrolled.status === "INVALID") return assert.fail(enrolled.reason);
+  attributedMemberId = enrolled.member.customerId;
+  assert.equal(enrolled.member.enrollmentChannel, "POS");
+  assert.equal(enrolled.member.enrolledLocationId, locationId);
+  assert.equal(enrolled.member.enrolledPosDeviceId, deviceId);
+  assert.equal(enrolled.member.enrolledShiftId, shiftId);
+  assert.equal(enrolled.member.enrolledByUserId, cashierId);
+
+  const repeated = await enrollMember(tenantId, {
+    phone,
+    actorUserId: cashierId,
+    enrollmentChannel: "ADMIN",
+  });
+  assert.equal(repeated.status, "ALREADY_MEMBER");
+  if (repeated.status === "INVALID") return assert.fail(repeated.reason);
+  assert.equal(repeated.member.enrollmentChannel, "POS", "สมัครซ้ำห้ามเขียนทับต้นทางครั้งแรก");
+  assert.equal(repeated.member.enrolledLocationId, locationId);
 });
 
 test("counter sale: tier + coupon + points on one bill, receipt agrees with the ledger", async () => {
@@ -457,6 +489,10 @@ test("teardown: remove every row this suite created", async () => {
   if (memberId) {
     await query(`DELETE FROM bms_loyalty_ledger WHERE tenant_id = $1 AND customer_id = $2`, [tenantId, memberId]);
     await query(`DELETE FROM bms_customers WHERE tenant_id = $1 AND id = $2`, [tenantId, memberId]);
+  }
+  if (attributedMemberId) {
+    await query(`DELETE FROM bms_loyalty_ledger WHERE tenant_id = $1 AND customer_id = $2`, [tenantId, attributedMemberId]);
+    await query(`DELETE FROM bms_customers WHERE tenant_id = $1 AND id = $2`, [tenantId, attributedMemberId]);
   }
   await query(`DELETE FROM bms_pos_shifts WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_devices WHERE tenant_id = $1 AND id = $2`, [tenantId, deviceId]);

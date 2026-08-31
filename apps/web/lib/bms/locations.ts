@@ -88,6 +88,49 @@ export async function listLocations(tenantId: string): Promise<BmsLocation[]> {
   return res.rows.map(mapRow);
 }
 
+export async function userHasLocationScope(tenantId: string, userId: string): Promise<boolean> {
+  const res = await query<{ scoped: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations
+        WHERE tenant_id = $1 AND user_id = $2
+     ) AS scoped`,
+    [tenantId, userId]
+  );
+  return Boolean(res.rows[0]?.scoped);
+}
+
+export async function listLocationsForUser(tenantId: string, userId: string): Promise<BmsLocation[]> {
+  if (!(await userHasLocationScope(tenantId, userId))) return listLocations(tenantId);
+  const res = await query(
+    `SELECT loc.*
+       FROM bms_locations loc
+       JOIN bms_user_allowed_locations al
+         ON al.tenant_id = loc.tenant_id
+        AND al.location_id = loc.id
+      WHERE loc.tenant_id = $1 AND al.user_id = $2
+      ORDER BY loc.is_head_office DESC, loc.code`,
+    [tenantId, userId]
+  );
+  return res.rows.map(mapRow);
+}
+
+export async function userCanAccessLocation(
+  tenantId: string,
+  userId: string,
+  locationId: string | null | undefined
+): Promise<boolean> {
+  if (!(await userHasLocationScope(tenantId, userId))) return true;
+  if (!locationId) return false;
+  const res = await query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations
+        WHERE tenant_id = $1 AND user_id = $2 AND location_id = $3
+     ) AS allowed`,
+    [tenantId, userId, locationId]
+  );
+  return Boolean(res.rows[0]?.allowed);
+}
+
 export async function getLocation(tenantId: string, locationId: string): Promise<BmsLocation | null> {
   const res = await query(
     `SELECT * FROM bms_locations WHERE tenant_id = $1 AND id = $2`,

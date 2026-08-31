@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice } from "@/lib/bms/pos";
-import { getLoyaltySettings, previewMemberDiscount } from "@/lib/bms/membership";
+import { getLoyaltySettings, previewMemberDiscount, toPosMemberSummary } from "@/lib/bms/membership";
 import { previewCouponForCustomer } from "@/lib/bms/coupons";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -41,7 +41,7 @@ async function handlePOST(req: NextRequest) {
   let couponDiscount = 0;
   let couponError: string | null = null;
   if (couponCode) {
-    const check = await previewCouponForCustomer(device.tenantId, couponCode, customerId, subtotal);
+    const check = await previewCouponForCustomer(device.tenantId, couponCode, customerId, subtotal, device.locationId);
     if (check.ok) couponDiscount = check.discount;
     else couponError = check.reason;
   }
@@ -62,6 +62,7 @@ async function handlePOST(req: NextRequest) {
   // ก้าวละ 1 หน่วยแลก (ไม่เหลือเศษแต้มที่ไม่ได้แปลงเป็นส่วนลด)
   return NextResponse.json({
     ...preview,
+    member: preview.member ? toPosMemberSummary(preview.member) : null,
     couponError,
     redeemPointsPerUnit: settings.redeemPointsPerUnit,
     redeemBahtPerUnit: settings.redeemBahtPerUnit,

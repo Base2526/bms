@@ -23,6 +23,10 @@ import { getMember, listLoyaltyLedger } from "@/lib/bms/membership";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { listLocationsForUser } from "@/lib/bms/locations";
+import { requireAuth } from "@/lib/auth";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -34,11 +38,28 @@ export const bmsCustomersResolvers = {
   Query: {
     async bmsCustomers(
       _p: unknown,
-      args: { search?: string; limit?: number; offset?: number },
+      args: { search?: string; limit?: number; offset?: number; enrolledLocationId?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "customer.view");
-      return listCustomers(getTenantId(ctx), args.search ?? "", args.limit ?? 50, args.offset ?? 0);
+      const enrolledLocationId = args.enrolledLocationId?.trim() || null;
+      if (enrolledLocationId && !UUID_RE.test(enrolledLocationId)) {
+        throw new GraphQLError("รหัสสาขาที่สมัครไม่ถูกต้อง", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      return listCustomers(
+        getTenantId(ctx),
+        args.search ?? "",
+        args.limit ?? 50,
+        args.offset ?? 0,
+        enrolledLocationId
+      );
+    },
+    async bmsCustomerLocations(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "customer.view");
+      const auth = requireAuth(ctx);
+      return listLocationsForUser(getTenantId(ctx), String(auth.author_id || ""));
     },
     async bmsCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.view");

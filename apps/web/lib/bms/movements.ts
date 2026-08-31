@@ -18,7 +18,8 @@ export type MovementType =
   | "TRANSFER_IN"
   | "TRANSFER_OUT"
   | "COUNT_ADJUST"
-  | "QUARANTINE_IN";
+  | "QUARANTINE_IN"
+  | "TRANSFER_LOST";
 
 export type MovementRow = {
   id: string;

@@ -130,6 +130,13 @@ Added by migration `7.96`. Before it, POS sales were always anonymous — `creat
 A side effect was that coupon `per_customer_limit` never applied at the counter. Attaching a
 customer fixes that too.
 
+Migration `9.38` makes the origin of that membership auditable. Enrollment from POS takes the
+branch and device from the authenticated device token, the shift from the currently open shift,
+and the employee from the verified PIN. `/admin/customers` displays those facts and can filter by
+enrollment branch. Repeating enrollment for an existing member never rewrites the original origin;
+members created before `9.38` show an unknown origin. The system deliberately does not treat the
+customer's first purchase branch as their enrollment branch.
+
 Four independent discount layers can stack on one bill, applied in a fixed order:
 
 | Layer | Source | Reversible |

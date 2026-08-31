@@ -35,14 +35,18 @@ type Customer = {
   addresses: Address[]; identities: Identity[]; orders: Order[]; coupons: CustomerCoupon[];
   membership: {
     memberNo: string | null; memberSince: string | null;
+    enrollmentChannel: string | null;
+    enrolledLocationId: string | null; enrolledLocationName: string | null; enrolledBranchCode: string | null;
+    enrolledPosDeviceId: string | null; enrolledPosDeviceName: string | null; enrolledRegisteredPosNo: string | null;
+    enrolledShiftId: string | null; enrolledByUserId: string | null; enrolledByName: string | null;
     pointsBalance: number; pointsUsable: number;
     tier: { name: string; discountType: string; discountValue: number } | null;
   } | null;
 };
 
 const Q_CUSTOMERS = gql`
-  query ($search: String) {
-    bmsCustomers(search: $search, limit: 100) {
+  query ($search: String, $enrolledLocationId: ID) {
+    bmsCustomers(search: $search, enrolledLocationId: $enrolledLocationId, limit: 100) {
       id name phone note tags total_spent order_count created_at
       identities { channel external_ref }
       addresses { id label address is_default }
@@ -52,11 +56,17 @@ const Q_CUSTOMERS = gql`
         assignedAt state redeemedOrderId reservedOrderId customerUsedCount remainingRedemptions
       }
       membership {
-        memberNo memberSince pointsBalance pointsUsable
+        memberNo memberSince enrollmentChannel
+        enrolledLocationId enrolledLocationName enrolledBranchCode
+        enrolledPosDeviceId enrolledPosDeviceName enrolledRegisteredPosNo enrolledShiftId
+        enrolledByUserId enrolledByName pointsBalance pointsUsable
         tier { name discountType discountValue }
       }
     }
   }
+`;
+const Q_CUSTOMER_LOCATIONS = gql`
+  query { bmsCustomerLocations { id name branchCode active } }
 `;
 const M_UPSERT = gql`mutation ($input: BmsCustomerInput!) { bmsUpsertCustomer(input: $input) { id } }`;
 const M_ADDR = gql`
@@ -116,11 +126,20 @@ function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : "—";
 }
 
+function enrollmentChannelLabel(channel: string | null, t: TFn) {
+  if (channel === "POS") return t("admin_customers.enrollment_pos");
+  if (channel === "ADMIN") return t("admin_customers.enrollment_admin");
+  if (channel === "ONLINE") return t("admin_customers.enrollment_online");
+  if (channel === "IMPORT") return t("admin_customers.enrollment_import");
+  return t("admin_customers.enrollment_unknown");
+}
+
 function CustomersManagement() {
   const { t } = useI18n();
   const [form] = Form.useForm();
   const [addrForm] = Form.useForm();
   const [search, setSearch] = useState("");
+  const [enrolledLocationId, setEnrolledLocationId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [addrFor, setAddrFor] = useState<Customer | null>(null);
@@ -129,9 +148,10 @@ function CustomersManagement() {
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const { data, loading, error, refetch } = useQuery(Q_CUSTOMERS, {
-    variables: { search: search || null },
+    variables: { search: search || null, enrolledLocationId },
     fetchPolicy: "cache-and-network",
   });
+  const { data: locationData } = useQuery(Q_CUSTOMER_LOCATIONS, { fetchPolicy: "cache-and-network" });
   const onErr = (e: any) => message.error(e?.message || t("admin_customers.action_failed"));
 
   const [searchDupes, { data: dupeData, loading: dupeLoading }] = useLazyQuery(Q_CUSTOMERS, { fetchPolicy: "network-only" });
@@ -248,6 +268,35 @@ function CustomersManagement() {
           </Space>
         );
       } },
+    { title: t("admin_customers.col_enrollment"), key: "enrollment", width: 245,
+      render: (_: any, c: Customer) => {
+        const m = c.membership;
+        if (!m?.memberNo) return <span style={{ color: "#999" }}>—</span>;
+        const device = m.enrolledRegisteredPosNo
+          ? `POS#${m.enrolledRegisteredPosNo}`
+          : m.enrolledPosDeviceName;
+        return (
+          <Space direction="vertical" size={0}>
+            <Space size={4} wrap>
+              <Tag color={m.enrollmentChannel === "POS" ? "blue" : "default"} style={{ marginInlineEnd: 0 }}>
+                {enrollmentChannelLabel(m.enrollmentChannel, t)}
+              </Tag>
+              <Text strong style={{ fontSize: 12 }}>
+                {m.enrolledLocationName ?? t("admin_customers.enrollment_branch_unknown")}
+                {m.enrolledBranchCode ? ` (${m.enrolledBranchCode})` : ""}
+              </Text>
+            </Space>
+            {(device || m.enrolledByName) && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {[device, m.enrolledByName].filter(Boolean).join(" · ")}
+              </Text>
+            )}
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {t("admin_customers.enrollment_date", { date: formatDate(m.memberSince) })}
+            </Text>
+          </Space>
+        );
+      } },
     { title: t("admin_customers.col_coupons"), dataIndex: "coupons", key: "coupons", width: 100, align: "center" as const,
       render: (coupons: CustomerCoupon[]) => {
         const count = coupons?.length || 0;
@@ -278,6 +327,17 @@ function CustomersManagement() {
           <Space wrap>
             <Input.Search placeholder={t("admin_customers.search_placeholder")} allowClear style={{ width: 220 }}
               onSearch={(v) => setSearch(v)} onChange={(e) => !e.target.value && setSearch("")} />
+            <Select
+              allowClear
+              value={enrolledLocationId ?? undefined}
+              placeholder={t("admin_customers.filter_enrollment_branch")}
+              style={{ minWidth: 220 }}
+              onChange={(value) => setEnrolledLocationId(value ?? null)}
+              options={(locationData?.bmsCustomerLocations ?? []).map((location: any) => ({
+                value: location.id,
+                label: `${location.name} (${location.branchCode})`,
+              }))}
+            />
             <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_customers.btn_add_customer")}</Button>
           </Space>

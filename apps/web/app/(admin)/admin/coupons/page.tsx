@@ -19,8 +19,13 @@ const Q = gql`
   query {
     bmsCoupons {
       id code type value minOrderAmount maxRedemptions redemptionsCount
-      perCustomerLimit startsAt expiresAt active note createdAt
+      perCustomerLimit startsAt expiresAt active note locationIds createdAt
     }
+  }
+`;
+const Q_LOCATIONS = gql`
+  query {
+    bmsCouponLocations { id name branchCode active }
   }
 `;
 const M_UPSERT = gql`
@@ -58,6 +63,19 @@ const money = (n: number | null) => (n == null ? "—" : `${Number(n).toLocaleSt
 
 function valueLabel(r: any) {
   return r.type === "PERCENT" ? `${r.value}%` : money(r.value);
+}
+
+function branchScopeLabel(
+  r: { locationIds?: string[] | null },
+  locationsById: Map<string, { name: string; branchCode?: string | null }>,
+  allBranchesLabel: string
+) {
+  const ids = Array.isArray(r.locationIds) ? r.locationIds : [];
+  if (ids.length === 0) return allBranchesLabel;
+  return ids.map((id) => {
+    const loc = locationsById.get(id);
+    return loc ? `${loc.name}${loc.branchCode ? ` (${loc.branchCode})` : ""}` : String(id).slice(0, 8);
+  }).join(", ");
 }
 
 // คู่ field แนวนอนบน desktop — บนมือถือซ้อนกันแทน เพราะแบ่งครึ่งแล้วเหลือช่องละ ~150px
@@ -151,6 +169,10 @@ export default function CouponsPage() {
     skip: permsLoading || !can("coupon.view"),
     fetchPolicy: "cache-and-network",
   });
+  const { data: locData } = useQuery(Q_LOCATIONS, {
+    skip: permsLoading || !can("coupon.view"),
+    fetchPolicy: "cache-and-network",
+  });
   const [form] = Form.useForm();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -171,11 +193,16 @@ export default function CouponsPage() {
   if (error) return <Alert closable type="error" showIcon message={t("admin_coupons.load_error")} description={error.message} />;
 
   const rows = data?.bmsCoupons || [];
+  const locations: Array<{ id: string; name: string; branchCode?: string | null; active: boolean }> = locData?.bmsCouponLocations ?? [];
+  const locationsById = new Map(locations.map((loc) => [loc.id, loc]));
+  const locationOptions = locations
+    .filter((loc) => loc.active)
+    .map((loc) => ({ value: loc.id, label: `${loc.name}${loc.branchCode ? ` (${loc.branchCode})` : ""}` }));
 
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ type: "PERCENT", active: true });
+    form.setFieldsValue({ type: "PERCENT", active: true, locationIds: [] });
     setModalOpen(true);
   };
   const openEdit = (r: any) => {
@@ -183,6 +210,7 @@ export default function CouponsPage() {
     form.setFieldsValue({
       code: r.code, type: r.type, value: r.value, minOrderAmount: r.minOrderAmount,
       maxRedemptions: r.maxRedemptions, perCustomerLimit: r.perCustomerLimit, active: r.active, note: r.note,
+      locationIds: r.locationIds ?? [],
       startsAt: r.startsAt ? dayjs(r.startsAt) : null, expiresAt: r.expiresAt ? dayjs(r.expiresAt) : null,
     });
     setModalOpen(true);
@@ -196,6 +224,7 @@ export default function CouponsPage() {
           code: v.code, type: v.type, value: v.value,
           minOrderAmount: v.minOrderAmount ?? null, maxRedemptions: v.maxRedemptions ?? null,
           perCustomerLimit: v.perCustomerLimit ?? null, active: v.active ?? true, note: v.note ?? null,
+          locationIds: v.locationIds ?? [],
           startsAt: v.startsAt ? v.startsAt.toISOString() : null,
           expiresAt: v.expiresAt ? v.expiresAt.toISOString() : null,
         },
@@ -206,6 +235,12 @@ export default function CouponsPage() {
   const columns = [
     { title: t("admin_coupons.col_code"), dataIndex: "code", key: "code", render: (v: string) => <Text strong copyable>{v}</Text> },
     { title: t("admin_coupons.col_discount"), key: "value", render: (_: any, r: any) => valueLabel(r) },
+    {
+      title: t("admin_coupons.col_branch_scope"),
+      key: "branchScope",
+      width: 180,
+      render: (_: any, r: any) => <Text>{branchScopeLabel(r, locationsById, t("admin_coupons.all_branches"))}</Text>,
+    },
     { title: t("admin_coupons.col_min_order"), dataIndex: "minOrderAmount", key: "minOrderAmount", render: money },
     {
       title: t("admin_coupons.col_usage"), key: "usage",
@@ -257,7 +292,6 @@ export default function CouponsPage() {
           emptyText={t("admin_coupons.mobile_empty")}
           renderItem={(r) => (
             <AdminRecordCard
-              key={r.id}
               title={
                 <Space size={6} wrap>
                   <Text strong copyable>{r.code}</Text>
@@ -267,6 +301,7 @@ export default function CouponsPage() {
               extra={<Tag color={r.active ? "green" : "default"} style={{ marginInlineEnd: 0 }}>{r.active ? t("admin_coupons.status_active") : t("admin_coupons.status_inactive")}</Tag>}
               fields={[
                 { label: t("admin_coupons.col_min_order"), value: money(r.minOrderAmount) },
+                { label: t("admin_coupons.field_branch_scope"), value: branchScopeLabel(r, locationsById, t("admin_coupons.all_branches")) },
                 { label: t("admin_coupons.col_per_customer"), value: r.perCustomerLimit ?? t("admin_coupons.unlimited") },
                 { label: t("admin_coupons.field_starts"), value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : t("admin_coupons.starts_immediately") },
                 { label: t("admin_coupons.field_expires"), value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : t("admin_coupons.no_expiry") },
@@ -331,6 +366,18 @@ export default function CouponsPage() {
           </FieldPair>
           <Form.Item name="minOrderAmount" label={t("admin_coupons.form_min_order")}>
             <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_coupons.form_min_order_placeholder")} />
+          </Form.Item>
+          <Form.Item
+            name="locationIds"
+            label={t("admin_coupons.form_branch_scope")}
+            extra={t("admin_coupons.form_branch_scope_extra")}
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              options={locationOptions}
+              placeholder={t("admin_coupons.form_branch_scope_placeholder")}
+            />
           </Form.Item>
           <FieldPair isMobile={isMobile}>
             <Form.Item name="maxRedemptions" label={t("admin_coupons.form_max_redemptions")} style={{ width: isMobile ? "100%" : "50%" }}>

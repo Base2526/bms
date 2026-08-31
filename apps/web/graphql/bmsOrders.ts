@@ -23,6 +23,9 @@ import { generateInvoice } from "@/lib/bms/documents";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { listLocationsForUser, userCanAccessLocation } from "@/lib/bms/locations";
+import { requireAuth } from "@/lib/auth";
+import { GraphQLError } from "graphql/error";
 
 const ORDER_STATUSES = [
   "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED",
@@ -31,11 +34,54 @@ type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 const VALID_ORDER_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
 
+async function assertOrderBranchAccess(ctx: any, tenantId: string, orderId: string): Promise<void> {
+  const userId = String(requireAuth(ctx).author_id || "");
+  if (!userId) return;
+  const res = await query<{ allowed: boolean }>(
+    `SELECT (
+        NOT EXISTS (
+          SELECT 1 FROM bms_user_allowed_locations al
+           WHERE al.tenant_id = $1 AND al.user_id = $2
+        )
+        OR EXISTS (
+          SELECT 1
+            FROM bms_orders o
+            JOIN bms_user_allowed_locations al
+              ON al.tenant_id = o.tenant_id
+             AND al.user_id = $2
+             AND al.location_id = o.location_id
+           WHERE o.tenant_id = $1 AND o.id = $3
+        )
+      ) AS allowed`,
+    [tenantId, userId, orderId]
+  );
+  if (!res.rows[0]?.allowed) {
+    throw new GraphQLError("ไม่มีสิทธิ์จัดการออเดอร์ของสาขานี้", {
+      extensions: { code: "FORBIDDEN", http: { status: 403 } },
+    });
+  }
+}
+
+async function resolveWritableLocationId(tenantId: string, userId: string, requestedLocationId: string | null): Promise<string | null> {
+  const allowed = await userCanAccessLocation(tenantId, userId, requestedLocationId);
+  if (allowed) return requestedLocationId;
+  if (!requestedLocationId) {
+    const allowedLocations = await listLocationsForUser(tenantId, userId);
+    if (allowedLocations.length === 1) return allowedLocations[0].id;
+    throw new GraphQLError("ต้องเลือกสาขาก่อนสร้างออเดอร์", {
+      extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+    });
+  }
+  throw new GraphQLError("ไม่มีสิทธิ์สร้างออเดอร์ให้สาขานี้", {
+    extensions: { code: "FORBIDDEN", http: { status: 403 } },
+  });
+}
+
 export const bmsOrdersResolvers = {
   Query: {
     async bmsOrders(
       _p: unknown,
-      args: { search?: string; status?: OrderStatus; limit?: number; offset?: number },
+      args: { search?: string; status?: OrderStatus; limit?: number; offset?: number; locationId?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "order.view");
@@ -45,6 +91,8 @@ export const bmsOrdersResolvers = {
       const search = args.search?.trim() || null;
       const status =
         args.status && ORDER_STATUSES.includes(args.status) ? args.status : null;
+      const locationId = args.locationId?.trim() || null;
+      const userId = String(requireAuth(ctx).author_id || "");
 
       const res = await query(
         `SELECT o.id, o.channel, o.customer_ref, o.customer_id, o.status, o.total_amount, o.discount_amount, o.shipping_fee,
@@ -52,39 +100,85 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.created_at, o.updated_at
+                o.coupon_code, o.preferred_carrier, o.location_id,
+                loc.name AS location_name, loc.branch_code,
+                pd.name AS pos_device_name, pd.registered_pos_no,
+                o.pos_shift_id, o.created_at, o.updated_at
            FROM bms_orders o
            LEFT JOIN bms_pos_deposits d
              ON d.tenant_id = o.tenant_id AND d.order_id = o.id
+           LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = o.location_id
+           LEFT JOIN bms_pos_devices pd ON pd.tenant_id = o.tenant_id AND pd.id = o.pos_device_id
           WHERE o.tenant_id = $4
             AND ($1::text IS NULL OR o.status = $1)
+            AND ($6::uuid IS NULL OR o.location_id = $6)
+            AND (
+              NOT EXISTS (
+                SELECT 1 FROM bms_user_allowed_locations al
+                 WHERE al.tenant_id = o.tenant_id AND al.user_id = $7
+              )
+              OR EXISTS (
+                SELECT 1 FROM bms_user_allowed_locations al
+                 WHERE al.tenant_id = o.tenant_id
+                   AND al.user_id = $7
+                   AND al.location_id = o.location_id
+              )
+            )
             AND (
               $5::text IS NULL
               OR o.id::text ILIKE '%' || $5 || '%'
               OR o.channel ILIKE '%' || $5 || '%'
               OR COALESCE(o.customer_ref, '') ILIKE '%' || $5 || '%'
+              OR COALESCE(loc.name, '') ILIKE '%' || $5 || '%'
+              OR COALESCE(loc.branch_code, '') ILIKE '%' || $5 || '%'
             )
           ORDER BY o.created_at DESC
           LIMIT $2 OFFSET $3`,
-        [status, limit, offset, tid, search]
+        [status, limit, offset, tid, search, locationId, userId]
       );
       return res.rows;
     },
 
+    async bmsOrderLocations(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "order.view");
+      const tenantId = getTenantId(ctx);
+      const userId = String(requireAuth(ctx).author_id || "");
+      return listLocationsForUser(tenantId, userId);
+    },
+
     async bmsOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.view");
+      const tenantId = getTenantId(ctx);
+      const userId = String(requireAuth(ctx).author_id || "");
       const res = await query(
         `SELECT o.id, o.channel, o.customer_ref, o.customer_id, o.status, o.total_amount, o.discount_amount, o.shipping_fee,
                 (o.total_amount + o.shipping_fee) AS amount_due,
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.created_at, o.updated_at
+                o.coupon_code, o.preferred_carrier, o.location_id,
+                loc.name AS location_name, loc.branch_code,
+                pd.name AS pos_device_name, pd.registered_pos_no,
+                o.pos_shift_id, o.created_at, o.updated_at
            FROM bms_orders o
            LEFT JOIN bms_pos_deposits d
              ON d.tenant_id = o.tenant_id AND d.order_id = o.id
-          WHERE o.tenant_id = $2 AND o.id = $1`,
-        [args.id, getTenantId(ctx)]
+           LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = o.location_id
+           LEFT JOIN bms_pos_devices pd ON pd.tenant_id = o.tenant_id AND pd.id = o.pos_device_id
+          WHERE o.tenant_id = $2 AND o.id = $1
+            AND (
+              NOT EXISTS (
+                SELECT 1 FROM bms_user_allowed_locations al
+                 WHERE al.tenant_id = o.tenant_id AND al.user_id = $3
+              )
+              OR EXISTS (
+                SELECT 1 FROM bms_user_allowed_locations al
+                 WHERE al.tenant_id = o.tenant_id
+                   AND al.user_id = $3
+                   AND al.location_id = o.location_id
+              )
+            )`,
+        [args.id, tenantId, userId]
       );
       return res.rows[0] ?? null;
     },
@@ -103,43 +197,57 @@ export const bmsOrdersResolvers = {
   Mutation: {
     async bmsPayOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
-      const ok = await payOrder(getTenantId(ctx), args.id);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const ok = await payOrder(tenantId, args.id);
       if (ok) await audit(ctx, "order.pay", args.id);
       return ok;
     },
     async bmsPackOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
-      const ok = await packOrder(getTenantId(ctx), args.id);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const ok = await packOrder(tenantId, args.id);
       if (ok) await audit(ctx, "order.pack", args.id);
       return ok;
     },
     async bmsShipOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
-      const ok = await shipOrder(getTenantId(ctx), args.id);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const ok = await shipOrder(tenantId, args.id);
       if (ok) await audit(ctx, "order.ship", args.id);
       return ok;
     },
     async bmsCompleteOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
-      const ok = await completeOrder(getTenantId(ctx), args.id);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const ok = await completeOrder(tenantId, args.id);
       if (ok) await audit(ctx, "order.complete", args.id);
       return ok;
     },
     async bmsCancelOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.cancel");
-      const ok = await cancelOrder(getTenantId(ctx), args.id);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const ok = await cancelOrder(tenantId, args.id);
       if (ok) await audit(ctx, "order.cancel", args.id);
       return ok;
     },
     async bmsReturnOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.return");
-      const ok = await returnOrder(getTenantId(ctx), args.id);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const ok = await returnOrder(tenantId, args.id);
       if (ok) await audit(ctx, "order.return", args.id);
       return ok;
     },
     async bmsReorderFromOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.create");
-      const r = await reorderFromOrder(getTenantId(ctx), args.id, ctx?.admin?.id ?? null);
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      const r = await reorderFromOrder(tenantId, args.id, ctx?.admin?.id ?? null);
       if (r.status === "CREATED") {
         await audit(ctx, "order.reorder", r.orderId, { sourceOrderId: args.id });
         return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์ใหม่แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
@@ -161,21 +269,25 @@ export const bmsOrdersResolvers = {
     },
     async bmsCreateOrder(
       _p: unknown,
-      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[]; couponCode?: string | null; preferredCarrier?: string | null },
+      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[]; couponCode?: string | null; preferredCarrier?: string | null; locationId?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "order.create");
+      const tenantId = getTenantId(ctx);
+      const userId = String(requireAuth(ctx).author_id || "");
+      const locationId = await resolveWritableLocationId(tenantId, userId, args.locationId?.trim() || null);
       const channel = (VALID_ORDER_CHANNELS as readonly string[]).includes(args.channel ?? "")
         ? (args.channel as (typeof VALID_ORDER_CHANNELS)[number])
         : "web";
       const r = await createOrder({
-        tenantId: getTenantId(ctx),
+        tenantId,
         channel,
         customerRef: args.customerRef ?? null,
         items: args.items ?? [],
         editorId: ctx?.admin?.id ?? null,
         couponCode: args.couponCode ?? null,
         preferredCarrier: args.preferredCarrier ?? null,
+        locationId,
       });
       if (r.status === "CREATED") {
         await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total, discount: r.discount, couponCode: r.couponCode });
@@ -237,6 +349,12 @@ export const bmsOrdersResolvers = {
     deposit_status: (p: any) => p.deposit_status ?? null,
     coupon_code: (p: any) => p.coupon_code ?? null,
     preferred_carrier: (p: any) => p.preferred_carrier ?? null,
+    locationId: (p: any) => p.location_id ?? null,
+    locationName: (p: any) => p.location_name ?? null,
+    branchCode: (p: any) => p.branch_code ?? null,
+    posDeviceName: (p: any) => p.pos_device_name ?? null,
+    registeredPosNo: (p: any) => p.registered_pos_no == null ? null : String(p.registered_pos_no),
+    posShiftId: (p: any) => p.pos_shift_id ?? null,
     created_at: (p: any) =>
       p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
     updated_at: (p: any) =>

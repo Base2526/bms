@@ -51,11 +51,11 @@ operators must resolve those records before retrying the migration.
 | Follow-up Automation (MVP core) | `bms_conversation_intents`, `bms_followup_rules`, `bms_followup_jobs`, `bms_followup_history` (+ `bms_conversations.last_sender_type`, `bms_customers.followup_opt_out`) | `7.52` |
 | Report email permission | (permission-only, no new table) | `7.54` |
 | Job run history | `bms_job_runs` (platform-wide, no `tenant_id`) | `7.55` (renumbered from `7.53` — see note below) |
-| Membership & loyalty | `bms_loyalty_settings`, `bms_membership_tiers`, `bms_loyalty_ledger`, `bms_order_discounts` (+ `bms_customers.member_no/member_since/tier_id/tier_reviewed_at/points_balance`) | `7.96` |
+| Membership & loyalty | `bms_loyalty_settings`, `bms_membership_tiers`, `bms_loyalty_ledger`, `bms_order_discounts` (+ member and enrollment-attribution columns on `bms_customers`) | `7.96`, `9.38` |
 | POS park / drawer cash / void | `bms_pos_parked_sales`, `bms_pos_cash_movements` (+ `bms_pos_returns.is_void`, `bms_orders.voided_at/voided_by/void_reason`; cash-movement idempotency) | `7.97`, `9.5` |
 | POS Scan Manager / PO receipt retry | `bms_pos_purchase_receipts` (+ `bms_pos_devices.scanner_mode/scanner_prefix_key/scanner_suffix_key/scanner_max_gap_ms`) | `9.6` |
 | POS petty-cash expenses | `bms_pos_expenses` (drawer-funded rows link atomically to `bms_pos_cash_movements`; personal-funded rows intentionally do not), `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger` | `9.7`–`9.10` |
-| Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items`; branch quarantine + receive discrepancy evidence | `7.98`, `9.35` |
+| Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items`; branch quarantine + receive discrepancy evidence + transfer-loss visibility | `7.98`, `9.35`, `9.36` |
 | Phase 1 action + inventory intelligence | `bms_actions`, `bms_action_events`, `bms_inventory_policies`, `bms_inventory_demand_events` | `9.12`–`9.13` |
 | Phase 2 retention engine | `bms_retention_cases` | `9.14` |
 | Data-integrity lifecycle | event timestamps on `bms_orders` / `bms_payments`; non-negative product-cost constraint | `9.15` |
@@ -116,6 +116,14 @@ adding anything usable. Usable points are `SUM(points - consumed_points)` over g
 not expired, consumed FIFO by `expires_at`. `UNIQUE (tenant_id, order_id, kind)` on `EARN`/`REDEEM`
 makes POS replay idempotent; `UNIQUE (tenant_id, pos_return_id, kind)` does the same for partial
 returns, and cancel/full-return reversals are the rows with `pos_return_id IS NULL`.
+
+**Member enrollment attribution (`9.38`)** — `bms_customers.enrollment_channel` records how the
+membership was created. A POS enrollment snapshots the authenticated register's
+`enrolled_location_id`, `enrolled_pos_device_id`, current `enrolled_shift_id` when one is open, and
+the PIN-verified `enrolled_by` user. These fields are written only on the first successful
+enrollment and are not inferred from the first order or overwritten by a repeated enrollment.
+Legacy members remain `NULL` and the UI labels them as unknown rather than inventing a branch.
+Composite tenant foreign keys prevent a location, device, or shift from another shop being stored.
 
 Two things about writing to these tables:
 
@@ -250,9 +258,11 @@ Sending also refuses to push the source below its `reserved_stock` — stock a c
 promised must not be driven to another branch. `bms_stock_transfer_items` has
 `UNIQUE (transfer_id, product_sku, size)`, `qty CHECK (qty > 0)`, and a nullable
 `received_qty CHECK (received_qty >= 0)`: receiving less than was sent is legitimate (breakage, loss,
-miscount at packing) and the shortfall is written as its own `STOCK_OUT` movement at the **source** with
-a note naming the transfer, rather than being absorbed silently into the difference between two
-branches.
+miscount at packing) and the shortfall is written as its own `TRANSFER_LOST` movement at the
+**source** with a note naming the transfer, rather than being absorbed silently into the difference
+between two branches. `9.36` keeps that loss visible on product inventory as an operational follow-up
+number, but it is deliberately outside company-held stock because the goods are neither sellable nor
+physically held in quarantine.
 
 `bms_stock_counts` / `bms_stock_count_items` (`DRAFT` → `APPLIED`/`CANCELLED`,
 `UNIQUE (tenant_id, count_no)`, `UNIQUE (count_id, product_sku, size)`) exist for the case where the
@@ -788,3 +798,15 @@ Full-shop fake seeding writes the run only after all business fixtures succeed. 
 does not rewrite history; per-domain row signatures make even a non-aggregate product/message edit
 change the fingerprint. The service reports that run as stale and refuses to score against it. Fake
 cleanup deletes the run, which cascades its cases and score history.
+
+## Branch visibility and policy scope (`9.37`)
+
+`bms_coupon_locations` stores the optional branch allow-list for a discount code. The primary key is
+`(tenant_id, coupon_id, location_id)` and all foreign keys include tenant-owned parents, so a coupon
+cannot be scoped to a branch in another shop. No rows means "usable at every active branch"; rows
+present means "usable only at these branches". The table has tenant RLS and `bms_app` grants.
+
+`bms_user_allowed_locations` is the Phase 4 foundation for branch-restricted staff access. It is
+tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_app` grants, and is
+deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
+RBAC until each page/mutation is wired to enforce the allow-list.

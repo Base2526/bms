@@ -414,7 +414,7 @@ export async function receiveStockTransfer(input: {
         // ของหายระหว่างทาง — ต้องมีบรรทัดของตัวเอง ไม่ใช่หายเงียบจากผลต่างสองสาขา
         await recordMovement(client, {
           tenantId: input.tenantId, locationId: t.from_location,
-          sku: item.product_sku, size: item.size, type: "STOCK_OUT", qty: missing,
+          sku: item.product_sku, size: item.size, type: "TRANSFER_LOST", qty: missing,
           note: `ของขาดระหว่างโอน ${t.transfer_no} (ส่ง ${item.qty} รับดี ${receivedQty} เสียหาย ${damagedQty} ไม่พบ ${missing}; ${reason}: ${note})`,
           actor: input.actorUserId,
         });

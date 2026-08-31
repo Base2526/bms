@@ -208,11 +208,15 @@ test("receiving less than was sent records the shortfall instead of hiding it", 
 
   const missing = await query<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM bms_stock_movements
-      WHERE tenant_id = $1 AND product_sku = $2 AND type = 'STOCK_OUT'
+      WHERE tenant_id = $1 AND product_sku = $2 AND type = 'TRANSFER_LOST'
         AND note LIKE '%ของขาดระหว่างโอน%'`,
     [tenantId, SKU]
   );
   assert.equal(Number(missing.rows[0].n), 1, "ของที่หายระหว่างทางต้องมีบรรทัดของตัวเอง");
+
+  const variants = await listVariants(tenantId, SKU);
+  const main = variants.find((row) => row.location_id === mainLocation && row.size === SIZE);
+  assert.equal(main?.transfer_lost_qty, 2, "หน้าสินค้าต้องเห็นยอดสูญหายจากใบโอนแยกจาก stock ที่บริษัทยังถือ");
 });
 
 test("a transfer cannot move more than is unreserved, and cannot be cancelled once sent", async () => {

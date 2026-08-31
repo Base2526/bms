@@ -15,6 +15,8 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { findCustomerIdByIdentity } from "./customers";
 
+type CouponQueryFn = (sql: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number | null }>;
+
 export type CouponType = "PERCENT" | "FIXED";
 
 export type Coupon = {
@@ -30,6 +32,7 @@ export type Coupon = {
   expiresAt: string | null;
   active: boolean;
   note: string | null;
+  locationIds: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -54,6 +57,7 @@ function mapRow(r: any): Coupon {
     expiresAt: r.expires_at ? new Date(r.expires_at).toISOString() : null,
     active: r.active,
     note: r.note ?? null,
+    locationIds: Array.isArray(r.location_ids) ? r.location_ids.filter(Boolean).map(String) : [],
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
   };
@@ -61,7 +65,14 @@ function mapRow(r: any): Coupon {
 
 export async function listCoupons(tenantId: string): Promise<Coupon[]> {
   const res = await query(
-    `SELECT ${ROW_COLUMNS} FROM bms_coupons WHERE tenant_id = $1 ORDER BY created_at DESC`,
+    `SELECT ${ROW_COLUMNS},
+            COALESCE((
+              SELECT array_agg(cl.location_id::text ORDER BY loc.is_head_office DESC, loc.code)
+                FROM bms_coupon_locations cl
+                JOIN bms_locations loc ON loc.tenant_id = cl.tenant_id AND loc.id = cl.location_id
+               WHERE cl.tenant_id = bms_coupons.tenant_id AND cl.coupon_id = bms_coupons.id
+            ), ARRAY[]::text[]) AS location_ids
+       FROM bms_coupons WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId]
   );
   return res.rows.map(mapRow);
@@ -106,6 +117,7 @@ function baseEligibility(
   c: Coupon,
   customerUsedCount: number,
   subtotal?: number | null,
+  locationId?: string | null,
   wallet?: {
     assignedAt?: string | null;
     source?: string | null;
@@ -135,6 +147,7 @@ function baseEligibility(
   else if (c.expiresAt && now > new Date(c.expiresAt).getTime()) reason = "โค้ดนี้หมดอายุแล้ว";
   else if (c.maxRedemptions != null && c.redemptionsCount >= c.maxRedemptions) reason = "โค้ดนี้ถูกใช้ครบจำนวนแล้ว";
   else if (c.perCustomerLimit != null && customerUsedCount >= c.perCustomerLimit) reason = "ลูกค้าใช้โค้ดนี้ครบจำนวนที่กำหนดแล้ว";
+  else if (c.locationIds.length > 0 && (!locationId || !c.locationIds.includes(locationId))) reason = "โค้ดนี้ใช้ได้เฉพาะบางสาขา";
   else if (subtotalOk === false) reason = `ยอดสั่งซื้อต้องถึง ${c.minOrderAmount?.toLocaleString()} บาทขึ้นไป`;
 
   return {
@@ -277,7 +290,7 @@ async function syncWalletLifecycle(tenantId: string, customerId: string): Promis
 
 export async function listCustomerCouponWallet(
   tenantId: string,
-  opts: { channel?: string | null; customerRef?: string | null; subtotal?: number | null; customerId?: string | null }
+  opts: { channel?: string | null; customerRef?: string | null; subtotal?: number | null; customerId?: string | null; locationId?: string | null }
 ): Promise<CustomerCouponWalletItem[]> {
   const customerId = opts.customerId ?? await findCustomerIdByIdentity(tenantId, opts.channel, opts.customerRef);
   if (!customerId) return [];
@@ -290,7 +303,7 @@ export async function listCustomerCouponWallet(
     const coupon = mapRow(row);
     return {
       ...coupon,
-      ...baseEligibility(coupon, counts.get(coupon.id) ?? 0, opts.subtotal, {
+      ...baseEligibility(coupon, counts.get(coupon.id) ?? 0, opts.subtotal, opts.locationId ?? null, {
         walletId: row.wallet_id,
         assignedAt: toIsoOrNull(row.assigned_at),
         source: row.source ?? null,
@@ -308,11 +321,11 @@ export async function listCustomerCouponWallet(
 
 export async function listAvailableCouponsForCustomer(
   tenantId: string,
-  opts: { channel?: string | null; customerRef?: string | null; subtotal?: number | null; limit?: number }
+  opts: { channel?: string | null; customerRef?: string | null; subtotal?: number | null; limit?: number; locationId?: string | null }
 ): Promise<CustomerCoupon[]> {
   const customerId = await findCustomerIdByIdentity(tenantId, opts.channel, opts.customerRef);
   if (customerId) {
-    const walletItems = await listCustomerCouponWallet(tenantId, { customerId, subtotal: opts.subtotal });
+    const walletItems = await listCustomerCouponWallet(tenantId, { customerId, subtotal: opts.subtotal, locationId: opts.locationId ?? null });
     if (walletItems.length > 0) {
       return walletItems
         .filter((coupon) => coupon.available)
@@ -330,7 +343,7 @@ export async function listAvailableCouponsForCustomer(
   const coupons = res.rows.map(mapRow);
   const counts = await customerCouponUseCounts(tenantId, customerId, coupons.map((c) => c.id), coupons.map((c) => c.code));
   return coupons
-    .map((coupon) => ({ ...coupon, ...baseEligibility(coupon, counts.get(coupon.id) ?? 0, opts.subtotal, null) }))
+    .map((coupon) => ({ ...coupon, ...baseEligibility(coupon, counts.get(coupon.id) ?? 0, opts.subtotal, opts.locationId ?? null, null) }))
     .filter((coupon) => coupon.available)
     .slice(0, Math.min(Math.max(opts.limit ?? 5, 1), 20));
 }
@@ -338,11 +351,11 @@ export async function listAvailableCouponsForCustomer(
 export async function checkCouponForCustomer(
   tenantId: string,
   rawCode: string,
-  opts: { channel?: string | null; customerRef?: string | null; subtotal?: number | null; alternativeLimit?: number }
+  opts: { channel?: string | null; customerRef?: string | null; subtotal?: number | null; alternativeLimit?: number; locationId?: string | null }
 ): Promise<CustomerCouponLookup> {
   const code = rawCode.trim().toUpperCase();
   const customerId = await findCustomerIdByIdentity(tenantId, opts.channel, opts.customerRef);
-  const walletItems = customerId ? await listCustomerCouponWallet(tenantId, { customerId, subtotal: opts.subtotal }) : [];
+  const walletItems = customerId ? await listCustomerCouponWallet(tenantId, { customerId, subtotal: opts.subtotal, locationId: opts.locationId ?? null }) : [];
   const hasWallet = walletItems.length > 0;
   const walletMatch = walletItems.find((item) => item.code === code) ?? null;
   if (hasWallet && !walletMatch) {
@@ -364,7 +377,7 @@ export async function checkCouponForCustomer(
     ? await customerCouponUseCounts(tenantId, customerId, [coupon.id], [coupon.code])
     : new Map<string, number>();
   const requested = coupon
-    ? { ...coupon, ...baseEligibility(coupon, counts.get(coupon.id) ?? 0, opts.subtotal, walletMatch ? {
+    ? { ...coupon, ...baseEligibility(coupon, counts.get(coupon.id) ?? 0, opts.subtotal, opts.locationId ?? null, walletMatch ? {
         walletId: walletMatch.walletId,
         assignedAt: walletMatch.assignedAt,
         source: walletMatch.source,
@@ -376,6 +389,7 @@ export async function checkCouponForCustomer(
         channel: opts.channel,
         customerRef: opts.customerRef,
         subtotal: opts.subtotal,
+        locationId: opts.locationId ?? null,
         limit: opts.alternativeLimit ?? 3,
       });
   return { requestedCode: code || null, requested, alternatives };
@@ -396,7 +410,8 @@ export async function previewCouponForCustomer(
   tenantId: string,
   rawCode: string,
   customerId: string | null,
-  subtotal: number
+  subtotal: number,
+  locationId?: string | null
 ): Promise<CouponPreviewResult> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, reason: "โค้ดส่วนลดไม่ถูกต้อง" };
@@ -408,8 +423,11 @@ export async function previewCouponForCustomer(
   if (res.rowCount === 0) return { ok: false, reason: "ไม่พบโค้ดส่วนลดนี้" };
   const coupon = mapRow(res.rows[0]);
 
+  if (!(await couponAllowsLocation(query, tenantId, coupon.id, locationId ?? null))) {
+    return { ok: false, reason: "โค้ดนี้ใช้ไม่ได้กับสาขานี้" };
+  }
   const counts = await customerCouponUseCounts(tenantId, customerId, [coupon.id], [coupon.code]);
-  const eligibility = baseEligibility(coupon, counts.get(coupon.id) ?? 0, subtotal, null);
+  const eligibility = baseEligibility(coupon, counts.get(coupon.id) ?? 0, subtotal, locationId ?? null, null);
   if (!eligibility.available) return { ok: false, reason: eligibility.reason ?? "ใช้โค้ดนี้ไม่ได้" };
 
   return { ok: true, code: coupon.code, discount: eligibility.discountPreview ?? 0 };
@@ -423,6 +441,25 @@ export function couponCodeFromShareText(body: string): string | null {
     .find((line) => /^(?:โค้ด|CODE)\s+/i.test(line));
   if (codeLine) return codeLine.replace(/^(?:โค้ด|CODE)\s+/i, "").trim().toUpperCase() || null;
   return null;
+}
+
+async function couponAllowsLocation(
+  runQuery: CouponQueryFn,
+  tenantId: string,
+  couponId: string,
+  locationId: string | null
+): Promise<boolean> {
+  const scoped = await runQuery(
+    `SELECT EXISTS (
+        SELECT 1 FROM bms_coupon_locations WHERE tenant_id = $1 AND coupon_id = $2
+      ) AS scoped,
+      EXISTS (
+        SELECT 1 FROM bms_coupon_locations WHERE tenant_id = $1 AND coupon_id = $2 AND location_id = $3
+      ) AS allowed`,
+    [tenantId, couponId, locationId]
+  );
+  const row = scoped.rows[0] as { scoped?: boolean; allowed?: boolean } | undefined;
+  return !row?.scoped || Boolean(row.allowed);
 }
 
 type CouponWalletTokenPayload = {
@@ -664,6 +701,7 @@ export type UpsertCouponInput = {
   expiresAt?: string | null;
   active?: boolean;
   note?: string | null;
+  locationIds?: string[] | null;
 };
 
 /** normalize + validate ก่อนเขียน DB เสมอ ไม่เชื่อค่าที่ client ส่งมาตรงๆ */
@@ -731,6 +769,7 @@ export async function upsertCoupon(
         ]
       );
       if (res.rowCount === 0) throw new Error("ไม่พบโค้ดส่วนลดนี้");
+      await replaceCouponLocationsInTx(client, tenantId, res.rows[0].id, v.locationIds ?? null);
       await client.query("COMMIT");
       return mapRow(res.rows[0]);
     }
@@ -745,6 +784,7 @@ export async function upsertCoupon(
         v.perCustomerLimit ?? null, v.startsAt ?? null, v.expiresAt ?? null, v.active ?? true, v.note ?? null,
       ]
     );
+    await replaceCouponLocationsInTx(client, tenantId, res.rows[0].id, v.locationIds ?? null);
     await client.query("COMMIT");
     return mapRow(res.rows[0]);
   } catch (err: any) {
@@ -754,6 +794,28 @@ export async function upsertCoupon(
   } finally {
     client.release();
   }
+}
+
+async function replaceCouponLocationsInTx(
+  client: PoolClient,
+  tenantId: string,
+  couponId: string,
+  locationIds: string[] | null
+): Promise<void> {
+  if (locationIds == null) return;
+  const ids = Array.from(new Set(locationIds.map((id) => String(id).trim()).filter(Boolean)));
+  await client.query(`DELETE FROM bms_coupon_locations WHERE tenant_id = $1 AND coupon_id = $2`, [tenantId, couponId]);
+  if (ids.length === 0) return;
+  const owned = await client.query<{ id: string }>(
+    `SELECT id FROM bms_locations WHERE tenant_id = $1 AND active AND id = ANY($2::uuid[])`,
+    [tenantId, ids]
+  );
+  if (owned.rowCount !== ids.length) throw new Error("มีสาขาที่ไม่อยู่ในร้านนี้หรือถูกปิดใช้งาน");
+  await client.query(
+    `INSERT INTO bms_coupon_locations (tenant_id, coupon_id, location_id)
+     SELECT $1, $2, unnest($3::uuid[])`,
+    [tenantId, couponId, ids]
+  );
 }
 
 export async function deleteCoupon(tenantId: string, id: string): Promise<boolean> {
@@ -830,7 +892,8 @@ export async function applyCouponInTx(
   tenantId: string,
   rawCode: string,
   customerId: string | null,
-  subtotal: number
+  subtotal: number,
+  locationId?: string | null
 ): Promise<CouponApplyResult> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, reason: "โค้ดส่วนลดไม่ถูกต้อง" };
@@ -864,6 +927,9 @@ export async function applyCouponInTx(
     if (Number(used.rows[0]?.n ?? 0) >= c.perCustomerLimit) {
       return { ok: false, reason: "คุณใช้โค้ดนี้ครบจำนวนที่กำหนดแล้ว" };
     }
+  }
+  if (!(await couponAllowsLocation(client.query.bind(client), tenantId, c.id, locationId ?? null))) {
+    return { ok: false, reason: "โค้ดนี้ใช้ไม่ได้กับสาขานี้" };
   }
 
   const discount = c.type === "PERCENT"

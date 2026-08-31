@@ -54,6 +54,7 @@ const shapeVariant = (r: {
   reserved_stock: number;
   quarantine_stock?: number;
   in_transit_qty?: number;
+  transfer_lost_qty?: number;
   reorder_point: number;
   price?: number;
   price_override?: number | null;
@@ -69,6 +70,7 @@ const shapeVariant = (r: {
     reserved_stock: r.reserved_stock,
     quarantine_stock: Number(r.quarantine_stock ?? 0),
     inTransitQty: Number(r.in_transit_qty ?? 0),
+    transferLostQty: Number(r.transfer_lost_qty ?? 0),
     reorder_point: r.reorder_point,
     available,
     low: available <= r.reorder_point,

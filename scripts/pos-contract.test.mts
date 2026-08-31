@@ -206,11 +206,14 @@ test("petty-cash advances return change or request only the real extra cash", ()
 
 test("POS last-sale decorator adds storefront metadata without changing sale fields", () => {
   const decorated = decoratePosSale(
-    { orderId: "ord-1", total: 250, paymentMethod: "CARD" },
+    { orderId: "ord-1", docNo: "Z6908310001", total: 250, paymentMethod: "CARD" },
     { storeName: "Main Branch", branchCode: "00001", posLabel: "POS01", vatRegistered: true }
   );
   assert.deepEqual(decorated, {
     orderId: "ord-1",
+    docNo: "Z6908310001",
+    receiptNo: "Z6908310001",
+    billNo: "Z6908310001",
     total: 250,
     paymentMethod: "CARD",
     storeName: "Main Branch",
@@ -218,6 +221,43 @@ test("POS last-sale decorator adds storefront metadata without changing sale fie
     posLabel: "POS01",
     vatRegistered: true,
   });
+});
+
+test("sale receipt prints human bill number separately from technical POS references", () => {
+  const orderId = "8ed2e0e7-6b54-43b5-83b1-7e42ab6c1e67";
+  const bytes = buildReceipt({
+    storeName: "Test Store",
+    locationId: "loc-123456789",
+    branchCode: "00001",
+    taxId: null,
+    posDeviceId: "dev-abcdefghi",
+    posNo: "POS01",
+    shiftId: "shift-987654321",
+    vatIncluded: false,
+    docTitle: "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ",
+    docNo: "Z6908310001",
+    orderId,
+    at: "31/8/2569 12:00:00",
+    cashier: "Cashier",
+    lines: [{ name: "Item", qty: 1, amount: 90 }],
+    itemCount: 1,
+    total: 90,
+    paymentLabel: "เงินสด",
+  });
+  const binary = Buffer.from(bytes);
+  assert.equal(binary.includes(Buffer.from("Z6908310001", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Order 8ed2e0e7", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Location loc-1234", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Device dev-abcd", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Shift shift-98", "ascii")), true);
+  const barcodePrefix = Buffer.from([0x1d, 0x6b, 69, "Z6908310001".length]);
+  const barcodeOffset = binary.indexOf(barcodePrefix);
+  assert.notEqual(barcodeOffset, -1);
+  assert.equal(
+    binary.subarray(barcodeOffset + barcodePrefix.length, barcodeOffset + barcodePrefix.length + "Z6908310001".length)
+      .equals(Buffer.from("Z6908310001", "ascii")),
+    true
+  );
 });
 
 test("return slip prints its credit-note reference but barcodes the searchable original sale", () => {

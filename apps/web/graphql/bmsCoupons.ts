@@ -8,12 +8,18 @@ import { requireAuth } from "@/lib/auth";
 import { GraphQLError } from "graphql/error";
 import { resolveActiveCustomerId } from "@/lib/bms/customers";
 import { query } from "@/lib/db";
+import { listLocationsForUser, userCanAccessLocation, userHasLocationScope } from "@/lib/bms/locations";
 
 export const bmsCouponsResolvers = {
   Query: {
     async bmsCoupons(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "coupon.view");
       return listCoupons(getTenantId(ctx));
+    },
+    async bmsCouponLocations(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "coupon.view");
+      const auth = requireAuth(ctx);
+      return listLocationsForUser(getTenantId(ctx), String(auth.author_id || ""));
     },
     async bmsCouponRedemptions(_p: unknown, args: { couponId: string }, ctx: any) {
       await requirePermission(ctx, "coupon.view");
@@ -24,7 +30,21 @@ export const bmsCouponsResolvers = {
     async bmsUpsertCoupon(_p: unknown, args: { input: UpsertCouponInput }, ctx: any) {
       await requirePermission(ctx, "coupon.manage");
       try {
-        const coupon = await upsertCoupon(getTenantId(ctx), args.input, requireAuth(ctx).author_id);
+        const auth = requireAuth(ctx);
+        const tenantId = getTenantId(ctx);
+        const userId = String(auth.author_id || "");
+        if (await userHasLocationScope(tenantId, userId)) {
+          const ids = Array.isArray(args.input.locationIds) ? args.input.locationIds.filter(Boolean) : [];
+          if (ids.length === 0) {
+            throw new Error("ผู้ใช้ที่ถูกจำกัดสาขาต้องเลือกสาขาของคูปองอย่างน้อย 1 สาขา");
+          }
+          for (const locationId of ids) {
+            if (!(await userCanAccessLocation(tenantId, userId, locationId))) {
+              throw new Error("ไม่มีสิทธิ์ตั้งคูปองให้สาขานี้");
+            }
+          }
+        }
+        const coupon = await upsertCoupon(tenantId, args.input, auth.author_id);
         await audit(ctx, "coupon.upsert", coupon.id, { code: coupon.code });
         return coupon;
       } catch (e: any) {

@@ -25,12 +25,42 @@ logging movement.
 | `RETURN` | Goods returned (stock re-added) |
 | `TRANSFER_OUT` | Goods sent from one branch and now in transit |
 | `TRANSFER_IN` | Goods received into the destination branch |
+| `TRANSFER_LOST` | Short receipt that is no longer held by any branch and must be followed up |
+| `QUARANTINE_IN` | Damaged goods received into a branch-held, non-sellable bucket |
 | `COUNT_ADJUST` | Variance accepted from a stock count apply |
 
 `TRANSFER` is no longer a roadmap placeholder: `7.98` split it into `TRANSFER_OUT` and
 `TRANSFER_IN` so branch-to-branch movement is not misread as stock leaving or entering the company.
-Generic manual adjustments still record as plain `STOCK_IN`/`STOCK_OUT`; `DAMAGED` remains a future
-reporting-specific type rather than a live schema value today.
+Since `9.35`–`9.36`, damaged receipt and missing receipt are also explicit: damaged pieces increase
+`quarantine_stock` at the destination and use `QUARANTINE_IN`; missing pieces use `TRANSFER_LOST`
+so the loss is visible in product stock totals and transfer history without being counted as
+sellable or company-held stock. Generic manual adjustments still record as plain
+`STOCK_IN`/`STOCK_OUT`; `DAMAGED` remains a future reporting-specific type rather than a live schema
+value today.
+
+## Multi-branch visibility and policy
+
+Branch identity is operational data, not only display text. A shop with more than one active
+location must be able to answer four separate questions without opening the database:
+
+- where the stock is now (`bms_inventory.location_id`);
+- where an order was sold/reserved from (`bms_orders.location_id`, plus POS device/shift when it is
+  a counter sale);
+- whether a promotion is allowed at the selling branch (`bms_coupon_locations`, added in `9.37`);
+- whether an operator is supposed to work across all branches or only assigned branches
+  (`bms_user_allowed_locations`, added in `9.37` as the tenant-scoped policy foundation).
+
+`bms_coupon_locations` is intentionally optional. No rows for a coupon means "all active branches",
+which preserves existing behaviour for single-branch shops and legacy coupons. Adding one or more
+rows turns the coupon into a branch-specific promotion. POS coupon preview and `createOrder()` both
+check the order/device branch before applying the discount, so a branch-only coupon cannot be shown
+as usable at POS and then fail later at settlement.
+
+`bms_user_allowed_locations` is also optional for now. No rows for a user means existing tenant-wide
+RBAC still applies; once branch-restricted staff management is wired, rows in this table become the
+allow-list that list pages and mutations must respect in addition to the normal permission check.
+This avoids silently changing existing teams while giving the Phase 4 access-control work a single
+source of truth.
 
 ## Who is holding reserved stock
 
@@ -293,7 +323,7 @@ could not correct the second branch's numbers at all — while its POS registers
 row. The admin Products screen always supplies it; its rows are branch × size, never anonymous
 duplicate sizes. Reorder points use the same explicit branch rule. The summary keeps sellable stock,
 in-transit units and quarantined units separate so company-owned goods are visible without making
-them available to POS.
+them available to POS. Transfer-loss totals are shown as follow-up evidence, not company-held stock.
 
 ### Transfers are two steps
 
@@ -306,9 +336,9 @@ A send refuses to move more than the unreserved quantity. Since `9.35`, receivin
 into sellable received, damaged/quarantined, and missing. These must add up to the sent quantity.
 Any discrepancy requires a controlled reason and a written note. Sellable units enter
 `current_stock`; damaged units enter the destination's `quarantine_stock` with a `QUARANTINE_IN`
-movement; missing units get their own `STOCK_OUT` evidence tied to the source and transfer number.
-The immutable receive row and audit retain the per-line reason/note rather than calling every
-difference “lost”. Cancelling is only possible before sending.
+movement; missing units get their own `TRANSFER_LOST` evidence tied to the source and transfer
+number. The immutable receive row and audit retain the per-line reason/note rather than calling
+every difference “lost”. Cancelling is only possible before sending.
 
 `TRANSFER_IN`/`TRANSFER_OUT` are separate movement types from `STOCK_IN`/`STOCK_OUT` because a
 transfer does not remove goods from the company, and a total-stock-value report must not treat it as

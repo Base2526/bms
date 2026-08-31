@@ -786,7 +786,7 @@ export async function createOrder(
     let appliedCouponCode: string | null = null;
     let appliedCouponId: string | null = null;
     if (input.couponCode) {
-      const couponResult = await applyCouponInTx(client, tenantId, input.couponCode, customerId, total);
+      const couponResult = await applyCouponInTx(client, tenantId, input.couponCode, customerId, total, locationId);
       if (!couponResult.ok) {
         await client.query("ROLLBACK");
         return { status: "COUPON_INVALID", reason: couponResult.reason };

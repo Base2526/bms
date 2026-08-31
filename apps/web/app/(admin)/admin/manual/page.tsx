@@ -477,6 +477,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "ดูข้อมูล CRM, ที่อยู่, ประวัติซื้อ, คูปองของลูกค้า และโปรแกรมสมาชิก/แต้ม",
     bullets: [
       "Customers ใช้ค้นหาชื่อ/เบอร์/ลูกค้าเดิม และ merge duplicate ตามสิทธิ์",
+      "สมาชิกที่สมัครจาก POS จะแสดงสาขา เครื่อง กะ และพนักงานต้นทางใน Customers พร้อมกรองตามสาขาที่สมัครได้; สมาชิกเก่าแสดงว่าไม่ทราบสาขาแทนการเดาจากบิลแรก",
       "หนึ่งลูกค้ามีหลายที่อยู่ได้ และที่อยู่จัดส่งต้องพร้อมก่อนใช้ Shipping กับช่องทางแชททั่วไป",
       "Loyalty ใช้ตั้งคะแนน, tier, ledger แต้ม, และปรับแต้มด้วยมือเมื่อมีสิทธิ์",
       "Customer 360 ใน Inbox เชื่อมกับ CRM เดิมโดยตรง จึงควรทำความสะอาดข้อมูลลูกค้าที่นี่ด้วย",
@@ -486,7 +487,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "Coupons / Follow-up Rules / Follow-up Queue",
     desc: "จัดการคูปอง, ดู wallet ลูกค้า, ตั้งกติกาติดตาม และทำงานจากคิว follow-up กับคิวรอของเข้า",
     bullets: [
-      "Coupons ใช้สร้าง master coupon, ตั้ง quota/ขั้นต่ำ/วันใช้ได้ และดูว่าแต่ละโค้ดถูกใช้กับใครบ้าง",
+      "Coupons ใช้สร้าง master coupon, ตั้ง quota/ขั้นต่ำ/วันใช้ได้, จำกัดสาขาที่ใช้โค้ดได้เมื่อเป็นโปรเฉพาะสาขา, และดูว่าแต่ละโค้ดถูกใช้กับใครบ้าง",
       "Follow-up Rules ใช้ตั้งกฎให้ระบบสร้างงานติดตามแบบอัตโนมัติจากพฤติกรรมลูกค้าหรือสถานะงาน",
       "Follow-up Queue ใช้รับงานที่ระบบสร้างแล้ว, review ข้อความ, accept, contact, หรือปิดงานพร้อมเหตุผล",
       "Restock subscriptions เป็นคิวเฉพาะสำหรับลูกค้าที่ยินยอมให้แจ้งเมื่อของกลับเข้า",
@@ -516,10 +517,11 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "POS / Loyalty",
     desc: "ขายหน้าร้าน, สมาชิก/แต้ม, พักบิล, เงินลิ้นชัก, void และรายงานกะ",
     bullets: [
-      "เปิดกะและยืนยันตัวพนักงานด้วย PIN ก่อนขาย; device token ระบุเครื่องและสาขา ไม่ใช่ตัวบุคคล",
+      "เปิดกะและยืนยันตัวพนักงานด้วย PIN ก่อนขาย; device token ระบุเครื่องและสาขา ไม่ใช่ตัวบุคคล และบิล POS จะอ้างอิง order/สาขา/เครื่อง/กะนั้นเป็นหลักฐานย้อนหลัง",
       "Bluetooth HID เป็น Keyboard: ตั้ง Scanner ของเครื่องเป็น Prefix Mode (เช่น F9 + ข้อมูล + Enter) ที่หน้าเครื่องขาย เพื่อให้สแกนได้แม้กำลังพิมพ์ค้นสมาชิก/PIN โดยข้อมูลไม่หลุดเข้าช่องนั้น",
       "แท็บรับของให้เลือก PO ก่อน สแกนเป็นรายการร่าง ตรวจจำนวน/lot/วันหมดอายุ แล้วกดยืนยันครั้งเดียว; ต้องมีสิทธิ์ purchase.receive และของเข้าที่สาขาของเครื่องนี้",
       "ค้นหาสมาชิกก่อนชำระเพื่อใช้ส่วนลดตาม tier และแต้ม; ตั้งโปรแกรมและตรวจ ledger ที่ /admin/loyalty",
+      "การสมัครสมาชิกจาก POS บันทึกสาขาและเครื่องจาก device token พร้อมกะที่เปิดและพนักงานที่ยืนยัน PIN; ดูต้นทางย้อนหลังได้ที่ Customers",
       "ราคาส่งเลือกได้ 2 แบบที่หน้า Products: ราคาคงที่เลือกไซซ์ M/XL ฯลฯ แยกกันได้ (หรือเลือกทุกไซซ์ให้ราคาเดียวกัน) และตั้งขั้นต่ำเท่ากันแต่ราคาคนละค่าได้; แบบรวมทุกไซซ์จะรวมจำนวนแล้วลดเปอร์เซ็นต์จากราคาปกติของแต่ละไซซ์ เช่น S/M/L รวมครบ 10 ชิ้น ลด 20% แต่ละไซซ์จึงยังมีราคาต่างกัน",
       "การแลกแต้มพิมพ์จำนวนในช่องกลางได้ หรือใช้ปุ่ม +/- ซึ่งขยับครั้งละ 1 หน่วยตามอัตราร้าน; ระบบใช้เฉพาะหน่วยเต็มและเก็บเศษไว้ เช่น มี 3,045 แต้ม อัตรา 100 แต้มต่อหน่วย ระบบใช้ 3,000 และคงเหลือ 45 แต้ม",
       "ก่อนรับเงิน ระบบจะตรวจราคาปกติ ราคาส่ง pack และโปรโมชันล่าสุดอีกครั้ง หากมีการแก้สินค้าหลังยิงเข้าตะกร้า ระบบจะอัปเดตยอดและให้ตรวจรับเงินใหม่แทนการขายด้วยราคาเก่า",
@@ -538,9 +540,10 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "จัดการโครงสร้างสาขาและงานคลังระหว่างสาขา รวมถึงการนับชั้นวางแบบไม่ทับยอดขายระหว่างนับ",
     bullets: [
       "Locations ใช้เพิ่ม/แก้สาขาที่จะรับ stock, ใช้กับ POS, และเป็นปลายทางของงานโอน",
-      "หน้า Products แสดงสต็อกเป็นสาขา × ไซซ์ พร้อมยอดรวมทุกสาขา ของระหว่างทาง และของกักกัน; การปรับยอดและจุดเตือนต้องระบุสาขาเสมอ",
+      "หน้า Orders แสดงสาขาที่ขาย/จองของ พร้อม POS device และกะเมื่อเป็นบิลหน้าร้าน เพื่อแยกยอดขาย/คืนสินค้า/ตามบิลข้ามสาขาได้โดยไม่ต้องเดาจากเลขใบเสร็จ",
+      "หน้า Products แสดงสต็อกเป็นสาขา × ไซซ์ พร้อมยอดรวมทุกสาขา ของระหว่างทาง ของกักกัน และยอดสูญหายจากใบโอนที่ต้องตามต่อ; การปรับยอดและจุดเตือนต้องระบุสาขาเสมอ",
       "ใบโอนทำสองขั้น: ส่งออกจากต้นทาง แล้วรับเข้าปลายทาง; ของระหว่างทางไม่อยู่ใน stock ของสาขาใด",
-      "ตอนรับให้แยกจำนวนรับสภาพดี เสียหาย/กักกัน และไม่พบ; ถ้ามีส่วนต่างต้องเลือกสาเหตุและกรอกหมายเหตุ สินค้าเสียหายจะไม่เข้ายอดพร้อมขาย",
+      "ตอนรับให้แยกจำนวนรับสภาพดี เสียหาย/กักกัน และไม่พบ; ถ้ามีส่วนต่างต้องเลือกสาเหตุและกรอกหมายเหตุ สินค้าเสียหายจะไม่เข้ายอดพร้อมขาย และสินค้าไม่พบจะแสดงเป็นยอดสูญหายแยกจากของที่บริษัทยังถือ",
       "ใบนับเก็บ snapshot ตอนกรอกรายการครั้งแรก และตอน Apply จะเพิ่มเฉพาะผลต่าง ไม่เขียนทับยอดปัจจุบัน",
       "พนักงานคลังที่มี inventory.count กรอกตัวเลขได้ แต่ต้องมี inventory.count.apply จึงยืนยันผลต่างเข้าสต็อกจริงได้",
       "เริ่มจาก Locations ถ้าร้านยังไม่มีหลายสาขา จากนั้นค่อยใช้ Stock Transfers และ Stock Counts",
@@ -1092,13 +1095,13 @@ const TH: ManualContent = {
   couponsSubtitle: "อธิบายว่าระบบรู้อะไรเกี่ยวกับคูปองของลูกค้า, ใช้อย่างไร, และเงื่อนไขไหนผ่านหรือไม่ผ่าน",
   couponAlertMessage: "สิ่งที่ระบบเก็บอยู่ตอนนี้",
   couponAlertDesc:
-    "ระบบเก็บ master ของคูปองไว้ที่ bms_coupons, เก็บว่าลูกค้าคนนี้เคยได้รับคูปองอะไรไว้ที่ bms_customer_coupon_wallet, และเก็บการใช้งานจริงไว้ที่ออเดอร์ (bms_orders.coupon_id / coupon_code / discount_amount) จากนั้นคำนวณสดว่าลูกค้าคนนี้ยังใช้โค้ดใดได้บ้างจากเวลา, quota รวม, per-customer limit, ยอดขั้นต่ำ, และประวัติออเดอร์ที่ไม่ถูกยกเลิก",
+    "ระบบเก็บ master ของคูปองไว้ที่ bms_coupons, เก็บ scope สาขาไว้ที่ bms_coupon_locations, เก็บว่าลูกค้าคนนี้เคยได้รับคูปองอะไรไว้ที่ bms_customer_coupon_wallet, และเก็บการใช้งานจริงไว้ที่ออเดอร์ (bms_orders.coupon_id / coupon_code / discount_amount) จากนั้นคำนวณสดว่าลูกค้าคนนี้ยังใช้โค้ดใดได้บ้างจากเวลา, quota รวม, per-customer limit, ยอดขั้นต่ำ, สาขาที่ขาย และประวัติออเดอร์ที่ไม่ถูกยกเลิก",
   couponStepsTitle: "ขั้นตอนใช้งานจริง",
   couponSteps: [
     {
       title: "1. สร้างคูปองที่หน้า Coupons",
       description:
-        "กำหนด code, ประเภทส่วนลด (เปอร์เซ็นต์/บาท), ยอดขั้นต่ำ, จำนวนครั้งรวม, จำนวนครั้งต่อลูกค้า, วันเริ่ม, วันหมดอายุ, และสถานะเปิดใช้งาน",
+        "กำหนด code, ประเภทส่วนลด (เปอร์เซ็นต์/บาท), ยอดขั้นต่ำ, จำนวนครั้งรวม, จำนวนครั้งต่อลูกค้า, วันเริ่ม, วันหมดอายุ, สาขาที่ใช้ได้ถ้าเป็นโปรเฉพาะสาขา, และสถานะเปิดใช้งาน; ถ้าไม่เลือกสาขา โค้ดจะใช้ได้ทุกสาขาเหมือนเดิม",
     },
     {
       title: "2. ส่งคูปองให้ลูกค้าจาก Inbox",
@@ -1118,7 +1121,7 @@ const TH: ManualContent = {
     {
       title: "4. ตอนสร้างออเดอร์ ระบบค่อยใช้คูปองจริง",
       description:
-        "create_order จะส่ง couponCode เข้า createOrder() และ backend ตรวจอีกครั้งใน transaction เดียวกับการจอง stock ถ้าไม่ผ่านจะคืนผล COUPON_INVALID และไม่สร้างออเดอร์ครึ่ง ๆ กลาง ๆ ถ้าผ่าน wallet จะขยับเป็น RESERVED พร้อมผูก order ไว้",
+        "create_order จะส่ง couponCode เข้า createOrder() และ backend ตรวจอีกครั้งใน transaction เดียวกับการจอง stock รวมถึงตรวจว่าสาขาของ order/POS ใช้โค้ดนี้ได้หรือไม่ ถ้าไม่ผ่านจะคืนผล COUPON_INVALID และไม่สร้างออเดอร์ครึ่ง ๆ กลาง ๆ ถ้าผ่าน wallet จะขยับเป็น RESERVED พร้อมผูก order ไว้",
     },
     {
       title: "5. ถ้าออเดอร์ไม่จบการขาย ระบบคืน quota เฉพาะบางกรณี",
@@ -1197,8 +1200,9 @@ const TH: ManualContent = {
       desc: "ผูกลูกค้าก่อนชำระ เพื่อให้สิทธิ์และ ledger ถูกคน",
       steps: [
         "ค้นด้วยเบอร์โทรหรือเลขสมาชิก; ถ้าไม่พบ กด สมัคร กรอกข้อมูล แล้วเลือกสมาชิกใหม่เข้าบิล",
+        "เมื่อลงทะเบียนจาก POS ระบบเก็บสาขา เครื่อง กะที่เปิด และพนักงานจากข้อมูลฝั่ง server; ตรวจย้อนหลังหรือกรองสาขาที่สมัครได้ใน Customers",
         "ระบบใช้ส่วนลดตาม tier อัตโนมัติ จากนั้นคูปอง แต้ม และส่วนลดหน้าร้านตามลำดับ พร้อมบังคับเพดานส่วนลดต่อบิล",
-        "กรอกคูปองแล้วรอผลตรวจจาก server; โค้ดหมดอายุ quota เต็ม ยอดไม่ถึง หรือเกินสิทธิ์ลูกค้าจะใช้ไม่ได้",
+        "กรอกคูปองแล้วรอผลตรวจจาก server; โค้ดหมดอายุ quota เต็ม ยอดไม่ถึง ผิดสาขา หรือเกินสิทธิ์ลูกค้าจะใช้ไม่ได้",
         "แลกแต้มเป็นหน่วยเต็มด้วย +/− พิมพ์จำนวน หรือกด ทั้งหมด เศษแต้มไม่หาย",
         "ส่วนลดหน้าร้านต้องใส่จำนวน เหตุผล ผู้อนุมัติ และ PIN แยกอีกครั้ง ผู้อนุมัติต้องเป็นคนละคนกับผู้ขายและมี pos.discount.approve",
         "หลังขาย แต้มที่ได้/ใช้และยอดคงเหลือแสดงบนใบเสร็จ; คืนสินค้าจะย้อนแต้มตามมูลค่าที่คืน",
@@ -1613,6 +1617,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Keep CRM data clean, manage addresses, see purchase history, and run the membership/points program",
     bullets: [
       "Customers is the main CRM page for searching existing customers and merging duplicates when allowed",
+      "POS-enrolled members show their enrollment branch, register, shift, and employee in Customers and can be filtered by enrollment branch; legacy members show unknown instead of guessing from their first bill",
       "One customer can hold multiple addresses, and shipping addresses must be complete before using Shipping for chat channels",
       "Loyalty manages member numbers, tiers, point settings, ledgers, and manual point adjustments",
       "Customer 360 inside Inbox reuses the same CRM records, so cleaning data here improves the whole workflow",
@@ -1622,7 +1627,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     title: "Coupons / Follow-up Rules / Follow-up Queue",
     desc: "Manage master coupons, inspect wallet usage, define follow-up rules, and work from the follow-up plus restock queues",
     bullets: [
-      "Coupons manages master coupon setup, quotas, minimum spend, valid dates, and each coupon's real redemptions",
+      "Coupons manages master coupon setup, quotas, minimum spend, valid dates, branch-specific scope when a promotion is local to a branch, and each coupon's real redemptions",
       "Follow-up Rules defines when the system should create follow-up work from customer behavior or business state",
       "Follow-up Queue is where staff review, accept, contact, or close those generated tasks with a reason",
       "Restock subscriptions remain the dedicated queue for customers who explicitly opted in for back-in-stock updates",
@@ -1652,10 +1657,11 @@ const MENU_CARDS_EN: MenuCard[] = [
     title: "POS / Loyalty",
     desc: "Counter sales, members and points, parked bills, drawer cash, voids, and shift reports",
     bullets: [
-      "Open a shift and identify the cashier with a PIN before selling; the device token identifies the register and branch, not the person",
+      "Open a shift and identify the cashier with a PIN before selling; the device token identifies the register and branch, not the person, and each POS bill keeps its order, branch, register, and shift as traceable evidence",
       "A Bluetooth HID scanner is a keyboard: configure the register for Prefix Mode (for example F9 + payload + Enter) so a scan is captured even while member/PIN input is focused without mutating that field",
       "In Receive, select an existing PO, scan into a draft, review quantities/lot/expiry, then confirm once; purchase.receive is checked and stock enters this register's branch",
       "Find the member before payment to apply tier discounts and points; configure the program and inspect its ledger at /admin/loyalty",
+      "POS enrollment records the branch and register from the device token plus the open shift and PIN-verified employee; review that origin later in Customers",
       "Wholesale steps have two modes in Products: a fixed price qualifying separately per size, or a cross-size quantity threshold that discounts each size's own regular price by a percentage",
       "Before taking payment, the register rechecks current shelf prices, wholesale steps, packs, and promotions. If product settings changed after scanning, it updates the total and asks the cashier to review and receive payment again instead of selling at stale pricing",
       "Park up to 20 bills per shift, but parked carts reserve no stock and lock no price; resume uses current stock and pricing",
@@ -1673,9 +1679,10 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Manage branch structure and warehouse operations across branches without overwriting sales made during a count",
     bullets: [
       "Locations is where the shop adds or edits branches that can receive stock, run POS, or receive transfers",
-      "Products shows stock as branch × size plus all-branch, in-transit, and quarantined totals; adjustments and reorder points always name a branch",
+      "Orders shows the sale/reservation branch, POS register, and shift for counter bills, so branch sales and cross-branch returns can be traced without guessing from the receipt number",
+      "Products shows stock as branch × size plus all-branch, in-transit, quarantined, and transfer-loss follow-up totals; adjustments and reorder points always name a branch",
       "A transfer has two steps: send from the source, then receive at the destination; in-transit goods belong to no branch",
-      "Receiving separates sellable, damaged/quarantined, and missing units; discrepancies require a reason and note, and damaged goods never become sellable stock",
+      "Receiving separates sellable, damaged/quarantined, and missing units; discrepancies require a reason and note, damaged goods never become sellable stock, and missing goods stay visible outside company-held stock",
       "A count snapshots each line on first entry and Apply adds only the variance instead of replacing current stock",
       "Warehouse staff with inventory.count can enter figures, while inventory.count.apply is required to accept the variance",
       "Start from Locations if the shop is still setting up branches, then use Stock Transfers and Stock Counts for day-to-day warehouse work",
@@ -2230,13 +2237,13 @@ const EN: ManualContent = {
     "Explains what the system knows about a customer's coupons, how they are used, and which conditions pass or fail.",
   couponAlertMessage: "What the system stores today",
   couponAlertDesc:
-    "The system stores master coupons in bms_coupons, records which coupons a customer has received in bms_customer_coupon_wallet, and stores actual usage on the order (bms_orders.coupon_id / coupon_code / discount_amount). It then works out live which codes this customer can still use, based on the validity window, the overall quota, the per-customer limit, the minimum spend, and their history of orders that were not cancelled.",
+    "The system stores master coupons in bms_coupons, stores branch scope in bms_coupon_locations, records which coupons a customer has received in bms_customer_coupon_wallet, and stores actual usage on the order (bms_orders.coupon_id / coupon_code / discount_amount). It then works out live which codes this customer can still use, based on the validity window, the overall quota, the per-customer limit, the minimum spend, the selling branch, and their history of orders that were not cancelled.",
   couponStepsTitle: "How it works in practice",
   couponSteps: [
     {
       title: "1. Create the coupon on the Coupons page",
       description:
-        "Set the code, discount type (percentage/baht), minimum spend, total redemptions, redemptions per customer, start date, expiry date, and whether it is active.",
+        "Set the code, discount type (percentage/baht), minimum spend, total redemptions, redemptions per customer, start date, expiry date, branch scope for branch-local promotions, and whether it is active. Leaving the branch scope empty keeps the code usable at every branch.",
     },
     {
       title: "2. Send the coupon to the customer from Inbox",
@@ -2256,7 +2263,7 @@ const EN: ManualContent = {
     {
       title: "4. The coupon is only really applied when the order is created",
       description:
-        "create_order passes couponCode into createOrder(), and the backend validates it again in the same transaction that reserves stock. If it fails, the result is COUPON_INVALID and no half-finished order is created. If it passes, the wallet entry moves to RESERVED and is linked to the order.",
+        "create_order passes couponCode into createOrder(), and the backend validates it again in the same transaction that reserves stock, including whether the order/POS branch is allowed to use the code. If it fails, the result is COUPON_INVALID and no half-finished order is created. If it passes, the wallet entry moves to RESERVED and is linked to the order.",
     },
     {
       title: "5. Quota is only returned in certain cases",
@@ -2335,8 +2342,9 @@ const EN: ManualContent = {
       desc: "Attach the customer before payment so benefits and ledgers belong to the right person.",
       steps: [
         "Search by phone or member number. If no match exists, press Enrol, enter the details, and attach the new member.",
+        "POS enrollment stores the server-verified branch, register, open shift, and employee; review or filter that origin later in Customers.",
         "Discounts stack in order: tier, coupon, points, then manual discount, under the shop's per-bill cap.",
-        "Enter a coupon and wait for server validation. Expired, exhausted, below-minimum, or over-limit codes are rejected.",
+        "Enter a coupon and wait for server validation. Expired, exhausted, below-minimum, wrong-branch, or over-limit codes are rejected.",
         "Redeem whole point units with +/−, a typed amount, or All; remainder points stay on the account.",
         "A manual discount needs amount, reason, approver, and a fresh second PIN. The approver must differ from the seller and hold pos.discount.approve.",
         "The receipt shows points earned/redeemed and the balance; returns reverse points proportionally.",
