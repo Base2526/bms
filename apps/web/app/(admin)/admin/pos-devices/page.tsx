@@ -232,7 +232,7 @@ export default function PosDevicesPage() {
             />
           )}
           <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-            ออก token ใหม่ = ตัวเดิมใช้ไม่ได้ทันที (ใช้ตอนเครื่องหาย) · เอา token ไปใส่ที่จอขาย <a href="/pos">/pos</a>
+            ออก token ใหม่ = ตัวเดิมใช้ไม่ได้ทันที (ใช้ตอนเครื่องหาย) · เอา token ไปใส่ที่จอขาย <a href="/pos">/pos</a> หรือ <a href="/pos/restaurant">/pos/restaurant</a> ตาม archetype ของร้าน
           </Typography.Paragraph>
         </Card>
       )}

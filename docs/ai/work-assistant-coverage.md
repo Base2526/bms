@@ -1,7 +1,7 @@
 # Global Work Assistant — full-system V1 coverage
 
-Status: implemented and contract-checked. The deterministic catalog currently contains 45 verified
-capabilities, 94 bilingual guides, 20 verified FAQ answers, and 19 groups of limits and traps
+Status: implemented and contract-checked. The deterministic catalog currently contains 46 verified
+capabilities, 97 bilingual guides, 20 verified FAQ answers, and 19 groups of limits and traps
 (97 rules). Every literal Admin Sidebar
 destination and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
 guide, either directly or through its parent detail route. POS has dedicated register guides for
@@ -151,7 +151,7 @@ All three suites run in `npm run test:pure` (and therefore in CI), not by hand:
 - An unmatched question at the register says so instead of showing the first page guide.
 - A proposal in the Drawer shows its mutation and server-composed arguments before Confirm, and an
   emailed report requires a reviewed, valid recipient with an unknown-recipient warning.
-- Every question the product asks — the 51 chips and hand-verified questions, plus one coverage
+- Every question the product asks — the 59 chips and hand-verified questions, plus one coverage
   question for every remaining catalog entry, plus 2 guards that must stay unanswerable (133 in
   `work-assistant-question-corpus.mts`) — is *led* by the entry that answers it. Presence anywhere
   in the result list is not a pass: a guide that slips to rank 6 behind unrelated entries fails,

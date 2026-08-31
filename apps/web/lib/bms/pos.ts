@@ -721,6 +721,41 @@ export async function listPosApprovers(
   }));
 }
 
+/**
+ * รายชื่อพนักงานที่เดินสถานะคิวครัวได้จริง — แยกจากคนขาย retail
+ *
+ * ร้านอาหารไม่ควรเอา dropdown คนขายมาใช้กับงานครัว เพราะคนที่มี `pos.sell`
+ * ไม่ได้แปลว่ามี `order.ship` เสมอ และคนที่มี `order.ship` มักไม่ใช่คนยืนคิดเงิน
+ */
+export async function listPosKitchenOperators(tenantId: string): Promise<PosCashier[]> {
+  const res = await query<any>(
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist, u.pos_only,
+            r.name AS role_name,
+            (u.pos_pin_hash IS NOT NULL) AS has_pin
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1
+        AND (
+          r.name = 'Administrator'
+          OR EXISTS (
+            SELECT 1 FROM bms_role_permissions rp
+             WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = 'order.ship'
+          )
+        )
+      ORDER BY (u.pos_pin_hash IS NULL), u.name NULLS LAST, u.email`,
+    [tenantId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    name: r.name ?? null,
+    email: r.email ?? null,
+    role: r.role_name ?? null,
+    isPharmacist: Boolean(r.is_licensed_pharmacist),
+    hasPin: Boolean(r.has_pin),
+    posOnly: Boolean(r.pos_only),
+  }));
+}
+
 /** Staff selectable in the POS Receive tab; deliberately separate from sellers. */
 export async function listPosPurchaseReceivers(tenantId: string): Promise<PosCashier[]> {
   const res = await query<any>(
@@ -1930,6 +1965,8 @@ export type PosSaleInput = {
   /** SALE = รับเต็มยอดและส่งของทันที; DEPOSIT = จองของและรับมัดจำงวดแรก */
   mode?: "SALE" | "DEPOSIT";
   lines: PosSaleLine[];
+  /** Set only by the restaurant service after checking device, shift and open-check ownership. */
+  restaurantCheckId?: string | null;
   /** SALE จ่ายผสมได้และต้องครบยอด; DEPOSIT รับงวดแรกด้วย 1 วิธีและต้องต่ำกว่ายอดบิล */
   payments: PosPaymentInput[];
   /**
@@ -2524,7 +2561,14 @@ async function fulfilPosOrderInTx(
   // ไม่เพิ่มชนิดใหม่เพราะทุกรายงานที่นับยอดจ่ายออกต้องแก้ตาม — แยกหน้าร้าน/ออนไลน์
   // ด้วย bms_orders.channel = 'pos' แทน
   await recordOrderMovements(client, [orderId], "SHIP", "pos");
-  const kitchenTickets = await enqueueKitchenTicketsInTx(client, tenantId, orderId);
+  const restaurantOrder = await client.query(
+    `SELECT 1 FROM bms_orders
+      WHERE tenant_id = $1 AND id = $2 AND restaurant_check_id IS NOT NULL`,
+    [tenantId, orderId]
+  );
+  const kitchenTickets = restaurantOrder.rowCount
+    ? 0
+    : await enqueueKitchenTicketsInTx(client, tenantId, orderId);
 
   // ใบกำกับอย่างย่อออกในทรานแซกชันเดียวกับการปิดการขาย — บิลที่ตัดสต็อกแล้ว
   // แต่ไม่มีเลขเอกสารคือบิลที่อธิบายกับสรรพากรไม่ได้
@@ -2777,6 +2821,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     posShiftId: shift.id,
     cashierUserId: input.cashierUserId,
     idempotencyKey: key,
+    restaurantCheckId: input.restaurantCheckId ?? null,
     editorId: input.cashierUserId,
     couponCode: input.couponCode ?? null,
     customerId: input.customerId ?? null,

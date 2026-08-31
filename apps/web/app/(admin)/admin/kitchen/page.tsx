@@ -11,7 +11,8 @@ import styles from "./page.module.css";
 const Q_TICKETS = gql`
   query KitchenBoard($status: String) {
     bmsKitchenTickets(status: $status, limit: 200) {
-      id orderId station status modifierCodes productSku productName size packQty qty createdAt updatedAt
+      id source orderId checkId tableCode tableName roundNo kitchenNote
+      station status modifierCodes productSku productName size packQty qty createdAt updatedAt
     }
   }
 `;
@@ -20,7 +21,7 @@ const M_STATUS = gql`
     bmsUpdateKitchenTicketStatus(id: $id, status: $status) { id status updatedAt }
   }
 `;
-type Ticket = { id: string; orderId: string; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
+type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 const LANES = [
   { status: "NEW", color: "#c65b35", next: "PREPARING" },
   { status: "PREPARING", color: "#d89b24", next: "READY" },
@@ -67,7 +68,10 @@ export default function KitchenPage() {
             {laneRows.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_kitchen.empty")} /> : laneRows.map((ticket) => <article className={styles.ticket} key={ticket.id}>
               <div className={styles.ticketName}>{ticket.productName}</div>
               <div>{ticket.size !== "-" ? `${ticket.size} · ` : ""}× {ticket.packQty ?? ticket.qty}</div>
-              <div className={styles.ticketMeta}>{ticket.station || t("admin_kitchen.unassigned")} · #{ticket.orderId.slice(0, 8)} · {new Date(ticket.createdAt).toLocaleTimeString(lang === "th" ? "th-TH" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
+              <div className={styles.ticketMeta}>{ticket.station || t("admin_kitchen.unassigned")} · {ticket.orderId
+                ? `#${ticket.orderId.slice(0, 8)}`
+                : `${ticket.tableName || ticket.tableCode || t("admin_kitchen.dine_in")}${ticket.roundNo ? ` · ${t("admin_kitchen.round")} ${ticket.roundNo}` : ""}`} · {new Date(ticket.createdAt).toLocaleTimeString(lang === "th" ? "th-TH" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
+              {ticket.kitchenNote && <div className={styles.ticketMeta}>{t("admin_kitchen.note")}: {ticket.kitchenNote}</div>}
               {ticket.modifierCodes.length > 0 && <Space wrap style={{ marginTop: 8 }}>{ticket.modifierCodes.map((code) => <Tag color="blue" key={code}>{code}</Tag>)}</Space>}
               {canMove && <div className={styles.ticketActions}>
                 {lane.next && <Button type="primary" size="small" onClick={() => void update(ticket.id, lane.next!)}>{t(`admin_kitchen.move_${lane.next.toLowerCase()}`)}</Button>}

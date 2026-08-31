@@ -53,9 +53,9 @@ const describe = (item: CorpusCase) =>
   `${item.locale}${item.context?.pageId ? `/${item.context.pageId}` : ""} "${item.q}"`;
 
 test("the pinned corpus still covers the questions it was written for", () => {
-  // 51 questions people actually ask (chips + hand-verified), plus coverage questions for the
+  // 59 questions people actually ask (chips + hand-verified), plus coverage questions for the
   // rest of the catalog, plus 2 guards that must stay unanswerable.
-  assert.equal(CORPUS_REAL_QUESTIONS.length, 51, "a pinned question disappeared or was added without review");
+  assert.equal(CORPUS_REAL_QUESTIONS.length, 59, "a pinned question disappeared or was added without review");
   assert.equal(WORK_ASSISTANT_QUESTION_CORPUS.filter((item) => item.expect === "no-match").length, 2, "empty-answer guards changed");
 
   const seen = new Set<string>();

@@ -1361,19 +1361,60 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Known operating boundaries
+## Restaurant POS (`9.40`, `9.44`)
 
-The implemented scope is a general-retail POS plus the stock-side restaurant workflow added in
-`9.40`: menu items priced from a recipe, modifiers that change which ingredients are deducted, and a
-kitchen board at `/admin/kitchen` fed by completed sale lines. The board shows work that is still
-open plus what was served in the last 12 hours, newest first when the row cap bites, so a busy shop
-can never be shown a page of its oldest served tickets instead of today's queue; cancelled tickets
-leave the board entirely. Voiding or cancelling a bill closes its open tickets inside the same
-transaction as the refund — a ticket that outlives its bill is food cooked and thrown away with no
-record of why. It does not include table/floor plans,
-kitchen printer routing to a physical station printer, queue numbers, reservations, or offline-first
-sync. Hardware integrations are browser/OS driven. These are separate product modules, not hidden
-configuration switches in the current POS.
+`/pos/restaurant` is a separate operating surface selected only for the `restaurant` archetype. It
+owns dining areas, tables, open checks, kitchen rounds, table moves and check cancellation. Sending
+a round creates or refreshes one PENDING POS order for the whole check, so ingredients are reserved
+before the kitchen starts. Checkout settles that same order through `recordPosSale()`; stock, FEFO,
+payments, drawer totals and tax documents therefore keep the normal POS source of truth. Restaurant
+kitchen tickets are attached to check items and appear before payment. Settlement does not enqueue a
+second copy of those tickets.
+
+Every restaurant mutation resolves tenant *and branch* from the device and verifies a staff PIN. What
+it deliberately does **not** pin down is the register or the shift: a check is opened on a waiter's
+tablet, added to from anywhere in the branch, and paid at the counter — often after a shift change.
+Binding a check to the device or shift that opened it made those checks unpayable and stranded their
+reserved stock, so `send_kitchen` and `settle` re-stamp the serving device, shift and cashier onto the
+order instead. The sale therefore belongs to the shift that took the money, the same rule deposits
+follow in `9.0` — and `finalizePosSale()` locks a bill by cashier, so without that re-stamp a
+different person closing the check is refused at the counter.
+
+Adding a later round increments the check version; payment is refused until that version has been
+sent and reserved. Concurrency is held by database facts rather than by an application lock:
+`status = 'OPEN'` plus `FOR UPDATE` on item edits, `version = n` on the reservation link, the partial
+unique index for one open check per table, and one idempotency key per (check, version) on the
+reservation order. A transaction-scoped advisory lock (`pg_advisory_xact_lock`) orders concurrent
+writers across instances, and an in-process mutex collapses double taps. It must stay
+transaction-scoped: a session-level lock has to park a pooled connection for the whole operation
+while the work inside borrows another, and five tables sending at once exhausts the ten-connection
+pool for the entire instance, not just for restaurant traffic.
+
+`CLOSING` is a transient state only. Any failed settlement — including a thrown one — returns the
+check to `OPEN`, and cancellation accepts `CLOSING` as well, refusing only when an order for that
+check has actually been paid. A check that cannot be finished *or* cancelled is a table lost for the
+night. The reservation order's idempotency key is read back from the order row rather than rebuilt, so
+a re-send after a failed payment attempt can never settle under a stale key and reserve the food
+twice. Abandoning a reservation releases its key together with the stock.
+
+Dine-in kitchen tickets cover **every** line that was sent, not only recipe-priced menu items; the
+retail board filters on `RECIPE` because retail bills are full of non-food SKUs, while every line on a
+dine-in check is something a person carries to a table. They still require the `KITCHEN_WORKFLOW`
+capability, and a ticket without a station lands in the "no station" lane rather than vanishing.
+Cancelling a ticket on the board stops the cooking, but does not remove the line from the bill or
+release its stock — that is a check edit, and while the round is already sent it needs a void.
+
+Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
+contracts and credentials; no mock adapter is presented as live. Customer QR self-ordering,
+reservations/queue numbers, split/merge checks, station-printer routing and offline-first sync are
+separate modules. Receipt and kitchen hardware remain browser/OS driven. If re-reserving fails while
+a later round is being sent — another till took the stock in between — the already-cooking lines are
+left without a reservation and the check cannot be paid until the send succeeds; the stock has to be
+corrected, which is why that failure is logged rather than silently returned as a status code.
+
+Returns, goods receiving, deposits, gift cards/store credit and credit sales all still live on the
+retail register, so the restaurant surface links back to `/pos?surface=retail` instead of trapping the
+shop on the floor plan.
 
 ### Who can approve this
 

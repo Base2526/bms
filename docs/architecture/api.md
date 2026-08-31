@@ -153,6 +153,22 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   locked tenant-wide and bound to a normalized request hash; exact retries replay, while reusing the
   key with a different payload returns `409 IDEMPOTENCY_CONFLICT`.
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
+- `GET|POST /api/pos/restaurant/floor` (`9.44`) — dining areas and tables of the device's branch.
+  `POST` seeds a default floor and needs PIN + `pos.device.manage`; the branch is never read from the
+  body.
+- `POST /api/pos/restaurant/checks` (`9.44`) — open a dine-in check on a table. PIN + `pos.sell` and
+  an open shift on the calling device; a second open check on the same table is `409` from the
+  partial unique index, not a duplicate bill.
+- `GET|POST /api/pos/restaurant/checks/[id]` (`9.44`) — one PIN-bearing adapter for the check:
+  `add_item`, `remove_item`, `send_kitchen`, `move`, `cancel`, `settle`. Every action is scoped to the
+  device's branch but **deliberately not to the device or shift that opened the check** — a check is
+  opened on a waiter's tablet, sent from anywhere, and paid at the register, possibly after a shift
+  change. `send_kitchen` reserves stock by creating/refreshing one PENDING POS order; `settle`
+  re-stamps that order's device/shift/cashier and closes it through `recordPosSale()`, so money,
+  stock, drawer and tax documents keep the single POS settlement path.
+- `GET /api/pos/kitchen/tickets` and `POST /api/pos/kitchen/tickets/[id]/status` (`9.44`) — the
+  register-side kitchen queue. Both are scoped to the device's branch (the admin board at
+  `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `order.ship` and never moves stock.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift

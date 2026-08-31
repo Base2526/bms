@@ -48,7 +48,18 @@ const SKU = `FAKE-${TAG}-A`;
 const SKU_HOT = `FAKE-${TAG}-HOT`;
 const SIZE = "M";
 const PIN = "3155";
-const TODAY = new Date().toISOString().slice(0, 10);
+/**
+ * "วันนี้" ต้องเป็นวันของร้าน ไม่ใช่ของ UTC
+ *
+ * `getCommissionReport()` ตัดช่วงวันด้วย `AT TIME ZONE 'Asia/Bangkok'` (ถูกต้อง — รายงานคอมของ
+ * ร้านไทยต้องเป็นวันตามหน้าร้าน) แต่บรรทัดนี้เคยคำนวณจาก `toISOString()` ซึ่งเป็น UTC · ผลคือ
+ * **ทุกคืนระหว่าง 00:00–07:00 เวลาไทย** ชุดนี้แดง 6 ตัวโดยที่โค้ดไม่มีอะไรผิด: บิลที่เพิ่งขาย
+ * ตกอยู่ในวันพรุ่งนี้ของกรุงเทพ ขณะที่ช่วงที่ขอไปคือเมื่อวานของกรุงเทพ (เจอตอนรัน 01:06 +07)
+ * เทสที่แดงตามเวลาของวันคือเทสที่คนเลิกอ่าน
+ */
+const TODAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+}).format(new Date());
 
 let tenantId = "";
 let locationId = "";

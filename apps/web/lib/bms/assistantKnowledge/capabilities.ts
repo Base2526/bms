@@ -74,10 +74,10 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     description: both("เปิดเฉพาะความสามารถที่ร้านต้องใช้ (แพ็ก ล็อต วันหมดอายุ FEFO ชั่งขาย แปลงหน่วย เลขเครื่อง สูตร ตัวเลือก คิวครัว ของเสีย) แล้วตั้งว่าสินค้าแต่ละตัวถูกตัดออกจากชั้นอย่างไร", "Turn on only the capabilities a shop needs — pack, lot, expiry, FEFO, weighed goods, unit conversion, serials, recipes, modifiers, kitchen queue, wastage — then set how each product leaves the shelf."),
     aliases: aliases([
       "รูปแบบสต็อก", "ความสามารถของร้าน", "ประเภทร้าน", "สูตร", "ตัวเลือกเมนู", "ชั่งขาย",
-      "ระบบรองรับร้านอาหารไหม", "ระบบรองรับร้านวัสดุก่อสร้างไหม", "ระบบรองรับร้านสัตว์เลี้ยงไหม",
+      "ระบบรองรับร้านวัสดุก่อสร้างไหม", "ระบบรองรับร้านสัตว์เลี้ยงไหม",
     ], [
       "stock model", "shop capabilities", "shop type", "recipe", "menu modifier", "sell by weight",
-      "does it support restaurants", "does it support building materials", "does it support pet supply",
+      "does it support building materials", "does it support pet supply",
     ]),
     status: "CONDITIONAL", route: "/admin/stock-models", requiredPermissions: ["product.view"],
     configurationDependencies: ["Capability presets follow the shop type; each one can be overridden per shop."],
@@ -215,6 +215,28 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     status: "CONDITIONAL", route: "/admin/pos-manual", requiredPermissions: ["pos.sell"],
     configurationDependencies: ["A POS device, branch, and cashier PIN must be configured."],
     limitations: both("ส่วนลด Void และเงินออกต้องมี PIN บุคคลที่สอง", "Discounts, voids, and cash-out require a second person's PIN."),
+  },
+  {
+    id: "restaurant.dine-in", module: "pos",
+    title: both("ขายหน้าร้านแบบร้านอาหาร (โต๊ะ/บิลเปิด)", "Restaurant dine-in service"),
+    description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, and checkout through the normal register."),
+    aliases: aliases([
+      "ร้านอาหาร", "โต๊ะ", "บิลโต๊ะ", "เปิดโต๊ะ", "ผังโต๊ะ", "ส่งครัว", "ย้ายโต๊ะ",
+      "ระบบรองรับร้านอาหารไหม",
+    ], [
+      "restaurant", "dine-in", "table", "open check", "floor plan", "send to kitchen", "move table",
+      "does it support restaurants", "restaurant dine-in",
+    ]),
+    status: "CONDITIONAL", route: "/admin/pos-manual", requiredPermissions: ["pos.sell"],
+    configurationDependencies: [
+      "The shop's business type must be restaurant; the surface lives at /pos/restaurant.",
+      "The branch needs a floor plan, a paired POS device, an open shift and cashier PINs.",
+      "Kitchen tickets require the KITCHEN_WORKFLOW store capability.",
+    ],
+    limitations: both(
+      "ยังไม่รองรับแยกบิล/รวมบิล ลูกค้าสั่งเองผ่าน QR การจองโต๊ะ/บัตรคิว และการส่งงานเข้าเครื่องพิมพ์ครัวแยกสถานี",
+      "Split/merge checks, customer QR self-ordering, reservations/queue numbers and per-station printer routing are not supported."
+    ),
   },
   {
     id: "pharmacy.workflow", module: "pharmacy",
