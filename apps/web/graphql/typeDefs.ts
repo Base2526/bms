@@ -3509,6 +3509,7 @@ export const typeDefs = /* GraphQL */ `
     aiRequiredFields: [String!]!
     aiInterpretShortReplies: Boolean!
     aiHandoffAfterFailedTurns: Int!
+    receiptLanguageMode: String!
     about: String
     address: String
     phone: String
@@ -3550,6 +3551,7 @@ export const typeDefs = /* GraphQL */ `
     aiRequiredFields: [String!]
     aiInterpretShortReplies: Boolean
     aiHandoffAfterFailedTurns: Int
+    receiptLanguageMode: String
     about: String
     address: String
     phone: String

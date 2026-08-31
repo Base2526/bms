@@ -20,6 +20,13 @@
 import { query } from "@/lib/db";
 import { sendEmail } from "@/lib/mailer";
 import { deliverToChannel } from "./inbox";
+import {
+  isReceiptLanguageMode,
+  receiptDocumentTitle,
+  receiptLabel,
+  receiptLocale,
+  type ReceiptLanguageMode,
+} from "@/lib/pos/receiptI18n";
 
 export type ReceiptDeliveryChannel = "email" | "line";
 
@@ -42,6 +49,7 @@ type ReceiptData = {
   customerEmail: string | null;
   customerLineId: string | null;
   customerName: string | null;
+  languageMode: ReceiptLanguageMode;
 };
 
 async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptData | null> {
@@ -51,7 +59,7 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
                         FROM bms_order_extra_lines extra
                        WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id), 0) AS extra_total,
             d.doc_no, d.vat_rate, d.taxable_amount, d.exempt_amount, d.vat_amount, d.rounding_amount,
-            sp.store_name, sp.tax_id,
+            COALESCE(t.name, sp.store_name) AS store_name, sp.tax_id, sp.receipt_language_mode,
             c.email AS customer_email, c.name AS customer_name,
             -- LINE id อยู่ที่ bms_customer_identities ไม่ใช่คอลัมน์บน bms_customers
             -- (7.74 แยก identity ต่อช่องทางออกมา — ลูกค้าคนเดียวมีได้หลายช่องทาง)
@@ -66,6 +74,7 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
          ON d.tenant_id = o.tenant_id AND d.order_id = o.id
         AND d.doc_type = 'ABBREVIATED' AND d.cancelled_at IS NULL
        LEFT JOIN bms_store_profile sp ON sp.tenant_id = o.tenant_id
+       LEFT JOIN bms_tenants t ON t.id = o.tenant_id
        LEFT JOIN bms_customers c ON c.tenant_id = o.tenant_id AND c.id = o.customer_id
       WHERE o.tenant_id = $1 AND o.id = $2`,
     [tenantId, orderId]
@@ -115,59 +124,67 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
     customerEmail: r.customer_email ?? null,
     customerLineId: r.customer_line_id ?? null,
     customerName: r.customer_name ?? null,
+    languageMode: isReceiptLanguageMode(r.receipt_language_mode) ? r.receipt_language_mode : "th",
   };
 }
 
-const money = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (n: number, mode: ReceiptLanguageMode) => n.toLocaleString(receiptLocale(mode), {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 /** ข้อความล้วน — ใช้กับ LINE และเป็น text ทางเลือกของอีเมล */
 function receiptText(data: ReceiptData): string {
   const lines: string[] = [];
+  const label = (thai: string, english: string) => receiptLabel(data.languageMode, thai, english);
   if (data.storeName) lines.push(data.storeName);
-  if (data.taxId) lines.push(`เลขประจำตัวผู้เสียภาษี ${data.taxId}`);
-  lines.push(data.docNo ? `ใบกำกับภาษีอย่างย่อ ${data.docNo}` : `ใบเสร็จ ${data.orderId.slice(0, 8)}`);
-  lines.push(new Date(data.soldAt).toLocaleString("th-TH"));
+  if (data.taxId) lines.push(`${label("เลขประจำตัวผู้เสียภาษี", "Tax ID")} ${data.taxId}`);
+  lines.push(data.docNo
+    ? `${receiptDocumentTitle(data.languageMode, "sale", true)} ${data.docNo}`
+    : `${receiptDocumentTitle(data.languageMode, "sale")} ${data.orderId.slice(0, 8)}`);
+  lines.push(new Date(data.soldAt).toLocaleString(receiptLocale(data.languageMode)));
   lines.push("");
   for (const line of data.lines) {
-    lines.push(`${line.qty}× ${line.name}${line.size ? ` (${line.size})` : ""}  ฿${money(line.amount)}`);
+    lines.push(`${line.qty}x ${line.name}${line.size ? ` (${line.size})` : ""}  ฿${money(line.amount, data.languageMode)}`);
   }
-  if (data.discountTotal > 0) lines.push(`ส่วนลด −฿${money(data.discountTotal)}`);
+  if (data.discountTotal > 0) lines.push(`${label("ส่วนลด", "Discount")} -฿${money(data.discountTotal, data.languageMode)}`);
   lines.push("");
-  lines.push(`รวม ฿${money(data.total)}`);
+  lines.push(`${label("รวม", "Total")} ฿${money(data.total, data.languageMode)}`);
   if (data.vat) {
-    lines.push(`  มูลค่าสินค้าที่เสีย VAT ฿${money(data.vat.taxable - data.vat.vat)}`);
-    if (data.vat.exempt > 0) lines.push(`  สินค้ายกเว้น VAT ฿${money(data.vat.exempt)}`);
-    lines.push(`  VAT ${data.vat.rate}% ฿${money(data.vat.vat)}`);
-    if (data.vat.rounding !== 0) lines.push(`  ปัดเศษเงินสด ฿${money(data.vat.rounding)}`);
+    lines.push(`  ${label("มูลค่าสินค้าที่เสีย VAT", "Net before VAT")} ฿${money(data.vat.taxable - data.vat.vat, data.languageMode)}`);
+    if (data.vat.exempt > 0) lines.push(`  ${label("สินค้ายกเว้น VAT", "VAT-exempt goods")} ฿${money(data.vat.exempt, data.languageMode)}`);
+    lines.push(`  VAT ${data.vat.rate}% ฿${money(data.vat.vat, data.languageMode)}`);
+    if (data.vat.rounding !== 0) lines.push(`  ${label("ปัดเศษเงินสด", "Cash rounding")} ฿${money(data.vat.rounding, data.languageMode)}`);
   }
   return lines.join("\n");
 }
 
 function receiptHtml(data: ReceiptData): string {
+  const label = (thai: string, english: string) => receiptLabel(data.languageMode, thai, english);
   const rows = data.lines
-    .map((l) => `<tr><td>${l.qty}× ${escapeHtml(l.name)}${l.size ? ` <small>(${escapeHtml(l.size)})</small>` : ""}</td>`
-      + `<td align="right">฿${money(l.amount)}</td></tr>`)
+    .map((l) => `<tr><td>${l.qty}x ${escapeHtml(l.name)}${l.size ? ` <small>(${escapeHtml(l.size)})</small>` : ""}</td>`
+      + `<td align="right">฿${money(l.amount, data.languageMode)}</td></tr>`)
     .join("");
   const vatBlock = data.vat
     ? `<tr><td colspan="2"><hr></td></tr>`
-      + `<tr><td>มูลค่าสินค้าที่เสีย VAT</td><td align="right">฿${money(data.vat.taxable - data.vat.vat)}</td></tr>`
-      + (data.vat.exempt > 0 ? `<tr><td>สินค้ายกเว้น VAT</td><td align="right">฿${money(data.vat.exempt)}</td></tr>` : "")
-      + `<tr><td>VAT ${data.vat.rate}%</td><td align="right">฿${money(data.vat.vat)}</td></tr>`
-      + (data.vat.rounding !== 0 ? `<tr><td>ปัดเศษเงินสด</td><td align="right">฿${money(data.vat.rounding)}</td></tr>` : "")
+      + `<tr><td>${label("มูลค่าสินค้าที่เสีย VAT", "Net before VAT")}</td><td align="right">฿${money(data.vat.taxable - data.vat.vat, data.languageMode)}</td></tr>`
+      + (data.vat.exempt > 0 ? `<tr><td>${label("สินค้ายกเว้น VAT", "VAT-exempt goods")}</td><td align="right">฿${money(data.vat.exempt, data.languageMode)}</td></tr>` : "")
+      + `<tr><td>VAT ${data.vat.rate}%</td><td align="right">฿${money(data.vat.vat, data.languageMode)}</td></tr>`
+      + (data.vat.rounding !== 0 ? `<tr><td>${label("ปัดเศษเงินสด", "Cash rounding")}</td><td align="right">฿${money(data.vat.rounding, data.languageMode)}</td></tr>` : "")
     : "";
 
   return `<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:420px">
     ${data.storeName ? `<h2 style="margin:0 0 4px">${escapeHtml(data.storeName)}</h2>` : ""}
-    ${data.taxId ? `<div style="font-size:12px;color:#666">เลขประจำตัวผู้เสียภาษี ${escapeHtml(data.taxId)}</div>` : ""}
+    ${data.taxId ? `<div style="font-size:12px;color:#666">${label("เลขประจำตัวผู้เสียภาษี", "Tax ID")} ${escapeHtml(data.taxId)}</div>` : ""}
     <div style="font-size:13px;margin:8px 0">
-      ${data.docNo ? `ใบกำกับภาษีอย่างย่อ <strong>${escapeHtml(data.docNo)}</strong>` : `ใบเสร็จ ${data.orderId.slice(0, 8)}`}<br>
-      ${new Date(data.soldAt).toLocaleString("th-TH")}
+      ${data.docNo ? `${receiptDocumentTitle(data.languageMode, "sale", true)} <strong>${escapeHtml(data.docNo)}</strong>` : `${receiptDocumentTitle(data.languageMode, "sale")} ${data.orderId.slice(0, 8)}`}<br>
+      ${new Date(data.soldAt).toLocaleString(receiptLocale(data.languageMode))}
     </div>
     <table style="width:100%;font-size:13px;border-collapse:collapse">
       ${rows}
-      ${data.discountTotal > 0 ? `<tr><td>ส่วนลด</td><td align="right">−฿${money(data.discountTotal)}</td></tr>` : ""}
+      ${data.discountTotal > 0 ? `<tr><td>${label("ส่วนลด", "Discount")}</td><td align="right">-฿${money(data.discountTotal, data.languageMode)}</td></tr>` : ""}
       <tr><td colspan="2"><hr></td></tr>
-      <tr><td><strong>รวม</strong></td><td align="right"><strong>฿${money(data.total)}</strong></td></tr>
+      <tr><td><strong>${label("รวม", "Total")}</strong></td><td align="right"><strong>฿${money(data.total, data.languageMode)}</strong></td></tr>
       ${vatBlock}
     </table>
   </div>`;
@@ -208,8 +225,8 @@ export async function sendReceipt(input: {
         {
           to,
           subject: data.docNo
-            ? `ใบเสร็จ ${data.docNo}${data.storeName ? ` — ${data.storeName}` : ""}`
-            : `ใบเสร็จการซื้อ${data.storeName ? ` — ${data.storeName}` : ""}`,
+            ? `${receiptLabel(data.languageMode, "ใบเสร็จ", "Receipt")} ${data.docNo}${data.storeName ? ` - ${data.storeName}` : ""}`
+            : `${receiptLabel(data.languageMode, "ใบเสร็จการซื้อ", "Purchase receipt")}${data.storeName ? ` - ${data.storeName}` : ""}`,
           html: receiptHtml(data),
           text: receiptText(data),
         },

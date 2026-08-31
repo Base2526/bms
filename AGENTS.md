@@ -213,8 +213,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**69 namespaces / 3,892 keys per language,
-   exact th↔en parity** as of 2026-08-25 — the +20 that day were `AdminSidebar.tsx`'s Store/Pharmacy
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**69 namespaces / 3,984 keys per language,
+   exact th↔en parity** as of 2026-08-31 — the latest +7 are store-profile receipt-language labels;
+   the +20 on 2026-08-25 were `AdminSidebar.tsx`'s Store/Pharmacy
    submenu child labels, which had been plain English string literals inside an otherwise-converted
    file; see [agent-invariants.md § i18n coverage](docs/agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)).
    This is what the per-user language preference switches.

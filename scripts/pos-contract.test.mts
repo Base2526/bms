@@ -15,6 +15,26 @@ import { calculatePettyCashSettlement } from "../apps/web/lib/pos/pettyCash.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
 import { orderRefundPaymentsForAllocation } from "../apps/web/lib/pos/refundAllocation.ts";
 import { appendSplitPaymentRow } from "../apps/web/lib/pos/paymentDraft.ts";
+import {
+  isReceiptLanguageMode,
+  receiptDocumentTitle,
+  receiptLabel,
+  receiptLocale,
+} from "../apps/web/lib/pos/receiptI18n.ts";
+
+test("receipt language modes stay explicit and deterministic", () => {
+  assert.equal(isReceiptLanguageMode("th"), true);
+  assert.equal(isReceiptLanguageMode("en"), true);
+  assert.equal(isReceiptLanguageMode("bilingual"), true);
+  assert.equal(isReceiptLanguageMode("th-en"), false);
+  assert.equal(receiptLabel("th", "รวม", "Total"), "รวม");
+  assert.equal(receiptLabel("en", "รวม", "Total"), "Total");
+  assert.equal(receiptLabel("bilingual", "รวม", "Total"), "รวม / Total");
+  assert.equal(receiptLocale("th"), "th-TH");
+  assert.equal(receiptLocale("en"), "en-US");
+  assert.equal(receiptDocumentTitle("en", "sale", true), "Receipt/Abbreviated Tax Invoice");
+  assert.equal(receiptDocumentTitle("bilingual", "return"), "ใบรับคืนสินค้า / Goods Return Receipt");
+});
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
   const lines = parsePosSaleLines([
@@ -258,6 +278,32 @@ test("sale receipt prints human bill number separately from technical POS refere
       .equals(Buffer.from("Z6908310001", "ascii")),
     true
   );
+});
+
+test("English ESC/POS receipt uses customer-facing English labels", () => {
+  const bytes = buildReceipt({
+    languageMode: "en",
+    storeName: "Test Store",
+    branchCode: "00001",
+    taxId: null,
+    posNo: "POS01",
+    vatIncluded: false,
+    docTitle: receiptDocumentTitle("en", "sale"),
+    docNo: "SALE-001",
+    at: "8/31/2026, 12:00:00 PM",
+    cashier: "Cashier",
+    lines: [{ name: "Item", qty: 1, amount: 90 }],
+    itemCount: 1,
+    total: 90,
+    tendered: 100,
+    change: 10,
+    vat: { rate: 7, vatAmount: 5.89, netBeforeVat: 84.11 },
+  });
+  const binary = Buffer.from(bytes);
+  assert.equal(binary.includes(Buffer.from("Receipt", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Net before VAT", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Tendered/Change", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("Cashier Cashier", "ascii")), true);
 });
 
 test("return slip prints its credit-note reference but barcodes the searchable original sale", () => {

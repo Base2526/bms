@@ -68,7 +68,7 @@ async function handleGET(req: NextRequest) {
     shiftReturnSummary,
     cashiers,
     purchaseReceivers,
-    store: { taxId: store.taxId },
+    store: { taxId: store.taxId, receiptLanguageMode: store.receiptLanguageMode },
     vat: {
       registered: vat.vatRegistered,
       priceIncludesVat: vat.priceIncludesVat,

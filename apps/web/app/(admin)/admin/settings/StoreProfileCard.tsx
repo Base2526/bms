@@ -14,6 +14,7 @@ const Q = gql`
     bmsMyTenant { id name slug }
     bmsStoreProfile {
       businessArchetype businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
+      receiptLanguageMode
       about address phone contactEmail website logoUrl taxId timezone country currency
       businessHours shippingPolicy returnPolicy
       paymentAccounts { type bankName accountName accountNo promptpayId note }
@@ -40,6 +41,7 @@ const M_PROFILE = gql`
 
 const PROFILE_KEYS = [
   "businessType", "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
+  "receiptLanguageMode",
   "businessArchetype",
   "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
   "timezone", "country", "currency", "businessHours", "shippingPolicy", "returnPolicy",
@@ -95,6 +97,7 @@ export default function StoreProfileCard() {
         aiRequiredFields: p?.aiRequiredFields || ["product", "size", "qty"],
         aiInterpretShortReplies: p?.aiInterpretShortReplies !== false,
         aiHandoffAfterFailedTurns: p?.aiHandoffAfterFailedTurns || 3,
+        receiptLanguageMode: p?.receiptLanguageMode || "th",
         about: p?.about, address: p?.address, phone: p?.phone,
         contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl, taxId: p?.taxId,
         timezone: p?.timezone, country: p?.country || undefined, currency: p?.currency || undefined,
@@ -173,6 +176,27 @@ export default function StoreProfileCard() {
                       <Form.Item name="slug" label={t("admin_store_profile.slug_label")} tooltip={t("admin_store_profile.slug_tooltip")}>
                         <Input disabled addonBefore="/" />
                       </Form.Item>
+                    </Col>
+                  </Row>
+                ),
+              },
+              {
+                key: "receipt-language",
+                forceRender: true,
+                label: <SectionHeader note={t("admin_store_profile.section_receipt_language_note")}>{t("admin_store_profile.section_receipt_language")}</SectionHeader>,
+                children: (
+                  <Row gutter={16}>
+                    <Col xs={24} md={12}>
+                      <Form.Item name="receiptLanguageMode" label={t("admin_store_profile.receipt_language_label")}>
+                        <Select options={[
+                          { value: "th", label: t("admin_store_profile.receipt_language_th") },
+                          { value: "en", label: t("admin_store_profile.receipt_language_en") },
+                          { value: "bilingual", label: t("admin_store_profile.receipt_language_bilingual") },
+                        ]} />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Alert type="info" showIcon message={t("admin_store_profile.receipt_language_help")} />
                     </Col>
                   </Row>
                 ),

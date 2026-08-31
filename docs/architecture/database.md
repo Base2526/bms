@@ -39,7 +39,7 @@ operators must resolve those records before retrying the migration.
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
-| Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30` |
+| Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language) |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split) |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
@@ -604,6 +604,10 @@ business type, name/about/address/phone/hours, shipping and return policies, sho
 accounts, and flat/free-threshold delivery estimates. It has forced RLS and explicit `bms_app`
 grants; writes run through `beginTenantTx()`. Carrier quotes are not stored or implied—the current
 estimate is only the shop-configured flat-rate policy.
+
+Receipt-language extension (`9.39`) stores `receipt_language_mode` (`th`, `en`, or `bilingual`) on
+the same tenant profile. It is customer-document policy shared by the POS preview, ESC/POS output,
+email, and LINE; it is deliberately independent from the AI language and staff UI preference.
 
 Signup/onboarding extension (`7.42`) — the current store-profile `business_type` remains the broad
 AI-facing classification, while the separate optional `business_archetype` field captures richer

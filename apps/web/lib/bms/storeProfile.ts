@@ -13,6 +13,7 @@ import { beginTenantTx } from "./tenant";
 import { normalizeShopArchetype } from "./shopArchetypes";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
+import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 
 // Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
 // every checkout page load, and the public storefront — but written only from
@@ -46,6 +47,7 @@ export type StoreProfile = {
   aiRequiredFields: string[];
   aiInterpretShortReplies: boolean;
   aiHandoffAfterFailedTurns: number;
+  receiptLanguageMode: ReceiptLanguageMode;
   about: string | null;
   address: string | null;
   phone: string | null;
@@ -86,6 +88,7 @@ const EMPTY: StoreProfile = {
   aiRequiredFields: ["product", "size", "qty"],
   aiInterpretShortReplies: true,
   aiHandoffAfterFailedTurns: 3,
+  receiptLanguageMode: "th",
   about: null, address: null, phone: null, contactEmail: null, website: null,
   logoUrl: null, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
@@ -112,7 +115,7 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
 async function fetchStoreProfile(tenantId: string): Promise<StoreProfile> {
   const res = await query<any>(
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
-            ai_interpret_short_replies, ai_handoff_after_failed_turns,
+            ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
             about, address, phone, contact_email, website, logo_url, tax_id,
             timezone, country, currency, business_hours, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
@@ -133,6 +136,7 @@ async function fetchStoreProfile(tenantId: string): Promise<StoreProfile> {
     aiRequiredFields: Array.isArray(r.ai_required_fields) ? r.ai_required_fields : ["product", "size", "qty"],
     aiInterpretShortReplies: r.ai_interpret_short_replies !== false,
     aiHandoffAfterFailedTurns: Number(r.ai_handoff_after_failed_turns || 3),
+    receiptLanguageMode: isReceiptLanguageMode(r.receipt_language_mode) ? r.receipt_language_mode : "th",
     about: r.about ?? null,
     address: r.address ?? null,
     phone: r.phone ?? null,
@@ -189,6 +193,7 @@ export async function upsertStoreProfile(
     throw new Error("ประเภทร้านไม่ถูกต้อง");
   }
   if (!AI_LANGUAGES.has(merged.aiLanguage)) throw new Error("ภาษาหลักของ AI ไม่ถูกต้อง");
+  if (!isReceiptLanguageMode(merged.receiptLanguageMode)) throw new Error("ภาษาใบเสร็จไม่ถูกต้อง");
   if (!AI_ORDERING_STYLES.has(merged.aiOrderingStyle)) throw new Error("รูปแบบการรับออร์เดอร์ไม่ถูกต้อง");
   merged.aiRequiredFields = Array.from(new Set(merged.aiRequiredFields)).filter((field) => AI_REQUIRED_FIELDS.has(field));
   if (!merged.aiRequiredFields.includes("product") || !merged.aiRequiredFields.includes("qty")) {
@@ -232,15 +237,15 @@ export async function upsertStoreProfile(
     await client.query(
       `INSERT INTO bms_store_profile (
         tenant_id, business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
-        ai_interpret_short_replies, ai_handoff_after_failed_turns,
+        ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
         about, address, phone, contact_email, website, logo_url, tax_id,
         timezone, country, currency, business_hours, shipping_policy, return_policy,
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
         enabled_carriers, email_theme_color, email_footer_text,
         shipping_mode, shipping_origin_province, shipping_origin_postcode,
         shipping_zone_rates, shipping_weight_tiers
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb,$23,$24,$25,$26,$27,$28,$29,
-               $30,$31,$32,$33::jsonb,$34::jsonb)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,
+               $31,$32,$33,$34::jsonb,$35::jsonb)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -249,6 +254,7 @@ export async function upsertStoreProfile(
         ai_required_fields = EXCLUDED.ai_required_fields,
         ai_interpret_short_replies = EXCLUDED.ai_interpret_short_replies,
         ai_handoff_after_failed_turns = EXCLUDED.ai_handoff_after_failed_turns,
+        receipt_language_mode = EXCLUDED.receipt_language_mode,
         about = EXCLUDED.about, address = EXCLUDED.address, phone = EXCLUDED.phone,
         contact_email = EXCLUDED.contact_email, website = EXCLUDED.website,
         logo_url = EXCLUDED.logo_url, tax_id = EXCLUDED.tax_id, timezone = EXCLUDED.timezone,
@@ -269,7 +275,7 @@ export async function upsertStoreProfile(
         email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
         tenantId, merged.businessArchetype, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
-        merged.aiInterpretShortReplies, merged.aiHandoffAfterFailedTurns,
+        merged.aiInterpretShortReplies, merged.aiHandoffAfterFailedTurns, merged.receiptLanguageMode,
         merged.about, merged.address, merged.phone, merged.contactEmail, merged.website,
         merged.logoUrl, merged.taxId, merged.timezone, merged.country, merged.currency,
         merged.businessHours, merged.shippingPolicy, merged.returnPolicy,

@@ -759,8 +759,8 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08-25
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **69 namespaces / 3,822 leaf keys per language**,
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08-31
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **69 namespaces / 3,984 leaf keys per language**,
   at exact th↔en parity — up from ~12 before an initial 2026-08 public-page pass (see CLAUDE.md's
   "Public-page i18n coverage expanded" entry), 25 after it, 30 after the first admin batch, and the rest
   added by admin batches 2–17 (one `admin_*` namespace per page or page group, e.g. `admin_login`,

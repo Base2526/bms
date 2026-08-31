@@ -16,6 +16,7 @@
 // =============================================================
 
 import { sanitizeCode39 } from "./barcode";
+import { receiptLabel, receiptLocale, type ReceiptLanguageMode } from "./receiptI18n";
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -145,6 +146,7 @@ export type ReceiptLine = {
 };
 
 export type ReceiptPayload = {
+  languageMode?: ReceiptLanguageMode;
   storeName: string;
   locationId?: string | null;
   branchCode: string | null;
@@ -190,8 +192,8 @@ export type ReceiptPayload = {
   } | null;
 };
 
-function money(n: number): string {
-  return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function money(n: number, mode: ReceiptLanguageMode): string {
+  return n.toLocaleString(receiptLocale(mode), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**
@@ -200,40 +202,42 @@ function money(n: number): string {
  */
 export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}): Uint8Array {
   const b = new EscPosBuilder(opts);
+  const mode = payload.languageMode ?? "th";
+  const label = (thai: string, english: string) => receiptLabel(mode, thai, english);
 
   b.align(1).bold(true).line(payload.storeName).bold(false);
-  if (payload.branchCode) b.line(`(สาขา ${payload.branchCode})`);
-  if (payload.taxId) b.line(`TAX#${payload.taxId}${payload.vatIncluded ? " (VAT Included)" : ""}`);
+  if (payload.branchCode) b.line(`(${label("สาขา", "Branch")} ${payload.branchCode})`);
+  if (payload.taxId) b.line(`TAX#${payload.taxId}${payload.vatIncluded ? ` (${label("รวม VAT", "VAT Included")})` : ""}`);
   if (payload.posNo) b.line(`POS#${payload.posNo}`);
   if (payload.locationId) b.line(`Location ${payload.locationId.slice(0, 8)}`);
   if (payload.posDeviceId) b.line(`Device ${payload.posDeviceId.slice(0, 8)}`);
   if (payload.shiftId) b.line(`Shift ${payload.shiftId.slice(0, 8)}`);
   b.line(payload.docTitle);
-  if (payload.referenceDocNo) b.line(`อ้างอิงบิลเดิม ${payload.referenceDocNo}`);
-  if (payload.relatedDocNo) b.line(`ใบลดหนี้ ${payload.relatedDocNo}`);
+  if (payload.referenceDocNo) b.line(`${label("อ้างอิงบิลเดิม", "Original bill")} ${payload.referenceDocNo}`);
+  if (payload.relatedDocNo) b.line(`${label("ใบลดหนี้", "Credit note")} ${payload.relatedDocNo}`);
 
   b.align(0).divider();
   for (const l of payload.lines) {
-    b.columnsLine(`${l.qty} ${l.name}`, money(l.amount) + (l.vatExempt ? "N" : ""));
+    b.columnsLine(`${l.qty} ${l.name}`, money(l.amount, mode) + (l.vatExempt ? "N" : ""));
   }
   b.divider();
 
   // ส่วนลดแยกบรรทัดก่อนยอด VAT — ยอดพวกนี้รวมอยู่ใน total แล้ว
   for (const d of payload.discountLines ?? []) {
-    if (d.amount > 0) b.columnsLine(d.label, `-${money(d.amount)}`);
+    if (d.amount > 0) b.columnsLine(d.label, `-${money(d.amount, mode)}`);
   }
 
   // ใบกำกับภาษีอย่างย่อต้องแสดงยอด VAT แยก — พิมพ์ก่อนยอดสุทธิเหมือนใบจริง
   if (payload.vat) {
-    b.columnsLine("มูลค่าก่อน VAT", money(payload.vat.netBeforeVat));
-    b.columnsLine(`VAT ${payload.vat.rate}%`, money(payload.vat.vatAmount));
-    if (payload.vat.exemptAmount) b.columnsLine("ยกเว้น VAT (N)", money(payload.vat.exemptAmount));
-    if (payload.vat.roundingAmount) b.columnsLine("ปัดเศษ", money(payload.vat.roundingAmount));
+    b.columnsLine(label("มูลค่าก่อน VAT", "Net before VAT"), money(payload.vat.netBeforeVat, mode));
+    b.columnsLine(`VAT ${payload.vat.rate}%`, money(payload.vat.vatAmount, mode));
+    if (payload.vat.exemptAmount) b.columnsLine(label("ยกเว้น VAT (N)", "VAT exempt (N)"), money(payload.vat.exemptAmount, mode));
+    if (payload.vat.roundingAmount) b.columnsLine(label("ปัดเศษ", "Rounding"), money(payload.vat.roundingAmount, mode));
   }
-  b.bold(true).columnsLine(`ยอดสุทธิ ${payload.itemCount} ชิ้น`, money(payload.total)).bold(false);
-  if (payload.paymentLabel) b.columnsLine("ชำระโดย", payload.paymentLabel);
+  b.bold(true).columnsLine(`${label("ยอดสุทธิ", "Total")} ${payload.itemCount} ${label("ชิ้น", "items")}`, money(payload.total, mode)).bold(false);
+  if (payload.paymentLabel) b.columnsLine(label("ชำระโดย", "Paid by"), payload.paymentLabel);
   if (payload.tendered != null) {
-    b.columnsLine("รับเงิน/เงินทอน", `${money(payload.tendered)} / ${money(payload.change ?? 0)}`);
+    b.columnsLine(label("รับเงิน/เงินทอน", "Tendered/Change"), `${money(payload.tendered, mode)} / ${money(payload.change ?? 0, mode)}`);
   }
 
   b.feed(1);
@@ -241,18 +245,18 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   if (payload.docNo) b.line(`${payload.docNo}  ${payload.at}`);
   else b.line(payload.at);
   if (payload.orderId) b.line(`Order ${payload.orderId.slice(0, 8)}`);
-  if (payload.cashier) b.line(`แคชเชียร์ ${payload.cashier}`);
+  if (payload.cashier) b.line(`${label("แคชเชียร์", "Cashier")} ${payload.cashier}`);
 
   // แต้มท้ายบิล — ลูกค้าใช้ตรวจว่าได้แต้มครบ ไม่ต้องถามพนักงาน
   if (payload.member) {
     b.feed(1);
     const who = [payload.member.memberNo, payload.member.name].filter(Boolean).join(" ");
-    if (who) b.line(`สมาชิก ${who}`);
+    if (who) b.line(`${label("สมาชิก", "Member")} ${who}`);
     if (payload.member.pointsEarned != null) {
-      b.columnsLine("แต้มที่ได้บิลนี้", `+${payload.member.pointsEarned}`);
+      b.columnsLine(label("แต้มที่ได้บิลนี้", "Points earned"), `+${payload.member.pointsEarned}`);
     }
     if (payload.member.pointsBalance != null) {
-      b.columnsLine("แต้มคงเหลือ", String(payload.member.pointsBalance));
+      b.columnsLine(label("แต้มคงเหลือ", "Points balance"), String(payload.member.pointsBalance));
     }
   }
 
