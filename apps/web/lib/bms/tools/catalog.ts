@@ -226,7 +226,7 @@ const searchSystemCapabilitiesTool: BmsTool = {
       role: ec.role,
       isPlatformAdmin: ec.isPlatformAdmin,
       kind: "capability",
-      limit: 20,
+      limit: 24,
     });
     const rankedIds = ranked.map((result) => result.id);
     const resultById = new Map(ranked.map((result) => [result.id, result]));
@@ -292,7 +292,7 @@ const searchSystemGuidesTool: BmsTool = {
       role: ec.role,
       isPlatformAdmin: ec.isPlatformAdmin,
       kind: "guide",
-      limit: 20,
+      limit: 24,
     });
     const rankedIds = ranked.map((result) => result.id);
     const resultById = new Map(ranked.map((result) => [result.id, result]));

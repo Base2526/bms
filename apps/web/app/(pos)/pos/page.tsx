@@ -844,6 +844,8 @@ type Session = {
   }>;
   purchaseReceivers: Array<{ id: string; name: string | null; email: string | null; role: string | null; hasPin: boolean }>;
   store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode };
+  surface?: "retail" | "restaurant";
+  businessArchetype?: string | null;
   vat: {
     registered: boolean;
     priceIncludesVat: boolean;
@@ -1736,6 +1738,15 @@ export default function PosPage() {
         return;
       }
       const data: Session = await res.json();
+      // ร้านอาหารเริ่มที่หน้าโต๊ะ แต่ **ห้ามปิดทางกลับ** — คืนสินค้า/รับของเข้าคลัง/มัดจำ/
+      // บัตรของขวัญ/ขายเชื่อ ยังอยู่ที่หน้านี้เท่านั้น ร้านอาหารก็ต้องทำงานเหล่านั้น
+      // (ขายน้ำแพ็กกลับบ้าน รับของจาก PO ที่เคาน์เตอร์) · `?surface=retail` คือทางกลับนั้น
+      // และปุ่มที่ /pos/restaurant เป็นตัวส่งมา
+      if (data.businessArchetype === "restaurant"
+          && new URLSearchParams(window.location.search).get("surface") !== "retail") {
+        window.location.replace("/pos/restaurant");
+        return;
+      }
       setSession(data);
       setShiftReturnSummary({
         count: Number(data.shiftReturnSummary?.returnCount ?? 0),

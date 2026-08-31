@@ -3628,7 +3628,15 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsKitchenTicket {
     id: ID!
-    orderId: ID!
+    """ORDER = ตั๋วจากบิลที่ปิดการขายแล้ว · RESTAURANT_CHECK = ตั๋วจากบิลโต๊ะก่อนชำระเงิน"""
+    source: String!
+    """null สำหรับตั๋วของบิลโต๊ะ (ยังไม่มีออร์เดอร์ที่ปิดการขาย)"""
+    orderId: ID
+    checkId: ID
+    tableCode: String
+    tableName: String
+    roundNo: Int
+    kitchenNote: String
     orderItemId: ID!
     station: String
     status: String!

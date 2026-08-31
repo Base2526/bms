@@ -172,6 +172,16 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "เมนูมัดจำ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.manage-deposit" },
   { q: "บัตรของขวัญ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.use-store-credit" },
   { q: "ขายเชื่อ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.credit-sale" },
+  { q: "เปิดโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-open-check" },
+  { q: "open a table", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-open-check" },
+  { q: "ส่งครัว", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-kitchen-round" },
+  { q: "send to kitchen", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-kitchen-round" },
+  { q: "ย้ายโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-settle" },
+  { q: "move table", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-settle" },
+  // ก่อน 9.44 คำถามนี้ถูกปักไว้ที่ inventory.stock-model เพราะนั่นเป็นคำตอบจริงเพียงข้อเดียว
+  // (สูตร/ตัวเลือก/คิวครัว) · ตอนนี้มีหน้าโต๊ะจริงแล้ว คนที่ถามหมายถึงบริการหน้าร้าน
+  { q: "ระบบรองรับร้านอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.dine-in" },
+  { q: "does BMS support restaurant dine-in", locale: "en", context: { kind: "capability" }, expect: "answer", expectTop: "restaurant.dine-in" },
   { q: "รายงานกะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.shift-reports" },
   { q: "ตั้งค่า scanner", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.device-settings" },
   { q: "ขายยา", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.pharmacist-authorization" },
@@ -227,7 +237,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "how do I write off expired stock", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "กระดานครัวใช้ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
   { q: "how do I move kitchen tickets to served", locale: "en", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
-  { q: "ระบบรองรับร้านอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.stock-model", origin: "coverage" },
+  { q: "ระบบรองรับร้านวัสดุก่อสร้างไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.stock-model", origin: "coverage" },
   { q: "ระบบมีคิวครัวไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "kitchen.workflow", origin: "coverage" },
   { q: "ระบบบันทึกของเสียได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.wastage-ledger", origin: "coverage" },
   {

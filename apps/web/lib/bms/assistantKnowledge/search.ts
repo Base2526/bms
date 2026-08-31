@@ -159,7 +159,10 @@ export function searchAssistantKnowledge(
   query: string,
   context: AssistantKnowledgeContext
 ): AssistantKnowledgeResult[] {
-  const limit = Math.min(Math.max(context.limit ?? 8, 1), 20);
+  // เพดานนี้กันค่าที่ผู้เรียกส่งมาเกินจริง ไม่ใช่คำสัญญาของฟีเจอร์ — หน้าที่มีไกด์มากกว่าเพดาน
+  // จะตอบ "อธิบายทุกเมนูในหน้านี้" ไม่ครบ โดยที่ไม่มีอะไรฟ้องนอกจากเทสความครบถ้วน
+  // (หน้าเครื่องขายแตะ 21 ไกด์ตอนเพิ่มงานร้านอาหาร) · ผู้เรียกจริงยังคุมตัวเลขของตัวเองเหมือนเดิม
+  const limit = Math.min(Math.max(context.limit ?? 8, 1), 32);
   const capabilities = context.kind === "guide" ? [] : SYSTEM_CAPABILITIES.map((entry) => capabilityResult(entry, query, context.locale, context));
   const guides = context.kind === "capability" ? [] : SYSTEM_GUIDES.map((entry) => guideResult(entry, query, context.locale, context));
   return [...capabilities, ...guides]

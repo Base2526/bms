@@ -6,7 +6,13 @@ import { isCapabilityEnabledInTx } from "./storeCapabilities";
 function mapKitchenTicket(row: any) {
   return {
     id: row.id,
-    orderId: row.order_id,
+    source: row.source ?? "ORDER",
+    orderId: row.order_id ?? null,
+    checkId: row.check_id ?? null,
+    tableCode: row.table_code ?? null,
+    tableName: row.table_name ?? null,
+    roundNo: row.round_no == null ? null : Number(row.round_no),
+    kitchenNote: row.kitchen_note ?? null,
     orderItemId: String(row.order_item_id),
     station: row.station ?? null,
     status: row.status,
@@ -70,27 +76,55 @@ const KITCHEN_CLOSED_VISIBLE_HOURS = 12;
 export async function listKitchenTickets(
   tenantId: string,
   status?: string | null,
-  limit = 100
+  limit = 100,
+  /**
+   * จอครัวของเครื่องหน้าร้านต้องเห็นเฉพาะสาขาของตัวเอง — คนครัวสาขา A ที่เห็นออร์เดอร์
+   * ของสาขา B จะกดว่าเสิร์ฟแล้วโดยที่อาหารไม่มีใครทำ · กระดานหลังบ้านยังดูทั้งร้านตามเดิม
+   * (ไม่ส่งค่านี้ = ทุกสาขา)
+   */
+  locationId?: string | null
 ) {
   const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
   const result = await query(
     `SELECT * FROM (
-       SELECT kt.id, kt.order_id, kt.order_item_id, kt.station, kt.status,
-              kt.modifier_codes, kt.created_at, kt.updated_at,
-              oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty
-         FROM bms_kitchen_tickets kt
-         JOIN bms_order_items oi
-           ON oi.tenant_id = kt.tenant_id AND oi.id = kt.order_item_id
-        WHERE kt.tenant_id = $1
-          AND ($2::text IS NULL OR kt.status = $2)
-          AND ($2::text IS NOT NULL
-               OR kt.status = ANY($4::text[])
-               OR (kt.status = 'SERVED' AND kt.updated_at > now() - ($5 || ' hours')::interval))
-        ORDER BY kt.created_at DESC, kt.id DESC
-        LIMIT $3
+       SELECT * FROM (
+         SELECT 'ORDER'::text AS source, kt.id, kt.order_id, kt.order_item_id::text,
+                NULL::uuid AS check_id, NULL::text AS table_code, NULL::text AS table_name,
+                NULL::integer AS round_no, NULL::text AS kitchen_note,
+                kt.station, kt.status, kt.modifier_codes, kt.created_at, kt.updated_at,
+                oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty
+           FROM bms_kitchen_tickets kt
+           JOIN bms_order_items oi
+             ON oi.tenant_id = kt.tenant_id AND oi.id = kt.order_item_id
+           JOIN bms_orders o
+             ON o.tenant_id = kt.tenant_id AND o.id = kt.order_id
+          WHERE kt.tenant_id = $1
+            AND ($6::uuid IS NULL OR o.location_id = $6)
+         UNION ALL
+         SELECT 'RESTAURANT_CHECK'::text, rt.id, NULL::uuid, ci.id::text,
+                rt.check_id, tb.code, tb.name, ci.round_no, ci.kitchen_note,
+                rt.station, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
+                ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty
+           FROM bms_restaurant_kitchen_tickets rt
+           JOIN bms_restaurant_check_items ci
+             ON ci.tenant_id = rt.tenant_id AND ci.id = rt.check_item_id
+           JOIN bms_restaurant_checks rc
+             ON rc.tenant_id = rt.tenant_id AND rc.id = rt.check_id
+           JOIN bms_restaurant_tables tb
+             ON tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
+          WHERE rt.tenant_id = $1
+            AND ($6::uuid IS NULL OR rc.location_id = $6)
+       ) all_tickets
+       WHERE ($2::text IS NULL OR all_tickets.status = $2)
+         AND ($2::text IS NOT NULL
+              OR all_tickets.status = ANY($4::text[])
+              OR (all_tickets.status = 'SERVED' AND all_tickets.updated_at > now() - ($5 || ' hours')::interval))
+       ORDER BY all_tickets.created_at DESC, all_tickets.id DESC
+       LIMIT $3
      ) recent
      ORDER BY recent.created_at, recent.id`,
-    [tenantId, status ?? null, safeLimit, [...KITCHEN_OPEN_STATUSES], String(KITCHEN_CLOSED_VISIBLE_HOURS)]
+    [tenantId, status ?? null, safeLimit, [...KITCHEN_OPEN_STATUSES],
+      String(KITCHEN_CLOSED_VISIBLE_HOURS), locationId ?? null]
   );
   return result.rows.map(mapKitchenTicket);
 }
@@ -127,35 +161,76 @@ export async function updateKitchenTicketStatus(input: {
   ticketId: string;
   status: string;
   actorUserId: string;
+  /**
+   * เครื่องหน้าร้านเลื่อนได้เฉพาะตั๋วของสาขาตัวเอง — จอครัวกรองตามสาขาแล้ว ด่านนี้กันการ
+   * ยิง id ตรง ๆ ไปเลื่อนอาหารของสาขาอื่น (กระดานหลังบ้านไม่ส่งค่านี้ = ดูแลได้ทั้งร้าน)
+   */
+  expectedLocationId?: string | null;
 }) {
   const status = String(input.status ?? "").trim().toUpperCase();
   if (!(status in NEXT_KITCHEN_STATUS)) throw new Error("สถานะ Kitchen ticket ไม่ถูกต้อง");
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
-    const current = await client.query<{ status: string }>(
-      `SELECT status FROM bms_kitchen_tickets
-        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
-      [input.tenantId, input.ticketId]
+    const locationId = input.expectedLocationId ?? null;
+    let current = await client.query<{ status: string; source: "ORDER" | "RESTAURANT_CHECK" }>(
+      `SELECT kt.status, 'ORDER'::text AS source FROM bms_kitchen_tickets kt
+         JOIN bms_orders o ON o.tenant_id = kt.tenant_id AND o.id = kt.order_id
+        WHERE kt.tenant_id = $1 AND kt.id = $2
+          AND ($3::uuid IS NULL OR o.location_id = $3)
+        FOR UPDATE OF kt`,
+      [input.tenantId, input.ticketId, locationId]
     );
+    if (!current.rowCount) {
+      current = await client.query<{ status: string; source: "ORDER" | "RESTAURANT_CHECK" }>(
+        `SELECT rt.status, 'RESTAURANT_CHECK'::text AS source
+           FROM bms_restaurant_kitchen_tickets rt
+           JOIN bms_restaurant_checks rc ON rc.tenant_id = rt.tenant_id AND rc.id = rt.check_id
+          WHERE rt.tenant_id = $1 AND rt.id = $2
+            AND ($3::uuid IS NULL OR rc.location_id = $3)
+          FOR UPDATE OF rt`,
+        [input.tenantId, input.ticketId, locationId]
+      );
+    }
     if (!current.rowCount) throw new Error("ไม่พบ Kitchen ticket");
     const previous = current.rows[0].status;
+    const source = current.rows[0].source;
     if (!NEXT_KITCHEN_STATUS[previous]?.has(status)) {
       throw new Error(`เปลี่ยนสถานะ Kitchen ticket จาก ${previous} เป็น ${status} ไม่ได้`);
     }
-    const updated = await client.query(
-      `UPDATE bms_kitchen_tickets kt SET status = $3, updated_at = now()
-        FROM bms_order_items oi
-        WHERE kt.tenant_id = $1 AND kt.id = $2
-          AND oi.tenant_id = kt.tenant_id AND oi.id = kt.order_item_id
-        RETURNING kt.*, oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty`,
-      [input.tenantId, input.ticketId, status]
-    );
+    const updated = source === "ORDER"
+      ? await client.query(
+          `UPDATE bms_kitchen_tickets kt SET status = $3, updated_at = now()
+            FROM bms_order_items oi
+            WHERE kt.tenant_id = $1 AND kt.id = $2
+              AND oi.tenant_id = kt.tenant_id AND oi.id = kt.order_item_id
+            RETURNING 'ORDER'::text AS source, kt.*, oi.product_sku, oi.product_name,
+                      oi.size, oi.pack_qty, oi.qty, NULL::uuid AS check_id,
+                      NULL::text AS table_code, NULL::text AS table_name,
+                      NULL::integer AS round_no, NULL::text AS kitchen_note`,
+          [input.tenantId, input.ticketId, status]
+        )
+      : await client.query(
+          `UPDATE bms_restaurant_kitchen_tickets rt SET status = $3, updated_at = now()
+            FROM bms_restaurant_check_items ci,
+                 bms_restaurant_checks rc,
+                 bms_restaurant_tables tb
+            WHERE rt.tenant_id = $1 AND rt.id = $2
+              AND ci.tenant_id = rt.tenant_id AND ci.id = rt.check_item_id
+              AND rc.tenant_id = rt.tenant_id AND rc.id = rt.check_id
+              AND tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
+            RETURNING 'RESTAURANT_CHECK'::text AS source, rt.id, NULL::uuid AS order_id,
+                      ci.id::text AS order_item_id, rt.check_id, tb.code AS table_code,
+                      tb.name AS table_name, ci.round_no, ci.kitchen_note, rt.station,
+                      rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
+                      ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty AS qty`,
+          [input.tenantId, input.ticketId, status]
+        );
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,'kitchen.ticket_status',$3,$4::jsonb)`,
       [input.tenantId, `user:${input.actorUserId}`, input.ticketId,
-        JSON.stringify({ previous, status })]
+        JSON.stringify({ previous, status, source })]
     );
     await client.query("COMMIT");
     return mapKitchenTicket(updated.rows[0]);

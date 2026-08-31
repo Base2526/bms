@@ -830,3 +830,19 @@ present means "usable only at these branches". The table has tenant RLS and `bms
 tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_app` grants, and is
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
+
+## Restaurant POS (`9.44`)
+
+`bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
+`bms_restaurant_checks` is the open dine-in service state, with a partial unique index allowing only
+one OPEN/CLOSING check per table. `version` changes with cart edits and `reserved_version` records the
+version represented by `current_order_id`; checkout requires equality so unsent food cannot bypass
+stock reservation or the kitchen.
+
+`bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
+`bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order
+tickets introduced in `9.40`; because those tickets exist before any sale, the kitchen board's
+`orderId` is nullable and dine-in rows identify themselves by table and round instead. The settling `bms_orders` row references `restaurant_check_id`, both to
+preserve traceability and to suppress duplicate kitchen-ticket creation during POS fulfilment. All
+five new tables have tenant RLS and `bms_app` grants; editable floor/check records use revision
+triggers, while the high-volume ticket state is represented by its audit events.

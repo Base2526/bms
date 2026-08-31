@@ -140,6 +140,8 @@ export type CreateOrderInput = {
   posShiftId?: string | null;
   cashierUserId?: string | null;
   idempotencyKey?: string | null;
+  /** Server-validated restaurant check settled by this order. */
+  restaurantCheckId?: string | null;
   /**
    * ส่วนลดมือเป็นบาท (ชั้นที่ 4 ต่อจาก tier → คูปอง → แต้ม)
    * > 0 ต้องมี discountApprovedBy + discountReason เสมอ — ผู้เรียกเป็นคนตรวจ
@@ -914,12 +916,13 @@ export async function createOrder(
     // total_amount = ค่าสินค้า − ส่วนลด + ค่าบริการ (ไม่รวมค่าส่ง — 7.47)
     const ord = await client.query<{ id: string }>(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
-                               pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason)
-       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18)
+                               pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19)
        RETURNING id`,
       [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
         locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
-        input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null]
+        input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null,
+        input.restaurantCheckId ?? null]
     );
     const orderId = ord.rows[0].id;
 
