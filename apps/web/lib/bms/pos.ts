@@ -1989,6 +1989,9 @@ export type PosSaleResult =
   | {
       status: "SOLD";
       orderId: string;
+      saleLocationId: string;
+      posDeviceId: string;
+      shiftId: string;
       total: number;
       cashTendered: number | null;
       cashChange: number | null;
@@ -2004,12 +2007,17 @@ export type PosSaleResult =
       pointsEarned: number | null;
       /** แต้มคงเหลือของสมาชิกหลังบิลนี้ (พิมพ์บนใบเสร็จ) */
       pointsBalance: number | null;
+      receiptNo: string | null;
+      billNo: string | null;
       /** true = คีย์นี้เคยขายไปแล้ว คืนบิลเดิม ไม่ได้ขายซ้ำ */
       replayed: boolean;
     }
   | {
       status: "DEPOSIT_TAKEN";
       orderId: string;
+      saleLocationId: string;
+      posDeviceId: string;
+      shiftId: string;
       total: number;
       deposit: Deposit;
       /** true = คีย์นี้เคยรับมัดจำแล้ว คืนรายการเดิมโดยไม่รับเงินซ้ำ */
@@ -2048,6 +2056,9 @@ export type PosSaleResult =
 export type PosRecentReceipt = {
   orderId: string;
   docNo: string | null;
+  /** เลขใบเสร็จที่มนุษย์ใช้ค้นหา/สแกนคืนของ — ตอนนี้ map จาก docNo เพื่อแยกจาก orderId ชัดเจน */
+  receiptNo: string | null;
+  billNo: string | null;
   /** ช่องทางบิลต้นทาง; marketplace แสดงผลได้แต่ต้องคืนผ่านแพลตฟอร์ม */
   sourceChannel: string;
   returnEligible: boolean;
@@ -2732,6 +2743,9 @@ async function takeInitialPosDeposit(args: {
   return {
     status: "DEPOSIT_TAKEN",
     orderId: args.orderId,
+    saleLocationId: args.shift.location_id,
+    posDeviceId: args.input.deviceId,
+    shiftId: args.shift.id,
     total: result.deposit.totalAmount,
     deposit: result.deposit,
     replayed: Boolean(result.replayed),
@@ -2989,10 +3003,15 @@ async function finalizePosSale(args: {
     return {
       status: "SOLD",
       orderId,
+      saleLocationId: shift.location_id,
+      posDeviceId: input.deviceId,
+      shiftId: shift.id,
       total: amountDue,
       cashTendered,
       cashChange,
       docNo: fulfilled.docNo,
+      receiptNo: fulfilled.docNo,
+      billNo: fulfilled.docNo,
       vat: fulfilled.vat,
       discountLines: receiptDiscountLines,
       pointsEarned: hasMember ? Number(loyaltyRow?.earned ?? 0) : null,
@@ -3508,6 +3527,8 @@ export async function listRecentPosSales(
   return orderRes.rows.map((row) => ({
     orderId: row.id,
     docNo: row.doc_no ?? null,
+    receiptNo: row.doc_no ?? null,
+    billNo: row.doc_no ?? null,
     sourceChannel: row.channel,
     returnEligible: !COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel),
     returnBlockedReason: COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel)

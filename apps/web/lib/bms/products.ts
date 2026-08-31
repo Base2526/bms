@@ -104,6 +104,7 @@ export type VariantRow = {
   reserved_stock: number;
   quarantine_stock: number;
   in_transit_qty: number;
+  transfer_lost_qty: number;
   reorder_point: number;
   /** ราคาที่ขายจริงของไซซ์นี้: override ของ BASE pack แล้ว fallback เป็นราคาสินค้า */
   price: number;
@@ -603,6 +604,7 @@ export async function listVariants(tenantId: string, sku: string): Promise<Varia
             COALESCE(i.reserved_stock, 0)::integer AS reserved_stock,
             COALESCE(i.quarantine_stock, 0)::integer AS quarantine_stock,
             COALESCE(inbound.qty, 0)::integer AS in_transit_qty,
+            COALESCE(loss.qty, 0)::integer AS transfer_lost_qty,
             COALESCE(i.reorder_point, 0)::integer AS reorder_point,
             COALESCE(sized.price, shared.price, p.price)::float8 AS price,
             sized.price::float8 AS price_override,
@@ -625,6 +627,17 @@ export async function listVariants(tenantId: string, sku: string): Promise<Varia
             AND tr.to_location = keys.location_id
             AND tr.status = 'IN_TRANSIT'
        ) inbound ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT SUM(GREATEST(ti.qty - COALESCE(ti.received_qty, 0) - COALESCE(ti.damaged_qty, 0), 0))::integer AS qty
+           FROM bms_stock_transfer_items ti
+           JOIN bms_stock_transfers tr
+             ON tr.tenant_id = ti.tenant_id AND tr.id = ti.transfer_id
+          WHERE ti.tenant_id = $1
+            AND ti.product_sku = $2
+            AND ti.size = keys.size
+            AND tr.from_location = keys.location_id
+            AND tr.status = 'RECEIVED'
+       ) loss ON TRUE
        LEFT JOIN bms_product_packs sized
          ON sized.tenant_id = $1
             AND sized.product_sku = $2
@@ -1384,7 +1397,7 @@ export async function setReorderPoint(
        ON CONFLICT (tenant_id, location_id, product_sku, size) DO UPDATE
          SET reorder_point = EXCLUDED.reorder_point, updated_at = now()
        RETURNING location_id, size, current_stock, reserved_stock, quarantine_stock,
-                 0::integer AS in_transit_qty, reorder_point`,
+                 0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, reorder_point`,
       [tenantId, sku, size.trim().toUpperCase(), rp, locationId]
     );
     await client.query("COMMIT");
@@ -1403,7 +1416,7 @@ export async function listLowStock(tenantId: string): Promise<
   const res = await query<any>(
     `SELECT p.sku, p.name, i.location_id, loc.name AS location_name,
             loc.branch_code, i.size, i.current_stock, i.reserved_stock,
-            i.quarantine_stock, 0::integer AS in_transit_qty, i.reorder_point,
+            i.quarantine_stock, 0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, i.reorder_point,
             (i.current_stock - i.reserved_stock) AS available
        FROM bms_inventory i
        JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
@@ -1465,7 +1478,7 @@ export async function adjustStock(
 
     const cur = await client.query<VariantRow>(
       `SELECT location_id, size, current_stock, reserved_stock, quarantine_stock,
-              0::integer AS in_transit_qty, reorder_point
+              0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, reorder_point
          FROM bms_inventory
         WHERE tenant_id = $1 AND location_id = $4 AND product_sku = $2 AND size = $3 FOR UPDATE`,
       [tenantId, sku, sizeUp, locationId]
@@ -1481,7 +1494,7 @@ export async function adjustStock(
         `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
          VALUES ($1, $5, $2, $3, $4, 0)
          RETURNING location_id, size, current_stock, reserved_stock, quarantine_stock,
-                   0::integer AS in_transit_qty, reorder_point`,
+                   0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, reorder_point`,
         [tenantId, sku, sizeUp, delta, locationId]
       );
       row = ins.rows[0];
@@ -1495,7 +1508,7 @@ export async function adjustStock(
         `UPDATE bms_inventory SET current_stock = current_stock + $4, updated_at = now()
           WHERE tenant_id = $1 AND location_id = $5 AND product_sku = $2 AND size = $3
           RETURNING location_id, size, current_stock, reserved_stock, quarantine_stock,
-                    0::integer AS in_transit_qty, reorder_point`,
+                    0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, reorder_point`,
         [tenantId, sku, sizeUp, delta, locationId]
       );
       row = upd.rows[0];

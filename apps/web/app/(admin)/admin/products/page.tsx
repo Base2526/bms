@@ -54,6 +54,7 @@ type Variant = {
   reserved_stock: number;
   quarantine_stock: number;
   inTransitQty: number;
+  transferLostQty: number;
   available: number;
   reorder_point: number;
   low: boolean;
@@ -144,6 +145,7 @@ const Q_PRODUCTS = gql`
           reserved_stock
           quarantine_stock
           inTransitQty
+          transferLostQty
           available
           reorder_point
           low
@@ -254,6 +256,7 @@ const MOVE_COLOR: Record<string, string> = {
   TRANSFER_IN: "cyan",
   TRANSFER_OUT: "geekblue",
   QUARANTINE_IN: "red",
+  TRANSFER_LOST: "volcano",
 };
 
 const LOW_STOCK_EXPANDED_KEY = "bms_products_lowstock_expanded";
@@ -1311,6 +1314,10 @@ function ProductDetail({
     () => product.variants.reduce((sum, variant) => sum + variant.inTransitQty, 0),
     [product.variants]
   );
+  const totalTransferLost = useMemo(
+    () => product.variants.reduce((sum, variant) => sum + variant.transferLostQty, 0),
+    [product.variants]
+  );
   const lowCount = useMemo(
     () => product.variants.filter((variant) => variant.low).length,
     [product.variants]
@@ -1496,6 +1503,11 @@ function ProductDetail({
       render: (value: number) => value > 0 ? <Tag color="error">{value}</Tag> : "0",
     },
     {
+      title: t("admin_products.col_transfer_lost"), dataIndex: "transferLostQty", width: 120,
+      align: "right" as const,
+      render: (value: number) => value > 0 ? <Tag color="volcano">{value}</Tag> : "0",
+    },
+    {
       title: t("admin_products.col_reorder"), key: "reorder", width: 130,
       render: (_: any, r: Variant) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1656,6 +1668,11 @@ function ProductDetail({
                   onHand: totalOnHand, transit: totalInTransit, quarantine: totalQuarantine,
                 })}
               </Typography.Text>
+              {totalTransferLost > 0 && (
+                <Typography.Text type="danger" style={{ display: "block", fontSize: 11 }}>
+                  {t("admin_products.stat_transfer_lost", { n: totalTransferLost })}
+                </Typography.Text>
+              )}
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fff" }}>

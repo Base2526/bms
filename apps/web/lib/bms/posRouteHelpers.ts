@@ -42,8 +42,11 @@ export function decoratePosSale(
   sale: Record<string, unknown>,
   extras: { storeName: string | null; branchCode: string | null; posLabel: string | null; vatRegistered: boolean }
 ) {
+  const docNo = typeof sale.docNo === "string" && sale.docNo.trim() ? sale.docNo : null;
   return {
     ...sale,
+    receiptNo: typeof sale.receiptNo === "string" && sale.receiptNo.trim() ? sale.receiptNo : docNo,
+    billNo: typeof sale.billNo === "string" && sale.billNo.trim() ? sale.billNo : docNo,
     storeName: extras.storeName,
     branchCode: extras.branchCode,
     posLabel: extras.posLabel,

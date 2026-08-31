@@ -241,6 +241,16 @@ export type MemberSummary = {
   phone: string | null;
   memberNo: string | null;
   memberSince: string | null;
+  enrollmentChannel: "POS" | "ADMIN" | "ONLINE" | "IMPORT" | null;
+  enrolledLocationId: string | null;
+  enrolledLocationName: string | null;
+  enrolledBranchCode: string | null;
+  enrolledPosDeviceId: string | null;
+  enrolledPosDeviceName: string | null;
+  enrolledRegisteredPosNo: string | null;
+  enrolledShiftId: string | null;
+  enrolledByUserId: string | null;
+  enrolledByName: string | null;
   tier: MembershipTier | null;
   /** SUM(points) ทั้ง ledger — ติดลบได้ */
   pointsBalance: number;
@@ -248,8 +258,36 @@ export type MemberSummary = {
   pointsUsable: number;
 };
 
+export type PosMemberSummary = Pick<
+  MemberSummary,
+  "customerId" | "name" | "phone" | "memberNo" | "memberSince" | "tier" | "pointsBalance" | "pointsUsable"
+>;
+
+/** POS responses do not need enrollment staff names or internal location/device/shift ids. */
+export function toPosMemberSummary(member: MemberSummary): PosMemberSummary {
+  return {
+    customerId: member.customerId,
+    name: member.name,
+    phone: member.phone,
+    memberNo: member.memberNo,
+    memberSince: member.memberSince,
+    tier: member.tier,
+    pointsBalance: member.pointsBalance,
+    pointsUsable: member.pointsUsable,
+  };
+}
+
 const MEMBER_SELECT = `
   SELECT c.id, c.name, c.phone, c.member_no, c.member_since, c.points_balance,
+         c.enrollment_channel, c.enrolled_location_id, c.enrolled_pos_device_id,
+         c.enrolled_shift_id, c.enrolled_by,
+         enrollment_location.name AS enrolled_location_name,
+         enrollment_location.branch_code AS enrolled_branch_code,
+         enrollment_device.name AS enrolled_pos_device_name,
+         enrollment_device.code AS enrolled_pos_device_code,
+         enrollment_device.registered_pos_no AS enrolled_registered_pos_no,
+         enrollment_user.name AS enrolled_by_name,
+         enrollment_user.email AS enrolled_by_email,
          t.id AS tier_id, t.code AS tier_code, t.name AS tier_name,
          t.discount_type, t.discount_value, t.qualify_spend_12m, t.qualify_points,
          t.sort_order, t.active AS tier_active,
@@ -261,7 +299,16 @@ const MEMBER_SELECT = `
               AND (l.expires_at IS NULL OR l.expires_at > now())
          ), 0) AS points_usable
     FROM bms_customers c
-    LEFT JOIN bms_membership_tiers t ON t.tenant_id = c.tenant_id AND t.id = c.tier_id`;
+    LEFT JOIN bms_membership_tiers t ON t.tenant_id = c.tenant_id AND t.id = c.tier_id
+    LEFT JOIN bms_locations enrollment_location
+      ON enrollment_location.tenant_id = c.tenant_id
+     AND enrollment_location.id = c.enrolled_location_id
+    LEFT JOIN bms_pos_devices enrollment_device
+      ON enrollment_device.tenant_id = c.tenant_id
+     AND enrollment_device.id = c.enrolled_pos_device_id
+    LEFT JOIN users enrollment_user
+      ON enrollment_user.tenant_id = c.tenant_id
+     AND enrollment_user.id = c.enrolled_by`;
 
 function mapMember(r: any): MemberSummary {
   return {
@@ -270,6 +317,16 @@ function mapMember(r: any): MemberSummary {
     phone: r.phone ?? null,
     memberNo: r.member_no ?? null,
     memberSince: r.member_since ? new Date(r.member_since).toISOString() : null,
+    enrollmentChannel: r.enrollment_channel ?? null,
+    enrolledLocationId: r.enrolled_location_id ?? null,
+    enrolledLocationName: r.enrolled_location_name ?? null,
+    enrolledBranchCode: r.enrolled_branch_code ?? null,
+    enrolledPosDeviceId: r.enrolled_pos_device_id ?? null,
+    enrolledPosDeviceName: r.enrolled_pos_device_name ?? r.enrolled_pos_device_code ?? null,
+    enrolledRegisteredPosNo: r.enrolled_registered_pos_no ?? null,
+    enrolledShiftId: r.enrolled_shift_id ?? null,
+    enrolledByUserId: r.enrolled_by ?? null,
+    enrolledByName: r.enrolled_by_name ?? r.enrolled_by_email ?? null,
     tier: r.tier_id
       ? mapTier({
           id: r.tier_id, code: r.tier_code, name: r.tier_name,
@@ -360,7 +417,15 @@ export type EnrollMemberResult =
  */
 export async function enrollMember(
   tenantId: string,
-  input: { name?: string | null; phone: string; actorUserId?: string | null }
+  input: {
+    name?: string | null;
+    phone: string;
+    actorUserId?: string | null;
+    enrollmentChannel?: "POS" | "ADMIN" | "ONLINE" | "IMPORT" | null;
+    enrolledLocationId?: string | null;
+    enrolledPosDeviceId?: string | null;
+    enrolledShiftId?: string | null;
+  }
 ): Promise<EnrollMemberResult> {
   const phone = input.phone.replace(/[\s-]/g, "").trim();
   if (!/^[0-9+]{8,20}$/.test(phone)) return { status: "INVALID", reason: "เบอร์โทรไม่ถูกต้อง" };
@@ -369,6 +434,38 @@ export async function enrollMember(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: input.actorUserId });
+
+    const enrollmentChannel = input.enrollmentChannel ?? null;
+    const enrolledLocationId = enrollmentChannel === "POS" ? input.enrolledLocationId ?? null : null;
+    const enrolledPosDeviceId = enrollmentChannel === "POS" ? input.enrolledPosDeviceId ?? null : null;
+    const enrolledShiftId = enrollmentChannel === "POS" ? input.enrolledShiftId ?? null : null;
+    if (enrollmentChannel === "POS") {
+      if (!enrolledLocationId || !enrolledPosDeviceId) {
+        return finishInvalid(client, "ไม่พบสาขาหรือเครื่อง POS ที่รับสมัคร");
+      }
+      const origin = await client.query(
+        `SELECT 1
+           FROM bms_pos_devices device
+           JOIN bms_locations location
+             ON location.tenant_id = device.tenant_id
+            AND location.id = device.location_id
+          WHERE device.tenant_id = $1
+            AND device.id = $2
+            AND device.location_id = $3
+            AND (
+              $4::uuid IS NULL
+              OR EXISTS (
+                SELECT 1 FROM bms_pos_shifts shift
+                 WHERE shift.tenant_id = device.tenant_id
+                   AND shift.id = $4
+                   AND shift.device_id = device.id
+                   AND shift.location_id = device.location_id
+              )
+            )`,
+        [tenantId, enrolledPosDeviceId, enrolledLocationId, enrolledShiftId]
+      );
+      if (!origin.rowCount) return finishInvalid(client, "ข้อมูลสาขา เครื่อง หรือกะที่รับสมัครไม่ตรงกัน");
+    }
 
     const existing = await client.query<{ id: string; member_no: string | null; name: string }>(
       `SELECT id, member_no, name FROM bms_customers
@@ -413,14 +510,35 @@ export async function enrollMember(
       await client.query(
         `UPDATE bms_customers
             SET member_no = $3, member_since = now(), tier_id = $4,
-                tier_reviewed_at = now(), updated_at = now()
+                tier_reviewed_at = now(),
+                enrollment_channel = $5,
+                enrolled_location_id = $6,
+                enrolled_pos_device_id = $7,
+                enrolled_shift_id = $8,
+                enrolled_by = $9,
+                updated_at = now()
           WHERE tenant_id = $1 AND id = $2`,
-        [tenantId, customerId, await nextMemberNoInTx(client, tenantId), tier.rows[0]?.id ?? null]
+        [
+          tenantId,
+          customerId,
+          await nextMemberNoInTx(client, tenantId),
+          tier.rows[0]?.id ?? null,
+          enrollmentChannel,
+          enrolledLocationId,
+          enrolledPosDeviceId,
+          enrolledShiftId,
+          input.actorUserId ?? null,
+        ]
       );
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1, $2, 'member.enroll', $3, $4)`,
-        [tenantId, input.actorUserId ?? "system", customerId, JSON.stringify({ phone })]
+        [tenantId, input.actorUserId ?? "system", customerId, JSON.stringify({
+          enrollmentChannel,
+          locationId: enrolledLocationId,
+          deviceId: enrolledPosDeviceId,
+          shiftId: enrolledShiftId,
+        })]
       );
     }
 

@@ -11,8 +11,8 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
-import { enrollMember, searchMembers } from "@/lib/bms/membership";
+import { authenticatePosDevice, cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
+import { enrollMember, searchMembers, toPosMemberSummary } from "@/lib/bms/membership";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -28,7 +28,8 @@ async function handleGET(req: NextRequest) {
     // กันการไล่ดูรายชื่อลูกค้าทั้งร้านจากจอขาย — ต้องรู้เบอร์/ชื่อบางส่วนก่อน
     return NextResponse.json({ members: [] }, { status: 200 });
   }
-  return NextResponse.json({ members: await searchMembers(device.tenantId, q, 10) }, { status: 200 });
+  const members = await searchMembers(device.tenantId, q, 10);
+  return NextResponse.json({ members: members.map(toPosMemberSummary) }, { status: 200 });
 }
 
 async function handlePOST(req: NextRequest) {
@@ -50,12 +51,20 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์สมัครสมาชิก" }, { status: 403 });
   }
 
+  const openShift = await getOpenPosShift(device.tenantId, device.id);
   const result = await enrollMember(device.tenantId, {
     phone,
     name: typeof body.name === "string" ? body.name : null,
     actorUserId: auth.userId,
+    enrollmentChannel: "POS",
+    enrolledLocationId: device.locationId,
+    enrolledPosDeviceId: device.id,
+    enrolledShiftId: openShift?.id ?? null,
   });
-  return NextResponse.json(result, { status: result.status === "INVALID" ? 400 : 200 });
+  return NextResponse.json(
+    result.status === "INVALID" ? result : { ...result, member: toPosMemberSummary(result.member) },
+    { status: result.status === "INVALID" ? 400 : 200 }
+  );
 }
 
 export const GET = withRouteErrorLog("GET /api/pos/member", handleGET);

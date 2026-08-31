@@ -146,6 +146,7 @@ export const bmsMembershipResolvers = {
           phone: args.phone,
           name: args.name ?? null,
           actorUserId: auth.author_id ? String(auth.author_id) : null,
+          enrollmentChannel: "ADMIN",
         });
       } catch (e: any) {
         badInput(e, "สมัครสมาชิกไม่สำเร็จ");

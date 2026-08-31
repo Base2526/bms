@@ -434,7 +434,13 @@ export async function ensureCustomerForIdentity(
   }
 }
 
-export async function listCustomers(tenantId: string, search = "", limit = 50, offset = 0) {
+export async function listCustomers(
+  tenantId: string,
+  search = "",
+  limit = 50,
+  offset = 0,
+  enrolledLocationId?: string | null
+) {
   const s = search.trim();
   const res = await query(
     `SELECT c.tenant_id, c.id, c.name, c.phone, c.note, c.tags, c.created_at,
@@ -450,9 +456,17 @@ export async function listCustomers(tenantId: string, search = "", limit = 50, o
        ) agg ON agg.customer_id = c.id
       WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
         AND ($2 = '' OR c.name ILIKE '%'||$2||'%' OR c.phone ILIKE '%'||$2||'%')
+        AND ($6::uuid IS NULL OR c.enrolled_location_id = $6)
       ORDER BY c.created_at DESC
       LIMIT $3 OFFSET $4`,
-    [tenantId, s, Math.min(Math.max(limit, 1), 200), Math.max(offset, 0), PAID_STATUSES]
+    [
+      tenantId,
+      s,
+      Math.min(Math.max(limit, 1), 200),
+      Math.max(offset, 0),
+      PAID_STATUSES,
+      enrolledLocationId ?? null,
+    ]
   );
   return res.rows;
 }
@@ -779,6 +793,36 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
                 COALESCE(merged.member_since, keep.member_since)
               ),
               tier_id = COALESCE(keep.tier_id, merged.tier_id),
+              enrollment_channel = CASE
+                WHEN keep.member_since IS NULL THEN merged.enrollment_channel
+                WHEN merged.member_since IS NULL THEN keep.enrollment_channel
+                WHEN merged.member_since < keep.member_since THEN merged.enrollment_channel
+                ELSE keep.enrollment_channel
+              END,
+              enrolled_location_id = CASE
+                WHEN keep.member_since IS NULL THEN merged.enrolled_location_id
+                WHEN merged.member_since IS NULL THEN keep.enrolled_location_id
+                WHEN merged.member_since < keep.member_since THEN merged.enrolled_location_id
+                ELSE keep.enrolled_location_id
+              END,
+              enrolled_pos_device_id = CASE
+                WHEN keep.member_since IS NULL THEN merged.enrolled_pos_device_id
+                WHEN merged.member_since IS NULL THEN keep.enrolled_pos_device_id
+                WHEN merged.member_since < keep.member_since THEN merged.enrolled_pos_device_id
+                ELSE keep.enrolled_pos_device_id
+              END,
+              enrolled_shift_id = CASE
+                WHEN keep.member_since IS NULL THEN merged.enrolled_shift_id
+                WHEN merged.member_since IS NULL THEN keep.enrolled_shift_id
+                WHEN merged.member_since < keep.member_since THEN merged.enrolled_shift_id
+                ELSE keep.enrolled_shift_id
+              END,
+              enrolled_by = CASE
+                WHEN keep.member_since IS NULL THEN merged.enrolled_by
+                WHEN merged.member_since IS NULL THEN keep.enrolled_by
+                WHEN merged.member_since < keep.member_since THEN merged.enrolled_by
+                ELSE keep.enrolled_by
+              END,
               updated_at = now()
          FROM bms_customers merged
         WHERE keep.tenant_id = $1 AND keep.id = $3

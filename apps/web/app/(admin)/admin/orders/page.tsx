@@ -16,6 +16,7 @@ import {
   Spin,
   Empty,
   Input,
+  Select,
 } from "antd";
 import Link from "next/link";
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -56,6 +57,12 @@ type Order = {
   deposit_balance_due: number;
   deposit_status: string | null;
   coupon_code: string | null;
+  locationId: string | null;
+  locationName: string | null;
+  branchCode: string | null;
+  posDeviceName: string | null;
+  registeredPosNo: string | null;
+  posShiftId: string | null;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
@@ -64,12 +71,18 @@ type Order = {
 
 // ---- GraphQL ------------------------------------------------
 const Q_ORDERS = gql`
-  query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
-    bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
-      id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code created_at updated_at hasShippingAddress
+  query BmsOrders($search: String, $status: BmsOrderStatus, $locationId: ID, $limit: Int, $offset: Int) {
+    bmsOrders(search: $search, status: $status, locationId: $locationId, limit: $limit, offset: $offset) {
+      id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code
+      locationId locationName branchCode posDeviceName registeredPosNo posShiftId created_at updated_at hasShippingAddress
       discountLines { source label amount pointsUsed }
       items { product_sku product_name size qty unit_price }
     }
+  }
+`;
+const Q_LOCATIONS = gql`
+  query BmsOrderLocations {
+    bmsOrderLocations { id name branchCode active }
   }
 `;
 const M_PAY = gql`mutation ($id: ID!) { bmsPayOrder(id: $id) }`;
@@ -129,6 +142,7 @@ function OrdersManagement() {
   const { can } = useBmsPermissions();
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
+  const [locationFilter, setLocationFilter] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
@@ -138,9 +152,10 @@ function OrdersManagement() {
   }, [searchInput]);
 
   const { data, loading, error, refetch } = useQuery(Q_ORDERS, {
-    variables: { search: search || null, status: filter === "ALL" ? null : filter, limit: 100, offset: 0 },
+    variables: { search: search || null, status: filter === "ALL" ? null : filter, locationId: locationFilter, limit: 100, offset: 0 },
     fetchPolicy: "cache-and-network",
   });
+  const { data: locData } = useQuery(Q_LOCATIONS, { fetchPolicy: "cache-and-network" });
 
   const onErr = (e: any) => message.error(e?.message || t("admin_orders.action_failed"));
   // handler ร่วม: mutation คืน Boolean — false = สถานะไม่ถูกต้อง
@@ -162,6 +177,7 @@ function OrdersManagement() {
   const busy = l1 || l2 || l3 || l4 || l5 || l6;
 
   const orders: Order[] = data?.bmsOrders || [];
+  const locations: Array<{ id: string; name: string; branchCode: string; active: boolean }> = locData?.bmsOrderLocations ?? [];
 
   const actionsFor = (r: Order) => {
     const v = { variables: { id: r.id } };
@@ -216,6 +232,18 @@ function OrdersManagement() {
         render: (c: string) => <Tag color={CHANNEL_COLOR[c] || "default"}>{c}</Tag> },
       { title: "Customer", dataIndex: "customer_ref", key: "customer_ref",
         render: (c: string | null) => c || <span style={{ color: "#999" }}>—</span> },
+      {
+        title: t("admin_orders.col_branch"), key: "branch", width: 170,
+        render: (_: any, r: Order) => r.locationName ? (
+          <Space direction="vertical" size={0}>
+            <Typography.Text>{r.locationName}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              {r.branchCode ? t("admin_orders.branch_code", { code: r.branchCode }) : "—"}
+              {r.registeredPosNo ? ` · POS#${r.registeredPosNo}` : ""}
+            </Typography.Text>
+          </Space>
+        ) : <Typography.Text type="secondary">—</Typography.Text>,
+      },
       { title: "Items", key: "items",
         render: (_: any, r: Order) => <span>{t("admin_orders.col_items", { qty: r.items.reduce((n, it) => n + it.qty, 0), count: r.items.length })}</span> },
       { title: t("admin_orders.col_amount_due"), dataIndex: "amount_due", key: "amount_due", width: 130, align: "right" as const,
@@ -273,6 +301,14 @@ function OrdersManagement() {
           value={filter}
           onChange={setFilter}
           labels={{ ALL: t("admin_orders.status_all"), ...STATUS_LABEL }}
+        />
+        <Select
+          allowClear
+          placeholder={t("admin_orders.branch_filter_placeholder")}
+          style={{ width: isMobile ? "100%" : 220 }}
+          value={locationFilter ?? undefined}
+          onChange={(value) => setLocationFilter(value ?? null)}
+          options={locations.map((l) => ({ value: l.id, label: `${l.name} (${l.branchCode})` }))}
         />
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_orders.refresh")}</Button>
       </AdminPageHeader>
@@ -374,6 +410,13 @@ function OrderDetails({ order: r }: { order: Order }) {
       }}
     >
       <OrderJourney orderId={r.id} onReturnSummary={setReturnSummary} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Tag color={r.locationName ? "blue" : "default"}>
+          {t("admin_orders.sale_branch")}: {r.locationName ?? "—"}{r.branchCode ? ` (${r.branchCode})` : ""}
+        </Tag>
+        {r.registeredPosNo && <Tag>POS#{r.registeredPosNo}</Tag>}
+        {r.posShiftId && <Tag>{t("admin_orders.shift_short")}: {r.posShiftId.slice(0, 8)}</Tag>}
+      </div>
       <div>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.items_label")}</Typography.Text>
         <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={ITEM_COLUMNS} pagination={false} size="small" scroll={{ x: "max-content" }} />
@@ -446,6 +489,7 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
       extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
       fields={[
         { label: t("admin_orders.customer_label"), value: r.customer_ref || <span style={{ color: "#999" }}>—</span> },
+        { label: t("admin_orders.sale_branch"), value: r.locationName ? `${r.locationName}${r.branchCode ? ` (${r.branchCode})` : ""}` : "—" },
         { label: t("admin_orders.items_short_label"), value: t("admin_orders.col_items", { qty: r.items.reduce((n, it) => n + it.qty, 0), count: r.items.length }) },
         {
           label: t("admin_orders.col_amount_due"),

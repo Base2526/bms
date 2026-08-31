@@ -600,6 +600,8 @@ type ReceiptVat = {
 
 type Receipt = {
   orderId?: string | null;
+  receiptNo?: string | null;
+  billNo?: string | null;
   docNo: string | null;
   sourceChannel?: string | null;
   returnEligible?: boolean;
@@ -3856,7 +3858,12 @@ export default function PosPage() {
       const serverReceipt: Receipt = {
         orderId: data.sale.orderId ?? null,
         docNo: data.sale.docNo ?? null,
+        receiptNo: data.sale.receiptNo ?? data.sale.docNo ?? null,
+        billNo: data.sale.billNo ?? data.sale.docNo ?? null,
         orderStatus: data.sale.orderStatus ?? null,
+        saleLocationId: data.sale.saleLocationId ?? null,
+        posDeviceId: data.sale.posDeviceId ?? null,
+        shiftId: data.sale.shiftId ?? null,
         lines: (data.sale.lines ?? []).map((line: any, idx: number) => ({
           orderItemId: Number(line.orderItemId ?? 0) || undefined,
           sku: String(line.sku ?? ""),
@@ -3933,6 +3940,8 @@ export default function PosPage() {
         sales.map((sale: any, saleIndex: number) => ({
           orderId: sale.orderId ?? null,
           docNo: sale.docNo ?? null,
+          receiptNo: sale.receiptNo ?? sale.docNo ?? null,
+          billNo: sale.billNo ?? sale.docNo ?? null,
           sourceChannel: sale.sourceChannel ?? "pos",
           returnEligible: sale.returnEligible !== false,
           returnBlockedReason: sale.returnBlockedReason ?? null,
@@ -4326,9 +4335,12 @@ export default function PosPage() {
     }));
     return buildReceipt({
       storeName: r.storeName ?? session?.location?.name ?? "",
+      locationId: r.saleLocationId ?? session?.location?.id ?? null,
       branchCode: r.branchCode ?? session?.location?.branchCode ?? null,
       taxId: r.taxId ?? session?.store?.taxId ?? null,
+      posDeviceId: r.posDeviceId ?? session?.device.id ?? null,
       posNo: r.posLabel ?? session?.device.registeredPosNo ?? session?.device.code ?? null,
+      shiftId: r.shiftId ?? null,
       vatIncluded: Boolean(session?.vat.registered),
       docTitle:
         r.receiptType === "return"
@@ -4339,6 +4351,7 @@ export default function PosPage() {
       // ใบรับคืนไม่ใช่ใบลดหนี้ แม้จะรู้เลข CN ที่ออกคู่กันแล้วก็ตาม
       // แยกเลขเอกสารและใช้เลขบิลขายเดิมเป็น barcode เพื่อให้สแกนกลับมาค้นบิลได้จริง
       docNo: r.receiptType === "return" || r.receiptType === "exchange" ? null : r.docNo,
+      orderId: r.orderId ?? null,
       relatedDocNo: r.receiptType === "return" ? r.docNo : null,
       referenceDocNo:
         r.receiptType === "return" || r.receiptType === "exchange"
@@ -4777,7 +4790,12 @@ export default function PosPage() {
         const soldTotal = Number.isFinite(Number(data.total)) ? Number(data.total) : amountDue;
         const nextReceipt: Receipt = {
           orderId: data.orderId ?? null,
+          receiptNo: data.receiptNo ?? data.docNo ?? null,
+          billNo: data.billNo ?? data.docNo ?? null,
           docNo: data.docNo ?? null,
+          saleLocationId: data.saleLocationId ?? session.location?.id ?? null,
+          posDeviceId: data.posDeviceId ?? session.device.id ?? null,
+          shiftId: data.shiftId ?? session.shift.id ?? null,
           lines: cart,
           total: soldTotal,
           tendered: data.cashTendered ?? null,
@@ -5352,8 +5370,8 @@ export default function PosPage() {
   const activeReceiptRefundSummary = receipt ? getReceiptRefundSummary(receipt) : null;
   const activeReceiptBarcodeValue = receipt
     ? receipt.receiptType === "return" || receipt.receiptType === "exchange"
-      ? (receipt.referenceDocNo ?? receipt.docNo)
-      : receipt.docNo
+      ? (receipt.referenceDocNo ?? receipt.billNo ?? receipt.receiptNo ?? receipt.docNo)
+      : (receipt.billNo ?? receipt.receiptNo ?? receipt.docNo)
     : null;
 
   if (!token || tokenRejected) {
@@ -9273,6 +9291,42 @@ export default function PosPage() {
             )}
             <div style={{ textAlign: "center" }}>
               POS#{receipt.posLabel ?? "—"}
+            </div>
+            <div style={{ marginTop: 4, color: "#555", fontSize: 11 }}>
+              {(!receipt.receiptType || receipt.receiptType === "sale") && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>Bill No</span>
+                  <span>{receipt.billNo ?? receipt.receiptNo ?? receipt.docNo ?? "—"}</span>
+                </div>
+              )}
+              {receipt.orderId && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>Order ID</span>
+                  <span>{receipt.orderId.slice(0, 8)}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>Sale Branch</span>
+                <span>{receipt.storeName ?? "—"}{receipt.branchCode ? ` (${receipt.branchCode})` : ""}</span>
+              </div>
+              {receipt.saleLocationId && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>Location ID</span>
+                  <span>{receipt.saleLocationId.slice(0, 8)}</span>
+                </div>
+              )}
+              {receipt.posDeviceId && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>Device ID</span>
+                  <span>{receipt.posDeviceId.slice(0, 8)}</span>
+                </div>
+              )}
+              {receipt.shiftId && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>Shift ID</span>
+                  <span>{receipt.shiftId.slice(0, 8)}</span>
+                </div>
+              )}
             </div>
             <div style={{ textAlign: "center", margin: "6px 0" }}>
               {receipt.receiptType === "return"

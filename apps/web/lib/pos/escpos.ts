@@ -146,12 +146,17 @@ export type ReceiptLine = {
 
 export type ReceiptPayload = {
   storeName: string;
+  locationId?: string | null;
   branchCode: string | null;
   taxId: string | null;
+  posDeviceId?: string | null;
   posNo: string | null;
+  shiftId?: string | null;
   vatIncluded: boolean;
   docTitle: string;
   docNo: string | null;
+  /** Internal order id. Printed short as a technical reference, not as the human search number. */
+  orderId?: string | null;
   /** เอกสารภาษีที่ออกคู่กับสลิปนี้ เช่น ใบลดหนี้; ไม่ใช้เป็นเลขของสลิปเอง */
   relatedDocNo?: string | null;
   /** เลขบิลขายต้นทางของใบรับคืน/ใบเตรียมเปลี่ยน */
@@ -200,6 +205,9 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   if (payload.branchCode) b.line(`(สาขา ${payload.branchCode})`);
   if (payload.taxId) b.line(`TAX#${payload.taxId}${payload.vatIncluded ? " (VAT Included)" : ""}`);
   if (payload.posNo) b.line(`POS#${payload.posNo}`);
+  if (payload.locationId) b.line(`Location ${payload.locationId.slice(0, 8)}`);
+  if (payload.posDeviceId) b.line(`Device ${payload.posDeviceId.slice(0, 8)}`);
+  if (payload.shiftId) b.line(`Shift ${payload.shiftId.slice(0, 8)}`);
   b.line(payload.docTitle);
   if (payload.referenceDocNo) b.line(`อ้างอิงบิลเดิม ${payload.referenceDocNo}`);
   if (payload.relatedDocNo) b.line(`ใบลดหนี้ ${payload.relatedDocNo}`);
@@ -232,6 +240,7 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   // ใช้ตัวคั่น ASCII เท่านั้น — TIS-620 ไม่มี "·" จะพิมพ์ออกมาเป็น ?
   if (payload.docNo) b.line(`${payload.docNo}  ${payload.at}`);
   else b.line(payload.at);
+  if (payload.orderId) b.line(`Order ${payload.orderId.slice(0, 8)}`);
   if (payload.cashier) b.line(`แคชเชียร์ ${payload.cashier}`);
 
   // แต้มท้ายบิล — ลูกค้าใช้ตรวจว่าได้แต้มครบ ไม่ต้องถามพนักงาน
