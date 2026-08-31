@@ -1,6 +1,6 @@
 # Shop Signup Archetype Spec
 
-> Status: implemented through migrations `7.42`-`7.44`, including signup capture, durable onboarding progress, resumable archetype sample data, paid restock attribution, and runtime commerce policy.
+> Status: implemented through migrations `7.42`-`7.44` and extended by `9.40`, including signup capture, durable onboarding progress, resumable archetype sample data, capability presets, paid restock attribution, and runtime commerce policy.
 
 ## Goal
 
@@ -101,6 +101,9 @@ Use stable snake_case ids so UI labels can evolve without data migrations.
 | `b2b_wholesale` | B2B / Wholesale | large orders, quotation, repeat buying |
 | `gifts_seasonal` | Gifts & Seasonal | occasion-led discovery and campaigns |
 | `pharmacy` | Pharmacy | health / pharmacy retail with repeat purchases |
+| `pet_supply` | Pet Supply | packs, lots/expiry, and optional weighed goods |
+| `building_materials` | Building Materials | multiple sale units, measured goods, and serials |
+| `restaurant` | Restaurant | recipes, modifiers, kitchen tickets, and wastage |
 | `other` | Other | no archetype-specific defaults |
 
 ## Data model
@@ -155,7 +158,27 @@ Initial mapping on verification:
 | `b2b_wholesale` | `general` |
 | `gifts_seasonal` | `general` |
 | `pharmacy` | `general` |
+| `pet_supply` | `general` |
+| `building_materials` | `home` |
+| `restaurant` | `food` |
 | `other` | `general` |
+
+Since `9.40`, `business_archetype` selects only an initial capability preset. Effective behaviour is
+resolved from `bms_store_capabilities` overrides and `bms_product_stock_policies`; changing an
+archetype never rewrites product policy, stock, lots, recipes, or historical orders.
+
+That last sentence is enforced, not asserted: `scripts/shop-archetype-db-contract.test.mts` builds a
+shop with an old archetype and no `9.40` rows at all — the shape every pre-existing tenant is in —
+sells from it, flips its archetype to `restaurant`, and checks that the product still sells as an
+ordinary line with its stock untouched. It matters because `9.40` put stock resolution in front of
+every order line of every tenant, so "the archetype is only a preset" stopped being obvious from
+reading the code.
+
+An archetype also fans out into four independent switch statements — capability preset, AI examples,
+onboarding checklist, commerce policy — each with a `default` that swallows an unknown value
+silently. `scripts/shop-archetype-coverage-contract.test.mts` walks the dropdown so a new option
+cannot ship half-wired, and it flags copy that exists with no case selecting it (which is how
+`b2b_wholesale`'s four translated checklist lines went unseen).
 
 This preserves existing AI defaults while allowing a richer archetype layer later.
 

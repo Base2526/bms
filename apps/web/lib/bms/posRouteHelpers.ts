@@ -2,6 +2,9 @@
 // recordPosSale ตรวจวงเงินอีกชั้นก่อนตัดสต็อก — ที่นี่แค่รับรูปแบบ
 const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT", "CREDIT"] as const;
 
+/** เพดานกันตะกร้าที่ใส่ตัวเลือกมาเป็นพัน ๆ ตัว — เมนูจริงมีไม่กี่ตัวเลือกต่อบรรทัด */
+const MAX_POS_MODIFIER_CODES = 20;
+
 type ParsedPosSaleLine = {
   sku: string;
   size: string;
@@ -12,6 +15,17 @@ type ParsedPosSaleLine = {
   packPrice: number | null;
   /** เลขเครื่องต่อชิ้น (8.3) — ตัดตัวว่างและตัดช่องว่างหัวท้ายทิ้ง */
   serials: string[] | null;
+  /**
+   * ตัวเลือกของเมนู (9.40) — มีผลกับ "วัตถุดิบที่ถูกตัด" ไม่ใช่ราคา
+   * รับจาก body ได้เพราะ resolveStockConsumptionInTx ตรวจว่ามีจริงและ active
+   * สำหรับ (sku, size) นั้นก่อนเสมอ (MODIFIER_NOT_FOUND ถ้าไม่ตรง)
+   */
+  modifierCodes: string[] | null;
+  /**
+   * ป้ายจากเครื่องชั่ง prefix 22 ดิบ ๆ (9.41) — server แกะน้ำหนักใหม่เองตอนปิดบิล
+   * ไม่เชื่อ baseQty ที่ browser ส่งมา
+   */
+  scaleBarcode: string | null;
 };
 
 type ParsedPosPaymentInput = {
@@ -69,6 +83,20 @@ export function parsePosSaleLines(rawLines: unknown): ParsedPosSaleLine[] {
       // แล้ว validatePosSaleSerials จะได้ตอบว่า "ขาดกี่เลข" ตรง ๆ
       serials: Array.isArray(line?.serials)
         ? (line.serials as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean)
+        : null,
+      // ⚠️ ตัวแยกนี้เป็น allowlist — ฟิลด์ที่ไม่ได้เขียนไว้ตรงนี้ "หายเงียบ" ระหว่างทาง
+      // ระหว่างจอกับ recordPosSale · ตอน 9.40/9.41 สองตัวนี้ตกหล่นไป ผลคือเมนูที่ลูกค้า
+      // สั่งพร้อมตัวเลือกถูกตัดวัตถุดิบตามสูตรเปล่า (เงียบสนิท) และสินค้าชั่งขายถูกคิดเป็น
+      // 1 หน่วยฐานแทนน้ำหนักจริง จนยอดไม่ตรงแล้วบิลโดน PAYMENT_MISMATCH ทิ้งทั้งใบ
+      modifierCodes: Array.isArray(line?.modifierCodes)
+        ? Array.from(new Set(
+            (line.modifierCodes as unknown[])
+              .map((code) => String(code ?? "").trim().toUpperCase())
+              .filter(Boolean)
+          )).sort().slice(0, MAX_POS_MODIFIER_CODES)
+        : null,
+      scaleBarcode: typeof line?.scaleBarcode === "string" && line.scaleBarcode.trim()
+        ? line.scaleBarcode.trim()
         : null,
     }))
     .filter((line) => line.sku && line.size && Number.isInteger(line.packQty) && line.packQty > 0);

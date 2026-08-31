@@ -1245,6 +1245,13 @@ export const typeDefs = /* GraphQL */ `
     bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
     bmsOnboardingProgress: BmsOnboardingProgress!
+    bmsStoreCapabilities: [BmsStoreCapability!]!
+    bmsKitchenBoardEnabled: Boolean!
+    bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
+    bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
+    bmsProductModifiers(productSku: String!, size: String): [BmsProductModifier!]!
+    bmsKitchenTickets(status: String, limit: Int = 100): [BmsKitchenTicket!]!
+    bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponLocations: [BmsLocation!]!
     bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!   # ประวัติการใช้โค้ด (query ตรงจาก bms_orders)
@@ -3543,6 +3550,118 @@ export const typeDefs = /* GraphQL */ `
     dismissedAt: String
     lastSeenAt: String
   }
+  type BmsStoreCapability {
+    capability: String!
+    enabled: Boolean!
+    configured: Boolean!
+    status: String!
+    config: JSON!
+    source: String!
+    # false = เป็นสถานะที่ระบบอ่านจากข้อมูลของร้าน ไม่ใช่สวิตช์ที่แก้ได้
+    gating: Boolean!
+  }
+  type BmsProductStockPolicy {
+    productSku: String!
+    stockPolicy: String!
+    baseUnit: String!
+    displayUnit: String
+    displayPrecision: Int!
+    lotTracking: Boolean!
+    expiryTracking: Boolean!
+    fefo: Boolean!
+    kitchenStation: String
+    scaleItemCode: String
+    scaleSize: String
+  }
+  input BmsProductStockPolicyInput {
+    productSku: String!
+    stockPolicy: String
+    baseUnit: String
+    displayUnit: String
+    displayPrecision: Int
+    lotTracking: Boolean
+    expiryTracking: Boolean
+    fefo: Boolean
+    kitchenStation: String
+    scaleItemCode: String
+    scaleSize: String
+  }
+  type BmsRecipeComponent { sku: String!, size: String!, qty: Int! }
+  input BmsRecipeComponentInput { sku: String!, size: String!, qty: Int! }
+  type BmsProductRecipe {
+    id: ID!
+    productSku: String!
+    size: String!
+    version: Int!
+    outputQty: Int!
+    active: Boolean!
+    items: [BmsRecipeComponent!]!
+  }
+  input BmsProductRecipeInput {
+    id: ID
+    productSku: String!
+    size: String!
+    outputQty: Int
+    active: Boolean
+    items: [BmsRecipeComponentInput!]!
+  }
+  type BmsModifierComponent { sku: String!, size: String!, qtyDelta: Int! }
+  input BmsModifierComponentInput { sku: String!, size: String!, qtyDelta: Int! }
+  type BmsProductModifier {
+    id: ID!
+    productSku: String!
+    size: String!
+    code: String!
+    name: String!
+    active: Boolean!
+    items: [BmsModifierComponent!]!
+  }
+  input BmsProductModifierInput {
+    id: ID
+    productSku: String!
+    size: String!
+    code: String!
+    name: String!
+    active: Boolean
+    items: [BmsModifierComponentInput!]!
+  }
+  type BmsKitchenTicket {
+    id: ID!
+    orderId: ID!
+    orderItemId: ID!
+    station: String
+    status: String!
+    modifierCodes: [String!]!
+    productSku: String!
+    productName: String!
+    size: String!
+    packQty: Int
+    qty: Int!
+    createdAt: String!
+    updatedAt: String!
+  }
+  input BmsInventoryWastageInput {
+    locationId: ID!
+    productSku: String!
+    size: String!
+    qty: Int!
+    reason: String!
+    orderId: ID
+  }
+  type BmsInventoryWastage {
+    id: ID!
+    locationId: ID!
+    locationName: String
+    productSku: String!
+    productName: String!
+    size: String!
+    qty: Int!
+    reason: String!
+    orderId: ID
+    actorName: String
+    createdAt: String!
+  }
+  type BmsInventoryWastageResult { id: ID! }
   input BmsStoreProfileInput {
     businessArchetype: String
     businessType: String
@@ -4090,6 +4209,13 @@ export const typeDefs = /* GraphQL */ `
     bmsSeedPharmacyQueueDemo(protocolKey: String, answers: JSON, transcript: JSON): BmsSeedPharmacyQueueDemoResult!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
+    bmsUpsertStoreCapability(capability: String!, enabled: Boolean!, config: JSON): BmsStoreCapability!
+    bmsResetStoreCapability(capability: String!): BmsStoreCapability!
+    bmsUpsertProductStockPolicy(input: BmsProductStockPolicyInput!): BmsProductStockPolicy!
+    bmsUpsertProductRecipe(input: BmsProductRecipeInput!): BmsProductRecipe!
+    bmsUpsertProductModifier(input: BmsProductModifierInput!): BmsProductModifier!
+    bmsUpdateKitchenTicketStatus(id: ID!, status: String!): BmsKitchenTicket!
+    bmsRecordInventoryWastage(input: BmsInventoryWastageInput!): BmsInventoryWastageResult!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
     bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!   # permission report.view
     bmsEmailReport(fileId: Int!, to: String!, subject: String): BmsEmailReportResult!   # permission report.email — ปุ่ม Confirm ของ proposal email_report (A3) เท่านั้น

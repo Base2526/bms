@@ -250,14 +250,19 @@ type ScanHit = {
     | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
     | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number }
     | null;
+  /** ตัวเลือกที่ server อนุญาตสำหรับ SKU+size นี้; มีผลต่อ stock ไม่ใช่ราคา */
+  modifiers?: Array<{ code: string; name: string }>;
   available: number;
   /** รูปหลัก — มีค่าเฉพาะการยิงโหมด "เช็คของ" (?withImage=1) เท่านั้น */
   imageUrl?: string | null;
+  /** Raw prefix-22 scale label; server re-parses it when committing the sale. */
+  scaleBarcode?: string | null;
 };
 
 type CartLine = ScanHit & {
   packQty: number;
   key: string;
+  modifierCodes?: string[];
   /** เลขเครื่องที่พนักงานยิง/พิมพ์ไว้สำหรับบรรทัดนี้ (8.3) */
   serials?: string[];
   orderItemId?: number;
@@ -270,6 +275,7 @@ function cartPricingSignature(line: ScanHit): string {
     sku: line.sku,
     size: line.size,
     packCode: line.packCode,
+    scaleBarcode: line.scaleBarcode ?? null,
     baseQty: line.baseQty,
     packPrice: line.packPrice,
     basePrice: line.basePrice,
@@ -279,6 +285,80 @@ function cartPricingSignature(line: ScanHit): string {
   });
 }
 const variantPricingKey = (sku: string, size: string) => `${sku}\u0000${size}`;
+
+/**
+ * สิ่งที่บรรทัดนี้คิดเงินจริง — ราคาต่อหน่วย × จำนวนหน่วย
+ *
+ * ของชั่งขาย (9.41) คิดเป็นหน่วยฐาน (กรัม) ไม่ใช่ "1 ป้าย": `packQty` คือจำนวนป้าย
+ * ส่วนน้ำหนักอยู่ใน `baseQty` · ยอดรวมบิล บรรทัดคำอธิบาย และยอดท้ายบรรทัด ต้องอ่านกฎ
+ * เดียวกันจากที่นี่ ไม่งั้นจอบอกคนละเลขกันเอง (เคยเป็น: ของชั่งที่ติดราคาส่งโชว์ยอด
+ * ต่อกรัมท้ายบรรทัด แต่ยอดรวมคิดเต็มน้ำหนัก)
+ */
+/**
+ * ตัวเลือกผู้อนุมัติของงานหนึ่ง — กรองด้วย "สิทธิ์ที่ต้องใช้จริง" ไม่ใช่แค่ "มี PIN"
+ *
+ * เดิมทุก dropdown กรองแค่ `hasPin` (บางที่ก็ไม่ตัดตัวเองออกด้วยซ้ำ) แคชเชียร์จึงเลือกคนที่
+ * อนุมัติไม่ได้ แล้วเพิ่งรู้ตอนคนนั้นเดินมากด PIN ต่อหน้าลูกค้าแล้ว
+ *
+ * `excludeUserId` สำหรับงานที่กฎบังคับว่าผู้อนุมัติต้องเป็นคนละคนกับคนขาย (ยกเลิกบิล ·
+ * ส่วนลดมือ · เงินออกลิ้นชัก) — ส่วนขายเชื่อกับการอนุมัติของเภสัชกรอนุญาตให้เป็นคนเดียวกันได้
+ * โดยตั้งใจ (ร้านเล็กมีหัวหน้าคนเดียวที่ยืนขายเอง) จึงไม่ตัดออก
+ *
+ * ⚠️ นี่คือ UX ไม่ใช่ด่าน — server ตรวจสิทธิ์ของผู้อนุมัติซ้ำทุกครั้งอยู่แล้ว
+ */
+function approverOptions(
+  session: Session | null,
+  permission: string,
+  excludeUserId?: string | null
+) {
+  return (session?.approvers ?? []).filter((person) =>
+    person.approvals.includes(permission)
+    && (!excludeUserId || person.id !== excludeUserId)
+  );
+}
+
+/**
+ * ตัวเลือกในกล่องผู้อนุมัติ พร้อมบรรทัดแรกที่อธิบายตัวเองเมื่อไม่มีใครอนุมัติได้
+ *
+ * dropdown ที่ว่างเปล่าโดยไม่บอกอะไรอ่านได้ว่า "ระบบพัง" — ทั้งที่คำตอบจริงคือร้านนี้ยังไม่มี
+ * ใครที่ทั้งตั้ง PIN แล้วและมีสิทธิ์นี้ ซึ่งแก้ได้ที่หลังบ้าน
+ */
+function ApproverOptions({ session, permission, excludeUserId, placeholder }: {
+  session: Session | null;
+  permission: string;
+  excludeUserId?: string | null;
+  placeholder: string;
+}) {
+  const list = approverOptions(session, permission, excludeUserId);
+  // คนที่มีสิทธิ์แต่ยังไม่ตั้ง PIN ยังขึ้นในรายการแบบเลือกไม่ได้ พร้อมบอกเหตุผล — หายไปเฉย ๆ
+  // แล้วให้แคชเชียร์เดาว่าทำไมคนที่ควรอนุมัติได้ไม่อยู่ในลิสต์ คือกฎเดียวกับ dropdown คนขาย
+  return <>
+    <option value="">{list.length ? placeholder : "— ไม่มีใครในร้านนี้อนุมัติงานนี้ได้ —"}</option>
+    {list.map((person) => (
+      <option key={person.id} value={person.id} disabled={!person.hasPin}>
+        {person.name ?? person.email ?? person.id}{person.role ? ` · ${person.role}` : ""}
+        {person.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
+      </option>
+    ))}
+  </>;
+}
+
+function cartLineCharge(line: CartLine, tierPrice: number | undefined) {
+  const shelfUnitPrice = line.scaleBarcode ? line.basePrice : line.packPrice;
+  const unitPrice = tierPrice ?? shelfUnitPrice;
+  const chargedQty = line.scaleBarcode ? line.packQty * line.baseQty : line.packQty;
+  return {
+    shelfUnitPrice,
+    unitPrice,
+    chargedQty,
+    amount: Math.round(unitPrice * chargedQty * 100) / 100,
+  };
+}
+
+function cartLineKey(hit: ScanHit, modifierCodes: readonly string[] = []): string {
+  const modifiers = [...modifierCodes].map((code) => code.trim().toUpperCase()).filter(Boolean).sort();
+  return `${hit.sku}__${hit.size}__${hit.packCode}__${hit.scaleBarcode ?? ""}__${modifiers.join(",")}`;
+}
 
 function addScanHitToCart(cart: CartLine[], hit: ScanHit, key: string): CartLine[] {
   // price tiers / promotion are SKU-wide. A scan of another size is the newest
@@ -754,6 +834,14 @@ type Session = {
   shift: { id: string; openedAt: string; openingFloat: number } | null;
   shiftReturnSummary: { returnCount: number; returnTotal: number; settledTotal: number; pendingTotal: number; pendingCount: number };
   cashiers: Array<{ id: string; name: string | null; email: string | null; isPharmacist: boolean; hasPin: boolean }>;
+  /**
+   * ใครกด PIN อนุมัติงานไหนได้ · **คนละชุดกับ `cashiers`** ซึ่งคัดเฉพาะคนที่มี `pos.sell` —
+   * ผู้จัดการที่ไม่เคยยืนขายเองไม่มีสิทธิ์นั้น แต่เป็นคนเดียวในร้านที่อนุมัติได้
+   */
+  approvers: Array<{
+    id: string; name: string | null; email: string | null; role: string | null;
+    hasPin: boolean; approvals: string[];
+  }>;
   purchaseReceivers: Array<{ id: string; name: string | null; email: string | null; role: string | null; hasPin: boolean }>;
   store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode };
   vat: {
@@ -1151,6 +1239,8 @@ export default function PosPage() {
   // แกล้งเพิ่มลงตะกร้าแล้วลบทิ้ง ซึ่งเสี่ยงขายพลาด
   const [lookupMode, setLookupMode] = useState(false);
   const [lookup, setLookup] = useState<ScanHit | null>(null);
+  const [modifierHit, setModifierHit] = useState<ScanHit | null>(null);
+  const [selectedModifierCodes, setSelectedModifierCodes] = useState<string[]>([]);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
   const [tab, setTab] = useState<PosTab>("sell");
   // ทุกบิลผูกกับคนนี้ — ต้องเห็นบนแถบบนตลอด ไม่ใช่ซ่อนอยู่ในแท็บตั้งค่า
@@ -1187,7 +1277,9 @@ export default function PosPage() {
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   // บิลที่เพิ่งขายจบ — แสดงผลในคอลัมน์ขวาแทนแผงจ่ายเงิน (จุดที่เพิ่งกดปุ่ม)
   // ไม่ใช้ modal เพราะต้องกดปิดทุกบิล = เพิ่ม 1 แตะต่อลูกค้า 1 คน
-  const [justSold, setJustSold] = useState<{ docNo: string | null; change: number | null; total: number } | null>(null);
+  const [justSold, setJustSold] = useState<
+    { docNo: string | null; change: number | null; total: number; kitchenTickets: number } | null
+  >(null);
   // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
   // ---- สมาชิก + แต้ม (7.96) ----
   const [member, setMember] = useState<PosMember | null>(null);
@@ -1459,7 +1551,7 @@ export default function PosPage() {
    * กล้องไม่อยู่ในนี้เพราะมันบล็อกเฉพาะการยิงจากเครื่องสแกน (source hid) ไม่ใช่
    * ทุกทาง — ตัวกล้องเองก็ป้อนโค้ดเข้ามาทางนี้
    */
-  const blockingOverlayOpen = receiptModalOpen || enrollOpen || imagePreview !== null;
+  const blockingOverlayOpen = receiptModalOpen || enrollOpen || imagePreview !== null || modifierHit !== null;
   const currentScanContext = resolveScanContext({
     tab,
     lookupMode,
@@ -1794,7 +1886,8 @@ export default function PosPage() {
       const line = cart[index];
       if (isFixedPricePack(line.packCode) || !line.priceTiers?.length) continue;
       const unit = priced[index].unitPrice;
-      if (unit !== line.packPrice) out.set(line.key, unit);
+      const comparisonPrice = line.scaleBarcode ? line.basePrice : line.packPrice;
+      if (unit !== comparisonPrice) out.set(line.key, unit);
     }
     return out;
   }, [cart]);
@@ -1819,7 +1912,8 @@ export default function PosPage() {
     for (const line of cart) {
       if (isFixedPricePack(line.packCode) || !line.promotion) continue;
       const key = variantPricingKey(line.sku, line.size);
-      qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + line.packQty);
+      const baseQuantity = line.packQty * line.baseQty;
+      qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + baseQuantity);
       promoOf.set(key, line.promotion);
       priceOf.set(key, line.basePrice);
     }
@@ -1840,7 +1934,7 @@ export default function PosPage() {
         if (!chargedPromo.has(key)) { chargedPromo.add(key); sum += promo.amount; }
         continue;
       }
-      sum += (tierPriceByKey.get(line.key) ?? line.packPrice) * line.packQty;
+      sum += cartLineCharge(line, tierPriceByKey.get(line.key)).amount;
     }
     return Math.round(sum * 100) / 100;
   }, [cart, tierPriceByKey, promoBySku]);
@@ -2361,6 +2455,8 @@ export default function PosPage() {
           size: line.size,
           packQty: line.packQty,
           packCode: line.packCode,
+          scaleBarcode: line.scaleBarcode ?? null,
+          modifierCodes: line.modifierCodes ?? [],
           serials: line.serials?.length ? [...line.serials] : [],
         })),
       });
@@ -2385,6 +2481,8 @@ export default function PosPage() {
             size: line.size,
             packQty: line.packQty,
             packCode: line.packCode,
+            scaleBarcode: line.scaleBarcode ?? null,
+            modifierCodes: line.modifierCodes ?? [],
             serials: line.serials?.length ? line.serials : undefined,
           })),
           parkedCart: buildParkedCartSnapshot(),
@@ -2951,6 +3049,8 @@ export default function PosPage() {
               size: line.size,
               packQty: line.packQty,
               packCode: line.packCode,
+              scaleBarcode: line.scaleBarcode ?? null,
+              modifierCodes: line.modifierCodes ?? [],
             })),
             extraLines: extraLines
               .map((line) => ({ label: line.label.trim(), unitAmount: Number(line.unitAmount) }))
@@ -3558,9 +3658,10 @@ export default function PosPage() {
         ...cart.map((l) => ({
           name: l.receiptName,
           size: l.size && l.size !== "-" ? l.size : null,
-          qty: l.packQty,
+          // จอลูกค้าต้องอ่านกฎเดียวกับตะกร้าและยอดรวม — ของชั่งขายบอกเป็นกรัม
+          qty: cartLineCharge(l, undefined).chargedQty,
           unitName: l.unitName,
-          amount: (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty,
+          amount: cartLineCharge(l, tierPriceByKey.get(l.key)).amount,
         })),
         ...extraLines
           .filter((x) => x.label.trim() && Number(x.unitAmount) > 0)
@@ -3726,8 +3827,7 @@ export default function PosPage() {
         setNotice(null);
         return;
       }
-      const key = `${hit.sku}__${hit.size}__${hit.packCode}`;
-      setCart((cur) => addScanHitToCart(cur, hit, key));
+      chooseModifiers(hit);
       if (tab === "returns" && blindOpen) {
         setRecentSalesQuery(trimmed);
         setRecentOpen(true);
@@ -4174,6 +4274,23 @@ export default function PosPage() {
         .map((l) => (l.key === key ? { ...l, packQty: l.packQty + delta } : l))
         .filter((l) => l.packQty > 0)
     );
+  }
+
+  function addHitWithModifiers(hit: ScanHit, modifierCodes: string[] = []) {
+    const normalized = Array.from(new Set(
+      modifierCodes.map((code) => code.trim().toUpperCase()).filter(Boolean)
+    )).sort();
+    const lineHit: ScanHit & { modifierCodes: string[] } = { ...hit, modifierCodes: normalized };
+    setCart((current) => addScanHitToCart(current, lineHit, cartLineKey(hit, normalized)));
+  }
+
+  function chooseModifiers(hit: ScanHit) {
+    if ((hit.modifiers?.length ?? 0) === 0) {
+      addHitWithModifiers(hit);
+      return;
+    }
+    setModifierHit(hit);
+    setSelectedModifierCodes([]);
   }
 
   function updatePayment(id: string, patch: Partial<PosPaymentDraft>) {
@@ -4635,7 +4752,7 @@ export default function PosPage() {
   async function refreshCartPricingBeforePay(options: { announce?: boolean } = {}): Promise<boolean> {
     const refreshed = await Promise.all(cart.map(async (line): Promise<CartLine> => {
       const params = new URLSearchParams({
-        code: line.sku,
+        code: line.scaleBarcode ?? line.sku,
         size: line.size,
         packCode: line.packCode,
       });
@@ -4648,6 +4765,11 @@ export default function PosPage() {
         throw new Error(data?.error ?? `ตรวจราคาล่าสุดของ ${line.receiptName} ไม่สำเร็จ`);
       }
       const latest = data as ScanHit;
+      const allowedModifiers = new Set((latest.modifiers ?? []).map((modifier) => modifier.code));
+      const unavailableModifier = (line.modifierCodes ?? []).find((code) => !allowedModifiers.has(code));
+      if (unavailableModifier) {
+        throw new Error(`ตัวเลือก ${unavailableModifier} ของ ${line.receiptName} ถูกปิดแล้ว กรุณาลบรายการและเพิ่มใหม่`);
+      }
       return {
         ...line,
         ...latest,
@@ -4756,6 +4878,8 @@ export default function PosPage() {
           size: line.size,
           packQty: line.packQty,
           packCode: line.packCode,
+          scaleBarcode: line.scaleBarcode ?? null,
+          modifierCodes: line.modifierCodes ?? [],
           // เลขเครื่อง (8.3) — ส่งเฉพาะที่กรอกไว้ server บังคับความครบเอง
           serials: line.serials?.length ? line.serials : undefined,
         })),
@@ -4856,6 +4980,8 @@ export default function PosPage() {
           docNo: data.docNo ?? null,
           change: data.cashChange ?? null,
           total: soldTotal,
+          // บิลที่ยิงซ้ำ (replayed) ไม่ส่งค่านี้กลับมา — ครัวรับไปตั้งแต่รอบแรกแล้ว
+          kitchenTickets: Number(data.kitchenTickets ?? 0) || 0,
         });
         window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(nextReceipt));
         setNotice({
@@ -4865,7 +4991,7 @@ export default function PosPage() {
             data.cashChange != null && Number(data.cashChange) > 0
               ? ` · เงินทอน ฿${baht(Number(data.cashChange))}`
               : ` · รับ ฿${baht(soldTotal)}`
-          }${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
+          }${Number(data.kitchenTickets ?? 0) > 0 ? ` · เข้าครัว ${Number(data.kitchenTickets)} รายการ` : ""}${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
         // สมาชิก/คูปองผูกกับบิล ไม่ใช่กับเครื่อง — ต้องล้างทุกบิล ไม่งั้นลูกค้า
@@ -5818,10 +5944,7 @@ export default function PosPage() {
                   onChange={(e) => setBlindApproverId(e.target.value)}
                   style={{ padding: 9, fontSize: 13, minWidth: 170 }}
                 >
-                  <option value="">— ผู้อนุมัติ —</option>
-                  {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                  ))}
+                  <ApproverOptions session={session} permission="pos.return.noreceipt" excludeUserId={cashierId} placeholder="— ผู้อนุมัติ —" />
                 </select>
                 <input
                   ref={blindApproverPinRef}
@@ -5853,13 +5976,9 @@ export default function PosPage() {
               onChange={(e) => setApprovalUserId(e.target.value)}
               style={{ padding: 8, fontSize: 13, minWidth: 160 }}
             >
-              <option value="">เลือกผู้อนุมัติ</option>
-              {(session?.cashiers ?? []).map((c) => (
-                <option key={`approval-${c.id}`} value={c.id} disabled={!c.hasPin}>
-                  {c.name || c.email}
-                  {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
-                </option>
-              ))}
+              {/* คืนตั้งแต่ ฿500 ต้องให้ผู้มีสิทธิ์ `payment.refund` อนุมัติ (approvalRuleForRefundAmount)
+                  ไม่ใช่คนที่ "รับคืน" ได้เฉย ๆ — เดิม dropdown นี้ยื่นพนักงานขายทุกคนให้เลือก */}
+              <ApproverOptions session={session} permission="payment.refund" placeholder="เลือกผู้อนุมัติ" />
             </select>
             <input
               ref={approvalPinRef}
@@ -6577,10 +6696,7 @@ export default function PosPage() {
                     </div>
                     <div className="pos-approve-row">
                       <select ref={expenseApproverSelectRef} value={expenseApproverId} onChange={(e) => setExpenseApproverId(e.target.value)}>
-                        <option value="">— ผู้อนุมัติ —</option>
-                        {(session?.cashiers ?? []).filter((c) => c.hasPin && c.id !== cashierId).map((c) => (
-                          <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                        ))}
+                        <ApproverOptions session={session} permission="pos.cash.movement" excludeUserId={cashierId} placeholder="— ผู้อนุมัติ —" />
                       </select>
                       <input ref={expenseApproverPinRef} type="password" inputMode="numeric" value={expenseApproverPin}
                              onChange={(e) => setExpenseApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
@@ -6716,10 +6832,7 @@ export default function PosPage() {
                       </div>
                       <div className="pos-approve-row">
                         <select ref={settleApproverSelectRef} value={settleApproverId} onChange={(e) => setSettleApproverId(e.target.value)}>
-                          <option value="">— ผู้อนุมัติปิดยอด —</option>
-                          {(session?.cashiers ?? []).filter((c) => c.hasPin && c.id !== cashierId).map((c) => (
-                            <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                          ))}
+                          <ApproverOptions session={session} permission="pos.cash.movement" excludeUserId={cashierId} placeholder="— ผู้อนุมัติปิดยอด —" />
                         </select>
                         <input ref={settleApproverPinRef} type="password" inputMode="numeric" value={settleApproverPin}
                                onChange={(e) => setSettleApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
@@ -6781,10 +6894,7 @@ export default function PosPage() {
                     <div className="pos-approve-row">
                       <select ref={cashApproverSelectRef} value={cashApproverId} onChange={(e) => setCashApproverId(e.target.value)}
                               style={{ fontSize: 14 }}>
-                        <option value="">— ผู้อนุมัติ —</option>
-                        {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
-                          <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                        ))}
+                        <ApproverOptions session={session} permission="pos.cash.movement" excludeUserId={cashierId} placeholder="— ผู้อนุมัติ —" />
                       </select>
                       <input ref={cashApproverPinRef} type="password" inputMode="numeric" value={cashApproverPin}
                              onChange={(e) => setCashApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
@@ -7377,8 +7487,7 @@ export default function PosPage() {
                 {lookup.available > 0 && (
                   <button
                     onClick={() => {
-                      const key = `${lookup.sku}__${lookup.size}__${lookup.packCode}`;
-                      setCart((cur) => addScanHitToCart(cur, lookup, key));
+                      chooseModifiers(lookup);
                       setLookup(null);
                       setLookupMode(false);
                       scanRef.current?.focus();
@@ -7417,13 +7526,20 @@ export default function PosPage() {
                     </>
                   ) : tierPriceByKey.has(l.key) ? (
                       <>
-                        <span style={{ textDecoration: "line-through", opacity: 0.6 }}>฿{baht(l.packPrice)}</span>{" "}
-                        ฿{baht(tierPriceByKey.get(l.key)!)} × {l.packQty} {l.unitName} · ราคาส่ง
+                        <span style={{ textDecoration: "line-through", opacity: 0.6 }}>฿{baht(cartLineCharge(l, undefined).unitPrice)}</span>{" "}
+                        ฿{baht(cartLineCharge(l, tierPriceByKey.get(l.key)).unitPrice)} × {cartLineCharge(l, undefined).chargedQty} {l.unitName} · ราคาส่ง
                       </>
                     ) : (
-                      <>฿{baht(l.packPrice)} × {l.packQty} {l.unitName} · เหลือ {l.available}</>
+                      <>฿{baht(cartLineCharge(l, undefined).unitPrice)} × {cartLineCharge(l, undefined).chargedQty} {l.unitName} · เหลือ {l.available}</>
                     )}
                   </div>
+                  {(l.modifierCodes?.length ?? 0) > 0 && (
+                    <div style={{ marginTop: 4, color: "#176b52", fontSize: 12, fontWeight: 600 }}>
+                      ตัวเลือก: {l.modifierCodes!.map((code) =>
+                        l.modifiers?.find((modifier) => modifier.code === code)?.name ?? code
+                      ).join(" · ")}
+                    </div>
+                  )}
                   {/* เลขเครื่อง (8.3) — กางเฉพาะสินค้าที่เปิดโหมดนี้
                       หนึ่งช่องต่อหนึ่งชิ้น เพราะพนักงานยิงกล่องทีละใบ ไม่ใช่พิมพ์รวมกัน
                       ช่องที่ยังว่างเห็นได้ทันทีว่าเหลืออีกกี่กล่องต้องยิง */}
@@ -7466,7 +7582,7 @@ export default function PosPage() {
                     ? (cart.findIndex((x) => x.sku === l.sku && x.size === l.size) === cart.indexOf(l)
                         ? `฿${baht(promoBySku.get(variantPricingKey(l.sku, l.size))!.amount)}`
                         : "—")
-                    : `฿${baht((tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty)}`}
+                    : `฿${baht(cartLineCharge(l, tierPriceByKey.get(l.key)).amount)}`}
                 </div>
               </div>
             ))}
@@ -7847,10 +7963,7 @@ export default function PosPage() {
                         <div className="pos-ret-void-row">
                           <select ref={voidApproverSelectRef} value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
                                   style={{ minWidth: 170 }}>
-                            <option value="">— ผู้อนุมัติ —</option>
-                            {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
-                              <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                            ))}
+                            <ApproverOptions session={session} permission="pos.void" excludeUserId={cashierId} placeholder="— ผู้อนุมัติ —" />
                           </select>
                           <input ref={voidApproverPinRef} type="password" inputMode="numeric" value={voidApproverPin}
                                  onChange={(e) => setVoidApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
@@ -8044,10 +8157,7 @@ export default function PosPage() {
                       onChange={(e) => setDiscountApproverId(e.target.value)}
                       style={{ flex: 1, minWidth: 0 }}
                     >
-                      <option value="">— ผู้อนุมัติ —</option>
-                      {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
-                        <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                      ))}
+                      <ApproverOptions session={session} permission="pos.discount.approve" excludeUserId={cashierId} placeholder="— ผู้อนุมัติ —" />
                     </select>
                     <input
                       ref={discountApproverPinRef}
@@ -8292,6 +8402,13 @@ export default function PosPage() {
                 <span aria-hidden="true">✓</span>
                 <span>ขายสำเร็จ{justSold.docNo ? ` · ${justSold.docNo}` : ""}</span>
               </div>
+              {/* ครัวรับตั๋วไปแล้วกี่รายการ — แคชเชียร์ไม่มีทางรู้เองว่าเมนูไหนมีสูตร
+                  และร้านเปิดคิวครัวไว้ไหม · ไม่มีบรรทัดนี้ = ต้องเดินไปถามครัวทุกบิล */}
+              {justSold.kitchenTickets > 0 && (
+                <div className="pos-success-label" style={{ marginTop: 4 }}>
+                  ส่งเข้าครัวแล้ว {justSold.kitchenTickets} รายการ
+                </div>
+              )}
 
               {/* จ่ายพอดี (เงินทอน 0) ต้องไม่ขึ้นเลข 0 ตัวเบ้อเร่อ — ตะกร้าเพิ่งถูกล้าง
                   ยอดข้างบนก็เป็น 0 อยู่แล้ว ทั้งจอเลยอ่านเหมือนขายไม่สำเร็จ
@@ -8488,10 +8605,7 @@ export default function PosPage() {
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <select value={creditApproverId} onChange={(e) => setCreditApproverId(e.target.value)}>
-                  <option value="">เลือกผู้อนุมัติ</option>
-                  {(session?.cashiers ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name ?? c.email}</option>
-                  ))}
+                  <ApproverOptions session={session} permission="ar.sell" placeholder="เลือกผู้อนุมัติ" />
                 </select>
                 <input
                   type="password"
@@ -8937,6 +9051,47 @@ export default function PosPage() {
         </section>
       </div>
       </div>
+      {modifierHit && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(13,35,29,0.68)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 65,
+        }}>
+          <div role="dialog" aria-modal="true" aria-label={`เลือกตัวเลือก ${modifierHit.productName}`}
+            style={{ width: 520, maxWidth: "100%", maxHeight: "80vh", overflow: "auto", background: "var(--pos-surface)", color: "var(--pos-text)", borderRadius: 14, boxShadow: "0 18px 60px rgba(0,0,0,.28)" }}>
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--pos-line)" }}>
+              <div style={{ fontSize: 17, fontWeight: 700 }}>เลือกตัวเลือก</div>
+              <div style={{ marginTop: 3, color: "var(--pos-muted)", fontSize: 13 }}>{modifierHit.productName}{modifierHit.size !== "-" ? ` · ${modifierHit.size}` : ""}</div>
+            </div>
+            <div style={{ padding: 14, display: "grid", gap: 8 }}>
+              {(modifierHit.modifiers ?? []).map((modifier) => {
+                const checked = selectedModifierCodes.includes(modifier.code);
+                return <label key={modifier.code} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+                  border: `1px solid ${checked ? "#2b9b74" : "var(--pos-line)"}`,
+                  borderRadius: 10, background: checked ? "rgba(43,155,116,.1)" : "var(--pos-sunken)", cursor: "pointer",
+                }}>
+                  <input type="checkbox" checked={checked} onChange={() => setSelectedModifierCodes((current) =>
+                    current.includes(modifier.code) ? current.filter((code) => code !== modifier.code) : [...current, modifier.code]
+                  )} style={{ width: 20, height: 20 }} />
+                  <span style={{ flex: 1 }}><strong>{modifier.name}</strong><br /><small style={{ color: "var(--pos-muted)" }}>{modifier.code}</small></span>
+                </label>;
+              })}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 8, padding: "12px 14px", borderTop: "1px solid var(--pos-line)" }}>
+              <button type="button" onClick={() => { setModifierHit(null); setSelectedModifierCodes([]); scanRef.current?.focus(); }} style={{ minHeight: 44 }}>ยกเลิก</button>
+              <button type="button" onClick={() => {
+                addHitWithModifiers(modifierHit, selectedModifierCodes);
+                setModifierHit(null);
+                setSelectedModifierCodes([]);
+                scanRef.current?.focus();
+              }} style={{ minHeight: 44, background: "#176b52", color: "#fff", border: 0, borderRadius: 7, fontWeight: 700 }}>
+                เพิ่มลงตะกร้า{selectedModifierCodes.length ? ` · ${selectedModifierCodes.length} ตัวเลือก` : ""}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* สมัครสมาชิก (7.96) — การค้นอยู่ในแผงชำระเงินแล้ว กล่องนี้ทำแค่การสมัคร
           ซึ่งเกิดนาน ๆ ครั้ง จึงคุ้มที่จะกินพื้นที่และมี numpad ให้กดด้วยนิ้ว
           สองขั้น (เบอร์ → ชื่อ) เพราะฟอร์มสองช่องพร้อมกันบนจอทัชกดผิดช่องบ่อย */}

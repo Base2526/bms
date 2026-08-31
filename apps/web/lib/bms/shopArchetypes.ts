@@ -8,6 +8,9 @@ export const SHOP_ARCHETYPE_OPTIONS = [
   { value: "b2b_wholesale", label: "B2B / Wholesale" },
   { value: "gifts_seasonal", label: "Gifts & Seasonal" },
   { value: "pharmacy", label: "Pharmacy" },
+  { value: "pet_supply", label: "Pet Supply" },
+  { value: "building_materials", label: "Building Materials" },
+  { value: "restaurant", label: "Restaurant" },
   { value: "other", label: "Other" },
 ] as const;
 
@@ -33,7 +36,10 @@ export function archetypeToBusinessType(value: string | null | undefined): strin
     case "beauty_personal_care":
       return "beauty";
     case "food_beverage":
+    case "restaurant":
       return "food";
+    case "building_materials":
+      return "home";
     case "gadgets_accessories":
       return "electronics";
     default:
@@ -46,7 +52,9 @@ export function archetypeNeedsRestockEmphasis(value: string | null | undefined):
     value === "fashion" ||
     value === "beauty_personal_care" ||
     value === "gadgets_accessories" ||
-    value === "home_kitchen";
+    value === "home_kitchen" ||
+    value === "pet_supply" ||
+    value === "building_materials";
 }
 
 export type ArchetypeCommercePolicy = {
@@ -81,6 +89,12 @@ export function commercePolicyForArchetype(value: string | null | undefined): Ar
     // ทางคลินิก ไม่ใช่ปัญหา UX ที่แก้ด้วยการเดาให้จบเร็ว
     case "pharmacy":
       return { salesMotion: "named_product_or_pharmacist", discovery: "รับหลายรายการในข้อความเดียวได้ แต่ห้ามเดา SKU/ความแรง/ขนาดบรรจุ ถ้าคำที่ลูกค้าใช้ตรงกับสินค้าหลายตัวให้ลูกค้าเลือกจากรายการจริงใน catalog เท่านั้น ถ้าไม่ตรงเลยให้บอกตรง ๆ ห้ามเสนอยาตัวอื่นแทน", basket: "ยืนยันทุกรายการที่ลูกค้าขอในบิลเดียว รายการที่ยังไม่ชัดต้องถามกลับ ห้ามตัดออกเงียบ ๆ และห้ามเติมจำนวนที่ลูกค้าไม่ได้บอก", repeatPurchase: "ใช้ reorder ได้เฉพาะสินค้าที่ไม่ต้องให้เภสัชกรประเมิน", fulfillment: "รายการที่ต้องให้เภสัชกรตรวจ ให้แจ้งว่าเภสัชกรจะตรวจและให้เลขเคสติดตาม ห้ามยืนยันการขายหรือแนะนำการใช้ยาเอง" };
+    case "pet_supply":
+      return { salesMotion: "pet_need_replenishment", discovery: "ยืนยันชนิดสัตว์ ช่วงวัย ขนาดบรรจุ และสินค้าจริงจาก catalog", basket: "เสนออุปกรณ์หรือขนาดบรรจุที่เกี่ยวข้องจาก catalog เพียงรายการเดียว", repeatPurchase: "ให้ความสำคัญกับ reorder อาหารและ restock สินค้าที่ใช้ประจำ", fulfillment: "ย้ำหน่วยขายและจำนวน โดยเฉพาะสินค้าถุงกับสินค้าแบ่งขาย" };
+    case "building_materials":
+      return { salesMotion: "spec_quantity_quote", discovery: "ยืนยันสเปก หน่วยขาย และจำนวนที่ต้องใช้ก่อนสรุปราคา", basket: "เสนอสินค้าที่ใช้ร่วมกันจากข้อมูล compatibility ที่ตรวจสอบแล้ว", repeatPurchase: "เน้นใบเสนอราคาและ reorder ตามหน่วยเดิม", fulfillment: "สรุปทั้งหน่วยขายและปริมาณหน่วยฐาน รวมถึงเงื่อนไขจัดส่งของชิ้นใหญ่" };
+    case "restaurant":
+      return { salesMotion: "menu_kitchen_checkout", discovery: "รับหลายเมนูและยืนยันเฉพาะตัวเลือกหรือ modifier ที่ร้านตั้งไว้", basket: "เสนอ add-on เดียวจากเมนูจริง", repeatPurchase: "ใช้ reorder สำหรับเมนูเดิม", fulfillment: "ยืนยันรายการ ตัวเลือก และเวลารับหรือจัดส่งก่อนส่งเข้าครัว" };
     default:
       return { salesMotion: "catalog_guided", discovery: "ค้น catalog ก่อนและถามข้อมูลที่ขาดทีละ 1 ข้อ", basket: "เสนอทางเลือกหรือสินค้าที่เกี่ยวข้องจาก catalog เท่านั้น", repeatPurchase: "ใช้ reorder/restock ตามเจตนาที่ลูกค้ายืนยัน", fulfillment: "ใช้เฉพาะ payment/shipping policy ที่ร้านตั้งค่าไว้" };
   }
@@ -133,12 +147,47 @@ export function onboardingChecklistKeysForArchetype(value: string | null | undef
         "checklist_gadgets_accessories_3",
         "checklist_gadgets_accessories_4",
       ];
+    case "pharmacy":
+      return [
+        "checklist_pharmacy_1",
+        "checklist_pharmacy_2",
+        "checklist_pharmacy_3",
+        "checklist_pharmacy_4",
+      ];
     case "b2b_wholesale":
       return [
         "checklist_b2b_wholesale_1",
         "checklist_b2b_wholesale_2",
         "checklist_b2b_wholesale_3",
         "checklist_b2b_wholesale_4",
+      ];
+    case "b2b_wholesale":
+      return [
+        "checklist_b2b_wholesale_1",
+        "checklist_b2b_wholesale_2",
+        "checklist_b2b_wholesale_3",
+        "checklist_b2b_wholesale_4",
+      ];
+    case "pet_supply":
+      return [
+        "checklist_pet_supply_1",
+        "checklist_pet_supply_2",
+        "checklist_pet_supply_3",
+        "checklist_pet_supply_4",
+      ];
+    case "building_materials":
+      return [
+        "checklist_building_materials_1",
+        "checklist_building_materials_2",
+        "checklist_building_materials_3",
+        "checklist_building_materials_4",
+      ];
+    case "restaurant":
+      return [
+        "checklist_restaurant_1",
+        "checklist_restaurant_2",
+        "checklist_restaurant_3",
+        "checklist_restaurant_4",
       ];
     case "gifts_seasonal":
       return [

@@ -10,6 +10,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { getArAccountByCustomer, listArInvoices } from "@/lib/bms/ar";
@@ -31,7 +32,7 @@ async function handleGET(req: NextRequest) {
   const auth = await verifyCashierPin(device.tenantId, userId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "ar.view"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ดูข้อมูลลูกหนี้" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "ar.view") }, { status: 403 });
   }
 
   // ไม่พบบัญชี = ตอบ 200 พร้อม account: null ไม่ใช่ 404 — "ลูกค้ารายนี้ยังไม่มี

@@ -19,7 +19,8 @@ export type MovementType =
   | "TRANSFER_OUT"
   | "COUNT_ADJUST"
   | "QUARANTINE_IN"
-  | "TRANSFER_LOST";
+  | "TRANSFER_LOST"
+  | "WASTAGE";
 
 export type MovementRow = {
   id: string;

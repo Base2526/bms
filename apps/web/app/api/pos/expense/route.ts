@@ -11,6 +11,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -54,7 +55,7 @@ async function handlePOST(req: NextRequest) {
 
   if (action === "fund") {
     if (!(await cashierHasPermission(device.tenantId, actor.userId, "pos.petty_cash.manage"))) {
-      return NextResponse.json({ error: "บัญชีนี้ไม่มีสิทธิ์เติมเงินสดย่อย" }, { status: 403 });
+      return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.petty_cash.manage") }, { status: 403 });
     }
     const source = body.source === "OWNER_PERSONAL" || body.source === "BUSINESS_ACCOUNT"
       ? body.source as PosPettyCashFundingSource : null;
@@ -76,7 +77,7 @@ async function handlePOST(req: NextRequest) {
   }
 
   if (!(await cashierHasPermission(device.tenantId, actor.userId, "pos.expense.create"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ทำรายการค่าใช้จ่าย" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.expense.create") }, { status: 403 });
   }
 
   if (action === "list") {
@@ -137,12 +138,12 @@ async function handlePOST(req: NextRequest) {
       return NextResponse.json({ error: "PIN ผู้อนุมัติไม่ถูกต้อง", reason: approver.reason }, { status: 403 });
     }
     if (!(await cashierHasPermission(device.tenantId, approver.userId, "pos.cash.movement"))) {
-      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์อนุมัติเงินออกจากลิ้นชัก" }, { status: 403 });
+      return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.cash.movement", { secondPerson: true }) }, { status: 403 });
     }
     approverUserId = approver.userId;
   } else if (fundingSource === "PERSONAL"
       && !(await cashierHasPermission(device.tenantId, actor.userId, "pos.expense.personal"))) {
-    return NextResponse.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้โหมดเจ้าของคนเดียว" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.expense.personal") }, { status: 403 });
   }
 
   if (action === "create") {

@@ -460,13 +460,20 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
         [tenantId, input.orderId]
       );
       await client.query(
+        // view ไม่ใช่ตารางตรง ๆ — เส้นทางนี้เคยอ่าน bms_order_items โดยตรง ซึ่งเป็นจุดที่ห้า
+        // ที่ขยับสต็อก (เอกสารนับไว้แค่สี่) · บิลที่ซื้อเซ็ต (8.8) หรือเมนูที่มีสูตร (9.40)
+        // จะไปลดสต็อกของ "SKU แม่" ซึ่งแถวคาไว้ที่ 0 ตลอด แล้วชน CHECK (current_stock >= 0)
+        // = ส่งของไม่ได้เลย ส่วนส่วนประกอบที่ถูกจองไว้จริงก็ไม่เคยถูกตัด
         `UPDATE bms_inventory inv
             SET current_stock  = current_stock  - oi.qty,
                 reserved_stock = reserved_stock - oi.qty,
                 updated_at = now()
-           FROM bms_order_items oi
-          WHERE oi.order_id = $1
-            AND inv.tenant_id = oi.tenant_id
+           FROM (
+             SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+               FROM bms_order_stock_lines WHERE order_id = $1
+              GROUP BY tenant_id, location_id, product_sku, size
+           ) oi
+          WHERE inv.tenant_id = oi.tenant_id
             AND inv.location_id = oi.location_id
             AND inv.product_sku = oi.product_sku
             AND inv.size = oi.size`,

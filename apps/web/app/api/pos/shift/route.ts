@@ -9,6 +9,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -46,7 +47,7 @@ async function handlePOST(req: NextRequest) {
 
   if (action === "open") {
     if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.shift.open"))) {
-      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์เปิดกะ" }, { status: 403 });
+      return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.shift.open") }, { status: 403 });
     }
     const result = await openPosShift({
       tenantId: device.tenantId,
@@ -67,7 +68,7 @@ async function handlePOST(req: NextRequest) {
 
   if (action === "close") {
     if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.shift.close"))) {
-      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ปิดกะ" }, { status: 403 });
+      return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.shift.close") }, { status: 403 });
     }
     const open = await getOpenPosShift(device.tenantId, device.id);
     if (!open) return NextResponse.json({ status: "NOT_OPEN" }, { status: 409 });

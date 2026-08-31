@@ -10,6 +10,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
 import { enrollMember, searchMembers, toPosMemberSummary } from "@/lib/bms/membership";
@@ -48,7 +49,7 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
   }
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "member.manage"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์สมัครสมาชิก" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "member.manage") }, { status: 403 });
   }
 
   const openShift = await getOpenPosShift(device.tenantId, device.id);

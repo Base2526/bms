@@ -95,6 +95,57 @@ export async function receiveLotInTx(
   return res.rows[0].id;
 }
 
+/**
+ * ตัดล็อตออกตามจำนวนของเสีย — ต้องเรียกในทรานแซกชันเดียวกับที่ลด `bms_inventory`
+ *
+ * ของเสียคือเส้นทางหลักที่ของหมดอายุออกจากชั้น การลดแต่ยอดรวมโดยไม่แตะล็อตทำให้
+ * invariant `SUM(lots.qty) = current_stock` พังทันที ผลจริงคือ **ล็อตที่หมดอายุยังค้าง
+ * จำนวนอยู่** แล้ว FEFO เอาไปจ่ายรอบถัดไป (หรือชน "lot ที่ขายได้ไม่พอ" กลางบิลของลูกค้า)
+ * และ `reconcileLotTotals()` ขึ้นแดงโดยหาต้นเหตุไม่เจอ
+ *
+ * ต่างจากเส้นทางขายตรงที่ **ตัดล็อตที่หมดอายุก่อน ไม่ข้าม** — ของที่ทิ้งคือของหมดอายุ
+ * ถ้าข้ามไปตัดล็อตดี ของหมดอายุจะอยู่ในระบบตลอดไปและของดีหายแทน
+ *
+ * สินค้าที่ไม่ได้ตามล็อตเลย (ไม่มีแถวใน `bms_inventory_lots`) ผ่านไปเฉย ๆ เหมือนเส้นทางขาย
+ */
+export async function consumeLotsForWastageInTx(
+  client: PoolClient,
+  input: { tenantId: string; locationId: string; productSku: string; size: string; qty: number }
+): Promise<void> {
+  const key = [input.tenantId, input.locationId, input.productSku, input.size];
+  const tracked = await client.query(
+    `SELECT 1 FROM bms_inventory_lots
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
+      LIMIT 1`,
+    key
+  );
+  if (!tracked.rowCount) return;
+  const lots = await client.query<{ id: string; qty: number }>(
+    `SELECT id, qty FROM bms_inventory_lots
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
+        AND qty > 0
+      ORDER BY expiry_date NULLS LAST, received_at
+      FOR UPDATE`,
+    key
+  );
+  let remaining = input.qty;
+  for (const lot of lots.rows) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, Number(lot.qty));
+    await client.query(
+      `UPDATE bms_inventory_lots SET qty = qty - $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, lot.id, take]
+    );
+    remaining -= take;
+  }
+  if (remaining > 0) {
+    throw new Error(
+      `lot ของ ${input.productSku}/${input.size} มีไม่พอสำหรับตัดของเสีย (ขาด ${remaining}) — ตรวจยอดล็อตก่อน`
+    );
+  }
+}
+
 export async function listLots(
   tenantId: string,
   opts: { productSku?: string | null; size?: string | null; locationId?: string | null; includeEmpty?: boolean } = {}

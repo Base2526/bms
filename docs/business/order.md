@@ -143,7 +143,15 @@ really completes.
 
 **Release policy** — coupon quota is released only when the sale never really happened. Staff/manual
 cancel (`cancelOrder()`) and the unpaid-order cron (`releaseExpiredOrders()`) return both reserved
-stock and the coupon's operational `redemptions_count` in the same transaction. Rejecting a payment
+stock and the coupon's operational `redemptions_count` in the same transaction. That cron sweeps **one bill
+per transaction**, not the whole batch in one: it used to run as a single platform-wide transaction,
+so a single bill it could not release — reservation drift that would drive `reserved_stock` below
+zero, or, before `9.42`, any bill holding a bundle or a menu item — rolled back the run and left
+*every* tenant's expired holds locked, permanently, because the next run met the same bill again.
+The endpoint answered 500 and nobody noticed the job had stopped. A bill that still fails is now
+reported in the response's `failed` array and stays `PENDING` for a human, while the rest are
+released. It also takes an optional tenant filter so a repair (or a test) can be scoped to one shop
+instead of sweeping the whole database. Rejecting a payment
 slip alone does **not** release the coupon because the order remains open for a corrected slip; the
 coupon is released if that order is later cancelled or auto-released. Post-sale returns/refunds do
 not automatically release coupon quota because the coupon was already used on a real transaction.

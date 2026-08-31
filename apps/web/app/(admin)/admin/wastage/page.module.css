@@ -1,0 +1,7 @@
+.page { display: grid; gap: 18px; }
+.hero { padding: 22px 24px; border-radius: 18px; color: #26352d; background: linear-gradient(120deg, #edf5e8 0%, #f7edda 100%); border: 1px solid #d8dfc8; }
+.hero h1 { margin: 0 0 4px; font: 700 clamp(26px, 4vw, 40px)/1.1 Georgia, "Noto Serif Thai", serif; }
+.hero p { margin: 0; color: #687366; }
+.grid { display: grid; grid-template-columns: minmax(320px, .75fr) minmax(0, 1.25fr); gap: 16px; align-items: start; }
+.qty { color: #a23d2b; font-weight: 700; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .hero { border-radius: 14px; } }

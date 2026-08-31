@@ -8,6 +8,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -34,7 +35,7 @@ async function handleGET(req: NextRequest) {
   const auth = await verifyCashierPin(device.tenantId, userId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.shift.report"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ดูสรุปกะ" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.shift.report") }, { status: 403 });
   }
 
   const requested = req.nextUrl.searchParams.get("shiftId");

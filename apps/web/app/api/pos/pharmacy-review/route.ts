@@ -7,6 +7,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -50,7 +51,7 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: message, reason: auth.reason, lockedUntil: auth.lockedUntil }, { status: 403 });
   }
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.sell"))) {
-    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ขายหน้าร้าน" }, { status: 403 });
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.sell") }, { status: 403 });
   }
 
   const lines = parsePosSaleLines(body.lines);

@@ -86,6 +86,12 @@ export function checkBarcode(raw: string): BarcodeCheck {
 export function inStoreBarcode(sequence: number, prefix: string = IN_STORE_PREFIX): string {
   if (!Number.isInteger(sequence) || sequence < 0) throw new Error("ลำดับต้องเป็นจำนวนเต็มไม่ติดลบ");
   if (!/^2\d$/.test(prefix)) throw new Error("prefix ต้องอยู่ในช่วง 20–29 (ช่วงที่ GS1 กันไว้ให้ร้านใช้ภายใน)");
+  // 21/22 ถูกจองไว้ให้ป้ายจากเครื่องชั่ง (9.41) — ออกเลขของสินค้าชิ้นด้วย prefix เดียวกัน
+  // แปลว่าเลข 5 หลักกลางอาจไปตรงกับรหัสสินค้าบนเครื่องชั่ง แล้วเครื่องยิงจะอ่านสินค้าชิ้นนั้น
+  // เป็นของชั่งขายพร้อมน้ำหนักที่แกะจากตัวเลขในบาร์โค้ดของมันเอง = คิดเงินผิดโดยดูปกติทุกอย่าง
+  if (prefix === SCALE_PRICE_PREFIX || prefix === SCALE_WEIGHT_PREFIX) {
+    throw new Error(`prefix ${prefix} สงวนไว้ให้ป้ายจากเครื่องชั่ง — ใช้ prefix อื่นในช่วง 20–29`);
+  }
   const body = String(sequence).padStart(10, "0");
   if (body.length > 10) throw new Error("ลำดับเกินช่วงที่ EAN-13 รองรับ");
   const head = `${prefix}${body}`;

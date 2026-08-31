@@ -10,6 +10,7 @@
 // =============================================================
 
 import { NextResponse } from "next/server";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
@@ -72,7 +73,7 @@ async function handlePOST(req: NextRequest) {
       return NextResponse.json({ error: "PIN ผู้อนุมัติไม่ถูกต้อง", reason: approver.reason }, { status: 403 });
     }
     if (!(await cashierHasPermission(device.tenantId, approver.userId, "pos.cash.movement"))) {
-      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์อนุมัติเงินออกจากลิ้นชัก" }, { status: 403 });
+      return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.cash.movement", { secondPerson: true }) }, { status: 403 });
     }
     approvedBy = approver.userId;
   }
