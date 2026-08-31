@@ -39,7 +39,7 @@ operators must resolve those records before retrying the migration.
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
-| Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40` |
+| Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split) |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
@@ -626,6 +626,13 @@ Migration `7.44` adds the intermediate restock `ORDERED` state and a tenant-scop
 `bms_onboarding_seed_runs` ledger. The ledger records completed seed stages and allows a failed or
 stale run to resume without repeating already completed stages; RLS and `bms_app` grants match the
 other tenant-owned onboarding data.
+
+Migration `9.43` makes `business_archetype` immutable after the tenant's first real order. The
+service reads and merges the profile inside a tenant transaction, while database triggers enforce
+the same rule for every write path. Both sides lock the tenant row before checking order history;
+because `bms_orders.tenant_id` references that row, a concurrent first order and archetype change
+are serialized rather than both passing on stale snapshots. Demo-seed orders identified by the
+reserved `FAKE-*` customer marker do not establish this lock.
 
 Migration `7.30` also adds validated AI language/ordering/required-field/short-reply/handoff policy.
 `bms_inbound_events` is the tenant/channel/platform-event idempotency ledger, while

@@ -3,7 +3,12 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { getTenantId } from "@/lib/bms/tenant";
-import { getStoreProfile, upsertStoreProfile, type StoreProfileInput } from "@/lib/bms/storeProfile";
+import {
+  getBusinessArchetypeLockState,
+  getStoreProfile,
+  upsertStoreProfile,
+  type StoreProfileInput,
+} from "@/lib/bms/storeProfile";
 import { updateTenantIdentity } from "@/lib/bms/platform";
 import { audit } from "@/lib/bms/audit";
 import { getOnboardingProgress, updateOnboardingProgress } from "@/lib/bms/onboarding";
@@ -19,7 +24,15 @@ export const bmsStoreProfileResolvers = {
   Query: {
     async bmsStoreProfile(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
-      return getStoreProfile(getTenantId(ctx));
+      const tenantId = getTenantId(ctx);
+      const [profile, archetypeLock] = await Promise.all([
+        getStoreProfile(tenantId),
+        getBusinessArchetypeLockState(tenantId),
+      ]);
+      return {
+        ...profile,
+        businessArchetypeLocked: archetypeLock.locked,
+      };
     },
     async bmsOnboardingProgress(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
@@ -30,9 +43,14 @@ export const bmsStoreProfileResolvers = {
     async bmsUpsertStoreProfile(_p: unknown, args: { input: StoreProfileInput }, ctx: any) {
       requireTenantAdmin(ctx);
       try {
-        const result = await upsertStoreProfile(getTenantId(ctx), args.input ?? {}, ctx?.admin?.id ?? null);
+        const tenantId = getTenantId(ctx);
+        const result = await upsertStoreProfile(tenantId, args.input ?? {}, ctx?.admin?.id ?? null);
+        const archetypeLock = await getBusinessArchetypeLockState(tenantId);
         await audit(ctx, "store.profile_update", null, {});
-        return result;
+        return {
+          ...result,
+          businessArchetypeLocked: archetypeLock.locked,
+        };
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกข้อมูลร้านไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }

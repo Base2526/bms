@@ -3,7 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useEffect } from "react";
-import { SHOP_ARCHETYPE_OPTIONS, archetypeNeedsRestockEmphasis, onboardingChecklistKeysForArchetype } from "@/lib/bms/shopArchetypes";
+import { localizedShopArchetypeOptions, archetypeNeedsRestockEmphasis, onboardingChecklistKeysForArchetype } from "@/lib/bms/shopArchetypes";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -13,7 +13,7 @@ const Q = gql`
   query {
     bmsMyTenant { id name slug }
     bmsStoreProfile {
-      businessArchetype businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
+      businessArchetype businessArchetypeLocked businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       receiptLanguageMode
       about address phone contactEmail website logoUrl taxId timezone country currency
       businessHours shippingPolicy returnPolicy
@@ -64,6 +64,7 @@ function SectionHeader({ children, note }: { children: React.ReactNode; note?: s
 
 export default function StoreProfileCard() {
   const { t } = useI18n();
+  const archetypeOptions = localizedShopArchetypeOptions(t);
   const SHIPPING_MODE_OPTIONS = [
     { value: "flat", label: t("admin_store_profile.shipping_mode_flat") },
     { value: "zone", label: t("admin_store_profile.shipping_mode_zone") },
@@ -80,6 +81,7 @@ export default function StoreProfileCard() {
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const selectedArchetype = Form.useWatch("businessArchetype", form);
+  const archetypeLocked = Boolean(data?.bmsStoreProfile?.businessArchetypeLocked);
   const checklistKeys = onboardingChecklistKeysForArchetype(selectedArchetype);
   const highlightRestock = archetypeNeedsRestockEmphasis(selectedArchetype);
 
@@ -210,8 +212,22 @@ export default function StoreProfileCard() {
                     <Row gutter={16}>
                       <Col xs={24} md={10}>
                         <Form.Item name="businessArchetype" label={t("admin_store_profile.shop_archetype_label")}>
-                          <Select allowClear placeholder={t("admin_store_profile.shop_archetype_placeholder")} options={SHOP_ARCHETYPE_OPTIONS as any} />
+                          <Select
+                            allowClear
+                            disabled={archetypeLocked}
+                            placeholder={t("admin_store_profile.shop_archetype_placeholder")}
+                            options={archetypeOptions}
+                          />
                         </Form.Item>
+                        {archetypeLocked && (
+                          <Alert
+                            style={{ marginTop: 8 }}
+                            type="warning"
+                            showIcon
+                            message={t("admin_store_profile.archetype_locked_title")}
+                            description={t("admin_store_profile.archetype_locked_desc")}
+                          />
+                        )}
                       </Col>
                       <Col xs={24} md={10}>
                         <Form.Item name="businessType" label={t("admin_store_profile.business_type_label")}>

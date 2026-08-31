@@ -15,8 +15,8 @@ import {
 } from "@ant-design/icons";
 import { useEffect, useRef, useState } from "react";
 import {
-  SHOP_ARCHETYPE_OPTIONS,
   archetypeNeedsRestockEmphasis,
+  localizedShopArchetypeLabel,
   onboardingChecklistKeysForArchetype,
 } from "@/lib/bms/shopArchetypes";
 import { useI18n } from "@/lib/i18nContext";
@@ -63,10 +63,6 @@ type StepItem = {
   recommended?: boolean;
   icon: React.ReactNode;
 };
-
-function archetypeLabel(value: string | null | undefined) {
-  return SHOP_ARCHETYPE_OPTIONS.find((x) => x.value === value)?.label || "General / Not set";
-}
 
 export default function Page() {
   const { t } = useI18n();
@@ -211,7 +207,7 @@ export default function Page() {
           <Space wrap>
             <Tag color="blue">{tenant?.name || t("admin_getting_started.your_shop")}</Tag>
             <Tag>{tenant?.slug ? `/${tenant.slug}` : "slug pending"}</Tag>
-            <Tag color="purple">{archetypeLabel(archetype)}</Tag>
+            <Tag color="purple">{localizedShopArchetypeLabel(archetype, t)}</Tag>
             {profile?.businessType ? <Tag color="geekblue">businessType: {profile.businessType}</Tag> : null}
           </Space>
         </Space>

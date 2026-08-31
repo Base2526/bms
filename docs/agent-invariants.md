@@ -761,10 +761,11 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
   `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08-31
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **69 namespaces / 3,984 leaf keys per language**,
-  at exact th↔en parity — up from ~12 before an initial 2026-08 public-page pass (see CLAUDE.md's
-  "Public-page i18n coverage expanded" entry), 25 after it, 30 after the first admin batch, and the rest
-  added by admin batches 2–17 (one `admin_*` namespace per page or page group, e.g. `admin_login`,
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **70 namespaces / 4,000 leaf keys per language**,
+  at exact th↔en parity — the latest +16 are the bilingual shop-archetype labels and the two
+  store-archetype lock labels, while the preceding +7 are the store-profile receipt-language labels;
+  the rest came from the public-page pass and admin batches 1–17 (one `admin_*` namespace per page or
+  page group, e.g. `admin_login`,
   `admin_billing`, `admin_products`, `admin_pharmacy_queue`, `admin_followup_queue`, `admin_audit`).
   **Always grep the actual file for the current list** — this doc's counts are a snapshot, not a live
   value, and have been wrong before. This is what a per-user language preference (see CLAUDE.md's
@@ -813,7 +814,7 @@ Store and Pharmacy submenus (`'Products'`, `'Orders'`, `'Pharmacy Intake Lab'`, 
 `pharmacyQueueLink()` badge label) were still plain English string literals passed straight to
 `link()`, invisible to `t()`-based audits because they were never `t()` calls at all. Fixed by adding
 18 new `admin.menu_*` keys to both dictionaries and wiring the literals to `t()`. Verified 2026-08-23
-by dictionary audit (before this fix): `i18n/th.ts` and `i18n/en.ts` were at exact key parity
+by dictionary audit (before the shop-archetype label pass): `i18n/th.ts` and `i18n/en.ts` were at exact key parity
 (3,802 = 3,802 across 69 namespaces) and every `t("ns.key")` call site in `app`/`components`/`lib`
 resolved to a real key — so there were **zero** raw-key-rendering bugs of the kind commit `5832eb23`
 fixed, but that audit method can't catch labels that were never routed through `t()` in the first

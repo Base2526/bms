@@ -213,8 +213,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**69 namespaces / 3,984 keys per language,
-   exact th↔en parity** as of 2026-08-31 — the latest +7 are store-profile receipt-language labels;
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**70 namespaces / 4,000 keys per language,
+   exact th↔en parity** as of 2026-08-31 — the latest +14 are bilingual shop-archetype labels, the
+   preceding +2 are store-archetype lock labels, and the preceding +7 are store-profile receipt-language labels;
    the +20 on 2026-08-25 were `AdminSidebar.tsx`'s Store/Pharmacy
    submenu child labels, which had been plain English string literals inside an otherwise-converted
    file; see [agent-invariants.md § i18n coverage](docs/agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)).
@@ -298,6 +299,9 @@ per-user-preference pattern:
 - Document new tables, states, constraints, and dependencies in `docs/architecture/database.md` and
   the relevant business doc. If operator workflows change, update the in-app manual
   (`app/(admin)/admin/manual/page.tsx`) in the same change.
+- `business_archetype` is a starter preset only. Migration `9.43` locks it after the tenant's first
+  real order; demo rows marked `FAKE-*` do not count. Any UI list for the field should use the shared
+  bilingual `shop_archetypes.*` labels rather than hardcoded strings.
 - Inbox diagnostics stay split: `Emit` publishes a realtime event only (no rows, no external calls);
   `Create Msg` writes diagnostic rows but never runs the AI pipeline or sends to a channel.
 

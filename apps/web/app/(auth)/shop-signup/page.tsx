@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
-import { SHOP_ARCHETYPE_OPTIONS } from "@/lib/bms/shopArchetypes";
+import { localizedShopArchetypeOptions } from "@/lib/bms/shopArchetypes";
 import { useI18n } from "@/lib/i18nContext";
 
 const { Paragraph } = Typography;
@@ -20,6 +20,7 @@ const M_SIGNUP = gql`
 
 export default function Page() {
   const { t } = useI18n();
+  const archetypeOptions = localizedShopArchetypeOptions(t);
   const [form] = Form.useForm();
   const [done, setDone] = useState(false);
 
@@ -80,7 +81,7 @@ export default function Page() {
               <Select
                 allowClear
                 placeholder={t("shopSignup.shop_type_placeholder")}
-                options={SHOP_ARCHETYPE_OPTIONS as any}
+                options={archetypeOptions}
               />
             </Form.Item>
             <Form.Item label={t("shopSignup.owner_name")} name="name">

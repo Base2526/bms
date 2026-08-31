@@ -10,6 +10,16 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Shop archetype lock + bilingual labels (9.43, 2026-08-31)
+
+- Added shared `shop_archetypes.*` labels in both `en` and `th` for the shop archetype dropdown and
+  related admin/profile screens, so the UI can show the same stable ids with localized labels.
+- Locked `business_archetype` after the tenant's first real order. Demo rows marked with `FAKE-*`
+  remain editable, but real order history now freezes the preset so onboarding, checklist, and AI
+  defaults cannot drift away from the business record.
+
+---
+
 ## POS shift reconciliation export (9.32, 2026-08-29)
 
 - Added device-scoped recent shift history and a PIN + `pos.shift.report` protected XLSX download.
@@ -223,8 +233,8 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   see the two bullets below for what changed since.
 - **Admin app i18n — batches 1–17 done, ~62% of the admin app (2026-08)**: a series of follow-up passes
   converted `/admin/**` from 0% (no file called `useI18n()`) to **48 of 78** admin `.tsx` files carrying
-  a bilingual mechanism, with the shared dictionary now at **69 namespaces / 3,802 keys per language at
-  exact th↔en parity** (verified 2026-08-23). The nav shell (`AdminSidebar.tsx`/`AdminLayoutClient.tsx`)
+  a bilingual mechanism, with the shared dictionary now at **70 namespaces / 4,000 keys per language at
+  exact th↔en parity** (verified 2026-08-31 after the shop-archetype label pass). The nav shell (`AdminSidebar.tsx`/`AdminLayoutClient.tsx`)
   and `admin/login/page.tsx` — both previously flagged here as priority gaps — are converted. The
   remaining 30 files are **not Thai leaks**: they are trivial `layout.tsx`/`loading.tsx` guards with no
   user-visible copy, plus the English-only legacy platform-admin pages (`admin/roles`, `admin/logs`,

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm, Input, Modal, Descriptions, Typography } from 'antd';
 import { gql, useQuery, useMutation } from '@apollo/client';
-import { SHOP_ARCHETYPE_OPTIONS } from '@/lib/bms/shopArchetypes';
+import { localizedShopArchetypeOptions } from '@/lib/bms/shopArchetypes';
 import { DEMO_SCENARIO_SHOPS } from '@/lib/bms/demoScenarioSelection';
 import { useI18n } from '@/lib/i18nContext';
 
@@ -102,6 +102,7 @@ type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms
 
 export default function DevFakePage() {
   const { t } = useI18n();
+  const archetypeOptions = localizedShopArchetypeOptions(t);
   const [kind, setKind] = useState<FakeKind>('bms-products');
   const [count, setCount] = useState(50);
   const [loading, setLoading] = useState(false);
@@ -366,7 +367,7 @@ export default function DevFakePage() {
           placeholder={t('admin_dev_fake.archetype_placeholder')}
           value={shopArchetype}
           onChange={setShopArchetype}
-          options={SHOP_ARCHETYPE_OPTIONS as any}
+          options={archetypeOptions}
           style={{ width: 240 }}
         />
         <Button type="primary" onClick={provisionShop} loading={provisioning}>{t('admin_dev_fake.btn_provision')}</Button>

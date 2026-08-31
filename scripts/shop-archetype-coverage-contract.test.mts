@@ -21,6 +21,8 @@ import {
   SHOP_ARCHETYPE_OPTIONS,
   archetypeToBusinessType,
   commercePolicyForArchetype,
+  localizedShopArchetypeLabel,
+  localizedShopArchetypeOptions,
   onboardingChecklistKeysForArchetype,
 } from "../apps/web/lib/bms/shopArchetypes.ts";
 import { presetCapabilitiesForArchetype } from "../apps/web/lib/bms/storeCapabilities.ts";
@@ -30,6 +32,25 @@ import th from "../apps/web/i18n/th.ts";
 const ARCHETYPES = SHOP_ARCHETYPE_OPTIONS.map((option) => option.value);
 /** `other` means "no archetype-specific defaults" — the generic checklist is the right answer. */
 const GENERIC_BY_DESIGN = new Set<string>(["other"]);
+
+function dictionaryTranslator(dictionary: Record<string, any>) {
+  return (key: string): string => key.split(".").reduce<any>((value, part) => value?.[part], dictionary) ?? key;
+}
+
+test("every shop type has distinct Thai and English list labels", () => {
+  const english = localizedShopArchetypeOptions(dictionaryTranslator(en as any));
+  const thai = localizedShopArchetypeOptions(dictionaryTranslator(th as any));
+  assert.deepEqual(english.map((option) => option.value), ARCHETYPES);
+  assert.deepEqual(thai.map((option) => option.value), ARCHETYPES);
+
+  for (let index = 0; index < ARCHETYPES.length; index += 1) {
+    assert.ok(english[index].label.trim(), `${ARCHETYPES[index]} has no English label`);
+    assert.ok(thai[index].label.trim(), `${ARCHETYPES[index]} has no Thai label`);
+    assert.notEqual(thai[index].label, english[index].label, `${ARCHETYPES[index]} is still English-only`);
+  }
+  assert.equal(localizedShopArchetypeLabel(null, dictionaryTranslator(en as any)), "General / Not set");
+  assert.equal(localizedShopArchetypeLabel(null, dictionaryTranslator(th as any)), "ทั่วไป / ยังไม่ได้เลือก");
+});
 
 test("every shop type in the dropdown has an onboarding checklist in both languages", () => {
   const dictionaries = { en, th } as Record<string, any>;
