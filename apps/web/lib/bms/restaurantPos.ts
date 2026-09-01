@@ -2,7 +2,13 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
-import { cancelOrder, createOrder, type CreateOrderResult, type OrderItemInput } from "./orders";
+import {
+  afterOrderCancellationCommitted,
+  cancelOrderInTx,
+  createOrderInTx,
+  type CreateOrderResult,
+  type OrderItemInput,
+} from "./orders";
 import {
   recordPosSale,
   resolvePosScan,
@@ -427,24 +433,6 @@ function toPosLine(row: CheckItemRow): PosSaleLine {
   };
 }
 
-/**
- * ปล่อยออร์เดอร์จองสต็อกที่ถูกทิ้ง — ยกเลิกบิล **และล้างคีย์กันบิลซ้ำ**
- *
- * คีย์จองคือ `restaurant:<บิล>:v<version>` ซึ่งผูกกับเนื้อหาของบิล ไม่ใช่กับความพยายาม
- * ครั้งนั้น · ถ้าปล่อยให้ออร์เดอร์ที่ถูกยกเลิกถือคีย์เดิมไว้ การกดส่งครัวรอบถัดไป **ที่
- * version เดิม** จะชน `uq_bms_orders_idempotency` แล้วโผล่เป็น error ดิบของ Postgres
- * (createOrder ไม่ได้ดัก 23505) → โต๊ะนั้นส่งครัวไม่ได้อีกเลยจนกว่าจะมีคนเพิ่ม/ลบรายการ
- * เพื่อดัน version · unique index ไม่นับ NULL จึงล้างคีย์แล้วจองใหม่ได้ทันที
- */
-async function releaseReservationOrder(tenantId: string, orderId: string) {
-  await cancelOrder(tenantId, orderId);
-  await query(
-    `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-    [tenantId, orderId]
-  );
-}
-
 export async function sendRestaurantKitchenRound(input: {
   tenantId: string;
   locationId: string;
@@ -454,97 +442,74 @@ export async function sendRestaurantKitchenRound(input: {
   actorUserId: string;
 }): Promise<{ status: "SENT"; check: Awaited<ReturnType<typeof getRestaurantCheck>>; kitchenTickets: number } | CreateOrderResult> {
   return withCheckLock(input.tenantId, input.checkId, async () => {
-    // เจตนา: **ไม่บังคับว่าต้องเป็นเครื่อง/กะเดียวกับที่เปิดโต๊ะ** — โต๊ะที่นั่งคาบเกี่ยว
-    // การเปลี่ยนกะเป็นเรื่องปกติของร้านอาหาร และคนเปิดโต๊ะ (แท็บเล็ตเด็กเสิร์ฟ) มักไม่ใช่
-    // เครื่องที่คิดเงิน · เดิมเทียบ pos_shift_id ตรง ๆ ผลคือพอปิดกะ โต๊ะที่ยังเปิดอยู่จะ
-    // ส่งครัว/คิดเงินไม่ได้ตลอดไป และสต็อกที่จองไว้ค้างโดยไม่มีทางปล่อย · ขอบเขตที่ยังบังคับ
-    // คือ "สาขาเดียวกัน" ซึ่งมาจากตัวเครื่อง ไม่ใช่จาก body
-    const checkResult = await query<any>(
-      `SELECT * FROM bms_restaurant_checks
-        WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'`,
-      [input.tenantId, input.checkId, input.locationId]
-    );
-    if (!checkResult.rowCount) throw new Error("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่ส่งครัวได้");
-    const check = checkResult.rows[0];
-    const items = await query<CheckItemRow>(
-      `SELECT * FROM bms_restaurant_check_items
-        WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
-        ORDER BY created_at, id`,
-      [input.tenantId, input.checkId]
-    );
-    if (!items.rowCount) throw new Error("ยังไม่มีรายการอาหารในบิล");
-    const unsent = items.rows.filter((item) => item.status === "NEW");
-    if (unsent.length === 0 && check.current_order_id && Number(check.reserved_version) === Number(check.version)) {
-      return { status: "SENT" as const, check: await getRestaurantCheck(input.tenantId, input.checkId), kitchenTickets: 0 };
-    }
-
-    if (check.current_order_id) {
-      const detached = await getClient();
-      try {
-        await beginTenantTx(detached, input.tenantId, { editorId: input.actorUserId });
-        await lockCheckInTx(detached, input.tenantId, input.checkId);
-        await detached.query(
-          `UPDATE bms_restaurant_checks
-              SET current_order_id = NULL, reserved_version = NULL, amount_due = 0, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
-          [input.tenantId, input.checkId]
-        );
-        await detached.query("COMMIT");
-      } catch (error) {
-        try { await detached.query("ROLLBACK"); } catch {}
-        throw error;
-      } finally {
-        detached.release();
-      }
-      await releaseReservationOrder(input.tenantId, check.current_order_id);
-    }
-
-    const reservationKey = `restaurant:${input.checkId}:v${check.version}`;
-    const created = await createOrder({
-      tenantId: input.tenantId,
-      channel: "pos",
-      items: items.rows.map(toOrderItem),
-      locationId: input.locationId,
-      posDeviceId: input.deviceId,
-      posShiftId: input.shiftId,
-      cashierUserId: input.actorUserId,
-      editorId: input.actorUserId,
-      idempotencyKey: reservationKey,
-      restaurantCheckId: input.checkId,
-    }).catch(async (error: any) => {
-      // อีก instance จองสต็อกของ version นี้ไปแล้ว (mutex ในโปรเซสกันได้แค่ instance เดียว)
-      // — ถ้าผลลัพธ์ปลายทางตรงกับที่คำขอนี้ต้องการอยู่แล้ว ให้ถือว่าสำเร็จ ไม่ใช่ error ดิบ
-      if (error?.code !== "23505") throw error;
-      return null;
-    });
-    if (created === null) {
-      const again = await query<{ current_order_id: string | null; version: number; reserved_version: number | null }>(
-        `SELECT current_order_id, version, reserved_version FROM bms_restaurant_checks
-          WHERE tenant_id = $1 AND id = $2`,
-        [input.tenantId, input.checkId]
-      );
-      const row = again.rows[0];
-      if (row?.current_order_id && Number(row.reserved_version) === Number(row.version)) {
-        return { status: "SENT" as const, check: await getRestaurantCheck(input.tenantId, input.checkId), kitchenTickets: 0 };
-      }
-      throw new Error("บิลนี้กำลังถูกส่งครัวจากอีกเครื่อง กรุณารีเฟรชแล้วลองใหม่");
-    }
-    if (created.status !== "CREATED") {
-      // ⚠️ ถ้ามาถึงตรงนี้หลังปล่อยออร์เดอร์เดิมไปแล้ว รายการที่ส่งครัวไปแล้วจะไม่มีสต็อกจอง
-      // อยู่ (ครัวทำอยู่แต่ระบบยังไม่กัน) และคิดเงินไม่ได้จนกว่าจะส่งครัวสำเร็จอีกครั้ง
-      // — ต้องบอกให้ชัด ไม่ปล่อยให้เห็นแค่รหัสสถานะ
-      if (check.current_order_id) {
-        console.error("[restaurant] จองสต็อกใหม่ไม่สำเร็จหลังปล่อยการจองเดิม", {
-          checkId: input.checkId, status: created.status,
-        });
-      }
-      return created;
-    }
-
     const client = await getClient();
     try {
       await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      // createOrderInTx และ finalizePosSale ล็อกกะก่อนสต็อกเสมอ การแทน reservation
+      // จึงต้องยึดลำดับเดียวกันก่อน cancelOrderInTx ไปแตะแถว inventory
+      await client.query(
+        `SELECT 1 FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE`,
+        [input.tenantId, input.shiftId]
+      );
       await lockCheckInTx(client, input.tenantId, input.checkId);
+      // ทุกขั้นตั้งแต่คืน reservation รุ่นก่อนจนผูก order รุ่นใหม่อยู่ใน transaction เดียวกัน
+      // ถ้ารอบใหม่จองไม่ได้ ROLLBACK จะเก็บ order+reservation เดิมไว้ให้ครัวที่กำลังทำต่อได้
+      const checkResult = await client.query<any>(
+        `SELECT * FROM bms_restaurant_checks
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
+          FOR UPDATE`,
+        [input.tenantId, input.checkId, input.locationId]
+      );
+      if (!checkResult.rowCount) throw new Error("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่ส่งครัวได้");
+      const check = checkResult.rows[0];
+      const items = await client.query<CheckItemRow>(
+        `SELECT * FROM bms_restaurant_check_items
+          WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
+          ORDER BY created_at, id
+          FOR UPDATE`,
+        [input.tenantId, input.checkId]
+      );
+      if (!items.rowCount) throw new Error("ยังไม่มีรายการอาหารในบิล");
+      const unsent = items.rows.filter((item) => item.status === "NEW");
+      if (unsent.length === 0 && check.current_order_id
+          && Number(check.reserved_version) === Number(check.version)) {
+        await client.query("COMMIT");
+        return {
+          status: "SENT" as const,
+          check: await getRestaurantCheck(input.tenantId, input.checkId),
+          kitchenTickets: 0,
+        };
+      }
+
+      if (check.current_order_id) {
+        const cancelled = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
+        if (!cancelled) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่สร้างรอบใหม่ได้");
+        // คีย์ผูกกับเนื้อหา check version เดิม ต้องคืนพร้อม order ที่ถูกแทนที่
+        await client.query(
+          `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
+          [input.tenantId, check.current_order_id]
+        );
+      }
+
+      const reservationKey = `restaurant:${input.checkId}:v${check.version}`;
+      const created = await createOrderInTx(client, {
+        tenantId: input.tenantId,
+        channel: "pos",
+        items: items.rows.map(toOrderItem),
+        locationId: input.locationId,
+        posDeviceId: input.deviceId,
+        posShiftId: input.shiftId,
+        cashierUserId: input.actorUserId,
+        editorId: input.actorUserId,
+        idempotencyKey: reservationKey,
+        restaurantCheckId: input.checkId,
+      });
+      if (created.status !== "CREATED") {
+        await client.query("ROLLBACK");
+        return created;
+      }
+
       const round = await client.query<{ next_round: number }>(
         `SELECT COALESCE(MAX(round_no), 0) + 1 AS next_round
            FROM bms_restaurant_check_items
@@ -605,7 +570,6 @@ export async function sendRestaurantKitchenRound(input: {
       };
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch {}
-      await releaseReservationOrder(input.tenantId, created.orderId);
       throw error;
     } finally {
       client.release();
@@ -669,28 +633,36 @@ export async function cancelRestaurantCheck(input: {
   reason: string;
 }) {
   return withCheckLock(input.tenantId, input.checkId, async () => {
-    // ยกเลิกได้จากทั้ง OPEN และ CLOSING · CLOSING เป็นสถานะชั่วคราวระหว่างเก็บเงิน ถ้ามี
-    // อะไรล้มค้างไว้ (โปรเซสตายกลางทาง) โต๊ะนั้นต้องมีทางออก ไม่ใช่ค้างใช้งานไม่ได้ตลอดไป
-    // · แต่ห้ามยกเลิกบิลที่เก็บเงินไปแล้ว — เงื่อนไข NOT EXISTS ข้างล่างคือด่านนั้น
-    const current = await query<{ current_order_id: string | null }>(
-      `SELECT current_order_id FROM bms_restaurant_checks c
-        WHERE c.tenant_id = $1 AND c.id = $2 AND c.location_id = $3
-          AND c.status IN ('OPEN','CLOSING')
-          AND NOT EXISTS (
-            SELECT 1 FROM bms_orders o
-             WHERE o.tenant_id = c.tenant_id AND o.restaurant_check_id = c.id
-               AND o.status NOT IN ('PENDING','CANCELLED')
-          )`,
-      [input.tenantId, input.checkId, input.locationId]
-    );
-    if (!current.rowCount) throw new Error("บิลนี้ยกเลิกไม่ได้ (ปิดไปแล้วหรือเก็บเงินแล้ว)");
-    if (current.rows[0].current_order_id) {
-      await releaseReservationOrder(input.tenantId, current.rows[0].current_order_id!);
-    }
     const client = await getClient();
+    let cancelledOrderId: string | null = null;
     try {
       await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
       await lockCheckInTx(client, input.tenantId, input.checkId);
+      // order, reservation, kitchen tickets, check และ audit ต้องยกเลิกพร้อมกัน
+      // ไม่เช่นนั้น transaction หลังล้มจะเหลือโต๊ะ OPEN ที่ไม่มี stock reservation รองรับ
+      const current = await client.query<{ current_order_id: string | null }>(
+        `SELECT current_order_id FROM bms_restaurant_checks c
+          WHERE c.tenant_id = $1 AND c.id = $2 AND c.location_id = $3
+            AND c.status IN ('OPEN','CLOSING')
+            AND NOT EXISTS (
+              SELECT 1 FROM bms_orders o
+               WHERE o.tenant_id = c.tenant_id AND o.restaurant_check_id = c.id
+                 AND o.status NOT IN ('PENDING','CANCELLED')
+            )
+          FOR UPDATE`,
+        [input.tenantId, input.checkId, input.locationId]
+      );
+      if (!current.rowCount) throw new Error("บิลนี้ยกเลิกไม่ได้ (ปิดไปแล้วหรือเก็บเงินแล้ว)");
+      cancelledOrderId = current.rows[0].current_order_id;
+      if (cancelledOrderId) {
+        const cancelled = await cancelOrderInTx(client, input.tenantId, cancelledOrderId);
+        if (!cancelled) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่ยกเลิกได้");
+        await client.query(
+          `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
+          [input.tenantId, cancelledOrderId]
+        );
+      }
       await client.query(
         `UPDATE bms_restaurant_kitchen_tickets
             SET status = 'CANCELLED', updated_at = now()
@@ -711,6 +683,16 @@ export async function cancelRestaurantCheck(input: {
           JSON.stringify({ reason: input.reason.trim().slice(0, 300) })]
       );
       await client.query("COMMIT");
+      if (cancelledOrderId) {
+        await afterOrderCancellationCommitted(input.tenantId, cancelledOrderId).catch((error) => {
+          // transaction ยกเลิกเสร็จแล้ว งานแจ้งเตือนหลัง commit ล้มต้องไม่หลอก POS ว่าบิลยังอยู่
+          console.error("[restaurant] งานหลังยกเลิก order ไม่สำเร็จ", {
+            checkId: input.checkId,
+            orderId: cancelledOrderId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
       return { status: "CANCELLED" as const };
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch {}
@@ -740,67 +722,94 @@ export async function settleRestaurantCheck(input: {
   payments: PosPaymentInput[];
 }): Promise<PosSaleResult> {
   return withCheckLock(input.tenantId, input.checkId, async () => {
-    // เงื่อนไขเดียวคือ "สาขาเดียวกัน" — เด็กเสิร์ฟเปิดโต๊ะจากแท็บเล็ต แคชเชียร์คิดเงินที่
-    // เคาน์เตอร์ และกะเปลี่ยนระหว่างที่ลูกค้ายังนั่งอยู่ ทั้งสามอย่างเป็นเรื่องปกติของร้านอาหาร
-    // เดิมบังคับ pos_device_id + pos_shift_id ของ *ตอนเปิดโต๊ะ* ผลคือโต๊ะที่คาบเกี่ยว
-    // การเปลี่ยนกะหรือคิดเงินคนละเครื่อง คิดเงินไม่ได้เลยและสต็อกที่จองไว้ค้างถาวร
-    const checkResult = await query<any>(
-      `SELECT * FROM bms_restaurant_checks
-        WHERE tenant_id = $1 AND id = $2 AND location_id = $3
-          AND status IN ('OPEN','CLOSING')`,
-      [input.tenantId, input.checkId, input.locationId]
-    );
-    if (!checkResult.rowCount) throw new Error("บิลนี้ไม่ได้เปิดอยู่ในสาขาของเครื่องนี้");
-    const check = checkResult.rows[0];
-    if (!check.current_order_id || Number(check.reserved_version) !== Number(check.version)) {
-      throw new Error("มีรายการที่ยังไม่ส่งครัว กรุณาส่งครัวก่อนคิดเงิน");
-    }
-    const items = await query<CheckItemRow>(
-      `SELECT * FROM bms_restaurant_check_items
-        WHERE tenant_id = $1 AND check_id = $2 AND status = 'SENT'
-        ORDER BY created_at, id`,
-      [input.tenantId, input.checkId]
-    );
-    // ⚠️ ประทับเครื่อง/กะ/คนขายใหม่ก่อนเรียกเก็บเงิน
-    //
-    // `finalizePosSale()` ล็อกบิลด้วย (order, กะ, เครื่อง, **cashier_user_id**) — ออร์เดอร์
-    // จองสต็อกถูกสร้างตอนส่งครัวโดยคนที่รับออร์เดอร์ ถ้าไม่ประทับใหม่ คนละคนคิดเงิน =
-    // "บิลไม่ตรงกับเครื่อง กะ หรือพนักงานผู้ขาย" ต่อหน้าลูกค้า (กับดักเดียวกับบิลมัดจำ 9.0)
-    // · และการขายต้องเป็นของกะที่รับเงินจริง ไม่ใช่กะที่รับออร์เดอร์
-    const restamped = await query<{ idempotency_key: string | null }>(
-      `UPDATE bms_orders
-          SET pos_device_id = $3, pos_shift_id = $4, cashier_user_id = $5, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'
-          AND restaurant_check_id = $6
-        RETURNING idempotency_key`,
-      [input.tenantId, check.current_order_id, input.deviceId, input.shiftId,
-        input.actorUserId, input.checkId]
-    );
-    if (!restamped.rowCount) {
-      const settled = await query<{ status: string }>(
-        `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
-        [input.tenantId, check.current_order_id]
+    // Prepare settlement in one locked tenant transaction. The process mutex above only protects
+    // this instance; without the xact advisory lock two registers on different instances could
+    // overwrite cashier/shift on the same PENDING order immediately before finalizePosSale locks it.
+    let key = "";
+    let items: { rows: CheckItemRow[] } = { rows: [] };
+    const prepare = await getClient();
+    try {
+      await beginTenantTx(prepare, input.tenantId, { editorId: input.actorUserId });
+      const shift = await prepare.query(
+        `SELECT 1 FROM bms_pos_shifts
+          WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4
+            AND status = 'OPEN'
+          FOR KEY SHARE`,
+        [input.tenantId, input.shiftId, input.deviceId, input.locationId]
       );
-      throw new Error(`บิลจองของโต๊ะนี้อยู่สถานะ ${settled.rows[0]?.status ?? "ไม่พบ"} คิดเงินซ้ำไม่ได้`);
-    }
+      if (!shift.rowCount) throw new Error("กะของเครื่องนี้ไม่ได้เปิดอยู่");
+      await lockCheckInTx(prepare, input.tenantId, input.checkId);
+      const checkResult = await prepare.query<any>(
+        `SELECT c.*, o.status AS order_status, o.idempotency_key AS order_key,
+                o.pos_device_id AS order_device_id, o.pos_shift_id AS order_shift_id,
+                o.cashier_user_id AS order_cashier_user_id
+           FROM bms_restaurant_checks c
+           JOIN bms_orders o
+             ON o.tenant_id = c.tenant_id AND o.id = c.current_order_id
+          WHERE c.tenant_id = $1 AND c.id = $2 AND c.location_id = $3
+            AND c.status IN ('OPEN','CLOSING','PAID')
+          FOR UPDATE OF c, o`,
+        [input.tenantId, input.checkId, input.locationId]
+      );
+      if (!checkResult.rowCount) throw new Error("บิลนี้ไม่ได้เปิดอยู่ในสาขาของเครื่องนี้");
+      const check = checkResult.rows[0];
+      if (!check.current_order_id || Number(check.reserved_version) !== Number(check.version)) {
+        throw new Error("มีรายการที่ยังไม่ส่งครัว กรุณาส่งครัวก่อนคิดเงิน");
+      }
+      key = String(check.order_key ?? "").trim();
+      if (!key) throw new Error("บิลจองนี้ไม่มี idempotency key จึงไม่สามารถเก็บเงินอย่างปลอดภัยได้");
 
-    // คีย์กันบิลซ้ำต้องเป็น **คีย์ของออร์เดอร์จองที่กำลังจะเก็บเงินจริง** อ่านจากแถวนั้นตรง ๆ
-    //
-    // เดิมอ่านจาก `settlement_idempotency_key` ที่เก็บไว้ก่อน แล้วค่อย fallback เป็นคีย์ที่
-    // คำนวณจาก version · ทั้งสองทางเป็นคนละแหล่งกับความจริง: ถ้าเคยกดคิดเงินแล้วล้ม
-    // (เช่นยอดไม่ตรง) แล้วลูกค้าสั่งเพิ่ม → version ขยับ → ส่งครัวใหม่ = ออร์เดอร์จองใบใหม่
-    // คีย์ใหม่ ส่วนคีย์เก่าถูกปล่อยว่างไปกับใบที่ยกเลิก · การกดคิดเงินรอบถัดไปด้วยคีย์เก่าจึง
-    // **ไม่ชนอะไรเลยแล้ว recordPosSale สร้างออร์เดอร์ใบที่สอง** = จองสต็อกซ้ำ ใบจองเดิมค้าง
-    // PENDING ตลอดไป · อ่านจากแถวจึง drift ไม่ได้โดยโครงสร้าง
-    const key = String(restamped.rows[0].idempotency_key
-      || `restaurant:${input.checkId}:v${check.version}`);
-    await query(
-      `UPDATE bms_restaurant_checks
-          SET status = 'CLOSING', settlement_idempotency_key = $3,
-              pos_device_id = $4, pos_shift_id = $5, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','CLOSING')`,
-      [input.tenantId, input.checkId, key, input.deviceId, input.shiftId]
-    );
+      if ((check.status === "CLOSING" || check.status === "PAID") && (
+        check.order_device_id !== input.deviceId
+        || check.order_shift_id !== input.shiftId
+        || check.order_cashier_user_id !== input.actorUserId
+      )) {
+        throw new Error("บิลนี้ถูกคิดเงินที่เครื่องอื่นแล้ว กรุณาเปิดใบเสร็จจากเครื่องเดิม");
+      }
+
+      if (check.order_status === "PENDING") {
+        // CLOSING may be an idempotent retry after a lost response. Only the same register request
+        // may continue it; another cashier/device must wait instead of stealing the order identity.
+        const restamped = await prepare.query(
+          `UPDATE bms_orders
+              SET pos_device_id = $3, pos_shift_id = $4, cashier_user_id = $5,
+                  idempotency_key = COALESCE(idempotency_key, $7), updated_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'
+              AND restaurant_check_id = $6`,
+          [input.tenantId, check.current_order_id, input.deviceId, input.shiftId,
+            input.actorUserId, input.checkId, key]
+        );
+        if (!restamped.rowCount) throw new Error("บิลจองเปลี่ยนสถานะระหว่างเริ่มคิดเงิน");
+      } else if (!(
+        (check.status === "CLOSING" || check.status === "PAID")
+        && check.order_status === "COMPLETED"
+      )) {
+        throw new Error(`บิลจองของโต๊ะนี้อยู่สถานะ ${check.order_status ?? "ไม่พบ"} คิดเงินซ้ำไม่ได้`);
+      }
+
+      items = await prepare.query<CheckItemRow>(
+        `SELECT * FROM bms_restaurant_check_items
+          WHERE tenant_id = $1 AND check_id = $2 AND status = 'SENT'
+          ORDER BY created_at, id`,
+        [input.tenantId, input.checkId]
+      );
+      if (!items.rows.length) throw new Error("บิลนี้ไม่มีรายการที่ส่งครัวแล้ว");
+      if (check.status !== "PAID") {
+        await prepare.query(
+          `UPDATE bms_restaurant_checks
+              SET status = 'CLOSING', settlement_idempotency_key = $3,
+                  pos_device_id = $4, pos_shift_id = $5, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','CLOSING')`,
+          [input.tenantId, input.checkId, key, input.deviceId, input.shiftId]
+        );
+      }
+      await prepare.query("COMMIT");
+    } catch (error) {
+      try { await prepare.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      prepare.release();
+    }
 
     // บิลค้างที่ CLOSING แก้รายการไม่ได้และยกเลิกไม่ได้ — ถ้าการเก็บเงิน throw (เน็ต/ฐานล้ม)
     // แล้วไม่คืนสถานะ โต๊ะนั้นจะค้างใช้งานไม่ได้ตลอดไป จึงคืนเป็น OPEN ทุกทางออกที่ไม่ใช่ SOLD
@@ -822,18 +831,28 @@ export async function settleRestaurantCheck(input: {
       try {
         await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
         await lockCheckInTx(client, input.tenantId, input.checkId);
-        await client.query(
+        const closed = await client.query(
           `UPDATE bms_restaurant_checks
               SET status = 'PAID', closed_by = $3, closed_at = now(), updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'CLOSING'`,
+            WHERE tenant_id = $1 AND id = $2 AND status = 'CLOSING'
+          RETURNING id`,
           [input.tenantId, input.checkId, input.actorUserId]
         );
-        await client.query(
-          `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-           VALUES ($1,$2,'restaurant.check_paid',$3,$4::jsonb)`,
-          [input.tenantId, `user:${input.actorUserId}`, input.checkId,
-            JSON.stringify({ orderId: result.orderId, amount: result.total })]
-        );
+        if (closed.rowCount) {
+          await client.query(
+            `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+             VALUES ($1,$2,'restaurant.check_paid',$3,$4::jsonb)`,
+            [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+              JSON.stringify({ orderId: result.orderId, amount: result.total })]
+          );
+        } else {
+          const alreadyPaid = await client.query(
+            `SELECT 1 FROM bms_restaurant_checks
+              WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'`,
+            [input.tenantId, input.checkId]
+          );
+          if (!alreadyPaid.rowCount) throw new Error("สถานะบิลเปลี่ยนระหว่างยืนยันการชำระเงิน");
+        }
         await client.query("COMMIT");
       } catch (error) {
         try { await client.query("ROLLBACK"); } catch {}

@@ -46,6 +46,7 @@ import {
 const TAG = "commission-test";
 const SKU = `FAKE-${TAG}-A`;
 const SKU_HOT = `FAKE-${TAG}-HOT`;
+const SKU_PACK = `FAKE-${TAG}-PACK`;
 const SIZE = "M";
 const PIN = "3155";
 /**
@@ -86,7 +87,7 @@ test("setup: two products at ฿1,000, a register, an open shift", async () => {
   // ปิดโปรแกรมสมาชิกไว้ ไม่ให้ส่วนลดชั้น/แต้มมากวนตัวเลขคอม
   await query(`UPDATE bms_loyalty_settings SET enabled = FALSE WHERE tenant_id = $1`, [tenantId]);
 
-  for (const [sku, category] of [[SKU, null], [SKU_HOT, `${TAG}-CAT`]] as Array<[string, string | null]>) {
+  for (const [sku, category] of [[SKU, null], [SKU_HOT, `${TAG}-CAT`], [SKU_PACK, null]] as Array<[string, string | null]>) {
     await query(
       `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category, category)
        VALUES ($1,$2,$3,1000,TRUE,'V',$4)
@@ -103,6 +104,14 @@ test("setup: two products at ฿1,000, a register, an open shift", async () => {
     );
   }
   await query(`DELETE FROM bms_commission_rules WHERE tenant_id = $1`, [tenantId]);
+  await query(
+    `INSERT INTO bms_product_packs
+       (tenant_id, product_sku, size, pack_code, unit_name, base_qty, price, active)
+     VALUES ($1,$2,$3,'BOX','กล่อง',10,800,TRUE)
+     ON CONFLICT (tenant_id, product_sku, pack_code) DO UPDATE
+       SET size = EXCLUDED.size, base_qty = 10, price = 800, active = TRUE`,
+    [tenantId, SKU_PACK, SIZE]
+  );
 
   const device = await upsertPosDevice(tenantId, {
     locationId, code: `${TAG}-REG`, name: `FAKE ${TAG} register`, active: true,
@@ -185,6 +194,23 @@ test("a bill-level discount is spread across lines, so commission follows the mo
   // 60 + 100 (ก่อนหน้า) + 2% ของ 1,500 = 30
   assert.equal(row?.commission, 160 + 30,
     "ถ้าไม่เกลี่ยส่วนลด จะจ่ายคอมบนยอดที่ร้านไม่ได้รับจริง");
+});
+
+test("commission follows the sold pack amount instead of base-unit shelf price", async () => {
+  const before = await mine();
+  const sale = await recordPosSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId,
+    idempotencyKey: key("pack"),
+    lines: [{ sku: SKU_PACK, size: SIZE, packQty: 1, packCode: "BOX" }],
+    payments: [{ method: "CASH", amount: 800, cashTendered: 800 }],
+  } as any);
+  assert.equal(sale.status, "SOLD", JSON.stringify(sale));
+
+  const after = await mine();
+  assert.equal(Math.round((after!.grossSales - before!.grossSales) * 100) / 100, 800,
+    "กล่อง 10 ชิ้นราคา 800 ต้องไม่กลายเป็นยอดหน้าชั้น 10,000");
+  assert.equal(Math.round((after!.commission - before!.commission) * 100) / 100, 16,
+    "คอม 2% ต้องคิดจากราคา pack ที่รับเงินจริง");
 });
 
 test("returned goods take their commission back", async () => {

@@ -165,6 +165,7 @@ export type ProductModifier = {
   size: string;
   code: string;
   name: string;
+  priceDelta: number;
   active: boolean;
   items: Array<{ sku: string; size: string; qtyDelta: number }>;
 };
@@ -175,7 +176,7 @@ export async function listProductModifiers(
   size?: string | null
 ): Promise<ProductModifier[]> {
   const result = await query<any>(
-    `SELECT m.id, m.product_sku, m.size, m.code, m.name, m.active,
+    `SELECT m.id, m.product_sku, m.size, m.code, m.name, m.price_delta, m.active,
             COALESCE(jsonb_agg(jsonb_build_object(
               'sku', mi.component_sku, 'size', mi.component_size, 'qtyDelta', mi.qty_delta
             ) ORDER BY mi.component_sku, mi.component_size)
@@ -195,6 +196,7 @@ export async function listProductModifiers(
     size: row.size,
     code: row.code,
     name: row.name,
+    priceDelta: Number(row.price_delta ?? 0),
     active: Boolean(row.active),
     items: Array.isArray(row.items) ? row.items : [],
   }));
@@ -208,6 +210,7 @@ export async function upsertProductModifier(
     size: string;
     code: string;
     name: string;
+    priceDelta?: number | null;
     active?: boolean | null;
     items: Array<{ sku: string; size: string; qtyDelta: number }>;
   },
@@ -217,12 +220,16 @@ export async function upsertProductModifier(
   const size = String(input.size ?? "").trim();
   const code = String(input.code ?? "").trim().toUpperCase();
   const name = String(input.name ?? "").trim();
+  const priceDelta = Math.round(Number(input.priceDelta ?? 0) * 100) / 100;
   const items = (input.items ?? []).map((item) => ({
     sku: String(item.sku ?? "").trim(),
     size: String(item.size ?? "").trim(),
     qtyDelta: Math.trunc(Number(item.qtyDelta)),
   }));
   if (!productSku || !size || !code || !name) throw new Error("ข้อมูล Modifier ไม่ครบ");
+  if (!Number.isFinite(priceDelta) || priceDelta < 0 || priceDelta > 9999999999.99) {
+    throw new Error("ราคาเพิ่มของ Modifier ต้องเป็นจำนวนตั้งแต่ 0 ขึ้นไป");
+  }
   if (items.length === 0 || items.some((item) =>
     !item.sku || !item.size || !Number.isSafeInteger(item.qtyDelta) || item.qtyDelta === 0
   )) throw new Error("ผลกระทบวัตถุดิบของ Modifier ไม่ถูกต้อง");
@@ -247,13 +254,14 @@ export async function upsertProductModifier(
     }
     const modifier = await client.query<{ id: string }>(
       `INSERT INTO bms_product_modifiers
-         (id, tenant_id, product_sku, size, code, name, active)
-       VALUES (COALESCE($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,COALESCE($7,TRUE))
+         (id, tenant_id, product_sku, size, code, name, price_delta, active)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7,COALESCE($8,TRUE))
        ON CONFLICT (id) DO UPDATE SET
          size = EXCLUDED.size, code = EXCLUDED.code, name = EXCLUDED.name,
-         active = COALESCE($7, bms_product_modifiers.active), updated_at = now()
+         price_delta = EXCLUDED.price_delta,
+         active = COALESCE($8, bms_product_modifiers.active), updated_at = now()
        RETURNING id`,
-      [modifierId, tenantId, productSku, size, code, name, input.active ?? null]
+      [modifierId, tenantId, productSku, size, code, name, priceDelta, input.active ?? null]
     );
     modifierId = modifier.rows[0].id;
     await client.query(

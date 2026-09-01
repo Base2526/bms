@@ -640,7 +640,7 @@ Migration `7.30` also adds validated AI language/ordering/required-field/short-r
 `bms_app` grants. `bms_conversations.ai_state` is non-authoritative conversation memory; orders and
 stock remain backend sources of truth.
 
-**Multi-store stock capabilities (`9.40`–`9.41`)** — `bms_store_capabilities` stores manual tenant
+**Multi-store stock capabilities (`9.40`–`9.41`, `9.45`)** — `bms_store_capabilities` stores manual tenant
 overrides on top of archetype presets. `bms_product_stock_policies` stores product-level stock mode,
 integer base unit, lot/expiry/FEFO flags, kitchen station, and optional scale mapping. Versioned
 `bms_product_recipes`/items and product modifiers describe derived consumption. New orders snapshot
@@ -648,6 +648,13 @@ the resolved component lines into `bms_order_item_stock_consumption`; `bms_order
 that snapshot and preserves direct/bundle fallback only for historical rows. `bms_kitchen_tickets`
 and `bms_inventory_wastage` are tenant-scoped operational ledgers. Every new table has forced RLS,
 `bms_app` grants, and composite tenant foreign keys.
+
+`9.45` adds non-negative `bms_product_modifiers.price_delta`. It is a surcharge per sold menu unit,
+resolved from active tenant catalog rows during order creation and copied into the order item's
+sale-time `pricing_snapshot`; POS payloads never provide a modifier price. The same migration seeds
+the restaurant floor, kitchen-transition and whole-check-cancel permissions for operational roles.
+Modifier consumption is intentionally recipe-relative; order creation rejects modifier codes on
+DIRECT/PACK products so pricing and stock snapshots cannot diverge.
 
 **`bms_ai_quality_reviews` (`7.31__bms_ai_quality_review.sql`)** — a tenant-scoped review queue that
 references the existing Inbox conversation and AI message. It stores only automatic outcome/reason
@@ -831,13 +838,17 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`)
+## Restaurant POS (`9.44`–`9.45`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
 `bms_restaurant_checks` is the open dine-in service state, with a partial unique index allowing only
 one OPEN/CLOSING check per table. `version` changes with cart edits and `reserved_version` records the
 version represented by `current_order_id`; checkout requires equality so unsent food cannot bypass
-stock reservation or the kitchen.
+stock reservation or the kitchen. Replacing that order for a later kitchen round is atomic: the old
+PENDING order is cancelled and the new whole-check order is created through `createOrderInTx()` in
+the same tenant transaction. An insufficient new basket therefore rolls back to the prior order and
+reservation instead of leaving already-cooking lines unexplained. Check cancellation likewise closes
+the order, reservation, tickets, check and audit in one transaction.
 
 `bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
 `bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order
@@ -846,3 +857,7 @@ tickets introduced in `9.40`; because those tickets exist before any sale, the k
 preserve traceability and to suppress duplicate kitchen-ticket creation during POS fulfilment. All
 five new tables have tenant RLS and `bms_app` grants; editable floor/check records use revision
 triggers, while the high-volume ticket state is represented by its audit events.
+
+`9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
+POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
+schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

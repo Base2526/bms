@@ -876,6 +876,25 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   lot rows are short of the summary row. Lastly the two capability mutations checked only for an
   admin session while the screen hid their switches behind `product.edit` — a hidden button is not a
   gate, and these switches change how every bill in the shop is deducted.
+- **Atomic restaurant round replacement (2026-09-01, no migration)** — sending a later kitchen
+  round no longer commits the release of the previous PENDING order before attempting its
+  replacement. `createOrderInTx()` now exposes the existing order builder to a caller-owned tenant
+  transaction, so the old order/key/reservation, the new whole-check reservation, new kitchen
+  tickets and the check link commit or roll back together. An insufficient later round keeps the
+  earlier reservation intact for food already being prepared. Whole-check cancellation now applies
+  the same boundary to order cancellation, released stock, stopped tickets, the closed check and its
+  audit. The public `createOrder()` contract and ordinary callers remain unchanged.
+- **Restaurant core completion (`9.45`, 2026-09-01)** — modifiers now carry a server-owned,
+  non-negative surcharge per menu unit. `createOrderInTx()` resolves it from the active tenant
+  catalog and snapshots it into line pricing, preserving VAT/receipt/commission/return arithmetic;
+  `/admin/stock-models` edits it and `/pos/restaurant` previews it. Restaurant checkout now accepts
+  split tender through the existing POS payment settlement, and its KDS auto-refreshes the
+  branch-scoped queue every five seconds. Floor setup, kitchen transitions and whole-check
+  cancellation use new semantic permissions instead of borrowing `pos.device.manage`, `order.ship`
+  and blanket `pos.sell`. A follow-up hardening pass locks the check and reservation order across
+  instances during settlement, makes paid-response replay same-register-only, rejects stock
+  modifiers outside RECIPE instead of ignoring their ingredient deltas, and makes commission use
+  named-pack revenue rather than base-unit multiplication.
 - **Approver visibility at the counter (2026-08-31, no migration, no new permission)** — every
   approver picker at `/pos` filtered the staff list on "has a PIN" alone, so a cashier could pick a
   colleague who could not approve and only found out after that person had typed their PIN in front

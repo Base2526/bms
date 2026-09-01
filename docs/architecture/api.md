@@ -153,9 +153,9 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   locked tenant-wide and bound to a normalized request hash; exact retries replay, while reusing the
   key with a different payload returns `409 IDEMPOTENCY_CONFLICT`.
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
-- `GET|POST /api/pos/restaurant/floor` (`9.44`) — dining areas and tables of the device's branch.
-  `POST` seeds a default floor and needs PIN + `pos.device.manage`; the branch is never read from the
-  body.
+- `GET|POST /api/pos/restaurant/floor` (`9.44`, `9.45`) — dining areas and tables of the device's
+  branch. `POST` seeds a default floor and needs PIN + `restaurant.floor.manage`; the branch is never
+  read from the body.
 - `POST /api/pos/restaurant/checks` (`9.44`) — open a dine-in check on a table. PIN + `pos.sell` and
   an open shift on the calling device; a second open check on the same table is `409` from the
   partial unique index, not a duplicate bill.
@@ -163,12 +163,18 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `add_item`, `remove_item`, `send_kitchen`, `move`, `cancel`, `settle`. Every action is scoped to the
   device's branch but **deliberately not to the device or shift that opened the check** — a check is
   opened on a waiter's tablet, sent from anywhere, and paid at the register, possibly after a shift
-  change. `send_kitchen` reserves stock by creating/refreshing one PENDING POS order; `settle`
-  re-stamps that order's device/shift/cashier and closes it through `recordPosSale()`, so money,
-  stock, drawer and tax documents keep the single POS settlement path.
+  change. `cancel` needs `restaurant.check.cancel` (`9.45`); the other actions stay on `pos.sell`.
+  `send_kitchen` reserves stock by creating/refreshing one PENDING POS order — cancelling the
+  superseded order and creating its replacement share one transaction, so a round that cannot be
+  reserved leaves the previous reservation intact. `settle` accepts split tender, re-stamps that
+  order's device/shift/cashier under a check + order row lock, and closes it through
+  `recordPosSale()`, so money, stock, drawer and tax documents keep the single POS settlement path;
+  a replayed response is honoured only for the same device, shift and cashier.
 - `GET /api/pos/kitchen/tickets` and `POST /api/pos/kitchen/tickets/[id]/status` (`9.44`) — the
   register-side kitchen queue. Both are scoped to the device's branch (the admin board at
-  `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `order.ship` and never moves stock.
+  `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `restaurant.kitchen.update`
+  (`9.45`, previously `order.ship`) and never moves stock. The register board polls this read every
+  five seconds while it is open.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift
@@ -338,7 +344,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing |
 | `bmsPos.ts` | POS back-office: locations, devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Actual counter selling never goes through GraphQL — see `/api/pos/*` above |
-| `bmsStockCapabilities.ts` | Multi-store stock model (`9.40`–`9.41`): tenant capability overrides (`bmsStoreCapabilities`, `bmsUpsertStoreCapability`, `bmsResetStoreCapability`), per-product stock policies (`bmsProductStockPolicy`, `bmsUpsertProductStockPolicy`), versioned recipes and modifiers (`bmsProductRecipes`, `bmsProductModifiers`, `bmsUpsertProductRecipe`, `bmsUpsertProductModifier`), kitchen tickets (`bmsKitchenTickets`, `bmsUpdateKitchenTicketStatus`) and the wastage ledger (`bmsInventoryWastage`, `bmsRecordInventoryWastage`). No new permission: reads use `product.view` / `order.view`, model edits use `product.edit`, ticket moves use `order.ship`, and a write-off uses `stock.adjust` |
+| `bmsStockCapabilities.ts` | Multi-store stock model (`9.40`–`9.41`): tenant capability overrides (`bmsStoreCapabilities`, `bmsUpsertStoreCapability`, `bmsResetStoreCapability`), per-product stock policies (`bmsProductStockPolicy`, `bmsUpsertProductStockPolicy`), versioned recipes and modifiers (`bmsProductRecipes`, `bmsProductModifiers`, `bmsUpsertProductRecipe`, `bmsUpsertProductModifier`), kitchen tickets (`bmsKitchenTickets`, `bmsUpdateKitchenTicketStatus`) and the wastage ledger (`bmsInventoryWastage`, `bmsRecordInventoryWastage`). No new permission: reads use `product.view` / `order.view`, model edits use `product.edit`, ticket moves use `restaurant.kitchen.update` (`9.45`, previously `order.ship`), and a write-off uses `stock.adjust`. `9.45` adds `priceDelta` to `BmsProductModifier`/`BmsModifierInput` — a server-owned, non-negative surcharge per sold menu unit that order creation re-resolves from the catalog; a client never supplies a modifier price |
 
 Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
 `getTenantId(ctx)` → call the matching `lib/bms/*.ts` function → optionally `audit(ctx, ...)`.

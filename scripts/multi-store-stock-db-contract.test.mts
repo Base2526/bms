@@ -93,6 +93,7 @@ test("setup a throwaway restaurant with an active recipe and modifier", async ()
     size: SIZE,
     code: "EXTRA_EGG",
     name: "Extra egg",
+    priceDelta: 15,
     items: [{ sku: EGG, size: SIZE, qtyDelta: 1 }],
   });
   await upsertProductStockPolicy(tenantId, {
@@ -147,6 +148,8 @@ test("a scale-shaped code that maps to nothing is still looked up as an ordinary
 });
 
 test("createOrder reserves recipe ingredients and stores one immutable snapshot", async () => {
+  const menuHit = await resolvePosScan(tenantId, MENU, { locationId, size: SIZE, packCode: "BASE" });
+  assert.equal(menuHit?.modifiers[0]?.priceDelta, 15, "register preview reads the catalog surcharge");
   const result = await createOrder({
     tenantId,
     channel: "pos",
@@ -156,6 +159,9 @@ test("createOrder reserves recipe ingredients and stores one immutable snapshot"
   assert.equal(result.status, "CREATED", JSON.stringify(result));
   if (result.status !== "CREATED") return;
   orderId = result.orderId;
+  assert.equal(result.total, 190, "2 × (menu 80 + extra egg 15)");
+  assert.equal(result.items[0].receiptUnitPrice, 95);
+  assert.equal(result.items[0].pricingSnapshot.modifierUnitPrice, 15);
 
   assert.equal(await reserved(RICE), 400);
   assert.equal(await reserved(MEAT), 200);

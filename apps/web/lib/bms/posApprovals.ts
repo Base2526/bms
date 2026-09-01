@@ -68,6 +68,9 @@ const ACTION_LABEL_TH: Record<string, string> = {
   "order.return": "คืนสินค้า",
   "member.manage": "สมัครสมาชิก",
   "storecredit.redeem": "รับบัตรของขวัญ",
+  "restaurant.floor.manage": "ตั้งค่าผังโต๊ะ",
+  "restaurant.kitchen.update": "อัปเดตคิวครัว",
+  "restaurant.check.cancel": "ยกเลิกบิลโต๊ะ",
 };
 
 export function posActionLabel(permission: string): string {

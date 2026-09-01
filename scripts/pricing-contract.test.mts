@@ -73,7 +73,26 @@ test("pricing snapshot ผิดรูปถูกลดเหลือกติ
       discountPct: 10,
     }],
     promotion: null,
+    modifierUnitPrice: 0,
   });
+});
+
+test("modifier surcharge survives promotion repricing and is refunded per remaining menu unit", () => {
+  const result = priceRemainingLines([{
+    id: 1, sku: "COFFEE", size: "CUP", qty: 4, packQty: 4, returnedPackQty: 0,
+    // Shelf menu 100 + extra shot 20. Promotion applies to the menu, not the add-on.
+    receiptUnitPrice: 120, packUnitPrice: null,
+    pricingSnapshot: {
+      source: "SALE",
+      priceTiers: [],
+      promotion: { kind: "BUY_X_GET_Y", buyQty: 3, getQty: 1 },
+      modifierUnitPrice: 20,
+    },
+  }], new Map([[1, 1]]));
+
+  assert.equal(result.pricingSubtotal, 360,
+    "เหลือ 3 ต้องคิดเมนู 3 × 100 และ extra shot 3 × 20");
+  assert.equal(result.shelfSubtotal, 360);
 });
 
 test("BASE remains eligible for wholesale and promotions; named packs keep their fixed price", () => {

@@ -1317,6 +1317,7 @@ const TH: ManualContent = {
     "คืนเงิน: order.return, payment.refund, pos.return.noreceipt, pos.void",
     "เงินและค่าใช้จ่าย: pos.cash.movement, pos.nosale, pos.expense.create, pos.expense.personal, pos.petty_cash.manage",
     "มัดจำ/รับของ/ภาษี/commission: pos.deposit.take, pos.deposit.cancel, purchase.receive, tax.setting.manage, commission.view, commission.manage",
+    "ร้านอาหาร (/pos/restaurant): เปิดโต๊ะ/สั่ง/ส่งครัว/ย้ายโต๊ะ/เก็บเงินใช้ pos.sell ตามปกติ; สร้างผังโต๊ะใช้ restaurant.floor.manage, เดินสถานะตั๋วครัวใช้ restaurant.kitchen.update, ยกเลิกทั้งบิลใช้ restaurant.check.cancel",
   ],
   posBoundariesTitle: "ขอบเขตที่ต้องรู้ก่อนสอนทีม",
   posBoundaries: [
@@ -2460,6 +2461,7 @@ const EN: ManualContent = {
     "Returns and refunds: order.return, payment.refund, pos.return.noreceipt, pos.void",
     "Cash and expenses: pos.cash.movement, pos.nosale, pos.expense.create, pos.expense.personal, pos.petty_cash.manage",
     "Deposits/receiving/tax/commission: pos.deposit.take, pos.deposit.cancel, purchase.receive, tax.setting.manage, commission.view, commission.manage",
+    "Restaurant (/pos/restaurant): opening, ordering, sending to the kitchen, moving tables and settling stay on pos.sell; creating the floor needs restaurant.floor.manage, moving a kitchen ticket needs restaurant.kitchen.update, cancelling a whole check needs restaurant.check.cancel",
   ],
   posBoundariesTitle: "Boundaries to explain during training",
   posBoundaries: [

@@ -160,6 +160,24 @@ wrong, and update the doc in the same change.
   and commits stock/movement/audit/retry result together. Bluetooth HID is globally captured only
   after a configured positive prefix; timing/focus is never treated as proof of a scanner. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
+- **Restaurant dine-in (`9.44`–`9.45`)** — `/pos/restaurant` is a second operating surface, never a
+  second money path: a check reserves stock by creating one PENDING POS order when a kitchen round is
+  sent, and `settleRestaurantCheck()` closes that same order through `recordPosSale()`. A check is
+  scoped to the device's **branch** only — a waiter's tablet opens it, the register pays it, possibly
+  after a shift change — so settlement re-stamps device/shift/cashier and the sale belongs to the
+  shift that took the money. Replacing the reservation for a later round is **one** transaction
+  (`createOrderInTx()` + `cancelOrderInTx()`): a round that cannot be reserved rolls back to the
+  previous order, because the alternative leaves food already cooking with no reserved stock.
+  Cancelling a check commits order cancellation, released stock, stopped tickets, the closed check
+  and its audit together. Settlement takes the tenant advisory lock and row-locks check + order, and
+  a replayed `CLOSING`/`PAID` response is accepted only from the same device, shift and cashier.
+  Modifier prices are catalog data resolved server-side inside that transaction and written into the
+  sale-time pricing snapshot; the register sends codes only, and a modifier is valid **only** on a
+  `RECIPE` product — charging a surcharge while silently skipping its ingredient movement is not an
+  acceptable fallback. Restaurant work uses its own permissions (`restaurant.floor.manage`,
+  `restaurant.kitchen.update`, `restaurant.check.cancel`); do not reuse `pos.device.manage` or
+  `order.ship` for it. Full detail:
+  [business/pos.md § Restaurant POS](docs/business/pos.md).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.
   A send never moves reserved stock, and a short receive books the shortfall as lost in transit at
@@ -214,7 +232,8 @@ wrong, and update the doc in the same change.
 Four mechanisms; the first three are real, the fourth is dead:
 
 1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**70 namespaces / 4,000 keys per language,
-   exact th↔en parity** as of 2026-08-31 — the latest +14 are bilingual shop-archetype labels, the
+   exact th↔en parity** as of 2026-09-01 — the latest +2 are the Restaurant permission-group
+   and modifier-surcharge labels, the preceding +14 are bilingual shop-archetype labels, the
    preceding +2 are store-archetype lock labels, and the preceding +7 are store-profile receipt-language labels;
    the +20 on 2026-08-25 were `AdminSidebar.tsx`'s Store/Pharmacy
    submenu child labels, which had been plain English string literals inside an otherwise-converted
@@ -402,6 +421,7 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
+| `restaurant-pos-contract` | dine-in check/round/settlement source contracts: one settlement path, atomic round replacement, branch-scoped KDS, restaurant-specific permissions, server-owned modifier pricing |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset |
 
   Suites that need a real Postgres **write to it** — dev only, never production. They create and

@@ -3614,6 +3614,7 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     code: String!
     name: String!
+    priceDelta: Float!
     active: Boolean!
     items: [BmsModifierComponent!]!
   }
@@ -3623,6 +3624,7 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     code: String!
     name: String!
+    priceDelta: Float
     active: Boolean
     items: [BmsModifierComponentInput!]!
   }

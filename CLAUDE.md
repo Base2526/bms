@@ -84,6 +84,21 @@ capability defaults cannot drift behind the business record. See
 [ui/shop-signup-archetype-spec.md](docs/ui/shop-signup-archetype-spec.md) and
 [shop-archetype-guide.md](docs/shop-archetype-guide.md).
 
+**Restaurant POS (`9.44`–`9.45`, 2026-09-01)** — `/pos/restaurant` is a separate operating surface
+selected only for the `restaurant` archetype: floor plan, open checks, kitchen rounds sent before
+payment, table moves, split-tender checkout and a branch-scoped kitchen display. It reuses the one
+POS settlement engine (`recordPosSale()`), so money, stock, FEFO lots, the drawer and tax documents
+keep a single formula. `9.45` closes the remaining core gaps: a modifier's `price_delta` is
+server-owned catalog data resolved inside the order transaction and snapshotted into that line's
+sale-time pricing — the register submits codes, never prices — and floor setup, kitchen transitions
+and whole-check cancellation get semantic permissions (`restaurant.floor.manage`,
+`restaurant.kitchen.update`, `restaurant.check.cancel`) instead of borrowing `pos.device.manage`
+and `order.ship`. Replacing a check's reservation for a later round now happens in one transaction
+through `createOrderInTx()`: a round that cannot be reserved rolls back to the previous order rather
+than leaving food already cooking without reserved stock. See
+[business/pos.md](docs/business/pos.md) § Restaurant POS and
+[architecture/database.md](docs/architecture/database.md) § Restaurant POS.
+
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features

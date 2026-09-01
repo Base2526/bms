@@ -31,7 +31,7 @@ const Q_MODEL = gql`
       id productSku size version outputQty active items { sku size qty }
     }
     bmsProductModifiers(productSku: $sku) {
-      id productSku size code name active items { sku size qtyDelta }
+      id productSku size code name priceDelta active items { sku size qtyDelta }
     }
   }
 `;
@@ -64,7 +64,7 @@ const M_MODIFIER = gql`
 type Capability = { capability: string; enabled: boolean; configured: boolean; status: string; source: string; gating: boolean };
 type Product = { sku: string; name: string; active: boolean; variants: Array<{ size: string }> };
 type Recipe = { id: string; productSku: string; size: string; version: number; outputQty: number; active: boolean; items: Array<{ sku: string; size: string; qty: number }> };
-type Modifier = { id: string; productSku: string; size: string; code: string; name: string; active: boolean; items: Array<{ sku: string; size: string; qtyDelta: number }> };
+type Modifier = { id: string; productSku: string; size: string; code: string; name: string; priceDelta: number; active: boolean; items: Array<{ sku: string; size: string; qtyDelta: number }> };
 
 const POLICY_OPTIONS = ["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"]
   .map((value) => ({ value, label: value }));
@@ -165,7 +165,7 @@ export default function StockModelsPage() {
   function openModifier(modifier?: Modifier) {
     const next = modifier ?? null;
     setEditingModifier(next);
-    modifierForm.setFieldsValue(next ?? { size: sizes[0], active: true, items: [{ sku: "", size: "", qtyDelta: 1 }] });
+    modifierForm.setFieldsValue(next ?? { size: sizes[0], priceDelta: 0, active: true, items: [{ sku: "", size: "", qtyDelta: 1 }] });
     setModifierOpen(true);
   }
 
@@ -298,6 +298,7 @@ export default function StockModelsPage() {
         <Table rowKey="id" pagination={false} dataSource={modifiers} locale={{ emptyText: <Empty description={t("admin_stock.no_modifiers")} /> }} columns={[
           { title: t("admin_stock.code"), dataIndex: "code", width: 130 },
           { title: t("admin_stock.name"), dataIndex: "name" },
+          { title: t("admin_stock.price_delta"), dataIndex: "priceDelta", render: (value: number) => `฿${Number(value).toFixed(2)}` },
           { title: t("admin_stock.size"), dataIndex: "size" },
           { title: t("admin_stock.stock_effect"), render: (_: unknown, row: Modifier) => row.items.map((i) => `${i.sku}/${i.size} ${i.qtyDelta > 0 ? "+" : ""}${i.qtyDelta}`).join(", ") },
           { title: t("admin_stock.status"), render: (_: unknown, row: Modifier) => <Tag color={row.active ? "green" : "default"}>{row.active ? t("admin_stock.active") : t("admin_stock.inactive")}</Tag> },
@@ -323,6 +324,7 @@ export default function StockModelsPage() {
           <Form.Item name="size" label={t("admin_stock.size")} rules={[{ required: true }]}><Select style={{ width: 180 }} options={sizes.map((s) => ({ value: s, label: s }))} /></Form.Item>
           <Form.Item name="code" label={t("admin_stock.code")} rules={[{ required: true }]}><Input placeholder="NO_SUGAR" /></Form.Item>
           <Form.Item name="name" label={t("admin_stock.name")} rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="priceDelta" label={t("admin_stock.price_delta")} rules={[{ required: true }]}><InputNumber min={0} precision={2} step={1} /></Form.Item>
           <Form.Item name="active" label={t("admin_stock.active")} valuePropName="checked"><Switch /></Form.Item>
         </Space>
         {componentFields("modifier")}

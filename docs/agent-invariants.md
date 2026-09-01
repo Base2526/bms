@@ -15,6 +15,7 @@ whichever is wrong, in the same change.
 - [Public customer checkout (signed link)](#public-customer-checkout-signed-link)
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
 - [POS and tax](#pos-and-tax)
+- [Restaurant POS (dine-in)](#restaurant-pos-dine-in)
 - [Membership and loyalty points](#membership-and-loyalty-points)
 - [Branch inventory operations](#branch-inventory-operations)
 - [REST route authentication and tenancy](#rest-route-authentication-and-tenancy)
@@ -384,6 +385,75 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **ESC/POS printing (`lib/pos/{escpos,printerClient}.ts`) is unverified against real hardware** —
   written over WebUSB for receipt/barcode/drawer-kick, with the browser print dialog as fallback.
   Treat it as untested per printer model until run against one.
+
+## Restaurant POS (dine-in)
+
+`lib/bms/restaurantPos.ts`, `app/(pos)/pos/restaurant`, `app/api/pos/restaurant/*`,
+`app/api/pos/kitchen/*` and migrations `9.44`-`9.45` own dine-in service. Operator detail:
+[business/pos.md § Restaurant POS](business/pos.md). Schema:
+[architecture/database.md § Restaurant POS](architecture/database.md).
+
+- **One money path, two surfaces.** A check is service state, not a second ledger. Sending a kitchen
+  round creates/refreshes exactly one `PENDING` POS order that reserves ingredients before the food
+  is cooked; settling closes *that* order through `recordPosSale()`. Never add a payment, drawer,
+  lot or tax-document path for the restaurant surface — every one of those already has a single
+  formula, and a second one drifts silently.
+- **A check belongs to a branch, not to a device, shift or person.** A waiter's tablet opens it, any
+  station sends it, and the register settles it — often after a shift change. The only scope check is
+  the device's `location_id`, taken from the authenticated device and never from the body. Because
+  `finalizePosSale()` locks a bill by device + shift + cashier, settlement re-stamps all three on the
+  reservation order, so the sale belongs to the shift that actually took the money (same rule as a
+  deposit hand-over in `9.0`). Without that re-stamp a different cashier closing the table is refused
+  in front of the customer, and a table left open across a shift change can never be paid while its
+  stock stays reserved.
+- **Replacing a reservation is one transaction.** `sendRestaurantKitchenRound()` locks the shift
+  (`FOR KEY SHARE` — the same order `createOrderInTx()` and `finalizePosSale()` take: shift before
+  stock), locks the check, cancels the superseded order with `cancelOrderInTx()`, clears its
+  idempotency key, and builds the new whole-check order with `createOrderInTx()`, all on one client.
+  If the later round cannot be reserved because another till took the stock, the rollback keeps the
+  previous order, its key and its reservation, so food already cooking stays covered. The earlier
+  release-then-recreate shape could commit the release and then fail, leaving a cooking round with no
+  reserved stock and a check that could not be paid.
+- **`createOrderInTx()` does not own its transaction.** It never issues `BEGIN`, `COMMIT` or
+  `ROLLBACK`; any result other than `CREATED` means the caller's transaction holds partial work and
+  **must** roll back. `createOrder()` remains the wrapper that owns the transaction for every
+  ordinary caller — do not collapse one into the other.
+- **Cancelling a check is also one transaction** — order cancellation, released stock, stopped
+  kitchen tickets, the closed check and its audit row commit together. Post-commit follow-up work
+  (`afterOrderCancellationCommitted()`) runs after and may fail loudly; it must never be able to
+  leave an `OPEN` table whose reservation is already gone.
+- **Settlement is single-writer across instances.** The in-process mutex only orders requests inside
+  one instance, so settlement takes a transaction-scoped advisory lock and row-locks both the check
+  and its order (`FOR UPDATE OF c, o`) before re-stamping the register. A lost response may replay a
+  `CLOSING`/`PAID` check **only from the same device, shift and cashier**; another register is told
+  to reopen the receipt where it was paid instead of taking over the order's identity. The
+  `restaurant.check_paid` audit row is written only on the real `CLOSING -> PAID` transition, so a
+  replay cannot duplicate it, and the idempotency key is read from the reservation order row itself —
+  a separately stored copy can drift from the order actually being paid.
+- **A modifier's price is catalog data, never a payload.** The register submits modifier *codes*;
+  `createOrderInTx()` resolves each active `bms_product_modifiers.price_delta` for that exact
+  `(sku, size, code)` inside the tenant transaction, rejects an unknown code, adds the non-negative
+  surcharge after tier/promotion pricing, and stores it in the line's sale-time `pricingSnapshot`.
+  That keeps `unit_price × qty` (or `pack_unit_price × pack_qty`) equal to the taxable line amount,
+  so VAT, receipts, commission and partial-return re-pricing all read one number. The POS modal shows
+  the same catalog figure as a preview only.
+- **A modifier is valid only on a `RECIPE` product.** Its quantity delta is relative to a recipe, so
+  `resolveStockConsumptionInTx()` refuses modifier codes on `DIRECT`/`PACK` items
+  (`MODIFIER_REQUIRES_RECIPE`) rather than charging the surcharge while silently skipping the
+  configured ingredient movement.
+- **Restaurant work has its own permissions (`9.45`).** `restaurant.floor.manage` creates the branch
+  floor, `restaurant.kitchen.update` moves a kitchen ticket (the REST route *and* the
+  `/admin/kitchen` board), `restaurant.check.cancel` cancels a whole check; opening, adding, sending,
+  moving and settling stay on `pos.sell`. Do not go back to `pos.device.manage` or `order.ship` — a
+  permission that names a different job cannot be granted or withheld honestly.
+- **The kitchen display polls; it is not an event queue.** The register KDS refreshes its
+  branch-scoped queue every five seconds while that screen is visible, and `/admin/kitchen` keeps its
+  bounded ten-second poll. A failed poll shows stale data and never invents a state transition.
+  Cancelling a ticket stops the cooking; it does not remove the line from the bill or release its
+  stock — that is a check edit, and once the round is sent it needs a void.
+- **Not built, and not to be faked**: split/merge of checks across tables (splitting *payment* is
+  supported), QR self-ordering, reservations/queue numbers, per-station printer routing,
+  offline-first sync, and delivery-aggregator integrations.
 
 ## Membership and loyalty points
 

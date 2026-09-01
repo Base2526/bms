@@ -1,7 +1,7 @@
 // =============================================================
 // BMS Orders — สร้าง order + reserve สต็อกแบบ atomic
 // -------------------------------------------------------------
-// ทุกอย่างอยู่ในทรานแซกชันเดียว (getClient + BEGIN/COMMIT):
+// ทุกอย่างอยู่ในทรานแซกชันเดียว (`createOrder` เปิดเอง; workflow ใหญ่เรียก `createOrderInTx`):
 //   1) reserve สต็อกทุกรายการ (guard กัน oversell)
 //   2) insert order + order_items (snapshot ราคา)
 // ถ้ารายการใดของไม่พอ / ไม่พบ → ROLLBACK ทั้งออร์เดอร์
@@ -167,7 +167,12 @@ export type CreatedLine = {
   /** ราคาที่พิมพ์บนใบเสร็จก่อนราคาส่ง/โปรโมชัน (snapshot ไม่อ่านราคาสินค้าปัจจุบัน) */
   receiptUnitPrice: number;
   /** กติกาคิดราคาตามจำนวน/โปร ณ ตอนขาย สำหรับประเมินยอดคงเหลือหลังคืน */
-  pricingSnapshot: { source: "SALE"; priceTiers: PriceTier[]; promotion: Promotion | null };
+  pricingSnapshot: {
+    source: "SALE";
+    priceTiers: PriceTier[];
+    promotion: Promotion | null;
+    modifierUnitPrice: number;
+  };
   availableAfter: number;
   packCode?: string | null;
   packUnitName?: string | null;
@@ -413,7 +418,16 @@ export async function recalculateOrderShipping(
   return { updated };
 }
 
-export async function createOrder(
+/**
+ * สร้างและจอง order ภายใน tenant transaction ที่ผู้เรียกเปิดไว้แล้ว
+ *
+ * ฟังก์ชันนี้ไม่ COMMIT/ROLLBACK เอง: ผลลัพธ์ใดที่ไม่ใช่ CREATED หมายความว่า
+ * transaction มีงานบางส่วนที่ต้อง rollback โดยผู้เรียก ห้าม commit ต่อเด็ดขาด
+ * ใช้สำหรับ workflow ที่ต้องประกอบการเปลี่ยน order เดิมกับ order ใหม่แบบ atomic
+ * เช่น restaurant check ที่ส่งครัวรอบถัดไป
+ */
+export async function createOrderInTx(
+  client: PoolClient,
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
@@ -431,10 +445,6 @@ export async function createOrder(
       reason: "จำนวนรวมของรายการซ้ำมากเกินกว่าที่ระบบบันทึกได้",
     };
   }
-
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId, { editorId: input.editorId });
 
     // ---- ลำดับการล็อกของบิลหน้าร้าน: กะก่อน แล้วค่อยสต็อก ------------
     //
@@ -462,7 +472,6 @@ export async function createOrder(
     // stale tool or POS payload data.
     const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items);
     if (!canonicalPacks.ok) {
-      await client.query("ROLLBACK");
       return {
         status: "PACK_NOT_FOUND",
         sku: canonicalPacks.sku,
@@ -495,7 +504,6 @@ export async function createOrder(
       input.channel === "pos" ? input.pharmacistCounterAuthorization ?? null : null
     );
     if (!pharmacySale.allowed) {
-      await client.query("ROLLBACK");
       return {
         status: pharmacySale.status,
         sku: pharmacySale.sku,
@@ -569,7 +577,6 @@ export async function createOrder(
         }));
       } catch (error) {
         const reason = error instanceof Error ? error.message : "คำนวณ Stock ไม่สำเร็จ";
-        await client.query("ROLLBACK");
         if (reason.startsWith("BUNDLE_INCOMPLETE:")) {
           return { status: "BUNDLE_INCOMPLETE", sku: item.sku };
         }
@@ -594,6 +601,37 @@ export async function createOrder(
       }
     }
     const productSkus = Array.from(new Set(items.map((item) => item.sku)));
+
+    // Modifier codes come from the client, but their prices never do. Resolve
+    // every active surcharge inside the same tenant transaction that creates
+    // the order so the POS preview cannot become price authority.
+    const selectedModifierCodes = Array.from(new Set(items.flatMap((item) => item.modifierCodes ?? [])));
+    const modifierPriceByKey = new Map<string, number>();
+    if (selectedModifierCodes.length > 0) {
+      const modifierPrices = await client.query<{
+        product_sku: string; size: string; code: string; price_delta: string;
+      }>(
+        `SELECT product_sku, size, upper(code) AS code, price_delta
+           FROM bms_product_modifiers
+          WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
+            AND upper(code) = ANY($3::text[]) AND active`,
+        [tenantId, productSkus, selectedModifierCodes]
+      );
+      for (const modifier of modifierPrices.rows) {
+        modifierPriceByKey.set(
+          `${modifier.product_sku}\u0000${modifier.size}\u0000${modifier.code}`,
+          Number(modifier.price_delta ?? 0)
+        );
+      }
+      for (const [index, item] of items.entries()) {
+        const missing = (item.modifierCodes ?? []).find((code) => !modifierPriceByKey.has(
+          `${item.sku}\u0000${item.size}\u0000${code}`
+        ));
+        if (missing) {
+          return { status: "INVALID_ITEM", index, reason: `MODIFIER_NOT_FOUND:${missing}` };
+        }
+      }
+    }
 
     const tierRows = await client.query<{
       product_sku: string; min_qty: number; unit_price: string | null;
@@ -687,7 +725,6 @@ export async function createOrder(
             WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
           [need.sku, need.size, tenantId, locationId]
         );
-        await client.query("ROLLBACK");
         if (!current.rowCount) return { status: "NOT_FOUND", sku: need.sku, size: need.size };
         return {
           status: "INSUFFICIENT",
@@ -710,20 +747,18 @@ export async function createOrder(
         [it.sku, tenantId]
       );
       if (prod.rowCount === 0) {
-        await client.query("ROLLBACK");
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };
       }
 
       const listPrice = await getVariantBasePriceInTx(client, tenantId, it.sku, it.size);
       if (listPrice == null) {
-        await client.query("ROLLBACK");
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };
       }
       const key = variantKey(it.sku, it.size);
       // ราคาส่ง (8.1) — ไม่มีขั้นไหนเข้าเงื่อนไข = ได้ราคาป้ายตามเดิม
       // บรรทัดที่ขายเป็นหน่วยขาย (pack) ไม่ถูกแตะ: ราคา pack บอกตรง ๆ ว่ากล่องนี้
       // ราคาเท่านี้ ให้สองกลไกแย่งกันตัดสินราคาจะอธิบายบิลไม่ได้
-      const unitPrice = it.packUnitPrice != null
+      const baseUnitPrice = it.packUnitPrice != null
         ? listPrice
         : unitPriceForQty(
             listPrice,
@@ -736,7 +771,18 @@ export async function createOrder(
       // ราคาหน่วยขายเมื่อมี ส่วน unit_price ยังเป็นราคาต่อหน่วยฐานตามความหมายเดิม
       // (ผลคือ SUM(unit_price × qty) > total_amount เท่ากับส่วนลดยกกล่อง — ตั้งใจ)
       const packQty = it.packQty ?? null;
-      const packUnitPrice = it.packUnitPrice ?? null;
+      const basePackUnitPrice = it.packUnitPrice ?? null;
+      const modifierUnitPrice = (it.modifierCodes ?? []).reduce((sum, code) => (
+        sum + (modifierPriceByKey.get(`${it.sku}\u0000${it.size}\u0000${code}`) ?? 0)
+      ), 0);
+      const soldUnitQty = packQty ?? it.qty;
+      const modifierTotal = Math.round(modifierUnitPrice * soldUnitQty * 100) / 100;
+      // Keep unit_price × qty (or pack_unit_price × pack_qty) equal to the
+      // taxable line amount consumed by documents, refunds and commission.
+      const unitPrice = baseUnitPrice + (it.qty > 0 ? modifierTotal / it.qty : 0);
+      const packUnitPrice = basePackUnitPrice == null
+        ? null
+        : basePackUnitPrice + modifierUnitPrice;
 
       // โปรคิดครั้งเดียวต่อ SKU+ไซซ์ เพื่อไม่ให้ราคา/จำนวนของคนละไซซ์ปนกัน
       // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
@@ -745,19 +791,23 @@ export async function createOrder(
         promoCharged.add(key);
         total += applyPromotion(listPrice, promoQtyByVariant.get(key) ?? it.qty, promo).amount;
       } else if (!promo) {
-        total += packUnitPrice != null && packQty != null ? packUnitPrice * packQty : unitPrice * it.qty;
+        total += basePackUnitPrice != null && packQty != null
+          ? basePackUnitPrice * packQty
+          : baseUnitPrice * it.qty;
       }
+      total += modifierTotal;
       lines.push({
         sku: it.sku,
         name: prod.rows[0].name,
         size: it.size,
         qty: it.qty,
         unitPrice,
-        receiptUnitPrice: packUnitPrice ?? listPrice,
+        receiptUnitPrice: (basePackUnitPrice ?? listPrice) + modifierUnitPrice,
         pricingSnapshot: {
           source: "SALE",
           priceTiers: canonicalPriceTiers(tiersBySku.get(it.sku) ?? []),
           promotion: promo,
+          modifierUnitPrice,
         },
         availableAfter: resolvedConsumption[itemIndex].derived
           ? Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
@@ -782,7 +832,6 @@ export async function createOrder(
         [tenantId, input.customerId]
       );
       if (!owned.rowCount) {
-        await client.query("ROLLBACK");
         return { status: "POINTS_INVALID", reason: "ไม่พบลูกค้าที่ระบุในร้านนี้" };
       }
       customerId = owned.rows[0].id;
@@ -803,7 +852,6 @@ export async function createOrder(
     if (input.couponCode) {
       const couponResult = await applyCouponInTx(client, tenantId, input.couponCode, customerId, total, locationId);
       if (!couponResult.ok) {
-        await client.query("ROLLBACK");
         return { status: "COUPON_INVALID", reason: couponResult.reason };
       }
       couponDiscount = couponResult.discount;
@@ -819,7 +867,6 @@ export async function createOrder(
     const member = customerId ? await getMemberForOrderInTx(client, tenantId, customerId) : null;
     const requestedPoints = Math.max(0, Math.floor(Number(input.pointsToRedeem ?? 0)));
     if (requestedPoints > 0 && !member?.memberNo) {
-      await client.query("ROLLBACK");
       return { status: "POINTS_INVALID", reason: "แลกแต้มได้เฉพาะลูกค้าที่เป็นสมาชิก" };
     }
 
@@ -847,7 +894,6 @@ export async function createOrder(
     // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
     const manualDiscount = Math.max(0, Math.round(Number(input.manualDiscount ?? 0) * 100) / 100);
     if (manualDiscount > 0 && !(input.discountApprovedBy && input.discountReason?.trim())) {
-      await client.query("ROLLBACK");
       return { status: "DISCOUNT_UNAPPROVED", reason: "ส่วนลดมือต้องมีผู้อนุมัติและเหตุผล" };
     }
 
@@ -864,7 +910,6 @@ export async function createOrder(
     // ชนเพดาน max_discount_pct แล้วส่วนลดมือถูกตัด = ต้องบอก ไม่ใช่ลดให้น้อยกว่าที่ตกลง
     // (composeDiscounts ตัดชั้น manual ก่อนเพื่อน เพราะย้อนคืนง่ายที่สุด)
     if (manualDiscount > 0 && breakdown.manualDiscount !== manualDiscount) {
-      await client.query("ROLLBACK");
       return {
         status: "DISCOUNT_UNAPPROVED",
         reason: `ส่วนลดรวมเกินเพดาน ${loyaltySettings.maxDiscountPct}% ของบิล — ส่วนลดมือลดได้สูงสุด ฿${breakdown.manualDiscount.toFixed(2)}`,
@@ -879,7 +924,6 @@ export async function createOrder(
     // แต้มเปลี่ยนไประหว่าง preview กับตอนกดรับเงิน ซึ่งต้องให้พนักงานคิดเงินใหม่
     // ไม่ใช่เงียบ ๆ ลดให้น้อยกว่าที่บอกลูกค้าไปแล้ว
     if (requestedPoints > 0 && breakdown.pointsUsed !== requestedPoints) {
-      await client.query("ROLLBACK");
       const usable = member?.pointsUsable ?? 0;
       return {
         status: "POINTS_INVALID",
@@ -1009,7 +1053,6 @@ export async function createOrder(
         actorUserId: input.cashierUserId ?? null,
       });
       if (!redeemed.ok) {
-        await client.query("ROLLBACK");
         return { status: "POINTS_INVALID", reason: redeemed.reason };
       }
     }
@@ -1088,7 +1131,6 @@ export async function createOrder(
       items,
       client,
     });
-    await client.query("COMMIT");
     return {
       status: "CREATED",
       orderId,
@@ -1103,6 +1145,21 @@ export async function createOrder(
       discountLines,
       pointsUsed: breakdown.pointsUsed,
     };
+}
+
+export async function createOrder(
+  input: CreateOrderInput
+): Promise<CreateOrderResult> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.editorId });
+    const result = await createOrderInTx(client, input);
+    if (result.status !== "CREATED") {
+      await client.query("ROLLBACK");
+      return result;
+    }
+    await client.query("COMMIT");
+    return result;
   } catch (err) {
     try {
       await client.query("ROLLBACK");

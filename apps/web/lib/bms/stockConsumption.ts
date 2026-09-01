@@ -211,6 +211,12 @@ export async function resolveStockConsumptionInTx(
     return { soldSku: input.sku, soldSize: input.size, derived: true, lines };
   }
 
+  // A modifier describes an ingredient delta against a recipe. Applying it to a DIRECT/PACK
+  // product would charge the surcharge while silently ignoring the configured stock movement.
+  if (modifierCodes.length > 0) {
+    throw new Error(`MODIFIER_REQUIRES_RECIPE:${input.sku}:${input.size}`);
+  }
+
   const stockPolicy = policy.stock_policy ?? (policy.serial_tracked ? "SERIALIZED" : "DIRECT");
   if (stockPolicy === "WEIGHTED" && !(await isCapabilityEnabledInTx(client, tenantId, "WEIGHTED_PRODUCT"))) {
     throw new Error("ร้านยังไม่ได้เปิดความสามารถสินค้าชั่งขาย — เปิดที่ /admin/stock-models ก่อนขายของชั่ง");
