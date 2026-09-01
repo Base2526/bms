@@ -336,3 +336,25 @@ test("restaurants keep a way back to the retail register", async () => {
   assert.match(retail, /get\("surface"\) !== "retail"/);
   assert.match(restaurant, /\/pos\?surface=retail/);
 });
+
+test("a rejected kitchen round tells staff what to do, not an HTTP code", async () => {
+  // เจอจากหน้าร้านจริง 2026-09-01: กด "ส่งครัว" แล้วขึ้น "HTTP 409" เฉย ๆ
+  // ต้นเหตุ: createOrderInTx ตอบเป็น "สถานะ" ({status:"INSUFFICIENT", available, requested})
+  // ไม่มีฟิลด์ error/reason ตัว json() ของหน้าร้านอาหารจึงตกไปที่รหัส HTTP
+  // ซึ่งบอกคนหน้าเคาน์เตอร์ไม่ได้ว่าของขาดกี่ชิ้นหรือต้องทำอะไรต่อ
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(restaurant, /describePosFailure/);
+  assert.match(restaurant, /typeof body\?\.status === "string"[\s\S]{0,80}describePosFailure\(body\)/);
+
+  // ข้อความชุดเดียวกับหน้าค้าปลีก — สองหน้าเรียก service เดียวกัน เขียนคนละชุดแล้ววันหนึ่ง
+  // ข้อความจะไม่ตรงกันโดยไม่มีอะไรฟ้อง
+  const retail = code(await read("apps/web/app/(pos)/pos/page.tsx"));
+  assert.match(retail, /from "@\/lib\/pos\/failureMessage"/);
+  assert.doesNotMatch(retail, /function describeFailure\(/);
+
+  // ทุกสถานะที่ createOrderInTx ปฏิเสธได้ต้องมีคำแปล ไม่ใช่ตกไปที่ default
+  const messages = code(await read("apps/web/lib/pos/failureMessage.ts"));
+  for (const status of ["INSUFFICIENT", "NOT_FOUND", "PACK_NOT_FOUND", "BUNDLE_INCOMPLETE", "INVALID_ITEM", "EMPTY"]) {
+    assert.match(messages, new RegExp(`case "${status}":`), `ไม่มีคำแปลของ ${status}`);
+  }
+});

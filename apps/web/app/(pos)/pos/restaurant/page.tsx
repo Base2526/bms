@@ -5,6 +5,7 @@ import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlin
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
+import { describePosFailure } from "@/lib/pos/failureMessage";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import styles from "./restaurant.module.css";
@@ -149,7 +150,12 @@ export default function RestaurantPosPage() {
         },
       });
     }
-    if (!response.ok) throw new Error(String(body.error ?? body.reason ?? `HTTP ${response.status}`));
+    // เส้นทางส่งครัว/คิดเงินตอบเป็น "สถานะ" ไม่ใช่ข้อความ (INSUFFICIENT, PAYMENT_MISMATCH …)
+    // เดิมจึงตกไปที่ `HTTP 409` ซึ่งพนักงานอ่านแล้วทำอะไรต่อไม่ได้ — แปลด้วยชุดคำตอบ
+    // เดียวกับหน้าค้าปลีก เพราะสองหน้านี้เรียก service เดียวกัน
+    if (!response.ok) throw new Error(typeof body?.status === "string"
+      ? describePosFailure(body)
+      : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
     return body;
   }
   function auth(extra: Record<string, unknown> = {}) { if (!actorUserId || !actorPin) throw new Error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return { ...extra, cashierUserId: actorUserId, cashierPin: actorPin }; }
