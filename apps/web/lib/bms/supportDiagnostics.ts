@@ -137,6 +137,14 @@ export async function recordSupportEvents(input: {
   }
 }
 
+/**
+ * A caller-supplied range that cannot be honoured. Separated from ordinary failures so a
+ * mistyped `from`/`to` answers 400 instead of falling through withRouteErrorLog as a 500 —
+ * a client-triggerable 500 writes an error-level system log and can page ops for what is
+ * really just bad input.
+ */
+export class SupportDiagnosticsInputError extends Error {}
+
 function normalizeRange(fromRaw: unknown, toRaw: unknown) {
   const toCandidate = new Date(String(toRaw ?? ""));
   const now = new Date();
@@ -146,7 +154,7 @@ function normalizeRange(fromRaw: unknown, toRaw: unknown) {
   const fromCandidate = new Date(String(fromRaw ?? ""));
   const fallback = new Date(to.getTime() - 60 * 60 * 1000);
   let from = Number.isFinite(fromCandidate.getTime()) ? fromCandidate : fallback;
-  if (from > to) throw new Error("ช่วงเวลา diagnostics ไม่ถูกต้อง");
+  if (from > to) throw new SupportDiagnosticsInputError("ช่วงเวลา diagnostics ไม่ถูกต้อง (from อยู่หลัง to)");
   if (to.getTime() - from.getTime() > MAX_RANGE_MS) {
     from = new Date(to.getTime() - MAX_RANGE_MS);
   }
@@ -462,41 +470,49 @@ export async function readSupportBundleForPlatform(input: {
   bundleId: string;
   actorId: string;
 }) {
+  // The bundle/file lookup deliberately runs on the plain pool, NOT inside
+  // beginTenantTx: 9.28 revoked SELECT on `files` from bms_app on purpose (files has
+  // RLS disabled, so that grant let the constrained role read every shop's file rows).
+  // Joining `files` under SET LOCAL ROLE bms_app fails with
+  // "permission denied for table files", which would break every Support download.
+  // Tenant scope is still explicit here, and the download is audited below before any
+  // bytes are handed back.
+  const meta = await query<{
+    id: string;
+    relpath: string;
+    original_name: string | null;
+    checksum: string;
+  }>(
+    `SELECT b.id, f.relpath, f.original_name, b.checksum
+       FROM bms_support_bundles b
+       JOIN files f ON f.id = b.file_id AND f.tenant_id = b.tenant_id
+      WHERE b.tenant_id = $1 AND b.id = $2 AND b.status = 'SENT'
+        AND b.expires_at > now()`,
+    [input.tenantId, input.bundleId]
+  );
+  const row = meta.rows[0];
+  if (!row) return null;
+
+  // Read first, then audit: an audit row for a download that never produced bytes is a
+  // lie, and a failed audit must stop the download rather than leave it unrecorded.
+  const buffer = await readStoredFile(row.relpath);
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorId });
-    const result = await client.query<{
-      id: string;
-      relpath: string;
-      original_name: string | null;
-      checksum: string;
-    }>(
-      `SELECT b.id, f.relpath, f.original_name, b.checksum
-         FROM bms_support_bundles b
-         JOIN files f ON f.id = b.file_id AND f.tenant_id = b.tenant_id
-        WHERE b.tenant_id = $1 AND b.id = $2 AND b.status = 'SENT'
-          AND b.expires_at > now()`,
-      [input.tenantId, input.bundleId]
-    );
-    const row = result.rows[0];
-    if (!row) {
-      await client.query("ROLLBACK");
-      return null;
-    }
-    const buffer = await readStoredFile(row.relpath);
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,'support.logs_download',$3,$4::jsonb)`,
       [input.tenantId, input.actorId, input.bundleId, JSON.stringify({ checksum: row.checksum })]
     );
     await client.query("COMMIT");
-    return {
-      buffer,
-      checksum: row.checksum,
-      filename: row.original_name || `support-diagnostics-${row.id}.ndjson.gz`,
-    };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;
   } finally { client.release(); }
+
+  return {
+    buffer,
+    checksum: row.checksum,
+    filename: row.original_name || `support-diagnostics-${row.id}.ndjson.gz`,
+  };
 }

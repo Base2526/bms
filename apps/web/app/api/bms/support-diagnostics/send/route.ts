@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
-import { sendSupportBundle } from "@/lib/bms/supportDiagnostics";
+import { sendSupportBundle, SupportDiagnosticsInputError } from "@/lib/bms/supportDiagnostics";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -8,7 +8,12 @@ export const runtime = "nodejs";
 
 async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("support.logs.send");
-  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
+  if (!auth.ok) {
+    return NextResponse.json(
+      { error: auth.status === 401 ? "unauthorized" : "forbidden", requiredPermission: "support.logs.send" },
+      { status: auth.status }
+    );
+  }
   const limit = await rateLimit(`support-send:${auth.tenantId}:${auth.adminId}`, 3, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
@@ -22,15 +27,22 @@ async function handlePOST(req: NextRequest) {
   }
   const description = String(body?.description ?? "").trim();
   if (!description) return NextResponse.json({ error: "description required" }, { status: 400 });
-  const result = await sendSupportBundle({
-    tenantId: auth.tenantId,
-    actorId: String(auth.adminId),
-    actorEmail: String(auth.admin.email ?? "support-request@invalid.local"),
-    description,
-    from: typeof body.from === "string" ? body.from : null,
-    to: typeof body.to === "string" ? body.to : null,
-  });
-  return NextResponse.json(result, { status: 201 });
+  try {
+    const result = await sendSupportBundle({
+      tenantId: auth.tenantId,
+      actorId: String(auth.adminId),
+      actorEmail: String(auth.admin.email ?? "support-request@invalid.local"),
+      description,
+      from: typeof body.from === "string" ? body.from : null,
+      to: typeof body.to === "string" ? body.to : null,
+    });
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    if (error instanceof SupportDiagnosticsInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 }
 
 export const POST = withRouteErrorLog("POST /api/bms/support-diagnostics/send", handlePOST);
