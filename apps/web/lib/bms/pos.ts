@@ -1971,6 +1971,8 @@ export type PosSaleInput = {
   lines: PosSaleLine[];
   /** Set only by the restaurant service after checking device, shift and open-check ownership. */
   restaurantCheckId?: string | null;
+  /** Cross-instance claim created by the restaurant service for this settlement only. */
+  restaurantSettlementAttemptId?: string | null;
   /** SALE จ่ายผสมได้และต้องครบยอด; DEPOSIT รับงวดแรกด้วย 1 วิธีและต้องต่ำกว่ายอดบิล */
   payments: PosPaymentInput[];
   /**
@@ -3051,6 +3053,23 @@ async function finalizePosSale(args: {
     );
     if (!orderLock.rowCount) throw new Error("บิลไม่ตรงกับเครื่อง กะ หรือพนักงานผู้ขาย");
     const current = orderLock.rows[0];
+    if (input.restaurantCheckId) {
+      if (!input.restaurantSettlementAttemptId) {
+        throw new Error("บิลโต๊ะไม่มี settlement claim");
+      }
+      const restaurantCheck = await client.query(
+        `SELECT 1 FROM bms_restaurant_checks
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+            AND current_order_id = $4 AND status = 'CLOSING'
+            AND settlement_attempt_id = $5
+          FOR UPDATE`,
+        [input.tenantId, input.restaurantCheckId, shift.location_id, orderId,
+          input.restaurantSettlementAttemptId]
+      );
+      if (!restaurantCheck.rowCount) {
+        throw new Error("บิลโต๊ะไม่ได้ถือ settlement claim นี้แล้ว");
+      }
+    }
     const roundingAmount = args.roundingAmount ?? Number(current.rounding_amount ?? 0);
     if (Math.abs(Number(current.rounding_amount ?? 0) - roundingAmount) > 0.001) {
       await client.query(
@@ -3198,6 +3217,26 @@ async function finalizePosSale(args: {
 
     if (args.depositSettlement) {
       await markDepositCompletedInTx(client, input.tenantId, orderId);
+    }
+
+    if (input.restaurantCheckId) {
+      const paidCheck = await client.query(
+        `UPDATE bms_restaurant_checks
+            SET status = 'PAID', closed_by = $3, closed_at = now(),
+                settlement_attempt_id = NULL, settlement_started_at = NULL,
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'CLOSING'
+            AND current_order_id = $4 AND settlement_attempt_id = $5`,
+        [input.tenantId, input.restaurantCheckId, input.cashierUserId, orderId,
+          input.restaurantSettlementAttemptId]
+      );
+      if (!paidCheck.rowCount) throw new Error("ปิดบิลโต๊ะใน settlement transaction ไม่สำเร็จ");
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.check_paid',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.cashierUserId}`, input.restaurantCheckId,
+          JSON.stringify({ orderId, amount: amountDue })]
+      );
     }
 
     await client.query(

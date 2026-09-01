@@ -8,7 +8,9 @@ import {
   sendRestaurantKitchenRound,
   settleRestaurantCheck,
 } from "@/lib/bms/restaurantPos";
-import { parsePosPayments } from "@/lib/bms/posRouteHelpers";
+import { cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
+import { isDistinctPosApprover, parsePosPayments } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { authenticateRestaurantMutation, authenticateRestaurantRead } from "../../routeAuth";
 
@@ -76,7 +78,40 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
   if (action === "cancel") {
     const reason = String(body.reason ?? "").trim();
     if (!reason) return NextResponse.json({ error: "ต้องระบุเหตุผลที่ยกเลิกบิล" }, { status: 400 });
-    return NextResponse.json(await cancelRestaurantCheck({ ...common, reason }));
+    const check = await getRestaurantCheck(auth.device.tenantId, params.id, auth.device.locationId);
+    if (!check) return NextResponse.json({ error: "ไม่พบบิลโต๊ะ" }, { status: 404 });
+
+    // โต๊ะที่ยังว่างหรือมีเฉพาะรายการ NEW ปิดได้โดยผู้ปฏิบัติงานคนเดิม แต่เมื่อส่งครัว
+    // หรือจองสต็อกแล้ว การยกเลิกมีผลเทียบเท่า void และต้องมีหลักฐานจากคนที่สอง
+    // service ตรวจเงื่อนไขนี้ซ้ำใต้ row lock เพื่อกัน send_kitchen แข่งกับ cancel
+    const requiresVoidApproval = ["OPEN", "CLOSING"].includes(check.status)
+      && (check.hasCurrentOrder || check.items.some((item) => item.status === "SENT"));
+    let approvedByUserId: string | null = null;
+    if (requiresVoidApproval) {
+      const approverId = typeof body.approverUserId === "string" ? body.approverUserId.trim() : "";
+      const approverPin = typeof body.approverPin === "string" ? body.approverPin : "";
+      if (!approverId || !approverPin) {
+        return NextResponse.json({ error: "บิลที่ส่งครัวแล้วต้องมีผู้อนุมัติกด PIN" }, { status: 400 });
+      }
+      if (!isDistinctPosApprover(auth.actor.userId, approverId)) {
+        return NextResponse.json({ error: "ผู้อนุมัติยกเลิกบิลต้องเป็นคนละคนกับผู้ปฏิบัติงาน" }, { status: 400 });
+      }
+      const approver = await verifyCashierPin(auth.device.tenantId, approverId, approverPin);
+      if (!approver.ok) {
+        return NextResponse.json({ error: "PIN ผู้อนุมัติไม่ถูกต้อง", reason: approver.reason }, { status: 403 });
+      }
+      if (!(await cashierHasPermission(auth.device.tenantId, approver.userId, "pos.void"))) {
+        return NextResponse.json({
+          error: await posPermissionDeniedMessage(auth.device.tenantId, "pos.void", { secondPerson: true }),
+        }, { status: 403 });
+      }
+      approvedByUserId = approver.userId;
+    }
+    return NextResponse.json(await cancelRestaurantCheck({
+      ...common,
+      reason,
+      approvedByUserId,
+    }));
   }
   if (action === "settle") {
     const parsed = parsePosPayments(body.payments);

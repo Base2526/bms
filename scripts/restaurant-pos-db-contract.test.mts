@@ -127,6 +127,44 @@ test("a default floor is idempotent and every table starts free", async () => {
   tables = again.tables.map((t) => ({ id: t.id, code: t.code }));
 });
 
+test("the database rejects a table whose area belongs to another branch", async () => {
+  const area = (await query<{ id: string }>(
+    `SELECT id FROM bms_restaurant_areas WHERE tenant_id = $1 AND location_id = $2 LIMIT 1`,
+    [tenantId, locationId]
+  )).rows[0];
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_restaurant_tables
+         (tenant_id, location_id, area_id, code, name, seats)
+       VALUES ($1,$2,$3,'CROSS-BRANCH','must fail',2)`,
+      [tenantId, otherLocationId, area.id]
+    ),
+    (error: any) => error?.code === "23503"
+  );
+});
+
+test("the database rejects a restaurant check using another branch's device and shift", async () => {
+  const otherDevice = (await query<{ id: string }>(
+    `INSERT INTO bms_pos_devices (tenant_id, location_id, code, name)
+     VALUES ($1,$2,'POS-B2',$3) RETURNING id`,
+    [tenantId, otherLocationId, `FAKE ${TAG} branch 2 device`]
+  )).rows[0].id;
+  const otherShift = (await query<{ id: string }>(
+    `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float)
+     VALUES ($1,$2,$3,$4,0) RETURNING id`,
+    [tenantId, otherLocationId, otherDevice, waiterId]
+  )).rows[0].id;
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_restaurant_checks
+         (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, guest_count, opened_by)
+       VALUES ($1,$2,$3,$4,$5,1,$6)`,
+      [tenantId, locationId, tables[0].id, otherDevice, otherShift, waiterId]
+    ),
+    (error: any) => error?.code === "23503"
+  );
+});
+
 test("one table holds at most one open check", async () => {
   const first = await openRestaurantCheck({
     tenantId, locationId, deviceId, shiftId: shiftA,
@@ -168,6 +206,41 @@ test("sending a round reserves the ingredients and tickets every line, recipe or
   assert.equal(Number((await stock(FOOD)).reserved_stock), 2);
   assert.equal(Number((await stock(DRINK)).reserved_stock), 1);
   assert.equal(Number((await stock(FOOD)).current_stock), 100, "จองไม่ใช่ตัดสต็อก");
+});
+
+test("a failed later round keeps the reservation for food already sent to the kitchen", async () => {
+  const before = await getRestaurantCheck(tenantId, paidCheckId);
+  const previousReservedVersion = before!.reservedVersion!;
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: paidCheckId, actorUserId: waiterId,
+    sku: DRINK, size: SIZE, packQty: 999,
+  });
+
+  const failed = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftA, checkId: paidCheckId, actorUserId: waiterId,
+  });
+  assert.equal(failed.status, "INSUFFICIENT");
+  assert.equal(Number((await stock(FOOD)).reserved_stock), 2,
+    "อาหารรอบเดิมอยู่ในครัวแล้วจึงต้องยังถูกจอง");
+  assert.equal(Number((await stock(DRINK)).reserved_stock), 1,
+    "ของรอบเดิมต้องไม่ถูกปล่อยเพราะรอบสั่งเพิ่มล้ม");
+
+  const restored = await getRestaurantCheck(tenantId, paidCheckId);
+  assert.equal(restored!.reservedVersion, previousReservedVersion);
+  assert.notEqual(restored!.version, restored!.reservedVersion,
+    "รายการใหม่ยังไม่ส่งครัว จึงยังห้ามคิดเงิน");
+  assert.equal(restored!.hasCurrentOrder, true, "ต้องผูก reservation ของรายการ SENT กลับเข้าบิล");
+
+  const unsent = restored!.items.find((item) => item.status === "NEW");
+  assert.ok(unsent);
+  await removeRestaurantCheckItem({
+    tenantId, locationId, checkId: paidCheckId, itemId: unsent.id, actorUserId: waiterId,
+  });
+  const resynced = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftA, checkId: paidCheckId, actorUserId: waiterId,
+  });
+  assert.equal(resynced.status, "SENT");
+  assert.equal((resynced as any).kitchenTickets, 0, "การ sync reservation ไม่สร้างตั๋วครัวซ้ำ");
 });
 
 test("a later round replaces the reservation, renumbers the round and frees the old key", async () => {
@@ -371,6 +444,23 @@ test("⚠️ a check survives a shift change and a different cashier closing it"
 
   const check = await getRestaurantCheck(tenantId, paidCheckId);
   assert.equal(check?.status, "PAID");
+  const settlementState = (await query<{
+    settlement_attempt_id: string | null;
+    settlement_started_at: Date | null;
+    paid_audits: string;
+  }>(
+    `SELECT c.settlement_attempt_id, c.settlement_started_at,
+            (SELECT count(*)::text FROM bms_audit_log a
+              WHERE a.tenant_id = c.tenant_id AND a.target = c.id::text
+                AND a.action = 'restaurant.check_paid') AS paid_audits
+       FROM bms_restaurant_checks c
+      WHERE c.tenant_id = $1 AND c.id = $2`,
+    [tenantId, paidCheckId]
+  )).rows[0];
+  assert.equal(settlementState.settlement_attempt_id, null);
+  assert.equal(settlementState.settlement_started_at, null);
+  assert.equal(Number(settlementState.paid_audits), 1,
+    "check-paid audit ต้อง commit พร้อม POS sale ไม่ใช่งานตามหลัง");
   assert.equal(Number((await stock(FOOD)).current_stock), 98, "จบบิลแล้วต้องตัดสต็อกจริง");
   assert.equal(Number((await stock(FOOD)).reserved_stock), 0);
   assert.equal(Number((await stock(DRINK)).current_stock), 96);
@@ -416,17 +506,56 @@ test("a paid check cannot be cancelled, and a stuck CLOSING one always can", asy
 
   // จำลองการเก็บเงินที่ล้มกลางทางจนบิลค้างที่ CLOSING (โปรเซสตาย/เน็ตหลุด)
   await query(
-    `UPDATE bms_restaurant_checks SET status = 'CLOSING' WHERE tenant_id = $1 AND id = $2`,
+    `UPDATE bms_restaurant_checks
+        SET status = 'CLOSING', settlement_attempt_id = gen_random_uuid(),
+            settlement_started_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
     [tenantId, fresh!.id]
   );
+  await assert.rejects(
+    () => cancelRestaurantCheck({
+      tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId, reason: "ห้ามชน payment",
+    }),
+    /กำลังรับชำระ/,
+    "active settlement lease ต้องกันอีกเครื่องยกเลิกบิลกลางการรับเงิน"
+  );
+  await query(
+    `UPDATE bms_restaurant_checks SET settlement_started_at = now() - interval '6 minutes'
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, fresh!.id]
+  );
+  await assert.rejects(
+    () => cancelRestaurantCheck({
+      tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId, reason: "ไม่มีหัวหน้า",
+    }),
+    /ผู้อนุมัติยกเลิกบิลคนที่สอง/,
+    "บิลที่ส่งครัวแล้วต้องปฏิเสธแม้ lease หมด ถ้าไม่มีหลักฐานผู้อนุมัติ"
+  );
+  await assert.rejects(
+    () => cancelRestaurantCheck({
+      tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId,
+      approvedByUserId: cashierId, reason: "อนุมัติตัวเอง",
+    }),
+    /ผู้อนุมัติยกเลิกบิลคนที่สอง/,
+    "ผู้ปฏิบัติงานอนุมัติ void ให้ตัวเองไม่ได้"
+  );
   const cancelled = await cancelRestaurantCheck({
-    tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId, reason: "ลูกค้าเดินออก",
+    tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId,
+    approvedByUserId: waiterId, reason: "ลูกค้าเดินออก",
   });
   assert.equal(cancelled.status, "CANCELLED");
   assert.equal(Number((await stock(FOOD)).reserved_stock), 0, "ยกเลิกต้องปล่อยของคืนชั้น");
   assert.equal(Number((await stock(FOOD)).current_stock), 98, "ยกเลิกไม่ใช่การขาย");
   const tickets = await listKitchenTickets(tenantId, "CANCELLED", 200, locationId);
   assert.ok(tickets.length >= 1, "ตั๋วของบิลที่ยกเลิกต้องหยุด ไม่ใช่ให้ครัวทำต่อ");
+  const cancelAudit = (await query<{ meta: { approvedByUserId?: string | null } }>(
+    `SELECT meta FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'restaurant.check_cancel' AND target = $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [tenantId, fresh!.id]
+  )).rows[0];
+  assert.equal(cancelAudit.meta.approvedByUserId, waiterId,
+    "audit ต้องระบุคนที่สองซึ่งอนุมัติการยกเลิกอาหารที่ส่งครัวแล้ว");
   assert.equal(
     (await listRestaurantFloor(tenantId, locationId)).tables.find((t) => t.id === tables[3].id)?.status,
     "AVAILABLE"

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
@@ -18,6 +19,7 @@ import {
 } from "./pos";
 
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"] as const;
+const SETTLEMENT_LEASE_MINUTES = 5;
 
 type CheckItemRow = {
   id: string;
@@ -645,36 +647,66 @@ export async function cancelRestaurantCheck(input: {
   checkId: string;
   actorUserId: string;
   reason: string;
+  approvedByUserId?: string | null;
 }) {
   return withCheckLock(input.tenantId, input.checkId, async () => {
     const client = await getClient();
-    let cancelledOrderId: string | null = null;
+    let releasedOrderId: string | null = null;
     try {
       await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
       await lockCheckInTx(client, input.tenantId, input.checkId);
       // order, reservation, kitchen tickets, check และ audit ต้องยกเลิกพร้อมกัน
       // ไม่เช่นนั้น transaction หลังล้มจะเหลือโต๊ะ OPEN ที่ไม่มี stock reservation รองรับ
-      const current = await client.query<{ current_order_id: string | null }>(
-        `SELECT current_order_id FROM bms_restaurant_checks c
+      const current = await client.query<{
+        current_order_id: string | null;
+        requires_void_approval: boolean;
+      }>(
+        `SELECT c.current_order_id,
+                (c.current_order_id IS NOT NULL OR EXISTS (
+                  SELECT 1 FROM bms_restaurant_check_items i
+                   WHERE i.tenant_id = c.tenant_id AND i.check_id = c.id
+                     AND i.status = 'SENT'
+                )) AS requires_void_approval
+           FROM bms_restaurant_checks c
           WHERE c.tenant_id = $1 AND c.id = $2 AND c.location_id = $3
             AND c.status IN ('OPEN','CLOSING')
+            AND (
+              c.status = 'OPEN'
+              OR COALESCE(c.settlement_started_at, '-infinity'::timestamptz)
+                   < now() - ($4::int * interval '1 minute')
+            )
             AND NOT EXISTS (
               SELECT 1 FROM bms_orders o
                WHERE o.tenant_id = c.tenant_id AND o.restaurant_check_id = c.id
                  AND o.status NOT IN ('PENDING','CANCELLED')
             )
           FOR UPDATE`,
-        [input.tenantId, input.checkId, input.locationId]
+        [input.tenantId, input.checkId, input.locationId, SETTLEMENT_LEASE_MINUTES]
       );
-      if (!current.rowCount) throw new Error("บิลนี้ยกเลิกไม่ได้ (ปิดไปแล้วหรือเก็บเงินแล้ว)");
-      cancelledOrderId = current.rows[0].current_order_id;
-      if (cancelledOrderId) {
-        const cancelled = await cancelOrderInTx(client, input.tenantId, cancelledOrderId);
+      if (!current.rowCount) {
+        const state = await client.query<{ status: string }>(
+          `SELECT status FROM bms_restaurant_checks
+            WHERE tenant_id = $1 AND id = $2 AND location_id = $3`,
+          [input.tenantId, input.checkId, input.locationId]
+        );
+        if (state.rows[0]?.status === "CLOSING") {
+          throw new Error("บิลนี้กำลังรับชำระเงิน กรุณารอให้รายการเดิมเสร็จหรือลองใหม่ภายหลัง");
+        }
+        throw new Error("บิลนี้ยกเลิกไม่ได้ (ปิดไปแล้วหรือเก็บเงินแล้ว)");
+      }
+      if (current.rows[0].requires_void_approval && (
+        !input.approvedByUserId || input.approvedByUserId === input.actorUserId
+      )) {
+        throw new Error("บิลที่ส่งครัวหรือจองสต็อกแล้วต้องให้ผู้มีสิทธิ์ pos.void คนที่สองอนุมัติ");
+      }
+      releasedOrderId = current.rows[0].current_order_id;
+      if (releasedOrderId) {
+        const cancelled = await cancelOrderInTx(client, input.tenantId, releasedOrderId);
         if (!cancelled) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่ยกเลิกได้");
         await client.query(
           `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
             WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-          [input.tenantId, cancelledOrderId]
+          [input.tenantId, releasedOrderId]
         );
       }
       await client.query(
@@ -686,6 +718,7 @@ export async function cancelRestaurantCheck(input: {
       await client.query(
         `UPDATE bms_restaurant_checks
             SET status = 'CANCELLED', closed_by = $3, closed_at = now(),
+                settlement_attempt_id = NULL, settlement_started_at = NULL,
                 note = concat_ws(E'\n', note, $4::text), updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','CLOSING')`,
         [input.tenantId, input.checkId, input.actorUserId, `ยกเลิก: ${input.reason.trim().slice(0, 300)}`]
@@ -694,36 +727,63 @@ export async function cancelRestaurantCheck(input: {
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.check_cancel',$3,$4::jsonb)`,
         [input.tenantId, `user:${input.actorUserId}`, input.checkId,
-          JSON.stringify({ reason: input.reason.trim().slice(0, 300) })]
+          JSON.stringify({
+            reason: input.reason.trim().slice(0, 300),
+            approvedByUserId: input.approvedByUserId ?? null,
+          })]
       );
       await client.query("COMMIT");
-      if (cancelledOrderId) {
-        await afterOrderCancellationCommitted(input.tenantId, cancelledOrderId).catch((error) => {
-          // transaction ยกเลิกเสร็จแล้ว งานแจ้งเตือนหลัง commit ล้มต้องไม่หลอก POS ว่าบิลยังอยู่
-          console.error("[restaurant] งานหลังยกเลิก order ไม่สำเร็จ", {
-            checkId: input.checkId,
-            orderId: cancelledOrderId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      }
-      return { status: "CANCELLED" as const };
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch {}
       throw error;
     } finally {
       client.release();
     }
+    if (releasedOrderId) {
+      await afterOrderCancellationCommitted(input.tenantId, releasedOrderId).catch((error) => {
+        // transaction ยกเลิกเสร็จแล้ว งานแจ้งเตือนหลัง commit ล้มต้องไม่หลอก POS ว่าบิลยังอยู่
+        console.error("[restaurant] งานหลังยกเลิก order ไม่สำเร็จ", {
+          checkId: input.checkId,
+          orderId: releasedOrderId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+    return { status: "CANCELLED" as const };
   });
 }
 
 /** คืนบิลที่ค้างระหว่างเก็บเงินให้กลับมาแก้ไข/ยกเลิกได้ (CLOSING เป็นสถานะชั่วคราวเท่านั้น) */
-async function reopenClosingCheck(tenantId: string, checkId: string) {
-  await query(
-    `UPDATE bms_restaurant_checks SET status = 'OPEN', updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'CLOSING'`,
-    [tenantId, checkId]
-  );
+async function reopenClosingCheck(
+  tenantId: string,
+  checkId: string,
+  actorUserId: string,
+  settlementAttemptId: string
+) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorUserId });
+    await lockCheckInTx(client, tenantId, checkId);
+    await client.query(
+      `UPDATE bms_restaurant_checks c
+          SET status = 'OPEN', settlement_attempt_id = NULL,
+              settlement_started_at = NULL, updated_at = now()
+        WHERE c.tenant_id = $1 AND c.id = $2 AND c.status = 'CLOSING'
+          AND c.settlement_attempt_id = $3
+          AND EXISTS (
+            SELECT 1 FROM bms_orders o
+             WHERE o.tenant_id = c.tenant_id AND o.id = c.current_order_id
+               AND o.status = 'PENDING'
+          )`,
+      [tenantId, checkId, settlementAttemptId]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function settleRestaurantCheck(input: {
@@ -739,6 +799,7 @@ export async function settleRestaurantCheck(input: {
     // Prepare settlement in one locked tenant transaction. The process mutex above only protects
     // this instance; without the xact advisory lock two registers on different instances could
     // overwrite cashier/shift on the same PENDING order immediately before finalizePosSale locks it.
+    const settlementAttemptId = randomUUID();
     let key = "";
     let items: { rows: CheckItemRow[] } = { rows: [] };
     const prepare = await getClient();
@@ -781,6 +842,15 @@ export async function settleRestaurantCheck(input: {
         throw new Error("บิลนี้ถูกคิดเงินที่เครื่องอื่นแล้ว กรุณาเปิดใบเสร็จจากเครื่องเดิม");
       }
 
+      if (
+        check.status === "CLOSING"
+        && check.settlement_started_at
+        && new Date(check.settlement_started_at).getTime()
+          >= Date.now() - SETTLEMENT_LEASE_MINUTES * 60_000
+      ) {
+        throw new Error("บิลนี้กำลังรับชำระเงิน กรุณารอผลรายการเดิมก่อนลองใหม่");
+      }
+
       if (check.order_status === "PENDING") {
         // CLOSING may be an idempotent retry after a lost response. Only the same register request
         // may continue it; another cashier/device must wait instead of stealing the order identity.
@@ -809,13 +879,24 @@ export async function settleRestaurantCheck(input: {
       );
       if (!items.rows.length) throw new Error("บิลนี้ไม่มีรายการที่ส่งครัวแล้ว");
       if (check.status !== "PAID") {
-        await prepare.query(
+        const claimed = await prepare.query(
           `UPDATE bms_restaurant_checks
               SET status = 'CLOSING', settlement_idempotency_key = $3,
-                  pos_device_id = $4, pos_shift_id = $5, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','CLOSING')`,
-          [input.tenantId, input.checkId, key, input.deviceId, input.shiftId]
+                  pos_device_id = $4, pos_shift_id = $5,
+                  settlement_attempt_id = $7, settlement_started_at = now(), updated_at = now()
+            WHERE tenant_id = $1 AND id = $2
+              AND (
+                status = 'OPEN'
+                OR (
+                  status = 'CLOSING'
+                  AND COALESCE(settlement_started_at, '-infinity'::timestamptz)
+                    < now() - ($6::int * interval '1 minute')
+                )
+              )`,
+          [input.tenantId, input.checkId, key, input.deviceId, input.shiftId,
+            SETTLEMENT_LEASE_MINUTES, settlementAttemptId]
         );
+        if (!claimed.rowCount) throw new Error("บิลนี้มีรายการรับชำระเงินอื่นกำลังทำงานอยู่");
       }
       await prepare.query("COMMIT");
     } catch (error) {
@@ -834,48 +915,25 @@ export async function settleRestaurantCheck(input: {
       cashierUserId: input.actorUserId,
       idempotencyKey: key,
       restaurantCheckId: input.checkId,
+      restaurantSettlementAttemptId: settlementAttemptId,
       lines: items.rows.map(toPosLine),
       payments: input.payments,
     }).catch(async (error) => {
-      await reopenClosingCheck(input.tenantId, input.checkId);
+      await reopenClosingCheck(
+        input.tenantId,
+        input.checkId,
+        input.actorUserId,
+        settlementAttemptId
+      );
       throw error;
     });
-    if (result.status === "SOLD") {
-      const client = await getClient();
-      try {
-        await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
-        await lockCheckInTx(client, input.tenantId, input.checkId);
-        const closed = await client.query(
-          `UPDATE bms_restaurant_checks
-              SET status = 'PAID', closed_by = $3, closed_at = now(), updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'CLOSING'
-          RETURNING id`,
-          [input.tenantId, input.checkId, input.actorUserId]
-        );
-        if (closed.rowCount) {
-          await client.query(
-            `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-             VALUES ($1,$2,'restaurant.check_paid',$3,$4::jsonb)`,
-            [input.tenantId, `user:${input.actorUserId}`, input.checkId,
-              JSON.stringify({ orderId: result.orderId, amount: result.total })]
-          );
-        } else {
-          const alreadyPaid = await client.query(
-            `SELECT 1 FROM bms_restaurant_checks
-              WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'`,
-            [input.tenantId, input.checkId]
-          );
-          if (!alreadyPaid.rowCount) throw new Error("สถานะบิลเปลี่ยนระหว่างยืนยันการชำระเงิน");
-        }
-        await client.query("COMMIT");
-      } catch (error) {
-        try { await client.query("ROLLBACK"); } catch {}
-        throw error;
-      } finally {
-        client.release();
-      }
-    } else {
-      await reopenClosingCheck(input.tenantId, input.checkId);
+    if (result.status !== "SOLD") {
+      await reopenClosingCheck(
+        input.tenantId,
+        input.checkId,
+        input.actorUserId,
+        settlementAttemptId
+      );
     }
     return result;
   });
