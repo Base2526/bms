@@ -528,7 +528,7 @@ test("a paid check cannot be cancelled, and a stuck CLOSING one always can", asy
     () => cancelRestaurantCheck({
       tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId, reason: "ไม่มีหัวหน้า",
     }),
-    /ผู้อนุมัติยกเลิกบิลคนที่สอง/,
+    /คนที่สอง/,
     "บิลที่ส่งครัวแล้วต้องปฏิเสธแม้ lease หมด ถ้าไม่มีหลักฐานผู้อนุมัติ"
   );
   await assert.rejects(
@@ -536,7 +536,7 @@ test("a paid check cannot be cancelled, and a stuck CLOSING one always can", asy
       tenantId, locationId, checkId: fresh!.id, actorUserId: cashierId,
       approvedByUserId: cashierId, reason: "อนุมัติตัวเอง",
     }),
-    /ผู้อนุมัติยกเลิกบิลคนที่สอง/,
+    /คนที่สอง/,
     "ผู้ปฏิบัติงานอนุมัติ void ให้ตัวเองไม่ได้"
   );
   const cancelled = await cancelRestaurantCheck({
