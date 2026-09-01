@@ -16,7 +16,7 @@ type FloorCheck = { id: string; status: string; guestCount: number; amountDue: n
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT"; roundNo: number | null };
-type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; items: CheckItem[] };
+type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type ScanHit = { sku: string; productName: string; size: string; packCode: string; unitName: string; baseQty: number; packPrice: number; available: number; modifiers: Array<{ code: string; name: string; priceDelta: number }> };
 type KitchenTicket = { id: string; orderId: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
@@ -63,6 +63,10 @@ export default function RestaurantPosPage() {
   const [supportDescription, setSupportDescription] = useState("");
   const [supportConfirmed, setSupportConfirmed] = useState(false);
   const [supportWorking, setSupportWorking] = useState<"export" | "send" | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelApproverId, setCancelApproverId] = useState("");
+  const [cancelApproverPin, setCancelApproverPin] = useState("");
 
   useEffect(() => { setToken(window.localStorage.getItem(TOKEN_KEY) ?? ""); setReady(true); }, []);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
@@ -80,6 +84,11 @@ export default function RestaurantPosPage() {
       : 0
   )) * 100) / 100;
   const supportScope = session?.device?.id ? `pos-${session.device.id}` : "";
+  const cancelNeedsApproval = Boolean(check?.hasCurrentOrder
+    || check?.items.some((item) => item.status === "SENT"));
+  const voidApprovers = (session?.approvers ?? []).filter((person) =>
+    person.hasPin && person.id !== actorUserId && person.approvals.includes("pos.void")
+  );
 
   async function json(url: string, init?: RequestInit) {
     const startedAt = Date.now();
@@ -158,6 +167,35 @@ export default function RestaurantPosPage() {
       await Promise.all([loadFloor(), loadTickets(), loadSession()]);
     });
   }
+  function openCancel() {
+    setCancelReason("");
+    setCancelApproverPin("");
+    setCancelApproverId(voidApprovers[0]?.id ?? "");
+    setCancelOpen(true);
+  }
+  async function cancelCheck() {
+    if (!check) return;
+    if (!cancelReason.trim()) { message.error("ต้องระบุเหตุผลที่ยกเลิกบิล"); return; }
+    if (cancelNeedsApproval && (!cancelApproverId || !cancelApproverPin)) {
+      message.error("บิลที่ส่งครัวแล้วต้องมีผู้อนุมัติคนที่สองกด PIN");
+      return;
+    }
+    await run(async () => {
+      await json(`/api/pos/restaurant/checks/${check.id}`, {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "cancel",
+          reason: cancelReason.trim(),
+          approverUserId: cancelNeedsApproval ? cancelApproverId : null,
+          approverPin: cancelNeedsApproval ? cancelApproverPin : null,
+        })),
+      });
+      setCancelOpen(false);
+      setCheck(null);
+      setSelectedTableId("");
+      await Promise.all([loadFloor(), loadTickets()]);
+    });
+  }
   async function ticketStatus(ticket: KitchenTicket, status: string) { await run(async () => { const body = await json(`/api/pos/kitchen/tickets/${ticket.id}/status`, { method: "POST", body: JSON.stringify({ userId: actorUserId, pin: actorPin, status }) }); setTickets((current) => current.map((row) => row.id === ticket.id ? body.ticket : row)); }); }
   async function changeShift() { if (!shiftModal) return; await run(async () => { await json("/api/pos/shift", { method: "POST", body: JSON.stringify({ action: shiftModal.toLowerCase(), userId: actorUserId, pin: actorPin, ...(shiftModal === "OPEN" ? { openingFloat: cashAmount } : { countedCash: cashAmount }) }) }); setShiftModal(null); setCashAmount(0); await loadSession(); }); }
   async function supportAction(action: "export" | "send") {
@@ -233,7 +271,7 @@ export default function RestaurantPosPage() {
             {searchResults.length > 0 && <div className={styles.searchResults}>{searchResults.map((item) => <button key={item.sku} className={styles.menuResult} onClick={() => void chooseMenu(item)}><span><strong>{item.name}</strong><br /><small>{item.sku} · คงเหลือ {item.availableTotal}</small></span><strong>฿{money(item.price)}</strong></button>)}</div>}
             <div className={styles.items}>{check.items.length === 0 && <div className={styles.empty}>ค้นเมนูด้านบนเพื่อเริ่มรับออร์เดอร์</div>}{check.items.map((item) => <article className={styles.item} key={item.id}><div className={styles.itemTop}><div><div className={styles.itemName}>{item.productName}</div><div className={styles.itemMeta}>{item.size !== "-" ? `${item.size} · ` : ""}{item.packQty} {item.unitName ?? "รายการ"}{item.roundNo ? ` · รอบ ${item.roundNo}` : ""}</div></div>{item.status === "NEW" ? <Button danger size="small" icon={<CloseCircleOutlined />} onClick={() => void action("remove_item", { itemId: item.id })} /> : <Tag color="green">ส่งแล้ว</Tag>}</div><div className={styles.itemTags}>{item.status === "NEW" && <span className={`${styles.tag} ${styles.tagNew}`}>รอส่งครัว</span>}{item.modifierNames.map((name) => <span className={styles.tag} key={name}>{name}</span>)}{item.kitchenNote && <span className={styles.tag}>โน้ต: {item.kitchenNote}</span>}</div></article>)}</div>
           </div>
-          <div className={styles.checkFooter}>{hasUnsent && <Alert type="warning" showIcon message="มีรายการใหม่ที่ยังไม่จองสต็อก/ส่งครัว" />}<div className={styles.total}><span>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong>฿{money(check.amountDue)}</strong></div><div className={styles.footerButtons}><Button icon={<SwapOutlined />} onClick={() => { setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}>ย้ายโต๊ะ</Button><Button danger onClick={() => { const reason = window.prompt("เหตุผลที่ยกเลิกบิล"); if (reason) void action("cancel", { reason }).then(() => { setCheck(null); setSelectedTableId(""); }); }}>ยกเลิกบิล</Button><Button className={styles.primaryAction} size="large" icon={<CoffeeOutlined />} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}>ส่งครัว / จองวัตถุดิบ</Button><Button className={styles.primaryAction} type="primary" size="large" icon={<WalletOutlined />} disabled={!check.items.length || hasUnsent || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}>คิดเงิน</Button></div></div>
+          <div className={styles.checkFooter}>{hasUnsent && <Alert type="warning" showIcon message="มีรายการใหม่ที่ยังไม่จองสต็อก/ส่งครัว" />}<div className={styles.total}><span>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong>฿{money(check.amountDue)}</strong></div><div className={styles.footerButtons}><Button icon={<SwapOutlined />} onClick={() => { setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}>ย้ายโต๊ะ</Button><Button danger onClick={openCancel}>ยกเลิกบิล</Button><Button className={styles.primaryAction} size="large" icon={<CoffeeOutlined />} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}>ส่งครัว / จองวัตถุดิบ</Button><Button className={styles.primaryAction} type="primary" size="large" icon={<WalletOutlined />} disabled={!check.items.length || hasUnsent || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}>คิดเงิน</Button></div></div>
         </> : <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 40 }} /><h3>เลือกโต๊ะเพื่อเริ่มงาน</h3><p>โต๊ะว่างจะเปิดบิลใหม่ โต๊ะสีส้มจะเรียกบิลเดิม</p></div></div>}</aside>
       </div></Spin> : <Spin spinning={working}><section className={styles.kitchenBoard}><div className={styles.panelHeader}><div><h2>Kitchen Display</h2><small>รายการจากโต๊ะเข้าครัวก่อนชำระเงิน</small></div><Button icon={<ReloadOutlined />} onClick={() => void loadTickets()}>รีเฟรชคิว</Button></div><div className={styles.lanes}>{LANES.map((lane) => { const rows = tickets.filter((ticket) => ticket.status === lane.status); return <section className={styles.lane} style={{ "--lane-color": lane.color } as CSSProperties} key={lane.status}><div className={styles.laneHead}><strong>{lane.label}</strong><span className={styles.laneCount}>{rows.length}</span></div>{rows.map((ticket) => <article className={styles.ticket} key={ticket.id}><div className={styles.ticketTable}>{ticket.tableName ? `${ticket.tableName} · รอบ ${ticket.roundNo ?? 1}` : `บิล #${ticket.orderId?.slice(0, 8) ?? "-"}`}</div><div className={styles.ticketName}>{ticket.productName}</div><div className={styles.ticketMeta}>{ticket.size !== "-" ? `${ticket.size} · ` : ""}x {ticket.packQty ?? ticket.qty} · {ticket.station ?? "ไม่ระบุ station"} · {new Date(ticket.createdAt).toLocaleTimeString(lang === "th" ? "th-TH" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</div>{ticket.modifierCodes.length > 0 && <div className={styles.itemTags}>{ticket.modifierCodes.map((code) => <span className={styles.tag} key={code}>{code}</span>)}</div>}{ticket.kitchenNote && <div className={styles.ticketNote}>{ticket.kitchenNote}</div>}<div className={styles.ticketActions}>{lane.next && <Button type="primary" size="small" onClick={() => void ticketStatus(ticket, lane.next!)}>{lane.nextLabel} <ArrowRightOutlined /></Button>}{lane.status !== "SERVED" && <Button danger size="small" onClick={() => void ticketStatus(ticket, "CANCELLED")}>ยกเลิก</Button>}</div></article>)}</section>; })}</div></section></Spin>}
     </div>
@@ -257,5 +295,6 @@ export default function RestaurantPosPage() {
     </Modal>
     <Modal title={`รับชำระ ${check?.tableName ?? ""}`} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText="ยืนยันรับเงิน" width={680}>{check && <div className={styles.modalGrid}><div className={styles.total}><span>ยอดที่ต้องชำระ</span><strong>฿{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>วิธีชำระ<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">เงินสด</option><option value="QR">QR / พร้อมเพย์</option><option value="CARD">บัตร</option></select></label><label>ยอดช่องทางนี้<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row))} /></label>{payment.method === "CASH" ? <label>เงินสดที่รับมา<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} /></label> : <label>เลขอ้างอิง<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <Button danger onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>ลบช่องทาง {index + 1}</Button>}</div>)}<Button type="dashed" onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>+ แบ่งชำระอีกช่องทาง</Button><Alert type={Math.abs(paymentTotal - checkoutDue) <= 0.009 ? "success" : "warning"} showIcon message={`รวม ฿${money(paymentTotal)} · ${paymentTotal < checkoutDue ? `เหลือ ฿${money(checkoutDue - paymentTotal)}` : paymentTotal > checkoutDue ? `เกิน ฿${money(paymentTotal - checkoutDue)}` : "ครบยอด"}`} /></div>}</Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย"><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
+    <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="ต้องให้ผู้มีสิทธิ์ยกเลิกบิลซึ่งเป็นคนละคนกับผู้ปฏิบัติงานกด PIN อนุมัติ" />}<label>เหตุผล<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>
   </main>;
 }

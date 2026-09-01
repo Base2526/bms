@@ -1361,7 +1361,7 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.45`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`)
 
 `/pos/restaurant` is a separate operating surface selected only for the `restaurant` archetype. It
 owns dining areas, tables, open checks, kitchen rounds, table moves and check cancellation. Sending
@@ -1379,6 +1379,9 @@ reserved stock, so `send_kitchen` and `settle` re-stamp the serving device, shif
 order instead. The sale therefore belongs to the shift that took the money, the same rule deposits
 follow in `9.0` — and `finalizePosSale()` locks a bill by cashier, so without that re-stamp a
 different person closing the check is refused at the counter.
+Composite database FKs mirror that authority chain: a device belongs to the tenant location, its
+shift belongs to that exact device/location, and a restaurant check must name the same tuple. This is
+defence in depth for maintenance SQL and future service callers, not a replacement for route auth.
 
 Migration `9.45` stops borrowing unrelated permissions: floor setup requires
 `restaurant.floor.manage`, KDS transitions require `restaurant.kitchen.update`, and cancelling a
@@ -1397,12 +1400,28 @@ transaction-scoped: a session-level lock has to park a pooled connection for the
 while the work inside borrows another, and five tables sending at once exhausts the ten-connection
 pool for the entire instance, not just for restaurant traffic.
 
-`CLOSING` is a transient state only. Any failed settlement — including a thrown one — returns the
-check to `OPEN`, and cancellation accepts `CLOSING` as well, refusing only when an order for that
-check has actually been paid. A check that cannot be finished *or* cancelled is a table lost for the
-night. The reservation order's idempotency key is read back from the order row rather than rebuilt, so
-a re-send after a failed payment attempt can never settle under a stale key and reserve the food
-twice. Abandoning a reservation releases its key together with the stock.
+Cancelling a table before anything has been sent to the kitchen remains a normal correction by the
+operator. Once any line is `SENT` or a reservation order exists, cancellation releases reserved
+stock and stops active kitchen tickets, so it is treated as a void: the route requires a different
+person's PIN and `pos.void`, the service re-checks the sent/reservation state under the locked check
+row, and `restaurant.check_cancel` records both the operator and `approvedByUserId`. This second
+check closes the race where a kitchen round could be sent after the route first inspected the bill.
+
+Refreshing the reservation for a later round cancels the previous PENDING order and creates the new
+whole-check snapshot in one tenant transaction through `createOrderInTx()`. If the larger basket
+fails validation or has insufficient stock, the transaction rolls back: the previous order, its
+idempotency key, the ingredient reservation and the already-sent kitchen lines remain unchanged.
+The new lines remain `NEW`, `reserved_version` remains behind `version`, and checkout stays blocked.
+
+`CLOSING` is a transient but durable settlement lease. Its random attempt id prevents a second app
+instance from re-stamping the order while the first cashier is receiving payment; a crashed lease can
+be reclaimed or cancelled after five minutes. A failed attempt may reopen only its own claim and only
+while the linked order remains `PENDING`, so an older failure cannot reopen a newer or already-paid
+check. The POS transaction marks the check `PAID` together with payment, stock, FEFO and tax, removing
+the old crash window where money committed but the table stayed occupied. The reservation order's
+idempotency key is read back from the order row rather than rebuilt, so a re-send after a failed
+payment attempt can never settle under a stale key and reserve the food twice. Abandoning a
+reservation releases its key together with the stock.
 
 Dine-in kitchen tickets cover **every** line that was sent, not only recipe-priced menu items; the
 retail board filters on `RECIPE` because retail bills are full of non-food SKUs, while every line on a
@@ -1425,9 +1444,9 @@ revenue.
 
 Settlement takes a tenant transaction advisory lock and row-locks both the check and reservation
 order before stamping the active register. A second app instance therefore cannot steal the same
-check while the first is finalizing it. A lost response can replay a `CLOSING` or already `PAID`
-check only from the same device, shift and cashier; the paid audit is inserted only on the actual
-`CLOSING -> PAID` transition.
+check while the first is finalizing it. A stale `CLOSING` claim can be reclaimed after its bounded
+lease only by the same device, shift and cashier; an already `PAID` check can replay its completed
+sale immediately. The paid audit is inserted only on the actual `CLOSING -> PAID` transition.
 
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
 contracts and credentials; no mock adapter is presented as live. Customer QR self-ordering,

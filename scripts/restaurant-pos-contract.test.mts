@@ -46,6 +46,36 @@ test("restaurant migration owns floor, checks, rounds, RLS and one-open-check co
   assert.match(sql, /bms_orders_restaurant_check_fk/);
 });
 
+test("restaurant floor hierarchy cannot cross branches inside one tenant", async () => {
+  const sql = code(await read("db/migrations/9.47__bms_restaurant_pos_location_integrity.sql"));
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, area_id\)/);
+  assert.match(sql, /REFERENCES bms_restaurant_areas\(tenant_id, location_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, table_id\)/);
+  assert.match(sql, /REFERENCES bms_restaurant_tables\(tenant_id, location_id, id\)/);
+  assert.match(sql, /VALIDATE CONSTRAINT bms_restaurant_tables_area_location_fk/);
+  assert.match(sql, /VALIDATE CONSTRAINT bms_restaurant_checks_table_location_fk/);
+});
+
+test("restaurant settlement has a recoverable cross-instance claim", async () => {
+  const sql = code(await read("db/migrations/9.48__bms_restaurant_pos_settlement_claim.sql"));
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS settlement_attempt_id UUID/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS settlement_started_at TIMESTAMPTZ/);
+  assert.match(sql, /settlement_attempt_id IS NULL\) = \(settlement_started_at IS NULL/);
+  assert.match(sql, /status = 'CLOSING'\) = \(settlement_attempt_id IS NOT NULL/);
+  assert.match(sql, /c\.status IN \('OPEN', 'CLOSING'\)/);
+  assert.match(sql, /o\.status = 'COMPLETED'/);
+});
+
+test("POS device, shift and restaurant check share one tenant location", async () => {
+  const sql = code(await read("db/migrations/9.49__bms_pos_device_shift_location_integrity.sql"));
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id\)/);
+  assert.match(sql, /REFERENCES bms_locations\(tenant_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, device_id\)/);
+  assert.match(sql, /REFERENCES bms_pos_devices\(tenant_id, location_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, pos_device_id, pos_shift_id\)/);
+  assert.match(sql, /REFERENCES bms_pos_shifts\(tenant_id, location_id, device_id, id\)/);
+});
+
 test("restaurant writes require device, PIN and permission at the route boundary", async () => {
   const auth = code(await read("apps/web/app/api/pos/restaurant/routeAuth.ts"));
   const checks = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
@@ -58,6 +88,23 @@ test("restaurant writes require device, PIN and permission at the route boundary
   assert.doesNotMatch(checks, /tenantId\s*:\s*body/);
   // สาขามาจากตัวเครื่องเสมอ — ทุก action ที่แตะบิลต้องได้ locationId ผ่าน `common`
   assert.match(checks, /locationId: auth\.device\.locationId/);
+});
+
+test("cancelling a sent restaurant check requires a distinct pos.void approver", async () => {
+  const route = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(route, /check\.hasCurrentOrder \|\| check\.items\.some/);
+  assert.match(route, /isDistinctPosApprover\(auth\.actor\.userId, approverId\)/);
+  assert.match(route, /verifyCashierPin\(auth\.device\.tenantId, approverId, approverPin\)/);
+  assert.match(route, /cashierHasPermission\(auth\.device\.tenantId, approver\.userId, "pos\.void"\)/);
+  assert.match(restaurant, /AS requires_void_approval/);
+  assert.match(restaurant, /requires_void_approval && \(/);
+  assert.match(restaurant, /approvedByUserId: input\.approvedByUserId \?\? null/);
+  assert.match(restaurant, /finally \{\s*client\.release\(\);\s*\}\s*if \(releasedOrderId\)/);
+  assert.match(page, /person\.approvals\.includes\("pos\.void"\)/);
+  assert.match(page, /approverUserId: cancelNeedsApproval \? cancelApproverId : null/);
+  assert.doesNotMatch(page, /window\.prompt/);
 });
 
 test("restaurant checkout reuses atomic POS settlement and suppresses duplicate kitchen tickets", async () => {
@@ -86,7 +133,7 @@ test("check serialization never parks a pool connection while it waits", async (
 test("a dine-in check is not chained to the device, shift or cashier that opened it", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   // finalizePosSale() ล็อกบิลด้วย cashier_user_id ด้วย — ไม่ประทับใหม่ = คนละคนคิดเงินไม่ได้
-  assert.match(restaurant, /UPDATE bms_orders\s+SET pos_device_id = \$3, pos_shift_id = \$4, cashier_user_id = \$5/);
+  assert.match(restaurant, /UPDATE bms_orders(?: o)?\s+SET pos_device_id = \$3, pos_shift_id = \$4, cashier_user_id = \$5/);
   // และการค้นบิลตอนคิดเงิน/ส่งครัวห้ามผูกกับกะ/เครื่องที่เปิดโต๊ะ (กะเปลี่ยนระหว่างมื้อได้)
   assert.doesNotMatch(restaurant, /AND pos_device_id = \$4 AND pos_shift_id = \$5 AND status IN/);
   assert.doesNotMatch(restaurant, /AND location_id = \$3 AND pos_shift_id = \$4/);
@@ -100,6 +147,20 @@ test("a check can always be finished or cancelled — CLOSING is never a dead en
   assert.match(restaurant, /c\.status IN \('OPEN','CLOSING'\)/);
   // ห้ามยกเลิกบิลที่เก็บเงินไปแล้ว
   assert.match(restaurant, /o\.status NOT IN \('PENDING','CANCELLED'\)/);
+});
+
+test("one settlement attempt owns CLOSING and POS closes the check atomically", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const pos = code(await read("apps/web/lib/bms/pos.ts"));
+  assert.match(restaurant, /const settlementAttemptId = randomUUID\(\)/);
+  assert.match(restaurant, /settlement_started_at, '-infinity'::timestamptz/);
+  assert.match(restaurant, /settlement_attempt_id = \$7, settlement_started_at = now\(\)/);
+  assert.match(restaurant, /restaurantSettlementAttemptId: settlementAttemptId/);
+  assert.match(restaurant, /c\.settlement_attempt_id = \$3/);
+  assert.match(pos, /AND settlement_attempt_id = \$5\s+FOR UPDATE/);
+  assert.match(pos, /SET status = 'PAID', closed_by = \$3, closed_at = now\(\)/);
+  assert.match(pos, /restaurant\.check_paid/);
+  assert.doesNotMatch(restaurant, /SET status = 'PAID', closed_by/);
 });
 
 test("the settlement key is read from the reservation order, never rebuilt", async () => {
@@ -177,7 +238,9 @@ test("restaurant settlement locks the check across instances and safely replays 
   assert.match(settle, /c\.status IN \('OPEN','CLOSING','PAID'\)/);
   assert.match(settle, /check\.order_device_id !== input\.deviceId[\s\S]*check\.order_shift_id !== input\.shiftId[\s\S]*check\.order_cashier_user_id !== input\.actorUserId/);
   assert.match(settle, /if \(check\.status !== "PAID"\)/);
-  assert.match(settle, /RETURNING id[\s\S]*if \(closed\.rowCount\)[\s\S]*status = 'PAID'/);
+  assert.match(settle, /settlement_started_at, '-infinity'::timestamptz/);
+  assert.match(settle, /restaurantSettlementAttemptId: settlementAttemptId/);
+  assert.doesNotMatch(settle, /SET status = 'PAID', closed_by/);
 });
 
 test("whole-check cancellation releases its order inside the check transaction", async () => {
@@ -188,9 +251,24 @@ test("whole-check cancellation releases its order inside the check transaction",
   );
   assert.match(cancelBlock, /beginTenantTx\(client, input\.tenantId/);
   assert.match(cancelBlock, /lockCheckInTx\(client, input\.tenantId, input\.checkId\)/);
-  assert.match(cancelBlock, /cancelOrderInTx\(client, input\.tenantId, cancelledOrderId\)/);
+  assert.match(cancelBlock, /cancelOrderInTx\(client, input\.tenantId, (?:cancelled|released)OrderId\)/);
   assert.match(cancelBlock, /UPDATE bms_restaurant_kitchen_tickets[\s\S]*UPDATE bms_restaurant_checks[\s\S]*restaurant\.check_cancel[\s\S]*COMMIT/);
   assert.doesNotMatch(cancelBlock, /cancelOrder\(/);
+});
+
+test("failed later rounds roll back to the previous sent-item reservation", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const send = restaurant.slice(
+    restaurant.indexOf("export async function sendRestaurantKitchenRound"),
+    restaurant.indexOf("export async function moveRestaurantCheck")
+  );
+  assert.match(send, /beginTenantTx\(client, input\.tenantId/);
+  assert.match(send, /cancelOrderInTx\(client, input\.tenantId, check\.current_order_id\)/);
+  assert.match(send, /createOrderInTx\(client,/);
+  assert.match(send, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\)/);
+  assert.doesNotMatch(send, /restoreSentReservation/);
+  assert.doesNotMatch(restaurant, /await query\(\s*`UPDATE bms_restaurant_/);
+  assert.doesNotMatch(restaurant, /await query<[^>]+>\(\s*`UPDATE bms_orders/);
 });
 
 test("dine-in kitchen tickets cover every sent line and follow the store capability", async () => {

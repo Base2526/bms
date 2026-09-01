@@ -839,9 +839,16 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`–`9.45`)
+## Restaurant POS (`9.44`–`9.49`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
+Composite foreign keys added in `9.47` require an area's table and a table's check to carry the same
+`tenant_id + location_id`; tenant isolation alone is not enough because one tenant can own several
+branches.
+Migration `9.49` extends the same database-level chain through
+`location -> POS device -> shift -> restaurant check`, including the device id carried by the shift;
+a UUID from another branch or tenant can no longer satisfy a restaurant check FK even if supplied by
+SQL outside the service.
 `bms_restaurant_checks` is the open dine-in service state, with a partial unique index allowing only
 one OPEN/CLOSING check per table. `version` changes with cart edits and `reserved_version` records the
 version represented by `current_order_id`; checkout requires equality so unsent food cannot bypass
@@ -850,6 +857,12 @@ PENDING order is cancelled and the new whole-check order is created through `cre
 the same tenant transaction. An insufficient new basket therefore rolls back to the prior order and
 reservation instead of leaving already-cooking lines unexplained. Check cancellation likewise closes
 the order, reservation, tickets, check and audit in one transaction.
+
+Migration `9.48` adds `settlement_attempt_id + settlement_started_at`, making `CLOSING` a
+cross-instance lease: an active cashier cannot be overwritten by another register, while a crashed
+attempt becomes recoverable after the bounded lease. The check changes to `PAID` inside the same POS
+transaction as payment, stock, FEFO and tax; `9.48` also repairs legacy OPEN/CLOSING checks whose
+linked order had already reached `COMPLETED` in the old two-transaction flow.
 
 `bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
 `bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order
