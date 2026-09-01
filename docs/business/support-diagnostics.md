@@ -40,3 +40,34 @@ The legacy global `/api/logs` surface is platform-admin-only. It must not be use
 export because it contains fleet-wide operational data. Standalone deployments still need durable
 stdout/file rotation for the case where PostgreSQL itself is unavailable; the browser ring buffer
 preserves client history but cannot replace database-server crash logs.
+
+## Two role/RLS rules this module must not break
+
+Both were live defects in the first cut of `9.46` and are now pinned by
+`scripts/support-diagnostics-extra-contract.test.mts`.
+
+**The `files` table is off-limits to `bms_app`.** `9.28` revoked `SELECT ON files FROM bms_app`
+on purpose: `files` has RLS disabled, so the grant let the deliberately-constrained role read
+every shop's file rows. Any statement touching `files` therefore has to run on the plain pool
+as the app role. `readSupportBundleForPlatform()` resolves `relpath` first and only then opens
+the tenant transaction that writes the `support.logs_download` audit row — joining `files`
+inside `beginTenantTx()` fails with `permission denied for table files`, which took out every
+Support download. The retention worker's `LEFT JOIN files` is fine because it runs on a plain
+`BEGIN` with no role switch; the rule is about the role, not the table.
+
+**New tenant tables copy `4.2`'s permissive-when-unset policy, not a stricter one.** The policy
+enforces `tenant_id` whenever `bms.tenant_id` is set and stays permissive when it is not.
+`bms_app` always sets that GUC in `beginTenantTx()` and is `NOBYPASSRLS`, so a shop is still
+isolated. Writing `tenant_id = NULLIF(current_setting(...))` without the `COALESCE` reads as
+safer but matches zero rows for the table owner under `FORCE ROW LEVEL SECURITY` — and
+`purgeExpiredSupportBundles()` is fleet-wide on the plain pool with no GUC set, so it would
+claim nothing, purge nothing and report success forever. Private bundles that must be deleted
+at 90 days would simply live on. `system_logs` additionally carries a base-app policy, because
+enabling RLS on a pre-existing shared table must not be able to cut off the log writer or
+`/admin/logs` on a deployment where the app role does not own the table.
+
+A caller-supplied `from`/`to` that cannot be honoured answers `400`. Letting it throw reached
+`withRouteErrorLog`, which writes an error-level `system_logs` row — a client-triggerable 500
+that can page ops over a typo. Permission denials name the missing permission, because these
+are back-office routes where the code is actionable; the counter is the surface where a raw
+permission string would mean nothing to the reader.

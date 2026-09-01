@@ -8,7 +8,12 @@ export const runtime = "nodejs";
 
 async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("support.logs.view");
-  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
+  if (!auth.ok) {
+    return NextResponse.json(
+      { error: auth.status === 401 ? "unauthorized" : "forbidden", requiredPermission: "support.logs.view" },
+      { status: auth.status }
+    );
+  }
   const limit = await rateLimit(`support-events:${auth.tenantId}:${auth.adminId}`, 30, 60_000);
   if (!limit.ok) {
     return NextResponse.json(

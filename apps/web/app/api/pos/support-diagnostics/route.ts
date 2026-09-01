@@ -11,6 +11,7 @@ import {
   recordSupportBundleExport,
   recordSupportEvents,
   sendSupportBundle,
+  SupportDiagnosticsInputError,
 } from "@/lib/bms/supportDiagnostics";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -66,41 +67,50 @@ async function handlePOST(req: NextRequest) {
 
   const from = typeof body?.from === "string" ? body.from : null;
   const to = typeof body?.to === "string" ? body.to : null;
-  if (action === "export") {
-    const bundle = await buildSupportBundle({ tenantId: device.tenantId, actorId: String(actor.userId), from, to });
-    const bundleId = await recordSupportBundleExport({ tenantId: device.tenantId, actorId: String(actor.userId), bundle });
-    const truncatedSources = Object.entries(bundle.manifest.truncated)
-      .filter(([, truncated]) => truncated)
-      .map(([source]) => source)
-      .join(",");
-    return new NextResponse(new Uint8Array(bundle.buffer), {
-      headers: {
-        "content-type": "application/gzip",
-        "content-disposition": `attachment; filename="support-diagnostics-${bundleId}.ndjson.gz"`,
-        "x-support-bundle-id": bundleId,
-        "x-content-sha256": bundle.checksum,
-        "x-support-truncated": truncatedSources,
-        "cache-control": "private, no-store",
-      },
-    });
-  }
+  try {
+    if (action === "export") {
+      const bundle = await buildSupportBundle({ tenantId: device.tenantId, actorId: String(actor.userId), from, to });
+      const bundleId = await recordSupportBundleExport({ tenantId: device.tenantId, actorId: String(actor.userId), bundle });
+      const truncatedSources = Object.entries(bundle.manifest.truncated)
+        .filter(([, truncated]) => truncated)
+        .map(([source]) => source)
+        .join(",");
+      return new NextResponse(new Uint8Array(bundle.buffer), {
+        headers: {
+          "content-type": "application/gzip",
+          "content-disposition": `attachment; filename="support-diagnostics-${bundleId}.ndjson.gz"`,
+          "x-support-bundle-id": bundleId,
+          "x-content-sha256": bundle.checksum,
+          "x-support-truncated": truncatedSources,
+          "cache-control": "private, no-store",
+        },
+      });
+    }
 
-  if (body?.confirmed !== true) return NextResponse.json({ error: "explicit confirmation required" }, { status: 400 });
-  const description = String(body?.description ?? "").trim();
-  if (!description) return NextResponse.json({ error: "description required" }, { status: 400 });
-  const email = await query<{ email: string }>(
-    `SELECT email FROM users WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
-    [device.tenantId, actor.userId]
-  );
-  const result = await sendSupportBundle({
-    tenantId: device.tenantId,
-    actorId: String(actor.userId),
-    actorEmail: String(email.rows[0]?.email ?? "pos-support@invalid.local"),
-    description,
-    from,
-    to,
-  });
-  return NextResponse.json(result, { status: 201 });
+    if (body?.confirmed !== true) return NextResponse.json({ error: "explicit confirmation required" }, { status: 400 });
+    const description = String(body?.description ?? "").trim();
+    if (!description) return NextResponse.json({ error: "description required" }, { status: 400 });
+    const email = await query<{ email: string }>(
+      `SELECT email FROM users WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+      [device.tenantId, actor.userId]
+    );
+    const result = await sendSupportBundle({
+      tenantId: device.tenantId,
+      actorId: String(actor.userId),
+      actorEmail: String(email.rows[0]?.email ?? "pos-support@invalid.local"),
+      description,
+      from,
+      to,
+    });
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    // A bad range from the register is bad input, not a server fault: a 500 here would
+    // write an error-level incident for a typo and tell the cashier the system broke.
+    if (error instanceof SupportDiagnosticsInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 }
 
 export const POST = withRouteErrorLog("POST /api/pos/support-diagnostics", handlePOST);

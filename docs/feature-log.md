@@ -891,6 +891,11 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   cron-secret-gated, multi-instance-safe retention worker then physically deletes the private object
   through the configured storage driver. The legacy fleet-wide log APIs are now
   platform-admin-only, and restaurant add/remove item decisions are audited in their transaction.
+  Recheck corrected two role/RLS defects before any database saw the migration: the platform
+  download joined `files` under `bms_app`, a grant `9.28` had revoked on purpose, so it could only
+  ever fail; and the new tables used a stricter policy than `4.2`, which matches zero rows for the
+  table owner under forced RLS and would have left the fleet-wide retention worker purging nothing
+  while reporting success. A caller-supplied range now answers 400 instead of a 500 that pages ops.
 - **Restaurant core completion (`9.45`, 2026-09-01)** — modifiers now carry a server-owned,
   non-negative surcharge per menu unit. `createOrderInTx()` resolves it from the active tenant
   catalog and snapshots it into line pricing, preserving VAT/receipt/commission/return arithmetic;

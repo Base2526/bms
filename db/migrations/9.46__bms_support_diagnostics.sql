@@ -6,8 +6,15 @@ ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS tenant_id UUID;
 CREATE INDEX IF NOT EXISTS idx_system_logs_tenant_created
   ON system_logs (tenant_id, created_at DESC) WHERE tenant_id IS NOT NULL;
 
--- system_logs is a mixed fleet/tenant table. The owning platform connection keeps its
--- fleet-wide view, while SET LOCAL ROLE bms_app may read only the active tenant.
+-- system_logs is a mixed fleet/tenant table. SET LOCAL ROLE bms_app may read only the
+-- active tenant; the base app connection keeps its fleet-wide view.
+--
+-- Two policies, because permissive policies are OR-ed. bms_app always sets bms.tenant_id
+-- (beginTenantTx) so it can only ever satisfy the tenant policy. The base app never sets
+-- it, so it satisfies the base policy. Without the second policy, enabling RLS on this
+-- pre-existing shared table would deny the log writer and /admin/logs outright on any
+-- deployment where the app role does not own the table — i.e. exactly the non-superuser
+-- production role this repo still has to move to.
 ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS system_logs_bms_app_tenant_read ON system_logs;
 CREATE POLICY system_logs_bms_app_tenant_read ON system_logs
@@ -15,6 +22,10 @@ CREATE POLICY system_logs_bms_app_tenant_read ON system_logs
   USING (
     tenant_id = NULLIF(current_setting('bms.tenant_id', true), '')::uuid
   );
+DROP POLICY IF EXISTS system_logs_base_app_full ON system_logs;
+CREATE POLICY system_logs_base_app_full ON system_logs
+  USING (NULLIF(current_setting('bms.tenant_id', true), '') IS NULL)
+  WITH CHECK (NULLIF(current_setting('bms.tenant_id', true), '') IS NULL);
 GRANT SELECT ON system_logs TO bms_app;
 
 CREATE TABLE IF NOT EXISTS bms_support_events (
@@ -95,6 +106,13 @@ ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS diagnostic_bundle_id UUID R
 CREATE INDEX IF NOT EXISTS idx_support_tickets_diagnostic_bundle
   ON support_tickets (diagnostic_bundle_id) WHERE diagnostic_bundle_id IS NOT NULL;
 
+-- Same policy shape as 4.2, and for the same reason: enforce when bms.tenant_id is set
+-- (every bms_app transaction sets it, and bms_app is NOBYPASSRLS), stay permissive when it
+-- is not so the base app and cron keep working. The strict form -- tenant_id = NULLIF(...)
+-- with no COALESCE -- reads as "safer" but under FORCE ROW LEVEL SECURITY it also matches
+-- zero rows for the table owner, which would make the fleet-wide retention worker in
+-- purgeExpiredSupportBundles() claim nothing, purge nothing, and report success forever.
+-- Private bundles that must be deleted at 90 days would simply never be deleted.
 DO $$
 DECLARE t TEXT;
 BEGIN
@@ -103,7 +121,7 @@ BEGIN
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_tenant_isolation', t);
     EXECUTE format(
-      'CREATE POLICY %I ON %I USING (tenant_id = NULLIF(current_setting(''bms.tenant_id'', true), '''')::uuid) WITH CHECK (tenant_id = NULLIF(current_setting(''bms.tenant_id'', true), '''')::uuid)',
+      'CREATE POLICY %I ON %I USING (tenant_id = COALESCE(NULLIF(current_setting(''bms.tenant_id'', true), '''')::uuid, tenant_id)) WITH CHECK (tenant_id = COALESCE(NULLIF(current_setting(''bms.tenant_id'', true), '''')::uuid, tenant_id))',
       t || '_tenant_isolation', t
     );
   END LOOP;

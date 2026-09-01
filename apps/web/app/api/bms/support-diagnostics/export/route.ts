@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
-import { buildSupportBundle, recordSupportBundleExport } from "@/lib/bms/supportDiagnostics";
+import {
+  buildSupportBundle,
+  recordSupportBundleExport,
+  SupportDiagnosticsInputError,
+} from "@/lib/bms/supportDiagnostics";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -9,7 +13,15 @@ export const dynamic = "force-dynamic";
 
 async function handleGET(req: NextRequest) {
   const auth = await authorizeAdminRoute("support.logs.export");
-  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
+  // Name the permission: this is a back-office page, and "unauthorized" alone leaves the
+  // shop with nothing to act on. The counter is the surface where a raw permission code
+  // would be meaningless to the reader, not here.
+  if (!auth.ok) {
+    return NextResponse.json(
+      { error: auth.status === 401 ? "unauthorized" : "forbidden", requiredPermission: "support.logs.export" },
+      { status: auth.status }
+    );
+  }
   const limit = await rateLimit(`support-export:${auth.tenantId}:${auth.adminId}`, 5, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
@@ -18,12 +30,20 @@ async function handleGET(req: NextRequest) {
     );
   }
   const url = new URL(req.url);
-  const bundle = await buildSupportBundle({
-    tenantId: auth.tenantId,
-    actorId: String(auth.adminId),
-    from: url.searchParams.get("from"),
-    to: url.searchParams.get("to"),
-  });
+  let bundle: Awaited<ReturnType<typeof buildSupportBundle>>;
+  try {
+    bundle = await buildSupportBundle({
+      tenantId: auth.tenantId,
+      actorId: String(auth.adminId),
+      from: url.searchParams.get("from"),
+      to: url.searchParams.get("to"),
+    });
+  } catch (error) {
+    if (error instanceof SupportDiagnosticsInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
   const bundleId = await recordSupportBundleExport({
     tenantId: auth.tenantId,
     actorId: String(auth.adminId),
