@@ -380,6 +380,50 @@ export async function addRestaurantCheckItem(input: {
   });
 }
 
+/**
+ * แก้จำนวนลูกค้าของบิลที่เปิดอยู่ (เช่น กรอกผิดตอนเปิดโต๊ะ หรือมีคนมาเพิ่ม)
+ *
+ * **ไม่ขยับ `version` โดยตั้งใจ** — version คือ "เนื้อหาที่สั่ง" ซึ่งผูกกับคีย์กันบิลซ้ำ
+ * ของออร์เดอร์จอง (`restaurant:<id>:v<version>`) จำนวนคนไม่เปลี่ยนของที่ครัวต้องทำ
+ * และไม่เปลี่ยนเงิน การขยับ version จะทำให้รอบที่ส่งครัวไปแล้วถูกมองว่าเก่าโดยไม่มีเหตุ
+ */
+export async function setRestaurantCheckGuestCount(input: {
+  tenantId: string;
+  locationId: string;
+  checkId: string;
+  actorUserId: string;
+  guestCount: number;
+}) {
+  const guestCount = Math.min(Math.max(Math.trunc(input.guestCount), 1), 500);
+  return withCheckLock(input.tenantId, input.checkId, async () => {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      await lockCheckInTx(client, input.tenantId, input.checkId);
+      const updated = await client.query<{ guest_count: number }>(
+        `UPDATE bms_restaurant_checks
+            SET guest_count = $4, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status IN ('OPEN', 'CLOSING')
+        RETURNING guest_count`,
+        [input.tenantId, input.checkId, input.locationId, guestCount]
+      );
+      if (!updated.rowCount) throw new Error("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แก้จำนวนคนได้");
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.guest_count',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.checkId, JSON.stringify({ guestCount })]
+      );
+      await client.query("COMMIT");
+      return getRestaurantCheck(input.tenantId, input.checkId);
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
 export async function removeRestaurantCheckItem(input: {
   tenantId: string;
   locationId: string;

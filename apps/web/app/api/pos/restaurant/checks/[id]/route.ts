@@ -7,6 +7,7 @@ import {
   removeRestaurantCheckItem,
   sendRestaurantKitchenRound,
   settleRestaurantCheck,
+  setRestaurantCheckGuestCount,
 } from "@/lib/bms/restaurantPos";
 import { cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
@@ -56,6 +57,13 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
     const check = await removeRestaurantCheckItem({
       ...common,
       itemId: String(body.itemId ?? "").trim(),
+    });
+    return NextResponse.json({ check });
+  }
+  if (action === "set_guest_count") {
+    const check = await setRestaurantCheckGuestCount({
+      ...common,
+      guestCount: Number(body.guestCount ?? 0),
     });
     return NextResponse.json({ check });
   }
