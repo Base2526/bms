@@ -328,6 +328,7 @@ function mapSupportTicket(row: any, comments: any[] = []) {
     createdAt: toIsoOrNull(row.created_at) || new Date(0).toISOString(),
     updatedAt: toIsoOrNull(row.updated_at),
     closedAt: toIsoOrNull(row.closed_at),
+    diagnosticBundleId: row.diagnostic_bundle_id ? String(row.diagnostic_bundle_id) : null,
     comments: comments.map(mapSupportComment),
   };
 }
@@ -896,7 +897,7 @@ const rawResolvers = {
       params.push(pageSize, (page - 1) * pageSize);
       const rows = await query<any>(
         `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
-                user_agent, ip, status, created_at, updated_at, closed_at
+                user_agent, ip, status, created_at, updated_at, closed_at, diagnostic_bundle_id
            FROM support_tickets
           ${whereSql}
           ORDER BY created_at DESC
@@ -6609,7 +6610,7 @@ const rawResolvers = {
       const { result } = await runInTransaction(actorId || "00000000-0000-0000-0000-000000000000", async (client) => {
         const current = await client.query<any>(
           `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
-                  user_agent, ip, status, created_at, updated_at, closed_at
+                  user_agent, ip, status, created_at, updated_at, closed_at, diagnostic_bundle_id
              FROM support_tickets
             WHERE id = $1
             FOR UPDATE`,
@@ -6653,7 +6654,7 @@ const rawResolvers = {
 
         const updated = await client.query<any>(
           `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
-                  user_agent, ip, status, created_at, updated_at, closed_at
+                  user_agent, ip, status, created_at, updated_at, closed_at, diagnostic_bundle_id
              FROM support_tickets
             WHERE id = $1`,
           [ticketId]

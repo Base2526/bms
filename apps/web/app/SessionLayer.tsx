@@ -8,6 +8,7 @@ import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { GlobalInboxNotifier } from "@/components/GlobalInboxNotifier";
 import { GlobalMentionNotifier } from "@/components/GlobalMentionNotifier";
 import { GlobalFailureNotifier } from "@/components/GlobalFailureNotifier";
+import { SupportActivityRecorder } from "@/components/SupportActivityRecorder";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
 import { getLangCookie, setLangCookie, isLang } from "@/lib/lang";
 
@@ -26,6 +27,9 @@ function GlobalWiresWrapper() {
   // Admin takes precedence over user, same reasoning as themePreference above (and the
   // "user = rawUser ?? admin" precedence already used elsewhere in session-context.tsx).
   const sessionLanguage = admin?.language ?? user?.language;
+  const supportScope = admin?.id && !admin.is_platform_admin
+    ? `admin-${admin.tenant_id ?? "default"}-${admin.id}`
+    : null;
 
   React.useEffect(() => {
     const frontendLogout = () => (window.location.href = "/admin/login");
@@ -64,6 +68,7 @@ function GlobalWiresWrapper() {
       {admin?.id ? <GlobalInboxNotifier /> : null}
       {admin?.id ? <GlobalMentionNotifier /> : null}
       {admin?.id ? <GlobalFailureNotifier /> : null}
+      {supportScope ? <SupportActivityRecorder scopeKey={supportScope} /> : null}
     </>
   );
 }

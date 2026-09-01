@@ -6,7 +6,7 @@
 
 import path from "path";
 import fs from "fs";
-import { mkdir, readFile, writeFile, stat as fsStat } from "fs/promises";
+import { mkdir, readFile, writeFile, stat as fsStat, unlink } from "fs/promises";
 import crypto from "crypto";
 import { Readable } from "stream";
 
@@ -39,6 +39,14 @@ export function createLocalDriver(): StorageDriver {
       const full = resolveWithin(relpath);
       await mkdir(path.dirname(full), { recursive: true });
       await writeFile(full, body);
+    },
+
+    async delete(relpath: string): Promise<void> {
+      try {
+        await unlink(resolveWithin(relpath));
+      } catch (err: any) {
+        if (err?.code !== "ENOENT") throw err;
+      }
     },
 
     async writeStream(relpath, stream): Promise<WriteResult> {

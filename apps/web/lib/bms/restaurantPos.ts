@@ -339,12 +339,13 @@ export async function addRestaurantCheckItem(input: {
         [input.tenantId, input.checkId, input.locationId]
       );
       if (!check.rowCount) throw new Error("บิลนี้ไม่อยู่ในสถานะที่เพิ่มอาหารได้");
-      await client.query(
+      const inserted = await client.query<{ id: string }>(
         `INSERT INTO bms_restaurant_check_items
            (tenant_id, check_id, product_sku, product_name, size, pack_qty,
             pack_code, unit_name, base_qty, pack_price, modifier_codes,
             modifier_names, kitchen_note, added_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         RETURNING id`,
         [input.tenantId, input.checkId, hit.sku, hit.productName, hit.size, packQty,
           hit.packCode, hit.unitName, hit.baseQty, hit.packPrice, modifierCodes,
           modifierCodes.map((code) => allowed.get(code) ?? code), input.kitchenNote?.trim() || null,
@@ -355,6 +356,13 @@ export async function addRestaurantCheckItem(input: {
             SET version = version + 1, updated_at = now()
           WHERE tenant_id = $1 AND id = $2`,
         [input.tenantId, input.checkId]
+      );
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.item_add',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+          JSON.stringify({ itemId: inserted.rows[0].id, sku: hit.sku, size: hit.size,
+            packCode: hit.packCode, packQty, modifierCount: modifierCodes.length })]
       );
       await client.query("COMMIT");
       return getRestaurantCheck(input.tenantId, input.checkId);
@@ -394,6 +402,12 @@ export async function removeRestaurantCheckItem(input: {
         `UPDATE bms_restaurant_checks SET version = version + 1, updated_at = now()
           WHERE tenant_id = $1 AND id = $2`,
         [input.tenantId, input.checkId]
+      );
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.item_remove',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+          JSON.stringify({ itemId: input.itemId })]
       );
       await client.query("COMMIT");
       return getRestaurantCheck(input.tenantId, input.checkId);

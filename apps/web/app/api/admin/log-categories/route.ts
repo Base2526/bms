@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/log-categories
 async function handleGET() {
+  const auth = await authorizePlatformAdminRoute();
+  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   const { rows } = await query<{ category: string | null }>(
     `
     SELECT DISTINCT category

@@ -21,11 +21,43 @@
 
 import "server-only";
 
+import crypto from "crypto";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { verifyAdminSession } from "@/lib/auth/server";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { writeLogServer } from "./writeLog.server";
 import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
+
+const SECRET_TEXT = /(Bearer\s+[A-Za-z0-9._~+\/-]+=*|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g;
+function safeErrorText(value: unknown, max = 2_000): string | null {
+  if (value == null) return null;
+  return String(value).replace(SECRET_TEXT, "[REDACTED]").slice(0, max);
+}
+
+function errorSourceKey(args: unknown[]) {
+  const req = args[0] as NextRequest | undefined;
+  const posToken = req?.headers?.get?.("x-pos-device-token")?.trim();
+  if (posToken) return `pos:${crypto.createHash("sha256").update(posToken).digest("hex").slice(0, 16)}`;
+  const admin = verifyAdminSession();
+  return admin?.id ? `admin:${admin.id}` : "anonymous";
+}
+
+async function resolveErrorTenant(args: unknown[]) {
+  try {
+    const admin = await authorizeAdminRoute(null);
+    if (admin.ok) return admin.tenantId;
+    const req = args[0] as NextRequest | undefined;
+    const posToken = req?.headers?.get?.("x-pos-device-token")?.trim();
+    if (!posToken) return null;
+    const { authenticatePosDevice } = await import("@/lib/bms/pos");
+    return (await authenticatePosDevice(posToken))?.tenantId ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * @param routeName เช่น "POST /api/pos/sale" — ใช้เป็น action/routeName ใน log
@@ -39,33 +71,41 @@ export function withRouteErrorLog<Args extends any[]>(
       return await handler(...args);
     } catch (error: any) {
       const detail = {
-        code: error?.code ?? null,             // SQLSTATE ถ้ามาจาก pg
-        constraint: error?.constraint ?? null,
-        detail: error?.detail ?? null,
-        message: error?.message ?? null,
+        code: safeErrorText(error?.code, 80),             // SQLSTATE ถ้ามาจาก pg
+        constraint: safeErrorText(error?.constraint, 160),
+        detail: safeErrorText(error?.detail),
+        message: safeErrorText(error?.message),
       };
       // console เขียนทุกครั้งเสมอ ไม่ throttle — เป็นทางถอยเดียวตอนฐานล่มจนเขียน
       // system_logs ไม่ได้ และไม่มีต้นทุนอะไรนอกจากบรรทัดใน stdout
-      console.error(`[route] unhandled ${routeName}`, { ...detail, stack: error?.stack ?? null });
+      const safeStack = safeErrorText(error?.stack, 12_000);
+      console.error(`[route] unhandled ${routeName}`, { ...detail, stack: safeStack });
 
       // error เดียวกันรัว ๆ (ฐานล่ม → ทุก request พังเหมือนกัน) ไม่ต้องเขียนทุกครั้ง
       // จำนวนครั้งยังนับครบที่ requestMetrics อยู่แล้ว
-      if (!shouldLog(`api|${routeName}|${detail.code ?? detail.message ?? ""}`, ERROR_WINDOW_MS)) {
+      const sourceKey = errorSourceKey(args);
+      if (!shouldLog(`api|${sourceKey}|${routeName}|${detail.code ?? detail.message ?? ""}`, ERROR_WINDOW_MS)) {
         return errorResponse(detail.message);
       }
 
       // ไม่ await — ถ้าต้นเหตุคือฐานล่ม การรอเขียน log จะหน่วง response เปล่า ๆ
       // (writeLogServer กลืน error ของตัวเองอยู่แล้ว ไม่มีทาง throw กลับมา)
-      void writeLogServer("error", "api", `unhandled error: ${routeName}`, {
-        action: "api.route.unhandled",
-        status: "500",
-        routeName,
-        errorMessage: detail.message,
-        stack: error?.stack ?? null,
-        sqlstate: detail.code,
-        constraint: detail.constraint,
-        detail: detail.detail,
-      });
+      void resolveErrorTenant(args).then((tenantId) => writeLogServer(
+        "error",
+        "api",
+        `unhandled error: ${routeName}`,
+        {
+          action: "api.route.unhandled",
+          status: "500",
+          routeName,
+          errorMessage: detail.message,
+          stack: safeStack,
+          sqlstate: detail.code,
+          constraint: detail.constraint,
+          detail: detail.detail,
+          tenantId,
+        }
+      ));
 
       return errorResponse(detail.message);
     }
@@ -73,8 +113,11 @@ export function withRouteErrorLog<Args extends any[]>(
 }
 
 function errorResponse(message: string | null) {
+  const publicMessage = process.env.NODE_ENV === "production"
+    ? "เซิร์ฟเวอร์ผิดพลาด"
+    : (message ? String(message) : "เซิร์ฟเวอร์ผิดพลาด");
   return NextResponse.json(
-    { status: "SERVER_ERROR", error: message ? String(message) : "เซิร์ฟเวอร์ผิดพลาด" },
+    { status: "SERVER_ERROR", error: publicMessage },
     { status: 500 }
   );
 }

@@ -5,7 +5,7 @@ import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Button, Card, Descriptions, Empty, Input, message, Select, Space, Table, Tag, Timeline, Typography,
 } from "antd";
-import { CustomerServiceOutlined, SaveOutlined } from "@ant-design/icons";
+import { CustomerServiceOutlined, DownloadOutlined, SaveOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -32,6 +32,7 @@ const Q_SUPPORT_TICKETS = gql`
         createdAt
         updatedAt
         closedAt
+        diagnosticBundleId
         comments {
           id
           authorId
@@ -65,6 +66,7 @@ const M_UPDATE_SUPPORT_TICKET = gql`
       createdAt
       updatedAt
       closedAt
+      diagnosticBundleId
       comments {
         id
         authorId
@@ -105,6 +107,7 @@ type SupportTicket = {
   createdAt: string;
   updatedAt: string | null;
   closedAt: string | null;
+  diagnosticBundleId: string | null;
   comments: SupportTicketComment[];
 };
 
@@ -345,6 +348,16 @@ export default function SupportTicketsPage() {
               <Descriptions.Item label="IP">{selected.ip || "-"}</Descriptions.Item>
               <Descriptions.Item label="Page URL" span={2}>{selected.pageUrl || "-"}</Descriptions.Item>
               <Descriptions.Item label="User Agent" span={2}>{selected.userAgent || "-"}</Descriptions.Item>
+              {selected.diagnosticBundleId ? (
+                <Descriptions.Item label={t("admin_support_tickets.diagnostic_bundle")} span={2}>
+                  <Button
+                    icon={<DownloadOutlined />}
+                    href={`/api/bms/support-diagnostics/bundles/${encodeURIComponent(selected.diagnosticBundleId)}/download`}
+                  >
+                    {t("admin_support_tickets.download_diagnostics")}
+                  </Button>
+                </Descriptions.Item>
+              ) : null}
             </Descriptions>
             <Paragraph style={{ whiteSpace: "pre-wrap", marginTop: 16 }}>{selected.message}</Paragraph>
 

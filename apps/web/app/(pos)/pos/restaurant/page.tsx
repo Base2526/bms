@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, ReloadOutlined, SearchOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
-import { Alert, Button, Modal, Segmented, Spin, Tag, message } from "antd";
+import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, ReloadOutlined, SearchOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { useI18n } from "@/lib/i18nContext";
+import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import styles from "./restaurant.module.css";
 
 const TOKEN_KEY = "bms.pos.deviceToken";
@@ -58,6 +59,10 @@ export default function RestaurantPosPage() {
   const [payments, setPayments] = useState<PosPaymentDraft[]>([]);
   const [moveOpen, setMoveOpen] = useState(false);
   const [targetTableId, setTargetTableId] = useState("");
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportDescription, setSupportDescription] = useState("");
+  const [supportConfirmed, setSupportConfirmed] = useState(false);
+  const [supportWorking, setSupportWorking] = useState<"export" | "send" | null>(null);
 
   useEffect(() => { setToken(window.localStorage.getItem(TOKEN_KEY) ?? ""); setReady(true); }, []);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
@@ -74,10 +79,33 @@ export default function RestaurantPosPage() {
       ? cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")
       : 0
   )) * 100) / 100;
+  const supportScope = session?.device?.id ? `pos-${session.device.id}` : "";
 
   async function json(url: string, init?: RequestInit) {
+    const startedAt = Date.now();
+    const method = String(init?.method ?? "GET").toUpperCase();
     const response = await fetch(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" });
     const body = await response.json().catch(() => ({}));
+    if (method !== "GET" || !response.ok) {
+      let requestedAction = method;
+      try {
+        const requestBody = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+        if (typeof requestBody?.action === "string") requestedAction = requestBody.action.slice(0, 80);
+      } catch {}
+      recordSupportActivity(supportScope, {
+        category: "pos.restaurant",
+        action: `restaurant.api.${requestedAction.toLowerCase()}`,
+        status: response.ok ? "success" : "error",
+        locationId: session?.location?.id ?? null,
+        deviceId: session?.device?.id ?? null,
+        context: {
+          route: url.split("?")[0],
+          httpStatus: response.status,
+          durationMs: Date.now() - startedAt,
+          online: navigator.onLine,
+        },
+      });
+    }
     if (!response.ok) throw new Error(String(body.error ?? body.reason ?? `HTTP ${response.status}`));
     return body;
   }
@@ -132,6 +160,54 @@ export default function RestaurantPosPage() {
   }
   async function ticketStatus(ticket: KitchenTicket, status: string) { await run(async () => { const body = await json(`/api/pos/kitchen/tickets/${ticket.id}/status`, { method: "POST", body: JSON.stringify({ userId: actorUserId, pin: actorPin, status }) }); setTickets((current) => current.map((row) => row.id === ticket.id ? body.ticket : row)); }); }
   async function changeShift() { if (!shiftModal) return; await run(async () => { await json("/api/pos/shift", { method: "POST", body: JSON.stringify({ action: shiftModal.toLowerCase(), userId: actorUserId, pin: actorPin, ...(shiftModal === "OPEN" ? { openingFloat: cashAmount } : { countedCash: cashAmount }) }) }); setShiftModal(null); setCashAmount(0); await loadSession(); }); }
+  async function supportAction(action: "export" | "send") {
+    if (!token || !session?.device?.id || !actorUserId || !actorPin) return message.error(lang === "en" ? "Select an operator and enter the PIN first." : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน");
+    if (action === "send" && (!supportConfirmed || !supportDescription.trim())) return message.warning(lang === "en" ? "Describe the issue and confirm before sending." : "อธิบายปัญหาและยืนยันก่อนส่ง");
+    setSupportWorking(action);
+    try {
+      if (action === "send") recordSupportActivity(supportScope, { category: "support", action: "support.bundle_send_confirmed", status: "success", deviceId: session.device.id, locationId: session.location?.id ?? null, context: { route: "/pos/restaurant" } });
+      await flushSupportActivity(supportScope, {
+        url: "/api/pos/support-diagnostics",
+        headers: { "x-pos-device-token": token },
+        body: { action: "events", cashierUserId: actorUserId, cashierPin: actorPin },
+      });
+      const to = new Date();
+      const response = await fetch("/api/pos/support-diagnostics", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-pos-device-token": token },
+        body: JSON.stringify({
+          action,
+          cashierUserId: actorUserId,
+          cashierPin: actorPin,
+          from: new Date(to.getTime() - 24 * 3_600_000).toISOString(),
+          to: to.toISOString(),
+          description: supportDescription.trim(),
+          confirmed: action === "send" ? supportConfirmed : false,
+        }),
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || `HTTP ${response.status}`);
+      const truncated = response.headers.get("x-support-truncated");
+      if (action === "export") {
+        const blob = await response.blob();
+        const filename = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "support-diagnostics.ndjson.gz";
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
+        message.success(truncated ? (lang === "en" ? `Downloaded; ${truncated} was truncated. Select a shorter period in Admin for a complete bundle.` : `ดาวน์โหลดแล้ว แต่ ${truncated} เกินเพดาน ให้เลือกช่วงสั้นลงในหน้า Admin`) : (lang === "en" ? "Diagnostic log downloaded." : "ดาวน์โหลด Diagnostic Log แล้ว"));
+      } else {
+        const body = await response.json();
+        const truncatedSources = Object.entries(body.truncated ?? {}).filter(([, value]) => value).map(([key]) => key).join(", ");
+        if (truncatedSources) {
+          message.warning(lang === "en" ? `Support case ${body.ticketCode} created, but ${truncatedSources} was truncated.` : `สร้างเคส ${body.ticketCode} แล้ว แต่ ${truncatedSources} เกินเพดานข้อมูล`);
+        } else {
+          message.success(lang === "en" ? `Support case created: ${body.ticketCode}` : `สร้างเคส Support แล้ว: ${body.ticketCode}`);
+        }
+        setSupportOpen(false); setSupportConfirmed(false); setSupportDescription("");
+      }
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : String(cause));
+    } finally { setSupportWorking(null); }
+  }
 
   if (!ready || loading) return <main className={styles.page}><div className={styles.empty}><Spin size="large" /></div></main>;
   if (!token) return <main className={styles.page}><Alert type="warning" showIcon message="ยังไม่พบ device token" description="จับคู่เครื่อง POS จากหลังบ้านก่อนเปิดหน้านี้" /></main>;
@@ -140,7 +216,7 @@ export default function RestaurantPosPage() {
     <div className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.brand}><div className={styles.brandMark}>B</div><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · โต๊ะและครัวแยกจาก Retail POS</p></div></div>
-        <div className={styles.topActions}><Segmented value={screen} onChange={(value) => setScreen(value as "FLOOR" | "KITCHEN")} options={[{ value: "FLOOR", label: <span><AppstoreOutlined /> โต๊ะ</span> }, { value: "KITCHEN", label: <span><CoffeeOutlined /> ครัว</span> }]} /><Button icon={<ReloadOutlined />} onClick={() => void refresh()}>รีเฟรช</Button><Button icon={<ShopOutlined />} onClick={() => { window.location.href = "/pos?surface=retail"; }} title="คืนสินค้า · รับของเข้าคลัง · มัดจำ · บัตรของขวัญ · ขายเชื่อ ยังอยู่ที่หน้าค้าปลีก">โหมดค้าปลีก</Button><Button type={session?.shift ? "default" : "primary"} onClick={() => setShiftModal(session?.shift ? "CLOSE" : "OPEN")}>{session?.shift ? "ปิดกะ" : "เปิดกะ"}</Button></div>
+        <div className={styles.topActions}><Segmented value={screen} onChange={(value) => setScreen(value as "FLOOR" | "KITCHEN")} options={[{ value: "FLOOR", label: <span><AppstoreOutlined /> โต๊ะ</span> }, { value: "KITCHEN", label: <span><CoffeeOutlined /> ครัว</span> }]} /><Button icon={<ReloadOutlined />} onClick={() => void refresh()}>รีเฟรช</Button><Button icon={<CustomerServiceOutlined />} onClick={() => setSupportOpen(true)}>Support Log ({localSupportEventCount(supportScope)})</Button><Button icon={<ShopOutlined />} onClick={() => { window.location.href = "/pos?surface=retail"; }} title="คืนสินค้า · รับของเข้าคลัง · มัดจำ · บัตรของขวัญ · ขายเชื่อ ยังอยู่ที่หน้าค้าปลีก">โหมดค้าปลีก</Button><Button type={session?.shift ? "default" : "primary"} onClick={() => setShiftModal(session?.shift ? "CLOSE" : "OPEN")}>{session?.shift ? "ปิดกะ" : "เปิดกะ"}</Button></div>
       </header>
       <section className={styles.operatorBar}><div className={styles.operatorFields}><strong>ผู้ปฏิบัติงาน</strong><select value={actorUserId} onChange={(event) => setActorUserId(event.target.value)}><option value="">เลือกพนักงาน</option>{staff.map((person) => <option key={person.id} value={person.id} disabled={!person.hasPin}>{person.name ?? person.email ?? person.id}{person.hasPin ? "" : " · ยังไม่มี PIN"}</option>)}</select><input value={actorPin} onChange={(event) => setActorPin(event.target.value)} type="password" inputMode="numeric" placeholder="PIN" /></div><Tag color={session?.shift ? "green" : "orange"}>{session?.shift ? "กะเปิดอยู่" : "ยังไม่เปิดกะ"}</Tag></section>
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
@@ -165,6 +241,20 @@ export default function RestaurantPosPage() {
     <Modal title={`เปิดบิล ${openTable?.name ?? ""}`} open={Boolean(openTable)} onCancel={() => setOpenTable(null)} onOk={() => void openCheck()} confirmLoading={working} okText="เปิดโต๊ะ"><div className={styles.modalGrid}><label>จำนวนลูกค้า<input type="number" min={1} max={500} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} /></label></div></Modal>
     <Modal title={menuHit?.productName ?? "เพิ่มเมนู"} open={Boolean(menuHit)} onCancel={() => setMenuHit(null)} onOk={() => void addMenu()} confirmLoading={working} okText="เพิ่มในบิล">{menuHit && <div className={styles.modalGrid}><Alert type="info" message={`${menuHit.size} · ฿${money(menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0))} / ${menuHit.unitName} · รวม ${menuQty} รายการ ฿${money((menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * menuQty)}`} /><label>จำนวน<input type="number" min={1} max={9999} value={menuQty} onChange={(event) => setMenuQty(Number(event.target.value))} /></label>{menuHit.modifiers.length > 0 && <div><strong>ตัวเลือก</strong><div className={styles.modifierList}>{menuHit.modifiers.map((modifier) => <label className={styles.modifierChoice} key={modifier.code}><input type="checkbox" checked={modifierCodes.includes(modifier.code)} onChange={(event) => setModifierCodes((current) => event.target.checked ? [...current, modifier.code] : current.filter((code) => code !== modifier.code))} /><span>{modifier.name}{modifier.priceDelta > 0 ? ` (+฿${money(modifier.priceDelta)})` : ""}</span></label>)}</div></div>}<label>โน้ตถึงครัว<textarea rows={3} maxLength={300} value={kitchenNote} onChange={(event) => setKitchenNote(event.target.value)} placeholder="เช่น ไม่เผ็ด, แยกน้ำ" /></label></div>}</Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
+    <Modal
+      title={lang === "en" ? "Support diagnostics" : "ข้อมูลวิเคราะห์สำหรับ Support"}
+      open={supportOpen}
+      onCancel={() => { if (!supportWorking) setSupportOpen(false); }}
+      footer={[
+        <Button key="cancel" disabled={Boolean(supportWorking)} onClick={() => setSupportOpen(false)}>{lang === "en" ? "Cancel" : "ยกเลิก"}</Button>,
+        <Button key="export" icon={<DownloadOutlined />} loading={supportWorking === "export"} disabled={Boolean(supportWorking)} onClick={() => void supportAction("export")}>Export Log</Button>,
+        <Button key="send" type="primary" icon={<CustomerServiceOutlined />} loading={supportWorking === "send"} disabled={Boolean(supportWorking) || !supportConfirmed} onClick={() => void supportAction("send")}>{lang === "en" ? "Send to Support" : "ส่งให้ Support"}</Button>,
+      ]}
+    >
+      <Alert type="info" showIcon message={lang === "en" ? "The last 24 hours will be included. Request bodies, PINs and tokens are excluded." : "ระบบจะรวมข้อมูล 24 ชั่วโมงล่าสุด โดยไม่ส่ง request body, PIN หรือ token"} />
+      <Input.TextArea style={{ marginTop: 16 }} rows={4} maxLength={2000} showCount value={supportDescription} onChange={(event) => setSupportDescription(event.target.value)} placeholder={lang === "en" ? "What happened before the error?" : "ก่อนเกิดปัญหาทำอะไรอยู่ และพบข้อความอะไร"} />
+      <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{lang === "en" ? "I consent to send this diagnostic bundle to Support." : "ยินยอมส่งข้อมูลวิเคราะห์ชุดนี้ให้ทีม Support"}</Checkbox>
+    </Modal>
     <Modal title={`รับชำระ ${check?.tableName ?? ""}`} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText="ยืนยันรับเงิน" width={680}>{check && <div className={styles.modalGrid}><div className={styles.total}><span>ยอดที่ต้องชำระ</span><strong>฿{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>วิธีชำระ<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">เงินสด</option><option value="QR">QR / พร้อมเพย์</option><option value="CARD">บัตร</option></select></label><label>ยอดช่องทางนี้<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row))} /></label>{payment.method === "CASH" ? <label>เงินสดที่รับมา<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} /></label> : <label>เลขอ้างอิง<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <Button danger onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>ลบช่องทาง {index + 1}</Button>}</div>)}<Button type="dashed" onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>+ แบ่งชำระอีกช่องทาง</Button><Alert type={Math.abs(paymentTotal - checkoutDue) <= 0.009 ? "success" : "warning"} showIcon message={`รวม ฿${money(paymentTotal)} · ${paymentTotal < checkoutDue ? `เหลือ ฿${money(checkoutDue - paymentTotal)}` : paymentTotal > checkoutDue ? `เกิน ฿${money(paymentTotal - checkoutDue)}` : "ครบยอด"}`} /></div>}</Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย"><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
   </main>;

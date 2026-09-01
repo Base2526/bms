@@ -121,6 +121,10 @@ export const BMS_PERMISSIONS = [
   "restaurant.floor.manage",
   "restaurant.kitchen.update",
   "restaurant.check.cancel",
+  // ชุดข้อมูลวิเคราะห์ที่ร้านยินยอมส่งให้ทีม Support (9.46)
+  "support.logs.view",
+  "support.logs.export",
+  "support.logs.send",
   // ค่าคอมพนักงาน — seed ที่ 8.5 · .view แยกจาก .manage เพราะหัวหน้าทีมควรดูยอดของ
   // ทีมได้โดยไม่ต้องมีสิทธิ์แก้อัตรา (อัตราคือเงินเดือน ไม่ใช่รายงาน)
   // บัตรของขวัญ / เครดิตร้าน — seed ที่ 8.9

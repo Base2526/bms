@@ -11,7 +11,7 @@ import { useSession } from '@/lib/useSession';
 // พฤติกรรมเดิมแทนที่จะลบ field ที่ยังมีโค้ดพึ่งอยู่
 type SessionValue = {
   user: { id:number; email:string; role:string; themePreference?: string | null; language?: string | null; avatar?: string | null; name?: string | null; username?: string | null } | null;
-  admin: { id:number; email:string; role:string; themePreference?: string | null; language?: string | null; avatar?: string | null; name?: string | null; username?: string | null } | null;
+  admin: { id:number; email:string; role:string; tenant_id?: string | null; is_platform_admin?: boolean; themePreference?: string | null; language?: string | null; avatar?: string | null; name?: string | null; username?: string | null } | null;
   isAuthenticated: boolean;
   loading: boolean;
   refreshSession: () => void;

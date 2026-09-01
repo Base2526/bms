@@ -31,6 +31,8 @@ export interface StorageDriver {
   /** True when a file written by one instance is readable by every other instance. */
   readonly shared: boolean;
   write(relpath: string, body: Buffer): Promise<void>;
+  /** Delete an object. Missing objects are treated as already deleted. */
+  delete(relpath: string): Promise<void>;
   /** Consume a readable stream into storage, returning its size and sha256. */
   writeStream(relpath: string, stream: NodeJS.ReadableStream): Promise<WriteResult>;
   read(relpath: string): Promise<Buffer>;

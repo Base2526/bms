@@ -278,6 +278,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "จัดการ role กลางของระบบ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.roles", origin: "coverage" },
   { q: "ดูไฟล์ที่ระบบเก็บไว้", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.files", origin: "coverage" },
   { q: "ดู system log ย้อนหลัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.logs", origin: "coverage" },
+  { q: "ส่ง log ให้ทีม support วิเคราะห์ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "support.send-diagnostics", origin: "coverage" },
   { q: "อีเมลส่งออกไม่ถึงต้องดูที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.mail-log", origin: "coverage" },
   { q: "ดูคิว support ticket", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.support", origin: "coverage" },
   { q: "งาน cron รันจริงหรือยัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.operations", origin: "coverage" },
