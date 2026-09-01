@@ -117,6 +117,10 @@ export const BMS_PERMISSIONS = [
   // แยกจาก order.return: การคืนที่อ้างบิลได้เป็นงานประจำ ส่วนการคืนที่ไม่มีบิล
   // คือการจ่ายเงินออกโดยเชื่อคำบอกเล่า
   "pos.return.noreceipt",
+  // Restaurant POS (9.45) — อย่าใช้สิทธิ์ shipping/device แทนงานหน้าร้านที่คนละความหมาย
+  "restaurant.floor.manage",
+  "restaurant.kitchen.update",
+  "restaurant.check.cancel",
   // ค่าคอมพนักงาน — seed ที่ 8.5 · .view แยกจาก .manage เพราะหัวหน้าทีมควรดูยอดของ
   // ทีมได้โดยไม่ต้องมีสิทธิ์แก้อัตรา (อัตราคือเงินเดือน ไม่ใช่รายงาน)
   // บัตรของขวัญ / เครดิตร้าน — seed ที่ 8.9

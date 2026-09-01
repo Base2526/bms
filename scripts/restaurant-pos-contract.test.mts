@@ -53,7 +53,7 @@ test("restaurant writes require device, PIN and permission at the route boundary
   assert.match(auth, /verifyCashierPin/);
   assert.match(auth, /cashierHasPermission/);
   assert.match(auth, /getOpenPosShift/);
-  assert.match(checks, /authenticateRestaurantMutation\(req, body, "pos\.sell"\)/);
+  assert.match(checks, /action === "cancel" \? "restaurant\.check\.cancel" : "pos\.sell"/);
   assert.match(checks, /parsePosPayments/);
   assert.doesNotMatch(checks, /tenantId\s*:\s*body/);
   // สาขามาจากตัวเครื่องเสมอ — ทุก action ที่แตะบิลต้องได้ locationId ผ่าน `common`
@@ -64,7 +64,7 @@ test("restaurant checkout reuses atomic POS settlement and suppresses duplicate 
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const pos = code(await read("apps/web/lib/bms/pos.ts"));
   const orders = code(await read("apps/web/lib/bms/orders.ts"));
-  assert.match(restaurant, /createOrder\(/);
+  assert.match(restaurant, /createOrderInTx\(client,/);
   assert.match(restaurant, /recordPosSale\(/);
   assert.match(restaurant, /reserved_version\) !== Number\(check\.version/);
   assert.match(pos, /restaurant_check_id IS NOT NULL/);
@@ -107,18 +107,90 @@ test("the settlement key is read from the reservation order, never rebuilt", asy
   // (ลูกค้าสั่งเพิ่มหลังกดคิดเงินล้มไปครั้งหนึ่ง) คีย์เก่าจะไม่ชนอะไรแล้ว recordPosSale
   // สร้างออร์เดอร์ใบที่สอง = จองสต็อกซ้ำ และใบจองเดิมค้าง PENDING ตลอดไป
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  assert.match(restaurant, /RETURNING idempotency_key/);
-  assert.match(restaurant, /restamped\.rows\[0\]\.idempotency_key/);
+  const settle = restaurant.slice(restaurant.indexOf("export async function settleRestaurantCheck"));
+  assert.match(settle, /o\.idempotency_key AS order_key/);
+  assert.match(settle, /key = String\(check\.order_key \?\? ""\)\.trim\(\)/);
+  assert.doesNotMatch(settle, /`restaurant:\$\{input\.checkId\}:v\$\{check\.version\}`/);
   assert.doesNotMatch(restaurant, /check\.settlement_idempotency_key \|\|/);
 });
 
-test("an abandoned reservation order gives back its idempotency key", async () => {
+test("a replacement reservation is atomic and gives the old key back", async () => {
   // คีย์คือ `restaurant:<บิล>:v<version>` ผูกกับเนื้อหาบิล ไม่ใช่กับความพยายามครั้งนั้น
-  // ออร์เดอร์ที่ถูกยกเลิกแล้วยังถือคีย์ = ส่งครัวซ้ำที่ version เดิมชน unique index ตลอดไป
+  // คืน reservation เก่าคนละ transaction กับสร้างใหม่ = รอบใหม่พลาดแล้วครัวกำลังทำโดยไม่มีของจอง
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  assert.match(restaurant, /async function releaseReservationOrder/);
+  const orders = code(await read("apps/web/lib/bms/orders.ts"));
+  assert.match(restaurant, /cancelOrderInTx\(client, input\.tenantId, check\.current_order_id\)/);
+  assert.match(restaurant, /createOrderInTx\(client,/);
   assert.match(restaurant, /SET idempotency_key = NULL/);
-  assert.doesNotMatch(restaurant, /await cancelOrder\(input\.tenantId, created\.orderId\)/);
+  assert.match(restaurant, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\);\s*return created/);
+  assert.doesNotMatch(restaurant, /releaseReservationOrder/);
+  // public createOrder ยังเป็นเจ้าของ transaction เดิม แต่ workflow ใหญ่เรียกแกน in-tx ได้
+  assert.match(orders, /export async function createOrderInTx\(/);
+  assert.match(orders, /const result = await createOrderInTx\(client, input\)/);
+  assert.match(orders, /result\.status !== "CREATED"[\s\S]*ROLLBACK[\s\S]*COMMIT/);
+});
+
+test("restaurant operations use restaurant permissions instead of shipping/device aliases", async () => {
+  const permissions = code(await read("apps/web/lib/bms/permissions.ts"));
+  const floor = code(await read("apps/web/app/api/pos/restaurant/floor/route.ts"));
+  const kitchenRoute = code(await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"));
+  const kitchenResolver = code(await read("apps/web/graphql/bmsStockCapabilities.ts"));
+  const migration = code(await read("db/migrations/9.45__bms_restaurant_modifier_pricing_rbac.sql"));
+  for (const permission of [
+    "restaurant.floor.manage", "restaurant.kitchen.update", "restaurant.check.cancel",
+  ]) {
+    assert.ok(permissions.includes(`"${permission}"`), `permission catalog ขาด ${permission}`);
+    assert.ok(migration.includes(`'${permission}'`), `migration ไม่ seed ${permission}`);
+  }
+  assert.match(floor, /"restaurant\.floor\.manage"/);
+  assert.doesNotMatch(floor, /"pos\.device\.manage"/);
+  assert.match(kitchenRoute, /"restaurant\.kitchen\.update"/);
+  assert.doesNotMatch(kitchenRoute, /"order\.ship"/);
+  assert.match(kitchenResolver, /requirePermission\(ctx, "restaurant\.kitchen\.update"\)/);
+});
+
+test("modifier surcharge is catalog-owned and reaches the immutable sale snapshot", async () => {
+  const migration = code(await read("db/migrations/9.45__bms_restaurant_modifier_pricing_rbac.sql"));
+  const productRecipes = code(await read("apps/web/lib/bms/productRecipes.ts"));
+  const orders = code(await read("apps/web/lib/bms/orders.ts"));
+  const consumption = code(await read("apps/web/lib/bms/stockConsumption.ts"));
+  const commission = code(await read("apps/web/lib/bms/commission.ts"));
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS price_delta NUMERIC\(12,2\) NOT NULL DEFAULT 0/);
+  assert.match(migration, /CHECK \(price_delta >= 0\)/);
+  assert.match(productRecipes, /price_delta = EXCLUDED\.price_delta/);
+  assert.match(orders, /FROM bms_product_modifiers/);
+  assert.match(orders, /MODIFIER_NOT_FOUND:/);
+  assert.match(orders, /modifierUnitPrice/);
+  assert.match(orders, /pricingSnapshot:[\s\S]*modifierUnitPrice/);
+  assert.match(consumption, /MODIFIER_REQUIRES_RECIPE:/);
+  assert.match(commission, /COALESCE\(oi\.pack_unit_price \* oi\.pack_qty, oi\.unit_price \* oi\.qty\)/);
+  assert.match(page, /modifier\.priceDelta/);
+});
+
+test("restaurant settlement locks the check across instances and safely replays a paid check", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const settle = restaurant.slice(restaurant.indexOf("export async function settleRestaurantCheck"));
+  assert.match(settle, /beginTenantTx\(prepare, input\.tenantId/);
+  assert.match(settle, /lockCheckInTx\(prepare, input\.tenantId, input\.checkId\)/);
+  assert.match(settle, /FOR UPDATE OF c, o/);
+  assert.match(settle, /c\.status IN \('OPEN','CLOSING','PAID'\)/);
+  assert.match(settle, /check\.order_device_id !== input\.deviceId[\s\S]*check\.order_shift_id !== input\.shiftId[\s\S]*check\.order_cashier_user_id !== input\.actorUserId/);
+  assert.match(settle, /if \(check\.status !== "PAID"\)/);
+  assert.match(settle, /RETURNING id[\s\S]*if \(closed\.rowCount\)[\s\S]*status = 'PAID'/);
+});
+
+test("whole-check cancellation releases its order inside the check transaction", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const cancelBlock = restaurant.slice(
+    restaurant.indexOf("export async function cancelRestaurantCheck"),
+    restaurant.indexOf("async function reopenClosingCheck")
+  );
+  assert.match(cancelBlock, /beginTenantTx\(client, input\.tenantId/);
+  assert.match(cancelBlock, /lockCheckInTx\(client, input\.tenantId, input\.checkId\)/);
+  assert.match(cancelBlock, /cancelOrderInTx\(client, input\.tenantId, cancelledOrderId\)/);
+  assert.match(cancelBlock, /UPDATE bms_restaurant_kitchen_tickets[\s\S]*UPDATE bms_restaurant_checks[\s\S]*restaurant\.check_cancel[\s\S]*COMMIT/);
+  assert.doesNotMatch(cancelBlock, /cancelOrder\(/);
 });
 
 test("dine-in kitchen tickets cover every sent line and follow the store capability", async () => {
@@ -137,9 +209,9 @@ test("kitchen board accepts tickets without an order id and stays branch-aware",
   // ตั๋วบิลโต๊ะเกิดก่อนมีออร์เดอร์ที่ปิดการขาย → orderId เป็น null ได้
   // ตัดเอาเฉพาะบล็อกของ type นี้ก่อน — regex ที่วิ่งข้ามบล็อกจะไปเจอ orderId ของ type อื่น
   const block = typeDefs.slice(typeDefs.indexOf("type BmsKitchenTicket {"));
-  const ticketType = block.slice(0, block.indexOf("\n  }"));
+  const ticketType = block.slice(0, block.search(/\r?\n  }/));
   assert.ok(ticketType.includes("type BmsKitchenTicket {"), "หา type BmsKitchenTicket ไม่เจอ");
-  assert.match(ticketType, /\n    orderId: ID\n/);
+  assert.match(ticketType, /\r?\n    orderId: ID\r?\n/);
   assert.doesNotMatch(ticketType, /orderId: ID!/);
   for (const field of ["source: String!", "checkId: ID", "tableName: String", "roundNo: Int"]) {
     assert.ok(ticketType.includes(field), `BmsKitchenTicket ขาดฟิลด์ ${field}`);
@@ -161,6 +233,9 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   }
   assert.match(page, /\/api\/pos\/restaurant\/floor/);
   assert.match(page, /\/api\/pos\/kitchen\/tickets/);
+  assert.match(page, /appendSplitPaymentRow/);
+  assert.match(page, /payments\.map\(\(payment\) =>/);
+  assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
 });
 
 test("the check footer never claims a total the bill does not have", async () => {

@@ -42,8 +42,8 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: message, reason: auth.reason, lockedUntil: auth.lockedUntil }, { status: 403 });
   }
 
-  if (!(await cashierHasPermission(device.tenantId, auth.userId, "order.ship"))) {
-    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "order.ship") }, { status: 403 });
+  if (!(await cashierHasPermission(device.tenantId, auth.userId, "restaurant.kitchen.update"))) {
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "restaurant.kitchen.update") }, { status: 403 });
   }
 
   const ticket = await updateKitchenTicketStatus({

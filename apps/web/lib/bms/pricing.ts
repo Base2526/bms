@@ -25,6 +25,8 @@ export type PriceTier = {
 export type PricingSnapshot = {
   priceTiers: PriceTier[];
   promotion: Promotion | null;
+  /** Sale-time surcharge per displayed menu unit; added after tier/promotion pricing. */
+  modifierUnitPrice: number;
 };
 
 /**
@@ -88,7 +90,11 @@ export function normalizePricingSnapshot(raw: unknown): PricingSnapshot {
         && Number.isFinite(Number(promo.bundlePrice)) && Number(promo.bundlePrice) >= 0
           ? { kind: "N_FOR_PRICE", buyQty: Number(promo.buyQty), bundlePrice: Number(promo.bundlePrice) }
           : null;
-  return { priceTiers: canonicalPriceTiers(priceTiers), promotion };
+  const rawModifierUnitPrice = Number(record.modifierUnitPrice ?? 0);
+  const modifierUnitPrice = Number.isFinite(rawModifierUnitPrice) && rawModifierUnitPrice >= 0
+    ? rawModifierUnitPrice
+    : 0;
+  return { priceTiers: canonicalPriceTiers(priceTiers), promotion, modifierUnitPrice };
 }
 
 export type RemainingPricingLine = {
@@ -149,16 +155,18 @@ export function priceRemainingLines(
       };
     }
     const snapshot = normalizePricingSnapshot(line.pricingSnapshot);
+    const baseReceiptUnitPrice = Math.max(0, line.receiptUnitPrice - snapshot.modifierUnitPrice);
     const promo = snapshot.promotion;
-    const amount = promo
-      ? applyPromotion(line.receiptUnitPrice, line.remainingBaseQty, promo).amount
+    const baseAmount = promo
+      ? applyPromotion(baseReceiptUnitPrice, line.remainingBaseQty, promo).amount
       : round2(unitPriceForQty(
-          line.receiptUnitPrice,
+          baseReceiptUnitPrice,
           snapshot.priceTiers,
           qtyByVariant.get(variantKey(line.sku, line.size)) ?? line.remainingBaseQty,
           qtyBySku.get(line.sku) ?? line.remainingBaseQty,
           line.size
         ) * line.remainingBaseQty);
+    const amount = round2(baseAmount + snapshot.modifierUnitPrice * line.remainingPackQty);
     return { id: line.id, remainingPackQty: line.remainingPackQty, amount, shelfAmount };
   });
   const pricingSubtotal = round2(priced.reduce((sum, line) => sum + line.amount, 0));

@@ -1361,7 +1361,7 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`)
+## Restaurant POS (`9.40`, `9.44`–`9.45`)
 
 `/pos/restaurant` is a separate operating surface selected only for the `restaurant` archetype. It
 owns dining areas, tables, open checks, kitchen rounds, table moves and check cancellation. Sending
@@ -1379,6 +1379,13 @@ reserved stock, so `send_kitchen` and `settle` re-stamp the serving device, shif
 order instead. The sale therefore belongs to the shift that took the money, the same rule deposits
 follow in `9.0` — and `finalizePosSale()` locks a bill by cashier, so without that re-stamp a
 different person closing the check is refused at the counter.
+
+Migration `9.45` stops borrowing unrelated permissions: floor setup requires
+`restaurant.floor.manage`, KDS transitions require `restaurant.kitchen.update`, and cancelling a
+whole check requires `restaurant.check.cancel`. Ordinary open/add/send/move/settle actions retain
+`pos.sell`. The restaurant KDS refreshes its branch-scoped queue every five seconds while visible;
+the admin KDS keeps its bounded ten-second poll. This is near-real-time polling, not an offline event
+queue, and a failed poll never invents a state transition.
 
 Adding a later round increments the check version; payment is refused until that version has been
 sent and reserved. Concurrency is held by database facts rather than by an application lock:
@@ -1404,13 +1411,35 @@ capability, and a ticket without a station lands in the "no station" lane rather
 Cancelling a ticket on the board stops the cooking, but does not remove the line from the bill or
 release its stock — that is a check edit, and while the round is already sent it needs a void.
 
+Modifier `price_delta` is non-negative catalog data resolved again inside the order transaction.
+The register submits only modifier codes. The surcharge is added after tier/promotion pricing and
+stored in the sale-time pricing snapshot and line prices, so VAT, receipts, commission allocation
+and partial returns use the same amount. The menu modal shows the same catalog preview, but the
+server remains price authority. Restaurant checkout accepts multiple payment allocations and still
+uses the normal POS settlement/idempotency path; cash rounding applies only to a single all-cash
+payment, never to a mixed split. A stock modifier is valid only on a `RECIPE` product: its quantity
+delta is relative to that recipe. DIRECT/PACK products reject modifier codes instead of charging a
+surcharge while silently skipping the configured ingredient movement. Commission uses the stored
+pack price/pack quantity where present, so a named pack with modifiers is not reported at base-unit
+revenue.
+
+Settlement takes a tenant transaction advisory lock and row-locks both the check and reservation
+order before stamping the active register. A second app instance therefore cannot steal the same
+check while the first is finalizing it. A lost response can replay a `CLOSING` or already `PAID`
+check only from the same device, shift and cashier; the paid audit is inserted only on the actual
+`CLOSING -> PAID` transition.
+
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
 contracts and credentials; no mock adapter is presented as live. Customer QR self-ordering,
-reservations/queue numbers, split/merge checks, station-printer routing and offline-first sync are
-separate modules. Receipt and kitchen hardware remain browser/OS driven. If re-reserving fails while
-a later round is being sent — another till took the stock in between — the already-cooking lines are
-left without a reservation and the check cannot be paid until the send succeeds; the stock has to be
-corrected, which is why that failure is logged rather than silently returned as a status code.
+reservations/queue numbers, split/merge **checks** (payment split is supported), station-printer
+routing and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
+driven. If re-reserving fails while
+a later round is being sent, the replacement now rolls back as one transaction: the previous PENDING
+order, its idempotency key, the ingredient reservation and the already-sent kitchen lines remain
+unchanged. `createOrderInTx()` exists specifically so cancelling the superseded reservation and
+creating the new whole-check snapshot share the restaurant transaction; its public `createOrder()`
+wrapper still owns BEGIN/COMMIT for every ordinary caller. Cancelling a check uses the same rule —
+order cancellation, released stock, stopped kitchen tickets, closed check and audit commit together.
 
 Returns, goods receiving, deposits, gift cards/store credit and credit sales all still live on the
 retail register, so the restaurant surface links back to `/pos?surface=retail` instead of trapping the

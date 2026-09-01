@@ -155,7 +155,7 @@ export const bmsStockCapabilityResolvers = {
       }
     },
     async bmsUpdateKitchenTicketStatus(_p: unknown, args: { id: string; status: string }, ctx: any) {
-      await requirePermission(ctx, "order.ship");
+      await requirePermission(ctx, "restaurant.kitchen.update");
       try {
         return await updateKitchenTicketStatus({
           tenantId: getTenantId(ctx),

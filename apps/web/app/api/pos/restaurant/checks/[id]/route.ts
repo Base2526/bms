@@ -28,7 +28,8 @@ async function handleGET(req: NextRequest, { params }: RouteContext) {
 async function handlePOST(req: NextRequest, { params }: RouteContext) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const action = String(body.action ?? "").trim().toLowerCase();
-  const auth = await authenticateRestaurantMutation(req, body, "pos.sell");
+  const permission = action === "cancel" ? "restaurant.check.cancel" : "pos.sell";
+  const auth = await authenticateRestaurantMutation(req, body, permission);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const common = {
     tenantId: auth.device.tenantId,

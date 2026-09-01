@@ -42,6 +42,7 @@ function resourceLabels(t: (key: string) => string): Record<string, string> {
     payment: t("admin_permissions.res_payment"), shipping: t("admin_permissions.res_shipping"),
     inbox: t("admin_permissions.res_inbox"), ai_quality: t("admin_permissions.res_ai_quality"),
     coupon: t("admin_permissions.res_coupon"), followup: t("admin_permissions.res_followup"),
+    restaurant: t("admin_permissions.res_restaurant"),
     "pharmacy.assessment": t("admin_permissions.res_pharmacy_assessment"),
     "pharmacy.protocol": t("admin_permissions.res_pharmacy_protocol"),
     "pharmacy.audit": t("admin_permissions.res_pharmacy_audit"),

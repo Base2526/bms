@@ -33,7 +33,7 @@ export default function KitchenPage() {
   const { t, lang } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canView = can("order.view");
-  const canMove = can("order.ship");
+  const canMove = can("restaurant.kitchen.update");
   const [station, setStation] = useState("ALL");
   const tickets = useQuery(Q_TICKETS, { variables: { status: null }, pollInterval: 10000, fetchPolicy: "cache-and-network" });
   const [move, moveState] = useMutation(M_STATUS);

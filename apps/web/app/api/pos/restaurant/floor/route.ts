@@ -14,7 +14,7 @@ async function handleGET(req: NextRequest) {
 
 async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const auth = await authenticateRestaurantMutation(req, body, "pos.device.manage");
+  const auth = await authenticateRestaurantMutation(req, body, "restaurant.floor.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const floor = await createDefaultRestaurantFloor({
     tenantId: auth.device.tenantId,

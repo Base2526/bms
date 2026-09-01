@@ -420,7 +420,7 @@ export type PosScanHit = {
    */
   promotion: Promotion | null;
   /** Active stock modifiers for this exact menu variant. Names are display-only. */
-  modifiers: Array<{ code: string; name: string }>;
+  modifiers: Array<{ code: string; name: string; priceDelta: number }>;
   /** Raw prefix-22 label; the server re-parses this at commit. */
   scaleBarcode?: string | null;
 };
@@ -581,14 +581,14 @@ export async function resolvePosScan(
 
   const modifierEnabled = await isCapabilityEnabledInTx({ query }, tenantId, "MODIFIER");
   const modifierRes = modifierEnabled
-    ? await query<{ code: string; name: string }>(
-      `SELECT code, name
+    ? await query<{ code: string; name: string; price_delta: string }>(
+      `SELECT code, name, price_delta
          FROM bms_product_modifiers
         WHERE tenant_id = $1 AND product_sku = $2 AND size = $3 AND active
         ORDER BY name, code`,
       [tenantId, row.sku, row.size]
     )
-    : { rows: [] as Array<{ code: string; name: string }> };
+    : { rows: [] as Array<{ code: string; name: string; price_delta: string }> };
 
   const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
   if (basePrice == null) return null;
@@ -614,7 +614,11 @@ export async function resolvePosScan(
     priceTiers,
     serialTracked: (row as any).serial_tracked === true,
     promotion,
-    modifiers: modifierRes.rows,
+    modifiers: modifierRes.rows.map((modifier) => ({
+      code: modifier.code,
+      name: modifier.name,
+      priceDelta: Number(modifier.price_delta ?? 0),
+    })),
     scaleBarcode,
   };
 }

@@ -205,6 +205,42 @@ test("a later round replaces the reservation, renumbers the round and frees the 
     "ของที่ครัวยังไม่รับต้องไม่หลุดไปเป็นเงิน"
   );
 
+  // ทำให้รอบใหม่จองทั้งบิลไม่พอ หลัง order เดิมถูกคืนชั่วคราวภายใน transaction
+  // ผลล้มต้อง rollback กลับไปหา reservation เดิม ไม่ปล่อยให้อาหารรอบแรกทำต่อแบบไม่มีของจอง
+  await query(
+    `UPDATE bms_inventory SET current_stock = reserved_stock
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+    [tenantId, locationId, DRINK, SIZE]
+  );
+  const refused = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftA, checkId: paidCheckId, actorUserId: waiterId,
+  });
+  assert.equal(refused.status, "INSUFFICIENT");
+  const preserved = await getRestaurantCheck(tenantId, paidCheckId);
+  assert.equal(preserved!.hasCurrentOrder, true);
+  assert.notEqual(preserved!.version, preserved!.reservedVersion,
+    "รอบใหม่ยังไม่ถูกส่ง แต่ reservation รุ่นก่อนต้องยังผูกอยู่");
+  assert.equal(
+    (await query<{ id: string }>(
+      `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, paidCheckId])).rows[0].id,
+    firstOrder
+  );
+  assert.deepEqual(preserved!.items.map((item) => item.status), ["SENT", "SENT", "NEW"]);
+  assert.equal(Number((await stock(DRINK)).reserved_stock), 1,
+    "จองใหม่ไม่ผ่านต้องไม่คืน reservation ของรอบที่ครัวรับแล้ว");
+  assert.equal(
+    (await query<{ status: string }>(
+      `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, firstOrder])).rows[0].status,
+    "PENDING"
+  );
+  await query(
+    `UPDATE bms_inventory SET current_stock = 100
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+    [tenantId, locationId, DRINK, SIZE]
+  );
+
   const second = await sendRestaurantKitchenRound({
     tenantId, locationId, deviceId, shiftId: shiftA, checkId: paidCheckId, actorUserId: waiterId,
   });
