@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { verifyUserFromRequest } from "@/lib/auth/server";
+import { authorizeAdminRoute, authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { rateLimit } from "@/lib/bms/rateLimit";
 import { writeLogServer } from "@/lib/log/writeLog.server";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -38,6 +40,8 @@ function whereEq(hasStructured: boolean, column: string, metaKey: string, paramI
 // Filters:
 //  q, level, category, user_id, action, status, correlation_id, session_id, platform, app_version, date_start, date_end, page, pageSize
 async function handleGET(req: NextRequest) {
+  const auth = await authorizePlatformAdminRoute();
+  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   const hasStructured = await ensureStructuredColsReady();
 
   const { searchParams } = new URL(req.url);
@@ -167,8 +171,21 @@ async function handleGET(req: NextRequest) {
 // POST /api/logs
 // Accepts either {logs:[...]} or a single log object.
 async function handlePOST(req: NextRequest) {
-  const actor = verifyUserFromRequest(req);
+  const cookieAuth = await authorizeAdminRoute(null);
+  const bearer = cookieAuth.ok ? null : verifyUserFromRequest(req);
+  if (!cookieAuth.ok && !bearer) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const actor = cookieAuth.ok ? cookieAuth.admin : bearer;
   const createdBy = actor?.id ?? null;
+  const tenantId = cookieAuth.ok ? cookieAuth.tenantId : bearer?.tenant_id ?? null;
+  const limit = await rateLimit(`client-logs:${tenantId ?? "none"}:${createdBy ?? "unknown"}`, 30, 60_000);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "too many log batches", retryAfter: limit.retryAfter },
+      { status: 429, headers: { "retry-after": String(limit.retryAfter) } }
+    );
+  }
 
   const body = await req.json().catch(() => ({} as any));
   const list: any[] = Array.isArray(body?.logs) ? body.logs : [body];
@@ -176,15 +193,17 @@ async function handlePOST(req: NextRequest) {
 
   let insertedCount = 0;
   for (const raw of capped) {
-    const level = String(raw?.level || "info").toLowerCase();
-    const category = String(raw?.category || "mobile");
-    const message = String(raw?.message || raw?.action || "client log");
+    const requestedLevel = String(raw?.level || "info").toLowerCase();
+    const level = ["debug", "info", "warn", "error"].includes(requestedLevel) ? requestedLevel : "info";
+    const category = String(raw?.category || "mobile").slice(0, 80);
+    const message = String(raw?.message || raw?.action || "client log").slice(0, 2_000);
     const meta = raw?.meta && typeof raw.meta === "object" ? raw.meta : {};
 
     const mergedMeta = {
       ...meta,
       // Ensure server can attribute logs even if client didn't send userId.
-      ...(createdBy ? { userId: createdBy } : {}),
+      userId: createdBy,
+      tenantId,
 
       // Preserve structured fields at top-level inside meta too.
       action: raw?.action ?? meta?.action,
@@ -212,6 +231,8 @@ async function handlePOST(req: NextRequest) {
 // - ids=1,2,3 (bulk delete)
 // - OR purge by filter (refuses if no conditions)
 async function handleDELETE(req: NextRequest) {
+  const auth = await authorizePlatformAdminRoute();
+  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   const hasStructured = await ensureStructuredColsReady();
   const { searchParams } = new URL(req.url);
 

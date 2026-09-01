@@ -8,6 +8,7 @@
 // =============================================================
 
 import { cookies } from "next/headers";
+import { query } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth/server";
 import { ACT_TENANT_COOKIE, verifyActTenant, type JWTPayload } from "@/lib/auth/token";
 import { DEFAULT_TENANT_ID } from "./tenant";
@@ -64,4 +65,19 @@ export async function authorizeAdminRoute(permission: BmsPermission | null): Pro
     admin,
     ctx,
   };
+}
+
+/** Global operational logs contain data from every shop; drill-down does not narrow this surface. */
+export async function authorizePlatformAdminRoute(): Promise<AdminRouteAuth> {
+  const auth = await authorizeAdminRoute(null);
+  if (!auth.ok) return auth;
+  try {
+    const result = await query<{ is_platform_admin: boolean }>(
+      `SELECT is_platform_admin FROM users WHERE id = $1`,
+      [auth.adminId]
+    );
+    return result.rows[0]?.is_platform_admin === true ? auth : { ok: false, status: 403 };
+  } catch {
+    return { ok: false, status: 403 };
+  }
 }

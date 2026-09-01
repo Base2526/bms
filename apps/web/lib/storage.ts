@@ -187,6 +187,11 @@ export async function readStoredFile(relpath: string): Promise<Buffer> {
   return getStorageDriver().read(toStorageKey(relpath));
 }
 
+/** ลบ bytes ผ่าน storage driver; เรียกซ้ำได้เมื่อ object ถูกลบไปแล้ว */
+export async function deleteStoredFile(relpath: string): Promise<void> {
+  return getStorageDriver().delete(toStorageKey(relpath));
+}
+
 /** คืน null เมื่อไฟล์ไม่มีอยู่ (แปลงเป็น 404 ที่ route ได้ตรง ๆ) */
 export async function statStoredFile(relpath: string): Promise<StoredStat | null> {
   return getStorageDriver().stat(toStorageKey(relpath));

@@ -2,8 +2,8 @@
 // S3-compatible driver (AWS S3, Cloudflare R2, MinIO, GCS S3-interop)
 // -------------------------------------------------------------
 // Implemented with fetch + AWS Signature V4 over node:crypto rather than an SDK
-// so this adds no dependency to the web image. Only the four verbs this app
-// needs are implemented: PUT object, GET object (incl. ranged), HEAD object.
+// so this adds no dependency to the web image. The bounded object operations
+// needed here are implemented: PUT, GET (including ranged), HEAD and DELETE.
 //
 // Enable with STORAGE_DRIVER=s3. Required env:
 //   S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
@@ -166,7 +166,7 @@ function signRequest(
 
 async function s3Fetch(
   cfg: S3Config,
-  method: "PUT" | "GET" | "HEAD",
+  method: "PUT" | "GET" | "HEAD" | "DELETE",
   relpath: string,
   opts: { body?: Buffer; contentType?: string; range?: ByteRange } = {}
 ): Promise<Response> {
@@ -211,6 +211,11 @@ export function createS3Driver(): StorageDriver {
     async write(relpath: string, body: Buffer): Promise<void> {
       const res = await s3Fetch(cfg, "PUT", relpath, { body });
       if (!res.ok) throw await failure(res, `PUT ${relpath}`);
+    },
+
+    async delete(relpath: string): Promise<void> {
+      const res = await s3Fetch(cfg, "DELETE", relpath);
+      if (!res.ok && res.status !== 404) throw await failure(res, `DELETE ${relpath}`);
     },
 
     async writeStream(relpath, stream): Promise<WriteResult> {

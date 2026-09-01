@@ -23,8 +23,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { getMessage } from "../apps/web/i18n/index.ts";
@@ -32,13 +31,21 @@ import { getMessage } from "../apps/web/i18n/index.ts";
 const WEB = path.resolve(import.meta.dirname, "../apps/web");
 const LANGS = ["th", "en"] as const;
 
-/** ไฟล์ที่มีการเรียก t("...") — grep เร็วกว่าการเดินทั้ง tree เอง */
+/** ไฟล์ที่มีการเรียก t("...") — เดินด้วย Node เพื่อให้ merge gate ใช้ได้ทั้ง Linux/Windows */
 const sourceFiles = () => {
-  const out = execFileSync("grep", ["-rl", 't("', "app", "lib", "components"], {
-    cwd: WEB,
-    encoding: "utf8",
-  });
-  return out.trim().split("\n").filter(Boolean);
+  const pending = ["app", "lib", "components"];
+  const found: string[] = [];
+  while (pending.length) {
+    const relative = pending.pop()!;
+    for (const entry of readdirSync(path.join(WEB, relative), { withFileTypes: true })) {
+      const child = path.join(relative, entry.name);
+      if (entry.isDirectory()) pending.push(child);
+      else if (/\.[jt]sx?$/.test(entry.name) && readFileSync(path.join(WEB, child), "utf8").includes('t("')) {
+        found.push(child);
+      }
+    }
+  }
+  return found;
 };
 
 /** คีย์ที่เขียนตรง ๆ เท่านั้น — คีย์ที่ประกอบตอนรันตรวจที่นี่ไม่ได้ */
@@ -49,7 +56,7 @@ const literalKeys = (src: string) =>
 
 test("every literal t() key resolves in th and en", () => {
   const files = sourceFiles();
-  assert.ok(files.length > 50, `เจอไฟล์แค่ ${files.length} ไฟล์ — grep คงพลาด ไม่ใช่ว่าโปรเจกต์เล็กลง`);
+  assert.ok(files.length > 50, `เจอไฟล์แค่ ${files.length} ไฟล์ — ตัวค้นหาคงพลาด ไม่ใช่ว่าโปรเจกต์เล็กลง`);
 
   const missing: string[] = [];
   let checked = 0;

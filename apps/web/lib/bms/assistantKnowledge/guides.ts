@@ -836,6 +836,15 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: [["ข้อมูลและปุ่มในหน้านี้เป็น mock ไม่ใช่เคสจริงและไม่ใช่คำตัดสินทางคลินิก"], ["This page is mock data and UI, not a real case or clinical decision."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
   menuGuide({
+    id: "support.send-diagnostics", module: "support", route: "/admin/support-diagnostics",
+    title: ["ส่งข้อมูลวิเคราะห์ให้ Support", "Send diagnostics to Support"],
+    summary: ["รวม activity, error และ audit ตามช่วงเวลาเพื่อ export หรือส่งเป็นเคส Support โดยไม่รวม PIN/token/request body", "Collect activity, errors, and audit events for a selected period, then export them or send a Support case without PINs, tokens, or request bodies."],
+    aliases: [["ส่ง log", "export log", "แจ้งปัญหาพร้อม log", "support bundle"], ["send logs", "export logs", "diagnostic bundle"]],
+    requiredPermissions: ["support.logs.view"],
+    steps: [["เปิด ส่งข้อมูลให้ Support", "เลือกช่วงเวลาสูงสุด 7 วัน", "อธิบายปัญหา", "เลือก Export หรือยืนยันความยินยอมแล้วกดส่ง"], ["Open Support diagnostics.", "Choose a range up to seven days.", "Describe the issue.", "Export, or confirm consent and send."]],
+    warnings: [["ไฟล์เป็นข้อมูล private หมดอายุใน 90 วัน และการส่ง/ดาวน์โหลดถูก audit"], ["The private bundle expires after 90 days, and every send/export is audited."]],
+  }),
+  menuGuide({
     // `/admin/post` has no index page — only `[id]` and `new`. Linking there is a 404, so the
     // linkable route is the Posts list and the editor subtree is documented, not linked.
     id: "platform.edit-post", module: "posts", route: "/admin/posts",

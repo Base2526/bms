@@ -48,6 +48,7 @@ operators must resolve those records before retrying the migration.
 | Generated report exports | `bms_generated_reports` | `7.53` |
 | Sales digest reports | `bms_report_subscriptions`, `bms_report_deliveries` | `7.37` |
 | Support tickets | `support_tickets`, `support_ticket_comments` | `7.45` |
+| Support diagnostics | `bms_support_events`, `bms_support_bundles`; `system_logs.tenant_id`; diagnostic linkage on `support_tickets` | `9.46` |
 | Follow-up Automation (MVP core) | `bms_conversation_intents`, `bms_followup_rules`, `bms_followup_jobs`, `bms_followup_history` (+ `bms_conversations.last_sender_type`, `bms_customers.followup_opt_out`) | `7.52` |
 | Report email permission | (permission-only, no new table) | `7.54` |
 | Job run history | `bms_job_runs` (platform-wide, no `tenant_id`) | `7.55` (renumbered from `7.53` — see note below) |

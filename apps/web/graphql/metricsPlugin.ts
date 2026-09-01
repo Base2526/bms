@@ -70,6 +70,7 @@ export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugi
             errorMessage: first?.message ?? null,
             stack: first?.stack ?? null,
             path: first?.path ? first.path.join(".") : null,
+            tenantId: (requestContext.contextValue as any)?.admin?.tenant_id ?? null,
           });
         },
         async willSendResponse(requestContext) {

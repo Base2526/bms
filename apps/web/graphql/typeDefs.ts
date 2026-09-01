@@ -3406,6 +3406,7 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
     updatedAt: String
     closedAt: String
+    diagnosticBundleId: ID
     comments: [BmsSupportTicketComment!]!
   }
 

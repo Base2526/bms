@@ -466,6 +466,7 @@ export default function AdminSidebar() {
       label: 'SaaS',
       children: [
         link('/admin/settings', t('admin.menu_settings_channels'), <ApiOutlined />, channelHealthCount, effectiveCollapsed),
+        ...(can('support.logs.view') ? [link('/admin/support-diagnostics', t('admin.menu_support_diagnostics'), <CustomerServiceOutlined />)] : []),
         ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <BugOutlined />)] : []),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
         ...(isPlatformAdmin ? [link('/admin/tenants', t('admin.menu_all_shops'), <BankOutlined />)] : []),

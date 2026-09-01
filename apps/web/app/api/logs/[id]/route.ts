@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 
 let structuredColsReady: boolean | null = null;
 async function ensureStructuredColsReady() {
@@ -23,6 +24,8 @@ async function ensureStructuredColsReady() {
 }
 
 async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await authorizePlatformAdminRoute();
+  if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   const id = parseInt(params.id, 10);
   if (isNaN(id)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
 

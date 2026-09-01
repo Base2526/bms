@@ -884,6 +884,13 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   earlier reservation intact for food already being prepared. Whole-check cancellation now applies
   the same boundary to order cancellation, released stock, stopped tickets, the closed check and its
   audit. The public `createOrder()` contract and ordinary callers remain unchanged.
+- **Support diagnostics (`9.46`, 2026-09-01)** — authorised shops can export or explicitly send a
+  seven-day diagnostics bundle containing an allowlisted local activity timeline, tenant system
+  errors, failure incidents and business audit, and sending creates a `SUP-*` platform ticket. Sent
+  bundles are private, checksummed, and lose Support download access after 90 days; a
+  cron-secret-gated, multi-instance-safe retention worker then physically deletes the private object
+  through the configured storage driver. The legacy fleet-wide log APIs are now
+  platform-admin-only, and restaurant add/remove item decisions are audited in their transaction.
 - **Restaurant core completion (`9.45`, 2026-09-01)** — modifiers now carry a server-owned,
   non-negative surcharge per menu unit. `createOrderInTx()` resolves it from the active tenant
   catalog and snapshots it into line pricing, preserving VAT/receipt/commission/return arithmetic;
