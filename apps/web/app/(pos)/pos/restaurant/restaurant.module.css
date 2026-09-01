@@ -1,182 +1,267 @@
+/*
+ * ผังโต๊ะ / บิลโต๊ะ — สไตล์ตาม mockup ที่ตกลงกันไว้ (2026-09-01)
+ *
+ * พื้นเรียบ + การ์ดขาวเส้นบาง แทนพื้นไล่สีอุ่น + แผงกระจกเบลอของเดิม เพราะจอนี้ถูก
+ * "กวาดตา" ไม่ใช่ "อ่าน" — สิ่งที่ต้องเด่นคือสถานะโต๊ะกับตัวเลข ไม่ใช่พื้นหลัง
+ *
+ * **ไม่โหลดฟอนต์จาก CDN โดยตั้งใจ** — จอนี้ต้องทำงานตอนเน็ตร้านหลุด และ pos.css
+ * ก็เลือกไม่พึ่ง dependency ภายนอกด้วยเหตุผลเดียวกัน (แท็บเล็ตหน้าร้านมักเป็นเครื่องเก่า)
+ * น้ำหนัก/ขนาด/ระยะตัวอักษรทำตาม mockup ด้วยฟอนต์ระบบแทน
+ */
 .page {
-  --ink: #20332c;
-  --muted: #6f7f76;
-  --paper: #fffdf8;
-  --cream: #f4ead9;
-  --tomato: #dd5d3d;
-  --tomato-dark: #a93d27;
-  --leaf: #30745b;
-  --amber: #e7a335;
+  --ink: #16201b;
+  --ink-2: #41544a;
+  --ink-3: #71857a;
+  --ground: #f2f1ea;
+  --panel: #ffffff;
+  --panel-2: #f7f6f0;
+  --line: #dfded3;
+  --line-2: #ebeae1;
+  --accent: #235c47;
+  --accent-soft: #e2ede7;
+  --new: #dd5d3d;
+  --new-ink: #a93d27;
+  --prep: #e7a335;
+  --prep-ink: #8a5c07;
+  --ready: #30745b;
+  --served: #718078;
+  --shadow: 0 1px 2px rgba(22, 32, 27, .06), 0 8px 24px rgba(22, 32, 27, .05);
   min-height: 100vh;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 8% 2%, rgba(231, 163, 53, .18), transparent 25rem),
-    radial-gradient(circle at 95% 20%, rgba(48, 116, 91, .14), transparent 32rem),
-    linear-gradient(145deg, #f9f2e5, #f4eee3 45%, #e9efe8);
-  padding: 20px;
-  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", sans-serif;
+  background: var(--ground);
+  padding: 16px;
+  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
 }
+.shell { max-width: 1760px; margin: 0 auto; display: grid; gap: 12px; }
 
-.shell { max-width: 1760px; margin: 0 auto; display: grid; gap: 14px; }
-.topbar, .operatorBar, .panel, .checkPanel, .kitchenBoard {
-  border: 1px solid rgba(32, 51, 44, .1);
-  box-shadow: 0 18px 50px rgba(52, 57, 45, .08);
-  backdrop-filter: blur(14px);
-}
+/* ---------- แถบบน: ชื่อร้าน · สลับจอ · ผู้ปฏิบัติงาน · ปุ่มระบบ ---------- */
 .topbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 18px;
-  padding: 18px 20px; border-radius: 24px; background: rgba(255, 253, 248, .9);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
 }
-.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; margin-inline-end: auto; }
 .brandMark {
-  width: 48px; height: 48px; border-radius: 15px; display: grid; place-items: center;
-  color: white; font-family: Georgia, serif; font-size: 25px; font-weight: 800;
-  background: linear-gradient(135deg, var(--tomato), #ef8b3e); box-shadow: 0 9px 22px rgba(221, 93, 61, .3);
+  width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex: none;
+  color: white; font-size: 18px; font-weight: 700; background: var(--accent);
 }
-.title { margin: 0; font: 800 clamp(22px, 3vw, 34px)/1.05 Georgia, "Noto Serif Thai", serif; letter-spacing: -.03em; }
-.subtitle { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-.topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.operatorBar {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
-  padding: 11px 14px; border-radius: 18px; background: rgba(255, 253, 248, .84);
+.title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; }
+.subtitle { margin: 1px 0 0; color: var(--ink-3); font-size: 12px; }
+.topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* สลับจอโต๊ะ/ครัว — เขียนเองแทน antd Segmented เพื่อคุมขนาดนิ้วโป้งและ badge ได้ */
+.seg { display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
+.segButton {
+  font: inherit; font-size: 13.5px; border: 0; background: transparent; color: var(--ink-2);
+  padding: 7px 14px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 7px;
 }
-.operatorFields { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.operatorFields select, .operatorFields input, .field {
-  height: 38px; border-radius: 10px; border: 1px solid #d5d6cc; background: white; padding: 0 11px; color: var(--ink);
-}
-.operatorFields select { min-width: 230px; }
-.operatorFields input { width: 120px; }
-.operatorChip { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.operatorChip strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.operatorHint { color: var(--muted); font-size: 12px; }
-.operatorDot { width: 9px; height: 9px; border-radius: 50%; background: var(--leaf); flex: none; }
+.segButtonActive { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
 .segBadge {
-  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 6px;
-  border-radius: 999px; background: var(--tomato); color: white; font-size: 11px; font-weight: 700; line-height: 1;
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--new); color: white; font-size: 11px; font-weight: 700; line-height: 1;
 }
 
-.floorWrap { display: grid; gap: 14px; min-width: 0; }
-/* การ์ดแยกใบ ไม่ใช่ตารางเส้น 1px — จำนวนช่องไม่ลงตัวกับคอลัมน์บนจอแคบ
-   แล้วช่องที่เหลือจะกลายเป็นบล็อกสีทึบที่ดูเหมือนของเสีย */
-.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+/* ปุ่มทั้งหน้าใช้หน้าตาเดียวกันหมด */
+.btn {
+  font: inherit; font-size: 13.5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  padding: 8px 14px; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--ink-3); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btnPrimary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.btnPrimary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.08); }
+.btnDanger { color: var(--new-ink); border-color: rgba(221, 93, 61, .45); }
+
+/* ชิปผู้ปฏิบัติงาน — PIN กรอกครั้งเดียวต่อกะ จึงไม่ต้องกินเต็มแถวตลอดเวลา */
+.who {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px;
+  padding: 5px 6px 5px 12px; font-size: 13.5px;
+}
+.whoDot { width: 8px; height: 8px; border-radius: 50%; background: var(--ready); flex: none; }
+.whoDotIdle { background: var(--prep); }
+.whoName { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.whoChange {
+  font: inherit; font-size: 12px; color: var(--ink-3); border: 1px solid var(--line);
+  background: var(--panel); border-radius: 999px; padding: 3px 9px; cursor: pointer;
+}
+.whoChange:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- แถบสรุปหน้าร้าน ---------- */
+/* เส้นคั่นวาดด้วย outline ของแต่ละช่อง ไม่ใช่พื้นหลังของ grid + gap
+   เพราะเมื่อ 5 ช่องตกลงมาเป็น 3 คอลัมน์ ช่องที่เหลือจะกลายเป็นบล็อกสีทึบที่ดูเหมือนของเสีย */
+.kpis {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow);
+}
 .kpi {
-  background: rgba(255, 253, 248, .92); padding: 12px 16px; display: grid; gap: 2px; align-content: start; min-width: 0;
-  border: 1px solid rgba(32, 51, 44, .1); border-radius: 18px; box-shadow: 0 10px 26px rgba(52, 57, 45, .06);
+  background: var(--panel); padding: 12px 16px; display: grid; gap: 2px; align-content: start; min-width: 0;
+  outline: 1px solid var(--line-2);
 }
-.kpiLabel { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+.kpiLabel { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.kpiValue { font-size: 23px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.kpiValue small { font-size: 13px; font-weight: 500; color: var(--ink-3); }
+.kpiAlert .kpiValue { color: var(--new); }
 .baht { margin-inline-end: .14em; }
-.kpiValue { font-size: 23px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.kpiValue small { font-size: 12.5px; font-weight: 500; color: var(--muted); }
-.kpiAlert .kpiValue { color: var(--tomato-dark); }
 
-.workspace { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(330px, .72fr); gap: 14px; min-height: 690px; }
-.panel, .checkPanel, .kitchenBoard { border-radius: 24px; background: rgba(255, 253, 248, .92); overflow: hidden; }
-.panel { padding: 18px; }
-.panelHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.panelHeader h2 { margin: 0; font-size: 18px; }
-.areaTabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
-.areaButton { border: 0; border-radius: 999px; padding: 8px 14px; background: #ece8dd; color: var(--ink); cursor: pointer; white-space: nowrap; }
-.areaButtonActive { color: white; background: var(--ink); }
+/* ---------- พื้นที่ทำงาน ---------- */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px; align-items: start; }
+.panel, .checkPanel, .kitchenBoard {
+  border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden;
+}
+.panel { padding: 16px; background: var(--panel-2); }
+.panelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.panelHeader h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.panelHeader small { color: var(--ink-3); font-size: 12.5px; }
+.livePill { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--new); background: rgba(221, 93, 61, .12); border-radius: 999px; padding: 3px 9px; }
+
+.areaTabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.areaButton {
+  font: inherit; font-size: 13.5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
+  border-radius: 999px; padding: 7px 14px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 7px;
+}
+.areaButtonActive { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.areaCount { opacity: .7; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ---------- การ์ดโต๊ะ ---------- */
 .tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
 .tableCard {
-  position: relative; min-height: 138px; text-align: left; border: 1px solid #dedfd6; border-radius: 20px;
-  padding: 14px 14px 14px 18px; background: #fff; cursor: pointer; color: var(--ink);
-  display: flex; flex-direction: column; gap: 2px; overflow: hidden;
-  transition: transform .16s ease, box-shadow .16s ease;
+  position: relative; min-height: 118px; text-align: left; font: inherit; color: inherit;
+  border: 1px solid var(--line); border-radius: 14px; padding: 12px 13px 13px; background: var(--panel);
+  cursor: pointer; display: flex; flex-direction: column; gap: 2px; overflow: hidden;
 }
-.tableCard:hover { transform: translateY(-3px); box-shadow: 0 12px 24px rgba(42, 61, 51, .12); }
-.tableCard:focus-visible { outline: 3px solid rgba(48, 116, 91, .45); outline-offset: 2px; }
-/* แถบสีข้างการ์ด = สถานะที่อ่านได้จากระยะเดิน */
-.tableStripe { position: absolute; top: 12px; bottom: 12px; left: 0; width: 5px; border-radius: 0 5px 5px 0; background: transparent; }
-.state_free { border-style: dashed; background: rgba(255, 255, 255, .45); }
-.state_free .tableName { color: #52655b; }
-.state_unsent { border-color: rgba(221, 93, 61, .5); background: linear-gradient(145deg, #fff9f4, #fff0e6); }
-.state_unsent .tableStripe { background: var(--tomato); }
-.state_cooking { border-color: rgba(231, 163, 53, .5); background: linear-gradient(145deg, #fffaf0, #fff4df); }
-.state_cooking .tableStripe { background: var(--amber); }
-.state_ready, .state_served { border-color: rgba(48, 116, 91, .42); background: linear-gradient(145deg, #f7fbf8, #ecf5ef); }
-.state_ready .tableStripe, .state_served .tableStripe { background: var(--leaf); }
-.state_idle { border-color: #d5d7cf; background: #fbfaf6; }
-.state_idle .tableStripe { background: #b9c0b7; }
-.tableBlocked { opacity: .55; cursor: not-allowed; background: #eee; }
-.tableSelected { outline: 3px solid rgba(48, 116, 91, .3); }
+.tableCard:hover:not(:disabled) { border-color: var(--ink-3); }
+.tableCard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tableStripe { position: absolute; top: 10px; bottom: 10px; left: 0; width: 4px; border-radius: 0 4px 4px 0; background: transparent; }
+.state_free { border-style: dashed; background: transparent; }
+.state_free .tableName { color: var(--ink-2); }
+.state_unsent .tableStripe { background: var(--new); }
+.state_cooking .tableStripe { background: var(--prep); }
+.state_ready .tableStripe, .state_served .tableStripe { background: var(--ready); }
+.state_idle .tableStripe { background: var(--served); }
+.tableBlocked { opacity: .5; cursor: not-allowed; }
+.tableSelected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .tableChip {
-  align-self: flex-start; border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 700;
-  margin-bottom: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: inline-flex; align-items: center; align-self: flex-start; gap: 5px; margin-bottom: 2px;
+  font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.chipUnsent { background: rgba(221, 93, 61, .14); color: var(--tomato-dark); }
-.chipCooking { background: rgba(231, 163, 53, .2); color: #8a5c07; }
-.chipReady { background: rgba(48, 116, 91, .16); color: var(--leaf); }
-.chipServed { background: #eef1ec; color: var(--muted); }
-.tableCode { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-.tableName { font-size: 18px; font-weight: 800; line-height: 1.2; }
-.tableMeta { color: var(--muted); font-size: 12px; margin-top: 4px; }
-/* ฿ ไม่มีใน Georgia จึงเคยตกฟอนต์แล้วทับตัวเลข — ใช้ฟอนต์เดียวกับทั้งหน้า + ตัวเลขความกว้างเท่ากัน */
-.tableAmount { font-size: 20px; font-weight: 800; line-height: 1.2; margin-top: auto; padding-top: 8px; font-variant-numeric: tabular-nums; }
-.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.chipUnsent { background: rgba(221, 93, 61, .16); color: var(--new-ink); }
+.chipCooking { background: rgba(231, 163, 53, .2); color: var(--prep-ink); }
+.chipReady { background: rgba(48, 116, 91, .16); color: var(--ready); }
+.chipServed, .chipIdle { background: var(--panel-2); color: var(--ink-3); font-weight: 500; }
+.tableCode { font-size: 11.5px; letter-spacing: .08em; color: var(--ink-3); font-weight: 600; }
+.tableName { font-size: 19px; font-weight: 600; line-height: 1.2; }
+.tableMeta { font-size: 12.5px; color: var(--ink-3); margin-top: auto; }
+/* ฿ ตกฟอนต์ในบางเครื่องแล้วทับตัวเลขแรก — .baht กันระยะให้ */
+.tableAmount { font-size: 19px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; font-size: 12.5px; color: var(--ink-2); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.legendUnsent { background: var(--tomato); }
-.legendCooking { background: var(--amber); }
-.legendReady { background: var(--leaf); }
-.legendFree { border: 1px dashed #b6bdb4; }
-.checkPanel { display: flex; flex-direction: column; min-width: 0; }
-.checkHead { padding: 18px; color: white; background: linear-gradient(135deg, var(--ink), #365c4d); }
-.checkHead h2 { margin: 0; font: 800 25px/1.1 Georgia, "Noto Serif Thai", serif; }
-.checkHead p { margin: 7px 0 0; opacity: .76; font-size: 13px; }
-.checkBody { flex: 1; overflow-y: auto; padding: 14px; display: grid; align-content: start; gap: 12px; }
-.empty { min-height: 270px; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 30px; }
-.searchRow { display: flex; gap: 8px; }
-.searchRow input { flex: 1; min-width: 0; }
-.searchResults { display: grid; gap: 7px; max-height: 210px; overflow-y: auto; }
-.menuResult { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; border: 1px solid #e4e3db; border-radius: 13px; padding: 10px 12px; background: white; cursor: pointer; text-align: left; }
-.menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.menuResult small { color: var(--muted); }
-.items { display: grid; gap: 8px; }
-.item { border: 1px solid #e2e2da; border-radius: 14px; background: white; padding: 11px; }
+.legendUnsent { background: var(--new); }
+.legendCooking { background: var(--prep); }
+.legendReady { background: var(--ready); }
+.legendFree { border: 1px dashed var(--line); }
+
+/* ---------- แผงบิลด้านขวา ---------- */
+.checkPanel { display: flex; flex-direction: column; min-width: 0; min-height: 620px; }
+.checkHead { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.checkHead h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.checkHead p { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-3); }
+.checkActions { display: flex; gap: 8px; margin-top: 12px; }
+.checkActions .btn { flex: 1; justify-content: center; padding: 8px 6px; font-size: 13px; }
+
+.searchRow { display: flex; gap: 8px; margin: 14px 16px 0; }
+.searchRow input, .field {
+  flex: 1; min-width: 0; height: 38px; border: 1px solid var(--line); background: var(--panel-2);
+  border-radius: 10px; padding: 0 12px; color: var(--ink); font: inherit; font-size: 13.5px;
+}
+.searchRow input:focus, .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--panel); }
+.searchResults { display: grid; gap: 7px; margin: 10px 16px 0; max-height: 210px; overflow-y: auto; }
+.menuResult {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left;
+  border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; background: var(--panel); cursor: pointer; font: inherit; color: inherit;
+}
+.menuResult:hover { border-color: var(--ink-3); }
+.menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.menuResult small { color: var(--ink-3); }
+
+.items { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 0; overflow-y: auto; flex: 1; }
+.roundLabel { font-size: 11.5px; color: var(--ink-3); letter-spacing: .04em; padding-top: 2px; }
+.item {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: start;
+  border: 1px solid var(--line-2); border-radius: 12px; background: var(--panel); padding: 10px 12px;
+}
 .itemUnsent { border-color: rgba(221, 93, 61, .45); background: #fffaf6; }
-.itemTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.itemName { font-weight: 750; }
-.itemMeta { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.itemTags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
-.tag { display: inline-flex; border-radius: 999px; padding: 3px 8px; background: #edf3ef; color: var(--leaf); font-size: 11px; }
-.tagNew { background: #fff1df; color: #9a5b08; }
-.checkFooter { padding: 14px; border-top: 1px solid #e4e2d9; background: #fffdf8; display: grid; gap: 9px; }
-.total { display: flex; align-items: baseline; justify-content: space-between; }
-.total strong { font-size: 28px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.itemQty { font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.itemName { display: block; font-weight: 600; font-size: 14.5px; }
+.itemMeta { display: block; font-size: 12.5px; color: var(--ink-3); }
+.itemNote { display: block; font-size: 12.5px; color: var(--new); }
+.itemSide { display: flex; align-items: center; gap: 8px; }
+.itemPrice { font-weight: 600; font-variant-numeric: tabular-nums; }
+.itemRemove {
+  font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--new-ink);
+  border-radius: 8px; width: 26px; height: 26px; display: grid; place-items: center; cursor: pointer; flex: none;
+}
+.itemRemove:hover { border-color: var(--new); }
+
+.checkFooter { margin-top: auto; border-top: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 10px; background: var(--panel); }
+.warn {
+  display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--ink-2);
+  background: rgba(221, 93, 61, .08); border: 1px solid rgba(221, 93, 61, .3); padding: 8px 10px; border-radius: 10px;
+}
+.warn b { color: var(--new); }
+.total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.totalLabel { font-size: 13px; color: var(--ink-3); }
+.total strong { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .footerButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.primaryAction { grid-column: 1 / -1; }
-.kitchenBoard { padding: 18px; }
+.footerButtons .btn { justify-content: center; padding: 12px; font-size: 14.5px; font-weight: 600; }
+
+.empty { flex: 1; min-height: 260px; display: grid; place-items: center; text-align: center; color: var(--ink-3); padding: 30px; }
+.empty h3 { margin: 12px 0 4px; font-size: 17px; font-weight: 600; color: var(--ink-2); }
+.empty p { margin: 0; font-size: 13px; }
+.setup { min-height: 420px; display: grid; place-items: center; text-align: center; padding: 32px; }
+.setupIcon { width: 72px; height: 72px; border-radius: 22px; display: grid; place-items: center; margin: 0 auto 16px; font-size: 32px; background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- จอครัว ---------- */
+.kitchenBoard { padding: 16px; background: var(--panel-2); }
 .lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
-.lane { border-radius: 18px; min-height: 490px; padding: 12px; background: #f0eee7; border-top: 5px solid var(--lane-color); }
-.laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
-.laneCount { min-width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: white; font-size: 12px; }
-.ticket { background: white; border-radius: 14px; padding: 12px; margin-bottom: 9px; border: 1px solid rgba(0,0,0,.06); }
-.ticketTable { color: var(--tomato-dark); font-weight: 800; font-size: 12px; margin-bottom: 5px; }
-.ticketName { font-weight: 800; }
-.ticketMeta { color: var(--muted); font-size: 11px; margin-top: 5px; }
-.ticketNote { background: #fff4db; border-radius: 8px; padding: 6px 8px; font-size: 12px; margin-top: 7px; }
+.lane { border-radius: 14px; min-height: 480px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color); }
+.laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; font-weight: 600; }
+.laneCount { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--panel-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ticket { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 11px; margin-bottom: 8px; }
+.ticketTable { color: var(--new-ink); font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+.ticketName { font-weight: 600; }
+.ticketMeta { color: var(--ink-3); font-size: 11.5px; margin-top: 4px; }
+.ticketNote { background: rgba(231, 163, 53, .16); border-radius: 8px; padding: 6px 8px; font-size: 12px; margin-top: 7px; }
 .ticketActions { display: flex; gap: 6px; margin-top: 9px; }
-.setup { min-height: 430px; display: grid; place-items: center; text-align: center; padding: 32px; }
-.setupIcon { width: 78px; height: 78px; border-radius: 26px; display: grid; place-items: center; margin: 0 auto 16px; font-size: 35px; background: #f5dfc0; }
+.ticketActions .btn { font-size: 12.5px; padding: 6px 10px; }
+.itemTags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.tag { display: inline-flex; border-radius: 999px; padding: 2px 8px; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
+
+/* ---------- modal ---------- */
 .modalGrid { display: grid; gap: 12px; }
-.modalGrid label { display: grid; gap: 5px; font-size: 13px; font-weight: 650; }
-.modalGrid input, .modalGrid select, .modalGrid textarea { border: 1px solid #d7d8d0; border-radius: 10px; padding: 9px 11px; width: 100%; }
+.modalGrid label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.modalGrid input, .modalGrid select, .modalGrid textarea {
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; width: 100%; font: inherit; background: var(--panel); color: var(--ink);
+}
 .modifierList { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.modifierChoice { display: flex !important; grid-template-columns: auto 1fr !important; align-items: center; border: 1px solid #dedfd7; border-radius: 11px; padding: 9px; }
+.modifierChoice { display: flex !important; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 11px; padding: 9px; font-weight: 400; }
 .modifierChoice input { width: auto; }
 
-/* แท็บเล็ตแนวนอนเล็ก / จอ POS 1280: การ์ดสรุปเหลือ 3 ช่องก่อนที่ตัวเลขจะถูกบีบจนอ่านไม่ออก */
+/* ---------- responsive ---------- */
 @media (max-width: 1280px) {
   .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .workspace { grid-template-columns: minmax(0, 1.35fr) minmax(300px, .8fr); }
+  .workspace { grid-template-columns: minmax(0, 1fr) 330px; }
 }
-/* แท็บเล็ตแนวตั้ง: แผงบิลลงมาอยู่ใต้ผังโต๊ะ */
 @media (max-width: 1024px) {
-  .workspace { grid-template-columns: 1fr; min-height: 0; }
-  .checkPanel { min-height: 560px; }
+  .workspace { grid-template-columns: 1fr; }
+  .checkPanel { min-height: 520px; }
   .lanes { grid-template-columns: repeat(4, 260px); }
-  .topActions { flex: 1; }
 }
 @media (max-width: 780px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -184,38 +269,26 @@
 }
 @media (max-width: 640px) {
   .page { padding: 9px; }
-  .shell { gap: 10px; }
-  .topbar { border-radius: 18px; align-items: flex-start; flex-wrap: wrap; gap: 12px; padding: 14px; }
-  .brandMark { width: 42px; height: 42px; font-size: 21px; }
+  .topbar { padding: 12px; }
+  .brand { margin-inline-end: 0; }
   .subtitle { display: none; }
-  .topActions { width: 100%; justify-content: flex-start; }
-  .topActions button { flex: 1 1 auto; }
-  .operatorBar { grid-template-columns: 1fr; }
-  .operatorFields { width: 100%; }
-  .operatorFields select { min-width: 0; flex: 1; }
-  .operatorFields input { width: 92px; }
-  .kpis { gap: 8px; }
-  .kpi { padding: 10px 12px; border-radius: 14px; }
+  .topActions { width: 100%; }
+  .topActions .btn { flex: 1 1 auto; justify-content: center; }
+  .who { width: 100%; }
+  .whoName { max-width: none; flex: 1; }
   .panel { padding: 13px; }
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .tableCard { min-height: 124px; padding: 12px 12px 12px 16px; border-radius: 16px; }
-  .tableName { font-size: 17px; }
-  .tableAmount { font-size: 18px; }
-  .checkPanel { min-height: 0; }
-  .checkBody { max-height: 60vh; }
+  .searchRow, .searchResults { margin-inline: 13px; }
+  .items { padding-inline: 13px; }
+  .checkFooter { padding: 13px; }
   .footerButtons { grid-template-columns: 1fr; }
-  .primaryAction { grid-column: auto; }
   .modifierList { grid-template-columns: 1fr; }
   .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
 }
-/* จอเล็กมากจริง ๆ เท่านั้น: ที่ 375px การบีบเป็นคอลัมน์เดียวทำให้ต้องเลื่อนผ่านการ์ดสรุป
-   5 ใบกว่าจะถึงผังโต๊ะ ซึ่งแย่กว่าตัวหนังสือแน่นเล็กน้อย */
+/* จอเล็กมากจริง ๆ เท่านั้น — ที่ 375px การบีบเป็นคอลัมน์เดียวทำให้ต้องเลื่อนผ่าน
+   การ์ดสรุป 5 ใบกว่าจะถึงผังโต๊ะ ซึ่งแย่กว่าตัวหนังสือแน่นเล็กน้อย */
 @media (max-width: 340px) {
-  .tableGrid { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: 1fr; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .tableCard { transition: none; }
-  .tableCard:hover { transform: none; }
+  .tableGrid { grid-template-columns: 1fr; }
 }

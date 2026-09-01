@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, ReloadOutlined, SearchOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
@@ -16,8 +16,8 @@ type Session = { device: { id: string; code: string; name: string | null }; loca
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
-type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT"; roundNo: number | null };
-type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; items: CheckItem[] };
+type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT"; roundNo: number | null; sentAt: string | null };
+type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type ScanHit = { sku: string; productName: string; size: string; packCode: string; unitName: string; baseQty: number; packPrice: number; available: number; modifiers: Array<{ code: string; name: string; priceDelta: number }> };
 type KitchenTicket = { id: string; orderId: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
@@ -28,6 +28,11 @@ const LANES = [
   { status: "READY", label: "พร้อมเสิร์ฟ", color: "#30745b", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
   { status: "SERVED", label: "เสิร์ฟแล้ว", color: "#718078", next: null, nextLabel: null },
 ] as const;
+const timeOf = (iso: string | null) => {
+  if (!iso) return "";
+  const at = new Date(iso);
+  return Number.isFinite(at.getTime()) ? at.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "";
+};
 const money = (value: number) => new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
 
 export default function RestaurantPosPage() {
@@ -105,6 +110,29 @@ export default function RestaurantPosPage() {
   }, null);
   const kitchenCooking = tickets.filter((ticket) => ticket.status === "NEW" || ticket.status === "PREPARING").length;
   const kitchenReady = tickets.filter((ticket) => ticket.status === "READY").length;
+  const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
+  // ไม่ใช้ items.reduce() โดยตั้งใจ — เทสห้ามรูปแบบนั้นทั้งหมดเพื่อกันการ "รวมยอดเอง"
+  // ที่จอ (สูตรเงินชุดที่สอง) การเลี่ยงจึงดีกว่าการไปคลายกฎในเทส
+  const lastRound = Math.max(0, ...(check?.items.map((item) => item.roundNo ?? 0) ?? [])) || null;
+  const checkMinutes = check ? minutesSince(check.openedAt) : null;
+  // จัดกลุ่มรายการตามรอบครัว: ของที่ยังไม่ส่งอยู่ท้ายสุดเสมอ เพราะนั่นคือสิ่งที่ต้องกดต่อ
+  const itemGroups = useMemo(() => {
+    if (!check) return [] as Array<{ key: string; label: string; items: CheckItem[] }>;
+    const rounds = new Map<number, CheckItem[]>();
+    const unsent: CheckItem[] = [];
+    for (const item of check.items) {
+      if (item.status === "NEW") { unsent.push(item); continue; }
+      const round = item.roundNo ?? 0;
+      rounds.set(round, [...(rounds.get(round) ?? []), item]);
+    }
+    const groups = [...rounds.entries()].sort((a, b) => a[0] - b[0]).map(([round, items]) => ({
+      key: `round-${round}`,
+      label: `รอบ ${round || 1} · ส่งครัวแล้ว${items[0]?.sentAt ? ` ${timeOf(items[0].sentAt)}` : ""}`,
+      items,
+    }));
+    if (unsent.length) groups.push({ key: "unsent", label: "ยังไม่ส่งครัว", items: unsent });
+    return groups;
+  }, [check]);
   const operatorReady = Boolean(actorUserId && actorPin);
   const operatorName = staff.find((person) => person.id === actorUserId)?.name ?? staff.find((person) => person.id === actorUserId)?.email ?? "";
   // เกณฑ์เดียวที่ใช้ทั้งคำเตือนและป้ายยอดเงิน: "มีบรรทัดที่ยังไม่ส่งครัวจริงไหม"
@@ -294,16 +322,24 @@ export default function RestaurantPosPage() {
     <div className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.brand}><div className={styles.brandMark}>B</div><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · โต๊ะและครัวแยกจาก Retail POS</p></div></div>
-        <div className={styles.topActions}><Segmented value={screen} onChange={(value) => setScreen(value as "FLOOR" | "KITCHEN")} options={[{ value: "FLOOR", label: <span><AppstoreOutlined /> โต๊ะ</span> }, { value: "KITCHEN", label: <span><CoffeeOutlined /> ครัว{kitchenCooking + kitchenReady > 0 ? <span className={styles.segBadge}>{kitchenCooking + kitchenReady}</span> : null}</span> }]} /><Button icon={<ReloadOutlined />} onClick={() => void refresh()}>รีเฟรช</Button><Button icon={<CustomerServiceOutlined />} onClick={() => setSupportOpen(true)}>Support Log ({localSupportEventCount(supportScope)})</Button><Button icon={<ShopOutlined />} onClick={() => { window.location.href = "/pos?surface=retail"; }} title="คืนสินค้า · รับของเข้าคลัง · มัดจำ · บัตรของขวัญ · ขายเชื่อ ยังอยู่ที่หน้าค้าปลีก">โหมดค้าปลีก</Button><Button type={session?.shift ? "default" : "primary"} onClick={() => setShiftModal(session?.shift ? "CLOSE" : "OPEN")}>{session?.shift ? "ปิดกะ" : "เปิดกะ"}</Button></div>
+        <div className={styles.topActions}>
+          <div className={styles.seg} role="group" aria-label="สลับหน้าจอ">
+            <button type="button" className={`${styles.segButton} ${screen === "FLOOR" ? styles.segButtonActive : ""}`} aria-pressed={screen === "FLOOR"} onClick={() => setScreen("FLOOR")}><AppstoreOutlined /> โต๊ะ</button>
+            <button type="button" className={`${styles.segButton} ${screen === "KITCHEN" ? styles.segButtonActive : ""}`} aria-pressed={screen === "KITCHEN"} onClick={() => setScreen("KITCHEN")}><CoffeeOutlined /> ครัว{kitchenCooking + kitchenReady > 0 ? <span className={styles.segBadge}>{kitchenCooking + kitchenReady}</span> : null}</button>
+          </div>
+          {/* PIN กรอกครั้งเดียวต่อกะ — ยุบเป็นชิปบนหัวจอ กดเปลี่ยนเมื่อสลับคน */}
+          <div className={styles.who}>
+            <span className={`${styles.whoDot} ${operatorReady ? "" : styles.whoDotIdle}`} aria-hidden="true" />
+            <span className={styles.whoName}>{operatorReady ? (operatorName || "ผู้ปฏิบัติงาน") : "ยังไม่ได้ระบุผู้ปฏิบัติงาน"}</span>
+            <button type="button" className={styles.whoChange} onClick={() => setOperatorOpen(true)}>{operatorReady ? "เปลี่ยน" : "เลือก"}</button>
+          </div>
+          <button type="button" className={styles.btn} onClick={() => void refresh()}><ReloadOutlined /> รีเฟรช</button>
+          <button type="button" className={styles.btn} onClick={() => setSupportOpen(true)}><CustomerServiceOutlined /> Support Log ({localSupportEventCount(supportScope)})</button>
+          <button type="button" className={styles.btn} onClick={() => { window.location.href = "/pos?surface=retail"; }} title="คืนสินค้า · รับของเข้าคลัง · มัดจำ · บัตรของขวัญ · ขายเชื่อ ยังอยู่ที่หน้าค้าปลีก"><ShopOutlined /> โหมดค้าปลีก</button>
+          <button type="button" className={`${styles.btn} ${session?.shift ? "" : styles.btnPrimary}`} onClick={() => setShiftModal(session?.shift ? "CLOSE" : "OPEN")}>{session?.shift ? "ปิดกะ" : "เปิดกะ"}</button>
+        </div>
       </header>
-      {/* PIN ถูกกรอกครั้งเดียวต่อกะ การให้กินเต็มแถวตลอดเวลาเบียดผังโต๊ะโดยไม่จำเป็น
-          จึงยุบเป็นชิปเมื่อเลือกคนและกรอก PIN แล้ว และกางกลับได้ทุกเมื่อ */}
-      <section className={styles.operatorBar}>
-        {operatorReady && !operatorOpen
-          ? <div className={styles.operatorChip}><span className={styles.operatorDot} aria-hidden="true" /><strong>{operatorName || "ผู้ปฏิบัติงาน"}</strong><span className={styles.operatorHint}>PIN พร้อมใช้งาน</span><Button size="small" onClick={() => setOperatorOpen(true)}>เปลี่ยน</Button></div>
-          : <div className={styles.operatorFields}><strong>ผู้ปฏิบัติงาน</strong><select value={actorUserId} onChange={(event) => setActorUserId(event.target.value)}><option value="">เลือกพนักงาน</option>{staff.map((person) => <option key={person.id} value={person.id} disabled={!person.hasPin}>{person.name ?? person.email ?? person.id}{person.hasPin ? "" : " · ยังไม่มี PIN"}</option>)}</select><input value={actorPin} onChange={(event) => setActorPin(event.target.value)} type="password" inputMode="numeric" placeholder="PIN" />{operatorReady && <Button size="small" onClick={() => setOperatorOpen(false)}>ซ่อน</Button>}</div>}
-        <Tag color={session?.shift ? "green" : "orange"}>{session?.shift ? "กะเปิดอยู่" : "ยังไม่เปิดกะ"}</Tag>
-      </section>
+      {!session?.shift && <Alert type="warning" showIcon message="ยังไม่เปิดกะ — เปิดกะก่อนจึงจะเปิดโต๊ะและรับออร์เดอร์ได้" />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
 
       {screen === "FLOOR" ? <Spin spinning={working}><div className={styles.floorWrap}>
@@ -315,9 +351,9 @@ export default function RestaurantPosPage() {
           <div className={styles.kpi}><span className={styles.kpiLabel}>คิวครัว</span><span className={styles.kpiValue}>{kitchenCooking}<small> กำลังทำ · {kitchenReady} พร้อมเสิร์ฟ</small></span></div>
         </section>}
         <div className={styles.workspace}>
-        <section className={styles.panel}>{floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>ยังไม่มีผังโต๊ะของสาขานี้</h2><p>เริ่มด้วยโซนหน้าร้านและโต๊ะ 12 ตัว</p><Button type="primary" size="large" disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>สร้างผังเริ่มต้น</Button></div></div> : <>
-          <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><Tag color="volcano">LIVE</Tag></div>
-          <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} onClick={() => setActiveArea(area.id)}>{area.name}</button>)}</div>
+        <section className={styles.panel}>{floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>ยังไม่มีผังโต๊ะของสาขานี้</h2><p>เริ่มด้วยโซนหน้าร้านและโต๊ะ 12 ตัว</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>สร้างผังเริ่มต้น</button></div></div> : <>
+          <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><span className={styles.livePill}>LIVE</span></div>
+          <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} <span className={styles.areaCount}>{floor.tables.filter((table) => table.areaId === area.id).length}</span></button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
               สถานะอ่านจากแถบสีข้างการ์ด + ป้ายข้อความ (จุดสี 10px เดิมแยกไม่ออกจากระยะยืน) */}
           <div className={styles.tableGrid}>{visibleTables.map((table) => {
@@ -331,7 +367,7 @@ export default function RestaurantPosPage() {
               : state === "cooking" ? { text: `ครัวกำลังทำ ${kitchen!.cooking}`, className: styles.chipCooking }
               : state === "served" ? { text: "เสิร์ฟครบ", className: styles.chipServed }
               : state === "idle" ? { text: "ยังไม่สั่ง", className: styles.chipServed } : null;
-            return <button key={table.id} className={`${styles.tableCard} ${styles[`state_${state}`]} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
+            return <button key={table.id} type="button" disabled={table.blocked} className={`${styles.tableCard} ${styles[`state_${state}`]} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
               <span className={styles.tableStripe} aria-hidden="true" />
               {chip && <span className={`${styles.tableChip} ${chip.className}`}>{chip.text}</span>}
               <span className={styles.tableCode}>{table.code}</span>
@@ -351,16 +387,65 @@ export default function RestaurantPosPage() {
           </div>
         </>}</section>
         <aside className={styles.checkPanel}>{check ? <>
-          <div className={styles.checkHead}><h2>{check.tableName}</h2><p>{check.areaName} · {check.guestCount} คน · บิล #{check.id.slice(0, 8)}</p></div>
-          <div className={styles.checkBody}><div className={styles.searchRow}><input className={styles.field} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นชื่อเมนู / SKU" /><Button icon={<SearchOutlined />} /></div>
-            {searchResults.length > 0 && <div className={styles.searchResults}>{searchResults.map((item) => <button key={item.sku} className={styles.menuResult} onClick={() => void chooseMenu(item)}><span><strong>{item.name}</strong><br /><small>{item.sku} · คงเหลือ {item.availableTotal}</small></span><strong>฿{money(item.price)}</strong></button>)}</div>}
-            <div className={styles.items}>{check.items.length === 0 && <div className={styles.empty}>ค้นเมนูด้านบนเพื่อเริ่มรับออร์เดอร์</div>}{check.items.map((item) => <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""}`} key={item.id}><div className={styles.itemTop}><div><div className={styles.itemName}>{item.productName}</div><div className={styles.itemMeta}>{item.size !== "-" ? `${item.size} · ` : ""}{item.packQty} {item.unitName ?? "รายการ"}{item.roundNo ? ` · รอบ ${item.roundNo}` : ""}</div></div>{item.status === "NEW" ? <Button danger size="small" icon={<CloseCircleOutlined />} onClick={() => void action("remove_item", { itemId: item.id })} /> : <Tag color="green">ส่งแล้ว</Tag>}</div><div className={styles.itemTags}>{item.status === "NEW" && <span className={`${styles.tag} ${styles.tagNew}`}>รอส่งครัว</span>}{item.modifierNames.map((name) => <span className={styles.tag} key={name}>{name}</span>)}{item.kitchenNote && <span className={styles.tag}>โน้ต: {item.kitchenNote}</span>}</div></article>)}</div>
+          {/* หัวแผง = ชื่อโต๊ะ + เวลาที่เปิด + งานที่ทำกับ "ทั้งบิล" (ย้ายมาไว้บนตามที่ออกแบบ
+              เพราะสองปุ่มล่างต้องเหลือไว้ให้งานที่ทำบ่อยที่สุด: ส่งครัว กับ คิดเงิน) */}
+          <div className={styles.checkHead}>
+            <h2>{check.tableName} · {check.guestCount} คน</h2>
+            <p>{check.areaName} · เปิดบิล {timeOf(check.openedAt)}{checkMinutes == null ? "" : ` · ${checkMinutes} นาที`}{lastRound ? ` · รอบล่าสุด ${lastRound}` : ""}</p>
+            <div className={styles.checkActions}>
+              <button type="button" className={styles.btn} onClick={() => { setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> ย้ายโต๊ะ</button>
+              {/* รวมบิลข้ามโต๊ะยังไม่มีเส้นทางฝั่ง server — ปุ่มที่กดแล้วไม่เกิดอะไรแย่กว่าปุ่มที่บอกตรง ๆ ว่ายังไม่มี */}
+              <button type="button" className={styles.btn} disabled title="ยังไม่รองรับการรวมบิลข้ามโต๊ะ">รวมบิล</button>
+              <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={openCancel}>ยกเลิกบิล</button>
+            </div>
           </div>
-          <div className={styles.checkFooter}>{hasUnsent && <Alert type="warning" showIcon message="มีรายการใหม่ที่ยังไม่จองสต็อก/ส่งครัว" />}<div className={styles.total}><span>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div><div className={styles.footerButtons}><Button icon={<SwapOutlined />} onClick={() => { setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}>ย้ายโต๊ะ</Button><Button danger onClick={openCancel}>ยกเลิกบิล</Button><Button className={styles.primaryAction} size="large" icon={<CoffeeOutlined />} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}>ส่งครัว / จองวัตถุดิบ</Button><Button className={styles.primaryAction} type="primary" size="large" icon={<WalletOutlined />} disabled={!check.items.length || hasUnsent || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}>คิดเงิน</Button></div></div>
+
+          <div className={styles.searchRow}>
+            <input className={styles.field} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นเมนู / SKU" />
+            <button type="button" className={styles.btn} aria-label="ค้นเมนู"><SearchOutlined /></button>
+          </div>
+          {searchResults.length > 0 && <div className={styles.searchResults}>{searchResults.map((item) => <button key={item.sku} type="button" className={styles.menuResult} onClick={() => void chooseMenu(item)}><span><strong>{item.name}</strong><br /><small>{item.sku} · คงเหลือ {item.availableTotal}</small></span><strong><span className={styles.baht}>฿</span>{money(item.price)}</strong></button>)}</div>}
+
+          <div className={styles.items}>
+            {check.items.length === 0 && <div className={styles.empty}><p>ค้นเมนูด้านบนเพื่อเริ่มรับออร์เดอร์</p></div>}
+            {itemGroups.map((group) => <Fragment key={group.key}>
+              <div className={styles.roundLabel}>{group.label}</div>
+              {group.items.map((item) => <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""}`} key={item.id}>
+                <span className={styles.itemQty}>{item.packQty}</span>
+                <span>
+                  <span className={styles.itemName}>{item.productName}</span>
+                  <span className={styles.itemMeta}>{[item.size !== "-" ? item.size : null, item.unitName, ...item.modifierNames].filter(Boolean).join(" · ")}</span>
+                  {item.kitchenNote && <span className={styles.itemNote}>โน้ตครัว: {item.kitchenNote}</span>}
+                </span>
+                <span className={styles.itemSide}>
+                  {/* ราคาต่อหน่วยที่ server บันทึกไว้ตอนเพิ่มรายการ — ห้ามคูณ/รวมเองที่จอ
+                      เพราะตัวเลือกมีส่วนต่างราคาที่ถูกคิดฝั่ง server ตอนส่งครัว */}
+                  {item.packPrice != null && <span className={styles.itemPrice} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
+                  {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
+                </span>
+              </article>)}
+            </Fragment>)}
+          </div>
+
+          <div className={styles.checkFooter}>
+            {hasUnsent && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>{unsentInCheck} รายการยังไม่ถึงครัว</b> — ส่งครัวก่อนจึงจะคิดเงินได้ ยอดด้านล่างคือยอดที่ส่งครัวแล้ว</span></div>}
+            <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
+            <div className={styles.footerButtons}>
+              <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
+              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> คิดเงิน</button>
+            </div>
+          </div>
         </> : <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 40 }} /><h3>เลือกโต๊ะเพื่อเริ่มงาน</h3><p>โต๊ะเส้นประคือโต๊ะว่าง กดเพื่อเปิดบิลใหม่ · โต๊ะที่มีแถบสีคือบิลที่เปิดค้างอยู่</p></div></div>}</aside>
-      </div></div></Spin> : <Spin spinning={working}><section className={styles.kitchenBoard}><div className={styles.panelHeader}><div><h2>Kitchen Display</h2><small>รายการจากโต๊ะเข้าครัวก่อนชำระเงิน</small></div><Button icon={<ReloadOutlined />} onClick={() => void loadTickets()}>รีเฟรชคิว</Button></div><div className={styles.lanes}>{LANES.map((lane) => { const rows = tickets.filter((ticket) => ticket.status === lane.status); return <section className={styles.lane} style={{ "--lane-color": lane.color } as CSSProperties} key={lane.status}><div className={styles.laneHead}><strong>{lane.label}</strong><span className={styles.laneCount}>{rows.length}</span></div>{rows.map((ticket) => <article className={styles.ticket} key={ticket.id}><div className={styles.ticketTable}>{ticket.tableName ? `${ticket.tableName} · รอบ ${ticket.roundNo ?? 1}` : `บิล #${ticket.orderId?.slice(0, 8) ?? "-"}`}</div><div className={styles.ticketName}>{ticket.productName}</div><div className={styles.ticketMeta}>{ticket.size !== "-" ? `${ticket.size} · ` : ""}x {ticket.packQty ?? ticket.qty} · {ticket.station ?? "ไม่ระบุ station"} · {new Date(ticket.createdAt).toLocaleTimeString(lang === "th" ? "th-TH" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</div>{ticket.modifierCodes.length > 0 && <div className={styles.itemTags}>{ticket.modifierCodes.map((code) => <span className={styles.tag} key={code}>{code}</span>)}</div>}{ticket.kitchenNote && <div className={styles.ticketNote}>{ticket.kitchenNote}</div>}<div className={styles.ticketActions}>{lane.next && <Button type="primary" size="small" onClick={() => void ticketStatus(ticket, lane.next!)}>{lane.nextLabel} <ArrowRightOutlined /></Button>}{lane.status !== "SERVED" && <Button danger size="small" onClick={() => void ticketStatus(ticket, "CANCELLED")}>ยกเลิก</Button>}</div></article>)}</section>; })}</div></section></Spin>}
+      </div></div></Spin> : <Spin spinning={working}><section className={styles.kitchenBoard}><div className={styles.panelHeader}><div><h2>Kitchen Display</h2><small>รายการจากโต๊ะเข้าครัวก่อนชำระเงิน</small></div><button type="button" className={styles.btn} onClick={() => void loadTickets()}><ReloadOutlined /> รีเฟรชคิว</button></div><div className={styles.lanes}>{LANES.map((lane) => { const rows = tickets.filter((ticket) => ticket.status === lane.status); return <section className={styles.lane} style={{ "--lane-color": lane.color } as CSSProperties} key={lane.status}><div className={styles.laneHead}><strong>{lane.label}</strong><span className={styles.laneCount}>{rows.length}</span></div>{rows.map((ticket) => <article className={styles.ticket} key={ticket.id}><div className={styles.ticketTable}>{ticket.tableName ? `${ticket.tableName} · รอบ ${ticket.roundNo ?? 1}` : `บิล #${ticket.orderId?.slice(0, 8) ?? "-"}`}</div><div className={styles.ticketName}>{ticket.productName}</div><div className={styles.ticketMeta}>{ticket.size !== "-" ? `${ticket.size} · ` : ""}x {ticket.packQty ?? ticket.qty} · {ticket.station ?? "ไม่ระบุ station"} · {new Date(ticket.createdAt).toLocaleTimeString(lang === "th" ? "th-TH" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</div>{ticket.modifierCodes.length > 0 && <div className={styles.itemTags}>{ticket.modifierCodes.map((code) => <span className={styles.tag} key={code}>{code}</span>)}</div>}{ticket.kitchenNote && <div className={styles.ticketNote}>{ticket.kitchenNote}</div>}<div className={styles.ticketActions}>{lane.next && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void ticketStatus(ticket, lane.next!)}>{lane.nextLabel} <ArrowRightOutlined /></button>}{lane.status !== "SERVED" && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => void ticketStatus(ticket, "CANCELLED")}>ยกเลิก</button>}</div></article>)}</section>; })}</div></section></Spin>}
     </div>
 
+    <Modal title="ผู้ปฏิบัติงาน" open={operatorOpen} onCancel={() => setOperatorOpen(false)} onOk={() => setOperatorOpen(false)} okText="ใช้บัญชีนี้" okButtonProps={{ disabled: !operatorReady }}>
+      <div className={styles.modalGrid}>
+        <Alert type="info" showIcon message="ทุกการกระทำที่หน้านี้บันทึกในชื่อบัญชีที่เลือก — เปลี่ยนคนเมื่อสลับกะหรือสลับพนักงาน" />
+        <label>พนักงาน<select value={actorUserId} onChange={(event) => setActorUserId(event.target.value)}><option value="">เลือกพนักงาน</option>{staff.map((person) => <option key={person.id} value={person.id} disabled={!person.hasPin}>{person.name ?? person.email ?? person.id}{person.hasPin ? "" : " · ยังไม่มี PIN"}</option>)}</select></label>
+        <label>PIN<input value={actorPin} onChange={(event) => setActorPin(event.target.value)} type="password" inputMode="numeric" autoComplete="off" placeholder="PIN" /></label>
+      </div>
+    </Modal>
     <Modal title={`เปิดบิล ${openTable?.name ?? ""}`} open={Boolean(openTable)} onCancel={() => setOpenTable(null)} onOk={() => void openCheck()} confirmLoading={working} okText="เปิดโต๊ะ"><div className={styles.modalGrid}><label>จำนวนลูกค้า<input type="number" min={1} max={500} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} /></label></div></Modal>
     <Modal title={menuHit?.productName ?? "เพิ่มเมนู"} open={Boolean(menuHit)} onCancel={() => setMenuHit(null)} onOk={() => void addMenu()} confirmLoading={working} okText="เพิ่มในบิล">{menuHit && <div className={styles.modalGrid}><Alert type="info" message={`${menuHit.size} · ฿${money(menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0))} / ${menuHit.unitName} · รวม ${menuQty} รายการ ฿${money((menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * menuQty)}`} /><label>จำนวน<input type="number" min={1} max={9999} value={menuQty} onChange={(event) => setMenuQty(Number(event.target.value))} /></label>{menuHit.modifiers.length > 0 && <div><strong>ตัวเลือก</strong><div className={styles.modifierList}>{menuHit.modifiers.map((modifier) => <label className={styles.modifierChoice} key={modifier.code}><input type="checkbox" checked={modifierCodes.includes(modifier.code)} onChange={(event) => setModifierCodes((current) => event.target.checked ? [...current, modifier.code] : current.filter((code) => code !== modifier.code))} /><span>{modifier.name}{modifier.priceDelta > 0 ? ` (+฿${money(modifier.priceDelta)})` : ""}</span></label>)}</div></div>}<label>โน้ตถึงครัว<textarea rows={3} maxLength={300} value={kitchenNote} onChange={(event) => setKitchenNote(event.target.value)} placeholder="เช่น ไม่เผ็ด, แยกน้ำ" /></label></div>}</Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>

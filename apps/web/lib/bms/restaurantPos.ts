@@ -31,6 +31,7 @@ type CheckItemRow = {
   unit_name: string | null;
   base_qty: number | null;
   pack_price: string | null;
+  sent_at?: string | Date | null;
   modifier_codes: string[];
   modifier_names: string[];
   kitchen_note: string | null;
@@ -61,6 +62,8 @@ function mapCheckItem(row: CheckItemRow) {
     status: row.status,
     roundNo: row.round_no == null ? null : Number(row.round_no),
     createdAt: iso(row.created_at),
+    // เวลาที่ส่งครัวจริง — หัวข้อ "รอบ N · ส่งครัวแล้ว HH:MM" บนแผงบิลอ่านจากค่านี้
+    sentAt: row.sent_at ? iso(row.sent_at) : null,
   };
 }
 
@@ -280,7 +283,7 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
   const itemResult = await query<CheckItemRow>(
     `SELECT id, product_sku, product_name, size, pack_qty, pack_code, unit_name,
             base_qty, pack_price, modifier_codes, modifier_names, kitchen_note,
-            status, round_no, created_at
+            status, round_no, created_at, sent_at
        FROM bms_restaurant_check_items
       WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
       ORDER BY created_at, id`,
