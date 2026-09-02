@@ -23,7 +23,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
-import { listKitchenTickets, updateKitchenTicketStatus } from "../apps/web/lib/bms/kitchen.ts";
+import {
+  KITCHEN_BULK_LIMIT,
+  listKitchenTickets,
+  updateKitchenTicketStatus,
+  updateKitchenTicketsStatus,
+} from "../apps/web/lib/bms/kitchen.ts";
 import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
@@ -396,6 +401,62 @@ test("a ticket only moves for the branch that owns it", async () => {
     }),
     /เปลี่ยนสถานะ/,
     "ข้ามขั้นไม่ได้"
+  );
+});
+
+/**
+ * จอครัวรวมตั๋วของ (โต๊ะ + รอบ + สถานี) เป็นใบเดียว ปุ่มเดียวจึงขยับหลายแถว — ต้องเป็น
+ * "ทั้งหมดหรือไม่เลื่อนเลย" ในทรานแซกชันเดียว · ถ้าปล่อยให้ครึ่งหนึ่งผ่าน งานเดียวกันจะโผล่
+ * สองช่องบนกระดานพร้อมกันโดยไม่มีใครอธิบายได้ และคนครัวจะทำซ้ำหรือข้ามไปเลย
+ */
+test("เลื่อนทั้งใบเป็นทั้งหมดหรือไม่เลื่อนเลย", async () => {
+  const stuck = (await listKitchenTickets(tenantId, "PREPARING", 200, locationId))[0];
+  const fresh = await listKitchenTickets(tenantId, "NEW", 200, locationId);
+  assert.ok(stuck && fresh.length >= 2, "ต้องมีทั้งใบที่ขยับแล้วและใบที่ยังใหม่ไว้ทดสอบ");
+
+  // ใบที่ขยับไม่ได้ (PREPARING → PREPARING) ปนอยู่ในชุด = ทั้งชุดต้อง rollback
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: [fresh[0].id, stuck.id], status: "PREPARING",
+      actorUserId: waiterId, expectedLocationId: locationId,
+    }),
+    /เปลี่ยนสถานะ/
+  );
+  const afterFailure = await listKitchenTickets(tenantId, "NEW", 200, locationId);
+  assert.ok(afterFailure.some((row) => row.id === fresh[0].id),
+    "ใบที่ดีต้องไม่ถูกเลื่อนทิ้งไว้ครึ่งทางเมื่อเพื่อนร่วมชุดล้ม");
+
+  // ชุดที่ถูกต้องเลื่อนครบทุกแถวในครั้งเดียว
+  const ids = fresh.slice(0, 2).map((row) => row.id);
+  const moved = await updateKitchenTicketsStatus({
+    tenantId, ticketIds: [...ids, ids[0]], status: "PREPARING",
+    actorUserId: waiterId, expectedLocationId: locationId,
+  });
+  assert.equal(moved.length, ids.length, "id ซ้ำในคำขอต้องถูกยุบ ไม่ใช่เลื่อนสองรอบ");
+  assert.ok(moved.every((row) => row.status === "PREPARING"));
+  const stillNew = await listKitchenTickets(tenantId, "NEW", 200, locationId);
+  assert.ok(ids.every((id) => !stillNew.some((row) => row.id === id)));
+
+  // สาขาอื่นเลื่อนไม่ได้ แม้รู้ id (ด่านเดียวกับ route ทีละใบ)
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: [ids[0]], status: "READY",
+      actorUserId: waiterId, expectedLocationId: otherLocationId,
+    }),
+    /ไม่พบ Kitchen ticket/
+  );
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: [], status: "PREPARING", actorUserId: waiterId,
+    }),
+    /ต้องระบุตั๋ว/
+  );
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: Array.from({ length: KITCHEN_BULK_LIMIT + 1 }, (_, i) => `id-${i}`),
+      status: "PREPARING", actorUserId: waiterId,
+    }),
+    /สูงสุด/
   );
 });
 

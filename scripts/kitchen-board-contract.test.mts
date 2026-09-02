@@ -1,0 +1,167 @@
+// =============================================================
+// กระดานครัว — การรวมใบ, ตัวนับเวลา, การนับงาน (ไม่ต้องมี DB)
+// -------------------------------------------------------------
+//   cd apps/web && npx tsx --test ../../scripts/kitchen-board-contract.test.mts
+// =============================================================
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  KITCHEN_LATE_MINUTES,
+  KITCHEN_WARN_MINUTES,
+  countKitchenDishes,
+  formatKitchenElapsed,
+  groupKitchenTickets,
+  kitchenElapsedSeconds,
+  kitchenGroupLabel,
+  kitchenStations,
+  kitchenUrgency,
+  pickReferenceAt,
+  type KitchenBoardTicket,
+} from "../apps/web/lib/bms/kitchenBoard.ts";
+
+const NOW = Date.parse("2026-09-02T15:00:00.000Z");
+const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
+
+let seq = 0;
+function ticket(over: Partial<KitchenBoardTicket> = {}): KitchenBoardTicket {
+  seq += 1;
+  return {
+    id: `t${seq}`,
+    checkId: "check-1",
+    tableName: "โต๊ะ 3",
+    roundNo: 1,
+    station: "บาร์เครื่องดื่ม",
+    status: "NEW",
+    modifierCodes: [],
+    productName: "ชามะนาวเย็น",
+    size: "S",
+    qty: 1,
+    createdAt: minutesAgo(3),
+    updatedAt: minutesAgo(3),
+    ...over,
+  };
+}
+
+test("รายการเหมือนกันในโต๊ะ+รอบ+สถานีเดียวกัน ยุบเป็นใบเดียวและบวกจำนวน", () => {
+  const groups = groupKitchenTickets([ticket(), ticket(), ticket()]);
+  assert.equal(groups.length, 1, "3 แก้วเดียวกันคืองานเดียว");
+  assert.equal(groups[0].items.length, 1);
+  assert.equal(groups[0].items[0].qty, 3);
+  assert.equal(groups[0].totalQty, 3);
+  assert.deepEqual(groups[0].ticketIds.length, 3, "ปุ่มเดียวต้องขยับได้ทั้งสามแถว");
+});
+
+test("⚠️ ตัวเลือกต่างกันห้ามยุบรวม — คนละงานของคนชง", () => {
+  const groups = groupKitchenTickets([
+    ticket(), ticket(),
+    ticket({ modifierCodes: ["หวานน้อย"] }),
+  ]);
+  assert.equal(groups.length, 1, "ยังเป็นใบเดียวของโต๊ะนั้น");
+  assert.equal(groups[0].items.length, 2, "แต่ต้องเป็นสองบรรทัด");
+  const plain = groups[0].items.find((item) => item.modifierCodes.length === 0);
+  const sweet = groups[0].items.find((item) => item.modifierCodes.length === 1);
+  assert.equal(plain?.qty, 2);
+  assert.equal(sweet?.qty, 1);
+});
+
+test("โน้ตถึงครัวต่างกันก็แยกบรรทัด และโน้ตติดอยู่กับรายการของมัน", () => {
+  const groups = groupKitchenTickets([
+    ticket({ productName: "ผัดไทยกุ้งสด", station: "ครัวร้อน" }),
+    ticket({ productName: "ผัดไทยกุ้งสด", station: "ครัวร้อน", kitchenNote: "ไม่เผ็ด, แยกน้ำ" }),
+  ]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].items.length, 2);
+  assert.equal(groups[0].items.filter((item) => item.kitchenNote === "ไม่เผ็ด, แยกน้ำ").length, 1);
+});
+
+test("⚠️ สถานีต่างกันต้องเป็นคนละใบ แม้โต๊ะและรอบเดียวกัน", () => {
+  const groups = groupKitchenTickets([
+    ticket({ station: "บาร์เครื่องดื่ม" }),
+    ticket({ station: "ครัวร้อน", productName: "ผัดไทยกุ้งสด" }),
+  ]);
+  assert.equal(groups.length, 2, "ครัวร้อนกับบาร์เป็นคนละคน ปุ่มของคนหนึ่งห้ามขยับงานของอีกคน");
+  assert.deepEqual(new Set(groups.map((group) => group.station)), new Set(["บาร์เครื่องดื่ม", "ครัวร้อน"]));
+});
+
+test("รอบต่างกัน บิลต่างกัน และสถานะต่างกัน แยกใบกันทั้งหมด", () => {
+  const groups = groupKitchenTickets([
+    ticket({ roundNo: 1 }),
+    ticket({ roundNo: 2 }),
+    ticket({ roundNo: 1, checkId: "check-2", tableName: "โต๊ะ 9" }),
+    ticket({ roundNo: 1, status: "PREPARING" }),
+  ]);
+  assert.equal(groups.length, 4);
+});
+
+test("ใบที่รอนานที่สุดอยู่บนสุด และตัวนับยึดตั๋วที่เก่าที่สุดในใบ", () => {
+  const groups = groupKitchenTickets([
+    ticket({ checkId: "c-new", tableName: "โต๊ะ 5", createdAt: minutesAgo(1) }),
+    ticket({ checkId: "c-old", tableName: "โต๊ะ 1", createdAt: minutesAgo(12) }),
+    ticket({ checkId: "c-old", tableName: "โต๊ะ 1", createdAt: minutesAgo(20) }),
+  ]);
+  assert.deepEqual(groups.map((group) => group.tableLabel), ["โต๊ะ 1", "โต๊ะ 5"]);
+  assert.equal(groups[0].referenceAt, minutesAgo(20), "ใบเดียวหลายตั๋ว = ยึดตัวที่รอนานสุด");
+});
+
+test("⚠️ ช่องพร้อมเสิร์ฟนับจากตอนทำเสร็จ ไม่ใช่ตอนสั่ง", () => {
+  // สั่งมา 40 นาที แต่เพิ่งทำเสร็จ 1 นาที — ถ้านับจากตอนสั่งจะแดงค้างทุกใบตลอดเวลา
+  // แล้วสีเลิกมีความหมาย ทั้งที่คำถามของช่องนี้คือ "อาหารวางรอนานแค่ไหน"
+  assert.equal(pickReferenceAt("READY", minutesAgo(40), minutesAgo(1)), minutesAgo(1));
+  assert.equal(pickReferenceAt("NEW", minutesAgo(40), minutesAgo(1)), minutesAgo(40));
+  assert.equal(pickReferenceAt("PREPARING", minutesAgo(40), minutesAgo(1)), minutesAgo(40));
+  const groups = groupKitchenTickets([
+    ticket({ status: "READY", createdAt: minutesAgo(40), updatedAt: minutesAgo(1) }),
+  ]);
+  assert.equal(kitchenUrgency(kitchenElapsedSeconds(groups[0].referenceAt, NOW)), "ok");
+});
+
+test("ระดับความเร่งเปลี่ยนตรงเกณฑ์ 5 และ 10 นาที", () => {
+  assert.equal(kitchenUrgency(0), "ok");
+  assert.equal(kitchenUrgency(KITCHEN_WARN_MINUTES * 60 - 1), "ok");
+  assert.equal(kitchenUrgency(KITCHEN_WARN_MINUTES * 60), "warn");
+  assert.equal(kitchenUrgency(KITCHEN_LATE_MINUTES * 60 - 1), "warn");
+  assert.equal(kitchenUrgency(KITCHEN_LATE_MINUTES * 60), "late");
+});
+
+test("เวลาที่เพี้ยนหรืออ่านไม่ออกต้องไม่ทำให้ตัวนับติดลบหรือ NaN", () => {
+  assert.equal(kitchenElapsedSeconds(new Date(NOW + 60_000).toISOString(), NOW), 0);
+  assert.equal(kitchenElapsedSeconds("ไม่ใช่วันที่", NOW), 0);
+  assert.equal(formatKitchenElapsed(-5), "0:00");
+});
+
+test("รูปแบบตัวเลขบนป้ายอ่านจบในสายตาเดียว", () => {
+  assert.equal(formatKitchenElapsed(48), "0:48");
+  assert.equal(formatKitchenElapsed(6 * 60 + 3), "6:03");
+  assert.equal(formatKitchenElapsed(12 * 60 + 41), "12:41");
+  assert.equal(formatKitchenElapsed(60 * 60 + 5 * 60), "1 ชม. 5 น.");
+});
+
+test("⚠️ ป้ายบนหัวเลนนับ ‘จาน’ ไม่ใช่จำนวนใบ", () => {
+  const tickets = [ticket(), ticket(), ticket(), ticket({ modifierCodes: ["หวานน้อย"] })];
+  const groups = groupKitchenTickets(tickets);
+  assert.equal(groups.length, 1, "ยุบเป็นใบเดียว");
+  assert.equal(countKitchenDishes(tickets), 4, "แต่ปริมาณงานคือ 4 แก้ว");
+  assert.equal(groups.reduce((sum, group) => sum + group.totalQty, 0), 4);
+});
+
+test("ใบของบิลค้าปลีกที่ไม่มีโต๊ะ ยังมีหัวใบที่บอกได้ว่าของใคร", () => {
+  assert.equal(kitchenGroupLabel(ticket({ tableName: null, tableCode: "T07" })), "T07");
+  assert.equal(
+    kitchenGroupLabel(ticket({ tableName: null, tableCode: null, checkId: null, orderId: "9f8e7d6c-1234" })),
+    "บิล #9f8e7d6c"
+  );
+  assert.equal(kitchenGroupLabel(ticket({ tableName: "  ", tableCode: null, checkId: null, orderId: null })), null);
+});
+
+test("รายชื่อสถานีมาจากงานที่ค้างจริง และไม่ซ้ำ", () => {
+  const stations = kitchenStations([
+    ticket({ station: "ครัวร้อน" }),
+    ticket({ station: "ครัวร้อน" }),
+    ticket({ station: "บาร์เครื่องดื่ม" }),
+    ticket({ station: null }),
+  ]);
+  assert.equal(stations.length, 2);
+  assert.ok(stations.includes("ครัวร้อน") && stations.includes("บาร์เครื่องดื่ม"));
+});

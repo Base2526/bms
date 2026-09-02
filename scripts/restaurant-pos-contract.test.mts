@@ -522,8 +522,9 @@ test("each kitchen lane scrolls on its own while its header stays put", async ()
   assert.match(rule(".laneHead")!, /flex:\s*none/, "the header must not shrink away as tickets pile up");
 
   const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(src, /styles\.laneScroll\}>\{rows\.map/,
-    "tickets must be wrapped in the scroll box, not dropped straight into the lane");
+  // ใบสั่งต้องอยู่ "ใน" กล่องที่เลื่อน ไม่ใช่ลูกโดยตรงของเลน (ไม่งั้นหัวเลนเลื่อนหายไปด้วย)
+  assert.match(src, /styles\.laneScroll\}>[\s\S]{0,600}styles\.ticket\}/,
+    "tickets must be rendered inside the scroll box, not dropped straight into the lane");
 
   // จอแคบเลื่อนทั้งหน้าตามปกติ — เลนจึงต้องคืน overflow ที่ breakpoint นั้น
   assert.match(css, /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
