@@ -541,7 +541,13 @@ export async function resolvePosScan(
               --    ยิงขวดเดิมวันนี้กับพรุ่งนี้ได้คนละขนาด
               (SELECT min(i.size) FROM bms_inventory i
                 WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
-                  AND ($4::uuid IS NULL OR i.location_id = $4))
+                  AND ($4::uuid IS NULL OR i.location_id = $4)),
+              -- 4. ยังไม่มีแถวสต็อกเลย (เมนู NON_STOCK/RECIPE ที่ยังไม่เคยขาย) —
+              --    ตัวเลือกในแคตตาล็อก (9.51) คือความจริงของไซซ์ ไม่ใช่ตารางสต็อก
+              --    กิ่งนี้ทำงานเฉพาะตอนสามกิ่งบนได้ NULL ซึ่งวันนี้แปลว่าสแกนไม่ได้อยู่แล้ว
+              (SELECT min(variant.code) FROM bms_product_variants variant
+                WHERE variant.tenant_id = p.tenant_id AND variant.product_sku = p.sku
+                  AND variant.active)
             )                                        AS size
        FROM bms_products p
        LEFT JOIN bms_product_packs k
@@ -2469,7 +2475,7 @@ async function canonicalizePosSaleLines(
                AND i.location_id = $3
                AND i.product_sku = p.sku
                AND upper(i.size) = upper($5)
-          ) OR p.is_bundle OR sp.stock_policy = 'RECIPE')
+          ) OR p.is_bundle OR sp.stock_policy IN ('RECIPE', 'NON_STOCK'))
         LIMIT 1`,
       [tenantId, sku, locationId, packCode, size, salesSurface]
     );

@@ -60,6 +60,24 @@ const stock = async (sku: string, location = locationId) =>
     [tenantId, location, sku, SIZE]
   )).rows[0];
 
+// 9.51 made a declared sales surface a precondition for selling. These fixtures write
+// bms_products directly, so nothing else declares one and every sale returns NOT_FOUND.
+// The rows cascade away with the product on teardown.
+const declareSalesSurfaces = async (sku: string, surfaces: string[]) => {
+  const present = (await query<{ reg: string | null }>(
+    `SELECT to_regclass('bms_product_sales_surfaces')::text AS reg`
+  )).rows[0]?.reg;
+  if (!present) return; // database predates 9.51
+  for (const surface of surfaces) {
+    await query(
+      `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface)
+       VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [tenantId, sku, surface]
+    );
+  }
+};
+const ALL_SURFACES = ["RETAIL_POS", "RESTAURANT_POS", "ONLINE_ORDER", "PUBLIC_STOREFRONT", "CUSTOMER_AI"];
+
 async function makeUser(name: string) {
   return (await query<{ id: string }>(
     `INSERT INTO users (name, username, email, role, role_id, tenant_id, password_hash, fake_test)
@@ -98,6 +116,7 @@ test("setup: a throwaway restaurant with a register, an open shift and two plain
       `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
        VALUES ($1,$2,$3,$4,100,0)`, [tenantId, locationId, sku, SIZE]
     );
+    await declareSalesSurfaces(sku, ALL_SURFACES);
   }
   waiterId = await makeUser("waiter");
   cashierId = await makeUser("cashier");

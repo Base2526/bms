@@ -6,7 +6,8 @@
 -- comes from bms_products.cost_price. A shop upgrades to RECIPE later from
 -- /admin/stock-models without losing data.
 --
--- No new table, permission, capability, RLS policy or GRANT: everything reuses 9.40.
+-- No new table, permission, capability or RLS policy: everything reuses 9.40. The view's
+-- GRANT is restated below because DROP VIEW discards it.
 
 BEGIN;
 

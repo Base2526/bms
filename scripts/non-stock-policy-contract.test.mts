@@ -93,3 +93,22 @@ test("the quick-menu copy exists in both languages", () => {
     assert.match(dict, /template_quick_menu_hint:/, `${locale} hint`);
   }
 });
+
+test("the register accepts a NON_STOCK line before any inventory row exists", () => {
+  const pos = withoutComments(source("apps/web/lib/bms/pos.ts"));
+  // canonicalizePosSaleLines admits a line only if it has a stock row, or the product
+  // owns no stock. A NON_STOCK menu owns none and its zero FK row is created by the
+  // first createOrder — so without NON_STOCK here the first sale of every quick menu
+  // died with INVALID_PACK, on the retail register and on a parked bill alike.
+  assert.match(pos, /OR p\.is_bundle OR sp\.stock_policy IN \('RECIPE', 'NON_STOCK'\)/);
+  assert.doesNotMatch(pos, /OR p\.is_bundle OR sp\.stock_policy = 'RECIPE'/);
+});
+
+test("a scan falls back to the catalog variant when no stock row exists yet", () => {
+  const pos = withoutComments(source("apps/web/lib/bms/pos.ts"));
+  const scan = pos.slice(pos.indexOf("export async function resolvePosScan"));
+  // Size was resolved only from bms_inventory/packs, so a never-sold menu scanned as
+  // size NULL and could not be added to a bill at all.
+  assert.match(scan.slice(0, scan.indexOf("AS size")),
+    /FROM bms_product_variants variant/);
+});

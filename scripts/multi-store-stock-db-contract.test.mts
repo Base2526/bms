@@ -90,7 +90,11 @@ test("setup a throwaway restaurant with an active recipe and modifier", async ()
   // 9.51 made a declared sales surface a precondition for selling. These products are
   // inserted straight into bms_products, so nothing else would declare one for them.
   for (const sku of [MENU, RICE, MEAT, EGG, FLOUR]) {
-    await declareSalesSurfaces(sku, ["RESTAURANT_POS", "RETAIL_POS"]);
+    // Every channel these fixtures are sold through below, including the online orders
+    // used by the shipping and expiry-sweep tests.
+    await declareSalesSurfaces(sku, [
+      "RESTAURANT_POS", "RETAIL_POS", "ONLINE_ORDER", "PUBLIC_STOREFRONT", "CUSTOMER_AI",
+    ]);
   }
   for (const sku of [RICE, MEAT, EGG, FLOUR]) {
     await query(
@@ -541,6 +545,7 @@ test("the board shows the newest work first when the ticket cap is reached, and 
  * migration 9.52 excluding it from the view's legacy fallback branch.
  */
 const NS_MENU = `FAKE-${TAG}-QUICKMENU`;
+const NS_MENU2 = `FAKE-${TAG}-QUICKMENU2`;
 
 
 test("a NON_STOCK menu sells with no stock movement and no ingredient setup", async () => {
@@ -602,6 +607,22 @@ test("a NON_STOCK menu sells with no stock movement and no ingredient setup", as
   )).rows[0].n), 0, "the legacy fallback branch must not resurrect a NON_STOCK line");
 
   assert.equal(await cancelOrder(tenantId, sale.orderId), true);
+
+  // A second quick menu that is never sold, kept for the scan test below.
+  await query(
+    `INSERT INTO bms_products (tenant_id, sku, name, price, cost_price, active, vat_category)
+     VALUES ($1,$2,$3,60,20,TRUE,'V')`,
+    [tenantId, NS_MENU2, NS_MENU2]
+  );
+  await declareSalesSurfaces(NS_MENU2, ["RESTAURANT_POS", "RETAIL_POS"]);
+  await query(
+    `INSERT INTO bms_product_variants (tenant_id, product_sku, code)
+     VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+    [tenantId, NS_MENU2, SIZE]
+  );
+  await upsertProductStockPolicy(tenantId, {
+    productSku: NS_MENU2, stockPolicy: "NON_STOCK", baseUnit: "PIECE",
+  });
 });
 
 /**
@@ -734,6 +755,23 @@ test("a NON_STOCK menu sold on a plain retail register still reaches the kitchen
   );
   assert.equal(Number(tickets.rows[0].n), 1);
   assert.equal(await cancelOrder(tenantId, sale.orderId), true);
+});
+
+test("a never-sold NON_STOCK menu is scannable at a register", async () => {
+  // Before this fix the size COALESCE read only bms_inventory/packs, so a menu that had
+  // never been sold (and therefore had no stock row) resolved to size NULL and could not
+  // be added to a bill. RETAIL_POS is already declared for NS_MENU by the setup helper.
+  const stockRows = Number((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_inventory
+      WHERE tenant_id = $1 AND product_sku = $2`,
+    [tenantId, NS_MENU2]
+  )).rows[0].n);
+  assert.equal(stockRows, 0, "this menu must have no inventory row for the test to mean anything");
+
+  const hit = await resolvePosScan(tenantId, NS_MENU2, { locationId, packCode: "BASE" });
+  assert.ok(hit, "a quick menu that was never sold must still scan");
+  assert.equal(hit?.size, SIZE, "size comes from the catalog variant, not the stock table");
+  assert.equal(hit?.sku, NS_MENU2);
 });
 
 test("a NON_STOCK menu can be upgraded to RECIPE later without losing data", async () => {

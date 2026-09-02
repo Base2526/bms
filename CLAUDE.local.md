@@ -1223,6 +1223,53 @@ truncate→round · ค่าบริการกลายเป็นของ
       (AI/ออนไลน์/ค้าปลีก) → `INVALID_ITEM MODIFIER_GROUP_MIN` ยังไม่มีทางออกนอกจากไม่ตั้งขั้นต่ำ
     - **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** ทั้งฟอร์มสินค้าใหม่ (template/variant/surface),
       การ์ด readiness, ปุ่มทำสำเนา และหน้า `/admin/stock-models` ที่เพิ่ม quick-create วัตถุดิบ
+- **`9.52__bms_product_non_stock_policy.sql` (stock policy `NON_STOCK` — เมนูขายเร็วที่ไม่คุมวัตถุดิบ)
+  บน branch `feat/non-stock-policy` (2026-09-02) · **apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว**
+  — ยังไม่ได้ apply เข้า production · ไม่มี permission/capability/ตารางใหม่
+  · **ต้นเหตุ**: เมนูร้านอาหารต้องเป็น `RECIPE` ซึ่งบังคับสร้างวัตถุดิบทีละตัว + กรอกสูตรทุกไซซ์ก่อน
+    publish (`RECIPE_REQUIRED`) ร้านเล็กจึงเปิดขายเมนูแรกไม่ได้ · `NON_STOCK` ขายได้ทันที ไม่ตัดสต็อก
+    ต้นทุนต่อจานอ่านจาก `bms_products.cost_price` (รายงานกำไรขั้นต้นใน `reports.ts` ใช้ค่านี้อยู่แล้ว)
+    · เลื่อนขึ้นเป็น `RECIPE` ทีหลังได้ที่ `/admin/stock-models` (มีเทสคุม)
+  · **⚠️ ต้อง apply migration ก่อน deploy โค้ดชุดนี้เสมอ** — `resolveStockConsumptionInTx`
+    อ่าน `stock_policy` กับทุกบิลของทุกร้าน (กฎเดียวกับ `9.40`/`9.51`)
+  · **หัวใจของ migration คือ view ไม่ใช่ CHECK** — `NON_STOCK` คืน `lines: []` จึงไม่มีแถว snapshot
+    เลย ถ้าไม่ตัดมันออกจากกิ่ง legacy ของ `bms_order_stock_lines` view จะอ่าน "ไม่มี snapshot" ว่าเป็น
+    บิลยุคก่อน `9.40` แล้วแปลเมนูเป็น "กินสต็อกตัวเอง 1 หน่วย" ทั้งที่แถวสต็อกค้างที่ 0 →
+    **ขายไม่ได้เลยสักบิล** · มีเทส DB ที่ **สลับ view เป็นตัวที่ไม่มีเงื่อนไขนี้แล้วพิสูจน์ว่าพัง**
+    จริงในเทสเดียว (คืน view เดิมใน `finally`)
+  · **กับดักที่เจอตอนทำ (ทั้งสามเป็นบั๊กจริง ไม่ใช่เรื่องสไตล์)**:
+    1. **`DROP VIEW` ทิ้ง GRANT ไปด้วย** — ลืม `GRANT SELECT ON bms_order_stock_lines TO bms_app`
+       แล้วทุกเส้นทางที่เขียนของภายใต้ `SET LOCAL ROLE bms_app` ล้มด้วย `42501` (`8.8`/`9.3`/`9.40`
+       ต่างก็ re-grant ทุกครั้ง — **ทุกครั้งที่ DROP/CREATE view นี้ต้อง GRANT ใหม่**)
+    2. **การหาชื่อ CHECK ด้วย `pg_constraint` ต้องแคบพอ** — `bms_product_stock_policies` มี CHECK
+       อีกตัว (`scale_mapping_check`) ที่อ้าง `stock_policy` ด้วย · ถ้า `LIMIT 1` เฉย ๆ จะ DROP ตัวผิด
+       เงียบ ๆ · ต้องกรอง `array_length(conkey,1) = 1` + ตรวจว่า def มีค่าในลิสต์
+    3. **`canonicalizePosSaleLines` ปฏิเสธเมนูที่ยังไม่เคยขาย** — เงื่อนไขเดิมคือ "มีแถว
+       `bms_inventory` **หรือ** เป็นเซ็ต **หรือ** เป็น RECIPE" แต่แถวศูนย์ของ `NON_STOCK`
+       เพิ่งถูกสร้างตอน `createOrder` ครั้งแรก → **บิลแรกของทุกเมนูใหม่ล้มด้วย `INVALID_PACK`**
+       ทั้งที่หน้าจอไม่ได้บอกว่าเกี่ยวกับช่องทางขาย · แก้เป็น `IN ('RECIPE','NON_STOCK')`
+  · **`resolvePosScan` แกะไซซ์จาก `bms_inventory`/pack เท่านั้น** สินค้าที่ยังไม่มีแถวสต็อกจึงได้
+    `size = NULL` = สแกนแล้วเพิ่มลงบิลไม่ได้ · เพิ่มกิ่งที่ 4 ให้ตกไปอ่าน `bms_product_variants`
+    (ความจริงของไซซ์ตาม `9.51`) — **กิ่งนี้ทำงานเฉพาะตอนสามกิ่งบนได้ NULL ซึ่งวันนี้แปลว่าพังอยู่แล้ว
+    จึงไม่มีทาง regress** · ผลพลอยได้: เมนู `RECIPE` ที่ยังไม่เคยขายก็สแกนได้ด้วย
+  · **ช่องทางขายเริ่มต้นจำกัดที่ `RESTAURANT_POS` ตามที่ตกลง แต่เหตุผลเดิมไม่จริงแล้ว** —
+    ตอนตั้งโจทย์เชื่อว่า `createShipment()`/`releaseExpiredOrders()` ยังอ่าน `bms_order_items` ตรง ๆ
+    · ตรวจแล้วทั้งคู่อ่าน view (แก้ไปตั้งแต่ recheck รอบสองของ `9.40`) ที่เหลืออ่าน order_items
+    จริงมีแค่ **น้ำหนักค่าส่ง + รายการบนใบปะหน้า** ซึ่งต้องเป็นของที่ลูกค้าซื้อ ไม่ใช่สต็อก ·
+    แปลว่า **เปิดช่องทางออนไลน์ให้ `NON_STOCK` ได้อย่างปลอดภัยเมื่อไหร่ก็ได้** ถ้าตัดสินใจใหม่
+  · **Modifier ยังบล็อก `NON_STOCK`** เหมือน DIRECT/PACK (ตั้งใจ — modifier คือส่วนต่างวัตถุดิบของสูตร)
+  · เทส: `scripts/non-stock-policy-contract.test.mts` (11 เทส pure · mutation test แล้ว) +
+    7 เทสใน `multi-store-stock-db-contract` · **ชุด DB นั้นกลับมาเขียวครบ 18/18**
+  · **⚠️ ของค้างที่ไม่ได้แก้ (คนละเรื่อง มีมาก่อน 9.52): `9.51` ไม่เคย verify กับ DB จริง แล้วทำให้
+    ชุดเทส DB พังครึ่งชุด** — `9.51` บังคับว่าต้องมีแถว `bms_product_sales_surfaces` ถึงจะขายได้ แต่
+    fixture ของเทสเขียน `bms_products` ตรง ๆ จึงไม่มีใครประกาศช่องทางให้ → `NOT_FOUND`/`INVALID_PACK`
+    · baseline บน `d99bac86` = **176 ผ่าน / 159 แดง** · แก้ fixture ให้ 5 ชุดที่อยู่ในรัศมีของงานนี้แล้ว
+    (multi-store-stock, restaurant-pos, bundles, promotions, price-tiers) → **209 ผ่าน / 127 แดง**
+    และ **ยืนยันด้วยการ diff ชื่อเทสที่แดงว่าไม่มี regression สักตัว** · **ยังเหลืออีก 17 ชุด**
+    (ar, commission, deposits, order-extra-lines, pharmacy-*, pos-loyalty, pos-serial, pos-shift-ops,
+    product-barcode, product-vat-category, receipt-delivery, shop-archetype, store-credit,
+    variant-reservations, loyalty, order-confirmation, pos-cross-branch-return) ที่เป็นสาเหตุเดียวกัน
+
 - **`9.30__bms_ar_credit_sales.sql` (ขายเชื่อ + ลูกหนี้การค้า) เขียนแล้วบน branch `feat/ar-credit-sales`
   (2026-08-27)** — `tsc --noEmit` ผ่าน · production build ผ่าน · เทส pure **268 ตัวผ่านทั้งหมด**
   (ชุด `scripts/ar-contract.test.mts` ตอนนี้ 19 ตัว) · **⚠️ ยังไม่ได้ apply migration เข้า dev DB และ

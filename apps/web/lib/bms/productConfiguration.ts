@@ -81,10 +81,10 @@ export function productTemplateDefaults(template: string | null | undefined): {
 } {
   switch (String(template ?? "").trim().toUpperCase()) {
     case "QUICK_MENU":
-      // Sells on day one with no ingredient/recipe setup (9.52). Restaurant POS only:
-      // createShipment()/releaseExpiredOrders() still read bms_order_items directly
-      // instead of the bms_order_stock_lines view, so online surfaces would hit that
-      // known bug.
+      // Sells on day one with no ingredient/recipe setup (9.52). The default is
+      // restaurant-counter only: a dish with no tracked stock and no recipe has no
+      // fulfilment story online (nothing reserves it, nothing can be picked or packed),
+      // so a shop must opt in per product rather than get storefront listings by default.
       return { stockPolicy: "NON_STOCK", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS"], active: false };
     case "PREPARED_MENU":
       return { stockPolicy: "RECIPE", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS"], active: false };
