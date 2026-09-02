@@ -163,7 +163,10 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `add_item`, `remove_item`, `send_kitchen`, `move`, `cancel`, `settle`. Every action is scoped to the
   device's branch but **deliberately not to the device or shift that opened the check** — a check is
   opened on a waiter's tablet, sent from anywhere, and paid at the register, possibly after a shift
-  change. `cancel` needs `restaurant.check.cancel` (`9.45`); the other actions stay on `pos.sell`.
+  change. An order taker with `pos.sell` may initiate `cancel` (the dedicated
+  `restaurant.check.cancel` grant remains accepted for compatibility); every cancellation needs a
+  note, and a sent/reserved check additionally needs a distinct `pos.void` approver. Other actions
+  stay on `pos.sell`.
   `send_kitchen` reserves stock by creating/refreshing one PENDING POS order — cancelling the
   superseded order and creating its replacement share one transaction, so a round that cannot be
   reserved leaves the previous reservation intact. `settle` accepts split tender, re-stamps that

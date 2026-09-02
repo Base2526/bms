@@ -1384,9 +1384,10 @@ shift belongs to that exact device/location, and a restaurant check must name th
 defence in depth for maintenance SQL and future service callers, not a replacement for route auth.
 
 Migration `9.45` stops borrowing unrelated permissions: floor setup requires
-`restaurant.floor.manage`, KDS transitions require `restaurant.kitchen.update`, and cancelling a
-whole check requires `restaurant.check.cancel`. Ordinary open/add/send/move/settle actions retain
-`pos.sell`. The restaurant KDS refreshes its branch-scoped queue every five seconds while visible;
+`restaurant.floor.manage` and KDS transitions require `restaurant.kitchen.update`. The order taker
+holding `pos.sell` can initiate whole-check cancellation and must enter a non-empty note explaining
+why. Once anything has been sent/reserved, the existing distinct `pos.void` approval still applies.
+Ordinary open/add/send/move/settle actions also retain `pos.sell`. The restaurant KDS refreshes its branch-scoped queue every five seconds while visible;
 the admin KDS keeps its bounded ten-second poll. This is near-real-time polling, not an offline event
 queue, and a failed poll never invents a state transition.
 
@@ -1401,11 +1402,12 @@ while the work inside borrows another, and five tables sending at once exhausts 
 pool for the entire instance, not just for restaurant traffic.
 
 Cancelling a table before anything has been sent to the kitchen remains a normal correction by the
-operator. Once any line is `SENT` or a reservation order exists, cancellation releases reserved
-stock and stops active kitchen tickets, so it is treated as a void: the route requires a different
-person's PIN and `pos.void`, the service re-checks the sent/reservation state under the locked check
-row, and `restaurant.check_cancel` records both the operator and `approvedByUserId`. This second
-check closes the race where a kitchen round could be sent after the route first inspected the bill.
+order taker, but a cancellation note is mandatory at both the route and service boundaries. Once
+any line is `SENT` or a reservation order exists, cancellation releases reserved stock and stops
+active kitchen tickets, so it is treated as a void: the route requires a different person's PIN and
+`pos.void`, the service re-checks the sent/reservation state under the locked check row, and
+`restaurant.check_cancel` records the operator, note and `approvedByUserId`. This second check closes
+the race where a kitchen round could be sent after the route first inspected the bill.
 
 Refreshing the reservation for a later round cancels the previous PENDING order and creates the new
 whole-check snapshot in one tenant transaction through `createOrderInTx()`. If the larger basket
@@ -1427,8 +1429,10 @@ Dine-in kitchen tickets cover **every** line that was sent, not only recipe-pric
 retail board filters on `RECIPE` because retail bills are full of non-food SKUs, while every line on a
 dine-in check is something a person carries to a table. They still require the `KITCHEN_WORKFLOW`
 capability, and a ticket without a station lands in the "no station" lane rather than vanishing.
-Cancelling a ticket on the board stops the cooking, but does not remove the line from the bill or
-release its stock — that is a check edit, and while the round is already sent it needs a void.
+Cancelling a dine-in ticket on the board while its check remains `OPEN` stops the cooking, removes
+that line from the amount due and rebuilds the remaining reservation in the same transaction. If
+settlement has started or the check is already closed, the ticket can still be stopped but the
+issued bill is not rewritten; staff must use the normal refund/adjustment workflow.
 
 Modifier `price_delta` is non-negative catalog data resolved again inside the order transaction.
 The register submits only modifier codes. The surcharge is added after tier/promotion pricing and
