@@ -30,12 +30,15 @@ async function handleGET(req: NextRequest) {
   // ใช้ตอน POS ตรวจราคาในตะกร้าซ้ำก่อนรับเงิน: SKU อย่างเดียวระบุ pack ไม่พอ
   // แต่ packCode ยังเป็นเพียงตัวค้นหา ราคา/baseQty ถูกอ่านจากฐานข้อมูลเสมอ
   const packCode = (req.nextUrl.searchParams.get("packCode") ?? "").trim() || null;
+  const requestedSurface = (req.nextUrl.searchParams.get("surface") ?? "").trim().toUpperCase();
+  const surface = requestedSurface === "RESTAURANT_POS" ? "RESTAURANT_POS" : "RETAIL_POS";
   if (!code) return NextResponse.json({ error: "ต้องระบุ code" }, { status: 400 });
 
   const hit = await resolvePosScan(device.tenantId, code, {
     size,
     locationId: device.locationId,
     packCode,
+    surface,
   });
   if (!hit) return NextResponse.json({ error: "ไม่พบสินค้าจากรหัสนี้", code }, { status: 404 });
 

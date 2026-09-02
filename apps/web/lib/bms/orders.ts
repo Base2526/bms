@@ -264,7 +264,8 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
 async function revalidateOrderPacksInTx(
   client: PoolClient,
   tenantId: string,
-  items: OrderItemInput[]
+  items: OrderItemInput[],
+  salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER"
 ): Promise<{ ok: true; items: OrderItemInput[] } | { ok: false; sku: string; size: string; packCode: string }> {
   const canonical: OrderItemInput[] = [];
   for (const item of items) {
@@ -290,10 +291,15 @@ async function revalidateOrderPacksInTx(
           AND k.product_sku = $2
           AND upper(k.pack_code) = upper($3)
           AND k.active
+          AND EXISTS (
+            SELECT 1 FROM bms_product_sales_surfaces surface
+             WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+               AND surface.surface = $5 AND surface.enabled
+          )
           AND (k.size IS NULL OR k.size = $4)
         ORDER BY k.size NULLS LAST
         LIMIT 1`,
-      [tenantId, item.sku, packCode, item.size]
+      [tenantId, item.sku, packCode, item.size, salesSurface]
     );
     const pack = result.rows[0];
     if (!pack) return { ok: false, sku: item.sku, size: item.size, packCode };
@@ -437,6 +443,9 @@ export async function createOrderInTx(
     return { status: "INVALID_ITEM", index: validation.index, reason: validation.reason };
   }
   let items = mergeItems(input.items);
+  const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
+    ? "RESTAURANT_POS"
+    : input.channel === "pos" ? "RETAIL_POS" : "ONLINE_ORDER";
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
     return {
@@ -470,7 +479,7 @@ export async function createOrderInTx(
     // Pack metadata may change after catalog lookup. Re-read it inside the
     // order transaction so active/baseQty/unit/price snapshots never come from
     // stale tool or POS payload data.
-    const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items);
+    const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items, salesSurface);
     if (!canonicalPacks.ok) {
       return {
         status: "PACK_NOT_FOUND",
@@ -607,28 +616,61 @@ export async function createOrderInTx(
     // the order so the POS preview cannot become price authority.
     const selectedModifierCodes = Array.from(new Set(items.flatMap((item) => item.modifierCodes ?? [])));
     const modifierPriceByKey = new Map<string, number>();
-    if (selectedModifierCodes.length > 0) {
-      const modifierPrices = await client.query<{
-        product_sku: string; size: string; code: string; price_delta: string;
-      }>(
-        `SELECT product_sku, size, upper(code) AS code, price_delta
-           FROM bms_product_modifiers
-          WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
-            AND upper(code) = ANY($3::text[]) AND active`,
-        [tenantId, productSkus, selectedModifierCodes]
-      );
-      for (const modifier of modifierPrices.rows) {
+    const modifierRules = await client.query<{
+      product_sku: string; size: string; code: string; price_delta: string;
+      group_code: string; group_name: string; selection_type: "SINGLE" | "MULTIPLE";
+      min_select: number; max_select: number | null;
+    }>(
+      `SELECT modifier.product_sku, modifier.size, upper(modifier.code) AS code,
+              modifier.price_delta, group_row.code AS group_code, group_row.name AS group_name,
+              group_row.selection_type, group_row.min_select, group_row.max_select
+         FROM bms_product_modifiers modifier
+         JOIN bms_product_modifier_groups group_row
+           ON group_row.tenant_id = modifier.tenant_id AND group_row.id = modifier.group_id
+        WHERE modifier.tenant_id = $1 AND modifier.product_sku = ANY($2::text[])
+          AND modifier.active AND group_row.active`,
+      [tenantId, productSkus]
+    );
+    const rulesByVariant = new Map<string, typeof modifierRules.rows>();
+    for (const modifier of modifierRules.rows) {
+      if (selectedModifierCodes.includes(modifier.code)) {
         modifierPriceByKey.set(
           `${modifier.product_sku}\u0000${modifier.size}\u0000${modifier.code}`,
           Number(modifier.price_delta ?? 0)
         );
       }
-      for (const [index, item] of items.entries()) {
-        const missing = (item.modifierCodes ?? []).find((code) => !modifierPriceByKey.has(
-          `${item.sku}\u0000${item.size}\u0000${code}`
-        ));
-        if (missing) {
-          return { status: "INVALID_ITEM", index, reason: `MODIFIER_NOT_FOUND:${missing}` };
+      const key = `${modifier.product_sku}\u0000${modifier.size}`;
+      const list = rulesByVariant.get(key) ?? [];
+      list.push(modifier);
+      rulesByVariant.set(key, list);
+    }
+    for (const [index, item] of items.entries()) {
+      const selected = item.modifierCodes ?? [];
+      const missing = selected.find((code) => !modifierPriceByKey.has(
+        `${item.sku}\u0000${item.size}\u0000${code}`
+      ));
+      if (missing) {
+        return { status: "INVALID_ITEM", index, reason: `MODIFIER_NOT_FOUND:${missing}` };
+      }
+      const rules = rulesByVariant.get(`${item.sku}\u0000${item.size}`) ?? [];
+      const groups = new Map<string, typeof rules>();
+      for (const rule of rules) {
+        const group = groups.get(rule.group_code) ?? [];
+        group.push(rule);
+        groups.set(rule.group_code, group);
+      }
+      for (const group of groups.values()) {
+        const first = group[0];
+        if (!first) continue;
+        const selectedCount = group.filter((rule) => selected.includes(rule.code)).length;
+        if (selectedCount < Number(first.min_select)) {
+          return { status: "INVALID_ITEM", index, reason: `MODIFIER_GROUP_MIN:${first.group_code}` };
+        }
+        if (first.max_select != null && selectedCount > Number(first.max_select)) {
+          return { status: "INVALID_ITEM", index, reason: `MODIFIER_GROUP_MAX:${first.group_code}` };
+        }
+        if (first.selection_type === "SINGLE" && selectedCount > 1) {
+          return { status: "INVALID_ITEM", index, reason: `MODIFIER_GROUP_SINGLE:${first.group_code}` };
         }
       }
     }
@@ -743,8 +785,15 @@ export async function createOrderInTx(
     for (const [itemIndex, it] of items.entries()) {
       // ดึงราคา (สินค้าต้อง active)
       const prod = await client.query<{ price: string; name: string; vat_category: string }>(
-        `SELECT price, name, vat_category FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
-        [it.sku, tenantId]
+        `SELECT p.price, p.name, p.vat_category
+           FROM bms_products p
+          WHERE p.tenant_id = $2 AND p.sku = $1 AND p.active
+            AND EXISTS (
+              SELECT 1 FROM bms_product_sales_surfaces surface
+               WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+                 AND surface.surface = $3 AND surface.enabled
+            )`,
+        [it.sku, tenantId, salesSurface]
       );
       if (prod.rowCount === 0) {
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };

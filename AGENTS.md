@@ -231,8 +231,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**70 namespaces / 4,000 keys per language,
-   exact th↔en parity** as of 2026-09-01 — the latest +2 are the Restaurant permission-group
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**74 namespaces / 4,217 keys per language,
+   exact th↔en parity** as of 2026-09-02 — the latest +52 are the product catalog draft/readiness,
+   sales-surface, duplicate, modifier-group, and quick-ingredient labels; the preceding +2 are the Restaurant permission-group
    and modifier-surcharge labels, the preceding +14 are bilingual shop-archetype labels, the
    preceding +2 are store-archetype lock labels, and the preceding +7 are store-profile receipt-language labels;
    the +20 on 2026-08-25 were `AdminSidebar.tsx`'s Store/Pharmacy
@@ -250,7 +251,7 @@ Four mechanisms; the first three are real, the fourth is dead:
 3. Inline `lang === "en" ? … : …` — used by `/shop/**` and `/checkout` metadata. Fine as-is.
 4. `lib/i18n.ts` + `useTranslation()` + `locales/` — **dead**; delete rather than extend.
 
-Coverage: all public/auth/legal pages, storefront, checkout, nav chrome, and **50 of 90** admin
+Coverage: all public/auth/legal pages, storefront, checkout, nav chrome, and **57 of 99** admin
 `.tsx` files. The remainder are layout/loading guards and English-only legacy platform pages
 (`admin/roles`, `admin/logs`, `admin/files`, `admin/posts`/`post/**`, `admin/operations-schedule`,
 `admin/dev/sql-console`) — not Thai leaks.

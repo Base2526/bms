@@ -1,5 +1,6 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { getProductReadinessInTx } from "./productConfiguration";
 
 export const PRODUCT_STOCK_POLICIES = [
   "DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED",
@@ -53,7 +54,10 @@ export async function getProductStockPolicy(
 
 export async function upsertProductStockPolicy(
   tenantId: string,
-  input: Partial<Omit<ProductStockPolicy, "productSku">> & { productSku: string },
+  input: Partial<Omit<ProductStockPolicy, "productSku">> & {
+    productSku: string;
+    deactivateDerived?: boolean;
+  },
   editorId?: string | null
 ): Promise<ProductStockPolicy> {
   const current = await getProductStockPolicy(tenantId, input.productSku);
@@ -80,8 +84,8 @@ export async function upsertProductStockPolicy(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
-    const product = await client.query<{ is_bundle: boolean; serial_tracked: boolean }>(
-      `SELECT is_bundle, serial_tracked FROM bms_products WHERE tenant_id = $1 AND sku = $2 FOR UPDATE`,
+    const product = await client.query<{ is_bundle: boolean; serial_tracked: boolean; active: boolean }>(
+      `SELECT is_bundle, serial_tracked, active FROM bms_products WHERE tenant_id = $1 AND sku = $2 FOR UPDATE`,
       [tenantId, input.productSku]
     );
     if (!product.rowCount) throw new Error("ไม่พบสินค้านี้ในร้าน");
@@ -90,6 +94,40 @@ export async function upsertProductStockPolicy(
     }
     if (stockPolicy === "SERIALIZED" && !product.rows[0].serial_tracked) {
       throw new Error("ต้องเปิด Serial tracking ที่สินค้าก่อน");
+    }
+    if (stockPolicy !== "RECIPE") {
+      const derived = await client.query<{ recipe_count: number; modifier_count: number }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM bms_product_recipes
+             WHERE tenant_id = $1 AND product_sku = $2 AND active) AS recipe_count,
+           (SELECT COUNT(*)::int FROM bms_product_modifiers
+             WHERE tenant_id = $1 AND product_sku = $2 AND active) AS modifier_count`,
+        [tenantId, input.productSku]
+      );
+      const recipeCount = Number(derived.rows[0]?.recipe_count ?? 0);
+      const modifierCount = Number(derived.rows[0]?.modifier_count ?? 0);
+      if ((recipeCount > 0 || modifierCount > 0) && !input.deactivateDerived) {
+        throw new Error(
+          `สินค้านี้ยังมีสูตร ${recipeCount} และ Modifier ${modifierCount} รายการที่เปิดใช้ — ยืนยันปิดข้อมูลเหล่านี้ก่อนเปลี่ยนจาก RECIPE`
+        );
+      }
+      if (input.deactivateDerived) {
+        await client.query(
+          `UPDATE bms_product_recipes SET active = FALSE, updated_at = now()
+            WHERE tenant_id = $1 AND product_sku = $2 AND active`,
+          [tenantId, input.productSku]
+        );
+        await client.query(
+          `UPDATE bms_product_modifiers SET active = FALSE, updated_at = now()
+            WHERE tenant_id = $1 AND product_sku = $2 AND active`,
+          [tenantId, input.productSku]
+        );
+        await client.query(
+          `UPDATE bms_product_modifier_groups SET active = FALSE, updated_at = now()
+            WHERE tenant_id = $1 AND product_sku = $2 AND active`,
+          [tenantId, input.productSku]
+        );
+      }
     }
     await client.query(
       `INSERT INTO bms_product_stock_policies
@@ -107,6 +145,12 @@ export async function upsertProductStockPolicy(
       [tenantId, input.productSku, stockPolicy, baseUnit, displayUnit, displayPrecision,
         lotTracking, expiryTracking, fefo, kitchenStation, scaleItemCode, scaleSize]
     );
+    if (product.rows[0].active) {
+      const readiness = await getProductReadinessInTx(client, tenantId, input.productSku);
+      if (!readiness.ready) {
+        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
+      }
+    }
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

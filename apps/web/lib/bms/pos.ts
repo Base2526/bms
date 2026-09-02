@@ -420,7 +420,17 @@ export type PosScanHit = {
    */
   promotion: Promotion | null;
   /** Active stock modifiers for this exact menu variant. Names are display-only. */
-  modifiers: Array<{ code: string; name: string; priceDelta: number }>;
+  modifiers: Array<{
+    code: string;
+    name: string;
+    priceDelta: number;
+    groupCode: string;
+    groupName: string;
+    selectionType: "SINGLE" | "MULTIPLE";
+    minSelect: number;
+    maxSelect: number | null;
+    defaultSelected: boolean;
+  }>;
   /** Raw prefix-22 label; the server re-parses this at commit. */
   scaleBarcode?: string | null;
 };
@@ -438,7 +448,12 @@ export type PosScanHit = {
 export async function resolvePosScan(
   tenantId: string,
   code: string,
-  opts: { size?: string | null; locationId?: string | null; packCode?: string | null } = {}
+  opts: {
+    size?: string | null;
+    locationId?: string | null;
+    packCode?: string | null;
+    surface?: "RETAIL_POS" | "RESTAURANT_POS";
+  } = {}
 ): Promise<PosScanHit | null> {
   const rawBarcode = code.trim();
   if (!rawBarcode) return null;
@@ -451,6 +466,7 @@ export async function resolvePosScan(
   let embeddedBaseQty: number | null = null;
   let scaleBarcode: string | null = null;
   let scaleUnitName: string | null = null;
+  const salesSurface = opts.surface ?? "RETAIL_POS";
 
   // Prefix 21/22 only *look* like scale labels. A shop can also have entered such a number as an
   // ordinary product barcode — `checkBarcode()` warns but never blocks — and the in-store generator
@@ -469,6 +485,11 @@ export async function resolvePosScan(
          JOIN bms_products p
            ON p.tenant_id = sp.tenant_id AND p.sku = sp.product_sku AND p.active
         WHERE sp.tenant_id = $1 AND sp.stock_policy = 'WEIGHTED'
+          AND EXISTS (
+            SELECT 1 FROM bms_product_sales_surfaces surface
+             WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+               AND surface.surface = $4 AND surface.enabled
+          )
           AND sp.base_unit = 'GRAM' AND sp.scale_item_code = $2
           AND EXISTS (
             SELECT 1 FROM bms_inventory i
@@ -476,7 +497,7 @@ export async function resolvePosScan(
                AND i.size = sp.scale_size
                AND ($3::uuid IS NULL OR i.location_id = $3)
           )`,
-      [tenantId, scale.itemCode, opts.locationId ?? null]
+      [tenantId, scale.itemCode, opts.locationId ?? null, salesSurface]
     );
     if (mapped.rowCount === 1) {
       barcode = mapped.rows[0].sku;
@@ -532,6 +553,11 @@ export async function resolvePosScan(
         AND k.active
       WHERE p.tenant_id = $1
         AND p.active
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = $6 AND surface.enabled
+        )
         AND (
           ($5::text IS NULL AND (k.barcode = $2 OR p.barcode = $2 OR upper(p.sku) = upper($2)))
           OR ($5 = 'BASE' AND upper(p.sku) = upper($2)
@@ -542,7 +568,7 @@ export async function resolvePosScan(
                (k.barcode = $2) DESC NULLS LAST,
                (p.barcode = $2) DESC
       LIMIT 1`,
-    [tenantId, barcode, size, opts.locationId ?? null, packCode]
+    [tenantId, barcode, size, opts.locationId ?? null, packCode, salesSurface]
   );
 
   const row = res.rows[0];
@@ -581,14 +607,28 @@ export async function resolvePosScan(
 
   const modifierEnabled = await isCapabilityEnabledInTx({ query }, tenantId, "MODIFIER");
   const modifierRes = modifierEnabled
-    ? await query<{ code: string; name: string; price_delta: string }>(
-      `SELECT code, name, price_delta
-         FROM bms_product_modifiers
-        WHERE tenant_id = $1 AND product_sku = $2 AND size = $3 AND active
-        ORDER BY name, code`,
+    ? await query<{
+        code: string; name: string; price_delta: string; group_code: string; group_name: string;
+        selection_type: "SINGLE" | "MULTIPLE"; min_select: number; max_select: number | null;
+        default_selected: boolean;
+      }>(
+      `SELECT modifier.code, modifier.name, modifier.price_delta,
+              modifier.default_selected, group_row.code AS group_code,
+              group_row.name AS group_name, group_row.selection_type,
+              group_row.min_select, group_row.max_select
+         FROM bms_product_modifiers modifier
+         JOIN bms_product_modifier_groups group_row
+           ON group_row.tenant_id = modifier.tenant_id AND group_row.id = modifier.group_id
+        WHERE modifier.tenant_id = $1 AND modifier.product_sku = $2
+          AND modifier.size = $3 AND modifier.active AND group_row.active
+        ORDER BY group_row.sort_order, modifier.sort_order, modifier.name, modifier.code`,
       [tenantId, row.sku, row.size]
     )
-    : { rows: [] as Array<{ code: string; name: string; price_delta: string }> };
+    : { rows: [] as Array<{
+        code: string; name: string; price_delta: string; group_code: string; group_name: string;
+        selection_type: "SINGLE" | "MULTIPLE"; min_select: number; max_select: number | null;
+        default_selected: boolean;
+      }> };
 
   const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
   if (basePrice == null) return null;
@@ -618,6 +658,12 @@ export async function resolvePosScan(
       code: modifier.code,
       name: modifier.name,
       priceDelta: Number(modifier.price_delta ?? 0),
+      groupCode: modifier.group_code,
+      groupName: modifier.group_name,
+      selectionType: modifier.selection_type,
+      minSelect: Number(modifier.min_select),
+      maxSelect: modifier.max_select == null ? null : Number(modifier.max_select),
+      defaultSelected: Boolean(modifier.default_selected),
     })),
     scaleBarcode,
   };
@@ -2407,6 +2453,11 @@ async function canonicalizePosSaleLines(
         WHERE p.tenant_id = $1
           AND p.sku = $2
           AND p.active
+          AND EXISTS (
+            SELECT 1 FROM bms_product_sales_surfaces surface
+             WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+               AND surface.surface = 'RETAIL_POS' AND surface.enabled
+          )
           AND (EXISTS (
             SELECT 1 FROM bms_inventory i
              WHERE i.tenant_id = p.tenant_id

@@ -1442,6 +1442,14 @@ surcharge while silently skipping the configured ingredient movement. Commission
 pack price/pack quantity where present, so a named pack with modifiers is not reported at base-unit
 revenue.
 
+Migration `9.51` groups modifiers per menu variant. Each group declares `SINGLE` or `MULTIPLE`, a
+minimum, an optional maximum, display order and defaults. The restaurant register renders radio or
+checkbox controls from that catalog, but order creation revalidates unknown codes and every group
+minimum/maximum inside the transaction. A crafted request therefore cannot skip a required choice
+or select two values from a single-choice group. Restaurant menu visibility is also explicit through
+the `RESTAURANT_POS` product surface; recipe membership and positive menu-row stock are no longer
+used as proxies for whether an item belongs on the menu.
+
 Settlement takes a tenant transaction advisory lock and row-locks both the check and reservation
 order before stamping the active register. A second app instance therefore cannot steal the same
 check while the first is finalizing it. A stale `CLOSING` claim can be reclaimed after its bounded

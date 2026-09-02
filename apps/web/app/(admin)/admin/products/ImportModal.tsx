@@ -33,6 +33,11 @@ type DraftRow = {
   brand: string | null;
   keywords: string[];
   active: boolean;
+  creation_template: string | null;
+  stock_policy: string | null;
+  base_unit: string | null;
+  variant_codes: string[] | null;
+  sales_surfaces: string[] | null;
 };
 
 type RowResult = {
@@ -67,10 +72,15 @@ const HEADER_MAP: Record<string, keyof DraftRow> = {
   "ยี่ห้อ": "brand",
   "คีย์เวิร์ด": "keywords",
   "เปิดขาย": "active",
+  "รูปแบบสินค้า": "creation_template",
+  "stock policy": "stock_policy",
+  "หน่วยฐาน": "base_unit",
+  "ตัวเลือก": "variant_codes",
+  "ช่องทางขาย": "sales_surfaces",
 };
 const REQUIRED_FIELDS: (keyof DraftRow)[] = ["sku", "name", "price"];
-const TEMPLATE_HEADERS = ["SKU", "บาร์โค้ด", "ชื่อสินค้า", "รายละเอียด", "ราคาขาย", "ต้นทุน", "หมวดหมู่", "ยี่ห้อ", "คีย์เวิร์ด", "เปิดขาย"];
-const TEMPLATE_EXAMPLE = ["NIKE-001", "8850123456789", "Nike Air Max", "รองเท้าวิ่ง", "2990", "1800", "รองเท้า", "Nike", "วิ่ง|กีฬา", "TRUE"];
+const TEMPLATE_HEADERS = ["SKU", "บาร์โค้ด", "ชื่อสินค้า", "รายละเอียด", "ราคาขาย", "ต้นทุน", "หมวดหมู่", "ยี่ห้อ", "คีย์เวิร์ด", "เปิดขาย", "รูปแบบสินค้า", "Stock Policy", "หน่วยฐาน", "ตัวเลือก", "ช่องทางขาย"];
+const TEMPLATE_EXAMPLE = ["MENU-KAPRAO", "", "ข้าวกะเพรา", "เมนูปรุงสด", "79", "", "อาหารจานเดียว", "", "กะเพรา|ผัดกะเพรา", "FALSE", "PREPARED_MENU", "RECIPE", "PIECE", "STD", "RESTAURANT_POS"];
 
 function normalizeHeader(h: unknown): string {
   return String(h ?? "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -112,6 +122,10 @@ function parseWorkbook(buf: ArrayBuffer, t: TFn): DraftRow[] {
       ? keywordsRaw.split(keywordsRaw.includes("|") ? "|" : ",").map((k) => k.trim().toLowerCase()).filter(Boolean)
       : [];
     const costRaw = get("cost_price");
+    const splitCodes = (raw: string) => raw
+      .split(raw.includes("|") ? "|" : ",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
 
     return {
       rowNumber: i + 2, // +1 header row, +1 เพื่อให้นับแบบ 1-based ตรงกับที่เห็นใน Excel
@@ -125,6 +139,11 @@ function parseWorkbook(buf: ArrayBuffer, t: TFn): DraftRow[] {
       brand: get("brand") || null,
       keywords,
       active,
+      creation_template: get("creation_template") || null,
+      stock_policy: get("stock_policy") || null,
+      base_unit: get("base_unit") || null,
+      variant_codes: colIndex.variant_codes === undefined ? null : splitCodes(get("variant_codes")),
+      sales_surfaces: colIndex.sales_surfaces === undefined ? null : splitCodes(get("sales_surfaces")),
     };
   });
 }

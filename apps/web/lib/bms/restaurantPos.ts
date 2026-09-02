@@ -187,15 +187,9 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
 // กรอง RECIPE = ของพวกนั้นสั่งไม่ได้เลย และร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลยจะเห็น
 // กริดว่างทั้งที่มีของขายอยู่ ซึ่งอ่านได้ว่า "ระบบพัง"
 //
-// สิ่งที่ต้องซ่อนคือ **วัตถุดิบ** และวัตถุดิบนิยามได้จากข้อมูล ไม่ต้องพึ่งหมวดหมู่ที่คนพิมพ์เอง:
-// มันคือของที่ถูกสูตร/ตัวเลือกอื่นกินเข้าไป (อยู่ใน recipe_items หรือ modifier_items)
-// หมูสับจึงหาย แต่น้ำเปล่าที่ไม่ได้เป็นส่วนประกอบของอะไรยังอยู่
-// ของที่เป็นทั้งวัตถุดิบและขายเดี่ยว (เช่นไข่ดาวขายแยก) จะถูกซ่อนด้วย — ยอมรับค่าเริ่มต้นที่
-// ปลอดภัยกว่า แล้วให้ช่องพิมพ์ค้นหาที่หน้าจอเป็นทางไปถึงของที่ไม่อยู่ในกริด
-//
-// `price > 0` ปิดช่องที่เหลือ: วัตถุดิบที่ยังไม่มีสูตรไหนใช้ (เพิ่งเพิ่มเข้ามา) ไม่เข้าเงื่อนไข
-// "เป็นส่วนประกอบ" จึงยังหลุดเข้ากริด · ร้านตั้งราคาวัตถุดิบเป็น 0 เพราะไม่ได้ขายแยกอยู่แล้ว
-// และของที่ขายที่โต๊ะต้องมีราคา การปล่อยแถว ฿0 ขึ้นกริด = เปิดทางให้กดขายอาหารฟรี
+// Visibility is explicit. Recipe membership and price are not product roles: an ingredient may
+// also be sold, and a newly entered ingredient may not be referenced by a recipe yet.  The old
+// inference leaked those rows into the menu or hid legitimate dual-purpose goods.
 //
 // ไม่ใช้ inStockOnly แบบ listSellableProducts เพราะเมนู RECIPE ไม่ถือสต็อกของตัวเอง
 // (แถว bms_inventory ของมันค้างที่ 0 ตลอด — ของจริงเช็คจากวัตถุดิบตอนสั่ง) กรองด้วยจะ
@@ -216,27 +210,27 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
                WHERE m.tenant_id = p.tenant_id AND m.product_sku = p.sku AND m.active
             ) AS has_modifiers,
             (SELECT jsonb_agg(jsonb_build_object(
-                'size', i.size, 'available', (i.current_stock - i.reserved_stock)
-              ) ORDER BY i.size)
-               FROM bms_inventory i
-              WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                'size', variant.code,
+                'available', COALESCE(i.current_stock - i.reserved_stock, 0)
+              ) ORDER BY variant.sort_order, variant.code)
+               FROM bms_product_variants variant
+               LEFT JOIN bms_inventory i
+                 ON i.tenant_id = variant.tenant_id
+                AND i.product_sku = variant.product_sku
+                AND i.size = variant.code
                 AND i.location_id = $2
+              WHERE variant.tenant_id = p.tenant_id
+                AND variant.product_sku = p.sku
+                AND variant.active
             ) AS sizes
        FROM bms_products p
        LEFT JOIN bms_product_stock_policies sp
          ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
-      WHERE p.tenant_id = $1 AND p.active AND p.price > 0
-        AND NOT EXISTS (
-          SELECT 1 FROM bms_product_recipe_items ri
-            JOIN bms_product_recipes r
-              ON r.tenant_id = ri.tenant_id AND r.id = ri.recipe_id AND r.active
-           WHERE ri.tenant_id = p.tenant_id AND ri.component_sku = p.sku
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM bms_product_modifier_items mi
-            JOIN bms_product_modifiers m
-              ON m.tenant_id = mi.tenant_id AND m.id = mi.modifier_id AND m.active
-           WHERE mi.tenant_id = p.tenant_id AND mi.component_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.active
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = 'RESTAURANT_POS' AND surface.enabled
         )
       ORDER BY sp.kitchen_station NULLS LAST, p.name`,
     [tenantId, locationId]
@@ -428,12 +422,29 @@ export async function addRestaurantCheckItem(input: {
     locationId: input.locationId,
     size: input.size ?? null,
     packCode: input.packCode ?? null,
+    surface: "RESTAURANT_POS",
   });
   if (!hit) throw new Error("ไม่พบเมนูหรือหน่วยขายนี้");
   const allowed = new Map(hit.modifiers.map((modifier) => [modifier.code, modifier.name]));
   const modifierCodes = Array.from(new Set((input.modifierCodes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean))).sort();
   const invalid = modifierCodes.find((code) => !allowed.has(code));
   if (invalid) throw new Error(`ตัวเลือก ${invalid} ไม่ได้เปิดใช้กับเมนูนี้`);
+  const modifierGroups = new Map<string, typeof hit.modifiers>();
+  for (const modifier of hit.modifiers) {
+    const group = modifierGroups.get(modifier.groupCode) ?? [];
+    group.push(modifier);
+    modifierGroups.set(modifier.groupCode, group);
+  }
+  for (const [groupCode, options] of modifierGroups) {
+    const first = options[0];
+    if (!first) continue;
+    const selectedCount = options.filter((option) => modifierCodes.includes(option.code)).length;
+    const { groupName, minSelect, maxSelect, selectionType } = first;
+    if (selectedCount < minSelect) throw new Error(`ต้องเลือก ${groupName} อย่างน้อย ${minSelect} รายการ`);
+    if (maxSelect != null && selectedCount > maxSelect) throw new Error(`เลือก ${groupName} ได้ไม่เกิน ${maxSelect} รายการ`);
+    if (selectionType === "SINGLE" && selectedCount > 1) throw new Error(`เลือก ${groupName} ได้เพียง 1 รายการ`);
+    if (!groupCode) throw new Error("กลุ่มตัวเลือกเมนูไม่ถูกต้อง");
+  }
   const packQty = Math.min(Math.max(Math.trunc(input.packQty), 1), 9999);
 
   return withCheckLock(input.tenantId, input.checkId, async () => {

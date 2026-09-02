@@ -12,6 +12,13 @@ import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
 import { IN_STORE_PREFIX, inStoreBarcode, isInStoreBarcode } from "./barcode";
 import type { PriceTier } from "./pricing";
+import {
+  normalizeProductSalesSurfaces,
+  normalizeProductVariantCode,
+  productTemplateDefaults,
+  getProductReadinessInTx,
+  type ProductSalesSurface,
+} from "./productConfiguration";
 
 export type ProductRowFull = {
   tenant_id?: string;
@@ -204,6 +211,24 @@ export async function listProducts(
   return { items: itemsRes.rows, total };
 }
 
+export async function getProductBySku(
+  tenantId: string,
+  sku: string
+): Promise<ProductRowFull | null> {
+  const normalizedSku = String(sku || "").trim();
+  if (!normalizedSku) return null;
+  const result = await query<ProductRowFull>(
+    `SELECT tenant_id, sku, name, active, price, keywords, barcode,
+            image_url, description, cost_price, weight_grams, category, brand,
+            vat_category, created_at, updated_at
+       FROM bms_products
+      WHERE tenant_id = $1 AND sku = $2
+      LIMIT 1`,
+    [tenantId, normalizedSku]
+  );
+  return result.rows[0] ?? null;
+}
+
 export type SellableProduct = {
   sku: string;
   name: string;
@@ -229,6 +254,8 @@ export type ListSellableProductsOpts = {
   inStockOnly?: boolean;
   /** จำกัดยอดคงเหลือ/ไซซ์ให้สาขานี้ — ใช้โดย POS ซึ่งขายจากเครื่องสาขาเดียว */
   locationId?: string | null;
+  /** ผิวการขายที่เรียกรายการนี้; ไม่ส่งมาถือเป็น customer AI และต้องสั่งออนไลน์ได้ด้วย */
+  salesSurface?: ProductSalesSurface;
   sort?: "relevance" | "newest" | "availability";
   limit?: number;
 };
@@ -267,6 +294,16 @@ export async function listSellableProducts(
   const locationParam = params.length;
   params.push(size);
   const sizeParam = params.length;
+  const salesSurface = opts.salesSurface ?? "CUSTOMER_AI";
+  params.push(salesSurface);
+  const salesSurfaceParam = params.length;
+  const onlineOrderClause = salesSurface === "CUSTOMER_AI"
+    ? `AND EXISTS (
+        SELECT 1 FROM bms_product_sales_surfaces order_surface
+         WHERE order_surface.tenant_id = p.tenant_id AND order_surface.product_sku = p.sku
+           AND order_surface.surface = 'ONLINE_ORDER' AND order_surface.enabled
+      )`
+    : "";
   let inStockClause = "";
   if (opts.inStockOnly) {
     inStockClause = `AND EXISTS (
@@ -353,6 +390,12 @@ export async function listSellableProducts(
          LEFT JOIN LATERAL (${variantPriceRangeSql}) price_range ON TRUE
         WHERE p.tenant_id = $1
           AND p.active = TRUE
+          AND EXISTS (
+            SELECT 1 FROM bms_product_sales_surfaces surface
+             WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+               AND surface.surface = $${salesSurfaceParam} AND surface.enabled
+          )
+          ${onlineOrderClause}
           AND ($2::text IS NULL OR
                lower(p.name) LIKE '%' || lower($2) || '%' OR
                lower(p.sku) LIKE '%' || lower($2) || '%' OR
@@ -484,6 +527,16 @@ export async function resolveSellableProduct(
        FROM bms_products p
       WHERE p.tenant_id = $1
         AND p.active = TRUE
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = 'CUSTOMER_AI' AND surface.enabled
+        )
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces order_surface
+           WHERE order_surface.tenant_id = p.tenant_id AND order_surface.product_sku = p.sku
+             AND order_surface.surface = 'ONLINE_ORDER' AND order_surface.enabled
+        )
         AND (
           lower(p.sku) = lower($2) OR
           lower(p.name) = lower($2) OR
@@ -589,6 +642,11 @@ export async function findAlternativeProducts(
 export async function listVariants(tenantId: string, sku: string): Promise<VariantRow[]> {
   const res = await query<VariantRow>(
     `WITH variant_keys AS (
+       SELECT loc.id AS location_id, variant.code AS size
+         FROM bms_product_variants variant
+         JOIN bms_locations loc ON loc.tenant_id = variant.tenant_id AND loc.active
+        WHERE variant.tenant_id = $1 AND variant.product_sku = $2 AND variant.active
+       UNION
        SELECT location_id, size
          FROM bms_inventory
         WHERE tenant_id = $1 AND product_sku = $2
@@ -689,6 +747,16 @@ export type UpsertProductInput = {
    * ล้างขั้นราคาที่ร้านตั้งไว้ทิ้งตอนกดบันทึก
    */
   price_tiers?: PriceTier[] | null;
+  /** UI creation preset only; authoritative behavior is stored in policy/surfaces. */
+  creation_template?: "PREPARED_MENU" | "READY_GOOD" | "INGREDIENT" | "GENERAL" | null;
+  /** Explicit catalog surfaces. Sending an empty array creates an internal-only item. */
+  sales_surfaces?: ProductSalesSurface[] | null;
+  /** Catalog variants can exist without positive branch stock. */
+  variant_codes?: string[] | null;
+  /** Optional initial policy for a newly created draft. */
+  stock_policy?: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED" | null;
+  /** Initial inventory unit for a new draft; later changes go through Stock Models. */
+  base_unit?: string | null;
 };
 
 function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
@@ -850,6 +918,11 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
         AND t.active = TRUE
         AND p.sku = $2
         AND p.active = TRUE
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = 'PUBLIC_STOREFRONT' AND surface.enabled
+        )
       LIMIT 1`,
     [slug, productSku]
   );
@@ -912,6 +985,11 @@ export async function listPublicRelatedProducts(
       "t.slug = $1",
       "t.active = TRUE",
       "p.active = TRUE",
+      `EXISTS (
+        SELECT 1 FROM bms_product_sales_surfaces surface
+         WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+           AND surface.surface = 'PUBLIC_STOREFRONT' AND surface.enabled
+      )`,
       "p.sku <> $2",
     ];
     const params: any[] = [slug, sku];
@@ -989,6 +1067,11 @@ export async function listPublicShops(limit = 24): Promise<PublicShopCard[]> {
        JOIN bms_products p
          ON p.tenant_id = t.id
         AND p.active = TRUE
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = 'PUBLIC_STOREFRONT' AND surface.enabled
+        )
        LEFT JOIN bms_store_profile sp
          ON sp.tenant_id = t.id
       WHERE t.active = TRUE
@@ -1038,6 +1121,11 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
        LEFT JOIN bms_products p
          ON p.tenant_id = t.id
         AND p.active = TRUE
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = 'PUBLIC_STOREFRONT' AND surface.enabled
+        )
       WHERE t.slug = $1
         AND t.active = TRUE
       GROUP BY t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency
@@ -1094,6 +1182,11 @@ export async function listPublicProducts(
       WHERE t.slug = $1
         AND t.active = TRUE
         AND p.active = TRUE
+        AND EXISTS (
+          SELECT 1 FROM bms_product_sales_surfaces surface
+           WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
+             AND surface.surface = 'PUBLIC_STOREFRONT' AND surface.enabled
+        )
       GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand, p.updated_at
       ORDER BY p.updated_at DESC NULLS LAST, p.name
       LIMIT $2`,
@@ -1179,7 +1272,7 @@ export type NormalizedProductFields = {
   name: string;
   price: number;
   keywords: string[];
-  active: boolean;
+  active: boolean | null;
   barcode: string | null;
   description: string | null;
   category: string | null;
@@ -1202,7 +1295,9 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   if (!Number.isFinite(price) || price < 0) throw new Error("ราคาไม่ถูกต้อง");
 
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
-  const active = input.active ?? true;
+  // Omitted active is resolved inside the upsert: new products are safe drafts,
+  // while an older caller updating a product preserves its current lifecycle.
+  const active = input.active == null ? null : Boolean(input.active);
   const barcode = input.barcode?.trim() || null;
   const description = input.description?.trim() || null;
   const category = input.category?.trim() || null;
@@ -1232,19 +1327,61 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams, vatCategory };
 }
 
+export type NormalizedProductConfigurationFields = {
+  templateDefaults: ReturnType<typeof productTemplateDefaults>;
+  requestedSurfaces: ProductSalesSurface[] | null;
+  requestedVariants: string[] | null;
+  requestedPolicy: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED";
+  requestedBaseUnit: string;
+};
+
+/** Pure validation shared by import preview and the transactional upsert. */
+export function validateProductConfigurationFields(
+  input: UpsertProductInput
+): NormalizedProductConfigurationFields {
+  const rawTemplate = String(input.creation_template ?? "").trim().toUpperCase();
+  if (rawTemplate && !["PREPARED_MENU", "READY_GOOD", "INGREDIENT", "GENERAL"].includes(rawTemplate)) {
+    throw new Error("รูปแบบสินค้าไม่ถูกต้อง");
+  }
+  const templateDefaults = productTemplateDefaults(rawTemplate || null);
+  const requestedSurfaces = Array.isArray(input.sales_surfaces)
+    ? normalizeProductSalesSurfaces(input.sales_surfaces)
+    : null;
+  const requestedVariants = Array.isArray(input.variant_codes)
+    ? Array.from(new Set(input.variant_codes.map(normalizeProductVariantCode)))
+    : null;
+  const requestedPolicy = String(input.stock_policy ?? templateDefaults.stockPolicy).trim().toUpperCase();
+  if (!["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"].includes(requestedPolicy)) {
+    throw new Error("นโยบาย Stock ไม่ถูกต้อง");
+  }
+  const requestedBaseUnit = String(input.base_unit ?? templateDefaults.baseUnit).trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{0,31}$/.test(requestedBaseUnit)) {
+    throw new Error("หน่วยฐานต้องเป็นรหัส A-Z, 0-9 หรือ underscore");
+  }
+  return {
+    templateDefaults,
+    requestedSurfaces,
+    requestedVariants,
+    requestedPolicy: requestedPolicy as NormalizedProductConfigurationFields["requestedPolicy"],
+    requestedBaseUnit,
+  };
+}
+
 export async function upsertProduct(
   tenantId: string,
   input: UpsertProductInput,
   editorId?: string | number | null,
   revisionId?: string | null
 ): Promise<ProductRowFull> {
-  const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams, vatCategory } =
+  const { sku, name, price, keywords, barcode, description, category, brand, costPrice, weightGrams, vatCategory } =
     validateProductFields(input);
   const normalizedPriceTiers = Array.isArray(input.price_tiers)
     ? normalizePriceTiers(input.price_tiers)
     : null;
   const imageUrls = normalizeImageUrls(input);
   const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
+  const { templateDefaults, requestedSurfaces, requestedVariants, requestedPolicy, requestedBaseUnit } =
+    validateProductConfigurationFields(input);
 
   const client = await getClient();
   try {
@@ -1255,16 +1392,23 @@ export async function upsertProduct(
     await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
 
     // quota: เฉพาะสินค้าใหม่ (sku ยังไม่มีในร้าน) ต้องไม่เกินแพ็กเกจ
-    const existing = await client.query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
-    if (existing.rowCount === 0) await enforceProductQuota(tenantId, client);
+    const existing = await client.query<{ active: boolean }>(
+      `SELECT active FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
+      [tenantId, sku]
+    );
+    const isNew = existing.rowCount === 0;
+    if (isNew) await enforceProductQuota(tenantId, client);
+    // Lifecycle เปลี่ยนได้เฉพาะ permission-gated bmsSetProductActive/publishProduct เท่านั้น
+    // ผู้ที่มี product.edit จึงใช้ upsert/import แอบเปิดหรือปิดสินค้าไม่ได้
+    const effectiveActive = isNew ? false : null;
 
     const res = await client.query<ProductRowFull>(
       `INSERT INTO bms_products
          (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand, weight_grams, vat_category)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'UNKNOWN'))
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6,FALSE), $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'UNKNOWN'))
        ON CONFLICT (tenant_id, sku) DO UPDATE
          SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
-             active = EXCLUDED.active, barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
+             active = COALESCE($6, bms_products.active), barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
              description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
              category = EXCLUDED.category, brand = EXCLUDED.brand,
              weight_grams = EXCLUDED.weight_grams,
@@ -1274,8 +1418,49 @@ export async function upsertProduct(
              vat_category = COALESCE($14, bms_products.vat_category),
              updated_at = now()
        RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand, weight_grams, vat_category`,
-      [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand, weightGrams, vatCategory]
+      [tenantId, sku, name, price, keywords, effectiveActive, barcode, imageUrl, description, costPrice, category, brand, weightGrams, vatCategory]
     );
+
+    if (isNew) {
+      await client.query(
+        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, stock_policy, base_unit)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (tenant_id, product_sku) DO NOTHING`,
+        [tenantId, sku, requestedPolicy, requestedBaseUnit]
+      );
+    }
+
+    const surfaces = requestedSurfaces ?? (isNew ? templateDefaults.surfaces : null);
+    if (surfaces) {
+      await client.query(
+        `UPDATE bms_product_sales_surfaces
+            SET enabled = FALSE, updated_at = now()
+          WHERE tenant_id = $1 AND product_sku = $2`,
+        [tenantId, sku]
+      );
+      for (const surface of surfaces) {
+        await client.query(
+          `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface, enabled)
+           VALUES ($1,$2,$3,TRUE)
+           ON CONFLICT (tenant_id, product_sku, surface) DO UPDATE SET
+             enabled = TRUE, updated_at = now()`,
+          [tenantId, sku, surface]
+        );
+      }
+    }
+
+    const variants = requestedVariants ?? (isNew ? ["STD"] : null);
+    if (variants) {
+      for (const [sortOrder, code] of variants.entries()) {
+        await client.query(
+          `INSERT INTO bms_product_variants (tenant_id, product_sku, code, sort_order)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (tenant_id, product_sku, code) DO UPDATE SET
+             active = TRUE, sort_order = EXCLUDED.sort_order, updated_at = now()`,
+          [tenantId, sku, code, sortOrder]
+        );
+      }
+    }
 
     // ขั้นราคาส่ง (8.1) — แทนที่ทั้งชุดในทรานแซกชันเดียวกับสินค้า
     // ลบแล้วใส่ใหม่ ไม่ใช่ diff ทีละแถว: ชุดเล็ก (ไม่กี่ขั้น) และการ diff เปิดช่องให้
@@ -1288,7 +1473,10 @@ export async function upsertProduct(
       ));
       if (requestedSizes.length > 0) {
         const knownSizes = await client.query<{ size: string }>(
-          `SELECT DISTINCT size FROM bms_inventory
+          `SELECT code AS size FROM bms_product_variants
+            WHERE tenant_id = $1 AND product_sku = $2 AND code = ANY($3::text[])
+           UNION
+           SELECT DISTINCT size FROM bms_inventory
             WHERE tenant_id = $1 AND product_sku = $2 AND size = ANY($3::text[])
            UNION
            SELECT DISTINCT size FROM bms_product_packs
@@ -1337,6 +1525,13 @@ export async function upsertProduct(
          DO UPDATE SET sort_order = EXCLUDED.sort_order`,
         [tenantId, sku, ...imageRows.flatMap((row) => [row.fileId, row.sortOrder])]
       );
+    }
+
+    if (res.rows[0]?.active) {
+      const readiness = await getProductReadinessInTx(client, tenantId, sku);
+      if (!readiness.ready) {
+        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
+      }
     }
 
     await client.query("COMMIT");

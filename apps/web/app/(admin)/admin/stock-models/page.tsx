@@ -6,7 +6,8 @@ import {
   Popconfirm, Select, Space, Spin, Switch, Table, Tag, Typography, message,
 } from "antd";
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
@@ -31,7 +32,9 @@ const Q_MODEL = gql`
       id productSku size version outputQty active items { sku size qty }
     }
     bmsProductModifiers(productSku: $sku) {
-      id productSku size code name priceDelta active items { sku size qtyDelta }
+      id productSku size code name priceDelta active
+      groupId groupCode groupName selectionType minSelect maxSelect defaultSelected sortOrder
+      items { sku size qtyDelta }
     }
   }
 `;
@@ -60,11 +63,21 @@ const M_MODIFIER = gql`
     bmsUpsertProductModifier(input: $input) { id code active }
   }
 `;
+const M_QUICK_INGREDIENT = gql`
+  mutation QuickIngredient($input: BmsProductInput!) {
+    bmsUpsertProduct(input: $input) { sku name }
+  }
+`;
 
 type Capability = { capability: string; enabled: boolean; configured: boolean; status: string; source: string; gating: boolean };
 type Product = { sku: string; name: string; active: boolean; variants: Array<{ size: string }> };
 type Recipe = { id: string; productSku: string; size: string; version: number; outputQty: number; active: boolean; items: Array<{ sku: string; size: string; qty: number }> };
-type Modifier = { id: string; productSku: string; size: string; code: string; name: string; priceDelta: number; active: boolean; items: Array<{ sku: string; size: string; qtyDelta: number }> };
+type Modifier = {
+  id: string; productSku: string; size: string; code: string; name: string; priceDelta: number; active: boolean;
+  groupId: string; groupCode: string; groupName: string; selectionType: "SINGLE" | "MULTIPLE";
+  minSelect: number; maxSelect: number | null; defaultSelected: boolean; sortOrder: number;
+  items: Array<{ sku: string; size: string; qtyDelta: number }>;
+};
 
 const POLICY_OPTIONS = ["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"]
   .map((value) => ({ value, label: value }));
@@ -76,17 +89,21 @@ function errorText(error: unknown, fallback: string) {
 export default function StockModelsPage() {
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
+  const searchParams = useSearchParams();
   const canView = can("product.view");
   const canEdit = can("product.edit");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [recipeOpen, setRecipeOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
+  const [ingredientOpen, setIngredientOpen] = useState(false);
+  const [ingredientTarget, setIngredientTarget] = useState<"recipe" | "modifier">("recipe");
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [editingModifier, setEditingModifier] = useState<Modifier | null>(null);
   const [policyForm] = Form.useForm();
   const [recipeForm] = Form.useForm();
   const [modifierForm] = Form.useForm();
+  const [ingredientForm] = Form.useForm();
 
   const capabilities = useQuery(Q_CAPABILITIES, { fetchPolicy: "cache-and-network", errorPolicy: "all" });
   const [loadProducts, productsQuery] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
@@ -96,7 +113,7 @@ export default function StockModelsPage() {
       const p = data?.bmsProductStockPolicy;
       policyForm.setFieldsValue(p ?? {
         stockPolicy: "DIRECT", baseUnit: "PIECE", displayPrecision: 0,
-        lotTracking: false, expiryTracking: false, fefo: false,
+        lotTracking: false, expiryTracking: false, fefo: false, deactivateDerived: false,
       });
     },
   });
@@ -105,6 +122,17 @@ export default function StockModelsPage() {
   const [savePolicy, policyMutation] = useMutation(M_POLICY);
   const [saveRecipe, recipeMutation] = useMutation(M_RECIPE);
   const [saveModifier, modifierMutation] = useMutation(M_MODIFIER);
+  const [quickIngredient, ingredientMutation] = useMutation(M_QUICK_INGREDIENT);
+
+  useEffect(() => {
+    const sku = searchParams.get("sku")?.trim();
+    if (!sku) return;
+    setSearch(sku);
+    void loadProducts({ variables: { search: sku } }).then((result) => {
+      const exact = result.data?.bmsProducts?.items?.find((product: Product) => product.sku === sku);
+      if (exact) setSelectedSku(exact.sku);
+    });
+  }, [loadProducts, searchParams]);
 
   if (!permsLoading && !canView) {
     return <Alert type="error" showIcon message={t("admin_stock.no_product_view")} />;
@@ -181,9 +209,18 @@ export default function StockModelsPage() {
       next
         ? {
             size: next.size, code: next.code, name: next.name, priceDelta: next.priceDelta, active: next.active,
+            groupCode: next.groupCode, groupName: next.groupName, selectionType: next.selectionType,
+            minSelect: next.minSelect, maxSelect: next.maxSelect, defaultSelected: next.defaultSelected,
+            sortOrder: next.sortOrder,
             items: next.items.map((item) => ({ sku: item.sku, size: item.size, qtyDelta: item.qtyDelta })),
           }
-        : { size: sizes[0], priceDelta: 0, active: true, items: [{ sku: "", size: "", qtyDelta: 1 }] }
+        : {
+            size: sizes[0], priceDelta: 0, active: true,
+            groupCode: "OPTIONS", groupName: t("admin_stock.default_modifier_group"),
+            selectionType: "MULTIPLE", minSelect: 0, maxSelect: null,
+            defaultSelected: false, sortOrder: 0,
+            items: [{ sku: "", size: "", qtyDelta: 1 }],
+          }
     );
     setModifierOpen(true);
   }
@@ -200,6 +237,47 @@ export default function StockModelsPage() {
     } catch (error) { message.error(errorText(error, t("admin_stock.action_failed"))); }
   }
 
+  function openQuickIngredient(kind: "recipe" | "modifier") {
+    setIngredientTarget(kind);
+    ingredientForm.resetFields();
+    ingredientForm.setFieldsValue({ variantCode: "STD", baseUnit: "PIECE" });
+    setIngredientOpen(true);
+  }
+
+  async function submitQuickIngredient() {
+    const values = await ingredientForm.validateFields().catch(() => null);
+    if (!values) return;
+    const sku = String(values.sku).trim().toUpperCase();
+    const variantCode = String(values.variantCode).trim().toUpperCase();
+    try {
+      await quickIngredient({ variables: { input: {
+        sku,
+        name: String(values.name).trim(),
+        price: 0,
+        active: false,
+        keywords: [],
+        creation_template: "INGREDIENT",
+        stock_policy: "DIRECT",
+        base_unit: String(values.baseUnit).trim().toUpperCase(),
+        variant_codes: [variantCode],
+        sales_surfaces: [],
+      } } });
+      const targetForm = ingredientTarget === "recipe" ? recipeForm : modifierForm;
+      const items = targetForm.getFieldValue("items") ?? [];
+      const usableItems = items.filter((item: { sku?: string; size?: string }) =>
+        String(item?.sku ?? "").trim() || String(item?.size ?? "").trim()
+      );
+      targetForm.setFieldsValue({
+        items: [...usableItems, ingredientTarget === "recipe"
+          ? { sku, size: variantCode, qty: 1 }
+          : { sku, size: variantCode, qtyDelta: 1 }],
+      });
+      setIngredientOpen(false);
+      await loadProducts({ variables: { search: search.trim() } });
+      message.success(t("admin_stock.ingredient_created"));
+    } catch (error) { message.error(errorText(error, t("admin_stock.action_failed"))); }
+  }
+
   const componentFields = (kind: "recipe" | "modifier") => (
     <Form.List name="items">
       {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>
@@ -213,7 +291,10 @@ export default function StockModelsPage() {
             <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(name)} aria-label={t("admin_stock.remove_component")} />
           </div>
         ))}
-        <Button type="dashed" icon={<PlusOutlined />} onClick={() => add(kind === "recipe" ? { qty: 1 } : { qtyDelta: 1 })}>{t("admin_stock.add_component")}</Button>
+        <Space wrap>
+          <Button type="dashed" icon={<PlusOutlined />} onClick={() => add(kind === "recipe" ? { qty: 1 } : { qtyDelta: 1 })}>{t("admin_stock.add_component")}</Button>
+          <Button type="link" onClick={() => openQuickIngredient(kind)}>{t("admin_stock.quick_create_ingredient")}</Button>
+        </Space>
       </Space>}
     </Form.List>
   );
@@ -289,6 +370,9 @@ export default function StockModelsPage() {
               <Form.Item name="fefo" valuePropName="checked"><Checkbox>FEFO</Checkbox></Form.Item>
             </Space>
             <Form.Item name="kitchenStation" label={t("admin_stock.kitchen_station")}><Input placeholder="HOT / COLD / BAR" /></Form.Item>
+            <Form.Item name="deactivateDerived" valuePropName="checked">
+              <Checkbox>{t("admin_stock.confirm_deactivate_derived")}</Checkbox>
+            </Form.Item>
             <Space wrap align="start">
               <Form.Item name="scaleItemCode" label={t("admin_stock.scale_code")}><Input maxLength={5} placeholder="00001" /></Form.Item>
               <Form.Item name="scaleSize" label={t("admin_stock.scale_size")}><Select allowClear options={sizes.map((s) => ({ value: s, label: s }))} /></Form.Item>
@@ -317,6 +401,7 @@ export default function StockModelsPage() {
         <Table rowKey="id" pagination={false} dataSource={modifiers} locale={{ emptyText: <Empty description={t("admin_stock.no_modifiers")} /> }} columns={[
           { title: t("admin_stock.code"), dataIndex: "code", width: 130 },
           { title: t("admin_stock.name"), dataIndex: "name" },
+          { title: t("admin_stock.modifier_group"), render: (_: unknown, row: Modifier) => `${row.groupName} · ${row.selectionType} (${row.minSelect}–${row.maxSelect ?? "∞"})` },
           { title: t("admin_stock.price_delta"), dataIndex: "priceDelta", render: (value: number) => `฿${Number(value).toFixed(2)}` },
           { title: t("admin_stock.size"), dataIndex: "size" },
           { title: t("admin_stock.stock_effect"), render: (_: unknown, row: Modifier) => row.items.map((i) => `${i.sku}/${i.size} ${i.qtyDelta > 0 ? "+" : ""}${i.qtyDelta}`).join(", ") },
@@ -346,7 +431,40 @@ export default function StockModelsPage() {
           <Form.Item name="priceDelta" label={t("admin_stock.price_delta")} rules={[{ required: true }]}><InputNumber min={0} precision={2} step={1} /></Form.Item>
           <Form.Item name="active" label={t("admin_stock.active")} valuePropName="checked"><Switch /></Form.Item>
         </Space>
+        <Card size="small" title={t("admin_stock.modifier_group")} style={{ marginBottom: 16 }}>
+          <Space wrap align="start">
+            <Form.Item name="groupCode" label={t("admin_stock.group_code")} rules={[{ required: true }]}><Input placeholder="SWEETNESS" /></Form.Item>
+            <Form.Item name="groupName" label={t("admin_stock.group_name")} rules={[{ required: true }]}><Input /></Form.Item>
+            <Form.Item name="selectionType" label={t("admin_stock.selection_type")} rules={[{ required: true }]}>
+              <Select style={{ width: 160 }} options={[
+                { value: "SINGLE", label: t("admin_stock.selection_single") },
+                { value: "MULTIPLE", label: t("admin_stock.selection_multiple") },
+              ]} />
+            </Form.Item>
+            <Form.Item name="minSelect" label={t("admin_stock.min_select")}><InputNumber min={0} precision={0} /></Form.Item>
+            <Form.Item name="maxSelect" label={t("admin_stock.max_select")}><InputNumber min={1} precision={0} /></Form.Item>
+            <Form.Item name="defaultSelected" valuePropName="checked"><Checkbox>{t("admin_stock.default_selected")}</Checkbox></Form.Item>
+          </Space>
+        </Card>
         {componentFields("modifier")}
+      </Form>
+    </Modal>
+
+    <Modal
+      open={ingredientOpen}
+      title={t("admin_stock.quick_create_ingredient")}
+      onCancel={() => setIngredientOpen(false)}
+      onOk={() => void submitQuickIngredient()}
+      confirmLoading={ingredientMutation.loading}
+    >
+      <Alert type="info" showIcon message={t("admin_stock.ingredient_draft_hint")} style={{ marginBottom: 16 }} />
+      <Form form={ingredientForm} layout="vertical">
+        <Form.Item name="sku" label="SKU" rules={[{ required: true }]}><Input placeholder="ING-CHICKEN" /></Form.Item>
+        <Form.Item name="name" label={t("admin_stock.name")} rules={[{ required: true }]}><Input /></Form.Item>
+        <Form.Item name="baseUnit" label={t("admin_stock.base_unit")} rules={[{ required: true }]}>
+          <Select options={["PIECE", "GRAM", "ML", "MM", "CM", "METER"].map((value) => ({ value, label: value }))} />
+        </Form.Item>
+        <Form.Item name="variantCode" label={t("admin_stock.size")} rules={[{ required: true }]}><Input placeholder="STD / GRAM" /></Form.Item>
       </Form>
     </Modal>
   </div>;

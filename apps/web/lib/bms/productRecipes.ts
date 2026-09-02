@@ -1,5 +1,6 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { getProductReadinessInTx } from "./productConfiguration";
 
 export type RecipeComponentInput = { sku: string; size: string; qty: number };
 export type ProductRecipe = {
@@ -86,8 +87,8 @@ export async function upsertProductRecipe(
   let recipeId = input.id ?? null;
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
-    const owned = await client.query(
-      `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2 FOR UPDATE`,
+    const owned = await client.query<{ active: boolean }>(
+      `SELECT active FROM bms_products WHERE tenant_id = $1 AND sku = $2 FOR UPDATE`,
       [tenantId, productSku]
     );
     if (!owned.rowCount) throw new Error("ไม่พบเมนูนี้ในร้าน");
@@ -146,6 +147,12 @@ export async function upsertProductRecipe(
          stock_policy = 'RECIPE', updated_at = now()`,
       [tenantId, productSku]
     );
+    if (owned.rows[0].active) {
+      const readiness = await getProductReadinessInTx(client, tenantId, productSku);
+      if (!readiness.ready) {
+        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
+      }
+    }
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -167,6 +174,14 @@ export type ProductModifier = {
   name: string;
   priceDelta: number;
   active: boolean;
+  groupId: string;
+  groupCode: string;
+  groupName: string;
+  selectionType: "SINGLE" | "MULTIPLE";
+  minSelect: number;
+  maxSelect: number | null;
+  defaultSelected: boolean;
+  sortOrder: number;
   items: Array<{ sku: string; size: string; qtyDelta: number }>;
 };
 
@@ -177,17 +192,21 @@ export async function listProductModifiers(
 ): Promise<ProductModifier[]> {
   const result = await query<any>(
     `SELECT m.id, m.product_sku, m.size, m.code, m.name, m.price_delta, m.active,
+            m.default_selected, m.sort_order, g.id AS group_id, g.code AS group_code,
+            g.name AS group_name, g.selection_type, g.min_select, g.max_select,
             COALESCE(jsonb_agg(jsonb_build_object(
               'sku', mi.component_sku, 'size', mi.component_size, 'qtyDelta', mi.qty_delta
             ) ORDER BY mi.component_sku, mi.component_size)
             FILTER (WHERE mi.id IS NOT NULL), '[]'::jsonb) AS items
        FROM bms_product_modifiers m
+       JOIN bms_product_modifier_groups g
+         ON g.tenant_id = m.tenant_id AND g.id = m.group_id
        LEFT JOIN bms_product_modifier_items mi
          ON mi.tenant_id = m.tenant_id AND mi.modifier_id = m.id
       WHERE m.tenant_id = $1 AND m.product_sku = $2
         AND ($3::text IS NULL OR m.size = $3)
-      GROUP BY m.id
-      ORDER BY m.size, m.code`,
+      GROUP BY m.id, g.id
+      ORDER BY m.size, g.sort_order, m.sort_order, m.code`,
     [tenantId, productSku, size ?? null]
   );
   return result.rows.map((row: any) => ({
@@ -198,6 +217,14 @@ export async function listProductModifiers(
     name: row.name,
     priceDelta: Number(row.price_delta ?? 0),
     active: Boolean(row.active),
+    groupId: row.group_id,
+    groupCode: row.group_code,
+    groupName: row.group_name,
+    selectionType: row.selection_type,
+    minSelect: Number(row.min_select),
+    maxSelect: row.max_select == null ? null : Number(row.max_select),
+    defaultSelected: Boolean(row.default_selected),
+    sortOrder: Number(row.sort_order),
     items: Array.isArray(row.items) ? row.items : [],
   }));
 }
@@ -212,6 +239,13 @@ export async function upsertProductModifier(
     name: string;
     priceDelta?: number | null;
     active?: boolean | null;
+    groupCode?: string | null;
+    groupName?: string | null;
+    selectionType?: "SINGLE" | "MULTIPLE" | null;
+    minSelect?: number | null;
+    maxSelect?: number | null;
+    defaultSelected?: boolean | null;
+    sortOrder?: number | null;
     items: Array<{ sku: string; size: string; qtyDelta: number }>;
   },
   editorId?: string | null
@@ -221,12 +255,30 @@ export async function upsertProductModifier(
   const code = String(input.code ?? "").trim().toUpperCase();
   const name = String(input.name ?? "").trim();
   const priceDelta = Math.round(Number(input.priceDelta ?? 0) * 100) / 100;
+  const groupCode = String(input.groupCode ?? "OPTIONS").trim().toUpperCase();
+  const groupName = String(input.groupName ?? "Options").trim();
+  const selectionTypeRaw = String(input.selectionType ?? "MULTIPLE").trim().toUpperCase();
+  if (selectionTypeRaw !== "SINGLE" && selectionTypeRaw !== "MULTIPLE") {
+    throw new Error("ประเภทการเลือก Modifier ไม่ถูกต้อง");
+  }
+  const selectionType = selectionTypeRaw as "SINGLE" | "MULTIPLE";
+  const minSelect = Number(input.minSelect ?? 0);
+  const maxSelect = selectionType === "SINGLE"
+    ? 1
+    : input.maxSelect == null ? null : Number(input.maxSelect);
+  const sortOrder = Number(input.sortOrder ?? 0);
   const items = (input.items ?? []).map((item) => ({
     sku: String(item.sku ?? "").trim(),
     size: String(item.size ?? "").trim(),
     qtyDelta: Math.trunc(Number(item.qtyDelta)),
   }));
   if (!productSku || !size || !code || !name) throw new Error("ข้อมูล Modifier ไม่ครบ");
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(groupCode) || !groupName) throw new Error("ข้อมูลกลุ่ม Modifier ไม่ถูกต้อง");
+  if (!Number.isSafeInteger(minSelect) || minSelect < 0
+    || (maxSelect != null && (!Number.isSafeInteger(maxSelect) || maxSelect <= 0 || minSelect > maxSelect))) {
+    throw new Error("จำนวนตัวเลือกขั้นต่ำ/สูงสุดไม่ถูกต้อง");
+  }
+  if (!Number.isSafeInteger(sortOrder)) throw new Error("ลำดับ Modifier ไม่ถูกต้อง");
   if (!Number.isFinite(priceDelta) || priceDelta < 0 || priceDelta > 9999999999.99) {
     throw new Error("ราคาเพิ่มของ Modifier ต้องเป็นจำนวนตั้งแต่ 0 ขึ้นไป");
   }
@@ -241,6 +293,14 @@ export async function upsertProductModifier(
   let modifierId = input.id ?? null;
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
+    const policy = await client.query<{ stock_policy: string | null }>(
+      `SELECT stock_policy FROM bms_product_stock_policies
+        WHERE tenant_id = $1 AND product_sku = $2 FOR UPDATE`,
+      [tenantId, productSku]
+    );
+    if (policy.rows[0]?.stock_policy !== "RECIPE") {
+      throw new Error("Modifier ใช้ได้เฉพาะสินค้าที่มี Stock Policy เป็น RECIPE");
+    }
     if (modifierId) {
       const existing = await client.query<{ product_sku: string }>(
         `SELECT product_sku FROM bms_product_modifiers
@@ -252,16 +312,32 @@ export async function upsertProductModifier(
         throw new Error("ย้าย Modifier ไปสินค้าอื่นไม่ได้");
       }
     }
+    const group = await client.query<{ id: string }>(
+      `INSERT INTO bms_product_modifier_groups
+         (tenant_id, product_sku, size, code, name, selection_type, min_select, max_select)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (tenant_id, product_sku, size, code) DO UPDATE SET
+         name = EXCLUDED.name, selection_type = EXCLUDED.selection_type,
+         min_select = EXCLUDED.min_select, max_select = EXCLUDED.max_select,
+         active = TRUE, updated_at = now()
+       RETURNING id`,
+      [tenantId, productSku, size, groupCode, groupName, selectionType, minSelect, maxSelect]
+    );
+    const groupId = group.rows[0].id;
     const modifier = await client.query<{ id: string }>(
       `INSERT INTO bms_product_modifiers
-         (id, tenant_id, product_sku, size, code, name, price_delta, active)
-       VALUES (COALESCE($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7,COALESCE($8,TRUE))
+         (id, tenant_id, product_sku, size, code, name, price_delta, active,
+          group_id, default_selected, sort_order)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7,COALESCE($8,TRUE),$9,$10,$11)
        ON CONFLICT (id) DO UPDATE SET
          size = EXCLUDED.size, code = EXCLUDED.code, name = EXCLUDED.name,
          price_delta = EXCLUDED.price_delta,
-         active = COALESCE($8, bms_product_modifiers.active), updated_at = now()
+         active = COALESCE($8, bms_product_modifiers.active), group_id = EXCLUDED.group_id,
+         default_selected = EXCLUDED.default_selected, sort_order = EXCLUDED.sort_order,
+         updated_at = now()
        RETURNING id`,
-      [modifierId, tenantId, productSku, size, code, name, priceDelta, input.active ?? null]
+      [modifierId, tenantId, productSku, size, code, name, priceDelta, input.active ?? null,
+        groupId, Boolean(input.defaultSelected), sortOrder]
     );
     modifierId = modifier.rows[0].id;
     await client.query(
@@ -276,6 +352,17 @@ export async function upsertProductModifier(
         [tenantId, modifierId, item.sku, item.size, item.qtyDelta]
       );
     }
+    const groupState = await client.query<{ selected_count: number; option_count: number }>(
+      `SELECT COUNT(*) FILTER (WHERE active AND default_selected)::int AS selected_count,
+              COUNT(*) FILTER (WHERE active)::int AS option_count
+         FROM bms_product_modifiers
+        WHERE tenant_id = $1 AND group_id = $2`,
+      [tenantId, groupId]
+    );
+    const selectedCount = Number(groupState.rows[0]?.selected_count ?? 0);
+    const optionCount = Number(groupState.rows[0]?.option_count ?? 0);
+    if (selectedCount > (maxSelect ?? optionCount)) throw new Error("ค่าเริ่มต้นของกลุ่ม Modifier เกินจำนวนที่เลือกได้");
+    if (minSelect > optionCount) throw new Error("จำนวนขั้นต่ำของกลุ่ม Modifier มากกว่าตัวเลือกที่เปิดใช้");
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

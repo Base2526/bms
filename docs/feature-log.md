@@ -10,6 +10,21 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Product catalog foundation (9.51, 2026-09-02)
+
+- Added catalog variants independent of branch stock, explicit product sales surfaces, and
+  draft-first creation/import with one readiness-gated publish path. Store archetype remains a
+  starter preset rather than product authority; ingredients can be active internal inventory
+  without leaking into restaurant POS, storefront, customer AI or online ordering.
+- Added restaurant modifier groups with single/multiple selection, min/max/default rules and
+  server-side order validation. Restaurant menu lookup now uses `RESTAURANT_POS` visibility and
+  catalog variants instead of positive stock or recipe-membership heuristics.
+- Added adaptive product templates, zero-stock option creation, recipe cost readiness, safe stock
+  policy transition confirmation, quick ingredient creation, configuration duplication as draft,
+  and menu-aware bulk import columns. Copies never clone stock, lots, serials or barcodes.
+
+---
+
 ## Shop archetype lock + bilingual labels (9.43, 2026-08-31)
 
 - Added shared `shop_archetypes.*` labels in both `en` and `th` for the shop archetype dropdown and

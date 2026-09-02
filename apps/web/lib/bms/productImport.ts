@@ -11,6 +11,7 @@ import { query } from "@/lib/db";
 import { getTenantPlan } from "./plans";
 import {
   upsertProduct,
+  validateProductConfigurationFields,
   validateProductFields,
   type UpsertProductInput,
   type NormalizedProductFields,
@@ -52,6 +53,7 @@ export async function runImport(
   for (const row of rows) {
     try {
       const fields = validateProductFields(row);
+      validateProductConfigurationFields(row);
       const firstRow = seenSku.get(fields.sku);
       if (firstRow != null) {
         results.push({
