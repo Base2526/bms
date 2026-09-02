@@ -28,6 +28,52 @@ const MENU_CARD_TINTS = [
   { bg: "var(--amber-bg)", ink: "var(--amber)" },
   { bg: "var(--green-bg)", ink: "var(--green)" },
 ];
+// ภาพอาหารบนการ์ด — วาดด้วย SVG ในโค้ด ไม่โหลดจาก CDN ตามเหตุผลเดียวกับที่หน้านี้
+// ไม่โหลดฟอนต์ภายนอก (จอนี้ต้องทำงานตอนเน็ตร้านหลุด) · ใช้เมื่อสินค้ายังไม่มีรูปจริง
+// ถ้าร้านอัปโหลดรูปเมนูไว้ที่ /admin/products รูปจริงชนะเสมอ
+const DISH_ART: Record<string, (a: string) => JSX.Element> = {
+  RICE: (a) => <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <ellipse cx="50" cy="64" rx="34" ry="15" fill={a} opacity=".28" />
+    <path d="M20 62c0-13 13-22 30-22s30 9 30 22z" fill={a} />
+    <circle cx="40" cy="50" r="5" fill="#fff" opacity=".55" /><circle cx="57" cy="47" r="4" fill="#fff" opacity=".55" />
+    <circle cx="65" cy="55" r="3.2" fill="#fff" opacity=".55" />
+  </svg>,
+  NOODLE: (a) => <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <ellipse cx="50" cy="64" rx="34" ry="15" fill={a} opacity=".28" />
+    <path d="M19 60c6-17 18-25 31-25s25 8 31 25z" fill={a} />
+    <path d="M28 55c8-4 16-4 24 0M32 46c8-4 18-4 26 1M38 39c6-3 14-3 20 1" stroke="#fff" strokeWidth="3" fill="none" strokeLinecap="round" opacity=".6" />
+  </svg>,
+  SOUP: (a) => <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <path d="M16 48h68c0 20-15 31-34 31S16 68 16 48z" fill={a} />
+    <ellipse cx="50" cy="48" rx="34" ry="9" fill={a} opacity=".45" />
+    <circle cx="38" cy="47" r="4.6" fill="#fff" opacity=".6" /><circle cx="54" cy="45" r="4" fill="#fff" opacity=".6" />
+    <path d="M40 30c0-5 5-6 5-11M58 30c0-5 5-6 5-11" stroke={a} strokeWidth="3.4" fill="none" strokeLinecap="round" opacity=".55" />
+  </svg>,
+  SALAD: (a) => <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <ellipse cx="50" cy="66" rx="34" ry="14" fill={a} opacity=".28" />
+    <path d="M23 63c2-15 12-23 27-23s25 8 27 23z" fill={a} />
+    <path d="M32 57c6-9 12-12 18-12M45 59c4-10 9-14 15-15" stroke="#fff" strokeWidth="3.2" fill="none" strokeLinecap="round" opacity=".6" />
+  </svg>,
+  DRINK: (a) => <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <path d="M33 26h34l-4 51a6 6 0 01-6 5H43a6 6 0 01-6-5z" fill={a} opacity=".32" />
+    <path d="M35 43h30l-3 34a5 5 0 01-5 4H43a5 5 0 01-5-4z" fill={a} />
+    <rect x="46" y="13" width="5" height="18" rx="2.5" fill={a} transform="rotate(14 48 22)" />
+  </svg>,
+};
+
+// เลือกภาพจากคำในชื่อเมนูที่คนไทยใช้จริง — เมนูที่จับคำไม่ได้ตกไปที่จานข้าว
+// ตั้งใจไม่สุ่ม เพราะการ์ดเดิมต้องได้ภาพเดิมทุกครั้งที่เปิดหน้า ไม่งั้นพนักงานจำตำแหน่งไม่ได้
+const DISH_ART_WORDS: Array<[RegExp, keyof typeof DISH_ART]> = [
+  [/ชา|กาแฟ|น้ำ|โอเลี้ยง|โซดา|นม|สมูทตี้|เบียร์|ปั่น/, "DRINK"],
+  [/ต้ม|แกง|ซุป|โจ๊ก|ก๋วยเตี๋ยว/, "SOUP"],
+  [/ตำ|ยำ|สลัด|ลาบ|น้ำตก/, "SALAD"],
+  [/ผัดไทย|ผัดหมี่|เส้น|หมี่|สปาเก็ตตี้|พาสต้า|ราดหน้า/, "NOODLE"],
+];
+function dishArt(name: string, color: string) {
+  for (const [words, key] of DISH_ART_WORDS) if (words.test(name)) return DISH_ART[key](color);
+  return DISH_ART.RICE(color);
+}
+
 function menuCardTint(station: string | null, stations: string[]) {
   const idx = station ? stations.indexOf(station) : stations.length;
   return MENU_CARD_TINTS[((idx % MENU_CARD_TINTS.length) + MENU_CARD_TINTS.length) % MENU_CARD_TINTS.length];
@@ -79,7 +125,7 @@ export default function RestaurantPosPage() {
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
   // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
   // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
-  const [screen, setScreen] = useState<"ORDER" | "FLOOR" | "KITCHEN">("FLOOR");
+  const [screen, setScreen] = useState<"ORDER" | "FLOOR" | "KITCHEN">("ORDER");
   const [actorUserId, setActorUserId] = useState("");
   const [actorPin, setActorPin] = useState("");
   const [loading, setLoading] = useState(true);
@@ -165,6 +211,18 @@ export default function RestaurantPosPage() {
     .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
     [floor.tables, tableKitchenStats]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
+  // จำนวนที่อยู่ในบิลแล้วต่อเมนู ไว้ขึ้นเป็น badge บนการ์ด — นับ "จำนวนของ" ไม่ใช่เงิน
+  // (ยอดเงินยังมาจาก check.amountDue ของ server เท่านั้น) · ใช้ for ไม่ใช่ reduce
+  // เพราะเทสห้ามรูปแบบ items.reduce( ทั้งไฟล์เพื่อกันการรวมยอดเองที่จอ
+  const qtyInCheckBySku = useMemo(() => {
+    // server ไม่ส่งรายการที่ถูกยกเลิกมาให้หน้านี้เลย (type เป็น NEW | SENT เท่านั้น)
+    // จึงไม่ต้องกรองสถานะซ้ำที่จอ
+    const counts = new Map<string, number>();
+    for (const item of check?.items ?? []) {
+      counts.set(item.sku, (counts.get(item.sku) ?? 0) + Number(item.packQty ?? 0));
+    }
+    return counts;
+  }, [check]);
   // ไม่ใช้ items.reduce() โดยตั้งใจ — เทสห้ามรูปแบบนั้นทั้งหมดเพื่อกันการ "รวมยอดเอง"
   // ที่จอ (สูตรเงินชุดที่สอง) การเลี่ยงจึงดีกว่าการไปคลายกฎในเทส
   const lastRound = Math.max(0, ...(check?.items.map((item) => item.roundNo ?? 0) ?? [])) || null;
@@ -468,10 +526,14 @@ export default function RestaurantPosPage() {
                     : "ไม่พบเมนูที่ตรงกับที่กรอง"}</div>
                 : <div className={styles.dishGrid}>{visibleMenuItems.map((item) => {
                     const tint = menuCardTint(item.kitchenStation, menuStations);
+                    const inCheck = qtyInCheckBySku.get(item.sku) ?? 0;
                     return <button key={item.sku} type="button" className={styles.dishCard} onClick={() => void chooseMenu(item)}>
                       <span className={styles.dishArt} style={{ background: tint.bg, color: tint.ink }}>
-                        {item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span className={styles.dishInitial}>{item.name.slice(0, 1)}</span>}
+                        {item.imageUrl
+                          ? <img src={item.imageUrl} alt="" />
+                          : <span className={styles.dishGlyph} style={{ color: tint.ink }}>{dishArt(item.name, "currentColor")}</span>}
                       </span>
+                      {inCheck > 0 && <span className={styles.dishQty}>{inCheck}</span>}
                       <span className={styles.dishBody}>
                         <span className={styles.dishName}>{item.name}</span>
                         <span className={styles.dishFoot}>
