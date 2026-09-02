@@ -34,7 +34,35 @@
   font-size: 15px;
   line-height: 1.45;
 }
-.shell { display: flex; flex-direction: column; min-height: 100vh; }
+/* เมนูนำทางเป็นแถบไอคอนแนวตั้งฝั่งซ้าย (ตามมอคอัพ) — คืนความกว้างแถวบนให้ชื่อร้าน
+   กับปุ่มที่ใช้จริง และปลายนิ้วโป้งอยู่ขอบซ้ายตลอด ไม่ต้องเอื้อมขึ้นไปหัวจอ */
+.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); }
+.pagePlain { display: block; }
+.rail {
+  background: var(--panel); border-inline-end: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0;
+}
+.railMark {
+  width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: white;
+  display: grid; place-items: center; font-weight: 700; font-size: 18px; margin-bottom: 8px; flex: none;
+}
+.railBtn {
+  position: relative; width: 46px; height: 46px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--ink-2); cursor: pointer; font: inherit;
+  display: grid; place-items: center; gap: 2px; line-height: 1;
+}
+.railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
+.railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
+.railIcon { font-size: 19px; }
+.railLabel { font-size: 9.5px; font-weight: 600; }
+.railBadge {
+  position: absolute; top: 2px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+  background: var(--red); color: white; font-size: 10.5px; font-weight: 700; display: grid; place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.railBtnActive .railBadge { background: rgba(255, 255, 255, .28); }
+
+.shell { display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
 /* antd Spin แทรก wrapper สองชั้นระหว่าง shell กับเนื้อหา ถ้าไม่ต่อ flex ให้ทะลุ
    แผงบิลจะสูงเท่าเนื้อหา แล้วปุ่ม "ส่งครัว/คิดเงิน" ไปลอยกลางจอแทนที่จะติดขอบล่าง */
 .floorWrap,

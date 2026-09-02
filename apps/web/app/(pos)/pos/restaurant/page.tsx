@@ -444,19 +444,37 @@ export default function RestaurantPosPage() {
     } finally { setSupportWorking(null); }
   }
 
-  if (!ready || loading) return <main className={styles.page}><div className={styles.empty}><Spin size="large" /></div></main>;
-  if (!token) return <main className={styles.page}><Alert type="warning" showIcon message="ยังไม่พบ device token" description="จับคู่เครื่อง POS จากหลังบ้านก่อนเปิดหน้านี้" /></main>;
+  // สองสถานะนี้ไม่มีแถบซ้าย (ยังไม่มีอะไรให้สลับ) จึงใช้ .pagePlain ที่ไม่ใช่ grid สองคอลัมน์
+  // ไม่งั้นเนื้อหาไปกองอยู่คอลัมน์ที่สองโดยเว้นช่องว่าง 64px ทางซ้ายไว้เฉย ๆ
+  if (!ready || loading) return <main className={`${styles.page} ${styles.pagePlain}`}><div className={styles.empty}><Spin size="large" /></div></main>;
+  if (!token) return <main className={`${styles.page} ${styles.pagePlain}`}><Alert type="warning" showIcon message="ยังไม่พบ device token" description="จับคู่เครื่อง POS จากหลังบ้านก่อนเปิดหน้านี้" /></main>;
+
+  // ป้ายในแถบกว้าง 64px ต้องสั้นพอไม่ตัดคำ ("สั่งอาหาร" เหลือ "สั่ง" แล้วอ่านเป็นคำอื่น)
+  // ชื่อเต็มอยู่ที่ title/aria-label เพื่อให้ screen reader และ tooltip ยังได้ความหมายครบ
+  const railScreens = [
+    { key: "ORDER" as const, short: "สั่ง", full: "สั่งอาหาร", icon: <WalletOutlined />, badge: 0 },
+    { key: "FLOOR" as const, short: "โต๊ะ", full: "ผังโต๊ะ", icon: <AppstoreOutlined />, badge: unsentTableCount },
+    { key: "KITCHEN" as const, short: "ครัว", full: "จอครัว", icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
+  ];
 
   return <main className={styles.page} ref={rootRef}>
+    {/* เมนูนำทางฝั่งซ้าย — ป้ายตัวเลขบอกงานค้างของจอนั้น (โต๊ะที่ยังไม่ส่งครัว / ตั๋วในครัว)
+        เพื่อให้เห็นว่าต้องไปจอไหนต่อโดยไม่ต้องเข้าไปดูทีละจอ */}
+    <nav className={styles.rail} aria-label="สลับหน้าจอ">
+      <div className={styles.railMark} aria-hidden="true">B</div>
+      {railScreens.map((item) => <button key={item.key} type="button"
+        className={`${styles.railBtn} ${screen === item.key ? styles.railBtnActive : ""}`}
+        aria-pressed={screen === item.key} title={item.full} aria-label={item.full}
+        onClick={() => setScreen(item.key)}>
+        <span className={styles.railIcon} aria-hidden="true">{item.icon}</span>
+        <span className={styles.railLabel} aria-hidden="true">{item.short}</span>
+        {item.badge > 0 && <span className={styles.railBadge}>{item.badge}</span>}
+      </button>)}
+    </nav>
     <div className={styles.shell}>
       <header className={styles.topbar}>
-        <div className={styles.brand}><div className={styles.brandMark}>B</div><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || "ผู้ปฏิบัติงาน") : "ยังไม่ได้ระบุผู้ปฏิบัติงาน"}</p></div></div>
+        <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || "ผู้ปฏิบัติงาน") : "ยังไม่ได้ระบุผู้ปฏิบัติงาน"}</p></div></div>
         <div className={styles.topActions}>
-          <div className={styles.tabs} role="group" aria-label="สลับหน้าจอ">
-            <button type="button" className={`${styles.tabButton} ${screen === "ORDER" ? styles.tabButtonActive : ""}`} aria-pressed={screen === "ORDER"} onClick={() => setScreen("ORDER")}><WalletOutlined /> สั่งอาหาร</button>
-            <button type="button" className={`${styles.tabButton} ${screen === "FLOOR" ? styles.tabButtonActive : ""}`} aria-pressed={screen === "FLOOR"} onClick={() => setScreen("FLOOR")}><AppstoreOutlined /> โต๊ะ</button>
-            <button type="button" className={`${styles.tabButton} ${screen === "KITCHEN" ? styles.tabButtonActive : ""}`} aria-pressed={screen === "KITCHEN"} onClick={() => setScreen("KITCHEN")}><CoffeeOutlined /> ครัว{kitchenCooking + kitchenReady > 0 ? <span className={styles.tabBadge}>{kitchenCooking + kitchenReady}</span> : null}</button>
-          </div>
           {/* PIN กรอกครั้งเดียวต่อกะ — ชื่อคนอยู่ใต้ชื่อร้าน ปุ่มนี้เปิดกล่องเลือกคน/กรอก PIN */}
           <button type="button" className={styles.btn} onClick={() => setOperatorOpen(true)}>{operatorReady ? "เปลี่ยนคน" : "เลือกผู้ปฏิบัติงาน"}</button>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void refresh()} title="รีเฟรช" aria-label="รีเฟรช"><ReloadOutlined /></button>
