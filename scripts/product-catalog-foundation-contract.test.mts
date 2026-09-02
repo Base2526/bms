@@ -44,6 +44,7 @@ test("migration installs catalog variants, explicit surfaces and modifier groups
   }
   assert.match(sql, /INSERT INTO bms_product_variants[\s\S]*bms_inventory/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS group_id UUID/);
+  assert.match(sql, /'MULTIPLE', 0, NULL::integer/);
   assert.match(sql, /ALTER COLUMN group_id SET NOT NULL/);
   assert.match(sql, /CREATE TRIGGER trg_bms_inventory_ensure_variant/);
   assert.match(sql, /Customer-facing paths[\s\S]*business_archetype[\s\S]*bms_product_recipe_items/);

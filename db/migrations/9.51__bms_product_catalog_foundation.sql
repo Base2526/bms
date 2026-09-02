@@ -193,7 +193,7 @@ ALTER TABLE bms_product_modifiers
 
 INSERT INTO bms_product_modifier_groups
   (tenant_id, product_sku, size, code, name, selection_type, min_select, max_select)
-SELECT DISTINCT tenant_id, product_sku, size, 'OPTIONS', 'Options', 'MULTIPLE', 0, NULL
+SELECT DISTINCT tenant_id, product_sku, size, 'OPTIONS', 'Options', 'MULTIPLE', 0, NULL::integer
 FROM bms_product_modifiers
 ON CONFLICT (tenant_id, product_sku, size, code) DO NOTHING;
 
