@@ -50,7 +50,7 @@ export async function enqueueKitchenTicketsInTx(
        JOIN bms_product_stock_policies sp
          ON sp.tenant_id = oi.tenant_id AND sp.product_sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND oi.order_id = $2
-        AND sp.stock_policy = 'RECIPE'
+        AND sp.stock_policy IN ('RECIPE', 'NON_STOCK')
      ON CONFLICT (tenant_id, order_item_id) DO NOTHING`,
     [tenantId, orderId]
   );

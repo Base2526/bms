@@ -1804,6 +1804,8 @@ const en = {
     draft_first_description: "Save the core information first, configure variants, recipe or packs, then publish when the readiness check passes.",
     creation_template: "Product template",
     creation_template_hint: "A starting preset only; it does not lock the product or the shop type.",
+    template_quick_menu: "Quick menu (no ingredient tracking)",
+    template_quick_menu_hint: "No ingredients or recipe needed for this menu item — enter a per-dish cost below. Turn on ingredient-level stock tracking later at /admin/stock-models",
     template_prepared_menu: "Prepared menu (recipe)",
     template_ready_good: "Ready-made item",
     template_ingredient: "Ingredient / internal stock",

@@ -79,7 +79,7 @@ type Modifier = {
   items: Array<{ sku: string; size: string; qtyDelta: number }>;
 };
 
-const POLICY_OPTIONS = ["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"]
+const POLICY_OPTIONS = ["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"]
   .map((value) => ({ value, label: value }));
 
 function errorText(error: unknown, fallback: string) {

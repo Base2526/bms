@@ -749,13 +749,13 @@ export type UpsertProductInput = {
    */
   price_tiers?: PriceTier[] | null;
   /** UI creation preset only; authoritative behavior is stored in policy/surfaces. */
-  creation_template?: "PREPARED_MENU" | "READY_GOOD" | "INGREDIENT" | "GENERAL" | null;
+  creation_template?: "QUICK_MENU" | "PREPARED_MENU" | "READY_GOOD" | "INGREDIENT" | "GENERAL" | null;
   /** Explicit catalog surfaces. Sending an empty array creates an internal-only item. */
   sales_surfaces?: ProductSalesSurface[] | null;
   /** Catalog variants can exist without positive branch stock. */
   variant_codes?: string[] | null;
   /** Optional initial policy for a newly created draft. */
-  stock_policy?: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED" | null;
+  stock_policy?: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED" | "NON_STOCK" | null;
   /** Initial inventory unit for a new draft; later changes go through Stock Models. */
   base_unit?: string | null;
 };
@@ -1332,7 +1332,7 @@ export type NormalizedProductConfigurationFields = {
   templateDefaults: ReturnType<typeof productTemplateDefaults>;
   requestedSurfaces: ProductSalesSurface[] | null;
   requestedVariants: string[] | null;
-  requestedPolicy: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED";
+  requestedPolicy: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED" | "NON_STOCK";
   requestedBaseUnit: string;
 };
 
@@ -1341,7 +1341,7 @@ export function validateProductConfigurationFields(
   input: UpsertProductInput
 ): NormalizedProductConfigurationFields {
   const rawTemplate = String(input.creation_template ?? "").trim().toUpperCase();
-  if (rawTemplate && !["PREPARED_MENU", "READY_GOOD", "INGREDIENT", "GENERAL"].includes(rawTemplate)) {
+  if (rawTemplate && !["QUICK_MENU", "PREPARED_MENU", "READY_GOOD", "INGREDIENT", "GENERAL"].includes(rawTemplate)) {
     throw new Error("รูปแบบสินค้าไม่ถูกต้อง");
   }
   const templateDefaults = productTemplateDefaults(rawTemplate || null);
@@ -1352,7 +1352,7 @@ export function validateProductConfigurationFields(
     ? Array.from(new Set(input.variant_codes.map(normalizeProductVariantCode)))
     : null;
   const requestedPolicy = String(input.stock_policy ?? templateDefaults.stockPolicy).trim().toUpperCase();
-  if (!["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"].includes(requestedPolicy)) {
+  if (!["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"].includes(requestedPolicy)) {
     throw new Error("นโยบาย Stock ไม่ถูกต้อง");
   }
   const requestedBaseUnit = String(input.base_unit ?? templateDefaults.baseUnit).trim().toUpperCase();

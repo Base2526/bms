@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { query } from "../apps/web/lib/db.ts";
 import { cancelOrder, createOrder, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
@@ -44,6 +46,20 @@ const onHand = async (sku: string) => Number((await query<{ qty: string }>(
   [tenantId, locationId, sku, SIZE]
 )).rows[0]?.qty ?? 0);
 
+const declareSalesSurfaces = async (sku: string, surfaces: string[]) => {
+  const present = (await query<{ reg: string | null }>(
+    `SELECT to_regclass('bms_product_sales_surfaces')::text AS reg`
+  )).rows[0]?.reg;
+  if (!present) return; // database predates 9.51
+  for (const surface of surfaces) {
+    await query(
+      `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface)
+       VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [tenantId, sku, surface]
+    );
+  }
+};
+
 test("setup a throwaway restaurant with an active recipe and modifier", async () => {
   tenantId = (await query<{ id: string }>(
     `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
@@ -70,6 +86,11 @@ test("setup a throwaway restaurant with an active recipe and modifier", async ()
        VALUES ($1,$2,$3,$4,TRUE,'V')`,
       [tenantId, sku, sku, price]
     );
+  }
+  // 9.51 made a declared sales surface a precondition for selling. These products are
+  // inserted straight into bms_products, so nothing else would declare one for them.
+  for (const sku of [MENU, RICE, MEAT, EGG, FLOUR]) {
+    await declareSalesSurfaces(sku, ["RESTAURANT_POS", "RETAIL_POS"]);
   }
   for (const sku of [RICE, MEAT, EGG, FLOUR]) {
     await query(
@@ -102,6 +123,10 @@ test("setup a throwaway restaurant with an active recipe and modifier", async ()
     baseUnit: "PORTION",
     kitchenStation: "HOT",
   });
+  // Mixed business: restaurant preset plus a manually enabled weighed-product
+  // capability. Archetype remains onboarding metadata, not a stock restriction.
+  await upsertStoreCapability(tenantId, { capability: "WEIGHTED_PRODUCT", enabled: true });
+
   await upsertProductStockPolicy(tenantId, {
     productSku: FLOUR,
     stockPolicy: "WEIGHTED",
@@ -110,9 +135,6 @@ test("setup a throwaway restaurant with an active recipe and modifier", async ()
     scaleItemCode: "12345",
     scaleSize: SIZE,
   });
-  // Mixed business: restaurant preset plus a manually enabled weighed-product
-  // capability. Archetype remains onboarding metadata, not a stock restriction.
-  await upsertStoreCapability(tenantId, { capability: "WEIGHTED_PRODUCT", enabled: true });
 });
 
 test("prefix-22 scale labels resolve exact grams while price labels fail closed", async () => {
@@ -513,6 +535,241 @@ test("the board shows the newest work first when the ticket cap is reached, and 
   assert.equal(await cancelOrder(tenantId, second.orderId), true);
 });
 
+/**
+ * NON_STOCK (9.52) — a menu that sells on day one with no ingredient or recipe setup.
+ * It consumes nothing, so it writes no snapshot rows at all; the whole feature rests on
+ * migration 9.52 excluding it from the view's legacy fallback branch.
+ */
+const NS_MENU = `FAKE-${TAG}-QUICKMENU`;
+
+
+test("a NON_STOCK menu sells with no stock movement and no ingredient setup", async () => {
+  await query(
+    `INSERT INTO bms_products (tenant_id, sku, name, price, cost_price, active, vat_category)
+     VALUES ($1,$2,$3,120,45,TRUE,'V')`,
+    [tenantId, NS_MENU, NS_MENU]
+  );
+  await declareSalesSurfaces(NS_MENU, ["RESTAURANT_POS", "RETAIL_POS"]);
+  // 9.51 readiness: a sellable product needs at least one variant (or pack).
+  await query(
+    `INSERT INTO bms_product_variants (tenant_id, product_sku, code)
+     VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+    [tenantId, NS_MENU, SIZE]
+  );
+  // No recipe, no ingredients, no modifiers — that is the whole point of the policy.
+  await upsertProductStockPolicy(tenantId, {
+    productSku: NS_MENU,
+    stockPolicy: "NON_STOCK",
+    baseUnit: "PIECE",
+    kitchenStation: "HOT",
+  });
+
+  assert.equal(await onHand(NS_MENU), 0, "no inventory row exists before the first sale");
+
+  const sale = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [{ sku: NS_MENU, size: SIZE, qty: 3 }],
+  } as any);
+  assert.equal(sale.status, "CREATED", JSON.stringify(sale));
+  if (sale.status !== "CREATED") return;
+  assert.equal(sale.total, 360, "3 × 120");
+
+  // (b) the FK row exists but stays pinned at zero on both sides, before and after.
+  assert.equal(await onHand(NS_MENU), 0, "a NON_STOCK menu never owns stock");
+  assert.equal(await reserved(NS_MENU), 0, "and never reserves any");
+
+  // (a) nothing moved anywhere in the ledger for this SKU.
+  assert.equal(Number((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_stock_movements
+      WHERE tenant_id = $1 AND product_sku = $2`,
+    [tenantId, NS_MENU]
+  )).rows[0].n), 0, "a NON_STOCK sale must write no stock movement");
+
+  assert.equal(Number((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_order_item_stock_consumption c
+       JOIN bms_order_items oi ON oi.tenant_id = c.tenant_id AND oi.id = c.order_item_id
+      WHERE c.tenant_id = $1 AND oi.order_id = $2`,
+    [tenantId, sale.orderId]
+  )).rows[0].n), 0, "zero consumption lines is the deliberate snapshot");
+
+  // The view must agree: this sold line has no stock effect whatsoever.
+  assert.equal(Number((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_order_stock_lines
+      WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, sale.orderId]
+  )).rows[0].n), 0, "the legacy fallback branch must not resurrect a NON_STOCK line");
+
+  assert.equal(await cancelOrder(tenantId, sale.orderId), true);
+});
+
+/**
+ * (c) Mutation test, automated: drop the 9.52 predicate from the view, replay the exact sale
+ * above, and prove it breaks. Without this predicate the view reads "no snapshot" as
+ * "pre-9.40 row" and expands the menu into "consumes 1 unit of itself" against an inventory
+ * row deliberately pinned at 0 — so every bill fails. The view is restored in `finally`.
+ */
+test("removing the 9.52 view predicate makes every NON_STOCK sale fail", async () => {
+  const brokenLegacyBranch = `
+    DROP VIEW IF EXISTS bms_order_stock_lines;
+    CREATE VIEW bms_order_stock_lines AS
+      SELECT oi.id AS order_item_id, oi.tenant_id, oi.order_id, oi.location_id,
+             c.product_sku, c.size, c.qty
+        FROM bms_order_items oi
+        JOIN bms_order_item_stock_consumption c
+          ON c.tenant_id = oi.tenant_id AND c.order_item_id = oi.id
+      UNION ALL
+      SELECT oi.id, oi.tenant_id, oi.order_id, oi.location_id, oi.product_sku, oi.size, oi.qty
+        FROM bms_order_items oi
+        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+       WHERE p.is_bundle IS NOT TRUE
+         AND NOT EXISTS (
+           SELECT 1 FROM bms_order_item_stock_consumption c
+            WHERE c.tenant_id = oi.tenant_id AND c.order_item_id = oi.id
+         )
+      UNION ALL
+      SELECT oi.id, oi.tenant_id, oi.order_id, oi.location_id,
+             b.component_sku, b.component_size, (oi.qty * b.qty)::integer
+        FROM bms_order_items oi
+        JOIN bms_products p
+          ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku AND p.is_bundle
+        JOIN bms_product_bundle_items b
+          ON b.tenant_id = oi.tenant_id AND b.bundle_sku = oi.product_sku
+       WHERE NOT EXISTS (
+           SELECT 1 FROM bms_order_item_stock_consumption c
+            WHERE c.tenant_id = oi.tenant_id AND c.order_item_id = oi.id
+         );
+    GRANT SELECT ON bms_order_stock_lines TO bms_app;`;
+
+  const shippedView = readFileSync(
+    path.join(import.meta.dirname, "..", "db/migrations/9.52__bms_product_non_stock_policy.sql"),
+    "utf8"
+  );
+  const restore = shippedView.slice(
+    shippedView.indexOf("DROP VIEW IF EXISTS bms_order_stock_lines;"),
+    shippedView.indexOf("COMMENT ON VIEW")
+  );
+  assert.ok(restore.includes("<> 'NON_STOCK'"), "the restore text must be the shipped 9.52 view");
+
+  let outcome: string | null = null;
+  try {
+    await query(brokenLegacyBranch);
+    const sale = await createOrder({
+      tenantId,
+      channel: "pos",
+      locationId,
+      items: [{ sku: NS_MENU, size: SIZE, qty: 3 }],
+    } as any);
+    outcome = sale.status;
+    if (sale.status === "CREATED") await cancelOrder(tenantId, sale.orderId);
+  } catch (error) {
+    outcome = `THREW:${(error as Error).message}`;
+  } finally {
+    await query(restore);
+  }
+
+  assert.notEqual(outcome, "CREATED",
+    "without the 9.52 predicate a NON_STOCK menu must fail to sell — that is the bug it prevents");
+
+  // and the restored view is the shipped one again
+  const sane = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [{ sku: NS_MENU, size: SIZE, qty: 1 }],
+  } as any);
+  assert.equal(sane.status, "CREATED", "restoring the shipped view must make the sale work again");
+  if (sane.status === "CREATED") await cancelOrder(tenantId, sane.orderId);
+});
+
+test("a mixed bill returns the DIRECT line only — NON_STOCK was never deducted", async () => {
+  const before = await reserved(EGG);
+  const sale = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [
+      { sku: NS_MENU, size: SIZE, qty: 2 },
+      { sku: EGG, size: SIZE, qty: 4 },
+    ],
+  } as any);
+  assert.equal(sale.status, "CREATED", JSON.stringify(sale));
+  if (sale.status !== "CREATED") return;
+  assert.equal(await reserved(EGG), before + 4, "the DIRECT line reserves normally");
+  assert.equal(await reserved(NS_MENU), 0, "the NON_STOCK line reserves nothing");
+
+  assert.equal(await cancelOrder(tenantId, sale.orderId), true);
+  assert.equal(await reserved(EGG), before, "cancelling returns only what was actually taken");
+  assert.equal(await reserved(NS_MENU), 0);
+  assert.equal(await onHand(NS_MENU), 0, "nothing may be credited back to a NON_STOCK menu");
+});
+
+test("a NON_STOCK menu sold on a plain retail register still reaches the kitchen board", async () => {
+  await upsertStoreCapability(tenantId, { capability: "KITCHEN_WORKFLOW", enabled: true });
+  const sale = await createOrder({
+    tenantId, channel: "pos", locationId,
+    items: [{ sku: NS_MENU, size: SIZE, qty: 1 }],
+  } as any);
+  assert.equal(sale.status, "CREATED", JSON.stringify(sale));
+  if (sale.status !== "CREATED") return;
+
+  const client = await getClient();
+  let created = 0;
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorUserId });
+    created = await enqueueKitchenTicketsInTx(client, tenantId, sale.orderId);
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+  assert.equal(created, 1, "the cook still has to cook it — a NON_STOCK menu needs a ticket");
+
+  const tickets = await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_kitchen_tickets WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, sale.orderId]
+  );
+  assert.equal(Number(tickets.rows[0].n), 1);
+  assert.equal(await cancelOrder(tenantId, sale.orderId), true);
+});
+
+test("a NON_STOCK menu can be upgraded to RECIPE later without losing data", async () => {
+  await upsertProductRecipe(tenantId, {
+    productSku: NS_MENU,
+    size: SIZE,
+    active: true,
+    items: [{ sku: RICE, size: SIZE, qty: 150 }],
+  });
+  await upsertProductStockPolicy(tenantId, {
+    productSku: NS_MENU,
+    stockPolicy: "RECIPE",
+    baseUnit: "PORTION",
+    kitchenStation: "HOT",
+  });
+  const policy = (await query<{ stock_policy: string }>(
+    `SELECT stock_policy FROM bms_product_stock_policies
+      WHERE tenant_id = $1 AND product_sku = $2`,
+    [tenantId, NS_MENU]
+  )).rows[0];
+  assert.equal(policy.stock_policy, "RECIPE", "no leftover recipe/modifier guard may block the upgrade");
+
+  const rice = await reserved(RICE);
+  const sale = await createOrder({
+    tenantId, channel: "pos", locationId,
+    items: [{ sku: NS_MENU, size: SIZE, qty: 2 }],
+  } as any);
+  assert.equal(sale.status, "CREATED", JSON.stringify(sale));
+  if (sale.status !== "CREATED") return;
+  assert.equal(await reserved(RICE), rice + 300, "after the upgrade it consumes ingredients");
+  assert.equal(await cancelOrder(tenantId, sale.orderId), true);
+
+  // No revert here: upsertProductStockPolicy deliberately refuses to leave RECIPE while an
+  // active recipe exists, so this upgrade test must be the last one to touch NS_MENU.
+});
+
 test("teardown the throwaway tenant", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -526,6 +783,7 @@ test("teardown the throwaway tenant", async () => {
     "bms_order_item_stock_consumption", "bms_order_items", "bms_order_discounts", "bms_orders",
     "bms_stock_movements", "bms_product_modifier_items", "bms_product_modifiers",
     "bms_product_recipe_items", "bms_product_recipes", "bms_product_stock_policies",
+    "bms_product_variants", "bms_product_sales_surfaces",
     "bms_inventory", "bms_products", "bms_store_capabilities", "bms_store_profile",
     "bms_locations", "bms_customers", "users",
   ]) {

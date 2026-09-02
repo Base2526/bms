@@ -3,7 +3,7 @@ import { beginTenantTx } from "./tenant";
 import { getProductReadinessInTx } from "./productConfiguration";
 
 export const PRODUCT_STOCK_POLICIES = [
-  "DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED",
+  "DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK",
 ] as const;
 export type ProductStockPolicyCode = typeof PRODUCT_STOCK_POLICIES[number];
 
