@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
+import { listPrimaryProductImages } from "./products";
 import {
   afterOrderCancellationCommitted,
   cancelOrderInTx,
@@ -169,6 +170,84 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
       } : null,
     })),
   };
+}
+
+// รายการที่ "ขายให้ลูกค้าที่โต๊ะได้" สำหรับกริดเลือกสั่งอาหาร (แทนการพิมพ์ค้นหาทุกครั้ง)
+//
+// **ห้ามกรองด้วย stock_policy = 'RECIPE'** — เหตุผลเดียวกันกับตั๋วครัวใน
+// sendRestaurantKitchenRound: น้ำเปล่า/เบียร์/ของหวานสำเร็จรูปเป็น DIRECT ไม่มีสูตร
+// กรอง RECIPE = ของพวกนั้นสั่งไม่ได้เลย และร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลยจะเห็น
+// กริดว่างทั้งที่มีของขายอยู่ ซึ่งอ่านได้ว่า "ระบบพัง"
+//
+// สิ่งที่ต้องซ่อนคือ **วัตถุดิบ** และวัตถุดิบนิยามได้จากข้อมูล ไม่ต้องพึ่งหมวดหมู่ที่คนพิมพ์เอง:
+// มันคือของที่ถูกสูตร/ตัวเลือกอื่นกินเข้าไป (อยู่ใน recipe_items หรือ modifier_items)
+// หมูสับจึงหาย แต่น้ำเปล่าที่ไม่ได้เป็นส่วนประกอบของอะไรยังอยู่
+// ของที่เป็นทั้งวัตถุดิบและขายเดี่ยว (เช่นไข่ดาวขายแยก) จะถูกซ่อนด้วย — ยอมรับค่าเริ่มต้นที่
+// ปลอดภัยกว่า แล้วให้ช่องพิมพ์ค้นหาที่หน้าจอเป็นทางไปถึงของที่ไม่อยู่ในกริด
+//
+// `price > 0` ปิดช่องที่เหลือ: วัตถุดิบที่ยังไม่มีสูตรไหนใช้ (เพิ่งเพิ่มเข้ามา) ไม่เข้าเงื่อนไข
+// "เป็นส่วนประกอบ" จึงยังหลุดเข้ากริด · ร้านตั้งราคาวัตถุดิบเป็น 0 เพราะไม่ได้ขายแยกอยู่แล้ว
+// และของที่ขายที่โต๊ะต้องมีราคา การปล่อยแถว ฿0 ขึ้นกริด = เปิดทางให้กดขายอาหารฟรี
+//
+// ไม่ใช้ inStockOnly แบบ listSellableProducts เพราะเมนู RECIPE ไม่ถือสต็อกของตัวเอง
+// (แถว bms_inventory ของมันค้างที่ 0 ตลอด — ของจริงเช็คจากวัตถุดิบตอนสั่ง) กรองด้วยจะ
+// ทำให้เมนูทุกตัวหายจากกริดเงียบ ๆ
+export async function listRestaurantMenu(tenantId: string, locationId: string) {
+  await requireRestaurantTenant(tenantId);
+  const res = await query<{
+    sku: string;
+    name: string;
+    price: string;
+    kitchen_station: string | null;
+    has_modifiers: boolean;
+    sizes: Array<{ size: string; available: number }> | null;
+  }>(
+    `SELECT p.sku, p.name, p.price, sp.kitchen_station,
+            EXISTS (
+              SELECT 1 FROM bms_product_modifiers m
+               WHERE m.tenant_id = p.tenant_id AND m.product_sku = p.sku AND m.active
+            ) AS has_modifiers,
+            (SELECT jsonb_agg(jsonb_build_object(
+                'size', i.size, 'available', (i.current_stock - i.reserved_stock)
+              ) ORDER BY i.size)
+               FROM bms_inventory i
+              WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                AND i.location_id = $2
+            ) AS sizes
+       FROM bms_products p
+       LEFT JOIN bms_product_stock_policies sp
+         ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.active AND p.price > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_product_recipe_items ri
+            JOIN bms_product_recipes r
+              ON r.tenant_id = ri.tenant_id AND r.id = ri.recipe_id AND r.active
+           WHERE ri.tenant_id = p.tenant_id AND ri.component_sku = p.sku
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_product_modifier_items mi
+            JOIN bms_product_modifiers m
+              ON m.tenant_id = mi.tenant_id AND m.id = mi.modifier_id AND m.active
+           WHERE mi.tenant_id = p.tenant_id AND mi.component_sku = p.sku
+        )
+      ORDER BY sp.kitchen_station NULLS LAST, p.name`,
+    [tenantId, locationId]
+  );
+  const skus = res.rows.map((row) => row.sku);
+  const images = await listPrimaryProductImages(tenantId, skus);
+  return res.rows.map((row) => {
+    const sizes = row.sizes ?? [];
+    return {
+      sku: row.sku,
+      name: row.name,
+      price: Number(row.price),
+      kitchenStation: row.kitchen_station,
+      hasModifiers: row.has_modifiers,
+      availableSizes: sizes,
+      availableTotal: sizes.reduce((sum, s) => sum + Math.max(0, Number(s.available)), 0),
+      imageUrl: images.get(row.sku) ?? null,
+    };
+  });
 }
 
 export async function createDefaultRestaurantFloor(input: {

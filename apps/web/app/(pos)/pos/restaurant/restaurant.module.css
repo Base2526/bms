@@ -154,6 +154,31 @@
 .menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .menuResult small { color: var(--ink-2); }
 
+/* กริดเลือกเมนู — แตะเลือกได้ทันทีแทนต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู */
+.catRow { display: flex; gap: 6px; padding: 0 12px 10px; flex-wrap: wrap; }
+.catChip {
+  border: 1px solid var(--line-2); background: var(--panel); border-radius: 20px; padding: 6px 12px;
+  font: inherit; font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+}
+.catChipActive { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.menuGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; padding: 0 12px 12px; }
+.menuCard {
+  position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel);
+  cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden;
+}
+.menuCard:hover { border-color: var(--ink-3); }
+.menuPhoto { height: 52px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; }
+.menuPhoto img { width: 100%; height: 100%; object-fit: cover; }
+.menuInfo { padding: 7px 9px 9px; }
+.menuName { font-size: 12.5px; font-weight: 600; line-height: 1.3; margin-bottom: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.menuPrice { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.menuBadge {
+  position: absolute; top: 5px; right: 5px; background: var(--accent); color: white; font-size: 11px; font-weight: 700;
+  min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px;
+}
+.menuModHint { position: absolute; bottom: 5px; right: 6px; font-size: 9.5px; color: var(--ink-3); }
+.menuEmpty { padding: 20px 12px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
 .items { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; overflow-y: auto; flex: 1; }
 .roundLabel { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .03em; text-transform: uppercase; padding: 8px 0 2px; }
 .item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 9px; align-items: start; border: 1px solid var(--line-2); border-radius: 6px; padding: 9px 10px; }

@@ -275,7 +275,33 @@ test("dine-in kitchen tickets cover every sent line and follow the store capabil
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   assert.match(restaurant, /isCapabilityEnabledInTx\(client, input\.tenantId, "KITCHEN_WORKFLOW"\)/);
   // บิลโต๊ะทุกบรรทัดคือของที่ต้องเสิร์ฟ — กรอง RECIPE = น้ำ/เบียร์/ของหวานไม่ขึ้นจอครัว
-  assert.doesNotMatch(restaurant, /stock_policy = 'RECIPE'/);
+  // ตัดมาเฉพาะเส้นทางส่งครัว: กฎนี้พูดถึงการออกตั๋ว ไม่ใช่ทั้งไฟล์ (เดิมเช็คทั้งไฟล์ได้เพราะ
+  // มีที่เดียวที่เอ่ยถึง RECIPE — พอ listRestaurantMenu เกิดขึ้นก็ต้องระบุขอบเขตให้ตรงกฎ)
+  const send = restaurant.slice(
+    restaurant.indexOf("export async function sendRestaurantKitchenRound"),
+    restaurant.indexOf("export async function moveRestaurantCheck")
+  );
+  assert.ok(send.length > 0, "หา sendRestaurantKitchenRound ไม่เจอ");
+  assert.doesNotMatch(send, /stock_policy = 'RECIPE'/);
+});
+
+test("the dine-in menu grid hides raw materials without filtering by RECIPE", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const menu = restaurant.slice(
+    restaurant.indexOf("export async function listRestaurantMenu"),
+    restaurant.indexOf("export async function createDefaultRestaurantFloor")
+  );
+  assert.ok(menu.length > 0, "หา listRestaurantMenu ไม่เจอ");
+  // เหตุผลเดียวกับตั๋วครัว: ของที่ขายเป็นชิ้น (น้ำ/ของหวาน) ไม่มีสูตร กรอง RECIPE แล้วสั่งไม่ได้
+  // และร้านที่ยังไม่ผูกสูตรจะเห็นกริดว่างทั้งที่มีของขาย
+  assert.doesNotMatch(menu, /stock_policy = 'RECIPE'/);
+  // วัตถุดิบถูกซ่อนด้วย "เป็นส่วนประกอบของสูตร/ตัวเลือกอื่น" ไม่ใช่หมวดหมู่ที่คนพิมพ์เอง
+  assert.match(menu, /NOT EXISTS[\s\S]*bms_product_recipe_items/);
+  assert.match(menu, /NOT EXISTS[\s\S]*bms_product_modifier_items/);
+  // วัตถุดิบที่ยังไม่มีสูตรไหนใช้ต้องไม่หลุดเข้ากริดมาให้กดขายฟรี
+  assert.match(menu, /p\.price > 0/);
+  // ต้องผูกสาขา ไม่งั้นยอดคงเหลือมาจากสาขาอื่น
+  assert.match(menu, /i\.location_id = \$2/);
 });
 
 test("kitchen board accepts tickets without an order id and stays branch-aware", async () => {
