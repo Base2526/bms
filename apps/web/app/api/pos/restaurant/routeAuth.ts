@@ -10,7 +10,7 @@ export async function authenticateRestaurantRead(req: NextRequest) {
 export async function authenticateRestaurantMutation(
   req: NextRequest,
   body: Record<string, unknown>,
-  permission: string
+  permission: string | readonly string[]
 ) {
   const read = await authenticateRestaurantRead(req);
   if (!read.ok) return read;
@@ -24,8 +24,12 @@ export async function authenticateRestaurantMutation(
       : "PIN ไม่ถูกต้อง";
     return { ok: false as const, status: 403, error };
   }
-  if (!(await cashierHasPermission(read.device.tenantId, actor.userId, permission))) {
-    return { ok: false as const, status: 403, error: `ไม่มีสิทธิ์ ${permission}` };
+  const acceptedPermissions = typeof permission === "string" ? [permission] : [...permission];
+  const permissionChecks = await Promise.all(acceptedPermissions.map((value) =>
+    cashierHasPermission(read.device.tenantId, actor.userId, value)
+  ));
+  if (!permissionChecks.some(Boolean)) {
+    return { ok: false as const, status: 403, error: `ไม่มีสิทธิ์ ${acceptedPermissions.join(" หรือ ")}` };
   }
   const shift = await getOpenPosShift(read.device.tenantId, read.device.id);
   if (!shift) return { ok: false as const, status: 409, error: "ต้องเปิดกะของเครื่องนี้ก่อน" };

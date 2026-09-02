@@ -68,9 +68,9 @@ function mapCheckItem(row: CheckItemRow) {
     sentAt: row.sent_at ? iso(row.sent_at) : null,
     // สถานะของตั๋วในครัวสำหรับบรรทัดนี้ (NEW/PREPARING/READY/SERVED/CANCELLED)
     //
-    // **ต้องส่งออกไปให้หน้าขายเห็น** เพราะการยกเลิกตั๋วบนจอครัวไม่ลบรายการออกจากบิล
-    // และไม่ลด amount_due โดยตั้งใจ (เป็นการแก้บิล ต้อง void) แต่ก่อนหน้านี้ไม่มีจอไหน
-    // บอกเลยว่าครัวยกเลิกไปแล้ว → ตั๋วหายจากกระดานครัว ส่วนแคชเชียร์ยังเก็บเงินค่าอาหาร
+    // **ต้องส่งออกไปให้หน้าขายเห็น** เพราะเมื่อบิลยัง OPEN การยกเลิกตั๋วจะตัดบรรทัด
+    // ออกจากยอดให้ แต่ถ้าบิลกำลังคิดเงินหรือปิดแล้ว service แตะยอดไม่ได้ ตั๋วยังหายจาก
+    // กระดานครัวได้และหน้าขายต้องบอกชัดว่ารายการนั้นยังถูกคิดเงินอยู่
     // ที่ไม่ได้ทำ · ค่านี้เป็น null ได้เมื่อบรรทัดยังไม่ถูกส่งครัว หรือร้านปิดคิวครัวไว้
     kitchenStatus: row.kitchen_status ?? null,
   };
@@ -910,6 +910,10 @@ export async function cancelRestaurantCheck(input: {
   reason: string;
   approvedByUserId?: string | null;
 }) {
+  // Route บังคับช่องนี้อยู่แล้ว แต่ service เป็น boundary ของ business rule และอาจมี caller ใหม่
+  // ในอนาคต จึงต้อง fail closed ที่นี่ด้วย ไม่ให้บิล CANCELLED โดยไม่มีคำอธิบายใน note/audit
+  const cancellationNote = String(input.reason ?? "").trim().slice(0, 300);
+  if (!cancellationNote) throw new Error("ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร");
   return withCheckLock(input.tenantId, input.checkId, async () => {
     const client = await getClient();
     let releasedOrderId: string | null = null;
@@ -982,14 +986,14 @@ export async function cancelRestaurantCheck(input: {
                 settlement_attempt_id = NULL, settlement_started_at = NULL,
                 note = concat_ws(E'\n', note, $4::text), updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','CLOSING')`,
-        [input.tenantId, input.checkId, input.actorUserId, `ยกเลิก: ${input.reason.trim().slice(0, 300)}`]
+        [input.tenantId, input.checkId, input.actorUserId, `ยกเลิก: ${cancellationNote}`]
       );
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.check_cancel',$3,$4::jsonb)`,
         [input.tenantId, `user:${input.actorUserId}`, input.checkId,
           JSON.stringify({
-            reason: input.reason.trim().slice(0, 300),
+            reason: cancellationNote,
             approvedByUserId: input.approvedByUserId ?? null,
           })]
       );

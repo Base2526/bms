@@ -442,15 +442,19 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   (`MODIFIER_REQUIRES_RECIPE`) rather than charging the surcharge while silently skipping the
   configured ingredient movement.
 - **Restaurant work has its own permissions (`9.45`).** `restaurant.floor.manage` creates the branch
-  floor, `restaurant.kitchen.update` moves a kitchen ticket (the REST route *and* the
-  `/admin/kitchen` board), `restaurant.check.cancel` cancels a whole check; opening, adding, sending,
-  moving and settling stay on `pos.sell`. Do not go back to `pos.device.manage` or `order.ship` — a
-  permission that names a different job cannot be granted or withheld honestly.
+  floor and `restaurant.kitchen.update` moves a kitchen ticket (the REST route *and* the
+  `/admin/kitchen` board). The order taker holding `pos.sell` may initiate whole-check cancellation,
+  but must leave a non-empty cancellation note; after any kitchen send/reservation, a different
+  person with `pos.void` must still approve it. Opening, adding, sending, moving and settling also
+  stay on `pos.sell`. Do not go back to `pos.device.manage` or `order.ship` — a permission that names
+  a different job cannot be granted or withheld honestly.
 - **The kitchen display polls; it is not an event queue.** The register KDS refreshes its
   branch-scoped queue every five seconds while that screen is visible, and `/admin/kitchen` keeps its
   bounded ten-second poll. A failed poll shows stale data and never invents a state transition.
-  Cancelling a ticket stops the cooking; it does not remove the line from the bill or release its
-  stock — that is a check edit, and once the round is sent it needs a void.
+  Cancelling a dine-in ticket while its check is still `OPEN` also marks that check line cancelled
+  and rebuilds the remaining reservation in the same transaction, so the customer is not charged
+  for food the kitchen cancelled. A ticket cancelled after settlement has started or completed
+  cannot rewrite the bill and must be handled through the normal refund/adjustment workflow.
 - **Not built, and not to be faked**: split/merge of checks across tables (splitting *payment* is
   supported), QR self-ordering, reservations/queue numbers, per-station printer routing,
   offline-first sync, and delivery-aggregator integrations.

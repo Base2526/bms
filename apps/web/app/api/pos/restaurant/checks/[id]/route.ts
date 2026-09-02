@@ -31,7 +31,9 @@ async function handleGET(req: NextRequest, { params }: RouteContext) {
 async function handlePOST(req: NextRequest, { params }: RouteContext) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const action = String(body.action ?? "").trim().toLowerCase();
-  const permission = action === "cancel" ? "restaurant.check.cancel" : "pos.sell";
+  // คนที่รับออร์เดอร์อยู่แล้วเป็นผู้เริ่มยกเลิกบิลได้ ไม่ต้องรอ Manager มาเป็น operator
+  // ของคำขอ แต่บิลที่ส่งครัว/จอง stock แล้วจะยังต้องมีคนที่สองซึ่งถือ pos.void อนุมัติด้านล่าง
+  const permission = action === "cancel" ? ["pos.sell", "restaurant.check.cancel"] as const : "pos.sell";
   const auth = await authenticateRestaurantMutation(req, body, permission);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const common = {
@@ -85,7 +87,7 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
   }
   if (action === "cancel") {
     const reason = String(body.reason ?? "").trim();
-    if (!reason) return NextResponse.json({ error: "ต้องระบุเหตุผลที่ยกเลิกบิล" }, { status: 400 });
+    if (!reason) return NextResponse.json({ error: "ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร" }, { status: 400 });
     const check = await getRestaurantCheck(auth.device.tenantId, params.id, auth.device.locationId);
     if (!check) return NextResponse.json({ error: "ไม่พบบิลโต๊ะ" }, { status: 404 });
 

@@ -1319,7 +1319,7 @@ const TH: ManualContent = {
     "คืนเงิน: order.return, payment.refund, pos.return.noreceipt, pos.void",
     "เงินและค่าใช้จ่าย: pos.cash.movement, pos.nosale, pos.expense.create, pos.expense.personal, pos.petty_cash.manage",
     "มัดจำ/รับของ/ภาษี/commission: pos.deposit.take, pos.deposit.cancel, purchase.receive, tax.setting.manage, commission.view, commission.manage",
-    "ร้านอาหาร (/pos/restaurant): เปิดโต๊ะ/สั่ง/ส่งครัว/ย้ายโต๊ะ/เก็บเงินใช้ pos.sell ตามปกติ; สร้างผังโต๊ะใช้ restaurant.floor.manage, เดินสถานะตั๋วครัวใช้ restaurant.kitchen.update, ยกเลิกทั้งบิลใช้ restaurant.check.cancel",
+    "ร้านอาหาร (/pos/restaurant): ผู้รับออร์เดอร์ที่มี pos.sell เปิดโต๊ะ/สั่ง/ส่งครัว/ย้ายโต๊ะ/เก็บเงินและเริ่มยกเลิกทั้งบิลได้ โดยการยกเลิกต้องลง Note เหตุผลทุกครั้ง; หลังส่งครัวต้องมีคนที่สองซึ่งมี pos.void อนุมัติ ส่วนสร้างผังโต๊ะใช้ restaurant.floor.manage และเดินสถานะตั๋วครัวใช้ restaurant.kitchen.update",
   ],
   posBoundariesTitle: "ขอบเขตที่ต้องรู้ก่อนสอนทีม",
   posBoundaries: [
@@ -2464,7 +2464,7 @@ const EN: ManualContent = {
     "Returns and refunds: order.return, payment.refund, pos.return.noreceipt, pos.void",
     "Cash and expenses: pos.cash.movement, pos.nosale, pos.expense.create, pos.expense.personal, pos.petty_cash.manage",
     "Deposits/receiving/tax/commission: pos.deposit.take, pos.deposit.cancel, purchase.receive, tax.setting.manage, commission.view, commission.manage",
-    "Restaurant (/pos/restaurant): opening, ordering, sending to the kitchen, moving tables and settling stay on pos.sell; creating the floor needs restaurant.floor.manage, moving a kitchen ticket needs restaurant.kitchen.update, cancelling a whole check needs restaurant.check.cancel",
+    "Restaurant (/pos/restaurant): an order taker with pos.sell can open, order, send, move, settle, and initiate whole-check cancellation; every cancellation requires a note, and a sent/reserved check still needs a distinct pos.void approver. Floor setup needs restaurant.floor.manage and kitchen-ticket transitions need restaurant.kitchen.update",
   ],
   posBoundariesTitle: "Boundaries to explain during training",
   posBoundaries: [

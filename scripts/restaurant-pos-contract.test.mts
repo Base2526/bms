@@ -83,7 +83,9 @@ test("restaurant writes require device, PIN and permission at the route boundary
   assert.match(auth, /verifyCashierPin/);
   assert.match(auth, /cashierHasPermission/);
   assert.match(auth, /getOpenPosShift/);
-  assert.match(checks, /action === "cancel" \? "restaurant\.check\.cancel" : "pos\.sell"/);
+  // ผู้ที่รับออร์เดอร์ด้วย pos.sell ต้องเป็นคนเริ่ม cancel ได้เอง โดยสิทธิ์เฉพาะเดิมยังใช้ได้
+  assert.match(checks, /action === "cancel" \? \["pos\.sell", "restaurant\.check\.cancel"\] as const : "pos\.sell"/);
+  assert.match(auth, /permissionChecks\.some\(Boolean\)/);
   assert.match(checks, /parsePosPayments/);
   assert.doesNotMatch(checks, /tenantId\s*:\s*body/);
   // สาขามาจากตัวเครื่องเสมอ — ทุก action ที่แตะบิลต้องได้ locationId ผ่าน `common`
@@ -105,6 +107,19 @@ test("cancelling a sent restaurant check requires a distinct pos.void approver",
   assert.match(page, /person\.approvals\.includes\("pos\.void"\)/);
   assert.match(page, /approverUserId: cancelNeedsApproval \? cancelApproverId : null/);
   assert.doesNotMatch(page, /window\.prompt/);
+});
+
+test("the order taker must leave a cancellation note at both route and service boundaries", async () => {
+  const route = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+
+  assert.match(route, /if \(!reason\).*ต้องระบุ Note/);
+  assert.match(restaurant, /const cancellationNote = String\(input\.reason \?\? ""\)\.trim\(\)\.slice\(0, 300\)/);
+  assert.match(restaurant, /if \(!cancellationNote\) throw new Error/);
+  assert.match(restaurant, /`ยกเลิก: \$\{cancellationNote\}`/);
+  assert.match(restaurant, /reason: cancellationNote/);
+  assert.match(page, /Note \/ เหตุผลที่ยกเลิก \(จำเป็น\)/);
 });
 
 test("restaurant checkout reuses atomic POS settlement and suppresses duplicate kitchen tickets", async () => {
