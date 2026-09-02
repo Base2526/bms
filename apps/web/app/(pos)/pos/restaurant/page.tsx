@@ -16,7 +16,7 @@ type Session = { device: { id: string; code: string; name: string | null }; loca
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
-type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
+type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & { kitchenStation: string | null; hasModifiers: boolean; imageUrl: string | null };
@@ -213,7 +213,11 @@ export default function RestaurantPosPage() {
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
   // ครัวกดยกเลิกตั๋วแล้ว แต่บรรทัดยังอยู่ในบิลและยังถูกคิดเงิน (ตั้งใจ — การแก้บิลต้อง void)
   // ถ้าไม่บอกที่จอนี้ แคชเชียร์จะเก็บเงินค่าอาหารที่ครัวไม่ได้ทำ โดยที่ตั๋วก็หายจากกระดานครัวไปแล้ว
-  const kitchenCancelled = check?.items.filter((item) => item.kitchenStatus === "CANCELLED") ?? [];
+  // ตัดออกจากยอดเรียบร้อยแล้ว — โชว์ไว้ให้ตอบลูกค้าได้ว่าจานนั้นหายไปไหน ไม่ใช่คำเตือน
+  const kitchenDropped = check?.items.filter((item) => item.status === "CANCELLED") ?? [];
+  // ครัวยกเลิกตอนบิลไม่ได้เปิดอยู่ (กำลังคิดเงิน/ปิดแล้ว) → ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
+  const kitchenCancelled = check?.items.filter((item) =>
+    item.status !== "CANCELLED" && item.kitchenStatus === "CANCELLED") ?? [];
   // จำนวนที่อยู่ในบิลแล้วต่อเมนู ไว้ขึ้นเป็น badge บนการ์ด — นับ "จำนวนของ" ไม่ใช่เงิน
   // (ยอดเงินยังมาจาก check.amountDue ของ server เท่านั้น) · ใช้ for ไม่ใช่ reduce
   // เพราะเทสห้ามรูปแบบ items.reduce( ทั้งไฟล์เพื่อกันการรวมยอดเองที่จอ
@@ -226,7 +230,7 @@ export default function RestaurantPosPage() {
     // กำลังมา แล้วคนกดจะไม่กดสั่งใหม่ให้ลูกค้า
     const counts = new Map<string, number>();
     for (const item of check?.items ?? []) {
-      if (item.kitchenStatus === "CANCELLED") continue;
+      if (item.status === "CANCELLED" || item.kitchenStatus === "CANCELLED") continue;
       counts.set(item.sku, (counts.get(item.sku) ?? 0) + Number(item.packQty ?? 0));
     }
     return counts;
@@ -640,21 +644,29 @@ export default function RestaurantPosPage() {
             {check.items.length === 0 && <div className={styles.empty}><p>แตะการ์ดเมนูทางซ้ายเพื่อเริ่มรับออร์เดอร์</p></div>}
             {itemGroups.map((group) => <Fragment key={group.key}>
               <div className={styles.roundLabel}>{group.label}</div>
-              {group.items.map((item) => <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""} ${item.kitchenStatus === "CANCELLED" ? styles.itemKitchenCancelled : ""}`} key={item.id}>
-                <span className={styles.itemQty}>{item.packQty}</span>
-                <span>
-                  <span className={styles.itemName}>{item.productName}</span>
-                  <span className={styles.itemMeta}>{[item.size !== "-" ? item.size : null, item.unitName, ...item.modifierNames].filter(Boolean).join(" · ")}</span>
-                  {item.kitchenNote && <span className={styles.itemNote}>โน้ตครัว: {item.kitchenNote}</span>}
-                  {item.kitchenStatus === "CANCELLED" && <span className={styles.itemCancelTag}>ครัวยกเลิกรายการนี้ — ยังคิดเงินอยู่</span>}
-                </span>
-                <span className={styles.itemSide}>
-                  {/* ราคาต่อหน่วยที่ server บันทึกไว้ตอนเพิ่มรายการ — ห้ามคูณ/รวมเองที่จอ
-                      เพราะตัวเลือกมีส่วนต่างราคาที่ถูกคิดฝั่ง server ตอนส่งครัว */}
-                  {item.packPrice != null && <span className={styles.itemPrice} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
-                  {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
-                </span>
-              </article>)}
+              {group.items.map((item) => {
+                // สองสถานะที่ต้องแยกให้ชัด ห้ามใช้คำเดียวกัน:
+                //  · status CANCELLED = ตัดออกจากยอดแล้ว (ครัวยกเลิกตอนบิลยังเปิด)
+                //  · ยัง SENT แต่ตั๋ว CANCELLED = ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
+                const dropped = item.status === "CANCELLED";
+                const stillCharged = !dropped && item.kitchenStatus === "CANCELLED";
+                return <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""} ${dropped ? styles.itemDropped : ""} ${stillCharged ? styles.itemKitchenCancelled : ""}`} key={item.id}>
+                  <span className={styles.itemQty}>{item.packQty}</span>
+                  <span>
+                    <span className={styles.itemName}>{item.productName}</span>
+                    <span className={styles.itemMeta}>{[item.size !== "-" ? item.size : null, item.unitName, ...item.modifierNames].filter(Boolean).join(" · ")}</span>
+                    {item.kitchenNote && <span className={styles.itemNote}>โน้ตครัว: {item.kitchenNote}</span>}
+                    {dropped && <span className={styles.itemDropTag}>ครัวยกเลิก — ตัดออกจากยอดแล้ว ไม่คิดเงิน</span>}
+                    {stillCharged && <span className={styles.itemCancelTag}>ครัวยกเลิกรายการนี้ — ยังคิดเงินอยู่</span>}
+                  </span>
+                  <span className={styles.itemSide}>
+                    {/* ราคาต่อหน่วยที่ server บันทึกไว้ตอนเพิ่มรายการ — ห้ามคูณ/รวมเองที่จอ
+                        เพราะตัวเลือกมีส่วนต่างราคาที่ถูกคิดฝั่ง server ตอนส่งครัว */}
+                    {item.packPrice != null && <span className={`${styles.itemPrice} ${dropped ? styles.itemPriceVoid : ""}`} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
+                    {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
+                  </span>
+                </article>;
+              })}
             </Fragment>)}
           </div>
 
@@ -663,6 +675,8 @@ export default function RestaurantPosPage() {
             {/* ปกติครัวยกเลิกแล้วบรรทัดจะหลุดจากบิลทันที เหลือค้างได้เฉพาะกรณีบิลไม่ได้เปิดอยู่
                 ตอนที่ครัวกด (กำลังคิดเงิน/ปิดแล้ว) ซึ่งแตะยอดที่ออกใบเสร็จไปแล้วไม่ได้ */}
             {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ครัวยกเลิก {kitchenCancelled.length} รายการ ตอนบิลไม่ได้เปิดอยู่</b> — ยอดด้านล่างยังรวมรายการนั้น ตัดออกอัตโนมัติไม่ได้ ต้องคืนเงินหรือแก้บิลตามปกติ</span></div>}
+            {/* อธิบายยอดที่ลดลงไว้ติดกับตัวยอด — ไม่ใช่คำเตือน จึงเป็นโทนเงียบ */}
+            {kitchenDropped.length > 0 && <div className={styles.dropNote}>ครัวยกเลิก {kitchenDropped.length} รายการ · ตัดออกจากยอดแล้ว (ยังเห็นในรายการด้านบนแบบขีดฆ่า)</div>}
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>

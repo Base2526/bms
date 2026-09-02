@@ -382,7 +382,14 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
           ORDER BY t.created_at DESC, t.id DESC
           LIMIT 1
        ) kt ON TRUE
-      WHERE ci.tenant_id = $1 AND ci.check_id = $2 AND ci.status <> 'CANCELLED'
+      WHERE ci.tenant_id = $1 AND ci.check_id = $2
+        -- บรรทัดที่ถูกยกเลิก "หลังส่งครัวแล้ว" ต้องยังโชว์อยู่บนแผงบิล ไม่ใช่หายไปเฉย ๆ
+        -- แล้วยอดลดลงโดยไม่มีอะไรอธิบาย · คนที่โต๊ะต้องตอบลูกค้าได้ว่าจานนั้นหายไปไหน
+        -- (จอแสดงเป็นขีดฆ่า + ไม่คิดเงิน · ยอดไม่รวมมันอยู่แล้วเพราะออร์เดอร์จองถูกสร้างใหม่)
+        --
+        -- บรรทัดที่แคชเชียร์ลบเองก่อนส่งครัว (sent_at IS NULL) ยังซ่อนตามเดิม — ไม่เคยถึงครัว
+        -- ไม่เคยอยู่ในยอด และคนลบก็รู้อยู่แล้วว่าลบอะไร การโชว์คือ noise
+        AND (ci.status <> 'CANCELLED' OR ci.sent_at IS NOT NULL)
       ORDER BY ci.created_at, ci.id`,
     [tenantId, checkId]
   );
