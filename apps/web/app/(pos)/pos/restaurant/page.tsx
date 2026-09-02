@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, ReloadOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, MoreOutlined, ReloadOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -178,6 +178,7 @@ export default function RestaurantPosPage() {
   const [operatorOpen, setOperatorOpen] = useState(false);
   const [guestOpen, setGuestOpen] = useState(false);
   const [guestEdit, setGuestEdit] = useState("2");
+  const [moreOpen, setMoreOpen] = useState(false);
   // Modal ของ antd portal ไป document.body โดยดีฟอลต์ ซึ่งอยู่นอก .page —
   // ตัวแปรสี/เส้นขอบทั้งหมด (--line, --panel, --ink, ...) ถูกประกาศไว้ที่ .page
   // เท่านั้น พอ modal portal ออกไปนอก scope นั้น border/background ของ input ในฟอร์ม
@@ -233,10 +234,6 @@ export default function RestaurantPosPage() {
     .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
     [floor.tables, tableKitchenStats]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
-  // ครัวกดยกเลิกตั๋วแล้ว แต่บรรทัดยังอยู่ในบิลและยังถูกคิดเงิน (ตั้งใจ — การแก้บิลต้อง void)
-  // ถ้าไม่บอกที่จอนี้ แคชเชียร์จะเก็บเงินค่าอาหารที่ครัวไม่ได้ทำ โดยที่ตั๋วก็หายจากกระดานครัวไปแล้ว
-  // ตัดออกจากยอดเรียบร้อยแล้ว — โชว์ไว้ให้ตอบลูกค้าได้ว่าจานนั้นหายไปไหน ไม่ใช่คำเตือน
-  const kitchenDropped = check?.items.filter((item) => item.status === "CANCELLED") ?? [];
   // ครัวยกเลิกตอนบิลไม่ได้เปิดอยู่ (กำลังคิดเงิน/ปิดแล้ว) → ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
   const kitchenCancelled = check?.items.filter((item) =>
     item.status !== "CANCELLED" && item.kitchenStatus === "CANCELLED") ?? [];
@@ -263,7 +260,7 @@ export default function RestaurantPosPage() {
   const checkMinutes = check ? minutesSince(check.openedAt) : null;
   // จัดกลุ่มรายการตามรอบครัว: ของที่ยังไม่ส่งอยู่ท้ายสุดเสมอ เพราะนั่นคือสิ่งที่ต้องกดต่อ
   const itemGroups = useMemo(() => {
-    if (!check) return [] as Array<{ key: string; label: string; items: CheckItem[] }>;
+    if (!check) return [] as Array<{ key: string; label: string; chip: string; items: CheckItem[] }>;
     const rounds = new Map<number, CheckItem[]>();
     const unsent: CheckItem[] = [];
     for (const item of check.items) {
@@ -271,12 +268,16 @@ export default function RestaurantPosPage() {
       const round = item.roundNo ?? 0;
       rounds.set(round, [...(rounds.get(round) ?? []), item]);
     }
+    // `chip` = รูปย่อของ label สำหรับกลุ่มที่มีรายการเดียว — รอบละหนึ่งจานเป็นเรื่องปกติ
+    // ของร้านอาหาร (ลูกค้าสั่งเพิ่มทีละอย่าง) หัวข้อเต็มบรรทัดต่อหนึ่งบรรทัดรายการทำให้
+    // ครึ่งหนึ่งของแผงเป็นหัวข้อ · กลุ่มที่มีหลายรายการยังใช้หัวข้อเหมือนเดิม
     const groups = [...rounds.entries()].sort((a, b) => a[0] - b[0]).map(([round, items]) => ({
       key: `round-${round}`,
       label: `รอบ ${round || 1} · ส่งครัวแล้ว${items[0]?.sentAt ? ` ${timeOf(items[0].sentAt)}` : ""}`,
+      chip: `รอบ ${round || 1}${items[0]?.sentAt ? ` · ${timeOf(items[0].sentAt)}` : ""}`,
       items,
     }));
-    if (unsent.length) groups.push({ key: "unsent", label: "ยังไม่ส่งครัว", items: unsent });
+    if (unsent.length) groups.push({ key: "unsent", label: "ยังไม่ส่งครัว", chip: "ยังไม่ส่งครัว", items: unsent });
     return groups;
   }, [check]);
   const operatorReady = Boolean(actorUserId && actorPin);
@@ -464,7 +465,7 @@ export default function RestaurantPosPage() {
   }
   async function cancelCheck() {
     if (!check) return;
-    if (!cancelReason.trim()) { message.error("ต้องระบุเหตุผลที่ยกเลิกบิล"); return; }
+    if (!cancelReason.trim()) { message.error("ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร"); return; }
     if (cancelNeedsApproval && (!cancelApproverId || !cancelApproverPin)) {
       message.error("บิลที่ส่งครัวแล้วต้องมีผู้อนุมัติคนที่สองกด PIN");
       return;
@@ -483,6 +484,7 @@ export default function RestaurantPosPage() {
       setCheck(null);
       setSelectedTableId("");
       await Promise.all([loadFloor(), loadTickets()]);
+      message.success("ยกเลิกบิลและบันทึก Note แล้ว");
     });
   }
   // เลื่อนสถานะตั๋ว — ต้องมีคำตอบที่จอทุกครั้ง เพราะตั๋วที่เลื่อนแล้วจะย้ายเลน (หรือหายไปเลย
@@ -659,7 +661,7 @@ export default function RestaurantPosPage() {
                   <span className={styles.catCount}>{menuItems.filter((item) => item.kitchenStation === stationName).length} เมนู</span>
                 </button>)}
               </div>}
-              {visibleMenuItems.length === 0
+              <div className={styles.panelScroll}>{visibleMenuItems.length === 0
                 ? <div className={styles.menuEmpty}>{menuItems.length === 0
                     ? "ยังไม่มีเมนูที่ขายที่โต๊ะได้ — สินค้าต้องเปิดขาย มีราคา และไม่ได้ถูกใช้เป็นวัตถุดิบของสูตรอื่น"
                     : "ไม่พบเมนูที่ตรงกับที่กรอง"}</div>
@@ -682,14 +684,14 @@ export default function RestaurantPosPage() {
                       </span>
                       {item.kitchenStation && <span className={styles.dishStation} style={{ background: tint.bg, color: tint.ink }}>{item.kitchenStation}</span>}
                     </button>;
-                  })}</div>}
+                  })}</div>}</div>
             </>}
         </> : floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>ยังไม่มีผังโต๊ะของสาขานี้</h2><p>เริ่มด้วยโซนหน้าร้านและโต๊ะ 12 ตัว</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>สร้างผังเริ่มต้น</button></div></div> : <>
           <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><span className={styles.livePill}>LIVE</span></div>
           <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
               สถานะอ่านจากแถบสีข้างการ์ด + ป้ายข้อความ (จุดสี 10px เดิมแยกไม่ออกจากระยะยืน) */}
-          <div className={styles.tableGrid}>{visibleTables.map((table) => {
+          <div className={styles.panelScroll}><div className={styles.tableGrid}>{visibleTables.map((table) => {
             const state = tableState(table, tableKitchenStats);
             const minutes = table.check ? minutesSince(table.check.openedAt) : null;
             return <button key={table.id} type="button" disabled={table.blocked} className={`${styles.tableCard} ${table.check ? styles[`state_${state.key}`] : styles.tableFree} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
@@ -702,26 +704,26 @@ export default function RestaurantPosPage() {
                 : `${table.seats} ที่นั่ง · ว่าง`}</span>
               {table.check && <span className={styles.tableAmount}><span className={styles.baht}>฿</span>{money(table.check.amountDue)}</span>}
             </button>;
-          })}</div>
+          })}</div></div>
 
         </>}</section>
         <aside className={styles.checkPanel}>{check ? <>
           {/* หัวแผง = ชื่อโต๊ะ + เวลาที่เปิด + งานที่ทำกับ "ทั้งบิล" (ย้ายมาไว้บนตามที่ออกแบบ
               เพราะสองปุ่มล่างต้องเหลือไว้ให้งานที่ทำบ่อยที่สุด: ส่งครัว กับ คิดเงิน) */}
           <div className={styles.checkHead}>
-            <h2>{check.tableName} · {check.guestCount} คน</h2>
-            <p>{check.areaName} · เปิดบิล {timeOf(check.openedAt)}{checkMinutes == null ? "" : ` · ${checkMinutes} นาที`}{lastRound ? ` · รอบล่าสุด ${lastRound}` : ""}</p>
-            <div className={styles.checkActions}>
-              <button type="button" className={styles.btn} onClick={() => { setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> ย้ายโต๊ะ</button>
-              <button type="button" className={styles.btn} onClick={() => { setGuestEdit(String(check.guestCount)); setGuestOpen(true); }}>แก้จำนวนคน</button>
-              <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={openCancel}>ยกเลิกบิล</button>
+            <div className={styles.checkHeadRow}>
+              <div className={styles.checkHeadText}>
+                <h2>{check.tableName} · {check.guestCount} คน</h2>
+                <p>{check.areaName} · เปิดบิล {timeOf(check.openedAt)}{checkMinutes == null ? "" : ` · ${checkMinutes} นาที`}{lastRound ? ` · รอบล่าสุด ${lastRound}` : ""}</p>
+              </div>
+              <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setMoreOpen(true)} title="จัดการบิลนี้ — ย้ายโต๊ะ · แก้จำนวนคน · ยกเลิกบิล" aria-label="จัดการบิลนี้"><MoreOutlined /></button>
             </div>
           </div>
 
           <div className={styles.items}>
             {check.items.length === 0 && <div className={styles.empty}><p>แตะการ์ดเมนูทางซ้ายเพื่อเริ่มรับออร์เดอร์</p></div>}
             {itemGroups.map((group) => <Fragment key={group.key}>
-              <div className={styles.roundLabel}>{group.label}</div>
+              {group.items.length > 1 && <div className={styles.roundLabel}>{group.label}</div>}
               {group.items.map((item) => {
                 // สองสถานะที่ต้องแยกให้ชัด ห้ามใช้คำเดียวกัน:
                 //  · status CANCELLED = ตัดออกจากยอดแล้ว (ครัวยกเลิกตอนบิลยังเปิด)
@@ -736,11 +738,21 @@ export default function RestaurantPosPage() {
                   <span className={styles.itemQty}>{item.packQty}</span>
                   <span>
                     <span className={styles.itemName}>{item.productName}</span>
-                    <span className={styles.itemMeta}>{[item.size !== "-" ? item.size : null, item.unitName, ...item.modifierNames].filter(Boolean).join(" · ")}</span>
+                    {/* ทุกอย่างที่ไม่ต้องลงมือทำอยู่บรรทัดเดียวกันหมด: ไซซ์ · หน่วย · ตัวเลือก ·
+                        รอบ (เฉพาะกลุ่มที่ไม่มีหัวข้อของตัวเอง) · และคำว่าถูกยกเลิกสำหรับบรรทัด
+                        ที่ตัดออกจากยอดแล้ว · "ยังไม่ส่งครัว" ไม่ต้องมีป้ายซ้ำ เพราะกรอบแดง +
+                        ข้อความในหัวข้อกลุ่ม/ชิป + คำเตือนท้ายแผง บอกไปแล้วสามทาง */}
+                    <span className={styles.itemMeta}>
+                      {[
+                        item.size !== "-" ? item.size : null,
+                        item.unitName,
+                        ...item.modifierNames,
+                        group.items.length > 1 ? null : group.chip,
+                      ].filter(Boolean).join(" · ")}
+                      {dropped && <b className={styles.itemDropMark}> · ครัวยกเลิก ไม่คิดเงิน</b>}
+                    </span>
                     {item.kitchenNote && <span className={styles.itemNote}>โน้ตครัว: {item.kitchenNote}</span>}
-                    {dropped && <span className={styles.itemDropTag}>ครัวยกเลิก — ตัดออกจากยอดแล้ว ไม่คิดเงิน</span>}
                     {stillCharged && <span className={styles.itemCancelTag}>ครัวยกเลิกรายการนี้ — ยังคิดเงินอยู่</span>}
-                    {item.status === "NEW" && <span className={styles.itemCancelTag}>ยังไม่ส่งครัว</span>}
                     {kitchenState && <span className={`${styles.itemKitchenTag} ${kitchenState.loud ? styles.itemKitchenTagLoud : ""}`} style={{ color: kitchenState.color }}>{kitchenState.label}</span>}
                   </span>
                   <span className={styles.itemSide}>
@@ -749,7 +761,7 @@ export default function RestaurantPosPage() {
                     {item.packPrice != null && <span className={`${styles.itemPrice} ${dropped ? styles.itemPriceVoid : ""}`} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
                     {/* สั่งซ้ำขึ้นเฉพาะบรรทัดที่ส่งครัวไปแล้วหรือถูกยกเลิก — บรรทัด NEW ยังแก้ได้
                         ที่การ์ดเมนูตรงหน้าอยู่แล้ว และช่องนี้เป็นที่ของปุ่มลบ */}
-                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain} title={`สั่ง ${item.productName} ซ้ำพร้อมตัวเลือกเดิม`} aria-label={`สั่ง ${item.productName} ซ้ำ`} disabled={working} onClick={() => void reorderLine(item)}><ReloadOutlined /> ซ้ำ</button>}
+                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain} title={`สั่ง ${item.productName} ซ้ำพร้อมตัวเลือกเดิม`} aria-label={`สั่ง ${item.productName} ซ้ำ`} disabled={working} onClick={() => void reorderLine(item)}><ReloadOutlined /></button>}
                     {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
                   </span>
                 </article>;
@@ -762,8 +774,6 @@ export default function RestaurantPosPage() {
             {/* ปกติครัวยกเลิกแล้วบรรทัดจะหลุดจากบิลทันที เหลือค้างได้เฉพาะกรณีบิลไม่ได้เปิดอยู่
                 ตอนที่ครัวกด (กำลังคิดเงิน/ปิดแล้ว) ซึ่งแตะยอดที่ออกใบเสร็จไปแล้วไม่ได้ */}
             {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ครัวยกเลิก {kitchenCancelled.length} รายการ ตอนบิลไม่ได้เปิดอยู่</b> — ยอดด้านล่างยังรวมรายการนั้น ตัดออกอัตโนมัติไม่ได้ ต้องคืนเงินหรือแก้บิลตามปกติ</span></div>}
-            {/* อธิบายยอดที่ลดลงไว้ติดกับตัวยอด — ไม่ใช่คำเตือน จึงเป็นโทนเงียบ */}
-            {kitchenDropped.length > 0 && <div className={styles.dropNote}>ครัวยกเลิก {kitchenDropped.length} รายการ · ตัดออกจากยอดแล้ว (ยังเห็นในรายการด้านบนแบบขีดฆ่า)</div>}
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
@@ -819,7 +829,14 @@ export default function RestaurantPosPage() {
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{lang === "en" ? "I consent to send this diagnostic bundle to Support." : "ยินยอมส่งข้อมูลวิเคราะห์ชุดนี้ให้ทีม Support"}</Checkbox>
     </Modal>
     <Modal title={`รับชำระ ${check?.tableName ?? ""}`} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText="ยืนยันรับเงิน" width={680} getContainer={modalContainer}>{check && <div className={styles.modalGrid}><div className={styles.total}><span>ยอดที่ต้องชำระ</span><strong><span className={styles.baht}>฿</span>{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>วิธีชำระ<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">เงินสด</option><option value="QR">QR / พร้อมเพย์</option><option value="CARD">บัตร</option></select></label><label>ยอดช่องทางนี้<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row))} /></label>{payment.method === "CASH" ? <label>เงินสดที่รับมา<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} /></label> : <label>เลขอ้างอิง<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <Button danger onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>ลบช่องทาง {index + 1}</Button>}</div>)}<Button type="dashed" onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>+ แบ่งชำระอีกช่องทาง</Button><Alert type={Math.abs(paymentTotal - checkoutDue) <= 0.009 ? "success" : "warning"} showIcon message={`รวม ฿${money(paymentTotal)} · ${paymentTotal < checkoutDue ? `เหลือ ฿${money(checkoutDue - paymentTotal)}` : paymentTotal > checkoutDue ? `เกิน ฿${money(paymentTotal - checkoutDue)}` : "ครบยอด"}`} /></div>}</Modal>
+    <Modal title={`จัดการบิล ${check?.tableName ?? ""}`} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
+      <div className={styles.sheetActions}>
+        <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> ย้ายโต๊ะ</button>
+        <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>แก้จำนวนคน</button>
+        <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { setMoreOpen(false); openCancel(); }}><CloseCircleOutlined /> ยกเลิกบิล</button>
+      </div>
+    </Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย" getContainer={modalContainer}><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
-    <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="ต้องให้ผู้มีสิทธิ์ยกเลิกบิลซึ่งเป็นคนละคนกับผู้ปฏิบัติงานกด PIN อนุมัติ" />}<label>เหตุผล<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>
+    <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="คนรับออร์เดอร์เริ่มยกเลิกได้ แต่ต้องให้ผู้มีสิทธิ์ pos.void ซึ่งเป็นคนละคนกด PIN อนุมัติ" />}<label>Note / เหตุผลที่ยกเลิก (จำเป็น)<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="เช่น ลูกค้าเปลี่ยนใจ เปิดผิดโต๊ะ หรือรับรายการผิด" /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>
   </main>;
 }

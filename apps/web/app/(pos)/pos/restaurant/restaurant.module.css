@@ -27,7 +27,12 @@
   --green: #256b4f;
   --green-bg: #e4f0e9;
   --grey: #6b756f;
-  min-height: 100vh;
+  /* แอปเต็มจอ ไม่ใช่เอกสาร — ทั้งสายเคยเป็น min-height ซึ่งไม่ได้จำกัดความสูง
+     กล่องจึงโตตามเนื้อหาไปเรื่อย ๆ แล้ว overflow:auto ของรายการในบิลไม่มีอะไรให้ล้น
+     ผลคือทั้งหน้าเลื่อนแทนที่จะเลื่อนเฉพาะรายการ · dvh ไม่ใช่ vh เพราะแถบเบราว์เซอร์
+     บนแท็บเล็ตกินความสูงจริง แล้วปุ่ม "คิดเงิน" จะตกใต้ขอบจอ */
+  height: 100vh;
+  height: 100dvh;
   color: var(--ink);
   background: var(--ground);
   font-family: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
@@ -36,12 +41,12 @@
 }
 /* เมนูนำทางเป็นแถบไอคอนแนวตั้งฝั่งซ้าย (ตามมอคอัพ) — คืนความกว้างแถวบนให้ชื่อร้าน
    กับปุ่มที่ใช้จริง และปลายนิ้วโป้งอยู่ขอบซ้ายตลอด ไม่ต้องเอื้อมขึ้นไปหัวจอ */
-.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); }
-.pagePlain { display: block; }
+.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); overflow: hidden; }
+.pagePlain { display: block; overflow: auto; }
 .rail {
   background: var(--panel); border-inline-end: 1px solid var(--line);
   display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0;
-  position: sticky; top: 0; align-self: start; height: 100dvh; overflow-y: auto;
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain;
 }
 .railMark {
   width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: white;
@@ -71,7 +76,7 @@
 .railBtnActive .railBadge { background: rgba(255, 255, 255, .28); }
 .railHelpSlot { margin-top: auto; width: 100%; display: flex; justify-content: center; padding: 8px 0 2px; }
 
-.shell { display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
+.shell { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
 /* antd Spin แทรก wrapper สองชั้นระหว่าง shell กับเนื้อหา ถ้าไม่ต่อ flex ให้ทะลุ
    แผงบิลจะสูงเท่าเนื้อหา แล้วปุ่ม "ส่งครัว/คิดเงิน" ไปลอยกลางจอแทนที่จะติดขอบล่าง */
 .floorWrap,
@@ -79,7 +84,7 @@
 .shell :global(.ant-spin-container) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
 /* ---------- แถบบน: หนึ่งแถว ---------- */
-.topbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.topbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; margin-inline-end: auto; }
 .brandMark { width: 34px; height: 34px; border-radius: 5px; background: var(--accent); color: white; display: grid; place-items: center; font-weight: 700; font-size: 17px; flex: none; }
 .title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.2; }
@@ -101,6 +106,7 @@
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
 .strip {
+  flex: none;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px;
   padding: 8px 14px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 14px;
 }
@@ -112,13 +118,18 @@
 
 /* ---------- พื้นที่ทำงาน ---------- */
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 360px; flex: 1; min-height: 0; }
-.panel { padding: 12px; border-inline-end: 1px solid var(--line); min-width: 0; }
-.panelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+/* ⚠️ min-height: 0 ต้องมีทั้งสองคอลัมน์ — grid item ปริยายเป็น min-height: auto
+   ถ้าฝั่งซ้าย (กริดเมนู 40+ การ์ด) ไม่ยอมหด row จะสูงเท่าเนื้อหา แล้วแผงบิลถูกลาก
+   สูงตามจน .items ไม่มีวันล้น = แก้ความสูงของหน้าอย่างเดียวไม่พอ */
+.panel { display: flex; flex-direction: column; padding: 12px 12px 0; border-inline-end: 1px solid var(--line); min-width: 0; min-height: 0; }
+/* หัวข้อ/แถวหมวดหมู่ปักอยู่ เลื่อนเฉพาะกริด — ไม่งั้นแถวหมวดหมู่เลื่อนหายตอนกำลังเลือกอาหาร */
+.panelScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 12px; }
+.panelHeader { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .panelHeader h2 { margin: 0; font-size: 16px; font-weight: 700; }
 .panelHeader small { color: var(--ink-2); font-size: 12.5px; }
 .livePill { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--red); background: var(--red-bg); border-radius: 3px; padding: 3px 8px; }
 
-.areaTabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.areaTabs { flex: none; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .page .areaButton{
   font: inherit; font-size: 14px; height: 36px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
@@ -157,11 +168,16 @@
 
 /* ---------- แผงบิลด้านขวา ---------- */
 .checkPanel { display: flex; flex-direction: column; background: var(--panel); min-width: 0; min-height: 0; }
-.checkHead { padding: 10px 12px 0; }
+.checkHead { flex: none; padding: 10px 12px 9px; border-bottom: 1px solid var(--line-2); }
+.checkHeadRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.checkHeadText { min-width: 0; }
 .checkHead h2 { margin: 0; font-size: 17px; font-weight: 700; }
-.checkHead p { margin: 2px 0 10px; font-size: 12.5px; color: var(--ink-2); }
-.checkActions { display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid var(--line-2); }
-.checkActions .btn { flex: 1; justify-content: center; font-size: 13px; padding: 0 8px; }
+.checkHead p { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2); }
+/* งานที่ทำกับ "ทั้งบิล" (ย้ายโต๊ะ/แก้จำนวนคน/ยกเลิกบิล) เคยเป็นสามปุ่มเต็มแถวเหนือรายการ
+   ทั้งที่เป็นงานนาน ๆ ครั้ง และปุ่มอันตรายที่สุดของแผงนั่งติดปุ่มที่กดทุกวัน
+   ตอนนี้ยุบเป็นปุ่มเดียวเปิด Modal — คืนพื้นที่ ~48px ให้รายการอาหารทุกบิล */
+.sheetActions { display: grid; gap: 8px; }
+.sheetActions .btn { width: 100%; height: 48px; justify-content: center; font-size: 15px; }
 
 .searchRow { display: flex; gap: 6px; padding: 10px 12px; }
 .searchRow input, .field {
@@ -169,21 +185,13 @@
   background: var(--panel-2); padding: 0 11px; font: inherit; font-size: 14px; color: var(--ink);
 }
 .searchRow input:focus, .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--panel); }
-.searchResults { display: grid; gap: 6px; padding: 0 12px; max-height: 210px; overflow-y: auto; }
-.menuResult {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left;
-  border: 1px solid var(--line-2); border-radius: 6px; padding: 9px 10px; background: var(--panel); cursor: pointer; font: inherit; color: inherit;
-}
-.menuResult:hover { border-color: var(--ink-3); }
-.menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.menuResult small { color: var(--ink-2); }
 
 /* ---------- จอสั่งอาหาร (กริดเมนูฝั่งกว้าง) ----------
    กริดอยู่ฝั่งกว้างเพราะการ์ดในแผงขวา 300px เล็กจนต้องเพ่งอ่านทุกใบ
    ซึ่งกลับหัวกับเหตุผลที่ทำกริด (แตะเลือกด้วยตา ไม่ต้องพิมพ์ค้นหา) */
 
 /* แถวบิลที่เปิดอยู่ — สลับโต๊ะได้จากจอสั่งอาหารโดยไม่ต้องเด้งกลับผังโต๊ะ */
-.billStrip { display: flex; gap: 8px; padding: 10px 12px 0; overflow-x: auto; }
+.billStrip { flex: none; display: flex; gap: 8px; padding: 10px 0 0; overflow-x: auto; }
 .billStrip::-webkit-scrollbar { height: 5px; }
 .billStrip::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
 .page .billChip {
@@ -202,7 +210,7 @@
 .billChipMeta { font-size: 11px; color: var(--ink-3); }
 
 /* หมวดหมู่ = station ในครัว (ไม่ใช่หมวดที่คนพิมพ์เอง) — ร้านตั้ง station ที่ Stock Models */
-.catRow { display: flex; gap: 8px; padding: 12px 12px 0; flex-wrap: wrap; }
+.catRow { flex: none; display: flex; gap: 8px; padding: 12px 0 0; flex-wrap: wrap; }
 .page .catCard {
   border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 9px 14px;
   font: inherit; color: var(--ink-2); cursor: pointer; text-align: left; display: grid; gap: 2px;
@@ -213,7 +221,7 @@
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
 
-.dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 12px; padding: 14px 12px 16px; }
+.dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 12px; padding: 14px 0 4px; }
 .page .dishCard {
   position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel);
   cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden; min-height: 0;
@@ -238,9 +246,9 @@
 .dishStation {
   position: absolute; top: 7px; left: 7px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
 }
-.menuEmpty { padding: 24px 12px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.menuEmpty { padding: 24px 0; text-align: center; color: var(--ink-3); font-size: 13px; }
 
-.items { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; overflow-y: auto; flex: 1; }
+.items { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
 .roundLabel { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .03em; text-transform: uppercase; padding: 8px 0 2px; }
 .item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 9px; align-items: start; border: 1px solid var(--line-2); border-radius: 6px; padding: 9px 10px; }
 .itemUnsent { border-color: var(--red); background: var(--red-bg); }
@@ -252,11 +260,12 @@
 /* ครัวยกเลิกและตัดออกจากยอดแล้ว — ต้องยังเห็นอยู่บนแผงบิล ไม่ใช่หายไปเฉย ๆ แล้วยอดลด
    โดยไม่มีอะไรอธิบาย · แต่ต้องอ่านออกทันทีว่า "ไม่คิดเงินแล้ว" ไม่ใช่คำเตือนให้ไปทำอะไรต่อ
    จึงเป็นสีเทาจาง + ขีดฆ่า ต่างจากกรอบแดงของกรณีที่ยังคิดเงินอยู่ */
-.itemDropped { border-style: dashed; background: var(--panel-2); opacity: .72; }
+/* บรรทัดที่ครัวยกเลิกคือบรรทัดที่ทำอะไรกับมันไม่ได้แล้ว — ห้ามกินที่มากกว่าบรรทัดที่
+   ลูกค้าต้องจ่ายจริง (ก่อนหน้านี้กินมากกว่า เพราะมีป้ายอธิบายสองบรรทัดต่อการ์ด) */
+.itemDropped { border-style: dashed; background: var(--panel-2); opacity: .72; padding: 6px 10px; }
 .itemDropped .itemName { text-decoration: line-through; color: var(--ink-2); }
-.itemDropTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
+.itemDropMark { color: var(--red); font-weight: 700; }
 .itemPriceVoid { text-decoration: line-through; color: var(--ink-3); }
-.dropNote { font-size: 11.5px; color: var(--ink-2); background: var(--panel-2); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
 
 /* สถานะอาหารรายบรรทัด — "พร้อมเสิร์ฟ" เป็นตัวเดียวที่เรียกร้องให้คนถือจอนี้ลุกไปทำอะไร
    จึงเป็นตัวเดียวที่ทำให้เด่น (พื้น + ตัวหนา) ที่เหลือเป็นข้อความเฉย ๆ */
@@ -265,7 +274,8 @@
 
 /* ปุ่มสั่งซ้ำ — เล็กแต่กดติด (สูง 30px) อยู่ในคอลัมน์เดียวกับราคา */
 .page .itemAgain {
-  font: inherit; font-size: 11.5px; font-weight: 600; height: 30px; min-height: 0; padding: 0 9px;
+  font: inherit; font-size: 15px; width: 30px; height: 30px; min-height: 0; padding: 0;
+  display: grid; place-items: center; flex: none;
   border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2); border-radius: 6px;
   cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
 }
@@ -284,7 +294,7 @@
 .page .itemRemove:hover{ border-color: var(--red); }
 
 /* ผู้ช่วยของหน้านี้อยู่ใน rail แล้ว จึงไม่ต้องกันพื้นที่ปุ่มลอยใต้ปุ่มคิดเงิน */
-.checkFooter { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 8px; background: var(--panel); }
+.checkFooter { flex: none; margin-top: auto; border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 8px; background: var(--panel); }
 .warn { display: flex; gap: 8px; font-size: 13px; background: var(--red-bg); border: 1px solid var(--red); border-radius: 6px; padding: 8px 10px; color: var(--ink); }
 .warn b { color: var(--red); }
 .total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -294,7 +304,7 @@
 .footerButtons .btn { height: 56px; justify-content: center; font-size: 16px; font-weight: 700; }
 
 /* รายการบิลที่เปิดอยู่ — แผงขวาตอนยังไม่เลือกโต๊ะ ไม่ปล่อยให้ว่างครึ่งจอ */
-.openList { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.openList { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
 .page .openRow{
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%;
   border: 1px solid var(--line-2); border-radius: 6px; padding: 10px; background: var(--panel);
@@ -311,11 +321,11 @@
 .empty { flex: 1; min-height: 200px; display: grid; place-items: center; text-align: center; color: var(--ink-2); padding: 24px; }
 .empty h3 { margin: 10px 0 4px; font-size: 16px; font-weight: 700; color: var(--ink); }
 .empty p { margin: 0; font-size: 13px; }
-.setup { min-height: 400px; display: grid; place-items: center; text-align: center; padding: 32px; }
+.setup { flex: 1; min-height: 400px; display: grid; place-items: center; text-align: center; padding: 32px; }
 .setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--panel-2); border: 1px solid var(--line); color: var(--accent); }
 
 /* ---------- จอครัว ---------- */
-.kitchenBoard { padding: 12px; }
+.kitchenBoard { padding: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; overflow-x: auto; }
 .lane { border-radius: 6px; min-height: 460px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color); }
 .laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
@@ -345,9 +355,17 @@
   .workspace { grid-template-columns: minmax(0, 1fr) 320px; }
 }
 @media (max-width: 900px) {
+  /* คอลัมน์เดียว = สอง pane เลื่อนแยกกันไม่ได้ (เลื่อนบิลแล้วเมนูหาย และกลับกัน)
+     จอแคบจึงกลับไปเลื่อนทั้งหน้าตามปกติ ซึ่งเป็นสิ่งที่มือถือคาดหวังอยู่แล้ว
+     แต่ "ยอด + ส่งครัว/คิดเงิน" ปักติดขอบล่างเสมอ เพราะสองอย่างนี้คือสิ่งที่ต้องเห็น
+     ตลอดเวลาที่กำลังเพิ่มรายการ */
+  .page { height: auto; min-height: 100dvh; overflow: visible; }
+  .rail { position: sticky; top: 0; align-self: start; height: 100dvh; }
+  .shell { overflow: visible; }
+  .panelScroll, .items, .openList, .kitchenBoard { overflow: visible; }
   .workspace { grid-template-columns: 1fr; }
-  .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); }
-  .checkPanel { min-height: 480px; }
+  .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px rgba(21, 25, 22, .1); }
   .lanes { grid-template-columns: repeat(4, 260px); }
 }
 @media (max-width: 640px) {
@@ -384,9 +402,7 @@
      ตกบรรทัดแทนการยืนกรานอยู่แถวเดิม จอ POS ห้าม scroll ข้าง (เลื่อนพลาดตอนกดเร็ว) */
   .panelHeader { flex-wrap: wrap; }
   .panelHeader .searchRow { width: 100%; padding: 0; }
-  .checkActions { flex-wrap: wrap; }
-  .checkActions .btn { flex: 1 1 auto; min-width: 92px; }
-  .billStrip, .catRow { padding-inline: 10px; }
+  .panel { padding-inline: 10px; }
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footerButtons { grid-template-columns: 1fr; }
   .modifierList { grid-template-columns: 1fr; }
