@@ -1132,6 +1132,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS products & inventory (admin) =====
     bmsProducts(search: String, category: String, limit: Int, offset: Int): BmsProductConnection!
+    bmsProductBySku(sku: String!): BmsProduct
     bmsAiSynonymCandidates(status: String = "PENDING", limit: Int = 50): [BmsAiSynonymCandidate!]!
     bmsProductCategories: [BmsProductCategory!]!
     bmsLowStock: [BmsLowStockItem!]!
@@ -1224,7 +1225,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
     "บันทึกการจ่ายยาที่เภสัชกรอนุมัติที่เคาน์เตอร์ (9.29) — สิทธิ์ pharmacy.audit.read"
     bmsPharmacistCounterAuthorizations(from: String, to: String, limit: Int, offset: Int): BmsPharmacistCounterAuthorizationPage!
-    bmsPharmacyCatalog(search: String, limit: Int): [BmsPharmacyCatalogItem!]!
+    bmsPharmacyCatalog(search: String, limit: Int, assessmentId: ID): [BmsPharmacyCatalogItem!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
@@ -1248,6 +1249,7 @@ export const typeDefs = /* GraphQL */ `
     bmsStoreCapabilities: [BmsStoreCapability!]!
     bmsKitchenBoardEnabled: Boolean!
     bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
+    bmsProductReadiness(productSku: String!): BmsProductReadiness!
     bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
     bmsProductModifiers(productSku: String!, size: String): [BmsProductModifier!]!
     bmsKitchenTickets(status: String, limit: Int = 100): [BmsKitchenTicket!]!
@@ -1923,6 +1925,36 @@ export const typeDefs = /* GraphQL */ `
     # ขั้นราคาส่ง: ราคาคงที่แยกไซซ์ หรือรวมข้ามไซซ์แล้วลด % จากราคาของแต่ละไซซ์
     priceTiers: [BmsPriceTier!]!
     variants: [BmsVariant!]!
+    catalogVariants: [BmsProductCatalogVariant!]!
+    salesSurfaces: [String!]!
+    readiness: BmsProductReadiness!
+    stockPolicy: BmsProductStockPolicy
+  }
+
+  type BmsProductCatalogVariant {
+    code: String!
+    displayName: String
+    active: Boolean!
+    sortOrder: Int!
+  }
+
+  type BmsProductReadinessIssue {
+    code: String!
+    message: String!
+    field: String
+  }
+
+  type BmsProductReadiness {
+    ready: Boolean!
+    blockers: [BmsProductReadinessIssue!]!
+    warnings: [BmsProductReadinessIssue!]!
+    recipeCostEstimate: Float
+    recipeCostMaxEstimate: Float
+  }
+
+  type BmsProductDuplicateResult {
+    sku: String!
+    name: String!
   }
 
   type BmsPriceTier {
@@ -1975,6 +2007,19 @@ export const typeDefs = /* GraphQL */ `
     vat_category: String
     # ส่งมา = แทนที่ขั้นราคาทั้งชุด · ไม่ส่ง = ไม่แตะของเดิม
     price_tiers: [BmsPriceTierInput!]
+    creation_template: String
+    sales_surfaces: [String!]
+    variant_codes: [String!]
+    stock_policy: String
+    base_unit: String
+  }
+
+  input BmsProductCatalogVariantInput {
+    productSku: String!
+    code: String!
+    displayName: String
+    active: Boolean
+    sortOrder: Int
   }
 
   # ===== BMS product bulk import (CSV/XLSX) =====
@@ -1990,6 +2035,11 @@ export const typeDefs = /* GraphQL */ `
     cost_price: Float
     category: String
     brand: String
+    creation_template: String
+    stock_policy: String
+    base_unit: String
+    variant_codes: [String!]
+    sales_surfaces: [String!]
   }
   type BmsProductImportRowResult {
     rowNumber: Int!
@@ -3587,6 +3637,7 @@ export const typeDefs = /* GraphQL */ `
     kitchenStation: String
     scaleItemCode: String
     scaleSize: String
+    deactivateDerived: Boolean
   }
   type BmsRecipeComponent { sku: String!, size: String!, qty: Int! }
   input BmsRecipeComponentInput { sku: String!, size: String!, qty: Int! }
@@ -3617,6 +3668,14 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     priceDelta: Float!
     active: Boolean!
+    groupId: ID!
+    groupCode: String!
+    groupName: String!
+    selectionType: String!
+    minSelect: Int!
+    maxSelect: Int
+    defaultSelected: Boolean!
+    sortOrder: Int!
     items: [BmsModifierComponent!]!
   }
   input BmsProductModifierInput {
@@ -3627,6 +3686,13 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     priceDelta: Float
     active: Boolean
+    groupCode: String
+    groupName: String
+    selectionType: String
+    minSelect: Int
+    maxSelect: Int
+    defaultSelected: Boolean
+    sortOrder: Int
     items: [BmsModifierComponentInput!]!
   }
   type BmsKitchenTicket {
@@ -4156,6 +4222,10 @@ export const typeDefs = /* GraphQL */ `
     bmsReviewAiSynonymCandidate(id: ID!, decision: String!, productSku: String): BmsAiSynonymCandidate!
     bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean = false): BmsProductImportResult!
     bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
+    bmsPublishProduct(sku: String!): BmsProductReadiness!
+    bmsUpsertProductCatalogVariant(input: BmsProductCatalogVariantInput!): BmsProductCatalogVariant!
+    bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
+    bmsDuplicateProduct(sourceSku: String!, targetSku: String!, targetName: String!): BmsProductDuplicateResult!
     bmsCreateProductCategory(name: String!): BmsProductCategory!
     bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
     bmsDeleteProductCategory(id: ID!): Boolean!

@@ -30,6 +30,7 @@ async function handleGET(req: NextRequest) {
     sort: "relevance",
     limit: 8,
     locationId: device.locationId,
+    salesSurface: "RETAIL_POS",
   });
 
   // รูปย่อสำหรับ "เลือกด้วยตา" — ผลค้นหาคือจุดที่แคชเชียร์ยังไม่รู้ว่าใช่ตัวไหน

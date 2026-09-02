@@ -594,6 +594,43 @@ overrides, while `bms_product_stock_policies` decides each product's authoritati
 `DIRECT`, `PACK`, `BUNDLE`, `WEIGHTED`, `RECIPE`, or `SERIALIZED`. A mixed shop can keep a restaurant
 archetype and manually enable weighed products without moving tenant or inventory data.
 
+### Catalog lifecycle and product roles (`9.51`)
+
+Product setup is now draft-first. Creating or importing a new SKU always stores `active = false`;
+reactivating an inactive SKU runs the same readiness check as the explicit publish mutation. The
+check blocks missing catalog variants, zero selling prices, unknown VAT classification for a
+VAT-registered shop, incomplete RECIPE/PACK configuration, and disabled required capabilities.
+Warnings such as an absent kitchen station or incomplete recipe cost remain visible without
+silently inventing values.
+
+`bms_product_variants` is the catalog source of truth for sizes, serving options, colours and other
+sellable variants. A row can exist while every branch has zero stock; `bms_inventory` remains the
+physical per-branch balance and is never mutated merely to create an option. Existing writes to
+inventory, packs, recipes and modifiers synchronize a corresponding catalog variant through an
+insert-only trigger for backward compatibility.
+
+`bms_product_sales_surfaces` explicitly separates lifecycle from visibility. An active SKU is sold
+only on its enabled surfaces: `RETAIL_POS`, `RESTAURANT_POS`, `PUBLIC_STOREFRONT`, `CUSTOMER_AI`, or
+`ONLINE_ORDER`. An ingredient can therefore remain active for recipe consumption while appearing on
+no menu or customer catalog; a bottled drink can intentionally appear on both POS surfaces. The
+store archetype supplies initial form defaults only and never overrides these per-product choices.
+
+Two consequences of "visibility is declared, never inferred" are easy to get wrong and are
+therefore fixed in code rather than left to operator memory. First, the `9.51` backfill treats a
+product as priced when either `bms_products.price` or an active **base pack** price is above zero:
+a menu priced only through its base pack (supported since `8.1`/`9.22`) would otherwise lose every
+surface the moment the migration ran. Second, sample data is inserted directly (it does not go
+through `upsertProduct`), so `seedFakeProducts()` writes the surface rows itself — and that path is
+also the "create sample data" button a brand-new shop presses, not just the dev seeder. A seeded
+product with no surface row would look active in the catalog while being invisible and unsellable
+everywhere.
+
+The Products form exposes four starter templates—prepared menu, ready-made item, ingredient and
+general product—then stores the same shared product model. Stock policy dependencies continue to be
+edited in Stock Models. Changing a RECIPE product to another policy is refused while active recipes
+or modifiers exist unless the operator explicitly asks to deactivate those derived records in the
+same transaction.
+
 Inventory quantities remain integers. Measured goods choose the smallest useful base unit, such as
 gram, millilitre, or millimetre; display units and precision are presentation metadata. Existing
 `bms_product_packs.base_qty` remains the source of truth for piece/pack/carton conversion.

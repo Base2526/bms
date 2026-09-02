@@ -24,6 +24,7 @@ import {
 import { listKitchenTickets, updateKitchenTicketStatus } from "@/lib/bms/kitchen";
 import { dropKitchenCancelledLineInTx } from "@/lib/bms/restaurantPos";
 import { listInventoryWastage, recordInventoryWastage } from "@/lib/bms/wastage";
+import { getProductReadiness } from "@/lib/bms/productConfiguration";
 
 function tenantAdminId(ctx: any): string {
   const auth = requireAuth(ctx);
@@ -64,6 +65,10 @@ export const bmsStockCapabilityResolvers = {
     async bmsProductStockPolicy(_p: unknown, args: { productSku: string }, ctx: any) {
       await requirePermission(ctx, "product.view");
       return getProductStockPolicy(getTenantId(ctx), args.productSku);
+    },
+    async bmsProductReadiness(_p: unknown, args: { productSku: string }, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return getProductReadiness(getTenantId(ctx), args.productSku);
     },
     async bmsProductRecipes(_p: unknown, args: { productSku: string; size?: string | null }, ctx: any) {
       await requirePermission(ctx, "product.view");

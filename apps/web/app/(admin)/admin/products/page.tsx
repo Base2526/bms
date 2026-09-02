@@ -37,6 +37,7 @@ import {
   ImportOutlined,
   TeamOutlined,
   LockOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
@@ -85,6 +86,16 @@ type Product = {
     discountPct: number | null;
   }>;
   variants: Variant[];
+  catalogVariants: Array<{ code: string; displayName: string | null; active: boolean; sortOrder: number }>;
+  salesSurfaces: string[];
+  readiness: {
+    ready: boolean;
+    blockers: Array<{ code: string; message: string; field: string | null }>;
+    warnings: Array<{ code: string; message: string; field: string | null }>;
+    recipeCostEstimate: number | null;
+    recipeCostMaxEstimate: number | null;
+  };
+  stockPolicy: { stockPolicy: string } | null;
 };
 type ReservationOrder = {
   orderId: string;
@@ -117,6 +128,7 @@ type Movement = {
 // ---- GraphQL ------------------------------------------------
 const Q_PRODUCTS = gql`
   query BmsProducts($search: String, $category: String, $limit: Int, $offset: Int) {
+    bmsStoreProfile { businessArchetype }
     bmsLocations { id code name branchCode active }
     bmsProducts(search: $search, category: $category, limit: $limit, offset: $offset) {
       total
@@ -154,6 +166,23 @@ const Q_PRODUCTS = gql`
           basePackId
         }
       }
+    }
+  }
+`;
+const Q_PRODUCT_CONFIGURATION = gql`
+  query BmsProductConfiguration($sku: String!) {
+    bmsProductBySku(sku: $sku) {
+      sku
+      catalogVariants { code displayName active sortOrder }
+      salesSurfaces
+      readiness {
+        ready
+        blockers { code message field }
+        warnings { code message field }
+        recipeCostEstimate
+        recipeCostMaxEstimate
+      }
+      stockPolicy { stockPolicy }
     }
   }
 `;
@@ -229,6 +258,16 @@ const M_VARIANT_PRICE = gql`
     bmsUpsertProductPack(input: $input) { id price size }
   }
 `;
+const M_CATALOG_VARIANT = gql`
+  mutation ($input: BmsProductCatalogVariantInput!) {
+    bmsUpsertProductCatalogVariant(input: $input) { code displayName active sortOrder }
+  }
+`;
+const M_DUPLICATE_PRODUCT = gql`
+  mutation ($sourceSku: String!, $targetSku: String!, $targetName: String!) {
+    bmsDuplicateProduct(sourceSku: $sourceSku, targetSku: $targetSku, targetName: $targetName) { sku name }
+  }
+`;
 const M_CREATE_CATEGORY = gql`mutation ($name: String!) { bmsCreateProductCategory(name: $name) { id name } }`;
 const M_RENAME_CATEGORY = gql`mutation ($id: ID!, $name: String!) { bmsRenameProductCategory(id: $id, name: $name) { id name } }`;
 const M_DELETE_CATEGORY = gql`mutation ($id: ID!) { bmsDeleteProductCategory(id: $id) }`;
@@ -283,12 +322,15 @@ function ProductsManagement() {
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const [form] = Form.useForm();
   const basePriceDraft = Form.useWatch("price", form);
+  const creationTemplate = Form.useWatch("creationTemplate", form);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, number | null>>({});
   const [savingVariantPrices, setSavingVariantPrices] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [duplicateSource, setDuplicateSource] = useState<Product | null>(null);
+  const [duplicateForm] = Form.useForm();
   const [lowExpanded, setLowExpanded] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(LOW_STOCK_EXPANDED_KEY) === "1";
@@ -320,6 +362,9 @@ function ProductsManagement() {
   const { data: lowData, refetch: refetchLow } = useQuery(Q_LOW, {
     fetchPolicy: "cache-and-network",
   });
+  const [loadProductConfiguration] = useLazyQuery(Q_PRODUCT_CONFIGURATION, {
+    fetchPolicy: "network-only",
+  });
 
   const onErr = (e: any) => message.error(e?.message || t("admin_products.action_failed"));
   const refreshAll = () => {
@@ -333,6 +378,34 @@ function ProductsManagement() {
     onCompleted: () => { message.success(t("admin_products.status_updated")); refreshAll(); },
     onError: onErr,
   });
+  const [duplicateProduct, { loading: duplicating }] = useMutation(M_DUPLICATE_PRODUCT, { onError: onErr });
+
+  const openDuplicate = (product: Product) => {
+    setDuplicateSource(product);
+    duplicateForm.setFieldsValue({
+      targetSku: `${product.sku}-COPY`,
+      targetName: `${product.name} (${t("admin_products.copy_suffix")})`,
+    });
+  };
+
+  const submitDuplicate = async () => {
+    if (!duplicateSource) return;
+    const values = await duplicateForm.validateFields().catch(() => null);
+    if (!values) return;
+    try {
+      await duplicateProduct({ variables: {
+        sourceSku: duplicateSource.sku,
+        targetSku: String(values.targetSku).trim(),
+        targetName: String(values.targetName).trim(),
+      } });
+      message.success(t("admin_products.duplicate_success"));
+      setDuplicateSource(null);
+      duplicateForm.resetFields();
+      refreshAll();
+    } catch {
+      // mutation onError keeps the modal open for correction
+    }
+  };
 
   const products: Product[] = data?.bmsProducts?.items || [];
   const locations: Array<{ id: string; code: string; name: string; branchCode: string; active: boolean }> =
@@ -407,33 +480,58 @@ function ProductsManagement() {
     setVariantPriceDrafts({});
     setImageUrls([]);
     form.resetFields();
-    form.setFieldsValue({ active: true, keywords: [], vatCategory: "UNKNOWN" });
+    const restaurant = data?.bmsStoreProfile?.businessArchetype === "restaurant";
+    form.setFieldsValue({
+      active: false,
+      keywords: [],
+      vatCategory: "UNKNOWN",
+      creationTemplate: restaurant ? "PREPARED_MENU" : "READY_GOOD",
+      stockPolicy: restaurant ? "RECIPE" : "DIRECT",
+      baseUnit: "PIECE",
+      variantCodes: ["STD"],
+      salesSurfaces: restaurant
+        ? ["RESTAURANT_POS"]
+        : ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"],
+    });
     setBarcodeDraft("");
     setPriceTiers([]);
     setModalOpen(true);
   };
-  const openEdit = (p: Product) => {
-    setEditing(p);
+  const openEdit = async (p: Product) => {
+    let configuredProduct = p;
+    try {
+      const result = await loadProductConfiguration({ variables: { sku: p.sku } });
+      if (!result.data?.bmsProductBySku) throw new Error(t("admin_products.product_not_found"));
+      configuredProduct = { ...p, ...result.data.bmsProductBySku };
+    } catch (error: any) {
+      message.error(error?.message || t("admin_products.action_failed"));
+      return;
+    }
+    setEditing(configuredProduct);
     setVariantPriceDrafts(Object.fromEntries(
-      p.variants.map((variant) => [variant.size, variant.priceOverride])
+      configuredProduct.variants.map((variant) => [variant.size, variant.priceOverride])
     ));
     setImageUrls(
-      Array.isArray(p.images) && p.images.length > 0
-        ? p.images.map((img) => img.url)
-        : p.imageUrl
-          ? [p.imageUrl]
+      Array.isArray(configuredProduct.images) && configuredProduct.images.length > 0
+        ? configuredProduct.images.map((img) => img.url)
+        : configuredProduct.imageUrl
+          ? [configuredProduct.imageUrl]
           : []
     );
     form.setFieldsValue({
-      sku: p.sku, name: p.name, price: p.price,
-      keywords: p.keywords, active: p.active, barcode: p.barcode || "",
-      description: p.description || "", costPrice: p.costPrice ?? undefined,
-      weightGrams: p.weightGrams ?? undefined,
-      category: p.category || "", brand: p.brand || "",
-      vatCategory: p.vatCategory || "UNKNOWN",
+      sku: configuredProduct.sku, name: configuredProduct.name, price: configuredProduct.price,
+      keywords: configuredProduct.keywords, active: configuredProduct.active, barcode: configuredProduct.barcode || "",
+      description: configuredProduct.description || "", costPrice: configuredProduct.costPrice ?? undefined,
+      weightGrams: configuredProduct.weightGrams ?? undefined,
+      category: configuredProduct.category || "", brand: configuredProduct.brand || "",
+      vatCategory: configuredProduct.vatCategory || "UNKNOWN",
+      creationTemplate: configuredProduct.stockPolicy?.stockPolicy === "RECIPE" ? "PREPARED_MENU" : "GENERAL",
+      stockPolicy: configuredProduct.stockPolicy?.stockPolicy || "DIRECT",
+      variantCodes: configuredProduct.catalogVariants.filter((variant) => variant.active).map((variant) => variant.code),
+      salesSurfaces: configuredProduct.salesSurfaces,
     });
-    setBarcodeDraft(p.barcode || "");
-    setPriceTiers((p.priceTiers ?? []).map((t) => ({
+    setBarcodeDraft(configuredProduct.barcode || "");
+    setPriceTiers((configuredProduct.priceTiers ?? []).map((t) => ({
       minQty: String(t.minQty),
       scope: t.scope ?? "PER_VARIANT_FIXED",
       size: t.size ?? null,
@@ -503,6 +601,11 @@ function ProductsManagement() {
             vat_category: v.vatCategory || null,
             // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
             price_tiers: normalizedPriceTiers,
+            creation_template: editing ? null : v.creationTemplate,
+            stock_policy: v.stockPolicy,
+            base_unit: v.baseUnit,
+            variant_codes: v.variantCodes || [],
+            sales_surfaces: v.salesSurfaces || [],
           },
         },
       });
@@ -631,10 +734,13 @@ function ProductsManagement() {
         ),
       },
       {
-        title: "", key: "actions", width: 80,
+        title: "", key: "actions", width: 190,
         render: (_: any, p: Product) =>
           can("product.edit")
-            ? <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(p)}>Edit</Button>
+            ? <Space size={0}>
+                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => void openEdit(p)}>{t("admin_products.btn_edit_product")}</Button>
+                <Button type="link" size="small" icon={<CopyOutlined />} onClick={() => openDuplicate(p)}>{t("admin_products.btn_duplicate")}</Button>
+              </Space>
             : <span style={{ color: "#ccc" }}>—</span>,
       },
     ],
@@ -768,7 +874,7 @@ function ProductsManagement() {
               canEdit={can("product.edit")}
               canToggleActive={can("product.delete")}
               canViewOrders={can("order.view")}
-              onEdit={() => openEdit(p)}
+              onEdit={() => void openEdit(p)}
               onToggleActive={(active) => setActive({ variables: { sku: p.sku, active } })}
             />
           ),
@@ -788,6 +894,98 @@ function ProductsManagement() {
         okText={editing ? t("admin_products.btn_save") : t("admin_products.btn_create")} width={680}
       >
         <Form form={form} layout="vertical" autoComplete="off">
+          {!editing && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={t("admin_products.draft_first_title")}
+              description={t("admin_products.draft_first_description")}
+            />
+          )}
+          {!editing && (
+            <Form.Item
+              label={t("admin_products.creation_template")}
+              name="creationTemplate"
+              rules={[{ required: true }]}
+              extra={t("admin_products.creation_template_hint")}
+            >
+              <Select
+                options={[
+                  { value: "PREPARED_MENU", label: t("admin_products.template_prepared_menu") },
+                  { value: "READY_GOOD", label: t("admin_products.template_ready_good") },
+                  { value: "INGREDIENT", label: t("admin_products.template_ingredient") },
+                  { value: "GENERAL", label: t("admin_products.template_general") },
+                ]}
+                onChange={(template) => {
+                  const presets: Record<string, { stockPolicy: string; salesSurfaces: string[] }> = {
+                    PREPARED_MENU: { stockPolicy: "RECIPE", salesSurfaces: ["RESTAURANT_POS"] },
+                    READY_GOOD: { stockPolicy: "DIRECT", salesSurfaces: ["RESTAURANT_POS", "RETAIL_POS"] },
+                    INGREDIENT: { stockPolicy: "DIRECT", salesSurfaces: [] },
+                    GENERAL: { stockPolicy: "DIRECT", salesSurfaces: ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"] },
+                  };
+                  form.setFieldsValue(presets[template]);
+                }}
+              />
+            </Form.Item>
+          )}
+
+          <Space.Compact block>
+            <Form.Item
+              label={t("admin_products.label_stock_policy")}
+              name="stockPolicy"
+              rules={[{ required: true }]}
+              style={{ flex: 1, marginInlineEnd: 8 }}
+              extra={editing ? t("admin_products.stock_policy_edit_hint") : undefined}
+            >
+              <Select
+                disabled={Boolean(editing)}
+                options={["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"].map((value) => ({ value, label: value }))}
+              />
+            </Form.Item>
+            <Form.Item
+              label={t("admin_products.label_catalog_variants")}
+              name="variantCodes"
+              rules={[{ required: true, type: "array", min: 1 }]}
+              style={{ flex: 1 }}
+              extra={t("admin_products.catalog_variants_hint")}
+            >
+              <Select disabled={Boolean(editing)} mode="tags" tokenSeparators={[",", " "]} placeholder="STD / S / M / LARGE" />
+            </Form.Item>
+          </Space.Compact>
+
+          {!editing && (
+            <Form.Item
+              label={t("admin_products.base_unit")}
+              name="baseUnit"
+              rules={[{ required: true }]}
+              extra={t("admin_products.base_unit_hint")}
+            >
+              <Select
+                showSearch
+                options={["PIECE", "GRAM", "ML", "MM", "CM", "METER"].map((value) => ({ value, label: value }))}
+              />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            label={t("admin_products.label_sales_surfaces")}
+            name="salesSurfaces"
+            extra={t("admin_products.sales_surfaces_hint")}
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              options={[
+                { value: "RESTAURANT_POS", label: t("admin_products.surface_restaurant_pos") },
+                { value: "RETAIL_POS", label: t("admin_products.surface_retail_pos") },
+                { value: "PUBLIC_STOREFRONT", label: t("admin_products.surface_storefront") },
+                { value: "CUSTOMER_AI", label: t("admin_products.surface_customer_ai") },
+                { value: "ONLINE_ORDER", label: t("admin_products.surface_online_order") },
+              ]}
+            />
+          </Form.Item>
+
           <Form.Item label={t("admin_products.label_images")} extra={t("admin_products.images_extra")}>
             <Space align="start" wrap>
               {imageUrls.length > 0 ? (
@@ -845,7 +1043,7 @@ function ProductsManagement() {
           {/* Barcode — เจตนาของช่องนี้คือ "ยิงเข้า" ไม่ใช่ "พิมพ์เอง"
               ของที่โรงงานติดบาร์โค้ดมาแล้ว เลขนั้นเป็นของ GS1 สร้างใหม่ทับไม่ได้
               ปุ่มสร้างเลขมีไว้สำหรับของแบ่งขาย/ของทำเองที่ไม่มีบาร์โค้ดเท่านั้น */}
-          <Form.Item label="Barcode" tooltip={t("admin_products.barcode_scan_hint")}>
+          {creationTemplate !== "PREPARED_MENU" && <Form.Item label="Barcode" tooltip={t("admin_products.barcode_scan_hint")}>
             <Space.Compact style={{ width: "100%" }}>
               <Form.Item name="barcode" noStyle>
                 <Input
@@ -865,7 +1063,7 @@ function ProductsManagement() {
                 {barcodeNotice.text}
               </Typography.Text>
             )}
-          </Form.Item>
+          </Form.Item>}
           <Form.Item label={t("admin_products.label_name")} name="name" rules={[{ required: true, message: t("admin_products.rule_name") }]}>
             <Input placeholder={t("admin_products.placeholder_name")} />
           </Form.Item>
@@ -880,14 +1078,14 @@ function ProductsManagement() {
             <Form.Item label={t("admin_products.label_cost")} name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
               <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_cost")} />
             </Form.Item>
-            <Form.Item
+            {creationTemplate !== "PREPARED_MENU" && <Form.Item
               label={t("admin_products.label_weight")}
               name="weightGrams"
               style={{ flex: 1 }}
               tooltip={t("admin_products.weight_tooltip")}
             >
               <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_weight")} />
-            </Form.Item>
+            </Form.Item>}
           </Space.Compact>
 
           {editing && editing.variants.length > 0 && (
@@ -1069,7 +1267,11 @@ function ProductsManagement() {
             <Select mode="tags" tokenSeparators={[",", " "]} placeholder={t("admin_products.placeholder_keywords")} />
           </Form.Item>
           <Form.Item label={t("admin_products.label_active")} name="active" valuePropName="checked">
-            <Switch checkedChildren={t("admin_products.switch_on")} unCheckedChildren={t("admin_products.switch_off")} />
+            <Switch
+              disabled
+              checkedChildren={t("admin_products.switch_on")}
+              unCheckedChildren={t("admin_products.switch_off")}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -1086,6 +1288,32 @@ function ProductsManagement() {
         onClose={() => setImportModalOpen(false)}
         onImported={refreshAll}
       />
+
+      <Modal
+        open={Boolean(duplicateSource)}
+        title={t("admin_products.duplicate_title")}
+        onCancel={() => { setDuplicateSource(null); duplicateForm.resetFields(); }}
+        onOk={() => void submitDuplicate()}
+        confirmLoading={duplicating}
+      >
+        <Alert
+          type="info"
+          showIcon
+          message={t("admin_products.duplicate_draft_hint")}
+          style={{ marginBottom: 16 }}
+        />
+        <Form form={duplicateForm} layout="vertical">
+          <Form.Item label={t("admin_products.duplicate_source")}>
+            <Input value={duplicateSource ? `${duplicateSource.sku} · ${duplicateSource.name}` : ""} disabled />
+          </Form.Item>
+          <Form.Item name="targetSku" label={t("admin_products.duplicate_target_sku")} rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="targetName" label={t("admin_products.label_name")} rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -1265,6 +1493,14 @@ function ProductDetail({
 }) {
   const { t } = useI18n();
   const onErr = (e: any) => message.error(e?.message || t("admin_products.action_failed"));
+  const { data: configurationData, refetch: refetchConfiguration } = useQuery(Q_PRODUCT_CONFIGURATION, {
+    variables: { sku: product.sku },
+    fetchPolicy: "cache-and-network",
+  });
+  const productConfiguration = configurationData?.bmsProductBySku ?? null;
+  const catalogVariants: Product["catalogVariants"] = productConfiguration?.catalogVariants ?? [];
+  const salesSurfaces: string[] = productConfiguration?.salesSurfaces ?? [];
+  const readiness: Product["readiness"] | null = productConfiguration?.readiness ?? null;
   const [adjustStockMut, { loading: adjustingStock }] = useMutation(M_ADJUST, { onError: onErr });
   const [setReorder] = useMutation(M_REORDER, {
     onCompleted: () => { message.success(t("admin_products.reorder_saved")); onChanged(); },
@@ -1272,6 +1508,14 @@ function ProductDetail({
   });
   const [setVariantPrice, { loading: savingVariantPrice }] = useMutation(M_VARIANT_PRICE, {
     onCompleted: () => { message.success(t("admin_products.variant_price_saved")); onChanged(); },
+    onError: onErr,
+  });
+  const [saveCatalogVariant, { loading: savingCatalogVariant }] = useMutation(M_CATALOG_VARIANT, {
+    onCompleted: () => {
+      message.success(t("admin_products.catalog_variant_saved"));
+      void refetchConfiguration();
+      onChanged();
+    },
     onError: onErr,
   });
   const [loadMoves, { data: movesData, loading: movesLoading, called: movesCalled, refetch: refetchMoves }] = useLazyQuery(Q_MOVEMENTS, {
@@ -1283,9 +1527,8 @@ function ProductDetail({
     fetchPolicy: "network-only",
   });
 
-  const [newSize, setNewSize] = useState<string | undefined>();
-  const [newLocationId, setNewLocationId] = useState<string | undefined>();
-  const [newQty, setNewQty] = useState<number>(1);
+  const [newVariantCode, setNewVariantCode] = useState("");
+  const [newVariantName, setNewVariantName] = useState("");
   const [manualVariant, setManualVariant] = useState<Variant | null>(null);
   const [manualDelta, setManualDelta] = useState<number>(1);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -1574,12 +1817,6 @@ function ProductDetail({
     { title: t("admin_products.col_actor"), dataIndex: "actor", key: "actor", render: (a: string | null) => a || "—" },
   ];
 
-  const SIZE_OPTS = ["S", "M", "L", "XL", "XXL"].filter((size) =>
-    !newLocationId || !product.variants.some((variant) =>
-      variant.locationId === newLocationId && variant.size === size
-    )
-  );
-
   return (
     <div style={{ display: "grid", gap: 16, padding: 8 }}>
       <div
@@ -1615,7 +1852,35 @@ function ProductDetail({
                 {product.brand && <Tag color="blue" style={{ margin: 0 }}>{product.brand}</Tag>}
                 {product.category && <Tag style={{ margin: 0 }}>{product.category}</Tag>}
                 {lowCount > 0 && <Tag color="warning" icon={<WarningOutlined />} style={{ margin: 0 }}>{t("admin_products.low_sizes", { n: lowCount })}</Tag>}
+                {salesSurfaces.map((surface) => <Tag key={surface} color="geekblue" style={{ margin: 0 }}>{surface}</Tag>)}
               </Space>
+              {readiness && !readiness.ready && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={t("admin_products.publish_blocked")}
+                  description={readiness.blockers.map((issue) => issue.message).join(" · ")}
+                />
+              )}
+              {readiness?.ready && readiness.warnings.length > 0 && (
+                <Alert
+                  type="info"
+                  showIcon
+                  message={t("admin_products.publish_warnings")}
+                  description={readiness.warnings.map((issue) => issue.message).join(" · ")}
+                />
+              )}
+              {readiness?.recipeCostEstimate != null && (
+                <Typography.Text type="secondary">
+                  {readiness.recipeCostMaxEstimate != null
+                    && readiness.recipeCostMaxEstimate !== readiness.recipeCostEstimate
+                    ? t("admin_products.recipe_cost_range", {
+                        min: readiness.recipeCostEstimate.toLocaleString(),
+                        max: readiness.recipeCostMaxEstimate.toLocaleString(),
+                      })
+                    : t("admin_products.recipe_cost_estimate", { amount: readiness.recipeCostEstimate.toLocaleString() })}
+                </Typography.Text>
+              )}
             </div>
           </div>
 
@@ -1685,9 +1950,14 @@ function ProductDetail({
             </div>
 
             <div style={{ display: "flex", alignItems: "center" }}>
-              <Button icon={<EditOutlined />} type="primary" ghost disabled={!canEdit} onClick={onEdit}>
-                {t("admin_products.btn_edit_product")}
-              </Button>
+              <Space direction="vertical">
+                <Button icon={<EditOutlined />} type="primary" ghost disabled={!canEdit} onClick={onEdit}>
+                  {t("admin_products.btn_edit_product")}
+                </Button>
+                <Button href={`/admin/stock-models?sku=${encodeURIComponent(product.sku)}`} disabled={!canEdit}>
+                  {t("admin_products.btn_configure_stock_model")}
+                </Button>
+              </Space>
             </div>
           </div>
         </div>
@@ -1722,41 +1992,73 @@ function ProductDetail({
             </div>
           </div>
 
-          <Space wrap size={8} style={{ display: canAdjust ? "inline-flex" : "none" }}>
-            <Select
-              placeholder={t("admin_products.select_branch")}
-              style={{ width: 190 }}
-              value={newLocationId}
-              onChange={setNewLocationId}
-              options={locations.map((location) => ({
-                value: location.id, label: `${location.name} (${location.branchCode})`,
-              }))}
+          <Space wrap size={8}>
+            <Input
+              placeholder={t("admin_products.variant_code_placeholder")}
+              style={{ width: 145 }}
+              value={newVariantCode}
+              disabled={!canEdit}
+              onChange={(event) => setNewVariantCode(event.target.value.toUpperCase())}
             />
-            <Select
-              placeholder="size"
-              style={{ width: 96 }}
-              value={newSize}
-              onChange={setNewSize}
-              options={SIZE_OPTS.map((s) => ({ value: s, label: s }))}
+            <Input
+              placeholder={t("admin_products.variant_name_placeholder")}
+              style={{ width: 180 }}
+              value={newVariantName}
+              disabled={!canEdit}
+              onChange={(event) => setNewVariantName(event.target.value)}
             />
-            <InputNumber min={1} value={newQty} onChange={(v) => setNewQty(Number(v) || 1)} />
             <Button
               icon={<PlusOutlined />}
-              disabled={!newSize || !newLocationId}
+              loading={savingCatalogVariant}
+              disabled={!canEdit || !newVariantCode.trim()}
               onClick={async () => {
-                if (!newSize || !newLocationId) return;
-                await runAdjust(newLocationId, newSize, newQty, t("admin_products.size_added"));
-                setNewSize(undefined);
-                setNewQty(1);
+                if (!newVariantCode.trim()) return;
+                await saveCatalogVariant({ variables: { input: {
+                  productSku: product.sku,
+                  code: newVariantCode,
+                  displayName: newVariantName.trim() || null,
+                  active: true,
+                  sortOrder: catalogVariants.length,
+                } } });
+                setNewVariantCode("");
+                setNewVariantName("");
               }}
             >
-              {t("admin_products.btn_add_size")}
+              {t("admin_products.btn_add_catalog_variant")}
             </Button>
-            <Button type="primary" ghost onClick={openBulkAdjust}>
+            <Button type="primary" ghost disabled={!canAdjust} onClick={openBulkAdjust}>
               {t("admin_products.btn_bulk_adjust")}
             </Button>
           </Space>
         </div>
+
+        {catalogVariants.length > 0 && (
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #f5f5f5", background: "#fafafa" }}>
+            <Space wrap size={8}>
+              <Typography.Text type="secondary">{t("admin_products.label_catalog_variants")}:</Typography.Text>
+              {catalogVariants.map((variant) => (
+                <Tag key={variant.code} color={variant.active ? "blue" : "default"} style={{ margin: 0, padding: "3px 8px" }}>
+                  <Space size={6}>
+                    <span>{variant.displayName || variant.code}</span>
+                    {variant.displayName && <Typography.Text type="secondary">({variant.code})</Typography.Text>}
+                    <Switch
+                      size="small"
+                      checked={variant.active}
+                      disabled={!canEdit || savingCatalogVariant}
+                      onChange={(active) => void saveCatalogVariant({ variables: { input: {
+                        productSku: product.sku,
+                        code: variant.code,
+                        displayName: variant.displayName,
+                        active,
+                        sortOrder: variant.sortOrder,
+                      } } })}
+                    />
+                  </Space>
+                </Tag>
+              ))}
+            </Space>
+          </div>
+        )}
 
         <Table
           rowKey={(variant: Variant) => `${variant.locationId}:${variant.size}`}

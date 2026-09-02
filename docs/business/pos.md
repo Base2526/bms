@@ -1363,6 +1363,13 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 
 ## Restaurant POS (`9.40`, `9.44`–`9.49`)
 
+A dine-in check is settled by the same `recordPosSale()` engine as a retail bill, so the line
+re-validation inside that engine takes the **bill's own** sales surface: `RESTAURANT_POS` when a
+`restaurantCheckId` is present, `RETAIL_POS` otherwise. Pinning it to the retail surface would
+make the register's default new-menu template (prepared menu, whose only surface is
+`RESTAURANT_POS`) orderable and cookable but impossible to pay for — the failure would land at
+the table, after the food, as an `INVALID_PACK` that says nothing about surfaces.
+
 `/pos/restaurant` is a separate operating surface selected only for the `restaurant` archetype. It
 owns dining areas, tables, open checks, kitchen rounds, table moves and check cancellation. Sending
 a round creates or refreshes one PENDING POS order for the whole check, so ingredients are reserved
@@ -1445,6 +1452,14 @@ delta is relative to that recipe. DIRECT/PACK products reject modifier codes ins
 surcharge while silently skipping the configured ingredient movement. Commission uses the stored
 pack price/pack quantity where present, so a named pack with modifiers is not reported at base-unit
 revenue.
+
+Migration `9.51` groups modifiers per menu variant. Each group declares `SINGLE` or `MULTIPLE`, a
+minimum, an optional maximum, display order and defaults. The restaurant register renders radio or
+checkbox controls from that catalog, but order creation revalidates unknown codes and every group
+minimum/maximum inside the transaction. A crafted request therefore cannot skip a required choice
+or select two values from a single-choice group. Restaurant menu visibility is also explicit through
+the `RESTAURANT_POS` product surface; recipe membership and positive menu-row stock are no longer
+used as proxies for whether an item belongs on the menu.
 
 Settlement takes a tenant transaction advisory lock and row-locks both the check and reservation
 order before stamping the active register. A second app instance therefore cannot steal the same

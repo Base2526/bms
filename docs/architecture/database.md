@@ -875,3 +875,19 @@ triggers, while the high-volume ticket state is represented by its audit events.
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.
+
+## Product catalog foundation (`9.51`)
+
+`bms_product_variants` stores product options independently of branch stock. Its composite primary
+key is `(tenant_id, product_sku, code)` and its product FK is tenant-composite. Migration backfill
+unions inventory, pack, recipe and modifier sizes; insert triggers on those four legacy sources keep
+older writers compatible without creating stock.
+
+`bms_product_sales_surfaces` stores explicit product visibility for retail POS, restaurant POS,
+public storefront, customer AI and online order creation. `bms_products.active` remains lifecycle
+state; reads and order creation require both active and the appropriate enabled surface.
+
+`bms_product_modifier_groups` owns per-product/variant selection rules. Existing modifier rows are
+backfilled into an `OPTIONS` group and receive `group_id`, `default_selected` and `sort_order`.
+All three new tables carry tenant RLS, `bms_app` grants and revision triggers. The modifier group FK
+includes `tenant_id`, preventing a modifier from linking to another shop's group.

@@ -32,7 +32,11 @@ type DraftRow = {
   category: string | null;
   brand: string | null;
   keywords: string[];
-  active: boolean;
+  creation_template: string | null;
+  stock_policy: string | null;
+  base_unit: string | null;
+  variant_codes: string[] | null;
+  sales_surfaces: string[] | null;
 };
 
 type RowResult = {
@@ -52,8 +56,8 @@ type ImportResult = {
 };
 
 // header ในเทมเพลต (ไทย) -> field ภายในที่ตรงกับ UpsertProductInput เดิม
-// ⚠️ ห้ามแปลค่าพวกนี้เป็น i18n (HEADER_MAP keys / TEMPLATE_HEADERS / TEMPLATE_EXAMPLE /
-// TRUE_WORDS / FALSE_WORDS) — มันไม่ใช่ UI copy แต่เป็น "สัญญารูปแบบไฟล์": parser เทียบหัว
+// ⚠️ ห้ามแปลค่าพวกนี้เป็น i18n (HEADER_MAP keys / TEMPLATE_HEADERS / TEMPLATE_EXAMPLE)
+// — มันไม่ใช่ UI copy แต่เป็น "สัญญารูปแบบไฟล์": parser เทียบหัว
 // คอลัมน์ในไฟล์ที่ผู้ใช้อัปโหลดกับสตริงพวกนี้ตรง ๆ ถ้าแปลตามภาษา UI ไฟล์ที่สร้างจากเทมเพลต
 // ภาษาหนึ่งจะ import ไม่ได้อีกภาษา (หลักเดียวกับ regex ที่ match ข้อความไทยที่ลูกค้าพิมพ์)
 const HEADER_MAP: Record<string, keyof DraftRow> = {
@@ -66,18 +70,22 @@ const HEADER_MAP: Record<string, keyof DraftRow> = {
   "หมวดหมู่": "category",
   "ยี่ห้อ": "brand",
   "คีย์เวิร์ด": "keywords",
-  "เปิดขาย": "active",
+  "รูปแบบสินค้า": "creation_template",
+  "stock policy": "stock_policy",
+  "หน่วยฐาน": "base_unit",
+  "ตัวเลือก": "variant_codes",
+  "ช่องทางขาย": "sales_surfaces",
 };
 const REQUIRED_FIELDS: (keyof DraftRow)[] = ["sku", "name", "price"];
-const TEMPLATE_HEADERS = ["SKU", "บาร์โค้ด", "ชื่อสินค้า", "รายละเอียด", "ราคาขาย", "ต้นทุน", "หมวดหมู่", "ยี่ห้อ", "คีย์เวิร์ด", "เปิดขาย"];
-const TEMPLATE_EXAMPLE = ["NIKE-001", "8850123456789", "Nike Air Max", "รองเท้าวิ่ง", "2990", "1800", "รองเท้า", "Nike", "วิ่ง|กีฬา", "TRUE"];
+// ไม่มีคอลัมน์ "เปิดขาย" โดยตั้งใจ: ตั้งแต่ 9.51 lifecycle เปลี่ยนได้ทาง
+// bmsSetProductActive/publishProduct ที่ตรวจ readiness เท่านั้น upsertProduct
+// จึงไม่สนใจค่า active ที่ส่งมา — คอลัมน์ที่กรอกแล้วไม่มีผลแย่กว่าไม่มีคอลัมน์
+const TEMPLATE_HEADERS = ["SKU", "บาร์โค้ด", "ชื่อสินค้า", "รายละเอียด", "ราคาขาย", "ต้นทุน", "หมวดหมู่", "ยี่ห้อ", "คีย์เวิร์ด", "รูปแบบสินค้า", "Stock Policy", "หน่วยฐาน", "ตัวเลือก", "ช่องทางขาย"];
+const TEMPLATE_EXAMPLE = ["MENU-KAPRAO", "", "ข้าวกะเพรา", "เมนูปรุงสด", "79", "", "อาหารจานเดียว", "", "กะเพรา|ผัดกะเพรา", "PREPARED_MENU", "RECIPE", "PIECE", "STD", "RESTAURANT_POS"];
 
 function normalizeHeader(h: unknown): string {
   return String(h ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
-
-const TRUE_WORDS = ["true", "1", "yes", "y", "ใช่"];
-const FALSE_WORDS = ["false", "0", "no", "n", "ไม่ใช่", "ปิด"];
 
 function parseWorkbook(buf: ArrayBuffer, t: TFn): DraftRow[] {
   const wb = XLSX.read(buf, { type: "array" });
@@ -105,13 +113,15 @@ function parseWorkbook(buf: ArrayBuffer, t: TFn): DraftRow[] {
       const idx = colIndex[field];
       return idx === undefined ? "" : String(r[idx] ?? "").trim();
     };
-    const activeRaw = get("active").toLowerCase();
-    const active = activeRaw === "" ? true : !FALSE_WORDS.includes(activeRaw) || TRUE_WORDS.includes(activeRaw);
     const keywordsRaw = get("keywords");
     const keywords = keywordsRaw
       ? keywordsRaw.split(keywordsRaw.includes("|") ? "|" : ",").map((k) => k.trim().toLowerCase()).filter(Boolean)
       : [];
     const costRaw = get("cost_price");
+    const splitCodes = (raw: string) => raw
+      .split(raw.includes("|") ? "|" : ",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
 
     return {
       rowNumber: i + 2, // +1 header row, +1 เพื่อให้นับแบบ 1-based ตรงกับที่เห็นใน Excel
@@ -124,7 +134,11 @@ function parseWorkbook(buf: ArrayBuffer, t: TFn): DraftRow[] {
       category: get("category") || null,
       brand: get("brand") || null,
       keywords,
-      active,
+      creation_template: get("creation_template") || null,
+      stock_policy: get("stock_policy") || null,
+      base_unit: get("base_unit") || null,
+      variant_codes: colIndex.variant_codes === undefined ? null : splitCodes(get("variant_codes")),
+      sales_surfaces: colIndex.sales_surfaces === undefined ? null : splitCodes(get("sales_surfaces")),
     };
   });
 }
@@ -275,7 +289,12 @@ export default function ImportModal({ open, onClose, onImported }: {
           <Alert closable
             type="info" showIcon style={{ marginBottom: 16 }}
             message={t("admin_product_import.no_images_title")}
-            description={t("admin_product_import.no_images_desc", { max: PRODUCT_IMPORT_MAX_ROWS })}
+            description={
+              <>
+                <div>{t("admin_product_import.no_images_desc", { max: PRODUCT_IMPORT_MAX_ROWS })}</div>
+                <div>{t("admin_product_import.draft_only_desc")}</div>
+              </>
+            }
           />
           <Button icon={<DownloadOutlined />} onClick={downloadTemplate} style={{ marginBottom: 16 }}>
             {t("admin_product_import.btn_download_template")}

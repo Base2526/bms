@@ -8,6 +8,7 @@
 import { GraphQLError } from "graphql/error";
 import {
   listProducts,
+  getProductBySku,
   listVariants,
   listProductImages,
   upsertProduct,
@@ -28,6 +29,16 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
 import { listSynonymCandidates, reviewSynonymCandidate } from "@/lib/bms/aiSynonyms";
+import {
+  getProductReadiness,
+  duplicateProductConfiguration,
+  listProductCatalogVariants,
+  listProductSalesSurfaces,
+  publishProduct,
+  setProductSalesSurfaces,
+  upsertProductCatalogVariant,
+} from "@/lib/bms/productConfiguration";
+import { getProductStockPolicy } from "@/lib/bms/productStockPolicies";
 
 function toGqlError(err: any): never {
   // ทุก error จาก service ถูกห่อเป็น 400 เหมือนกันหมด ทั้งที่บางอันไม่ใช่ความผิด
@@ -92,6 +103,10 @@ export const bmsProductsResolvers = {
         search: args.search, category: args.category,
         limit: args.limit, offset: args.offset,
       });
+    },
+    async bmsProductBySku(_p: unknown, args: { sku: string }, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return getProductBySku(getTenantId(ctx), args.sku);
     },
     async bmsProductCategories(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
@@ -248,9 +263,79 @@ export const bmsProductsResolvers = {
     ) {
       await requirePermission(ctx, "product.delete");
       const auth = requireAuth(ctx);
-      const ok = await setProductActive(getTenantId(ctx), args.sku, args.active, auth.author_id);
+      if (args.active) {
+        // ผ่าน toGqlError เหมือน mutation อื่นในไฟล์นี้: readiness ที่ไม่ผ่านคือ 400
+        // ของผู้ใช้ ส่วน 42P01 (ยังไม่ apply 9.51) ต้องเหลือ SQLSTATE ไว้ใน log
+        // ของ server ไม่ใช่โผล่เป็น 500 เปล่า ๆ ให้ไล่
+        try {
+          await publishProduct(getTenantId(ctx), args.sku, String(auth.author_id));
+        } catch (err) {
+          toGqlError(err);
+        }
+      }
+      const ok = args.active
+        ? true
+        : await setProductActive(getTenantId(ctx), args.sku, false, auth.author_id);
       if (ok) await audit(ctx, "product.active", args.sku, { active: args.active });
       return ok;
+    },
+    async bmsPublishProduct(_p: unknown, args: { sku: string }, ctx: any) {
+      await requirePermission(ctx, "product.delete");
+      const auth = requireAuth(ctx);
+      try {
+        const readiness = await publishProduct(getTenantId(ctx), args.sku, String(auth.author_id));
+        await audit(ctx, "product.publish", args.sku, { blockers: 0 });
+        return readiness;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsUpsertProductCatalogVariant(_p: unknown, args: { input: any }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const auth = requireAuth(ctx);
+      try {
+        const variant = await upsertProductCatalogVariant(
+          getTenantId(ctx), args.input, String(auth.author_id)
+        );
+        await audit(ctx, "product.variant_upsert", args.input?.productSku, { code: variant.code });
+        return variant;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsSetProductSalesSurfaces(
+      _p: unknown,
+      args: { productSku: string; surfaces: string[] },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "product.edit");
+      const auth = requireAuth(ctx);
+      try {
+        const surfaces = await setProductSalesSurfaces(
+          getTenantId(ctx), args.productSku, args.surfaces, String(auth.author_id)
+        );
+        await audit(ctx, "product.sales_surfaces_update", args.productSku, { surfaces });
+        return surfaces;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsDuplicateProduct(
+      _p: unknown,
+      args: { sourceSku: string; targetSku: string; targetName: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "product.edit");
+      const auth = requireAuth(ctx);
+      try {
+        const duplicated = await duplicateProductConfiguration(
+          getTenantId(ctx), args.sourceSku, args.targetSku, args.targetName, String(auth.author_id)
+        );
+        await audit(ctx, "product.duplicate", duplicated.sku, { sourceSku: args.sourceSku });
+        return duplicated;
+      } catch (err) {
+        toGqlError(err);
+      }
     },
     async bmsCreateProductCategory(_p: unknown, args: { name: string }, ctx: any) {
       await requirePermission(ctx, "product.edit");
@@ -363,6 +448,18 @@ export const bmsProductsResolvers = {
     async variants(parent: { sku: string; tenant_id: string }) {
       const rows = await listVariants(parent.tenant_id, parent.sku);
       return rows.map(shapeVariant);
+    },
+    async catalogVariants(parent: { sku: string; tenant_id: string }) {
+      return listProductCatalogVariants(parent.tenant_id, parent.sku);
+    },
+    async salesSurfaces(parent: { sku: string; tenant_id: string }) {
+      return listProductSalesSurfaces(parent.tenant_id, parent.sku);
+    },
+    async readiness(parent: { sku: string; tenant_id: string }) {
+      return getProductReadiness(parent.tenant_id, parent.sku);
+    },
+    async stockPolicy(parent: { sku: string; tenant_id: string }) {
+      return getProductStockPolicy(parent.tenant_id, parent.sku);
     },
   },
 };

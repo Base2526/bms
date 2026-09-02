@@ -160,6 +160,25 @@ function decisionResultToGraphQLError(result: { status: string; [k: string]: unk
   });
 }
 
+// 9.51: เคสหน้าร้านกับเคสออนไลน์ต้องเลือกยาจากคนละชุด
+// ยาที่ร้านไม่ได้เปิดขายออนไลน์ต้องไม่โผล่ในตัวเลือกของเคสออนไลน์ ไม่งั้นเภสัชกรอนุมัติ
+// ตะกร้าที่ createOrder ปฏิเสธทีหลัง (ต้องมี ONLINE_ORDER) = ใบอนุมัติที่ใช้จริงไม่ได้
+// และยาที่ขายได้เฉพาะหน้าร้านต้องยังอยู่ในตัวเลือกของเคสจากเครื่องขาย ไม่งั้นเคาน์เตอร์
+// จ่ายยาที่เพิ่งซักถามไปแล้วไม่ได้เลย
+// ช่องทางอ่านจาก `channel_id` ไม่ใช่ `complaint.sourceMeta` (กฎเดียวกับ approveAssessment)
+function catalogSurfaceForChannel(channelId: string | null | undefined): "RETAIL_POS" | "CUSTOMER_AI" {
+  return channelId === "pos" ? "RETAIL_POS" : "CUSTOMER_AI";
+}
+
+async function assessmentCatalogSurface(
+  tenantId: string,
+  assessmentId: string | null
+): Promise<"RETAIL_POS" | "CUSTOMER_AI"> {
+  if (!assessmentId) return "CUSTOMER_AI";
+  const assessment = await getAssessment(tenantId, assessmentId);
+  return catalogSurfaceForChannel(assessment?.channelId);
+}
+
 export const bmsPharmacyResolvers = {
   Query: {
     async bmsPharmacyAssessments(
@@ -237,7 +256,11 @@ export const bmsPharmacyResolvers = {
         createdAt: new Date(r.created_at).toISOString(),
       }));
     },
-    async bmsPharmacyCatalog(_p: unknown, args: { search?: string | null; limit?: number | null }, ctx: any) {
+    async bmsPharmacyCatalog(
+      _p: unknown,
+      args: { search?: string | null; limit?: number | null; assessmentId?: string | null },
+      ctx: any
+    ) {
       requireIntakeEnabled();
       await requirePermission(ctx, "pharmacy.assessment.review");
       const { items } = await listSellableProducts(getTenantId(ctx), {
@@ -245,6 +268,7 @@ export const bmsPharmacyResolvers = {
         inStockOnly: true,
         sort: "relevance",
         limit: args.limit ?? 12,
+        salesSurface: await assessmentCatalogSurface(getTenantId(ctx), args.assessmentId ?? null),
       });
       const policies = await listPharmacyProductPolicies(getTenantId(ctx));
       const policyBySku = new Map(policies.map((policy) => [policy.productSku, policy]));
@@ -622,6 +646,7 @@ export const bmsPharmacyResolvers = {
       const { kept, excluded } = filterMedicationSuggestionsAgainstAllergies(result, allergiesText);
       const productPolicies = await listPharmacyProductPolicies(tenantId);
       const productPolicyBySku = new Map(productPolicies.map((policy) => [policy.productSku, policy]));
+      const suggestionSurface = catalogSurfaceForChannel(assessment.channelId);
       const withCatalogMatches = async <T extends { drugName: string; strength?: string; dosageInstruction?: string }>(suggestion: T) => {
         const bySku = new Map<
           string,
@@ -642,6 +667,7 @@ export const bmsPharmacyResolvers = {
             inStockOnly: true,
             sort: "relevance",
             limit: 3,
+            salesSurface: suggestionSurface,
           });
           for (const item of items) {
             if (!bySku.has(item.sku)) {

@@ -79,7 +79,50 @@ function menuCardTint(station: string | null, stations: string[]) {
   const idx = station ? stations.indexOf(station) : stations.length;
   return MENU_CARD_TINTS[((idx % MENU_CARD_TINTS.length) + MENU_CARD_TINTS.length) % MENU_CARD_TINTS.length];
 }
-type ScanHit = { sku: string; productName: string; size: string; packCode: string; unitName: string; baseQty: number; packPrice: number; available: number; modifiers: Array<{ code: string; name: string; priceDelta: number }> };
+type ScanModifier = { code: string; name: string; priceDelta: number; groupCode: string; groupName: string; selectionType: "SINGLE" | "MULTIPLE"; minSelect: number; maxSelect: number | null; defaultSelected: boolean };
+type ScanHit = { sku: string; productName: string; size: string; packCode: string; unitName: string; baseQty: number; packPrice: number; available: number; modifiers: ScanModifier[] };
+
+function MenuModifierGroups({ modifiers, selected, onChange }: {
+  modifiers: ScanModifier[];
+  selected: string[];
+  onChange: (codes: string[]) => void;
+}) {
+  const groups = Array.from(modifiers.reduce((map, modifier) => {
+    const current = map.get(modifier.groupCode) ?? { meta: modifier, items: [] as ScanModifier[] };
+    current.items.push(modifier);
+    map.set(modifier.groupCode, current);
+    return map;
+  }, new Map<string, { meta: ScanModifier; items: ScanModifier[] }>()).values());
+  return <div className={styles.modifierList}>{groups.map(({ meta, items }) => {
+    const selectedInGroup = items.filter((item) => selected.includes(item.code));
+    return <fieldset key={meta.groupCode} style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend><strong>{meta.groupName}</strong>{meta.minSelect > 0 ? ` · เลือกอย่างน้อย ${meta.minSelect}` : ""}</legend>
+      {items.map((modifier) => {
+        const checked = selected.includes(modifier.code);
+        const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
+        return <label className={styles.modifierChoice} key={modifier.code}>
+          <input
+            type={meta.selectionType === "SINGLE" ? "radio" : "checkbox"}
+            name={`modifier-${meta.groupCode}`}
+            checked={checked}
+            disabled={!checked && atLimit}
+            onChange={(event) => {
+              if (meta.selectionType === "SINGLE") {
+                const groupCodes = new Set(items.map((item) => item.code));
+                onChange([...selected.filter((code) => !groupCodes.has(code)), modifier.code]);
+                return;
+              }
+              onChange(event.target.checked
+                ? [...selected, modifier.code]
+                : selected.filter((code) => code !== modifier.code));
+            }}
+          />
+          <span>{modifier.name}{modifier.priceDelta > 0 ? ` (+฿${money(modifier.priceDelta)})` : ""}</span>
+        </label>;
+      })}
+    </fieldset>;
+  })}</div>;
+}
 type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 
 const LANES = [
@@ -396,7 +439,7 @@ export default function RestaurantPosPage() {
     setOpenTable(table);
   }
   async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); setScreen("ORDER"); await loadFloor(); }); }
-  async function chooseMenu(item: SearchItem) { await run(async () => { const size = item.availableSizes.find((v) => v.available > 0)?.size ?? item.availableSizes[0]?.size ?? ""; const hit = await json(`/api/pos/scan?code=${encodeURIComponent(item.sku)}&size=${encodeURIComponent(size)}&withImage=1`); setMenuHit(hit); setModifierCodes([]); setKitchenNote(""); setMenuQty(1); }); }
+  async function chooseMenu(item: SearchItem) { await run(async () => { const size = item.availableSizes.find((v) => v.available > 0)?.size ?? item.availableSizes[0]?.size ?? ""; const hit: ScanHit = await json(`/api/pos/scan?code=${encodeURIComponent(item.sku)}&size=${encodeURIComponent(size)}&surface=RESTAURANT_POS&withImage=1`); setMenuHit(hit); setModifierCodes(hit.modifiers.filter((modifier) => modifier.defaultSelected).map((modifier) => modifier.code)); setKitchenNote(""); setMenuQty(1); }); }
   async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setSearch(""); await loadFloor(); }); }
   /**
    * สั่งซ้ำบรรทัดเดิม — คุณค่าอยู่ที่การก็อป **ตัวเลือก + โน้ตครัว** ไม่ใช่ก็อปเมนู
@@ -811,7 +854,22 @@ export default function RestaurantPosPage() {
       </div>
     </Modal>
     <Modal title={`เปิดบิล ${openTable?.name ?? ""}`} open={Boolean(openTable)} onCancel={() => setOpenTable(null)} onOk={() => void openCheck()} confirmLoading={working} okText="เปิดโต๊ะ" getContainer={modalContainer}><div className={styles.modalGrid}><label>จำนวนลูกค้า<input type="number" min={1} max={500} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} /></label></div></Modal>
-    <Modal title={menuHit?.productName ?? "เพิ่มเมนู"} open={Boolean(menuHit)} onCancel={() => setMenuHit(null)} onOk={() => void addMenu()} confirmLoading={working} okText="เพิ่มในบิล" getContainer={modalContainer}>{menuHit && <div className={styles.modalGrid}><Alert type="info" message={`${menuHit.size} · ฿${money(menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0))} / ${menuHit.unitName} · รวม ${menuQty} รายการ ฿${money((menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * menuQty)}`} /><label>จำนวน<input type="number" min={1} max={9999} value={menuQty} onChange={(event) => setMenuQty(Number(event.target.value))} /></label>{menuHit.modifiers.length > 0 && <div><strong>ตัวเลือก</strong><div className={styles.modifierList}>{menuHit.modifiers.map((modifier) => <label className={styles.modifierChoice} key={modifier.code}><input type="checkbox" checked={modifierCodes.includes(modifier.code)} onChange={(event) => setModifierCodes((current) => event.target.checked ? [...current, modifier.code] : current.filter((code) => code !== modifier.code))} /><span>{modifier.name}{modifier.priceDelta > 0 ? ` (+฿${money(modifier.priceDelta)})` : ""}</span></label>)}</div></div>}<label>โน้ตถึงครัว<textarea rows={3} maxLength={300} value={kitchenNote} onChange={(event) => setKitchenNote(event.target.value)} placeholder="เช่น ไม่เผ็ด, แยกน้ำ" /></label></div>}</Modal>
+    <Modal
+      title={menuHit?.productName ?? "เพิ่มเมนู"}
+      open={Boolean(menuHit)}
+      onCancel={() => setMenuHit(null)}
+      onOk={() => void addMenu()}
+      confirmLoading={working}
+      okText="เพิ่มในบิล"
+      getContainer={modalContainer}
+    >
+      {menuHit && <div className={styles.modalGrid}>
+        <Alert type="info" message={`${menuHit.size} · ฿${money(menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0))} / ${menuHit.unitName} · รวม ${menuQty} รายการ ฿${money((menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * menuQty)}`} />
+        <label>จำนวน<input type="number" min={1} max={9999} value={menuQty} onChange={(event) => setMenuQty(Number(event.target.value))} /></label>
+        {menuHit.modifiers.length > 0 && <MenuModifierGroups modifiers={menuHit.modifiers} selected={modifierCodes} onChange={setModifierCodes} />}
+        <label>โน้ตถึงครัว<textarea rows={3} maxLength={300} value={kitchenNote} onChange={(event) => setKitchenNote(event.target.value)} placeholder="เช่น ไม่เผ็ด, แยกน้ำ" /></label>
+      </div>}
+    </Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
     <Modal
       title={lang === "en" ? "Support diagnostics" : "ข้อมูลวิเคราะห์สำหรับ Support"}
