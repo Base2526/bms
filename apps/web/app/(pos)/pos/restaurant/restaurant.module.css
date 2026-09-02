@@ -345,6 +345,7 @@
 .kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
 .kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }

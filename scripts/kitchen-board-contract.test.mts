@@ -18,6 +18,9 @@ import {
   kitchenStations,
   kitchenUrgency,
   pickReferenceAt,
+  slaForStation,
+  DEFAULT_KITCHEN_SLA,
+  PREVIOUS_KITCHEN_STATUS,
   type KitchenBoardTicket,
 } from "../apps/web/lib/bms/kitchenBoard.ts";
 
@@ -164,4 +167,35 @@ test("รายชื่อสถานีมาจากงานที่ค�
   ]);
   assert.equal(stations.length, 2);
   assert.ok(stations.includes("ครัวร้อน") && stations.includes("บาร์เครื่องดื่ม"));
+});
+
+test("⚠️ เกณฑ์เวลาแยกตามสถานี — เกณฑ์เดียวทั้งร้านทำให้ครัวร้อนแดงตลอด", () => {
+  const slas = {
+    "บาร์เครื่องดื่ม": { warnMinutes: 2, lateMinutes: 4 },
+    "ครัวร้อน": { warnMinutes: 8, lateMinutes: 15 },
+  };
+  const at5min = 5 * 60;
+  assert.equal(kitchenUrgency(at5min, slaForStation("บาร์เครื่องดื่ม", slas)), "late", "บาร์ 5 นาทีคือสาย");
+  assert.equal(kitchenUrgency(at5min, slaForStation("ครัวร้อน", slas)), "ok", "ครัวร้อน 5 นาทียังปกติ");
+  assert.equal(kitchenUrgency(at5min, slaForStation("ครัวเย็น", slas)), "warn", "สถานีที่ไม่ตั้งใช้ค่าปริยาย 5/10");
+});
+
+test("ค่าเกณฑ์ที่ใช้ไม่ได้ต้องตกกลับค่าปริยาย ไม่ใช่ทำให้ทุกใบสีเดียว", () => {
+  assert.deepEqual(slaForStation("x", null), DEFAULT_KITCHEN_SLA);
+  assert.deepEqual(slaForStation(null, { x: { warnMinutes: 1, lateMinutes: 2 } }), DEFAULT_KITCHEN_SLA);
+  // เหลืองต้องมาก่อนแดง ถ้าสลับกันมาให้ทิ้งค่านั้น
+  assert.deepEqual(slaForStation("x", { x: { warnMinutes: 9, lateMinutes: 3 } }), DEFAULT_KITCHEN_SLA);
+  assert.deepEqual(slaForStation("x", { x: { warnMinutes: 0, lateMinutes: 0 } }), DEFAULT_KITCHEN_SLA);
+  assert.deepEqual(slaForStation("x", { x: { warnMinutes: NaN, lateMinutes: 5 } } as any), DEFAULT_KITCHEN_SLA);
+  // ค่าที่ใช้ได้ต้องถูกใช้จริง รวมถึง warn = 0 (เตือนทันที)
+  assert.deepEqual(slaForStation("x", { x: { warnMinutes: 0, lateMinutes: 3 } }), { warnMinutes: 0, lateMinutes: 3 });
+});
+
+test("⚠️ ย้อนสถานะได้ทีละขั้น แต่ใบที่ยกเลิกแล้วย้อนไม่ได้", () => {
+  assert.equal(PREVIOUS_KITCHEN_STATUS.PREPARING, "NEW");
+  assert.equal(PREVIOUS_KITCHEN_STATUS.READY, "PREPARING");
+  assert.equal(PREVIOUS_KITCHEN_STATUS.SERVED, "READY");
+  assert.equal(PREVIOUS_KITCHEN_STATUS.NEW, null, "ขั้นแรกไม่มีที่ให้ถอย");
+  // การยกเลิกตัดบรรทัดออกจากบิลไปแล้ว การย้อนคือการแก้บิล ไม่ใช่การแก้สถานะครัว
+  assert.equal(PREVIOUS_KITCHEN_STATUS.CANCELLED, null);
 });

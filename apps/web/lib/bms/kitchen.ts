@@ -148,13 +148,24 @@ export async function cancelKitchenTicketsForOrderInTx(
   return result.rowCount ?? 0;
 }
 
+/**
+ * เดินหน้าได้ทีละขั้น ถอยหลังได้ทีละขั้น
+ *
+ * ถอยหลังมีเพราะการกดผิดที่จอครัวเกิดจริงและบ่อย (มือเปื้อน จอสัมผัสลั่น กดใบข้าง ๆ) —
+ * เดิมกดพลาดเป็น "พร้อมเสิร์ฟ" แล้วแก้ไม่ได้เลย ครัวต้องจำเอาเองว่าใบไหนยังไม่เสร็จจริง
+ *
+ * **CANCELLED เป็นปลายทางถาวรโดยตั้งใจ ห้ามเพิ่มทางกลับ** — การยกเลิกตัดบรรทัดออกจากบิล
+ * โต๊ะไปแล้วในทรานแซกชันเดียวกัน การ "ย้อนกลับ" จึงต้องเอาบรรทัดกลับเข้าบิลพร้อมจองสต็อกใหม่
+ * ซึ่งเป็นการแก้บิล ไม่ใช่การแก้สถานะครัว (ทางที่ถูกคือสั่งรอบใหม่)
+ */
 const NEXT_KITCHEN_STATUS: Record<string, ReadonlySet<string>> = {
   NEW: new Set(["PREPARING", "CANCELLED"]),
-  PREPARING: new Set(["READY", "CANCELLED"]),
-  READY: new Set(["SERVED", "CANCELLED"]),
-  SERVED: new Set(),
+  PREPARING: new Set(["READY", "NEW", "CANCELLED"]),
+  READY: new Set(["SERVED", "PREPARING", "CANCELLED"]),
+  SERVED: new Set(["READY"]),
   CANCELLED: new Set(),
 };
+
 
 /**
  * ผลที่ต้องเกิดกับ "บิลโต๊ะ" เมื่อครัวยกเลิกตั๋ว — อาหารไม่ได้ทำ บรรทัดต้องหลุดจากยอด

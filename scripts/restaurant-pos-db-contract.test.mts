@@ -30,6 +30,12 @@ import {
   updateKitchenTicketsStatus,
 } from "../apps/web/lib/bms/kitchen.ts";
 import {
+  clearKitchenStationSla,
+  getKitchenStationSlaMap,
+  listKitchenStationSlas,
+  upsertKitchenStationSla,
+} from "../apps/web/lib/bms/kitchenSla.ts";
+import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
   createDefaultRestaurantFloor,
@@ -40,6 +46,7 @@ import {
   removeRestaurantCheckItem,
   sendRestaurantKitchenRound,
   settleRestaurantCheck,
+  dropKitchenCancelledLineInTx,
 } from "../apps/web/lib/bms/restaurantPos.ts";
 
 const TAG = "restaurant-test";
@@ -642,6 +649,73 @@ test("a paid check cannot be cancelled, and a stuck CLOSING one always can", asy
   );
 });
 
+test("ย้อนสถานะได้ทีละขั้น แต่ใบที่ยกเลิกแล้วย้อนไม่ได้", async () => {
+  const ticket = (await listKitchenTickets(tenantId, "PREPARING", 200, locationId))[0];
+  assert.ok(ticket, "ต้องมีใบที่กำลังทำอยู่");
+  const back = await updateKitchenTicketStatus({
+    tenantId, ticketId: ticket.id, status: "NEW",
+    actorUserId: waiterId, expectedLocationId: locationId,
+  });
+  assert.equal(back.status, "NEW", "กดผิดแล้วต้องถอยได้");
+
+  // ข้ามขั้นถอยสองทียังไม่ได้เหมือนเดิม
+  await assert.rejects(
+    () => updateKitchenTicketStatus({
+      tenantId, ticketId: ticket.id, status: "SERVED",
+      actorUserId: waiterId, expectedLocationId: locationId,
+    }),
+    /เปลี่ยนสถานะ/
+  );
+
+  // ยกเลิกแล้วเป็นปลายทางถาวร — บรรทัดหลุดจากบิลไปแล้ว การย้อนคือการแก้บิล
+  await updateKitchenTicketStatus({
+    tenantId, ticketId: ticket.id, status: "CANCELLED",
+    actorUserId: waiterId, expectedLocationId: locationId,
+    onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx,
+  });
+  await assert.rejects(
+    () => updateKitchenTicketStatus({
+      tenantId, ticketId: ticket.id, status: "NEW",
+      actorUserId: waiterId, expectedLocationId: locationId,
+    }),
+    /เปลี่ยนสถานะ/
+  );
+});
+
+test("เกณฑ์เวลาต่อสถานีเก็บได้ ลบแล้วกลับไปใช้ค่าปริยาย และค่าที่ผิดถูกปฏิเสธ", async () => {
+  await upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 2, lateMinutes: 4 }, waiterId);
+  const map = await getKitchenStationSlaMap(tenantId);
+  assert.deepEqual(map["บาร์เครื่องดื่ม"], { warnMinutes: 2, lateMinutes: 4 });
+
+  // เหลืองต้องมาก่อนแดง ไม่งั้นใบกระโดดเป็นแดงโดยไม่มีขั้นเตือน
+  await assert.rejects(
+    () => upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 9, lateMinutes: 3 }, waiterId),
+    /น้อยกว่า/
+  );
+  await assert.rejects(
+    () => upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 1, lateMinutes: 900 }, waiterId),
+    /0 ถึง 600/
+  );
+  await assert.rejects(
+    () => upsertKitchenStationSla(tenantId, { station: "   ", warnMinutes: 1, lateMinutes: 2 }, waiterId),
+    /ชื่อสถานี/
+  );
+
+  // แก้ค่าเดิมทับได้ (ไม่ใช่สร้างแถวที่สอง)
+  await upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 3, lateMinutes: 6 }, waiterId);
+  assert.deepEqual((await getKitchenStationSlaMap(tenantId))["บาร์เครื่องดื่ม"], { warnMinutes: 3, lateMinutes: 6 });
+
+  // หน้าตั้งค่าเห็นสถานีที่ยังไม่เคยตั้งด้วย ไม่งั้นร้านต้องเดาชื่อให้ตรงเป๊ะเอง
+  const listed = await listKitchenStationSlas(tenantId);
+  const bar = listed.find((row) => row.station === "บาร์เครื่องดื่ม");
+  assert.equal(bar?.configured, true);
+  assert.ok(listed.every((row) => row.warnMinutes < row.lateMinutes));
+
+  assert.equal(await clearKitchenStationSla(tenantId, "บาร์เครื่องดื่ม", waiterId), true);
+  assert.equal((await getKitchenStationSlaMap(tenantId))["บาร์เครื่องดื่ม"], undefined);
+  assert.equal(await clearKitchenStationSla(tenantId, "บาร์เครื่องดื่ม", waiterId), false, "ลบซ้ำต้องไม่ล้ม");
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -658,7 +732,7 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_restaurant_kitchen_tickets",
     "bms_restaurant_check_items",
     // checks ต้องไปหลัง orders เพราะ bms_orders.restaurant_check_id เป็น FK ปกติ (NO ACTION)
-    "bms_kitchen_tickets",
+    "bms_kitchen_station_slas", "bms_kitchen_tickets",
     "bms_payments",
     "bms_order_items",
     "bms_order_discounts",

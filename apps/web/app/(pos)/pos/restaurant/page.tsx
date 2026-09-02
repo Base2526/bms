@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowRightOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, MoreOutlined, ReloadOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, MoreOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -16,7 +16,10 @@ import {
   kitchenStations,
   countKitchenDishes,
   kitchenUrgency,
+  slaForStation,
+  PREVIOUS_KITCHEN_STATUS,
   type KitchenBoardGroup,
+  type KitchenSla,
 } from "@/lib/bms/kitchenBoard";
 import styles from "./restaurant.module.css";
 
@@ -198,6 +201,13 @@ export default function RestaurantPosPage() {
   const [boardNow, setBoardNow] = useState(() => Date.now());
   const [stationFilter, setStationFilter] = useState<string | null>(null);
   const [groupMenu, setGroupMenu] = useState<KitchenBoardGroup | null>(null);
+  const [stationSlas, setStationSlas] = useState<Record<string, KitchenSla>>({});
+  // เสียงเตือนต้องให้คนเปิดเอง — เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ และครัวบางร้าน
+  // เปิดเพลงอยู่แล้ว การเด้งเสียงเองจึงเป็นการรบกวน ไม่ใช่ความช่วยเหลือ
+  const [chimeOn, setChimeOn] = useState(false);
+  const knownTicketIds = useRef<Set<string> | null>(null);
+  const chimeRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const [activeArea, setActiveArea] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
@@ -406,6 +416,34 @@ export default function RestaurantPosPage() {
   }
   async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
   async function loadFloor() { const data: Floor = await json("/api/pos/restaurant/floor"); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
+  /**
+   * เสียงเตือนสังเคราะห์เอง ไม่โหลดไฟล์ — จอครัวออฟไลน์ได้และ CSP ของแอปไม่ต้องเปิดทางให้
+   * ไฟล์เสียงจากที่อื่น · สองโน้ตสั้นเพื่อให้แยกออกจากเสียงแจ้งเตือนของเครื่องอื่นในร้าน
+   */
+  function playKitchenChime() {
+    if (!chimeRef.current) return;
+    try {
+      const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = audioCtxRef.current ?? new Ctx();
+      audioCtxRef.current = ctx;
+      if (ctx.state === "suspended") void ctx.resume();
+      [880, 1174].forEach((hz, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = hz;
+        osc.type = "sine";
+        const at = ctx.currentTime + index * 0.16;
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.15);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(at);
+        osc.stop(at + 0.18);
+      });
+    } catch { /* จอที่เล่นเสียงไม่ได้ต้องไม่ทำให้คิวครัวพัง */ }
+  }
+
   // เลนที่ยังไม่จบเท่านั้นที่นับเข้าตัวกรองสถานี — "เสิร์ฟแล้ว" เป็นประวัติ ไม่ใช่งานค้าง
   const openTicket = (row: KitchenTicket) => row.status === "NEW" || row.status === "PREPARING" || row.status === "READY";
   const kitchenGroups = useMemo(
@@ -417,12 +455,27 @@ export default function RestaurantPosPage() {
     const timer = window.setInterval(() => setBoardNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [screen]);
+  useEffect(() => { chimeRef.current = chimeOn; }, [chimeOn]);
+  useEffect(() => {
+    try { setChimeOn(window.localStorage.getItem("bms.pos.kitchenChime") === "1"); } catch { /* โหมดส่วนตัว */ }
+  }, []);
   // สถานีที่เลือกไว้หมดงานแล้ว = ตัวกรองค้างอยู่กับช่องว่าง แล้วครัวอ่านว่าไม่มีออร์เดอร์
   useEffect(() => {
     if (stationFilter && !kitchenStations(tickets.filter(openTicket)).includes(stationFilter)) setStationFilter(null);
   }, [tickets, stationFilter]);
 
-  async function loadTickets() { const data = await json("/api/pos/kitchen/tickets?limit=200"); setTickets(Array.isArray(data.tickets) ? data.tickets : []); }
+  async function loadTickets() {
+    const data = await json("/api/pos/kitchen/tickets?limit=200");
+    const rows: KitchenTicket[] = Array.isArray(data.tickets) ? data.tickets : [];
+    setStationSlas(data.stationSlas && typeof data.stationSlas === "object" ? data.stationSlas : {});
+    // ตั๋วที่ "เพิ่งเข้ามา" เทียบกับรอบก่อน ไม่ใช่ทุกใบที่สถานะ NEW — ไม่งั้นจะดังทุก 5 วินาที
+    // ตราบใดที่ยังมีงานค้าง · รอบแรกหลังเปิดจอถือเป็นการตั้งต้น ไม่ใช่ของใหม่
+    const open = rows.filter((row) => row.status === "NEW");
+    const seen = knownTicketIds.current;
+    if (seen && open.some((row) => !seen.has(row.id))) playKitchenChime();
+    knownTicketIds.current = new Set(open.map((row) => row.id));
+    setTickets(rows);
+  }
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
@@ -919,6 +972,21 @@ export default function RestaurantPosPage() {
             </button>)}
             <div className={styles.kitchenBarEnd}>
               <span className={styles.kitchenLive}><span className={styles.kitchenLiveDot} aria-hidden="true" />อัปเดตอัตโนมัติ · {timeOf(new Date(boardNow).toISOString())}</span>
+              <button type="button" className={`${styles.btn} ${styles.btnIcon} ${chimeOn ? styles.kitchenChimeOn : ""}`}
+                aria-pressed={chimeOn}
+                onClick={() => {
+                  const next = !chimeOn;
+                  setChimeOn(next);
+                  chimeRef.current = next;
+                  try { window.localStorage.setItem("bms.pos.kitchenChime", next ? "1" : "0"); } catch { /* โหมดส่วนตัว */ }
+                  // เล่นทันทีตอนเปิด: เป็นทั้งการทดสอบลำโพงและการปลดล็อกเสียงของเบราว์เซอร์
+                  // ซึ่งต้องเกิดจากการแตะของคนเท่านั้น
+                  if (next) playKitchenChime();
+                }}
+                title={chimeOn ? "ปิดเสียงเตือนตั๋วใหม่" : "เปิดเสียงเตือนตั๋วใหม่"}
+                aria-label={chimeOn ? "ปิดเสียงเตือนตั๋วใหม่" : "เปิดเสียงเตือนตั๋วใหม่"}>
+                {chimeOn ? <SoundOutlined /> : <AudioMutedOutlined />}
+              </button>
               <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadTickets()} title="รีเฟรชคิว" aria-label="รีเฟรชคิว"><ReloadOutlined /></button>
             </div>
           </div>
@@ -930,7 +998,7 @@ export default function RestaurantPosPage() {
                 {groups.length === 0 && <div className={styles.laneEmpty}>ว่าง</div>}
                 {groups.map((group) => {
                   const elapsed = kitchenElapsedSeconds(group.referenceAt, boardNow);
-                  const urgency = kitchenUrgency(elapsed);
+                  const urgency = kitchenUrgency(elapsed, slaForStation(group.station, stationSlas));
                   return <article className={styles.ticket} key={group.key}>
                     <div className={styles.ticketHead}>
                       <span className={styles.ticketTable}>{group.tableLabel ?? "ไม่ระบุโต๊ะ"}{group.roundNo == null ? "" : ` · รอบ ${group.roundNo}`}</span>
@@ -992,6 +1060,12 @@ export default function RestaurantPosPage() {
           </div>;
         })}
         <div className={styles.sheetActions}>
+          {/* กดผิดที่จอครัวเกิดจริงและบ่อย — เดิมกดพลาดเป็น "พร้อมเสิร์ฟ" แล้วแก้ไม่ได้เลย
+              ย้อนได้ทีละขั้น · ใบที่ยกเลิกไปแล้วย้อนไม่ได้ (บรรทัดหลุดจากบิลไปแล้ว) */}
+          {PREVIOUS_KITCHEN_STATUS[groupMenu.status] && <button type="button" className={styles.btn}
+            onClick={() => void ticketGroupStatus(groupMenu, PREVIOUS_KITCHEN_STATUS[groupMenu.status]!)}>
+            <ArrowLeftOutlined /> ย้อนกลับไป {LANES.find((lane) => lane.status === PREVIOUS_KITCHEN_STATUS[groupMenu.status])?.label}
+          </button>}
           <button type="button" className={`${styles.btn} ${styles.btnDanger}`}
             onClick={() => void ticketGroupStatus(groupMenu, "CANCELLED")}>
             <CloseCircleOutlined /> ยกเลิกทั้งใบ ({groupMenu.ticketIds.length} รายการ)

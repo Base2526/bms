@@ -338,9 +338,15 @@ test("kitchen board accepts tickets without an order id and stays branch-aware",
     assert.ok(ticketType.includes(field), `BmsKitchenTicket ขาดฟิลด์ ${field}`);
   }
   // เลขบิลต้องอยู่ใต้เงื่อนไข และตั๋วที่ไม่มีเลขบิลต้องมีอะไรอ่านแทน (โต๊ะ/รอบ)
-  assert.match(board, /\{ticket\.orderId\s*\n?\s*\?/);
+  // การตัดสินใจนั้นย้ายไปอยู่ใน kitchenGroupLabel() ที่กระดานทั้งสองฝั่งใช้ร่วมกัน —
+  // กระดานหลังบ้านจึงต้องไม่แตะ orderId เองอีก (เทสของโมดูลคุมพฤติกรรมนั้นแยก)
+  assert.match(board, /group\.tableLabel \?\? t\("admin_kitchen\.dine_in"\)/);
+  assert.doesNotMatch(board, /ticket\.orderId\.slice/,
+    "อย่าหั่นเลขบิลตรง ๆ ที่หน้าจอ — ตั๋วบิลโต๊ะไม่มี orderId");
   assert.doesNotMatch(board, /·\s*#\{ticket\.orderId\.slice/);
-  assert.match(board, /ticket\.tableName \|\| ticket\.tableCode/);
+  // ชื่อโต๊ะ/รหัสโต๊ะเป็นทางเลือกสำรองของหัวใบ — ตอนนี้อยู่ใน kitchenGroupLabel()
+  const boardModule = code(await read("apps/web/lib/bms/kitchenBoard.ts"));
+  assert.match(boardModule, /clean\(ticket\.tableName\) \?\? clean\(ticket\.tableCode\)/);
   // จอครัวของเครื่องหน้าร้านเห็นและเลื่อนได้เฉพาะสาขาตัวเอง
   assert.match(kitchen, /locationId\?: string \| null/);
   assert.match(posQueue, /listKitchenTickets\(device\.tenantId, status, limit, device\.locationId\)/);

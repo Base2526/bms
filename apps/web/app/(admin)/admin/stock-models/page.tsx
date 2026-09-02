@@ -38,6 +38,19 @@ const Q_MODEL = gql`
     }
   }
 `;
+const Q_STATION_SLAS = gql`
+  query KitchenStationSlas { bmsKitchenStationSlas { station warnMinutes lateMinutes configured } }
+`;
+const M_STATION_SLA = gql`
+  mutation SaveKitchenStationSla($station: String!, $warnMinutes: Int!, $lateMinutes: Int!) {
+    bmsUpsertKitchenStationSla(station: $station, warnMinutes: $warnMinutes, lateMinutes: $lateMinutes) {
+      station warnMinutes lateMinutes configured
+    }
+  }
+`;
+const M_CLEAR_STATION_SLA = gql`
+  mutation ClearKitchenStationSla($station: String!) { bmsClearKitchenStationSla(station: $station) }
+`;
 const M_CAPABILITY = gql`
   mutation SetStockCapability($capability: String!, $enabled: Boolean!) {
     bmsUpsertStoreCapability(capability: $capability, enabled: $enabled) { capability enabled configured status source }
@@ -117,6 +130,10 @@ export default function StockModelsPage() {
       });
     },
   });
+  const stationSlas = useQuery(Q_STATION_SLAS, { fetchPolicy: "cache-and-network", errorPolicy: "all" });
+  const [saveStationSla, stationSlaMutation] = useMutation(M_STATION_SLA);
+  const [clearStationSla] = useMutation(M_CLEAR_STATION_SLA);
+  const [slaDraft, setSlaDraft] = useState<Record<string, { warnMinutes: number; lateMinutes: number }>>({});
   const [setCapability, capabilityMutation] = useMutation(M_CAPABILITY);
   const [resetCapability] = useMutation(M_RESET_CAPABILITY);
   const [savePolicy, policyMutation] = useMutation(M_POLICY);
@@ -339,6 +356,81 @@ export default function StockModelsPage() {
         </div>
       </Spin>
     </section>
+
+    {/* เกณฑ์เวลาของจอครัว (9.53) — บาร์ชงเสร็จใน 2 นาที ครัวร้อน 8-12 นาทีเป็นปกติ
+        เกณฑ์เดียวทั้งร้านทำให้ครัวร้อนแดงตลอดจนสีเลิกมีความหมาย */}
+    <Card title={t("admin_stock.station_sla")}>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        {t("admin_stock.station_sla_hint")}
+      </Typography.Paragraph>
+      <Spin spinning={stationSlas.loading}>
+        {(stationSlas.data?.bmsKitchenStationSlas ?? []).length === 0
+          ? <Empty description={t("admin_stock.station_sla_empty")} />
+          : <Table
+              rowKey="station"
+              size="small"
+              pagination={false}
+              dataSource={stationSlas.data?.bmsKitchenStationSlas ?? []}
+              columns={[
+                { title: t("admin_stock.station"), dataIndex: "station" },
+                {
+                  title: t("admin_stock.station_sla_warn"),
+                  render: (_v: unknown, row: any) => <InputNumber min={0} max={599} disabled={!canEdit}
+                    value={slaDraft[row.station]?.warnMinutes ?? row.warnMinutes}
+                    onChange={(value) => setSlaDraft((current) => ({
+                      ...current,
+                      [row.station]: {
+                        warnMinutes: Number(value ?? 0),
+                        lateMinutes: current[row.station]?.lateMinutes ?? row.lateMinutes,
+                      },
+                    }))} />,
+                },
+                {
+                  title: t("admin_stock.station_sla_late"),
+                  render: (_v: unknown, row: any) => <InputNumber min={1} max={600} disabled={!canEdit}
+                    value={slaDraft[row.station]?.lateMinutes ?? row.lateMinutes}
+                    onChange={(value) => setSlaDraft((current) => ({
+                      ...current,
+                      [row.station]: {
+                        warnMinutes: current[row.station]?.warnMinutes ?? row.warnMinutes,
+                        lateMinutes: Number(value ?? 0),
+                      },
+                    }))} />,
+                },
+                {
+                  title: t("admin_stock.source"),
+                  render: (_v: unknown, row: any) => row.configured
+                    ? <Tag color="green">{t("admin_stock.station_sla_custom")}</Tag>
+                    : <Tag>{t("admin_stock.station_sla_default")}</Tag>,
+                },
+                {
+                  title: "",
+                  render: (_v: unknown, row: any) => canEdit && <Space>
+                    <Button size="small" type="primary" loading={stationSlaMutation.loading}
+                      onClick={async () => {
+                        const draft = slaDraft[row.station] ?? { warnMinutes: row.warnMinutes, lateMinutes: row.lateMinutes };
+                        try {
+                          await saveStationSla({ variables: { station: row.station, ...draft } });
+                          message.success(t("admin_stock.saved"));
+                          await stationSlas.refetch();
+                        } catch (error: any) {
+                          message.error(error?.message ?? t("admin_stock.save_failed"));
+                        }
+                      }}>{t("admin_stock.save")}</Button>
+                    {row.configured && <Popconfirm title={t("admin_stock.station_sla_reset_confirm")}
+                      onConfirm={async () => {
+                        await clearStationSla({ variables: { station: row.station } });
+                        setSlaDraft((current) => { const next = { ...current }; delete next[row.station]; return next; });
+                        await stationSlas.refetch();
+                      }}>
+                      <Button size="small" icon={<ReloadOutlined />} />
+                    </Popconfirm>}
+                  </Space>,
+                },
+              ]}
+            />}
+      </Spin>
+    </Card>
 
     <Card title={t("admin_stock.product_model")}>
       <Space.Compact style={{ width: "100%", maxWidth: 720 }}>
