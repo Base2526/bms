@@ -495,3 +495,37 @@ test("modals still portal into the page root so the CSS-module theme applies", a
   assert.match(src, /getContainer=\{modalContainer\}/);
   assert.match(src, /rootRef\.current \?\? document\.body/);
 });
+
+/**
+ * กระดานครัว: แต่ละเลนเลื่อนของตัวเอง ไม่ใช่เลื่อนทั้งแผ่น
+ * ถ้าเลื่อนทั้งแผ่น เลนที่ตั๋วเยอะจะดันหัวเลนของทุกช่องหายไปพร้อมกัน แล้วครัวอ่านไม่ออกว่า
+ * ที่เห็นอยู่คือช่องไหน · วัดจริงที่ viewport 820px: 20 ตั๋วในเลนเดียว → เลนเลื่อนได้
+ * (content 2905 / client 519) หัวเลนอยู่กับที่ และทั้งกระดาน/หน้าไม่เลื่อนตาม
+ */
+test("each kitchen lane scrolls on its own while its header stays put", async () => {
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const rule = (name: string) => css.split("\n").find((line) => line.trimStart().startsWith(name + " {"));
+
+  const board = rule(".kitchenBoard");
+  assert.ok(board, ".kitchenBoard must exist");
+  assert.match(board!, /overflow:\s*hidden/, "the board itself must not be the scroller");
+  assert.match(board!, /display:\s*flex/, "it has to bound .lanes for the lanes to be scrollable");
+
+  const lanes = rule(".lanes");
+  assert.match(lanes!, /min-height:\s*0/, "a grid item defaults to min-height:auto and would never scroll");
+
+  const laneScroll = rule(".laneScroll");
+  assert.ok(laneScroll, "tickets need their own scroll box so .laneHead can stay pinned");
+  assert.match(laneScroll!, /overflow-y:\s*auto/);
+  assert.match(laneScroll!, /min-height:\s*0/);
+
+  assert.match(rule(".laneHead")!, /flex:\s*none/, "the header must not shrink away as tickets pile up");
+
+  const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(src, /styles\.laneScroll\}>\{rows\.map/,
+    "tickets must be wrapped in the scroll box, not dropped straight into the lane");
+
+  // จอแคบเลื่อนทั้งหน้าตามปกติ — เลนจึงต้องคืน overflow ที่ breakpoint นั้น
+  assert.match(css, /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
+    "the <=900px breakpoint scrolls the page as a document, so per-lane scrolling is released");
+});

@@ -332,10 +332,15 @@
 .setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--panel-2); border: 1px solid var(--line); color: var(--accent); }
 
 /* ---------- จอครัว ---------- */
-.kitchenBoard { padding: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; overflow-x: auto; }
-.lane { border-radius: 6px; min-height: 460px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color); }
-.laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
+/* กระดานครัวไม่เลื่อนทั้งแผ่น — แต่ละเลนเลื่อนของตัวเอง หัวเลน (ชื่อ + ตัวนับ) จึงอยู่กับที่
+   ถ้าเลื่อนทั้งแผ่น เลนที่ตั๋วเยอะจะดันหัวเลนอื่นหายไปด้วย แล้วครัวอ่านไม่ออกว่ากำลังดูช่องไหน */
+.kitchenBoard { padding: 12px; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
+.lane { border-radius: 6px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+/* ตั๋วเลื่อนในเลน ส่วนหัวเลนตรึงไว้ */
+.laneScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.laneHead { flex: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
 .laneCount { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; background: var(--panel-2); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ticket { background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
 .ticketTable { color: var(--red); font-weight: 700; font-size: 12.5px; margin-bottom: 3px; }
@@ -369,7 +374,8 @@
   .page { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto; }
   .rail { position: sticky; top: 0; align-self: start; height: 100dvh; }
   .shell { overflow: visible; }
-  .panelScroll, .items, .openList, .kitchenBoard { overflow: visible; }
+  .panelScroll, .items, .openList, .kitchenBoard, .laneScroll { overflow: visible; }
+  .lane { min-height: 460px; }
   .workspace { grid-template-columns: 1fr; }
   .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px rgba(21, 25, 22, .1); }
