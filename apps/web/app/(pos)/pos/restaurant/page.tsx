@@ -8,6 +8,7 @@ import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDr
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
+import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import styles from "./restaurant.module.css";
 
 const TOKEN_KEY = "bms.pos.deviceToken";
@@ -16,7 +17,7 @@ type Session = { device: { id: string; code: string; name: string | null }; loca
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
-type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
+type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & { kitchenStation: string | null; hasModifiers: boolean; imageUrl: string | null };
@@ -79,7 +80,7 @@ function menuCardTint(station: string | null, stations: string[]) {
   return MENU_CARD_TINTS[((idx % MENU_CARD_TINTS.length) + MENU_CARD_TINTS.length) % MENU_CARD_TINTS.length];
 }
 type ScanHit = { sku: string; productName: string; size: string; packCode: string; unitName: string; baseQty: number; packPrice: number; available: number; modifiers: Array<{ code: string; name: string; priceDelta: number }> };
-type KitchenTicket = { id: string; orderId: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
+type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 
 const LANES = [
   { status: "NEW", label: "เข้าใหม่", color: "#dd5d3d", next: "PREPARING", nextLabel: "เริ่มทำ" },
@@ -103,7 +104,7 @@ function tableState(
   kitchen: Map<string, { cooking: number; ready: number }>
 ): { key: TableStateKey; label: string; rank: number; color: string } {
   const check = table.check;
-  const stats = kitchen.get(table.name);
+  const stats = check ? kitchen.get(check.id) : undefined;
   if (!check) return { key: "idle", label: "", rank: 99, color: "var(--grey)" };
   if (check.unsentCount > 0) return { key: "unsent", label: `ยังไม่ส่งครัว ${check.unsentCount}`, rank: 0, color: "var(--red)" };
   if ((stats?.ready ?? 0) > 0) return { key: "ready", label: `พร้อมเสิร์ฟ ${stats!.ready}`, rank: 1, color: "var(--green)" };
@@ -112,6 +113,26 @@ function tableState(
   return { key: "idle", label: "ยังไม่สั่ง", rank: 4, color: "var(--grey)" };
 }
 const money = (value: number) => new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+
+/**
+ * สถานะของอาหารจานนั้นบนแผงบิล — อ่านจากตั๋วครัวของบรรทัดเดียวกัน
+ *
+ * ก่อนหน้านี้แผงบิลเงียบเรื่องนี้ทั้งหมด: ป้ายบนชิปโต๊ะบอกภาพรวม ("เสิร์ฟครบ") แต่รายบรรทัด
+ * ไม่บอกอะไร เด็กเสิร์ฟจึงตอบไม่ได้ว่าจานไหนยังอยู่ในครัว ต้องสลับไปจอครัวแล้วจับคู่ด้วย
+ * ชื่อโต๊ะเอง
+ *
+ * **คำต้องตรงกับ LANES ของจอครัว** — สองจอเรียกสถานะเดียวกันคนละชื่อคือทางที่ทำให้คนคุยกัน
+ * ไม่รู้เรื่องหน้าเคาน์เตอร์
+ *
+ * `loud` = ตัวที่เรียกร้องให้คนถือจอนี้ลุกไปทำอะไร มีแค่ "พร้อมเสิร์ฟ" ตัวเดียว — "เสิร์ฟแล้ว"
+ * คืองานที่จบแล้ว ต้องจางลง ไม่ใช่เด่นขึ้น
+ */
+const LINE_KITCHEN_STATE: Record<string, { label: string; color: string; loud?: boolean }> = {
+  NEW: { label: "เข้าครัวแล้ว รอคิว", color: "var(--ink-3)" },
+  PREPARING: { label: "ครัวกำลังทำ", color: "var(--amber)" },
+  READY: { label: "พร้อมเสิร์ฟ", color: "var(--green)", loud: true },
+  SERVED: { label: "เสิร์ฟแล้ว", color: "var(--ink-3)" },
+};
 
 export default function RestaurantPosPage() {
   const { lang } = useI18n();
@@ -163,6 +184,7 @@ export default function RestaurantPosPage() {
   // จะ resolve ไม่ได้แล้วหายไปเงียบ ๆ (เห็นแค่ตัวเลขลอยไม่มีกรอบ) — ต้องส่ง getContainer
   // ให้ modal render อยู่ใต้ .page แทนเพื่อให้ยังเห็นตัวแปรพวกนี้
   const rootRef = useRef<HTMLElement>(null);
+  const workingRef = useRef(false);
   // ⚠️ ต้องเป็น reference เดิมทุก render — ถ้าสร้าง closure ใหม่ทุกครั้ง antd จะเห็นว่า
   // container เปลี่ยน แล้ว portal ใหม่ซ้ำ ๆ จน animation ค้างที่ `ant-zoom-appear-start`
   // (opacity 0) = กล่องอยู่ใน DOM ตำแหน่งถูก แต่มองไม่เห็นทั้งใบ
@@ -177,16 +199,16 @@ export default function RestaurantPosPage() {
   const [now, setNow] = useState(0);
   useEffect(() => { setNow(Date.now()); const timer = window.setInterval(() => setNow(Date.now()), 30_000); return () => window.clearInterval(timer); }, []);
   const minutesSince = (iso: string) => { if (!now) return null; const started = new Date(iso).getTime(); return Number.isFinite(started) ? Math.max(0, Math.floor((now - started) / 60_000)) : null; };
-  // สถานะครัวรายโต๊ะ: ใช้ตั๋วที่โหลดมาแล้ว (ผูกด้วยชื่อโต๊ะที่ server ส่งมากับตั๋ว)
+  // สถานะครัวรายโต๊ะ: ผูกด้วย check id ซึ่งไม่ซ้ำ แม้หลายโซนจะใช้ชื่อโต๊ะเดียวกัน
   // เป็นข้อมูลสำหรับ "แสดงผล" เท่านั้น การตัดสินใจเรื่องเงิน/สต็อกยังอยู่ที่ server เหมือนเดิม
   const tableKitchenStats = useMemo(() => {
     const map = new Map<string, { cooking: number; ready: number }>();
     for (const ticket of tickets) {
-      if (!ticket.tableName) continue;
+      if (!ticket.checkId) continue;
       if (ticket.status !== "NEW" && ticket.status !== "PREPARING" && ticket.status !== "READY") continue;
-      const row = map.get(ticket.tableName) ?? { cooking: 0, ready: 0 };
+      const row = map.get(ticket.checkId) ?? { cooking: 0, ready: 0 };
       if (ticket.status === "READY") row.ready += 1; else row.cooking += 1;
-      map.set(ticket.tableName, row);
+      map.set(ticket.checkId, row);
     }
     return map;
   }, [tickets]);
@@ -316,7 +338,14 @@ export default function RestaurantPosPage() {
     return body;
   }
   function auth(extra: Record<string, unknown> = {}) { if (!actorUserId || !actorPin) throw new Error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return { ...extra, cashierUserId: actorUserId, cashierPin: actorPin }; }
-  async function run(work: () => Promise<void>) { setWorking(true); try { await work(); setError(""); } catch (cause) { const text = cause instanceof Error ? cause.message : String(cause); setError(text); message.error(text); } finally { setWorking(false); } }
+  async function run(work: () => Promise<void>) {
+    if (workingRef.current) return;
+    workingRef.current = true;
+    setWorking(true);
+    try { await work(); setError(""); }
+    catch (cause) { const text = cause instanceof Error ? cause.message : String(cause); setError(text); message.error(text); }
+    finally { workingRef.current = false; setWorking(false); }
+  }
   async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
   async function loadFloor() { const data: Floor = await json("/api/pos/restaurant/floor"); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
   async function loadTickets() { const data = await json("/api/pos/kitchen/tickets?limit=200"); setTickets(Array.isArray(data.tickets) ? data.tickets : []); }
@@ -349,10 +378,56 @@ export default function RestaurantPosPage() {
     return () => window.clearInterval(timer);
   }, [token, screen]);
 
-  async function chooseTable(table: DiningTable) { if (table.blocked) return; setSelectedTableId(table.id); if (table.check) await run(async () => { await loadCheck(table.check!.id); setScreen("ORDER"); }); else { setCheck(null); setGuestCount(Math.min(table.seats, 2)); setOpenTable(table); } }
+  async function chooseTable(table: DiningTable) {
+    if (table.blocked) return;
+    if (table.check) {
+      await run(async () => {
+        await loadCheck(table.check!.id);
+        setSelectedTableId(table.id);
+        setOpenTable(null);
+        setScreen("ORDER");
+      });
+      return;
+    }
+    setSelectedTableId(table.id);
+    setCheck(null);
+    setGuestCount(Math.min(table.seats, 2));
+    setOpenTable(table);
+  }
   async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); setScreen("ORDER"); await loadFloor(); }); }
   async function chooseMenu(item: SearchItem) { await run(async () => { const size = item.availableSizes.find((v) => v.available > 0)?.size ?? item.availableSizes[0]?.size ?? ""; const hit = await json(`/api/pos/scan?code=${encodeURIComponent(item.sku)}&size=${encodeURIComponent(size)}&withImage=1`); setMenuHit(hit); setModifierCodes([]); setKitchenNote(""); setMenuQty(1); }); }
   async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setSearch(""); await loadFloor(); }); }
+  /**
+   * สั่งซ้ำบรรทัดเดิม — คุณค่าอยู่ที่การก็อป **ตัวเลือก + โน้ตครัว** ไม่ใช่ก็อปเมนู
+   * ("เผ็ดน้อย เพิ่มไข่ดาว ไม่ใส่ผักชี" ถ้าไม่มีปุ่มนี้ต้องเลือกใหม่ทั้งชุดทุกครั้ง)
+   *
+   * **ห้ามก็อปราคา** — ส่งแต่ sku/size/packCode/จำนวน/รหัสตัวเลือก/โน้ต แล้วให้ server
+   * คิดราคาใหม่ตอนเพิ่ม ถ้าร้านขึ้นราคาหรือโปรหมดไปแล้ว บรรทัดใหม่ต้องได้ราคาวันนี้
+   * · ก็อปราคาเก่ามาคือสูตรเงินชุดที่สอง
+   *
+   * ได้บรรทัดสถานะ NEW ที่ต้องกดส่งครัวอีกรอบ — ไม่แอบเพิ่มเข้ารอบที่ส่งไปแล้ว
+   */
+  async function reorderLine(item: CheckItem) {
+    if (!check) return;
+    await run(async () => {
+      const body = await json(`/api/pos/restaurant/checks/${check.id}`, {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "add_item",
+          sku: item.sku,
+          size: item.size,
+          packCode: item.packCode,
+          packQty: item.packQty,
+          modifierCodes: item.modifierCodes,
+          kitchenNote: item.kitchenNote,
+        })),
+      });
+      setCheck(body.check);
+      await loadFloor();
+      message.success(`เพิ่ม ${item.productName} อีก ${item.packQty} — กดส่งครัวเพื่อส่งเข้าครัว`);
+    });
+  }
+
   async function action(name: string, extra: Record<string, unknown> = {}) { if (!check) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: name, ...extra })) }); if (body.check) setCheck(body.check); await Promise.all([loadFloor(), loadTickets()]); }); }
   async function settle() {
     if (!check) return;
@@ -513,6 +588,9 @@ export default function RestaurantPosPage() {
         <span className={styles.railLabel} aria-hidden="true">{item.short}</span>
         {item.badge > 0 && <span className={styles.railBadge}>{item.badge}</span>}
       </button>)}
+      <div className={styles.railHelpSlot}>
+        <PosGuideAssistant variant="rail" className={styles.railBtn} />
+      </div>
     </nav>
     <div className={styles.shell}>
       <header className={styles.topbar}>
@@ -650,6 +728,10 @@ export default function RestaurantPosPage() {
                 //  · ยัง SENT แต่ตั๋ว CANCELLED = ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
                 const dropped = item.status === "CANCELLED";
                 const stillCharged = !dropped && item.kitchenStatus === "CANCELLED";
+                // ร้านที่ปิดคิวครัวไม่มีตั๋ว = ไม่มีอะไรให้รายงาน จึงไม่ขึ้นป้าย (ไม่ใช่ขึ้นว่า "ไม่ทราบ")
+                const kitchenState = !dropped && !stillCharged && item.status === "SENT" && item.kitchenStatus
+                  ? LINE_KITCHEN_STATE[item.kitchenStatus] ?? null
+                  : null;
                 return <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""} ${dropped ? styles.itemDropped : ""} ${stillCharged ? styles.itemKitchenCancelled : ""}`} key={item.id}>
                   <span className={styles.itemQty}>{item.packQty}</span>
                   <span>
@@ -658,12 +740,17 @@ export default function RestaurantPosPage() {
                     {item.kitchenNote && <span className={styles.itemNote}>โน้ตครัว: {item.kitchenNote}</span>}
                     {dropped && <span className={styles.itemDropTag}>ครัวยกเลิก — ตัดออกจากยอดแล้ว ไม่คิดเงิน</span>}
                     {stillCharged && <span className={styles.itemCancelTag}>ครัวยกเลิกรายการนี้ — ยังคิดเงินอยู่</span>}
+                    {item.status === "NEW" && <span className={styles.itemCancelTag}>ยังไม่ส่งครัว</span>}
+                    {kitchenState && <span className={`${styles.itemKitchenTag} ${kitchenState.loud ? styles.itemKitchenTagLoud : ""}`} style={{ color: kitchenState.color }}>{kitchenState.label}</span>}
                   </span>
                   <span className={styles.itemSide}>
                     {/* ราคาต่อหน่วยที่ server บันทึกไว้ตอนเพิ่มรายการ — ห้ามคูณ/รวมเองที่จอ
                         เพราะตัวเลือกมีส่วนต่างราคาที่ถูกคิดฝั่ง server ตอนส่งครัว */}
                     {item.packPrice != null && <span className={`${styles.itemPrice} ${dropped ? styles.itemPriceVoid : ""}`} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
-                    {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
+                    {/* สั่งซ้ำขึ้นเฉพาะบรรทัดที่ส่งครัวไปแล้วหรือถูกยกเลิก — บรรทัด NEW ยังแก้ได้
+                        ที่การ์ดเมนูตรงหน้าอยู่แล้ว และช่องนี้เป็นที่ของปุ่มลบ */}
+                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain} title={`สั่ง ${item.productName} ซ้ำพร้อมตัวเลือกเดิม`} aria-label={`สั่ง ${item.productName} ซ้ำ`} disabled={working} onClick={() => void reorderLine(item)}><ReloadOutlined /> ซ้ำ</button>}
+                    {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
                   </span>
                 </article>;
               })}

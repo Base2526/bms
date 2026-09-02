@@ -19,7 +19,18 @@ const REGISTER_GUIDE_IDS = new Set(
   SYSTEM_GUIDES.filter((guide) => guide.pageId === "pos").map((guide) => guide.id)
 );
 
-export default function PosGuideAssistant() {
+/**
+ * `variant` เลือกว่าปุ่มเปิดอยู่ที่ไหน — ตัวผู้ช่วยและคำตอบเป็นตัวเดียวกันทั้งสองแบบ
+ *
+ *  · "floating" (ค่าปริยาย) = ปุ่มกลมลอยมุมขวาล่าง · หน้าค้าปลีก /pos ใช้แบบนี้ต่อ
+ *    เพราะไม่มีแถบเมนูให้วาง
+ *  · "rail" = หน้าร้านอาหารวางปุ่มไว้ท้ายแถบซ้ายเอง เพราะปุ่มลอยไปทับ "ส่งครัว/คิดเงิน"
+ *    ซึ่งเป็นสองปุ่มที่กดบ่อยที่สุดบนจอนั้น
+ */
+export default function PosGuideAssistant({ variant = "floating", className }: {
+  variant?: "floating" | "rail";
+  className?: string;
+} = {}) {
   const pathname = usePathname();
   const { lang } = useI18n();
   const locale = lang === "en" ? "en" : "th";
@@ -37,6 +48,9 @@ export default function PosGuideAssistant() {
     && (!query.trim() || result.matchedQuery)), [locale, query]);
 
   if (pathname === "/pos/display") return null;
+  // จอลูกค้าไม่มีผู้ช่วย · และหน้าร้านอาหารวางปุ่มเองในแถบซ้าย ตัวลอยจาก layout จึงต้องถอย
+  // (เงื่อนไขเดียวกับ /pos/display — layout เป็น server component จึงเช็ค route ที่นี่)
+  if (variant === "floating" && pathname === "/pos/restaurant") return null;
   const selected = results[0] ? SYSTEM_GUIDES.find((guide) => guide.id === results[0].id) : null;
   const en = locale === "en";
 
@@ -46,8 +60,9 @@ export default function PosGuideAssistant() {
         type="button"
         aria-label={en ? "Open POS guide assistant" : "เปิดผู้ช่วยคู่มือ POS"}
         onClick={() => setOpen(true)}
-        style={{ position: "fixed", right: 18, bottom: 18, zIndex: 100, width: 52, height: 52, borderRadius: 26, border: 0, background: "#1677ff", color: "#fff", fontSize: 22, boxShadow: "0 8px 24px rgba(0,0,0,.25)", cursor: "pointer" }}
-      >?</button>
+        className={className}
+        style={variant === "rail" ? undefined : { position: "fixed", right: 18, bottom: 18, zIndex: 100, width: 52, height: 52, borderRadius: 26, border: 0, background: "#1677ff", color: "#fff", fontSize: 22, boxShadow: "0 8px 24px rgba(0,0,0,.25)", cursor: "pointer" }}
+      >{variant === "rail" ? <><span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1 }}>?</span><span style={{ fontSize: 10, fontWeight: 600 }}>{en ? "Help" : "คู่มือ"}</span></> : "?"}</button>
       {open ? (
         <div role="dialog" aria-modal="true" aria-label={en ? "POS guide assistant" : "ผู้ช่วยคู่มือ POS"} style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,.4)", display: "flex", justifyContent: "flex-end" }}>
           <div style={{ width: "min(440px, 100vw)", height: "100%", overflowY: "auto", background: "#fff", color: "#1f1f1f", padding: 18 }}>

@@ -41,6 +41,7 @@
 .rail {
   background: var(--panel); border-inline-end: 1px solid var(--line);
   display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0;
+  position: sticky; top: 0; align-self: start; height: 100dvh; overflow-y: auto;
 }
 .railMark {
   width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: white;
@@ -68,6 +69,7 @@
   font-variant-numeric: tabular-nums;
 }
 .railBtnActive .railBadge { background: rgba(255, 255, 255, .28); }
+.railHelpSlot { margin-top: auto; width: 100%; display: flex; justify-content: center; padding: 8px 0 2px; }
 
 .shell { display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
 /* antd Spin แทรก wrapper สองชั้นระหว่าง shell กับเนื้อหา ถ้าไม่ต่อ flex ให้ทะลุ
@@ -255,6 +257,20 @@
 .itemDropTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
 .itemPriceVoid { text-decoration: line-through; color: var(--ink-3); }
 .dropNote { font-size: 11.5px; color: var(--ink-2); background: var(--panel-2); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
+
+/* สถานะอาหารรายบรรทัด — "พร้อมเสิร์ฟ" เป็นตัวเดียวที่เรียกร้องให้คนถือจอนี้ลุกไปทำอะไร
+   จึงเป็นตัวเดียวที่ทำให้เด่น (พื้น + ตัวหนา) ที่เหลือเป็นข้อความเฉย ๆ */
+.itemKitchenTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; }
+.itemKitchenTagLoud { background: var(--green-bg); border-radius: 4px; padding: 2px 7px; display: inline-block; font-weight: 700; }
+
+/* ปุ่มสั่งซ้ำ — เล็กแต่กดติด (สูง 30px) อยู่ในคอลัมน์เดียวกับราคา */
+.page .itemAgain {
+  font: inherit; font-size: 11.5px; font-weight: 600; height: 30px; min-height: 0; padding: 0 9px;
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2); border-radius: 6px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.page .itemAgain:hover { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
+.page .itemAgain:disabled, .page .itemRemove:disabled { cursor: not-allowed; opacity: .5; }
 .itemQty { font-weight: 700; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 .itemName { display: block; font-weight: 600; font-size: 14.5px; }
 .itemMeta { display: block; font-size: 12.5px; color: var(--ink-2); }
@@ -267,9 +283,8 @@
 }
 .page .itemRemove:hover{ border-color: var(--red); }
 
-/* เว้นที่ให้ปุ่มผู้ช่วย (PosGuideAssistant) ที่ลอยมุมขวาล่างของทุกหน้า POS
-   ไม่เว้น = วงกลมนั้นทับปุ่ม "คิดเงิน" พอดี แล้วกดพลาดกลางหน้าลูกค้า */
-.checkFooter { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 12px 64px; display: grid; gap: 8px; background: var(--panel); }
+/* ผู้ช่วยของหน้านี้อยู่ใน rail แล้ว จึงไม่ต้องกันพื้นที่ปุ่มลอยใต้ปุ่มคิดเงิน */
+.checkFooter { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 8px; background: var(--panel); }
 .warn { display: flex; gap: 8px; font-size: 13px; background: var(--red-bg); border: 1px solid var(--red); border-radius: 6px; padding: 8px 10px; color: var(--ink); }
 .warn b { color: var(--red); }
 .total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -350,6 +365,7 @@
   .page .railBtn .railIcon { font-size: 17px; }
   .page .railBtn .railLabel { font-size: 9.5px; }
   .railMark { width: 34px; height: 34px; font-size: 16px; margin-bottom: 6px; }
+  .railHelpSlot { padding-top: 6px; }
 
   /* การ์ดเมนูต้องได้ 2 คอลัมน์บนมือถือ — ค่า 164px ของจอใหญ่ทำให้เหลือคอลัมน์เดียว
      (ที่ 375px เหลือพื้นที่กริด 263px ซึ่งไม่พอสำหรับ 164×2 + gap) */

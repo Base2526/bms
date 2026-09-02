@@ -342,6 +342,25 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
 });
 
+test("restaurant floor correlates kitchen state by check id, not a reusable table name", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /checkId: string \| null/);
+  assert.match(page, /map\.get\(ticket\.checkId\)/);
+  assert.match(page, /map\.set\(ticket\.checkId, row\)/);
+  assert.match(page, /kitchen\.get\(check\.id\)/);
+  assert.doesNotMatch(page, /map\.get\(ticket\.tableName\)/);
+  assert.doesNotMatch(page, /kitchen\.get\(table\.name\)/);
+});
+
+test("restaurant UI serializes mutations and changes table selection only after a check loads", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /if \(workingRef\.current\) return/);
+  assert.match(page, /workingRef\.current = true/);
+  assert.match(page, /finally \{ workingRef\.current = false; setWorking\(false\); \}/);
+  const chooseTable = page.slice(page.indexOf("async function chooseTable"), page.indexOf("async function openCheck"));
+  assert.ok(chooseTable.indexOf("await loadCheck") < chooseTable.indexOf("setSelectedTableId"));
+});
+
 test("the check footer never claims a total the bill does not have", async () => {
   // บิลที่เพิ่งเปิดมี version 0 แต่ reservedVersion เป็น null — เทียบสองค่านี้ตรง ๆ ทำให้
   // โต๊ะว่างเปล่าขึ้นคำเตือน "มีรายการที่ยังไม่ส่งครัว" และป้าย "ยอดบิลปัจจุบัน ฿0.00" ก็โกหก
