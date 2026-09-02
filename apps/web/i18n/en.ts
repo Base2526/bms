@@ -2719,6 +2719,7 @@ const en = {
     btn_close: "Close",
     no_images_title: "Images are not imported",
     no_images_desc: "Product images are not imported from the file (add them later on the product edit page) — up to {max} rows per import, file size under 5MB",
+    draft_only_desc: "Newly imported products always arrive as drafts. Publish each one from the product page once its readiness passes — that is why the template no longer has an \"active\" column.",
     btn_download_template: "Download template",
     upload_text: "Click or drag a CSV/XLSX file here",
     upload_hint: "Use the template's column headers so fields map correctly",

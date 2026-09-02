@@ -264,7 +264,14 @@ export const bmsProductsResolvers = {
       await requirePermission(ctx, "product.delete");
       const auth = requireAuth(ctx);
       if (args.active) {
-        await publishProduct(getTenantId(ctx), args.sku, String(auth.author_id));
+        // ผ่าน toGqlError เหมือน mutation อื่นในไฟล์นี้: readiness ที่ไม่ผ่านคือ 400
+        // ของผู้ใช้ ส่วน 42P01 (ยังไม่ apply 9.51) ต้องเหลือ SQLSTATE ไว้ใน log
+        // ของ server ไม่ใช่โผล่เป็น 500 เปล่า ๆ ให้ไล่
+        try {
+          await publishProduct(getTenantId(ctx), args.sku, String(auth.author_id));
+        } catch (err) {
+          toGqlError(err);
+        }
       }
       const ok = args.active
         ? true

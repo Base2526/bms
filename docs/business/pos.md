@@ -1363,6 +1363,13 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 
 ## Restaurant POS (`9.40`, `9.44`–`9.49`)
 
+A dine-in check is settled by the same `recordPosSale()` engine as a retail bill, so the line
+re-validation inside that engine takes the **bill's own** sales surface: `RESTAURANT_POS` when a
+`restaurantCheckId` is present, `RETAIL_POS` otherwise. Pinning it to the retail surface would
+make the register's default new-menu template (prepared menu, whose only surface is
+`RESTAURANT_POS`) orderable and cookable but impossible to pay for — the failure would land at
+the table, after the food, as an `INVALID_PACK` that says nothing about surfaces.
+
 `/pos/restaurant` is a separate operating surface selected only for the `restaurant` archetype. It
 owns dining areas, tables, open checks, kitchen rounds, table moves and check cancellation. Sending
 a round creates or refreshes one PENDING POS order for the whole check, so ingredients are reserved

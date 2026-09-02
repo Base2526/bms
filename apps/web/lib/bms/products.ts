@@ -17,6 +17,7 @@ import {
   normalizeProductVariantCode,
   productTemplateDefaults,
   getProductReadinessInTx,
+  resolveStoredVariantCodeInTx,
   type ProductSalesSurface,
 } from "./productConfiguration";
 
@@ -1452,12 +1453,14 @@ export async function upsertProduct(
     const variants = requestedVariants ?? (isNew ? ["STD"] : null);
     if (variants) {
       for (const [sortOrder, code] of variants.entries()) {
+        // ฟอร์มส่งค่าที่อ่านมาจากตัวเลือกเดิมกลับมา ต้องลงที่แถวเดิมแม้ตัวพิมพ์ต่างกัน
+        const storedCode = await resolveStoredVariantCodeInTx({ query: client.query.bind(client) }, tenantId, sku, code);
         await client.query(
           `INSERT INTO bms_product_variants (tenant_id, product_sku, code, sort_order)
            VALUES ($1,$2,$3,$4)
            ON CONFLICT (tenant_id, product_sku, code) DO UPDATE SET
              active = TRUE, sort_order = EXCLUDED.sort_order, updated_at = now()`,
-          [tenantId, sku, code, sortOrder]
+          [tenantId, sku, storedCode, sortOrder]
         );
       }
     }

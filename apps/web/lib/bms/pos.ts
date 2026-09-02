@@ -2370,7 +2370,12 @@ export type PosRecentReceipt = {
 async function canonicalizePosSaleLines(
   tenantId: string,
   locationId: string,
-  lines: PosSaleLine[]
+  lines: PosSaleLine[],
+  // ผิวการขายของบิลใบนี้ ไม่ใช่ค่าคงที่ของหน้าจอ: บิลโต๊ะเก็บเงินผ่าน recordPosSale
+  // ตัวเดียวกับบิลค้าปลีก ถ้าตรึงเป็น RETAIL_POS เมนูที่ร้านเปิดขายแค่ที่โต๊ะ
+  // (เทมเพลต PREPARED_MENU ตั้ง RESTAURANT_POS ตัวเดียว) จะสั่งได้ ครัวทำเสร็จ
+  // แต่ **คิดเงินไม่ได้** โดยขึ้นเป็น INVALID_PACK ที่อ่านไม่รู้เรื่องหน้าลูกค้า
+  salesSurface: "RETAIL_POS" | "RESTAURANT_POS"
 ): Promise<
   | { ok: true; items: OrderItemInput[]; serialLines: CanonicalPosSerialLine[] }
   | { ok: false; sku: string; packCode: string }
@@ -2456,7 +2461,7 @@ async function canonicalizePosSaleLines(
           AND EXISTS (
             SELECT 1 FROM bms_product_sales_surfaces surface
              WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
-               AND surface.surface = 'RETAIL_POS' AND surface.enabled
+               AND surface.surface = $6 AND surface.enabled
           )
           AND (EXISTS (
             SELECT 1 FROM bms_inventory i
@@ -2466,7 +2471,7 @@ async function canonicalizePosSaleLines(
                AND upper(i.size) = upper($5)
           ) OR p.is_bundle OR sp.stock_policy = 'RECIPE')
         LIMIT 1`,
-      [tenantId, sku, locationId, packCode, size]
+      [tenantId, sku, locationId, packCode, size, salesSurface]
     );
     const row = res.rows[0];
     if (!row || (packCode !== "BASE" && !row.pack_code)) {
@@ -2752,7 +2757,12 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
 
   // ราคา จำนวนชิ้นต่อ pack และไซซ์จริงมาจากฐานข้อมูลก่อนตรวจ serial เสมอ
   // ห้ามใช้ baseQty ที่ browser ส่งมาเป็น authority เพราะปลอมเป็น 1 เพื่อข้ามกฎได้
-  const canonical = await canonicalizePosSaleLines(tenantId, shift.location_id, input.lines);
+  const canonical = await canonicalizePosSaleLines(
+    tenantId,
+    shift.location_id,
+    input.lines,
+    input.restaurantCheckId ? "RESTAURANT_POS" : "RETAIL_POS"
+  );
   if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
   const items = canonical.items;
   if (items.length === 0) return { status: "EMPTY" };
@@ -5481,7 +5491,9 @@ export async function requestPosPharmacyReview(input: {
     return { status: "TOO_MANY", limit: MAX_PARKED_PER_SHIFT };
   }
 
-  const canonical = await canonicalizePosSaleLines(input.tenantId, shift.location_id, input.lines);
+  const canonical = await canonicalizePosSaleLines(
+    input.tenantId, shift.location_id, input.lines, "RETAIL_POS"
+  );
   if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
   const items = canonical.items;
   if (items.length === 0) return { status: "EMPTY" };

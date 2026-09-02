@@ -229,6 +229,10 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "บันทึกค่าใช้จ่ายเงินสดย่อยหน้าร้าน", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.expense-petty-cash", origin: "coverage" },
   { q: "เปิดร้านมาต้องดูอะไรก่อน", locale: "th", context: GUIDES, expect: "answer", expectTop: "dashboard.daily-review", origin: "coverage" },
   { q: "เพิ่มสินค้าใหม่ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "products.create", origin: "coverage" },
+  // 9.51: คำถามสองข้อนี้คือสิ่งที่พนักงานถามจริงหลังการมองเห็นสินค้ากลายเป็นค่าที่ต้องประกาศ
+  // ถ้ามันไม่พาไปที่ไกด์สินค้า กฎ limits.product-catalog ก็ไม่มีใครไปถึง
+  { q: "เพิ่มสินค้าแล้วขายไม่ได้", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-sale-blockers", expectAlso: ["products.create"] },
+  { q: "why a new product cannot be sold", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.stock-sale-blockers", expectAlso: ["products.create"] },
   { q: "โอนของไปสาขาอื่นยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.transfer", origin: "coverage" },
   { q: "นับสต็อกแล้วปรับยอดยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.count", origin: "coverage" },
   { q: "ตั้งสูตรตัดวัตถุดิบของเมนูยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },

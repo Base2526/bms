@@ -1225,7 +1225,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
     "บันทึกการจ่ายยาที่เภสัชกรอนุมัติที่เคาน์เตอร์ (9.29) — สิทธิ์ pharmacy.audit.read"
     bmsPharmacistCounterAuthorizations(from: String, to: String, limit: Int, offset: Int): BmsPharmacistCounterAuthorizationPage!
-    bmsPharmacyCatalog(search: String, limit: Int): [BmsPharmacyCatalogItem!]!
+    bmsPharmacyCatalog(search: String, limit: Int, assessmentId: ID): [BmsPharmacyCatalogItem!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol

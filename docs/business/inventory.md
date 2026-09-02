@@ -615,6 +615,16 @@ only on its enabled surfaces: `RETAIL_POS`, `RESTAURANT_POS`, `PUBLIC_STOREFRONT
 no menu or customer catalog; a bottled drink can intentionally appear on both POS surfaces. The
 store archetype supplies initial form defaults only and never overrides these per-product choices.
 
+Two consequences of "visibility is declared, never inferred" are easy to get wrong and are
+therefore fixed in code rather than left to operator memory. First, the `9.51` backfill treats a
+product as priced when either `bms_products.price` or an active **base pack** price is above zero:
+a menu priced only through its base pack (supported since `8.1`/`9.22`) would otherwise lose every
+surface the moment the migration ran. Second, sample data is inserted directly (it does not go
+through `upsertProduct`), so `seedFakeProducts()` writes the surface rows itself — and that path is
+also the "create sample data" button a brand-new shop presses, not just the dev seeder. A seeded
+product with no surface row would look active in the catalog while being invisible and unsellable
+everywhere.
+
 The Products form exposes four starter templates—prepared menu, ready-made item, ingredient and
 general product—then stores the same shared product model. Stock policy dependencies continue to be
 edited in Stock Models. Changing a RECIPE product to another policy is refused while active recipes

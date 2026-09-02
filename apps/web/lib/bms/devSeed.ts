@@ -576,8 +576,21 @@ function purchasePresetForArchetype(archetype: ShopArchetype | null | undefined)
   }
 }
 
+// 9.51: การมองเห็นสินค้าเป็นสิ่งที่ต้องประกาศ ไม่ได้อนุมานจาก active/ราคา/สูตรอีกแล้ว
+// สินค้าตัวอย่างเข้าฐานด้วย INSERT ตรง ไม่ผ่าน upsertProduct() จึงไม่มีใครใส่แถว
+// bms_product_sales_surfaces ให้ — ผลคือของที่ดู active อยู่ในหน้าแคตตาล็อกแต่
+// **ยิงที่ POS ไม่เจอ หน้าร้านออนไลน์ว่าง AI หาไม่เจอ และขายไม่ได้เลย**
+// เส้นทางนี้ไม่ใช่แค่เครื่องมือ dev: ปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านใหม่
+// (createOnboardingSampleData) เรียกตัวเดียวกันนี้
+function fakeProductSurfaces(archetype?: ShopArchetype | null): string[] {
+  const surfaces = ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"];
+  if (archetype === "restaurant") surfaces.push("RESTAURANT_POS");
+  return surfaces;
+}
+
 export async function seedFakeProducts(tenantId: string, count: number, archetype?: ShopArchetype | null) {
   const curated = archetype ? CURATED_SEED_PRODUCTS[archetype] ?? null : null;
+  const salesSurfaces = fakeProductSurfaces(archetype);
   if (curated?.length) {
     const client = await getClient();
     try {
@@ -624,6 +637,13 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
         // กันเหนียว: ถ้าเคยลบสินค้าบางตัวไปแล้ว count จะไม่ตรงกับลำดับจริงและอาจชนซ้ำ
         // ข้ามตัวนั้นไปเงียบ ๆ ดีกว่าให้ทั้ง transaction ล้ม แล้วรายงานจำนวนที่สร้างได้จริง
         if (!ins.rowCount) continue;
+        await client.query(
+          `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface, enabled)
+           SELECT $1, $2, surface, TRUE FROM unnest($3::text[]) AS surface
+           ON CONFLICT (tenant_id, product_sku, surface) DO UPDATE SET
+             enabled = TRUE, updated_at = now()`,
+          [tenantId, sku, salesSurfaces]
+        );
         for (const size of sizes) {
           await client.query(
             `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
@@ -704,6 +724,14 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
         FROM gen
       RETURNING sku, name, price
     ),
+    surf AS (
+      INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface, enabled)
+      SELECT $1::uuid, np.sku, surface, TRUE
+        FROM np CROSS JOIN unnest($6::text[]) AS surface
+      ON CONFLICT (tenant_id, product_sku, surface) DO UPDATE SET
+        enabled = TRUE, updated_at = now()
+      RETURNING 1
+    ),
     inv AS (
       INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
       SELECT $1::uuid,
@@ -722,7 +750,7 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
       RETURNING 1
     )
     SELECT sku, name, price FROM np ORDER BY sku`;
-  const { rows } = await query(sql, [tenantId, count, preset.categories, preset.brands, preset.prefix]);
+  const { rows } = await query(sql, [tenantId, count, preset.categories, preset.brands, preset.prefix, salesSurfaces]);
   return rows;
 }
 

@@ -55,6 +55,53 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
     aliases: lists(["สมการสต็อก", "ประเภทการเคลื่อนไหวสต็อก", "ทำไมสต็อกไม่ตรง"], ["stock invariant", "stock movement types", "why stock does not add up"]),
   },
   {
+    // 9.51: การมองเห็นสินค้าเลิกเป็นค่าที่อนุมานจาก active/ราคา/สูตร แล้วกลายเป็นสิ่งที่ต้อง
+    // ประกาศรายสินค้า กฎชุดนี้จึงเป็นคำตอบของคำถามที่พนักงานถามมากที่สุดในช่วงเปลี่ยน:
+    // "เพิ่มสินค้าแล้วทำไมขายไม่ได้" / "ทำไมของไม่โผล่หน้าร้าน"
+    id: "limits.product-catalog",
+    guideIds: ["products.create", "inventory.stock-sale-blockers", "inventory.stock-models", "pos.restaurant-open-check"],
+    title: both(
+      "แคตตาล็อกสินค้า: ฉบับร่าง ช่องทางขาย และตัวเลือก",
+      "Product catalog: drafts, sales surfaces and variants"
+    ),
+    items: lists(
+      [
+        "สินค้าที่สร้างใหม่และรายการที่นำเข้าเป็น \"ฉบับร่าง\" เสมอ — ค่า เปิดขาย ที่ส่งมาพร้อมฟอร์มหรือไฟล์นำเข้าไม่มีผล เปิดขายได้ทางสวิตช์ Active ที่หน้าสินค้าเท่านั้น และมันตรวจความพร้อม (readiness) ก่อน",
+        "ช่องทางขายเป็นค่าที่ประกาศรายสินค้า ไม่ได้อนุมานจากประเภทร้าน — สินค้าที่ไม่เปิดช่องทางใดเลยคือของใช้ภายใน (เช่นวัตถุดิบ) มันจะไม่โผล่ที่ไหนและขายไม่ได้ นั่นคือค่าที่ตั้งไว้ ไม่ใช่ระบบพัง",
+        "เมนูที่เปิดเฉพาะ Restaurant POS สั่งที่โต๊ะและเก็บเงินที่โต๊ะได้ แต่จะไม่โผล่ที่เครื่องค้าปลีก ถ้าต้องขายที่เคาน์เตอร์ด้วยให้เปิด Retail POS เพิ่ม",
+        "ตัวเลือกสินค้า (Variant) เป็นข้อมูลแคตตาล็อก ไม่ใช่สต็อก — สร้างไซซ์/ขนาดเสิร์ฟไว้ก่อนได้ทั้งที่ทุกสาขายังมีของ 0 และการเพิ่มตัวเลือกไม่ใช่การปรับสต็อก",
+        "ป้ายตัวเลือกถูกเก็บตามที่ร้านพิมพ์ (60ml, 100 ml, 10 เม็ด ใช้ได้) ต่างกันแค่ตัวพิมพ์เล็ก-ใหญ่ถือเป็นตัวเดียวกัน จึงไม่งอกตัวเลือกซ้ำ",
+        "Modifier ใช้ได้เฉพาะสินค้าที่ Stock Policy เป็น RECIPE และกลุ่มตัวเลือกมีขั้นต่ำ/สูงสุด/เลือกได้หนึ่งอย่าง — เซิร์ฟเวอร์ตรวจซ้ำตอนสร้างบิล ตะกร้าที่เลือกไม่ครบขั้นต่ำถูกปฏิเสธ ไม่ใช่ปล่อยผ่าน",
+        "ทำสำเนาสินค้าคัดลอกเฉพาะการตั้งค่า (ตัวเลือก ช่องทางขาย สูตร Modifier แพ็ก ขั้นราคา) เป็นฉบับร่าง — ไม่คัดลอกสต็อก ล็อต เลขเครื่อง หรือบาร์โค้ด เพราะสามอย่างนั้นเป็นของจริงชิ้นเดียวในโลก",
+      ],
+      [
+        "Every newly created and every imported product is a draft — an \"active\" value sent with the form or the import file has no effect. Publishing happens only through the Active switch on the product page, and that switch checks readiness first.",
+        "Sales surfaces are declared per product, never inferred from the shop type — a product with no surface enabled is an internal item (an ingredient, say): it appears nowhere and cannot be sold. That is the setting, not a broken system.",
+        "A menu item enabled only for Restaurant POS can be ordered and paid at the table but will not appear on a retail register. Enable Retail POS as well if the counter must sell it too.",
+        "A variant is catalog data, not stock — serving sizes can exist before any branch holds one, and adding a variant is never a stock adjustment.",
+        "Variant labels keep the spelling the shop typed (60ml, 100 ml, 10 เม็ด all work); labels differing only in letter case are the same variant, so editing a product never forks a duplicate.",
+        "Modifiers apply only to products whose stock policy is RECIPE, and a modifier group carries a minimum, a maximum and single-choice rules — the server re-checks them when the order is created, so a basket that misses a required choice is rejected rather than waved through.",
+        "Duplicating a product copies configuration only (variants, sales surfaces, recipes, modifiers, packs, price tiers) as a draft — never stock, lots, serials or barcodes, because those name one physical thing in the world.",
+      ]
+    ),
+    aliases: lists(
+      [
+        "ทำไมสินค้าใหม่ขายไม่ได้",
+        "สินค้าไม่โผล่หน้าร้าน",
+        "ช่องทางขายของสินค้า",
+        "สินค้าเป็นฉบับร่าง",
+        "เพิ่มสินค้าแล้วยิงไม่เจอ",
+      ],
+      [
+        "why a new product cannot be sold",
+        "product missing from the storefront",
+        "product sales surfaces",
+        "imported products stay drafts",
+        "new product not found at the register",
+      ]
+    ),
+  },
+  {
     id: "limits.barcode-rules",
     guideIds: ["products.create", "catalog.print-labels"],
     title: both("กฎเรื่องบาร์โค้ด — ข้อที่ผิดกันบ่อยที่สุด", "Barcode rules — the most common mistake"),

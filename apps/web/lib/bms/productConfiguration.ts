@@ -40,14 +40,30 @@ type QueryClient = {
 };
 
 const SURFACE_SET = new Set<string>(PRODUCT_SALES_SURFACES);
-const VARIANT_CODE_RE = /^[A-Z0-9][A-Z0-9._/-]{0,63}$/;
 
+/**
+ * รหัสตัวเลือกคือ **ป้ายหน่วยขายที่ร้านพิมพ์เอง** ไม่ใช่ enum ภายใน — namespace เดียวกับ
+ * `bms_inventory.size` / `bms_product_packs.size` / `bms_product_recipes.size` ซึ่งเป็น
+ * free text มาตลอด (ของจริงในฐานมีทั้ง "60ml", "100 ml", "10 เม็ด", "1 ชุด")
+ * และไมเกรชัน 9.51 ก็ยกค่าเดิมมาเป็น code แบบตรงตัว
+ *
+ * ⚠️ ห้ามกลับไป uppercase/บังคับ A-Z: ฟอร์มสินค้าเติม variantCodes จากค่าที่มีอยู่แล้ว
+ * ส่งกลับมาตอนกดบันทึก ถ้าแปลงตัวพิมพ์ ("60ml" → "60ML") จะได้ตัวเลือกงอกใบใหม่คู่กับ
+ * ของเดิม แล้ว readiness หา pack ของมันไม่เจอ (join ด้วย code ตรงตัว) → บันทึกไม่ได้
+ * ส่วนไซซ์ภาษาไทยจะถูกปฏิเสธทั้งก้อน = เปิดสินค้ามากดบันทึกเฉย ๆ ก็ล้ม
+ */
 export function normalizeProductVariantCode(value: string): string {
-  const code = String(value ?? "").trim().toUpperCase().replace(/\s+/g, "_");
-  if (!VARIANT_CODE_RE.test(code)) {
-    throw new Error("รหัสตัวเลือกใช้ได้เฉพาะ A-Z, 0-9, จุด, ขีด, underscore หรือ slash และยาวไม่เกิน 64 ตัว");
-  }
+  const code = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (!code) throw new Error("ต้องระบุรหัสตัวเลือก");
+  if (code.length > 64) throw new Error("รหัสตัวเลือกยาวได้ไม่เกิน 64 ตัวอักษร");
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(code)) throw new Error("รหัสตัวเลือกมีอักขระควบคุมที่ใช้ไม่ได้");
   return code;
+}
+
+/** ตัวเลือกที่ต่างกันแค่ตัวพิมพ์คือตัวเดียวกัน — เส้นทางขายเทียบไซซ์ด้วย upper() อยู่แล้ว */
+export function sameProductVariantCode(a: string, b: string): boolean {
+  return a.toLocaleLowerCase() === b.toLocaleLowerCase();
 }
 
 export function normalizeProductSalesSurfaces(values: readonly string[]): ProductSalesSurface[] {
@@ -119,6 +135,7 @@ export async function upsertProductCatalogVariant(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
+    const storedCode = await resolveStoredVariantCodeInTx(client, tenantId, productSku, code);
     const result = await client.query<{
       code: string; display_name: string | null; active: boolean; sort_order: number;
     }>(
@@ -131,7 +148,7 @@ export async function upsertProductCatalogVariant(
          sort_order = EXCLUDED.sort_order,
          updated_at = now()
        RETURNING code, display_name, active, sort_order`,
-      [tenantId, productSku, code, displayName, input.active ?? null, sortOrder]
+      [tenantId, productSku, storedCode, displayName, input.active ?? null, sortOrder]
     );
     const lifecycle = await client.query<{ active: boolean }>(
       `SELECT active FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
@@ -152,6 +169,25 @@ export async function upsertProductCatalogVariant(
   } finally {
     client.release();
   }
+}
+
+/**
+ * คืนสะกดที่เก็บอยู่จริงถ้ามีตัวเลือกที่ต่างกันแค่ตัวพิมพ์ — พิมพ์ "std" ตอนที่ร้านมี "STD"
+ * ต้องไปแก้แถวเดิม ไม่ใช่งอกตัวเลือกใบที่สองที่ไม่มีสต็อก/ไม่มีราคาผูกไว้
+ */
+export async function resolveStoredVariantCodeInTx(
+  client: QueryClient,
+  tenantId: string,
+  productSku: string,
+  code: string
+): Promise<string> {
+  const existing = await client.query<{ code: string }>(
+    `SELECT code FROM bms_product_variants
+      WHERE tenant_id = $1 AND product_sku = $2 AND lower(code) = lower($3)
+      LIMIT 1`,
+    [tenantId, productSku, code]
+  );
+  return existing.rows[0]?.code ?? code;
 }
 
 export async function listProductSalesSurfaces(
@@ -460,11 +496,15 @@ export async function duplicateProductConfiguration(
     await enforceProductQuota(tenantId, client);
 
     const inserted = await client.query<{ sku: string; name: string }>(
+      // `serial_tracked` ตามมาด้วยเพราะสำเนายก stock policy มาทั้งชุด: สำเนาของสินค้า
+      // SERIALIZED ที่ไม่ได้ยกธงนี้มาจะเป็นฉบับร่างที่เปิดขายไม่ได้ (readiness ค้างที่
+      // SERIAL_TRACKING_REQUIRED) และไม่มีหน้าไหนในแอปเปิดธงนี้ให้ได้ · เลขเครื่องรายชิ้น
+      // (bms_product_serials) ยังไม่ถูกคัดลอกตามเดิม — มันคือของจริงชิ้นเดียวในโลก
       `INSERT INTO bms_products
          (tenant_id, sku, name, active, price, keywords, barcode, image_url, description,
-          cost_price, category, brand, weight_grams, vat_category, is_bundle)
+          cost_price, category, brand, weight_grams, vat_category, is_bundle, serial_tracked)
        SELECT tenant_id, $3, $4, FALSE, price, keywords, NULL, image_url, description,
-              cost_price, category, brand, weight_grams, vat_category, is_bundle
+              cost_price, category, brand, weight_grams, vat_category, is_bundle, serial_tracked
          FROM bms_products
         WHERE tenant_id = $1 AND sku = $2
        RETURNING sku, name`,

@@ -135,8 +135,8 @@ const M_DELETE_EVIDENCE = gql`
 `;
 
 const Q_PRODUCTS = gql`
-  query PharmacyCaseProducts($search: String, $limit: Int) {
-    bmsPharmacyCatalog(search: $search, limit: $limit) {
+  query PharmacyCaseProducts($search: String, $limit: Int, $assessmentId: ID) {
+    bmsPharmacyCatalog(search: $search, limit: $limit, assessmentId: $assessmentId) {
       sku
       name
       price
@@ -214,7 +214,7 @@ export default function PharmacyCaseDetailPage() {
     fetchPolicy: "cache-and-network",
   });
   const { data: productSearchData, loading: productSearchLoading, error: productSearchError } = useQuery(Q_PRODUCTS, {
-    variables: { search: productSearch || undefined, limit: 12 },
+    variables: { search: productSearch || undefined, limit: 12, assessmentId: params.caseId },
     skip: !productPickerOpen,
     fetchPolicy: "cache-and-network",
   });

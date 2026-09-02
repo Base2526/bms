@@ -110,7 +110,8 @@ FROM bms_products p
 ON CONFLICT (tenant_id, product_sku, surface) DO NOTHING;
 
 -- Customer-facing paths preserve legacy visibility except for restaurant raw
--- materials. A zero-price item or an active recipe/modifier component was the
+-- materials. An unpriced item (neither product price nor an active base pack
+-- price) or an active recipe/modifier component was the
 -- pre-9.51 restaurant definition of an ingredient; omitting these surfaces
 -- fixes the leak at migration time while staff can explicitly opt a dual-role
 -- product back in afterwards.
@@ -123,7 +124,19 @@ CROSS JOIN unnest(ARRAY[
 ]::text[]) AS surface
 WHERE COALESCE(profile.business_archetype, '') <> 'restaurant'
    OR (
-     p.price > 0
+     -- ราคาขายจริงของหน่วยฐานอยู่ที่ bms_product_packs.price ได้ (9.22/8.1) แล้ว
+     -- bms_products.price ค้างที่ 0 — เมนูแบบนั้นถูกต้องและขายอยู่จริง ถ้าเทียบแต่
+     -- p.price > 0 การ backfill จะถอดช่องทางขายของมันออกทั้งหมดตอน migrate
+     (
+       p.price > 0
+       OR EXISTS (
+         SELECT 1 FROM bms_product_packs base_pack
+          WHERE base_pack.tenant_id = p.tenant_id
+            AND base_pack.product_sku = p.sku
+            AND base_pack.is_base AND base_pack.active
+            AND COALESCE(base_pack.price, 0) > 0
+       )
+     )
      AND NOT EXISTS (
        SELECT 1
        FROM bms_product_recipe_items ri
@@ -145,8 +158,20 @@ INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface, enabled
 SELECT p.tenant_id, p.sku, 'RESTAURANT_POS', TRUE
 FROM bms_products p
 JOIN bms_store_profile profile ON profile.tenant_id = p.tenant_id
-WHERE p.price > 0
-  AND profile.business_archetype = 'restaurant'
+WHERE profile.business_archetype = 'restaurant'
+  -- ราคาขายจริงของหน่วยฐานอยู่ที่ bms_product_packs.price ได้ (9.22/8.1) แล้ว
+  -- bms_products.price ค้างที่ 0 — เมนูแบบนั้นถูกต้องและขายอยู่จริง ถ้าเทียบแต่
+  -- p.price > 0 การ backfill จะถอดช่องทางขายของมันออกทั้งหมดตอน migrate
+  AND (
+    p.price > 0
+    OR EXISTS (
+      SELECT 1 FROM bms_product_packs base_pack
+       WHERE base_pack.tenant_id = p.tenant_id
+         AND base_pack.product_sku = p.sku
+         AND base_pack.is_base AND base_pack.active
+         AND COALESCE(base_pack.price, 0) > 0
+    )
+  )
   AND NOT EXISTS (
     SELECT 1
     FROM bms_product_recipe_items ri
