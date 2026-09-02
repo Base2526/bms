@@ -41,7 +41,14 @@
 }
 /* เมนูนำทางเป็นแถบไอคอนแนวตั้งฝั่งซ้าย (ตามมอคอัพ) — คืนความกว้างแถวบนให้ชื่อร้าน
    กับปุ่มที่ใช้จริง และปลายนิ้วโป้งอยู่ขอบซ้ายตลอด ไม่ต้องเอื้อมขึ้นไปหัวจอ */
-.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); overflow: hidden; }
+/* ⚠️ grid-template-rows ต้องประกาศเป็น 100% — ห้ามปล่อยให้เป็น implicit row
+   โมดัลทุกตัวของหน้านี้ใช้ getContainer ชี้มาที่ <main> (เพื่อให้ตัวแปรสีของ CSS module
+   มีผลในโมดัล) · portal root ของ antd เป็น div ปกติที่ค้างอยู่ใน DOM ต่อแม้ปิดโมดัลแล้ว
+   จึงกลายเป็น grid item เพิ่ม = แถวใหม่ แล้ว align-content ปริยาย (stretch) เกลี่ยความสูง
+   ให้ทุกแถว → แถวแรกที่เป็นตัวแอปหดลง เหลือแถบว่างท้ายจอ และหดเพิ่มทุกครั้งที่เปิด
+   โมดัลตัวใหม่ (วัดจริง: 1 โมดัล = หาย 175px · 3 โมดัล = หาย 233px จาก 820px)
+   ประกาศแถวเดียว 100% แล้ว portal root ตกไปอยู่ implicit row สูง 0 ที่ overflow:hidden ตัดทิ้ง */
+.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 100%; overflow: hidden; }
 .pagePlain { display: block; overflow: auto; }
 .rail {
   background: var(--panel); border-inline-end: 1px solid var(--line);
@@ -359,7 +366,7 @@
      จอแคบจึงกลับไปเลื่อนทั้งหน้าตามปกติ ซึ่งเป็นสิ่งที่มือถือคาดหวังอยู่แล้ว
      แต่ "ยอด + ส่งครัว/คิดเงิน" ปักติดขอบล่างเสมอ เพราะสองอย่างนี้คือสิ่งที่ต้องเห็น
      ตลอดเวลาที่กำลังเพิ่มรายการ */
-  .page { height: auto; min-height: 100dvh; overflow: visible; }
+  .page { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto; }
   .rail { position: sticky; top: 0; align-self: start; height: 100dvh; }
   .shell { overflow: visible; }
   .panelScroll, .items, .openList, .kitchenBoard { overflow: visible; }

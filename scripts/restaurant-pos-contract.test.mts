@@ -470,3 +470,28 @@ test("a kitchen cancellation drops the line from the bill instead of charging fo
   assert.match(migration, /status = 'CANCELLED'/);
   assert.doesNotMatch(drop, /sent_at\s*=\s*NULL/);
 });
+
+/**
+ * วัดจริงในเบราว์เซอร์ 2026-09-02: โมดัลทุกตัวของหน้านี้ส่ง getContainer ชี้มาที่ <main>
+ * ซึ่งเป็น display:grid · portal root ของ antd เป็น div ปกติและ **ค้างอยู่ใน DOM ต่อแม้ปิด
+ * โมดัลแล้ว** จึงเป็น grid item เพิ่มหนึ่งแถว แล้ว align-content ปริยาย (stretch) เกลี่ย
+ * ความสูงให้ทุกแถว → แถวของตัวแอปหดลง เหลือแถบว่างท้ายจอถาวร (วัดที่ viewport 820px:
+ * 1 โมดัล = หาย 175px · 3 โมดัล = หาย 233px) และปุ่ม "คิดเงิน" ลอยขึ้นจากขอบจอ
+ */
+test("the page grid declares its own single row so modal portals cannot steal height", async () => {
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const pageGrid = css.split("\n").find((line) => line.includes(".page {") && line.includes("display: grid"));
+  assert.ok(pageGrid, ".page must still be the grid shell");
+  assert.match(pageGrid!, /grid-template-rows:\s*100%/,
+    "an implicit row lets every antd portal root shrink the app — declare the row explicitly");
+  // จอแคบปล่อยให้หน้าเลื่อนตามเนื้อหาโดยตั้งใจ แถวจึงต้องกลับเป็น auto ที่ breakpoint นั้น
+  assert.match(css, /min-height: 100dvh;[^}]*grid-template-rows:\s*auto/,
+    "the <=900px breakpoint lets the page grow, so the fixed row must be released there");
+});
+
+test("modals still portal into the page root so the CSS-module theme applies", async () => {
+  const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  // ถ้าเลิกใช้ getContainer ต้องเลิกพึ่ง grid-template-rows ด้วย (เทสข้างบนจะกลายเป็นของตกค้าง)
+  assert.match(src, /getContainer=\{modalContainer\}/);
+  assert.match(src, /rootRef\.current \?\? document\.body/);
+});
