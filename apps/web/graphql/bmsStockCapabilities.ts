@@ -22,6 +22,7 @@ import {
   upsertProductRecipe,
 } from "@/lib/bms/productRecipes";
 import { listKitchenTickets, updateKitchenTicketStatus } from "@/lib/bms/kitchen";
+import { dropKitchenCancelledLineInTx } from "@/lib/bms/restaurantPos";
 import { listInventoryWastage, recordInventoryWastage } from "@/lib/bms/wastage";
 
 function tenantAdminId(ctx: any): string {
@@ -162,6 +163,8 @@ export const bmsStockCapabilityResolvers = {
           ticketId: args.id,
           status: args.status,
           actorUserId: String(requireAuth(ctx).author_id),
+          // กระดานหลังบ้านต้องให้ผลเดียวกับเครื่องขาย: ยกเลิกแล้วบรรทัดหลุดจากยอด
+          onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx,
         });
       } catch (error) {
         badInput(error, "อัปเดต Kitchen ticket ไม่สำเร็จ");

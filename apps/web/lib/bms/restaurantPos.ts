@@ -593,6 +593,116 @@ function toPosLine(row: CheckItemRow): PosSaleLine {
   };
 }
 
+/**
+ * ครัวกดยกเลิกตั๋วของบิลโต๊ะ = อาหารจานนั้นไม่ได้ทำ → บรรทัดต้องหลุดออกจากยอดทันที
+ *
+ * ทำงานใน transaction เดียวกับการเปลี่ยนสถานะตั๋ว (รับ client เข้ามา) เพราะนี่คือการ
+ * **ลดเงินในบิลและคืนสต็อกที่จองไว้** ถ้าแยก transaction แล้วครึ่งหลังล้ม ตั๋วจะถูกยกเลิก
+ * โดยที่ลูกค้ายังถูกคิดเงินอยู่ ซึ่งเป็นอาการเดิมที่กำลังแก้
+ *
+ * วิธีคิดยอดใหม่ใช้ **เส้นทางเดียวกับการส่งครัวรอบถัดไป**: ยกเลิก order ที่จองไว้ แล้วสร้าง
+ * ใหม่จากบรรทัดที่เหลือด้วย createOrderInTx ตัวเดิม · ห้ามลบราคาบรรทัดออกจาก amount_due
+ * ตรง ๆ เพราะจะกลายเป็นสูตรเงินชุดที่สองที่ drift จากตัวจริง (กฎเดียวกับ unitPriceForQty)
+ *
+ * ลำดับล็อกยึดตาม createOrderInTx/finalizePosSale: **กะ → บิล → สต็อก** ไม่งั้น deadlock
+ * กับการส่งครัวที่วิ่งพร้อมกัน
+ */
+export async function dropKitchenCancelledLineInTx(
+  // ต้องเป็น PoolClient เต็มตัว ไม่ใช่ Pick<..,"query"> เพราะ cancelOrderInTx/createOrderInTx
+  // รับ client จริง (ทั้งสองเปิด savepoint ภายใน)
+  client: PoolClient,
+  input: { tenantId: string; checkId: string; checkItemId: string; actorUserId: string }
+): Promise<{ dropped: boolean; amountDue: number | null }> {
+  // อ่านก่อนแบบไม่ล็อก เพื่อรู้ว่าต้องล็อกกะไหน — ต้องล็อกกะก่อนบิลตามลำดับข้างบน
+  const pre = await client.query<{ status: string; pos_shift_id: string | null }>(
+    `SELECT status, pos_shift_id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [input.tenantId, input.checkId]
+  );
+  // บิลปิด/จ่ายเงินไปแล้ว: ห้ามแตะยอดที่ออกใบเสร็จไปแล้ว — ตั๋วยังยกเลิกได้ตามที่ครัวกด
+  if (!pre.rowCount || pre.rows[0].status !== "OPEN") return { dropped: false, amountDue: null };
+  if (pre.rows[0].pos_shift_id) {
+    await client.query(
+      `SELECT 1 FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE`,
+      [input.tenantId, pre.rows[0].pos_shift_id]
+    );
+  }
+  await lockCheckInTx(client, input.tenantId, input.checkId);
+  const checkResult = await client.query<any>(
+    `SELECT * FROM bms_restaurant_checks
+      WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'
+      FOR UPDATE`,
+    [input.tenantId, input.checkId]
+  );
+  if (!checkResult.rowCount) return { dropped: false, amountDue: null };
+  const check = checkResult.rows[0];
+
+  const cancelled = await client.query(
+    `UPDATE bms_restaurant_check_items
+        SET status = 'CANCELLED', updated_at = now()
+      WHERE tenant_id = $1 AND check_id = $2 AND id = $3 AND status <> 'CANCELLED'
+      RETURNING id`,
+    [input.tenantId, input.checkId, input.checkItemId]
+  );
+  if (!cancelled.rowCount) return { dropped: false, amountDue: null };
+
+  const remaining = await client.query<CheckItemRow>(
+    `SELECT * FROM bms_restaurant_check_items
+      WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
+      ORDER BY created_at, id
+      FOR UPDATE`,
+    [input.tenantId, input.checkId]
+  );
+
+  if (check.current_order_id) {
+    const releasedOk = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
+    if (!releasedOk) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ยกเลิกตั๋วไม่สำเร็จ");
+    // คีย์ผูกกับ version เดิม ต้องคืนพร้อม order ที่ถูกแทนที่ (เหตุผลเดียวกับตอนส่งครัว)
+    await client.query(
+      `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
+      [input.tenantId, check.current_order_id]
+    );
+  }
+
+  const nextVersion = Number(check.version) + 1;
+  let orderId: string | null = null;
+  let amountDue = 0;
+  if (remaining.rowCount) {
+    const created = await createOrderInTx(client, {
+      tenantId: input.tenantId,
+      channel: "pos",
+      items: remaining.rows.map(toOrderItem),
+      locationId: check.location_id,
+      posDeviceId: check.pos_device_id,
+      posShiftId: check.pos_shift_id,
+      cashierUserId: input.actorUserId,
+      editorId: input.actorUserId,
+      idempotencyKey: `restaurant:${input.checkId}:v${nextVersion}`,
+      restaurantCheckId: input.checkId,
+    });
+    if (created.status !== "CREATED") {
+      throw new Error(`คิดยอดใหม่หลังครัวยกเลิกไม่สำเร็จ (${created.status}) — ยังไม่ยกเลิกตั๋ว`);
+    }
+    orderId = created.orderId;
+    amountDue = created.amountDue;
+  }
+
+  await client.query(
+    `UPDATE bms_restaurant_checks
+        SET version = $3, reserved_version = $3, current_order_id = $4,
+            amount_due = $5, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [input.tenantId, input.checkId, nextVersion, orderId, amountDue]
+  );
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1,$2,'restaurant.kitchen_cancel_line',$3,$4::jsonb)`,
+    [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+      JSON.stringify({ checkItemId: input.checkItemId, amountDue, orderId })]
+  );
+  return { dropped: true, amountDue };
+}
+
 export async function sendRestaurantKitchenRound(input: {
   tenantId: string;
   locationId: string;

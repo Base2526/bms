@@ -220,8 +220,13 @@ export default function RestaurantPosPage() {
   const qtyInCheckBySku = useMemo(() => {
     // server ไม่ส่งรายการที่ถูกยกเลิกมาให้หน้านี้เลย (type เป็น NEW | SENT เท่านั้น)
     // จึงไม่ต้องกรองสถานะซ้ำที่จอ
+    //
+    // แต่ต้องข้ามบรรทัดที่ **ครัวยกเลิกตั๋วแล้ว** — badge บอกว่า "สั่งไปแล้วกี่ที่"
+    // ถ้านับของที่ครัวไม่ได้ทำเข้าไปด้วย จอจะบอกว่าสั่งผัดไทยไปแล้ว 2 ที่ ทั้งที่ไม่มีจานไหน
+    // กำลังมา แล้วคนกดจะไม่กดสั่งใหม่ให้ลูกค้า
     const counts = new Map<string, number>();
     for (const item of check?.items ?? []) {
+      if (item.kitchenStatus === "CANCELLED") continue;
       counts.set(item.sku, (counts.get(item.sku) ?? 0) + Number(item.packQty ?? 0));
     }
     return counts;
@@ -413,7 +418,14 @@ export default function RestaurantPosPage() {
       setTickets((current) => current.map((row) => row.id === ticket.id ? body.ticket : row));
       const where = ticket.tableName ? `${ticket.tableName} · ` : "";
       if (status === "CANCELLED") {
-        message.warning(`${where}ยกเลิกตั๋ว "${ticket.productName}" แล้ว — รายการยังอยู่ในบิลและยังคิดเงิน ถ้าไม่ได้เสิร์ฟต้องไปแก้บิลที่หน้าสั่งอาหาร`, 8);
+        // server ตัดบรรทัดออกจากยอดให้แล้วในทรานแซกชันเดียวกัน — บอกยอดใหม่ไปเลย
+        // เพื่อให้คนกดเห็นว่าเงินขยับจริง ไม่ต้องเดาว่าต้องไปแก้บิลเองอีกไหม
+        if (body.ticket?.billLineDropped) {
+          const due = body.ticket.checkAmountDue;
+          message.success(`${where}ยกเลิก "${ticket.productName}" แล้ว — ตัดออกจากบิลให้เรียบร้อย${due == null ? "" : ` ยอดใหม่ ฿${money(due)}`}`, 6);
+        } else {
+          message.warning(`${where}ยกเลิกตั๋ว "${ticket.productName}" แล้ว แต่บิลไม่ได้เปิดอยู่ (กำลังคิดเงินหรือปิดแล้ว) — ยอดยังรวมรายการนี้ ต้องคืนเงิน/แก้บิลตามปกติ`, 10);
+        }
       } else {
         message.success(`${where}${ticket.productName}: ${TICKET_DONE_TEXT[status] ?? "อัปเดตแล้ว"}`);
       }
@@ -648,7 +660,9 @@ export default function RestaurantPosPage() {
 
           <div className={styles.checkFooter}>
             {hasUnsent && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>{unsentInCheck} รายการยังไม่ถึงครัว</b> — ส่งครัวก่อนจึงจะคิดเงินได้ ยอดด้านล่างคือยอดที่ส่งครัวแล้ว</span></div>}
-            {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ครัวยกเลิก {kitchenCancelled.length} รายการ</b> — ยอดด้านล่างยังรวมรายการนั้นอยู่ ถ้าไม่ได้เสิร์ฟจริงต้องยกเลิกบิลแล้วเปิดใหม่ก่อนเก็บเงิน</span></div>}
+            {/* ปกติครัวยกเลิกแล้วบรรทัดจะหลุดจากบิลทันที เหลือค้างได้เฉพาะกรณีบิลไม่ได้เปิดอยู่
+                ตอนที่ครัวกด (กำลังคิดเงิน/ปิดแล้ว) ซึ่งแตะยอดที่ออกใบเสร็จไปแล้วไม่ได้ */}
+            {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ครัวยกเลิก {kitchenCancelled.length} รายการ ตอนบิลไม่ได้เปิดอยู่</b> — ยอดด้านล่างยังรวมรายการนั้น ตัดออกอัตโนมัติไม่ได้ ต้องคืนเงินหรือแก้บิลตามปกติ</span></div>}
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>

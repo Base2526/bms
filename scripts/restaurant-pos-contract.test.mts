@@ -384,3 +384,53 @@ test("a rejected kitchen round tells staff what to do, not an HTTP code", async 
     assert.match(messages, new RegExp(`case "${status}":`), `ไม่มีคำแปลของ ${status}`);
   }
 });
+
+test("a kitchen cancellation drops the line from the bill instead of charging for it", async () => {
+  const kitchen = code(await read("apps/web/lib/bms/kitchen.ts"));
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const posRoute = code(await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"));
+  const adminResolver = code(await read("apps/web/graphql/bmsStockCapabilities.ts"));
+  const migration = code(await read("db/migrations/9.50__bms_restaurant_cancelled_line_keeps_sent_at.sql"));
+
+  // hook เป็น required ไม่ใช่ optional — ผู้เรียกที่ลืมส่งต้องไม่ compile ไม่ใช่เงียบแล้ว
+  // เก็บเงินค่าอาหารที่ครัวยกเลิก · `?:` ที่นี่คือการเปิดทางให้สองจอให้ผลต่างกัน
+  assert.match(kitchen, /onRestaurantCheckLineCancelled:\s*RestaurantCheckLineCancelHook/);
+  assert.doesNotMatch(kitchen, /onRestaurantCheckLineCancelled\?:/);
+  // kitchen.ts ต้องไม่ import restaurantPos ตรง ๆ (จะเกิดวง kitchen → restaurantPos → orders → kitchen)
+  assert.doesNotMatch(kitchen, /from "\.\/restaurantPos"/);
+  // ต้องเรียก hook ก่อน COMMIT = อยู่ในทรานแซกชันเดียวกับการเปลี่ยนสถานะตั๋ว
+  const cancelBlock = kitchen.slice(
+    kitchen.indexOf('source === "RESTAURANT_CHECK" && status === "CANCELLED"'),
+    kitchen.indexOf('await client.query("COMMIT")', kitchen.indexOf('source === "RESTAURANT_CHECK" && status === "CANCELLED"'))
+  );
+  assert.ok(cancelBlock.length > 0, "หา block ที่เรียก hook ก่อน COMMIT ไม่เจอ");
+  assert.match(cancelBlock, /onRestaurantCheckLineCancelled\(/);
+
+  // ทั้งสองจอ (เครื่องขาย + กระดานหลังบ้าน) ต้องให้ผลเดียวกัน
+  assert.match(posRoute, /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/);
+  assert.match(adminResolver, /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/);
+
+  const drop = restaurant.slice(
+    restaurant.indexOf("export async function dropKitchenCancelledLineInTx"),
+    restaurant.indexOf("export async function sendRestaurantKitchenRound")
+  );
+  assert.ok(drop.length > 0, "หา dropKitchenCancelledLineInTx ไม่เจอ");
+  // ยอดใหม่ต้องมาจาก createOrderInTx เส้นทางเดียวกับการส่งครัว — ห้ามลบราคาบรรทัดออกจาก
+  // amount_due เองที่นี่ เพราะจะเป็นสูตรเงินชุดที่สองที่ drift จากตัวจริง
+  assert.match(drop, /cancelOrderInTx\(/);
+  assert.match(drop, /createOrderInTx\(/);
+  assert.doesNotMatch(drop, /amount_due\s*-/);
+  // ลำดับล็อก: กะ → บิล → สต็อก (ตาม createOrderInTx/finalizePosSale) ไม่งั้น deadlock
+  // กับการส่งครัวที่วิ่งพร้อมกัน
+  assert.ok(
+    drop.indexOf("FOR KEY SHARE") < drop.indexOf("lockCheckInTx"),
+    "ต้องล็อกกะก่อนล็อกบิล"
+  );
+  // บิลที่ปิด/กำลังคิดเงินแล้วห้ามถูกแก้ยอด — ตั๋วยกเลิกได้ แต่เงินที่ออกใบไปแล้วแตะไม่ได้
+  assert.match(drop, /status = 'OPEN'/);
+
+  // constraint เดิมบังคับ sent_at มีค่าเฉพาะตอน SENT ทำให้ยกเลิกบรรทัดที่ส่งครัวแล้วไม่ได้
+  // ทางแก้ต้อง **เก็บ sent_at ไว้** ไม่ใช่ล้างทิ้งเพื่อเลี่ยง constraint (ลบหลักฐานเวลาส่งครัว)
+  assert.match(migration, /status = 'CANCELLED'/);
+  assert.doesNotMatch(drop, /sent_at\s*=\s*NULL/);
+});
