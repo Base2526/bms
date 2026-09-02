@@ -326,10 +326,38 @@
   .topbar { padding: 8px; }
   .subtitle { display: none; }
   .brand { margin-inline-end: 0; }
-  .topbar .btn, .tabs { flex: 1 1 auto; }
+  .topbar .btn { flex: 1 1 auto; }
   .topbar .btnIcon { flex: 0 0 40px; }
-  .tabButton { flex: 1; justify-content: center; }
   .strip { gap: 4px 14px; font-size: 13.5px; }
+
+  /* บนมือถือ แถบซ้าย 64px กินพื้นที่ ~17% ของจอ — บีบลงแล้วคืนให้กริดเมนู
+     ป้ายยังอยู่ (คนกดต้องรู้ว่าปุ่มไหนคืออะไร) แค่เล็กลงพอดีความกว้างใหม่ */
+  .page { grid-template-columns: 52px minmax(0, 1fr); }
+  .page .railBtn { width: 46px; min-height: 48px; padding: 6px 1px 5px; }
+  .page .railBtn .railIcon { font-size: 17px; }
+  .page .railBtn .railLabel { font-size: 9.5px; }
+  .railMark { width: 34px; height: 34px; font-size: 16px; margin-bottom: 6px; }
+
+  /* การ์ดเมนูต้องได้ 2 คอลัมน์บนมือถือ — ค่า 164px ของจอใหญ่ทำให้เหลือคอลัมน์เดียว
+     (ที่ 375px เหลือพื้นที่กริด 263px ซึ่งไม่พอสำหรับ 164×2 + gap) */
+  .dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; padding: 10px 10px 14px; }
+  .dishArt { height: 76px; }
+  .dishGlyph { width: 56px; height: 56px; }
+  .dishName { font-size: 12.5px; min-height: 2.6em; }
+  .dishPrice { font-size: 14px; }
+  /* การ์ดแคบลงจนราคากับคำว่า "มีตัวเลือก" อยู่บรรทัดเดียวกันไม่พอ แล้วคำถูกตัดเป็น
+     "มีตัว / เลือก" เบียดราคา — วางซ้อนบรรทัดแทนการบีบให้อยู่แถวเดียว */
+  .dishFoot { display: block; }
+  .dishModHint { display: block; margin-top: 3px; }
+
+  /* จอแคบสุด (320px) เคยล้นออกข้าง ~4px เพราะช่องกรอง (มี padding ของตัวเอง) ถูกวางเป็น
+     คอลัมน์ที่สองของ panelHeader และปุ่มจัดการบิล 3 ตัวถูกอัดในแถวเดียว — ให้ทั้งสอง
+     ตกบรรทัดแทนการยืนกรานอยู่แถวเดิม จอ POS ห้าม scroll ข้าง (เลื่อนพลาดตอนกดเร็ว) */
+  .panelHeader { flex-wrap: wrap; }
+  .panelHeader .searchRow { width: 100%; padding: 0; }
+  .checkActions { flex-wrap: wrap; }
+  .checkActions .btn { flex: 1 1 auto; min-width: 92px; }
+  .billStrip, .catRow { padding-inline: 10px; }
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footerButtons { grid-template-columns: 1fr; }
   .modifierList { grid-template-columns: 1fr; }
