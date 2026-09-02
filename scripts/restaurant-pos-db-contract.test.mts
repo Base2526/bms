@@ -23,7 +23,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
-import { listKitchenTickets, updateKitchenTicketStatus } from "../apps/web/lib/bms/kitchen.ts";
+import {
+  KITCHEN_BULK_LIMIT,
+  listKitchenTickets,
+  updateKitchenTicketStatus,
+  updateKitchenTicketsStatus,
+} from "../apps/web/lib/bms/kitchen.ts";
+import {
+  clearKitchenStationSla,
+  getKitchenStationSlaMap,
+  listKitchenStationSlas,
+  upsertKitchenStationSla,
+} from "../apps/web/lib/bms/kitchenSla.ts";
 import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
@@ -35,6 +46,7 @@ import {
   removeRestaurantCheckItem,
   sendRestaurantKitchenRound,
   settleRestaurantCheck,
+  dropKitchenCancelledLineInTx,
 } from "../apps/web/lib/bms/restaurantPos.ts";
 
 const TAG = "restaurant-test";
@@ -59,6 +71,24 @@ const stock = async (sku: string, location = locationId) =>
       WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
     [tenantId, location, sku, SIZE]
   )).rows[0];
+
+// 9.51 made a declared sales surface a precondition for selling. These fixtures write
+// bms_products directly, so nothing else declares one and every sale returns NOT_FOUND.
+// The rows cascade away with the product on teardown.
+const declareSalesSurfaces = async (sku: string, surfaces: string[]) => {
+  const present = (await query<{ reg: string | null }>(
+    `SELECT to_regclass('bms_product_sales_surfaces')::text AS reg`
+  )).rows[0]?.reg;
+  if (!present) return; // database predates 9.51
+  for (const surface of surfaces) {
+    await query(
+      `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface)
+       VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [tenantId, sku, surface]
+    );
+  }
+};
+const ALL_SURFACES = ["RETAIL_POS", "RESTAURANT_POS", "ONLINE_ORDER", "PUBLIC_STOREFRONT", "CUSTOMER_AI"];
 
 async function makeUser(name: string) {
   return (await query<{ id: string }>(
@@ -98,6 +128,7 @@ test("setup: a throwaway restaurant with a register, an open shift and two plain
       `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
        VALUES ($1,$2,$3,$4,100,0)`, [tenantId, locationId, sku, SIZE]
     );
+    await declareSalesSurfaces(sku, ALL_SURFACES);
   }
   waiterId = await makeUser("waiter");
   cashierId = await makeUser("cashier");
@@ -380,6 +411,62 @@ test("a ticket only moves for the branch that owns it", async () => {
   );
 });
 
+/**
+ * จอครัวรวมตั๋วของ (โต๊ะ + รอบ + สถานี) เป็นใบเดียว ปุ่มเดียวจึงขยับหลายแถว — ต้องเป็น
+ * "ทั้งหมดหรือไม่เลื่อนเลย" ในทรานแซกชันเดียว · ถ้าปล่อยให้ครึ่งหนึ่งผ่าน งานเดียวกันจะโผล่
+ * สองช่องบนกระดานพร้อมกันโดยไม่มีใครอธิบายได้ และคนครัวจะทำซ้ำหรือข้ามไปเลย
+ */
+test("เลื่อนทั้งใบเป็นทั้งหมดหรือไม่เลื่อนเลย", async () => {
+  const stuck = (await listKitchenTickets(tenantId, "PREPARING", 200, locationId))[0];
+  const fresh = await listKitchenTickets(tenantId, "NEW", 200, locationId);
+  assert.ok(stuck && fresh.length >= 2, "ต้องมีทั้งใบที่ขยับแล้วและใบที่ยังใหม่ไว้ทดสอบ");
+
+  // ใบที่ขยับไม่ได้ (PREPARING → PREPARING) ปนอยู่ในชุด = ทั้งชุดต้อง rollback
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: [fresh[0].id, stuck.id], status: "PREPARING",
+      actorUserId: waiterId, expectedLocationId: locationId,
+    }),
+    /เปลี่ยนสถานะ/
+  );
+  const afterFailure = await listKitchenTickets(tenantId, "NEW", 200, locationId);
+  assert.ok(afterFailure.some((row) => row.id === fresh[0].id),
+    "ใบที่ดีต้องไม่ถูกเลื่อนทิ้งไว้ครึ่งทางเมื่อเพื่อนร่วมชุดล้ม");
+
+  // ชุดที่ถูกต้องเลื่อนครบทุกแถวในครั้งเดียว
+  const ids = fresh.slice(0, 2).map((row) => row.id);
+  const moved = await updateKitchenTicketsStatus({
+    tenantId, ticketIds: [...ids, ids[0]], status: "PREPARING",
+    actorUserId: waiterId, expectedLocationId: locationId,
+  });
+  assert.equal(moved.length, ids.length, "id ซ้ำในคำขอต้องถูกยุบ ไม่ใช่เลื่อนสองรอบ");
+  assert.ok(moved.every((row) => row.status === "PREPARING"));
+  const stillNew = await listKitchenTickets(tenantId, "NEW", 200, locationId);
+  assert.ok(ids.every((id) => !stillNew.some((row) => row.id === id)));
+
+  // สาขาอื่นเลื่อนไม่ได้ แม้รู้ id (ด่านเดียวกับ route ทีละใบ)
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: [ids[0]], status: "READY",
+      actorUserId: waiterId, expectedLocationId: otherLocationId,
+    }),
+    /ไม่พบ Kitchen ticket/
+  );
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: [], status: "PREPARING", actorUserId: waiterId,
+    }),
+    /ต้องระบุตั๋ว/
+  );
+  await assert.rejects(
+    () => updateKitchenTicketsStatus({
+      tenantId, ticketIds: Array.from({ length: KITCHEN_BULK_LIMIT + 1 }, (_, i) => `id-${i}`),
+      status: "PREPARING", actorUserId: waiterId,
+    }),
+    /สูงสุด/
+  );
+});
+
 test("only NEW lines can be pulled off a check, and only from its own branch", async () => {
   const sentItemId = (await getRestaurantCheck(tenantId, paidCheckId))!.items[0].id;
   await assert.rejects(
@@ -562,6 +649,73 @@ test("a paid check cannot be cancelled, and a stuck CLOSING one always can", asy
   );
 });
 
+test("ย้อนสถานะได้ทีละขั้น แต่ใบที่ยกเลิกแล้วย้อนไม่ได้", async () => {
+  const ticket = (await listKitchenTickets(tenantId, "PREPARING", 200, locationId))[0];
+  assert.ok(ticket, "ต้องมีใบที่กำลังทำอยู่");
+  const back = await updateKitchenTicketStatus({
+    tenantId, ticketId: ticket.id, status: "NEW",
+    actorUserId: waiterId, expectedLocationId: locationId,
+  });
+  assert.equal(back.status, "NEW", "กดผิดแล้วต้องถอยได้");
+
+  // ข้ามขั้นถอยสองทียังไม่ได้เหมือนเดิม
+  await assert.rejects(
+    () => updateKitchenTicketStatus({
+      tenantId, ticketId: ticket.id, status: "SERVED",
+      actorUserId: waiterId, expectedLocationId: locationId,
+    }),
+    /เปลี่ยนสถานะ/
+  );
+
+  // ยกเลิกแล้วเป็นปลายทางถาวร — บรรทัดหลุดจากบิลไปแล้ว การย้อนคือการแก้บิล
+  await updateKitchenTicketStatus({
+    tenantId, ticketId: ticket.id, status: "CANCELLED",
+    actorUserId: waiterId, expectedLocationId: locationId,
+    onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx,
+  });
+  await assert.rejects(
+    () => updateKitchenTicketStatus({
+      tenantId, ticketId: ticket.id, status: "NEW",
+      actorUserId: waiterId, expectedLocationId: locationId,
+    }),
+    /เปลี่ยนสถานะ/
+  );
+});
+
+test("เกณฑ์เวลาต่อสถานีเก็บได้ ลบแล้วกลับไปใช้ค่าปริยาย และค่าที่ผิดถูกปฏิเสธ", async () => {
+  await upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 2, lateMinutes: 4 }, waiterId);
+  const map = await getKitchenStationSlaMap(tenantId);
+  assert.deepEqual(map["บาร์เครื่องดื่ม"], { warnMinutes: 2, lateMinutes: 4 });
+
+  // เหลืองต้องมาก่อนแดง ไม่งั้นใบกระโดดเป็นแดงโดยไม่มีขั้นเตือน
+  await assert.rejects(
+    () => upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 9, lateMinutes: 3 }, waiterId),
+    /น้อยกว่า/
+  );
+  await assert.rejects(
+    () => upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 1, lateMinutes: 900 }, waiterId),
+    /0 ถึง 600/
+  );
+  await assert.rejects(
+    () => upsertKitchenStationSla(tenantId, { station: "   ", warnMinutes: 1, lateMinutes: 2 }, waiterId),
+    /ชื่อสถานี/
+  );
+
+  // แก้ค่าเดิมทับได้ (ไม่ใช่สร้างแถวที่สอง)
+  await upsertKitchenStationSla(tenantId, { station: "บาร์เครื่องดื่ม", warnMinutes: 3, lateMinutes: 6 }, waiterId);
+  assert.deepEqual((await getKitchenStationSlaMap(tenantId))["บาร์เครื่องดื่ม"], { warnMinutes: 3, lateMinutes: 6 });
+
+  // หน้าตั้งค่าเห็นสถานีที่ยังไม่เคยตั้งด้วย ไม่งั้นร้านต้องเดาชื่อให้ตรงเป๊ะเอง
+  const listed = await listKitchenStationSlas(tenantId);
+  const bar = listed.find((row) => row.station === "บาร์เครื่องดื่ม");
+  assert.equal(bar?.configured, true);
+  assert.ok(listed.every((row) => row.warnMinutes < row.lateMinutes));
+
+  assert.equal(await clearKitchenStationSla(tenantId, "บาร์เครื่องดื่ม", waiterId), true);
+  assert.equal((await getKitchenStationSlaMap(tenantId))["บาร์เครื่องดื่ม"], undefined);
+  assert.equal(await clearKitchenStationSla(tenantId, "บาร์เครื่องดื่ม", waiterId), false, "ลบซ้ำต้องไม่ล้ม");
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -578,7 +732,7 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_restaurant_kitchen_tickets",
     "bms_restaurant_check_items",
     // checks ต้องไปหลัง orders เพราะ bms_orders.restaurant_check_id เป็น FK ปกติ (NO ACTION)
-    "bms_kitchen_tickets",
+    "bms_kitchen_station_slas", "bms_kitchen_tickets",
     "bms_payments",
     "bms_order_items",
     "bms_order_discounts",

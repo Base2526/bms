@@ -1253,6 +1253,7 @@ export const typeDefs = /* GraphQL */ `
     bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
     bmsProductModifiers(productSku: String!, size: String): [BmsProductModifier!]!
     bmsKitchenTickets(status: String, limit: Int = 100): [BmsKitchenTicket!]!
+    bmsKitchenStationSlas: [BmsKitchenStationSla!]!
     bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponLocations: [BmsLocation!]!
@@ -3695,6 +3696,13 @@ export const typeDefs = /* GraphQL */ `
     sortOrder: Int
     items: [BmsModifierComponentInput!]!
   }
+  """เกณฑ์เวลาของจอครัวต่อสถานี (9.53) — สถานีที่ยังไม่ตั้งค่าคืนค่าปริยายพร้อม configured=false"""
+  type BmsKitchenStationSla {
+    station: String!
+    warnMinutes: Int!
+    lateMinutes: Int!
+    configured: Boolean!
+  }
   type BmsKitchenTicket {
     id: ID!
     """ORDER = ตั๋วจากบิลที่ปิดการขายแล้ว · RESTAURANT_CHECK = ตั๋วจากบิลโต๊ะก่อนชำระเงิน"""
@@ -4297,6 +4305,9 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertProductRecipe(input: BmsProductRecipeInput!): BmsProductRecipe!
     bmsUpsertProductModifier(input: BmsProductModifierInput!): BmsProductModifier!
     bmsUpdateKitchenTicketStatus(id: ID!, status: String!): BmsKitchenTicket!
+    bmsUpdateKitchenTicketsStatus(ids: [ID!]!, status: String!): [BmsKitchenTicket!]!
+    bmsUpsertKitchenStationSla(station: String!, warnMinutes: Int!, lateMinutes: Int!): BmsKitchenStationSla!
+    bmsClearKitchenStationSla(station: String!): Boolean!
     bmsRecordInventoryWastage(input: BmsInventoryWastageInput!): BmsInventoryWastageResult!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
     bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!   # permission report.view

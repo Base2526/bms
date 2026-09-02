@@ -908,10 +908,13 @@ function ProductsManagement() {
               label={t("admin_products.creation_template")}
               name="creationTemplate"
               rules={[{ required: true }]}
-              extra={t("admin_products.creation_template_hint")}
+              extra={creationTemplate === "QUICK_MENU"
+                ? t("admin_products.template_quick_menu_hint")
+                : t("admin_products.creation_template_hint")}
             >
               <Select
                 options={[
+                  { value: "QUICK_MENU", label: t("admin_products.template_quick_menu") },
                   { value: "PREPARED_MENU", label: t("admin_products.template_prepared_menu") },
                   { value: "READY_GOOD", label: t("admin_products.template_ready_good") },
                   { value: "INGREDIENT", label: t("admin_products.template_ingredient") },
@@ -919,6 +922,7 @@ function ProductsManagement() {
                 ]}
                 onChange={(template) => {
                   const presets: Record<string, { stockPolicy: string; salesSurfaces: string[] }> = {
+                    QUICK_MENU: { stockPolicy: "NON_STOCK", salesSurfaces: ["RESTAURANT_POS"] },
                     PREPARED_MENU: { stockPolicy: "RECIPE", salesSurfaces: ["RESTAURANT_POS"] },
                     READY_GOOD: { stockPolicy: "DIRECT", salesSurfaces: ["RESTAURANT_POS", "RETAIL_POS"] },
                     INGREDIENT: { stockPolicy: "DIRECT", salesSurfaces: [] },
@@ -940,7 +944,7 @@ function ProductsManagement() {
             >
               <Select
                 disabled={Boolean(editing)}
-                options={["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED"].map((value) => ({ value, label: value }))}
+                options={["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"].map((value) => ({ value, label: value }))}
               />
             </Form.Item>
             <Form.Item

@@ -50,7 +50,7 @@ export async function enqueueKitchenTicketsInTx(
        JOIN bms_product_stock_policies sp
          ON sp.tenant_id = oi.tenant_id AND sp.product_sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND oi.order_id = $2
-        AND sp.stock_policy = 'RECIPE'
+        AND sp.stock_policy IN ('RECIPE', 'NON_STOCK')
      ON CONFLICT (tenant_id, order_item_id) DO NOTHING`,
     [tenantId, orderId]
   );
@@ -148,13 +148,24 @@ export async function cancelKitchenTicketsForOrderInTx(
   return result.rowCount ?? 0;
 }
 
+/**
+ * เดินหน้าได้ทีละขั้น ถอยหลังได้ทีละขั้น
+ *
+ * ถอยหลังมีเพราะการกดผิดที่จอครัวเกิดจริงและบ่อย (มือเปื้อน จอสัมผัสลั่น กดใบข้าง ๆ) —
+ * เดิมกดพลาดเป็น "พร้อมเสิร์ฟ" แล้วแก้ไม่ได้เลย ครัวต้องจำเอาเองว่าใบไหนยังไม่เสร็จจริง
+ *
+ * **CANCELLED เป็นปลายทางถาวรโดยตั้งใจ ห้ามเพิ่มทางกลับ** — การยกเลิกตัดบรรทัดออกจากบิล
+ * โต๊ะไปแล้วในทรานแซกชันเดียวกัน การ "ย้อนกลับ" จึงต้องเอาบรรทัดกลับเข้าบิลพร้อมจองสต็อกใหม่
+ * ซึ่งเป็นการแก้บิล ไม่ใช่การแก้สถานะครัว (ทางที่ถูกคือสั่งรอบใหม่)
+ */
 const NEXT_KITCHEN_STATUS: Record<string, ReadonlySet<string>> = {
   NEW: new Set(["PREPARING", "CANCELLED"]),
-  PREPARING: new Set(["READY", "CANCELLED"]),
-  READY: new Set(["SERVED", "CANCELLED"]),
-  SERVED: new Set(),
+  PREPARING: new Set(["READY", "NEW", "CANCELLED"]),
+  READY: new Set(["SERVED", "PREPARING", "CANCELLED"]),
+  SERVED: new Set(["READY"]),
   CANCELLED: new Set(),
 };
+
 
 /**
  * ผลที่ต้องเกิดกับ "บิลโต๊ะ" เมื่อครัวยกเลิกตั๋ว — อาหารไม่ได้ทำ บรรทัดต้องหลุดจากยอด
@@ -168,7 +179,7 @@ export type RestaurantCheckLineCancelHook = (
   input: { tenantId: string; checkId: string; checkItemId: string; actorUserId: string }
 ) => Promise<{ dropped: boolean; amountDue: number | null }>;
 
-export async function updateKitchenTicketStatus(input: {
+export type UpdateKitchenTicketInput = {
   tenantId: string;
   ticketId: string;
   status: string;
@@ -184,12 +195,19 @@ export async function updateKitchenTicketStatus(input: {
    * ยิง id ตรง ๆ ไปเลื่อนอาหารของสาขาอื่น (กระดานหลังบ้านไม่ส่งค่านี้ = ดูแลได้ทั้งร้าน)
    */
   expectedLocationId?: string | null;
-}) {
+};
+
+/**
+ * แกนของการเลื่อนสถานะหนึ่งใบ — **ต้องถูกเรียกในทรานแซกชันที่เปิดไว้แล้วเท่านั้น**
+ *
+ * แยกออกมาเพื่อให้การเลื่อนทีละใบกับการเลื่อนทั้งรอบ (updateKitchenTicketsStatus) ใช้
+ * สูตรเดียวกันจริง ๆ ไม่ใช่สองสูตรที่ต้องคอยไล่ให้ตรงกัน — โดยเฉพาะการตัดบรรทัดออกจาก
+ * บิลโต๊ะตอนยกเลิก และการเขียน audit ซึ่งต้องอยู่ในทรานแซกชันเดียวกับการเปลี่ยนสถานะ
+ */
+async function updateKitchenTicketStatusInTx(client: PoolClient, input: UpdateKitchenTicketInput) {
   const status = String(input.status ?? "").trim().toUpperCase();
   if (!(status in NEXT_KITCHEN_STATUS)) throw new Error("สถานะ Kitchen ticket ไม่ถูกต้อง");
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+  {
     const locationId = input.expectedLocationId ?? null;
     let current = await client.query<{ status: string; source: "ORDER" | "RESTAURANT_CHECK" }>(
       `SELECT kt.status, 'ORDER'::text AS source FROM bms_kitchen_tickets kt
@@ -264,8 +282,52 @@ export async function updateKitchenTicketStatus(input: {
       [input.tenantId, `user:${input.actorUserId}`, input.ticketId,
         JSON.stringify({ previous, status, source, billLineDropped: billDropped.dropped, amountDue: billDropped.amountDue })]
     );
-    await client.query("COMMIT");
     return { ...mapKitchenTicket(updated.rows[0]), billLineDropped: billDropped.dropped, checkAmountDue: billDropped.amountDue };
+  }
+}
+
+export async function updateKitchenTicketStatus(input: UpdateKitchenTicketInput) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    const ticket = await updateKitchenTicketStatusInTx(client, input);
+    await client.query("COMMIT");
+    return ticket;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** ปุ่มเดียวบนจอครัวเลื่อนได้ทั้งใบ ซึ่งเป็นได้หลายตั๋ว — จำกัดไว้กันคำขอที่ยิงทั้งกระดาน */
+export const KITCHEN_BULK_LIMIT = 50;
+
+/**
+ * เลื่อนหลายตั๋ว "ทั้งหมดหรือไม่เลื่อนเลย" ในทรานแซกชันเดียว
+ *
+ * จอครัวรวม 3 แก้วของโต๊ะเดียวเป็นใบเดียว ปุ่มจึงต้องขยับทั้ง 3 แถว · ถ้าปล่อยให้จอยิง
+ * ทีละใบ ใบที่ล้มกลางทางจะทิ้งครึ่งหนึ่งไว้ที่สถานะเก่า แล้วครัวเห็นงานเดียวกันโผล่สองช่อง
+ * พร้อมกันโดยไม่มีใครอธิบายได้ · ล้มใบไหนก็ rollback ทั้งชุดแล้วให้กดใหม่
+ */
+export async function updateKitchenTicketsStatus(input: Omit<UpdateKitchenTicketInput, "ticketId"> & {
+  ticketIds: string[];
+}) {
+  const ids = [...new Set((input.ticketIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (ids.length === 0) throw new Error("ต้องระบุตั๋วอย่างน้อยหนึ่งใบ");
+  if (ids.length > KITCHEN_BULK_LIMIT) {
+    throw new Error(`เลื่อนได้สูงสุด ${KITCHEN_BULK_LIMIT} รายการต่อครั้ง`);
+  }
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    const tickets = [];
+    for (const ticketId of ids) {
+      tickets.push(await updateKitchenTicketStatusInTx(client, { ...input, ticketId }));
+    }
+    await client.query("COMMIT");
+    return tickets;
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

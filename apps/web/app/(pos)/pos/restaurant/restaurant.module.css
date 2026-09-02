@@ -41,7 +41,14 @@
 }
 /* เมนูนำทางเป็นแถบไอคอนแนวตั้งฝั่งซ้าย (ตามมอคอัพ) — คืนความกว้างแถวบนให้ชื่อร้าน
    กับปุ่มที่ใช้จริง และปลายนิ้วโป้งอยู่ขอบซ้ายตลอด ไม่ต้องเอื้อมขึ้นไปหัวจอ */
-.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); overflow: hidden; }
+/* ⚠️ grid-template-rows ต้องประกาศเป็น 100% — ห้ามปล่อยให้เป็น implicit row
+   โมดัลทุกตัวของหน้านี้ใช้ getContainer ชี้มาที่ <main> (เพื่อให้ตัวแปรสีของ CSS module
+   มีผลในโมดัล) · portal root ของ antd เป็น div ปกติที่ค้างอยู่ใน DOM ต่อแม้ปิดโมดัลแล้ว
+   จึงกลายเป็น grid item เพิ่ม = แถวใหม่ แล้ว align-content ปริยาย (stretch) เกลี่ยความสูง
+   ให้ทุกแถว → แถวแรกที่เป็นตัวแอปหดลง เหลือแถบว่างท้ายจอ และหดเพิ่มทุกครั้งที่เปิด
+   โมดัลตัวใหม่ (วัดจริง: 1 โมดัล = หาย 175px · 3 โมดัล = หาย 233px จาก 820px)
+   ประกาศแถวเดียว 100% แล้ว portal root ตกไปอยู่ implicit row สูง 0 ที่ overflow:hidden ตัดทิ้ง */
+.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 100%; overflow: hidden; }
 .pagePlain { display: block; overflow: auto; }
 .rail {
   background: var(--panel); border-inline-end: 1px solid var(--line);
@@ -325,19 +332,54 @@
 .setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--panel-2); border: 1px solid var(--line); color: var(--accent); }
 
 /* ---------- จอครัว ---------- */
-.kitchenBoard { padding: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; overflow-x: auto; }
-.lane { border-radius: 6px; min-height: 460px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color); }
-.laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
+/* กระดานครัวไม่เลื่อนทั้งแผ่น — แต่ละเลนเลื่อนของตัวเอง หัวเลน (ชื่อ + ตัวนับ) จึงอยู่กับที่
+   ถ้าเลื่อนทั้งแผ่น เลนที่ตั๋วเยอะจะดันหัวเลนอื่นหายไปด้วย แล้วครัวอ่านไม่ออกว่ากำลังดูช่องไหน */
+.kitchenBoard { padding: 12px; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* แถบหัวจอครัว — แทนที่บล็อกชื่อจอ + คำอธิบาย + ปุ่มรีเฟรชขนาดเต็ม (สูงรวม ~72px)
+   ด้วยแถวเดียวที่เป็นเครื่องมือจริง: กรองตามสถานีที่คนครัวคนนั้นรับผิดชอบ */
+.kitchenBar { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.kitchenFilter { font: inherit; font-size: 13.5px; height: 34px; padding: 0 13px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.kitchenFilter:hover { background: var(--panel-2); }
+.kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
+.kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
+.sheetRow { display: flex; align-items: center; gap: 8px; }
+.sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
+.sheetNote { color: var(--ink-2); font-size: 12.5px; }
+.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
+.lane { border-radius: 6px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+/* ตั๋วเลื่อนในเลน ส่วนหัวเลนตรึงไว้ */
+.laneScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.laneHead { flex: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
 .laneCount { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; background: var(--panel-2); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.ticket { background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+/* ใบสั่งครัว — 1 ใบ = (โต๊ะ/บิล + รอบ + สถานี) ไม่ใช่ 1 รายการ
+   แถบสีซ้ายบอกเลนที่ใบนั้นอยู่ อ่านได้จากระยะยืนทำงานโดยไม่ต้องหาหัวคอลัมน์ */
+.ticket { background: var(--panel); border: 1px solid var(--line-2); border-left: 4px solid var(--lane-color);
+  border-radius: 6px; padding: 9px 10px 10px; margin-bottom: 8px; }
+.ticketHead { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.ticketAge { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; border-radius: 4px;
+  padding: 2px 7px; background: var(--panel-2); color: var(--ink-2); font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.ticketAgeWarn { background: var(--amber-bg); color: var(--amber); }
+.ticketAgeLate { background: var(--red-bg); color: var(--red); }
+.ticketLine { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+.ticketQty { min-width: 30px; font-size: 19px; font-weight: 700; color: var(--lane-color); font-variant-numeric: tabular-nums; }
+.ticketDish { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; line-height: 1.25; }
+.ticketSize { font-size: 12.5px; color: var(--ink-2); }
+.ticketGo { flex: 1; height: 44px; justify-content: center; font-size: 15px; }
+.laneEmpty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 12.5px; }
 .ticketTable { color: var(--red); font-weight: 700; font-size: 12.5px; margin-bottom: 3px; }
 .ticketName { font-weight: 700; }
 .ticketMeta { color: var(--ink-2); font-size: 12px; margin-top: 3px; }
-.ticketNote { background: var(--amber-bg); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; margin-top: 6px; }
+.ticketNote { display: block; background: var(--amber-bg); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; margin-top: 6px; }
 .ticketActions { display: flex; gap: 6px; margin-top: 8px; }
 .ticketActions .btn { height: 36px; font-size: 13px; padding: 0 12px; }
 .itemTags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.ticketDish .itemTags { display: inline-flex; margin-top: 4px; }
 .tag { display: inline-flex; border-radius: 3px; padding: 2px 7px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink-2); font-size: 11.5px; }
 
 /* ---------- modal ---------- */
@@ -359,10 +401,11 @@
      จอแคบจึงกลับไปเลื่อนทั้งหน้าตามปกติ ซึ่งเป็นสิ่งที่มือถือคาดหวังอยู่แล้ว
      แต่ "ยอด + ส่งครัว/คิดเงิน" ปักติดขอบล่างเสมอ เพราะสองอย่างนี้คือสิ่งที่ต้องเห็น
      ตลอดเวลาที่กำลังเพิ่มรายการ */
-  .page { height: auto; min-height: 100dvh; overflow: visible; }
+  .page { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto; }
   .rail { position: sticky; top: 0; align-self: start; height: 100dvh; }
   .shell { overflow: visible; }
-  .panelScroll, .items, .openList, .kitchenBoard { overflow: visible; }
+  .panelScroll, .items, .openList, .kitchenBoard, .laneScroll { overflow: visible; }
+  .lane { min-height: 460px; }
   .workspace { grid-template-columns: 1fr; }
   .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px rgba(21, 25, 22, .1); }

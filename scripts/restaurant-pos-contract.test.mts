@@ -338,9 +338,15 @@ test("kitchen board accepts tickets without an order id and stays branch-aware",
     assert.ok(ticketType.includes(field), `BmsKitchenTicket ขาดฟิลด์ ${field}`);
   }
   // เลขบิลต้องอยู่ใต้เงื่อนไข และตั๋วที่ไม่มีเลขบิลต้องมีอะไรอ่านแทน (โต๊ะ/รอบ)
-  assert.match(board, /\{ticket\.orderId\s*\n?\s*\?/);
+  // การตัดสินใจนั้นย้ายไปอยู่ใน kitchenGroupLabel() ที่กระดานทั้งสองฝั่งใช้ร่วมกัน —
+  // กระดานหลังบ้านจึงต้องไม่แตะ orderId เองอีก (เทสของโมดูลคุมพฤติกรรมนั้นแยก)
+  assert.match(board, /group\.tableLabel \?\? t\("admin_kitchen\.dine_in"\)/);
+  assert.doesNotMatch(board, /ticket\.orderId\.slice/,
+    "อย่าหั่นเลขบิลตรง ๆ ที่หน้าจอ — ตั๋วบิลโต๊ะไม่มี orderId");
   assert.doesNotMatch(board, /·\s*#\{ticket\.orderId\.slice/);
-  assert.match(board, /ticket\.tableName \|\| ticket\.tableCode/);
+  // ชื่อโต๊ะ/รหัสโต๊ะเป็นทางเลือกสำรองของหัวใบ — ตอนนี้อยู่ใน kitchenGroupLabel()
+  const boardModule = code(await read("apps/web/lib/bms/kitchenBoard.ts"));
+  assert.match(boardModule, /clean\(ticket\.tableName\) \?\? clean\(ticket\.tableCode\)/);
   // จอครัวของเครื่องหน้าร้านเห็นและเลื่อนได้เฉพาะสาขาตัวเอง
   assert.match(kitchen, /locationId\?: string \| null/);
   assert.match(posQueue, /listKitchenTickets\(device\.tenantId, status, limit, device\.locationId\)/);
@@ -469,4 +475,64 @@ test("a kitchen cancellation drops the line from the bill instead of charging fo
   // ทางแก้ต้อง **เก็บ sent_at ไว้** ไม่ใช่ล้างทิ้งเพื่อเลี่ยง constraint (ลบหลักฐานเวลาส่งครัว)
   assert.match(migration, /status = 'CANCELLED'/);
   assert.doesNotMatch(drop, /sent_at\s*=\s*NULL/);
+});
+
+/**
+ * วัดจริงในเบราว์เซอร์ 2026-09-02: โมดัลทุกตัวของหน้านี้ส่ง getContainer ชี้มาที่ <main>
+ * ซึ่งเป็น display:grid · portal root ของ antd เป็น div ปกติและ **ค้างอยู่ใน DOM ต่อแม้ปิด
+ * โมดัลแล้ว** จึงเป็น grid item เพิ่มหนึ่งแถว แล้ว align-content ปริยาย (stretch) เกลี่ย
+ * ความสูงให้ทุกแถว → แถวของตัวแอปหดลง เหลือแถบว่างท้ายจอถาวร (วัดที่ viewport 820px:
+ * 1 โมดัล = หาย 175px · 3 โมดัล = หาย 233px) และปุ่ม "คิดเงิน" ลอยขึ้นจากขอบจอ
+ */
+test("the page grid declares its own single row so modal portals cannot steal height", async () => {
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const pageGrid = css.split("\n").find((line) => line.includes(".page {") && line.includes("display: grid"));
+  assert.ok(pageGrid, ".page must still be the grid shell");
+  assert.match(pageGrid!, /grid-template-rows:\s*100%/,
+    "an implicit row lets every antd portal root shrink the app — declare the row explicitly");
+  // จอแคบปล่อยให้หน้าเลื่อนตามเนื้อหาโดยตั้งใจ แถวจึงต้องกลับเป็น auto ที่ breakpoint นั้น
+  assert.match(css, /min-height: 100dvh;[^}]*grid-template-rows:\s*auto/,
+    "the <=900px breakpoint lets the page grow, so the fixed row must be released there");
+});
+
+test("modals still portal into the page root so the CSS-module theme applies", async () => {
+  const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  // ถ้าเลิกใช้ getContainer ต้องเลิกพึ่ง grid-template-rows ด้วย (เทสข้างบนจะกลายเป็นของตกค้าง)
+  assert.match(src, /getContainer=\{modalContainer\}/);
+  assert.match(src, /rootRef\.current \?\? document\.body/);
+});
+
+/**
+ * กระดานครัว: แต่ละเลนเลื่อนของตัวเอง ไม่ใช่เลื่อนทั้งแผ่น
+ * ถ้าเลื่อนทั้งแผ่น เลนที่ตั๋วเยอะจะดันหัวเลนของทุกช่องหายไปพร้อมกัน แล้วครัวอ่านไม่ออกว่า
+ * ที่เห็นอยู่คือช่องไหน · วัดจริงที่ viewport 820px: 20 ตั๋วในเลนเดียว → เลนเลื่อนได้
+ * (content 2905 / client 519) หัวเลนอยู่กับที่ และทั้งกระดาน/หน้าไม่เลื่อนตาม
+ */
+test("each kitchen lane scrolls on its own while its header stays put", async () => {
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const rule = (name: string) => css.split("\n").find((line) => line.trimStart().startsWith(name + " {"));
+
+  const board = rule(".kitchenBoard");
+  assert.ok(board, ".kitchenBoard must exist");
+  assert.match(board!, /overflow:\s*hidden/, "the board itself must not be the scroller");
+  assert.match(board!, /display:\s*flex/, "it has to bound .lanes for the lanes to be scrollable");
+
+  const lanes = rule(".lanes");
+  assert.match(lanes!, /min-height:\s*0/, "a grid item defaults to min-height:auto and would never scroll");
+
+  const laneScroll = rule(".laneScroll");
+  assert.ok(laneScroll, "tickets need their own scroll box so .laneHead can stay pinned");
+  assert.match(laneScroll!, /overflow-y:\s*auto/);
+  assert.match(laneScroll!, /min-height:\s*0/);
+
+  assert.match(rule(".laneHead")!, /flex:\s*none/, "the header must not shrink away as tickets pile up");
+
+  const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  // ใบสั่งต้องอยู่ "ใน" กล่องที่เลื่อน ไม่ใช่ลูกโดยตรงของเลน (ไม่งั้นหัวเลนเลื่อนหายไปด้วย)
+  assert.match(src, /styles\.laneScroll\}>[\s\S]{0,600}styles\.ticket\}/,
+    "tickets must be rendered inside the scroll box, not dropped straight into the lane");
+
+  // จอแคบเลื่อนทั้งหน้าตามปกติ — เลนจึงต้องคืน overflow ที่ breakpoint นั้น
+  assert.match(css, /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
+    "the <=900px breakpoint scrolls the page as a document, so per-lane scrolling is released");
 });

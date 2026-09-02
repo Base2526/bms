@@ -21,7 +21,16 @@ import {
   upsertProductModifier,
   upsertProductRecipe,
 } from "@/lib/bms/productRecipes";
-import { listKitchenTickets, updateKitchenTicketStatus } from "@/lib/bms/kitchen";
+import {
+  listKitchenTickets,
+  updateKitchenTicketStatus,
+  updateKitchenTicketsStatus,
+} from "@/lib/bms/kitchen";
+import {
+  clearKitchenStationSla,
+  listKitchenStationSlas,
+  upsertKitchenStationSla,
+} from "@/lib/bms/kitchenSla";
 import { dropKitchenCancelledLineInTx } from "@/lib/bms/restaurantPos";
 import { listInventoryWastage, recordInventoryWastage } from "@/lib/bms/wastage";
 import { getProductReadiness } from "@/lib/bms/productConfiguration";
@@ -81,6 +90,10 @@ export const bmsStockCapabilityResolvers = {
     async bmsKitchenTickets(_p: unknown, args: { status?: string | null; limit?: number | null }, ctx: any) {
       await requirePermission(ctx, "order.view");
       return listKitchenTickets(getTenantId(ctx), args.status, args.limit ?? 100);
+    },
+    async bmsKitchenStationSlas(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return listKitchenStationSlas(getTenantId(ctx));
     },
     async bmsInventoryWastage(_p: unknown, args: { limit?: number | null }, ctx: any) {
       await requirePermission(ctx, "product.view");
@@ -158,6 +171,44 @@ export const bmsStockCapabilityResolvers = {
         return result;
       } catch (error) {
         badInput(error, "บันทึก Modifier ไม่สำเร็จ");
+      }
+    },
+    async bmsUpsertKitchenStationSla(
+      _p: unknown,
+      args: { station: string; warnMinutes: number; lateMinutes: number },
+      ctx: any
+    ) {
+      // สิทธิ์เดียวกับสวิตช์ความสามารถและรูปแบบสต็อก — เป็นค่าตั้งของหน้า /admin/stock-models
+      await requirePermission(ctx, "product.edit");
+      try {
+        const saved = await upsertKitchenStationSla(getTenantId(ctx), args, String(requireAuth(ctx).author_id));
+        return { ...saved, configured: true };
+      } catch (error) {
+        badInput(error, "บันทึกเกณฑ์เวลาของสถานีไม่สำเร็จ");
+      }
+    },
+    async bmsClearKitchenStationSla(_p: unknown, args: { station: string }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      try {
+        return await clearKitchenStationSla(getTenantId(ctx), args.station, String(requireAuth(ctx).author_id));
+      } catch (error) {
+        badInput(error, "ล้างเกณฑ์เวลาของสถานีไม่สำเร็จ");
+      }
+    },
+    // กระดานหลังบ้านรวมใบเหมือนจอครัวของเครื่องขาย ปุ่มเดียวจึงขยับหลายตั๋ว —
+    // ใช้ service ตัวเดียวกัน (ทรานแซกชันเดียว ทั้งหมดหรือไม่เลื่อนเลย)
+    async bmsUpdateKitchenTicketsStatus(_p: unknown, args: { ids: string[]; status: string }, ctx: any) {
+      await requirePermission(ctx, "restaurant.kitchen.update");
+      try {
+        return await updateKitchenTicketsStatus({
+          tenantId: getTenantId(ctx),
+          ticketIds: args.ids,
+          status: args.status,
+          actorUserId: String(requireAuth(ctx).author_id),
+          onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx,
+        });
+      } catch (error) {
+        badInput(error, "อัปเดต Kitchen ticket ไม่สำเร็จ");
       }
     },
     async bmsUpdateKitchenTicketStatus(_p: unknown, args: { id: string; status: string }, ctx: any) {

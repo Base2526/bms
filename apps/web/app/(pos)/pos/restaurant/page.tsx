@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, MoreOutlined, ReloadOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, MoreOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -9,6 +9,18 @@ import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureM
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
+import {
+  formatKitchenElapsed,
+  groupKitchenTickets,
+  kitchenElapsedSeconds,
+  kitchenStations,
+  countKitchenDishes,
+  kitchenUrgency,
+  slaForStation,
+  PREVIOUS_KITCHEN_STATUS,
+  type KitchenBoardGroup,
+  type KitchenSla,
+} from "@/lib/bms/kitchenBoard";
 import styles from "./restaurant.module.css";
 
 const TOKEN_KEY = "bms.pos.deviceToken";
@@ -184,6 +196,18 @@ export default function RestaurantPosPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [floor, setFloor] = useState<Floor>({ areas: [], tables: [] });
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
+  // ตัวนับเวลาบนใบต้องเดินเอง ไม่ใช่ขยับตอน poll — ครัวมองจออยู่ตลอดและ 5 วินาทีของ
+  // poll ทำให้ตัวเลขกระตุก · เก็บเป็น "เวลาที่จอเชื่อ" ก้อนเดียวเพื่อให้ทุกใบนับตรงกัน
+  const [boardNow, setBoardNow] = useState(() => Date.now());
+  const [stationFilter, setStationFilter] = useState<string | null>(null);
+  const [groupMenu, setGroupMenu] = useState<KitchenBoardGroup | null>(null);
+  const [stationSlas, setStationSlas] = useState<Record<string, KitchenSla>>({});
+  // เสียงเตือนต้องให้คนเปิดเอง — เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ และครัวบางร้าน
+  // เปิดเพลงอยู่แล้ว การเด้งเสียงเองจึงเป็นการรบกวน ไม่ใช่ความช่วยเหลือ
+  const [chimeOn, setChimeOn] = useState(false);
+  const knownTicketIds = useRef<Set<string> | null>(null);
+  const chimeRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const [activeArea, setActiveArea] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
@@ -392,7 +416,66 @@ export default function RestaurantPosPage() {
   }
   async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
   async function loadFloor() { const data: Floor = await json("/api/pos/restaurant/floor"); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
-  async function loadTickets() { const data = await json("/api/pos/kitchen/tickets?limit=200"); setTickets(Array.isArray(data.tickets) ? data.tickets : []); }
+  /**
+   * เสียงเตือนสังเคราะห์เอง ไม่โหลดไฟล์ — จอครัวออฟไลน์ได้และ CSP ของแอปไม่ต้องเปิดทางให้
+   * ไฟล์เสียงจากที่อื่น · สองโน้ตสั้นเพื่อให้แยกออกจากเสียงแจ้งเตือนของเครื่องอื่นในร้าน
+   */
+  function playKitchenChime() {
+    if (!chimeRef.current) return;
+    try {
+      const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = audioCtxRef.current ?? new Ctx();
+      audioCtxRef.current = ctx;
+      if (ctx.state === "suspended") void ctx.resume();
+      [880, 1174].forEach((hz, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = hz;
+        osc.type = "sine";
+        const at = ctx.currentTime + index * 0.16;
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.15);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(at);
+        osc.stop(at + 0.18);
+      });
+    } catch { /* จอที่เล่นเสียงไม่ได้ต้องไม่ทำให้คิวครัวพัง */ }
+  }
+
+  // เลนที่ยังไม่จบเท่านั้นที่นับเข้าตัวกรองสถานี — "เสิร์ฟแล้ว" เป็นประวัติ ไม่ใช่งานค้าง
+  const openTicket = (row: KitchenTicket) => row.status === "NEW" || row.status === "PREPARING" || row.status === "READY";
+  const kitchenGroups = useMemo(
+    () => groupKitchenTickets(stationFilter === null ? tickets : tickets.filter((row) => row.station === stationFilter)),
+    [tickets, stationFilter]
+  );
+  useEffect(() => {
+    if (screen !== "KITCHEN") return;
+    const timer = window.setInterval(() => setBoardNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [screen]);
+  useEffect(() => { chimeRef.current = chimeOn; }, [chimeOn]);
+  useEffect(() => {
+    try { setChimeOn(window.localStorage.getItem("bms.pos.kitchenChime") === "1"); } catch { /* โหมดส่วนตัว */ }
+  }, []);
+  // สถานีที่เลือกไว้หมดงานแล้ว = ตัวกรองค้างอยู่กับช่องว่าง แล้วครัวอ่านว่าไม่มีออร์เดอร์
+  useEffect(() => {
+    if (stationFilter && !kitchenStations(tickets.filter(openTicket)).includes(stationFilter)) setStationFilter(null);
+  }, [tickets, stationFilter]);
+
+  async function loadTickets() {
+    const data = await json("/api/pos/kitchen/tickets?limit=200");
+    const rows: KitchenTicket[] = Array.isArray(data.tickets) ? data.tickets : [];
+    setStationSlas(data.stationSlas && typeof data.stationSlas === "object" ? data.stationSlas : {});
+    // ตั๋วที่ "เพิ่งเข้ามา" เทียบกับรอบก่อน ไม่ใช่ทุกใบที่สถานะ NEW — ไม่งั้นจะดังทุก 5 วินาที
+    // ตราบใดที่ยังมีงานค้าง · รอบแรกหลังเปิดจอถือเป็นการตั้งต้น ไม่ใช่ของใหม่
+    const open = rows.filter((row) => row.status === "NEW");
+    const seen = knownTicketIds.current;
+    if (seen && open.some((row) => !seen.has(row.id))) playKitchenChime();
+    knownTicketIds.current = new Set(open.map((row) => row.id));
+    setTickets(rows);
+  }
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
@@ -536,6 +619,42 @@ export default function RestaurantPosPage() {
   const TICKET_DONE_TEXT: Record<string, string> = {
     PREPARING: "เริ่มทำแล้ว", READY: "พร้อมเสิร์ฟแล้ว", SERVED: "เสิร์ฟแล้ว",
   };
+  /**
+   * ปุ่มบนใบเลื่อนทุกตั๋วในใบนั้นพร้อมกัน ผ่าน route เดียวที่ทำในทรานแซกชันเดียว
+   * (ยิงทีละใบจากที่นี่ = ใบที่ล้มกลางชุดทิ้งงานเดียวกันคาไว้สองช่องบนกระดาน)
+   */
+  async function ticketGroupStatus(group: KitchenBoardGroup, status: string) {
+    await run(async () => {
+      const body = await json("/api/pos/kitchen/tickets/status", {
+        method: "POST",
+        body: JSON.stringify({ userId: actorUserId, pin: actorPin, status, ticketIds: group.ticketIds }),
+      });
+      const moved: Array<KitchenTicket & { billLineDropped?: boolean; checkAmountDue?: number | null }> =
+        Array.isArray(body.tickets) ? body.tickets : [];
+      const byId = new Map(moved.map((row) => [row.id, row]));
+      setTickets((current) => current.map((row) => byId.get(row.id) ?? row));
+      setGroupMenu(null);
+      const where = group.tableLabel ? `${group.tableLabel} · ` : "";
+      // นับ "จาน" ให้ตรงกับป้ายบนหัวเลนและเมนู ⋯ — ถ้าใช้จำนวนบรรทัด (items.length)
+      // การขยับชามะนาว 4 แก้วจะรายงานว่า "2 รายการ" ซึ่งไม่ตรงกับสิ่งที่เพิ่งเกิด
+      const what = group.items.length === 1
+        ? `${group.items[0].qty}× ${group.items[0].productName}`
+        : `${group.totalQty} รายการ`;
+      if (status === "CANCELLED") {
+        const dropped = moved.filter((row) => row.billLineDropped).length;
+        if (dropped > 0) {
+          const due = moved.find((row) => row.checkAmountDue != null)?.checkAmountDue;
+          message.success(`${where}ยกเลิก ${what} แล้ว — ตัดออกจากบิลให้เรียบร้อย${due == null ? "" : ` ยอดใหม่ ฿${money(due)}`}`, 6);
+        } else {
+          message.warning(`${where}ยกเลิก ${what} แล้ว แต่บิลไม่ได้เปิดอยู่ (กำลังคิดเงินหรือปิดแล้ว) — ยอดยังรวมรายการนี้ ต้องคืนเงิน/แก้บิลตามปกติ`, 10);
+        }
+      } else {
+        message.success(`${where}${what}: ${TICKET_DONE_TEXT[status] ?? "อัปเดตแล้ว"}`);
+      }
+      if (check && group.items.some((item) => item.ticketIds.length > 0)) await loadCheck(check.id);
+    });
+  }
+
   async function ticketStatus(ticket: KitchenTicket, status: string) {
     await run(async () => {
       const body = await json(`/api/pos/kitchen/tickets/${ticket.id}/status`, { method: "POST", body: JSON.stringify({ userId: actorUserId, pin: actorPin, status }) });
@@ -839,12 +958,120 @@ export default function RestaurantPosPage() {
               </li>)}</ul>}
           <div className={styles.hint}>เรียงตาม <b>โต๊ะที่ต้องไปก่อน</b>: ค้างส่งครัว → พร้อมเสิร์ฟ → ครัวกำลังทำ → เสิร์ฟครบรอเก็บเงิน → ยังไม่สั่ง</div>
         </>}</aside>
-      </div></div></Spin> : <Spin spinning={working}><section className={styles.kitchenBoard}><div className={styles.panelHeader}><div><h2>Kitchen Display</h2><small>รายการจากโต๊ะเข้าครัวก่อนชำระเงิน</small></div><button type="button" className={styles.btn} onClick={() => void loadTickets()}><ReloadOutlined /> รีเฟรชคิว</button></div><div className={styles.lanes}>{LANES.map((lane) => { const rows = tickets.filter((ticket) => ticket.status === lane.status); return <section className={styles.lane} style={{ "--lane-color": lane.color } as CSSProperties} key={lane.status}><div className={styles.laneHead}><strong>{lane.label}</strong><span className={styles.laneCount}>{rows.length}</span></div>{rows.map((ticket) => <article className={styles.ticket} key={ticket.id}><div className={styles.ticketTable}>{ticket.tableName ? `${ticket.tableName} · รอบ ${ticket.roundNo ?? 1}` : `บิล #${ticket.orderId?.slice(0, 8) ?? "-"}`}</div><div className={styles.ticketName}>{ticket.productName}</div><div className={styles.ticketMeta}>{ticket.size !== "-" ? `${ticket.size} · ` : ""}x {ticket.packQty ?? ticket.qty} · {ticket.station ?? "ไม่ระบุ station"} · {new Date(ticket.createdAt).toLocaleTimeString(lang === "th" ? "th-TH" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</div>{ticket.modifierCodes.length > 0 && <div className={styles.itemTags}>{ticket.modifierCodes.map((code) => <span className={styles.tag} key={code}>{code}</span>)}</div>}{ticket.kitchenNote && <div className={styles.ticketNote}>{ticket.kitchenNote}</div>}<div className={styles.ticketActions}>{lane.next && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void ticketStatus(ticket, lane.next!)}>{lane.nextLabel} <ArrowRightOutlined /></button>}{lane.status !== "SERVED" && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => void ticketStatus(ticket, "CANCELLED")}>ยกเลิก</button>}</div></article>)}</section>; })}</div></section></Spin>}
+      </div></div></Spin> : <Spin spinning={working}><section className={styles.kitchenBoard}>
+          {/* หัวจอเหลือแถวเดียว — ชื่อจอกับคำอธิบายไม่ช่วยคนที่ยืนทำอาหาร พื้นที่นั้นไปเป็น
+              ตัวกรองสถานี ซึ่งเป็นวิธีที่ครัวแบ่งงานกันจริง (ครัวร้อน/บาร์ อยู่คนละที่) */}
+          <div className={styles.kitchenBar}>
+            <button type="button"
+              className={`${styles.kitchenFilter} ${stationFilter === null ? styles.kitchenFilterOn : ""}`}
+              onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets.filter(openTicket))}</button>
+            {kitchenStations(tickets.filter(openTicket)).map((station) => <button key={station} type="button"
+              className={`${styles.kitchenFilter} ${stationFilter === station ? styles.kitchenFilterOn : ""}`}
+              onClick={() => setStationFilter(station)}>
+              {station} {countKitchenDishes(tickets.filter((row) => openTicket(row) && row.station === station))}
+            </button>)}
+            <div className={styles.kitchenBarEnd}>
+              <span className={styles.kitchenLive}><span className={styles.kitchenLiveDot} aria-hidden="true" />อัปเดตอัตโนมัติ · {timeOf(new Date(boardNow).toISOString())}</span>
+              <button type="button" className={`${styles.btn} ${styles.btnIcon} ${chimeOn ? styles.kitchenChimeOn : ""}`}
+                aria-pressed={chimeOn}
+                onClick={() => {
+                  const next = !chimeOn;
+                  setChimeOn(next);
+                  chimeRef.current = next;
+                  try { window.localStorage.setItem("bms.pos.kitchenChime", next ? "1" : "0"); } catch { /* โหมดส่วนตัว */ }
+                  // เล่นทันทีตอนเปิด: เป็นทั้งการทดสอบลำโพงและการปลดล็อกเสียงของเบราว์เซอร์
+                  // ซึ่งต้องเกิดจากการแตะของคนเท่านั้น
+                  if (next) playKitchenChime();
+                }}
+                title={chimeOn ? "ปิดเสียงเตือนตั๋วใหม่" : "เปิดเสียงเตือนตั๋วใหม่"}
+                aria-label={chimeOn ? "ปิดเสียงเตือนตั๋วใหม่" : "เปิดเสียงเตือนตั๋วใหม่"}>
+                {chimeOn ? <SoundOutlined /> : <AudioMutedOutlined />}
+              </button>
+              <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadTickets()} title="รีเฟรชคิว" aria-label="รีเฟรชคิว"><ReloadOutlined /></button>
+            </div>
+          </div>
+          <div className={styles.lanes}>{LANES.map((lane) => {
+            const groups = kitchenGroups.filter((group) => group.status === lane.status);
+            return <section className={styles.lane} style={{ "--lane-color": lane.color } as CSSProperties} key={lane.status}>
+              <div className={styles.laneHead}><strong>{lane.label}</strong><span className={styles.laneCount}>{groups.reduce((sum, group) => sum + group.totalQty, 0)}</span></div>
+              <div className={styles.laneScroll}>
+                {groups.length === 0 && <div className={styles.laneEmpty}>ว่าง</div>}
+                {groups.map((group) => {
+                  const elapsed = kitchenElapsedSeconds(group.referenceAt, boardNow);
+                  const urgency = kitchenUrgency(elapsed, slaForStation(group.station, stationSlas));
+                  return <article className={styles.ticket} key={group.key}>
+                    <div className={styles.ticketHead}>
+                      <span className={styles.ticketTable}>{group.tableLabel ?? "ไม่ระบุโต๊ะ"}{group.roundNo == null ? "" : ` · รอบ ${group.roundNo}`}</span>
+                      {group.station && <span className={styles.tag}>{group.station}</span>}
+                      {/* ตัวนับเวลาที่รอ — ของเดิมบอกแค่เวลาที่สั่ง (21:42) แล้วให้ครัวคิดเลขเอง */}
+                      <span className={`${styles.ticketAge} ${urgency === "late" ? styles.ticketAgeLate : urgency === "warn" ? styles.ticketAgeWarn : ""}`}>
+                        <ClockCircleOutlined /> {formatKitchenElapsed(elapsed)}
+                      </span>
+                    </div>
+                    {group.items.map((item) => <div className={styles.ticketLine} key={item.key}>
+                      <span className={styles.ticketQty}>{item.qty}×</span>
+                      <span className={styles.ticketDish}>{item.productName}
+                        {item.modifierCodes.length > 0 && <span className={styles.itemTags}>{item.modifierCodes.map((code) => <span className={styles.tag} key={code}>{code}</span>)}</span>}
+                        {item.kitchenNote && <span className={styles.ticketNote}>{item.kitchenNote}</span>}
+                      </span>
+                      {item.size && item.size !== "-" && <span className={styles.ticketSize}>{item.size}</span>}
+                    </div>)}
+                    {/* ปุ่มหลักเต็มความกว้าง · "ยกเลิก" ย้ายไปหลังปุ่ม ⋯ เพราะของเดิมปุ่มทำลาย
+                        อยู่ติดปุ่มที่กดบ่อยสุดด้วยขนาดเท่ากัน มือเปียกกดพลาดได้ */}
+                    <div className={styles.ticketActions}>
+                      {lane.next && <button type="button" className={`${styles.btn} ${styles.btnPrimary} ${styles.ticketGo}`}
+                        onClick={() => void ticketGroupStatus(group, lane.next!)}>
+                        {group.ticketIds.length > 1 ? `${lane.nextLabel} ทั้งใบ` : lane.nextLabel} <ArrowRightOutlined />
+                      </button>}
+                      <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setGroupMenu(group)}
+                        title="จัดการใบนี้" aria-label="จัดการใบนี้"><MoreOutlined /></button>
+                    </div>
+                  </article>;
+                })}
+              </div>
+            </section>;
+          })}</div>
+        </section></Spin>}
     </div>
 
     <Modal title={`แก้จำนวนคน ${check?.tableName ?? ""}`} open={guestOpen} onCancel={() => setGuestOpen(false)} confirmLoading={working} okText="บันทึก" getContainer={modalContainer}
       onOk={() => void action("set_guest_count", { guestCount: Number(guestEdit) }).then(() => setGuestOpen(false))}>
       <div className={styles.modalGrid}><label>จำนวนลูกค้า<input type="number" min={1} max={500} value={guestEdit} onChange={(event) => setGuestEdit(event.target.value)} /></label></div>
+    </Modal>
+    {/* งานที่ไม่ได้ทำบ่อยของใบนั้น อยู่หลังปุ่ม ⋯ — รวมทั้งการเลื่อน/ยกเลิก "ทีละรายการ"
+        สำหรับรอบที่ครัวทำเสร็จไม่พร้อมกัน (ของทอดเสร็จก่อนแกง) ซึ่งหน้าใบไม่ควรรับภาระ */}
+    <Modal title={groupMenu ? `${groupMenu.tableLabel ?? "ใบนี้"}${groupMenu.roundNo == null ? "" : ` · รอบ ${groupMenu.roundNo}`}` : ""}
+      open={Boolean(groupMenu)} onCancel={() => setGroupMenu(null)} footer={null}
+      getContainer={modalContainer} destroyOnClose>
+      {groupMenu && <div className={styles.modalGrid}>
+        <div className={styles.sheetNote}>
+          {groupMenu.station ?? "ไม่ระบุสถานี"} · {groupMenu.ticketIds.length} รายการในใบนี้
+        </div>
+        {groupMenu.items.map((item) => {
+          const next = LANES.find((lane) => lane.status === groupMenu.status)?.next ?? null;
+          const one: KitchenBoardGroup = { ...groupMenu, items: [item], ticketIds: item.ticketIds };
+          return <div className={styles.sheetRow} key={item.key}>
+            <span className={styles.sheetRowText}>{item.qty}× {item.productName}{item.size && item.size !== "-" ? ` · ${item.size}` : ""}</span>
+            {next && <button type="button" className={styles.btn} onClick={() => void ticketGroupStatus(one, next)}>
+              {LANES.find((lane) => lane.status === groupMenu.status)?.nextLabel} <ArrowRightOutlined />
+            </button>}
+            <button type="button" className={`${styles.btn} ${styles.btnDanger}`}
+              onClick={() => void ticketGroupStatus(one, "CANCELLED")}>ยกเลิก</button>
+          </div>;
+        })}
+        <div className={styles.sheetActions}>
+          {/* กดผิดที่จอครัวเกิดจริงและบ่อย — เดิมกดพลาดเป็น "พร้อมเสิร์ฟ" แล้วแก้ไม่ได้เลย
+              ย้อนได้ทีละขั้น · ใบที่ยกเลิกไปแล้วย้อนไม่ได้ (บรรทัดหลุดจากบิลไปแล้ว) */}
+          {PREVIOUS_KITCHEN_STATUS[groupMenu.status] && <button type="button" className={styles.btn}
+            onClick={() => void ticketGroupStatus(groupMenu, PREVIOUS_KITCHEN_STATUS[groupMenu.status]!)}>
+            <ArrowLeftOutlined /> ย้อนกลับไป {LANES.find((lane) => lane.status === PREVIOUS_KITCHEN_STATUS[groupMenu.status])?.label}
+          </button>}
+          <button type="button" className={`${styles.btn} ${styles.btnDanger}`}
+            onClick={() => void ticketGroupStatus(groupMenu, "CANCELLED")}>
+            <CloseCircleOutlined /> ยกเลิกทั้งใบ ({groupMenu.ticketIds.length} รายการ)
+          </button>
+        </div>
+      </div>}
     </Modal>
     <Modal title="ผู้ปฏิบัติงาน" open={operatorOpen} onCancel={() => setOperatorOpen(false)} onOk={() => setOperatorOpen(false)} okText="ใช้บัญชีนี้" okButtonProps={{ disabled: !operatorReady }} getContainer={modalContainer}>
       <div className={styles.modalGrid}>

@@ -132,6 +132,19 @@ export async function resolveStockConsumptionInTx(
     };
   }
 
+  // NON_STOCK (9.52) sells a menu item without tracking any ingredient stock. It
+  // returns no consumption lines, but stays derived: true so createOrder() still
+  // creates the zero inventory row that bms_order_items' FK to
+  // bms_inventory(product_sku, size) has required since migration 3.3.
+  // Modifiers describe an ingredient delta against a recipe, so they stay blocked
+  // here exactly as they are for DIRECT/PACK.
+  if (policy.stock_policy === "NON_STOCK") {
+    if (modifierCodes.length > 0) {
+      throw new Error(`MODIFIER_REQUIRES_RECIPE:${input.sku}:${input.size}`);
+    }
+    return { soldSku: input.sku, soldSize: input.size, derived: true, lines: [] };
+  }
+
   if (policy.stock_policy === "RECIPE") {
     if (!(await isCapabilityEnabledInTx(client, tenantId, "RECIPE"))) {
       throw new Error("ร้านยังไม่ได้เปิดความสามารถ Recipe — เปิดที่ /admin/stock-models ก่อนขายเมนูที่มีสูตร");

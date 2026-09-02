@@ -49,6 +49,24 @@ const stock = async (sku: string) => {
   return res.rowCount ? { current: Number(res.rows[0].c), reserved: Number(res.rows[0].r) } : null;
 };
 
+// 9.51 made a declared sales surface a precondition for selling. These fixtures write
+// bms_products directly, so nothing else declares one and every sale returns NOT_FOUND.
+// The rows cascade away with the product on teardown.
+const declareSalesSurfaces = async (sku: string, surfaces: string[]) => {
+  const present = (await query<{ reg: string | null }>(
+    `SELECT to_regclass('bms_product_sales_surfaces')::text AS reg`
+  )).rows[0]?.reg;
+  if (!present) return; // database predates 9.51
+  for (const surface of surfaces) {
+    await query(
+      `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface)
+       VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [tenantId, sku, surface]
+    );
+  }
+};
+const ALL_SURFACES = ["RETAIL_POS", "RESTAURANT_POS", "ONLINE_ORDER", "PUBLIC_STOREFRONT", "CUSTOMER_AI"];
+
 test("setup: a set of 1 soap + 2 lotions, priced below buying loose", async () => {
   tenantId = (await query<{ id: string }>(`SELECT id FROM bms_tenants ORDER BY created_at LIMIT 1`)).rows[0].id;
   locationId = (await query<{ id: string }>(
@@ -68,6 +86,7 @@ test("setup: a set of 1 soap + 2 lotions, priced below buying loose", async () =
          SET price = EXCLUDED.price, active = TRUE, is_bundle = EXCLUDED.is_bundle`,
       [tenantId, sku, `FAKE ${TAG} ${sku}`, price, isBundle]
     );
+    await declareSalesSurfaces(sku, ALL_SURFACES);
   }
   for (const sku of [SOAP, LOTION]) {
     await query(
