@@ -33,6 +33,7 @@ type CheckItemRow = {
   base_qty: number | null;
   pack_price: string | null;
   sent_at?: string | Date | null;
+  kitchen_status?: string | null;
   modifier_codes: string[];
   modifier_names: string[];
   kitchen_note: string | null;
@@ -65,6 +66,13 @@ function mapCheckItem(row: CheckItemRow) {
     createdAt: iso(row.created_at),
     // เวลาที่ส่งครัวจริง — หัวข้อ "รอบ N · ส่งครัวแล้ว HH:MM" บนแผงบิลอ่านจากค่านี้
     sentAt: row.sent_at ? iso(row.sent_at) : null,
+    // สถานะของตั๋วในครัวสำหรับบรรทัดนี้ (NEW/PREPARING/READY/SERVED/CANCELLED)
+    //
+    // **ต้องส่งออกไปให้หน้าขายเห็น** เพราะการยกเลิกตั๋วบนจอครัวไม่ลบรายการออกจากบิล
+    // และไม่ลด amount_due โดยตั้งใจ (เป็นการแก้บิล ต้อง void) แต่ก่อนหน้านี้ไม่มีจอไหน
+    // บอกเลยว่าครัวยกเลิกไปแล้ว → ตั๋วหายจากกระดานครัว ส่วนแคชเชียร์ยังเก็บเงินค่าอาหาร
+    // ที่ไม่ได้ทำ · ค่านี้เป็น null ได้เมื่อบรรทัดยังไม่ถูกส่งครัว หรือร้านปิดคิวครัวไว้
+    kitchenStatus: row.kitchen_status ?? null,
   };
 }
 
@@ -360,12 +368,22 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
   );
   if (!result.rowCount) return null;
   const itemResult = await query<CheckItemRow>(
-    `SELECT id, product_sku, product_name, size, pack_qty, pack_code, unit_name,
-            base_qty, pack_price, modifier_codes, modifier_names, kitchen_note,
-            status, round_no, created_at, sent_at
-       FROM bms_restaurant_check_items
-      WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
-      ORDER BY created_at, id`,
+    `SELECT ci.id, ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_code, ci.unit_name,
+            ci.base_qty, ci.pack_price, ci.modifier_codes, ci.modifier_names, ci.kitchen_note,
+            ci.status, ci.round_no, ci.created_at, ci.sent_at,
+            kt.status AS kitchen_status
+       FROM bms_restaurant_check_items ci
+       -- ตั๋วครัวล่าสุดของบรรทัดนี้ · LEFT JOIN เพราะบรรทัดที่ยังไม่ส่งครัว (และร้านที่ปิด
+       -- คิวครัว) ไม่มีตั๋ว และต้องไม่หายไปจากบิลเพราะการ join
+       LEFT JOIN LATERAL (
+         SELECT t.status
+           FROM bms_restaurant_kitchen_tickets t
+          WHERE t.tenant_id = ci.tenant_id AND t.check_item_id = ci.id
+          ORDER BY t.created_at DESC, t.id DESC
+          LIMIT 1
+       ) kt ON TRUE
+      WHERE ci.tenant_id = $1 AND ci.check_id = $2 AND ci.status <> 'CANCELLED'
+      ORDER BY ci.created_at, ci.id`,
     [tenantId, checkId]
   );
   const row = result.rows[0];

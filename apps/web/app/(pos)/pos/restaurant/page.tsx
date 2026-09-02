@@ -5,7 +5,7 @@ import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlin
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
-import { describePosFailure } from "@/lib/pos/failureMessage";
+import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import styles from "./restaurant.module.css";
@@ -16,7 +16,7 @@ type Session = { device: { id: string; code: string; name: string | null }; loca
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
-type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT"; roundNo: number | null; sentAt: string | null };
+type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & { kitchenStation: string | null; hasModifiers: boolean; imageUrl: string | null };
@@ -211,6 +211,9 @@ export default function RestaurantPosPage() {
     .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
     [floor.tables, tableKitchenStats]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
+  // ครัวกดยกเลิกตั๋วแล้ว แต่บรรทัดยังอยู่ในบิลและยังถูกคิดเงิน (ตั้งใจ — การแก้บิลต้อง void)
+  // ถ้าไม่บอกที่จอนี้ แคชเชียร์จะเก็บเงินค่าอาหารที่ครัวไม่ได้ทำ โดยที่ตั๋วก็หายจากกระดานครัวไปแล้ว
+  const kitchenCancelled = check?.items.filter((item) => item.kitchenStatus === "CANCELLED") ?? [];
   // จำนวนที่อยู่ในบิลแล้วต่อเมนู ไว้ขึ้นเป็น badge บนการ์ด — นับ "จำนวนของ" ไม่ใช่เงิน
   // (ยอดเงินยังมาจาก check.amountDue ของ server เท่านั้น) · ใช้ for ไม่ใช่ reduce
   // เพราะเทสห้ามรูปแบบ items.reduce( ทั้งไฟล์เพื่อกันการรวมยอดเองที่จอ
@@ -293,6 +296,11 @@ export default function RestaurantPosPage() {
     // เส้นทางส่งครัว/คิดเงินตอบเป็น "สถานะ" ไม่ใช่ข้อความ (INSUFFICIENT, PAYMENT_MISMATCH …)
     // เดิมจึงตกไปที่ `HTTP 409` ซึ่งพนักงานอ่านแล้วทำอะไรต่อไม่ได้ — แปลด้วยชุดคำตอบ
     // เดียวกับหน้าค้าปลีก เพราะสองหน้านี้เรียก service เดียวกัน
+    // ไม่มีทั้ง status และ error = ตอบมาไม่ใช่ JSON ของ service (proxy ตอบ HTML ตอน 502
+    // หรือเน็ตหลุด) → ต้องแปลเป็นคำที่บอกได้ว่าให้ทำอะไรต่อ ไม่ใช่โชว์ "HTTP 502" ดิบ ๆ
+    if (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason) {
+      throw new Error(describeTransportFailure(response.status, navigator.onLine));
+    }
     if (!response.ok) throw new Error(typeof body?.status === "string"
       ? describePosFailure(body)
       : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
@@ -393,7 +401,26 @@ export default function RestaurantPosPage() {
       await Promise.all([loadFloor(), loadTickets()]);
     });
   }
-  async function ticketStatus(ticket: KitchenTicket, status: string) { await run(async () => { const body = await json(`/api/pos/kitchen/tickets/${ticket.id}/status`, { method: "POST", body: JSON.stringify({ userId: actorUserId, pin: actorPin, status }) }); setTickets((current) => current.map((row) => row.id === ticket.id ? body.ticket : row)); }); }
+  // เลื่อนสถานะตั๋ว — ต้องมีคำตอบที่จอทุกครั้ง เพราะตั๋วที่เลื่อนแล้วจะย้ายเลน (หรือหายไปเลย
+  // เมื่อยกเลิก เพราะไม่มีเลนของ CANCELLED) ถ้าเงียบ คนครัวอ่านว่า "กดแล้วไม่เกิดอะไร"
+  // และการยกเลิกต้องบอกด้วยว่า **รายการยังอยู่ในบิล** ไม่งั้นเข้าใจว่าตัดออกให้แล้ว
+  const TICKET_DONE_TEXT: Record<string, string> = {
+    PREPARING: "เริ่มทำแล้ว", READY: "พร้อมเสิร์ฟแล้ว", SERVED: "เสิร์ฟแล้ว",
+  };
+  async function ticketStatus(ticket: KitchenTicket, status: string) {
+    await run(async () => {
+      const body = await json(`/api/pos/kitchen/tickets/${ticket.id}/status`, { method: "POST", body: JSON.stringify({ userId: actorUserId, pin: actorPin, status }) });
+      setTickets((current) => current.map((row) => row.id === ticket.id ? body.ticket : row));
+      const where = ticket.tableName ? `${ticket.tableName} · ` : "";
+      if (status === "CANCELLED") {
+        message.warning(`${where}ยกเลิกตั๋ว "${ticket.productName}" แล้ว — รายการยังอยู่ในบิลและยังคิดเงิน ถ้าไม่ได้เสิร์ฟต้องไปแก้บิลที่หน้าสั่งอาหาร`, 8);
+      } else {
+        message.success(`${where}${ticket.productName}: ${TICKET_DONE_TEXT[status] ?? "อัปเดตแล้ว"}`);
+      }
+      // บิลที่เปิดอยู่ต้องเห็นธง "ครัวยกเลิกรายการนี้" ทันที ไม่ต้องรอ poll รอบถัดไป
+      if (check?.id) await loadCheck(check.id).catch(() => {});
+    });
+  }
   async function changeShift() { if (!shiftModal) return; await run(async () => { await json("/api/pos/shift", { method: "POST", body: JSON.stringify({ action: shiftModal.toLowerCase(), userId: actorUserId, pin: actorPin, ...(shiftModal === "OPEN" ? { openingFloat: cashAmount } : { countedCash: cashAmount }) }) }); setShiftModal(null); setCashAmount(0); await loadSession(); }); }
   async function supportAction(action: "export" | "send") {
     if (!token || !session?.device?.id || !actorUserId || !actorPin) return message.error(lang === "en" ? "Select an operator and enter the PIN first." : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน");
@@ -601,12 +628,13 @@ export default function RestaurantPosPage() {
             {check.items.length === 0 && <div className={styles.empty}><p>แตะการ์ดเมนูทางซ้ายเพื่อเริ่มรับออร์เดอร์</p></div>}
             {itemGroups.map((group) => <Fragment key={group.key}>
               <div className={styles.roundLabel}>{group.label}</div>
-              {group.items.map((item) => <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""}`} key={item.id}>
+              {group.items.map((item) => <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""} ${item.kitchenStatus === "CANCELLED" ? styles.itemKitchenCancelled : ""}`} key={item.id}>
                 <span className={styles.itemQty}>{item.packQty}</span>
                 <span>
                   <span className={styles.itemName}>{item.productName}</span>
                   <span className={styles.itemMeta}>{[item.size !== "-" ? item.size : null, item.unitName, ...item.modifierNames].filter(Boolean).join(" · ")}</span>
                   {item.kitchenNote && <span className={styles.itemNote}>โน้ตครัว: {item.kitchenNote}</span>}
+                  {item.kitchenStatus === "CANCELLED" && <span className={styles.itemCancelTag}>ครัวยกเลิกรายการนี้ — ยังคิดเงินอยู่</span>}
                 </span>
                 <span className={styles.itemSide}>
                   {/* ราคาต่อหน่วยที่ server บันทึกไว้ตอนเพิ่มรายการ — ห้ามคูณ/รวมเองที่จอ
@@ -620,6 +648,7 @@ export default function RestaurantPosPage() {
 
           <div className={styles.checkFooter}>
             {hasUnsent && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>{unsentInCheck} รายการยังไม่ถึงครัว</b> — ส่งครัวก่อนจึงจะคิดเงินได้ ยอดด้านล่างคือยอดที่ส่งครัวแล้ว</span></div>}
+            {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ครัวยกเลิก {kitchenCancelled.length} รายการ</b> — ยอดด้านล่างยังรวมรายการนั้นอยู่ ถ้าไม่ได้เสิร์ฟจริงต้องยกเลิกบิลแล้วเปิดใหม่ก่อนเก็บเงิน</span></div>}
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>

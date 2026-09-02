@@ -242,6 +242,10 @@
 .roundLabel { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .03em; text-transform: uppercase; padding: 8px 0 2px; }
 .item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 9px; align-items: start; border: 1px solid var(--line-2); border-radius: 6px; padding: 9px 10px; }
 .itemUnsent { border-color: var(--red); background: var(--red-bg); }
+/* ครัวยกเลิกแล้วแต่บรรทัดยังคิดเงินอยู่ — ต้องเด่นกว่า "ยังไม่ส่งครัว" เพราะเป็นเงินที่
+   กำลังจะเก็บผิด ไม่ใช่แค่งานที่ยังไม่ได้ทำ · เส้นประแยกจากกรอบทึบของยังไม่ส่งครัว */
+.itemKitchenCancelled { border-color: var(--red); border-style: dashed; background: var(--red-bg); }
+.itemCancelTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 700; color: var(--red); }
 .itemQty { font-weight: 700; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 .itemName { display: block; font-weight: 600; font-size: 14.5px; }
 .itemMeta { display: block; font-size: 12.5px; color: var(--ink-2); }
