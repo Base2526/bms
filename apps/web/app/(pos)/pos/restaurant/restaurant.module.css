@@ -154,30 +154,61 @@
 .menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .menuResult small { color: var(--ink-2); }
 
-/* กริดเลือกเมนู — แตะเลือกได้ทันทีแทนต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู */
-.catRow { display: flex; gap: 6px; padding: 0 12px 10px; flex-wrap: wrap; }
-.catChip {
-  border: 1px solid var(--line-2); background: var(--panel); border-radius: 20px; padding: 6px 12px;
-  font: inherit; font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+/* ---------- จอสั่งอาหาร (กริดเมนูฝั่งกว้าง) ----------
+   กริดอยู่ฝั่งกว้างเพราะการ์ดในแผงขวา 300px เล็กจนต้องเพ่งอ่านทุกใบ
+   ซึ่งกลับหัวกับเหตุผลที่ทำกริด (แตะเลือกด้วยตา ไม่ต้องพิมพ์ค้นหา) */
+
+/* แถวบิลที่เปิดอยู่ — สลับโต๊ะได้จากจอสั่งอาหารโดยไม่ต้องเด้งกลับผังโต๊ะ */
+.billStrip { display: flex; gap: 8px; padding: 10px 12px 0; overflow-x: auto; }
+.billStrip::-webkit-scrollbar { height: 5px; }
+.billStrip::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+.billChip {
+  flex: 0 0 auto; display: flex; gap: 9px; align-items: center; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); padding: 8px 11px 8px 8px; min-width: 168px;
 }
-.catChipActive { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
-.menuGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; padding: 0 12px 12px; }
-.menuCard {
-  position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel);
+.billChip:hover { border-color: var(--ink-3); }
+.billChipActive { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.billChipCode {
+  width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0;
+  color: white; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.billChipBody { display: grid; gap: 1px; min-width: 0; }
+.billChipName { font-size: 13px; font-weight: 600; }
+.billChipState { font-size: 11.5px; font-weight: 600; }
+.billChipMeta { font-size: 11px; color: var(--ink-3); }
+
+/* หมวดหมู่ = station ในครัว (ไม่ใช่หมวดที่คนพิมพ์เอง) — ร้านตั้ง station ที่ Stock Models */
+.catRow { display: flex; gap: 8px; padding: 12px 12px 0; flex-wrap: wrap; }
+.catCard {
+  border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 9px 14px;
+  font: inherit; color: var(--ink-2); cursor: pointer; text-align: left; display: grid; gap: 2px;
+}
+.catCard:hover { border-color: var(--ink-3); }
+.catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
+.catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
+
+.dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 12px; padding: 14px 12px 16px; }
+.dishCard {
+  position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel);
   cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden;
 }
-.menuCard:hover { border-color: var(--ink-3); }
-.menuPhoto { height: 52px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; }
-.menuPhoto img { width: 100%; height: 100%; object-fit: cover; }
-.menuInfo { padding: 7px 9px 9px; }
-.menuName { font-size: 12.5px; font-weight: 600; line-height: 1.3; margin-bottom: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.menuPrice { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.menuBadge {
-  position: absolute; top: 5px; right: 5px; background: var(--accent); color: white; font-size: 11px; font-weight: 700;
-  min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px;
+.dishCard:hover { border-color: var(--accent); }
+.dishArt { height: 96px; display: grid; place-items: center; }
+.dishArt img { width: 100%; height: 100%; object-fit: cover; }
+.dishInitial { font-size: 30px; font-weight: 700; }
+.dishBody { display: block; padding: 10px 12px 12px; }
+.dishName {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 13.5px; font-weight: 600; line-height: 1.35; min-height: 2.7em; margin-bottom: 6px;
 }
-.menuModHint { position: absolute; bottom: 5px; right: 6px; font-size: 9.5px; color: var(--ink-3); }
-.menuEmpty { padding: 20px 12px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.dishFoot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dishPrice { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dishModHint { font-size: 10.5px; color: var(--ink-3); }
+.dishStation {
+  position: absolute; top: 7px; left: 7px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+}
+.menuEmpty { padding: 24px 12px; text-align: center; color: var(--ink-3); font-size: 13px; }
 
 .items { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; overflow-y: auto; flex: 1; }
 .roundLabel { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .03em; text-transform: uppercase; padding: 8px 0 2px; }

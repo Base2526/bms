@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppstoreOutlined, ArrowRightOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, ReloadOutlined, ShopOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
@@ -77,7 +77,9 @@ export default function RestaurantPosPage() {
   const [activeArea, setActiveArea] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
-  const [screen, setScreen] = useState<"FLOOR" | "KITCHEN">("FLOOR");
+  // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
+  // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
+  const [screen, setScreen] = useState<"ORDER" | "FLOOR" | "KITCHEN">("FLOOR");
   const [actorUserId, setActorUserId] = useState("");
   const [actorPin, setActorPin] = useState("");
   const [loading, setLoading] = useState(true);
@@ -115,7 +117,10 @@ export default function RestaurantPosPage() {
   // จะ resolve ไม่ได้แล้วหายไปเงียบ ๆ (เห็นแค่ตัวเลขลอยไม่มีกรอบ) — ต้องส่ง getContainer
   // ให้ modal render อยู่ใต้ .page แทนเพื่อให้ยังเห็นตัวแปรพวกนี้
   const rootRef = useRef<HTMLElement>(null);
-  const modalContainer = () => rootRef.current ?? document.body;
+  // ⚠️ ต้องเป็น reference เดิมทุก render — ถ้าสร้าง closure ใหม่ทุกครั้ง antd จะเห็นว่า
+  // container เปลี่ยน แล้ว portal ใหม่ซ้ำ ๆ จน animation ค้างที่ `ant-zoom-appear-start`
+  // (opacity 0) = กล่องอยู่ใน DOM ตำแหน่งถูก แต่มองไม่เห็นทั้งใบ
+  const modalContainer = useCallback(() => rootRef.current ?? document.body, []);
 
   useEffect(() => { setToken(window.localStorage.getItem(TOKEN_KEY) ?? ""); setReady(true); }, []);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
@@ -269,8 +274,8 @@ export default function RestaurantPosPage() {
     return () => window.clearInterval(timer);
   }, [token, screen]);
 
-  async function chooseTable(table: DiningTable) { if (table.blocked) return; setSelectedTableId(table.id); if (table.check) await run(async () => { await loadCheck(table.check!.id); }); else { setCheck(null); setGuestCount(Math.min(table.seats, 2)); setOpenTable(table); } }
-  async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); await loadFloor(); }); }
+  async function chooseTable(table: DiningTable) { if (table.blocked) return; setSelectedTableId(table.id); if (table.check) await run(async () => { await loadCheck(table.check!.id); setScreen("ORDER"); }); else { setCheck(null); setGuestCount(Math.min(table.seats, 2)); setOpenTable(table); } }
+  async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); setScreen("ORDER"); await loadFloor(); }); }
   async function chooseMenu(item: SearchItem) { await run(async () => { const size = item.availableSizes.find((v) => v.available > 0)?.size ?? item.availableSizes[0]?.size ?? ""; const hit = await json(`/api/pos/scan?code=${encodeURIComponent(item.sku)}&size=${encodeURIComponent(size)}&withImage=1`); setMenuHit(hit); setModifierCodes([]); setKitchenNote(""); setMenuQty(1); }); }
   async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setSearch(""); await loadFloor(); }); }
   async function action(name: string, extra: Record<string, unknown> = {}) { if (!check) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: name, ...extra })) }); if (body.check) setCheck(body.check); await Promise.all([loadFloor(), loadTickets()]); }); }
@@ -390,6 +395,7 @@ export default function RestaurantPosPage() {
         <div className={styles.brand}><div className={styles.brandMark}>B</div><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || "ผู้ปฏิบัติงาน") : "ยังไม่ได้ระบุผู้ปฏิบัติงาน"}</p></div></div>
         <div className={styles.topActions}>
           <div className={styles.tabs} role="group" aria-label="สลับหน้าจอ">
+            <button type="button" className={`${styles.tabButton} ${screen === "ORDER" ? styles.tabButtonActive : ""}`} aria-pressed={screen === "ORDER"} onClick={() => setScreen("ORDER")}><WalletOutlined /> สั่งอาหาร</button>
             <button type="button" className={`${styles.tabButton} ${screen === "FLOOR" ? styles.tabButtonActive : ""}`} aria-pressed={screen === "FLOOR"} onClick={() => setScreen("FLOOR")}><AppstoreOutlined /> โต๊ะ</button>
             <button type="button" className={`${styles.tabButton} ${screen === "KITCHEN" ? styles.tabButtonActive : ""}`} aria-pressed={screen === "KITCHEN"} onClick={() => setScreen("KITCHEN")}><CoffeeOutlined /> ครัว{kitchenCooking + kitchenReady > 0 ? <span className={styles.tabBadge}>{kitchenCooking + kitchenReady}</span> : null}</button>
           </div>
@@ -404,8 +410,8 @@ export default function RestaurantPosPage() {
       {!session?.shift && <Alert type="warning" showIcon message="ยังไม่เปิดกะ — เปิดกะก่อนจึงจะเปิดโต๊ะและรับออร์เดอร์ได้" />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
 
-      {screen === "FLOOR" ? <Spin spinning={working}><div className={styles.floorWrap}>
-        {floor.tables.length > 0 && <section className={styles.strip} aria-label="สรุปหน้าร้าน">
+      {screen !== "KITCHEN" ? <Spin spinning={working}><div className={styles.floorWrap}>
+        {screen === "FLOOR" && floor.tables.length > 0 && <section className={styles.strip} aria-label="สรุปหน้าร้าน">
           <span>โต๊ะใช้งาน <b>{occupiedTables.length}</b> / {floor.tables.length}</span>
           <span className={styles.stripSep} aria-hidden="true">│</span>
           <span>ยอดเปิดค้าง <b><span className={styles.baht}>฿</span>{money(openAmountTotal)}</b></span>
@@ -417,7 +423,67 @@ export default function RestaurantPosPage() {
           <span><span className={styles.stripDot} style={{ background: "var(--amber)" }} aria-hidden="true" />คิวครัว <b>{kitchenCooking}</b> กำลังทำ · {kitchenReady} พร้อมเสิร์ฟ</span>
         </section>}
         <div className={styles.workspace}>
-        <section className={styles.panel}>{floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>ยังไม่มีผังโต๊ะของสาขานี้</h2><p>เริ่มด้วยโซนหน้าร้านและโต๊ะ 12 ตัว</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>สร้างผังเริ่มต้น</button></div></div> : <>
+        <section className={styles.panel}>{screen === "ORDER" ? <>
+          {/* จอสั่งอาหาร: แถวบิลที่เปิดอยู่ → หมวดหมู่ (station) → กริดเมนูเต็มพื้นที่
+              กริดอยู่ฝั่งกว้างโดยตั้งใจ ของเดิมอยู่ในแผงขวา 300px ซึ่งการ์ดเล็กจนต้องเพ่ง */}
+          <div className={styles.panelHeader}>
+            <div><h2>สั่งอาหาร</h2><small>{check ? `${check.tableName} · ${check.guestCount} คน` : "เลือกโต๊ะก่อนเริ่มรับออร์เดอร์"}</small></div>
+            <div className={styles.searchRow}>
+              <input className={styles.field} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="กรองเมนู (ไม่จำเป็น — แตะการ์ดได้เลย)" />
+            </div>
+          </div>
+
+          {openChecks.length > 0 && <div className={styles.billStrip} role="group" aria-label="บิลที่เปิดอยู่">
+            {openChecks.map(({ table, state }) => <button key={table.id} type="button"
+              className={`${styles.billChip} ${check?.tableId === table.id ? styles.billChipActive : ""}`}
+              onClick={() => void chooseTable(table)}>
+              <span className={styles.billChipCode} style={{ background: state.color }}>{table.code}</span>
+              <span className={styles.billChipBody}>
+                <span className={styles.billChipName}>{table.name}</span>
+                <span className={styles.billChipState} style={{ color: state.color }}>{state.label}</span>
+                <span className={styles.billChipMeta}>{table.check!.guestCount} คน · {table.check!.itemCount} รายการ</span>
+              </span>
+            </button>)}
+          </div>}
+
+          {!check
+            ? <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 36 }} /><h3>ยังไม่ได้เลือกโต๊ะ</h3>
+                <p>{openChecks.length > 0 ? "แตะบิลด้านบนเพื่อสั่งต่อ หรือไปที่แท็บโต๊ะเพื่อเปิดโต๊ะใหม่" : "ไปที่แท็บโต๊ะเพื่อเปิดโต๊ะก่อน"}</p>
+                <button type="button" className={styles.btn} onClick={() => setScreen("FLOOR")}><AppstoreOutlined /> ไปที่ผังโต๊ะ</button></div></div>
+            : <>
+              {menuStations.length > 0 && <div className={styles.catRow}>
+                <button type="button" className={`${styles.catCard} ${menuCategory === "" ? styles.catCardActive : ""}`} onClick={() => setMenuCategory("")}>
+                  <span className={styles.catName}>ทั้งหมด</span><span className={styles.catCount}>{menuItems.length} เมนู</span>
+                </button>
+                {menuStations.map((stationName) => <button key={stationName} type="button"
+                  className={`${styles.catCard} ${menuCategory === stationName ? styles.catCardActive : ""}`}
+                  onClick={() => setMenuCategory(stationName)}>
+                  <span className={styles.catName}>{stationName}</span>
+                  <span className={styles.catCount}>{menuItems.filter((item) => item.kitchenStation === stationName).length} เมนู</span>
+                </button>)}
+              </div>}
+              {visibleMenuItems.length === 0
+                ? <div className={styles.menuEmpty}>{menuItems.length === 0
+                    ? "ยังไม่มีเมนูที่ขายที่โต๊ะได้ — สินค้าต้องเปิดขาย มีราคา และไม่ได้ถูกใช้เป็นวัตถุดิบของสูตรอื่น"
+                    : "ไม่พบเมนูที่ตรงกับที่กรอง"}</div>
+                : <div className={styles.dishGrid}>{visibleMenuItems.map((item) => {
+                    const tint = menuCardTint(item.kitchenStation, menuStations);
+                    return <button key={item.sku} type="button" className={styles.dishCard} onClick={() => void chooseMenu(item)}>
+                      <span className={styles.dishArt} style={{ background: tint.bg, color: tint.ink }}>
+                        {item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span className={styles.dishInitial}>{item.name.slice(0, 1)}</span>}
+                      </span>
+                      <span className={styles.dishBody}>
+                        <span className={styles.dishName}>{item.name}</span>
+                        <span className={styles.dishFoot}>
+                          <span className={styles.dishPrice}><span className={styles.baht}>฿</span>{money(item.price)}</span>
+                          {item.hasModifiers && <span className={styles.dishModHint}>มีตัวเลือก</span>}
+                        </span>
+                      </span>
+                      {item.kitchenStation && <span className={styles.dishStation} style={{ background: tint.bg, color: tint.ink }}>{item.kitchenStation}</span>}
+                    </button>;
+                  })}</div>}
+            </>}
+        </> : floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>ยังไม่มีผังโต๊ะของสาขานี้</h2><p>เริ่มด้วยโซนหน้าร้านและโต๊ะ 12 ตัว</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>สร้างผังเริ่มต้น</button></div></div> : <>
           <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><span className={styles.livePill}>LIVE</span></div>
           <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
@@ -451,31 +517,8 @@ export default function RestaurantPosPage() {
             </div>
           </div>
 
-          <div className={styles.searchRow}>
-            <input className={styles.field} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="กรองเมนู (ไม่จำเป็น — แตะเลือกได้เลย)" />
-          </div>
-          {menuStations.length > 0 && <div className={styles.catRow}>
-            <button type="button" className={`${styles.catChip} ${menuCategory === "" ? styles.catChipActive : ""}`} onClick={() => setMenuCategory("")}>ทั้งหมด</button>
-            {menuStations.map((stationName) => <button key={stationName} type="button" className={`${styles.catChip} ${menuCategory === stationName ? styles.catChipActive : ""}`} onClick={() => setMenuCategory(stationName)}>{stationName}</button>)}
-          </div>}
-          {visibleMenuItems.length === 0
-            ? <div className={styles.menuEmpty}>{menuItems.length === 0 ? "ยังไม่มีเมนูที่ตั้งเป็น RECIPE — ไปตั้งที่ Stock Models ก่อน" : "ไม่พบเมนูที่ตรงกับที่กรอง"}</div>
-            : <div className={styles.menuGrid}>{visibleMenuItems.map((item) => {
-              const tint = menuCardTint(item.kitchenStation, menuStations);
-              return <button key={item.sku} type="button" className={styles.menuCard} onClick={() => void chooseMenu(item)}>
-                <span className={styles.menuPhoto} style={{ background: tint.bg, color: tint.ink }}>
-                  {item.imageUrl ? <img src={item.imageUrl} alt="" /> : item.name.slice(0, 1)}
-                </span>
-                <span className={styles.menuInfo}>
-                  <span className={styles.menuName}>{item.name}</span>
-                  <span className={styles.menuPrice}><span className={styles.baht}>฿</span>{money(item.price)}</span>
-                </span>
-                {item.hasModifiers && <span className={styles.menuModHint}>มีตัวเลือก</span>}
-              </button>;
-            })}</div>}
-
           <div className={styles.items}>
-            {check.items.length === 0 && <div className={styles.empty}><p>ค้นเมนูด้านบนเพื่อเริ่มรับออร์เดอร์</p></div>}
+            {check.items.length === 0 && <div className={styles.empty}><p>แตะการ์ดเมนูทางซ้ายเพื่อเริ่มรับออร์เดอร์</p></div>}
             {itemGroups.map((group) => <Fragment key={group.key}>
               <div className={styles.roundLabel}>{group.label}</div>
               {group.items.map((item) => <article className={`${styles.item} ${item.status === "NEW" ? styles.itemUnsent : ""}`} key={item.id}>
