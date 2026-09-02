@@ -46,15 +46,22 @@
   width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: white;
   display: grid; place-items: center; font-weight: 700; font-size: 18px; margin-bottom: 8px; flex: none;
 }
-.railBtn {
-  position: relative; width: 46px; height: 46px; border: 1px solid transparent; border-radius: 8px;
+/* ⚠️ ห้ามล็อก height ตายตัว — ป้ายไทยมีสระบน/ล่างและวรรณยุกต์ (ั ่ ๊ ะ) ทำให้ line box
+   สูงกว่าที่เดาจากขนาดฟอนต์ ป้ายจะล้นออกไปทับปุ่มถัดไป · ให้ปุ่มโตตามเนื้อหาแทน */
+/* ⚠️ ทุกกฎที่ทับ `<button>` ในหน้านี้ต้องเขียนคู่กับ .page ให้ specificity ชนะ
+   `.pos-root button` ใน pos.css (0,1,1) — คลาสเดี่ยวของ CSS module เป็น (0,1,0) จึงแพ้
+   แล้ว background/padding/border-radius/min-height ของปุ่มมาตรฐานทับเงียบ ๆ
+   (กับดักเดียวกับที่ pos.css เขียนเตือนไว้เองที่ .pos-root .pos-cam-btn) */
+.page .railBtn {
+  position: relative; width: 54px; min-height: 54px; padding: 7px 2px 6px;
+  border: 1px solid transparent; border-radius: 8px;
   background: transparent; color: var(--ink-2); cursor: pointer; font: inherit;
-  display: grid; place-items: center; gap: 2px; line-height: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
 }
-.railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
-.railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
-.railIcon { font-size: 19px; }
-.railLabel { font-size: 9.5px; font-weight: 600; }
+.page .railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
+.page .railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
+.railIcon { display: block; font-size: 19px; line-height: 1; }
+.railLabel { display: block; font-size: 10px; font-weight: 600; line-height: 1.35; white-space: nowrap; }
 .railBadge {
   position: absolute; top: 2px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
   background: var(--red); color: white; font-size: 10.5px; font-weight: 700; display: grid; place-items: center;
@@ -77,31 +84,18 @@
 .subtitle { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.2; }
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
-.tabs { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.tabButton {
-  font: inherit; font-size: 14px; font-weight: 600; border: 0; background: var(--panel); color: var(--ink-2);
-  padding: 0 18px; height: 40px; cursor: pointer; display: flex; align-items: center; gap: 7px; border-inline-end: 1px solid var(--line);
-}
-.tabButton:last-child { border-inline-end: 0; }
-.tabButtonActive { background: var(--accent); color: white; }
-.tabBadge {
-  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 3px;
-  background: var(--red); color: white; font-size: 12px; font-weight: 700; line-height: 1;
-}
-.tabButtonActive .tabBadge { background: rgba(255, 255, 255, .25); }
-
-.btn {
+.page .btn{
   font: inherit; font-size: 14px; height: 40px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink); border-radius: 6px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
 }
-.btn:hover:not(:disabled) { background: var(--panel-2); }
-.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
-.btnPrimary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
-.btnPrimary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
-.btnDanger { color: var(--red); }
-.btnIcon { width: 40px; padding: 0; justify-content: center; font-size: 16px; }
+.page .btn:hover:not(:disabled){ background: var(--panel-2); }
+.page .btn:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+.page .btn:disabled{ opacity: .4; cursor: not-allowed; }
+.page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
+.page .btnDanger{ color: var(--red); }
+.page .btnIcon{ width: 40px; padding: 0; justify-content: center; font-size: 16px; }
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
 .strip {
@@ -123,21 +117,21 @@
 .livePill { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--red); background: var(--red-bg); border-radius: 3px; padding: 3px 8px; }
 
 .areaTabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.areaButton {
+.page .areaButton{
   font: inherit; font-size: 14px; height: 36px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
-.areaButtonActive { background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
+.page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
 
 /* ---------- การ์ดโต๊ะ ---------- */
 .tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 8px; }
-.tableCard {
+.page .tableCard{
   position: relative; text-align: left; font: inherit; color: inherit; background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px 9px 14px; min-height: 92px;
   cursor: pointer; display: flex; flex-direction: column; overflow: hidden;
 }
-.tableCard:hover:not(:disabled) { border-color: var(--ink-3); }
-.tableCard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page .tableCard:hover:not(:disabled){ border-color: var(--ink-3); }
+.page .tableCard:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
 .tableBand { position: absolute; top: -1px; bottom: -1px; left: -1px; width: 6px; border-radius: 6px 0 0 6px; }
 .tableCode { font-size: 12px; color: var(--ink-3); font-weight: 600; letter-spacing: .04em; }
 .tableName { font-size: 18px; font-weight: 700; line-height: 1.15; margin-top: 1px; }
@@ -145,11 +139,11 @@
 .tableMeta { font-size: 12.5px; color: var(--ink-2); margin-top: auto; }
 /* ฿ ตกฟอนต์ในบางเครื่องแล้วทับตัวเลขแรก — .baht กันระยะให้ */
 .tableAmount { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
-.tableFree { background: var(--panel-2); border-style: dashed; }
-.tableFree .tableName { color: var(--ink-2); font-weight: 600; }
-.tableFree .tableMeta { color: var(--ink-3); }
-.tableBlocked { opacity: .5; cursor: not-allowed; }
-.tableSelected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.page .tableFree{ background: var(--panel-2); border-style: dashed; }
+.page .tableFree .tableName{ color: var(--ink-2); font-weight: 600; }
+.page .tableFree .tableMeta{ color: var(--ink-3); }
+.page .tableBlocked{ opacity: .5; cursor: not-allowed; }
+.page .tableSelected{ border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .state_unsent .tableBand { background: var(--red); }
 .state_unsent .tableStatus { color: var(--red); }
 .state_cooking .tableBand { background: var(--amber); }
@@ -190,12 +184,12 @@
 .billStrip { display: flex; gap: 8px; padding: 10px 12px 0; overflow-x: auto; }
 .billStrip::-webkit-scrollbar { height: 5px; }
 .billStrip::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
-.billChip {
+.page .billChip {
   flex: 0 0 auto; display: flex; gap: 9px; align-items: center; text-align: left; cursor: pointer; font: inherit; color: inherit;
   border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); padding: 8px 11px 8px 8px; min-width: 168px;
 }
-.billChip:hover { border-color: var(--ink-3); }
-.billChipActive { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.page .billChip:hover { border-color: var(--ink-3); }
+.page .billChipActive { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .billChipCode {
   width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0;
   color: white; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -207,21 +201,22 @@
 
 /* หมวดหมู่ = station ในครัว (ไม่ใช่หมวดที่คนพิมพ์เอง) — ร้านตั้ง station ที่ Stock Models */
 .catRow { display: flex; gap: 8px; padding: 12px 12px 0; flex-wrap: wrap; }
-.catCard {
+.page .catCard {
   border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 9px 14px;
   font: inherit; color: var(--ink-2); cursor: pointer; text-align: left; display: grid; gap: 2px;
+  min-height: 0;
 }
-.catCard:hover { border-color: var(--ink-3); }
-.catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
+.page .catCard:hover { border-color: var(--ink-3); }
+.page .catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
 
 .dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 12px; padding: 14px 12px 16px; }
-.dishCard {
+.page .dishCard {
   position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel);
-  cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden;
+  cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden; min-height: 0;
 }
-.dishCard:hover { border-color: var(--accent); }
+.page .dishCard:hover { border-color: var(--accent); }
 .dishArt { height: 96px; display: grid; place-items: center; }
 .dishArt img { width: 100%; height: 100%; object-fit: cover; }
 .dishGlyph { display: block; width: 72px; height: 72px; }
@@ -253,11 +248,11 @@
 .itemNote { display: block; font-size: 12.5px; color: var(--red); font-weight: 600; }
 .itemSide { display: flex; align-items: center; gap: 8px; }
 .itemPrice { font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
-.itemRemove {
+.page .itemRemove{
   font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--red);
   border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer; flex: none;
 }
-.itemRemove:hover { border-color: var(--red); }
+.page .itemRemove:hover{ border-color: var(--red); }
 
 /* เว้นที่ให้ปุ่มผู้ช่วย (PosGuideAssistant) ที่ลอยมุมขวาล่างของทุกหน้า POS
    ไม่เว้น = วงกลมนั้นทับปุ่ม "คิดเงิน" พอดี แล้วกดพลาดกลางหน้าลูกค้า */
@@ -272,12 +267,12 @@
 
 /* รายการบิลที่เปิดอยู่ — แผงขวาตอนยังไม่เลือกโต๊ะ ไม่ปล่อยให้ว่างครึ่งจอ */
 .openList { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
-.openRow {
+.page .openRow{
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%;
   border: 1px solid var(--line-2); border-radius: 6px; padding: 10px; background: var(--panel);
   cursor: pointer; font: inherit; color: inherit; text-align: left;
 }
-.openRow:hover { border-color: var(--ink-3); }
+.page .openRow:hover{ border-color: var(--ink-3); }
 .openDot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .openName { font-weight: 700; }
 .openMeta { display: block; font-size: 12.5px; color: var(--ink-2); }
