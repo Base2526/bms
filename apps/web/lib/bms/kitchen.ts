@@ -156,11 +156,29 @@ const NEXT_KITCHEN_STATUS: Record<string, ReadonlySet<string>> = {
   CANCELLED: new Set(),
 };
 
+/**
+ * ผลที่ต้องเกิดกับ "บิลโต๊ะ" เมื่อครัวยกเลิกตั๋ว — อาหารไม่ได้ทำ บรรทัดต้องหลุดจากยอด
+ *
+ * รับเป็น hook ไม่ import ตรง ๆ เพราะ kitchen.ts เป็นโมดูลปลายทาง (import แค่ db/tenant/
+ * storeCapabilities) ถ้า import restaurantPos จะเกิดวง
+ * kitchen → restaurantPos → orders → kitchen
+ */
+export type RestaurantCheckLineCancelHook = (
+  client: PoolClient,
+  input: { tenantId: string; checkId: string; checkItemId: string; actorUserId: string }
+) => Promise<{ dropped: boolean; amountDue: number | null }>;
+
 export async function updateKitchenTicketStatus(input: {
   tenantId: string;
   ticketId: string;
   status: string;
   actorUserId: string;
+  /**
+   * **required โดยตั้งใจ** — ผู้เรียกที่ลืมส่งจะไม่ compile แทนที่จะเงียบแล้วเก็บเงินค่าอาหาร
+   * ที่ครัวยกเลิกไปแล้ว · ผู้เรียกมีสองที่ (route ของเครื่องขาย และ resolver ของกระดาน
+   * หลังบ้าน) ซึ่งต้องให้ผลเหมือนกัน ไม่ใช่อย่างใดอย่างหนึ่งลดยอดให้
+   */
+  onRestaurantCheckLineCancelled: RestaurantCheckLineCancelHook;
   /**
    * เครื่องหน้าร้านเลื่อนได้เฉพาะตั๋วของสาขาตัวเอง — จอครัวกรองตามสาขาแล้ว ด่านนี้กันการ
    * ยิง id ตรง ๆ ไปเลื่อนอาหารของสาขาอื่น (กระดานหลังบ้านไม่ส่งค่านี้ = ดูแลได้ทั้งร้าน)
@@ -226,14 +244,28 @@ export async function updateKitchenTicketStatus(input: {
                       ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty AS qty`,
           [input.tenantId, input.ticketId, status]
         );
+    // ครัวยกเลิกอาหารของบิลโต๊ะ → ตัดบรรทัดออกจากยอดใน transaction เดียวกันนี้
+    // (แยก transaction แล้วครึ่งหลังล้ม = ตั๋วถูกยกเลิกแต่ลูกค้ายังถูกคิดเงิน)
+    let billDropped: { dropped: boolean; amountDue: number | null } = { dropped: false, amountDue: null };
+    if (source === "RESTAURANT_CHECK" && status === "CANCELLED") {
+      const row = updated.rows[0] as { check_id: string | null; order_item_id: string | null };
+      if (row.check_id && row.order_item_id) {
+        billDropped = await input.onRestaurantCheckLineCancelled(client, {
+          tenantId: input.tenantId,
+          checkId: row.check_id,
+          checkItemId: String(row.order_item_id),
+          actorUserId: input.actorUserId,
+        });
+      }
+    }
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,'kitchen.ticket_status',$3,$4::jsonb)`,
       [input.tenantId, `user:${input.actorUserId}`, input.ticketId,
-        JSON.stringify({ previous, status, source })]
+        JSON.stringify({ previous, status, source, billLineDropped: billDropped.dropped, amountDue: billDropped.amountDue })]
     );
     await client.query("COMMIT");
-    return mapKitchenTicket(updated.rows[0]);
+    return { ...mapKitchenTicket(updated.rows[0]), billLineDropped: billDropped.dropped, checkAmountDue: billDropped.amountDue };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

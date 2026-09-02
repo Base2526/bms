@@ -13,6 +13,7 @@ import {
   verifyCashierPin,
 } from "@/lib/bms/pos";
 import { updateKitchenTicketStatus } from "@/lib/bms/kitchen";
+import { dropKitchenCancelledLineInTx } from "@/lib/bms/restaurantPos";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -52,6 +53,8 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
     status,
     actorUserId: auth.userId,
     expectedLocationId: device.locationId,
+    // ครัวยกเลิกอาหารของบิลโต๊ะ = ตัดบรรทัดนั้นออกจากยอดในทรานแซกชันเดียวกัน
+    onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx,
   });
   return NextResponse.json({ ticket });
 }

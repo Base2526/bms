@@ -1,136 +1,398 @@
+/*
+ * ผังโต๊ะ / บิลโต๊ะ — แบบ "เน้นใช้งาน" ตาม mockup 2026-09-01 (รอบที่สอง)
+ *
+ * เจตนา: ตัดของประดับออกให้หมด แล้วเอาพื้นที่กับความชัดคืนให้ข้อมูล
+ *   · ไม่มีเงา · มุมมน 6px · เส้นขอบชัด — ดูเป็นเครื่องมือ ไม่ใช่หน้าโชว์
+ *   · ปุ่มหลัก 56px ปุ่มรอง 40px (เดิม 34px ซึ่งเล็กกว่ามาตรฐานนิ้วโป้ง)
+ *   · เลิกใช้เทาอ่อนกับข้อความที่ต้องอ่านจริง
+ *   · สถานะโต๊ะเป็น "คำ" คู่กับแถบสีหนา 6px ไม่ใช่ชิปเล็กมุมบน
+ *
+ * **ไม่โหลดฟอนต์จาก CDN โดยตั้งใจ** — จอนี้ต้องทำงานตอนเน็ตร้านหลุด และ pos.css
+ * ก็เลือกไม่พึ่ง dependency ภายนอกด้วยเหตุผลเดียวกัน
+ */
 .page {
-  --ink: #20332c;
-  --muted: #6f7f76;
-  --paper: #fffdf8;
-  --cream: #f4ead9;
-  --tomato: #dd5d3d;
-  --tomato-dark: #a93d27;
-  --leaf: #30745b;
-  --amber: #e7a335;
+  --ink: #151916;
+  --ink-2: #4c5750;
+  --ink-3: #6e7a73;
+  --ground: #e8eae6;
+  --panel: #ffffff;
+  --panel-2: #f4f5f2;
+  --line: #c9cfc9;
+  --line-2: #e1e5e0;
+  --accent: #1f5340;
+  --red: #c4472a;
+  --red-bg: #fbe9e4;
+  --amber: #a9721a;
+  --amber-bg: #fbf1de;
+  --green: #256b4f;
+  --green-bg: #e4f0e9;
+  --grey: #6b756f;
   min-height: 100vh;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 8% 2%, rgba(231, 163, 53, .18), transparent 25rem),
-    radial-gradient(circle at 95% 20%, rgba(48, 116, 91, .14), transparent 32rem),
-    linear-gradient(145deg, #f9f2e5, #f4eee3 45%, #e9efe8);
-  padding: 20px;
-  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", sans-serif;
+  background: var(--ground);
+  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
 }
+/* เมนูนำทางเป็นแถบไอคอนแนวตั้งฝั่งซ้าย (ตามมอคอัพ) — คืนความกว้างแถวบนให้ชื่อร้าน
+   กับปุ่มที่ใช้จริง และปลายนิ้วโป้งอยู่ขอบซ้ายตลอด ไม่ต้องเอื้อมขึ้นไปหัวจอ */
+.page { display: grid; grid-template-columns: 64px minmax(0, 1fr); }
+.pagePlain { display: block; }
+.rail {
+  background: var(--panel); border-inline-end: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0;
+  position: sticky; top: 0; align-self: start; height: 100dvh; overflow-y: auto;
+}
+.railMark {
+  width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: white;
+  display: grid; place-items: center; font-weight: 700; font-size: 18px; margin-bottom: 8px; flex: none;
+}
+/* ⚠️ ห้ามล็อก height ตายตัว — ป้ายไทยมีสระบน/ล่างและวรรณยุกต์ (ั ่ ๊ ะ) ทำให้ line box
+   สูงกว่าที่เดาจากขนาดฟอนต์ ป้ายจะล้นออกไปทับปุ่มถัดไป · ให้ปุ่มโตตามเนื้อหาแทน */
+/* ⚠️ ทุกกฎที่ทับ `<button>` ในหน้านี้ต้องเขียนคู่กับ .page ให้ specificity ชนะ
+   `.pos-root button` ใน pos.css (0,1,1) — คลาสเดี่ยวของ CSS module เป็น (0,1,0) จึงแพ้
+   แล้ว background/padding/border-radius/min-height ของปุ่มมาตรฐานทับเงียบ ๆ
+   (กับดักเดียวกับที่ pos.css เขียนเตือนไว้เองที่ .pos-root .pos-cam-btn) */
+.page .railBtn {
+  position: relative; width: 54px; min-height: 54px; padding: 7px 2px 6px;
+  border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--ink-2); cursor: pointer; font: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+}
+.page .railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
+.page .railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
+.railIcon { display: block; font-size: 19px; line-height: 1; }
+.railLabel { display: block; font-size: 10px; font-weight: 600; line-height: 1.35; white-space: nowrap; }
+.railBadge {
+  position: absolute; top: 2px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+  background: var(--red); color: white; font-size: 10.5px; font-weight: 700; display: grid; place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.railBtnActive .railBadge { background: rgba(255, 255, 255, .28); }
+.railHelpSlot { margin-top: auto; width: 100%; display: flex; justify-content: center; padding: 8px 0 2px; }
 
-.shell { max-width: 1760px; margin: 0 auto; display: grid; gap: 14px; }
-.topbar, .operatorBar, .panel, .checkPanel, .kitchenBoard {
-  border: 1px solid rgba(32, 51, 44, .1);
-  box-shadow: 0 18px 50px rgba(52, 57, 45, .08);
-  backdrop-filter: blur(14px);
-}
-.topbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 18px;
-  padding: 18px 20px; border-radius: 24px; background: rgba(255, 253, 248, .9);
-}
-.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.brandMark {
-  width: 48px; height: 48px; border-radius: 15px; display: grid; place-items: center;
-  color: white; font-family: Georgia, serif; font-size: 25px; font-weight: 800;
-  background: linear-gradient(135deg, var(--tomato), #ef8b3e); box-shadow: 0 9px 22px rgba(221, 93, 61, .3);
-}
-.title { margin: 0; font: 800 clamp(22px, 3vw, 34px)/1.05 Georgia, "Noto Serif Thai", serif; letter-spacing: -.03em; }
-.subtitle { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.shell { display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
+/* antd Spin แทรก wrapper สองชั้นระหว่าง shell กับเนื้อหา ถ้าไม่ต่อ flex ให้ทะลุ
+   แผงบิลจะสูงเท่าเนื้อหา แล้วปุ่ม "ส่งครัว/คิดเงิน" ไปลอยกลางจอแทนที่จะติดขอบล่าง */
+.floorWrap,
+.shell :global(.ant-spin-nested-loading),
+.shell :global(.ant-spin-container) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+/* ---------- แถบบน: หนึ่งแถว ---------- */
+.topbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; margin-inline-end: auto; }
+.brandMark { width: 34px; height: 34px; border-radius: 5px; background: var(--accent); color: white; display: grid; place-items: center; font-weight: 700; font-size: 17px; flex: none; }
+.title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.2; }
+.subtitle { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.2; }
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.operatorBar {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
-  padding: 11px 14px; border-radius: 18px; background: rgba(255, 253, 248, .84);
+
+.page .btn{
+  font: inherit; font-size: 14px; height: 40px; padding: 0 14px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); border-radius: 6px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
 }
-.operatorFields { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.operatorFields select, .operatorFields input, .field {
-  height: 38px; border-radius: 10px; border: 1px solid #d5d6cc; background: white; padding: 0 11px; color: var(--ink);
+.page .btn:hover:not(:disabled){ background: var(--panel-2); }
+.page .btn:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+.page .btn:disabled{ opacity: .4; cursor: not-allowed; }
+.page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
+.page .btnDanger{ color: var(--red); }
+.page .btnIcon{ width: 40px; padding: 0; justify-content: center; font-size: 16px; }
+
+/* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
+.strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px;
+  padding: 8px 14px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 14px;
 }
-.operatorFields select { min-width: 230px; }
-.operatorFields input { width: 120px; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(330px, .72fr); gap: 14px; min-height: 690px; }
-.panel, .checkPanel, .kitchenBoard { border-radius: 24px; background: rgba(255, 253, 248, .92); overflow: hidden; }
-.panel { padding: 18px; }
-.panelHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.panelHeader h2 { margin: 0; font-size: 18px; }
-.areaTabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
-.areaButton { border: 0; border-radius: 999px; padding: 8px 14px; background: #ece8dd; color: var(--ink); cursor: pointer; white-space: nowrap; }
-.areaButtonActive { color: white; background: var(--ink); }
-.tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 12px; }
-.tableCard {
-  position: relative; min-height: 132px; text-align: left; border: 1px solid #dedfd6; border-radius: 20px;
-  padding: 15px; background: #fff; cursor: pointer; color: var(--ink); transition: transform .16s ease, box-shadow .16s ease;
+.strip b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.stripDot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-inline-end: 6px; vertical-align: middle; }
+.stripSep { color: var(--line); }
+.stripWarn { color: var(--red); }
+.baht { margin-inline-end: .14em; }
+
+/* ---------- พื้นที่ทำงาน ---------- */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 360px; flex: 1; min-height: 0; }
+.panel { padding: 12px; border-inline-end: 1px solid var(--line); min-width: 0; }
+.panelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.panelHeader h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.panelHeader small { color: var(--ink-2); font-size: 12.5px; }
+.livePill { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--red); background: var(--red-bg); border-radius: 3px; padding: 3px 8px; }
+
+.areaTabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.page .areaButton{
+  font: inherit; font-size: 14px; height: 36px; padding: 0 14px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
-.tableCard:hover { transform: translateY(-3px); box-shadow: 0 12px 24px rgba(42, 61, 51, .12); }
-.tableOccupied { border-color: rgba(221, 93, 61, .45); background: linear-gradient(145deg, #fff9f4, #fff0e6); }
-.tableBlocked { opacity: .55; cursor: not-allowed; background: #eee; }
-.tableSelected { outline: 3px solid rgba(48, 116, 91, .3); }
-.tableCode { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-.tableName { font-size: 18px; font-weight: 800; margin-top: 8px; }
-.tableMeta { color: var(--muted); font-size: 12px; margin-top: 6px; }
-.tableAmount { font: 800 20px/1 Georgia, serif; margin-top: 12px; }
-.dot { position: absolute; top: 13px; right: 13px; width: 10px; height: 10px; border-radius: 50%; background: #8cb49f; }
-.tableOccupied .dot { background: var(--tomato); box-shadow: 0 0 0 5px rgba(221, 93, 61, .12); }
-.checkPanel { display: flex; flex-direction: column; min-width: 0; }
-.checkHead { padding: 18px; color: white; background: linear-gradient(135deg, var(--ink), #365c4d); }
-.checkHead h2 { margin: 0; font: 800 25px/1.1 Georgia, "Noto Serif Thai", serif; }
-.checkHead p { margin: 7px 0 0; opacity: .76; font-size: 13px; }
-.checkBody { flex: 1; overflow-y: auto; padding: 14px; display: grid; align-content: start; gap: 12px; }
-.empty { min-height: 270px; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 30px; }
-.searchRow { display: flex; gap: 8px; }
-.searchRow input { flex: 1; min-width: 0; }
-.searchResults { display: grid; gap: 7px; max-height: 210px; overflow-y: auto; }
-.menuResult { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; border: 1px solid #e4e3db; border-radius: 13px; padding: 10px 12px; background: white; cursor: pointer; text-align: left; }
-.menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.menuResult small { color: var(--muted); }
-.items { display: grid; gap: 8px; }
-.item { border: 1px solid #e2e2da; border-radius: 14px; background: white; padding: 11px; }
-.itemTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.itemName { font-weight: 750; }
-.itemMeta { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.itemTags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
-.tag { display: inline-flex; border-radius: 999px; padding: 3px 8px; background: #edf3ef; color: var(--leaf); font-size: 11px; }
-.tagNew { background: #fff1df; color: #9a5b08; }
-.checkFooter { padding: 14px; border-top: 1px solid #e4e2d9; background: #fffdf8; display: grid; gap: 9px; }
-.total { display: flex; align-items: baseline; justify-content: space-between; }
-.total strong { font: 800 28px/1 Georgia, serif; }
+.page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
+
+/* ---------- การ์ดโต๊ะ ---------- */
+.tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 8px; }
+.page .tableCard{
+  position: relative; text-align: left; font: inherit; color: inherit; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px 9px 14px; min-height: 92px;
+  cursor: pointer; display: flex; flex-direction: column; overflow: hidden;
+}
+.page .tableCard:hover:not(:disabled){ border-color: var(--ink-3); }
+.page .tableCard:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+.tableBand { position: absolute; top: -1px; bottom: -1px; left: -1px; width: 6px; border-radius: 6px 0 0 6px; }
+.tableCode { font-size: 12px; color: var(--ink-3); font-weight: 600; letter-spacing: .04em; }
+.tableName { font-size: 18px; font-weight: 700; line-height: 1.15; margin-top: 1px; }
+.tableStatus { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.tableMeta { font-size: 12.5px; color: var(--ink-2); margin-top: auto; }
+/* ฿ ตกฟอนต์ในบางเครื่องแล้วทับตัวเลขแรก — .baht กันระยะให้ */
+.tableAmount { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.page .tableFree{ background: var(--panel-2); border-style: dashed; }
+.page .tableFree .tableName{ color: var(--ink-2); font-weight: 600; }
+.page .tableFree .tableMeta{ color: var(--ink-3); }
+.page .tableBlocked{ opacity: .5; cursor: not-allowed; }
+.page .tableSelected{ border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.state_unsent .tableBand { background: var(--red); }
+.state_unsent .tableStatus { color: var(--red); }
+.state_cooking .tableBand { background: var(--amber); }
+.state_cooking .tableStatus { color: var(--amber); }
+.state_ready .tableBand, .state_served .tableBand { background: var(--green); }
+.state_ready .tableStatus, .state_served .tableStatus { color: var(--green); }
+.state_idle .tableBand { background: var(--grey); }
+.state_idle .tableStatus { color: var(--ink-3); }
+
+/* ---------- แผงบิลด้านขวา ---------- */
+.checkPanel { display: flex; flex-direction: column; background: var(--panel); min-width: 0; min-height: 0; }
+.checkHead { padding: 10px 12px 0; }
+.checkHead h2 { margin: 0; font-size: 17px; font-weight: 700; }
+.checkHead p { margin: 2px 0 10px; font-size: 12.5px; color: var(--ink-2); }
+.checkActions { display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid var(--line-2); }
+.checkActions .btn { flex: 1; justify-content: center; font-size: 13px; padding: 0 8px; }
+
+.searchRow { display: flex; gap: 6px; padding: 10px 12px; }
+.searchRow input, .field {
+  flex: 1; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel-2); padding: 0 11px; font: inherit; font-size: 14px; color: var(--ink);
+}
+.searchRow input:focus, .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--panel); }
+.searchResults { display: grid; gap: 6px; padding: 0 12px; max-height: 210px; overflow-y: auto; }
+.menuResult {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 9px 10px; background: var(--panel); cursor: pointer; font: inherit; color: inherit;
+}
+.menuResult:hover { border-color: var(--ink-3); }
+.menuResult strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.menuResult small { color: var(--ink-2); }
+
+/* ---------- จอสั่งอาหาร (กริดเมนูฝั่งกว้าง) ----------
+   กริดอยู่ฝั่งกว้างเพราะการ์ดในแผงขวา 300px เล็กจนต้องเพ่งอ่านทุกใบ
+   ซึ่งกลับหัวกับเหตุผลที่ทำกริด (แตะเลือกด้วยตา ไม่ต้องพิมพ์ค้นหา) */
+
+/* แถวบิลที่เปิดอยู่ — สลับโต๊ะได้จากจอสั่งอาหารโดยไม่ต้องเด้งกลับผังโต๊ะ */
+.billStrip { display: flex; gap: 8px; padding: 10px 12px 0; overflow-x: auto; }
+.billStrip::-webkit-scrollbar { height: 5px; }
+.billStrip::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+.page .billChip {
+  flex: 0 0 auto; display: flex; gap: 9px; align-items: center; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); padding: 8px 11px 8px 8px; min-width: 168px;
+}
+.page .billChip:hover { border-color: var(--ink-3); }
+.page .billChipActive { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.billChipCode {
+  width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0;
+  color: white; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.billChipBody { display: grid; gap: 1px; min-width: 0; }
+.billChipName { font-size: 13px; font-weight: 600; }
+.billChipState { font-size: 11.5px; font-weight: 600; }
+.billChipMeta { font-size: 11px; color: var(--ink-3); }
+
+/* หมวดหมู่ = station ในครัว (ไม่ใช่หมวดที่คนพิมพ์เอง) — ร้านตั้ง station ที่ Stock Models */
+.catRow { display: flex; gap: 8px; padding: 12px 12px 0; flex-wrap: wrap; }
+.page .catCard {
+  border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 9px 14px;
+  font: inherit; color: var(--ink-2); cursor: pointer; text-align: left; display: grid; gap: 2px;
+  min-height: 0;
+}
+.page .catCard:hover { border-color: var(--ink-3); }
+.page .catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
+.catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
+
+.dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 12px; padding: 14px 12px 16px; }
+.page .dishCard {
+  position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel);
+  cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden; min-height: 0;
+}
+.page .dishCard:hover { border-color: var(--accent); }
+.dishArt { height: 96px; display: grid; place-items: center; }
+.dishArt img { width: 100%; height: 100%; object-fit: cover; }
+.dishGlyph { display: block; width: 72px; height: 72px; }
+.dishQty {
+  position: absolute; top: 7px; right: 7px; min-width: 22px; height: 22px; border-radius: 11px;
+  background: var(--accent); color: white; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  display: grid; place-items: center; padding: 0 6px;
+}
+.dishBody { display: block; padding: 10px 12px 12px; }
+.dishName {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 13.5px; font-weight: 600; line-height: 1.35; min-height: 2.7em; margin-bottom: 6px;
+}
+.dishFoot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dishPrice { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dishModHint { font-size: 10.5px; color: var(--ink-3); }
+.dishStation {
+  position: absolute; top: 7px; left: 7px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+}
+.menuEmpty { padding: 24px 12px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
+.items { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; overflow-y: auto; flex: 1; }
+.roundLabel { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .03em; text-transform: uppercase; padding: 8px 0 2px; }
+.item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 9px; align-items: start; border: 1px solid var(--line-2); border-radius: 6px; padding: 9px 10px; }
+.itemUnsent { border-color: var(--red); background: var(--red-bg); }
+/* ครัวยกเลิกแล้วแต่บรรทัดยังคิดเงินอยู่ — ต้องเด่นกว่า "ยังไม่ส่งครัว" เพราะเป็นเงินที่
+   กำลังจะเก็บผิด ไม่ใช่แค่งานที่ยังไม่ได้ทำ · เส้นประแยกจากกรอบทึบของยังไม่ส่งครัว */
+.itemKitchenCancelled { border-color: var(--red); border-style: dashed; background: var(--red-bg); }
+.itemCancelTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 700; color: var(--red); }
+
+/* ครัวยกเลิกและตัดออกจากยอดแล้ว — ต้องยังเห็นอยู่บนแผงบิล ไม่ใช่หายไปเฉย ๆ แล้วยอดลด
+   โดยไม่มีอะไรอธิบาย · แต่ต้องอ่านออกทันทีว่า "ไม่คิดเงินแล้ว" ไม่ใช่คำเตือนให้ไปทำอะไรต่อ
+   จึงเป็นสีเทาจาง + ขีดฆ่า ต่างจากกรอบแดงของกรณีที่ยังคิดเงินอยู่ */
+.itemDropped { border-style: dashed; background: var(--panel-2); opacity: .72; }
+.itemDropped .itemName { text-decoration: line-through; color: var(--ink-2); }
+.itemDropTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
+.itemPriceVoid { text-decoration: line-through; color: var(--ink-3); }
+.dropNote { font-size: 11.5px; color: var(--ink-2); background: var(--panel-2); border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
+
+/* สถานะอาหารรายบรรทัด — "พร้อมเสิร์ฟ" เป็นตัวเดียวที่เรียกร้องให้คนถือจอนี้ลุกไปทำอะไร
+   จึงเป็นตัวเดียวที่ทำให้เด่น (พื้น + ตัวหนา) ที่เหลือเป็นข้อความเฉย ๆ */
+.itemKitchenTag { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; }
+.itemKitchenTagLoud { background: var(--green-bg); border-radius: 4px; padding: 2px 7px; display: inline-block; font-weight: 700; }
+
+/* ปุ่มสั่งซ้ำ — เล็กแต่กดติด (สูง 30px) อยู่ในคอลัมน์เดียวกับราคา */
+.page .itemAgain {
+  font: inherit; font-size: 11.5px; font-weight: 600; height: 30px; min-height: 0; padding: 0 9px;
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2); border-radius: 6px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.page .itemAgain:hover { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
+.page .itemAgain:disabled, .page .itemRemove:disabled { cursor: not-allowed; opacity: .5; }
+.itemQty { font-weight: 700; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.itemName { display: block; font-weight: 600; font-size: 14.5px; }
+.itemMeta { display: block; font-size: 12.5px; color: var(--ink-2); }
+.itemNote { display: block; font-size: 12.5px; color: var(--red); font-weight: 600; }
+.itemSide { display: flex; align-items: center; gap: 8px; }
+.itemPrice { font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+.page .itemRemove{
+  font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--red);
+  border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer; flex: none;
+}
+.page .itemRemove:hover{ border-color: var(--red); }
+
+/* ผู้ช่วยของหน้านี้อยู่ใน rail แล้ว จึงไม่ต้องกันพื้นที่ปุ่มลอยใต้ปุ่มคิดเงิน */
+.checkFooter { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 8px; background: var(--panel); }
+.warn { display: flex; gap: 8px; font-size: 13px; background: var(--red-bg); border: 1px solid var(--red); border-radius: 6px; padding: 8px 10px; color: var(--ink); }
+.warn b { color: var(--red); }
+.total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.totalLabel { font-size: 13.5px; color: var(--ink-2); }
+.total strong { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .footerButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.primaryAction { grid-column: 1 / -1; }
-.kitchenBoard { padding: 18px; }
-.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
-.lane { border-radius: 18px; min-height: 490px; padding: 12px; background: #f0eee7; border-top: 5px solid var(--lane-color); }
-.laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
-.laneCount { min-width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: white; font-size: 12px; }
-.ticket { background: white; border-radius: 14px; padding: 12px; margin-bottom: 9px; border: 1px solid rgba(0,0,0,.06); }
-.ticketTable { color: var(--tomato-dark); font-weight: 800; font-size: 12px; margin-bottom: 5px; }
-.ticketName { font-weight: 800; }
-.ticketMeta { color: var(--muted); font-size: 11px; margin-top: 5px; }
-.ticketNote { background: #fff4db; border-radius: 8px; padding: 6px 8px; font-size: 12px; margin-top: 7px; }
-.ticketActions { display: flex; gap: 6px; margin-top: 9px; }
-.setup { min-height: 430px; display: grid; place-items: center; text-align: center; padding: 32px; }
-.setupIcon { width: 78px; height: 78px; border-radius: 26px; display: grid; place-items: center; margin: 0 auto 16px; font-size: 35px; background: #f5dfc0; }
+.footerButtons .btn { height: 56px; justify-content: center; font-size: 16px; font-weight: 700; }
+
+/* รายการบิลที่เปิดอยู่ — แผงขวาตอนยังไม่เลือกโต๊ะ ไม่ปล่อยให้ว่างครึ่งจอ */
+.openList { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.page .openRow{
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 10px; background: var(--panel);
+  cursor: pointer; font: inherit; color: inherit; text-align: left;
+}
+.page .openRow:hover{ border-color: var(--ink-3); }
+.openDot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.openName { font-weight: 700; }
+.openMeta { display: block; font-size: 12.5px; color: var(--ink-2); }
+.openAmount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hint { padding: 12px; font-size: 13px; color: var(--ink-2); border-top: 1px solid var(--line-2); margin-top: auto; }
+.hint b { color: var(--ink); }
+
+.empty { flex: 1; min-height: 200px; display: grid; place-items: center; text-align: center; color: var(--ink-2); padding: 24px; }
+.empty h3 { margin: 10px 0 4px; font-size: 16px; font-weight: 700; color: var(--ink); }
+.empty p { margin: 0; font-size: 13px; }
+.setup { min-height: 400px; display: grid; place-items: center; text-align: center; padding: 32px; }
+.setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--panel-2); border: 1px solid var(--line); color: var(--accent); }
+
+/* ---------- จอครัว ---------- */
+.kitchenBoard { padding: 12px; }
+.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; overflow-x: auto; }
+.lane { border-radius: 6px; min-height: 460px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color); }
+.laneHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
+.laneCount { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; background: var(--panel-2); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ticket { background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+.ticketTable { color: var(--red); font-weight: 700; font-size: 12.5px; margin-bottom: 3px; }
+.ticketName { font-weight: 700; }
+.ticketMeta { color: var(--ink-2); font-size: 12px; margin-top: 3px; }
+.ticketNote { background: var(--amber-bg); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; margin-top: 6px; }
+.ticketActions { display: flex; gap: 6px; margin-top: 8px; }
+.ticketActions .btn { height: 36px; font-size: 13px; padding: 0 12px; }
+.itemTags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.tag { display: inline-flex; border-radius: 3px; padding: 2px 7px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink-2); font-size: 11.5px; }
+
+/* ---------- modal ---------- */
 .modalGrid { display: grid; gap: 12px; }
-.modalGrid label { display: grid; gap: 5px; font-size: 13px; font-weight: 650; }
-.modalGrid input, .modalGrid select, .modalGrid textarea { border: 1px solid #d7d8d0; border-radius: 10px; padding: 9px 11px; width: 100%; }
+.modalGrid label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.modalGrid input, .modalGrid select, .modalGrid textarea {
+  border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; width: 100%; font: inherit; background: var(--panel); color: var(--ink);
+}
 .modifierList { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.modifierChoice { display: flex !important; grid-template-columns: auto 1fr !important; align-items: center; border: 1px solid #dedfd7; border-radius: 11px; padding: 9px; }
+.modifierChoice { display: flex !important; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 9px; font-weight: 400; }
 .modifierChoice input { width: auto; }
 
-@media (max-width: 980px) {
+/* ---------- responsive ---------- */
+@media (max-width: 1180px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 320px; }
+}
+@media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; }
-  .checkPanel { min-height: 580px; }
-  .lanes { grid-template-columns: repeat(4, 250px); }
+  .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .checkPanel { min-height: 480px; }
+  .lanes { grid-template-columns: repeat(4, 260px); }
 }
 @media (max-width: 640px) {
-  .page { padding: 9px; }
-  .topbar { border-radius: 18px; align-items: flex-start; }
-  .brandMark { width: 42px; height: 42px; }
+  .topbar { padding: 8px; }
   .subtitle { display: none; }
-  .topActions { width: 100%; }
-  .topbar { flex-wrap: wrap; }
-  .operatorBar { grid-template-columns: 1fr; }
-  .operatorFields select { min-width: 0; flex: 1; }
+  .brand { margin-inline-end: 0; }
+  .topbar .btn { flex: 1 1 auto; }
+  .topbar .btnIcon { flex: 0 0 40px; }
+  .strip { gap: 4px 14px; font-size: 13.5px; }
+
+  /* บนมือถือ แถบซ้าย 64px กินพื้นที่ ~17% ของจอ — บีบลงแล้วคืนให้กริดเมนู
+     ป้ายยังอยู่ (คนกดต้องรู้ว่าปุ่มไหนคืออะไร) แค่เล็กลงพอดีความกว้างใหม่ */
+  .page { grid-template-columns: 52px minmax(0, 1fr); }
+  .page .railBtn { width: 46px; min-height: 48px; padding: 6px 1px 5px; }
+  .page .railBtn .railIcon { font-size: 17px; }
+  .page .railBtn .railLabel { font-size: 9.5px; }
+  .railMark { width: 34px; height: 34px; font-size: 16px; margin-bottom: 6px; }
+  .railHelpSlot { padding-top: 6px; }
+
+  /* การ์ดเมนูต้องได้ 2 คอลัมน์บนมือถือ — ค่า 164px ของจอใหญ่ทำให้เหลือคอลัมน์เดียว
+     (ที่ 375px เหลือพื้นที่กริด 263px ซึ่งไม่พอสำหรับ 164×2 + gap) */
+  .dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; padding: 10px 10px 14px; }
+  .dishArt { height: 76px; }
+  .dishGlyph { width: 56px; height: 56px; }
+  .dishName { font-size: 12.5px; min-height: 2.6em; }
+  .dishPrice { font-size: 14px; }
+  /* การ์ดแคบลงจนราคากับคำว่า "มีตัวเลือก" อยู่บรรทัดเดียวกันไม่พอ แล้วคำถูกตัดเป็น
+     "มีตัว / เลือก" เบียดราคา — วางซ้อนบรรทัดแทนการบีบให้อยู่แถวเดียว */
+  .dishFoot { display: block; }
+  .dishModHint { display: block; margin-top: 3px; }
+
+  /* จอแคบสุด (320px) เคยล้นออกข้าง ~4px เพราะช่องกรอง (มี padding ของตัวเอง) ถูกวางเป็น
+     คอลัมน์ที่สองของ panelHeader และปุ่มจัดการบิล 3 ตัวถูกอัดในแถวเดียว — ให้ทั้งสอง
+     ตกบรรทัดแทนการยืนกรานอยู่แถวเดิม จอ POS ห้าม scroll ข้าง (เลื่อนพลาดตอนกดเร็ว) */
+  .panelHeader { flex-wrap: wrap; }
+  .panelHeader .searchRow { width: 100%; padding: 0; }
+  .checkActions { flex-wrap: wrap; }
+  .checkActions .btn { flex: 1 1 auto; min-width: 92px; }
+  .billStrip, .catRow { padding-inline: 10px; }
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .tableCard { min-height: 116px; padding: 12px; }
   .footerButtons { grid-template-columns: 1fr; }
-  .primaryAction { grid-column: auto; }
   .modifierList { grid-template-columns: 1fr; }
+  .lanes { grid-template-columns: repeat(4, 82vw); }
+  .lane { min-height: 340px; }
+}
+@media (max-width: 340px) {
+  .tableGrid { grid-template-columns: 1fr; }
 }

@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
+import { listPrimaryProductImages } from "./products";
 import {
   afterOrderCancellationCommitted,
   cancelOrderInTx,
@@ -31,6 +32,8 @@ type CheckItemRow = {
   unit_name: string | null;
   base_qty: number | null;
   pack_price: string | null;
+  sent_at?: string | Date | null;
+  kitchen_status?: string | null;
   modifier_codes: string[];
   modifier_names: string[];
   kitchen_note: string | null;
@@ -61,6 +64,15 @@ function mapCheckItem(row: CheckItemRow) {
     status: row.status,
     roundNo: row.round_no == null ? null : Number(row.round_no),
     createdAt: iso(row.created_at),
+    // เวลาที่ส่งครัวจริง — หัวข้อ "รอบ N · ส่งครัวแล้ว HH:MM" บนแผงบิลอ่านจากค่านี้
+    sentAt: row.sent_at ? iso(row.sent_at) : null,
+    // สถานะของตั๋วในครัวสำหรับบรรทัดนี้ (NEW/PREPARING/READY/SERVED/CANCELLED)
+    //
+    // **ต้องส่งออกไปให้หน้าขายเห็น** เพราะการยกเลิกตั๋วบนจอครัวไม่ลบรายการออกจากบิล
+    // และไม่ลด amount_due โดยตั้งใจ (เป็นการแก้บิล ต้อง void) แต่ก่อนหน้านี้ไม่มีจอไหน
+    // บอกเลยว่าครัวยกเลิกไปแล้ว → ตั๋วหายจากกระดานครัว ส่วนแคชเชียร์ยังเก็บเงินค่าอาหาร
+    // ที่ไม่ได้ทำ · ค่านี้เป็น null ได้เมื่อบรรทัดยังไม่ถูกส่งครัว หรือร้านปิดคิวครัวไว้
+    kitchenStatus: row.kitchen_status ?? null,
   };
 }
 
@@ -166,6 +178,84 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
       } : null,
     })),
   };
+}
+
+// รายการที่ "ขายให้ลูกค้าที่โต๊ะได้" สำหรับกริดเลือกสั่งอาหาร (แทนการพิมพ์ค้นหาทุกครั้ง)
+//
+// **ห้ามกรองด้วย stock_policy = 'RECIPE'** — เหตุผลเดียวกันกับตั๋วครัวใน
+// sendRestaurantKitchenRound: น้ำเปล่า/เบียร์/ของหวานสำเร็จรูปเป็น DIRECT ไม่มีสูตร
+// กรอง RECIPE = ของพวกนั้นสั่งไม่ได้เลย และร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลยจะเห็น
+// กริดว่างทั้งที่มีของขายอยู่ ซึ่งอ่านได้ว่า "ระบบพัง"
+//
+// สิ่งที่ต้องซ่อนคือ **วัตถุดิบ** และวัตถุดิบนิยามได้จากข้อมูล ไม่ต้องพึ่งหมวดหมู่ที่คนพิมพ์เอง:
+// มันคือของที่ถูกสูตร/ตัวเลือกอื่นกินเข้าไป (อยู่ใน recipe_items หรือ modifier_items)
+// หมูสับจึงหาย แต่น้ำเปล่าที่ไม่ได้เป็นส่วนประกอบของอะไรยังอยู่
+// ของที่เป็นทั้งวัตถุดิบและขายเดี่ยว (เช่นไข่ดาวขายแยก) จะถูกซ่อนด้วย — ยอมรับค่าเริ่มต้นที่
+// ปลอดภัยกว่า แล้วให้ช่องพิมพ์ค้นหาที่หน้าจอเป็นทางไปถึงของที่ไม่อยู่ในกริด
+//
+// `price > 0` ปิดช่องที่เหลือ: วัตถุดิบที่ยังไม่มีสูตรไหนใช้ (เพิ่งเพิ่มเข้ามา) ไม่เข้าเงื่อนไข
+// "เป็นส่วนประกอบ" จึงยังหลุดเข้ากริด · ร้านตั้งราคาวัตถุดิบเป็น 0 เพราะไม่ได้ขายแยกอยู่แล้ว
+// และของที่ขายที่โต๊ะต้องมีราคา การปล่อยแถว ฿0 ขึ้นกริด = เปิดทางให้กดขายอาหารฟรี
+//
+// ไม่ใช้ inStockOnly แบบ listSellableProducts เพราะเมนู RECIPE ไม่ถือสต็อกของตัวเอง
+// (แถว bms_inventory ของมันค้างที่ 0 ตลอด — ของจริงเช็คจากวัตถุดิบตอนสั่ง) กรองด้วยจะ
+// ทำให้เมนูทุกตัวหายจากกริดเงียบ ๆ
+export async function listRestaurantMenu(tenantId: string, locationId: string) {
+  await requireRestaurantTenant(tenantId);
+  const res = await query<{
+    sku: string;
+    name: string;
+    price: string;
+    kitchen_station: string | null;
+    has_modifiers: boolean;
+    sizes: Array<{ size: string; available: number }> | null;
+  }>(
+    `SELECT p.sku, p.name, p.price, sp.kitchen_station,
+            EXISTS (
+              SELECT 1 FROM bms_product_modifiers m
+               WHERE m.tenant_id = p.tenant_id AND m.product_sku = p.sku AND m.active
+            ) AS has_modifiers,
+            (SELECT jsonb_agg(jsonb_build_object(
+                'size', i.size, 'available', (i.current_stock - i.reserved_stock)
+              ) ORDER BY i.size)
+               FROM bms_inventory i
+              WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                AND i.location_id = $2
+            ) AS sizes
+       FROM bms_products p
+       LEFT JOIN bms_product_stock_policies sp
+         ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.active AND p.price > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_product_recipe_items ri
+            JOIN bms_product_recipes r
+              ON r.tenant_id = ri.tenant_id AND r.id = ri.recipe_id AND r.active
+           WHERE ri.tenant_id = p.tenant_id AND ri.component_sku = p.sku
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_product_modifier_items mi
+            JOIN bms_product_modifiers m
+              ON m.tenant_id = mi.tenant_id AND m.id = mi.modifier_id AND m.active
+           WHERE mi.tenant_id = p.tenant_id AND mi.component_sku = p.sku
+        )
+      ORDER BY sp.kitchen_station NULLS LAST, p.name`,
+    [tenantId, locationId]
+  );
+  const skus = res.rows.map((row) => row.sku);
+  const images = await listPrimaryProductImages(tenantId, skus);
+  return res.rows.map((row) => {
+    const sizes = row.sizes ?? [];
+    return {
+      sku: row.sku,
+      name: row.name,
+      price: Number(row.price),
+      kitchenStation: row.kitchen_station,
+      hasModifiers: row.has_modifiers,
+      availableSizes: sizes,
+      availableTotal: sizes.reduce((sum, s) => sum + Math.max(0, Number(s.available)), 0),
+      imageUrl: images.get(row.sku) ?? null,
+    };
+  });
 }
 
 export async function createDefaultRestaurantFloor(input: {
@@ -278,12 +368,29 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
   );
   if (!result.rowCount) return null;
   const itemResult = await query<CheckItemRow>(
-    `SELECT id, product_sku, product_name, size, pack_qty, pack_code, unit_name,
-            base_qty, pack_price, modifier_codes, modifier_names, kitchen_note,
-            status, round_no, created_at
-       FROM bms_restaurant_check_items
-      WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
-      ORDER BY created_at, id`,
+    `SELECT ci.id, ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_code, ci.unit_name,
+            ci.base_qty, ci.pack_price, ci.modifier_codes, ci.modifier_names, ci.kitchen_note,
+            ci.status, ci.round_no, ci.created_at, ci.sent_at,
+            kt.status AS kitchen_status
+       FROM bms_restaurant_check_items ci
+       -- ตั๋วครัวล่าสุดของบรรทัดนี้ · LEFT JOIN เพราะบรรทัดที่ยังไม่ส่งครัว (และร้านที่ปิด
+       -- คิวครัว) ไม่มีตั๋ว และต้องไม่หายไปจากบิลเพราะการ join
+       LEFT JOIN LATERAL (
+         SELECT t.status
+           FROM bms_restaurant_kitchen_tickets t
+          WHERE t.tenant_id = ci.tenant_id AND t.check_item_id = ci.id
+          ORDER BY t.created_at DESC, t.id DESC
+          LIMIT 1
+       ) kt ON TRUE
+      WHERE ci.tenant_id = $1 AND ci.check_id = $2
+        -- บรรทัดที่ถูกยกเลิก "หลังส่งครัวแล้ว" ต้องยังโชว์อยู่บนแผงบิล ไม่ใช่หายไปเฉย ๆ
+        -- แล้วยอดลดลงโดยไม่มีอะไรอธิบาย · คนที่โต๊ะต้องตอบลูกค้าได้ว่าจานนั้นหายไปไหน
+        -- (จอแสดงเป็นขีดฆ่า + ไม่คิดเงิน · ยอดไม่รวมมันอยู่แล้วเพราะออร์เดอร์จองถูกสร้างใหม่)
+        --
+        -- บรรทัดที่แคชเชียร์ลบเองก่อนส่งครัว (sent_at IS NULL) ยังซ่อนตามเดิม — ไม่เคยถึงครัว
+        -- ไม่เคยอยู่ในยอด และคนลบก็รู้อยู่แล้วว่าลบอะไร การโชว์คือ noise
+        AND (ci.status <> 'CANCELLED' OR ci.sent_at IS NOT NULL)
+      ORDER BY ci.created_at, ci.id`,
     [tenantId, checkId]
   );
   const row = result.rows[0];
@@ -377,6 +484,50 @@ export async function addRestaurantCheckItem(input: {
   });
 }
 
+/**
+ * แก้จำนวนลูกค้าของบิลที่เปิดอยู่ (เช่น กรอกผิดตอนเปิดโต๊ะ หรือมีคนมาเพิ่ม)
+ *
+ * **ไม่ขยับ `version` โดยตั้งใจ** — version คือ "เนื้อหาที่สั่ง" ซึ่งผูกกับคีย์กันบิลซ้ำ
+ * ของออร์เดอร์จอง (`restaurant:<id>:v<version>`) จำนวนคนไม่เปลี่ยนของที่ครัวต้องทำ
+ * และไม่เปลี่ยนเงิน การขยับ version จะทำให้รอบที่ส่งครัวไปแล้วถูกมองว่าเก่าโดยไม่มีเหตุ
+ */
+export async function setRestaurantCheckGuestCount(input: {
+  tenantId: string;
+  locationId: string;
+  checkId: string;
+  actorUserId: string;
+  guestCount: number;
+}) {
+  const guestCount = Math.min(Math.max(Math.trunc(input.guestCount), 1), 500);
+  return withCheckLock(input.tenantId, input.checkId, async () => {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      await lockCheckInTx(client, input.tenantId, input.checkId);
+      const updated = await client.query<{ guest_count: number }>(
+        `UPDATE bms_restaurant_checks
+            SET guest_count = $4, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status IN ('OPEN', 'CLOSING')
+        RETURNING guest_count`,
+        [input.tenantId, input.checkId, input.locationId, guestCount]
+      );
+      if (!updated.rowCount) throw new Error("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แก้จำนวนคนได้");
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.guest_count',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.checkId, JSON.stringify({ guestCount })]
+      );
+      await client.query("COMMIT");
+      return getRestaurantCheck(input.tenantId, input.checkId);
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
 export async function removeRestaurantCheckItem(input: {
   tenantId: string;
   locationId: string;
@@ -447,6 +598,116 @@ function toPosLine(row: CheckItemRow): PosSaleLine {
     packPrice: row.pack_price == null ? null : Number(row.pack_price),
     modifierCodes: row.modifier_codes ?? [],
   };
+}
+
+/**
+ * ครัวกดยกเลิกตั๋วของบิลโต๊ะ = อาหารจานนั้นไม่ได้ทำ → บรรทัดต้องหลุดออกจากยอดทันที
+ *
+ * ทำงานใน transaction เดียวกับการเปลี่ยนสถานะตั๋ว (รับ client เข้ามา) เพราะนี่คือการ
+ * **ลดเงินในบิลและคืนสต็อกที่จองไว้** ถ้าแยก transaction แล้วครึ่งหลังล้ม ตั๋วจะถูกยกเลิก
+ * โดยที่ลูกค้ายังถูกคิดเงินอยู่ ซึ่งเป็นอาการเดิมที่กำลังแก้
+ *
+ * วิธีคิดยอดใหม่ใช้ **เส้นทางเดียวกับการส่งครัวรอบถัดไป**: ยกเลิก order ที่จองไว้ แล้วสร้าง
+ * ใหม่จากบรรทัดที่เหลือด้วย createOrderInTx ตัวเดิม · ห้ามลบราคาบรรทัดออกจาก amount_due
+ * ตรง ๆ เพราะจะกลายเป็นสูตรเงินชุดที่สองที่ drift จากตัวจริง (กฎเดียวกับ unitPriceForQty)
+ *
+ * ลำดับล็อกยึดตาม createOrderInTx/finalizePosSale: **กะ → บิล → สต็อก** ไม่งั้น deadlock
+ * กับการส่งครัวที่วิ่งพร้อมกัน
+ */
+export async function dropKitchenCancelledLineInTx(
+  // ต้องเป็น PoolClient เต็มตัว ไม่ใช่ Pick<..,"query"> เพราะ cancelOrderInTx/createOrderInTx
+  // รับ client จริง (ทั้งสองเปิด savepoint ภายใน)
+  client: PoolClient,
+  input: { tenantId: string; checkId: string; checkItemId: string; actorUserId: string }
+): Promise<{ dropped: boolean; amountDue: number | null }> {
+  // อ่านก่อนแบบไม่ล็อก เพื่อรู้ว่าต้องล็อกกะไหน — ต้องล็อกกะก่อนบิลตามลำดับข้างบน
+  const pre = await client.query<{ status: string; pos_shift_id: string | null }>(
+    `SELECT status, pos_shift_id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [input.tenantId, input.checkId]
+  );
+  // บิลปิด/จ่ายเงินไปแล้ว: ห้ามแตะยอดที่ออกใบเสร็จไปแล้ว — ตั๋วยังยกเลิกได้ตามที่ครัวกด
+  if (!pre.rowCount || pre.rows[0].status !== "OPEN") return { dropped: false, amountDue: null };
+  if (pre.rows[0].pos_shift_id) {
+    await client.query(
+      `SELECT 1 FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE`,
+      [input.tenantId, pre.rows[0].pos_shift_id]
+    );
+  }
+  await lockCheckInTx(client, input.tenantId, input.checkId);
+  const checkResult = await client.query<any>(
+    `SELECT * FROM bms_restaurant_checks
+      WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'
+      FOR UPDATE`,
+    [input.tenantId, input.checkId]
+  );
+  if (!checkResult.rowCount) return { dropped: false, amountDue: null };
+  const check = checkResult.rows[0];
+
+  const cancelled = await client.query(
+    `UPDATE bms_restaurant_check_items
+        SET status = 'CANCELLED', updated_at = now()
+      WHERE tenant_id = $1 AND check_id = $2 AND id = $3 AND status <> 'CANCELLED'
+      RETURNING id`,
+    [input.tenantId, input.checkId, input.checkItemId]
+  );
+  if (!cancelled.rowCount) return { dropped: false, amountDue: null };
+
+  const remaining = await client.query<CheckItemRow>(
+    `SELECT * FROM bms_restaurant_check_items
+      WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
+      ORDER BY created_at, id
+      FOR UPDATE`,
+    [input.tenantId, input.checkId]
+  );
+
+  if (check.current_order_id) {
+    const releasedOk = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
+    if (!releasedOk) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ยกเลิกตั๋วไม่สำเร็จ");
+    // คีย์ผูกกับ version เดิม ต้องคืนพร้อม order ที่ถูกแทนที่ (เหตุผลเดียวกับตอนส่งครัว)
+    await client.query(
+      `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
+      [input.tenantId, check.current_order_id]
+    );
+  }
+
+  const nextVersion = Number(check.version) + 1;
+  let orderId: string | null = null;
+  let amountDue = 0;
+  if (remaining.rowCount) {
+    const created = await createOrderInTx(client, {
+      tenantId: input.tenantId,
+      channel: "pos",
+      items: remaining.rows.map(toOrderItem),
+      locationId: check.location_id,
+      posDeviceId: check.pos_device_id,
+      posShiftId: check.pos_shift_id,
+      cashierUserId: input.actorUserId,
+      editorId: input.actorUserId,
+      idempotencyKey: `restaurant:${input.checkId}:v${nextVersion}`,
+      restaurantCheckId: input.checkId,
+    });
+    if (created.status !== "CREATED") {
+      throw new Error(`คิดยอดใหม่หลังครัวยกเลิกไม่สำเร็จ (${created.status}) — ยังไม่ยกเลิกตั๋ว`);
+    }
+    orderId = created.orderId;
+    amountDue = created.amountDue;
+  }
+
+  await client.query(
+    `UPDATE bms_restaurant_checks
+        SET version = $3, reserved_version = $3, current_order_id = $4,
+            amount_due = $5, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [input.tenantId, input.checkId, nextVersion, orderId, amountDue]
+  );
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1,$2,'restaurant.kitchen_cancel_line',$3,$4::jsonb)`,
+    [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+      JSON.stringify({ checkItemId: input.checkItemId, amountDue, orderId })]
+  );
+  return { dropped: true, amountDue };
 }
 
 export async function sendRestaurantKitchenRound(input: {

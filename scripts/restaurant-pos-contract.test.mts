@@ -275,7 +275,33 @@ test("dine-in kitchen tickets cover every sent line and follow the store capabil
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   assert.match(restaurant, /isCapabilityEnabledInTx\(client, input\.tenantId, "KITCHEN_WORKFLOW"\)/);
   // บิลโต๊ะทุกบรรทัดคือของที่ต้องเสิร์ฟ — กรอง RECIPE = น้ำ/เบียร์/ของหวานไม่ขึ้นจอครัว
-  assert.doesNotMatch(restaurant, /stock_policy = 'RECIPE'/);
+  // ตัดมาเฉพาะเส้นทางส่งครัว: กฎนี้พูดถึงการออกตั๋ว ไม่ใช่ทั้งไฟล์ (เดิมเช็คทั้งไฟล์ได้เพราะ
+  // มีที่เดียวที่เอ่ยถึง RECIPE — พอ listRestaurantMenu เกิดขึ้นก็ต้องระบุขอบเขตให้ตรงกฎ)
+  const send = restaurant.slice(
+    restaurant.indexOf("export async function sendRestaurantKitchenRound"),
+    restaurant.indexOf("export async function moveRestaurantCheck")
+  );
+  assert.ok(send.length > 0, "หา sendRestaurantKitchenRound ไม่เจอ");
+  assert.doesNotMatch(send, /stock_policy = 'RECIPE'/);
+});
+
+test("the dine-in menu grid hides raw materials without filtering by RECIPE", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const menu = restaurant.slice(
+    restaurant.indexOf("export async function listRestaurantMenu"),
+    restaurant.indexOf("export async function createDefaultRestaurantFloor")
+  );
+  assert.ok(menu.length > 0, "หา listRestaurantMenu ไม่เจอ");
+  // เหตุผลเดียวกับตั๋วครัว: ของที่ขายเป็นชิ้น (น้ำ/ของหวาน) ไม่มีสูตร กรอง RECIPE แล้วสั่งไม่ได้
+  // และร้านที่ยังไม่ผูกสูตรจะเห็นกริดว่างทั้งที่มีของขาย
+  assert.doesNotMatch(menu, /stock_policy = 'RECIPE'/);
+  // วัตถุดิบถูกซ่อนด้วย "เป็นส่วนประกอบของสูตร/ตัวเลือกอื่น" ไม่ใช่หมวดหมู่ที่คนพิมพ์เอง
+  assert.match(menu, /NOT EXISTS[\s\S]*bms_product_recipe_items/);
+  assert.match(menu, /NOT EXISTS[\s\S]*bms_product_modifier_items/);
+  // วัตถุดิบที่ยังไม่มีสูตรไหนใช้ต้องไม่หลุดเข้ากริดมาให้กดขายฟรี
+  assert.match(menu, /p\.price > 0/);
+  // ต้องผูกสาขา ไม่งั้นยอดคงเหลือมาจากสาขาอื่น
+  assert.match(menu, /i\.location_id = \$2/);
 });
 
 test("kitchen board accepts tickets without an order id and stays branch-aware", async () => {
@@ -316,6 +342,25 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
 });
 
+test("restaurant floor correlates kitchen state by check id, not a reusable table name", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /checkId: string \| null/);
+  assert.match(page, /map\.get\(ticket\.checkId\)/);
+  assert.match(page, /map\.set\(ticket\.checkId, row\)/);
+  assert.match(page, /kitchen\.get\(check\.id\)/);
+  assert.doesNotMatch(page, /map\.get\(ticket\.tableName\)/);
+  assert.doesNotMatch(page, /kitchen\.get\(table\.name\)/);
+});
+
+test("restaurant UI serializes mutations and changes table selection only after a check loads", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /if \(workingRef\.current\) return/);
+  assert.match(page, /workingRef\.current = true/);
+  assert.match(page, /finally \{ workingRef\.current = false; setWorking\(false\); \}/);
+  const chooseTable = page.slice(page.indexOf("async function chooseTable"), page.indexOf("async function openCheck"));
+  assert.ok(chooseTable.indexOf("await loadCheck") < chooseTable.indexOf("setSelectedTableId"));
+});
+
 test("the check footer never claims a total the bill does not have", async () => {
   // บิลที่เพิ่งเปิดมี version 0 แต่ reservedVersion เป็น null — เทียบสองค่านี้ตรง ๆ ทำให้
   // โต๊ะว่างเปล่าขึ้นคำเตือน "มีรายการที่ยังไม่ส่งครัว" และป้าย "ยอดบิลปัจจุบัน ฿0.00" ก็โกหก
@@ -335,4 +380,76 @@ test("restaurants keep a way back to the retail register", async () => {
   const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(retail, /get\("surface"\) !== "retail"/);
   assert.match(restaurant, /\/pos\?surface=retail/);
+});
+
+test("a rejected kitchen round tells staff what to do, not an HTTP code", async () => {
+  // เจอจากหน้าร้านจริง 2026-09-01: กด "ส่งครัว" แล้วขึ้น "HTTP 409" เฉย ๆ
+  // ต้นเหตุ: createOrderInTx ตอบเป็น "สถานะ" ({status:"INSUFFICIENT", available, requested})
+  // ไม่มีฟิลด์ error/reason ตัว json() ของหน้าร้านอาหารจึงตกไปที่รหัส HTTP
+  // ซึ่งบอกคนหน้าเคาน์เตอร์ไม่ได้ว่าของขาดกี่ชิ้นหรือต้องทำอะไรต่อ
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(restaurant, /describePosFailure/);
+  assert.match(restaurant, /typeof body\?\.status === "string"[\s\S]{0,80}describePosFailure\(body\)/);
+
+  // ข้อความชุดเดียวกับหน้าค้าปลีก — สองหน้าเรียก service เดียวกัน เขียนคนละชุดแล้ววันหนึ่ง
+  // ข้อความจะไม่ตรงกันโดยไม่มีอะไรฟ้อง
+  const retail = code(await read("apps/web/app/(pos)/pos/page.tsx"));
+  assert.match(retail, /from "@\/lib\/pos\/failureMessage"/);
+  assert.doesNotMatch(retail, /function describeFailure\(/);
+
+  // ทุกสถานะที่ createOrderInTx ปฏิเสธได้ต้องมีคำแปล ไม่ใช่ตกไปที่ default
+  const messages = code(await read("apps/web/lib/pos/failureMessage.ts"));
+  for (const status of ["INSUFFICIENT", "NOT_FOUND", "PACK_NOT_FOUND", "BUNDLE_INCOMPLETE", "INVALID_ITEM", "EMPTY"]) {
+    assert.match(messages, new RegExp(`case "${status}":`), `ไม่มีคำแปลของ ${status}`);
+  }
+});
+
+test("a kitchen cancellation drops the line from the bill instead of charging for it", async () => {
+  const kitchen = code(await read("apps/web/lib/bms/kitchen.ts"));
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const posRoute = code(await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"));
+  const adminResolver = code(await read("apps/web/graphql/bmsStockCapabilities.ts"));
+  const migration = code(await read("db/migrations/9.50__bms_restaurant_cancelled_line_keeps_sent_at.sql"));
+
+  // hook เป็น required ไม่ใช่ optional — ผู้เรียกที่ลืมส่งต้องไม่ compile ไม่ใช่เงียบแล้ว
+  // เก็บเงินค่าอาหารที่ครัวยกเลิก · `?:` ที่นี่คือการเปิดทางให้สองจอให้ผลต่างกัน
+  assert.match(kitchen, /onRestaurantCheckLineCancelled:\s*RestaurantCheckLineCancelHook/);
+  assert.doesNotMatch(kitchen, /onRestaurantCheckLineCancelled\?:/);
+  // kitchen.ts ต้องไม่ import restaurantPos ตรง ๆ (จะเกิดวง kitchen → restaurantPos → orders → kitchen)
+  assert.doesNotMatch(kitchen, /from "\.\/restaurantPos"/);
+  // ต้องเรียก hook ก่อน COMMIT = อยู่ในทรานแซกชันเดียวกับการเปลี่ยนสถานะตั๋ว
+  const cancelBlock = kitchen.slice(
+    kitchen.indexOf('source === "RESTAURANT_CHECK" && status === "CANCELLED"'),
+    kitchen.indexOf('await client.query("COMMIT")', kitchen.indexOf('source === "RESTAURANT_CHECK" && status === "CANCELLED"'))
+  );
+  assert.ok(cancelBlock.length > 0, "หา block ที่เรียก hook ก่อน COMMIT ไม่เจอ");
+  assert.match(cancelBlock, /onRestaurantCheckLineCancelled\(/);
+
+  // ทั้งสองจอ (เครื่องขาย + กระดานหลังบ้าน) ต้องให้ผลเดียวกัน
+  assert.match(posRoute, /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/);
+  assert.match(adminResolver, /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/);
+
+  const drop = restaurant.slice(
+    restaurant.indexOf("export async function dropKitchenCancelledLineInTx"),
+    restaurant.indexOf("export async function sendRestaurantKitchenRound")
+  );
+  assert.ok(drop.length > 0, "หา dropKitchenCancelledLineInTx ไม่เจอ");
+  // ยอดใหม่ต้องมาจาก createOrderInTx เส้นทางเดียวกับการส่งครัว — ห้ามลบราคาบรรทัดออกจาก
+  // amount_due เองที่นี่ เพราะจะเป็นสูตรเงินชุดที่สองที่ drift จากตัวจริง
+  assert.match(drop, /cancelOrderInTx\(/);
+  assert.match(drop, /createOrderInTx\(/);
+  assert.doesNotMatch(drop, /amount_due\s*-/);
+  // ลำดับล็อก: กะ → บิล → สต็อก (ตาม createOrderInTx/finalizePosSale) ไม่งั้น deadlock
+  // กับการส่งครัวที่วิ่งพร้อมกัน
+  assert.ok(
+    drop.indexOf("FOR KEY SHARE") < drop.indexOf("lockCheckInTx"),
+    "ต้องล็อกกะก่อนล็อกบิล"
+  );
+  // บิลที่ปิด/กำลังคิดเงินแล้วห้ามถูกแก้ยอด — ตั๋วยกเลิกได้ แต่เงินที่ออกใบไปแล้วแตะไม่ได้
+  assert.match(drop, /status = 'OPEN'/);
+
+  // constraint เดิมบังคับ sent_at มีค่าเฉพาะตอน SENT ทำให้ยกเลิกบรรทัดที่ส่งครัวแล้วไม่ได้
+  // ทางแก้ต้อง **เก็บ sent_at ไว้** ไม่ใช่ล้างทิ้งเพื่อเลี่ยง constraint (ลบหลักฐานเวลาส่งครัว)
+  assert.match(migration, /status = 'CANCELLED'/);
+  assert.doesNotMatch(drop, /sent_at\s*=\s*NULL/);
 });

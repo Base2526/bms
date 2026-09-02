@@ -146,7 +146,18 @@ export default function StockModelsPage() {
   function openRecipe(recipe?: Recipe) {
     const next = recipe ?? null;
     setEditingRecipe(next);
-    recipeForm.setFieldsValue(next ?? { size: sizes[0], outputQty: 1, active: true, items: [{ sku: "", size: "", qty: 1 }] });
+    // Apollo แปะ __typename ลงทุก object ที่มาจาก query รวมถึงแต่ละแถวใน items —
+    // ถ้าเซ็ตฟอร์มด้วย object ของ query ตรง ๆ ค่านั้นจะติดไปกับ mutation input ตอน submit
+    // แล้วโดน GraphQL ปฏิเสธ ("Field \"__typename\" is not defined by type ...Input")
+    // จึงต้อง map เหลือเฉพาะฟิลด์ที่ input type ต้องการก่อนเซ็ตฟอร์มเสมอ
+    recipeForm.setFieldsValue(
+      next
+        ? {
+            size: next.size, outputQty: next.outputQty, active: next.active,
+            items: next.items.map((item) => ({ sku: item.sku, size: item.size, qty: item.qty })),
+          }
+        : { size: sizes[0], outputQty: 1, active: true, items: [{ sku: "", size: "", qty: 1 }] }
+    );
     setRecipeOpen(true);
   }
 
@@ -165,7 +176,15 @@ export default function StockModelsPage() {
   function openModifier(modifier?: Modifier) {
     const next = modifier ?? null;
     setEditingModifier(next);
-    modifierForm.setFieldsValue(next ?? { size: sizes[0], priceDelta: 0, active: true, items: [{ sku: "", size: "", qtyDelta: 1 }] });
+    // เหตุผลเดียวกับ openRecipe — ตัด __typename ที่ Apollo แปะมากับแต่ละแถวใน items ทิ้งก่อน
+    modifierForm.setFieldsValue(
+      next
+        ? {
+            size: next.size, code: next.code, name: next.name, priceDelta: next.priceDelta, active: next.active,
+            items: next.items.map((item) => ({ sku: item.sku, size: item.size, qtyDelta: item.qtyDelta })),
+          }
+        : { size: sizes[0], priceDelta: 0, active: true, items: [{ sku: "", size: "", qtyDelta: 1 }] }
+    );
     setModifierOpen(true);
   }
 
