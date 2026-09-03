@@ -143,7 +143,9 @@ test("seeded sample products declare their sales surfaces", () => {
   assert.match(seed, /function fakeProductSurfaces/);
   assert.match(seed, /INSERT INTO bms_product_sales_surfaces[\s\S]*unnest\(\$3::text\[\]\)/);
   assert.match(seed, /surf AS \([\s\S]*INSERT INTO bms_product_sales_surfaces/);
-  assert.match(seed, /archetype === "restaurant"[\s\S]{0,80}RESTAURANT_POS/);
+  assert.match(seed, /archetype === "restaurant"\) return \["RESTAURANT_POS"\]/);
+  assert.doesNotMatch(seed, /archetype === "restaurant"[\s\S]{0,80}\.push\("RESTAURANT_POS"\)/);
+  assert.match(seed, /archetype === "restaurant" \? CURATED_SEED_PRODUCTS\.food_beverage/);
   const onboarding = source("apps/web/lib/bms/onboardingSampleData.ts");
   assert.match(onboarding, /seedFakeProducts/);
 });

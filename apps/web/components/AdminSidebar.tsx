@@ -295,6 +295,10 @@ export default function AdminSidebar() {
   const showWastage = shopExperience.showWastageInNavigation || bootstrapData?.bmsWastageEnabled === true;
   const showPackTools = shopExperience.recommendedCapabilities.some((item) => item === "PACK" || item === "MULTI_BARCODE")
     || bootstrapData?.bmsPackToolsConfigured === true;
+  const canViewPosReadiness = can('pos.device.manage')
+    && can('pharmacy.policy.read')
+    && can('product.view')
+    && can('stock.adjust');
   // กระดานครัวตามความสามารถที่ร้านเปิดจริง ไม่ใช่ตามประเภทร้าน — preset ของร้านอาหาร
   // เปิด KITCHEN_WORKFLOW ให้อยู่แล้ว ส่วนร้านประเภทอื่นที่เปิดเองก็ต้องเห็นเมนูนี้ด้วย
   // (เดิม gate ด้วย archetype === "restaurant" ร้านที่เปิดเองจึงมีตั๋วครัวแต่ไม่มีทางเปิดดู)
@@ -452,7 +456,7 @@ export default function AdminSidebar() {
           ? [link('/admin/product-labels', t('admin.menu_product_labels'), <PrinterOutlined />)] : []),
         // POS Readiness covers branch/device/tax/stock/refund readiness for every POS shop.
         // Pharmacy adds stricter checks inside the page; it is not the only audience for the page.
-        ...(can('pharmacy.policy.read')
+        ...(canViewPosReadiness
           ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
         // gate เท่ากับสิทธิ์ต่ำสุดที่ขายได้ — เผื่อ Cashier ธรรมดา (ไม่มีสิทธิ์ตั้งค่าใดๆ ข้างบน)
         // ยังเห็นกลุ่มนี้เพื่อเปิดคู่มือได้ · หมายเหตุ: บัญชี pos_only เข้า /admin ไม่ได้เลยที่ระดับ
