@@ -904,7 +904,13 @@ it. **2026-08-25 correction**: "converted" for `AdminSidebar.tsx` had meant the 
 Store and Pharmacy submenus (`'Products'`, `'Orders'`, `'Pharmacy Intake Lab'`, etc., plus the
 `pharmacyQueueLink()` badge label) were still plain English string literals passed straight to
 `link()`, invisible to `t()`-based audits because they were never `t()` calls at all. Fixed by adding
-18 new `admin.menu_*` keys to both dictionaries and wiring the literals to `t()`. Verified 2026-08-23
+18 new `admin.menu_*` keys to both dictionaries and wiring the literals to `t()`.
+**2026-09-03 update**: those keys are gone. The menu moved to `lib/bms/adminNavigation.ts`, whose
+entries carry a `labelKey` in the new `admin_nav` namespace, so all 40 `admin.menu_*`/`admin.group_*`
+keys became dead and were deleted rather than left as a second copy of every menu name. ⚠️ Labels are
+now read as `t(item.labelKey)` — a *variable* — so the literal-scanning audit described in this
+paragraph cannot see them at all; `scripts/admin-navigation-contract.test.mts` resolves every
+`labelKey` and section label against both dictionaries instead, and that is the check to keep. Verified 2026-08-23
 by dictionary audit (before the shop-archetype label pass): `i18n/th.ts` and `i18n/en.ts` were at exact key parity
 (3,802 = 3,802 across 69 namespaces) and every `t("ns.key")` call site in `app`/`components`/`lib`
 resolved to a real key — so there were **zero** raw-key-rendering bugs of the kind commit `5832eb23`

@@ -231,8 +231,17 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**74 namespaces / 4,307 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-03 — the latest +2 are signup progress/timeout feedback;
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**75 namespaces / 4,284 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-03 — the latest change is net **−23**: the
+   new `admin_nav` namespace adds 75 keys (72 for the menu itself, +3 for the command palette:
+   search_placeholder, search_hint, search_empty) (task-based sidebar sections, workspace names, and every
+   menu label, including the ones that used to be hardcoded English string literals in
+   `AdminSidebar.tsx`), and the 40 now-dead `admin.menu_*`/`admin.group_*` keys were deleted rather
+   than left behind as a second copy of every menu name — the `admin` namespace is down to 20 keys.
+   ⚠️ Menu labels are read as `t(item.labelKey)` from `lib/bms/adminNavigation.ts`, so the literal
+   scanner in `i18n-keys-contract` cannot see them — `admin-navigation-contract` resolves every one
+   against both dictionaries instead;
+   the preceding +2 are signup progress/timeout feedback;
    the preceding +66 are the archetype-aware shop experience,
    human-readable stock-policy, progressive-disclosure, signup and special-mode labels; the preceding +52 are the product catalog draft/readiness,
    sales-surface, duplicate, modifier-group, and quick-ingredient labels; the preceding +2 are the Restaurant permission-group

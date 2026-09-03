@@ -1,8 +1,9 @@
 'use client';
 import Link from 'next/link';
-import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer, Badge, Skeleton } from 'antd';
+import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer, Badge, Skeleton, Segmented } from 'antd';
 import type { MenuProps } from 'antd';
 import {
+  SearchOutlined,
   UserOutlined,
   FileTextOutlined,
   FileImageOutlined,
@@ -13,7 +14,6 @@ import {
   ExperimentOutlined,
   TeamOutlined,
   DashboardOutlined,
-  SafetyOutlined,
   ApiOutlined,
   CreditCardOutlined,
   ShopOutlined,
@@ -53,7 +53,6 @@ import {
   SafetyCertificateOutlined,
   HeartOutlined,
   ClusterOutlined,
-  ShoppingOutlined,
   ScanOutlined,
   PrinterOutlined,
   PercentageOutlined,
@@ -70,14 +69,27 @@ import {
   ProfileOutlined,
   ControlOutlined,
 } from '@ant-design/icons';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
 import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
 import { useIsMobile } from '@/app/hooks/useMediaQuery';
 import { useSessionCtx } from '@/lib/session-context';
 import { useEffect, useState } from 'react';
 import { useI18n } from '@/lib/i18nContext';
-import { shopExperienceForArchetype } from '@/lib/bms/shopExperience';
+import {
+  ADMIN_NAV_SECTION_LABELS,
+  buildAdminNavigation,
+  hasPlatformWorkspace,
+  searchableAdminNavItems,
+  selectAdminNavItem,
+  workspaceForRoute,
+  type AdminNavBadge,
+  type AdminNavContext,
+  type AdminNavItem,
+  type AdminNavSectionId,
+  type AdminWorkspace,
+} from '@/lib/bms/adminNavigation';
+import AdminCommandPalette from '@/components/work-assistant/AdminCommandPalette';
 
 const Q_SIDEBAR_BOOTSTRAP = gql`
   query {
@@ -169,38 +181,122 @@ const link = (
     ),
 });
 
+// ⚠️ ใช้ label จาก labelKey ของรายการเมนูเดียวกัน ห้ามอ่านคีย์ของตัวเอง — ไม่งั้นเมนูนี้จะมีชื่อ
+// สองที่ แก้ที่นิยามเมนูแล้วหน้าจอไม่เปลี่ยน (กับดักเดียวกับที่ CLAUDE.md เรียกว่า "สองสำเนา")
 const pharmacyQueueLink = (
-  t: (key: string) => string,
+  route: string,
+  label: string,
   collapsed: boolean,
   emergencyCount: number,
   pendingConfirmationCount: number,
+  pendingLabel: string,
+  emergencyLabel: string,
 ) => {
   const totalBadge = emergencyCount + pendingConfirmationCount;
   return {
-    key: '/admin/pharmacy-queue',
+    key: route,
     icon: collapsed && totalBadge > 0
       ? iconWithBadge(<AlertOutlined />, totalBadge)
       : <AlertOutlined />,
     label: !collapsed ? (
       // whiteSpace: 'normal' (ไม่ nowrap/ellipsis) — เดิมตัดข้อความยาวเป็น "..." อ่านไม่ออกว่าเมนูอะไร
-      <Link href="/admin/pharmacy-queue" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+      <Link href={route} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ flex: 1, minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-word' }}>
-          {t('admin.menu_pharmacy_intake_queue')}
+          {label}
         </span>
         {/* เดิม hardcode ไทยตรง ๆ ไม่มี fallback ภาษาอังกฤษเลย — ต่างกับ label อื่นในไฟล์นี้ที่เป็น
             English เสมอหรือผ่าน t() ทั้งคู่ ตอนนี้ผ่าน t() ให้ตรงตาม lang cookie จริง */}
-        {pendingConfirmationCount > 0 ? <span style={{ ...GOLD_PILL_STYLE, flexShrink: 0 }}>{t('admin.pharmacy_queue_pending')} {badgeText(pendingConfirmationCount)}</span> : null}
-        {emergencyCount > 0 ? <span style={{ ...PILL_STYLE, flexShrink: 0 }}>{t('admin.pharmacy_queue_emergency')} {badgeText(emergencyCount)}</span> : null}
+        {pendingConfirmationCount > 0 ? <span style={{ ...GOLD_PILL_STYLE, flexShrink: 0 }}>{pendingLabel} {badgeText(pendingConfirmationCount)}</span> : null}
+        {emergencyCount > 0 ? <span style={{ ...PILL_STYLE, flexShrink: 0 }}>{emergencyLabel} {badgeText(emergencyCount)}</span> : null}
       </Link>
     ) : (
-      <Link href="/admin/pharmacy-queue">{t('admin.menu_pharmacy_intake_queue')}</Link>
+      <Link href={route}>{label}</Link>
     ),
   };
 };
 
+// ไอคอนอยู่ที่นี่ไม่ได้อยู่ในนิยามเมนู — นิยามต้องเป็นโมดูล pure ที่เทสได้โดยไม่ต้องมี React
+const SECTION_ICONS: Record<AdminNavSectionId, React.ReactNode> = {
+  sales: <OrderedListOutlined />,
+  inventory: <ShoppingCartOutlined />,
+  customers: <MessageOutlined />,
+  finance: <DollarOutlined />,
+  shopfloor: <MedicineBoxOutlined />,
+  settings: <ControlOutlined />,
+  platform_shops: <BankOutlined />,
+  platform_content: <FileTextOutlined />,
+  platform_ops: <AppstoreOutlined />,
+};
+
+const NAV_ICONS: Record<string, React.ReactNode> = {
+  'overview.dashboard': <DashboardOutlined />,
+  'overview.getting-started': <ThunderboltOutlined />,
+  'sales.orders': <OrderedListOutlined />,
+  'sales.shipment': <CarOutlined />,
+  'sales.pos-shifts': <ProfileOutlined />,
+  'sales.kitchen': <CoffeeOutlined />,
+  'sales.pos-manual': <ReadOutlined />,
+  'inventory.products': <ShoppingCartOutlined />,
+  'inventory.stock-models': <BuildOutlined />,
+  'inventory.product-packs': <ScanOutlined />,
+  'inventory.product-labels': <PrinterOutlined />,
+  'inventory.purchase': <ImportOutlined />,
+  'inventory.stock-transfers': <SwapOutlined />,
+  'inventory.stock-counts': <ContainerOutlined />,
+  'inventory.wastage': <DeleteOutlined />,
+  'customers.inbox': <MessageOutlined />,
+  'customers.mentions': <NotificationOutlined />,
+  'customers.customers': <TeamOutlined />,
+  'customers.restock': <BellOutlined />,
+  'customers.loyalty': <TrophyOutlined />,
+  'customers.coupons': <TagsOutlined />,
+  'customers.followup-rules': <BranchesOutlined />,
+  'customers.followup-queue': <ClockCircleOutlined />,
+  'finance.payment': <DollarOutlined />,
+  'finance.receivables': <AuditOutlined />,
+  'finance.commission': <PercentageOutlined />,
+  'finance.reports': <BarChartOutlined />,
+  'shopfloor.pharmacy-queue': <AlertOutlined />,
+  'shopfloor.pharmacy-intake-lab': <FileSearchOutlined />,
+  'shopfloor.pharmacy-protocols': <FileProtectOutlined />,
+  'shopfloor.pharmacist-licenses': <IdcardOutlined />,
+  'shopfloor.pharmacist-manual': <ReadOutlined />,
+  'settings.store': <ApiOutlined />,
+  'settings.locations': <ClusterOutlined />,
+  'settings.pos-devices': <DesktopOutlined />,
+  'settings.pos-readiness': <SafetyCertificateOutlined />,
+  'settings.users': <UserOutlined />,
+  'settings.permissions': <KeyOutlined />,
+  'settings.revisions': <HistoryOutlined />,
+  'settings.audit': <ProfileOutlined />,
+  'settings.billing': <CreditCardOutlined />,
+  'settings.ai-quality': <FundViewOutlined />,
+  'settings.playground': <ExperimentOutlined />,
+  'settings.support-diagnostics': <CustomerServiceOutlined />,
+  'settings.realtime-diagnostics': <BugOutlined />,
+  'settings.manual': <BookOutlined />,
+  'platform.tenants': <BankOutlined />,
+  'platform.roles': <SnippetsOutlined />,
+  'platform.report-schedule': <ScheduleOutlined />,
+  'platform.support-tickets': <CustomerServiceOutlined />,
+  'platform.posts': <FileTextOutlined />,
+  'platform.files': <FileImageOutlined />,
+  'platform.architecture': <PartitionOutlined />,
+  'platform.logs': <DatabaseOutlined />,
+  'platform.mail-log': <MailOutlined />,
+  'platform.operations-schedule': <ControlOutlined />,
+  'platform.system-health': <HeartOutlined />,
+  'platform.env': <EnvironmentOutlined />,
+  'platform.sql-console': <CodeOutlined />,
+  'platform.fake-data': <ThunderboltOutlined />,
+};
+
+const WORKSPACE_STORAGE_KEY = 'bms_admin_workspace';
+
 export default function AdminSidebar() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const pathname = usePathname();
+  const router = useRouter();
   // จอมือถือไม่มีที่ให้ rail 64px (เหลือเนื้อหา ~272px บนจอ 360px) → ซ่อน Sider ทั้งตัว
   // แล้วเปิดเมนูเดิมใน Drawer จากแถบบนแทน
   const isMobile = useIsMobile();
@@ -234,26 +330,10 @@ export default function AdminSidebar() {
   const isPlatformAdmin = bootstrapData?.bmsIsPlatformAdmin === true;
   const { admin, refreshSession } = useSessionCtx();
   const isAdministrator = admin?.role === 'Administrator';
-  const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Permissions/Audit/Revisions
-  const { can, loading: permsLoading } = useBmsPermissions();
+  const { can, perms, loading: permsLoading } = useBmsPermissions();
   // เกือบทุกรายการเมนูด้านล่างนี้ถูกกำหนดด้วย can(...)/isPlatformAdmin ซึ่งทั้งคู่เป็น false
   // เสมอก่อน query จะตอบกลับรอบแรก (แคชว่าง) — ใช้ธงนี้โชว์ skeleton แทนเมนูที่ดูเหมือนหายไป
   const menuGateLoading = permsLoading || bootstrapLoading;
-  // Users แยกออกจาก canManageAccess แล้ว — role ที่มี user.view (seed ให้ Manager ที่ 7.78)
-  // เห็นเมนู Users ได้ แต่ต้อง **ไม่** เห็น Permissions (ยกระดับสิทธิ์ตัวเองได้)/Audit/Revisions
-  // ซึ่ง resolver ฝั่งนั้น gate ด้วย requireSuper อยู่แล้ว กดเข้าไปก็ 403 เปล่า ๆ
-  const canViewUsers = canManageAccess || can('user.view');
-  const canViewReports = can('report.view');
-  // Fake data (dev): platform admin เท่านั้น — ต้องตรงกับ requirePlatformAdminPage() ใน
-  // app/(admin)/admin/dev/fake/layout.tsx และ requirePlatformAdminSeeder() ที่ API
-  // (เดิมผูกกับ can('product.edit') ทำให้ staff เห็นเมนูแล้วกดเข้าไปโดน redirect)
-  const canSeedFake = isPlatformAdmin;
-  // ระบบ = ของระดับแพลตฟอร์ม (Posts/Files/Queue/Logs/ENV) → platform admin เท่านั้น
-  // + ai_quality.view เพิ่มมาเพราะ Playground (dev tool ทดสอบ AI) ย้ายเข้ากลุ่มนี้แล้ว และ
-  // Manager (ที่มี ai_quality.view แต่ไม่ใช่ platform admin) ต้องเห็นกลุ่มนี้เพื่อเห็น Playground —
-  // รายการอื่นในกลุ่มยังกรองด้วย isPlatformAdmin ของตัวเองอยู่แล้ว ไม่หลุดออกไปเพิ่ม
-  const showSystemGroup = isPlatformAdmin || canSeedFake || can('ai_quality.view');
-
   // แชทเข้าคือจุดเริ่ม workflow ทั้งหมด (ตาม CLAUDE.md) — badge unread ต้อง poll เอง
   // เพราะ sidebar ติดอยู่ทุกหน้า ไม่ใช่แค่หน้า Inbox
   const canViewInbox = can('inbox.view');
@@ -290,15 +370,6 @@ export default function AdminSidebar() {
     skip: !canViewPharmacy, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const pharmacyPendingConfirmationCount: number = pharmacyPendingConfirmationData?.bmsPharmacyAssessments?.length ?? 0;
-  const isPharmacyShop = bootstrapData?.bmsStoreProfile?.businessArchetype === "pharmacy";
-  const shopExperience = shopExperienceForArchetype(bootstrapData?.bmsStoreProfile?.businessArchetype);
-  const showWastage = shopExperience.showWastageInNavigation || bootstrapData?.bmsWastageEnabled === true;
-  const showPackTools = shopExperience.recommendedCapabilities.some((item) => item === "PACK" || item === "MULTI_BARCODE")
-    || bootstrapData?.bmsPackToolsConfigured === true;
-  const canViewPosReadiness = can('pos.device.manage')
-    && can('pharmacy.policy.read')
-    && can('product.view')
-    && can('stock.adjust');
   // กระดานครัวตามความสามารถที่ร้านเปิดจริง ไม่ใช่ตามประเภทร้าน — preset ของร้านอาหาร
   // เปิด KITCHEN_WORKFLOW ให้อยู่แล้ว ส่วนร้านประเภทอื่นที่เปิดเองก็ต้องเห็นเมนูนี้ด้วย
   // (เดิม gate ด้วย archetype === "restaurant" ร้านที่เปิดเองจึงมีตั๋วครัวแต่ไม่มีทางเปิดดู)
@@ -341,6 +412,12 @@ export default function AdminSidebar() {
   // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage) — ผสมกับจอแคบ (breakpoint="lg" ของ Sider ด้านล่าง)
   // ต้องคำนวณทั้งสองเงื่อนไขในเอฟเฟกต์เดียวกัน ไม่งั้นเอฟเฟกต์ breakpoint ของ Sider (child)
   // กับเอฟเฟกต์นี้ (parent) จะแย่งกันเซ็ต state ตอน mount แล้วค่าจอแคบโดนทับกลับเป็นขยาย
+  // พื้นที่ทำงานที่ผู้ใช้เลือกไว้ (ดูแลร้าน / ดูแลแพลตฟอร์ม) — เป็นการเลือก "ชุดเครื่องมือ"
+  // ไม่ใช่การสลับ tenant: drill-down กับแถบเตือนร้านที่กำลังดูแลยังทำงานเหมือนเดิมทั้งสองพื้นที่
+  const [workspace, setWorkspace] = useState<AdminWorkspace>('SHOP');
+  useEffect(() => {
+    if (window.localStorage.getItem(WORKSPACE_STORAGE_KEY) === 'PLATFORM') setWorkspace('PLATFORM');
+  }, []);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     const stored = window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1';
@@ -372,175 +449,118 @@ export default function AdminSidebar() {
     }
   }
 
-  // จัดกลุ่มเมนูเป็นหมวด → submenu แบบ inline
-  // Inbox = จุดเริ่ม workflow ทั้งหมด (ลูกค้าทักเข้ามา) → ดึงออกมาเป็น top-level แยกจาก
-  // กลุ่ม "ร้านค้า" เดิม (เคยฝังลึก 2 คลิกกว่าจะถึง) พร้อม badge unread ให้เห็นทันที
-  // Reports/คู่มือ ใช้ไม่บ่อยเท่า Inbox → Reports ย้ายลงมาไว้หลังกลุ่มร้านค้า, คู่มือย้ายไปแถบล่างสุด
+  // เมนูทั้งหมดมาจาก lib/bms/adminNavigation.ts (pure, ทดสอบได้โดยไม่ต้อง render แอป)
+  // ไฟล์นี้เหลือหน้าที่ 3 อย่าง: ผูกไอคอน, ผูก badge จากตัวนับที่ poll อยู่แล้ว, และเรนเดอร์
+  // ⚠️ การซ่อนเมนูไม่ใช่การกันสิทธิ์ — ทุกหน้ายังตรวจสิทธิ์ของตัวเองฝั่ง server เหมือนเดิม
+  const navContext: AdminNavContext = {
+    can,
+    isPlatformAdmin,
+    isAdministrator,
+    archetype: bootstrapData?.bmsStoreProfile?.businessArchetype ?? null,
+    kitchenBoardEnabled,
+    wastageEnabled: bootstrapData?.bmsWastageEnabled === true,
+    packToolsConfigured: bootstrapData?.bmsPackToolsConfigured === true,
+  };
+  const platformAvailable = hasPlatformWorkspace(navContext);
+  // พื้นที่ทำงานตามหน้าที่เปิดอยู่ชนะค่าที่ผู้ใช้เลือกไว้ — deep link หรือ back/forward เข้าหน้า
+  // ของอีกพื้นที่แล้วเมนูต้องสอดคล้องกับหน้าที่เห็น ไม่ใช่ค้างอยู่พื้นที่เดิม
+  const routeWorkspace = workspaceForRoute(pathname);
+  const effectiveWorkspace: AdminWorkspace = !platformAvailable
+    ? 'SHOP'
+    : routeWorkspace ?? workspace;
+  const { topLevel, sections } = buildAdminNavigation(navContext, effectiveWorkspace);
+  const selectedNavItem = selectAdminNavItem(pathname);
+
+  // ⚠️ กดสวิตช์ตอนยืนอยู่บนหน้าของอีกพื้นที่ต้องพาไปหน้าแรกของพื้นที่ที่เลือก — ไม่งั้น
+  // routeWorkspace (ซึ่งชนะโดยตั้งใจ เพื่อให้ deep link/back สอดคล้อง) จะทับค่าที่เพิ่งเลือก
+  // แล้วปุ่มดูเหมือนกดไม่ติดจนกว่าจะเปลี่ยนหน้าเอง
+  const chooseWorkspace = (next: AdminWorkspace) => {
+    setWorkspace(next);
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, next);
+    if (routeWorkspace && routeWorkspace !== next) {
+      const nextNav = buildAdminNavigation(navContext, next);
+      const target = nextNav.topLevel[0]?.route ?? nextNav.sections[0]?.items[0]?.route;
+      if (target) router.push(target);
+    }
+  };
+
+  // ค้นหาเมนู (⌘K / Ctrl+K) — ครอบคลุมทั้งสองพื้นที่เสมอ ไม่ผูกกับ effectiveWorkspace ปัจจุบัน
+  // เพราะประโยชน์หลักคือกระโดดข้ามพื้นที่ได้โดยไม่ต้องสลับสวิตช์ก่อน (ดู searchableAdminNavItems)
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const searchableItems = searchableAdminNavItems(navContext);
+  const labelForNavItem = (item: AdminNavItem) => t(item.labelKey);
+  const sectionLabelForNavItem = (item: AdminNavItem) => t(ADMIN_NAV_SECTION_LABELS[item.section]);
+  const iconForNavItem = (item: AdminNavItem) => NAV_ICONS[item.id] ?? <AppstoreOutlined />;
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const badgeCounts: Record<AdminNavBadge, number> = {
+    inbox: inboxUnread,
+    mentions: mentionsUnread,
+    restockReady: restockReady,
+    channelHealth: channelHealthCount,
+    pharmacyQueue: pharmacyEmergencyCount + pharmacyPendingConfirmationCount,
+    aiProviderHealth: aiProviderHealthCount,
+  };
+
+  // topLevel = หน้าแรกที่คนกลับมาทั้งวัน + คิวที่มีคนรออยู่ เรนเดอร์แบน ๆ เหนือทุกหมวด
+  // คิวโชว์ badge บนไอคอนตอนย่อด้วย เพราะหัวหมวดของ antd ไม่รวมเลขของลูก และหมวดที่ยุบอยู่
+  // กลายเป็น popup ที่ต้อง hover → เลขที่อยู่ในหมวดมองไม่เห็นจากทุกหน้าที่ไม่ใช่หน้านั้นเอง
+  const renderItem = (item: AdminNavItem) => (
+    item.id === 'shopfloor.pharmacy-queue'
+      ? pharmacyQueueLink(
+          item.route,
+          t(item.labelKey),
+          effectiveCollapsed,
+          pharmacyEmergencyCount,
+          pharmacyPendingConfirmationCount,
+          t('admin.pharmacy_queue_pending'),
+          t('admin.pharmacy_queue_emergency'),
+        )
+      : link(
+          item.route,
+          t(item.labelKey),
+          NAV_ICONS[item.id] ?? <AppstoreOutlined />,
+          item.badge ? badgeCounts[item.badge] : 0,
+          effectiveCollapsed,
+          item.topLevel === 'queue',
+        )
+  );
+
   const items: MenuProps['items'] = [
-    ...(canViewReports ? [link('/admin/dashboard', 'Dashboard', <DashboardOutlined />)] : []),
-    ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, effectiveCollapsed, true)] : []),
-    ...(canViewInbox ? [link('/admin/restock-subscriptions', t('admin.menu_restock_subscriptions'), <BellOutlined />, restockReady, effectiveCollapsed, true)] : []),
-    ...(canViewInbox ? [link('/admin/inbox/mentions', t('admin.menu_mentions'), <NotificationOutlined />, mentionsUnread, effectiveCollapsed, true)] : []),
-    // ผู้ช่วย AI หลังบ้าน — ถาม/สั่งงานด้วยภาษาพูด (tool-calling); งาน sensitive ต้องกดยืนยันเอง
-    link('/admin/assistant', t('admin.menu_assistant'), <RobotOutlined />),
-    // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
-    ...(isPlatformAdmin ? [link('/admin/architecture', 'Architecture', <PartitionOutlined />)] : []),
-    {
-      key: 'g-bms',
-      icon: <ShopOutlined />,
-      label: t('admin.group_shop'),
-      // เรียงตามความถี่ใช้จริง: งานประจำวัน (Orders/Payment/Shipping คู่ Products/Customers) ก่อน
-      // งานที่ตั้งค่าเป็นระยะ (Coupons/Follow-up/Purchase) — Revision History/Playground/เมนู
-      // เภสัชกรรมย้ายออกไปกลุ่มอื่นแล้ว (ดู g-pharmacy, g-access, g-system ด้านล่าง) เพราะคนละ
-      // audience/permission set ไม่ใช่งานร้านค้าทั่วไป — ก่อนหน้านี้ยัดรวมกัน 11-15 รายการในลิสต์เดียว
-      children: [
-        ...(can('product.view') ? [link('/admin/products', t('admin.menu_products'), <ShoppingCartOutlined />)] : []),
-        ...(can('order.view') ? [link('/admin/orders', t('admin.menu_orders'), <OrderedListOutlined />)] : []),
-        ...(can('payment.view') ? [link('/admin/payment', t('admin.menu_payment'), <DollarOutlined />)] : []),
-        // ลูกหนี้การค้า (9.30) วางติดกับการชำระเงินเพราะเป็นคำถามเดียวกันคนละด้าน:
-        // "ใครจ่ายมาแล้ว" กับ "ใครยังไม่จ่าย"
-        ...(can('ar.view') ? [link('/admin/receivables', t('admin.menu_receivables'), <AuditOutlined />)] : []),
-        ...(can('shipping.view') ? [link('/admin/shipment', t('admin.menu_shipping'), <CarOutlined />)] : []),
-        ...(can('customer.view') ? [link('/admin/customers', t('admin.menu_customers'), <TeamOutlined />)] : []),
-        ...(can('coupon.view') ? [link('/admin/coupons', t('admin.menu_coupons'), <TagsOutlined />)] : []),
-        ...(can('member.view') ? [link('/admin/loyalty', t('admin.menu_members'), <TrophyOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-rules', t('admin.menu_followup_rules'), <BranchesOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-queue', t('admin.menu_followup_queue'), <ClockCircleOutlined />)] : []),
-        ...(can('purchase.view') ? [link('/admin/purchase', t('admin.menu_purchase'), <ImportOutlined />)] : []),
-        // สาขา (9.1) วางก่อน Stock Transfers เพราะต้องมีสาขาที่สองก่อนถึงจะมี
-        // อะไรให้โอนย้าย — สิทธิ์ location.manage ให้ Manager เท่านั้น (โครงสร้างร้าน
-        // ไม่ใช่งานประจำวัน)
-        ...(can('location.manage') ? [link('/admin/locations', t('admin.menu_locations'), <ClusterOutlined />)] : []),
-        // งานคลัง (7.98) วางต่อจาก Purchase เพราะเป็นงานตระกูลเดียวกัน (ของเข้า/ของย้าย/ของขาด)
-        // สิทธิ์คนละตัวกัน: คลังสินค้าเห็นสองเมนูนี้ได้โดยไม่ต้องมีสิทธิ์ดูออร์เดอร์
-        ...(can('inventory.transfer') ? [link('/admin/stock-transfers', t('admin.menu_stock_transfers'), <SwapOutlined />)] : []),
-        ...(can('inventory.count') ? [link('/admin/stock-counts', t('admin.menu_stock_counts'), <ContainerOutlined />)] : []),
-        // รูปแบบสต็อก (9.40) — ตั้งว่าร้านนี้ต้องติดตามอะไร และสินค้าแต่ละตัวถูกตัดออกจากชั้นยังไง
-        // (สูตร/ตัวเลือก/ชั่งขาย) · gate เท่ากับหน้าเอง: product.view อ่านได้ product.edit ถึงจะบันทึกได้
-        ...(can('product.view') ? [link('/admin/stock-models', t('admin.menu_stock_models'), <BuildOutlined />)] : []),
-        // ของเสีย (9.40) วางต่อจากงานคลังเพราะเป็นการตัดสต็อกเหมือนกัน แค่ไม่มีคนซื้อ
-        ...(can('product.view') && showWastage ? [link('/admin/wastage', t('admin.menu_wastage'), <DeleteOutlined />)] : []),
-      ],
-    },
-    // เภสัชกรรม — เฉพาะร้านยา (isPharmacyShop) แยกจาก "ร้านค้า" เพราะ permission set/audience
-    // คนละกลุ่ม (เภสัชกร ไม่ใช่ Sales ทั่วไป) และ workflow เชื่อมกันเอง (รับยา→คิว→protocol→license)
-    // ไอคอนตั้งใจให้ต่างกันทั้ง 3 หน้า (เดิมใช้ MedicineBoxOutlined ซ้ำ 2 หน้า + ExperimentOutlined
-    // ชนกับ Playground) — เลือกให้สื่อความหมายจริง: ตรวจรับ/คิวคนไข้ (คงกล่องยา)/เอกสาร policy/บัตรรับรอง
-    ...(isPharmacyShop && (canViewPharmacy || can('pharmacy.protocol.manage') || isAdministrator) ? [{
-      key: 'g-pharmacy',
-      icon: <MedicineBoxOutlined />,
-      label: t('admin.group_pharmacy'),
-      children: [
-        ...(canViewPharmacy ? [link('/admin/pharmacy-intake-lab', t('admin.menu_pharmacy_intake_lab'), <FileSearchOutlined />)] : []),
-        ...(canViewPharmacy ? [pharmacyQueueLink(t, effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
-        ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', t('admin.menu_pharmacy_protocols'), <FileProtectOutlined />)] : []),
-        ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', t('admin.menu_pharmacist_licenses'), <IdcardOutlined />)] : []),
-        // gate เท่ากับสิทธิ์ต่ำสุดที่เปิดคิวได้ — คู่มือนี้แค่ "อ่าน" ไม่มีอะไรให้ทำ จึงไม่ต้องขอ permission ใหม่
-        ...(canViewPharmacy ? [link('/admin/pharmacy-manual', t('admin.menu_pharmacist_manual'), <ReadOutlined />)] : []),
-      ],
-    }] : []),
-    // ขายหน้าร้าน — แยกกลุ่มเพราะ audience คือแคชเชียร์/หัวหน้ากะ ไม่ใช่คนทำงานออนไลน์
-    // และงานคือ "เตรียมจุดขาย" (เครื่อง/PIN/ความพร้อมก่อนเปิด) ไม่ใช่จัดการออร์เดอร์
-    ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') || can('pos.sell') || can('pos.shift.report.all') ? [{
-      key: 'g-pos',
-      icon: <ShoppingOutlined />,
-      label: t('admin.group_pos'),
-      children: [
-        ...(can('pos.device.manage') || can('pos.pin.manage')
-          ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
-        ...(can('pos.shift.report.all')
-          ? [link('/admin/pos-shifts', t('admin.menu_pos_shifts'), <ProfileOutlined />)] : []),
-        ...(can('product.view') && showPackTools
-          ? [link('/admin/product-packs', t('admin.menu_product_packs'), <ScanOutlined />)] : []),
-        ...(can('product.view') && showPackTools
-          ? [link('/admin/product-labels', t('admin.menu_product_labels'), <PrinterOutlined />)] : []),
-        // POS Readiness covers branch/device/tax/stock/refund readiness for every POS shop.
-        // Pharmacy adds stricter checks inside the page; it is not the only audience for the page.
-        ...(canViewPosReadiness
-          ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
-        // gate เท่ากับสิทธิ์ต่ำสุดที่ขายได้ — เผื่อ Cashier ธรรมดา (ไม่มีสิทธิ์ตั้งค่าใดๆ ข้างบน)
-        // ยังเห็นกลุ่มนี้เพื่อเปิดคู่มือได้ · หมายเหตุ: บัญชี pos_only เข้า /admin ไม่ได้เลยที่ระดับ
-        // login ระบบ จึงยังไม่มีทางเปิดลิงก์นี้ได้จากอุปกรณ์ที่ล็อกเป็น pos_only
-        ...(can('pos.sell')
-          ? [link('/admin/pos-manual', 'Cashier Manual', <ReadOutlined />)] : []),
-      ],
-    }] : []),
-    // กระดานครัว (9.40) — ขึ้นเมื่อร้านเปิดความสามารถคิวครัวจริง ซึ่งเป็นเงื่อนไขเดียวกับที่
-    // enqueueKitchenTicketsInTx() ใช้สร้างตั๋ว · เมนูกับตั๋วจึงมาพร้อมกันเสมอ ไม่มีกรณี
-    // "มีตั๋วแต่ไม่มีที่เปิดดู" หรือ "มีเมนูแต่กระดานว่างตลอด"
-    ...(kitchenBoardEnabled && can('order.view')
-      ? [link('/admin/kitchen', t('admin.menu_kitchen'), <CoffeeOutlined />)] : []),
-    ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
-    ...(can('commission.view') ? [link('/admin/commission', t('admin.menu_commission'), <PercentageOutlined />)] : []),
-    ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
-    {
-      key: 'g-saas',
-      icon: <CloudOutlined />,
-      label: 'SaaS',
-      children: [
-        link('/admin/settings', t('admin.menu_settings_channels'), <ApiOutlined />, channelHealthCount, effectiveCollapsed),
-        ...(can('support.logs.view') ? [link('/admin/support-diagnostics', t('admin.menu_support_diagnostics'), <CustomerServiceOutlined />)] : []),
-        ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <BugOutlined />)] : []),
-        link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
-        ...(isPlatformAdmin ? [link('/admin/tenants', t('admin.menu_all_shops'), <BankOutlined />)] : []),
-        ...(isPlatformAdmin ? [link('/admin/report-schedule', t('admin.menu_report_schedule'), <ScheduleOutlined />)] : []),
-      ],
-    },
-    ...(canViewUsers ? [{
-      key: 'g-access',
-      icon: <SafetyOutlined />,
-      label: t('admin.group_access'),
-      children: [
-        ...(canViewUsers ? [link('/admin/users', 'Users', <UserOutlined />)] : []),
-        // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
-        ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
-        // Permissions/Audit/Revisions = Administrator/platform admin เท่านั้น (resolver ก็ requireSuper)
-        // Manager ที่มีแค่ user.view จะเห็นกลุ่มนี้โดยมีแต่ Users
-        ...(canManageAccess ? [
-          link('/admin/permissions', 'Permissions', <KeyOutlined />),
-          link('/admin/audit', 'Audit log', <ProfileOutlined />),
-          // ย้ายมาจาก "ร้านค้า" — ทั้ง Audit log และ Revision History เป็นธีมเดียวกัน
-          // ("ใครแก้อะไรเมื่อไหร่") คนที่เปิดกลุ่มนี้อยู่แล้วคือคนที่สนใจเรื่องนี้จริง
-          link('/admin/revisions', 'Revision History', <HistoryOutlined />),
-        ] : []),
-      ],
-    }] : []),
-    ...(showSystemGroup ? [{
-      key: 'g-system',
-      icon: <AppstoreOutlined />,
-      label: t('admin.group_system'),
-      children: [
-        // ระดับแพลตฟอร์ม → platform admin เท่านั้น
-        ...(isPlatformAdmin ? [
-          // ⚠️ ต้องส่ง effectiveCollapsed ทุกครั้งที่ส่ง badge (เหมือน ENV ด้านล่าง) — ถ้าลืม
-          // ค่า default `collapsed = false` จะบังคับ label เป็น flex+pill เสมอ แล้วตอน sidebar ย่อ
-          // เมนูกลุ่มนี้เปิดเป็น popup flyout ที่แคบ span flex:1 minWidth:0 จะยุบเหลือ 0 → ข้อความหาย
-          // เห็นแต่ไอคอน (เคสเดียวกับที่เคยเจอที่เมนู Users)
-          link('/admin/posts', 'Posts', <FileTextOutlined />, 2, effectiveCollapsed),
-          link('/admin/files', 'Files', <FileImageOutlined />, 5, effectiveCollapsed),
-          link('/admin/logs', 'Logs', <DatabaseOutlined />, 1, effectiveCollapsed),
-          link('/admin/mail-log', 'Mail log', <MailOutlined />),
-          link('/admin/support-tickets', 'Support Tickets', <CustomerServiceOutlined />),
-          link('/admin/operations-schedule', 'Batch & Cron', <ControlOutlined />),
-          link('/admin/system-health', 'System Health', <HeartOutlined />),
-          link('/admin/env', 'ENV', <EnvironmentOutlined />, aiProviderHealthCount, effectiveCollapsed),
-          link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
-        ] : []),
-        // Fake data (dev) → ร้านค้าเทสในมุมตัวเองได้
-        ...(canSeedFake ? [link('/admin/dev/fake', 'Fake data', <ThunderboltOutlined />)] : []),
-        // ย้ายมาจาก "ร้านค้า" — ไม่ใช่งานธุรกิจ เป็นเครื่องมือ dev สำหรับจำลองแชตทดสอบ AI pipeline
-        // เดิมไม่มี permission gate เลย (Sales/Warehouse เห็น+ใช้ได้) ตอนนี้ gate ด้วย
-        // ai_quality.view เหมือนหน้าเพจเอง (ไม่ใช่แค่ซ่อนเมนู — ดู page.tsx)
-        ...(can('ai_quality.view') ? [link('/admin/playground', 'Playground', <ExperimentOutlined />)] : []),
-      ],
-    }] : []),
+    ...topLevel.map(renderItem),
+    ...sections.map((section) => ({
+      key: `nav-${section.id}`,
+      icon: SECTION_ICONS[section.id],
+      label: t(section.labelKey),
+      children: section.items.map(renderItem),
+    })),
   ];
 
-  // ไฮไลต์เมนูที่ตรง path ปัจจุบัน + เปิด submenu ของกลุ่มที่ path อยู่ (เฉพาะตอนขยาย)
-  const selectedKeys = [pathname];
-  const openGroupKey = ['g-bms', 'g-pharmacy', 'g-saas', 'g-access', 'g-system'].find((g) =>
-    (items.find((i: any) => i?.key === g) as any)?.children?.some((c: any) => c.key === pathname)
-  );
+  // ไฮไลต์เมนูที่ "เป็นเจ้าของ" path ปัจจุบัน (จับคู่ตามขอบเขต route เลือกตัวที่เจาะจงที่สุด)
+  // หน้ารายละเอียดอย่าง /admin/users/new หรือ /admin/pharmacy-queue/<id> จึงเลือกเมนูแม่ถูก
+  const selectedKeys = selectedNavItem ? [selectedNavItem.route] : [];
+  // รายการที่อยู่ด้านบนไม่มีหมวดให้เปิด — ยืนอยู่บนกล่องข้อความไม่ควรไปกางหมวดอื่นทิ้งไว้
+  const activeSectionKey = selectedNavItem && !selectedNavItem.topLevel
+    ? `nav-${selectedNavItem.section}`
+    : null;
+  // ⚠️ hook นี้ต้องอยู่หลัง activeSectionKey (const ตัวนั้นอยู่ใน TDZ ถ้าเรียกก่อน)
+  // ย้ายไปหมวดใหม่ = เปิดหมวดนั้นหมวดเดียว (เดิมเวอร์ชันแรกของผมสะสมไปเรื่อย ๆ เดินไป 5 หมวด
+  // แล้วเมนูกางค้างทั้ง 5 ซึ่งกลับหัวกับเหตุผลที่จัดหมวดตั้งแต่แรก) · เดินภายในหมวดเดิมไม่รีเซ็ต
+  // อะไร ผู้ใช้จึงยังกางหลายหมวดเทียบกันเองได้ตามต้องการ
+  const [openKeys, setOpenKeys] = useState<string[]>(() => (activeSectionKey ? [activeSectionKey] : []));
+  useEffect(() => {
+    if (!activeSectionKey) return;
+    setOpenKeys((prev) => (prev.includes(activeSectionKey) ? prev : [activeSectionKey]));
+  }, [activeSectionKey]);
 
   // เนื้อเมนู — ใช้ร่วมกันทั้ง Sider (desktop) และ Drawer (มือถือ)
   // `mini` = โหมดย่อเหลือไอคอน · `inDrawer` = อยู่ใน Drawer (ไม่ต้องมีปุ่มย่อ/ขยาย)
@@ -578,6 +598,60 @@ export default function AdminSidebar() {
         )}
       </div>
 
+      {/* ค้นหาเมนู — ทางเข้าเดียวกับ ⌘K/Ctrl+K แต่ต้องมีปุ่มให้กดเห็น ๆ ด้วย เพราะ rail ย่อ 64px
+          และ Drawer มือถือไม่มีคีย์บอร์ดจริงให้กด ⌘K เลย ปุ่มนี้จึงเป็นทางเข้าเดียวของทั้งสองกรณี */}
+      <div style={{ padding: mini ? '0 10px 8px' : '0 16px 10px', flexShrink: 0 }}>
+        <button
+          type="button"
+          className="bms-sider-quiet"
+          onClick={() => setPaletteOpen(true)}
+          aria-label={t('admin_nav.search_placeholder')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+            justifyContent: mini ? 'center' : 'flex-start',
+            padding: mini ? '8px 0' : '8px 10px', cursor: 'pointer', borderRadius: 8,
+            // กรอบ+พื้นหลังคงไว้ทั้งสองโหมด — ช่องค้นหาเป็นคนละชนิดกับรายการเมนู มันคือกล่องรับ
+            // คำพิมพ์ ไม่ใช่ปลายทาง จึงควรอ่านออกว่าเป็นตัวรับข้อความแม้ตอนเหลือแค่ไอคอน
+            background: 'var(--app-surface-2)',
+            border: '1px solid var(--app-border)',
+            color: 'var(--text-secondary)', fontSize: 13,
+          }}
+        >
+          <SearchOutlined />
+          {!mini && <span style={{ flex: 1, textAlign: 'left' }}>{t('admin_nav.search_placeholder')}</span>}
+          {!mini && !inDrawer && (
+            <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+              <kbd style={{ fontSize: 10.5, border: '1px solid var(--app-border)', borderRadius: 4, padding: '1px 5px' }}>⌘</kbd>
+              <kbd style={{ fontSize: 10.5, border: '1px solid var(--app-border)', borderRadius: 4, padding: '1px 5px' }}>K</kbd>
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* สลับพื้นที่ทำงาน — เฉพาะคนที่มีเครื่องมือระดับแพลตฟอร์มจริง (คนอื่นไม่เห็นแถบนี้เลย)
+          ⚠️ นี่คือการสลับ "ชุดเมนู" ไม่ใช่การสลับร้าน — drill-down/แถบเตือนร้านที่กำลังดูแล
+          ทำงานเหมือนเดิมทั้งสองพื้นที่ และไม่มีสิทธิ์ใดถูกเพิ่มจากการกดปุ่มนี้ */}
+      {platformAvailable && !menuGateLoading && (
+        <div style={{ padding: mini ? '0 6px 8px' : '0 12px 10px', flexShrink: 0 }}>
+          <Segmented
+            block
+            size="small"
+            value={effectiveWorkspace}
+            onChange={(value) => chooseWorkspace(value as AdminWorkspace)}
+            aria-label={t('admin_nav.workspace_switch_label')}
+            options={mini
+              ? [
+                  { value: 'SHOP', icon: <Tooltip title={t('admin_nav.workspace_shop')} placement="right"><ShopOutlined /></Tooltip> },
+                  { value: 'PLATFORM', icon: <Tooltip title={t('admin_nav.workspace_platform')} placement="right"><CloudOutlined /></Tooltip> },
+                ]
+              : [
+                  { value: 'SHOP', label: t('admin_nav.workspace_shop'), icon: <ShopOutlined /> },
+                  { value: 'PLATFORM', label: t('admin_nav.workspace_platform'), icon: <CloudOutlined /> },
+                ]}
+          />
+        </div>
+      )}
+
       {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ (overflowX ต้อง visible ไม่งั้น badge ที่ล้นขอบไอคอนโดนตัด) */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'visible' }}>
         {menuGateLoading ? (
@@ -592,7 +666,8 @@ export default function AdminSidebar() {
             mode="inline"
             items={items}
             selectedKeys={selectedKeys}
-            defaultOpenKeys={openGroupKey ? [openGroupKey] : []}
+            openKeys={openKeys}
+            onOpenChange={(keys) => setOpenKeys(keys as string[])}
             style={{ background: 'transparent', borderRight: 'none' }}
           />
         )}
@@ -601,7 +676,7 @@ export default function AdminSidebar() {
       {/* โควตา AI shared key ฟรี — โชว์ตลอดเมื่อใช้ Shared Key และยกระดับสีเมื่อใกล้/เกินโควตา
           ปักไว้เหนือคู่มือ/โปรไฟล์ เหมือน balance strip ของ Claude Console */}
       {aiShouldShow && (
-        <div style={{ padding: mini ? '0 10px' : '0 10px 8px', flexShrink: 0 }}>
+        <div style={{ padding: mini ? '0 10px 10px' : '0 10px 8px', flexShrink: 0 }}>
           <Tooltip
             title={aiTooltip}
             placement="right"
@@ -633,31 +708,44 @@ export default function AdminSidebar() {
         </div>
       )}
 
-      {/* คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — คู่มือใช้ไม่บ่อย เลยลดความสำคัญมาไว้แถบนี้แทน top-level */}
-      <div style={{ borderTop: '1px solid var(--app-border)', padding: '10px 10px 0', flexShrink: 0 }}>
-        <Tooltip title={mini ? t('admin.manual') : ''} placement="right">
-          <Link
-            href="/admin/manual"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              justifyContent: mini ? 'center' : 'flex-start',
-              padding: '4px 8px', marginBottom: 6, borderRadius: 8,
-              color: 'var(--app-text-secondary, #888)', fontSize: 13,
-            }}
-          >
-            <BookOutlined />
-            {!mini && <span>{t('admin.manual')}</span>}
-          </Link>
-        </Tooltip>
+      {/* ผู้ช่วย AI + คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — สองตัวแรกคือของที่คนหยิบตอน "ไม่รู้จะทำ
+          ยังไง" จึงอยู่ที่เดิมเสมอโดยไม่ต้องกางหมวด · ผู้ช่วยมี Drawer อยู่ทุกหน้าแล้ว (AdminLayoutClient)
+          หน้าเต็มจึงเป็นทางเข้าที่สอง ไม่ใช่ทางหลัก — ให้แถวบนสุดกับ Dashboard คุ้มกว่า */}
+      {/* ⚠️ ระยะห่างของกลุ่มล่างต้องคิดแยกสองโหมด — ตอนขยายมี label ยืดความสูงให้เอง แต่ตอนย่อ
+          เหลือแค่ไอคอน 16px กอง ๆ กัน 4 ตัว (ผู้ช่วย/คู่มือ/โปรไฟล์/ออก) ถ้าใช้ padding ชุดเดียวกัน
+          ทั้งสองโหมด รางจะดูอัดกันจนแยกไม่ออกว่าอันไหนคืออะไร */}
+      <div style={{ borderTop: '1px solid var(--app-border)', padding: mini ? '12px 10px 0' : '10px 10px 0', flexShrink: 0 }}>
+        {[
+          { href: '/admin/assistant', icon: <RobotOutlined />, label: t('admin_nav.assistant') },
+          { href: '/admin/manual', icon: <BookOutlined />, label: t('admin.manual') },
+        ].map((entry) => (
+          <Tooltip key={entry.href} title={mini ? entry.label : ''} placement="right">
+            <Link
+              className="bms-sider-quiet"
+              href={entry.href}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                justifyContent: mini ? 'center' : 'flex-start',
+                padding: mini ? '8px 0' : '4px 8px', marginBottom: mini ? 8 : 6, borderRadius: 8,
+                color: 'var(--text-secondary)', fontSize: 13,
+              }}
+            >
+              {entry.icon}
+              {!mini && <span>{entry.label}</span>}
+            </Link>
+          </Tooltip>
+        ))}
       </div>
       {admin && (
-        <div style={{ padding: '0 10px 10px', flexShrink: 0 }}>
+        <div style={{ padding: mini ? '0 10px 12px' : '0 10px 10px', flexShrink: 0 }}>
           <Link
+            className="bms-sider-quiet"
             href="/admin/profile"
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               justifyContent: mini ? 'center' : 'flex-start',
-              padding: '4px', marginBottom: 8, borderRadius: 8, color: 'var(--app-text)',
+              padding: mini ? '5px 0' : '4px', marginBottom: mini ? 12 : 8, borderRadius: 8,
+              color: 'var(--app-text)',
             }}
           >
             <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
@@ -666,7 +754,7 @@ export default function AdminSidebar() {
                 <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {admin.name || admin.username || admin.email}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--app-text-secondary, #888)' }}>{admin.role}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{admin.role}</span>
               </span>
             )}
           </Link>
@@ -713,7 +801,7 @@ export default function AdminSidebar() {
           {canViewInbox && alerts > 0 && (
             <Link href="/admin/inbox" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
               <Badge count={alerts > 99 ? '99+' : alerts} size="small" offset={[-2, 2]}>
-                <MessageOutlined style={{ fontSize: 18, color: 'var(--app-text-secondary, #888)' }} />
+                <MessageOutlined style={{ fontSize: 18, color: 'var(--text-secondary)' }} />
               </Badge>
             </Link>
           )}
@@ -733,27 +821,49 @@ export default function AdminSidebar() {
         >
           {sidebarBody(false, true)}
         </Drawer>
+        <AdminCommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          items={searchableItems}
+          labelFor={labelForNavItem}
+          sectionLabelFor={sectionLabelForNavItem}
+          iconFor={iconForNavItem}
+          searchContext={{ locale: lang, permissions: perms, role: admin?.role, isPlatformAdmin }}
+          t={t}
+        />
       </>
     );
   }
 
   return (
-    <Sider
-      collapsed={collapsed}
-      collapsedWidth={64}
-      width={220}
-      breakpoint="lg"
-      onCollapse={onCollapse}
-      style={{
-        background: 'var(--app-surface)',
-        borderRight: '1px solid var(--app-border)',
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        overflow: 'hidden',
-      }}
-    >
-      {sidebarBody(collapsed)}
-    </Sider>
+    <>
+      <Sider
+        collapsed={collapsed}
+        collapsedWidth={64}
+        width={220}
+        breakpoint="lg"
+        onCollapse={onCollapse}
+        style={{
+          background: 'var(--app-surface)',
+          borderRight: '1px solid var(--app-border)',
+          height: '100vh',
+          position: 'sticky',
+          top: 0,
+          overflow: 'hidden',
+        }}
+      >
+        {sidebarBody(collapsed)}
+      </Sider>
+      <AdminCommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        items={searchableItems}
+        labelFor={labelForNavItem}
+        sectionLabelFor={sectionLabelForNavItem}
+        iconFor={iconForNavItem}
+        searchContext={{ locale: lang, permissions: perms, role: admin?.role, isPlatformAdmin }}
+        t={t}
+      />
+    </>
   );
 }

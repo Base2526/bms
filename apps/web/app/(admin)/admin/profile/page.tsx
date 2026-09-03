@@ -148,7 +148,7 @@ export default function Page() {
                 </Upload>
                 <div style={{ textAlign: "center" }}>
                   <div style={{ fontSize: 18, fontWeight: 600 }}>{me.name || me.username || me.email}</div>
-                  <div style={{ color: "var(--app-text-secondary, #888)" }}>{me.email}</div>
+                  <div style={{ color: "var(--text-secondary)" }}>{me.email}</div>
                 </div>
                 <Space wrap style={{ justifyContent: "center" }}>
                   <Tag color="blue" icon={<SafetyOutlined />}>{me.role}</Tag>

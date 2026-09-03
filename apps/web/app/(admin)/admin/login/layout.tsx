@@ -7,6 +7,9 @@ import { verifyAdminSession } from "@/lib/auth/server";
 // (ยิ่งเสี่ยงบนเครื่องที่ใช้ร่วมกันหลายคน/autofill ผิดบัญชี)
 export default function Layout({ children }: { children: React.ReactNode }) {
   const admin = verifyAdminSession();
-  if (admin) redirect("/admin/dashboard");
+  // ⚠️ ส่งไป /admin ไม่ใช่ /admin/dashboard — dashboard อ่านด้วยสิทธิ์ report.view ซึ่ง role
+  // คลัง/แคตาล็อกไม่มี การ redirect ตายตัวจึงพาไปเจอการ์ด "ไม่มีสิทธิ์" · /admin เลือกปลายทาง
+  // จากนิยามเมนู (firstAdminDestination) ให้ได้หน้าที่บัญชีนั้นเปิดได้จริง
+  if (admin) redirect("/admin");
   return <>{children}</>;
 }
