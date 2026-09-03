@@ -1,13 +1,14 @@
 'use client';
 import { gql, useMutation } from "@apollo/client";
-import { Card, Form, Input, Button, message, Alert, Typography, Result, Select } from "antd";
-import { useState } from "react";
+import { Card, Form, Input, Button, Alert, Typography, Result, Select } from "antd";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
 import { localizedShopArchetypeOptions } from "@/lib/bms/shopArchetypes";
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { useI18n } from "@/lib/i18nContext";
+import { runSignupRequest, SignupRequestTimeout } from "@/lib/auth/signupRequest";
 
 const { Paragraph } = Typography;
 
@@ -27,27 +28,42 @@ export default function Page() {
   const shopExperience = shopExperienceForArchetype(selectedArchetype);
   const [done, setDone] = useState(false);
 
-  const [signup, { loading }] = useMutation(M_SIGNUP, {
-    onCompleted: (d) => {
-      const r = d?.bmsSignup;
-      if (r?.status === "PENDING_VERIFICATION") setDone(true);
-      else if (r?.status === "EMAIL_TAKEN") message.error(t("shopSignup.email_taken"));
-      else message.error(t("shopSignup.invalid_data"));
-    },
-    onError: (e) => message.error(e?.message || t("shopSignup.signup_failed")),
-  });
+  const [signup] = useMutation(M_SIGNUP);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submitting = useRef(false);
 
   const submit = async () => {
-    const v = await form.validateFields();
-    await signup({
-      variables: {
-        shopName: v.shopName,
-        name: v.name || null,
-        email: v.email,
-        password: v.password,
-        businessArchetype: v.businessArchetype || null,
-      },
-    });
+    if (submitting.current) return;
+    submitting.current = true;
+    try {
+      // Field errors are rendered by Form, without an unhandled rejection.
+      let v;
+      try { v = await form.validateFields(); } catch { return; }
+      setError(null);
+      setLoading(true);
+      const { data } = await runSignupRequest((signal) => signup({
+        context: { fetchOptions: { signal } },
+        variables: {
+          shopName: v.shopName,
+          name: v.name || null,
+          email: v.email,
+          password: v.password,
+          businessArchetype: v.businessArchetype || null,
+        },
+      }));
+      const status = data?.bmsSignup?.status;
+      if (status === "PENDING_VERIFICATION") setDone(true);
+      else if (status === "EMAIL_TAKEN") setError(t("shopSignup.email_taken"));
+      else setError(t("shopSignup.invalid_data"));
+    } catch (e) {
+      setError(e instanceof SignupRequestTimeout
+        ? t("shopSignup.request_timeout")
+        : t("shopSignup.signup_failed"));
+    } finally {
+      submitting.current = false;
+      setLoading(false);
+    }
   };
 
   if (done) {
@@ -108,6 +124,8 @@ export default function Page() {
               <Input.Password placeholder={t("shopSignup.password_placeholder")} />
             </Form.Item>
             <Button type="primary" size="large" block loading={loading} onClick={submit}>{t("shopSignup.submit")}</Button>
+            {loading && <Paragraph type="secondary" role="status" style={{ marginTop: 12 }}>{t("shopSignup.sending_verification")}</Paragraph>}
+            {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginTop: 12 }} />}
           </Form>
           <Alert closable className={styles.loginAlert} type="info" showIcon
             message={t("shopSignup.has_account")} description={<Link href="/admin/login">{t("shopSignup.login_link")}</Link>} />

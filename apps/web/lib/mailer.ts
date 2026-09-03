@@ -42,6 +42,8 @@ function initSendGrid() {
   }
 
   sgMail.setApiKey(key);
+  // Abort stalled provider requests; signup awaits delivery before responding.
+  sgMail.setTimeout(20_000);
   sendgridInitialized = true;
 }
 
@@ -126,6 +128,10 @@ function getGmailTransporter(): nodemailer.Transporter {
   gmailTransporter = nodemailer.createTransport({
     service: "gmail",
     auth: { user, pass },
+    dnsTimeout: 5_000,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   });
   return gmailTransporter;
 }

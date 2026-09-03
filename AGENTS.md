@@ -231,8 +231,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**74 namespaces / 4,283 keys per language,
-   exact th↔en parity** as of 2026-09-03 — the latest +66 are the archetype-aware shop experience,
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**74 namespaces / 4,307 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-03 — the latest +2 are signup progress/timeout feedback;
+   the preceding +66 are the archetype-aware shop experience,
    human-readable stock-policy, progressive-disclosure, signup and special-mode labels; the preceding +52 are the product catalog draft/readiness,
    sales-surface, duplicate, modifier-group, and quick-ingredient labels; the preceding +2 are the Restaurant permission-group
    and modifier-surcharge labels, the preceding +14 are bilingual shop-archetype labels, the
