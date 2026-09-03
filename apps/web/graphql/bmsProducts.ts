@@ -462,4 +462,11 @@ export const bmsProductsResolvers = {
       return getProductStockPolicy(parent.tenant_id, parent.sku);
     },
   },
+  // `external`/`fixPath` เป็น optional ในฝั่ง service (ข้อส่วนใหญ่แก้ได้ในฟอร์มอยู่แล้ว)
+  // แต่ schema ประกาศ Boolean! — ต้อง coerce ที่นี่ ไม่งั้นทุก issue ที่ไม่ได้ตั้งค่าจะ
+  // ทำให้ทั้ง query ล้มด้วย non-null violation
+  BmsProductReadinessIssue: {
+    external: (issue: any) => issue?.external === true,
+    fixPath: (issue: any) => issue?.fixPath ?? null,
+  },
 };

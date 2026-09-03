@@ -161,7 +161,14 @@ export type UpsertPackInput = {
   productSku: string;
   size?: string | null;
   packCode: string;
-  unitName: string;
+  /**
+   * ไม่ส่งมา (หรือส่งค่าว่าง) = คงชื่อหน่วยเดิมของแพ็กนั้น
+   *
+   * ⚠️ ห้ามกลับไปบังคับให้ส่งเสมอ: ผู้เรียกที่แก้แค่ "ราคาต่อไซซ์" ไม่มีทางรู้ชื่อหน่วยจริง
+   * แล้วจะเดาเป็น "ชิ้น" ทับของเดิม (โมดัลสินค้าเคยทำแบบนั้น ใบเสร็จร้านอาหารจึงกลายเป็น
+   * "ข้าวกะเพรา 1 ชิ้น" และของชั่งกิโลกลายเป็น "ชิ้น" หลังแก้ราคาครั้งแรก)
+   */
+  unitName?: string | null;
   baseQty: number;
   barcode?: string | null;
   price?: number | null;
@@ -171,13 +178,12 @@ export type UpsertPackInput = {
 
 export async function upsertProductPack(tenantId: string, input: UpsertPackInput): Promise<ProductPack> {
   const packCode = String(input.packCode ?? "").trim().toUpperCase();
-  const unitName = String(input.unitName ?? "").trim();
+  const requestedUnitName = String(input.unitName ?? "").trim();
   const baseQty = Math.floor(Number(input.baseQty));
   const size = input.size?.trim() || null;
   const barcode = input.barcode?.trim() || null;
 
   if (!packCode) throw new Error("ต้องระบุรหัสหน่วยขาย (เช่น BASE, BOX)");
-  if (!unitName) throw new Error("ต้องระบุชื่อหน่วย (เช่น แผง, กล่อง)");
   if (!Number.isInteger(baseQty) || baseQty < 1) throw new Error("จำนวนต่อหน่วยต้องเป็นจำนวนเต็มตั้งแต่ 1");
   if (input.isBase && baseQty !== 1) throw new Error("หน่วยฐานต้องมีจำนวนต่อหน่วย = 1");
   if (input.price != null && Number(input.price) < 0) throw new Error("ราคาติดลบไม่ได้");
@@ -187,6 +193,29 @@ export async function upsertProductPack(tenantId: string, input: UpsertPackInput
     [tenantId, input.productSku]
   );
   if (!prod.rowCount) throw new Error("ไม่พบสินค้านี้ในร้าน");
+
+  // ลำดับการเดาชื่อหน่วยเมื่อผู้เรียกไม่ส่งมา: ของแพ็กเดิม → หน่วยแสดงผลของสินค้า
+  // (display_unit ของ stock policy — ร้านอาหารตั้งเป็น "จาน"/"แก้ว") → "ชิ้น"
+  let unitName = requestedUnitName;
+  if (!unitName) {
+    const fallback = await query<{ unit_name: string | null; display_unit: string | null }>(
+      `SELECT pack.unit_name, policy.display_unit
+         FROM bms_products p
+         LEFT JOIN bms_product_packs pack
+           ON pack.tenant_id = p.tenant_id
+          AND (($3::uuid IS NOT NULL AND pack.id = $3::uuid)
+               OR ($3::uuid IS NULL AND pack.product_sku = p.sku
+                   AND pack.size IS NOT DISTINCT FROM $4::text
+                   AND upper(pack.pack_code) = $5))
+         LEFT JOIN bms_product_stock_policies policy
+           ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+        WHERE p.tenant_id = $1 AND p.sku = $2
+        LIMIT 1`,
+      [tenantId, input.productSku, input.id ?? null, size, packCode]
+    );
+    const row = fallback.rows[0];
+    unitName = String(row?.unit_name ?? row?.display_unit ?? "").trim() || "ชิ้น";
+  }
 
   // บาร์โค้ดซ้ำในร้าน = ยิงแล้วไม่รู้ว่าหมายถึงอันไหน — กันไว้ก่อนถึง DB
   // เพื่อให้ข้อความอ่านรู้เรื่องกว่า unique violation

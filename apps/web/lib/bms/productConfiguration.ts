@@ -23,6 +23,19 @@ export type ProductReadinessIssue = {
   code: string;
   message: string;
   field: string | null;
+  /**
+   * `true` = แก้ที่ฟอร์มสินค้าไม่ได้ ต้องไปทำที่หน้าอื่น (เช่น นโยบายสินค้าของร้านยา
+   * ที่ต้องผ่านการอนุมัติของเภสัชกร)
+   *
+   * ทำไมต้องแยกออกมา: `upsertProduct()` ปฏิเสธการบันทึกสินค้าที่ active เมื่อ readiness
+   * ไม่ผ่าน ซึ่งถูกสำหรับข้อที่แก้ได้ในฟอร์มเดียวกัน แต่ถ้าเป็นข้อที่แก้ที่นี่ไม่ได้
+   * ร้านยาที่มีสินค้าเปิดขายอยู่แล้วจะ **แก้ชื่อสินค้าตัวเองไม่ได้เลยทั้งร้าน**
+   * จนกว่าจะไปเดิน workflow อนุมัติให้ครบทุก SKU · ข้อพวกนี้จึงยังบล็อก "การเปิดขาย"
+   * (publishProduct) เหมือนเดิม แต่ไม่บล็อก "การบันทึกข้อมูลอื่นของสินค้าที่เปิดขายอยู่แล้ว"
+   */
+  external?: boolean;
+  /** หน้าที่แก้ข้อนี้ได้ — ให้ UI ยื่นลิงก์แทนที่จะให้ผู้ใช้ไปเดาเอง */
+  fixPath?: string | null;
 };
 
 export type ProductReadiness = {
@@ -38,6 +51,19 @@ type QueryClient = {
 };
 
 const SURFACE_SET = new Set<string>(PRODUCT_SALES_SURFACES);
+
+/**
+ * ด่าน "สินค้าที่เปิดขายอยู่แล้วต้องยังพร้อมขายหลังบันทึก" ที่ทุกเส้นทางเขียนใช้ร่วมกัน
+ *
+ * ตัด `external` ออกโดยตั้งใจ — ข้อที่แก้ที่หน้าอื่นไม่ควรทำให้ "แก้ชื่อสินค้า" ล้ม
+ * (ร้านยาที่มีสินค้าเปิดขาย 500 ตัวจะแก้อะไรไม่ได้เลยทั้งร้าน) · การ **เปิดขาย**
+ * ยังต้องผ่านทุกข้อ เพราะ publishProduct ใช้ `readiness.ready` ตรง ๆ ไม่ผ่านฟังก์ชันนี้
+ */
+export function assertReadinessAllowsSaveOfActiveProduct(readiness: ProductReadiness) {
+  const blocking = readiness.blockers.filter((issue) => !issue.external);
+  if (blocking.length === 0) return;
+  throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${blocking.map((issue) => issue.message).join("; ")}`);
+}
 
 /**
  * รหัสตัวเลือกคือ **ป้ายหน่วยขายที่ร้านพิมพ์เอง** ไม่ใช่ enum ภายใน — namespace เดียวกับ
@@ -131,9 +157,7 @@ export async function upsertProductCatalogVariant(
     );
     if (lifecycle.rows[0]?.active) {
       const readiness = await getProductReadinessInTx(client, tenantId, productSku);
-      if (!readiness.ready) {
-        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
-      }
+      assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
     await client.query("COMMIT");
     const row = result.rows[0];
@@ -217,9 +241,7 @@ export async function setProductSalesSurfaces(
     );
     if (lifecycle.rows[0]?.active) {
       const readiness = await getProductReadinessInTx(client, tenantId, productSku);
-      if (!readiness.ready) {
-        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
-      }
+      assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
     await client.query("COMMIT");
     return surfaces;
@@ -247,11 +269,13 @@ export async function getProductReadinessInTx(
     base_unit: string | null;
     scale_item_code: string | null;
     scale_size: string | null;
+    business_archetype: string | null;
   }>(
     `SELECT p.price, p.vat_category, p.is_bundle, p.serial_tracked,
             policy.stock_policy, policy.kitchen_station, policy.base_unit,
             policy.scale_item_code, policy.scale_size,
-            COALESCE(profile.vat_registered, FALSE) AS vat_registered
+            COALESCE(profile.vat_registered, FALSE) AS vat_registered,
+            profile.business_archetype
        FROM bms_products p
        LEFT JOIN bms_product_stock_policies policy
          ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
@@ -394,6 +418,41 @@ export async function getProductReadinessInTx(
   }
   if (surfaces.size === 0) {
     warnings.push({ code: "NO_SALES_SURFACE", message: "รายการนี้ใช้ภายในร้านและยังไม่เปิดขายในช่องทางใด", field: "salesSurfaces" });
+  }
+  // ช่องทางที่ร้านนี้ไม่มีหน้าจอรองรับ = สินค้าที่มองไม่เห็นจากทุกที่ · `/pos/restaurant`
+  // เรียก requireRestaurantTenant() และ `/pos` ค้าปลีกกรองด้วย RETAIL_POS ดังนั้น
+  // RESTAURANT_POS ในร้านที่ไม่ใช่ร้านอาหารคือช่องทางที่ไม่มีใครเปิดได้
+  if (surfaces.has("RESTAURANT_POS") && product.business_archetype !== "restaurant") {
+    warnings.push({
+      code: "SURFACE_NOT_SERVED",
+      message: "เปิดช่องทาง Restaurant POS ไว้ แต่ร้านนี้ไม่ใช่ประเภทร้านอาหารจึงไม่มีหน้าจอนั้นให้ขาย",
+      field: "salesSurfaces",
+    });
+  }
+
+  // ร้านยา: ขายไม่ได้จนกว่านโยบายสินค้าจะ APPROVED — เงื่อนไขเดียวกับที่
+  // evaluatePharmacySale() ใช้ปฏิเสธบิล (`!policy || policy.status !== 'APPROVED'`)
+  // ก่อนหน้านี้ readiness ไม่รู้จักร้านยาเลย ฟอร์มจึงบอกว่า "พร้อมขาย" แล้วไปตายที่
+  // เคาน์เตอร์กลางคิวลูกค้าด้วย PHARMACY_POLICY_UNKNOWN
+  if (product.business_archetype === "pharmacy" && surfaces.size > 0) {
+    const policyRow = await client.query<{ status: string }>(
+      `SELECT status FROM bms_pharmacy_product_policies
+        WHERE tenant_id = $1 AND product_sku = $2`,
+      [tenantId, productSku]
+    );
+    const status = policyRow.rows[0]?.status ?? "MISSING";
+    if (status !== "APPROVED") {
+      blockers.push({
+        code: "PHARMACY_POLICY_REQUIRED",
+        message: status === "MISSING"
+          ? "ร้านยาต้องมีนโยบายสินค้าที่เภสัชกรอนุมัติก่อนจึงจะขายได้"
+          : `นโยบายสินค้ายังอยู่สถานะ ${status} — ต้องผ่านการอนุมัติของเภสัชกรก่อนจึงจะขายได้`,
+        field: "pharmacyPolicy",
+        // แก้ที่ฟอร์มสินค้าไม่ได้ ต้องเดิน workflow ที่หน้านโยบายสินค้า
+        external: true,
+        fixPath: "/admin/pharmacy-protocols",
+      });
+    }
   }
 
   const cost = costResult.rows[0];

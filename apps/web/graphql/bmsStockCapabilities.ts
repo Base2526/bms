@@ -21,6 +21,7 @@ import {
   upsertProductModifier,
   upsertProductRecipe,
 } from "@/lib/bms/productRecipes";
+import { listProductBundleItems, setProductBundleItems } from "@/lib/bms/productBundles";
 import {
   listKitchenTickets,
   updateKitchenTicketStatus,
@@ -124,6 +125,10 @@ export const bmsStockCapabilityResolvers = {
       await requirePermission(ctx, "product.view");
       return listProductModifiers(getTenantId(ctx), args.productSku, args.size);
     },
+    async bmsProductBundleItems(_p: unknown, args: { bundleSku: string }, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return listProductBundleItems(getTenantId(ctx), args.bundleSku);
+    },
     async bmsKitchenTickets(_p: unknown, args: { status?: string | null; limit?: number | null }, ctx: any) {
       await requirePermission(ctx, "order.view");
       return listKitchenTickets(getTenantId(ctx), args.status, args.limit ?? 100);
@@ -194,6 +199,23 @@ export const bmsStockCapabilityResolvers = {
         return result;
       } catch (error) {
         badInput(error, "บันทึกสูตรไม่สำเร็จ");
+      }
+    },
+    async bmsSetProductBundleItems(
+      _p: unknown,
+      args: { bundleSku: string; items: any[] },
+      ctx: any
+    ) {
+      // สิทธิ์เดียวกับรูปแบบสต็อก/สูตร — ส่วนประกอบของชุดเปลี่ยนว่าขายแล้วตัดของอะไรบ้าง
+      await requirePermission(ctx, "product.edit");
+      try {
+        const result = await setProductBundleItems(
+          getTenantId(ctx), args.bundleSku, args.items ?? [], String(requireAuth(ctx).author_id)
+        );
+        await audit(ctx, "product.bundle_items_set", args.bundleSku, { components: result.length });
+        return result;
+      } catch (error) {
+        badInput(error, "บันทึกส่วนประกอบของชุดไม่สำเร็จ");
       }
     },
     async bmsUpsertProductModifier(_p: unknown, args: { input: any }, ctx: any) {

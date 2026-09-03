@@ -16,6 +16,7 @@ import {
   normalizeProductSalesSurfaces,
   normalizeProductVariantCode,
   productTemplateDefaults,
+  assertReadinessAllowsSaveOfActiveProduct,
   getProductReadinessInTx,
   resolveStoredVariantCodeInTx,
   type ProductSalesSurface,
@@ -758,6 +759,14 @@ export type UpsertProductInput = {
   stock_policy?: "DIRECT" | "PACK" | "BUNDLE" | "WEIGHTED" | "RECIPE" | "SERIALIZED" | "NON_STOCK" | null;
   /** Initial inventory unit for a new draft; later changes go through Stock Models. */
   base_unit?: string | null;
+  /**
+   * สถานีครัวของเมนู (9.40) — กระดานครัวจัดกลุ่มด้วยคีย์นี้ และ SLA (9.53) ตั้งค่าต่อสถานี
+   *
+   * ไม่ส่งมา = คงค่าเดิม (กฎเดียวกับ vat_category) · ส่งสตริงว่าง = ล้างสถานี
+   * แก้ได้ทั้งตอนสร้างและตอนแก้ไข ต่างจาก stock_policy/base_unit ที่มีผลเฉพาะของใหม่
+   * เพราะสถานีเป็นข้อมูลที่ร้านสลับไปมาได้ตลอด ไม่มี dependency ให้ตรวจ
+   */
+  kitchen_station?: string | null;
 };
 
 function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
@@ -1429,6 +1438,30 @@ export async function upsertProduct(
          ON CONFLICT (tenant_id, product_sku) DO NOTHING`,
         [tenantId, sku, requestedPolicy, requestedBaseUnit]
       );
+      // `serial_tracked` derive จากนโยบายเสมอ (ดูเหตุผลเต็มใน productStockPolicies.ts)
+      // ไม่มีช่องอิสระให้ตั้ง เพราะสองค่านี้พูดเรื่องเดียวกันและ POS อ่านคอลัมน์นี้
+      if (requestedPolicy === "SERIALIZED") {
+        await client.query(
+          `UPDATE bms_products SET serial_tracked = TRUE, updated_at = now()
+            WHERE tenant_id = $1 AND sku = $2`,
+          [tenantId, sku]
+        );
+      }
+    }
+
+    // สถานีครัวเป็นข้อมูลของเมนู ไม่ใช่ของ "นโยบายสต็อก" ในสายตาคนกรอก — ก่อนหน้านี้
+    // อยู่แค่ที่ /admin/stock-models ทำให้เมนูใหม่ทุกจานได้คำเตือน KITCHEN_STATION_MISSING
+    // โดยฟอร์มที่เพิ่งกรอกไม่มีปุ่มแก้ (กับดักเดียวกับ vat_category ก่อน 7.88)
+    // กฎเดียวกับ vat_category/price_tiers: ไม่ส่งมา = คงค่าเดิม
+    if (input.kitchen_station !== undefined) {
+      const kitchenStation = String(input.kitchen_station ?? "").trim() || null;
+      await client.query(
+        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, kitchen_station)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (tenant_id, product_sku) DO UPDATE SET
+           kitchen_station = EXCLUDED.kitchen_station, updated_at = now()`,
+        [tenantId, sku, kitchenStation]
+      );
     }
 
     const surfaces = requestedSurfaces ?? (isNew ? templateDefaults.surfaces : null);
@@ -1532,9 +1565,7 @@ export async function upsertProduct(
 
     if (res.rows[0]?.active) {
       const readiness = await getProductReadinessInTx(client, tenantId, sku);
-      if (!readiness.ready) {
-        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
-      }
+      assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
 
     await client.query("COMMIT");

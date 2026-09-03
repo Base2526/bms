@@ -9,6 +9,7 @@ import {
   upsertStoreProfile,
   type StoreProfileInput,
 } from "@/lib/bms/storeProfile";
+import { getVatSettings } from "@/lib/bms/taxDocuments";
 import { updateTenantIdentity } from "@/lib/bms/platform";
 import { audit } from "@/lib/bms/audit";
 import { getOnboardingProgress, updateOnboardingProgress } from "@/lib/bms/onboarding";
@@ -25,13 +26,17 @@ export const bmsStoreProfileResolvers = {
     async bmsStoreProfile(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
       const tenantId = getTenantId(ctx);
-      const [profile, archetypeLock] = await Promise.all([
+      // vatRegistered ไม่ได้อยู่ใน getStoreProfile() (มี cache อ่านผ่าน) จึงอ่านจาก
+      // ตัวเดียวกับที่ออกใบกำกับใช้ — ฟอร์มสินค้าต้องรู้ว่าจะถามประเภท VAT ไหม
+      const [profile, archetypeLock, vat] = await Promise.all([
         getStoreProfile(tenantId),
         getBusinessArchetypeLockState(tenantId),
+        getVatSettings(tenantId),
       ]);
       return {
         ...profile,
         businessArchetypeLocked: archetypeLock.locked,
+        vatRegistered: vat.vatRegistered,
       };
     },
     async bmsOnboardingProgress(_p: unknown, _a: unknown, ctx: any) {
@@ -45,11 +50,15 @@ export const bmsStoreProfileResolvers = {
       try {
         const tenantId = getTenantId(ctx);
         const result = await upsertStoreProfile(tenantId, args.input ?? {}, ctx?.admin?.id ?? null);
-        const archetypeLock = await getBusinessArchetypeLockState(tenantId);
+        const [archetypeLock, vat] = await Promise.all([
+          getBusinessArchetypeLockState(tenantId),
+          getVatSettings(tenantId),
+        ]);
         await audit(ctx, "store.profile_update", null, {});
         return {
           ...result,
           businessArchetypeLocked: archetypeLock.locked,
+          vatRegistered: vat.vatRegistered,
         };
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกข้อมูลร้านไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });

@@ -1,6 +1,6 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { getProductReadinessInTx } from "./productConfiguration";
+import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
 
 export type RecipeComponentInput = { sku: string; size: string; qty: number };
 export type ProductRecipe = {
@@ -149,9 +149,7 @@ export async function upsertProductRecipe(
     );
     if (owned.rows[0].active) {
       const readiness = await getProductReadinessInTx(client, tenantId, productSku);
-      if (!readiness.ready) {
-        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
-      }
+      assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
     await client.query("COMMIT");
   } catch (error) {

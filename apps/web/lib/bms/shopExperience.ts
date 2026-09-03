@@ -11,7 +11,7 @@ export type ShopExperienceCapability =
   | "RECIPE" | "MODIFIER" | "KITCHEN_WORKFLOW" | "WASTAGE";
 
 export type StockExperienceSection =
-  | "LOT_EXPIRY" | "KITCHEN_STATION" | "SCALE" | "STATION_SLA" | "RECIPES" | "MODIFIERS";
+  | "LOT_EXPIRY" | "KITCHEN_STATION" | "SCALE" | "STATION_SLA" | "RECIPES" | "MODIFIERS" | "BUNDLE";
 
 export type ShopExperienceProfile = {
   archetype: ShopArchetype;
@@ -126,7 +126,8 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     recommendedTemplates: GENERAL_TEMPLATE,
     recommendedCapabilities: ["PACK", "MULTI_BARCODE"],
     primarySalesSurfaces: RETAIL_SURFACES,
-    recommendedStockSections: [],
+    // กระเช้า/ชุดของขวัญคือสินค้าชุด — ส่วนประกอบต้องอยู่ในสายตาตั้งแต่แรก
+    recommendedStockSections: ["BUNDLE"],
     restockEmphasis: false,
     showWastageInNavigation: false,
     specialMode: "NONE",
