@@ -80,7 +80,8 @@ test("migration 9.52 keeps NON_STOCK out of the view's legacy fallback branch", 
 test("both admin surfaces can select the new policy", () => {
   const products = source("apps/web/app/(admin)/admin/products/page.tsx");
   assert.match(products, /"SERIALIZED", "NON_STOCK"/);
-  assert.match(products, /QUICK_MENU: \{ stockPolicy: "NON_STOCK", salesSurfaces: \["RESTAURANT_POS"\] \}/);
+  assert.match(products, /productTemplateDefaults\(template\)/,
+    "the product UI must consume the shared template defaults");
   assert.match(products, /admin_products\.template_quick_menu/);
   const stockModels = source("apps/web/app/(admin)/admin/stock-models/page.tsx");
   assert.match(stockModels, /POLICY_OPTIONS = \[.*"NON_STOCK"\]/);

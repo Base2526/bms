@@ -192,13 +192,6 @@ export function onboardingChecklistKeysForArchetype(value: string | null | undef
         "checklist_b2b_wholesale_3",
         "checklist_b2b_wholesale_4",
       ];
-    case "b2b_wholesale":
-      return [
-        "checklist_b2b_wholesale_1",
-        "checklist_b2b_wholesale_2",
-        "checklist_b2b_wholesale_3",
-        "checklist_b2b_wholesale_4",
-      ];
     case "pet_supply":
       return [
         "checklist_pet_supply_1",

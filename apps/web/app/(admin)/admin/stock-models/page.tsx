@@ -10,10 +10,14 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { shopExperienceForArchetype, type StockExperienceSection } from "@/lib/bms/shopExperience";
 import styles from "./page.module.css";
 
 const Q_CAPABILITIES = gql`
-  query StockModelCapabilities { bmsStoreCapabilities { capability enabled configured status source gating } }
+  query StockModelCapabilities {
+    bmsStoreProfile { businessArchetype }
+    bmsStoreCapabilities { capability enabled configured status source gating }
+  }
 `;
 const Q_PRODUCTS = gql`
   query StockModelProducts($search: String) {
@@ -110,6 +114,8 @@ export default function StockModelsPage() {
   const [recipeOpen, setRecipeOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
   const [ingredientOpen, setIngredientOpen] = useState(false);
+  const [showAdditionalCapabilities, setShowAdditionalCapabilities] = useState(false);
+  const [showAdvancedProductModel, setShowAdvancedProductModel] = useState(false);
   const [ingredientTarget, setIngredientTarget] = useState<"recipe" | "modifier">("recipe");
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [editingModifier, setEditingModifier] = useState<Modifier | null>(null);
@@ -117,6 +123,7 @@ export default function StockModelsPage() {
   const [recipeForm] = Form.useForm();
   const [modifierForm] = Form.useForm();
   const [ingredientForm] = Form.useForm();
+  const selectedStockPolicy = Form.useWatch("stockPolicy", policyForm);
 
   const capabilities = useQuery(Q_CAPABILITIES, { fetchPolicy: "cache-and-network", errorPolicy: "all" });
   const [loadProducts, productsQuery] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
@@ -160,6 +167,60 @@ export default function StockModelsPage() {
   const sizes = Array.from(new Set(selectedProduct?.variants.map((v) => v.size) ?? [])).sort();
   const recipes: Recipe[] = model.data?.bmsProductRecipes ?? [];
   const modifiers: Modifier[] = model.data?.bmsProductModifiers ?? [];
+  const shopExperience = shopExperienceForArchetype(capabilities.data?.bmsStoreProfile?.businessArchetype);
+  const capabilityItems: Capability[] = capabilities.data?.bmsStoreCapabilities ?? [];
+  const recommendedCapabilitySet = new Set<string>(shopExperience.recommendedCapabilities);
+  const recommendedCapabilities = capabilityItems.filter((item) => recommendedCapabilitySet.has(item.capability));
+  const activeAdditionalCapabilities = capabilityItems.filter((item) =>
+    !recommendedCapabilitySet.has(item.capability) && (item.enabled || item.configured)
+  );
+  const inactiveAdditionalCapabilities = capabilityItems.filter((item) =>
+    !recommendedCapabilitySet.has(item.capability) && !item.enabled && !item.configured
+  );
+  const capabilityIsActive = (capability: string) => capabilityItems.some((item) =>
+    item.capability === capability && (item.enabled || item.configured)
+  );
+  const stockSectionVisible = (section: StockExperienceSection) => {
+    if (showAdvancedProductModel || shopExperience.recommendedStockSections.includes(section)) return true;
+    if (section === "LOT_EXPIRY") return ["LOT_TRACKING", "EXPIRY_TRACKING", "FEFO"].some(capabilityIsActive);
+    if (section === "SCALE") return capabilityIsActive("WEIGHTED_PRODUCT");
+    if (section === "KITCHEN_STATION" || section === "STATION_SLA") return capabilityIsActive("KITCHEN_WORKFLOW");
+    if (section === "RECIPES") return capabilityIsActive("RECIPE") || recipes.length > 0;
+    if (section === "MODIFIERS") return capabilityIsActive("MODIFIER") || modifiers.length > 0;
+    return false;
+  };
+  const policyOptions = POLICY_OPTIONS.filter((option) => {
+    if (showAdvancedProductModel || option.value === selectedStockPolicy) return true;
+    if (["DIRECT", "PACK", "BUNDLE"].includes(option.value)) return true;
+    if (option.value === "WEIGHTED") return capabilityIsActive("WEIGHTED_PRODUCT");
+    if (option.value === "SERIALIZED") return capabilityIsActive("SERIAL_TRACKING");
+    if (["RECIPE", "NON_STOCK"].includes(option.value)) return capabilityIsActive("RECIPE");
+    return false;
+  }).map((option) => ({
+    ...option,
+    label: t(`admin_products.stock_policy_${option.value.toLowerCase()}`),
+  }));
+
+  const renderCapabilityCards = (items: Capability[]) => items.map((item) => {
+    const copyKey = item.capability.toLowerCase();
+    return <article key={item.capability} className={`${styles.capability} ${item.enabled ? styles.capabilityEnabled : ""}`}>
+      <div className={styles.capabilityTitle}>
+        <strong>{t(`admin_stock.cap_${copyKey}_title`)}</strong>
+        {item.gating
+          ? <Switch checked={item.enabled} onChange={(value) => void changeCapability(item.capability, value)} />
+          : <Tag color={item.enabled ? "blue" : "default"}>
+              {item.enabled ? t("admin_stock.detected_on") : t("admin_stock.detected_off")}
+            </Tag>}
+      </div>
+      <p>{t(`admin_stock.cap_${copyKey}_desc`)}</p>
+      {!item.gating && <p className={styles.capabilityNote}>{t("admin_stock.detected_hint")}</p>}
+      <Space wrap>
+        <Tag color={item.configured ? "green" : item.enabled ? "gold" : "default"}>{item.status}</Tag>
+        <Tag>{item.source}</Tag>
+        {item.gating && item.source === "MANUAL" && <Popconfirm title={t("admin_stock.reset_confirm")} onConfirm={() => void resetPreset(item.capability)}><Button size="small" type="link">{t("admin_stock.reset_preset")}</Button></Popconfirm>}
+      </Space>
+    </article>;
+  });
 
   async function changeCapability(capability: string, enabled: boolean) {
     try {
@@ -329,37 +390,29 @@ export default function StockModelsPage() {
       </Space>
       {capabilities.error && <Alert type="error" showIcon message={capabilities.error.message} style={{ marginBottom: 12 }} />}
       <Spin spinning={capabilities.loading || capabilityMutation.loading}>
-        <div className={styles.capabilityGrid}>
-          {(capabilities.data?.bmsStoreCapabilities ?? []).map((item: Capability) => {
-            const copyKey = item.capability.toLowerCase();
-            return <article key={item.capability} className={`${styles.capability} ${item.enabled ? styles.capabilityEnabled : ""}`}>
-              <div className={styles.capabilityTitle}>
-                <strong>{t(`admin_stock.cap_${copyKey}_title`)}</strong>
-                {/* สวิตช์เฉพาะตัวที่สลับแล้วพฤติกรรมเปลี่ยนจริง — ที่เหลือเป็นสถานะที่ระบบ
-                    อ่านจากข้อมูล (มีแพ็ก/มีล็อต/ตั้ง serial ไว้ไหม) ให้สวิตช์ที่กดแล้วไม่มีอะไร
-                    เกิดขึ้น แย่กว่าไม่มีสวิตช์ เพราะคนอ่านว่าปิดไปแล้วทั้งที่ยังทำงานอยู่ */}
-                {item.gating
-                  ? <Switch checked={item.enabled} onChange={(v) => void changeCapability(item.capability, v)} />
-                  : <Tag color={item.enabled ? "blue" : "default"}>
-                      {item.enabled ? t("admin_stock.detected_on") : t("admin_stock.detected_off")}
-                    </Tag>}
-              </div>
-              <p>{t(`admin_stock.cap_${copyKey}_desc`)}</p>
-              {!item.gating && <p className={styles.capabilityNote}>{t("admin_stock.detected_hint")}</p>}
-              <Space wrap>
-                <Tag color={item.configured ? "green" : item.enabled ? "gold" : "default"}>{item.status}</Tag>
-                <Tag>{item.source}</Tag>
-                {item.gating && item.source === "MANUAL" && <Popconfirm title={t("admin_stock.reset_confirm")} onConfirm={() => void resetPreset(item.capability)}><Button size="small" type="link">{t("admin_stock.reset_preset")}</Button></Popconfirm>}
-              </Space>
-            </article>;
-          })}
-        </div>
+        {recommendedCapabilities.length > 0 && <>
+          <Typography.Title level={5}>{t("admin_stock.recommended_for_shop")}</Typography.Title>
+          <div className={styles.capabilityGrid}>{renderCapabilityCards(recommendedCapabilities)}</div>
+        </>}
+        {activeAdditionalCapabilities.length > 0 && <>
+          <Typography.Title level={5}>{t("admin_stock.currently_in_use")}</Typography.Title>
+          <div className={styles.capabilityGrid}>{renderCapabilityCards(activeAdditionalCapabilities)}</div>
+        </>}
+        {inactiveAdditionalCapabilities.length > 0 && <>
+          <Button type="link" style={{ paddingInline: 0 }} onClick={() => setShowAdditionalCapabilities((current) => !current)}>
+            {showAdditionalCapabilities ? t("admin_stock.hide_additional") : t("admin_stock.show_additional")}
+          </Button>
+          {showAdditionalCapabilities && <>
+            <Typography.Title level={5}>{t("admin_stock.additional_capabilities")}</Typography.Title>
+            <div className={styles.capabilityGrid}>{renderCapabilityCards(inactiveAdditionalCapabilities)}</div>
+          </>}
+        </>}
       </Spin>
     </section>
 
     {/* เกณฑ์เวลาของจอครัว (9.53) — บาร์ชงเสร็จใน 2 นาที ครัวร้อน 8-12 นาทีเป็นปกติ
         เกณฑ์เดียวทั้งร้านทำให้ครัวร้อนแดงตลอดจนสีเลิกมีความหมาย */}
-    <Card title={t("admin_stock.station_sla")}>
+    {stockSectionVisible("STATION_SLA") && <Card title={t("admin_stock.station_sla")}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         {t("admin_stock.station_sla_hint")}
       </Typography.Paragraph>
@@ -430,9 +483,13 @@ export default function StockModelsPage() {
               ]}
             />}
       </Spin>
-    </Card>
+    </Card>}
 
-    <Card title={t("admin_stock.product_model")}>
+    <Card title={t("admin_stock.product_model")} extra={
+      <Button type="link" onClick={() => setShowAdvancedProductModel((current) => !current)}>
+        {showAdvancedProductModel ? t("admin_stock.hide_advanced_model") : t("admin_stock.show_advanced_model")}
+      </Button>
+    }>
       <Space.Compact style={{ width: "100%", maxWidth: 720 }}>
         <Input value={search} onChange={(e) => setSearch(e.target.value)} onPressEnter={() => loadProducts({ variables: { search: search.trim() } })} placeholder={t("admin_stock.search_product")} />
         <Button icon={<SearchOutlined />} loading={productsQuery.loading} onClick={() => loadProducts({ variables: { search: search.trim() } })}>{t("admin_stock.search")}</Button>
@@ -450,25 +507,25 @@ export default function StockModelsPage() {
       <div className={styles.modelGrid}>
         <Card title={t("admin_stock.policy")} extra={canEdit && <Button type="primary" loading={policyMutation.loading} onClick={() => void submitPolicy()}>{t("admin_stock.save")}</Button>}>
           <Form form={policyForm} layout="vertical" disabled={!canEdit}>
-            <Form.Item name="stockPolicy" label={t("admin_stock.stock_policy")} rules={[{ required: true }]}><Select options={POLICY_OPTIONS} /></Form.Item>
+            <Form.Item name="stockPolicy" label={t("admin_stock.stock_policy")} rules={[{ required: true }]}><Select options={policyOptions} /></Form.Item>
             <Space wrap align="start">
               <Form.Item name="baseUnit" label={t("admin_stock.base_unit")} rules={[{ required: true }]}><Input placeholder="PIECE / GRAM" /></Form.Item>
               <Form.Item name="displayUnit" label={t("admin_stock.display_unit")}><Input placeholder={t("admin_stock.display_unit_hint")} /></Form.Item>
               <Form.Item name="displayPrecision" label={t("admin_stock.precision")}><InputNumber min={0} max={6} precision={0} /></Form.Item>
             </Space>
-            <Space wrap>
+            {stockSectionVisible("LOT_EXPIRY") && <Space wrap>
               <Form.Item name="lotTracking" valuePropName="checked"><Checkbox>{t("admin_stock.lot")}</Checkbox></Form.Item>
               <Form.Item name="expiryTracking" valuePropName="checked"><Checkbox>{t("admin_stock.expiry")}</Checkbox></Form.Item>
               <Form.Item name="fefo" valuePropName="checked"><Checkbox>FEFO</Checkbox></Form.Item>
-            </Space>
-            <Form.Item name="kitchenStation" label={t("admin_stock.kitchen_station")}><Input placeholder="HOT / COLD / BAR" /></Form.Item>
+            </Space>}
+            {stockSectionVisible("KITCHEN_STATION") && <Form.Item name="kitchenStation" label={t("admin_stock.kitchen_station")}><Input placeholder="HOT / COLD / BAR" /></Form.Item>}
             <Form.Item name="deactivateDerived" valuePropName="checked">
               <Checkbox>{t("admin_stock.confirm_deactivate_derived")}</Checkbox>
             </Form.Item>
-            <Space wrap align="start">
+            {stockSectionVisible("SCALE") && <Space wrap align="start">
               <Form.Item name="scaleItemCode" label={t("admin_stock.scale_code")}><Input maxLength={5} placeholder="00001" /></Form.Item>
               <Form.Item name="scaleSize" label={t("admin_stock.scale_size")}><Select allowClear options={sizes.map((s) => ({ value: s, label: s }))} /></Form.Item>
-            </Space>
+            </Space>}
           </Form>
         </Card>
 
@@ -478,7 +535,7 @@ export default function StockModelsPage() {
         </Card>
       </div>
 
-      <Card title={t("admin_stock.recipes")} extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openRecipe()}>{t("admin_stock.new_recipe")}</Button>}>
+      {stockSectionVisible("RECIPES") && <Card title={t("admin_stock.recipes")} extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openRecipe()}>{t("admin_stock.new_recipe")}</Button>}>
         <Table rowKey="id" pagination={false} dataSource={recipes} locale={{ emptyText: <Empty description={t("admin_stock.no_recipes")} /> }} columns={[
           { title: t("admin_stock.size"), dataIndex: "size" },
           { title: t("admin_stock.version"), dataIndex: "version", width: 90 },
@@ -487,9 +544,9 @@ export default function StockModelsPage() {
           { title: t("admin_stock.status"), render: (_: unknown, row: Recipe) => <Tag color={row.active ? "green" : "default"}>{row.active ? t("admin_stock.active") : t("admin_stock.inactive")}</Tag> },
           ...(canEdit ? [{ title: "", width: 90, render: (_: unknown, row: Recipe) => <Button size="small" onClick={() => openRecipe(row)}>{t("admin_stock.edit")}</Button> }] : []),
         ]} />
-      </Card>
+      </Card>}
 
-      <Card title={t("admin_stock.modifiers")} extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openModifier()}>{t("admin_stock.new_modifier")}</Button>}>
+      {stockSectionVisible("MODIFIERS") && <Card title={t("admin_stock.modifiers")} extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openModifier()}>{t("admin_stock.new_modifier")}</Button>}>
         <Table rowKey="id" pagination={false} dataSource={modifiers} locale={{ emptyText: <Empty description={t("admin_stock.no_modifiers")} /> }} columns={[
           { title: t("admin_stock.code"), dataIndex: "code", width: 130 },
           { title: t("admin_stock.name"), dataIndex: "name" },
@@ -500,7 +557,7 @@ export default function StockModelsPage() {
           { title: t("admin_stock.status"), render: (_: unknown, row: Modifier) => <Tag color={row.active ? "green" : "default"}>{row.active ? t("admin_stock.active") : t("admin_stock.inactive")}</Tag> },
           ...(canEdit ? [{ title: "", width: 90, render: (_: unknown, row: Modifier) => <Button size="small" onClick={() => openModifier(row)}>{t("admin_stock.edit")}</Button> }] : []),
         ]} />
-      </Card>
+      </Card>}
     </Spin>}
 
     <Modal open={recipeOpen} title={editingRecipe ? t("admin_stock.edit_recipe") : t("admin_stock.new_recipe")} onCancel={() => setRecipeOpen(false)} onOk={() => void submitRecipe()} confirmLoading={recipeMutation.loading} width={760}>

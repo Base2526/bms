@@ -77,6 +77,7 @@ import { useIsMobile } from '@/app/hooks/useMediaQuery';
 import { useSessionCtx } from '@/lib/session-context';
 import { useEffect, useState } from 'react';
 import { useI18n } from '@/lib/i18nContext';
+import { shopExperienceForArchetype } from '@/lib/bms/shopExperience';
 
 const Q_SIDEBAR_BOOTSTRAP = gql`
   query {
@@ -85,6 +86,8 @@ const Q_SIDEBAR_BOOTSTRAP = gql`
       businessArchetype
     }
     bmsKitchenBoardEnabled
+    bmsWastageEnabled
+    bmsPackToolsConfigured
   }
 `;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
@@ -288,6 +291,10 @@ export default function AdminSidebar() {
   });
   const pharmacyPendingConfirmationCount: number = pharmacyPendingConfirmationData?.bmsPharmacyAssessments?.length ?? 0;
   const isPharmacyShop = bootstrapData?.bmsStoreProfile?.businessArchetype === "pharmacy";
+  const shopExperience = shopExperienceForArchetype(bootstrapData?.bmsStoreProfile?.businessArchetype);
+  const showWastage = shopExperience.showWastageInNavigation || bootstrapData?.bmsWastageEnabled === true;
+  const showPackTools = shopExperience.recommendedCapabilities.some((item) => item === "PACK" || item === "MULTI_BARCODE")
+    || bootstrapData?.bmsPackToolsConfigured === true;
   // กระดานครัวตามความสามารถที่ร้านเปิดจริง ไม่ใช่ตามประเภทร้าน — preset ของร้านอาหาร
   // เปิด KITCHEN_WORKFLOW ให้อยู่แล้ว ส่วนร้านประเภทอื่นที่เปิดเองก็ต้องเห็นเมนูนี้ด้วย
   // (เดิม gate ด้วย archetype === "restaurant" ร้านที่เปิดเองจึงมีตั๋วครัวแต่ไม่มีทางเปิดดู)
@@ -408,7 +415,7 @@ export default function AdminSidebar() {
         // (สูตร/ตัวเลือก/ชั่งขาย) · gate เท่ากับหน้าเอง: product.view อ่านได้ product.edit ถึงจะบันทึกได้
         ...(can('product.view') ? [link('/admin/stock-models', t('admin.menu_stock_models'), <BuildOutlined />)] : []),
         // ของเสีย (9.40) วางต่อจากงานคลังเพราะเป็นการตัดสต็อกเหมือนกัน แค่ไม่มีคนซื้อ
-        ...(can('product.view') ? [link('/admin/wastage', t('admin.menu_wastage'), <DeleteOutlined />)] : []),
+        ...(can('product.view') && showWastage ? [link('/admin/wastage', t('admin.menu_wastage'), <DeleteOutlined />)] : []),
       ],
     },
     // เภสัชกรรม — เฉพาะร้านยา (isPharmacyShop) แยกจาก "ร้านค้า" เพราะ permission set/audience
@@ -439,10 +446,12 @@ export default function AdminSidebar() {
           ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
         ...(can('pos.shift.report.all')
           ? [link('/admin/pos-shifts', t('admin.menu_pos_shifts'), <ProfileOutlined />)] : []),
-        ...(can('product.view')
+        ...(can('product.view') && showPackTools
           ? [link('/admin/product-packs', t('admin.menu_product_packs'), <ScanOutlined />)] : []),
-        ...(can('product.view')
+        ...(can('product.view') && showPackTools
           ? [link('/admin/product-labels', t('admin.menu_product_labels'), <PrinterOutlined />)] : []),
+        // POS Readiness covers branch/device/tax/stock/refund readiness for every POS shop.
+        // Pharmacy adds stricter checks inside the page; it is not the only audience for the page.
         ...(can('pharmacy.policy.read')
           ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
         // gate เท่ากับสิทธิ์ต่ำสุดที่ขายได้ — เผื่อ Cashier ธรรมดา (ไม่มีสิทธิ์ตั้งค่าใดๆ ข้างบน)

@@ -625,11 +625,22 @@ also the "create sample data" button a brand-new shop presses, not just the dev 
 product with no surface row would look active in the catalog while being invisible and unsellable
 everywhere.
 
-The Products form exposes four starter templates—prepared menu, ready-made item, ingredient and
-general product—then stores the same shared product model. Stock policy dependencies continue to be
-edited in Stock Models. Changing a RECIPE product to another policy is refused while active recipes
-or modifiers exist unless the operator explicitly asks to deactivate those derived records in the
-same transaction.
+The Products form exposes five starter templates—quick menu, prepared menu, ready-made item,
+ingredient and general product—then stores the same shared product model. The shop experience
+profile ranks only the templates relevant to the current archetype; specialist templates remain
+available behind an explicit expansion. The same profile also groups Stock Models into recommended,
+already-in-use and additional capabilities. Existing configuration always remains visible even when
+it is not recommended for the archetype. Stock policy dependencies continue to be edited in Stock
+Models. Changing a RECIPE product to another policy is refused while active recipes or modifiers
+exist unless the operator explicitly asks to deactivate those derived records in the same
+transaction.
+
+Restaurant product creation keeps the shared catalog's core identity, pricing, tax, search and sales
+surface fields visible. Barcode, shipping weight, brand and wholesale tiers are progressively
+disclosed according to the selected template: packaged ready goods expose the relevant retail
+fields, while prepared/quick menus keep them behind an explicit action. Editing a product that
+already contains any of those values expands the section automatically; hiding the section never
+clears or changes stored data.
 
 Inventory quantities remain integers. Measured goods choose the smallest useful base unit, such as
 gram, millilitre, or millimetre; display units and precision are presentation metadata. Existing

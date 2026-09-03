@@ -39,7 +39,9 @@ anthropic-compatible provider's tool-use
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
-  tenant-selected Thai, English, or latest-message language and ordering style; the Thai persona
+  tenant-selected Thai, English, or latest-message language and ordering style; a selected
+  business archetype supplies the precise commerce policy and example set, while the legacy
+  coarse `businessType` examples are used only for shops that have no archetype; the Thai persona
   uses `ค่ะ/คะ` (never `ผม/ครับ` or unrelated filler); must use tools for
   every stock/price/order number; needs `sku` + size + qty before `create_order`; asks for only one
   missing field per turn; customer identity comes from the channel (don't ask for it). Recent
@@ -104,12 +106,17 @@ Unambiguous own-order status, payment-submission, reorder, and fully confirmed s
 flows are server-routed through `runApprovedTool()` before provider inference; this preserves the
 same tool authorization/audit guarantees while removing model tool-selection variance.
 
+Proactive Inbox follow-ups use the same archetype commerce policy (sales motion, discovery, basket,
+repeat purchase, and fulfillment) in their bounded context, so a B2B or Restaurant follow-up does
+not fall back to generic-shop guidance merely because its legacy `businessType` is coarse.
+
 The runtime marks two prompt-cache breakpoints: the end of the filtered tool definitions and the end
 of the system prompt. Both blocks must be byte-identical across requests from the same shop, so
 anything that varies per conversation — intent guidance, compressed history summary and durable order slot
 memory — is sent as a second system block placed *after* the breakpoint (`volatileSystem`), where it
 can change without invalidating the cached prefix. The stable system block may still vary by tenant
-because it includes that shop's categories, business-type examples, and validated AI policy from
+because it includes that shop's categories, precise archetype examples (or legacy business-type
+examples when no archetype exists), and validated AI policy from
 `bms_store_profile`. The `input_tokens` column on a usage event is the *sum* of regular, cache-write, and
 cache-read tokens, so it does not fall when a cache hits and cannot be used to tell whether caching is
 working; `estimated_cost` applies the active provider's configured rates. Anthropic prompt caching uses

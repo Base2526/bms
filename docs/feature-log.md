@@ -10,6 +10,23 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Archetype-aware shop experience (2026-09-03)
+
+- Added one pure experience profile covering all 13 shop archetypes. Products, imports, Stock
+  Models, Store Profile and the admin sidebar now prioritize the current shop's workflow while
+  keeping additional or already-configured capabilities reachable.
+- Centralized product-template defaults so the client and backend cannot disagree. General retail
+  shops now start from the general product preset, while restaurant products retain their explicit
+  Restaurant POS defaults.
+- Moved the archetype out of the AI-only settings section, added explicit Pharmacy/Restaurant mode
+  warnings, derived the legacy broad `business_type`, and generated import examples per archetype.
+- Restaurant product forms now keep catalog essentials visible while progressively disclosing
+  barcode, shipping weight, brand, and wholesale tiers. Existing saved values reveal themselves
+  automatically on edit and remain preserved when the section is hidden.
+- Inbox AI now selects one precise archetype example set instead of mixing it with the legacy broad
+  business type, and proactive follow-ups receive the same commerce policy. Existing product
+  visibility remains governed by explicit `CUSTOMER_AI` + `ONLINE_ORDER` sales surfaces.
+
 ## Product catalog foundation (9.51, 2026-09-02)
 
 - Added catalog variants independent of branch stock, explicit product sales surfaces, and

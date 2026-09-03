@@ -42,6 +42,8 @@ import {
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import { checkBarcode, isInStoreBarcode } from "@/lib/bms/barcode";
+import { inferProductCreationTemplate, productTemplateDefaults, type ProductCreationTemplate } from "@/lib/bms/productTemplatePresets";
+import { additionalProductTemplates, productFormFieldVisibility, shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import debounce from "lodash/debounce";
 import ImportModal from "./ImportModal";
 
@@ -329,6 +331,8 @@ function ProductsManagement() {
   const [savingVariantPrices, setSavingVariantPrices] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [showSpecializedTemplates, setShowSpecializedTemplates] = useState(false);
+  const [showRestaurantAdditionalFields, setShowRestaurantAdditionalFields] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<Product | null>(null);
   const [duplicateForm] = Form.useForm();
   const [lowExpanded, setLowExpanded] = useState<boolean>(() => {
@@ -416,6 +420,65 @@ function ProductsManagement() {
   const lowCount: number = lowItems.length;
   const outOfStockItems = lowItems.filter((x) => x.available <= 0);
   const lowStockItems = lowItems.filter((x) => x.available > 0).sort((a, b) => a.available - b.available);
+  const shopExperience = shopExperienceForArchetype(data?.bmsStoreProfile?.businessArchetype);
+  const isRestaurantShop = shopExperience.specialMode === "RESTAURANT";
+  const templateLabel = (template: ProductCreationTemplate) => ({
+    QUICK_MENU: t("admin_products.template_quick_menu"),
+    PREPARED_MENU: t("admin_products.template_prepared_menu"),
+    READY_GOOD: t("admin_products.template_ready_good"),
+    INGREDIENT: t("admin_products.template_ingredient"),
+    GENERAL: t("admin_products.template_general"),
+  })[template];
+  const recommendedTemplateOptions = shopExperience.recommendedTemplates.map((value) => ({ value, label: templateLabel(value) }));
+  const additionalTemplateOptions = additionalProductTemplates(shopExperience).map((value) => ({ value, label: templateLabel(value) }));
+  const visibleAdditionalTemplateOptions = showSpecializedTemplates
+    ? additionalTemplateOptions
+    : additionalTemplateOptions.filter((option) => option.value === creationTemplate);
+  const templateSelectOptions: any[] = visibleAdditionalTemplateOptions.length > 0 ? [
+    { label: t("admin_products.templates_recommended"), options: recommendedTemplateOptions },
+    { label: t("admin_products.templates_additional"), options: visibleAdditionalTemplateOptions },
+  ] : recommendedTemplateOptions;
+
+  const applyCreationTemplate = (template: ProductCreationTemplate) => {
+    const defaults = productTemplateDefaults(template);
+    form.setFieldsValue({
+      stockPolicy: defaults.stockPolicy,
+      baseUnit: defaults.baseUnit,
+      salesSurfaces: [...defaults.surfaces],
+    });
+    form.setFields([
+      { name: "stockPolicy", touched: false },
+      { name: "baseUnit", touched: false },
+      { name: "salesSurfaces", touched: false },
+    ]);
+  };
+
+  const changeCreationTemplate = (template: ProductCreationTemplate) => {
+    const defaults = productTemplateDefaults(template);
+    const current = form.getFieldsValue(["stockPolicy", "baseUnit", "salesSurfaces"]);
+    const wouldOverwriteCustomizedValue =
+      (form.isFieldTouched("stockPolicy") && current.stockPolicy !== defaults.stockPolicy)
+      || (form.isFieldTouched("baseUnit") && current.baseUnit !== defaults.baseUnit)
+      || (form.isFieldTouched("salesSurfaces")
+        && JSON.stringify(current.salesSurfaces ?? []) !== JSON.stringify(defaults.surfaces));
+
+    if (!wouldOverwriteCustomizedValue) {
+      applyCreationTemplate(template);
+      return;
+    }
+
+    Modal.confirm({
+      title: t("admin_products.template_change_confirm_title"),
+      content: t("admin_products.template_change_confirm_description"),
+      okText: t("admin_products.template_change_confirm_ok"),
+      cancelText: t("admin_products.template_change_confirm_cancel"),
+      onOk: () => applyCreationTemplate(template),
+      onCancel: () => {
+        form.setFieldValue("creationTemplate", creationTemplate);
+        form.setFields([{ name: "creationTemplate", touched: false }]);
+      },
+    });
+  };
 
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -437,6 +500,11 @@ function ProductsManagement() {
     unitPrice: string;
     discountPct: string;
   }>>([]);
+  const productFieldVisibility = productFormFieldVisibility(
+    shopExperience,
+    creationTemplate,
+    showRestaurantAdditionalFields
+  );
   const [genBarcode, { loading: generatingBarcode }] = useMutation(M_GENERATE_BARCODE);
 
   const generateBarcode = async () => {
@@ -479,19 +547,21 @@ function ProductsManagement() {
     setEditing(null);
     setVariantPriceDrafts({});
     setImageUrls([]);
+    setShowSpecializedTemplates(false);
+    setShowRestaurantAdditionalFields(false);
     form.resetFields();
-    const restaurant = data?.bmsStoreProfile?.businessArchetype === "restaurant";
+    const restaurant = shopExperience.specialMode === "RESTAURANT";
+    const template: ProductCreationTemplate = restaurant ? "PREPARED_MENU" : "GENERAL";
+    const defaults = productTemplateDefaults(template);
     form.setFieldsValue({
       active: false,
       keywords: [],
       vatCategory: "UNKNOWN",
-      creationTemplate: restaurant ? "PREPARED_MENU" : "READY_GOOD",
-      stockPolicy: restaurant ? "RECIPE" : "DIRECT",
-      baseUnit: "PIECE",
+      creationTemplate: template,
+      stockPolicy: defaults.stockPolicy,
+      baseUnit: defaults.baseUnit,
       variantCodes: ["STD"],
-      salesSurfaces: restaurant
-        ? ["RESTAURANT_POS"]
-        : ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"],
+      salesSurfaces: [...shopExperience.primarySalesSurfaces],
     });
     setBarcodeDraft("");
     setPriceTiers([]);
@@ -508,6 +578,12 @@ function ProductsManagement() {
       return;
     }
     setEditing(configuredProduct);
+    setShowRestaurantAdditionalFields(Boolean(
+      configuredProduct.barcode
+      || configuredProduct.weightGrams != null
+      || configuredProduct.brand
+      || configuredProduct.priceTiers?.length
+    ));
     setVariantPriceDrafts(Object.fromEntries(
       configuredProduct.variants.map((variant) => [variant.size, variant.priceOverride])
     ));
@@ -525,7 +601,10 @@ function ProductsManagement() {
       weightGrams: configuredProduct.weightGrams ?? undefined,
       category: configuredProduct.category || "", brand: configuredProduct.brand || "",
       vatCategory: configuredProduct.vatCategory || "UNKNOWN",
-      creationTemplate: configuredProduct.stockPolicy?.stockPolicy === "RECIPE" ? "PREPARED_MENU" : "GENERAL",
+      creationTemplate: inferProductCreationTemplate(
+        configuredProduct.stockPolicy?.stockPolicy,
+        configuredProduct.salesSurfaces
+      ),
       stockPolicy: configuredProduct.stockPolicy?.stockPolicy || "DIRECT",
       variantCodes: configuredProduct.catalogVariants.filter((variant) => variant.active).map((variant) => variant.code),
       salesSurfaces: configuredProduct.salesSurfaces,
@@ -758,8 +837,8 @@ function ProductsManagement() {
           <h2 style={{ margin: 0 }}>Products & Inventory</h2>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loading}>Refresh</Button>
-            {can("product.edit") && <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>{t("admin_products.btn_import")}</Button>}
-            {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_products.btn_add_product")}</Button>}
+            {can("product.edit") && <Button icon={<ImportOutlined />} disabled={loading} onClick={() => setImportModalOpen(true)}>{t("admin_products.btn_import")}</Button>}
+            {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} disabled={loading} onClick={openCreate}>{t("admin_products.btn_add_product")}</Button>}
           </Space>
         </Space>
         <Typography.Text type="secondary" style={{ display: "block", marginTop: 6 }}>
@@ -913,25 +992,21 @@ function ProductsManagement() {
                 : t("admin_products.creation_template_hint")}
             >
               <Select
-                options={[
-                  { value: "QUICK_MENU", label: t("admin_products.template_quick_menu") },
-                  { value: "PREPARED_MENU", label: t("admin_products.template_prepared_menu") },
-                  { value: "READY_GOOD", label: t("admin_products.template_ready_good") },
-                  { value: "INGREDIENT", label: t("admin_products.template_ingredient") },
-                  { value: "GENERAL", label: t("admin_products.template_general") },
-                ]}
-                onChange={(template) => {
-                  const presets: Record<string, { stockPolicy: string; salesSurfaces: string[] }> = {
-                    QUICK_MENU: { stockPolicy: "NON_STOCK", salesSurfaces: ["RESTAURANT_POS"] },
-                    PREPARED_MENU: { stockPolicy: "RECIPE", salesSurfaces: ["RESTAURANT_POS"] },
-                    READY_GOOD: { stockPolicy: "DIRECT", salesSurfaces: ["RESTAURANT_POS", "RETAIL_POS"] },
-                    INGREDIENT: { stockPolicy: "DIRECT", salesSurfaces: [] },
-                    GENERAL: { stockPolicy: "DIRECT", salesSurfaces: ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"] },
-                  };
-                  form.setFieldsValue(presets[template]);
-                }}
+                options={templateSelectOptions}
+                onChange={changeCreationTemplate}
               />
             </Form.Item>
+          )}
+          {!editing && additionalTemplateOptions.length > 0 && (
+            <Button
+              type="link"
+              style={{ paddingInline: 0, marginTop: -18, marginBottom: 12 }}
+              onClick={() => setShowSpecializedTemplates((current) => !current)}
+            >
+              {showSpecializedTemplates
+                ? t("admin_products.hide_specialized_templates")
+                : t("admin_products.show_specialized_templates")}
+            </Button>
           )}
 
           <Space.Compact block>
@@ -944,7 +1019,10 @@ function ProductsManagement() {
             >
               <Select
                 disabled={Boolean(editing)}
-                options={["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"].map((value) => ({ value, label: value }))}
+                options={["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"].map((value) => ({
+                  value,
+                  label: t(`admin_products.stock_policy_${value.toLowerCase()}`),
+                }))}
               />
             </Form.Item>
             <Form.Item
@@ -967,7 +1045,10 @@ function ProductsManagement() {
             >
               <Select
                 showSearch
-                options={["PIECE", "GRAM", "ML", "MM", "CM", "METER"].map((value) => ({ value, label: value }))}
+                options={["PIECE", "GRAM", "ML", "MM", "CM", "METER"].map((value) => ({
+                  value,
+                  label: value === "PIECE" ? t("admin_products.unit_piece") : value,
+                }))}
               />
             </Form.Item>
           )}
@@ -981,7 +1062,9 @@ function ProductsManagement() {
               mode="multiple"
               allowClear
               options={[
-                { value: "RESTAURANT_POS", label: t("admin_products.surface_restaurant_pos") },
+                ...(shopExperience.specialMode === "RESTAURANT" || showSpecializedTemplates
+                  ? [{ value: "RESTAURANT_POS", label: t("admin_products.surface_restaurant_pos") }]
+                  : []),
                 { value: "RETAIL_POS", label: t("admin_products.surface_retail_pos") },
                 { value: "PUBLIC_STOREFRONT", label: t("admin_products.surface_storefront") },
                 { value: "CUSTOMER_AI", label: t("admin_products.surface_customer_ai") },
@@ -989,6 +1072,34 @@ function ProductsManagement() {
               ]}
             />
           </Form.Item>
+
+          {isRestaurantShop && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={t("admin_products.restaurant_core_fields_title")}
+              description={
+                <Space direction="vertical" size={4}>
+                  <span>{t("admin_products.restaurant_core_fields_description")}</span>
+                  <Button
+                    type="link"
+                    style={{ paddingInline: 0, alignSelf: "flex-start" }}
+                    onClick={() => setShowRestaurantAdditionalFields((current) => !current)}
+                  >
+                    {showRestaurantAdditionalFields
+                      ? t("admin_products.hide_restaurant_additional_fields")
+                      : t("admin_products.show_restaurant_additional_fields")}
+                  </Button>
+                  {showRestaurantAdditionalFields && (
+                    <Typography.Text type="secondary">
+                      {t("admin_products.restaurant_additional_fields_description")}
+                    </Typography.Text>
+                  )}
+                </Space>
+              }
+            />
+          )}
 
           <Form.Item label={t("admin_products.label_images")} extra={t("admin_products.images_extra")}>
             <Space align="start" wrap>
@@ -1047,7 +1158,7 @@ function ProductsManagement() {
           {/* Barcode — เจตนาของช่องนี้คือ "ยิงเข้า" ไม่ใช่ "พิมพ์เอง"
               ของที่โรงงานติดบาร์โค้ดมาแล้ว เลขนั้นเป็นของ GS1 สร้างใหม่ทับไม่ได้
               ปุ่มสร้างเลขมีไว้สำหรับของแบ่งขาย/ของทำเองที่ไม่มีบาร์โค้ดเท่านั้น */}
-          {creationTemplate !== "PREPARED_MENU" && <Form.Item label="Barcode" tooltip={t("admin_products.barcode_scan_hint")}>
+          {productFieldVisibility.barcode && <Form.Item label="Barcode" tooltip={t("admin_products.barcode_scan_hint")}>
             <Space.Compact style={{ width: "100%" }}>
               <Form.Item name="barcode" noStyle>
                 <Input
@@ -1082,7 +1193,7 @@ function ProductsManagement() {
             <Form.Item label={t("admin_products.label_cost")} name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
               <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_cost")} />
             </Form.Item>
-            {creationTemplate !== "PREPARED_MENU" && <Form.Item
+            {productFieldVisibility.shippingWeight && <Form.Item
               label={t("admin_products.label_weight")}
               name="weightGrams"
               style={{ flex: 1 }}
@@ -1154,9 +1265,9 @@ function ProductsManagement() {
                 notFoundContent={t("admin_products.category_not_found")}
               />
             </Form.Item>
-            <Form.Item label={t("admin_products.label_brand")} name="brand" style={{ flex: 1, marginInlineEnd: 8 }}>
+            {productFieldVisibility.brand && <Form.Item label={t("admin_products.label_brand")} name="brand" style={{ flex: 1, marginInlineEnd: 8 }}>
               <AutoComplete options={brandOptions.map((b) => ({ value: b }))} placeholder={t("admin_products.placeholder_brand")} filterOption />
-            </Form.Item>
+            </Form.Item>}
             {/* ประเภท VAT (7.88) — คอลัมน์มีมานานแต่ไม่มีช่องให้กรอก ร้านที่จด VAT
                 จึงติด blocker ที่ /admin/pos-readiness โดยไม่มีปุ่มแก้ · ค่า default
                 ของฟอร์มคือ UNKNOWN เพื่อไม่ให้การกดบันทึกกลาย ๆ ตั้งค่าภาษีให้เอง */}
@@ -1179,7 +1290,7 @@ function ProductsManagement() {
           {/* ขั้นราคาส่ง — แบบราคาคงที่นับแยกไซซ์; แบบเปอร์เซ็นต์นับรวมข้ามไซซ์
               แต่ยังลดจากราคาฐานของแต่ละไซซ์ ไม่บีบทุกไซซ์ให้เป็นราคาเดียว
               ยุบไว้ตอนไม่มีขั้น เพราะสินค้าส่วนใหญ่ขายราคาเดียว */}
-          <Form.Item label={t("admin_products.label_price_tiers")} tooltip={t("admin_products.price_tiers_tooltip")}>
+          {productFieldVisibility.wholesalePriceTiers && <Form.Item label={t("admin_products.label_price_tiers")} tooltip={t("admin_products.price_tiers_tooltip")}>
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
               {priceTiers.map((tier, idx) => (
                 <Space key={idx} align="baseline" wrap>
@@ -1265,7 +1376,7 @@ function ProductsManagement() {
                 + {t("admin_products.tier_add")}
               </Button>
             </Space>
-          </Form.Item>
+          </Form.Item>}
 
           <Form.Item label={t("admin_products.label_keywords")} name="keywords">
             <Select mode="tags" tokenSeparators={[",", " "]} placeholder={t("admin_products.placeholder_keywords")} />
@@ -1289,6 +1400,7 @@ function ProductsManagement() {
 
       <ImportModal
         open={importModalOpen}
+        businessArchetype={data?.bmsStoreProfile?.businessArchetype}
         onClose={() => setImportModalOpen(false)}
         onImported={refreshAll}
       />

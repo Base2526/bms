@@ -28,6 +28,7 @@ import { getStoreProfile } from "./storeProfile";
 import { resolveAiCredentials, type AiCredentials } from "./ai";
 import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
+import { commercePolicyForArchetype } from "./shopArchetypes";
 
 export const FOLLOWUP_INTENTS = [
   "ASK_PRICE",
@@ -431,8 +432,10 @@ async function generateFollowupMessage(
       .join("\n");
     const priorFollowups = history.rows.map((r) => r.message_body).filter(Boolean).join("\n---\n");
 
+    const commercePolicy = commercePolicyForArchetype(storeProfile.businessArchetype);
     const contextLines = [
-      `Store: ${storeProfile.businessType ?? ""}, hours (as configured, free text): ${storeProfile.businessHours ?? "unknown"}`,
+      `Store archetype: ${storeProfile.businessArchetype ?? "none"}; legacy business type: ${storeProfile.businessType ?? "none"}; hours (as configured, free text): ${storeProfile.businessHours ?? "unknown"}`,
+      `Shop sales guidance: salesMotion=${commercePolicy.salesMotion}; discovery=${commercePolicy.discovery}; basket=${commercePolicy.basket}; repeatPurchase=${commercePolicy.repeatPurchase}; fulfillment=${commercePolicy.fulfillment}`,
       `Conversation history:\n${transcript || "(no messages)"}`,
       customer360?.stats
         ? `Customer stats: lifetimeValue=${customer360.stats.lifetimeValue}, totalOrders=${customer360.stats.totalOrders}`

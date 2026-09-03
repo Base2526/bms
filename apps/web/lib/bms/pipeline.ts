@@ -255,6 +255,11 @@ function buildBusinessArchetypeExamples(businessArchetype: string | null | undef
         'ตัวอย่างร้าน mini mart — ลูกค้า: "โค้ก 1.5 ลิตรมีไหม" → ค้นจากคำเรียกสินค้าทั่วไปและตอบแบบสั้น พร้อมถามจำนวนต่อทันที',
         'ตัวอย่างร้าน mini mart — ลูกค้า: "เอาเหมือนเดิม 3" → ใช้บริบทสินค้าล่าสุดหรือ reorder ถ้าพอได้ ห้ามถามยืดยาว',
       ];
+    case "fashion":
+      return [
+        'ตัวอย่างร้านแฟชั่น — ลูกค้า: "เสื้อดำไซซ์ใหญ่" → ค้นสินค้าด้วยคำว่า "เสื้อดำ" แล้วถามยืนยันรุ่นที่ตรงที่สุด',
+        'ตัวอย่างร้านแฟชั่น — ลูกค้า: "เปลี่ยนเป็น XL" → ใช้สินค้าที่คุยค้างและเปลี่ยนเฉพาะไซซ์ ห้ามถามชื่อสินค้าใหม่',
+      ];
     case "home_kitchen":
       return [
         'ตัวอย่างร้าน home & kitchen — ลูกค้า: "มีจานที่เข้าไมโครเวฟได้ไหม" → ค้นจาก use case และเสนอสินค้าจริง 2-3 ชิ้นก่อนถามต่อ 1 คำถาม',
@@ -305,6 +310,11 @@ function buildBusinessArchetypeExamples(businessArchetype: string | null | undef
         'ตัวอย่างร้านขายยา — ลูกค้า: "อยากได้ พารา 1 แผง, ยาแดง 1 ขวด, ยาแก้ปวด" → ค้นทั้ง 3 รายการพร้อมกันในรอบเดียว: 2 ตัวแรกระบุชัดให้ยืนยันจาก catalog ส่วน "ยาแก้ปวด" ตรงกับหลายตัวจึงต้องให้ลูกค้าเลือกจากรายการจริง ห้ามหยิบตัวใดตัวหนึ่งให้เอง และห้ามตัดรายการที่ 3 ออกเงียบ ๆ',
         'ตัวอย่างร้านขายยา — ลูกค้า: "พารา 2 แผง" แต่ catalog มีทั้ง 500mg และ 325mg → ถามให้เลือกความแรงก่อน ห้ามเดาว่าลูกค้าหมายถึงตัวที่ขายดีกว่าหรือถูกกว่า',
         'ตัวอย่างร้านขายยา — ลูกค้าถามของที่ create_order ตอบว่าต้องให้เภสัชกรตรวจ → แจ้งตามผลนั้นพร้อมเลขเคส 8 ตัว ห้ามยืนยันการขายและห้ามแนะนำวิธีใช้ยา',
+      ];
+    case "other":
+      return [
+        'ตัวอย่างร้านทั่วไป — ลูกค้า: "มีอะไรแนะนำ" → เรียก browse_catalog/recommend_products และเสนอของจริง 3-5 รายการก่อนถามความสนใจต่อ',
+        'ตัวอย่างร้านทั่วไป — ลูกค้า: "เอาอันนี้ 2" → ใช้สินค้าล่าสุดและตีความ 2 เป็นจำนวนก่อนตรวจสต็อก',
       ];
     default:
       return [];
@@ -414,8 +424,13 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
       "กฎร้านยา: ถ้าผล create_order มี pharmacyReviewCaseId ให้แจ้งเลขเคส 8 ตัวนั้นแก่ลูกค้าเพื่อใช้ติดตาม; ถ้าเป็น null ห้ามอ้างว่าสร้างเคสแล้ว"
     );
   }
-  lines.push(...buildBusinessTypeExamples(profile.businessType));
-  lines.push(...buildBusinessArchetypeExamples(profile.businessArchetype));
+  // One source of behavioral examples per shop. A selected archetype is more precise than the
+  // legacy six-value businessType; adding both made B2B look partly like a general shop and gave
+  // Restaurant two overlapping food flows. Legacy shops with no archetype keep their old examples.
+  const archetypeExamples = buildBusinessArchetypeExamples(profile.businessArchetype);
+  lines.push(...(archetypeExamples.length > 0
+    ? archetypeExamples
+    : buildBusinessTypeExamples(profile.businessType)));
   return lines.join("\n");
 }
 

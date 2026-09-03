@@ -16,6 +16,7 @@ import { InboxOutlined, DownloadOutlined, ReloadOutlined } from "@ant-design/ico
 import * as XLSX from "xlsx";
 import { PRODUCT_IMPORT_MAX_ROWS } from "@/lib/bms/productImport.constants";
 import { useI18n } from "@/lib/i18nContext";
+import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -81,7 +82,6 @@ const REQUIRED_FIELDS: (keyof DraftRow)[] = ["sku", "name", "price"];
 // bmsSetProductActive/publishProduct ที่ตรวจ readiness เท่านั้น upsertProduct
 // จึงไม่สนใจค่า active ที่ส่งมา — คอลัมน์ที่กรอกแล้วไม่มีผลแย่กว่าไม่มีคอลัมน์
 const TEMPLATE_HEADERS = ["SKU", "บาร์โค้ด", "ชื่อสินค้า", "รายละเอียด", "ราคาขาย", "ต้นทุน", "หมวดหมู่", "ยี่ห้อ", "คีย์เวิร์ด", "รูปแบบสินค้า", "Stock Policy", "หน่วยฐาน", "ตัวเลือก", "ช่องทางขาย"];
-const TEMPLATE_EXAMPLE = ["MENU-KAPRAO", "", "ข้าวกะเพรา", "เมนูปรุงสด", "79", "", "อาหารจานเดียว", "", "กะเพรา|ผัดกะเพรา", "PREPARED_MENU", "RECIPE", "PIECE", "STD", "RESTAURANT_POS"];
 
 function normalizeHeader(h: unknown): string {
   return String(h ?? "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -143,11 +143,11 @@ function parseWorkbook(buf: ArrayBuffer, t: TFn): DraftRow[] {
   });
 }
 
-function downloadTemplate() {
-  const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, TEMPLATE_EXAMPLE]);
+function downloadTemplate(example: readonly string[], archetype: string) {
+  const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, [...example]]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Products");
-  XLSX.writeFile(wb, "bms_product_import_template.xlsx");
+  XLSX.writeFile(wb, `bms_product_import_${archetype}_template.xlsx`);
 }
 
 const M_IMPORT = gql`
@@ -173,12 +173,14 @@ const actionLabel = (a: RowResult["action"], t: TFn) =>
   : a === "UPDATE" ? t("admin_product_import.action_update")
   : t("admin_product_import.action_error");
 
-export default function ImportModal({ open, onClose, onImported }: {
+export default function ImportModal({ open, businessArchetype, onClose, onImported }: {
   open: boolean;
+  businessArchetype?: string | null;
   onClose: () => void;
   onImported: () => void;
 }) {
   const { t } = useI18n();
+  const shopExperience = shopExperienceForArchetype(businessArchetype);
   const [rows, setRows] = useState<DraftRow[]>([]);
   const [stage, setStage] = useState<"upload" | "preview" | "result">("upload");
   const [preview, setPreview] = useState<ImportResult | null>(null);
@@ -296,7 +298,11 @@ export default function ImportModal({ open, onClose, onImported }: {
               </>
             }
           />
-          <Button icon={<DownloadOutlined />} onClick={downloadTemplate} style={{ marginBottom: 16 }}>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => downloadTemplate(shopExperience.importExample, shopExperience.archetype)}
+            style={{ marginBottom: 16 }}
+          >
             {t("admin_product_import.btn_download_template")}
           </Button>
           <Upload.Dragger
