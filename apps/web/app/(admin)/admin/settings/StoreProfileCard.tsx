@@ -213,7 +213,7 @@ export default function StoreProfileCard() {
                         <Form.Item name="businessType" hidden><Input /></Form.Item>
                       </Col>
                       <Col xs={24} md={12}>
-                        <Alert
+                        <Alert closable
                           type={shopExperience.specialMode === "NONE" ? "info" : "warning"}
                           showIcon
                           message={t(shopExperience.descriptionKey)}
@@ -224,7 +224,7 @@ export default function StoreProfileCard() {
                       </Col>
                     </Row>
                     {archetypeLocked && (
-                      <Alert
+                      <Alert closable
                         style={{ marginBottom: 12 }}
                         type="warning"
                         showIcon
@@ -240,7 +240,7 @@ export default function StoreProfileCard() {
                         ))}
                       </Space>
                     )}
-                    <Alert
+                    <Alert closable
                       style={{ marginBottom: 4 }}
                       type={highlightRestock ? "success" : "info"}
                       showIcon
@@ -275,7 +275,7 @@ export default function StoreProfileCard() {
                       </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>
-                      <Alert type="info" showIcon message={t("admin_store_profile.receipt_language_help")} />
+                      <Alert closable type="info" showIcon message={t("admin_store_profile.receipt_language_help")} />
                     </Col>
                   </Row>
                 ),

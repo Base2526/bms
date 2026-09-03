@@ -69,7 +69,7 @@ export default function KitchenPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  if (!permsLoading && !canView) return <Alert type="error" showIcon message={t("admin_kitchen.no_permission")} />;
+  if (!permsLoading && !canView) return <Alert closable type="error" showIcon message={t("admin_kitchen.no_permission")} />;
 
   const rows: Ticket[] = tickets.data?.bmsKitchenTickets ?? [];
   const stationFilters = kitchenBoardStationFilters(rows, stationsQuery.data?.bmsKitchenStations ?? []);
@@ -108,7 +108,7 @@ export default function KitchenPage() {
 
   return <main className={styles.page}>
     <section className={styles.hero}><h1>{t("admin_kitchen.title")}</h1><p>{t("admin_kitchen.subtitle")}</p></section>
-    {!canMove && <Alert type="info" showIcon message={t("admin_kitchen.read_only")} />}
+    {!canMove && <Alert closable type="info" showIcon message={t("admin_kitchen.read_only")} />}
     <Space wrap style={{ justifyContent: "space-between" }}>
       <Segmented
         value={activeKey}
@@ -131,7 +131,7 @@ export default function KitchenPage() {
       />
       <Button icon={<ReloadOutlined />} onClick={() => tickets.refetch()} loading={tickets.loading}>{t("admin_kitchen.refresh")}</Button>
     </Space>
-    {tickets.error && <Alert type="error" showIcon message={tickets.error.message} />}
+    {tickets.error && <Alert closable type="error" showIcon message={tickets.error.message} />}
     <Spin spinning={tickets.loading || moveState.loading}>
       <div className={styles.board}>
         {LANES.map((lane) => {

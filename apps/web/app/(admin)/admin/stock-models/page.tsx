@@ -209,7 +209,7 @@ export default function StockModelsPage() {
   }, [loadProducts, searchParams]);
 
   if (!permsLoading && !canView) {
-    return <Alert type="error" showIcon message={t("admin_stock.no_product_view")} />;
+    return <Alert closable type="error" showIcon message={t("admin_stock.no_product_view")} />;
   }
 
   const products: Product[] = productsQuery.data?.bmsProducts?.items ?? [];
@@ -543,7 +543,7 @@ export default function StockModelsPage() {
         <div><h2 className={styles.sectionTitle}>{t("admin_stock.capabilities")}</h2><Typography.Text type="secondary">{t("admin_stock.capability_hint")}</Typography.Text></div>
         <Button icon={<ReloadOutlined />} onClick={() => capabilities.refetch()}>{t("admin_stock.refresh")}</Button>
       </Space>
-      {capabilities.error && <Alert type="error" showIcon message={capabilities.error.message} style={{ marginBottom: 12 }} />}
+      {capabilities.error && <Alert closable type="error" showIcon message={capabilities.error.message} style={{ marginBottom: 12 }} />}
       <Spin spinning={capabilities.loading || capabilityMutation.loading}>
         {recommendedCapabilities.length > 0 && <>
           <Typography.Title level={5}>{t("admin_stock.recommended_for_shop")}</Typography.Title>
@@ -576,7 +576,7 @@ export default function StockModelsPage() {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         {t("admin_stock.stations_hint")}
       </Typography.Paragraph>
-      {unmappedStationNames.length > 0 && <Alert
+      {unmappedStationNames.length > 0 && <Alert closable
         type="warning" showIcon style={{ marginBottom: 12 }}
         message={t("admin_stock.stations_unmapped")}
         description={`${t("admin_stock.stations_unmapped_desc")} — ${unmappedStationNames.join(", ")}`}
@@ -773,7 +773,7 @@ export default function StockModelsPage() {
         </Card>
 
         <Card title={t("admin_stock.safety_note")}>
-          <Alert type="info" showIcon message={t("admin_stock.snapshot_title")} description={t("admin_stock.snapshot_desc")} />
+          <Alert closable type="info" showIcon message={t("admin_stock.snapshot_title")} description={t("admin_stock.snapshot_desc")} />
           <Typography.Paragraph style={{ marginTop: 16 }}>{t("admin_stock.unit_note")}</Typography.Paragraph>
         </Card>
       </div>
@@ -836,7 +836,7 @@ export default function StockModelsPage() {
       confirmLoading={bundleMutation.loading}
       width={760}
     >
-      <Alert type="info" showIcon message={t("admin_stock.bundle_modal_hint")} style={{ marginBottom: 16 }} />
+      <Alert closable type="info" showIcon message={t("admin_stock.bundle_modal_hint")} style={{ marginBottom: 16 }} />
       <Form form={bundleForm} layout="vertical">
         <Form.List name="items">
           {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>
@@ -891,7 +891,7 @@ export default function StockModelsPage() {
       onOk={() => void submitQuickIngredient()}
       confirmLoading={ingredientMutation.loading}
     >
-      <Alert type="info" showIcon message={t("admin_stock.ingredient_draft_hint")} style={{ marginBottom: 16 }} />
+      <Alert closable type="info" showIcon message={t("admin_stock.ingredient_draft_hint")} style={{ marginBottom: 16 }} />
       <Form form={ingredientForm} layout="vertical">
         <Form.Item name="sku" label="SKU" rules={[{ required: true }]}><Input placeholder="ING-CHICKEN" /></Form.Item>
         <Form.Item name="name" label={t("admin_stock.name")} rules={[{ required: true }]}><Input /></Form.Item>
