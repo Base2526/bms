@@ -19,6 +19,7 @@ import type { ShopArchetype } from "./shopArchetypes";
 import { adjustPoints, reviewMemberTier } from "./membership";
 import { resolveDefaultLocationId } from "./locations";
 import { beginTenantTx } from "./tenant";
+import { ensureKitchenStationByNameInTx } from "./kitchenStations";
 import {
   RESTAURANT_DEFAULT_SIZES,
   RESTAURANT_INGREDIENTS,
@@ -740,11 +741,16 @@ async function seedRestaurantCatalog(tenantId: string, count: number) {
          ON CONFLICT (tenant_id, product_sku, surface) DO UPDATE SET enabled = TRUE, updated_at = now()`,
         [tenantId, sku]
       );
+      // สถานีของเมนูตัวอย่างต้องเป็นแถวหลักจริง (9.54) ไม่ใช่สตริงลอย ๆ — ไม่งั้นร้านที่กด
+      // สร้างข้อมูลตัวอย่างจะได้สถานีที่เปิด/ปิดไม่ได้และไม่โผล่ในดรอปดาวน์ของฟอร์มสินค้า
+      const seededStation = await ensureKitchenStationByNameInTx(client, tenantId, item.station);
       await client.query(
-        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, stock_policy, base_unit, display_unit, kitchen_station)
-         VALUES ($1, $2, $3, 'PIECE', $4, $5)
+        `INSERT INTO bms_product_stock_policies
+           (tenant_id, product_sku, stock_policy, base_unit, display_unit, kitchen_station, kitchen_station_id)
+         VALUES ($1, $2, $3, 'PIECE', $4, $5, $6)
          ON CONFLICT (tenant_id, product_sku) DO NOTHING`,
-        [tenantId, sku, item.stockPolicy, restaurantPackUnitName(item), item.station]
+        [tenantId, sku, item.stockPolicy, restaurantPackUnitName(item),
+          seededStation?.name ?? item.station, seededStation?.id ?? null]
       );
 
       for (const size of sizes) {

@@ -27,6 +27,38 @@ const lists = (th: readonly string[], en: readonly string[]) => ({ th, en }) as 
 
 export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
   {
+    // 9.54: สถานีครัวเลิกเป็นข้อความอิสระบนสินค้า กลายเป็นทะเบียนที่เปิด/ปิดและเรียงลำดับได้
+    // กฎชุดนี้ตอบคำถามที่ร้านอาหารถามจริงตอนเปิดครัวที่สอง: "หลายครัวในสาขาเดียวทำยังไง"
+    // และ "แก้ชื่อครัวแล้วของเก่าหายไหม"
+    id: "limits.kitchen-stations",
+    guideIds: ["inventory.stock-models", "kitchen.board", "pos.restaurant-kitchen-round"],
+    title: both("สถานีครัว: หลายครัวในสาขาเดียว", "Kitchen stations: several kitchens in one branch"),
+    items: lists(
+      [
+        "สาขาเดียวมีได้หลายสถานี (ครัวร้อน/ครัวเย็น/บาร์) — สถานีไม่ใช่สาขา และไม่แยกสต็อก สต็อกยังตัดตามสาขาของบิลเหมือนเดิม",
+        "สถานีระดับร้านใช้ได้ทุกสาขา · สถานีเฉพาะสาขาใช้ได้เฉพาะบิลของสาขานั้น สาขาอื่นที่ขายเมนูเดียวกันจะเห็นตั๋วในช่อง ไม่ระบุสถานี",
+        "เมนูที่ไม่ระบุสถานีไม่ได้หายจากกระดาน แต่ไปอยู่ช่อง ไม่ระบุสถานี",
+        "เปลี่ยนชื่อสถานีได้ ประวัติไม่เปลี่ยนตาม: ตั๋วเก็บชื่อสถานี ณ เวลาที่ครัวเห็น ส่วนเกณฑ์เวลาย้ายไปกับชื่อใหม่ให้เอง",
+        "ปิดสถานีคือปิดใช้งาน ไม่ใช่ลบ — ตั๋วเก่าและประวัติยังอยู่ครบ และสถานีที่ปิดแล้วแต่ยังมีของค้างในครัวยังมีปุ่มบนกระดาน",
+        "ปิดสถานีที่ยังมีเมนูเปิดขายผูกอยู่ต้องยืนยันก่อน เพราะตั๋วของเมนูเหล่านั้นจะไปช่อง ไม่ระบุสถานี",
+        "จัดการสถานีที่ Stock models (สิทธิ์ product.edit) — ยังไม่มีการต่อเครื่องพิมพ์แยกตามสถานี",
+      ],
+      [
+        "One branch can run several stations (hot line, cold line, bar) — a station is not a branch and never splits stock; stock still moves by the order's branch.",
+        "A store-wide station works in every branch; a branch-only station only applies to that branch's bills, so other branches selling the same item see its tickets as unassigned.",
+        "An item with no station is not hidden from the board — it lands in the unassigned column.",
+        "Renaming a station does not rewrite history: each ticket keeps the station name the kitchen actually saw, while the SLA thresholds follow the new name.",
+        "Deactivating a station is not a delete — old tickets and history stay, and a deactivated station with food still in the kitchen keeps its button on the board.",
+        "Deactivating a station that selling menu items still point at needs a confirmation, because their tickets will show as unassigned.",
+        "Stations are managed on Stock models (product.edit permission) — per-station printer routing is not built.",
+      ]
+    ),
+    aliases: lists(
+      ["สถานีครัว", "หลายครัว", "ครัวร้อน", "ครัวเย็น", "บาร์", "เพิ่มครัว", "แก้ชื่อครัว", "ปิดครัว", "ไม่ระบุสถานี"],
+      ["kitchen station", "multiple kitchens", "hot line", "cold line", "bar station", "add a station", "rename a station", "deactivate a station", "unassigned station"]
+    ),
+  },
+  {
     id: "limits.stock-invariant",
     guideIds: ["inventory.stock-sale-blockers", "inventory.reservation-owners"],
     title: both("สมการสต็อกและกฎการเคลื่อนไหว (Stock Invariant)", "The stock invariant and its movement types"),

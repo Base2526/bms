@@ -12,14 +12,16 @@ import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import {
   formatKitchenElapsed,
   groupKitchenTickets,
+  kitchenBoardStationFilters,
   kitchenElapsedSeconds,
-  kitchenStations,
   countKitchenDishes,
   kitchenUrgency,
-  slaForStation,
+  slaForStationRef,
+  ticketMatchesStation,
   PREVIOUS_KITCHEN_STATUS,
   type KitchenBoardGroup,
   type KitchenSla,
+  type KitchenStationFilter,
 } from "@/lib/bms/kitchenBoard";
 import styles from "./restaurant.module.css";
 
@@ -32,7 +34,7 @@ type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; ta
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
-type MenuItem = SearchItem & { kitchenStation: string | null; hasModifiers: boolean; imageUrl: string | null };
+type MenuItem = SearchItem & { kitchenStation: string | null; kitchenStationId: string | null; hasModifiers: boolean; imageUrl: string | null };
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
@@ -135,7 +137,7 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
     </fieldset>;
   })}</div>;
 }
-type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
+type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 
 const LANES = [
   { status: "NEW", label: "เข้าใหม่", color: "#dd5d3d", next: "PREPARING", nextLabel: "เริ่มทำ" },
@@ -199,7 +201,10 @@ export default function RestaurantPosPage() {
   // ตัวนับเวลาบนใบต้องเดินเอง ไม่ใช่ขยับตอน poll — ครัวมองจออยู่ตลอดและ 5 วินาทีของ
   // poll ทำให้ตัวเลขกระตุก · เก็บเป็น "เวลาที่จอเชื่อ" ก้อนเดียวเพื่อให้ทุกใบนับตรงกัน
   const [boardNow, setBoardNow] = useState(() => Date.now());
+  // เก็บ "คีย์" ของสถานี ไม่ใช่ชื่อ (9.54) — ชื่อสถานีเปลี่ยนได้แล้ว ถ้าผูกตัวกรองไว้กับชื่อ
+  // การแก้ชื่อระหว่างกะจะทำให้จอครัวที่กรองอยู่กลายเป็นจอว่างโดยไม่มีใครกดอะไร
   const [stationFilter, setStationFilter] = useState<string | null>(null);
+  const [stationList, setStationList] = useState<Array<{ id: string; name: string; sortOrder: number }>>([]);
   const [groupMenu, setGroupMenu] = useState<KitchenBoardGroup | null>(null);
   const [stationSlas, setStationSlas] = useState<Record<string, KitchenSla>>({});
   // เสียงเตือนต้องให้คนเปิดเอง — เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ และครัวบางร้าน
@@ -446,10 +451,23 @@ export default function RestaurantPosPage() {
 
   // เลนที่ยังไม่จบเท่านั้นที่นับเข้าตัวกรองสถานี — "เสิร์ฟแล้ว" เป็นประวัติ ไม่ใช่งานค้าง
   const openTicket = (row: KitchenTicket) => row.status === "NEW" || row.status === "PREPARING" || row.status === "READY";
-  const kitchenGroups = useMemo(
-    () => groupKitchenTickets(stationFilter === null ? tickets : tickets.filter((row) => row.station === stationFilter)),
-    [tickets, stationFilter]
+  const stationFilterKey = (filter: KitchenStationFilter) => filter.id ?? `name:${filter.name}`;
+  // ปุ่มกรอง = ทะเบียนสถานีของสาขานี้ + สถานีที่โผล่บนตั๋วจริง (รวมสถานีที่เพิ่งถูกปิด
+  // แต่ยังมีของค้างในครัว) · ครัวที่ว่างยังมีปุ่มของตัวเองพร้อมเลข 0 ไม่ใช่หายไปเฉย ๆ
+  const stationFilters = useMemo(
+    () => kitchenBoardStationFilters(tickets.filter(openTicket), stationList),
+    [tickets, stationList]
   );
+  const selectedStation = stationFilters.find((filter) => stationFilterKey(filter) === stationFilter) ?? null;
+  const kitchenGroups = useMemo(
+    () => groupKitchenTickets(
+      stationFilter === null ? tickets
+        : stationFilter === "UNASSIGNED" ? tickets.filter((row) => !row.stationId && !row.station)
+        : tickets.filter((row) => ticketMatchesStation(row, selectedStation))
+    ),
+    [tickets, stationFilter, selectedStation]
+  );
+  const unassignedOpen = tickets.filter((row) => openTicket(row) && !row.stationId && !row.station);
   useEffect(() => {
     if (screen !== "KITCHEN") return;
     const timer = window.setInterval(() => setBoardNow(Date.now()), 1000);
@@ -461,13 +479,18 @@ export default function RestaurantPosPage() {
   }, []);
   // สถานีที่เลือกไว้หมดงานแล้ว = ตัวกรองค้างอยู่กับช่องว่าง แล้วครัวอ่านว่าไม่มีออร์เดอร์
   useEffect(() => {
-    if (stationFilter && !kitchenStations(tickets.filter(openTicket)).includes(stationFilter)) setStationFilter(null);
-  }, [tickets, stationFilter]);
+    if (!stationFilter) return;
+    const stillThere = stationFilter === "UNASSIGNED"
+      ? unassignedOpen.length > 0
+      : stationFilters.some((filter) => stationFilterKey(filter) === stationFilter);
+    if (!stillThere) setStationFilter(null);
+  }, [stationFilters, unassignedOpen.length, stationFilter]);
 
   async function loadTickets() {
     const data = await json("/api/pos/kitchen/tickets?limit=200");
     const rows: KitchenTicket[] = Array.isArray(data.tickets) ? data.tickets : [];
     setStationSlas(data.stationSlas && typeof data.stationSlas === "object" ? data.stationSlas : {});
+    setStationList(Array.isArray(data.stations) ? data.stations : []);
     // ตั๋วที่ "เพิ่งเข้ามา" เทียบกับรอบก่อน ไม่ใช่ทุกใบที่สถานะ NEW — ไม่งั้นจะดังทุก 5 วินาที
     // ตราบใดที่ยังมีงานค้าง · รอบแรกหลังเปิดจอถือเป็นการตั้งต้น ไม่ใช่ของใหม่
     const open = rows.filter((row) => row.status === "NEW");
@@ -965,11 +988,21 @@ export default function RestaurantPosPage() {
             <button type="button"
               className={`${styles.kitchenFilter} ${stationFilter === null ? styles.kitchenFilterOn : ""}`}
               onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets.filter(openTicket))}</button>
-            {kitchenStations(tickets.filter(openTicket)).map((station) => <button key={station} type="button"
-              className={`${styles.kitchenFilter} ${stationFilter === station ? styles.kitchenFilterOn : ""}`}
-              onClick={() => setStationFilter(station)}>
-              {station} {countKitchenDishes(tickets.filter((row) => openTicket(row) && row.station === station))}
-            </button>)}
+            {stationFilters.map((filter) => {
+              const key = stationFilterKey(filter);
+              return <button key={key} type="button"
+                className={`${styles.kitchenFilter} ${stationFilter === key ? styles.kitchenFilterOn : ""}`}
+                onClick={() => setStationFilter(key)}>
+                {filter.name} {countKitchenDishes(tickets.filter((row) => openTicket(row) && ticketMatchesStation(row, filter)))}
+              </button>;
+            })}
+            {/* ปุ่ม "ไม่ระบุสถานี" โผล่เฉพาะตอนมีของอยู่จริง — ปุ่มที่ว่างตลอดเวลาสอนให้ครัว
+                เลิกอ่านตัวเลขบนแถบนี้ */}
+            {unassignedOpen.length > 0 && <button type="button"
+              className={`${styles.kitchenFilter} ${stationFilter === "UNASSIGNED" ? styles.kitchenFilterOn : ""}`}
+              onClick={() => setStationFilter("UNASSIGNED")}>
+              ไม่ระบุสถานี {countKitchenDishes(unassignedOpen)}
+            </button>}
             <div className={styles.kitchenBarEnd}>
               <span className={styles.kitchenLive}><span className={styles.kitchenLiveDot} aria-hidden="true" />อัปเดตอัตโนมัติ · {timeOf(new Date(boardNow).toISOString())}</span>
               <button type="button" className={`${styles.btn} ${styles.btnIcon} ${chimeOn ? styles.kitchenChimeOn : ""}`}
@@ -998,7 +1031,7 @@ export default function RestaurantPosPage() {
                 {groups.length === 0 && <div className={styles.laneEmpty}>ว่าง</div>}
                 {groups.map((group) => {
                   const elapsed = kitchenElapsedSeconds(group.referenceAt, boardNow);
-                  const urgency = kitchenUrgency(elapsed, slaForStation(group.station, stationSlas));
+                  const urgency = kitchenUrgency(elapsed, slaForStationRef(group, stationSlas));
                   return <article className={styles.ticket} key={group.key}>
                     <div className={styles.ticketHead}>
                       <span className={styles.ticketTable}>{group.tableLabel ?? "ไม่ระบุโต๊ะ"}{group.roundNo == null ? "" : ` · รอบ ${group.roundNo}`}</span>

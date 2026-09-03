@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
+import { kitchenStationColumnsSql } from "./kitchenStations";
 
 function mapKitchenTicket(row: any) {
   return {
@@ -14,6 +15,12 @@ function mapKitchenTicket(row: any) {
     roundNo: row.round_no == null ? null : Number(row.round_no),
     kitchenNote: row.kitchen_note ?? null,
     orderItemId: String(row.order_item_id),
+    /**
+     * ตั๋วถือทั้ง id ของสถานี **และ** ชื่อ ณ เวลาที่ครัวเห็น (9.54) — เปลี่ยนชื่อสถานีวันนี้
+     * ต้องไม่เปลี่ยนประวัติว่าเมื่อวานอาหารออกจากครัวชื่ออะไร · จอใช้ id เป็นตัวจับคู่กับ
+     * ตัวกรอง/เกณฑ์เวลา แล้วใช้ชื่อเป็นสิ่งที่พิมพ์บนใบ
+     */
+    stationId: row.station_id ? String(row.station_id) : null,
     station: row.station ?? null,
     status: row.status,
     modifierCodes: row.modifier_codes ?? [],
@@ -42,13 +49,20 @@ export async function enqueueKitchenTicketsInTx(
   orderId: string
 ): Promise<number> {
   if (!(await isCapabilityEnabledInTx(client, tenantId, "KITCHEN_WORKFLOW"))) return 0;
+  // สถานีมาจากแถวหลัก (9.54) ผ่านนิพจน์ชุดเดียวกับรอบครัวของบิลโต๊ะ — เก็บทั้ง id และ
+  // ชื่อ snapshot · ร้านที่ยังไม่ได้ยกสตริงเดิมขึ้นเป็นแถวหลักได้ชื่อเดิมไปตามเดิม
+  const station = kitchenStationColumnsSql({ orderLocation: "o.location_id" });
   const result = await client.query(
     `INSERT INTO bms_kitchen_tickets
-       (tenant_id, order_id, order_item_id, station, modifier_codes)
-     SELECT oi.tenant_id, oi.order_id, oi.id, sp.kitchen_station, oi.stock_modifier_codes
+       (tenant_id, order_id, order_item_id, station, station_id, modifier_codes)
+     SELECT oi.tenant_id, oi.order_id, oi.id, ${station.name}, ${station.id}, oi.stock_modifier_codes
        FROM bms_order_items oi
+       JOIN bms_orders o
+         ON o.tenant_id = oi.tenant_id AND o.id = oi.order_id
        JOIN bms_product_stock_policies sp
          ON sp.tenant_id = oi.tenant_id AND sp.product_sku = oi.product_sku
+       LEFT JOIN bms_kitchen_stations st
+         ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
       WHERE oi.tenant_id = $1 AND oi.order_id = $2
         AND sp.stock_policy IN ('RECIPE', 'NON_STOCK')
      ON CONFLICT (tenant_id, order_item_id) DO NOTHING`,
@@ -91,7 +105,7 @@ export async function listKitchenTickets(
          SELECT 'ORDER'::text AS source, kt.id, kt.order_id, kt.order_item_id::text,
                 NULL::uuid AS check_id, NULL::text AS table_code, NULL::text AS table_name,
                 NULL::integer AS round_no, NULL::text AS kitchen_note,
-                kt.station, kt.status, kt.modifier_codes, kt.created_at, kt.updated_at,
+                kt.station, kt.station_id, kt.status, kt.modifier_codes, kt.created_at, kt.updated_at,
                 oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty
            FROM bms_kitchen_tickets kt
            JOIN bms_order_items oi
@@ -103,7 +117,7 @@ export async function listKitchenTickets(
          UNION ALL
          SELECT 'RESTAURANT_CHECK'::text, rt.id, NULL::uuid, ci.id::text,
                 rt.check_id, tb.code, tb.name, ci.round_no, ci.kitchen_note,
-                rt.station, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
+                rt.station, rt.station_id, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
                 ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty
            FROM bms_restaurant_kitchen_tickets rt
            JOIN bms_restaurant_check_items ci
@@ -258,7 +272,7 @@ async function updateKitchenTicketStatusInTx(client: PoolClient, input: UpdateKi
             RETURNING 'RESTAURANT_CHECK'::text AS source, rt.id, NULL::uuid AS order_id,
                       ci.id::text AS order_item_id, rt.check_id, tb.code AS table_code,
                       tb.name AS table_name, ci.round_no, ci.kitchen_note, rt.station,
-                      rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
+                      rt.station_id, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
                       ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty AS qty`,
           [input.tenantId, input.ticketId, status]
         );

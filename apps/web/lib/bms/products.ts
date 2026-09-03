@@ -7,6 +7,7 @@ import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
 import { resolveDefaultLocationIdInTx } from "./locations";
+import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
@@ -767,6 +768,11 @@ export type UpsertProductInput = {
    * เพราะสถานีเป็นข้อมูลที่ร้านสลับไปมาได้ตลอด ไม่มี dependency ให้ตรวจ
    */
   kitchen_station?: string | null;
+  /**
+   * ทางใหม่ตั้งแต่ `9.54` — ฟอร์มเลือกจากรายการสถานีจริง ส่ง id มา ชื่อเป็นค่าที่ derive
+   * ส่งมาคู่กับ `kitchen_station` ได้ แต่ **id ชนะเสมอ** (ชื่อคือสำเนา ไม่ใช่ความจริง)
+   */
+  kitchen_station_id?: string | null;
 };
 
 function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
@@ -1453,14 +1459,23 @@ export async function upsertProduct(
     // อยู่แค่ที่ /admin/stock-models ทำให้เมนูใหม่ทุกจานได้คำเตือน KITCHEN_STATION_MISSING
     // โดยฟอร์มที่เพิ่งกรอกไม่มีปุ่มแก้ (กับดักเดียวกับ vat_category ก่อน 7.88)
     // กฎเดียวกับ vat_category/price_tiers: ไม่ส่งมา = คงค่าเดิม
-    if (input.kitchen_station !== undefined) {
-      const kitchenStation = String(input.kitchen_station ?? "").trim() || null;
+    //
+    // ตั้งแต่ `9.54` รับได้ทั้ง `kitchen_station_id` (เลือกจากทะเบียน) และชื่อล้วนแบบเดิม
+    // ซึ่งฟอร์มสินค้ายังส่งอยู่ (ตัวเลือกในฟอร์มมาจากทะเบียน แต่พิมพ์ชื่อใหม่ได้)
+    // ชื่อที่ยังไม่มีแถวหลักถูกยกขึ้นเป็นสถานีระดับร้านให้อัตโนมัติ ไม่ใช่ปล่อยเป็นสตริงกำพร้า
+    if (input.kitchen_station_id !== undefined || input.kitchen_station !== undefined) {
+      // ตัวตัดสินอยู่ที่เดียวกับหน้ารูปแบบสต็อก (id ชนะชื่อ · ชื่อที่ยังไม่มีแถวหลักถูกยกขึ้นให้)
+      const station = await resolveKitchenStationForProductInTx(client, tenantId, {
+        stationId: input.kitchen_station_id,
+        stationName: input.kitchen_station,
+      });
       await client.query(
-        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, kitchen_station)
-         VALUES ($1,$2,$3)
+        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, kitchen_station, kitchen_station_id)
+         VALUES ($1,$2,$3,$4)
          ON CONFLICT (tenant_id, product_sku) DO UPDATE SET
-           kitchen_station = EXCLUDED.kitchen_station, updated_at = now()`,
-        [tenantId, sku, kitchenStation]
+           kitchen_station = EXCLUDED.kitchen_station,
+           kitchen_station_id = EXCLUDED.kitchen_station_id, updated_at = now()`,
+        [tenantId, sku, station.name, station.id]
       );
     }
 

@@ -1,6 +1,7 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
+import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 
 // ลิสต์อยู่ในโมดูล pure เพื่อให้ฟอร์มสินค้า/หน้า Stock models/เทส อ่านชุดเดียวกัน
 // (มีสองลิสต์ = วันหนึ่งดรอปดาวน์ยื่นค่าที่ service ไม่รู้จัก)
@@ -17,7 +18,12 @@ export type ProductStockPolicy = {
   lotTracking: boolean;
   expiryTracking: boolean;
   fefo: boolean;
+  /**
+   * ชื่อสถานี — ตั้งแต่ `9.54` เป็น **ค่าที่ derive จาก `kitchenStationId`** ไม่ใช่ค่าที่ตั้งเอง
+   * เก็บไว้เป็น fallback ให้ผู้อ่านรุ่นก่อน 9.54 และให้สถานีที่ยังไม่มีแถวหลัก
+   */
   kitchenStation: string | null;
+  kitchenStationId: string | null;
   scaleItemCode: string | null;
   scaleSize: string | null;
 };
@@ -36,6 +42,7 @@ function mapPolicy(row: any): ProductStockPolicy {
     expiryTracking: Boolean(row.expiry_tracking),
     fefo: Boolean(row.fefo),
     kitchenStation: row.kitchen_station ?? null,
+    kitchenStationId: row.kitchen_station_id ? String(row.kitchen_station_id) : null,
     scaleItemCode: row.scale_item_code ?? null,
     scaleSize: row.scale_size ?? null,
   };
@@ -69,7 +76,18 @@ export async function upsertProductStockPolicy(
   const expiryTracking = input.expiryTracking ?? current?.expiryTracking ?? false;
   const fefo = input.fefo ?? current?.fefo ?? false;
   const displayUnit = String(input.displayUnit !== undefined ? input.displayUnit ?? "" : current?.displayUnit ?? "").trim() || null;
-  const kitchenStation = String(input.kitchenStation !== undefined ? input.kitchenStation ?? "" : current?.kitchenStation ?? "").trim() || null;
+  // สถานีครัวมีสองทางเข้า: `kitchenStationId` (ทางใหม่ตั้งแต่ 9.54 — หน้าจอใช้ทางนี้) และ
+  // `kitchenStation` ที่เป็นชื่อล้วน (ทางเก่าที่ไฟล์นำเข้า/สคริปต์ยังใช้อยู่)
+  // ทางเก่าไม่ถูกตัดทิ้ง แต่จะถูก "ยกระดับ" ให้ผูกกับแถวหลักที่ชื่อตรงกันในทรานแซกชันเดียวกัน
+  const stationIdProvided = input.kitchenStationId !== undefined;
+  const stationNameProvided = input.kitchenStation !== undefined;
+  const requestedStationId = stationIdProvided
+    ? String(input.kitchenStationId ?? "").trim() || null
+    : current?.kitchenStationId ?? null;
+  const requestedStationName = stationNameProvided
+    ? String(input.kitchenStation ?? "").trim() || null
+    // ส่ง id มาว่าง ๆ โดยไม่ส่งชื่อ = ล้างสถานี ไม่ใช่คงชื่อเดิมไว้ให้เป็นสตริงกำพร้า
+    : stationIdProvided && !requestedStationId ? null : current?.kitchenStation ?? null;
   const scaleItemCode = String(input.scaleItemCode !== undefined ? input.scaleItemCode ?? "" : current?.scaleItemCode ?? "").trim() || null;
   const scaleSize = String(input.scaleSize !== undefined ? input.scaleSize ?? "" : current?.scaleSize ?? "").trim() || null;
 
@@ -145,21 +163,31 @@ export async function upsertProductStockPolicy(
         );
       }
     }
+    // ชื่อสถานีเป็นค่าที่ derive จาก id ไม่ใช่ค่าที่ผู้เรียกตั้งเอง (9.54) — ตัวตัดสินอยู่ที่
+    // เดียวกับที่ฟอร์มสินค้าใช้ ไม่ใช่สำเนาที่ต้องคอยไล่ให้ตรงกัน
+    const station = await resolveKitchenStationForProductInTx(client, tenantId, {
+      stationId: requestedStationId,
+      stationName: requestedStationName,
+    });
+    const kitchenStationId = station.id;
+    const kitchenStation = station.name;
     await client.query(
       `INSERT INTO bms_product_stock_policies
          (tenant_id, product_sku, stock_policy, base_unit, display_unit, display_precision,
-          lot_tracking, expiry_tracking, fefo, kitchen_station, scale_item_code, scale_size)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          lot_tracking, expiry_tracking, fefo, kitchen_station, kitchen_station_id,
+          scale_item_code, scale_size)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (tenant_id, product_sku) DO UPDATE SET
          stock_policy = EXCLUDED.stock_policy, base_unit = EXCLUDED.base_unit,
          display_unit = EXCLUDED.display_unit, display_precision = EXCLUDED.display_precision,
          lot_tracking = EXCLUDED.lot_tracking, expiry_tracking = EXCLUDED.expiry_tracking,
          fefo = EXCLUDED.fefo, kitchen_station = EXCLUDED.kitchen_station,
+         kitchen_station_id = EXCLUDED.kitchen_station_id,
          scale_item_code = EXCLUDED.scale_item_code, scale_size = EXCLUDED.scale_size,
          updated_at = now()
        RETURNING *`,
       [tenantId, input.productSku, stockPolicy, baseUnit, displayUnit, displayPrecision,
-        lotTracking, expiryTracking, fefo, kitchenStation, scaleItemCode, scaleSize]
+        lotTracking, expiryTracking, fefo, kitchenStation, kitchenStationId, scaleItemCode, scaleSize]
     );
     if (product.rows[0].active) {
       const readiness = await getProductReadinessInTx(client, tenantId, input.productSku);

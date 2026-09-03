@@ -31,7 +31,7 @@ const Q_MODEL = gql`
   query StockModel($sku: String!) {
     bmsProductStockPolicy(productSku: $sku) {
       productSku stockPolicy baseUnit displayUnit displayPrecision lotTracking expiryTracking fefo
-      kitchenStation scaleItemCode scaleSize
+      kitchenStation kitchenStationId scaleItemCode scaleSize
     }
     bmsProductRecipes(productSku: $sku) {
       id productSku size version outputQty active items { sku size qty }
@@ -47,7 +47,34 @@ const Q_MODEL = gql`
   }
 `;
 const Q_STATION_SLAS = gql`
-  query KitchenStationSlas { bmsKitchenStationSlas { station warnMinutes lateMinutes configured } }
+  query KitchenStationSlas { bmsKitchenStationSlas { station stationId warnMinutes lateMinutes configured } }
+`;
+// ทะเบียนสถานีครัว (9.54) — includeInactive เพราะหน้าตั้งค่าต้องเห็นสถานีที่ปิดไปแล้วเพื่อ
+// เปิดกลับได้ (ปิดสถานีไม่ใช่การลบ ตั๋วเก่ายังอ้างถึงมันอยู่)
+const Q_STATIONS = gql`
+  query KitchenStations {
+    bmsKitchenStations(includeInactive: true) {
+      id code name description locationId locationName active sortOrder
+      productCount activeProductCount
+    }
+    bmsUnmappedKitchenStationNames
+  }
+`;
+const Q_LOCATIONS = gql`query StockModelLocations { bmsLocations { id name active } }`;
+const M_CREATE_STATION = gql`
+  mutation CreateKitchenStation($input: BmsKitchenStationInput!) {
+    bmsCreateKitchenStation(input: $input) { id }
+  }
+`;
+const M_UPDATE_STATION = gql`
+  mutation UpdateKitchenStation($id: ID!, $input: BmsKitchenStationInput!) {
+    bmsUpdateKitchenStation(id: $id, input: $input) { id }
+  }
+`;
+const M_ARCHIVE_STATION = gql`
+  mutation ArchiveKitchenStation($id: ID!, $force: Boolean) {
+    bmsArchiveKitchenStation(id: $id, force: $force) { id active }
+  }
 `;
 const M_STATION_SLA = gql`
   mutation SaveKitchenStationSla($station: String!, $warnMinutes: Int!, $lateMinutes: Int!) {
@@ -154,6 +181,13 @@ export default function StockModelsPage() {
   const [saveStationSla, stationSlaMutation] = useMutation(M_STATION_SLA);
   const [clearStationSla] = useMutation(M_CLEAR_STATION_SLA);
   const [slaDraft, setSlaDraft] = useState<Record<string, { warnMinutes: number; lateMinutes: number }>>({});
+  const stations = useQuery(Q_STATIONS, { fetchPolicy: "cache-and-network", errorPolicy: "all" });
+  const locations = useQuery(Q_LOCATIONS, { fetchPolicy: "cache-first", errorPolicy: "all" });
+  const [createStation] = useMutation(M_CREATE_STATION);
+  const [updateStation, updateStationState] = useMutation(M_UPDATE_STATION);
+  const [archiveStation] = useMutation(M_ARCHIVE_STATION);
+  const [stationForm] = Form.useForm();
+  const [stationModal, setStationModal] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
   const [setCapability, capabilityMutation] = useMutation(M_CAPABILITY);
   const [resetCapability] = useMutation(M_RESET_CAPABILITY);
   const [savePolicy, policyMutation] = useMutation(M_POLICY);
@@ -227,6 +261,20 @@ export default function StockModelsPage() {
     label: t(`admin_products.stock_policy_${option.value.toLowerCase()}`),
   }));
 
+  const stationRows: any[] = stations.data?.bmsKitchenStations ?? [];
+  // สถานีที่สินค้าตัวนี้ผูกอยู่ต้องอยู่ในดรอปดาวน์เสมอ แม้จะถูกปิดใช้งานไปแล้ว — ไม่งั้นเปิด
+  // สินค้ามาแล้วช่องว่าง ซึ่งอ่านได้ว่า "ไม่เคยตั้งสถานี" แล้วกดบันทึกทีเดียวก็ล้างของจริงทิ้ง
+  // (อ่านจากผลของ query ไม่ใช่ policyForm.getFieldValue ระหว่าง render ซึ่ง antd เตือนว่า
+  //  ฟอร์มยังไม่ผูกกับ <Form> ในรอบเรนเดอร์แรก)
+  const savedKitchenStationId: string | null = model.data?.bmsProductStockPolicy?.kitchenStationId ?? null;
+  const unmappedStationNames: string[] = stations.data?.bmsUnmappedKitchenStationNames ?? [];
+  const locationOptions = [
+    { value: "", label: t("admin_stock.station_scope_all") },
+    ...((locations.data?.bmsLocations ?? []) as Array<{ id: string; name: string; active: boolean }>)
+      .filter((location) => location.active)
+      .map((location) => ({ value: location.id, label: location.name })),
+  ];
+
   const renderCapabilityCards = (items: Capability[]) => items.map((item) => {
     const copyKey = item.capability.toLowerCase();
     return <article key={item.capability} className={`${styles.capability} ${item.enabled ? styles.capabilityEnabled : ""}`}>
@@ -248,6 +296,49 @@ export default function StockModelsPage() {
     </article>;
   });
 
+  function openStationModal(row?: any) {
+    stationForm.setFieldsValue({
+      name: row?.name ?? "",
+      code: row?.code ?? "",
+      description: row?.description ?? "",
+      // "" = ทั้งร้าน · ค่าปริยายของสถานีใหม่คือทั้งร้าน เพราะสินค้าหนึ่งตัวขายได้หลายสาขา
+      // การผูกกับสาขาเดียวเป็นการตัดสินใจของร้าน ไม่ใช่ค่าตั้งต้น (ดู 9.54)
+      locationId: row?.locationId ?? "",
+      sortOrder: row?.sortOrder ?? 0,
+      active: row?.active ?? true,
+    });
+    setStationModal({ open: true, id: row?.id ?? null });
+  }
+
+  async function submitStation() {
+    const values = await stationForm.validateFields();
+    const input = {
+      name: String(values.name ?? "").trim(),
+      code: String(values.code ?? "").trim() || null,
+      description: String(values.description ?? "").trim(),
+      locationId: values.locationId ? String(values.locationId) : null,
+      sortOrder: Number(values.sortOrder ?? 0),
+      active: values.active !== false,
+    };
+    try {
+      if (stationModal.id) await updateStation({ variables: { id: stationModal.id, input } });
+      else await createStation({ variables: { input } });
+      setStationModal({ open: false, id: null });
+      await Promise.all([stations.refetch(), stationSlas.refetch()]);
+      message.success(t("admin_stock.saved"));
+    } catch (error) { message.error(errorText(error, t("admin_stock.save_failed"))); }
+  }
+
+  // ปิดสถานีที่ยังมีสินค้าเปิดขายผูกอยู่ = อาหารของเมนูเหล่านั้นไปโผล่ช่อง "ไม่ระบุสถานี"
+  // service ปฏิเสธไว้ก่อน แล้วหน้านี้ถามซ้ำพร้อมจำนวนก่อนส่ง force
+  async function archiveStationRow(row: any) {
+    try {
+      await archiveStation({ variables: { id: row.id, force: row.activeProductCount > 0 } });
+      await Promise.all([stations.refetch(), stationSlas.refetch()]);
+      message.success(t("admin_stock.station_archived"));
+    } catch (error) { message.error(errorText(error, t("admin_stock.action_failed"))); }
+  }
+
   async function changeCapability(capability: string, enabled: boolean) {
     try {
       await setCapability({ variables: { capability, enabled } });
@@ -268,8 +359,13 @@ export default function StockModelsPage() {
     if (!selectedSku) return;
     const values = await policyForm.validateFields().catch(() => null);
     if (!values) return;
+    // ล้างสถานีต้องส่ง null จริง ๆ — antd คืน undefined เมื่อกด clear แล้ว undefined ถูก
+    // ตัดออกจาก JSON ของ GraphQL ซึ่ง service อ่านว่า "ไม่ได้ส่งมา = คงค่าเดิม" (ปุ่มล้าง
+    // ที่ไม่ล้างอะไรเลย) · ส่งเฉพาะตอนช่องนี้แสดงอยู่ ไม่งั้นหน้าที่ซ่อนช่องจะล้างของร้าน
+    const input: Record<string, unknown> = { productSku: selectedSku, ...values };
+    if (stockSectionVisible("KITCHEN_STATION")) input.kitchenStationId = values.kitchenStationId ?? null;
     try {
-      await savePolicy({ variables: { input: { productSku: selectedSku, ...values } } });
+      await savePolicy({ variables: { input } });
       await model.refetch();
       message.success(t("admin_stock.policy_saved"));
     } catch (error) { message.error(errorText(error, t("admin_stock.action_failed"))); }
@@ -469,6 +565,78 @@ export default function StockModelsPage() {
       </Spin>
     </section>
 
+    {/* ทะเบียนสถานีครัว (9.54) — สถานีเคยเป็นข้อความอิสระบนสินค้า จึงเปลี่ยนชื่อไม่ได้
+        เรียงไม่ได้ ปิดไม่ได้ และผูกสาขาไม่ได้ · **สถานีไม่ใช่สาขา และไม่แยกสต็อก** */}
+    {stockSectionVisible("KITCHEN_STATION") && <Card
+      title={t("admin_stock.stations")}
+      extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openStationModal()}>
+        {t("admin_stock.station_add")}
+      </Button>}
+    >
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        {t("admin_stock.stations_hint")}
+      </Typography.Paragraph>
+      {unmappedStationNames.length > 0 && <Alert
+        type="warning" showIcon style={{ marginBottom: 12 }}
+        message={t("admin_stock.stations_unmapped")}
+        description={`${t("admin_stock.stations_unmapped_desc")} — ${unmappedStationNames.join(", ")}`}
+      />}
+      <Spin spinning={stations.loading}>
+        {stationRows.length === 0
+          ? <Empty description={t("admin_stock.stations_empty")} />
+          : <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              scroll={{ x: 720 }}
+              dataSource={stationRows}
+              columns={[
+                {
+                  title: t("admin_stock.station"),
+                  render: (_v: unknown, row: any) => <Space direction="vertical" size={0}>
+                    <strong>{row.name}</strong>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>{row.code}</Typography.Text>
+                  </Space>,
+                },
+                {
+                  title: t("admin_stock.station_scope"),
+                  render: (_v: unknown, row: any) => row.locationId
+                    ? <Tag color="geekblue">{row.locationName ?? t("admin_stock.station_scope_branch")}</Tag>
+                    : <Tag>{t("admin_stock.station_scope_all")}</Tag>,
+                },
+                { title: t("admin_stock.station_sort"), dataIndex: "sortOrder", width: 90 },
+                {
+                  title: t("admin_stock.station_products"),
+                  width: 130,
+                  render: (_v: unknown, row: any) => `${row.activeProductCount} / ${row.productCount}`,
+                },
+                {
+                  title: t("admin_stock.status"),
+                  width: 110,
+                  render: (_v: unknown, row: any) => row.active
+                    ? <Tag color="green">{t("admin_stock.station_active")}</Tag>
+                    : <Tag>{t("admin_stock.station_inactive")}</Tag>,
+                },
+                {
+                  title: "",
+                  width: 150,
+                  render: (_v: unknown, row: any) => canEdit && <Space>
+                    <Button size="small" onClick={() => openStationModal(row)}>{t("admin_stock.edit")}</Button>
+                    {row.active && <Popconfirm
+                      title={row.activeProductCount > 0
+                        ? `${t("admin_stock.station_archive_confirm_linked")} (${row.activeProductCount})`
+                        : t("admin_stock.station_archive_confirm")}
+                      onConfirm={() => void archiveStationRow(row)}
+                    >
+                      <Button size="small" danger>{t("admin_stock.station_archive")}</Button>
+                    </Popconfirm>}
+                  </Space>,
+                },
+              ]}
+            />}
+      </Spin>
+    </Card>}
+
     {/* เกณฑ์เวลาของจอครัว (9.53) — บาร์ชงเสร็จใน 2 นาที ครัวร้อน 8-12 นาทีเป็นปกติ
         เกณฑ์เดียวทั้งร้านทำให้ครัวร้อนแดงตลอดจนสีเลิกมีความหมาย */}
     {stockSectionVisible("STATION_SLA") && <Card title={t("admin_stock.station_sla")}>
@@ -577,7 +745,23 @@ export default function StockModelsPage() {
               <Form.Item name="expiryTracking" valuePropName="checked"><Checkbox>{t("admin_stock.expiry")}</Checkbox></Form.Item>
               <Form.Item name="fefo" valuePropName="checked"><Checkbox>FEFO</Checkbox></Form.Item>
             </Space>}
-            {stockSectionVisible("KITCHEN_STATION") && <Form.Item name="kitchenStation" label={t("admin_stock.kitchen_station")}><Input placeholder="HOT / COLD / BAR" /></Form.Item>}
+            {/* เลือกจากทะเบียนสถานี (9.54) ไม่ใช่พิมพ์ชื่ออิสระ — ชื่อที่พิมพ์เกินมาหนึ่ง
+                ช่องว่างเคยกลายเป็นสถานีใหม่ทั้งสถานีที่ไม่มีใครตั้งเกณฑ์เวลาให้ได้ */}
+            {stockSectionVisible("KITCHEN_STATION") && <Form.Item
+              name="kitchenStationId"
+              label={t("admin_stock.kitchen_station")}
+              extra={t("admin_stock.kitchen_station_hint")}
+            >
+              <Select
+                allowClear showSearch optionFilterProp="label"
+                placeholder={t("admin_stock.kitchen_station_placeholder")}
+                options={stationRows.filter((row) => row.active || row.id === savedKitchenStationId)
+                  .map((row) => ({
+                    value: row.id,
+                    label: row.active ? row.name : `${row.name} (${t("admin_stock.station_inactive")})`,
+                  }))}
+              />
+            </Form.Item>}
             <Form.Item name="deactivateDerived" valuePropName="checked">
               <Checkbox>{t("admin_stock.confirm_deactivate_derived")}</Checkbox>
             </Form.Item>
@@ -715,6 +899,37 @@ export default function StockModelsPage() {
           <Select options={["PIECE", "GRAM", "ML", "MM", "CM", "METER"].map((value) => ({ value, label: value }))} />
         </Form.Item>
         <Form.Item name="variantCode" label={t("admin_stock.size")} rules={[{ required: true }]}><Input placeholder="STD / GRAM" /></Form.Item>
+      </Form>
+    </Modal>
+
+    <Modal
+      open={stationModal.open}
+      title={stationModal.id ? t("admin_stock.station_edit") : t("admin_stock.station_add")}
+      onCancel={() => setStationModal({ open: false, id: null })}
+      onOk={() => void submitStation()}
+      confirmLoading={updateStationState.loading}
+    >
+      <Form form={stationForm} layout="vertical">
+        <Form.Item name="name" label={t("admin_stock.station_name")} rules={[{ required: true }]}>
+          <Input placeholder={t("admin_stock.station_name_placeholder")} maxLength={64} />
+        </Form.Item>
+        <Form.Item name="code" label={t("admin_stock.station_code")} extra={t("admin_stock.station_code_hint")}>
+          <Input placeholder="HOT / BAR" maxLength={32} />
+        </Form.Item>
+        <Form.Item name="description" label={t("admin_stock.station_description")}>
+          <Input.TextArea rows={2} maxLength={200} />
+        </Form.Item>
+        <Form.Item name="locationId" label={t("admin_stock.station_scope")} extra={t("admin_stock.station_scope_hint")}>
+          <Select options={locationOptions} />
+        </Form.Item>
+        <Space wrap align="start">
+          <Form.Item name="sortOrder" label={t("admin_stock.station_sort")} extra={t("admin_stock.station_sort_hint")}>
+            <InputNumber min={-9999} max={9999} precision={0} />
+          </Form.Item>
+          <Form.Item name="active" label={t("admin_stock.station_active")} valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Space>
       </Form>
     </Modal>
   </div>;

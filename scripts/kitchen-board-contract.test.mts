@@ -15,8 +15,11 @@ import {
   groupKitchenTickets,
   kitchenElapsedSeconds,
   kitchenGroupLabel,
+  kitchenBoardStationFilters,
   kitchenStations,
   kitchenUrgency,
+  slaForStationRef,
+  ticketMatchesStation,
   pickReferenceAt,
   slaForStation,
   DEFAULT_KITCHEN_SLA,
@@ -198,4 +201,83 @@ test("⚠️ ย้อนสถานะได้ทีละขั้น แต
   assert.equal(PREVIOUS_KITCHEN_STATUS.NEW, null, "ขั้นแรกไม่มีที่ให้ถอย");
   // การยกเลิกตัดบรรทัดออกจากบิลไปแล้ว การย้อนคือการแก้บิล ไม่ใช่การแก้สถานะครัว
   assert.equal(PREVIOUS_KITCHEN_STATUS.CANCELLED, null);
+});
+
+// =============================================================
+// ทะเบียนสถานี (9.54) — ตัวกรอง, การจับคู่ตั๋ว, และเกณฑ์เวลาเมื่อสถานีถูกเปลี่ยนชื่อ
+// =============================================================
+
+test("ตัวกรองสถานีมาจากทะเบียน + สถานีที่มีตั๋วจริง เรียงตามลำดับที่ร้านตั้ง", () => {
+  // ครัวที่ว่างต้องยังมีปุ่มของตัวเอง — "ครัวร้อนไม่มีงาน" กับ "ระบบไม่ส่งงานมาให้ครัวร้อน"
+  // เป็นคนละเรื่อง แต่กระดานที่ซ่อนสถานีว่างทำให้อ่านออกมาเหมือนกัน
+  const filters = kitchenBoardStationFilters(
+    [ticket({ stationId: "s-bar", station: "บาร์" })],
+    [
+      { id: "s-hot", name: "ครัวร้อน", sortOrder: 1, active: true },
+      { id: "s-bar", name: "บาร์", sortOrder: 0, active: true },
+      { id: "s-old", name: "ครัวเก่า", sortOrder: 2, active: false },
+    ]
+  );
+  assert.deepEqual(filters.map((filter) => filter.name), ["บาร์", "ครัวร้อน"]);
+  assert.equal(filters.some((filter) => filter.name === "ครัวเก่า"), false, "สถานีที่ปิดและไม่มีงานต้องไม่มีปุ่ม");
+});
+
+test("สถานีที่ถูกปิดแต่ยังมีของค้างในครัวต้องมีปุ่ม และอยู่ท้ายลิสต์", () => {
+  // ตั๋วที่ไม่มีปุ่มกรองของตัวเอง = อาหารที่ครัวหาไม่เจอเวลากรอง
+  const filters = kitchenBoardStationFilters(
+    [ticket({ stationId: "s-old", station: "ครัวเก่า" }), ticket({ stationId: null, station: "สถานีไร้ทะเบียน" })],
+    [{ id: "s-hot", name: "ครัวร้อน", sortOrder: 5, active: true }]
+  );
+  assert.deepEqual(filters.map((filter) => filter.name), ["ครัวร้อน", "ครัวเก่า", "สถานีไร้ทะเบียน"]);
+});
+
+test("การจับคู่ตั๋วกับปุ่มกรองใช้ id ก่อนชื่อ — เปลี่ยนชื่อระหว่างกะแล้วของต้องไม่หายจากจอ", () => {
+  const renamed = ticket({ stationId: "s-bar", station: "บาร์ (ชื่อเก่า)" });
+  const byId = { id: "s-bar", name: "บาร์เครื่องดื่ม", sortOrder: 0 };
+  assert.equal(ticketMatchesStation(renamed, byId), true);
+  // ตั๋วที่มี id อยู่แล้วต้องไม่ไปตกใต้ปุ่มของสถานีไร้ทะเบียนที่บังเอิญชื่อเหมือนกัน
+  const legacyButton = { id: null, name: "บาร์ (ชื่อเก่า)", sortOrder: 10 };
+  assert.equal(ticketMatchesStation(renamed, legacyButton), false);
+  assert.equal(ticketMatchesStation({ stationId: null, station: "บาร์ (ชื่อเก่า)" }, legacyButton), true);
+  assert.equal(ticketMatchesStation(renamed, null), true, "ไม่เลือกตัวกรอง = เห็นทุกใบ");
+});
+
+test("ตั๋วรอบเดียวกันของสถานีเดียวกันไม่แตกเป็นสองใบเพราะชื่อคนละยุค", () => {
+  // ชื่อบนตั๋วเป็น snapshot · ใบที่ออกก่อนและหลังการเปลี่ยนชื่อถือชื่อคนละชื่อแต่เป็นครัว
+  // เดียวกัน ถ้าจับกลุ่มด้วยชื่อ ครัวจะเห็นงานเดียวโผล่สองใบพร้อมกัน
+  const groups = groupKitchenTickets([
+    ticket({ stationId: "s-bar", station: "บาร์", productName: "ชามะนาว" }),
+    ticket({ stationId: "s-bar", station: "บาร์เครื่องดื่ม", productName: "ชาเย็น" }),
+  ]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].stationId, "s-bar");
+});
+
+test("เกณฑ์เวลาหาด้วย id ก่อน แล้วค่อยชื่อ", () => {
+  // แถวเกณฑ์เวลาย้ายไปอยู่กับชื่อใหม่ตอนเปลี่ยนชื่อ ส่วนใบที่ยังทำอยู่ถือชื่อเก่า —
+  // หาแต่ชื่อ = ใบนั้นตกกลับไปค่าปริยาย 5/10 กลางกะโดยไม่มีใครสั่ง
+  const map = {
+    "s-bar": { warnMinutes: 1, lateMinutes: 2 },
+    "บาร์เครื่องดื่ม": { warnMinutes: 1, lateMinutes: 2 },
+    "ครัวร้อน": { warnMinutes: 8, lateMinutes: 12 },
+  };
+  assert.deepEqual(slaForStationRef({ stationId: "s-bar", station: "บาร์ (ชื่อเก่า)" }, map), { warnMinutes: 1, lateMinutes: 2 });
+  assert.deepEqual(slaForStationRef({ stationId: null, station: "ครัวร้อน" }, map), { warnMinutes: 8, lateMinutes: 12 });
+  assert.deepEqual(slaForStationRef({ stationId: "s-unknown", station: "ไม่รู้จัก" }, map), DEFAULT_KITCHEN_SLA);
+  assert.deepEqual(slaForStationRef({}, map), DEFAULT_KITCHEN_SLA);
+});
+
+test("ตั๋วยุคก่อน 9.54 (มีแต่ชื่อ ไม่มี id) ยังอยู่ใต้ปุ่มของครัวตัวเอง", () => {
+  // ตั๋วที่โค้ดรุ่นเก่าเขียนไว้ระหว่าง deploy มีชื่อแต่ยังไม่มี station_id · ถ้ายืนกรานว่าต้องมี
+  // id อาหารที่ครัวกำลังทำอยู่จะหลุดจากปุ่มของตัวเองไปอยู่ปุ่มตกค้าง ทั้งที่เป็นครัวเดียวกัน
+  const legacy = { stationId: null, station: "บาร์" };
+  const master = { id: "s-bar", name: "บาร์", sortOrder: 0 };
+  assert.equal(ticketMatchesStation(legacy, master), true);
+
+  // และต้องไม่งอกปุ่มที่สองที่เขียนว่า "บาร์" เหมือนกัน — ครัวกดปุ่มหนึ่งแล้วเจอครึ่งเดียวของงาน
+  const filters = kitchenBoardStationFilters(
+    [ticket({ stationId: null, station: "บาร์" }), ticket({ stationId: "s-bar", station: "บาร์" })],
+    [{ id: "s-bar", name: "บาร์", sortOrder: 0, active: true }]
+  );
+  assert.deepEqual(filters.map((f) => `${f.id ?? "-"}:${f.name}`), ["s-bar:บาร์"]);
 });

@@ -4,6 +4,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { listPrimaryProductImages } from "./products";
+import { kitchenStationColumnsSql } from "./kitchenStations";
 import {
   afterOrderCancellationCommitted,
   cancelOrderInTx,
@@ -196,15 +197,25 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
 // ทำให้เมนูทุกตัวหายจากกริดเงียบ ๆ
 export async function listRestaurantMenu(tenantId: string, locationId: string) {
   await requireRestaurantTenant(tenantId);
+  // ⚠️ หมวดหมู่บนจอสั่งอาหารต้องตอบเหมือนกับที่ตั๋วจะถูกส่งจริง — ใช้ตัวตัดสินตัวเดียวกับ
+  // การออกตั๋ว ไม่ใช่กรองสาขาที่ ON ของ JOIN
+  //
+  // ถ้ากรองที่ JOIN แล้ว COALESCE ไปหาชื่อเดิม เมนูที่ผูกกับสถานีของ **อีกสาขา** จะโผล่เป็น
+  // หมวด "ครัวสาขาสอง" บนจอของสาขานี้ ทั้งที่พอกดส่งครัวจริง ตั๋วจะไปช่อง "ไม่ระบุสถานี" —
+  // จอบอกอย่าง ครัวได้อีกอย่าง
+  const menuStation = kitchenStationColumnsSql({ orderLocation: "$2::uuid" });
   const res = await query<{
     sku: string;
     name: string;
     price: string;
     kitchen_station: string | null;
+    kitchen_station_id: string | null;
     has_modifiers: boolean;
     sizes: Array<{ size: string; available: number }> | null;
   }>(
-    `SELECT p.sku, p.name, p.price, sp.kitchen_station,
+    `SELECT p.sku, p.name, p.price,
+            ${menuStation.name} AS kitchen_station,
+            ${menuStation.id} AS kitchen_station_id,
             EXISTS (
               SELECT 1 FROM bms_product_modifiers m
                WHERE m.tenant_id = p.tenant_id AND m.product_sku = p.sku AND m.active
@@ -226,13 +237,17 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
        FROM bms_products p
        LEFT JOIN bms_product_stock_policies sp
          ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
+       LEFT JOIN bms_kitchen_stations st
+         ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
       WHERE p.tenant_id = $1 AND p.active
         AND EXISTS (
           SELECT 1 FROM bms_product_sales_surfaces surface
            WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
              AND surface.surface = 'RESTAURANT_POS' AND surface.enabled
         )
-      ORDER BY sp.kitchen_station NULLS LAST, p.name`,
+      ORDER BY CASE WHEN st.location_id IS NULL OR st.location_id = $2 THEN st.sort_order END
+                 NULLS LAST,
+               ${menuStation.name} NULLS LAST, p.name`,
     [tenantId, locationId]
   );
   const skus = res.rows.map((row) => row.sku);
@@ -244,6 +259,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
       name: row.name,
       price: Number(row.price),
       kitchenStation: row.kitchen_station,
+      kitchenStationId: row.kitchen_station_id ? String(row.kitchen_station_id) : null,
       hasModifiers: row.has_modifiers,
       availableSizes: sizes,
       availableTotal: sizes.reduce((sum, s) => sum + Math.max(0, Number(s.available)), 0),
@@ -820,14 +836,21 @@ export async function sendRestaurantKitchenRound(input: {
       // และร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลยจะเห็นจอครัวว่างทั้งที่ออร์เดอร์วิ่งอยู่ ซึ่ง
       // อ่านได้ว่า "ระบบพัง" · station เป็น NULL ได้ตามเดิม (จอมีช่อง "ไม่ระบุ station")
       const kitchenOn = await isCapabilityEnabledInTx(client, input.tenantId, "KITCHEN_WORKFLOW");
+      const roundStation = kitchenStationColumnsSql({ policy: "sp", orderLocation: "c.location_id" });
       const tickets = kitchenOn && sent.rowCount
         ? await client.query(
+            // สถานีมาจากแถวหลัก (9.54) ด้วยนิพจน์ชุดเดียวกับคิวครัวของบิลค้าปลีก —
+            // เก็บทั้ง id (ตัวจับคู่กับตัวกรอง/เกณฑ์เวลา) และชื่อ ณ เวลาส่งครัว (ประวัติ)
             `INSERT INTO bms_restaurant_kitchen_tickets
-               (tenant_id, check_id, check_item_id, station)
-             SELECT i.tenant_id, i.check_id, i.id, p.kitchen_station
+               (tenant_id, check_id, check_item_id, station, station_id)
+             SELECT i.tenant_id, i.check_id, i.id, ${roundStation.name}, ${roundStation.id}
                FROM bms_restaurant_check_items i
-               LEFT JOIN bms_product_stock_policies p
-                 ON p.tenant_id = i.tenant_id AND p.product_sku = i.product_sku
+               JOIN bms_restaurant_checks c
+                 ON c.tenant_id = i.tenant_id AND c.id = i.check_id
+               LEFT JOIN bms_product_stock_policies sp
+                 ON sp.tenant_id = i.tenant_id AND sp.product_sku = i.product_sku
+               LEFT JOIN bms_kitchen_stations st
+                 ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
               WHERE i.tenant_id = $1 AND i.check_id = $2 AND i.id = ANY($3::uuid[])
              ON CONFLICT (tenant_id, check_item_id) DO NOTHING`,
             [input.tenantId, input.checkId, sent.rows.map((row) => row.id)]

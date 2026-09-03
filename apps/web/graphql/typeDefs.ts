@@ -1258,6 +1258,10 @@ export const typeDefs = /* GraphQL */ `
     bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
     bmsKitchenTickets(status: String, limit: Int = 100): [BmsKitchenTicket!]!
     bmsKitchenStationSlas: [BmsKitchenStationSla!]!
+    """สถานีครัวของร้าน · locationId = กรอง "ใช้ได้ที่สาขานี้" (สถานีระดับร้าน + ของสาขานั้น)"""
+    bmsKitchenStations(locationId: ID, includeInactive: Boolean = false): [BmsKitchenStation!]!
+    """ชื่อสถานีที่ยังถูกใช้อยู่แต่ไม่มีแถวหลัก (ข้อมูลตกค้าง) — ปกติต้องว่าง"""
+    bmsUnmappedKitchenStationNames: [String!]!
     bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponLocations: [BmsLocation!]!
@@ -2022,6 +2026,8 @@ export const typeDefs = /* GraphQL */ `
     base_unit: String
     # สถานีครัวของเมนู — ไม่ส่งมา = คงค่าเดิม · "" = ล้างสถานี
     kitchen_station: String
+    """9.54 — id ของสถานีจาก bmsKitchenStations · ชนะ kitchen_station เมื่อส่งมาทั้งคู่"""
+    kitchen_station_id: ID
   }
 
   input BmsProductCatalogVariantInput {
@@ -3632,7 +3638,9 @@ export const typeDefs = /* GraphQL */ `
     lotTracking: Boolean!
     expiryTracking: Boolean!
     fefo: Boolean!
+    """ชื่อสถานี — ค่าที่ derive จาก kitchenStationId ตั้งแต่ 9.54 (fallback ของผู้อ่านรุ่นเก่า)"""
     kitchenStation: String
+    kitchenStationId: ID
     scaleItemCode: String
     scaleSize: String
   }
@@ -3645,7 +3653,10 @@ export const typeDefs = /* GraphQL */ `
     lotTracking: Boolean
     expiryTracking: Boolean
     fefo: Boolean
+    """ทางเก่า (ชื่อล้วน) — ชื่อที่ยังไม่มีแถวหลักจะถูกยกขึ้นเป็นสถานีระดับร้านให้อัตโนมัติ"""
     kitchenStation: String
+    """ทางใหม่ (9.54) เลือกจาก bmsKitchenStations — ส่งมาคู่กับ kitchenStation ได้ แต่ id ชนะ"""
+    kitchenStationId: ID
     scaleItemCode: String
     scaleSize: String
     deactivateDerived: Boolean
@@ -3719,9 +3730,39 @@ export const typeDefs = /* GraphQL */ `
     sortOrder: Int
     items: [BmsModifierComponentInput!]!
   }
+  """สถานีครัว (9.54) — พื้นที่ทำงานในสาขา ไม่ใช่สาขา และไม่แยกสต็อก"""
+  type BmsKitchenStation {
+    id: ID!
+    code: String!
+    name: String!
+    description: String
+    """null = ใช้ได้ทุกสาขา · มีค่า = ของสาขานั้นสาขาเดียว"""
+    locationId: ID
+    locationName: String
+    active: Boolean!
+    sortOrder: Int!
+    productCount: Int!
+    activeProductCount: Int!
+    warnMinutes: Int!
+    lateMinutes: Int!
+    slaConfigured: Boolean!
+    createdAt: String!
+    updatedAt: String!
+  }
+  input BmsKitchenStationInput {
+    """ไม่ส่ง = derive จากชื่อ (ร้านส่วนใหญ่ไม่เคยอยากตั้งรหัสเอง)"""
+    code: String
+    name: String
+    description: String
+    locationId: ID
+    active: Boolean
+    sortOrder: Int
+  }
   """เกณฑ์เวลาของจอครัวต่อสถานี (9.53) — สถานีที่ยังไม่ตั้งค่าคืนค่าปริยายพร้อม configured=false"""
   type BmsKitchenStationSla {
     station: String!
+    """null = ชื่อที่ยังไม่มีแถวหลักในตารางสถานี"""
+    stationId: ID
     warnMinutes: Int!
     lateMinutes: Int!
     configured: Boolean!
@@ -3738,6 +3779,9 @@ export const typeDefs = /* GraphQL */ `
     roundNo: Int
     kitchenNote: String
     orderItemId: ID!
+    """id ของสถานี (9.54) — null สำหรับตั๋วเก่าหรือสถานีที่ยังไม่ถูกยกระดับ"""
+    stationId: ID
+    """ชื่อสถานี ณ เวลาที่ตั๋วถูกสร้าง (snapshot) — เปลี่ยนชื่อสถานีแล้วใบเก่าต้องไม่เปลี่ยนตาม"""
     station: String
     status: String!
     modifierCodes: [String!]!
@@ -4333,6 +4377,10 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateKitchenTicketsStatus(ids: [ID!]!, status: String!): [BmsKitchenTicket!]!
     bmsUpsertKitchenStationSla(station: String!, warnMinutes: Int!, lateMinutes: Int!): BmsKitchenStationSla!
     bmsClearKitchenStationSla(station: String!): Boolean!
+    bmsCreateKitchenStation(input: BmsKitchenStationInput!): BmsKitchenStation!
+    bmsUpdateKitchenStation(id: ID!, input: BmsKitchenStationInput!): BmsKitchenStation!
+    """ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่"""
+    bmsArchiveKitchenStation(id: ID!, force: Boolean = false): BmsKitchenStation!
     bmsRecordInventoryWastage(input: BmsInventoryWastageInput!): BmsInventoryWastageResult!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
     bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!   # permission report.view

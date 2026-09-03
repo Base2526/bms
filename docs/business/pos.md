@@ -1361,7 +1361,31 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`)
+
+### Kitchen stations (`9.54`)
+
+One branch can run several kitchens — a hot line, a cold line, a bar — and each works at a different
+pace. Stations are managed on **Stock models → Kitchen stations** (`product.edit`); each menu item
+points at one from its stock model, and the timing thresholds that colour the board stay on the
+existing per-station SLA card (`9.53`).
+
+What matters at the counter:
+
+- **A station is not a branch and does not split stock.** Stock still moves by the branch that sold
+  the bill. A station only answers "who cooks this".
+- **Store-wide is the safe default.** A branch-only station applies to that branch's bills alone, so
+  every other branch selling the same item sees its tickets in the **unassigned** column. The
+  product's readiness card warns about that instead of blocking the sale.
+- **An item with no station is not hidden** — it lands in the unassigned column, which is why that
+  column exists.
+- **Renaming a station is safe.** Each ticket keeps the station name the kitchen actually saw, so
+  yesterday's history does not change; the SLA thresholds follow the new name automatically.
+- **Deactivating is not deleting.** Old tickets and history stay, a deactivated station that still
+  has food in the kitchen keeps its button on the board, and deactivating one that selling menu items
+  still point at asks for confirmation first.
+- **Per-station printer routing is not built.** The schema reserves a column for it; nothing reads it.
+
 
 A dine-in check is settled by the same `recordPosSale()` engine as a retail bill, so the line
 re-validation inside that engine takes the **bill's own** sales surface: `RESTAURANT_POS` when a

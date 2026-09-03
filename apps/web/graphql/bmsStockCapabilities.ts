@@ -32,6 +32,14 @@ import {
   listKitchenStationSlas,
   upsertKitchenStationSla,
 } from "@/lib/bms/kitchenSla";
+import {
+  archiveKitchenStation,
+  createKitchenStation,
+  getKitchenStation,
+  listKitchenStations,
+  listUnmappedKitchenStationNames,
+  updateKitchenStation,
+} from "@/lib/bms/kitchenStations";
 import { dropKitchenCancelledLineInTx } from "@/lib/bms/restaurantPos";
 import { listInventoryWastage, recordInventoryWastage } from "@/lib/bms/wastage";
 import { getProductReadiness } from "@/lib/bms/productConfiguration";
@@ -136,6 +144,23 @@ export const bmsStockCapabilityResolvers = {
     async bmsKitchenStationSlas(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
       return listKitchenStationSlas(getTenantId(ctx));
+    },
+    // อ่านด้วย product.view เหมือนรูปแบบสต็อก/เกณฑ์เวลา — สถานีเป็นข้อมูลแคตตาล็อกของเมนู
+    // (จอครัวอ่านสถานีของตัวเองผ่าน bmsKitchenTickets ซึ่ง gate ด้วย order.view อยู่แล้ว)
+    async bmsKitchenStations(
+      _p: unknown,
+      args: { locationId?: string | null; includeInactive?: boolean | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "product.view");
+      return listKitchenStations(getTenantId(ctx), {
+        locationId: args.locationId ?? null,
+        includeInactive: args.includeInactive === true,
+      });
+    },
+    async bmsUnmappedKitchenStationNames(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return listUnmappedKitchenStationNames(getTenantId(ctx));
     },
     async bmsInventoryWastage(_p: unknown, args: { limit?: number | null }, ctx: any) {
       await requirePermission(ctx, "product.view");
@@ -244,6 +269,43 @@ export const bmsStockCapabilityResolvers = {
         return { ...saved, configured: true };
       } catch (error) {
         badInput(error, "บันทึกเกณฑ์เวลาของสถานีไม่สำเร็จ");
+      }
+    },
+    // ⚠️ จัดการสถานีใช้ `product.edit` ตัวเดียวกับสวิตช์ความสามารถ/รูปแบบสต็อก/เกณฑ์เวลา —
+    // การซ่อนปุ่มฝั่ง client ไม่ใช่ด่าน และสถานีเปลี่ยนว่าอาหารทั้งร้านไปโผล่ที่ครัวไหน
+    async bmsCreateKitchenStation(_p: unknown, args: { input: any }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const actorId = tenantAdminId(ctx);
+      try {
+        const created = await createKitchenStation(getTenantId(ctx), args.input ?? {}, actorId);
+        await audit(ctx, "kitchen.station_create", created.id, { code: created.code, name: created.name });
+        return (await getKitchenStation(getTenantId(ctx), created.id)) ?? created;
+      } catch (error) {
+        badInput(error, "สร้างสถานีครัวไม่สำเร็จ");
+      }
+    },
+    async bmsUpdateKitchenStation(_p: unknown, args: { id: string; input: any }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const actorId = tenantAdminId(ctx);
+      try {
+        const saved = await updateKitchenStation(getTenantId(ctx), args.id, args.input ?? {}, actorId);
+        await audit(ctx, "kitchen.station_update", saved.id, { code: saved.code, name: saved.name, active: saved.active });
+        return (await getKitchenStation(getTenantId(ctx), saved.id)) ?? saved;
+      } catch (error) {
+        badInput(error, "บันทึกสถานีครัวไม่สำเร็จ");
+      }
+    },
+    async bmsArchiveKitchenStation(_p: unknown, args: { id: string; force?: boolean | null }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const actorId = tenantAdminId(ctx);
+      try {
+        const saved = await archiveKitchenStation(getTenantId(ctx), args.id, actorId, {
+          force: args.force === true,
+        });
+        await audit(ctx, "kitchen.station_archive", saved.id, { code: saved.code, forced: args.force === true });
+        return (await getKitchenStation(getTenantId(ctx), saved.id)) ?? saved;
+      } catch (error) {
+        badInput(error, "ปิดใช้งานสถานีครัวไม่สำเร็จ");
       }
     },
     async bmsClearKitchenStationSla(_p: unknown, args: { station: string }, ctx: any) {

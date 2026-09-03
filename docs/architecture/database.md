@@ -650,6 +650,33 @@ that snapshot and preserves direct/bundle fallback only for historical rows. `bm
 and `bms_inventory_wastage` are tenant-scoped operational ledgers. Every new table has forced RLS,
 `bms_app` grants, and composite tenant foreign keys.
 
+**Kitchen station master (`9.54`)** — a station used to exist only as free text on
+`bms_product_stock_policies.kitchen_station`, so everything that referred to one referred to it by an
+exactly-matching name: SLA thresholds (`9.53`) are keyed by name, tickets stored a name, and the
+board's filter was built from whichever names happened to have open work. Renaming a station was
+impossible, because the name *was* the identity. `bms_kitchen_stations` gives a station its own id,
+an active flag, a sort order and an optional branch scope. Three rules it does not bend:
+
+- **A station is a work area inside a branch — never a branch, and never a stock location.** Stock
+  still moves by the order's `location_id`; nothing in `9.54` touches a stock or money path.
+- **`location_id NULL` means the station serves every branch**; a non-null one belongs to that branch
+  alone, and a bill from any other branch resolves to no station (the ticket lands in the board's
+  unassigned column rather than being routed to a kitchen that branch does not have).
+- **Tickets store both `station_id` and a `station` name snapshot.** Renaming a station today must
+  not rewrite what the kitchen saw yesterday, so `bms_kitchen_tickets.station` and
+  `bms_restaurant_kitchen_tickets.station` keep the name recorded at queue time while `station_id`
+  is the live reference. Both foreign keys are `ON DELETE SET NULL`, so a station deleted directly in
+  the database cannot take menu items or history with it.
+
+Station names are unique per tenant across every branch and both active states, because the SLA table
+is still keyed by name; two stations called "บาร์" would give one ticket two different thresholds.
+Codes are unique per scope through two partial indexes — a plain `UNIQUE (tenant_id, location_id,
+code)` would not constrain the store-wide rows at all, since NULL never conflicts with NULL. The
+`9.54` backfill promotes every station name still present in stock policies, SLA rows and both ticket
+tables into a store-wide master row, and never drops the legacy text columns: readers that predate
+`9.54` keep working through a deploy. `printer_profile_id` is a placeholder with no table behind it,
+no reader and no writer — per-station printer routing is not built.
+
 `9.45` adds non-negative `bms_product_modifiers.price_delta`. It is a surcharge per sold menu unit,
 resolved from active tenant catalog rows during order creation and copied into the order item's
 sale-time `pricing_snapshot`; POS payloads never provide a modifier price. The same migration seeds

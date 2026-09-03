@@ -240,6 +240,9 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ตัดของเสียออกจากสต็อกยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "how do I write off expired stock", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "กระดานครัวใช้ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
+  // 9.54: "หลายครัวในสาขาเดียว" ต้องพาไปที่หน้าที่ **จัดการ** สถานี ไม่ใช่กระดานที่แค่แสดงผล
+  { q: "หลายครัวในสาขาเดียวตั้งยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
+  { q: "how do I set up several kitchen stations in one branch", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
   { q: "how do I move kitchen tickets to served", locale: "en", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
   { q: "ระบบรองรับร้านวัสดุก่อสร้างไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.stock-model", origin: "coverage" },
   { q: "ระบบมีคิวครัวไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "kitchen.workflow", origin: "coverage" },
