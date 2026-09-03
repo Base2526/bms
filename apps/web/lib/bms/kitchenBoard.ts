@@ -286,11 +286,16 @@ export function kitchenBoardStationFilters(
     if (!name || master.active === false) continue;
     push({ id: String(master.id), name, sortOrder: Number(master.sortOrder ?? 0) });
   }
+  // ⚠️ ตั๋วที่ไม่มี id แต่ชื่อตรงกับสถานีในทะเบียน **ต้องไม่ได้ปุ่มของตัวเอง** — ไม่งั้นแถบกรอง
+  // มีปุ่มสองปุ่มที่เขียนว่า "บาร์" เหมือนกัน แล้วครัวกดปุ่มหนึ่งเจอครึ่งเดียวของงานตัวเอง
+  // (เกิดกับตั๋วที่โค้ดรุ่นก่อน 9.54 เขียนไว้ระหว่าง deploy ซึ่งมีชื่อแต่ยังไม่มี station_id)
+  const masterNames = new Set([...byId.values()].map((entry) => entry.name));
   for (const ticket of tickets) {
     const id = clean(ticket.stationId);
     const name = clean(ticket.station);
     if (!id && !name) continue;
     if (id && byId.has(id)) continue;
+    if (!id && name && masterNames.has(name)) continue;
     // สถานีที่ปิดไปแล้วแต่ยังมีของค้างในครัว ต้องอยู่ท้ายลิสต์ ไม่ใช่แทรกกลางลำดับที่ร้านตั้ง
     push({ id, name: name ?? id!, sortOrder: KITCHEN_ORPHAN_STATION_SORT });
   }
@@ -308,14 +313,19 @@ const KITCHEN_ORPHAN_STATION_SORT = 10_000;
  *
  * ตั๋วที่ออกก่อนการเปลี่ยนชื่อสถานีถือชื่อเก่า ถ้าเทียบด้วยชื่ออย่างเดียว กดกรองสถานีนั้น
  * แล้วอาหารที่กำลังทำอยู่จะหายไปจากจอทันทีที่มีคนแก้ชื่อ
+ *
+ * **ตั๋วที่ไม่มี id เลยยังจับคู่ด้วยชื่อได้** — ตั๋วที่โค้ดรุ่นก่อน `9.54` เขียนไว้ (ระหว่าง deploy
+ * หรือก่อน apply migration) มีแต่ชื่อ · ถ้ายืนกรานว่าต้องมี id อาหารที่ครัวกำลังทำอยู่จะหลุด
+ * จากปุ่มของตัวเองไปอยู่ปุ่มตกค้าง ทั้งที่มันคือครัวเดียวกัน
  */
 export function ticketMatchesStation(
   ticket: Pick<KitchenBoardTicket, "stationId" | "station">,
   filter: KitchenStationFilter | null
 ): boolean {
   if (!filter) return true;
-  if (filter.id) return clean(ticket.stationId) === filter.id;
-  return clean(ticket.stationId) === null && clean(ticket.station) === filter.name;
+  const id = clean(ticket.stationId);
+  if (filter.id) return id === filter.id || (id === null && clean(ticket.station) === filter.name);
+  return id === null && clean(ticket.station) === filter.name;
 }
 
 /** สถานีทั้งหมดที่มีงานค้างอยู่จริง เรียงตามตัวอักษร (ไม่ระบุสถานีไปท้ายสุด) */

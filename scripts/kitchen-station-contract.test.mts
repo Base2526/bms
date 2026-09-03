@@ -37,6 +37,9 @@ test("รหัสสถานีเก็บอักษรไทยไว้ �
   assert.equal(normalizeKitchenStationCode("hot line"), "HOT_LINE");
   assert.equal(normalizeKitchenStationCode("  Cold/Line  "), "COLD_LINE");
   assert.equal(normalizeKitchenStationCode("---"), KITCHEN_STATION_FALLBACK_CODE);
+  // ชื่อที่ขึ้นต้นด้วยสระ/วรรณยุกต์ลอยต้อง derive เป็นรหัสที่ตัวตรวจของตัวเองยอมรับ —
+  // ไม่งั้นผู้ใช้ที่พิมพ์แต่ "ชื่อ" เจอ error เรื่องรูปแบบ "รหัส" ที่ตัวเองไม่เคยกรอก
+  assert.equal(isValidKitchenStationCode(normalizeKitchenStationCode("\u0e49ครัว")), true);
   assert.equal(normalizeKitchenStationCode(""), KITCHEN_STATION_FALLBACK_CODE);
   assert.equal(normalizeKitchenStationCode(null), KITCHEN_STATION_FALLBACK_CODE);
 });
@@ -95,6 +98,13 @@ test("ทั้งสองเส้นทางที่ออกตั๋ว�
   assert.match(kitchen, /INSERT INTO bms_kitchen_tickets[\s\S]{0,200}station, station_id/);
   const restaurant = withoutComments(source("apps/web/lib/bms/restaurantPos.ts"));
   assert.match(restaurant, /INSERT INTO bms_restaurant_kitchen_tickets[\s\S]{0,200}station, station_id/);
+  // จอสั่งอาหารต้องใช้ตัวตัดสินตัวเดียวกันด้วย — ไม่งั้นเมนูที่ผูกกับสถานีของ "อีกสาขา" จะโผล่
+  // เป็นหมวดหมู่บนจอของสาขานี้ แต่พอกดส่งครัวจริง ตั๋วไปช่อง "ไม่ระบุสถานี"
+  // (จอบอกอย่าง ครัวได้อีกอย่าง)
+  assert.doesNotMatch(restaurant, /COALESCE\(st\.name, sp\.kitchen_station\)/,
+    "listRestaurantMenu ต้องไม่ COALESCE ชื่อสถานีเอง");
+  assert.equal((restaurant.match(/kitchenStationColumnsSql\(/g) ?? []).length, 2,
+    "ทั้งการออกตั๋วและจอสั่งอาหารต้องเรียกตัวตัดสินชุดกลาง");
 });
 
 test("ปิดสถานีคือ active = FALSE — ห้ามมีทางลบถาวรในโค้ด", () => {
@@ -119,18 +129,21 @@ test("เปลี่ยนชื่อสถานีต้องพาเก�
 });
 
 test("ชื่อสถานีที่มาทางเส้นทางเก่าถูกยกขึ้นเป็นแถวหลัก ไม่ปล่อยเป็นสตริงกำพร้า", () => {
-  // ฟอร์มสินค้า/ไฟล์นำเข้า/ตัวสร้างข้อมูลตัวอย่าง เขียนชื่อสถานีได้โดยตรง · ถ้าไม่ยกขึ้นเป็น
-  // แถวหลัก สถานีเหล่านั้นจะไม่โผล่ในดรอปดาวน์ เปิด/ปิดไม่ได้ และเรียงลำดับไม่ได้
-  for (const file of [
-    "apps/web/lib/bms/products.ts",
-    "apps/web/lib/bms/productStockPolicies.ts",
-    "apps/web/lib/bms/devSeed.ts",
-  ]) {
-    assert.match(
-      withoutComments(source(file)),
-      /ensureKitchenStationByNameInTx\(/,
-      `${file} ต้องยกชื่อสถานีขึ้นเป็นแถวหลัก`
-    );
+  // ฟอร์มสินค้าและตัวสร้างข้อมูลตัวอย่างเขียนชื่อสถานีได้โดยตรง · ถ้าไม่ยกขึ้นเป็นแถวหลัก
+  // สถานีเหล่านั้นจะไม่โผล่ในดรอปดาวน์ เปิด/ปิดไม่ได้ และเรียงลำดับไม่ได้
+  const service = withoutComments(source("apps/web/lib/bms/kitchenStations.ts"));
+  assert.match(service, /resolveKitchenStationForProductInTx[\s\S]{0,900}ensureKitchenStationByNameInTx\(/);
+  assert.match(withoutComments(source("apps/web/lib/bms/devSeed.ts")), /ensureKitchenStationByNameInTx\(/);
+});
+
+test("ทั้งสองเส้นทางที่เขียนสถานีลงสินค้าใช้ตัวตัดสินชุดเดียว", () => {
+  // "id ชนะชื่อ" + "ชื่อที่ยังไม่มีแถวหลักถูกยกขึ้นให้" + "id ต้องเป็นของร้านนี้" ถ้าเขียนแยกกัน
+  // สองชุด วันหนึ่งทางหนึ่งจะเลิกทำข้อใดข้อหนึ่งโดยที่อีกทางยังเขียวอยู่
+  for (const file of ["apps/web/lib/bms/products.ts", "apps/web/lib/bms/productStockPolicies.ts"]) {
+    const code = withoutComments(source(file));
+    assert.match(code, /resolveKitchenStationForProductInTx\(/, `${file} ต้องเรียกตัวตัดสินชุดกลาง`);
+    // สำเนาของกฎ "id ชนะ" ที่เขียนเองในไฟล์ผู้เรียก = สูตรที่สอง
+    assert.doesNotMatch(code, /SELECT name FROM bms_kitchen_stations/, `${file} ต้องไม่หาชื่อสถานีเอง`);
   }
 });
 

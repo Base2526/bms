@@ -262,6 +262,11 @@ export default function StockModelsPage() {
   }));
 
   const stationRows: any[] = stations.data?.bmsKitchenStations ?? [];
+  // สถานีที่สินค้าตัวนี้ผูกอยู่ต้องอยู่ในดรอปดาวน์เสมอ แม้จะถูกปิดใช้งานไปแล้ว — ไม่งั้นเปิด
+  // สินค้ามาแล้วช่องว่าง ซึ่งอ่านได้ว่า "ไม่เคยตั้งสถานี" แล้วกดบันทึกทีเดียวก็ล้างของจริงทิ้ง
+  // (อ่านจากผลของ query ไม่ใช่ policyForm.getFieldValue ระหว่าง render ซึ่ง antd เตือนว่า
+  //  ฟอร์มยังไม่ผูกกับ <Form> ในรอบเรนเดอร์แรก)
+  const savedKitchenStationId: string | null = model.data?.bmsProductStockPolicy?.kitchenStationId ?? null;
   const unmappedStationNames: string[] = stations.data?.bmsUnmappedKitchenStationNames ?? [];
   const locationOptions = [
     { value: "", label: t("admin_stock.station_scope_all") },
@@ -750,7 +755,7 @@ export default function StockModelsPage() {
               <Select
                 allowClear showSearch optionFilterProp="label"
                 placeholder={t("admin_stock.kitchen_station_placeholder")}
-                options={stationRows.filter((row) => row.active || row.id === policyForm.getFieldValue("kitchenStationId"))
+                options={stationRows.filter((row) => row.active || row.id === savedKitchenStationId)
                   .map((row) => ({
                     value: row.id,
                     label: row.active ? row.name : `${row.name} (${t("admin_stock.station_inactive")})`,

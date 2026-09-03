@@ -1,7 +1,7 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
-import { ensureKitchenStationByNameInTx } from "./kitchenStations";
+import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 
 // ลิสต์อยู่ในโมดูล pure เพื่อให้ฟอร์มสินค้า/หน้า Stock models/เทส อ่านชุดเดียวกัน
 // (มีสองลิสต์ = วันหนึ่งดรอปดาวน์ยื่นค่าที่ service ไม่รู้จัก)
@@ -163,28 +163,14 @@ export async function upsertProductStockPolicy(
         );
       }
     }
-    // ⚠️ ชื่อสถานีเป็น "ค่าที่ derive" ไม่ใช่ค่าที่ผู้เรียกตั้งเอง (9.54)
-    //
-    // ถ้าปล่อยให้ผู้เรียกส่งชื่อมาคู่กับ id คนละตัว สินค้าจะชี้ไปสถานี A แต่ป้ายบนจอครัว
-    // เขียนว่า B แล้วไม่มีทางรู้ว่าอันไหนคือความจริง · id เป็นความจริง ชื่อคือสำเนา
-    let kitchenStationId: string | null = requestedStationId;
-    let kitchenStation: string | null = requestedStationName;
-    if (kitchenStationId) {
-      const station = await client.query<{ name: string }>(
-        `SELECT name FROM bms_kitchen_stations WHERE tenant_id = $1 AND id = $2`,
-        [tenantId, kitchenStationId]
-      );
-      if (!station.rowCount) throw new Error("ไม่พบสถานีครัวนี้ในร้าน");
-      kitchenStation = station.rows[0].name;
-    } else if (kitchenStation) {
-      // ทางเก่า (ไฟล์นำเข้า/สคริปต์): ยกชื่อขึ้นเป็นแถวหลักให้เลย ไม่งั้นสถานีกำพร้าจะงอก
-      // ขึ้นเรื่อย ๆ — ชื่อที่ไม่มีแถวหลักไม่มีในดรอปดาวน์ เปิด/ปิดไม่ได้ และเรียงลำดับไม่ได้
-      const station = await ensureKitchenStationByNameInTx(client, tenantId, kitchenStation);
-      if (station) {
-        kitchenStationId = station.id;
-        kitchenStation = station.name;
-      }
-    }
+    // ชื่อสถานีเป็นค่าที่ derive จาก id ไม่ใช่ค่าที่ผู้เรียกตั้งเอง (9.54) — ตัวตัดสินอยู่ที่
+    // เดียวกับที่ฟอร์มสินค้าใช้ ไม่ใช่สำเนาที่ต้องคอยไล่ให้ตรงกัน
+    const station = await resolveKitchenStationForProductInTx(client, tenantId, {
+      stationId: requestedStationId,
+      stationName: requestedStationName,
+    });
+    const kitchenStationId = station.id;
+    const kitchenStation = station.name;
     await client.query(
       `INSERT INTO bms_product_stock_policies
          (tenant_id, product_sku, stock_policy, base_unit, display_unit, display_precision,

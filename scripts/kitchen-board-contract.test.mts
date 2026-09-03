@@ -266,3 +266,18 @@ test("เกณฑ์เวลาหาด้วย id ก่อน แล้ว
   assert.deepEqual(slaForStationRef({ stationId: "s-unknown", station: "ไม่รู้จัก" }, map), DEFAULT_KITCHEN_SLA);
   assert.deepEqual(slaForStationRef({}, map), DEFAULT_KITCHEN_SLA);
 });
+
+test("ตั๋วยุคก่อน 9.54 (มีแต่ชื่อ ไม่มี id) ยังอยู่ใต้ปุ่มของครัวตัวเอง", () => {
+  // ตั๋วที่โค้ดรุ่นเก่าเขียนไว้ระหว่าง deploy มีชื่อแต่ยังไม่มี station_id · ถ้ายืนกรานว่าต้องมี
+  // id อาหารที่ครัวกำลังทำอยู่จะหลุดจากปุ่มของตัวเองไปอยู่ปุ่มตกค้าง ทั้งที่เป็นครัวเดียวกัน
+  const legacy = { stationId: null, station: "บาร์" };
+  const master = { id: "s-bar", name: "บาร์", sortOrder: 0 };
+  assert.equal(ticketMatchesStation(legacy, master), true);
+
+  // และต้องไม่งอกปุ่มที่สองที่เขียนว่า "บาร์" เหมือนกัน — ครัวกดปุ่มหนึ่งแล้วเจอครึ่งเดียวของงาน
+  const filters = kitchenBoardStationFilters(
+    [ticket({ stationId: null, station: "บาร์" }), ticket({ stationId: "s-bar", station: "บาร์" })],
+    [{ id: "s-bar", name: "บาร์", sortOrder: 0, active: true }]
+  );
+  assert.deepEqual(filters.map((f) => `${f.id ?? "-"}:${f.name}`), ["s-bar:บาร์"]);
+});

@@ -234,34 +234,50 @@ export function kitchenStationColumnsSql(opts: {
   };
 }
 
+/**
+ * ตัดสินว่าจะ "เก็บ" สถานีอะไรไว้กับสินค้าหนึ่งตัว — ใช้ร่วมกันโดยทุกเส้นทางที่เขียนสถานี
+ *
+ * มีสองทางเข้า: `stationId` (ทางใหม่ตั้งแต่ 9.54 — หน้ารูปแบบสต็อกใช้ทางนี้) และ `stationName`
+ * ที่เป็นชื่อล้วน (ฟอร์มสินค้า/สคริปต์/ตัวสร้างข้อมูลตัวอย่าง) · **id ชนะเสมอ และชื่อเป็นค่าที่ derive**
+ * ถ้าปล่อยให้ผู้เรียกส่งชื่อมาคู่กับ id คนละตัว สินค้าจะชี้สถานี A แต่ป้ายบนจอครัวเขียนว่า B
+ * แล้วไม่มีทางรู้ว่าอันไหนคือความจริง
+ *
+ * ผู้เรียกมีสองที่ (ฟอร์มสินค้า `upsertProduct` และรูปแบบสต็อก `upsertProductStockPolicy`)
+ * ซึ่งต้องให้ผลเหมือนกันเป๊ะ — เขียนแยกกันสองชุดแล้ววันหนึ่งทางหนึ่งจะยอมรับ id ของร้านอื่น
+ * หรือเลิกยกชื่อขึ้นเป็นแถวหลัก
+ */
 export async function resolveKitchenStationForProductInTx(
   client: Pick<PoolClient, "query">,
   tenantId: string,
-  productSku: string,
-  locationId?: string | null
-): Promise<{ stationId: string | null; stationName: string | null }> {
-  const columns = kitchenStationColumnsSql({ orderLocation: "$3::uuid" });
-  const result = await client.query<{ station_id: string | null; station_name: string | null }>(
-    `SELECT ${columns.id} AS station_id, ${columns.name} AS station_name
-       FROM bms_product_stock_policies sp
-       LEFT JOIN bms_kitchen_stations st
-         ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
-      WHERE sp.tenant_id = $1 AND sp.product_sku = $2`,
-    [tenantId, productSku, locationId ?? null]
-  );
-  const row = result.rows[0];
-  return {
-    stationId: row?.station_id ? String(row.station_id) : null,
-    stationName: row?.station_name ?? null,
-  };
+  input: { stationId?: string | null; stationName?: string | null }
+): Promise<{ id: string | null; name: string | null }> {
+  const stationId = String(input.stationId ?? "").trim() || null;
+  if (stationId) {
+    const station = await client.query<{ name: string }>(
+      `SELECT name FROM bms_kitchen_stations WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, stationId]
+    );
+    if (!station.rowCount) throw new Error("ไม่พบสถานีครัวนี้ในร้าน");
+    return { id: stationId, name: station.rows[0].name };
+  }
+  const name = normalizeKitchenStationName(input.stationName);
+  if (!name) return { id: null, name: null };
+  // ทางเก่า: ยกชื่อขึ้นเป็นแถวหลักให้เลย ไม่งั้นสถานีกำพร้าจะงอกขึ้นเรื่อย ๆ — ชื่อที่ไม่มี
+  // แถวหลักไม่มีในดรอปดาวน์ เปิด/ปิดไม่ได้ และเรียงลำดับไม่ได้
+  const station = await ensureKitchenStationByNameInTx(client, tenantId, name);
+  return { id: station?.id ?? null, name: station?.name ?? name };
 }
 
 /**
- * ยกชื่อสถานีที่มาทางเส้นทางเก่า (ฟอร์มสินค้า/ไฟล์นำเข้า/ตัวสร้างข้อมูลตัวอย่าง) ขึ้นเป็นแถวหลัก
+ * ยกชื่อสถานีที่มาทางเส้นทางเก่า (ชื่อล้วน) ขึ้นเป็นแถวหลัก
+ *
+ * "ทางเก่า" คือผู้เรียก service ที่ส่งแต่ชื่อ — ฟอร์มสินค้า, `devSeed`, สคริปต์ของร้าน
+ * (**ไฟล์นำเข้าสินค้ายังไม่มีคอลัมน์สถานีเลย** ดู HEADER_MAP ใน ImportModal ก่อนอ้างถึงมัน)
  *
  * **ไม่ทำแบบนี้ = สถานีกำพร้างอกขึ้นเรื่อย ๆ** — ชื่อที่ไม่มีแถวหลักจะไม่มีในดรอปดาวน์
  * ไม่มีลำดับ เปิด/ปิดไม่ได้ และตั้งเกณฑ์เวลาให้ได้ก็ต่อเมื่อพิมพ์ชื่อตรงเป๊ะ ซึ่งเป็นอาการที่
- * `9.54` ทำมาเพื่อเลิก · สร้างเป็นสถานีระดับร้าน (location_id NULL) เพราะไฟล์นำเข้าไม่มีสาขา
+ * `9.54` ทำมาเพื่อเลิก · สร้างเป็นสถานีระดับร้าน (location_id NULL) เพราะผู้เรียกทางนี้
+ * ไม่เคยรู้จักสาขา
  *
  * ต้องเรียกในทรานแซกชันของผู้เรียก — ชื่อกับ id ของสินค้าต้อง commit พร้อมกัน ไม่งั้นสินค้า
  * ชี้ไปสถานีที่ rollback หายไปแล้ว

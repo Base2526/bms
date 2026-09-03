@@ -161,7 +161,9 @@ async function configuredCapabilities(
          UNION ALL SELECT 'MODIFIER'
           WHERE EXISTS (SELECT 1 FROM bms_product_modifiers WHERE tenant_id = $1 AND active)
          UNION ALL SELECT 'KITCHEN_WORKFLOW'
-          WHERE EXISTS (SELECT 1 FROM bms_product_stock_policies WHERE tenant_id = $1 AND kitchen_station IS NOT NULL)
+          WHERE EXISTS (SELECT 1 FROM bms_product_stock_policies
+                         WHERE tenant_id = $1
+                           AND (kitchen_station_id IS NOT NULL OR kitchen_station IS NOT NULL))
          UNION ALL SELECT 'WASTAGE'
           WHERE EXISTS (SELECT 1 FROM bms_inventory_wastage WHERE tenant_id = $1)
        ) configured`,

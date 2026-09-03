@@ -27,6 +27,8 @@ export const KITCHEN_STATION_FALLBACK_CODE = "STATION";
 // "ครัวร้อน" กลายเป็น "คร_วร_อน" เพราะ ั และ ้ เป็น Mn ไม่ใช่ L (เจอด้วยเทส ไม่ใช่ด้วยสายตา)
 const CODE_ALLOWED = /^[\p{L}\p{N}][\p{L}\p{N}\p{M}_-]*$/u;
 const CODE_DISALLOWED_RUN = /[^\p{L}\p{N}\p{M}_-]+/gu;
+/** ทุกอย่างที่ขึ้นต้นรหัสไม่ได้ (รวมเครื่องหมายประกอบที่อยู่กลางรหัสได้แต่ขึ้นต้นไม่ได้) */
+const CODE_LEADING_RUN = /^[^\p{L}\p{N}]+/u;
 
 /**
  * แปลงข้อความอะไรก็ได้ให้เป็นรหัสสถานี — ตัวพิมพ์ใหญ่ · อะไรที่ไม่ใช่ตัวอักษร/ตัวเลข/เครื่องหมาย
@@ -37,10 +39,16 @@ const CODE_DISALLOWED_RUN = /[^\p{L}\p{N}\p{M}_-]+/gu;
  */
 export function normalizeKitchenStationCode(value: string | null | undefined): string {
   const raw = String(value ?? "").trim().toUpperCase();
-  // ตัดทั้ง `_` และ `-` ที่หัวท้าย ไม่ใช่แค่ `_` — "---" เคยผ่านมาเป็น "---" ซึ่ง
-  // isValidKitchenStationCode() ปฏิเสธทีหลัง (รหัสต้องขึ้นต้นด้วยตัวอักษรหรือตัวเลข)
-  // แล้วผู้ใช้เจอ error ที่พูดถึงรูปแบบรหัสทั้งที่ไม่เคยพิมพ์รหัสเอง
-  const slug = raw.replace(CODE_DISALLOWED_RUN, "_").replace(/^[-_]+|[-_]+$/g, "");
+  // ⚠️ ตัวที่ตัดหัวออกต้องเป็น "ทุกอย่างที่ขึ้นต้นรหัสไม่ได้" ไม่ใช่แค่ `_`/`-`
+  //
+  // รหัสต้องขึ้นต้นด้วยตัวอักษรหรือตัวเลข (`isValidKitchenStationCode`) แต่เครื่องหมายประกอบ
+  // (`\p{M}`) อยู่ในชุดที่อนุญาต **ระหว่างกลาง** ชื่อที่บังเอิญขึ้นต้นด้วยสระ/วรรณยุกต์ลอย
+  // จึงเคย derive ออกมาเป็นรหัสที่ตัวตรวจของตัวเองปฏิเสธ แล้วผู้ใช้เจอ error เรื่องรูปแบบ
+  // "รหัส" ทั้งที่พิมพ์แต่ "ชื่อ" · เหตุผลเดียวกับ "---" ที่เคยผ่านมาแล้วถูกปฏิเสธทีหลัง
+  const slug = raw
+    .replace(CODE_DISALLOWED_RUN, "_")
+    .replace(CODE_LEADING_RUN, "")
+    .replace(/[-_]+$/g, "");
   const code = slug.slice(0, KITCHEN_STATION_CODE_MAX).replace(/[-_]+$/g, "");
   return code || KITCHEN_STATION_FALLBACK_CODE;
 }

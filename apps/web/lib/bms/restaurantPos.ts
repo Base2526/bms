@@ -197,6 +197,13 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
 // ทำให้เมนูทุกตัวหายจากกริดเงียบ ๆ
 export async function listRestaurantMenu(tenantId: string, locationId: string) {
   await requireRestaurantTenant(tenantId);
+  // ⚠️ หมวดหมู่บนจอสั่งอาหารต้องตอบเหมือนกับที่ตั๋วจะถูกส่งจริง — ใช้ตัวตัดสินตัวเดียวกับ
+  // การออกตั๋ว ไม่ใช่กรองสาขาที่ ON ของ JOIN
+  //
+  // ถ้ากรองที่ JOIN แล้ว COALESCE ไปหาชื่อเดิม เมนูที่ผูกกับสถานีของ **อีกสาขา** จะโผล่เป็น
+  // หมวด "ครัวสาขาสอง" บนจอของสาขานี้ ทั้งที่พอกดส่งครัวจริง ตั๋วจะไปช่อง "ไม่ระบุสถานี" —
+  // จอบอกอย่าง ครัวได้อีกอย่าง
+  const menuStation = kitchenStationColumnsSql({ orderLocation: "$2::uuid" });
   const res = await query<{
     sku: string;
     name: string;
@@ -207,8 +214,8 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     sizes: Array<{ size: string; available: number }> | null;
   }>(
     `SELECT p.sku, p.name, p.price,
-            COALESCE(st.name, sp.kitchen_station) AS kitchen_station,
-            st.id AS kitchen_station_id,
+            ${menuStation.name} AS kitchen_station,
+            ${menuStation.id} AS kitchen_station_id,
             EXISTS (
               SELECT 1 FROM bms_product_modifiers m
                WHERE m.tenant_id = p.tenant_id AND m.product_sku = p.sku AND m.active
@@ -232,14 +239,15 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
          ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
        LEFT JOIN bms_kitchen_stations st
          ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
-        AND (st.location_id IS NULL OR st.location_id = $2)
       WHERE p.tenant_id = $1 AND p.active
         AND EXISTS (
           SELECT 1 FROM bms_product_sales_surfaces surface
            WHERE surface.tenant_id = p.tenant_id AND surface.product_sku = p.sku
              AND surface.surface = 'RESTAURANT_POS' AND surface.enabled
         )
-      ORDER BY st.sort_order NULLS LAST, COALESCE(st.name, sp.kitchen_station) NULLS LAST, p.name`,
+      ORDER BY CASE WHEN st.location_id IS NULL OR st.location_id = $2 THEN st.sort_order END
+                 NULLS LAST,
+               ${menuStation.name} NULLS LAST, p.name`,
     [tenantId, locationId]
   );
   const skus = res.rows.map((row) => row.sku);
