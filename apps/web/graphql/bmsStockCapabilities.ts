@@ -71,6 +71,43 @@ export const bmsStockCapabilityResolvers = {
         return false;
       }
     },
+    /** Lightweight sidebar checks; keep the full 13-capability UNION on Stock Models only. */
+    async bmsWastageEnabled(_p: unknown, _a: unknown, ctx: any) {
+      tenantAdminId(ctx);
+      try {
+        return await isCapabilityEnabledInTx({ query }, getTenantId(ctx), "WASTAGE");
+      } catch {
+        return false;
+      }
+    },
+    async bmsPackToolsConfigured(_p: unknown, _a: unknown, ctx: any) {
+      tenantAdminId(ctx);
+      try {
+        const result = await query<{ configured: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1
+               FROM bms_product_packs
+              WHERE tenant_id = $1
+                AND active
+                AND (NOT is_base OR barcode IS NOT NULL)
+             UNION ALL
+             SELECT 1
+               FROM bms_products
+              WHERE tenant_id = $1
+                AND barcode IS NOT NULL
+             UNION ALL
+             SELECT 1
+               FROM bms_product_stock_policies
+              WHERE tenant_id = $1
+                AND stock_policy IN ('PACK', 'BUNDLE')
+           ) AS configured`,
+          [getTenantId(ctx)]
+        );
+        return result.rows[0]?.configured === true;
+      } catch {
+        return false;
+      }
+    },
     async bmsProductStockPolicy(_p: unknown, args: { productSku: string }, ctx: any) {
       await requirePermission(ctx, "product.view");
       return getProductStockPolicy(getTenantId(ctx), args.productSku);

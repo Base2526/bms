@@ -1,7 +1,8 @@
 import { getClient, query } from "@/lib/db";
 import type { QueryResult, QueryResultRow } from "pg";
 import { beginTenantTx } from "./tenant";
-import { normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
+import { normalizeShopArchetype } from "./shopArchetypes";
+import { shopExperienceForArchetype } from "./shopExperience";
 
 export const STORE_CAPABILITIES = [
   "PACK",
@@ -66,21 +67,6 @@ export type StoreCapability = {
 
 const CAPABILITY_SET = new Set<string>(STORE_CAPABILITIES);
 
-const PRESETS: Partial<Record<ShopArchetype, readonly StoreCapabilityCode[]>> = {
-  mini_mart: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "WEIGHTED_PRODUCT"],
-  pet_supply: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "WEIGHTED_PRODUCT"],
-  pharmacy: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "FEFO", "PHARMACY_POLICY"],
-  building_materials: ["PACK", "MULTI_BARCODE", "UNIT_CONVERSION", "WEIGHTED_PRODUCT", "SERIAL_TRACKING"],
-  restaurant: ["RECIPE", "MODIFIER", "KITCHEN_WORKFLOW", "WASTAGE"],
-  food_beverage: ["PACK", "LOT_TRACKING", "EXPIRY_TRACKING", "RECIPE", "MODIFIER", "WASTAGE"],
-  fashion: ["PACK", "MULTI_BARCODE"],
-  home_kitchen: ["PACK", "MULTI_BARCODE", "SERIAL_TRACKING"],
-  beauty_personal_care: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING"],
-  gadgets_accessories: ["PACK", "MULTI_BARCODE", "SERIAL_TRACKING"],
-  b2b_wholesale: ["PACK", "MULTI_BARCODE", "UNIT_CONVERSION"],
-  gifts_seasonal: ["PACK", "MULTI_BARCODE"],
-};
-
 export function isStoreCapability(value: string): value is StoreCapabilityCode {
   return CAPABILITY_SET.has(value);
 }
@@ -89,7 +75,9 @@ export function presetCapabilitiesForArchetype(
   archetype: string | null | undefined
 ): ReadonlySet<StoreCapabilityCode> {
   const normalized = normalizeShopArchetype(archetype);
-  return new Set(normalized ? PRESETS[normalized] ?? [] : []);
+  return new Set(normalized
+    ? shopExperienceForArchetype(normalized).recommendedCapabilities
+    : []);
 }
 
 type CapabilityOverrideRow = {

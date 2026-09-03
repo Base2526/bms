@@ -3,16 +3,14 @@ import type { QueryResult, QueryResultRow } from "pg";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { enforceProductQuota } from "./plans";
+import {
+  PRODUCT_SALES_SURFACES,
+  productTemplateDefaults,
+  type ProductSalesSurface,
+} from "./productTemplatePresets";
 
-export const PRODUCT_SALES_SURFACES = [
-  "RETAIL_POS",
-  "RESTAURANT_POS",
-  "PUBLIC_STOREFRONT",
-  "CUSTOMER_AI",
-  "ONLINE_ORDER",
-] as const;
-
-export type ProductSalesSurface = typeof PRODUCT_SALES_SURFACES[number];
+export { PRODUCT_SALES_SURFACES, productTemplateDefaults } from "./productTemplatePresets";
+export type { ProductSalesSurface } from "./productTemplatePresets";
 
 export type ProductCatalogVariant = {
   code: string;
@@ -71,35 +69,6 @@ export function normalizeProductSalesSurfaces(values: readonly string[]): Produc
   const invalid = normalized.find((value) => !SURFACE_SET.has(value));
   if (invalid) throw new Error(`ช่องทางขายไม่ถูกต้อง: ${invalid}`);
   return normalized as ProductSalesSurface[];
-}
-
-export function productTemplateDefaults(template: string | null | undefined): {
-  stockPolicy: "DIRECT" | "RECIPE" | "NON_STOCK";
-  baseUnit: string;
-  surfaces: ProductSalesSurface[];
-  active: false;
-} {
-  switch (String(template ?? "").trim().toUpperCase()) {
-    case "QUICK_MENU":
-      // Sells on day one with no ingredient/recipe setup (9.52). The default is
-      // restaurant-counter only: a dish with no tracked stock and no recipe has no
-      // fulfilment story online (nothing reserves it, nothing can be picked or packed),
-      // so a shop must opt in per product rather than get storefront listings by default.
-      return { stockPolicy: "NON_STOCK", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS"], active: false };
-    case "PREPARED_MENU":
-      return { stockPolicy: "RECIPE", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS"], active: false };
-    case "READY_GOOD":
-      return { stockPolicy: "DIRECT", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS", "RETAIL_POS"], active: false };
-    case "INGREDIENT":
-      return { stockPolicy: "DIRECT", baseUnit: "PIECE", surfaces: [], active: false };
-    default:
-      return {
-        stockPolicy: "DIRECT",
-        baseUnit: "PIECE",
-        surfaces: ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"],
-        active: false,
-      };
-  }
 }
 
 export async function listProductCatalogVariants(

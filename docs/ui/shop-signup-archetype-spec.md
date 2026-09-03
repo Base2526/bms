@@ -185,6 +185,23 @@ cannot ship half-wired, and it flags copy that exists with no case selecting it 
 
 This preserves existing AI defaults while allowing a richer archetype layer later.
 
+### Archetype-aware admin experience
+
+The shared `shopExperience.ts` profile supplies presentation defaults for all 13 archetypes:
+recommended product templates, sales surfaces, stock sections, capabilities, navigation emphasis
+and an archetype-specific import example. It is presentation policy, not authorization or an
+inventory rule. Admin surfaces apply progressive disclosure:
+
+- core commerce remains visible for every shop;
+- archetype recommendations appear first;
+- capabilities that are enabled, configured or backed by existing product data remain visible;
+- unrelated specialist features sit behind an explicit “additional capabilities” action; and
+- pharmacy and restaurant remain explicit special operating modes because their services enforce
+  the archetype directly.
+
+This prevents a mini mart from learning kitchen configuration merely to add a normal SKU without
+hiding an existing recipe or weakening a route/resolver permission check.
+
 ## Verification flow
 
 When `bmsVerifyShopSignup` creates the tenant:

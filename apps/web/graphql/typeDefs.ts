@@ -1248,6 +1248,8 @@ export const typeDefs = /* GraphQL */ `
     bmsOnboardingProgress: BmsOnboardingProgress!
     bmsStoreCapabilities: [BmsStoreCapability!]!
     bmsKitchenBoardEnabled: Boolean!
+    bmsWastageEnabled: Boolean!
+    bmsPackToolsConfigured: Boolean!
     bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
     bmsProductReadiness(productSku: String!): BmsProductReadiness!
     bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!

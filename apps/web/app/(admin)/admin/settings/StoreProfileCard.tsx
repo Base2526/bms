@@ -3,7 +3,8 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useEffect } from "react";
-import { localizedShopArchetypeOptions, archetypeNeedsRestockEmphasis, onboardingChecklistKeysForArchetype } from "@/lib/bms/shopArchetypes";
+import { localizedShopArchetypeOptions, onboardingChecklistKeysForArchetype, archetypeToBusinessType } from "@/lib/bms/shopArchetypes";
+import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -83,7 +84,8 @@ export default function StoreProfileCard() {
   const selectedArchetype = Form.useWatch("businessArchetype", form);
   const archetypeLocked = Boolean(data?.bmsStoreProfile?.businessArchetypeLocked);
   const checklistKeys = onboardingChecklistKeysForArchetype(selectedArchetype);
-  const highlightRestock = archetypeNeedsRestockEmphasis(selectedArchetype);
+  const shopExperience = shopExperienceForArchetype(selectedArchetype);
+  const highlightRestock = shopExperience.restockEmphasis;
 
   useEffect(() => {
     const tenantData = data?.bmsMyTenant;
@@ -125,6 +127,12 @@ export default function StoreProfileCard() {
       // 2) ข้อมูลร้านที่เหลือ → bms_store_profile
       const input: any = {};
       for (const k of PROFILE_KEYS) input[k] = v[k] ?? null;
+      // Archetype is now the single visible driver, but older shops may have only the
+      // legacy AI business type. Preserve that value until the operator actually picks
+      // an archetype; saving an unrelated profile field must not silently reset AI context.
+      input.businessType = v.businessArchetype
+        ? archetypeToBusinessType(v.businessArchetype)
+        : (v.businessType ?? null);
       input.paymentAccounts = (v.paymentAccounts || []).map((a: any) => ({
         type: a.type || "BANK", bankName: a.bankName ?? null, accountName: a.accountName ?? null,
         accountNo: a.accountNo ?? null, promptpayId: a.promptpayId ?? null, note: a.note ?? null,
@@ -183,6 +191,75 @@ export default function StoreProfileCard() {
                 ),
               },
               {
+                key: "business-profile",
+                forceRender: true,
+                label: <SectionHeader note={t("admin_store_profile.section_business_profile_note")}>{t("admin_store_profile.section_business_profile")}</SectionHeader>,
+                children: (
+                  <>
+                    <Row gutter={16}>
+                      <Col xs={24} md={12}>
+                        <Form.Item name="businessArchetype" label={t("admin_store_profile.shop_archetype_label")}>
+                          <Select
+                            allowClear
+                            disabled={archetypeLocked}
+                            placeholder={t("admin_store_profile.shop_archetype_placeholder")}
+                            options={archetypeOptions}
+                            onChange={(value) => form.setFieldValue(
+                              "businessType",
+                              value ? archetypeToBusinessType(value) : null
+                            )}
+                          />
+                        </Form.Item>
+                        <Form.Item name="businessType" hidden><Input /></Form.Item>
+                      </Col>
+                      <Col xs={24} md={12}>
+                        <Alert
+                          type={shopExperience.specialMode === "NONE" ? "info" : "warning"}
+                          showIcon
+                          message={t(shopExperience.descriptionKey)}
+                          description={shopExperience.specialMode === "NONE"
+                            ? t("admin_store_profile.archetype_effect_desc")
+                            : t(`admin_store_profile.special_mode_${shopExperience.specialMode.toLowerCase()}`)}
+                        />
+                      </Col>
+                    </Row>
+                    {archetypeLocked && (
+                      <Alert
+                        style={{ marginBottom: 12 }}
+                        type="warning"
+                        showIcon
+                        message={t("admin_store_profile.archetype_locked_title")}
+                        description={t("admin_store_profile.archetype_locked_desc")}
+                      />
+                    )}
+                    {shopExperience.recommendedCapabilities.length > 0 && (
+                      <Space wrap style={{ marginBottom: 12 }}>
+                        <Text type="secondary">{t("admin_store_profile.recommended_capabilities")}</Text>
+                        {shopExperience.recommendedCapabilities.map((capability) => (
+                          <Tag key={capability}>{t(`admin_stock.cap_${capability.toLowerCase()}_title`)}</Tag>
+                        ))}
+                      </Space>
+                    )}
+                    <Alert
+                      style={{ marginBottom: 4 }}
+                      type={highlightRestock ? "success" : "info"}
+                      showIcon
+                      message={highlightRestock ? t("admin_store_profile.checklist_highlight_title") : t("admin_store_profile.checklist_default_title")}
+                      description={
+                        <div>
+                          {checklistKeys.map((key) => <div key={key}>- {t(`admin_getting_started.${key}`)}</div>)}
+                          {highlightRestock && (
+                            <div style={{ marginTop: 8 }}>
+                              - {t("admin_store_profile.checklist_restock_hint")} <b>/admin/restock-subscriptions</b> {t("admin_store_profile.checklist_restock_hint_end")}
+                            </div>
+                          )}
+                        </div>
+                      }
+                    />
+                  </>
+                ),
+              },
+              {
                 key: "receipt-language",
                 forceRender: true,
                 label: <SectionHeader note={t("admin_store_profile.section_receipt_language_note")}>{t("admin_store_profile.section_receipt_language")}</SectionHeader>,
@@ -210,42 +287,7 @@ export default function StoreProfileCard() {
                 children: (
                   <>
                     <Row gutter={16}>
-                      <Col xs={24} md={10}>
-                        <Form.Item name="businessArchetype" label={t("admin_store_profile.shop_archetype_label")}>
-                          <Select
-                            allowClear
-                            disabled={archetypeLocked}
-                            placeholder={t("admin_store_profile.shop_archetype_placeholder")}
-                            options={archetypeOptions}
-                          />
-                        </Form.Item>
-                        {archetypeLocked && (
-                          <Alert
-                            style={{ marginTop: 8 }}
-                            type="warning"
-                            showIcon
-                            message={t("admin_store_profile.archetype_locked_title")}
-                            description={t("admin_store_profile.archetype_locked_desc")}
-                          />
-                        )}
-                      </Col>
-                      <Col xs={24} md={10}>
-                        <Form.Item name="businessType" label={t("admin_store_profile.business_type_label")}>
-                          <Select
-                            allowClear
-                            placeholder={t("admin_store_profile.business_type_placeholder")}
-                            options={[
-                              { value: "fashion", label: t("admin_store_profile.business_type_fashion") },
-                              { value: "beauty", label: t("admin_store_profile.business_type_beauty") },
-                              { value: "food", label: t("admin_store_profile.business_type_food") },
-                              { value: "electronics", label: t("admin_store_profile.business_type_electronics") },
-                              { value: "home", label: t("admin_store_profile.business_type_home") },
-                              { value: "general", label: t("admin_store_profile.business_type_general") },
-                            ]}
-                          />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} md={7}>
+                      <Col xs={24} md={12}>
                         <Form.Item name="aiLanguage" label={t("admin_store_profile.ai_language_label")}>
                           <Select options={[
                             { value: "th", label: t("admin_store_profile.lang_th") },
@@ -254,7 +296,7 @@ export default function StoreProfileCard() {
                           ]} />
                         </Form.Item>
                       </Col>
-                      <Col xs={24} md={7}>
+                      <Col xs={24} md={12}>
                         <Form.Item name="aiOrderingStyle" label={t("admin_store_profile.ai_ordering_style_label")}>
                           <Select options={[
                             { value: "catalog_variant", label: t("admin_store_profile.ordering_catalog_variant") },
@@ -289,24 +331,6 @@ export default function StoreProfileCard() {
                         </Form.Item>
                       </Col>
                     </Row>
-                    <Alert closable
-                      style={{ marginBottom: 4 }}
-                      type={highlightRestock ? "success" : "info"}
-                      showIcon
-                      message={highlightRestock ? t("admin_store_profile.checklist_highlight_title") : t("admin_store_profile.checklist_default_title")}
-                      description={
-                        <div>
-                          {checklistKeys.map((key) => (
-                            <div key={key}>- {t(`admin_getting_started.${key}`)}</div>
-                          ))}
-                          {highlightRestock && (
-                            <div style={{ marginTop: 8 }}>
-                              - {t("admin_store_profile.checklist_restock_hint")} <b>/admin/restock-subscriptions</b> {t("admin_store_profile.checklist_restock_hint_end")}
-                            </div>
-                          )}
-                        </div>
-                      }
-                    />
                   </>
                 ),
               },

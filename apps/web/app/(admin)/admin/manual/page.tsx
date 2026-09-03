@@ -443,9 +443,10 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "Products",
     desc: "เพิ่มสินค้า, รูปหลายรูป, SKU/บาร์โค้ด, stock, ราคาขาย, ราคาส่ง และสถานะพร้อมขาย",
     bullets: [
-      "สินค้าใหม่และรายการจาก Import เริ่มเป็น Draft เสมอ เลือก template เมนูปรุงสด / สินค้าพร้อมขาย / วัตถุดิบ / สินค้าทั่วไป แล้ว Publish หลังผ่าน readiness",
+      "สินค้าใหม่และรายการจาก Import เริ่มเป็น Draft เสมอ ระบบเรียง template ที่เหมาะกับประเภทร้านก่อน ส่วนรูปแบบเฉพาะทางเปิดดูเพิ่มได้ แล้ว Publish หลังผ่าน readiness",
       "ตัวเลือกสินค้าเป็น catalog แยกจาก stock จึงสร้างไซซ์/ขนาดเสิร์ฟไว้ก่อนได้แม้ทุกสาขามี stock 0; การเพิ่มตัวเลือกไม่ใช่การปรับสต็อก",
       "Sales surface กำหนดรายสินค้าอย่างชัดเจนว่าแสดงใน Retail POS, Restaurant POS, Storefront, Customer AI หรือ Online order; ประเภทร้านเป็นเพียงค่าเริ่มต้น",
+      "ร้านอาหารเห็นข้อมูลหลักของเมนูครบเสมอ ส่วน Barcode น้ำหนักส่ง ยี่ห้อ และราคาตามจำนวนจะแสดงตามรูปแบบสินค้า หรือเปิดเพิ่มได้สำหรับสินค้าบรรจุ/เดลิเวอรี/จัดเลี้ยง",
       "รูปแรกเป็น cover และรูปที่เหลือเป็น gallery ของหน้าสินค้าสาธารณะ",
       "ตั้ง SKU, ราคา, Variant, VAT, stock policy และ dependency ให้ครบก่อนเปิดขาย; readiness จะบอก blocker เป็นรายช่อง",
       "Import CSV/XLSX รองรับรูปแบบสินค้า, Stock Policy, ตัวเลือก และช่องทางขาย พร้อม preview ก่อนสร้าง / อัปเดต / ข้าม",
@@ -1595,9 +1596,14 @@ const MENU_CARDS_EN: MenuCard[] = [
     title: "Products",
     desc: "Add products, multiple images, SKUs/barcodes, stock, selling prices, wholesale pricing, and sellable status",
     bullets: [
+      "New and imported products always start as Draft. Templates recommended for the shop archetype appear first; specialized templates remain available under additional choices, and products are published only after readiness passes",
+      "Variants belong to the catalog, independently of stock, so sizes or serving sizes can be defined even when every branch has zero stock; adding a variant does not adjust inventory",
+      "Sales surfaces explicitly control whether each product appears in Retail POS, Restaurant POS, Storefront, Customer AI, or Online order. The shop archetype only supplies the starting defaults",
+      "Restaurant shops always see the core menu fields. Barcode, shipping weight, brand, and quantity pricing appear when relevant to the product template, or can be revealed for packaged goods, delivery, and catering",
       "The first image is the cover and the rest form the public product gallery",
-      "Set SKU, barcode, price, active status, reorder point, and per-size stock before selling",
-      "CSV/XLSX import works for larger product batches and previews create / update / skip before you confirm",
+      "Complete the SKU, price, variants, VAT, stock policy, and dependencies before selling; readiness reports blockers for each sales surface",
+      "CSV/XLSX import supports product template, stock policy, variants, and sales surfaces, and previews create / update / skip before you confirm",
+      "Duplicating a product copies its configuration, recipe, modifiers, packs, and prices into a Draft, but does not copy stock, lots, serial numbers, or barcode",
       "Expand a row to inspect stock per size and use quick adjust / manual entry / bulk adjustment",
       "The Reserved number is clickable: it lists which bills hold that size (PENDING / PAID / PACKING) with quantity, customer, channel, branch, and whether a deposit or a bundle is the reason. Requires the order.view permission",
       "If that view reports reserved units with no bill behind them, stock is locked and unsellable — report it to an administrator instead of adjusting stock over it",
@@ -2018,7 +2024,7 @@ const LINK_STEPS_EN: LinkStep[] = [
         currency matter too — the AI uses all of this to answer questions such as “what is the shop called / what are
         your hours”, “which account do I transfer to”, and “how much is shipping”, and it tailors its examples and
         follow-up questions to your business type using real data rather than guessing · the <b>/shop-signup</b> page
-        has an optional <b>shop archetype</b> that pre-fills suitable product categories, sample data, and starter tips,
+        has an optional <b>shop archetype</b> that prioritizes suitable product templates, stock capabilities, navigation, sample data, and starter tips while keeping existing or manually enabled capabilities visible,
         and highlights the
         <b> restock subscriptions</b> flow for shops that regularly lose sales to stock-outs
       </>

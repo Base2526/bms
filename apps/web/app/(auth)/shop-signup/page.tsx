@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
 import { localizedShopArchetypeOptions } from "@/lib/bms/shopArchetypes";
+import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { useI18n } from "@/lib/i18nContext";
 
 const { Paragraph } = Typography;
@@ -22,6 +23,8 @@ export default function Page() {
   const { t } = useI18n();
   const archetypeOptions = localizedShopArchetypeOptions(t);
   const [form] = Form.useForm();
+  const selectedArchetype = Form.useWatch("businessArchetype", form);
+  const shopExperience = shopExperienceForArchetype(selectedArchetype);
   const [done, setDone] = useState(false);
 
   const [signup, { loading }] = useMutation(M_SIGNUP, {
@@ -84,6 +87,17 @@ export default function Page() {
                 options={archetypeOptions}
               />
             </Form.Item>
+            {selectedArchetype && (
+              <Alert
+                style={{ marginTop: -12, marginBottom: 18 }}
+                type={shopExperience.specialMode === "NONE" ? "info" : "warning"}
+                showIcon
+                message={t(shopExperience.descriptionKey)}
+                description={shopExperience.specialMode === "NONE"
+                  ? t("shopSignup.shop_type_effect")
+                  : t(`shopSignup.special_mode_${shopExperience.specialMode.toLowerCase()}`)}
+              />
+            )}
             <Form.Item label={t("shopSignup.owner_name")} name="name">
               <Input placeholder={t("shopSignup.owner_name_placeholder")} />
             </Form.Item>
