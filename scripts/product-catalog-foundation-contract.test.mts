@@ -145,7 +145,11 @@ test("seeded sample products declare their sales surfaces", () => {
   assert.match(seed, /surf AS \([\s\S]*INSERT INTO bms_product_sales_surfaces/);
   assert.match(seed, /archetype === "restaurant"\) return \["RESTAURANT_POS"\]/);
   assert.doesNotMatch(seed, /archetype === "restaurant"[\s\S]{0,80}\.push\("RESTAURANT_POS"\)/);
-  assert.match(seed, /archetype === "restaurant" \? CURATED_SEED_PRODUCTS\.food_beverage/);
+  // ร้านอาหารมีแคตตาล็อกของตัวเอง ไม่ยืมชุด food_beverage (อาหารกล่องพร้อมขาย)
+  // ซึ่งไม่มีสถานีครัว/สูตร/ตัวเลือก จึงทดสอบครัวไม่ได้เลย
+  assert.match(seed, /archetype === "restaurant"\) return seedRestaurantCatalog/);
+  assert.doesNotMatch(seed, /archetype === "restaurant" \? CURATED_SEED_PRODUCTS\.food_beverage/);
+  assert.match(seed, /VALUES \(\$1, \$2, 'RESTAURANT_POS', TRUE\)/);
   const onboarding = source("apps/web/lib/bms/onboardingSampleData.ts");
   assert.match(onboarding, /seedFakeProducts/);
 });

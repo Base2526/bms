@@ -678,7 +678,8 @@ export const typeDefs = /* GraphQL */ `
     productSku: String!
     size: String
     packCode: String!
-    unitName: String!
+    # ไม่ส่งมา = คงชื่อหน่วยเดิมของแพ็กนั้น (แพ็กใหม่จะใช้หน่วยแสดงผลของสินค้า)
+    unitName: String
     baseQty: Int!
     barcode: String
     price: Float
@@ -1254,6 +1255,7 @@ export const typeDefs = /* GraphQL */ `
     bmsProductReadiness(productSku: String!): BmsProductReadiness!
     bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
     bmsProductModifiers(productSku: String!, size: String): [BmsProductModifier!]!
+    bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
     bmsKitchenTickets(status: String, limit: Int = 100): [BmsKitchenTicket!]!
     bmsKitchenStationSlas: [BmsKitchenStationSla!]!
     bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
@@ -1945,6 +1947,9 @@ export const typeDefs = /* GraphQL */ `
     code: String!
     message: String!
     field: String
+    # true = แก้ที่ฟอร์มสินค้าไม่ได้ (บล็อกการเปิดขาย แต่ไม่บล็อกการบันทึกข้อมูลอื่น)
+    external: Boolean!
+    fixPath: String
   }
 
   type BmsProductReadiness {
@@ -2015,6 +2020,8 @@ export const typeDefs = /* GraphQL */ `
     variant_codes: [String!]
     stock_policy: String
     base_unit: String
+    # สถานีครัวของเมนู — ไม่ส่งมา = คงค่าเดิม · "" = ล้างสถานี
+    kitchen_station: String
   }
 
   input BmsProductCatalogVariantInput {
@@ -3565,6 +3572,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsStoreProfile {
     businessArchetype: String
     businessArchetypeLocked: Boolean!
+    vatRegistered: Boolean!
     businessType: String
     aiLanguage: String!
     aiOrderingStyle: String!
@@ -3642,6 +3650,19 @@ export const typeDefs = /* GraphQL */ `
     scaleSize: String
     deactivateDerived: Boolean
   }
+  # ส่วนประกอบของสินค้าชุด (8.8) — ตารางมีมาตั้งแต่ 8.8 แต่เพิ่งมีทางเขียนจากแอป
+  type BmsBundleItem {
+    componentSku: String!
+    componentName: String!
+    componentSize: String!
+    qty: Int!
+  }
+  input BmsBundleItemInput {
+    componentSku: String!
+    componentSize: String!
+    qty: Int!
+  }
+
   type BmsRecipeComponent { sku: String!, size: String!, qty: Int! }
   input BmsRecipeComponentInput { sku: String!, size: String!, qty: Int! }
   type BmsProductRecipe {
@@ -4306,6 +4327,8 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertProductStockPolicy(input: BmsProductStockPolicyInput!): BmsProductStockPolicy!
     bmsUpsertProductRecipe(input: BmsProductRecipeInput!): BmsProductRecipe!
     bmsUpsertProductModifier(input: BmsProductModifierInput!): BmsProductModifier!
+    # ส่งรายการว่าง = เลิกเป็นสินค้าชุด (is_bundle ถูก derive จากรายการนี้เสมอ)
+    bmsSetProductBundleItems(bundleSku: String!, items: [BmsBundleItemInput!]!): [BmsBundleItem!]!
     bmsUpdateKitchenTicketStatus(id: ID!, status: String!): BmsKitchenTicket!
     bmsUpdateKitchenTicketsStatus(ids: [ID!]!, status: String!): [BmsKitchenTicket!]!
     bmsUpsertKitchenStationSla(station: String!, warnMinutes: Int!, lateMinutes: Int!): BmsKitchenStationSla!

@@ -7593,6 +7593,7 @@ const rawResolvers = {
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,
   BmsProduct: bmsProductsResolvers.BmsProduct,
+  BmsProductReadinessIssue: bmsProductsResolvers.BmsProductReadinessIssue,
   BmsCustomer: bmsCustomersResolvers.BmsCustomer,
   BmsPurchaseOrder: bmsPurchaseResolvers.BmsPurchaseOrder,
   BmsPayment: bmsPaymentsResolvers.BmsPayment,

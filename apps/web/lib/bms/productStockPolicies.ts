@@ -1,11 +1,12 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { getProductReadinessInTx } from "./productConfiguration";
+import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
 
-export const PRODUCT_STOCK_POLICIES = [
-  "DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK",
-] as const;
-export type ProductStockPolicyCode = typeof PRODUCT_STOCK_POLICIES[number];
+// ลิสต์อยู่ในโมดูล pure เพื่อให้ฟอร์มสินค้า/หน้า Stock models/เทส อ่านชุดเดียวกัน
+// (มีสองลิสต์ = วันหนึ่งดรอปดาวน์ยื่นค่าที่ service ไม่รู้จัก)
+export { PRODUCT_STOCK_POLICIES } from "./productStockPolicyOptions";
+export type { ProductStockPolicyCode } from "./productStockPolicyOptions";
+import { PRODUCT_STOCK_POLICIES as POLICY_LIST, type ProductStockPolicyCode } from "./productStockPolicyOptions";
 
 export type ProductStockPolicy = {
   productSku: string;
@@ -21,7 +22,7 @@ export type ProductStockPolicy = {
   scaleSize: string | null;
 };
 
-const POLICY_SET = new Set<string>(PRODUCT_STOCK_POLICIES);
+const POLICY_SET = new Set<string>(POLICY_LIST);
 const BASE_UNIT_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
 
 function mapPolicy(row: any): ProductStockPolicy {
@@ -90,10 +91,25 @@ export async function upsertProductStockPolicy(
     );
     if (!product.rowCount) throw new Error("ไม่พบสินค้านี้ในร้าน");
     if (stockPolicy === "BUNDLE" && !product.rows[0].is_bundle) {
-      throw new Error("ต้องตั้งสินค้าเป็น Bundle และกำหนดส่วนประกอบก่อน");
+      throw new Error("ต้องกำหนดส่วนประกอบของชุดก่อน (หน้า Stock models → ส่วนประกอบของชุด)");
     }
-    if (stockPolicy === "SERIALIZED" && !product.rows[0].serial_tracked) {
-      throw new Error("ต้องเปิด Serial tracking ที่สินค้าก่อน");
+    // ⚠️ `serial_tracked` เป็นค่าที่ derive จากนโยบาย ไม่ใช่ธงอิสระ
+    //
+    // เดิมที่นี่ throw ว่า "ต้องเปิด Serial tracking ที่สินค้าก่อน" ทั้งที่ **ไม่มีที่ไหน
+    // ในแอปเปิดธงนี้ได้เลย** (ผู้เขียนคอลัมน์นี้ตัวเดียวคือปุ่มทำสำเนาสินค้า และ
+    // BmsProductInput ก็ไม่มีฟิลด์นี้) → `SERIALIZED` เป็นตัวเลือกที่เลือกแล้วออกไม่ได้
+    // สำหรับร้านที่ preset ของตัวเองแนะนำ SERIAL_TRACKING (home_kitchen, gadgets_accessories)
+    //
+    // ความจริงมีชุดเดียว: นโยบาย · POS อ่าน `serial_tracked` เพื่อบังคับกรอกเลขเครื่อง
+    // การปล่อยให้สองค่านี้ไม่ตรงกันคือสินค้าที่ policy บอกว่าไม่ใช่ SERIALIZED แต่หน้า
+    // เคาน์เตอร์ยังทวงเลขเครื่องอยู่ (หรือกลับกัน)
+    const serialTracked = stockPolicy === "SERIALIZED";
+    if (product.rows[0].serial_tracked !== serialTracked) {
+      await client.query(
+        `UPDATE bms_products SET serial_tracked = $3, updated_at = now()
+          WHERE tenant_id = $1 AND sku = $2`,
+        [tenantId, input.productSku, serialTracked]
+      );
     }
     if (stockPolicy !== "RECIPE") {
       const derived = await client.query<{ recipe_count: number; modifier_count: number }>(
@@ -147,9 +163,7 @@ export async function upsertProductStockPolicy(
     );
     if (product.rows[0].active) {
       const readiness = await getProductReadinessInTx(client, tenantId, input.productSku);
-      if (!readiness.ready) {
-        throw new Error(`สินค้าที่เปิดขายต้องผ่าน readiness: ${readiness.blockers.map((issue) => issue.message).join("; ")}`);
-      }
+      assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
     await client.query("COMMIT");
   } catch (error) {

@@ -44,6 +44,7 @@ import { useI18n } from "@/lib/i18nContext";
 import { checkBarcode, isInStoreBarcode } from "@/lib/bms/barcode";
 import { inferProductCreationTemplate, productTemplateDefaults, type ProductCreationTemplate } from "@/lib/bms/productTemplatePresets";
 import { additionalProductTemplates, productFormFieldVisibility, shopExperienceForArchetype } from "@/lib/bms/shopExperience";
+import { productStockPolicyOptions } from "@/lib/bms/productStockPolicyOptions";
 import debounce from "lodash/debounce";
 import ImportModal from "./ImportModal";
 
@@ -64,6 +65,14 @@ type Variant = {
   price: number;
   priceOverride: number | null;
   basePackId: string | null;
+};
+type ReadinessIssue = {
+  code: string;
+  message: string;
+  field: string | null;
+  /** แก้ที่ฟอร์มสินค้าไม่ได้ — บล็อกการเปิดขาย แต่ไม่บล็อกการบันทึกข้อมูลอื่น */
+  external: boolean;
+  fixPath: string | null;
 };
 type Product = {
   sku: string;
@@ -92,12 +101,12 @@ type Product = {
   salesSurfaces: string[];
   readiness: {
     ready: boolean;
-    blockers: Array<{ code: string; message: string; field: string | null }>;
-    warnings: Array<{ code: string; message: string; field: string | null }>;
+    blockers: ReadinessIssue[];
+    warnings: ReadinessIssue[];
     recipeCostEstimate: number | null;
     recipeCostMaxEstimate: number | null;
   };
-  stockPolicy: { stockPolicy: string } | null;
+  stockPolicy: { stockPolicy: string; kitchenStation: string | null } | null;
 };
 type ReservationOrder = {
   orderId: string;
@@ -130,7 +139,7 @@ type Movement = {
 // ---- GraphQL ------------------------------------------------
 const Q_PRODUCTS = gql`
   query BmsProducts($search: String, $category: String, $limit: Int, $offset: Int) {
-    bmsStoreProfile { businessArchetype }
+    bmsStoreProfile { businessArchetype vatRegistered }
     bmsLocations { id code name branchCode active }
     bmsProducts(search: $search, category: $category, limit: $limit, offset: $offset) {
       total
@@ -179,16 +188,21 @@ const Q_PRODUCT_CONFIGURATION = gql`
       salesSurfaces
       readiness {
         ready
-        blockers { code message field }
-        warnings { code message field }
+        blockers { code message field external fixPath }
+        warnings { code message field external fixPath }
         recipeCostEstimate
         recipeCostMaxEstimate
       }
-      stockPolicy { stockPolicy }
+      stockPolicy { stockPolicy kitchenStation }
     }
   }
 `;
 const Q_CATEGORIES = gql`query { bmsProductCategories { id name } }`;
+// สถานีครัวที่ร้านนี้ใช้อยู่จริง — ใช้เป็นตัวเลือกช่วยพิมพ์ ไม่ใช่รายการปิด
+// (สถานีเป็นข้อความอิสระบน stock policy ไม่มีตารางทะเบียนของตัวเอง)
+const Q_KITCHEN_STATIONS = gql`query { bmsKitchenStationSlas { station } }`;
+// ความสามารถของร้าน — ใช้ตัดรูปแบบสต็อกที่ร้านนี้ยังเปิดขายไม่ได้ออกจากดรอปดาวน์
+const Q_STOCK_CAPABILITIES = gql`query { bmsStoreCapabilities { capability enabled configured } }`;
 const Q_LOW = gql`query { bmsLowStock { sku name locationId locationName branchCode size available reorder_point } }`;
 const Q_MOVEMENTS = gql`
   query ($sku: String!) {
@@ -325,6 +339,7 @@ function ProductsManagement() {
   const [form] = Form.useForm();
   const basePriceDraft = Form.useWatch("price", form);
   const creationTemplate = Form.useWatch("creationTemplate", form);
+  const stockPolicyDraft = Form.useWatch("stockPolicy", form);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, number | null>>({});
@@ -420,8 +435,45 @@ function ProductsManagement() {
   const lowCount: number = lowItems.length;
   const outOfStockItems = lowItems.filter((x) => x.available <= 0);
   const lowStockItems = lowItems.filter((x) => x.available > 0).sort((a, b) => a.available - b.available);
+  // ยิงเฉพาะตอนเปิดโมดัล และกลืน error เอง — ฐานที่ยังไม่ apply 9.40 ต้องไม่ทำให้
+  // ฟอร์มสินค้าเปิดไม่ได้ · ล้มเหลว = แสดงทุกรูปแบบเหมือนเดิม (server ยังเป็นด่านจริง)
+  const { data: capabilityData } = useQuery(Q_STOCK_CAPABILITIES, {
+    skip: !modalOpen,
+    fetchPolicy: "cache-first",
+    onError: () => {},
+  });
+  const capabilityRows: Array<{ capability: string; enabled: boolean; configured: boolean }> | null =
+    capabilityData?.bmsStoreCapabilities ?? null;
+  const capabilityIsActive = (capability: string) =>
+    capabilityRows == null
+    || capabilityRows.some((row) => row.capability === capability && (row.enabled || row.configured));
+  // ต่างจาก capabilityIsActive: ตอนยังไม่รู้ให้ตอบ "ไม่" — ใช้ตัดสินว่าจะ **แสดงช่อง**
+  // สถานีครัวไหม และช่องที่โผล่มาแล้วหายไปตอนข้อมูลมาถึงอ่านแล้วสับสนกว่าไม่มีตั้งแต่แรก
+  const kitchenWorkflowOn = capabilityRows != null && capabilityRows.some((row) =>
+    row.capability === "KITCHEN_WORKFLOW" && (row.enabled || row.configured));
+  // ยิงเฉพาะร้านที่คิวครัวทำงาน และกลืน error เอง — ฐานที่ยังไม่ apply 9.53 ต้องไม่ทำให้
+  // หน้าสินค้าทั้งหน้าพัง แค่พิมพ์ชื่อสถานีเองแทนการเลือกจากลิสต์
+  const { data: kitchenStationData } = useQuery(Q_KITCHEN_STATIONS, {
+    skip: !modalOpen
+      || (shopExperienceForArchetype(data?.bmsStoreProfile?.businessArchetype).specialMode !== "RESTAURANT"
+          && !kitchenWorkflowOn),
+    fetchPolicy: "cache-first",
+    onError: () => {},
+  });
+  const kitchenStationOptions = (kitchenStationData?.bmsKitchenStationSlas ?? [])
+    .map((row: { station: string }) => ({ value: row.station }));
   const shopExperience = shopExperienceForArchetype(data?.bmsStoreProfile?.businessArchetype);
   const isRestaurantShop = shopExperience.specialMode === "RESTAURANT";
+  // ร้านที่ไม่จด VAT ไม่ต้องตอบคำถามเรื่องประเภทภาษี — และ readiness ก็ไม่บล็อกด้วย
+  // (blocker VAT_CATEGORY_REQUIRED ยิงเฉพาะร้านที่ vat_registered)
+  const vatRegistered = data?.bmsStoreProfile?.vatRegistered === true;
+  // สถานีครัวมีความหมายเฉพาะร้านที่คิวครัวทำงาน — preset ของ restaurant เปิด
+  // KITCHEN_WORKFLOW ไว้ ส่วนร้านอื่นที่ไปเปิดเองจะเห็นช่องนี้เมื่อสินค้ามีสถานีอยู่แล้ว
+  // ร้านอาหารเห็นเสมอ · ร้านประเภทอื่นที่เปิดคิวครัวเองก็ต้องตั้งสถานีได้ ·
+  // และสินค้าที่มีสถานีอยู่แล้วต้องไม่ถูกซ่อนค่าที่ร้านตั้งไว้
+  const showKitchenStationField = isRestaurantShop
+    || kitchenWorkflowOn
+    || Boolean(editing?.stockPolicy?.kitchenStation);
   const templateLabel = (template: ProductCreationTemplate) => ({
     QUICK_MENU: t("admin_products.template_quick_menu"),
     PREPARED_MENU: t("admin_products.template_prepared_menu"),
@@ -562,6 +614,7 @@ function ProductsManagement() {
       baseUnit: defaults.baseUnit,
       variantCodes: ["STD"],
       salesSurfaces: [...shopExperience.primarySalesSurfaces],
+      kitchenStation: "",
     });
     setBarcodeDraft("");
     setPriceTiers([]);
@@ -608,6 +661,7 @@ function ProductsManagement() {
       stockPolicy: configuredProduct.stockPolicy?.stockPolicy || "DIRECT",
       variantCodes: configuredProduct.catalogVariants.filter((variant) => variant.active).map((variant) => variant.code),
       salesSurfaces: configuredProduct.salesSurfaces,
+      kitchenStation: configuredProduct.stockPolicy?.kitchenStation || "",
     });
     setBarcodeDraft(configuredProduct.barcode || "");
     setPriceTiers((configuredProduct.priceTiers ?? []).map((t) => ({
@@ -677,7 +731,6 @@ function ProductsManagement() {
             weight_grams: v.weightGrams != null && v.weightGrams !== "" ? Number(v.weightGrams) : null,
             category: v.category?.trim() || null,
             brand: v.brand?.trim() || null,
-            vat_category: v.vatCategory || null,
             // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
             price_tiers: normalizedPriceTiers,
             creation_template: editing ? null : v.creationTemplate,
@@ -685,6 +738,11 @@ function ProductsManagement() {
             base_unit: v.baseUnit,
             variant_codes: v.variantCodes || [],
             sales_surfaces: v.salesSurfaces || [],
+            // ส่งเฉพาะตอนที่ฟอร์มแสดงช่องนี้จริง — ไม่ส่ง = คงค่าเดิม (กฎเดียวกับ vat_category)
+            // ร้านที่ไม่มีคิวครัวจึงไม่มีทางล้างสถานีของร้านอื่นด้วยการกดบันทึกเฉย ๆ
+            ...(showKitchenStationField ? { kitchen_station: v.kitchenStation?.trim() || "" } : {}),
+            // ร้านที่ไม่จด VAT ไม่มีช่องนี้บนจอ — ไม่ส่ง = คงค่าเดิม ไม่ใช่ล้างเป็น UNKNOWN
+            ...(vatRegistered ? { vat_category: v.vatCategory || null } : {}),
           },
         },
       });
@@ -703,7 +761,9 @@ function ProductsManagement() {
                 productSku: editing.sku,
                 size: variant.size,
                 packCode: "BASE",
-                unitName: "ชิ้น",
+                // ⚠️ ห้ามส่งชื่อหน่วยจากที่นี่ — โมดัลนี้แก้แค่ "ราคาต่อไซซ์" และไม่รู้ว่า
+                // หน่วยจริงคืออะไร เดิมส่ง "ชิ้น" ตายตัวจึงทับ "จาน"/"แก้ว"/"กรัม" ของแพ็กเดิม
+                // (ใบเสร็จร้านอาหารกลายเป็น "ข้าวกะเพรา 1 ชิ้น") · ไม่ส่ง = server คงของเดิม
                 baseQty: 1,
                 price: variantPriceDrafts[variant.size] ?? null,
                 isBase: true,
@@ -1019,7 +1079,9 @@ function ProductsManagement() {
             >
               <Select
                 disabled={Boolean(editing)}
-                options={["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"].map((value) => ({
+                // ยื่นเฉพาะรูปแบบที่ตั้งค่าต่อจนเปิดขายได้จริง (ลิสต์เดียวกับหน้า Stock models)
+                // ตัวเลือกที่กดแล้วติด blocker ถาวรแย่กว่าไม่มีตัวเลือก
+                options={productStockPolicyOptions(capabilityIsActive, editing?.stockPolicy?.stockPolicy).map((value) => ({
                   value,
                   label: t(`admin_products.stock_policy_${value.toLowerCase()}`),
                 }))}
@@ -1040,8 +1102,21 @@ function ProductsManagement() {
             <Form.Item
               label={t("admin_products.base_unit")}
               name="baseUnit"
-              rules={[{ required: true }]}
-              extra={t("admin_products.base_unit_hint")}
+              rules={[
+                { required: true },
+                // สินค้าชั่งน้ำหนักต้องใช้ GRAM (blocker WEIGHTED_BASE_UNIT_REQUIRED)
+                // ปล่อยให้เลือก PIECE คู่กับ WEIGHTED = สร้างสินค้าที่เปิดขายไม่ได้
+                // และช่องนี้แก้ได้แค่ตอนสร้าง จึงต้องกันที่นี่ ไม่ใช่ให้ไปเจอทีหลัง
+                {
+                  validator: (_rule, value) =>
+                    stockPolicyDraft === "WEIGHTED" && value !== "GRAM"
+                      ? Promise.reject(new Error(t("admin_products.base_unit_weighted_rule")))
+                      : Promise.resolve(),
+                },
+              ]}
+              extra={stockPolicyDraft === "WEIGHTED"
+                ? t("admin_products.base_unit_weighted_hint")
+                : t("admin_products.base_unit_hint")}
             >
               <Select
                 showSearch
@@ -1062,7 +1137,11 @@ function ProductsManagement() {
               mode="multiple"
               allowClear
               options={[
-                ...(shopExperience.specialMode === "RESTAURANT" || showSpecializedTemplates
+                // ⚠️ เปิดให้เฉพาะร้านอาหาร — `/pos/restaurant` เรียก requireRestaurantTenant()
+                // และ `/pos` ค้าปลีกกรองด้วย RETAIL_POS ดังนั้นสินค้าที่มี RESTAURANT_POS
+                // อย่างเดียวในร้านประเภทอื่นคือสินค้าที่มองไม่เห็นจากทุกที่
+                // (สินค้าเดิมที่เปิดไว้แล้วยังเห็นตัวเลือกนี้ เพื่อไม่ให้กดบันทึกแล้วหายไปเงียบ ๆ)
+                ...(isRestaurantShop || (editing?.salesSurfaces ?? []).includes("RESTAURANT_POS")
                   ? [{ value: "RESTAURANT_POS", label: t("admin_products.surface_restaurant_pos") }]
                   : []),
                 { value: "RETAIL_POS", label: t("admin_products.surface_retail_pos") },
@@ -1072,6 +1151,24 @@ function ProductsManagement() {
               ]}
             />
           </Form.Item>
+
+          {/* สถานีครัว (9.40/9.53) — เดิมอยู่แค่ /admin/stock-models ทำให้เมนูใหม่ทุกจาน
+              ได้คำเตือน KITCHEN_STATION_MISSING โดยฟอร์มที่เพิ่งกรอกไม่มีปุ่มแก้ */}
+          {showKitchenStationField && (
+            <Form.Item
+              label={t("admin_products.label_kitchen_station")}
+              name="kitchenStation"
+              extra={t("admin_products.kitchen_station_hint")}
+            >
+              <AutoComplete
+                allowClear
+                options={kitchenStationOptions}
+                placeholder={t("admin_products.kitchen_station_placeholder")}
+                filterOption={(inputValue, option) =>
+                  String(option?.value ?? "").toLowerCase().includes(inputValue.toLowerCase())}
+              />
+            </Form.Item>
+          )}
 
           {isRestaurantShop && (
             <Alert
@@ -1271,7 +1368,7 @@ function ProductsManagement() {
             {/* ประเภท VAT (7.88) — คอลัมน์มีมานานแต่ไม่มีช่องให้กรอก ร้านที่จด VAT
                 จึงติด blocker ที่ /admin/pos-readiness โดยไม่มีปุ่มแก้ · ค่า default
                 ของฟอร์มคือ UNKNOWN เพื่อไม่ให้การกดบันทึกกลาย ๆ ตั้งค่าภาษีให้เอง */}
-            <Form.Item
+            {vatRegistered && <Form.Item
               label={t("admin_products.label_vat_category")}
               name="vatCategory"
               style={{ flex: 1 }}
@@ -1284,7 +1381,7 @@ function ProductsManagement() {
                   { value: "UNKNOWN", label: t("admin_products.vat_unknown") },
                 ]}
               />
-            </Form.Item>
+            </Form.Item>}
           </Space.Compact>
 
           {/* ขั้นราคาส่ง — แบบราคาคงที่นับแยกไซซ์; แบบเปอร์เซ็นต์นับรวมข้ามไซซ์
@@ -1761,7 +1858,8 @@ function ProductDetail({
                     productSku: product.sku,
                     size: variant.size,
                     packCode: "BASE",
-                    unitName: "ชิ้น",
+                    // ห้ามส่งชื่อหน่วยจากที่นี่ (เหตุผลเดียวกับในโมดัลแก้สินค้า) —
+                    // ช่องนี้แก้แค่ราคาต่อไซซ์ ไม่ใช่หน่วยขาย
                     baseQty: 1,
                     price: value,
                     isBase: true,
@@ -1975,7 +2073,23 @@ function ProductDetail({
                   type="warning"
                   showIcon
                   message={t("admin_products.publish_blocked")}
-                  description={readiness.blockers.map((issue) => issue.message).join(" · ")}
+                  description={
+                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                      {readiness.blockers.map((issue) => (
+                        <span key={issue.code}>
+                          {issue.message}
+                          {/* ข้อที่แก้ที่ฟอร์มนี้ไม่ได้ต้องบอกด้วยว่าไปแก้ที่ไหน — ไม่งั้น
+                              ร้านยาจะอ่านว่า "ต้องมีนโยบายที่อนุมัติแล้ว" แล้วไม่รู้ว่าต้องไปไหนต่อ */}
+                          {issue.external && issue.fixPath && (
+                            <>
+                              {" "}
+                              <a href={issue.fixPath}>{t("admin_products.readiness_fix_link")}</a>
+                            </>
+                          )}
+                        </span>
+                      ))}
+                    </Space>
+                  }
                 />
               )}
               {readiness?.ready && readiness.warnings.length > 0 && (
@@ -2114,7 +2228,9 @@ function ProductDetail({
               style={{ width: 145 }}
               value={newVariantCode}
               disabled={!canEdit}
-              onChange={(event) => setNewVariantCode(event.target.value.toUpperCase())}
+              // ห้าม uppercase: รหัสตัวเลือกคือป้ายหน่วยขายที่ร้านพิมพ์เอง ("60ml", "จานเล็ก")
+              // server จะ fold ให้ลงแถวเดิมอยู่แล้ว การแปลงที่นี่ทำให้จอโชว์ไม่ตรงกับของจริง
+              onChange={(event) => setNewVariantCode(event.target.value)}
             />
             <Input
               placeholder={t("admin_products.variant_name_placeholder")}

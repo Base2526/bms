@@ -19,6 +19,14 @@ import type { ShopArchetype } from "./shopArchetypes";
 import { adjustPoints, reviewMemberTier } from "./membership";
 import { resolveDefaultLocationId } from "./locations";
 import { beginTenantTx } from "./tenant";
+import {
+  RESTAURANT_DEFAULT_SIZES,
+  RESTAURANT_INGREDIENTS,
+  RESTAURANT_MENU,
+  RESTAURANT_MODIFIER_GROUPS,
+  restaurantMenuName,
+  restaurantPackUnitName,
+} from "./restaurantCatalogSeed";
 
 const R = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(a: T[]): T => a[R(a.length)];
@@ -614,13 +622,238 @@ function fakeProductSurfaces(archetype?: ShopArchetype | null): string[] {
   return ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"];
 }
 
+// หน่วยขายที่พิมพ์บนใบเสร็จและกระดานครัว — ร้านอาหารไม่มีคำว่า "ชิ้น"
+/**
+ * แคตตาล็อกร้านอาหาร: เมนู + วัตถุดิบ + สูตร + สถานีครัว + ตัวเลือก
+ *
+ * เขียนด้วย INSERT ตรงเหมือนเส้นทาง seeder อื่น ไม่ผ่าน upsertProduct() เพราะ
+ * readiness ของสินค้าที่ active จะบล็อกเมนู RECIPE ระหว่างที่สูตรยังใส่ไม่ครบ
+ * ทุกแถวลูกจึงต้องประกาศเองให้ครบ — โดยเฉพาะ bms_product_sales_surfaces (9.51)
+ * ที่ถ้าลืมจะได้เมนูที่ดู active แต่ยิงที่เครื่องขายไม่เจอ
+ */
+async function seedRestaurantCatalog(tenantId: string, count: number) {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const locationResult = await client.query<{ id: string }>(
+      `SELECT id FROM bms_locations WHERE tenant_id = $1 AND active
+        ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1`,
+      [tenantId]
+    );
+    const locationId = locationResult.rows[0]?.id;
+    if (!locationId) throw new Error("ยังไม่มีสาขาในร้านนี้ — สร้างสาขาก่อนสร้างสินค้า");
+
+    const inserted: Array<{ sku: string; name: string; price: string }> = [];
+    // นับเฉพาะ "เมนู" ไม่นับวัตถุดิบ — ไม่งั้นวัตถุดิบ 32 ตัวจะดันตัวนับข้ามเมนู
+    // ที่ยังไม่เคยถูกสร้าง แล้วการกดครั้งที่สองได้ชื่อซ้ำ (· สูตรพิเศษ) ทั้งที่ครัว
+    // ยังมีเมนูอีกครึ่งค่อนที่ไม่เคยโผล่
+    const seq = await client.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM bms_products
+        WHERE tenant_id = $1 AND sku LIKE 'FAKE-%' AND sku NOT LIKE 'FAKE-ING-%'`,
+      [tenantId]
+    );
+    const offset = seq.rows[0]?.n ?? 0;
+
+    // ---- วัตถุดิบ: ชุดเดียวต่อร้าน ----
+    // SKU ไม่ผูกกับ offset โดยตั้งใจ กดสร้างซ้ำจึงใช้ของเดิม ไม่ใช่สร้าง "หมูสับ"
+    // กองที่สองแล้วสูตรของเมนูรอบใหม่ไปตัดคนละกองกับรอบก่อน
+    const ingredientSkus = new Map<string, string>();
+    for (const ingredient of RESTAURANT_INGREDIENTS) {
+      const sku = `FAKE-ING-${ingredient.code}`;
+      ingredientSkus.set(ingredient.code, sku);
+      const created = await client.query(
+        `INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, description, cost_price, category)
+         VALUES ($1, $2, $3, true, 0, $4, $5, $6, $7)
+         ON CONFLICT (tenant_id, sku) DO NOTHING`,
+        [
+          tenantId,
+          sku,
+          ingredient.name,
+          [ingredient.name.toLowerCase(), "วัตถุดิบ"],
+          `วัตถุดิบสำหรับครัว คิดเป็น${ingredient.unitLabel}`,
+          ingredient.costPerUnit.toFixed(2),
+          ingredient.category,
+        ]
+      );
+      // วัตถุดิบไม่มีแถวใน bms_product_sales_surfaces เลย = ไม่โผล่ในเมนู/หน้าร้าน/AI
+      // แต่สูตรยังตัดได้ เพราะการตัดวัตถุดิบไม่ได้เดินผ่านด่านช่องทางขาย
+      await client.query(
+        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, stock_policy, base_unit, display_unit)
+         VALUES ($1, $2, 'DIRECT', $3, $4)
+         ON CONFLICT (tenant_id, product_sku) DO NOTHING`,
+        [tenantId, sku, ingredient.baseUnit, ingredient.unitLabel]
+      );
+      await client.query(
+        `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
+         VALUES ($1, $2, $3, 'STD', $4, 0, $5)
+         ON CONFLICT DO NOTHING`,
+        [tenantId, locationId, sku, ingredient.stock, Math.max(1, Math.round(ingredient.stock * 0.15))]
+      );
+      await client.query(
+        `INSERT INTO bms_product_packs
+           (tenant_id, product_sku, size, pack_code, unit_name, base_qty, barcode, price, is_base, active)
+         VALUES ($1, $2, 'STD', 'BASE', $3, 1, NULL, NULL, true, true)
+         ON CONFLICT DO NOTHING`,
+        [tenantId, sku, ingredient.unitLabel]
+      );
+      if (created.rowCount) inserted.push({ sku, name: ingredient.name, price: "0.00" });
+    }
+
+    // ---- เมนู ----
+    for (let i = 0; i < count; i++) {
+      const n = offset + i;
+      const item = RESTAURANT_MENU[n % RESTAURANT_MENU.length];
+      const cycle = Math.floor(n / RESTAURANT_MENU.length);
+      const sku = cycle === 0 ? `FAKE-${item.code}` : `FAKE-${item.code}-${cycle + 1}`;
+      const name = restaurantMenuName(item, n);
+      const sizes = item.sizes?.length ? item.sizes : RESTAURANT_DEFAULT_SIZES;
+      // เมนูปรุงสดไม่ตั้งต้นทุนต่อจาน — ต้นทุนมาจากสูตร (การ์ดต้นทุนที่หน้า
+      // Stock models คำนวณจากวัตถุดิบ) ส่วนของบรรจุ/ขายเร็วต้องมีต้นทุนของตัวเอง
+      const costPrice = item.stockPolicy === "RECIPE"
+        ? null
+        : (item.price * (item.stockPolicy === "DIRECT" ? 0.6 : 0.4)).toFixed(2);
+      // อาหารตามสั่งไม่มีบาร์โค้ด ของบรรจุมี — ให้ทดสอบได้ทั้งค้นด้วยชื่อและยิงสแกน
+      const barcode = item.stockPolicy === "DIRECT" ? fakeEan13(`${tenantId}:${sku}`) : null;
+      const created = await client.query(
+        `INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand, barcode)
+         VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (tenant_id, sku) DO NOTHING`,
+        [
+          tenantId,
+          sku,
+          name,
+          item.price.toFixed(2),
+          Array.from(new Set(item.keywords.map((keyword) => keyword.toLowerCase()))),
+          `https://picsum.photos/seed/${sku}/400/400`,
+          item.description,
+          costPrice,
+          item.category,
+          item.brand ?? null,
+          barcode,
+        ]
+      );
+      if (!created.rowCount) continue;
+
+      await client.query(
+        `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface, enabled)
+         VALUES ($1, $2, 'RESTAURANT_POS', TRUE)
+         ON CONFLICT (tenant_id, product_sku, surface) DO UPDATE SET enabled = TRUE, updated_at = now()`,
+        [tenantId, sku]
+      );
+      await client.query(
+        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, stock_policy, base_unit, display_unit, kitchen_station)
+         VALUES ($1, $2, $3, 'PIECE', $4, $5)
+         ON CONFLICT (tenant_id, product_sku) DO NOTHING`,
+        [tenantId, sku, item.stockPolicy, restaurantPackUnitName(item), item.station]
+      );
+
+      for (const size of sizes) {
+        // RECIPE/NON_STOCK ถือแถวสต็อกของตัวเองไว้ที่ 0 ตลอด (FK ของ order_items
+        // บังคับให้มี) ของจริงถูกตัดจากวัตถุดิบหรือไม่ตัดเลย
+        await client.query(
+          `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
+           VALUES ($1, $2, $3, $4, $5, 0, $6)
+           ON CONFLICT DO NOTHING`,
+          [
+            tenantId,
+            locationId,
+            sku,
+            size.code,
+            item.stockPolicy === "DIRECT" ? (item.stock ?? 60) : 0,
+            item.stockPolicy === "DIRECT" ? 24 : 0,
+          ]
+        );
+        await client.query(
+          `INSERT INTO bms_product_packs
+             (tenant_id, product_sku, size, pack_code, unit_name, base_qty, barcode, price, is_base, active)
+           VALUES ($1, $2, $3, 'BASE', $4, 1, $5, $6, true, true)
+           ON CONFLICT DO NOTHING`,
+          [
+            tenantId,
+            sku,
+            size.code,
+            restaurantPackUnitName(item),
+            // บาร์โค้ดข้างขวดอยู่ที่หน่วยฐานของไซซ์เดียว ของบรรจุจึงไม่มีหลายไซซ์
+            sizes.length === 1 ? barcode : null,
+            size.price == null ? null : size.price.toFixed(2),
+          ]
+        );
+
+        for (const groupKey of item.modifierGroups ?? []) {
+          const group = RESTAURANT_MODIFIER_GROUPS[groupKey];
+          const groupRow = await client.query<{ id: string }>(
+            `INSERT INTO bms_product_modifier_groups
+               (tenant_id, product_sku, size, code, name, selection_type, min_select, max_select, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT (tenant_id, product_sku, size, code) DO NOTHING
+             RETURNING id`,
+            [
+              tenantId, sku, size.code, group.code, group.name, group.selectionType,
+              group.minSelect ?? 0, group.maxSelect ?? null,
+              (item.modifierGroups ?? []).indexOf(groupKey),
+            ]
+          );
+          const groupId = groupRow.rows[0]?.id;
+          if (!groupId) continue;
+          for (let optionIndex = 0; optionIndex < group.options.length; optionIndex++) {
+            const option = group.options[optionIndex];
+            await client.query(
+              `INSERT INTO bms_product_modifiers
+                 (tenant_id, product_sku, size, group_id, code, name, price_delta, default_selected, sort_order, active)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+               ON CONFLICT DO NOTHING`,
+              [
+                tenantId, sku, size.code, groupId, option.code, option.name,
+                (option.priceDelta ?? 0).toFixed(2), option.defaultSelected === true, optionIndex,
+              ]
+            );
+          }
+        }
+
+        if (item.stockPolicy === "RECIPE" && item.recipe?.length) {
+          const recipe = await client.query<{ id: string }>(
+            `INSERT INTO bms_product_recipes (tenant_id, product_sku, size, version, output_qty, active)
+             VALUES ($1,$2,$3,1,1,true)
+             ON CONFLICT (tenant_id, product_sku, size, version) DO NOTHING
+             RETURNING id`,
+            [tenantId, sku, size.code]
+          );
+          const recipeId = recipe.rows[0]?.id;
+          if (recipeId) {
+            const scale = size.recipeScale ?? 1;
+            for (const component of item.recipe) {
+              const componentSku = ingredientSkus.get(component.code);
+              if (!componentSku) continue;
+              await client.query(
+                `INSERT INTO bms_product_recipe_items
+                   (tenant_id, recipe_id, component_sku, component_size, qty)
+                 VALUES ($1,$2,$3,'STD',$4)
+                 ON CONFLICT DO NOTHING`,
+                [tenantId, recipeId, componentSku, Math.max(1, Math.round(component.qty * scale))]
+              );
+            }
+          }
+        }
+      }
+
+      inserted.push({ sku, name, price: item.price.toFixed(2) });
+    }
+
+    await client.query("COMMIT");
+    return inserted;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function seedFakeProducts(tenantId: string, count: number, archetype?: ShopArchetype | null) {
-  // ชุด food_beverage เป็นเมนูพร้อมขายที่เหมาะกับ Restaurant POS มากกว่า General Item
-  // แม้ร้านจะยังไม่ได้ตั้งสูตร เมนู DIRECT ก็ขายและตัดสต็อกได้อย่างถูกต้อง
-  const curated = archetype
-    ? CURATED_SEED_PRODUCTS[archetype]
-      ?? (archetype === "restaurant" ? CURATED_SEED_PRODUCTS.food_beverage : null)
-    : null;
+  // ร้านอาหารมีแคตตาล็อกของตัวเอง (เมนู + วัตถุดิบ + สูตร + สถานีครัว + ตัวเลือก)
+  // เพราะชุด food_beverage เป็นอาหารกล่องพร้อมขาย ซึ่งทดสอบครัวไม่ได้เลย
+  if (archetype === "restaurant") return seedRestaurantCatalog(tenantId, count);
+  const curated = archetype ? CURATED_SEED_PRODUCTS[archetype] ?? null : null;
   const salesSurfaces = fakeProductSurfaces(archetype);
   if (curated?.length) {
     const client = await getClient();

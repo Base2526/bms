@@ -711,6 +711,11 @@ when the dataset is larger than the currently loaded page.
   then creates the free tenant and Manager account. Repeated unverified requests keep independent
   tokens, so an attacker cannot invalidate the real owner's link; the first valid verification creates
   the account and consumes the remaining requests for that email.
+  The signup page stops waiting after 45 seconds, aborts its HTTP request, and keeps a visible
+  error with inbox/spam guidance. A timeout means the outcome is unknown: it does not undo the
+  pending request or a delivered email, and no retry is automatic. The shared mailer uses native
+  provider timeouts (SendGrid: 20 seconds; Gmail: DNS 5 seconds, connect/greeting 10 seconds each,
+  socket inactivity 20 seconds) so a stalled provider does not retain a request for minutes.
 - `/shop-signup` also accepts an **optional** `businessArchetype` field and persists it on the
   pending signup row until verification. The verified flow initializes the tenant's first
   store-profile archetype/business-type defaults in the same transaction. This is for onboarding,

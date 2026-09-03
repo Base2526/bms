@@ -4,6 +4,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import {
+  POLICY_REQUIRED_CAPABILITY,
+  PRODUCT_STOCK_POLICIES,
+  productStockPolicyOptions,
+} from "../apps/web/lib/bms/productStockPolicyOptions.ts";
 import path from "node:path";
 
 import { productTemplateDefaults } from "../apps/web/lib/bms/productConfiguration.ts";
@@ -78,13 +83,22 @@ test("migration 9.52 keeps NON_STOCK out of the view's legacy fallback branch", 
 });
 
 test("both admin surfaces can select the new policy", () => {
+  // ทั้งสองหน้าอ่านลิสต์เดียวกันจากโมดูล pure แล้ว (ดู product-policy-reachability)
+  // เทสนี้จึงคุม "NON_STOCK เลือกได้จริงโดยไม่ต้องเปิดความสามารถอะไรก่อน" ซึ่งเป็น
+  // ประเด็นของ 9.52 — เดิม stock-models ผูกมันไว้กับ capability RECIPE ซึ่งกลับหัว
+  // (ร้านที่ไม่อยากคุมวัตถุดิบคือคนที่ต้องใช้ NON_STOCK พอดี)
+  assert.ok(PRODUCT_STOCK_POLICIES.includes("NON_STOCK"));
+  assert.equal(POLICY_REQUIRED_CAPABILITY.NON_STOCK, undefined);
+  assert.ok(productStockPolicyOptions(() => false).includes("NON_STOCK"));
+
   const products = source("apps/web/app/(admin)/admin/products/page.tsx");
-  assert.match(products, /"SERIALIZED", "NON_STOCK"/);
+  assert.match(products, /productStockPolicyOptions\(capabilityIsActive/);
   assert.match(products, /productTemplateDefaults\(template\)/,
     "the product UI must consume the shared template defaults");
   assert.match(products, /admin_products\.template_quick_menu/);
   const stockModels = source("apps/web/app/(admin)/admin/stock-models/page.tsx");
-  assert.match(stockModels, /POLICY_OPTIONS = \[.*"NON_STOCK"\]/);
+  assert.match(stockModels, /POLICY_OPTIONS = PRODUCT_STOCK_POLICIES\.map/);
+  assert.match(stockModels, /POLICY_REQUIRED_CAPABILITY\[option\.value\]/);
 });
 
 test("the quick-menu copy exists in both languages", () => {

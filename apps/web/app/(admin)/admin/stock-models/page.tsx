@@ -11,6 +11,7 @@ import { useSearchParams } from "next/navigation";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import { shopExperienceForArchetype, type StockExperienceSection } from "@/lib/bms/shopExperience";
+import { POLICY_REQUIRED_CAPABILITY, PRODUCT_STOCK_POLICIES } from "@/lib/bms/productStockPolicyOptions";
 import styles from "./page.module.css";
 
 const Q_CAPABILITIES = gql`
@@ -34,6 +35,9 @@ const Q_MODEL = gql`
     }
     bmsProductRecipes(productSku: $sku) {
       id productSku size version outputQty active items { sku size qty }
+    }
+    bmsProductBundleItems(bundleSku: $sku) {
+      componentSku componentName componentSize qty
     }
     bmsProductModifiers(productSku: $sku) {
       id productSku size code name priceDelta active
@@ -75,6 +79,15 @@ const M_RECIPE = gql`
     bmsUpsertProductRecipe(input: $input) { id version active }
   }
 `;
+// ส่วนประกอบของชุด (8.8) — ก่อนหน้านี้ตารางนี้ไม่มีทางเขียนจากแอปเลย ทำให้ BUNDLE
+// เป็นตัวเลือกที่เลือกแล้วติด blocker ถาวร
+const M_BUNDLE = gql`
+  mutation SetProductBundleItems($bundleSku: String!, $items: [BmsBundleItemInput!]!) {
+    bmsSetProductBundleItems(bundleSku: $bundleSku, items: $items) {
+      componentSku componentName componentSize qty
+    }
+  }
+`;
 const M_MODIFIER = gql`
   mutation SaveProductModifier($input: BmsProductModifierInput!) {
     bmsUpsertProductModifier(input: $input) { id code active }
@@ -89,6 +102,7 @@ const M_QUICK_INGREDIENT = gql`
 type Capability = { capability: string; enabled: boolean; configured: boolean; status: string; source: string; gating: boolean };
 type Product = { sku: string; name: string; active: boolean; variants: Array<{ size: string }> };
 type Recipe = { id: string; productSku: string; size: string; version: number; outputQty: number; active: boolean; items: Array<{ sku: string; size: string; qty: number }> };
+type BundleItem = { componentSku: string; componentName: string; componentSize: string; qty: number };
 type Modifier = {
   id: string; productSku: string; size: string; code: string; name: string; priceDelta: number; active: boolean;
   groupId: string; groupCode: string; groupName: string; selectionType: "SINGLE" | "MULTIPLE";
@@ -96,8 +110,7 @@ type Modifier = {
   items: Array<{ sku: string; size: string; qtyDelta: number }>;
 };
 
-const POLICY_OPTIONS = ["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"]
-  .map((value) => ({ value, label: value }));
+const POLICY_OPTIONS = PRODUCT_STOCK_POLICIES.map((value) => ({ value, label: value as string }));
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -146,6 +159,9 @@ export default function StockModelsPage() {
   const [savePolicy, policyMutation] = useMutation(M_POLICY);
   const [saveRecipe, recipeMutation] = useMutation(M_RECIPE);
   const [saveModifier, modifierMutation] = useMutation(M_MODIFIER);
+  const [saveBundle, bundleMutation] = useMutation(M_BUNDLE);
+  const [bundleOpen, setBundleOpen] = useState(false);
+  const [bundleForm] = Form.useForm();
   const [quickIngredient, ingredientMutation] = useMutation(M_QUICK_INGREDIENT);
 
   useEffect(() => {
@@ -167,6 +183,7 @@ export default function StockModelsPage() {
   const sizes = Array.from(new Set(selectedProduct?.variants.map((v) => v.size) ?? [])).sort();
   const recipes: Recipe[] = model.data?.bmsProductRecipes ?? [];
   const modifiers: Modifier[] = model.data?.bmsProductModifiers ?? [];
+  const bundleItems: BundleItem[] = model.data?.bmsProductBundleItems ?? [];
   const shopExperience = shopExperienceForArchetype(capabilities.data?.bmsStoreProfile?.businessArchetype);
   const capabilityItems: Capability[] = capabilities.data?.bmsStoreCapabilities ?? [];
   const recommendedCapabilitySet = new Set<string>(shopExperience.recommendedCapabilities);
@@ -187,15 +204,24 @@ export default function StockModelsPage() {
     if (section === "KITCHEN_STATION" || section === "STATION_SLA") return capabilityIsActive("KITCHEN_WORKFLOW");
     if (section === "RECIPES") return capabilityIsActive("RECIPE") || recipes.length > 0;
     if (section === "MODIFIERS") return capabilityIsActive("MODIFIER") || modifiers.length > 0;
+    // ชุดไม่มี capability ของตัวเอง (ไม่มีสวิตช์ BUNDLE) — ให้เห็นเมื่อสินค้าตัวนี้
+    // เลือกรูปแบบ BUNDLE ไว้ หรือมีส่วนประกอบอยู่แล้ว
+    if (section === "BUNDLE") return selectedStockPolicy === "BUNDLE" || bundleItems.length > 0;
     return false;
   };
   const policyOptions = POLICY_OPTIONS.filter((option) => {
     if (showAdvancedProductModel || option.value === selectedStockPolicy) return true;
-    if (["DIRECT", "PACK", "BUNDLE"].includes(option.value)) return true;
-    if (option.value === "WEIGHTED") return capabilityIsActive("WEIGHTED_PRODUCT");
-    if (option.value === "SERIALIZED") return capabilityIsActive("SERIAL_TRACKING");
-    if (["RECIPE", "NON_STOCK"].includes(option.value)) return capabilityIsActive("RECIPE");
-    return false;
+    // เกณฑ์เดียวกับฟอร์มสินค้า (ดู POLICY_REQUIRED_CAPABILITY ใน productStockPolicies.ts):
+    // ยื่นเฉพาะรูปแบบที่ตั้งค่าต่อจนเปิดขายได้จริง
+    //
+    // SERIALIZED เคยถูกซ่อนไว้หลัง capability `SERIAL_TRACKING` ซึ่งเป็นความสามารถแบบ
+    // "ตรวจพบจากข้อมูล" (มีสินค้าที่ serial_tracked แล้วเท่านั้นจึงจะติด) = ไก่กับไข่
+    // ตอนนี้ธงนั้น derive จากนโยบายแล้ว จึงเลือกได้เลย
+    //
+    // NON_STOCK เคยถูกผูกกับ capability `RECIPE` ซึ่งกลับหัว — ร้านที่ไม่อยากคุมวัตถุดิบ
+    // คือคนที่ต้องใช้ NON_STOCK พอดี และฝั่ง server ก็ไม่ได้ตรวจ capability ให้มันเลย
+    const required = POLICY_REQUIRED_CAPABILITY[option.value];
+    return !required || capabilityIsActive(required);
   }).map((option) => ({
     ...option,
     label: t(`admin_products.stock_policy_${option.value.toLowerCase()}`),
@@ -276,6 +302,39 @@ export default function StockModelsPage() {
       setRecipeOpen(false);
       await model.refetch();
       message.success(t("admin_stock.recipe_saved"));
+    } catch (error) { message.error(errorText(error, t("admin_stock.action_failed"))); }
+  }
+
+  function openBundle() {
+    // ตัด __typename ของ Apollo ทิ้งก่อนเซ็ตฟอร์ม (เหตุผลเดียวกับ openRecipe)
+    bundleForm.setFieldsValue({
+      items: bundleItems.length > 0
+        ? bundleItems.map((item) => ({
+            componentSku: item.componentSku, componentSize: item.componentSize, qty: item.qty,
+          }))
+        : [{ componentSku: "", componentSize: "", qty: 1 }],
+    });
+    setBundleOpen(true);
+  }
+
+  async function submitBundle() {
+    if (!selectedSku) return;
+    const values = await bundleForm.validateFields().catch(() => null);
+    if (!values) return;
+    try {
+      await saveBundle({
+        variables: {
+          bundleSku: selectedSku,
+          items: (values.items ?? []).map((item: any) => ({
+            componentSku: String(item.componentSku ?? "").trim(),
+            componentSize: String(item.componentSize ?? "").trim(),
+            qty: Number(item.qty),
+          })),
+        },
+      });
+      setBundleOpen(false);
+      await model.refetch();
+      message.success(t("admin_stock.bundle_saved"));
     } catch (error) { message.error(errorText(error, t("admin_stock.action_failed"))); }
   }
 
@@ -535,6 +594,20 @@ export default function StockModelsPage() {
         </Card>
       </div>
 
+      {stockSectionVisible("BUNDLE") && <Card
+        title={t("admin_stock.bundle_items")}
+        extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openBundle()}>{t("admin_stock.edit_bundle_items")}</Button>}
+      >
+        <Table rowKey={(row: BundleItem) => `${row.componentSku}:${row.componentSize}`} pagination={false} dataSource={bundleItems}
+          locale={{ emptyText: <Empty description={t("admin_stock.no_bundle_items")} /> }} columns={[
+          { title: t("admin_stock.component_sku"), dataIndex: "componentSku", width: 200 },
+          { title: t("admin_stock.name"), dataIndex: "componentName" },
+          { title: t("admin_stock.size"), dataIndex: "componentSize", width: 140 },
+          { title: t("admin_stock.qty_per_bundle"), dataIndex: "qty", width: 140 },
+        ]} />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_stock.bundle_hint")}</Typography.Text>
+      </Card>}
+
       {stockSectionVisible("RECIPES") && <Card title={t("admin_stock.recipes")} extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openRecipe()}>{t("admin_stock.new_recipe")}</Button>}>
         <Table rowKey="id" pagination={false} dataSource={recipes} locale={{ emptyText: <Empty description={t("admin_stock.no_recipes")} /> }} columns={[
           { title: t("admin_stock.size"), dataIndex: "size" },
@@ -568,6 +641,34 @@ export default function StockModelsPage() {
           <Form.Item name="active" label={t("admin_stock.active")} valuePropName="checked"><Switch /></Form.Item>
         </Space>
         {componentFields("recipe")}
+      </Form>
+    </Modal>
+
+    <Modal
+      open={bundleOpen}
+      title={t("admin_stock.edit_bundle_items")}
+      onCancel={() => setBundleOpen(false)}
+      onOk={() => void submitBundle()}
+      confirmLoading={bundleMutation.loading}
+      width={760}
+    >
+      <Alert type="info" showIcon message={t("admin_stock.bundle_modal_hint")} style={{ marginBottom: 16 }} />
+      <Form form={bundleForm} layout="vertical">
+        <Form.List name="items">
+          {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>
+            {fields.map(({ key, name, ...rest }) => (
+              <div className={styles.componentRow} key={key}>
+                <Form.Item {...rest} name={[name, "componentSku"]} rules={[{ required: true }]}><Input placeholder={t("admin_stock.component_sku")} /></Form.Item>
+                <Form.Item {...rest} name={[name, "componentSize"]} rules={[{ required: true }]}><Input placeholder={t("admin_stock.component_size")} /></Form.Item>
+                <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]}>
+                  <InputNumber style={{ width: "100%" }} min={1} precision={0} placeholder="Qty" />
+                </Form.Item>
+                <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(name)} aria-label={t("admin_stock.remove_component")} />
+              </div>
+            ))}
+            <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ qty: 1 })}>{t("admin_stock.add_component")}</Button>
+          </Space>}
+        </Form.List>
       </Form>
     </Modal>
 
