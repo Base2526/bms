@@ -352,6 +352,31 @@ function productPresetForArchetype(archetype: ShopArchetype | null | undefined) 
         categories: ["ของขวัญ", "Gift Set", "เทศกาล", "ของฝาก", "พรีเมียม"],
         brands: ["Premium Box", "Seasonal Co", "Gift Studio", "Local Craft", "No Brand"],
       };
+    case "pharmacy":
+      return {
+        prefix: "Pharmacy",
+        categories: ["ยาสามัญประจำบ้าน", "เวชภัณฑ์", "วิตามิน", "ดูแลแผล", "ของใช้สุขภาพ"],
+        brands: ["Medical Care", "Health Plus", "Wellness", "First Aid", "No Brand"],
+      };
+    case "pet_supply":
+      return {
+        prefix: "Pet",
+        categories: ["อาหารสัตว์", "ขนมสัตว์เลี้ยง", "ของเล่น", "อุปกรณ์ดูแล", "ทรายและสุขอนามัย"],
+        brands: ["Pet Daily", "Happy Paws", "Pet Care", "Animal House", "No Brand"],
+      };
+    case "building_materials":
+      return {
+        prefix: "Building",
+        categories: ["ปูนและวัสดุก่อ", "สีและเคมีภัณฑ์", "เครื่องมือช่าง", "ประปา", "ไฟฟ้า"],
+        brands: ["Build Pro", "Home Fix", "Tool Master", "Trade Supply", "No Brand"],
+      };
+    case "restaurant":
+      return {
+        prefix: "Restaurant",
+        categories: ["อาหารจานเดียว", "กับข้าว", "เครื่องดื่ม", "ของทานเล่น", "วัตถุดิบ"],
+        brands: ["House Kitchen", "House Drinks", "Fresh Daily", "Kitchen Supply", "No Brand"],
+      };
+    case "other":
     default:
       return {
         prefix: "General",
@@ -583,13 +608,19 @@ function purchasePresetForArchetype(archetype: ShopArchetype | null | undefined)
 // เส้นทางนี้ไม่ใช่แค่เครื่องมือ dev: ปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านใหม่
 // (createOnboardingSampleData) เรียกตัวเดียวกันนี้
 function fakeProductSurfaces(archetype?: ShopArchetype | null): string[] {
-  const surfaces = ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"];
-  if (archetype === "restaurant") surfaces.push("RESTAURANT_POS");
-  return surfaces;
+  // ร้านอาหารเริ่มจากหน้าร้านอาหารเท่านั้น เช่นเดียวกับ template defaults ในหน้าเพิ่มสินค้า
+  // การเปิด CUSTOMER_AI/ONLINE_ORDER ต้องเป็นการตัดสินใจของร้าน ไม่ใช่ผลข้างเคียงจาก sample data
+  if (archetype === "restaurant") return ["RESTAURANT_POS"];
+  return ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"];
 }
 
 export async function seedFakeProducts(tenantId: string, count: number, archetype?: ShopArchetype | null) {
-  const curated = archetype ? CURATED_SEED_PRODUCTS[archetype] ?? null : null;
+  // ชุด food_beverage เป็นเมนูพร้อมขายที่เหมาะกับ Restaurant POS มากกว่า General Item
+  // แม้ร้านจะยังไม่ได้ตั้งสูตร เมนู DIRECT ก็ขายและตัดสต็อกได้อย่างถูกต้อง
+  const curated = archetype
+    ? CURATED_SEED_PRODUCTS[archetype]
+      ?? (archetype === "restaurant" ? CURATED_SEED_PRODUCTS.food_beverage : null)
+    : null;
   const salesSurfaces = fakeProductSurfaces(archetype);
   if (curated?.length) {
     const client = await getClient();

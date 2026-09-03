@@ -51,7 +51,7 @@ const GATING_SET = new Set<string>(GATING_CAPABILITIES);
 export function isGatingCapability(capability: string): boolean {
   return GATING_SET.has(capability);
 }
-export type StoreCapabilitySource = "PRESET" | "MANUAL";
+export type StoreCapabilitySource = "PRESET" | "MANUAL" | "DETECTED";
 export type StoreCapabilityStatus = "AVAILABLE" | "ENABLED" | "CONFIGURED";
 
 export type StoreCapability = {
@@ -64,6 +64,45 @@ export type StoreCapability = {
   /** true = สวิตช์นี้เปลี่ยนพฤติกรรมจริง · false = สถานะที่ระบบอ่านจากข้อมูล แก้ไม่ได้ */
   gating: boolean;
 };
+
+type CapabilityOverride = Pick<CapabilityOverrideRow, "enabled" | "config" | "source"> | undefined;
+
+/**
+ * Resolve the presentation state without conflating an archetype recommendation with real setup.
+ *
+ * Gating capabilities are genuine switches, so their effective enabled state still comes from a
+ * manual override or the archetype preset. Status-only capabilities (pack, lot, serial, etc.) are
+ * different: they are on exactly when the underlying product data exists. A Mini Mart preset must
+ * recommend packs without claiming that a pack has already been configured, while an `other` shop
+ * with real pack rows must still appear under "currently in use".
+ */
+export function resolveStoreCapabilityState(input: {
+  capability: StoreCapabilityCode;
+  preset: boolean;
+  override?: CapabilityOverride;
+  configured: boolean;
+}): Omit<StoreCapability, "capability"> {
+  const gating = isGatingCapability(input.capability);
+  const enabled = gating
+    ? (input.override?.enabled ?? input.preset)
+    : input.configured;
+  const configured = gating
+    ? enabled && input.configured
+    : input.configured;
+
+  return {
+    enabled,
+    configured,
+    status: configured ? "CONFIGURED" : enabled ? "ENABLED" : "AVAILABLE",
+    config: input.override?.config && typeof input.override.config === "object"
+      ? input.override.config as Record<string, unknown>
+      : {},
+    source: gating
+      ? input.override?.source ?? "PRESET"
+      : configured ? "DETECTED" : "PRESET",
+    gating,
+  };
+}
 
 const CAPABILITY_SET = new Set<string>(STORE_CAPABILITIES);
 
@@ -84,7 +123,7 @@ type CapabilityOverrideRow = {
   capability: string;
   enabled: boolean;
   config: unknown;
-  source: StoreCapabilitySource;
+  source: Exclude<StoreCapabilitySource, "DETECTED">;
 };
 
 type QueryClient = {
@@ -153,18 +192,14 @@ export async function listStoreCapabilities(tenantId: string): Promise<StoreCapa
 
   return STORE_CAPABILITIES.map((capability) => {
     const override = overrideMap.get(capability);
-    const enabled = override?.enabled ?? preset.has(capability);
-    const isConfigured = enabled && configured.has(capability);
     return {
       capability,
-      enabled,
-      configured: isConfigured,
-      status: isConfigured ? "CONFIGURED" : enabled ? "ENABLED" : "AVAILABLE",
-      config: override?.config && typeof override.config === "object"
-        ? override.config as Record<string, unknown>
-        : {},
-      source: override?.source ?? "PRESET",
-      gating: isGatingCapability(capability),
+      ...resolveStoreCapabilityState({
+        capability,
+        preset: preset.has(capability),
+        override,
+        configured: configured.has(capability),
+      }),
     };
   });
 }

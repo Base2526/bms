@@ -4296,7 +4296,7 @@ const en = {
     no_product_view: "Your role cannot view products, so stock models are unavailable.",
     action_failed: "Could not complete this action",
     capabilities: "Shop capabilities",
-    capability_hint: "Presets follow the shop type. Switching one here overrides the preset for this shop only.",
+    capability_hint: "Recommendations follow the shop type. Switchable features can be enabled here; Pack, Lot, Barcode, and Serial status comes from actual product data.",
     recommended_for_shop: "Recommended for your shop",
     currently_in_use: "Additional capabilities currently in use",
     additional_capabilities: "Additional capabilities",

@@ -26,6 +26,10 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 - Inbox AI now selects one precise archetype example set instead of mixing it with the legacy broad
   business type, and proactive follow-ups receive the same commerce policy. Existing product
   visibility remains governed by explicit `CUSTOMER_AI` + `ONLINE_ORDER` sales surfaces.
+- The final cross-surface audit separated archetype recommendations from capabilities detected in
+  real product data, mirrored the POS Readiness page's complete permission boundary in the sidebar,
+  and kept Restaurant sample products on `RESTAURANT_POS` until the shop explicitly enables online
+  or customer-AI visibility.
 
 ## Product catalog foundation (9.51, 2026-09-02)
 
