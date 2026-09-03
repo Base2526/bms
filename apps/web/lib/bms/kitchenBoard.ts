@@ -22,6 +22,9 @@ export type KitchenBoardTicket = {
   tableCode?: string | null;
   roundNo?: number | null;
   kitchenNote?: string | null;
+  /** id ของสถานีจากแถวหลัก (9.54) — null สำหรับตั๋วเก่าหรือสถานีที่ยังไม่ถูกยกระดับ */
+  stationId?: string | null;
+  /** ชื่อสถานี ณ เวลาที่ตั๋วถูกสร้าง (snapshot) — เปลี่ยนชื่อสถานีแล้วใบเก่าต้องไม่เปลี่ยนตาม */
   station?: string | null;
   status: string;
   modifierCodes?: string[] | null;
@@ -45,6 +48,7 @@ export type KitchenBoardItem = {
 export type KitchenBoardGroup = {
   key: string;
   status: string;
+  stationId: string | null;
   station: string | null;
   tableLabel: string | null;
   roundNo: number | null;
@@ -100,7 +104,27 @@ export function slaForStation(
   slas?: Record<string, KitchenSla> | null
 ): KitchenSla {
   const key = clean(station);
-  const found = key && slas ? slas[key] : null;
+  return normalizeSla(key && slas ? slas[key] : null);
+}
+
+/**
+ * เกณฑ์เวลาของตั๋วที่ถือทั้ง id และชื่อ (9.54) — **หา id ก่อนเสมอ**
+ *
+ * เปลี่ยนชื่อสถานีตอนที่ยังมีตั๋วค้างอยู่บนกระดาน: ใบเก่าถือชื่อเดิม (snapshot) ส่วนแถวเกณฑ์
+ * เวลาย้ายไปอยู่กับชื่อใหม่แล้ว · หาแต่ชื่อ = ใบที่ครัวกำลังทำอยู่ตกกลับไปค่าปริยาย 5/10
+ * เงียบ ๆ กลางกะ แล้วสีบนจอเปลี่ยนความหมายโดยไม่มีใครสั่ง
+ */
+export function slaForStationRef(
+  ref: { stationId?: string | null; station?: string | null },
+  slas?: Record<string, KitchenSla> | null
+): KitchenSla {
+  const id = clean(ref.stationId);
+  const byId = id && slas ? slas[id] : null;
+  if (byId) return normalizeSla(byId);
+  return slaForStation(ref.station, slas);
+}
+
+function normalizeSla(found: KitchenSla | null | undefined): KitchenSla {
   if (!found) return DEFAULT_KITCHEN_SLA;
   const warnMinutes = Number(found.warnMinutes);
   const lateMinutes = Number(found.lateMinutes);
@@ -158,10 +182,11 @@ export function groupKitchenTickets(tickets: KitchenBoardTicket[]): KitchenBoard
 
   for (const ticket of tickets) {
     const status = String(ticket.status ?? "").toUpperCase();
+    const stationId = clean(ticket.stationId);
     const station = clean(ticket.station);
     const bill = clean(ticket.checkId) ?? clean(ticket.orderId) ?? ticket.id;
     const roundNo = ticket.roundNo == null ? null : Number(ticket.roundNo);
-    const groupKey = [status, bill, roundNo ?? "-", station ?? "-"].join(" ");
+    const groupKey = [status, bill, roundNo ?? "-", stationId ?? station ?? "-"].join(" ");
     const referenceAt = pickReferenceAt(status, ticket.createdAt, ticket.updatedAt);
 
     let group = groups.get(groupKey);
@@ -169,6 +194,7 @@ export function groupKitchenTickets(tickets: KitchenBoardTicket[]): KitchenBoard
       group = {
         key: groupKey,
         status,
+        stationId,
         station,
         tableLabel: kitchenGroupLabel(ticket),
         roundNo,
@@ -224,6 +250,72 @@ export function groupKitchenTickets(tickets: KitchenBoardTicket[]): KitchenBoard
  */
 export function countKitchenDishes(tickets: KitchenBoardTicket[]): number {
   return tickets.reduce((sum, ticket) => sum + (Number(ticket.qty ?? 0) || 0), 0);
+}
+
+/**
+ * สถานีที่ควรมีปุ่มกรองบนกระดาน (9.54)
+ *
+ * รวมสองแหล่งเข้าด้วยกันโดยตั้งใจ:
+ *   1. **สถานีที่ร้านตั้งไว้และยังเปิดใช้งาน** — ขึ้นแม้ยังไม่มีงานค้าง เพราะ "ครัวร้อนว่าง"
+ *      กับ "ระบบไม่ส่งงานมาให้ครัวร้อน" เป็นคนละเรื่อง แต่กระดานที่ซ่อนสถานีว่างทำให้
+ *      อ่านออกมาเหมือนกัน
+ *   2. **สถานีที่โผล่บนตั๋วจริง** แม้จะถูกปิดใช้งานไปแล้วหรือไม่มีแถวหลัก — ตั๋วที่ไม่มีปุ่ม
+ *      กรองของตัวเองคืออาหารที่ครัวหาไม่เจอเวลากรอง
+ *
+ * เรียงตาม `sortOrder` ของร้านก่อน (ลำดับที่ครัวเรียงจริง) แล้วค่อยเป็นสถานีตกค้างท้ายสุด
+ */
+export type KitchenStationFilter = { id: string | null; name: string; sortOrder: number };
+
+export function kitchenBoardStationFilters(
+  tickets: KitchenBoardTicket[],
+  masters?: ReadonlyArray<{ id: string; name: string; sortOrder?: number | null; active?: boolean | null }> | null
+): KitchenStationFilter[] {
+  const byId = new Map<string, KitchenStationFilter>();
+  const byName = new Map<string, KitchenStationFilter>();
+  const push = (entry: KitchenStationFilter) => {
+    if (entry.id) {
+      if (byId.has(entry.id)) return;
+      byId.set(entry.id, entry);
+    } else {
+      if (byName.has(entry.name)) return;
+      byName.set(entry.name, entry);
+    }
+  };
+  for (const master of masters ?? []) {
+    const name = clean(master.name);
+    if (!name || master.active === false) continue;
+    push({ id: String(master.id), name, sortOrder: Number(master.sortOrder ?? 0) });
+  }
+  for (const ticket of tickets) {
+    const id = clean(ticket.stationId);
+    const name = clean(ticket.station);
+    if (!id && !name) continue;
+    if (id && byId.has(id)) continue;
+    // สถานีที่ปิดไปแล้วแต่ยังมีของค้างในครัว ต้องอยู่ท้ายลิสต์ ไม่ใช่แทรกกลางลำดับที่ร้านตั้ง
+    push({ id, name: name ?? id!, sortOrder: KITCHEN_ORPHAN_STATION_SORT });
+  }
+  return [...byId.values(), ...byName.values()].sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.name.localeCompare(b.name, "th");
+  });
+}
+
+/** ท้ายสุดเสมอ — เกินเพดาน sort_order ของฐาน (9999) ไปหนึ่งขั้น */
+const KITCHEN_ORPHAN_STATION_SORT = 10_000;
+
+/**
+ * ตั๋วใบนี้อยู่ใต้ปุ่มกรองอันนี้ไหม — **เทียบ id ก่อน ชื่อทีหลัง**
+ *
+ * ตั๋วที่ออกก่อนการเปลี่ยนชื่อสถานีถือชื่อเก่า ถ้าเทียบด้วยชื่ออย่างเดียว กดกรองสถานีนั้น
+ * แล้วอาหารที่กำลังทำอยู่จะหายไปจากจอทันทีที่มีคนแก้ชื่อ
+ */
+export function ticketMatchesStation(
+  ticket: Pick<KitchenBoardTicket, "stationId" | "station">,
+  filter: KitchenStationFilter | null
+): boolean {
+  if (!filter) return true;
+  if (filter.id) return clean(ticket.stationId) === filter.id;
+  return clean(ticket.stationId) === null && clean(ticket.station) === filter.name;
 }
 
 /** สถานีทั้งหมดที่มีงานค้างอยู่จริง เรียงตามตัวอักษร (ไม่ระบุสถานีไปท้ายสุด) */

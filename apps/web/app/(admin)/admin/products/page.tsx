@@ -198,9 +198,10 @@ const Q_PRODUCT_CONFIGURATION = gql`
   }
 `;
 const Q_CATEGORIES = gql`query { bmsProductCategories { id name } }`;
-// สถานีครัวที่ร้านนี้ใช้อยู่จริง — ใช้เป็นตัวเลือกช่วยพิมพ์ ไม่ใช่รายการปิด
-// (สถานีเป็นข้อความอิสระบน stock policy ไม่มีตารางทะเบียนของตัวเอง)
-const Q_KITCHEN_STATIONS = gql`query { bmsKitchenStationSlas { station } }`;
+// สถานีครัวจากทะเบียนจริง (9.54) — เลือกจากรายการที่ร้านตั้งไว้ที่ /admin/stock-models
+// ยังพิมพ์ชื่อใหม่ได้: ชื่อที่ยังไม่มีในทะเบียนถูกยกขึ้นเป็นสถานีระดับร้านให้ในทรานแซกชัน
+// เดียวกับการบันทึกสินค้า (ดู ensureKitchenStationByNameInTx) จึงไม่มีสถานีกำพร้าเกิดขึ้น
+const Q_KITCHEN_STATIONS = gql`query { bmsKitchenStations { id name } }`;
 // ความสามารถของร้าน — ใช้ตัดรูปแบบสต็อกที่ร้านนี้ยังเปิดขายไม่ได้ออกจากดรอปดาวน์
 const Q_STOCK_CAPABILITIES = gql`query { bmsStoreCapabilities { capability enabled configured } }`;
 const Q_LOW = gql`query { bmsLowStock { sku name locationId locationName branchCode size available reorder_point } }`;
@@ -451,7 +452,7 @@ function ProductsManagement() {
   // สถานีครัวไหม และช่องที่โผล่มาแล้วหายไปตอนข้อมูลมาถึงอ่านแล้วสับสนกว่าไม่มีตั้งแต่แรก
   const kitchenWorkflowOn = capabilityRows != null && capabilityRows.some((row) =>
     row.capability === "KITCHEN_WORKFLOW" && (row.enabled || row.configured));
-  // ยิงเฉพาะร้านที่คิวครัวทำงาน และกลืน error เอง — ฐานที่ยังไม่ apply 9.53 ต้องไม่ทำให้
+  // ยิงเฉพาะร้านที่คิวครัวทำงาน และกลืน error เอง — ฐานที่ยังไม่ apply 9.53/9.54 ต้องไม่ทำให้
   // หน้าสินค้าทั้งหน้าพัง แค่พิมพ์ชื่อสถานีเองแทนการเลือกจากลิสต์
   const { data: kitchenStationData } = useQuery(Q_KITCHEN_STATIONS, {
     skip: !modalOpen
@@ -460,8 +461,8 @@ function ProductsManagement() {
     fetchPolicy: "cache-first",
     onError: () => {},
   });
-  const kitchenStationOptions = (kitchenStationData?.bmsKitchenStationSlas ?? [])
-    .map((row: { station: string }) => ({ value: row.station }));
+  const kitchenStationOptions = (kitchenStationData?.bmsKitchenStations ?? [])
+    .map((row: { name: string }) => ({ value: row.name }));
   const shopExperience = shopExperienceForArchetype(data?.bmsStoreProfile?.businessArchetype);
   const isRestaurantShop = shopExperience.specialMode === "RESTAURANT";
   // ร้านที่ไม่จด VAT ไม่ต้องตอบคำถามเรื่องประเภทภาษี — และ readiness ก็ไม่บล็อกด้วย

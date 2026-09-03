@@ -263,6 +263,8 @@ export async function getProductReadinessInTx(
     vat_category: string;
     stock_policy: string | null;
     kitchen_station: string | null;
+    kitchen_station_active: boolean | null;
+    kitchen_station_location_id: string | null;
     vat_registered: boolean;
     is_bundle: boolean;
     serial_tracked: boolean;
@@ -272,13 +274,19 @@ export async function getProductReadinessInTx(
     business_archetype: string | null;
   }>(
     `SELECT p.price, p.vat_category, p.is_bundle, p.serial_tracked,
-            policy.stock_policy, policy.kitchen_station, policy.base_unit,
+            policy.stock_policy,
+            COALESCE(station.name, policy.kitchen_station) AS kitchen_station,
+            station.active AS kitchen_station_active,
+            station.location_id AS kitchen_station_location_id,
+            policy.base_unit,
             policy.scale_item_code, policy.scale_size,
             COALESCE(profile.vat_registered, FALSE) AS vat_registered,
             profile.business_archetype
        FROM bms_products p
        LEFT JOIN bms_product_stock_policies policy
          ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+       LEFT JOIN bms_kitchen_stations station
+         ON station.tenant_id = policy.tenant_id AND station.id = policy.kitchen_station_id
        LEFT JOIN bms_store_profile profile ON profile.tenant_id = p.tenant_id
       WHERE p.tenant_id = $1 AND p.sku = $2`,
     [tenantId, productSku]
@@ -415,6 +423,23 @@ export async function getProductReadinessInTx(
   }
   if (surfaces.has("RESTAURANT_POS") && !product.kitchen_station) {
     warnings.push({ code: "KITCHEN_STATION_MISSING", message: "ยังไม่ระบุ Kitchen station รายการจะไปช่องไม่ระบุสถานี", field: "kitchenStation" });
+  }
+  // ⚠️ ทั้งสองข้อนี้เป็น **คำเตือน ไม่ใช่ตัวบล็อก** โดยตั้งใจ (9.54) — ปิดการขายเมนูเพราะครัว
+  // ถูกปิดหรือผูกผิดสาขา คือทำให้ร้านขายของไม่ได้เพราะการตั้งค่าที่แก้ทีหลังได้ ตั๋วยังออกและ
+  // ยังขึ้นกระดานเสมอ (สถานีที่ปิดแล้วยังรับตั๋ว · สถานีของอีกสาขาตกไปช่องไม่ระบุสถานี)
+  if (product.kitchen_station_active === false) {
+    warnings.push({
+      code: "KITCHEN_STATION_INACTIVE",
+      message: `สถานี "${product.kitchen_station}" ถูกปิดใช้งานแล้ว แต่รายการนี้ยังส่งไปที่นั่นอยู่`,
+      field: "kitchenStation",
+    });
+  }
+  if (product.kitchen_station_location_id) {
+    warnings.push({
+      code: "KITCHEN_STATION_BRANCH_SCOPED",
+      message: `สถานี "${product.kitchen_station}" เป็นของสาขาเดียว สาขาอื่นที่ขายรายการนี้จะเห็นตั๋วในช่องไม่ระบุสถานี`,
+      field: "kitchenStation",
+    });
   }
   if (surfaces.size === 0) {
     warnings.push({ code: "NO_SALES_SURFACE", message: "รายการนี้ใช้ภายในร้านและยังไม่เปิดขายในช่องทางใด", field: "salesSurfaces" });
@@ -567,9 +592,10 @@ export async function duplicateProductConfiguration(
     await client.query(
       `INSERT INTO bms_product_stock_policies
          (tenant_id, product_sku, stock_policy, base_unit, display_unit, display_precision,
-          lot_tracking, expiry_tracking, fefo, kitchen_station, scale_item_code, scale_size)
+          lot_tracking, expiry_tracking, fefo, kitchen_station, kitchen_station_id,
+          scale_item_code, scale_size)
        SELECT tenant_id, $3, stock_policy, base_unit, display_unit, display_precision,
-              lot_tracking, expiry_tracking, fefo, kitchen_station, NULL, NULL
+              lot_tracking, expiry_tracking, fefo, kitchen_station, kitchen_station_id, NULL, NULL
          FROM bms_product_stock_policies
         WHERE tenant_id = $1 AND product_sku = $2`,
       [tenantId, sourceSku, targetSku]

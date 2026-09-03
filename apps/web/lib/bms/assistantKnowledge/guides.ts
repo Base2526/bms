@@ -230,11 +230,11 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     aliases: aliases([
       "รูปแบบสต็อก", "สูตรอาหาร", "ตั้งสูตร", "ตัดวัตถุดิบ", "ตัวเลือกเมนู", "modifier", "หวานน้อย",
       "ขายตามน้ำหนัก", "สินค้าชั่งขาย", "บาร์โค้ดเครื่องชั่ง", "หน่วยฐาน", "ความสามารถของร้าน",
-      "เปิดความสามารถ", "ตั้ง station ครัว",
+      "เปิดความสามารถ", "ตั้ง station ครัว", "สถานีครัว", "หลายครัวในสาขาเดียว", "เพิ่มสถานีครัว",
     ], [
       "stock model", "recipe", "set a recipe", "ingredient deduction", "menu modifier", "modifier",
       "sell by weight", "weighed product", "scale barcode", "base unit", "shop capabilities",
-      "enable capability", "kitchen station",
+      "enable capability", "kitchen station", "kitchen stations", "several kitchens in one branch", "add a kitchen station",
     ]), requiredPermissions: ["product.view"],
     prerequisites: lists(["สินค้ามีอยู่ในแคตตาล็อกแล้ว", "แก้ไขต้องมีสิทธิ์ product.edit"], ["The product already exists in the catalog.", "Editing needs the product.edit permission."]),
     steps: lists([

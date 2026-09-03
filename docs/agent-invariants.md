@@ -448,6 +448,23 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   person with `pos.void` must still approve it. Opening, adding, sending, moving and settling also
   stay on `pos.sell`. Do not go back to `pos.device.manage` or `order.ship` — a permission that names
   a different job cannot be granted or withheld honestly.
+- **A kitchen station is a work area, not a branch (`9.54`).** Stations live in
+  `bms_kitchen_stations` with their own id, active flag, sort order and optional `location_id`;
+  products point at one through `bms_product_stock_policies.kitchen_station_id`. A station never
+  splits stock — stock still moves by the order's `location_id`. `location_id NULL` serves every
+  branch; a branch-scoped station applies only to that branch's bills, and a bill from elsewhere
+  resolves to no station so the ticket lands in the unassigned column instead of being routed to a
+  kitchen that branch does not have. That resolution lives in one place
+  (`kitchenStationColumnsSql()`), used by both ticket writers and the single-product read; a second
+  copy drifts and one path starts routing across branches. Tickets store the station **name
+  snapshot** alongside `station_id`, so renaming a station never rewrites what the kitchen saw; the
+  board and the SLA map therefore match on id first and name second. Deactivating is
+  `active = FALSE`, never a delete, and a deactivated station still accepts tickets — losing food off
+  the board because of a settings change is worse than a ticket on a station being retired. Names
+  arriving through the old free-text path (product form, file import, sample data) are promoted into
+  master rows in the same transaction; an orphan name cannot be ordered, renamed or given SLA
+  thresholds. Reads use `product.view`, management uses `product.edit`. Per-station printer routing
+  is **not** built.
 - **The kitchen display polls; it is not an event queue.** The register KDS refreshes its
   branch-scoped queue every five seconds while that screen is visible, and `/admin/kitchen` keeps its
   bounded ten-second poll. A failed poll shows stale data and never invents a state transition.

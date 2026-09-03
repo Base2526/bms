@@ -9,7 +9,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import type { KitchenSla } from "./kitchenBoard";
 
-export type KitchenStationSla = KitchenSla & { station: string };
+export type KitchenStationSla = KitchenSla & { station: string; stationId: string | null };
 
 function normalizeStation(value: string | null | undefined): string {
   const station = String(value ?? "").trim();
@@ -18,17 +18,28 @@ function normalizeStation(value: string | null | undefined): string {
   return station;
 }
 
-/** map พร้อมใช้กับ slaForStation() — คีย์คือชื่อสถานีตรงตามที่ร้านพิมพ์ไว้ */
+/**
+ * map พร้อมใช้กับ slaForStationRef() — **คีย์ด้วยทั้ง id ของสถานีและชื่อ**
+ *
+ * แถวเกณฑ์เวลายังคีย์ด้วยชื่อตามเดิม (9.53) แต่ตั้งแต่ `9.54` ตั๋วถือ id ด้วย และชื่อบนตั๋ว
+ * เป็น snapshot ที่ค้างอยู่ที่ชื่อ ณ เวลาส่งครัว · ใส่ทั้งสองคีย์ทำให้ทั้งใบเก่า (หาด้วยชื่อ)
+ * และใบที่เกิดหลังเปลี่ยนชื่อ (หาด้วย id) ได้เกณฑ์เดียวกัน · ชื่อสถานีไม่ซ้ำต่อร้าน และ id
+ * เป็น uuid จึงไม่มีทางชนกันในแมพเดียว
+ */
 export async function getKitchenStationSlaMap(tenantId: string): Promise<Record<string, KitchenSla>> {
-  const result = await query<{ station: string; warn_minutes: number; late_minutes: number }>(
-    `SELECT station, warn_minutes, late_minutes
-       FROM bms_kitchen_station_slas
-      WHERE tenant_id = $1`,
+  const result = await query<{ station: string; station_id: string | null; warn_minutes: number; late_minutes: number }>(
+    `SELECT sla.station, st.id AS station_id, sla.warn_minutes, sla.late_minutes
+       FROM bms_kitchen_station_slas sla
+       LEFT JOIN bms_kitchen_stations st
+         ON st.tenant_id = sla.tenant_id AND st.name = sla.station
+      WHERE sla.tenant_id = $1`,
     [tenantId]
   );
   const map: Record<string, KitchenSla> = {};
   for (const row of result.rows) {
-    map[row.station] = { warnMinutes: Number(row.warn_minutes), lateMinutes: Number(row.late_minutes) };
+    const sla = { warnMinutes: Number(row.warn_minutes), lateMinutes: Number(row.late_minutes) };
+    map[row.station] = sla;
+    if (row.station_id) map[String(row.station_id)] = sla;
   }
   return map;
 }
@@ -38,22 +49,28 @@ export async function getKitchenStationSlaMap(tenantId: string): Promise<Record<
  * สถานีที่ยังไม่เคยตั้งด้วย ไม่งั้นร้านต้องเดาว่าต้องพิมพ์ชื่อสถานีให้ตรงเป๊ะเอง
  */
 export async function listKitchenStationSlas(tenantId: string): Promise<Array<KitchenStationSla & { configured: boolean }>> {
-  const result = await query<{ station: string; warn_minutes: number | null; late_minutes: number | null }>(
-    `SELECT s.station, sla.warn_minutes, sla.late_minutes
+  const result = await query<{ station: string; station_id: string | null; warn_minutes: number | null; late_minutes: number | null }>(
+    `SELECT s.station, st.id AS station_id, sla.warn_minutes, sla.late_minutes
        FROM (
          SELECT DISTINCT btrim(kitchen_station) AS station
            FROM bms_product_stock_policies
           WHERE tenant_id = $1 AND btrim(COALESCE(kitchen_station, '')) <> ''
          UNION
          SELECT station FROM bms_kitchen_station_slas WHERE tenant_id = $1
+         UNION
+         -- สถานีที่ร้านเพิ่งสร้างและยังไม่มีเมนูผูก ต้องตั้งเกณฑ์เวลาได้ตั้งแต่วันแรก (9.54)
+         SELECT name FROM bms_kitchen_stations WHERE tenant_id = $1 AND active
        ) s
        LEFT JOIN bms_kitchen_station_slas sla
          ON sla.tenant_id = $1 AND sla.station = s.station
-      ORDER BY s.station`,
+       LEFT JOIN bms_kitchen_stations st
+         ON st.tenant_id = $1 AND st.name = s.station
+      ORDER BY st.sort_order NULLS LAST, s.station`,
     [tenantId]
   );
   return result.rows.map((row) => ({
     station: row.station,
+    stationId: row.station_id ? String(row.station_id) : null,
     warnMinutes: row.warn_minutes == null ? 5 : Number(row.warn_minutes),
     lateMinutes: row.late_minutes == null ? 10 : Number(row.late_minutes),
     configured: row.warn_minutes != null,
@@ -100,7 +117,16 @@ export async function upsertKitchenStationSla(
     );
     await client.query("COMMIT");
     const row = result.rows[0];
-    return { station: row.station, warnMinutes: Number(row.warn_minutes), lateMinutes: Number(row.late_minutes) };
+    const linked = await client.query<{ id: string }>(
+      `SELECT id FROM bms_kitchen_stations WHERE tenant_id = $1 AND name = $2`,
+      [tenantId, station]
+    );
+    return {
+      station: row.station,
+      stationId: linked.rows[0]?.id ? String(linked.rows[0].id) : null,
+      warnMinutes: Number(row.warn_minutes),
+      lateMinutes: Number(row.late_minutes),
+    };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

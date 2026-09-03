@@ -7,6 +7,7 @@ import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
 import { resolveDefaultLocationIdInTx } from "./locations";
+import { ensureKitchenStationByNameInTx } from "./kitchenStations";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
@@ -767,6 +768,11 @@ export type UpsertProductInput = {
    * เพราะสถานีเป็นข้อมูลที่ร้านสลับไปมาได้ตลอด ไม่มี dependency ให้ตรวจ
    */
   kitchen_station?: string | null;
+  /**
+   * ทางใหม่ตั้งแต่ `9.54` — ฟอร์มเลือกจากรายการสถานีจริง ส่ง id มา ชื่อเป็นค่าที่ derive
+   * ส่งมาคู่กับ `kitchen_station` ได้ แต่ **id ชนะเสมอ** (ชื่อคือสำเนา ไม่ใช่ความจริง)
+   */
+  kitchen_station_id?: string | null;
 };
 
 function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
@@ -1453,14 +1459,34 @@ export async function upsertProduct(
     // อยู่แค่ที่ /admin/stock-models ทำให้เมนูใหม่ทุกจานได้คำเตือน KITCHEN_STATION_MISSING
     // โดยฟอร์มที่เพิ่งกรอกไม่มีปุ่มแก้ (กับดักเดียวกับ vat_category ก่อน 7.88)
     // กฎเดียวกับ vat_category/price_tiers: ไม่ส่งมา = คงค่าเดิม
-    if (input.kitchen_station !== undefined) {
-      const kitchenStation = String(input.kitchen_station ?? "").trim() || null;
+    //
+    // ตั้งแต่ `9.54` ฟอร์มส่ง `kitchen_station_id` (เลือกจากรายการสถานี) ส่วนไฟล์นำเข้ายังส่ง
+    // ชื่อล้วนมาได้ — ชื่อที่ยังไม่มีแถวหลักถูกยกขึ้นเป็นสถานีระดับร้านให้อัตโนมัติ ไม่ใช่ปล่อย
+    // เป็นสตริงกำพร้าที่ตั้งเกณฑ์เวลาให้ไม่ได้
+    if (input.kitchen_station_id !== undefined || input.kitchen_station !== undefined) {
+      let stationId = input.kitchen_station_id !== undefined
+        ? String(input.kitchen_station_id ?? "").trim() || null
+        : null;
+      let stationName: string | null = null;
+      if (stationId) {
+        const station = await client.query<{ name: string }>(
+          `SELECT name FROM bms_kitchen_stations WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, stationId]
+        );
+        if (!station.rowCount) throw new Error("ไม่พบสถานีครัวนี้ในร้าน");
+        stationName = station.rows[0].name;
+      } else if (input.kitchen_station !== undefined) {
+        const station = await ensureKitchenStationByNameInTx(client, tenantId, input.kitchen_station);
+        stationId = station?.id ?? null;
+        stationName = station?.name ?? null;
+      }
       await client.query(
-        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, kitchen_station)
-         VALUES ($1,$2,$3)
+        `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, kitchen_station, kitchen_station_id)
+         VALUES ($1,$2,$3,$4)
          ON CONFLICT (tenant_id, product_sku) DO UPDATE SET
-           kitchen_station = EXCLUDED.kitchen_station, updated_at = now()`,
-        [tenantId, sku, kitchenStation]
+           kitchen_station = EXCLUDED.kitchen_station,
+           kitchen_station_id = EXCLUDED.kitchen_station_id, updated_at = now()`,
+        [tenantId, sku, stationName, stationId]
       );
     }
 

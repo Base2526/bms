@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { authenticatePosDevice } from "@/lib/bms/pos";
 import { listKitchenTickets } from "@/lib/bms/kitchen";
 import { getKitchenStationSlaMap } from "@/lib/bms/kitchenSla";
+import { listKitchenStations } from "@/lib/bms/kitchenStations";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -26,12 +27,23 @@ async function handleGET(req: NextRequest) {
   const limit = Number.isFinite(limitRaw) ? limitRaw : 100;
   // เกณฑ์เวลาต่อสถานี (9.53) มากับคิวรอบเดียวกัน — จอครัวคำนวณสีเองทุกวินาที ถ้าให้ยิงแยก
   // จะกลายเป็นคำขอที่สองต่อการรีเฟรชหนึ่งครั้งโดยไม่ได้อะไรเพิ่ม
-  const [tickets, stationSlas] = await Promise.all([
+  // ทะเบียนสถานี (9.54) มากับคิวรอบเดียวกันด้วยเหตุผลเดียวกับเกณฑ์เวลา · กรองตามสาขาของ
+  // เครื่อง (สถานีระดับร้าน + ของสาขานี้) — ครัวสาขา A ไม่ต้องมีปุ่มของครัวสาขา B
+  const [tickets, stationSlas, stations] = await Promise.all([
     listKitchenTickets(device.tenantId, status, limit, device.locationId),
     getKitchenStationSlaMap(device.tenantId),
+    listKitchenStations(device.tenantId, { locationId: device.locationId }),
   ]);
 
-  return NextResponse.json({ tickets, stationSlas });
+  return NextResponse.json({
+    tickets,
+    stationSlas,
+    stations: stations.map((station) => ({
+      id: station.id,
+      name: station.name,
+      sortOrder: station.sortOrder,
+    })),
+  });
 }
 
 export const GET = withRouteErrorLog("GET /api/pos/kitchen/tickets", handleGET);
