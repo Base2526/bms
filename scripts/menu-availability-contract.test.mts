@@ -150,8 +150,27 @@ test("การ์ดเมนูที่ยังขายได้ต้อ�
   assert.match(page, /MENU_SOLD_OUT_REASONS\.map/,
     "แผ่นยืนยันต้องให้เลือกสาเหตุจริง ไม่ใช่ส่งคำว่าหมดวันนี้ซ้ำสถานะ");
   assert.match(page, /setMenuAvailability\(item, true, reason\)/);
-  // ปุ่มเต็มความกว้างสงวนไว้ให้ "เปิดขาย" บนการ์ดที่ปิดอยู่ ซึ่งตอนนั้นคือสิ่งที่คนอยากทำจริง
-  assert.match(page, /className=\{styles\.dishReopen\}[\s\S]{0,160}เปิดขาย/);
+});
+
+test("การ์ดที่ปิดขายต้องเงียบ สูงเท่าเพื่อน และแตะเพื่อเปิดขายได้", () => {
+  // กริดนี้มีไว้สั่งอาหาร ของที่สั่งไม่ได้จึงต้องจางจนตากวาดผ่าน — แถบแดงทับรูปกลบตัวช่วย
+  // จำเมนูของพนักงาน และปุ่มเต็มความกว้างทำให้การ์ดสูงกว่าเพื่อนในแถว (ขอบล่างไม่ตรง)
+  const page = withoutComments(source("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const css = withoutComments(source("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  for (const gone of ["dishRibbon", "dishReopen"]) {
+    assert.doesNotMatch(page, new RegExp(gone), `${gone} ต้องไม่กลับมาอยู่บนการ์ด`);
+    assert.doesNotMatch(css, new RegExp(gone), `${gone} ต้องไม่เหลือใน CSS`);
+  }
+  // ไม่มี element ไหนที่เรนเดอร์เฉพาะการ์ดที่ปิดขายแล้วเพิ่มความสูง — สถานะทั้งหมดอยู่ในกล่องเดิม
+  assert.match(page, /styles\.dishOutChip/);
+  assert.match(page, /styles\.dishOutNote/);
+  // แตะการ์ดที่ปิดขาย = เปิดแผ่นเปิดขาย (สั่งอาหารไม่ได้อยู่แล้ว การแตะจึงว่าง)
+  assert.match(page, /disabled=\{!item\.sellable && !soldOutToday\}/);
+  assert.match(page, /if \(soldOutToday\) setSoldOutSheet\(item\); else void chooseMenu\(item\);/);
+  // แผ่นเดียวกันต้องใช้ได้สองทิศ ไม่ใช่มีแต่ทางปิด
+  assert.match(page, /soldOutSheet\.availability === "SOLD_OUT_TODAY"[\s\S]{0,400}เปิดขายเดี๋ยวนี้/);
+  // รูปจางลงแทนการเอาอะไรไปทับ
+  assert.match(css, /\.dishCardUnavailable \.dishArt \{[^}]*grayscale/);
 });
 
 test("เวลาที่เมนูจะกลับมาขายเองมาจาก server ไม่ใช่จอเดา", () => {
