@@ -647,3 +647,33 @@ test("the collapsed rail gives its own breathing room and every control reads as
   assert.match(sidebar, /padding: mini \? '8px 0' : '4px 8px', marginBottom: mini \? 8 : 6/);
   assert.match(sidebar, /padding: mini \? '5px 0' : '4px', marginBottom: mini \? 12 : 8/);
 });
+
+test("สวิตช์พื้นที่ทำงาน: ป้ายสั้นพอดีแถบ ความหมายเต็มอยู่ที่ tooltip และมีสีประจำโหมด", () => {
+  // แถบเมนูกว้าง 264px · ป้ายเดิม "ดูแลแพลตฟอร์ม" ถูกตัดเป็น "ดูแลแพ…" = ปุ่มที่อ่านไม่จบ
+  // และสองปุ่มที่หน้าตาเกือบเหมือนกันทำให้คนอ่านว่าเป็นการสลับร้าน (ซึ่งเป็นคนละเรื่องกับ drill-down)
+  const root = path.resolve(import.meta.dirname, "..");
+  const src = (rel: string) => readFileSync(path.join(root, rel), "utf8");
+  const th = src("apps/web/i18n/th.ts");
+  const en = src("apps/web/i18n/en.ts");
+  for (const [file, text] of [["th", th], ["en", en]] as const) {
+    for (const key of ["workspace_shop", "workspace_platform"]) {
+      const label = new RegExp(`${key}: "([^"]+)"`).exec(text)?.[1] ?? "";
+      assert.ok(label.length > 0 && label.length <= 12,
+        `${file}.${key} ยาว ${label.length} ตัว — แถบตัดคำที่ยาวกว่านี้ ("${label}")`);
+    }
+    for (const key of ["workspace_shop_full", "workspace_platform_full"]) {
+      assert.match(text, new RegExp(`${key}: "`), `${file} ต้องมี ${key} ไว้ใช้กับ tooltip/aria`);
+    }
+  }
+  const sidebar = src("apps/web/components/AdminSidebar.tsx");
+  // ความหมายเต็มต้องอยู่ที่ tooltip ทั้งสองโหมด ไม่ใช่เฉพาะตอนแถบย่อ
+  assert.equal(sidebar.split("admin_nav.workspace_shop_full").length - 1, 2);
+  assert.equal(sidebar.split("admin_nav.workspace_platform_full").length - 1, 2);
+  // สีประจำโหมดต้องลามไปถึงเมนู ไม่ใช่แค่ตัวสวิตช์ — ไม่งั้นยังต้องอ่านป้ายเพื่อรู้ว่าอยู่โหมดไหน
+  assert.match(sidebar, /bms-admin-sidebar-menu-platform/);
+  assert.match(sidebar, /bms-workspace-platform/);
+  const css = src("apps/web/app/globals.css");
+  assert.match(css, /\.bms-workspace-platform \.ant-segmented-item-selected/);
+  // ต้องมีกฎของโหมดสว่างด้วย ไม่ใช่มีแต่บล็อก [data-theme="dark"] (เคยเขียวทั้งที่ถอดกฎหลักออก)
+  assert.match(css, /^\.bms-admin-sidebar-menu-platform[^\n]*\.ant-menu-item-selected/m);
+});

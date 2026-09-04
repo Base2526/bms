@@ -363,6 +363,33 @@ html.dark .ant-drawer-mask {
    ส่วน badge (absolute) กับ tooltip ของ antd ไปโผล่ผิดที่ = เมนูดูเพี้ยนทั้งแถบ
    popup flyout ของ submenu ตอนย่อถูก portal ออกไปนอก .bms-admin-sidebar-menu จึงไม่โดนกฎนี้อยู่แล้ว */
 .bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-item,
+/* โหมดแพลตฟอร์มมีสีประจำตัว — เครื่องมือของแพลตฟอร์ม (ENV, Logs, Dev Console) อยู่คนละโลก
+   กับเมนูของร้าน คนต้องรู้จากหางตาว่ากำลังอยู่โหมดไหนโดยไม่ต้องอ่านป้ายบนสวิตช์
+   ⚠️ สีนี้เป็น "โหมดของเครื่องมือ" ไม่ใช่ "ร้านที่กำลังดูอยู่" — ร้านที่ drill-down เข้าไป
+   ยังประกาศด้วยแถบสีส้มเต็มความกว้างของหน้าเหมือนเดิม สองอย่างนี้ตั้งฉากกัน */
+.bms-workspace-platform .ant-segmented-item-selected {
+  background: var(--purple-6, #722ed1);
+  color: #fff;
+}
+.bms-workspace-platform .ant-segmented-item-selected .ant-segmented-item-icon,
+.bms-workspace-platform .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #fff;
+}
+.bms-admin-sidebar-menu-platform.ant-menu-inline .ant-menu-item-selected,
+.bms-admin-sidebar-menu-platform.ant-menu-inline-collapsed .ant-menu-item-selected {
+  background: var(--purple-1, #f9f0ff);
+  color: var(--purple-7, #531dab);
+}
+.bms-admin-sidebar-menu-platform.ant-menu-inline .ant-menu-item-selected a,
+.bms-admin-sidebar-menu-platform .ant-menu-item-selected .anticon {
+  color: inherit;
+}
+[data-theme="dark"] .bms-admin-sidebar-menu-platform.ant-menu-inline .ant-menu-item-selected,
+[data-theme="dark"] .bms-admin-sidebar-menu-platform.ant-menu-inline-collapsed .ant-menu-item-selected {
+  background: #2b1d47;
+  color: #d3adf7;
+}
+
 .bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-submenu-title {
   height: auto;
   line-height: 1.4;

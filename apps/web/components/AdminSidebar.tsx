@@ -632,7 +632,13 @@ export default function AdminSidebar() {
           ⚠️ นี่คือการสลับ "ชุดเมนู" ไม่ใช่การสลับร้าน — drill-down/แถบเตือนร้านที่กำลังดูแล
           ทำงานเหมือนเดิมทั้งสองพื้นที่ และไม่มีสิทธิ์ใดถูกเพิ่มจากการกดปุ่มนี้ */}
       {platformAvailable && !menuGateLoading && (
-        <div style={{ padding: mini ? '0 6px 8px' : '0 12px 10px', flexShrink: 0 }}>
+        <div
+          className={effectiveWorkspace === 'PLATFORM' ? 'bms-workspace-switch bms-workspace-platform' : 'bms-workspace-switch'}
+          style={{ padding: mini ? '0 6px 8px' : '0 12px 10px', flexShrink: 0 }}
+        >
+          {/* ป้ายสั้น ("ร้าน"/"แพลตฟอร์ม") เพราะแถบกว้าง 264px ตัดคำยาวทิ้ง — ของเดิม
+              "ดูแลแพลตฟอร์ม" เหลือ "ดูแลแพ…" ซึ่งเป็นปุ่มที่อ่านไม่จบ · ความหมายเต็มอยู่ที่
+              tooltip/aria-label ทั้งสองโหมด ไม่ใช่เฉพาะตอนแถบย่อ */}
           <Segmented
             block
             size="small"
@@ -641,12 +647,22 @@ export default function AdminSidebar() {
             aria-label={t('admin_nav.workspace_switch_label')}
             options={mini
               ? [
-                  { value: 'SHOP', icon: <Tooltip title={t('admin_nav.workspace_shop')} placement="right"><ShopOutlined /></Tooltip> },
-                  { value: 'PLATFORM', icon: <Tooltip title={t('admin_nav.workspace_platform')} placement="right"><CloudOutlined /></Tooltip> },
+                  { value: 'SHOP', icon: <Tooltip title={t('admin_nav.workspace_shop_full')} placement="right"><ShopOutlined /></Tooltip> },
+                  { value: 'PLATFORM', icon: <Tooltip title={t('admin_nav.workspace_platform_full')} placement="right"><CloudOutlined /></Tooltip> },
                 ]
               : [
-                  { value: 'SHOP', label: t('admin_nav.workspace_shop'), icon: <ShopOutlined /> },
-                  { value: 'PLATFORM', label: t('admin_nav.workspace_platform'), icon: <CloudOutlined /> },
+                  {
+                    value: 'SHOP',
+                    label: <Tooltip title={t('admin_nav.workspace_shop_full')} placement="bottom">
+                      <span>{t('admin_nav.workspace_shop')}</span></Tooltip>,
+                    icon: <ShopOutlined />,
+                  },
+                  {
+                    value: 'PLATFORM',
+                    label: <Tooltip title={t('admin_nav.workspace_platform_full')} placement="bottom">
+                      <span>{t('admin_nav.workspace_platform')}</span></Tooltip>,
+                    icon: <CloudOutlined />,
+                  },
                 ]}
           />
         </div>
@@ -662,7 +678,9 @@ export default function AdminSidebar() {
           </div>
         ) : (
           <Menu
-            className="bms-admin-sidebar-menu"
+            className={effectiveWorkspace === 'PLATFORM'
+              ? 'bms-admin-sidebar-menu bms-admin-sidebar-menu-platform'
+              : 'bms-admin-sidebar-menu'}
             mode="inline"
             items={items}
             selectedKeys={selectedKeys}
