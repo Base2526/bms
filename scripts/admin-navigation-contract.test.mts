@@ -636,7 +636,7 @@ test("the collapsed rail gives its own breathing room and every control reads as
   const sidebar = source("apps/web/components/AdminSidebar.tsx");
   // The search control keeps its box in both modes: it is an input affordance, not a destination,
   // and it should still read as "type here" when the rail is down to icons.
-  assert.match(sidebar, /background: 'var\(--app-surface-2\)',\n\s*border: '1px solid var\(--app-border\)',/);
+  assert.match(sidebar, /background: 'var\(--app-surface-2\)',\r?\n\s*border: '1px solid var\(--app-border\)',/);
   // Controls without their own box (help pair, profile) rely on hover as the only affordance.
   assert.match(source("apps/web/app/globals.css"), /\.bms-sider-quiet:hover/);
   assert.equal((sidebar.match(/className="bms-sider-quiet"/g) ?? []).length, 3,
