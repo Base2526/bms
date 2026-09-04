@@ -68,7 +68,8 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (46 capabilities, 97 guides, 20 FAQ answers, 97 limit rules) covering every Sidebar
+deterministic bilingual catalog (46 capabilities, 101 guides, 20 FAQ answers, 21 limit groups/111
+rules — counts drift as features ship; re-check with the catalog module before quoting them) covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
 no GraphQL/AI call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes
 anything a permission did not already allow. The FAQ *and* the limits/traps moved out of
@@ -76,6 +77,16 @@ anything a permission did not already allow. The FAQ *and* the limits/traps move
 is pinned to the entry that must *lead* its answer (`scripts/ai-eval/work-assistant-question-corpus.mts`)
 — retrieving the right guide at rank 6 is a failure, not a pass. Coverage, status vocabulary and the
 regression gates: [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
+
+**Credit sales and accounts receivable (`9.30`, written 2026-08-27)** — a `CREDIT` payment method
+completes an order and deducts stock like any other sale, but opens an AR invoice in the same
+settlement transaction instead of counting toward drawer cash; collecting the debt later is a drawer
+cash-in on the *collecting* shift, never a payment added to the old order. Credit limits are checked
+before order creation and again under the account lock after stock settlement, and a return against
+`CREDIT` reduces the debt immediately — a resulting negative balance transfers to the oldest open
+invoice under that lock rather than reporting debt the customer no longer owes. `ar.writeoff` stays
+separate from `ar.manage`. See
+[agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 
 **Shop archetype lock + bilingual labels (2026-08-31)** — the `9.40`–`9.43` archetype work expanded
 the catalog and now locks `business_archetype` after the tenant's first real order; the dropdown
@@ -99,6 +110,50 @@ through `createOrderInTx()`: a round that cannot be reserved rolls back to the p
 than leaving food already cooking without reserved stock. See
 [business/pos.md](docs/business/pos.md) § Restaurant POS and
 [architecture/database.md](docs/architecture/database.md) § Restaurant POS.
+
+**Product catalog foundation + multi-store stock capabilities (`9.40`–`9.43`, `9.51`–`9.52`,
+2026-08-31–09-02)** — `bms_product_variants` is now the source of truth for a product's
+serving/size options, independent of branch stock: a `RECIPE`/`NON_STOCK` item's own inventory row
+stays at zero on purpose, so a variant can exist while every branch has zero stock. Inventory/pack/
+recipe/modifier writes sync a variant row into it one-way; reading `bms_inventory` to discover a
+product's sizes is wrong for these policies and was found live in the AI chat stock-check path.
+`bms_product_sales_surfaces` makes channel visibility explicit
+(`RETAIL_POS`/`RESTAURANT_POS`/`PUBLIC_STOREFRONT`/`CUSTOMER_AI`/`ONLINE_ORDER`) and separate from
+`active` lifecycle state; a new/imported product is a draft until a surface is turned on. `NON_STOCK`
+(`9.52`) sells with zero ingredient tracking, using `cost_price` for margin reporting, as a stepping
+stone toward `RECIPE`. Of the thirteen `bms_store_capabilities` flags an archetype preset can carry,
+only five gate real behavior (`RECIPE`, `MODIFIER`, `WEIGHTED_PRODUCT`, `WASTAGE`,
+`KITCHEN_WORKFLOW`); the rest describe what the shop's data already looks like. See
+[business/inventory.md](docs/business/inventory.md) §§ Multi-store stock policies / Catalog
+lifecycle and [agent-invariants.md](docs/agent-invariants.md#product-catalog-variants-sales-surfaces-and-stock-policies).
+
+**Kitchen stations (`9.53`–`9.54`, 2026-09-02–09-03)** — a station is a registered work area
+(`bms_kitchen_stations`: id, active flag, sort order, optional branch scope), not a free-text label
+and not a branch. Tickets carry both `station_id` and a name **snapshot**, so renaming a station
+never rewrites what the kitchen already saw, and a branch-scoped station's bills from elsewhere
+route to an unassigned column instead of a kitchen that branch doesn't have. Per-station SLA
+thresholds color the register KDS and `/admin/kitchen`; a station stays open to new tickets even
+after being deactivated, because losing food off the board from a settings change is worse than a
+ticket sitting on a station being retired. See [business/pos.md](docs/business/pos.md) § Kitchen
+stations.
+
+**Restaurant chat ordering + delivery (`9.55`–`9.57`, 2026-09-04)** — a `restaurant`-archetype shop
+can now take food orders through chat/online and hand them to the kitchen and a delivery rider,
+reusing the existing `flat` shipping mode and prepaid-only checkout rather than building a second
+fulfillment model. A branch can mark one menu item "sold out today" (`9.55`) without touching
+`bms_products.active`; the flag resets on the earliest of a 15-minute cron (honoring each shop's own
+reset time/timezone) or the branch's next shift-open — shift-open clears only closures whose
+service day has actually ended, never the whole branch, because a shift belongs to a device and a
+cashier, not to a service day. An online order requires an explicit branch and `DELIVERY`/`PICKUP`
+choice (`9.56`); payment alone never creates kitchen work, only a human `PAID -> PACKING` accept
+does. Line cancellation (`9.57`) reuses the POS return engine rather than a second money path,
+writes an immutable merchant/customer cause, and reprices/absorbs/queues a refund exactly like a
+counter partial return. A same-day recheck found and fixed ten defects before this shipped
+end-to-end, including a query ordering by a `bms_locations` column that does not exist (every
+online order failed to create), a migration that could drop the wrong `bms_order_discounts` check
+constraint, and the same "read `bms_inventory` instead of the catalog variant" mistake called out
+above — see [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) for
+the full brief and [CLAUDE.local.md](CLAUDE.local.md) for the incident-by-incident record.
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
