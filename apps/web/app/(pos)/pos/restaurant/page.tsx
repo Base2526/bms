@@ -41,7 +41,12 @@ type MenuItem = SearchItem & {
   imageUrl: string | null;
   sellable: boolean;
   availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
+  unavailableResetsAt: string | null;
+  unavailableReason: string | null;
 };
+// เหตุผลที่ครัวบอกจริงตอนของหมด — เก็บลงหลักฐานว่าปิดเพราะอะไร ไม่ใช่คำว่า "หมดวันนี้"
+// ซึ่งเป็นแค่การพูดซ้ำสิ่งที่สถานะบอกอยู่แล้ว
+const MENU_SOLD_OUT_REASONS = ["วัตถุดิบหมด", "เตา/เครื่องไม่พร้อม", "งดขายรอบนี้"] as const;
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
@@ -234,6 +239,11 @@ export default function RestaurantPosPage() {
   const [search, setSearch] = useState("");
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategory, setMenuCategory] = useState("");
+  // โหมดแจ้งของหมด: ครัวเดินมาบอกทีเดียวหลายอย่าง — เปิดโหมดแล้วทุกการ์ดกลายเป็นสวิตช์
+  // ปิดโหมดแล้วการ์ดกลับมาเป็นปุ่มสั่งอาหารล้วน ไม่มีปุ่มปิดขายค้างอยู่ใต้ทุกเมนูตลอดกะ
+  const [menuManage, setMenuManage] = useState(false);
+  const [menuOnlySoldOut, setMenuOnlySoldOut] = useState(false);
+  const [soldOutSheet, setSoldOutSheet] = useState<MenuItem | null>(null);
   const [menuHit, setMenuHit] = useState<ScanHit | null>(null);
   const [modifierCodes, setModifierCodes] = useState<string[]>([]);
   const [kitchenNote, setKitchenNote] = useState("");
@@ -509,19 +519,26 @@ export default function RestaurantPosPage() {
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
-  async function toggleMenuAvailability(item: MenuItem) {
+  async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
-      await json("/api/pos/restaurant/menu", {
+      const result = await json("/api/pos/restaurant/menu", {
         method: "POST",
         body: JSON.stringify(auth({
           productSku: item.sku,
-          unavailable: item.availability !== "SOLD_OUT_TODAY",
-          reason: item.availability === "SOLD_OUT_TODAY" ? null : "หมดวันนี้",
+          unavailable,
+          reason: unavailable ? reason ?? null : null,
         })),
       });
       await loadMenu();
-      message.success(item.availability === "SOLD_OUT_TODAY" ? "เปิดขายเมนูแล้ว" : "ปิดเมนูจนถึงรอบเปิดร้านถัดไปแล้ว");
+      // บอกเวลาที่จะกลับมาขายเองด้วยเสมอ — ไม่งั้นคนกดต้องจำกฎรีเซ็ตวันบริการของร้านเอง
+      const back = typeof result?.resetsAt === "string" ? timeOf(result.resetsAt) : "";
+      message.success(unavailable
+        ? `ปิด “${item.name}” แล้ว${back ? ` · เปิดขายอีกครั้ง ${back} น.` : ""}`
+        : `เปิดขาย “${item.name}” แล้ว`);
     });
+  }
+  function toggleMenuAvailability(item: MenuItem) {
+    return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", "แจ้งจากครัว");
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
   async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
@@ -533,14 +550,22 @@ export default function RestaurantPosPage() {
     menuItems.forEach((item) => { if (item.kitchenStation) seen.add(item.kitchenStation); });
     return [...seen];
   }, [menuItems]);
+  const soldOutCount = useMemo(
+    () => menuItems.filter((item) => item.availability === "SOLD_OUT_TODAY").length,
+    [menuItems]
+  );
   const visibleMenuItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     return menuItems.filter((item) => {
+      if (menuOnlySoldOut && item.availability !== "SOLD_OUT_TODAY") return false;
       if (menuCategory && (item.kitchenStation ?? "") !== menuCategory) return false;
       if (!q) return true;
       return item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
     });
-  }, [menuItems, menuCategory, search]);
+  }, [menuItems, menuCategory, menuOnlySoldOut, search]);
+  // ตัวกรองที่ค้างอยู่กับกริดว่างอ่านได้ว่า "ระบบพัง" — ปลดเองเมื่อเปิดขายครบแล้ว
+  // (กติกาเดียวกับตัวกรองสถานีบนจอครัว)
+  useEffect(() => { if (menuOnlySoldOut && soldOutCount === 0) setMenuOnlySoldOut(false); }, [menuOnlySoldOut, soldOutCount]);
   // KDS/floor are operational screens, so stale data is more dangerous than a
   // small bounded poll. The API remains branch-scoped by the device token.
   useEffect(() => {
@@ -867,6 +892,19 @@ export default function RestaurantPosPage() {
                   <span className={styles.catCount}>{menuItems.filter((item) => item.kitchenStation === stationName).length} เมนู</span>
                 </button>)}
               </div>}
+              {/* งานปิด/เปิดเมนูเป็นงานวันละไม่กี่ครั้ง จึงอยู่บนแถบเครื่องมือแถวเดียว
+                  ไม่ใช่แถบใต้การ์ดทุกใบตลอดกะ (ซึ่งอ่านเป็น "สถานะ" มากกว่า "ปุ่ม") */}
+              <div className={styles.menuTools}>
+                <button type="button" aria-pressed={menuManage}
+                  className={`${styles.menuTool} ${menuManage ? styles.menuToolOn : ""}`}
+                  onClick={() => setMenuManage((on) => !on)}>{menuManage ? "เสร็จแล้ว" : "แจ้งของหมด"}</button>
+                {soldOutCount > 0 && <button type="button" aria-pressed={menuOnlySoldOut}
+                  className={`${styles.menuTool} ${styles.menuToolAlert} ${menuOnlySoldOut ? styles.menuToolOn : ""}`}
+                  onClick={() => setMenuOnlySoldOut((on) => !on)}>หมดวันนี้ {soldOutCount}</button>}
+                <span className={styles.menuToolNote}>{menuManage
+                  ? "สลับสวิตช์ที่การ์ดเพื่อปิด/เปิดเมนู แล้วกดเสร็จแล้ว"
+                  : "แตะการ์ดเพื่อสั่ง · ปุ่ม ⋯ มุมการ์ดเพื่อปิดขาย"}</span>
+              </div>
               <div className={styles.panelScroll}>{visibleMenuItems.length === 0
                 ? <div className={styles.menuEmpty}>{menuItems.length === 0
                     ? "ยังไม่มีเมนูที่ขายที่โต๊ะได้ — สินค้าต้องเปิดขาย มีราคา และไม่ได้ถูกใช้เป็นวัตถุดิบของสูตรอื่น"
@@ -874,7 +912,15 @@ export default function RestaurantPosPage() {
                 : <div className={styles.dishGrid}>{visibleMenuItems.map((item) => {
                     const tint = menuCardTint(item.kitchenStation, menuStations);
                     const inCheck = qtyInCheckBySku.get(item.sku) ?? 0;
-                    return <div key={item.sku} className={`${styles.dishCard} ${!item.sellable ? styles.dishCardUnavailable : ""}`}>
+                    const soldOutToday = item.availability === "SOLD_OUT_TODAY";
+                    const hasKebab = !menuManage && !soldOutToday;
+                    return <div key={item.sku} className={`${styles.dishCard} ${!item.sellable ? styles.dishCardUnavailable : ""} ${hasKebab ? styles.dishCardKebab : ""}`}>
+                      {/* ริบบิ้นอยู่นอกปุ่มสั่ง จึงไม่ถูก opacity ของการ์ดที่ปิดอยู่กลืนไปด้วย */}
+                      {!item.sellable && <span className={styles.dishRibbon}>
+                        {soldOutToday ? `หมดวันนี้${item.unavailableReason ? ` · ${item.unavailableReason}` : ""}` : "สต็อกหมด"}
+                        {soldOutToday && item.unavailableResetsAt
+                          && <small>เปิดขายอีกครั้ง {timeOf(item.unavailableResetsAt)} น.</small>}
+                      </span>}
                       <button type="button" className={styles.dishSelect} disabled={!item.sellable} onClick={() => void chooseMenu(item)}>
                       <span className={styles.dishArt} style={{ background: tint.bg, color: tint.ink }}>
                         {item.imageUrl
@@ -890,11 +936,20 @@ export default function RestaurantPosPage() {
                         </span>
                       </span>
                       {item.kitchenStation && <span className={styles.dishStation} style={{ background: tint.bg, color: tint.ink }}>{item.kitchenStation}</span>}
-                      {!item.sellable && <span className={styles.dishUnavailableLabel}>{item.availability === "SOLD_OUT_TODAY" ? "วันนี้หมด" : "สต็อกหมด"}</span>}
                       </button>
-                      <button type="button" className={styles.dishAvailabilityButton} onClick={() => void toggleMenuAvailability(item)}>
-                        {item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "หมดวันนี้"}
-                      </button>
+                      {menuManage
+                        ? <div className={styles.dishManageRow}>
+                            <span>{soldOutToday ? "ปิดขายอยู่" : "ขายอยู่"}</span>
+                            <button type="button" className={styles.dishSwitch} aria-pressed={!soldOutToday}
+                              aria-label={`สลับสถานะขาย ${item.name}`}
+                              onClick={() => void toggleMenuAvailability(item)} />
+                          </div>
+                        : soldOutToday
+                          /* ปุ่มเต็มความกว้างบนการ์ดที่ปิดอยู่ = "เปิดขาย" ซึ่งเป็นสิ่งที่คนอยากทำจริงตอนนั้น */
+                          ? <button type="button" className={styles.dishReopen}
+                              onClick={() => void setMenuAvailability(item, false)}>เปิดขาย</button>
+                          : <button type="button" className={styles.dishKebab} aria-label={`จัดการเมนู ${item.name}`}
+                              onClick={() => setSoldOutSheet(item)}><MoreOutlined /></button>}
                     </div>;
                   })}</div>}</div>
             </>}
@@ -1018,7 +1073,8 @@ export default function RestaurantPosPage() {
                 {menuItems.map((item) => <button type="button" key={item.sku}
                   className={item.availability === "SOLD_OUT_TODAY" ? styles.kitchenMenuSoldOut : ""}
                   onClick={() => void toggleMenuAvailability(item)}>
-                  <span>{item.name}</span><b>{item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "หมดวันนี้"}</b>
+                  <span>{item.name}{item.availability === "SOLD_OUT_TODAY" && item.unavailableReason ? ` · ${item.unavailableReason}` : ""}</span>
+                  <b>{item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "ปิดขายวันนี้"}</b>
                 </button>)}
               </div>
             </details>
@@ -1190,6 +1246,21 @@ export default function RestaurantPosPage() {
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>แก้จำนวนคน</button>
         <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { setMoreOpen(false); openCancel(); }}><CloseCircleOutlined /> ยกเลิกบิล</button>
       </div>
+    </Modal>
+    {/* ปิดขายเป็นงานที่ย้อนคืนยาก (เมนูหายจากทุกช่องทางของสาขานี้ทันที) จึงมีจังหวะยืนยัน
+        หนึ่งครั้งพร้อมเลือกสาเหตุ — แต่ยังจบใน 2 แตะ เท่ากับแถบเดิมที่กดพลาดได้ */}
+    <Modal title={soldOutSheet ? `ปิดขาย ${soldOutSheet.name}` : ""} open={Boolean(soldOutSheet)}
+      onCancel={() => setSoldOutSheet(null)} footer={null} getContainer={modalContainer} destroyOnClose>
+      {soldOutSheet && <div className={styles.sheetActions}>
+        {MENU_SOLD_OUT_REASONS.map((reason) => <button key={reason} type="button"
+          className={`${styles.btn} ${styles.btnDanger}`}
+          onClick={() => { const item = soldOutSheet; setSoldOutSheet(null); void setMenuAvailability(item, true, reason); }}>
+          <CloseCircleOutlined /> ปิดขายวันนี้ — {reason}
+        </button>)}
+        <div className={styles.sheetNote}>
+          ปิดเฉพาะสาขานี้ · กลับมาขายเองเมื่อถึงรอบเปิดร้านถัดไป หรือกด “เปิดขาย” ที่การ์ดเมื่อไหร่ก็ได้
+        </div>
+      </div>}
     </Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย" getContainer={modalContainer}><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
     <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="คนรับออร์เดอร์เริ่มยกเลิกได้ แต่ต้องให้ผู้มีสิทธิ์ pos.void ซึ่งเป็นคนละคนกด PIN อนุมัติ" />}<label>Note / เหตุผลที่ยกเลิก (จำเป็น)<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="เช่น ลูกค้าเปลี่ยนใจ เปิดผิดโต๊ะ หรือรับรายการผิด" /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>

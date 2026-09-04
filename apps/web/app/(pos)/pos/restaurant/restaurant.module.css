@@ -142,6 +142,7 @@
   background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
 .page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
+.page .areaButtonActive:hover:not(:disabled) { background: var(--ink); filter: brightness(1.25); }
 
 /* ---------- การ์ดโต๊ะ ---------- */
 .tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 8px; }
@@ -225,6 +226,7 @@
 }
 .page .catCard:hover { border-color: var(--ink-3); }
 .page .catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
+.page .catCardActive:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
 
@@ -236,9 +238,51 @@
 .page .dishSelect { display: block; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .page .dishSelect:disabled { cursor: not-allowed; }
 .dishCardUnavailable .dishSelect { opacity: .52; }
-.dishUnavailableLabel { position: absolute; inset: 36px 12px auto; z-index: 2; border-radius: 5px; padding: 7px 8px; background: var(--red); color: white; text-align: center; font-weight: 700; }
-.page .dishAvailabilityButton { width: 100%; min-height: 34px; border: 0; border-top: 1px solid var(--line-2); background: var(--panel-2); color: var(--red); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.dishCardUnavailable .dishAvailabilityButton { color: var(--green); }
+/* เมนูที่ปิดขายต้องอ่านออกจากอีกฝั่งห้อง — ริบบิ้นพาดหน้าการ์ดพร้อมเวลาที่จะกลับมาขายเอง
+   (การ์ดจาง ๆ กับป้ายเล็กแบบเดิมกลืนไปกับการ์ดอื่นบนกริด 50 เมนู) */
+.dishRibbon { position: absolute; inset: 30px 0 auto; z-index: 2; padding: 5px 6px; background: var(--red);
+  color: #fff; text-align: center; font-size: 11.5px; font-weight: 700; line-height: 1.3; }
+.dishRibbon small { display: block; font-size: 10px; font-weight: 500; opacity: .88; }
+/* ปุ่มเต็มความกว้างสงวนไว้ให้ "เปิดขาย" เท่านั้น — บนการ์ดที่ปิดอยู่ นั่นคือสิ่งที่คนอยากทำจริง
+   ส่วนการ "ปิดขาย" เป็นงานนาน ๆ ครั้งและย้อนคืนยาก จึงอยู่หลังปุ่ม ⋯ แบบเดียวกับ .sheetActions */
+.page .dishReopen { position: relative; z-index: 3; width: 100%; min-height: 40px; border: 0;
+  border-top: 1px solid var(--line-2); background: var(--accent); color: #fff; font: inherit;
+  font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.page .dishReopen:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.page .dishKebab { position: absolute; top: 5px; right: 5px; z-index: 3; width: 34px; height: 34px;
+  display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px;
+  background: rgba(255, 255, 255, .82); color: var(--ink-2); font: inherit; font-size: 16px;
+  line-height: 1; cursor: pointer; }
+.page .dishKebab:hover:not(:disabled) { border-color: var(--line); color: var(--ink); }
+/* ตัวเลขจำนวนในบิลกับปุ่ม ⋯ อยู่มุมเดียวกัน — เลื่อนตัวเลขซ้ายเฉพาะการ์ดที่มีปุ่ม ⋯ จริง */
+.dishCardKebab .dishQty { right: 44px; }
+.dishManageRow { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; border-top: 1px solid var(--line-2); background: var(--panel-2);
+  font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+.page .dishSwitch { flex: none; position: relative; width: 40px; height: 23px; padding: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; }
+.page .dishSwitch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+  border-radius: 9px; background: var(--ink-3); transition: transform .14s ease, background .14s ease; }
+.page .dishSwitch[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+.page .dishSwitch[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent); }
+.page .dishSwitch[aria-pressed="true"]::after { transform: translateX(17px); background: #fff; }
+@media (prefers-reduced-motion: reduce) { .page .dishSwitch::after { transition: none; } }
+/* แถวเครื่องมือของกริดเมนู: โหมดแจ้งของหมด (ครัวเดินมาบอกทีเดียวหลายอย่าง) + ตัวนับที่กรองได้ */
+.menuTools { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0 0; }
+.page .menuTool { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px;
+  background: var(--panel); color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; }
+/* ⚠️ ทุกปุ่มที่ทาสีเองต้องประกาศ :hover ของตัวเอง — pos.css มี
+   `.pos-root button:hover:not(:disabled) { background: var(--pos-sunken) }` ซึ่งเจาะจงกว่า
+   คลาสเดี่ยว ๆ ปุ่มที่ active จึงกลายเป็นสีขาวพร้อมตัวหนังสือสีขาว = อ่านไม่ออก
+   และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุดจนไปแตะที่อื่น (แบบเดียวกับ .btnPrimary) */
+.page .menuToolOn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page .menuToolOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.page .menuToolAlert { border-color: var(--amber); background: var(--amber-bg); color: var(--amber); }
+.page .menuToolAlert:hover:not(:disabled) { background: var(--amber-bg); }
+.page .menuToolAlert.menuToolOn { background: var(--amber); border-color: var(--amber); color: #fff; }
+.page .menuToolAlert.menuToolOn:hover:not(:disabled) { background: var(--amber); filter: brightness(1.08); }
+.menuToolNote { font-size: 11.5px; color: var(--ink-3); margin-inline-start: auto; }
 .page .dishCard:hover { border-color: var(--accent); }
 .dishArt { height: 96px; display: grid; place-items: center; }
 .dishArt img { width: 100%; height: 100%; object-fit: cover; }
@@ -355,6 +399,7 @@
   border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 .kitchenFilter:hover { background: var(--panel-2); }
 .kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.page .kitchenFilterOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
 .kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
