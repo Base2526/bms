@@ -1035,7 +1035,7 @@ function ProductsManagement() {
       >
         <Form form={form} layout="vertical" autoComplete="off">
           {!editing && (
-            <Alert
+            <Alert closable
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -1172,7 +1172,7 @@ function ProductsManagement() {
           )}
 
           {isRestaurantShop && (
-            <Alert
+            <Alert closable
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -1510,7 +1510,7 @@ function ProductsManagement() {
         onOk={() => void submitDuplicate()}
         confirmLoading={duplicating}
       >
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           message={t("admin_products.duplicate_draft_hint")}
@@ -2070,7 +2070,7 @@ function ProductDetail({
                 {salesSurfaces.map((surface) => <Tag key={surface} color="geekblue" style={{ margin: 0 }}>{surface}</Tag>)}
               </Space>
               {readiness && !readiness.ready && (
-                <Alert
+                <Alert closable
                   type="warning"
                   showIcon
                   message={t("admin_products.publish_blocked")}
@@ -2094,7 +2094,7 @@ function ProductDetail({
                 />
               )}
               {readiness?.ready && readiness.warnings.length > 0 && (
-                <Alert
+                <Alert closable
                   type="info"
                   showIcon
                   message={t("admin_products.publish_warnings")}

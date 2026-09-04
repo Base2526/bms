@@ -57,7 +57,7 @@ export default function Page() {
       render: (_: any, r: any) => (
         <Space direction="vertical" size={0}>
           <span style={{ fontWeight: 600 }}>{r.name}</span>
-          <span style={{ color: "var(--app-text-secondary, #888)", fontSize: 12 }}>/{r.slug}</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>/{r.slug}</span>
         </Space>
       ),
     },

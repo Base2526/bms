@@ -175,11 +175,17 @@ test("the global sidebar uses bounded feature checks instead of the full capabil
   assert.match(resolvers, /stock_policy IN \('PACK', 'BUNDLE'\)/,
     "an unfinished pack model must keep its configuration route discoverable");
 
-  assert.match(sidebar, /const canViewPosReadiness = can\('pos\.device\.manage'\)[\s\S]*?can\('pharmacy\.policy\.read'\)[\s\S]*?can\('product\.view'\)[\s\S]*?can\('stock\.adjust'\)/,
-    "the sidebar must mirror the page's complete read permission boundary");
-  assert.match(sidebar, /canViewPosReadiness[\s\S]*?admin\/pos-readiness/,
-    "POS Readiness must remain available to an authorized POS manager regardless of archetype");
-  assert.doesNotMatch(sidebar, /isPharmacyShop && can\('pharmacy\.policy\.read'\)/);
+  // The archetype/capability guards moved into lib/bms/adminNavigation.ts, which
+  // scripts/admin-navigation-contract.test.mts exercises by calling them. What still belongs here
+  // is that the shell feeds those guards the real signals rather than re-deriving them.
+  assert.match(sidebar, /wastageEnabled: bootstrapData\?\.bmsWastageEnabled === true/);
+  assert.match(sidebar, /packToolsConfigured: bootstrapData\?\.bmsPackToolsConfigured === true/);
+  assert.match(sidebar, /archetype: bootstrapData\?\.bmsStoreProfile\?\.businessArchetype \?\? null/);
+
+  const navigation = source("apps/web/lib/bms/adminNavigation.ts");
+  assert.match(navigation, /recommendedCapabilities[\s\S]*?"PACK"[\s\S]*?"MULTI_BARCODE"/,
+    "pack tools must stay reachable for an archetype that recommends them, before any pack exists");
+  assert.match(navigation, /showWastageInNavigation/);
 });
 
 test("status-only capabilities distinguish recommendation from real configuration", () => {

@@ -36,7 +36,7 @@ export default function WastagePage() {
   const history = useQuery(Q_WASTAGE, { skip: !canView, fetchPolicy: "cache-and-network" });
   const [loadProducts, products] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
   const [record, recordState] = useMutation(M_WASTAGE);
-  if (!permsLoading && !canView) return <Alert type="error" showIcon message={t("admin_wastage.no_permission")} />;
+  if (!permsLoading && !canView) return <Alert closable type="error" showIcon message={t("admin_wastage.no_permission")} />;
 
   const productRows: Product[] = products.data?.bmsProducts?.items ?? [];
   const selected = productRows.find((row) => row.sku === selectedSku) ?? null;
@@ -58,7 +58,7 @@ export default function WastagePage() {
 
   return <main className={styles.page}>
     <section className={styles.hero}><h1>{t("admin_wastage.title")}</h1><p>{t("admin_wastage.subtitle")}</p></section>
-    {!canAdjust && <Alert type="info" showIcon message={t("admin_wastage.read_only")} />}
+    {!canAdjust && <Alert closable type="info" showIcon message={t("admin_wastage.read_only")} />}
     <div className={styles.grid}>
       <Card title={t("admin_wastage.record_title")}>
         <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
@@ -85,7 +85,7 @@ export default function WastagePage() {
         </Form>
       </Card>
       <Card title={t("admin_wastage.history")} extra={<Button icon={<ReloadOutlined />} onClick={() => history.refetch()} loading={history.loading}>{t("admin_wastage.refresh")}</Button>}>
-        {history.error && <Alert type="error" showIcon message={history.error.message} style={{ marginBottom: 12 }} />}
+        {history.error && <Alert closable type="error" showIcon message={history.error.message} style={{ marginBottom: 12 }} />}
         <Table rowKey="id" loading={history.loading} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
           { title: t("admin_wastage.when"), dataIndex: "createdAt", width: 150, render: (value: string) => new Date(value).toLocaleString(lang === "th" ? "th-TH" : "en-GB", { dateStyle: "short", timeStyle: "short" }) },
           { title: t("admin_wastage.product"), render: (_: unknown, row: WastageRow) => <><strong>{row.productName}</strong><br /><small>{row.productSku} · {row.size}</small></> },

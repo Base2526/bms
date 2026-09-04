@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { ADMIN_NAV_FOOTER_ROUTES, ADMIN_NAV_ITEMS } from "../../apps/web/lib/bms/adminNavigation.ts";
 
 import { BMS_PERMISSIONS } from "../../apps/web/lib/bms/permissions.ts";
 import {
@@ -170,9 +171,14 @@ test("catalog permissions and admin routes resolve to real application contracts
 });
 
 test("every Admin sidebar route and routable Admin page has verified guide coverage", () => {
-  const sidebar = readFileSync(path.join(WEB, "components", "AdminSidebar.tsx"), "utf8");
-  const sidebarRoutes = new Set([...sidebar.matchAll(/link\('(\/admin[^']+)'/g)].map((match) => match[1]));
-  sidebarRoutes.add("/admin/pharmacy-queue");
+  // Routes come from the navigation module, not from scraping JSX: the old source regex would have
+  // matched nothing once the menu moved out of the component, and an empty set passes every loop
+  // below — coverage would have disappeared without a single failing assertion.
+  const sidebarRoutes = new Set<string>([
+    ...ADMIN_NAV_ITEMS.map((item) => item.route),
+    ...ADMIN_NAV_FOOTER_ROUTES,
+  ]);
+  assert.ok(sidebarRoutes.size > 30, `navigation exposes only ${sidebarRoutes.size} routes; coverage check is not reading the menu`);
   const guideRoutes = new Set(SYSTEM_GUIDES.map((guide) => guide.route));
   // Documented-but-not-linkable subtrees (parent has no index page) still count as covered.
   const coveredPrefixes = new Set([

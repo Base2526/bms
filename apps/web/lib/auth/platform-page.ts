@@ -19,5 +19,8 @@ export async function requirePlatformAdminPage() {
   } catch {
     ok = false; // 5.6 ยังไม่ apply / column ไม่มี → ปฏิเสธไว้ก่อน
   }
-  if (!ok) redirect("/admin/dashboard");
+  // ⚠️ ส่งไป /admin ไม่ใช่ /admin/dashboard — dashboard อ่านด้วยสิทธิ์ report.view ซึ่ง role
+  // คลัง/แคตาล็อกไม่มี การ redirect ตายตัวจึงพาไปเจอการ์ด "ไม่มีสิทธิ์" · /admin เลือกปลายทาง
+  // จากนิยามเมนู (firstAdminDestination) ให้ได้หน้าที่บัญชีนั้นเปิดได้จริง
+  if (!ok) redirect("/admin");
 }

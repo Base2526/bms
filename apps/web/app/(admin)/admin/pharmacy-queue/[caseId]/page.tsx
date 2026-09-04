@@ -1304,7 +1304,7 @@ export default function PharmacyCaseDetailPage() {
               <Input placeholder={t("admin_pharmacy_case.reason_placeholder")} value={reason} onChange={(e) => setReason(e.target.value)} disabled={!canDecide} />
 
               {draftHasPrescriptionItem && (
-                <Alert
+                <Alert closable
                   type={hasPrescriptionEvidence ? "info" : "warning"}
                   showIcon
                   message={

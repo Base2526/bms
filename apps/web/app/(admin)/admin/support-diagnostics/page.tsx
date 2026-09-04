@@ -65,8 +65,8 @@ export default function Page() {
   }
   return <Space direction="vertical" size={16} style={{ width: "100%", maxWidth: 900 }}>
     <div><Title level={2}>{t("admin_support_diagnostics.title")}</Title><Paragraph>{t("admin_support_diagnostics.intro")}</Paragraph></div>
-    <Alert type="info" showIcon message={t("admin_support_diagnostics.privacy_title")} description={t("admin_support_diagnostics.privacy_desc")} />
-    {ticket && <Alert type="success" showIcon message={t("admin_support_diagnostics.ticket_created", { ticket })} />}
+    <Alert closable type="info" showIcon message={t("admin_support_diagnostics.privacy_title")} description={t("admin_support_diagnostics.privacy_desc")} />
+    {ticket && <Alert closable type="success" showIcon message={t("admin_support_diagnostics.ticket_created", { ticket })} />}
     <Card title={t("admin_support_diagnostics.range_title")}><Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Segmented value={range} onChange={(value) => setRange(value as WindowKey)} options={[
         { value: "1h", label: t("admin_support_diagnostics.range_1h") }, { value: "24h", label: t("admin_support_diagnostics.range_24h") }, { value: "7d", label: t("admin_support_diagnostics.range_7d") },

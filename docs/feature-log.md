@@ -10,6 +10,119 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Admin menu search / command palette (2026-09-03)
+
+- Added a keyboard-triggered jump list (⌘K / Ctrl+K, plus a visible "ค้นหาเมนู" button in the
+  sidebar header for the collapsed rail and the mobile Drawer, where there is no physical
+  keyboard) over the ~60 destinations the sidebar now holds across both workspaces. Scanning a
+  collapsed accordion for something opened once a month does not scale; typing the word a cashier
+  or bookkeeper actually uses does.
+- The word list is the assistant's own knowledge catalog (`lib/bms/assistantKnowledge`) — the same
+  verified guide aliases, folded-in FAQ phrasings, and limit phrasings `bmsWorkAssistant` and
+  `/pos` already search — reused via `searchAssistantKnowledge(query, {kind:'guide', ...})`, not a
+  second alias list written for the sidebar. Writing one would have repeated the exact mistake the
+  40 `admin.menu_*` keys were deleted for two commits ago. Coverage is already enforced elsewhere
+  (`work-assistant-knowledge-contract.test.mts`: every sidebar route has a guide at that exact
+  route), so the palette benefits from that guarantee for free.
+- Two layers, merged: an instant label-substring match needs no network request, and a catalog
+  alias match joins in once the catalog has loaded, for the words that aren't the menu's own name
+  ("เครดิตหมด" → Billing & Plan, "ของหมดอายุ" → Wastage, "เปิดร้านไม่ได้" → the POS readiness
+  checklist — verified against the real shipped catalog, not invented for a demo).
+- **The catalog (~360KB of source: guides + FAQ + limits) is never imported statically.** Every
+  Admin page renders the sidebar, so a static import would have shipped that to every page load
+  whether or not anyone ever searches. `adminNavSearch.ts` loads it with a single dynamic
+  `import()` behind a module-level singleton promise the first time the palette opens, shared by
+  every consumer. Verified against the real production build: `/admin/orders`'s first load grew by
+  1KB (571KB, from 570KB before this change), and the guide/FAQ/limit text lives in its own
+  215KB chunk that does not appear in the Admin layout's initial bundle at all.
+- **The palette can never show a route the account's own sidebar wouldn't** — it searches
+  `searchableAdminNavItems(navContext)`, the exact same permission-filtered list the menu itself
+  renders from (both workspaces, so a platform admin can jump straight to `/admin/env` without
+  switching areas first), not the catalog's own separate `accessible` flag. A guide match for a
+  route outside that list is dropped before it can render.
+- ⚠️ Known gap, disclosed rather than silently left: "VAT" is not currently an alias of the POS
+  readiness guide in the catalog (searched; confirmed empty), even though that page's own Manual
+  description mentions VAT — the Manual's prose was never wired into the search corpus (by design,
+  see `assistantKnowledge`'s "answer text is never scored" invariant). Adding it is a content
+  change to `guides.ts`, not a wiring change, and is left for whoever owns that alias list next.
+- Not shipped in this pass: the mobile Drawer gets the same modal (tapping the header button opens
+  it, the native keyboard appears), not the friendlier "inline filter pinned above the menu list"
+  pattern a touch screen deserves — that needs restructuring how the Drawer's `<Menu>` items are
+  built and was scoped out to ship the higher-value desktop piece with real tests rather than both
+  surfaces half-verified.
+
+## Admin navigation by task (2026-09-03)
+
+- Menu data moved out of `AdminSidebar.tsx` into `lib/bms/adminNavigation.ts` — a pure module with
+  no React or database imports, so the whole menu is asserted by calling it rather than by scraping
+  JSX. Icons and badge counters stay in the shell; the module owns ids, routes, i18n keys, sections,
+  guards and route ownership. Hiding an entry remains presentation only: every page still enforces
+  its own permissions server-side.
+- Groups are now the work people do — Sales, Products & stock, Customers & marketing, Finance &
+  reports, Shop-specific work, Settings & administration — instead of one 16-item "Shop" group
+  holding sales, customers, finance, stock and setup together. Items are filtered first and
+  empty sections are dropped, so a group header never opens onto nothing.
+- Platform tools (ENV, Logs, System Health, Dev Console, Fake data, all-shops, Roles, Posts, Files)
+  moved to a separate workspace behind a switch that only platform admins see. **The switch selects
+  a tool set, not a tenant** — drill-down and the acting-shop banner are untouched, no permission is
+  granted, and AI Quality plus Playground stay in the shop area because they are tenant permissions.
+  The workspace follows the URL when a route belongs to one, so deep links and Back stay consistent.
+- Three guards disagreed with the pages they opened. The follow-up queue renders for
+  `retention.view` alone, but the menu required `followup.view` — a retention-only role had no route
+  to its own queue. POS Readiness reads with four permissions while the menu offered it for one, so
+  three of the four landed on an access screen. Pack and label tools read with `product.view` but
+  sat inside a POS-conditional group, leaving a catalog manager no way in.
+- `/admin` used to redirect to `/admin/dashboard`, which reads `report.view` — a warehouse or
+  catalog role signed in and landed on a permission warning. It now picks the first destination the
+  navigation policy says that account can open (see the landing order below), and
+  `getting-started` is open to any admin session, so the answer is never "nowhere". The four guards that bounce people back into the shop
+  (`requirePlatformAdminPage`, `requireTenantAdministratorPage`, and the login/shop-signup layouts)
+  had the same dead end and now send people to `/admin` as well, so one place decides the landing.
+  The Admin shell layout must stay guard-free or that redirect would loop; a test pins it.
+- The 40 `admin.menu_*`/`admin.group_*` i18n keys the old sidebar used are deleted, not left
+  behind. Menu names live once, in `admin_nav`; the `admin` namespace is down to 20 keys. Nothing
+  reads a menu label from two places any more — including the pharmacy queue's custom two-pill
+  renderer, which took its own key and so quietly ignored the entry's label.
+- Archetype changes emphasis, never reach: declared entries float to the top of the section they
+  already belong to, the order never changes with usage, and the same permissions reach the same
+  pages in every shop type. Only capability-driven entries (packs, wastage, the kitchen board)
+  differ in visibility, and each follows a real data signal rather than the archetype alone.
+- Two kinds of entry sit above the groups, and nothing else qualifies: the **home** page (the
+  dashboard, exactly one) and **queues** where someone is waiting — Inbox, My mentions, and, in a
+  pharmacy, the intake queue. The "Overview" group that used to hold the dashboard was a group
+  whose own name repeated its main child ("ภาพรวม" › "ภาพรวมวันนี้") and whose other two members
+  are opened rarely, so it cost a click and bought nothing; it is dissolved. Getting started now
+  leads the settings group (it is setup work, and the fallback landing page), and the AI assistant
+  joined the manual in the pinned footer — it is already mounted as a Drawer on every Admin page,
+  so its full page is a second entrance, not the one that deserved a prime row.
+- `/admin` now lands on the most central thing the account can open: dashboard if it can read one,
+  otherwise its live queue (a cashier whose whole job is the Inbox should not have to go find it),
+  otherwise the first section it has, and for an account with no permission rows at all, the setup
+  checklist.
+- Queues above the groups: A group header does not aggregate its
+  children's badges and a collapsed group renders as a hover popup, so an unread count inside a
+  group is invisible from every page except its own; grouping Inbox had silently undone the reason
+  it was pulled out of the Store group in the first place. Restock notifications deliberately stay
+  in their group: those customers have already waited days, and pinning a badge that is almost
+  always non-zero is how a red pill stops meaning anything. Pinned order is fixed for every shop
+  type, pinned entries leave their section rather than appearing twice, and signing in still lands
+  on the overview — the badge is what pulls someone into a queue.
+- Posts, Files and Logs shipped hardcoded badge counts (2, 5, 1) that read as unread work; they are
+  gone. Every remaining badge maps to a counter the shell already polls.
+- Detail pages select their parent by route boundary, most specific first, so
+  `/admin/inbox/mentions`, `/admin/pharmacy-protocols/licenses` and `/admin/users/42/edit` no longer
+  highlight the wrong entry, and `openKeys` is controlled so navigating opens the new group.
+- Every alert in the Admin tree can be dismissed. 237 of 265 already carried `closable`; the 28
+  that did not were readiness blockers, permission notes and load errors that stack up on a busy
+  screen and cover the work underneath with no way past them. A contract test now pins the
+  convention. ⚠️ Where the alert *is* the whole page (a permission wall, a failed query), closing
+  it leaves an empty page until reload — that was already true of the 237 and is accepted here for
+  consistency. The acting-shop banner in `AdminLayoutClient` is a plain div, not an `Alert`, so it
+  stays undismissable on purpose: it says whose data is on screen.
+- The Manual's sidebar map was a second copy of the old structure. It keeps its per-destination
+  bilingual notes but is now grouped like the real menu, and a contract test fails if the two ever
+  document different destinations.
+
 ## Archetype-aware shop experience (2026-09-03)
 
 - Added one pure experience profile covering all 13 shop archetypes. Products, imports, Stock

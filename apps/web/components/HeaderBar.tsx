@@ -1164,7 +1164,7 @@ export default function HeaderBar({
           border-radius: 999px;
           border: none;
           background: transparent;
-          color: var(--app-text-secondary, var(--app-text));
+          color: var(--text-secondary);
           font-size: 18px;
           cursor: pointer;
           transition: background 120ms ease, color 120ms ease, transform 120ms ease;

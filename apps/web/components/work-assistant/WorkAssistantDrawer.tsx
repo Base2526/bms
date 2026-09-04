@@ -332,7 +332,7 @@ export default function WorkAssistantDrawer() {
                           <Tag color={citation.accessible ? "blue" : "default"}>{citation.status || citation.kind}</Tag>
                           <Typography.Text strong>{citation.title}</Typography.Text>
                         </Space>
-                        <div style={{ color: "var(--app-text-secondary, #777)" }}>{citation.summary}</div>
+                        <div style={{ color: "var(--text-secondary)" }}>{citation.summary}</div>
                         {!citation.accessible ? <div>{citation.missingPermissions.length
                           ? `${en ? "Missing access: " : "ขาดสิทธิ์: "}${citation.missingPermissions.join(", ")}`
                           : en ? "This page is restricted to administrators." : "หน้านี้จำกัดเฉพาะผู้ดูแลระบบ"}</div> : null}
@@ -362,7 +362,7 @@ export default function WorkAssistantDrawer() {
                         server-composed arguments, so an informed confirmation has to show them —
                         the full-page assistant does the same.
                       */}
-                      <div style={{ fontSize: 11.5, fontFamily: "monospace", color: "var(--app-text-secondary, #777)", wordBreak: "break-word", marginBottom: 6 }}>
+                      <div style={{ fontSize: 11.5, fontFamily: "monospace", color: "var(--text-secondary)", wordBreak: "break-word", marginBottom: 6 }}>
                         {proposal.mutation}({Object.entries(proposal.args || {})
                           .map(([key, value]) => `${key}: ${value === null || value === undefined ? "—" : String(value)}`)
                           .join(", ")})

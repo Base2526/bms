@@ -185,7 +185,7 @@ export default function ReceivablesPage() {
 
   if (permLoading) return null;
   if (!can("ar.view")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูข้อมูลลูกหนี้ (ar.view)" />;
+    return <Alert closable type="warning" showIcon message="ไม่มีสิทธิ์ดูข้อมูลลูกหนี้ (ar.view)" />;
   }
 
   return (
@@ -214,7 +214,7 @@ export default function ReceivablesPage() {
       </AdminPageHeader>
 
       {/* ยอดคงค้างเป็นสินทรัพย์ในงบดุล — ตัวเลขนี้ต้องส่งบัญชีก่อนปิดงบ */}
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -223,7 +223,7 @@ export default function ReceivablesPage() {
       />
 
       {summary?.balanceMismatchCount > 0 && (
-        <Alert
+        <Alert closable
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
@@ -629,7 +629,7 @@ function ReceiptModal({
       onCancel={onCancel}
       onOk={() => form.submit()}
     >
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}

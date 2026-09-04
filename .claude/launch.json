@@ -10,6 +10,15 @@
       "name": "web-docker",
       "url": "http://localhost:3000",
       "port": 3000
+    },
+    {
+      "name": "web-host-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app POSTGRES_PASSWORD=\"$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)\" REDIS_URL=redis://127.0.0.1:6379 NEXT_PUBLIC_BASE_URL=http://localhost:3100 NEXT_PUBLIC_GRAPHQL_HTTP=http://localhost:3100/api/graphql NEXT_PUBLIC_GRAPHQL_WS=ws://localhost:3100/graphql npx next dev -p 3100"
+      ],
+      "port": 3100
     }
   ]
 }

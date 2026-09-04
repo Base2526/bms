@@ -337,6 +337,20 @@ html.dark .ant-drawer-mask {
   opacity: 1 !important;
 }
 
+/* Sidebar: ปุ่มในรางที่ไม่มีกรอบ (ค้นหาตอนย่อ, ผู้ช่วย/คู่มือ, โปรไฟล์) — ไม่มีพื้นหลังของตัวเอง
+   จึงต้องมี hover เป็นตัวเดียวที่บอกว่ากดได้ ใช้โทนเดียวกับ hover ของ .ant-menu-item เพื่อไม่ให้
+   รางมีสองภาษาของการ "ชี้อยู่" · transition สั้นและถูกปิดเมื่อผู้ใช้ตั้ง prefers-reduced-motion */
+.bms-sider-quiet {
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.bms-sider-quiet:hover {
+  background: rgba(var(--app-text-rgb), 0.06);
+  color: var(--app-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bms-sider-quiet { transition: none; }
+}
+
 /* Sidebar: label เมนูยาว (เช่น "Pharmacy Intake Lab"/"Pharmacy Protocols") เดิมโดน antd ตัดเป็น
    "..." ด้วย ellipsis + height คงที่ของ .ant-menu-item อ่านไม่ออกว่าเมนูอะไร — scope เฉพาะ sidebar
    (ไม่แตะ Menu อื่นในแอป เช่น dropdown) เปลี่ยนเป็นขึ้นบรรทัดใหม่แทนตัดคำ

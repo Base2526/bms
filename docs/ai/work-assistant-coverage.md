@@ -2,8 +2,10 @@
 
 Status: implemented and contract-checked. The deterministic catalog currently contains 46 verified
 capabilities, 97 bilingual guides, 20 verified FAQ answers, and 19 groups of limits and traps
-(97 rules). Every literal Admin Sidebar
-destination and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
+(97 rules). Every Admin Sidebar
+destination — read from `ADMIN_NAV_ITEMS`/`ADMIN_NAV_FOOTER_ROUTES` in `lib/bms/adminNavigation.ts`,
+not scraped from the component, so the coverage set cannot silently empty out when the menu moves —
+and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
 guide, either directly or through its parent detail route. POS has dedicated register guides for
 Sale, Payment, Return/Void, no-receipt return, Receive, Deposits, Shift reports, scanner/device
 settings, members/coupons/points, parked bills, receipts/display, expenses/petty cash, drawer
