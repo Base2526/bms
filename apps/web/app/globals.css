@@ -381,42 +381,13 @@ html.dark .ant-drawer-mask {
    ⚠️ สีนี้เป็น "โหมดของเครื่องมือ" ไม่ใช่ "ร้านที่กำลังดูอยู่" — ร้านที่ drill-down เข้าไป
    ยังประกาศด้วยแถบสีส้มเต็มความกว้างของหน้าเหมือนเดิม สองอย่างนี้ตั้งฉากกัน */
 /* ป้ายต้องอ่านจบ — Segmented ของ antd ใส่ padding-inline 11px ต่อช่อง ซึ่งกินความกว้าง
-   ของแถบ 264px ไปมากจน "แพลตฟอร์ม" โดนตัด (เห็นจากหน้าจอจริงหลัง deploy) */
+   ของแถบ 264px ไปมากจน "แพลตฟอร์ม" โดนตัด (เห็นจากหน้าจอจริงหลัง deploy)
+   ⚠️ สวิตช์นี้ตั้งใจ "ไม่มีสีประจำโหมด" — เคยลองพื้นม่วง (ทึบแล้วก็อ่อน) สองรอบ ทั้งคู่ตีกับ
+   สีน้ำเงินที่แอปใช้ทั้งระบบ และทำให้ปุ่มที่กดวันละไม่กี่ครั้งเด่นกว่าเมนูที่ใช้ทุกวัน
+   ถ้าจะบอกโหมดอีกครั้ง ให้ใช้ทางที่ไม่ใช่สี (ไอคอน/ตัวหนา) */
 .bms-workspace-switch .ant-segmented-item-label {
   padding-inline: 4px;
   font-size: 12.5px;
-}
-/* พื้นม่วงทึบเต็มช่องดังเกินไปและตีกับสีน้ำเงินของแอปทั้งระบบ (เมนูที่เลือก/หัวข้อกลุ่มเป็นน้ำเงิน)
-   — สวิตช์นี้กดวันละไม่กี่ครั้ง ไม่ควรเป็นสิ่งที่ตาไปเกาะที่สุดบนแถบ · ใช้พื้นม่วงอ่อน + ตัวหนังสือม่วง
-   แบบเดียวกับแถวเมนูที่เลือกในโหมดนี้ ให้เป็น "สัญญาณ" ไม่ใช่ "ป้ายไฟ" */
-.bms-workspace-platform .ant-segmented-item-selected {
-  background: var(--purple-1, #f6efff);
-  color: var(--purple-7, #531dab);
-  box-shadow: inset 0 0 0 1px rgba(114, 46, 209, .35);
-}
-.bms-workspace-platform .ant-segmented-item-selected .ant-segmented-item-icon,
-.bms-workspace-platform .ant-segmented-item-selected .ant-segmented-item-label {
-  color: inherit;
-  font-weight: 600;
-}
-[data-theme="dark"] .bms-workspace-platform .ant-segmented-item-selected {
-  background: #2b1d47;
-  color: #d3adf7;
-  box-shadow: inset 0 0 0 1px rgba(211, 173, 247, .35);
-}
-.bms-admin-sidebar-menu-platform.ant-menu-inline .ant-menu-item-selected,
-.bms-admin-sidebar-menu-platform.ant-menu-inline-collapsed .ant-menu-item-selected {
-  background: var(--purple-1, #f9f0ff);
-  color: var(--purple-7, #531dab);
-}
-.bms-admin-sidebar-menu-platform.ant-menu-inline .ant-menu-item-selected a,
-.bms-admin-sidebar-menu-platform .ant-menu-item-selected .anticon {
-  color: inherit;
-}
-[data-theme="dark"] .bms-admin-sidebar-menu-platform.ant-menu-inline .ant-menu-item-selected,
-[data-theme="dark"] .bms-admin-sidebar-menu-platform.ant-menu-inline-collapsed .ant-menu-item-selected {
-  background: #2b1d47;
-  color: #d3adf7;
 }
 
 /* overlay เวลา +more รูป */

@@ -648,9 +648,8 @@ test("the collapsed rail gives its own breathing room and every control reads as
   assert.match(sidebar, /padding: mini \? '5px 0' : '4px', marginBottom: mini \? 12 : 8/);
 });
 
-test("สวิตช์พื้นที่ทำงาน: ป้ายสั้นพอดีแถบ ความหมายเต็มอยู่ที่ tooltip และมีสีประจำโหมด", () => {
+test("สวิตช์พื้นที่ทำงาน: ป้ายสั้นพอดีแถบ และความหมายเต็มอยู่ที่ tooltip", () => {
   // แถบเมนูกว้าง 264px · ป้ายเดิม "ดูแลแพลตฟอร์ม" ถูกตัดเป็น "ดูแลแพ…" = ปุ่มที่อ่านไม่จบ
-  // และสองปุ่มที่หน้าตาเกือบเหมือนกันทำให้คนอ่านว่าเป็นการสลับร้าน (ซึ่งเป็นคนละเรื่องกับ drill-down)
   const root = path.resolve(import.meta.dirname, "..");
   const src = (rel: string) => readFileSync(path.join(root, rel), "utf8");
   const th = src("apps/web/i18n/th.ts");
@@ -669,38 +668,38 @@ test("สวิตช์พื้นที่ทำงาน: ป้ายสั
   // ความหมายเต็มต้องอยู่ที่ tooltip ทั้งสองโหมด ไม่ใช่เฉพาะตอนแถบย่อ
   assert.equal(sidebar.split("admin_nav.workspace_shop_full").length - 1, 2);
   assert.equal(sidebar.split("admin_nav.workspace_platform_full").length - 1, 2);
-  // สีประจำโหมดต้องลามไปถึงเมนู ไม่ใช่แค่ตัวสวิตช์ — ไม่งั้นยังต้องอ่านป้ายเพื่อรู้ว่าอยู่โหมดไหน
-  assert.match(sidebar, /bms-admin-sidebar-menu-platform/);
-  assert.match(sidebar, /bms-workspace-platform/);
-  const css = src("apps/web/app/globals.css");
-  assert.match(css, /\.bms-workspace-platform \.ant-segmented-item-selected/);
-  // ต้องมีกฎของโหมดสว่างด้วย ไม่ใช่มีแต่บล็อก [data-theme="dark"] (เคยเขียวทั้งที่ถอดกฎหลักออก)
-  assert.match(css, /^\.bms-admin-sidebar-menu-platform[^\n]*\.ant-menu-item-selected/m);
 });
 
-test("⚠️ กฎสีของโหมดแพลตฟอร์มต้องไม่ถูกเชื่อมเข้ากับ selector ของกฎอื่น", () => {
-  // เกิดจริง (2026-09-04): แทรกบล็อกใหม่ "ก่อน" บรรทัดที่สองของ selector list
-  //   .bms-admin-sidebar-menu... .ant-menu-item,        ← บรรทัดนี้ค้างอยู่
-  //   .bms-admin-sidebar-menu... .ant-menu-submenu-title { height: auto; ... }
-  // ผลคือ .ant-menu-item ไปเกาะกฎใหม่แทน → **ทุกเมนูในแถบกลายเป็นพื้นม่วงทั้งแถบ** บน production
-  // และกฎ layout เดิมก็เสีย .ant-menu-item ไปด้วย · CSS ไม่มี error ให้เห็นเลย
+test("สวิตช์พื้นที่ทำงานต้องไม่มีสีประจำโหมด และต้องไม่กินกฎของแถบเมนู", () => {
+  // ลองใส่สีม่วงให้โหมดแพลตฟอร์มมาแล้วสองรอบ (ทึบ แล้วก็อ่อน) — ทั้งคู่ตีกับสีน้ำเงินที่แอปใช้
+  // ทั้งระบบ และทำให้ปุ่มที่กดวันละไม่กี่ครั้งเด่นกว่าเมนูที่ใช้ทุกวัน · ผู้ใช้ขอให้กลับไปแบบปกติ
+  //
+  // และรอบที่ใส่สีนั้นเองก็เคยพัง production: แทรกบล็อกใหม่ก่อน "บรรทัดที่สอง" ของ selector list
+  //   .bms-admin-sidebar-menu...(...) .ant-menu-item,
+  //   .bms-admin-sidebar-menu...(...) .ant-menu-submenu-title { height: auto; ... }
+  // ทำให้ .ant-menu-item ไปเกาะกฎใหม่ → ทุกแถวเมนูกลายเป็นพื้นม่วง · CSS ไม่มี error ให้เห็นเลย
   const root = path.resolve(import.meta.dirname, "..");
   const css = readFileSync(path.join(root, "apps/web/app/globals.css"), "utf8");
-  // ตัดคอมเมนต์ออกก่อน ไม่งั้นคอมเมนต์ที่คั่นระหว่างกฎถูกนับเป็น selector (กับดักเดิมของเทสสแกนซอร์ส)
+  const sidebar = readFileSync(path.join(root, "apps/web/components/AdminSidebar.tsx"), "utf8");
+
+  for (const cls of ["bms-workspace-platform", "bms-admin-sidebar-menu-platform"]) {
+    assert.doesNotMatch(css, new RegExp(cls), `${cls} ต้องไม่กลับมา — สวิตช์นี้ไม่มีสีประจำโหมด`);
+    assert.doesNotMatch(sidebar, new RegExp(cls), `${cls} ต้องไม่ถูกผูกกลับเข้า component`);
+  }
+
   const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = [...bare.matchAll(/(^|\})\s*([^{}]+?)\s*\{([^}]*)\}/g)]
     .map((m) => ({ selectors: m[2].split(",").map((x) => x.trim()).filter(Boolean), body: m[3] }));
 
-  // ทุกกฎที่พูดถึงโหมดแพลตฟอร์ม ต้องมีแต่ selector ของโหมดนั้น ไม่ปนของอื่น
+  // กฎของสวิตช์ต้องมีแต่ selector ของตัวเอง — selector อื่นที่หลุดเข้ามาแปลว่าแทรกกลาง list
   for (const rule of rules) {
-    if (!rule.selectors.some((sel) => /bms-(workspace-platform|admin-sidebar-menu-platform|workspace-switch)/.test(sel))) continue;
+    if (!rule.selectors.some((sel) => sel.includes("bms-workspace-switch"))) continue;
     for (const sel of rule.selectors) {
-      assert.match(sel,
-        /^(\[data-theme="dark"\] )?\.bms-(workspace-platform|admin-sidebar-menu-platform|workspace-switch)/,
-        `selector "${sel}" หลุดเข้ามาในกฎของโหมดแพลตฟอร์ม — น่าจะแทรกบล็อกกลาง selector list`);
+      assert.match(sel, /^\.bms-workspace-switch/,
+        `selector "${sel}" หลุดเข้ามาในกฎของสวิตช์ — น่าจะแทรกบล็อกกลาง selector list`);
     }
   }
-  // และกฎ layout เดิมของแถบต้องยังครอบ .ant-menu-item อยู่
+  // กฎ layout เดิมของแถบต้องยังครอบ .ant-menu-item อยู่
   const layout = rules.find((rule) => /height:\s*auto/.test(rule.body)
     && rule.selectors.some((sel) => sel.includes(".bms-admin-sidebar-menu") && sel.includes(".ant-menu-submenu-title")));
   assert.ok(layout, "หากฎ layout ของแถบเมนูไม่เจอ");

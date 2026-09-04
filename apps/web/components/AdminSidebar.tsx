@@ -632,10 +632,7 @@ export default function AdminSidebar() {
           ⚠️ นี่คือการสลับ "ชุดเมนู" ไม่ใช่การสลับร้าน — drill-down/แถบเตือนร้านที่กำลังดูแล
           ทำงานเหมือนเดิมทั้งสองพื้นที่ และไม่มีสิทธิ์ใดถูกเพิ่มจากการกดปุ่มนี้ */}
       {platformAvailable && !menuGateLoading && (
-        <div
-          className={effectiveWorkspace === 'PLATFORM' ? 'bms-workspace-switch bms-workspace-platform' : 'bms-workspace-switch'}
-          style={{ padding: mini ? '0 6px 8px' : '0 12px 10px', flexShrink: 0 }}
-        >
+        <div className="bms-workspace-switch" style={{ padding: mini ? '0 6px 8px' : '0 12px 10px', flexShrink: 0 }}>
           {/* ป้ายสั้น ("ร้าน"/"แพลตฟอร์ม") เพราะแถบกว้าง 264px ตัดคำยาวทิ้ง — ของเดิม
               "ดูแลแพลตฟอร์ม" เหลือ "ดูแลแพ…" ซึ่งเป็นปุ่มที่อ่านไม่จบ · ความหมายเต็มอยู่ที่
               tooltip/aria-label ทั้งสองโหมด ไม่ใช่เฉพาะตอนแถบย่อ */}
@@ -680,9 +677,7 @@ export default function AdminSidebar() {
           </div>
         ) : (
           <Menu
-            className={effectiveWorkspace === 'PLATFORM'
-              ? 'bms-admin-sidebar-menu bms-admin-sidebar-menu-platform'
-              : 'bms-admin-sidebar-menu'}
+            className="bms-admin-sidebar-menu"
             mode="inline"
             items={items}
             selectedKeys={selectedKeys}
