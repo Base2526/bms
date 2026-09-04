@@ -16,6 +16,8 @@ whichever is wrong, in the same change.
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
 - [POS and tax](#pos-and-tax)
 - [Restaurant POS (dine-in)](#restaurant-pos-dine-in)
+- [Product catalog: variants, sales surfaces, and stock policies](#product-catalog-variants-sales-surfaces-and-stock-policies)
+- [Restaurant online ordering (chat, delivery, sold-out)](#restaurant-online-ordering-chat-delivery-sold-out)
 - [Membership and loyalty points](#membership-and-loyalty-points)
 - [Branch inventory operations](#branch-inventory-operations)
 - [REST route authentication and tenancy](#rest-route-authentication-and-tenancy)
@@ -475,6 +477,139 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **Not built, and not to be faked**: split/merge of checks across tables (splitting *payment* is
   supported), QR self-ordering, reservations/queue numbers, per-station printer routing,
   offline-first sync, and delivery-aggregator integrations.
+
+## Product catalog: variants, sales surfaces, and stock policies
+
+`lib/bms/{shopArchetypes,storeCapabilities,stockConsumption,products}.ts` and migrations
+`9.40`–`9.43`, `9.51`, `9.52` own what a product *is* (its serving options, which channels may sell
+it, how its stock is consumed) independently of how many units are on a shelf.
+
+- **A store capability is a real switch only if something calls `isCapabilityEnabledInTx()` for
+  it.** `business_archetype` selects a preset of capability flags at signup
+  (`shopArchetypes.ts`), but most of that preset is descriptive, not enforced — `PACK`,
+  `MULTI_BARCODE`, `LOT_TRACKING`, `EXPIRY_TRACKING`, `FEFO`, `SERIAL`, and `PHARMACY_POLICY` are
+  inferred from data that already exists (a pack row, a lot row, `serial_tracked`,
+  `business_archetype = 'pharmacy'`) and toggling them changes nothing. Only `RECIPE`,
+  `MODIFIER`, `WEIGHTED_PRODUCT`, `WASTAGE`, and `KITCHEN_WORKFLOW` gate real behavior, and
+  `store-capability-gates-contract.test.mts` asserts the switch list on `/admin/stock-models` and
+  the set of `isCapabilityEnabledInTx()` call sites are identical **in both directions** — a
+  capability with no reader is a lie told to the operator, and a gate with no switch cannot be
+  turned off by a shop that needs to.
+- **`bms_product_variants` (`9.51`) is the one source of truth for a product's serving/size
+  options — never `bms_inventory`.** A `RECIPE` or `NON_STOCK` item's own inventory row is
+  deliberately held at zero (`"A recipe menu may have a variant while its own inventory remains
+  zero"`, verbatim from the migration comment); reading `bms_inventory` to answer "what sizes does
+  this product have" returns nothing for exactly the items this system exists to sell, and the
+  model has no way to recover because `create_order` requires a size. Writing to
+  `bms_inventory`/`bms_product_packs`/`bms_product_recipes`/`bms_product_modifiers` syncs a variant
+  row **into** `bms_product_variants` one-way via `bms_ensure_catalog_variant()`; nothing syncs the
+  other direction, and `upsertProduct()` writes the variant without ever creating an inventory row.
+  `listRestaurantMenu()` and `resolvePosScan()` already read variants for this reason;
+  `checkStock()`'s menu-size lookup (AI/chat path) was found reading `bms_inventory` during the
+  2026-09-04 restaurant-chat-delivery recheck — it looked correct because sample-data seeders and
+  the `9.51` backfill both happen to write legacy sizes into the same rows, so it was green in every
+  demo and broken for every menu item a real shop typed in. `listSellableProducts()`
+  (`search_products`) still has this bug as of this writing — check the current source before
+  trusting `availableSizes` from search results for a `RECIPE`/`NON_STOCK` product.
+- **`bms_product_sales_surfaces` (`9.51`) is channel authority; `bms_products.active` is only
+  lifecycle state.** A product can be `active = true` and still be invisible on
+  `RETAIL_POS`/`RESTAURANT_POS`/`PUBLIC_STOREFRONT`/`CUSTOMER_AI`/`ONLINE_ORDER` individually — every
+  surface that lists or sells a product (`createOrder`, `resolvePosScan`, `listSellableProducts`,
+  `listRestaurantMenu`) checks its own row, and a database migrated to `9.51` without a surface row
+  for a given channel sells nothing on that channel, platform-wide, until the row exists. A brand
+  new product is a **draft**: `upsertProduct()` ignores an `active` value supplied on creation (a
+  bulk-import "active" column has no effect on a new row) and readiness checks
+  (`getProductReadinessInTx()`) re-run on **every save of an already-active product**, not just on
+  first publish — a blocker that has nothing to do with the field being edited (e.g. an unset VAT
+  category) locks out that edit until the blocker clears.
+- **`NON_STOCK` (`9.52`) sells with zero ingredient/inventory tracking; cost comes from
+  `bms_products.cost_price`.** It exists for a shop with no time to write recipes, and is meant as a
+  stepping stone up to `RECIPE`, not a permanent substitute for it. `bms_order_stock_lines`
+  (the one view every stock-moving write path is required to read, per the reservation rule below)
+  must treat "policy is `NON_STOCK`" as "zero consumption lines, deliberately" and keep that
+  distinct from "no snapshot at all" (a pre-`9.40` legacy order) — collapsing the two branches makes
+  every sale of every shop on the database fail, and `scripts/non-stock-policy-contract.test.mts`
+  proves this by swapping in a version of the view without that branch and checking it breaks.
+- **A capability or catalog-shape migration (`9.40`–`9.43`, `9.51`, `9.52`) is read by every order,
+  not only restaurant ones.** `resolveStockConsumptionInTx()`, `checkStock()`, `resolvePosScan()`
+  and `createOrderInTx()` all name these tables/columns on the common path every channel shares —
+  the repo has no schema probe anywhere, so a database that has not applied one of these migrations
+  yet fails every sale platform-wide the moment the corresponding code deploys, not just the feature
+  the migration was written for. Always confirm the target database's applied-migration state before
+  deploying code that reads a new column unconditionally.
+
+## Restaurant online ordering (chat, delivery, sold-out)
+
+`lib/bms/{menuAvailability,restaurantOrdering}.ts`, `app/api/pos/restaurant/{menu,incoming}`,
+`app/api/bms/menu-availability/reset`, and migrations `9.55`–`9.57` let a `restaurant`-archetype
+shop take food orders through chat/online and hand them to the kitchen and a delivery rider. Recheck
+findings from 2026-09-04 are folded in below as durable rules, not "recent bug" notes — see
+[business/restaurant-chat-delivery.md](business/restaurant-chat-delivery.md) for the full brief and
+[CLAUDE.local.md](../CLAUDE.local.md) for the incident-by-incident record.
+
+- **Every restaurant-only branch gates on `business_archetype === 'restaurant'` specifically, read
+  in its own statement.** `restaurantOrderingStateInTx()` runs for every non-POS order of *every*
+  tenant, so it reads `business_archetype` first and only names the `9.56` columns
+  (`restaurant_order_hours`, `restaurant_orders_paused`) once the archetype is confirmed — naming
+  them in the same `SELECT` would make a database without `9.56` fail every online order of every
+  shop, not just restaurants (the same class of mistake `9.29`'s first recheck finding made). A
+  `food_beverage` cafe deliberately keeps ordinary online-order behavior (single-branch fallback, no
+  forced fulfillment-type prompt) — do not widen this gate to "any archetype that sells food".
+- **`bms_locations` has no `is_default` column.** That column belongs to
+  `bms_customer_addresses`; the tie-break for "which branch is the default one" is always
+  `(code = 'MAIN') DESC, is_head_office DESC, created_at`, matching
+  `resolveDefaultLocationIdInTx()`. Ordering `bms_locations` by `is_default` compiles, passes `tsc`,
+  and fails every query at runtime with `42703` — this broke restaurant online ordering completely
+  (order creation and the `list_restaurant_order_locations` AI tool both used it) until caught by a
+  test that scans every SQL literal touching `bms_locations` for the string `is_default`.
+- **"Sold out today" (`9.55`) is a branch fact on `bms_product_menu_unavailability`, not a change
+  to `bms_products.active`.** `products.ts` and `restaurantPos.ts` call the shared
+  `isMenuSellable()`; `stock.ts`'s AI-facing `checkStock()` re-implements the same
+  `temporarily_unavailable`/stock-policy logic inline against the same table and the same
+  `resets_at > now()` condition rather than calling that function — if you change the meaning of
+  either condition, change it in both places, because nothing enforces they stay identical. The
+  flag clears on the earliest of two signals, and **both must key off `resets_at`, not off the
+  event itself**: the guarded cron (`POST /api/bms/menu-availability/reset`, every 15 minutes,
+  honouring each shop's own `menu_availability_reset_time`/timezone rather than assuming Bangkok
+  04:00) and opening a POS shift at that branch, as a fallback sweep for a shop whose scheduler
+  isn't configured yet. **Shift-open must delete only rows whose `resets_at <= now()`, never every
+  row at the branch** — a shift belongs to a device and a cashier, not to a service day, so a second
+  register opening (two-till restaurant, or a shift change mid-service) would otherwise put food the
+  kitchen has actually run out of back on the menu, silently undoing a call staff made minutes
+  earlier with nothing on screen to explain it. A cron that sweeps every tenant in one loop must
+  never let one tenant's failure `throw` out of that loop — catch it, record it, and keep going, or
+  every tenant queued after the first bad row stops being swept, forever, the same shape as the
+  `orders/release-expired` cron bug.
+- **An online restaurant order requires an explicit branch and an explicit fulfillment type
+  (`9.56`); neither is ever inferred.** `createOrderInTx()` asks the customer to choose a branch
+  whenever the shop has more than one active location, and refuses to proceed without a
+  `DELIVERY`/`PICKUP` choice once a branch is set — `list_restaurant_order_locations` is the only
+  source of a valid `locationId` for the AI, and a location id the model invents surfaces as a
+  `ToolArgError` naming that tool (never a bare exception that opens an `ai.tool_failed` incident
+  for what is only a bad argument). **Payment alone never creates kitchen work.** `packOrder()`
+  (`PAID -> PACKING`) is the human-accept boundary, and it enqueues kitchen tickets only when the
+  order carries a `fulfillment_type` — an ordinary retail bill that happens to contain a product
+  with a kitchen station must never get a kitchen ticket just because it was packed.
+- **Line cancellation (`9.57`) reuses the POS return engine; it is not a second money path.**
+  `cancelRestaurantOrderLines()` calls `processPosReturn()` with a `restaurantCancellation` payload
+  (`deviceId: null`, expected branch, per-line cause) instead of forking a parallel refund/stock
+  flow, so pricing snapshot re-evaluation, coupon-threshold re-check, loyalty/credit reversal, and
+  kitchen-ticket cancellation all happen inside the one transaction that already does this for a
+  counter return. The cause (`MERCHANT_OUT_OF_STOCK` / `CUSTOMER_CHANGED`) is written once per
+  return-item row and made **immutable by a trigger** — it is the permanent record of who was at
+  fault, not an editable note. Repricing the retained lines can leave the shop owing less than it
+  already collected; that shortfall becomes a `MERCHANT_ABSORBED` discount up to
+  `bms_store_profile.restaurant_merchant_absorb_limit`, beyond which a distinct `restaurant.floor.manage`
+  holder must approve — a **separate approval axis from the ordinary refund-amount approval rule**,
+  not a special case of it. A non-cash refund lands in the same `PENDING` refund-allocation queue a
+  counter return uses, and completes only from a register at the order's own branch with a transfer
+  reference. `POST /api/pos/restaurant/incoming` (`cancel_lines`) accepts or rejects the whole
+  request as one batch — silently dropping the lines it cannot parse and cancelling only the rest
+  would refund a different amount than the register asked for, with nothing anywhere saying a line
+  was skipped. The quantity handed to the cancel action is the **remaining** pack-count still live
+  on that order line, in the same unit `processPosReturn()` reads (`pack_qty`, not base units) — a
+  cancelled or already-shrunk line must both disappear from the counter's list and be measured
+  correctly if it is still partly there.
 
 ## Membership and loyalty points
 

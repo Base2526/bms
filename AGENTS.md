@@ -178,6 +178,29 @@ wrong, and update the doc in the same change.
   `restaurant.kitchen.update`, `restaurant.check.cancel`); do not reuse `pos.device.manage` or
   `order.ship` for it. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
+- **Product catalog truth (`9.40`–`9.43`, `9.51`, `9.52`)** — a product's serving/size options live
+  in `bms_product_variants`, never `bms_inventory`: a `RECIPE`/`NON_STOCK` item's own inventory row
+  is deliberately zero, so reading inventory to discover sizes returns nothing for exactly the items
+  this exists to sell (found live in `checkStock()`'s AI path; `listSellableProducts()` still has
+  it). `bms_product_sales_surfaces` is channel authority — `active` is only lifecycle state, and a
+  product invisible on a channel needs a surface row there, not a change to `active`. A store
+  capability only does something if `isCapabilityEnabledInTx()` is called for it (`RECIPE`,
+  `MODIFIER`, `WEIGHTED_PRODUCT`, `WASTAGE`, `KITCHEN_WORKFLOW` — the rest of the archetype preset
+  is descriptive, inferred from existing data). Full detail:
+  [agent-invariants.md § Product catalog](docs/agent-invariants.md#product-catalog-variants-sales-surfaces-and-stock-policies).
+- **Restaurant online ordering (`9.55`–`9.57`)** — gates on `business_archetype === 'restaurant'`
+  read in its own statement, because the shared function runs for every non-POS order of every
+  tenant and naming a not-yet-migrated column there takes every shop offline, not just restaurants.
+  `bms_locations` has no `is_default` column — the default-branch order is
+  `(code = 'MAIN') DESC, is_head_office DESC, created_at`. A "sold out today" flag
+  (`bms_product_menu_unavailability`) clears on the earliest of a 15-minute cron or the branch's
+  next shift-open, both keyed off `resets_at`; **shift-open must clear only rows past their
+  `resets_at`, never the whole branch** — a shift is per device and cashier, not per service day. An
+  online order needs an explicit branch and `fulfillmentType`; payment alone never creates kitchen
+  work, only `packOrder()`'s `PAID -> PACKING`. Line cancellation reuses `processPosReturn()`
+  (never a second money path), writes an immutable cancellation cause, and reprices/absorbs/queues a
+  refund exactly like a counter partial return. Full detail:
+  [agent-invariants.md § Restaurant online ordering](docs/agent-invariants.md#restaurant-online-ordering-chat-delivery-sold-out).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.
   A send never moves reserved stock, and a short receive books the shortfall as lost in transit at
@@ -434,6 +457,13 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
 | `restaurant-pos-contract` | dine-in check/round/settlement source contracts: one settlement path, atomic round replacement, branch-scoped KDS, restaurant-specific permissions, server-owned modifier pricing |
+| `kitchen-board-contract` · `kitchen-station-contract` | ticket grouping/counting/SLA on the register KDS · station master (id-first matching, branch scope, name snapshot, active-but-retiring) |
+| `store-capability-gates-contract` | the capability switch list and every `isCapabilityEnabledInTx()` call site match exactly, in both directions |
+| `product-catalog-foundation-contract` · `product-policy-reachability-contract` · `non-stock-policy-contract` | catalog variants as serving-option truth, sales-surface channel authority, draft-only new products · every stock policy has a real settings path and matches what readiness/capability gating actually checks · `NON_STOCK` zero-consumption vs. no-snapshot-at-all stays distinct |
+| `shop-archetype-coverage-contract` | every archetype's onboarding checklist/AI examples resolve in both languages; no orphaned copy |
+| `menu-availability-contract` · `restaurant-online-order-contract` · `restaurant-order-cancellation-contract` | sold-out flag scoping/reset signals · explicit branch+fulfillment+human-accept for online orders · line cancellation reuses the return engine with an immutable cause |
+| `order-stock-lines-contract` | every stock-moving write path reads `bms_order_stock_lines`, never `bms_order_items`, for what a bill actually consumed |
+| `ar-contract` | credit-sale approval/limit math and ledger transfer of an over-collected credit to the oldest open invoice |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset |
 
   Suites that need a real Postgres **write to it** — dev only, never production. They create and
