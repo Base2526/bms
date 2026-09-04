@@ -1144,7 +1144,15 @@ export default function RestaurantPosPage() {
                     {item.packPrice != null && <span className={`${styles.itemPrice} ${dropped ? styles.itemPriceVoid : ""}`} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
                     {/* สั่งซ้ำขึ้นเฉพาะบรรทัดที่ส่งครัวไปแล้วหรือถูกยกเลิก — บรรทัด NEW ยังแก้ได้
                         ที่การ์ดเมนูตรงหน้าอยู่แล้ว และช่องนี้เป็นที่ของปุ่มลบ */}
-                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain} title={`สั่ง ${item.productName} ซ้ำพร้อมตัวเลือกเดิม`} aria-label={`สั่ง ${item.productName} ซ้ำ`} disabled={working} onClick={() => void reorderLine(item)}><ReloadOutlined /></button>}
+                    {/* คำบนปุ่มเปลี่ยนตามสถานะบรรทัด: บรรทัดที่ครัวยกเลิก อาหารไม่เคยถึงลูกค้า
+                        สิ่งที่คนกดกำลังทำคือ "ทำใหม่ให้" ไม่ใช่ "เอาเพิ่มอีกที่" — ไอคอน ⟳ ตัวเดียว
+                        พูดสองเรื่องนี้ไม่ได้ และ ⟳ บนจอเดียวกันนี้ยังแปลว่า "รีเฟรช" อยู่อีกที่ */}
+                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain}
+                      title={`สั่ง ${item.productName} ${dropped || stillCharged ? "ใหม่" : "ซ้ำ"}พร้อมตัวเลือกเดิม`}
+                      aria-label={`สั่ง ${item.productName} ${dropped || stillCharged ? "ใหม่" : "ซ้ำ"}พร้อมตัวเลือกเดิม`}
+                      disabled={working} onClick={() => void reorderLine(item)}>
+                      {dropped || stillCharged ? "สั่งใหม่" : "สั่งซ้ำ"}
+                    </button>}
                     {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
                   </span>
                 </article>;

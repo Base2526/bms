@@ -347,13 +347,16 @@
 .itemKitchenTagLoud { background: var(--green-bg); border-radius: 4px; padding: 2px 7px; display: inline-block; font-weight: 700; }
 
 /* ปุ่มสั่งซ้ำ — เล็กแต่กดติด (สูง 30px) อยู่ในคอลัมน์เดียวกับราคา */
+/* ปุ่มข้อความ ไม่ใช่ไอคอน — ⟳ อ่านได้หลายอย่าง (รีเฟรช/ย้อนกลับ/กำลังโหลด) และบนจอเดียวกันนี้
+   ⟳ ที่หัวจอคือปุ่มรีเฟรชจริง ๆ อยู่แล้ว · tooltip ช่วยไม่ได้เพราะจอสัมผัสไม่มี hover ให้อ่าน
+   · ที่กว้างขึ้น ~34px มาจากคอลัมน์ชื่อเมนู ไม่ใช่ราคา (ราคาไม่ยอมหด) */
 .page .itemAgain {
-  font: inherit; font-size: 15px; width: 30px; height: 30px; min-height: 0; padding: 0;
-  display: grid; place-items: center; flex: none;
-  border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2); border-radius: 6px;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  font: inherit; font-size: 12.5px; font-weight: 700; height: 30px; min-height: 0; padding: 0 11px;
+  flex: none; border: 1px solid var(--line-2); background: var(--panel); color: var(--accent);
+  border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap;
 }
-.page .itemAgain:hover { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
+.page .itemAgain:hover:not(:disabled) { border-color: var(--accent); background: var(--green-bg); }
 .page .itemAgain:disabled, .page .itemRemove:disabled { cursor: not-allowed; opacity: .5; }
 .itemQty { font-weight: 700; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 .itemName { display: block; font-weight: 600; font-size: 14.5px; }

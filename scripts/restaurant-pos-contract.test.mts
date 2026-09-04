@@ -683,3 +683,16 @@ test("ช่องกรองเมนูมีปุ่มล้าง ขึ�
   // Escape ล้างได้ด้วยสำหรับเครื่องที่ต่อคีย์บอร์ด/สแกนเนอร์
   assert.match(page, /event\.key === "Escape" && search/);
 });
+
+test("ปุ่มสั่งซ้ำเป็นข้อความ และเปลี่ยนคำตามสถานะของบรรทัด", async () => {
+  // ⟳ อ่านได้หลายอย่าง และบนจอเดียวกันนี้ ⟳ ที่หัวจอคือ "รีเฟรช" จริง ๆ · tooltip ช่วยไม่ได้
+  // เพราะจอสัมผัสไม่มี hover ให้อ่าน · บรรทัดที่ครัวยกเลิกคือ "ทำใหม่ให้" ไม่ใช่ "เอาเพิ่มอีกที่"
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const at = page.indexOf("styles.itemAgain");
+  assert.ok(at > 0, "หาปุ่มสั่งซ้ำไม่เจอ");
+  const button = page.slice(at, page.indexOf("</button>", at));
+  assert.doesNotMatch(button, /<ReloadOutlined/, "ปุ่มนี้ต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
+  assert.match(button, /dropped \|\| stillCharged \? "สั่งใหม่" : "สั่งซ้ำ"/);
+  // ป้ายสำหรับ screen reader ต้องบอกทั้งประโยคเหมือนเดิม ไม่ใช่แค่คำบนปุ่ม
+  assert.match(button, /aria-label=\{`สั่ง \$\{item\.productName\}[^`]*พร้อมตัวเลือกเดิม`\}/);
+});
