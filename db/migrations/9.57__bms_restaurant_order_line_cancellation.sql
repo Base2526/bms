@@ -1,14 +1,29 @@
 -- 9.57 — Immutable restaurant line-cancellation cause and merchant-absorbed repricing.
+-- Wrapped so a mid-file failure cannot leave half of these columns applied.
+BEGIN;
 
-DO $$ DECLARE constraint_name TEXT;
+-- 7.96 left TWO check constraints whose definition mentions "source":
+--   CHECK (source IN ('TIER','COUPON','POINTS','MANUAL'))     <- the value list to widen
+--   CHECK (points_used = 0 OR source = 'POINTS')              <- must survive untouched
+-- Matching on LIKE '%source%' alone picks one of them at random. Dropping the wrong one
+-- leaves the old 4-value list in place (so every MERCHANT_ABSORBED insert fails with a
+-- check violation) and silently deletes the points_used guard. Narrow the match to a
+-- single-column check on "source" whose definition carries the value list.
+DO $$ DECLARE victim TEXT;
 BEGIN
-  SELECT conname INTO constraint_name
-    FROM pg_constraint
-   WHERE conrelid = 'bms_order_discounts'::regclass
-     AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%source%';
-  IF constraint_name IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE bms_order_discounts DROP CONSTRAINT %I', constraint_name);
-  END IF;
+  FOR victim IN
+    SELECT c.conname
+      FROM pg_constraint c
+      JOIN pg_attribute a
+        ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+     WHERE c.conrelid = 'bms_order_discounts'::regclass
+       AND c.contype = 'c'
+       AND array_length(c.conkey, 1) = 1
+       AND a.attname = 'source'
+       AND pg_get_constraintdef(c.oid) LIKE '%TIER%'
+  LOOP
+    EXECUTE format('ALTER TABLE bms_order_discounts DROP CONSTRAINT %I', victim);
+  END LOOP;
   ALTER TABLE bms_order_discounts ADD CONSTRAINT bms_order_discounts_source_check
     CHECK (source IN ('TIER','COUPON','POINTS','MANUAL','MERCHANT_ABSORBED'));
 EXCEPTION WHEN duplicate_object THEN NULL;
@@ -54,3 +69,4 @@ COMMENT ON COLUMN bms_pos_return_items.cancellation_cause IS
 COMMENT ON COLUMN bms_store_profile.restaurant_merchant_absorb_limit IS
   'Separate approval threshold for a repricing difference absorbed by the restaurant; not the refund threshold.';
 
+COMMIT;

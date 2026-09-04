@@ -53,7 +53,8 @@ async function handlePOST(req: NextRequest) {
   if (action === "cancel_lines") {
     const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
     const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
-    const lines = (Array.isArray(body.lines) ? body.lines : []).map((line: any) => ({
+    const requestedLines = Array.isArray(body.lines) ? body.lines : [];
+    const lines = requestedLines.map((line: any) => ({
       orderItemId: Number(line?.orderItemId),
       packQty: Number(line?.packQty),
       cause: String(line?.cause ?? ""),
@@ -61,6 +62,14 @@ async function handlePOST(req: NextRequest) {
       && ["MERCHANT_OUT_OF_STOCK", "CUSTOMER_CHANGED"].includes(line.cause));
     if (!orderId || !idempotencyKey || lines.length === 0) {
       return NextResponse.json({ error: "ต้องระบุออร์เดอร์ รายการ ต้นเหตุ และ idempotencyKey" }, { status: 400 });
+    }
+    // Reject the whole request when any line is malformed. Cancelling the readable subset would
+    // take food off a customer's order and refund a different amount than the register asked for,
+    // with nothing anywhere saying a line was dropped.
+    if (lines.length !== requestedLines.length) {
+      return NextResponse.json({
+        error: "รายการที่ส่งมาไม่ถูกต้องบางบรรทัด — ต้องระบุ orderItemId จำนวน และต้นเหตุให้ครบทุกบรรทัด",
+      }, { status: 400 });
     }
     let managerApprovedByUserId: string | null = null;
     const managerId = typeof body.managerUserId === "string" ? body.managerUserId.trim() : "";
@@ -75,6 +84,7 @@ async function handlePOST(req: NextRequest) {
     }
     const result = await cancelRestaurantOrderLines({
       tenantId: auth.device.tenantId,
+      locationId: auth.device.locationId,
       orderId,
       actorUserId: auth.actor.userId,
       lines: lines as any,

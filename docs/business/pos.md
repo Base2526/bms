@@ -1371,11 +1371,16 @@ Temporary availability is a branch fact, not the product's durable `active` stat
 closes them, while countable `DIRECT`/`PACK` goods still require real stock. The order transaction
 rechecks the flag at its selected location, so a stale screen or chat result cannot bypass it.
 
-The closure resets at the first of two signals: opening a POS shift at that branch, or the guarded
-daily cron after `bms_store_profile.menu_availability_reset_time` (04:00 local time by default).
-Opening at 04:00 rather than midnight avoids putting a sold-out late-night dish back on sale in the
-middle of service. Kitchen and restaurant order screens expose the same one-tap control; neither
-path changes `bms_products.active`.
+Both reset signals honour the same `resets_at` stamp on the row: the guarded cron (every 15 minutes,
+so each shop's own `bms_store_profile.menu_availability_reset_time` and timezone are respected — 04:00
+local by default), and opening a POS shift at that branch as the fallback sweep for a shop whose
+scheduler is not wired up. Resetting at 04:00 rather than midnight avoids putting a sold-out
+late-night dish back on sale in the middle of service — and for exactly that reason **shift-open
+clears only rows whose `resets_at` has already passed**. A shift belongs to a device and a cashier,
+not to a service day: a two-register restaurant, or one that changes shift at lunch, opens several
+shifts a day, so clearing the whole branch would undo a sold-out call made minutes earlier with
+nothing on screen to say so. Kitchen and restaurant order screens expose the same one-tap control;
+neither path changes `bms_products.active`.
 
 ### Kitchen stations (`9.54`)
 
@@ -1564,13 +1569,20 @@ kitchen tickets are created. The tab is scoped to the POS device's branch. Manag
 fulfilment metadata on the admin orders page. Structured weekly hours and the temporary whole-shop
 pause live in Store Profile; the customer assistant refuses clearly while paused or closed.
 
+These branch, fulfilment, acceptance and kitchen-queue rules apply only to
+`business_archetype = 'restaurant'`. A cafe configured as `food_beverage` still supports AI chat and
+ordinary online ordering—including catalog-backed modifier codes—but keeps the retail order flow and
+does not silently inherit restaurant hours, branch selection, or kitchen acceptance.
+
 Staff can cancel individual incoming-order lines from the same POS tab. The server infers
 merchant-caused cancellation when that branch has marked the menu sold out, otherwise the operator
 must record merchant or customer cause. The shared return engine reprices remaining quantities,
 re-evaluates coupon eligibility, releases only the cancelled reservation, reverses proportional
 loyalty/credit, closes only matching kitchen tickets, writes the audit, and creates non-cash refund
 allocations atomically. Pending refunds and their age are actionable in POS and mirrored on admin
-orders; completion requires a real transfer reference.
+orders; completion requires a real transfer reference and can be performed only by an authenticated
+register at the order's branch. If the operator identifies a merchant stock-out, POS offers to mark
+that exact menu unavailable for the branch after the cancellation succeeds.
 
 Restaurant delivery deliberately uses the existing flat shipping configuration and prepaid order
 lifecycle. COD is not part of this rollout. For an in-house rider, select carrier `OTHER` and record

@@ -146,22 +146,39 @@ export async function setMenuTemporarilyUnavailable(input: {
   } finally { client.release(); }
 }
 
+/**
+ * Opening service reopens the closures whose service day is already over — it is the safety net
+ * for a shop whose reset cron is not wired up yet.
+ *
+ * It deliberately does NOT clear closures that are still inside their service day. A POS shift is
+ * per device and per cashier, not per service day: a restaurant with two registers, or with a
+ * lunch shift and a dinner shift, opens several shifts a day. Clearing everything would put food
+ * that the kitchen has actually run out of back on the menu the moment the next register opens —
+ * silently undoing a decision staff made minutes earlier, with nothing on screen to say so.
+ */
 export async function resetMenuAvailabilityForLocationInTx(
-  client: PoolClient, tenantId: string, locationId: string
+  client: PoolClient, tenantId: string, locationId: string, now = new Date()
 ) {
   const result = await client.query(
     `DELETE FROM bms_product_menu_unavailability
-      WHERE tenant_id = $1 AND location_id = $2`,
-    [tenantId, locationId]
+      WHERE tenant_id = $1 AND location_id = $2 AND resets_at <= $3`,
+    [tenantId, locationId, now]
   );
   return result.rowCount ?? 0;
 }
 
+/**
+ * One transaction per tenant, and one tenant's failure never ends the sweep. Throwing out of the
+ * loop would leave every tenant after the failing one closed for the rest of the day, and the next
+ * run would meet the same bad row first and stop again — the shape of the release-expired cron bug.
+ * A failure is reported instead, so the endpoint answer says which shops still need a human.
+ */
 export async function resetDueMenuAvailability(now = new Date()) {
   const tenants = await query<{ tenant_id: string }>(
     `SELECT DISTINCT tenant_id FROM bms_product_menu_unavailability WHERE resets_at <= $1`, [now]
   );
   let resetCount = 0;
+  const failed: Array<{ tenantId: string; error: string }> = [];
   for (const row of tenants.rows) {
     const client = await getClient();
     try {
@@ -182,8 +199,9 @@ export async function resetDueMenuAvailability(now = new Date()) {
       resetCount += deleted.rowCount ?? 0;
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch {}
-      throw error;
+      console.error("[menu-availability] reset failed", row.tenant_id, error);
+      failed.push({ tenantId: row.tenant_id, error: String((error as any)?.message ?? error) });
     } finally { client.release(); }
   }
-  return { resetCount };
+  return { resetCount, failedCount: failed.length, failed };
 }

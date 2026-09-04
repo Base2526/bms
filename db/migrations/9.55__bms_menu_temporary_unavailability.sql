@@ -27,7 +27,11 @@ CREATE INDEX IF NOT EXISTS idx_bms_product_menu_unavailability_due
   ON bms_product_menu_unavailability (resets_at);
 
 COMMENT ON TABLE bms_product_menu_unavailability IS
-  'Branch-scoped temporary menu closure (9.55). The first of branch shift-open or resets_at reopens the product; active remains unchanged.';
+  'Branch-scoped temporary menu closure (9.55). A row is cleared when resets_at passes -- by the
+reset cron, or by the next shift-open at that branch acting as the fallback sweep. Shift-open must
+never clear a row that is still inside its service day: shifts are per device and per cashier, so a
+second register opening would otherwise put genuinely sold-out food back on the menu. active is
+never touched by this table.';
 COMMENT ON COLUMN bms_store_profile.menu_availability_reset_time IS
   'Local wall-clock time at which temporary menu closures reset each service day. Default 04:00.';
 

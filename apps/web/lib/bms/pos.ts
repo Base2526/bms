@@ -4067,6 +4067,7 @@ export async function partiallyReturnPosSale(input: {
 
 export async function cancelRestaurantOrderLines(input: {
   tenantId: string;
+  locationId: string;
   orderId: string;
   actorUserId: string;
   lines: Array<{ orderItemId: number; packQty: number; cause: RestaurantCancellationCause }>;
@@ -4087,6 +4088,7 @@ export async function cancelRestaurantOrderLines(input: {
     approvedByUserId: null,
     idempotencyKey: input.idempotencyKey,
     restaurantCancellation: {
+      expectedLocationId: input.locationId,
       causes: input.lines.map(({ orderItemId, cause }) => ({ orderItemId, cause })),
       merchantAbsorbApprovedByUserId: input.managerApprovedByUserId,
     },
@@ -4172,6 +4174,7 @@ export async function processPosReturn(input: {
   voidReason?: string | null;
   voidShiftId?: string | null;
   restaurantCancellation?: {
+    expectedLocationId: string;
     causes: Array<{ orderItemId: number; cause: RestaurantCancellationCause }>;
     merchantAbsorbApprovedByUserId?: string | null;
   };
@@ -4217,7 +4220,9 @@ export async function processPosReturn(input: {
       if (existing.order_id !== input.orderId
           || existing.pos_device_id !== input.deviceId
           || existing.return_mode !== input.mode
-          || existing.preferred_refund_method !== (input.preferredRefundMethod ?? null)) {
+          || existing.preferred_refund_method !== (input.preferredRefundMethod ?? null)
+          || (input.restaurantCancellation
+            && existing.sale_location_id !== input.restaurantCancellation.expectedLocationId)) {
         await client.query("ROLLBACK");
         return { status: "IDEMPOTENCY_CONFLICT" };
       }
@@ -4312,11 +4317,12 @@ export async function processPosReturn(input: {
       rounding_amount: string | null;
       discount_amount: string;
       coupon_id: string | null;
+      fulfillment_type: "DELIVERY" | "PICKUP" | null;
       extra_total: string;
     }>(
       `SELECT id, status, channel, pos_device_id, location_id, total_amount, shipping_fee,
               rounding_amount,
-              discount_amount, coupon_id,
+              discount_amount, coupon_id, fulfillment_type,
               COALESCE((
                 SELECT SUM(extra.qty * extra.unit_amount)
                   FROM bms_order_extra_lines extra
@@ -4342,7 +4348,18 @@ export async function processPosReturn(input: {
       return { status: "ORDER_NOT_FOUND" };
     }
     const onlineCancellation = input.deviceId === null && Boolean(input.restaurantCancellation);
-    if (onlineCancellation ? !["PAID", "PACKING", "COMPLETED"].includes(order.status) : order.status !== "COMPLETED") {
+    if (input.deviceId === null && !onlineCancellation) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_FOUND" };
+    }
+    if (onlineCancellation && (
+      order.fulfillment_type === null
+      || order.location_id !== input.restaurantCancellation!.expectedLocationId
+    )) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_FOUND" };
+    }
+    if (onlineCancellation ? !["PAID", "PACKING"].includes(order.status) : order.status !== "COMPLETED") {
       await client.query("ROLLBACK");
       return { status: "INVALID_ORDER_STATUS", current: order.status };
     }
@@ -4631,7 +4648,7 @@ export async function processPosReturn(input: {
       );
       const approverId = input.restaurantCancellation?.merchantAbsorbApprovedByUserId?.trim() || null;
       const approved = Boolean(approverId && approverId !== input.actorUserId
-        && await cashierHasPermissionInTx(client, input.tenantId, approverId, "order.line.cancel"));
+        && await cashierHasPermissionInTx(client, input.tenantId, approverId, "restaurant.floor.manage"));
       const decision = merchantAbsorbApproval({
         amount: merchantAbsorbedAmount,
         limit: Number(limitResult.rows[0]?.restaurant_merchant_absorb_limit ?? 2000),
@@ -4749,6 +4766,13 @@ export async function processPosReturn(input: {
       if (onlineCancellation) {
         for (const stockLine of stockLines.rows) {
           const exactQty = Number(stockLine.qty) * line.packQty / originalPackQty;
+          // reserved_stock is INTEGER (3.2), so a fractional release would be rounded by Postgres
+          // and leave drift nobody can trace back. Every policy makes this divisible by
+          // construction, so a fraction means a malformed consumption snapshot: refuse the
+          // cancellation, exactly as the counter-return branch below already does.
+          if (!Number.isInteger(exactQty) || exactQty <= 0) {
+            throw new Error(`จำนวนส่วนประกอบ ${stockLine.product_sku}/${stockLine.size} สำหรับตัดรายการไม่ลงตัว`);
+          }
           const released = await client.query(
             `UPDATE bms_inventory SET reserved_stock = reserved_stock - $5, updated_at = now()
               WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
@@ -4999,7 +5023,7 @@ export async function processPosReturn(input: {
         `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
           WHERE tenant_id = $1 AND id = $2
             AND status = ANY($3::text[])`,
-        [input.tenantId, input.orderId, onlineCancellation ? ["PAID", "PACKING", "COMPLETED"] : ["COMPLETED"]]
+        [input.tenantId, input.orderId, onlineCancellation ? ["PAID", "PACKING"] : ["COMPLETED"]]
       );
       // เลขเครื่อง (8.3) — ปลดเฉพาะตอนคืนครบทั้งบิล
       //
@@ -5195,6 +5219,8 @@ export type CompletePosRefundResult =
 export async function completePosRefundAllocation(input: {
   tenantId: string;
   deviceId: string;
+  /** Authenticated device branch; online refunds may be settled only from this branch. */
+  locationId: string;
   /** กะที่ยืนยันเงินจริง; null ยอมได้เฉพาะ replay ที่ allocation เสร็จแล้ว */
   shiftId: string | null;
   allocationId: string;
@@ -5209,13 +5235,19 @@ export async function completePosRefundAllocation(input: {
       return { status: "APPROVAL_REQUIRED" };
     }
     const res = await client.query<any>(
-      `SELECT a.*, pr.order_id, pr.shift_id AS return_shift_id, o.pos_shift_id AS sale_shift_id
+      `SELECT a.*, pr.order_id, pr.shift_id AS return_shift_id, o.pos_shift_id AS sale_shift_id,
+              (pr.pos_device_id IS NULL) AS online_refund
          FROM bms_pos_refund_allocations a
          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-        WHERE a.tenant_id = $1 AND a.id = $2 AND pr.pos_device_id = $3
+        WHERE a.tenant_id = $1 AND a.id = $2
+          AND (pr.pos_device_id = $3 OR (
+            pr.pos_device_id IS NULL
+            AND o.location_id = $4
+            AND o.fulfillment_type IS NOT NULL
+          ))
         FOR UPDATE`,
-      [input.tenantId, input.allocationId, input.deviceId]
+      [input.tenantId, input.allocationId, input.deviceId, input.locationId]
     );
     const row = res.rows[0];
     if (!row) {
@@ -5240,7 +5272,7 @@ export async function completePosRefundAllocation(input: {
       return { status: "SHIFT_NOT_OPEN" };
     }
     const effectiveReturnShiftId = row.return_shift_id ?? row.sale_shift_id ?? null;
-    if (effectiveReturnShiftId !== input.shiftId) {
+    if (!row.online_refund && effectiveReturnShiftId !== input.shiftId) {
       await client.query("ROLLBACK");
       return { status: "NOT_FOUND" };
     }
@@ -5255,7 +5287,7 @@ export async function completePosRefundAllocation(input: {
       return { status: "SHIFT_NOT_OPEN" };
     }
     const externalRef = input.externalRef?.trim() || null;
-    if (row.method !== "CASH" && !externalRef) {
+    if ((row.online_refund || row.method !== "CASH") && !externalRef) {
       await client.query("ROLLBACK");
       return { status: "REFERENCE_REQUIRED" };
     }
@@ -5302,6 +5334,7 @@ export async function completePosRefundAllocation(input: {
       [input.tenantId, input.actorUserId, row.order_id,
         JSON.stringify({
           allocationId: input.allocationId,
+          onlineRefund: Boolean(row.online_refund),
           method: row.method,
           amount: Number(row.amount),
           shiftId: input.shiftId,

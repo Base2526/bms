@@ -624,6 +624,7 @@ const findAlternativesTool: BmsTool = {
       keyword: { type: "string", description: "Customer's requested product text, if SKU is unknown." },
       category: { type: "string", description: "Known desired category, if any." },
       size: { type: "string", description: "Requested size/variant, if any." },
+      locationId: { type: "string", description: "Active branch id selected by the customer, when branch-specific stock matters." },
       limit: { type: "integer", description: "Maximum alternatives (default 3, max 5)." },
     },
   },
@@ -632,12 +633,13 @@ const findAlternativesTool: BmsTool = {
     const keyword = optString(args, "keyword");
     const category = optString(args, "category") ?? null;
     const size = optString(args, "size") ?? null;
+    const locationId = optString(args, "locationId") ?? null;
     if (!sku && !keyword && !category) {
       throw new ToolArgError('ต้องระบุ "sku", "keyword" หรือ "category" อย่างน้อยหนึ่งค่า');
     }
     const limit = optInt(args, "limit", 1, 5) ?? 3;
     const [result, tenantSlug] = await Promise.all([
-      findAlternativeProducts(ec.tenantId, { sku, keyword, category, size, limit }),
+      findAlternativeProducts(ec.tenantId, { sku, keyword, category, size, locationId, limit }),
       getTenantSlug(ec.tenantId),
     ]);
     return {
@@ -837,13 +839,15 @@ const checkStockTool: BmsTool = {
     properties: {
       product: { type: "string", description: "Product name or search term." },
       size: { type: "string", description: "Size, if the customer gave one." },
+      locationId: { type: "string", description: "Optional exact active branch UUID returned by list_restaurant_order_locations." },
     },
     required: ["product"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const product = reqString(args, "product");
     const size = optString(args, "size") ?? null;
-    const res = await checkStock(ec.tenantId, product, size);
+    const locationId = optString(args, "locationId") ?? null;
+    const res = await checkStockForBranch(ec.tenantId, product, size, locationId);
     return { ok: true, data: { ...res, verifiedAt: new Date().toISOString() } };
   },
 };
@@ -893,6 +897,26 @@ const listMenuModifiersTool: BmsTool = {
     return { ok: true, data: { sku, size, groups: [...groups.values()], verifiedAt: new Date().toISOString() } };
   },
 };
+
+/**
+ * A branch id the model invented is a bad argument, not a broken system. Left as a plain Error it
+ * reaches the model as "ดึงข้อมูลไม่สำเร็จ" and also raises an ai.tool_failed incident, so the one
+ * thing that would fix it — call list_restaurant_order_locations and use a real id — is never said.
+ */
+async function checkStockForBranch(
+  tenantId: string, product: string, size: string | null, locationId: string | null
+) {
+  try {
+    return await checkStock(tenantId, product, size, locationId);
+  } catch (error: any) {
+    if (String(error?.message) === "INVALID_OR_INACTIVE_LOCATION") {
+      throw new ToolArgError(
+        "locationId ไม่ใช่สาขาที่เปิดใช้งานของร้านนี้ — เรียก list_restaurant_order_locations แล้วใช้ id ที่ทูลคืนมา"
+      );
+    }
+    throw error;
+  }
+}
 
 const listRestaurantOrderLocationsTool: BmsTool = {
   name: "list_restaurant_order_locations",
@@ -1912,6 +1936,7 @@ const createOrderTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const requested = reqItems(args);
+    const requestedLocationId = optString(args, "locationId") ?? null;
     if (requested.length > 20) {
       throw new ToolArgError("หนึ่งออร์เดอร์รับได้ไม่เกิน 20 รายการ กรุณาแบ่งเป็นหลายออร์เดอร์");
     }
@@ -1954,7 +1979,7 @@ const createOrderTool: BmsTool = {
     // ไม่มีออร์เดอร์ไหนหายจากกฎนี้ — ครั้งแรกกลายเป็นคำถามยืนยัน ครั้งที่สอง (หลังลูกค้าตอบ)
     // เดินเส้นทางเขียนเดิมทั้งเส้น · staff surface ไม่ถูกแตะ (แอดมินเห็นหน้าจอที่ตัวเองกรอกอยู่)
     if (ec.surface === "customer") {
-      const locationId = optString(args, "locationId") ?? "";
+      const locationId = requestedLocationId ?? "";
       const fulfillmentType = enumVal(args, "fulfillmentType", ["DELIVERY", "PICKUP"], false) ?? "";
       const promisedAt = optString(args, "promisedAt") ?? "";
       const fulfillmentFingerprint = locationId || fulfillmentType || promisedAt
@@ -1964,7 +1989,7 @@ const createOrderTool: BmsTool = {
       if (ec.customerConfirmedQuote?.fingerprint !== fingerprint) {
         const quoteLines: OrderQuoteLine[] = [];
         for (const it of requested) {
-          const stock = await checkStock(ec.tenantId, it.sku, it.size);
+          const stock = await checkStockForBranch(ec.tenantId, it.sku, it.size, requestedLocationId);
           const name = "name" in stock ? stock.name : it.sku;
           const basePrice = "price" in stock ? Number(stock.price) : null;
           const availableModifiers = (await listProductModifiers(ec.tenantId, it.sku, it.size))
@@ -2038,7 +2063,7 @@ const createOrderTool: BmsTool = {
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
-      locationId: optString(args, "locationId") ?? null,
+      locationId: requestedLocationId,
       fulfillmentType: enumVal(args, "fulfillmentType", ["DELIVERY", "PICKUP"], false) as "DELIVERY" | "PICKUP" | undefined,
       promisedAt: optString(args, "promisedAt") ?? null,
     });
@@ -3236,8 +3261,13 @@ export const ALL_TOOLS: BmsTool[] = [
 assertValidToolRegistry(ALL_TOOLS);
 
 /** ทูลฝั่งลูกค้า: เฉพาะ surface=customer (ไม่มี A3/A2-staff ตั้งแต่ต้น) */
-export function customerTools(): BmsTool[] {
-  return ALL_TOOLS.filter((t) => t.surfaces.includes("customer"));
+export function customerTools(businessArchetype?: string | null): BmsTool[] {
+  return ALL_TOOLS.filter((tool) =>
+    tool.surfaces.includes("customer")
+    && (businessArchetype === undefined
+      || tool.name !== "list_restaurant_order_locations"
+      || businessArchetype === "restaurant")
+  );
 }
 
 /** ทูลฝั่งแอดมิน: surface=staff + ผ่าน RBAC (ทูลที่ role ไม่มีสิทธิ์จะไม่ถูกเสนอให้ AI เลย) */

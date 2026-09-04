@@ -621,6 +621,7 @@ export async function findAlternativeProducts(
     keyword?: string | null;
     category?: string | null;
     size?: string | null;
+    locationId?: string | null;
     limit?: number;
   }
 ): Promise<{
@@ -648,6 +649,7 @@ export async function findAlternativeProducts(
       excludeSku: source?.sku,
       size,
       inStockOnly: true,
+      locationId: input.locationId,
       sort: "availability",
       limit: 20,
     });

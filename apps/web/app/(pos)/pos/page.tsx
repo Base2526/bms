@@ -1217,7 +1217,8 @@ type IncomingRestaurantOrder = {
   promisedAt: string | null;
   amountDue: number;
   createdAt: string;
-  items: Array<{ orderItemId: number; sku: string; name: string; size: string; qty: number; modifierCodes: string[] }>;
+  // qty is the quantity still live on the order, in the same unit cancel_lines expects.
+  items: Array<{ orderItemId: number; sku: string; name: string; size: string; qty: number; unitName: string | null; modifierCodes: string[] }>;
 };
 type IncomingRefund = { id: string; orderId: string; amount: number; method: string; channel: string; customerRef: string | null; cancelledBy: string | null; createdAt: string };
 
@@ -1273,6 +1274,9 @@ export default function PosPage() {
   const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
+  const visiblePosTabs = session?.businessArchetype === "restaurant"
+    ? POS_TABS
+    : POS_TABS.filter((item) => item.key !== "incoming");
   // ทุกบิลผูกกับคนนี้ — ต้องเห็นบนแถบบนตลอด ไม่ใช่ซ่อนอยู่ในแท็บตั้งค่า
   const currentCashierName = useMemo(() => {
     const found = (session?.cashiers ?? []).find((c) => c.id === cashierId);
@@ -2380,10 +2384,10 @@ export default function PosPage() {
     }
   }
 
-  async function mutateIncomingOrder(body: Record<string, unknown>) {
+  async function mutateIncomingOrder(body: Record<string, unknown>): Promise<Record<string, any> | null> {
     if (!cashierId || !pin) {
       setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อนทำรายการ" });
-      return;
+      return null;
     }
     setIncomingLoading(true);
     try {
@@ -2393,7 +2397,26 @@ export default function PosPage() {
         body: JSON.stringify({ ...body, cashierUserId: cashierId, cashierPin: pin }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? data?.status ?? `HTTP ${res.status}`);
+      if (!res.ok && body.action === "cancel_lines" && data?.status === "APPROVAL_REQUIRED"
+          && !body.managerUserId) {
+        const managers = (session?.approvers ?? []).filter((candidate) =>
+          candidate.id !== cashierId && candidate.approvals.includes("restaurant.floor.manage")
+        );
+        if (managers.length === 0) throw new Error("ส่วนต่างเกินเพดาน แต่ไม่มีผู้จัดการคนอื่นที่มีสิทธิ์ยืนยัน");
+        const choices = managers.map((manager, index) =>
+          `${index + 1}. ${manager.name || manager.email || manager.id.slice(0, 8)}`
+        ).join("\n");
+        const selected = Number(window.prompt(
+          `ส่วนต่างที่ร้านรับเกินเพดาน เลือกผู้จัดการคนอื่นเพื่อยืนยัน\n${choices}`,
+          "1"
+        ));
+        const manager = Number.isInteger(selected) ? managers[selected - 1] : null;
+        if (!manager) throw new Error("ยังไม่ได้เลือกผู้จัดการที่ยืนยัน");
+        const managerPin = window.prompt(`PIN ของ ${manager.name || manager.email || "ผู้จัดการ"}`, "") ?? "";
+        if (!managerPin) throw new Error("ต้องใส่ PIN ผู้จัดการเพื่อยืนยันส่วนต่าง");
+        return await mutateIncomingOrder({ ...body, managerUserId: manager.id, managerPin });
+      }
+      if (!res.ok) throw new Error(data?.error ?? data?.reason ?? data?.status ?? `HTTP ${res.status}`);
       setNotice({
         type: "ok",
         text: body.action === "accept"
@@ -2403,8 +2426,10 @@ export default function PosPage() {
           : body.paused ? "หยุดรับออร์เดอร์ออนไลน์ชั่วคราวแล้ว" : "เปิดรับออร์เดอร์ออนไลน์แล้ว",
       });
       await refreshIncomingOrders();
+      return data;
     } catch (error: any) {
       setNotice({ type: "error", text: `ทำรายการออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
+      return null;
     } finally {
       setIncomingLoading(false);
     }
@@ -2414,7 +2439,7 @@ export default function PosPage() {
     const merchantCause = window.confirm("เมนูนี้หมด/ร้านส่งไม่ได้ใช่หรือไม่?\nตกลง = ร้านเป็นเหตุ · ยกเลิก = ลูกค้าเปลี่ยนใจ");
     const detail = window.prompt("บันทึกรายละเอียดสั้น ๆ (ข้อความนี้ใช้ใน audit และแจ้งลูกค้า)", "")?.trim();
     if (!detail) return;
-    await mutateIncomingOrder({
+    const result = await mutateIncomingOrder({
       action: "cancel_lines",
       orderId: order.id,
       idempotencyKey: crypto.randomUUID(),
@@ -2425,6 +2450,29 @@ export default function PosPage() {
         cause: merchantCause ? "MERCHANT_OUT_OF_STOCK" : "CUSTOMER_CHANGED",
       }],
     });
+    if (result && merchantCause && window.confirm(`ปิดเมนู “${item.name}” เป็นหมดวันนี้ที่สาขานี้ด้วยหรือไม่?`)) {
+      setIncomingLoading(true);
+      try {
+        const res = await fetch("/api/pos/restaurant/menu", {
+          method: "POST",
+          headers: { ...authHeaders, "content-type": "application/json" },
+          body: JSON.stringify({
+            cashierUserId: cashierId,
+            cashierPin: pin,
+            productSku: item.sku,
+            unavailable: true,
+            reason: detail,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+        setNotice({ type: "ok", text: `ตัดรายการและปิดเมนู “${item.name}” เป็นหมดวันนี้แล้ว` });
+      } catch (error: any) {
+        setNotice({ type: "error", text: `ตัดรายการสำเร็จ แต่ปิดเมนูไม่สำเร็จ: ${String(error?.message ?? error)}` });
+      } finally {
+        setIncomingLoading(false);
+      }
+    }
   }
 
   async function settleIncomingRefund(refund: IncomingRefund) {
@@ -3665,6 +3713,12 @@ export default function PosPage() {
     }
     if (tab === "deposits") void refreshDeposits();
   }, [token, tab, session?.shift?.id]);
+
+  useEffect(() => {
+    if (session && session.businessArchetype !== "restaurant" && tab === "incoming") {
+      setTab("sell");
+    }
+  }, [session, tab]);
 
   // Incoming delivery is live operational work; refresh only while this tab is visible.
   useEffect(() => {
@@ -5847,7 +5901,7 @@ export default function PosPage() {
       `}</style>
 
       <nav className="pos-rail" aria-label="งานในจอขาย">
-        {POS_TABS.map((item) => (
+        {visiblePosTabs.map((item) => (
           <button
             key={item.key}
             onClick={() => switchTab(item.key)}
@@ -6257,7 +6311,7 @@ export default function PosPage() {
               </div>
               <ul style={{ margin: "12px 0", paddingLeft: 22 }}>
                 {order.items.map((item) => <li key={item.orderItemId} style={{ marginBottom: 6 }}>
-                  {item.name || item.sku} · {item.size} × {item.qty}
+                  {item.name || item.sku} · {item.size} × {item.qty}{item.unitName ? ` ${item.unitName}` : ""}
                   {item.modifierCodes?.length ? ` (${item.modifierCodes.join(", ")})` : ""}
                   <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
                     onClick={() => void cancelIncomingLine(order, item)}>ตัดรายการ / คืนส่วนต่าง</button>

@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { DEFAULT_LOCATION_CODE } from "./locations";
 import { enqueueKitchenTicketsInTx } from "./kitchen";
 import { invalidateCache } from "@/lib/cache";
 
@@ -60,45 +61,78 @@ export function restaurantOrderingState(input: {
   return { accepting, reason: accepting ? null : "CLOSED" };
 }
 
-export async function restaurantOrderingStateInTx(client: Pick<PoolClient, "query">, tenantId: string) {
+export async function restaurantOrderingStateInTx(
+  client: Pick<PoolClient, "query">,
+  tenantId: string
+): Promise<{ isRestaurant: boolean; accepting: boolean; reason: "PAUSED" | "CLOSED" | null }> {
+  // Two statements on purpose. This runs inside every non-POS order of every shop, so the
+  // 9.56 columns must never be named until the shop is known to be a restaurant — otherwise a
+  // database that has not applied 9.56 yet stops selling for every tenant, not just restaurants.
+  const archetype = await client.query<{ business_archetype: string | null; timezone: string | null }>(
+    `SELECT business_archetype, timezone FROM bms_store_profile WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  const profile = archetype.rows[0];
+  if (profile?.business_archetype !== "restaurant") {
+    return { isRestaurant: false, accepting: true, reason: null };
+  }
   const result = await client.query<{
-    business_archetype: string | null;
-    timezone: string | null;
     restaurant_order_hours: unknown;
     restaurant_orders_paused: boolean;
   }>(
-    `SELECT business_archetype, timezone, restaurant_order_hours, restaurant_orders_paused
+    `SELECT restaurant_order_hours, restaurant_orders_paused
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
   const row = result.rows[0];
-  if (row?.business_archetype !== "restaurant") return { accepting: true, reason: null as null };
-  return restaurantOrderingState({
-    paused: Boolean(row.restaurant_orders_paused),
-    hours: row.restaurant_order_hours,
-    timezone: row.timezone,
-  });
+  return { isRestaurant: true, ...restaurantOrderingState({
+    paused: Boolean(row?.restaurant_orders_paused),
+    hours: row?.restaurant_order_hours,
+    timezone: profile.timezone,
+  }) };
 }
 
 export async function listRestaurantOrderLocations(tenantId: string) {
+  // Same ordering as resolveDefaultLocationIdInTx(): bms_locations has no is_default column,
+  // head office is code MAIN plus is_head_office. Ordering by a column that does not exist
+  // made this tool fail with 42703 on every call.
   const result = await query<{ id: string; name: string; branch_code: string | null }>(
     `SELECT id, name, branch_code FROM bms_locations
-      WHERE tenant_id = $1 AND active ORDER BY is_default DESC, name LIMIT 20`,
-    [tenantId]
+      WHERE tenant_id = $1 AND active
+      ORDER BY (code = $2) DESC, is_head_office DESC, created_at
+      LIMIT 20`,
+    [tenantId, DEFAULT_LOCATION_CODE]
   );
   return result.rows.map((row) => ({ id: row.id, name: row.name, branchCode: row.branch_code }));
 }
 
 export async function listIncomingRestaurantOrders(tenantId: string, locationId: string, limit = 100) {
+  // qty is the REMAINING pack quantity, for two reasons:
+  //   * a line already cancelled must leave the card, otherwise the counter keeps seeing a dish
+  //     whose kitchen ticket is cancelled and whose money is already on the refund queue;
+  //   * cancelRestaurantOrderLines() reads packQty as a pack count (pack_qty, not base qty), so
+  //     handing the screen oi.qty made every pack-sold line fail with RETURN_QTY_EXCEEDED.
+  // Same returned-quantity expression as the POS return path in pos.ts.
   const result = await query<any>(
     `SELECT o.id, o.channel, o.customer_ref, o.status, o.fulfillment_type, o.promised_at,
             o.total_amount + o.shipping_fee AS amount_due, o.created_at,
             COALESCE(jsonb_agg(jsonb_build_object(
               'orderItemId', oi.id, 'sku', oi.product_sku, 'name', p.name, 'size', oi.size,
-              'qty', oi.qty, 'modifierCodes', oi.stock_modifier_codes
-            ) ORDER BY oi.id) FILTER (WHERE oi.id IS NOT NULL), '[]'::jsonb) AS items
+              'qty', remaining.pack_qty, 'unitName', oi.pack_unit_name,
+              'modifierCodes', oi.stock_modifier_codes
+            ) ORDER BY oi.id) FILTER (WHERE oi.id IS NOT NULL AND remaining.pack_qty > 0), '[]'::jsonb) AS items
        FROM bms_orders o
        LEFT JOIN bms_order_items oi ON oi.tenant_id = o.tenant_id AND oi.order_id = o.id
+       LEFT JOIN LATERAL (
+         SELECT GREATEST(COALESCE(oi.pack_qty, oi.qty) - COALESCE((
+           SELECT SUM(pri.pack_qty)
+             FROM bms_pos_return_items pri
+             JOIN bms_pos_returns pr ON pr.id = pri.pos_return_id
+            WHERE pri.tenant_id = oi.tenant_id
+              AND pri.order_item_id = oi.id
+              AND pr.order_id = oi.order_id
+         ), 0), 0) AS pack_qty
+       ) remaining ON TRUE
        LEFT JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
       WHERE o.tenant_id = $1 AND o.location_id = $2 AND o.fulfillment_type IS NOT NULL
         AND o.status IN ('PAID', 'PACKING')

@@ -15,7 +15,7 @@ import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { beginTenantTx } from "./tenant";
-import { resolveDefaultLocationIdInTx } from "./locations";
+import { DEFAULT_LOCATION_CODE, resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { isCarrier, type Carrier } from "./carriers/constants";
@@ -213,9 +213,10 @@ export type CreateOrderResult =
     }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
-  | { status: "SOLD_OUT_TODAY"; sku: string; size: string }
-  | { status: "LOCATION_REQUIRED"; locations: Array<{ id: string; name: string; branchCode: string | null }> }
-  | { status: "ORDERING_PAUSED" | "ORDERING_CLOSED" }
+    | { status: "SOLD_OUT_TODAY"; sku: string; size: string }
+    | { status: "LOCATION_REQUIRED"; locations: Array<{ id: string; name: string; branchCode: string | null }> }
+    | { status: "FULFILLMENT_REQUIRED" }
+    | { status: "ORDERING_PAUSED" | "ORDERING_CLOSED" }
   | { status: "PACK_NOT_FOUND"; sku: string; size: string; packCode: string }
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
@@ -458,34 +459,64 @@ export async function createOrderInTx(
   const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
     ? "RESTAURANT_POS"
     : input.channel === "pos" ? "RETAIL_POS" : "ONLINE_ORDER";
-  // Online restaurant stock and kitchen work belong to a concrete branch. A multi-branch
-  // customer order may never silently fall back to the default branch.
-  const activeLocations = await client.query<{ id: string; name: string; branch_code: string | null }>(
-    `SELECT id, name, branch_code FROM bms_locations
-      WHERE tenant_id = $1 AND active ORDER BY is_default DESC, name LIMIT 21`,
-    [tenantId]
-  );
-  if (!input.locationId && input.channel !== "pos" && activeLocations.rows.length > 1) {
-    return {
-      status: "LOCATION_REQUIRED",
-      locations: activeLocations.rows.slice(0, 20).map((row) => ({ id: row.id, name: row.name, branchCode: row.branch_code })),
-    };
-  }
-  const locationId = input.locationId
-    ?? activeLocations.rows[0]?.id
-    ?? (await resolveDefaultLocationIdInTx(client, tenantId));
-  if (!activeLocations.rows.some((row) => row.id === locationId)) {
-    return { status: "INVALID_ITEM", index: -1, reason: "สาขารับออร์เดอร์ไม่ถูกต้องหรือปิดใช้งาน" };
-  }
-  if (input.channel !== "pos") {
-    const ordering = await restaurantOrderingStateInTx(client, tenantId);
+  const ordering = input.channel === "pos"
+    ? null
+    : await restaurantOrderingStateInTx(client, tenantId);
+  const restaurantOnlineOrder = ordering?.isRestaurant === true;
+
+  // Branch choice, ordering hours and fulfillment are restaurant-online policy. Keeping this
+  // branch explicit prevents a multi-branch retailer or cafe from inheriting restaurant rules.
+  let locationId: string;
+  if (restaurantOnlineOrder) {
+    // Ordered exactly like resolveDefaultLocationIdInTx() so the single-branch fallback below
+    // picks the same branch the rest of the stock path calls "default". bms_locations has no
+    // is_default column — head office is expressed by code MAIN plus is_head_office.
+    const activeLocations = await client.query<{ id: string; name: string; branch_code: string | null }>(
+      `SELECT id, name, branch_code FROM bms_locations
+        WHERE tenant_id = $1 AND active
+        ORDER BY (code = $2) DESC, is_head_office DESC, created_at
+        LIMIT 21`,
+      [tenantId, DEFAULT_LOCATION_CODE]
+    );
+    if (!input.locationId && activeLocations.rows.length > 1) {
+      return {
+        status: "LOCATION_REQUIRED",
+        locations: activeLocations.rows.slice(0, 20).map((row) => ({ id: row.id, name: row.name, branchCode: row.branch_code })),
+      };
+    }
+    locationId = input.locationId
+      ?? activeLocations.rows[0]?.id
+      ?? (await resolveDefaultLocationIdInTx(client, tenantId));
+    if (!activeLocations.rows.some((row) => row.id === locationId)) {
+      return { status: "INVALID_ITEM", index: -1, reason: "สาขารับออร์เดอร์ไม่ถูกต้องหรือปิดใช้งาน" };
+    }
     if (!ordering.accepting) {
       return { status: ordering.reason === "PAUSED" ? "ORDERING_PAUSED" : "ORDERING_CLOSED" };
     }
+  } else {
+    if (input.fulfillmentType != null || input.promisedAt != null) {
+      return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลรับเอง/จัดส่งแบบครัวใช้ได้เฉพาะร้านอาหารออนไลน์" };
+    }
+    if (input.locationId) {
+      const selectedLocation = await client.query<{ id: string }>(
+        `SELECT id FROM bms_locations
+          WHERE tenant_id = $1 AND id::text = $2 AND active
+          LIMIT 1`,
+        [tenantId, input.locationId]
+      );
+      if (!selectedLocation.rows[0]) {
+        return { status: "INVALID_ITEM", index: -1, reason: "สาขารับออร์เดอร์ไม่ถูกต้องหรือปิดใช้งาน" };
+      }
+      locationId = selectedLocation.rows[0].id;
+    } else {
+      locationId = await resolveDefaultLocationIdInTx(client, tenantId);
+    }
   }
-  const fulfillmentType = input.fulfillmentType === "DELIVERY" || input.fulfillmentType === "PICKUP"
-    ? input.fulfillmentType
-    : null;
+  const fulfillmentType = restaurantOnlineOrder
+    && (input.fulfillmentType === "DELIVERY" || input.fulfillmentType === "PICKUP")
+      ? input.fulfillmentType
+      : null;
+  if (restaurantOnlineOrder && fulfillmentType === null) return { status: "FULFILLMENT_REQUIRED" };
   const promisedAtDate = input.promisedAt == null ? null : new Date(input.promisedAt);
   if (promisedAtDate && !Number.isFinite(promisedAtDate.getTime())) {
     return { status: "INVALID_ITEM", index: -1, reason: "เวลาที่สัญญาไว้ไม่ถูกต้อง" };
@@ -1492,9 +1523,10 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
   let ok = false;
   try {
     await beginTenantTx(client, tenantId);
-    const updated = await client.query(
+    const updated = await client.query<{ fulfillment_type: "DELIVERY" | "PICKUP" | null }>(
       `UPDATE bms_orders SET status = 'PACKING', updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status = 'PAID' RETURNING id`,
+        WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'
+        RETURNING fulfillment_type`,
       [tenantId, orderId]
     );
     ok = Boolean(updated.rowCount);
@@ -1502,8 +1534,11 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
       await client.query("ROLLBACK");
       return false;
     }
-    // Human acceptance is the boundary that creates kitchen work. Payment alone never does.
-    await enqueueKitchenTicketsInTx(client, tenantId, orderId);
+    // Only restaurant fulfillment uses PACKING as the human-accept boundary. Ordinary retail
+    // packing must never create kitchen tickets just because a product happens to have a station.
+    if (updated.rows[0].fulfillment_type !== null) {
+      await enqueueKitchenTicketsInTx(client, tenantId, orderId);
+    }
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

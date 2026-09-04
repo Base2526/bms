@@ -37,7 +37,12 @@ test("restaurant onboarding teaches delivery operations rather than mandatory re
 
 test("delivery uses existing flat shipping, prepaid packing, and OTHER rider tracking", () => {
   assert.match(read("apps/web/lib/bms/storeProfile.ts"), /shippingMode: "flat"/);
-  assert.match(read("apps/web/lib/bms/orders.ts"), /status = 'PAID' RETURNING id[\s\S]{0,500}enqueueKitchenTicketsInTx/);
+  // PAID -> PACKING stays the boundary that creates kitchen work, but only for a restaurant
+  // fulfillment. Asserting the old `RETURNING id` shape would force retail packing to enqueue
+  // kitchen tickets again for any product that happens to carry a station.
+  const orders = read("apps/web/lib/bms/orders.ts");
+  assert.match(orders, /status = 'PAID'[\s\S]{0,120}RETURNING fulfillment_type/);
+  assert.match(orders, /fulfillment_type !== null\)?\s*\{?[\s\S]{0,160}enqueueKitchenTicketsInTx/);
   assert.match(read("apps/web/lib/bms/carriers/constants.ts"), /"OTHER"/);
 });
 

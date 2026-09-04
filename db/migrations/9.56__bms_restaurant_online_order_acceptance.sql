@@ -1,4 +1,6 @@
 -- 9.56 — Restaurant online order handoff: explicit branch/fulfillment and human acceptance.
+-- Wrapped so a mid-file failure cannot leave half of these columns applied.
+BEGIN;
 
 ALTER TABLE bms_orders
   ADD COLUMN IF NOT EXISTS fulfillment_type TEXT,
@@ -26,3 +28,5 @@ COMMENT ON COLUMN bms_orders.promised_at IS
   'Customer-facing promised fulfillment time, used for kitchen/incoming-order ordering.';
 COMMENT ON COLUMN bms_store_profile.restaurant_order_hours IS
   'Structured weekly intervals: [{day:0..6,open:"HH:mm",close:"HH:mm"}]. Empty keeps legacy always-open behavior.';
+
+COMMIT;

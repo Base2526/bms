@@ -31,6 +31,7 @@ async function handlePOST(req: NextRequest) {
   const result = await completePosRefundAllocation({
     tenantId: device.tenantId,
     deviceId: device.id,
+    locationId: device.locationId,
     shiftId,
     allocationId,
     actorUserId: auth.userId,
