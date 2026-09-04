@@ -608,3 +608,42 @@ test("ห้ามจำ PIN ผู้ปฏิบัติงาน โหม�
     "LOCAL_SCREEN_KEY_PREFIX", "LOCAL_CHECK_KEY_PREFIX"]);
   for (const found of keys) assert.ok(allowed.has(found), `คีย์ localStorage ที่ไม่ได้ประกาศไว้: ${found}`);
 });
+
+test("ทุกกฎที่ทาสีปุ่มต้องเจาะจงกว่า .pos-root button ของ pos.css", async () => {
+  // pos.css ตั้ง `.pos-root button { background/color/border/font/padding }` = (0,1,1)
+  // ซึ่ง **เจาะจงกว่าคลาสเดี่ยว ๆ ของ CSS module (0,1,0)** — กฎที่ลืม .page นำหน้าจึงไม่มีผล
+  // เงียบ ๆ โดยไม่มี error ที่ไหน · เคยกินไปแล้วสามรอบ: .btnPrimary (แก้ไปนานแล้ว),
+  // .menuToolOn ตอน :hover, และ .kitchenFilterOn ที่ไม่เคยทำงานเลยแม้แต่ครั้งเดียว
+  const page = await read("apps/web/app/(pos)/pos/restaurant/page.tsx");
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+
+  // เก็บชื่อคลาสที่อยู่บน <button> จริง — เดินตัวอักษรเพื่อหาปลาย tag เพราะ className
+  // เป็น template literal ที่มี ${...} ซ้อนอยู่ (regex สั้น ๆ จะตัดกลางทางแล้วมองไม่เห็น)
+  const onButtons = new Set<string>();
+  for (let at = page.indexOf("<button"); at >= 0; at = page.indexOf("<button", at + 1)) {
+    let depth = 0;
+    let end = at;
+    while (end < page.length) {
+      const ch = page[end];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") depth -= 1;
+      else if (ch === ">" && depth === 0) break;
+      end += 1;
+    }
+    for (const [, name] of page.slice(at, end).matchAll(/styles\.(\w+)/g)) onButtons.add(name);
+  }
+  assert.ok(onButtons.size > 8, `หาคลาสของปุ่มไม่เจอ (${onButtons.size})`);
+
+  const PAINTS = /(?:^|;|\{)\s*(?:background|border(?:-color|-radius|-width)?|color|font|font-weight|padding|height|min-height)\s*:/;
+  const offenders: string[] = [];
+  for (const [, , selector, body] of css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)) {
+    if (!PAINTS.test(body)) continue;
+    if (selector.includes(".page")) continue;
+    for (const name of onButtons) {
+      // นับเฉพาะกฎที่ "จบ" ที่คลาสของปุ่มเอง — `.x .y` (สองคลาส) เจาะจงพอแล้ว
+      if (new RegExp(`^\\.${name}(?![\\w-])[^ ]*$`).test(selector.trim())) offenders.push(selector.trim());
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `กฎเหล่านี้ทาสีปุ่มแต่ไม่มี .page นำหน้า จึงแพ้ .pos-root button: ${offenders.join(" · ")}`);
+});

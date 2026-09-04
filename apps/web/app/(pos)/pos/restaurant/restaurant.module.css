@@ -395,15 +395,23 @@
 .page .kitchenMenuAvailabilityList button:hover { background: var(--panel-2); }
 .page .kitchenMenuAvailabilityList button b { color: var(--red); }
 .page .kitchenMenuAvailabilityList .kitchenMenuSoldOut b { color: var(--green); }
-.kitchenFilter { font: inherit; font-size: 13.5px; height: 34px; padding: 0 13px; border-radius: 6px;
+/* ⚠️ ต้องมี .page นำหน้าทุกกฎที่ทาสี/ตีกรอบปุ่ม — `.pos-root button` ของ pos.css เป็น
+   (0,1,1) ซึ่ง **เจาะจงกว่าคลาสเดี่ยว ๆ (0,1,0)** ไม่ใช่แค่ตอน :hover
+   ก่อนแก้ (2026-09-04): .kitchenFilterOn ไม่เคยมีผลเลยสักครั้ง — ตัวกรองสถานีที่เลือกอยู่
+   หน้าตาเหมือนตัวที่ไม่ได้เลือก ครัวจึงอ่านไม่ออกว่ากำลังดูช่องไหน (ที่เห็นเขียวคือตอนเอา
+   เมาส์ไปชี้เท่านั้น เพราะกฎ :hover ที่เพิ่มทีหลังบังเอิญมี .page นำหน้า) */
+.page .kitchenFilter { font: inherit; font-size: 13.5px; height: 34px; min-height: 34px; padding: 0 13px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
-.kitchenFilter:hover { background: var(--panel-2); }
-.kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.page .kitchenFilter:hover:not(:disabled) { background: var(--panel-2); }
+/* "เลือกอยู่" ต้องอ่านออกจากอีกฝั่งครัว ไม่ใช่ต่างกันแค่เฉดสี: พื้นทึบ + ตัวหนา + วงแหวน
+   รอบปุ่ม · สีอย่างเดียวยังแยกจาก focus ring ของเบราว์เซอร์ไม่ออกตอนเพิ่งกดเสร็จ */
+.page .kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700;
+  box-shadow: 0 0 0 3px var(--green-bg); }
 .page .kitchenFilterOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
 .kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
-.kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
+.page .kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }
@@ -428,7 +436,7 @@
 .ticketQty { min-width: 30px; font-size: 19px; font-weight: 700; color: var(--lane-color); font-variant-numeric: tabular-nums; }
 .ticketDish { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; line-height: 1.25; }
 .ticketSize { font-size: 12.5px; color: var(--ink-2); }
-.ticketGo { flex: 1; height: 44px; justify-content: center; font-size: 15px; }
+.page .ticketGo { flex: 1; height: 44px; justify-content: center; font-size: 15px; }
 .laneEmpty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 12.5px; }
 .ticketTable { color: var(--red); font-weight: 700; font-size: 12.5px; margin-bottom: 3px; }
 .ticketName { font-weight: 700; }

@@ -1183,11 +1183,13 @@ export default function RestaurantPosPage() {
               </div>
             </details>
             <button type="button"
+              aria-pressed={stationFilter === null}
               className={`${styles.kitchenFilter} ${stationFilter === null ? styles.kitchenFilterOn : ""}`}
               onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets.filter(openTicket))}</button>
             {stationFilters.map((filter) => {
               const key = stationFilterKey(filter);
               return <button key={key} type="button"
+                aria-pressed={stationFilter === key}
                 className={`${styles.kitchenFilter} ${stationFilter === key ? styles.kitchenFilterOn : ""}`}
                 onClick={() => setStationFilter(key)}>
                 {filter.name} {countKitchenDishes(tickets.filter((row) => openTicket(row) && ticketMatchesStation(row, filter)))}
@@ -1196,6 +1198,7 @@ export default function RestaurantPosPage() {
             {/* ปุ่ม "ไม่ระบุสถานี" โผล่เฉพาะตอนมีของอยู่จริง — ปุ่มที่ว่างตลอดเวลาสอนให้ครัว
                 เลิกอ่านตัวเลขบนแถบนี้ */}
             {unassignedOpen.length > 0 && <button type="button"
+              aria-pressed={stationFilter === "UNASSIGNED"}
               className={`${styles.kitchenFilter} ${stationFilter === "UNASSIGNED" ? styles.kitchenFilterOn : ""}`}
               onClick={() => setStationFilter("UNASSIGNED")}>
               ไม่ระบุสถานี {countKitchenDishes(unassignedOpen)}
