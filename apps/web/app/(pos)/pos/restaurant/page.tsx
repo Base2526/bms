@@ -1153,7 +1153,13 @@ export default function RestaurantPosPage() {
                       disabled={working} onClick={() => void reorderLine(item)}>
                       {dropped || stillCharged ? "สั่งใหม่" : "สั่งซ้ำ"}
                     </button>}
-                    {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
+                    {/* คอลัมน์นี้เป็นข้อความทั้งคอลัมน์ — ปุ่มเดียวที่เป็นสัญลักษณ์ทำให้ตาต้องสลับ
+                        วิธีอ่านกลางคัน และ ⊗ อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
+                        · ไม่ต้องถามยืนยัน: บรรทัด NEW ยังไม่มีตั๋วครัว ไม่มีการจองวัตถุดิบ ไม่มีเงินขยับ
+                        และเผลอลบแล้วแตะการ์ดเมนูใบเดิมก็กลับมา (ต่างจาก "ยกเลิกบิล" ที่ต้องมี PIN) */}
+                    {item.status === "NEW" && <button type="button" className={styles.itemRemove}
+                      aria-label={`ลบ ${item.productName} ออกจากบิล`} title={`ลบ ${item.productName} ออกจากบิล`}
+                      disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}>ลบ</button>}
                   </span>
                 </article>;
               })}

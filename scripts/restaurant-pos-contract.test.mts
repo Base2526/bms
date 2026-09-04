@@ -709,4 +709,23 @@ test("ปุ่มสั่งซ้ำเป็นข้อความ แล�
   assert.match(button, /dropped \|\| stillCharged \? "สั่งใหม่" : "สั่งซ้ำ"/);
   // ป้ายสำหรับ screen reader ต้องบอกทั้งประโยคเหมือนเดิม ไม่ใช่แค่คำบนปุ่ม
   assert.match(button, /aria-label=\{`สั่ง \$\{item\.productName\}[^`]*พร้อมตัวเลือกเดิม`\}/);
+
+  // ปุ่มลบบรรทัดที่ยังไม่ส่งครัวอยู่คอลัมน์เดียวกัน ต้องเป็นคำเหมือนกัน — ปุ่มเดียวที่เป็น
+  // สัญลักษณ์ทำให้ตาต้องสลับวิธีอ่านกลางคอลัมน์ และ ⊗ อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
+  const removeAt = page.indexOf("styles.itemRemove");
+  assert.ok(removeAt > 0, "หาปุ่มลบไม่เจอ");
+  const removeButton = page.slice(removeAt, page.indexOf("</button>", removeAt));
+  assert.doesNotMatch(removeButton, /<CloseCircleOutlined/, "ปุ่มลบต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
+  assert.match(removeButton, />ลบ<\/button>|>ลบ$/m);
+  // บิลหนึ่งใบมีเมนูซ้ำกันได้หลายบรรทัด ป้ายจึงต้องบอกด้วยว่าลบบรรทัดของเมนูไหน
+  assert.match(removeButton, /aria-label=\{`ลบ \$\{item\.productName\} ออกจากบิล`\}/);
+
+  // ปุ่มสองแบบในคอลัมน์เดียวกันต้องกว้างเท่ากัน ไม่งั้นขอบซ้ายเยื้องกันทุกบรรทัด
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  for (const name of ["itemAgain", "itemRemove"]) {
+    const rule = css.slice(css.indexOf(`.page .${name}{`) >= 0
+      ? css.indexOf(`.page .${name}{`) : css.indexOf(`.page .${name} {`));
+    assert.match(rule.slice(0, rule.indexOf("}")), /min-width:\s*62px/,
+      `${name} ต้องมี min-width เท่ากับอีกปุ่มในคอลัมน์`);
+  }
 });
