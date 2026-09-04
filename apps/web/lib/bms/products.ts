@@ -7,6 +7,8 @@ import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
 import { resolveDefaultLocationIdInTx } from "./locations";
+import { resolveDefaultLocationId } from "./locations";
+import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
 import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
@@ -243,6 +245,8 @@ export type SellableProduct = {
   createdAt: string;
   updatedAt: string;
   availableTotal: number;
+  availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
+  stockPolicy: MenuStockPolicy;
   availableSizes: Array<{ size: string; available: number; price?: number }>;
 };
 
@@ -293,7 +297,8 @@ export async function listSellableProducts(
     brand,
     excludeSku,
   ];
-  params.push(opts.locationId?.trim() || null);
+  const effectiveLocationId = opts.locationId?.trim() || await resolveDefaultLocationId(tenantId);
+  params.push(effectiveLocationId);
   const locationParam = params.length;
   params.push(size);
   const sizeParam = params.length;
@@ -309,7 +314,11 @@ export async function listSellableProducts(
     : "";
   let inStockClause = "";
   if (opts.inStockOnly) {
-    inStockClause = `AND EXISTS (
+    inStockClause = `AND (
+       COALESCE((SELECT policy.stock_policy FROM bms_product_stock_policies policy
+                  WHERE policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku), 'DIRECT')
+         IN ('NON_STOCK', 'RECIPE')
+       OR EXISTS (
          SELECT 1
            FROM bms_inventory sellable_i
           WHERE sellable_i.tenant_id = p.tenant_id
@@ -317,7 +326,7 @@ export async function listSellableProducts(
             AND ($${locationParam}::uuid IS NULL OR sellable_i.location_id = $${locationParam})
             AND (sellable_i.current_stock - sellable_i.reserved_stock) > 0
             AND ($${sizeParam}::text IS NULL OR sellable_i.size = $${sizeParam})
-       )`;
+       ))`;
   }
   params.push(minPrice);
   const minPriceParam = params.length;
@@ -360,10 +369,13 @@ export async function listSellableProducts(
     updated_at: Date | string;
     available_total: string;
     available_sizes: Array<{ size: string; available: number }> | string | null;
+    stock_policy: MenuStockPolicy | null;
+    temporarily_unavailable: boolean;
     total: string;
   }>(
     `WITH matched AS (
-       SELECT p.sku,
+       SELECT p.tenant_id,
+              p.sku,
               p.name,
               p.price,
               p.description,
@@ -423,6 +435,14 @@ export async function listSellableProducts(
             m.brand,
             m.created_at,
             m.updated_at,
+            COALESCE(sp.stock_policy, 'DIRECT') AS stock_policy,
+            EXISTS (
+              SELECT 1 FROM bms_product_menu_unavailability unavailable
+               WHERE unavailable.tenant_id = m.tenant_id
+                 AND unavailable.location_id = $${locationParam}
+                 AND unavailable.product_sku = m.sku
+                 AND unavailable.resets_at > now()
+            ) AS temporarily_unavailable,
             COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text
               AS available_total,
             COALESCE(
@@ -437,12 +457,14 @@ export async function listSellableProducts(
             ) AS available_sizes,
             COUNT(*) OVER()::text AS total
        FROM matched m
+       LEFT JOIN bms_product_stock_policies sp
+         ON sp.tenant_id = m.tenant_id AND sp.product_sku = m.sku
        LEFT JOIN bms_inventory i
-         ON i.tenant_id = $1
+         ON i.tenant_id = m.tenant_id
         AND i.product_sku = m.sku
         AND ($${locationParam}::uuid IS NULL OR i.location_id = $${locationParam})
-      GROUP BY m.sku, m.name, m.price, m.description, m.category, m.brand,
-               m.created_at, m.updated_at, m.search_rank
+      GROUP BY m.tenant_id, m.sku, m.name, m.price, m.description, m.category, m.brand,
+               m.created_at, m.updated_at, m.search_rank, sp.stock_policy
       ORDER BY ${orderBy}
       LIMIT $${limitParam}`,
     params
@@ -490,6 +512,12 @@ export async function listSellableProducts(
       createdAt: isoDate(row.created_at),
       updatedAt: isoDate(row.updated_at),
       availableTotal: Math.max(0, Number(row.available_total) || 0),
+      stockPolicy: row.stock_policy ?? "DIRECT",
+      availability: isMenuSellable({
+        stockPolicy: row.stock_policy,
+        temporarilyUnavailable: row.temporarily_unavailable,
+        available: Number(row.available_total),
+      }).availability,
       availableSizes,
     };
   });

@@ -204,6 +204,7 @@ export type CreateOrderResult =
     }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
+  | { status: "SOLD_OUT_TODAY"; sku: string; size: string }
   | { status: "PACK_NOT_FOUND"; sku: string; size: string; packCode: string }
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
@@ -446,6 +447,21 @@ export async function createOrderInTx(
   const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
     ? "RESTAURANT_POS"
     : input.channel === "pos" ? "RETAIL_POS" : "ONLINE_ORDER";
+  // Availability and reservation must use the same branch. Until delivery gets an explicit
+  // branch selector, non-POS orders intentionally use the established default-location rule.
+  const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
+  const requestedSkus = Array.from(new Set(items.map((item) => item.sku)));
+  const unavailable = await client.query<{ product_sku: string }>(
+    `SELECT product_sku FROM bms_product_menu_unavailability
+      WHERE tenant_id = $1 AND location_id = $2
+        AND product_sku = ANY($3::text[]) AND resets_at > now()
+      ORDER BY product_sku LIMIT 1`,
+    [tenantId, locationId, requestedSkus]
+  );
+  if (unavailable.rowCount) {
+    const sku = unavailable.rows[0].product_sku;
+    return { status: "SOLD_OUT_TODAY", sku, size: items.find((item) => item.sku === sku)?.size ?? "" };
+  }
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
     return {
@@ -722,8 +738,6 @@ export async function createOrderInTx(
     const promoCharged = new Set<string>();
 
     // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
-    const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
-
     // Derived products (bundle/menu) are sold lines but hold no stock themselves.
     // Keep their zero row for the historical order-item FK, then reserve only the
     // globally sorted, aggregated component lines to keep lock order deterministic.

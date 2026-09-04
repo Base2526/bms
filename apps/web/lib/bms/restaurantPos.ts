@@ -5,6 +5,7 @@ import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { listPrimaryProductImages } from "./products";
 import { kitchenStationColumnsSql } from "./kitchenStations";
+import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
 import {
   afterOrderCancellationCommitted,
   cancelOrderInTx,
@@ -211,11 +212,28 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     kitchen_station: string | null;
     kitchen_station_id: string | null;
     has_modifiers: boolean;
+    stock_policy: MenuStockPolicy | null;
+    temporarily_unavailable: boolean;
+    available_total: string;
     sizes: Array<{ size: string; available: number }> | null;
   }>(
     `SELECT p.sku, p.name, p.price,
             ${menuStation.name} AS kitchen_station,
             ${menuStation.id} AS kitchen_station_id,
+            sp.stock_policy,
+            EXISTS (
+              SELECT 1 FROM bms_product_menu_unavailability unavailable
+               WHERE unavailable.tenant_id = p.tenant_id
+                 AND unavailable.location_id = $2
+                 AND unavailable.product_sku = p.sku
+                 AND unavailable.resets_at > now()
+            ) AS temporarily_unavailable,
+            COALESCE((
+              SELECT SUM(GREATEST(i.current_stock - i.reserved_stock, 0))
+                FROM bms_inventory i
+               WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                 AND i.location_id = $2
+            ), 0)::text AS available_total,
             EXISTS (
               SELECT 1 FROM bms_product_modifiers m
                WHERE m.tenant_id = p.tenant_id AND m.product_sku = p.sku AND m.active
@@ -254,6 +272,11 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
   const images = await listPrimaryProductImages(tenantId, skus);
   return res.rows.map((row) => {
     const sizes = row.sizes ?? [];
+    const sellability = isMenuSellable({
+      stockPolicy: row.stock_policy,
+      temporarilyUnavailable: row.temporarily_unavailable,
+      available: Number(row.available_total),
+    });
     return {
       sku: row.sku,
       name: row.name,
@@ -262,7 +285,9 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
       kitchenStationId: row.kitchen_station_id ? String(row.kitchen_station_id) : null,
       hasModifiers: row.has_modifiers,
       availableSizes: sizes,
-      availableTotal: sizes.reduce((sum, s) => sum + Math.max(0, Number(s.available)), 0),
+      availableTotal: Math.max(0, Number(row.available_total)),
+      sellable: sellability.sellable,
+      availability: sellability.availability,
       imageUrl: images.get(row.sku) ?? null,
     };
   });

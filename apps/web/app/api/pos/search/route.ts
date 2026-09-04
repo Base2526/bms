@@ -47,6 +47,7 @@ async function handleGET(req: NextRequest) {
       name: item.name,
       price: item.price,
       availableTotal: item.availableTotal,
+      availability: item.availability,
       availableSizes: item.availableSizes,
       imageUrl: imagesBySku.get(item.sku) ?? null,
     })),

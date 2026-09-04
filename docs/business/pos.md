@@ -1361,7 +1361,21 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`)
+
+### “Sold out today” menu availability (`9.55`)
+
+Temporary availability is a branch fact, not the product's durable `active` state. One row in
+`bms_product_menu_unavailability` closes one SKU at one location for every sales surface. The shared
+`isMenuSellable()` policy treats `NON_STOCK` and `RECIPE` menu items as available until the shop
+closes them, while countable `DIRECT`/`PACK` goods still require real stock. The order transaction
+rechecks the flag at its selected location, so a stale screen or chat result cannot bypass it.
+
+The closure resets at the first of two signals: opening a POS shift at that branch, or the guarded
+daily cron after `bms_store_profile.menu_availability_reset_time` (04:00 local time by default).
+Opening at 04:00 rather than midnight avoids putting a sold-out late-night dish back on sale in the
+middle of service. Kitchen and restaurant order screens expose the same one-tap control; neither
+path changes `bms_products.active`.
 
 ### Kitchen stations (`9.54`)
 

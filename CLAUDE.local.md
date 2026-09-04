@@ -3,6 +3,15 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Restaurant chat delivery — 2026-09-04
+
+- `9.55__bms_menu_temporary_unavailability.sql`: เขียนแล้ว แต่ **ยังไม่ได้ apply เข้า dev หรือ production**
+  เพราะเครื่องรอบนี้ไม่มีค่า `POSTGRES_*` สำหรับ compose/host process จึงยังรัน DB contract ไม่ได้
+- เพิ่มธง “หมดวันนี้” ต่อสินค้า x สาขา, รีเซ็ตเมื่อเปิดกะหรือ cron ถึงเวลา (default 04:00),
+  และใช้ policy กลางกับ AI/online/POS/restaurant; pure contract + typecheck ผ่าน
+- UI ตรวจจริงใน browser: **ยังไม่ได้ตรวจ** (dev stack ยังไม่ขึ้นเพราะ env ข้างต้น)
+- งานบรีฟ `docs/business/restaurant-chat-delivery.md`: เฟส 1 อยู่ระหว่าง verify; เฟส 2–5 ยังไม่เริ่ม
+
 **ประวัติงานเก่าทั้งหมด (ทุก § ที่เคยอยู่ในไฟล์นี้) ย้ายไป
 [docs/local-notes-archive.md](docs/local-notes-archive.md)** — ยกไปครบไม่ได้ลบ ก่อนแก้ฟีเจอร์ไหนให้
 เปิดหัวข้อนั้นก่อน (Channel Health, AI Provider Health, Failure Incidents, AI tool-calling, Coupons,

@@ -21,6 +21,7 @@ import bcrypt from "bcryptjs";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { resolveStockConsumptionInTx } from "./stockConsumption";
 import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
@@ -1203,6 +1204,11 @@ export async function openPosShift(input: {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: input.openedBy });
+    // Opening service is one of the two reset signals for "sold out today". Keep it in
+    // the shift transaction so a failed shift-open never silently reopens the menu.
+    const reopenedMenuCount = await resetMenuAvailabilityForLocationInTx(
+      client, tenantId, device.rows[0].location_id
+    );
     const res = await client.query(
       `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float, pharmacist_user_id)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -1218,6 +1224,7 @@ export async function openPosShift(input: {
         locationId: device.rows[0].location_id,
         openingFloat,
         pharmacistUserId: input.pharmacistUserId ?? null,
+        reopenedMenuCount,
       })]
     );
     await client.query("COMMIT");

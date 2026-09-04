@@ -27,7 +27,7 @@ operators must resolve those records before retrying the migration.
 
 | Module | Tables | Key migration |
 | --- | --- | --- |
-| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41` |
+| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_product_menu_unavailability`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41`, `9.55` |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot), `9.24` (snapshot provenance) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |

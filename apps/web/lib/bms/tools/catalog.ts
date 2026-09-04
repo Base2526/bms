@@ -160,6 +160,7 @@ function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null)
     description: product.description?.slice(0, 400) ?? null,
     category: product.category,
     brand: product.brand,
+    availability: product.availability,
     availableTotal: product.availableTotal,
     availableSizes: product.availableSizes.filter((variant) => variant.available > 0),
     createdAt: product.createdAt,
