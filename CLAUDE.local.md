@@ -1938,7 +1938,8 @@ truncate→round · ค่าบริการกลายเป็นของ
 - `9.55` เพิ่มสถานะหมดชั่วคราวรายเมนู/สาขา และใช้ availability policy เดียวกันทุกช่องทาง
 - `9.56` เพิ่มสาขา ประเภทรับของ เวลาสัญญา เวลารับออร์เดอร์ และ human-accept ก่อนยิงตั๋วครัว
 - `9.57` ใช้ POS return engine เดิมเพื่อตัดเมนูออนไลน์รายรายการ, เก็บต้นเหตุถาวร, คืนเงินเข้าคิว และบันทึกส่วนต่างที่ร้านรับ
-- ผ่าน typecheck และ pure contract ของเฟส 1–4; migration/DB contract ยังไม่ได้รันเพราะเครื่องนี้ไม่มี local DB
+- เฟส 5 ใช้ค่าส่ง `flat`, prepaid-only, carrier `OTHER`; เปลี่ยน checklist/seed default เป็นเมนูไม่บังคับสูตร และเพิ่มไกด์ผู้ช่วย 3 เรื่องพร้อมคอร์ปัส
+- ผ่าน typecheck และ pure contract ของเฟส 1–5; migration/DB contract และ browser QA ยังไม่ได้รันเพราะเครื่องนี้ไม่มี local DB/server
 
 > `loginAdmin` ตรวจรหัสผ่านจริงทุก environment แล้ว (`passwordMatches()`, ยืนยัน 2026-08-13) — โน้ตเก่า
 > ที่เขียนว่า "dev ยังไม่ตรวจ" ไม่ตรงกับโค้ดปัจจุบัน

@@ -7,6 +7,7 @@ import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId }
 import { seedFakeProducts } from "@/lib/bms/devSeed";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
 import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
+import { normalizeRestaurantSeedSet } from "@/lib/bms/restaurantCatalogSeed";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -24,8 +25,9 @@ async function handlePOST(req: NextRequest) {
     const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
     const profile = await getStoreProfile(tenantId);
     const businessArchetype = normalizeShopArchetype(profile.businessArchetype);
-    const created = await seedFakeProducts(tenantId, count, businessArchetype);
-    return NextResponse.json({ ok: true, businessArchetype, created });
+    const restaurantSeedSet = normalizeRestaurantSeedSet(body?.restaurantSeedSet);
+    const created = await seedFakeProducts(tenantId, count, businessArchetype, restaurantSeedSet);
+    return NextResponse.json({ ok: true, businessArchetype, restaurantSeedSet, created });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "insert failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });
   }

@@ -23,10 +23,12 @@ import { ensureKitchenStationByNameInTx } from "./kitchenStations";
 import {
   RESTAURANT_DEFAULT_SIZES,
   RESTAURANT_INGREDIENTS,
-  RESTAURANT_MENU,
+  DEFAULT_RESTAURANT_SEED_SET,
   RESTAURANT_MODIFIER_GROUPS,
+  RESTAURANT_SEED_SETS,
   restaurantMenuName,
   restaurantPackUnitName,
+  type RestaurantSeedSet,
 } from "./restaurantCatalogSeed";
 
 const R = (n: number) => Math.floor(Math.random() * n);
@@ -632,7 +634,11 @@ function fakeProductSurfaces(archetype?: ShopArchetype | null): string[] {
  * ทุกแถวลูกจึงต้องประกาศเองให้ครบ — โดยเฉพาะ bms_product_sales_surfaces (9.51)
  * ที่ถ้าลืมจะได้เมนูที่ดู active แต่ยิงที่เครื่องขายไม่เจอ
  */
-async function seedRestaurantCatalog(tenantId: string, count: number) {
+async function seedRestaurantCatalog(
+  tenantId: string,
+  count: number,
+  seedSet: RestaurantSeedSet = DEFAULT_RESTAURANT_SEED_SET
+) {
   const client = await getClient();
   try {
     await client.query("BEGIN");
@@ -655,11 +661,13 @@ async function seedRestaurantCatalog(tenantId: string, count: number) {
     );
     const offset = seq.rows[0]?.n ?? 0;
 
-    // ---- วัตถุดิบ: ชุดเดียวต่อร้าน ----
+    const menu = RESTAURANT_SEED_SETS[seedSet];
+
+    // ---- วัตถุดิบ: ชุดเดียวต่อร้าน และสร้างเฉพาะชุดทดสอบสูตร ----
     // SKU ไม่ผูกกับ offset โดยตั้งใจ กดสร้างซ้ำจึงใช้ของเดิม ไม่ใช่สร้าง "หมูสับ"
     // กองที่สองแล้วสูตรของเมนูรอบใหม่ไปตัดคนละกองกับรอบก่อน
     const ingredientSkus = new Map<string, string>();
-    for (const ingredient of RESTAURANT_INGREDIENTS) {
+    for (const ingredient of seedSet === "recipe" ? RESTAURANT_INGREDIENTS : []) {
       const sku = `FAKE-ING-${ingredient.code}`;
       ingredientSkus.set(ingredient.code, sku);
       const created = await client.query(
@@ -703,8 +711,8 @@ async function seedRestaurantCatalog(tenantId: string, count: number) {
     // ---- เมนู ----
     for (let i = 0; i < count; i++) {
       const n = offset + i;
-      const item = RESTAURANT_MENU[n % RESTAURANT_MENU.length];
-      const cycle = Math.floor(n / RESTAURANT_MENU.length);
+      const item = menu[n % menu.length];
+      const cycle = Math.floor(n / menu.length);
       const sku = cycle === 0 ? `FAKE-${item.code}` : `FAKE-${item.code}-${cycle + 1}`;
       const name = restaurantMenuName(item, n);
       const sizes = item.sizes?.length ? item.sizes : RESTAURANT_DEFAULT_SIZES;
@@ -855,10 +863,15 @@ async function seedRestaurantCatalog(tenantId: string, count: number) {
   }
 }
 
-export async function seedFakeProducts(tenantId: string, count: number, archetype?: ShopArchetype | null) {
+export async function seedFakeProducts(
+  tenantId: string,
+  count: number,
+  archetype?: ShopArchetype | null,
+  restaurantSeedSet: RestaurantSeedSet = DEFAULT_RESTAURANT_SEED_SET
+) {
   // ร้านอาหารมีแคตตาล็อกของตัวเอง (เมนู + วัตถุดิบ + สูตร + สถานีครัว + ตัวเลือก)
   // เพราะชุด food_beverage เป็นอาหารกล่องพร้อมขาย ซึ่งทดสอบครัวไม่ได้เลย
-  if (archetype === "restaurant") return seedRestaurantCatalog(tenantId, count);
+  if (archetype === "restaurant") return seedRestaurantCatalog(tenantId, count, restaurantSeedSet);
   const curated = archetype ? CURATED_SEED_PRODUCTS[archetype] ?? null : null;
   const salesSurfaces = fakeProductSurfaces(archetype);
   if (curated?.length) {

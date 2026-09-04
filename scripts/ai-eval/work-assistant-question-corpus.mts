@@ -60,6 +60,7 @@ export type CorpusCase = Readonly<{
 
 /** Register questions are asked from `/pos`, which searches guides only. */
 const REGISTER = { currentPath: "/admin/pos-manual", pageId: "pos", kind: "guide" } as const;
+const PRODUCTS = { currentPath: "/admin/products", pageId: "products", kind: "guide" } as const;
 /** The Drawer sends the page the user is standing on. Orders is used as a representative page. */
 const ON_ORDERS_PAGE = { currentPath: "/admin/orders", pageId: "orders" } as const;
 /**
@@ -182,6 +183,12 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   // (สูตร/ตัวเลือก/คิวครัว) · ตอนนี้มีหน้าโต๊ะจริงแล้ว คนที่ถามหมายถึงบริการหน้าร้าน
   { q: "ระบบรองรับร้านอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.dine-in" },
   { q: "does BMS support restaurant dine-in", locale: "en", context: { kind: "capability" }, expect: "answer", expectTop: "restaurant.dine-in" },
+  { q: "ปิดเมนูชั่วคราวเฉพาะสาขายังไง", locale: "th", context: PRODUCTS, expect: "answer", expectTop: "restaurant.menu-availability" },
+  { q: "how do I mark a dish sold out for one branch", locale: "en", context: PRODUCTS, expect: "answer", expectTop: "restaurant.menu-availability" },
+  { q: "รับออร์เดอร์เดลิเวอรีเข้าครัวยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "restaurant.delivery-accept" },
+  { q: "accept a paid delivery order into the kitchen", locale: "en", context: REGISTER, expect: "answer", expectTop: "restaurant.delivery-accept" },
+  { q: "ตัดอาหารที่ทำไม่ได้แล้วคืนเงินยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "restaurant.delivery-cancel-refund" },
+  { q: "cancel one delivery item and settle its refund", locale: "en", context: REGISTER, expect: "answer", expectTop: "restaurant.delivery-cancel-refund" },
   { q: "รายงานกะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.shift-reports" },
   { q: "ตั้งค่า scanner", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.device-settings" },
   { q: "ขายยา", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.pharmacist-authorization" },

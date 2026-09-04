@@ -1571,3 +1571,9 @@ re-evaluates coupon eligibility, releases only the cancelled reservation, revers
 loyalty/credit, closes only matching kitchen tickets, writes the audit, and creates non-cash refund
 allocations atomically. Pending refunds and their age are actionable in POS and mirrored on admin
 orders; completion requires a real transfer reference.
+
+Restaurant delivery deliberately uses the existing flat shipping configuration and prepaid order
+lifecycle. COD is not part of this rollout. For an in-house rider, select carrier `OTHER` and record
+the rider name in tracking; live parcel-carrier adapters are not inferred. Sample restaurant data
+offers a quick menu with no ingredient recipes by default and an opt-in recipe set for operators who
+want ingredient-level depletion.

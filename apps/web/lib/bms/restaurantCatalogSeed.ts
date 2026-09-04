@@ -464,6 +464,27 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
 ];
 
+/**
+ * Two explicit demo sets: quick is the onboarding default and needs no ingredient setup;
+ * recipe remains available for restaurants that intentionally want ingredient depletion.
+ */
+export const RESTAURANT_QUICK_MENU: RestaurantMenuItem[] = RESTAURANT_MENU.map((item) => ({
+  ...item,
+  stockPolicy: item.stockPolicy === "DIRECT" ? "DIRECT" : "NON_STOCK",
+  recipe: undefined,
+}));
+export const RESTAURANT_RECIPE_MENU: RestaurantMenuItem[] = RESTAURANT_MENU;
+export const DEFAULT_RESTAURANT_SEED_SET = "quick" as const;
+export const RESTAURANT_SEED_SETS = {
+  quick: RESTAURANT_QUICK_MENU,
+  recipe: RESTAURANT_RECIPE_MENU,
+} as const;
+export type RestaurantSeedSet = keyof typeof RESTAURANT_SEED_SETS;
+
+export function normalizeRestaurantSeedSet(value: unknown): RestaurantSeedSet {
+  return value === "recipe" ? "recipe" : DEFAULT_RESTAURANT_SEED_SET;
+}
+
 export function restaurantPackUnitName(item: RestaurantMenuItem): string {
   if (item.code === "COKE-325") return "กระป๋อง";
   if (item.category === "เครื่องดื่ม") return item.stockPolicy === "DIRECT" ? "ขวด" : "แก้ว";
