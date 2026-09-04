@@ -647,3 +647,16 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
   assert.deepEqual(offenders, [],
     `กฎเหล่านี้ทาสีปุ่มแต่ไม่มี .page นำหน้า จึงแพ้ .pos-root button: ${offenders.join(" · ")}`);
 });
+
+test("ช่องกรองเมนูมีปุ่มล้าง ขึ้นเฉพาะตอนมีข้อความ และคืนโฟกัสให้พิมพ์ต่อ", async () => {
+  // คนหน้าร้านพิมพ์ด้วยนิ้วบนแท็บเล็ต ลบทีละตัวช้ากว่าแตะครั้งเดียวมาก และคำค้นที่ค้างอยู่
+  // ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่ · ปุ่มที่ขึ้นตลอดเวลาแม้ช่องว่างคือปุ่มที่
+  // กดแล้วไม่เกิดอะไร ซึ่งสอนให้คนเลิกเชื่อปุ่มบนแถบนี้
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /\{search && <button type="button" className=\{styles\.searchClear\}/);
+  assert.match(page, /aria-label="ล้างคำค้น"/);
+  // คืนโฟกัสหลังล้าง — ไม่งั้นต้องแตะช่องอีกครั้งก่อนพิมพ์คำใหม่
+  assert.match(page, /setSearch\(""\); searchRef\.current\?\.focus\(\)/);
+  // Escape ล้างได้ด้วยสำหรับเครื่องที่ต่อคีย์บอร์ด/สแกนเนอร์
+  assert.match(page, /event\.key === "Escape" && search/);
+});

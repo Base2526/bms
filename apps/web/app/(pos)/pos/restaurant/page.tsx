@@ -273,6 +273,7 @@ export default function RestaurantPosPage() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategory, setMenuCategory] = useState("");
   // โหมดแจ้งของหมด: ครัวเดินมาบอกทีเดียวหลายอย่าง — เปิดโหมดแล้วทุกการ์ดกลายเป็นสวิตช์
@@ -963,7 +964,18 @@ export default function RestaurantPosPage() {
           <div className={styles.panelHeader}>
             <div><h2>สั่งอาหาร</h2><small>{check ? `${check.tableName} · ${check.guestCount} คน` : "เลือกโต๊ะก่อนเริ่มรับออร์เดอร์"}</small></div>
             <div className={styles.searchRow}>
-              <input className={styles.field} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="กรองเมนู (ไม่จำเป็น — แตะการ์ดได้เลย)" />
+              {/* ปุ่มล้างคำค้น: คนหน้าร้านพิมพ์ด้วยนิ้วบนแท็บเล็ต การลบทีละตัวอักษรช้ากว่าการ
+                  แตะครั้งเดียวมาก และคำค้นที่ค้างอยู่ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่
+                  · ขึ้นเฉพาะตอนมีข้อความ ไม่งั้นเป็นปุ่มที่กดแล้วไม่เกิดอะไรลอยอยู่ตลอดเวลา */}
+              <div className={styles.searchField}>
+                <input ref={searchRef} className={`${styles.field} ${search ? styles.fieldClearable : ""}`}
+                  value={search} onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Escape" && search) { event.preventDefault(); setSearch(""); } }}
+                  placeholder="กรองเมนู (ไม่จำเป็น — แตะการ์ดได้เลย)" />
+                {search && <button type="button" className={styles.searchClear} aria-label="ล้างคำค้น"
+                  title="ล้างคำค้น"
+                  onClick={() => { setSearch(""); searchRef.current?.focus(); }}>✕</button>}
+              </div>
             </div>
           </div>
 
