@@ -26,6 +26,35 @@ import {
 import styles from "./restaurant.module.css";
 
 const TOKEN_KEY = "bms.pos.deviceToken";
+// จำ "ฉันยืนอยู่จอไหน / โต๊ะไหน" ไว้ข้ามการรีเฟรช — ต่อท้ายด้วย device token เพื่อผูกกับ
+// เครื่องนี้เครื่องเดียว (แบบเดียวกับ bms.pos.localTab. ของหน้าค้าปลีก) เครื่องอื่นที่ใช้
+// เบราว์เซอร์เดียวกัน — หรือเครื่องเดิมที่ถูก pair ใหม่ — จะไม่เห็นของกันและกัน
+//
+// **ตั้งใจจำแค่ "ยืนอยู่ไหน" ไม่จำ "กรองอะไรไว้" และไม่จำ "ใครกำลังทำงาน"**:
+//   · โหมดแจ้งของหมด → กลับมาแล้วแตะการ์ดจะเป็นการปิดเมนู ไม่ใช่สั่งอาหาร
+//   · ตัวกรองหมดวันนี้ / หมวดหมู่ / สถานีบนจอครัว → ตัวกรองที่ค้างข้ามรีเฟรชคือการซ่อนงานจริง
+//     (โค้ดปัจจุบันปลดตัวกรองเองเมื่อไม่มีงานด้วยเหตุผลนี้)
+//   · ผู้ปฏิบัติงาน + PIN → PIN ไม่ลง localStorage เด็ดขาด และชื่อคนที่ค้างบนหัวจอทำให้
+//     เข้าใจผิดว่าใครกำลังทำงานอยู่
+const LOCAL_SCREEN_KEY_PREFIX = "bms.pos.restaurantScreen.";
+const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
+// บิลที่ไม่มีใครแตะนานกว่านี้ไม่คืนให้ (นับจากการแตะครั้งล่าสุด ไม่ใช่ตอนเปิดโต๊ะ) —
+// กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
+// ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
+const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+type RestaurantScreen = "ORDER" | "FLOOR" | "KITCHEN";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN"];
+// จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
+// เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
+//
+// **ห้ามเขียนจอที่เปิดอยู่กลับลง URL** — เคยลองแล้วพัง: พอ replaceState ใส่ ?screen= ให้เอง
+// ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
+// การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
+const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", kitchen: "KITCHEN", kds: "KITCHEN",
+};
+const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
+const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
 type Session = { device: { id: string; code: string; name: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; vat: { cashRounding?: CashRounding } };
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
@@ -41,7 +70,14 @@ type MenuItem = SearchItem & {
   imageUrl: string | null;
   sellable: boolean;
   availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
+  unavailableResetsAt: string | null;
+  unavailableReason: string | null;
 };
+// เหตุผลที่ครัวบอกจริงตอนของหมด — เก็บลงหลักฐานว่าปิดเพราะอะไร ไม่ใช่คำว่า "หมดวันนี้"
+// ซึ่งเป็นแค่การพูดซ้ำสิ่งที่สถานะบอกอยู่แล้ว
+const MENU_SOLD_OUT_REASONS = ["วัตถุดิบหมด", "เตา/เครื่องไม่พร้อม", "งดขายรอบนี้"] as const;
+const MENU_QTY_SHORTCUTS = [1, 2, 3, 5] as const;
+const KITCHEN_NOTE_SHORTCUTS = ["ไม่เผ็ด", "แยกน้ำ", "ไม่ใส่ผัก", "ไม่ใส่ถั่ว"] as const;
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
@@ -116,31 +152,46 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
   }, new Map<string, { meta: ScanModifier; items: ScanModifier[] }>()).values());
   return <div className={styles.modifierList}>{groups.map(({ meta, items }) => {
     const selectedInGroup = items.filter((item) => selected.includes(item.code));
-    return <fieldset key={meta.groupCode} style={{ border: 0, padding: 0, margin: 0 }}>
-      <legend><strong>{meta.groupName}</strong>{meta.minSelect > 0 ? ` · เลือกอย่างน้อย ${meta.minSelect}` : ""}</legend>
-      {items.map((modifier) => {
-        const checked = selected.includes(modifier.code);
-        const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
-        return <label className={styles.modifierChoice} key={modifier.code}>
-          <input
-            type={meta.selectionType === "SINGLE" ? "radio" : "checkbox"}
-            name={`modifier-${meta.groupCode}`}
-            checked={checked}
-            disabled={!checked && atLimit}
-            onChange={(event) => {
-              if (meta.selectionType === "SINGLE") {
-                const groupCodes = new Set(items.map((item) => item.code));
-                onChange([...selected.filter((code) => !groupCodes.has(code)), modifier.code]);
-                return;
-              }
-              onChange(event.target.checked
-                ? [...selected, modifier.code]
-                : selected.filter((code) => code !== modifier.code));
-            }}
-          />
-          <span>{modifier.name}{modifier.priceDelta > 0 ? ` (+฿${money(modifier.priceDelta)})` : ""}</span>
-        </label>;
-      })}
+    // บอกกติกาให้ครบ ไม่ใช่แค่ขั้นต่ำ — คนหน้าร้านต้องรู้ก่อนแตะว่าเลือกได้กี่อย่าง
+    const single = meta.selectionType === "SINGLE";
+    const rule = [
+      single || meta.maxSelect === 1 ? "เลือกได้ 1"
+        : meta.maxSelect != null ? `เลือกได้ไม่เกิน ${meta.maxSelect}`
+        : "เลือกได้หลายอย่าง",
+      meta.minSelect > 0 ? `ต้องเลือกอย่างน้อย ${meta.minSelect}` : null,
+    ].filter(Boolean).join(" · ");
+    return <fieldset key={meta.groupCode} className={styles.modifierGroup}>
+      <legend className={styles.fieldLabel}>{meta.groupName} <span className={styles.fieldRule}>· {rule}</span></legend>
+      {/* ชิปแทนกล่องเต็มแถว — เมนูที่มี 4–5 ตัวเลือกไม่ต้องเลื่อนกล่องอีก · ยังเป็น
+          radio/checkbox จริงข้างใน (ซ่อนไว้) จึงคุมด้วยคีย์บอร์ดและอ่านด้วย screen reader ได้ */}
+      <div className={styles.modifierChips}>
+        {items.map((modifier) => {
+          const checked = selected.includes(modifier.code);
+          const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
+          return <label className={`${styles.modifierChip} ${checked ? styles.modifierChipOn : ""} ${!checked && atLimit ? styles.modifierChipOff : ""}`} key={modifier.code}>
+            <input
+              className={styles.modifierChipInput}
+              type={single ? "radio" : "checkbox"}
+              name={`modifier-${meta.groupCode}`}
+              checked={checked}
+              disabled={!checked && atLimit}
+              onChange={(event) => {
+                if (single) {
+                  const groupCodes = new Set(items.map((item) => item.code));
+                  onChange([...selected.filter((code) => !groupCodes.has(code)), modifier.code]);
+                  return;
+                }
+                onChange(event.target.checked
+                  ? [...selected, modifier.code]
+                  : selected.filter((code) => code !== modifier.code));
+              }}
+            />
+            <span>{modifier.name}</span>
+            {/* ส่วนต่างราคาต้องเห็นก่อนกด ไม่ใช่ไปโผล่ตอนบิลออก */}
+            {modifier.priceDelta > 0 && <small>+฿{money(modifier.priceDelta)}</small>}
+          </label>;
+        })}
+      </div>
     </fieldset>;
   })}</div>;
 }
@@ -225,15 +276,28 @@ export default function RestaurantPosPage() {
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
   // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
   // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
-  const [screen, setScreen] = useState<"ORDER" | "FLOOR" | "KITCHEN">("ORDER");
+  const [screen, setScreen] = useState<RestaurantScreen>("ORDER");
+  // ต้องอ่านค่าที่จำไว้ให้เสร็จก่อน effect ที่เขียนทับจะเริ่มทำงาน — สลับลำดับกันแล้วค่า
+  // เริ่มต้น ("ORDER" / ไม่มีบิล) จะทับของที่จำไว้ตั้งแต่ก่อนที่ใครจะได้อ่านมัน
+  // (กับดักเดียวกับ localDraftRestoredRef ของหน้าค้าปลีก)
+  const localViewRestoredRef = useRef(false);
+  // เป็น state ไม่ใช่ ref เพราะ effect ที่เขียนต้องรอ "คืนค่าเสร็จ" ไม่ใช่ "เริ่มคืนค่า" —
+  // การคืนบิลเป็น async ถ้าไม่รอ effect ที่ลบบิลจะวิ่งไปก่อนแล้วลบค่าที่ยังไม่ได้อ่าน
+  const [viewRestored, setViewRestored] = useState(false);
   const [actorUserId, setActorUserId] = useState("");
   const [actorPin, setActorPin] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategory, setMenuCategory] = useState("");
+  // โหมดแจ้งของหมด: ครัวเดินมาบอกทีเดียวหลายอย่าง — เปิดโหมดแล้วทุกการ์ดกลายเป็นสวิตช์
+  // ปิดโหมดแล้วการ์ดกลับมาเป็นปุ่มสั่งอาหารล้วน ไม่มีปุ่มปิดขายค้างอยู่ใต้ทุกเมนูตลอดกะ
+  const [menuManage, setMenuManage] = useState(false);
+  const [menuOnlySoldOut, setMenuOnlySoldOut] = useState(false);
+  const [soldOutSheet, setSoldOutSheet] = useState<MenuItem | null>(null);
   const [menuHit, setMenuHit] = useState<ScanHit | null>(null);
   const [modifierCodes, setModifierCodes] = useState<string[]>([]);
   const [kitchenNote, setKitchenNote] = useState("");
@@ -509,23 +573,98 @@ export default function RestaurantPosPage() {
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
-  async function toggleMenuAvailability(item: MenuItem) {
+  async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
-      await json("/api/pos/restaurant/menu", {
+      const result = await json("/api/pos/restaurant/menu", {
         method: "POST",
         body: JSON.stringify(auth({
           productSku: item.sku,
-          unavailable: item.availability !== "SOLD_OUT_TODAY",
-          reason: item.availability === "SOLD_OUT_TODAY" ? null : "หมดวันนี้",
+          unavailable,
+          reason: unavailable ? reason ?? null : null,
         })),
       });
       await loadMenu();
-      message.success(item.availability === "SOLD_OUT_TODAY" ? "เปิดขายเมนูแล้ว" : "ปิดเมนูจนถึงรอบเปิดร้านถัดไปแล้ว");
+      // บอกเวลาที่จะกลับมาขายเองด้วยเสมอ — ไม่งั้นคนกดต้องจำกฎรีเซ็ตวันบริการของร้านเอง
+      const back = typeof result?.resetsAt === "string" ? timeOf(result.resetsAt) : "";
+      message.success(unavailable
+        ? `ปิด “${item.name}” แล้ว${back ? ` · เปิดขายอีกครั้ง ${back} น.` : ""}`
+        : `เปิดขาย “${item.name}” แล้ว`);
     });
   }
+  function toggleMenuAvailability(item: MenuItem) {
+    return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", "แจ้งจากครัว");
+  }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
+  /**
+   * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
+   *
+   * ทำไมต้องคืนจอ: interval 5 วินาทีของจอครัวอยู่ใต้เงื่อนไข screen === "KITCHEN"
+   * และเสียงเตือนตั๋วใหม่ถูกเรียกจาก loadTickets ของ interval นั้น — แท็บเล็ตติดผนัง
+   * ที่หลับแล้วตื่นมารีโหลด (หรือถูกเบราว์เซอร์ดีดจาก memory) จะเด้งกลับจอสั่งอาหาร
+   * แล้ว **หยุดดึงตั๋วและหยุดส่งเสียงทั้งกะ** โดยไม่มีอะไรบนจอบอก · บัญชี pos_only
+   * เปิด /admin/kitchen แทนไม่ได้ ครัวจึงไม่มีทางหนีไปหน้าอื่น
+   */
+  useEffect(() => {
+    if (!token || localViewRestoredRef.current) return;
+    localViewRestoredRef.current = true;
+    let fromUrl: RestaurantScreen | undefined;
+    try {
+      const asked = new URLSearchParams(window.location.search).get("screen");
+      fromUrl = asked ? SCREEN_FROM_URL[asked.trim().toLowerCase()] : undefined;
+    } catch { /* URL แปลก ๆ ไม่ควรทำให้เปิดจอไม่ได้ */ }
+    let savedScreen: string | null = null;
+    let savedCheckRaw: string | null = null;
+    try {
+      savedScreen = window.localStorage.getItem(LOCAL_SCREEN_KEY_PREFIX + token);
+      savedCheckRaw = window.localStorage.getItem(LOCAL_CHECK_KEY_PREFIX + token);
+    } catch { /* โหมดส่วนตัว */ }
+    // ลิงก์ที่ปักหมุดไว้ชนะค่าที่จำไว้ — แต่ชนะแค่ "จอไหน" ไม่ใช่ข้ามการคืนบิลที่ทำอยู่
+    if (fromUrl) setScreen(fromUrl);
+    else if (savedScreen && (RESTAURANT_SCREENS as string[]).includes(savedScreen)) {
+      setScreen(savedScreen as RestaurantScreen);
+    }
+    if (!savedCheckRaw) { setViewRestored(true); return; }
+    try {
+      const saved = JSON.parse(savedCheckRaw) as { id?: unknown; savedAt?: unknown };
+      const id = typeof saved.id === "string" ? saved.id : "";
+      const savedAt = Number(saved.savedAt ?? 0);
+      if (!id || !(savedAt > 0) || Date.now() - savedAt > LOCAL_CHECK_MAX_AGE_MS) {
+        window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + token);
+        setViewRestored(true);
+        return;
+      }
+      // ยืนยันกับ server ทุกครั้ง — บิลอาจถูกเก็บเงิน/ยกเลิก/ย้ายโต๊ะที่เครื่องอื่นไปแล้ว
+      void loadCheck(id)
+        .then((restored) => {
+          if (restored && isOpenCheckStatus(restored.status)) setSelectedTableId(restored.tableId);
+          else setCheck(null);
+        })
+        .catch(() => setCheck(null))
+        .finally(() => setViewRestored(true));
+    } catch { setViewRestored(true); /* ค่าที่จำไว้พัง = เริ่มใหม่ ไม่ใช่ทำให้เปิดจอไม่ได้ */ }
+  }, [token]);
+  useEffect(() => {
+    if (!token || !viewRestored) return;
+    try { window.localStorage.setItem(LOCAL_SCREEN_KEY_PREFIX + token, screen); } catch { /* โหมดส่วนตัว */ }
+  }, [screen, token, viewRestored]);
+  // จำบิลที่กำลังทำอยู่ — เก็บแค่ id กับเวลา ไม่เก็บรายการ/ยอดเงิน (ยอดต้องมาจาก server
+  // เสมอ · เวลาอัปเดตทุกครั้งที่บิลถูกโหลดใหม่ จึงเป็น "นับจากการแตะครั้งล่าสุด")
+  useEffect(() => {
+    if (!token || !viewRestored) return;
+    const key = LOCAL_CHECK_KEY_PREFIX + token;
+    try {
+      if (check && isOpenCheckStatus(check.status)) {
+        window.localStorage.setItem(key, JSON.stringify({ id: check.id, savedAt: Date.now() }));
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch { /* โหมดส่วนตัว */ }
+    // viewRestored อยู่ใน deps ด้วย ไม่ใช่แค่ในเงื่อนไข — บิลที่คืนไม่สำเร็จ (ถูกเก็บเงิน/
+    // ยกเลิกไปแล้ว) ทำให้ check เป็น null ตั้งแต่ก่อนธงจะปัก ถ้าไม่ให้ effect วิ่งอีกรอบ
+    // ตอนธงปัก คีย์ที่ตายแล้วจะค้างอยู่ตลอดไปและเสีย GET ทิ้งทุกครั้งที่เปิดจอ
+  }, [check, token, viewRestored]);
   // กรองจากเมนูที่โหลดไว้แล้วในเครื่อง ไม่ยิง API ซ้ำ — ค้นหาที่นี่เป็นตัวช่วยกรองกริด
   // ไม่ใช่ทางเดียวเหมือนเดิม (เมนูร้านอาหารมีไม่มาก พิมพ์ทุกครั้งเสียเวลาเปล่า)
   const menuStations = useMemo(() => {
@@ -533,14 +672,32 @@ export default function RestaurantPosPage() {
     menuItems.forEach((item) => { if (item.kitchenStation) seen.add(item.kitchenStation); });
     return [...seen];
   }, [menuItems]);
+  // ราคาต่อหน่วยรวมส่วนต่างของตัวเลือก — คิดที่เดียวแล้วใช้ทั้งบรรทัดสรุปและข้อความบนปุ่ม
+  // (เดิมสูตรเดียวกันถูกเขียนซ้ำสองครั้งในข้อความเดียว) · price_delta เป็นข้อมูลฝั่ง server
+  // เสมอ (9.45) จอแค่แสดงให้เห็นก่อนกด ไม่ได้เป็นคนตั้งราคา
+  const menuHitUnitPrice = useMemo(() => {
+    if (!menuHit) return 0;
+    return menuHit.packPrice + menuHit.modifiers
+      .filter((modifier) => modifierCodes.includes(modifier.code))
+      .reduce((sum, modifier) => sum + modifier.priceDelta, 0);
+  }, [menuHit, modifierCodes]);
+  const menuHitTotal = menuHitUnitPrice * menuQty;
+  const soldOutCount = useMemo(
+    () => menuItems.filter((item) => item.availability === "SOLD_OUT_TODAY").length,
+    [menuItems]
+  );
   const visibleMenuItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     return menuItems.filter((item) => {
+      if (menuOnlySoldOut && item.availability !== "SOLD_OUT_TODAY") return false;
       if (menuCategory && (item.kitchenStation ?? "") !== menuCategory) return false;
       if (!q) return true;
       return item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
     });
-  }, [menuItems, menuCategory, search]);
+  }, [menuItems, menuCategory, menuOnlySoldOut, search]);
+  // ตัวกรองที่ค้างอยู่กับกริดว่างอ่านได้ว่า "ระบบพัง" — ปลดเองเมื่อเปิดขายครบแล้ว
+  // (กติกาเดียวกับตัวกรองสถานีบนจอครัว)
+  useEffect(() => { if (menuOnlySoldOut && soldOutCount === 0) setMenuOnlySoldOut(false); }, [menuOnlySoldOut, soldOutCount]);
   // KDS/floor are operational screens, so stale data is more dangerous than a
   // small bounded poll. The API remains branch-scoped by the device token.
   useEffect(() => {
@@ -834,7 +991,18 @@ export default function RestaurantPosPage() {
           <div className={styles.panelHeader}>
             <div><h2>สั่งอาหาร</h2><small>{check ? `${check.tableName} · ${check.guestCount} คน` : "เลือกโต๊ะก่อนเริ่มรับออร์เดอร์"}</small></div>
             <div className={styles.searchRow}>
-              <input className={styles.field} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="กรองเมนู (ไม่จำเป็น — แตะการ์ดได้เลย)" />
+              {/* ปุ่มล้างคำค้น: คนหน้าร้านพิมพ์ด้วยนิ้วบนแท็บเล็ต การลบทีละตัวอักษรช้ากว่าการ
+                  แตะครั้งเดียวมาก และคำค้นที่ค้างอยู่ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่
+                  · ขึ้นเฉพาะตอนมีข้อความ ไม่งั้นเป็นปุ่มที่กดแล้วไม่เกิดอะไรลอยอยู่ตลอดเวลา */}
+              <div className={styles.searchField}>
+                <input ref={searchRef} className={`${styles.field} ${search ? styles.fieldClearable : ""}`}
+                  value={search} onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Escape" && search) { event.preventDefault(); setSearch(""); } }}
+                  placeholder="กรองเมนู (ไม่จำเป็น — แตะการ์ดได้เลย)" />
+                {search && <button type="button" className={styles.searchClear} aria-label="ล้างคำค้น"
+                  title="ล้างคำค้น"
+                  onClick={() => { setSearch(""); searchRef.current?.focus(); }}>✕</button>}
+              </div>
             </div>
           </div>
 
@@ -867,6 +1035,19 @@ export default function RestaurantPosPage() {
                   <span className={styles.catCount}>{menuItems.filter((item) => item.kitchenStation === stationName).length} เมนู</span>
                 </button>)}
               </div>}
+              {/* งานปิด/เปิดเมนูเป็นงานวันละไม่กี่ครั้ง จึงอยู่บนแถบเครื่องมือแถวเดียว
+                  ไม่ใช่แถบใต้การ์ดทุกใบตลอดกะ (ซึ่งอ่านเป็น "สถานะ" มากกว่า "ปุ่ม") */}
+              <div className={styles.menuTools}>
+                <button type="button" aria-pressed={menuManage}
+                  className={`${styles.menuTool} ${menuManage ? styles.menuToolOn : ""}`}
+                  onClick={() => setMenuManage((on) => !on)}>{menuManage ? "เสร็จแล้ว" : "แจ้งของหมด"}</button>
+                {soldOutCount > 0 && <button type="button" aria-pressed={menuOnlySoldOut}
+                  className={`${styles.menuTool} ${styles.menuToolAlert} ${menuOnlySoldOut ? styles.menuToolOn : ""}`}
+                  onClick={() => setMenuOnlySoldOut((on) => !on)}>หมดวันนี้ {soldOutCount}</button>}
+                <span className={styles.menuToolNote}>{menuManage
+                  ? "สลับสวิตช์ที่การ์ดเพื่อปิด/เปิดเมนู แล้วกดเสร็จแล้ว"
+                  : "แตะการ์ดเพื่อสั่ง · ปุ่ม ⋯ มุมการ์ดเพื่อปิดขาย"}</span>
+              </div>
               <div className={styles.panelScroll}>{visibleMenuItems.length === 0
                 ? <div className={styles.menuEmpty}>{menuItems.length === 0
                     ? "ยังไม่มีเมนูที่ขายที่โต๊ะได้ — สินค้าต้องเปิดขาย มีราคา และไม่ได้ถูกใช้เป็นวัตถุดิบของสูตรอื่น"
@@ -874,8 +1055,20 @@ export default function RestaurantPosPage() {
                 : <div className={styles.dishGrid}>{visibleMenuItems.map((item) => {
                     const tint = menuCardTint(item.kitchenStation, menuStations);
                     const inCheck = qtyInCheckBySku.get(item.sku) ?? 0;
-                    return <div key={item.sku} className={`${styles.dishCard} ${!item.sellable ? styles.dishCardUnavailable : ""}`}>
-                      <button type="button" className={styles.dishSelect} disabled={!item.sellable} onClick={() => void chooseMenu(item)}>
+                    const soldOutToday = item.availability === "SOLD_OUT_TODAY";
+                    // การ์ดที่ปิดขายต้อง "เงียบ" ไม่ใช่ดังที่สุดบนจอ — กริดนี้มีไว้สั่งอาหาร
+                    // ของที่สั่งไม่ได้ควรจางลงจนตากวาดผ่าน (รูปขาวดำ + พื้นจาง + ชิปแดงเล็ก)
+                    // แทนแถบแดงทึบทับรูปอาหารกับปุ่มเต็มความกว้างที่ทำให้การ์ดสูงไม่เท่าเพื่อนในแถว
+                    const backAt = soldOutToday ? timeOf(item.unavailableResetsAt) : "";
+                    const outNote = soldOutToday
+                      ? [item.unavailableReason, backAt ? `เปิดเอง ${backAt} น.` : null].filter(Boolean).join(" · ")
+                      : "ยังไม่มีของในสาขานี้";
+                    return <div key={item.sku} className={`${styles.dishCard} ${!item.sellable ? styles.dishCardUnavailable : ""} ${menuManage ? "" : styles.dishCardKebab}`}>
+                      {/* เมนูที่ปิดวันนี้ "แตะการ์ด = เปิดขาย" — การ์ดนี้สั่งอาหารไม่ได้อยู่แล้ว
+                          การแตะจึงว่างอยู่ ใช้ให้เป็นประโยชน์แทนที่จะเพิ่มปุ่มและความสูง
+                          · ของที่สต็อกหมดจริงยังกดไม่ได้ เพราะไม่มีอะไรให้ "เปิด" */}
+                      <button type="button" className={styles.dishSelect} disabled={!item.sellable && !soldOutToday}
+                        onClick={() => { if (soldOutToday) setSoldOutSheet(item); else void chooseMenu(item); }}>
                       <span className={styles.dishArt} style={{ background: tint.bg, color: tint.ink }}>
                         {item.imageUrl
                           ? <img src={item.imageUrl} alt="" />
@@ -884,17 +1077,28 @@ export default function RestaurantPosPage() {
                       {inCheck > 0 && <span className={styles.dishQty}>{inCheck}</span>}
                       <span className={styles.dishBody}>
                         <span className={styles.dishName}>{item.name}</span>
+                        {!item.sellable && outNote && <span className={styles.dishOutNote}>{outNote}</span>}
                         <span className={styles.dishFoot}>
                           <span className={styles.dishPrice}><span className={styles.baht}>฿</span>{money(item.price)}</span>
-                          {item.hasModifiers && <span className={styles.dishModHint}>มีตัวเลือก</span>}
+                          {soldOutToday
+                            ? <span className={styles.dishTapHint}>แตะเพื่อเปิดขาย</span>
+                            : item.hasModifiers && <span className={styles.dishModHint}>มีตัวเลือก</span>}
                         </span>
                       </span>
-                      {item.kitchenStation && <span className={styles.dishStation} style={{ background: tint.bg, color: tint.ink }}>{item.kitchenStation}</span>}
-                      {!item.sellable && <span className={styles.dishUnavailableLabel}>{item.availability === "SOLD_OUT_TODAY" ? "วันนี้หมด" : "สต็อกหมด"}</span>}
+                      {/* ชิปสถานะแทนป้ายสถานี — ตอนสั่งไม่ได้ สถานีไม่ใช่ข้อมูลที่ต้องรู้ */}
+                      {!item.sellable
+                        ? <span className={styles.dishOutChip}>{soldOutToday ? "หมดวันนี้" : "สต็อกหมด"}</span>
+                        : item.kitchenStation && <span className={styles.dishStation} style={{ background: tint.bg, color: tint.ink }}>{item.kitchenStation}</span>}
                       </button>
-                      <button type="button" className={styles.dishAvailabilityButton} onClick={() => void toggleMenuAvailability(item)}>
-                        {item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "หมดวันนี้"}
-                      </button>
+                      {menuManage
+                        ? <div className={styles.dishManageRow}>
+                            <span>{soldOutToday ? "ปิดขายอยู่" : "ขายอยู่"}</span>
+                            <button type="button" className={styles.dishSwitch} aria-pressed={!soldOutToday}
+                              aria-label={`สลับสถานะขาย ${item.name}`}
+                              onClick={() => void toggleMenuAvailability(item)} />
+                          </div>
+                        : <button type="button" className={styles.dishKebab} aria-label={`จัดการเมนู ${item.name}`}
+                            onClick={() => setSoldOutSheet(item)}><MoreOutlined /></button>}
                     </div>;
                   })}</div>}</div>
             </>}
@@ -973,8 +1177,22 @@ export default function RestaurantPosPage() {
                     {item.packPrice != null && <span className={`${styles.itemPrice} ${dropped ? styles.itemPriceVoid : ""}`} title={`ราคาต่อ${item.unitName ?? "หน่วย"}`}><span className={styles.baht}>฿</span>{money(item.packPrice)}</span>}
                     {/* สั่งซ้ำขึ้นเฉพาะบรรทัดที่ส่งครัวไปแล้วหรือถูกยกเลิก — บรรทัด NEW ยังแก้ได้
                         ที่การ์ดเมนูตรงหน้าอยู่แล้ว และช่องนี้เป็นที่ของปุ่มลบ */}
-                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain} title={`สั่ง ${item.productName} ซ้ำพร้อมตัวเลือกเดิม`} aria-label={`สั่ง ${item.productName} ซ้ำ`} disabled={working} onClick={() => void reorderLine(item)}><ReloadOutlined /></button>}
-                    {item.status === "NEW" && <button type="button" className={styles.itemRemove} aria-label="ลบรายการ" disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}><CloseCircleOutlined /></button>}
+                    {/* คำบนปุ่มเปลี่ยนตามสถานะบรรทัด: บรรทัดที่ครัวยกเลิก อาหารไม่เคยถึงลูกค้า
+                        สิ่งที่คนกดกำลังทำคือ "ทำใหม่ให้" ไม่ใช่ "เอาเพิ่มอีกที่" — ไอคอน ⟳ ตัวเดียว
+                        พูดสองเรื่องนี้ไม่ได้ และ ⟳ บนจอเดียวกันนี้ยังแปลว่า "รีเฟรช" อยู่อีกที่ */}
+                    {item.status !== "NEW" && <button type="button" className={styles.itemAgain}
+                      title={`สั่ง ${item.productName} ${dropped || stillCharged ? "ใหม่" : "ซ้ำ"}พร้อมตัวเลือกเดิม`}
+                      aria-label={`สั่ง ${item.productName} ${dropped || stillCharged ? "ใหม่" : "ซ้ำ"}พร้อมตัวเลือกเดิม`}
+                      disabled={working} onClick={() => void reorderLine(item)}>
+                      {dropped || stillCharged ? "สั่งใหม่" : "สั่งซ้ำ"}
+                    </button>}
+                    {/* คอลัมน์นี้เป็นข้อความทั้งคอลัมน์ — ปุ่มเดียวที่เป็นสัญลักษณ์ทำให้ตาต้องสลับ
+                        วิธีอ่านกลางคัน และ ⊗ อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
+                        · ไม่ต้องถามยืนยัน: บรรทัด NEW ยังไม่มีตั๋วครัว ไม่มีการจองวัตถุดิบ ไม่มีเงินขยับ
+                        และเผลอลบแล้วแตะการ์ดเมนูใบเดิมก็กลับมา (ต่างจาก "ยกเลิกบิล" ที่ต้องมี PIN) */}
+                    {item.status === "NEW" && <button type="button" className={styles.itemRemove}
+                      aria-label={`ลบ ${item.productName} ออกจากบิล`} title={`ลบ ${item.productName} ออกจากบิล`}
+                      disabled={working} onClick={() => void action("remove_item", { itemId: item.id })}>ลบ</button>}
                   </span>
                 </article>;
               })}
@@ -1018,16 +1236,19 @@ export default function RestaurantPosPage() {
                 {menuItems.map((item) => <button type="button" key={item.sku}
                   className={item.availability === "SOLD_OUT_TODAY" ? styles.kitchenMenuSoldOut : ""}
                   onClick={() => void toggleMenuAvailability(item)}>
-                  <span>{item.name}</span><b>{item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "หมดวันนี้"}</b>
+                  <span>{item.name}{item.availability === "SOLD_OUT_TODAY" && item.unavailableReason ? ` · ${item.unavailableReason}` : ""}</span>
+                  <b>{item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "ปิดขายวันนี้"}</b>
                 </button>)}
               </div>
             </details>
             <button type="button"
+              aria-pressed={stationFilter === null}
               className={`${styles.kitchenFilter} ${stationFilter === null ? styles.kitchenFilterOn : ""}`}
               onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets.filter(openTicket))}</button>
             {stationFilters.map((filter) => {
               const key = stationFilterKey(filter);
               return <button key={key} type="button"
+                aria-pressed={stationFilter === key}
                 className={`${styles.kitchenFilter} ${stationFilter === key ? styles.kitchenFilterOn : ""}`}
                 onClick={() => setStationFilter(key)}>
                 {filter.name} {countKitchenDishes(tickets.filter((row) => openTicket(row) && ticketMatchesStation(row, filter)))}
@@ -1036,6 +1257,7 @@ export default function RestaurantPosPage() {
             {/* ปุ่ม "ไม่ระบุสถานี" โผล่เฉพาะตอนมีของอยู่จริง — ปุ่มที่ว่างตลอดเวลาสอนให้ครัว
                 เลิกอ่านตัวเลขบนแถบนี้ */}
             {unassignedOpen.length > 0 && <button type="button"
+              aria-pressed={stationFilter === "UNASSIGNED"}
               className={`${styles.kitchenFilter} ${stationFilter === "UNASSIGNED" ? styles.kitchenFilterOn : ""}`}
               onClick={() => setStationFilter("UNASSIGNED")}>
               ไม่ระบุสถานี {countKitchenDishes(unassignedOpen)}
@@ -1152,19 +1374,62 @@ export default function RestaurantPosPage() {
     </Modal>
     <Modal title={`เปิดบิล ${openTable?.name ?? ""}`} open={Boolean(openTable)} onCancel={() => setOpenTable(null)} onOk={() => void openCheck()} confirmLoading={working} okText="เปิดโต๊ะ" getContainer={modalContainer}><div className={styles.modalGrid}><label>จำนวนลูกค้า<input type="number" min={1} max={500} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} /></label></div></Modal>
     <Modal
-      title={menuHit?.productName ?? "เพิ่มเมนู"}
+      title={menuHit
+        ? <span className={styles.menuModalTitle}>{menuHit.productName}
+            <small>{menuHit.size !== "-" ? `${menuHit.size} · ` : ""}฿{money(menuHit.packPrice)} / {menuHit.unitName}</small>
+          </span>
+        : "เพิ่มเมนู"}
       open={Boolean(menuHit)}
       onCancel={() => setMenuHit(null)}
       onOk={() => void addMenu()}
       confirmLoading={working}
-      okText="เพิ่มในบิล"
+      okText={`เพิ่มในบิล · ฿${money(menuHitTotal)}`}
+      cancelText="ยกเลิก"
       getContainer={modalContainer}
     >
       {menuHit && <div className={styles.modalGrid}>
-        <Alert type="info" message={`${menuHit.size} · ฿${money(menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0))} / ${menuHit.unitName} · รวม ${menuQty} รายการ ฿${money((menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * menuQty)}`} />
-        <label>จำนวน<input type="number" min={1} max={9999} value={menuQty} onChange={(event) => setMenuQty(Number(event.target.value))} /></label>
+        {/* จำนวนเป็น stepper ไม่ใช่ช่องพิมพ์ — บนแท็บเล็ตการพิมพ์เลขตัวเดียวต้องเรียกคีย์บอร์ด
+            ขึ้นมาบังครึ่งจอ · ชิป 1–5 ไว้ให้โต๊ะที่สั่งทีละหลายที่ */}
+        <div>
+          <span className={styles.fieldLabel}>จำนวน</span>
+          <div className={styles.qtyRow}>
+            <div className={styles.stepper}>
+              <button type="button" aria-label="ลดจำนวน" disabled={menuQty <= 1}
+                onClick={() => setMenuQty((current) => Math.max(1, current - 1))}>−</button>
+              <span className={styles.stepperValue} aria-live="polite">{menuQty}</span>
+              <button type="button" aria-label="เพิ่มจำนวน" disabled={menuQty >= 99}
+                onClick={() => setMenuQty((current) => Math.min(99, current + 1))}>+</button>
+            </div>
+            <div className={styles.quickQty}>
+              {MENU_QTY_SHORTCUTS.map((n) => <button key={n} type="button" aria-pressed={menuQty === n}
+                className={`${styles.quickQtyBtn} ${menuQty === n ? styles.quickQtyOn : ""}`}
+                onClick={() => setMenuQty(n)}>{n}</button>)}
+            </div>
+          </div>
+        </div>
         {menuHit.modifiers.length > 0 && <MenuModifierGroups modifiers={menuHit.modifiers} selected={modifierCodes} onChange={setModifierCodes} />}
-        <label>โน้ตถึงครัว<textarea rows={3} maxLength={300} value={kitchenNote} onChange={(event) => setKitchenNote(event.target.value)} placeholder="เช่น ไม่เผ็ด, แยกน้ำ" /></label>
+        <div>
+          <span className={styles.fieldLabel}>โน้ตถึงครัว <span className={styles.fieldRule}>· ไม่บังคับ</span></span>
+          {/* คำที่ครัวเจอทุกวันไม่ควรต้องพิมพ์ใหม่ทุกครั้ง — ชิปเติมข้อความให้แล้วพิมพ์ต่อได้ */}
+          <div className={styles.noteChips}>
+            {KITCHEN_NOTE_SHORTCUTS.map((text) => {
+              const parts = kitchenNote.split(",").map((part) => part.trim()).filter(Boolean);
+              const on = parts.includes(text);
+              return <button key={text} type="button" aria-pressed={on}
+                className={`${styles.noteChip} ${on ? styles.noteChipOn : ""}`}
+                onClick={() => setKitchenNote((on ? parts.filter((part) => part !== text) : [...parts, text]).join(", "))}>
+                {on ? text : `+ ${text}`}
+              </button>;
+            })}
+          </div>
+          <textarea rows={2} maxLength={300} value={kitchenNote} className={styles.noteBox}
+            onChange={(event) => setKitchenNote(event.target.value)} placeholder="พิมพ์เองได้" />
+        </div>
+        {/* ยอดรวมอยู่บนปุ่มด้วย (okText) — บรรทัดนี้บอก "มาจากไหน" ให้ตรวจก่อนกด */}
+        <div className={styles.menuTotalRow}>
+          <span>{`฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? " (รวมตัวเลือก)" : ` / ${menuHit.unitName}`}`}</span>
+          <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
+        </div>
       </div>}
     </Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
@@ -1190,6 +1455,38 @@ export default function RestaurantPosPage() {
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>แก้จำนวนคน</button>
         <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { setMoreOpen(false); openCancel(); }}><CloseCircleOutlined /> ยกเลิกบิล</button>
       </div>
+    </Modal>
+    {/* ปิดขายเป็นงานที่ย้อนคืนยาก (เมนูหายจากทุกช่องทางของสาขานี้ทันที) จึงมีจังหวะยืนยัน
+        หนึ่งครั้งพร้อมเลือกสาเหตุ — แต่ยังจบใน 2 แตะ เท่ากับแถบเดิมที่กดพลาดได้ */}
+    <Modal title={soldOutSheet
+        ? `${soldOutSheet.availability === "SOLD_OUT_TODAY" ? "ปิดขายอยู่" : "ปิดขาย"} ${soldOutSheet.name}`
+        : ""}
+      open={Boolean(soldOutSheet)}
+      onCancel={() => setSoldOutSheet(null)} footer={null} getContainer={modalContainer} destroyOnClose>
+      {soldOutSheet && <div className={styles.sheetActions}>
+        {soldOutSheet.availability === "SOLD_OUT_TODAY"
+          ? <>
+              <button type="button" className={`${styles.btn} ${styles.btnPrimary}`}
+                onClick={() => { const item = soldOutSheet; setSoldOutSheet(null); void setMenuAvailability(item, false); }}>
+                เปิดขายเดี๋ยวนี้
+              </button>
+              <div className={styles.sheetNote}>
+                {[soldOutSheet.unavailableReason ? `ปิดเพราะ ${soldOutSheet.unavailableReason}` : null,
+                  soldOutSheet.unavailableResetsAt ? `เปิดเองอัตโนมัติ ${timeOf(soldOutSheet.unavailableResetsAt)} น.` : null]
+                  .filter(Boolean).join(" · ") || "ปิดเฉพาะสาขานี้"}
+              </div>
+            </>
+          : <>
+              {MENU_SOLD_OUT_REASONS.map((reason) => <button key={reason} type="button"
+                className={`${styles.btn} ${styles.btnDanger}`}
+                onClick={() => { const item = soldOutSheet; setSoldOutSheet(null); void setMenuAvailability(item, true, reason); }}>
+                <CloseCircleOutlined /> ปิดขายวันนี้ — {reason}
+              </button>)}
+              <div className={styles.sheetNote}>
+                ปิดเฉพาะสาขานี้ · กลับมาขายเองเมื่อถึงรอบเปิดร้านถัดไป หรือแตะการ์ดเพื่อเปิดขายเมื่อไหร่ก็ได้
+              </div>
+            </>}
+      </div>}
     </Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย" getContainer={modalContainer}><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
     <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="คนรับออร์เดอร์เริ่มยกเลิกได้ แต่ต้องให้ผู้มีสิทธิ์ pos.void ซึ่งเป็นคนละคนกด PIN อนุมัติ" />}<label>Note / เหตุผลที่ยกเลิก (จำเป็น)<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="เช่น ลูกค้าเปลี่ยนใจ เปิดผิดโต๊ะ หรือรับรายการผิด" /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>

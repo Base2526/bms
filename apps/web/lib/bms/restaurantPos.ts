@@ -213,7 +213,8 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     kitchen_station_id: string | null;
     has_modifiers: boolean;
     stock_policy: MenuStockPolicy | null;
-    temporarily_unavailable: boolean;
+    unavailable_resets_at: Date | string | null;
+    unavailable_reason: string | null;
     available_total: string;
     sizes: Array<{ size: string; available: number }> | null;
   }>(
@@ -221,13 +222,8 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
             ${menuStation.name} AS kitchen_station,
             ${menuStation.id} AS kitchen_station_id,
             sp.stock_policy,
-            EXISTS (
-              SELECT 1 FROM bms_product_menu_unavailability unavailable
-               WHERE unavailable.tenant_id = p.tenant_id
-                 AND unavailable.location_id = $2
-                 AND unavailable.product_sku = p.sku
-                 AND unavailable.resets_at > now()
-            ) AS temporarily_unavailable,
+            unavailable.resets_at AS unavailable_resets_at,
+            unavailable.reason AS unavailable_reason,
             COALESCE((
               SELECT SUM(GREATEST(i.current_stock - i.reserved_stock, 0))
                 FROM bms_inventory i
@@ -257,6 +253,11 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
          ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
        LEFT JOIN bms_kitchen_stations st
          ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
+       LEFT JOIN bms_product_menu_unavailability unavailable
+         ON unavailable.tenant_id = p.tenant_id
+        AND unavailable.location_id = $2
+        AND unavailable.product_sku = p.sku
+        AND unavailable.resets_at > now()
       WHERE p.tenant_id = $1 AND p.active
         AND EXISTS (
           SELECT 1 FROM bms_product_sales_surfaces surface
@@ -274,7 +275,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     const sizes = row.sizes ?? [];
     const sellability = isMenuSellable({
       stockPolicy: row.stock_policy,
-      temporarilyUnavailable: row.temporarily_unavailable,
+      temporarilyUnavailable: row.unavailable_resets_at != null,
       available: Number(row.available_total),
     });
     return {
@@ -288,6 +289,10 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
       availableTotal: Math.max(0, Number(row.available_total)),
       sellable: sellability.sellable,
       availability: sellability.availability,
+      // เวลาที่เมนูจะกลับมาขายเองมาจาก server เสมอ — จอบอกลูกค้าไม่ได้ถ้าต้องเดาเอง
+      // (เวลารีเซ็ตวันบริการตั้งได้รายร้าน ไม่ใช่ 04:00 ตายตัว)
+      unavailableResetsAt: iso(row.unavailable_resets_at),
+      unavailableReason: row.unavailable_reason,
       imageUrl: images.get(row.sku) ?? null,
     };
   });

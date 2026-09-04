@@ -536,3 +536,241 @@ test("each kitchen lane scrolls on its own while its header stays put", async ()
   assert.match(css, /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
     "the <=900px breakpoint scrolls the page as a document, so per-lane scrolling is released");
 });
+
+test("จอที่เปิดอยู่ถูกจำไว้ข้ามรีเฟรช และ ?screen= ชนะค่าที่จำไว้", async () => {
+  // interval 5 วินาทีของจอครัวอยู่ใต้เงื่อนไข screen === "KITCHEN" และเสียงเตือนตั๋วใหม่
+  // ถูกเรียกจาก loadTickets ของ interval นั้น — จอที่เด้งกลับ ORDER หลังรีเฟรชจึง "หยุด
+  // ดึงตั๋วและหยุดส่งเสียง" ไม่ใช่แค่แสดงจอผิด และ pos_only เปิด /admin/kitchen แทนไม่ได้
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /LOCAL_SCREEN_KEY_PREFIX = "bms\.pos\.restaurantScreen\."/);
+  // ผูกกับ device token — เบราว์เซอร์เดียวที่ pair หลายเครื่องต้องไม่เห็นค่าของกันและกัน
+  assert.match(page, /setItem\(LOCAL_SCREEN_KEY_PREFIX \+ token, screen\)/);
+  assert.match(page, /getItem\(LOCAL_SCREEN_KEY_PREFIX \+ token\)/);
+  // อ่านก่อนเขียนทับ: ค่าเริ่มต้น ("ORDER" / ไม่มีบิล) ต้องไม่ทับของที่จำไว้ก่อนใครได้อ่าน
+  // ตรวจ **ทุก effect ที่เขียน** แยกกัน — เช็ครวมทั้งไฟล์จะเขียวได้ด้วย guard ของ effect อื่น
+  assert.match(page, /localViewRestoredRef\.current = true/);
+  // (removeItem ตอน TTL หมดอายุอยู่ใน effect ที่คืนค่าเอง จึงไม่นับ — ตัวที่ทับของได้คือ setItem
+  //  กับ effect ที่ลบเมื่อไม่มีบิล)
+  const writes = [...page.matchAll(/localStorage\.setItem\(\s*(?:LOCAL_(?:SCREEN|CHECK)_KEY_PREFIX|key)/g)];
+  assert.equal(writes.length, 2, "ต้องมีจุดเขียนสองจุดเท่านั้น: จอที่เปิด และบิลที่ทำอยู่");
+  for (const write of writes) {
+    const before = page.slice(Math.max(0, write.index! - 460), write.index!);
+    assert.match(before, /!viewRestored\) return/,
+      "ทุกจุดที่เขียนต้องรอให้การคืนค่าเสร็จก่อน (viewRestored) ไม่ใช่แค่เริ่มไปแล้ว");
+  }
+  const persistCheck = page.indexOf("const key = LOCAL_CHECK_KEY_PREFIX + token;");
+  assert.ok(persistCheck > 0, "หา effect ที่จำบิลไม่เจอ");
+  assert.match(page.slice(Math.max(0, persistCheck - 240), persistCheck), /!viewRestored\) return/,
+    "effect ที่ลบบิลเมื่อไม่มีบิลต้องรอการคืนค่าเสร็จ ไม่งั้นมันลบของที่จำไว้ตอน mount");
+  // การคืนบิลเป็น async — ธงต้องปักหลังงานจบจริง ไม่ใช่ตอนสั่งให้เริ่ม
+  assert.match(page, /\.finally\(\(\) => setViewRestored\(true\)\)/);
+  // ลิงก์ที่ปักหมุดไว้ที่จอครัวต้องชนะค่าที่จำไว้ ไม่งั้นล้าง site data แล้วจอครัวเปลี่ยนหน้าเอง
+  assert.match(page, /SCREEN_FROM_URL/);
+  assert.match(page, /if \(fromUrl\) setScreen\(fromUrl\);\s*else if \(savedScreen/);
+  // ⚠️ ห้ามเขียนจอที่เปิดอยู่กลับลง URL — เคยทำแล้วทุกการโหลดกลายเป็น "ลิงก์ที่ปักหมุด"
+  // แล้วการคืนบิลถูกข้ามเงียบ ๆ · พารามิเตอร์นี้ต้องมาจากคนที่ตั้งใจใส่เท่านั้น
+  assert.doesNotMatch(page, /searchParams\.set\(\s*"screen"/);
+  assert.doesNotMatch(page, /history\.(replaceState|pushState)/);
+  assert.doesNotMatch(page, /router\.(push|replace)\([^)]*screen=/);
+  // การปักหมุดจอต้องไม่ข้ามการคืนบิล — ทั้งสองอย่างเป็นคนละคำถามกัน
+  const restore = page.slice(page.indexOf("localViewRestoredRef.current = true"));
+  const urlBranch = restore.slice(0, restore.indexOf("LOCAL_CHECK_MAX_AGE_MS"));
+  assert.doesNotMatch(urlBranch, /if \(fromUrl\) \{[\s\S]{0,200}return;/);
+});
+
+test("บิลที่จำไว้ต้องมีอายุ ยืนยันกับ server และหลุดเมื่อไม่ใช่บิลที่เปิดอยู่", async () => {
+  // แท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปต้องไม่เปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ และบิลที่
+  // ถูกเก็บเงิน/ยกเลิกที่เครื่องอื่นต้องหลุดจากจอ ไม่ใช่ค้างให้กดต่อแล้วไปล้มที่ server
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /LOCAL_CHECK_MAX_AGE_MS/);
+  assert.match(page, /Date\.now\(\) - savedAt > LOCAL_CHECK_MAX_AGE_MS/);
+  assert.match(page, /loadCheck\(id\)[\s\S]{0,220}isOpenCheckStatus\(restored\.status\)/);
+  assert.match(page, /if \(check && isOpenCheckStatus\(check\.status\)\)/);
+  // เก็บแค่ id + เวลา — ยอดเงิน/รายการต้องมาจาก server เสมอ ห้ามมีสูตรเงินชุดที่สองใน localStorage
+  assert.match(page, /JSON\.stringify\(\{ id: check\.id, savedAt: Date\.now\(\) \}\)/);
+  assert.doesNotMatch(page, /LOCAL_CHECK_KEY_PREFIX[\s\S]{0,400}amountDue/);
+});
+
+test("ห้ามจำ PIN ผู้ปฏิบัติงาน โหมดแจ้งของหมด และตัวกรองใด ๆ ข้ามรีเฟรช", async () => {
+  // ตัวกรองที่ค้างข้ามรีเฟรช = ซ่อนงานจริง (จอครัวปลดตัวกรองเองเมื่อไม่มีงานด้วยเหตุผลนี้)
+  // และกลับมาอยู่ในโหมดแจ้งของหมด = แตะการ์ดแล้วปิดเมนู ไม่ใช่สั่งอาหาร
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  for (const banned of ["actorPin", "actorUserId", "menuManage", "menuOnlySoldOut", "menuCategory", "stationFilter"]) {
+    assert.doesNotMatch(page, new RegExp(`localStorage\\.setItem\\([^)]*${banned}`),
+      `${banned} ต้องไม่ถูกเก็บลง localStorage`);
+    assert.doesNotMatch(page, new RegExp(`set(Menu|Actor|Station)[A-Za-z]*\\(\\s*(JSON\\.parse\\()?window\\.localStorage`),
+      `${banned} ต้องไม่ถูกคืนค่าจาก localStorage`);
+  }
+  // คีย์ที่หน้านี้เก็บได้มีสามตัวเท่านั้น: token (ของเดิม), จอที่เปิด, บิลที่ทำอยู่ + เสียงเตือน
+  const keys = [...page.matchAll(/localStorage\.(?:set|get|remove)Item\(\s*([A-Za-z_][\w.]*|"[^"]+")/g)]
+    .map((match) => match[1]);
+  const allowed = new Set(["TOKEN_KEY", '"bms.pos.kitchenChime"', "key",
+    "LOCAL_SCREEN_KEY_PREFIX", "LOCAL_CHECK_KEY_PREFIX"]);
+  for (const found of keys) assert.ok(allowed.has(found), `คีย์ localStorage ที่ไม่ได้ประกาศไว้: ${found}`);
+});
+
+test("ทุกกฎที่ทาสีปุ่มต้องเจาะจงกว่า .pos-root button ของ pos.css", async () => {
+  // pos.css ตั้ง `.pos-root button { background/color/border/font/padding }` = (0,1,1)
+  // ซึ่ง **เจาะจงกว่าคลาสเดี่ยว ๆ ของ CSS module (0,1,0)** — กฎที่ลืม .page นำหน้าจึงไม่มีผล
+  // เงียบ ๆ โดยไม่มี error ที่ไหน · เคยกินไปแล้วสามรอบ: .btnPrimary (แก้ไปนานแล้ว),
+  // .menuToolOn ตอน :hover, และ .kitchenFilterOn ที่ไม่เคยทำงานเลยแม้แต่ครั้งเดียว
+  const page = await read("apps/web/app/(pos)/pos/restaurant/page.tsx");
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+
+  // เก็บชื่อคลาสที่อยู่บน <button> จริง — เดินตัวอักษรเพื่อหาปลาย tag เพราะ className
+  // เป็น template literal ที่มี ${...} ซ้อนอยู่ (regex สั้น ๆ จะตัดกลางทางแล้วมองไม่เห็น)
+  const onButtons = new Set<string>();
+  for (let at = page.indexOf("<button"); at >= 0; at = page.indexOf("<button", at + 1)) {
+    let depth = 0;
+    let end = at;
+    while (end < page.length) {
+      const ch = page[end];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") depth -= 1;
+      else if (ch === ">" && depth === 0) break;
+      end += 1;
+    }
+    for (const [, name] of page.slice(at, end).matchAll(/styles\.(\w+)/g)) onButtons.add(name);
+  }
+  assert.ok(onButtons.size > 8, `หาคลาสของปุ่มไม่เจอ (${onButtons.size})`);
+
+  const PAINTS = /(?:^|;|\{)\s*(?:background|border(?:-color|-radius|-width)?|color|font|font-weight|padding|height|min-height)\s*:/;
+  const offenders: string[] = [];
+  for (const [, , selector, body] of css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)) {
+    if (!PAINTS.test(body)) continue;
+    if (selector.includes(".page")) continue;
+    for (const name of onButtons) {
+      // นับเฉพาะกฎที่ "จบ" ที่คลาสของปุ่มเอง — `.x .y` (สองคลาส) เจาะจงพอแล้ว
+      if (new RegExp(`^\\.${name}(?![\\w-])[^ ]*$`).test(selector.trim())) offenders.push(selector.trim());
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `กฎเหล่านี้ทาสีปุ่มแต่ไม่มี .page นำหน้า จึงแพ้ .pos-root button: ${offenders.join(" · ")}`);
+
+  // ปุ่มที่ทาพื้นทึบแล้วใช้ตัวหนังสือสีอ่อน **ต้องประกาศ :hover ของตัวเองเสมอ** —
+  // pos.css เปลี่ยนพื้นเป็น --pos-sunken ตอน hover แล้วตัวหนังสือสีขาวจะหายไปกับพื้น
+  // และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุด = เห็นปุ่มว่างเปล่าเป็นปกติ
+  const rules = [...css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)].map(([, , sel, body]) => ({
+    sel: sel.trim(), body,
+  }));
+  const LIGHT_INK = /(?<![-\w])color\s*:\s*(?:white|#fff(?:fff)?|var\(--panel\))\s*(?:;|$)/i;
+  const missingHover: string[] = [];
+  // ตัด :not(...) ออกก่อนถามว่า "กฎนี้เป็นของปุ่มตัวไหน" — `.railBtn:hover:not(.railBtnActive)`
+  // เอ่ยถึง railBtnActive เพื่อ *ยกเว้น* มัน ไม่ใช่เพื่อทาสีให้มัน (รอบแรกเทสเขียวเพราะข้อนี้)
+  const withoutNot = (sel: string) => sel.replace(/:not\([^)]*\)/g, "");
+  for (const name of onButtons) {
+    const owns = (sel: string) => new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
+    const painted = rules.some((rule) => owns(rule.sel) && !rule.sel.includes(":hover")
+      && /(?:^|;|\{)\s*background\s*:/.test(rule.body) && LIGHT_INK.test(rule.body));
+    if (!painted) continue;
+    const hovered = rules.some((rule) => owns(rule.sel) && rule.sel.includes(":hover")
+      && /(?:^|;|\{)\s*background\s*:/.test(rule.body));
+    if (!hovered) missingHover.push(name);
+  }
+  assert.deepEqual(missingHover, [],
+    `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`);
+
+  // ด่านที่สาม — คนละกลไกกับ specificity: pos.css ตั้ง `min-height: 44px` ให้ทุก <button>
+  // คุณสมบัติที่กฎของเรา "ไม่ได้ประกาศ" จึงตกมาจากตรงนั้น · ปุ่มที่เขียน height: 34px แล้วไม่เขียน
+  // min-height จะได้กล่อง 34×44 (สูงกว่ากว้าง) แล้วไอคอนดูไม่อยู่กลาง — เจอจริงที่ปุ่ม ⋯ ของการ์ดเมนู
+  const missingMinHeight: string[] = [];
+  for (const name of onButtons) {
+    const owns = (sel: string) => new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
+    const own = rules.filter((rule) => owns(rule.sel));
+    const setsHeight = own.some((rule) => /(?:^|;|\{)\s*height\s*:/.test(rule.body));
+    const setsMin = own.some((rule) => /min-height\s*:/.test(rule.body));
+    if (setsHeight && !setsMin) missingMinHeight.push(name);
+  }
+  assert.deepEqual(missingMinHeight, [],
+    `ปุ่มที่ตั้ง height แต่ไม่ตั้ง min-height จะถูก min-height:44px ของ pos.css ยืด: ${missingMinHeight.join(" · ")}`);
+});
+
+test("ช่องกรองเมนูมีปุ่มล้าง ขึ้นเฉพาะตอนมีข้อความ และคืนโฟกัสให้พิมพ์ต่อ", async () => {
+  // คนหน้าร้านพิมพ์ด้วยนิ้วบนแท็บเล็ต ลบทีละตัวช้ากว่าแตะครั้งเดียวมาก และคำค้นที่ค้างอยู่
+  // ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่ · ปุ่มที่ขึ้นตลอดเวลาแม้ช่องว่างคือปุ่มที่
+  // กดแล้วไม่เกิดอะไร ซึ่งสอนให้คนเลิกเชื่อปุ่มบนแถบนี้
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /\{search && <button type="button" className=\{styles\.searchClear\}/);
+  assert.match(page, /aria-label="ล้างคำค้น"/);
+  // คืนโฟกัสหลังล้าง — ไม่งั้นต้องแตะช่องอีกครั้งก่อนพิมพ์คำใหม่
+  assert.match(page, /setSearch\(""\); searchRef\.current\?\.focus\(\)/);
+  // Escape ล้างได้ด้วยสำหรับเครื่องที่ต่อคีย์บอร์ด/สแกนเนอร์
+  assert.match(page, /event\.key === "Escape" && search/);
+});
+
+test("ปุ่มสั่งซ้ำเป็นข้อความ และเปลี่ยนคำตามสถานะของบรรทัด", async () => {
+  // ⟳ อ่านได้หลายอย่าง และบนจอเดียวกันนี้ ⟳ ที่หัวจอคือ "รีเฟรช" จริง ๆ · tooltip ช่วยไม่ได้
+  // เพราะจอสัมผัสไม่มี hover ให้อ่าน · บรรทัดที่ครัวยกเลิกคือ "ทำใหม่ให้" ไม่ใช่ "เอาเพิ่มอีกที่"
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const at = page.indexOf("styles.itemAgain");
+  assert.ok(at > 0, "หาปุ่มสั่งซ้ำไม่เจอ");
+  const button = page.slice(at, page.indexOf("</button>", at));
+  assert.doesNotMatch(button, /<ReloadOutlined/, "ปุ่มนี้ต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
+  assert.match(button, /dropped \|\| stillCharged \? "สั่งใหม่" : "สั่งซ้ำ"/);
+  // ป้ายสำหรับ screen reader ต้องบอกทั้งประโยคเหมือนเดิม ไม่ใช่แค่คำบนปุ่ม
+  assert.match(button, /aria-label=\{`สั่ง \$\{item\.productName\}[^`]*พร้อมตัวเลือกเดิม`\}/);
+
+  // ปุ่มลบบรรทัดที่ยังไม่ส่งครัวอยู่คอลัมน์เดียวกัน ต้องเป็นคำเหมือนกัน — ปุ่มเดียวที่เป็น
+  // สัญลักษณ์ทำให้ตาต้องสลับวิธีอ่านกลางคอลัมน์ และ ⊗ อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
+  const removeAt = page.indexOf("styles.itemRemove");
+  assert.ok(removeAt > 0, "หาปุ่มลบไม่เจอ");
+  const removeButton = page.slice(removeAt, page.indexOf("</button>", removeAt));
+  assert.doesNotMatch(removeButton, /<CloseCircleOutlined/, "ปุ่มลบต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
+  assert.match(removeButton, />ลบ<\/button>|>ลบ$/m);
+  // บิลหนึ่งใบมีเมนูซ้ำกันได้หลายบรรทัด ป้ายจึงต้องบอกด้วยว่าลบบรรทัดของเมนูไหน
+  assert.match(removeButton, /aria-label=\{`ลบ \$\{item\.productName\} ออกจากบิล`\}/);
+
+  // ปุ่มสองแบบในคอลัมน์เดียวกันต้องกว้างเท่ากัน ไม่งั้นขอบซ้ายเยื้องกันทุกบรรทัด
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  for (const name of ["itemAgain", "itemRemove"]) {
+    const rule = css.slice(css.indexOf(`.page .${name}{`) >= 0
+      ? css.indexOf(`.page .${name}{`) : css.indexOf(`.page .${name} {`));
+    assert.match(rule.slice(0, rule.indexOf("}")), /min-width:\s*62px/,
+      `${name} ต้องมี min-width เท่ากับอีกปุ่มในคอลัมน์`);
+  }
+});
+
+test("กล่องเพิ่มเมนูเป็นจอสัมผัส: stepper · ชิปตัวเลือกพร้อมส่วนต่างราคา · ยอดรวมบนปุ่ม", async () => {
+  // ทุกจานที่เข้าบิลผ่านกล่องนี้ · งานจริงคือ "สองแก้ว หวานน้อย เพิ่มในบิล" ในสองสามวินาที
+  // ช่องพิมพ์ตัวเลขบนแท็บเล็ตต้องเรียกคีย์บอร์ดขึ้นมาบังครึ่งจอเพื่อพิมพ์เลขตัวเดียว
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const start = page.indexOf("okText={`เพิ่มในบิล");
+  assert.ok(start > 0, "หากล่องเพิ่มเมนูไม่เจอ");
+  const dialog = page.slice(start, page.indexOf("<Modal", start + 10));
+  assert.doesNotMatch(dialog, /type="number"/, "จำนวนต้องเป็น stepper ไม่ใช่ช่องพิมพ์ตัวเลข");
+  assert.match(dialog, /styles\.stepper/);
+  assert.match(dialog, /aria-label="เพิ่มจำนวน"/);
+  assert.match(dialog, /MENU_QTY_SHORTCUTS/);
+  // ยอดรวมต้องอยู่บนปุ่ม — เป็นสิ่งสุดท้ายที่ตาเห็นก่อนกด
+  assert.match(page, /okText=\{`เพิ่มในบิล · ฿\$\{money\(menuHitTotal\)\}`\}/);
+  // ปุ่มยกเลิกต้องเป็นไทย ไม่ปล่อยให้ antd ใส่ "Cancel" ให้
+  assert.match(page, /cancelText="ยกเลิก"/);
+  // สูตรราคาต่อหน่วยต้องมีที่เดียว (เดิมเขียนซ้ำสองรอบในข้อความเดียว)
+  assert.equal(page.split("modifier.priceDelta, 0)").length - 1, 1);
+});
+
+test("กลุ่มตัวเลือกบอกกติกาครบ และส่วนต่างราคาต้องเห็นก่อนกด", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const group = page.slice(page.indexOf("function MenuModifierGroups"), page.indexOf("function ", page.indexOf("function MenuModifierGroups") + 10));
+  // เดิมบอกแต่ขั้นต่ำ — คนหน้าร้านต้องรู้ก่อนแตะว่าเลือกได้กี่อย่าง
+  assert.match(group, /เลือกได้ 1/);
+  assert.match(group, /เลือกได้ไม่เกิน \$\{meta\.maxSelect\}/);
+  assert.match(group, /ต้องเลือกอย่างน้อย \$\{meta\.minSelect\}/);
+  // ชิปยังเป็น radio/checkbox จริงข้างใน จึงคุมด้วยคีย์บอร์ด/screen reader ได้
+  assert.match(group, /type=\{single \? "radio" : "checkbox"\}/);
+  assert.match(group, /modifier\.priceDelta > 0 && <small>/);
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  assert.match(css, /\.modifierChipInput \{[^}]*opacity: 0/);
+  assert.match(css, /\.modifierChip:focus-within/, "ชิปที่ซ่อน input ต้องยังเห็น focus ตอนใช้คีย์บอร์ด");
+});
+
+test("antd locale ผูกกับภาษาผู้ใช้ ไม่ปล่อยให้ปุ่มในตัวเป็นอังกฤษ", async () => {
+  // "Cancel" ที่โผล่ทุก Modal ของ /pos ไม่ใช่ข้อความที่ใครพิมพ์ไว้ แต่เป็นค่าปริยายของ antd
+  // เพราะ ConfigProvider ไม่เคยตั้ง locale
+  const provider = code(await read("apps/web/app/AntdThemeProvider.tsx"));
+  assert.match(provider, /locale=\{lang === "en" \? enUS : thTH\}/);
+  // ต้องอยู่ใต้ I18nProvider ไม่งั้น useI18n() คืนค่า default ของ context แทนภาษาจริง
+  const providers = code(await read("apps/web/app/ClientProviders.tsx"));
+  assert.ok(providers.indexOf("<I18nProvider") < providers.indexOf("<AntdThemeProvider"),
+    "I18nProvider ต้องห่อ AntdThemeProvider");
+});

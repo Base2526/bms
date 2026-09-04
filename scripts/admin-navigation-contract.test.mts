@@ -647,3 +647,62 @@ test("the collapsed rail gives its own breathing room and every control reads as
   assert.match(sidebar, /padding: mini \? '8px 0' : '4px 8px', marginBottom: mini \? 8 : 6/);
   assert.match(sidebar, /padding: mini \? '5px 0' : '4px', marginBottom: mini \? 12 : 8/);
 });
+
+test("สวิตช์พื้นที่ทำงาน: ป้ายสั้นพอดีแถบ และความหมายเต็มอยู่ที่ tooltip", () => {
+  // แถบเมนูกว้าง 264px · ป้ายเดิม "ดูแลแพลตฟอร์ม" ถูกตัดเป็น "ดูแลแพ…" = ปุ่มที่อ่านไม่จบ
+  const root = path.resolve(import.meta.dirname, "..");
+  const src = (rel: string) => readFileSync(path.join(root, rel), "utf8");
+  const th = src("apps/web/i18n/th.ts");
+  const en = src("apps/web/i18n/en.ts");
+  for (const [file, text] of [["th", th], ["en", en]] as const) {
+    for (const key of ["workspace_shop", "workspace_platform"]) {
+      const label = new RegExp(`${key}: "([^"]+)"`).exec(text)?.[1] ?? "";
+      assert.ok(label.length > 0 && label.length <= 12,
+        `${file}.${key} ยาว ${label.length} ตัว — แถบตัดคำที่ยาวกว่านี้ ("${label}")`);
+    }
+    for (const key of ["workspace_shop_full", "workspace_platform_full"]) {
+      assert.match(text, new RegExp(`${key}: "`), `${file} ต้องมี ${key} ไว้ใช้กับ tooltip/aria`);
+    }
+  }
+  const sidebar = src("apps/web/components/AdminSidebar.tsx");
+  // ความหมายเต็มต้องอยู่ที่ tooltip ทั้งสองโหมด ไม่ใช่เฉพาะตอนแถบย่อ
+  assert.equal(sidebar.split("admin_nav.workspace_shop_full").length - 1, 2);
+  assert.equal(sidebar.split("admin_nav.workspace_platform_full").length - 1, 2);
+});
+
+test("สวิตช์พื้นที่ทำงานต้องไม่มีสีประจำโหมด และต้องไม่กินกฎของแถบเมนู", () => {
+  // ลองใส่สีม่วงให้โหมดแพลตฟอร์มมาแล้วสองรอบ (ทึบ แล้วก็อ่อน) — ทั้งคู่ตีกับสีน้ำเงินที่แอปใช้
+  // ทั้งระบบ และทำให้ปุ่มที่กดวันละไม่กี่ครั้งเด่นกว่าเมนูที่ใช้ทุกวัน · ผู้ใช้ขอให้กลับไปแบบปกติ
+  //
+  // และรอบที่ใส่สีนั้นเองก็เคยพัง production: แทรกบล็อกใหม่ก่อน "บรรทัดที่สอง" ของ selector list
+  //   .bms-admin-sidebar-menu...(...) .ant-menu-item,
+  //   .bms-admin-sidebar-menu...(...) .ant-menu-submenu-title { height: auto; ... }
+  // ทำให้ .ant-menu-item ไปเกาะกฎใหม่ → ทุกแถวเมนูกลายเป็นพื้นม่วง · CSS ไม่มี error ให้เห็นเลย
+  const root = path.resolve(import.meta.dirname, "..");
+  const css = readFileSync(path.join(root, "apps/web/app/globals.css"), "utf8");
+  const sidebar = readFileSync(path.join(root, "apps/web/components/AdminSidebar.tsx"), "utf8");
+
+  for (const cls of ["bms-workspace-platform", "bms-admin-sidebar-menu-platform"]) {
+    assert.doesNotMatch(css, new RegExp(cls), `${cls} ต้องไม่กลับมา — สวิตช์นี้ไม่มีสีประจำโหมด`);
+    assert.doesNotMatch(sidebar, new RegExp(cls), `${cls} ต้องไม่ถูกผูกกลับเข้า component`);
+  }
+
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...bare.matchAll(/(^|\})\s*([^{}]+?)\s*\{([^}]*)\}/g)]
+    .map((m) => ({ selectors: m[2].split(",").map((x) => x.trim()).filter(Boolean), body: m[3] }));
+
+  // กฎของสวิตช์ต้องมีแต่ selector ของตัวเอง — selector อื่นที่หลุดเข้ามาแปลว่าแทรกกลาง list
+  for (const rule of rules) {
+    if (!rule.selectors.some((sel) => sel.includes("bms-workspace-switch"))) continue;
+    for (const sel of rule.selectors) {
+      assert.match(sel, /^\.bms-workspace-switch/,
+        `selector "${sel}" หลุดเข้ามาในกฎของสวิตช์ — น่าจะแทรกบล็อกกลาง selector list`);
+    }
+  }
+  // กฎ layout เดิมของแถบต้องยังครอบ .ant-menu-item อยู่
+  const layout = rules.find((rule) => /height:\s*auto/.test(rule.body)
+    && rule.selectors.some((sel) => sel.includes(".bms-admin-sidebar-menu") && sel.includes(".ant-menu-submenu-title")));
+  assert.ok(layout, "หากฎ layout ของแถบเมนูไม่เจอ");
+  assert.ok(layout!.selectors.some((sel) => sel.endsWith(".ant-menu-item")),
+    "กฎ height:auto ต้องยังครอบ .ant-menu-item ด้วย ไม่งั้นเมนูสูงเป็นบล็อกยักษ์ตอนแถบขยาย");
+});

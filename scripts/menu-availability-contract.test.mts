@@ -136,3 +136,56 @@ test("อ่าน business_archetype แยกคำสั่งจากคอ
   assert.ok(archetypeSelect, "ต้องมีคำสั่งอ่าน business_archetype");
   assert.doesNotMatch(archetypeSelect!, /restaurant_order_hours|restaurant_orders_paused/);
 });
+
+test("การ์ดเมนูที่ยังขายได้ต้องไม่มีปุ่มปิดขายเต็มความกว้างใต้การ์ด", () => {
+  // แถบแดง "หมดวันนี้" ใต้ทุกการ์ดอ่านเป็น *สถานะ* ไม่ใช่ *ปุ่ม* — พนักงานเข้าใจว่าเมนูปิดอยู่
+  // ทั้งที่ยังขายได้ปกติ (รายงานจากหน้าร้านจริง 2026-09-04) และปุ่มที่ย้อนคืนยากไปนั่งติด
+  // ปุ่มที่กดบ่อยสุดของจอด้วยขนาดเท่ากัน · กติกาเดียวกับที่ .sheetActions ยุบงานทั้งบิลไป Modal
+  const page = withoutComments(source("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.doesNotMatch(page, /dishAvailabilityButton/,
+    "ห้ามคืนแถบปิดขายเต็มความกว้างมาอยู่ใต้การ์ดที่ยังขายได้");
+  assert.match(page, /styles\.dishKebab/, "การ์ดปกติต้องมีปุ่ม ⋯ แทน");
+  assert.match(page, /onClick=\{\(\) => setSoldOutSheet\(item\)\}/,
+    "ปุ่ม ⋯ ต้องเปิดแผ่นยืนยันก่อน ไม่ใช่ปิดขายทันทีที่แตะ");
+  assert.match(page, /MENU_SOLD_OUT_REASONS\.map/,
+    "แผ่นยืนยันต้องให้เลือกสาเหตุจริง ไม่ใช่ส่งคำว่าหมดวันนี้ซ้ำสถานะ");
+  assert.match(page, /setMenuAvailability\(item, true, reason\)/);
+});
+
+test("การ์ดที่ปิดขายต้องเงียบ สูงเท่าเพื่อน และแตะเพื่อเปิดขายได้", () => {
+  // กริดนี้มีไว้สั่งอาหาร ของที่สั่งไม่ได้จึงต้องจางจนตากวาดผ่าน — แถบแดงทับรูปกลบตัวช่วย
+  // จำเมนูของพนักงาน และปุ่มเต็มความกว้างทำให้การ์ดสูงกว่าเพื่อนในแถว (ขอบล่างไม่ตรง)
+  const page = withoutComments(source("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const css = withoutComments(source("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  for (const gone of ["dishRibbon", "dishReopen"]) {
+    assert.doesNotMatch(page, new RegExp(gone), `${gone} ต้องไม่กลับมาอยู่บนการ์ด`);
+    assert.doesNotMatch(css, new RegExp(gone), `${gone} ต้องไม่เหลือใน CSS`);
+  }
+  // ไม่มี element ไหนที่เรนเดอร์เฉพาะการ์ดที่ปิดขายแล้วเพิ่มความสูง — สถานะทั้งหมดอยู่ในกล่องเดิม
+  assert.match(page, /styles\.dishOutChip/);
+  assert.match(page, /styles\.dishOutNote/);
+  // แตะการ์ดที่ปิดขาย = เปิดแผ่นเปิดขาย (สั่งอาหารไม่ได้อยู่แล้ว การแตะจึงว่าง)
+  assert.match(page, /disabled=\{!item\.sellable && !soldOutToday\}/);
+  assert.match(page, /if \(soldOutToday\) setSoldOutSheet\(item\); else void chooseMenu\(item\);/);
+  // แผ่นเดียวกันต้องใช้ได้สองทิศ ไม่ใช่มีแต่ทางปิด
+  assert.match(page, /soldOutSheet\.availability === "SOLD_OUT_TODAY"[\s\S]{0,400}เปิดขายเดี๋ยวนี้/);
+  // รูปจางลงแทนการเอาอะไรไปทับ
+  assert.match(css, /\.dishCardUnavailable \.dishArt \{[^}]*grayscale/);
+});
+
+test("เวลาที่เมนูจะกลับมาขายเองมาจาก server ไม่ใช่จอเดา", () => {
+  // เวลารีเซ็ตวันบริการตั้งได้รายร้าน (menu_availability_reset_time + timezone) จอที่เขียน
+  // 04:00 ตายตัวจะบอกเวลาผิดให้ร้านที่ตั้งค่าอื่น — และนั่นคือข้อมูลที่พนักงานเอาไปบอกลูกค้า
+  const service = withoutComments(source("apps/web/lib/bms/restaurantPos.ts"));
+  const menu = service.slice(
+    service.indexOf("export async function listRestaurantMenu"),
+    service.indexOf("export async function createDefaultRestaurantFloor")
+  );
+  assert.ok(menu.length > 0, "หา listRestaurantMenu ไม่เจอ");
+  assert.match(menu, /unavailable\.resets_at AS unavailable_resets_at/);
+  assert.match(menu, /unavailableResetsAt: iso\(row\.unavailable_resets_at\)/);
+  assert.match(menu, /unavailableReason: row\.unavailable_reason/);
+  const page = withoutComments(source("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.doesNotMatch(page, /04:00/, "จอห้าม hardcode เวลารีเซ็ตของร้าน");
+  assert.match(page, /timeOf\(item\.unavailableResetsAt\)/);
+});

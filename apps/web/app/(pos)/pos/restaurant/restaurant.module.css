@@ -73,6 +73,11 @@
 }
 .page .railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
 .page .railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
+/* :not(.railBtnActive) ข้างบนกันไม่ให้ *กฎของเราเอง* ทาทับปุ่มที่เลือกอยู่ แต่ไม่ได้กัน
+   `.pos-root button:hover:not(:disabled)` ของ pos.css (0,3,1) ซึ่งเปลี่ยนพื้นเป็นสีอ่อน
+   ขณะที่ตัวหนังสือยังเป็นสีขาว = แท็บที่เปิดอยู่กลายเป็นปุ่มว่างเปล่าตอนเอาเมาส์ไปชี้
+   (และบนจอสัมผัส :hover ค้างกับปุ่มที่แตะล่าสุด จึงเห็นเป็นปกติที่หน้าร้าน) */
+.page .railBtnActive:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); filter: brightness(1.12); }
 .railIcon { display: block; font-size: 19px; line-height: 1; }
 .railLabel { display: block; font-size: 10px; font-weight: 600; line-height: 1.35; white-space: nowrap; }
 .railBadge {
@@ -99,7 +104,7 @@
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 .page .btn{
-  font: inherit; font-size: 14px; height: 40px; padding: 0 14px; border: 1px solid var(--line);
+  font: inherit; font-size: 14px; height: 44px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink); border-radius: 6px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
 }
@@ -109,7 +114,7 @@
 .page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
 .page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
 .page .btnDanger{ color: var(--red); }
-.page .btnIcon{ width: 40px; padding: 0; justify-content: center; font-size: 16px; }
+.page .btnIcon{ width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
 .strip {
@@ -138,10 +143,11 @@
 
 .areaTabs { flex: none; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .page .areaButton{
-  font: inherit; font-size: 14px; height: 36px; padding: 0 14px; border: 1px solid var(--line);
+  font: inherit; font-size: 14px; height: 44px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
 .page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
+.page .areaButtonActive:hover:not(:disabled) { background: var(--ink); filter: brightness(1.25); }
 
 /* ---------- การ์ดโต๊ะ ---------- */
 .tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 8px; }
@@ -192,6 +198,18 @@
   background: var(--panel-2); padding: 0 11px; font: inherit; font-size: 14px; color: var(--ink);
 }
 .searchRow input:focus, .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--panel); }
+/* ช่องค้นหาที่มีปุ่มล้าง — ปุ่มวางทับมุมขวาของช่อง จึงต้องกันที่ให้ตัวหนังสือไม่ลอดใต้ปุ่ม */
+.searchField { position: relative; flex: 1; min-width: 0; display: flex; }
+.searchField .field { flex: 1; min-width: 0; }
+.searchRow .fieldClearable { padding-inline-end: 42px; }
+/* .page นำหน้าเสมอสำหรับปุ่ม — `.pos-root button` (0,1,1) ชนะคลาสเดี่ยว ๆ (ดูคอมเมนต์ที่
+   .kitchenFilter) · 36px คือขนาดที่นิ้วเปียกบนแท็บเล็ตยังกดโดนโดยไม่ไปโดนตัวหนังสือในช่อง */
+.page .searchClear { position: absolute; inset-inline-end: 3px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 34px; min-height: 34px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--ink-3); font-size: 15px;
+  line-height: 1; cursor: pointer; }
+.page .searchClear:hover:not(:disabled) { background: var(--line-2); color: var(--ink); }
+.page .searchClear:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- จอสั่งอาหาร (กริดเมนูฝั่งกว้าง) ----------
    กริดอยู่ฝั่งกว้างเพราะการ์ดในแผงขวา 300px เล็กจนต้องเพ่งอ่านทุกใบ
@@ -225,6 +243,7 @@
 }
 .page .catCard:hover { border-color: var(--ink-3); }
 .page .catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
+.page .catCardActive:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
 
@@ -235,10 +254,59 @@
 }
 .page .dishSelect { display: block; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .page .dishSelect:disabled { cursor: not-allowed; }
-.dishCardUnavailable .dishSelect { opacity: .52; }
-.dishUnavailableLabel { position: absolute; inset: 36px 12px auto; z-index: 2; border-radius: 5px; padding: 7px 8px; background: var(--red); color: white; text-align: center; font-weight: 700; }
-.page .dishAvailabilityButton { width: 100%; min-height: 34px; border: 0; border-top: 1px solid var(--line-2); background: var(--panel-2); color: var(--red); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.dishCardUnavailable .dishAvailabilityButton { color: var(--green); }
+/* การ์ดที่ปิดขาย = เงียบ ไม่ใช่ดังที่สุดบนจอ · กริดนี้มีไว้สั่งอาหาร ของที่สั่งไม่ได้จึงต้องจาง
+   จนตากวาดผ่าน · ห้ามกลับไปใช้แถบแดงทับรูปหรือปุ่มเต็มความกว้าง: อย่างแรกกลบรูปอาหารซึ่งเป็น
+   ตัวช่วยจำเมนูของพนักงาน อย่างหลังทำให้การ์ดสูงกว่าเพื่อนในแถวเดียวกัน (ขอบล่างไม่ตรง) */
+.dishCardUnavailable { background: var(--panel-2); }
+.dishCardUnavailable .dishArt { filter: grayscale(1); opacity: .4; }
+.dishCardUnavailable .dishName { color: var(--ink-2); }
+.dishCardUnavailable .dishPrice { color: var(--ink-3); font-weight: 600; }
+.dishOutChip { position: absolute; top: 7px; left: 7px; z-index: 2; background: var(--red); color: #fff;
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+/* บรรทัดสถานะกินที่ของบรรทัดที่สองของชื่อเมนู (ชื่อคลิปเหลือบรรทัดเดียว) — การ์ดที่ปิดขาย
+   จึงสูงเท่าการ์ดปกติพอดี ไม่ไปดันความสูงของทั้งแถว · ชื่อยาว ๆ ยังอ่านครบใน tooltip/แผ่น */
+.dishCardUnavailable .dishName { -webkit-line-clamp: 1; min-height: 1.35em; margin-bottom: 2px; }
+.dishOutNote { display: block; font-size: 10.5px; line-height: 1.35; color: var(--ink-3);
+  margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dishTapHint { font-size: 10.5px; font-weight: 700; color: var(--accent); }
+/* ⚠️ ปุ่มไอคอนต้องประกาศ min-height + padding เองเสมอ — pos.css ตั้ง
+   `min-height: 44px; padding: 10px 14px` ให้ทุก <button> · กฎที่ตั้งแค่ `height: 34px`
+   จึงได้กล่อง **34×44** (สูงกว่ากว้าง) ไอคอนเลยดูไม่อยู่กลางมุมการ์ด
+   · คนละกลไกกับเรื่อง specificity: อันนี้คือคุณสมบัติที่เรา "ไม่ได้ประกาศ" จึงตกมาจาก pos.css */
+.page .dishKebab { position: absolute; top: 5px; right: 5px; z-index: 3; width: 34px; height: 34px;
+  min-height: 34px; padding: 0; display: grid; place-items: center; border: 1px solid transparent;
+  border-radius: 8px; background: rgba(255, 255, 255, .82); color: var(--ink-2); font: inherit;
+  font-size: 16px; line-height: 1; cursor: pointer; }
+.page .dishKebab:hover:not(:disabled) { border-color: var(--line); color: var(--ink); }
+/* ตัวเลขจำนวนในบิลกับปุ่ม ⋯ อยู่มุมเดียวกัน — เลื่อนตัวเลขซ้ายเฉพาะการ์ดที่มีปุ่ม ⋯ จริง */
+.dishCardKebab .dishQty { right: 44px; }
+.dishManageRow { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; border-top: 1px solid var(--line-2); background: var(--panel-2);
+  font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+.page .dishSwitch { flex: none; position: relative; width: 40px; height: 23px; min-height: 23px; padding: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; }
+.page .dishSwitch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+  border-radius: 9px; background: var(--ink-3); transition: transform .14s ease, background .14s ease; }
+.page .dishSwitch[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+.page .dishSwitch[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent); }
+.page .dishSwitch[aria-pressed="true"]::after { transform: translateX(17px); background: #fff; }
+@media (prefers-reduced-motion: reduce) { .page .dishSwitch::after { transition: none; } }
+/* แถวเครื่องมือของกริดเมนู: โหมดแจ้งของหมด (ครัวเดินมาบอกทีเดียวหลายอย่าง) + ตัวนับที่กรองได้ */
+.menuTools { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0 0; }
+.page .menuTool { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px;
+  background: var(--panel); color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; }
+/* ⚠️ ทุกปุ่มที่ทาสีเองต้องประกาศ :hover ของตัวเอง — pos.css มี
+   `.pos-root button:hover:not(:disabled) { background: var(--pos-sunken) }` ซึ่งเจาะจงกว่า
+   คลาสเดี่ยว ๆ ปุ่มที่ active จึงกลายเป็นสีขาวพร้อมตัวหนังสือสีขาว = อ่านไม่ออก
+   และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุดจนไปแตะที่อื่น (แบบเดียวกับ .btnPrimary) */
+.page .menuToolOn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page .menuToolOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.page .menuToolAlert { border-color: var(--amber); background: var(--amber-bg); color: var(--amber); }
+.page .menuToolAlert:hover:not(:disabled) { background: var(--amber-bg); }
+.page .menuToolAlert.menuToolOn { background: var(--amber); border-color: var(--amber); color: #fff; }
+.page .menuToolAlert.menuToolOn:hover:not(:disabled) { background: var(--amber); filter: brightness(1.08); }
+.menuToolNote { font-size: 11.5px; color: var(--ink-3); margin-inline-start: auto; }
 .page .dishCard:hover { border-color: var(--accent); }
 .dishArt { height: 96px; display: grid; place-items: center; }
 .dishArt img { width: 100%; height: 100%; object-fit: cover; }
@@ -286,13 +354,16 @@
 .itemKitchenTagLoud { background: var(--green-bg); border-radius: 4px; padding: 2px 7px; display: inline-block; font-weight: 700; }
 
 /* ปุ่มสั่งซ้ำ — เล็กแต่กดติด (สูง 30px) อยู่ในคอลัมน์เดียวกับราคา */
+/* ปุ่มข้อความ ไม่ใช่ไอคอน — ⟳ อ่านได้หลายอย่าง (รีเฟรช/ย้อนกลับ/กำลังโหลด) และบนจอเดียวกันนี้
+   ⟳ ที่หัวจอคือปุ่มรีเฟรชจริง ๆ อยู่แล้ว · tooltip ช่วยไม่ได้เพราะจอสัมผัสไม่มี hover ให้อ่าน
+   · ที่กว้างขึ้น ~34px มาจากคอลัมน์ชื่อเมนู ไม่ใช่ราคา (ราคาไม่ยอมหด) */
 .page .itemAgain {
-  font: inherit; font-size: 15px; width: 30px; height: 30px; min-height: 0; padding: 0;
-  display: grid; place-items: center; flex: none;
-  border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2); border-radius: 6px;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  font: inherit; font-size: 12.5px; font-weight: 700; height: 30px; min-height: 0; padding: 0 11px;
+  flex: none; border: 1px solid var(--line-2); background: var(--panel); color: var(--accent);
+  border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center;
+  justify-content: center; gap: 4px; white-space: nowrap; min-width: 62px;
 }
-.page .itemAgain:hover { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
+.page .itemAgain:hover:not(:disabled) { border-color: var(--accent); background: var(--green-bg); }
 .page .itemAgain:disabled, .page .itemRemove:disabled { cursor: not-allowed; opacity: .5; }
 .itemQty { font-weight: 700; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 .itemName { display: block; font-weight: 600; font-size: 14.5px; }
@@ -300,11 +371,16 @@
 .itemNote { display: block; font-size: 12.5px; color: var(--red); font-weight: 600; }
 .itemSide { display: flex; align-items: center; gap: 8px; }
 .itemPrice { font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+/* ปุ่มข้อความเหมือน .itemAgain — คอลัมน์นี้เป็นคำทั้งคอลัมน์ ไม่ปนสัญลักษณ์
+   · min-width เท่ากันทั้งสองปุ่ม เพราะ "ลบ" สั้นกว่า "สั่งใหม่" ~18px ถ้าไม่บังคับ
+     ขอบซ้ายของปุ่มจะเยื้องกันทุกบรรทัด แล้วนิ้วต้องเล็งใหม่ทีละครั้ง */
 .page .itemRemove{
-  font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--red);
-  border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer; flex: none;
+  font: inherit; font-size: 12.5px; font-weight: 700; border: 1px solid var(--line-2);
+  background: var(--panel); color: var(--red); border-radius: 6px; height: 30px; min-height: 30px;
+  min-width: 62px; padding: 0 11px; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; flex: none;
 }
-.page .itemRemove:hover{ border-color: var(--red); }
+.page .itemRemove:hover:not(:disabled){ border-color: var(--red); background: var(--red-bg); }
 
 /* ผู้ช่วยของหน้านี้อยู่ใน rail แล้ว จึงไม่ต้องกันพื้นที่ปุ่มลอยใต้ปุ่มคิดเงิน */
 .checkFooter { flex: none; margin-top: auto; border-top: 1px solid var(--line); padding: 10px 12px 12px; display: grid; gap: 8px; background: var(--panel); }
@@ -351,14 +427,23 @@
 .page .kitchenMenuAvailabilityList button:hover { background: var(--panel-2); }
 .page .kitchenMenuAvailabilityList button b { color: var(--red); }
 .page .kitchenMenuAvailabilityList .kitchenMenuSoldOut b { color: var(--green); }
-.kitchenFilter { font: inherit; font-size: 13.5px; height: 34px; padding: 0 13px; border-radius: 6px;
+/* ⚠️ ต้องมี .page นำหน้าทุกกฎที่ทาสี/ตีกรอบปุ่ม — `.pos-root button` ของ pos.css เป็น
+   (0,1,1) ซึ่ง **เจาะจงกว่าคลาสเดี่ยว ๆ (0,1,0)** ไม่ใช่แค่ตอน :hover
+   ก่อนแก้ (2026-09-04): .kitchenFilterOn ไม่เคยมีผลเลยสักครั้ง — ตัวกรองสถานีที่เลือกอยู่
+   หน้าตาเหมือนตัวที่ไม่ได้เลือก ครัวจึงอ่านไม่ออกว่ากำลังดูช่องไหน (ที่เห็นเขียวคือตอนเอา
+   เมาส์ไปชี้เท่านั้น เพราะกฎ :hover ที่เพิ่มทีหลังบังเอิญมี .page นำหน้า) */
+.page .kitchenFilter { font: inherit; font-size: 13.5px; height: 34px; min-height: 34px; padding: 0 13px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
-.kitchenFilter:hover { background: var(--panel-2); }
-.kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.page .kitchenFilter:hover:not(:disabled) { background: var(--panel-2); }
+/* "เลือกอยู่" ต้องอ่านออกจากอีกฝั่งครัว ไม่ใช่ต่างกันแค่เฉดสี: พื้นทึบ + ตัวหนา + วงแหวน
+   รอบปุ่ม · สีอย่างเดียวยังแยกจาก focus ring ของเบราว์เซอร์ไม่ออกตอนเพิ่งกดเสร็จ */
+.page .kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700;
+  box-shadow: 0 0 0 3px var(--green-bg); }
+.page .kitchenFilterOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
 .kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
-.kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
+.page .kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }
@@ -383,7 +468,7 @@
 .ticketQty { min-width: 30px; font-size: 19px; font-weight: 700; color: var(--lane-color); font-variant-numeric: tabular-nums; }
 .ticketDish { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; line-height: 1.25; }
 .ticketSize { font-size: 12.5px; color: var(--ink-2); }
-.ticketGo { flex: 1; height: 44px; justify-content: center; font-size: 15px; }
+.page .ticketGo { flex: 1; height: 44px; min-height: 44px; justify-content: center; font-size: 15px; }
 .laneEmpty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 12.5px; }
 .ticketTable { color: var(--red); font-weight: 700; font-size: 12.5px; margin-bottom: 3px; }
 .ticketName { font-weight: 700; }
@@ -401,9 +486,52 @@
 .modalGrid input, .modalGrid select, .modalGrid textarea {
   border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; width: 100%; font: inherit; background: var(--panel); color: var(--ink);
 }
-.modifierList { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.modifierChoice { display: flex !important; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 9px; font-weight: 400; }
-.modifierChoice input { width: auto; }
+/* ── กล่องเพิ่มเมนู: ทุกอย่างแตะได้ ไม่ต้องเรียกคีย์บอร์ด ────────────────────────
+   หมายเหตุกฎของไฟล์นี้: ปุ่มทุกตัวต้องมี .page นำหน้า, มี :hover ของตัวเองถ้าพื้นทึบ+
+   ตัวหนังสือสีอ่อน, และตั้ง min-height คู่กับ height (pos.css ตั้ง min-height: 44px ให้ทุกปุ่ม) */
+.menuModalTitle { display: block; font-size: 17px; font-weight: 700; line-height: 1.25; }
+.menuModalTitle small { display: block; font-size: 12px; font-weight: 400; color: var(--ink-3); margin-top: 1px; }
+.fieldLabel { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+.fieldRule { font-weight: 400; font-size: 11.5px; color: var(--ink-3); }
+.qtyRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.page .stepper button { width: 52px; height: 48px; min-height: 48px; padding: 0; border: 0; background: var(--panel);
+  color: var(--ink); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; }
+.page .stepper button:hover:not(:disabled) { background: var(--panel-2); }
+.page .stepper button:disabled { color: var(--ink-3); cursor: not-allowed; }
+.stepperValue { width: 64px; height: 48px; display: grid; place-items: center; font-size: 19px; font-weight: 700;
+  font-variant-numeric: tabular-nums; border-inline: 1px solid var(--line); }
+.quickQty { display: flex; gap: 6px; flex-wrap: wrap; }
+.page .quickQtyBtn { height: 34px; min-height: 34px; min-width: 44px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); color: var(--ink-2); font: inherit; font-size: 13px;
+  font-weight: 600; cursor: pointer; }
+.page .quickQtyBtn:hover:not(:disabled) { background: var(--panel-2); }
+.page .quickQtyOn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page .quickQtyOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.modifierGroup { border: 0; padding: 0; margin: 0; }
+.modifierChips { display: flex; flex-wrap: wrap; gap: 7px; }
+.modifierChip { display: inline-flex !important; align-items: center; gap: 6px; height: 40px; min-height: 40px;
+  padding: 0 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.modifierChip:hover { border-color: var(--ink-3); }
+.modifierChip small { font-size: 11.5px; font-weight: 700; color: var(--amber); }
+.modifierChipInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.modifierChipOn { background: var(--green-bg); border-color: var(--accent); color: var(--accent); }
+.modifierChipOn small { color: var(--accent); }
+.modifierChipOff { opacity: .45; cursor: not-allowed; }
+.modifierChip:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.noteChips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
+.page .noteChip { height: 32px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer; }
+.page .noteChip:hover:not(:disabled) { background: var(--panel-2); }
+.page .noteChipOn { background: var(--green-bg); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.page .noteChipOn:hover:not(:disabled) { background: var(--green-bg); }
+.noteBox { border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; width: 100%; font: inherit;
+  font-size: 14px; background: var(--panel); color: var(--ink); resize: vertical; }
+.menuTotalRow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  border-top: 1px solid var(--line-2); padding-top: 10px; font-size: 12.5px; color: var(--ink-3); }
+.menuTotalRow b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.modifierList { display: grid; gap: 12px; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {
@@ -461,8 +589,7 @@
   .panel { padding-inline: 10px; }
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footerButtons { grid-template-columns: 1fr; }
-  .modifierList { grid-template-columns: 1fr; }
-  .lanes { grid-template-columns: repeat(4, 82vw); }
+    .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
 }
 @media (max-width: 340px) {
