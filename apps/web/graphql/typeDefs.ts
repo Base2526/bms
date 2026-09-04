@@ -1343,6 +1343,8 @@ export const typeDefs = /* GraphQL */ `
     deposit_status: String
     coupon_code: String
     preferred_carrier: BmsCarrier   # ขนส่งที่ลูกค้าแจ้งไว้ตอนสั่ง — เป็นความต้องการ ไม่ใช่ขนส่งจริงที่ใช้ส่ง (7.46)
+    fulfillmentType: String
+    promisedAt: String
     locationId: ID
     locationName: String
     branchCode: String
@@ -3597,6 +3599,8 @@ export const typeDefs = /* GraphQL */ `
     country: String
     currency: String
     businessHours: String
+    restaurantOrderHours: JSON!
+    restaurantOrdersPaused: Boolean!
     shippingPolicy: String
     returnPolicy: String
     paymentAccounts: [BmsPaymentAccount!]!
@@ -3835,6 +3839,8 @@ export const typeDefs = /* GraphQL */ `
     country: String
     currency: String
     businessHours: String
+    restaurantOrderHours: JSON
+    restaurantOrdersPaused: Boolean
     shippingPolicy: String
     returnPolicy: String
     paymentAccounts: [BmsPaymentAccountInput!]

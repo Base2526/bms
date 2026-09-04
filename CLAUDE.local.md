@@ -1933,5 +1933,11 @@ truncate→round · ค่าบริการกลายเป็นของ
 - หน้าระดับแพลตฟอร์ม (ENV/Logs/Posts/Files/Architecture) gate ด้วย `layout.tsx` →
   `requirePlatformAdminPage()` (server-side กัน shop user เข้าตรงผ่าน URL)
 
+## Restaurant chat delivery rollout (2026-09-04)
+
+- `9.55` เพิ่มสถานะหมดชั่วคราวรายเมนู/สาขา และใช้ availability policy เดียวกันทุกช่องทาง
+- `9.56` เพิ่มสาขา ประเภทรับของ เวลาสัญญา เวลารับออร์เดอร์ และ human-accept ก่อนยิงตั๋วครัว
+- ผ่าน typecheck และ pure contract ของเฟส 1–3; migration/DB contract ยังไม่ได้รันเพราะเครื่องนี้ไม่มี local DB
+
 > `loginAdmin` ตรวจรหัสผ่านจริงทุก environment แล้ว (`passwordMatches()`, ยืนยัน 2026-08-13) — โน้ตเก่า
 > ที่เขียนว่า "dev ยังไม่ตรวจ" ไม่ตรงกับโค้ดปัจจุบัน

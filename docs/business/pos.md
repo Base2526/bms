@@ -1556,3 +1556,10 @@ the option, and `scaleBarcode` was discarded, so a weighed line was priced as on
 such bill died on `PAYMENT_MISMATCH`. Adding a line field means adding it to that parser, and pinning
 it in `scripts/pos-contract.test.mts` — a DB contract that calls `createOrder()` directly never
 crosses the route and will not catch it.
+# Restaurant chat and online orders
+
+Restaurant chat orders carry an explicit active branch, `DELIVERY`/`PICKUP`, and an optional promised
+time. Paid orders appear in the **ออร์เดอร์เข้า** tab at `/pos`; staff must accept an order before its
+kitchen tickets are created. The tab is scoped to the POS device's branch. Managers see the same
+fulfilment metadata on the admin orders page. Structured weekly hours and the temporary whole-shop
+pause live in Store Profile; the customer assistant refuses clearly while paused or closed.

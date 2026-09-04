@@ -100,7 +100,7 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.location_id,
+                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
                 o.pos_shift_id, o.created_at, o.updated_at
@@ -156,7 +156,7 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.location_id,
+                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
                 o.pos_shift_id, o.created_at, o.updated_at
@@ -325,7 +325,8 @@ export const bmsOrdersResolvers = {
       return res.rows;
     },
     // มาร์เก็ตเพลส (lazada/shopee/tiktok) = ที่อยู่อยู่ฝั่งแพลตฟอร์ม ไม่ต้องเช็ก — ช่องทางอื่นต้องมีที่อยู่จัดส่งก่อนถึงจัดส่งได้
-    async hasShippingAddress(parent: { channel: string; customer_id: string | null }, _args: unknown, ctx: any) {
+    async hasShippingAddress(parent: { channel: string; customer_id: string | null; fulfillment_type?: string | null }, _args: unknown, ctx: any) {
+      if (parent.fulfillment_type === "PICKUP") return true;
       if (MARKETPLACE_CHANNELS.has(parent.channel)) return true;
       if (!parent.customer_id) return false;
       const res = await query(
@@ -349,6 +350,8 @@ export const bmsOrdersResolvers = {
     deposit_status: (p: any) => p.deposit_status ?? null,
     coupon_code: (p: any) => p.coupon_code ?? null,
     preferred_carrier: (p: any) => p.preferred_carrier ?? null,
+    fulfillmentType: (p: any) => p.fulfillment_type ?? null,
+    promisedAt: (p: any) => p.promised_at instanceof Date ? p.promised_at.toISOString() : p.promised_at ?? null,
     locationId: (p: any) => p.location_id ?? null,
     locationName: (p: any) => p.location_name ?? null,
     branchCode: (p: any) => p.branch_code ?? null,

@@ -918,3 +918,10 @@ state; reads and order creation require both active and the appropriate enabled 
 backfilled into an `OPTIONS` group and receive `group_id`, `default_selected` and `sort_order`.
 All three new tables carry tenant RLS, `bms_app` grants and revision triggers. The modifier group FK
 includes `tenant_id`, preventing a modifier from linking to another shop's group.
+# Restaurant online order acceptance (9.56)
+
+`bms_orders.fulfillment_type` (`DELIVERY`/`PICKUP`) and `promised_at` are first-class fields so the
+incoming queue and kitchen can sort without parsing notes. `bms_store_profile` stores validated
+weekly `restaurant_order_hours` plus the audited whole-shop pause state. An online restaurant order
+reserves stock when created, but payment does not start cooking: a human at the order's branch moves
+it from `PAID` to `PACKING` and creates kitchen tickets in the same tenant transaction.

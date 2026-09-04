@@ -15,6 +15,7 @@ import { normalizeShopArchetype } from "./shopArchetypes";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
 import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
+import { normalizeRestaurantOrderHours, type RestaurantOrderInterval } from "./restaurantOrdering";
 
 // Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
 // every checkout page load, and the public storefront — but written only from
@@ -60,6 +61,8 @@ export type StoreProfile = {
   country: string | null;   // TH / AU / UK
   currency: string | null;  // THB / AUD / GBP
   businessHours: string | null;
+  restaurantOrderHours: RestaurantOrderInterval[];
+  restaurantOrdersPaused: boolean;
   shippingPolicy: string | null;
   returnPolicy: string | null;
   paymentAccounts: PaymentAccount[];
@@ -98,6 +101,7 @@ const EMPTY: StoreProfile = {
   about: null, address: null, phone: null, contactEmail: null, website: null,
   logoUrl: null, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
+  restaurantOrderHours: [], restaurantOrdersPaused: false,
   paymentAccounts: [],
   shippingFlatRate: null, shippingFreeThreshold: null,
   shippingEstDaysMin: null, shippingEstDaysMax: null,
@@ -127,7 +131,8 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
             about, address, phone, contact_email, website, logo_url, tax_id,
-            timezone, country, currency, business_hours, shipping_policy, return_policy,
+            timezone, country, currency, business_hours, restaurant_order_hours,
+            restaurant_orders_paused, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
             shipping_est_days_min, shipping_est_days_max, enabled_carriers,
             shipping_mode, shipping_origin_province, shipping_origin_postcode,
@@ -157,6 +162,8 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     country: r.country ?? null,
     currency: r.currency ?? null,
     businessHours: r.business_hours ?? null,
+    restaurantOrderHours: normalizeRestaurantOrderHours(r.restaurant_order_hours),
+    restaurantOrdersPaused: Boolean(r.restaurant_orders_paused),
     shippingPolicy: r.shipping_policy ?? null,
     returnPolicy: r.return_policy ?? null,
     paymentAccounts: Array.isArray(r.payment_accounts) ? r.payment_accounts : [],
@@ -255,6 +262,7 @@ export async function upsertStoreProfile(
     }
     // Drop unknown carrier codes rather than throwing — same forgiving filter as aiRequiredFields.
     merged.enabledCarriers = Array.from(new Set(merged.enabledCarriers ?? [])).filter(isCarrier);
+    merged.restaurantOrderHours = normalizeRestaurantOrderHours(merged.restaurantOrderHours);
 
     if (!SHIPPING_MODES.has(merged.shippingMode)) throw new Error("รูปแบบการคิดค่าส่งไม่ถูกต้อง");
     // Normalize/validate through the same parsers the rate engine uses, so what we store
@@ -290,9 +298,9 @@ export async function upsertStoreProfile(
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
         enabled_carriers, email_theme_color, email_footer_text,
         shipping_mode, shipping_origin_province, shipping_origin_postcode,
-        shipping_zone_rates, shipping_weight_tiers
+        shipping_zone_rates, shipping_weight_tiers, restaurant_order_hours, restaurant_orders_paused
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34::jsonb,$35::jsonb)
+               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -318,6 +326,8 @@ export async function upsertStoreProfile(
         shipping_origin_postcode = EXCLUDED.shipping_origin_postcode,
         shipping_zone_rates = EXCLUDED.shipping_zone_rates,
         shipping_weight_tiers = EXCLUDED.shipping_weight_tiers,
+        restaurant_order_hours = EXCLUDED.restaurant_order_hours,
+        restaurant_orders_paused = EXCLUDED.restaurant_orders_paused,
         email_theme_color = EXCLUDED.email_theme_color,
         email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
@@ -331,6 +341,7 @@ export async function upsertStoreProfile(
         merged.enabledCarriers, merged.emailThemeColor, merged.emailFooterText,
         merged.shippingMode, merged.shippingOriginProvince, merged.shippingOriginPostcode,
         JSON.stringify(merged.shippingZoneRates ?? []), JSON.stringify(merged.shippingWeightTiers ?? []),
+        JSON.stringify(merged.restaurantOrderHours ?? []), merged.restaurantOrdersPaused,
       ]
     );
     await client.query("COMMIT");

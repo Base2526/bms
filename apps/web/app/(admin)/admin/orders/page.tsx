@@ -57,6 +57,8 @@ type Order = {
   deposit_balance_due: number;
   deposit_status: string | null;
   coupon_code: string | null;
+  fulfillmentType: "DELIVERY" | "PICKUP" | null;
+  promisedAt: string | null;
   locationId: string | null;
   locationName: string | null;
   branchCode: string | null;
@@ -74,7 +76,7 @@ const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $locationId: ID, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, locationId: $locationId, limit: $limit, offset: $offset) {
       id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code
-      locationId locationName branchCode posDeviceName registeredPosNo posShiftId created_at updated_at hasShippingAddress
+      locationId locationName branchCode posDeviceName registeredPosNo posShiftId fulfillmentType promisedAt created_at updated_at hasShippingAddress
       discountLines { source label amount pointsUsed }
       items { product_sku product_name size qty unit_price }
     }
@@ -183,7 +185,7 @@ function OrdersManagement() {
     const v = { variables: { id: r.id } };
     const btns: any[] = [];
     const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>{t("admin_orders.btn_pay")}</Button>;
-    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{t("admin_orders.btn_pack")}</Button>;
+    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{r.fulfillmentType ? t("admin_orders.btn_accept") : t("admin_orders.btn_pack")}</Button>;
     const shipBtn = r.hasShippingAddress ? (
       <Popconfirm key="ship" title={t("admin_orders.ship_confirm_title")} description={t("admin_orders.ship_confirm_desc")} okText={t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy} onConfirm={() => ship(v)}>
         <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>{t("admin_orders.btn_ship")}</Button>
@@ -416,6 +418,10 @@ function OrderDetails({ order: r }: { order: Order }) {
         </Tag>
         {r.registeredPosNo && <Tag>POS#{r.registeredPosNo}</Tag>}
         {r.posShiftId && <Tag>{t("admin_orders.shift_short")}: {r.posShiftId.slice(0, 8)}</Tag>}
+        {r.fulfillmentType && <Tag color="purple">
+          {r.fulfillmentType === "PICKUP" ? t("admin_orders.fulfillment_pickup") : t("admin_orders.fulfillment_delivery")}
+        </Tag>}
+        {r.promisedAt && <Tag>{t("admin_orders.promised_at")}: {new Date(r.promisedAt).toLocaleString()}</Tag>}
       </div>
       <div>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.items_label")}</Typography.Text>

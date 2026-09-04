@@ -387,6 +387,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น ห้ามพิมพ์ UUID เต็ม และห้ามสร้างเลขตัวอย่างขึ้นมาเอง",
     "create_order ต้องได้รับ sku+size+qty เสมอตามสัญญา backend: ถ้า tenant ไม่กำหนด size เป็นข้อมูลที่ต้องถาม ให้ใช้ size จากผลทูลได้เฉพาะเมื่อสินค้ามีตัวเลือกเดียว; ถ้ามีหลายตัวเลือกต้องถามลูกค้า ห้ามเดา",
     "เมนูอาหาร: เรียก list_menu_modifiers ด้วย sku+size ก่อนสรุปบิล ถ้ามีกลุ่มบังคับให้ถามลูกค้า แล้วส่งเฉพาะรหัสที่ทูลคืนมาเป็น modifierCodes ใน create_order; ห้ามเดารหัสหรือราคา",
+    "ออร์เดอร์ร้านอาหารหลายสาขา: เรียก list_restaurant_order_locations ให้ลูกค้าเลือกสาขาและวิธีรับ DELIVERY/PICKUP แล้วส่ง locationId + fulfillmentType เข้า create_order; ห้ามปล่อยให้ระบบเดาสาขา",
     "หน่วยขาย (แผง/ขวด/กล่อง/ซอง): ถ้า check_stock คืน packs มา และลูกค้านับเป็นหน่วยนั้น ให้ส่ง packCode ของหน่วยนั้นใน create_order พร้อม qty = จำนวนหน่วยที่ลูกค้าขอ (เช่น '2 แผง' = qty 2 + packCode ของแผง) " +
       "ห้ามคำนวณจำนวนเม็ดเอง ห้ามคิดราคาต่อหน่วยเอง และห้ามเดารหัสหน่วยที่ไม่ได้อยู่ในผลทูล — ระบบอ่านจำนวนต่อหน่วยและราคาจากข้อมูลหน่วยขายของร้านเอง " +
       "ถ้าลูกค้าบอกหน่วยที่ร้านไม่มี (เช่นขอเป็นโหล) ให้ถามกลับ ห้ามแปลงหน่วยเอง",
@@ -1552,6 +1553,14 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult, eng
       return english
         ? `Sorry, ${nameOf(order.sku)} is sold out today. Would you like another menu item?`
         : `ขออภัยค่ะ ${nameOf(order.sku)} วันนี้หมดแล้ว รับเป็นเมนูอื่นไหมคะ?`;
+    case "LOCATION_REQUIRED":
+      return english
+        ? `Please choose the restaurant branch for this order: ${order.locations.map((location) => location.name).join(", ")}.`
+        : `กรุณาเลือกสาขาที่จะรับออร์เดอร์นี้ค่ะ: ${order.locations.map((location) => location.name).join(", ")}`;
+    case "ORDERING_PAUSED":
+      return english ? "The kitchen has temporarily paused online orders." : "ตอนนี้ครัวเต็มและหยุดรับออร์เดอร์ชั่วคราวค่ะ";
+    case "ORDERING_CLOSED":
+      return english ? "The restaurant is currently outside its online ordering hours." : "ตอนนี้อยู่นอกเวลารับออร์เดอร์ออนไลน์ของร้านค่ะ";
     case "PACK_NOT_FOUND":
       return english
         ? `Sorry, ${nameOf(order.sku)} is not currently sold in unit ${order.packCode}. Please choose an available selling unit.`

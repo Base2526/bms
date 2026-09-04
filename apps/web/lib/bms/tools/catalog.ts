@@ -33,6 +33,7 @@ import {
   type SellableProduct,
 } from "../products";
 import { listProductModifiers } from "../productRecipes";
+import { listRestaurantOrderLocations } from "../restaurantOrdering";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
@@ -891,6 +892,18 @@ const listMenuModifiersTool: BmsTool = {
     }
     return { ok: true, data: { sku, size, groups: [...groups.values()], verifiedAt: new Date().toISOString() } };
   },
+};
+
+const listRestaurantOrderLocationsTool: BmsTool = {
+  name: "list_restaurant_order_locations",
+  description: "List active restaurant branches a customer may choose for pickup or delivery. Return and pass the selected verified UUID as locationId to create_order; never invent a branch id.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec): Promise<ToolResult> => ({
+    ok: true,
+    data: { locations: await listRestaurantOrderLocations(ec.tenantId), verifiedAt: new Date().toISOString() },
+  }),
 };
 
 const getVariantReservationsTool: BmsTool = {
@@ -1891,6 +1904,9 @@ const createOrderTool: BmsTool = {
         description:
           "Carrier the customer asked for. Only pass a code listed in get_store_info's enabledCarriers, and only if the customer named one — never guess. This is a preference the shop confirms at packing time, not a guarantee, and it does not change the shipping fee.",
       },
+      locationId: { type: "string", description: "Exact active branch UUID returned by list_restaurant_order_locations." },
+      fulfillmentType: { type: "string", enum: ["DELIVERY", "PICKUP"], description: "How the customer will receive a restaurant order." },
+      promisedAt: { type: "string", description: "ISO-8601 promised delivery/pickup time after the customer agrees." },
     },
     required: ["items"],
   },
@@ -1938,7 +1954,13 @@ const createOrderTool: BmsTool = {
     // ไม่มีออร์เดอร์ไหนหายจากกฎนี้ — ครั้งแรกกลายเป็นคำถามยืนยัน ครั้งที่สอง (หลังลูกค้าตอบ)
     // เดินเส้นทางเขียนเดิมทั้งเส้น · staff surface ไม่ถูกแตะ (แอดมินเห็นหน้าจอที่ตัวเองกรอกอยู่)
     if (ec.surface === "customer") {
-      const fingerprint = orderQuoteFingerprint(requested);
+      const locationId = optString(args, "locationId") ?? "";
+      const fulfillmentType = enumVal(args, "fulfillmentType", ["DELIVERY", "PICKUP"], false) ?? "";
+      const promisedAt = optString(args, "promisedAt") ?? "";
+      const fulfillmentFingerprint = locationId || fulfillmentType || promisedAt
+        ? `#${locationId}#${fulfillmentType}#${promisedAt}`
+        : "";
+      const fingerprint = `${orderQuoteFingerprint(requested)}${fulfillmentFingerprint}`;
       if (ec.customerConfirmedQuote?.fingerprint !== fingerprint) {
         const quoteLines: OrderQuoteLine[] = [];
         for (const it of requested) {
@@ -2016,6 +2038,9 @@ const createOrderTool: BmsTool = {
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
+      locationId: optString(args, "locationId") ?? null,
+      fulfillmentType: enumVal(args, "fulfillmentType", ["DELIVERY", "PICKUP"], false) as "DELIVERY" | "PICKUP" | undefined,
+      promisedAt: optString(args, "promisedAt") ?? null,
     });
     const pharmacyBlockers = "blockers" in r && Array.isArray(r.blockers) ? r.blockers : [];
     // เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" อยู่ที่ productPolicyDecision.ts ที่เดียว —
@@ -2776,6 +2801,8 @@ const getStoreInfoTool: BmsTool = {
         contactEmail: p.contactEmail, website: p.website,
         country: p.country, timezone: p.timezone,
         businessHours: p.businessHours, shippingPolicy: p.shippingPolicy, returnPolicy: p.returnPolicy,
+        restaurantOrderHours: p.restaurantOrderHours,
+        restaurantOrdersPaused: p.restaurantOrdersPaused,
         // Carriers the shop uses. Empty = do not offer the customer any carrier choice.
         // Picking one does not change the fee or delivery estimate (no carrier API is wired up),
         // and the shop confirms the real carrier at packing time.
@@ -3141,6 +3168,7 @@ export const ALL_TOOLS: BmsTool[] = [
   getProduct,
   checkStockTool,
   listMenuModifiersTool,
+  listRestaurantOrderLocationsTool,
   getVariantReservationsTool,
   subscribeRestockNotificationTool,
   listCustomerCouponsTool,
