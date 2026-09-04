@@ -669,6 +669,20 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
   }
   assert.deepEqual(missingHover, [],
     `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`);
+
+  // ด่านที่สาม — คนละกลไกกับ specificity: pos.css ตั้ง `min-height: 44px` ให้ทุก <button>
+  // คุณสมบัติที่กฎของเรา "ไม่ได้ประกาศ" จึงตกมาจากตรงนั้น · ปุ่มที่เขียน height: 34px แล้วไม่เขียน
+  // min-height จะได้กล่อง 34×44 (สูงกว่ากว้าง) แล้วไอคอนดูไม่อยู่กลาง — เจอจริงที่ปุ่ม ⋯ ของการ์ดเมนู
+  const missingMinHeight: string[] = [];
+  for (const name of onButtons) {
+    const owns = (sel: string) => new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
+    const own = rules.filter((rule) => owns(rule.sel));
+    const setsHeight = own.some((rule) => /(?:^|;|\{)\s*height\s*:/.test(rule.body));
+    const setsMin = own.some((rule) => /min-height\s*:/.test(rule.body));
+    if (setsHeight && !setsMin) missingMinHeight.push(name);
+  }
+  assert.deepEqual(missingMinHeight, [],
+    `ปุ่มที่ตั้ง height แต่ไม่ตั้ง min-height จะถูก min-height:44px ของ pos.css ยืด: ${missingMinHeight.join(" · ")}`);
 });
 
 test("ช่องกรองเมนูมีปุ่มล้าง ขึ้นเฉพาะตอนมีข้อความ และคืนโฟกัสให้พิมพ์ต่อ", async () => {

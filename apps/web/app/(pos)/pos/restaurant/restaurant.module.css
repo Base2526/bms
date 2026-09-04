@@ -104,7 +104,7 @@
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 .page .btn{
-  font: inherit; font-size: 14px; height: 40px; padding: 0 14px; border: 1px solid var(--line);
+  font: inherit; font-size: 14px; height: 44px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink); border-radius: 6px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
 }
@@ -114,7 +114,7 @@
 .page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
 .page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
 .page .btnDanger{ color: var(--red); }
-.page .btnIcon{ width: 40px; padding: 0; justify-content: center; font-size: 16px; }
+.page .btnIcon{ width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
 .strip {
@@ -143,7 +143,7 @@
 
 .areaTabs { flex: none; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .page .areaButton{
-  font: inherit; font-size: 14px; height: 36px; padding: 0 14px; border: 1px solid var(--line);
+  font: inherit; font-size: 14px; height: 44px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line);
   background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
 .page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
@@ -266,17 +266,21 @@
   border-top: 1px solid var(--line-2); background: var(--accent); color: #fff; font: inherit;
   font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .page .dishReopen:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+/* ⚠️ ปุ่มไอคอนต้องประกาศ min-height + padding เองเสมอ — pos.css ตั้ง
+   `min-height: 44px; padding: 10px 14px` ให้ทุก <button> · กฎที่ตั้งแค่ `height: 34px`
+   จึงได้กล่อง **34×44** (สูงกว่ากว้าง) ไอคอนเลยดูไม่อยู่กลางมุมการ์ด
+   · คนละกลไกกับเรื่อง specificity: อันนี้คือคุณสมบัติที่เรา "ไม่ได้ประกาศ" จึงตกมาจาก pos.css */
 .page .dishKebab { position: absolute; top: 5px; right: 5px; z-index: 3; width: 34px; height: 34px;
-  display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px;
-  background: rgba(255, 255, 255, .82); color: var(--ink-2); font: inherit; font-size: 16px;
-  line-height: 1; cursor: pointer; }
+  min-height: 34px; padding: 0; display: grid; place-items: center; border: 1px solid transparent;
+  border-radius: 8px; background: rgba(255, 255, 255, .82); color: var(--ink-2); font: inherit;
+  font-size: 16px; line-height: 1; cursor: pointer; }
 .page .dishKebab:hover:not(:disabled) { border-color: var(--line); color: var(--ink); }
 /* ตัวเลขจำนวนในบิลกับปุ่ม ⋯ อยู่มุมเดียวกัน — เลื่อนตัวเลขซ้ายเฉพาะการ์ดที่มีปุ่ม ⋯ จริง */
 .dishCardKebab .dishQty { right: 44px; }
 .dishManageRow { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 7px 10px; border-top: 1px solid var(--line-2); background: var(--panel-2);
   font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
-.page .dishSwitch { flex: none; position: relative; width: 40px; height: 23px; padding: 0;
+.page .dishSwitch { flex: none; position: relative; width: 40px; height: 23px; min-height: 23px; padding: 0;
   border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; }
 .page .dishSwitch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
   border-radius: 9px; background: var(--ink-3); transition: transform .14s ease, background .14s ease; }
@@ -366,7 +370,8 @@
 .itemPrice { font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
 .page .itemRemove{
   font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--red);
-  border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer; flex: none;
+  border-radius: 6px; width: 30px; height: 30px; min-height: 30px; padding: 0;
+  display: grid; place-items: center; cursor: pointer; flex: none;
 }
 .page .itemRemove:hover{ border-color: var(--red); }
 
@@ -456,7 +461,7 @@
 .ticketQty { min-width: 30px; font-size: 19px; font-weight: 700; color: var(--lane-color); font-variant-numeric: tabular-nums; }
 .ticketDish { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; line-height: 1.25; }
 .ticketSize { font-size: 12.5px; color: var(--ink-2); }
-.page .ticketGo { flex: 1; height: 44px; justify-content: center; font-size: 15px; }
+.page .ticketGo { flex: 1; height: 44px; min-height: 44px; justify-content: center; font-size: 15px; }
 .laneEmpty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 12.5px; }
 .ticketTable { color: var(--red); font-weight: 700; font-size: 12.5px; margin-bottom: 3px; }
 .ticketName { font-weight: 700; }
