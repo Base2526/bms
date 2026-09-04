@@ -254,7 +254,7 @@ export async function upsertProductModifier(
   const name = String(input.name ?? "").trim();
   const priceDelta = Math.round(Number(input.priceDelta ?? 0) * 100) / 100;
   const groupCode = String(input.groupCode ?? "OPTIONS").trim().toUpperCase();
-  const groupName = String(input.groupName ?? "Options").trim();
+  const groupName = String(input.groupName ?? "ตัวเลือก").trim();
   const selectionTypeRaw = String(input.selectionType ?? "MULTIPLE").trim().toUpperCase();
   if (selectionTypeRaw !== "SINGLE" && selectionTypeRaw !== "MULTIPLE") {
     throw new Error("ประเภทการเลือก Modifier ไม่ถูกต้อง");

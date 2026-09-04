@@ -51,11 +51,14 @@ export default function ClientProviders({
 
   return (
     <ApolloProvider client={client}>
-      <AntdThemeProvider>
-        <I18nProvider lang={lang}>
+      {/* I18nProvider ต้องอยู่ "นอก" AntdThemeProvider — provider ตัวนั้นอ่าน lang เพื่อเลือก
+          locale ของ antd (ปุ่ม Cancel/OK ในตัว) ถ้าอยู่ข้างในจะได้ค่า default ของ context
+          แทนภาษาที่ผู้ใช้เลือกไว้จริง */}
+      <I18nProvider lang={lang}>
+        <AntdThemeProvider>
           {onPublicStandaloneRoute ? children : <SessionLayer>{children}</SessionLayer>}
-        </I18nProvider>
-      </AntdThemeProvider>
+        </AntdThemeProvider>
+      </I18nProvider>
     </ApolloProvider>
   );
 }

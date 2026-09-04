@@ -729,3 +729,48 @@ test("ปุ่มสั่งซ้ำเป็นข้อความ แล�
       `${name} ต้องมี min-width เท่ากับอีกปุ่มในคอลัมน์`);
   }
 });
+
+test("กล่องเพิ่มเมนูเป็นจอสัมผัส: stepper · ชิปตัวเลือกพร้อมส่วนต่างราคา · ยอดรวมบนปุ่ม", async () => {
+  // ทุกจานที่เข้าบิลผ่านกล่องนี้ · งานจริงคือ "สองแก้ว หวานน้อย เพิ่มในบิล" ในสองสามวินาที
+  // ช่องพิมพ์ตัวเลขบนแท็บเล็ตต้องเรียกคีย์บอร์ดขึ้นมาบังครึ่งจอเพื่อพิมพ์เลขตัวเดียว
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const start = page.indexOf("okText={`เพิ่มในบิล");
+  assert.ok(start > 0, "หากล่องเพิ่มเมนูไม่เจอ");
+  const dialog = page.slice(start, page.indexOf("<Modal", start + 10));
+  assert.doesNotMatch(dialog, /type="number"/, "จำนวนต้องเป็น stepper ไม่ใช่ช่องพิมพ์ตัวเลข");
+  assert.match(dialog, /styles\.stepper/);
+  assert.match(dialog, /aria-label="เพิ่มจำนวน"/);
+  assert.match(dialog, /MENU_QTY_SHORTCUTS/);
+  // ยอดรวมต้องอยู่บนปุ่ม — เป็นสิ่งสุดท้ายที่ตาเห็นก่อนกด
+  assert.match(page, /okText=\{`เพิ่มในบิล · ฿\$\{money\(menuHitTotal\)\}`\}/);
+  // ปุ่มยกเลิกต้องเป็นไทย ไม่ปล่อยให้ antd ใส่ "Cancel" ให้
+  assert.match(page, /cancelText="ยกเลิก"/);
+  // สูตรราคาต่อหน่วยต้องมีที่เดียว (เดิมเขียนซ้ำสองรอบในข้อความเดียว)
+  assert.equal(page.split("modifier.priceDelta, 0)").length - 1, 1);
+});
+
+test("กลุ่มตัวเลือกบอกกติกาครบ และส่วนต่างราคาต้องเห็นก่อนกด", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const group = page.slice(page.indexOf("function MenuModifierGroups"), page.indexOf("function ", page.indexOf("function MenuModifierGroups") + 10));
+  // เดิมบอกแต่ขั้นต่ำ — คนหน้าร้านต้องรู้ก่อนแตะว่าเลือกได้กี่อย่าง
+  assert.match(group, /เลือกได้ 1/);
+  assert.match(group, /เลือกได้ไม่เกิน \$\{meta\.maxSelect\}/);
+  assert.match(group, /ต้องเลือกอย่างน้อย \$\{meta\.minSelect\}/);
+  // ชิปยังเป็น radio/checkbox จริงข้างใน จึงคุมด้วยคีย์บอร์ด/screen reader ได้
+  assert.match(group, /type=\{single \? "radio" : "checkbox"\}/);
+  assert.match(group, /modifier\.priceDelta > 0 && <small>/);
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  assert.match(css, /\.modifierChipInput \{[^}]*opacity: 0/);
+  assert.match(css, /\.modifierChip:focus-within/, "ชิปที่ซ่อน input ต้องยังเห็น focus ตอนใช้คีย์บอร์ด");
+});
+
+test("antd locale ผูกกับภาษาผู้ใช้ ไม่ปล่อยให้ปุ่มในตัวเป็นอังกฤษ", async () => {
+  // "Cancel" ที่โผล่ทุก Modal ของ /pos ไม่ใช่ข้อความที่ใครพิมพ์ไว้ แต่เป็นค่าปริยายของ antd
+  // เพราะ ConfigProvider ไม่เคยตั้ง locale
+  const provider = code(await read("apps/web/app/AntdThemeProvider.tsx"));
+  assert.match(provider, /locale=\{lang === "en" \? enUS : thTH\}/);
+  // ต้องอยู่ใต้ I18nProvider ไม่งั้น useI18n() คืนค่า default ของ context แทนภาษาจริง
+  const providers = code(await read("apps/web/app/ClientProviders.tsx"));
+  assert.ok(providers.indexOf("<I18nProvider") < providers.indexOf("<AntdThemeProvider"),
+    "I18nProvider ต้องห่อ AntdThemeProvider");
+});

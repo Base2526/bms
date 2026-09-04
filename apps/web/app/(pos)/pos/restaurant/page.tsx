@@ -76,6 +76,8 @@ type MenuItem = SearchItem & {
 // เหตุผลที่ครัวบอกจริงตอนของหมด — เก็บลงหลักฐานว่าปิดเพราะอะไร ไม่ใช่คำว่า "หมดวันนี้"
 // ซึ่งเป็นแค่การพูดซ้ำสิ่งที่สถานะบอกอยู่แล้ว
 const MENU_SOLD_OUT_REASONS = ["วัตถุดิบหมด", "เตา/เครื่องไม่พร้อม", "งดขายรอบนี้"] as const;
+const MENU_QTY_SHORTCUTS = [1, 2, 3, 5] as const;
+const KITCHEN_NOTE_SHORTCUTS = ["ไม่เผ็ด", "แยกน้ำ", "ไม่ใส่ผัก", "ไม่ใส่ถั่ว"] as const;
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
@@ -150,31 +152,46 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
   }, new Map<string, { meta: ScanModifier; items: ScanModifier[] }>()).values());
   return <div className={styles.modifierList}>{groups.map(({ meta, items }) => {
     const selectedInGroup = items.filter((item) => selected.includes(item.code));
-    return <fieldset key={meta.groupCode} style={{ border: 0, padding: 0, margin: 0 }}>
-      <legend><strong>{meta.groupName}</strong>{meta.minSelect > 0 ? ` · เลือกอย่างน้อย ${meta.minSelect}` : ""}</legend>
-      {items.map((modifier) => {
-        const checked = selected.includes(modifier.code);
-        const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
-        return <label className={styles.modifierChoice} key={modifier.code}>
-          <input
-            type={meta.selectionType === "SINGLE" ? "radio" : "checkbox"}
-            name={`modifier-${meta.groupCode}`}
-            checked={checked}
-            disabled={!checked && atLimit}
-            onChange={(event) => {
-              if (meta.selectionType === "SINGLE") {
-                const groupCodes = new Set(items.map((item) => item.code));
-                onChange([...selected.filter((code) => !groupCodes.has(code)), modifier.code]);
-                return;
-              }
-              onChange(event.target.checked
-                ? [...selected, modifier.code]
-                : selected.filter((code) => code !== modifier.code));
-            }}
-          />
-          <span>{modifier.name}{modifier.priceDelta > 0 ? ` (+฿${money(modifier.priceDelta)})` : ""}</span>
-        </label>;
-      })}
+    // บอกกติกาให้ครบ ไม่ใช่แค่ขั้นต่ำ — คนหน้าร้านต้องรู้ก่อนแตะว่าเลือกได้กี่อย่าง
+    const single = meta.selectionType === "SINGLE";
+    const rule = [
+      single || meta.maxSelect === 1 ? "เลือกได้ 1"
+        : meta.maxSelect != null ? `เลือกได้ไม่เกิน ${meta.maxSelect}`
+        : "เลือกได้หลายอย่าง",
+      meta.minSelect > 0 ? `ต้องเลือกอย่างน้อย ${meta.minSelect}` : null,
+    ].filter(Boolean).join(" · ");
+    return <fieldset key={meta.groupCode} className={styles.modifierGroup}>
+      <legend className={styles.fieldLabel}>{meta.groupName} <span className={styles.fieldRule}>· {rule}</span></legend>
+      {/* ชิปแทนกล่องเต็มแถว — เมนูที่มี 4–5 ตัวเลือกไม่ต้องเลื่อนกล่องอีก · ยังเป็น
+          radio/checkbox จริงข้างใน (ซ่อนไว้) จึงคุมด้วยคีย์บอร์ดและอ่านด้วย screen reader ได้ */}
+      <div className={styles.modifierChips}>
+        {items.map((modifier) => {
+          const checked = selected.includes(modifier.code);
+          const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
+          return <label className={`${styles.modifierChip} ${checked ? styles.modifierChipOn : ""} ${!checked && atLimit ? styles.modifierChipOff : ""}`} key={modifier.code}>
+            <input
+              className={styles.modifierChipInput}
+              type={single ? "radio" : "checkbox"}
+              name={`modifier-${meta.groupCode}`}
+              checked={checked}
+              disabled={!checked && atLimit}
+              onChange={(event) => {
+                if (single) {
+                  const groupCodes = new Set(items.map((item) => item.code));
+                  onChange([...selected.filter((code) => !groupCodes.has(code)), modifier.code]);
+                  return;
+                }
+                onChange(event.target.checked
+                  ? [...selected, modifier.code]
+                  : selected.filter((code) => code !== modifier.code));
+              }}
+            />
+            <span>{modifier.name}</span>
+            {/* ส่วนต่างราคาต้องเห็นก่อนกด ไม่ใช่ไปโผล่ตอนบิลออก */}
+            {modifier.priceDelta > 0 && <small>+฿{money(modifier.priceDelta)}</small>}
+          </label>;
+        })}
+      </div>
     </fieldset>;
   })}</div>;
 }
@@ -655,6 +672,16 @@ export default function RestaurantPosPage() {
     menuItems.forEach((item) => { if (item.kitchenStation) seen.add(item.kitchenStation); });
     return [...seen];
   }, [menuItems]);
+  // ราคาต่อหน่วยรวมส่วนต่างของตัวเลือก — คิดที่เดียวแล้วใช้ทั้งบรรทัดสรุปและข้อความบนปุ่ม
+  // (เดิมสูตรเดียวกันถูกเขียนซ้ำสองครั้งในข้อความเดียว) · price_delta เป็นข้อมูลฝั่ง server
+  // เสมอ (9.45) จอแค่แสดงให้เห็นก่อนกด ไม่ได้เป็นคนตั้งราคา
+  const menuHitUnitPrice = useMemo(() => {
+    if (!menuHit) return 0;
+    return menuHit.packPrice + menuHit.modifiers
+      .filter((modifier) => modifierCodes.includes(modifier.code))
+      .reduce((sum, modifier) => sum + modifier.priceDelta, 0);
+  }, [menuHit, modifierCodes]);
+  const menuHitTotal = menuHitUnitPrice * menuQty;
   const soldOutCount = useMemo(
     () => menuItems.filter((item) => item.availability === "SOLD_OUT_TODAY").length,
     [menuItems]
@@ -1347,19 +1374,62 @@ export default function RestaurantPosPage() {
     </Modal>
     <Modal title={`เปิดบิล ${openTable?.name ?? ""}`} open={Boolean(openTable)} onCancel={() => setOpenTable(null)} onOk={() => void openCheck()} confirmLoading={working} okText="เปิดโต๊ะ" getContainer={modalContainer}><div className={styles.modalGrid}><label>จำนวนลูกค้า<input type="number" min={1} max={500} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} /></label></div></Modal>
     <Modal
-      title={menuHit?.productName ?? "เพิ่มเมนู"}
+      title={menuHit
+        ? <span className={styles.menuModalTitle}>{menuHit.productName}
+            <small>{menuHit.size !== "-" ? `${menuHit.size} · ` : ""}฿{money(menuHit.packPrice)} / {menuHit.unitName}</small>
+          </span>
+        : "เพิ่มเมนู"}
       open={Boolean(menuHit)}
       onCancel={() => setMenuHit(null)}
       onOk={() => void addMenu()}
       confirmLoading={working}
-      okText="เพิ่มในบิล"
+      okText={`เพิ่มในบิล · ฿${money(menuHitTotal)}`}
+      cancelText="ยกเลิก"
       getContainer={modalContainer}
     >
       {menuHit && <div className={styles.modalGrid}>
-        <Alert type="info" message={`${menuHit.size} · ฿${money(menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0))} / ${menuHit.unitName} · รวม ${menuQty} รายการ ฿${money((menuHit.packPrice + menuHit.modifiers.filter((modifier) => modifierCodes.includes(modifier.code)).reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * menuQty)}`} />
-        <label>จำนวน<input type="number" min={1} max={9999} value={menuQty} onChange={(event) => setMenuQty(Number(event.target.value))} /></label>
+        {/* จำนวนเป็น stepper ไม่ใช่ช่องพิมพ์ — บนแท็บเล็ตการพิมพ์เลขตัวเดียวต้องเรียกคีย์บอร์ด
+            ขึ้นมาบังครึ่งจอ · ชิป 1–5 ไว้ให้โต๊ะที่สั่งทีละหลายที่ */}
+        <div>
+          <span className={styles.fieldLabel}>จำนวน</span>
+          <div className={styles.qtyRow}>
+            <div className={styles.stepper}>
+              <button type="button" aria-label="ลดจำนวน" disabled={menuQty <= 1}
+                onClick={() => setMenuQty((current) => Math.max(1, current - 1))}>−</button>
+              <span className={styles.stepperValue} aria-live="polite">{menuQty}</span>
+              <button type="button" aria-label="เพิ่มจำนวน" disabled={menuQty >= 99}
+                onClick={() => setMenuQty((current) => Math.min(99, current + 1))}>+</button>
+            </div>
+            <div className={styles.quickQty}>
+              {MENU_QTY_SHORTCUTS.map((n) => <button key={n} type="button" aria-pressed={menuQty === n}
+                className={`${styles.quickQtyBtn} ${menuQty === n ? styles.quickQtyOn : ""}`}
+                onClick={() => setMenuQty(n)}>{n}</button>)}
+            </div>
+          </div>
+        </div>
         {menuHit.modifiers.length > 0 && <MenuModifierGroups modifiers={menuHit.modifiers} selected={modifierCodes} onChange={setModifierCodes} />}
-        <label>โน้ตถึงครัว<textarea rows={3} maxLength={300} value={kitchenNote} onChange={(event) => setKitchenNote(event.target.value)} placeholder="เช่น ไม่เผ็ด, แยกน้ำ" /></label>
+        <div>
+          <span className={styles.fieldLabel}>โน้ตถึงครัว <span className={styles.fieldRule}>· ไม่บังคับ</span></span>
+          {/* คำที่ครัวเจอทุกวันไม่ควรต้องพิมพ์ใหม่ทุกครั้ง — ชิปเติมข้อความให้แล้วพิมพ์ต่อได้ */}
+          <div className={styles.noteChips}>
+            {KITCHEN_NOTE_SHORTCUTS.map((text) => {
+              const parts = kitchenNote.split(",").map((part) => part.trim()).filter(Boolean);
+              const on = parts.includes(text);
+              return <button key={text} type="button" aria-pressed={on}
+                className={`${styles.noteChip} ${on ? styles.noteChipOn : ""}`}
+                onClick={() => setKitchenNote((on ? parts.filter((part) => part !== text) : [...parts, text]).join(", "))}>
+                {on ? text : `+ ${text}`}
+              </button>;
+            })}
+          </div>
+          <textarea rows={2} maxLength={300} value={kitchenNote} className={styles.noteBox}
+            onChange={(event) => setKitchenNote(event.target.value)} placeholder="พิมพ์เองได้" />
+        </div>
+        {/* ยอดรวมอยู่บนปุ่มด้วย (okText) — บรรทัดนี้บอก "มาจากไหน" ให้ตรวจก่อนกด */}
+        <div className={styles.menuTotalRow}>
+          <span>{`฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? " (รวมตัวเลือก)" : ` / ${menuHit.unitName}`}`}</span>
+          <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
+        </div>
       </div>}
     </Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
