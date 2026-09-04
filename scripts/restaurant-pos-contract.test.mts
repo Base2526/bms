@@ -646,6 +646,29 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
   }
   assert.deepEqual(offenders, [],
     `กฎเหล่านี้ทาสีปุ่มแต่ไม่มี .page นำหน้า จึงแพ้ .pos-root button: ${offenders.join(" · ")}`);
+
+  // ปุ่มที่ทาพื้นทึบแล้วใช้ตัวหนังสือสีอ่อน **ต้องประกาศ :hover ของตัวเองเสมอ** —
+  // pos.css เปลี่ยนพื้นเป็น --pos-sunken ตอน hover แล้วตัวหนังสือสีขาวจะหายไปกับพื้น
+  // และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุด = เห็นปุ่มว่างเปล่าเป็นปกติ
+  const rules = [...css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)].map(([, , sel, body]) => ({
+    sel: sel.trim(), body,
+  }));
+  const LIGHT_INK = /(?<![-\w])color\s*:\s*(?:white|#fff(?:fff)?|var\(--panel\))\s*(?:;|$)/i;
+  const missingHover: string[] = [];
+  // ตัด :not(...) ออกก่อนถามว่า "กฎนี้เป็นของปุ่มตัวไหน" — `.railBtn:hover:not(.railBtnActive)`
+  // เอ่ยถึง railBtnActive เพื่อ *ยกเว้น* มัน ไม่ใช่เพื่อทาสีให้มัน (รอบแรกเทสเขียวเพราะข้อนี้)
+  const withoutNot = (sel: string) => sel.replace(/:not\([^)]*\)/g, "");
+  for (const name of onButtons) {
+    const owns = (sel: string) => new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
+    const painted = rules.some((rule) => owns(rule.sel) && !rule.sel.includes(":hover")
+      && /(?:^|;|\{)\s*background\s*:/.test(rule.body) && LIGHT_INK.test(rule.body));
+    if (!painted) continue;
+    const hovered = rules.some((rule) => owns(rule.sel) && rule.sel.includes(":hover")
+      && /(?:^|;|\{)\s*background\s*:/.test(rule.body));
+    if (!hovered) missingHover.push(name);
+  }
+  assert.deepEqual(missingHover, [],
+    `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`);
 });
 
 test("ช่องกรองเมนูมีปุ่มล้าง ขึ้นเฉพาะตอนมีข้อความ และคืนโฟกัสให้พิมพ์ต่อ", async () => {

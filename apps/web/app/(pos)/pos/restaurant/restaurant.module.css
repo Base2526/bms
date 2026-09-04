@@ -73,6 +73,11 @@
 }
 .page .railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
 .page .railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
+/* :not(.railBtnActive) ข้างบนกันไม่ให้ *กฎของเราเอง* ทาทับปุ่มที่เลือกอยู่ แต่ไม่ได้กัน
+   `.pos-root button:hover:not(:disabled)` ของ pos.css (0,3,1) ซึ่งเปลี่ยนพื้นเป็นสีอ่อน
+   ขณะที่ตัวหนังสือยังเป็นสีขาว = แท็บที่เปิดอยู่กลายเป็นปุ่มว่างเปล่าตอนเอาเมาส์ไปชี้
+   (และบนจอสัมผัส :hover ค้างกับปุ่มที่แตะล่าสุด จึงเห็นเป็นปกติที่หน้าร้าน) */
+.page .railBtnActive:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); filter: brightness(1.12); }
 .railIcon { display: block; font-size: 19px; line-height: 1; }
 .railLabel { display: block; font-size: 10px; font-weight: 600; line-height: 1.35; white-space: nowrap; }
 .railBadge {
