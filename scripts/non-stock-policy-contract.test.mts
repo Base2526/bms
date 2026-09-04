@@ -27,16 +27,15 @@ test("NON_STOCK is an accepted stock policy", () => {
   assert.ok(PRODUCT_STOCK_POLICIES.includes("NON_STOCK" as never));
 });
 
-test("the QUICK_MENU template is a restaurant-only draft that needs no recipe", () => {
+test("the QUICK_MENU template is a chat-ready restaurant draft that needs no recipe", () => {
   assert.deepEqual(productTemplateDefaults("QUICK_MENU"), {
     stockPolicy: "NON_STOCK",
     baseUnit: "PIECE",
-    surfaces: ["RESTAURANT_POS"],
+    surfaces: ["RESTAURANT_POS", "CUSTOMER_AI", "ONLINE_ORDER"],
     active: false,
   });
-  // Online surfaces stay shut: createShipment()/releaseExpiredOrders() still read
-  // bms_order_items directly instead of the bms_order_stock_lines view.
-  assert.deepEqual(productTemplateDefaults("QUICK_MENU").surfaces, ["RESTAURANT_POS"]);
+  assert.deepEqual(productTemplateDefaults("QUICK_MENU").surfaces,
+    ["RESTAURANT_POS", "CUSTOMER_AI", "ONLINE_ORDER"]);
   assert.equal(productTemplateDefaults("PREPARED_MENU").stockPolicy, "RECIPE",
     "the recipe template is untouched");
 });
@@ -58,12 +57,13 @@ test("a NON_STOCK line consumes nothing but still creates its zero inventory row
   assert.match(body, /lines:\s*\[\]/);
 });
 
-test("modifiers stay blocked on NON_STOCK exactly as they are on DIRECT/PACK", () => {
+test("NON_STOCK accepts instruction-only modifiers and rejects ingredient deltas", () => {
   const consumption = withoutComments(source("apps/web/lib/bms/stockConsumption.ts"));
   const branch = consumption.slice(consumption.indexOf('policy.stock_policy === "NON_STOCK"'));
   const body = branch.slice(0, branch.indexOf("}\n\n"));
-  assert.match(body, /MODIFIER_REQUIRES_RECIPE/,
-    "a modifier is an ingredient delta against a recipe; NON_STOCK has neither");
+  assert.match(body, /if \(hasStockModifiers\)[\s\S]*MODIFIER_REQUIRES_RECIPE/);
+  assert.match(consumption, /LEFT JOIN bms_product_modifier_items/,
+    "a modifier without an ingredient row must still resolve as a valid instruction");
 });
 
 test("the kitchen board covers NON_STOCK menus sold on a plain retail register", () => {

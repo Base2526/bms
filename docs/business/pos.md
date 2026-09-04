@@ -1361,7 +1361,26 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`)
+
+### “Sold out today” menu availability (`9.55`)
+
+Temporary availability is a branch fact, not the product's durable `active` state. One row in
+`bms_product_menu_unavailability` closes one SKU at one location for every sales surface. The shared
+`isMenuSellable()` policy treats `NON_STOCK` and `RECIPE` menu items as available until the shop
+closes them, while countable `DIRECT`/`PACK` goods still require real stock. The order transaction
+rechecks the flag at its selected location, so a stale screen or chat result cannot bypass it.
+
+Both reset signals honour the same `resets_at` stamp on the row: the guarded cron (every 15 minutes,
+so each shop's own `bms_store_profile.menu_availability_reset_time` and timezone are respected — 04:00
+local by default), and opening a POS shift at that branch as the fallback sweep for a shop whose
+scheduler is not wired up. Resetting at 04:00 rather than midnight avoids putting a sold-out
+late-night dish back on sale in the middle of service — and for exactly that reason **shift-open
+clears only rows whose `resets_at` has already passed**. A shift belongs to a device and a cashier,
+not to a service day: a two-register restaurant, or one that changes shift at lunch, opens several
+shifts a day, so clearing the whole branch would undo a sold-out call made minutes earlier with
+nothing on screen to say so. Kitchen and restaurant order screens expose the same one-tap control;
+neither path changes `bms_products.active`.
 
 ### Kitchen stations (`9.54`)
 
@@ -1542,3 +1561,31 @@ the option, and `scaleBarcode` was discarded, so a weighed line was priced as on
 such bill died on `PAYMENT_MISMATCH`. Adding a line field means adding it to that parser, and pinning
 it in `scripts/pos-contract.test.mts` — a DB contract that calls `createOrder()` directly never
 crosses the route and will not catch it.
+# Restaurant chat and online orders
+
+Restaurant chat orders carry an explicit active branch, `DELIVERY`/`PICKUP`, and an optional promised
+time. Paid orders appear in the **ออร์เดอร์เข้า** tab at `/pos`; staff must accept an order before its
+kitchen tickets are created. The tab is scoped to the POS device's branch. Managers see the same
+fulfilment metadata on the admin orders page. Structured weekly hours and the temporary whole-shop
+pause live in Store Profile; the customer assistant refuses clearly while paused or closed.
+
+These branch, fulfilment, acceptance and kitchen-queue rules apply only to
+`business_archetype = 'restaurant'`. A cafe configured as `food_beverage` still supports AI chat and
+ordinary online ordering—including catalog-backed modifier codes—but keeps the retail order flow and
+does not silently inherit restaurant hours, branch selection, or kitchen acceptance.
+
+Staff can cancel individual incoming-order lines from the same POS tab. The server infers
+merchant-caused cancellation when that branch has marked the menu sold out, otherwise the operator
+must record merchant or customer cause. The shared return engine reprices remaining quantities,
+re-evaluates coupon eligibility, releases only the cancelled reservation, reverses proportional
+loyalty/credit, closes only matching kitchen tickets, writes the audit, and creates non-cash refund
+allocations atomically. Pending refunds and their age are actionable in POS and mirrored on admin
+orders; completion requires a real transfer reference and can be performed only by an authenticated
+register at the order's branch. If the operator identifies a merchant stock-out, POS offers to mark
+that exact menu unavailable for the branch after the cancellation succeeds.
+
+Restaurant delivery deliberately uses the existing flat shipping configuration and prepaid order
+lifecycle. COD is not part of this rollout. For an in-house rider, select carrier `OTHER` and record
+the rider name in tracking; live parcel-carrier adapters are not inferred. Sample restaurant data
+offers a quick menu with no ingredient recipes by default and an opt-in recipe set for operators who
+want ingredient-level depletion.

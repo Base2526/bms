@@ -27,7 +27,7 @@ operators must resolve those records before retrying the migration.
 
 | Module | Tables | Key migration |
 | --- | --- | --- |
-| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41` |
+| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_product_menu_unavailability`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41`, `9.55` |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot), `9.24` (snapshot provenance) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
@@ -918,3 +918,20 @@ state; reads and order creation require both active and the appropriate enabled 
 backfilled into an `OPTIONS` group and receive `group_id`, `default_selected` and `sort_order`.
 All three new tables carry tenant RLS, `bms_app` grants and revision triggers. The modifier group FK
 includes `tenant_id`, preventing a modifier from linking to another shop's group.
+# Restaurant online order acceptance (9.56)
+
+`bms_orders.fulfillment_type` (`DELIVERY`/`PICKUP`) and `promised_at` are first-class fields so the
+incoming queue and kitchen can sort without parsing notes. `bms_store_profile` stores validated
+weekly `restaurant_order_hours` plus the audited whole-shop pause state. An online restaurant order
+reserves stock when created, but payment does not start cooking: a human at the order's branch moves
+it from `PAID` to `PACKING` and creates kitchen tickets in the same tenant transaction.
+
+## Restaurant line cancellation (9.57)
+
+Restaurant line cancellation reuses `bms_pos_returns`, its item rows, refund allocations, pricing
+snapshots, loyalty reversal, and audit transaction. `pos_device_id = NULL` identifies the online
+path. Each return item records an immutable merchant/customer cause; a branch sold-out flag forces
+the merchant cause. Repricing differences absorbed by the shop use the distinct
+`MERCHANT_ABSORBED` order-discount source and accumulate on conflict. The store-level approval limit
+defaults to ฿2,000. `order.line.cancel` is seeded to Manager and Cashier without widening
+`order.return`.

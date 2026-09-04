@@ -79,6 +79,19 @@ const DEFINITIONS: OperationDefinition[] = [
     evidenceFallback: "Cron endpoint is available, but no repository-level scheduler is configured.",
   },
   {
+    key: "menu-availability-reset",
+    name: "Restaurant Menu Availability Reset",
+    kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/menu-availability/reset/route.ts",
+    docsPath: "docs/business/pos.md",
+    triggerHint: "POST /api/bms/menu-availability/reset",
+    purposeFallback: "Reopen branch-scoped menus whose tenant-local service-day reset time has arrived.",
+    whenFallback: "Every 15 minutes",
+    statusFallback: "Scheduled",
+    triggerFallback: "GitHub Actions frequent schedule",
+    evidenceFallback: "Called by the frequent matrix in .github/workflows/bms-cron.yml.",
+  },
+  {
     key: "loyalty-maintenance",
     name: "Loyalty Maintenance",
     kind: "Cron Endpoint",
@@ -264,6 +277,7 @@ async function buildWorkflowRow(def: OperationDefinition): Promise<OperationSche
 async function buildRouteRow(def: OperationDefinition): Promise<OperationScheduleRow> {
   const source = await readSourceIfAvailable(def.sourcePath);
   if (!source) return buildFallbackRow(def);
+  const workflow = await readSourceIfAvailable(".github/workflows/bms-cron.yml");
   const lines = extractTopCommentLines(source);
   const when = inferWhenFromComments(lines, def.whenFallback);
   const unauthorizedGuard = source.includes("x-cron-secret");
@@ -271,16 +285,20 @@ async function buildRouteRow(def: OperationDefinition): Promise<OperationSchedul
     def.triggerHint ||
     source.match(/POST\s+(\/api\/[^\s—]+)/)?.[1] ||
     def.sourcePath;
+  const routePath = trigger.replace(/^POST\s+/, "");
+  const scheduled = Boolean(workflow?.includes(`path: ${routePath}`));
 
   return {
     key: def.key,
     name: def.name,
     kind: def.kind,
-    status: "Ready but unscheduled",
+    status: scheduled ? "Scheduled" : "Ready but unscheduled",
     when,
     trigger,
     purpose: inferPurposeFromComments(lines, def.purposeFallback),
-    evidence: `${def.sourcePath} exposes the cron entrypoint${unauthorizedGuard ? " and checks x-cron-secret" : ""}; no repo-level scheduler was found for it.`,
+    evidence: scheduled
+      ? `${def.sourcePath} exposes the cron entrypoint and .github/workflows/bms-cron.yml calls it${unauthorizedGuard ? " with x-cron-secret" : ""}.`
+      : `${def.sourcePath} exposes the cron entrypoint${unauthorizedGuard ? " and checks x-cron-secret" : ""}; no repo-level scheduler was found for it.`,
     sourcePath: def.sourcePath,
     docsPath: def.docsPath,
   };

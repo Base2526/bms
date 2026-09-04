@@ -233,6 +233,12 @@
   position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel);
   cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden; min-height: 0;
 }
+.page .dishSelect { display: block; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.page .dishSelect:disabled { cursor: not-allowed; }
+.dishCardUnavailable .dishSelect { opacity: .52; }
+.dishUnavailableLabel { position: absolute; inset: 36px 12px auto; z-index: 2; border-radius: 5px; padding: 7px 8px; background: var(--red); color: white; text-align: center; font-weight: 700; }
+.page .dishAvailabilityButton { width: 100%; min-height: 34px; border: 0; border-top: 1px solid var(--line-2); background: var(--panel-2); color: var(--red); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.dishCardUnavailable .dishAvailabilityButton { color: var(--green); }
 .page .dishCard:hover { border-color: var(--accent); }
 .dishArt { height: 96px; display: grid; place-items: center; }
 .dishArt img { width: 100%; height: 100%; object-fit: cover; }
@@ -338,6 +344,13 @@
 /* แถบหัวจอครัว — แทนที่บล็อกชื่อจอ + คำอธิบาย + ปุ่มรีเฟรชขนาดเต็ม (สูงรวม ~72px)
    ด้วยแถวเดียวที่เป็นเครื่องมือจริง: กรองตามสถานีที่คนครัวคนนั้นรับผิดชอบ */
 .kitchenBar { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.kitchenMenuAvailability { position: relative; }
+.kitchenMenuAvailability summary { list-style: none; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; padding: 7px 11px; font-size: 13px; font-weight: 700; }
+.kitchenMenuAvailabilityList { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; width: min(360px, 80vw); max-height: 55vh; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); box-shadow: 0 10px 28px rgba(21,25,22,.16); }
+.page .kitchenMenuAvailabilityList button { width: 100%; display: flex; justify-content: space-between; gap: 12px; border: 0; border-radius: 5px; padding: 9px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.page .kitchenMenuAvailabilityList button:hover { background: var(--panel-2); }
+.page .kitchenMenuAvailabilityList button b { color: var(--red); }
+.page .kitchenMenuAvailabilityList .kitchenMenuSoldOut b { color: var(--green); }
 .kitchenFilter { font: inherit; font-size: 13.5px; height: 34px; padding: 0 13px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 .kitchenFilter:hover { background: var(--panel-2); }

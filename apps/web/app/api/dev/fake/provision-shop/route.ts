@@ -22,6 +22,7 @@ import {
 } from "@/lib/bms/devSeed";
 import { seedFakePosDevices } from "@/lib/bms/devPosSeed";
 import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
+import { normalizeRestaurantSeedSet } from "@/lib/bms/restaurantCatalogSeed";
 import { generateFakeGroundTruth } from "@/lib/bms/fakeEvaluation";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -41,6 +42,7 @@ async function handlePOST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : undefined;
   const businessArchetype = normalizeShopArchetype(body?.businessArchetype);
+  const restaurantSeedSet = normalizeRestaurantSeedSet(body?.restaurantSeedSet);
   const c = body?.counts ?? {};
   const counts = {
     // One Administrator is provisioned separately, so 44 seeded staff = 45 total.
@@ -65,7 +67,7 @@ async function handlePOST(req: NextRequest) {
   try {
     const staff = await seedFakeStaff(shop.tenantId, counts.staff, guard.actor?.id, businessArchetype);
     const deviceResult = await seedFakePosDevices(shop.tenantId, counts.posDevices, guard.actor?.id);
-    const products = await seedFakeProducts(shop.tenantId, counts.products, businessArchetype);
+    const products = await seedFakeProducts(shop.tenantId, counts.products, businessArchetype, restaurantSeedSet);
     const customers = await seedFakeCustomers(shop.tenantId, counts.customers);
     const orderResult = await seedFakeOrders(shop.tenantId, counts.orders, businessArchetype, "omnichannel");
     const convResult = await seedFakeConversations(shop.tenantId, counts.conversations, businessArchetype);
@@ -84,6 +86,7 @@ async function handlePOST(req: NextRequest) {
       tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name },
       admin: { email: shop.adminEmail, password: shop.adminPassword },
       businessArchetype,
+      restaurantSeedSet,
       groundTruth: {
         id: groundTruth.id,
         cases: groundTruth.cases.length,

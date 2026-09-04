@@ -12,7 +12,7 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { resolveDefaultLocationIdInTx } from "./locations";
+import { resolveDefaultLocationId, resolveDefaultLocationIdInTx } from "./locations";
 import { recordMovement } from "./movements";
 import {
   findAlternativeProducts,
@@ -40,6 +40,29 @@ export type StockPackOption = {
 };
 
 export type StockResult =
+  | {
+      status: "AVAILABLE_TO_ORDER";
+      availability: "AVAILABLE";
+      sku: string;
+      name: string;
+      price: number;
+      size: string;
+    }
+  | {
+      status: "SOLD_OUT_TODAY";
+      availability: "SOLD_OUT_TODAY";
+      sku: string;
+      name: string;
+      price: number;
+      size: string | null;
+    }
+  | {
+      status: "MENU_SIZE_REQUIRED";
+      sku: string;
+      name: string;
+      price: number;
+      sizes: Array<{ size: string; price: number }>;
+    }
   | {
       status: "IN_STOCK";
       sku: string;
@@ -97,16 +120,77 @@ export async function resolveProduct(tenantId: string, text: string): Promise<Pr
 export async function checkStock(
   tenantId: string,
   productText: string,
-  size: string | null
+  size: string | null,
+  requestedLocationId?: string | null
 ): Promise<StockResult> {
+  const requested = requestedLocationId?.trim() || null;
+  const locationId = requested
+    ? (await query<{ id: string }>(
+        `SELECT id FROM bms_locations
+          WHERE tenant_id = $1 AND id::text = $2 AND active`,
+        [tenantId, requested]
+      )).rows[0]?.id
+    : await resolveDefaultLocationId(tenantId);
+  if (!locationId) throw new Error("INVALID_OR_INACTIVE_LOCATION");
   const product = await resolveProduct(tenantId, productText);
   if (!product) {
     const { items } = await listSellableProducts(tenantId, {
       inStockOnly: true,
       sort: "availability",
       limit: 3,
+      locationId,
     });
     return { status: "NOT_FOUND", query: productText, alternatives: items };
+  }
+
+  const menuState = await query<{ stock_policy: string; temporarily_unavailable: boolean }>(
+    `SELECT COALESCE(policy.stock_policy, 'DIRECT') AS stock_policy,
+            EXISTS (
+              SELECT 1 FROM bms_product_menu_unavailability unavailable
+               WHERE unavailable.tenant_id = p.tenant_id
+                 AND unavailable.location_id = $3
+                 AND unavailable.product_sku = p.sku
+                 AND unavailable.resets_at > now()
+            ) AS temporarily_unavailable
+       FROM bms_products p
+       LEFT JOIN bms_product_stock_policies policy
+         ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.sku = $2`,
+    [tenantId, product.sku, locationId]
+  );
+  const policy = menuState.rows[0]?.stock_policy ?? "DIRECT";
+  if (menuState.rows[0]?.temporarily_unavailable) {
+    return { status: "SOLD_OUT_TODAY", availability: "SOLD_OUT_TODAY", sku: product.sku,
+      name: product.name, price: Number(product.price), size };
+  }
+  if (policy === "NON_STOCK" || policy === "RECIPE") {
+    if (!size) {
+      // Serving options come from the catalog (bms_product_variants, 9.51), not from branch stock.
+      // A NON_STOCK/RECIPE menu deliberately keeps its own inventory at zero, and upsertProduct
+      // writes the variant without ever creating a bms_inventory row — so reading inventory here
+      // answered "no sizes" for every menu a restaurant had just typed in, which the model cannot
+      // recover from because create_order requires a size. listRestaurantMenu() and resolvePosScan()
+      // already read the same catalog truth; this keeps all three surfaces on one answer.
+      const variants = await query<{ size: string; price: string }>(
+        `SELECT variant.code AS size, COALESCE(sized.price, shared.price, p.price)::text AS price
+           FROM bms_product_variants variant
+           JOIN bms_products p ON p.tenant_id = variant.tenant_id AND p.sku = variant.product_sku
+           LEFT JOIN bms_product_packs sized
+             ON sized.tenant_id = variant.tenant_id AND sized.product_sku = variant.product_sku
+            AND sized.size = variant.code AND sized.is_base AND sized.active
+           LEFT JOIN bms_product_packs shared
+             ON shared.tenant_id = variant.tenant_id AND shared.product_sku = variant.product_sku
+            AND shared.size IS NULL AND shared.is_base AND shared.active
+          WHERE variant.tenant_id = $1 AND variant.product_sku = $2 AND variant.active
+          ORDER BY variant.sort_order, variant.code`,
+        [tenantId, product.sku]
+      );
+      return { status: "MENU_SIZE_REQUIRED", sku: product.sku, name: product.name,
+        price: Number(product.price), sizes: variants.rows.map((row) => ({ size: row.size, price: Number(row.price) })) };
+    }
+    const price = await getVariantBasePrice(tenantId, product.sku, size) ?? Number(product.price);
+    return { status: "AVAILABLE_TO_ORDER", availability: "AVAILABLE", sku: product.sku,
+      name: product.name, price, size };
   }
 
   if (!size) {
@@ -121,9 +205,9 @@ export async function checkStock(
          LEFT JOIN bms_product_packs shared
            ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
           AND shared.size IS NULL AND shared.is_base AND shared.active
-        WHERE i.tenant_id = $2 AND i.product_sku = $1
+        WHERE i.tenant_id = $2 AND i.location_id = $3 AND i.product_sku = $1
         ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size)`,
-      [product.sku, tenantId]
+      [product.sku, tenantId, locationId]
     );
     const prices = res.rows.map((row) => Number(row.price));
     return {
@@ -140,8 +224,8 @@ export async function checkStock(
   const res = await query<{ available: number }>(
     `SELECT (current_stock - reserved_stock) AS available
        FROM bms_inventory
-      WHERE tenant_id = $3 AND product_sku = $1 AND size = $2`,
-    [product.sku, size, tenantId]
+      WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
+    [product.sku, size, tenantId, locationId]
   );
   const available = Number(res.rows[0]?.available ?? 0);
   if (available <= 0) {
@@ -149,11 +233,11 @@ export async function checkStock(
       query<{ size: string; available: number }>(
         `SELECT size, GREATEST(current_stock - reserved_stock, 0) AS available
            FROM bms_inventory
-          WHERE tenant_id = $2 AND product_sku = $1
+          WHERE tenant_id = $2 AND location_id = $3 AND product_sku = $1
           ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size), size`,
-        [product.sku, tenantId]
+        [product.sku, tenantId, locationId]
       ),
-      findAlternativeProducts(tenantId, { sku: product.sku, size, limit: 3 }),
+      findAlternativeProducts(tenantId, { sku: product.sku, size, locationId, limit: 3 }),
     ]);
     return {
       status: "OUT_OF_STOCK",

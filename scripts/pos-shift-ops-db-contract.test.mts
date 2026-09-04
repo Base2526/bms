@@ -637,7 +637,7 @@ test("bill history follows a non-cash refund from pending to completed", async (
   assert.equal(event?.refunds[0].completedAt, null);
 
   const settled = await completePosRefundAllocation({
-    tenantId, deviceId, shiftId, allocationId: returned.refunds[0].id,
+    tenantId, deviceId, locationId, shiftId, allocationId: returned.refunds[0].id,
     actorUserId: approverId, externalRef: "CARD-REFUND-REF",
   });
   assert.equal(settled.status, "COMPLETED", JSON.stringify(settled));

@@ -34,7 +34,14 @@ type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; ta
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
-type MenuItem = SearchItem & { kitchenStation: string | null; kitchenStationId: string | null; hasModifiers: boolean; imageUrl: string | null };
+type MenuItem = SearchItem & {
+  kitchenStation: string | null;
+  kitchenStationId: string | null;
+  hasModifiers: boolean;
+  imageUrl: string | null;
+  sellable: boolean;
+  availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
+};
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
@@ -502,6 +509,20 @@ export default function RestaurantPosPage() {
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
+  async function toggleMenuAvailability(item: MenuItem) {
+    await run(async () => {
+      await json("/api/pos/restaurant/menu", {
+        method: "POST",
+        body: JSON.stringify(auth({
+          productSku: item.sku,
+          unavailable: item.availability !== "SOLD_OUT_TODAY",
+          reason: item.availability === "SOLD_OUT_TODAY" ? null : "หมดวันนี้",
+        })),
+      });
+      await loadMenu();
+      message.success(item.availability === "SOLD_OUT_TODAY" ? "เปิดขายเมนูแล้ว" : "ปิดเมนูจนถึงรอบเปิดร้านถัดไปแล้ว");
+    });
+  }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
   async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
@@ -853,7 +874,8 @@ export default function RestaurantPosPage() {
                 : <div className={styles.dishGrid}>{visibleMenuItems.map((item) => {
                     const tint = menuCardTint(item.kitchenStation, menuStations);
                     const inCheck = qtyInCheckBySku.get(item.sku) ?? 0;
-                    return <button key={item.sku} type="button" className={styles.dishCard} onClick={() => void chooseMenu(item)}>
+                    return <div key={item.sku} className={`${styles.dishCard} ${!item.sellable ? styles.dishCardUnavailable : ""}`}>
+                      <button type="button" className={styles.dishSelect} disabled={!item.sellable} onClick={() => void chooseMenu(item)}>
                       <span className={styles.dishArt} style={{ background: tint.bg, color: tint.ink }}>
                         {item.imageUrl
                           ? <img src={item.imageUrl} alt="" />
@@ -868,7 +890,12 @@ export default function RestaurantPosPage() {
                         </span>
                       </span>
                       {item.kitchenStation && <span className={styles.dishStation} style={{ background: tint.bg, color: tint.ink }}>{item.kitchenStation}</span>}
-                    </button>;
+                      {!item.sellable && <span className={styles.dishUnavailableLabel}>{item.availability === "SOLD_OUT_TODAY" ? "วันนี้หมด" : "สต็อกหมด"}</span>}
+                      </button>
+                      <button type="button" className={styles.dishAvailabilityButton} onClick={() => void toggleMenuAvailability(item)}>
+                        {item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "หมดวันนี้"}
+                      </button>
+                    </div>;
                   })}</div>}</div>
             </>}
         </> : floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>ยังไม่มีผังโต๊ะของสาขานี้</h2><p>เริ่มด้วยโซนหน้าร้านและโต๊ะ 12 ตัว</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>สร้างผังเริ่มต้น</button></div></div> : <>
@@ -985,6 +1012,16 @@ export default function RestaurantPosPage() {
           {/* หัวจอเหลือแถวเดียว — ชื่อจอกับคำอธิบายไม่ช่วยคนที่ยืนทำอาหาร พื้นที่นั้นไปเป็น
               ตัวกรองสถานี ซึ่งเป็นวิธีที่ครัวแบ่งงานกันจริง (ครัวร้อน/บาร์ อยู่คนละที่) */}
           <div className={styles.kitchenBar}>
+            <details className={styles.kitchenMenuAvailability}>
+              <summary>เมนูหมดวันนี้ {menuItems.filter((item) => item.availability === "SOLD_OUT_TODAY").length}</summary>
+              <div className={styles.kitchenMenuAvailabilityList}>
+                {menuItems.map((item) => <button type="button" key={item.sku}
+                  className={item.availability === "SOLD_OUT_TODAY" ? styles.kitchenMenuSoldOut : ""}
+                  onClick={() => void toggleMenuAvailability(item)}>
+                  <span>{item.name}</span><b>{item.availability === "SOLD_OUT_TODAY" ? "เปิดขาย" : "หมดวันนี้"}</b>
+                </button>)}
+              </div>
+            </details>
             <button type="button"
               className={`${styles.kitchenFilter} ${stationFilter === null ? styles.kitchenFilterOn : ""}`}
               onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets.filter(openTicket))}</button>

@@ -52,6 +52,10 @@ jobs:
             path: /api/bms/followups/run
           - name: carrier-tracking-sync
             path: /api/bms/shipping/sync-carriers
+          # Rows carry their own tenant-local resets_at. Polling every 15 minutes honours
+          # custom reset times instead of assuming every shop resets at 04:00 Bangkok.
+          - name: menu-availability-reset
+            path: /api/bms/menu-availability/reset
     steps:
       - name: POST ${{ matrix.job.name }}
         env:

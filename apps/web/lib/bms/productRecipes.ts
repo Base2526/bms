@@ -280,7 +280,7 @@ export async function upsertProductModifier(
   if (!Number.isFinite(priceDelta) || priceDelta < 0 || priceDelta > 9999999999.99) {
     throw new Error("ราคาเพิ่มของ Modifier ต้องเป็นจำนวนตั้งแต่ 0 ขึ้นไป");
   }
-  if (items.length === 0 || items.some((item) =>
+  if (items.some((item) =>
     !item.sku || !item.size || !Number.isSafeInteger(item.qtyDelta) || item.qtyDelta === 0
   )) throw new Error("ผลกระทบวัตถุดิบของ Modifier ไม่ถูกต้อง");
   if (new Set(items.map((item) => `${item.sku}\u0000${item.size}`)).size !== items.length) {
@@ -296,8 +296,10 @@ export async function upsertProductModifier(
         WHERE tenant_id = $1 AND product_sku = $2 FOR UPDATE`,
       [tenantId, productSku]
     );
-    if (policy.rows[0]?.stock_policy !== "RECIPE") {
-      throw new Error("Modifier ใช้ได้เฉพาะสินค้าที่มี Stock Policy เป็น RECIPE");
+    // A modifier without ingredient rows is a preparation instruction or price-only option.
+    // It is valid for every policy; only a stock-affecting modifier needs a recipe.
+    if (items.length > 0 && policy.rows[0]?.stock_policy !== "RECIPE") {
+      throw new Error("Modifier ที่มีผลต่อวัตถุดิบใช้ได้เฉพาะสินค้าที่มี Stock Policy เป็น RECIPE");
     }
     if (modifierId) {
       const existing = await client.query<{ product_sku: string }>(

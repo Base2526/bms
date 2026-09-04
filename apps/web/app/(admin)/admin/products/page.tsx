@@ -604,7 +604,7 @@ function ProductsManagement() {
     setShowRestaurantAdditionalFields(false);
     form.resetFields();
     const restaurant = shopExperience.specialMode === "RESTAURANT";
-    const template: ProductCreationTemplate = restaurant ? "PREPARED_MENU" : "GENERAL";
+    const template: ProductCreationTemplate = restaurant ? "QUICK_MENU" : "GENERAL";
     const defaults = productTemplateDefaults(template);
     form.setFieldsValue({
       active: false,

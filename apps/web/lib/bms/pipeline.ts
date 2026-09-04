@@ -386,6 +386,12 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     `ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และข้อมูลที่ร้านกำหนดครบ (${required}) ถ้าไม่ครบให้ถามกลับ`,
     "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น ห้ามพิมพ์ UUID เต็ม และห้ามสร้างเลขตัวอย่างขึ้นมาเอง",
     "create_order ต้องได้รับ sku+size+qty เสมอตามสัญญา backend: ถ้า tenant ไม่กำหนด size เป็นข้อมูลที่ต้องถาม ให้ใช้ size จากผลทูลได้เฉพาะเมื่อสินค้ามีตัวเลือกเดียว; ถ้ามีหลายตัวเลือกต้องถามลูกค้า ห้ามเดา",
+    ...(profile.businessArchetype === "restaurant" || profile.businessArchetype === "food_beverage"
+      ? ["เมนูอาหาร/เครื่องดื่ม: เรียก list_menu_modifiers ด้วย sku+size ก่อนสรุปบิล ถ้ามีกลุ่มบังคับให้ถามลูกค้า แล้วส่งเฉพาะรหัสที่ทูลคืนมาเป็น modifierCodes ใน create_order; ห้ามเดารหัสหรือราคา"]
+      : []),
+    ...(profile.businessArchetype === "restaurant"
+      ? ["ออร์เดอร์ร้านอาหาร: เรียก list_restaurant_order_locations; ถ้ามีหลายสาขาให้ลูกค้าเลือก ถ้ามีสาขาเดียวใช้สาขานั้นได้ แล้วถามวิธีรับ DELIVERY/PICKUP ก่อนส่ง locationId + fulfillmentType เข้า create_order; ห้ามปล่อยให้ระบบเดาสาขาเมื่อมีหลายสาขา"]
+      : []),
     "หน่วยขาย (แผง/ขวด/กล่อง/ซอง): ถ้า check_stock คืน packs มา และลูกค้านับเป็นหน่วยนั้น ให้ส่ง packCode ของหน่วยนั้นใน create_order พร้อม qty = จำนวนหน่วยที่ลูกค้าขอ (เช่น '2 แผง' = qty 2 + packCode ของแผง) " +
       "ห้ามคำนวณจำนวนเม็ดเอง ห้ามคิดราคาต่อหน่วยเอง และห้ามเดารหัสหน่วยที่ไม่ได้อยู่ในผลทูล — ระบบอ่านจำนวนต่อหน่วยและราคาจากข้อมูลหน่วยขายของร้านเอง " +
       "ถ้าลูกค้าบอกหน่วยที่ร้านไม่มี (เช่นขอเป็นโหล) ให้ถามกลับ ห้ามแปลงหน่วยเอง",
@@ -657,14 +663,18 @@ async function prepareResolvedBasketLines(
       execCtx
     );
     trace.push(checked.trace);
-    if (!checked.result.ok || (checked.result.data as any)?.status !== "IN_STOCK") {
+    const checkedStatus = checked.result.ok ? (checked.result.data as any)?.status : null;
+    if (!checked.result.ok || (checkedStatus !== "IN_STOCK" && checkedStatus !== "AVAILABLE_TO_ORDER")) {
       return {
         lines: null,
-        error: `${candidate.name} ไซซ์ ${requested.size} ไม่มีสต็อกพร้อมขายแล้ว กรุณาเริ่มเลือกรายการใหม่ค่ะ`,
+        error: checkedStatus === "SOLD_OUT_TODAY"
+          ? `${candidate.name} วันนี้หมดแล้วค่ะ กรุณาเลือกรายการอื่น`
+          : `${candidate.name} ไซซ์ ${requested.size} ไม่มีสต็อกพร้อมขายแล้ว กรุณาเริ่มเลือกรายการใหม่ค่ะ`,
         trace,
       };
     }
-    const stock = checked.result.data as StockResult;
+    const stock = checked.result.ok ? checked.result.data as StockResult : null;
+    if (!stock) return { lines: null, error: "ตรวจสอบสินค้าไม่สำเร็จค่ะ", trace };
     let packCode: string | null = null;
     if (requested.unit) {
       const packs = stock.status === "IN_STOCK" && Array.isArray(stock.packs) ? stock.packs : [];
@@ -1528,8 +1538,8 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult, eng
       const shortId = order.orderId.slice(0, 8);
       const lines = order.items
         .map((l) => english
-          ? `• ${nameOf(l.sku)}, size ${l.size} × ${l.qty} (${l.availableAfter} remaining)`
-          : `• ${nameOf(l.sku)} ไซซ์ ${l.size} × ${l.qty} (คงเหลือ ${l.availableAfter})`)
+          ? `• ${nameOf(l.sku)}, size ${l.size} × ${l.qty}${l.availableAfter == null ? "" : ` (${l.availableAfter} remaining)`}`
+          : `• ${nameOf(l.sku)} ไซซ์ ${l.size} × ${l.qty}${l.availableAfter == null ? "" : ` (คงเหลือ ${l.availableAfter})`}`)
         .join("\n");
       return english
         ? `Your order has been received.\n${lines}\nTotal ${order.total.toLocaleString("en-US")} THB\nOrder number: ${shortId}`
@@ -1543,6 +1553,22 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult, eng
       return english
         ? `Sorry, ${nameOf(order.sku)} size ${order.size} was not found.`
         : `ขออภัยค่ะ ไม่พบสินค้า ${nameOf(order.sku)} ไซซ์ ${order.size} ในระบบค่ะ`;
+    case "SOLD_OUT_TODAY":
+      return english
+        ? `Sorry, ${nameOf(order.sku)} is sold out today. Would you like another menu item?`
+        : `ขออภัยค่ะ ${nameOf(order.sku)} วันนี้หมดแล้ว รับเป็นเมนูอื่นไหมคะ?`;
+    case "LOCATION_REQUIRED":
+      return english
+        ? `Please choose the restaurant branch for this order: ${order.locations.map((location) => location.name).join(", ")}.`
+        : `กรุณาเลือกสาขาที่จะรับออร์เดอร์นี้ค่ะ: ${order.locations.map((location) => location.name).join(", ")}`;
+    case "FULFILLMENT_REQUIRED":
+      return english
+        ? "Would you like delivery or pickup for this restaurant order?"
+        : "ออร์เดอร์นี้ต้องการให้จัดส่งหรือมารับที่ร้านคะ?";
+    case "ORDERING_PAUSED":
+      return english ? "The kitchen has temporarily paused online orders." : "ตอนนี้ครัวเต็มและหยุดรับออร์เดอร์ชั่วคราวค่ะ";
+    case "ORDERING_CLOSED":
+      return english ? "The restaurant is currently outside its online ordering hours." : "ตอนนี้อยู่นอกเวลารับออร์เดอร์ออนไลน์ของร้านค่ะ";
     case "PACK_NOT_FOUND":
       return english
         ? `Sorry, ${nameOf(order.sku)} is not currently sold in unit ${order.packCode}. Please choose an available selling unit.`
@@ -2842,7 +2868,7 @@ export async function runPipeline(
       orderMemorySystemBlock(orderMemoryHint(orderMemory))
     ),
     messages: [...recentTurns, { role: "user", content: aiInputMessage }],
-    tools: customerTools(),
+    tools: customerTools(profile.businessArchetype),
     execCtx,
     usageMeta: {
       intent: classifiedIntent,

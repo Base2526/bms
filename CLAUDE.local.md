@@ -3,6 +3,11 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Restaurant chat delivery — 2026-09-04
+
+- งานเฟส 1–5 ลงครบแล้ว; สถานะ migration และสิ่งที่ยัง verify ไม่ได้ดูหัวข้อ
+  “Restaurant chat delivery rollout” ด้านล่าง (อย่าตีความว่า apply DB แล้ว)
+
 **ประวัติงานเก่าทั้งหมด (ทุก § ที่เคยอยู่ในไฟล์นี้) ย้ายไป
 [docs/local-notes-archive.md](docs/local-notes-archive.md)** — ยกไปครบไม่ได้ลบ ก่อนแก้ฟีเจอร์ไหนให้
 เปิดหัวข้อนั้นก่อน (Channel Health, AI Provider Health, Failure Incidents, AI tool-calling, Coupons,
@@ -1917,6 +1922,106 @@ truncate→round · ค่าบริการกลายเป็นของ
   `docker compose ... exec web printenv BMS_ALLOW_FAKE_SEED NODE_ENV`
 - หน้าระดับแพลตฟอร์ม (ENV/Logs/Posts/Files/Architecture) gate ด้วย `layout.tsx` →
   `requirePlatformAdminPage()` (server-side กัน shop user เข้าตรงผ่าน URL)
+
+## Restaurant chat delivery rollout (2026-09-04)
+
+- `9.55` เพิ่มสถานะหมดชั่วคราวรายเมนู/สาขา และใช้ availability policy เดียวกันทุกช่องทาง
+- `9.56` เพิ่มสาขา ประเภทรับของ เวลาสัญญา เวลารับออร์เดอร์ และ human-accept ก่อนยิงตั๋วครัว
+- `9.57` ใช้ POS return engine เดิมเพื่อตัดเมนูออนไลน์รายรายการ, เก็บต้นเหตุถาวร, คืนเงินเข้าคิว และบันทึกส่วนต่างที่ร้านรับ
+- เฟส 5 ใช้ค่าส่ง `flat`, prepaid-only, carrier `OTHER`; เปลี่ยน checklist/seed default เป็นเมนูไม่บังคับสูตร และเพิ่มไกด์ผู้ช่วย 3 เรื่องพร้อมคอร์ปัส
+- cron หลักยิงรีเซ็ตเมนูทุก 15 นาทีเพื่อเคารพ `resets_at` ของแต่ละ timezone/เวลาที่ร้านตั้ง ไม่ผูกกับ 04:00 กรุงเทพอย่างเดียว
+- ผ่าน typecheck และ pure contract ของเฟส 1–5; migration/DB contract และ browser QA ยังไม่ได้รันเพราะเครื่องนี้ไม่มี local DB/server
+
+### recheck ต่อจาก codex — เจอของจริง 10 จุด แก้ครบแล้ว (2026-09-04)
+
+`tsc --noEmit` ผ่าน · **pure 785 เทสผ่านทั้งหมด** (ก่อน recheck **แดง 2 ตัว**) · production build ผ่าน
+· **เทส DB ยังไม่ได้รันในรอบนี้** (เครื่องนี้ไม่มี Postgres ของ BMS — `docker ps` มีแต่ container
+ของโปรเจกต์อื่น) ต้อง apply `9.55`–`9.57` เข้า dev DB แล้วรันชุด DB ให้ผ่านก่อนเชื่อว่าใช้ได้จริง
+· **ทั้ง 10 จุดผ่าน mutation test แล้ว** (ย้อนโค้ดกลับทีละจุด → แดงถูกตัวทุกครั้ง)
+
+1. **⚠️ `bms_locations` ไม่มีคอลัมน์ `is_default` — ออร์เดอร์ร้านอาหารออนไลน์สร้างไม่ได้เลยสักใบ**
+   · `createOrderInTx()` และ `listRestaurantOrderLocations()` ทั้งคู่ `ORDER BY is_default DESC, name`
+   · ตาราง `bms_locations` (7.84) มีแค่ `code` / `is_head_office` — `is_default` เป็นคอลัมน์ของ
+   `bms_customer_addresses` (3.6) → ทุกการเรียกล้มด้วย **42703** แปลว่าเส้นทางสั่งอาหารทางแชท
+   **พังทั้งเส้น** และทูล `list_restaurant_order_locations` ล้มทุกครั้งที่ลูกค้าถามเรื่องสาขา
+   · แก้เป็นลำดับเดียวกับ `resolveDefaultLocationIdInTx()` (`(code = 'MAIN') DESC,
+   is_head_office DESC, created_at`) เพื่อให้ fallback ของร้านสาขาเดียวได้สาขาเดียวกับที่เส้นสต็อก
+   ทั้งระบบเรียกว่า default · **กันย้อนกลับด้วยเทสที่สแกน template literal ทุกก้อนที่เอ่ยถึง
+   `bms_locations` แล้วห้ามมีคำว่า `is_default`** (ไม่ใช่แค่จับสองบรรทัดที่เจอ)
+2. **⚠️ `9.57` DROP CHECK ผิดตัวได้ 50%** — `bms_order_discounts` (7.96) มี check ที่เอ่ยคำว่า
+   `source` **สองตัว**: ลิสต์ค่าที่ต้องขยาย และ `CHECK (points_used = 0 OR source = 'POINTS')`
+   · เดิมหาด้วย `pg_get_constraintdef(oid) LIKE '%source%'` + `SELECT INTO` ซึ่งได้ตัวไหนก็ได้
+   → ถ้าได้ตัว points_used: ลิสต์ 4 ค่าเดิมยังอยู่ **ทุก insert `MERCHANT_ABSORBED` ล้มด้วย
+   check violation** และการ์ด points_used หายเงียบ ๆ · เป็นกับดักตัวเดียวกับที่ `9.52` จดไว้แล้ว
+   ("ต้องกรอง `array_length(conkey,1) = 1`") · แก้เป็น FOR loop ที่กรอง single-column check บน
+   คอลัมน์ `source` ที่ def มีคำว่า `TIER`
+3. **⚠️ เปิดกะล้างธง "หมดวันนี้" ทั้งสาขา** — `resetMenuAvailabilityForLocationInTx()` ลบทุกแถวของ
+   สาขา · กะเป็นของ **เครื่อง x คนขาย** ไม่ใช่ของ **วันบริการ**: ร้านสองเครื่อง หรือร้านที่เปลี่ยนกะ
+   กลางวัน เปิดกะหลายรอบต่อวัน → เครื่องที่สองเปิดกะตอน 11:00 เอาเมนูที่ครัวเพิ่งบอกว่าหมดตอน 10:30
+   **กลับขึ้นเมนูทันที** โดยไม่มีอะไรบนจอบอกว่าใครยกเลิกการตัดสินใจนั้น
+   · นี่คือความเสียหายเดียวกับที่เหตุผลของ "รีเซ็ต 04:00 ไม่ใช่เที่ยงคืน" กันไว้ แค่มาจากการเปิดกะ
+   แทนเที่ยงคืน · แก้เป็นล้างแค่แถวที่ `resets_at <= now()` — **เจตนาเดิม (เปิดร้านแล้วเมนูของเมื่อวาน
+   กลับมาขายเองแม้ยังไม่ได้ตั้ง cron) ยังอยู่ครบ** เปลี่ยนแค่ขอบเขต
+4. **⚠️ `restaurantOrderingStateInTx()` อ่านคอลัมน์ของ `9.56` ในคำสั่งเดียวกับ `business_archetype`**
+   — ฟังก์ชันนี้รันกับ **ทุกออร์เดอร์ที่ไม่ใช่ POS ของทุกร้าน** ฐานที่ยังไม่ apply `9.56` จึง
+   **ขายไม่ได้ทั้งแพลตฟอร์ม ไม่ใช่แค่ร้านอาหาร** · กับดักเดียวกับ recheck ข้อ 1 ของ `9.29`
+   · แยกเป็นสองคำสั่ง: อ่าน archetype ก่อน แล้วอ่านคอลัมน์ใหม่เฉพาะร้านอาหาร
+   · **ยังเหลือรัศมีกว้างที่ไม่ได้แก้ (จงใจ)**: `listSellableProducts()`/`checkStock()` อ่าน
+   `bms_product_menu_unavailability` (9.55) ให้ทุกร้าน → **ต้อง apply `9.55` ก่อน deploy โค้ดชุดนี้เสมอ**
+   (repo นี้ไม่มี schema probe ที่ไหนเลย — กฎเดียวกับ `9.40`/`9.51`/`9.52`)
+5. **การ์ดออร์เดอร์เข้าโชว์รายการที่ตัดไปแล้ว และส่งจำนวนผิดหน่วยให้ปุ่มตัดรายการ** —
+   `listIncomingRestaurantOrders()` คืน `oi.qty` ตรง ๆ · ผลสองอย่าง: (ก) เมนูที่ตัดไปแล้ว
+   (ตั๋วครัวยกเลิกแล้ว เงินเข้าคิวคืนแล้ว) ยังอยู่บนการ์ดให้ครัวทำต่อ (ข) `cancelRestaurantOrderLines()`
+   อ่าน `packQty` เป็น **จำนวน pack** (`pack_qty`) ไม่ใช่หน่วยฐาน → บรรทัดที่ขายเป็นแพ็ก
+   **ตัดไม่ได้เลย ตอบ `RETURN_QTY_EXCEEDED` ทุกครั้ง** · แก้ให้คืน "จำนวนที่ยังเหลือจริง" ในหน่วยเดียวกับ
+   ที่ปุ่มตัดต้องใช้ + ซ่อนบรรทัดที่ตัดครบแล้ว (นิพจน์ returned เดียวกับเส้นทางคืนของใน `pos.ts`)
+6. **`cancel_lines` ตัดบางบรรทัดเงียบ ๆ เมื่อ payload บางบรรทัดผิดรูป** — route ใช้ `.filter()`
+   แล้วเดินต่อ · ตัดอาหารออกจากบิลลูกค้าและคืนเงินคนละยอดกับที่เครื่องสั่ง โดยไม่มีที่ไหนบอกว่ามีบรรทัดหาย
+   · แก้เป็นปฏิเสธทั้งคำขอ 400 (กฎเดียวกับที่ `9.5` ทำกับ `parsePosExtraLines`)
+7. **cron รีเซ็ตเมนู throw ออกจากลูป** — ร้านเดียวที่ล้มทำให้ร้านที่เหลือ **ไม่ถูกกวาดเลย** และรอบถัดไป
+   เจอแถวเดิมแล้วหยุดอีก = เมนูปิดค้างตลอดไป (รูปเดียวกับบั๊ก `orders/release-expired`)
+   · แก้เป็นเก็บ `failed[]` แล้วเดินต่อ + คืน `failedCount` ออกไปที่คำตอบของ endpoint
+8. **`checkStock()` throw `Error` เปล่าเมื่อ locationId ไม่ใช่สาขาจริง** → โมเดลได้ข้อความ
+   "ดึงข้อมูลไม่สำเร็จ" **พร้อมเปิด incident `ai.tool_failed`** ทั้งที่เป็นแค่โมเดลเดา UUID ผิด
+   · ห่อด้วย `checkStockForBranch()` ใน catalog ให้เป็น `ToolArgError` ที่บอกให้เรียก
+   `list_restaurant_order_locations` ก่อน (โมเดลแก้เองได้ ไม่กินโควตา incident)
+9. **⚠️ `checkStock()` อ่านไซซ์เมนูจาก `bms_inventory` แต่ความจริงของไซซ์อยู่ที่
+   `bms_product_variants` (9.51)** — `9.51` ประกาศไว้เองว่า "A recipe menu may have a variant while
+   its own inventory remains zero" และติด trigger ให้การเขียน inventory/pack/recipe **ซิงก์เข้า**
+   ตาราง variant **ทางเดียว** · `upsertProduct()` เขียนแถว variant แต่ **ไม่เคยสร้างแถว
+   `bms_inventory`** → เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองได้ `MENU_SIZE_REQUIRED` พร้อม `sizes: []`
+   และ `create_order` บังคับ `size` **โมเดลจึงไปต่อไม่ได้เลย** = อาการเดียวกับที่เฟส 2 ทำมาเพื่อแก้
+   แค่ย้ายไปโผล่ช้าลงหนึ่งขั้น
+   · **ร้ายที่สุดคือมันดูเหมือนใช้ได้**: seeder เขียน `bms_inventory` ให้ (จึงผ่านตอนกดข้อมูลตัวอย่าง)
+   และ backfill ของ `9.51` ยกไซซ์เดิมของร้านที่มีอยู่แล้วมาให้ → **เขียวใน demo, พังกับเมนูใหม่ของ
+   ร้านจริง** · แก้ให้กิ่ง NON_STOCK/RECIPE อ่านจาก `bms_product_variants` เหมือน
+   `listRestaurantMenu()` (9.44) และ `resolvePosScan()` (9.52) — สามจอตอบคำถามเดียวกันด้วยแหล่งเดียว
+   · กิ่ง DIRECT/PACK ยังอ่าน inventory ตามเดิมโดยตั้งใจ (ของนับได้ที่ไม่มีแถวสาขา = ไม่มีของจริง)
+10. **ปล่อย reserved ตอนตัดรายการไม่ตรวจว่าลงตัว** — `bms_inventory.reserved_stock` เป็น `INTEGER`
+   (3.2) เศษทศนิยมจะถูก Postgres ปัดเงียบ ๆ แล้วเหลือ drift ที่ไล่ต้นเหตุไม่ได้ · กิ่งคืนของหน้าเคาน์เตอร์
+   ในฟังก์ชันเดียวกันตรวจอยู่แล้ว กิ่งตัดรายการออนไลน์ไม่ตรวจ · ทุก policy หารลงตัวโดยโครงสร้าง
+   ดังนั้นเศษ = snapshot เพี้ยน → ปฏิเสธการตัดรายการ ตรงกับที่กิ่งข้างล่างทำ
+
+**ยังไม่ได้แก้ (ตั้งใจ — เสี่ยง regression เกินขอบเขต recheck)**:
+`listSellableProducts()` (`search_products`) ยังคืน `availableSizes` จาก `bms_inventory` ล้วน เมนูใหม่
+จึงโผล่ในผลค้นหาโดยไม่มีไซซ์ · เส้นทางที่บังคับคือ `check_stock` ซึ่งแก้แล้ว แต่ถ้าโมเดลข้ามไป
+`create_order` ตรง ๆ จะได้ `INVALID_ITEM` แล้ววนถาม · การเปลี่ยนแหล่งของ `availableSizes` กระทบ
+หน้าร้านออนไลน์/แอดมิน/AI พร้อมกัน 5 จุด และ `availableTotal`/`inStockOnly` ผูกกับตัวเลขเดียวกัน —
+ควรทำเป็นงานแยกที่มีเทสของตัวเอง
+
+**เทสที่แดงอยู่ก่อน recheck 2 ตัว (แก้แล้ว — เป็นเทสค้าง ไม่ใช่โค้ดผิด)**:
+`restaurant-delivery-readiness` ยัง assert `status = 'PAID' RETURNING id … enqueueKitchenTicketsInTx`
+ซึ่ง **บังคับให้ `packOrder()` กลับไปยิงตั๋วครัวให้บิลค้าปลีกทุกใบ** ที่สินค้าบังเอิญมีสถานี ·
+`restaurant-online-order` assert ternary ของแท็บ POS แบบต้องอยู่บรรทัดเดียว
+
+**ยังไม่ได้แก้ / ต้องรู้ก่อนใช้จริง**:
+- **ยอด `amountDue` บนการ์ดออร์เดอร์เข้ายังเป็นยอดตอนสั่ง** ไม่หักยอดที่คืนไปแล้ว (ตั้งใจ — บิล/ใบกำกับ
+  ที่ออกไปแล้วไม่ถูกเขียนใหม่ ตามกฎเดียวกับ `9.22`) ยอดคืนอยู่ในคิวคืนเงินแยก
+- `restaurantCancellationLossReport()` เกลี่ย `merchant_absorbed_amount` ตามมูลค่าของ **ทุกบรรทัด**
+  ที่ถูกตัดในใบนั้น ไม่ได้แยกว่าบรรทัดไหนเป็น `MERCHANT_OUT_OF_STOCK`
+- การเลือกผู้จัดการยืนยันส่วนต่างที่หน้า POS ใช้ `window.prompt` (ไม่มี harness ทดสอบ React
+  component ใน repo นี้) — ต้องลองด้วยมือที่หน้าจอ
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** ทั้งแท็บ "รับออร์เดอร์", คิวคืนเงิน, ปุ่มปิดเมนูหมดวันนี้
 
 > `loginAdmin` ตรวจรหัสผ่านจริงทุก environment แล้ว (`passwordMatches()`, ยืนยัน 2026-08-13) — โน้ตเก่า
 > ที่เขียนว่า "dev ยังไม่ตรวจ" ไม่ตรงกับโค้ดปัจจุบัน

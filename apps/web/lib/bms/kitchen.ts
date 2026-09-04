@@ -162,6 +162,25 @@ export async function cancelKitchenTicketsForOrderInTx(
   return result.rowCount ?? 0;
 }
 
+/** Close only tickets whose source order item was cancelled; other food keeps cooking. */
+export async function cancelKitchenTicketsForOrderItemsInTx(
+  client: Pick<PoolClient, "query">,
+  tenantId: string,
+  orderId: string,
+  orderItemIds: number[]
+): Promise<number> {
+  if (orderItemIds.length === 0) return 0;
+  const result = await client.query(
+    `UPDATE bms_kitchen_tickets
+        SET status = 'CANCELLED', updated_at = now()
+      WHERE tenant_id = $1 AND order_id = $2
+        AND order_item_id = ANY($3::bigint[])
+        AND status = ANY($4::text[])`,
+    [tenantId, orderId, orderItemIds, [...KITCHEN_OPEN_STATUSES]]
+  );
+  return result.rowCount ?? 0;
+}
+
 /**
  * เดินหน้าได้ทีละขั้น ถอยหลังได้ทีละขั้น
  *

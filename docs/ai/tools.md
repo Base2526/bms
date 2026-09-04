@@ -66,6 +66,13 @@ reports `available` in base units and may include the configured non-base `packs
 Both catalog search and stock-check responses include `verifiedAt`; they are live database reads,
 and `createOrder()` still re-reads price, pack, and stock inside its transaction before writing.
 
+Restaurant menus use the same catalog boundary. A menu must explicitly enable `CUSTOMER_AI` and
+`ONLINE_ORDER`; `list_menu_modifiers` returns active option groups for an exact SKU/size, and
+`create_order.items[].modifierCodes` accepts codes only. Names and price deltas are re-read
+server-side and included in the pre-write confirmation summary and its fingerprint. `NON_STOCK`
+and `RECIPE` return availability states rather than invented stock quantities; a branch-level
+`SOLD_OUT_TODAY` flag remains visible so the assistant explains that the dish is sold out.
+
 ## Authoritative runtime registry and gates
 
 `—` means no staff RBAC permission is needed because the data is customer-safe/public or the tool
@@ -77,7 +84,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `get_my_access` | A1/access | no | — | server-derived current actor role and effective permission codes; display name and POS-only scope are read from `users` because they are not session claims |
 | `search_staff_users`, `get_staff_user_access` | A1/access | no | `user.view` | bounded current-tenant staff lookup / effective access; excludes platform identities and sensitive account fields |
 | `get_loyalty_program_status` | A1/config | no | `member.view` | tenant loyalty enablement and verified earning/redemption settings, including the before/after-discount earning base; not a customer balance |
-| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
+| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `list_menu_modifiers`, `recommend_products` | A1 | yes | `product.view` | read |
 | `get_variant_reservations` | A1 | no | `order.view` | bounded tenant-scoped reconstruction of orders holding one SKU/size, including bundle sources and unattributed/over-attributed totals |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_loyalty_points` | A1 | own `(channel, customer_ref)` only | `member.view` | read; never redeems |

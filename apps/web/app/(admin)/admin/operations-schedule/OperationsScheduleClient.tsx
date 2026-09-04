@@ -211,7 +211,7 @@ export default function OperationsScheduleClient({
                 />
               ) : (
                 <Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
-                  No recorded runs yet — either this job hasn't fired since 7.55__bms_job_runs.sql was applied, or (for release-expired/channel-health/ai-health/report-digest) no external scheduler is calling it yet.
+                  No recorded runs yet — the job may not have fired since 7.55__bms_job_runs.sql was applied, or the scheduler secrets may not be configured.
                 </Paragraph>
               )}
             </div>
@@ -257,8 +257,8 @@ export default function OperationsScheduleClient({
         /></Card></Col>
         <Col xs={24} xl={10}><Card title="Still Open"><List
           dataSource={[
-            "None of the 4 cron endpoints have an external scheduler wired yet (see Status column) — a route only gets a run logged when something actually calls it.",
-            "daily-log-triage only reports back if BMS_APP_BASE_URL + BMS_CRON_SECRET are set as GitHub Actions secrets.",
+            "Scheduled endpoint jobs run only when BMS_APP_BASE_URL + BMS_CRON_SECRET are configured as GitHub Actions secrets; verify this against Recent runs.",
+            "A route shown as Ready but unscheduled still needs an external scheduler before operators can rely on it.",
             "A 'running' row that crashed before finishing is flagged 'Stuck' after 30 minutes, but is never auto-corrected — that's a real signal something needs manual attention.",
           ]}
           renderItem={(item) => <List.Item><Space align="start"><DatabaseOutlined style={{ color: "#722ed1", marginTop: 4 }} /><Text>{item}</Text></Space></List.Item>}

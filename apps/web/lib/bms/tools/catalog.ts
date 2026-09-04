@@ -32,6 +32,8 @@ import {
   listLowStock,
   type SellableProduct,
 } from "../products";
+import { listProductModifiers } from "../productRecipes";
+import { listRestaurantOrderLocations } from "../restaurantOrdering";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
@@ -160,8 +162,13 @@ function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null)
     description: product.description?.slice(0, 400) ?? null,
     category: product.category,
     brand: product.brand,
-    availableTotal: product.availableTotal,
-    availableSizes: product.availableSizes.filter((variant) => variant.available > 0),
+    availability: product.availability,
+    ...(product.stockPolicy === "NON_STOCK" || product.stockPolicy === "RECIPE"
+      ? {}
+      : {
+          availableTotal: product.availableTotal,
+          availableSizes: product.availableSizes.filter((variant) => variant.available > 0),
+        }),
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
     publicPath,
@@ -617,6 +624,7 @@ const findAlternativesTool: BmsTool = {
       keyword: { type: "string", description: "Customer's requested product text, if SKU is unknown." },
       category: { type: "string", description: "Known desired category, if any." },
       size: { type: "string", description: "Requested size/variant, if any." },
+      locationId: { type: "string", description: "Active branch id selected by the customer, when branch-specific stock matters." },
       limit: { type: "integer", description: "Maximum alternatives (default 3, max 5)." },
     },
   },
@@ -625,12 +633,13 @@ const findAlternativesTool: BmsTool = {
     const keyword = optString(args, "keyword");
     const category = optString(args, "category") ?? null;
     const size = optString(args, "size") ?? null;
+    const locationId = optString(args, "locationId") ?? null;
     if (!sku && !keyword && !category) {
       throw new ToolArgError('ต้องระบุ "sku", "keyword" หรือ "category" อย่างน้อยหนึ่งค่า');
     }
     const limit = optInt(args, "limit", 1, 5) ?? 3;
     const [result, tenantSlug] = await Promise.all([
-      findAlternativeProducts(ec.tenantId, { sku, keyword, category, size, limit }),
+      findAlternativeProducts(ec.tenantId, { sku, keyword, category, size, locationId, limit }),
       getTenantSlug(ec.tenantId),
     ]);
     return {
@@ -669,7 +678,13 @@ const getProduct: BmsTool = {
     ]);
     const p = items.find((x) => x.sku.toLowerCase() === sku.toLowerCase());
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
-    const variants = await listVariants(ec.tenantId, p.sku);
+    const [variants, sellableResult] = await Promise.all([
+      listVariants(ec.tenantId, p.sku),
+      listSellableProducts(ec.tenantId, { search: p.sku, limit: 5 }),
+    ]);
+    const sellable = sellableResult.items.find((item) => item.sku.toLowerCase() === p.sku.toLowerCase()) ?? null;
+    if (ec.surface === "customer" && !sellable) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
+    const uncounted = sellable?.stockPolicy === "NON_STOCK" || sellable?.stockPolicy === "RECIPE";
     const variantPrices = variants.map((variant) => Number(variant.price));
     return {
       ok: true,
@@ -685,11 +700,10 @@ const getProduct: BmsTool = {
         active: p.active,
         createdAt: p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
         updatedAt: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at),
-        availableTotal: variants.reduce(
-          (sum, variant) =>
-            sum + Math.max(0, variant.current_stock - variant.reserved_stock),
-          0
-        ),
+        availability: sellable?.availability ?? null,
+        ...(!uncounted ? { availableTotal: variants.reduce(
+          (sum, variant) => sum + Math.max(0, variant.current_stock - variant.reserved_stock), 0
+        ) } : {}),
         publicPath: tenantSlug
           ? `/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(p.sku)}`
           : null,
@@ -700,7 +714,7 @@ const getProduct: BmsTool = {
         // /shop/{tenantSlug}/products/{sku} ไม่ใช่ URL ไฟล์ใน storage
         variants: variants.map((v) => ({
           size: v.size,
-          available: Math.max(0, v.current_stock - v.reserved_stock),
+          ...(!uncounted ? { available: Math.max(0, v.current_stock - v.reserved_stock) } : {}),
           price: Number(v.price),
         })),
       },
@@ -825,15 +839,95 @@ const checkStockTool: BmsTool = {
     properties: {
       product: { type: "string", description: "Product name or search term." },
       size: { type: "string", description: "Size, if the customer gave one." },
+      locationId: { type: "string", description: "Optional exact active branch UUID returned by list_restaurant_order_locations." },
     },
     required: ["product"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const product = reqString(args, "product");
     const size = optString(args, "size") ?? null;
-    const res = await checkStock(ec.tenantId, product, size);
+    const locationId = optString(args, "locationId") ?? null;
+    const res = await checkStockForBranch(ec.tenantId, product, size, locationId);
     return { ok: true, data: { ...res, verifiedAt: new Date().toISOString() } };
   },
+};
+
+const listMenuModifiersTool: BmsTool = {
+  name: "list_menu_modifiers",
+  description:
+    "List the shop-defined option groups for one exact menu SKU and size. Returns verified option codes, names and price deltas. Pass selected codes to create_order as modifierCodes; never invent a code or price.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  whenToUse: "After resolving an exact menu SKU and size, before creating an order when the customer asks for preparation options or the menu has required choices.",
+  whenNotToUse: "The SKU or size is still ambiguous — resolve it with search_products/check_stock first.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      sku: { type: "string", description: "Exact SKU returned by a product tool." },
+      size: { type: "string", description: "Exact menu variant/size." },
+    },
+    required: ["sku", "size"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const sku = reqString(args, "sku");
+    const size = reqString(args, "size");
+    const rows = (await listProductModifiers(ec.tenantId, sku, size)).filter((row) => row.active);
+    const groups = new Map<string, {
+      code: string; name: string; selectionType: "SINGLE" | "MULTIPLE";
+      minSelect: number; maxSelect: number | null;
+      options: Array<{ code: string; name: string; priceDelta: number; defaultSelected: boolean }>;
+    }>();
+    for (const row of rows) {
+      const group = groups.get(row.groupCode) ?? {
+        code: row.groupCode,
+        name: row.groupName,
+        selectionType: row.selectionType,
+        minSelect: row.minSelect,
+        maxSelect: row.maxSelect,
+        options: [],
+      };
+      group.options.push({
+        code: row.code,
+        name: row.name,
+        priceDelta: row.priceDelta,
+        defaultSelected: row.defaultSelected,
+      });
+      groups.set(row.groupCode, group);
+    }
+    return { ok: true, data: { sku, size, groups: [...groups.values()], verifiedAt: new Date().toISOString() } };
+  },
+};
+
+/**
+ * A branch id the model invented is a bad argument, not a broken system. Left as a plain Error it
+ * reaches the model as "ดึงข้อมูลไม่สำเร็จ" and also raises an ai.tool_failed incident, so the one
+ * thing that would fix it — call list_restaurant_order_locations and use a real id — is never said.
+ */
+async function checkStockForBranch(
+  tenantId: string, product: string, size: string | null, locationId: string | null
+) {
+  try {
+    return await checkStock(tenantId, product, size, locationId);
+  } catch (error: any) {
+    if (String(error?.message) === "INVALID_OR_INACTIVE_LOCATION") {
+      throw new ToolArgError(
+        "locationId ไม่ใช่สาขาที่เปิดใช้งานของร้านนี้ — เรียก list_restaurant_order_locations แล้วใช้ id ที่ทูลคืนมา"
+      );
+    }
+    throw error;
+  }
+}
+
+const listRestaurantOrderLocationsTool: BmsTool = {
+  name: "list_restaurant_order_locations",
+  description: "List active restaurant branches a customer may choose for pickup or delivery. Return and pass the selected verified UUID as locationId to create_order; never invent a branch id.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec): Promise<ToolResult> => ({
+    ok: true,
+    data: { locations: await listRestaurantOrderLocations(ec.tenantId), verifiedAt: new Date().toISOString() },
+  }),
 };
 
 const getVariantReservationsTool: BmsTool = {
@@ -1816,6 +1910,12 @@ const createOrderTool: BmsTool = {
               description:
                 'Selling-unit code when the customer counted in packs instead of pieces — "2 แผง" is qty 2 with the blister pack code. Omit for base units. Only use a code that appeared in a tool result; never invent one, and never send a price or a pieces-per-pack number: the shop\'s own pack data decides both.',
             },
+            modifierCodes: {
+              type: "array",
+              description: "Menu option codes selected by the customer. Use only codes returned by list_menu_modifiers; never send a price.",
+              maxItems: 20,
+              items: { type: "string", maxLength: 64 },
+            },
           },
           required: ["sku", "size", "qty"],
         },
@@ -1828,11 +1928,15 @@ const createOrderTool: BmsTool = {
         description:
           "Carrier the customer asked for. Only pass a code listed in get_store_info's enabledCarriers, and only if the customer named one — never guess. This is a preference the shop confirms at packing time, not a guarantee, and it does not change the shipping fee.",
       },
+      locationId: { type: "string", description: "Exact active branch UUID returned by list_restaurant_order_locations." },
+      fulfillmentType: { type: "string", enum: ["DELIVERY", "PICKUP"], description: "How the customer will receive a restaurant order." },
+      promisedAt: { type: "string", description: "ISO-8601 promised delivery/pickup time after the customer agrees." },
     },
     required: ["items"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const requested = reqItems(args);
+    const requestedLocationId = optString(args, "locationId") ?? null;
     if (requested.length > 20) {
       throw new ToolArgError("หนึ่งออร์เดอร์รับได้ไม่เกิน 20 รายการ กรุณาแบ่งเป็นหลายออร์เดอร์");
     }
@@ -1843,7 +1947,7 @@ const createOrderTool: BmsTool = {
     const items: OrderItemInput[] = [];
     for (const it of requested) {
       if (!it.packCode) {
-        items.push({ sku: it.sku, size: it.size, qty: it.qty });
+        items.push({ sku: it.sku, size: it.size, qty: it.qty, modifierCodes: it.modifierCodes });
         continue;
       }
       const pack = await resolveSellablePack(ec.tenantId, it.sku, it.size, it.packCode);
@@ -1862,6 +1966,7 @@ const createOrderTool: BmsTool = {
         packUnitName: pack.unitName,
         packQty: it.qty,
         packUnitPrice: pack.price,
+        modifierCodes: it.modifierCodes,
       });
     }
 
@@ -1874,13 +1979,29 @@ const createOrderTool: BmsTool = {
     // ไม่มีออร์เดอร์ไหนหายจากกฎนี้ — ครั้งแรกกลายเป็นคำถามยืนยัน ครั้งที่สอง (หลังลูกค้าตอบ)
     // เดินเส้นทางเขียนเดิมทั้งเส้น · staff surface ไม่ถูกแตะ (แอดมินเห็นหน้าจอที่ตัวเองกรอกอยู่)
     if (ec.surface === "customer") {
-      const fingerprint = orderQuoteFingerprint(requested);
+      const locationId = requestedLocationId ?? "";
+      const fulfillmentType = enumVal(args, "fulfillmentType", ["DELIVERY", "PICKUP"], false) ?? "";
+      const promisedAt = optString(args, "promisedAt") ?? "";
+      const fulfillmentFingerprint = locationId || fulfillmentType || promisedAt
+        ? `#${locationId}#${fulfillmentType}#${promisedAt}`
+        : "";
+      const fingerprint = `${orderQuoteFingerprint(requested)}${fulfillmentFingerprint}`;
       if (ec.customerConfirmedQuote?.fingerprint !== fingerprint) {
         const quoteLines: OrderQuoteLine[] = [];
         for (const it of requested) {
-          const stock = await checkStock(ec.tenantId, it.sku, it.size);
+          const stock = await checkStockForBranch(ec.tenantId, it.sku, it.size, requestedLocationId);
           const name = "name" in stock ? stock.name : it.sku;
           const basePrice = "price" in stock ? Number(stock.price) : null;
+          const availableModifiers = (await listProductModifiers(ec.tenantId, it.sku, it.size))
+            .filter((modifier) => modifier.active);
+          const modifiers = (it.modifierCodes ?? []).map((code) => {
+            const modifier = availableModifiers.find((candidate) => candidate.code.toUpperCase() === code);
+            if (!modifier) {
+              throw new ToolArgError(`ไม่พบตัวเลือก "${code}" ของเมนู ${it.sku} (ไซซ์ ${it.size})`);
+            }
+            return { code, name: modifier.name, priceDelta: modifier.priceDelta };
+          });
+          const modifierPrice = modifiers.reduce((sum, modifier) => sum + modifier.priceDelta, 0);
           const pack = it.packCode
             ? await resolveSellablePack(ec.tenantId, it.sku, it.size, it.packCode)
             : null;
@@ -1893,8 +2014,12 @@ const createOrderTool: BmsTool = {
             // ราคายกหน่วยที่ร้านตั้งไว้ชนะเสมอ ถ้าไม่ได้ตั้งไว้จึงคิดจากราคาต่อหน่วยฐาน ×
             // baseQty — สูตรเดียวกับที่ stock.ts บอกไว้ที่ StockPackOption.price
             unitPrice: pack
-              ? pack.price ?? (basePrice != null ? basePrice * pack.baseQty : null)
-              : basePrice,
+              ? (() => {
+                  const resolvedPackPrice = pack.price ?? (basePrice != null ? basePrice * pack.baseQty : null);
+                  return resolvedPackPrice == null ? null : resolvedPackPrice + modifierPrice;
+                })()
+              : basePrice == null ? null : basePrice + modifierPrice,
+            modifiers,
           });
         }
         ec.pendingOrderQuote = { fingerprint, lines: quoteLines };
@@ -1938,6 +2063,9 @@ const createOrderTool: BmsTool = {
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
+      locationId: requestedLocationId,
+      fulfillmentType: enumVal(args, "fulfillmentType", ["DELIVERY", "PICKUP"], false) as "DELIVERY" | "PICKUP" | undefined,
+      promisedAt: optString(args, "promisedAt") ?? null,
     });
     const pharmacyBlockers = "blockers" in r && Array.isArray(r.blockers) ? r.blockers : [];
     // เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" อยู่ที่ productPolicyDecision.ts ที่เดียว —
@@ -2698,6 +2826,8 @@ const getStoreInfoTool: BmsTool = {
         contactEmail: p.contactEmail, website: p.website,
         country: p.country, timezone: p.timezone,
         businessHours: p.businessHours, shippingPolicy: p.shippingPolicy, returnPolicy: p.returnPolicy,
+        restaurantOrderHours: p.restaurantOrderHours,
+        restaurantOrdersPaused: p.restaurantOrdersPaused,
         // Carriers the shop uses. Empty = do not offer the customer any carrier choice.
         // Picking one does not change the fee or delivery estimate (no carrier API is wired up),
         // and the shop confirms the real carrier at packing time.
@@ -3062,6 +3192,8 @@ export const ALL_TOOLS: BmsTool[] = [
   findAlternativesTool,
   getProduct,
   checkStockTool,
+  listMenuModifiersTool,
+  listRestaurantOrderLocationsTool,
   getVariantReservationsTool,
   subscribeRestockNotificationTool,
   listCustomerCouponsTool,
@@ -3129,8 +3261,13 @@ export const ALL_TOOLS: BmsTool[] = [
 assertValidToolRegistry(ALL_TOOLS);
 
 /** ทูลฝั่งลูกค้า: เฉพาะ surface=customer (ไม่มี A3/A2-staff ตั้งแต่ต้น) */
-export function customerTools(): BmsTool[] {
-  return ALL_TOOLS.filter((t) => t.surfaces.includes("customer"));
+export function customerTools(businessArchetype?: string | null): BmsTool[] {
+  return ALL_TOOLS.filter((tool) =>
+    tool.surfaces.includes("customer")
+    && (businessArchetype === undefined
+      || tool.name !== "list_restaurant_order_locations"
+      || businessArchetype === "restaurant")
+  );
 }
 
 /** ทูลฝั่งแอดมิน: surface=staff + ผ่าน RBAC (ทูลที่ role ไม่มีสิทธิ์จะไม่ถูกเสนอให้ AI เลย) */

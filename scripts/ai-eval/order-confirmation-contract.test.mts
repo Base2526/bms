@@ -48,6 +48,18 @@ test("เปลี่ยนจำนวน หน่วยขาย หรือ
   );
 });
 
+test("เปลี่ยนตัวเลือกเมนูหลังลูกค้ายืนยัน = ลายนิ้วมือคนละอัน", () => {
+  const line = { sku: "PAD-KAPRAO", size: "STD", qty: 2, modifierCodes: ["NO_SPICY"] };
+  assert.notEqual(
+    orderQuoteFingerprint([line]),
+    orderQuoteFingerprint([{ ...line, modifierCodes: ["NO_SPICY", "SEPARATE_RICE"] }])
+  );
+  assert.equal(
+    orderQuoteFingerprint([line]),
+    orderQuoteFingerprint([{ ...line, modifierCodes: [" no_spicy "] }])
+  );
+});
+
 test("ลายนิ้วมือทนต่อการเขียน sku/size ต่างตัวพิมพ์และช่องว่าง", () => {
   assert.equal(
     orderQuoteFingerprint(BASKET),
@@ -83,6 +95,15 @@ const QUOTE_LINES: OrderQuoteLine[] = [
     unitPrice: 45,
   },
 ];
+
+test("สรุปบิลแสดงตัวเลือกเมนูที่ server resolve ให้ลูกค้าตรวจ", () => {
+  const summary = composeOrderQuoteSummary([{
+    sku: "PAD-KAPRAO", name: "กะเพราหมู", size: "STD", displayQty: 2, unitPrice: 65,
+    modifiers: [{ code: "NO_SPICY", name: "ไม่เผ็ด", priceDelta: 0 }],
+  }], "th");
+  assert.match(summary, /กะเพราหมู[\s\S]*ไม่เผ็ด/);
+  assert.match(summary, /130/);
+});
 
 test("สรุปรายการต้องมีทุกบรรทัดพร้อมชื่อสินค้าที่ลูกค้าอ่านรู้เรื่อง", () => {
   const summary = composeOrderQuoteSummary(QUOTE_LINES, "th");

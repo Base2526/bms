@@ -325,11 +325,14 @@ export async function getProductReadinessInTx(
           )`,
       [tenantId, productSku]
     ),
-    client.query<{ size: string; count: number }>(
-      `SELECT size, COUNT(*)::int AS count
-         FROM bms_product_modifiers
-        WHERE tenant_id = $1 AND product_sku = $2 AND active
-        GROUP BY size`,
+    client.query<{ size: string; count: number; stock_count: number }>(
+      `SELECT m.size, COUNT(DISTINCT m.id)::int AS count,
+              COUNT(mi.id)::int AS stock_count
+         FROM bms_product_modifiers m
+         LEFT JOIN bms_product_modifier_items mi
+           ON mi.tenant_id = m.tenant_id AND mi.modifier_id = m.id
+        WHERE m.tenant_id = $1 AND m.product_sku = $2 AND m.active
+        GROUP BY m.size`,
       [tenantId, productSku]
     ),
     client.query<{ count: number }>(
@@ -394,8 +397,8 @@ export async function getProductReadinessInTx(
         blockers.push({ code: "RECIPE_REQUIRED", message: `ยังไม่มีสูตรที่เปิดใช้สำหรับ ${variant}`, field: "recipes" });
       }
     }
-  } else if (modifiersResult.rows.length > 0) {
-    blockers.push({ code: "MODIFIER_REQUIRES_RECIPE", message: "Modifier ใช้ได้เฉพาะสินค้า RECIPE", field: "modifiers" });
+  } else if (modifiersResult.rows.some((row) => row.stock_count > 0)) {
+    blockers.push({ code: "MODIFIER_REQUIRES_RECIPE", message: "Modifier ที่เปลี่ยนวัตถุดิบใช้ได้เฉพาะสินค้า RECIPE", field: "modifiers" });
   }
 
   if (modifiersResult.rows.length > 0 && !(await isCapabilityEnabledInTx(client, tenantId, "MODIFIER"))) {

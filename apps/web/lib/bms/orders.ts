@@ -13,9 +13,9 @@ import { getClient, query } from "@/lib/db";
 import type { Channel } from "./pipeline";
 import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
-import { cancelKitchenTicketsForOrderInTx } from "./kitchen";
+import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { beginTenantTx } from "./tenant";
-import { resolveDefaultLocationIdInTx } from "./locations";
+import { DEFAULT_LOCATION_CODE, resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { isCarrier, type Carrier } from "./carriers/constants";
@@ -68,6 +68,7 @@ import {
   type CustomerChannelIdentity,
 } from "./customerIdentity";
 import { validateOrderItems } from "./orderValidation";
+import { restaurantOrderingStateInTx } from "./restaurantOrdering";
 import {
   resolveStockConsumptionInTx,
   snapshotOrderItemConsumptionInTx,
@@ -135,6 +136,10 @@ export type CreateOrderInput = {
   pharmacySupersededAssessmentId?: string | null;
   /** สาขาที่ตัดสต็อก — ไม่ระบุ = สาขาเริ่มต้นของร้าน (7.84) */
   locationId?: string | null;
+  /** Online restaurant handoff; NULL preserves ordinary commerce orders. */
+  fulfillmentType?: "DELIVERY" | "PICKUP" | null;
+  /** ISO timestamp promised to the customer; never hide this scheduling fact in notes. */
+  promisedAt?: string | Date | null;
   /** POS เท่านั้น — เครื่อง/กะ/คนขาย และคีย์กันบิลซ้ำ (7.87) */
   posDeviceId?: string | null;
   posShiftId?: string | null;
@@ -173,7 +178,8 @@ export type CreatedLine = {
     promotion: Promotion | null;
     modifierUnitPrice: number;
   };
-  availableAfter: number;
+  /** null means this menu intentionally does not expose a counted stock number. */
+  availableAfter: number | null;
   packCode?: string | null;
   packUnitName?: string | null;
   packQty?: number | null;
@@ -201,9 +207,16 @@ export type CreateOrderResult =
       discountLines: OrderDiscountLine[];
       /** แต้มที่ถูกหักไปกับบิลนี้ (0 = ไม่ได้แลก) */
       pointsUsed: number;
+      locationId: string;
+      fulfillmentType: "DELIVERY" | "PICKUP" | null;
+      promisedAt: string | null;
     }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
+    | { status: "SOLD_OUT_TODAY"; sku: string; size: string }
+    | { status: "LOCATION_REQUIRED"; locations: Array<{ id: string; name: string; branchCode: string | null }> }
+    | { status: "FULFILLMENT_REQUIRED" }
+    | { status: "ORDERING_PAUSED" | "ORDERING_CLOSED" }
   | { status: "PACK_NOT_FOUND"; sku: string; size: string; packCode: string }
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
@@ -446,6 +459,80 @@ export async function createOrderInTx(
   const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
     ? "RESTAURANT_POS"
     : input.channel === "pos" ? "RETAIL_POS" : "ONLINE_ORDER";
+  const ordering = input.channel === "pos"
+    ? null
+    : await restaurantOrderingStateInTx(client, tenantId);
+  const restaurantOnlineOrder = ordering?.isRestaurant === true;
+
+  // Branch choice, ordering hours and fulfillment are restaurant-online policy. Keeping this
+  // branch explicit prevents a multi-branch retailer or cafe from inheriting restaurant rules.
+  let locationId: string;
+  if (restaurantOnlineOrder) {
+    // Ordered exactly like resolveDefaultLocationIdInTx() so the single-branch fallback below
+    // picks the same branch the rest of the stock path calls "default". bms_locations has no
+    // is_default column — head office is expressed by code MAIN plus is_head_office.
+    const activeLocations = await client.query<{ id: string; name: string; branch_code: string | null }>(
+      `SELECT id, name, branch_code FROM bms_locations
+        WHERE tenant_id = $1 AND active
+        ORDER BY (code = $2) DESC, is_head_office DESC, created_at
+        LIMIT 21`,
+      [tenantId, DEFAULT_LOCATION_CODE]
+    );
+    if (!input.locationId && activeLocations.rows.length > 1) {
+      return {
+        status: "LOCATION_REQUIRED",
+        locations: activeLocations.rows.slice(0, 20).map((row) => ({ id: row.id, name: row.name, branchCode: row.branch_code })),
+      };
+    }
+    locationId = input.locationId
+      ?? activeLocations.rows[0]?.id
+      ?? (await resolveDefaultLocationIdInTx(client, tenantId));
+    if (!activeLocations.rows.some((row) => row.id === locationId)) {
+      return { status: "INVALID_ITEM", index: -1, reason: "สาขารับออร์เดอร์ไม่ถูกต้องหรือปิดใช้งาน" };
+    }
+    if (!ordering.accepting) {
+      return { status: ordering.reason === "PAUSED" ? "ORDERING_PAUSED" : "ORDERING_CLOSED" };
+    }
+  } else {
+    if (input.fulfillmentType != null || input.promisedAt != null) {
+      return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลรับเอง/จัดส่งแบบครัวใช้ได้เฉพาะร้านอาหารออนไลน์" };
+    }
+    if (input.locationId) {
+      const selectedLocation = await client.query<{ id: string }>(
+        `SELECT id FROM bms_locations
+          WHERE tenant_id = $1 AND id::text = $2 AND active
+          LIMIT 1`,
+        [tenantId, input.locationId]
+      );
+      if (!selectedLocation.rows[0]) {
+        return { status: "INVALID_ITEM", index: -1, reason: "สาขารับออร์เดอร์ไม่ถูกต้องหรือปิดใช้งาน" };
+      }
+      locationId = selectedLocation.rows[0].id;
+    } else {
+      locationId = await resolveDefaultLocationIdInTx(client, tenantId);
+    }
+  }
+  const fulfillmentType = restaurantOnlineOrder
+    && (input.fulfillmentType === "DELIVERY" || input.fulfillmentType === "PICKUP")
+      ? input.fulfillmentType
+      : null;
+  if (restaurantOnlineOrder && fulfillmentType === null) return { status: "FULFILLMENT_REQUIRED" };
+  const promisedAtDate = input.promisedAt == null ? null : new Date(input.promisedAt);
+  if (promisedAtDate && !Number.isFinite(promisedAtDate.getTime())) {
+    return { status: "INVALID_ITEM", index: -1, reason: "เวลาที่สัญญาไว้ไม่ถูกต้อง" };
+  }
+  const requestedSkus = Array.from(new Set(items.map((item) => item.sku)));
+  const unavailable = await client.query<{ product_sku: string }>(
+    `SELECT product_sku FROM bms_product_menu_unavailability
+      WHERE tenant_id = $1 AND location_id = $2
+        AND product_sku = ANY($3::text[]) AND resets_at > now()
+      ORDER BY product_sku LIMIT 1`,
+    [tenantId, locationId, requestedSkus]
+  );
+  if (unavailable.rowCount) {
+    const sku = unavailable.rows[0].product_sku;
+    return { status: "SOLD_OUT_TODAY", sku, size: items.find((item) => item.sku === sku)?.size ?? "" };
+  }
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
     return {
@@ -722,8 +809,6 @@ export async function createOrderInTx(
     const promoCharged = new Set<string>();
 
     // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
-    const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
-
     // Derived products (bundle/menu) are sold lines but hold no stock themselves.
     // Keep their zero row for the historical order-item FK, then reserve only the
     // globally sorted, aggregated component lines to keep lock order deterministic.
@@ -859,7 +944,7 @@ export async function createOrderInTx(
           modifierUnitPrice,
         },
         availableAfter: resolvedConsumption[itemIndex].derived
-          ? Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
+          ? resolvedConsumption[itemIndex].lines.length === 0 ? null : Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
               availableAfterByStockKey.get(`${line.sku}\u0000${line.size}`) ?? 0
             ))
           : availableAfterByStockKey.get(`${it.sku}\u0000${it.size}`) ?? 0,
@@ -995,7 +1080,7 @@ export async function createOrderInTx(
     //   recalculateOrderShipping() ใน saveCustomerCheckoutDetails
     // ลูกค้ารับของที่เคาน์เตอร์เอง ช่องทาง POS ต้องไม่มีค่าส่ง แม้ร้านจะตั้ง
     // flat shipping สำหรับออร์เดอร์ออนไลน์ไว้ก็ตาม
-    const shippingFee = input.channel === "pos"
+    const shippingFee = input.channel === "pos" || fulfillmentType === "PICKUP"
       ? { fee: 0, source: "none" as ShippingFeeSource }
       : await computeOrderShippingFeeInTx(client, {
           tenantId,
@@ -1009,13 +1094,14 @@ export async function createOrderInTx(
     // total_amount = ค่าสินค้า − ส่วนลด + ค่าบริการ (ไม่รวมค่าส่ง — 7.47)
     const ord = await client.query<{ id: string }>(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
-                               pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id)
-       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19)
+                               pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id,
+                               fulfillment_type, promised_at)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING id`,
       [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
         locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
         input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null,
-        input.restaurantCheckId ?? null]
+        input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate]
     );
     const orderId = ord.rows[0].id;
 
@@ -1193,6 +1279,9 @@ export async function createOrderInTx(
       items: lines,
       discountLines,
       pointsUsed: breakdown.pointsUsed,
+      locationId,
+      fulfillmentType,
+      promisedAt: promisedAtDate?.toISOString() ?? null,
     };
 }
 
@@ -1430,9 +1519,35 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
 }
 /** แพ็คของ: PAID → PACKING */
 export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const ok = await transition(tenantId, orderId, ["PAID"], "PACKING");
-  if (ok) void notifyOrderStatusEmail(tenantId, orderId, "packing");
-  return ok;
+  const client = await getClient();
+  let ok = false;
+  try {
+    await beginTenantTx(client, tenantId);
+    const updated = await client.query<{ fulfillment_type: "DELIVERY" | "PICKUP" | null }>(
+      `UPDATE bms_orders SET status = 'PACKING', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'
+        RETURNING fulfillment_type`,
+      [tenantId, orderId]
+    );
+    ok = Boolean(updated.rowCount);
+    if (!ok) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    // Only restaurant fulfillment uses PACKING as the human-accept boundary. Ordinary retail
+    // packing must never create kitchen tickets just because a product happens to have a station.
+    if (updated.rows[0].fulfillment_type !== null) {
+      await enqueueKitchenTicketsInTx(client, tenantId, orderId);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+  void notifyOrderStatusEmail(tenantId, orderId, "packing");
+  return true;
 }
 /** ปิดงาน: SHIPPED → COMPLETED */
 export async function completeOrder(tenantId: string, orderId: string): Promise<boolean> {

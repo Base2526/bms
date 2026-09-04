@@ -90,7 +90,8 @@ test("special operating modes stay explicit and restrictive", () => {
   for (const archetype of ARCHETYPES.filter((value) => !["pharmacy", "restaurant"].includes(value))) {
     assert.equal(shopExperienceForArchetype(archetype).specialMode, "NONE");
   }
-  assert.deepEqual(shopExperienceForArchetype("restaurant").primarySalesSurfaces, ["RESTAURANT_POS"]);
+  assert.deepEqual(shopExperienceForArchetype("restaurant").primarySalesSurfaces,
+    ["RESTAURANT_POS", "CUSTOMER_AI", "ONLINE_ORDER"]);
   assert.ok(!shopExperienceForArchetype("mini_mart").primarySalesSurfaces.includes("RESTAURANT_POS"));
   assert.ok(!shopExperienceForArchetype("fashion").primarySalesSurfaces.includes("RESTAURANT_POS"));
 });

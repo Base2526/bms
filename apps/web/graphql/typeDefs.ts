@@ -1126,6 +1126,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS orders (admin) =====
     bmsOrders(search: String, status: BmsOrderStatus, locationId: ID, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
+    bmsRestaurantCancellationLossReport: [BmsRestaurantCancellationLoss!]!
     bmsOrderLocations: [BmsLocation!]!
     bmsOrder(id: ID!): BmsOrder
     bmsOrderJourney(orderId: ID!): BmsOrderJourney
@@ -1329,6 +1330,13 @@ export const typeDefs = /* GraphQL */ `
     unit_price: Float!
   }
 
+  type BmsRestaurantCancellationLoss {
+    sku: String!
+    name: String!
+    quantity: Int!
+    absorbedAmount: Float!
+  }
+
   type BmsOrder {
     id: ID!
     channel: String!
@@ -1343,6 +1351,11 @@ export const typeDefs = /* GraphQL */ `
     deposit_status: String
     coupon_code: String
     preferred_carrier: BmsCarrier   # ขนส่งที่ลูกค้าแจ้งไว้ตอนสั่ง — เป็นความต้องการ ไม่ใช่ขนส่งจริงที่ใช้ส่ง (7.46)
+    fulfillmentType: String
+    promisedAt: String
+    pendingRefundCount: Int!
+    pendingRefundAmount: Float!
+    pendingRefundSince: String
     locationId: ID
     locationName: String
     branchCode: String
@@ -3597,6 +3610,9 @@ export const typeDefs = /* GraphQL */ `
     country: String
     currency: String
     businessHours: String
+    restaurantOrderHours: JSON!
+    restaurantOrdersPaused: Boolean!
+    restaurantMerchantAbsorbLimit: Float!
     shippingPolicy: String
     returnPolicy: String
     paymentAccounts: [BmsPaymentAccount!]!
@@ -3835,6 +3851,9 @@ export const typeDefs = /* GraphQL */ `
     country: String
     currency: String
     businessHours: String
+    restaurantOrderHours: JSON
+    restaurantOrdersPaused: Boolean
+    restaurantMerchantAbsorbLimit: Float
     shippingPolicy: String
     returnPolicy: String
     paymentAccounts: [BmsPaymentAccountInput!]

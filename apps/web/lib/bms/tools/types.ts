@@ -231,7 +231,7 @@ export function enumVal<T extends string>(
 export function reqItems(
   args: Record<string, any>,
   key = "items"
-): Array<{ sku: string; size: string; qty: number; packCode?: string }> {
+): Array<{ sku: string; size: string; qty: number; packCode?: string; modifierCodes?: string[] }> {
   const raw = args?.[key];
   if (!Array.isArray(raw) || raw.length === 0) {
     throw new ToolArgError(`ต้องระบุ "${key}" อย่างน้อย 1 รายการ`);
@@ -242,9 +242,18 @@ export function reqItems(
     const size = typeof it.size === "string" ? it.size.trim() : "";
     const qty = Number(it.qty);
     const packCode = typeof it.packCode === "string" ? it.packCode.trim() : "";
+    const modifierCodes: string[] = Array.isArray(it.modifierCodes)
+      ? Array.from(new Set<string>(it.modifierCodes.map((code: unknown) =>
+          typeof code === "string" ? code.trim().toUpperCase() : ""
+        ).filter((code: string) => code.length > 0 && code.length <= 64))).slice(0, 20)
+      : [];
     if (!sku) throw new ToolArgError(`${key}[${i}].sku ต้องระบุ`);
     if (!size) throw new ToolArgError(`${key}[${i}].size ต้องระบุ`);
     if (!Number.isInteger(qty) || qty < 1) throw new ToolArgError(`${key}[${i}].qty ต้องเป็นจำนวนเต็ม ≥ 1`);
-    return packCode ? { sku, size, qty, packCode } : { sku, size, qty };
+    return {
+      sku, size, qty,
+      ...(packCode ? { packCode } : {}),
+      ...(modifierCodes.length ? { modifierCodes } : {}),
+    };
   });
 }

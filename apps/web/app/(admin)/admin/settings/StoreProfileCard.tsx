@@ -17,7 +17,7 @@ const Q = gql`
       businessArchetype businessArchetypeLocked businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       receiptLanguageMode
       about address phone contactEmail website logoUrl taxId timezone country currency
-      businessHours shippingPolicy returnPolicy
+      businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
       paymentAccounts { type bankName accountName accountNo promptpayId note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
       enabledCarriers
@@ -45,7 +45,7 @@ const PROFILE_KEYS = [
   "receiptLanguageMode",
   "businessArchetype",
   "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
-  "timezone", "country", "currency", "businessHours", "shippingPolicy", "returnPolicy",
+  "timezone", "country", "currency", "businessHours", "restaurantOrderHours", "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
   "enabledCarriers",
   "shippingMode", "shippingOriginProvince", "shippingOriginPostcode",
@@ -105,7 +105,11 @@ export default function StoreProfileCard() {
         about: p?.about, address: p?.address, phone: p?.phone,
         contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl, taxId: p?.taxId,
         timezone: p?.timezone, country: p?.country || undefined, currency: p?.currency || undefined,
-        businessHours: p?.businessHours, shippingPolicy: p?.shippingPolicy, returnPolicy: p?.returnPolicy,
+        businessHours: p?.businessHours,
+        restaurantOrderHours: p?.restaurantOrderHours || [],
+        restaurantOrdersPaused: p?.restaurantOrdersPaused === true,
+        restaurantMerchantAbsorbLimit: Number(p?.restaurantMerchantAbsorbLimit ?? 2000),
+        shippingPolicy: p?.shippingPolicy, returnPolicy: p?.returnPolicy,
         paymentAccounts: (p?.paymentAccounts || []).map((a: any) => ({ ...a })),
         shippingFlatRate: p?.shippingFlatRate, shippingFreeThreshold: p?.shippingFreeThreshold,
         shippingEstDaysMin: p?.shippingEstDaysMin, shippingEstDaysMax: p?.shippingEstDaysMax,
@@ -380,6 +384,31 @@ export default function StoreProfileCard() {
                     </Col>
                     <Col xs={24} md={6}><Form.Item name="timezone" label={t("admin_store_profile.timezone_label")}><Input placeholder="Asia/Bangkok" /></Form.Item></Col>
                     <Col xs={24} md={6}><Form.Item name="businessHours" label={t("admin_store_profile.business_hours_label")}><Input placeholder={t("admin_store_profile.business_hours_placeholder")} /></Form.Item></Col>
+                    {selectedArchetype === "restaurant" && <Col span={24}>
+                      <Form.Item name="restaurantOrdersPaused" label={t("admin_store_profile.restaurant_pause_label")} valuePropName="checked">
+                        <Switch checkedChildren={t("admin_store_profile.restaurant_paused")} unCheckedChildren={t("admin_store_profile.restaurant_accepting")} />
+                      </Form.Item>
+                      <Form.Item name="restaurantMerchantAbsorbLimit" label={t("admin_store_profile.restaurant_absorb_limit")}>
+                        <InputNumber min={0} precision={2} addonAfter="฿" />
+                      </Form.Item>
+                      <Form.List name="restaurantOrderHours">
+                        {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>
+                          <Text strong>{t("admin_store_profile.restaurant_hours_label")}</Text>
+                          {fields.map((field) => <Space key={field.key} wrap>
+                            <Form.Item {...field} name={[field.name, "day"]} rules={[{ required: true }]}>
+                              <Select style={{ width: 150 }} placeholder={t("admin_store_profile.restaurant_day_placeholder")}
+                                options={[0,1,2,3,4,5,6].map((day) => ({ value: day, label: t(`admin_store_profile.restaurant_day_${day}`) }))} />
+                            </Form.Item>
+                            <Form.Item {...field} name={[field.name, "open"]} rules={[{ required: true }]}><Input type="time" /></Form.Item>
+                            <Form.Item {...field} name={[field.name, "close"]} rules={[{ required: true }]}><Input type="time" /></Form.Item>
+                            <Button danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                          </Space>)}
+                          <Button icon={<PlusOutlined />} onClick={() => add({ day: 1, open: "09:00", close: "21:00" })}>
+                            {t("admin_store_profile.restaurant_add_hours")}
+                          </Button>
+                        </Space>}
+                      </Form.List>
+                    </Col>}
                   </Row>
                 ),
               },

@@ -32,7 +32,12 @@ export type ProductTemplateDefaults = {
 export function productTemplateDefaults(template: string | null | undefined): ProductTemplateDefaults {
   switch (String(template ?? "").trim().toUpperCase()) {
     case "QUICK_MENU":
-      return { stockPolicy: "NON_STOCK", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS"], active: false };
+      return {
+        stockPolicy: "NON_STOCK",
+        baseUnit: "PIECE",
+        surfaces: ["RESTAURANT_POS", "CUSTOMER_AI", "ONLINE_ORDER"],
+        active: false,
+      };
     case "PREPARED_MENU":
       return { stockPolicy: "RECIPE", baseUnit: "PIECE", surfaces: ["RESTAURANT_POS"], active: false };
     case "READY_GOOD":
