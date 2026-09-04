@@ -651,17 +651,19 @@ export default function AdminSidebar() {
                   { value: 'PLATFORM', icon: <Tooltip title={t('admin_nav.workspace_platform_full')} placement="right"><CloudOutlined /></Tooltip> },
                 ]
               : [
+                  // ไม่ใส่ icon ในโหมดเต็มโดยตั้งใจ — Segmented block แบ่งครึ่งความกว้างเท่ากัน
+                  // พอมีไอคอน + padding ป้าย "แพลตฟอร์ม" ยังถูกตัดเป็น "แพลตฟ…" อยู่ดี
+                  // (เห็นจากหน้าจอจริงหลัง deploy) · ตัวอักษรอ่านจบสำคัญกว่าไอคอนประดับ
+                  // ส่วนโหมดย่อยังเป็นไอคอนล้วนเหมือนเดิมเพราะไม่มีที่ให้ตัวหนังสือ
                   {
                     value: 'SHOP',
                     label: <Tooltip title={t('admin_nav.workspace_shop_full')} placement="bottom">
                       <span>{t('admin_nav.workspace_shop')}</span></Tooltip>,
-                    icon: <ShopOutlined />,
                   },
                   {
                     value: 'PLATFORM',
                     label: <Tooltip title={t('admin_nav.workspace_platform_full')} placement="bottom">
                       <span>{t('admin_nav.workspace_platform')}</span></Tooltip>,
-                    icon: <CloudOutlined />,
                   },
                 ]}
           />

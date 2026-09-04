@@ -677,3 +677,33 @@ test("สวิตช์พื้นที่ทำงาน: ป้ายสั
   // ต้องมีกฎของโหมดสว่างด้วย ไม่ใช่มีแต่บล็อก [data-theme="dark"] (เคยเขียวทั้งที่ถอดกฎหลักออก)
   assert.match(css, /^\.bms-admin-sidebar-menu-platform[^\n]*\.ant-menu-item-selected/m);
 });
+
+test("⚠️ กฎสีของโหมดแพลตฟอร์มต้องไม่ถูกเชื่อมเข้ากับ selector ของกฎอื่น", () => {
+  // เกิดจริง (2026-09-04): แทรกบล็อกใหม่ "ก่อน" บรรทัดที่สองของ selector list
+  //   .bms-admin-sidebar-menu... .ant-menu-item,        ← บรรทัดนี้ค้างอยู่
+  //   .bms-admin-sidebar-menu... .ant-menu-submenu-title { height: auto; ... }
+  // ผลคือ .ant-menu-item ไปเกาะกฎใหม่แทน → **ทุกเมนูในแถบกลายเป็นพื้นม่วงทั้งแถบ** บน production
+  // และกฎ layout เดิมก็เสีย .ant-menu-item ไปด้วย · CSS ไม่มี error ให้เห็นเลย
+  const root = path.resolve(import.meta.dirname, "..");
+  const css = readFileSync(path.join(root, "apps/web/app/globals.css"), "utf8");
+  // ตัดคอมเมนต์ออกก่อน ไม่งั้นคอมเมนต์ที่คั่นระหว่างกฎถูกนับเป็น selector (กับดักเดิมของเทสสแกนซอร์ส)
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...bare.matchAll(/(^|\})\s*([^{}]+?)\s*\{([^}]*)\}/g)]
+    .map((m) => ({ selectors: m[2].split(",").map((x) => x.trim()).filter(Boolean), body: m[3] }));
+
+  // ทุกกฎที่พูดถึงโหมดแพลตฟอร์ม ต้องมีแต่ selector ของโหมดนั้น ไม่ปนของอื่น
+  for (const rule of rules) {
+    if (!rule.selectors.some((sel) => /bms-(workspace-platform|admin-sidebar-menu-platform|workspace-switch)/.test(sel))) continue;
+    for (const sel of rule.selectors) {
+      assert.match(sel,
+        /^(\[data-theme="dark"\] )?\.bms-(workspace-platform|admin-sidebar-menu-platform|workspace-switch)/,
+        `selector "${sel}" หลุดเข้ามาในกฎของโหมดแพลตฟอร์ม — น่าจะแทรกบล็อกกลาง selector list`);
+    }
+  }
+  // และกฎ layout เดิมของแถบต้องยังครอบ .ant-menu-item อยู่
+  const layout = rules.find((rule) => /height:\s*auto/.test(rule.body)
+    && rule.selectors.some((sel) => sel.includes(".bms-admin-sidebar-menu") && sel.includes(".ant-menu-submenu-title")));
+  assert.ok(layout, "หากฎ layout ของแถบเมนูไม่เจอ");
+  assert.ok(layout!.selectors.some((sel) => sel.endsWith(".ant-menu-item")),
+    "กฎ height:auto ต้องยังครอบ .ant-menu-item ด้วย ไม่งั้นเมนูสูงเป็นบล็อกยักษ์ตอนแถบขยาย");
+});
