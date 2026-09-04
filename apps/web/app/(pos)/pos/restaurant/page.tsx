@@ -26,6 +26,35 @@ import {
 import styles from "./restaurant.module.css";
 
 const TOKEN_KEY = "bms.pos.deviceToken";
+// จำ "ฉันยืนอยู่จอไหน / โต๊ะไหน" ไว้ข้ามการรีเฟรช — ต่อท้ายด้วย device token เพื่อผูกกับ
+// เครื่องนี้เครื่องเดียว (แบบเดียวกับ bms.pos.localTab. ของหน้าค้าปลีก) เครื่องอื่นที่ใช้
+// เบราว์เซอร์เดียวกัน — หรือเครื่องเดิมที่ถูก pair ใหม่ — จะไม่เห็นของกันและกัน
+//
+// **ตั้งใจจำแค่ "ยืนอยู่ไหน" ไม่จำ "กรองอะไรไว้" และไม่จำ "ใครกำลังทำงาน"**:
+//   · โหมดแจ้งของหมด → กลับมาแล้วแตะการ์ดจะเป็นการปิดเมนู ไม่ใช่สั่งอาหาร
+//   · ตัวกรองหมดวันนี้ / หมวดหมู่ / สถานีบนจอครัว → ตัวกรองที่ค้างข้ามรีเฟรชคือการซ่อนงานจริง
+//     (โค้ดปัจจุบันปลดตัวกรองเองเมื่อไม่มีงานด้วยเหตุผลนี้)
+//   · ผู้ปฏิบัติงาน + PIN → PIN ไม่ลง localStorage เด็ดขาด และชื่อคนที่ค้างบนหัวจอทำให้
+//     เข้าใจผิดว่าใครกำลังทำงานอยู่
+const LOCAL_SCREEN_KEY_PREFIX = "bms.pos.restaurantScreen.";
+const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
+// บิลที่ไม่มีใครแตะนานกว่านี้ไม่คืนให้ (นับจากการแตะครั้งล่าสุด ไม่ใช่ตอนเปิดโต๊ะ) —
+// กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
+// ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
+const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+type RestaurantScreen = "ORDER" | "FLOOR" | "KITCHEN";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN"];
+// จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
+// เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
+//
+// **ห้ามเขียนจอที่เปิดอยู่กลับลง URL** — เคยลองแล้วพัง: พอ replaceState ใส่ ?screen= ให้เอง
+// ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
+// การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
+const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", kitchen: "KITCHEN", kds: "KITCHEN",
+};
+const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
+const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
 type Session = { device: { id: string; code: string; name: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; vat: { cashRounding?: CashRounding } };
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
@@ -230,7 +259,14 @@ export default function RestaurantPosPage() {
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
   // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
   // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
-  const [screen, setScreen] = useState<"ORDER" | "FLOOR" | "KITCHEN">("ORDER");
+  const [screen, setScreen] = useState<RestaurantScreen>("ORDER");
+  // ต้องอ่านค่าที่จำไว้ให้เสร็จก่อน effect ที่เขียนทับจะเริ่มทำงาน — สลับลำดับกันแล้วค่า
+  // เริ่มต้น ("ORDER" / ไม่มีบิล) จะทับของที่จำไว้ตั้งแต่ก่อนที่ใครจะได้อ่านมัน
+  // (กับดักเดียวกับ localDraftRestoredRef ของหน้าค้าปลีก)
+  const localViewRestoredRef = useRef(false);
+  // เป็น state ไม่ใช่ ref เพราะ effect ที่เขียนต้องรอ "คืนค่าเสร็จ" ไม่ใช่ "เริ่มคืนค่า" —
+  // การคืนบิลเป็น async ถ้าไม่รอ effect ที่ลบบิลจะวิ่งไปก่อนแล้วลบค่าที่ยังไม่ได้อ่าน
+  const [viewRestored, setViewRestored] = useState(false);
   const [actorUserId, setActorUserId] = useState("");
   const [actorPin, setActorPin] = useState("");
   const [loading, setLoading] = useState(true);
@@ -541,8 +577,76 @@ export default function RestaurantPosPage() {
     return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", "แจ้งจากครัว");
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
+  /**
+   * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
+   *
+   * ทำไมต้องคืนจอ: interval 5 วินาทีของจอครัวอยู่ใต้เงื่อนไข screen === "KITCHEN"
+   * และเสียงเตือนตั๋วใหม่ถูกเรียกจาก loadTickets ของ interval นั้น — แท็บเล็ตติดผนัง
+   * ที่หลับแล้วตื่นมารีโหลด (หรือถูกเบราว์เซอร์ดีดจาก memory) จะเด้งกลับจอสั่งอาหาร
+   * แล้ว **หยุดดึงตั๋วและหยุดส่งเสียงทั้งกะ** โดยไม่มีอะไรบนจอบอก · บัญชี pos_only
+   * เปิด /admin/kitchen แทนไม่ได้ ครัวจึงไม่มีทางหนีไปหน้าอื่น
+   */
+  useEffect(() => {
+    if (!token || localViewRestoredRef.current) return;
+    localViewRestoredRef.current = true;
+    let fromUrl: RestaurantScreen | undefined;
+    try {
+      const asked = new URLSearchParams(window.location.search).get("screen");
+      fromUrl = asked ? SCREEN_FROM_URL[asked.trim().toLowerCase()] : undefined;
+    } catch { /* URL แปลก ๆ ไม่ควรทำให้เปิดจอไม่ได้ */ }
+    let savedScreen: string | null = null;
+    let savedCheckRaw: string | null = null;
+    try {
+      savedScreen = window.localStorage.getItem(LOCAL_SCREEN_KEY_PREFIX + token);
+      savedCheckRaw = window.localStorage.getItem(LOCAL_CHECK_KEY_PREFIX + token);
+    } catch { /* โหมดส่วนตัว */ }
+    // ลิงก์ที่ปักหมุดไว้ชนะค่าที่จำไว้ — แต่ชนะแค่ "จอไหน" ไม่ใช่ข้ามการคืนบิลที่ทำอยู่
+    if (fromUrl) setScreen(fromUrl);
+    else if (savedScreen && (RESTAURANT_SCREENS as string[]).includes(savedScreen)) {
+      setScreen(savedScreen as RestaurantScreen);
+    }
+    if (!savedCheckRaw) { setViewRestored(true); return; }
+    try {
+      const saved = JSON.parse(savedCheckRaw) as { id?: unknown; savedAt?: unknown };
+      const id = typeof saved.id === "string" ? saved.id : "";
+      const savedAt = Number(saved.savedAt ?? 0);
+      if (!id || !(savedAt > 0) || Date.now() - savedAt > LOCAL_CHECK_MAX_AGE_MS) {
+        window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + token);
+        setViewRestored(true);
+        return;
+      }
+      // ยืนยันกับ server ทุกครั้ง — บิลอาจถูกเก็บเงิน/ยกเลิก/ย้ายโต๊ะที่เครื่องอื่นไปแล้ว
+      void loadCheck(id)
+        .then((restored) => {
+          if (restored && isOpenCheckStatus(restored.status)) setSelectedTableId(restored.tableId);
+          else setCheck(null);
+        })
+        .catch(() => setCheck(null))
+        .finally(() => setViewRestored(true));
+    } catch { setViewRestored(true); /* ค่าที่จำไว้พัง = เริ่มใหม่ ไม่ใช่ทำให้เปิดจอไม่ได้ */ }
+  }, [token]);
+  useEffect(() => {
+    if (!token || !viewRestored) return;
+    try { window.localStorage.setItem(LOCAL_SCREEN_KEY_PREFIX + token, screen); } catch { /* โหมดส่วนตัว */ }
+  }, [screen, token, viewRestored]);
+  // จำบิลที่กำลังทำอยู่ — เก็บแค่ id กับเวลา ไม่เก็บรายการ/ยอดเงิน (ยอดต้องมาจาก server
+  // เสมอ · เวลาอัปเดตทุกครั้งที่บิลถูกโหลดใหม่ จึงเป็น "นับจากการแตะครั้งล่าสุด")
+  useEffect(() => {
+    if (!token || !viewRestored) return;
+    const key = LOCAL_CHECK_KEY_PREFIX + token;
+    try {
+      if (check && isOpenCheckStatus(check.status)) {
+        window.localStorage.setItem(key, JSON.stringify({ id: check.id, savedAt: Date.now() }));
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch { /* โหมดส่วนตัว */ }
+    // viewRestored อยู่ใน deps ด้วย ไม่ใช่แค่ในเงื่อนไข — บิลที่คืนไม่สำเร็จ (ถูกเก็บเงิน/
+    // ยกเลิกไปแล้ว) ทำให้ check เป็น null ตั้งแต่ก่อนธงจะปัก ถ้าไม่ให้ effect วิ่งอีกรอบ
+    // ตอนธงปัก คีย์ที่ตายแล้วจะค้างอยู่ตลอดไปและเสีย GET ทิ้งทุกครั้งที่เปิดจอ
+  }, [check, token, viewRestored]);
   // กรองจากเมนูที่โหลดไว้แล้วในเครื่อง ไม่ยิง API ซ้ำ — ค้นหาที่นี่เป็นตัวช่วยกรองกริด
   // ไม่ใช่ทางเดียวเหมือนเดิม (เมนูร้านอาหารมีไม่มาก พิมพ์ทุกครั้งเสียเวลาเปล่า)
   const menuStations = useMemo(() => {

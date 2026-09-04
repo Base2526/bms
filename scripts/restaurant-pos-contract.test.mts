@@ -536,3 +536,75 @@ test("each kitchen lane scrolls on its own while its header stays put", async ()
   assert.match(css, /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
     "the <=900px breakpoint scrolls the page as a document, so per-lane scrolling is released");
 });
+
+test("จอที่เปิดอยู่ถูกจำไว้ข้ามรีเฟรช และ ?screen= ชนะค่าที่จำไว้", async () => {
+  // interval 5 วินาทีของจอครัวอยู่ใต้เงื่อนไข screen === "KITCHEN" และเสียงเตือนตั๋วใหม่
+  // ถูกเรียกจาก loadTickets ของ interval นั้น — จอที่เด้งกลับ ORDER หลังรีเฟรชจึง "หยุด
+  // ดึงตั๋วและหยุดส่งเสียง" ไม่ใช่แค่แสดงจอผิด และ pos_only เปิด /admin/kitchen แทนไม่ได้
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /LOCAL_SCREEN_KEY_PREFIX = "bms\.pos\.restaurantScreen\."/);
+  // ผูกกับ device token — เบราว์เซอร์เดียวที่ pair หลายเครื่องต้องไม่เห็นค่าของกันและกัน
+  assert.match(page, /setItem\(LOCAL_SCREEN_KEY_PREFIX \+ token, screen\)/);
+  assert.match(page, /getItem\(LOCAL_SCREEN_KEY_PREFIX \+ token\)/);
+  // อ่านก่อนเขียนทับ: ค่าเริ่มต้น ("ORDER" / ไม่มีบิล) ต้องไม่ทับของที่จำไว้ก่อนใครได้อ่าน
+  // ตรวจ **ทุก effect ที่เขียน** แยกกัน — เช็ครวมทั้งไฟล์จะเขียวได้ด้วย guard ของ effect อื่น
+  assert.match(page, /localViewRestoredRef\.current = true/);
+  // (removeItem ตอน TTL หมดอายุอยู่ใน effect ที่คืนค่าเอง จึงไม่นับ — ตัวที่ทับของได้คือ setItem
+  //  กับ effect ที่ลบเมื่อไม่มีบิล)
+  const writes = [...page.matchAll(/localStorage\.setItem\(\s*(?:LOCAL_(?:SCREEN|CHECK)_KEY_PREFIX|key)/g)];
+  assert.equal(writes.length, 2, "ต้องมีจุดเขียนสองจุดเท่านั้น: จอที่เปิด และบิลที่ทำอยู่");
+  for (const write of writes) {
+    const before = page.slice(Math.max(0, write.index! - 460), write.index!);
+    assert.match(before, /!viewRestored\) return/,
+      "ทุกจุดที่เขียนต้องรอให้การคืนค่าเสร็จก่อน (viewRestored) ไม่ใช่แค่เริ่มไปแล้ว");
+  }
+  const persistCheck = page.indexOf("const key = LOCAL_CHECK_KEY_PREFIX + token;");
+  assert.ok(persistCheck > 0, "หา effect ที่จำบิลไม่เจอ");
+  assert.match(page.slice(Math.max(0, persistCheck - 240), persistCheck), /!viewRestored\) return/,
+    "effect ที่ลบบิลเมื่อไม่มีบิลต้องรอการคืนค่าเสร็จ ไม่งั้นมันลบของที่จำไว้ตอน mount");
+  // การคืนบิลเป็น async — ธงต้องปักหลังงานจบจริง ไม่ใช่ตอนสั่งให้เริ่ม
+  assert.match(page, /\.finally\(\(\) => setViewRestored\(true\)\)/);
+  // ลิงก์ที่ปักหมุดไว้ที่จอครัวต้องชนะค่าที่จำไว้ ไม่งั้นล้าง site data แล้วจอครัวเปลี่ยนหน้าเอง
+  assert.match(page, /SCREEN_FROM_URL/);
+  assert.match(page, /if \(fromUrl\) setScreen\(fromUrl\);\s*else if \(savedScreen/);
+  // ⚠️ ห้ามเขียนจอที่เปิดอยู่กลับลง URL — เคยทำแล้วทุกการโหลดกลายเป็น "ลิงก์ที่ปักหมุด"
+  // แล้วการคืนบิลถูกข้ามเงียบ ๆ · พารามิเตอร์นี้ต้องมาจากคนที่ตั้งใจใส่เท่านั้น
+  assert.doesNotMatch(page, /searchParams\.set\(\s*"screen"/);
+  assert.doesNotMatch(page, /history\.(replaceState|pushState)/);
+  assert.doesNotMatch(page, /router\.(push|replace)\([^)]*screen=/);
+  // การปักหมุดจอต้องไม่ข้ามการคืนบิล — ทั้งสองอย่างเป็นคนละคำถามกัน
+  const restore = page.slice(page.indexOf("localViewRestoredRef.current = true"));
+  const urlBranch = restore.slice(0, restore.indexOf("LOCAL_CHECK_MAX_AGE_MS"));
+  assert.doesNotMatch(urlBranch, /if \(fromUrl\) \{[\s\S]{0,200}return;/);
+});
+
+test("บิลที่จำไว้ต้องมีอายุ ยืนยันกับ server และหลุดเมื่อไม่ใช่บิลที่เปิดอยู่", async () => {
+  // แท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปต้องไม่เปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ และบิลที่
+  // ถูกเก็บเงิน/ยกเลิกที่เครื่องอื่นต้องหลุดจากจอ ไม่ใช่ค้างให้กดต่อแล้วไปล้มที่ server
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /LOCAL_CHECK_MAX_AGE_MS/);
+  assert.match(page, /Date\.now\(\) - savedAt > LOCAL_CHECK_MAX_AGE_MS/);
+  assert.match(page, /loadCheck\(id\)[\s\S]{0,220}isOpenCheckStatus\(restored\.status\)/);
+  assert.match(page, /if \(check && isOpenCheckStatus\(check\.status\)\)/);
+  // เก็บแค่ id + เวลา — ยอดเงิน/รายการต้องมาจาก server เสมอ ห้ามมีสูตรเงินชุดที่สองใน localStorage
+  assert.match(page, /JSON\.stringify\(\{ id: check\.id, savedAt: Date\.now\(\) \}\)/);
+  assert.doesNotMatch(page, /LOCAL_CHECK_KEY_PREFIX[\s\S]{0,400}amountDue/);
+});
+
+test("ห้ามจำ PIN ผู้ปฏิบัติงาน โหมดแจ้งของหมด และตัวกรองใด ๆ ข้ามรีเฟรช", async () => {
+  // ตัวกรองที่ค้างข้ามรีเฟรช = ซ่อนงานจริง (จอครัวปลดตัวกรองเองเมื่อไม่มีงานด้วยเหตุผลนี้)
+  // และกลับมาอยู่ในโหมดแจ้งของหมด = แตะการ์ดแล้วปิดเมนู ไม่ใช่สั่งอาหาร
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  for (const banned of ["actorPin", "actorUserId", "menuManage", "menuOnlySoldOut", "menuCategory", "stationFilter"]) {
+    assert.doesNotMatch(page, new RegExp(`localStorage\\.setItem\\([^)]*${banned}`),
+      `${banned} ต้องไม่ถูกเก็บลง localStorage`);
+    assert.doesNotMatch(page, new RegExp(`set(Menu|Actor|Station)[A-Za-z]*\\(\\s*(JSON\\.parse\\()?window\\.localStorage`),
+      `${banned} ต้องไม่ถูกคืนค่าจาก localStorage`);
+  }
+  // คีย์ที่หน้านี้เก็บได้มีสามตัวเท่านั้น: token (ของเดิม), จอที่เปิด, บิลที่ทำอยู่ + เสียงเตือน
+  const keys = [...page.matchAll(/localStorage\.(?:set|get|remove)Item\(\s*([A-Za-z_][\w.]*|"[^"]+")/g)]
+    .map((match) => match[1]);
+  const allowed = new Set(["TOKEN_KEY", '"bms.pos.kitchenChime"', "key",
+    "LOCAL_SCREEN_KEY_PREFIX", "LOCAL_CHECK_KEY_PREFIX"]);
+  for (const found of keys) assert.ok(allowed.has(found), `คีย์ localStorage ที่ไม่ได้ประกาศไว้: ${found}`);
+});
