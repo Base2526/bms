@@ -32,6 +32,7 @@ import {
   listLowStock,
   type SellableProduct,
 } from "../products";
+import { listProductModifiers } from "../productRecipes";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
@@ -161,8 +162,12 @@ function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null)
     category: product.category,
     brand: product.brand,
     availability: product.availability,
-    availableTotal: product.availableTotal,
-    availableSizes: product.availableSizes.filter((variant) => variant.available > 0),
+    ...(product.stockPolicy === "NON_STOCK" || product.stockPolicy === "RECIPE"
+      ? {}
+      : {
+          availableTotal: product.availableTotal,
+          availableSizes: product.availableSizes.filter((variant) => variant.available > 0),
+        }),
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
     publicPath,
@@ -670,7 +675,13 @@ const getProduct: BmsTool = {
     ]);
     const p = items.find((x) => x.sku.toLowerCase() === sku.toLowerCase());
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
-    const variants = await listVariants(ec.tenantId, p.sku);
+    const [variants, sellableResult] = await Promise.all([
+      listVariants(ec.tenantId, p.sku),
+      listSellableProducts(ec.tenantId, { search: p.sku, limit: 5 }),
+    ]);
+    const sellable = sellableResult.items.find((item) => item.sku.toLowerCase() === p.sku.toLowerCase()) ?? null;
+    if (ec.surface === "customer" && !sellable) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
+    const uncounted = sellable?.stockPolicy === "NON_STOCK" || sellable?.stockPolicy === "RECIPE";
     const variantPrices = variants.map((variant) => Number(variant.price));
     return {
       ok: true,
@@ -686,11 +697,10 @@ const getProduct: BmsTool = {
         active: p.active,
         createdAt: p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
         updatedAt: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at),
-        availableTotal: variants.reduce(
-          (sum, variant) =>
-            sum + Math.max(0, variant.current_stock - variant.reserved_stock),
-          0
-        ),
+        availability: sellable?.availability ?? null,
+        ...(!uncounted ? { availableTotal: variants.reduce(
+          (sum, variant) => sum + Math.max(0, variant.current_stock - variant.reserved_stock), 0
+        ) } : {}),
         publicPath: tenantSlug
           ? `/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(p.sku)}`
           : null,
@@ -701,7 +711,7 @@ const getProduct: BmsTool = {
         // /shop/{tenantSlug}/products/{sku} ไม่ใช่ URL ไฟล์ใน storage
         variants: variants.map((v) => ({
           size: v.size,
-          available: Math.max(0, v.current_stock - v.reserved_stock),
+          ...(!uncounted ? { available: Math.max(0, v.current_stock - v.reserved_stock) } : {}),
           price: Number(v.price),
         })),
       },
@@ -834,6 +844,52 @@ const checkStockTool: BmsTool = {
     const size = optString(args, "size") ?? null;
     const res = await checkStock(ec.tenantId, product, size);
     return { ok: true, data: { ...res, verifiedAt: new Date().toISOString() } };
+  },
+};
+
+const listMenuModifiersTool: BmsTool = {
+  name: "list_menu_modifiers",
+  description:
+    "List the shop-defined option groups for one exact menu SKU and size. Returns verified option codes, names and price deltas. Pass selected codes to create_order as modifierCodes; never invent a code or price.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  whenToUse: "After resolving an exact menu SKU and size, before creating an order when the customer asks for preparation options or the menu has required choices.",
+  whenNotToUse: "The SKU or size is still ambiguous — resolve it with search_products/check_stock first.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      sku: { type: "string", description: "Exact SKU returned by a product tool." },
+      size: { type: "string", description: "Exact menu variant/size." },
+    },
+    required: ["sku", "size"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const sku = reqString(args, "sku");
+    const size = reqString(args, "size");
+    const rows = (await listProductModifiers(ec.tenantId, sku, size)).filter((row) => row.active);
+    const groups = new Map<string, {
+      code: string; name: string; selectionType: "SINGLE" | "MULTIPLE";
+      minSelect: number; maxSelect: number | null;
+      options: Array<{ code: string; name: string; priceDelta: number; defaultSelected: boolean }>;
+    }>();
+    for (const row of rows) {
+      const group = groups.get(row.groupCode) ?? {
+        code: row.groupCode,
+        name: row.groupName,
+        selectionType: row.selectionType,
+        minSelect: row.minSelect,
+        maxSelect: row.maxSelect,
+        options: [],
+      };
+      group.options.push({
+        code: row.code,
+        name: row.name,
+        priceDelta: row.priceDelta,
+        defaultSelected: row.defaultSelected,
+      });
+      groups.set(row.groupCode, group);
+    }
+    return { ok: true, data: { sku, size, groups: [...groups.values()], verifiedAt: new Date().toISOString() } };
   },
 };
 
@@ -1817,6 +1873,12 @@ const createOrderTool: BmsTool = {
               description:
                 'Selling-unit code when the customer counted in packs instead of pieces — "2 แผง" is qty 2 with the blister pack code. Omit for base units. Only use a code that appeared in a tool result; never invent one, and never send a price or a pieces-per-pack number: the shop\'s own pack data decides both.',
             },
+            modifierCodes: {
+              type: "array",
+              description: "Menu option codes selected by the customer. Use only codes returned by list_menu_modifiers; never send a price.",
+              maxItems: 20,
+              items: { type: "string", maxLength: 64 },
+            },
           },
           required: ["sku", "size", "qty"],
         },
@@ -1844,7 +1906,7 @@ const createOrderTool: BmsTool = {
     const items: OrderItemInput[] = [];
     for (const it of requested) {
       if (!it.packCode) {
-        items.push({ sku: it.sku, size: it.size, qty: it.qty });
+        items.push({ sku: it.sku, size: it.size, qty: it.qty, modifierCodes: it.modifierCodes });
         continue;
       }
       const pack = await resolveSellablePack(ec.tenantId, it.sku, it.size, it.packCode);
@@ -1863,6 +1925,7 @@ const createOrderTool: BmsTool = {
         packUnitName: pack.unitName,
         packQty: it.qty,
         packUnitPrice: pack.price,
+        modifierCodes: it.modifierCodes,
       });
     }
 
@@ -1882,6 +1945,16 @@ const createOrderTool: BmsTool = {
           const stock = await checkStock(ec.tenantId, it.sku, it.size);
           const name = "name" in stock ? stock.name : it.sku;
           const basePrice = "price" in stock ? Number(stock.price) : null;
+          const availableModifiers = (await listProductModifiers(ec.tenantId, it.sku, it.size))
+            .filter((modifier) => modifier.active);
+          const modifiers = (it.modifierCodes ?? []).map((code) => {
+            const modifier = availableModifiers.find((candidate) => candidate.code.toUpperCase() === code);
+            if (!modifier) {
+              throw new ToolArgError(`ไม่พบตัวเลือก "${code}" ของเมนู ${it.sku} (ไซซ์ ${it.size})`);
+            }
+            return { code, name: modifier.name, priceDelta: modifier.priceDelta };
+          });
+          const modifierPrice = modifiers.reduce((sum, modifier) => sum + modifier.priceDelta, 0);
           const pack = it.packCode
             ? await resolveSellablePack(ec.tenantId, it.sku, it.size, it.packCode)
             : null;
@@ -1894,8 +1967,12 @@ const createOrderTool: BmsTool = {
             // ราคายกหน่วยที่ร้านตั้งไว้ชนะเสมอ ถ้าไม่ได้ตั้งไว้จึงคิดจากราคาต่อหน่วยฐาน ×
             // baseQty — สูตรเดียวกับที่ stock.ts บอกไว้ที่ StockPackOption.price
             unitPrice: pack
-              ? pack.price ?? (basePrice != null ? basePrice * pack.baseQty : null)
-              : basePrice,
+              ? (() => {
+                  const resolvedPackPrice = pack.price ?? (basePrice != null ? basePrice * pack.baseQty : null);
+                  return resolvedPackPrice == null ? null : resolvedPackPrice + modifierPrice;
+                })()
+              : basePrice == null ? null : basePrice + modifierPrice,
+            modifiers,
           });
         }
         ec.pendingOrderQuote = { fingerprint, lines: quoteLines };
@@ -3063,6 +3140,7 @@ export const ALL_TOOLS: BmsTool[] = [
   findAlternativesTool,
   getProduct,
   checkStockTool,
+  listMenuModifiersTool,
   getVariantReservationsTool,
   subscribeRestockNotificationTool,
   listCustomerCouponsTool,

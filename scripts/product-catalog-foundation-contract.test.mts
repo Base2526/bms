@@ -106,7 +106,8 @@ test("restaurant modifiers are grouped and revalidated on the server", () => {
   assert.match(orders, /MODIFIER_GROUP_MIN/);
   assert.match(orders, /MODIFIER_GROUP_MAX/);
   assert.match(orders, /MODIFIER_GROUP_SINGLE/);
-  assert.match(recipes, /Modifier ใช้ได้เฉพาะสินค้าที่มี Stock Policy เป็น RECIPE/);
+  assert.match(recipes, /items\.length > 0 && policy\.rows\[0\]\?\.stock_policy !== "RECIPE"/);
+  assert.match(recipes, /Modifier ที่มีผลต่อวัตถุดิบใช้ได้เฉพาะสินค้าที่มี Stock Policy เป็น RECIPE/);
   assert.match(recipes, /default_selected/);
 });
 

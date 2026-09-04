@@ -28,6 +28,8 @@ export type OrderQuoteLine = {
   packUnitName?: string | null;
   /** ราคาต่อหนึ่งหน่วยที่แสดง (ราคาป้าย ไม่ใช่ราคาหลังส่วนลด) · null = ยังไม่รู้ */
   unitPrice?: number | null;
+  /** ตัวเลือกที่ฝั่ง server resolve แล้ว เพื่อให้ลูกค้าเห็นสิ่งที่จะเข้าครัวจริง */
+  modifiers?: Array<{ code: string; name: string; priceDelta: number }>;
 };
 
 export type OrderQuoteFingerprintLine = {
@@ -35,6 +37,7 @@ export type OrderQuoteFingerprintLine = {
   size: string;
   qty: number;
   packCode?: string | null;
+  modifierCodes?: string[] | null;
 };
 
 /**
@@ -55,6 +58,9 @@ export function orderQuoteFingerprint(lines: OrderQuoteFingerprintLine[]): strin
         String(line.size ?? "").trim().toUpperCase(),
         String(Number(line.qty) || 0),
         String(line.packCode ?? "").trim().toUpperCase(),
+        Array.from(new Set((line.modifierCodes ?? []).map((code) =>
+          String(code).trim().toUpperCase()
+        ).filter(Boolean))).sort().join(","),
       ].join("|")
     )
     .sort();
@@ -87,11 +93,15 @@ export function composeOrderQuoteSummary(
     const head = english
       ? `• ${line.name}, size ${line.size} × ${line.displayQty}${unit}`
       : `• ${line.name} ไซซ์ ${line.size} × ${line.displayQty}${unit}`;
-    if (line.unitPrice == null) return head;
+    const modifierText = (line.modifiers ?? []).length
+      ? ` (${(line.modifiers ?? []).map((modifier) => modifier.name).join(", ")})`
+      : "";
+    const describedHead = `${head}${modifierText}`;
+    if (line.unitPrice == null) return describedHead;
     const lineTotal = line.unitPrice * line.displayQty;
     return english
-      ? `${head} — ${formatMoney(lineTotal, true)} THB`
-      : `${head} — ${formatMoney(lineTotal, false)} บาท`;
+      ? `${describedHead} — ${formatMoney(lineTotal, true)} THB`
+      : `${describedHead} — ${formatMoney(lineTotal, false)} บาท`;
   });
 
   const known = lines.filter((line) => line.unitPrice != null);

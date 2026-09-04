@@ -102,9 +102,38 @@ export async function resolveStockConsumptionInTx(
   const policy = product.rows[0];
   if (!policy) throw new Error(`ไม่พบสินค้าที่ขายได้: ${input.sku}`);
 
+  // A modifier row is a valid preparation instruction/price option even when it has no
+  // ingredient delta. LEFT JOIN preserves that distinction; only rows with component_sku alter
+  // stock, and those remain recipe-only.
+  const selectedModifiers = modifierCodes.length === 0 ? [] : (await client.query<{
+    code: string;
+    component_sku: string | null;
+    component_size: string | null;
+    qty_delta: number | null;
+  }>(
+    `SELECT upper(m.code) AS code, mi.component_sku, mi.component_size, mi.qty_delta
+       FROM bms_product_modifiers m
+       LEFT JOIN bms_product_modifier_items mi
+         ON mi.tenant_id = m.tenant_id AND mi.modifier_id = m.id
+      WHERE m.tenant_id = $1 AND m.product_sku = $2 AND m.size = $3
+        AND m.active AND upper(m.code) = ANY($4::text[])
+      ORDER BY upper(m.code), mi.component_sku, mi.component_size`,
+    [tenantId, input.sku, input.size, modifierCodes]
+  )).rows;
+  if (modifierCodes.length > 0) {
+    if (!(await isCapabilityEnabledInTx(client, tenantId, "MODIFIER"))) {
+      throw new Error("ร้านยังไม่ได้เปิดความสามารถ Modifier — เปิดที่ /admin/stock-models ก่อนใช้ตัวเลือกเมนู");
+    }
+    const found = new Set(selectedModifiers.map((row) => row.code));
+    const missing = modifierCodes.filter((code) => !found.has(code));
+    if (missing.length > 0) throw new Error(`MODIFIER_NOT_FOUND:${missing.join(",")}`);
+  }
+  const hasStockModifiers = selectedModifiers.some((row) => row.component_sku !== null);
+
   // Existing bundles remain authoritative regardless of a missing 9.40 policy
   // row, preserving all pre-migration products.
   if (policy.is_bundle || policy.stock_policy === "BUNDLE") {
+    if (hasStockModifiers) throw new Error(`MODIFIER_REQUIRES_RECIPE:${input.sku}:${input.size}`);
     const parts = await client.query<{
       component_sku: string;
       component_size: string;
@@ -136,10 +165,8 @@ export async function resolveStockConsumptionInTx(
   // returns no consumption lines, but stays derived: true so createOrder() still
   // creates the zero inventory row that bms_order_items' FK to
   // bms_inventory(product_sku, size) has required since migration 3.3.
-  // Modifiers describe an ingredient delta against a recipe, so they stay blocked
-  // here exactly as they are for DIRECT/PACK.
   if (policy.stock_policy === "NON_STOCK") {
-    if (modifierCodes.length > 0) {
+    if (hasStockModifiers) {
       throw new Error(`MODIFIER_REQUIRES_RECIPE:${input.sku}:${input.size}`);
     }
     return { soldSku: input.sku, soldSize: input.size, derived: true, lines: [] };
@@ -184,28 +211,8 @@ export async function resolveStockConsumptionInTx(
     });
 
     if (modifierCodes.length > 0) {
-      if (!(await isCapabilityEnabledInTx(client, tenantId, "MODIFIER"))) {
-        throw new Error("ร้านยังไม่ได้เปิดความสามารถ Modifier — เปิดที่ /admin/stock-models ก่อนใช้ตัวเลือกเมนู");
-      }
-      const modifiers = await client.query<{
-        code: string;
-        component_sku: string;
-        component_size: string;
-        qty_delta: number;
-      }>(
-        `SELECT upper(m.code) AS code, mi.component_sku, mi.component_size, mi.qty_delta
-           FROM bms_product_modifiers m
-           JOIN bms_product_modifier_items mi
-             ON mi.tenant_id = m.tenant_id AND mi.modifier_id = m.id
-          WHERE m.tenant_id = $1 AND m.product_sku = $2 AND m.size = $3
-            AND m.active AND upper(m.code) = ANY($4::text[])
-          ORDER BY upper(m.code), mi.component_sku, mi.component_size`,
-        [tenantId, input.sku, input.size, modifierCodes]
-      );
-      const found = new Set(modifiers.rows.map((row) => row.code));
-      const missing = modifierCodes.filter((code) => !found.has(code));
-      if (missing.length > 0) throw new Error(`MODIFIER_NOT_FOUND:${missing.join(",")}`);
-      for (const modifier of modifiers.rows) {
+      for (const modifier of selectedModifiers) {
+        if (!modifier.component_sku || !modifier.component_size || modifier.qty_delta == null) continue;
         recipeLines.push({
           sku: modifier.component_sku,
           size: modifier.component_size,
@@ -224,9 +231,8 @@ export async function resolveStockConsumptionInTx(
     return { soldSku: input.sku, soldSize: input.size, derived: true, lines };
   }
 
-  // A modifier describes an ingredient delta against a recipe. Applying it to a DIRECT/PACK
-  // product would charge the surcharge while silently ignoring the configured stock movement.
-  if (modifierCodes.length > 0) {
+  // Instruction/price-only modifiers are safe on a countable product; ingredient deltas are not.
+  if (hasStockModifiers) {
     throw new Error(`MODIFIER_REQUIRES_RECIPE:${input.sku}:${input.size}`);
   }
 

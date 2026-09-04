@@ -94,6 +94,12 @@ function facts(res: StockResult): string {
   switch (res.status) {
     case "IN_STOCK":
       return `${res.name} ไซซ์ ${res.size} available=${res.available} ราคา=${res.price}`;
+    case "AVAILABLE_TO_ORDER":
+      return `${res.name} ไซซ์ ${res.size} พร้อมสั่ง ราคา=${res.price}`;
+    case "SOLD_OUT_TODAY":
+      return `${res.name} วันนี้หมด`;
+    case "MENU_SIZE_REQUIRED":
+      return `${res.name} ตัวเลือก: ${res.sizes.map((s) => `${s.size}:${s.price}`).join(", ")}`;
     case "OUT_OF_STOCK":
       return `${res.name} ไซซ์ ${res.size} available=0 (หมด); ไซซ์อื่นที่มี=${(res.availableSizes ?? [])
         .map((item) => `${item.size}:${item.available}`)
@@ -102,7 +108,7 @@ function facts(res: StockResult): string {
         .join(",") || "ไม่มี"}`;
     case "SIZE_UNKNOWN":
       return `${res.name} สต็อก: ${res.sizes.map((s) => `${s.size}=${s.available}`).join(", ")}`;
-    default:
+    case "NOT_FOUND":
       return `ไม่พบสินค้าในระบบ; สินค้าพร้อมขายที่เสนอได้=${(res.alternatives ?? [])
         .map((item) => `${item.name}:${item.price}`)
         .join(",") || "ไม่มี"}`;

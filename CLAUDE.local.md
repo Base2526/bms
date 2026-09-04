@@ -10,7 +10,13 @@
 - เพิ่มธง “หมดวันนี้” ต่อสินค้า x สาขา, รีเซ็ตเมื่อเปิดกะหรือ cron ถึงเวลา (default 04:00),
   และใช้ policy กลางกับ AI/online/POS/restaurant; pure contract + typecheck ผ่าน
 - UI ตรวจจริงใน browser: **ยังไม่ได้ตรวจ** (dev stack ยังไม่ขึ้นเพราะ env ข้างต้น)
-- งานบรีฟ `docs/business/restaurant-chat-delivery.md`: เฟส 1 อยู่ระหว่าง verify; เฟส 2–5 ยังไม่เริ่ม
+- เฟส 1 commit แล้ว; full gate ติด baseline `admin-navigation-contract` ที่อ่าน CRLF ไม่ตรง regex
+  (ไฟล์นั้นไม่ได้ถูกแก้) แต่ typecheck/targeted pure/build ผ่าน
+- เฟส 2: ค่าเริ่มต้นร้านอาหารเป็น `QUICK_MENU` / `NON_STOCK`, เปิด surface รายเมนูสำหรับ
+  restaurant POS + customer AI + online order, เพิ่ม `list_menu_modifiers`, ส่ง modifier code เท่านั้น,
+  และแยก instruction/price-only modifier ออกจากชนิดที่กระทบวัตถุดิบ
+- เฟส 2 targeted pure contracts + typecheck ผ่าน; full gate/build/DB/browser ยังรอตรวจ
+- งานบรีฟ `docs/business/restaurant-chat-delivery.md`: เฟส 3–5 ยังไม่เริ่ม
 
 **ประวัติงานเก่าทั้งหมด (ทุก § ที่เคยอยู่ในไฟล์นี้) ย้ายไป
 [docs/local-notes-archive.md](docs/local-notes-archive.md)** — ยกไปครบไม่ได้ลบ ก่อนแก้ฟีเจอร์ไหนให้

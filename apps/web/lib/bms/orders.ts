@@ -173,7 +173,8 @@ export type CreatedLine = {
     promotion: Promotion | null;
     modifierUnitPrice: number;
   };
-  availableAfter: number;
+  /** null means this menu intentionally does not expose a counted stock number. */
+  availableAfter: number | null;
   packCode?: string | null;
   packUnitName?: string | null;
   packQty?: number | null;
@@ -873,7 +874,7 @@ export async function createOrderInTx(
           modifierUnitPrice,
         },
         availableAfter: resolvedConsumption[itemIndex].derived
-          ? Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
+          ? resolvedConsumption[itemIndex].lines.length === 0 ? null : Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
               availableAfterByStockKey.get(`${line.sku}\u0000${line.size}`) ?? 0
             ))
           : availableAfterByStockKey.get(`${it.sku}\u0000${it.size}`) ?? 0,

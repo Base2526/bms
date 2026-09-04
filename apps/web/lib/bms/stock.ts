@@ -12,7 +12,7 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { resolveDefaultLocationIdInTx } from "./locations";
+import { resolveDefaultLocationId, resolveDefaultLocationIdInTx } from "./locations";
 import { recordMovement } from "./movements";
 import {
   findAlternativeProducts,
@@ -40,6 +40,29 @@ export type StockPackOption = {
 };
 
 export type StockResult =
+  | {
+      status: "AVAILABLE_TO_ORDER";
+      availability: "AVAILABLE";
+      sku: string;
+      name: string;
+      price: number;
+      size: string;
+    }
+  | {
+      status: "SOLD_OUT_TODAY";
+      availability: "SOLD_OUT_TODAY";
+      sku: string;
+      name: string;
+      price: number;
+      size: string | null;
+    }
+  | {
+      status: "MENU_SIZE_REQUIRED";
+      sku: string;
+      name: string;
+      price: number;
+      sizes: Array<{ size: string; price: number }>;
+    }
   | {
       status: "IN_STOCK";
       sku: string;
@@ -107,6 +130,51 @@ export async function checkStock(
       limit: 3,
     });
     return { status: "NOT_FOUND", query: productText, alternatives: items };
+  }
+
+  const locationId = await resolveDefaultLocationId(tenantId);
+  const menuState = await query<{ stock_policy: string; temporarily_unavailable: boolean }>(
+    `SELECT COALESCE(policy.stock_policy, 'DIRECT') AS stock_policy,
+            EXISTS (
+              SELECT 1 FROM bms_product_menu_unavailability unavailable
+               WHERE unavailable.tenant_id = p.tenant_id
+                 AND unavailable.location_id = $3
+                 AND unavailable.product_sku = p.sku
+                 AND unavailable.resets_at > now()
+            ) AS temporarily_unavailable
+       FROM bms_products p
+       LEFT JOIN bms_product_stock_policies policy
+         ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.sku = $2`,
+    [tenantId, product.sku, locationId]
+  );
+  const policy = menuState.rows[0]?.stock_policy ?? "DIRECT";
+  if (menuState.rows[0]?.temporarily_unavailable) {
+    return { status: "SOLD_OUT_TODAY", availability: "SOLD_OUT_TODAY", sku: product.sku,
+      name: product.name, price: Number(product.price), size };
+  }
+  if (policy === "NON_STOCK" || policy === "RECIPE") {
+    if (!size) {
+      const variants = await query<{ size: string; price: string }>(
+        `SELECT i.size, COALESCE(sized.price, shared.price, p.price)::text AS price
+           FROM bms_inventory i
+           JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+           LEFT JOIN bms_product_packs sized
+             ON sized.tenant_id = i.tenant_id AND sized.product_sku = i.product_sku
+            AND sized.size = i.size AND sized.is_base AND sized.active
+           LEFT JOIN bms_product_packs shared
+             ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
+            AND shared.size IS NULL AND shared.is_base AND shared.active
+          WHERE i.tenant_id = $1 AND i.location_id = $2 AND i.product_sku = $3
+          ORDER BY i.size`,
+        [tenantId, locationId, product.sku]
+      );
+      return { status: "MENU_SIZE_REQUIRED", sku: product.sku, name: product.name,
+        price: Number(product.price), sizes: variants.rows.map((row) => ({ size: row.size, price: Number(row.price) })) };
+    }
+    const price = await getVariantBasePrice(tenantId, product.sku, size) ?? Number(product.price);
+    return { status: "AVAILABLE_TO_ORDER", availability: "AVAILABLE", sku: product.sku,
+      name: product.name, price, size };
   }
 
   if (!size) {
