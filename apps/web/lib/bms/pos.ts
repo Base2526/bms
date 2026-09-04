@@ -24,7 +24,7 @@ import { beginTenantTx } from "./tenant";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { resolveStockConsumptionInTx } from "./stockConsumption";
-import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
+import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { parseScaleBarcode } from "./barcode";
 import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
@@ -58,8 +58,10 @@ import {
   issueCreditNote,
   type TenantVatSettings,
 } from "./taxDocuments";
-import { redeemCustomerCouponForOrderInTx } from "./coupons";
+import { redeemCustomerCouponForOrderInTx, releaseCouponForOrdersInTx, releaseCustomerCouponReservationsInTx } from "./coupons";
+import { couponEligibilitySubtotal, merchantAbsorbApproval, type RestaurantCancellationCause } from "./restaurantCancellationPolicy";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
+import { sendStaffMessage } from "./inbox";
 import {
   earnPointsForOrderInTx,
   reversePointsForReturnInTx,
@@ -2132,6 +2134,7 @@ async function loadPosReceiptDiscountLines(
     db.query<{
       total_amount: string;
       discount_amount: string;
+      coupon_id: string | null;
       receipt_gross: string;
       extra_total: string;
     }>(
@@ -4062,6 +4065,55 @@ export async function partiallyReturnPosSale(input: {
   return processPosReturn({ ...input, mode: "PARTIAL" });
 }
 
+export async function cancelRestaurantOrderLines(input: {
+  tenantId: string;
+  orderId: string;
+  actorUserId: string;
+  lines: Array<{ orderItemId: number; packQty: number; cause: RestaurantCancellationCause }>;
+  idempotencyKey: string;
+  managerApprovedByUserId?: string | null;
+  note?: string | null;
+}): Promise<PosPartialReturnResult> {
+  const result = await processPosReturn({
+    tenantId: input.tenantId,
+    deviceId: null,
+    shiftId: null,
+    orderId: input.orderId,
+    actorUserId: input.actorUserId,
+    mode: "PARTIAL",
+    lines: input.lines.map(({ orderItemId, packQty }) => ({ orderItemId, packQty })),
+    note: input.note,
+    preferredRefundMethod: null,
+    approvedByUserId: null,
+    idempotencyKey: input.idempotencyKey,
+    restaurantCancellation: {
+      causes: input.lines.map(({ orderItemId, cause }) => ({ orderItemId, cause })),
+      merchantAbsorbApprovedByUserId: input.managerApprovedByUserId,
+    },
+  });
+  if (result.status === "PARTIAL_RETURNED" && !result.replayed) {
+    const conversation = await query<{ id: string }>(
+      `SELECT c.id FROM bms_orders o
+        JOIN bms_conversations c ON c.tenant_id = o.tenant_id
+          AND c.channel = o.channel AND c.customer_ref = o.customer_ref
+       WHERE o.tenant_id = $1 AND o.id = $2
+       ORDER BY c.updated_at DESC LIMIT 1`,
+      [input.tenantId, input.orderId]
+    );
+    if (conversation.rows[0]) {
+      const reasons = new Set(input.lines.map((line) => line.cause));
+      const why = reasons.has("MERCHANT_OUT_OF_STOCK") ? "ร้านไม่สามารถจัดส่งบางรายการได้" : "ตัดรายการตามที่ลูกค้าแจ้ง";
+      const adjustment = result.pricingAdjustmentAmount > 0
+        ? ` ยอดคืนต่างจากราคาหน้าเมนูเพราะระบบประเมินราคาตามจำนวน/โปรโมชันของรายการที่เหลือใหม่ (ส่วนต่าง ฿${result.pricingAdjustmentAmount.toFixed(2)})`
+        : "";
+      await sendStaffMessage(input.tenantId, conversation.rows[0].id,
+        `${why} ร้านตัดรายการออกแล้ว และคืนเงิน ฿${result.refundAmount.toFixed(2)}${adjustment}`,
+        input.actorUserId).catch((error) => console.error("[restaurant] cancellation notification failed", error));
+    }
+  }
+  return result;
+}
+
 /**
  * ใบลดหนี้อยู่นอก tx การคืนโดยตั้งใจ แต่ retry ของ POS ต้องกลับมาทำส่วนนี้ซ้ำได้ด้วย:
  * ถ้าคำตอบหายหลัง COMMIT แต่ก่อน/หลังออกเอกสาร การยิง idempotency key เดิมต้อง
@@ -4098,9 +4150,9 @@ async function ensurePosReturnCreditNote(input: {
   }
 }
 
-async function processPosReturn(input: {
+export async function processPosReturn(input: {
   tenantId: string;
-  deviceId: string;
+  deviceId: string | null;
   shiftId: string | null;
   orderId: string;
   actorUserId: string;
@@ -4119,6 +4171,10 @@ async function processPosReturn(input: {
   /** เหตุผลและกะของการยกเลิก — ใช้ประทับบิล/ยกเลิกใบกำกับใน tx เดียวกัน (ดู § void) */
   voidReason?: string | null;
   voidShiftId?: string | null;
+  restaurantCancellation?: {
+    causes: Array<{ orderItemId: number; cause: RestaurantCancellationCause }>;
+    merchantAbsorbApprovedByUserId?: string | null;
+  };
 }): Promise<PosPartialReturnResult> {
   const requestedMap = new Map<number, number>();
   for (const line of input.lines) {
@@ -4223,11 +4279,11 @@ async function processPosReturn(input: {
 
     // เช็กหลัง replay เสมอ: คำตอบที่หายไปต้อง replay ได้แม้กะเดิมปิดแล้ว แต่คำขอ
     // ใหม่ห้ามรับคืนโดยไม่มีกะที่ถือเงินจริง และห้ามใช้กะของเครื่องอื่นเป็น authority
-    if (!input.shiftId) {
+    if (input.deviceId !== null && !input.shiftId) {
       await client.query("ROLLBACK");
       return { status: "SHIFT_NOT_OPEN" };
     }
-    const returnShift = await client.query<{
+    const returnShift = input.deviceId === null ? null : await client.query<{
       id: string;
       opening_float: string;
       location_id: string;
@@ -4240,7 +4296,7 @@ async function processPosReturn(input: {
         FOR UPDATE`,
       [input.tenantId, input.shiftId, input.deviceId]
     );
-    if (!returnShift.rowCount) {
+    if (input.deviceId !== null && !returnShift?.rowCount) {
       await client.query("ROLLBACK");
       return { status: "SHIFT_NOT_OPEN" };
     }
@@ -4255,11 +4311,12 @@ async function processPosReturn(input: {
       shipping_fee: string | null;
       rounding_amount: string | null;
       discount_amount: string;
+      coupon_id: string | null;
       extra_total: string;
     }>(
       `SELECT id, status, channel, pos_device_id, location_id, total_amount, shipping_fee,
               rounding_amount,
-              discount_amount,
+              discount_amount, coupon_id,
               COALESCE((
                 SELECT SUM(extra.qty * extra.unit_amount)
                   FROM bms_order_extra_lines extra
@@ -4276,7 +4333,7 @@ async function processPosReturn(input: {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
-    if (COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(order.channel)) {
+    if (input.deviceId !== null && COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(order.channel)) {
       await client.query("ROLLBACK");
       return { status: "CHANNEL_RETURN_MANAGED_EXTERNALLY", channel: order.channel };
     }
@@ -4284,13 +4341,21 @@ async function processPosReturn(input: {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
-    if (order.status !== "COMPLETED") {
+    const onlineCancellation = input.deviceId === null && Boolean(input.restaurantCancellation);
+    if (onlineCancellation ? !["PAID", "PACKING", "COMPLETED"].includes(order.status) : order.status !== "COMPLETED") {
       await client.query("ROLLBACK");
       return { status: "INVALID_ORDER_STATUS", current: order.status };
     }
 
     const saleLocationId = order.location_id;
-    const returnLocationId = returnShift.rows[0].location_id;
+    let resolvedReturnLocationId = saleLocationId;
+    if (returnShift) {
+      const returnLocationId = returnShift.rows[0].location_id;
+      // Keep the counter-return authority visibly derived from the device's open shift.
+      // The outer value remains the sale branch only for the device-less online path.
+      resolvedReturnLocationId = returnLocationId;
+    }
+    const returnLocationId = resolvedReturnLocationId;
     const crossBranch = saleLocationId !== returnLocationId;
     if (crossBranch) {
       const approvedBy = input.approvedByUserId?.trim() || null;
@@ -4364,6 +4429,7 @@ async function processPosReturn(input: {
     // requestedMap จาก row.id เอง ชนิดจึงตรงกันโดยบังเอิญ)
     const orderItems = itemsRes.rows.map((row) => ({ ...row, id: Number(row.id) }));
     const byId = new Map(orderItems.map((row) => [row.id, row]));
+    const cancellationCauses = new Map<number, RestaurantCancellationCause>();
     if (input.mode === "PARTIAL") for (const [orderItemId, packQty] of requestedMap) {
       const line = { orderItemId, packQty };
       const item = byId.get(line.orderItemId);
@@ -4388,6 +4454,27 @@ async function processPosReturn(input: {
       if (requestedMap.size === 0) {
         await client.query("ROLLBACK");
         return { status: "EMPTY" };
+      }
+    }
+
+    if (onlineCancellation) {
+      const selected = new Map((input.restaurantCancellation?.causes ?? []).map((row) => [row.orderItemId, row.cause]));
+      const unavailable = await client.query<{ product_sku: string }>(
+        `SELECT product_sku FROM bms_product_menu_unavailability
+          WHERE tenant_id = $1 AND location_id = $2
+            AND product_sku = ANY($3::text[]) AND resets_at > now()`,
+        [input.tenantId, saleLocationId, [...requestedMap.keys()].map((id) => byId.get(id)!.product_sku)]
+      );
+      const forcedMerchant = new Set(unavailable.rows.map((row) => row.product_sku));
+      for (const orderItemId of requestedMap.keys()) {
+        const cause = forcedMerchant.has(byId.get(orderItemId)!.product_sku)
+          ? "MERCHANT_OUT_OF_STOCK"
+          : selected.get(orderItemId);
+        if (cause !== "MERCHANT_OUT_OF_STOCK" && cause !== "CUSTOMER_CHANGED") {
+          await client.query("ROLLBACK");
+          return { status: "EMPTY" };
+        }
+        cancellationCauses.set(orderItemId, cause);
       }
     }
 
@@ -4474,11 +4561,45 @@ async function processPosReturn(input: {
     const extraTotal = Number(order.extra_total ?? 0);
     const originalPricingSubtotal = Math.max(0,
       Number(order.total_amount) + Number(order.discount_amount ?? 0) - extraTotal);
+    let effectiveOrderDiscount = Number(order.discount_amount ?? 0);
+    if (onlineCancellation && order.coupon_id) {
+      const coupon = await client.query<{ min_order_amount: string | null; amount: string | null }>(
+        `SELECT c.min_order_amount, d.amount
+           FROM bms_coupons c
+           LEFT JOIN bms_order_discounts d ON d.tenant_id = c.tenant_id
+             AND d.order_id = $2 AND d.source = 'COUPON'
+          WHERE c.tenant_id = $1 AND c.id = $3 FOR UPDATE`,
+        [input.tenantId, input.orderId, order.coupon_id]
+      );
+      const merchantCancelledSubtotal = rawCalculated.reduce((sum, line) => (
+        cancellationCauses.get(line.item.id) === "MERCHANT_OUT_OF_STOCK"
+          ? sum + line.packQty * Number(line.item.pack_unit_price ?? line.item.unit_price)
+          : sum
+      ), 0);
+      const eligibleSubtotal = couponEligibilitySubtotal({
+        remainingSubtotal: remainingPricing.pricingSubtotal,
+        merchantCancelledSubtotal,
+      });
+      const minimum = Number(coupon.rows[0]?.min_order_amount ?? 0);
+      if (minimum > 0 && eligibleSubtotal + 0.001 < minimum) {
+        const removed = Number(coupon.rows[0]?.amount ?? 0);
+        await releaseCouponForOrdersInTx(client, [input.orderId]);
+        await releaseCustomerCouponReservationsInTx(client, [input.orderId]);
+        await client.query(`DELETE FROM bms_order_discounts WHERE tenant_id = $1 AND order_id = $2 AND source = 'COUPON'`, [input.tenantId, input.orderId]);
+        await client.query(
+          `UPDATE bms_orders SET coupon_id = NULL, coupon_code = NULL,
+             discount_amount = GREATEST(0, discount_amount - $3), updated_at = now()
+           WHERE tenant_id = $1 AND id = $2`,
+          [input.tenantId, input.orderId, removed]
+        );
+        effectiveOrderDiscount = Math.max(0, effectiveOrderDiscount - removed);
+      }
+    }
     const originalProductNet = Math.max(0, Number(order.total_amount) - extraTotal);
     // ส่วนลดระดับบิลเดิม (สมาชิก/คูปอง/แต้ม/มือ) ยังคงตามสัดส่วนเดิม
     // เปลี่ยนเฉพาะกลไกราคาตามจำนวนและโปร ซึ่งต้องตรวจจำนวนใหม่
     const orderDiscountRatio = originalPricingSubtotal > 0
-      ? Math.min(1, originalProductNet / originalPricingSubtotal)
+      ? Math.min(1, (originalProductNet + Number(order.discount_amount ?? 0) - effectiveOrderDiscount) / originalPricingSubtotal)
       : 1;
     const previousRefundAmount = Math.round(orderItems.reduce(
       (sum, item) => sum + Number(item.returned_refund_amount ?? 0), 0
@@ -4497,10 +4618,30 @@ async function processPosReturn(input: {
           ) * 100) / 100);
     const targetCumulativeRefund = Math.max(0,
       Math.round((orderAmount - desiredRemainingAmount) * 100) / 100);
-    const roundedRefundAmount = Math.round(
+    let roundedRefundAmount = Math.round(
       (targetCumulativeRefund - previousRefundAmount) * 100
     ) / 100;
-    if (roundedRefundAmount < 0) {
+    let merchantAbsorbedAmount = 0;
+    if (roundedRefundAmount < 0 && onlineCancellation) {
+      merchantAbsorbedAmount = Math.round(Math.abs(roundedRefundAmount) * 100) / 100;
+      roundedRefundAmount = 0;
+      const limitResult = await client.query<{ restaurant_merchant_absorb_limit: string }>(
+        `SELECT restaurant_merchant_absorb_limit FROM bms_store_profile WHERE tenant_id = $1`,
+        [input.tenantId]
+      );
+      const approverId = input.restaurantCancellation?.merchantAbsorbApprovedByUserId?.trim() || null;
+      const approved = Boolean(approverId && approverId !== input.actorUserId
+        && await cashierHasPermissionInTx(client, input.tenantId, approverId, "order.line.cancel"));
+      const decision = merchantAbsorbApproval({
+        amount: merchantAbsorbedAmount,
+        limit: Number(limitResult.rows[0]?.restaurant_merchant_absorb_limit ?? 2000),
+        hasDistinctManagerApproval: approved,
+      });
+      if (!decision.allowed) {
+        await client.query("ROLLBACK");
+        return { status: "APPROVAL_REQUIRED", reason: "ส่วนต่างที่ร้านรับเกินเพดาน ต้องให้ผู้จัดการยืนยัน", refundAmount: 0 };
+      }
+    } else if (roundedRefundAmount < 0) {
       await client.query("ROLLBACK");
       return {
         status: "REPRICE_PAYMENT_REQUIRED",
@@ -4532,7 +4673,9 @@ async function processPosReturn(input: {
       return { ...line, refundAmount };
     });
 
-    const approvalRule = approvalRuleForRefundAmount(roundedRefundAmount);
+    const approvalRule = onlineCancellation
+      ? { requiredPermission: null, reason: null }
+      : approvalRuleForRefundAmount(roundedRefundAmount);
     let approvedBy = input.approvedByUserId?.trim() || null;
     if (approvalRule.requiredPermission) {
       const actorCanApprove = await cashierHasPermissionInTx(
@@ -4557,15 +4700,15 @@ async function processPosReturn(input: {
     const ret = await client.query<{ id: string; created_at: unknown }>(
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, shift_id, returned_by, approved_by, return_mode,
-          refund_amount, settlement_status, idempotency_key, note, is_void,
+          refund_amount, settlement_status, idempotency_key, note, is_void, merchant_absorbed_amount,
           pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method,
           source_channel, sale_location_id, return_location_id, cross_branch)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14,
-               $15, $16, $17, $18)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14, $15,
+               $16, $17, $18, $19)
        RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
-        input.isVoid === true, pricingAdjustmentAmount, remainingAmount,
+        input.isVoid === true, merchantAbsorbedAmount, pricingAdjustmentAmount, remainingAmount,
         input.preferredRefundMethod ?? null, order.channel, saleLocationId, returnLocationId,
         crossBranch]
     );
@@ -4581,10 +4724,11 @@ async function processPosReturn(input: {
 
       const returnItem = await client.query<{ id: string }>(
         `INSERT INTO bms_pos_return_items
-           (tenant_id, pos_return_id, order_item_id, qty, pack_qty, refund_amount)
-         VALUES ($1, $2, $3, $4, $5, $6)
+           (tenant_id, pos_return_id, order_item_id, qty, pack_qty, refund_amount, cancellation_cause, cause_selected_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
-        [input.tenantId, posReturnId, item.id, baseQtyToReturn, line.packQty, line.refundAmount]
+        [input.tenantId, posReturnId, item.id, baseQtyToReturn, line.packQty, line.refundAmount,
+          cancellationCauses.get(item.id) ?? null, onlineCancellation ? input.actorUserId : null]
       );
 
       // คืนของที่ขยับจริงจาก expansion view: บิล bundle ต้องคืนส่วนประกอบ ไม่ใช่
@@ -4600,7 +4744,27 @@ async function processPosReturn(input: {
           ORDER BY product_sku, size`,
         [input.tenantId, input.orderId, item.id]
       );
-      if (!stockLines.rowCount) throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+      if (!stockLines.rowCount && !onlineCancellation) throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+
+      if (onlineCancellation) {
+        for (const stockLine of stockLines.rows) {
+          const exactQty = Number(stockLine.qty) * line.packQty / originalPackQty;
+          const released = await client.query(
+            `UPDATE bms_inventory SET reserved_stock = reserved_stock - $5, updated_at = now()
+              WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
+                AND reserved_stock >= $5`,
+            [input.tenantId, saleLocationId, stockLine.product_sku, stockLine.size, exactQty]
+          );
+          if (!released.rowCount) throw new Error(`reserved stock ของ ${stockLine.product_sku}/${stockLine.size} ไม่พอ`);
+          await recordMovement(client, {
+            tenantId: input.tenantId, locationId: saleLocationId, sku: stockLine.product_sku,
+            size: stockLine.size, type: "RELEASE", qty: exactQty, refOrderId: input.orderId,
+            note: `Restaurant line cancellation ${posReturnId}`, actor: input.actorUserId,
+          });
+        }
+        returnedItems.push({ orderItemId: item.id, packQty: line.packQty, refundAmount: line.refundAmount });
+        continue;
+      }
 
       for (const stockLine of stockLines.rows) {
         const exactQty = Number(stockLine.qty) * line.packQty / originalPackQty;
@@ -4750,9 +4914,9 @@ async function processPosReturn(input: {
       if (payment.method === "CASH") plannedCashRefund = Math.round((plannedCashRefund + amount) * 100) / 100;
       previewRemaining = Math.round((previewRemaining - amount) * 100) / 100;
     }
-    if (plannedCashRefund > 0) {
+    if (plannedCashRefund > 0 && input.deviceId !== null) {
       const drawer = await drawerExpectedInTx(
-        client, input.tenantId, input.shiftId, Number(returnShift.rows[0].opening_float)
+        client, input.tenantId, input.shiftId!, Number(returnShift!.rows[0].opening_float)
       );
       if (plannedCashRefund > drawer + 0.001) {
         const blind = (await getVatSettings(input.tenantId)).blindClose;
@@ -4774,6 +4938,7 @@ async function processPosReturn(input: {
       // หรือเครื่องรูดบัตร · ถ้าปล่อยเป็น PENDING กะจะปิดไม่ได้จนกว่าจะมีคนไปกด
       // ยืนยันการคืนเงินที่ไม่มีเงินให้คืน
       const completed = payment.method === "CASH" || payment.method === "CREDIT";
+      const allocationCompleted = onlineCancellation ? false : completed;
       if (payment.method === "CREDIT") arRefundAmount = Math.round((arRefundAmount + amount) * 100) / 100;
       const allocation = await client.query<any>(
         `INSERT INTO bms_pos_refund_allocations
@@ -4784,13 +4949,13 @@ async function processPosReturn(input: {
                  CASE WHEN $6 = 'COMPLETED' THEN $8::uuid ELSE NULL END)
          RETURNING id, payment_id, method, amount, status, external_ref`,
         [input.tenantId, posReturnId, payment.id, payment.method, amount,
-          completed ? "COMPLETED" : "PENDING", completed ? input.actorUserId : null,
+          allocationCompleted ? "COMPLETED" : "PENDING", allocationCompleted ? input.actorUserId : null,
           input.shiftId]
       );
       refunds.push(mapRefundAllocation(allocation.rows[0]));
       remainingRefund = Math.round((remainingRefund - amount) * 100) / 100;
 
-      if (completed && Number(payment.allocated) + amount >= Number(payment.amount) - 0.01) {
+      if (allocationCompleted && Number(payment.allocated) + amount >= Number(payment.amount) - 0.01) {
         await client.query(
           `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3,
               refunded_at = COALESCE(refunded_at, now()), updated_at = now()
@@ -4810,11 +4975,31 @@ async function processPosReturn(input: {
       [input.tenantId, posReturnId, settlementStatus]
     );
 
+    if (onlineCancellation && merchantAbsorbedAmount > 0) {
+      await client.query(
+        `INSERT INTO bms_order_discounts (tenant_id, order_id, source, label, amount)
+         VALUES ($1,$2,'MERCHANT_ABSORBED','ร้านรับส่วนต่างจากการตัดรายการ',$3)
+         ON CONFLICT (order_id, source) DO UPDATE
+           SET amount = bms_order_discounts.amount + EXCLUDED.amount`,
+        [input.tenantId, input.orderId, merchantAbsorbedAmount]
+      );
+      await client.query(
+        `UPDATE bms_orders SET discount_amount = discount_amount + $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, input.orderId, merchantAbsorbedAmount]
+      );
+    }
+
+    if (onlineCancellation) {
+      await cancelKitchenTicketsForOrderItemsInTx(client, input.tenantId, input.orderId, [...requestedMap.keys()]);
+    }
+
     if (allReturned) {
       await client.query(
         `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
-          WHERE tenant_id = $1 AND id = $2 AND status = 'COMPLETED'`,
-        [input.tenantId, input.orderId]
+          WHERE tenant_id = $1 AND id = $2
+            AND status = ANY($3::text[])`,
+        [input.tenantId, input.orderId, onlineCancellation ? ["PAID", "PACKING", "COMPLETED"] : ["COMPLETED"]]
       );
       // เลขเครื่อง (8.3) — ปลดเฉพาะตอนคืนครบทั้งบิล
       //
@@ -4869,8 +5054,8 @@ async function processPosReturn(input: {
 
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1, $2, 'pos.return', $3, $4)`,
-      [input.tenantId, input.actorUserId, input.orderId, JSON.stringify({
+       VALUES ($1, $2, $3, $4, $5)`,
+      [input.tenantId, input.actorUserId, onlineCancellation ? "order.line.cancel" : "pos.return", input.orderId, JSON.stringify({
         posReturnId,
         shiftId: input.shiftId,
         sourceChannel: order.channel,
@@ -4883,6 +5068,8 @@ async function processPosReturn(input: {
         settlementStatus,
         pricingAdjustmentAmount,
         remainingAmount,
+        merchantAbsorbedAmount,
+        cancellationCauses: [...cancellationCauses.entries()],
         pointsReversed: loyaltyReversal.earnedReversed,
         pointsReturned: loyaltyReversal.redeemedReturned,
         // การยกเลิกบิลเดินผ่านเครื่องจักรตัวเดียวกับการคืน — ติดธงไว้ ไม่งั้นรายงาน

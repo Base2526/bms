@@ -59,6 +59,9 @@ type Order = {
   coupon_code: string | null;
   fulfillmentType: "DELIVERY" | "PICKUP" | null;
   promisedAt: string | null;
+  pendingRefundCount: number;
+  pendingRefundAmount: number;
+  pendingRefundSince: string | null;
   locationId: string | null;
   locationName: string | null;
   branchCode: string | null;
@@ -76,7 +79,7 @@ const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $locationId: ID, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, locationId: $locationId, limit: $limit, offset: $offset) {
       id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code
-      locationId locationName branchCode posDeviceName registeredPosNo posShiftId fulfillmentType promisedAt created_at updated_at hasShippingAddress
+      locationId locationName branchCode posDeviceName registeredPosNo posShiftId fulfillmentType promisedAt pendingRefundCount pendingRefundAmount pendingRefundSince created_at updated_at hasShippingAddress
       discountLines { source label amount pointsUsed }
       items { product_sku product_name size qty unit_price }
     }
@@ -273,6 +276,14 @@ function OrdersManagement() {
                   </Typography.Text>
                 )}
               </>
+            )}
+            {r.pendingRefundCount > 0 && (
+              <Typography.Text type="warning" style={{ fontSize: 11 }}>
+                {t("admin_orders.refund_queue", {
+                  amount: money(r.pendingRefundAmount),
+                  hours: Math.max(0, Math.floor((Date.now() - new Date(r.pendingRefundSince || Date.now()).getTime()) / 3600000)),
+                })}
+              </Typography.Text>
             )}
           </Space>
         ) },

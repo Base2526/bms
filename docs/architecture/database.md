@@ -925,3 +925,13 @@ incoming queue and kitchen can sort without parsing notes. `bms_store_profile` s
 weekly `restaurant_order_hours` plus the audited whole-shop pause state. An online restaurant order
 reserves stock when created, but payment does not start cooking: a human at the order's branch moves
 it from `PAID` to `PACKING` and creates kitchen tickets in the same tenant transaction.
+
+## Restaurant line cancellation (9.57)
+
+Restaurant line cancellation reuses `bms_pos_returns`, its item rows, refund allocations, pricing
+snapshots, loyalty reversal, and audit transaction. `pos_device_id = NULL` identifies the online
+path. Each return item records an immutable merchant/customer cause; a branch sold-out flag forces
+the merchant cause. Repricing differences absorbed by the shop use the distinct
+`MERCHANT_ABSORBED` order-discount source and accumulate on conflict. The store-level approval limit
+defaults to ฿2,000. `order.line.cancel` is seeded to Manager and Cashier without widening
+`order.return`.

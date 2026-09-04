@@ -120,6 +120,50 @@ export async function listIncomingRestaurantOrders(tenantId: string, locationId:
   }));
 }
 
+export async function listPendingRestaurantRefunds(tenantId: string, locationId: string) {
+  const result = await query<any>(
+    `SELECT a.id, a.amount, a.method, a.created_at, o.id AS order_id, o.channel, o.customer_ref,
+            COALESCE(u.name, u.email, pr.returned_by::text) AS cancelled_by
+       FROM bms_pos_refund_allocations a
+       JOIN bms_pos_returns pr ON pr.tenant_id = a.tenant_id AND pr.id = a.pos_return_id
+       JOIN bms_orders o ON o.tenant_id = pr.tenant_id AND o.id = pr.order_id
+       LEFT JOIN users u ON u.tenant_id = pr.tenant_id AND u.id = pr.returned_by
+      WHERE a.tenant_id = $1 AND o.location_id = $2 AND o.fulfillment_type IS NOT NULL
+        AND a.status = 'PENDING'
+      ORDER BY a.created_at`,
+    [tenantId, locationId]
+  );
+  return result.rows.map((row: any) => ({
+    id: row.id, orderId: row.order_id, amount: Number(row.amount), method: row.method,
+    channel: row.channel, customerRef: row.customer_ref, cancelledBy: row.cancelled_by,
+    createdAt: new Date(row.created_at).toISOString(),
+  }));
+}
+
+export async function restaurantCancellationLossReport(tenantId: string) {
+  const result = await query<any>(
+    `SELECT oi.product_sku AS sku, COALESCE(oi.product_name, oi.product_sku) AS name,
+            SUM(pri.pack_qty)::int AS quantity,
+            SUM(pr.merchant_absorbed_amount * (pri.pack_qty * oi.receipt_unit_price) /
+              NULLIF((SELECT SUM(pri2.pack_qty * oi2.receipt_unit_price)
+                        FROM bms_pos_return_items pri2
+                        JOIN bms_order_items oi2 ON oi2.tenant_id = pri2.tenant_id AND oi2.id = pri2.order_item_id
+                       WHERE pri2.tenant_id = pr.tenant_id AND pri2.pos_return_id = pr.id), 0)) AS absorbed_amount
+       FROM bms_pos_returns pr
+       JOIN bms_pos_return_items pri ON pri.tenant_id = pr.tenant_id AND pri.pos_return_id = pr.id
+       JOIN bms_order_items oi ON oi.tenant_id = pri.tenant_id AND oi.id = pri.order_item_id
+      WHERE pr.tenant_id = $1 AND pr.pos_device_id IS NULL
+        AND pr.merchant_absorbed_amount > 0
+        AND pr.created_at >= date_trunc('month', now())
+      GROUP BY oi.product_sku, oi.product_name
+      ORDER BY absorbed_amount DESC NULLS LAST`,
+    [tenantId]
+  );
+  return result.rows.map((row: any) => ({
+    sku: row.sku, name: row.name, quantity: Number(row.quantity), absorbedAmount: Number(row.absorbed_amount ?? 0),
+  }));
+}
+
 export async function getRestaurantOrderingConfig(tenantId: string) {
   const result = await query<{
     timezone: string | null; restaurant_order_hours: unknown; restaurant_orders_paused: boolean;

@@ -1219,6 +1219,7 @@ type IncomingRestaurantOrder = {
   createdAt: string;
   items: Array<{ orderItemId: number; sku: string; name: string; size: string; qty: number; modifierCodes: string[] }>;
 };
+type IncomingRefund = { id: string; orderId: string; amount: number; method: string; channel: string; customerRef: string | null; cancelledBy: string | null; createdAt: string };
 
 export default function PosPage() {
   const [token, setToken] = useState<string>("");
@@ -1269,6 +1270,7 @@ export default function PosPage() {
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
   const [tab, setTab] = useState<PosTab>("sell");
   const [incomingOrders, setIncomingOrders] = useState<IncomingRestaurantOrder[]>([]);
+  const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
   // ทุกบิลผูกกับคนนี้ — ต้องเห็นบนแถบบนตลอด ไม่ใช่ซ่อนอยู่ในแท็บตั้งค่า
@@ -2369,6 +2371,7 @@ export default function PosPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
       setIncomingOrders(Array.isArray(data.orders) ? data.orders : []);
+      setIncomingRefunds(Array.isArray(data.refunds) ? data.refunds : []);
       setRestaurantOrdersPaused(data?.config?.paused === true);
     } catch (error: any) {
       setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
@@ -2395,6 +2398,8 @@ export default function PosPage() {
         type: "ok",
         text: body.action === "accept"
           ? `รับออร์เดอร์แล้ว · ส่งเข้าครัว ${Number(data.ticketsCreated ?? 0)} ใบ`
+          : body.action === "cancel_lines"
+            ? `ตัดรายการแล้ว · คืนลูกค้า ฿${baht(Number(data.refundAmount ?? 0))}${Number(data.pricingAdjustmentAmount ?? 0) > 0 ? ` · ส่วนต่างราคา ฿${baht(Number(data.pricingAdjustmentAmount))}` : ""}`
           : body.paused ? "หยุดรับออร์เดอร์ออนไลน์ชั่วคราวแล้ว" : "เปิดรับออร์เดอร์ออนไลน์แล้ว",
       });
       await refreshIncomingOrders();
@@ -2403,6 +2408,41 @@ export default function PosPage() {
     } finally {
       setIncomingLoading(false);
     }
+  }
+
+  async function cancelIncomingLine(order: IncomingRestaurantOrder, item: IncomingRestaurantOrder["items"][number]) {
+    const merchantCause = window.confirm("เมนูนี้หมด/ร้านส่งไม่ได้ใช่หรือไม่?\nตกลง = ร้านเป็นเหตุ · ยกเลิก = ลูกค้าเปลี่ยนใจ");
+    const detail = window.prompt("บันทึกรายละเอียดสั้น ๆ (ข้อความนี้ใช้ใน audit และแจ้งลูกค้า)", "")?.trim();
+    if (!detail) return;
+    await mutateIncomingOrder({
+      action: "cancel_lines",
+      orderId: order.id,
+      idempotencyKey: crypto.randomUUID(),
+      note: detail,
+      lines: [{
+        orderItemId: item.orderItemId,
+        packQty: item.qty,
+        cause: merchantCause ? "MERCHANT_OUT_OF_STOCK" : "CUSTOMER_CHANGED",
+      }],
+    });
+  }
+
+  async function settleIncomingRefund(refund: IncomingRefund) {
+    const externalRef = window.prompt("เลขอ้างอิงการโอนคืน", "")?.trim();
+    if (!externalRef) return;
+    setIncomingLoading(true);
+    try {
+      const res = await fetch("/api/pos/refund-settlement", {
+        method: "POST", headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ allocationId: refund.id, userId: cashierId, pin, externalRef }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? data?.status ?? `HTTP ${res.status}`);
+      setNotice({ type: "ok", text: `ปิดคิวคืนเงิน ฿${baht(refund.amount)} แล้ว · ${externalRef}` });
+      await refreshIncomingOrders();
+    } catch (error: any) {
+      setNotice({ type: "error", text: `ปิดคิวคืนเงินไม่สำเร็จ: ${String(error?.message ?? error)}` });
+    } finally { setIncomingLoading(false); }
   }
 
   async function refreshParked() {
@@ -6216,9 +6256,11 @@ export default function PosPage() {
                 <strong>฿{baht(order.amountDue)}</strong>
               </div>
               <ul style={{ margin: "12px 0", paddingLeft: 22 }}>
-                {order.items.map((item) => <li key={item.orderItemId}>
+                {order.items.map((item) => <li key={item.orderItemId} style={{ marginBottom: 6 }}>
                   {item.name || item.sku} · {item.size} × {item.qty}
                   {item.modifierCodes?.length ? ` (${item.modifierCodes.join(", ")})` : ""}
+                  <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
+                    onClick={() => void cancelIncomingLine(order, item)}>ตัดรายการ / คืนส่วนต่าง</button>
                 </li>)}
               </ul>
               {order.status === "PAID" ? (
@@ -6227,6 +6269,20 @@ export default function PosPage() {
               ) : <span className="pos-chip pos-chip--ok">รับแล้ว · กำลังทำ</span>}
             </div>
           ))}
+          <div className="pos-card" style={{ padding: 16 }}>
+            <div className="pos-block-title">คิวคืนเงินเดลิเวอรี</div>
+            <div className="pos-block-hint">ต้องโอนจริงก่อน แล้วปิดงานด้วยเลขอ้างอิง</div>
+            {incomingRefunds.length === 0 ? <div style={{ marginTop: 12 }}>ไม่มีรายการค้าง</div> : (
+              <ul style={{ paddingLeft: 22 }}>
+                {incomingRefunds.map((refund) => <li key={refund.id} style={{ marginTop: 10 }}>
+                  ฿{baht(refund.amount)} · {refund.channel}/{refund.customerRef || "ไม่ระบุลูกค้า"}
+                  · โดย {refund.cancelledBy || "ไม่ระบุ"} · ค้าง {Math.max(0, Math.floor((Date.now() - new Date(refund.createdAt).getTime()) / 3600000))} ชม.
+                  <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
+                    onClick={() => void settleIncomingRefund(refund)}>ปิดด้วยเลขโอน</button>
+                </li>)}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 

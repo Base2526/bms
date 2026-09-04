@@ -1563,3 +1563,11 @@ time. Paid orders appear in the **ออร์เดอร์เข้า** tab 
 kitchen tickets are created. The tab is scoped to the POS device's branch. Managers see the same
 fulfilment metadata on the admin orders page. Structured weekly hours and the temporary whole-shop
 pause live in Store Profile; the customer assistant refuses clearly while paused or closed.
+
+Staff can cancel individual incoming-order lines from the same POS tab. The server infers
+merchant-caused cancellation when that branch has marked the menu sold out, otherwise the operator
+must record merchant or customer cause. The shared return engine reprices remaining quantities,
+re-evaluates coupon eligibility, releases only the cancelled reservation, reverses proportional
+loyalty/credit, closes only matching kitchen tickets, writes the audit, and creates non-cash refund
+allocations atomically. Pending refunds and their age are actionable in POS and mirrored on admin
+orders; completion requires a real transfer reference.

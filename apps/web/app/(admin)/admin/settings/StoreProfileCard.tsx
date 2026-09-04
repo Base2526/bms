@@ -17,7 +17,7 @@ const Q = gql`
       businessArchetype businessArchetypeLocked businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       receiptLanguageMode
       about address phone contactEmail website logoUrl taxId timezone country currency
-      businessHours restaurantOrderHours restaurantOrdersPaused shippingPolicy returnPolicy
+      businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
       paymentAccounts { type bankName accountName accountNo promptpayId note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
       enabledCarriers
@@ -45,7 +45,7 @@ const PROFILE_KEYS = [
   "receiptLanguageMode",
   "businessArchetype",
   "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
-  "timezone", "country", "currency", "businessHours", "restaurantOrderHours", "restaurantOrdersPaused", "shippingPolicy", "returnPolicy",
+  "timezone", "country", "currency", "businessHours", "restaurantOrderHours", "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
   "enabledCarriers",
   "shippingMode", "shippingOriginProvince", "shippingOriginPostcode",
@@ -108,6 +108,7 @@ export default function StoreProfileCard() {
         businessHours: p?.businessHours,
         restaurantOrderHours: p?.restaurantOrderHours || [],
         restaurantOrdersPaused: p?.restaurantOrdersPaused === true,
+        restaurantMerchantAbsorbLimit: Number(p?.restaurantMerchantAbsorbLimit ?? 2000),
         shippingPolicy: p?.shippingPolicy, returnPolicy: p?.returnPolicy,
         paymentAccounts: (p?.paymentAccounts || []).map((a: any) => ({ ...a })),
         shippingFlatRate: p?.shippingFlatRate, shippingFreeThreshold: p?.shippingFreeThreshold,
@@ -386,6 +387,9 @@ export default function StoreProfileCard() {
                     {selectedArchetype === "restaurant" && <Col span={24}>
                       <Form.Item name="restaurantOrdersPaused" label={t("admin_store_profile.restaurant_pause_label")} valuePropName="checked">
                         <Switch checkedChildren={t("admin_store_profile.restaurant_paused")} unCheckedChildren={t("admin_store_profile.restaurant_accepting")} />
+                      </Form.Item>
+                      <Form.Item name="restaurantMerchantAbsorbLimit" label={t("admin_store_profile.restaurant_absorb_limit")}>
+                        <InputNumber min={0} precision={2} addonAfter="฿" />
                       </Form.Item>
                       <Form.List name="restaurantOrderHours">
                         {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>

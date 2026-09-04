@@ -27,6 +27,7 @@ export const BMS_PERMISSIONS = [
   "order.ship",
   "order.cancel",
   "order.return",
+  "order.line.cancel",
   "purchase.view",
   "purchase.edit",
   "purchase.receive",

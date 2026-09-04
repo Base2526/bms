@@ -17,6 +17,7 @@ import {
   reorderFromOrder,
   createOrder,
 } from "@/lib/bms/orders";
+import { restaurantCancellationLossReport } from "@/lib/bms/restaurantOrdering";
 import { MARKETPLACE_CHANNELS } from "@/lib/bms/shipping";
 import { listOrderDiscounts } from "@/lib/bms/membership";
 import { generateInvoice } from "@/lib/bms/documents";
@@ -79,6 +80,10 @@ async function resolveWritableLocationId(tenantId: string, userId: string, reque
 
 export const bmsOrdersResolvers = {
   Query: {
+    async bmsRestaurantCancellationLossReport(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return restaurantCancellationLossReport(getTenantId(ctx));
+    },
     async bmsOrders(
       _p: unknown,
       args: { search?: string; status?: OrderStatus; limit?: number; offset?: number; locationId?: string | null },
@@ -103,7 +108,16 @@ export const bmsOrdersResolvers = {
                 o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
-                o.pos_shift_id, o.created_at, o.updated_at
+                o.pos_shift_id, o.created_at, o.updated_at,
+                COALESCE((SELECT COUNT(*) FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                  WHERE pr.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'PENDING'), 0) AS pending_refund_count,
+                COALESCE((SELECT SUM(a.amount) FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                  WHERE pr.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'PENDING'), 0) AS pending_refund_amount,
+                (SELECT MIN(a.created_at) FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                  WHERE pr.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'PENDING') AS pending_refund_since
            FROM bms_orders o
            LEFT JOIN bms_pos_deposits d
              ON d.tenant_id = o.tenant_id AND d.order_id = o.id
@@ -159,7 +173,16 @@ export const bmsOrdersResolvers = {
                 o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
-                o.pos_shift_id, o.created_at, o.updated_at
+                o.pos_shift_id, o.created_at, o.updated_at,
+                COALESCE((SELECT COUNT(*) FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                  WHERE pr.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'PENDING'), 0) AS pending_refund_count,
+                COALESCE((SELECT SUM(a.amount) FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                  WHERE pr.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'PENDING'), 0) AS pending_refund_amount,
+                (SELECT MIN(a.created_at) FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+                  WHERE pr.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'PENDING') AS pending_refund_since
            FROM bms_orders o
            LEFT JOIN bms_pos_deposits d
              ON d.tenant_id = o.tenant_id AND d.order_id = o.id
@@ -352,6 +375,9 @@ export const bmsOrdersResolvers = {
     preferred_carrier: (p: any) => p.preferred_carrier ?? null,
     fulfillmentType: (p: any) => p.fulfillment_type ?? null,
     promisedAt: (p: any) => p.promised_at instanceof Date ? p.promised_at.toISOString() : p.promised_at ?? null,
+    pendingRefundCount: (p: any) => Number(p.pending_refund_count ?? 0),
+    pendingRefundAmount: (p: any) => Number(p.pending_refund_amount ?? 0),
+    pendingRefundSince: (p: any) => p.pending_refund_since instanceof Date ? p.pending_refund_since.toISOString() : p.pending_refund_since ?? null,
     locationId: (p: any) => p.location_id ?? null,
     locationName: (p: any) => p.location_name ?? null,
     branchCode: (p: any) => p.branch_code ?? null,
