@@ -6,6 +6,7 @@ import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } 
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
+import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
@@ -160,8 +161,12 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
         : "เลือกได้หลายอย่าง",
       meta.minSelect > 0 ? `ต้องเลือกอย่างน้อย ${meta.minSelect}` : null,
     ].filter(Boolean).join(" · ");
+    // กลุ่มที่ยังไม่ครบต้องบอกที่ตัวมันเอง — เมนูที่มีหลายกลุ่ม ข้อความรวมท้ายกล่องไม่ชี้ว่าอันไหน
+    const needsPick = selectedInGroup.length < meta.minSelect;
     return <fieldset key={meta.groupCode} className={styles.modifierGroup}>
-      <legend className={styles.fieldLabel}>{meta.groupName} <span className={styles.fieldRule}>· {rule}</span></legend>
+      <legend className={styles.fieldLabel}>{meta.groupName} <span className={styles.fieldRule}>· {rule}</span>
+        {needsPick && <span className={styles.fieldNeeded}> · ยังไม่ได้เลือก</span>}
+      </legend>
       {/* ชิปแทนกล่องเต็มแถว — เมนูที่มี 4–5 ตัวเลือกไม่ต้องเลื่อนกล่องอีก · ยังเป็น
           radio/checkbox จริงข้างใน (ซ่อนไว้) จึงคุมด้วยคีย์บอร์ดและอ่านด้วย screen reader ได้ */}
       <div className={styles.modifierChips}>
@@ -686,6 +691,11 @@ export default function RestaurantPosPage() {
       .reduce((sum, modifier) => sum + modifier.priceDelta, 0);
   }, [menuHit, modifierCodes]);
   const menuHitTotal = menuHitUnitPrice * menuQty;
+  // ปุ่มที่กดไปก็ล้มต้องกดไม่ได้ พร้อมบอกว่าต้องแตะอะไร (กฎเดียวกับปุ่มคิดเงินตอนใบจองหาย)
+  const unmetModifiers = useMemo(
+    () => (menuHit ? unmetModifierGroups(menuHit.modifiers, modifierCodes) : []),
+    [menuHit, modifierCodes]
+  );
   const soldOutCount = useMemo(
     () => menuItems.filter((item) => item.availability === "SOLD_OUT_TODAY").length,
     [menuItems]
@@ -1388,6 +1398,7 @@ export default function RestaurantPosPage() {
       onCancel={() => setMenuHit(null)}
       onOk={() => void addMenu()}
       confirmLoading={working}
+      okButtonProps={{ disabled: unmetModifiers.length > 0 }}
       okText={`เพิ่มในบิล · ฿${money(menuHitTotal)}`}
       cancelText="ยกเลิก"
       getContainer={modalContainer}
@@ -1432,7 +1443,9 @@ export default function RestaurantPosPage() {
         </div>
         {/* ยอดรวมอยู่บนปุ่มด้วย (okText) — บรรทัดนี้บอก "มาจากไหน" ให้ตรวจก่อนกด */}
         <div className={styles.menuTotalRow}>
-          <span>{`฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? " (รวมตัวเลือก)" : ` / ${menuHit.unitName}`}`}</span>
+          <span>{unmetModifiers.length > 0
+            ? describeUnmetModifierGroups(unmetModifiers)
+            : `฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? " (รวมตัวเลือก)" : ` / ${menuHit.unitName}`}`}</span>
           <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
         </div>
       </div>}
