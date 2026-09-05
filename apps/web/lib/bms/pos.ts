@@ -537,6 +537,16 @@ export async function resolvePosScan(
                 WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
                   AND upper(i.size) = upper($3::text)
                 LIMIT 1),
+              -- 1b. ไซซ์ที่ผู้เรียกระบุมีอยู่ในแคตตาล็อกแต่ยังไม่มีแถวสต็อก (9.51)
+              --     upsertProduct เขียน bms_product_variants แต่ **ไม่เคยสร้างแถว
+              --     bms_inventory** เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองจึงมีไซซ์ในแคตตาล็อก
+              --     โดยไม่มีแถวสต็อกสักไซซ์ · ถ้าไม่มีกิ่งนี้ กิ่ง 3/4 จะไปคืน "ไซซ์อื่น"
+              --     ให้แทนไซซ์ที่ขอมาแบบเงียบ ๆ (พิสูจน์แล้วกับ dev DB: ขอ 'L' ได้ 'S')
+              --     = ร้านขายไซซ์ที่ไม่ใช่ min(code) จากเครื่องขายไม่ได้เลย
+              (SELECT variant.code FROM bms_product_variants variant
+                WHERE variant.tenant_id = p.tenant_id AND variant.product_sku = p.sku
+                  AND variant.active AND upper(variant.code) = upper($3::text)
+                LIMIT 1),
               -- 2. บาร์โค้ดที่ยิงมาเป็นของหน่วยขายที่ผูกไซซ์ไว้แล้ว (7.93)
               --    นี่คือทางปกติของระบบค้าปลีก: 1 บาร์โค้ด = 1 หน่วยขาย
               k.size,

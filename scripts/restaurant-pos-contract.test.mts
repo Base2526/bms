@@ -1009,4 +1009,13 @@ test("กลุ่มตัวเลือกแบบเลือกได้�
     "ชิปไซซ์ห้ามอ่านสต็อกของไซซ์นั้น");
   assert.doesNotMatch(sizeChips, /disabled/,
     "ห้ามปิดไซซ์ไหนด้วยสต็อก — RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0 ตามดีไซน์");
+
+  // ⚠️ ปุ่มเลือกไซซ์จะเป็นแค่ปุ่มหลอกถ้า server ไม่เคารพไซซ์ที่ขอมา — `resolvePosScan`
+  // หาไซซ์จาก `bms_inventory` เป็นหลัก แต่เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองมีแค่แถวใน
+  // `bms_product_variants` (upsertProduct ไม่เคยสร้างแถวสต็อก) ถ้าไม่มีกิ่งนี้ การขอไซซ์
+  // ที่ไม่ใช่ min(code) จะได้ไซซ์อื่นกลับมาเงียบ ๆ (พิสูจน์กับ dev DB แล้ว: ขอ 'L' ได้ 'S')
+  const pos = code(await read("apps/web/lib/bms/pos.ts"));
+  const sizeCoalesce = pos.slice(pos.indexOf("            COALESCE("), pos.indexOf("AS size"));
+  assert.match(sizeCoalesce, /FROM bms_product_variants variant[\s\S]*?upper\(variant\.code\) = upper\(\$3::text\)/,
+    "resolvePosScan ต้องยอมรับไซซ์ที่ขอมาจากแคตตาล็อกด้วย ไม่ใช่จากตารางสต็อกอย่างเดียว");
 });
