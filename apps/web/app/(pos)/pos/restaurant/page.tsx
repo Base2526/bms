@@ -6,6 +6,7 @@ import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } 
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
+import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
@@ -61,7 +62,7 @@ type FloorCheck = { id: string; status: string; guestCount: number; amountDue: n
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
-type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; openedAt: string; items: CheckItem[] };
+type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
   kitchenStation: string | null;
@@ -160,8 +161,12 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
         : "เลือกได้หลายอย่าง",
       meta.minSelect > 0 ? `ต้องเลือกอย่างน้อย ${meta.minSelect}` : null,
     ].filter(Boolean).join(" · ");
+    // กลุ่มที่ยังไม่ครบต้องบอกที่ตัวมันเอง — เมนูที่มีหลายกลุ่ม ข้อความรวมท้ายกล่องไม่ชี้ว่าอันไหน
+    const needsPick = selectedInGroup.length < meta.minSelect;
     return <fieldset key={meta.groupCode} className={styles.modifierGroup}>
-      <legend className={styles.fieldLabel}>{meta.groupName} <span className={styles.fieldRule}>· {rule}</span></legend>
+      <legend className={styles.fieldLabel}>{meta.groupName} <span className={styles.fieldRule}>· {rule}</span>
+        {needsPick && <span className={styles.fieldNeeded}> · ยังไม่ได้เลือก</span>}
+      </legend>
       {/* ชิปแทนกล่องเต็มแถว — เมนูที่มี 4–5 ตัวเลือกไม่ต้องเลื่อนกล่องอีก · ยังเป็น
           radio/checkbox จริงข้างใน (ซ่อนไว้) จึงคุมด้วยคีย์บอร์ดและอ่านด้วย screen reader ได้ */}
       <div className={styles.modifierChips}>
@@ -430,6 +435,10 @@ export default function RestaurantPosPage() {
   // version = 0 แต่ reservedVersion = null) · ยอดที่แสดงยังเป็นตัวเลขจาก server เสมอ
   // ห้ามคำนวณเองที่จอ เพราะจะกลายเป็นสูตรเงินชุดที่สอง
   const hasUnsent = Boolean(check?.items.some((item) => item.status === "NEW"));
+  // ใบจองสต็อกของโต๊ะหายไป (ถูกยกเลิกนอกเส้นทางนี้) — คิดเงินจะล้มแน่นอน แต่ส่งครัวจะ
+  // จองใหม่ให้ทั้งบิล · ปุ่มที่ยังไงก็ล้มต้องกดไม่ได้ พร้อมบอกทางไปต่อ ไม่ใช่ปล่อยให้กด
+  // แล้วเจอ error ต่อหน้าลูกค้า (เกณฑ์มาจาก server ที่เดียว ไม่ให้จอเดาเอง)
+  const reservationLost = Boolean(check?.reservationLost);
   const paymentTotal = Math.round(payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
   const checkoutDue = check == null ? 0 : Math.round((check.amountDue + (
     payments.length === 1 && payments[0].method === "CASH"
@@ -682,6 +691,11 @@ export default function RestaurantPosPage() {
       .reduce((sum, modifier) => sum + modifier.priceDelta, 0);
   }, [menuHit, modifierCodes]);
   const menuHitTotal = menuHitUnitPrice * menuQty;
+  // ปุ่มที่กดไปก็ล้มต้องกดไม่ได้ พร้อมบอกว่าต้องแตะอะไร (กฎเดียวกับปุ่มคิดเงินตอนใบจองหาย)
+  const unmetModifiers = useMemo(
+    () => (menuHit ? unmetModifierGroups(menuHit.modifiers, modifierCodes) : []),
+    [menuHit, modifierCodes]
+  );
   const soldOutCount = useMemo(
     () => menuItems.filter((item) => item.availability === "SOLD_OUT_TODAY").length,
     [menuItems]
@@ -1200,14 +1214,15 @@ export default function RestaurantPosPage() {
           </div>
 
           <div className={styles.checkFooter}>
+            {reservationLost && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ใบจองสต็อกของโต๊ะนี้หายไป</b> — กด “ส่งครัว” หนึ่งครั้งเพื่อจองทั้งบิลใหม่ แล้วจึงคิดเงินได้ (ครัวไม่ได้รับรายการซ้ำ)</span></div>}
             {hasUnsent && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>{unsentInCheck} รายการยังไม่ถึงครัว</b> — ส่งครัวก่อนจึงจะคิดเงินได้ ยอดด้านล่างคือยอดที่ส่งครัวแล้ว</span></div>}
             {/* ปกติครัวยกเลิกแล้วบรรทัดจะหลุดจากบิลทันที เหลือค้างได้เฉพาะกรณีบิลไม่ได้เปิดอยู่
                 ตอนที่ครัวกด (กำลังคิดเงิน/ปิดแล้ว) ซึ่งแตะยอดที่ออกใบเสร็จไปแล้วไม่ได้ */}
             {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>ครัวยกเลิก {kitchenCancelled.length} รายการ ตอนบิลไม่ได้เปิดอยู่</b> — ยอดด้านล่างยังรวมรายการนั้น ตัดออกอัตโนมัติไม่ได้ ต้องคืนเงินหรือแก้บิลตามปกติ</span></div>}
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
-              <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
-              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> คิดเงิน</button>
+              <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent && !reservationLost} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> ส่งครัว{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
+              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> คิดเงิน</button>
             </div>
           </div>
         </> : <>
@@ -1383,6 +1398,7 @@ export default function RestaurantPosPage() {
       onCancel={() => setMenuHit(null)}
       onOk={() => void addMenu()}
       confirmLoading={working}
+      okButtonProps={{ disabled: unmetModifiers.length > 0 }}
       okText={`เพิ่มในบิล · ฿${money(menuHitTotal)}`}
       cancelText="ยกเลิก"
       getContainer={modalContainer}
@@ -1427,7 +1443,9 @@ export default function RestaurantPosPage() {
         </div>
         {/* ยอดรวมอยู่บนปุ่มด้วย (okText) — บรรทัดนี้บอก "มาจากไหน" ให้ตรวจก่อนกด */}
         <div className={styles.menuTotalRow}>
-          <span>{`฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? " (รวมตัวเลือก)" : ` / ${menuHit.unitName}`}`}</span>
+          <span>{unmetModifiers.length > 0
+            ? describeUnmetModifierGroups(unmetModifiers)
+            : `฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? " (รวมตัวเลือก)" : ` / ${menuHit.unitName}`}`}</span>
           <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
         </div>
       </div>}

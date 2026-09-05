@@ -40,6 +40,7 @@ import { deleteCustomer, mergeCustomers } from "../apps/web/lib/bms/customers.ts
 import { cancelOrder, createOrder, payOrder, returnOrder } from "../apps/web/lib/bms/orders.ts";
 import { upsertCoupon } from "../apps/web/lib/bms/coupons.ts";
 import { listOrderDiscounts } from "../apps/web/lib/bms/membership.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "loyalty-test";
 let tenantId = "";
@@ -500,6 +501,8 @@ async function ensureProduct(): Promise<void> {
      ON CONFLICT (tenant_id, sku) DO UPDATE SET price = 100, active = TRUE`,
     [tenantId, SKU, `FAKE ${TAG} product`]
   );
+  // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   await query(
     `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
      VALUES ($1,$2,$3,$4,10000,0)

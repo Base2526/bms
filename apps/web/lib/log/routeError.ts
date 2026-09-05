@@ -28,6 +28,7 @@ import { verifyAdminSession } from "@/lib/auth/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { writeLogServer } from "./writeLog.server";
 import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
+import { isRestaurantCheckError } from "@/lib/bms/restaurantPosErrors";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
 
@@ -70,6 +71,16 @@ export function withRouteErrorLog<Args extends any[]>(
     try {
       return await handler(...args);
     } catch (error: any) {
+      // การปฏิเสธตามกฎธุรกิจไม่ใช่ "error ที่ไม่มีใครรับ" — ตอบ 409 พร้อมข้อความจริง
+      // และ **ไม่เขียน log ระดับ error** เพราะมันคือคำตอบที่ตั้งใจ ไม่ใช่ระบบพัง
+      //
+      // ถ้าปล่อยให้ตกไปที่ 500 ด้านล่าง ข้อความจะถูก errorResponse() ลบทิ้งบน production
+      // (เจอจริง: จอ POS ร้านอาหารขึ้น "เซิร์ฟเวอร์ผิดพลาด (เซิร์ฟเวอร์ผิดพลาด)" แล้วสั่งให้
+      // กดชำระเงินซ้ำ ทั้งที่เหตุผลจริงคือใบจองถูกยกเลิกและกดกี่ครั้งก็ไม่ผ่าน) และ
+      // system_logs จะเต็มไปด้วยกฎธุรกิจปกติจนกลบ error จริง
+      if (isRestaurantCheckError(error)) {
+        return NextResponse.json({ status: error.code, error: error.message }, { status: 409 });
+      }
       const detail = {
         code: safeErrorText(error?.code, 80),             // SQLSTATE ถ้ามาจาก pg
         constraint: safeErrorText(error?.constraint, 160),

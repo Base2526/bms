@@ -30,6 +30,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { sendReceipt } from "../apps/web/lib/bms/receiptDelivery.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "receiptsend-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -54,6 +55,8 @@ test("setup: a shop, a product, and one order", async () => {
      ON CONFLICT (tenant_id, sku) DO UPDATE SET price = 250, active = TRUE`,
     [tenantId, SKU, `FAKE ${TAG} product`]
   );
+  // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   await query(
     `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
      VALUES ($1,$2,$3,$4,100,0)

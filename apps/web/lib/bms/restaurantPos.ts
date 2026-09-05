@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { RESERVATION_LOST, RestaurantCheckError } from "./restaurantPosErrors";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
@@ -125,7 +126,7 @@ async function requireRestaurantTenant(tenantId: string) {
     [tenantId]
   );
   if (result.rows[0]?.business_archetype !== "restaurant") {
-    throw new Error("ฟังก์ชันนี้ใช้ได้เฉพาะร้านที่ตั้ง Shop archetype เป็น restaurant");
+    throw new RestaurantCheckError("ฟังก์ชันนี้ใช้ได้เฉพาะร้านที่ตั้ง Shop archetype เป็น restaurant");
   }
 }
 
@@ -363,14 +364,14 @@ export async function openRestaurantCheck(input: {
         FOR UPDATE`,
       [input.tenantId, input.shiftId, input.deviceId, input.locationId]
     );
-    if (!shift.rowCount) throw new Error("ต้องเปิดกะของเครื่องนี้ก่อนเปิดโต๊ะ");
+    if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนเปิดโต๊ะ");
     const table = await client.query(
       `SELECT 1 FROM bms_restaurant_tables
         WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active AND NOT blocked
         FOR UPDATE`,
       [input.tenantId, input.tableId, input.locationId]
     );
-    if (!table.rowCount) throw new Error("โต๊ะนี้ไม่พร้อมใช้งาน");
+    if (!table.rowCount) throw new RestaurantCheckError("โต๊ะนี้ไม่พร้อมใช้งาน");
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO bms_restaurant_checks
          (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, guest_count, note, opened_by)
@@ -389,7 +390,7 @@ export async function openRestaurantCheck(input: {
     return getRestaurantCheck(input.tenantId, inserted.rows[0].id);
   } catch (error: any) {
     try { await client.query("ROLLBACK"); } catch {}
-    if (error?.code === "23505") throw new Error("โต๊ะนี้มีบิลเปิดอยู่แล้ว");
+    if (error?.code === "23505") throw new RestaurantCheckError("โต๊ะนี้มีบิลเปิดอยู่แล้ว");
     throw error;
   } finally {
     client.release();
@@ -398,10 +399,15 @@ export async function openRestaurantCheck(input: {
 
 export async function getRestaurantCheck(tenantId: string, checkId: string, locationId?: string | null) {
   const result = await query<any>(
-    `SELECT c.*, t.code AS table_code, t.name AS table_name, a.name AS area_name
+    // สถานะของ "ใบจอง" ต้องมากับบิลเสมอ — LEFT JOIN เพราะโต๊ะที่ยังไม่ส่งครัวไม่มีใบจอง
+    // และบิลต้องไม่หายไปเพราะการ join · จอต้องรู้ว่าใบจองยังมีชีวิตไหม ไม่งั้นจะบอก
+    // พนักงานได้อย่างเดียวว่า "กดแล้วค่อยรู้ว่าล้ม"
+    `SELECT c.*, t.code AS table_code, t.name AS table_name, a.name AS area_name,
+            o.status AS reservation_status
        FROM bms_restaurant_checks c
        JOIN bms_restaurant_tables t ON t.tenant_id = c.tenant_id AND t.id = c.table_id
        JOIN bms_restaurant_areas a ON a.tenant_id = t.tenant_id AND a.id = t.area_id
+       LEFT JOIN bms_orders o ON o.tenant_id = c.tenant_id AND o.id = c.current_order_id
       WHERE c.tenant_id = $1 AND c.id = $2
         AND ($3::uuid IS NULL OR c.location_id = $3)`,
     [tenantId, checkId, locationId ?? null]
@@ -447,9 +453,51 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
     version: Number(row.version),
     reservedVersion: row.reserved_version == null ? null : Number(row.reserved_version),
     hasCurrentOrder: Boolean(row.current_order_id),
+    /**
+     * `null` = ยังไม่เคยส่งครัว (ปกติ) · `PENDING` = ใบจองมีชีวิต · อย่างอื่นคือหายไปแล้ว
+     *
+     * `reservationLost` แยกออกมาให้จอใช้ตรง ๆ เพราะการตัดสินว่า "กดปุ่มนี้แล้วจะล้มไหม"
+     * ต้องมีสูตรเดียว ไม่ใช่ให้แต่ละหน้าจอเดาจาก status string เอง
+     */
+    reservationStatus: (row.reservation_status as string | null) ?? null,
+    reservationLost: Boolean(row.current_order_id) && row.reservation_status !== "PENDING",
     openedAt: iso(row.opened_at),
     items: itemResult.rows.map(mapCheckItem),
   };
+}
+
+/**
+ * ปล่อยใบจองของบิลโต๊ะให้พร้อมถูกแทนที่ — คำตอบมีสามแบบ ไม่ใช่จริง/เท็จ
+ *
+ * `cancelOrderInTx()` คืน `false` ทั้งกรณี "ยกเลิกไปแล้ว" และ "อยู่สถานะที่ยกเลิกไม่ได้"
+ * ซึ่งเป็นคนละเรื่องกันสำหรับบิลโต๊ะ: ใบที่ถูกยกเลิกไปแล้วแปลว่าของถูกปล่อยคืนหมดแล้ว
+ * (ไม่มีอะไรต้องทำต่อ) ส่วนใบที่ COMPLETED แปลว่าบิลนี้เก็บเงินไปแล้วและต้องมีคนดู ·
+ * เดิมทั้งสามผู้เรียกแปล `false` เป็น throw เหมือนกันหมด ผลคือโต๊ะที่ใบจองหายไป
+ * **ส่งครัวไม่ได้ คิดเงินไม่ได้ และยกเลิกบิลก็ไม่ได้** = ค้างอยู่บนผังโต๊ะตลอดไป
+ *
+ * ล็อกแถว order ก่อนตัดสินเสมอ และเรียงหลัง lock ของ check เพื่อให้ทุกเส้นทาง
+ * (ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล · คิดเงิน) ล็อกลำดับเดียวกัน: กะ → บิล → ใบจอง → สต็อก
+ */
+async function releaseCheckReservationInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string
+): Promise<"RELEASED" | "ALREADY_GONE" | "BLOCKED"> {
+  const current = await client.query<{ status: string }>(
+    `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+    [tenantId, orderId]
+  );
+  const status = current.rows[0]?.status ?? null;
+  if (status !== null && status !== "CANCELLED" && status !== "PENDING") return "BLOCKED";
+  if (status === "PENDING" && !(await cancelOrderInTx(client, tenantId, orderId))) return "BLOCKED";
+  // คีย์ผูกกับ check version เดิม ต้องคืนไม่ว่าใบนี้จะถูกยกเลิกโดยเราหรือโดยอย่างอื่น
+  // ไม่งั้น createOrderInTx จะชน unique แล้วมองว่าเป็นการยิงซ้ำของใบที่ตายไปแล้ว
+  await client.query(
+    `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
+    [tenantId, orderId]
+  );
+  return status === "PENDING" ? "RELEASED" : "ALREADY_GONE";
 }
 
 export async function addRestaurantCheckItem(input: {
@@ -470,11 +518,11 @@ export async function addRestaurantCheckItem(input: {
     packCode: input.packCode ?? null,
     surface: "RESTAURANT_POS",
   });
-  if (!hit) throw new Error("ไม่พบเมนูหรือหน่วยขายนี้");
+  if (!hit) throw new RestaurantCheckError("ไม่พบเมนูหรือหน่วยขายนี้");
   const allowed = new Map(hit.modifiers.map((modifier) => [modifier.code, modifier.name]));
   const modifierCodes = Array.from(new Set((input.modifierCodes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean))).sort();
   const invalid = modifierCodes.find((code) => !allowed.has(code));
-  if (invalid) throw new Error(`ตัวเลือก ${invalid} ไม่ได้เปิดใช้กับเมนูนี้`);
+  if (invalid) throw new RestaurantCheckError(`ตัวเลือก ${invalid} ไม่ได้เปิดใช้กับเมนูนี้`);
   const modifierGroups = new Map<string, typeof hit.modifiers>();
   for (const modifier of hit.modifiers) {
     const group = modifierGroups.get(modifier.groupCode) ?? [];
@@ -486,10 +534,10 @@ export async function addRestaurantCheckItem(input: {
     if (!first) continue;
     const selectedCount = options.filter((option) => modifierCodes.includes(option.code)).length;
     const { groupName, minSelect, maxSelect, selectionType } = first;
-    if (selectedCount < minSelect) throw new Error(`ต้องเลือก ${groupName} อย่างน้อย ${minSelect} รายการ`);
-    if (maxSelect != null && selectedCount > maxSelect) throw new Error(`เลือก ${groupName} ได้ไม่เกิน ${maxSelect} รายการ`);
-    if (selectionType === "SINGLE" && selectedCount > 1) throw new Error(`เลือก ${groupName} ได้เพียง 1 รายการ`);
-    if (!groupCode) throw new Error("กลุ่มตัวเลือกเมนูไม่ถูกต้อง");
+    if (selectedCount < minSelect) throw new RestaurantCheckError(`ต้องเลือก ${groupName} อย่างน้อย ${minSelect} รายการ`);
+    if (maxSelect != null && selectedCount > maxSelect) throw new RestaurantCheckError(`เลือก ${groupName} ได้ไม่เกิน ${maxSelect} รายการ`);
+    if (selectionType === "SINGLE" && selectedCount > 1) throw new RestaurantCheckError(`เลือก ${groupName} ได้เพียง 1 รายการ`);
+    if (!groupCode) throw new RestaurantCheckError("กลุ่มตัวเลือกเมนูไม่ถูกต้อง");
   }
   const packQty = Math.min(Math.max(Math.trunc(input.packQty), 1), 9999);
 
@@ -504,7 +552,7 @@ export async function addRestaurantCheckItem(input: {
           FOR UPDATE`,
         [input.tenantId, input.checkId, input.locationId]
       );
-      if (!check.rowCount) throw new Error("บิลนี้ไม่อยู่ในสถานะที่เพิ่มอาหารได้");
+      if (!check.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสถานะที่เพิ่มอาหารได้");
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO bms_restaurant_check_items
            (tenant_id, check_id, product_sku, product_name, size, pack_qty,
@@ -568,7 +616,7 @@ export async function setRestaurantCheckGuestCount(input: {
         RETURNING guest_count`,
         [input.tenantId, input.checkId, input.locationId, guestCount]
       );
-      if (!updated.rowCount) throw new Error("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แก้จำนวนคนได้");
+      if (!updated.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แก้จำนวนคนได้");
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.guest_count',$3,$4::jsonb)`,
@@ -607,7 +655,7 @@ export async function removeRestaurantCheckItem(input: {
           RETURNING i.id`,
         [input.tenantId, input.itemId, input.checkId, input.locationId]
       );
-      if (!removed.rowCount) throw new Error("ลบได้เฉพาะรายการที่ยังไม่ส่งครัว");
+      if (!removed.rowCount) throw new RestaurantCheckError("ลบได้เฉพาะรายการที่ยังไม่ส่งครัว");
       await client.query(
         `UPDATE bms_restaurant_checks SET version = version + 1, updated_at = now()
           WHERE tenant_id = $1 AND id = $2`,
@@ -718,14 +766,11 @@ export async function dropKitchenCancelledLineInTx(
   );
 
   if (check.current_order_id) {
-    const releasedOk = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
-    if (!releasedOk) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ยกเลิกตั๋วไม่สำเร็จ");
-    // คีย์ผูกกับ version เดิม ต้องคืนพร้อม order ที่ถูกแทนที่ (เหตุผลเดียวกับตอนส่งครัว)
-    await client.query(
-      `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-      [input.tenantId, check.current_order_id]
-    );
+    // ใบจองที่หายไปแล้วต้องไม่บล็อกครัว — รายการที่ครัวยกเลิกคืออาหารที่ทำไม่ได้จริง
+    // การปฏิเสธที่นี่ทำให้จอครัวกดยกเลิกไม่ได้ทั้งที่บิลถูกคิดยอดใหม่ได้อยู่ดี
+    if (await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
+      throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ยกเลิกตั๋วไม่สำเร็จ");
+    }
   }
 
   const nextVersion = Number(check.version) + 1;
@@ -745,7 +790,7 @@ export async function dropKitchenCancelledLineInTx(
       restaurantCheckId: input.checkId,
     });
     if (created.status !== "CREATED") {
-      throw new Error(`คิดยอดใหม่หลังครัวยกเลิกไม่สำเร็จ (${created.status}) — ยังไม่ยกเลิกตั๋ว`);
+      throw new RestaurantCheckError(`คิดยอดใหม่หลังครัวยกเลิกไม่สำเร็จ (${created.status}) — ยังไม่ยกเลิกตั๋ว`);
     }
     orderId = created.orderId;
     amountDue = created.amountDue;
@@ -794,7 +839,7 @@ export async function sendRestaurantKitchenRound(input: {
           FOR UPDATE`,
         [input.tenantId, input.checkId, input.locationId]
       );
-      if (!checkResult.rowCount) throw new Error("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่ส่งครัวได้");
+      if (!checkResult.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่ส่งครัวได้");
       const check = checkResult.rows[0];
       const items = await client.query<CheckItemRow>(
         `SELECT * FROM bms_restaurant_check_items
@@ -803,9 +848,21 @@ export async function sendRestaurantKitchenRound(input: {
           FOR UPDATE`,
         [input.tenantId, input.checkId]
       );
-      if (!items.rowCount) throw new Error("ยังไม่มีรายการอาหารในบิล");
+      if (!items.rowCount) throw new RestaurantCheckError("ยังไม่มีรายการอาหารในบิล");
       const unsent = items.rows.filter((item) => item.status === "NEW");
-      if (unsent.length === 0 && check.current_order_id
+      // ใบจองที่ "ยังมีชีวิต" = PENDING เท่านั้น · ก่อนหน้านี้โค้ดดูแค่ว่ามี current_order_id
+      // ไหม ซึ่งเป็นคนละคำถาม: ใบที่ถูกยกเลิกไปแล้วก็ยังถูกชี้อยู่ **ของถูกปล่อยคืนหมดแล้ว
+      // แต่บิลยังอ้างว่ามีใบจอง** → กิ่ง early-return ด้านล่างตอบ SENT ทั้งที่ไม่มีอะไรจอง
+      // อยู่จริง แล้วไปล้มตอนคิดเงินแทน
+      const reservation = check.current_order_id
+        ? await client.query<{ status: string }>(
+            `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+            [input.tenantId, check.current_order_id]
+          )
+        : null;
+      const reservationStatus = reservation?.rows[0]?.status ?? null;
+      const reservationAlive = reservationStatus === "PENDING";
+      if (unsent.length === 0 && reservationAlive
           && Number(check.reserved_version) === Number(check.version)) {
         await client.query("COMMIT");
         return {
@@ -816,14 +873,13 @@ export async function sendRestaurantKitchenRound(input: {
       }
 
       if (check.current_order_id) {
-        const cancelled = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
-        if (!cancelled) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่สร้างรอบใหม่ได้");
-        // คีย์ผูกกับเนื้อหา check version เดิม ต้องคืนพร้อม order ที่ถูกแทนที่
-        await client.query(
-          `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-          [input.tenantId, check.current_order_id]
-        );
+        // COMPLETED = บิลนี้ถูกเก็บเงินไปแล้วแต่โต๊ะยัง OPEN — ความไม่สอดคล้องที่ต้องมีคนดู
+        // ไม่ใช่สิ่งที่การส่งครัวรอบใหม่ควรเขียนทับให้เงียบ
+        if (await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
+          throw new RestaurantCheckError(
+            `ใบจองของโต๊ะนี้อยู่สถานะ ${reservationStatus ?? "ไม่พบ"} ส่งครัวรอบใหม่ไม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน`
+          );
+        }
       }
 
       const reservationKey = `restaurant:${input.checkId}:v${check.version}`;
@@ -896,7 +952,7 @@ export async function sendRestaurantKitchenRound(input: {
         [input.tenantId, input.checkId, created.orderId, created.amountDue, check.version,
           input.deviceId, input.shiftId]
       );
-      if (!linked.rowCount) throw new Error("บิลเปลี่ยนระหว่างส่งครัว กรุณาลองใหม่");
+      if (!linked.rowCount) throw new RestaurantCheckError("บิลเปลี่ยนระหว่างส่งครัว กรุณาลองใหม่");
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.kitchen_send',$3,$4::jsonb)`,
@@ -947,7 +1003,7 @@ export async function moveRestaurantCheck(input: {
           RETURNING current.previous_table_id`,
         [input.tenantId, input.checkId, input.locationId, input.targetTableId]
       );
-      if (!moved.rowCount) throw new Error("ย้ายโต๊ะไม่ได้");
+      if (!moved.rowCount) throw new RestaurantCheckError("ย้ายโต๊ะไม่ได้");
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.check_move',$3,$4::jsonb)`,
@@ -958,7 +1014,7 @@ export async function moveRestaurantCheck(input: {
       return getRestaurantCheck(input.tenantId, input.checkId);
     } catch (error: any) {
       try { await client.query("ROLLBACK"); } catch {}
-      if (error?.code === "23505") throw new Error("โต๊ะปลายทางมีบิลเปิดอยู่แล้ว");
+      if (error?.code === "23505") throw new RestaurantCheckError("โต๊ะปลายทางมีบิลเปิดอยู่แล้ว");
       throw error;
     } finally {
       client.release();
@@ -977,7 +1033,7 @@ export async function cancelRestaurantCheck(input: {
   // Route บังคับช่องนี้อยู่แล้ว แต่ service เป็น boundary ของ business rule และอาจมี caller ใหม่
   // ในอนาคต จึงต้อง fail closed ที่นี่ด้วย ไม่ให้บิล CANCELLED โดยไม่มีคำอธิบายใน note/audit
   const cancellationNote = String(input.reason ?? "").trim().slice(0, 300);
-  if (!cancellationNote) throw new Error("ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร");
+  if (!cancellationNote) throw new RestaurantCheckError("ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร");
   return withCheckLock(input.tenantId, input.checkId, async () => {
     const client = await getClient();
     let releasedOrderId: string | null = null;
@@ -1019,24 +1075,23 @@ export async function cancelRestaurantCheck(input: {
           [input.tenantId, input.checkId, input.locationId]
         );
         if (state.rows[0]?.status === "CLOSING") {
-          throw new Error("บิลนี้กำลังรับชำระเงิน กรุณารอให้รายการเดิมเสร็จหรือลองใหม่ภายหลัง");
+          throw new RestaurantCheckError("บิลนี้กำลังรับชำระเงิน กรุณารอให้รายการเดิมเสร็จหรือลองใหม่ภายหลัง");
         }
-        throw new Error("บิลนี้ยกเลิกไม่ได้ (ปิดไปแล้วหรือเก็บเงินแล้ว)");
+        throw new RestaurantCheckError("บิลนี้ยกเลิกไม่ได้ (ปิดไปแล้วหรือเก็บเงินแล้ว)");
       }
       if (current.rows[0].requires_void_approval && (
         !input.approvedByUserId || input.approvedByUserId === input.actorUserId
       )) {
-        throw new Error("บิลที่ส่งครัวหรือจองสต็อกแล้วต้องให้ผู้มีสิทธิ์ pos.void คนที่สองอนุมัติ");
+        throw new RestaurantCheckError("บิลที่ส่งครัวหรือจองสต็อกแล้วต้องให้ผู้มีสิทธิ์ pos.void คนที่สองอนุมัติ");
       }
-      releasedOrderId = current.rows[0].current_order_id;
-      if (releasedOrderId) {
-        const cancelled = await cancelOrderInTx(client, input.tenantId, releasedOrderId);
-        if (!cancelled) throw new Error("บิลจองเดิมไม่อยู่ในสถานะที่ยกเลิกได้");
-        await client.query(
-          `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-          [input.tenantId, releasedOrderId]
-        );
+      const reservationId = current.rows[0].current_order_id;
+      if (reservationId) {
+        const released = await releaseCheckReservationInTx(client, input.tenantId, reservationId);
+        // ใบจองที่หายไปแล้วต้องไม่ทำให้ "ปิดโต๊ะ" เป็นไปไม่ได้ — โต๊ะที่ยกเลิกไม่ได้จะค้าง
+        // อยู่บนผังตลอดไปและเปิดบิลใหม่ทับไม่ได้ (unique index กันโต๊ะละหนึ่งบิลที่เปิดอยู่)
+        if (released === "BLOCKED") throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่ยกเลิกได้");
+        // งานหลัง commit (แจ้งลูกค้าว่ายกเลิก) ทำเฉพาะใบที่ **เราเป็นคนยกเลิกรอบนี้**
+        if (released === "RELEASED") releasedOrderId = reservationId;
       }
       await client.query(
         `UPDATE bms_restaurant_kitchen_tickets
@@ -1141,7 +1196,7 @@ export async function settleRestaurantCheck(input: {
           FOR KEY SHARE`,
         [input.tenantId, input.shiftId, input.deviceId, input.locationId]
       );
-      if (!shift.rowCount) throw new Error("กะของเครื่องนี้ไม่ได้เปิดอยู่");
+      if (!shift.rowCount) throw new RestaurantCheckError("กะของเครื่องนี้ไม่ได้เปิดอยู่");
       await lockCheckInTx(prepare, input.tenantId, input.checkId);
       const checkResult = await prepare.query<any>(
         `SELECT c.*, o.status AS order_status, o.idempotency_key AS order_key,
@@ -1155,20 +1210,20 @@ export async function settleRestaurantCheck(input: {
           FOR UPDATE OF c, o`,
         [input.tenantId, input.checkId, input.locationId]
       );
-      if (!checkResult.rowCount) throw new Error("บิลนี้ไม่ได้เปิดอยู่ในสาขาของเครื่องนี้");
+      if (!checkResult.rowCount) throw new RestaurantCheckError("บิลนี้ไม่ได้เปิดอยู่ในสาขาของเครื่องนี้");
       const check = checkResult.rows[0];
       if (!check.current_order_id || Number(check.reserved_version) !== Number(check.version)) {
-        throw new Error("มีรายการที่ยังไม่ส่งครัว กรุณาส่งครัวก่อนคิดเงิน");
+        throw new RestaurantCheckError("มีรายการที่ยังไม่ส่งครัว กรุณาส่งครัวก่อนคิดเงิน");
       }
       key = String(check.order_key ?? "").trim();
-      if (!key) throw new Error("บิลจองนี้ไม่มี idempotency key จึงไม่สามารถเก็บเงินอย่างปลอดภัยได้");
+      if (!key) throw new RestaurantCheckError("บิลจองนี้ไม่มี idempotency key จึงไม่สามารถเก็บเงินอย่างปลอดภัยได้");
 
       if ((check.status === "CLOSING" || check.status === "PAID") && (
         check.order_device_id !== input.deviceId
         || check.order_shift_id !== input.shiftId
         || check.order_cashier_user_id !== input.actorUserId
       )) {
-        throw new Error("บิลนี้ถูกคิดเงินที่เครื่องอื่นแล้ว กรุณาเปิดใบเสร็จจากเครื่องเดิม");
+        throw new RestaurantCheckError("บิลนี้ถูกคิดเงินที่เครื่องอื่นแล้ว กรุณาเปิดใบเสร็จจากเครื่องเดิม");
       }
 
       if (
@@ -1177,7 +1232,7 @@ export async function settleRestaurantCheck(input: {
         && new Date(check.settlement_started_at).getTime()
           >= Date.now() - SETTLEMENT_LEASE_MINUTES * 60_000
       ) {
-        throw new Error("บิลนี้กำลังรับชำระเงิน กรุณารอผลรายการเดิมก่อนลองใหม่");
+        throw new RestaurantCheckError("บิลนี้กำลังรับชำระเงิน กรุณารอผลรายการเดิมก่อนลองใหม่");
       }
 
       if (check.order_status === "PENDING") {
@@ -1192,12 +1247,21 @@ export async function settleRestaurantCheck(input: {
           [input.tenantId, check.current_order_id, input.deviceId, input.shiftId,
             input.actorUserId, input.checkId, key]
         );
-        if (!restamped.rowCount) throw new Error("บิลจองเปลี่ยนสถานะระหว่างเริ่มคิดเงิน");
+        if (!restamped.rowCount) throw new RestaurantCheckError("บิลจองเปลี่ยนสถานะระหว่างเริ่มคิดเงิน");
       } else if (!(
         (check.status === "CLOSING" || check.status === "PAID")
         && check.order_status === "COMPLETED"
       )) {
-        throw new Error(`บิลจองของโต๊ะนี้อยู่สถานะ ${check.order_status ?? "ไม่พบ"} คิดเงินซ้ำไม่ได้`);
+        // ใบจองถูกยกเลิกไปแล้ว = ของที่กันไว้ถูกปล่อยคืนหมด · ไม่ใช่ทางตัน: ส่งครัวอีกครั้ง
+        // จะจองทั้งบิลใหม่แล้วคิดเงินได้ตามปกติ ข้อความจึงต้องพาไปทำสิ่งนั้น ไม่ใช่บอกว่า
+        // "คิดเงินซ้ำไม่ได้" ซึ่งอ่านแล้วเหมือนบิลนี้จบไปแล้ว
+        if (check.order_status === "CANCELLED") {
+          throw new RestaurantCheckError(
+            "ใบจองสต็อกของโต๊ะนี้ถูกยกเลิกไปแล้ว — กดส่งครัวอีกครั้งเพื่อจองใหม่ทั้งบิล แล้วค่อยคิดเงิน",
+            RESERVATION_LOST
+          );
+        }
+        throw new RestaurantCheckError(`บิลจองของโต๊ะนี้อยู่สถานะ ${check.order_status ?? "ไม่พบ"} คิดเงินซ้ำไม่ได้`);
       }
 
       items = await prepare.query<CheckItemRow>(
@@ -1206,7 +1270,7 @@ export async function settleRestaurantCheck(input: {
           ORDER BY created_at, id`,
         [input.tenantId, input.checkId]
       );
-      if (!items.rows.length) throw new Error("บิลนี้ไม่มีรายการที่ส่งครัวแล้ว");
+      if (!items.rows.length) throw new RestaurantCheckError("บิลนี้ไม่มีรายการที่ส่งครัวแล้ว");
       if (check.status !== "PAID") {
         const claimed = await prepare.query(
           `UPDATE bms_restaurant_checks
@@ -1225,7 +1289,7 @@ export async function settleRestaurantCheck(input: {
           [input.tenantId, input.checkId, key, input.deviceId, input.shiftId,
             SETTLEMENT_LEASE_MINUTES, settlementAttemptId]
         );
-        if (!claimed.rowCount) throw new Error("บิลนี้มีรายการรับชำระเงินอื่นกำลังทำงานอยู่");
+        if (!claimed.rowCount) throw new RestaurantCheckError("บิลนี้มีรายการรับชำระเงินอื่นกำลังทำงานอยู่");
       }
       await prepare.query("COMMIT");
     } catch (error) {

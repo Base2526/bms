@@ -24,6 +24,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
 import { listPharmacistCounterAuthorizations } from "../apps/web/lib/bms/pharmacy/counterAuthorizations.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "rxcounter-test";
 const RX_SKU = `FAKE-${TAG}-RX`;      // PRESCRIPTION_REQUIRED, policy APPROVED
@@ -146,6 +147,8 @@ test("setup: throwaway pharmacy tenant + ยา 3 แบบ + เภสัชก
        VALUES ($1,$2,$3,100,TRUE,'V')`,
       [tenantId, sku, `FAKE ${TAG} ${sku}`]
     );
+    // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+    await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
     await query(
       `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
        VALUES ($1,$2,$3,$4,100,0)`,
