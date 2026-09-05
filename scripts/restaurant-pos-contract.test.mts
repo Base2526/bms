@@ -387,8 +387,8 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.doesNotMatch(page, /finished: true/);
   assert.match(page, /const checkMember = memberCheckIdRef\.current === \(check\?\.id \?\? null\) \? selectedMember : null/);
   assert.match(page, /memberCheckIdRef\.current === checkId/);
-  assert.match(page, /function closeSettlementReceipt\(\)[\s\S]*setReceiptTo\(""\)/);
-  assert.match(page, /function closeSelectedReceipt\(\)[\s\S]*setReceiptTo\(""\)/);
+  // ส่งสำเนาทางอีเมล/LINE ถูกถอดออกจากเครื่องขายร้านอาหาร — จอนี้พิมพ์อย่างเดียว
+  assert.doesNotMatch(page, /send-receipt|receiptTo|ส่งอีเมล|ส่ง LINE/);
   assert.match(page, /recent-sales\?limit=20&deviceOnly=1/);
   assert.match(page, /cashMovementRequestRef\.current\?\.signature !== signature/);
   assert.match(page, /idempotencyKey: cashMovementRequestRef\.current\.key/);
@@ -401,14 +401,20 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.match(settle, /customerId: checkMember\?\.customerId \?\? null/);
   assert.doesNotMatch(settle, /message\.success\(`ปิดบิลแล้ว/);
 
-  const receipt = page.slice(page.indexOf("function receiptBytes"), page.indexOf("async function printReceipt"));
-  assert.match(receipt, /buildReceipt\(/);
+  const receipt = page.slice(page.indexOf("function receiptPayload"), page.indexOf("function receiptBytes"));
+  assert.doesNotMatch(receipt, /buildReceipt\(/,
+    "ตัวประกอบ payload ต้องไม่ผูกกับ renderer ตัวใดตัวหนึ่ง");
   assert.match(receipt, /result\.total/);
   assert.match(receipt, /result\.cashTendered/);
   assert.match(receipt, /result\.cashChange/);
   assert.match(receipt, /result\.vat/);
   assert.match(receipt, /result\.discountLines/);
   assert.match(receipt, /item\.lineAmount == null/);
+  // ⚠️ `buildReceipt` พิมพ์ `at` ตรง ๆ — ส่ง ISO ดิบเข้าไป = ใบเสร็จของลูกค้าเป็นเวลา UTC
+  // ที่เพี้ยนจากเวลาขายจริง 7 ชั่วโมง (เจอตอนเรนเดอร์กระดาษขึ้นจอครั้งแรก)
+  assert.match(receipt, /at: localReceiptTime\(/);
+  assert.doesNotMatch(receipt, /at: current \? receipt\.at : receipt\.soldAt/);
+  assert.match(page, /function localReceiptTime\(iso: string, mode: ReceiptLanguageMode\)[\s\S]*toLocaleString\(receiptLocale\(mode\)\)/);
   assert.match(receipt, /for \(const line of lines\) itemCount \+= line\.qty/);
   assert.doesNotMatch(receipt, /\.reduce\(|packPrice\s*\*|lineAmount\s*[+*]/,
     "ใบเสร็จต้องยก snapshot/ผล settle มาแสดง ไม่คำนวณเงินซ้ำที่จอ");
@@ -425,8 +431,30 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.match(page, /receipt\.voidedAt\) return "ถูกยกเลิกแล้ว"/);
   assert.match(page, /receipt\.orderStatus === "RETURNED"\) return "มีการคืนสินค้า"/);
   assert.match(page, /billHistoryNote\(selectedReceipt\) \? "พิมพ์ใบขายเดิม" : "พิมพ์ซ้ำ"/);
-  assert.match(page, /orderId: receipt\.result\.orderId/);
-  assert.match(page, /orderId: selectedReceipt\.orderId/);
+  // ใบเสร็จบนจอกับไบต์ที่ส่งเข้าเครื่องพิมพ์ต้องมาจาก payload ก้อนเดียว ไม่งั้น drift
+  assert.match(page, /function receiptPayload\(receipt: ReceiptSelection\): ReceiptPayload \| null/);
+  assert.match(page, /return buildReceipt\(payload\)/);
+  assert.match(page, /<ReceiptPaper payload=\{receiptPayload\(settlementReceipt\)!\} \/>/);
+  assert.match(page, /<ReceiptPaper payload=\{receiptPayload\(selectedReceipt\)!\} \/>/);
+  // ทางพิมพ์สำรอง: เครื่องพิมพ์ไม่ติดต้องยังได้กระดาษ (หน้าค้าปลีกมีมาตลอด หน้านี้เพิ่งมี)
+  assert.match(page, /if \(!isWebUsbSupported\(\)\)/);
+  assert.match(page, /function printViaBrowser\(\)[\s\S]*data-pos-print-target[\s\S]*window\.print\(\)/);
+  // rAF ไม่ทำงานเมื่อแท็บถูกซ่อน — พึ่งตัวเดียว = กดพิมพ์แล้วเงียบไปเลย ต้องมีตัวสำรอง
+  // และต้องยิงครั้งเดียว ไม่งั้นได้ print dialog ซ้อนกันสองใบ
+  const viaBrowser = page.slice(page.indexOf("function printViaBrowser"), page.indexOf("async function printReceipt"));
+  assert.match(viaBrowser, /requestAnimationFrame\(fire\)/);
+  assert.match(viaBrowser, /setTimeout\(fire, \d+\)/);
+  assert.match(viaBrowser, /if \(printed\) return;/);
+  // กฎ @media print เล็งที่ #pos-receipt ใบเดียว — กล่องที่ปิดแล้วต้องไม่ค้างใน DOM
+  // ต้องผูกกับ "กล่องใบเสร็จสองใบนี้" ไม่ใช่แค่นับจำนวนคำในไฟล์ — modal อื่นก็มีคำนี้
+  assert.match(page, /open=\{Boolean\(settlementReceipt\)\}[\s\S]{0,240}?destroyOnClose>/);
+  assert.match(page, /open=\{Boolean\(selectedReceipt\)\}[\s\S]{0,240}?destroyOnClose>/);
+  const paper = code(await read("apps/web/components/pos/ReceiptPaper.tsx"));
+  assert.match(paper, /id=\{RECEIPT_PRINT_ID\}/);
+  assert.match(paper, /payload\.discountLines/);
+  assert.match(paper, /payload\.vat/);
+  // ห้ามคิดเลขเองในกระดาษ — ทุกตัวเลขต้องมาจาก payload ที่ประกอบจากผลของ server
+  assert.doesNotMatch(paper, /[-+*/]=|\.reduce\(|Number\(/);
 
   assert.match(route, /customerId: typeof body\.customerId === "string"/);
   assert.match(service, /SELECT 1 FROM bms_customers[\s\S]*tenant_id = \$1 AND id = \$2 AND deleted_at IS NULL AND member_no IS NOT NULL/);

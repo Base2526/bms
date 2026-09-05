@@ -1423,11 +1423,17 @@ second copy of those tickets.
 
 The same restaurant register also owns the ordinary counter close-out work. After settlement it
 keeps the server result and the pre-close check snapshot on screen, including tendered cash, change,
-tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. It can print that
-snapshot through the existing WebUSB ESC/POS path or send the already-issued receipt; it never
-recalculates money in the browser. Printing kicks the cash drawer **only** for the sale just
-settled and only when cash was tendered — a reprint never opens it, because an unaudited drawer
-open is exactly what `8.0` moved behind `pos.nosale`, a stated reason and the shift report. The **Bills** screen lists only sales stamped to that device and
+tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. Both the settlement
+panel and the Bills detail render the **same `ReceiptPayload` that feeds the printer**, so what the
+cashier sees is what the paper says — including the `9.22` pricing-discount line, without which the
+item lines of a bill carrying a wholesale tier or promotion do not add up to the total. It never
+recalculates money in the browser. Printing goes to WebUSB ESC/POS and **falls back to the browser
+print dialog** when that path is unavailable (non-Chromium, no paired printer, a transfer error);
+before this the restaurant register had a single print path, and that path is still the one marked
+"never run against real hardware". Printing kicks the cash drawer **only** for the sale just settled
+and only when cash was tendered — a reprint never opens it, because an unaudited drawer open is
+exactly what `8.0` moved behind `pos.nosale`, a stated reason and the shift report; the fallback
+cannot open a drawer at all and says so. Emailing or LINE-ing a copy stays a retail-mode action. The **Bills** screen lists only sales stamped to that device and
 supports detail, reprint and resend. The **Shift** screen exposes cash in/out, audited no-sale drawer
 opens, the device's X report and shift close. Cash out still requires a distinct approver. A member
 selected at checkout is tenant-validated before settlement, then stamped onto the reservation order
