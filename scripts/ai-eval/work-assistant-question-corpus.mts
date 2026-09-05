@@ -244,6 +244,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "นับสต็อกแล้วปรับยอดยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.count", origin: "coverage" },
   { q: "ตั้งสูตรตัดวัตถุดิบของเมนูยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
   { q: "how do I set a recipe for a menu item", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
+  { q: "เพิ่มโต๊ะและจัดผังร้านยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "restaurant.floor-management", origin: "coverage" },
+  { q: "how do I move a table to another dining area", locale: "en", context: GUIDES, expect: "answer", expectTop: "restaurant.floor-management", origin: "coverage" },
   { q: "ตัดของเสียออกจากสต็อกยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "how do I write off expired stock", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "กระดานครัวใช้ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },

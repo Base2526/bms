@@ -14,6 +14,7 @@ import { posPaymentMethodLabel, receiptDocumentTitle, receiptLocale, type Receip
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
+import RestaurantTableChairs from "@/components/RestaurantTableChairs";
 import {
   formatKitchenElapsed,
   groupKitchenTickets,
@@ -63,8 +64,12 @@ const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STAT
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
 type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
-type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
+type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
+const FLOOR_TABLE_SIZE = {
+  round: { width: 96, height: 96 },
+  rect: { width: 128, height: 76 },
+} as const;
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; lineAmount: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
@@ -510,6 +515,16 @@ export default function RestaurantPosPage() {
   }, [check?.id]);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
   const visibleTables = activeArea ? floor.tables.filter((table) => table.areaId === activeArea) : floor.tables;
+  // พิกัดเป็นข้อมูลผังจริงจากหลังบ้าน จึงต้องรักษาหน่วย px เดียวกับ editor และให้ viewport
+  // เลื่อนเมื่อจอแคบ แทนการบีบ/เรียงใหม่จนโต๊ะไม่ตรงกับตำแหน่งที่ผู้ดูแลบันทึกไว้
+  const floorCanvasWidth = visibleTables.reduce((width, table) => {
+    const size = FLOOR_TABLE_SIZE[table.shape === "rect" ? "rect" : "round"];
+    return Math.max(width, table.positionX + size.width + 24);
+  }, 720);
+  const floorCanvasHeight = visibleTables.reduce((height, table) => {
+    const size = FLOOR_TABLE_SIZE[table.shape === "rect" ? "rect" : "round"];
+    return Math.max(height, table.positionY + size.height + 24);
+  }, 520);
   const availableTables = floor.tables.filter((table) => table.status === "AVAILABLE" && table.id !== selectedTableId);
   // นาฬิกาเดินเองทุก 30 วิ เพื่อให้ "นั่งมากี่นาที" บนการ์ดโต๊ะไม่ค้าง โดยไม่ต้องยิง API
   // เริ่มที่ 0 แล้วตั้งค่าใน effect เพื่อไม่ให้ค่าที่ render ฝั่ง server ต่างจาก client
@@ -1615,11 +1630,13 @@ export default function RestaurantPosPage() {
           <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><span className={styles.livePill}>LIVE</span></div>
           <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
-              สถานะอ่านจากแถบสีข้างการ์ด + ป้ายข้อความ (จุดสี 10px เดิมแยกไม่ออกจากระยะยืน) */}
-          <div className={styles.panelScroll}><div className={styles.tableGrid}>{visibleTables.map((table) => {
+              สถานะอ่านจากแถบสีบนการ์ด + ป้ายข้อความ (จุดสี 10px เดิมแยกไม่ออกจากระยะยืน) */}
+          <div className={styles.panelScroll}><div className={styles.floorViewport}><div className={styles.floorCanvas} style={{ width: `max(100%, ${floorCanvasWidth}px)`, height: floorCanvasHeight }}>{visibleTables.map((table) => {
             const state = tableState(table, tableKitchenStats);
             const minutes = table.check ? minutesSince(table.check.openedAt) : null;
-            return <button key={table.id} type="button" disabled={table.blocked} className={`${styles.tableCard} ${table.check ? styles[`state_${state.key}`] : styles.tableFree} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
+            const shape = table.shape === "rect" ? "rect" : "round";
+            return <button key={table.id} type="button" disabled={table.blocked} style={{ transform: `translate(${table.positionX}px, ${table.positionY}px)` }} className={`${styles.tableCard} ${shape === "rect" ? styles.tableRect : styles.tableRound} ${table.check ? styles[`state_${state.key}`] : styles.tableFree} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
+              <RestaurantTableChairs seats={table.seats} shape={shape} />
               {table.check && <span className={styles.tableBand} aria-hidden="true" />}
               <span className={styles.tableCode}>{table.code}</span>
               <span className={styles.tableName}>{table.name}</span>
@@ -1629,7 +1646,7 @@ export default function RestaurantPosPage() {
                 : `${table.seats} ที่นั่ง · ว่าง`}</span>
               {table.check && <span className={styles.tableAmount}><span className={styles.baht}>฿</span>{money(table.check.amountDue)}</span>}
             </button>;
-          })}</div></div>
+          })}</div></div></div>
 
         </>}</section>
         <aside className={styles.checkPanel}>{check ? <>
