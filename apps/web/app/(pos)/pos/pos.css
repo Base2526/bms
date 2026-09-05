@@ -43,7 +43,23 @@
 }
 
 /* ---- พื้นฐาน ---- */
-.pos-root button {
+/* ⚠️ `:not(.ant-btn)` ไม่ใช่การกันไว้เผื่อ — ปุ่มของ antd ถูกกฎนี้ทำพังจริงมาแล้วสองแบบ
+   ที่กล่องรับชำระของหน้าร้านอาหารในธีมมืด:
+
+     • `<Button danger>` — antd ชนะเรื่อง "พื้น" (โปร่งใสทับพื้นมืดของ modal) แต่กฎนี้ชนะ
+       เรื่อง "สีตัวอักษร" (--pos-text ของธีมสว่าง) → ตัวหนังสือเกือบดำบนพื้นเกือบดำ
+       วัดได้ contrast **1.09** (เกณฑ์ปกติคือ 4.5) = ปุ่มที่อ่านไม่ออกเลย
+     • ปุ่ม primary ที่ถูก disable — กลับข้างกันพอดี: antd ให้สีตัวอักษรธีมมืด
+       (`rgba(255,255,255,.25)`) ส่วนกฎนี้ให้พื้นขาว → ขาวบนขาว contrast **1**
+
+   ต้นเหตุร่วมคือกฎนี้ทาแค่ "ครึ่งเดียว" ของปุ่ม antd ทำให้สองครึ่งมาจากคนละธีม · ปล่อยให้
+   antd แต่งปุ่มของตัวเองทั้งใบจึงเป็นทางเดียวที่ทั้งใบมาจากธีมเดียวกันเสมอ
+   ⚠️ ต้องห่อ `.pos-root` ด้วย `:where()` ด้วย — `:not(.ant-btn)` เพิ่ม specificity ขึ้นหนึ่งคลาส
+   ถ้าไม่ชดเชย กฎนี้จะกลายเป็น (0,2,1) แล้วไป **ทับสีปุ่มของ CSS module** (`.page .btnDanger`
+   = (0,2,0)) ทั้งหน้า · `:where()` นับเป็น 0 ผลรวมจึงเท่าเดิมเป๊ะ (0,1,1) — เปลี่ยนแค่ว่า
+   ปุ่มของ antd ไม่โดน ไม่ได้เปลี่ยนลำดับกับใครอีกเลย
+   (ปุ่มของหน้าจอเองใช้คลาสจาก CSS module ซึ่งมี `.page` นำหน้าอยู่แล้ว ไม่กระทบ) */
+:where(.pos-root) button:not(.ant-btn) {
   font: inherit;
   border: 1px solid var(--pos-line-strong);
   background: var(--pos-surface);
@@ -54,9 +70,9 @@
   cursor: pointer;
   transition: background 120ms ease, transform 60ms ease;
 }
-.pos-root button:hover:not(:disabled) { background: var(--pos-sunken); }
-.pos-root button:active:not(:disabled) { transform: scale(0.97); }
-.pos-root button:disabled { opacity: 0.55; cursor: not-allowed; }
+:where(.pos-root) button:not(.ant-btn):hover:not(:disabled) { background: var(--pos-sunken); }
+:where(.pos-root) button:not(.ant-btn):active:not(:disabled) { transform: scale(0.97); }
+:where(.pos-root) button:not(.ant-btn):disabled { opacity: 0.55; cursor: not-allowed; }
 
 .pos-root input,
 .pos-root select {

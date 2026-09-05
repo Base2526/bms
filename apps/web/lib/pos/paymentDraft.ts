@@ -35,3 +35,34 @@ export function appendSplitPaymentRow(
     { id: nextId, method: "QR", amount: "", tendered: "", ref: "" },
   ];
 }
+
+/**
+ * เหตุผลที่ยังกด "ยืนยันรับเงิน" ไม่ได้ — `null` = กดได้
+ *
+ * จอต้องกันสิ่งที่ตัวเองรู้อยู่แล้วว่าจะถูกปฏิเสธ ไม่ใช่ปล่อยให้กดแล้วค่อยล้มที่ server
+ * (กฎเดียวกับที่จอกันตัวเลือกที่บังคับของเมนูไว้ก่อนส่ง) · สองด่านนี้ server ตรวจอยู่แล้ว:
+ *   - ยอดรวมต้องเท่ากับยอดที่ต้องชำระเป๊ะ (POS ไม่คลายกฎนี้ให้ใครเลย)
+ *   - เงินสดที่รับมาต้องไม่น้อยกว่ายอดของช่องทางเงินสดนั้น (`recordPosSale` → PAYMENT_FAILED)
+ * ปล่อยให้กดแล้วล้ม แปลว่าบิลโต๊ะถูก claim เป็น CLOSING แล้วถูกคืนสถานะ ต่อหน้าลูกค้าที่ยืนรออยู่
+ */
+export function checkoutBlockReason(
+  payments: readonly PosPaymentDraft[],
+  amountDue: number,
+): string | null {
+  if (payments.length === 0) return "ต้องระบุช่องทางชำระเงิน";
+  const total = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+  if (Math.abs(total - amountDue) > 0.009) {
+    return total < amountDue
+      ? `ยอดชำระรวมยังขาด ฿${(amountDue - total).toFixed(2)}`
+      : `ยอดชำระรวมเกินไป ฿${(total - amountDue).toFixed(2)}`;
+  }
+  for (const payment of payments) {
+    if (!(Number(payment.amount) > 0)) return "ทุกช่องทางต้องระบุยอดที่มากกว่า 0";
+    // เว้นว่าง = รับมาพอดี (server ยอมรับ) · ใส่มาแล้วน้อยกว่ายอด = ทอนติดลบ ซึ่งไม่มีอยู่จริง
+    if (payment.method === "CASH" && payment.tendered.trim()
+      && Number(payment.tendered) < Number(payment.amount)) {
+      return "เงินสดที่รับมาน้อยกว่ายอดของช่องทางเงินสด";
+    }
+  }
+  return null;
+}
