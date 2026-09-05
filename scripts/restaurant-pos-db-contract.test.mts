@@ -837,6 +837,142 @@ test("ใบจองที่หายไปกู้ได้ด้วยก�
   assert.equal(paid.status, "SOLD", `หลังกู้ต้องคิดเงินได้ แต่ได้ ${JSON.stringify(paid)}`);
 });
 
+/**
+ * ใบจองที่หายไปต้องไม่ทำให้ "ปิดโต๊ะ" เป็นไปไม่ได้ — โต๊ะที่ยกเลิกไม่ได้จะค้างบนผังตลอดไป
+ * และเปิดบิลใหม่ทับไม่ได้เพราะ unique index กันโต๊ะละหนึ่งบิลที่เปิดอยู่
+ *
+ * แยกจากเทส "ครัวยกเลิกรายการ" โดยตั้งใจ: การยกเลิกรายการสร้างใบจองใบใหม่ให้ทันที
+ * เส้นทางยกเลิกบิลจึงไม่มีวันเจอใบจองที่ตายแล้วถ้าเขียนรวมเป็นเทสเดียว (พิสูจน์ด้วย
+ * mutation แล้วว่าเทสรวมไม่แดง)
+ */
+test("ใบจองที่หายไปยังยกเลิกบิลได้ โต๊ะไม่ค้างบนผัง", async () => {
+  const table = tables[2];
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: table.id, guestCount: 2,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: FOOD, size: SIZE, packQty: 1,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+  const lost = (await query<{ id: string }>(
+    `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, check.id])).rows[0].id;
+  assert.equal(await cancelOrder(tenantId, lost), true);
+  assert.equal((await getRestaurantCheck(tenantId, check.id))!.reservationLost, true);
+
+  const cancelled = await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ลูกค้ากลับก่อน", approvedByUserId: waiterId,
+  });
+  assert.equal(cancelled.status, "CANCELLED");
+  assert.equal(
+    (await listRestaurantFloor(tenantId, locationId)).tables.find((t) => t.id === table.id)?.status,
+    "AVAILABLE",
+    "โต๊ะต้องกลับมาว่าง ไม่ค้างอยู่บนผัง"
+  );
+  assert.equal(Number((await stock(FOOD)).reserved_stock), 0);
+});
+
+/** จอครัวต้องยกเลิกจานที่ทำไม่ได้ ถึงใบจองของโต๊ะจะหายไปแล้วก็ตาม */
+test("ครัวยกเลิกรายการได้แม้ใบจองหาย และการคิดยอดใหม่สร้างใบจองใบใหม่ให้", async () => {
+  const table = tables[0];
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: table.id, guestCount: 2,
+    actorUserId: cashierId,
+  });
+  for (const [sku, qty] of [[FOOD, 1], [DRINK, 1]] as const) {
+    await addRestaurantCheckItem({
+      tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+      sku, size: SIZE, packQty: qty,
+    });
+  }
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+  const lost = (await query<{ id: string }>(
+    `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, check.id])).rows[0].id;
+  assert.equal(await cancelOrder(tenantId, lost), true);
+
+  const drinkLine = (await getRestaurantCheck(tenantId, check.id))!
+    .items.find((item) => item.sku === DRINK)!;
+  const drinkTicket = (await query<{ id: string }>(
+    `SELECT id FROM bms_restaurant_kitchen_tickets WHERE tenant_id = $1 AND check_item_id = $2`,
+    [tenantId, drinkLine.id])).rows[0].id;
+  // เดินผ่านเส้นทางเดียวกับจอครัวจริง ไม่ใช่เรียก in-tx helper ตรง ๆ
+  await updateKitchenTicketStatus({
+    tenantId, ticketId: drinkTicket, status: "CANCELLED",
+    actorUserId: cashierId, expectedLocationId: locationId,
+    onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx,
+  });
+
+  const afterDrop = await getRestaurantCheck(tenantId, check.id);
+  assert.equal(afterDrop!.amountDue, 60, "ยอดต้องถูกคิดใหม่จากรายการที่เหลือ");
+  assert.equal(afterDrop!.reservationLost, false, "การคิดยอดใหม่ต้องสร้างใบจองใหม่ให้ด้วย");
+  assert.equal(Number((await stock(FOOD)).reserved_stock), 1, "จานที่ครัวยังทำอยู่ต้องถูกจองคืน");
+  assert.equal(Number((await stock(DRINK)).reserved_stock), 0, "ของที่ครัวยกเลิกต้องไม่ถูกจองต่อ");
+
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+/**
+ * ใบจองที่ **เก็บเงินไปแล้ว** ต่างจากใบจองที่หายไป: มันไม่ใช่ของที่หลุดไป แต่เป็นบิลที่จบแล้ว
+ * ถ้าปล่อยให้ส่งครัวรอบใหม่เขียนทับ ยอดขายที่ออกใบกำกับไปแล้วจะถูกแทนที่เงียบ ๆ
+ * (สภาพนี้เกิดจากข้อมูลไม่สอดคล้อง จึงต้องหยุดให้คนดู ไม่ใช่ซ่อมเอง)
+ */
+test("ใบจองที่เก็บเงินไปแล้วต้องไม่ถูกส่งครัวรอบใหม่เขียนทับ", async () => {
+  const table = tables[3];
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: table.id, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+  const due = (await getRestaurantCheck(tenantId, check.id))!.amountDue;
+  assert.equal((await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+    actorUserId: cashierId, payments: [{ method: "CASH", amount: due, cashTendered: due }],
+  })).status, "SOLD");
+
+  // ผ่าตัดข้อมูลให้ไม่สอดคล้อง: บิลจ่ายแล้วแต่โต๊ะกลับมา OPEN
+  // closed_at ต้องหลุดไปด้วย — CHECK ของตารางผูก status กับ closed_at ไว้ (9.44)
+  await query(
+    `UPDATE bms_restaurant_checks
+        SET status = 'OPEN', closed_at = NULL, closed_by = NULL
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, check.id]
+  );
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  await assert.rejects(
+    () => sendRestaurantKitchenRound({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+    }),
+    /ให้ผู้ดูแลตรวจบิลนี้ก่อน/
+  );
+  assert.equal(
+    (await query<{ status: string }>(
+      `SELECT status FROM bms_orders WHERE tenant_id = $1 AND restaurant_check_id = $2`,
+      [tenantId, check.id])).rows.map((row) => row.status).sort().join(","),
+    "COMPLETED",
+    "ต้องไม่มีใบจองใบใหม่งอกมาทับบิลที่ออกใบกำกับไปแล้ว"
+  );
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]

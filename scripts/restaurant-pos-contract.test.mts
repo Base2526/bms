@@ -195,7 +195,9 @@ test("a replacement reservation is atomic and gives the old key back", async () 
   // คืน reservation เก่าคนละ transaction กับสร้างใหม่ = รอบใหม่พลาดแล้วครัวกำลังทำโดยไม่มีของจอง
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const orders = code(await read("apps/web/lib/bms/orders.ts"));
-  assert.match(restaurant, /cancelOrderInTx\(client, input\.tenantId, check\.current_order_id\)/);
+  // การคืน reservation ย้ายเข้า releaseCheckReservationInTx() แล้ว — การันตีเดิมไม่ได้หายไป
+  assert.match(restaurant, /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/);
+  assert.match(restaurant, /await cancelOrderInTx\(client, tenantId, orderId\)/);
   assert.match(restaurant, /createOrderInTx\(client,/);
   assert.match(restaurant, /SET idempotency_key = NULL/);
   assert.match(restaurant, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\);\s*return created/);
@@ -266,7 +268,7 @@ test("whole-check cancellation releases its order inside the check transaction",
   );
   assert.match(cancelBlock, /beginTenantTx\(client, input\.tenantId/);
   assert.match(cancelBlock, /lockCheckInTx\(client, input\.tenantId, input\.checkId\)/);
-  assert.match(cancelBlock, /cancelOrderInTx\(client, input\.tenantId, (?:cancelled|released)OrderId\)/);
+  assert.match(cancelBlock, /releaseCheckReservationInTx\(client, input\.tenantId, reservationId\)/);
   assert.match(cancelBlock, /UPDATE bms_restaurant_kitchen_tickets[\s\S]*UPDATE bms_restaurant_checks[\s\S]*restaurant\.check_cancel[\s\S]*COMMIT/);
   assert.doesNotMatch(cancelBlock, /cancelOrder\(/);
 });
@@ -278,7 +280,7 @@ test("failed later rounds roll back to the previous sent-item reservation", asyn
     restaurant.indexOf("export async function moveRestaurantCheck")
   );
   assert.match(send, /beginTenantTx\(client, input\.tenantId/);
-  assert.match(send, /cancelOrderInTx\(client, input\.tenantId, check\.current_order_id\)/);
+  assert.match(send, /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/);
   assert.match(send, /createOrderInTx\(client,/);
   assert.match(send, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\)/);
   assert.doesNotMatch(send, /restoreSentReservation/);
@@ -459,7 +461,7 @@ test("a kitchen cancellation drops the line from the bill instead of charging fo
   assert.ok(drop.length > 0, "หา dropKitchenCancelledLineInTx ไม่เจอ");
   // ยอดใหม่ต้องมาจาก createOrderInTx เส้นทางเดียวกับการส่งครัว — ห้ามลบราคาบรรทัดออกจาก
   // amount_due เองที่นี่ เพราะจะเป็นสูตรเงินชุดที่สองที่ drift จากตัวจริง
-  assert.match(drop, /cancelOrderInTx\(/);
+  assert.match(drop, /releaseCheckReservationInTx\(/);
   assert.match(drop, /createOrderInTx\(/);
   assert.doesNotMatch(drop, /amount_due\s*-/);
   // ลำดับล็อก: กะ → บิล → สต็อก (ตาม createOrderInTx/finalizePosSale) ไม่งั้น deadlock
@@ -823,4 +825,21 @@ test("ปุ่มที่กดไปก็ล้มต้องกดไม�
   assert.match(src, /disabled=\{!check\.items\.length \|\| hasUnsent \|\| reservationLost/,
     "คิดเงินตอนใบจองหายล้มแน่นอน — ต้องกันไว้ก่อน ไม่ใช่ให้เจอ error ต่อหน้าลูกค้า");
   assert.match(src, /ใบจองสต็อกของโต๊ะนี้หายไป/, "ต้องบอกด้วยว่าทำอะไรต่อ ไม่ใช่แค่ปิดปุ่ม");
+});
+
+/**
+ * ทั้งสามเส้นทางที่ต้องแทนใบจอง (ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล) ต้องใช้สูตรเดียว
+ * `cancelOrderInTx()` คืน false ทั้ง "ยกเลิกไปแล้ว" และ "ยกเลิกไม่ได้" — ผู้เรียกที่แปลสอง
+ * อย่างนี้เป็นอย่างเดียวกันคือที่มาของทางตัน (โต๊ะที่ปิดไม่ได้ ครัวที่ยกเลิกจานไม่ได้)
+ */
+test("การแทนใบจองของบิลโต๊ะต้องผ่านตัวเดียว ไม่ให้ผู้เรียกแปล false เอง", async () => {
+  const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  assert.match(src, /"RELEASED" \| "ALREADY_GONE" \| "BLOCKED"/,
+    "ต้องแยก 'ยกเลิกไปแล้ว' ออกจาก 'ยกเลิกไม่ได้'");
+  assert.equal((src.match(/releaseCheckReservationInTx\(client/g) ?? []).length, 3,
+    "ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล ต้องเรียกตัวเดียวกันครบทั้งสาม");
+  assert.doesNotMatch(src, /const \w+ = await cancelOrderInTx\(/,
+    "ห้ามเรียก cancelOrderInTx ตรง ๆ นอก helper อีก");
+  assert.equal((src.match(/if \(released === "RELEASED"\) releasedOrderId/g) ?? []).length, 1,
+    "งานหลัง commit ต้องทำเฉพาะใบที่รอบนี้เป็นคนยกเลิกเอง");
 });

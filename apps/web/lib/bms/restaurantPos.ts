@@ -466,6 +466,40 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
   };
 }
 
+/**
+ * ปล่อยใบจองของบิลโต๊ะให้พร้อมถูกแทนที่ — คำตอบมีสามแบบ ไม่ใช่จริง/เท็จ
+ *
+ * `cancelOrderInTx()` คืน `false` ทั้งกรณี "ยกเลิกไปแล้ว" และ "อยู่สถานะที่ยกเลิกไม่ได้"
+ * ซึ่งเป็นคนละเรื่องกันสำหรับบิลโต๊ะ: ใบที่ถูกยกเลิกไปแล้วแปลว่าของถูกปล่อยคืนหมดแล้ว
+ * (ไม่มีอะไรต้องทำต่อ) ส่วนใบที่ COMPLETED แปลว่าบิลนี้เก็บเงินไปแล้วและต้องมีคนดู ·
+ * เดิมทั้งสามผู้เรียกแปล `false` เป็น throw เหมือนกันหมด ผลคือโต๊ะที่ใบจองหายไป
+ * **ส่งครัวไม่ได้ คิดเงินไม่ได้ และยกเลิกบิลก็ไม่ได้** = ค้างอยู่บนผังโต๊ะตลอดไป
+ *
+ * ล็อกแถว order ก่อนตัดสินเสมอ และเรียงหลัง lock ของ check เพื่อให้ทุกเส้นทาง
+ * (ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล · คิดเงิน) ล็อกลำดับเดียวกัน: กะ → บิล → ใบจอง → สต็อก
+ */
+async function releaseCheckReservationInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string
+): Promise<"RELEASED" | "ALREADY_GONE" | "BLOCKED"> {
+  const current = await client.query<{ status: string }>(
+    `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+    [tenantId, orderId]
+  );
+  const status = current.rows[0]?.status ?? null;
+  if (status !== null && status !== "CANCELLED" && status !== "PENDING") return "BLOCKED";
+  if (status === "PENDING" && !(await cancelOrderInTx(client, tenantId, orderId))) return "BLOCKED";
+  // คีย์ผูกกับ check version เดิม ต้องคืนไม่ว่าใบนี้จะถูกยกเลิกโดยเราหรือโดยอย่างอื่น
+  // ไม่งั้น createOrderInTx จะชน unique แล้วมองว่าเป็นการยิงซ้ำของใบที่ตายไปแล้ว
+  await client.query(
+    `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
+    [tenantId, orderId]
+  );
+  return status === "PENDING" ? "RELEASED" : "ALREADY_GONE";
+}
+
 export async function addRestaurantCheckItem(input: {
   tenantId: string;
   locationId: string;
@@ -732,14 +766,11 @@ export async function dropKitchenCancelledLineInTx(
   );
 
   if (check.current_order_id) {
-    const releasedOk = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
-    if (!releasedOk) throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ยกเลิกตั๋วไม่สำเร็จ");
-    // คีย์ผูกกับ version เดิม ต้องคืนพร้อม order ที่ถูกแทนที่ (เหตุผลเดียวกับตอนส่งครัว)
-    await client.query(
-      `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-      [input.tenantId, check.current_order_id]
-    );
+    // ใบจองที่หายไปแล้วต้องไม่บล็อกครัว — รายการที่ครัวยกเลิกคืออาหารที่ทำไม่ได้จริง
+    // การปฏิเสธที่นี่ทำให้จอครัวกดยกเลิกไม่ได้ทั้งที่บิลถูกคิดยอดใหม่ได้อยู่ดี
+    if (await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
+      throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ยกเลิกตั๋วไม่สำเร็จ");
+    }
   }
 
   const nextVersion = Number(check.version) + 1;
@@ -842,24 +873,13 @@ export async function sendRestaurantKitchenRound(input: {
       }
 
       if (check.current_order_id) {
-        if (reservationAlive) {
-          const cancelled = await cancelOrderInTx(client, input.tenantId, check.current_order_id);
-          if (!cancelled) throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่สร้างรอบใหม่ได้");
-        } else if (reservationStatus !== null && reservationStatus !== "CANCELLED") {
-          // COMPLETED = บิลนี้ถูกเก็บเงินไปแล้วแต่โต๊ะยัง OPEN — เป็นความไม่สอดคล้องที่ต้องมี
-          // คนดู ไม่ใช่สิ่งที่การส่งครัวรอบใหม่ควรเขียนทับให้เงียบ
+        // COMPLETED = บิลนี้ถูกเก็บเงินไปแล้วแต่โต๊ะยัง OPEN — ความไม่สอดคล้องที่ต้องมีคนดู
+        // ไม่ใช่สิ่งที่การส่งครัวรอบใหม่ควรเขียนทับให้เงียบ
+        if (await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
           throw new RestaurantCheckError(
-            `ใบจองของโต๊ะนี้อยู่สถานะ ${reservationStatus} ส่งครัวรอบใหม่ไม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน`
+            `ใบจองของโต๊ะนี้อยู่สถานะ ${reservationStatus ?? "ไม่พบ"} ส่งครัวรอบใหม่ไม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน`
           );
         }
-        // ใบจองที่ถูกยกเลิก (โดยเราเองหรือโดยอย่างอื่น) ต้องคืนคีย์ก่อน เพราะคีย์ผูกกับ check
-        // version เดิม ถ้ายังค้างอยู่ createOrderInTx จะชน unique แล้วมองว่าเป็นการยิงซ้ำ
-        // ของใบที่ตายไปแล้ว
-        await client.query(
-          `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-          [input.tenantId, check.current_order_id]
-        );
       }
 
       const reservationKey = `restaurant:${input.checkId}:v${check.version}`;
@@ -1064,15 +1084,14 @@ export async function cancelRestaurantCheck(input: {
       )) {
         throw new RestaurantCheckError("บิลที่ส่งครัวหรือจองสต็อกแล้วต้องให้ผู้มีสิทธิ์ pos.void คนที่สองอนุมัติ");
       }
-      releasedOrderId = current.rows[0].current_order_id;
-      if (releasedOrderId) {
-        const cancelled = await cancelOrderInTx(client, input.tenantId, releasedOrderId);
-        if (!cancelled) throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่ยกเลิกได้");
-        await client.query(
-          `UPDATE bms_orders SET idempotency_key = NULL, updated_at = now()
-            WHERE tenant_id = $1 AND id = $2 AND status = 'CANCELLED'`,
-          [input.tenantId, releasedOrderId]
-        );
+      const reservationId = current.rows[0].current_order_id;
+      if (reservationId) {
+        const released = await releaseCheckReservationInTx(client, input.tenantId, reservationId);
+        // ใบจองที่หายไปแล้วต้องไม่ทำให้ "ปิดโต๊ะ" เป็นไปไม่ได้ — โต๊ะที่ยกเลิกไม่ได้จะค้าง
+        // อยู่บนผังตลอดไปและเปิดบิลใหม่ทับไม่ได้ (unique index กันโต๊ะละหนึ่งบิลที่เปิดอยู่)
+        if (released === "BLOCKED") throw new RestaurantCheckError("บิลจองเดิมไม่อยู่ในสถานะที่ยกเลิกได้");
+        // งานหลัง commit (แจ้งลูกค้าว่ายกเลิก) ทำเฉพาะใบที่ **เราเป็นคนยกเลิกรอบนี้**
+        if (released === "RELEASED") releasedOrderId = reservationId;
       }
       await client.query(
         `UPDATE bms_restaurant_kitchen_tickets
