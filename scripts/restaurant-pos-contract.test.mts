@@ -116,7 +116,7 @@ test("the order taker must leave a cancellation note at both route and service b
 
   assert.match(route, /if \(!reason\).*ต้องระบุ Note/);
   assert.match(restaurant, /const cancellationNote = String\(input\.reason \?\? ""\)\.trim\(\)\.slice\(0, 300\)/);
-  assert.match(restaurant, /if \(!cancellationNote\) throw new Error/);
+  assert.match(restaurant, /if \(!cancellationNote\) throw new RestaurantCheckError/);
   assert.match(restaurant, /`ยกเลิก: \$\{cancellationNote\}`/);
   assert.match(restaurant, /reason: cancellationNote/);
   assert.match(page, /Note \/ เหตุผลที่ยกเลิก \(จำเป็น\)/);
@@ -773,4 +773,54 @@ test("antd locale ผูกกับภาษาผู้ใช้ ไม่ป�
   const providers = code(await read("apps/web/app/ClientProviders.tsx"));
   assert.ok(providers.indexOf("<I18nProvider") < providers.indexOf("<AntdThemeProvider"),
     "I18nProvider ต้องห่อ AntdThemeProvider");
+});
+
+/**
+ * ⚠️ เคสจริงจาก production (2026-09-05) — โต๊ะที่นั่งเกิน 30 นาทีถูก cron ปล่อยบิลหมดอายุ
+ * ยกเลิกใบจองทิ้ง แล้วทั้งส่งครัวและคิดเงินล้มถาวร · เทส DB คุมพฤติกรรมไว้แล้ว ตัวนี้คุม
+ * ที่ระดับ statement เพราะชุด DB ไม่ได้รันใน CI (ยังสร้างฐานใหม่จาก db/migrations ไม่ได้)
+ */
+test("cron ปล่อยบิลหมดอายุต้องไม่กวาดใบจองของบิลโต๊ะ", async () => {
+  const src = code(await read("apps/web/lib/bms/orders.ts"));
+  const statement = src.slice(src.indexOf("export async function releaseExpiredOrders"));
+  const candidates = statement.slice(statement.indexOf("SELECT id FROM bms_orders"), statement.indexOf("const released"));
+  assert.match(candidates, /restaurant_check_id IS NULL/,
+    "ใบจองของบิลโต๊ะไม่หมดอายุตามเวลา — มันจบเมื่อคิดเงินหรือยกเลิกบิลเท่านั้น");
+});
+
+test("การส่งครัวตัดสินจากสถานะใบจอง ไม่ใช่แค่ว่ามี current_order_id", async () => {
+  const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  assert.match(src, /const reservationAlive = reservationStatus === "PENDING"/);
+  assert.match(src, /if \(unsent\.length === 0 && reservationAlive/,
+    "ใบจองที่ถูกยกเลิกแล้วต้องไม่ถูกนับว่า 'ส่งครัวครบแล้ว' ไม่งั้นไปล้มตอนคิดเงินแทน");
+  assert.match(src, /reservationLost: Boolean\(row\.current_order_id\) && row\.reservation_status !== "PENDING"/,
+    "จอต้องรู้สถานะใบจองจาก server ที่เดียว ไม่ใช่เดาเอง");
+});
+
+/**
+ * บิลโต๊ะปฏิเสธด้วย `throw` ล้วน ๆ ไม่ได้ — `errorResponse()` ของ routeError ลบข้อความจริง
+ * ทิ้งบน production เหลือ "เซิร์ฟเวอร์ผิดพลาด" · เส้นทางค้าปลีกมี describePosFailure()
+ * แปลสถานะให้มาตลอด ชุดนี้บังคับให้บิลโต๊ะมีการันตีเดียวกัน
+ */
+test("การปฏิเสธของบิลโต๊ะต้องเป็น RestaurantCheckError และ route ต้องตอบ 409 ไม่ใช่ 500", async () => {
+  const service = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  assert.doesNotMatch(service, /throw new Error\(/,
+    "throw new Error() จะกลายเป็น 500 ที่ข้อความถูกลบทิ้งบน production");
+
+  const wrapper = code(await read("apps/web/lib/log/routeError.ts"));
+  const guard = wrapper.indexOf("isRestaurantCheckError(error)");
+  assert.ok(guard > 0, "withRouteErrorLog ต้องรู้จักการปฏิเสธตามกฎธุรกิจ");
+  assert.ok(guard < wrapper.indexOf("return errorResponse("),
+    "ต้องตอบ 409 ก่อนถึงเส้นทาง log+500 ไม่งั้นกฎธุรกิจปกติจะกลบ error จริงใน system_logs");
+  assert.match(wrapper.slice(guard, guard + 400), /status: 409/);
+});
+
+test("ปุ่มที่กดไปก็ล้มต้องกดไม่ได้ และปุ่มที่กู้ได้ต้องกดได้", async () => {
+  const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(src, /const reservationLost = Boolean\(check\?\.reservationLost\)/);
+  assert.match(src, /disabled=\{!hasUnsent && !reservationLost\}[^]{0,120}send_kitchen/,
+    "ใบจองหาย = ส่งครัวคือทางกู้ ต้องกดได้แม้ไม่มีรายการใหม่");
+  assert.match(src, /disabled=\{!check\.items\.length \|\| hasUnsent \|\| reservationLost/,
+    "คิดเงินตอนใบจองหายล้มแน่นอน — ต้องกันไว้ก่อน ไม่ใช่ให้เจอ error ต่อหน้าลูกค้า");
+  assert.match(src, /ใบจองสต็อกของโต๊ะนี้หายไป/, "ต้องบอกด้วยว่าทำอะไรต่อ ไม่ใช่แค่ปิดปุ่ม");
 });

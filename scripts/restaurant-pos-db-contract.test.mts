@@ -35,6 +35,8 @@ import {
   listKitchenStationSlas,
   upsertKitchenStationSla,
 } from "../apps/web/lib/bms/kitchenSla.ts";
+import { cancelOrder, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
+import { RESERVATION_LOST } from "../apps/web/lib/bms/restaurantPosErrors.ts";
 import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
@@ -714,6 +716,125 @@ test("เกณฑ์เวลาต่อสถานีเก็บได้ �
   assert.equal(await clearKitchenStationSla(tenantId, "บาร์เครื่องดื่ม", waiterId), true);
   assert.equal((await getKitchenStationSlaMap(tenantId))["บาร์เครื่องดื่ม"], undefined);
   assert.equal(await clearKitchenStationSla(tenantId, "บาร์เครื่องดื่ม", waiterId), false, "ลบซ้ำต้องไม่ล้ม");
+});
+
+/**
+ * ⚠️ เคสจริงจาก production (2026-09-05): โต๊ะที่นั่งกินเกิน 30 นาทีถูก cron ปล่อยบิลหมดอายุ
+ * ยกเลิกใบจองทิ้ง แล้วโต๊ะนั้นทั้งส่งครัวและคิดเงินไม่ได้อีกเลย โดยหน้าจอขึ้นแค่
+ * "เซิร์ฟเวอร์ผิดพลาด" · ใบจองของบิลโต๊ะไม่หมดอายุตามเวลา — มันจบเมื่อคิดเงินหรือยกเลิกบิล
+ */
+test("cron ปล่อยบิลหมดอายุต้องไม่แตะใบจองของโต๊ะ แต่ยังปล่อยบิลออนไลน์ตามเดิม", async () => {
+  const table = tables[2];
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: table.id, guestCount: 2,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: FOOD, size: SIZE, packQty: 1,
+  });
+  const sent = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  });
+  assert.equal(sent.status, "SENT");
+  const reservationId = (await query<{ id: string }>(
+    `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, check.id])).rows[0].id;
+
+  // ลูกค้านั่งกินสองชั่วโมง — เวลาเดียวที่ cron ใช้ตัดสิน
+  await query(`UPDATE bms_orders SET created_at = now() - interval '2 hours' WHERE id = $1`, [reservationId]);
+  // บิลออนไลน์เก่าในร้านเดียวกัน เพื่อพิสูจน์ว่า job ยังทำงาน ไม่ใช่ถูกปิดไปทั้งตัว
+  const abandoned = (await query<{ id: string }>(
+    `INSERT INTO bms_orders (tenant_id, location_id, channel, status, total_amount, created_at)
+     VALUES ($1,$2,'web','PENDING',0, now() - interval '2 hours') RETURNING id`,
+    [tenantId, locationId])).rows[0].id;
+
+  const result = await releaseExpiredOrders(30, tenantId);
+  assert.deepEqual(result.failed, []);
+  assert.ok(result.orderIds.includes(abandoned), "บิลออนไลน์ที่ถูกทิ้งต้องยังถูกปล่อยเหมือนเดิม");
+  assert.ok(!result.orderIds.includes(reservationId), "ใบจองของโต๊ะที่ยังนั่งอยู่ต้องไม่ถูกแตะ");
+
+  assert.equal(
+    (await query<{ status: string }>(`SELECT status FROM bms_orders WHERE id = $1`, [reservationId])).rows[0].status,
+    "PENDING"
+  );
+  assert.equal(Number((await stock(FOOD)).reserved_stock), 1, "อาหารที่ครัวทำไปแล้วต้องยังถูกจองอยู่");
+  const alive = await getRestaurantCheck(tenantId, check.id);
+  assert.equal(alive?.reservationLost, false);
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+/**
+ * ใบจองอาจหายได้จากทางอื่นอีก (คนไปยกเลิกออร์เดอร์จากหลังบ้าน, สคริปต์ซ่อมข้อมูล) การกัน
+ * cron อย่างเดียวจึงไม่พอ — โต๊ะต้อง "กู้เองได้" ด้วยการส่งครัวอีกครั้ง ไม่ใช่เป็นทางตัน
+ */
+test("ใบจองที่หายไปกู้ได้ด้วยการส่งครัวอีกครั้ง แล้วคิดเงินได้ตามปกติ", async () => {
+  const table = tables[3];
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: table.id, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 2,
+  });
+  const sent = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  });
+  assert.equal(sent.status, "SENT");
+  const lostOrder = (await query<{ id: string }>(
+    `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, check.id])).rows[0].id;
+  const drinkBefore = Number((await stock(DRINK)).reserved_stock);
+
+  // ยกเลิกใบจองจากนอกเส้นทางของบิลโต๊ะ = สภาพที่ production เจอ
+  assert.equal(await cancelOrder(tenantId, lostOrder), true);
+  assert.equal(Number((await stock(DRINK)).reserved_stock), drinkBefore - 2, "ของถูกปล่อยคืนไปแล้วจริง");
+
+  const broken = await getRestaurantCheck(tenantId, check.id);
+  assert.equal(broken?.reservationLost, true, "จอต้องรู้ได้ก่อนกดปุ่ม ไม่ใช่รู้ตอนล้ม");
+  assert.equal(broken?.reservationStatus, "CANCELLED");
+
+  // คิดเงินตอนนี้ต้องบอกทางไปต่อ ไม่ใช่ 500 ที่อ่านไม่รู้เรื่อง
+  await assert.rejects(
+    () => settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId, payments: [{ method: "CASH", amount: 30, cashTendered: 30 }],
+    }),
+    (error: any) => {
+      assert.equal(error.code, RESERVATION_LOST);
+      assert.match(error.message, /ส่งครัวอีกครั้ง/);
+      return true;
+    }
+  );
+
+  const ticketsBefore = Number((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_restaurant_kitchen_tickets t
+       JOIN bms_restaurant_check_items i ON i.tenant_id = t.tenant_id AND i.id = t.check_item_id
+      WHERE t.tenant_id = $1 AND i.check_id = $2`, [tenantId, check.id])).rows[0].n);
+
+  const recovered = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  });
+  assert.equal(recovered.status, "SENT", `กู้ต้องผ่าน แต่ได้ ${JSON.stringify(recovered)}`);
+  assert.equal((recovered as any).kitchenTickets, 0, "ครัวต้องไม่ได้รายการซ้ำจากการกู้");
+  assert.equal(Number((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_restaurant_kitchen_tickets t
+       JOIN bms_restaurant_check_items i ON i.tenant_id = t.tenant_id AND i.id = t.check_item_id
+      WHERE t.tenant_id = $1 AND i.check_id = $2`, [tenantId, check.id])).rows[0].n), ticketsBefore);
+  assert.equal(Number((await stock(DRINK)).reserved_stock), drinkBefore, "ของต้องถูกจองคืนให้ครบ");
+
+  const fixed = await getRestaurantCheck(tenantId, check.id);
+  assert.equal(fixed?.reservationLost, false);
+  const due = fixed!.amountDue;
+  const paid = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+    actorUserId: cashierId, payments: [{ method: "CASH", amount: due, cashTendered: due }],
+  });
+  assert.equal(paid.status, "SOLD", `หลังกู้ต้องคิดเงินได้ แต่ได้ ${JSON.stringify(paid)}`);
 });
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {

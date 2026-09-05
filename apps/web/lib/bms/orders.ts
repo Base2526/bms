@@ -1802,8 +1802,15 @@ export async function releaseExpiredOrders(
 ): Promise<{ released: number; orderIds: string[]; failed: Array<{ orderId: string; reason: string }> }> {
   const mins = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : 30;
   const candidates = await query<{ id: string }>(
+    // ⚠️ `restaurant_check_id IS NULL` ไม่ใช่การปรับจูน — ใบจองของบิลโต๊ะ **ไม่หมดอายุตามเวลา**
+    // มันจบเมื่อคิดเงินหรือยกเลิกบิลเท่านั้น · ใบจองถูกสร้างเป็น PENDING ตอนส่งครัวรอบแรก
+    // แล้วค้างไว้จนลูกค้ากินเสร็จ ซึ่งเกินกี่นาทีก็ได้ · ก่อนมีเงื่อนไขนี้ cron ยกเลิกใบจอง
+    // ของโต๊ะที่ยังนั่งอยู่ + คืน reserved stock ของอาหารที่ออกไปแล้ว แล้วโต๊ะนั้นทั้ง
+    // ส่งครัวและคิดเงินไม่ได้อีกเลย (ทางตันที่ต้องแก้ที่ฐาน) · การไปเพิ่ม `minutes` แทน
+    // คือการผิดช้าลง ไม่ใช่ถูกขึ้น
     `SELECT id FROM bms_orders
       WHERE status = 'PENDING'
+        AND restaurant_check_id IS NULL
         AND created_at < now() - make_interval(mins => $1)
         AND ($2::uuid IS NULL OR tenant_id = $2)`,
     [mins, tenantId ?? null]
