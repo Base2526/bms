@@ -25,11 +25,12 @@ async function handleGET(req: NextRequest) {
 
   const limit = Number(req.nextUrl.searchParams.get("limit") ?? 5);
   const q = normalizePosSearchQuery(req.nextUrl.searchParams.get("q"));
+  const deviceOnly = req.nextUrl.searchParams.get("deviceOnly") === "1";
   const sales = await listRecentPosSales(
     device.tenantId,
     device.id,
     Number.isFinite(limit) ? limit : 5,
-    { query: q || null, locationId: device.locationId }
+    { query: q || null, locationId: device.locationId, deviceOnly }
   );
   // แท็บคืนค้นได้เฉพาะบิลที่ปิดแล้ว (COMPLETED/RETURNED) ซึ่งถูกต้อง — ของที่ยังไม่ได้
   // ส่งมอบจะ "คืน" ไม่ได้ · แต่พนักงานที่ถือใบเสร็จมาย่อมมาค้นที่นี่ก่อน แล้วเดิมได้

@@ -130,6 +130,9 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
       ...common,
       deviceId: auth.device.id,
       shiftId: auth.shift.id,
+      customerId: typeof body.customerId === "string" && body.customerId.trim()
+        ? body.customerId.trim()
+        : null,
       payments: parsed.payments,
     });
     return NextResponse.json(result, { status: result.status === "SOLD" ? 200 : 409 });

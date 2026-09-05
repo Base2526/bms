@@ -1421,6 +1421,19 @@ payments, drawer totals and tax documents therefore keep the normal POS source o
 kitchen tickets are attached to check items and appear before payment. Settlement does not enqueue a
 second copy of those tickets.
 
+The same restaurant register also owns the ordinary counter close-out work. After settlement it
+keeps the server result and the pre-close check snapshot on screen, including tendered cash, change,
+tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. It can print that
+snapshot through the existing WebUSB ESC/POS path or send the already-issued receipt; it never
+recalculates money in the browser. Printing kicks the cash drawer **only** for the sale just
+settled and only when cash was tendered — a reprint never opens it, because an unaudited drawer
+open is exactly what `8.0` moved behind `pos.nosale`, a stated reason and the shift report. The **Bills** screen lists only sales stamped to that device and
+supports detail, reprint and resend. The **Shift** screen exposes cash in/out, audited no-sale drawer
+opens, the device's X report and shift close. Cash out still requires a distinct approver. A member
+selected at checkout is tenant-validated before settlement, then stamped onto the reservation order
+inside the same transaction that takes payment, awards points and closes the check. The shared
+`bms-pos-display` BroadcastChannel lets `/pos/display` show the table bill without a second transport.
+
 Every restaurant mutation resolves tenant *and branch* from the device and verifies a staff PIN. What
 it deliberately does **not** pin down is the register or the shift: a check is opened on a waiter's
 tablet, added to from anywhere in the branch, and paid at the counter — often after a shift change.

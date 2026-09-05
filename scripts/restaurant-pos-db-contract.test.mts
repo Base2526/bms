@@ -39,6 +39,7 @@ import { cancelOrder, cancelOrderInTx, releaseExpiredOrders } from "../apps/web/
 import { getClient } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { RESERVATION_LOST } from "../apps/web/lib/bms/restaurantPosErrors.ts";
+import { listRecentPosSales } from "../apps/web/lib/bms/pos.ts";
 import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
@@ -68,6 +69,9 @@ let waiterId = "";
 let cashierId = "";
 let tables: Array<{ id: string; code: string }> = [];
 let paidCheckId = "";
+let memberId = "";
+let foreignTenantId = "";
+let foreignCustomerId = "";
 
 const stock = async (sku: string, location = locationId) =>
   (await query<{ current_stock: string; reserved_stock: string }>(
@@ -138,6 +142,25 @@ test("setup: a throwaway restaurant with a register, an open shift and two plain
     `INSERT INTO bms_store_profile (tenant_id, business_archetype) VALUES ($1,'restaurant')`,
     [tenantId]
   );
+  await query(
+    `INSERT INTO bms_loyalty_settings (tenant_id, enabled, earn_mode, earn_points_per_baht, earn_min_spend)
+     VALUES ($1,TRUE,'SPEND',1,0)`,
+    [tenantId]
+  );
+  memberId = (await query<{ id: string }>(
+    `INSERT INTO bms_customers (tenant_id, name, phone, member_no, member_since)
+     VALUES ($1,$2,$3,$4,now()) RETURNING id`,
+    [tenantId, `FAKE ${TAG} member`, "0800000001", `FAKE-${TAG}-MEMBER`]
+  )).rows[0].id;
+  foreignTenantId = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    [`FAKE ${TAG} foreign`, `fake-${TAG}-foreign-${Date.now()}`]
+  )).rows[0].id;
+  foreignCustomerId = (await query<{ id: string }>(
+    `INSERT INTO bms_customers (tenant_id, name, phone, member_no, member_since)
+     VALUES ($1,$2,$3,$4,now()) RETURNING id`,
+    [foreignTenantId, `FAKE ${TAG} foreign member`, "0800000002", `FAKE-${TAG}-FOREIGN`]
+  )).rows[0].id;
   // เมนูทั้งสองตัวเป็น DIRECT (ไม่มีสูตร) โดยตั้งใจ — นี่คือร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลย
   // ซึ่งเป็นสภาพจริงของร้านที่เพิ่งเปิดใช้ระบบ · ตั๋วครัวต้องเกิดอยู่ดี
   for (const [sku, price] of [[FOOD, 60], [DRINK, 15]] as const) {
@@ -151,6 +174,18 @@ test("setup: a throwaway restaurant with a register, an open shift and two plain
     );
     await declareSalesSurfaces(sku, ALL_SURFACES);
   }
+  const modifierGroupId = (await query<{ id: string }>(
+    `INSERT INTO bms_product_modifier_groups
+       (tenant_id, product_sku, size, code, name, selection_type, min_select, max_select)
+     VALUES ($1,$2,$3,'ICE','ระดับน้ำแข็ง','MULTIPLE',0,NULL) RETURNING id`,
+    [tenantId, DRINK, SIZE]
+  )).rows[0].id;
+  await query(
+    `INSERT INTO bms_product_modifiers
+       (tenant_id, product_sku, size, group_id, code, name, price_delta, active)
+     VALUES ($1,$2,$3,$4,'EXTRA_ICE','เพิ่มน้ำแข็ง',5,TRUE)`,
+    [tenantId, DRINK, SIZE, modifierGroupId]
+  );
   waiterId = await makeUser("waiter");
   cashierId = await makeUser("cashier");
   deviceId = (await query<{ id: string }>(
@@ -1033,11 +1068,268 @@ test("แอดมินยกเลิกใบจองของโต๊ะ�
   assert.equal(await cancelOrder(tenantId, reservationId), false, "ใบจองถูกยกเลิกไปพร้อมบิลแล้ว");
 });
 
+async function openSentMemberCheck(tableId: string) {
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+  return (await getRestaurantCheck(tenantId, check.id))!;
+}
+
+test("check receipt line uses the immutable order price including modifier deltas", async () => {
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: tables[0].id, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 2, modifierCodes: ["EXTRA_ICE"],
+  });
+  await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  });
+  const sent = (await getRestaurantCheck(tenantId, check.id))!;
+  assert.equal(sent.amountDue, 40);
+  assert.equal(sent.items[0].packPrice, 15, "ราคา base ที่แสดงแยกยังคงเดิม");
+  assert.equal(sent.items[0].lineAmount, 40, "ยอดบรรทัดต้องรวม modifier จาก order snapshot");
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+test("เมนูเดิมสั่งซ้ำคนละรอบ ยอดบรรทัดบนใบเสร็จต้องกระจายตามบรรทัด ไม่ใช่ยอดเต็มของกลุ่ม", async () => {
+  // createOrderInTx รวม check line ที่ sku/size/pack/modifier เดียวกันเป็น order line เดียว
+  // (mergeItems) — โต๊ะที่สั่งชาเย็นรอบแรก 1 แก้ว แล้วสั่งเพิ่มอีก 2 แก้ว มี order line เดียว
+  // pack_qty = 3 · ถ้าใบเสร็จคูณ receipt_unit_price ด้วยจำนวนของ order line ทั้งสองบรรทัด
+  // จะพิมพ์ 45 + 45 = 90 ออกมาให้ลูกค้าดู ทั้งที่เก็บเงินจริง 45
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: tables[0].id, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 2,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+
+  const sent = (await getRestaurantCheck(tenantId, check.id))!;
+  const lines = sent.items.filter((item) => item.status === "SENT");
+  assert.equal(lines.length, 2, "สองรอบยังเป็นสองบรรทัดบนบิล แม้ order จะรวมเป็นบรรทัดเดียว");
+  assert.deepEqual(lines.map((item) => item.lineAmount), [15, 30]);
+  // ผลรวมบรรทัดที่พิมพ์ต้องเท่ากับฐานเดียวกับที่ loadPosReceiptDiscountLines ใช้ตั้งบรรทัดส่วนลด
+  const receiptGross = Number((await query<{ gross: string }>(
+    `SELECT COALESCE(SUM(COALESCE(oi.pack_qty, oi.qty) * oi.receipt_unit_price), 0)::text AS gross
+       FROM bms_order_items oi
+       JOIN bms_restaurant_checks c
+         ON c.tenant_id = oi.tenant_id AND c.current_order_id = oi.order_id
+      WHERE c.tenant_id = $1 AND c.id = $2`,
+    [tenantId, check.id]
+  )).rows[0].gross);
+  assert.equal(lines.reduce((sum, item) => sum + (item.lineAmount ?? 0), 0), receiptGross);
+  assert.equal(sent.amountDue, receiptGross);
+
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+test("ปิดบิลโต๊ะพร้อมสมาชิกต้องประทับ customer และให้แต้มใน transaction เดียวกัน", async () => {
+  const check = await openSentMemberCheck(tables[0].id);
+  const result = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+    actorUserId: cashierId, customerId: memberId,
+    payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+  });
+  assert.equal(result.status, "SOLD");
+  if (result.status !== "SOLD") return;
+  assert.equal(result.replayed, false, "รับเงินจริงครั้งแรกไม่ใช่ replay ของใบเสร็จเดิม");
+  assert.equal(result.kitchenTickets, 1, "ใบเสร็จร้านอาหารนับตั๋วที่ออกตอนส่งครัว");
+  const order = (await query<{ customer_id: string | null; earned: string }>(
+    `SELECT o.customer_id, COUNT(l.id)::text AS earned
+       FROM bms_orders o
+       LEFT JOIN bms_loyalty_ledger l
+         ON l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN'
+      WHERE o.tenant_id = $1 AND o.id = $2
+      GROUP BY o.id`,
+    [tenantId, result.orderId]
+  )).rows[0];
+  assert.equal(order.customer_id, memberId);
+  assert.equal(Number(order.earned), 1);
+  assert.ok((result.pointsEarned ?? 0) > 0);
+
+  const replay = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+    actorUserId: cashierId, customerId: memberId,
+    payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+  });
+  assert.equal(replay.status, "SOLD");
+  assert.equal((replay as any).replayed, true);
+  assert.equal((replay as any).kitchenTickets, 1);
+  await assert.rejects(
+    () => settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId,
+      payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+    }),
+    /ข้อมูลสมาชิกไม่ตรงกับบิลที่ปิดไปแล้ว/
+  );
+
+  const paidAt = (await query<{ paid_at: Date }>(
+    `UPDATE bms_orders SET created_at = paid_at - interval '3 hours'
+      WHERE tenant_id = $1 AND id = $2 RETURNING paid_at`,
+    [tenantId, result.orderId]
+  )).rows[0].paid_at;
+  const recent = await listRecentPosSales(tenantId, deviceId, 20, { deviceOnly: true });
+  const receipt = recent.find((row) => row.orderId === result.orderId);
+  assert.ok(receipt);
+  assert.equal(new Date(receipt!.soldAt).getTime(), new Date(paidAt).getTime(),
+    "ประวัติบิลร้านอาหารต้องใช้เวลารับเงินจริง ไม่ใช่เวลาส่งครัวรอบแรก");
+
+  const otherRegisterId = (await query<{ id: string }>(
+    `INSERT INTO bms_pos_devices (tenant_id, location_id, code, name)
+     VALUES ($1,$2,$3,$3) RETURNING id`,
+    [tenantId, locationId, `FAKE-${TAG}-OTHER-REGISTER`]
+  )).rows[0].id;
+  await query(`UPDATE bms_orders SET pos_device_id = $3 WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, result.orderId, otherRegisterId]);
+  assert.ok((await listRecentPosSales(tenantId, deviceId, 20, {
+    query: result.orderId, locationId, deviceOnly: false,
+  })).some((row) => row.orderId === result.orderId), "ค้นหาแบบ retail ยังขยายไปเครื่องอื่นได้");
+  assert.equal((await listRecentPosSales(tenantId, deviceId, 20, {
+    query: result.orderId, locationId, deviceOnly: true,
+  })).length, 0, "สมุดบิลร้านอาหารต้อง scope ที่เครื่องใน SQL แม้มีคำค้น");
+  await query(`UPDATE bms_orders SET pos_device_id = $3 WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, result.orderId, deviceId]);
+});
+
+test("ลูกค้าของร้านอื่นถูกปฏิเสธโดยไม่ประทับและไม่ปิดบิล", async () => {
+  const check = await openSentMemberCheck(tables[0].id);
+  await assert.rejects(
+    () => settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId, customerId: "not-a-uuid",
+      payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+    }),
+    /สมาชิกที่เลือกไม่ถูกต้อง/
+  );
+  await query(`UPDATE bms_customers SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, memberId]);
+  await assert.rejects(
+    () => settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId, customerId: memberId,
+      payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+    }),
+    /ไม่พบสมาชิกนี้ในร้าน/
+  );
+  await query(`UPDATE bms_customers SET deleted_at = NULL WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, memberId]);
+  await assert.rejects(
+    () => settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId, customerId: foreignCustomerId,
+      payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+    }),
+    /ไม่พบสมาชิกนี้ในร้าน/
+  );
+  const state = (await query<{ check_status: string; order_status: string; customer_id: string | null }>(
+    `SELECT c.status AS check_status, o.status AS order_status, o.customer_id
+       FROM bms_restaurant_checks c
+       JOIN bms_orders o ON o.tenant_id = c.tenant_id AND o.id = c.current_order_id
+      WHERE c.tenant_id = $1 AND c.id = $2`,
+    [tenantId, check.id]
+  )).rows[0];
+  assert.deepEqual(state, { check_status: "OPEN", order_status: "PENDING", customer_id: null });
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+test("ร้านที่ปิดคิวครัวต้องรายงานตั๋วครัวเป็น 0 ไม่ใช่จำนวนบรรทัดที่ส่งครัว", async () => {
+  // `sendRestaurantKitchenRound` ออกตั๋วเฉพาะร้านที่เปิด KITCHEN_WORKFLOW — ร้านอาหารที่ยังไม่
+  // ใช้จอครัว (รับออร์เดอร์ด้วยกระดาษ) จึงไม่มีตั๋วสักใบ · ใบเสร็จที่บอกว่า "ตั๋วครัว N"
+  // ในร้านแบบนั้นคือตัวเลขที่ตรวจสอบไม่ได้ ซึ่งเป็นสิ่งเดียวกับที่ทำให้คนเลิกเชื่อทั้งหน้าจอ
+  await query(
+    `INSERT INTO bms_store_capabilities (tenant_id, capability, enabled, source)
+     VALUES ($1,'KITCHEN_WORKFLOW',FALSE,'MANUAL')
+     ON CONFLICT (tenant_id, capability) DO UPDATE SET enabled = FALSE`,
+    [tenantId]
+  );
+  try {
+    const check = await openSentMemberCheck(tables[0].id);
+    assert.equal(check.items.filter((item) => item.status === "SENT").length, 1,
+      "บิลยังมีบรรทัดที่ส่งครัวแล้วจริง — ต่างกันแค่ว่าไม่มีตั๋ว");
+    assert.equal(
+      Number((await query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM bms_restaurant_kitchen_tickets
+          WHERE tenant_id = $1 AND check_id = $2`,
+        [tenantId, check.id]
+      )).rows[0].n),
+      0
+    );
+    const result = await settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId,
+      payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+    });
+    assert.equal(result.status, "SOLD");
+    if (result.status !== "SOLD") return;
+    assert.equal(result.kitchenTickets, 0);
+  } finally {
+    await query(
+      `DELETE FROM bms_store_capabilities WHERE tenant_id = $1 AND capability = 'KITCHEN_WORKFLOW'`,
+      [tenantId]
+    );
+  }
+});
+
+test("ปิดบิลโต๊ะโดยไม่ส่ง customerId ยังทำงานเดิมและไม่สร้างแต้ม", async () => {
+  const check = await openSentMemberCheck(tables[0].id);
+  const result = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+    actorUserId: cashierId,
+    payments: [{ method: "CASH", amount: check.amountDue, cashTendered: check.amountDue }],
+  });
+  assert.equal(result.status, "SOLD");
+  if (result.status !== "SOLD") return;
+  const order = (await query<{ customer_id: string | null; earned: string }>(
+    `SELECT o.customer_id, COUNT(l.id)::text AS earned
+       FROM bms_orders o
+       LEFT JOIN bms_loyalty_ledger l
+         ON l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN'
+      WHERE o.tenant_id = $1 AND o.id = $2
+      GROUP BY o.id`,
+    [tenantId, result.orderId]
+  )).rows[0];
+  assert.equal(order.customer_id, null);
+  assert.equal(Number(order.earned), 0);
+  assert.equal(result.pointsEarned, null);
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
   );
-  const ids = [...new Set([tenantId, ...stale.rows.map((r) => r.id)].filter(Boolean))];
+  const ids = [...new Set([tenantId, foreignTenantId, ...stale.rows.map((r) => r.id)].filter(Boolean))];
   if (ids.length === 0) return;
   // bms_orders.restaurant_check_id และ bms_restaurant_checks.current_order_id ชี้กันไปกลับ
   // ต้องตัดขาหนึ่งก่อน ไม่งั้นลบอะไรก่อนก็ชน FK (teardown ที่ throw = teardown ที่ไม่มีใครรู้ว่าไม่ทำงาน)
@@ -1051,6 +1343,7 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     // checks ต้องไปหลัง orders เพราะ bms_orders.restaurant_check_id เป็น FK ปกติ (NO ACTION)
     "bms_kitchen_station_slas", "bms_kitchen_tickets",
     "bms_payments",
+    "bms_loyalty_ledger",
     "bms_order_items",
     "bms_order_discounts",
     "bms_tax_documents",
@@ -1063,7 +1356,12 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_pos_devices",
     "bms_stock_movements",
     "bms_inventory",
+    "bms_product_modifiers",
+    "bms_product_modifier_groups",
     "bms_products",
+    "bms_customers",
+    "bms_loyalty_settings",
+    "bms_store_capabilities",
     "bms_store_profile",
     "bms_locations",
     "bms_audit_log",
