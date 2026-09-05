@@ -980,3 +980,33 @@ test("cancelOrder จากหลังบ้านต้องปฏิเส�
     "ต้องตรวจก่อนแตะสถานะบิล ไม่ใช่ยกเลิกไปแล้วค่อยบ่น"
   );
 });
+
+test("กลุ่มตัวเลือกแบบเลือกได้อันเดียวต้องเปลี่ยนใจได้ และเมนูหลายไซซ์ต้องเลือกไซซ์ได้", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+
+  // ⚠️ เพดานจำนวนใช้กับกลุ่มที่เลือกได้หลายอย่างเท่านั้น — กลุ่ม SINGLE ที่ตั้ง max_select = 1
+  // (ค่าปกติของกลุ่มอย่าง "ระดับความเผ็ด") เคยทำให้ตัวเลือกที่เหลือถูก disabled ทั้งหมด
+  // ทันทีที่มีตัวถูกเลือก แล้วเปลี่ยนใจไม่ได้เลย (เจอจริงบน production)
+  assert.match(page, /const atLimit = !single && meta\.maxSelect != null/);
+  assert.doesNotMatch(page, /const atLimit = meta\.maxSelect != null/);
+
+  // ไซซ์ต้องเลือกได้ในกล่อง ไม่ใช่ถูกเลือกให้เงียบ ๆ แล้วโยนที่เหลือทิ้ง
+  assert.match(page, /function pickMenuSize\(size: string\)/);
+  assert.match(page, /const \[menuSource, setMenuSource\]/);
+  assert.match(page, /\(menuSource\?\.availableSizes\.length \?\? 0\) > 1/);
+  assert.match(page, /name="menu-size"/);
+
+  // เปลี่ยนไซซ์ต้อง re-scan แล้วรีเซ็ตตัวเลือกเป็นค่าปริยายของไซซ์ใหม่ —
+  // ตัวเลือกผูกกับ (sku, ไซซ์) ยกของเดิมมาใช้ต่อ = ส่งรหัสที่ไซซ์ใหม่ไม่รู้จักให้ server
+  const load = page.slice(page.indexOf("async function loadMenuHit"), page.indexOf("async function chooseMenu"));
+  assert.match(load, /\/api\/pos\/scan\?code=/);
+  assert.match(load, /defaultSelected/);
+
+  // ⚠️ ห้ามคัดไซซ์ที่เลือกได้ด้วยสต็อก — เมนู RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0
+  // ตามดีไซน์ (9.51/9.52) กรองด้วยสต็อกแล้วอาหารเกือบทุกจานจะไม่มีไซซ์ให้เลือกสักอัน
+  const sizeChips = page.slice(page.indexOf('<span className={styles.fieldLabel}>ขนาด'), page.indexOf('<span className={styles.fieldLabel}>จำนวน'));
+  assert.doesNotMatch(sizeChips, /variant\.available/,
+    "ชิปไซซ์ห้ามอ่านสต็อกของไซซ์นั้น");
+  assert.doesNotMatch(sizeChips, /disabled/,
+    "ห้ามปิดไซซ์ไหนด้วยสต็อก — RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0 ตามดีไซน์");
+});
