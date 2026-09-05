@@ -35,6 +35,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { cancelOrder, createOrder, payOrder, packOrder, shipOrder } from "../apps/web/lib/bms/orders.ts";
 import { listVariantReservations } from "../apps/web/lib/bms/stock.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "resv-test";
 const PLAIN = `FAKE-${TAG}-CREAM`;
@@ -90,6 +91,8 @@ test("setup: one ordinary product and one set built from a component", async () 
          SET price = EXCLUDED.price, active = TRUE, is_bundle = EXCLUDED.is_bundle`,
       [tenantId, sku, `FAKE ${TAG} ${sku}`, price, isBundle]
     );
+    // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+    await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   }
   await dropOrdersTouching(SKUS);
   for (const sku of [PLAIN, PART]) {

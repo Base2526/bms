@@ -29,6 +29,7 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder, getOrderJourney } from "../apps/web/lib/bms/orders.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 import {
   addToDeposit,
   closeDeposit,
@@ -97,6 +98,8 @@ test("setup: a ฿1,000 product, a register, an open shift", async () => {
      ON CONFLICT (tenant_id, sku) DO UPDATE SET price = 1000, active = TRUE`,
     [tenantId, SKU, `FAKE ${TAG} product`]
   );
+  // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   await query(
     `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
      VALUES ($1,$2,$3,$4,100,0)

@@ -35,7 +35,9 @@ import {
   listKitchenStationSlas,
   upsertKitchenStationSla,
 } from "../apps/web/lib/bms/kitchenSla.ts";
-import { cancelOrder, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
+import { cancelOrder, cancelOrderInTx, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
+import { getClient } from "../apps/web/lib/db.ts";
+import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { RESERVATION_LOST } from "../apps/web/lib/bms/restaurantPosErrors.ts";
 import {
   addRestaurantCheckItem,
@@ -101,6 +103,23 @@ async function makeUser(name: string) {
     [tenantId, `FAKE ${TAG} ${name}`, `fake-${TAG}-${name}-${Date.now()}@example.invalid`]
   )).rows[0].id;
 }
+
+/**
+ * จำลอง "ใบจองหายไปจากทางอื่น" — เดิมเทสเรียก cancelOrder() ตรง ๆ ซึ่งตอนนี้ถูกปิดสำหรับ
+ * ใบจองของโต๊ะที่ยังเปิดอยู่ (ดูเทสด้านล่าง) · ทางที่ยังเกิดได้จริงคือระบบอื่นที่ทำใน
+ * ทรานแซกชันของตัวเอง เช่น cron ปล่อยบิลหมดอายุก่อนถูกแก้
+ */
+const cancelReservationOutside = async (orderId: string) => {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const ok = await cancelOrderInTx(client, tenantId, orderId);
+    await client.query(ok ? "COMMIT" : "ROLLBACK");
+    return ok;
+  } finally {
+    client.release();
+  }
+};
 
 test("setup: a throwaway restaurant with a register, an open shift and two plain menu items", async () => {
   tenantId = (await query<{ id: string }>(
@@ -791,7 +810,7 @@ test("ใบจองที่หายไปกู้ได้ด้วยก�
   const drinkBefore = Number((await stock(DRINK)).reserved_stock);
 
   // ยกเลิกใบจองจากนอกเส้นทางของบิลโต๊ะ = สภาพที่ production เจอ
-  assert.equal(await cancelOrder(tenantId, lostOrder), true);
+  assert.equal(await cancelReservationOutside(lostOrder), true);
   assert.equal(Number((await stock(DRINK)).reserved_stock), drinkBefore - 2, "ของถูกปล่อยคืนไปแล้วจริง");
 
   const broken = await getRestaurantCheck(tenantId, check.id);
@@ -861,7 +880,7 @@ test("ใบจองที่หายไปยังยกเลิกบิ�
   const lost = (await query<{ id: string }>(
     `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
     [tenantId, check.id])).rows[0].id;
-  assert.equal(await cancelOrder(tenantId, lost), true);
+  assert.equal(await cancelReservationOutside(lost), true);
   assert.equal((await getRestaurantCheck(tenantId, check.id))!.reservationLost, true);
 
   const cancelled = await cancelRestaurantCheck({
@@ -896,7 +915,7 @@ test("ครัวยกเลิกรายการได้แม้ใบ�
   const lost = (await query<{ id: string }>(
     `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
     [tenantId, check.id])).rows[0].id;
-  assert.equal(await cancelOrder(tenantId, lost), true);
+  assert.equal(await cancelReservationOutside(lost), true);
 
   const drinkLine = (await getRestaurantCheck(tenantId, check.id))!
     .items.find((item) => item.sku === DRINK)!;
@@ -971,6 +990,47 @@ test("ใบจองที่เก็บเงินไปแล้วต้�
     "COMPLETED",
     "ต้องไม่มีใบจองใบใหม่งอกมาทับบิลที่ออกใบกำกับไปแล้ว"
   );
+});
+
+/**
+ * ยกเลิกใบจองของโต๊ะจากหลังบ้าน = ปล่อยของคืนขณะครัวทำอยู่ และเป็นการ void บิลโต๊ะที่ข้าม
+ * ด่าน PIN ผู้อนุมัติคนที่สองซึ่งหน้าร้านอาหารบังคับไว้
+ */
+test("แอดมินยกเลิกใบจองของโต๊ะที่ยังเปิดอยู่จากหลังบ้านไม่ได้", async () => {
+  const table = tables[1];
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: table.id, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+  })).status, "SENT");
+  const reservationId = (await query<{ id: string }>(
+    `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, check.id])).rows[0].id;
+  const reservedBefore = Number((await stock(DRINK)).reserved_stock);
+
+  await assert.rejects(
+    () => cancelOrder(tenantId, reservationId),
+    /ยกเลิกที่หน้าร้านอาหาร/
+  );
+  assert.equal(
+    (await query<{ status: string }>(`SELECT status FROM bms_orders WHERE id = $1`, [reservationId])).rows[0].status,
+    "PENDING",
+    "ใบจองต้องไม่ถูกแตะ"
+  );
+  assert.equal(Number((await stock(DRINK)).reserved_stock), reservedBefore, "ของต้องยังถูกจองไว้");
+
+  // ปิดโต๊ะด้วยทางที่ถูกต้อง แล้วใบจองใบเดิมยกเลิกจากหลังบ้านได้ (บิลไม่เปิดอยู่แล้ว)
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+  assert.equal(await cancelOrder(tenantId, reservationId), false, "ใบจองถูกยกเลิกไปพร้อมบิลแล้ว");
 });
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {

@@ -31,6 +31,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
 import { approveAssessment } from "../apps/web/lib/bms/pharmacy/assessments.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "rxapproval-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -72,6 +73,8 @@ test("setup: a throwaway pharmacy tenant with one approval-gated drug", async ()
      VALUES ($1,$2,$3,100,TRUE,'V')`,
     [tenantId, SKU, `FAKE ${TAG} drug`]
   );
+  // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   await query(
     `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
      VALUES ($1,$2,$3,$4,100,0)`,
@@ -318,6 +321,7 @@ test("ยาที่ต้องมีใบสั่ง: ออนไลน์
      VALUES ($1,$2,$3,120,TRUE,'V')`,
     [tenantId, RX_SKU, `FAKE ${TAG} prescription drug`]
   );
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   await query(
     `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
      VALUES ($1,$2,$3,$4,50,0)`,

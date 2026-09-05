@@ -83,7 +83,11 @@ export async function upsertProductStockPolicy(
   const stationNameProvided = input.kitchenStation !== undefined;
   const requestedStationId = stationIdProvided
     ? String(input.kitchenStationId ?? "").trim() || null
-    : current?.kitchenStationId ?? null;
+    // ⚠️ ส่ง "ชื่อ" มาอย่างเดียว = ทางเก่ากำลังสั่งเปลี่ยนสถานี · id ที่ค้างอยู่บนแถวเดิมต้อง
+    // ไม่ชนะค่าที่เพิ่งถูกส่งมา ไม่งั้นสินค้าที่เคยผูก id ไว้แล้วจะ **เพิกเฉยต่อชื่อใหม่เงียบ ๆ**
+    // (resolveKitchenStationForProductInTx ให้ id ชนะชื่อเสมอ ซึ่งถูกเมื่อผู้เรียกส่งทั้งคู่มา
+    // ในคำขอเดียวกัน ไม่ใช่เมื่อ id มาจากแถวเดิม)
+    : stationNameProvided ? null : current?.kitchenStationId ?? null;
   const requestedStationName = stationNameProvided
     ? String(input.kitchenStation ?? "").trim() || null
     // ส่ง id มาว่าง ๆ โดยไม่ส่งชื่อ = ล้างสถานี ไม่ใช่คงชื่อเดิมไว้ให้เป็นสตริงกำพร้า

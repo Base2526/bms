@@ -318,6 +318,25 @@ export async function ensureKitchenStationByNameInTx(
   throw new Error("สร้างสถานีครัวไม่สำเร็จ: รหัสสถานีซ้ำเกินกว่าจะหาเลขว่างได้");
 }
 
+/**
+ * ชื่อสถานีต้องไม่ซ้ำทั้งร้าน (ข้ามสาขา ข้ามสถานะ) เพราะเกณฑ์เวลา (9.53) ยังคีย์ด้วยชื่อ —
+ * สองสถานีชื่อเดียวกัน = ตั๋วใบเดียวมีเกณฑ์สองชุด
+ */
+async function assertNameIsFreeInTx(
+  client: PoolClient,
+  tenantId: string,
+  name: string,
+  exceptStationId: string | null
+) {
+  const clash = await client.query(
+    `SELECT 1 FROM bms_kitchen_stations
+      WHERE tenant_id = $1 AND name = $2 AND ($3::uuid IS NULL OR id <> $3)
+      LIMIT 1`,
+    [tenantId, name, exceptStationId]
+  );
+  if (clash.rowCount) throw new Error("มีสถานีชื่อนี้อยู่แล้วในร้าน");
+}
+
 export async function createKitchenStation(
   tenantId: string,
   input: KitchenStationInput,
@@ -328,6 +347,11 @@ export async function createKitchenStation(
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     const locationId = await resolveLocationInTx(client, tenantId, input.locationId);
+    // ตรวจ "ชื่อซ้ำ" ก่อนถึงชั้นฐาน — รหัส derive มาจากชื่อ ชื่อซ้ำจึงชนดัชนี *รหัส* ก่อนเสมอ
+    // แล้วผู้ใช้ที่พิมพ์แต่ชื่อได้ error เรื่องรหัสที่ตัวเองไม่เคยกรอก (uq_..._code_global
+    // ถูกสร้างก่อน uq_..._name ลำดับการชนจึงตายตัว) · rethrowUniqueViolation ยังอยู่เป็น
+    // ตัวกันการแข่งกันสร้างพร้อมกัน
+    await assertNameIsFreeInTx(client, tenantId, values.name, null);
     const inserted = await client.query(
       `INSERT INTO bms_kitchen_stations
          (tenant_id, location_id, code, name, description, active, sort_order)
@@ -370,6 +394,10 @@ export async function updateKitchenStation(
     const locationId = input.locationId !== undefined
       ? await resolveLocationInTx(client, tenantId, input.locationId)
       : current.locationId;
+    // เหตุผลเดียวกับตอนสร้าง: เปลี่ยนชื่อไปชนชื่อที่มีอยู่ ต้องบอกว่า "ชื่อซ้ำ" ไม่ใช่ "รหัสซ้ำ"
+    if (values.name !== current.name) {
+      await assertNameIsFreeInTx(client, tenantId, values.name, stationId);
+    }
 
     const updated = await client.query(
       `UPDATE bms_kitchen_stations

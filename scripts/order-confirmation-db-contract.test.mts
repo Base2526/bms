@@ -16,6 +16,7 @@ import { query } from "../apps/web/lib/db.ts";
 import { ALL_TOOLS } from "../apps/web/lib/bms/tools/catalog.ts";
 import { orderQuoteFingerprint } from "../apps/web/lib/bms/orderQuote.ts";
 import type { ExecCtx } from "../apps/web/lib/bms/tools/types.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const SKU = "TEST-CONFIRM-SKU";
 const SIZE = "M";
@@ -68,6 +69,8 @@ before(async () => {
      VALUES ($1, $2, 'สินค้าทดสอบยืนยันออร์เดอร์', 100, TRUE)`,
     [tenantId, SKU]
   );
+  // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   // bms_inventory.location_id เป็น NOT NULL ตั้งแต่ 7.84 (multi-location) — ต้องผูกสาขา
   // ใช้สำนักงานใหญ่ของร้าน ไม่สร้างสาขาใหม่ (branch_code '00000' สงวนไว้ให้สำนักงานใหญ่)
   const location = await query<{ id: string }>(

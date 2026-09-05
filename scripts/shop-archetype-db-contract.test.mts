@@ -33,6 +33,7 @@ import {
   presetCapabilitiesForArchetype,
 } from "../apps/web/lib/bms/storeCapabilities.ts";
 import { SHOP_ARCHETYPE_OPTIONS } from "../apps/web/lib/bms/shopArchetypes.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "archetype-test";
 const SIZE = "BASE";
@@ -65,6 +66,8 @@ async function makeShop(archetype: string | null, skus: string[]): Promise<[stri
        VALUES ($1,$2,$3,100,TRUE,'V')`,
       [tenantId, sku, sku]
     );
+    // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+    await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
     await query(
       `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
        VALUES ($1,$2,$3,$4,500,0)`,
@@ -240,8 +243,10 @@ test("products and fake orders stay editable; the first real order locks the arc
     )).rows[0].n),
     0
   );
+  // ร้านนี้เพิ่งถูกสลับเป็น restaurant ด้านบน — ตั้งแต่ 9.56 ออร์เดอร์ออนไลน์ของร้านอาหาร
+  // ต้องระบุประเภทรับของ ไม่งั้นได้ FULFILLMENT_REQUIRED (เทสนี้เขียนก่อน 9.56)
   const order = await createOrder({
-    tenantId, channel: "web", locationId,
+    tenantId, channel: "web", locationId, fulfillmentType: "DELIVERY",
     items: [{ sku, size: SIZE, qty: 1 }],
   } as any);
   assert.equal(order.status, "CREATED", JSON.stringify(order));

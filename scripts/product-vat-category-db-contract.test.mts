@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
-import { setVatCategoryForUnknown, upsertProduct } from "../apps/web/lib/bms/products.ts";
+import { setProductActive, setVatCategoryForUnknown, upsertProduct } from "../apps/web/lib/bms/products.ts";
 
 const TAG = "vatcat-test";
 const SKU_A = `FAKE-${TAG}-A`;
@@ -89,6 +89,10 @@ test("the bulk setter touches only UNKNOWN rows", async () => {
   await upsertProduct(tenantId, { ...base(SKU_A), vat_category: "N" });   // ตั้งไว้แล้ว
   await upsertProduct(tenantId, base(SKU_B));                             // UNKNOWN
   await upsertProduct(tenantId, { ...base(SKU_C), active: false });        // UNKNOWN + ปิดขาย
+  // ⚠️ ตั้งแต่ `9.51` สินค้าใหม่เป็น "ฉบับร่าง" เสมอ — ฟิลด์ `active` ที่ส่งเข้า upsertProduct
+  // ไม่มีผลอีกแล้ว ต้องกดเปิดขายผ่านเส้นทางจริง ไม่งั้นตัว bulk (activeOnly) ข้ามมันไป
+  // แล้วเทสนี้จะกลายเป็นการยืนยันว่า "ไม่แตะอะไรเลย" ซึ่งไม่ใช่สิ่งที่มันมีไว้ตรวจ
+  await setProductActive(tenantId, SKU_B, true);
 
   const changed = await setVatCategoryForUnknown(tenantId, "V");
   assert.equal(await catOf(SKU_A), "N", "สินค้าที่ตั้งค่าไว้แล้วต้องไม่ถูกเขียนทับ");

@@ -347,8 +347,10 @@ test("shipping a menu bill deducts ingredients, not the zero row of the menu its
      VALUES ($1,$2,$3,$4,'shipping')`,
     [tenantId, customerId, `FAKE ${TAG} addr`, `FAKE ${TAG} address line`]
   );
+  // ร้านอาหารสั่งออนไลน์ต้องระบุประเภทรับของเสมอตั้งแต่ 9.56 — ไม่ระบุ = FULFILLMENT_REQUIRED
+  // (เทสนี้เขียนก่อน 9.56 จึงเคยผ่านโดยไม่ส่งค่านี้)
   const order = await createOrder({
-    tenantId, channel: "web", locationId, customerId,
+    tenantId, channel: "web", locationId, customerId, fulfillmentType: "DELIVERY",
     items: [{ sku: MENU, size: SIZE, qty: 1 }],
   } as any);
   assert.equal(order.status, "CREATED", JSON.stringify(order));
@@ -377,10 +379,12 @@ test("shipping a menu bill deducts ingredients, not the zero row of the menu its
  */
 test("one unreleasable bill no longer blocks the rest of the sweep", async () => {
   const healthy = await createOrder({
-    tenantId, channel: "web", locationId, items: [{ sku: MENU, size: SIZE, qty: 1 }],
+    tenantId, channel: "web", locationId, fulfillmentType: "DELIVERY",
+    items: [{ sku: MENU, size: SIZE, qty: 1 }],
   } as any);
   const broken = await createOrder({
-    tenantId, channel: "web", locationId, items: [{ sku: EGG, size: SIZE, qty: 2 }],
+    tenantId, channel: "web", locationId, fulfillmentType: "DELIVERY",
+    items: [{ sku: EGG, size: SIZE, qty: 2 }],
   } as any);
   assert.equal(healthy.status, "CREATED", JSON.stringify(healthy));
   assert.equal(broken.status, "CREATED", JSON.stringify(broken));

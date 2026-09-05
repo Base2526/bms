@@ -843,3 +843,21 @@ test("การแทนใบจองของบิลโต๊ะต้อ�
   assert.equal((src.match(/if \(released === "RELEASED"\) releasedOrderId/g) ?? []).length, 1,
     "งานหลัง commit ต้องทำเฉพาะใบที่รอบนี้เป็นคนยกเลิกเอง");
 });
+
+/**
+ * ยกเลิกใบจองของโต๊ะจากหลังบ้านคือการ void บิลโต๊ะที่ข้ามด่าน PIN ผู้อนุมัติคนที่สอง
+ * (`pos.void`) ที่หน้าร้านอาหารบังคับไว้ — และปล่อยของคืนขณะครัวยังทำอยู่
+ */
+test("cancelOrder จากหลังบ้านต้องปฏิเสธใบจองของโต๊ะที่ยังเปิดอยู่", async () => {
+  const src = code(await read("apps/web/lib/bms/orders.ts"));
+  const fn = src.slice(
+    src.indexOf("export async function cancelOrder("),
+    src.indexOf("export async function releaseExpiredOrders")
+  );
+  assert.match(fn, /bms_restaurant_checks[\s\S]*c\.status IN \('OPEN','CLOSING'\)/);
+  assert.match(fn, /ยกเลิกที่หน้าร้านอาหาร/);
+  assert.ok(
+    fn.indexOf("dineIn.rowCount") < fn.indexOf("cancelOrderInTx"),
+    "ต้องตรวจก่อนแตะสถานะบิล ไม่ใช่ยกเลิกไปแล้วค่อยบ่น"
+  );
+});

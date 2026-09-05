@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { getPosReturnSummary } from "../apps/web/lib/bms/reports.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 import {
   closePosShift,
   getPosShiftReport,
@@ -68,6 +69,8 @@ test("setup two branches, registers, one lot and two distinct people", async () 
      VALUES ($1,$2,$3,100,TRUE,'V')`,
     [tenantId, SKU, `FAKE ${TAG} product`]
   );
+  // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+  await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
   await query(
     `INSERT INTO bms_inventory
        (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)

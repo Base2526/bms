@@ -27,6 +27,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
+import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 import {
   getCommissionReport,
   listCommissionRules,
@@ -95,6 +96,8 @@ test("setup: two products at ฿1,000, a register, an open shift", async () => {
          SET price = 1000, active = TRUE, category = EXCLUDED.category`,
       [tenantId, sku, `FAKE ${TAG} ${sku}`, category]
     );
+    // สินค้าที่ INSERT ตรง ๆ เป็นฉบับร่างตั้งแต่ 9.51 — ต้องประกาศช่องทางขายเอง
+    await query(DECLARE_FAKE_SALES_SURFACES_SQL, [tenantId]);
     await query(
       `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
        VALUES ($1,$2,$3,$4,500,0)
@@ -108,7 +111,9 @@ test("setup: two products at ฿1,000, a register, an open shift", async () => {
     `INSERT INTO bms_product_packs
        (tenant_id, product_sku, size, pack_code, unit_name, base_qty, price, active)
      VALUES ($1,$2,$3,'BOX','กล่อง',10,800,TRUE)
-     ON CONFLICT (tenant_id, product_sku, pack_code) DO UPDATE
+     -- ดัชนีของ bms_product_packs เป็น partial: (tenant_id, product_sku, size, pack_code)
+     -- ใช้ได้เฉพาะแถวที่มี size · ละ size ออกจาก arbiter = "no unique constraint matching"
+     ON CONFLICT (tenant_id, product_sku, size, pack_code) WHERE size IS NOT NULL DO UPDATE
        SET size = EXCLUDED.size, base_qty = 10, price = 800, active = TRUE`,
     [tenantId, SKU_PACK, SIZE]
   );
@@ -316,10 +321,16 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_pos_cash_movements WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_shifts WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_devices WHERE tenant_id = $1 AND id = $2`, [tenantId, deviceId]);
+  // ⚠️ ต้องรวม SKU_PACK ด้วย — ชุดนี้ใช้ร้านจริงของฐาน dev ซึ่งอยู่แพ็กเกจ Free (สินค้าสูงสุด 5)
+  // สินค้าที่ค้างไว้หนึ่งตัวกินโควตาของชุดที่รันถัดไปจนล้มด้วย "เกินโควตาแพ็กเกจ" ที่อ่านแล้ว
+  // ไม่มีทางเดาว่าเป็นเศษของเทสตัวก่อน
+  const ownSkus = [SKU, SKU_HOT, SKU_PACK];
+  await query(`DELETE FROM bms_product_packs WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
+    [tenantId, ownSkus]);
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
-    [tenantId, [SKU, SKU_HOT]]);
+    [tenantId, ownSkus]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
-    [tenantId, [SKU, SKU_HOT]]);
-  await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`, [tenantId, [SKU, SKU_HOT]]);
+    [tenantId, ownSkus]);
+  await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`, [tenantId, ownSkus]);
   await query(`UPDATE bms_loyalty_settings SET enabled = TRUE WHERE tenant_id = $1`, [tenantId]);
 });

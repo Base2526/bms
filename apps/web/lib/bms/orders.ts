@@ -69,6 +69,7 @@ import {
 } from "./customerIdentity";
 import { validateOrderItems } from "./orderValidation";
 import { restaurantOrderingStateInTx } from "./restaurantOrdering";
+import { RestaurantCheckError } from "./restaurantPosErrors";
 import {
   resolveStockConsumptionInTx,
   snapshotOrderItemConsumptionInTx,
@@ -1746,10 +1747,35 @@ export async function afterOrderCancellationCommitted(tenantId: string, orderId:
   void notifyOrderStatusEmail(tenantId, orderId, "cancelled");
 }
 
+/**
+ * ยกเลิกบิลจากหลังบ้าน/REST — **ไม่ใช่** ทางสำหรับใบจองของบิลโต๊ะ
+ *
+ * ใบจองของโต๊ะที่ยังนั่งอยู่ถูกยกเลิกที่นี่ = ปล่อยของคืนขณะครัวกำลังทำ และเป็นการ void
+ * บิลโต๊ะที่ข้ามด่าน "PIN ผู้อนุมัติคนที่สอง" ของ `pos.void` ที่หน้าร้านอาหารบังคับไว้ ·
+ * ทางที่ถูกคือยกเลิกบิลที่เครื่องขาย (`cancelRestaurantCheck`) ซึ่งปิดตั๋วครัว คืนโต๊ะ
+ * และเขียนเหตุผล + audit ให้ครบในทรานแซกชันเดียว
+ */
 export async function cancelOrder(tenantId: string, orderId: string): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
+
+    const dineIn = await client.query<{ table_code: string | null }>(
+      `SELECT t.code AS table_code
+         FROM bms_orders o
+         JOIN bms_restaurant_checks c ON c.tenant_id = o.tenant_id AND c.id = o.restaurant_check_id
+         LEFT JOIN bms_restaurant_tables t ON t.tenant_id = c.tenant_id AND t.id = c.table_id
+        WHERE o.tenant_id = $1 AND o.id = $2 AND c.status IN ('OPEN','CLOSING')`,
+      [tenantId, orderId]
+    );
+    if (dineIn.rowCount) {
+      await client.query("ROLLBACK");
+      const table = dineIn.rows[0].table_code;
+      throw new RestaurantCheckError(
+        `บิลนี้เป็นใบจองของโต๊ะ${table ? ` ${table}` : ""}ที่ยังเปิดอยู่ — ยกเลิกที่หน้าร้านอาหาร`
+        + " (ต้องมีเหตุผลและ PIN ผู้อนุมัติ) ไม่ใช่ยกเลิกออร์เดอร์จากหลังบ้าน"
+      );
+    }
 
     const cancelled = await cancelOrderInTx(client, tenantId, orderId);
     if (!cancelled) {

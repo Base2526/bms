@@ -104,6 +104,14 @@ test("setup: shop, product, register, cashier PIN", async () => {
      ON CONFLICT (tenant_id, sku) DO UPDATE SET price = 100, active = TRUE`,
     [tenantId, SKU, `FAKE ${TAG} product`]
   );
+  // ตั้งแต่ `9.51` สินค้าที่ไม่ประกาศช่องทางขายเป็น "ฉบับร่าง" — ขายที่เคาน์เตอร์ไม่ได้
+  // (`INVALID_PACK`) · fixture ที่ INSERT bms_products ตรง ๆ ไม่ผ่าน upsertProduct จึงต้อง
+  // ประกาศเอง ไม่งั้นทั้งชุดล้มตั้งแต่บิลแรกแล้วเทสที่เหลือได้ orderId เป็นสตริงว่าง
+  await query(
+    `INSERT INTO bms_product_sales_surfaces (tenant_id, product_sku, surface)
+     VALUES ($1,$2,'RETAIL_POS') ON CONFLICT DO NOTHING`,
+    [tenantId, SKU]
+  );
   await query(
     `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
      VALUES ($1,$2,$3,$4,10000,0)
