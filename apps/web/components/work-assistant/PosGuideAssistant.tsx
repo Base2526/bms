@@ -64,8 +64,12 @@ export default function PosGuideAssistant({ variant = "floating", className }: {
         style={variant === "rail" ? undefined : { position: "fixed", right: 18, bottom: 18, zIndex: 100, width: 52, height: 52, borderRadius: 26, border: 0, background: "#1677ff", color: "#fff", fontSize: 22, boxShadow: "0 8px 24px rgba(0,0,0,.25)", cursor: "pointer" }}
       >{variant === "rail" ? <><span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1 }}>?</span><span style={{ fontSize: 10, fontWeight: 600 }}>{en ? "Help" : "คู่มือ"}</span></> : "?"}</button>
       {open ? (
-        <div role="dialog" aria-modal="true" aria-label={en ? "POS guide assistant" : "ผู้ช่วยคู่มือ POS"} style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,.4)", display: "flex", justifyContent: "flex-end" }}>
-          <div style={{ width: "min(440px, 100vw)", height: "100%", overflowY: "auto", background: "#fff", color: "#1f1f1f", padding: 18 }}>
+        <div role="dialog" aria-modal="true" aria-label={en ? "POS guide assistant" : "ผู้ช่วยคู่มือ POS"} style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,.5)", display: "flex", justifyContent: "flex-end" }}>
+          {/* ตัวแปรของหน้า /pos/restaurant (CSS module) ถึงตรงนี้เพราะแผ่นนี้เรนเดอร์อยู่ใน
+              react tree ของหน้านั้น ไม่ได้ portal ออกไป — จึงตามธีมสว่าง/มืดของจอร้านอาหาร
+              · ค่า fallback คือค่าเดิมเป๊ะ ๆ สำหรับจอค้าปลีก /pos ที่ยังไม่ได้ทำโหมดมืด
+                (ไม่มีตัวแปรพวกนี้ → ได้ขาว/ดำเหมือนเดิมทุกพิกเซล) */}
+          <div style={{ width: "min(440px, 100vw)", height: "100%", overflowY: "auto", background: "var(--panel, #fff)", color: "var(--ink, #1f1f1f)", padding: 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
               <strong style={{ fontSize: 18 }}>{en ? "POS Guide Assistant" : "ผู้ช่วยคู่มือ POS"}</strong>
               <button type="button" onClick={() => setOpen(false)} style={{ marginLeft: "auto", minWidth: 44, minHeight: 44 }}>×</button>
@@ -75,7 +79,7 @@ export default function PosGuideAssistant({ variant = "floating", className }: {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={en ? "e.g. How do I apply a discount?" : "เช่น ให้ส่วนลดอย่างไร"}
-              style={{ width: "100%", minHeight: 46, padding: "8px 12px", fontSize: 16, boxSizing: "border-box" }}
+              style={{ width: "100%", minHeight: 46, padding: "8px 12px", fontSize: 16, boxSizing: "border-box", background: "var(--panel, #fff)", color: "var(--ink, #1f1f1f)", border: "1px solid var(--line, #d9d9d9)", borderRadius: 6 }}
             />
             {!query ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
@@ -95,7 +99,7 @@ export default function PosGuideAssistant({ variant = "floating", className }: {
                 <ol>{selected.steps[locale].map((item) => <li key={item}>{item}</li>)}</ol>
                 <h3>{en ? "Important" : "ข้อควรระวัง"}</h3>
                 <ul>{selected.warnings[locale].map((item) => <li key={item}>{item}</li>)}</ul>
-                <a href="/pos/manual">{en ? "Open the full cashier manual" : "เปิดคู่มือแคชเชียร์ฉบับเต็ม"}</a>
+                <a href="/pos/manual" style={{ color: "var(--accent, #1677ff)" }}>{en ? "Open the full cashier manual" : "เปิดคู่มือแคชเชียร์ฉบับเต็ม"}</a>
               </div>
             ) : null}
           </div>

@@ -10,6 +10,27 @@
  * **ไม่โหลดฟอนต์จาก CDN โดยตั้งใจ** — จอนี้ต้องทำงานตอนเน็ตร้านหลุด และ pos.css
  * ก็เลือกไม่พึ่ง dependency ภายนอกด้วยเหตุผลเดียวกัน
  */
+/* ── พาเลตต์: ทุกสีของหน้านี้ต้องมาจากตัวแปรชุดนี้เท่านั้น ───────────────────────
+   ตัวแปรถูกจัดตาม "หน้าที่" ไม่ใช่ตาม "ค่าสี" เพราะโหมดมืดสลับหน้าที่ ไม่ได้สลับค่า:
+
+   · --panel / --panel-2 / --quiet เป็นสามพื้นผิวคนละงาน **ห้ามใช้แทนกัน**
+       panel   = พื้นการ์ด/แผง
+       panel-2 = พื้นตอน hover (โหมดสว่างเข้มกว่า panel · โหมดมืดสว่างกว่า panel)
+       quiet   = พื้นที่ "ถอยหลัง" ที่อยู่ในการ์ด (แถบสรุป, ป้าย, ช่องกรอก, โต๊ะว่าง)
+     โหมดสว่าง panel-2 กับ quiet เป็นค่าเดียวกันโดยบังเอิญ (เทาอ่อนทั้งคู่) แต่โหมดมืด
+     ต้องแยกกัน: hover ต้อง "สว่างขึ้น" ส่วนพื้นที่ถอยหลังต้อง "มืดลง" ถ้าใช้ตัวเดียวกัน
+     โต๊ะว่างจะสว่างกว่าโต๊ะที่มีลูกค้า = ลำดับความสำคัญกลับหัวบนจอที่ต้องอ่านเร็ว
+
+   · --accent/--red/--amber/--green/--grey ถูกใช้ **ทั้งเป็นตัวหนังสือบน panel และเป็นพื้น
+     ของป้าย/ปุ่ม** (ค่าเดียวกันวิ่งไปสองที่ผ่าน tableState() ที่คืนสีเดียวให้ทั้ง
+     background ของจุดสถานะและ color ของข้อความ) · สีเดียวทำสองงานให้ผ่าน WCAG AA
+     พร้อมกันไม่ได้ในโหมดมืด (ตัวหนังสือบนพื้นมืดต้องสว่าง ≥ L .233 · พื้นที่ใช้ตัวหนังสือ
+     ขาวต้องมืด ≤ L .183) จึงแก้ด้วยการ **สลับสีตัวหนังสือบนพื้นสี** แทนการแตกตัวแปร:
+       โหมดสว่าง สีเข้ม + --on-solid ขาว · โหมดมืด สีสว่าง + --on-solid ดำเขียว
+     ทุกที่ที่เคยเขียน `color: white` ทับพื้นสีจึงต้องเป็น var(--on-solid) เสมอ
+
+   วัดจริงด้วย WCAG contrast แล้วทั้งสองโหมด (โหมดมืดผ่าน 46/47 คู่ · ที่ไม่ผ่านคือ
+   เส้นขอบต่อพื้น 1.64 ซึ่งโหมดสว่างก็ 1.58 อยู่แล้ว = เป็นภาษาของดีไซน์ ไม่ใช่การถดถอย) */
 .page {
   --ink: #151916;
   --ink-2: #4c5750;
@@ -17,6 +38,7 @@
   --ground: #e8eae6;
   --panel: #ffffff;
   --panel-2: #f4f5f2;
+  --quiet: #f4f5f2;
   --line: #c9cfc9;
   --line-2: #e1e5e0;
   --accent: #1f5340;
@@ -27,6 +49,22 @@
   --green: #256b4f;
   --green-bg: #e4f0e9;
   --grey: #6b756f;
+  /* ตัวหนังสือ/ไอคอนบนพื้นที่เป็นสีสถานะ (accent/red/amber/green/grey) */
+  --on-solid: #ffffff;
+  --on-solid-soft: rgba(255, 255, 255, .28);
+  /* ฉากบาง ๆ ทับรูปอาหาร (ปุ่ม ⋯ ต้องอ่านออกทั้งบนรูปสว่างและรูปมืด) */
+  --scrim: rgba(255, 255, 255, .82);
+  --shadow-1: rgba(21, 25, 22, .16);
+  --shadow-2: rgba(21, 25, 22, .1);
+  /* สีการ์ดเมนูตามสถานีครัว (MENU_CARD_TINTS) — เป็นการ "จัดกลุ่มด้วยตา" ไม่ใช่การเตือน
+     จึงต้องเบากว่า --*-bg ที่เป็นพื้นของกล่องเตือน · ในโหมดสว่างสองชุดนี้บังเอิญเท่ากัน
+     แต่โหมดมืดต้องแยก: พื้นเตือนต้องอ่านออกว่า "แดง/เหลือง" ส่วนพื้นการ์ดคือสิ่งที่ตา
+     กวาดผ่าน 40 ใบต่อจอ ถ้าใช้ค่าเดียวกันกริดเมนูจะกลายเป็นแถบสีทั้งจอ
+     · วัดแล้วให้ห่างจาก --panel เท่า ๆ กับโหมดสว่าง (1.08–1.16 เท่า) */
+  --tint-1: #f4f5f2;
+  --tint-2: #fbe9e4;
+  --tint-3: #fbf1de;
+  --tint-4: #e4f0e9;
   /* แอปเต็มจอ ไม่ใช่เอกสาร — ทั้งสายเคยเป็น min-height ซึ่งไม่ได้จำกัดความสูง
      กล่องจึงโตตามเนื้อหาไปเรื่อย ๆ แล้ว overflow:auto ของรายการในบิลไม่มีอะไรให้ล้น
      ผลคือทั้งหน้าเลื่อนแทนที่จะเลื่อนเฉพาะรายการ · dvh ไม่ใช่ vh เพราะแถบเบราว์เซอร์
@@ -39,6 +77,74 @@
   font-size: 15px;
   line-height: 1.45;
 }
+
+/* ── โหมดมืด ────────────────────────────────────────────────────────────────────
+   เกาะกับ `html.dark` ที่ layout ราก (app/layout.tsx) ใส่ให้ก่อน paint ด้วยสคริปต์
+   inline — ไม่ใช่ `@media (prefers-color-scheme)` เพราะผู้ใช้เลือก light/dark/system
+   เองได้ที่ ThemeToggle และค่านั้นต้องชนะค่าของระบบ · เขียนคู่กับ [data-theme="dark"]
+   ซึ่ง lib/theme.ts ตั้งพร้อมกันเสมอ เผื่อวันที่มีใครเลิก toggle คลาส
+
+   **ประกาศเฉพาะ "ค่า" ไม่แตะ "กฎ"** — ทั้งไฟล์ข้างล่างนี้ไม่มีที่ไหนต้องรู้ว่าตอนนี้
+   โหมดไหน · กฎที่ต้องเขียนแยกโหมดคือกฎที่จะลืมอัปเดตเวลาแก้ดีไซน์ทีหลัง
+
+   ⚠️ บล็อกนี้ยัง override ตัวแปร --pos-* ของ pos.css ด้วย เพราะ `.pos-root button`,
+   `input`, `select` (0,1,1) เจาะจงกว่าคลาสของ CSS module และทาสีจากตัวแปรชุดนั้น
+   ปุ่ม/ช่องกรอกที่หน้านี้ไม่ได้ทาสีเองจึงจะขาวโพลนบนพื้นมืดถ้าไม่ตั้งให้
+   · ตั้งไว้ที่ .page (ไม่ใช่ .pos-root) โดยตั้งใจ — จอค้าปลีก /pos ยังไม่ได้ทำโหมดมืด
+     การไปแก้ pos.css จะทำให้หน้านั้นมืดครึ่งเดียว ซึ่งแย่กว่าสว่างทั้งหน้า */
+:global(html.dark) .page,
+:global(html[data-theme="dark"]) .page {
+  --ink: #eef1ee;
+  --ink-2: #b6c0ba;
+  --ink-3: #8a948e;
+  --ground: #0d100f;
+  --panel: #1a1f1c;
+  --panel-2: #252b28;
+  --quiet: #131715;
+  --line: #3b433f;
+  --line-2: #2b322f;
+  --accent: #54c398;
+  --red: #ff8f70;
+  --red-bg: #3d2019;
+  --amber: #e5b25a;
+  --amber-bg: #3c2e15;
+  --green: #6bcfa6;
+  --green-bg: #1d3c2f;
+  --grey: #93a099;
+  --on-solid: #0b100e;
+  --on-solid-soft: rgba(11, 16, 14, .30);
+  --scrim: rgba(13, 16, 15, .78);
+  --shadow-1: rgba(0, 0, 0, .58);
+  --shadow-2: rgba(0, 0, 0, .48);
+  --tint-1: #131715;
+  --tint-2: #33231c;
+  --tint-3: #2f2819;
+  --tint-4: #1a2e24;
+
+  /* pos.css: ปุ่ม/ช่องกรอกมาตรฐานที่หน้านี้ไม่ได้ทาสีเอง */
+  --pos-bg: var(--ground);
+  --pos-surface: var(--panel);
+  --pos-sunken: var(--panel-2);
+  --pos-line: var(--line-2);
+  --pos-line-strong: var(--line);
+  --pos-text: var(--ink);
+  --pos-muted: var(--ink-3);
+  --pos-accent: var(--accent);
+  --pos-accent-bg: rgba(84, 195, 152, .22);
+  --pos-money: var(--green);
+  --pos-money-bg: var(--green-bg);
+  --pos-warn: var(--amber);
+  --pos-warn-bg: var(--amber-bg);
+  --pos-danger: var(--red);
+  --pos-danger-bg: var(--red-bg);
+  --pos-alt: #b79be8;
+  --pos-alt-bg: #2c2440;
+}
+/* placeholder ของ pos.css เป็นค่าคงที่ (#9aa1ab) ตัวแปรจึงเอื้อมไม่ถึง */
+:global(html.dark) .page input::placeholder,
+:global(html[data-theme="dark"]) .page input::placeholder,
+:global(html.dark) .page textarea::placeholder,
+:global(html[data-theme="dark"]) .page textarea::placeholder { color: var(--ink-3); }
 /* เมนูนำทางเป็นแถบไอคอนแนวตั้งฝั่งซ้าย (ตามมอคอัพ) — คืนความกว้างแถวบนให้ชื่อร้าน
    กับปุ่มที่ใช้จริง และปลายนิ้วโป้งอยู่ขอบซ้ายตลอด ไม่ต้องเอื้อมขึ้นไปหัวจอ */
 /* ⚠️ grid-template-rows ต้องประกาศเป็น 100% — ห้ามปล่อยให้เป็น implicit row
@@ -56,7 +162,7 @@
   min-height: 0; overflow-y: auto; overscroll-behavior: contain;
 }
 .railMark {
-  width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: white;
+  width: 38px; height: 38px; border-radius: 6px; background: var(--accent); color: var(--on-solid);
   display: grid; place-items: center; font-weight: 700; font-size: 18px; margin-bottom: 8px; flex: none;
 }
 /* ⚠️ ห้ามล็อก height ตายตัว — ป้ายไทยมีสระบน/ล่างและวรรณยุกต์ (ั ่ ๊ ะ) ทำให้ line box
@@ -72,7 +178,7 @@
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
 }
 .page .railBtn:hover:not(.railBtnActive) { background: var(--panel-2); border-color: var(--line-2); }
-.page .railBtnActive { background: var(--accent); border-color: var(--accent); color: white; }
+.page .railBtnActive { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
 /* :not(.railBtnActive) ข้างบนกันไม่ให้ *กฎของเราเอง* ทาทับปุ่มที่เลือกอยู่ แต่ไม่ได้กัน
    `.pos-root button:hover:not(:disabled)` ของ pos.css (0,3,1) ซึ่งเปลี่ยนพื้นเป็นสีอ่อน
    ขณะที่ตัวหนังสือยังเป็นสีขาว = แท็บที่เปิดอยู่กลายเป็นปุ่มว่างเปล่าตอนเอาเมาส์ไปชี้
@@ -82,10 +188,10 @@
 .railLabel { display: block; font-size: 10px; font-weight: 600; line-height: 1.35; white-space: nowrap; }
 .railBadge {
   position: absolute; top: 2px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
-  background: var(--red); color: white; font-size: 10.5px; font-weight: 700; display: grid; place-items: center;
+  background: var(--red); color: var(--on-solid); font-size: 10.5px; font-weight: 700; display: grid; place-items: center;
   font-variant-numeric: tabular-nums;
 }
-.railBtnActive .railBadge { background: rgba(255, 255, 255, .28); }
+.railBtnActive .railBadge { background: var(--on-solid-soft); }
 .railHelpSlot { margin-top: auto; width: 100%; display: flex; justify-content: center; padding: 8px 0 2px; }
 
 .shell { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
@@ -98,7 +204,7 @@
 /* ---------- แถบบน: หนึ่งแถว ---------- */
 .topbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; margin-inline-end: auto; }
-.brandMark { width: 34px; height: 34px; border-radius: 5px; background: var(--accent); color: white; display: grid; place-items: center; font-weight: 700; font-size: 17px; flex: none; }
+.brandMark { width: 34px; height: 34px; border-radius: 5px; background: var(--accent); color: var(--on-solid); display: grid; place-items: center; font-weight: 700; font-size: 17px; flex: none; }
 .title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.2; }
 .subtitle { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.2; }
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -111,7 +217,7 @@
 .page .btn:hover:not(:disabled){ background: var(--panel-2); }
 .page .btn:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
 .page .btn:disabled{ opacity: .4; cursor: not-allowed; }
-.page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: var(--on-solid); font-weight: 600; }
 .page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
 .page .btnDanger{ color: var(--red); }
 .page .btnIcon{ width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
@@ -120,7 +226,7 @@
 .strip {
   flex: none;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px;
-  padding: 8px 14px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 14px;
+  padding: 8px 14px; background: var(--quiet); border-bottom: 1px solid var(--line); font-size: 14px;
 }
 .strip b { font-weight: 700; font-variant-numeric: tabular-nums; }
 .stripDot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-inline-end: 6px; vertical-align: middle; }
@@ -165,7 +271,7 @@
 .tableMeta { font-size: 12.5px; color: var(--ink-2); margin-top: auto; }
 /* ฿ ตกฟอนต์ในบางเครื่องแล้วทับตัวเลขแรก — .baht กันระยะให้ */
 .tableAmount { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
-.page .tableFree{ background: var(--panel-2); border-style: dashed; }
+.page .tableFree{ background: var(--quiet); border-style: dashed; }
 .page .tableFree .tableName{ color: var(--ink-2); font-weight: 600; }
 .page .tableFree .tableMeta{ color: var(--ink-3); }
 .page .tableBlocked{ opacity: .5; cursor: not-allowed; }
@@ -195,7 +301,7 @@
 .searchRow { display: flex; gap: 6px; padding: 10px 12px; }
 .searchRow input, .field {
   flex: 1; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--panel-2); padding: 0 11px; font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--quiet); padding: 0 11px; font: inherit; font-size: 14px; color: var(--ink);
 }
 .searchRow input:focus, .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--panel); }
 /* ช่องค้นหาที่มีปุ่มล้าง — ปุ่มวางทับมุมขวาของช่อง จึงต้องกันที่ให้ตัวหนังสือไม่ลอดใต้ปุ่ม */
@@ -227,7 +333,7 @@
 .page .billChipActive { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .billChipCode {
   width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0;
-  color: white; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--on-solid); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 .billChipBody { display: grid; gap: 1px; min-width: 0; }
 .billChipName { font-size: 13px; font-weight: 600; }
@@ -242,7 +348,7 @@
   min-height: 0;
 }
 .page .catCard:hover { border-color: var(--ink-3); }
-.page .catCardActive { background: var(--accent); border-color: var(--accent); color: white; }
+.page .catCardActive { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
 .page .catCardActive:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
@@ -257,11 +363,11 @@
 /* การ์ดที่ปิดขาย = เงียบ ไม่ใช่ดังที่สุดบนจอ · กริดนี้มีไว้สั่งอาหาร ของที่สั่งไม่ได้จึงต้องจาง
    จนตากวาดผ่าน · ห้ามกลับไปใช้แถบแดงทับรูปหรือปุ่มเต็มความกว้าง: อย่างแรกกลบรูปอาหารซึ่งเป็น
    ตัวช่วยจำเมนูของพนักงาน อย่างหลังทำให้การ์ดสูงกว่าเพื่อนในแถวเดียวกัน (ขอบล่างไม่ตรง) */
-.dishCardUnavailable { background: var(--panel-2); }
+.dishCardUnavailable { background: var(--quiet); }
 .dishCardUnavailable .dishArt { filter: grayscale(1); opacity: .4; }
 .dishCardUnavailable .dishName { color: var(--ink-2); }
 .dishCardUnavailable .dishPrice { color: var(--ink-3); font-weight: 600; }
-.dishOutChip { position: absolute; top: 7px; left: 7px; z-index: 2; background: var(--red); color: #fff;
+.dishOutChip { position: absolute; top: 7px; left: 7px; z-index: 2; background: var(--red); color: var(--on-solid);
   font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
 /* บรรทัดสถานะกินที่ของบรรทัดที่สองของชื่อเมนู (ชื่อคลิปเหลือบรรทัดเดียว) — การ์ดที่ปิดขาย
    จึงสูงเท่าการ์ดปกติพอดี ไม่ไปดันความสูงของทั้งแถว · ชื่อยาว ๆ ยังอ่านครบใน tooltip/แผ่น */
@@ -275,13 +381,13 @@
    · คนละกลไกกับเรื่อง specificity: อันนี้คือคุณสมบัติที่เรา "ไม่ได้ประกาศ" จึงตกมาจาก pos.css */
 .page .dishKebab { position: absolute; top: 5px; right: 5px; z-index: 3; width: 34px; height: 34px;
   min-height: 34px; padding: 0; display: grid; place-items: center; border: 1px solid transparent;
-  border-radius: 8px; background: rgba(255, 255, 255, .82); color: var(--ink-2); font: inherit;
+  border-radius: 8px; background: var(--scrim); color: var(--ink-2); font: inherit;
   font-size: 16px; line-height: 1; cursor: pointer; }
 .page .dishKebab:hover:not(:disabled) { border-color: var(--line); color: var(--ink); }
 /* ตัวเลขจำนวนในบิลกับปุ่ม ⋯ อยู่มุมเดียวกัน — เลื่อนตัวเลขซ้ายเฉพาะการ์ดที่มีปุ่ม ⋯ จริง */
 .dishCardKebab .dishQty { right: 44px; }
 .dishManageRow { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 7px 10px; border-top: 1px solid var(--line-2); background: var(--panel-2);
+  padding: 7px 10px; border-top: 1px solid var(--line-2); background: var(--quiet);
   font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
 .page .dishSwitch { flex: none; position: relative; width: 40px; height: 23px; min-height: 23px; padding: 0;
   border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; }
@@ -289,7 +395,7 @@
   border-radius: 9px; background: var(--ink-3); transition: transform .14s ease, background .14s ease; }
 .page .dishSwitch[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .page .dishSwitch[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent); }
-.page .dishSwitch[aria-pressed="true"]::after { transform: translateX(17px); background: #fff; }
+.page .dishSwitch[aria-pressed="true"]::after { transform: translateX(17px); background: var(--on-solid); }
 @media (prefers-reduced-motion: reduce) { .page .dishSwitch::after { transition: none; } }
 /* แถวเครื่องมือของกริดเมนู: โหมดแจ้งของหมด (ครัวเดินมาบอกทีเดียวหลายอย่าง) + ตัวนับที่กรองได้ */
 .menuTools { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0 0; }
@@ -300,11 +406,11 @@
    `.pos-root button:hover:not(:disabled) { background: var(--pos-sunken) }` ซึ่งเจาะจงกว่า
    คลาสเดี่ยว ๆ ปุ่มที่ active จึงกลายเป็นสีขาวพร้อมตัวหนังสือสีขาว = อ่านไม่ออก
    และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุดจนไปแตะที่อื่น (แบบเดียวกับ .btnPrimary) */
-.page .menuToolOn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page .menuToolOn { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
 .page .menuToolOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .page .menuToolAlert { border-color: var(--amber); background: var(--amber-bg); color: var(--amber); }
 .page .menuToolAlert:hover:not(:disabled) { background: var(--amber-bg); }
-.page .menuToolAlert.menuToolOn { background: var(--amber); border-color: var(--amber); color: #fff; }
+.page .menuToolAlert.menuToolOn { background: var(--amber); border-color: var(--amber); color: var(--on-solid); }
 .page .menuToolAlert.menuToolOn:hover:not(:disabled) { background: var(--amber); filter: brightness(1.08); }
 .menuToolNote { font-size: 11.5px; color: var(--ink-3); margin-inline-start: auto; }
 .page .dishCard:hover { border-color: var(--accent); }
@@ -313,7 +419,7 @@
 .dishGlyph { display: block; width: 72px; height: 72px; }
 .dishQty {
   position: absolute; top: 7px; right: 7px; min-width: 22px; height: 22px; border-radius: 11px;
-  background: var(--accent); color: white; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--accent); color: var(--on-solid); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
   display: grid; place-items: center; padding: 0 6px;
 }
 .dishBody { display: block; padding: 10px 12px 12px; }
@@ -343,7 +449,7 @@
    จึงเป็นสีเทาจาง + ขีดฆ่า ต่างจากกรอบแดงของกรณีที่ยังคิดเงินอยู่ */
 /* บรรทัดที่ครัวยกเลิกคือบรรทัดที่ทำอะไรกับมันไม่ได้แล้ว — ห้ามกินที่มากกว่าบรรทัดที่
    ลูกค้าต้องจ่ายจริง (ก่อนหน้านี้กินมากกว่า เพราะมีป้ายอธิบายสองบรรทัดต่อการ์ด) */
-.itemDropped { border-style: dashed; background: var(--panel-2); opacity: .72; padding: 6px 10px; }
+.itemDropped { border-style: dashed; background: var(--quiet); opacity: .72; padding: 6px 10px; }
 .itemDropped .itemName { text-decoration: line-through; color: var(--ink-2); }
 .itemDropMark { color: var(--red); font-weight: 700; }
 .itemPriceVoid { text-decoration: line-through; color: var(--ink-3); }
@@ -411,7 +517,7 @@
 .empty h3 { margin: 10px 0 4px; font-size: 16px; font-weight: 700; color: var(--ink); }
 .empty p { margin: 0; font-size: 13px; }
 .setup { flex: 1; min-height: 400px; display: grid; place-items: center; text-align: center; padding: 32px; }
-.setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--panel-2); border: 1px solid var(--line); color: var(--accent); }
+.setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--quiet); border: 1px solid var(--line); color: var(--accent); }
 
 /* ---------- จอครัว ---------- */
 /* กระดานครัวไม่เลื่อนทั้งแผ่น — แต่ละเลนเลื่อนของตัวเอง หัวเลน (ชื่อ + ตัวนับ) จึงอยู่กับที่
@@ -422,7 +528,7 @@
 .kitchenBar { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .kitchenMenuAvailability { position: relative; }
 .kitchenMenuAvailability summary { list-style: none; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; padding: 7px 11px; font-size: 13px; font-weight: 700; }
-.kitchenMenuAvailabilityList { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; width: min(360px, 80vw); max-height: 55vh; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); box-shadow: 0 10px 28px rgba(21,25,22,.16); }
+.kitchenMenuAvailabilityList { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; width: min(360px, 80vw); max-height: 55vh; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); box-shadow: 0 10px 28px var(--shadow-1); }
 .page .kitchenMenuAvailabilityList button { width: 100%; display: flex; justify-content: space-between; gap: 12px; border: 0; border-radius: 5px; padding: 9px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .page .kitchenMenuAvailabilityList button:hover { background: var(--panel-2); }
 .page .kitchenMenuAvailabilityList button b { color: var(--red); }
@@ -437,7 +543,7 @@
 .page .kitchenFilter:hover:not(:disabled) { background: var(--panel-2); }
 /* "เลือกอยู่" ต้องอ่านออกจากอีกฝั่งครัว ไม่ใช่ต่างกันแค่เฉดสี: พื้นทึบ + ตัวหนา + วงแหวน
    รอบปุ่ม · สีอย่างเดียวยังแยกจาก focus ring ของเบราว์เซอร์ไม่ออกตอนเพิ่งกดเสร็จ */
-.page .kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700;
+.page .kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: var(--on-solid); font-weight: 700;
   box-shadow: 0 0 0 3px var(--green-bg); }
 .page .kitchenFilterOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -453,14 +559,14 @@
 /* ตั๋วเลื่อนในเลน ส่วนหัวเลนตรึงไว้ */
 .laneScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .laneHead { flex: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
-.laneCount { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; background: var(--panel-2); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.laneCount { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; background: var(--quiet); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 /* ใบสั่งครัว — 1 ใบ = (โต๊ะ/บิล + รอบ + สถานี) ไม่ใช่ 1 รายการ
    แถบสีซ้ายบอกเลนที่ใบนั้นอยู่ อ่านได้จากระยะยืนทำงานโดยไม่ต้องหาหัวคอลัมน์ */
 .ticket { background: var(--panel); border: 1px solid var(--line-2); border-left: 4px solid var(--lane-color);
   border-radius: 6px; padding: 9px 10px 10px; margin-bottom: 8px; }
 .ticketHead { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .ticketAge { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; border-radius: 4px;
-  padding: 2px 7px; background: var(--panel-2); color: var(--ink-2); font-size: 13px; font-weight: 700;
+  padding: 2px 7px; background: var(--quiet); color: var(--ink-2); font-size: 13px; font-weight: 700;
   font-variant-numeric: tabular-nums; }
 .ticketAgeWarn { background: var(--amber-bg); color: var(--amber); }
 .ticketAgeLate { background: var(--red-bg); color: var(--red); }
@@ -478,9 +584,26 @@
 .ticketActions .btn { height: 36px; font-size: 13px; padding: 0 12px; }
 .itemTags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
 .ticketDish .itemTags { display: inline-flex; margin-top: 4px; }
-.tag { display: inline-flex; border-radius: 3px; padding: 2px 7px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink-2); font-size: 11.5px; }
+.tag { display: inline-flex; border-radius: 3px; padding: 2px 7px; background: var(--quiet); border: 1px solid var(--line-2); color: var(--ink-2); font-size: 11.5px; }
 
 /* ---------- modal ---------- */
+/* โมดัลของ antd ถูก portal เข้ามาใน <main class=page> (ดู getContainer) ตัวแปรสีของ
+   โมดูลจึงถึง — แต่ "เปลือก" ของโมดัลยังทาสีจาก darkAlgorithm ของ antd ซึ่งเป็นเทา
+   กลางไม่มีอมเขียว วางบนหน้าที่อมเขียวแล้วเห็นเป็นกล่องแปลกปลอม · ผูกเปลือกเข้ากับ
+   พื้นผิวของหน้าแทน (โหมดสว่างค่าตรงกับของ antd อยู่แล้ว จึงไม่มีอะไรเปลี่ยน) */
+/* ⚠️ ต้องมี html.dark นำหน้า — globals.css มี `html.dark .ant-modal-content` (0,2,1)
+   ซึ่งชนะ `.page .ant-modal-content` (0,2,0) · วัดจริงก่อนแก้: พื้นโมดัลออกมาเป็น
+   #111827 (--app-surface ของธีมรวม เทาอมน้ำเงิน) บนหน้าที่เป็นเขียวอมเทา #1a1f1c
+   = กล่องแปลกปลอมที่ดูเหมือนมาจากอีกแอป · กฎของโหมดสว่างไม่ต้องแข่งกับใครจึงเขียนสั้นได้ */
+.page :global(.ant-modal-content),
+.page :global(.ant-modal-header),
+:global(html.dark) .page :global(.ant-modal-content),
+:global(html.dark) .page :global(.ant-modal-header) { background: var(--panel); border-color: var(--line); }
+.page :global(.ant-modal-title),
+:global(html.dark) .page :global(.ant-modal-title) { color: var(--ink); }
+.page :global(.ant-modal-close) { color: var(--ink-2); }
+.page :global(.ant-modal-close:hover) { color: var(--ink); background: var(--panel-2); }
+
 .modalGrid { display: grid; gap: 12px; }
 .modalGrid label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
 .modalGrid input, .modalGrid select, .modalGrid textarea {
@@ -495,7 +618,7 @@
 .fieldRule { font-weight: 400; font-size: 11.5px; color: var(--ink-3); }
 
 /* กลุ่มตัวเลือกที่ยังเลือกไม่ครบขั้นต่ำ — สีเตือนที่ตัวกลุ่มเอง ไม่ใช่แค่ข้อความรวมท้ายกล่อง */
-.fieldNeeded { color: var(--red-6, #cf1322); font-weight: 700; }
+.fieldNeeded { color: var(--red); font-weight: 700; }
 .qtyRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .page .stepper button { width: 52px; height: 48px; min-height: 48px; padding: 0; border: 0; background: var(--panel);
@@ -509,7 +632,7 @@
   border-radius: 6px; background: var(--panel); color: var(--ink-2); font: inherit; font-size: 13px;
   font-weight: 600; cursor: pointer; }
 .page .quickQtyBtn:hover:not(:disabled) { background: var(--panel-2); }
-.page .quickQtyOn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page .quickQtyOn { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
 .page .quickQtyOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
 .modifierGroup { border: 0; padding: 0; margin: 0; }
 .modifierChips { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -537,7 +660,7 @@
 .modifierList { display: grid; gap: 12px; }
 
 /* ---------- bills + shift register ---------- */
-.counterScreen { min-height: 0; overflow-y: auto; padding: 18px; background: var(--bg); }
+.counterScreen { min-height: 0; overflow-y: auto; padding: 18px; background: var(--ground); }
 .counterGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .counterCard { display: grid; align-content: start; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .counterCard h3, .counterCard p { margin: 0; }
@@ -547,7 +670,7 @@
 .counterCard input, .counterCard select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; background: var(--panel); color: var(--ink); font: inherit; }
 .reportCard { grid-column: 1 / -1; }
 .summaryGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.summaryGrid > span { display: grid; gap: 3px; padding: 10px; border-radius: 7px; background: var(--panel-2); color: var(--ink-2); font-size: 12px; }
+.summaryGrid > span { display: grid; gap: 3px; padding: 10px; border-radius: 7px; background: var(--quiet); color: var(--ink-2); font-size: 12px; }
 .summaryGrid b { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
 .receiptGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .page .receiptCard { min-height: 112px; display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
@@ -556,7 +679,7 @@
 .receiptCard > span:first-child { align-items: flex-start; color: var(--ink); }
 .receiptCard small { display: block; color: var(--ink-3); }
 .receiptCard strong { font-size: 22px; font-variant-numeric: tabular-nums; }
-.memberBox { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.memberBox { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--quiet); }
 .memberSelected, .memberResult { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .memberSelected span, .memberResult span { display: grid; }
 .memberSelected small, .memberResult small { color: var(--ink-2); }
@@ -586,7 +709,7 @@
   .counterGrid { grid-template-columns: 1fr; }
   .reportCard { grid-column: auto; }
   .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-  .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px rgba(21, 25, 22, .1); }
+  .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px var(--shadow-2); }
   .lanes { grid-template-columns: repeat(4, 260px); }
 }
 @media (max-width: 640px) {

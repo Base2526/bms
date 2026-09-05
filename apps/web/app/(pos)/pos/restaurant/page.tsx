@@ -147,10 +147,10 @@ const KITCHEN_NOTE_SHORTCUTS = ["ไม่เผ็ด", "แยกน้ำ", "
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
-  { bg: "var(--panel-2)", ink: "var(--accent)" },
-  { bg: "var(--red-bg)", ink: "var(--red)" },
-  { bg: "var(--amber-bg)", ink: "var(--amber)" },
-  { bg: "var(--green-bg)", ink: "var(--green)" },
+  { bg: "var(--tint-1)", ink: "var(--accent)" },
+  { bg: "var(--tint-2)", ink: "var(--red)" },
+  { bg: "var(--tint-3)", ink: "var(--amber)" },
+  { bg: "var(--tint-4)", ink: "var(--green)" },
 ];
 // ภาพอาหารบนการ์ด — วาดด้วย SVG ในโค้ด ไม่โหลดจาก CDN ตามเหตุผลเดียวกับที่หน้านี้
 // ไม่โหลดฟอนต์ภายนอก (จอนี้ต้องทำงานตอนเน็ตร้านหลุด) · ใช้เมื่อสินค้ายังไม่มีรูปจริง
@@ -275,11 +275,16 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
 }
 type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 
+// สีเลนอ้างตัวแปรของหน้า ไม่ใช่ค่าคงที่ — ค่าคงที่จะค้างสว่างในโหมดมืด และตัวเลขจำนวน
+// บนตั๋ว (.ticketQty) ใช้สีนี้เป็น "ตัวหนังสือ" ซึ่งต้องอ่านออกจากอีกฝั่งครัว
+// · ใช้ชุดสีสถานะเดียวกับผังโต๊ะ (tableState) เพื่อให้ "แดง=ยังไม่เริ่ม เขียว=พร้อม"
+//   แปลเหมือนกันทั้งสองจอ — ของเดิมเป็นเฉดของตัวเองที่ใกล้กันแต่ไม่เท่ากัน และเฉด
+//   อำพัน #e7a335 บนพื้นขาวมี contrast แค่ 2.17 (ต่ำกว่าเกณฑ์ตัวหนังสือใหญ่ด้วยซ้ำ)
 const LANES = [
-  { status: "NEW", label: "เข้าใหม่", color: "#dd5d3d", next: "PREPARING", nextLabel: "เริ่มทำ" },
-  { status: "PREPARING", label: "กำลังทำ", color: "#e7a335", next: "READY", nextLabel: "พร้อมเสิร์ฟ" },
-  { status: "READY", label: "พร้อมเสิร์ฟ", color: "#30745b", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
-  { status: "SERVED", label: "เสิร์ฟแล้ว", color: "#718078", next: null, nextLabel: null },
+  { status: "NEW", label: "เข้าใหม่", color: "var(--red)", next: "PREPARING", nextLabel: "เริ่มทำ" },
+  { status: "PREPARING", label: "กำลังทำ", color: "var(--amber)", next: "READY", nextLabel: "พร้อมเสิร์ฟ" },
+  { status: "READY", label: "พร้อมเสิร์ฟ", color: "var(--green)", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
+  { status: "SERVED", label: "เสิร์ฟแล้ว", color: "var(--grey)", next: null, nextLabel: null },
 ] as const;
 const timeOf = (iso: string | null) => {
   if (!iso) return "";
