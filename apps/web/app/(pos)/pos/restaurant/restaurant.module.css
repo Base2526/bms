@@ -544,7 +544,7 @@
 .counterCard p { color: var(--ink-2); }
 .counterCard label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
 .page .cashConfirm { display: flex; align-items: flex-start; gap: 8px; font-weight: 500; line-height: 1.4; }
-.counterCard input, .counterCard select, .receiptActions input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; background: var(--panel); color: var(--ink); font: inherit; }
+.counterCard input, .counterCard select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; background: var(--panel); color: var(--ink); font: inherit; }
 .reportCard { grid-column: 1 / -1; }
 .summaryGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .summaryGrid > span { display: grid; gap: 3px; padding: 10px; border-radius: 7px; background: var(--panel-2); color: var(--ink-2); font-size: 12px; }
@@ -566,7 +566,7 @@
 .receiptHero > span { display: grid; font-weight: 700; }
 .receiptHero small { color: var(--ink-2); font-weight: 400; }
 .receiptHero strong { color: var(--accent); font-size: 28px; }
-.receiptActions { display: grid; grid-template-columns: auto minmax(160px, 1fr) auto auto; gap: 8px; align-items: center; }
+.receiptActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {
@@ -627,7 +627,6 @@
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footerButtons { grid-template-columns: 1fr; }
   .summaryGrid { grid-template-columns: 1fr 1fr; }
-  .receiptActions { grid-template-columns: 1fr; }
   .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
 }
