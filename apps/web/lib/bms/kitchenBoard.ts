@@ -68,13 +68,22 @@ const clean = (value: string | null | undefined) => {
  * เวลาอ้างอิงของตัวนับ ต่างกันตามเลนโดยตั้งใจ:
  *
  * - NEW/PREPARING นับจาก "ตอนสั่ง" (createdAt) = ลูกค้ารอมานานแค่ไหนแล้ว
- * - READY นับจาก "ตอนทำเสร็จ" (updatedAt) = อาหารวางรออยู่บน pass นานแค่ไหน
+ * - READY/SERVED นับจาก "ตอนที่สถานะเปลี่ยน" (updatedAt) = อาหารวางรอบน pass นานแค่ไหน /
+ *   เสิร์ฟไปเมื่อกี้หรือเมื่อวาน
  *
  * ถ้า READY นับจากตอนสั่งเหมือนกัน ทุกใบบนช่องพร้อมเสิร์ฟจะแดงค้างตลอดเวลาแล้วเลิกมี
  * ความหมาย ทั้งที่คำถามของช่องนั้นคือ "อาหารเย็นหรือยัง" ไม่ใช่ "สั่งมานานเท่าไร"
+ *
+ * ⚠️ SERVED เดิมตกมาใช้ createdAt ทั้งที่เหตุผลเดียวกันทุกประการ — ตั๋วที่สั่งเมื่อวานแล้ว
+ * เพิ่งกดเสิร์ฟเมื่อกี้ ขึ้นเป็น "65 ชม." สีแดงบนกระดาน (เจอจริงบน production) · ช่อง
+ * "เสิร์ฟแล้ว" เป็นแถบประวัติ 12 ชม. คำถามของมันคือ "เสิร์ฟไปนานหรือยัง" ไม่ใช่ "สั่งมานานเท่าไร"
  */
+const KITCHEN_ELAPSED_FROM_UPDATED = new Set(["READY", "SERVED"]);
+
 export function pickReferenceAt(status: string, createdAt: string, updatedAt?: string | null): string {
-  if (String(status).toUpperCase() === "READY" && clean(updatedAt)) return String(updatedAt);
+  if (KITCHEN_ELAPSED_FROM_UPDATED.has(String(status).toUpperCase()) && clean(updatedAt)) {
+    return String(updatedAt);
+  }
   return createdAt;
 }
 

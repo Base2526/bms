@@ -5,6 +5,7 @@
 // =============================================================
 
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -280,4 +281,32 @@ test("ตั๋วยุคก่อน 9.54 (มีแต่ชื่อ ไม
     [{ id: "s-bar", name: "บาร์", sortOrder: 0, active: true }]
   );
   assert.deepEqual(filters.map((f) => `${f.id ?? "-"}:${f.name}`), ["s-bar:บาร์"]);
+});
+
+test("ตั๋วที่เสิร์ฟแล้วนับเวลาจากตอนเสิร์ฟ ไม่ใช่ตอนสั่ง", () => {
+  // เจอบน production: ตั๋วที่สั่งเมื่อวานแล้วเพิ่งกดเสิร์ฟ ขึ้นเป็น "65 ชม." สีแดงบนกระดาน
+  // ช่อง "เสิร์ฟแล้ว" เป็นแถบประวัติ 12 ชม. คำถามของมันคือ "เสิร์ฟไปนานหรือยัง"
+  const ordered = "2026-09-03T00:00:00.000Z";
+  const served = "2026-09-05T08:00:00.000Z";
+  assert.equal(pickReferenceAt("SERVED", ordered, served), served);
+  assert.equal(pickReferenceAt("READY", ordered, served), served);
+  // ที่ยังไม่จบยังนับจากตอนสั่ง — คำถามคือ "ลูกค้ารอมานานแค่ไหน"
+  assert.equal(pickReferenceAt("NEW", ordered, served), ordered);
+  assert.equal(pickReferenceAt("PREPARING", ordered, served), ordered);
+  // ไม่มี updated_at (ตั๋วยุคก่อน) ตกกลับไปใช้ created_at ไม่ใช่พังหรือว่าง
+  assert.equal(pickReferenceAt("SERVED", ordered, null), ordered);
+});
+
+test("ปุ่มกรองสถานีของจอครัวนับประชากรเดียวกับที่กระดานแสดง", async () => {
+  const page = (await readFile(new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url), "utf8"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/.*$/gm, "");
+  // ปุ่มคือตัวกรอง เลขข้างปุ่มต้องบอกว่ากดแล้วเห็นอะไร — เดิมนับเฉพาะงานที่ยังไม่จบ
+  // ขณะที่กระดานมีเลน "เสิร์ฟแล้ว" อยู่ด้วย จอเดียวกันจึงเขียน "ทั้งหมด 2" คู่กับเลนที่บวกได้ 7
+  assert.match(page, /ทั้งหมด \{countKitchenDishes\(tickets\)\}/);
+  assert.match(page, /kitchenBoardStationFilters\(tickets, stationList\)/);
+  assert.doesNotMatch(page, /openTicket/,
+    "ตัวกรองสถานีต้องไม่คัดเฉพาะตั๋วที่ยังไม่จบอีก — badge/แถบสรุปเป็นที่ของสัญญาณงานค้าง");
+  // สัญญาณ "งานค้าง" ยังต้องอยู่ ไม่ใช่หายไปพร้อมกัน
+  assert.match(page, /kitchenCooking \+ kitchenReady/);
 });

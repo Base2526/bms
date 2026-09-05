@@ -1449,6 +1449,14 @@ selected at checkout is tenant-validated before settlement, then stamped onto th
 inside the same transaction that takes payment, awards points and closes the check. The shared
 `bms-pos-display` BroadcastChannel lets `/pos/display` show the table bill without a second transport.
 
+The kitchen board's station chips are a **filter**, so their counts describe what pressing one
+shows — every ticket the board renders, served history included. Counting only unfinished work made
+one screen contradict itself: the chip read "all 2" beside lanes adding up to 7, and `/admin/kitchen`
+(same module) had counted every row all along. The "how much is still queued" signal keeps its own
+places — the register's kitchen badge and the floor summary strip. A served ticket's timer runs from
+when it was served, not when it was ordered, for the same reason `READY` already did: a slip ordered
+yesterday and served a minute ago showed "65h" in red, which is how a colour stops meaning anything.
+
 Every restaurant mutation resolves tenant *and branch* from the device and verifies a staff PIN. What
 it deliberately does **not** pin down is the register or the shift: a check is opened on a waiter's
 tablet, added to from anywhere in the branch, and paid at the counter — often after a shift change.
