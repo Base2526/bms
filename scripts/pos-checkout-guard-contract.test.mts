@@ -81,3 +81,16 @@ test("ปุ่มของ antd ต้องไม่ถูก pos.css ทา�
   assert.doesNotMatch(page, /<Button danger/);
   assert.doesNotMatch(page, /<Button type="dashed"/);
 });
+
+test("รับเงินสดเกินต้องบอกเงินทอนตอนถือเงินอยู่ในมือ ไม่ใช่หลังกดยืนยัน", async () => {
+  const page = strip(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  // หน้าค้าปลีกแสดง "เงินทอนรายการนี้" ระหว่างกรอกมาตลอด · หน้านี้เคยมีเงินทอนแค่ในแผงใบเสร็จ
+  // ซึ่งขึ้น **หลัง** เก็บเงินไปแล้ว = แคชเชียร์ต้องคิดเลขเองตอนที่ลูกค้ายืนรอทอน
+  assert.match(page, /const cashChangeOf = \(payment: PosPaymentDraft\)/);
+  assert.match(page, /เงินทอนรายการนี้/);
+  // เฉพาะช่องทางเงินสดที่กรอกแล้วและไม่ต่ำกว่ายอด — ทอนติดลบไม่มีอยู่จริง
+  assert.match(page, /payment\.method !== "CASH" \|\| !payment\.tendered\.trim\(\)/);
+  assert.match(page, /change >= 0 \? Math\.round\(change \* 100\) \/ 100 : null/);
+  // ต้องคิดจากค่าที่กรอก ไม่ใช่ผูกกับยอดบิลทั้งใบ (บิลแบ่งจ่ายมีเงินสดแค่บางส่วน)
+  assert.doesNotMatch(page, /เงินทอนรายการนี้[\s\S]{0,120}checkoutDue/);
+});
