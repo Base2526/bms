@@ -1,12 +1,15 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, MoreOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
+import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
+import { findRememberedPrinter, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
+import { receiptDocumentTitle, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
@@ -43,8 +46,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "KITCHEN";
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN"];
+type RestaurantScreen = "ORDER" | "FLOOR" | "KITCHEN" | "BILLS" | "SHIFT";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN", "BILLS", "SHIFT"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -52,16 +55,16 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN"];
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", kitchen: "KITCHEN", kds: "KITCHEN",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
-type Session = { device: { id: string; code: string; name: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; vat: { cashRounding?: CashRounding } };
+type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
 type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
-type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
+type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; lineAmount: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
@@ -73,6 +76,51 @@ type MenuItem = SearchItem & {
   availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
   unavailableResetsAt: string | null;
   unavailableReason: string | null;
+};
+type PosMember = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number; tier: { code: string; name: string } | null };
+type SettlementResult = {
+  status: "SOLD"; orderId: string; total: number; cashTendered: number | null; cashChange: number | null;
+  docNo: string | null; receiptNo: string | null; billNo: string | null;
+  vat: { rate: number; vatAmount: number; netBeforeVat: number; exemptAmount?: number; roundingAmount?: number } | null;
+  roundingAmount: number; discountLines: Array<{ source?: string; label: string; amount: number; pointsUsed?: number }>;
+  pointsEarned: number | null; pointsBalance: number | null; kitchenTickets: number; replayed: boolean;
+};
+type SettlementReceipt = { result: SettlementResult; check: RestaurantCheck; member: PosMember | null; at: string; cashierName: string | null; shiftId: string | null };
+type RecentReceipt = {
+  orderId: string; docNo: string | null; receiptNo: string | null; billNo: string | null;
+  total: number; cashTendered: number | null; cashChange: number | null; soldAt: string;
+  cashierName: string | null; locationName: string | null; branchCode: string | null; posLabel: string | null;
+  posDeviceId: string | null; shiftId: string | null; orderStatus: string; voidedAt: string | null;
+  vat: SettlementResult["vat"]; roundingAmount: number;
+  memberName: string | null; memberNo: string | null; pointsEarned?: number | null; pointsBalance?: number | null;
+  discountLines: SettlementResult["discountLines"];
+  payments: Array<{ method: string; amount: number; ref: string | null; cashTendered: number | null; cashChange: number | null }>;
+  lines: Array<{ receiptName: string; size: string; packQty: number; lineTotal: number; unitName: string }>;
+};
+type ReceiptSelection = SettlementReceipt | RecentReceipt;
+/**
+ * บิลเก่าที่ถูกยกเลิก/คืนของ ต้องบอกก่อนพิมพ์ซ้ำ ไม่ใช่พิมพ์ออกมาเหมือนบิลปกติ
+ *
+ * `9.22` เจอมาแล้วว่าใบเสร็จที่เงียบเรื่องการคืน ทำให้คนพิมพ์ซ้ำเข้าใจว่าการคืนไม่ถูกบันทึก
+ * แล้วไปคืนซ้ำ · แท็บบิลของร้านอาหารดึงทั้ง COMPLETED และ RETURNED มาเหมือนกัน ถ้าไม่ติดป้าย
+ * ก็เท่ากับพาปัญหาเดิมกลับมาที่หน้าใหม่ · ไม่แสดงยอดคงเหลือหลังคืนที่นี่โดยตั้งใจ — เลขนั้น
+ * ต้องมาจากไทม์ไลน์การคืนของโหมดค้าปลีก ไม่ใช่จากการคำนวณใหม่ที่จอ
+ */
+function billHistoryNote(receipt: RecentReceipt): string {
+  if (receipt.voidedAt) return "ถูกยกเลิกแล้ว";
+  if (receipt.orderStatus === "RETURNED") return "มีการคืนสินค้า";
+  return "";
+}
+type ShiftReport = { status: "OPEN" | "CLOSED"; openedAt: string; closedAt: string | null; salesTotal: number; billCount: number; returnCount: number; returnTotal: number; cashIn: number; cashOut: number; noSaleCount: number; expectedCash: number | null; expectedCashHidden: boolean; countedCash: number | null; cashVariance: number | null; byMethod: Array<{ method: string; count: number; amount: number }> };
+type CustomerDisplayPayload = {
+  lines: Array<{ name: string; size: string | null; qty: number; unitName: string; amount: number }>;
+  itemCount: number;
+  total: number;
+  discountTotal: number;
+  amountDue: number;
+  memberName: string | null;
+  pointsEarned: number | null;
+  finished: { total: number; tendered: number | null; change: number | null } | null;
 };
 // เหตุผลที่ครัวบอกจริงตอนของหมด — เก็บลงหลักฐานว่าปิดเพราะอะไร ไม่ใช่คำว่า "หมดวันนี้"
 // ซึ่งเป็นแค่การพูดซ้ำสิ่งที่สถานะบอกอยู่แล้ว
@@ -313,6 +361,22 @@ export default function RestaurantPosPage() {
   const [cashAmount, setCashAmount] = useState(0);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [payments, setPayments] = useState<PosPaymentDraft[]>([]);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberResults, setMemberResults] = useState<PosMember[]>([]);
+  const [selectedMember, setSelectedMember] = useState<PosMember | null>(null);
+  const [settlementReceipt, setSettlementReceipt] = useState<SettlementReceipt | null>(null);
+  const [recentReceipts, setRecentReceipts] = useState<RecentReceipt[]>([]);
+  const [recentQuery, setRecentQuery] = useState("");
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptSelection | null>(null);
+  const [receiptTo, setReceiptTo] = useState("");
+  const [cashMoveDirection, setCashMoveDirection] = useState<"IN" | "OUT">("IN");
+  const [cashMoveAmount, setCashMoveAmount] = useState("");
+  const [cashMoveReason, setCashMoveReason] = useState("");
+  const [cashMoveApproverId, setCashMoveApproverId] = useState("");
+  const [cashMoveApproverPin, setCashMoveApproverPin] = useState("");
+  const [cashMoveExternalConfirmed, setCashMoveExternalConfirmed] = useState(false);
+  const [noSaleReason, setNoSaleReason] = useState("");
+  const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const [targetTableId, setTargetTableId] = useState("");
   const [supportOpen, setSupportOpen] = useState(false);
@@ -334,12 +398,85 @@ export default function RestaurantPosPage() {
   // ให้ modal render อยู่ใต้ .page แทนเพื่อให้ยังเห็นตัวแปรพวกนี้
   const rootRef = useRef<HTMLElement>(null);
   const workingRef = useRef(false);
+  const displayChannel = useRef<BroadcastChannel | null>(null);
+  const displayPayloadRef = useRef<CustomerDisplayPayload | null>(null);
+  const memberCheckIdRef = useRef<string | null>(null);
+  const cashMovementRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  // Member selection belongs to one check only. This synchronous guard prevents even one render
+  // of a newly selected table from inheriting the previous table's customer before the cleanup
+  // effect below runs.
+  const checkMember = memberCheckIdRef.current === (check?.id ?? null) ? selectedMember : null;
   // ⚠️ ต้องเป็น reference เดิมทุก render — ถ้าสร้าง closure ใหม่ทุกครั้ง antd จะเห็นว่า
   // container เปลี่ยน แล้ว portal ใหม่ซ้ำ ๆ จน animation ค้างที่ `ant-zoom-appear-start`
   // (opacity 0) = กล่องอยู่ใน DOM ตำแหน่งถูก แต่มองไม่เห็นทั้งใบ
   const modalContainer = useCallback(() => rootRef.current ?? document.body, []);
 
   useEffect(() => { setToken(window.localStorage.getItem(TOKEN_KEY) ?? ""); setReady(true); }, []);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("bms-pos-display");
+    displayChannel.current = channel;
+    channel.onmessage = (event) => {
+      if (event.data?.type === "hello" && displayPayloadRef.current) {
+        channel.postMessage(displayPayloadRef.current);
+      }
+    };
+    return () => { channel.close(); displayChannel.current = null; };
+  }, []);
+  useEffect(() => {
+    if (!check) {
+      if (settlementReceipt) return;
+      const empty: CustomerDisplayPayload = {
+        lines: [], itemCount: 0, total: 0, discountTotal: 0, amountDue: 0,
+        memberName: null, pointsEarned: null, finished: null,
+      };
+      displayPayloadRef.current = empty;
+      displayChannel.current?.postMessage(empty);
+      return;
+    }
+    const sentItems = check.items.filter((item) => item.status === "SENT" && item.lineAmount != null);
+    let itemCount = 0;
+    for (const item of sentItems) itemCount += item.packQty;
+    const payload: CustomerDisplayPayload = {
+      lines: sentItems.map((item) => ({
+        name: item.productName, size: item.size && item.size !== "-" ? item.size : null,
+        qty: item.packQty, unitName: item.unitName ?? "", amount: item.lineAmount!,
+      })),
+      itemCount,
+      total: check.amountDue,
+      discountTotal: 0,
+      amountDue: check.amountDue,
+      memberName: checkMember?.name ?? null,
+      pointsEarned: null,
+      finished: null,
+    };
+    displayPayloadRef.current = payload;
+    displayChannel.current?.postMessage(payload);
+  }, [check, checkMember, settlementReceipt]);
+  useEffect(() => {
+    if (!settlementReceipt) return;
+    const payload: CustomerDisplayPayload = {
+      lines: [], itemCount: 0, total: settlementReceipt.result.total, discountTotal: 0,
+      amountDue: settlementReceipt.result.total,
+      memberName: settlementReceipt.member?.name ?? null,
+      pointsEarned: settlementReceipt.result.pointsEarned,
+      finished: {
+        total: settlementReceipt.result.total,
+        tendered: settlementReceipt.result.cashTendered,
+        change: settlementReceipt.result.cashChange,
+      },
+    };
+    displayPayloadRef.current = payload;
+    displayChannel.current?.postMessage(payload);
+  }, [settlementReceipt]);
+  useEffect(() => {
+    const checkId = check?.id ?? null;
+    if (memberCheckIdRef.current === checkId) return;
+    memberCheckIdRef.current = checkId;
+    setSelectedMember(null);
+    setMemberQuery("");
+    setMemberResults([]);
+  }, [check?.id]);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
   const visibleTables = activeArea ? floor.tables.filter((table) => table.areaId === activeArea) : floor.tables;
   const availableTables = floor.tables.filter((table) => table.status === "AVAILABLE" && table.id !== selectedTableId);
@@ -485,9 +622,11 @@ export default function RestaurantPosPage() {
     if (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason) {
       throw new Error(describeTransportFailure(response.status, navigator.onLine));
     }
-    if (!response.ok) throw new Error(typeof body?.status === "string"
-      ? describePosFailure(body)
-      : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
+    if (!response.ok) throw new Error(url === "/api/pos/send-receipt" && body?.reason
+      ? String(body.reason)
+      : typeof body?.status === "string"
+        ? describePosFailure(body)
+        : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
     return body;
   }
   function auth(extra: Record<string, unknown> = {}) { if (!actorUserId || !actorPin) throw new Error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return { ...extra, cashierUserId: actorUserId, cashierPin: actorPin }; }
@@ -771,15 +910,135 @@ export default function RestaurantPosPage() {
   }
 
   async function action(name: string, extra: Record<string, unknown> = {}) { if (!check) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: name, ...extra })) }); if (body.check) setCheck(body.check); await Promise.all([loadFloor(), loadTickets()]); }); }
+  async function searchMembers() {
+    if (memberQuery.trim().length < 3) { setMemberResults([]); return; }
+    await run(async () => {
+      const body = await json(`/api/pos/member?q=${encodeURIComponent(memberQuery.trim())}`);
+      setMemberResults(Array.isArray(body.members) ? body.members : []);
+    });
+  }
+  async function loadRecentReceipts() {
+    await run(async () => {
+      const suffix = recentQuery.trim() ? `&q=${encodeURIComponent(recentQuery.trim())}` : "";
+      const body = await json(`/api/pos/recent-sales?limit=20&deviceOnly=1${suffix}`);
+      const rows: RecentReceipt[] = Array.isArray(body.sales) ? body.sales : [];
+      // deviceOnly บังคับขอบเขตที่ query ฝั่ง server; filter นี้เป็น fail-closed guard ของจอ
+      // เผื่อ response contract ถูกเปลี่ยนในอนาคต ไม่ใช่ชั้น authorization หลัก
+      setRecentReceipts(rows.filter((row) => row.posDeviceId === session?.device.id));
+    });
+  }
+  function receiptBytes(receipt: ReceiptSelection) {
+    const current = "result" in receipt;
+    const result = current ? receipt.result : receipt;
+    const currentLines = current ? receipt.check.items.filter((item) => item.status === "SENT") : [];
+    if (current && currentLines.some((item) => item.lineAmount == null)) {
+      throw new Error("ข้อมูลราคาบรรทัดใบเสร็จไม่ครบ — เปิดแท็บบิลแล้วลองพิมพ์ซ้ำ");
+    }
+    const lines: ReceiptLine[] = current
+      ? currentLines.map((item) => ({
+          name: `${item.productName}${item.size && item.size !== "-" ? ` (${item.size})` : ""}${item.modifierNames.length ? ` · ${item.modifierNames.join(", ")}` : ""}`,
+          qty: item.packQty,
+          amount: item.lineAmount!,
+        }))
+      : receipt.lines.map((item) => ({
+          name: `${item.receiptName}${item.size && item.size !== "-" ? ` (${item.size})` : ""}`,
+          qty: item.packQty,
+          amount: item.lineTotal,
+        }));
+    let itemCount = 0;
+    for (const line of lines) itemCount += line.qty;
+    return buildReceipt({
+      languageMode: session?.store?.receiptLanguageMode ?? "th",
+      storeName: session?.location?.name ?? "BMS Restaurant",
+      locationId: session?.location?.id ?? null,
+      branchCode: session?.location?.branchCode ?? null,
+      taxId: session?.store?.taxId ?? null,
+      posDeviceId: session?.device.id ?? null,
+      posNo: session?.device.registeredPosNo ?? session?.device.code ?? null,
+      shiftId: receipt.shiftId,
+      vatIncluded: Boolean(session?.vat.registered),
+      docTitle: receiptDocumentTitle(session?.store?.receiptLanguageMode ?? "th", "sale", Boolean(session?.vat.registered)),
+      docNo: result.docNo,
+      orderId: result.orderId,
+      at: current ? receipt.at : receipt.soldAt,
+      cashier: receipt.cashierName,
+      lines,
+      itemCount,
+      total: result.total,
+      tendered: result.cashTendered,
+      change: result.cashChange,
+      vat: result.vat,
+      discountLines: result.discountLines,
+      member: current
+        ? receipt.member ? { name: receipt.member.name, memberNo: receipt.member.memberNo, pointsEarned: receipt.result.pointsEarned, pointsBalance: receipt.result.pointsBalance } : null
+        : receipt.memberName ? { name: receipt.memberName, memberNo: receipt.memberNo, pointsEarned: receipt.pointsEarned ?? null, pointsBalance: receipt.pointsBalance ?? null } : null,
+    });
+  }
+  /**
+   * ⚠️ ลิ้นชักเปิดได้เฉพาะตอนพิมพ์ใบเสร็จของบิลที่ "เพิ่งรับเงินสด" เท่านั้น
+   *
+   * `8.0` ปิดช่องที่เปิดลิ้นชักได้โดยไม่มีร่องรอยไปแล้ว (ปุ่มเปล่า ๆ ที่แท็บตั้งค่า) แล้วบังคับ
+   * ให้การเปิดลิ้นชักที่ไม่ได้มาจากการขายต้องผ่าน `pos.nosale` + เหตุผล + นับในสรุปกะ ·
+   * ถ้าพิมพ์ซ้ำก็เปิดลิ้นชักด้วย แท็บ "บิล" จะกลายเป็นปุ่มเปิดลิ้นชักที่ไม่ต้องใช้ PIN
+   * ไม่มีเหตุผล และไม่มีใครนับ — กดกี่ครั้งก็ได้ต่อหน้าเงินในลิ้นชัก
+   *
+   * บิลที่จ่ายบัตร/QR ล้วนก็ไม่เปิด เพราะไม่มีเงินสดให้ทอน · คนที่ต้องเปิดลิ้นชักจริง ๆ
+   * ใช้ "เปิดลิ้นชักโดยไม่ขาย" ที่แท็บกะ ซึ่งบันทึกว่าใครเปิดเพราะอะไร (กฎเดียวกับหน้าค้าปลีก
+   * ที่แยก `printReceipt(true)` ของบิลที่เพิ่งขาย ออกจาก `printReceipt(false)` ของการพิมพ์ซ้ำ)
+   */
+  async function printReceipt(receipt: ReceiptSelection, openDrawer = false) {
+    await run(async () => {
+      let printer = await findRememberedPrinter();
+      if (!printer) {
+        try { printer = await requestPrinter(); }
+        catch { throw new Error("ไม่ได้เลือกเครื่องพิมพ์ — เลือกเครื่องแล้วลองพิมพ์อีกครั้ง"); }
+      }
+      if (!printer) throw new Error("ยังไม่ได้เลือกเครื่องพิมพ์");
+      await sendToPrinter(receiptBytes(receipt), printer);
+      if (openDrawer) await sendToPrinter(buildDrawerKick(), printer);
+      message.success("พิมพ์ใบเสร็จแล้ว");
+    });
+  }
+  async function sendSettlementReceipt(receipt: SettlementReceipt, channel: "email" | "line") {
+    await run(async () => {
+      const body = await json("/api/pos/send-receipt", { method: "POST", body: JSON.stringify({
+        orderId: receipt.result.orderId, channel, cashierUserId: actorUserId, pin: actorPin,
+        to: receiptTo.trim() || null,
+      }) });
+      message.success(`ส่งใบเสร็จไปที่ ${body.to} แล้ว`);
+      setReceiptTo("");
+    });
+  }
+  function closeSettlementReceipt() {
+    setReceiptTo("");
+    setSettlementReceipt(null);
+  }
+  function closeSelectedReceipt() {
+    setReceiptTo("");
+    setSelectedReceipt(null);
+  }
+  async function sendSelectedReceipt(channel: "email" | "line") {
+    if (!selectedReceipt || "result" in selectedReceipt) return;
+    await run(async () => {
+      const body = await json("/api/pos/send-receipt", { method: "POST", body: JSON.stringify({
+        orderId: selectedReceipt.orderId, channel, cashierUserId: actorUserId, pin: actorPin,
+        to: receiptTo.trim() || null,
+      }) });
+      message.success(`ส่งใบเสร็จไปที่ ${body.to} แล้ว`);
+      setReceiptTo("");
+    });
+  }
   async function settle() {
     if (!check) return;
     if (payments.length === 0) { message.error("ต้องระบุช่องทางชำระเงิน"); return; }
     if (Math.abs(paymentTotal - checkoutDue) > 0.009) { message.error(`ยอดชำระรวมต้องเท่ากับ ฿${money(checkoutDue)}`); return; }
     await run(async () => {
-      const result = await json(`/api/pos/restaurant/checks/${check.id}`, {
+      const settledCheck = check;
+      const result: SettlementResult = await json(`/api/pos/restaurant/checks/${settledCheck.id}`, {
         method: "POST",
         body: JSON.stringify(auth({
           action: "settle",
+          customerId: checkMember?.customerId ?? null,
           payments: payments.map((payment) => ({
             method: payment.method,
             amount: Number(payment.amount),
@@ -790,11 +1049,23 @@ export default function RestaurantPosPage() {
           })),
         })),
       });
-      message.success(`ปิดบิลแล้ว ฿${money(result.total)}`);
+      setReceiptTo("");
+      setSettlementReceipt({
+        result,
+        check: settledCheck,
+        member: checkMember,
+        at: new Date().toISOString(),
+        cashierName: operatorName || null,
+        shiftId: session?.shift?.id ?? null,
+      });
       setCheckoutOpen(false);
       setPayments([]);
+      setSelectedMember(null);
+      setMemberQuery("");
+      setMemberResults([]);
       setCheck(null);
       setSelectedTableId("");
+      setScreen("FLOOR");
       await Promise.all([loadFloor(), loadTickets(), loadSession()]);
     });
   }
@@ -891,7 +1162,75 @@ export default function RestaurantPosPage() {
       if (check?.id) await loadCheck(check.id).catch(() => {});
     });
   }
-  async function changeShift() { if (!shiftModal) return; await run(async () => { await json("/api/pos/shift", { method: "POST", body: JSON.stringify({ action: shiftModal.toLowerCase(), userId: actorUserId, pin: actorPin, ...(shiftModal === "OPEN" ? { openingFloat: cashAmount } : { countedCash: cashAmount }) }) }); setShiftModal(null); setCashAmount(0); await loadSession(); }); }
+  async function changeShift() {
+    if (!shiftModal || !operatorReady) return;
+    await run(async () => {
+      const actionName = shiftModal;
+      await json("/api/pos/shift", { method: "POST", body: JSON.stringify({ action: actionName.toLowerCase(), userId: actorUserId, pin: actorPin, ...(actionName === "OPEN" ? { openingFloat: cashAmount } : { countedCash: cashAmount }) }) });
+      setShiftModal(null);
+      setCashAmount(0);
+      setShiftReport(null);
+      await loadSession();
+      message.success(actionName === "OPEN" ? "เปิดกะแล้ว" : "ปิดกะและบันทึกยอดนับแล้ว");
+    });
+  }
+  async function recordCashMove() {
+    if (!operatorReady) { message.error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return; }
+    if (!(Number(cashMoveAmount) > 0) || !cashMoveReason.trim()) { message.error("ระบุจำนวนเงินที่มากกว่า 0 และเหตุผลก่อน"); return; }
+    if (cashMoveDirection === "IN" && !cashMoveExternalConfirmed) {
+      message.error("ยืนยันก่อนว่าเงินก้อนนี้มาจากนอกยอดขาย");
+      return;
+    }
+    if (cashMoveDirection === "OUT" && (!cashMoveApproverId || !cashMoveApproverPin)) { message.error("เงินออกต้องมีผู้อนุมัติคนที่สองกด PIN"); return; }
+    await run(async () => {
+      const signature = JSON.stringify({
+        shiftId: session?.shift?.id ?? null,
+        direction: cashMoveDirection,
+        amount: Number(cashMoveAmount),
+        reason: cashMoveReason.trim(),
+        cashierUserId: actorUserId,
+        approverUserId: cashMoveDirection === "OUT" ? cashMoveApproverId : null,
+      });
+      if (cashMovementRequestRef.current?.signature !== signature) {
+        cashMovementRequestRef.current = { signature, key: `restaurant-cash-${crypto.randomUUID()}` };
+      }
+      await json("/api/pos/cash-movement", { method: "POST", body: JSON.stringify({
+        direction: cashMoveDirection, amount: Number(cashMoveAmount), reason: cashMoveReason.trim(),
+        cashierUserId: actorUserId, pin: actorPin,
+        approverUserId: cashMoveDirection === "OUT" ? cashMoveApproverId : null,
+        approverPin: cashMoveDirection === "OUT" ? cashMoveApproverPin : null,
+        idempotencyKey: cashMovementRequestRef.current.key,
+      }) });
+      cashMovementRequestRef.current = null;
+      setCashMoveAmount(""); setCashMoveReason(""); setCashMoveApproverPin(""); setCashMoveExternalConfirmed(false);
+      setShiftReport(null);
+      message.success("บันทึกเงินเข้า/ออกแล้ว");
+    });
+  }
+  async function recordNoSale() {
+    if (!operatorReady) { message.error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return; }
+    if (!noSaleReason.trim()) { message.error("ระบุเหตุผลที่เปิดลิ้นชักก่อน"); return; }
+    await run(async () => {
+      await json("/api/pos/no-sale", { method: "POST", body: JSON.stringify({ cashierUserId: actorUserId, pin: actorPin, reason: noSaleReason.trim() }) });
+      setNoSaleReason("");
+      const printer = await findRememberedPrinter();
+      if (printer) await sendToPrinter(buildDrawerKick(), printer).catch(() => {});
+      setShiftReport(null);
+      message.success("บันทึกการเปิดลิ้นชักแล้ว");
+    });
+  }
+  async function loadShiftReport() {
+    if (!actorUserId || !actorPin) { message.error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return; }
+    await run(async () => {
+      const query = new URLSearchParams({ cashierUserId: actorUserId, pin: actorPin });
+      const body = await json(`/api/pos/shift-report?${query}`);
+      setShiftReport(body.report ?? null);
+    });
+  }
+  useEffect(() => {
+    if (screen !== "BILLS" || !token || !session?.device.id) return;
+    void loadRecentReceipts();
+  }, [screen, token, session?.device.id]);
   async function supportAction(action: "export" | "send") {
     if (!token || !session?.device?.id || !actorUserId || !actorPin) return message.error(lang === "en" ? "Select an operator and enter the PIN first." : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน");
     if (action === "send" && (!supportConfirmed || !supportDescription.trim())) return message.warning(lang === "en" ? "Describe the issue and confirm before sending." : "อธิบายปัญหาและยืนยันก่อนส่ง");
@@ -952,6 +1291,8 @@ export default function RestaurantPosPage() {
     { key: "ORDER" as const, short: "สั่ง", full: "สั่งอาหาร", icon: <WalletOutlined />, badge: 0 },
     { key: "FLOOR" as const, short: "โต๊ะ", full: "ผังโต๊ะ", icon: <AppstoreOutlined />, badge: unsentTableCount },
     { key: "KITCHEN" as const, short: "ครัว", full: "จอครัว", icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
+    { key: "BILLS" as const, short: "บิล", full: "บิลล่าสุด", icon: <FileTextOutlined />, badge: 0 },
+    { key: "SHIFT" as const, short: "กะ", full: "จัดการกะและลิ้นชัก", icon: <SwapOutlined />, badge: 0 },
   ];
 
   return <main className={styles.page} ref={rootRef}>
@@ -980,13 +1321,37 @@ export default function RestaurantPosPage() {
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void refresh()} title="รีเฟรช" aria-label="รีเฟรช"><ReloadOutlined /></button>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setSupportOpen(true)} title={`Support Log (${localSupportEventCount(supportScope)})`} aria-label={`Support Log (${localSupportEventCount(supportScope)})`}><CustomerServiceOutlined /></button>
           <button type="button" className={styles.btn} onClick={() => { window.location.href = "/pos?surface=retail"; }} title="คืนสินค้า · รับของเข้าคลัง · มัดจำ · บัตรของขวัญ · ขายเชื่อ ยังอยู่ที่หน้าค้าปลีก"><ShopOutlined /> โหมดค้าปลีก</button>
-          <button type="button" className={`${styles.btn} ${session?.shift ? "" : styles.btnPrimary}`} onClick={() => setShiftModal(session?.shift ? "CLOSE" : "OPEN")}>{session?.shift ? "ปิดกะ" : "เปิดกะ"}</button>
+          {!session?.shift && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady} title={operatorReady ? "เปิดกะ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => setShiftModal("OPEN")}>เปิดกะ</button>}
         </div>
       </header>
       {!session?.shift && <Alert type="warning" showIcon message="ยังไม่เปิดกะ — เปิดกะก่อนจึงจะเปิดโต๊ะและรับออร์เดอร์ได้" />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
 
-      {screen !== "KITCHEN" ? <Spin spinning={working}><div className={styles.floorWrap}>
+      {screen === "BILLS" && <Spin spinning={working}><section className={styles.counterScreen}>
+        <div className={styles.panelHeader}>
+          <div><h2>บิลล่าสุดของเครื่องนี้</h2><small>ค้นหา เปิดดู พิมพ์ซ้ำ หรือส่งสำเนา โดยไม่ต้องออกจากหน้าร้านอาหาร</small></div>
+          <div className={styles.searchRow}><input className={styles.field} value={recentQuery} onChange={(event) => setRecentQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void loadRecentReceipts(); }} placeholder="เลขบิล / สมาชิก" /><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void loadRecentReceipts()}>ค้นหา</button></div>
+        </div>
+        <div className={styles.receiptGrid}>
+          {recentReceipts.length === 0 && <div className={styles.empty}>ยังไม่มีบิลในเครื่องนี้ หรือกดค้นหาเพื่อรีเฟรช</div>}
+          {recentReceipts.map((receipt) => <button type="button" className={styles.receiptCard} key={receipt.orderId} onClick={() => { setReceiptTo(""); setSelectedReceipt(receipt); }}>
+            <span><b>{receipt.docNo ?? receipt.receiptNo ?? receipt.orderId.slice(0, 8)}</b><small>{new Date(receipt.soldAt).toLocaleString("th-TH")}</small></span>
+            <strong><span className={styles.baht}>฿</span>{money(receipt.total)}</strong>
+            <span>{receipt.memberName ?? "ลูกค้าทั่วไป"} · {receipt.lines.length} รายการ{billHistoryNote(receipt) ? ` · ${billHistoryNote(receipt)}` : ""}</span>
+          </button>)}
+        </div>
+      </section></Spin>}
+
+      {screen === "SHIFT" && <Spin spinning={working}><section className={styles.counterScreen}>
+        <div className={styles.panelHeader}><div><h2>กะและลิ้นชัก</h2><small>{session?.shift ? `เปิดเมื่อ ${new Date(session.shift.openedAt).toLocaleString("th-TH")}` : "ยังไม่เปิดกะ"}</small></div><div className={styles.searchRow}><button type="button" className={styles.btn} disabled={!session?.shift || !operatorReady} title={operatorReady ? "ดูรายงานกะที่เปิดอยู่" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void loadShiftReport()}>ดูสรุปกะ X</button>{session?.shift && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} disabled={!operatorReady} title={operatorReady ? "ปิดกะและบันทึกยอดนับ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => setShiftModal("CLOSE")}>ปิดกะ</button>}</div></div>
+        <div className={styles.counterGrid}>
+          <article className={styles.counterCard}><h3>เงินเข้า / เงินออก</h3><Segmented value={cashMoveDirection} onChange={(value) => { setCashMoveDirection(value as "IN" | "OUT"); setCashMoveExternalConfirmed(false); }} options={[{ label: "เงินเข้า", value: "IN" }, { label: "เงินออก", value: "OUT" }]} /><label>จำนวนเงิน<input type="number" min="0.01" step="0.01" value={cashMoveAmount} onChange={(event) => setCashMoveAmount(event.target.value)} /></label><label>เหตุผล<input value={cashMoveReason} onChange={(event) => setCashMoveReason(event.target.value)} /></label>{cashMoveDirection === "IN" && <Checkbox className={styles.cashConfirm} checked={cashMoveExternalConfirmed} onChange={(event) => setCashMoveExternalConfirmed(event.target.checked)}>ยืนยันว่าเป็นเงินจากนอกยอดขาย (ยอดขายเงินสดนับให้อัตโนมัติแล้ว)</Checkbox>}{cashMoveDirection === "OUT" && <><label>ผู้อนุมัติ<select value={cashMoveApproverId} onChange={(event) => setCashMoveApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติคนที่สอง</option>{(session?.approvers ?? []).filter((person) => person.id !== actorUserId && person.hasPin && person.approvals.includes("pos.cash.movement")).map((person) => <option key={person.id} value={person.id}>{person.name ?? person.email ?? person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cashMoveApproverPin} onChange={(event) => setCashMoveApproverPin(event.target.value)} /></label></>}<button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift || !operatorReady || !(Number(cashMoveAmount) > 0) || !cashMoveReason.trim() || (cashMoveDirection === "IN" ? !cashMoveExternalConfirmed : !cashMoveApproverId || !cashMoveApproverPin)} title={!operatorReady ? "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน" : "บันทึกเงินเข้า/ออกลิ้นชัก"} onClick={() => void recordCashMove()}>บันทึกรายการ</button></article>
+          <article className={styles.counterCard}><h3>เปิดลิ้นชักโดยไม่ขาย</h3><p>ทุกครั้งต้องมีเหตุผล ระบบบันทึกผู้เปิดและนับในสรุปกะ</p><label>เหตุผล<input value={noSaleReason} onChange={(event) => setNoSaleReason(event.target.value)} placeholder="เช่น แลกแบงก์ย่อย" /></label><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift || !operatorReady || !noSaleReason.trim()} title={!operatorReady ? "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน" : "บันทึกและเปิดลิ้นชัก"} onClick={() => void recordNoSale()}>บันทึกและเปิดลิ้นชัก</button></article>
+          <article className={`${styles.counterCard} ${styles.reportCard}`}><h3>สรุปกะจาก server</h3>{shiftReport ? <div className={styles.summaryGrid}><span>ยอดขาย<b>฿{money(shiftReport.salesTotal)}</b></span><span>จำนวนบิล<b>{shiftReport.billCount}</b></span><span>รับคืน<b>{shiftReport.returnCount} / ฿{money(shiftReport.returnTotal)}</b></span><span>เงินเข้า / ออก<b>฿{money(shiftReport.cashIn)} / ฿{money(shiftReport.cashOut)}</b></span><span>เปิดลิ้นชักไม่ขาย<b>{shiftReport.noSaleCount}</b></span><span>เงินที่ควรมี<b>{shiftReport.expectedCashHidden ? "ซ่อนจนปิดกะ" : `฿${money(shiftReport.expectedCash ?? 0)}`}</b></span>{shiftReport.byMethod.map((row) => <span key={row.method}>{row.method}<b>{row.count} บิล · ฿{money(row.amount)}</b></span>)}</div> : <p>กด “ดูสรุปกะ X” หลังเลือกผู้ปฏิบัติงานและกรอก PIN</p>}</article>
+        </div>
+      </section></Spin>}
+
+      {screen === "ORDER" || screen === "FLOOR" ? <Spin spinning={working}><div className={styles.floorWrap}>
         {screen === "FLOOR" && floor.tables.length > 0 && <section className={styles.strip} aria-label="สรุปหน้าร้าน">
           <span>โต๊ะใช้งาน <b>{occupiedTables.length}</b> / {floor.tables.length}</span>
           <span className={styles.stripSep} aria-hidden="true">│</span>
@@ -1241,7 +1606,7 @@ export default function RestaurantPosPage() {
               </li>)}</ul>}
           <div className={styles.hint}>เรียงตาม <b>โต๊ะที่ต้องไปก่อน</b>: ค้างส่งครัว → พร้อมเสิร์ฟ → ครัวกำลังทำ → เสิร์ฟครบรอเก็บเงิน → ยังไม่สั่ง</div>
         </>}</aside>
-      </div></div></Spin> : <Spin spinning={working}><section className={styles.kitchenBoard}>
+      </div></div></Spin> : screen === "KITCHEN" ? <Spin spinning={working}><section className={styles.kitchenBoard}>
           {/* หัวจอเหลือแถวเดียว — ชื่อจอกับคำอธิบายไม่ช่วยคนที่ยืนทำอาหาร พื้นที่นั้นไปเป็น
               ตัวกรองสถานี ซึ่งเป็นวิธีที่ครัวแบ่งงานกันจริง (ครัวร้อน/บาร์ อยู่คนละที่) */}
           <div className={styles.kitchenBar}>
@@ -1338,7 +1703,7 @@ export default function RestaurantPosPage() {
               </div>
             </section>;
           })}</div>
-        </section></Spin>}
+        </section></Spin> : null}
     </div>
 
     <Modal title={`แก้จำนวนคน ${check?.tableName ?? ""}`} open={guestOpen} onCancel={() => setGuestOpen(false)} confirmLoading={working} okText="บันทึก" getContainer={modalContainer}
@@ -1450,7 +1815,24 @@ export default function RestaurantPosPage() {
         </div>
       </div>}
     </Modal>
-    <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
+    <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okButtonProps={{ disabled: !operatorReady }} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
+    <Modal title="ปิดบิลสำเร็จ" open={Boolean(settlementReceipt)} onCancel={closeSettlementReceipt} footer={null} width={620} getContainer={modalContainer}>
+      {settlementReceipt && <div className={styles.modalGrid}>
+        <div className={styles.receiptHero}><span>{settlementReceipt.result.docNo ?? settlementReceipt.result.receiptNo ?? "ใบเสร็จ"}<small>{settlementReceipt.check.tableName} · {settlementReceipt.member?.name ?? "ลูกค้าทั่วไป"}</small></span><strong>฿{money(settlementReceipt.result.total)}</strong></div>
+        <div className={styles.summaryGrid}><span>รับเงิน<b>{settlementReceipt.result.cashTendered == null ? "—" : `฿${money(settlementReceipt.result.cashTendered)}`}</b></span><span>เงินทอน<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>VAT<b>{settlementReceipt.result.vat ? `฿${money(settlementReceipt.result.vat.vatAmount)}` : "—"}</b></span><span>แต้มที่ได้<b>{settlementReceipt.result.pointsEarned ?? "—"}</b></span><span>ตั๋วครัว<b>{settlementReceipt.result.kitchenTickets}</b></span><span>สถานะ<b>{settlementReceipt.result.replayed ? "รายการเดิม (ไม่คิดซ้ำ)" : "รับชำระแล้ว"}</b></span></div>
+        {settlementReceipt.result.discountLines.map((line, index) => <div className={styles.sheetRow} key={`${line.label}-${index}`}><span>{line.label}</span><b>-฿{money(line.amount)}</b></div>)}
+        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> พิมพ์ใบเสร็จ</button><input value={receiptTo} onChange={(event) => setReceiptTo(event.target.value)} placeholder="อีเมล / LINE recipient" /><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSettlementReceipt(settlementReceipt, "email")}>ส่งอีเมล</button><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSettlementReceipt(settlementReceipt, "line")}>ส่ง LINE</button></div>
+        <button type="button" className={styles.btn} onClick={closeSettlementReceipt}>กลับไปผังโต๊ะ</button>
+      </div>}
+    </Modal>
+    <Modal title={selectedReceipt && !("result" in selectedReceipt) ? selectedReceipt.docNo ?? "รายละเอียดบิล" : "รายละเอียดบิล"} open={Boolean(selectedReceipt)} onCancel={closeSelectedReceipt} footer={null} width={620} getContainer={modalContainer}>
+      {selectedReceipt && !("result" in selectedReceipt) && <div className={styles.modalGrid}>
+        <div className={styles.receiptHero}><span>{new Date(selectedReceipt.soldAt).toLocaleString("th-TH")}<small>{selectedReceipt.memberName ?? "ลูกค้าทั่วไป"} · {selectedReceipt.cashierName ?? "—"}</small></span><strong>฿{money(selectedReceipt.total)}</strong></div>
+        {billHistoryNote(selectedReceipt) && <Alert type="warning" showIcon message={`บิลนี้${billHistoryNote(selectedReceipt)}`} description="กระดาษที่พิมพ์จากที่นี่คือ “ใบขายเดิม” ยอดบนใบยังเป็นยอดตอนขายจริง การคืน/ยกเลิกออกเป็นเอกสารคนละใบ — ดูรายละเอียดการคืนที่โหมดค้าปลีก" />}
+        {selectedReceipt.lines.map((line, index) => <div className={styles.sheetRow} key={`${line.receiptName}-${index}`}><span>{line.packQty}× {line.receiptName}{line.size && line.size !== "-" ? ` · ${line.size}` : ""}</span><b>฿{money(line.lineTotal)}</b></div>)}
+        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(selectedReceipt)}><PrinterOutlined /> {billHistoryNote(selectedReceipt) ? "พิมพ์ใบขายเดิม" : "พิมพ์ซ้ำ"}</button><input value={receiptTo} onChange={(event) => setReceiptTo(event.target.value)} placeholder="อีเมล / LINE recipient" /><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSelectedReceipt("email")}>ส่งอีเมล</button><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSelectedReceipt("line")}>ส่ง LINE</button></div>
+      </div>}
+    </Modal>
     <Modal
       title={lang === "en" ? "Support diagnostics" : "ข้อมูลวิเคราะห์สำหรับ Support"}
       open={supportOpen}
@@ -1466,7 +1848,9 @@ export default function RestaurantPosPage() {
       <Input.TextArea style={{ marginTop: 16 }} rows={4} maxLength={2000} showCount value={supportDescription} onChange={(event) => setSupportDescription(event.target.value)} placeholder={lang === "en" ? "What happened before the error?" : "ก่อนเกิดปัญหาทำอะไรอยู่ และพบข้อความอะไร"} />
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{lang === "en" ? "I consent to send this diagnostic bundle to Support." : "ยินยอมส่งข้อมูลวิเคราะห์ชุดนี้ให้ทีม Support"}</Checkbox>
     </Modal>
-    <Modal title={`รับชำระ ${check?.tableName ?? ""}`} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText="ยืนยันรับเงิน" width={680} getContainer={modalContainer}>{check && <div className={styles.modalGrid}><div className={styles.total}><span>ยอดที่ต้องชำระ</span><strong><span className={styles.baht}>฿</span>{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>วิธีชำระ<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">เงินสด</option><option value="QR">QR / พร้อมเพย์</option><option value="CARD">บัตร</option></select></label><label>ยอดช่องทางนี้<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row))} /></label>{payment.method === "CASH" ? <label>เงินสดที่รับมา<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} /></label> : <label>เลขอ้างอิง<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <Button danger onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>ลบช่องทาง {index + 1}</Button>}</div>)}<Button type="dashed" onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>+ แบ่งชำระอีกช่องทาง</Button><Alert type={Math.abs(paymentTotal - checkoutDue) <= 0.009 ? "success" : "warning"} showIcon message={`รวม ฿${money(paymentTotal)} · ${paymentTotal < checkoutDue ? `เหลือ ฿${money(checkoutDue - paymentTotal)}` : paymentTotal > checkoutDue ? `เกิน ฿${money(paymentTotal - checkoutDue)}` : "ครบยอด"}`} /></div>}</Modal>
+    <Modal title={`รับชำระ ${check?.tableName ?? ""}`} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText="ยืนยันรับเงิน" width={680} getContainer={modalContainer}>{check && <div className={styles.modalGrid}>
+      <div className={styles.memberBox}><b>สมาชิก (ไม่บังคับ)</b>{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? "สมาชิก"}<small>แต้มใช้ได้ {checkMember.pointsUsable}</small></span><button type="button" className={styles.btn} onClick={() => setSelectedMember(null)}>เอาออก</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder="ชื่อ / เบอร์ / เลขสมาชิก อย่างน้อย 3 ตัว" /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>ค้นหา</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => setSelectedMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{member.pointsUsable} แต้ม</b></button>)}</>}</div>
+      <div className={styles.total}><span>ยอดที่ต้องชำระ</span><strong><span className={styles.baht}>฿</span>{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>วิธีชำระ<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">เงินสด</option><option value="QR">QR / พร้อมเพย์</option><option value="CARD">บัตร</option></select></label><label>ยอดช่องทางนี้<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row))} /></label>{payment.method === "CASH" ? <label>เงินสดที่รับมา<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} /></label> : <label>เลขอ้างอิง<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <Button danger onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>ลบช่องทาง {index + 1}</Button>}</div>)}<Button type="dashed" onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>+ แบ่งชำระอีกช่องทาง</Button><Alert type={Math.abs(paymentTotal - checkoutDue) <= 0.009 ? "success" : "warning"} showIcon message={`รวม ฿${money(paymentTotal)} · ${paymentTotal < checkoutDue ? `เหลือ ฿${money(checkoutDue - paymentTotal)}` : paymentTotal > checkoutDue ? `เกิน ฿${money(paymentTotal - checkoutDue)}` : "ครบยอด"}`} /></div>}</Modal>
     <Modal title={`จัดการบิล ${check?.tableName ?? ""}`} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> ย้ายโต๊ะ</button>

@@ -35,6 +35,7 @@ type CheckItemRow = {
   unit_name: string | null;
   base_qty: number | null;
   pack_price: string | null;
+  line_amount?: string | null;
   sent_at?: string | Date | null;
   kitchen_status?: string | null;
   modifier_codes: string[];
@@ -51,6 +52,7 @@ function iso(value: Date | string | null) {
 }
 
 function mapCheckItem(row: CheckItemRow) {
+  const packPrice = row.pack_price == null ? null : Number(row.pack_price);
   return {
     id: row.id,
     sku: row.product_sku,
@@ -60,7 +62,10 @@ function mapCheckItem(row: CheckItemRow) {
     packCode: row.pack_code,
     unitName: row.unit_name,
     baseQty: row.base_qty == null ? null : Number(row.base_qty),
-    packPrice: row.pack_price == null ? null : Number(row.pack_price),
+    packPrice,
+    // Exact immutable order-line amount (including modifier deltas) for receipt/customer-display
+    // rendering. A NEW line has no authoritative order snapshot yet and deliberately stays null.
+    lineAmount: row.line_amount == null ? null : Number(row.line_amount),
     modifierCodes: row.modifier_codes ?? [],
     modifierNames: row.modifier_names ?? [],
     kitchenNote: row.kitchen_note,
@@ -417,8 +422,27 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
     `SELECT ci.id, ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_code, ci.unit_name,
             ci.base_qty, ci.pack_price, ci.modifier_codes, ci.modifier_names, ci.kitchen_note,
             ci.status, ci.round_no, ci.created_at, ci.sent_at,
-            kt.status AS kitchen_status
+            kt.status AS kitchen_status,
+            order_line.line_amount
        FROM bms_restaurant_check_items ci
+       -- createOrderInTx รวมรายการ SKU/size/pack/modifier เดียวกันเป็น order line เดียว แม้
+       -- ร้านอาหารจะกดสั่งซ้ำคนละรอบ จึงห้ามจับคู่ตามลำดับบรรทัด ใช้ key เดียวกับการรวมและ
+       -- กระจาย immutable receipt unit price กลับตามจำนวนของ check line นี้แทน
+       LEFT JOIN LATERAL (
+         SELECT round(oi.receipt_unit_price * ci.pack_qty, 2) AS line_amount
+           FROM bms_restaurant_checks current_check
+           JOIN bms_order_items oi
+             ON oi.tenant_id = current_check.tenant_id AND oi.order_id = current_check.current_order_id
+          WHERE current_check.tenant_id = ci.tenant_id AND current_check.id = ci.check_id
+            AND ci.status = 'SENT'
+            AND oi.product_sku = ci.product_sku
+            AND oi.size = ci.size
+            AND COALESCE(oi.pack_code, 'BASE') = COALESCE(ci.pack_code, 'BASE')
+            AND COALESCE(oi.stock_modifier_codes, ARRAY[]::text[])
+                = COALESCE(ci.modifier_codes, ARRAY[]::text[])
+          ORDER BY oi.id
+          LIMIT 1
+       ) order_line ON TRUE
        -- ตั๋วครัวล่าสุดของบรรทัดนี้ · LEFT JOIN เพราะบรรทัดที่ยังไม่ส่งครัว (และร้านที่ปิด
        -- คิวครัว) ไม่มีตั๋ว และต้องไม่หายไปจากบิลเพราะการ join
        LEFT JOIN LATERAL (
@@ -1177,8 +1201,13 @@ export async function settleRestaurantCheck(input: {
   shiftId: string;
   checkId: string;
   actorUserId: string;
+  customerId?: string | null;
   payments: PosPaymentInput[];
 }): Promise<PosSaleResult> {
+  const customerId = String(input.customerId ?? "").trim() || null;
+  if (customerId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customerId)) {
+    throw new RestaurantCheckError("สมาชิกที่เลือกไม่ถูกต้อง กรุณาค้นหาและเลือกใหม่");
+  }
   return withCheckLock(input.tenantId, input.checkId, async () => {
     // Prepare settlement in one locked tenant transaction. The process mutex above only protects
     // this instance; without the xact advisory lock two registers on different instances could
@@ -1186,6 +1215,8 @@ export async function settleRestaurantCheck(input: {
     const settlementAttemptId = randomUUID();
     let key = "";
     let items: { rows: CheckItemRow[] } = { rows: [] };
+    let wasSettlementReplay = false;
+    let kitchenTicketCount = 0;
     const prepare = await getClient();
     try {
       await beginTenantTx(prepare, input.tenantId, { editorId: input.actorUserId });
@@ -1201,7 +1232,8 @@ export async function settleRestaurantCheck(input: {
       const checkResult = await prepare.query<any>(
         `SELECT c.*, o.status AS order_status, o.idempotency_key AS order_key,
                 o.pos_device_id AS order_device_id, o.pos_shift_id AS order_shift_id,
-                o.cashier_user_id AS order_cashier_user_id
+                o.cashier_user_id AS order_cashier_user_id,
+                o.customer_id AS order_customer_id
            FROM bms_restaurant_checks c
            JOIN bms_orders o
              ON o.tenant_id = c.tenant_id AND o.id = c.current_order_id
@@ -1212,6 +1244,18 @@ export async function settleRestaurantCheck(input: {
       );
       if (!checkResult.rowCount) throw new RestaurantCheckError("บิลนี้ไม่ได้เปิดอยู่ในสาขาของเครื่องนี้");
       const check = checkResult.rows[0];
+      wasSettlementReplay = check.status !== "OPEN";
+      if (customerId) {
+        const customer = await prepare.query(
+          `SELECT 1 FROM bms_customers
+            WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL AND member_no IS NOT NULL`,
+          [input.tenantId, customerId]
+        );
+        if (!customer.rowCount) throw new RestaurantCheckError("ไม่พบสมาชิกนี้ในร้าน");
+      }
+      if (check.status === "PAID" && (check.order_customer_id ?? null) !== customerId) {
+        throw new RestaurantCheckError("ข้อมูลสมาชิกไม่ตรงกับบิลที่ปิดไปแล้ว กรุณาเปิดใบเสร็จเดิมจากแท็บบิล");
+      }
       if (!check.current_order_id || Number(check.reserved_version) !== Number(check.version)) {
         throw new RestaurantCheckError("มีรายการที่ยังไม่ส่งครัว กรุณาส่งครัวก่อนคิดเงิน");
       }
@@ -1271,6 +1315,19 @@ export async function settleRestaurantCheck(input: {
         [input.tenantId, input.checkId]
       );
       if (!items.rows.length) throw new RestaurantCheckError("บิลนี้ไม่มีรายการที่ส่งครัวแล้ว");
+      // จำนวนตั๋วครัวของบิลนี้ต้องนับจากตั๋วจริง ไม่ใช่จากจำนวนบรรทัดที่ส่งครัว —
+      // `sendRestaurantKitchenRound` ออกตั๋วเฉพาะร้านที่เปิดความสามารถ KITCHEN_WORKFLOW
+      // ร้านที่ไม่ได้ใช้จอครัวจึงไม่มีตั๋วสักใบ แล้วการรายงานจำนวนบรรทัดแทนคือการบอก
+      // แคชเชียร์ว่างานถูกส่งเข้าคิวที่ไม่มีอยู่จริง (ตัวเลขบนใบเสร็จต้องตรวจสอบได้)
+      const kitchenTickets = await prepare.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n
+           FROM bms_restaurant_kitchen_tickets t
+           JOIN bms_restaurant_check_items i
+             ON i.tenant_id = t.tenant_id AND i.id = t.check_item_id
+          WHERE t.tenant_id = $1 AND t.check_id = $2 AND i.status = 'SENT'`,
+        [input.tenantId, input.checkId]
+      );
+      kitchenTicketCount = Number(kitchenTickets.rows[0]?.n ?? 0);
       if (check.status !== "PAID") {
         const claimed = await prepare.query(
           `UPDATE bms_restaurant_checks
@@ -1311,6 +1368,7 @@ export async function settleRestaurantCheck(input: {
       restaurantSettlementAttemptId: settlementAttemptId,
       lines: items.rows.map(toPosLine),
       payments: input.payments,
+      customerId,
     }).catch(async (error) => {
       await reopenClosingCheck(
         input.tenantId,
@@ -1327,6 +1385,18 @@ export async function settleRestaurantCheck(input: {
         input.actorUserId,
         settlementAttemptId
       );
+    }
+    if (result.status === "SOLD") {
+      // recordPosSale sees the kitchen reservation as an existing idempotent order, so its generic
+      // result says replayed=true even on the restaurant's first real payment. Translate that flag
+      // at this boundary, where the check's pre-claim state tells first settlement from a retry.
+      // Kitchen tickets were emitted when the round was sent, not during recordPosSale, so report
+      // the tickets this check actually holds instead of the generic settlement's zero.
+      return {
+        ...result,
+        replayed: result.replayed && wasSettlementReplay,
+        kitchenTickets: kitchenTicketCount,
+      };
     }
     return result;
   });

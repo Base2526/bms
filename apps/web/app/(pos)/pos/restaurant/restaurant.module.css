@@ -536,6 +536,38 @@
 .menuTotalRow b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .modifierList { display: grid; gap: 12px; }
 
+/* ---------- bills + shift register ---------- */
+.counterScreen { min-height: 0; overflow-y: auto; padding: 18px; background: var(--bg); }
+.counterGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.counterCard { display: grid; align-content: start; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.counterCard h3, .counterCard p { margin: 0; }
+.counterCard p { color: var(--ink-2); }
+.counterCard label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.page .cashConfirm { display: flex; align-items: flex-start; gap: 8px; font-weight: 500; line-height: 1.4; }
+.counterCard input, .counterCard select, .receiptActions input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; background: var(--panel); color: var(--ink); font: inherit; }
+.reportCard { grid-column: 1 / -1; }
+.summaryGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.summaryGrid > span { display: grid; gap: 3px; padding: 10px; border-radius: 7px; background: var(--panel-2); color: var(--ink-2); font-size: 12px; }
+.summaryGrid b { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+.receiptGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.page .receiptCard { min-height: 112px; display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.page .receiptCard:hover { border-color: var(--accent); background: var(--panel-2); }
+.receiptCard > span { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: 12px; }
+.receiptCard > span:first-child { align-items: flex-start; color: var(--ink); }
+.receiptCard small { display: block; color: var(--ink-3); }
+.receiptCard strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.memberBox { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.memberSelected, .memberResult { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.memberSelected span, .memberResult span { display: grid; }
+.memberSelected small, .memberResult small { color: var(--ink-2); }
+.page .memberResult { min-height: 46px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.page .memberResult:hover { border-color: var(--accent); background: var(--green-bg); }
+.receiptHero { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 8px; background: var(--green-bg); }
+.receiptHero > span { display: grid; font-weight: 700; }
+.receiptHero small { color: var(--ink-2); font-weight: 400; }
+.receiptHero strong { color: var(--accent); font-size: 28px; }
+.receiptActions { display: grid; grid-template-columns: auto minmax(160px, 1fr) auto auto; gap: 8px; align-items: center; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: minmax(0, 1fr) 320px; }
@@ -551,6 +583,8 @@
   .panelScroll, .items, .openList, .kitchenBoard, .laneScroll { overflow: visible; }
   .lane { min-height: 460px; }
   .workspace { grid-template-columns: 1fr; }
+  .counterGrid { grid-template-columns: 1fr; }
+  .reportCard { grid-column: auto; }
   .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px rgba(21, 25, 22, .1); }
   .lanes { grid-template-columns: repeat(4, 260px); }
@@ -592,7 +626,9 @@
   .panel { padding-inline: 10px; }
   .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footerButtons { grid-template-columns: 1fr; }
-    .lanes { grid-template-columns: repeat(4, 82vw); }
+  .summaryGrid { grid-template-columns: 1fr 1fr; }
+  .receiptActions { grid-template-columns: 1fr; }
+  .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
 }
 @media (max-width: 340px) {

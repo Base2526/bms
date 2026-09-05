@@ -367,6 +367,97 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
 });
 
+test("restaurant register keeps settlement receipts and counter screens on the same device", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const route = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const service = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const pos = code(await read("apps/web/lib/bms/pos.ts"));
+
+  for (const screen of ["ORDER", "FLOOR", "KITCHEN", "BILLS", "SHIFT"]) {
+    assert.match(page, new RegExp(`RESTAURANT_SCREENS[^;]*"${screen}"`));
+    assert.match(page, new RegExp(`${screen.toLowerCase()}: "${screen}"`));
+  }
+  assert.match(page, /\/api\/pos\/recent-sales\?limit=20/);
+  assert.match(page, /\/api\/pos\/cash-movement/);
+  assert.match(page, /\/api\/pos\/no-sale/);
+  assert.match(page, /\/api\/pos\/shift-report/);
+  assert.match(page, /new BroadcastChannel\("bms-pos-display"\)/);
+  assert.match(page, /event\.data\?\.type === "hello"/);
+  assert.match(page, /finished: \{[\s\S]*total: settlementReceipt\.result\.total[\s\S]*tendered: settlementReceipt\.result\.cashTendered[\s\S]*change: settlementReceipt\.result\.cashChange/);
+  assert.doesNotMatch(page, /finished: true/);
+  assert.match(page, /const checkMember = memberCheckIdRef\.current === \(check\?\.id \?\? null\) \? selectedMember : null/);
+  assert.match(page, /memberCheckIdRef\.current === checkId/);
+  assert.match(page, /function closeSettlementReceipt\(\)[\s\S]*setReceiptTo\(""\)/);
+  assert.match(page, /function closeSelectedReceipt\(\)[\s\S]*setReceiptTo\(""\)/);
+  assert.match(page, /recent-sales\?limit=20&deviceOnly=1/);
+  assert.match(page, /cashMovementRequestRef\.current\?\.signature !== signature/);
+  assert.match(page, /idempotencyKey: cashMovementRequestRef\.current\.key/);
+  assert.doesNotMatch(page, /idempotencyKey: `restaurant-cash-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.match(page, /cashMoveDirection === "IN" && !cashMoveExternalConfirmed/);
+
+  const settle = page.slice(page.indexOf("async function settle()"), page.indexOf("function openCancel"));
+  assert.match(settle, /const settledCheck = check/);
+  assert.match(settle, /setSettlementReceipt\(\{[\s\S]*result,[\s\S]*check: settledCheck/);
+  assert.match(settle, /customerId: checkMember\?\.customerId \?\? null/);
+  assert.doesNotMatch(settle, /message\.success\(`ปิดบิลแล้ว/);
+
+  const receipt = page.slice(page.indexOf("function receiptBytes"), page.indexOf("async function printReceipt"));
+  assert.match(receipt, /buildReceipt\(/);
+  assert.match(receipt, /result\.total/);
+  assert.match(receipt, /result\.cashTendered/);
+  assert.match(receipt, /result\.cashChange/);
+  assert.match(receipt, /result\.vat/);
+  assert.match(receipt, /result\.discountLines/);
+  assert.match(receipt, /item\.lineAmount == null/);
+  assert.match(receipt, /for \(const line of lines\) itemCount \+= line\.qty/);
+  assert.doesNotMatch(receipt, /\.reduce\(|packPrice\s*\*|lineAmount\s*[+*]/,
+    "ใบเสร็จต้องยก snapshot/ผล settle มาแสดง ไม่คำนวณเงินซ้ำที่จอ");
+  assert.match(page, /sendToPrinter\(receiptBytes\(receipt\)/);
+  // 8.0 บังคับว่าการเปิดลิ้นชักที่ไม่ได้มาจากการขายต้องผ่าน pos.nosale + เหตุผล + นับในสรุปกะ
+  // · ถ้าการพิมพ์ซ้ำเปิดลิ้นชักด้วย แท็บบิลจะกลายเป็นปุ่มเปิดลิ้นชักที่ไม่มี PIN ไม่มีร่องรอย
+  assert.match(page, /async function printReceipt\(receipt: ReceiptSelection, openDrawer = false\)/);
+  assert.match(page, /if \(openDrawer\) await sendToPrinter\(buildDrawerKick\(\), printer\)/);
+  assert.match(page, /printReceipt\(settlementReceipt, settlementReceipt\.result\.cashTendered != null\)/);
+  assert.match(page, /printReceipt\(selectedReceipt\)/);
+  assert.doesNotMatch(page, /printReceipt\(selectedReceipt, /);
+  // บิลที่ถูกยกเลิก/คืนของต้องติดป้ายก่อนพิมพ์ซ้ำ (กฎเดียวกับ 9.22 ของหน้าค้าปลีก)
+  assert.match(page, /function billHistoryNote\(receipt: RecentReceipt\)/);
+  assert.match(page, /receipt\.voidedAt\) return "ถูกยกเลิกแล้ว"/);
+  assert.match(page, /receipt\.orderStatus === "RETURNED"\) return "มีการคืนสินค้า"/);
+  assert.match(page, /billHistoryNote\(selectedReceipt\) \? "พิมพ์ใบขายเดิม" : "พิมพ์ซ้ำ"/);
+  assert.match(page, /orderId: receipt\.result\.orderId/);
+  assert.match(page, /orderId: selectedReceipt\.orderId/);
+
+  assert.match(route, /customerId: typeof body\.customerId === "string"/);
+  assert.match(service, /SELECT 1 FROM bms_customers[\s\S]*tenant_id = \$1 AND id = \$2 AND deleted_at IS NULL AND member_no IS NOT NULL/);
+  // ยอดบรรทัดบนใบเสร็จของบิลโต๊ะต้องบวกลงตัวกับ `receipt_gross` ที่ loadPosReceiptDiscountLines
+  // ใช้ตั้งบรรทัด "ส่วนลดราคาส่ง/โปรโมชั่น" (9.22) — สองสูตรนี้ต้องคูณฐานเดียวกันเสมอ
+  // · createOrderInTx รวม check line ที่ sku/size/pack/modifier เดียวกันเป็น order line เดียว
+  //   ตัวคูณฝั่ง check จึงต้องเป็นจำนวนของ **บรรทัดนั้น** (ci.pack_qty) ไม่ใช่ของ order line
+  //   ที่รวมแล้ว ไม่งั้นโต๊ะที่สั่งเมนูเดิมซ้ำสองรอบจะพิมพ์ยอดเต็มของกลุ่มออกมาทุกบรรทัด
+  assert.match(service, /receipt_unit_price \* ci\.pack_qty/);
+  assert.doesNotMatch(service, /receipt_unit_price \* oi\./,
+    "ห้ามคูณด้วยจำนวนของ order line ที่รวมบรรทัดอื่นไว้แล้ว");
+  assert.match(pos, /SUM\(COALESCE\(oi\.pack_qty, oi\.qty\) \* oi\.receipt_unit_price\)/,
+    "ฝั่ง receipt_gross ต้องยังคูณ receipt_unit_price ด้วยจำนวนหน่วยขายเหมือนกัน");
+  assert.match(service, /lineAmount: row\.line_amount == null \? null : Number\(row\.line_amount\)/);
+  assert.match(service, /check\.status === "PAID"[\s\S]*order_customer_id[\s\S]*!== customerId/);
+  assert.match(service, /wasSettlementReplay = check\.status !== "OPEN"/);
+  assert.match(service, /replayed: result\.replayed && wasSettlementReplay/);
+  // จำนวนตั๋วครัวบนใบเสร็จต้องนับจากตั๋วจริง ไม่ใช่จำนวนบรรทัด — ร้านที่ปิด KITCHEN_WORKFLOW
+  // ไม่มีตั๋วสักใบ (sendRestaurantKitchenRound gate ไว้) การรายงานจำนวนบรรทัดคือตัวเลขที่โกหก
+  assert.match(service, /FROM bms_restaurant_kitchen_tickets t[\s\S]*i\.status = 'SENT'/);
+  assert.match(service, /kitchenTickets: kitchenTicketCount/);
+  assert.doesNotMatch(service, /kitchenTickets: items\.rows\.length/);
+  assert.match(pos, /SET customer_id = \$3/);
+  assert.match(pos, /throw new RestaurantCheckError\("ไม่สามารถผูกสมาชิกกับบิลโต๊ะนี้ได้/);
+  assert.match(pos, /Boolean\(q\) && !opts\.deviceOnly/);
+  assert.match(pos, /COALESCE\(o\.paid_at, o\.created_at\) AS sold_at/);
+  assert.match(pos, /ORDER BY \(o\.pos_device_id = \$2\) DESC, COALESCE\(o\.paid_at, o\.created_at\) DESC/);
+  assert.ok(pos.indexOf("SET customer_id = $3") < pos.indexOf("await earnPointsForOrderInTx"),
+    "ต้องประทับสมาชิกก่อนให้แต้มใน transaction ปิดบิล");
+});
+
 test("restaurant floor correlates kitchen state by check id, not a reusable table name", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(page, /checkId: string \| null/);

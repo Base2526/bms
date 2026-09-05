@@ -60,6 +60,7 @@ import {
 } from "./taxDocuments";
 import { redeemCustomerCouponForOrderInTx, releaseCouponForOrdersInTx, releaseCustomerCouponReservationsInTx } from "./coupons";
 import { couponEligibilitySubtotal, merchantAbsorbApproval, type RestaurantCancellationCause } from "./restaurantCancellationPolicy";
+import { RestaurantCheckError } from "./restaurantPosErrors";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { sendStaffMessage } from "./inbox";
 import {
@@ -3146,6 +3147,26 @@ async function finalizePosSale(args: {
       if (!restaurantCheck.rowCount) {
         throw new Error("บิลโต๊ะไม่ได้ถือ settlement claim นี้แล้ว");
       }
+      if (input.customerId) {
+        // The reservation was created when the kitchen round was sent, before the cashier knew
+        // which member was paying. Stamp the tenant-owned customer under the same order/check locks
+        // and transaction that takes payment, awards points, and closes the table.
+        const stampedCustomer = await client.query(
+          `UPDATE bms_orders o
+              SET customer_id = $3, updated_at = now()
+            WHERE o.tenant_id = $1 AND o.id = $2
+              AND (o.customer_id IS NULL OR o.customer_id = $3)
+              AND EXISTS (
+                SELECT 1 FROM bms_customers c
+                 WHERE c.tenant_id = o.tenant_id AND c.id = $3
+                   AND c.deleted_at IS NULL AND c.member_no IS NOT NULL
+              )`,
+          [input.tenantId, orderId, input.customerId]
+        );
+        if (!stampedCustomer.rowCount) {
+          throw new RestaurantCheckError("ไม่สามารถผูกสมาชิกกับบิลโต๊ะนี้ได้ กรุณาค้นหาและเลือกใหม่");
+        }
+      }
     }
     const roundingAmount = args.roundingAmount ?? Number(current.rounding_amount ?? 0);
     if (Math.abs(Number(current.rounding_amount ?? 0) - roundingAmount) > 0.001) {
@@ -3478,7 +3499,7 @@ export async function listRecentPosSales(
   tenantId: string,
   deviceId: string,
   limit = 5,
-  opts: { query?: string | null; locationId?: string | null } = {}
+  opts: { query?: string | null; locationId?: string | null; deviceOnly?: boolean } = {}
 ): Promise<PosRecentReceipt[]> {
   const q = String(opts.query ?? "").trim();
   const matchedProduct = q
@@ -3500,7 +3521,7 @@ export async function listRecentPosSales(
     extra_total: string;
     shipping_fee: string | null;
     status: string;
-    created_at: string | Date;
+    sold_at: string | Date;
     cashier_name: string | null;
     payment_method: PaymentMethod | null;
     payment_ref: string | null;
@@ -3530,7 +3551,7 @@ export async function listRecentPosSales(
             o.shipping_fee,
             o.rounding_amount AS order_rounding,
             o.status,
-            o.created_at,
+            COALESCE(o.paid_at, o.created_at) AS sold_at,
             dev.code AS pos_device_code,
             dev.registered_pos_no AS pos_registered_pos_no,
             loc.name AS location_name,
@@ -3600,14 +3621,14 @@ export async function listRecentPosSales(
                )
           )
         )
-      ORDER BY (o.pos_device_id = $2) DESC, o.created_at DESC, o.id DESC
+      ORDER BY (o.pos_device_id = $2) DESC, COALESCE(o.paid_at, o.created_at) DESC, o.id DESC
       LIMIT $3`,
     [
       tenantId,
       deviceId,
       Math.min(Math.max(limit, 1), 20),
       q || null,
-      Boolean(q),
+      Boolean(q) && !opts.deviceOnly,
       matchedSku,
       matchedSize,
     ]
@@ -3895,7 +3916,9 @@ export async function listRecentPosSales(
     cashChange: row.cash_change == null ? null : Number(row.cash_change),
     paymentMethod: row.payment_method ?? null,
     paymentRef: row.payment_ref ?? null,
-    soldAt: toISO(row.created_at),
+    // A restaurant reservation may be created hours before the customer pays. Receipt history
+    // must show the settlement time, not the first kitchen round's reservation timestamp.
+    soldAt: toISO(row.sold_at),
     cashierName: row.cashier_name ?? null,
     memberNo: row.member_no ?? null,
     memberName: row.member_no ? (row.member_name ?? null) : null,
