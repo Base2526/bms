@@ -10,7 +10,7 @@ import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modi
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
-import { receiptDocumentTitle, receiptLocale, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
+import { posPaymentMethodLabel, receiptDocumentTitle, receiptLocale, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
@@ -86,7 +86,15 @@ type SettlementResult = {
   roundingAmount: number; discountLines: Array<{ source?: string; label: string; amount: number; pointsUsed?: number }>;
   pointsEarned: number | null; pointsBalance: number | null; kitchenTickets: number; replayed: boolean;
 };
-type SettlementReceipt = { result: SettlementResult; check: RestaurantCheck; member: PosMember | null; at: string; cashierName: string | null; shiftId: string | null };
+type SettlementReceipt = {
+  result: SettlementResult; check: RestaurantCheck; member: PosMember | null; at: string;
+  cashierName: string | null; shiftId: string | null;
+  /**
+   * วิธีชำระที่ส่งไปและ server รับไว้ในบิลนี้ (หนึ่งแถวต่อหนึ่ง `bms_payments`)
+   * ไม่ใช่การคิดเงินซ้ำที่จอ — server ปฏิเสธบิลถ้าผลรวมไม่ตรงยอด จึงเป็นรายการเดียวกับที่เขียนลงฐาน
+   */
+  payments: Array<{ method: string; amount: number; ref: string | null; cashTendered: number | null; cashChange: number | null }>;
+};
 type RecentReceipt = {
   orderId: string; docNo: string | null; receiptNo: string | null; billNo: string | null;
   total: number; cashTendered: number | null; cashChange: number | null; soldAt: string;
@@ -986,6 +994,16 @@ export default function RestaurantPosPage() {
       total: result.total,
       tendered: result.cashTendered,
       change: result.cashChange,
+      // ปัดเศษเงินสด (7.95) รวมอยู่ใน total แล้ว แต่ต้องมีบรรทัดของตัวเองบนใบเสร็จ
+      // ร้านอาหารส่วนใหญ่ยังไม่จด VAT จึงไม่มีบล็อก VAT ให้ค่านี้ไปอาศัยอยู่
+      roundingAmount: result.roundingAmount,
+      payments: receipt.payments.map((payment) => ({
+        label: posPaymentMethodLabel(payment.method, mode),
+        amount: payment.amount,
+        ref: payment.ref,
+        tendered: payment.cashTendered,
+        change: payment.cashChange,
+      })),
       vat: result.vat,
       discountLines: result.discountLines,
       member: current
@@ -1084,6 +1102,17 @@ export default function RestaurantPosPage() {
     if (Math.abs(paymentTotal - checkoutDue) > 0.009) { message.error(`ยอดชำระรวมต้องเท่ากับ ฿${money(checkoutDue)}`); return; }
     await run(async () => {
       const settledCheck = check;
+      const settledPayments = payments.map((payment) => {
+        const amount = Number(payment.amount);
+        const tendered = payment.method === "CASH" && payment.tendered ? Number(payment.tendered) : null;
+        return {
+          method: payment.method,
+          amount,
+          ref: payment.ref.trim() || null,
+          cashTendered: tendered,
+          cashChange: tendered == null ? null : Math.round((tendered - amount) * 100) / 100,
+        };
+      });
       const result: SettlementResult = await json(`/api/pos/restaurant/checks/${settledCheck.id}`, {
         method: "POST",
         body: JSON.stringify(auth({
@@ -1101,6 +1130,7 @@ export default function RestaurantPosPage() {
       });
       setSettlementReceipt({
         result,
+        payments: settledPayments,
         check: settledCheck,
         member: checkMember,
         at: new Date().toISOString(),

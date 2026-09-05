@@ -22,6 +22,7 @@
 // =============================================================
 
 import type { ReceiptPayload } from "@/lib/pos/escpos";
+import { code39Bars } from "@/lib/pos/barcode";
 import { receiptLabel, receiptLocale } from "@/lib/pos/receiptI18n";
 
 const money = (value: number, locale: string) =>
@@ -29,6 +30,22 @@ const money = (value: number, locale: string) =>
 
 /** id คงที่เพราะกฎ `@media print` ใน globals.css เล็งที่ `#pos-receipt` (ใช้ร่วมกับหน้าค้าปลีก) */
 export const RECEIPT_PRINT_ID = "pos-receipt";
+
+/** บาร์โค้ดเลขบิล — พนักงานสแกนตอนลูกค้าเอาบิลมาคืนของ แทนการพิมพ์เลขด้วยมือ */
+function ReceiptBarcode({ value }: { value: string }) {
+  const code = code39Bars(value);
+  if (!code) return null;
+  const height = 36;
+  return (
+    <svg viewBox={`0 0 ${code.width} ${height}`} width="100%" height={height}
+      preserveAspectRatio="none" role="img" aria-label={`บาร์โค้ดเลขบิล ${value}`}
+      style={{ display: "block" }}>
+      {code.bars.map((bar, index) => (
+        <rect key={index} x={bar.x} y={0} width={bar.width} height={height} fill="#000" />
+      ))}
+    </svg>
+  );
+}
 
 export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
   const mode = payload.languageMode ?? "th";
@@ -52,6 +69,11 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
         <div>{payload.docTitle}</div>
       </div>
 
+      {payload.billNo && <Row left={label("เลขที่บิล", "Bill No")} right={payload.billNo} />}
+      {(payload.notes ?? []).map((note, index) => (
+        <div className="pos-receipt-note" key={`note-${index}`}>{note}</div>
+      ))}
+
       <div className="pos-receipt-rule" />
       {payload.lines.map((line, index) => (
         <Row key={`${line.name}-${index}`} left={`${line.qty} ${line.name}`}
@@ -69,18 +91,45 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
         {Boolean(payload.vat.exemptAmount) && (
           <Row left={label("ยกเว้น VAT (N)", "VAT exempt (N)")} right={baht(payload.vat.exemptAmount!)} />
         )}
-        {Boolean(payload.vat.roundingAmount) && (
-          <Row left={label("ปัดเศษ", "Rounding")} right={baht(payload.vat.roundingAmount!)} />
-        )}
       </>}
+      {/* ปัดเศษอยู่นอกบล็อก VAT — ร้านที่ยังไม่จด VAT ก็ปัดเศษได้ และต้องเห็นบรรทัดนี้ */}
+      {Boolean(payload.roundingAmount ?? payload.vat?.roundingAmount) && (
+        <Row left={label("ปัดเศษเงินสด", "Cash rounding")}
+          right={baht((payload.roundingAmount ?? payload.vat?.roundingAmount)!)} />
+      )}
 
       <Row strong left={`${label("ยอดสุทธิ", "Total")} ${payload.itemCount} ${label("ชิ้น", "items")}`}
         right={baht(payload.total)} />
-      {payload.paymentLabel && <Row left={label("ชำระโดย", "Paid by")} right={payload.paymentLabel} />}
-      {payload.tendered != null && (
-        <Row left={label("รับเงิน/เงินทอน", "Tendered/Change")}
-          right={`${baht(payload.tendered)} / ${baht(payload.change ?? 0)}`} />
+      {payload.returnReason && (
+        <div className="pos-receipt-note">{label("เหตุผล", "Reason")}: {payload.returnReason}</div>
       )}
+
+      {(payload.refundLines ?? []).map((refund, index) => (
+        <div key={`refund-${index}`}>
+          <Row left={`${label("คืนโดย", "Refund via")} ${refund.label}${refund.pending ? ` (${label("รอยืนยัน", "pending")})` : ""}`}
+            right={baht(refund.amount)} />
+          {refund.ref && <Row left={label("เลขอ้างอิงคืนเงิน", "Refund reference")} right={refund.ref} />}
+        </div>
+      ))}
+
+      {payload.payments?.length
+        ? payload.payments.map((payment, index) => (
+            <div key={`pay-${index}`}>
+              <Row left={`${label("ชำระโดย", "Paid by")} ${payment.label}`} right={baht(payment.amount)} />
+              {payment.tendered != null && (
+                <Row left={label("รับเงิน/เงินทอน", "Tendered/Change")}
+                  right={`${baht(payment.tendered)} / ${baht(payment.change ?? 0)}`} />
+              )}
+              {payment.ref && <Row left={label("เลขอ้างอิง", "Reference")} right={payment.ref} />}
+            </div>
+          ))
+        : <>
+            {payload.paymentLabel && <Row left={label("ชำระโดย", "Paid by")} right={payload.paymentLabel} />}
+            {payload.tendered != null && (
+              <Row left={label("รับเงิน/เงินทอน", "Tendered/Change")}
+                right={`${baht(payload.tendered)} / ${baht(payload.change ?? 0)}`} />
+            )}
+          </>}
 
       <div className="pos-receipt-foot">
         <div>{payload.docNo ? `${payload.docNo}  ${payload.at}` : payload.at}</div>
@@ -98,6 +147,12 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
         {payload.member.pointsBalance != null && (
           <Row left={label("แต้มคงเหลือ", "Points balance")} right={String(payload.member.pointsBalance)} />
         )}
+      </div>}
+
+      {/* กฎเดียวกับ `buildReceipt`: barcodeValue ชนะ docNo — สลิปคืนต้องสแกนกลับไปหาบิลขายเดิม */}
+      {(payload.barcodeValue ?? payload.docNo) && <div className="pos-receipt-foot">
+        <ReceiptBarcode value={(payload.barcodeValue ?? payload.docNo)!} />
+        <div>{payload.referenceDocNo ? `${label("บิลเดิม", "Original bill")} ` : ""}{payload.barcodeValue ?? payload.docNo}</div>
       </div>}
     </div>
   );

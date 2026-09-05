@@ -11,7 +11,6 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { code39Bars } from "@/lib/pos/barcode";
 import {
   applyPromotion,
   canonicalPriceTiers,
@@ -33,8 +32,10 @@ import {
   type ScanContext,
   type ScanSource,
 } from "@/lib/pos/scanManager";
-import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
+import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
+import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import {
+  posPaymentMethodLabel,
   receiptDocumentTitle,
   receiptLabel,
   receiptLocale,
@@ -1060,19 +1061,6 @@ function getRefundPaymentOptions(row: Pick<Receipt, "payments" | "refunds">) {
   return [...availableByMethod.entries()]
     .map(([method, available]) => ({ method, available }))
     .sort((left, right) => posPaymentMethodLabel(left.method).localeCompare(posPaymentMethodLabel(right.method), "th"));
-}
-
-function posPaymentMethodLabel(method: string, languageMode: ReceiptLanguageMode = "th") {
-  if (method === "CASH") return receiptLabel(languageMode, "เงินสด", "Cash");
-  if (method === "QR") return "QR";
-  if (method === "CARD") return receiptLabel(languageMode, "บัตร", "Card");
-  if (method === "WALLET") return receiptLabel(languageMode, "วอลเล็ท", "Wallet");
-  if (method === "BANK_TRANSFER") return receiptLabel(languageMode, "โอนเงิน", "Bank transfer");
-  // ขายเชื่อ (9.30) ไม่ได้อยู่ใน METHODS เพราะปุ่มของมันโผล่ตามลูกค้า ไม่ใช่ตลอดเวลา
-  // แต่ป้ายต้องอ่านออกทุกที่ที่แสดงวิธีชำระ (ใบเสร็จ/ประวัติบิล/แถวคืนเงิน)
-  if (method === "CREDIT") return receiptLabel(languageMode, "ขายเชื่อ", "Credit sale");
-  if (method === "STORE_CREDIT") return receiptLabel(languageMode, "เครดิตร้าน", "Store credit");
-  return METHODS.find((item) => item.key === method)?.label ?? method;
 }
 
 function BillHistoryPanel({
@@ -4648,14 +4636,31 @@ export default function PosPage() {
   }
 
   /** ประกอบใบเสร็จเป็นไบต์ ESC/POS จาก receipt ที่ค้างอยู่บนจอ */
-  function receiptToEscPos(r: Receipt) {
+  /**
+   * `Receipt` (state ของหน้านี้) → `ReceiptPayload` ก้อนเดียวที่ป้อนทั้งกระดาษบนจอ
+   * (`<ReceiptPaper/>`) และไบต์ที่ส่งเข้าเครื่องพิมพ์ (`buildReceipt`)
+   *
+   * เดิมใบเสร็จบนจอเป็น JSX ~230 บรรทัดที่ประกอบเอง แยกจาก payload ของเครื่องพิมพ์
+   * ผลคือ **สองใบไม่ตรงกันจริง**: จอบอกวิธีชำระทีละช่องทาง กระดาษบอกแค่ "จ่ายหลายวิธี" ·
+   * จอบอกว่าเงินคืนไปทางไหนและยังรอยืนยันไหม กระดาษเงียบสนิท · จอมีบรรทัดปัดเศษเงินสด
+   * ของร้านที่ยังไม่จด VAT กระดาษไม่มี · ตอนนี้ทั้งสองอ่านจากฟังก์ชันนี้ตัวเดียว
+   */
+  function receiptPayloadOf(r: Receipt): ReceiptPayload {
     const nonSaleReceipt = Boolean(r.receiptType && r.receiptType !== "sale");
     const lines: ReceiptLine[] = r.lines.map((l) => ({
       name: l.receiptName + (l.size && l.size !== "-" ? ` (${l.size})` : ""),
       qty: l.packQty,
       amount: l.packPrice * l.packQty,
     }));
-    return buildReceipt({
+    const salePayments = r.payments.length > 0 ? r.payments : [{
+      method: "CASH",
+      label: r.paymentLabel,
+      amount: r.total,
+      ref: r.paymentRef,
+      tendered: r.tendered,
+      change: r.change,
+    }];
+    return ({
       languageMode: receiptLanguageMode,
       storeName: r.storeName ?? session?.location?.name ?? "",
       locationId: r.saleLocationId ?? session?.location?.id ?? null,
@@ -4679,12 +4684,44 @@ export default function PosPage() {
         r.receiptType === "return" || r.receiptType === "exchange"
           ? (r.referenceDocNo ?? r.docNo)
           : null,
+      // ⚠️ เคยต่างกันสองที่: จอสแกน `billNo ?? receiptNo ?? docNo` กระดาษสแกน `docNo`
+      // วันนี้สามค่านี้ถูกตั้งเท่ากันตอนปิดการขาย จึงยังไม่เคยต่างจริง แต่การมีสองกฎแปลว่า
+      // วันไหนแยกกันเมื่อไร สแกนจากกระดาษกับจากจอจะไปเจอคนละบิล — ใช้กฎที่กันเหนียวกว่า
       barcodeValue:
         r.receiptType === "return" || r.receiptType === "exchange"
-          ? (r.referenceDocNo ?? r.docNo)
-          : r.docNo,
+          ? (r.referenceDocNo ?? r.billNo ?? r.receiptNo ?? r.docNo)
+          : (r.billNo ?? r.receiptNo ?? r.docNo),
       at: receiptAt(r),
       cashier: r.cashier,
+      billNo: (!r.receiptType || r.receiptType === "sale")
+        ? (r.billNo ?? r.receiptNo ?? r.docNo ?? "—")
+        : null,
+      notes: r.receiptType === "return"
+        ? [receiptText("มูลค่ารายการ = ยอดคืนจริงหลังเฉลี่ยส่วนลดจากบิลเดิม", "Item value = actual refund after prorating the original discount")]
+        : (!r.receiptType || r.receiptType === "sale") && (r.discountLines ?? []).length > 0
+          ? [receiptText("ราคาสินค้าเป็นราคาป้าย ณ ตอนขาย ส่วนลดแสดงแยกด้านล่าง", "Items show the sale-time list price; discounts appear below")]
+          : null,
+      returnReason: r.returnReason ?? null,
+      roundingAmount: (!r.receiptType || r.receiptType === "sale")
+        ? Number(r.roundingAmount ?? r.vat?.roundingAmount ?? 0)
+        : null,
+      refundLines: r.receiptType === "return"
+        ? (Array.isArray(r.refunds) && r.refunds.length > 0
+            ? r.refunds.map((refund) => ({
+                label: posPaymentMethodLabel(refund.method, receiptLanguageMode),
+                amount: refund.amount,
+                ref: refund.externalRef,
+                pending: refund.status === "PENDING",
+              }))
+            : [{ label: receiptText("ตามบิลเดิม", "original payment"), amount: r.refundTotal ?? 0 }])
+        : null,
+      payments: nonSaleReceipt ? null : salePayments.map((payment) => ({
+        label: posPaymentMethodLabel(payment.method, receiptLanguageMode),
+        amount: payment.amount,
+        ref: payment.ref,
+        tendered: payment.tendered,
+        change: payment.change,
+      })),
       lines,
       itemCount: r.lines.reduce((n, l) => n + l.packQty, 0),
       total: r.refundTotal ?? r.total,
@@ -4718,6 +4755,9 @@ export default function PosPage() {
             },
     });
   }
+  function receiptToEscPos(r: Receipt) {
+    return buildReceipt(receiptPayloadOf(r));
+  }
 
   /**
    * หน้า POS เก็บใบเสร็จล่าสุดไว้ใน DOM และมีสรุปกะอยู่อีกส่วนหนึ่ง จึงต้องระบุ
@@ -4748,7 +4788,18 @@ export default function PosPage() {
     };
     window.addEventListener("afterprint", cleanup, { once: true });
     // รอให้ browser คำนวณ style จาก marker ก่อนเก็บ snapshot สำหรับ print preview
-    window.requestAnimationFrame(() => window.print());
+    //
+    // ⚠️ **rAF ไม่ทำงานเลยเมื่อแท็บถูกซ่อนหรือพับไปหลัง** ซึ่งเกิดจริงบนแท็บเล็ตหน้าร้าน
+    // ที่สลับแอปได้ตลอด · พึ่งตัวเดียว = กดพิมพ์แล้วเงียบไปเลยโดยไม่มีอะไรบอก
+    // ใครถึงก่อนชนะ แต่ยิงครั้งเดียว ไม่งั้นได้ print dialog ซ้อนกันสองใบ
+    let printed = false;
+    const fire = () => {
+      if (printed) return;
+      printed = true;
+      window.print();
+    };
+    window.requestAnimationFrame(fire);
+    window.setTimeout(fire, 120);
     fallbackTimer = window.setTimeout(cleanup, 30_000);
   }
 
@@ -5709,11 +5760,6 @@ export default function PosPage() {
   }
 
   const activeReceiptRefundSummary = receipt ? getReceiptRefundSummary(receipt) : null;
-  const activeReceiptBarcodeValue = receipt
-    ? receipt.receiptType === "return" || receipt.receiptType === "exchange"
-      ? (receipt.referenceDocNo ?? receipt.billNo ?? receipt.receiptNo ?? receipt.docNo)
-      : (receipt.billNo ?? receipt.receiptNo ?? receipt.docNo)
-    : null;
 
   if (!token || tokenRejected) {
     return (
@@ -9704,230 +9750,7 @@ export default function PosPage() {
                   : null}
               </div>
             )}
-          <div
-            id="pos-receipt"
-            style={{
-              background: "#fff", borderRadius: 4, padding: "14px 16px", width: 280, maxWidth: "100%",
-              fontFamily: "ui-monospace, monospace", fontSize: 12, lineHeight: 1.55,
-            }}
-          >
-            <div style={{ textAlign: "center" }}>{receipt.storeName}</div>
-            <div style={{ textAlign: "center" }}>
-              ({receiptText("สาขา", "Branch")} {receipt.branchCode ?? "-"})
-            </div>
-            {/* ใบกำกับภาษีอย่างย่อต้องมีเลขประจำตัวผู้เสียภาษีของผู้ออก
-                ร้านที่ยังไม่กรอกในโปรไฟล์จะไม่มีบรรทัดนี้ — เห็นแล้วรู้ว่าต้องไปตั้งค่า */}
-            {receipt.taxId && (
-              <div style={{ textAlign: "center" }}>TAX# {receipt.taxId}</div>
-            )}
-            {receipt.vatRegistered && (
-              <div style={{ textAlign: "center" }}>({receiptText("รวม VAT", "VAT Included")})</div>
-            )}
-            <div style={{ textAlign: "center" }}>
-              POS#{receipt.posLabel ?? "—"}
-            </div>
-            <div style={{ marginTop: 4, color: "#555", fontSize: 11 }}>
-              {(!receipt.receiptType || receipt.receiptType === "sale") && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span>{receiptText("เลขที่บิล", "Bill No")}</span>
-                  <span>{receipt.billNo ?? receipt.receiptNo ?? receipt.docNo ?? "—"}</span>
-                </div>
-              )}
-              {receipt.orderId && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span>{receiptText("รหัสออเดอร์", "Order ID")}</span>
-                  <span>{receipt.orderId.slice(0, 8)}</span>
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>{receiptText("สาขาขาย", "Sale Branch")}</span>
-                <span>{receipt.storeName ?? "—"}{receipt.branchCode ? ` (${receipt.branchCode})` : ""}</span>
-              </div>
-              {receipt.saleLocationId && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span>{receiptText("รหัสสาขา", "Location ID")}</span>
-                  <span>{receipt.saleLocationId.slice(0, 8)}</span>
-                </div>
-              )}
-              {receipt.posDeviceId && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span>{receiptText("รหัสเครื่อง", "Device ID")}</span>
-                  <span>{receipt.posDeviceId.slice(0, 8)}</span>
-                </div>
-              )}
-              {receipt.shiftId && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span>{receiptText("รหัสกะ", "Shift ID")}</span>
-                  <span>{receipt.shiftId.slice(0, 8)}</span>
-                </div>
-              )}
-            </div>
-            <div style={{ textAlign: "center", margin: "6px 0" }}>
-              {receiptDocumentTitle(
-                receiptLanguageMode,
-                receipt.receiptType === "return" ? "return" : receipt.receiptType === "exchange" ? "exchange" : "sale",
-                Boolean(receipt.vatRegistered)
-              )}
-            </div>
-            {(receipt.receiptType === "return" || receipt.receiptType === "exchange") && receipt.referenceDocNo && (
-              <div style={{ textAlign: "center" }}>
-                {receiptText("อ้างอิงบิลเดิม", "Original bill")} {receipt.referenceDocNo}
-              </div>
-            )}
-            {receipt.receiptType === "return" && receipt.docNo && (
-              <div style={{ textAlign: "center" }}>
-                {receiptText("ใบลดหนี้", "Credit note")} {receipt.docNo}
-              </div>
-            )}
-            <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
-            {receipt.receiptType === "return" && (
-              <div style={{ marginBottom: 6, color: "#8a6100" }}>
-                {receiptText("มูลค่ารายการ = ยอดคืนจริงหลังเฉลี่ยส่วนลดจากบิลเดิม", "Item value = actual refund after prorating the original discount")}
-              </div>
-            )}
-            {(!receipt.receiptType || receipt.receiptType === "sale") && (receipt.discountLines ?? []).length > 0 && (
-              <div style={{ marginBottom: 6, color: "#555" }}>
-                {receiptText("ราคาสินค้าเป็นราคาป้าย ณ ตอนขาย ส่วนลดแสดงแยกด้านล่าง", "Items show the sale-time list price; discounts appear below")}
-              </div>
-            )}
-            {receipt.lines.map((l) => (
-              <div key={l.key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {l.packQty} {l.receiptName}{l.size && l.size !== "-" ? ` (${l.size})` : ""}
-                </span>
-                <span>{baht(l.packPrice * l.packQty)}</span>
-              </div>
-            ))}
-            <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
-            {/* ส่วนลดแยกที่มา (7.96) — รวมอยู่ในยอดสุทธิด้านล่างแล้ว */}
-            {(!receipt.receiptType || receipt.receiptType === "sale") &&
-              (receipt.discountLines ?? []).map((d, i) => (
-                <div key={`${d.source}-${i}`} style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
-                  <span>{d.label}</span>
-                  <span>-{baht(d.amount)}</span>
-                </div>
-              ))}
-            {/* ตัวเลขชุดนี้มาจากใบกำกับที่ออกจริง ไม่ได้ถอด 7/107 จากยอดรวมที่จอ
-                — บิลที่มีสินค้ายกเว้น VAT ปนจะได้คนละตัวเลขกับเอกสารที่ยื่น
-                ใบรับคืน/ใบเปลี่ยนไม่แสดง เพราะใบลดหนี้เป็นเอกสารคนละใบ */}
-            {receipt.vat && (!receipt.receiptType || receipt.receiptType === "sale") && (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
-                  <span>{receiptText("มูลค่าก่อน VAT", "Net before VAT")}</span>
-                  <span>{baht(receipt.vat.netBeforeVat)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
-                  <span>VAT {receipt.vat.rate}%</span>
-                  <span>{baht(receipt.vat.vatAmount)}</span>
-                </div>
-                {receipt.vat.exemptAmount > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
-                    <span>{receiptText("ยกเว้น VAT (N)", "VAT exempt (N)")}</span>
-                    <span>{baht(receipt.vat.exemptAmount)}</span>
-                  </div>
-                )}
-              </>
-            )}
-            {/* ปัดเศษเงินสดแยกจากบล็อก VAT — ร้านที่ไม่ได้จด VAT ก็ตั้งปัดเศษได้
-                ถ้าไม่พิมพ์บรรทัดนี้ ผลรวมรายการจะไม่เท่ายอดสุทธิโดยไม่มีคำอธิบาย */}
-            {(!receipt.receiptType || receipt.receiptType === "sale")
-              && Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0) !== 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
-                <span>{receiptText("ปัดเศษเงินสด", "Cash rounding")}</span>
-                <span>{baht(Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0))}</span>
-              </div>
-            )}
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
-              <span>{receiptText("ยอดสุทธิ", "Total")} {receipt.lines.reduce((n, l) => n + l.packQty, 0)} {receiptText("ชิ้น", "items")}</span>
-              <span>{baht(receipt.refundTotal ?? receipt.total)}</span>
-            </div>
-            {receipt.returnReason && (
-              <div style={{ marginTop: 4 }}>
-                {receiptText("เหตุผล", "Reason")}: {receipt.returnReason}
-              </div>
-            )}
-            {/* แต้มท้ายบิล — ลูกค้าตรวจเองได้ว่าได้แต้มครบ (7.96) */}
-            {receipt.memberNo && (!receipt.receiptType || receipt.receiptType === "sale") && (
-              <div style={{ marginTop: 6, borderTop: "1px dashed #999", paddingTop: 6 }}>
-                <div>{receiptText("สมาชิก", "Member")} {receipt.memberNo} {receipt.memberName ?? ""}</div>
-                {receipt.pointsEarned != null && (
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{receiptText("แต้มที่ได้บิลนี้", "Points earned")}</span><span>+{receipt.pointsEarned}</span>
-                  </div>
-                )}
-                {receipt.pointsBalance != null && (
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{receiptText("แต้มคงเหลือ", "Points balance")}</span><span>{receipt.pointsBalance}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            {receipt.receiptType === "return"
-              ? (Array.isArray(receipt.refunds) && receipt.refunds.length > 0
-                ? receipt.refunds.map((refund, idx) => (
-                    <div key={`${refund.id ?? refund.method}-${idx}`}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>
-                          {receiptText("คืนโดย", "Refund via")} {posPaymentMethodLabel(refund.method, receiptLanguageMode)}
-                          {refund.status === "PENDING" ? ` (${receiptText("รอยืนยัน", "pending")})` : ""}
-                        </span>
-                        <span>{baht(refund.amount)}</span>
-                      </div>
-                      {refund.externalRef && (
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span>{receiptText("เลขอ้างอิงคืนเงิน", "Refund reference")}</span>
-                          <span>{refund.externalRef}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                : (
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{receiptText("คืนเงินตามบิลเดิม", "Refunded via original payment")}</span>
-                    <span>{baht(receipt.refundTotal ?? 0)}</span>
-                  </div>
-                ))
-              : (receipt.payments.length > 0 ? receipt.payments : [{
-                  method: "UNKNOWN",
-                  label: receipt.paymentLabel,
-                  amount: receipt.total,
-                  ref: receipt.paymentRef,
-                  tendered: receipt.tendered,
-                  change: receipt.change,
-                }]).map((payment, idx) => (
-                  <div key={`${payment.method}-${idx}`}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>{receiptText("ชำระโดย", "Paid by")} {posPaymentMethodLabel(payment.method, receiptLanguageMode)}</span>
-                      <span>{baht(payment.amount)}</span>
-                    </div>
-                    {payment.tendered != null && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>{receiptText("รับเงิน/เงินทอน", "Tendered/Change")}</span>
-                        <span>{baht(payment.tendered)} / {baht(payment.change ?? 0)}</span>
-                      </div>
-                    )}
-                    {payment.ref && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>{receiptText("เลขอ้างอิง", "Reference")}</span>
-                        <span>{payment.ref}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-            <div style={{ marginTop: 6 }}>
-              {receipt.receiptType === "return" || receipt.receiptType === "exchange"
-                ? receiptAt(receipt)
-                : `${receipt.docNo ?? `(${receiptText("ไม่มีเลขใบกำกับ", "No tax invoice number")})`} · ${receiptAt(receipt)}`}
-            </div>
-            <div>{receiptText("แคชเชียร์", "Cashier")} {receipt.cashier}</div>
-            {/* สแกนเลขบิลตอนลูกค้าเอาบิลมาคืนของ แทนการพิมพ์เลขด้วยมือ */}
-            {activeReceiptBarcodeValue && (
-              <div style={{ marginTop: 8, textAlign: "center" }}>
-                <ReceiptBarcode value={activeReceiptBarcodeValue} />
-                <div>{receipt.receiptType === "return" || receipt.receiptType === "exchange" ? `${receiptText("บิลเดิม", "Original bill")} ` : ""}{activeReceiptBarcodeValue}</div>
-              </div>
-            )}
-          </div>
+          <ReceiptPaper payload={receiptPayloadOf(receipt)} />
           </div>
           </div>
 
@@ -10005,24 +9828,4 @@ export default function PosPage() {
  * บาร์โค้ดเลขบิลบนจอและใน print dialog
  * (ทาง ESC/POS ใช้คำสั่งบาร์โค้ดของเครื่องพิมพ์เอง ไม่ได้ส่งภาพนี้ไป)
  */
-function ReceiptBarcode({ value }: { value: string }) {
-  const code = code39Bars(value);
-  if (!code) return null;
-  const height = 36;
-  return (
-    <svg
-      viewBox={`0 0 ${code.width} ${height}`}
-      width="100%"
-      height={height}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={`บาร์โค้ดเลขบิล ${value}`}
-      style={{ display: "block" }}
-    >
-      {code.bars.map((bar, i) => (
-        <rect key={i} x={bar.x} y={0} width={bar.width} height={height} fill="#000" />
-      ))}
-    </svg>
-  );
-}
 

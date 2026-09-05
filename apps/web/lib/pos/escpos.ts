@@ -165,14 +165,44 @@ export type ReceiptPayload = {
   referenceDocNo?: string | null;
   /** ค่าที่เข้ารหัสเป็น barcode; แยกจาก docNo เพื่อให้สลิปคืนสแกนกลับไปหาบิลเดิม */
   barcodeValue?: string | null;
+  /** เลขที่บิลที่คนอ่าน (ต่างจาก docNo ซึ่งเป็นเลขใบกำกับ) */
+  billNo?: string | null;
   at: string;
   cashier: string | null;
+  /** บรรทัดอธิบายใต้หัวใบ เช่น "ราคาสินค้าเป็นราคาป้าย ณ ตอนขาย ส่วนลดแสดงแยกด้านล่าง" */
+  notes?: string[] | null;
   lines: ReceiptLine[];
   itemCount: number;
   total: number;
   tendered?: number | null;
   change?: number | null;
   paymentLabel?: string | null;
+  /**
+   * รายวิธีชำระของบิลนี้ — บิลแบ่งจ่ายต้องบอกว่าแต่ละช่องทางรับไปเท่าไร
+   * ไม่ส่งมา = ตกไปใช้ `paymentLabel` + `tendered/change` แบบเดิม
+   */
+  payments?: Array<{
+    label: string;
+    amount: number;
+    ref?: string | null;
+    tendered?: number | null;
+    change?: number | null;
+  }> | null;
+  /** ใบรับคืน: เงินกลับไปทางไหน และยังรอยืนยันอยู่ไหม — เอกสารที่ไม่บอกเรื่องนี้ไม่ครบ */
+  refundLines?: Array<{
+    label: string;
+    amount: number;
+    ref?: string | null;
+    pending?: boolean;
+  }> | null;
+  /** เหตุผลการคืน/ยกเลิกที่พนักงานบันทึกไว้ */
+  returnReason?: string | null;
+  /**
+   * ปัดเศษเงินสดที่รวมอยู่ใน total แล้ว
+   * แยกจาก `vat.roundingAmount` เพราะ **ร้านที่ยังไม่จด VAT ก็ปัดเศษได้** และไม่มีบล็อก VAT
+   * ให้ซ่อนบรรทัดนี้ไว้ข้างใน — เดิมกระดาษของร้านแบบนั้นจึงไม่มีบรรทัดปัดเศษเลย
+   */
+  roundingAmount?: number | null;
   /** ตัวเลขจากใบกำกับที่ออกจริง — ไม่ส่งมา = ไม่พิมพ์บรรทัดแยกฐาน/VAT */
   vat?: {
     rate: number;
@@ -216,7 +246,10 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   if (payload.referenceDocNo) b.line(`${label("อ้างอิงบิลเดิม", "Original bill")} ${payload.referenceDocNo}`);
   if (payload.relatedDocNo) b.line(`${label("ใบลดหนี้", "Credit note")} ${payload.relatedDocNo}`);
 
-  b.align(0).divider();
+  b.align(0);
+  if (payload.billNo) b.columnsLine(label("เลขที่บิล", "Bill No"), payload.billNo);
+  for (const note of payload.notes ?? []) b.line(note);
+  b.divider();
   for (const l of payload.lines) {
     b.columnsLine(`${l.qty} ${l.name}`, money(l.amount, mode) + (l.vatExempt ? "N" : ""));
   }
@@ -232,12 +265,36 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
     b.columnsLine(label("มูลค่าก่อน VAT", "Net before VAT"), money(payload.vat.netBeforeVat, mode));
     b.columnsLine(`VAT ${payload.vat.rate}%`, money(payload.vat.vatAmount, mode));
     if (payload.vat.exemptAmount) b.columnsLine(label("ยกเว้น VAT (N)", "VAT exempt (N)"), money(payload.vat.exemptAmount, mode));
-    if (payload.vat.roundingAmount) b.columnsLine(label("ปัดเศษ", "Rounding"), money(payload.vat.roundingAmount, mode));
   }
+  // ปัดเศษพิมพ์บรรทัดเดียวเสมอ และอยู่นอกบล็อก VAT — ร้านที่ยังไม่จด VAT ก็ปัดเศษได้
+  const rounding = payload.roundingAmount ?? payload.vat?.roundingAmount ?? 0;
+  if (rounding) b.columnsLine(label("ปัดเศษเงินสด", "Cash rounding"), money(rounding, mode));
   b.bold(true).columnsLine(`${label("ยอดสุทธิ", "Total")} ${payload.itemCount} ${label("ชิ้น", "items")}`, money(payload.total, mode)).bold(false);
-  if (payload.paymentLabel) b.columnsLine(label("ชำระโดย", "Paid by"), payload.paymentLabel);
-  if (payload.tendered != null) {
-    b.columnsLine(label("รับเงิน/เงินทอน", "Tendered/Change"), `${money(payload.tendered, mode)} / ${money(payload.change ?? 0, mode)}`);
+  if (payload.returnReason) b.line(`${label("เหตุผล", "Reason")}: ${payload.returnReason}`);
+
+  // เงินกลับไปทางไหน (ใบรับคืน) — ต้องอยู่บนกระดาษ ไม่ใช่เห็นแค่บนจอ
+  for (const refund of payload.refundLines ?? []) {
+    b.columnsLine(
+      `${label("คืนโดย", "Refund via")} ${refund.label}${refund.pending ? ` (${label("รอยืนยัน", "pending")})` : ""}`,
+      money(refund.amount, mode)
+    );
+    if (refund.ref) b.columnsLine(label("เลขอ้างอิงคืนเงิน", "Refund reference"), refund.ref);
+  }
+
+  if (payload.payments?.length) {
+    // บิลแบ่งจ่ายต้องบอกทีละช่องทาง — เดิมพิมพ์ได้แค่ "จ่ายหลายวิธี" บรรทัดเดียว
+    for (const payment of payload.payments) {
+      b.columnsLine(`${label("ชำระโดย", "Paid by")} ${payment.label}`, money(payment.amount, mode));
+      if (payment.tendered != null) {
+        b.columnsLine(label("รับเงิน/เงินทอน", "Tendered/Change"), `${money(payment.tendered, mode)} / ${money(payment.change ?? 0, mode)}`);
+      }
+      if (payment.ref) b.columnsLine(label("เลขอ้างอิง", "Reference"), payment.ref);
+    }
+  } else {
+    if (payload.paymentLabel) b.columnsLine(label("ชำระโดย", "Paid by"), payload.paymentLabel);
+    if (payload.tendered != null) {
+      b.columnsLine(label("รับเงิน/เงินทอน", "Tendered/Change"), `${money(payload.tendered, mode)} / ${money(payload.change ?? 0, mode)}`);
+    }
   }
 
   b.feed(1);

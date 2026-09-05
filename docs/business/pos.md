@@ -1423,9 +1423,9 @@ second copy of those tickets.
 
 The same restaurant register also owns the ordinary counter close-out work. After settlement it
 keeps the server result and the pre-close check snapshot on screen, including tendered cash, change,
-tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. Both the settlement
-panel and the Bills detail render the **same `ReceiptPayload` that feeds the printer**, so what the
-cashier sees is what the paper says — including the `9.22` pricing-discount line, without which the
+tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. Both registers render the receipt through one
+component (`components/pos/ReceiptPaper.tsx`) fed by the **same `ReceiptPayload` that feeds the
+printer**, so what the cashier sees is what the paper says — including the `9.22` pricing-discount line, without which the
 item lines of a bill carrying a wholesale tier or promotion do not add up to the total. It never
 recalculates money in the browser. Printing goes to WebUSB ESC/POS and **falls back to the browser
 print dialog** when that path is unavailable (non-Chromium, no paired printer, a transfer error);
@@ -1433,7 +1433,16 @@ before this the restaurant register had a single print path, and that path is st
 "never run against real hardware". Printing kicks the cash drawer **only** for the sale just settled
 and only when cash was tendered — a reprint never opens it, because an unaudited drawer open is
 exactly what `8.0` moved behind `pos.nosale`, a stated reason and the shift report; the fallback
-cannot open a drawer at all and says so. Emailing or LINE-ing a copy stays a retail-mode action. The **Bills** screen lists only sales stamped to that device and
+cannot open a drawer at all and says so. Emailing or LINE-ing a copy stays a retail-mode action.
+
+Unifying the two renderers closed four gaps where the screen and the paper disagreed, all of them
+visible only to whoever compared a printed slip against the register: a split-tender bill printed
+"multiple payment methods" and one tendered/change pair while the screen listed each method; a
+return slip printed nothing about **where the money went back** or whether a leg was still pending;
+the cash-rounding line lived inside the VAT block, so a shop that is not VAT-registered never
+printed it even though it rounds; and the restaurant register printed a raw UTC ISO timestamp,
+seven hours off the sale it documents. Payment-method labels moved to `lib/pos/receiptI18n.ts` for
+the same reason — two tables drift, and the loser prints `STORE_CREDIT` at a customer. The **Bills** screen lists only sales stamped to that device and
 supports detail, reprint and resend. The **Shift** screen exposes cash in/out, audited no-sale drawer
 opens, the device's X report and shift close. Cash out still requires a distinct approver. A member
 selected at checkout is tenant-validated before settlement, then stamped onto the reservation order
