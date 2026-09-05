@@ -668,13 +668,21 @@ export default function RestaurantPosPage() {
     } catch { /* จอที่เล่นเสียงไม่ได้ต้องไม่ทำให้คิวครัวพัง */ }
   }
 
-  // เลนที่ยังไม่จบเท่านั้นที่นับเข้าตัวกรองสถานี — "เสิร์ฟแล้ว" เป็นประวัติ ไม่ใช่งานค้าง
-  const openTicket = (row: KitchenTicket) => row.status === "NEW" || row.status === "PREPARING" || row.status === "READY";
+  // ⚠️ ปุ่มกรองสถานีต้องนับ **ประชากรเดียวกับที่กระดานแสดง** ไม่ใช่เฉพาะงานที่ยังไม่จบ
+  //
+  // เดิมปุ่มนับเฉพาะ NEW/PREPARING/READY แต่กระดานมีเลน "เสิร์ฟแล้ว" (ประวัติ 12 ชม.) อยู่ด้วย
+  // ผลคือ **จอเดียวกันขัดกันเอง**: ปุ่มเขียน "ทั้งหมด 2" ขณะที่เลนบวกกันได้ 7 (เจอจริงบน
+  // production) · ปุ่มพวกนี้คือ "ตัวกรอง" เลขข้างปุ่มจึงต้องบอกว่ากดแล้วจะเห็นอะไร
+  // ไม่ใช่ตอบคำถามคนละข้อกับที่จอแสดงอยู่ · `/admin/kitchen` นับจากทุกแถวมาตลอด — สองกระดาน
+  // ที่ใช้โมดูลเดียวกันตอบไม่ตรงกันเองคือทางที่ทำให้คนเลิกเชื่อตัวเลขทั้งจอ
+  //
+  // สัญญาณ "งานค้างเท่าไร" ยังมีที่ของตัวเองอยู่แล้ว: badge ข้างเมนู ครัว และแถบสรุปหน้าผังโต๊ะ
+  // (`kitchenCooking` / `kitchenReady`) ซึ่งนับเฉพาะที่ยังไม่จบตามเดิม
   const stationFilterKey = (filter: KitchenStationFilter) => filter.id ?? `name:${filter.name}`;
   // ปุ่มกรอง = ทะเบียนสถานีของสาขานี้ + สถานีที่โผล่บนตั๋วจริง (รวมสถานีที่เพิ่งถูกปิด
   // แต่ยังมีของค้างในครัว) · ครัวที่ว่างยังมีปุ่มของตัวเองพร้อมเลข 0 ไม่ใช่หายไปเฉย ๆ
   const stationFilters = useMemo(
-    () => kitchenBoardStationFilters(tickets.filter(openTicket), stationList),
+    () => kitchenBoardStationFilters(tickets, stationList),
     [tickets, stationList]
   );
   const selectedStation = stationFilters.find((filter) => stationFilterKey(filter) === stationFilter) ?? null;
@@ -686,7 +694,7 @@ export default function RestaurantPosPage() {
     ),
     [tickets, stationFilter, selectedStation]
   );
-  const unassignedOpen = tickets.filter((row) => openTicket(row) && !row.stationId && !row.station);
+  const unassignedOpen = tickets.filter((row) => !row.stationId && !row.station);
   useEffect(() => {
     if (screen !== "KITCHEN") return;
     const timer = window.setInterval(() => setBoardNow(Date.now()), 1000);
@@ -1624,14 +1632,14 @@ export default function RestaurantPosPage() {
             <button type="button"
               aria-pressed={stationFilter === null}
               className={`${styles.kitchenFilter} ${stationFilter === null ? styles.kitchenFilterOn : ""}`}
-              onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets.filter(openTicket))}</button>
+              onClick={() => setStationFilter(null)}>ทั้งหมด {countKitchenDishes(tickets)}</button>
             {stationFilters.map((filter) => {
               const key = stationFilterKey(filter);
               return <button key={key} type="button"
                 aria-pressed={stationFilter === key}
                 className={`${styles.kitchenFilter} ${stationFilter === key ? styles.kitchenFilterOn : ""}`}
                 onClick={() => setStationFilter(key)}>
-                {filter.name} {countKitchenDishes(tickets.filter((row) => openTicket(row) && ticketMatchesStation(row, filter)))}
+                {filter.name} {countKitchenDishes(tickets.filter((row) => ticketMatchesStation(row, filter)))}
               </button>;
             })}
             {/* ปุ่ม "ไม่ระบุสถานี" โผล่เฉพาะตอนมีของอยู่จริง — ปุ่มที่ว่างตลอดเวลาสอนให้ครัว
