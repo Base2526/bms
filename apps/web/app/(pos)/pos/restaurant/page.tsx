@@ -147,10 +147,10 @@ const KITCHEN_NOTE_SHORTCUTS = ["ไม่เผ็ด", "แยกน้ำ", "
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
-  { bg: "var(--panel-2)", ink: "var(--accent)" },
-  { bg: "var(--red-bg)", ink: "var(--red)" },
-  { bg: "var(--amber-bg)", ink: "var(--amber)" },
-  { bg: "var(--green-bg)", ink: "var(--green)" },
+  { bg: "var(--tint-1)", ink: "var(--accent)" },
+  { bg: "var(--tint-2)", ink: "var(--red)" },
+  { bg: "var(--tint-3)", ink: "var(--amber)" },
+  { bg: "var(--tint-4)", ink: "var(--green)" },
 ];
 // ภาพอาหารบนการ์ด — วาดด้วย SVG ในโค้ด ไม่โหลดจาก CDN ตามเหตุผลเดียวกับที่หน้านี้
 // ไม่โหลดฟอนต์ภายนอก (จอนี้ต้องทำงานตอนเน็ตร้านหลุด) · ใช้เมื่อสินค้ายังไม่มีรูปจริง
@@ -237,7 +237,15 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
       <div className={styles.modifierChips}>
         {items.map((modifier) => {
           const checked = selected.includes(modifier.code);
-          const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
+          // ⚠️ เพดานจำนวนใช้กับกลุ่มที่เลือกได้หลายอย่างเท่านั้น
+          //
+          // กลุ่มแบบเลือกได้อันเดียว (radio) การแตะตัวอื่นคือการ **แทนที่** ไม่ใช่การ **เพิ่ม**
+          // จึงเกินเพดานไม่ได้อยู่แล้ว · เดิมกลุ่ม SINGLE ที่ตั้ง `max_select = 1` (ซึ่งเป็นค่า
+          // ปกติของกลุ่มอย่าง "ระดับความเผ็ด") พอมีตัวถูกเลือกอยู่ — ไม่ว่าจะจาก default หรือ
+          // จากการแตะครั้งแรก — ตัวที่เหลือจะถูก disabled ทั้งหมด **แล้วเปลี่ยนใจไม่ได้เลย**
+          // (เจอจริงบน production: ต้มยำเลือกได้แต่ "เผ็ดปกติ" ที่ระบบติ๊กมาให้)
+          // · โค้ดใน onChange เขียนการแทนที่ไว้ถูกแล้ว แต่ไม่มีวันถูกเรียกเพราะ input ถูกปิดก่อน
+          const atLimit = !single && meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
           return <label className={`${styles.modifierChip} ${checked ? styles.modifierChipOn : ""} ${!checked && atLimit ? styles.modifierChipOff : ""}`} key={modifier.code}>
             <input
               className={styles.modifierChipInput}
@@ -267,11 +275,16 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
 }
 type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 
+// สีเลนอ้างตัวแปรของหน้า ไม่ใช่ค่าคงที่ — ค่าคงที่จะค้างสว่างในโหมดมืด และตัวเลขจำนวน
+// บนตั๋ว (.ticketQty) ใช้สีนี้เป็น "ตัวหนังสือ" ซึ่งต้องอ่านออกจากอีกฝั่งครัว
+// · ใช้ชุดสีสถานะเดียวกับผังโต๊ะ (tableState) เพื่อให้ "แดง=ยังไม่เริ่ม เขียว=พร้อม"
+//   แปลเหมือนกันทั้งสองจอ — ของเดิมเป็นเฉดของตัวเองที่ใกล้กันแต่ไม่เท่ากัน และเฉด
+//   อำพัน #e7a335 บนพื้นขาวมี contrast แค่ 2.17 (ต่ำกว่าเกณฑ์ตัวหนังสือใหญ่ด้วยซ้ำ)
 const LANES = [
-  { status: "NEW", label: "เข้าใหม่", color: "#dd5d3d", next: "PREPARING", nextLabel: "เริ่มทำ" },
-  { status: "PREPARING", label: "กำลังทำ", color: "#e7a335", next: "READY", nextLabel: "พร้อมเสิร์ฟ" },
-  { status: "READY", label: "พร้อมเสิร์ฟ", color: "#30745b", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
-  { status: "SERVED", label: "เสิร์ฟแล้ว", color: "#718078", next: null, nextLabel: null },
+  { status: "NEW", label: "เข้าใหม่", color: "var(--red)", next: "PREPARING", nextLabel: "เริ่มทำ" },
+  { status: "PREPARING", label: "กำลังทำ", color: "var(--amber)", next: "READY", nextLabel: "พร้อมเสิร์ฟ" },
+  { status: "READY", label: "พร้อมเสิร์ฟ", color: "var(--green)", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
+  { status: "SERVED", label: "เสิร์ฟแล้ว", color: "var(--grey)", next: null, nextLabel: null },
 ] as const;
 const timeOf = (iso: string | null) => {
   if (!iso) return "";
@@ -369,6 +382,8 @@ export default function RestaurantPosPage() {
   const [menuOnlySoldOut, setMenuOnlySoldOut] = useState(false);
   const [soldOutSheet, setSoldOutSheet] = useState<MenuItem | null>(null);
   const [menuHit, setMenuHit] = useState<ScanHit | null>(null);
+  /** การ์ดที่ถูกแตะ — `ScanHit` รู้จักไซซ์เดียว รายการไซซ์ทั้งหมดอยู่ที่การ์ดเท่านั้น */
+  const [menuSource, setMenuSource] = useState<MenuItem | SearchItem | null>(null);
   const [modifierCodes, setModifierCodes] = useState<string[]>([]);
   const [kitchenNote, setKitchenNote] = useState("");
   const [menuQty, setMenuQty] = useState(1);
@@ -898,8 +913,36 @@ export default function RestaurantPosPage() {
     setOpenTable(table);
   }
   async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); setScreen("ORDER"); await loadFloor(); }); }
-  async function chooseMenu(item: SearchItem) { await run(async () => { const size = item.availableSizes.find((v) => v.available > 0)?.size ?? item.availableSizes[0]?.size ?? ""; const hit: ScanHit = await json(`/api/pos/scan?code=${encodeURIComponent(item.sku)}&size=${encodeURIComponent(size)}&surface=RESTAURANT_POS&withImage=1`); setMenuHit(hit); setModifierCodes(hit.modifiers.filter((modifier) => modifier.defaultSelected).map((modifier) => modifier.code)); setKitchenNote(""); setMenuQty(1); }); }
-  async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setSearch(""); await loadFloor(); }); }
+  /**
+   * ยิงสแกนของไซซ์หนึ่ง แล้วตั้งตัวเลือกเป็นค่าปริยาย **ของไซซ์นั้น**
+   *
+   * ตัวเลือกผูกกับ (sku, ไซซ์) — `resolvePosScan` query ด้วย `modifier.size` ตรง ๆ
+   * เปลี่ยนไซซ์แล้วยกตัวเลือกเดิมมาใช้ต่อ = ส่งรหัสที่ไซซ์ใหม่ไม่รู้จักไปให้ server ปฏิเสธ
+   */
+  async function loadMenuHit(sku: string, size: string) {
+    const hit: ScanHit = await json(`/api/pos/scan?code=${encodeURIComponent(sku)}&size=${encodeURIComponent(size)}&surface=RESTAURANT_POS&withImage=1`);
+    setMenuHit(hit);
+    setModifierCodes(hit.modifiers.filter((modifier) => modifier.defaultSelected).map((modifier) => modifier.code));
+  }
+  async function chooseMenu(item: SearchItem) {
+    await run(async () => {
+      // ⚠️ ห้ามใช้ `available > 0` เป็นตัวคัดไซซ์ที่เลือกได้ — เมนู RECIPE/NON_STOCK มีสต็อก
+      // ของตัวเองเป็น 0 ตามดีไซน์ (9.51/9.52) การกรองด้วยสต็อกจะทำให้อาหารเกือบทุกจาน
+      // ไม่มีไซซ์ให้เลือกสักอัน · ที่นี่ใช้แค่เลือก "ไซซ์ตั้งต้น" ให้ตรงกับของที่มีจริงถ้ามี
+      const sizes = item.availableSizes;
+      const size = sizes.find((variant) => variant.available > 0)?.size ?? sizes[0]?.size ?? "";
+      setMenuSource(item);
+      setKitchenNote("");
+      setMenuQty(1);
+      await loadMenuHit(item.sku, size);
+    });
+  }
+  /** เปลี่ยนไซซ์ในกล่อง — คงจำนวนและโน้ตถึงครัวที่คนหน้าร้านกรอกไปแล้ว */
+  async function pickMenuSize(size: string) {
+    if (!menuSource || !menuHit || menuHit.size === size) return;
+    await run(async () => { await loadMenuHit(menuSource.sku, size); });
+  }
+  async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setMenuSource(null); setSearch(""); await loadFloor(); }); }
   /**
    * สั่งซ้ำบรรทัดเดิม — คุณค่าอยู่ที่การก็อป **ตัวเลือก + โน้ตครัว** ไม่ใช่ก็อปเมนู
    * ("เผ็ดน้อย เพิ่มไข่ดาว ไม่ใส่ผักชี" ถ้าไม่มีปุ่มนี้ต้องเลือกใหม่ทั้งชุดทุกครั้ง)
@@ -1847,7 +1890,7 @@ export default function RestaurantPosPage() {
           </span>
         : "เพิ่มเมนู"}
       open={Boolean(menuHit)}
-      onCancel={() => setMenuHit(null)}
+      onCancel={() => { setMenuHit(null); setMenuSource(null); }}
       onOk={() => void addMenu()}
       confirmLoading={working}
       okButtonProps={{ disabled: unmetModifiers.length > 0 }}
@@ -1856,6 +1899,22 @@ export default function RestaurantPosPage() {
       getContainer={modalContainer}
     >
       {menuHit && <div className={styles.modalGrid}>
+        {/* ไซซ์ต้องเลือกได้ในกล่อง — เดิม chooseMenu เลือกให้เองเงียบ ๆ แล้วโยนไซซ์ที่เหลือทิ้ง
+            เมนูที่มีถ้วยเล็ก/ถ้วยใหญ่จึงสั่งได้แต่ถ้วยเล็กจากจอนี้ · ขึ้นเฉพาะเมนูที่มีมากกว่า
+            หนึ่งไซซ์ ไม่งั้นเป็นแถวที่กดแล้วไม่เกิดอะไรบนทุกเมนูจานเดียว */}
+        {(menuSource?.availableSizes.length ?? 0) > 1 && <div>
+          <span className={styles.fieldLabel}>ขนาด</span>
+          <div className={styles.modifierChips}>
+            {menuSource!.availableSizes.map((variant) => <label
+              key={variant.size}
+              className={`${styles.modifierChip} ${menuHit.size === variant.size ? styles.modifierChipOn : ""}`}>
+              <input className={styles.modifierChipInput} type="radio" name="menu-size"
+                checked={menuHit.size === variant.size}
+                onChange={() => void pickMenuSize(variant.size)} />
+              <span>{variant.size}</span>
+            </label>)}
+          </div>
+        </div>}
         {/* จำนวนเป็น stepper ไม่ใช่ช่องพิมพ์ — บนแท็บเล็ตการพิมพ์เลขตัวเดียวต้องเรียกคีย์บอร์ด
             ขึ้นมาบังครึ่งจอ · ชิป 1–5 ไว้ให้โต๊ะที่สั่งทีละหลายที่ */}
         <div>
