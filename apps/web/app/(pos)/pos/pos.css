@@ -693,3 +693,41 @@
   .pos-ret-money { text-align: left; }
   .pos-ret-reason { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---- ใบเสร็จบนจอ (components/pos/ReceiptPaper.tsx) ----
+   กระดาษต้องหน้าตาเหมือนกระดาษเสมอ: พื้นขาว ตัวหนังสือดำ ฟอนต์ความกว้างคงที่ ไม่ว่า
+   จอจะอยู่ธีมไหน — เพราะสิ่งที่คนเห็นบนจอคือคำสัญญาว่ากระดาษจะออกมาแบบนี้ ถ้าจอเป็น
+   ธีมมืดแล้วใบเสร็จมืดตาม จะเทียบกับของจริงไม่ได้เลย
+   กฎ `@media print` ที่เล็ง `#pos-receipt` อยู่ใน globals.css (CSS module ประกาศ
+   `body *` ไม่ได้) — ที่นี่คุมแค่หน้าตาบนจอ */
+.pos-receipt-paper {
+  background: #fff; color: #111;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px; line-height: 1.6;
+  width: 100%; max-width: 320px; margin: 0 auto;
+  padding: 14px 16px; border-radius: 6px;
+  border: 1px solid #e3e3e3;
+  /* ใบยาว ๆ ต้องเลื่อนดูได้ในกล่อง ไม่ใช่ดันกล่องจนปุ่มพิมพ์หลุดจอ */
+  max-height: 46vh; overflow-y: auto;
+}
+.pos-receipt-head, .pos-receipt-foot { text-align: center; }
+.pos-receipt-head b { display: block; font-size: 13.5px; }
+.pos-receipt-foot { margin-top: 10px; }
+.pos-receipt-foot .pos-receipt-row { text-align: left; }
+.pos-receipt-rule { border-top: 1px dashed #bbb; margin: 8px 0; }
+.pos-receipt-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  align-items: baseline;
+}
+.pos-receipt-row > span:first-child { flex: 1; word-break: break-word; }
+.pos-receipt-row > span:last-child { white-space: nowrap; }
+
+@media print {
+  /* ตอนพิมพ์ผ่าน print dialog กล่องต้องคลายเพดานความสูงและกรอบทิ้ง ไม่งั้นได้กระดาษ
+     ที่ตัดครึ่งใบเท่าที่เลื่อนดูอยู่พอดี */
+  .pos-receipt-paper {
+    max-height: none !important; overflow: visible !important;
+    border: 0 !important; border-radius: 0 !important;
+    max-width: none !important; padding: 0 !important;
+  }
+}

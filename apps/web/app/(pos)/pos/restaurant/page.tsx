@@ -7,9 +7,10 @@ import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
-import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
-import { findRememberedPrinter, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
-import { receiptDocumentTitle, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
+import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
+import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
+import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import { receiptDocumentTitle, receiptLocale, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
@@ -106,6 +107,14 @@ type ReceiptSelection = SettlementReceipt | RecentReceipt;
  * ก็เท่ากับพาปัญหาเดิมกลับมาที่หน้าใหม่ · ไม่แสดงยอดคงเหลือหลังคืนที่นี่โดยตั้งใจ — เลขนั้น
  * ต้องมาจากไทม์ไลน์การคืนของโหมดค้าปลีก ไม่ใช่จากการคำนวณใหม่ที่จอ
  */
+/**
+ * เวลาที่พิมพ์บนใบเสร็จ — ISO จาก server ต้องกลายเป็นเวลาท้องถิ่นก่อนถึงกระดาษเสมอ
+ * ค่าที่แปลงไม่ได้คืนของเดิม ดีกว่าพิมพ์ "Invalid Date" ให้ลูกค้า
+ */
+function localReceiptTime(iso: string, mode: ReceiptLanguageMode): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? iso : at.toLocaleString(receiptLocale(mode));
+}
 function billHistoryNote(receipt: RecentReceipt): string {
   if (receipt.voidedAt) return "ถูกยกเลิกแล้ว";
   if (receipt.orderStatus === "RETURNED") return "มีการคืนสินค้า";
@@ -368,7 +377,6 @@ export default function RestaurantPosPage() {
   const [recentReceipts, setRecentReceipts] = useState<RecentReceipt[]>([]);
   const [recentQuery, setRecentQuery] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptSelection | null>(null);
-  const [receiptTo, setReceiptTo] = useState("");
   const [cashMoveDirection, setCashMoveDirection] = useState<"IN" | "OUT">("IN");
   const [cashMoveAmount, setCashMoveAmount] = useState("");
   const [cashMoveReason, setCashMoveReason] = useState("");
@@ -622,11 +630,9 @@ export default function RestaurantPosPage() {
     if (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason) {
       throw new Error(describeTransportFailure(response.status, navigator.onLine));
     }
-    if (!response.ok) throw new Error(url === "/api/pos/send-receipt" && body?.reason
-      ? String(body.reason)
-      : typeof body?.status === "string"
-        ? describePosFailure(body)
-        : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
+    if (!response.ok) throw new Error(typeof body?.status === "string"
+      ? describePosFailure(body)
+      : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
     return body;
   }
   function auth(extra: Record<string, unknown> = {}) { if (!actorUserId || !actorPin) throw new Error("เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"); return { ...extra, cashierUserId: actorUserId, cashierPin: actorPin }; }
@@ -927,13 +933,20 @@ export default function RestaurantPosPage() {
       setRecentReceipts(rows.filter((row) => row.posDeviceId === session?.device.id));
     });
   }
-  function receiptBytes(receipt: ReceiptSelection) {
+  /**
+   * payload ชุดเดียวป้อนทั้งกระดาษบนจอ (`<ReceiptPaper/>`) และไบต์ที่ส่งเข้าเครื่องพิมพ์
+   * (`buildReceipt`) — สองตัวประกอบเองแยกกันเมื่อไหร่ จอกับกระดาษจะเริ่มบอกคนละเลข
+   * โดยไม่มีใครรู้จนลูกค้าถือใบเสร็จมาเทียบ
+   *
+   * คืน `null` แทนการ throw เพราะตัวนี้ถูกเรียกตอน render ด้วย — บิลที่ราคาบรรทัดยังไม่ครบ
+   * ต้องขึ้นคำเตือนในกล่อง ไม่ใช่ทำทั้งกล่องพัง (ส่วนปุ่มพิมพ์เป็นคนบอกว่าพิมพ์ไม่ได้เพราะอะไร)
+   */
+  function receiptPayload(receipt: ReceiptSelection): ReceiptPayload | null {
+    const mode = session?.store?.receiptLanguageMode ?? "th";
     const current = "result" in receipt;
     const result = current ? receipt.result : receipt;
     const currentLines = current ? receipt.check.items.filter((item) => item.status === "SENT") : [];
-    if (current && currentLines.some((item) => item.lineAmount == null)) {
-      throw new Error("ข้อมูลราคาบรรทัดใบเสร็จไม่ครบ — เปิดแท็บบิลแล้วลองพิมพ์ซ้ำ");
-    }
+    if (current && currentLines.some((item) => item.lineAmount == null)) return null;
     const lines: ReceiptLine[] = current
       ? currentLines.map((item) => ({
           name: `${item.productName}${item.size && item.size !== "-" ? ` (${item.size})` : ""}${item.modifierNames.length ? ` · ${item.modifierNames.join(", ")}` : ""}`,
@@ -947,8 +960,8 @@ export default function RestaurantPosPage() {
         }));
     let itemCount = 0;
     for (const line of lines) itemCount += line.qty;
-    return buildReceipt({
-      languageMode: session?.store?.receiptLanguageMode ?? "th",
+    return {
+      languageMode: mode,
       storeName: session?.location?.name ?? "BMS Restaurant",
       locationId: session?.location?.id ?? null,
       branchCode: session?.location?.branchCode ?? null,
@@ -957,10 +970,16 @@ export default function RestaurantPosPage() {
       posNo: session?.device.registeredPosNo ?? session?.device.code ?? null,
       shiftId: receipt.shiftId,
       vatIncluded: Boolean(session?.vat.registered),
-      docTitle: receiptDocumentTitle(session?.store?.receiptLanguageMode ?? "th", "sale", Boolean(session?.vat.registered)),
+      docTitle: receiptDocumentTitle(mode, "sale", Boolean(session?.vat.registered)),
       docNo: result.docNo,
       orderId: result.orderId,
-      at: current ? receipt.at : receipt.soldAt,
+      // ⚠️ ต้องแปลงเป็นเวลาท้องถิ่นก่อน — `buildReceipt` พิมพ์ค่านี้ตรง ๆ
+      //
+      // เดิมส่ง ISO ดิบเข้าไป ใบเสร็จจึงพิมพ์ "2026-09-05T03:17:15.933Z" ซึ่งอ่านไม่ออก
+      // **และเป็นเวลา UTC** = เพี้ยนจากเวลาที่ขายจริง 7 ชั่วโมงบนเอกสารที่ยื่นให้ลูกค้า
+      // (การ์ดข้าง ๆ ในจอเดียวกันเขียน 10:17 แต่กระดาษเขียน 03:17) · หน้าค้าปลีกแปลงด้วย
+      // `receiptAt()` มาตลอด — เจอตอนเรนเดอร์กระดาษขึ้นจอเป็นครั้งแรก
+      at: localReceiptTime(current ? receipt.at : receipt.soldAt, mode),
       cashier: receipt.cashierName,
       lines,
       itemCount,
@@ -972,7 +991,40 @@ export default function RestaurantPosPage() {
       member: current
         ? receipt.member ? { name: receipt.member.name, memberNo: receipt.member.memberNo, pointsEarned: receipt.result.pointsEarned, pointsBalance: receipt.result.pointsBalance } : null
         : receipt.memberName ? { name: receipt.memberName, memberNo: receipt.memberNo, pointsEarned: receipt.pointsEarned ?? null, pointsBalance: receipt.pointsBalance ?? null } : null,
-    });
+    };
+  }
+  /**
+   * ทางพิมพ์สำรองผ่าน print dialog — ใบเสร็จที่เรนเดอร์อยู่ในกล่องคือสิ่งที่ถูกพิมพ์
+   *
+   * เดิมหน้านี้มีทางพิมพ์ทางเดียวคือ WebUSB ESC/POS ซึ่ง **ใช้ได้เฉพาะ Chrome/Edge บน
+   * HTTPS และต้อง pair เครื่องก่อน** (บน macOS อาจต้องถอน driver ของระบบด้วย) แถลสถานะ
+   * ของเส้นนั้นยังเป็น "เขียนแล้ว ไม่เคยยิงกับฮาร์ดแวร์จริง" · หน้าค้าปลีกตกมาที่ dialog ได้
+   * มาตลอด หน้าร้านอาหารไม่ได้ = เครื่องพิมพ์ไม่ติดแล้วลูกค้าไม่ได้ใบเสร็จเลย
+   *
+   * ตั้ง marker ที่ body ก่อน `window.print()` เพราะกฎ `@media print` ใน globals.css
+   * เลือกพิมพ์เฉพาะ `#pos-receipt` — ไม่งั้นได้ทั้งหน้าจอขายลงกระดาษ
+   */
+  function printViaBrowser() {
+    document.body.setAttribute("data-pos-print-target", "receipt");
+    let fallbackTimer = 0;
+    const cleanup = () => {
+      document.body.removeAttribute("data-pos-print-target");
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    // rAF มีไว้ให้เบราว์เซอร์คำนวณ style จาก marker ก่อน snapshot — แต่ **rAF ไม่ทำงานเลย
+    // เมื่อแท็บถูกซ่อนหรือพับไปหลัง** ซึ่งเกิดจริงบนแท็บเล็ตหน้าร้านที่สลับแอปได้ตลอด
+    // ถ้าพึ่งตัวเดียว ใบเสร็จจะไม่ถูกพิมพ์เงียบ ๆ ทั้งที่พนักงานกดไปแล้วและ toast บอกว่ากำลังพิมพ์
+    // · ใครถึงก่อนชนะ แต่ยิงครั้งเดียว ไม่งั้นได้ dialog สองใบซ้อน
+    let printed = false;
+    const fire = () => {
+      if (printed) return;
+      printed = true;
+      window.print();
+    };
+    window.requestAnimationFrame(fire);
+    window.setTimeout(fire, 120);
+    fallbackTimer = window.setTimeout(cleanup, 30_000);
   }
   /**
    * ⚠️ ลิ้นชักเปิดได้เฉพาะตอนพิมพ์ใบเสร็จของบิลที่ "เพิ่งรับเงินสด" เท่านั้น
@@ -985,47 +1037,45 @@ export default function RestaurantPosPage() {
    * บิลที่จ่ายบัตร/QR ล้วนก็ไม่เปิด เพราะไม่มีเงินสดให้ทอน · คนที่ต้องเปิดลิ้นชักจริง ๆ
    * ใช้ "เปิดลิ้นชักโดยไม่ขาย" ที่แท็บกะ ซึ่งบันทึกว่าใครเปิดเพราะอะไร (กฎเดียวกับหน้าค้าปลีก
    * ที่แยก `printReceipt(true)` ของบิลที่เพิ่งขาย ออกจาก `printReceipt(false)` ของการพิมพ์ซ้ำ)
+   *
+   * **print dialog เปิดลิ้นชักไม่ได้** — ตกมาทางสำรองเมื่อไหร่ ต้องบอกให้ไปเปิดที่แท็บกะ
+   * ซึ่งเป็นทางที่มีหลักฐานอยู่แล้ว ไม่ใช่ปล่อยให้เข้าใจว่าลิ้นชักจะเด้งเอง
    */
+  function receiptBytes(receipt: ReceiptSelection) {
+    const payload = receiptPayload(receipt);
+    if (!payload) throw new Error("ข้อมูลราคาบรรทัดใบเสร็จไม่ครบ — เปิดแท็บบิลแล้วลองพิมพ์ซ้ำ");
+    return buildReceipt(payload);
+  }
   async function printReceipt(receipt: ReceiptSelection, openDrawer = false) {
     await run(async () => {
+      if (!receiptPayload(receipt)) {
+        throw new Error("ข้อมูลราคาบรรทัดใบเสร็จไม่ครบ — เปิดแท็บบิลแล้วลองพิมพ์ซ้ำ");
+      }
+      const fallback = (reason: string) => {
+        message.info(`${reason} — ใช้หน้าต่างพิมพ์ของเบราว์เซอร์แทน${openDrawer ? " (ลิ้นชักไม่เปิดเอง ใช้ปุ่มที่แท็บกะ)" : ""}`);
+        printViaBrowser();
+      };
+      if (!isWebUsbSupported()) {
+        fallback("เบราว์เซอร์นี้สั่งเครื่องพิมพ์โดยตรงไม่ได้");
+        return;
+      }
       let printer = await findRememberedPrinter();
       if (!printer) {
         try { printer = await requestPrinter(); }
-        catch { throw new Error("ไม่ได้เลือกเครื่องพิมพ์ — เลือกเครื่องแล้วลองพิมพ์อีกครั้ง"); }
+        catch { printer = null; }
       }
-      if (!printer) throw new Error("ยังไม่ได้เลือกเครื่องพิมพ์");
-      await sendToPrinter(receiptBytes(receipt), printer);
-      if (openDrawer) await sendToPrinter(buildDrawerKick(), printer);
+      if (!printer) {
+        fallback("ยังไม่ได้เลือกเครื่องพิมพ์");
+        return;
+      }
+      try {
+        await sendToPrinter(receiptBytes(receipt), printer);
+        if (openDrawer) await sendToPrinter(buildDrawerKick(), printer);
+      } catch (cause) {
+        fallback(`พิมพ์ผ่านเครื่องไม่สำเร็จ: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return;
+      }
       message.success("พิมพ์ใบเสร็จแล้ว");
-    });
-  }
-  async function sendSettlementReceipt(receipt: SettlementReceipt, channel: "email" | "line") {
-    await run(async () => {
-      const body = await json("/api/pos/send-receipt", { method: "POST", body: JSON.stringify({
-        orderId: receipt.result.orderId, channel, cashierUserId: actorUserId, pin: actorPin,
-        to: receiptTo.trim() || null,
-      }) });
-      message.success(`ส่งใบเสร็จไปที่ ${body.to} แล้ว`);
-      setReceiptTo("");
-    });
-  }
-  function closeSettlementReceipt() {
-    setReceiptTo("");
-    setSettlementReceipt(null);
-  }
-  function closeSelectedReceipt() {
-    setReceiptTo("");
-    setSelectedReceipt(null);
-  }
-  async function sendSelectedReceipt(channel: "email" | "line") {
-    if (!selectedReceipt || "result" in selectedReceipt) return;
-    await run(async () => {
-      const body = await json("/api/pos/send-receipt", { method: "POST", body: JSON.stringify({
-        orderId: selectedReceipt.orderId, channel, cashierUserId: actorUserId, pin: actorPin,
-        to: receiptTo.trim() || null,
-      }) });
-      message.success(`ส่งใบเสร็จไปที่ ${body.to} แล้ว`);
-      setReceiptTo("");
     });
   }
   async function settle() {
@@ -1049,7 +1099,6 @@ export default function RestaurantPosPage() {
           })),
         })),
       });
-      setReceiptTo("");
       setSettlementReceipt({
         result,
         check: settledCheck,
@@ -1334,7 +1383,7 @@ export default function RestaurantPosPage() {
         </div>
         <div className={styles.receiptGrid}>
           {recentReceipts.length === 0 && <div className={styles.empty}>ยังไม่มีบิลในเครื่องนี้ หรือกดค้นหาเพื่อรีเฟรช</div>}
-          {recentReceipts.map((receipt) => <button type="button" className={styles.receiptCard} key={receipt.orderId} onClick={() => { setReceiptTo(""); setSelectedReceipt(receipt); }}>
+          {recentReceipts.map((receipt) => <button type="button" className={styles.receiptCard} key={receipt.orderId} onClick={() => setSelectedReceipt(receipt)}>
             <span><b>{receipt.docNo ?? receipt.receiptNo ?? receipt.orderId.slice(0, 8)}</b><small>{new Date(receipt.soldAt).toLocaleString("th-TH")}</small></span>
             <strong><span className={styles.baht}>฿</span>{money(receipt.total)}</strong>
             <span>{receipt.memberName ?? "ลูกค้าทั่วไป"} · {receipt.lines.length} รายการ{billHistoryNote(receipt) ? ` · ${billHistoryNote(receipt)}` : ""}</span>
@@ -1816,21 +1865,32 @@ export default function RestaurantPosPage() {
       </div>}
     </Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okButtonProps={{ disabled: !operatorReady }} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
-    <Modal title="ปิดบิลสำเร็จ" open={Boolean(settlementReceipt)} onCancel={closeSettlementReceipt} footer={null} width={620} getContainer={modalContainer}>
+    {/* กล่องนี้มีสองงานคนละชั้น: แถบสรุปคือ "งานของแคชเชียร์" (ทอนเท่าไร ครัวได้กี่ใบ
+        คิดซ้ำหรือเปล่า) ส่วนกระดาษคือ "สิ่งที่ลูกค้าจะได้" — ยอด/ส่วนลด/VAT/แต้ม อยู่บน
+        กระดาษที่เดียว ไม่ซ้ำกับแถบสรุป เพราะเลขเดียวกันสองที่คือจุดที่เริ่ม drift
+        destroyOnClose เพราะกฎพิมพ์เล็งที่ `#pos-receipt` — ปล่อยให้ค้างสองใบใน DOM
+        แล้ว print dialog จะไม่รู้ว่าต้องพิมพ์ใบไหน */}
+    <Modal title="ปิดบิลสำเร็จ" open={Boolean(settlementReceipt)} onCancel={() => setSettlementReceipt(null)} footer={null} width={620} getContainer={modalContainer} destroyOnClose>
       {settlementReceipt && <div className={styles.modalGrid}>
         <div className={styles.receiptHero}><span>{settlementReceipt.result.docNo ?? settlementReceipt.result.receiptNo ?? "ใบเสร็จ"}<small>{settlementReceipt.check.tableName} · {settlementReceipt.member?.name ?? "ลูกค้าทั่วไป"}</small></span><strong>฿{money(settlementReceipt.result.total)}</strong></div>
-        <div className={styles.summaryGrid}><span>รับเงิน<b>{settlementReceipt.result.cashTendered == null ? "—" : `฿${money(settlementReceipt.result.cashTendered)}`}</b></span><span>เงินทอน<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>VAT<b>{settlementReceipt.result.vat ? `฿${money(settlementReceipt.result.vat.vatAmount)}` : "—"}</b></span><span>แต้มที่ได้<b>{settlementReceipt.result.pointsEarned ?? "—"}</b></span><span>ตั๋วครัว<b>{settlementReceipt.result.kitchenTickets}</b></span><span>สถานะ<b>{settlementReceipt.result.replayed ? "รายการเดิม (ไม่คิดซ้ำ)" : "รับชำระแล้ว"}</b></span></div>
-        {settlementReceipt.result.discountLines.map((line, index) => <div className={styles.sheetRow} key={`${line.label}-${index}`}><span>{line.label}</span><b>-฿{money(line.amount)}</b></div>)}
-        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> พิมพ์ใบเสร็จ</button><input value={receiptTo} onChange={(event) => setReceiptTo(event.target.value)} placeholder="อีเมล / LINE recipient" /><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSettlementReceipt(settlementReceipt, "email")}>ส่งอีเมล</button><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSettlementReceipt(settlementReceipt, "line")}>ส่ง LINE</button></div>
-        <button type="button" className={styles.btn} onClick={closeSettlementReceipt}>กลับไปผังโต๊ะ</button>
+        <div className={styles.summaryGrid}><span>เงินทอน<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>ตั๋วครัว<b>{settlementReceipt.result.kitchenTickets}</b></span><span>สถานะ<b>{settlementReceipt.result.replayed ? "รายการเดิม (ไม่คิดซ้ำ)" : "รับชำระแล้ว"}</b></span></div>
+        {receiptPayload(settlementReceipt)
+          ? <ReceiptPaper payload={receiptPayload(settlementReceipt)!} />
+          : <Alert type="warning" showIcon message="ยังประกอบใบเสร็จไม่ได้" description="ราคาบางบรรทัดยังไม่ครบ — เปิดบิลนี้จากแท็บบิลแล้วพิมพ์ซ้ำ" />}
+        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> พิมพ์ใบเสร็จ</button></div>
+        <button type="button" className={styles.btn} onClick={() => setSettlementReceipt(null)}>กลับไปผังโต๊ะ</button>
       </div>}
     </Modal>
-    <Modal title={selectedReceipt && !("result" in selectedReceipt) ? selectedReceipt.docNo ?? "รายละเอียดบิล" : "รายละเอียดบิล"} open={Boolean(selectedReceipt)} onCancel={closeSelectedReceipt} footer={null} width={620} getContainer={modalContainer}>
+    {/* กล่องนี้เคยโชว์รายการสินค้าอย่างเดียว ไม่โชว์ส่วนลด/VAT ทั้งที่ response มีให้แล้ว
+        · `lineTotal` คือราคาป้ายก่อนหักราคาส่ง/โปร (9.22) บิลที่ติดโปรจึงแสดงรายการที่
+        บวกแล้ว **ไม่เท่ายอดรวม** โดยไม่มีอะไรอธิบาย — ตอนนี้เรนเดอร์กระดาษจริงทั้งใบแทน */}
+    <Modal title={selectedReceipt && !("result" in selectedReceipt) ? selectedReceipt.docNo ?? "รายละเอียดบิล" : "รายละเอียดบิล"} open={Boolean(selectedReceipt)} onCancel={() => setSelectedReceipt(null)} footer={null} width={620} getContainer={modalContainer} destroyOnClose>
       {selectedReceipt && !("result" in selectedReceipt) && <div className={styles.modalGrid}>
-        <div className={styles.receiptHero}><span>{new Date(selectedReceipt.soldAt).toLocaleString("th-TH")}<small>{selectedReceipt.memberName ?? "ลูกค้าทั่วไป"} · {selectedReceipt.cashierName ?? "—"}</small></span><strong>฿{money(selectedReceipt.total)}</strong></div>
         {billHistoryNote(selectedReceipt) && <Alert type="warning" showIcon message={`บิลนี้${billHistoryNote(selectedReceipt)}`} description="กระดาษที่พิมพ์จากที่นี่คือ “ใบขายเดิม” ยอดบนใบยังเป็นยอดตอนขายจริง การคืน/ยกเลิกออกเป็นเอกสารคนละใบ — ดูรายละเอียดการคืนที่โหมดค้าปลีก" />}
-        {selectedReceipt.lines.map((line, index) => <div className={styles.sheetRow} key={`${line.receiptName}-${index}`}><span>{line.packQty}× {line.receiptName}{line.size && line.size !== "-" ? ` · ${line.size}` : ""}</span><b>฿{money(line.lineTotal)}</b></div>)}
-        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(selectedReceipt)}><PrinterOutlined /> {billHistoryNote(selectedReceipt) ? "พิมพ์ใบขายเดิม" : "พิมพ์ซ้ำ"}</button><input value={receiptTo} onChange={(event) => setReceiptTo(event.target.value)} placeholder="อีเมล / LINE recipient" /><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSelectedReceipt("email")}>ส่งอีเมล</button><button type="button" className={styles.btn} disabled={!operatorReady} title={operatorReady ? "ส่งสำเนาใบเสร็จ" : "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน"} onClick={() => void sendSelectedReceipt("line")}>ส่ง LINE</button></div>
+        {receiptPayload(selectedReceipt)
+          ? <ReceiptPaper payload={receiptPayload(selectedReceipt)!} />
+          : <Alert type="warning" showIcon message="ยังประกอบใบเสร็จไม่ได้" description="ราคาบางบรรทัดของบิลนี้ยังไม่ครบ" />}
+        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(selectedReceipt)}><PrinterOutlined /> {billHistoryNote(selectedReceipt) ? "พิมพ์ใบขายเดิม" : "พิมพ์ซ้ำ"}</button></div>
       </div>}
     </Modal>
     <Modal
