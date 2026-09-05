@@ -243,16 +243,19 @@ test("every archetype including unknown produces a usable shop menu", () => {
   }
 });
 
-test("emphasis for a restaurant and a mini mart differ without hiding anything", () => {
+test("emphasis differs by archetype and only explicit shop-type tools are hidden", () => {
   const restaurant = buildAdminNavigation(administrator({ archetype: "restaurant", kitchenBoardEnabled: true }), "SHOP");
   const miniMart = buildAdminNavigation(administrator({ archetype: "mini_mart", kitchenBoardEnabled: true }), "SHOP");
   const firstSales = (nav: typeof restaurant) =>
     nav.sections.find((section) => section.id === "sales")!.items[0].id;
   assert.equal(firstSales(restaurant), "sales.kitchen");
   assert.notEqual(firstSales(miniMart), "sales.kitchen");
-  // Archetype changes order, not reach. The only entries whose *visibility* differs are the ones
-  // driven by a real capability signal (packs, wastage) — asserted in the capability test above.
-  const capabilityDriven = new Set(["/admin/product-packs", "/admin/product-labels", "/admin/wastage"]);
+  // Most archetype changes affect order, not reach. Besides real capability signals, the restaurant
+  // floor editor is intentionally restaurant-only because its data and workflow do not exist for
+  // other archetypes.
+  const capabilityDriven = new Set([
+    "/admin/product-packs", "/admin/product-labels", "/admin/wastage", "/admin/restaurant-floor",
+  ]);
   const comparable = (sections: typeof restaurant) =>
     routesOf(sections).filter((route) => !capabilityDriven.has(route)).sort();
   assert.deepEqual(comparable(restaurant), comparable(miniMart),

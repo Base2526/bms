@@ -1421,6 +1421,18 @@ payments, drawer totals and tax documents therefore keep the normal POS source o
 kitchen tickets are attached to check items and appear before payment. Settlement does not enqueue a
 second copy of those tickets.
 
+The branch floor is maintained from `/admin/restaurant-floor`, behind an admin session and
+`restaurant.floor.manage`. An administrator selects a branch, creates and orders area tabs, manages
+table names/seats/shapes, and drags tables on a grid before saving the accumulated coordinate
+changes. The restaurant register renders those saved shapes and coordinates on a scrollable,
+read-only canvas instead of reflowing the tables into a CSS grid, so its floor matches the admin
+layout at every viewport width. Both surfaces draw chairs from the table's configured seat count;
+the stored seat count remains authoritative, while the compact canvas caps the decorative chairs at
+12 to keep unusually large communal tables legible. This is deliberately read-only for check state: occupied tables show
+their status and can still be repositioned, but their configuration cannot change until the check closes. Opening,
+editing, moving or settling a check remains exclusively on `/pos/restaurant` with device + PIN
+authentication.
+
 The same restaurant register also owns the ordinary counter close-out work. After settlement it
 keeps the server result and the pre-close check snapshot on screen, including tendered cash, change,
 tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. Both registers render the receipt through one

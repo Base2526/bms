@@ -261,6 +261,45 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     ]), relatedCapabilityIds: ["inventory.stock-model"],
   },
   {
+    id: "restaurant.floor-management", module: "restaurant", pageId: "restaurant-floor", route: "/admin/restaurant-floor",
+    title: both("จัดโซน โต๊ะ และผังร้านอาหาร", "Manage restaurant areas, tables and floor plan"),
+    summary: both("เลือกสาขา จัดโซนและโต๊ะ แล้วลากโต๊ะบนผังเพื่อบันทึกตำแหน่งใช้งานจริง", "Choose a branch, manage its areas and tables, then drag tables into their real floor positions."),
+    aliases: aliases([
+      "เพิ่มโต๊ะ", "จัดผังร้าน", "ลบโซน", "ย้ายโต๊ะไปโซนอื่น", "เปลี่ยนชื่อโต๊ะ", "ปิดโต๊ะชั่วคราว",
+    ], [
+      "add table", "edit floor plan", "delete area", "move table to another area", "rename table", "block a table",
+    ]),
+    requiredPermissions: ["restaurant.floor.manage"],
+    prerequisites: lists([
+      "ร้านต้องตั้งประเภทธุรกิจเป็นร้านอาหาร",
+      "เลือกสาขาที่ต้องการจัดผังก่อน เพราะแต่ละสาขามีโซนและโต๊ะของตัวเอง",
+    ], [
+      "The shop's business type must be Restaurant.",
+      "Choose the branch first because every branch owns its own areas and tables.",
+    ]),
+    steps: lists([
+      "เพิ่มหรือเปลี่ยนชื่อโซน แล้วลากแท็บเพื่อเรียงลำดับ",
+      "เลือกโซนและเพิ่มโต๊ะ พร้อมชื่อ จำนวนที่นั่ง และรูปทรง",
+      "ลากโต๊ะบนกริดไปยังตำแหน่งจริง แล้วกดบันทึกผังร้าน",
+      "คลิกโต๊ะเพื่อแก้รายละเอียด ย้ายโซน หรือปิดใช้งานชั่วคราว",
+    ], [
+      "Add or rename areas, then drag their tabs to reorder them.",
+      "Choose an area and add tables with a name, seat count and shape.",
+      "Drag tables to their real positions on the grid, then save the floor plan.",
+      "Select a table to edit its details, move it to another area or block it temporarily.",
+    ]),
+    warnings: lists([
+      "โต๊ะที่มีบิลเปิดอยู่ลากตำแหน่งได้ แต่แก้รายละเอียด ย้ายโซน ปิดใช้งาน หรือลบไม่ได้",
+      "ลบโซนได้เมื่อไม่มีโต๊ะใช้งานอยู่ และลบโซนสุดท้ายของสาขาไม่ได้",
+      "หน้านี้จัดผังเท่านั้น การเปิดหรือปิดบิลทำที่ Restaurant POS",
+    ], [
+      "An occupied table can be repositioned, but its details, area, availability and deletion are locked.",
+      "An area can be deleted only when it has no active tables, and a branch must keep at least one area.",
+      "This page edits the floor only; checks are opened and closed in Restaurant POS.",
+    ]),
+    relatedCapabilityIds: ["restaurant.dine-in"],
+  },
+  {
     id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",
     title: both("ตัดของเสียออกจากสต็อก", "Write off wasted stock"),
     summary: both("ตัดของที่ขายต่อไม่ได้ พร้อมบันทึก movement และ audit ไว้ทุกครั้ง", "Write off stock that can no longer be sold, with a movement and an audit entry every time."),

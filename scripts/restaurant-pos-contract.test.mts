@@ -357,6 +357,7 @@ test("kitchen board accepts tickets without an order id and stays branch-aware",
 
 test("restaurant screen exposes floor, kitchen round, move and settlement actions", async () => {
   const page = await read("apps/web/app/(pos)/pos/restaurant/page.tsx");
+  const css = await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css");
   for (const action of ["add_item", "remove_item", "send_kitchen", "move", "cancel", "settle"]) {
     assert.match(page, new RegExp(`"${action}"`));
   }
@@ -365,6 +366,23 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   assert.match(page, /appendSplitPaymentRow/);
   assert.match(page, /payments\.map\(\(payment\) =>/);
   assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
+  // หน้าจอ POS ต้องอ่านผังเดียวกับ editor ไม่ใช่นำโต๊ะกลับไปเรียงด้วย CSS grid
+  for (const field of ["shape", "positionX", "positionY"]) assert.match(page, new RegExp(field));
+  assert.match(page, /transform: `translate\(\$\{table\.positionX\}px, \$\{table\.positionY\}px\)`/);
+  assert.match(page, /styles\.tableRect/);
+  assert.match(page, /styles\.tableRound/);
+  assert.match(page, /<RestaurantTableChairs seats=\{table\.seats\} shape=\{shape\}/);
+  assert.doesNotMatch(css, /\.tableGrid\s*\{/);
+});
+
+test("admin and POS render the same bounded chair visual from the table seat count", async () => {
+  const admin = await read("apps/web/app/(admin)/admin/restaurant-floor/page.tsx");
+  const chairs = await read("apps/web/components/RestaurantTableChairs.tsx");
+  assert.match(admin, /<RestaurantTableChairs seats=\{table\.seats\} shape=\{table\.shape\}/);
+  assert.match(chairs, /const MAX_VISIBLE_CHAIRS = 12/);
+  assert.match(chairs, /Math\.min\(MAX_VISIBLE_CHAIRS, Math\.max\(0, Math\.floor\(seats\)\)\)/);
+  assert.match(chairs, /shape === "rect"[\s\S]*rectChairs\(visibleCount\)[\s\S]*roundChair/);
+  assert.match(chairs, /aria-hidden="true"/);
 });
 
 test("restaurant register keeps settlement receipts and counter screens on the same device", async () => {

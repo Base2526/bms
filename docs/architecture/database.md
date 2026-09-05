@@ -869,6 +869,11 @@ RBAC until each page/mutation is wired to enforce the allow-list.
 ## Restaurant POS (`9.44`–`9.49`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
+Migration `9.59` adds each table's `shape` (`round`/`rect`) and non-negative pixel coordinates
+`position_x + position_y`. Areas remain ordered tabs rather than drawable regions. Existing tables
+are backfilled into a four-column grid per area so an upgraded floor never opens as one overlapping
+stack. Admin edits soft-delete areas/tables to retain closed-check history; every write is tenant- and
+branch-validated and audited in the same transaction.
 Composite foreign keys added in `9.47` require an area's table and a table's check to carry the same
 `tenant_id + location_id`; tenant isolation alone is not enough because one tenant can own several
 branches.

@@ -254,8 +254,10 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**75 namespaces / 4,284 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-03 — the latest change is net **−23**: the
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**76 namespaces / 4,435 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-05 — the latest change is net **+54**: the
+   `admin_restaurant_floor` namespace adds 53 keys for the branch/area/table/layout editor and
+   `admin_nav.restaurant_floor` adds its menu label; the preceding change is net **−23**: the
    new `admin_nav` namespace adds 75 keys (72 for the menu itself, +3 for the command palette:
    search_placeholder, search_hint, search_empty) (task-based sidebar sections, workspace names, and every
    menu label, including the ones that used to be hardcoded English string literals in

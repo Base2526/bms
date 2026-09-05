@@ -1,0 +1,220 @@
+.page {
+  width: 100%;
+}
+
+.toolbarCard :global(.ant-card-body) {
+  padding: 14px 18px;
+}
+
+.toolbar,
+.areaBar,
+.tableHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.branchPicker {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 320px);
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.areaBar {
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+
+.areaTabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.areaTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  background: #fff;
+  color: #3b4351;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.areaTab:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+.areaTabActive {
+  border-color: #1677ff;
+  background: #e6f4ff;
+  color: #0958d9;
+  box-shadow: 0 0 0 2px rgb(22 119 255 / 10%);
+}
+
+.areaCount {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 7%);
+  font-size: 12px;
+  text-align: center;
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.canvasCard :global(.ant-card-body) {
+  padding: 12px;
+}
+
+.canvas {
+  position: relative;
+  min-height: 620px;
+  overflow: hidden;
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+  background-color: #fbfcfe;
+  background-image: radial-gradient(circle, #cfd7e3 1.25px, transparent 1.25px);
+  background-size: 20px 20px;
+  touch-action: none;
+}
+
+.canvasEmpty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #8c8c8c;
+  pointer-events: none;
+}
+
+.table {
+  --restaurant-chair-border: #52c41a;
+  --restaurant-chair-fill: #f6ffed;
+  --restaurant-chair-shadow: rgb(31 45 61 / 10%);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  padding: 8px;
+  border: 2px solid #52c41a;
+  background: #f6ffed;
+  box-shadow: 0 5px 16px rgb(31 45 61 / 10%);
+  color: #1f2d3d;
+  cursor: grab;
+  isolation: isolate;
+  user-select: none;
+  touch-action: none;
+  transition: border-color 120ms, box-shadow 120ms, background-color 120ms;
+  will-change: transform;
+}
+
+.table:active {
+  cursor: grabbing;
+}
+
+.table strong {
+  font-size: 16px;
+}
+
+.table span,
+.table small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table small {
+  color: #667085;
+  font-size: 11px;
+}
+
+.round {
+  border-radius: 50%;
+}
+
+.rect {
+  width: 128px;
+  height: 76px;
+  border-radius: 14px;
+}
+
+.occupied {
+  --restaurant-chair-border: #fa8c16;
+  --restaurant-chair-fill: #fff7e6;
+  border-color: #fa8c16;
+  background: #fff7e6;
+}
+
+.blocked {
+  --restaurant-chair-border: #8c8c8c;
+  --restaurant-chair-fill: #f5f5f5;
+  border-color: #8c8c8c;
+  background: #f5f5f5;
+  color: #8c8c8c;
+}
+
+.tableSelected {
+  box-shadow: 0 0 0 4px rgb(22 119 255 / 22%), 0 8px 22px rgb(31 45 61 / 16%);
+}
+
+.sidePanel {
+  position: sticky;
+  top: 76px;
+}
+
+.tableHeading :global(.ant-typography) {
+  margin: 0;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+@media (max-width: 960px) {
+  .toolbar,
+  .areaBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .editorGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidePanel {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .branchPicker {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas {
+    min-height: 520px;
+  }
+}

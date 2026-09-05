@@ -139,14 +139,19 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
   await requireRestaurantTenant(tenantId);
   const [areas, tables] = await Promise.all([
     query<any>(
-      `SELECT id, name, sort_order
-         FROM bms_restaurant_areas
-        WHERE tenant_id = $1 AND location_id = $2 AND active
-        ORDER BY sort_order, name`,
+      `SELECT a.id, a.name, a.sort_order,
+              COUNT(t.id) FILTER (WHERE t.active)::integer AS table_count
+         FROM bms_restaurant_areas a
+         LEFT JOIN bms_restaurant_tables t
+           ON t.tenant_id = a.tenant_id AND t.location_id = a.location_id AND t.area_id = a.id
+        WHERE a.tenant_id = $1 AND a.location_id = $2 AND a.active
+        GROUP BY a.id
+        ORDER BY a.sort_order, a.name`,
       [tenantId, locationId]
     ),
     query<any>(
-      `SELECT t.id, t.area_id, t.code, t.name, t.seats, t.sort_order, t.blocked,
+      `SELECT t.id, t.area_id, t.code, t.name, t.seats, t.shape,
+              t.position_x, t.position_y, t.sort_order, t.blocked, t.active,
               c.id AS check_id, c.status AS check_status, c.guest_count,
               c.amount_due, c.opened_at, c.version, c.reserved_version,
               COUNT(i.id) FILTER (WHERE i.status <> 'CANCELLED')::integer AS item_count,
@@ -164,14 +169,23 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
     ),
   ]);
   return {
-    areas: areas.rows.map((row) => ({ id: row.id, name: row.name, sortOrder: Number(row.sort_order) })),
+    areas: areas.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      sortOrder: Number(row.sort_order),
+      tableCount: Number(row.table_count),
+    })),
     tables: tables.rows.map((row) => ({
       id: row.id,
       areaId: row.area_id,
       code: row.code,
       name: row.name,
       seats: Number(row.seats),
+      shape: row.shape === "rect" ? "rect" : "round",
+      positionX: Number(row.position_x),
+      positionY: Number(row.position_y),
       blocked: Boolean(row.blocked),
+      active: Boolean(row.active),
       status: row.blocked ? "BLOCKED" : row.check_id ? "OCCUPIED" : "AVAILABLE",
       check: row.check_id ? {
         id: row.check_id,
@@ -186,6 +200,375 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
       } : null,
     })),
   };
+}
+
+type RestaurantFloorActor = {
+  tenantId: string;
+  actorUserId: string;
+};
+
+type RestaurantTablePatch = {
+  name?: string;
+  seats?: number;
+  shape?: "round" | "rect";
+  blocked?: boolean;
+  areaId?: string;
+  positionX?: number;
+  positionY?: number;
+};
+
+function floorName(value: string, label: string) {
+  const name = String(value ?? "").trim();
+  if (!name || name.length > 80) {
+    throw new RestaurantCheckError(`${label}ต้องมีความยาว 1–80 ตัวอักษร`);
+  }
+  return name;
+}
+
+function floorInteger(value: number, label: string, min: number, max: number) {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new RestaurantCheckError(`${label}ต้องเป็นจำนวนเต็มระหว่าง ${min}–${max}`);
+  }
+  return value;
+}
+
+function duplicateAreaError(error: unknown) {
+  const pgError = error as { code?: string; constraint?: string };
+  if (pgError?.code === "23505" && pgError.constraint?.includes("restaurant_areas")) {
+    return new RestaurantCheckError("มีชื่อโซนนี้ในสาขาแล้ว");
+  }
+  return error;
+}
+
+async function auditFloorInTx(
+  client: Pick<PoolClient, "query">,
+  input: RestaurantFloorActor,
+  action: string,
+  target: string,
+  meta: Record<string, unknown> = {}
+) {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1,$2,$3,$4,$5::jsonb)`,
+    [input.tenantId, `user:${input.actorUserId}`, action, target, JSON.stringify(meta)]
+  );
+}
+
+async function lockFloorConfigInTx(
+  client: Pick<PoolClient, "query">,
+  tenantId: string,
+  locationId: string
+) {
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+    `restaurant-floor:${tenantId}:${locationId}`,
+  ]);
+}
+
+async function withFloorWrite<T>(
+  input: RestaurantFloorActor,
+  work: (client: PoolClient) => Promise<T>
+) {
+  await requireRestaurantTenant(input.tenantId);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw duplicateAreaError(error);
+  } finally {
+    client.release();
+  }
+}
+
+export async function createRestaurantArea(input: RestaurantFloorActor & {
+  locationId: string;
+  name: string;
+}) {
+  const name = floorName(input.name, "ชื่อโซน");
+  const areaId = await withFloorWrite(input, async (client) => {
+    await lockFloorConfigInTx(client, input.tenantId, input.locationId);
+    const location = await client.query(
+      `SELECT 1 FROM bms_locations WHERE tenant_id = $1 AND id = $2 AND active FOR KEY SHARE`,
+      [input.tenantId, input.locationId]
+    );
+    if (!location.rowCount) throw new RestaurantCheckError("ไม่พบสาขานี้");
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_restaurant_areas (tenant_id, location_id, name, sort_order)
+       VALUES ($1,$2,$3,COALESCE((
+         SELECT MAX(sort_order) + 1 FROM bms_restaurant_areas
+          WHERE tenant_id = $1 AND location_id = $2 AND active
+       ),0)) RETURNING id`,
+      [input.tenantId, input.locationId, name]
+    );
+    const id = inserted.rows[0].id;
+    await auditFloorInTx(client, input, "restaurant.area.create", id, { locationId: input.locationId });
+    return id;
+  });
+  const floor = await listRestaurantFloor(input.tenantId, input.locationId);
+  return floor.areas.find((area) => area.id === areaId)!;
+}
+
+export async function renameRestaurantArea(input: RestaurantFloorActor & {
+  areaId: string;
+  name: string;
+}) {
+  const name = floorName(input.name, "ชื่อโซน");
+  const locationId = await withFloorWrite(input, async (client) => {
+    const updated = await client.query<{ location_id: string }>(
+      `UPDATE bms_restaurant_areas SET name = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND active RETURNING location_id`,
+      [input.tenantId, input.areaId, name]
+    );
+    if (!updated.rowCount) throw new RestaurantCheckError("ไม่พบโซนนี้");
+    await auditFloorInTx(client, input, "restaurant.area.rename", input.areaId);
+    return updated.rows[0].location_id;
+  });
+  const floor = await listRestaurantFloor(input.tenantId, locationId);
+  return floor.areas.find((area) => area.id === input.areaId)!;
+}
+
+export async function reorderRestaurantAreas(input: RestaurantFloorActor & {
+  locationId: string;
+  orderedAreaIds: string[];
+}) {
+  await withFloorWrite(input, async (client) => {
+    await lockFloorConfigInTx(client, input.tenantId, input.locationId);
+    const ids = [...new Set(input.orderedAreaIds)];
+    if (ids.length !== input.orderedAreaIds.length) {
+      throw new RestaurantCheckError("รายการโซนเรียงลำดับมี id ซ้ำ");
+    }
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM bms_restaurant_areas
+        WHERE tenant_id = $1 AND location_id = $2 AND active FOR UPDATE`,
+      [input.tenantId, input.locationId]
+    );
+    const existingIds = new Set(existing.rows.map((row) => row.id));
+    if (ids.length !== existingIds.size || ids.some((id) => !existingIds.has(id))) {
+      throw new RestaurantCheckError("รายการโซนไม่ตรงกับโซนของสาขานี้");
+    }
+    for (const [sortOrder, id] of ids.entries()) {
+      await client.query(
+        `UPDATE bms_restaurant_areas SET sort_order = $4, updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
+        [input.tenantId, input.locationId, id, sortOrder]
+      );
+    }
+    await auditFloorInTx(client, input, "restaurant.area.reorder", input.locationId, { orderedAreaIds: ids });
+  });
+  return (await listRestaurantFloor(input.tenantId, input.locationId)).areas;
+}
+
+export async function deleteRestaurantArea(input: RestaurantFloorActor & { areaId: string }) {
+  return withFloorWrite(input, async (client) => {
+    const discovered = await client.query<{ location_id: string }>(
+      `SELECT location_id FROM bms_restaurant_areas
+        WHERE tenant_id = $1 AND id = $2 AND active`,
+      [input.tenantId, input.areaId]
+    );
+    if (!discovered.rowCount) throw new RestaurantCheckError("ไม่พบโซนนี้");
+    const locationId = discovered.rows[0].location_id;
+    // Serialize delete against another delete/reorder/create in the same branch. Locking only the
+    // area row lets two concurrent requests each observe "two areas" and remove both last areas.
+    await lockFloorConfigInTx(client, input.tenantId, locationId);
+    const area = await client.query<{ location_id: string }>(
+      `SELECT location_id FROM bms_restaurant_areas
+        WHERE tenant_id = $1 AND id = $2 AND active FOR UPDATE`,
+      [input.tenantId, input.areaId]
+    );
+    if (!area.rowCount) throw new RestaurantCheckError("ไม่พบโซนนี้");
+    const [tables, areas] = await Promise.all([
+      client.query(
+        `SELECT COUNT(*)::integer AS count FROM bms_restaurant_tables
+          WHERE tenant_id = $1 AND area_id = $2 AND active`,
+        [input.tenantId, input.areaId]
+      ),
+      client.query(
+        `SELECT COUNT(*)::integer AS count FROM bms_restaurant_areas
+          WHERE tenant_id = $1 AND location_id = $2 AND active`,
+        [input.tenantId, locationId]
+      ),
+    ]);
+    if (Number(tables.rows[0].count) > 0) throw new RestaurantCheckError("ลบโซนที่ยังมีโต๊ะใช้งานอยู่ไม่ได้");
+    if (Number(areas.rows[0].count) <= 1) throw new RestaurantCheckError("ลบโซนสุดท้ายของสาขาไม่ได้");
+    await client.query(
+      `UPDATE bms_restaurant_areas SET active = FALSE, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, input.areaId]
+    );
+    await auditFloorInTx(client, input, "restaurant.area.delete", input.areaId, { locationId });
+    return true;
+  });
+}
+
+export async function createRestaurantTable(input: RestaurantFloorActor & {
+  locationId: string;
+  areaId: string;
+  name: string;
+  seats: number;
+  shape: "round" | "rect";
+}) {
+  const name = floorName(input.name, "ชื่อโต๊ะ");
+  const seats = floorInteger(input.seats, "จำนวนที่นั่ง", 1, 100);
+  if (input.shape !== "round" && input.shape !== "rect") throw new RestaurantCheckError("รูปทรงโต๊ะไม่ถูกต้อง");
+  const tableId = await withFloorWrite(input, async (client) => {
+    await lockFloorConfigInTx(client, input.tenantId, input.locationId);
+    const area = await client.query(
+      `SELECT 1 FROM bms_restaurant_areas
+        WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active FOR KEY SHARE`,
+      [input.tenantId, input.areaId, input.locationId]
+    );
+    if (!area.rowCount) throw new RestaurantCheckError("ไม่พบโซนในสาขานี้");
+    const codeResult = await client.query<{ next_no: number }>(
+      `SELECT COALESCE(MAX(substring(code FROM '^T([0-9]+)$')::integer), 0) + 1 AS next_no
+         FROM bms_restaurant_tables WHERE tenant_id = $1 AND location_id = $2`,
+      [input.tenantId, input.locationId]
+    );
+    const nextNo = Number(codeResult.rows[0].next_no);
+    const code = `T${String(nextNo).padStart(2, "0")}`;
+    const sort = await client.query<{ next_order: number }>(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order
+         FROM bms_restaurant_tables WHERE tenant_id = $1 AND area_id = $2 AND active`,
+      [input.tenantId, input.areaId]
+    );
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_restaurant_tables
+         (tenant_id, location_id, area_id, code, name, seats, shape, sort_order, position_x, position_y)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+      [input.tenantId, input.locationId, input.areaId, code, name, seats, input.shape,
+       Number(sort.rows[0].next_order), 40 + (Number(sort.rows[0].next_order) % 4) * 110,
+       40 + Math.floor(Number(sort.rows[0].next_order) / 4) * 130]
+    );
+    const id = inserted.rows[0].id;
+    await auditFloorInTx(client, input, "restaurant.table.create", id, { locationId: input.locationId, areaId: input.areaId });
+    return id;
+  });
+  const floor = await listRestaurantFloor(input.tenantId, input.locationId);
+  return floor.tables.find((table) => table.id === tableId)!;
+}
+
+export async function updateRestaurantTable(input: RestaurantFloorActor & {
+  tableId: string;
+  patch: RestaurantTablePatch;
+}) {
+  const patch = input.patch;
+  if (patch.name !== undefined) patch.name = floorName(patch.name, "ชื่อโต๊ะ");
+  if (patch.seats !== undefined) patch.seats = floorInteger(patch.seats, "จำนวนที่นั่ง", 1, 100);
+  if (patch.shape !== undefined && patch.shape !== "round" && patch.shape !== "rect") {
+    throw new RestaurantCheckError("รูปทรงโต๊ะไม่ถูกต้อง");
+  }
+  if (patch.positionX !== undefined) patch.positionX = floorInteger(patch.positionX, "ตำแหน่ง X", 0, 100000);
+  if (patch.positionY !== undefined) patch.positionY = floorInteger(patch.positionY, "ตำแหน่ง Y", 0, 100000);
+  const result = await withFloorWrite(input, async (client) => {
+    const table = await client.query<{ location_id: string; area_id: string }>(
+      `SELECT location_id, area_id FROM bms_restaurant_tables
+        WHERE tenant_id = $1 AND id = $2 AND active FOR UPDATE`,
+      [input.tenantId, input.tableId]
+    );
+    if (!table.rowCount) throw new RestaurantCheckError("ไม่พบโต๊ะนี้");
+    const locationId = table.rows[0].location_id;
+    if (patch.areaId !== undefined) {
+      const area = await client.query(
+        `SELECT 1 FROM bms_restaurant_areas
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active`,
+        [input.tenantId, patch.areaId, locationId]
+      );
+      if (!area.rowCount) throw new RestaurantCheckError("ไม่พบโซนปลายทางในสาขานี้");
+    }
+    if (patch.areaId !== undefined || patch.blocked !== undefined) {
+      const open = await client.query(
+        `SELECT 1 FROM bms_restaurant_checks
+          WHERE tenant_id = $1 AND table_id = $2 AND status IN ('OPEN','CLOSING') LIMIT 1`,
+        [input.tenantId, input.tableId]
+      );
+      if (open.rowCount) throw new RestaurantCheckError("ย้ายโซนหรือปิดใช้งานโต๊ะที่มีบิลเปิดอยู่ไม่ได้");
+    }
+    await client.query(
+      `UPDATE bms_restaurant_tables SET
+         name = CASE WHEN $3::boolean THEN $4 ELSE name END,
+         seats = CASE WHEN $5::boolean THEN $6 ELSE seats END,
+         shape = CASE WHEN $7::boolean THEN $8 ELSE shape END,
+         blocked = CASE WHEN $9::boolean THEN $10 ELSE blocked END,
+         area_id = CASE WHEN $11::boolean THEN $12::uuid ELSE area_id END,
+         position_x = CASE WHEN $13::boolean THEN $14 ELSE position_x END,
+         position_y = CASE WHEN $15::boolean THEN $16 ELSE position_y END,
+         updated_at = now()
+       WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, input.tableId,
+       patch.name !== undefined, patch.name ?? "",
+       patch.seats !== undefined, patch.seats ?? 1,
+       patch.shape !== undefined, patch.shape ?? "round",
+       patch.blocked !== undefined, patch.blocked ?? false,
+       patch.areaId !== undefined, patch.areaId ?? null,
+       patch.positionX !== undefined, patch.positionX ?? 0,
+       patch.positionY !== undefined, patch.positionY ?? 0]
+    );
+    await auditFloorInTx(client, input, "restaurant.table.update", input.tableId, { fields: Object.keys(patch) });
+    return { locationId };
+  });
+  const floor = await listRestaurantFloor(input.tenantId, result.locationId);
+  return floor.tables.find((table) => table.id === input.tableId)!;
+}
+
+export async function deleteRestaurantTable(input: RestaurantFloorActor & { tableId: string }) {
+  return withFloorWrite(input, async (client) => {
+    const table = await client.query<{ location_id: string }>(
+      `SELECT location_id FROM bms_restaurant_tables
+        WHERE tenant_id = $1 AND id = $2 AND active FOR UPDATE`,
+      [input.tenantId, input.tableId]
+    );
+    if (!table.rowCount) throw new RestaurantCheckError("ไม่พบโต๊ะนี้");
+    const open = await client.query(
+      `SELECT 1 FROM bms_restaurant_checks
+        WHERE tenant_id = $1 AND table_id = $2 AND status IN ('OPEN','CLOSING') LIMIT 1`,
+      [input.tenantId, input.tableId]
+    );
+    if (open.rowCount) throw new RestaurantCheckError("ลบโต๊ะที่มีบิลเปิดอยู่ไม่ได้");
+    await client.query(
+      `UPDATE bms_restaurant_tables SET active = FALSE, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, input.tableId]
+    );
+    await auditFloorInTx(client, input, "restaurant.table.delete", input.tableId, { locationId: table.rows[0].location_id });
+    return true;
+  });
+}
+
+export async function saveRestaurantFloorLayout(input: RestaurantFloorActor & {
+  locationId: string;
+  positions: Array<{ tableId: string; x: number; y: number }>;
+}) {
+  const positions = input.positions.map((position) => ({
+    tableId: position.tableId,
+    x: floorInteger(position.x, "ตำแหน่ง X", 0, 100000),
+    y: floorInteger(position.y, "ตำแหน่ง Y", 0, 100000),
+  }));
+  if (new Set(positions.map((position) => position.tableId)).size !== positions.length) {
+    throw new RestaurantCheckError("รายการตำแหน่งมีโต๊ะซ้ำ");
+  }
+  return withFloorWrite(input, async (client) => {
+    if (positions.length) {
+      const owned = await client.query<{ id: string }>(
+        `SELECT id FROM bms_restaurant_tables
+          WHERE tenant_id = $1 AND location_id = $2 AND active AND id = ANY($3::uuid[]) FOR UPDATE`,
+        [input.tenantId, input.locationId, positions.map((position) => position.tableId)]
+      );
+      if (owned.rowCount !== positions.length) {
+        throw new RestaurantCheckError("มีโต๊ะที่ไม่อยู่ในสาขานี้");
+      }
+    }
+    for (const position of positions) {
+      await client.query(
+        `UPDATE bms_restaurant_tables SET position_x = $4, position_y = $5, updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
+        [input.tenantId, input.locationId, position.tableId, position.x, position.y]
+      );
+    }
+    await auditFloorInTx(client, input, "restaurant.floor.layout.update", input.locationId, { tableCount: positions.length });
+    return true;
+  });
 }
 
 // รายการที่ "ขายให้ลูกค้าที่โต๊ะได้" สำหรับกริดเลือกสั่งอาหาร (แทนการพิมพ์ค้นหาทุกครั้ง)
@@ -327,11 +710,12 @@ export async function createDefaultRestaurantFloor(input: {
       const code = `T${String(index).padStart(2, "0")}`;
       await client.query(
         `INSERT INTO bms_restaurant_tables
-           (tenant_id, location_id, area_id, code, name, seats, sort_order)
-         VALUES ($1,$2,$3,$4,$5,2,$6)
+           (tenant_id, location_id, area_id, code, name, seats, sort_order, position_x, position_y)
+         VALUES ($1,$2,$3,$4,$5,2,$6,$7,$8)
          ON CONFLICT (tenant_id, location_id, code)
          DO UPDATE SET active = TRUE, updated_at = now()`,
-        [input.tenantId, input.locationId, area.rows[0].id, code, `โต๊ะ ${index}`, index]
+        [input.tenantId, input.locationId, area.rows[0].id, code, `โต๊ะ ${index}`, index,
+         40 + ((index - 1) % 4) * 110, 40 + Math.floor((index - 1) / 4) * 130]
       );
     }
     await client.query(

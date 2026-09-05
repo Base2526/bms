@@ -255,23 +255,35 @@
 .page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
 .page .areaButtonActive:hover:not(:disabled) { background: var(--ink); filter: brightness(1.25); }
 
-/* ---------- การ์ดโต๊ะ ---------- */
-.tableGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 8px; }
-.page .tableCard{
-  position: relative; text-align: left; font: inherit; color: inherit; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px 9px 14px; min-height: 92px;
-  cursor: pointer; display: flex; flex-direction: column; overflow: hidden;
+/* ---------- ผังและโต๊ะ ----------
+   viewport เลื่อนได้เมื่อผังใหญ่กว่าจอ แต่ canvas ไม่จัดเรียงโต๊ะใหม่: position/shape มาจาก
+   /admin/restaurant-floor และต้องตรงกับภาพพื้นที่จริงที่ผู้ดูแลบันทึกไว้ */
+.floorViewport { width: 100%; max-width: 100%; overflow: auto; overscroll-behavior: contain; }
+.floorCanvas {
+  position: relative; min-height: 520px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
+  background-color: var(--panel); background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
+.page .tableCard{
+  --restaurant-chair-border: var(--line);
+  --restaurant-chair-fill: var(--panel);
+  --restaurant-chair-shadow: var(--shadow-2);
+  position: absolute; top: 0; left: 0; text-align: center; font: inherit; color: inherit; background: var(--panel);
+  border: 2px solid var(--line); padding: 7px 8px; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; flex-direction: column; overflow: visible; isolation: isolate; user-select: none;
+}
+.page .tableRound { width: 96px; height: 96px; min-height: 96px; border-radius: 50%; }
+.page .tableRect { width: 128px; height: 76px; min-height: 76px; border-radius: 14px; }
 .page .tableCard:hover:not(:disabled){ border-color: var(--ink-3); }
 .page .tableCard:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
-.tableBand { position: absolute; top: -1px; bottom: -1px; left: -1px; width: 6px; border-radius: 6px 0 0 6px; }
-.tableCode { font-size: 12px; color: var(--ink-3); font-weight: 600; letter-spacing: .04em; }
-.tableName { font-size: 18px; font-weight: 700; line-height: 1.15; margin-top: 1px; }
-.tableStatus { font-size: 13px; font-weight: 600; margin-top: 4px; }
-.tableMeta { font-size: 12.5px; color: var(--ink-2); margin-top: auto; }
+.tableBand { position: absolute; inset: 0 0 auto; height: 5px; }
+.tableCode { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--ink-3); font-weight: 600; letter-spacing: .04em; }
+.tableName { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; line-height: 1.1; margin-top: 1px; }
+.tableStatus { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-weight: 600; margin-top: 2px; }
+.tableMeta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--ink-2); margin-top: 2px; }
 /* ฿ ตกฟอนต์ในบางเครื่องแล้วทับตัวเลขแรก — .baht กันระยะให้ */
-.tableAmount { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
-.page .tableFree{ background: var(--quiet); border-style: dashed; }
+.tableAmount { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.page .tableFree{ --restaurant-chair-fill: var(--quiet); background: var(--quiet); border-style: dashed; }
 .page .tableFree .tableName{ color: var(--ink-2); font-weight: 600; }
 .page .tableFree .tableMeta{ color: var(--ink-3); }
 .page .tableBlocked{ opacity: .5; cursor: not-allowed; }
@@ -747,12 +759,8 @@
   .panelHeader { flex-wrap: wrap; }
   .panelHeader .searchRow { width: 100%; padding: 0; }
   .panel { padding-inline: 10px; }
-  .tableGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footerButtons { grid-template-columns: 1fr; }
   .summaryGrid { grid-template-columns: 1fr 1fr; }
   .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
-}
-@media (max-width: 340px) {
-  .tableGrid { grid-template-columns: 1fr; }
 }

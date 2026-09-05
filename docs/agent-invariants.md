@@ -450,6 +450,15 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   person with `pos.void` must still approve it. Opening, adding, sending, moving and settling also
   stay on `pos.sell`. Do not go back to `pos.device.manage` or `order.ship` — a permission that names
   a different job cannot be granted or withheld honestly.
+- **The admin floor editor (`9.59`) is configuration, not a register.** `/admin/restaurant-floor`
+  uses the admin session plus `restaurant.floor.manage`; `/pos/restaurant` keeps device + cashier-PIN
+  authentication. Both read `listRestaurantFloor()` so table state cannot drift, and the POS renders
+  the saved shape + coordinates on a scrollable canvas rather than reflowing them into a grid. Both
+  canvases derive decorative chairs from `seats` (capped visually at 12; the numeric capacity remains
+  authoritative), rather than persisting a second chair count. An
+  occupied table may be repositioned, but cannot be moved to another area, blocked or deleted. Areas and tables are
+  soft-deleted, all ids are rechecked against tenant + branch in the write transaction, and layout
+  saves validate the full submitted table set before updating any coordinate.
 - **A kitchen station is a work area, not a branch (`9.54`).** Stations live in
   `bms_kitchen_stations` with their own id, active flag, sort order and optional `location_id`;
   products point at one through `bms_product_stock_policies.kitchen_station_id`. A station never

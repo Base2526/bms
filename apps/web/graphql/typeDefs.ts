@@ -591,6 +591,46 @@ export const typeDefs = /* GraphQL */ `
     active: Boolean!
   }
 
+  type BmsRestaurantArea {
+    id: ID!
+    name: String!
+    sortOrder: Int!
+    tableCount: Int!
+  }
+
+  type BmsRestaurantTableAdmin {
+    id: ID!
+    areaId: ID!
+    code: String!
+    name: String!
+    seats: Int!
+    shape: String!
+    positionX: Int!
+    positionY: Int!
+    blocked: Boolean!
+    active: Boolean!
+    status: String!
+  }
+
+  type BmsRestaurantFloorAdmin {
+    areas: [BmsRestaurantArea!]!
+    tables: [BmsRestaurantTableAdmin!]!
+  }
+
+  input BmsRestaurantTablePatchInput {
+    name: String
+    seats: Int
+    shape: String
+    blocked: Boolean
+    areaId: ID
+  }
+
+  input BmsRestaurantTablePositionInput {
+    tableId: ID!
+    x: Int!
+    y: Int!
+  }
+
   input BmsLocationInput {
     id: ID
     code: String!
@@ -1009,6 +1049,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
+    bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
     bmsPosDevices: [BmsPosDevice!]!
     # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
     bmsArAccounts(search: String, status: String, withBalanceOnly: Boolean, limit: Int = 200): [BmsArAccount!]!
@@ -4148,6 +4189,14 @@ export const typeDefs = /* GraphQL */ `
 
     # ---- สาขา (9.1) ----
     bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
+    bmsCreateRestaurantArea(locationId: ID!, name: String!): BmsRestaurantArea!
+    bmsRenameRestaurantArea(areaId: ID!, name: String!): BmsRestaurantArea!
+    bmsReorderRestaurantAreas(locationId: ID!, orderedAreaIds: [ID!]!): [BmsRestaurantArea!]!
+    bmsDeleteRestaurantArea(areaId: ID!): Boolean!
+    bmsCreateRestaurantTable(locationId: ID!, areaId: ID!, name: String!, seats: Int!, shape: String!): BmsRestaurantTableAdmin!
+    bmsUpdateRestaurantTable(tableId: ID!, patch: BmsRestaurantTablePatchInput!): BmsRestaurantTableAdmin!
+    bmsDeleteRestaurantTable(tableId: ID!): Boolean!
+    bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
 
     # ---- POS (7.87) ----
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
