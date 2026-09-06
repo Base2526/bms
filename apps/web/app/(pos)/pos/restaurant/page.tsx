@@ -620,11 +620,22 @@ export default function RestaurantPosPage() {
   const kitchenReady = tickets.filter((ticket) => ticket.status === "READY").length;
   // แผงขวาตอนยังไม่เลือกโต๊ะ = รายการบิลที่เปิดอยู่ เรียงตามโต๊ะที่ต้องไปก่อน
   // (เดิมเป็นภาพเปล่ากลางจอ ซึ่งกินพื้นที่มากที่สุดของหน้าโดยไม่บอกอะไรเลย)
+  // หนึ่งแถวต่อ **บิล** ไม่ใช่ต่อโต๊ะ — โต๊ะที่แยกบิลไว้มีสองใบที่ต้องเก็บเงินคนละครั้ง
+  // ถ้านับต่อโต๊ะ หัวข้อจะเขียนว่า "บิลที่เปิดอยู่ · 1" ขณะที่การ์ดข้าง ๆ เขียนว่า "2 บิล"
+  // บนหน้าจอเดียวกัน และบิลใบที่สองจะกดเข้าจากแผงนี้ไม่ได้เลย
   const openChecks = useMemo(() => floor.tables
-    .filter((table) => table.check)
-    .map((table) => ({ table, state: tableState(table, tableKitchenStats) }))
-    .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
+    .flatMap((table) => table.checks.map((row) => ({
+      table,
+      check: row,
+      state: tableState({ ...table, check: row }, tableKitchenStats),
+    })))
+    .sort((a, b) => a.state.rank - b.state.rank
+      || a.table.code.localeCompare(b.table.code)
+      || a.check.splitGroupNo - b.check.splitGroupNo),
     [floor.tables, tableKitchenStats]);
+  /** ป้ายของบิลหนึ่งใบ — ใบที่สองขึ้นไปต้องบอกเลขบิล ไม่งั้นสองแถวจะอ่านเหมือนกันทุกตัวอักษร */
+  const openCheckLabel = (table: DiningTable, row: FloorCheck) =>
+    `${table.name}${row.splitGroupNo > 1 ? ` · บิล ${row.splitGroupNo}` : ""}`;
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
   const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
   const selectedQrSubmission = qrSubmissions.find((submission) => submission.id === qrSelectedId)
@@ -1066,6 +1077,15 @@ export default function RestaurantPosPage() {
     return () => window.clearInterval(timer);
   }, [token, screen]);
 
+  /** เปิดบิลที่ระบุมาแล้ว — ใช้เมื่อคนกดเลือก "ใบไหน" ไปแล้ว (แผงบิล/แถบบิล/กล่องเลือกบิล) */
+  async function openCheckById(table: DiningTable, checkId: string) {
+    await run(async () => {
+      await loadCheck(checkId);
+      setSelectedTableId(table.id);
+      setOpenTable(null);
+      setScreen("ORDER");
+    });
+  }
   async function chooseTable(table: DiningTable) {
     if (table.blocked) return;
     // โต๊ะที่แยกบิลไว้มีบิลเปิดอยู่หลายใบ — เปิดใบแรกให้เองคือการเดาแทนคนที่ยืนอยู่ตรงนั้น
@@ -1728,7 +1748,16 @@ export default function RestaurantPosPage() {
           <div className={styles.queueList}>
             {waitlist.entries.map((entry) => {
               const open = entry.status === "WAITING" || entry.status === "CALLED";
-              const minutes = minutesSince(entry.createdAt);
+              // ⚠️ "รอมากี่นาที" ใช้ได้กับคิวเดินเข้าเท่านั้น — การจองที่รับไว้เมื่อวานจะกลายเป็น
+              // "รอมา 1,400 นาที" ซึ่งไม่ใช่ความจริงของใครเลย · สิ่งที่คนถามถึงการจองคือเวลานัด
+              // และถ้าเลยเวลานัดแล้ว เลยไปนานแค่ไหน (นั่นคือจังหวะที่ต้องตัดสินว่าจะรออีกไหม)
+              const waitLabel = entry.kind === "WALK_IN"
+                ? (() => { const m = minutesSince(entry.createdAt); return m == null ? "" : ` · รอมา ${m} นาที`; })()
+                : (() => {
+                    const m = entry.reservedFor == null ? null : minutesSince(entry.reservedFor);
+                    if (m == null) return "";
+                    return m > 0 ? ` · เลยเวลานัด ${m} นาที` : ` · นัด ${timeOf(entry.reservedFor!)}`;
+                  })();
               return <div key={entry.id} className={`${styles.queueCard} ${open ? "" : styles.queueCardClosed}`}>
                 <div className={styles.queueMark}>
                   {entry.kind === "WALK_IN"
@@ -1739,7 +1768,7 @@ export default function RestaurantPosPage() {
                   <b>{entry.guestName || (entry.kind === "WALK_IN" ? "ลูกค้าเดินเข้า" : "ลูกค้าจองโต๊ะ")} · {entry.partySize} คน</b>
                   <small>
                     {QUEUE_STATUS_LABEL[entry.status] ?? entry.status}
-                    {open && minutes != null ? ` · รอมา ${minutes} นาที` : ""}
+                    {open ? waitLabel : ""}
                     {entry.seatedTableCode ? ` · ${entry.seatedTableCode}` : ""}
                     {entry.guestPhone ? ` · ${entry.guestPhone}` : ""}
                   </small>
@@ -1862,14 +1891,14 @@ export default function RestaurantPosPage() {
           </div>
 
           {openChecks.length > 0 && <div className={styles.billStrip} role="group" aria-label="บิลที่เปิดอยู่">
-            {openChecks.map(({ table, state }) => <button key={table.id} type="button"
-              className={`${styles.billChip} ${check?.tableId === table.id ? styles.billChipActive : ""}`}
-              onClick={() => void chooseTable(table)}>
+            {openChecks.map(({ table, check: row, state }) => <button key={row.id} type="button"
+              className={`${styles.billChip} ${check?.id === row.id ? styles.billChipActive : ""}`}
+              onClick={() => void openCheckById(table, row.id)}>
               <span className={styles.billChipCode} style={{ background: state.color }}>{table.code}</span>
               <span className={styles.billChipBody}>
-                <span className={styles.billChipName}>{table.name}</span>
+                <span className={styles.billChipName}>{openCheckLabel(table, row)}</span>
                 <span className={styles.billChipState} style={{ color: state.color }}>{state.label}</span>
-                <span className={styles.billChipMeta}>{table.check!.guestCount} คน · {table.check!.itemCount} รายการ</span>
+                <span className={styles.billChipMeta}>{row.guestCount} คน · {row.itemCount} รายการ</span>
               </span>
             </button>)}
           </div>}
@@ -2094,14 +2123,14 @@ export default function RestaurantPosPage() {
           <div className={styles.checkHead}><h2>บิลที่เปิดอยู่ · {openChecks.length}</h2></div>
           {openChecks.length === 0
             ? <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 36 }} /><h3>ยังไม่มีบิลที่เปิดอยู่</h3><p>กดโต๊ะว่างทางซ้ายเพื่อเปิดบิลใหม่</p></div></div>
-            : <ul className={styles.openList}>{openChecks.map(({ table, state }) => <li key={table.id}>
-                <button type="button" className={styles.openRow} onClick={() => void chooseTable(table)}>
+            : <ul className={styles.openList}>{openChecks.map(({ table, check: row, state }) => <li key={row.id}>
+                <button type="button" className={styles.openRow} onClick={() => void openCheckById(table, row.id)}>
                   <span className={styles.openDot} style={{ background: state.color }} aria-hidden="true" />
                   <span>
-                    <span className={styles.openName}>{table.name}</span>
-                    <span className={styles.openMeta}>{state.label}{minutesSince(table.check!.openedAt) == null ? "" : ` · ${minutesSince(table.check!.openedAt)} นาที`}</span>
+                    <span className={styles.openName}>{openCheckLabel(table, row)}</span>
+                    <span className={styles.openMeta}>{state.label}{minutesSince(row.openedAt) == null ? "" : ` · ${minutesSince(row.openedAt)} นาที`}</span>
                   </span>
-                  <span className={styles.openAmount}><span className={styles.baht}>฿</span>{money(table.check!.amountDue)}</span>
+                  <span className={styles.openAmount}><span className={styles.baht}>฿</span>{money(row.amountDue)}</span>
                 </button>
               </li>)}</ul>}
           <div className={styles.hint}>เรียงตาม <b>โต๊ะที่ต้องไปก่อน</b>: ค้างส่งครัว → พร้อมเสิร์ฟ → ครัวกำลังทำ → เสิร์ฟครบรอเก็บเงิน → ยังไม่สั่ง</div>
@@ -2444,7 +2473,7 @@ export default function RestaurantPosPage() {
       getContainer={modalContainer} destroyOnClose>
       <div className={styles.sheetActions}>
         {(billPickerTable?.checks ?? []).map((row) => <button key={row.id} type="button" className={styles.btn}
-          onClick={() => { const table = billPickerTable; setBillPickerTable(null); void run(async () => { await loadCheck(row.id); setSelectedTableId(table?.id ?? ""); setScreen("ORDER"); }); }}>
+          onClick={() => { const table = billPickerTable; setBillPickerTable(null); if (table) void openCheckById(table, row.id); }}>
           บิล {row.splitGroupNo} · {row.itemCount} รายการ · ฿{money(row.amountDue)}
           {row.unsentCount > 0 ? ` · ค้างส่งครัว ${row.unsentCount}` : ""}
         </button>)}
@@ -2482,8 +2511,10 @@ export default function RestaurantPosPage() {
       onOk={() => void mergeCheck()} confirmLoading={working} okText="รวมบิล"
       okButtonProps={{ disabled: !mergeTargetId }} getContainer={modalContainer} destroyOnClose>
       <div className={styles.modalGrid}>
+        {/* ⚠️ ห้ามเขียนว่า "โต๊ะจะว่างทันที" ลอย ๆ — รวมบิล 1 เข้าบิล 2 ของโต๊ะเดียวกัน
+            โต๊ะนั้นยังมีคนนั่งอยู่ · ข้อความที่จริงเฉพาะบางกรณีคือข้อความที่สอนให้คนเลิกอ่าน */}
         <Alert type="warning" showIcon message="บิลนี้จะถูกยกไปรวมกับใบปลายทางทั้งใบ"
-          description="ทุกรายการยังถูกคิดเงินครบที่ใบปลายทาง ไม่ใช่การยกเลิกบิล · บิลนี้จะปิดลงและโต๊ะจะว่างทันที" />
+          description="ทุกรายการยังถูกคิดเงินครบที่ใบปลายทาง ไม่ใช่การยกเลิกบิล · บิลนี้จะปิดลง และโต๊ะจะว่างก็ต่อเมื่อไม่มีบิลอื่นเหลืออยู่" />
         <label>บิลปลายทาง
           <select value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)}>
             {mergeTargets.map((row) => <option key={row.id} value={row.id}>

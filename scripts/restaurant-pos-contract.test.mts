@@ -521,8 +521,15 @@ test("restaurant UI serializes mutations and changes table selection only after 
   assert.match(page, /if \(workingRef\.current\) return/);
   assert.match(page, /workingRef\.current = true/);
   assert.match(page, /finally \{ workingRef\.current = false; setWorking\(false\); \}/);
-  const chooseTable = page.slice(page.indexOf("async function chooseTable"), page.indexOf("async function openCheck"));
+  // ⚠️ ต้องเป็น "openCheck(" ที่มีวงเล็บ — ตั้งแต่ `9.63` มี openCheckById() อยู่ก่อนหน้า
+  // chooseTable ในไฟล์ การตัดด้วยชื่อที่ไม่มีวงเล็บจะได้ช่วงว่างแล้วเทสเขียวโดยไม่ตรวจอะไรเลย
+  const chooseTable = page.slice(page.indexOf("async function chooseTable"), page.indexOf("async function openCheck("));
+  assert.ok(chooseTable.length > 0, "การตัดช่วงต้องได้ตัวฟังก์ชันจริง");
   assert.ok(chooseTable.indexOf("await loadCheck") < chooseTable.indexOf("setSelectedTableId"));
+  // เส้นทาง "เลือกบิลไปแล้ว" (แผงบิล · แถบบิล · กล่องเลือกบิลของโต๊ะที่แยกไว้) ต้องอยู่ใต้กฎเดียวกัน
+  const openById = page.slice(page.indexOf("async function openCheckById"), page.indexOf("async function chooseTable"));
+  assert.ok(openById.length > 0);
+  assert.ok(openById.indexOf("await loadCheck") < openById.indexOf("setSelectedTableId"));
 });
 
 test("the check footer never claims a total the bill does not have", async () => {

@@ -833,6 +833,11 @@
   .lanes { grid-template-columns: repeat(4, 260px); }
 }
 @media (max-width: 640px) {
+  /* การ์ดคิว: ที่ 375px สามปุ่มเรียงข้างเนื้อหาไม่พอ ปุ่มสุดท้ายถูกตัดหายไปนอกจอ —
+     ย้ายแถวปุ่มลงมาอยู่ใต้เนื้อหาเต็มความกว้างแทน (ปุ่มที่กดไม่ถึงเท่ากับไม่มีปุ่ม) */
+  .queueCard { grid-template-columns: 48px minmax(0, 1fr); }
+  .queueActions { grid-column: 1 / -1; }
+  .queueActions .btn { flex: 1 1 0; justify-content: center; }
   .topbar { padding: 8px; }
   .subtitle { display: none; }
   .brand { margin-inline-end: 0; }
