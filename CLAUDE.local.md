@@ -3,6 +3,111 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## recheck POS ร้านอาหารทั้งเส้น (`9.44`–`9.62`) — 2026-09-06
+
+branch `recheck/restaurant-pos-deep` · `npm run gate` ผ่าน (typecheck · **pure 852** จาก 846 ·
+production build) · **DB 389 เทสผ่านทั้งหมด** (baseline ก่อนเริ่มคือ 386 เขียวครบ — ไม่มี regression)
+· `9.62` **apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว** · **ยังไม่ได้ apply เข้า production** ·
+**ไม่มี permission ใหม่** · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** (แท็บ QR ที่เครื่องขาย, ปุ่ม QR ที่
+`/admin/restaurant-floor` และหน้า `/q/<token>` ผ่านแค่ tsc + build + เทส)
+
+**ทั้ง 12 mutation ผ่านแล้ว** (8 pure + 4 DB) แดงถูกตัวทุกครั้ง
+
+### 1. ⚠️ กดคิดเงินพลาดหนึ่งครั้ง = ออร์เดอร์ QR ของลูกค้าหายถาวร (`9.62`, migration ใหม่)
+
+- trigger ของ `9.60` เขียนว่า `OLD.status = 'OPEN' AND NEW.status <> 'OPEN'` = "ปิดบิล" แต่
+  `bms_restaurant_checks.status` มี **สี่** ค่า และ `CLOSING` (`9.48`) คือ "แคชเชียร์เพิ่งกดคิดเงิน"
+  ซึ่ง `reopenClosingCheck()` คืนกลับเป็น OPEN ทุกครั้งที่รับเงินไม่สำเร็จ
+- **พิสูจน์กับฐาน dev แล้ว** (รันใน transaction แล้ว ROLLBACK): `OPEN→CLOSING` ทำให้ submission
+  เป็น `EXPIRED` + session ถูก revoke · `CLOSING→OPEN` trigger ไม่ทำงาน (OLD ไม่ใช่ OPEN แล้ว)
+  ของที่หายจึงไม่กลับมา
+- **หายแบบมองไม่เห็น**: กล่องขาเข้าอ่านเฉพาะ `PENDING/ACCEPTED/REJECTED` พนักงานจึงไม่รู้ว่าเคยมี
+  ส่วนลูกค้าเห็นบนจอตัวเองว่า "หมดอายุ" ทั้งที่ไม่มีใครทำอะไรผิด
+- แก้เป็น `NEW.status IN ('PAID','CANCELLED') AND OLD.status IS DISTINCT FROM NEW.status`
+  (สองค่านี้ = สถานะที่ CHECK ของตารางบังคับว่าต้องมี `closed_at`) · verify ทั้ง CLOSING/reopen/PAID
+- **แถวที่ถูก EXPIRED ไปแล้วก่อน apply จงใจไม่กู้** — แยกไม่ออกว่าอันไหนหมดอายุเพราะบิลปิดจริง
+
+### 2. ⚠️ ตั้งเมนู "หมดวันนี้" หลังอาหารถูกเสิร์ฟ = โต๊ะนั้นจ่ายเงินไม่ได้เลย
+
+- `createOrderInTx()` กรอง `bms_product_menu_unavailability` แบบไม่มีเงื่อนไขช่องทาง แต่บิลโต๊ะ
+  **ส่งทุกบรรทัดบนบิลกลับเข้าไปใหม่ทุกครั้งที่คิดยอด** (ส่งครัวรอบถัดไป / ครัวยกเลิกรายการ)
+- ผล: ผัดไทยจานสุดท้ายเสิร์ฟไปแล้ว ครัวกดว่าหมด → ลูกค้าสั่งน้ำเพิ่ม → ส่งครัวรอบ 2 ได้
+  `SOLD_OUT_TODAY` → `reserved_version` ไม่เท่า `version` → **คิดเงินไม่ได้** และบรรทัดที่ส่งครัว
+  ไปแล้วลบไม่ได้ (`removeRestaurantCheckItem` รับเฉพาะ `NEW`) → ทางออกเดียวคือ void บิลที่ลูกค้ากินไปแล้ว
+- แก้: ด่านย้ายไปที่ **จุดที่บรรทัดเข้าบิล** (`resolveRestaurantCheckItemRequest`) ซึ่งครอบทั้ง
+  พนักงานกดเพิ่ม การส่งคำขอ QR และการกดรับคำขอ · `createOrderInTx` ข้ามด่านเมื่อมี `restaurantCheckId`
+  · ช่องทางอื่น (ออนไลน์/แชท/ค้าปลีก) ไม่ถูกแตะ
+- `describePosFailure()` ไม่มี case `SOLD_OUT_TODAY` → เครื่องค้าปลีกขึ้น "ขายไม่สำเร็จ
+  (SOLD_OUT_TODAY)" ซึ่งเป็นอาการที่ไฟล์นั้นมีไว้กัน · เพิ่มแล้ว
+
+### 3. ⚠️ พนักงานที่ถูกจำกัดสาขาหมุน QR ของโต๊ะสาขาอื่นได้
+
+- `bmsRestaurantFloorAdmin.ts` ตรวจแค่ `restaurant.floor.manage` ไม่เคยดู `bms_user_allowed_locations`
+  (9.37) ทั้งที่ promotions/coupons/orders/customers ตรวจกันหมดแล้ว
+- แรงสุดคือ `bmsIssueRestaurantTableQr(tableId)` — รับมาแค่ tableId **หมุนแล้วสติกเกอร์ที่ติดบนโต๊ะ
+  จริงของอีกสาขาใช้ไม่ได้ทันที และลูกค้าที่นั่งอยู่ถูกตัด session**
+- mutation ครึ่งหนึ่งรับมาแค่ `areaId`/`tableId` จึงต้องมี `locationOfRestaurantArea/Table()`
+  แปลงกลับเป็นสาขาก่อนตรวจ ไม่งั้นด่านครอบได้แค่ครึ่งเดียว = เท่ากับไม่มี
+- ดรอปดาวน์สาขาที่หน้าจอเปลี่ยนจาก `bmsLocations` (ทุกสาขา) เป็น `bmsRestaurantFloorLocations`
+  (`listLocationsForUser`) ไม่งั้นเลือกได้แล้วเจอ FORBIDDEN
+- `floorMutation()` เดิมห่อ **ทุก** error เป็น `BAD_USER_INPUT` → ตอนนี้ปล่อย `GraphQLError` ผ่าน
+  ไม่งั้นด่านสิทธิ์กลายเป็น "กรอกผิด"
+
+### 4. ป้ายออร์เดอร์ QR รอรับไม่เคยขึ้นตอนพนักงานยืนหน้าผังโต๊ะ
+
+- ป้ายอยู่บนแถบซ้าย (เห็นทุกจอ) แต่ `loadQrSubmissions` poll เฉพาะตอน `screen === "QR"` →
+  ยืนหน้าผังโต๊ะ (ที่ยืนจริง) ป้ายไม่มีวันขึ้น ลูกค้ารอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น
+- แก้: เปิดแท็บอยู่ 5 วิ · จออื่น 20 วิ
+
+### 5. คำขอ QR ที่ยังไม่ได้ตรวจไม่มีเพดานสะสม
+
+- เพดาน 10/นาที ที่ route กันการยิงรัว แต่ session อยู่ได้ 12 ชม. และกล่องขาเข้าตัดที่ 100 แถว
+  → โทรศัพท์เครื่องเดียวดันคำขอจริงของโต๊ะอื่นหลุดออกจากหน้าจอได้ · เพิ่มเพดาน **20 คำขอ PENDING
+  ต่อบิลโต๊ะ** (นับต่อบิล ไม่ใช่ต่อ session เพราะโต๊ะหนึ่งมีลูกค้าหลายเครื่อง)
+
+### 6. จอลูกค้ากด "เพิ่มลงตะกร้า" ได้ทั้งที่ยังไม่เลือกกลุ่มที่บังคับ
+
+- อาการเดียวกับเคสจริงบน production 2026-09-05 (ส้มตำ "เผ็ดกี่เม็ด" `min_select = 1` ไม่มีค่าปริยาย)
+  ที่แก้ไปแล้วที่หน้าเครื่องขาย แต่จอลูกค้าเป็นคนละ component จึงยังกดได้แล้วค่อยขึ้น error ·
+  คนที่เจอคราวนี้คือลูกค้าซึ่งไม่มีพนักงานยืนอธิบายให้
+- ใช้ `unmetModifierGroups()` ตัวเดียวกับหน้าเครื่องขาย (pure, `lib/pos/modifierSelection.ts`)
+  **ห้ามเขียนสำเนาที่สอง** — วันที่กฎเปลี่ยน อีกจอจะเริ่มโกหกเงียบ ๆ
+
+### เทส
+
+- pure: `restaurant-pos-contract` **52** (จาก 50) · `restaurant-qr-ordering-contract` **11** (จาก 7)
+  · corpus เพิ่ม 4 คำถาม
+- **⚠️ เทสเดิม 1 ตัวต้องเล็งใหม่**: `restaurant-qr-ordering-contract` assert
+  `/OLD\.status = 'OPEN' AND NEW\.status <> 'OPEN'/` ตรง ๆ = **ตรึงบั๊กไว้** · ย้ายไปเล็งที่ `9.62`
+  แล้วห้าม `NEW.status <> 'OPEN'` กลับมา
+- DB: `restaurant-pos-db-contract` **35** (จาก 32) — เมนูที่หมดหลังเสิร์ฟ / คิดเงินพลาดต้องไม่ทำลาย
+  คำขอ QR (เดินเส้นจริงถึง PAID แล้วเช็คว่ารอบที่ค้างกลายเป็น EXPIRED ตามเจตนาเดิม) / รับคำขอของ
+  เมนูที่หมดไม่ได้
+- **⚠️ teardown ต้องลบตาราง QR ก่อน `bms_restaurant_check_items` และ `bms_products`** —
+  `accepted_check_item_id` กับ `product_sku` เป็น FK ธรรมดา (ไม่ CASCADE) teardown ที่ลบผิดลำดับจะ
+  throw แล้วทิ้งร้านทดสอบไว้ในฐาน
+- **⚠️ `settleRestaurantCheck` ยอดไม่ตรง = คืน `PAYMENT_MISMATCH` ไม่ใช่ throw** —
+  `assert.rejects()` จึงใช้ไม่ได้กับเส้นนี้ (เจอตอนเขียนเทส)
+- ยืนยันหลังรัน: ไม่มี tenant `fake-%` ค้าง และแถว QR/หมดวันนี้ของผู้ใช้ (shop-b, สร้างช่วง 12:26–13:12
+  ของวันนั้น) ไม่ถูกแตะ — **เช็ค `bms_audit_log`/timestamp ก่อนลบอะไรในฐาน dev เสมอ**
+
+### เอกสารที่แก้ตามไปด้วย
+
+- `docs/architecture/api.md` — เดิม**ไม่มีแถวของ** `/api/pos/restaurant/{menu,incoming,qr-orders}`,
+  `/api/bms/restaurant-qr/*` ทั้ง 4 ตัว และโมดูล GraphQL `bmsRestaurantFloorAdmin.ts` เลย
+- `docs/business/pos.md`, `docs/agent-invariants.md`, `CLAUDE.md` (จำนวนแคตตาล็อกเป็น 47/104)
+- แคตตาล็อกผู้ช่วย: guide `pos.restaurant-qr-orders` + capability `restaurant.qr-ordering` +
+  เติมขั้นตอน/คำเตือนเรื่อง QR ให้ `restaurant.floor-management` (เดิมหน้านั้นมีปุ่ม QR แต่ไกด์ไม่พูดถึงเลย)
+
+### ยังไม่ได้แก้ (จงใจ)
+
+- `estimatedUnitPrice` ในกล่องขาเข้าเป็นสูตรที่สองของราคา (SQL ตรง ๆ ไม่ผ่าน `resolvePosScan`)
+  — ตรวจกับข้อมูล dev แล้วว่าให้เลขถูกสำหรับรูปทรงราคาที่มีจริง (ราคาบนสินค้า หรือ per-size pack)
+  และหน้าจอเขียนว่า "ยอดประมาณการ" · การเรียก resolver จริงต่อรายการทุก 5 วิหนักเกินไป
+- กล่องขาเข้าเรียงเก่าก่อน (FIFO ถูกแล้ว) แต่ ACCEPTED/REJECTED ปนอยู่ในลิสต์เดียวกัน
+- ผังโต๊ะไม่บอกว่าโต๊ะไหนมีคำขอ QR รออยู่ (มีแต่ป้ายรวมบนแถบซ้าย)
+- `crypto.randomUUID()` ที่หน้า `/q/<token>` ใช้ได้เฉพาะ secure context (HTTPS/localhost)
+
 ## `9.61` โปรโมชันแยกสาขา — 2026-09-06
 
 `npm run gate` ผ่าน (typecheck · **pure 841** · production build) · **apply เข้า dev DB แล้วและ

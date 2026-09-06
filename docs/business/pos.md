@@ -1403,6 +1403,17 @@ Temporary availability is a branch fact, not the product's durable `active` stat
 closes them, while countable `DIRECT`/`PACK` goods still require real stock. The order transaction
 rechecks the flag at its selected location, so a stale screen or chat result cannot bypass it.
 
+The flag is an **intake** rule, and where the intake happens differs by surface. Online, chat and
+the retail register intake a whole cart at order creation, so `createOrderInTx()` rechecks there. A
+dine-in check does not: it hands the *entire* check to `createOrderInTx()` again every time the
+amount has to be rebuilt — the next kitchen round, or a line the kitchen cancelled. Re-gating there
+meant a dish marked sold out *after* it was cooked and served locked the whole table: the next round
+could not be sent, so `reserved_version` never caught up to `version`, so the check could not be
+paid, and a line already sent to the kitchen cannot be removed. The only exit was voiding a bill the
+guests had eaten. The dine-in intake is therefore `resolveRestaurantCheckItemRequest()` — the moment
+a line *enters* a check, whether a waiter typed it or staff accepted it from a table QR — and
+`createOrderInTx()` skips the gate when it is rebuilding a check's reservation.
+
 Both reset signals honour the same `resets_at` stamp on the row: the guarded cron (every 15 minutes,
 so each shop's own `bms_store_profile.menu_availability_reset_time` and timezone are respected — 04:00
 local by default), and opening a POS shift at that branch as the fallback sweep for a shop whose
@@ -1598,6 +1609,15 @@ check and creates an HttpOnly session tied to that exact check. With no open che
 waiting screen and cannot submit. Closing the check revokes its sessions, so the same browser cannot
 order for the next party; rotating a damaged or leaked QR invalidates the old printed code.
 
+"Closing" here means a **terminal** status — `PAID` or `CANCELLED` (`9.62`). `CLOSING` is the
+reversible settlement claim a register takes the moment the cashier presses checkout (`9.48`), and
+`9.60` originally treated it as a close: one mismatched payment marked every waiting proposal
+`EXPIRED` and cut every phone at the table, permanently and invisibly, because the staff inbox only
+lists `PENDING`/`ACCEPTED`/`REJECTED` and the reopen path never restored anything. Issuing the QR is
+also branch-scoped now: `restaurant.floor.manage` says a person may edit floors, not which branch's,
+so every floor operation resolves the owning branch — from the area or table row when that is all the
+argument carries — and refuses one outside the caller's `bms_user_allowed_locations` scope.
+
 The mobile menu uses the same `RESTAURANT_POS` surface, variants, packs, modifier rules and temporary
 sold-out state as the register. A submission contains structured catalog codes, not prices or
 tenant/table/check identifiers, is capped and idempotent, and remains `PENDING`. Displayed prices are
@@ -1606,9 +1626,13 @@ estimates because promotion, tier, stock and recipe checks run again during acce
 The QR inbox on `/pos/restaurant` is branch-scoped to the authenticated device. A PIN-verified
 `pos.sell` operator accepts or rejects the whole proposal. Acceptance adds the
 lines, replaces the whole-check stock reservation, creates the normal kitchen round, records the
-review and audit, and commits once. Failure leaves both proposal and check unchanged. Existing
+review and audit, and commits once. Failure leaves both proposal and check unchanged. A dish the
+branch marked sold out that day is refused at acceptance with the dish named, because acceptance is
+an intake, not a recalculation. Existing
 unsent staff draft lines must be sent or removed first, preventing an unrelated draft from riding
-along with the accepted QR round. If the party moves, the proposal retains its scan-time table
+along with the accepted QR round. The pending-proposal count per check is capped, so one phone
+cannot push real orders off the 100-row inbox during a service. The register's badge for waiting
+proposals refreshes from every screen, not only while the QR tab happens to be open. If the party moves, the proposal retains its scan-time table
 snapshot for referential integrity while the staff inbox displays the check's current table; the old
 browser session no longer matches that moved check and the guest must scan the destination QR.
 

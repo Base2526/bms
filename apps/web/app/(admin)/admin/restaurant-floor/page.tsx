@@ -17,10 +17,13 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
 
+// ⚠️ ดรอปดาวน์สาขาต้องอ่านจาก bmsRestaurantFloorLocations ซึ่งคืนเฉพาะสาขาที่ผู้ใช้คนนี้
+// ดูแลจริง (bms_user_allowed_locations, 9.37) — query ที่คืนทุกสาขาของร้านทำให้พนักงานที่
+// ถูกจำกัดสาขาเลือกสาขาอื่นได้แล้วเจอ FORBIDDEN จาก server แทนที่จะไม่เห็นตั้งแต่แรก
 const Q_BOOTSTRAP = gql`
   query RestaurantFloorBootstrap {
     bmsStoreProfile { businessArchetype }
-    bmsLocations { id name active }
+    bmsRestaurantFloorLocations { id name active }
   }
 `;
 
@@ -104,7 +107,7 @@ export default function RestaurantFloorPage() {
   const { can, loading: permissionsLoading } = useBmsPermissions();
   const canManage = can("restaurant.floor.manage");
   const bootstrap = useQuery(Q_BOOTSTRAP, { skip: !canManage, fetchPolicy: "cache-and-network" });
-  const locations: Location[] = (bootstrap.data?.bmsLocations ?? []).filter((location: Location) => location.active);
+  const locations: Location[] = (bootstrap.data?.bmsRestaurantFloorLocations ?? []).filter((location: Location) => location.active);
   const [locationId, setLocationId] = useState<string | null>(null);
   const floor = useQuery(Q_FLOOR, {
     variables: { locationId: locationId ?? "" },
