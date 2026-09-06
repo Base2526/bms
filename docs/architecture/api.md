@@ -180,6 +180,12 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `restaurant.kitchen.update`
   (`9.45`, previously `order.ship`) and never moves stock. The register board polls this read every
   five seconds while it is open.
+- GraphQL `bmsProductPriceTiers` / `bmsReplaceProductPriceTiers` (`9.65`, module
+  `graphql/bmsProductPriceTiers.ts`) — branch-scoped quantity price ladders on `product.view` /
+  `product.edit`, the same gate promotions use (`8.7`): setting a rung is setting that product's
+  selling price. A branch-restricted user (`bms_user_allowed_locations`, `9.37`) cannot write the
+  store-wide ladder, which would reach branches they do not run. The write replaces one whole
+  ladder for one (product, branch) because a branch ladder replaces rather than merges.
 - `GET|POST /api/pos/restaurant/waitlist` (`9.64`) — the branch's walk-in queue and table
   reservations. `add`, `call`, `cancel`, `no_show`, `seat`; all on PIN + `pos.sell`, the same gate as
   opening a table, because nothing here moves money or stock and the one action that does — `seat`,

@@ -34,6 +34,7 @@ import { recordMovement, recordOrderMovements } from "./movements";
 import {
   isFixedPricePack,
   isSaleTimePricingSnapshot,
+  pickPriceTiersForLocation,
   pickPromotionForLocation,
   priceRemainingLines,
   type PriceTier,
@@ -615,21 +616,30 @@ export async function resolvePosScan(
     opts.locationId ?? null
   );
 
+  // 9.65: บันไดของสาขาแทนที่บันไดของทั้งร้าน — ตัดสินด้วย pickPriceTiersForLocation()
+  // ตัวเดียวกับ createOrder ตอน commit (สองสูตรจะ drift แล้วเป็น PAYMENT_MISMATCH)
   const tierRes = await query<{
-    min_qty: number; unit_price: string | null; scope: PriceTier["scope"];
-    discount_pct: string | null; size: string | null;
+    location_id: string | null; min_qty: number; unit_price: string | null;
+    scope: PriceTier["scope"]; discount_pct: string | null; size: string | null;
   }>(
-    `SELECT min_qty, unit_price, scope, discount_pct, size FROM bms_product_price_tiers
-      WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
-    [tenantId, row.sku]
+    `SELECT location_id, min_qty, unit_price, scope, discount_pct, size
+       FROM bms_product_price_tiers
+      WHERE tenant_id = $1 AND product_sku = $2
+        AND (location_id IS NULL OR location_id = $3)
+      ORDER BY min_qty`,
+    [tenantId, row.sku, opts.locationId ?? null]
   );
-  const priceTiers: PriceTier[] = tierRes.rows.map((t) => ({
-    minQty: Number(t.min_qty),
-    scope: t.scope,
-    size: t.size,
-    unitPrice: t.unit_price == null ? null : Number(t.unit_price),
-    discountPct: t.discount_pct == null ? null : Number(t.discount_pct),
-  }));
+  const priceTiers: PriceTier[] = pickPriceTiersForLocation(
+    tierRes.rows.map((t) => ({
+      locationId: t.location_id ?? null,
+      minQty: Number(t.min_qty),
+      scope: t.scope,
+      size: t.size,
+      unitPrice: t.unit_price == null ? null : Number(t.unit_price),
+      discountPct: t.discount_pct == null ? null : Number(t.discount_pct),
+    })),
+    opts.locationId ?? null
+  );
 
   const modifierEnabled = await isCapabilityEnabledInTx({ query }, tenantId, "MODIFIER");
   const modifierRes = modifierEnabled

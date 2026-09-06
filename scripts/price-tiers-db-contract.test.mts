@@ -28,7 +28,8 @@ import { createOrder, cancelOrder } from "../apps/web/lib/bms/orders.ts";
 import { resolvePosScan } from "../apps/web/lib/bms/pos.ts";
 import { listProductPacks, upsertProductPack } from "../apps/web/lib/bms/productPacks.ts";
 import { unitPriceForQty } from "../apps/web/lib/bms/pricing.ts";
-import { listSellableProducts } from "../apps/web/lib/bms/products.ts";
+import { listSellableProducts, upsertProduct } from "../apps/web/lib/bms/products.ts";
+import { listProductPriceTiers, replaceProductPriceTiers } from "../apps/web/lib/bms/productPriceTiers.ts";
 import { generateQuotation } from "../apps/web/lib/bms/documents.ts";
 import { getInventorySummary } from "../apps/web/lib/bms/reports.ts";
 
@@ -39,6 +40,8 @@ const SIZE_L = "150ML";
 
 let tenantId = "";
 let locationId = "";
+let branchId = "";
+let actorUserId = "";
 const createdOrders: string[] = [];
 
 const sell = async (lines: Array<{ size: string; qty: number }>) => {
@@ -435,6 +438,110 @@ test("saving a product replaces its steps, and omitting the field leaves them al
     "บันทึกที่ validation ไม่ผ่านต้องคงชุดราคาส่งเดิมทั้งหมด");
 });
 
+// ---------------------------------------------------------------------------
+// 9.65 — บันไดราคาส่งแยกสาขา
+//
+// สิ่งที่ตรึงไว้คือกฎเดียวที่อธิบายที่เคาน์เตอร์ได้: บันไดของสาขา **แทนที่** บันไดของ
+// ส่วนกลางทั้งชุด ไม่ใช่ผสมกัน · และเลขที่จอพรีวิวกับเลขที่ commit ต้องตรงกันทั้งสองสาขา
+// (ต่างกันหนึ่งสตางค์ = PAYMENT_MISMATCH บิลถูกทิ้งทั้งใบต่อหน้าลูกค้า)
+// ---------------------------------------------------------------------------
+
+test("setup: สาขาที่สองของร้านนี้ พร้อมสต็อกและคนตั้งราคา", async () => {
+  branchId = (await query<{ id: string }>(
+    `INSERT INTO bms_locations (tenant_id, code, name, branch_code, is_head_office)
+     VALUES ($1,$2,$3,$4,FALSE) RETURNING id`,
+    [tenantId, `FAKE-${TAG}-B2`, `FAKE ${TAG} branch 2`, "90065"]
+  )).rows[0].id;
+  for (const size of [SIZE_S, SIZE_L]) {
+    await query(
+      `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+       VALUES ($1,$2,$3,$4,500,0)
+       ON CONFLICT (tenant_id, location_id, product_sku, size)
+       DO UPDATE SET current_stock = 500, reserved_stock = 0`,
+      [tenantId, branchId, SKU, size]
+    );
+  }
+  actorUserId = (await query<{ id: string }>(
+    `SELECT id FROM users WHERE tenant_id = $1 ORDER BY created_at LIMIT 1`, [tenantId]
+  )).rows[0].id;
+});
+
+/** ราคาที่ "จอ" จะแสดง = ราคาป้ายของไซซ์นั้น ผ่านบันไดที่ resolvePosScan ส่งมาให้ */
+async function previewUnitPrice(where: string, qty: number) {
+  const hit = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId: where });
+  assert.ok(hit, "สแกนต้องเจอสินค้า");
+  return unitPriceForQty(hit!.packPrice ?? hit!.basePrice ?? 0, hit!.priceTiers ?? [], qty, qty, SIZE_S);
+}
+
+test("บันไดของสาขาแทนที่ของทั้งร้านทั้งชุด ไม่ใช่ผสมขั้นกัน", async () => {
+  // ทั้งร้าน: 5 ชิ้น 90 · 10 ชิ้น 80 — สาขา: ขั้นเดียวที่ 10 ชิ้น 70
+  await replaceProductPriceTiers({
+    tenantId, actorUserId, productSku: SKU, locationId: null,
+    tiers: [
+      { minQty: 5, scope: "PER_VARIANT_FIXED", size: SIZE_S, unitPrice: 90 },
+      { minQty: 10, scope: "PER_VARIANT_FIXED", size: SIZE_S, unitPrice: 80 },
+    ],
+  });
+  await replaceProductPriceTiers({
+    tenantId, actorUserId, productSku: SKU, locationId: branchId,
+    tiers: [{ minQty: 10, scope: "PER_VARIANT_FIXED", size: SIZE_S, unitPrice: 70 }],
+  });
+
+  // ที่สาขา ซื้อ 5 ชิ้นต้องได้ราคาป้าย ไม่ใช่ 90 ของส่วนกลาง (ขั้น 5 ไม่ถูกยกมาผสม)
+  assert.equal(await previewUnitPrice(locationId, 5), 90, "สาขาที่ไม่ได้ตั้งเองยังใช้บันไดของทั้งร้าน");
+  assert.notEqual(await previewUnitPrice(branchId, 5), 90,
+    "ขั้น 5 ชิ้นของส่วนกลางต้องไม่แทรกเข้าบันไดของสาขา");
+  assert.equal(await previewUnitPrice(branchId, 10), 70);
+  assert.equal(await previewUnitPrice(locationId, 10), 80);
+});
+
+test("จอพรีวิวกับยอดที่ commit ต้องตรงกันทั้งสองสาขา", async () => {
+  for (const [where, expected] of [[branchId, 70], [locationId, 80]] as const) {
+    assert.equal(await previewUnitPrice(where, 10), expected);
+    const order = await createOrder({
+      tenantId, channel: "pos", locationId: where,
+      items: [{ sku: SKU, size: SIZE_S, qty: 10 }],
+    } as any);
+    assert.equal(order.status, "CREATED", `สร้างบิลที่สาขาไม่สำเร็จ: ${order.status}`);
+    createdOrders.push(order.orderId);
+    const line = await query<{ unit_price: string }>(
+      `SELECT unit_price FROM bms_order_items WHERE order_id = $1`, [order.orderId]
+    );
+    assert.equal(Number(line.rows[0].unit_price), expected,
+      "ยอดที่ commit ต้องเท่ากับที่จอพรีวิว ไม่งั้นบิลถูกทิ้งด้วย PAYMENT_MISMATCH");
+  }
+});
+
+test("⚠️ กดบันทึกสินค้าต้องไม่ล้างบันไดที่สาขาตั้งไว้", async () => {
+  const before = (await listProductPriceTiers({ tenantId, productSku: SKU, locationId: branchId }))
+    .filter((row) => row.locationId === branchId);
+  assert.equal(before.length, 1);
+  // ฟอร์มสินค้าส่งบันไดของทั้งร้านมาให้เสมอ (ค่าที่มันอ่านไป) — ถ้า DELETE ไม่กรองสาขา
+  // บันไดของสาขาจะหายทุกครั้งที่มีคนกดบันทึกสินค้า โดยไม่มีอะไรบนหน้าจอบอก
+  await upsertProduct(tenantId, {
+    sku: SKU, name: `FAKE ${TAG} product`, price: 100,
+    // ⚠️ ชื่อฟิลด์เป็น snake_case (`price_tiers`) — ส่งชื่อผิดแล้วบล็อกราคาส่งถูกข้ามทั้งก้อน
+    // เงียบ ๆ แล้วเทสนี้จะเขียวโดยไม่เคยเรียกเส้นทางที่กำลังตรึง (เจอตอน mutation test)
+    price_tiers: [{ minQty: 5, scope: "PER_VARIANT_FIXED", size: SIZE_S, unitPrice: 90 }],
+  } as any);
+  const after = (await listProductPriceTiers({ tenantId, productSku: SKU, locationId: branchId }))
+    .filter((row) => row.locationId === branchId);
+  assert.deepEqual(after.map((row) => row.minQty), [10], "บันไดของสาขาต้องอยู่ครบหลังบันทึกสินค้า");
+  assert.equal(await previewUnitPrice(branchId, 10), 70);
+});
+
+test("บันทึกบันไดว่างของสาขา = สาขานั้นกลับไปใช้ราคาของทั้งร้าน", async () => {
+  await replaceProductPriceTiers({
+    tenantId, actorUserId, productSku: SKU, locationId: branchId, tiers: [],
+  });
+  assert.equal(
+    (await listProductPriceTiers({ tenantId, productSku: SKU, locationId: branchId }))
+      .filter((row) => row.locationId === branchId).length,
+    0
+  );
+  assert.equal(await previewUnitPrice(branchId, 5), 90, "ไม่มีบันไดของตัวเอง = ใช้ของทั้งร้าน");
+});
+
 test("teardown: remove every row this suite created", async () => {
   for (const id of createdOrders) {
     await cancelOrder(tenantId, id).catch(() => {});
@@ -445,6 +552,10 @@ test("teardown: remove every row this suite created", async () => {
   }
   await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  if (branchId) {
+    await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND location_id = $2`, [tenantId, branchId]);
+    await query(`DELETE FROM bms_locations WHERE tenant_id = $1 AND id = $2`, [tenantId, branchId]);
+  }
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
 });

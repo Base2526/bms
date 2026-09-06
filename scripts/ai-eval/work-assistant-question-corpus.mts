@@ -114,6 +114,10 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
     why: "A chain asks this before opening branch two; the answer is the scope rule, not the product form.",
   },
   { q: "can each branch run its own promotion", locale: "en", expect: "answer", expectTop: "products.branch-promotions", origin: "coverage" },
+  // 9.65 — ร้านค้าส่งที่มีหลายสาขาถามข้อนี้ก่อนเปิดสาขาที่สอง คำตอบคือกติกาขอบเขต
+  // (บันไดของสาขาแทนที่ของทั้งร้าน) ไม่ใช่ฟอร์มสินค้าซึ่งแก้ได้แค่บันไดของทั้งร้าน
+  { q: "แต่ละสาขาตั้งราคาส่งของตัวเองได้ไหม", locale: "th", expect: "answer", expectTop: "products.branch-promotions" },
+  { q: "branch quantity pricing", locale: "en", expect: "answer", expectTop: "products.branch-promotions" },
   {
     q: "ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", locale: "th", expect: "answer", expectTop: "inventory.stock-sale-blockers",
     expectTool: { name: "check_stock", permission: "product.view" },

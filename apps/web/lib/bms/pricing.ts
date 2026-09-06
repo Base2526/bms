@@ -419,4 +419,33 @@ export function pickPromotionForLocation(
   return storeWide;
 }
 
+/**
+ * บันไดราคาส่งที่ใช้ได้จริง ณ สาขาหนึ่ง ๆ (9.65)
+ *
+ * **บันไดของสาขาแทนที่บันไดของส่วนกลางทั้งชุด ไม่ใช่ผสมกัน** — สินค้าหนึ่งตัวมีขั้นราคา
+ * ได้หลายขั้น การผสมสองชุดจะได้บันไดที่ไม่มีใครเคยตั้ง (สาขาตั้งไว้ขั้นเดียวที่ 10 ชิ้น
+ * แล้วขั้น 5 ชิ้นของส่วนกลางแทรกกลาง) ซึ่งร้านอธิบายไม่ได้ว่าราคานี้มาจากไหน · ประโยคที่
+ * พนักงานพูดได้คือ "สาขานี้ตั้งราคาส่งของตัวเองไว้" ซึ่งต้องเป็นชุดเดียวจบ
+ *
+ * ตั้งใจอยู่ไฟล์นี้ด้วยเหตุผลเดียวกับ `pickPromotionForLocation` — ทั้ง `orders.ts`
+ * (ตอน commit) และ `pos.ts` (ตอนพรีวิวที่จอ) ต้องได้บันไดชุดเดียวกัน สองสูตรจะ drift
+ * แล้วจอกับ server คิดคนละยอด = `PAYMENT_MISMATCH` บิลถูกทิ้งทั้งใบต่อหน้าลูกค้า
+ */
+export type ScopedPriceTier = PriceTier & {
+  /** null = ขั้นราคาของทั้งร้าน */
+  locationId: string | null;
+};
+
+export function pickPriceTiersForLocation(
+  scoped: readonly ScopedPriceTier[],
+  locationId: string | null | undefined
+): PriceTier[] {
+  const strip = ({ locationId: _ignored, ...tier }: ScopedPriceTier): PriceTier => tier;
+  // ไม่รู้ว่าขายที่สาขาไหน = ใช้บันไดรายสาขาไม่ได้ (เดาสาขาแล้วคิดเงินผิดแย่กว่าไม่ลด)
+  const branch = locationId
+    ? scoped.filter((tier) => tier.locationId === locationId)
+    : [];
+  return (branch.length ? branch : scoped.filter((tier) => tier.locationId == null)).map(strip);
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;

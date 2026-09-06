@@ -1570,8 +1570,12 @@ export async function upsertProduct(
           throw new Error(`ไม่พบไซซ์ของสินค้า: ${unknown.join(", ")}`);
         }
       }
+      // ⚠️ ฟอร์มสินค้าแก้ **บันไดของทั้งร้าน** เท่านั้น (9.65) — ลบทั้ง SKU โดยไม่กรอง
+      // `location_id IS NULL` จะล้างบันไดที่แต่ละสาขาตั้งไว้ทิ้งทุกครั้งที่มีคนกดบันทึก
+      // สินค้า โดยไม่มีอะไรบนหน้าจอบอกว่าเพิ่งทำอะไรไป · บันไดรายสาขาแก้ที่หน้าของมันเอง
       await client.query(
-        `DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`,
+        `DELETE FROM bms_product_price_tiers
+          WHERE tenant_id = $1 AND product_sku = $2 AND location_id IS NULL`,
         [tenantId, sku]
       );
       for (const tier of normalizedPriceTiers) {
@@ -1899,8 +1903,10 @@ export async function listPriceTiersForSkus(
     product_sku: string; min_qty: number; unit_price: string | null;
     scope: PriceTier["scope"]; discount_pct: string | null; size: string | null;
   }>(
+    // ฟอร์มสินค้าแสดงและแก้บันไดของทั้งร้าน — บันไดรายสาขาไม่โผล่ที่นี่ ไม่งั้นการกดบันทึก
+    // จะเขียนบันไดของสาขาหนึ่งกลับไปเป็นของส่วนกลาง (9.65)
     `SELECT product_sku, min_qty, unit_price, scope, discount_pct, size FROM bms_product_price_tiers
-      WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
+      WHERE tenant_id = $1 AND product_sku = ANY($2::text[]) AND location_id IS NULL
       ORDER BY product_sku, min_qty`,
     [tenantId, skus]
   );

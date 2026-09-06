@@ -603,10 +603,13 @@ export async function duplicateProductConfiguration(
         WHERE tenant_id = $1 AND product_sku = $2`,
       [tenantId, sourceSku, targetSku]
     );
+    // ทำสำเนายกบันไดราคามาทั้งชุด **รวมของรายสาขาด้วย** (9.65) — คนที่กดทำสำเนาสินค้า
+    // คาดหวังสินค้าที่ตั้งค่าเหมือนกันทุกประการ การทิ้งบันไดของสาขาไว้จะทำให้สินค้าใหม่
+    // ขายราคาส่วนกลางที่สาขาซึ่งตั้งราคาของตัวเองไว้ โดยไม่มีอะไรบอก
     await client.query(
       `INSERT INTO bms_product_price_tiers
-         (tenant_id, product_sku, min_qty, unit_price, note, scope, size, discount_pct)
-       SELECT tenant_id, $3, min_qty, unit_price, note, scope, size, discount_pct
+         (tenant_id, product_sku, location_id, min_qty, unit_price, note, scope, size, discount_pct)
+       SELECT tenant_id, $3, location_id, min_qty, unit_price, note, scope, size, discount_pct
          FROM bms_product_price_tiers
         WHERE tenant_id = $1 AND product_sku = $2`,
       [tenantId, sourceSku, targetSku]

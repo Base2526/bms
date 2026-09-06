@@ -413,6 +413,26 @@ the same scope would require answering which one wins, and there is no answer st
 customer. Date windows mean an expired offer stops applying on its own, without anyone remembering to
 edit the product — a stale promotion is how a shop keeps selling at a loss without noticing.
 
+### Branch quantity pricing (`9.65`)
+
+`8.1` put the quantity ladder ("buy 5, pay 90 each") at tenant level, so a wholesale branch on a
+main road and a mall branch paying far higher rent had to sell at the same bulk price. `9.65` adds
+the same `location_id` scope `9.61` gave promotions.
+
+The rule differs from promotions in one important way: **a branch ladder replaces the store ladder
+entirely, it does not merge with it.** A product has several rungs, and mixing two sets produces a
+ladder nobody declared — a branch that set only a 10-unit rung would silently inherit the store's
+5-unit rung in the middle of its own ladder, and no one could explain where the price came from. The
+sentence staff can say is "this branch sets its own bulk price", which has to mean one complete set.
+
+Both the register preview and `createOrder` pick the ladder through the same
+`pickPriceTiersForLocation()` — a second copy would drift and cost a bill to `PAYMENT_MISMATCH`.
+Saving with no rungs removes the branch ladder, and that branch falls back to the store price.
+
+The product form still edits the **store-wide** ladder only, and its delete is scoped to
+`location_id IS NULL`; without that scope every product save would wipe every branch's ladder with
+nothing on screen to say so. Shelf price, pack price and membership-tier discounts remain store-wide.
+
 ### Each branch runs its own offer (`9.61`)
 
 `8.7` priced promotions for the whole tenant, so a chain could not do what Thai retail does every

@@ -902,6 +902,13 @@ attempt becomes recoverable after the bounded lease. The check changes to `PAID`
 transaction as payment, stock, FEFO and tax; `9.48` also repairs legacy OPEN/CLOSING checks whose
 linked order had already reached `COMPLETED` in the old two-transaction flow.
 
+`bms_product_price_tiers` gains `location_id` in `9.65` with the same meaning it has on
+`bms_product_promotions` (`9.61`): NULL is the store-wide ladder, a branch id is that branch only,
+and a branch ladder replaces the store ladder for that SKU instead of merging rungs into it. The
+rule unique index had to take the branch into the key (with `COALESCE` for the NULL scope, since
+NULL never collides with NULL) or a branch could not set a rung at a quantity the store already uses
+— the most common case there is.
+
 `bms_restaurant_waitlist` (`9.64`) holds parties that do not have a table yet — walk-in queue
 tickets and advance reservations in one table, because seating them is the same action and a second
 seating path would be free to drift. `kind` selects which of `queue_no` / `reserved_for` must be

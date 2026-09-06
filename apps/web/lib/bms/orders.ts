@@ -37,12 +37,14 @@ import {
 import {
   applyPromotion,
   canonicalPriceTiers,
+  pickPriceTiersForLocation,
   pickPromotionForLocation,
   isFixedPricePack,
   normalizePackCode,
   unitPriceForQty,
   type PriceTier,
   type Promotion,
+  type ScopedPriceTier,
   type ScopedPromotion,
 } from "./pricing";
 import { getVariantBasePriceInTx } from "./productPacks";
@@ -776,27 +778,36 @@ export async function createOrderInTx(
       }
     }
 
+    // 9.65: อ่านทั้งบันไดของทั้งร้าน (location_id IS NULL) และของสาขาที่กำลังขาย แล้วให้
+    // pickPriceTiersForLocation() ตัดสิน — ฟังก์ชันตัวเดียวกับที่ resolvePosScan ใช้พรีวิว
+    // ที่จอ ไม่งั้นจอกับ server คิดคนละยอดแล้วบิลถูกทิ้งทั้งใบหน้าลูกค้า
     const tierRows = await client.query<{
-      product_sku: string; min_qty: number; unit_price: string | null;
+      product_sku: string; location_id: string | null; min_qty: number; unit_price: string | null;
       scope: PriceTier["scope"]; discount_pct: string | null; size: string | null;
     }>(
-      `SELECT product_sku, min_qty, unit_price, scope, discount_pct, size
+      `SELECT product_sku, location_id, min_qty, unit_price, scope, discount_pct, size
          FROM bms_product_price_tiers
         WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
+          AND (location_id IS NULL OR location_id = $3)
         ORDER BY product_sku, min_qty`,
-      [tenantId, productSkus]
+      [tenantId, productSkus, locationId]
     );
-    const tiersBySku = new Map<string, PriceTier[]>();
+    const scopedTiersBySku = new Map<string, ScopedPriceTier[]>();
     for (const row of tierRows.rows) {
-      const list = tiersBySku.get(row.product_sku) ?? [];
+      const list = scopedTiersBySku.get(row.product_sku) ?? [];
       list.push({
+        locationId: row.location_id ?? null,
         minQty: Number(row.min_qty),
         scope: row.scope,
         size: row.size,
         unitPrice: row.unit_price == null ? null : Number(row.unit_price),
         discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
       });
-      tiersBySku.set(row.product_sku, list);
+      scopedTiersBySku.set(row.product_sku, list);
+    }
+    const tiersBySku = new Map<string, PriceTier[]>();
+    for (const [sku, scoped] of scopedTiersBySku) {
+      tiersBySku.set(sku, pickPriceTiersForLocation(scoped, locationId));
     }
 
     // ---- โปรโมชัน ซื้อ X แถม Y / N ชิ้นราคาเดียว (8.7) -----------
