@@ -591,6 +591,54 @@ export const typeDefs = /* GraphQL */ `
     active: Boolean!
   }
 
+  type BmsRestaurantArea {
+    id: ID!
+    name: String!
+    sortOrder: Int!
+    tableCount: Int!
+  }
+
+  type BmsRestaurantTableAdmin {
+    id: ID!
+    areaId: ID!
+    code: String!
+    name: String!
+    seats: Int!
+    shape: String!
+    positionX: Int!
+    positionY: Int!
+    blocked: Boolean!
+    active: Boolean!
+    status: String!
+  }
+
+  type BmsRestaurantFloorAdmin {
+    areas: [BmsRestaurantArea!]!
+    tables: [BmsRestaurantTableAdmin!]!
+  }
+
+  type BmsRestaurantTableQr {
+    token: String!
+    tableId: ID!
+    tableCode: String!
+    tableName: String!
+    createdAt: String!
+  }
+
+  input BmsRestaurantTablePatchInput {
+    name: String
+    seats: Int
+    shape: String
+    blocked: Boolean
+    areaId: ID
+  }
+
+  input BmsRestaurantTablePositionInput {
+    tableId: ID!
+    x: Int!
+    y: Int!
+  }
+
   input BmsLocationInput {
     id: ID
     code: String!
@@ -1009,6 +1057,8 @@ export const typeDefs = /* GraphQL */ `
 
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
+    bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
+    bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
     bmsPosDevices: [BmsPosDevice!]!
     # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
     bmsArAccounts(search: String, status: String, withBalanceOnly: Boolean, limit: Int = 200): [BmsArAccount!]!
@@ -1267,6 +1317,11 @@ export const typeDefs = /* GraphQL */ `
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponLocations: [BmsLocation!]!
     bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!   # ประวัติการใช้โค้ด (query ตรงจาก bms_orders)
+
+    # ===== BMS โปรโมชันต่อสินค้า (8.7) + ขอบเขตสาขา (9.61) =====
+    # locationId = สาขาที่สนใจ → ได้โปรทั้งร้าน + โปรของสาขานั้น (permission product.view)
+    bmsProductPromotions(productSku: String, locationId: ID, includeInactive: Boolean = false): [BmsProductPromotion!]!
+    bmsPromotionLocations: [BmsLocation!]!
 
     # ===== BMS membership + แต้มสะสม (7.96) =====
     bmsLoyaltySettings: BmsLoyaltySettings!                        # permission member.view
@@ -4055,6 +4110,34 @@ export const typeDefs = /* GraphQL */ `
     totalAmount: Float!
     createdAt: String!
   }
+  type BmsProductPromotion {
+    id: ID!
+    productSku: String!
+    productName: String
+    """null = โปรทั้งร้าน · มีค่า = โปรของสาขานั้น และทับโปรทั้งร้านของ SKU เดียวกัน"""
+    locationId: ID
+    locationName: String
+    kind: String!          # BUY_X_GET_Y | N_FOR_PRICE
+    buyQty: Int!
+    getQty: Int
+    bundlePrice: Float
+    active: Boolean!
+    startsAt: String
+    endsAt: String
+    note: String
+    updatedAt: String!
+  }
+  input BmsProductPromotionInput {
+    productSku: String!
+    locationId: ID
+    kind: String!
+    buyQty: Int!
+    getQty: Int
+    bundlePrice: Float
+    startsAt: String
+    endsAt: String
+    note: String
+  }
   input BmsCouponInput {
     id: ID
     code: String!
@@ -4148,6 +4231,15 @@ export const typeDefs = /* GraphQL */ `
 
     # ---- สาขา (9.1) ----
     bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
+    bmsCreateRestaurantArea(locationId: ID!, name: String!): BmsRestaurantArea!
+    bmsRenameRestaurantArea(areaId: ID!, name: String!): BmsRestaurantArea!
+    bmsReorderRestaurantAreas(locationId: ID!, orderedAreaIds: [ID!]!): [BmsRestaurantArea!]!
+    bmsDeleteRestaurantArea(areaId: ID!): Boolean!
+    bmsCreateRestaurantTable(locationId: ID!, areaId: ID!, name: String!, seats: Int!, shape: String!): BmsRestaurantTableAdmin!
+    bmsUpdateRestaurantTable(tableId: ID!, patch: BmsRestaurantTablePatchInput!): BmsRestaurantTableAdmin!
+    bmsDeleteRestaurantTable(tableId: ID!): Boolean!
+    bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
+    bmsIssueRestaurantTableQr(tableId: ID!, rotate: Boolean): BmsRestaurantTableQr!
 
     # ---- POS (7.87) ----
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
@@ -4406,6 +4498,10 @@ export const typeDefs = /* GraphQL */ `
     bmsEmailReport(fileId: Int!, to: String!, subject: String): BmsEmailReportResult!   # permission report.email — ปุ่ม Confirm ของ proposal email_report (A3) เท่านั้น
     bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
     bmsDeleteCoupon(id: ID!): Boolean!
+    # โปรโมชันต่อสินค้า: หนึ่งขอบเขต (สินค้า × สาขา/ทั้งร้าน) มีโปร active ได้ทีละหนึ่ง
+    # บันทึกซ้ำ = แก้ของเดิมในขอบเขตนั้น ไม่ใช่เพิ่มตัวที่สอง (permission product.edit)
+    bmsUpsertProductPromotion(input: BmsProductPromotionInput!): BmsProductPromotion!
+    bmsDeactivateProductPromotion(id: ID!): Boolean!
     bmsAssignCouponToCustomer(customerId: ID, channel: String, customerRef: String, conversationId: ID, code: String!, note: String): Boolean!   # แจกคูปองเข้ากระเป๋าลูกค้าโดยตรง (permission coupon.manage)
 
     # ===== BMS membership + แต้มสะสม (7.96) =====

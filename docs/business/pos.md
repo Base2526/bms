@@ -408,10 +408,42 @@ below its own bundle price — or leaves a stale promotion running — would oth
 overcharge customers in the name of an offer, which is damage the shop cannot explain. The lower total
 always wins.
 
-Only one promotion can be active per product (a partial unique index enforces it). Two would require
-answering which one wins, and there is no answer staff can give a customer. Date windows mean an
-expired offer stops applying on its own, without anyone remembering to edit the product — a stale
-promotion is how a shop keeps selling at a loss without noticing.
+Only one promotion can be active per product **per scope** (partial unique indexes enforce it). Two in
+the same scope would require answering which one wins, and there is no answer staff can give a
+customer. Date windows mean an expired offer stops applying on its own, without anyone remembering to
+edit the product — a stale promotion is how a shop keeps selling at a loss without noticing.
+
+### Each branch runs its own offer (`9.61`)
+
+`8.7` priced promotions for the whole tenant, so a chain could not do what Thai retail does every
+day: the branch by the school clears stock at "3 for ฿100" while the mall branch sells at list price.
+`bms_product_promotions.location_id` makes the scope explicit — `NULL` is the store-wide offer (every
+row `8.7` ever wrote, so applying the migration changes no bill), a branch id is that branch alone.
+
+**A branch offer overrides the store-wide offer for the same product.** That does not reopen the
+"which one wins" problem `8.7` closed, because the answer fits in one sentence a cashier can say:
+*this branch set its own offer, over head office's*. What is deliberately **not** the rule is "pick
+the cheaper one" — which is cheaper depends on how many the customer picked up (buy-2-get-1 and
+3-for-฿100 trade places by quantity), so the same bill would be priced by different offers depending
+on basket size. Comparing against the *normal* price still happens, unchanged.
+
+One function decides it, `pickPromotionForLocation()` in `lib/bms/pricing.ts`, and both readers call
+it: the register previewing a line through `resolvePosScan()` and `createOrder()` recomputing at
+commit. Two copies of that rule drift into a screen and a server that disagree by a satang, which is
+`PAYMENT_MISMATCH` and a bill discarded in front of the customer. A path that does not know the
+branch — a bill lookup, for instance — sees only store-wide offers; guessing a branch and then
+charging for it is worse than not discounting.
+
+Offers are set on **`/admin/promotions`** (read `product.view`, write `product.edit` — the same gate
+`8.7` argued for, since setting an offer is setting that product's selling price, so nothing new needs
+seeding). Saving the same scope again edits that offer rather than adding a second. Stopping one
+deactivates it instead of deleting it, because "which branch ran what, and when" is the first question
+asked when a month's margin looks wrong. Staff restricted by `bms_user_allowed_locations` (`9.37`) can
+only set offers for their own branches and cannot set a store-wide one, which would reach branches
+outside the scope the shop gave them.
+
+**Wholesale steps (`8.1`) are still store-wide.** They are a per-unit price, not an advertised offer,
+and splitting them per branch is a separate decision with its own migration.
 
 Named packs are excluded, same as wholesale steps: the pack row already states what the box costs.
 Their underlying pieces do not enter the promotion quantity and are not charged again as loose units.
@@ -1421,6 +1453,18 @@ payments, drawer totals and tax documents therefore keep the normal POS source o
 kitchen tickets are attached to check items and appear before payment. Settlement does not enqueue a
 second copy of those tickets.
 
+The branch floor is maintained from `/admin/restaurant-floor`, behind an admin session and
+`restaurant.floor.manage`. An administrator selects a branch, creates and orders area tabs, manages
+table names/seats/shapes, and drags tables on a grid before saving the accumulated coordinate
+changes. The restaurant register renders those saved shapes and coordinates on a scrollable,
+read-only canvas instead of reflowing the tables into a CSS grid, so its floor matches the admin
+layout at every viewport width. Both surfaces draw chairs from the table's configured seat count;
+the stored seat count remains authoritative, while the compact canvas caps the decorative chairs at
+12 to keep unusually large communal tables legible. This is deliberately read-only for check state: occupied tables show
+their status and can still be repositioned, but their configuration cannot change until the check closes. Opening,
+editing, moving or settling a check remains exclusively on `/pos/restaurant` with device + PIN
+authentication.
+
 The same restaurant register also owns the ordinary counter close-out work. After settlement it
 keeps the server result and the pre-close check snapshot on screen, including tendered cash, change,
 tax-document number, VAT, discounts, loyalty result and kitchen-ticket count. Both registers render the receipt through one
@@ -1546,9 +1590,31 @@ check while the first is finalizing it. A stale `CLOSING` claim can be reclaimed
 lease only by the same device, shift and cashier; an already `PAID` check can replay its completed
 sale immediately. The paid audit is inserted only on the actual `CLOSING -> PAID` transition.
 
+### Table QR self-ordering (`9.60`)
+
+The floor editor issues one permanent QR URL per table and can download, print or rotate it. The QR
+is a locator, not a dynamic order id: after scanning, the server finds that table's current OPEN
+check and creates an HttpOnly session tied to that exact check. With no open check, the guest sees a
+waiting screen and cannot submit. Closing the check revokes its sessions, so the same browser cannot
+order for the next party; rotating a damaged or leaked QR invalidates the old printed code.
+
+The mobile menu uses the same `RESTAURANT_POS` surface, variants, packs, modifier rules and temporary
+sold-out state as the register. A submission contains structured catalog codes, not prices or
+tenant/table/check identifiers, is capped and idempotent, and remains `PENDING`. Displayed prices are
+estimates because promotion, tier, stock and recipe checks run again during acceptance.
+
+The QR inbox on `/pos/restaurant` is branch-scoped to the authenticated device. A PIN-verified
+`pos.sell` operator accepts or rejects the whole proposal. Acceptance adds the
+lines, replaces the whole-check stock reservation, creates the normal kitchen round, records the
+review and audit, and commits once. Failure leaves both proposal and check unchanged. Existing
+unsent staff draft lines must be sent or removed first, preventing an unrelated draft from riding
+along with the accepted QR round. If the party moves, the proposal retains its scan-time table
+snapshot for referential integrity while the staff inbox displays the check's current table; the old
+browser session no longer matches that moved check and the guest must scan the destination QR.
+
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
-contracts and credentials; no mock adapter is presented as live. Customer QR self-ordering,
-reservations/queue numbers, split/merge **checks** (payment split is supported), station-printer
+contracts and credentials; no mock adapter is presented as live. Reservations/queue numbers,
+split/merge **checks** (payment split is supported), station-printer
 routing and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
 driven. If re-reserving fails while
 a later round is being sent, the replacement now rolls back as one transaction: the previous PENDING

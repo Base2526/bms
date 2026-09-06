@@ -160,7 +160,7 @@ wrong, and update the doc in the same change.
   and commits stock/movement/audit/retry result together. Bluetooth HID is globally captured only
   after a configured positive prefix; timing/focus is never treated as proof of a scanner. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
-- **Restaurant dine-in (`9.44`–`9.45`)** — `/pos/restaurant` is a second operating surface, never a
+- **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
   second money path: a check reserves stock by creating one PENDING POS order when a kitchen round is
   sent, and `settleRestaurantCheck()` closes that same order through `recordPosSale()`. A check is
   scoped to the device's **branch** only — a waiter's tablet opens it, the register pays it, possibly
@@ -176,7 +176,9 @@ wrong, and update the doc in the same change.
   `RECIPE` product — charging a surcharge while silently skipping its ingredient movement is not an
   acceptable fallback. Restaurant work uses its own permissions (`restaurant.floor.manage`,
   `restaurant.kitchen.update`, `restaurant.check.cancel`); do not reuse `pos.device.manage` or
-  `order.ship` for it. Full detail:
+  `order.ship` for it. A static table QR is only an opaque locator: its hashed browser session binds
+  to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
+  `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
 - **Product catalog truth (`9.40`–`9.43`, `9.51`, `9.52`)** — a product's serving/size options live
   in `bms_product_variants`, never `bms_inventory`: a `RECIPE`/`NON_STOCK` item's own inventory row
@@ -254,8 +256,12 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**75 namespaces / 4,284 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-03 — the latest change is net **−23**: the
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**76 namespaces / 4,444 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-06 — the latest change is net **+9**: the
+   `admin_restaurant_floor` namespace adds table-QR issue, print, download and rotation labels; the
+   preceding change is net **+54**: the
+   `admin_restaurant_floor` namespace adds 53 keys for the branch/area/table/layout editor and
+   `admin_nav.restaurant_floor` adds its menu label; the preceding change is net **−23**: the
    new `admin_nav` namespace adds 75 keys (72 for the menu itself, +3 for the command palette:
    search_placeholder, search_hint, search_empty) (task-based sidebar sections, workspace names, and every
    menu label, including the ones that used to be hardcoded English string literals in

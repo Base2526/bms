@@ -69,8 +69,10 @@ import { bmsStoreProfileResolvers } from "@/graphql/bmsStoreProfile";
 import { bmsStockCapabilityResolvers } from "@/graphql/bmsStockCapabilities";
 import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
+import { bmsProductPromotionsResolvers } from "@/graphql/bmsProductPromotions";
 import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
 import { bmsPosResolvers } from "@/graphql/bmsPos";
+import { bmsRestaurantFloorAdminResolvers } from "@/graphql/bmsRestaurantFloorAdmin";
 import { bmsArResolvers } from "@/graphql/bmsAr";
 import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
 import { bmsReportScheduleResolvers } from "@/graphql/bmsReportSchedule";
@@ -2864,8 +2866,10 @@ const rawResolvers = {
     ...bmsStockCapabilityResolvers.Query,
     ...bmsRevisionsResolvers.Query,
     ...bmsCouponsResolvers.Query,
+    ...bmsProductPromotionsResolvers.Query,
     ...bmsMembershipResolvers.Query,
     ...bmsPosResolvers.Query,
+    ...bmsRestaurantFloorAdminResolvers.Query,
     ...bmsArResolvers.Query,
     ...bmsReportScheduleResolvers.Query,
     ...bmsFollowupsResolvers.Query,
@@ -7581,8 +7585,10 @@ const rawResolvers = {
     ...bmsStoreProfileResolvers.Mutation,
     ...bmsStockCapabilityResolvers.Mutation,
     ...bmsCouponsResolvers.Mutation,
+    ...bmsProductPromotionsResolvers.Mutation,
     ...bmsMembershipResolvers.Mutation,
     ...bmsPosResolvers.Mutation,
+    ...bmsRestaurantFloorAdminResolvers.Mutation,
     ...bmsArResolvers.Mutation,
     ...bmsReportEngineResolvers.Mutation,
     ...bmsReportScheduleResolvers.Mutation,

@@ -183,7 +183,17 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     requiredPermissions: ["product.view"],
     prerequisites: lists(["การบันทึกต้องมี product.edit", "กำหนดช่วงจำนวนและราคาหรือเงื่อนไขโปรโมชันให้ครบ"], ["Saving requires product.edit.", "Define complete quantity tiers and promotion conditions."]),
     steps: lists(["เปิด Products และเลือกสินค้า", "เปิดส่วนราคาตามจำนวนหรือโปรโมชัน", "กรอกขั้นต่ำ ราคา/เปอร์เซ็นต์ หรือจำนวนซื้อและจำนวนแถม", "บันทึกแล้วทดลองจัดตะกร้าที่ POS", "ตรวจราคา preview ก่อนรับเงินจริง"], ["Open Products and choose an item.", "Open quantity pricing or promotions.", "Enter thresholds, price/percentage, or buy/get quantities.", "Save and test the cart in POS.", "Review the preview before taking payment."]),
-    warnings: lists(["ราคาตามจำนวนและโปรโมชันเป็นระดับ SKU และ server เป็นผู้คำนวณ", "อย่าใช้ค่าจากตะกร้าเก่าหลังแก้กฎ"], ["Quantity pricing and promotions are SKU-level and server-calculated.", "Do not trust an old cart preview after changing a rule."]), relatedCapabilityIds: ["catalog.products", "pos.operations"],
+    warnings: lists(["ราคาตามจำนวนเป็นระดับ SKU ทั้งร้าน และ server เป็นผู้คำนวณ", "โปรโมชันซื้อแถม/N ชิ้นราคาเดียว ตั้งแยกสาขาได้ที่หน้าโปรโมชัน", "อย่าใช้ค่าจากตะกร้าเก่าหลังแก้กฎ"], ["Quantity pricing is SKU-level, store-wide, and server-calculated.", "Buy-X-get-Y and N-for-a-price deals can be set per branch on the Promotions page.", "Do not trust an old cart preview after changing a rule."]), relatedCapabilityIds: ["catalog.products", "pos.operations"],
+  },
+  {
+    id: "products.branch-promotions", module: "products", pageId: "promotions", route: "/admin/promotions",
+    title: both("ตั้งโปรโมชันแยกสาขา", "Run a promotion for one branch"),
+    summary: both("ตั้งซื้อ X แถม Y หรือ N ชิ้นราคาเดียว ให้ทั้งร้านหรือเฉพาะสาขา — โปรของสาขาทับโปรทั้งร้านของสินค้าตัวเดียวกัน", "Set buy-X-get-Y or N-for-a-price store-wide or for one branch; a branch deal overrides the store-wide deal for the same product."),
+    aliases: aliases(["สาขาจัดโปรของตัวเอง", "โปรแยกสาขา", "โปรเฉพาะสาขา", "สาขาลดราคาเองได้ไหม", "ตั้งโปรโมชัน", "ซื้อ 3 แถม 1", "3 ชิ้น 100"], ["branch promotion", "promotion per branch", "store level promotion", "can a branch run its own promotion", "buy 3 get 1", "3 for 100"]),
+    requiredPermissions: ["product.view"],
+    prerequisites: lists(["การบันทึกต้องมี product.edit", "ต้องมีสาขาในระบบก่อนถ้าจะตั้งโปรเฉพาะสาขา"], ["Saving requires product.edit.", "A branch must exist before a branch-only deal can be set."]),
+    steps: lists(["เปิดโปรโมชัน แล้วค้นและเลือกสินค้า", "เลือกว่าใช้กับทุกสาขาหรือสาขาเดียว", "เลือกชนิดโปรและกรอกจำนวน/ราคาชุด", "ตั้งช่วงเวลาถ้าต้องการ แล้วบันทึก", "ทดลองจัดตะกร้าที่เครื่องขายของสาขานั้นก่อนเปิดขายจริง"], ["Open Promotions, then search and select the product.", "Choose every branch or a single branch.", "Pick the deal type and enter quantities or the bundle price.", "Set an optional time window and save.", "Test a cart on that branch's register before going live."]),
+    warnings: lists(["สินค้าหนึ่งตัวมีโปรที่ใช้งานอยู่ได้ทีละหนึ่งต่อขอบเขต — บันทึกซ้ำคือการแก้ของเดิม ไม่ใช่เพิ่มตัวที่สอง", "โปรที่แพงกว่าซื้อแยกจะไม่ถูกใช้ ระบบเลือกยอดที่ต่ำกว่าเสมอ", "โปรไม่อยู่ใต้เพดานส่วนลดของบิล เพราะเป็นราคาของกลุ่มชิ้น ไม่ใช่ส่วนลดอีกชั้น", "หยุดโปรคือปิด ไม่ใช่ลบ เพื่อให้ยังไล่ได้ว่าสาขาไหนจัดโปรอะไรช่วงไหน"], ["One product has one running deal per scope; saving again edits it instead of adding a second.", "A deal that costs more than buying separately is never applied; the lower amount always wins.", "A deal is not capped by the bill's discount ceiling because it prices a group of items, not another discount layer.", "Stopping a deal deactivates it rather than deleting it, so you can still see which branch ran what and when."]), relatedCapabilityIds: ["catalog.products", "coupons.promotions", "inventory.branch"],
   },
   {
     id: "inventory.stock-sale-blockers", module: "inventory", pageId: "products", route: "/admin/products",
@@ -259,6 +269,45 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "Stock is always held in whole base units; the display unit changes only what staff read.",
       "A scale item code is unique per shop and only valid on a weighed product whose base unit is grams.",
     ]), relatedCapabilityIds: ["inventory.stock-model"],
+  },
+  {
+    id: "restaurant.floor-management", module: "restaurant", pageId: "restaurant-floor", route: "/admin/restaurant-floor",
+    title: both("จัดโซน โต๊ะ และผังร้านอาหาร", "Manage restaurant areas, tables and floor plan"),
+    summary: both("เลือกสาขา จัดโซนและโต๊ะ แล้วลากโต๊ะบนผังเพื่อบันทึกตำแหน่งใช้งานจริง", "Choose a branch, manage its areas and tables, then drag tables into their real floor positions."),
+    aliases: aliases([
+      "เพิ่มโต๊ะ", "จัดผังร้าน", "ลบโซน", "ย้ายโต๊ะไปโซนอื่น", "เปลี่ยนชื่อโต๊ะ", "ปิดโต๊ะชั่วคราว",
+    ], [
+      "add table", "edit floor plan", "delete area", "move table to another area", "rename table", "block a table",
+    ]),
+    requiredPermissions: ["restaurant.floor.manage"],
+    prerequisites: lists([
+      "ร้านต้องตั้งประเภทธุรกิจเป็นร้านอาหาร",
+      "เลือกสาขาที่ต้องการจัดผังก่อน เพราะแต่ละสาขามีโซนและโต๊ะของตัวเอง",
+    ], [
+      "The shop's business type must be Restaurant.",
+      "Choose the branch first because every branch owns its own areas and tables.",
+    ]),
+    steps: lists([
+      "เพิ่มหรือเปลี่ยนชื่อโซน แล้วลากแท็บเพื่อเรียงลำดับ",
+      "เลือกโซนและเพิ่มโต๊ะ พร้อมชื่อ จำนวนที่นั่ง และรูปทรง",
+      "ลากโต๊ะบนกริดไปยังตำแหน่งจริง แล้วกดบันทึกผังร้าน",
+      "คลิกโต๊ะเพื่อแก้รายละเอียด ย้ายโซน หรือปิดใช้งานชั่วคราว",
+    ], [
+      "Add or rename areas, then drag their tabs to reorder them.",
+      "Choose an area and add tables with a name, seat count and shape.",
+      "Drag tables to their real positions on the grid, then save the floor plan.",
+      "Select a table to edit its details, move it to another area or block it temporarily.",
+    ]),
+    warnings: lists([
+      "โต๊ะที่มีบิลเปิดอยู่ลากตำแหน่งได้ แต่แก้รายละเอียด ย้ายโซน ปิดใช้งาน หรือลบไม่ได้",
+      "ลบโซนได้เมื่อไม่มีโต๊ะใช้งานอยู่ และลบโซนสุดท้ายของสาขาไม่ได้",
+      "หน้านี้จัดผังเท่านั้น การเปิดหรือปิดบิลทำที่ Restaurant POS",
+    ], [
+      "An occupied table can be repositioned, but its details, area, availability and deletion are locked.",
+      "An area can be deleted only when it has no active tables, and a branch must keep at least one area.",
+      "This page edits the floor only; checks are opened and closed in Restaurant POS.",
+    ]),
+    relatedCapabilityIds: ["restaurant.dine-in"],
   },
   {
     id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",

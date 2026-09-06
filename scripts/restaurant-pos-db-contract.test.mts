@@ -39,13 +39,14 @@ import { cancelOrder, cancelOrderInTx, releaseExpiredOrders } from "../apps/web/
 import { getClient } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { RESERVATION_LOST } from "../apps/web/lib/bms/restaurantPosErrors.ts";
-import { listRecentPosSales } from "../apps/web/lib/bms/pos.ts";
+import { listRecentPosSales, resolvePosScan } from "../apps/web/lib/bms/pos.ts";
 import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
   createDefaultRestaurantFloor,
   getRestaurantCheck,
   listRestaurantFloor,
+  listRestaurantMenu,
   moveRestaurantCheck,
   openRestaurantCheck,
   removeRestaurantCheckItem,
@@ -1323,6 +1324,66 @@ test("ปิดบิลโต๊ะโดยไม่ส่ง customerId ย�
   assert.equal(order.customer_id, null);
   assert.equal(Number(order.earned), 0);
   assert.equal(result.pointsEarned, null);
+});
+
+test("⚠️ เมนูหลายไซซ์ที่ยังไม่มีแถวสต็อก ต้องขายไซซ์ที่เลือกได้จริง ไม่ใช่ไซซ์แรกตามตัวอักษร", async () => {
+  // `upsertProduct` เขียน `bms_product_variants` แต่ **ไม่เคยสร้างแถว `bms_inventory`**
+  // เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองจึงมีไซซ์ในแคตตาล็อกโดยไม่มีแถวสต็อกสักไซซ์ —
+  // ซึ่งเป็นเคสที่ตัวเลือกไซซ์บนกล่องเพิ่มเมนูมีไว้เพื่อ
+  const sku = `FAKE-${TAG}-TOMYUM`;
+  await query(
+    `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
+     VALUES ($1,$2,$2,149,TRUE,'V')`, [tenantId, sku]
+  );
+  await query(
+    `INSERT INTO bms_product_stock_policies (tenant_id, product_sku, stock_policy)
+     VALUES ($1,$2,'NON_STOCK')`, [tenantId, sku]
+  );
+  // ⚠️ ไซซ์ที่เทสขอต้องไม่ใช่ min(code) ไม่งั้นเทสจะเขียวด้วยกิ่งที่ผิด: 'XL' เรียงหลัง 'S'
+  // (รอบแรกใช้ 'L' ซึ่ง ASCII น้อยกว่า 'S' เทสจึงผ่านแม้ถอดกิ่งที่กำลังตรึงออกไปแล้ว)
+  for (const [code, sortOrder, price] of [["S", 0, 149], ["XL", 1, 299]] as const) {
+    await query(
+      `INSERT INTO bms_product_variants (tenant_id, product_sku, code, sort_order)
+       VALUES ($1,$2,$3,$4)`, [tenantId, sku, code, sortOrder]
+    );
+    await query(
+      `INSERT INTO bms_product_packs
+         (tenant_id, product_sku, size, pack_code, unit_name, base_qty, price, is_base, active)
+       VALUES ($1,$2,$3,'BASE','ถ้วย',1,$4,TRUE,TRUE)`, [tenantId, sku, code, price]
+    );
+  }
+  await declareSalesSurfaces(sku, ALL_SURFACES);
+
+  const row = (await listRestaurantMenu(tenantId, locationId)).find((item) => item.sku === sku);
+  assert.ok(row, "เมนูต้องขึ้นบนจอสั่งอาหาร");
+  assert.deepEqual(row!.availableSizes.map((variant) => variant.size), ["S", "XL"],
+    "ไซซ์บนจอมาจากแคตตาล็อก (9.51) ไม่ใช่ตารางสต็อก");
+  assert.ok(row!.sellable, "NON_STOCK ขายได้แม้สต็อกของตัวเองเป็น 0 ตามดีไซน์ (9.52)");
+
+  const hit = await resolvePosScan(tenantId, sku, {
+    size: "XL", locationId, surface: "RESTAURANT_POS",
+  });
+  assert.equal(hit?.size, "XL", "ขอไซซ์ XL ต้องได้ XL — ตกไป min(code) = ขายไซซ์อื่นไม่ได้เลย");
+  assert.equal(hit?.packPrice, 299, "ราคาต้องเป็นของไซซ์ที่ขอ");
+
+  // add_item resolve ใหม่ด้วยเส้นทางเดียวกัน — บรรทัดในบิลต้องเป็นไซซ์ที่เลือก
+  const free = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((table) => table.status === "AVAILABLE");
+  assert.ok(free, "ต้องมีโต๊ะว่างสำหรับเทสนี้");
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: free!.id, guestCount: 1,
+    actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId, sku, size: "XL", packQty: 1,
+  });
+  const saved = (await getRestaurantCheck(tenantId, check.id))!;
+  assert.equal(saved.items[0].size, "XL");
+  assert.equal(saved.items[0].packPrice, 299);
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
 });
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {

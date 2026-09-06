@@ -200,7 +200,8 @@ test("a replacement reservation is atomic and gives the old key back", async () 
   assert.match(restaurant, /await cancelOrderInTx\(client, tenantId, orderId\)/);
   assert.match(restaurant, /createOrderInTx\(client,/);
   assert.match(restaurant, /SET idempotency_key = NULL/);
-  assert.match(restaurant, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\);\s*return created/);
+  assert.match(restaurant, /created\.status !== "CREATED"\) return created/);
+  assert.match(restaurant, /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\);\s*return result/);
   assert.doesNotMatch(restaurant, /releaseReservationOrder/);
   // public createOrder ยังเป็นเจ้าของ transaction เดิม แต่ workflow ใหญ่เรียกแกน in-tx ได้
   assert.match(orders, /export async function createOrderInTx\(/);
@@ -276,13 +277,14 @@ test("whole-check cancellation releases its order inside the check transaction",
 test("failed later rounds roll back to the previous sent-item reservation", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const send = restaurant.slice(
-    restaurant.indexOf("export async function sendRestaurantKitchenRound"),
+    restaurant.indexOf("async function sendRestaurantKitchenRoundInTx"),
     restaurant.indexOf("export async function moveRestaurantCheck")
   );
   assert.match(send, /beginTenantTx\(client, input\.tenantId/);
   assert.match(send, /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/);
   assert.match(send, /createOrderInTx\(client,/);
-  assert.match(send, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\)/);
+  assert.match(send, /created\.status !== "CREATED"\) return created/);
+  assert.match(send, /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\)/);
   assert.doesNotMatch(send, /restoreSentReservation/);
   assert.doesNotMatch(restaurant, /await query\(\s*`UPDATE bms_restaurant_/);
   assert.doesNotMatch(restaurant, /await query<[^>]+>\(\s*`UPDATE bms_orders/);
@@ -357,6 +359,7 @@ test("kitchen board accepts tickets without an order id and stays branch-aware",
 
 test("restaurant screen exposes floor, kitchen round, move and settlement actions", async () => {
   const page = await read("apps/web/app/(pos)/pos/restaurant/page.tsx");
+  const css = await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css");
   for (const action of ["add_item", "remove_item", "send_kitchen", "move", "cancel", "settle"]) {
     assert.match(page, new RegExp(`"${action}"`));
   }
@@ -365,6 +368,23 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   assert.match(page, /appendSplitPaymentRow/);
   assert.match(page, /payments\.map\(\(payment\) =>/);
   assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
+  // หน้าจอ POS ต้องอ่านผังเดียวกับ editor ไม่ใช่นำโต๊ะกลับไปเรียงด้วย CSS grid
+  for (const field of ["shape", "positionX", "positionY"]) assert.match(page, new RegExp(field));
+  assert.match(page, /transform: `translate\(\$\{table\.positionX\}px, \$\{table\.positionY\}px\)`/);
+  assert.match(page, /styles\.tableRect/);
+  assert.match(page, /styles\.tableRound/);
+  assert.match(page, /<RestaurantTableChairs seats=\{table\.seats\} shape=\{shape\}/);
+  assert.doesNotMatch(css, /\.tableGrid\s*\{/);
+});
+
+test("admin and POS render the same bounded chair visual from the table seat count", async () => {
+  const admin = await read("apps/web/app/(admin)/admin/restaurant-floor/page.tsx");
+  const chairs = await read("apps/web/components/RestaurantTableChairs.tsx");
+  assert.match(admin, /<RestaurantTableChairs seats=\{table\.seats\} shape=\{table\.shape\}/);
+  assert.match(chairs, /const MAX_VISIBLE_CHAIRS = 12/);
+  assert.match(chairs, /Math\.min\(MAX_VISIBLE_CHAIRS, Math\.max\(0, Math\.floor\(seats\)\)\)/);
+  assert.match(chairs, /shape === "rect"[\s\S]*rectChairs\(visibleCount\)[\s\S]*roundChair/);
+  assert.match(chairs, /aria-hidden="true"/);
 });
 
 test("restaurant register keeps settlement receipts and counter screens on the same device", async () => {
@@ -979,4 +999,43 @@ test("cancelOrder จากหลังบ้านต้องปฏิเส�
     fn.indexOf("dineIn.rowCount") < fn.indexOf("cancelOrderInTx"),
     "ต้องตรวจก่อนแตะสถานะบิล ไม่ใช่ยกเลิกไปแล้วค่อยบ่น"
   );
+});
+
+test("กลุ่มตัวเลือกแบบเลือกได้อันเดียวต้องเปลี่ยนใจได้ และเมนูหลายไซซ์ต้องเลือกไซซ์ได้", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+
+  // ⚠️ เพดานจำนวนใช้กับกลุ่มที่เลือกได้หลายอย่างเท่านั้น — กลุ่ม SINGLE ที่ตั้ง max_select = 1
+  // (ค่าปกติของกลุ่มอย่าง "ระดับความเผ็ด") เคยทำให้ตัวเลือกที่เหลือถูก disabled ทั้งหมด
+  // ทันทีที่มีตัวถูกเลือก แล้วเปลี่ยนใจไม่ได้เลย (เจอจริงบน production)
+  assert.match(page, /const atLimit = !single && meta\.maxSelect != null/);
+  assert.doesNotMatch(page, /const atLimit = meta\.maxSelect != null/);
+
+  // ไซซ์ต้องเลือกได้ในกล่อง ไม่ใช่ถูกเลือกให้เงียบ ๆ แล้วโยนที่เหลือทิ้ง
+  assert.match(page, /function pickMenuSize\(size: string\)/);
+  assert.match(page, /const \[menuSource, setMenuSource\]/);
+  assert.match(page, /\(menuSource\?\.availableSizes\.length \?\? 0\) > 1/);
+  assert.match(page, /name="menu-size"/);
+
+  // เปลี่ยนไซซ์ต้อง re-scan แล้วรีเซ็ตตัวเลือกเป็นค่าปริยายของไซซ์ใหม่ —
+  // ตัวเลือกผูกกับ (sku, ไซซ์) ยกของเดิมมาใช้ต่อ = ส่งรหัสที่ไซซ์ใหม่ไม่รู้จักให้ server
+  const load = page.slice(page.indexOf("async function loadMenuHit"), page.indexOf("async function chooseMenu"));
+  assert.match(load, /\/api\/pos\/scan\?code=/);
+  assert.match(load, /defaultSelected/);
+
+  // ⚠️ ห้ามคัดไซซ์ที่เลือกได้ด้วยสต็อก — เมนู RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0
+  // ตามดีไซน์ (9.51/9.52) กรองด้วยสต็อกแล้วอาหารเกือบทุกจานจะไม่มีไซซ์ให้เลือกสักอัน
+  const sizeChips = page.slice(page.indexOf('<span className={styles.fieldLabel}>ขนาด'), page.indexOf('<span className={styles.fieldLabel}>จำนวน'));
+  assert.doesNotMatch(sizeChips, /variant\.available/,
+    "ชิปไซซ์ห้ามอ่านสต็อกของไซซ์นั้น");
+  assert.doesNotMatch(sizeChips, /disabled/,
+    "ห้ามปิดไซซ์ไหนด้วยสต็อก — RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0 ตามดีไซน์");
+
+  // ⚠️ ปุ่มเลือกไซซ์จะเป็นแค่ปุ่มหลอกถ้า server ไม่เคารพไซซ์ที่ขอมา — `resolvePosScan`
+  // หาไซซ์จาก `bms_inventory` เป็นหลัก แต่เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองมีแค่แถวใน
+  // `bms_product_variants` (upsertProduct ไม่เคยสร้างแถวสต็อก) ถ้าไม่มีกิ่งนี้ การขอไซซ์
+  // ที่ไม่ใช่ min(code) จะได้ไซซ์อื่นกลับมาเงียบ ๆ (พิสูจน์กับ dev DB แล้ว: ขอ 'L' ได้ 'S')
+  const pos = code(await read("apps/web/lib/bms/pos.ts"));
+  const sizeCoalesce = pos.slice(pos.indexOf("            COALESCE("), pos.indexOf("AS size"));
+  assert.match(sizeCoalesce, /FROM bms_product_variants variant[\s\S]*?upper\(variant\.code\) = upper\(\$3::text\)/,
+    "resolvePosScan ต้องยอมรับไซซ์ที่ขอมาจากแคตตาล็อกด้วย ไม่ใช่จากตารางสต็อกอย่างเดียว");
 });

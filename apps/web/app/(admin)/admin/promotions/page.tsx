@@ -1,0 +1,223 @@
+"use client";
+
+import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
+import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Select, Space, Table, Tag, message } from "antd";
+import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { useState } from "react";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
+import styles from "./page.module.css";
+
+const Q_PROMOTIONS = gql`
+  query ProductPromotions($locationId: ID, $includeInactive: Boolean) {
+    bmsPromotionLocations { id code name branchCode active }
+    bmsProductPromotions(locationId: $locationId, includeInactive: $includeInactive) {
+      id productSku productName locationId locationName
+      kind buyQty getQty bundlePrice active startsAt endsAt note updatedAt
+    }
+  }
+`;
+const Q_PRODUCTS = gql`
+  query PromotionProducts($search: String) {
+    bmsProducts(search: $search, limit: 30, offset: 0) { items { sku name } }
+  }
+`;
+const M_UPSERT = gql`
+  mutation UpsertPromotion($input: BmsProductPromotionInput!) {
+    bmsUpsertProductPromotion(input: $input) { id productSku locationId kind }
+  }
+`;
+const M_DEACTIVATE = gql`
+  mutation DeactivatePromotion($id: ID!) { bmsDeactivateProductPromotion(id: $id) }
+`;
+
+type PromotionRow = {
+  id: string; productSku: string; productName: string | null;
+  locationId: string | null; locationName: string | null;
+  kind: "BUY_X_GET_Y" | "N_FOR_PRICE";
+  buyQty: number; getQty: number | null; bundlePrice: number | null;
+  active: boolean; startsAt: string | null; endsAt: string | null; note: string | null; updatedAt: string;
+};
+
+const ALL_BRANCHES = "__ALL__";
+
+export default function PromotionsPage() {
+  const { t, lang } = useI18n();
+  const { can, loading: permsLoading } = useBmsPermissions();
+  const canView = can("product.view");
+  const canEdit = can("product.edit");
+  const [filterLocation, setFilterLocation] = useState<string | null>(null);
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [form] = Form.useForm();
+
+  const list = useQuery(Q_PROMOTIONS, {
+    skip: !canView,
+    variables: { locationId: filterLocation, includeInactive },
+    fetchPolicy: "cache-and-network",
+  });
+  const [loadProducts, products] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
+  const [upsert, upsertState] = useMutation(M_UPSERT);
+  const [deactivate] = useMutation(M_DEACTIVATE);
+
+  const kind = Form.useWatch("kind", form) ?? "N_FOR_PRICE";
+
+  if (!permsLoading && !canView) {
+    return <Alert closable type="error" showIcon message={t("admin_promotions.no_permission")} />;
+  }
+
+  const locations = (list.data?.bmsPromotionLocations ?? []).filter((l: any) => l.active);
+  const rows: PromotionRow[] = list.data?.bmsProductPromotions ?? [];
+  const productRows: Array<{ sku: string; name: string }> = products.data?.bmsProducts?.items ?? [];
+
+  async function submit() {
+    const values = await form.validateFields().catch(() => null);
+    if (!values || !selectedSku) return;
+    const locationId = values.locationId === ALL_BRANCHES ? null : values.locationId ?? null;
+    try {
+      await upsert({
+        variables: {
+          input: {
+            productSku: selectedSku,
+            locationId,
+            kind: values.kind,
+            buyQty: values.buyQty,
+            getQty: values.kind === "BUY_X_GET_Y" ? values.getQty : null,
+            bundlePrice: values.kind === "N_FOR_PRICE" ? values.bundlePrice : null,
+            startsAt: values.startsAt ? values.startsAt.toISOString() : null,
+            endsAt: values.endsAt ? values.endsAt.toISOString() : null,
+            note: values.note?.trim() || null,
+          },
+        },
+      });
+      form.resetFields(["buyQty", "getQty", "bundlePrice", "startsAt", "endsAt", "note"]);
+      await list.refetch();
+      message.success(t("admin_promotions.saved"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("admin_promotions.save_failed"));
+    }
+  }
+
+  async function stop(row: PromotionRow) {
+    try {
+      await deactivate({ variables: { id: row.id } });
+      await list.refetch();
+      message.success(t("admin_promotions.stopped"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("admin_promotions.save_failed"));
+    }
+  }
+
+  function describe(row: PromotionRow) {
+    return row.kind === "BUY_X_GET_Y"
+      ? t("admin_promotions.describe_buy_x").replace("{buy}", String(row.buyQty)).replace("{get}", String(row.getQty ?? 0))
+      : t("admin_promotions.describe_n_for").replace("{qty}", String(row.buyQty)).replace("{price}", Number(row.bundlePrice ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 }));
+  }
+
+  return <main className={styles.page}>
+    <section className={styles.hero}>
+      <h1>{t("admin_promotions.title")}</h1>
+      <p>{t("admin_promotions.subtitle")}</p>
+    </section>
+    {!canEdit && <Alert closable type="info" showIcon message={t("admin_promotions.read_only")} />}
+    <Alert type="info" showIcon closable message={t("admin_promotions.scope_hint")} />
+    <div className={styles.grid}>
+      <Card title={t("admin_promotions.form_title")}>
+        <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onPressEnter={() => loadProducts({ variables: { search: search.trim() } })}
+            placeholder={t("admin_promotions.search_product")}
+          />
+          <Button icon={<SearchOutlined />} loading={products.loading} onClick={() => loadProducts({ variables: { search: search.trim() } })} />
+        </Space.Compact>
+        {productRows.length > 0 && <Select
+          style={{ width: "100%", marginBottom: 14 }} showSearch optionFilterProp="label"
+          placeholder={t("admin_promotions.select_product")} value={selectedSku}
+          onChange={(sku) => setSelectedSku(sku)}
+          options={productRows.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
+        />}
+        <Form form={form} layout="vertical" disabled={!canEdit || !selectedSku} initialValues={{ kind: "N_FOR_PRICE", locationId: ALL_BRANCHES, buyQty: 3 }}>
+          <Form.Item name="locationId" label={t("admin_promotions.scope")} rules={[{ required: true }]}>
+            <Select options={[
+              { value: ALL_BRANCHES, label: t("admin_promotions.scope_all") },
+              ...locations.map((l: any) => ({ value: l.id, label: `${l.branchCode} · ${l.name}` })),
+            ]} />
+          </Form.Item>
+          <Form.Item name="kind" label={t("admin_promotions.kind")} rules={[{ required: true }]}>
+            <Select options={[
+              { value: "N_FOR_PRICE", label: t("admin_promotions.kind_n_for") },
+              { value: "BUY_X_GET_Y", label: t("admin_promotions.kind_buy_x") },
+            ]} />
+          </Form.Item>
+          <Form.Item name="buyQty" label={kind === "BUY_X_GET_Y" ? t("admin_promotions.buy_qty") : t("admin_promotions.bundle_qty")} rules={[{ required: true }]}>
+            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          {kind === "BUY_X_GET_Y"
+            ? <Form.Item name="getQty" label={t("admin_promotions.get_qty")} rules={[{ required: true }]}>
+                <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+              </Form.Item>
+            : <Form.Item name="bundlePrice" label={t("admin_promotions.bundle_price")} rules={[{ required: true }]}>
+                <InputNumber min={0} precision={2} style={{ width: "100%" }} />
+              </Form.Item>}
+          <Form.Item name="startsAt" label={t("admin_promotions.starts_at")}><DatePicker showTime style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="endsAt" label={t("admin_promotions.ends_at")}><DatePicker showTime style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="note" label={t("admin_promotions.note")}><Input.TextArea rows={2} maxLength={300} /></Form.Item>
+          <Button block type="primary" loading={upsertState.loading} onClick={() => void submit()}>{t("admin_promotions.save")}</Button>
+        </Form>
+      </Card>
+
+      <Card
+        title={t("admin_promotions.list_title")}
+        extra={<Space>
+          <Select
+            style={{ minWidth: 190 }} value={filterLocation ?? ALL_BRANCHES}
+            onChange={(value) => setFilterLocation(value === ALL_BRANCHES ? null : value)}
+            options={[
+              { value: ALL_BRANCHES, label: t("admin_promotions.filter_all") },
+              ...locations.map((l: any) => ({ value: l.id, label: `${l.branchCode} · ${l.name}` })),
+            ]}
+          />
+          <Button onClick={() => setIncludeInactive((prev) => !prev)}>
+            {includeInactive ? t("admin_promotions.hide_stopped") : t("admin_promotions.show_stopped")}
+          </Button>
+          <Button icon={<ReloadOutlined />} loading={list.loading} onClick={() => list.refetch()} />
+        </Space>}
+      >
+        {list.error && <Alert closable type="error" showIcon message={list.error.message} style={{ marginBottom: 12 }} />}
+        <Table rowKey="id" loading={list.loading} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
+          {
+            title: t("admin_promotions.product"),
+            render: (_: unknown, row: PromotionRow) => <><strong>{row.productName ?? row.productSku}</strong><br /><small>{row.productSku}</small></>,
+          },
+          {
+            title: t("admin_promotions.scope"),
+            width: 180,
+            render: (_: unknown, row: PromotionRow) => row.locationId
+              ? <Tag color="purple">{row.locationName ?? row.locationId}</Tag>
+              : <Tag>{t("admin_promotions.scope_all")}</Tag>,
+          },
+          { title: t("admin_promotions.deal"), render: (_: unknown, row: PromotionRow) => <span className={styles.saving}>{describe(row)}</span> },
+          {
+            title: t("admin_promotions.window"),
+            render: (_: unknown, row: PromotionRow) => {
+              const fmt = (value: string | null) => value
+                ? new Date(value).toLocaleString(lang === "th" ? "th-TH" : "en-GB", { dateStyle: "short", timeStyle: "short" })
+                : "—";
+              return <small>{fmt(row.startsAt)} → {fmt(row.endsAt)}</small>;
+            },
+          },
+          {
+            title: "",
+            width: 110,
+            render: (_: unknown, row: PromotionRow) => row.active
+              ? <Button size="small" danger disabled={!canEdit} onClick={() => void stop(row)}>{t("admin_promotions.stop")}</Button>
+              : <Tag>{t("admin_promotions.stopped_tag")}</Tag>,
+          },
+        ]} />
+      </Card>
+    </div>
+  </main>;
+}

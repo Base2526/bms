@@ -382,4 +382,41 @@ export function applyPromotion(basePrice: number, qty: number, promo: Promotion 
   return { amount, freeQty: 0, saved: round2(full - amount) };
 }
 
+/**
+ * โปรที่ใช้ได้จริง ณ สาขาหนึ่ง ๆ (9.61)
+ *
+ * แถวโปรมีได้สองขอบเขต: `locationId === null` = ทั้งร้าน · มีค่า = สาขานั้นสาขาเดียว
+ * **โปรของสาขาทับโปรของส่วนกลางเสมอ** — สาขาที่ลงมือตั้งเองคือคนที่ตัดสินใจล่าสุด
+ * และเป็นคำตอบเดียวที่พนักงานอธิบายลูกค้าได้ในประโยคเดียว
+ *
+ * ห้ามเปลี่ยนเป็น "เลือกอันที่ถูกกว่า" — ราคาที่ถูกกว่าขึ้นกับจำนวนที่ลูกค้าหยิบ
+ * (ซื้อ 2 แถม 1 กับ 3 ชิ้น 100 สลับกันชนะตามจำนวน) ผลคือบิลเดียวกันคิดคนละโปร
+ * ตามจำนวนที่หยิบ ซึ่งอธิบายที่เคาน์เตอร์ไม่ได้ · การเทียบกับ "ราคาปกติ" ยังทำอยู่
+ * ที่ applyPromotion เหมือนเดิม
+ *
+ * ตั้งใจอยู่ในไฟล์นี้เพราะทั้ง orders.ts (ตอน commit) และ pos.ts (ตอนพรีวิวที่จอ)
+ * ต้องเลือกโปรตัวเดียวกัน — สองสูตรจะ drift แล้วจอกับ server คิดคนละยอด = PAYMENT_MISMATCH
+ */
+export type ScopedPromotion = {
+  /** null = โปรทั้งร้าน */
+  locationId: string | null;
+  promotion: Promotion;
+};
+
+export function pickPromotionForLocation(
+  scoped: readonly ScopedPromotion[],
+  locationId: string | null | undefined
+): Promotion | null {
+  let storeWide: Promotion | null = null;
+  for (const row of scoped) {
+    if (row.locationId == null) {
+      storeWide = row.promotion;
+      continue;
+    }
+    // ไม่รู้ว่าขายที่สาขาไหน = ใช้โปรรายสาขาไม่ได้ (เดาสาขาแล้วคิดเงินผิดแย่กว่าไม่ลด)
+    if (locationId && row.locationId === locationId) return row.promotion;
+  }
+  return storeWide;
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;

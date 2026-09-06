@@ -1,0 +1,905 @@
+<title>BMS Feature Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+/* ─── Tokens ─── */
+:root {
+  --bg:        #0D1117;
+  --surface:   #161B22;
+  --raise:     #1C2330;
+  --border:    rgba(255,255,255,0.07);
+  --border-m:  rgba(255,255,255,0.12);
+  --text:      #E2E8F0;
+  --muted:     #8B97A8;
+  --dim:       #5A6577;
+
+  --ai:        #3B82F6;
+  --ai-bg:     rgba(59,130,246,0.10);
+  --pos:       #E8622A;
+  --pos-bg:    rgba(232,98,42,0.10);
+  --rest:      #0D9488;
+  --rest-bg:   rgba(13,148,136,0.10);
+  --branch:    #8B5CF6;
+  --branch-bg: rgba(139,92,246,0.10);
+  --stock:     #D97706;
+  --stock-bg:  rgba(217,119,6,0.10);
+  --sales:     #EC4899;
+  --sales-bg:  rgba(236,72,153,0.10);
+  --crm:       #10B981;
+  --crm-bg:    rgba(16,185,129,0.10);
+  --report:    #6366F1;
+  --report-bg: rgba(99,102,241,0.10);
+  --pharma:    #9333EA;
+  --pharma-bg: rgba(147,51,234,0.10);
+  --sys:       #475569;
+  --sys-bg:    rgba(71,85,105,0.12);
+
+  --ok:        #22C55E;
+  --ok-bg:     rgba(34,197,94,0.10);
+  --setup:     #F59E0B;
+  --setup-bg:  rgba(245,158,11,0.10);
+  --beta:      #A78BFA;
+  --beta-bg:   rgba(167,139,250,0.10);
+  --planned:   #64748B;
+  --planned-bg:rgba(100,116,139,0.10);
+  --warn:      #EF4444;
+  --warn-bg:   rgba(239,68,68,0.08);
+
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Sarabun', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:       #F1F5F9;
+    --surface:  #FFFFFF;
+    --raise:    #F8FAFC;
+    --border:   rgba(0,0,0,0.07);
+    --border-m: rgba(0,0,0,0.12);
+    --text:     #1E293B;
+    --muted:    #64748B;
+    --dim:      #94A3B8;
+    --ai-bg:    rgba(59,130,246,0.07);
+    --pos-bg:   rgba(232,98,42,0.07);
+    --rest-bg:  rgba(13,148,136,0.07);
+    --branch-bg:rgba(139,92,246,0.07);
+    --stock-bg: rgba(217,119,6,0.07);
+    --sales-bg: rgba(236,72,153,0.07);
+    --crm-bg:   rgba(16,185,129,0.07);
+    --report-bg:rgba(99,102,241,0.07);
+    --pharma-bg:rgba(147,51,234,0.07);
+    --sys-bg:   rgba(71,85,105,0.07);
+    --ok-bg:    rgba(34,197,94,0.08);
+    --setup-bg: rgba(245,158,11,0.08);
+    --beta-bg:  rgba(167,139,250,0.08);
+    --planned-bg:rgba(100,116,139,0.08);
+    --warn-bg:  rgba(239,68,68,0.06);
+  }
+}
+:root[data-theme="light"] {
+    --bg:       #F1F5F9;
+    --surface:  #FFFFFF;
+    --raise:    #F8FAFC;
+    --border:   rgba(0,0,0,0.07);
+    --border-m: rgba(0,0,0,0.12);
+    --text:     #1E293B;
+    --muted:    #64748B;
+    --dim:      #94A3B8;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Layout ─── */
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* ─── Hero ─── */
+.hero {
+  padding: 56px 0 40px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.hero-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.hero h1 {
+  margin: 0 0 8px;
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 700;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.hero-sub {
+  color: var(--muted);
+  font-size: 16px;
+  margin: 0 auto 36px;
+  max-width: 620px;
+}
+
+/* ─── Pipeline Flow ─── */
+.pipeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 48px;
+}
+.pipe-step {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.pipe-node {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--border-m);
+  background: var(--surface);
+  transition: transform .15s;
+}
+.pipe-node:hover { transform: translateY(-2px); }
+.pipe-node.n-ai    { color: var(--ai);    background: var(--ai-bg);    border-color: var(--ai); }
+.pipe-node.n-crm   { color: var(--crm);   background: var(--crm-bg);   border-color: var(--crm); }
+.pipe-node.n-order { color: var(--pos);   background: var(--pos-bg);   border-color: var(--pos); }
+.pipe-node.n-stock { color: var(--stock); background: var(--stock-bg); border-color: var(--stock); }
+.pipe-node.n-pay   { color: var(--sales); background: var(--sales-bg); border-color: var(--sales); }
+.pipe-node.n-ship  { color: var(--rest);  background: var(--rest-bg);  border-color: var(--rest); }
+.pipe-node.n-dash  { color: var(--report);background: var(--report-bg);border-color: var(--report); }
+.pipe-arrow {
+  color: var(--dim);
+  font-size: 18px;
+  padding: 0 6px;
+  user-select: none;
+}
+
+/* ─── Stats bar ─── */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 48px;
+}
+.stat {
+  background: var(--surface);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat-num {
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text);
+}
+.stat-label { font-size: 12px; color: var(--muted); line-height: 1.3; }
+
+/* ─── Status legend ─── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 40px;
+  align-items: center;
+}
+.legend-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.badge-ok     { background: var(--ok-bg);      color: var(--ok);      border: 1px solid rgba(34,197,94,.2); }
+.badge-setup  { background: var(--setup-bg);   color: var(--setup);   border: 1px solid rgba(245,158,11,.2); }
+.badge-beta   { background: var(--beta-bg);    color: var(--beta);    border: 1px solid rgba(167,139,250,.2); }
+.badge-planned{ background: var(--planned-bg); color: var(--planned); border: 1px solid rgba(100,116,139,.2); }
+.badge-warn   { background: var(--warn-bg);    color: var(--warn);    border: 1px solid rgba(239,68,68,.2); }
+
+/* ─── Section heading ─── */
+.section-head {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ─── Module grid ─── */
+.modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  margin-bottom: 40px;
+}
+
+/* ─── Module card ─── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.card-title { font-size: 15px; font-weight: 700; margin: 0 0 2px; line-height: 1.2; }
+.card-desc  { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.4; }
+
+.card-body { padding: 14px 20px 18px; flex: 1; }
+
+/* Feature rows */
+.feat-list { display: flex; flex-direction: column; gap: 7px; }
+.feat {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.feat-status { flex-shrink: 0; margin-top: 1px; }
+.feat-text { color: var(--text); }
+.feat-text strong { font-weight: 600; }
+.feat-sub { font-size: 11px; color: var(--muted); display: block; margin-top: 1px; }
+
+/* Status dots */
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; margin-top: 4px; }
+.dot-ok      { background: var(--ok); }
+.dot-setup   { background: var(--setup); }
+.dot-beta    { background: var(--beta); }
+.dot-planned { background: var(--planned); }
+
+/* Accent left border per domain */
+.card.ai      { border-left: 3px solid var(--ai);     }
+.card.pos     { border-left: 3px solid var(--pos);    }
+.card.rest    { border-left: 3px solid var(--rest);   }
+.card.branch  { border-left: 3px solid var(--branch); }
+.card.stock   { border-left: 3px solid var(--stock);  }
+.card.sales   { border-left: 3px solid var(--sales);  }
+.card.crm     { border-left: 3px solid var(--crm);    }
+.card.report  { border-left: 3px solid var(--report); }
+.card.pharma  { border-left: 3px solid var(--pharma); }
+.card.sys     { border-left: 3px solid var(--sys);    }
+
+/* Icon backgrounds */
+.icon-ai     { background: var(--ai-bg);     color: var(--ai);     }
+.icon-pos    { background: var(--pos-bg);    color: var(--pos);    }
+.icon-rest   { background: var(--rest-bg);   color: var(--rest);   }
+.icon-branch { background: var(--branch-bg); color: var(--branch); }
+.icon-stock  { background: var(--stock-bg);  color: var(--stock);  }
+.icon-sales  { background: var(--sales-bg);  color: var(--sales);  }
+.icon-crm    { background: var(--crm-bg);    color: var(--crm);    }
+.icon-report { background: var(--report-bg); color: var(--report); }
+.icon-pharma { background: var(--pharma-bg); color: var(--pharma); }
+.icon-sys    { background: var(--sys-bg);    color: var(--sys);    }
+
+/* Capability mini-bar */
+.cap-bar {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.cap-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-m);
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* ─── Status summary pills row ─── */
+.status-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+  align-items: center;
+}
+.ss-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+.ss-num { font-family: var(--mono); font-size: 22px; font-weight: 500; }
+.ss-label { font-size: 12px; color: var(--muted); }
+
+/* ─── Warning section ─── */
+.warn-section {
+  background: var(--surface);
+  border: 1px solid rgba(239,68,68,.2);
+  border-left: 3px solid var(--warn);
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin-bottom: 40px;
+}
+.warn-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--warn);
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.warn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.warn-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+}
+.warn-topic { font-weight: 600; color: var(--text); }
+.warn-detail { color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+/* ─── Go-live block ─── */
+.golive {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin-bottom: 56px;
+}
+.golive-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--setup);
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.env-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.env-row {
+  background: var(--raise);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.env-key {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--setup);
+}
+.env-val { font-size: 12px; color: var(--muted); }
+
+/* ─── Footer ─── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+footer strong { color: var(--muted); }
+
+@media (max-width: 600px) {
+  .pipeline { gap: 0; }
+  .pipe-arrow { font-size: 14px; padding: 0 3px; }
+  .pipe-node { padding: 6px 10px; font-size: 11px; }
+  .modules { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="wrap">
+
+  <!-- ─── Hero ─── -->
+  <header class="hero">
+    <span class="hero-eyebrow">ทะเบียนฟีเจอร์ · อัปเดต 6 ก.ย. 2026</span>
+    <h1>BMS — ระบบทำอะไรได้บ้าง</h1>
+    <p class="hero-sub">ภาพรวมทุกฟีเจอร์พร้อมสถานะจริง สำหรับทีมพัฒนาและทีมขาย<br>AI ไม่เคยแตะฐานข้อมูลโดยตรง — เรียกได้แค่ 77 เครื่องมือที่ผ่านการอนุมัติ</p>
+
+    <!-- Flow pipeline -->
+    <div class="pipeline">
+      <div class="pipe-step"><span class="pipe-node">ลูกค้า</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-ai">AI</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-crm">CRM</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-order">ออร์เดอร์</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-stock">สต็อก</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-pay">ชำระเงิน</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-ship">จัดส่ง</span><span class="pipe-arrow">→</span></div>
+      <div class="pipe-step"><span class="pipe-node n-dash">แดชบอร์ด</span></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat"><span class="stat-num">46</span><span class="stat-label">ความสามารถในแคตตาล็อก</span></div>
+      <div class="stat"><span class="stat-num">103</span><span class="stat-label">คู่มือในตัวระบบ</span></div>
+      <div class="stat"><span class="stat-num">77</span><span class="stat-label">เครื่องมือที่ AI เรียกได้</span></div>
+      <div class="stat"><span class="stat-num">66</span><span class="stat-label">หน้าหลังบ้าน</span></div>
+      <div class="stat"><span class="stat-num">248</span><span class="stat-label">migration</span></div>
+      <div class="stat"><span class="stat-num">841</span><span class="stat-label">เทสต่อ PR</span></div>
+    </div>
+  </header>
+
+  <!-- ─── Legend + status summary ─── -->
+  <div style="padding: 32px 0 0;">
+    <div class="legend">
+      <span class="legend-label">สถานะ:</span>
+      <span class="badge badge-ok">✅ พร้อมใช้</span>
+      <span class="badge badge-setup">⚙️ ต้องตั้งค่าก่อน</span>
+      <span class="badge badge-beta">🧪 ยังไม่พิสูจน์</span>
+      <span class="badge badge-planned">📋 ยังไม่มี</span>
+    </div>
+
+    <div class="status-summary">
+      <div class="ss-pill"><span class="ss-num" style="color:var(--ok)">21</span><span class="ss-label">พร้อมใช้</span></div>
+      <div class="ss-pill"><span class="ss-num" style="color:var(--setup)">21</span><span class="ss-label">ต้องตั้งค่าก่อน</span></div>
+      <div class="ss-pill"><span class="ss-num" style="color:var(--beta)">3</span><span class="ss-label">เบต้า</span></div>
+      <div class="ss-pill"><span class="ss-num" style="color:var(--planned)">1</span><span class="ss-label">จำลอง</span></div>
+    </div>
+  </div>
+
+  <!-- ─── Module cards ─── -->
+  <p class="section-head">โมดูลทั้งหมด</p>
+  <div class="modules">
+
+    <!-- 1. AI & Inbox -->
+    <div class="card ai">
+      <div class="card-header">
+        <div class="card-icon icon-ai">💬</div>
+        <div>
+          <p class="card-title">AI และกล่องข้อความลูกค้า</p>
+          <p class="card-desc">LINE · Facebook · Instagram · TikTok · เว็บวิดเจ็ต · Shopee/Lazada (เบต้า)</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-setup feat-status"></span><span class="feat-text"><strong>กล่องข้อความรวมทุกช่องทาง</strong> — มอบหมายงาน ติดแท็ก โน้ต ค้นหา ไฟล์แนบ</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>AI ตอบลูกค้าและปิดการขายในแชท</strong> — เรียกได้แค่ 77 เครื่องมือที่ลงทะเบียน ห้ามแต่งเลขสต็อก/ราคา</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ยืนยันรายการก่อนสร้างบิลเสมอ</strong> — คืน CONFIRMATION_REQUIRED เซิร์ฟเวอร์ประกอบสรุปเอง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ผู้ช่วยงานสำหรับพนักงาน</strong> — Drawer ทุกหน้า งานอ่อนไหว = เสนอ ไม่ทำเอง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ตรวจคุณภาพคำตอบ AI</strong></span></div>
+          <div class="feat"><span class="dot dot-setup feat-status"></span><span class="feat-text"><strong>โควตา/ต้นทุน/เครดิต AI</strong> — 3 มิติ: เครดิต · จำนวนครั้ง · ต้นทุนจริง USD</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ร้านใส่ API key ของตัวเอง (BYOK)</strong> — คีย์เข้ารหัสก่อนเก็บ</span></div>
+          <div class="feat"><span class="dot dot-setup feat-status"></span><span class="feat-text"><strong>ตามลูกค้าอัตโนมัติ</strong> — ตั้งกฎ + คิวมีคะแนน + สรุปผล 30 วัน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>เครื่องยนต์ดึงลูกค้ากลับ</strong> — RFM/ความเสี่ยง · เดาสินค้าถัดไป · กลุ่มควบคุม · นับ conversion 30 วัน</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">pipeline.ts</span>
+          <span class="cap-pill">/admin/inbox</span>
+          <span class="cap-pill">/admin/ai-quality</span>
+          <span class="cap-pill">/admin/followup-queue</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. POS General -->
+    <div class="card pos">
+      <div class="card-header">
+        <div class="card-icon icon-pos">🏪</div>
+        <div>
+          <p class="card-title">เครื่องขายหน้าร้าน — ร้านทั่วไป</p>
+          <p class="card-desc">มินิมาร์ท · แฟชั่น · ค้าส่ง · วัสดุก่อสร้าง · สัตว์เลี้ยง · ร้านยา</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ขาย · คืน · คืนเงิน · ปิดกะ · หลายกะ/เครื่อง</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>device token + PIN แคชเชียร์</strong> — ไม่ใช่คุกกี้เบราว์เซอร์</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>พักบิล · เงินเข้า-ออกลิ้นชัก · ยกเลิกบิล (void)</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>Blind close · No-sale · รายงานกะ X/Z</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>Scan Manager</strong> — Bluetooth PREFIX ไม่เดาจากความเร็วพิมพ์</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ราคาส่งตามจำนวน</strong> — นับรวมทั้งบิลต่อ SKU</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ซื้อ X แถม Y · สินค้าชุด · ค่าบริการไม่ใช่สต็อก</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>มัดจำ/ค้างชำระ · บัตรของขวัญ · เครดิตร้าน</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ขายเชื่อ + ลูกหนี้การค้า (AR)</strong> — วงเงิน · อายุหนี้</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สมาชิก · ระดับชั้น · แต้มสะสม</strong> — แต้มเป็น ledger</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ใบกำกับภาษีอย่างย่อ/เต็ม · ใบลดหนี้</strong> — เอกสารแก้ไม่ได้</span></div>
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>คิวยื่น e-Tax</strong> — ปิดโดยค่าเริ่มต้น ยังไม่มี provider ตัวจริง</span></div>
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>พิมพ์ ESC/POS + เปิดลิ้นชัก</strong> — เขียนแล้ว ไม่เคยยิงเครื่องจริง</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">/pos</span>
+          <span class="cap-pill">mig 7.84–9.5</span>
+          <span class="cap-pill">/admin/receivables</span>
+          <span class="cap-pill">/admin/loyalty</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Restaurant POS -->
+    <div class="card rest">
+      <div class="card-header">
+        <div class="card-icon icon-rest">🍽️</div>
+        <div>
+          <p class="card-title">เครื่องขายร้านอาหารและคาเฟ่</p>
+          <p class="card-desc">เลือกอัตโนมัติเฉพาะร้านที่ตั้งประเภทเป็น restaurant</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ผังโต๊ะ</strong> — จัดโซน ชื่อโต๊ะ จำนวนที่นั่ง ลากวางพิกัด</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>บิลโต๊ะ</strong> — เปิดโต๊ะ · สั่งเป็นรอบ · ย้ายโต๊ะ · แบ่งจ่าย</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ส่งครัวเป็นรอบ</strong> — จองวัตถุดิบตอนส่งครัว ไม่ใช่ตอนจ่ายเงิน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>จอครัว (KDS) + สถานีครัว</strong> — ครัวร้อน/เย็น/บาร์ เกณฑ์เวลารายสถานี เสียงเตือน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>QR สั่งเองที่โต๊ะ</strong> — พนักงานกด PIN รับก่อนเข้าครัว</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สั่งผ่านแชท + เดลิเวอรี่</strong> — ต้องเลือกสาขา + รับเอง/ส่ง ก่อนจ่าย</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>"หมดวันนี้"</strong> — ปิดเมนูรายสาขา รีเซ็ตเองตามเวลาร้าน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>NON_STOCK</strong> — ขายได้ทันทีไม่ผูกสูตร ใช้ cost_price คิดกำไร</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">/pos/restaurant</span>
+          <span class="cap-pill">mig 9.44–9.60</span>
+          <span class="cap-pill">/admin/kitchen</span>
+          <span class="cap-pill">/q/[token]</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Multi-branch -->
+    <div class="card branch">
+      <div class="card-header">
+        <div class="card-icon icon-branch">🏢</div>
+        <div>
+          <p class="card-title">หลายสาขา</p>
+          <p class="card-desc">สาขาเป็นข้อมูลปฏิบัติการ ไม่ใช่แค่ข้อความบนหน้าจอ</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ทะเบียนสาขา</strong> — รหัสห้ามซ้ำ · 00000 สงวนให้สำนักงานใหญ่ · สาขาใหม่เริ่มด้วยสต็อกว่าง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สต็อกแยกสาขา + โอนย้าย 2 ขั้น</strong> — ของระหว่างทางไม่เป็นของสาขาไหน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ของกักกัน + ของหายระหว่างโอน</strong> — แยกออกจากยอดที่ POS ใช้ขาย</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>คืนสินค้าข้ามสาขา</strong> — สิทธิ์ pos.return.cross_branch (Manager เท่านั้น)</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>โปรโมชันแยกสาขา</strong> — โปรสาขาทับโปรส่วนกลาง · หยุด = ปิด ไม่ใช่ลบ</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>คูปองเฉพาะสาขา</strong> — ตรวจทั้งตอนพรีวิวและตอนสร้างบิล</span></div>
+          <div class="feat"><span class="dot dot-setup feat-status"></span><span class="feat-text"><strong>พนักงานผูกสาขา</strong> — ยังไม่ครบทุกหน้า</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">mig 7.98, 9.1</span>
+          <span class="cap-pill">/admin/locations</span>
+          <span class="cap-pill">/admin/stock-transfers</span>
+          <span class="cap-pill">/admin/promotions</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Stock & Products -->
+    <div class="card stock">
+      <div class="card-header">
+        <div class="card-icon icon-stock">📦</div>
+        <div>
+          <p class="card-title">สินค้าและสต็อก</p>
+          <p class="card-desc">7 รูปแบบตัดสต็อก · ล็อต/FEFO · นำเข้า CSV</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>แคตตาล็อกสินค้า</strong> — ตัวเลือก/ไซซ์ · รูปหลายรูป · หมวดหมู่ · ราคาแยกไซซ์</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ช่องทางขายต้องประกาศ</strong> — RETAIL_POS · RESTAURANT_POS · CUSTOMER_AI · ONLINE_ORDER · สินค้าใหม่เป็นฉบับร่าง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>7 รูปแบบตัดสต็อก</strong> — DIRECT · PACK · BUNDLE · WEIGHTED · RECIPE · SERIALIZED · NON_STOCK</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ตัวเลือกเมนู (modifier)</strong> — ราคาส่วนต่างเป็นข้อมูลฝั่งเซิร์ฟเวอร์</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ล็อต + วันหมดอายุ + FEFO · ตัดของเสีย</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>บาร์โค้ด</strong> — ไม่ซ้ำต่อร้าน + ป้ายสติกเกอร์ + ป้ายเครื่องชั่ง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ใบสั่งซื้อผู้ขาย + รับของ</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>แนะนำสั่งซื้อ · เตือนของจะหมด · ของช้า/ของตาย</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>"ใครกำลังจองสต็อกนี้"</strong> — กดคอลัมน์ "จอง" เห็นเลขบิล+ลูกค้า</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">/admin/products</span>
+          <span class="cap-pill">mig 9.40–9.52</span>
+          <span class="cap-pill">/admin/purchase</span>
+          <span class="cap-pill">/admin/wastage</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Sales & Shipping -->
+    <div class="card sales">
+      <div class="card-header">
+        <div class="card-icon icon-sales">💸</div>
+        <div>
+          <p class="card-title">ขาย เงิน และจัดส่ง (หลังบ้าน)</p>
+          <p class="card-desc">วงจรออร์เดอร์ · คูปอง · ชำระเงิน · จัดส่ง</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>วงจรออร์เดอร์</strong> — พนักงานเปิดบิลเอง · ซื้อซ้ำ · ด่านตรวจที่อยู่ก่อนกดส่ง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>คูปอง/โค้ดส่วนลด</strong> — หมดอายุ · ยอดขั้นต่ำ · โควตารวม · เพดานต่อคน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>รับชำระเงินหลายวิธี</strong> — เงินสด · โอน · QR · บัตร · TikTok</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>AI อ่านสลิปโอนเงิน</strong> — เป็นความเห็นประกอบ คนยืนยัน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ลิงก์ชำระเงิน</strong> — เซ็นชื่อ ลูกค้าไม่ต้องมีบัญชี</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>จัดส่ง + ติดตามพัสดุ · ค่าส่งตามโซน/น้ำหนัก</strong></span></div>
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>จองพัสดุ Flash/Kerry</strong> — ชั้นความปลอดภัยพร้อม รอสัญญาจริง</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">/admin/orders</span>
+          <span class="cap-pill">/admin/coupons</span>
+          <span class="cap-pill">/admin/shipment</span>
+          <span class="cap-pill">/checkout</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. CRM -->
+    <div class="card crm">
+      <div class="card-header">
+        <div class="card-icon icon-crm">👥</div>
+        <div>
+          <p class="card-title">ลูกค้าและการตลาด</p>
+          <p class="card-desc">CRM ข้ามช่องทาง · Customer 360 · สมาชิก</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>CRM ข้ามช่องทาง</strong> — LINE + เบอร์โทรผูกโปรไฟล์เดียวกัน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>Customer 360</strong> — เปิดจากในแชทได้ทันที เห็นบิล แต้ม คูปอง เคสค้าง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>รวมลูกค้าซ้ำ</strong> — AI เสนอ คนกดยืนยัน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ที่อยู่หลายชุด · ประวัติซื้อรวมทุกช่องทาง</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สมาชิก + ระดับชั้น + แต้มสะสม</strong></span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">/admin/customers</span>
+          <span class="cap-pill">mig 3.6, 7.74</span>
+          <span class="cap-pill">/admin/loyalty</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. Reports -->
+    <div class="card report">
+      <div class="card-header">
+        <div class="card-icon icon-report">📊</div>
+        <div>
+          <p class="card-title">รายงานและข่าวกรองธุรกิจ</p>
+          <p class="card-desc">แดชบอร์ด · Action Center · ส่งออก XLSX/PDF</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>แดชบอร์ด + Action Center</strong> — งานที่ต้องทำวันนี้พร้อมหลักฐาน เป็นคำแนะนำ ไม่ลงมือเอง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>รายงานขาย · สต็อก · สินค้าขายดี · กำไรขั้นต้น</strong></span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ส่งออก XLSX · CSV · PDF</strong> — สั่งจากจอ GraphQL หรือให้ AI สั่ง</span></div>
+          <div class="feat"><span class="dot dot-setup feat-status"></span><span class="feat-text"><strong>ส่งสรุปยอดเข้าอีเมล/Slack/LINE</strong> — ตารางเวลาส่ง</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>Live dashboard สาธารณะ</strong> — ข้อมูลจริง</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">/admin/dashboard</span>
+          <span class="cap-pill">mig 9.12–9.14</span>
+          <span class="cap-pill">/admin/reports</span>
+          <span class="cap-pill">/live-dashboard</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. Pharmacy -->
+    <div class="card pharma">
+      <div class="card-header">
+        <div class="card-icon icon-pharma">💊</div>
+        <div>
+          <p class="card-title">ร้านยา <span class="badge badge-beta" style="font-size:11px;padding:2px 8px;">🧪 ปิดโดยค่าเริ่มต้น</span></p>
+          <p class="card-desc">AI ซักประวัติได้ — การตัดสินใจทางคลินิกเป็นของเภสัชกรผู้มีใบอนุญาตเท่านั้น</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>คิวเภสัชกร + ชุดคำถามซักประวัติ</strong></span></div>
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>หลักฐานทางคลินิก</strong> — รูปใบสั่งยา · เลขอ้างอิง · บันทึกคำแนะนำ</span></div>
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>เภสัชกรกด PIN อนุมัติที่เครื่องขาย</strong> — ด่านคือใบอนุญาต ไม่ใช่ permission</span></div>
+          <div class="feat"><span class="dot dot-beta feat-status"></span><span class="feat-text"><strong>ยาต้องใบสั่งแพทย์</strong> — เคาน์เตอร์เท่านั้น ออนไลน์บล็อกเสมอ</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">mig 7.57–7.83</span>
+          <span class="cap-pill">/admin/pharmacy-queue</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10. Platform & System -->
+    <div class="card sys">
+      <div class="card-header">
+        <div class="card-icon icon-sys">⚙️</div>
+        <div>
+          <p class="card-title">ระบบและแพลตฟอร์ม</p>
+          <p class="card-desc">Multi-tenant RLS · RBAC · Audit log · สองภาษา</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="feat-list">
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>หลายร้านบนระบบเดียว</strong> — แยกด้วย RLS ระดับฐานข้อมูล ไม่ใช่แค่โค้ด</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สิทธิ์ตามบทบาท</strong> — Administrator · Manager · Sales · Warehouse · Cashier</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>ผู้ดูแลแพลตฟอร์ม</strong> — เข้าดูร้านลูกค้าด้วยคุกกี้เซ็นชื่อ ไม่ปนข้อมูล</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>บันทึกการกระทำ (audit) + ประวัติแก้ไข</strong> — snapshot ก่อน UPDATE</span></div>
+          <div class="feat"><span class="dot dot-setup feat-status"></span><span class="feat-text"><strong>สุขภาพระบบ</strong> — Postgres · Redis · ช่องทาง · AI · ประวัติ cron</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สองภาษา ไทย/อังกฤษ + โหมดมืด</strong> — ตั้งได้รายคน</span></div>
+          <div class="feat"><span class="dot dot-ok feat-status"></span><span class="feat-text"><strong>สมัครร้านเอง</strong> — เลือกประเภท 13 แบบ + ข้อมูลตัวอย่าง · ล็อกหลังบิลจริงใบแรก</span></div>
+        </div>
+        <div class="cap-bar">
+          <span class="cap-pill">mig 4.0–5.8</span>
+          <span class="cap-pill">/admin/tenants</span>
+          <span class="cap-pill">/admin/permissions</span>
+          <span class="cap-pill">/shop-signup</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /modules -->
+
+  <!-- ─── Warning section ─── -->
+  <p class="section-head">⚠️ ยังไม่พร้อมใช้จริง — ต้องรู้ก่อนขาย</p>
+  <div class="warn-section">
+    <p class="warn-title">⚠️ อย่าสัญญากับลูกค้าว่าสิ่งเหล่านี้พร้อมแล้ว</p>
+    <div class="warn-grid">
+      <div class="warn-row">
+        <span class="badge badge-beta" style="flex-shrink:0">🧪</span>
+        <div><p class="warn-topic" style="margin:0">Shopee / Lazada</p><p class="warn-detail" style="margin:0">ลายเซ็น webhook ยังไม่เคยตรวจกับ Open Platform ตัวจริง</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-beta" style="flex-shrink:0">🧪</span>
+        <div><p class="warn-topic" style="margin:0">Flash / Kerry</p><p class="warn-detail" style="margin:0">ชั้นความปลอดภัยพร้อม รอสัญญาและ credential ตัวจริง</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-beta" style="flex-shrink:0">🧪</span>
+        <div><p class="warn-topic" style="margin:0">ESC/POS พิมพ์ + เปิดลิ้นชัก</p><p class="warn-detail" style="margin:0">เขียนแล้ว ไม่เคยยิงกับเครื่องพิมพ์จริงเลย</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-beta" style="flex-shrink:0">🧪</span>
+        <div><p class="warn-topic" style="margin:0">e-Tax ยื่นกรมสรรพากร</p><p class="warn-detail" style="margin:0">ปิดโดยค่าเริ่มต้น ยังไม่มี provider ตัวจริง ออกใบกำกับ ≠ ยื่นแล้ว</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-planned" style="flex-shrink:0">📋</span>
+        <div><p class="warn-topic" style="margin:0">TikTok ส่งข้อความออก</p><p class="warn-detail" style="margin:0">รับเข้าได้แล้ว ยังไม่มีเส้นทางส่งออก</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-planned" style="flex-shrink:0">📋</span>
+        <div><p class="warn-topic" style="margin:0">GrabFood / aggregator</p><p class="warn-detail" style="margin:0">ต้องใช้ API contract ของเขา ยังไม่มีตัวจำลอง</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-planned" style="flex-shrink:0">📋</span>
+        <div><p class="warn-topic" style="margin:0">แอปเครื่องขายมือถือ (iOS/Android)</p><p class="warn-detail" style="margin:0">backend พร้อม ที่ขาด: พิมพ์ BT · สแกนกล้อง · จอลูกค้าเครื่องสอง</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-warn" style="flex-shrink:0">⚠️</span>
+        <div><p class="warn-topic" style="margin:0">งานตั้งเวลา 7 ตัว (cron)</p><p class="warn-detail" style="margin:0">ยังไม่ตั้ง BMS_APP_BASE_URL + BMS_CRON_SECRET → ทุก job ข้ามตัวเองเงียบๆ แต้มไม่หมดอายุ เมนูไม่รีเซ็ต</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-warn" style="flex-shrink:0">⚠️</span>
+        <div><p class="warn-topic" style="margin:0">Migration บน production</p><p class="warn-detail" style="margin:0">หลายไฟล์ยังไม่ apply — ตรวจกับฐานจริงก่อนเชื่อเอกสาร</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-planned" style="flex-shrink:0">📋</span>
+        <div><p class="warn-topic" style="margin:0">ราคาแยกรายสาขา</p><p class="warn-detail" style="margin:0">โปรโมชัน+คูปองแยกได้แล้ว แต่ราคาป้าย/แพ็ก/ส่วนลดสมาชิก ยังระดับร้าน</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-planned" style="flex-shrink:0">📋</span>
+        <div><p class="warn-topic" style="margin:0">แยกบิล/รวมบิลข้ามโต๊ะ · จองโต๊ะ</p><p class="warn-detail" style="margin:0">แบ่งจ่ายในบิลเดียวทำได้แล้ว แต่แยกบิลออกหลายใบยังไม่มี</p></div>
+      </div>
+      <div class="warn-row">
+        <span class="badge badge-planned" style="flex-shrink:0">📋</span>
+        <div><p class="warn-topic" style="margin:0">แยกเครื่องพิมพ์ตามสถานีครัว</p><p class="warn-detail" style="margin:0">9.54 จองคอลัมน์ไว้แล้ว แต่ยังไม่มีใครอ่าน</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Go-live ─── -->
+  <p class="section-head">ก่อน Go-Live ต้องตั้งค่า</p>
+  <div class="golive">
+    <p class="golive-title">⚙️ Environment variables ที่ต้องตั้ง — ไม่ตั้ง = production ล้ม</p>
+    <div class="env-list">
+      <div class="env-row">
+        <span class="env-key">JWT_SECRET</span>
+        <span class="env-val">เซ็น session + คุกกี้เข้าดูร้าน</span>
+      </div>
+      <div class="env-row">
+        <span class="env-key">BMS_SECRET_KEY</span>
+        <span class="env-val">hex 64 ตัว เข้ารหัส token ช่องทางและ API key ร้าน</span>
+      </div>
+      <div class="env-row">
+        <span class="env-key">BMS_CHECKOUT_SECRET</span>
+        <span class="env-val">หมุนเมื่อไหร่ ลิงก์ชำระเงินทั้งหมดใช้ไม่ได้ทันที</span>
+      </div>
+      <div class="env-row">
+        <span class="env-key">BMS_APP_BASE_URL + BMS_CRON_SECRET</span>
+        <span class="env-val">ไม่ตั้ง = งานตั้งเวลาไม่ทำงานเลย</span>
+      </div>
+      <div class="env-row">
+        <span class="env-key">NEXT_PUBLIC_BASE_URL</span>
+        <span class="env-val">ให้ตรงโดเมนจริง</span>
+      </div>
+      <div class="env-row">
+        <span class="env-key">BMS_ALLOW_FAKE_SEED</span>
+        <span class="env-val" style="color:var(--warn)">ต้องปิดบน production</span>
+      </div>
+    </div>
+    <div style="margin-top:16px; padding:12px 16px; background:var(--warn-bg); border:1px solid rgba(239,68,68,.2); border-radius:8px; font-size:13px; color:var(--text);">
+      ⚠️ <strong>Apply migration ก่อน deploy เสมอ</strong> — ฟีเจอร์ <code style="font-family:var(--mono);font-size:12px;background:var(--raise);padding:1px 5px;border-radius:3px;">9.40 9.51 9.52 9.55 9.61</code> อ่านคอลัมน์ใหม่กับทุกบิลของทุกร้าน ลืม apply แล้ว deploy = <strong style="color:var(--warn)">ขายไม่ได้ทั้งระบบ</strong>
+    </div>
+  </div>
+
+  <!-- ─── Shop archetypes ─── -->
+  <p class="section-head">ประเภทร้านที่รองรับ (13 แบบ)</p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:48px;">
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🏪 มินิมาร์ท</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">👗 แฟชั่น</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🏠 ของใช้ในบ้าน</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">💄 ความงาม</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🍜 อาหารและเครื่องดื่ม</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">📱 แกดเจ็ต</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">📦 ค้าส่ง B2B</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🎁 ของขวัญ/เทศกาล</span>
+    <span style="background:var(--pharma-bg);border:1px solid rgba(147,51,234,.25);border-radius:6px;padding:7px 14px;font-size:13px;color:var(--pharma);">💊 ร้านยา</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🐾 สัตว์เลี้ยง</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🧱 วัสดุก่อสร้าง</span>
+    <span style="background:var(--rest-bg);border:1px solid rgba(13,148,136,.25);border-radius:6px;padding:7px 14px;font-size:13px;color:var(--rest);">🍽️ ร้านอาหาร</span>
+    <span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;">🏷️ อื่น ๆ</span>
+    <div style="background:var(--warn-bg);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:7px 14px;font-size:12px;color:var(--muted);align-self:center;">ประเภทล็อกหลังบิลจริงใบแรก</div>
+  </div>
+
+  <footer>
+    <span>BMS Feature Map · อัปเดต <strong>6 ก.ย. 2026</strong></span>
+    <span>สเปกรายโดเมน <strong>docs/business/</strong> · สถาปัตยกรรม <strong>architecture/system.md</strong></span>
+  </footer>
+
+</div>

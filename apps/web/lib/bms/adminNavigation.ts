@@ -152,6 +152,11 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     visible: (ctx) => ctx.kitchenBoardEnabled && ctx.can("order.view"),
   },
   {
+    id: "sales.restaurant-floor", route: "/admin/restaurant-floor", labelKey: "admin_nav.restaurant_floor",
+    section: "sales", workspace: "SHOP",
+    visible: (ctx) => ctx.archetype === "restaurant" && ctx.can("restaurant.floor.manage"),
+  },
+  {
     id: "sales.pos-manual", route: "/admin/pos-manual", labelKey: "admin_nav.pos_manual",
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("pos.sell"),
   },
@@ -226,6 +231,12 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "customers.coupons", route: "/admin/coupons", labelKey: "admin_nav.coupons",
     section: "customers", workspace: "SHOP", visible: (ctx) => ctx.can("coupon.view"),
+  },
+  {
+    // อยู่ข้างคูปองเพราะเป็นคันโยกส่วนลดคู่กัน — คนที่มาหา "จะลดราคายังไง" มองที่เดียวจบ
+    // gate ด้วย product.view/product.edit ตามเหตุผลของ 8.7 (ตั้งโปร = ตั้งราคาขายสินค้านั้น)
+    id: "customers.promotions", route: "/admin/promotions", labelKey: "admin_nav.promotions",
+    section: "customers", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
   },
   {
     id: "customers.followup-rules", route: "/admin/followup-rules", labelKey: "admin_nav.followup_rules",
@@ -446,7 +457,7 @@ const PLATFORM_SECTION_ORDER: readonly AdminNavSectionId[] = [
  */
 // ⚠️ อ้างถึงรายการที่ pinned ไม่ได้ — แถบด่วนเรียงคงที่ ใส่ไปก็ไม่มีผล (มีเทสคุม)
 const ARCHETYPE_EMPHASIS: Record<string, readonly string[]> = {
-  restaurant: ["sales.kitchen", "sales.pos-shifts", "inventory.stock-models", "inventory.products", "inventory.wastage"],
+  restaurant: ["sales.kitchen", "sales.restaurant-floor", "sales.pos-shifts", "inventory.stock-models", "inventory.products", "inventory.wastage"],
   mini_mart: ["sales.pos-shifts", "inventory.products", "inventory.product-packs", "inventory.purchase", "inventory.stock-counts"],
   fashion: ["sales.orders", "inventory.products", "sales.shipment", "customers.customers"],
   pharmacy: ["inventory.products", "sales.pos-shifts", "settings.pos-readiness"],

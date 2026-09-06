@@ -28,6 +28,11 @@ import { createOrder } from "../apps/web/lib/bms/orders.ts";
 import { resolvePosScan } from "../apps/web/lib/bms/pos.ts";
 import { applyPromotion } from "../apps/web/lib/bms/pricing.ts";
 import { listProductPacks, upsertProductPack } from "../apps/web/lib/bms/productPacks.ts";
+import {
+  listProductPromotions,
+  upsertProductPromotion,
+  deactivateProductPromotion,
+} from "../apps/web/lib/bms/productPromotions.ts";
 
 const TAG = "promo-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -36,11 +41,14 @@ const SIZE_L = "150ML";
 
 let tenantId = "";
 let locationId = "";
+/** สาขาที่สองที่ชุดนี้สร้างเอง (9.61) — ลบทิ้งตอน teardown */
+let branchId = "";
+let actorUserId = "";
 const created: string[] = [];
 
-const sell = async (lines: Array<{ size: string; qty: number }>) => {
+const sell = async (lines: Array<{ size: string; qty: number }>, atLocationId?: string) => {
   const res = await createOrder({
-    tenantId, channel: "pos", locationId,
+    tenantId, channel: "pos", locationId: atLocationId ?? locationId,
     items: lines.map((l) => ({ sku: SKU, size: l.size, qty: l.qty })),
   } as any);
   assert.equal(res.status, "CREATED", JSON.stringify(res));
@@ -239,6 +247,148 @@ test("a deactivated promotion does not apply, and only one can be active per pro
   );
 });
 
+
+// =============================================================
+// 9.61 — แต่ละสาขาตั้งโปรของตัวเองได้อิสระ
+// -------------------------------------------------------------
+// เทส pure (promotion-branch-scope-contract) ตรึงกติกา "ใครชนะ" ไว้แล้ว · ตรงนี้ตรึง
+// สิ่งที่มีแต่บิลจริงเท่านั้นที่พิสูจน์ได้: ตะกร้าเดียวกันเป๊ะ ขายคนละสาขา ได้คนละยอด
+// และยอดที่จอพรีวิวตรงกับยอดที่ commit (ไม่งั้น = PAYMENT_MISMATCH ที่หน้าเคาน์เตอร์)
+// =============================================================
+
+test("setup 9.61: a second branch that stocks the same product", async () => {
+  actorUserId = (await query<{ id: string }>(
+    `SELECT id FROM users WHERE tenant_id = $1 ORDER BY created_at LIMIT 1`, [tenantId]
+  )).rows[0].id;
+
+  // branch_code default คือ '00000' ซึ่งสงวนให้สำนักงานใหญ่ — ไม่ตั้งเอง = ชนทันที
+  branchId = (await query<{ id: string }>(
+    `INSERT INTO bms_locations (tenant_id, code, name, branch_code, is_head_office, active)
+     VALUES ($1,$2,$3,$4,FALSE,TRUE)
+     ON CONFLICT (tenant_id, code) DO UPDATE SET active = TRUE
+     RETURNING id`,
+    [tenantId, `FAKE-${TAG}-BR2`, `FAKE ${TAG} branch 2`, `9${TAG.length}871`]
+  )).rows[0].id;
+
+  for (const size of [SIZE_S, SIZE_L]) {
+    await query(
+      `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+       VALUES ($1,$2,$3,$4,500,0)
+       ON CONFLICT (tenant_id, location_id, product_sku, size)
+         DO UPDATE SET current_stock = 500, reserved_stock = 0`,
+      [tenantId, branchId, SKU, size]
+    );
+  }
+});
+
+test("a branch deal overrides the store-wide deal for the same product", async () => {
+  await setPromo(
+    `INSERT INTO bms_product_promotions (tenant_id, product_sku, kind, buy_qty, bundle_price)
+     VALUES ($1,$2,'N_FOR_PRICE',3,100)`,
+    [tenantId, SKU]
+  );
+  // สาขาที่สองจัด "ซื้อ 2 แถม 1" ของตัวเอง ทับโปรทั้งร้านของสินค้าตัวเดียวกัน
+  await upsertProductPromotion({
+    tenantId, actorUserId, productSku: SKU, locationId: branchId,
+    kind: "BUY_X_GET_Y", buyQty: 2, getQty: 1,
+  });
+
+  // ตะกร้าเดียวกันเป๊ะ: 3 ชิ้นไซซ์เล็ก (ราคาป้าย ฿40)
+  assert.equal((await sell([{ size: SIZE_S, qty: 3 }])).subtotal, 100,
+    "สำนักงานใหญ่ไม่ได้ตั้งโปรเอง จึงยังได้ 3 ชิ้น 100 ของทั้งร้าน");
+  assert.equal((await sell([{ size: SIZE_S, qty: 3 }], branchId)).subtotal, 80,
+    "สาขาที่ตั้งโปรเองต้องได้ซื้อ 2 แถม 1 = จ่าย 2 ชิ้น");
+});
+
+test("the register preview at a branch matches what the bill commits", async () => {
+  // ถ้าสองฝั่งเลือกโปรคนละแถว บิลถูกทิ้งทั้งใบด้วย PAYMENT_MISMATCH หน้าลูกค้า
+  for (const [where, expected] of [[locationId, 100], [branchId, 80]] as const) {
+    const hit = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId: where });
+    assert.ok(hit, "resolvePosScan ต้องเจอสินค้า");
+    const preview = applyPromotion(hit!.packPrice, 3, hit!.promotion);
+    assert.equal(preview.amount, expected, `จอของสาขานี้ต้องพรีวิวได้ ${expected}`);
+    assert.equal((await sell([{ size: SIZE_S, qty: 3 }], where)).subtotal, preview.amount,
+      "ยอดที่จอโชว์กับยอดที่ commit ต้องเท่ากันเสมอ");
+  }
+});
+
+test("a branch deal never leaks into another branch", async () => {
+  const atHq = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });
+  assert.equal(atHq?.promotion?.kind, "N_FOR_PRICE", "สำนักงานใหญ่ต้องไม่เห็นโปรของสาขาที่สอง");
+  const atBranch = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId: branchId });
+  assert.equal(atBranch?.promotion?.kind, "BUY_X_GET_Y");
+
+  // เส้นทางที่ไม่รู้สาขา (เช่นการค้นบิลย้อนหลัง) ต้องได้แค่โปรทั้งร้าน
+  const noBranch = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId: null });
+  assert.equal(noBranch?.promotion?.kind, "N_FOR_PRICE");
+});
+
+test("one active deal per scope — but store-wide and branch may coexist", async () => {
+  // นี่คือทั้งหมดของ 9.61: สองแถวนี้อยู่ด้วยกันได้ ต่างจากดัชนีเดิมของ 8.7
+  const scoped = await listProductPromotions(tenantId, { productSku: SKU });
+  assert.equal(scoped.length, 2, "ต้องมีโปรทั้งร้าน 1 + โปรของสาขา 1 อยู่พร้อมกัน");
+
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_product_promotions (tenant_id, product_sku, location_id, kind, buy_qty, bundle_price, active)
+       VALUES ($1,$2,$3,'N_FOR_PRICE',3,100,TRUE)`,
+      [tenantId, SKU, branchId]
+    ),
+    /duplicate key|uq_bms_promotions_active_sku_branch/i,
+    "สาขาเดียวกันมีโปร active สองแบบไม่ได้"
+  );
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_product_promotions (tenant_id, product_sku, kind, buy_qty, get_qty, active)
+       VALUES ($1,$2,'BUY_X_GET_Y',2,1,TRUE)`,
+      [tenantId, SKU]
+    ),
+    /duplicate key|uq_bms_promotions_active_sku_store/i,
+    "โปรทั้งร้าน active สองแบบก็ยังไม่ได้เหมือนเดิม"
+  );
+});
+
+test("saving the same scope again edits the deal instead of adding a second", async () => {
+  const before = (await listProductPromotions(tenantId, { productSku: SKU })).length;
+  const saved = await upsertProductPromotion({
+    tenantId, actorUserId, productSku: SKU, locationId: branchId,
+    kind: "N_FOR_PRICE", buyQty: 2, bundlePrice: 70,
+  });
+  const after = await listProductPromotions(tenantId, { productSku: SKU });
+  assert.equal(after.length, before, "บันทึกซ้ำในขอบเขตเดิมต้องไม่งอกแถวที่สอง");
+  assert.equal(saved.kind, "N_FOR_PRICE");
+  assert.equal((await sell([{ size: SIZE_S, qty: 2 }], branchId)).subtotal, 70,
+    "โปรที่แก้แล้วต้องมีผลกับบิลถัดไปทันที");
+});
+
+test("stopping a branch deal falls back to the store-wide one, and keeps the record", async () => {
+  const branchDeal = (await listProductPromotions(tenantId, { productSku: SKU }))
+    .find((row) => row.locationId === branchId);
+  assert.ok(branchDeal, "ต้องมีโปรของสาขาให้ปิด");
+  assert.equal(await deactivateProductPromotion({ tenantId, id: branchDeal!.id, actorUserId }), true);
+
+  assert.equal((await sell([{ size: SIZE_S, qty: 3 }], branchId)).subtotal, 100,
+    "ปิดโปรของสาขาแล้วต้องตกกลับไปใช้โปรทั้งร้าน ไม่ใช่ไม่มีโปรเลย");
+  const stopped = await listProductPromotions(tenantId, { productSku: SKU, includeInactive: true });
+  assert.ok(stopped.some((row) => row.id === branchDeal!.id && !row.active),
+    "โปรที่ปิดแล้วต้องยังอยู่ให้ไล่ได้ว่าสาขาไหนจัดอะไรช่วงไหน");
+});
+
+test("a promotion cannot point at another shop's branch", async () => {
+  const otherLocation = (await query<{ id: string }>(
+    `SELECT id FROM bms_locations WHERE tenant_id <> $1 LIMIT 1`, [tenantId]
+  )).rows[0]?.id;
+  if (!otherLocation) return; // ฐานนี้มีร้านเดียว ไม่มีอะไรให้ทดสอบ
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_product_promotions (tenant_id, product_sku, location_id, kind, buy_qty, get_qty)
+       VALUES ($1,$2,$3,'BUY_X_GET_Y',2,1)`,
+      [tenantId, SKU, otherLocation]
+    ),
+    /foreign key|bms_product_promotions_location_fk/i
+  );
+});
+
 test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_product_promotions WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   if (created.length) {
@@ -249,4 +399,11 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_product_packs WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
+  if (branchId) {
+    await query(`DELETE FROM bms_locations WHERE tenant_id = $1 AND id = $2`, [tenantId, branchId]);
+  }
+  const leftovers = (await query<{ n: string }>(
+    `SELECT count(*) AS n FROM bms_locations WHERE tenant_id = $1 AND code LIKE 'FAKE-%'`, [tenantId]
+  )).rows[0].n;
+  assert.equal(Number(leftovers), 0, "สาขาทดสอบต้องไม่ค้างอยู่ในฐาน");
 });

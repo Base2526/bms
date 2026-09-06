@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -14,6 +14,7 @@ import { posPaymentMethodLabel, receiptDocumentTitle, receiptLocale, type Receip
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
+import RestaurantTableChairs from "@/components/RestaurantTableChairs";
 import {
   formatKitchenElapsed,
   groupKitchenTickets,
@@ -47,8 +48,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "KITCHEN" | "BILLS" | "SHIFT";
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN", "BILLS", "SHIFT"];
+type RestaurantScreen = "ORDER" | "FLOOR" | "QR" | "KITCHEN" | "BILLS" | "SHIFT";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QR", "KITCHEN", "BILLS", "SHIFT"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -56,15 +57,19 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN", "BI
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", qr: "QR", qrorders: "QR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
 type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
-type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
+type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
+const FLOOR_TABLE_SIZE = {
+  round: { width: 96, height: 96 },
+  rect: { width: 128, height: 76 },
+} as const;
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; lineAmount: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
 type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
@@ -77,6 +82,31 @@ type MenuItem = SearchItem & {
   availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
   unavailableResetsAt: string | null;
   unavailableReason: string | null;
+};
+type QrSubmissionItem = {
+  id: string;
+  sku: string;
+  productName: string;
+  size: string | null;
+  packCode: string | null;
+  packQty: number;
+  modifierCodes: string[];
+  modifierNames: string[];
+  kitchenNote: string | null;
+  estimatedUnitPrice: number;
+};
+type QrSubmission = {
+  id: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED";
+  checkId: string;
+  tableId: string;
+  tableCode: string;
+  tableName: string;
+  submittedAt: string;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  estimatedTotal: number;
+  items: QrSubmissionItem[];
 };
 type PosMember = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number; tier: { code: string; name: string } | null };
 type SettlementResult = {
@@ -147,10 +177,10 @@ const KITCHEN_NOTE_SHORTCUTS = ["ไม่เผ็ด", "แยกน้ำ", "
 // สีการ์ดวนตาม station ตามลำดับที่เจอก่อน-หลัง ไม่ผูกกับชื่อ station ตายตัว
 // เพราะแต่ละร้านตั้งชื่อ station เองอิสระ (ครัวร้อน/ครัวต้ม/HOT/COLD ฯลฯ)
 const MENU_CARD_TINTS = [
-  { bg: "var(--panel-2)", ink: "var(--accent)" },
-  { bg: "var(--red-bg)", ink: "var(--red)" },
-  { bg: "var(--amber-bg)", ink: "var(--amber)" },
-  { bg: "var(--green-bg)", ink: "var(--green)" },
+  { bg: "var(--tint-1)", ink: "var(--accent)" },
+  { bg: "var(--tint-2)", ink: "var(--red)" },
+  { bg: "var(--tint-3)", ink: "var(--amber)" },
+  { bg: "var(--tint-4)", ink: "var(--green)" },
 ];
 // ภาพอาหารบนการ์ด — วาดด้วย SVG ในโค้ด ไม่โหลดจาก CDN ตามเหตุผลเดียวกับที่หน้านี้
 // ไม่โหลดฟอนต์ภายนอก (จอนี้ต้องทำงานตอนเน็ตร้านหลุด) · ใช้เมื่อสินค้ายังไม่มีรูปจริง
@@ -237,7 +267,15 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
       <div className={styles.modifierChips}>
         {items.map((modifier) => {
           const checked = selected.includes(modifier.code);
-          const atLimit = meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
+          // ⚠️ เพดานจำนวนใช้กับกลุ่มที่เลือกได้หลายอย่างเท่านั้น
+          //
+          // กลุ่มแบบเลือกได้อันเดียว (radio) การแตะตัวอื่นคือการ **แทนที่** ไม่ใช่การ **เพิ่ม**
+          // จึงเกินเพดานไม่ได้อยู่แล้ว · เดิมกลุ่ม SINGLE ที่ตั้ง `max_select = 1` (ซึ่งเป็นค่า
+          // ปกติของกลุ่มอย่าง "ระดับความเผ็ด") พอมีตัวถูกเลือกอยู่ — ไม่ว่าจะจาก default หรือ
+          // จากการแตะครั้งแรก — ตัวที่เหลือจะถูก disabled ทั้งหมด **แล้วเปลี่ยนใจไม่ได้เลย**
+          // (เจอจริงบน production: ต้มยำเลือกได้แต่ "เผ็ดปกติ" ที่ระบบติ๊กมาให้)
+          // · โค้ดใน onChange เขียนการแทนที่ไว้ถูกแล้ว แต่ไม่มีวันถูกเรียกเพราะ input ถูกปิดก่อน
+          const atLimit = !single && meta.maxSelect != null && selectedInGroup.length >= meta.maxSelect;
           return <label className={`${styles.modifierChip} ${checked ? styles.modifierChipOn : ""} ${!checked && atLimit ? styles.modifierChipOff : ""}`} key={modifier.code}>
             <input
               className={styles.modifierChipInput}
@@ -267,11 +305,16 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
 }
 type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
 
+// สีเลนอ้างตัวแปรของหน้า ไม่ใช่ค่าคงที่ — ค่าคงที่จะค้างสว่างในโหมดมืด และตัวเลขจำนวน
+// บนตั๋ว (.ticketQty) ใช้สีนี้เป็น "ตัวหนังสือ" ซึ่งต้องอ่านออกจากอีกฝั่งครัว
+// · ใช้ชุดสีสถานะเดียวกับผังโต๊ะ (tableState) เพื่อให้ "แดง=ยังไม่เริ่ม เขียว=พร้อม"
+//   แปลเหมือนกันทั้งสองจอ — ของเดิมเป็นเฉดของตัวเองที่ใกล้กันแต่ไม่เท่ากัน และเฉด
+//   อำพัน #e7a335 บนพื้นขาวมี contrast แค่ 2.17 (ต่ำกว่าเกณฑ์ตัวหนังสือใหญ่ด้วยซ้ำ)
 const LANES = [
-  { status: "NEW", label: "เข้าใหม่", color: "#dd5d3d", next: "PREPARING", nextLabel: "เริ่มทำ" },
-  { status: "PREPARING", label: "กำลังทำ", color: "#e7a335", next: "READY", nextLabel: "พร้อมเสิร์ฟ" },
-  { status: "READY", label: "พร้อมเสิร์ฟ", color: "#30745b", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
-  { status: "SERVED", label: "เสิร์ฟแล้ว", color: "#718078", next: null, nextLabel: null },
+  { status: "NEW", label: "เข้าใหม่", color: "var(--red)", next: "PREPARING", nextLabel: "เริ่มทำ" },
+  { status: "PREPARING", label: "กำลังทำ", color: "var(--amber)", next: "READY", nextLabel: "พร้อมเสิร์ฟ" },
+  { status: "READY", label: "พร้อมเสิร์ฟ", color: "var(--green)", next: "SERVED", nextLabel: "เสิร์ฟแล้ว" },
+  { status: "SERVED", label: "เสิร์ฟแล้ว", color: "var(--grey)", next: null, nextLabel: null },
 ] as const;
 const timeOf = (iso: string | null) => {
   if (!iso) return "";
@@ -362,6 +405,10 @@ export default function RestaurantPosPage() {
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [qrSubmissions, setQrSubmissions] = useState<QrSubmission[]>([]);
+  const [qrSelectedId, setQrSelectedId] = useState("");
+  const [qrRejectOpen, setQrRejectOpen] = useState(false);
+  const [qrRejectReason, setQrRejectReason] = useState("");
   const [menuCategory, setMenuCategory] = useState("");
   // โหมดแจ้งของหมด: ครัวเดินมาบอกทีเดียวหลายอย่าง — เปิดโหมดแล้วทุกการ์ดกลายเป็นสวิตช์
   // ปิดโหมดแล้วการ์ดกลับมาเป็นปุ่มสั่งอาหารล้วน ไม่มีปุ่มปิดขายค้างอยู่ใต้ทุกเมนูตลอดกะ
@@ -369,6 +416,8 @@ export default function RestaurantPosPage() {
   const [menuOnlySoldOut, setMenuOnlySoldOut] = useState(false);
   const [soldOutSheet, setSoldOutSheet] = useState<MenuItem | null>(null);
   const [menuHit, setMenuHit] = useState<ScanHit | null>(null);
+  /** การ์ดที่ถูกแตะ — `ScanHit` รู้จักไซซ์เดียว รายการไซซ์ทั้งหมดอยู่ที่การ์ดเท่านั้น */
+  const [menuSource, setMenuSource] = useState<MenuItem | SearchItem | null>(null);
   const [modifierCodes, setModifierCodes] = useState<string[]>([]);
   const [kitchenNote, setKitchenNote] = useState("");
   const [menuQty, setMenuQty] = useState(1);
@@ -495,6 +544,16 @@ export default function RestaurantPosPage() {
   }, [check?.id]);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
   const visibleTables = activeArea ? floor.tables.filter((table) => table.areaId === activeArea) : floor.tables;
+  // พิกัดเป็นข้อมูลผังจริงจากหลังบ้าน จึงต้องรักษาหน่วย px เดียวกับ editor และให้ viewport
+  // เลื่อนเมื่อจอแคบ แทนการบีบ/เรียงใหม่จนโต๊ะไม่ตรงกับตำแหน่งที่ผู้ดูแลบันทึกไว้
+  const floorCanvasWidth = visibleTables.reduce((width, table) => {
+    const size = FLOOR_TABLE_SIZE[table.shape === "rect" ? "rect" : "round"];
+    return Math.max(width, table.positionX + size.width + 24);
+  }, 720);
+  const floorCanvasHeight = visibleTables.reduce((height, table) => {
+    const size = FLOOR_TABLE_SIZE[table.shape === "rect" ? "rect" : "round"];
+    return Math.max(height, table.positionY + size.height + 24);
+  }, 520);
   const availableTables = floor.tables.filter((table) => table.status === "AVAILABLE" && table.id !== selectedTableId);
   // นาฬิกาเดินเองทุก 30 วิ เพื่อให้ "นั่งมากี่นาที" บนการ์ดโต๊ะไม่ค้าง โดยไม่ต้องยิง API
   // เริ่มที่ 0 แล้วตั้งค่าใน effect เพื่อไม่ให้ค่าที่ render ฝั่ง server ต่างจาก client
@@ -535,6 +594,9 @@ export default function RestaurantPosPage() {
     .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
     [floor.tables, tableKitchenStats]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
+  const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
+  const selectedQrSubmission = qrSubmissions.find((submission) => submission.id === qrSelectedId)
+    ?? pendingQrSubmissions[0] ?? qrSubmissions[0] ?? null;
   // ครัวยกเลิกตอนบิลไม่ได้เปิดอยู่ (กำลังคิดเงิน/ปิดแล้ว) → ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
   const kitchenCancelled = check?.items.filter((item) =>
     item.status !== "CANCELLED" && item.kitchenStatus === "CANCELLED") ?? [];
@@ -752,6 +814,15 @@ export default function RestaurantPosPage() {
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
+  async function loadQrSubmissions() {
+    const data = await json("/api/pos/restaurant/qr-orders");
+    const rows: QrSubmission[] = Array.isArray(data.submissions) ? data.submissions : [];
+    setQrSubmissions(rows);
+    setQrSelectedId((current) => current && rows.some((row) => row.id === current)
+      ? current
+      : rows.find((row) => row.status === "PENDING")?.id ?? rows[0]?.id ?? "");
+    return rows;
+  }
   async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
       const result = await json("/api/pos/restaurant/menu", {
@@ -774,7 +845,7 @@ export default function RestaurantPosPage() {
     return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", "แจ้งจากครัว");
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
   /**
    * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
@@ -889,6 +960,11 @@ export default function RestaurantPosPage() {
     const timer = window.setInterval(() => { void Promise.all([loadTickets(), loadFloor()]).catch(() => {}); }, 5000);
     return () => window.clearInterval(timer);
   }, [token, screen]);
+  useEffect(() => {
+    if (!token || screen !== "QR") return;
+    const timer = window.setInterval(() => { void loadQrSubmissions().catch(() => {}); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [token, screen]);
 
   async function chooseTable(table: DiningTable) {
     if (table.blocked) return;
@@ -907,8 +983,36 @@ export default function RestaurantPosPage() {
     setOpenTable(table);
   }
   async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); setScreen("ORDER"); await loadFloor(); }); }
-  async function chooseMenu(item: SearchItem) { await run(async () => { const size = item.availableSizes.find((v) => v.available > 0)?.size ?? item.availableSizes[0]?.size ?? ""; const hit: ScanHit = await json(`/api/pos/scan?code=${encodeURIComponent(item.sku)}&size=${encodeURIComponent(size)}&surface=RESTAURANT_POS&withImage=1`); setMenuHit(hit); setModifierCodes(hit.modifiers.filter((modifier) => modifier.defaultSelected).map((modifier) => modifier.code)); setKitchenNote(""); setMenuQty(1); }); }
-  async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setSearch(""); await loadFloor(); }); }
+  /**
+   * ยิงสแกนของไซซ์หนึ่ง แล้วตั้งตัวเลือกเป็นค่าปริยาย **ของไซซ์นั้น**
+   *
+   * ตัวเลือกผูกกับ (sku, ไซซ์) — `resolvePosScan` query ด้วย `modifier.size` ตรง ๆ
+   * เปลี่ยนไซซ์แล้วยกตัวเลือกเดิมมาใช้ต่อ = ส่งรหัสที่ไซซ์ใหม่ไม่รู้จักไปให้ server ปฏิเสธ
+   */
+  async function loadMenuHit(sku: string, size: string) {
+    const hit: ScanHit = await json(`/api/pos/scan?code=${encodeURIComponent(sku)}&size=${encodeURIComponent(size)}&surface=RESTAURANT_POS&withImage=1`);
+    setMenuHit(hit);
+    setModifierCodes(hit.modifiers.filter((modifier) => modifier.defaultSelected).map((modifier) => modifier.code));
+  }
+  async function chooseMenu(item: SearchItem) {
+    await run(async () => {
+      // ⚠️ ห้ามใช้ `available > 0` เป็นตัวคัดไซซ์ที่เลือกได้ — เมนู RECIPE/NON_STOCK มีสต็อก
+      // ของตัวเองเป็น 0 ตามดีไซน์ (9.51/9.52) การกรองด้วยสต็อกจะทำให้อาหารเกือบทุกจาน
+      // ไม่มีไซซ์ให้เลือกสักอัน · ที่นี่ใช้แค่เลือก "ไซซ์ตั้งต้น" ให้ตรงกับของที่มีจริงถ้ามี
+      const sizes = item.availableSizes;
+      const size = sizes.find((variant) => variant.available > 0)?.size ?? sizes[0]?.size ?? "";
+      setMenuSource(item);
+      setKitchenNote("");
+      setMenuQty(1);
+      await loadMenuHit(item.sku, size);
+    });
+  }
+  /** เปลี่ยนไซซ์ในกล่อง — คงจำนวนและโน้ตถึงครัวที่คนหน้าร้านกรอกไปแล้ว */
+  async function pickMenuSize(size: string) {
+    if (!menuSource || !menuHit || menuHit.size === size) return;
+    await run(async () => { await loadMenuHit(menuSource.sku, size); });
+  }
+  async function addMenu() { if (!check || !menuHit) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: "add_item", sku: menuHit.sku, size: menuHit.size, packCode: menuHit.packCode, packQty: menuQty, modifierCodes, kitchenNote })) }); setCheck(body.check); setMenuHit(null); setMenuSource(null); setSearch(""); await loadFloor(); }); }
   /**
    * สั่งซ้ำบรรทัดเดิม — คุณค่าอยู่ที่การก็อป **ตัวเลือก + โน้ตครัว** ไม่ใช่ก็อปเมนู
    * ("เผ็ดน้อย เพิ่มไข่ดาว ไม่ใส่ผักชี" ถ้าไม่มีปุ่มนี้ต้องเลือกใหม่ทั้งชุดทุกครั้ง)
@@ -937,6 +1041,39 @@ export default function RestaurantPosPage() {
       setCheck(body.check);
       await loadFloor();
       message.success(`เพิ่ม ${item.productName} อีก ${item.packQty} — กดส่งครัวเพื่อส่งเข้าครัว`);
+    });
+  }
+
+  async function acceptQrSubmission(submission: QrSubmission) {
+    await run(async () => {
+      const result = await json("/api/pos/restaurant/qr-orders", {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "accept",
+          submissionId: submission.id,
+        })),
+      });
+      await Promise.all([loadQrSubmissions(), loadFloor(), loadTickets()]);
+      if (check?.id === submission.checkId && result.check) setCheck(result.check);
+      message.success(`รับออร์เดอร์ ${submission.tableName} และส่งเข้าครัวแล้ว`);
+    });
+  }
+
+  async function rejectQrSubmission() {
+    if (!selectedQrSubmission || !qrRejectReason.trim()) return;
+    await run(async () => {
+      await json("/api/pos/restaurant/qr-orders", {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "reject",
+          submissionId: selectedQrSubmission.id,
+          reason: qrRejectReason.trim(),
+        })),
+      });
+      setQrRejectOpen(false);
+      setQrRejectReason("");
+      await loadQrSubmissions();
+      message.success(`ปฏิเสธออร์เดอร์ ${selectedQrSubmission.tableName} และแจ้งเหตุผลกลับแล้ว`);
     });
   }
 
@@ -1386,6 +1523,7 @@ export default function RestaurantPosPage() {
   const railScreens = [
     { key: "ORDER" as const, short: "สั่ง", full: "สั่งอาหาร", icon: <WalletOutlined />, badge: 0 },
     { key: "FLOOR" as const, short: "โต๊ะ", full: "ผังโต๊ะ", icon: <AppstoreOutlined />, badge: unsentTableCount },
+    { key: "QR" as const, short: "QR", full: "ออร์เดอร์ QR รอรับ", icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
     { key: "KITCHEN" as const, short: "ครัว", full: "จอครัว", icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
     { key: "BILLS" as const, short: "บิล", full: "บิลล่าสุด", icon: <FileTextOutlined />, badge: 0 },
     { key: "SHIFT" as const, short: "กะ", full: "จัดการกะและลิ้นชัก", icon: <SwapOutlined />, badge: 0 },
@@ -1422,6 +1560,47 @@ export default function RestaurantPosPage() {
       </header>
       {!session?.shift && <Alert type="warning" showIcon message="ยังไม่เปิดกะ — เปิดกะก่อนจึงจะเปิดโต๊ะและรับออร์เดอร์ได้" />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
+
+      {screen === "QR" && <Spin spinning={working}><section className={styles.qrScreen}>
+        <div className={styles.panelHeader}>
+          <div><h2>ออร์เดอร์ QR จากลูกค้า</h2><small>ตรวจรายการก่อนเพิ่มเข้าบิลโต๊ะ จองวัตถุดิบ และส่งครัว</small></div>
+          <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadQrSubmissions()} title="รีเฟรชออร์เดอร์ QR" aria-label="รีเฟรชออร์เดอร์ QR"><ReloadOutlined /></button>
+        </div>
+        <div className={styles.qrWorkspace}>
+          <aside className={styles.qrQueue}>
+            {qrSubmissions.length === 0 && <div className={styles.empty}>ยังไม่มีออร์เดอร์ QR ใน 24 ชั่วโมงล่าสุด</div>}
+            {qrSubmissions.map((submission) => {
+              const total = submission.estimatedTotal;
+              return <button key={submission.id} type="button"
+                className={`${styles.qrCard} ${selectedQrSubmission?.id === submission.id ? styles.qrCardActive : ""}`}
+                onClick={() => setQrSelectedId(submission.id)}>
+                <span><b>{submission.tableCode}</b><small>{submission.tableName}</small></span>
+                <span className={`${styles.qrStatus} ${styles[`qrStatus_${submission.status}`]}`}>{submission.status === "PENDING" ? "รอรับ" : submission.status === "ACCEPTED" ? "รับแล้ว" : "ปฏิเสธ"}</span>
+                <span className={styles.qrCardMeta}>{submission.items.length} รายการ · <span className={styles.baht}>฿</span>{money(total)} · {new Date(submission.submittedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}</span>
+              </button>;
+            })}
+          </aside>
+          <div className={styles.qrDetail}>
+            {!selectedQrSubmission ? <div className={styles.empty}>เลือกออร์เดอร์เพื่อดูรายละเอียด</div> : <>
+              <div className={styles.qrDetailHead}><div><h3>{selectedQrSubmission.tableName}</h3><small>{selectedQrSubmission.tableCode} · ส่งเมื่อ {new Date(selectedQrSubmission.submittedAt).toLocaleString("th-TH")}</small></div><span className={`${styles.qrStatus} ${styles[`qrStatus_${selectedQrSubmission.status}`]}`}>{selectedQrSubmission.status === "PENDING" ? "รอพนักงานรับ" : selectedQrSubmission.status === "ACCEPTED" ? "รับและส่งครัวแล้ว" : "ปฏิเสธแล้ว"}</span></div>
+              <div className={styles.qrLines}>{selectedQrSubmission.items.map((item) => <div key={item.id} className={styles.qrLine}>
+                <span className={styles.qrQty}>{item.packQty}</span>
+                <span><b>{item.productName}</b><small>{[item.size, item.packCode, ...(item.modifierNames.length ? item.modifierNames : item.modifierCodes)].filter(Boolean).join(" · ") || "มาตรฐาน"}</small>{item.kitchenNote && <em>ครัว: {item.kitchenNote}</em>}</span>
+                <strong><span className={styles.baht}>฿</span>{money(item.estimatedUnitPrice * item.packQty)}</strong>
+              </div>)}</div>
+              <div className={styles.qrTotal}><span>ยอดประมาณการ</span><b><span className={styles.baht}>฿</span>{money(selectedQrSubmission.estimatedTotal)}</b></div>
+              {selectedQrSubmission.rejectionReason && <Alert type="error" showIcon message="เหตุผลที่ปฏิเสธ" description={selectedQrSubmission.rejectionReason} />}
+              {selectedQrSubmission.status === "PENDING" && <>
+                <Alert type="info" showIcon message="กดรับครั้งเดียว" description="ระบบจะเพิ่มรายการเข้าบิลโต๊ะ จองวัตถุดิบ และส่งตั๋วครัวใน transaction เดียว หากทำไม่ครบทุกขั้นจะไม่รับรายการบางส่วน" />
+                <div className={styles.qrActions}>
+                  <button type="button" className={`${styles.btn} ${styles.btnDanger}`} disabled={!operatorReady || !session?.shift} onClick={() => { setQrRejectReason(""); setQrRejectOpen(true); }}>ปฏิเสธ</button>
+                  <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady || !session?.shift} onClick={() => void acceptQrSubmission(selectedQrSubmission)}>รับและส่งเข้าครัว</button>
+                </div>
+              </>}
+            </>}
+          </div>
+        </div>
+      </section></Spin>}
 
       {screen === "BILLS" && <Spin spinning={working}><section className={styles.counterScreen}>
         <div className={styles.panelHeader}>
@@ -1581,12 +1760,21 @@ export default function RestaurantPosPage() {
           <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><span className={styles.livePill}>LIVE</span></div>
           <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
-              สถานะอ่านจากแถบสีข้างการ์ด + ป้ายข้อความ (จุดสี 10px เดิมแยกไม่ออกจากระยะยืน) */}
-          <div className={styles.panelScroll}><div className={styles.tableGrid}>{visibleTables.map((table) => {
+              สถานะอ่านจากจุดสีที่มุมการ์ด (tableDot) + ป้ายข้อความ (tableStatus) ใต้ชื่อโต๊ะ — คำอธิบายว่า
+              สีไหนหมายถึงอะไรอยู่ที่แถบ .floorLegend ท้ายผัง (ตั้งใจวางไว้ล่างสุด ไม่ใช่บนสุด: กริดโต๊ะ
+              ที่พนักงานต้องกดใช้งานจริงต้องเป็นสิ่งแรกที่เห็นใต้แท็บโซน คำอธิบายเป็นของอ้างอิงเงียบ ๆ
+              ไม่ใช่ส่วนควบคุม — เทียบกับ .floorLegend เดิมที่เคยอยู่ตรงนี้: ตัวเล็กลง สีจางลง ไม่มีกรอบ)
+              ⚠️ เคยเปลี่ยนจากจุด 10px มาเป็นแถบเต็มความกว้าง (tableBand) เพราะจุดเดิมแยกไม่ออกจาก
+              ระยะยืน — ตอนนี้กลับมาใช้จุดอีกครั้งตามที่ตัดสินใจ แต่ขยับ "วงสี" เป็น 14px + ขอบสีพื้น
+              การ์ดคั่นให้ตัดกับพื้นหลังชัดขึ้น (กล่องจึงเป็น 18px เพราะ border-box กิน ring เข้าไป —
+              เหตุผลเต็มอยู่ที่ .tableDot) ถ้ายังอ่านไม่ออกจากระยะไกล ให้ย้อนดูประวัตินี้ก่อนแก้ */}
+          <div className={styles.panelScroll}><div className={styles.floorViewport}><div className={styles.floorCanvas} style={{ width: `max(100%, ${floorCanvasWidth}px)`, height: floorCanvasHeight }}>{visibleTables.map((table) => {
             const state = tableState(table, tableKitchenStats);
             const minutes = table.check ? minutesSince(table.check.openedAt) : null;
-            return <button key={table.id} type="button" disabled={table.blocked} className={`${styles.tableCard} ${table.check ? styles[`state_${state.key}`] : styles.tableFree} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
-              {table.check && <span className={styles.tableBand} aria-hidden="true" />}
+            const shape = table.shape === "rect" ? "rect" : "round";
+            return <button key={table.id} type="button" disabled={table.blocked} style={{ transform: `translate(${table.positionX}px, ${table.positionY}px)` }} className={`${styles.tableCard} ${shape === "rect" ? styles.tableRect : styles.tableRound} ${table.check ? styles[`state_${state.key}`] : styles.tableFree} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
+              <RestaurantTableChairs seats={table.seats} shape={shape} />
+              {table.check && <span className={styles.tableDot} aria-hidden="true" />}
               <span className={styles.tableCode}>{table.code}</span>
               <span className={styles.tableName}>{table.name}</span>
               {table.check && <span className={styles.tableStatus}>{state.label}</span>}
@@ -1595,7 +1783,19 @@ export default function RestaurantPosPage() {
                 : `${table.seats} ที่นั่ง · ว่าง`}</span>
               {table.check && <span className={styles.tableAmount}><span className={styles.baht}>฿</span>{money(table.check.amountDue)}</span>}
             </button>;
-          })}</div></div>
+          })}</div></div></div>
+          {/* legend ต้อง "ปักหมุด" อยู่นอก panelScroll เสมอ ห้ามเอาไปไว้เป็นบรรทัดสุดท้ายในนั้น —
+              เคยลองมาแล้ว: ผังที่มี 4 แถวขึ้นไปสูงเกินพื้นที่จอจริง (ไม่ใช่แค่บนเครื่องเล็ก) ทำให้
+              legend ซึ่งเป็นบรรทัดท้ายสุดถูกเลื่อนลงไปครึ่ง ๆ กลาง ๆ อ่านไม่ออก ต้องเลื่อนเอาเองถึงจะ
+              เห็นเต็ม ๆ — ปักไว้นอก panelScroll (เหมือน panelHeader/areaTabs) แทน จึงเห็นครบทุกตัวอักษร
+              เสมอไม่ว่าโต๊ะจะเยอะแค่ไหน · scrollbar ที่ panelScroll โผล่มาแทนเมื่อผังสูงเกินจอจริง ๆ
+              (ปกติ ไม่ใช่บั๊ก) — ทำให้ดูตั้งใจด้วยการปรับสไตล์ scrollbar เอง แทนแบบเทาหนาของเบราว์เซอร์ */}
+          <div className={styles.floorLegend} aria-hidden="true">
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--red)" }} />ยังไม่ส่งครัว</span>
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--amber)" }} />กำลังทำ</span>
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--green)" }} />พร้อมเสิร์ฟ/เสิร์ฟครบ</span>
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--grey)" }} />ยังไม่สั่ง</span>
+          </div>
 
         </>}</section>
         <aside className={styles.checkPanel}>{check ? <>
@@ -1856,7 +2056,7 @@ export default function RestaurantPosPage() {
           </span>
         : "เพิ่มเมนู"}
       open={Boolean(menuHit)}
-      onCancel={() => setMenuHit(null)}
+      onCancel={() => { setMenuHit(null); setMenuSource(null); }}
       onOk={() => void addMenu()}
       confirmLoading={working}
       okButtonProps={{ disabled: unmetModifiers.length > 0 }}
@@ -1865,6 +2065,22 @@ export default function RestaurantPosPage() {
       getContainer={modalContainer}
     >
       {menuHit && <div className={styles.modalGrid}>
+        {/* ไซซ์ต้องเลือกได้ในกล่อง — เดิม chooseMenu เลือกให้เองเงียบ ๆ แล้วโยนไซซ์ที่เหลือทิ้ง
+            เมนูที่มีถ้วยเล็ก/ถ้วยใหญ่จึงสั่งได้แต่ถ้วยเล็กจากจอนี้ · ขึ้นเฉพาะเมนูที่มีมากกว่า
+            หนึ่งไซซ์ ไม่งั้นเป็นแถวที่กดแล้วไม่เกิดอะไรบนทุกเมนูจานเดียว */}
+        {(menuSource?.availableSizes.length ?? 0) > 1 && <div>
+          <span className={styles.fieldLabel}>ขนาด</span>
+          <div className={styles.modifierChips}>
+            {menuSource!.availableSizes.map((variant) => <label
+              key={variant.size}
+              className={`${styles.modifierChip} ${menuHit.size === variant.size ? styles.modifierChipOn : ""}`}>
+              <input className={styles.modifierChipInput} type="radio" name="menu-size"
+                checked={menuHit.size === variant.size}
+                onChange={() => void pickMenuSize(variant.size)} />
+              <span>{variant.size}</span>
+            </label>)}
+          </div>
+        </div>}
         {/* จำนวนเป็น stepper ไม่ใช่ช่องพิมพ์ — บนแท็บเล็ตการพิมพ์เลขตัวเดียวต้องเรียกคีย์บอร์ด
             ขึ้นมาบังครึ่งจอ · ชิป 1–5 ไว้ให้โต๊ะที่สั่งทีละหลายที่ */}
         <div>
@@ -1910,6 +2126,16 @@ export default function RestaurantPosPage() {
           <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
         </div>
       </div>}
+    </Modal>
+    <Modal title={`ปฏิเสธออร์เดอร์ ${selectedQrSubmission?.tableName ?? ""}`} open={qrRejectOpen}
+      onCancel={() => setQrRejectOpen(false)} onOk={() => void rejectQrSubmission()}
+      okText="ยืนยันปฏิเสธ" okButtonProps={{ danger: true, disabled: !qrRejectReason.trim() }}
+      confirmLoading={working} getContainer={modalContainer}>
+      <div className={styles.modalGrid}>
+        <Alert type="warning" showIcon message="ลูกค้าจะเห็นเหตุผลนี้บนหน้าติดตามออร์เดอร์" />
+        <label>เหตุผล (จำเป็น)<textarea rows={3} maxLength={300} value={qrRejectReason}
+          onChange={(event) => setQrRejectReason(event.target.value)} placeholder="เช่น เมนูหมด กรุณาเลือกเมนูอื่น" /></label>
+      </div>
     </Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okButtonProps={{ disabled: !operatorReady }} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
     {/* กล่องนี้มีสองงานคนละชั้น: แถบสรุปคือ "งานของแคชเชียร์" (ทอนเท่าไร ครัวได้กี่ใบ

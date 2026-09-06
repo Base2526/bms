@@ -336,6 +336,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
+| `bmsProductPromotions.ts` | buy-X-get-Y / N-for-a-price offers, store-wide or per branch (`bmsProductPromotions`, `bmsPromotionLocations`, `bmsUpsertProductPromotion`, `bmsDeactivateProductPromotion`) — reads `product.view`, writes `product.edit`; branch-restricted staff (`bms_user_allowed_locations`) may only set offers for their own branches and never a store-wide one |
 | `bmsAr.ts` | credit accounts, invoice aging, receivable ledger, non-cash collection and write-off (`9.30`). Selling on credit and collecting **cash** are absent by design — those live on `/api/pos/*`, because cash has to reach the drawer of the shift that is actually open |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |
