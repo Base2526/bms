@@ -1630,14 +1630,21 @@ export default function RestaurantPosPage() {
           <div className={styles.panelHeader}><div><h2>ผังโต๊ะ</h2><small>{floor.tables.filter((t) => t.status === "AVAILABLE").length} โต๊ะว่าง · {floor.tables.filter((t) => t.status === "OCCUPIED").length} โต๊ะใช้งาน</small></div><span className={styles.livePill}>LIVE</span></div>
           <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
-              สถานะอ่านจากแถบสีบนการ์ด + ป้ายข้อความ (จุดสี 10px เดิมแยกไม่ออกจากระยะยืน) */}
+              สถานะอ่านจากจุดสีที่มุมการ์ด (tableDot) + ป้ายข้อความ (tableStatus) ใต้ชื่อโต๊ะ — คำอธิบายว่า
+              สีไหนหมายถึงอะไรอยู่ที่แถบ .floorLegend ท้ายผัง (ตั้งใจวางไว้ล่างสุด ไม่ใช่บนสุด: กริดโต๊ะ
+              ที่พนักงานต้องกดใช้งานจริงต้องเป็นสิ่งแรกที่เห็นใต้แท็บโซน คำอธิบายเป็นของอ้างอิงเงียบ ๆ
+              ไม่ใช่ส่วนควบคุม — เทียบกับ .floorLegend เดิมที่เคยอยู่ตรงนี้: ตัวเล็กลง สีจางลง ไม่มีกรอบ)
+              ⚠️ เคยเปลี่ยนจากจุด 10px มาเป็นแถบเต็มความกว้าง (tableBand) เพราะจุดเดิมแยกไม่ออกจาก
+              ระยะยืน — ตอนนี้กลับมาใช้จุดอีกครั้งตามที่ตัดสินใจ แต่ขยับ "วงสี" เป็น 14px + ขอบสีพื้น
+              การ์ดคั่นให้ตัดกับพื้นหลังชัดขึ้น (กล่องจึงเป็น 18px เพราะ border-box กิน ring เข้าไป —
+              เหตุผลเต็มอยู่ที่ .tableDot) ถ้ายังอ่านไม่ออกจากระยะไกล ให้ย้อนดูประวัตินี้ก่อนแก้ */}
           <div className={styles.panelScroll}><div className={styles.floorViewport}><div className={styles.floorCanvas} style={{ width: `max(100%, ${floorCanvasWidth}px)`, height: floorCanvasHeight }}>{visibleTables.map((table) => {
             const state = tableState(table, tableKitchenStats);
             const minutes = table.check ? minutesSince(table.check.openedAt) : null;
             const shape = table.shape === "rect" ? "rect" : "round";
             return <button key={table.id} type="button" disabled={table.blocked} style={{ transform: `translate(${table.positionX}px, ${table.positionY}px)` }} className={`${styles.tableCard} ${shape === "rect" ? styles.tableRect : styles.tableRound} ${table.check ? styles[`state_${state.key}`] : styles.tableFree} ${table.blocked ? styles.tableBlocked : ""} ${selectedTableId === table.id ? styles.tableSelected : ""}`} onClick={() => void chooseTable(table)}>
               <RestaurantTableChairs seats={table.seats} shape={shape} />
-              {table.check && <span className={styles.tableBand} aria-hidden="true" />}
+              {table.check && <span className={styles.tableDot} aria-hidden="true" />}
               <span className={styles.tableCode}>{table.code}</span>
               <span className={styles.tableName}>{table.name}</span>
               {table.check && <span className={styles.tableStatus}>{state.label}</span>}
@@ -1647,6 +1654,18 @@ export default function RestaurantPosPage() {
               {table.check && <span className={styles.tableAmount}><span className={styles.baht}>฿</span>{money(table.check.amountDue)}</span>}
             </button>;
           })}</div></div></div>
+          {/* legend ต้อง "ปักหมุด" อยู่นอก panelScroll เสมอ ห้ามเอาไปไว้เป็นบรรทัดสุดท้ายในนั้น —
+              เคยลองมาแล้ว: ผังที่มี 4 แถวขึ้นไปสูงเกินพื้นที่จอจริง (ไม่ใช่แค่บนเครื่องเล็ก) ทำให้
+              legend ซึ่งเป็นบรรทัดท้ายสุดถูกเลื่อนลงไปครึ่ง ๆ กลาง ๆ อ่านไม่ออก ต้องเลื่อนเอาเองถึงจะ
+              เห็นเต็ม ๆ — ปักไว้นอก panelScroll (เหมือน panelHeader/areaTabs) แทน จึงเห็นครบทุกตัวอักษร
+              เสมอไม่ว่าโต๊ะจะเยอะแค่ไหน · scrollbar ที่ panelScroll โผล่มาแทนเมื่อผังสูงเกินจอจริง ๆ
+              (ปกติ ไม่ใช่บั๊ก) — ทำให้ดูตั้งใจด้วยการปรับสไตล์ scrollbar เอง แทนแบบเทาหนาของเบราว์เซอร์ */}
+          <div className={styles.floorLegend} aria-hidden="true">
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--red)" }} />ยังไม่ส่งครัว</span>
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--amber)" }} />กำลังทำ</span>
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--green)" }} />พร้อมเสิร์ฟ/เสิร์ฟครบ</span>
+            <span className={styles.floorLegendItem}><span className={styles.floorLegendDot} style={{ background: "var(--grey)" }} />ยังไม่สั่ง</span>
+          </div>
 
         </>}</section>
         <aside className={styles.checkPanel}>{check ? <>

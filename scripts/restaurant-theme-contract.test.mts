@@ -54,7 +54,10 @@ function contrast(a: string, b: string) {
 const PAIRS: Array<[string, string, number]> = [
   ["--ink", "--panel", 7], ["--ink", "--ground", 7], ["--ink", "--quiet", 7],
   ["--ink-2", "--panel", 4.5], ["--ink-2", "--panel-2", 4.5],
-  ["--ink-3", "--panel", 3],
+  // --ink-3 เป็นชั้น "ข้อความรอง" เกณฑ์ 3:1 ตามที่ใช้กันทั้งหน้า · ต้องตรึงบน --ground ด้วย
+  // เพราะ .panel ไม่มีพื้นของตัวเอง ลูกทุกตัวจึงนั่งบน --ground จริง ๆ (คำอธิบายสีท้ายผัง
+  // .floorLegend · .menuToolNote · .menuEmpty) — ก่อนหน้านี้เทสตรึงไว้แค่บน --panel
+  ["--ink-3", "--panel", 3], ["--ink-3", "--ground", 3],
   ...(["--accent", "--red", "--amber", "--green", "--grey"] as const).flatMap(
     (c): Array<[string, string, number]> => [
       [c, "--panel", 4.5],
