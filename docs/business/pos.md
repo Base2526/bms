@@ -1558,9 +1558,31 @@ check while the first is finalizing it. A stale `CLOSING` claim can be reclaimed
 lease only by the same device, shift and cashier; an already `PAID` check can replay its completed
 sale immediately. The paid audit is inserted only on the actual `CLOSING -> PAID` transition.
 
+### Table QR self-ordering (`9.60`)
+
+The floor editor issues one permanent QR URL per table and can download, print or rotate it. The QR
+is a locator, not a dynamic order id: after scanning, the server finds that table's current OPEN
+check and creates an HttpOnly session tied to that exact check. With no open check, the guest sees a
+waiting screen and cannot submit. Closing the check revokes its sessions, so the same browser cannot
+order for the next party; rotating a damaged or leaked QR invalidates the old printed code.
+
+The mobile menu uses the same `RESTAURANT_POS` surface, variants, packs, modifier rules and temporary
+sold-out state as the register. A submission contains structured catalog codes, not prices or
+tenant/table/check identifiers, is capped and idempotent, and remains `PENDING`. Displayed prices are
+estimates because promotion, tier, stock and recipe checks run again during acceptance.
+
+The QR inbox on `/pos/restaurant` is branch-scoped to the authenticated device. A PIN-verified
+`pos.sell` operator accepts or rejects the whole proposal. Acceptance adds the
+lines, replaces the whole-check stock reservation, creates the normal kitchen round, records the
+review and audit, and commits once. Failure leaves both proposal and check unchanged. Existing
+unsent staff draft lines must be sent or removed first, preventing an unrelated draft from riding
+along with the accepted QR round. If the party moves, the proposal retains its scan-time table
+snapshot for referential integrity while the staff inbox displays the check's current table; the old
+browser session no longer matches that moved check and the guest must scan the destination QR.
+
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
-contracts and credentials; no mock adapter is presented as live. Customer QR self-ordering,
-reservations/queue numbers, split/merge **checks** (payment split is supported), station-printer
+contracts and credentials; no mock adapter is presented as live. Reservations/queue numbers,
+split/merge **checks** (payment split is supported), station-printer
 routing and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
 driven. If re-reserving fails while
 a later round is being sent, the replacement now rolls back as one transaction: the previous PENDING

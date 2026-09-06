@@ -904,6 +904,18 @@ preserve traceability and to suppress duplicate kitchen-ticket creation during P
 five new tables have tenant RLS and `bms_app` grants; editable floor/check records use revision
 triggers, while the high-volume ticket state is represented by its audit events.
 
+Migration `9.60` adds static table QR ordering without creating a second check or kitchen path.
+`bms_restaurant_table_qr_tokens` stores one active, opaque, rotatable public locator per table plus
+its lookup digest so SQL error parameters never contain the printable token;
+`bms_restaurant_qr_sessions` stores only a SHA-256 hash of the browser token and binds it to the
+table's current OPEN check. `bms_restaurant_qr_submissions` and its item rows are structured,
+idempotent customer proposals with `PENDING -> ACCEPTED | REJECTED | EXPIRED` state. Composite
+foreign keys enforce one tenant/location/table/check/session chain. Leaving OPEN revokes sessions
+and expires unreviewed proposals in the check transaction; moving an OPEN check revokes its old-table
+sessions while pending proposals follow the check in the staff inbox. Acceptance is a PIN-authenticated
+`pos.sell` action that adds the proposal and runs the existing whole-check reservation/KDS send before
+committing the accepted state; a failure rolls all of it back.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

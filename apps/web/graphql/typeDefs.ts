@@ -617,6 +617,14 @@ export const typeDefs = /* GraphQL */ `
     tables: [BmsRestaurantTableAdmin!]!
   }
 
+  type BmsRestaurantTableQr {
+    token: String!
+    tableId: ID!
+    tableCode: String!
+    tableName: String!
+    createdAt: String!
+  }
+
   input BmsRestaurantTablePatchInput {
     name: String
     seats: Int
@@ -1050,6 +1058,7 @@ export const typeDefs = /* GraphQL */ `
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
     bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
+    bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
     bmsPosDevices: [BmsPosDevice!]!
     # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
     bmsArAccounts(search: String, status: String, withBalanceOnly: Boolean, limit: Int = 200): [BmsArAccount!]!
@@ -4197,6 +4206,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateRestaurantTable(tableId: ID!, patch: BmsRestaurantTablePatchInput!): BmsRestaurantTableAdmin!
     bmsDeleteRestaurantTable(tableId: ID!): Boolean!
     bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
+    bmsIssueRestaurantTableQr(tableId: ID!, rotate: Boolean): BmsRestaurantTableQr!
 
     # ---- POS (7.87) ----
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!

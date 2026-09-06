@@ -483,8 +483,21 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   and rebuilds the remaining reservation in the same transaction, so the customer is not charged
   for food the kitchen cancelled. A ticket cancelled after settlement has started or completed
   cannot rewrite the bill and must be handled through the normal refund/adjustment workflow.
+- **A table QR identifies a table; it never authorises cooking (`9.60`).** The printed URL carries
+  one opaque, rotatable token. A scan creates only a hashed, expiring browser session bound to the
+  table's current `OPEN` check. The browser never supplies tenant, branch, table or check authority,
+  and its structured basket becomes a `PENDING` proposal only. Public endpoints are rate-limited.
+- **Staff acceptance is the kitchen boundary.** A device-authenticated, PIN-verified operator with
+  `pos.sell` accepts or rejects the entire proposal. Acceptance adds all items, refreshes the same
+  whole-check reservation, creates the normal KDS round, records the review and audit, and commits
+  once. Any validation/stock/reservation failure rolls the whole action back. Existing unsent staff
+  lines must be sent or removed first so acceptance cannot silently send an unrelated draft.
+- **An old scan cannot order for the next guest.** Leaving `OPEN` revokes every session and expires
+  pending proposals in the check transaction; QR rotation also revokes its sessions. Moving a party
+  keeps the scan-time table snapshot immutable while the staff inbox resolves the check's current
+  table, and guests must scan the destination table QR again.
 - **Not built, and not to be faked**: split/merge of checks across tables (splitting *payment* is
-  supported), QR self-ordering, reservations/queue numbers, per-station printer routing,
+  supported), reservations/queue numbers, per-station printer routing,
   offline-first sync, and delivery-aggregator integrations.
 
 ## Product catalog: variants, sales surfaces, and stock policies

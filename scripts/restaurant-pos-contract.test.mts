@@ -200,7 +200,8 @@ test("a replacement reservation is atomic and gives the old key back", async () 
   assert.match(restaurant, /await cancelOrderInTx\(client, tenantId, orderId\)/);
   assert.match(restaurant, /createOrderInTx\(client,/);
   assert.match(restaurant, /SET idempotency_key = NULL/);
-  assert.match(restaurant, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\);\s*return created/);
+  assert.match(restaurant, /created\.status !== "CREATED"\) return created/);
+  assert.match(restaurant, /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\);\s*return result/);
   assert.doesNotMatch(restaurant, /releaseReservationOrder/);
   // public createOrder ยังเป็นเจ้าของ transaction เดิม แต่ workflow ใหญ่เรียกแกน in-tx ได้
   assert.match(orders, /export async function createOrderInTx\(/);
@@ -276,13 +277,14 @@ test("whole-check cancellation releases its order inside the check transaction",
 test("failed later rounds roll back to the previous sent-item reservation", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const send = restaurant.slice(
-    restaurant.indexOf("export async function sendRestaurantKitchenRound"),
+    restaurant.indexOf("async function sendRestaurantKitchenRoundInTx"),
     restaurant.indexOf("export async function moveRestaurantCheck")
   );
   assert.match(send, /beginTenantTx\(client, input\.tenantId/);
   assert.match(send, /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/);
   assert.match(send, /createOrderInTx\(client,/);
-  assert.match(send, /created\.status !== "CREATED"\) \{\s*await client\.query\("ROLLBACK"\)/);
+  assert.match(send, /created\.status !== "CREATED"\) return created/);
+  assert.match(send, /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\)/);
   assert.doesNotMatch(send, /restoreSentReservation/);
   assert.doesNotMatch(restaurant, /await query\(\s*`UPDATE bms_restaurant_/);
   assert.doesNotMatch(restaurant, /await query<[^>]+>\(\s*`UPDATE bms_orders/);

@@ -13,6 +13,7 @@ import {
   saveRestaurantFloorLayout,
   updateRestaurantTable,
 } from "@/lib/bms/restaurantPos";
+import { getRestaurantTableQr, issueRestaurantTableQr } from "@/lib/bms/restaurantQrOrdering";
 
 async function floorContext(ctx: any) {
   await requirePermission(ctx, "restaurant.floor.manage");
@@ -36,8 +37,23 @@ export const bmsRestaurantFloorAdminResolvers = {
       const actor = await floorContext(ctx);
       return listRestaurantFloor(actor.tenantId, args.locationId);
     },
+    async bmsRestaurantTableQr(_parent: unknown, args: { tableId: string }, ctx: any) {
+      const actor = await floorContext(ctx);
+      return getRestaurantTableQr(actor.tenantId, args.tableId);
+    },
   },
   Mutation: {
+    async bmsIssueRestaurantTableQr(
+      _parent: unknown,
+      args: { tableId: string; rotate?: boolean | null },
+      ctx: any
+    ) {
+      const actor = await floorContext(ctx);
+      return floorMutation(
+        () => issueRestaurantTableQr({ ...actor, tableId: args.tableId, rotate: Boolean(args.rotate) }),
+        "สร้าง QR โต๊ะไม่สำเร็จ"
+      );
+    },
     async bmsCreateRestaurantArea(_parent: unknown, args: { locationId: string; name: string }, ctx: any) {
       const actor = await floorContext(ctx);
       return floorMutation(
