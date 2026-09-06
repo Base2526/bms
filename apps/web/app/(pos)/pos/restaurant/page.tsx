@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -63,15 +63,15 @@ const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
 type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
-type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
-type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
+type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number };
+type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null; checks: FloorCheck[] };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
 const FLOOR_TABLE_SIZE = {
   round: { width: 96, height: 96 },
   rect: { width: 128, height: 76 },
 } as const;
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; lineAmount: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
-type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; items: CheckItem[] };
+type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
   kitchenStation: string | null;
@@ -422,6 +422,12 @@ export default function RestaurantPosPage() {
   const [kitchenNote, setKitchenNote] = useState("");
   const [menuQty, setMenuQty] = useState(1);
   const [openTable, setOpenTable] = useState<DiningTable | null>(null);
+  // โต๊ะที่แยกบิลแล้วมีบิลเปิดอยู่หลายใบ — แตะโต๊ะต้องถามก่อนว่าจะเปิดใบไหน
+  const [billPickerTable, setBillPickerTable] = useState<DiningTable | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitItemIds, setSplitItemIds] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
   const [guestCount, setGuestCount] = useState(2);
   const [shiftModal, setShiftModal] = useState<"OPEN" | "CLOSE" | null>(null);
   const [cashAmount, setCashAmount] = useState(0);
@@ -555,6 +561,17 @@ export default function RestaurantPosPage() {
     return Math.max(height, table.positionY + size.height + 24);
   }, 520);
   const availableTables = floor.tables.filter((table) => table.status === "AVAILABLE" && table.id !== selectedTableId);
+  // บรรทัดที่ย้ายไปบิลใหม่ได้ = ทุกบรรทัดที่ยังถูกคิดเงินอยู่ · บรรทัดที่ครัวยกเลิกไปแล้ว
+  // (status CANCELLED) หลุดจากยอดไปแล้วจึงไม่มีอะไรให้ย้าย
+  const splittableItems = (check?.items ?? []).filter((item) => item.status !== "CANCELLED");
+  // ปลายทางของการรวมบิล = บิลที่เปิดอยู่ใบอื่นทั้งสาขา รวมบิลใบอื่นของโต๊ะเดียวกันด้วย
+  // (แยกไปแล้วแต่ลูกค้าเปลี่ยนใจขอจ่ายรวม เป็นเรื่องที่เกิดจริงพอ ๆ กับการขอแยก)
+  const mergeTargets = floor.tables.flatMap((table) => table.checks
+    .filter((row) => row.id !== check?.id && isOpenCheckStatus(row.status))
+    .map((row) => ({
+      id: row.id,
+      label: `${table.name}${row.splitGroupNo > 1 ? ` · บิล ${row.splitGroupNo}` : ""} · ${row.itemCount} รายการ · ฿${money(row.amountDue)}`,
+    })));
   // นาฬิกาเดินเองทุก 30 วิ เพื่อให้ "นั่งมากี่นาที" บนการ์ดโต๊ะไม่ค้าง โดยไม่ต้องยิง API
   // เริ่มที่ 0 แล้วตั้งค่าใน effect เพื่อไม่ให้ค่าที่ render ฝั่ง server ต่างจาก client
   const [now, setNow] = useState(0);
@@ -975,6 +992,14 @@ export default function RestaurantPosPage() {
 
   async function chooseTable(table: DiningTable) {
     if (table.blocked) return;
+    // โต๊ะที่แยกบิลไว้มีบิลเปิดอยู่หลายใบ — เปิดใบแรกให้เองคือการเดาแทนคนที่ยืนอยู่ตรงนั้น
+    // แล้วสั่งอาหารเข้าบิลของอีกคนโดยไม่มีอะไรบนจอบอกว่าเข้าใบไหน
+    if (table.checks.length > 1) {
+      // ยังไม่ทำเครื่องหมายว่าเลือกโต๊ะนี้ — โต๊ะจะถูกเลือกก็ต่อเมื่อบิลใบใดใบหนึ่งโหลดสำเร็จ
+      // (กฎเดิมของหน้านี้: การเลือกโต๊ะต้องตามหลังบิลที่โหลดได้จริง ไม่ใช่ตามการแตะ)
+      setBillPickerTable(table);
+      return;
+    }
     if (table.check) {
       await run(async () => {
         await loadCheck(table.check!.id);
@@ -1085,6 +1110,41 @@ export default function RestaurantPosPage() {
   }
 
   async function action(name: string, extra: Record<string, unknown> = {}) { if (!check) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: name, ...extra })) }); if (body.check) setCheck(body.check); await Promise.all([loadFloor(), loadTickets()]); }); }
+  /**
+   * แยกบิล — บรรทัดที่เลือกย้ายไปเป็นบิลใหม่ของโต๊ะเดิม แล้วจอกระโดดไปยืนบนบิลใหม่
+   *
+   * ยืนบนใบใหม่โดยตั้งใจ เพราะขั้นตอนถัดไปของคนที่เพิ่งกดคือเก็บเงินใบที่เพิ่งแยกออกมา
+   * (ลูกค้าที่ขอแยกมักเป็นคนที่จะลุกก่อน) · ใบเดิมยังกดกลับได้จากผังโต๊ะ
+   */
+  async function splitCheck() {
+    if (!check || splitItemIds.length === 0) return;
+    await run(async () => {
+      const body = await json(`/api/pos/restaurant/checks/${check.id}`, {
+        method: "POST",
+        body: JSON.stringify(auth({ action: "split", itemIds: splitItemIds })),
+      });
+      setSplitOpen(false);
+      setSplitItemIds([]);
+      if (body.target) setCheck(body.target);
+      await Promise.all([loadFloor(), loadTickets()]);
+      message.success(`แยกเป็นบิลใหม่แล้ว · ฿${money(Number(body.target?.amountDue ?? 0))}`);
+    });
+  }
+  /** รวมบิล — ยกบิลที่เปิดอยู่ตอนนี้ไปรวมกับใบปลายทาง แล้วจอไปยืนบนใบปลายทาง */
+  async function mergeCheck() {
+    if (!check || !mergeTargetId) return;
+    await run(async () => {
+      const body = await json(`/api/pos/restaurant/checks/${check.id}`, {
+        method: "POST",
+        body: JSON.stringify(auth({ action: "merge", targetCheckId: mergeTargetId })),
+      });
+      setMergeOpen(false);
+      setMergeTargetId("");
+      if (body.check) setCheck(body.check);
+      await Promise.all([loadFloor(), loadTickets()]);
+      message.success(`รวม ${body.movedItems ?? 0} รายการเข้าบิลปลายทางแล้ว`);
+    });
+  }
   async function searchMembers() {
     if (memberQuery.trim().length < 3) { setMemberResults([]); return; }
     await run(async () => {
@@ -1789,6 +1849,9 @@ export default function RestaurantPosPage() {
                 ? `${table.check.guestCount} คน · ${table.check.itemCount} รายการ${minutes == null ? "" : ` · ${minutes} นาที`}`
                 : `${table.seats} ที่นั่ง · ว่าง`}</span>
               {table.check && <span className={styles.tableAmount}><span className={styles.baht}>฿</span>{money(table.check.amountDue)}</span>}
+              {/* โต๊ะที่แยกบิลไว้ต้องบอกจากผังเลย ไม่ใช่ให้รู้ตอนแตะแล้วเจอกล่องถาม —
+                  ยอดบนการ์ดเป็นของบิลหลักใบเดียว ป้ายนี้คือเหตุผลว่าทำไมมันไม่ใช่ยอดทั้งโต๊ะ */}
+              {table.checks.length > 1 && <span className={styles.tableSplitBadge}>{table.checks.length} บิล</span>}
             </button>;
           })}</div></div></div>
           {/* legend ต้อง "ปักหมุด" อยู่นอก panelScroll เสมอ ห้ามเอาไปไว้เป็นบรรทัดสุดท้ายในนั้น —
@@ -1811,7 +1874,7 @@ export default function RestaurantPosPage() {
           <div className={styles.checkHead}>
             <div className={styles.checkHeadRow}>
               <div className={styles.checkHeadText}>
-                <h2>{check.tableName} · {check.guestCount} คน</h2>
+                <h2>{check.tableName}{check.splitGroupNo > 1 ? ` · บิล ${check.splitGroupNo}` : ""} · {check.guestCount} คน</h2>
                 <p>{check.areaName} · เปิดบิล {timeOf(check.openedAt)}{checkMinutes == null ? "" : ` · ${checkMinutes} นาที`}{lastRound ? ` · รอบล่าสุด ${lastRound}` : ""}</p>
               </div>
               <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setMoreOpen(true)} title="จัดการบิลนี้ — ย้ายโต๊ะ · แก้จำนวนคน · ยกเลิกบิล" aria-label="จัดการบิลนี้"><MoreOutlined /></button>
@@ -2198,6 +2261,12 @@ export default function RestaurantPosPage() {
     <Modal title={`จัดการบิล ${check?.tableName ?? ""}`} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> ย้ายโต๊ะ</button>
+        <button type="button" className={styles.btn} disabled={splittableItems.length < 2}
+          title={splittableItems.length < 2 ? "ต้องมีอย่างน้อยสองรายการถึงจะแยกบิลได้" : "แยกบางรายการไปเป็นบิลใหม่ของโต๊ะเดิม"}
+          onClick={() => { setMoreOpen(false); setSplitItemIds([]); setSplitOpen(true); }}><ScissorOutlined /> แยกบิล</button>
+        <button type="button" className={styles.btn} disabled={mergeTargets.length === 0}
+          title={mergeTargets.length === 0 ? "ไม่มีบิลอื่นที่เปิดอยู่ให้รวมด้วย" : "ยกบิลนี้ไปรวมกับอีกใบ"}
+          onClick={() => { setMoreOpen(false); setMergeTargetId(mergeTargets[0]?.id ?? ""); setMergeOpen(true); }}><MergeCellsOutlined /> รวมบิลนี้เข้ากับใบอื่น</button>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>แก้จำนวนคน</button>
         <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { setMoreOpen(false); openCancel(); }}><CloseCircleOutlined /> ยกเลิกบิล</button>
       </div>
@@ -2233,6 +2302,62 @@ export default function RestaurantPosPage() {
               </div>
             </>}
       </div>}
+    </Modal>
+    {/* เลือกบิลของโต๊ะที่แยกไว้ — ปุ่มละใบ พร้อมยอดและจำนวนรายการ เพราะสิ่งที่คนจำได้คือ
+        "โต๊ะนี้ใบของกลุ่มที่สั่งเบียร์" ไม่ใช่เลขใบ */}
+    <Modal title={`${billPickerTable?.name ?? ""} · ${billPickerTable?.checks.length ?? 0} บิล`}
+      open={Boolean(billPickerTable)} onCancel={() => setBillPickerTable(null)} footer={null}
+      getContainer={modalContainer} destroyOnClose>
+      <div className={styles.sheetActions}>
+        {(billPickerTable?.checks ?? []).map((row) => <button key={row.id} type="button" className={styles.btn}
+          onClick={() => { const table = billPickerTable; setBillPickerTable(null); void run(async () => { await loadCheck(row.id); setSelectedTableId(table?.id ?? ""); setScreen("ORDER"); }); }}>
+          บิล {row.splitGroupNo} · {row.itemCount} รายการ · ฿{money(row.amountDue)}
+          {row.unsentCount > 0 ? ` · ค้างส่งครัว ${row.unsentCount}` : ""}
+        </button>)}
+        <div className={styles.sheetNote}>โต๊ะนี้ถูกแยกบิลไว้ · แต่ละใบจองของและเก็บเงินแยกกัน</div>
+      </div>
+    </Modal>
+    <Modal title={`แยกบิล ${check?.tableName ?? ""}`} open={splitOpen} onCancel={() => setSplitOpen(false)}
+      onOk={() => void splitCheck()} confirmLoading={working} okText="แยกไปบิลใหม่"
+      okButtonProps={{ disabled: splitItemIds.length === 0 || splitItemIds.length >= splittableItems.length }}
+      getContainer={modalContainer} destroyOnClose>
+      <div className={styles.modalGrid}>
+        <Alert type="info" showIcon message="เลือกรายการที่จะย้ายไปบิลใหม่ของโต๊ะเดิม"
+          description="บิลใหม่จองของและเก็บเงินแยกกันเหมือนบิลปกติ · ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่ใบเดิม" />
+        <div className={styles.splitList}>
+          {splittableItems.map((item) => {
+            const picked = splitItemIds.includes(item.id);
+            return <label key={item.id} className={`${styles.splitRow} ${picked ? styles.splitRowOn : ""}`}>
+              <input type="checkbox" checked={picked}
+                onChange={(event) => setSplitItemIds((current) => event.target.checked
+                  ? [...current, item.id]
+                  : current.filter((id) => id !== item.id))} />
+              <span className={styles.splitName}>{item.productName}{item.packQty > 1 ? ` × ${item.packQty}` : ""}
+                {item.modifierNames.length ? <small>{item.modifierNames.join(" · ")}</small> : null}
+                <small>{item.status === "NEW" ? "ยังไม่ส่งครัว" : `รอบ ${item.roundNo ?? 1}`}</small>
+              </span>
+              {item.lineAmount != null && <b>฿{money(item.lineAmount)}</b>}
+            </label>;
+          })}
+        </div>
+        {splitItemIds.length >= splittableItems.length && splittableItems.length > 0 &&
+          <Alert type="warning" showIcon message="ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่บิลเดิม" />}
+      </div>
+    </Modal>
+    <Modal title={`รวมบิล ${check?.tableName ?? ""}`} open={mergeOpen} onCancel={() => setMergeOpen(false)}
+      onOk={() => void mergeCheck()} confirmLoading={working} okText="รวมบิล"
+      okButtonProps={{ disabled: !mergeTargetId }} getContainer={modalContainer} destroyOnClose>
+      <div className={styles.modalGrid}>
+        <Alert type="warning" showIcon message="บิลนี้จะถูกยกไปรวมกับใบปลายทางทั้งใบ"
+          description="ทุกรายการยังถูกคิดเงินครบที่ใบปลายทาง ไม่ใช่การยกเลิกบิล · บิลนี้จะปิดลงและโต๊ะจะว่างทันที" />
+        <label>บิลปลายทาง
+          <select value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)}>
+            {mergeTargets.map((row) => <option key={row.id} value={row.id}>
+              {row.label}
+            </option>)}
+          </select>
+        </label>
+      </div>
     </Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย" getContainer={modalContainer}><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
     <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="คนรับออร์เดอร์เริ่มยกเลิกได้ แต่ต้องให้ผู้มีสิทธิ์ pos.void ซึ่งเป็นคนละคนกด PIN อนุมัติ" />}<label>Note / เหตุผลที่ยกเลิก (จำเป็น)<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="เช่น ลูกค้าเปลี่ยนใจ เปิดผิดโต๊ะ หรือรับรายการผิด" /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>

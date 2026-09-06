@@ -149,21 +149,38 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
         ORDER BY a.sort_order, a.name`,
       [tenantId, locationId]
     ),
+    // โต๊ะหนึ่งมีบิลที่เปิดอยู่ได้หลายใบตั้งแต่ `9.63` (แยกบิล) — ต้องรวมเป็น array
+    // ต่อโต๊ะ ไม่ใช่ join ตรง ๆ ไม่งั้นโต๊ะที่แยกบิลจะโผล่บนผังสองครั้ง
     query<any>(
-      `SELECT t.id, t.area_id, t.code, t.name, t.seats, t.shape,
+      `WITH open_checks AS (
+         SELECT c.id, c.table_id, c.status, c.guest_count, c.amount_due, c.opened_at,
+                c.version, c.reserved_version, c.split_group_no,
+                COUNT(i.id) FILTER (WHERE i.status <> 'CANCELLED')::integer AS item_count,
+                COUNT(i.id) FILTER (WHERE i.status = 'NEW')::integer AS unsent_count
+           FROM bms_restaurant_checks c
+           LEFT JOIN bms_restaurant_check_items i
+             ON i.tenant_id = c.tenant_id AND i.check_id = c.id
+          WHERE c.tenant_id = $1 AND c.location_id = $2 AND c.status = ANY($3::text[])
+          GROUP BY c.id
+       )
+       SELECT t.id, t.area_id, t.code, t.name, t.seats, t.shape,
               t.position_x, t.position_y, t.sort_order, t.blocked, t.active,
-              c.id AS check_id, c.status AS check_status, c.guest_count,
-              c.amount_due, c.opened_at, c.version, c.reserved_version,
-              COUNT(i.id) FILTER (WHERE i.status <> 'CANCELLED')::integer AS item_count,
-              COUNT(i.id) FILTER (WHERE i.status = 'NEW')::integer AS unsent_count
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', oc.id, 'status', oc.status, 'guestCount', oc.guest_count,
+                    'amountDue', oc.amount_due, 'openedAt', oc.opened_at,
+                    'itemCount', oc.item_count, 'unsentCount', oc.unsent_count,
+                    'version', oc.version, 'reservedVersion', oc.reserved_version,
+                    'splitGroupNo', oc.split_group_no
+                  ) ORDER BY oc.split_group_no
+                ) FILTER (WHERE oc.id IS NOT NULL),
+                '[]'::json
+              ) AS checks
          FROM bms_restaurant_tables t
-         LEFT JOIN bms_restaurant_checks c
-           ON c.tenant_id = t.tenant_id AND c.table_id = t.id
-          AND c.status = ANY($3::text[])
-         LEFT JOIN bms_restaurant_check_items i
-           ON i.tenant_id = c.tenant_id AND i.check_id = c.id
+         LEFT JOIN open_checks oc ON oc.table_id = t.id
         WHERE t.tenant_id = $1 AND t.location_id = $2 AND t.active
-        GROUP BY t.id, c.id
+        GROUP BY t.id
         ORDER BY t.sort_order, t.code`,
       [tenantId, locationId, [...OPEN_CHECK_STATUSES]]
     ),
@@ -175,30 +192,37 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
       sortOrder: Number(row.sort_order),
       tableCount: Number(row.table_count),
     })),
-    tables: tables.rows.map((row) => ({
-      id: row.id,
-      areaId: row.area_id,
-      code: row.code,
-      name: row.name,
-      seats: Number(row.seats),
-      shape: row.shape === "rect" ? "rect" : "round",
-      positionX: Number(row.position_x),
-      positionY: Number(row.position_y),
-      blocked: Boolean(row.blocked),
-      active: Boolean(row.active),
-      status: row.blocked ? "BLOCKED" : row.check_id ? "OCCUPIED" : "AVAILABLE",
-      check: row.check_id ? {
-        id: row.check_id,
-        status: row.check_status,
-        guestCount: Number(row.guest_count),
-        amountDue: Number(row.amount_due),
-        openedAt: iso(row.opened_at),
-        itemCount: Number(row.item_count),
-        unsentCount: Number(row.unsent_count),
-        version: Number(row.version),
-        reservedVersion: row.reserved_version == null ? null : Number(row.reserved_version),
-      } : null,
-    })),
+    tables: tables.rows.map((row) => {
+      const checks = (row.checks as any[]).map((entry) => ({
+        id: String(entry.id),
+        status: String(entry.status),
+        guestCount: Number(entry.guestCount),
+        amountDue: Number(entry.amountDue),
+        openedAt: iso(entry.openedAt),
+        itemCount: Number(entry.itemCount),
+        unsentCount: Number(entry.unsentCount),
+        version: Number(entry.version),
+        reservedVersion: entry.reservedVersion == null ? null : Number(entry.reservedVersion),
+        splitGroupNo: Number(entry.splitGroupNo),
+      }));
+      return {
+        id: row.id,
+        areaId: row.area_id,
+        code: row.code,
+        name: row.name,
+        seats: Number(row.seats),
+        shape: row.shape === "rect" ? "rect" : "round",
+        positionX: Number(row.position_x),
+        positionY: Number(row.position_y),
+        blocked: Boolean(row.blocked),
+        active: Boolean(row.active),
+        status: row.blocked ? "BLOCKED" : checks.length ? "OCCUPIED" : "AVAILABLE",
+        // บิลหลักของโต๊ะ = ใบที่เลขน้อยที่สุดที่ยังเปิดอยู่ · ไม่มีธง is_primary ให้ต้องดูแล
+        // และเมื่อบิลหลักถูกคิดเงินไป ใบถัดไปเลื่อนขึ้นมาเป็นหลักเอง
+        check: checks[0] ?? null,
+        checks,
+      };
+    }),
   };
 }
 
@@ -880,6 +904,11 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
     guestCount: Number(row.guest_count),
     note: row.note,
     amountDue: Number(row.amount_due),
+    // บิลใบที่เท่าไรของโต๊ะ (9.63) — จอต้องบอกให้ชัดว่ากำลังยืนอยู่บนบิลไหน ไม่งั้น
+    // โต๊ะที่แยกบิลแล้วจะมีสองหน้าจอที่หน้าตาเหมือนกันทุกอย่างแต่คิดเงินคนละก้อน
+    splitGroupNo: Number(row.split_group_no ?? 1),
+    splitFromCheckId: (row.split_from_check_id as string | null) ?? null,
+    mergedIntoCheckId: (row.merged_into_check_id as string | null) ?? null,
     version: Number(row.version),
     reservedVersion: row.reserved_version == null ? null : Number(row.reserved_version),
     hasCurrentOrder: Boolean(row.current_order_id),
@@ -1658,6 +1687,369 @@ export async function moveRestaurantCheck(input: {
     } catch (error: any) {
       try { await client.query("ROLLBACK"); } catch {}
       if (error?.code === "23505") throw new RestaurantCheckError("โต๊ะปลายทางมีบิลเปิดอยู่แล้ว");
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+/**
+ * ล็อกบิลหลายใบพร้อมกัน — เรียงตาม id เสมอ
+ *
+ * การรวมบิลแตะสองใบในทรานแซกชันเดียว ถ้าสองคำขอที่สลับต้นทาง/ปลายทางกันวิ่งพร้อมกัน
+ * (A→B กับ B→A) แล้วต่างคนต่างล็อกตามลำดับที่ตัวเองได้รับมา จะได้ deadlock ทันที ·
+ * เรียงตาม id ก่อนเสมอทำให้ทุกคำขอไล่ล็อกในลำดับเดียวกัน — กฎเดียวกับที่ทั้งโมดูล
+ * ใช้กับลำดับ กะ → บิล → ใบจอง → สต็อก
+ */
+function withChecksLock<T>(tenantId: string, checkIds: string[], work: () => Promise<T>): Promise<T> {
+  const ordered = [...new Set(checkIds)].sort();
+  return ordered.reduceRight<() => Promise<T>>(
+    (next, checkId) => () => withCheckLock(tenantId, checkId, next),
+    work
+  )();
+}
+
+type CheckMoveContext = {
+  tenantId: string;
+  locationId: string;
+  deviceId: string;
+  shiftId: string;
+  actorUserId: string;
+};
+
+/**
+ * คิดยอดและจองสต็อกใหม่ให้บิลหนึ่งใบหลังรายการเปลี่ยนมือ (แยกบิล/รวมบิล)
+ *
+ * ใช้ **เส้นทางเดียวกับการส่งครัวรอบถัดไป**: ปล่อยใบจองเดิม แล้วสร้างใหม่จากบรรทัดที่
+ * เหลือด้วย `createOrderInTx` ตัวเดิม · ห้ามบวก/ลบ `amount_due` เองจากราคาบรรทัดที่ย้าย
+ * เพราะจะกลายเป็นสูตรเงินชุดที่สองที่ drift จากตัวจริง (กฎเดียวกับ `unitPriceForQty`
+ * และเหตุผลเดียวกับที่ `dropKitchenCancelledLineInTx` สร้างออร์เดอร์ใหม่ทั้งใบ)
+ *
+ * **จองใหม่เฉพาะบิลที่ "เคยจอง" หรือ "ตอนนี้ถืออาหารที่ส่งครัวไปแล้ว"** — บิลที่มีแต่
+ * บรรทัดยังไม่ส่งครัวไม่เคยจองสต็อกมาก่อน ถ้าไปบังคับให้จองตอนแยกบิล การแยกบิลจะล้ม
+ * ด้วย `OUT_OF_STOCK` ในสถานการณ์ที่การ "กดเพิ่มรายการ" เมื่อครู่ยังผ่าน ซึ่งอ่านไม่รู้เรื่อง
+ * ที่หน้าเคาน์เตอร์และไม่มีทางแก้นอกจากลบรายการทิ้ง
+ *
+ * ผู้เรียกต้องล็อกกะและบิลใบนี้มาก่อนแล้ว (ลำดับ กะ → บิล → ใบจอง → สต็อก)
+ */
+async function repriceCheckAfterItemMoveInTx(
+  client: PoolClient,
+  ctx: CheckMoveContext,
+  checkId: string
+): Promise<{ orderId: string | null; amountDue: number }> {
+  const checkResult = await client.query<any>(
+    `SELECT * FROM bms_restaurant_checks
+      WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
+      FOR UPDATE`,
+    [ctx.tenantId, checkId, ctx.locationId]
+  );
+  if (!checkResult.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แก้ไขได้");
+  const check = checkResult.rows[0];
+  const items = await client.query<CheckItemRow>(
+    `SELECT * FROM bms_restaurant_check_items
+      WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
+      ORDER BY created_at, id
+      FOR UPDATE`,
+    [ctx.tenantId, checkId]
+  );
+  const hadReservation = Boolean(check.current_order_id);
+  const holdsSentFood = items.rows.some((row) => row.status === "SENT");
+  if (hadReservation
+      && await releaseCheckReservationInTx(client, ctx.tenantId, check.current_order_id) === "BLOCKED") {
+    throw new RestaurantCheckError(
+      "บิลจองเดิมไม่อยู่ในสถานะที่คิดยอดใหม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน"
+    );
+  }
+  const nextVersion = Number(check.version) + 1;
+  let orderId: string | null = null;
+  let amountDue = 0;
+  if (items.rowCount && (hadReservation || holdsSentFood)) {
+    const created = await createOrderInTx(client, {
+      tenantId: ctx.tenantId,
+      channel: "pos",
+      items: items.rows.map(toOrderItem),
+      locationId: ctx.locationId,
+      posDeviceId: ctx.deviceId,
+      posShiftId: ctx.shiftId,
+      cashierUserId: ctx.actorUserId,
+      editorId: ctx.actorUserId,
+      idempotencyKey: `restaurant:${checkId}:v${nextVersion}`,
+      restaurantCheckId: checkId,
+    });
+    if (created.status !== "CREATED") {
+      throw new RestaurantCheckError(`คิดยอดใหม่ไม่สำเร็จ (${created.status}) — ยังไม่มีอะไรถูกย้าย`);
+    }
+    orderId = created.orderId;
+    amountDue = created.amountDue;
+  }
+  await client.query(
+    `UPDATE bms_restaurant_checks
+        SET version = $3, reserved_version = $4, current_order_id = $5, amount_due = $6,
+            pos_device_id = $7, pos_shift_id = $8, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [ctx.tenantId, checkId, nextVersion, orderId == null ? null : nextVersion, orderId, amountDue,
+      ctx.deviceId, ctx.shiftId]
+  );
+  return { orderId, amountDue };
+}
+
+/**
+ * ย้ายบรรทัดไปอีกบิล พร้อมเรียงเลขรอบครัวใหม่ให้เป็นของบิลปลายทาง
+ *
+ * `round_no` คือ "ลำดับที่อาหารถูกส่งครัวสำหรับบิลใบนี้" ไม่ใช่รหัสสากล — ยกเลขเดิมข้ามบิล
+ * ไปด้วยจะทำให้บิลปลายทางมีสองกลุ่มที่เขียนว่า "รอบ 1" แล้วแผงบิลจับรวมเป็นกลุ่มเดียว
+ * (จอจัดกลุ่มด้วย `roundNo`) · ใช้ DENSE_RANK เพื่อ **รักษาลำดับของรอบเดิม** ไว้แทนที่จะ
+ * ยุบทุกอย่างเป็นรอบเดียว — ครัวส่งของมาสามรอบก็ยังเห็นสามกลุ่มบนบิลใหม่
+ *
+ * `sent_at` ของแต่ละบรรทัดไม่ถูกแตะ เพราะนั่นคือเวลาที่ครัวได้รับจริง
+ */
+async function moveCheckItemsInTx(
+  client: PoolClient,
+  input: { tenantId: string; fromCheckId: string; toCheckId: string; itemIds: string[] | null }
+): Promise<number> {
+  const base = await client.query<{ base: number }>(
+    `SELECT COALESCE(MAX(round_no), 0) AS base
+       FROM bms_restaurant_check_items
+      WHERE tenant_id = $1 AND check_id = $2`,
+    [input.tenantId, input.toCheckId]
+  );
+  const moved = await client.query<{ id: string }>(
+    `WITH picked AS (
+       SELECT id, round_no,
+              CASE WHEN round_no IS NULL THEN NULL
+                   ELSE $5::int + DENSE_RANK() OVER (ORDER BY round_no) END AS next_round
+         FROM bms_restaurant_check_items
+        WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
+          AND ($4::uuid[] IS NULL OR id = ANY($4::uuid[]))
+     )
+     UPDATE bms_restaurant_check_items i
+        SET check_id = $3, round_no = picked.next_round, updated_at = now()
+       FROM picked
+      WHERE i.tenant_id = $1 AND i.id = picked.id
+      RETURNING i.id`,
+    [input.tenantId, input.fromCheckId, input.toCheckId, input.itemIds, Number(base.rows[0].base)]
+  );
+  if (moved.rowCount) {
+    // ตั๋วครัวต้องตามบรรทัดไป ไม่งั้นกระดานครัวจะบอกโต๊ะผิดให้คนยกอาหาร
+    // (`bms_restaurant_kitchen_tickets.check_id` เป็นทางเดียวที่ตั๋วรู้ว่าตัวเองอยู่โต๊ะไหน)
+    await client.query(
+      `UPDATE bms_restaurant_kitchen_tickets
+          SET check_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND check_id = $2 AND check_item_id = ANY($4::uuid[])`,
+      [input.tenantId, input.fromCheckId, input.toCheckId, moved.rows.map((row) => row.id)]
+    );
+  }
+  return moved.rowCount ?? 0;
+}
+
+/**
+ * แยกบิล — ย้ายบางรายการออกไปเป็นบิลใบใหม่ของ **โต๊ะเดิม**
+ *
+ * ทำที่โต๊ะเดิมโดยตั้งใจ เพราะนี่คือสิ่งที่ลูกค้าขอจริง ("โต๊ะนี้ขอแยกจ่าย") ไม่ใช่การย้ายโต๊ะ
+ * ซึ่งมีปุ่มของตัวเองอยู่แล้ว · บิลใบใหม่เป็นบิลเต็มใบ (จองสต็อกเอง ออกใบกำกับเอง คิดเงินเอง)
+ * จึงเดินเส้นทางเงินเส้นเดิมทั้งหมดโดยไม่ต้องมีกลไก "จ่ายบางส่วน" ซึ่งเครื่องคิดเงินตัวนี้
+ * ไม่มีและไม่ควรมี (`recordPosSale` บังคับว่ายอดต้องตรงเป๊ะทั้งใบ)
+ *
+ * ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่ใบเดิม — ย้ายออกทั้งหมดคือการเปลี่ยนเลขบิลเปล่า ๆ
+ * แล้วทิ้งบิลว่างไว้บนโต๊ะให้คนมาสงสัยทีหลัง
+ */
+export async function splitRestaurantCheck(input: {
+  tenantId: string;
+  locationId: string;
+  deviceId: string;
+  shiftId: string;
+  checkId: string;
+  itemIds: string[];
+  guestCount?: number | null;
+  actorUserId: string;
+}) {
+  const itemIds = [...new Set((input.itemIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (!itemIds.length) throw new RestaurantCheckError("เลือกรายการที่จะแยกไปบิลใหม่ก่อน");
+  return withCheckLock(input.tenantId, input.checkId, async () => {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      const shift = await client.query(
+        `SELECT 1 FROM bms_pos_shifts
+          WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4 AND status = 'OPEN'
+          FOR KEY SHARE`,
+        [input.tenantId, input.shiftId, input.deviceId, input.locationId]
+      );
+      if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนแยกบิล");
+      await lockCheckInTx(client, input.tenantId, input.checkId);
+      const source = await client.query<{ table_id: string; guest_count: number }>(
+        `SELECT table_id, guest_count FROM bms_restaurant_checks
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
+          FOR UPDATE`,
+        [input.tenantId, input.checkId, input.locationId]
+      );
+      if (!source.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แยกบิลได้");
+
+      const picked = await client.query<{ picked: number; remaining: number }>(
+        `SELECT COUNT(*) FILTER (WHERE id = ANY($3::uuid[]))::int AS picked,
+                COUNT(*) FILTER (WHERE NOT (id = ANY($3::uuid[])))::int AS remaining
+           FROM bms_restaurant_check_items
+          WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'`,
+        [input.tenantId, input.checkId, itemIds]
+      );
+      if (Number(picked.rows[0].picked) !== itemIds.length) {
+        throw new RestaurantCheckError("มีรายการที่เลือกไม่อยู่ในบิลนี้แล้ว กรุณารีเฟรชแล้วลองใหม่");
+      }
+      if (Number(picked.rows[0].remaining) < 1) {
+        throw new RestaurantCheckError("ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่บิลเดิม");
+      }
+
+      const nextGroup = await client.query<{ next_group: number }>(
+        `SELECT COALESCE(MAX(split_group_no), 0) + 1 AS next_group
+           FROM bms_restaurant_checks
+          WHERE tenant_id = $1 AND table_id = $2 AND status IN ('OPEN','CLOSING')`,
+        [input.tenantId, source.rows[0].table_id]
+      );
+      if (Number(nextGroup.rows[0].next_group) > 20) {
+        throw new RestaurantCheckError("โต๊ะนี้มีบิลที่เปิดอยู่ครบเพดานแล้ว (20 ใบ)");
+      }
+      const created = await client.query<{ id: string }>(
+        `INSERT INTO bms_restaurant_checks
+           (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, guest_count,
+            opened_by, split_group_no, split_from_check_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING id`,
+        [input.tenantId, input.locationId, source.rows[0].table_id, input.deviceId, input.shiftId,
+          Math.min(Math.max(Math.trunc(input.guestCount ?? 1), 1), 500), input.actorUserId,
+          Number(nextGroup.rows[0].next_group), input.checkId]
+      );
+      const targetId = created.rows[0].id;
+      const moved = await moveCheckItemsInTx(client, {
+        tenantId: input.tenantId,
+        fromCheckId: input.checkId,
+        toCheckId: targetId,
+        itemIds,
+      });
+      if (moved !== itemIds.length) {
+        throw new RestaurantCheckError("ย้ายรายการไม่ครบ กรุณารีเฟรชแล้วลองใหม่");
+      }
+      // ปล่อยของที่ใบเดิมจองไว้ **ก่อน** ให้ใบใหม่จอง ไม่งั้นสองใบแย่งสต็อกก้อนเดียวกัน
+      // แล้วการแยกบิลจะล้มด้วย OUT_OF_STOCK ทั้งที่ของทั้งหมดอยู่บนโต๊ะไปแล้ว
+      const ctx: CheckMoveContext = {
+        tenantId: input.tenantId,
+        locationId: input.locationId,
+        deviceId: input.deviceId,
+        shiftId: input.shiftId,
+        actorUserId: input.actorUserId,
+      };
+      await repriceCheckAfterItemMoveInTx(client, ctx, input.checkId);
+      await repriceCheckAfterItemMoveInTx(client, ctx, targetId);
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.check_split',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+          JSON.stringify({
+            targetCheckId: targetId,
+            splitGroupNo: Number(nextGroup.rows[0].next_group),
+            itemCount: moved,
+          })]
+      );
+      await client.query("COMMIT");
+      return {
+        status: "SPLIT" as const,
+        source: await getRestaurantCheck(input.tenantId, input.checkId),
+        target: await getRestaurantCheck(input.tenantId, targetId),
+      };
+    } catch (error: any) {
+      try { await client.query("ROLLBACK"); } catch {}
+      if (error?.code === "23505") throw new RestaurantCheckError("โต๊ะนี้เพิ่งมีบิลใหม่เกิดขึ้น กรุณาลองใหม่");
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+/**
+ * รวมบิล — ยกทุกรายการของบิลต้นทางไปไว้ที่บิลปลายทาง แล้วปิดต้นทางเป็น `MERGED`
+ *
+ * **ไม่ใช่การยกเลิกบิล** จึงไม่ผ่าน `cancelRestaurantCheck()` และไม่ต้องมีผู้อนุมัติคนที่สอง:
+ * ไม่มีอาหารถูกทิ้ง ไม่มีบรรทัดไหนหลุดออกจากยอด ทุกจานยังถูกเก็บเงินอยู่ที่ใบปลายทาง ·
+ * ถ้าบังคับ PIN ผู้อนุมัติทุกครั้งที่ลูกค้าขอรวมบิล ร้านจะเลิกใช้แล้วกลับไปคิดเงินในหัว
+ *
+ * ปิดต้นทางด้วยสถานะของตัวเองแทน CANCELLED เพื่อไม่ให้ตัวเลข "บิลที่ถูกยกเลิก" พองขึ้น
+ * ตามจำนวนครั้งที่ร้านรวมบิล (เหตุผลเต็มอยู่ในหัวไฟล์ migration `9.63`)
+ */
+export async function mergeRestaurantChecks(input: {
+  tenantId: string;
+  locationId: string;
+  deviceId: string;
+  shiftId: string;
+  sourceCheckId: string;
+  targetCheckId: string;
+  actorUserId: string;
+}) {
+  if (input.sourceCheckId === input.targetCheckId) {
+    throw new RestaurantCheckError("เลือกบิลปลายทางที่ไม่ใช่บิลเดียวกัน");
+  }
+  return withChecksLock(input.tenantId, [input.sourceCheckId, input.targetCheckId], async () => {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      const shift = await client.query(
+        `SELECT 1 FROM bms_pos_shifts
+          WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4 AND status = 'OPEN'
+          FOR KEY SHARE`,
+        [input.tenantId, input.shiftId, input.deviceId, input.locationId]
+      );
+      if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนรวมบิล");
+      for (const checkId of [input.sourceCheckId, input.targetCheckId].sort()) {
+        await lockCheckInTx(client, input.tenantId, checkId);
+      }
+      const both = await client.query<{ id: string; status: string }>(
+        `SELECT id, status FROM bms_restaurant_checks
+          WHERE tenant_id = $1 AND location_id = $2 AND id = ANY($3::uuid[])
+          ORDER BY id
+          FOR UPDATE`,
+        [input.tenantId, input.locationId, [input.sourceCheckId, input.targetCheckId]]
+      );
+      if (both.rowCount !== 2 || both.rows.some((row) => row.status !== "OPEN")) {
+        throw new RestaurantCheckError("รวมบิลได้เฉพาะบิลที่เปิดอยู่ในสาขาเดียวกันและยังไม่ได้กดคิดเงิน");
+      }
+      const moved = await moveCheckItemsInTx(client, {
+        tenantId: input.tenantId,
+        fromCheckId: input.sourceCheckId,
+        toCheckId: input.targetCheckId,
+        itemIds: null,
+      });
+      const ctx: CheckMoveContext = {
+        tenantId: input.tenantId,
+        locationId: input.locationId,
+        deviceId: input.deviceId,
+        shiftId: input.shiftId,
+        actorUserId: input.actorUserId,
+      };
+      // ต้นทางว่างแล้ว — คืนใบจองของมันก่อนให้ปลายทางจองรวม ไม่งั้นสองใบแย่งของก้อนเดียวกัน
+      await repriceCheckAfterItemMoveInTx(client, ctx, input.sourceCheckId);
+      await repriceCheckAfterItemMoveInTx(client, ctx, input.targetCheckId);
+      const closed = await client.query(
+        `UPDATE bms_restaurant_checks
+            SET status = 'MERGED', merged_into_check_id = $3, closed_by = $4, closed_at = now(),
+                settlement_attempt_id = NULL, settlement_started_at = NULL, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
+        [input.tenantId, input.sourceCheckId, input.targetCheckId, input.actorUserId]
+      );
+      if (!closed.rowCount) throw new RestaurantCheckError("บิลต้นทางเปลี่ยนสถานะระหว่างรวมบิล กรุณาลองใหม่");
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.check_merge',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.targetCheckId,
+          JSON.stringify({ sourceCheckId: input.sourceCheckId, itemCount: moved })]
+      );
+      await client.query("COMMIT");
+      return {
+        status: "MERGED" as const,
+        movedItems: moved,
+        check: await getRestaurantCheck(input.tenantId, input.targetCheckId),
+      };
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
       throw error;
     } finally {
       client.release();

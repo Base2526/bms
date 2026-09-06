@@ -586,6 +586,31 @@
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }
+
+/* ---- แยกบิล / รวมบิล (9.63) ---------------------------------------------
+   ป้าย "N บิล" อยู่มุมล่างขวาของการ์ดโต๊ะ ไม่ทับจุดสถานะ (มุมบนขวา) และไม่ทับยอดเงิน
+   ซึ่งเป็นบรรทัดสุดท้ายกลางการ์ด · ใช้สีของตัวอักษรเป็นสัญญาณ ไม่ใช่พื้นทึบ เพราะการ์ดโต๊ะ
+   มีสีสถานะของตัวเองอยู่แล้วและป้ายพื้นทึบอีกอันจะแย่งความสนใจจากสีที่บอกว่าอาหารถึงไหน */
+.tableSplitBadge {
+  position: absolute; right: 6px; bottom: 5px;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  padding: 2px 5px; border-radius: 999px;
+  color: var(--ink-2); background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.splitList { display: grid; gap: 6px; max-height: 46vh; overflow: auto; }
+/* แถวเลือกรายการเป็น label เต็มแถว — นิ้วบนแท็บเล็ตต้องแตะที่ไหนก็ได้ในแถว ไม่ใช่เล็งช่องติ๊ก */
+.splitRow {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  min-height: 48px; padding: 8px 10px; cursor: pointer;
+  border-radius: 10px; background: var(--quiet);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.splitRow input { width: 20px; height: 20px; accent-color: var(--accent); }
+.splitRowOn { background: var(--panel-2); box-shadow: inset 0 0 0 2px var(--accent); }
+.splitName { display: grid; font-size: 14px; font-weight: 600; color: var(--ink); }
+.splitName small { font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
+.splitRow b { font-variant-numeric: tabular-nums; }
 .lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
 .lane { border-radius: 6px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color);
   display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

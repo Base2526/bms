@@ -866,7 +866,7 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`–`9.49`)
+## Restaurant POS (`9.44`–`9.49`, `9.63`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
 Migration `9.59` adds each table's `shape` (`round`/`rect`) and non-negative pixel coordinates
@@ -881,8 +881,14 @@ Migration `9.49` extends the same database-level chain through
 `location -> POS device -> shift -> restaurant check`, including the device id carried by the shift;
 a UUID from another branch or tenant can no longer satisfy a restaurant check FK even if supplied by
 SQL outside the service.
-`bms_restaurant_checks` is the open dine-in service state, with a partial unique index allowing only
-one OPEN/CLOSING check per table. `version` changes with cart edits and `reserved_version` records the
+`bms_restaurant_checks` is the open dine-in service state. Migration `9.63` widens the partial unique
+index to `(tenant_id, table_id, split_group_no)` so a table can carry several open bills at once —
+the primary bill is simply the lowest `split_group_no` still open, which needs no flag to maintain
+and hands the role to the next bill when the primary is paid. The same migration adds the terminal
+status `MERGED` (with `merged_into_check_id`, and `split_from_check_id` for the other direction):
+a merged bill is not a void, so counting it as `CANCELLED` would inflate every void metric by the
+number of times a shop combined bills. `MERGED` is terminal, so it carries `closed_at` and the `9.62`
+QR-expiry trigger fires on it. `version` changes with cart edits and `reserved_version` records the
 version represented by `current_order_id`; checkout requires equality so unsent food cannot bypass
 stock reservation or the kitchen. Replacing that order for a later kitchen round is atomic: the old
 PENDING order is cancelled and the new whole-check order is created through `createOrderInTx()` in

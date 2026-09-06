@@ -185,6 +185,13 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "send to kitchen", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-kitchen-round" },
   { q: "ย้ายโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-settle" },
   { q: "move table", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-settle" },
+  // "แยกบิล" คือคำที่ลูกค้าพูดกับพนักงานจริง ๆ ที่โต๊ะ ไม่ใช่ชื่อฟีเจอร์ — ต้องพามาที่ไกด์
+  // ของมันเป็นอันดับหนึ่ง ไม่ใช่ไปโผล่ใต้ไกด์เก็บเงินซึ่งตอบคนละคำถาม
+  { q: "แยกบิลยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "ลูกค้าขอจ่ายแยกกันทำยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "รวมบิลสองโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "split the bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "merge two tables into one bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
   // ก่อน 9.44 คำถามนี้ถูกปักไว้ที่ inventory.stock-model เพราะนั่นเป็นคำตอบจริงเพียงข้อเดียว
   // (สูตร/ตัวเลือก/คิวครัว) · ตอนนี้มีหน้าโต๊ะจริงแล้ว คนที่ถามหมายถึงบริการหน้าร้าน
   { q: "ระบบรองรับร้านอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.dine-in" },

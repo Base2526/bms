@@ -1412,7 +1412,49 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`)
+
+### Splitting and merging bills (`9.63`)
+
+`9.44` allowed one open check per table, which is the right shape for a shop starting out and the
+wrong shape for two things a Thai restaurant does daily: a table asking to pay separately, and two
+tables asking to pay as one. Before `9.63` the only route through either was to void a check and
+re-enter the order — which needed a second `pos.void` approver, threw away the kitchen history, and
+left a cancelled bill nobody could explain.
+
+The primitive is **moving lines between checks**; split and merge are the two directions.
+
+- **Split** moves selected lines onto a **new check on the same table**. That is what the customer
+  actually asks for ("this table wants to pay separately"); moving to another table already has its
+  own button. Each bill is a full check — it reserves its own stock, issues its own tax document and
+  settles through `recordPosSale()` like any other — so no partial-payment mechanism was needed, and
+  the rule that a bill must be paid exactly is untouched. At least one line has to stay on the
+  original.
+- **Merge** moves *every* line onto a destination check and closes the source as **`MERGED`**.
+  A merge is not a void: no food was thrown away and every line is still charged, so it needs no
+  second approver. It gets its own terminal status rather than reusing `CANCELLED` because
+  a shop that merges bills often would otherwise look like a shop that voids bills often.
+  `merged_into_check_id` records which bill absorbed it.
+
+What follows the lines, and what does not:
+
+- **The amount is always rebuilt, never adjusted.** Both sides release their reservation and rebuild
+  it through `createOrderInTx()`, the same path a later kitchen round uses. Adding or subtracting
+  line prices from `amount_due` would be a second money formula, free to drift from the first.
+- **Release before reserve.** The source's reservation is returned *before* the destination reserves,
+  or the two bills contend for the same stock and a split of the last portion of a dish fails with
+  `OUT_OF_STOCK` while that dish is already on the table.
+- **Kitchen tickets follow, and round numbers are renumbered.** A ticket's `check_id` is the only
+  thing telling the kitchen which table the plate belongs to. Round numbers are per check, so moved
+  rounds are re-ranked (order preserved) instead of colliding with the destination's own "round 1".
+- **A table can now carry several open checks**, numbered by `split_group_no`. The **primary** bill is
+  simply the lowest number still open — no flag to maintain, and when the primary is paid the next
+  one becomes primary on its own. The floor plan aggregates them into one card with a bill-count
+  badge; the amount on the card is the primary bill, not the table total.
+- **A table QR always lands on the primary bill.** Ordering by `opened_at` would have sent guests to
+  whichever bill was split off most recently — someone else's.
+- **Merging expires the source's QR** the same way paying or cancelling does; the `9.62` trigger
+  treats `MERGED` as terminal.
 
 ### “Sold out today” menu availability (`9.55`)
 

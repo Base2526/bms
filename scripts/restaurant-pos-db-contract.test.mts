@@ -54,6 +54,8 @@ import {
   removeRestaurantCheckItem,
   sendRestaurantKitchenRound,
   settleRestaurantCheck,
+  splitRestaurantCheck,
+  mergeRestaurantChecks,
   dropKitchenCancelledLineInTx,
 } from "../apps/web/lib/bms/restaurantPos.ts";
 
@@ -1600,6 +1602,345 @@ test("รับออร์เดอร์ QR ของเมนูที่ห�
       tenantId, locationId, checkId: check.id, actorUserId: cashierId, reason: "ปิดหลังเทส",
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 9.63 — แยกบิล / รวมบิล
+//
+// ทั้งสองอย่างย้าย "บรรทัดที่ลูกค้ากินไปแล้ว" ข้ามบิล ซึ่งแปลว่ามันแตะสามอย่างพร้อมกัน:
+// ยอดที่ต้องจ่าย, สต็อกที่จองไว้, และตั๋วที่ครัวถืออยู่ · เทสชุดนี้จึงตรึงทั้งสามเสมอ ไม่ใช่
+// แค่ "ย้ายแถวสำเร็จ" เพราะการย้ายที่ทำให้ของถูกจองสองรอบหรือครัวยกอาหารผิดโต๊ะ
+// จะดูเหมือนสำเร็จทุกประการจนกว่าจะมีคนไปนับของจริงตอนปิดร้าน
+// ---------------------------------------------------------------------------
+
+/** โต๊ะของชุดแยกบิล/รวมบิลโดยเฉพาะ — ผังเริ่มต้นในชุดนี้มีแค่ 4 โต๊ะและถูกใช้หมดแล้ว */
+async function makeSplitTable(code: string) {
+  const areaId = (await query<{ id: string }>(
+    `SELECT id FROM bms_restaurant_areas WHERE tenant_id = $1 AND location_id = $2 LIMIT 1`,
+    [tenantId, locationId]
+  )).rows[0].id;
+  return (await query<{ id: string; code: string }>(
+    `INSERT INTO bms_restaurant_tables (tenant_id, location_id, area_id, code, name, seats, sort_order)
+     VALUES ($1,$2,$3,$4,$4,4,90) RETURNING id, code`,
+    [tenantId, locationId, areaId, code]
+  )).rows[0];
+}
+
+let splitTable: { id: string; code: string };
+let splitSourceId = "";
+let splitTargetId = "";
+
+test("แยกบิล: ยอด สต็อกที่จอง และตั๋วครัว ต้องย้ายตามบรรทัดไปบิลใหม่ของโต๊ะเดิม", async () => {
+  splitTable = await makeSplitTable(`T-SPLIT-${Date.now()}`);
+  const reservedBefore = {
+    food: Number((await stock(FOOD)).reserved_stock),
+    drink: Number((await stock(DRINK)).reserved_stock),
+  };
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: splitTable.id, guestCount: 4, actorUserId: cashierId,
+  });
+  splitSourceId = check!.id;
+  for (const sku of [FOOD, DRINK]) {
+    await addRestaurantCheckItem({
+      tenantId, locationId, checkId: splitSourceId, actorUserId: cashierId,
+      sku, size: SIZE, packQty: 1,
+    });
+  }
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: splitSourceId, actorUserId: cashierId,
+  })).status, "SENT");
+  const beforeSplit = (await getRestaurantCheck(tenantId, splitSourceId))!;
+  assert.equal(beforeSplit.amountDue, 75, "ผัดไทย 60 + น้ำ 15");
+  const drinkLine = beforeSplit.items.find((item) => item.sku === DRINK)!;
+
+  const result = await splitRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: splitSourceId,
+    itemIds: [drinkLine.id], actorUserId: cashierId,
+  });
+  splitTargetId = result.target!.id;
+
+  // 1. ยอดถูกคิดใหม่ทั้งสองใบจากออร์เดอร์จริง ไม่ใช่การลบราคาบรรทัดออกจากยอดเดิม
+  assert.equal(result.source!.amountDue, 60);
+  assert.equal(result.target!.amountDue, 15);
+  assert.equal(result.target!.splitGroupNo, 2, "บิลใหม่เป็นใบที่สองของโต๊ะเดิม");
+  assert.equal(result.target!.splitFromCheckId, splitSourceId);
+  assert.equal(result.target!.tableId, splitTable.id, "แยกบิลอยู่ที่โต๊ะเดิม ไม่ใช่การย้ายโต๊ะ");
+
+  // 2. ของที่จองไว้ต้องเท่าเดิมทั้งก้อน — ย้ายเจ้าของ ไม่ใช่จองเพิ่มหรือปล่อยทิ้ง
+  assert.equal(Number((await stock(FOOD)).reserved_stock), reservedBefore.food + 1);
+  assert.equal(Number((await stock(DRINK)).reserved_stock), reservedBefore.drink + 1);
+
+  // 3. ตั๋วครัวของน้ำต้องตามไปบิลใหม่ ไม่งั้นกระดานครัวบอกโต๊ะ/บิลผิดให้คนยกอาหาร
+  const ticketCheck = (await query<{ check_id: string }>(
+    `SELECT check_id FROM bms_restaurant_kitchen_tickets
+      WHERE tenant_id = $1 AND check_item_id = $2`,
+    [tenantId, drinkLine.id]
+  )).rows[0];
+  assert.equal(ticketCheck.check_id, splitTargetId);
+
+  // 4. ผังโต๊ะต้องไม่โผล่โต๊ะซ้ำ และบิลหลักยังเป็นใบเดิม
+  const floor = await listRestaurantFloor(tenantId, locationId);
+  const row = floor.tables.filter((t) => t.id === splitTable.id);
+  assert.equal(row.length, 1, "โต๊ะที่แยกบิลต้องมีแถวเดียวบนผัง");
+  assert.equal(row[0].checks.length, 2);
+  assert.equal(row[0].check?.id, splitSourceId, "บิลหลัก = เลขน้อยสุดที่ยังเปิดอยู่");
+  assert.deepEqual(row[0].checks.map((c) => c.splitGroupNo), [1, 2]);
+});
+
+test("แยกบิลแล้วสองใบเก็บเงินแยกกันได้จริง และโต๊ะว่างเมื่อจ่ายครบทุกใบ", async () => {
+  const paidTarget = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: splitTargetId,
+    actorUserId: cashierId, payments: [{ method: "CASH", amount: 15 }],
+  });
+  assert.equal(paidTarget.status, "SOLD");
+  // โต๊ะยังไม่ว่าง เพราะบิลหลักยังเปิดอยู่
+  const midway = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((t) => t.id === splitTable.id)!;
+  assert.equal(midway.status, "OCCUPIED");
+  assert.equal(midway.checks.length, 1);
+  assert.equal(midway.check?.id, splitSourceId);
+
+  const paidSource = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: splitSourceId,
+    actorUserId: cashierId, payments: [{ method: "CASH", amount: 60 }],
+  });
+  assert.equal(paidSource.status, "SOLD");
+  assert.notEqual(paidSource.orderId, paidTarget.orderId, "สองใบต้องเป็นคนละออร์เดอร์");
+  const done = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((t) => t.id === splitTable.id)!;
+  assert.equal(done.status, "AVAILABLE");
+  assert.equal(done.checks.length, 0);
+});
+
+test("แยกบิลต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่ใบเดิม และย้ายของที่ไม่ได้อยู่ในบิลไม่ได้", async () => {
+  const table = await makeSplitTable(`T-SPLIT-GUARD-${Date.now()}`);
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: table.id, guestCount: 2, actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check!.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  const only = (await getRestaurantCheck(tenantId, check!.id))!.items[0];
+
+  await assert.rejects(
+    () => splitRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check!.id,
+      itemIds: [only.id], actorUserId: cashierId,
+    }),
+    /เหลืออย่างน้อยหนึ่งรายการ/
+  );
+  await assert.rejects(
+    () => splitRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check!.id,
+      itemIds: ["00000000-0000-4000-8000-000000000000"], actorUserId: cashierId,
+    }),
+    /ไม่อยู่ในบิลนี้/
+  );
+  // ล้มแล้วต้องไม่ทิ้งบิลใบที่สองไว้บนโต๊ะ
+  assert.equal(
+    (await listRestaurantFloor(tenantId, locationId)).tables.find((t) => t.id === table.id)!.checks.length,
+    1
+  );
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check!.id, actorUserId: cashierId, reason: "ปิดหลังเทส",
+  });
+});
+
+test("รวมบิล: ทุกบรรทัดย้ายไปใบปลายทาง ต้นทางปิดเป็น MERGED ไม่ใช่ CANCELLED และไม่ต้องมีผู้อนุมัติ", async () => {
+  const tableA = await makeSplitTable(`T-MERGE-A-${Date.now()}`);
+  const tableB = await makeSplitTable(`T-MERGE-B-${Date.now()}`);
+  const reservedBefore = Number((await stock(FOOD)).reserved_stock);
+
+  const target = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: tableA.id, guestCount: 2, actorUserId: cashierId,
+  });
+  const source = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: tableB.id, guestCount: 2, actorUserId: cashierId,
+  });
+  for (const checkId of [target!.id, source!.id]) {
+    await addRestaurantCheckItem({
+      tenantId, locationId, checkId, actorUserId: cashierId, sku: FOOD, size: SIZE, packQty: 1,
+    });
+    assert.equal((await sendRestaurantKitchenRound({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId, actorUserId: cashierId,
+    })).status, "SENT");
+  }
+  const sourceOrderId = (await query<{ id: string }>(
+    `SELECT current_order_id AS id FROM bms_restaurant_checks WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, source!.id]
+  )).rows[0].id;
+  const sourceItemId = (await getRestaurantCheck(tenantId, source!.id))!.items[0].id;
+
+  // ไม่ส่ง approvedBy อะไรเลย — การรวมบิลไม่ใช่ void จึงต้องผ่านได้ด้วยคนคนเดียว
+  const merged = await mergeRestaurantChecks({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    sourceCheckId: source!.id, targetCheckId: target!.id, actorUserId: cashierId,
+  });
+  assert.equal(merged.status, "MERGED");
+  assert.equal(merged.movedItems, 1);
+  assert.equal(merged.check!.amountDue, 120, "สองจานมารวมอยู่ใบเดียว");
+
+  const closed = (await query<{ status: string; merged_into_check_id: string | null; closed_at: string | null }>(
+    `SELECT status, merged_into_check_id, closed_at::text FROM bms_restaurant_checks
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, source!.id]
+  )).rows[0];
+  assert.equal(closed.status, "MERGED", "ต้นทางต้องไม่ถูกนับเป็นบิลที่ถูกยกเลิก");
+  assert.equal(closed.merged_into_check_id, target!.id);
+  assert.ok(closed.closed_at, "สถานะปลายทางต้องมี closed_at เสมอ");
+
+  // ใบจองของต้นทางถูกคืน ปลายทางจองรวม — ของที่จองทั้งก้อนเท่าเดิม ไม่ใช่จองซ้ำสองใบ
+  assert.equal(
+    (await query<{ status: string }>(`SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, sourceOrderId])).rows[0].status,
+    "CANCELLED"
+  );
+  assert.equal(Number((await stock(FOOD)).reserved_stock), reservedBefore + 2);
+
+  // ตั๋วครัวของโต๊ะต้นทางต้องตามไปบิลปลายทาง
+  assert.equal(
+    (await query<{ check_id: string }>(
+      `SELECT check_id FROM bms_restaurant_kitchen_tickets
+        WHERE tenant_id = $1 AND check_item_id = $2`, [tenantId, sourceItemId])).rows[0].check_id,
+    target!.id
+  );
+  // เลขรอบต้องเรียงใหม่เป็นของบิลปลายทาง ไม่ใช่ "รอบ 1" ซ้ำสองกลุ่มบนบิลเดียว
+  const rounds = (await getRestaurantCheck(tenantId, target!.id))!.items
+    .filter((item) => item.status === "SENT").map((item) => item.roundNo);
+  assert.deepEqual([...rounds].sort(), [1, 2]);
+
+  // โต๊ะต้นทางว่างทันที ปลายทางยังมีบิลเดียว
+  const floor = await listRestaurantFloor(tenantId, locationId);
+  assert.equal(floor.tables.find((t) => t.id === tableB.id)!.status, "AVAILABLE");
+  assert.equal(floor.tables.find((t) => t.id === tableA.id)!.checks.length, 1);
+
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: target!.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+test("รวมบิลแล้ว QR ของโต๊ะต้นทางต้องหมดอายุเหมือนบิลที่ปิดจริง", async () => {
+  const tableA = await makeSplitTable(`T-MERGE-QR-A-${Date.now()}`);
+  const tableB = await makeSplitTable(`T-MERGE-QR-B-${Date.now()}`);
+  const target = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: tableA.id, guestCount: 2, actorUserId: cashierId,
+  });
+  const source = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: tableB.id, guestCount: 2, actorUserId: cashierId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: source!.id, actorUserId: cashierId,
+    sku: DRINK, size: SIZE, packQty: 1,
+  });
+  const seeded = await seedQrSubmission(tableB.id, source!.id, DRINK);
+
+  await mergeRestaurantChecks({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    sourceCheckId: source!.id, targetCheckId: target!.id, actorUserId: cashierId,
+  });
+
+  assert.equal(
+    (await query<{ status: string }>(
+      `SELECT status FROM bms_restaurant_qr_submissions WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, seeded.submissionId])).rows[0].status,
+    "EXPIRED",
+    "คำขอที่ยังไม่ได้ตรวจของบิลที่ถูกรวมไปแล้วต้องออกจากคิว"
+  );
+  assert.ok(
+    (await query<{ revoked_at: string | null }>(
+      `SELECT revoked_at::text FROM bms_restaurant_qr_sessions WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, seeded.sessionId])).rows[0].revoked_at,
+    "โทรศัพท์ที่โต๊ะต้นทางต้องยิงเข้าบิลที่ปิดไปแล้วไม่ได้อีก"
+  );
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: target!.id, actorUserId: cashierId, reason: "ปิดหลังเทส",
+  });
+});
+
+test("⚠️ แยกบิล/รวมบิลของเมนูที่เหลือชิ้นสุดท้าย ต้องไม่ล้มเพราะแย่งของกับใบจองของตัวเอง", async () => {
+  // ของถูกยกไปเสิร์ฟบนโต๊ะแล้ว การย้ายว่า "ใครจ่าย" จึงต้องไม่ต้องใช้สต็อกเพิ่มอีกชิ้น ·
+  // ถ้าคิดยอดใบปลายทาง **ก่อน** คืนใบจองของใบต้นทาง สองใบจะแย่งของก้อนเดียวกัน แล้ว
+  // การแยกบิลจะล้มด้วย OUT_OF_STOCK เฉพาะเมนูที่ใกล้หมด — ซึ่งเป็นเมนูที่ร้านขายดีที่สุด
+  const SCARCE = `FAKE-${TAG}-LASTONE`;
+  await query(
+    `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
+     VALUES ($1,$2,$2,90,TRUE,'V')`, [tenantId, SCARCE]
+  );
+  await query(
+    `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+     VALUES ($1,$2,$3,$4,1,0)`, [tenantId, locationId, SCARCE, SIZE]
+  );
+  await declareSalesSurfaces(SCARCE, ALL_SURFACES);
+
+  const table = await makeSplitTable(`T-SCARCE-${Date.now()}`);
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: table.id, guestCount: 2, actorUserId: cashierId,
+  });
+  for (const sku of [SCARCE, DRINK]) {
+    await addRestaurantCheckItem({
+      tenantId, locationId, checkId: check!.id, actorUserId: cashierId, sku, size: SIZE, packQty: 1,
+    });
+  }
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check!.id, actorUserId: cashierId,
+  })).status, "SENT");
+  assert.equal(Number((await stock(SCARCE)).reserved_stock), 1, "ชิ้นสุดท้ายถูกจองไปแล้ว");
+
+  const scarceLine = (await getRestaurantCheck(tenantId, check!.id))!
+    .items.find((item) => item.sku === SCARCE)!;
+  const split = await splitRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check!.id,
+    itemIds: [scarceLine.id], actorUserId: cashierId,
+  });
+  assert.equal(split.target!.amountDue, 90);
+  assert.equal(Number((await stock(SCARCE)).reserved_stock), 1, "ยังจองชิ้นเดียวเท่าเดิม ไม่ใช่สองชิ้น");
+
+  // รวมกลับเข้าใบเดิมก็ต้องผ่านด้วยเหตุผลเดียวกัน (ปลายทางจะถือของชิ้นเดียวกันนั้น)
+  const merged = await mergeRestaurantChecks({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    sourceCheckId: split.target!.id, targetCheckId: check!.id, actorUserId: cashierId,
+  });
+  assert.equal(merged.check!.amountDue, 105, "90 + 15 กลับมาอยู่ใบเดียว");
+  assert.equal(Number((await stock(SCARCE)).reserved_stock), 1);
+
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: check!.id, actorUserId: cashierId,
+    reason: "ปิดหลังเทส", approvedByUserId: waiterId,
+  });
+});
+
+test("รวมบิลเข้าตัวเอง หรือรวมกับบิลที่ปิดไปแล้ว ต้องถูกปฏิเสธ", async () => {
+  const table = await makeSplitTable(`T-MERGE-GUARD-${Date.now()}`);
+  const open = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: table.id, guestCount: 1, actorUserId: cashierId,
+  });
+  await assert.rejects(
+    () => mergeRestaurantChecks({
+      tenantId, locationId, deviceId, shiftId: shiftB,
+      sourceCheckId: open!.id, targetCheckId: open!.id, actorUserId: cashierId,
+    }),
+    /ไม่ใช่บิลเดียวกัน/
+  );
+  await assert.rejects(
+    () => mergeRestaurantChecks({
+      tenantId, locationId, deviceId, shiftId: shiftB,
+      sourceCheckId: open!.id, targetCheckId: paidCheckId, actorUserId: cashierId,
+    }),
+    /บิลที่เปิดอยู่/
+  );
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: open!.id, actorUserId: cashierId, reason: "ปิดหลังเทส",
+  });
 });
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {

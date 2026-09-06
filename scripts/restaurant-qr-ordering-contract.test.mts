@@ -34,7 +34,12 @@ test("scanner session is bound to one OPEN check and dies with that check", asyn
   assert.match(migration, /SET revoked_at = COALESCE\(revoked_at, now\(\)\)/);
   assert.match(migration, /SET status = 'EXPIRED'/);
   assert.match(service, /status = 'OPEN'/);
-  assert.match(service, /ORDER BY opened_at DESC LIMIT 1\s+FOR UPDATE/);
+  // ⚠️ เล็งใหม่หลัง `9.63` (แยกบิล) — เดิม assert `ORDER BY opened_at DESC LIMIT 1` ตรงตัว
+  // ซึ่งกลายเป็นการ **ตรึงบั๊ก** ทันทีที่โต๊ะหนึ่งมีบิลเปิดได้หลายใบ: ใบที่เพิ่งเปิดล่าสุดคือ
+  // ใบที่เพิ่งถูกแยกออกมา ลูกค้าที่สแกน QR จึงจะไปลงบิลของอีกคนเงียบ ๆ · การันตีที่ต้องคง
+  // ไว้คือ "หนึ่ง session ผูกกับบิลเดียวที่เลือกแบบตายตัว" ไม่ใช่ลำดับใดลำดับหนึ่ง
+  assert.match(service, /ORDER BY split_group_no, opened_at LIMIT 1\s+FOR UPDATE/);
+  assert.doesNotMatch(service, /ORDER BY opened_at DESC LIMIT 1/);
   assert.match(service, /session_token_hash = \$1/);
   assert.match(service, /qr\.public_token_hash = \$2/);
   assert.match(service, /createHash\("sha256"\)/);

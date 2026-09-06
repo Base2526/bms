@@ -242,13 +242,13 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
     id: "restaurant.dine-in", module: "pos",
     title: both("ขายหน้าร้านแบบร้านอาหาร (โต๊ะ/บิลเปิด)", "Restaurant dine-in service"),
-    description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, and checkout through the normal register."),
+    description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ แยกบิล/รวมบิล และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, bill splitting and merging, and checkout through the normal register."),
     aliases: aliases([
       "ร้านอาหาร", "โต๊ะ", "บิลโต๊ะ", "เปิดโต๊ะ", "ผังโต๊ะ", "ส่งครัว", "ย้ายโต๊ะ",
-      "ระบบรองรับร้านอาหารไหม",
+      "ระบบรองรับร้านอาหารไหม", "แยกบิล", "รวมบิล",
     ], [
       "restaurant", "dine-in", "table", "open check", "floor plan", "send to kitchen", "move table",
-      "does it support restaurants", "restaurant dine-in",
+      "does it support restaurants", "restaurant dine-in", "split bill", "merge bill",
     ]),
     status: "CONDITIONAL", route: "/admin/pos-manual", requiredPermissions: ["pos.sell"],
     configurationDependencies: [

@@ -159,14 +159,16 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 - `POST /api/pos/restaurant/checks` (`9.44`) — open a dine-in check on a table. PIN + `pos.sell` and
   an open shift on the calling device; a second open check on the same table is `409` from the
   partial unique index, not a duplicate bill.
-- `GET|POST /api/pos/restaurant/checks/[id]` (`9.44`) — one PIN-bearing adapter for the check:
-  `add_item`, `remove_item`, `send_kitchen`, `move`, `cancel`, `settle`. Every action is scoped to the
+- `GET|POST /api/pos/restaurant/checks/[id]` (`9.44`, `9.63`) — one PIN-bearing adapter for the check:
+  `add_item`, `remove_item`, `send_kitchen`, `move`, `split`, `merge`, `cancel`, `settle`. Every action is scoped to the
   device's branch but **deliberately not to the device or shift that opened the check** — a check is
   opened on a waiter's tablet, sent from anywhere, and paid at the register, possibly after a shift
   change. An order taker with `pos.sell` may initiate `cancel` (the dedicated
   `restaurant.check.cancel` grant remains accepted for compatibility); every cancellation needs a
   note, and a sent/reserved check additionally needs a distinct `pos.void` approver. Other actions
-  stay on `pos.sell`.
+  stay on `pos.sell` — including `split` and `merge` (`9.63`), which move lines between checks but
+  never drop one: a merge closes the source as `MERGED`, not `CANCELLED`, and therefore does not
+  borrow the void approval that exists to protect food actually being thrown away.
   `send_kitchen` reserves stock by creating/refreshing one PENDING POS order — cancelling the
   superseded order and creating its replacement share one transaction, so a round that cannot be
   reserved leaves the previous reservation intact. `settle` accepts split tender, re-stamps that

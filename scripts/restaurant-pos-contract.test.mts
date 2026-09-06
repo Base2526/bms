@@ -975,12 +975,86 @@ test("การแทนใบจองของบิลโต๊ะต้อ�
   const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   assert.match(src, /"RELEASED" \| "ALREADY_GONE" \| "BLOCKED"/,
     "ต้องแยก 'ยกเลิกไปแล้ว' ออกจาก 'ยกเลิกไม่ได้'");
-  assert.equal((src.match(/releaseCheckReservationInTx\(client/g) ?? []).length, 3,
-    "ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล ต้องเรียกตัวเดียวกันครบทั้งสาม");
+  assert.equal((src.match(/releaseCheckReservationInTx\(client/g) ?? []).length, 4,
+    "ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล · คิดยอดใหม่หลังแยก/รวมบิล ต้องเรียกตัวเดียวกันครบทั้งสี่");
   assert.doesNotMatch(src, /const \w+ = await cancelOrderInTx\(/,
     "ห้ามเรียก cancelOrderInTx ตรง ๆ นอก helper อีก");
   assert.equal((src.match(/if \(released === "RELEASED"\) releasedOrderId/g) ?? []).length, 1,
     "งานหลัง commit ต้องทำเฉพาะใบที่รอบนี้เป็นคนยกเลิกเอง");
+});
+
+/**
+ * แยกบิล / รวมบิล (`9.63`)
+ *
+ * ทั้งสองอย่างย้าย "บรรทัดที่ลูกค้ากินไปแล้ว" ข้ามบิล จึงแตะยอดเงิน สต็อกที่จอง และตั๋วครัว
+ * พร้อมกัน · สามข้อที่เทสนี้ตรึงคือสามข้อที่พังแล้วไม่มีใครเห็นจนกว่าจะไปนับของตอนปิดร้าน
+ */
+test("แยกบิล/รวมบิลต้องคิดยอดใหม่จากออร์เดอร์จริง ไม่ใช่บวกลบยอดเอง", async () => {
+  const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const fn = src.slice(
+    src.indexOf("async function repriceCheckAfterItemMoveInTx"),
+    src.indexOf("async function moveCheckItemsInTx")
+  );
+  assert.ok(fn.length > 0, "ต้องมีตัวคิดยอดใหม่ตัวเดียวให้ทั้งสองเส้นทางใช้");
+  assert.match(fn, /createOrderInTx\(client/,
+    "ยอดใหม่ต้องมาจากเส้นทางสร้างออร์เดอร์เดิม ไม่ใช่สูตรเงินชุดที่สอง");
+  assert.doesNotMatch(fn, /amount_due\s*[+-]=/, "ห้ามบวก/ลบยอดเดิมเอง");
+
+  // ปล่อยของที่ใบต้นทางจองไว้ก่อนเสมอ ไม่งั้นเมนูที่เหลือชิ้นสุดท้ายจะแยกบิลไม่ได้
+  const split = src.slice(
+    src.indexOf("export async function splitRestaurantCheck"),
+    src.indexOf("export async function mergeRestaurantChecks")
+  );
+  assert.ok(
+    split.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.checkId)")
+      < split.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, targetId)"),
+    "ต้องคืนใบจองของต้นทางก่อนให้ปลายทางจอง ไม่งั้นสองใบแย่งของก้อนเดียวกัน"
+  );
+  const merge = src.slice(src.indexOf("export async function mergeRestaurantChecks"));
+  assert.ok(
+    merge.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.sourceCheckId)")
+      < merge.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.targetCheckId)"),
+    "รวมบิลก็ต้องคืนของต้นทางก่อนด้วยเหตุผลเดียวกัน"
+  );
+});
+
+test("รวมบิลต้องไม่ถูกนับเป็นบิลที่ถูกยกเลิก และตั๋วครัวต้องตามบรรทัดไป", async () => {
+  const migration = code(await read("db/migrations/9.63__bms_restaurant_check_split_merge.sql"));
+  const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+
+  assert.match(migration, /'OPEN', 'CLOSING', 'PAID', 'CANCELLED', 'MERGED'/);
+  assert.match(migration, /\(status IN \('PAID', 'CANCELLED', 'MERGED'\)\) = \(closed_at IS NOT NULL\)/);
+  // trigger ของ 9.62 ต้องนับ MERGED เป็นสถานะปลายทาง ไม่งั้นโทรศัพท์ที่โต๊ะต้นทางยังยิง
+  // คำขอเข้าบิลที่ปิดไปแล้วได้ตลอดไป (อาการเดียวกับที่ 9.62 เพิ่งปิดไป)
+  assert.match(migration, /NEW\.status IN \('PAID', 'CANCELLED', 'MERGED'\)/);
+  assert.doesNotMatch(migration, /NEW\.status <> 'OPEN'/);
+  assert.match(migration, /uq_bms_restaurant_checks_open_table[\s\S]{0,200}split_group_no/);
+
+  assert.match(src, /SET status = 'MERGED', merged_into_check_id/);
+  const move = src.slice(
+    src.indexOf("async function moveCheckItemsInTx"),
+    src.indexOf("export async function splitRestaurantCheck")
+  );
+  assert.match(move, /UPDATE bms_restaurant_kitchen_tickets[\s\S]{0,200}SET check_id/,
+    "ตั๋วครัวต้องตามบรรทัดไป ไม่งั้นกระดานครัวบอกโต๊ะผิดให้คนยกอาหาร");
+  assert.match(move, /DENSE_RANK\(\) OVER \(ORDER BY round_no\)/,
+    "เลขรอบเป็นของบิลใบนั้น ยกเลขเดิมข้ามบิลไปจะได้ 'รอบ 1' ซ้ำสองกลุ่ม");
+});
+
+test("โต๊ะที่แยกบิลแล้วต้องไม่โผล่ซ้ำบนผัง และลูกค้าที่สแกน QR ต้องลงบิลหลักเสมอ", async () => {
+  const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const floor = src.slice(
+    src.indexOf("export async function listRestaurantFloor"),
+    src.indexOf("type RestaurantFloorActor")
+  );
+  assert.match(floor, /json_agg\(/, "หลายบิลต่อโต๊ะต้องรวมเป็น array ไม่ใช่ join ตรง ๆ");
+  assert.match(floor, /ORDER BY oc\.split_group_no/);
+  assert.match(floor, /check: checks\[0\] \?\? null/, "บิลหลัก = เลขน้อยสุดที่ยังเปิดอยู่");
+
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /table\.checks\.length > 1/, "ผังต้องบอกว่าโต๊ะไหนแยกบิลไว้");
+  assert.match(page, /setBillPickerTable\(table\)/,
+    "แตะโต๊ะที่มีหลายบิลต้องถามก่อนว่าใบไหน ไม่ใช่เดาแทนคนที่ยืนอยู่ตรงนั้น");
 });
 
 /**
