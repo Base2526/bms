@@ -242,6 +242,13 @@
 .panel { display: flex; flex-direction: column; padding: 12px 12px 0; border-inline-end: 1px solid var(--line); min-width: 0; min-height: 0; }
 /* หัวข้อ/แถวหมวดหมู่ปักอยู่ เลื่อนเฉพาะกริด — ไม่งั้นแถวหมวดหมู่เลื่อนหายตอนกำลังเลือกอาหาร */
 .panelScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 12px; }
+/* scrollbar เริ่มปรากฏเองก็ต่อเมื่อเนื้อหาสูงเกินจอจริง (ผังโต๊ะหลายแถว/เมนูยาว) — ไม่ใช่บั๊ก
+   แค่ทำให้ดูตั้งใจกว่าแถบเทาหนาปริยายของเบราว์เซอร์ — ใช้ --line-2 ตัวเดียวกับ .billStrip */
+.panelScroll { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.panelScroll::-webkit-scrollbar { width: 7px; }
+.panelScroll::-webkit-scrollbar-track { background: transparent; }
+.panelScroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.panelScroll::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
 .panelHeader { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .panelHeader h2 { margin: 0; font-size: 16px; font-weight: 700; }
 .panelHeader small { color: var(--ink-2); font-size: 12.5px; }
@@ -254,6 +261,15 @@
 }
 .page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
 .page .areaButtonActive:hover:not(:disabled) { background: var(--ink); filter: brightness(1.25); }
+
+/* จุดสีที่มุมโต๊ะ (tableDot) ไม่มีคำอธิบายกำกับเลย — แถบนี้แปลความหมายให้ครบทั้ง 4 สี
+   ในบรรทัดเดียว ตั้งใจวางไว้ "ท้ายผัง" ไม่ใช่บนสุด: กริดโต๊ะที่พนักงานต้องกดใช้งานจริงต้อง
+   เป็นสิ่งแรกที่เห็นใต้แท็บโซนเสมอ ส่วนนี้เป็นข้อมูลอ้างอิงเงียบ ๆ จึงเบาน้ำหนักกว่าตัวควบคุม
+   ทุกตัว (ตัวเล็ก สีจาง ไม่มีกรอบ/พื้นหลัง มีแค่เส้นประคั่นบาง ๆ) — เคยลองแบบเข้ม+กรอบ+วางบน
+   สุดมาก่อนแล้ว พบว่าเด่นกว่าโต๊ะที่ต้องใช้งานจริง จึงย้ายลงมาและลดน้ำหนักลง */
+.floorLegend { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 15px; padding: 8px 4px 0; margin-top: 6px; border-top: 1px dashed var(--line); font-size: 11px; }
+.floorLegendItem { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-weight: 600; color: var(--ink-3); }
+.floorLegendDot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
 
 /* ---------- ผังและโต๊ะ ----------
    viewport เลื่อนได้เมื่อผังใหญ่กว่าจอ แต่ canvas ไม่จัดเรียงโต๊ะใหม่: position/shape มาจาก
@@ -276,7 +292,12 @@
 .page .tableRect { width: 128px; height: 76px; min-height: 76px; border-radius: 14px; }
 .page .tableCard:hover:not(:disabled){ border-color: var(--ink-3); }
 .page .tableCard:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
-.tableBand { position: absolute; inset: 0 0 auto; height: 5px; }
+/* ⚠️ วงสีจริง = width − border×2 เพราะหน้านี้อยู่ใต้ box-sizing: border-box (วัดจริงในเบราว์เซอร์)
+   เขียน 14px ตรง ๆ จะได้วงสีแค่ 10px ซึ่งคือขนาดที่เคยถูกตีตกไปแล้วว่า "แยกไม่ออกจากระยะยืน"
+   — เจตนาคือวงสี 14px จึงต้องตั้งกล่อง 18px · ring 2px สีพื้นการ์ดกันจุดกลืนกับขอบโต๊ะ
+   ส่วนที่ยื่นพ้นการ์ด (top/right -3px) เกือบทั้งหมดเป็น ring สีจริงพ้นออกไปแค่ 1px โต๊ะที่ถูกลาก
+   ไปชิดขอบบนสุด (editor ยอมให้ y=0) จึงโดน overflow:hidden ของ .floorCanvas ตัดแค่ 1px = มองไม่เห็น */
+.tableDot { position: absolute; top: -3px; right: -3px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--panel); }
 .tableCode { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--ink-3); font-weight: 600; letter-spacing: .04em; }
 .tableName { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; line-height: 1.1; margin-top: 1px; }
 .tableStatus { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-weight: 600; margin-top: 2px; }
@@ -288,13 +309,13 @@
 .page .tableFree .tableMeta{ color: var(--ink-3); }
 .page .tableBlocked{ opacity: .5; cursor: not-allowed; }
 .page .tableSelected{ border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.state_unsent .tableBand { background: var(--red); }
+.state_unsent .tableDot { background: var(--red); }
 .state_unsent .tableStatus { color: var(--red); }
-.state_cooking .tableBand { background: var(--amber); }
+.state_cooking .tableDot { background: var(--amber); }
 .state_cooking .tableStatus { color: var(--amber); }
-.state_ready .tableBand, .state_served .tableBand { background: var(--green); }
+.state_ready .tableDot, .state_served .tableDot { background: var(--green); }
 .state_ready .tableStatus, .state_served .tableStatus { color: var(--green); }
-.state_idle .tableBand { background: var(--grey); }
+.state_idle .tableDot { background: var(--grey); }
 .state_idle .tableStatus { color: var(--ink-3); }
 
 /* ---------- แผงบิลด้านขวา ---------- */
