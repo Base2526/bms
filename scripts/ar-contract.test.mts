@@ -133,9 +133,13 @@ test("ยอด 0 หรือติดลบไม่ควรผ่านเ�
 
 test("สูตรเงินที่ควรมีในลิ้นชักนับเฉพาะ method = 'CASH'", () => {
   const pos = read("apps/web/lib/bms/pos.ts");
-  const start = pos.indexOf("export async function drawerExpectedInTx");
-  assert.ok(start > 0, "หา drawerExpectedInTx ไม่เจอ — เทสนี้ต้องตามไปแก้");
+  // ⚠️ เล็งที่ตัวสูตร ไม่ใช่ที่ตัวห่อ — SQL ถูกย้ายออกมาเป็น POS_SHIFT_CASH_SQL เพื่อให้
+  // ปิดกะ/รายงาน/ไฟล์ export ใช้ชุดเดียวกัน การันตีเดิม (ลิ้นชักนับเฉพาะเงินสด) ไม่ได้หายไป
+  const start = pos.indexOf("const POS_SHIFT_CASH_SQL = `");
+  assert.ok(start > 0, "หาสูตรเงินสดของกะไม่เจอ — เทสนี้ต้องตามไปแก้");
   const body = pos.slice(start, pos.indexOf("export type VoidPosSaleResult", start));
+  assert.match(body, /export async function drawerExpectedInTx/,
+    "ช่วงที่สแกนต้องครอบตัวห่อด้วย ไม่งั้นสูตรที่สองจะแอบเกิดในตัวห่อได้");
 
   // ยอดขายที่เข้าลิ้นชักต้องกรองด้วย CASH ตรง ๆ
   assert.match(body, /pay\.method = 'CASH'/);

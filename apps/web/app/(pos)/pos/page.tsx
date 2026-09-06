@@ -636,6 +636,7 @@ type ShiftReport = {
   returnCount: number;
   returnTotal: number;
   discountTotal: number;
+  roundingTotal: number;
   byMethod: Array<{ method: string; count: number; amount: number }>;
   byCashier: Array<{ cashier: string; billCount: number; amount: number }>;
   cashIn: number;
@@ -7284,6 +7285,13 @@ export default function PosPage() {
                     <div className="pos-report-grid">
                       <span>ยอดขายสุทธิ · {shiftReport.billCount} บิล</span><span>฿{baht(shiftReport.salesTotal)}</span>
                       <span>ส่วนลดรวม</span><span>฿{baht(shiftReport.discountTotal)}</span>
+                      {/* ยอดขายไม่รวมยอดปัดเศษ แต่เงินที่รับรวม — ไม่มีบรรทัดนี้ ผลรวมวิธีชำระ
+                          ด้านล่างจะไม่เท่ากับยอดขายด้านบนโดยไม่มีอะไรอธิบาย */}
+                      {shiftReport.roundingTotal !== 0 && (
+                        <>
+                          <span>ปัดเศษเงินสด</span><span>฿{baht(shiftReport.roundingTotal)}</span>
+                        </>
+                      )}
                       <span>ยกเลิกบิล {shiftReport.voidCount} ใบ</span><span>฿{baht(shiftReport.voidTotal)}</span>
                       <span>คืนสินค้า {shiftReport.returnCount} บิล</span><span>฿{baht(shiftReport.returnTotal)}</span>
                     </div>

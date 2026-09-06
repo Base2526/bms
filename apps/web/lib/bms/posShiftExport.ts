@@ -45,6 +45,9 @@ export function buildPosShiftWorkbook(
       { label: "ปิดโดย", value: r.closedByName ?? "—" },
       { label: "สร้างไฟล์เมื่อ", value: when(generatedAt.toISOString()) },
       { label: "ยอดขายสุทธิ", value: String(r.salesTotal) },
+      // ยอดขายไม่รวมยอดปัดเศษ แต่เงินที่รับรวม — ต้องมีบรรทัดนี้ ไม่งั้นแผ่นนี้อธิบาย
+      // ส่วนต่างระหว่างยอดขายกับเงินสดจากการขายไม่ได้
+      { label: "ปัดเศษเงินสด", value: String(r.roundingTotal) },
       { label: "จำนวนบิล", value: String(r.billCount) },
       { label: "เงินสดที่ควรมี", value: r.expectedCashHidden ? "ซ่อนจนกว่าจะปิดกะ" : String(r.expectedCash ?? "") },
       { label: "เงินสดที่นับได้", value: r.countedCash == null ? "—" : String(r.countedCash) },

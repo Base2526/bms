@@ -3,6 +3,89 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## recheck POS ค้าปลีกทั้งเส้น (`/pos`, `/api/pos/*`, `lib/bms/pos.ts`) — 2026-09-07
+
+branch `recheck/pos-retail-deep` (ตัดจาก `develop` · **ไม่รวมงานของ `recheck/restaurant-pos-deep`**
+ซึ่งยังรอ merge อยู่คนละ branch) · `npm run gate` ผ่าน (typecheck · **pure 857** จาก 846 ·
+production build) · **DB 392 ผ่านทั้งหมด** (baseline 386 เขียวครบ — ไม่มี regression) ·
+**ไม่มี migration** · **ไม่มี permission ใหม่** · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+(บรรทัดปัดเศษบนสรุปกะผ่านแค่ tsc + build + เทส)
+
+**ทั้ง 6 mutation ผ่านแล้ว** (2 pure + 3 DB + 1 เทสเดิมที่เล็งใหม่) แดงถูกตัวทุกครั้ง
+
+### 1. ⚠️ เงินสดที่จ่ายคืนออกไปจริง ไม่ถูกหักออกจาก "เงินที่ควรมีในลิ้นชัก"
+
+- "เงินสดที่ควรมี" ถูกคิดที่ **ห้าที่**: ด่านกันจ่ายเกินลิ้นชัก (`drawerExpectedInTx`), ปิดกะ
+  (`closePosShift` เขียน SELECT ของตัวเอง), สรุปกะ X/Z, หน้าภาพรวมกะหลังบ้าน, และไฟล์ XLSX
+- สองที่แรกคีย์การคืนด้วย `COALESCE(pr.shift_id, o.pos_shift_id)` ส่วนอีกสองที่ใช้
+  `COALESCE(a.completed_shift_id, pr.shift_id, o.pos_shift_id)` = **กะที่จ่ายเงินออกจริง**
+  · `docs/business/pos.md` เขียนกฎของ `9.32` ไว้แล้วว่า "reports **and close checks** prefer those
+  fields" — โค้ดฝั่ง close ไม่เคยทำตาม
+- **เส้นทางที่ทำให้ต่างกันจริง**: การตัดรายการออร์เดอร์ออนไลน์ (`9.57`) สร้าง allocation เป็น
+  `PENDING` **เสมอแม้วิธีจ่ายเป็นเงินสด** (`allocationCompleted = onlineCancellation ? false : …`)
+  แล้วมีคนมากดยืนยันจ่ายที่เครื่องทีหลัง · ใบคืนนั้นไม่มีเครื่อง (`pr.shift_id` NULL) และบิลออนไลน์
+  ไม่มีกะ (`o.pos_shift_id` NULL) → เงินออกจากลิ้นชักจริงแต่สูตรที่ตัดสินไม่เห็นเลย
+- ผล: ปิดกะแล้ว **เงินขาดเท่ายอดคืนพอดีโดยไม่มีอะไรอธิบาย** · X report กับ Z ไม่ตรงกัน ·
+  แผ่น "ตรวจสอบยอด" ในไฟล์ XLSX บวกลงมาแล้วไม่เท่ายอดรวมที่พิมพ์ไว้บรรทัดล่าง ·
+  และ `posExpenses` ใช้ `drawerExpectedInTx` เป็นเพดาน จึงยอมให้เบิกเกินเงินที่มีจริง
+- แก้: ยุบเหลือ `POS_SHIFT_CASH_SQL` + `drawerCashComponentsInTx()` + `drawerExpectedFrom()` ตัวเดียว
+  · `closePosShift` เลิกเขียน SELECT ของตัวเอง · ไฟล์ XLSX เพิ่ม `OR a.completed_shift_id = $2`
+  ให้แถวรายละเอียดมีของที่จ่ายจากกะนี้ด้วย
+- **บิลที่ถูก void ตัดออกทั้งสองขา** (`o.voided_at IS NULL` + `pr.is_void = FALSE`) แทนการนับทั้งคู่
+  แล้วหักล้างกัน — ผลลัพธ์วันนี้เท่ากัน แต่เป็นรูปเดียวกับที่รายงานสองตัวใช้อยู่แล้ว
+- **allocation ที่ยัง `PENDING` ยังคีย์แบบเดิมโดยตั้งใจ** — ยังไม่มีใครจ่ายมันออกจากลิ้นชักไหน
+
+### 2. สรุปกะไม่มีบรรทัดปัดเศษเงินสด → ยอดขายกับผลรวมวิธีชำระบนกระดาษใบเดียวกันไม่มีทางเท่ากัน
+
+- `bms_orders.total_amount` **ไม่รวม** ยอดปัดเศษโดยตั้งใจ (คอมเมนต์ใน `pos.ts` เขียนไว้) แต่
+  `bms_payments.amount` รวม · ร้านที่เปิด `cash_rounding` จะได้ X/Z ที่ "ยอดขายสุทธิ" กับ
+  `byMethod` ต่างกันเท่ายอดปัดเศษสะสม โดยไม่มีบรรทัดไหนอธิบาย
+- เพิ่ม `roundingTotal` ใน `PosShiftReport` + แสดงบนแผงสรุปกะและในไฟล์ XLSX
+- **ยังเป็นบั๊กแฝง**: dev ทั้ง 5 ร้านตั้ง `cash_rounding = 'NONE'` และยังไม่มีบิล POS ที่มียอดปัดเศษ
+
+### 3. ไม่เคยมีเทสสแกนด่านของ `/api/pos/**` เลย
+
+- `inventory-tenant-scope-contract` สแกน `/api/bms` อย่างเดียว ทั้งที่ `/api/pos` 38 route
+  ขยับเงิน สต็อก ลิ้นชัก และเอกสารภาษี และยืนยันตัวตนด้วย device token + PIN (ไม่ใช่ session)
+- **ตรวจแล้วว่าวันนี้ยังไม่มีรูรั่ว** — เทสใหม่จึงเขียวตั้งแต่แรก หน้าที่ของมันคือกันของใหม่
+  · `park` (ไม่แตะเงิน/สต็อก/เอกสาร) และ `member/preview` (อ่านล้วน) อยู่ในลิสต์ยกเว้นพร้อมเหตุผล
+  · `refund-settlement` ดูเหมือนไม่ตรวจสิทธิ์ที่ route แต่ `completePosRefundAllocation` ตรวจ
+    `payment.refund` **ในทรานแซกชัน** ซึ่งแข็งแรงกว่า — ไม่ใช่รูรั่ว
+
+### เทส
+
+- pure ใหม่ 2 ไฟล์: `pos-cash-formula-contract` (5 เทส) · `pos-route-guard-contract` (6 เทส)
+- DB ใหม่ 1 ไฟล์: `pos-cash-formula-db-contract` (6 เทส · สร้างร้านทดสอบของตัวเองแล้วลบทิ้ง
+  ยืนยัน `fake-%` เหลือ 0 · **เขียนจริงลงฐาน ห้ามรันกับ production**)
+- **⚠️ เทสเดิม 1 ตัวต้องเล็งใหม่**: `ar-contract` → "สูตรเงินที่ควรมีในลิ้นชักนับเฉพาะ CASH"
+  slice จาก `drawerExpectedInTx` ถึง `VoidPosSaleResult` · SQL ย้ายออกไปอยู่เหนือฟังก์ชันแล้ว
+  เทสจึงแดงทั้งที่การันตีไม่ได้หาย · ย้ายไปเล็งที่ `POS_SHIFT_CASH_SQL` และบังคับให้ช่วงที่สแกน
+  ครอบตัวห่อด้วย (กันสูตรที่สองแอบเกิดในตัวห่อ) · ยืนยันด้วย mutation ว่ายังจับ CREDIT ได้
+- **⚠️ ตัวสร้างเคสในเทส DB เป็น SQL ตรง ๆ โดยตั้งใจ** — เดินเส้นทางร้านอาหารออนไลน์ทั้งเส้น
+  ต้องมี archetype restaurant + ออร์เดอร์เดลิเวอรี + ผังโต๊ะ · สิ่งที่ตรึงคือ **สิ่งที่เกิดกับลิ้นชัก
+  หลังมีแถวหน้าตาแบบนั้นแล้ว** ซึ่งเดินผ่าน `completePosRefundAllocation()` และสูตรจริงทั้งคู่
+
+### ที่ตรวจแล้วว่า "ไม่ใช่บั๊ก" (จดไว้กันไล่ซ้ำ)
+
+- `closePosShift` ไม่ปัดเศษ `expected` ก่อนเขียน — `expected_cash` เป็น `NUMERIC(12,2)` Postgres
+  ปัดให้เอง และ `cash_variance` เป็น generated column จากค่าที่ปัดแล้ว
+- SQL ที่ไม่มี `tenant_id` 3 จุด (`orders.ts` cron, `posExpenses` SELECT prefix) — ทั้งหมดทำงานกับ
+  id ที่คัดมาแบบ tenant-scoped แล้ว หรือมี WHERE ต่อท้ายจากผู้เรียก
+- `previewMemberDiscount` scope ด้วย tenant · `/api/pos/scan` และ `/api/pos/search` ส่ง
+  `device.locationId` เสมอ (สำคัญหลัง `9.61` ที่โปรแยกสาขา)
+- ค่าใช้จ่ายหน้าร้าน: `DRAWER` เขียน `bms_pos_cash_movements` ส่วน `PERSONAL`/`PETTY_CASH`
+  ไม่แตะลิ้นชักโดยตั้งใจ · โหมดนับปิดตาถูกเคารพครบทุกจุดที่อาจทำเลขหลุด
+
+### ยังไม่ได้แก้ (จงใจ)
+
+- หน้าภาพรวมกะหลังบ้าน (`listPosShiftOverview`) ยังเขียน SQL ของตัวเอง ไม่ได้ใช้
+  `POS_SHIFT_CASH_SQL` — คีย์ตรงกันแล้ว (เทสบังคับ) แต่รูปแบบ query ต่างกัน (lateral ต่อแถว)
+  การยุบต้องรื้อ query ใหญ่ทั้งก้อน
+- `/pos` page ยังเป็น 9,831 บรรทัดในไฟล์เดียวและไม่มี `t()` (ภาษาไทย hardcode ทั้งหน้า
+  เหมือน `/pos/restaurant`) — คนละเรื่องกับ recheck นี้
+- ยังไม่ได้ไล่ `recordPosSale`/`processPosReturn` แบบบรรทัดต่อบรรทัด (อ่านเฉพาะด่านสำคัญ:
+  idempotency, precheck ก่อนตัดสต็อก, cross-branch, การจัดสรรเงินคืน)
+
 ## `9.61` โปรโมชันแยกสาขา — 2026-09-06
 
 `npm run gate` ผ่าน (typecheck · **pure 841** · production build) · **apply เข้า dev DB แล้วและ

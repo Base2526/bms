@@ -910,6 +910,25 @@ and close checks prefer those fields and use the original order's shift only for
 event-shift evidence. Returning yesterday's receipt today therefore affects today's drawer and return
 totals, not yesterday's already-signed Z report.
 
+**There is one cash formula, `POS_SHIFT_CASH_SQL`, and every consumer reads it.** Expected cash is
+asked for in five places — the guard that refuses to pay out more than the drawer holds, the close,
+the X/Z sheet, the back-office shift overview, and the XLSX detail workbook. Three of them used to
+key completed refunds on the *return's* shift instead of the shift that actually handed over the
+money, so the rule stated in the paragraph above held only for the two report surfaces. That matters
+because the online line-cancellation path (`9.57`) always writes its allocation `PENDING`, **even when
+the method is cash**, and a register confirms the payout later: `pr.shift_id` is null (no device took
+the return) and `o.pos_shift_id` is null (an online bill has no shift), so the cash left the till while
+the number that decides "what should be in this drawer" never moved. The till then counts short by
+exactly the refund with nothing on any screen to explain it, and the workbook's own "ตรวจสอบยอด" sheet
+stops adding up to the total printed beneath it. `closePosShift()` now calls
+`drawerCashComponentsInTx()` rather than repeating the query, so the number a manager signs and the
+number the register showed all shift are the same number by construction, not by coincidence.
+
+**The report carries its own rounding line.** `bms_orders.total_amount` deliberately excludes the cash
+rounding adjustment while `bms_payments.amount` includes it, so on a shop with `cash_rounding` enabled
+"ยอดขายสุทธิ" and the payment-method breakdown printed directly beneath it cannot reconcile. The X/Z
+sheet, the counter panel and the workbook now print `roundingTotal` between them.
+
 **A device can only read its own shift's report.** `GET /api/pos/shift-report` passes the requesting
 device's id into `getPosShiftReport()`, which returns nothing if the shift belongs to a different
 device — knowing another register's shift UUID is not enough to read its numbers, even inside the

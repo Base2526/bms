@@ -295,6 +295,29 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   was already paid, the credit is ledger-transferred to the oldest open invoice (and later credit
   sales) under the same account lock so aging never reports debt the customer no longer owes.
   `ar.writeoff` remains separate from `ar.manage`.
+- **"เงินสดที่ควรอยู่ในลิ้นชัก" มีสูตรเดียว `POS_SHIFT_CASH_SQL` และผู้เรียกทุกตัวต้องผ่านมัน.**
+  Five surfaces ask the question — the overdraw guard, `closePosShift()`, the X/Z sheet, the
+  back-office shift overview, and the XLSX detail workbook. Two rules bind all of them: a **completed**
+  cash refund belongs to `COALESCE(a.completed_shift_id, pr.shift_id, o.pos_shift_id)` — the shift that
+  actually handed the money over, not the one that accepted the goods — and a voided bill is excluded
+  on **both** legs (`o.voided_at IS NULL`, `pr.is_void = FALSE`) rather than counted twice and netted.
+  The online line-cancellation path (`9.57`) writes its allocation `PENDING` even for cash and a
+  register confirms it later, so keying on the return's shift loses the payout entirely: `pr.shift_id`
+  and `o.pos_shift_id` are both null there. `closePosShift()` must call `drawerCashComponentsInTx()`,
+  never repeat the query — the number the manager signs and the number the register showed all shift
+  have to be the same by construction. A `PENDING` allocation is deliberately keyed the other way
+  (`COALESCE(pr.shift_id, o.pos_shift_id)`): nobody has paid it out of any drawer yet.
+- **The shift report prints its own rounding line.** `bms_orders.total_amount` excludes the cash
+  rounding adjustment by design while `bms_payments.amount` includes it, so without `roundingTotal`
+  the sales figure and the payment-method breakdown printed beneath it cannot reconcile on any shop
+  with `cash_rounding` enabled.
+- **Every route under `/api/pos/**` carries its own guard, and `scripts/pos-route-guard-contract.test.mts`
+  enforces it.** `middleware.ts` covers `/admin/**` only, and these routes authenticate with a device
+  token plus a cashier PIN rather than a session. Device authentication is mandatory; any route that
+  writes must verify a person's PIN — a register left on a counter is not anybody's identity — unless
+  it is listed with a reason that still holds (today: parking a bill, which touches no money, stock or
+  document, and the read-only member-discount preview). Tenant and branch always come from the
+  authenticated device, never from the body.
 - **A POS PO receipt (`9.6`) is device-branch scoped and retry-safe.** The route re-checks cashier
   PIN plus `purchase.receive`; tenant/location come from the authenticated device. Inventory, lot,
   movement, PO status, audit, and `bms_pos_purchase_receipts.result` commit together. Reusing one

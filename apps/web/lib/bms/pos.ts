@@ -1932,41 +1932,14 @@ export async function closePosShift(input: {
       };
     }
 
-    const cash = await client.query<{ total: string }>(
-      `SELECT COALESCE(SUM(pay.amount), 0) AS total
-         FROM bms_payments pay
-         JOIN bms_orders o ON o.id = pay.order_id AND o.tenant_id = pay.tenant_id
-        WHERE o.tenant_id = $1 AND o.pos_shift_id = $2
-          AND pay.method = 'CASH' AND pay.status IN ('CONFIRMED','REFUNDED')`,
-      [input.tenantId, input.shiftId]
-    );
-    const partialReturns = await client.query<{ total: string }>(
-      `SELECT COALESCE(SUM(a.amount), 0) AS total
-         FROM bms_pos_refund_allocations a
-         JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
-         JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-        WHERE a.tenant_id = $1
-          AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
-          AND a.method = 'CASH'
-          AND a.status = 'COMPLETED'`,
-      [input.tenantId, input.shiftId]
-    );
-    const partialReturnCashOut = Number(partialReturns.rows[0]?.total ?? 0);
-
-    // เงินเข้า-ออกลิ้นชักที่ไม่ใช่การขาย (7.97) — ถอนไปฝากธนาคาร ยืมเงินทอน จ่ายค่าของ
-    // ก่อนมีตารางนี้ รายการพวกนี้ทำให้ปิดกะขึ้นเงินขาดทุกครั้งโดยไม่มีที่ให้อธิบาย
-    const movements = await client.query<{ cash_in: string; cash_out: string }>(
-      `SELECT COALESCE(SUM(amount) FILTER (WHERE direction = 'IN'), 0)  AS cash_in,
-              COALESCE(SUM(amount) FILTER (WHERE direction = 'OUT'), 0) AS cash_out
-         FROM bms_pos_cash_movements
-        WHERE tenant_id = $1 AND shift_id = $2`,
-      [input.tenantId, input.shiftId]
-    );
-    const cashIn = Number(movements.rows[0]?.cash_in ?? 0);
-    const cashOut = Number(movements.rows[0]?.cash_out ?? 0);
-
-    const expected = Number(open.rows[0].opening_float) + Number(cash.rows[0].total)
-      - partialReturnCashOut + cashIn - cashOut;
+    // ⚠️ ห้ามคิดสูตรเงินสดซ้ำที่นี่ — เงินที่ควรมีตอนปิดกะกับเงินที่จอบอกระหว่างกะ
+    // ต้องเป็นเลขเดียวกันเสมอ ไม่งั้นแคชเชียร์นับตรงตามที่จอบอกแล้วยังขึ้นว่าเงินขาด
+    // (เงินเข้า-ออกลิ้นชักที่ไม่ใช่การขาย 7.97 รวมอยู่ในสูตรนั้นแล้ว)
+    const cash = await drawerCashComponentsInTx(client, input.tenantId, input.shiftId);
+    const partialReturnCashOut = cash.cashRefunds;
+    const cashIn = cash.cashIn;
+    const cashOut = cash.cashOut;
+    const expected = drawerExpectedFrom(Number(open.rows[0].opening_float), cash);
 
     const res = await client.query(
       `UPDATE bms_pos_shifts
@@ -6052,31 +6025,72 @@ export async function recordCashMovement(input: {
  * เงินสดที่ "ควรอยู่" ในลิ้นชักตอนนี้ — สูตรเดียวกับตอนปิดกะเป๊ะ ๆ
  * ถ้าสองที่คิดต่างกัน ตัวเลขที่จอเตือนตอนถอนเงินจะไม่ตรงกับที่ปิดกะฟ้อง
  */
-export async function drawerExpectedInTx(
-  client: PoolClient, tenantId: string, shiftId: string, openingFloat: number
-): Promise<number> {
+/**
+ * เงินสดของกะหนึ่ง ๆ — **สูตรเดียวของทั้งระบบ** ($1 = tenant, $2 = shift)
+ *
+ * ⚠️ กฎที่ต้องรู้ก่อนแก้: การคืนเงินสดเป็นของ **กะที่จ่ายเงินออกจริง** ไม่ใช่กะที่รับของคืน
+ * `bms_pos_refund_allocations.completed_shift_id` คือกะนั้น · การคืนของหน้าเคาน์เตอร์จบทันที
+ * ในกะเดียวกันจึงไม่ต่างกัน แต่การตัดรายการของออร์เดอร์ออนไลน์ (9.57) สร้าง allocation เป็น
+ * PENDING เสมอ **แม้วิธีจ่ายจะเป็นเงินสด** แล้วมีคนมากดยืนยันจ่ายที่เครื่องทีหลัง — ถ้าคีย์ด้วย
+ * `pr.shift_id` (ซึ่งเป็น NULL สำหรับเส้นทางที่ไม่มีเครื่อง) เงินที่ออกจากลิ้นชักจริงจะไม่ถูกหัก
+ * ออกจาก "เงินที่ควรมี" เลย → ปิดกะแล้วเงินขาดเท่ายอดคืนโดยไม่มีอะไรอธิบาย
+ *
+ * บิลที่ถูก void ตัดออกทั้งขาขายและขาคืน (แทนที่จะนับทั้งคู่แล้วหักล้างกัน) — รายงานสรุปกะ
+ * และหน้าภาพรวมกะทำแบบนี้อยู่ก่อนแล้ว การเขียนต่างกันคือจุดที่สองสูตรเริ่ม drift
+ */
+const POS_SHIFT_CASH_SQL = `
+  (SELECT COALESCE(SUM(pay.amount), 0)
+     FROM bms_payments pay
+     JOIN bms_orders o ON o.id = pay.order_id AND o.tenant_id = pay.tenant_id
+    WHERE o.tenant_id = $1 AND o.pos_shift_id = $2 AND o.voided_at IS NULL
+      AND pay.method = 'CASH' AND pay.status IN ('CONFIRMED','REFUNDED')) AS cash_sales,
+  (SELECT COALESCE(SUM(a.amount), 0)
+     FROM bms_pos_refund_allocations a
+     JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+     JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+    WHERE a.tenant_id = $1
+      AND COALESCE(a.completed_shift_id, pr.shift_id, o.pos_shift_id) = $2
+      AND pr.is_void = FALSE
+      AND a.method = 'CASH' AND a.status = 'COMPLETED') AS cash_refunds,
+  (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
+    WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'IN') AS cash_in,
+  (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
+    WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'OUT') AS cash_out`;
+
+export type PosShiftCashComponents = {
+  cashSales: number;
+  cashRefunds: number;
+  cashIn: number;
+  cashOut: number;
+};
+
+/** ส่วนประกอบของเงินสดในกะ — ปิดกะต้องใช้แยกชิ้นเพื่อลง audit ไม่ใช่แค่ยอดรวม */
+export async function drawerCashComponentsInTx(
+  client: Pick<PoolClient, "query">, tenantId: string, shiftId: string
+): Promise<PosShiftCashComponents> {
   const res = await client.query<{ cash_sales: string; cash_refunds: string; cash_in: string; cash_out: string }>(
-    `SELECT
-       (SELECT COALESCE(SUM(pay.amount), 0)
-          FROM bms_payments pay
-          JOIN bms_orders o ON o.id = pay.order_id AND o.tenant_id = pay.tenant_id
-         WHERE o.tenant_id = $1 AND o.pos_shift_id = $2
-           AND pay.method = 'CASH' AND pay.status IN ('CONFIRMED','REFUNDED')) AS cash_sales,
-       (SELECT COALESCE(SUM(a.amount), 0)
-          FROM bms_pos_refund_allocations a
-          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
-          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-         WHERE a.tenant_id = $1 AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
-           AND a.method = 'CASH' AND a.status = 'COMPLETED') AS cash_refunds,
-       (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
-         WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'IN') AS cash_in,
-       (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
-         WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'OUT') AS cash_out`,
+    `SELECT ${POS_SHIFT_CASH_SQL}`,
     [tenantId, shiftId]
   );
   const r = res.rows[0];
-  return Math.round((openingFloat + Number(r.cash_sales) - Number(r.cash_refunds)
-    + Number(r.cash_in) - Number(r.cash_out)) * 100) / 100;
+  return {
+    cashSales: Number(r.cash_sales),
+    cashRefunds: Number(r.cash_refunds),
+    cashIn: Number(r.cash_in),
+    cashOut: Number(r.cash_out),
+  };
+}
+
+/** เงินสดที่ควรอยู่ในลิ้นชักตอนนี้ — ผู้เรียกทุกตัวต้องผ่านทางนี้ ห้ามคิดเอง */
+export function drawerExpectedFrom(openingFloat: number, cash: PosShiftCashComponents): number {
+  return Math.round((openingFloat + cash.cashSales - cash.cashRefunds
+    + cash.cashIn - cash.cashOut) * 100) / 100;
+}
+
+export async function drawerExpectedInTx(
+  client: PoolClient, tenantId: string, shiftId: string, openingFloat: number
+): Promise<number> {
+  return drawerExpectedFrom(openingFloat, await drawerCashComponentsInTx(client, tenantId, shiftId));
 }
 
 // ---------------------------------------------------------------
@@ -6191,6 +6205,14 @@ export type PosShiftReport = {
   returnCount: number;
   returnTotal: number;
   discountTotal: number;
+  /**
+   * ผลรวมยอดปัดเศษเงินสด (9.x) — บวก/ลบได้
+   *
+   * `bms_orders.total_amount` **ไม่รวม** ยอดปัดเศษโดยตั้งใจ แต่เงินที่รับจริง (และ `byMethod`)
+   * รวม · ไม่มีบรรทัดนี้ ร้านที่เปิดปัดเศษจะได้กระดาษที่ "ยอดขาย" กับผลรวมวิธีชำระไม่เท่ากัน
+   * โดยไม่มีอะไรบนใบเดียวกันอธิบายส่วนต่าง
+   */
+  roundingTotal: number;
   byMethod: Array<{ method: string; count: number; amount: number }>;
   byCashier: Array<{ cashier: string; billCount: number; amount: number }>;
   cashIn: number;
@@ -6251,6 +6273,7 @@ export async function getPosShiftReport(
       `SELECT COUNT(*) FILTER (WHERE voided_at IS NULL)::text AS bills,
               COALESCE(SUM(total_amount) FILTER (WHERE voided_at IS NULL), 0) AS sales,
               COALESCE(SUM(discount_amount) FILTER (WHERE voided_at IS NULL), 0) AS discounts,
+              COALESCE(SUM(rounding_amount) FILTER (WHERE voided_at IS NULL), 0) AS rounding,
               COUNT(*) FILTER (WHERE voided_at IS NOT NULL)::text AS voids,
               COALESCE(SUM(total_amount) FILTER (WHERE voided_at IS NOT NULL), 0) AS void_total
          FROM bms_orders
@@ -6351,6 +6374,7 @@ export async function getPosShiftReport(
     returnCount: Number(r.n ?? 0),
     returnTotal: Number(r.amount ?? 0),
     discountTotal: Number(s.discounts),
+    roundingTotal: Number(s.rounding ?? 0),
     byMethod: methods.rows.map((x: any) => ({ method: x.method, count: Number(x.n), amount: Number(x.amount) })),
     byCashier: cashiers.rows.map((x: any) => ({ cashier: x.cashier, billCount: Number(x.bills), amount: Number(x.amount) })),
     cashIn,
@@ -6567,7 +6591,8 @@ export async function getPosShiftExportData(
               AND d.doc_type = 'ABBREVIATED'
             ORDER BY d.issued_at, d.id LIMIT 1
          ) doc ON TRUE
-        WHERE pr.tenant_id = $1 AND COALESCE(pr.shift_id, o.pos_shift_id) = $2
+        WHERE pr.tenant_id = $1
+          AND (COALESCE(pr.shift_id, o.pos_shift_id) = $2 OR a.completed_shift_id = $2)
         ORDER BY pr.created_at, pr.id, a.created_at, a.id`,
       [tenantId, shiftId]
     ),
