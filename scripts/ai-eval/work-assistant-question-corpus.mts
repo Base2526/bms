@@ -109,6 +109,12 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "เพิ่มพนักงานและกำหนดสิทธิ์ยังไง", locale: "th", expect: "answer", expectTop: "users.add-and-authorize" },
   { q: "ตั้งราคาส่งหรือโปรโมชันซื้อแถมยังไง", locale: "th", expect: "answer", expectTop: "products.pricing-promotions" },
   {
+    q: "แต่ละสาขาจัดโปรของตัวเองได้ไหม", locale: "th", expect: "answer", expectTop: "products.branch-promotions",
+    origin: "coverage",
+    why: "A chain asks this before opening branch two; the answer is the scope rule, not the product form.",
+  },
+  { q: "can each branch run its own promotion", locale: "en", expect: "answer", expectTop: "products.branch-promotions", origin: "coverage" },
+  {
     q: "ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", locale: "th", expect: "answer", expectTop: "inventory.stock-sale-blockers",
     expectTool: { name: "check_stock", permission: "product.view" },
     why: "Sellable stock is current minus reserved; only a live read separates the two.",

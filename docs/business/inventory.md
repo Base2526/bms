@@ -46,7 +46,10 @@ location must be able to answer four separate questions without opening the data
 - where the stock is now (`bms_inventory.location_id`);
 - where an order was sold/reserved from (`bms_orders.location_id`, plus POS device/shift when it is
   a counter sale);
-- whether a promotion is allowed at the selling branch (`bms_coupon_locations`, added in `9.37`);
+- whether a promotion is allowed at the selling branch (`bms_coupon_locations`, added in `9.37`), and
+  which offer that branch actually runs (`bms_product_promotions.location_id`, added in `9.61` — a
+  branch offer overrides the store-wide one; see
+  [../business/pos.md](./pos.md#each-branch-runs-its-own-offer-961));
 - whether an operator is supposed to work across all branches or only assigned branches
   (`bms_user_allowed_locations`, added in `9.37` as the tenant-scoped policy foundation).
 

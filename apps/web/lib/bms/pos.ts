@@ -34,6 +34,7 @@ import { recordMovement, recordOrderMovements } from "./movements";
 import {
   isFixedPricePack,
   isSaleTimePricingSnapshot,
+  pickPromotionForLocation,
   priceRemainingLines,
   type PriceTier,
   type Promotion,
@@ -594,20 +595,25 @@ export async function resolvePosScan(
   const row = res.rows[0];
   if (!row || !row.size) return null;
 
+  // 9.61: โปรของสาขาทับโปรทั้งร้าน · `LIMIT 1` เดิมใช้ไม่ได้แล้ว เพราะตอนนี้ SKU เดียว
+  // มีได้สองแถว (ทั้งร้าน + สาขานี้) แล้วแถวที่ได้จะขึ้นกับลำดับที่ Postgres บังเอิญคืนมา
   const promoRes = await query<any>(
-    `SELECT kind, buy_qty, get_qty, bundle_price FROM bms_product_promotions
+    `SELECT location_id, kind, buy_qty, get_qty, bundle_price FROM bms_product_promotions
       WHERE tenant_id = $1 AND product_sku = $2 AND active
+        AND (location_id IS NULL OR location_id = $3)
         AND (starts_at IS NULL OR starts_at <= now())
-        AND (ends_at   IS NULL OR ends_at   >  now())
-      LIMIT 1`,
-    [tenantId, row.sku]
+        AND (ends_at   IS NULL OR ends_at   >  now())`,
+    [tenantId, row.sku, opts.locationId ?? null]
   );
-  const promoRow = promoRes.rows[0];
-  const promotion: Promotion | null = !promoRow
-    ? null
-    : promoRow.kind === "BUY_X_GET_Y"
-      ? { kind: "BUY_X_GET_Y", buyQty: Number(promoRow.buy_qty), getQty: Number(promoRow.get_qty) }
-      : { kind: "N_FOR_PRICE", buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) };
+  const promotion: Promotion | null = pickPromotionForLocation(
+    promoRes.rows.map((promoRow: any) => ({
+      locationId: promoRow.location_id ?? null,
+      promotion: promoRow.kind === "BUY_X_GET_Y"
+        ? { kind: "BUY_X_GET_Y" as const, buyQty: Number(promoRow.buy_qty), getQty: Number(promoRow.get_qty) }
+        : { kind: "N_FOR_PRICE" as const, buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) },
+    })),
+    opts.locationId ?? null
+  );
 
   const tierRes = await query<{
     min_qty: number; unit_price: string | null; scope: PriceTier["scope"];

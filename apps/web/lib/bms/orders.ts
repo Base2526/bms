@@ -37,11 +37,13 @@ import {
 import {
   applyPromotion,
   canonicalPriceTiers,
+  pickPromotionForLocation,
   isFixedPricePack,
   normalizePackCode,
   unitPriceForQty,
   type PriceTier,
   type Promotion,
+  type ScopedPromotion,
 } from "./pricing";
 import { getVariantBasePriceInTx } from "./productPacks";
 import type { VatCategory } from "./vat";
@@ -789,22 +791,33 @@ export async function createOrderInTx(
     // ---- โปรโมชัน ซื้อ X แถม Y / N ชิ้นราคาเดียว (8.7) -----------
     // เป็นกลไก "ราคาของกลุ่มชิ้น" ไม่ใช่ส่วนลดชั้นที่ 5 — โปรที่ร้านประกาศไว้จึงไม่ถูก
     // ตัดด้วยเพดาน max_discount_pct ของบิลนั้น (ดูเหตุผลเต็มใน migration 8.7)
+    // 9.61: อ่านทั้งโปรทั้งร้าน (location_id IS NULL) และโปรของสาขาที่กำลังขาย แล้วให้
+    // pickPromotionForLocation() ตัดสิน — ต้องเป็นฟังก์ชันตัวเดียวกับที่ resolvePosScan
+    // ใช้พรีวิวที่จอ ไม่งั้นจอกับ server คิดคนละยอดแล้วบิลถูกทิ้งทั้งใบหน้าลูกค้า
     const promoRows = await client.query<any>(
-      `SELECT product_sku, kind, buy_qty, get_qty, bundle_price
+      `SELECT product_sku, location_id, kind, buy_qty, get_qty, bundle_price
          FROM bms_product_promotions
         WHERE tenant_id = $1 AND product_sku = ANY($2::text[]) AND active
+          AND (location_id IS NULL OR location_id = $3)
           AND (starts_at IS NULL OR starts_at <= now())
           AND (ends_at   IS NULL OR ends_at   >  now())`,
-      [tenantId, productSkus]
+      [tenantId, productSkus, locationId]
     );
-    const promoBySku = new Map<string, Promotion>();
+    const scopedPromosBySku = new Map<string, ScopedPromotion[]>();
     for (const row of promoRows.rows) {
-      promoBySku.set(
-        row.product_sku,
-        row.kind === "BUY_X_GET_Y"
+      const scoped = scopedPromosBySku.get(row.product_sku) ?? [];
+      scoped.push({
+        locationId: row.location_id ?? null,
+        promotion: row.kind === "BUY_X_GET_Y"
           ? { kind: "BUY_X_GET_Y", buyQty: Number(row.buy_qty), getQty: Number(row.get_qty) }
-          : { kind: "N_FOR_PRICE", buyQty: Number(row.buy_qty), bundlePrice: Number(row.bundle_price) }
-      );
+          : { kind: "N_FOR_PRICE", buyQty: Number(row.buy_qty), bundlePrice: Number(row.bundle_price) },
+      });
+      scopedPromosBySku.set(row.product_sku, scoped);
+    }
+    const promoBySku = new Map<string, Promotion>();
+    for (const [sku, scoped] of scopedPromosBySku) {
+      const picked = pickPromotionForLocation(scoped, locationId);
+      if (picked) promoBySku.set(sku, picked);
     }
     /** SKU ที่คิดยอดโปรไปแล้ว — โปรคิดครั้งเดียวต่อ SKU ต่อบิล ไม่ใช่ต่อบรรทัด */
     const promoCharged = new Set<string>();

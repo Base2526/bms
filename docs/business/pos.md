@@ -408,10 +408,42 @@ below its own bundle price — or leaves a stale promotion running — would oth
 overcharge customers in the name of an offer, which is damage the shop cannot explain. The lower total
 always wins.
 
-Only one promotion can be active per product (a partial unique index enforces it). Two would require
-answering which one wins, and there is no answer staff can give a customer. Date windows mean an
-expired offer stops applying on its own, without anyone remembering to edit the product — a stale
-promotion is how a shop keeps selling at a loss without noticing.
+Only one promotion can be active per product **per scope** (partial unique indexes enforce it). Two in
+the same scope would require answering which one wins, and there is no answer staff can give a
+customer. Date windows mean an expired offer stops applying on its own, without anyone remembering to
+edit the product — a stale promotion is how a shop keeps selling at a loss without noticing.
+
+### Each branch runs its own offer (`9.61`)
+
+`8.7` priced promotions for the whole tenant, so a chain could not do what Thai retail does every
+day: the branch by the school clears stock at "3 for ฿100" while the mall branch sells at list price.
+`bms_product_promotions.location_id` makes the scope explicit — `NULL` is the store-wide offer (every
+row `8.7` ever wrote, so applying the migration changes no bill), a branch id is that branch alone.
+
+**A branch offer overrides the store-wide offer for the same product.** That does not reopen the
+"which one wins" problem `8.7` closed, because the answer fits in one sentence a cashier can say:
+*this branch set its own offer, over head office's*. What is deliberately **not** the rule is "pick
+the cheaper one" — which is cheaper depends on how many the customer picked up (buy-2-get-1 and
+3-for-฿100 trade places by quantity), so the same bill would be priced by different offers depending
+on basket size. Comparing against the *normal* price still happens, unchanged.
+
+One function decides it, `pickPromotionForLocation()` in `lib/bms/pricing.ts`, and both readers call
+it: the register previewing a line through `resolvePosScan()` and `createOrder()` recomputing at
+commit. Two copies of that rule drift into a screen and a server that disagree by a satang, which is
+`PAYMENT_MISMATCH` and a bill discarded in front of the customer. A path that does not know the
+branch — a bill lookup, for instance — sees only store-wide offers; guessing a branch and then
+charging for it is worse than not discounting.
+
+Offers are set on **`/admin/promotions`** (read `product.view`, write `product.edit` — the same gate
+`8.7` argued for, since setting an offer is setting that product's selling price, so nothing new needs
+seeding). Saving the same scope again edits that offer rather than adding a second. Stopping one
+deactivates it instead of deleting it, because "which branch ran what, and when" is the first question
+asked when a month's margin looks wrong. Staff restricted by `bms_user_allowed_locations` (`9.37`) can
+only set offers for their own branches and cannot set a store-wide one, which would reach branches
+outside the scope the shop gave them.
+
+**Wholesale steps (`8.1`) are still store-wide.** They are a per-unit price, not an advertised offer,
+and splitting them per branch is a separate decision with its own migration.
 
 Named packs are excluded, same as wholesale steps: the pack row already states what the box costs.
 Their underlying pieces do not enter the promotion quantity and are not charged again as loose units.

@@ -233,6 +233,12 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "customers", workspace: "SHOP", visible: (ctx) => ctx.can("coupon.view"),
   },
   {
+    // อยู่ข้างคูปองเพราะเป็นคันโยกส่วนลดคู่กัน — คนที่มาหา "จะลดราคายังไง" มองที่เดียวจบ
+    // gate ด้วย product.view/product.edit ตามเหตุผลของ 8.7 (ตั้งโปร = ตั้งราคาขายสินค้านั้น)
+    id: "customers.promotions", route: "/admin/promotions", labelKey: "admin_nav.promotions",
+    section: "customers", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
+  },
+  {
     id: "customers.followup-rules", route: "/admin/followup-rules", labelKey: "admin_nav.followup_rules",
     section: "customers", workspace: "SHOP", visible: (ctx) => ctx.can("followup.view"),
   },
