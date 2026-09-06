@@ -276,8 +276,10 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     summary: both("เลือกสาขา จัดโซนและโต๊ะ แล้วลากโต๊ะบนผังเพื่อบันทึกตำแหน่งใช้งานจริง", "Choose a branch, manage its areas and tables, then drag tables into their real floor positions."),
     aliases: aliases([
       "เพิ่มโต๊ะ", "จัดผังร้าน", "ลบโซน", "ย้ายโต๊ะไปโซนอื่น", "เปลี่ยนชื่อโต๊ะ", "ปิดโต๊ะชั่วคราว",
+      "พิมพ์ QR โต๊ะ", "สร้าง QR ให้ลูกค้าสแกนสั่งอาหาร", "หมุน QR โต๊ะ",
     ], [
       "add table", "edit floor plan", "delete area", "move table to another area", "rename table", "block a table",
+      "print a table QR", "create a scan-to-order QR", "rotate a table QR",
     ]),
     requiredPermissions: ["restaurant.floor.manage"],
     prerequisites: lists([
@@ -292,22 +294,28 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "เลือกโซนและเพิ่มโต๊ะ พร้อมชื่อ จำนวนที่นั่ง และรูปทรง",
       "ลากโต๊ะบนกริดไปยังตำแหน่งจริง แล้วกดบันทึกผังร้าน",
       "คลิกโต๊ะเพื่อแก้รายละเอียด ย้ายโซน หรือปิดใช้งานชั่วคราว",
+      "กดปุ่ม QR ของโต๊ะเพื่อสร้าง ดาวน์โหลด หรือพิมพ์รหัสให้ลูกค้าสแกนสั่งอาหารเอง",
     ], [
       "Add or rename areas, then drag their tabs to reorder them.",
       "Choose an area and add tables with a name, seat count and shape.",
       "Drag tables to their real positions on the grid, then save the floor plan.",
       "Select a table to edit its details, move it to another area or block it temporarily.",
+      "Use a table's QR button to create, download or print the code customers scan to order.",
     ]),
     warnings: lists([
       "โต๊ะที่มีบิลเปิดอยู่ลากตำแหน่งได้ แต่แก้รายละเอียด ย้ายโซน ปิดใช้งาน หรือลบไม่ได้",
       "ลบโซนได้เมื่อไม่มีโต๊ะใช้งานอยู่ และลบโซนสุดท้ายของสาขาไม่ได้",
       "หน้านี้จัดผังเท่านั้น การเปิดหรือปิดบิลทำที่ Restaurant POS",
+      "หมุน QR ของโต๊ะ = สติกเกอร์ที่พิมพ์ไปแล้วใช้ไม่ได้ทันที และลูกค้าที่กำลังนั่งอยู่ต้องสแกนใหม่ — พิมพ์แผ่นใหม่ก่อนหมุน",
+      "เห็นและแก้ได้เฉพาะสาขาที่ร้านตั้งให้ดูแล (ถ้าร้านจำกัดสาขาไว้)",
     ], [
       "An occupied table can be repositioned, but its details, area, availability and deletion are locked.",
       "An area can be deleted only when it has no active tables, and a branch must keep at least one area.",
       "This page edits the floor only; checks are opened and closed in Restaurant POS.",
+      "Rotating a table QR voids the sticker already on that table at once and forces seated customers to rescan — print the new sheet before rotating.",
+      "You only see and edit the branches the shop assigned to you, when branch scoping is in use.",
     ]),
-    relatedCapabilityIds: ["restaurant.dine-in"],
+    relatedCapabilityIds: ["restaurant.dine-in", "restaurant.qr-ordering"],
   },
   {
     id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",
@@ -645,6 +653,17 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     steps: [["กดคิดเงิน เลือกวิธีชำระ (เงินสด/QR/บัตร) แบ่งได้หลายช่องทางในบิลเดียว ยอดรวมต้องเท่ายอดที่ต้องชำระ แล้วยืนยันครั้งเดียว", "ย้ายโต๊ะจากปุ่มย้ายโต๊ะ — บิลเดิมและรอบครัวติดไปด้วย", "ลูกค้าเดินออกหรือสั่งผิดทั้งบิล ให้ยกเลิกบิลพร้อมเหตุผล ของที่จองไว้จะถูกปล่อยคืน"], ["Press checkout, choose the tender (cash/QR/card) — several tenders can split one check as long as they add up to the amount due — then confirm once.", "Use the move button to change tables — the same check and its kitchen rounds follow.", "For a walkout or a wholly wrong order, cancel the check with a reason; the reservation is released."]],
     warnings: [["เก็บเงินได้จากเครื่องอื่นและกะอื่นในสาขาเดียวกัน — ยอดขายจะเป็นของกะที่รับเงินจริง ไม่ใช่กะที่เปิดโต๊ะ", "คนละคนกับคนที่รับออร์เดอร์เก็บเงินได้", "บิลที่เก็บเงินแล้วยกเลิกที่หน้าโต๊ะไม่ได้ — ต้องใช้การคืนสินค้าหรือ void แบบบิลค้าปลีก", "ยกเลิกบิลไม่ใช่การขาย: ไม่มีใบกำกับ และของกลับเข้าสต็อก", "ยังไม่รองรับการแยกบิล/รวมบิลข้ามโต๊ะ"], ["A check can be paid from another register and another shift in the same branch — the sale belongs to the shift that took the money, not the one that opened the table.", "A different person from the one who took the order may take the payment.", "A paid check cannot be cancelled from the floor screen — use the retail return or void path.", "Cancelling is not a sale: no tax document is issued and the stock returns.", "Splitting or merging checks across tables is not supported yet."]],
     relatedCapabilityIds: ["restaurant.dine-in", "pos.operations"],
+  }),
+  menuGuide({
+    id: "pos.restaurant-qr-orders", module: "pos", pageId: "pos", route: "/admin/pos-manual",
+    title: ["รับหรือปฏิเสธออร์เดอร์ที่ลูกค้าสั่งเองจาก QR โต๊ะ", "Accept or decline orders customers sent from the table QR"],
+    summary: ["ลูกค้าสแกน QR บนโต๊ะแล้วส่งรายการเข้ามา — รายการนั้นยังไม่เข้าครัวจนกว่าพนักงานจะกดรับ", "A customer scans the table QR and sends a list; nothing reaches the kitchen until a staff member accepts it."],
+    aliases: [["ออร์เดอร์ QR", "รับออร์เดอร์ QR", "ลูกค้าสั่งจาก QR", "ลูกค้าสั่งเอง", "สแกนสั่งอาหาร", "QR โต๊ะ", "รับออร์เดอร์จากลูกค้า", "ปฏิเสธออร์เดอร์ QR", "ลูกค้าสั่งจากมือถือ"], ["QR order", "accept a QR order", "customer self-order", "scan to order", "table QR", "accept customer order", "decline QR order", "order from phone"]],
+    requiredPermissions: ["pos.sell"],
+    prerequisites: [["โต๊ะนั้นต้องมีบิลที่พนักงานเปิดไว้แล้ว — QR ไม่เปิดโต๊ะให้เอง", "โต๊ะต้องมี QR ที่พิมพ์จากหน้าจัดผังร้าน", "เปิดกะและกรอก PIN ผู้ปฏิบัติงานที่แถบด้านบนก่อน"], ["The table must already have a check a staff member opened — a QR never opens a table by itself.", "The table needs a QR printed from the floor-plan screen.", "Open the shift and enter the operator PIN in the top bar first."]],
+    steps: [["ป้ายตัวเลขบนแท็บ ออร์เดอร์ QR บอกจำนวนที่รออยู่ — เห็นได้จากทุกจอ", "เปิดแท็บนั้น เลือกออร์เดอร์เพื่อดูรายการ ตัวเลือก โน้ตถึงครัว และยอดประมาณการ", "กดรับและส่งเข้าครัว — ระบบเพิ่มรายการเข้าบิลโต๊ะ จองวัตถุดิบ และออกตั๋วครัวใน transaction เดียว", "ถ้าทำไม่ได้ ให้กดปฏิเสธพร้อมเหตุผล ลูกค้าจะเห็นเหตุผลนั้นบนจอของตัวเอง"], ["The badge on the QR orders tab counts what is waiting and is visible from every screen.", "Open the tab, pick an order to see its lines, options, kitchen notes and estimated total.", "Press accept — the lines join the table's check, ingredients are reserved and kitchen tickets are issued in one transaction.", "If you cannot make it, decline with a reason; the customer sees that reason on their own screen."]],
+    warnings: [["ยอดที่เห็นก่อนกดรับเป็นยอดประมาณการ ราคาจริงคิดใหม่ตอนกดรับด้วยเส้นทางเดียวกับที่พนักงานสั่งเอง", "รับไม่ได้ถ้าบิลนั้นยังมีบรรทัดที่พนักงานพิมพ์ค้างไว้ยังไม่ส่งครัว — ส่งหรือลบบรรทัดนั้นก่อน", "เมนูที่ถูกตั้งว่าหมดวันนี้รับไม่ได้ ระบบจะบอกชื่อเมนูนั้น", "ปิดบิลโต๊ะเมื่อไหร่ คำขอที่ยังไม่ได้ตรวจจะหมดอายุและโทรศัพท์ลูกค้าสั่งต่อไม่ได้", "ย้ายโต๊ะแล้วลูกค้าต้องสแกน QR ของโต๊ะใหม่ แต่คำขอที่ค้างอยู่ยังตามบิลไปด้วย"], ["The total shown before accepting is an estimate; the real price is resolved on accept through the same path a staff-entered line uses.", "Acceptance is blocked while the check still has staff-typed lines that were never sent — send or remove them first.", "A menu marked sold out today cannot be accepted; the system names the dish.", "Closing the check expires unreviewed proposals and stops the customer's phone from ordering more.", "After a table move the customer must rescan the new table's QR, but proposals already waiting follow the check."]],
+    relatedCapabilityIds: ["restaurant.qr-ordering", "restaurant.dine-in"],
   }),
   menuGuide({
     id: "restaurant.menu-availability", module: "products", pageId: "products", route: "/admin/products",

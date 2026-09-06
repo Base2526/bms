@@ -525,13 +525,24 @@ export async function createOrderInTx(
     return { status: "INVALID_ITEM", index: -1, reason: "เวลาที่สัญญาไว้ไม่ถูกต้อง" };
   }
   const requestedSkus = Array.from(new Set(items.map((item) => item.sku)));
-  const unavailable = await client.query<{ product_sku: string }>(
+  // ⚠️ "หมดวันนี้" (9.55) เป็นด่าน **ตอนรับออร์เดอร์** ไม่ใช่ตอนคิดยอด
+  //
+  // บิลโต๊ะ (restaurantCheckId) ไม่ได้ส่งตะกร้าใหม่เข้ามา — มันส่ง "ทุกบรรทัดที่ยังอยู่บนบิล"
+  // ซ้ำทุกครั้งที่ต้องคิดยอดใหม่ (ส่งครัวรอบถัดไป / ครัวยกเลิกรายการ) ถ้ากรองที่นี่ด้วย
+  // เมนูที่ถูกตั้งว่าหมดหลังจากมันถูกเสิร์ฟไปแล้วจะทำให้ **ทั้งโต๊ะเดินต่อไม่ได้**:
+  // ส่งครัวรอบใหม่ไม่ได้ → version ค้างไม่เท่า reserved_version → คิดเงินไม่ได้ →
+  // และลบบรรทัดที่ส่งครัวไปแล้วก็ไม่ได้ ทางออกเดียวคือ void ทั้งบิลที่ลูกค้ากินไปแล้ว
+  //
+  // ด่านของบิลโต๊ะอยู่ที่ resolveRestaurantCheckItemRequest() คือตอนที่บรรทัด *เข้า* บิล
+  // (พนักงานกดเพิ่ม / รับออร์เดอร์ QR) ซึ่งเป็นจุดเดียวกับที่ช่องทางอื่นถูกกรองที่นี่
+  const soldOutGate = input.restaurantCheckId ? [] : requestedSkus;
+  const unavailable = soldOutGate.length ? await client.query<{ product_sku: string }>(
     `SELECT product_sku FROM bms_product_menu_unavailability
       WHERE tenant_id = $1 AND location_id = $2
         AND product_sku = ANY($3::text[]) AND resets_at > now()
       ORDER BY product_sku LIMIT 1`,
-    [tenantId, locationId, requestedSkus]
-  );
+    [tenantId, locationId, soldOutGate]
+  ) : { rowCount: 0, rows: [] as Array<{ product_sku: string }> };
   if (unavailable.rowCount) {
     const sku = unavailable.rows[0].product_sku;
     return { status: "SOLD_OUT_TODAY", sku, size: items.find((item) => item.sku === sku)?.size ?? "" };

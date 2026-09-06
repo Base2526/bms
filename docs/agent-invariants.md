@@ -514,11 +514,29 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   `pos.sell` accepts or rejects the entire proposal. Acceptance adds all items, refreshes the same
   whole-check reservation, creates the normal KDS round, records the review and audit, and commits
   once. Any validation/stock/reservation failure rolls the whole action back. Existing unsent staff
-  lines must be sent or removed first so acceptance cannot silently send an unrelated draft.
-- **An old scan cannot order for the next guest.** Leaving `OPEN` revokes every session and expires
-  pending proposals in the check transaction; QR rotation also revokes its sessions. Moving a party
-  keeps the scan-time table snapshot immutable while the staff inbox resolves the check's current
-  table, and guests must scan the destination table QR again.
+  lines must be sent or removed first so acceptance cannot silently send an unrelated draft. A dish
+  the branch marked sold out that day is refused here with the dish named: acceptance is an intake,
+  and an intake is where the sold-out flag belongs.
+- **An old scan cannot order for the next guest — but only a *closed* check ends a scan (`9.62`).**
+  Reaching a terminal status (`PAID`/`CANCELLED`) revokes every session and expires pending
+  proposals in the check transaction; QR rotation also revokes its sessions. `CLOSING` must **not**:
+  it is the reversible settlement claim taken the instant a cashier presses checkout (`9.48`), and
+  treating it as a close meant one mismatched payment destroyed every waiting proposal at that table
+  for good — invisibly, because the staff inbox lists only `PENDING`/`ACCEPTED`/`REJECTED` and the
+  reopen path restores nothing. Moving a party keeps the scan-time table snapshot immutable while the
+  staff inbox resolves the check's current table, and guests must scan the destination table QR again.
+- **Waiting proposals are bounded per check, and their badge is live everywhere.** A 12-hour session
+  under a per-minute rate limit can still accumulate, and the inbox reads the newest 100 rows, so one
+  phone must not be able to push a real order off the list. The register's pending count sits on the
+  left rail to be seen from any screen, so its data is polled from any screen — a badge fed only
+  while its own tab is open announces nothing.
+- **Branch scope applies to floor management, not just the permission (`9.62`).**
+  `restaurant.floor.manage` says a person may edit floors, never which branch's. Every floor query
+  and mutation resolves the owning branch — from `locationId`, or from the area/table row when that
+  is all the argument list carries — and refuses one outside the caller's `bms_user_allowed_locations`
+  scope; the branch picker reads the same scoped list so the UI cannot offer what the server refuses.
+  Rotating another branch's QR invalidates the sticker physically on its table and cuts the guests
+  seated at it, which is the widest blast radius on this surface.
 - **Not built, and not to be faked**: split/merge of checks across tables (splitting *payment* is
   supported), reservations/queue numbers, per-station printer routing,
   offline-first sync, and delivery-aggregator integrations.
@@ -625,6 +643,17 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
   never let one tenant's failure `throw` out of that loop — catch it, record it, and keep going, or
   every tenant queued after the first bad row stops being swept, forever, the same shape as the
   `orders/release-expired` cron bug.
+- **The sold-out flag is an *intake* rule, and a dine-in check's intake is not order creation
+  (`9.62`).** Online, chat and the retail register intake a cart once, at `createOrderInTx()`, so
+  that is where they are gated. A dine-in check re-submits its *whole* content to `createOrderInTx()`
+  every time the amount must be rebuilt (next kitchen round, kitchen-cancelled line), so gating there
+  locks the table the moment a dish is marked sold out after being cooked: the round cannot be sent,
+  `reserved_version` never catches up to `version`, the check cannot be paid, and a line already sent
+  to the kitchen cannot be removed — leaving only "void a bill the guests ate". The dine-in gate
+  therefore lives in `resolveRestaurantCheckItemRequest()`, the one place a line *enters* a check
+  (waiter-typed or QR-accepted), and `createOrderInTx()` skips the gate whenever `restaurantCheckId`
+  is set. Any surface that returns `SOLD_OUT_TODAY` to a register must also have a case in
+  `describePosFailure()`; a raw status code tells a cashier nothing about which dish or how to fix it.
 - **An online restaurant order requires an explicit branch and an explicit fulfillment type
   (`9.56`); neither is ever inferred.** `createOrderInTx()` asks the customer to choose a branch
   whenever the shop has more than one active location, and refuses to proceed without a

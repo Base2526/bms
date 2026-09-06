@@ -35,6 +35,10 @@ export function describePosFailure(data: any): string {
       return `รายการที่ ${Number(data.index) + 1} ใช้ไม่ได้: ${data.reason}`;
     case "EMPTY":
       return "ยังไม่มีรายการที่ส่งครัวได้ — เพิ่มเมนูก่อน";
+    // เมนูที่ถูกตั้งว่า "หมดวันนี้" (9.55) — เดิมตกไปที่ default แล้วโชว์
+    // "ขายไม่สำเร็จ (SOLD_OUT_TODAY)" ซึ่งไม่บอกว่าของตัวไหนและปลดที่ไหน
+    case "SOLD_OUT_TODAY":
+      return `${data.sku}${data.size && data.size !== "-" ? ` (${data.size})` : ""}: ถูกตั้งว่าหมดวันนี้ — เปิดขายอีกครั้งที่แท็บครัว หรือเอารายการนี้ออกจากบิล`;
     case "INVALID_PACK":
       return `${data.sku}: ไม่พบหน่วยขาย ${data.packCode || "ที่เลือก"} — โหลดสินค้าใหม่แล้วลองอีกครั้ง`;
     case "PHARMACY_POLICY_UNKNOWN":

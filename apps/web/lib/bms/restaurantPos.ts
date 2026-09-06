@@ -217,6 +217,28 @@ type RestaurantTablePatch = {
   positionY?: number;
 };
 
+/**
+ * สาขาเจ้าของโซน/โต๊ะ — ผู้เรียกใช้ตรวจขอบเขตสาขาของคนกด (bms_user_allowed_locations, 9.37)
+ *
+ * mutation ของผังร้านครึ่งหนึ่งรับมาแค่ `areaId`/`tableId` ไม่มีสาขาในอาร์กิวเมนต์ ถ้าไม่มีทาง
+ * แปลงกลับเป็นสาขา ด่านขอบเขตสาขาจะครอบได้แค่ครึ่งเดียว ซึ่งเท่ากับไม่มี
+ */
+export async function locationOfRestaurantArea(tenantId: string, areaId: string) {
+  const result = await query<{ location_id: string }>(
+    `SELECT location_id FROM bms_restaurant_areas WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, areaId]
+  );
+  return result.rows[0]?.location_id ?? null;
+}
+
+export async function locationOfRestaurantTable(tenantId: string, tableId: string) {
+  const result = await query<{ location_id: string }>(
+    `SELECT location_id FROM bms_restaurant_tables WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, tableId]
+  );
+  return result.rows[0]?.location_id ?? null;
+}
+
 function floorName(value: string, label: string) {
   const name = String(value ?? "").trim();
   if (!name || name.length > 80) {
@@ -943,6 +965,20 @@ export async function resolveRestaurantCheckItemRequest(
     surface: "RESTAURANT_POS",
   });
   if (!hit) throw new RestaurantCheckError("ไม่พบเมนูหรือหน่วยขายนี้");
+  // ด่าน "หมดวันนี้" (9.55) ของบิลโต๊ะอยู่ตรงนี้ — จุดที่บรรทัดเข้าบิล ไม่ใช่ตอนคิดยอด
+  // (createOrderInTx ข้ามการกรองนี้ให้บิลโต๊ะโดยตั้งใจ · เหตุผลอยู่ในคอมเมนต์ที่นั่น)
+  // ครอบทั้งพนักงานกดเพิ่มเอง การส่งคำขอจาก QR และการที่พนักงานกดรับคำขอนั้น
+  const soldOut = await query<{ reason: string | null }>(
+    `SELECT reason FROM bms_product_menu_unavailability
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND resets_at > now()`,
+    [tenantId, locationId, hit.sku]
+  );
+  if (soldOut.rowCount) {
+    const reason = String(soldOut.rows[0].reason ?? "").trim();
+    throw new RestaurantCheckError(
+      `${hit.productName} ถูกตั้งว่าหมดวันนี้${reason ? ` (${reason})` : ""} — เปิดขายอีกครั้งที่แท็บครัวก่อนถึงจะสั่งได้`
+    );
+  }
   const allowed = new Map(hit.modifiers.map((modifier) => [modifier.code, modifier.name]));
   const modifierCodes = Array.from(new Set((input.modifierCodes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean))).sort();
   const invalid = modifierCodes.find((code) => !allowed.has(code));
