@@ -779,7 +779,7 @@ export async function createDefaultRestaurantFloor(input: {
   }
 }
 
-export async function openRestaurantCheck(input: {
+export type OpenRestaurantCheckInput = {
   tenantId: string;
   locationId: string;
   deviceId: string;
@@ -788,41 +788,58 @@ export async function openRestaurantCheck(input: {
   guestCount: number;
   note?: string | null;
   actorUserId: string;
-}) {
+};
+
+/**
+ * เปิดบิลโต๊ะภายในทรานแซกชันของผู้เรียก — ผู้เรียกเป็นเจ้าของ BEGIN/COMMIT/ROLLBACK
+ *
+ * แยกออกมาเพื่อให้ "พาคิวไปนั่ง" (`9.64`) เปิดบิลและผูกคิวกลับมาได้ใน transaction เดียว ·
+ * ถ้าปล่อยให้เส้นทางคิวเปิดบิลด้วยทรานแซกชันของตัวเองแล้วค่อยผูก แถวคิวที่ผูกไม่สำเร็จจะ
+ * เหลือโต๊ะที่มีบิลเปิดอยู่แต่ไม่มีใครรู้ว่ามาจากคิวไหน และคิวนั้นยังค้างรออยู่บนกระดาน
+ */
+export async function openRestaurantCheckInTx(
+  client: PoolClient,
+  input: OpenRestaurantCheckInput
+): Promise<string> {
+  const shift = await client.query(
+    `SELECT 1 FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4 AND status = 'OPEN'
+      FOR UPDATE`,
+    [input.tenantId, input.shiftId, input.deviceId, input.locationId]
+  );
+  if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนเปิดโต๊ะ");
+  const table = await client.query(
+    `SELECT 1 FROM bms_restaurant_tables
+      WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active AND NOT blocked
+      FOR UPDATE`,
+    [input.tenantId, input.tableId, input.locationId]
+  );
+  if (!table.rowCount) throw new RestaurantCheckError("โต๊ะนี้ไม่พร้อมใช้งาน");
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO bms_restaurant_checks
+       (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, guest_count, note, opened_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING id`,
+    [input.tenantId, input.locationId, input.tableId, input.deviceId, input.shiftId,
+      Math.min(Math.max(Math.trunc(input.guestCount), 1), 500), input.note?.trim() || null, input.actorUserId]
+  );
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1,$2,'restaurant.check_open',$3,$4::jsonb)`,
+    [input.tenantId, `user:${input.actorUserId}`, inserted.rows[0].id,
+      JSON.stringify({ tableId: input.tableId, guestCount: input.guestCount })]
+  );
+  return inserted.rows[0].id;
+}
+
+export async function openRestaurantCheck(input: OpenRestaurantCheckInput) {
   await requireRestaurantTenant(input.tenantId);
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
-    const shift = await client.query(
-      `SELECT 1 FROM bms_pos_shifts
-        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4 AND status = 'OPEN'
-        FOR UPDATE`,
-      [input.tenantId, input.shiftId, input.deviceId, input.locationId]
-    );
-    if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนเปิดโต๊ะ");
-    const table = await client.query(
-      `SELECT 1 FROM bms_restaurant_tables
-        WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active AND NOT blocked
-        FOR UPDATE`,
-      [input.tenantId, input.tableId, input.locationId]
-    );
-    if (!table.rowCount) throw new RestaurantCheckError("โต๊ะนี้ไม่พร้อมใช้งาน");
-    const inserted = await client.query<{ id: string }>(
-      `INSERT INTO bms_restaurant_checks
-         (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, guest_count, note, opened_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING id`,
-      [input.tenantId, input.locationId, input.tableId, input.deviceId, input.shiftId,
-        Math.min(Math.max(Math.trunc(input.guestCount), 1), 500), input.note?.trim() || null, input.actorUserId]
-    );
-    await client.query(
-      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1,$2,'restaurant.check_open',$3,$4::jsonb)`,
-      [input.tenantId, `user:${input.actorUserId}`, inserted.rows[0].id,
-        JSON.stringify({ tableId: input.tableId, guestCount: input.guestCount })]
-    );
+    const checkId = await openRestaurantCheckInTx(client, input);
     await client.query("COMMIT");
-    return getRestaurantCheck(input.tenantId, inserted.rows[0].id);
+    return getRestaurantCheck(input.tenantId, checkId);
   } catch (error: any) {
     try { await client.query("ROLLBACK"); } catch {}
     if (error?.code === "23505") throw new RestaurantCheckError("โต๊ะนี้มีบิลเปิดอยู่แล้ว");

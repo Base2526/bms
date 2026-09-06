@@ -1058,6 +1058,35 @@ test("โต๊ะที่แยกบิลแล้วต้องไม่�
 });
 
 /**
+ * บัตรคิว / จองโต๊ะ (`9.64`)
+ *
+ * โมดูลนี้ไม่แตะเงินและไม่แตะสต็อก จุดเดียวที่ต่อกับของจริงคือ "พาไปนั่ง" ซึ่งเปิดบิลโต๊ะ ·
+ * ถ้าการเปิดบิลกับการปิดคิวอยู่คนละทรานแซกชัน วันที่ครึ่งหลังล้มจะเหลือโต๊ะที่มีบิลเปิดอยู่
+ * โดยไม่มีใครรู้ว่ามาจากคิวไหน และคิวนั้นยังรออยู่บนกระดาน — สองอาการที่มองไม่เห็นทั้งคู่
+ */
+test("พาคิวไปนั่งต้องเปิดบิลด้วยเส้นทางเดิม ในทรานแซกชันเดียวกับการปิดคิว", async () => {
+  const src = code(await read("apps/web/lib/bms/restaurantWaitlist.ts"));
+  const seat = src.slice(src.indexOf("export async function seatRestaurantWaitlistEntry"));
+  assert.ok(seat.length > 0);
+  assert.match(seat, /openRestaurantCheckInTx\(client, \{/,
+    "ต้องเปิดบิลบน client เดียวกับที่ปิดคิว");
+  assert.doesNotMatch(seat, /await openRestaurantCheck\(/,
+    "ห้ามเรียกตัวที่เปิดทรานแซกชันของตัวเอง — ครึ่งหลังล้มแล้วจะเหลือบิลกำพร้า");
+  assert.match(seat, /guestCount: Number\(entry\.rows\[0\]\.party_size\)/,
+    "จำนวนลูกค้าของบิลมาจากขนาดปาร์ตี้ที่จดไว้ตอนรับคิว ไม่ใช่ถามซ้ำ");
+  assert.match(seat, /status IN \('WAITING','CALLED'\)[\s\S]{0,40}FOR UPDATE/,
+    "กดซ้ำต้องไม่เปิดบิลใบที่สองให้คิวเดิม");
+
+  // เลขคิวต้องคีย์ด้วยวันบริการของร้าน ไม่ใช่วันตามปฏิทินของเซิร์ฟเวอร์
+  const migration = code(await read("db/migrations/9.64__bms_restaurant_waitlist.sql"));
+  assert.match(migration, /uq_bms_restaurant_waitlist_queue_no[\s\S]{0,200}service_date, queue_no/);
+  assert.match(migration, /\(kind = 'WALK_IN'\) = \(queue_no IS NOT NULL\)/);
+  assert.match(migration, /status <> 'SEATED' OR \(seated_table_id IS NOT NULL AND check_id IS NOT NULL\)/);
+  assert.match(src, /menu_availability_reset_time/,
+    "วันบริการของคิวต้องใช้เส้นแบ่งวันเดียวกับเมนูหมดวันนี้ ไม่ใช่เส้นที่สอง");
+});
+
+/**
  * ยกเลิกใบจองของโต๊ะจากหลังบ้านคือการ void บิลโต๊ะที่ข้ามด่าน PIN ผู้อนุมัติคนที่สอง
  * (`pos.void`) ที่หน้าร้านอาหารบังคับไว้ — และปล่อยของคืนขณะครัวยังทำอยู่
  */

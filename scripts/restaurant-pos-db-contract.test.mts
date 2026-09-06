@@ -43,6 +43,14 @@ import { listRecentPosSales, resolvePosScan } from "../apps/web/lib/bms/pos.ts";
 import { setMenuTemporarilyUnavailable } from "../apps/web/lib/bms/menuAvailability.ts";
 import { acceptRestaurantQrSubmission } from "../apps/web/lib/bms/restaurantPos.ts";
 import {
+  addRestaurantWaitlistEntry,
+  callRestaurantWaitlistEntry,
+  closeRestaurantWaitlistEntry,
+  getRestaurantWaitlistEntry,
+  listRestaurantWaitlist,
+  seatRestaurantWaitlistEntry,
+} from "../apps/web/lib/bms/restaurantWaitlist.ts";
+import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
   createDefaultRestaurantFloor,
@@ -1943,6 +1951,182 @@ test("รวมบิลเข้าตัวเอง หรือรวมก�
   });
 });
 
+// ---------------------------------------------------------------------------
+// 9.64 — บัตรคิวหน้าร้าน + จองโต๊ะ
+//
+// สิ่งที่ตรึงไว้คือ **จุดที่คิวต่อกับของจริง** ไม่ใช่การเขียนแถวสำเร็จ: พาไปนั่งต้องเปิดบิล
+// จริงในทรานแซกชันเดียวกัน และเมื่อเปิดบิลไม่ได้ คิวต้องยังรออยู่บนกระดานเหมือนไม่มีอะไรเกิด
+// (คิวที่หายไปพร้อมกับบิลที่ไม่เกิด = ลูกค้าที่ยืนรออยู่แต่ไม่มีใครเห็น)
+// ---------------------------------------------------------------------------
+
+let queueTable: { id: string; code: string };
+
+test("บัตรคิว: เลขคิวเดินต่อในวันบริการเดียวกัน และการจองไม่ได้เลขคิว", async () => {
+  const first = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "WALK_IN", partySize: 2, guestName: "ก",
+  });
+  const second = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "WALK_IN", partySize: 4,
+  });
+  assert.equal(second!.queueNo, (first!.queueNo ?? 0) + 1);
+  assert.equal(second!.status, "WAITING");
+  assert.equal(second!.serviceDate, first!.serviceDate);
+
+  const booked = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "RESERVATION", partySize: 6,
+    guestName: "คุณจอง", guestPhone: "0800000009",
+    reservedFor: new Date(Date.now() + 3_600_000).toISOString(),
+  });
+  assert.equal(booked!.queueNo, null, "การจองไม่ใช่คิวเดินเข้า จึงไม่กินเลขคิว");
+  assert.ok(booked!.reservedFor);
+
+  await assert.rejects(
+    () => addRestaurantWaitlistEntry({
+      tenantId, locationId, actorUserId: cashierId, kind: "RESERVATION", partySize: 2,
+    }),
+    /วันเวลาที่จอง/
+  );
+
+  const board = await listRestaurantWaitlist(tenantId, locationId);
+  assert.equal(board.waitingCount, 3);
+  assert.equal(board.waitingGuests, 12, "กระดานต้องบอกจำนวนคน ไม่ใช่จำนวนคิว");
+});
+
+test("ฐานข้อมูลบังคับรูปทรงของคิว: WALK_IN ต้องมีเลขคิว และ SEATED ต้องมีบิล", async () => {
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_restaurant_waitlist
+         (tenant_id, location_id, kind, service_date, party_size, created_by)
+       VALUES ($1,$2,'WALK_IN',current_date,2,$3)`,
+      [tenantId, locationId, cashierId]
+    ),
+    (error: any) => error?.code === "23514"
+  );
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_restaurant_waitlist
+         (tenant_id, location_id, kind, service_date, queue_no, party_size, created_by,
+          status, seated_at, closed_at)
+       VALUES ($1,$2,'WALK_IN',current_date,9001,2,$3,'SEATED',now(),now())`,
+      [tenantId, locationId, cashierId]
+    ),
+    (error: any) => error?.code === "23514"
+  );
+});
+
+test("เรียกคิวแล้วไม่มา กับลูกค้ายกเลิกเอง ต้องเป็นคนละสถานะ", async () => {
+  const entry = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "WALK_IN", partySize: 2,
+  });
+  const called = await callRestaurantWaitlistEntry({
+    tenantId, locationId, entryId: entry!.id, actorUserId: cashierId,
+  });
+  assert.equal(called!.status, "CALLED");
+  assert.ok(called!.calledAt);
+  await assert.rejects(
+    () => callRestaurantWaitlistEntry({
+      tenantId, locationId, entryId: entry!.id, actorUserId: cashierId,
+    }),
+    /คิวที่ยังรออยู่/
+  );
+
+  const noShow = await closeRestaurantWaitlistEntry({
+    tenantId, locationId, entryId: entry!.id, actorUserId: cashierId,
+    status: "NO_SHOW", reason: "เรียกสามรอบ",
+  });
+  assert.equal(noShow!.status, "NO_SHOW");
+  assert.ok(noShow!.closedAt);
+  assert.match(noShow!.note ?? "", /เรียกสามรอบ/);
+
+  const other = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "WALK_IN", partySize: 2,
+  });
+  assert.equal((await closeRestaurantWaitlistEntry({
+    tenantId, locationId, entryId: other!.id, actorUserId: cashierId, status: "CANCELLED",
+  }))!.status, "CANCELLED");
+  await assert.rejects(
+    () => closeRestaurantWaitlistEntry({
+      tenantId, locationId, entryId: other!.id, actorUserId: cashierId, status: "CANCELLED",
+    }),
+    /ปิดไปแล้ว/
+  );
+});
+
+test("พาคิวไปนั่งต้องเปิดบิลจริงและผูกกลับมาที่คิวในทรานแซกชันเดียว", async () => {
+  queueTable = await makeSplitTable(`T-QUEUE-${Date.now()}`);
+  const entry = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "WALK_IN", partySize: 5,
+    guestName: "โต๊ะห้าคน",
+  });
+  const seated = await seatRestaurantWaitlistEntry({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    entryId: entry!.id, tableId: queueTable.id, actorUserId: cashierId,
+  });
+  assert.equal(seated.status, "SEATED");
+  assert.equal(seated.entry!.status, "SEATED");
+  assert.equal(seated.entry!.seatedTableId, queueTable.id);
+  assert.equal(seated.entry!.checkId, seated.check!.id);
+  assert.ok(seated.entry!.seatedAt && seated.entry!.closedAt);
+  // จำนวนลูกค้าของบิลมาจากขนาดปาร์ตี้ที่จดไว้ตอนรับคิว ไม่ต้องถามซ้ำตอนโต๊ะว่างพอดี
+  assert.equal(seated.check!.guestCount, 5);
+  assert.equal(
+    (await listRestaurantFloor(tenantId, locationId)).tables.find((t) => t.id === queueTable.id)!.status,
+    "OCCUPIED"
+  );
+  // คิวที่ได้โต๊ะแล้วต้องออกจากยอด "กำลังรอ" ทันที
+  assert.equal(
+    (await listRestaurantWaitlist(tenantId, locationId)).entries
+      .find((row) => row.id === entry!.id)!.status,
+    "SEATED"
+  );
+  // กดพาไปนั่งซ้ำ (แตะสองครั้งเพราะจอไม่ตอบสนอง) ต้องไม่เปิดบิลใบที่สองให้คิวเดิม
+  await assert.rejects(
+    () => seatRestaurantWaitlistEntry({
+      tenantId, locationId, deviceId, shiftId: shiftB,
+      entryId: entry!.id, tableId: queueTable.id, actorUserId: cashierId,
+    }),
+    /ปิดไปแล้วหรือได้โต๊ะไปแล้ว/
+  );
+});
+
+test("⚠️ พาไปนั่งโต๊ะที่มีบิลอยู่แล้วต้องล้มทั้งก้อน — คิวยังรออยู่ ไม่ใช่หายไปพร้อมบิลที่ไม่เกิด", async () => {
+  const entry = await addRestaurantWaitlistEntry({
+    tenantId, locationId, actorUserId: cashierId, kind: "WALK_IN", partySize: 2,
+  });
+  await assert.rejects(
+    () => seatRestaurantWaitlistEntry({
+      tenantId, locationId, deviceId, shiftId: shiftB,
+      entryId: entry!.id, tableId: queueTable.id, actorUserId: cashierId,
+    }),
+    /มีบิลเปิดอยู่แล้ว/
+  );
+  const after = await getRestaurantWaitlistEntry(tenantId, entry!.id);
+  assert.equal(after!.status, "WAITING", "คิวต้องยังรออยู่เหมือนไม่มีอะไรเกิดขึ้น");
+  assert.equal(after!.checkId, null);
+  assert.equal(after!.seatedTableId, null);
+
+  // ปิดบิลของโต๊ะนั้นแล้วพาไปนั่งได้จริง
+  const occupying = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((t) => t.id === queueTable.id)!.check!.id;
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: occupying, actorUserId: cashierId, reason: "ปิดหลังเทส",
+  });
+  const seated = await seatRestaurantWaitlistEntry({
+    tenantId, locationId, deviceId, shiftId: shiftB,
+    entryId: entry!.id, tableId: queueTable.id, actorUserId: cashierId,
+  });
+  assert.equal(seated.entry!.status, "SEATED");
+  await cancelRestaurantCheck({
+    tenantId, locationId, checkId: seated.check!.id, actorUserId: cashierId, reason: "ปิดหลังเทส",
+  });
+});
+
+test("คิวของสาขาอื่นไม่โผล่บนกระดานของสาขานี้", async () => {
+  const board = await listRestaurantWaitlist(tenantId, otherLocationId);
+  assert.equal(board.entries.length, 0);
+  assert.equal(board.waitingCount, 0);
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -1963,6 +2147,8 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_restaurant_qr_sessions",
     "bms_restaurant_table_qr_tokens",
     "bms_product_menu_unavailability",
+    // คิวอ้างทั้งโต๊ะและบิล (SET NULL) แต่ลบก่อนเสมอเพื่อไม่ต้องพึ่งลำดับของ FK
+    "bms_restaurant_waitlist",
     "bms_restaurant_kitchen_tickets",
     "bms_restaurant_check_items",
     // checks ต้องไปหลัง orders เพราะ bms_orders.restaurant_check_id เป็น FK ปกติ (NO ACTION)

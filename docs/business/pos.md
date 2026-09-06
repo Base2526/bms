@@ -1412,7 +1412,42 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`–`9.64`)
+
+### Walk-in queue and table reservations (`9.64`)
+
+A restaurant with full tables always has people waiting, and a restaurant that takes bookings gets
+phone calls all day. Before `9.64` the system had nowhere to put **a party without a table**, so
+shops kept a paper list next to the register — which means nobody could answer how many parties are
+waiting, how long they have waited, or who has already been called. Wait time is the number that
+decides whether a guest stays or leaves.
+
+Walk-in queue tickets and advance reservations are **one list**, not two systems. They differ only
+in whether the shop knew in advance; what happens when a table frees up is identical — pick a free
+table, open a check, link it back. That last part is the piece that touches real money and stock, so
+having two of it would mean two paths free to drift apart. The two genuinely different fields
+(`queue_no` and `reserved_for`) are shape-checked in the database instead.
+
+At the counter:
+
+- **Seating opens the check in the same transaction that closes the queue entry.** A separate
+  transaction could leave a table with an open bill nobody can trace back to a queue entry, while
+  that entry is still shown as waiting — two failures that are both invisible.
+- **The check's guest count comes from the party size recorded when the number was issued.** Nothing
+  to re-enter at the moment a table frees up and the host is in a hurry.
+- **Queue numbers run through the shop's service day**, restarting at the same boundary the
+  sold-out-today flag uses (04:00 local by default). A shop open past midnight keeps counting instead
+  of resetting to 1 in front of people who are still waiting. A shop with two different day
+  boundaries could not say what "today" means.
+- **A requested table is a preference, not a hold.** Holding a table in advance means a table that
+  cannot be sold while it sits empty, which real restaurants do not do.
+- **No-show and cancelled are separate outcomes.** "Called and never came" and "guest changed their
+  mind" are different numbers when a shop asks whether its queue is too long; collapsing them makes
+  that question unanswerable forever.
+- **Seating a table that already has an open check fails and leaves the queue entry waiting** —
+  including a double tap on an unresponsive screen, which cannot open a second bill for one party.
+- Customers cannot take a number themselves and there is no SMS/LINE notification when a party is
+  called; both are staff screen actions.
 
 ### Splitting and merging bills (`9.63`)
 

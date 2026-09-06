@@ -611,6 +611,32 @@
 .splitName { display: grid; font-size: 14px; font-weight: 600; color: var(--ink); }
 .splitName small { font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
 .splitRow b { font-variant-numeric: tabular-nums; }
+
+/* ---- คิวและการจองโต๊ะ (9.64) --------------------------------------------
+   การ์ดคิวอ่านจากซ้ายไปขวา: เลขคิว/เวลานัด → ใครกี่คนรอมานานเท่าไร → ปุ่มที่ต้องกด
+   ปุ่มอยู่ขวาสุดเสมอ ตำแหน่งเดียวกันทุกใบ นิ้วจึงไม่ต้องเล็งใหม่ทีละแถว */
+.queueHeadActions { display: flex; gap: 8px; align-items: center; }
+.queueList { display: grid; gap: 8px; padding-bottom: 8px; }
+.queueCard {
+  display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 12px; background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* คิวที่ปิดไปแล้วยังอยู่บนกระดานของวันนี้ — คำถาม "เรียกใครไปแล้วบ้าง" ตอบได้ที่เดียวนี้ */
+.queueCardClosed { background: var(--quiet); opacity: .72; }
+.queueMark {
+  display: grid; justify-items: center; gap: 1px;
+  min-height: 44px; border-radius: 10px; padding: 4px;
+  background: var(--quiet); color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.queueMark b { font-size: 20px; line-height: 1; color: var(--ink); }
+.queueMark small { font-size: 10.5px; color: var(--ink-3); }
+.queueBody { display: grid; gap: 1px; min-width: 0; }
+.queueBody b { font-size: 14.5px; }
+.queueBody small { font-size: 12px; color: var(--ink-2); }
+.queueNote { color: var(--ink-3) !important; font-style: italic; }
+.queueActions { display: flex; gap: 6px; align-items: center; }
 .lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
 .lane { border-radius: 6px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color);
   display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

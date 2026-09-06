@@ -68,7 +68,7 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (47 capabilities, 105 guides, 20 FAQ answers, 21 limit groups/111
+deterministic bilingual catalog (48 capabilities, 106 guides, 20 FAQ answers, 21 limit groups/111
 rules — counts drift as features ship; re-check with the catalog module before quoting them) covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
 no GraphQL/AI call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes

@@ -414,7 +414,8 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 ## Restaurant POS (dine-in)
 
 `lib/bms/restaurantPos.ts`, `app/(pos)/pos/restaurant`, `app/api/pos/restaurant/*`,
-`app/api/pos/kitchen/*` and migrations `9.44`-`9.45`, `9.63` own dine-in service. Operator detail:
+`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`
+own dine-in service. Operator detail:
 [business/pos.md § Restaurant POS](business/pos.md). Schema:
 [architecture/database.md § Restaurant POS](architecture/database.md).
 
@@ -431,6 +432,11 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   deposit hand-over in `9.0`). Without that re-stamp a different cashier closing the table is refused
   in front of the customer, and a table left open across a shift change can never be paid while its
   stock stays reserved.
+- **Seating a queued party opens its check in the same transaction that closes the entry** (`9.64`),
+  through the same `openRestaurantCheckInTx()` the floor screen uses. Two transactions can leave a
+  table holding a bill nobody can trace to a queue entry while that entry still shows as waiting —
+  both invisible. The queue is the only place in dine-in that may create a check outside the floor
+  screen, and it must never grow a second way to open one.
 - **Moving lines between checks rebuilds both amounts, and releases before it reserves.** Split
   (`9.63`) and merge use the same `createOrderInTx()` path a later kitchen round uses — never
   arithmetic on `amount_due`, which would be a second money formula free to drift. The source's

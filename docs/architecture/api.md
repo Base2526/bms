@@ -180,6 +180,12 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `restaurant.kitchen.update`
   (`9.45`, previously `order.ship`) and never moves stock. The register board polls this read every
   five seconds while it is open.
+- `GET|POST /api/pos/restaurant/waitlist` (`9.64`) — the branch's walk-in queue and table
+  reservations. `add`, `call`, `cancel`, `no_show`, `seat`; all on PIN + `pos.sell`, the same gate as
+  opening a table, because nothing here moves money or stock and the one action that does — `seat`,
+  which opens a dine-in check — goes through the same `openRestaurantCheckInTx()` the floor screen
+  uses, inside the transaction that closes the queue entry. Queue numbers and the service day are
+  derived server-side from the shop's timezone; the client never supplies either.
 - `GET|POST /api/pos/restaurant/menu` (`9.44`, `9.55`) — the dine-in menu grid for the device's
   branch, including each item's sales-day availability so the register can grey out a dish the
   kitchen marked sold out. `POST` is the one-tap "sold out today / back on sale" toggle and needs

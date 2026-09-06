@@ -192,6 +192,11 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "รวมบิลสองโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
   { q: "split the bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
   { q: "merge two tables into one bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "รับคิวยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-waitlist" },
+  { q: "โต๊ะเต็มลูกค้าต้องรอ ทำยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-waitlist" },
+  { q: "walk-in queue", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-waitlist" },
+  { q: "ระบบมีบัตรคิวไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.waitlist" },
+  { q: "can it take table bookings", locale: "en", context: { kind: "capability" }, expect: "answer", expectTop: "restaurant.waitlist" },
   // ก่อน 9.44 คำถามนี้ถูกปักไว้ที่ inventory.stock-model เพราะนั่นเป็นคำตอบจริงเพียงข้อเดียว
   // (สูตร/ตัวเลือก/คิวครัว) · ตอนนี้มีหน้าโต๊ะจริงแล้ว คนที่ถามหมายถึงบริการหน้าร้าน
   { q: "ระบบรองรับร้านอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.dine-in" },

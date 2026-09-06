@@ -866,7 +866,7 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`–`9.49`, `9.63`)
+## Restaurant POS (`9.44`–`9.49`, `9.63`–`9.64`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
 Migration `9.59` adds each table's `shape` (`round`/`rect`) and non-negative pixel coordinates
@@ -901,6 +901,14 @@ cross-instance lease: an active cashier cannot be overwritten by another registe
 attempt becomes recoverable after the bounded lease. The check changes to `PAID` inside the same POS
 transaction as payment, stock, FEFO and tax; `9.48` also repairs legacy OPEN/CLOSING checks whose
 linked order had already reached `COMPLETED` in the old two-transaction flow.
+
+`bms_restaurant_waitlist` (`9.64`) holds parties that do not have a table yet — walk-in queue
+tickets and advance reservations in one table, because seating them is the same action and a second
+seating path would be free to drift. `kind` selects which of `queue_no` / `reserved_for` must be
+present, and a `SEATED` row is required to name both the table and the check it opened, so the wait a
+shop actually delivered stays measurable. `service_date` is stamped server-side from the shop
+timezone and is part of the queue-number unique index, so a shop open past midnight keeps counting
+instead of restarting at 1.
 
 `bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
 `bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order
