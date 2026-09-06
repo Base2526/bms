@@ -136,12 +136,15 @@ const ROUTE_GUARDS = [
 ];
 
 /**
- * เปิดสาธารณะโดยตั้งใจ — ต้องมีเหตุผลเขียนไว้ และต้องมีเพดานการใช้ เพราะทั้งสองตัว
- * เรียกโมเดลจริง (ค่า token เป็นของเจ้าของระบบ ไม่ใช่ของผู้ยิง)
+ * เปิดสาธารณะโดยตั้งใจ — ต้องมีเหตุผลเขียนไว้ และต้องมีเพดานการใช้
  */
 const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
+  ["app/api/bms/restaurant-qr/[token]/route.ts", "ลูกค้าสแกนรหัสโต๊ะเพื่อเริ่ม session ที่ผูกกับบิล OPEN"],
+  ["app/api/bms/restaurant-qr/menu/route.ts", "ลูกค้าที่มี table session อ่านเมนูสาขา"],
+  ["app/api/bms/restaurant-qr/menu-item/route.ts", "ลูกค้าที่มี table session อ่านตัวเลือกเมนู"],
+  ["app/api/bms/restaurant-qr/submissions/route.ts", "ลูกค้าที่มี table session ส่งและติดตามคำขอ"],
 ]);
 
 test("every /api/bms route is guarded, or public by design with a rate limit", () => {
@@ -157,7 +160,7 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
     const reason = PUBLIC_BY_DESIGN.get(rel);
     if (reason) {
       // เปิดสาธารณะได้ แต่ต้องมีเพดาน ไม่งั้นเป็นช่องเผาเงินค่าโมเดล
-      if (!/rateLimit\(/.test(src)) unlimited.push(rel);
+      if (!/rateLimit\(|requireRestaurantQrRateLimit\(/.test(src)) unlimited.push(rel);
       continue;
     }
     if (!ROUTE_GUARDS.some((guard) => src.includes(guard))) unguarded.push(rel);

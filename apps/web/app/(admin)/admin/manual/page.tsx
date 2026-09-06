@@ -1237,11 +1237,13 @@ const TH: ManualContent = {
       desc: "งานประจำวันจบได้ใน /pos/restaurant เครื่องเดียว",
       steps: [
         "เปิดโต๊ะในแท็บ โต๊ะ เลือกเมนูในแท็บ สั่ง แล้วกด ส่งครัว ทุกครั้งที่มีรอบใหม่; รายการที่ยังไม่ส่งจะคิดเงินไม่ได้",
+        "ถ้าให้ลูกค้าสั่งเอง ให้ผู้มี restaurant.floor.manage ออกและพิมพ์ QR จากหน้าจัดผังร้าน ลูกค้าสแกนได้เมื่อโต๊ะมีบิล OPEN แล้ว; รายการจะเข้าแท็บ QR เป็นคำขอรอรับและไม่เข้าครัวเอง",
+        "ที่แท็บ QR ตรวจโต๊ะ จำนวน ตัวเลือก และ Note แล้วกดรับทั้งชุดด้วย PIN; ถ้ามีรายการพนักงานค้างอยู่ให้ส่งหรือลบก่อน หรือกดปฏิเสธพร้อมเหตุผล",
         "ก่อนรับเงินค้นและเลือกสมาชิกในกล่องคิดเงินได้ ระบบผูกสมาชิก ให้แต้ม และปิดบิลใน transaction เดียวกัน",
         "หลังรับเงินตรวจใบเสร็จที่แสดงเหมือนกระดาษจริง (รายการ ส่วนลด VAT เงินทอน แต้ม) แล้วกดพิมพ์; เครื่องพิมพ์ไม่ติดจะตกไปหน้าต่างพิมพ์ของเบราว์เซอร์ให้เอง",
         "แท็บ บิล แสดงบิลของเครื่องนี้สำหรับเปิดดูใบเสร็จเต็มใบและพิมพ์ซ้ำ; แท็บ กะ ใช้เงินเข้า/ออก เปิดลิ้นชักไม่ขาย ดู X report และปิดกะ",
       ],
-      warning: "เงินออกต้องมี PIN ผู้อนุมัติคนที่สอง; พิมพ์ซ้ำจากแท็บบิลจะไม่เปิดลิ้นชัก (ใช้ เปิดลิ้นชักโดยไม่ขาย ที่แท็บกะ ซึ่งบันทึกเหตุผลและนับในสรุปกะ) และหน้าต่างพิมพ์ของเบราว์เซอร์เปิดลิ้นชักไม่ได้เลย; ส่งสำเนาใบเสร็จทางอีเมล/LINE ทำที่โหมดค้าปลีก; การคืนอาหารหลังจ่ายยังใช้โหมดค้าปลีกจนกว่าจะมี return flow ของร้านอาหารครบทั้งเส้น",
+      warning: "QR เป็นรหัสประจำโต๊ะ ไม่ใช่รหัสบิล แต่ session จากการสแกนผูกกับบิล OPEN ปัจจุบันและหมดสิทธิ์เมื่อปิดบิล; หมุน QR ใหม่ทันทีถ้าป้ายรั่วหรือสูญหาย เงินออกต้องมี PIN ผู้อนุมัติคนที่สอง และการคืนอาหารหลังจ่ายยังใช้โหมดค้าปลีก",
     },
     {
       title: "สแกน ค้น และจัดตะกร้า",
@@ -2423,11 +2425,13 @@ const EN: ManualContent = {
       desc: "Daily counter work stays on one /pos/restaurant device.",
       steps: [
         "Open the table under Tables, add dishes under Order, and send every new round to the kitchen; checkout stays blocked while a line is unsent.",
+        "For self-ordering, a restaurant.floor.manage user issues and prints the table QR from Floor Plan. Guests can submit only while that table has an OPEN check; proposals wait under QR and never reach the kitchen automatically.",
+        "Under QR, review the table, quantities, choices, and notes, then accept the whole proposal with the operator PIN. Send or remove any existing staff draft first, or reject the proposal with a reason.",
         "Optionally find and select a member in checkout; settlement binds that member, awards points, and closes the check in one transaction.",
         "After payment, check the on-screen receipt — it renders the same payload the printer gets (lines, discounts, VAT, change, points) — then print; if the printer path is unavailable the browser print dialog takes over.",
         "Bills lists this device's receipts as full receipts to review and reprint; Shift owns cash in/out, audited no-sale drawer opens, the X report, and shift close.",
       ],
-      warning: "Cash out still needs a second approver PIN; reprinting from Bills never opens the cash drawer and the browser fallback cannot open one at all (use the audited no-sale drawer open under Shift); emailing or LINE-ing a receipt copy is a retail-mode action; paid-food returns remain in retail mode until the restaurant return workflow is complete end to end.",
+      warning: "The printed QR identifies the table, not the bill; each scan session is bound to the current OPEN check and loses authority when it closes. Rotate a leaked or missing table QR immediately. Cash out still needs a second approver PIN, and paid-food returns remain in retail mode.",
     },
     {
       title: "Scan, search, and build the cart",

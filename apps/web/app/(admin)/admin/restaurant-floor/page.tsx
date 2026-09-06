@@ -6,9 +6,11 @@ import {
   Radio, Select, Space, Spin, Switch, Tag, Tooltip, Typography, message,
 } from "antd";
 import {
-  DeleteOutlined, EditOutlined, HolderOutlined, PlusOutlined, SaveOutlined,
+  DeleteOutlined, DownloadOutlined, EditOutlined, HolderOutlined, PlusOutlined,
+  PrinterOutlined, QrcodeOutlined, ReloadOutlined, SaveOutlined,
 } from "@ant-design/icons";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import QRCode from "qrcode";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
@@ -67,6 +69,13 @@ const M_SAVE_LAYOUT = gql`
     bmsSaveRestaurantFloorLayout(locationId: $locationId, positions: $positions)
   }
 `;
+const M_ISSUE_TABLE_QR = gql`
+  mutation IssueRestaurantTableQr($tableId: ID!, $rotate: Boolean) {
+    bmsIssueRestaurantTableQr(tableId: $tableId, rotate: $rotate) {
+      token tableId tableCode tableName createdAt
+    }
+  }
+`;
 
 type Location = { id: string; name: string; active: boolean };
 type Area = { id: string; name: string; sortOrder: number; tableCount: number };
@@ -84,6 +93,7 @@ type DiningTable = {
   status: "AVAILABLE" | "OCCUPIED" | "BLOCKED";
 };
 type Position = { x: number; y: number };
+type TableQr = { token: string; tableId: string; tableCode: string; tableName: string; createdAt: string };
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -109,6 +119,9 @@ export default function RestaurantFloorPage() {
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
   const [areaModal, setAreaModal] = useState<{ mode: "create" | "rename"; area?: Area } | null>(null);
   const [tableModalOpen, setTableModalOpen] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [tableQr, setTableQr] = useState<TableQr | null>(null);
+  const [qrImage, setQrImage] = useState("");
   const [areaForm] = Form.useForm();
   const [tableCreateForm] = Form.useForm();
   const [tableEditForm] = Form.useForm();
@@ -124,6 +137,7 @@ export default function RestaurantFloorPage() {
   const [updateTable, updateTableState] = useMutation(M_UPDATE_TABLE);
   const [deleteTable] = useMutation(M_DELETE_TABLE);
   const [saveLayout, saveLayoutState] = useMutation(M_SAVE_LAYOUT);
+  const [issueTableQr, issueTableQrState] = useMutation(M_ISSUE_TABLE_QR);
 
   useEffect(() => {
     if (!locationId && locations.length) setLocationId(locations[0].id);
@@ -298,6 +312,57 @@ export default function RestaurantFloorPage() {
     } catch (error) {
       message.error(errorMessage(error, t("admin_restaurant_floor.action_failed")));
     }
+  }
+
+  async function showTableQr(rotate = false) {
+    if (!selectedTable) return;
+    try {
+      const result = await issueTableQr({ variables: { tableId: selectedTable.id, rotate } });
+      const qr = result.data?.bmsIssueRestaurantTableQr as TableQr | undefined;
+      if (!qr) throw new Error(t("admin_restaurant_floor.qr_failed"));
+      const url = `${window.location.origin}/q/${encodeURIComponent(qr.token)}`;
+      setTableQr(qr);
+      setQrImage(await QRCode.toDataURL(url, { width: 720, margin: 2, errorCorrectionLevel: "M" }));
+      setQrModalOpen(true);
+      if (rotate) message.success(t("admin_restaurant_floor.qr_rotated"));
+    } catch (error) {
+      message.error(errorMessage(error, t("admin_restaurant_floor.qr_failed")));
+    }
+  }
+
+  function downloadTableQr() {
+    if (!tableQr || !qrImage) return;
+    const link = document.createElement("a");
+    const safeCode = tableQr.tableCode.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 80) || "table";
+    link.download = `bms-qr-${safeCode}.png`;
+    link.href = qrImage;
+    link.click();
+  }
+
+  function printTableQr() {
+    if (!tableQr || !qrImage) return;
+    const popup = window.open("", "_blank", "width=520,height=720");
+    if (!popup) return;
+    const doc = popup.document;
+    doc.title = tableQr.tableName;
+    const main = doc.createElement("main");
+    main.style.cssText = "font-family:system-ui;text-align:center;padding:32px";
+    const appendText = (tag: "h1" | "h2" | "p", value: string) => {
+      const node = doc.createElement(tag);
+      node.textContent = value;
+      main.appendChild(node);
+    };
+    appendText("h1", tableQr.tableName);
+    appendText("p", tableQr.tableCode);
+    const image = doc.createElement("img");
+    image.alt = `${t("admin_restaurant_floor.table_qr")} ${tableQr.tableName}`;
+    image.style.cssText = "width:360px;max-width:100%";
+    image.addEventListener("load", () => popup.print(), { once: true });
+    image.src = qrImage;
+    main.appendChild(image);
+    appendText("h2", "สแกนเพื่อสั่งอาหาร");
+    appendText("p", "Scan to order");
+    doc.body.replaceChildren(main);
   }
 
   if (!permissionsLoading && !canManage) {
@@ -504,6 +569,12 @@ export default function RestaurantFloorPage() {
                       disabled={selectedTable.status === "OCCUPIED"}
                       onClick={() => void saveTableDetails()}
                     >{t("admin_restaurant_floor.save_table")}</Button>
+                    <Button
+                      block
+                      icon={<QrcodeOutlined />}
+                      loading={issueTableQrState.loading}
+                      onClick={() => void showTableQr(false)}
+                    >{t("admin_restaurant_floor.table_qr")}</Button>
                     <Tooltip title={selectedTable.status === "OCCUPIED" ? t("admin_restaurant_floor.occupied_locked") : undefined}>
                       <span>
                         <Popconfirm title={t("admin_restaurant_floor.delete_table_confirm")} onConfirm={() => void removeTable(selectedTable)}>
@@ -535,6 +606,30 @@ export default function RestaurantFloorPage() {
             <Input maxLength={80} autoFocus />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        open={qrModalOpen}
+        title={tableQr ? `${t("admin_restaurant_floor.table_qr")} · ${tableQr.tableName}` : t("admin_restaurant_floor.table_qr")}
+        footer={null}
+        onCancel={() => setQrModalOpen(false)}
+      >
+        <div className={styles.qrPanel}>
+          {qrImage && <img src={qrImage} alt={tableQr ? `${t("admin_restaurant_floor.table_qr")} ${tableQr.tableName}` : "QR"} />}
+          <Typography.Title level={4}>{tableQr?.tableName}</Typography.Title>
+          <Typography.Text type="secondary">{t("admin_restaurant_floor.qr_scan_hint")}</Typography.Text>
+          <Space wrap className={styles.qrActions}>
+            <Button icon={<DownloadOutlined />} onClick={downloadTableQr}>{t("admin_restaurant_floor.qr_download")}</Button>
+            <Button icon={<PrinterOutlined />} onClick={printTableQr}>{t("admin_restaurant_floor.qr_print")}</Button>
+            <Popconfirm
+              title={t("admin_restaurant_floor.qr_rotate_confirm")}
+              description={t("admin_restaurant_floor.qr_rotate_warning")}
+              onConfirm={() => void showTableQr(true)}
+            >
+              <Button danger icon={<ReloadOutlined />} loading={issueTableQrState.loading}>{t("admin_restaurant_floor.qr_rotate")}</Button>
+            </Popconfirm>
+          </Space>
+        </div>
       </Modal>
 
       <Modal

@@ -908,20 +908,36 @@ async function releaseCheckReservationInTx(
   return status === "PENDING" ? "RELEASED" : "ALREADY_GONE";
 }
 
-export async function addRestaurantCheckItem(input: {
-  tenantId: string;
-  locationId: string;
-  checkId: string;
-  actorUserId: string;
+export type RestaurantCheckItemRequest = {
   sku: string;
   size?: string | null;
   packCode?: string | null;
   packQty: number;
   modifierCodes?: string[] | null;
   kitchenNote?: string | null;
-}) {
-  const hit = await resolvePosScan(input.tenantId, input.sku, {
-    locationId: input.locationId,
+};
+
+type ResolvedRestaurantCheckItem = {
+  sku: string;
+  productName: string;
+  size: string;
+  packQty: number;
+  packCode: string | null;
+  unitName: string | null;
+  baseQty: number | null;
+  packPrice: number | null;
+  modifierCodes: string[];
+  modifierNames: string[];
+  kitchenNote: string | null;
+};
+
+export async function resolveRestaurantCheckItemRequest(
+  tenantId: string,
+  locationId: string,
+  input: RestaurantCheckItemRequest
+): Promise<ResolvedRestaurantCheckItem> {
+  const hit = await resolvePosScan(tenantId, input.sku, {
+    locationId,
     size: input.size ?? null,
     packCode: input.packCode ?? null,
     surface: "RESTAURANT_POS",
@@ -949,6 +965,29 @@ export async function addRestaurantCheckItem(input: {
   }
   const packQty = Math.min(Math.max(Math.trunc(input.packQty), 1), 9999);
 
+  return {
+    sku: hit.sku,
+    productName: hit.productName,
+    size: hit.size,
+    packQty,
+    packCode: hit.packCode,
+    unitName: hit.unitName,
+    baseQty: hit.baseQty,
+    packPrice: hit.packPrice,
+    modifierCodes,
+    modifierNames: modifierCodes.map((code) => allowed.get(code) ?? code),
+    kitchenNote: input.kitchenNote?.trim() || null,
+  };
+}
+
+export async function addRestaurantCheckItem(input: {
+  tenantId: string;
+  locationId: string;
+  checkId: string;
+  actorUserId: string;
+} & RestaurantCheckItemRequest) {
+  const resolved = await resolveRestaurantCheckItemRequest(input.tenantId, input.locationId, input);
+
   return withCheckLock(input.tenantId, input.checkId, async () => {
     const client = await getClient();
     try {
@@ -968,9 +1007,9 @@ export async function addRestaurantCheckItem(input: {
             modifier_names, kitchen_note, added_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          RETURNING id`,
-        [input.tenantId, input.checkId, hit.sku, hit.productName, hit.size, packQty,
-          hit.packCode, hit.unitName, hit.baseQty, hit.packPrice, modifierCodes,
-          modifierCodes.map((code) => allowed.get(code) ?? code), input.kitchenNote?.trim() || null,
+        [input.tenantId, input.checkId, resolved.sku, resolved.productName, resolved.size, resolved.packQty,
+          resolved.packCode, resolved.unitName, resolved.baseQty, resolved.packPrice, resolved.modifierCodes,
+          resolved.modifierNames, resolved.kitchenNote,
           input.actorUserId]
       );
       await client.query(
@@ -983,8 +1022,9 @@ export async function addRestaurantCheckItem(input: {
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.item_add',$3,$4::jsonb)`,
         [input.tenantId, `user:${input.actorUserId}`, input.checkId,
-          JSON.stringify({ itemId: inserted.rows[0].id, sku: hit.sku, size: hit.size,
-            packCode: hit.packCode, packQty, modifierCount: modifierCodes.length })]
+          JSON.stringify({ itemId: inserted.rows[0].id, sku: resolved.sku, size: resolved.size,
+            packCode: resolved.packCode, packQty: resolved.packQty,
+            modifierCount: resolved.modifierCodes.length })]
       );
       await client.query("COMMIT");
       return getRestaurantCheck(input.tenantId, input.checkId);
@@ -1220,158 +1260,308 @@ export async function dropKitchenCancelledLineInTx(
   return { dropped: true, amountDue };
 }
 
-export async function sendRestaurantKitchenRound(input: {
+type KitchenRoundInput = {
   tenantId: string;
   locationId: string;
   deviceId: string;
   shiftId: string;
   checkId: string;
   actorUserId: string;
-}): Promise<{ status: "SENT"; check: Awaited<ReturnType<typeof getRestaurantCheck>>; kitchenTickets: number } | CreateOrderResult> {
+};
+
+type KitchenRoundInTxResult = { status: "SENT"; kitchenTickets: number } | CreateOrderResult;
+
+/** Caller owns BEGIN/COMMIT/ROLLBACK. This is shared by staff-entered and QR-accepted rounds. */
+async function sendRestaurantKitchenRoundInTx(
+  client: PoolClient,
+  input: KitchenRoundInput
+): Promise<KitchenRoundInTxResult> {
+  const shift = await client.query(
+    `SELECT 1 FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4
+        AND status = 'OPEN'
+      FOR KEY SHARE`,
+    [input.tenantId, input.shiftId, input.deviceId, input.locationId]
+  );
+  if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนส่งครัว");
+  await lockCheckInTx(client, input.tenantId, input.checkId);
+  const checkResult = await client.query<any>(
+    `SELECT * FROM bms_restaurant_checks
+      WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
+      FOR UPDATE`,
+    [input.tenantId, input.checkId, input.locationId]
+  );
+  if (!checkResult.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่ส่งครัวได้");
+  const check = checkResult.rows[0];
+  const items = await client.query<CheckItemRow>(
+    `SELECT * FROM bms_restaurant_check_items
+      WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
+      ORDER BY created_at, id
+      FOR UPDATE`,
+    [input.tenantId, input.checkId]
+  );
+  if (!items.rowCount) throw new RestaurantCheckError("ยังไม่มีรายการอาหารในบิล");
+  const unsent = items.rows.filter((item) => item.status === "NEW");
+  const reservation = check.current_order_id
+    ? await client.query<{ status: string }>(
+        `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+        [input.tenantId, check.current_order_id]
+      )
+    : null;
+  const reservationStatus = reservation?.rows[0]?.status ?? null;
+  const reservationAlive = reservationStatus === "PENDING";
+  if (unsent.length === 0 && reservationAlive
+      && Number(check.reserved_version) === Number(check.version)) {
+    return { status: "SENT", kitchenTickets: 0 };
+  }
+
+  if (check.current_order_id
+      && await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
+    throw new RestaurantCheckError(
+      `ใบจองของโต๊ะนี้อยู่สถานะ ${reservationStatus ?? "ไม่พบ"} ส่งครัวรอบใหม่ไม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน`
+    );
+  }
+
+  const created = await createOrderInTx(client, {
+    tenantId: input.tenantId,
+    channel: "pos",
+    items: items.rows.map(toOrderItem),
+    locationId: input.locationId,
+    posDeviceId: input.deviceId,
+    posShiftId: input.shiftId,
+    cashierUserId: input.actorUserId,
+    editorId: input.actorUserId,
+    idempotencyKey: `restaurant:${input.checkId}:v${check.version}`,
+    restaurantCheckId: input.checkId,
+  });
+  if (created.status !== "CREATED") return created;
+
+  const round = await client.query<{ next_round: number }>(
+    `SELECT COALESCE(MAX(round_no), 0) + 1 AS next_round
+       FROM bms_restaurant_check_items
+      WHERE tenant_id = $1 AND check_id = $2`,
+    [input.tenantId, input.checkId]
+  );
+  const roundNo = Number(round.rows[0].next_round);
+  const sent = await client.query<{ id: string }>(
+    `UPDATE bms_restaurant_check_items
+        SET status = 'SENT', round_no = $3, sent_by = $4, sent_at = now(), updated_at = now()
+      WHERE tenant_id = $1 AND check_id = $2 AND status = 'NEW'
+      RETURNING id`,
+    [input.tenantId, input.checkId, roundNo, input.actorUserId]
+  );
+  const kitchenOn = await isCapabilityEnabledInTx(client, input.tenantId, "KITCHEN_WORKFLOW");
+  const roundStation = kitchenStationColumnsSql({ policy: "sp", orderLocation: "c.location_id" });
+  const tickets = kitchenOn && sent.rowCount
+    ? await client.query(
+        `INSERT INTO bms_restaurant_kitchen_tickets
+           (tenant_id, check_id, check_item_id, station, station_id)
+         SELECT i.tenant_id, i.check_id, i.id, ${roundStation.name}, ${roundStation.id}
+           FROM bms_restaurant_check_items i
+           JOIN bms_restaurant_checks c
+             ON c.tenant_id = i.tenant_id AND c.id = i.check_id
+           LEFT JOIN bms_product_stock_policies sp
+             ON sp.tenant_id = i.tenant_id AND sp.product_sku = i.product_sku
+           LEFT JOIN bms_kitchen_stations st
+             ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
+          WHERE i.tenant_id = $1 AND i.check_id = $2 AND i.id = ANY($3::uuid[])
+         ON CONFLICT (tenant_id, check_item_id) DO NOTHING`,
+        [input.tenantId, input.checkId, sent.rows.map((row) => row.id)]
+      )
+    : { rowCount: 0 };
+  const linked = await client.query(
+    `UPDATE bms_restaurant_checks
+        SET current_order_id = $3, reserved_version = version,
+            amount_due = $4, pos_device_id = $6, pos_shift_id = $7, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN' AND version = $5`,
+    [input.tenantId, input.checkId, created.orderId, created.amountDue, check.version,
+      input.deviceId, input.shiftId]
+  );
+  if (!linked.rowCount) throw new RestaurantCheckError("บิลเปลี่ยนระหว่างส่งครัว กรุณาลองใหม่");
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1,$2,'restaurant.kitchen_send',$3,$4::jsonb)`,
+    [input.tenantId, `user:${input.actorUserId}`, input.checkId,
+      JSON.stringify({ roundNo, itemCount: sent.rowCount, orderId: created.orderId })]
+  );
+  return { status: "SENT", kitchenTickets: tickets.rowCount ?? 0 };
+}
+
+export async function sendRestaurantKitchenRound(input: KitchenRoundInput): Promise<{
+  status: "SENT";
+  check: Awaited<ReturnType<typeof getRestaurantCheck>>;
+  kitchenTickets: number;
+} | CreateOrderResult> {
   return withCheckLock(input.tenantId, input.checkId, async () => {
     const client = await getClient();
     try {
       await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
-      // createOrderInTx และ finalizePosSale ล็อกกะก่อนสต็อกเสมอ การแทน reservation
-      // จึงต้องยึดลำดับเดียวกันก่อน cancelOrderInTx ไปแตะแถว inventory
-      await client.query(
-        `SELECT 1 FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE`,
-        [input.tenantId, input.shiftId]
-      );
-      await lockCheckInTx(client, input.tenantId, input.checkId);
-      // ทุกขั้นตั้งแต่คืน reservation รุ่นก่อนจนผูก order รุ่นใหม่อยู่ใน transaction เดียวกัน
-      // ถ้ารอบใหม่จองไม่ได้ ROLLBACK จะเก็บ order+reservation เดิมไว้ให้ครัวที่กำลังทำต่อได้
-      const checkResult = await client.query<any>(
-        `SELECT * FROM bms_restaurant_checks
-          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
-          FOR UPDATE`,
-        [input.tenantId, input.checkId, input.locationId]
-      );
-      if (!checkResult.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่ส่งครัวได้");
-      const check = checkResult.rows[0];
-      const items = await client.query<CheckItemRow>(
-        `SELECT * FROM bms_restaurant_check_items
-          WHERE tenant_id = $1 AND check_id = $2 AND status <> 'CANCELLED'
-          ORDER BY created_at, id
-          FOR UPDATE`,
-        [input.tenantId, input.checkId]
-      );
-      if (!items.rowCount) throw new RestaurantCheckError("ยังไม่มีรายการอาหารในบิล");
-      const unsent = items.rows.filter((item) => item.status === "NEW");
-      // ใบจองที่ "ยังมีชีวิต" = PENDING เท่านั้น · ก่อนหน้านี้โค้ดดูแค่ว่ามี current_order_id
-      // ไหม ซึ่งเป็นคนละคำถาม: ใบที่ถูกยกเลิกไปแล้วก็ยังถูกชี้อยู่ **ของถูกปล่อยคืนหมดแล้ว
-      // แต่บิลยังอ้างว่ามีใบจอง** → กิ่ง early-return ด้านล่างตอบ SENT ทั้งที่ไม่มีอะไรจอง
-      // อยู่จริง แล้วไปล้มตอนคิดเงินแทน
-      const reservation = check.current_order_id
-        ? await client.query<{ status: string }>(
-            `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
-            [input.tenantId, check.current_order_id]
-          )
-        : null;
-      const reservationStatus = reservation?.rows[0]?.status ?? null;
-      const reservationAlive = reservationStatus === "PENDING";
-      if (unsent.length === 0 && reservationAlive
-          && Number(check.reserved_version) === Number(check.version)) {
-        await client.query("COMMIT");
-        return {
-          status: "SENT" as const,
-          check: await getRestaurantCheck(input.tenantId, input.checkId),
-          kitchenTickets: 0,
-        };
-      }
-
-      if (check.current_order_id) {
-        // COMPLETED = บิลนี้ถูกเก็บเงินไปแล้วแต่โต๊ะยัง OPEN — ความไม่สอดคล้องที่ต้องมีคนดู
-        // ไม่ใช่สิ่งที่การส่งครัวรอบใหม่ควรเขียนทับให้เงียบ
-        if (await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
-          throw new RestaurantCheckError(
-            `ใบจองของโต๊ะนี้อยู่สถานะ ${reservationStatus ?? "ไม่พบ"} ส่งครัวรอบใหม่ไม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน`
-          );
-        }
-      }
-
-      const reservationKey = `restaurant:${input.checkId}:v${check.version}`;
-      const created = await createOrderInTx(client, {
-        tenantId: input.tenantId,
-        channel: "pos",
-        items: items.rows.map(toOrderItem),
-        locationId: input.locationId,
-        posDeviceId: input.deviceId,
-        posShiftId: input.shiftId,
-        cashierUserId: input.actorUserId,
-        editorId: input.actorUserId,
-        idempotencyKey: reservationKey,
-        restaurantCheckId: input.checkId,
-      });
-      if (created.status !== "CREATED") {
+      const result = await sendRestaurantKitchenRoundInTx(client, input);
+      if (result.status !== "SENT") {
         await client.query("ROLLBACK");
-        return created;
+        return result;
       }
-
-      const round = await client.query<{ next_round: number }>(
-        `SELECT COALESCE(MAX(round_no), 0) + 1 AS next_round
-           FROM bms_restaurant_check_items
-          WHERE tenant_id = $1 AND check_id = $2`,
-        [input.tenantId, input.checkId]
-      );
-      const roundNo = Number(round.rows[0].next_round);
-      const sent = await client.query<{ id: string }>(
-        `UPDATE bms_restaurant_check_items
-            SET status = 'SENT', round_no = $3, sent_by = $4, sent_at = now(), updated_at = now()
-          WHERE tenant_id = $1 AND check_id = $2 AND status = 'NEW'
-          RETURNING id`,
-        [input.tenantId, input.checkId, roundNo, input.actorUserId]
-      );
-      // ตั๋วครัวของบิลโต๊ะครอบ **ทุกรายการที่ส่ง** ไม่ใช่เฉพาะเมนูที่มีสูตร (RECIPE)
-      //
-      // เส้นทาง retail (enqueueKitchenTicketsInTx) กรอง RECIPE เพราะบิลค้าปลีกมี SKU ที่
-      // ไม่ใช่อาหารปนอยู่เต็มไปหมด · บิลโต๊ะไม่ใช่แบบนั้น: ทุกบรรทัดคือของที่ต้องมีคนยกไป
-      // เสิร์ฟ · กรอง RECIPE ที่นี่ = น้ำเปล่า/เบียร์/ของหวานสำเร็จรูปไม่โผล่บนจอครัว-บาร์เลย
-      // และร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลยจะเห็นจอครัวว่างทั้งที่ออร์เดอร์วิ่งอยู่ ซึ่ง
-      // อ่านได้ว่า "ระบบพัง" · station เป็น NULL ได้ตามเดิม (จอมีช่อง "ไม่ระบุ station")
-      const kitchenOn = await isCapabilityEnabledInTx(client, input.tenantId, "KITCHEN_WORKFLOW");
-      const roundStation = kitchenStationColumnsSql({ policy: "sp", orderLocation: "c.location_id" });
-      const tickets = kitchenOn && sent.rowCount
-        ? await client.query(
-            // สถานีมาจากแถวหลัก (9.54) ด้วยนิพจน์ชุดเดียวกับคิวครัวของบิลค้าปลีก —
-            // เก็บทั้ง id (ตัวจับคู่กับตัวกรอง/เกณฑ์เวลา) และชื่อ ณ เวลาส่งครัว (ประวัติ)
-            `INSERT INTO bms_restaurant_kitchen_tickets
-               (tenant_id, check_id, check_item_id, station, station_id)
-             SELECT i.tenant_id, i.check_id, i.id, ${roundStation.name}, ${roundStation.id}
-               FROM bms_restaurant_check_items i
-               JOIN bms_restaurant_checks c
-                 ON c.tenant_id = i.tenant_id AND c.id = i.check_id
-               LEFT JOIN bms_product_stock_policies sp
-                 ON sp.tenant_id = i.tenant_id AND sp.product_sku = i.product_sku
-               LEFT JOIN bms_kitchen_stations st
-                 ON st.tenant_id = sp.tenant_id AND st.id = sp.kitchen_station_id
-              WHERE i.tenant_id = $1 AND i.check_id = $2 AND i.id = ANY($3::uuid[])
-             ON CONFLICT (tenant_id, check_item_id) DO NOTHING`,
-            [input.tenantId, input.checkId, sent.rows.map((row) => row.id)]
-          )
-        : { rowCount: 0 };
-      // ประทับเครื่อง/กะที่ให้บริการรอบนี้ลงบนบิลโต๊ะ — ยอดขายและค่าคอมต้องไปอยู่กับกะที่
-      // ทำงานจริง (กฎเดียวกับบิลมัดจำที่ 9.0 ประทับใหม่ตอนส่งของ)
-      const linked = await client.query(
-        `UPDATE bms_restaurant_checks
-            SET current_order_id = $3, reserved_version = version,
-                amount_due = $4, pos_device_id = $6, pos_shift_id = $7, updated_at = now()
-          WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN' AND version = $5`,
-        [input.tenantId, input.checkId, created.orderId, created.amountDue, check.version,
-          input.deviceId, input.shiftId]
-      );
-      if (!linked.rowCount) throw new RestaurantCheckError("บิลเปลี่ยนระหว่างส่งครัว กรุณาลองใหม่");
-      await client.query(
-        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-         VALUES ($1,$2,'restaurant.kitchen_send',$3,$4::jsonb)`,
-        [input.tenantId, `user:${input.actorUserId}`, input.checkId,
-          JSON.stringify({ roundNo, itemCount: sent.rowCount, orderId: created.orderId })]
-      );
       await client.query("COMMIT");
       return {
         status: "SENT" as const,
         check: await getRestaurantCheck(input.tenantId, input.checkId),
-        kitchenTickets: tickets.rowCount ?? 0,
+        kitchenTickets: result.kitchenTickets,
+      };
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+export async function acceptRestaurantQrSubmission(
+  input: Omit<KitchenRoundInput, "checkId"> & { submissionId: string }
+) {
+  const pending = await query<{
+    check_id: string;
+    submission_status: string;
+    product_sku: string;
+    size: string | null;
+    pack_code: string | null;
+    pack_qty: number;
+    modifier_codes: string[];
+    kitchen_note: string | null;
+    item_id: string;
+  }>(
+    `SELECT submission.check_id, submission.status AS submission_status,
+            item.product_sku, item.size, item.pack_code, item.pack_qty,
+            item.modifier_codes, item.kitchen_note, item.id AS item_id
+       FROM bms_restaurant_qr_submissions submission
+       JOIN bms_restaurant_qr_submission_items item
+         ON item.tenant_id = submission.tenant_id AND item.submission_id = submission.id
+      WHERE submission.tenant_id = $1 AND submission.location_id = $2
+        AND submission.id = $3
+      ORDER BY item.sort_order, item.id`,
+    [input.tenantId, input.locationId, input.submissionId]
+  );
+  if (!pending.rowCount) throw new RestaurantCheckError("ไม่พบรายการ QR นี้ในสาขาที่ระบุ");
+  const checkId = pending.rows[0].check_id;
+  const roundInput: KitchenRoundInput = { ...input, checkId };
+  if (pending.rows[0].submission_status === "ACCEPTED") {
+    return {
+      status: "ACCEPTED" as const,
+      replayed: true,
+      check: await getRestaurantCheck(input.tenantId, checkId),
+    };
+  }
+  if (pending.rows[0].submission_status !== "PENDING") {
+    throw new RestaurantCheckError("รายการนี้ถูกปฏิเสธหรือหมดอายุแล้ว");
+  }
+  const resolved = await Promise.all(pending.rows.map((row) => resolveRestaurantCheckItemRequest(
+    input.tenantId,
+    input.locationId,
+    {
+      sku: row.product_sku,
+      size: row.size,
+      packCode: row.pack_code,
+      packQty: Number(row.pack_qty),
+      modifierCodes: row.modifier_codes,
+      kitchenNote: row.kitchen_note,
+    }
+  )));
+
+  return withCheckLock(input.tenantId, checkId, async () => {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      const activeShift = await client.query(
+        `SELECT 1 FROM bms_pos_shifts
+          WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4 AND status = 'OPEN'
+          FOR UPDATE`,
+        [input.tenantId, input.shiftId, input.deviceId, input.locationId]
+      );
+      if (!activeShift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนรับออร์เดอร์ QR");
+      await lockCheckInTx(client, input.tenantId, checkId);
+      const submission = await client.query<{ status: string }>(
+        `SELECT submission.status
+           FROM bms_restaurant_qr_submissions submission
+           JOIN bms_restaurant_checks check_row
+             ON check_row.tenant_id = submission.tenant_id AND check_row.id = submission.check_id
+          WHERE submission.tenant_id = $1 AND submission.location_id = $2
+            AND submission.id = $3 AND submission.check_id = $4
+            AND check_row.status = 'OPEN'
+          FOR UPDATE OF submission, check_row`,
+        [input.tenantId, input.locationId, input.submissionId, checkId]
+      );
+      if (!submission.rowCount) throw new RestaurantCheckError("บิลโต๊ะปิดแล้วหรือรายการไม่อยู่ในสาขานี้");
+      if (submission.rows[0].status === "ACCEPTED") {
+        await client.query("COMMIT");
+        return { status: "ACCEPTED" as const, replayed: true, check: await getRestaurantCheck(input.tenantId, checkId) };
+      }
+      if (submission.rows[0].status !== "PENDING") {
+        throw new RestaurantCheckError("รายการนี้ถูกปฏิเสธหรือหมดอายุแล้ว");
+      }
+
+      const staffDraft = await client.query(
+        `SELECT 1 FROM bms_restaurant_check_items
+          WHERE tenant_id = $1 AND check_id = $2 AND status = 'NEW'
+          LIMIT 1 FOR UPDATE`,
+        [input.tenantId, checkId]
+      );
+      if (staffDraft.rowCount) {
+        throw new RestaurantCheckError(
+          "บิลนี้มีรายการที่พนักงานยังไม่ส่งครัว กรุณาส่งหรือลบรายการนั้นก่อนรับออร์เดอร์ QR"
+        );
+      }
+
+      const insertedIds: string[] = [];
+      for (const item of resolved) {
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO bms_restaurant_check_items
+             (tenant_id, check_id, product_sku, product_name, size, pack_qty,
+              pack_code, unit_name, base_qty, pack_price, modifier_codes,
+              modifier_names, kitchen_note, added_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           RETURNING id`,
+          [input.tenantId, checkId, item.sku, item.productName, item.size, item.packQty,
+            item.packCode, item.unitName, item.baseQty, item.packPrice, item.modifierCodes,
+            item.modifierNames, item.kitchenNote, input.actorUserId]
+        );
+        insertedIds.push(inserted.rows[0].id);
+      }
+      await client.query(
+        `UPDATE bms_restaurant_checks SET version = version + 1, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'`,
+        [input.tenantId, checkId, input.locationId]
+      );
+      const sent = await sendRestaurantKitchenRoundInTx(client, roundInput);
+      if (sent.status !== "SENT") {
+        await client.query("ROLLBACK");
+        return sent;
+      }
+      for (let index = 0; index < pending.rows.length; index += 1) {
+        await client.query(
+          `UPDATE bms_restaurant_qr_submission_items
+              SET accepted_check_item_id = $4
+            WHERE tenant_id = $1 AND submission_id = $2 AND id = $3`,
+          [input.tenantId, input.submissionId, pending.rows[index].item_id, insertedIds[index]]
+        );
+      }
+      await client.query(
+        `UPDATE bms_restaurant_qr_submissions
+            SET status = 'ACCEPTED', reviewed_by = $4, reviewed_at = now(), updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND status = 'PENDING'`,
+        [input.tenantId, input.locationId, input.submissionId, input.actorUserId]
+      );
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.qr_submission.accept',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.submissionId,
+          JSON.stringify({ checkId, itemCount: insertedIds.length })]
+      );
+      await client.query("COMMIT");
+      return {
+        status: "ACCEPTED" as const,
+        replayed: false,
+        kitchenTickets: sent.kitchenTickets,
+        check: await getRestaurantCheck(input.tenantId, checkId),
       };
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch {}
@@ -1412,6 +1602,15 @@ export async function moveRestaurantCheck(input: {
         [input.tenantId, input.checkId, input.locationId, input.targetTableId]
       );
       if (!moved.rowCount) throw new RestaurantCheckError("ย้ายโต๊ะไม่ได้");
+      // Submissions keep their scan-time table snapshot so their session chain stays immutable.
+      // The staff inbox resolves the table from the check, so pending proposals visibly follow the
+      // party while the old browser session stops matching the check and must rescan at destination.
+      await client.query(
+        `UPDATE bms_restaurant_qr_sessions
+            SET revoked_at = COALESCE(revoked_at, now())
+          WHERE tenant_id = $1 AND check_id = $2 AND revoked_at IS NULL`,
+        [input.tenantId, input.checkId]
+      );
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.check_move',$3,$4::jsonb)`,

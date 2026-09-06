@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -48,8 +48,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "KITCHEN" | "BILLS" | "SHIFT";
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN", "BILLS", "SHIFT"];
+type RestaurantScreen = "ORDER" | "FLOOR" | "QR" | "KITCHEN" | "BILLS" | "SHIFT";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QR", "KITCHEN", "BILLS", "SHIFT"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -57,7 +57,7 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "KITCHEN", "BI
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", qr: "QR", qrorders: "QR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
@@ -82,6 +82,31 @@ type MenuItem = SearchItem & {
   availability: "AVAILABLE" | "SOLD_OUT_TODAY" | "OUT_OF_STOCK";
   unavailableResetsAt: string | null;
   unavailableReason: string | null;
+};
+type QrSubmissionItem = {
+  id: string;
+  sku: string;
+  productName: string;
+  size: string | null;
+  packCode: string | null;
+  packQty: number;
+  modifierCodes: string[];
+  modifierNames: string[];
+  kitchenNote: string | null;
+  estimatedUnitPrice: number;
+};
+type QrSubmission = {
+  id: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED";
+  checkId: string;
+  tableId: string;
+  tableCode: string;
+  tableName: string;
+  submittedAt: string;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  estimatedTotal: number;
+  items: QrSubmissionItem[];
 };
 type PosMember = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number; tier: { code: string; name: string } | null };
 type SettlementResult = {
@@ -380,6 +405,10 @@ export default function RestaurantPosPage() {
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [qrSubmissions, setQrSubmissions] = useState<QrSubmission[]>([]);
+  const [qrSelectedId, setQrSelectedId] = useState("");
+  const [qrRejectOpen, setQrRejectOpen] = useState(false);
+  const [qrRejectReason, setQrRejectReason] = useState("");
   const [menuCategory, setMenuCategory] = useState("");
   // โหมดแจ้งของหมด: ครัวเดินมาบอกทีเดียวหลายอย่าง — เปิดโหมดแล้วทุกการ์ดกลายเป็นสวิตช์
   // ปิดโหมดแล้วการ์ดกลับมาเป็นปุ่มสั่งอาหารล้วน ไม่มีปุ่มปิดขายค้างอยู่ใต้ทุกเมนูตลอดกะ
@@ -565,6 +594,9 @@ export default function RestaurantPosPage() {
     .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
     [floor.tables, tableKitchenStats]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
+  const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
+  const selectedQrSubmission = qrSubmissions.find((submission) => submission.id === qrSelectedId)
+    ?? pendingQrSubmissions[0] ?? qrSubmissions[0] ?? null;
   // ครัวยกเลิกตอนบิลไม่ได้เปิดอยู่ (กำลังคิดเงิน/ปิดแล้ว) → ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
   const kitchenCancelled = check?.items.filter((item) =>
     item.status !== "CANCELLED" && item.kitchenStatus === "CANCELLED") ?? [];
@@ -773,6 +805,15 @@ export default function RestaurantPosPage() {
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
+  async function loadQrSubmissions() {
+    const data = await json("/api/pos/restaurant/qr-orders");
+    const rows: QrSubmission[] = Array.isArray(data.submissions) ? data.submissions : [];
+    setQrSubmissions(rows);
+    setQrSelectedId((current) => current && rows.some((row) => row.id === current)
+      ? current
+      : rows.find((row) => row.status === "PENDING")?.id ?? rows[0]?.id ?? "");
+    return rows;
+  }
   async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
       const result = await json("/api/pos/restaurant/menu", {
@@ -795,7 +836,7 @@ export default function RestaurantPosPage() {
     return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", "แจ้งจากครัว");
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
   /**
    * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
@@ -910,6 +951,11 @@ export default function RestaurantPosPage() {
     const timer = window.setInterval(() => { void Promise.all([loadTickets(), loadFloor()]).catch(() => {}); }, 5000);
     return () => window.clearInterval(timer);
   }, [token, screen]);
+  useEffect(() => {
+    if (!token || screen !== "QR") return;
+    const timer = window.setInterval(() => { void loadQrSubmissions().catch(() => {}); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [token, screen]);
 
   async function chooseTable(table: DiningTable) {
     if (table.blocked) return;
@@ -986,6 +1032,39 @@ export default function RestaurantPosPage() {
       setCheck(body.check);
       await loadFloor();
       message.success(`เพิ่ม ${item.productName} อีก ${item.packQty} — กดส่งครัวเพื่อส่งเข้าครัว`);
+    });
+  }
+
+  async function acceptQrSubmission(submission: QrSubmission) {
+    await run(async () => {
+      const result = await json("/api/pos/restaurant/qr-orders", {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "accept",
+          submissionId: submission.id,
+        })),
+      });
+      await Promise.all([loadQrSubmissions(), loadFloor(), loadTickets()]);
+      if (check?.id === submission.checkId && result.check) setCheck(result.check);
+      message.success(`รับออร์เดอร์ ${submission.tableName} และส่งเข้าครัวแล้ว`);
+    });
+  }
+
+  async function rejectQrSubmission() {
+    if (!selectedQrSubmission || !qrRejectReason.trim()) return;
+    await run(async () => {
+      await json("/api/pos/restaurant/qr-orders", {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "reject",
+          submissionId: selectedQrSubmission.id,
+          reason: qrRejectReason.trim(),
+        })),
+      });
+      setQrRejectOpen(false);
+      setQrRejectReason("");
+      await loadQrSubmissions();
+      message.success(`ปฏิเสธออร์เดอร์ ${selectedQrSubmission.tableName} และแจ้งเหตุผลกลับแล้ว`);
     });
   }
 
@@ -1435,6 +1514,7 @@ export default function RestaurantPosPage() {
   const railScreens = [
     { key: "ORDER" as const, short: "สั่ง", full: "สั่งอาหาร", icon: <WalletOutlined />, badge: 0 },
     { key: "FLOOR" as const, short: "โต๊ะ", full: "ผังโต๊ะ", icon: <AppstoreOutlined />, badge: unsentTableCount },
+    { key: "QR" as const, short: "QR", full: "ออร์เดอร์ QR รอรับ", icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
     { key: "KITCHEN" as const, short: "ครัว", full: "จอครัว", icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
     { key: "BILLS" as const, short: "บิล", full: "บิลล่าสุด", icon: <FileTextOutlined />, badge: 0 },
     { key: "SHIFT" as const, short: "กะ", full: "จัดการกะและลิ้นชัก", icon: <SwapOutlined />, badge: 0 },
@@ -1471,6 +1551,47 @@ export default function RestaurantPosPage() {
       </header>
       {!session?.shift && <Alert type="warning" showIcon message="ยังไม่เปิดกะ — เปิดกะก่อนจึงจะเปิดโต๊ะและรับออร์เดอร์ได้" />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
+
+      {screen === "QR" && <Spin spinning={working}><section className={styles.qrScreen}>
+        <div className={styles.panelHeader}>
+          <div><h2>ออร์เดอร์ QR จากลูกค้า</h2><small>ตรวจรายการก่อนเพิ่มเข้าบิลโต๊ะ จองวัตถุดิบ และส่งครัว</small></div>
+          <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadQrSubmissions()} title="รีเฟรชออร์เดอร์ QR" aria-label="รีเฟรชออร์เดอร์ QR"><ReloadOutlined /></button>
+        </div>
+        <div className={styles.qrWorkspace}>
+          <aside className={styles.qrQueue}>
+            {qrSubmissions.length === 0 && <div className={styles.empty}>ยังไม่มีออร์เดอร์ QR ใน 24 ชั่วโมงล่าสุด</div>}
+            {qrSubmissions.map((submission) => {
+              const total = submission.estimatedTotal;
+              return <button key={submission.id} type="button"
+                className={`${styles.qrCard} ${selectedQrSubmission?.id === submission.id ? styles.qrCardActive : ""}`}
+                onClick={() => setQrSelectedId(submission.id)}>
+                <span><b>{submission.tableCode}</b><small>{submission.tableName}</small></span>
+                <span className={`${styles.qrStatus} ${styles[`qrStatus_${submission.status}`]}`}>{submission.status === "PENDING" ? "รอรับ" : submission.status === "ACCEPTED" ? "รับแล้ว" : "ปฏิเสธ"}</span>
+                <span className={styles.qrCardMeta}>{submission.items.length} รายการ · <span className={styles.baht}>฿</span>{money(total)} · {new Date(submission.submittedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}</span>
+              </button>;
+            })}
+          </aside>
+          <div className={styles.qrDetail}>
+            {!selectedQrSubmission ? <div className={styles.empty}>เลือกออร์เดอร์เพื่อดูรายละเอียด</div> : <>
+              <div className={styles.qrDetailHead}><div><h3>{selectedQrSubmission.tableName}</h3><small>{selectedQrSubmission.tableCode} · ส่งเมื่อ {new Date(selectedQrSubmission.submittedAt).toLocaleString("th-TH")}</small></div><span className={`${styles.qrStatus} ${styles[`qrStatus_${selectedQrSubmission.status}`]}`}>{selectedQrSubmission.status === "PENDING" ? "รอพนักงานรับ" : selectedQrSubmission.status === "ACCEPTED" ? "รับและส่งครัวแล้ว" : "ปฏิเสธแล้ว"}</span></div>
+              <div className={styles.qrLines}>{selectedQrSubmission.items.map((item) => <div key={item.id} className={styles.qrLine}>
+                <span className={styles.qrQty}>{item.packQty}</span>
+                <span><b>{item.productName}</b><small>{[item.size, item.packCode, ...(item.modifierNames.length ? item.modifierNames : item.modifierCodes)].filter(Boolean).join(" · ") || "มาตรฐาน"}</small>{item.kitchenNote && <em>ครัว: {item.kitchenNote}</em>}</span>
+                <strong><span className={styles.baht}>฿</span>{money(item.estimatedUnitPrice * item.packQty)}</strong>
+              </div>)}</div>
+              <div className={styles.qrTotal}><span>ยอดประมาณการ</span><b><span className={styles.baht}>฿</span>{money(selectedQrSubmission.estimatedTotal)}</b></div>
+              {selectedQrSubmission.rejectionReason && <Alert type="error" showIcon message="เหตุผลที่ปฏิเสธ" description={selectedQrSubmission.rejectionReason} />}
+              {selectedQrSubmission.status === "PENDING" && <>
+                <Alert type="info" showIcon message="กดรับครั้งเดียว" description="ระบบจะเพิ่มรายการเข้าบิลโต๊ะ จองวัตถุดิบ และส่งตั๋วครัวใน transaction เดียว หากทำไม่ครบทุกขั้นจะไม่รับรายการบางส่วน" />
+                <div className={styles.qrActions}>
+                  <button type="button" className={`${styles.btn} ${styles.btnDanger}`} disabled={!operatorReady || !session?.shift} onClick={() => { setQrRejectReason(""); setQrRejectOpen(true); }}>ปฏิเสธ</button>
+                  <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady || !session?.shift} onClick={() => void acceptQrSubmission(selectedQrSubmission)}>รับและส่งเข้าครัว</button>
+                </div>
+              </>}
+            </>}
+          </div>
+        </div>
+      </section></Spin>}
 
       {screen === "BILLS" && <Spin spinning={working}><section className={styles.counterScreen}>
         <div className={styles.panelHeader}>
@@ -1996,6 +2117,16 @@ export default function RestaurantPosPage() {
           <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
         </div>
       </div>}
+    </Modal>
+    <Modal title={`ปฏิเสธออร์เดอร์ ${selectedQrSubmission?.tableName ?? ""}`} open={qrRejectOpen}
+      onCancel={() => setQrRejectOpen(false)} onOk={() => void rejectQrSubmission()}
+      okText="ยืนยันปฏิเสธ" okButtonProps={{ danger: true, disabled: !qrRejectReason.trim() }}
+      confirmLoading={working} getContainer={modalContainer}>
+      <div className={styles.modalGrid}>
+        <Alert type="warning" showIcon message="ลูกค้าจะเห็นเหตุผลนี้บนหน้าติดตามออร์เดอร์" />
+        <label>เหตุผล (จำเป็น)<textarea rows={3} maxLength={300} value={qrRejectReason}
+          onChange={(event) => setQrRejectReason(event.target.value)} placeholder="เช่น เมนูหมด กรุณาเลือกเมนูอื่น" /></label>
+      </div>
     </Modal>
     <Modal title={shiftModal === "OPEN" ? "เปิดกะ" : "ปิดกะ"} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okButtonProps={{ disabled: !operatorReady }} okText={shiftModal === "OPEN" ? "เปิดกะ" : "ยืนยันปิดกะ"} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? "ระบุเงินทอนตั้งต้น" : "นับเงินสดจริงในลิ้นชัก"} /><label>จำนวนเงิน<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
     {/* กล่องนี้มีสองงานคนละชั้น: แถบสรุปคือ "งานของแคชเชียร์" (ทอนเท่าไร ครัวได้กี่ใบ
