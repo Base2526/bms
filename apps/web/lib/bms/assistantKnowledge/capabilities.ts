@@ -217,6 +217,29 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     limitations: both("ส่วนลด Void และเงินออกต้องมี PIN บุคคลที่สอง", "Discounts, voids, and cash-out require a second person's PIN."),
   },
   {
+    id: "restaurant.qr-ordering", module: "pos",
+    title: both("ลูกค้าสแกน QR ที่โต๊ะแล้วสั่งอาหารเอง", "Customer scan-to-order at the table"),
+    description: both("QR บนโต๊ะเปิดเมนูให้ลูกค้าเลือกและส่งคำขอ พนักงานกดรับก่อนถึงจะเข้าครัวและเข้าบิล", "A table QR lets guests browse the menu and send a proposal; staff must accept it before it reaches the kitchen or the bill."),
+    aliases: aliases([
+      "สแกนสั่งอาหาร", "QR โต๊ะ", "ลูกค้าสั่งเอง", "สั่งอาหารจากมือถือ", "เมนูออนไลน์ที่โต๊ะ",
+      "ระบบมีสแกนสั่งอาหารไหม", "ระบบให้ลูกค้าสั่งเองไหม",
+    ], [
+      "scan to order", "table QR", "self ordering", "order from phone", "digital menu at the table",
+      "does it support scan to order", "can customers order themselves",
+    ]),
+    status: "CONDITIONAL", route: "/admin/restaurant-floor",
+    requiredPermissions: ["restaurant.floor.manage", "pos.sell"],
+    configurationDependencies: [
+      "The shop's business type must be restaurant and the branch needs a floor plan.",
+      "Each table needs a QR issued and printed from /admin/restaurant-floor.",
+      "A scan only works while a staff-opened check is already on that table.",
+    ],
+    limitations: both(
+      "คำขอของลูกค้ายังไม่ใช่ออร์เดอร์ — ไม่จองวัตถุดิบ ไม่เข้าครัว และไม่ขยับยอดจนกว่าพนักงานจะกดรับ · ลูกค้าจ่ายเงินจากมือถือไม่ได้ ปิดบิลที่เครื่องคิดเงินเท่านั้น",
+      "A customer proposal is not an order: nothing is reserved, cooked or billed until staff accept it. Guests cannot pay from the phone; the check closes at the register."
+    ),
+  },
+  {
     id: "restaurant.dine-in", module: "pos",
     title: both("ขายหน้าร้านแบบร้านอาหาร (โต๊ะ/บิลเปิด)", "Restaurant dine-in service"),
     description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, and checkout through the normal register."),

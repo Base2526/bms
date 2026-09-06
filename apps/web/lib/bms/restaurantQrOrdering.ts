@@ -8,6 +8,7 @@ import { resolvePosScan } from "./pos";
 export const RESTAURANT_QR_SESSION_COOKIE = "bms.restaurantQrSession";
 export const RESTAURANT_QR_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 const MAX_SUBMISSION_ITEMS = 30;
+const MAX_PENDING_SUBMISSIONS_PER_CHECK = 20;
 
 type QrSessionContext = {
   sessionId: string;
@@ -520,6 +521,18 @@ export async function submitRestaurantQrOrder(input: {
       [session.tenantId, session.sessionId, session.checkId]
     );
     if (!valid.rowCount) throw new RestaurantCheckError("บิลโต๊ะปิดแล้ว กรุณาติดต่อพนักงาน");
+    // เพดานคำขอที่ยังไม่ได้ตรวจต่อโต๊ะ — เพดานต่อนาที (route) กันการยิงรัว แต่ไม่กันการ
+    // สะสม: session อยู่ได้ 12 ชม. โทรศัพท์เครื่องเดียวจึงกองคำขอค้างในกล่องขาเข้าของ
+    // พนักงานได้ไม่จำกัด และกล่องนั้นตัดที่ 100 แถว = ของจริงถูกดันหายไปจากหน้าจอ
+    // นับต่อ "บิลโต๊ะ" ไม่ใช่ต่อ session เพราะโต๊ะหนึ่งมีลูกค้าหลายเครื่องได้
+    const pending = await client.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM bms_restaurant_qr_submissions
+        WHERE tenant_id = $1 AND check_id = $2 AND status = 'PENDING'`,
+      [session.tenantId, session.checkId]
+    );
+    if (Number(pending.rows[0]?.n ?? 0) >= MAX_PENDING_SUBMISSIONS_PER_CHECK) {
+      throw new RestaurantCheckError("มีรายการรอพนักงานตรวจอยู่หลายรอบแล้ว กรุณารอพนักงานรับก่อนสั่งเพิ่ม");
+    }
     const submission = await client.query<{ id: string }>(
       `INSERT INTO bms_restaurant_qr_submissions
          (tenant_id, location_id, table_id, check_id, session_id, idempotency_key)

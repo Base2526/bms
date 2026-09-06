@@ -35,11 +35,13 @@ import {
   listKitchenStationSlas,
   upsertKitchenStationSla,
 } from "../apps/web/lib/bms/kitchenSla.ts";
-import { cancelOrder, cancelOrderInTx, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
+import { cancelOrder, cancelOrderInTx, createOrder, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
 import { getClient } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { RESERVATION_LOST } from "../apps/web/lib/bms/restaurantPosErrors.ts";
 import { listRecentPosSales, resolvePosScan } from "../apps/web/lib/bms/pos.ts";
+import { setMenuTemporarilyUnavailable } from "../apps/web/lib/bms/menuAvailability.ts";
+import { acceptRestaurantQrSubmission } from "../apps/web/lib/bms/restaurantPos.ts";
 import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
@@ -125,6 +127,47 @@ const cancelReservationOutside = async (orderId: string) => {
     client.release();
   }
 };
+
+/**
+ * สร้าง QR โต๊ะ + session + คำขอที่ยังไม่ได้ตรวจ ด้วย SQL ตรง ๆ
+ *
+ * เส้นทางสาธารณะ (`openRestaurantQrSession` / `submitRestaurantQrOrder`) ต้องมี HTTP + cookie
+ * ซึ่งชุดนี้ไม่มี · สิ่งที่เทสพวกนี้ตรึงคือ **สิ่งที่เกิดกับคำขอที่มีอยู่แล้ว** เมื่อบิลเดินไป
+ * ตามสถานะต่าง ๆ จึงป้อนแถวให้ตรงรูปทรงที่ service เขียนก็พอ
+ */
+async function seedQrSubmission(tableId: string, checkId: string, sku: string) {
+  const tokenId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_table_qr_tokens
+       (tenant_id, location_id, table_id, public_token, public_token_hash, created_by)
+     VALUES ($1,$2,$3,$4, encode(digest($4,'sha256'),'hex'), $5)
+     ON CONFLICT (tenant_id, table_id) WHERE active DO NOTHING
+     RETURNING id`,
+    [tenantId, locationId, tableId, `faketoken${tableId.replace(/-/g, "")}`, waiterId]
+  )).rows[0]?.id ?? (await query<{ id: string }>(
+    `SELECT id FROM bms_restaurant_table_qr_tokens
+      WHERE tenant_id = $1 AND table_id = $2 AND active`, [tenantId, tableId]
+  )).rows[0].id;
+  const sessionId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_qr_sessions
+       (tenant_id, location_id, table_id, check_id, qr_token_id, session_token_hash, expires_at)
+     VALUES ($1,$2,$3,$4,$5, encode(digest($6,'sha256'),'hex'), now() + interval '12 hours')
+     RETURNING id`,
+    [tenantId, locationId, tableId, checkId, tokenId, `fakesession${checkId}${Date.now()}`]
+  )).rows[0].id;
+  const submissionId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_qr_submissions
+       (tenant_id, location_id, table_id, check_id, session_id, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [tenantId, locationId, tableId, checkId, sessionId, `fake-idem-${Date.now()}-${Math.random()}`]
+  )).rows[0].id;
+  await query(
+    `INSERT INTO bms_restaurant_qr_submission_items
+       (tenant_id, submission_id, product_sku, size, pack_qty, modifier_codes, sort_order)
+     VALUES ($1,$2,$3,$4,1,'{}',0)`,
+    [tenantId, submissionId, sku, SIZE]
+  );
+  return { tokenId, sessionId, submissionId };
+}
 
 test("setup: a throwaway restaurant with a register, an open shift and two plain menu items", async () => {
   tenantId = (await query<{ id: string }>(
@@ -1386,6 +1429,179 @@ test("⚠️ เมนูหลายไซซ์ที่ยังไม่ม�
   });
 });
 
+/**
+ * ⚠️ "หมดวันนี้" (9.55) ต้องเป็นด่านตอนรับออร์เดอร์ ไม่ใช่ตอนคิดยอดใหม่
+ *
+ * เคสจริง: ครัวทำผัดไทยจานสุดท้ายเสิร์ฟไปแล้ว แล้วกดว่าหมด · ลูกค้าโต๊ะนั้นสั่งน้ำเพิ่ม
+ * ถ้า createOrderInTx ยังกรอง SKU ที่หมดออกจาก "ทุกบรรทัดบนบิล" การส่งครัวรอบใหม่จะล้ม
+ * → version ค้างไม่เท่า reserved_version → **คิดเงินไม่ได้** และผัดไทยที่ส่งครัวไปแล้ว
+ * ก็ลบไม่ได้ ทางออกเดียวคือ void ทั้งบิลที่ลูกค้ากินไปแล้ว
+ */
+test("⚠️ เมนูที่หมดหลังเสิร์ฟไปแล้วต้องไม่ทำให้โต๊ะสั่งเพิ่มและคิดเงินไม่ได้", async () => {
+  const free = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((table) => table.status === "AVAILABLE");
+  assert.ok(free, "ต้องมีโต๊ะว่างสำหรับเทสนี้");
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: free!.id, guestCount: 2,
+    actorUserId: waiterId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: waiterId, sku: FOOD, packQty: 1,
+  });
+  const round1 = await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: waiterId,
+  });
+  assert.equal(round1.status, "SENT", "รอบแรกต้องส่งครัวได้ตามปกติ");
+
+  // ครัวหมดหลังจากอาหารจานนั้นออกไปแล้ว
+  await setMenuTemporarilyUnavailable({
+    tenantId, locationId, productSku: FOOD, unavailable: true,
+    actorUserId: waiterId, reason: "วัตถุดิบหมด",
+  });
+
+  try {
+    // สั่งเมนูที่หมด "เพิ่ม" ต้องถูกปฏิเสธตั้งแต่ตอนเข้าบิล พร้อมเหตุผลที่อ่านรู้เรื่อง
+    await assert.rejects(
+      addRestaurantCheckItem({
+        tenantId, locationId, checkId: check.id, actorUserId: waiterId, sku: FOOD, packQty: 1,
+      }),
+      /หมดวันนี้/,
+      "เมนูที่หมดต้องเข้าบิลไม่ได้"
+    );
+
+    // ...แต่โต๊ะเดิมต้องยังสั่งของอื่น ส่งครัว และคิดเงินได้ทั้งที่บิลยังถือเมนูที่หมดอยู่
+    await addRestaurantCheckItem({
+      tenantId, locationId, checkId: check.id, actorUserId: waiterId, sku: DRINK, packQty: 1,
+    });
+    const round2 = await sendRestaurantKitchenRound({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: waiterId,
+    });
+    assert.equal(round2.status, "SENT",
+      `รอบถัดไปต้องส่งครัวได้ ไม่ใช่ ${round2.status} — บิลที่เดินต่อไม่ได้คือโต๊ะที่จ่ายเงินไม่ได้`);
+
+    const due = (await getRestaurantCheck(tenantId, check.id))!.amountDue;
+    const paid = await settleRestaurantCheck({
+      tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+      payments: [{ method: "CASH", amount: due, received: due }],
+    });
+    assert.equal(paid.status, "SOLD", "โต๊ะต้องปิดบิลได้ตามปกติ");
+
+    // ...และครึ่งที่ต้องไม่หายไปกับการแก้: ช่องทางที่ "รับออร์เดอร์ใหม่" ยังต้องถูกกันเหมือนเดิม
+    const online = await createOrder({
+      tenantId, channel: "web", locationId, fulfillmentType: "PICKUP",
+      items: [{ sku: FOOD, size: SIZE, qty: 1 }],
+    } as any);
+    assert.equal(online.status, "SOLD_OUT_TODAY",
+      `ออนไลน์ยังต้องถูกกันด้วย SOLD_OUT_TODAY ไม่ใช่ ${online.status}`);
+  } finally {
+    await setMenuTemporarilyUnavailable({
+      tenantId, locationId, productSku: FOOD, unavailable: false, actorUserId: waiterId,
+    });
+  }
+});
+
+/**
+ * ⚠️ trigger ของ 9.60 นับ "ออกจาก OPEN" ว่าเป็นการปิดบิล ซึ่งกิน CLOSING (การกดคิดเงินที่
+ * ย้อนกลับได้ 9.48) เข้าไปด้วย · 9.62 แก้ให้หมดอายุเฉพาะสถานะปลายทาง เทสนี้เดินเส้นจริง:
+ * คิดเงินด้วยยอดผิด (เรื่องปกติที่เคาน์เตอร์) แล้วคำขอของลูกค้าต้องยังอยู่ในคิว
+ */
+test("⚠️ คิดเงินพลาดหนึ่งครั้งต้องไม่ทำลายออร์เดอร์ QR ที่ลูกค้าส่งเข้ามา", async () => {
+  const free = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((table) => table.status === "AVAILABLE");
+  assert.ok(free, "ต้องมีโต๊ะว่างสำหรับเทสนี้");
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: free!.id, guestCount: 2,
+    actorUserId: waiterId,
+  });
+  await addRestaurantCheckItem({
+    tenantId, locationId, checkId: check.id, actorUserId: waiterId, sku: FOOD, packQty: 1,
+  });
+  assert.equal((await sendRestaurantKitchenRound({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: waiterId,
+  })).status, "SENT");
+
+  const { submissionId } = await seedQrSubmission(free!.id, check.id, DRINK);
+  const status = async () => (await query<{ status: string }>(
+    `SELECT status FROM bms_restaurant_qr_submissions WHERE id = $1`, [submissionId]
+  )).rows[0].status;
+  const liveSessions = async () => Number((await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_restaurant_qr_sessions
+      WHERE check_id = $1 AND revoked_at IS NULL`, [check.id]
+  )).rows[0].n);
+
+  assert.equal(await status(), "PENDING");
+  assert.equal(await liveSessions(), 1);
+
+  // ยอดไม่ตรง — บิลถูก claim เป็น CLOSING แล้วคืนกลับเป็น OPEN
+  const mismatch = await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+    payments: [{ method: "CASH", amount: 1, received: 1 }],
+  });
+  assert.equal(mismatch.status, "PAYMENT_MISMATCH", "เทสนี้ต้องเดินผ่านทางที่ CLOSING เกิดจริง");
+  assert.equal((await getRestaurantCheck(tenantId, check.id))!.status, "OPEN",
+    "บิลต้องกลับมาเปิดหลังคิดเงินไม่สำเร็จ");
+  assert.equal(await status(), "PENDING",
+    "คำขอที่ลูกค้าส่งเข้ามาต้องยังอยู่ในคิว — EXPIRED กู้ไม่ได้และหายจากกล่องขาเข้า");
+  assert.equal(await liveSessions(), 1, "โทรศัพท์ลูกค้าต้องไม่ถูกตัดเพราะแคชเชียร์กดพลาด");
+
+  // พนักงานรับออร์เดอร์นั้นแล้วคิดเงินจริง — ตอนบิลปิด ทุกอย่างต้องหมดอายุตามเจตนาเดิมของ 9.60
+  const accepted = await acceptRestaurantQrSubmission({
+    tenantId, locationId, deviceId, shiftId: shiftB, submissionId, actorUserId: cashierId,
+  });
+  assert.equal(accepted.status, "ACCEPTED");
+  assert.ok(
+    accepted.check!.items.some((item) => item.sku === DRINK && item.status === "SENT"),
+    "รายการที่รับต้องเข้าบิลและถูกส่งครัวในทรานแซกชันเดียวกัน"
+  );
+  assert.equal(await status(), "ACCEPTED");
+
+  // ลูกค้าสั่งอีกรอบระหว่างที่แคชเชียร์กำลังปิดบิล — รอบนี้ต้องหมดอายุตอนบิลปิดจริง
+  const late = await seedQrSubmission(free!.id, check.id, DRINK);
+  const due = (await getRestaurantCheck(tenantId, check.id))!.amountDue;
+  assert.equal((await settleRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId,
+    payments: [{ method: "CASH", amount: due, received: due }],
+  })).status, "SOLD");
+  assert.equal(await liveSessions(), 0, "ปิดบิลแล้วโทรศัพท์เก่าต้องสั่งต่อไม่ได้");
+  assert.equal((await query<{ status: string }>(
+    `SELECT status FROM bms_restaurant_qr_submissions WHERE id = $1`, [late.submissionId]
+  )).rows[0].status, "EXPIRED",
+    "เจตนาเดิมของ 9.60 ต้องยังอยู่: ปิดบิลแล้วคำขอที่ค้างต้องออกจากคิว");
+  assert.equal(await status(), "ACCEPTED", "คำขอที่รับไปแล้วต้องไม่ถูกเขียนทับเป็น EXPIRED");
+});
+
+/** พนักงานกดรับคำขอ QR ของเมนูที่เพิ่งหมดต้องถูกปฏิเสธ ไม่ใช่ส่งงานให้ครัวที่ทำไม่ได้ */
+test("รับออร์เดอร์ QR ของเมนูที่หมดวันนี้ไม่ได้ และคำขอยังคงรอให้ตัดสินใจ", async () => {
+  const free = (await listRestaurantFloor(tenantId, locationId)).tables
+    .find((table) => table.status === "AVAILABLE");
+  assert.ok(free, "ต้องมีโต๊ะว่างสำหรับเทสนี้");
+  const check = await openRestaurantCheck({
+    tenantId, locationId, deviceId, shiftId: shiftB, tableId: free!.id, guestCount: 1,
+    actorUserId: waiterId,
+  });
+  const { submissionId } = await seedQrSubmission(free!.id, check.id, FOOD);
+  await setMenuTemporarilyUnavailable({
+    tenantId, locationId, productSku: FOOD, unavailable: true, actorUserId: waiterId,
+  });
+  try {
+    await assert.rejects(acceptRestaurantQrSubmission({
+      tenantId, locationId, deviceId, shiftId: shiftB, submissionId, actorUserId: cashierId,
+    }), /หมดวันนี้/);
+    assert.equal((await query<{ status: string }>(
+      `SELECT status FROM bms_restaurant_qr_submissions WHERE id = $1`, [submissionId]
+    )).rows[0].status, "PENDING", "คำขอต้องยังรออยู่ ไม่ใช่ถูกกลืนไป");
+    assert.equal((await getRestaurantCheck(tenantId, check.id))!.items.length, 0,
+      "ต้องไม่มีบรรทัดไหนหลุดเข้าบิลจากการรับที่ล้ม");
+  } finally {
+    await setMenuTemporarilyUnavailable({
+      tenantId, locationId, productSku: FOOD, unavailable: false, actorUserId: waiterId,
+    });
+    await cancelRestaurantCheck({
+      tenantId, locationId, checkId: check.id, actorUserId: cashierId, reason: "ปิดหลังเทส",
+    });
+  }
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -1399,6 +1615,13 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     [ids]
   );
   for (const table of [
+    // QR (9.60) ต้องมาก่อน check_items และ products — FK ของ accepted_check_item_id และ
+    // product_sku ไม่ใช่ CASCADE, teardown ที่ลบผิดลำดับจะ throw แล้วทิ้งร้านทดสอบไว้ในฐาน
+    "bms_restaurant_qr_submission_items",
+    "bms_restaurant_qr_submissions",
+    "bms_restaurant_qr_sessions",
+    "bms_restaurant_table_qr_tokens",
+    "bms_product_menu_unavailability",
     "bms_restaurant_kitchen_tickets",
     "bms_restaurant_check_items",
     // checks ต้องไปหลัง orders เพราะ bms_orders.restaurant_check_id เป็น FK ปกติ (NO ACTION)

@@ -68,7 +68,7 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (46 capabilities, 101 guides, 20 FAQ answers, 21 limit groups/111
+deterministic bilingual catalog (47 capabilities, 104 guides, 20 FAQ answers, 21 limit groups/111
 rules — counts drift as features ship; re-check with the catalog module before quoting them) covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
 no GraphQL/AI call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes
@@ -154,6 +154,22 @@ online order failed to create), a migration that could drop the wrong `bms_order
 constraint, and the same "read `bms_inventory` instead of the catalog variant" mistake called out
 above — see [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) for
 the full brief and [CLAUDE.local.md](CLAUDE.local.md) for the incident-by-incident record.
+
+**Restaurant floor editor + table QR self-ordering (`9.59`–`9.60`, `9.62`, 2026-09-06)** —
+`/admin/restaurant-floor` lays out zones and tables by drag-and-drop and prints one rotatable QR per
+table; a guest who scans it gets a menu bound to that table's **already-open** check and can only
+send a `PENDING` proposal, which a PIN-verified `pos.sell` operator accepts (lines + reservation +
+kitchen round in one transaction) or rejects with a reason. Possession of a printed token identifies
+a table, never a right. A recheck of the whole restaurant surface fixed three things that made the
+feature unsafe or unusable in a real service: `9.62` stops the QR expiry trigger from firing on the
+reversible `CLOSING` settlement claim — before it, **one mismatched payment silently destroyed every
+waiting proposal at that table and cut every guest's phone, permanently**; the "sold out today" gate
+moved from order-rebuild time to the moment a line enters a check, because re-gating a whole dine-in
+check made a dish marked sold out *after* it was served block that table from sending another round
+or paying at all; and every floor operation (including QR rotation, which invalidates a sticker on a
+physical table) now resolves the owning branch and honours `bms_user_allowed_locations`. See
+[business/pos.md](docs/business/pos.md) § Table QR self-ordering and
+[agent-invariants.md § Restaurant POS](docs/agent-invariants.md#restaurant-pos-dine-in).
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in

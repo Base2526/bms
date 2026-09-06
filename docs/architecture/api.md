@@ -178,6 +178,19 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `restaurant.kitchen.update`
   (`9.45`, previously `order.ship`) and never moves stock. The register board polls this read every
   five seconds while it is open.
+- `GET|POST /api/pos/restaurant/menu` (`9.44`, `9.55`) — the dine-in menu grid for the device's
+  branch, including each item's sales-day availability so the register can grey out a dish the
+  kitchen marked sold out. `POST` is the one-tap "sold out today / back on sale" toggle and needs
+  PIN + `pos.sell`; the branch comes from the device, never the body.
+- `GET|POST /api/pos/restaurant/incoming` (`9.56`) — chat/online food orders waiting for a human
+  accept. Payment alone never creates kitchen work; the `PAID -> PACKING` accept does, and it needs
+  PIN + `pos.sell`.
+- `GET|POST /api/pos/restaurant/qr-orders` (`9.60`) — the staff inbox for table-QR proposals. `GET`
+  lists the last 24 hours for the device's branch; `POST` takes `accept` or `reject` with PIN +
+  `pos.sell`. Accepting adds the customer's lines to the existing check, reserves stock and issues
+  the kitchen tickets in **one** transaction, so a partially accepted round cannot exist. A menu
+  marked sold out that day is refused at acceptance with the dish named, and acceptance is blocked
+  while the check still holds staff-typed lines that were never sent.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift
@@ -245,6 +258,17 @@ pipeline and wrote into the default shop's inbox for anyone who posted, so they 
 fail-closed. `/api/bms/demo-chat` stays public on purpose (it is the marketing demo) but was calling
 the model with no ceiling at all, and now carries a 20-per-minute-per-IP limit like the web-widget
 webhook already did.
+- `GET /api/bms/restaurant-qr/[token]`, `GET /api/bms/restaurant-qr/menu`,
+  `POST /api/bms/restaurant-qr/menu-item`, `GET|POST /api/bms/restaurant-qr/submissions` (`9.60`) —
+  the four routes a diner's phone talks to. **Public by design and the only unauthenticated write
+  surface in `/api/bms`**, so each one carries `requireRestaurantQrRateLimit()` (opening a QR is
+  IP-scoped; the rest are scoped by a digest of the session cookie, because a restaurant's guests
+  share one NAT address). Possession of a printed table token identifies a table, never a right: it
+  resolves to a session only while that table already has a staff-opened `OPEN` check, and every
+  write lands as a `PENDING` proposal that staff must accept at the register. The session is an
+  HttpOnly `SameSite=Lax` cookie and the table token travels in the `x-bms-restaurant-qr` header, so
+  a cross-origin page can neither send the cookie on a POST nor set the header. Tenant, branch,
+  table and check are always derived from the session row — never read from the body.
 - `POST /api/bms/reserve` — hold stock without a bill. Requires a signed admin session with
   `stock.adjust`; the tenant is derived server-side from the session or the drill-down cookie and is
   never read from the body. Reserves in one branch only and writes a `RESERVE` movement in the same
@@ -337,6 +361,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
 | `bmsProductPromotions.ts` | buy-X-get-Y / N-for-a-price offers, store-wide or per branch (`bmsProductPromotions`, `bmsPromotionLocations`, `bmsUpsertProductPromotion`, `bmsDeactivateProductPromotion`) — reads `product.view`, writes `product.edit`; branch-restricted staff (`bms_user_allowed_locations`) may only set offers for their own branches and never a store-wide one |
+| `bmsRestaurantFloorAdmin.ts` | restaurant areas, tables, drag-and-drop floor layout and the printable table QR (`9.59`, `9.60`): `bmsRestaurantFloorAdmin`, `bmsRestaurantFloorLocations`, `bmsRestaurantTableQr`, `bmsIssueRestaurantTableQr`, plus area/table create-rename-reorder-delete and `bmsSaveRestaurantFloorLayout`. All of it uses one permission, `restaurant.floor.manage`, and every operation additionally resolves the owning branch (from the locationId, or from the area/table row when that is all the argument list carries) and rejects a branch outside the caller's `bms_user_allowed_locations` scope — rotating a QR invalidates the sticker physically on another branch's table and cuts the guests seated at it |
 | `bmsAr.ts` | credit accounts, invoice aging, receivable ledger, non-cash collection and write-off (`9.30`). Selling on credit and collecting **cash** are absent by design — those live on `/api/pos/*`, because cash has to reach the drawer of the shift that is actually open |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |

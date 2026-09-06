@@ -1058,6 +1058,8 @@ export const typeDefs = /* GraphQL */ `
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
     bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
+    # สาขาที่ผู้ใช้คนนี้จัดผังได้จริง (bms_user_allowed_locations, 9.37) — ไม่ใช่ bmsLocations
+    bmsRestaurantFloorLocations: [BmsLocation!]!
     bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
     bmsPosDevices: [BmsPosDevice!]!
     # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { unmetModifierGroups } from "@/lib/pos/modifierSelection";
 import styles from "./qr-order.module.css";
 
 type Bootstrap = {
@@ -254,6 +255,9 @@ export default function RestaurantQrOrderPage() {
   if (bootstrap.status !== "READY") return <div className={styles.centerState}><div><span>🍽️</span><h1>{bootstrap.tableName ?? bootstrap.tableCode}</h1><p>{bootstrap.status === "WAITING_FOR_TABLE" ? (th ? "กรุณาให้พนักงานเปิดโต๊ะก่อนเริ่มสั่งอาหาร" : "Ask a staff member to open the table before ordering") : (th ? "โต๊ะนี้ยังไม่พร้อมรับออร์เดอร์" : "This table is not accepting orders")}</p>{bootstrap.status === "WAITING_FOR_TABLE" && <small>{th ? "หน้านี้จะตรวจสอบอีกครั้งอัตโนมัติ" : "This page will refresh automatically"}</small>}</div></div>;
 
   const modifierGroups = selected ? Array.from(new Set(selected.modifiers.map((item) => item.groupCode))) : [];
+  // กติกาเดียวกับหน้าเครื่องขาย: ปุ่มที่กดแล้ว server ปฏิเสธแน่ ๆ ต้องกดไม่ได้และต้องบอกว่าติดกลุ่มไหน
+  // (เคสจริง 2026-09-05 ที่หน้าร้าน: ส้มตำมีกลุ่มบังคับที่ไม่มีค่าปริยาย แล้วพนักงานกดซ้ำสี่ครั้ง)
+  const unmetGroups = selected ? unmetModifierGroups(selected.modifiers, selectedModifiers) : [];
   return <div className={styles.app}>
     <header className={styles.header}>
       <div><strong>{bootstrap.storeName}</strong><small>{bootstrap.locationName}</small></div>
@@ -310,7 +314,8 @@ export default function RestaurantQrOrderPage() {
         })}
         <label className={styles.note}>{th ? "หมายเหตุถึงครัว" : "Kitchen note"}<textarea maxLength={300} value={note} onChange={(event) => setNote(event.target.value)} placeholder={th ? "เช่น ไม่ใส่ถั่ว" : "e.g. no peanuts"} /></label>
         {error && <div className={styles.error} role="alert">{error}</div>}
-        <div className={styles.addRow}><div><button type="button" aria-label={th ? "ลดจำนวน" : "Decrease quantity"} onClick={() => setQty((value) => Math.max(1, value - 1))}>−</button><b aria-live="polite">{qty}</b><button type="button" aria-label={th ? "เพิ่มจำนวน" : "Increase quantity"} onClick={() => setQty((value) => Math.min(99, value + 1))}>+</button></div><button type="button" disabled={busy} onClick={addToCart}>{th ? "เพิ่มลงตะกร้า" : "Add to cart"}</button></div>
+        <div className={styles.addRow}><div><button type="button" aria-label={th ? "ลดจำนวน" : "Decrease quantity"} onClick={() => setQty((value) => Math.max(1, value - 1))}>−</button><b aria-live="polite">{qty}</b><button type="button" aria-label={th ? "เพิ่มจำนวน" : "Increase quantity"} onClick={() => setQty((value) => Math.min(99, value + 1))}>+</button></div><button type="button" disabled={busy || unmetGroups.length > 0} onClick={addToCart}>{th ? "เพิ่มลงตะกร้า" : "Add to cart"}</button></div>
+        {unmetGroups.length > 0 && <p className={styles.notice} role="status">{th ? `ยังต้องเลือก: ${unmetGroups.join(" · ")}` : `Still to choose: ${unmetGroups.join(" · ")}`}</p>}
       </section>
     </div>}
   </div>;

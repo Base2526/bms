@@ -1039,3 +1039,62 @@ test("กลุ่มตัวเลือกแบบเลือกได้�
   assert.match(sizeCoalesce, /FROM bms_product_variants variant[\s\S]*?upper\(variant\.code\) = upper\(\$3::text\)/,
     "resolvePosScan ต้องยอมรับไซซ์ที่ขอมาจากแคตตาล็อกด้วย ไม่ใช่จากตารางสต็อกอย่างเดียว");
 });
+
+/**
+ * ⚠️ "หมดวันนี้" (9.55) เป็นด่านตอน *รับ* ออร์เดอร์ ไม่ใช่ตอนคิดยอด
+ *
+ * บิลโต๊ะไม่ได้ส่งตะกร้าใหม่ให้ createOrderInTx — มันส่งทุกบรรทัดที่ยังอยู่บนบิลซ้ำทุกครั้ง
+ * ที่ต้องคิดยอดใหม่ (ส่งครัวรอบถัดไป / ครัวยกเลิกรายการ) · ถ้ากรองที่นั่น เมนูที่ถูกตั้งว่า
+ * หมด *หลังจาก* มันถูกเสิร์ฟไปแล้วจะทำให้ทั้งโต๊ะเดินต่อไม่ได้: ส่งครัวรอบใหม่ไม่ได้ →
+ * version ค้างไม่เท่า reserved_version → คิดเงินไม่ได้ → และบรรทัดที่ส่งครัวไปแล้วลบไม่ได้
+ * ทางออกเดียวคือ void ทั้งบิลที่ลูกค้ากินไปแล้ว
+ */
+test("เมนูที่ตั้งว่าหมดวันนี้ต้องถูกกันตอนเข้าบิล ไม่ใช่ตอนคิดยอดใหม่ของบิลที่เปิดอยู่", async () => {
+  const orders = code(await read("apps/web/lib/bms/orders.ts"));
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const failure = code(await read("apps/web/lib/pos/failureMessage.ts"));
+
+  // createOrderInTx: บิลโต๊ะข้ามด่านนี้ ช่องทางอื่นยังโดนเหมือนเดิม
+  const gate = orders.slice(
+    orders.indexOf("const requestedSkus ="),
+    orders.indexOf('return { status: "SOLD_OUT_TODAY"')
+  );
+  assert.match(gate, /input\.restaurantCheckId \? \[\] :/,
+    "บิลโต๊ะต้องไม่ถูกกรองซ้ำตอนคิดยอด");
+  assert.match(gate, /FROM bms_product_menu_unavailability/,
+    "ช่องทางที่ไม่ใช่บิลโต๊ะยังต้องถูกกรองเหมือนเดิม");
+
+  // ด่านจริงย้ายมาอยู่ที่จุดที่บรรทัดเข้าบิล — ครอบทั้งพนักงานกดเพิ่มและการรับออร์เดอร์ QR
+  const resolve = restaurant.slice(
+    restaurant.indexOf("export async function resolveRestaurantCheckItemRequest"),
+    restaurant.indexOf("export async function addRestaurantCheckItem")
+  );
+  assert.match(resolve, /FROM bms_product_menu_unavailability/);
+  assert.match(resolve, /resets_at > now\(\)/);
+  assert.match(resolve, /หมดวันนี้/);
+  assert.ok(
+    resolve.indexOf("bms_product_menu_unavailability") > resolve.indexOf("resolvePosScan"),
+    "ต้องถามหลัง resolve เพื่อใช้ sku ที่ resolve แล้ว ไม่ใช่ค่าที่ browser ส่งมา"
+  );
+
+  // เส้นทางค้าปลีกยังคืน SOLD_OUT_TODAY ได้ — ต้องมีคำตอบที่บอกได้ว่าต้องทำอะไรต่อ
+  assert.match(failure, /case "SOLD_OUT_TODAY":/);
+  assert.match(failure, /หมดวันนี้/);
+});
+
+/**
+ * ป้ายจำนวน "ออร์เดอร์ QR รอรับ" อยู่บนแถบซ้ายเพื่อให้เห็นจากทุกจอ — ถ้าดึงข้อมูลเฉพาะตอน
+ * เปิดแท็บ QR อยู่ ป้ายจะไม่ขึ้นเลยตอนพนักงานยืนหน้าผังโต๊ะ (ที่ยืนจริง) แล้วออร์เดอร์ของ
+ * ลูกค้าค้างจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น = ป้ายไม่มีความหมาย
+ */
+test("ป้ายออร์เดอร์ QR รอรับต้องอัปเดตจากทุกจอ ไม่ใช่เฉพาะตอนเปิดแท็บ QR", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const start = page.indexOf("loadQrSubmissions().catch");
+  assert.ok(start > 0, "ต้องมี poll ของออร์เดอร์ QR");
+  const effect = page.slice(page.lastIndexOf("useEffect(", start), page.indexOf("}, [token, screen]);", start));
+  assert.doesNotMatch(effect, /screen !== "QR"\) return/,
+    "ห้าม return ออกเมื่อไม่ได้อยู่แท็บ QR — ป้ายบนแถบซ้ายจะไม่มีวันขึ้น");
+  assert.match(effect, /screen === "QR" \? 5000 : \d+/,
+    "เปิดแท็บอยู่ต้องถี่กว่า แต่จออื่นต้องยังดึงอยู่");
+  assert.match(page, /badge: pendingQrSubmissions\.length/);
+});

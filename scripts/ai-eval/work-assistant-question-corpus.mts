@@ -261,6 +261,12 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "how do I move kitchen tickets to served", locale: "en", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
   { q: "ระบบรองรับร้านวัสดุก่อสร้างไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.stock-model", origin: "coverage" },
   { q: "ระบบมีคิวครัวไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "kitchen.workflow", origin: "coverage" },
+  // 9.60: ออร์เดอร์ที่ลูกค้าสแกนสั่งเองคือ "คำขอ" ที่พนักงานต้องกดรับ — คำถามของคนหน้าเคาน์เตอร์
+  // คือจะรับ/ปฏิเสธยังไง ไม่ใช่จะพิมพ์ QR ยังไง (อันหลังเป็นงานหลังบ้านที่ floor-management ถือ)
+  { q: "ออร์เดอร์ QR ที่ลูกค้าส่งมา รับยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-qr-orders", origin: "coverage" },
+  { q: "how do I accept a QR order from a customer", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-qr-orders", origin: "coverage" },
+  { q: "ระบบมีสแกนสั่งอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.qr-ordering", origin: "coverage" },
+  { q: "can customers order themselves from a table QR", locale: "en", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.qr-ordering", origin: "coverage" },
   { q: "ระบบบันทึกของเสียได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.wastage-ledger", origin: "coverage" },
   {
     q: "ตรวจสลิปแล้วยืนยันเงินยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "payments.review-payment",

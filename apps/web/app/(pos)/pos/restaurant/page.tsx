@@ -960,9 +960,16 @@ export default function RestaurantPosPage() {
     const timer = window.setInterval(() => { void Promise.all([loadTickets(), loadFloor()]).catch(() => {}); }, 5000);
     return () => window.clearInterval(timer);
   }, [token, screen]);
+  // ⚠️ ป้ายจำนวน "ออร์เดอร์ QR รอรับ" อยู่บนแถบซ้ายเพื่อให้เห็นจากทุกจอ — ถ้าดึงข้อมูล
+  // เฉพาะตอนเปิดแท็บ QR อยู่ ป้ายจะไม่มีวันขึ้นเลยตอนพนักงานยืนอยู่หน้าผังโต๊ะ (ที่ยืนจริง)
+  // แล้วลูกค้าที่สั่งผ่าน QR ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น = ป้ายไม่มีความหมาย
+  // เปิดแท็บอยู่ = 5 วิ (กำลังตัดสินใจรับ/ปฏิเสธ) · จออื่น = 20 วิ พอสำหรับป้าย
   useEffect(() => {
-    if (!token || screen !== "QR") return;
-    const timer = window.setInterval(() => { void loadQrSubmissions().catch(() => {}); }, 5000);
+    if (!token) return;
+    const timer = window.setInterval(
+      () => { void loadQrSubmissions().catch(() => {}); },
+      screen === "QR" ? 5000 : 20000
+    );
     return () => window.clearInterval(timer);
   }, [token, screen]);
 
