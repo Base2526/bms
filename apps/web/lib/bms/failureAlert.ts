@@ -60,6 +60,15 @@ export type BmsFailureCode =
    * แปลว่า quota/cost/รายงานทั้งชุดตาบอด และการไล่ปัญหา AI ไม่มีข้อมูลตั้งต้นเลย
    */
   | "ai.usage_finalize_failed"
+  /**
+   * บันทึก "เริ่มเรียก provider" ไม่สำเร็จ → `provider_calls` ค้างที่ 0
+   *
+   * ⚠️ ร้ายกว่าที่ชื่อฟัง: ตัวกวาด reservation คืน credit ให้แถวที่ `provider_calls = 0`
+   * เพราะตีความว่า "ยังไม่ได้เรียก provider" → request ที่เรียกไปแล้วจริงและเสียเงินไปแล้วจริง
+   * จะถูกคืนโควตาให้ฟรี แล้วตัวนับเดินถอยหลังโดยไม่มีใครเห็นเหตุผล
+   * incident นี้คือหลักฐานเดียวที่แยก "abort ก่อนถึง provider จริง" ออกจาก "บันทึกพลาด"
+   */
+  | "ai.provider_attempt_unrecorded"
   /** AI Pharmacy Intake: ไม่มี credentials/เกิน quota/validation retry หมด → ส่งเคสให้เภสัชกรตรวจเอง */
   | "pharmacy_ai.unavailable"
   /** AI Pharmacy Intake: ผลลัพธ์จาก AI validate ไม่ผ่านซ้ำจนครบจำนวน retry */
@@ -132,6 +141,12 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     shopTitle: "ระบบบันทึกการใช้งาน AI ไม่สำเร็จ",
     shopMessage:
       "คำตอบถูกส่งให้ลูกค้าเรียบร้อยแล้ว แต่ระบบปิดรายการบันทึกการใช้งาน AI ไม่สำเร็จ ทำให้ยอดโทเคน/ค่าใช้จ่ายของรายการนี้หายไปจากรายงาน",
+  },
+  "ai.provider_attempt_unrecorded": {
+    tier: "B",
+    shopTitle: "ระบบบันทึกจำนวนครั้งที่เรียก AI ไม่สำเร็จ",
+    shopMessage:
+      "คำตอบถูกส่งให้ลูกค้าเรียบร้อยแล้ว แต่ระบบบันทึกไม่ได้ว่ารายการนี้เรียกผู้ให้บริการ AI ไปแล้ว ยอดโควตาที่แสดงอาจต่ำกว่าที่ใช้จริง",
   },
   "pharmacy_ai.unavailable": {
     tier: "A",

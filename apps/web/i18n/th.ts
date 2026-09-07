@@ -1752,6 +1752,8 @@ const th = {
     from_total: "จากทั้งหมด {total}",
     card_used_this_month: "ใช้ไปเดือนนี้",
     requests_total_month: "{count} AI requests · {calls} provider calls เดือนนี้",
+    card_tokens: "โทเคนที่ใช้เดือนนี้",
+    tokens_subtitle: "{input} เข้า · {output} ออก — ไม่ได้นับในโควตา (โควตานับเป็นจำนวนครั้ง)",
     card_estimated_cost: "ต้นทุน Provider จาก Usage",
     cost_subtitle: "คำนวณเป็น USD จาก usage ที่ provider รายงานและ rate card ไม่ใช่ยอด invoice",
     unpriced_calls: "{count} provider calls ไม่มี usage สำหรับคำนวณต้นทุน",

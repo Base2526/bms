@@ -18,6 +18,7 @@ const Q = gql`
       count limit remaining unlimited planCode planName
       requestCount sharedRequests byokRequests blockedRequests
       grantedCredits bonusCredits adjustedCredits billableCredits providerCalls actualCostUsd unpricedProviderCalls
+      inputTokens outputTokens
     }
     bmsAiConfig { has_key model }
     bmsAiCreditLedger(limit: 12) {
@@ -175,6 +176,8 @@ export default function Page() {
       Number(aiUsage?.adjustedCredits ?? 0);
   const aiCreditsUsed = Number(aiUsage?.billableCredits ?? aiUsage?.count ?? 0);
   const aiCreditsRemaining = Number(aiUsage?.remaining ?? 0);
+  // โทเคนไม่เข้าสูตรโควตาและไม่เข้า usagePercent โดยตั้งใจ — เป็นคนละหน่วยกับ `limit`
+  const aiTokensTotal = Number(aiUsage?.inputTokens ?? 0) + Number(aiUsage?.outputTokens ?? 0);
   const aiStatus = aiQuotaStatus(aiUsage);
   const ledger: BillingLedgerRow[] = data?.bmsAiCreditLedger ?? [];
   const usagePercent = aiCreditsTotal < 0 ? 0 : pct(aiCreditsUsed, aiCreditsTotal);
@@ -302,13 +305,16 @@ export default function Page() {
         </Card>
 
         <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12} lg={6}>
             <AiMetricCard title={t("admin_billing.card_remaining")} value={aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: formatNumber(aiCreditsTotal) })} accent={tone.accent} />
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12} lg={6}>
             <AiMetricCard title={t("admin_billing.card_used_this_month")} value={formatNumber(aiCreditsUsed)} subtitle={t("admin_billing.requests_total_month", { count: formatNumber(aiUsage?.requestCount ?? aiUsage?.count ?? 0), calls: formatNumber(aiUsage?.providerCalls ?? 0) })} accent="#13c2c2" />
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12} lg={6}>
+            <AiMetricCard title={t("admin_billing.card_tokens")} value={formatNumber(aiTokensTotal)} subtitle={t("admin_billing.tokens_subtitle", { input: formatNumber(aiUsage?.inputTokens ?? 0), output: formatNumber(aiUsage?.outputTokens ?? 0) })} accent="#2f54eb" />
+          </Col>
+          <Col xs={24} md={12} lg={6}>
             <AiMetricCard title={t("admin_billing.card_estimated_cost")} value={`$${Number(aiUsage?.actualCostUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}`} subtitle={aiUsage?.unpricedProviderCalls > 0 ? `${t("admin_billing.cost_subtitle")} · ${t("admin_billing.unpriced_calls", { count: aiUsage.unpricedProviderCalls })}` : t("admin_billing.cost_subtitle")} accent="#722ed1" />
           </Col>
         </Row>
