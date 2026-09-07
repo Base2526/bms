@@ -284,6 +284,31 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     ),
   },
   {
+    id: "restaurant.chat-requests", module: "orders",
+    title: both("รับคำขอสั่งอาหารจากแชทไว้ก่อนตรวจ", "Take restaurant orders from chat as requests"),
+    description: both(
+      "แชทเก็บจำนวนที่ลูกค้าขอครบทุกรายการโดยยังไม่จองสต็อกและไม่เรียกชำระเงิน แล้วพนักงานตรวจความพร้อม โทรตกลงถ้าต้องปรับ และยืนยันจำนวนที่ตกลงเพื่อสร้างบิลปกติ",
+      "Chat keeps every quantity the customer asked for without reserving stock or asking for payment; staff then check availability, call if something must change, and confirm the agreed quantities to create a normal order."
+    ),
+    aliases: aliases([
+      "คำขอร้านอาหาร", "รับออร์เดอร์จากแชท", "สั่งอาหารทางแชท", "คิวคำขอ", "ตรวจคำขอ",
+      "ระบบรับออร์เดอร์อาหารทางแชทไหม", "ลูกค้าสั่งอาหารทางไลน์",
+    ], [
+      "restaurant request", "chat order intake", "order food by chat", "request queue",
+      "review requests", "does it take food orders from chat", "customer orders by LINE",
+    ]),
+    status: "CONDITIONAL", route: "/admin/orders", requiredPermissions: ["order.view"],
+    configurationDependencies: [
+      "The shop's business type must be restaurant; the queue is a card on /admin/orders and on the POS Incoming tab.",
+      "Menu items need both the CUSTOMER_AI and ONLINE_ORDER sales surfaces enabled.",
+      "Migration 9.66 must be applied; without it neither intake nor the queue works.",
+    ],
+    limitations: both(
+      "ยังไม่มีการส่งลิงก์ชำระเงินให้ลูกค้าอัตโนมัติ (ส่งเอง) และเวลาที่ลูกค้าขอไม่ใช่เวลาที่ร้านรับรอง",
+      "The checkout link is shared manually, and the time the customer asked for is not a time the shop promised."
+    ),
+  },
+  {
     id: "pharmacy.workflow", module: "pharmacy",
     title: both("กระบวนการร้านขายยา", "Pharmacy workflow"),
     description: both("รับเคส ขอข้อมูลเพิ่ม และส่งให้เภสัชกรผู้มีใบอนุญาตพิจารณา", "Intake cases, request more information, and route them to a licensed pharmacist."),

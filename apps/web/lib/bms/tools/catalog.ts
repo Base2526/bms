@@ -98,6 +98,8 @@ import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile } from "../storeProfile";
+import { receiveRestaurantRequest, listRestaurantRequests } from "../restaurantRequests";
+import { isRestaurantRequestRejection } from "../restaurantRequestPolicy";
 import {
   configuredPaymentAccounts,
   isCustomerPaymentMethod,
@@ -1075,7 +1077,8 @@ const getOrderStatus: BmsTool = {
     if (ec.surface === "customer") {
       if (!ec.customerRef || !ec.channel) return { ok: true, data: { orders: [] } };
       const orders = await listCustomerOrderStatuses(ec.tenantId, ec.channel, ec.customerRef, 10);
-      return { ok: true, data: { orders } };
+      const requests = await listRestaurantRequests({ tenantId: ec.tenantId, channel: ec.channel, customerRef: ec.customerRef });
+      return { ok: true, data: { orders, requests } };
     }
     // staff
     const orderId = reqString(args, "orderId");
@@ -1931,12 +1934,42 @@ const createOrderTool: BmsTool = {
       locationId: { type: "string", description: "Exact active branch UUID returned by list_restaurant_order_locations." },
       fulfillmentType: { type: "string", enum: ["DELIVERY", "PICKUP"], description: "How the customer will receive a restaurant order." },
       promisedAt: { type: "string", description: "ISO-8601 promised delivery/pickup time after the customer agrees." },
+      requestNote: { type: "string", maxLength: 1000, description: "Restaurant request only: customer-supplied preparation instructions, with exact line/portion references. These await human review, not a promise to the kitchen." },
     },
     required: ["items"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const requested = reqItems(args);
     const requestedLocationId = optString(args, "locationId") ?? null;
+    if (ec.surface === "customer" && (await getStoreProfile(ec.tenantId)).businessArchetype === "restaurant") {
+      if (!ec.channel || !ec.customerRef) return { ok: false, error: "ไม่พบตัวตนลูกค้าสำหรับรับคำขอ" };
+      let result: Awaited<ReturnType<typeof receiveRestaurantRequest>>;
+      try {
+        result = await receiveRestaurantRequest({
+          tenantId: ec.tenantId, channel: ec.channel, customerRef: ec.customerRef, items: requested,
+          locationId: requestedLocationId, fulfillmentType: optString(args, "fulfillmentType"),
+          requestedAt: optString(args, "promisedAt"), note: optString(args, "requestNote"),
+          couponCode: optString(args, "couponCode"), confirmedFingerprint: ec.customerConfirmedQuote?.fingerprint,
+        });
+      } catch (error) {
+        // A refusal is an answer, not a crash. Letting it throw would hand the model
+        // "ดึงข้อมูลไม่สำเร็จ" (runtime.ts hides non-ToolArgError text) and open an
+        // ai.tool_failed incident — once per customer message for something as ordinary
+        // as the shop being closed, or as fixable as a missing branch id. Every other
+        // refusal in the ordering path is a returned status for exactly this reason.
+        if (isRestaurantRequestRejection(error)) return { ok: false, error: error.message };
+        throw error;
+      }
+      if (result.status === "CONFIRMATION_REQUIRED") {
+        ec.restaurantRequestQuote = result;
+        ec.pendingOrderQuote = { fingerprint: result.fingerprint, lines: result.lines };
+      } else if (result.status === "REQUEST_RECEIVED") {
+        ec.restaurantRequestId = result.requestId;
+      }
+      // Anything else is a shop-state refusal carrying createOrderInTx's own status, which the
+      // model and orderReply() already know how to explain. It is a result, not an error.
+      return { ok: true, data: result };
+    }
     if (requested.length > 20) {
       throw new ToolArgError("หนึ่งออร์เดอร์รับได้ไม่เกิน 20 รายการ กรุณาแบ่งเป็นหลายออร์เดอร์");
     }
@@ -2256,6 +2289,12 @@ const submitPaymentTool: BmsTool = {
       }
     }
     let orderId = optString(args, "orderId") ?? null;
+    // Deliberately NOT gated on the restaurant archetype. This tool never creates an order: it
+    // attaches a payment notice to an existing PENDING order (findCustomerPayableOrder), which
+    // in a restaurant only exists because a human confirmed a request. Refusing here told a
+    // customer who had already transferred money to submit the whole order again, and left the
+    // shop with no record that a slip had arrived. With no confirmed bill the tool already
+    // answers ORDER_NOT_FOUND, which is the correct answer.
     if (ec.surface === "customer") {
       if (!ec.customerRef || !ec.channel) {
         return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
@@ -2312,6 +2351,13 @@ const reorderTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     let orderId = optString(args, "orderId") ?? null;
+    // 9.66: in a restaurant, chat may only *record demand*. This tool creates a real order and
+    // reserves stock from a previous one with no human review and without the customer seeing
+    // the lines again, so it is a second door straight past the gate create_order was rerouted
+    // through. customerTools() already withholds it from the model; this refuses a direct call.
+    if (ec.surface === "customer" && (await getStoreProfile(ec.tenantId)).businessArchetype === "restaurant") {
+      return { ok: false, error: "ร้านอาหารรับเป็นคำขอก่อน: อ่านรายการเดิมด้วย get_order_status แล้วส่งรายการนั้นเข้า create_order พร้อมสาขาและวิธีรับ เพื่อให้ลูกค้ายืนยันคำขอใหม่" };
+    }
     if (!orderId) {
       if (ec.surface !== "customer" || !ec.customerRef || !ec.channel) {
         return { ok: false, error: "ต้องระบุ orderId" };
@@ -3262,12 +3308,19 @@ assertValidToolRegistry(ALL_TOOLS);
 
 /** ทูลฝั่งลูกค้า: เฉพาะ surface=customer (ไม่มี A3/A2-staff ตั้งแต่ต้น) */
 export function customerTools(businessArchetype?: string | null): BmsTool[] {
-  return ALL_TOOLS.filter((tool) =>
-    tool.surfaces.includes("customer")
-    && (businessArchetype === undefined
-      || tool.name !== "list_restaurant_order_locations"
-      || businessArchetype === "restaurant")
-  );
+  const restaurant = businessArchetype === "restaurant";
+  return ALL_TOOLS.filter((tool) => {
+    if (!tool.surfaces.includes("customer")) return false;
+    // No archetype passed = "just the customer-surface names" (progress counters, direct
+    // deterministic calls). Only the list actually handed to the model is narrowed.
+    if (businessArchetype === undefined) return true;
+    if (tool.name === "list_restaurant_order_locations") return restaurant;
+    // 9.66: reorder writes an order and reserves stock from a previous one. A restaurant takes
+    // demand as a request a human reviews, so the model must never be offered a second door to
+    // the write path — see reorderTool.execute for the direct-call refusal.
+    if (tool.name === "reorder" && restaurant) return false;
+    return true;
+  });
 }
 
 /** ทูลฝั่งแอดมิน: surface=staff + ผ่าน RBAC (ทูลที่ role ไม่มีสิทธิ์จะไม่ถูกเสนอให้ AI เลย) */

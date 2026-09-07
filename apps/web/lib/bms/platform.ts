@@ -164,6 +164,10 @@ export async function updateTenantIdentity(
  */
 async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promise<void> {
   if (!tenantIds.length) return;
+  // Restaurant chat requests (9.66) reference orders, customers and the reviewing user with
+  // RESTRICT FKs on purpose (they are the evidence of what was asked for), so they must go
+  // before all three or the whole purge fails on this one table.
+  await client.query(`DELETE FROM bms_restaurant_order_requests WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // POS operations retain user/device/purchase evidence with RESTRICT FKs.
   await client.query(`DELETE FROM bms_pos_expenses WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_petty_cash_ledger WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);

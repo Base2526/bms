@@ -34,3 +34,5 @@ db/*.dump
 *.tsbuildinfo
 
 .pnpm-store/
+# ผลการรันชุดเทส (scripts/run-contract-tests.mjs) — 249 KB ต่อรอบ และเป็นของเครื่องนั้น
+.test-output/

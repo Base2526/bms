@@ -24,6 +24,12 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: '9.66__bms_restaurant_order_requests.sql',
+    impact: 'แชทร้านอาหารรับคำขอก่อนตรวจสต็อกไม่ได้ และร้านเปิดคิวตรวจคำขอไม่ได้',
+    needs: [{ kind: 'table', name: 'bms_restaurant_order_requests' },
+      { kind: 'column', table: 'bms_orders', name: 'restaurant_request_instructions' }],
+  },
+  {
     file: "9.40__bms_multi_store_stock_capabilities.sql",
     impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder/POS อ่านรูปแบบสต็อกทุกบิล",
     needs: [

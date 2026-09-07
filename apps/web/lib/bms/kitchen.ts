@@ -104,7 +104,7 @@ export async function listKitchenTickets(
        SELECT * FROM (
          SELECT 'ORDER'::text AS source, kt.id, kt.order_id, kt.order_item_id::text,
                 NULL::uuid AS check_id, NULL::text AS table_code, NULL::text AS table_name,
-                NULL::integer AS round_no, NULL::text AS kitchen_note,
+                NULL::integer AS round_no, o.restaurant_request_instructions AS kitchen_note,
                 kt.station, kt.station_id, kt.status, kt.modifier_codes, kt.created_at, kt.updated_at,
                 oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty
            FROM bms_kitchen_tickets kt
@@ -276,7 +276,9 @@ async function updateKitchenTicketStatusInTx(client: PoolClient, input: UpdateKi
             RETURNING 'ORDER'::text AS source, kt.*, oi.product_sku, oi.product_name,
                       oi.size, oi.pack_qty, oi.qty, NULL::uuid AS check_id,
                       NULL::text AS table_code, NULL::text AS table_name,
-                      NULL::integer AS round_no, NULL::text AS kitchen_note`,
+                      NULL::integer AS round_no,
+                      (SELECT o.restaurant_request_instructions FROM bms_orders o
+                        WHERE o.tenant_id=kt.tenant_id AND o.id=kt.order_id) AS kitchen_note`,
           [input.tenantId, input.ticketId, status]
         )
       : await client.query(

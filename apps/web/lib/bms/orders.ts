@@ -153,6 +153,21 @@ export type CreateOrderInput = {
   /** Server-validated restaurant check settled by this order. */
   restaurantCheckId?: string | null;
   /**
+   * Server-derived only: the reviewed chat request (9.66) this order was created from.
+   *
+   * A request is demand the shop already accepted; turning it into an order is in-house
+   * work a permissioned human just approved, so the **online ordering window must not
+   * gate it**. Without this, "หยุดรับชั่วคราว" — the button whose whole purpose is to
+   * stop new demand while the kitchen catches up — also blocks clearing the backlog it
+   * created, and requests taken minutes before closing can never be confirmed at all.
+   * Same reasoning as `restaurantCheckId`, which skips the window because a seated table
+   * is not a new online order.
+   *
+   * It skips the window and nothing else: branch validity, fulfillment, sold-out-today,
+   * stock, coupons and pricing all still decide the order.
+   */
+  acceptedRestaurantRequestId?: string | null;
+  /**
    * ส่วนลดมือเป็นบาท (ชั้นที่ 4 ต่อจาก tier → คูปอง → แต้ม)
    * > 0 ต้องมี discountApprovedBy + discountReason เสมอ — ผู้เรียกเป็นคนตรวจ
    * ว่าคนอนุมัติมีสิทธิ์จริง ที่นี่แค่ปฏิเสธบิลที่ไม่มีหลักฐานอนุมัติติดมา
@@ -495,7 +510,9 @@ export async function createOrderInTx(
     if (!activeLocations.rows.some((row) => row.id === locationId)) {
       return { status: "INVALID_ITEM", index: -1, reason: "สาขารับออร์เดอร์ไม่ถูกต้องหรือปิดใช้งาน" };
     }
-    if (!ordering.accepting) {
+    // A human-reviewed request (9.66) is already-accepted demand; see
+    // acceptedRestaurantRequestId. Only *new* customer-initiated orders honour the window.
+    if (!ordering.accepting && !input.acceptedRestaurantRequestId) {
       return { status: ordering.reason === "PAUSED" ? "ORDERING_PAUSED" : "ORDERING_CLOSED" };
     }
   } else {

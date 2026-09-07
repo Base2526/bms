@@ -619,6 +619,8 @@ export type AiConversationState = {
    * เดียวคือผูกคำว่า "ยืนยัน" ไว้กับตะกร้าชุดที่ลูกค้าเห็นจริง · JSONB ไม่ต้อง migration
    */
   pendingQuoteFingerprint?: string | null;
+  /** Server-resolved restaurant request; confirmation revalidates the catalog, never infers lost notes. */
+  pendingRestaurantRequest?: import('./restaurantRequestPolicy').RestaurantRequestDraft | null;
   updatedAt?: string;
 };
 
