@@ -39,14 +39,27 @@ test("expanded keeps the assistant on its own row; collapsed folds it into the �
     "the collapsed rail must still offer the assistant somewhere");
 });
 
-test("nothing that folded into the ⋯ menu lost its way in", () => {
+test("every destination stays reachable in both modes, and none is offered twice", () => {
   const menu = accountMenu();
-  // Folding rows into a menu is only safe if the menu actually carries them.
-  for (const href of ["/admin/assistant", "/admin/manual", "/admin/profile"]) {
-    assert.ok(menu.includes(href), `${href} is no longer offered anywhere in the footer`);
+  // Items the menu only carries while the rail is collapsed, because that mode has no room for
+  // a row of their own. `...(compact ? [...] : [])` is how each one is gated.
+  const collapsedOnly = [...menu.matchAll(/\.\.\.\(compact[\s\S]*?: \[\]\)/g)].map((m) => m[0]).join("\n");
+  const always = menu.replace(/\.\.\.\(compact[\s\S]*?: \[\]\),/g, "");
+  assert.ok(collapsedOnly.length > 0, "the compact-only branches moved — re-aim this slice");
+
+  // Folding rows into a menu is only safe if the menu carries them where the rows are gone.
+  for (const href of ["/admin/assistant", "/admin/profile"]) {
+    assert.ok(collapsedOnly.includes(href), `${href} is unreachable once the rail collapses`);
   }
+  // Offering these again while expanded would put two paths to one page 40px apart — the same
+  // duplication that keeps the theme toggle out of this menu.
+  for (const href of ["/admin/assistant", "/admin/profile"]) {
+    assert.ok(!always.includes(href), `${href} already has its own row while expanded`);
+  }
+  // The manual never had a row, so it belongs to the menu in both modes.
+  assert.ok(always.includes("/admin/manual"), "the manual is offered nowhere else");
   // Signing out is the one item with no route; it has to keep calling the real handler.
-  assert.match(menu, /key: 'logout'[\s\S]*?danger: true[\s\S]*?onClick: onLogout/,
+  assert.match(always, /key: 'logout'[\s\S]*?danger: true[\s\S]*?onClick: onLogout/,
     "sign out must stay in the menu, marked destructive, wired to onLogout");
 });
 
@@ -95,6 +108,25 @@ test("the quota lives on the row that spends it, and its destination follows its
   // Out of quota is the only state whose text tells the reader to go add a key, so it is the only
   // state whose link may leave the assistant. Sending a normal click to settings would be a lie.
   assert.match(block, /href=\{aiOverLimit \? '\/admin\/settings' : '\/admin\/assistant'\}/);
+});
+
+test("the row's own icon carries the quota now, not a separate bar underneath", () => {
+  const block = footer();
+  // The ring is what replaced "0/1000 crammed against the edge" — a screenshot from a real
+  // deploy showed the only way to see the proportion used was to hover a tooltip, which a
+  // touchscreen at a counter cannot do. The arc has to move with the same number the old bar did.
+  assert.match(block, /strokeDasharray=\{`\$\{aiQuotaPct\} 100`\}/);
+  // No ring at all when the shop has its own key — there is no quota to show a proportion of.
+  assert.match(block, /\{aiShouldShow && \(\s*\n\s*<svg/);
+  // A full-width bar directly under the row would just be the same information twice.
+  assert.doesNotMatch(block, /!mini \|\| aiOverLimit \? quotaMeter/,
+    "the expanded row must not keep the separate meter now that the ring carries it");
+});
+
+test("the collapsed rail still gets a bar when there is no row or ring to look at", () => {
+  // Collapsed + within quota renders neither the row nor its ring at all — the 3px strip at the
+  // footer's own edge is the only surviving signal, and it must still exist for that one case.
+  assert.match(sidebar, /\{mini && !aiOverLimit \? quotaMeter : null\}/);
 });
 
 test("the quota meter is an indicator, never a 3px tap target", () => {

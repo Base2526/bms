@@ -575,7 +575,7 @@ const en = {
     ai_quota_count: "{count}/{limit}",
     ai_quota_remaining: "{remaining} left",
     profile: "My profile",
-    account_menu: "My account, manual and sign out",
+    account_menu: "Account menu",
     impersonation_banner_prefix: "Viewing as shop:",
     impersonation_banner_suffix: "everything on screen belongs to this shop",
     exit_impersonation: "Exit shop view",

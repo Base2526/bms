@@ -577,7 +577,7 @@ const th = {
     ai_quota_count: "{count}/{limit}",
     ai_quota_remaining: "เหลือ {remaining}",
     profile: "โปรไฟล์ของฉัน",
-    account_menu: "บัญชีของฉัน คู่มือ และออกจากระบบ",
+    account_menu: "เมนูบัญชีของฉัน",
     impersonation_banner_prefix: "กำลังดูในมุมของร้าน:",
     impersonation_banner_suffix: "ข้อมูลทั้งหมดในหน้าจอเป็นของร้านนี้",
     exit_impersonation: "ออกจากมุมร้าน",

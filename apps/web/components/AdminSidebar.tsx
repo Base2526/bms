@@ -568,12 +568,14 @@ export default function AdminSidebar() {
 
   // เนื้อเมนู — ใช้ร่วมกันทั้ง Sider (desktop) และ Drawer (มือถือ)
   // `mini` = โหมดย่อเหลือไอคอน · `inDrawer` = อยู่ใน Drawer (ไม่ต้องมีปุ่มย่อ/ขยาย)
-  // รางโควตา AI — ตัวบอกระดับแบบเงียบที่ขอบล่าง แทนพิลล์เต็มความกว้างที่เคยดังตลอดเวลาแม้ไม่มี
-  // อะไรให้ทำ · สูง 3px จึงเป็น "ตัวชี้" ไม่ใช่เป้าแตะ — ตัวเลขบนแถวผู้ช่วยเป็นคนตอบว่าเหลือเท่าไร
-  // และเป็นตัวที่กดได้จริง
+  // สัดส่วนโควตาที่ใช้ไป — วาดเป็นวงแหวนรอบไอคอนบนแถวผู้ช่วย (RING_CIRCUMFERENCE) แทนตัวเลขที่
+  // ต้องอ่านแล้วคำนวณเอง หรือ tooltip ที่ hover ไม่ได้บนจอสัมผัส (เจอจากภาพหน้าจอจริง) ·
+  // `quotaMeter` (แถบเต็มความกว้าง) เหลือไว้แค่กรณีเดียว: รางย่อตอนไม่มีแถว/ไอคอนให้วงล้อม
   const aiQuotaPct = aiShouldShow && aiUsage?.limit
     ? Math.min(100, Math.max(0, ((aiUsage.count ?? 0) / aiUsage.limit) * 100))
     : 0;
+  // r = 15.9155 ทำให้เส้นรอบวง ≈ 100 พอดี — dasharray รับเปอร์เซ็นต์ตรง ๆ ได้โดยไม่ต้องคูณ 2πr เอง
+  const RING_R = 15.9155;
   const quotaMeter = aiShouldShow ? (
     <div aria-hidden style={{ height: 3, background: 'var(--app-border)', flexShrink: 0 }}>
       <div style={{ width: `${aiQuotaPct}%`, height: '100%', background: aiTone }} />
@@ -583,8 +585,10 @@ export default function AdminSidebar() {
   // เมนู ⋯ ของแถวตัวตน — ของที่กดไม่กี่ครั้งต่อวัน (คู่มือ/โปรไฟล์/ออกจากระบบ) ย้ายมาอยู่ที่นี่
   // ⚠️ ไม่มี "สลับธีม" ในเมนูนี้โดยตั้งใจ — ThemeToggle อยู่บน HeaderBar ทุกหน้าแล้ว
   //    การมีสองที่ทำเรื่องเดียวกันคือสิ่งที่งานนี้ทำมาเพื่อเลิก
+  // ⚠️ เมนูนี้ถือเฉพาะสิ่งที่แถบ *ในโหมดนั้น* ไม่มีเป้าของตัวเองให้ — ตอนขยายทั้งผู้ช่วยและโปรไฟล์
+  // มีแถวของตัวเองอยู่แล้ว การใส่ซ้ำคือสองทางไปที่เดียวกันที่ห่างกัน 40px (เหตุผลเดียวกับที่ไม่ใส่
+  // "สลับธีม") · ตอนย่อรางกว้าง 64px ไม่มีที่ให้แถวไหนเลย เมนูจึงต้องรับทั้งสองไว้แทน
   const accountMenuItems = (compact: boolean): MenuProps['items'] => [
-    // ตอนย่อแถวผู้ช่วยหายไปจากแถบ จึงต้องอยู่ในเมนูนี้ ไม่ใช่หายไปจากโหมดนั้นทั้งโหมด
     ...(compact
       ? [{
           key: 'assistant',
@@ -593,7 +597,13 @@ export default function AdminSidebar() {
         }]
       : []),
     { key: 'manual', icon: <BookOutlined />, label: <Link href="/admin/manual">{t('admin.manual')}</Link> },
-    { key: 'profile', icon: <UserOutlined />, label: <Link href="/admin/profile">{t('admin.profile')}</Link> },
+    ...(compact
+      ? [{
+          key: 'profile',
+          icon: <UserOutlined />,
+          label: <Link href="/admin/profile">{t('admin.profile')}</Link>,
+        }]
+      : []),
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, danger: true, label: t('admin.logout'), onClick: onLogout },
   ];
@@ -740,18 +750,30 @@ export default function AdminSidebar() {
                 className="bms-sider-quiet"
                 href={aiOverLimit ? '/admin/settings' : '/admin/assistant'}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8, height: 30,
+                  display: 'flex', alignItems: 'center', gap: 8, height: 32,
                   justifyContent: mini ? 'center' : 'flex-start',
                   padding: mini ? 0 : '0 8px', borderRadius: 8,
                   background: aiOverLimit ? aiBg : undefined,
                   color: aiOverLimit || aiNearLimit ? aiTone : 'var(--app-text)',
                 }}
               >
-                <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-                  <RobotOutlined />
+                {/* วงแหวน 24px รอบไอคอน — สัดส่วนอ่านออกโดยไม่ต้องมองตัวเลข · ไม่วาดวงเลย
+                    ตอนร้านมี AI Key เอง (aiShouldShow=false) เพราะไม่มีโควตาให้บอกสัดส่วน */}
+                <span style={{ position: 'relative', width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {aiShouldShow && (
+                    <svg viewBox="0 0 36 36" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
+                      <circle cx="18" cy="18" r={RING_R} fill="none" stroke="var(--app-border)" strokeWidth="3" />
+                      {/* aiTone ครอบทั้งสามสถานะอยู่แล้ว (ปกติ/ใกล้หมด/หมด) — ไม่ต้องมีสีสำรองซ้ำ */}
+                      <circle
+                        cx="18" cy="18" r={RING_R} fill="none" stroke={aiTone}
+                        strokeWidth="3" strokeLinecap="round" strokeDasharray={`${aiQuotaPct} 100`}
+                      />
+                    </svg>
+                  )}
+                  <RobotOutlined style={{ position: 'relative', fontSize: 12 }} />
                   {aiOverLimit && (
                     <span style={{
-                      position: 'absolute', top: -2, right: -3, width: 7, height: 7, borderRadius: '50%',
+                      position: 'absolute', top: -1, right: -1, width: 7, height: 7, borderRadius: '50%',
                       background: aiTone, boxShadow: '0 0 0 1.5px var(--app-surface)',
                     }} />
                   )}
@@ -781,8 +803,9 @@ export default function AdminSidebar() {
             </Tooltip>
           </div>
         )}
-        {/* รางอยู่ติดใต้แถวผู้ช่วยเมื่อมีแถวนั้น ไม่งั้นไปอยู่ขอบล่างสุด — ทั้งสองที่คือ "ใต้สิ่งที่ใช้โควตา" */}
-        {!mini || aiOverLimit ? quotaMeter : null}
+        {/* ⚠️ ไม่มีรางเต็มความกว้างที่นี่แล้ว — สัดส่วนย้ายเข้าวงแหวนรอบไอคอนของแถวข้างบนหมดแล้ว
+            รางเต็มความกว้างเหลือไว้แค่กรณีเดียว (ท้ายไฟล์): ตอนย่อและไม่ได้โควตาหมด ซึ่งไม่มีทั้ง
+            แถวและวงแหวนให้เห็นเลย */}
         {(!mini || aiOverLimit) && <div style={{ height: 6 }} />}
         {admin && (
           <div style={{ padding: mini ? (aiOverLimit ? '0 10px 10px' : '10px') : '0 10px 8px' }}>
