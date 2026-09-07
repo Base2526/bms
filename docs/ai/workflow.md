@@ -352,7 +352,12 @@ $0.072 output per million tokens as checked 2026-07-30) and can be overridden wi
   metered provider cost. If only some attempts return usage, known cost is retained while the missing attempts
   remain explicitly unpriced. When no attempt returns usage, `actual_cost_usd` is NULL rather than a misleading
   zero; summaries expose `unpricedProviderCalls` so known cost is never presented
-  as complete silently. Shared-key deduction and monthly adjustment balances are serialized on the monthly row,
+  as complete silently. `getAiUsage()` also returns `inputTokens`/`outputTokens` for the month, which
+  `/admin/billing` shows as its own card — a shop cannot answer "how much did we use" from the credit
+  counter, because a credit is one request regardless of size. A finalization that fails leaves the
+  row with no tokens and no cost and raises `ai.usage_finalize_failed`; a provider attempt whose
+  bookkeeping write does not land raises `ai.provider_attempt_unrecorded`, which is the only signal
+  that stops the stale sweep from refunding a call that really was paid for. Shared-key deduction and monthly adjustment balances are serialized on the monthly row,
   so concurrent requests cannot blow past the quota or calculate two adjustments from the same balance.
   Tenant DeepSeek BYOK key tests are inference calls and are therefore recorded as zero-credit `ai_key_test`
   events. Platform-wide health probes remain operational overhead outside tenant billing; tenant cost totals do

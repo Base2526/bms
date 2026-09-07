@@ -3,6 +3,135 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## ⚠️ token/ค่าใช้ AI ไม่ถูกบันทึกเลย — `finalizeAiUsageEvent` ล้ม 100% (2026-09-08)
+
+branch `fix/ai-usage-token-accounting` (ตัดจาก `develop` ที่ merge #190 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 925** · production build) ·
+**DB 415/424** — แดง 9 ตัว **พิสูจน์แล้วว่าเป็นของเดิม** (รันชุดเดียวกันบน `develop` แล้ว diff
+ชื่อเทสที่แดง: ฝั่ง regression ว่าง · baseline แดง 10 ตัว ตัวที่หายคือ
+`a concurrent first real order cannot race past the database lock` ซึ่ง **flaky ไม่เกี่ยวกับงานนี้**) ·
+**ไม่มี migration · ไม่มี permission ใหม่** · **มิวเทชัน 7 แบบ แดงถูก subtest ทุกครั้ง**
+
+### ต้นเหตุ: Postgres infer พารามิเตอร์เป็น integer จาก literal `0`
+
+`aiUsage.ts` คำสั่งอัปเดตสรุปรายเดือนเขียน `COALESCE($3, 0)` โดย `$3` รับ `actualCostUsd` (ทศนิยม)
+· literal `0` ไม่ระบุชนิด → COALESCE resolve `$3` เป็น **integer** → ค่าอย่าง `0.00014537` throw
+`invalid input syntax for type integer` แล้ว **ทรานแซกชัน rollback ทั้งก้อน**
+
+- **พิสูจน์กับฐานจริงด้วย `pg_prepared_statements` ไม่ใช่ด้วยตา**: ก่อนแก้
+  `{uuid,text,integer,integer}` · หลังใส่ `$3::numeric` ได้ `{uuid,text,numeric,integer}`
+- **คำสั่งอื่นในไฟล์ infer ถูกหมด** — คำสั่งที่เขียน event ใช้ `COALESCE($5, estimated_cost)`
+  ซึ่งอีกฝั่งเป็น numeric · ledger เป็น integer ล้วนซึ่งถูก · pattern `COALESCE($n, 0)`
+  มีที่นี่ **ที่เดียวในทั้ง `lib/bms`**
+- **หลักฐานว่าเส้นทางนี้ไม่เคยสำเร็จเลย** (ฐาน dev): แถวที่ insert ด้วยโค้ดปัจจุบัน
+  (`meta ? 'credit_policy'`) มี 13 แถว **แดงทั้ง 13** โดยมี `stale_usage_finalization: true`
+  = มาจากตัวกวาด ไม่ใช่จาก finalize · และมี incident `ai.usage_finalize_failed` 13 ใบตรงกันเป๊ะ
+  · 208 แถวที่ดู "สวย" คือแถว legacy ที่ migration `7.82` backfill ให้ (`cost_status` ว่าง)
+- ความเสียหายที่วัดได้: **31 provider call ที่เกิดขึ้นจริงและเสียเงินจริง บันทึกเป็น token 0 · cost 0**
+
+### ⚠️ `provider_calls = 0` มีสองความหมาย และตัวกวาดเคยเหมารวม
+
+`reconcileStaleAiReservations` คืน credit ให้แถวที่ `provider_calls = 0` โดยตีความว่า
+"ยังไม่ได้เรียก provider" · แต่ `recordAiProviderAttempt` เดิม catch แล้ว `console.error` เฉย ๆ
+→ **เรียก provider ไปแล้วจริงแต่เขียนไม่ลง = ถูกคืนโควตาให้ฟรี** และตัวนับเดินถอยหลัง
+
+- แก้: `recordAiProviderAttempt` เปิด incident `ai.provider_attempt_unrecorded` (tier B) ทั้งกรณี
+  throw และกรณี **UPDATE ได้ 0 แถวแบบไม่มี error** (ซึ่งเป็นรูปของการล้มเงียบ ๆ)
+- ตัวกวาดแยก **สามสถานะ** แล้ว: abort จริง (คืน · `provider_not_started_timeout`) ·
+  บันทึก attempt พลาด (**ไม่คืน** · `provider_attempt_unrecorded`) · finalize ล้ม
+  (**ไม่คืน** · `usage_finalization_timeout`)
+- **incident เป็นสิ่งเดียวที่แยกสองกรณีแรกออกจากกัน** — ตัวแถวเองหน้าตาเหมือนกันเป๊ะ ·
+  ค้น incident โดย bound `created_at` ด้วยแถวที่เก่าสุด เพื่อวิ่งบน
+  `idx_bms_failure_incidents_cooldown (tenant_id, code, created_at DESC)`
+- ⚠️ **ห้ามกลับไปตัดสินด้วย `provider_calls = 0` ตรง ๆ ใน SQL** — นั่นคือเงื่อนไขที่รวมกรณีที่สอง
+  เข้ามาด้วย (SQL รับ `refundableIds` ที่คำนวณมาแล้วเป็น `$2`)
+
+### หน่วยของ `limit 1000` คือ "ครั้ง" ไม่ใช่ token — และหน้าจอไม่เคยบอกโทเคนเลย
+
+- `tryConsumeAiQuota` หัก **1 credit ต่อ 1 logical request** ไม่ว่ากินโทเคนเท่าไร · วัดจากฐาน dev:
+  `customer_tool_loop` **~20,637 โทเคนต่อ 1 credit** และ `staff_assistant` ยิงโมเดล
+  **59 รอบต่อ 41 credit** → เดือน 2026-07 ใช้โทเคน 3.66 ล้าน แต่ตัวนับขยับแค่ 179/1000
+  · **นี่คือตัวนับทำงานตามดีไซน์ ไม่ใช่การนับผิด**
+- แต่ **ไม่มีที่ไหนแสดงโทเคนให้เจ้าของร้านเลย**: `getAiUsage` ไม่คืนโทเคน · `/admin/billing`
+  ไม่ขอมา · ที่แสดงจริงมีที่เดียวคือ `/admin/env` (platform) ซึ่งเขียน
+  `{(record.inputTokens ?? 0)} in · ...` → **แถวที่ finalize ล้มขึ้นเป็น `0 in · 0 out`**
+  ซึ่งอ่านเหมือน "เรียกแล้วไม่ใช้โทเคน" (เป็นไปไม่ได้)
+- แก้: `getAiUsage` คืน `inputTokens`/`outputTokens` (SUM จาก events **ไม่ต้องเพิ่มคอลัมน์**) ·
+  การ์ด "โทเคนที่ใช้เดือนนี้" ที่ `/admin/billing` (3 การ์ด → 4 การ์ด `md={12} lg={6}`)
+  **พร้อมข้อความกำกับว่าไม่ได้นับในโควตา** · `/admin/env` ใช้ `formatTokens()` ที่คืน
+  `Unavailable`/`—` แบบเดียวกับ `formatMoney(null)` ที่มีอยู่แล้ว
+- ⚠️ **`?? 0` ห้ามกลับมา** — การโกหกที่อ่านไม่ออกว่าโกหกคือเหตุที่บั๊กนี้อยู่ได้เป็นเดือน (มีคอมเมนต์คุมไว้)
+
+### เทส: `scripts/ai-usage-db-contract.test.mts` (10 เทส) — ไฟล์แรกของ `aiUsage.ts`
+
+**`lib/bms/aiUsage.ts` ไม่เคยมีเทสสักตัวทั้ง pure และ DB** และตัวที่ดูเหมือนครอบ
+(`scripts/ai-eval/runtime-contract.test.mts`) **ฉีด `deps.finalizeUsage` ปลอม** แล้ว assert แค่
+*payload ที่ caller ประกอบ* — SQL ตัวจริงไม่เคยถูกรัน จึงผ่าน gate มาตลอดทั้งที่ล้ม 100%
+
+- ⚠️ **provider ในเทสต้องเป็นชื่อที่ `isTrackedAiProvider` ไม่รู้จัก** (`fake-test-provider`)
+  ไม่งั้น finalize ไปเขียน `bms_ai_provider_health` ซึ่งเป็นตาราง **ระดับแพลตฟอร์ม ไม่มี tenant_id**
+  = เทสทับสถานะ provider ของจริง · rate card ยังใช้ได้เพราะ `priceForModel` ตัดสินจาก **model**
+  เมื่อ provider ไม่ใช่ deepseek/qwen
+- ⚠️ **teardown ต้องลบ `notifications` ด้วย** — `reportBmsFailure` สร้าง notification ให้
+  platform admin **ตัวจริง** (ลบด้วย `entity_type='bms_failure_incident' AND entity_id=ANY(tenants)`)
+  ไม่งั้นเทสไปขึ้นกระดิ่งแจ้งเตือนของผู้ใช้จริงบนฐาน dev
+- ⚠️ **golden ของค่าใช้ต้องเป็นทศนิยม** — 12,345 × $1/M + 678 × $5/M = **0.015735**
+  (คำนวณมือ) · ถ้าใช้ 0 หรือจำนวนเต็ม **เทสจะเขียวทั้งที่บั๊กอยู่ตรงหน้า**
+- **ลำดับ subtest มีความหมาย**: เทส invariant (`SUM(billable_credits) = credits_consumed`) ต้องอยู่
+  **หลัง** ทุกเส้นทางปกติ และ **ก่อน** เทสโควตาหมด ซึ่งแก้ตัวนับด้วยมือ (เร็วกว่ายิง 1,000 ครั้ง)
+- ⚠️ **subtest "provider attempt ... leaves a trace" ใช้เวลา ~5 วินาที ไม่ใช่ค้าง** —
+  `reportBmsFailure` แจ้ง platform admin จริงแล้วชน `NOTIFY_TIMEOUT_MS` เพราะเครื่องนี้
+  **docker ไม่ได้ publish 6379 → Redis เข้าไม่ถึงจาก host** · การที่ทั้งเส้นยังจบได้ทั้งที่ช่องทาง
+  แจ้งเตือนพัง **คือการันตีที่ subtest นั้นมีไว้ตรึง ห้ามถอด assert ทิ้ง**
+- **มิวเทชัน 7 แบบ แดงถูก subtest ทุกตัว**: ถอด `::numeric` (แดง 2 ตัว — ตัวหลัก + ตัวที่พึ่งพา
+  แถวที่ถูกปิด ซึ่งแสดงรัศมีของบั๊ก) · ตัวกวาดคืน credit ให้แถวที่บันทึกพลาด · attempt
+  ไม่สนใจว่าเขียนลงไหม · finalize ไม่ one-shot · unknown rate เก็บ 0 แทน NULL ·
+  เงื่อนไขโควตาหลุด · `getAiUsage` คืน `inputTokens: 0` คงที่
+
+### ⚠️ กับดักสามอย่างที่เจอตอนทำ (จดไว้กันเสียเวลาซ้ำ)
+
+1. **`typeDefs.ts` เป็น template literal — backtick ในคอมเมนต์ปิด literal กลางคัน**
+   ผมเขียน `` `limit` `` ใน SDL comment แล้วได้ `TS1005: ',' expected` ที่ชี้บรรทัดถัดไป ·
+   **กับดักเดียวกับที่ไฟล์นี้จดไว้แล้วสำหรับคอมเมนต์ SQL** แค่ย้ายไฟล์
+2. **⚠️ `git checkout -- scripts` ในตัวรัน mutation ลบ subtest ที่ยังไม่ commit ทิ้ง** —
+   ผมเพิ่ม subtest ของ `getAiUsage` หลังคอมมิตแล้วรัน mutation รอบถัดไป มันหายไปเงียบ ๆ แล้ว
+   **M7 รายงานว่า "ไม่แดง" ทั้งที่จริง ๆ รันกับเทสที่ไม่มีอยู่** (จับได้จากยอด `tests 9` ที่ควรเป็น 10)
+   · **กฎ: commit เทสก่อน mutate เสมอ และให้ตัวรันคืนเฉพาะไฟล์ที่ถูก mutate ไม่ใช่ทั้งโฟลเดอร์**
+3. **ยอดไฟล์เทสใน `scripts/README.md` ค้างอยู่ที่ pure 80 ไฟล์** ทั้งที่ของจริง 83 (แก้เป็น
+   119 ไฟล์ = pure 83 + DB 36 แล้ว) · `34 จาก 36 ไฟล์ของชุด DB ไม่มีด่าน host ของตัวเอง`
+   ยังจริงอยู่ เพราะไฟล์ใหม่นี้มีด่านของตัวเอง (เป็นไฟล์ที่สองที่มี)
+
+### ยังไม่ได้ทำ (ตามลำดับที่ตกลงไว้)
+
+- **เฟส 0 บน production ยังไม่ได้รัน** — ต่อฐาน production จากเครื่องนี้ไม่ได้
+  (`POSTGRES_HOST=postgres` = ชื่อ service ใน docker network ของเซิร์ฟเวอร์) ต้อง ssh แล้วรัน psql
+  เพื่อดูว่า (ก) แถวที่ผ่าน finalize ตัวจริงแดงทั้งหมดเหมือน dev ไหม (ข) มี incident
+  `ai.usage_finalize_failed` กี่ใบ (ค) `credits_consumed` drift จาก `SUM(billable_credits)` เท่าไร
+- **⚠️ หลัง deploy ตัวเลขจะกระโดด** — cost จาก $0.0000 เป็นเลขจริง · `unpricedProviderCalls`
+  ตกลงมาเยอะ · token เริ่มไม่เป็น 0 · **เป็นสัญญาณว่าแก้สำเร็จ ไม่ใช่บั๊กใหม่** จดวันที่ deploy ไว้
+- **แถวที่ล้มไปแล้วกู้ไม่ได้** — response ของ provider ไม่มีเก็บไว้ที่ไหน ห้าม backfill ด้วยการเดา
+  (ต่างจาก `9.22` ที่มีหลักฐานทางอ้อมให้ยึด) · ปล่อยให้นับใน `unpricedProviderCalls` ตามที่มันมีไว้
+- **เฟส 3 (หน่วยของเพดาน) ยังไม่ตัดสิน** — เก็บ "ครั้ง" ไว้ + เพิ่มเพดาน $/เดือน เป็นด่านที่สอง
+  คือทางที่แนะนำ แต่ **ต้องรอข้อมูล cost จริงครบ 1 เดือนหลัง deploy ก่อนตั้งเลข** ไม่งั้นเป็นการเดา
+- **เฟส 4 ที่ยังค้าง**: ① `credits_consumed` drift จาก `SUM(billable_credits)` (ฐาน dev เจอ 190 vs
+  179) — เทสใหม่บังคับ invariant นี้แล้วสำหรับ tenant ของตัวเอง แต่ **ยังไม่มี
+  `balanceMismatchCount` บนหน้า Billing** แบบที่ loyalty/store credit/AR มี ② รางโควตาบนแถบเมนู
+  คิด `count/limit` ขณะที่ `remaining` คิดจาก `granted+bonus+adjusted−consumed` → ร้านที่เคยเติม
+  เครดิต (dev: `adjusted = 6000`) เห็น "ใช้ไป 39%" คู่กับคงเหลือ 6,606 ③ `currentYearMonth()`
+  ใช้ UTC ขณะที่รายงานอื่นใช้ `Asia/Bangkok` → การใช้งานวันที่ 1 ช่วง 00:00–07:00 ไทยตกถังเดือนก่อน
+  · **แก้ลอย ๆ ไม่ได้** เพราะ `year_month` เป็นคีย์ของสามตาราง (รวม unique index ของ monthly grant)
+  ④ ตัวกวาดยังรันตอนมีคนเปิดหน้าจอ (`getAiUsage` เรียกก่อนอ่านค่า) ไม่ใช่ cron → ตัวเลขขึ้นกับว่า
+  ใครเปิดหน้าไหนเมื่อไร
+- **เฟส 5**: `transaction()` ใน `aiUsage.ts` ใช้ `BEGIN` เปล่า ไม่ผ่าน `beginTenantTx` → write
+  ทั้งโมดูลไม่มี RLS คุม (ขัดข้อ 2 ของ checklist ใน `CLAUDE.md`) ไม่พังวันนี้เพราะ policy เป็นแบบ
+  "ผ่านหมดเมื่อไม่ได้ตั้งค่า" แต่ `WHERE` พลาดครั้งเดียวจะข้ามร้านได้
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — การ์ดโทเคนที่ `/admin/billing` และ `/admin/env`
+  ผ่านแค่ typecheck + build + เทส (`NEXT_PUBLIC_GRAPHQL_HTTP` ของ container dev ยังชี้ production
+  ปัญหาที่จดไว้ตั้งแต่ `9.44`)
+- **ฐาน dev มี tenant `fake-request-*` ค้าง 6 แถว** จาก `restaurant-request-db-contract` ที่แดงอยู่
+  ก่อนแล้ว (`bms_restaurant_order_requests` ไม่มีในฐานนี้ = `9.66` ยังไม่ apply) มันล้มก่อนถึง
+  teardown จึงงอกเพิ่มทุกรอบ · **ไม่ใช่ของงานนี้ ยังไม่ลบ**
+
 ## ท้าย sidebar แอดมิน 191px → 90px + ธีมเริ่มต้นของบัญชีใหม่ (`9.67`) — 2026-09-08
 
 branch `feat/sidebar-footer-and-light-default` (ตัดจาก `develop` ที่ merge #188 แล้ว) ·
