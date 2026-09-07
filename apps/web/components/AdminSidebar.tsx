@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer, Badge, Skeleton, Segmented } from 'antd';
+import { Layout, Menu, Avatar, Button, Dropdown, message, Tooltip, Drawer, Badge, Skeleton, Segmented } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   SearchOutlined,
@@ -69,6 +69,7 @@ import {
   AlertOutlined,
   ProfileOutlined,
   ControlOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -567,6 +568,36 @@ export default function AdminSidebar() {
 
   // เนื้อเมนู — ใช้ร่วมกันทั้ง Sider (desktop) และ Drawer (มือถือ)
   // `mini` = โหมดย่อเหลือไอคอน · `inDrawer` = อยู่ใน Drawer (ไม่ต้องมีปุ่มย่อ/ขยาย)
+  // รางโควตา AI — ตัวบอกระดับแบบเงียบที่ขอบล่าง แทนพิลล์เต็มความกว้างที่เคยดังตลอดเวลาแม้ไม่มี
+  // อะไรให้ทำ · สูง 3px จึงเป็น "ตัวชี้" ไม่ใช่เป้าแตะ — ตัวเลขบนแถวผู้ช่วยเป็นคนตอบว่าเหลือเท่าไร
+  // และเป็นตัวที่กดได้จริง
+  const aiQuotaPct = aiShouldShow && aiUsage?.limit
+    ? Math.min(100, Math.max(0, ((aiUsage.count ?? 0) / aiUsage.limit) * 100))
+    : 0;
+  const quotaMeter = aiShouldShow ? (
+    <div aria-hidden style={{ height: 3, background: 'var(--app-border)', flexShrink: 0 }}>
+      <div style={{ width: `${aiQuotaPct}%`, height: '100%', background: aiTone }} />
+    </div>
+  ) : null;
+
+  // เมนู ⋯ ของแถวตัวตน — ของที่กดไม่กี่ครั้งต่อวัน (คู่มือ/โปรไฟล์/ออกจากระบบ) ย้ายมาอยู่ที่นี่
+  // ⚠️ ไม่มี "สลับธีม" ในเมนูนี้โดยตั้งใจ — ThemeToggle อยู่บน HeaderBar ทุกหน้าแล้ว
+  //    การมีสองที่ทำเรื่องเดียวกันคือสิ่งที่งานนี้ทำมาเพื่อเลิก
+  const accountMenuItems = (compact: boolean): MenuProps['items'] => [
+    // ตอนย่อแถวผู้ช่วยหายไปจากแถบ จึงต้องอยู่ในเมนูนี้ ไม่ใช่หายไปจากโหมดนั้นทั้งโหมด
+    ...(compact
+      ? [{
+          key: 'assistant',
+          icon: <RobotOutlined />,
+          label: <Link href="/admin/assistant">{t('admin_nav.assistant')}</Link>,
+        }]
+      : []),
+    { key: 'manual', icon: <BookOutlined />, label: <Link href="/admin/manual">{t('admin.manual')}</Link> },
+    { key: 'profile', icon: <UserOutlined />, label: <Link href="/admin/profile">{t('admin.profile')}</Link> },
+    { type: 'divider' },
+    { key: 'logout', icon: <LogoutOutlined />, danger: true, label: t('admin.logout'), onClick: onLogout },
+  ];
+
   const sidebarBody = (mini: boolean, inDrawer = false) => (
       /* wrapper flex ของตัวเอง — .ant-layout-sider-children ที่ antd แทรกให้ไม่ใช่ flex container
           ถ้าไม่มี div นี้ flex:1 ของเมนูด้านล่างจะไม่มีผล โปรไฟล์/logout จะไม่ติดล่างสุด */
@@ -691,100 +722,134 @@ export default function AdminSidebar() {
         )}
       </div>
 
-      {/* โควตา AI shared key ฟรี — โชว์ตลอดเมื่อใช้ Shared Key และยกระดับสีเมื่อใกล้/เกินโควตา
-          ปักไว้เหนือคู่มือ/โปรไฟล์ เหมือน balance strip ของ Claude Console */}
-      {aiShouldShow && (
-        <div style={{ padding: mini ? '0 10px 10px' : '0 10px 8px', flexShrink: 0 }}>
-          <Tooltip
-            title={aiTooltip}
-            placement="right"
-          >
-            <Link
-              href="/admin/settings"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                justifyContent: mini ? 'center' : 'flex-start',
-                padding: mini ? '6px 0' : '6px 8px', borderRadius: 8,
-                background: aiBg,
-                color: aiTone,
-              }}
-            >
-              <span style={{ position: 'relative', display: 'inline-flex' }}>
-                <RobotOutlined />
-                <span style={{
-                  position: 'absolute', top: -2, right: -3, width: 7, height: 7, borderRadius: '50%',
-                  background: aiTone, boxShadow: '0 0 0 1.5px var(--app-surface)',
-                }} />
-              </span>
-              {!mini && (
-                <span style={{ fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {aiStripText}
+      {/* ท้ายแถบ: ผู้ช่วย AI + โควตาในแถวเดียวกัน แล้วแถวตัวตนที่ถือคู่มือ/โปรไฟล์/ออกจากระบบ ไว้ใน
+          เมนู ⋯ — เดิมเป็น 5 บล็อกใน 3 container สูงรวม 191px (ตอนย่อ 223px คือ *มากกว่า* ตอนขยาย
+          เพราะทุกแถวได้ padding ใหญ่ขึ้นเพื่อแยกไอคอนออกจากกัน) และปุ่มออกจากระบบซึ่งกดน้อยที่สุด
+          ในหน้าเป็นของที่ดังที่สุดบนแถบทั้งแถบ — ดังกว่าเมนูของหน้าที่เปิดอยู่จริง
+          ⚠️ container เดียวโดยตั้งใจ: ทุกแถวในนี้คือเรื่อง "ตัวฉัน / ช่วยฉัน" ชุดเดียวกัน การมีเส้นคั่น
+          และ padding ของตัวเองสามชุดคือที่มาของ 191px นั้น
+          ⚠️ รางโควตาต้องอยู่นอก padding ของแถว (จึงเต็มความกว้าง) แต่ยังอยู่ใน container ใบนี้ */}
+      <div style={{ borderTop: '1px solid var(--app-border)', flexShrink: 0 }}>
+        {/* ตอนย่อไม่มีที่ให้ label ผู้ช่วยจึงยุบเข้าเมนู ⋯ — เหลือไอคอน 16px ที่ต้อง hover ถึงจะรู้ว่า
+            อะไร ไม่คุ้ม 43px ที่เสียไป · ยกเว้นตอนโควตาหมด ซึ่งเป็นสถานะเดียวที่ *มีอะไรให้ทำ*
+            จึงยอมให้ดังและกินที่เพิ่มเฉพาะตอนนั้น */}
+        {(!mini || aiOverLimit) && (
+          <div style={{ padding: mini ? '10px 10px 0' : '8px 10px 0' }}>
+            <Tooltip title={aiShouldShow ? aiTooltip : mini ? t('admin_nav.assistant') : ''} placement="right">
+              <Link
+                className="bms-sider-quiet"
+                href={aiOverLimit ? '/admin/settings' : '/admin/assistant'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, height: 30,
+                  justifyContent: mini ? 'center' : 'flex-start',
+                  padding: mini ? 0 : '0 8px', borderRadius: 8,
+                  background: aiOverLimit ? aiBg : undefined,
+                  color: aiOverLimit || aiNearLimit ? aiTone : 'var(--app-text)',
+                }}
+              >
+                <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+                  <RobotOutlined />
+                  {aiOverLimit && (
+                    <span style={{
+                      position: 'absolute', top: -2, right: -3, width: 7, height: 7, borderRadius: '50%',
+                      background: aiTone, boxShadow: '0 0 0 1.5px var(--app-surface)',
+                    }} />
+                  )}
                 </span>
-              )}
-            </Link>
-          </Tooltip>
-        </div>
-      )}
-
-      {/* ผู้ช่วย AI + คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — สองตัวแรกคือของที่คนหยิบตอน "ไม่รู้จะทำ
-          ยังไง" จึงอยู่ที่เดิมเสมอโดยไม่ต้องกางหมวด · ผู้ช่วยมี Drawer อยู่ทุกหน้าแล้ว (AdminLayoutClient)
-          หน้าเต็มจึงเป็นทางเข้าที่สอง ไม่ใช่ทางหลัก — ให้แถวบนสุดกับ Dashboard คุ้มกว่า */}
-      {/* ⚠️ ระยะห่างของกลุ่มล่างต้องคิดแยกสองโหมด — ตอนขยายมี label ยืดความสูงให้เอง แต่ตอนย่อ
-          เหลือแค่ไอคอน 16px กอง ๆ กัน 4 ตัว (ผู้ช่วย/คู่มือ/โปรไฟล์/ออก) ถ้าใช้ padding ชุดเดียวกัน
-          ทั้งสองโหมด รางจะดูอัดกันจนแยกไม่ออกว่าอันไหนคืออะไร */}
-      <div style={{ borderTop: '1px solid var(--app-border)', padding: mini ? '12px 10px 0' : '10px 10px 0', flexShrink: 0 }}>
-        {[
-          { href: '/admin/assistant', icon: <RobotOutlined />, label: t('admin_nav.assistant') },
-          { href: '/admin/manual', icon: <BookOutlined />, label: t('admin.manual') },
-        ].map((entry) => (
-          <Tooltip key={entry.href} title={mini ? entry.label : ''} placement="right">
-            <Link
-              className="bms-sider-quiet"
-              href={entry.href}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                justifyContent: mini ? 'center' : 'flex-start',
-                padding: mini ? '8px 0' : '4px 8px', marginBottom: mini ? 8 : 6, borderRadius: 8,
-                color: 'var(--text-secondary)', fontSize: 13,
-              }}
-            >
-              {entry.icon}
-              {!mini && <span>{entry.label}</span>}
-            </Link>
-          </Tooltip>
-        ))}
-      </div>
-      {admin && (
-        <div style={{ padding: mini ? '0 10px 12px' : '0 10px 10px', flexShrink: 0 }}>
-          <Link
-            className="bms-sider-quiet"
-            href="/admin/profile"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              justifyContent: mini ? 'center' : 'flex-start',
-              padding: mini ? '5px 0' : '4px', marginBottom: mini ? 12 : 8, borderRadius: 8,
-              color: 'var(--app-text)',
-            }}
-          >
-            <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
-            {!mini && (
-              <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {admin.name || admin.username || admin.email}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{admin.role}</span>
-              </span>
+                {!mini && (
+                  <>
+                    <span style={{
+                      flex: 1, minWidth: 0, fontSize: 13, fontWeight: aiOverLimit ? 600 : 400,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {aiOverLimit ? aiStripText : t('admin_nav.assistant')}
+                    </span>
+                    {aiShouldShow && !aiOverLimit && (
+                      <span style={{
+                        flexShrink: 0, fontSize: 11, fontVariantNumeric: 'tabular-nums',
+                        color: aiNearLimit ? aiTone : 'var(--text-secondary)',
+                        fontWeight: aiNearLimit ? 600 : 400,
+                      }}>
+                        {aiNearLimit
+                          ? t('admin.ai_quota_remaining', { remaining: aiUsage?.remaining ?? 0 })
+                          : t('admin.ai_quota_count', { count: aiUsage?.count ?? 0, limit: aiUsage?.limit ?? 0 })}
+                      </span>
+                    )}
+                  </>
+                )}
+              </Link>
+            </Tooltip>
+          </div>
+        )}
+        {/* รางอยู่ติดใต้แถวผู้ช่วยเมื่อมีแถวนั้น ไม่งั้นไปอยู่ขอบล่างสุด — ทั้งสองที่คือ "ใต้สิ่งที่ใช้โควตา" */}
+        {!mini || aiOverLimit ? quotaMeter : null}
+        {(!mini || aiOverLimit) && <div style={{ height: 6 }} />}
+        {admin && (
+          <div style={{ padding: mini ? (aiOverLimit ? '0 10px 10px' : '10px') : '0 10px 8px' }}>
+            {mini ? (
+              /* ⚠️ ตอนย่อ avatar ต้องเป็นตัวเปิดเมนู ไม่ใช่ลิงก์ไปโปรไฟล์ — รางกว้าง 64px มีที่ให้
+                 เป้าเดียว ถ้าเป้านั้นพาไปโปรไฟล์ ทางออกจากระบบจะหายไปทั้งโหมด */
+              <Dropdown menu={{ items: accountMenuItems(true) }} trigger={['click']} placement="topLeft">
+                <button
+                  type="button"
+                  className="bms-sider-quiet"
+                  aria-label={t('admin.account_menu')}
+                  aria-haspopup="menu"
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    height: 36, padding: 0, borderRadius: 8,
+                    background: 'transparent', border: 0, cursor: 'pointer',
+                    color: 'var(--app-text)', font: 'inherit',
+                  }}
+                >
+                  <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
+                </button>
+              </Dropdown>
+            ) : (
+              /* สองเป้าแยกกัน: แถวที่เขียนชื่อตัวเองพาไปโปรไฟล์ตัวเอง ส่วน ⋮ เปิดเมนูที่เหลือ —
+                 ให้ทั้งแถวเปิดเมนูจะทำให้โปรไฟล์ ซึ่งเป็นสิ่งที่แถวนี้แสดงอยู่ ต้องกดสองที
+                 · ทั้งคู่โฟกัสได้ด้วยคีย์บอร์ด (ลิงก์ + ปุ่ม) และมีชื่อของตัวเองคนละชื่อ */
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Link
+                  className="bms-sider-quiet"
+                  href="/admin/profile"
+                  style={{
+                    flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
+                    height: 34, padding: 4, borderRadius: 8, color: 'var(--app-text)',
+                  }}
+                >
+                  <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
+                  <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {admin.name || admin.username || admin.email}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{admin.role}</span>
+                  </span>
+                </Link>
+                <Dropdown menu={{ items: accountMenuItems(false) }} trigger={['click']} placement="topRight">
+                  <button
+                    type="button"
+                    className="bms-sider-quiet"
+                    aria-label={t('admin.account_menu')}
+                    aria-haspopup="menu"
+                    style={{
+                      /* 40 ไม่ใช่ 32: ชื่อยาวสุดที่พบจริงกินแค่ ~93px จากกล่อง 122px การกว้างขึ้น
+                         8px จึงไม่ทำให้ชื่อไหนถูกตัดเพิ่ม แต่เป็นเป้าแตะที่ถือปุ่มออกจากระบบอยู่ */
+                      flexShrink: 0, width: 40, height: 34, display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', borderRadius: 8,
+                      background: 'transparent', border: 0, cursor: 'pointer',
+                      color: 'var(--text-secondary)', font: 'inherit',
+                    }}
+                  >
+                    <MoreOutlined />
+                  </button>
+                </Dropdown>
+              </div>
             )}
-          </Link>
-          <Button
-            danger type="primary" icon={<LogoutOutlined />} onClick={onLogout}
-            block={!mini}
-            style={mini ? { width: 32, height: 32, padding: 0, minWidth: 0 } : {}}
-          >
-            {!mini && 'Logout'}
-          </Button>
-        </div>
-      )}
+          </div>
+        )}
+        {mini && !aiOverLimit ? quotaMeter : null}
+      </div>
       </div>
   );
 
