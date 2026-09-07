@@ -154,9 +154,21 @@ const args = [
   "--test-reporter=spec",
   "--test-reporter-destination=stdout",
   "--test-reporter=tap",
-  `--test-reporter-destination=${tapFile}`,
-  ...files.map((f) => path.join(SCRIPTS, f)),
+  `--test-reporter-destination=${path.relative(WEB, tapFile)}`,
+  // พาธสัมพัทธ์กับ cwd ของลูก ไม่ใช่พาธเต็ม — บน Windows คำสั่งถูกส่งผ่าน cmd.exe ซึ่งมี
+  // เพดานความยาว 8,191 ตัวอักษร · พาธเต็ม 80 กว่าไฟล์เคยทะลุเพดานแล้วได้แค่
+  // "The syntax of the command is incorrect." ซึ่งไม่บอกอะไรเลยว่าเกิดอะไรขึ้น
+  ...files.map((f) => path.relative(WEB, path.join(SCRIPTS, f))),
 ];
+
+// ถ้าวันหนึ่งไฟล์เทสมากพอจะทะลุเพดานอีก ต้องฟ้องให้อ่านรู้เรื่อง ไม่ใช่ปล่อยให้ cmd.exe
+// ตอบข้อความที่ไม่มีใครเดาต้นเหตุได้
+const commandLength = args.reduce((sum, arg) => sum + arg.length + 3, 4);
+if (process.platform === "win32" && commandLength > 7_500) {
+  console.error(`คำสั่งยาว ${commandLength} ตัวอักษร ใกล้เพดาน 8,191 ของ cmd.exe แล้ว`);
+  console.error("แบ่งรันด้วยตัวกรอง เช่น node scripts/run-contract-tests.mjs pure <ชื่อไฟล์บางส่วน>");
+  process.exit(2);
+}
 
 console.log(
   `[gate] โหมด ${mode} — ${files.length} ไฟล์` +

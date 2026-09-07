@@ -15,10 +15,15 @@ import { MIGRATIONS, renderReadinessSql } from "./schemaReadiness.mts";
 
 const file = new URL("../db/checks/schema-readiness.sql", import.meta.url);
 
+// เทียบแบบไม่สนชนิดของขึ้นบรรทัดใหม่ — repo เก็บไฟล์เป็น LF แต่ autocrlf บน Windows
+// เช็คเอาต์เป็น CRLF ส่วนตัวเรนเดอร์คืน LF เสมอ · เทียบดิบ ๆ แล้วเทสนี้จะแดงทุกครั้ง
+// บนเครื่อง Windows ทั้งที่ไฟล์ถูกต้อง และเทสที่แดงเสมอคือเทสที่เลิกมีคนอ่าน
+const sameLines = (text: string) => text.replace(/\r\n?/g, "\n").trimEnd();
+
 test("ไฟล์ SQL ที่ commit ไว้ต้องตรงกับตัวเรนเดอร์ (regenerate ด้วย --sql)", async () => {
   assert.equal(
-    (await readFile(file, "utf8")).trimEnd(),
-    renderReadinessSql().trimEnd(),
+    sameLines(await readFile(file, "utf8")),
+    sameLines(renderReadinessSql()),
     "รัน: npx tsx scripts/check-schema-readiness.mts --sql > db/checks/schema-readiness.sql"
   );
 });
