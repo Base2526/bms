@@ -255,6 +255,25 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
     assert.equal(Number((await monthly()).credits_consumed), events);
   });
 
+  await t.test('getAiUsage reports the tokens the events actually recorded', async () => {
+    // หน้า Billing ไม่เคยแสดงโทเคนเลยมาตลอด และ getAiUsage ก็ไม่เคยคืนมาให้
+    // ฟิลด์ที่คืน 0 เสมอแยกจาก "เดือนนี้ยังไม่ได้ใช้" ไม่ออก จึงต้องผูกกับผลรวมจริงของ events
+    const expected = (
+      await query(
+        `SELECT COALESCE(SUM(input_tokens), 0)::int AS input, COALESCE(SUM(output_tokens), 0)::int AS output
+           FROM bms_ai_usage_events WHERE tenant_id = $1 AND year_month = $2`,
+        [tenantId, yearMonth]
+      )
+    ).rows[0];
+    assert.ok(Number(expected.input) > 0, 'fixture must have recorded tokens by now');
+    const usage = await getAiUsage(tenantId);
+    assert.equal(usage.inputTokens, Number(expected.input));
+    assert.equal(usage.outputTokens, Number(expected.output));
+    // โทเคนต้องไม่ไปโผล่ในหน่วยของโควตา — `count` คือเครดิต ไม่ใช่โทเคน
+    assert.equal(usage.count, Number((await monthly()).credits_consumed));
+    assert.equal(usage.limit, 1000, 'free plan quota is 1000 requests, not 1000 tokens');
+  });
+
   await t.test('an exhausted quota blocks the request instead of letting the balance go negative', async () => {
     // ⚠️ subtest นี้แก้ตัวนับด้วยมือ (เร็วกว่ายิง 1,000 ครั้ง) จึงต้องอยู่ **หลัง** เทส invariant ข้างบน
     const row = await monthly();
