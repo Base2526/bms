@@ -260,7 +260,7 @@ async function authorizeTool(tool: BmsTool, ec: ExecCtx): Promise<void> {
 function assertSingleCustomerOrderWrite(tool: BmsTool, ec: ExecCtx): void {
   if (
     ec.surface === "customer" &&
-    ec.createdOrderId &&
+    (ec.createdOrderId || ec.restaurantRequestId) &&
     (tool.name === "create_order" || tool.name === "reorder")
   ) {
     throw new ToolArgError(

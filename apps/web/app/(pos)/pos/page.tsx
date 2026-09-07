@@ -11,6 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
+import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
 import {
   applyPromotion,
   canonicalPriceTiers,
@@ -6325,6 +6326,7 @@ export default function PosPage() {
 
       {tab === "incoming" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <RestaurantRequestQueue pos={{token:token ?? '',cashierUserId:cashierId,cashierPin:pin}} />
           <div className="pos-card" style={{ padding: 16 }}>
             <div className="pos-shift-head">
               <div>

@@ -9,11 +9,18 @@
 //   node scripts/run-contract-tests.mjs db     # ต้องมี Postgres + env
 //   node scripts/run-contract-tests.mjs all
 //
+// อาร์กิวเมนต์ที่สามคือ "ชื่อไฟล์บางส่วน" สำหรับตอนกำลังแก้ไฟล์ใดไฟล์หนึ่ง:
+//   node scripts/run-contract-tests.mjs db restaurant-request
+//
+// มีไว้เพราะทางเลือกเดิมคือรันมือด้วย `npx tsx --test <ไฟล์>` ซึ่ง **ข้ามด่านตรวจ host
+// ด้านล่างทั้งหมด** และ 34 จาก 35 ไฟล์ของชุด DB ไม่มีด่านของตัวเอง — ชุดนี้เขียนจริงลงฐาน
+// จึงต้องมีทางรันไฟล์เดียวที่ยังผ่านด่านและได้ shim ครบ ไม่ใช่ให้คนเลี่ยงไปรันมือ
+//
 // เรียกผ่าน npm จาก apps/web ได้เลย: npm run test:pure / npm run test:db / npm run gate
 // =============================================================
 
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -26,6 +33,7 @@ if (!["pure", "db", "all"].includes(mode)) {
   console.error(`ไม่รู้จักโหมด "${mode}" — ใช้ pure | db | all`);
   process.exit(2);
 }
+const filter = (process.argv[3] ?? "").trim();
 
 /**
  * เดินทั้ง `scripts/` และ `scripts/ai-eval/`
@@ -49,10 +57,17 @@ const collect = (dir, prefix = "") =>
 const all = collect(SCRIPTS).sort();
 /** ชื่อไฟล์คือสัญญา: `-db-contract` = ต้องมี Postgres จริง ที่เหลือรันที่ไหนก็ได้ */
 const isDb = (f) => f.includes("-db-contract");
-const files = all.filter((f) => (mode === "all" ? true : mode === "db" ? isDb(f) : !isDb(f)));
-
-if (files.length === 0) {
+const inMode = all.filter((f) => (mode === "all" ? true : mode === "db" ? isDb(f) : !isDb(f)));
+if (inMode.length === 0) {
   console.error("ไม่พบไฟล์เทสสำหรับโหมดนี้ — การเดินไดเรกทอรีคงพลาด");
+  process.exit(2);
+}
+
+// ตัวกรองที่ไม่ตรงอะไรเลยต้องดัง ไม่ใช่ "ผ่าน 0 ไฟล์" ซึ่งอ่านเหมือนเทสเขียว
+const files = filter ? inMode.filter((f) => f.includes(filter)) : inMode;
+if (files.length === 0) {
+  console.error(`ตัวกรอง "${filter}" ไม่ตรงไฟล์ไหนในโหมด ${mode} (${inMode.length} ไฟล์)`);
+  console.error("ตัวอย่างชื่อที่มี: " + inMode.slice(0, 4).map((f) => f.replace(".test.mts", "")).join(", "));
   process.exit(2);
 }
 
@@ -83,6 +98,49 @@ if (mode !== "pure") {
   console.log(`[gate] เทส DB จะรันกับ ${host}/${db}`);
 }
 
+/**
+ * ผลลัพธ์ออกสองทาง: จอ + ไฟล์ — ทางเดียวไม่พอทั้งคู่
+ *
+ * จอเดิมพิมพ์ TAP ทั้งก้อน = **5,445 บรรทัด / 249 KB** ต่อรอบที่ผ่าน ซึ่ง 66% เป็นบล็อก YAML
+ * ของเทสที่ผ่าน · ตอนแดงต้อง `grep "^not ok"` เอง และ scrollback อาจไม่พอ
+ * ส่วนถ้าเขียนลงไฟล์แล้วจอเงียบ รอบที่ใช้ 30 วินาที (โหมด DB นานกว่า) จะแยกไม่ออกว่า
+ * ค้างหรือกำลังทำงาน
+ *
+ * จอ = spec (มี `ℹ tests/pass/fail` + section `✖ failing tests:` ที่ลิสต์เฉพาะตัวแดง)
+ * ไฟล์ = TAP เต็ม ไม่มี ANSI จึง grep/diff ได้ — งานที่ต้องใช้ไฟล์จริงมีสามอย่างและทำอยู่แล้ว
+ * ด้วยมือ: ไล่ตัวแดง · diff ชื่อเทสที่แดงก่อน/หลังเพื่อยืนยันว่าไม่มี regression · mutation test
+ *
+ * ไม่ใช้ `tee` เพราะ exit code จะต้องพึ่ง PIPESTATUS แล้วหลุดง่ายบน shell ผสมของ Windows
+ * — reporter destination ของ node ไม่มีปัญหานั้น (ยืนยันแล้วว่า exit code ยังถูกทั้ง 0 และ 1)
+ */
+const OUT_DIR = path.resolve(process.env.BMS_TEST_OUTPUT_DIR || path.join(REPO, ".test-output"));
+mkdirSync(OUT_DIR, { recursive: true });
+const tapFile = path.join(OUT_DIR, `${mode}.tap`);
+const runFile = path.join(OUT_DIR, `${mode}.run.txt`);
+
+/**
+ * `.run.txt` เขียนโดยตัวรันเอง ไม่ใช่ node — มีสองหน้าที่ที่ไฟล์ TAP ทำแทนไม่ได้:
+ *
+ *   1. **บอกว่ารันกับฐานไหน** (โหมด DB) · ไฟล์ผลที่ไม่รู้ว่าเป็นของฐานไหนตอบอะไรไม่ได้
+ *   2. **แยก "รันจบ" ออกจาก "ตายกลางทาง"** · process ที่ถูกฆ่าทิ้งไฟล์ครึ่งเดียวที่ไม่มี
+ *      `not ok` แล้วอ่านเหมือนผ่าน — บรรทัด `exit=` ถูกเขียน *หลัง* ลูกจบเท่านั้น
+ *      **ไม่มีบรรทัด `exit=` = รอบนั้นยังไม่จบ ห้ามอ่านว่าเขียว**
+ */
+const startedAt = new Date();
+const commit = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO, encoding: "utf8" });
+writeFileSync(runFile, [
+  `mode=${mode}`,
+  `filter=${filter || "-"}`,
+  `files=${files.length}`,
+  `commit=${(commit.stdout ?? "").trim() || "unknown"}`,
+  `database=${mode === "pure" ? "-" : `${process.env.POSTGRES_HOST}/${process.env.POSTGRES_DB}`}`,
+  `started=${startedAt.toISOString()}`,
+  `tap=${path.relative(REPO, tapFile)}`,
+  "files:",
+  ...files.map((f) => `  ${f}`),
+  "",
+].join("\n"));
+
 const args = [
   "tsx",
   // ต้องเป็น file:// URL — บน Windows path แบบ C:\... ถูก ESM loader อ่านเป็น protocol "c:"
@@ -93,13 +151,28 @@ const args = [
   // สองชุดขึ้นไปใช้ร้านแรกร่วมกัน รันขนานกันแล้วเหยียบกันเอง (บทเรียนจาก loyalty/pos)
   "--test-concurrency=1",
   "--test-force-exit",
+  "--test-reporter=spec",
+  "--test-reporter-destination=stdout",
+  "--test-reporter=tap",
+  `--test-reporter-destination=${tapFile}`,
   ...files.map((f) => path.join(SCRIPTS, f)),
 ];
 
-console.log(`[gate] โหมด ${mode} — ${files.length} ไฟล์`);
+console.log(
+  `[gate] โหมด ${mode} — ${files.length} ไฟล์` +
+    (filter ? ` (กรองด้วย "${filter}" จาก ${inMode.length})` : "")
+);
 const run = spawnSync("npx", args, {
   cwd: WEB,
   stdio: "inherit",
   shell: process.platform === "win32",
 });
-process.exit(run.status ?? 1);
+const exitCode = run.status ?? 1;
+appendFileSync(runFile, [
+  `finished=${new Date().toISOString()}`,
+  `duration_ms=${Date.now() - startedAt.getTime()}`,
+  `exit=${exitCode}`,
+  "",
+].join("\n"));
+console.log(`[gate] ผลเต็มอยู่ที่ ${path.relative(REPO, tapFile)} · สรุปรอบนี้ ${path.relative(REPO, runFile)}`);
+process.exit(exitCode);

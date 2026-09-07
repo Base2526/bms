@@ -2,6 +2,8 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('9.66__bms_restaurant_order_requests.sql', 'table', 'bms_restaurant_order_requests', NULL, 'แชทร้านอาหารรับคำขอก่อนตรวจสต็อกไม่ได้ และร้านเปิดคิวตรวจคำขอไม่ได้'),
+    ('9.66__bms_restaurant_order_requests.sql', 'column', 'bms_orders', 'restaurant_request_instructions', 'แชทร้านอาหารรับคำขอก่อนตรวจสต็อกไม่ได้ และร้านเปิดคิวตรวจคำขอไม่ได้'),
     ('9.40__bms_multi_store_stock_capabilities.sql', 'table', 'bms_store_capabilities', NULL, 'ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder/POS อ่านรูปแบบสต็อกทุกบิล'),
     ('9.40__bms_multi_store_stock_capabilities.sql', 'table', 'bms_product_stock_policies', NULL, 'ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder/POS อ่านรูปแบบสต็อกทุกบิล'),
     ('9.40__bms_multi_store_stock_capabilities.sql', 'table', 'bms_product_recipes', NULL, 'ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder/POS อ่านรูปแบบสต็อกทุกบิล'),

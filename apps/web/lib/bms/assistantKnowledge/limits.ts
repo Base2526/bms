@@ -27,6 +27,52 @@ const lists = (th: readonly string[], en: readonly string[]) => ({ th, en }) as 
 
 export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
   {
+    // 9.66: the rules for chat requests lived only as an Alert on /admin/manual, which is the
+    // "two copies" mistake the catalog was built to end — the assistant could not answer
+    // "why can't I confirm this request?" at all. The Manual renders SYSTEM_LIMITS, so this
+    // group is the single home and both surfaces read it.
+    id: "limits.restaurant-requests",
+    guideIds: ["orders.restaurant-requests", "pos.restaurant-requests", "orders.follow-lifecycle"],
+    // The phrasings staff actually type when the queue does not behave, not feature names.
+    aliases: lists(
+      ["ยืนยันคำขอไม่ได้", "คำขอหาย", "คำขอไม่เข้า", "กดยืนยันแล้วไม่มีบิล", "คำขอกับบิลต่างกันยังไง",
+        "ลูกค้าสั่งทางแชทแล้วสต็อกไม่ตัด", "หยุดรับออร์เดอร์แล้วยืนยันคำขอไม่ได้", "ส่งลิงก์จ่ายเงินให้ลูกค้ายังไง"],
+      ["cannot confirm request", "request disappeared", "request not arriving", "confirmed but no order",
+        "request versus order", "chat order did not reserve stock", "paused ordering blocks confirming",
+        "how do I send the payment link"]
+    ),
+    title: both(
+      "คำขอสั่งอาหารจากแชท: ตรวจก่อน แล้วจึงเป็นบิล",
+      "Restaurant chat requests: reviewed first, an order second"
+    ),
+    items: lists(
+      [
+        "แชทของร้านอาหารรับได้แค่ \"คำขอ\" — ไม่จองสต็อก ไม่สร้างบิล และไม่เรียกชำระเงิน แม้ของจะไม่พอหรือถูกตั้งว่าหมดวันนี้ ระบบก็ยังรับจำนวนที่ลูกค้าขอไว้ให้ร้านตรวจ",
+        "จำนวนที่ลูกค้าขอเดิมแก้ไม่ได้ตลอดไป จำนวนที่ตกลงหลังโทรคุยถูกเก็บแยกอีกช่อง จึงตอบได้เสมอว่าลูกค้าขอมาเท่าไรและร้านตกลงเท่าไร",
+        "ยืนยันได้ไม่เกินจำนวนที่ลูกค้าขอ และใส่ 0 เพื่อตัดบรรทัดออกได้ แต่การเพิ่มจำนวนหรือเปลี่ยนสินค้าต้องให้ลูกค้าส่งคำขอใหม่ที่เขายืนยันเอง",
+        "การยืนยันคือจุดเดียวที่บิลเกิดและสต็อกถูกจอง เดินผ่านเครื่องคิดเงินตัวเดิม ราคา คูปอง ภาษี และการตัดสต็อกจึงมีสูตรชุดเดียวกับบิลอื่น",
+        "สต็อกไม่พอตอนกดยืนยัน = ไม่มีบิลเกิด และคำขอยังอยู่ในคิวให้ตรวจต่อ ไม่ใช่คำขอที่หายไปเงียบ ๆ",
+        "การกดหยุดรับออร์เดอร์ชั่วคราวหรือเวลารับออร์เดอร์ที่ปิดแล้ว หยุดแค่คำขอใหม่ — คำขอที่ค้างอยู่ในคิวยังยืนยันได้ ไม่งั้นปุ่มหยุดรับจะบล็อกงานที่ตัวเองสร้างค้างไว้",
+        "ลิงก์ชำระเงินไม่ถูกส่งให้ลูกค้าอัตโนมัติ ต้องส่งเอง และลิงก์ผูกกับคำขอใบเดียว ให้ตรวจเลขคำขอบนแถบก่อนส่ง",
+        "เวลาที่ลูกค้าแจ้งคือเวลาที่ต้องการ ไม่ใช่เวลาที่ร้านรับรอง และหน้าตรวจยังไม่มีช่องให้แก้เวลา",
+        "ข้อความส่งครัวเป็นข้อความที่พนักงานตรวจแล้ว ไม่ใช่คำของลูกค้าที่ส่งต่อดิบ ๆ — ครัวเห็นข้อความนี้บนตั๋ว จึงต้องไม่มีเบอร์โทรหรือที่อยู่",
+        "ลูกค้าบอกว่าโอนแล้วยังแจ้งชำระเงินทางแชทได้ตามปกติ เพราะการแจ้งชำระผูกกับบิลที่พนักงานยืนยันไปแล้ว ถ้ายังไม่มีบิล ระบบตอบว่ายังไม่มีออร์เดอร์ให้ชำระ",
+      ],
+      [
+        "Restaurant chat can only take a request: no stock reserved, no order created, no payment asked for. Even when stock is short or the dish is marked sold out today, the quantities the customer asked for are still recorded for the shop to review.",
+        "The quantities the customer asked for are immutable; the quantities agreed on the phone are stored in a separate field, so the record always answers both what they asked for and what was agreed.",
+        "You can confirm at most what was asked, and 0 removes a line — but raising a quantity or swapping a product needs a fresh request the customer confirms themselves.",
+        "Confirming is the only point where an order is created and stock is reserved, and it runs through the same register engine, so pricing, coupons, tax and stock deduction share one formula with every other bill.",
+        "Short stock at confirmation means no order was created and the request is still in the queue — it is not a request that vanished.",
+        "Pausing online ordering, or being outside ordering hours, stops only new requests. Requests already in the queue can still be confirmed, otherwise the pause button would block the backlog it created.",
+        "The checkout link is not sent automatically; share it yourself. It belongs to one request, so check the request number on the banner first.",
+        "The time the customer gives is the time they want, not a time the shop promised, and the review screen has no field to change it.",
+        "Kitchen instructions are text a human reviewed, not the customer's words forwarded raw — the kitchen sees them on the ticket, so they must carry no phone number or address.",
+        "A customer who says they transferred can still submit that in chat: a payment notice attaches to the order staff already confirmed. With no order yet, the system answers that there is nothing to pay for.",
+      ]
+    ),
+  },
+  {
     // 9.54: สถานีครัวเลิกเป็นข้อความอิสระบนสินค้า กลายเป็นทะเบียนที่เปิด/ปิดและเรียงลำดับได้
     // กฎชุดนี้ตอบคำถามที่ร้านอาหารถามจริงตอนเปิดครัวที่สอง: "หลายครัวในสาขาเดียวทำยังไง"
     // และ "แก้ชื่อครัวแล้วของเก่าหายไหม"

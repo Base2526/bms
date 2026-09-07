@@ -27,6 +27,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) | Global staff assistant: capability/guide catalog, what each status word means, coverage + regression gates |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
 | [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine |
+| [scripts/README.md](scripts/README.md) | How to run every suite and tool, what pass/fail output looks like, exit codes |
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
 | [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
 | [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md) | Why each built feature works the way it does (EN · TH) |

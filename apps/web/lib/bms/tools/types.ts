@@ -32,6 +32,12 @@ export type ExecCtx = {
    * customer pipeline replace the model's closing prose with the verified checkout link.
    */
   createdOrderId?: string;
+  restaurantRequestId?: string;
+  restaurantRequestQuote?: {
+    draft: import('../restaurantRequestPolicy').RestaurantRequestDraft;
+    fingerprint: string; lines: OrderQuoteLine[]; locationName: string;
+    fulfillmentType: string; requestedAt: string | null; note: string;
+  };
   /** Server-only tracking id for a product purchase routed to pharmacist review. */
   pharmacyReviewCaseId?: string;
   /**

@@ -24,38 +24,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DB_VARS = ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"] as const;
+import { dbTarget, describeDbTarget, loadDbEnvFromFiles } from "./dbEnv.mts";
 
-// อ่าน .env เฉพาะคีย์ที่ยังไม่ได้ตั้ง — ค่าที่คนส่งมาทางบรรทัดคำสั่งต้องชนะไฟล์เสมอ
-let envFileUsed: string | null = null;
-if (!DB_VARS.some((name) => process.env[name])) {
-  for (const candidate of [".env", ".env.prod", ".env.dev"]) {
-    const file = path.join(ROOT, candidate);
-    if (!fs.existsSync(file)) continue;
-    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-      const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-      if (!match) continue;
-      const [, key, raw] = match;
-      if ((DB_VARS as readonly string[]).includes(key) && !process.env[key]) {
-        process.env[key] = raw.replace(/^["']|["']$/g, "");
-      }
-    }
-    envFileUsed = candidate;
-    break;
-  }
-}
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// การหาว่า "ฐานเป้าหมาย" คือฐานไหน อยู่ที่ scripts/dbEnv.mts ที่เดียว — preflight ใช้ตัวเดียวกัน
+// แล้วส่ง env ที่ resolve แล้วต่อให้ด่านย่อยทุกตัว จึงไม่มีทางที่สองด่านจะตรวจคนละฐานกัน
+const envFileUsed = loadDbEnvFromFiles(ROOT);
 
 const wantsSql = process.argv.includes("--sql");
-const target = {
-  host: process.env.POSTGRES_HOST || "localhost",
-  port: process.env.POSTGRES_PORT || "5432",
-  db: process.env.POSTGRES_DB || "appdb",
-  user: process.env.POSTGRES_USER || "app",
-};
+const target = dbTarget();
 if (!wantsSql) {
-  console.log(`ฐานที่กำลังตรวจ: ${target.user}@${target.host}:${target.port}/${target.db}`
-    + (envFileUsed ? ` (อ่านค่าจาก ${envFileUsed})` : " (จาก env ที่ส่งมา)"));
+  console.log(describeDbTarget(envFileUsed));
   console.log("");
 }
 

@@ -10,6 +10,10 @@
 
 import { parseOrderItems, understand, type Understanding } from "./nlu";
 import {
+  isRestaurantRequestRefusal, restaurantRequestReceipt, restaurantRequestStatusLine,
+  restaurantRequestSummary,
+} from './restaurantRequestPolicy';
+import {
   looksLikeRequestedItemList,
   parseRequestedItems,
   requestedItemTargetIndex,
@@ -428,6 +432,15 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
       "กฎร้านยา: เมื่อลูกค้าระบุชื่อสินค้าแล้ว ให้ค้น Catalog จริงก่อน ถ้าพบหลายสูตร/ความแรง/ขนาดต้องให้ลูกค้าเลือก ห้ามเดา SKU หรือสรุปประเภททางกฎหมายจากชื่อเรียกทั่วไป เช่น 'ยาแดง'",
       "กฎร้านยา: Product Policy จาก backend เป็นผู้ตัดสินสุดท้าย ถ้า create_order คืนว่าต้องตรวจความปลอดภัย ต้องผ่านเภสัชกร ต้องมีใบสั่ง ห้ามขายออนไลน์ หรือ policy ยังไม่ทราบ ให้แจ้งตามผลนั้นและห้ามพยายามสร้างออร์เดอร์ซ้ำ",
       "กฎร้านยา: ถ้าผล create_order มี pharmacyReviewCaseId ให้แจ้งเลขเคส 8 ตัวนั้นแก่ลูกค้าเพื่อใช้ติดตาม; ถ้าเป็น null ห้ามอ้างว่าสร้างเคสแล้ว"
+    );
+  }
+  if (profile.businessArchetype === "restaurant") {
+    lines.push(
+      "กฎร้านอาหารรับคำขอมาก่อน (มีลำดับเหนือกฎขายทั่วไป): รับจำนวนที่ลูกค้าขอทั้งหมดแม้สต็อกไม่พอหรือหมดวันนี้ ห้ามลดจำนวน เสนอแทน หรือปฏิเสธเพราะสต็อก ร้านจะตรวจและโทรคุยเอง",
+      "create_order ของลูกค้าร้านอาหารบันทึกคำขอรอร้านตรวจเท่านั้น ไม่สร้างบิล ไม่จองสต็อก และไม่เรียกชำระเงิน ต้องให้ลูกค้ายืนยันรายการก่อนรับคำขอ แจ้งผลตาม REQUEST_RECEIVED เท่านั้น",
+      "แยกบริบทรายสินค้า: อาหารคาวทำสด ขนมพร้อมขาย เครื่องดื่ม และเครื่องปรุงบรรจุขาย ถามเฉพาะตัวเลือกจริงของรายการนั้น ห้ามถามความหวานกับขนมสูตรตายตัวหรือเสนอวัตถุดิบครัวที่ไม่ได้เปิดขาย",
+      "ตัวเลือกต่างกันในแต่ละกล่อง/แก้วต้องแยกบรรทัด แม้ SKU เดียวกัน หากข้อกำชับไม่มีใน modifier ให้เก็บคำของลูกค้าใน requestNote พร้อมชื่อรายการและจำนวน ให้ร้านตรวจ ห้ามรับรองว่าทำได้หรือรับรองเรื่องแพ้อาหาร",
+      "promisedAt ในคำขอคือเวลาที่ลูกค้าต้องการ ไม่ใช่เวลาที่ร้านรับรอง ต้องไม่เดาเวลาครัวหรือไรเดอร์ หลังรับคำขอให้เก็บเบอร์ติดต่อผ่าน save_customer_checkout_details เฉพาะเมื่อยังไม่มี และไม่แนะนำชำระเงินจนมีบิลที่ร้านยืนยันจริง",
     );
   }
   // One source of behavioral examples per shop. A selected archetype is more precise than the
@@ -1962,7 +1975,10 @@ export async function runPipeline(
       data: { status: "NOT_FOUND", query: aiInputMessage },
       reply:
         checkout
-          ? englishReply
+          ? profile.businessArchetype === 'restaurant'
+            ? englishReply ? 'Contact details saved. The shop can use them when reviewing your request. Payment is only due after the shop confirms an order.'
+              : 'บันทึกข้อมูลติดต่อแล้วค่ะ ร้านใช้ติดต่อเพื่อตรวจคำขอได้ ยังไม่ต้องชำระเงินจนกว่าร้านยืนยันบิลค่ะ'
+            : englishReply
             ? `Your delivery details have been saved.\n\n${checkoutNextStepReply(checkout, profile.paymentAccounts, true)}`
             : `บันทึกข้อมูลแล้วค่ะ\n\n${checkoutNextStepReply(checkout, profile.paymentAccounts)}`
           : englishReply
@@ -1980,7 +1996,9 @@ export async function runPipeline(
       understanding,
       tool: "deterministic:greeting",
       data: { status: "NOT_FOUND", query: message },
-      reply: englishReply
+      reply: profile.businessArchetype === "restaurant"
+        ? (englishReply ? "Hello! Tell us the dishes, drinks or packaged products and quantities you would like. The shop will review your request." : "สวัสดีค่ะ แจ้งเมนูอาหาร ขนม เครื่องดื่ม หรือสินค้าที่ต้องการ พร้อมจำนวนได้เลยค่ะ ร้านจะรับคำขอไว้ตรวจความพร้อมนะคะ")
+        : englishReply
         ? "Hello! Which product are you interested in?"
         : "สวัสดีค่ะ สนใจสินค้ารุ่นไหน แจ้งชื่อสินค้าได้เลยนะคะ",
     });
@@ -1998,7 +2016,9 @@ export async function runPipeline(
       understanding,
       tool: "deterministic:multi_item_example",
       data: { status: "NOT_FOUND", query: message },
-      reply: multiItemOrderExample(englishReply ? "en" : "th"),
+      reply: profile.businessArchetype === "restaurant"
+        ? (englishReply ? 'Send item names, quantities and instructions together, for example: fried rice 2 boxes, Thai tea 2 cups, brownies 3 pieces. The shop will review availability.' : 'แจ้งชื่อเมนู จำนวน และข้อกำชับรวมกันได้เลยค่ะ เช่น ข้าวผัด 2 กล่อง, ชาไทย 2 แก้ว, บราวนี่ 3 ชิ้น ร้านจะตรวจความพร้อมและโทรหากต้องปรับรายการค่ะ')
+        : multiItemOrderExample(englishReply ? "en" : "th"),
     });
   }
 
@@ -2050,13 +2070,25 @@ export async function runPipeline(
           }>)
         : [];
       const latest = orders[0];
-      reply = latest
+      // 9.66: in a restaurant the question is usually about a request that has no order row
+      // yet, and answering "no order was found" reads as the shop having lost it. The tool
+      // returns both lists, and requests is always empty for other archetypes, so the data
+      // decides this — no archetype branch, and nothing changes for the shops that had none.
+      const pendingRequest = (
+        Array.isArray((executed.result.data as any)?.requests)
+          ? ((executed.result.data as any).requests as Array<{ id: string; status: string }>)
+          : []
+      ).find((request) => request.status === "REQUESTED" || request.status === "CONTACTING");
+      const orderLine = latest
         ? englishReply
           ? `Latest order #${latest.displayOrderId}: ${orderStatusLabel(latest.status, true)}. Total ${Number(latest.total).toLocaleString("en-US")} THB.`
           : `ออร์เดอร์ล่าสุด #${latest.displayOrderId} สถานะ “${orderStatusLabel(latest.status)}” ยอด ${Number(latest.total).toLocaleString()} บาทค่ะ`
-        : englishReply
+        : null;
+      const requestLine = pendingRequest ? restaurantRequestStatusLine(pendingRequest, englishReply) : null;
+      reply = [orderLine, requestLine].filter(Boolean).join("\n")
+        || (englishReply
           ? "No order was found for this account. You do not need to send an order number; if you just ordered, please check again shortly."
-          : "ยังไม่พบออร์เดอร์ของบัญชีนี้ค่ะ ไม่ต้องส่งเลขออร์เดอร์ให้ทางร้านนะคะ หากเพิ่งสั่งไปลองเช็คอีกครั้งในอีกสักครู่ค่ะ";
+          : "ยังไม่พบออร์เดอร์ของบัญชีนี้ค่ะ ไม่ต้องส่งเลขออร์เดอร์ให้ทางร้านนะคะ หากเพิ่งสั่งไปลองเช็คอีกครั้งในอีกสักครู่ค่ะ");
     }
     return customerSafe({
       channel,
@@ -2069,6 +2101,8 @@ export async function runPipeline(
     });
   }
 
+  // Enabled for restaurants too: submit_payment only ever attaches a notice to an order a human
+  // already created by confirming a request, and answers ORDER_NOT_FOUND when there is none.
   if (isPaymentSubmission(aiInputMessage)) {
     const method = paymentMethodFromMessage(aiInputMessage);
     if (!method) {
@@ -2138,6 +2172,8 @@ export async function runPipeline(
     });
   }
 
+  // Read-only: it lists the receiving channels the shop configured. Leaving it off meant a
+  // restaurant customer who asked "which account?" got silence whenever no provider is set up.
   if (isPaymentInfoQuestion(aiInputMessage)) {
     const executed = await executeCustomerTool("get_payment_info", {}, execCtx);
     const accounts =
@@ -2159,7 +2195,7 @@ export async function runPipeline(
     });
   }
 
-  if (isReorderRequest(aiInputMessage)) {
+  if (isReorderRequest(aiInputMessage) && profile.businessArchetype !== "restaurant") {
     const executed = await executeCustomerTool("reorder", {}, execCtx);
     let reply: string;
     let order: CreateOrderResult | undefined;
@@ -2357,6 +2393,7 @@ export async function runPipeline(
       // ต้องยกมาด้วย ไม่งั้นตะกร้าที่รอลูกค้ายืนยันจะถูกลืมในเทิร์นถัดไป
       // แล้วลูกค้าตอบ "ยืนยัน" ไปก็ถูกถามใหม่วนไม่จบ
       pendingQuoteFingerprint: storedState.pendingQuoteFingerprint ?? null,
+      pendingRestaurantRequest: storedState.pendingRestaurantRequest ?? null,
       pendingCatalogChoices: storedState.pendingCatalogChoices ?? null,
     }).catch(async (err) => {
       console.error("[BMS] pipeline AI state update failed:", err);
@@ -2372,6 +2409,30 @@ export async function runPipeline(
   if (storedState.pendingQuoteFingerprint && orderMemory?.confirmed) {
     execCtx.customerConfirmedQuote = { fingerprint: storedState.pendingQuoteFingerprint };
   }
+  if (profile.businessArchetype === 'restaurant' && !draftOrderCancelled &&
+      storedState.pendingRestaurantRequest && storedState.pendingQuoteFingerprint && isConfirmationOnly(aiInputMessage)) {
+    execCtx.customerConfirmedQuote = { fingerprint: storedState.pendingQuoteFingerprint };
+    const received = await executeCustomerTool('create_order', storedState.pendingRestaurantRequest, execCtx);
+    if (execCtx.restaurantRequestId && convId) {
+      await setAiConversationState(tenantId, convId, {}).catch(async (err) => {
+        console.error('[BMS] restaurant request state clear failed:', err);
+        await reportStateFailure(err, 'restaurant_request_clear');
+      });
+    }
+    // The basket was already resolved in the turn that produced the summary, so what usually
+    // fails here is the shop's own state changing in between — it paused ordering, or its hours
+    // ended. receiveRestaurantRequest answers those with createOrderInTx's statuses, so the
+    // customer gets the real reason instead of "could not be received" with nothing to act on.
+    const refusal = received.result.ok && isRestaurantRequestRefusal(received.result.data)
+      ? orderReply({}, received.result.data as CreateOrderResult, englishReply)
+      : null;
+    return customerSafe({ channel, incoming: message, understanding, tool: 'deterministic:restaurant_request_confirm',
+      data: { status: 'NOT_FOUND', query: aiInputMessage }, trace: [received.trace],
+      reply: execCtx.restaurantRequestId ? restaurantRequestReceipt(execCtx.restaurantRequestId, englishReply)
+        : refusal ? `${refusal}\n${englishReply ? 'Your requested quantities are kept; nothing is reserved and no payment is due.' : 'จำนวนที่แจ้งไว้ยังอยู่ค่ะ ยังไม่จองสต็อกและยังไม่ต้องชำระเงิน'}`
+        : englishReply ? 'The request could not be received. Please ask the shop to check the items and options; no payment is due.'
+          : 'ยังรับคำขอไม่สำเร็จ กรุณาให้ร้านตรวจรายการและตัวเลือกอีกครั้ง ยังไม่ต้องชำระเงินค่ะ' });
+  }
   // ลูกค้าพิมพ์รายการมาหลายอย่างแต่บางรายการไม่ได้บอกจำนวน → ถามกลับ **ฝั่ง server**
   //
   // requestedItems.ts ตั้งใจให้ `qty === null` หมายถึง "ลูกค้าไม่ได้บอก" และห้ามเติมให้เอง
@@ -2379,6 +2440,9 @@ export async function runPipeline(
   // ข้อความที่ประกอบเองยกทุกรายการกลับไปให้ลูกค้าเห็น ลูกค้าจึงตรวจได้ว่าไม่มีรายการไหนหายไป
   //
   // วางไว้หลังด่านร้านยาทั้งชุด (emergency/intake/clinical) จึงไม่แย่งเส้นทางคัดกรองไปจากเภสัชกร
+  // Restaurants need this more than anyone: food orders arrive as long lists ("ข้าวผัด ชาไทย
+  // บราวนี่ 3 ชิ้น") and this is the guard that stops the model asking about one item and
+  // dropping the rest. It only asks a question — it names no price and creates nothing.
   if (!orderMemory?.confirmed) {
     const requested = parseRequestedItems(aiInputMessage);
     const missingQty = requested.filter((item) => item.qty === null);
@@ -2407,6 +2471,7 @@ export async function runPipeline(
       }
     | null = null;
   if (
+    profile.businessArchetype !== "restaurant" &&
     !draftOrderCancelled &&
     isPharmacyTenant &&
     convId &&
@@ -2719,6 +2784,7 @@ export async function runPipeline(
   })();
 
   if (
+    profile.businessArchetype !== "restaurant" &&
     classifiedIntent === "ordering" &&
     memoryLines &&
     !/(?:คูปอง|coupon|โค้ดส่วนลด)/i.test(aiInputMessage)
@@ -2887,7 +2953,11 @@ export async function runPipeline(
     // + unverified action-claim guard — reply อ้างว่าทำ write action (เช่น บันทึกการโอนเงิน) สำเร็จแล้ว
     // ทั้งที่ไม่มี write tool ที่ ok:true เลย (พบจริงจาก scripts/ai-eval รอบแรก — ดูคอมเมนต์ที่นิยาม)
     let reply: string;
-    if (execCtx.createdOrderId) {
+    if (execCtx.restaurantRequestId) {
+      reply = restaurantRequestReceipt(execCtx.restaurantRequestId, englishReply);
+    } else if (execCtx.restaurantRequestQuote) {
+      reply = restaurantRequestSummary(execCtx.restaurantRequestQuote, englishReply);
+    } else if (execCtx.createdOrderId) {
       reply = await orderCheckoutChatReply(
         tenantId,
         execCtx.createdOrderId,
@@ -2933,9 +3003,9 @@ export async function runPipeline(
     }
 
     if (convId) {
-      const completedOrder = (loop.trace ?? []).some(
+      const completedOrder = !execCtx.pendingOrderQuote && (Boolean(execCtx.restaurantRequestId) || (loop.trace ?? []).some(
         (entry) => entry.ok && ["create_order", "reorder"].includes(entry.tool)
-      );
+      ));
       const nextState: AiConversationState = completedOrder || draftOrderCancelled
         ? {}
         : {
@@ -2949,6 +3019,7 @@ export async function runPipeline(
               storedState.pendingQuoteFingerprint ??
               null,
             pendingCatalogChoices: storedState.pendingCatalogChoices ?? null,
+            pendingRestaurantRequest: execCtx.restaurantRequestQuote?.draft ?? storedState.pendingRestaurantRequest ?? null,
           };
       await setAiConversationState(tenantId, convId, nextState).catch(async (err) => {
         console.error("[BMS] pipeline AI state persist failed:", err);
@@ -3001,6 +3072,18 @@ export async function runPipeline(
 
   // ----- CONFIRM_ORDER: สั่งซื้อ (หลายรายการต่อข้อความได้) → สร้าง order + reserve -----
   if (intent === "CONFIRM_ORDER") {
+    // Without a provider the legacy path would *sell*: create an order and reserve stock
+    // directly, which is the one thing 9.66 exists to stop. Only this write path is blocked
+    // — the read-only branches after it (stock/price answers, greeting) create nothing, and
+    // replacing a real answer about a dish with "the assistant is unavailable" is a worse
+    // failure than the one being prevented.
+    if (profile.businessArchetype === "restaurant") {
+      return customerSafe({ channel, incoming: message, understanding, tool: "restaurant:manual_intake",
+        data: { status: "NOT_FOUND", query: message },
+        reply: englishReply
+          ? 'The assistant is unavailable, so your order cannot be submitted for review right now. Your chat message is kept for the shop to read; nothing has been confirmed and no payment is due. Please leave a contact number.'
+          : 'ผู้ช่วยรับคำขอไม่พร้อมใช้งานค่ะ จึงยังส่งรายการให้ร้านตรวจไม่ได้ตอนนี้ ข้อความในแชทถูกเก็บไว้ให้ร้านอ่าน ยังไม่ได้ยืนยันออร์เดอร์และยังไม่ต้องชำระเงิน รบกวนฝากเบอร์ติดต่อไว้ด้วยนะคะ' });
+    }
     const parsed = entities.items.length
       ? entities.items
       : [

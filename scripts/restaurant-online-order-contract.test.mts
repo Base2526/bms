@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { normalizeRestaurantOrderHours, restaurantOrderingState } from "../apps/web/lib/bms/restaurantOrdering";
+import { customerTools } from "../apps/web/lib/bms/tools/catalog";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
@@ -50,7 +51,12 @@ test("restaurant-only branch rules and tools do not leak into cafes or ordinary 
   assert.match(orders, /if \(restaurantOnlineOrder\)[\s\S]{0,2500}LOCATION_REQUIRED/);
   assert.match(orders, /ข้อมูลรับเอง\/จัดส่งแบบครัวใช้ได้เฉพาะร้านอาหารออนไลน์/);
   assert.match(pipeline, /profile\.businessArchetype === "restaurant"[\s\S]{0,300}list_restaurant_order_locations/);
-  assert.match(tools, /tool\.name !== "list_restaurant_order_locations"[\s\S]{0,120}businessArchetype === "restaurant"/);
+  // Asserted on behaviour, not on the shape of the filter: the guarantee is "a non-restaurant
+  // is never offered the branch tool", and pinning one spelling of the condition made a
+  // rewrite of customerTools() look like a regression while the rule still held.
+  assert.ok(customerTools("restaurant").some((tool) => tool.name === "list_restaurant_order_locations"));
+  assert.ok(!customerTools("general").some((tool) => tool.name === "list_restaurant_order_locations"));
+  assert.ok(!customerTools(null).some((tool) => tool.name === "list_restaurant_order_locations"));
 });
 
 test("AI stock checks can follow the exact branch selected for a restaurant order", () => {

@@ -271,6 +271,15 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ตัดของเสียออกจากสต็อกยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "how do I write off expired stock", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.wastage", origin: "coverage" },
   { q: "กระดานครัวใช้ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
+  // 9.66: the question staff really ask is not "what is a request" but "why can't I confirm it",
+  // and the answer is on the queue's own guide — the request card, not the order lifecycle.
+  { q: "ตรวจคำขอสั่งอาหารจากแชทที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "orders.restaurant-requests", origin: "coverage" },
+  { q: "where do I review restaurant chat requests", locale: "en", context: GUIDES, expect: "answer", expectTop: "orders.restaurant-requests", origin: "coverage" },
+  { q: "ยืนยันคำขอแล้วไม่มีบิลเกิดขึ้น", locale: "th", context: GUIDES, expect: "answer", expectTop: "orders.restaurant-requests", origin: "coverage" },
+  { q: "โหลดคำขออาหารที่เครื่องขายยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pos.restaurant-requests", origin: "coverage" },
+  { q: "load restaurant requests at the register", locale: "en", context: GUIDES, expect: "answer", expectTop: "pos.restaurant-requests", origin: "coverage" },
+  { q: "ระบบรับออร์เดอร์อาหารทางแชทไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.chat-requests", origin: "coverage" },
+  { q: "does it take food orders from chat", locale: "en", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.chat-requests", origin: "coverage" },
   // 9.54: "หลายครัวในสาขาเดียว" ต้องพาไปที่หน้าที่ **จัดการ** สถานี ไม่ใช่กระดานที่แค่แสดงผล
   { q: "หลายครัวในสาขาเดียวตั้งยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
   { q: "how do I set up several kitchen stations in one branch", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },

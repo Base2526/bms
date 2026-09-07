@@ -19,6 +19,7 @@ import {
   Select,
 } from "antd";
 import Link from "next/link";
+import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
   ReloadOutlined,
@@ -142,7 +143,7 @@ const orderSubtotal = (order: Order) =>
   order.items.reduce((sum, it) => sum + (Number(it.unit_price) || 0) * (Number(it.qty) || 0), 0);
 
 function OrdersManagement() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const STATUS_LABEL = useMemo(() => getStatusLabel(t), [t]);
   const { can } = useBmsPermissions();
   const isMobile = useIsMobile();
@@ -301,6 +302,7 @@ function OrdersManagement() {
 
   return (
     <div>
+      <RestaurantRequestQueue english={lang === 'en'} canReview={can('order.create')} />
       <AdminPageHeader title={t("admin_orders.page_title")}>
         <Input.Search
           placeholder={t("admin_orders.search_placeholder")}
