@@ -256,8 +256,12 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**76 namespaces / 4,444 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-06 — the latest change is net **+9**: the
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**78 namespaces / 4,914 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-07 — the latest change is net **+415**:
+   the new `pos_restaurant` namespace makes the full restaurant register bilingual, including floor,
+   order, kitchen, queue, QR intake, bills, shift, payment and operational modals; a dedicated contract
+   rejects any new hardcoded Thai UI copy while deliberately allowing the shared `฿` currency symbol
+   and Thai product-name matcher regexes. The preceding change is net **+9**: the
    `admin_restaurant_floor` namespace adds table-QR issue, print, download and rotation labels; the
    preceding change is net **+54**: the
    `admin_restaurant_floor` namespace adds 53 keys for the branch/area/table/layout editor and

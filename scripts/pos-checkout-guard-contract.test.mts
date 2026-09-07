@@ -87,10 +87,10 @@ test("รับเงินสดเกินต้องบอกเงิน�
   // หน้าค้าปลีกแสดง "เงินทอนรายการนี้" ระหว่างกรอกมาตลอด · หน้านี้เคยมีเงินทอนแค่ในแผงใบเสร็จ
   // ซึ่งขึ้น **หลัง** เก็บเงินไปแล้ว = แคชเชียร์ต้องคิดเลขเองตอนที่ลูกค้ายืนรอทอน
   assert.match(page, /const cashChangeOf = \(payment: PosPaymentDraft\)/);
-  assert.match(page, /เงินทอนรายการนี้/);
+  assert.match(page, /t\("pos_restaurant\.payment_change"\)/);
   // เฉพาะช่องทางเงินสดที่กรอกแล้วและไม่ต่ำกว่ายอด — ทอนติดลบไม่มีอยู่จริง
   assert.match(page, /payment\.method !== "CASH" \|\| !payment\.tendered\.trim\(\)/);
   assert.match(page, /change >= 0 \? Math\.round\(change \* 100\) \/ 100 : null/);
   // ต้องคิดจากค่าที่กรอก ไม่ใช่ผูกกับยอดบิลทั้งใบ (บิลแบ่งจ่ายมีเงินสดแค่บางส่วน)
-  assert.doesNotMatch(page, /เงินทอนรายการนี้[\s\S]{0,120}checkoutDue/);
+  assert.doesNotMatch(page, /pos_restaurant\.payment_change[\s\S]{0,120}checkoutDue/);
 });

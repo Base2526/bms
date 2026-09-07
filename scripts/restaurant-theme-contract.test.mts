@@ -132,7 +132,7 @@ test("กฎที่ต้องชนะ globals.css ต้องมี html.d
 
 test("สีที่ประกาศใน page.tsx ต้องเป็นตัวแปร ไม่ใช่ค่าคงที่", async () => {
   const page = stripComments(await read(PAGE));
-  const lanes = page.slice(page.indexOf("const LANES = ["), page.indexOf("] as const;", page.indexOf("const LANES = [")));
+  const lanes = page.slice(page.indexOf("const kitchenLanes = (t: Translate) => ["), page.indexOf("] as const;", page.indexOf("const kitchenLanes = (t: Translate) => [")));
   assert.doesNotMatch(lanes, /#[0-9a-fA-F]{3,8}/,
     "สีเลนจอครัวถูกใช้เป็นสีตัวหนังสือของ .ticketQty ด้วย — ค่าคงที่จะอ่านไม่ออกในโหมดมืด");
   assert.equal([...lanes.matchAll(/color: "var\(--[a-z-]+\)"/g)].length, 4);

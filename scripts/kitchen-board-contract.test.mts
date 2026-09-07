@@ -303,7 +303,7 @@ test("ปุ่มกรองสถานีของจอครัวนั�
     .replace(/^[ \t]*\/\/.*$/gm, "");
   // ปุ่มคือตัวกรอง เลขข้างปุ่มต้องบอกว่ากดแล้วเห็นอะไร — เดิมนับเฉพาะงานที่ยังไม่จบ
   // ขณะที่กระดานมีเลน "เสิร์ฟแล้ว" อยู่ด้วย จอเดียวกันจึงเขียน "ทั้งหมด 2" คู่กับเลนที่บวกได้ 7
-  assert.match(page, /ทั้งหมด \{countKitchenDishes\(tickets\)\}/);
+  assert.match(page, /t\("pos_restaurant\.all_count", \{ count: countKitchenDishes\(tickets\) \}\)/);
   assert.match(page, /kitchenBoardStationFilters\(tickets, stationList\)/);
   assert.doesNotMatch(page, /openTicket/,
     "ตัวกรองสถานีต้องไม่คัดเฉพาะตั๋วที่ยังไม่จบอีก — badge/แถบสรุปเป็นที่ของสัญญาณงานค้าง");

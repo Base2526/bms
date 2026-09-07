@@ -1081,9 +1081,12 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08-31
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **70 namespaces / 4,000 leaf keys per language**,
-  at exact th↔en parity — the latest +16 are the bilingual shop-archetype labels and the two
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-07
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **78 namespaces / 4,914 leaf keys per language**,
+  at exact th↔en parity — the latest +415 are the complete bilingual restaurant POS surface in the
+  new `pos_restaurant` namespace; `pos-restaurant-i18n-contract` now refuses hardcoded Thai UI copy
+  there while excluding the shared baht symbol and Thai product-name matcher regexes. The earlier +16
+  were the bilingual shop-archetype labels and the two
   store-archetype lock labels, while the preceding +7 are the store-profile receipt-language labels;
   the rest came from the public-page pass and admin batches 1–17 (one `admin_*` namespace per page or
   page group, e.g. `admin_login`,

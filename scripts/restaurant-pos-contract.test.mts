@@ -119,7 +119,7 @@ test("the order taker must leave a cancellation note at both route and service b
   assert.match(restaurant, /if \(!cancellationNote\) throw new RestaurantCheckError/);
   assert.match(restaurant, /`ยกเลิก: \$\{cancellationNote\}`/);
   assert.match(restaurant, /reason: cancellationNote/);
-  assert.match(page, /Note \/ เหตุผลที่ยกเลิก \(จำเป็น\)/);
+  assert.match(page, /t\("pos_restaurant\.cancel_reason_label"\)/);
 });
 
 test("restaurant checkout reuses atomic POS settlement and suppresses duplicate kitchen tickets", async () => {
@@ -447,10 +447,10 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.match(page, /printReceipt\(selectedReceipt\)/);
   assert.doesNotMatch(page, /printReceipt\(selectedReceipt, /);
   // บิลที่ถูกยกเลิก/คืนของต้องติดป้ายก่อนพิมพ์ซ้ำ (กฎเดียวกับ 9.22 ของหน้าค้าปลีก)
-  assert.match(page, /function billHistoryNote\(receipt: RecentReceipt\)/);
-  assert.match(page, /receipt\.voidedAt\) return "ถูกยกเลิกแล้ว"/);
-  assert.match(page, /receipt\.orderStatus === "RETURNED"\) return "มีการคืนสินค้า"/);
-  assert.match(page, /billHistoryNote\(selectedReceipt\) \? "พิมพ์ใบขายเดิม" : "พิมพ์ซ้ำ"/);
+  assert.match(page, /function billHistoryNote\(receipt: RecentReceipt, t: Translate\)/);
+  assert.match(page, /receipt\.voidedAt\) return t\("pos_restaurant\.bill_voided"\)/);
+  assert.match(page, /receipt\.orderStatus === "RETURNED"\) return t\("pos_restaurant\.bill_returned"\)/);
+  assert.match(page, /billHistoryNote\(selectedReceipt, t\) \? t\("pos_restaurant\.print_original_sale"\) : t\("pos_restaurant\.reprint"\)/);
   // ใบเสร็จบนจอกับไบต์ที่ส่งเข้าเครื่องพิมพ์ต้องมาจาก payload ก้อนเดียว ไม่งั้น drift
   assert.match(page, /function receiptPayload\(receipt: ReceiptSelection\): ReceiptPayload \| null/);
   assert.match(page, /return buildReceipt\(payload\)/);
@@ -539,7 +539,7 @@ test("the check footer never claims a total the bill does not have", async () =>
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(page, /const hasUnsent = Boolean\(check\?\.items\.some\(\(item\) => item\.status === "NEW"\)\)/);
   assert.doesNotMatch(page, /check\.version !== check\.reservedVersion/);
-  assert.match(page, /hasUnsent \? "ยอดที่ส่งครัวแล้ว" : "ยอดบิลปัจจุบัน"/);
+  assert.match(page, /hasUnsent \? t\("pos_restaurant\.amount_sent"\) : t\("pos_restaurant\.amount_current"\)/);
   // ยอดที่แสดงต้องมาจาก server เสมอ ห้ามรวมเองที่จอ (สูตรเงินชุดที่สอง)
   assert.doesNotMatch(page, /items\.reduce\(/);
 });
@@ -839,7 +839,7 @@ test("ช่องกรองเมนูมีปุ่มล้าง ขึ�
   // กดแล้วไม่เกิดอะไร ซึ่งสอนให้คนเลิกเชื่อปุ่มบนแถบนี้
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(page, /\{search && <button type="button" className=\{styles\.searchClear\}/);
-  assert.match(page, /aria-label="ล้างคำค้น"/);
+  assert.match(page, /aria-label=\{t\("pos_restaurant\.clear_search"\)\}/);
   // คืนโฟกัสหลังล้าง — ไม่งั้นต้องแตะช่องอีกครั้งก่อนพิมพ์คำใหม่
   assert.match(page, /setSearch\(""\); searchRef\.current\?\.focus\(\)/);
   // Escape ล้างได้ด้วยสำหรับเครื่องที่ต่อคีย์บอร์ด/สแกนเนอร์
@@ -854,9 +854,9 @@ test("ปุ่มสั่งซ้ำเป็นข้อความ แล�
   assert.ok(at > 0, "หาปุ่มสั่งซ้ำไม่เจอ");
   const button = page.slice(at, page.indexOf("</button>", at));
   assert.doesNotMatch(button, /<ReloadOutlined/, "ปุ่มนี้ต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
-  assert.match(button, /dropped \|\| stillCharged \? "สั่งใหม่" : "สั่งซ้ำ"/);
+  assert.match(button, /dropped \|\| stillCharged \? t\("pos_restaurant\.order_again_new"\) : t\("pos_restaurant\.order_again"\)/);
   // ป้ายสำหรับ screen reader ต้องบอกทั้งประโยคเหมือนเดิม ไม่ใช่แค่คำบนปุ่ม
-  assert.match(button, /aria-label=\{`สั่ง \$\{item\.productName\}[^`]*พร้อมตัวเลือกเดิม`\}/);
+  assert.match(button, /aria-label=\{t\("pos_restaurant\.order_line_again_label", \{ name: item\.productName,/);
 
   // ปุ่มลบบรรทัดที่ยังไม่ส่งครัวอยู่คอลัมน์เดียวกัน ต้องเป็นคำเหมือนกัน — ปุ่มเดียวที่เป็น
   // สัญลักษณ์ทำให้ตาต้องสลับวิธีอ่านกลางคอลัมน์ และ ⊗ อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
@@ -864,9 +864,9 @@ test("ปุ่มสั่งซ้ำเป็นข้อความ แล�
   assert.ok(removeAt > 0, "หาปุ่มลบไม่เจอ");
   const removeButton = page.slice(removeAt, page.indexOf("</button>", removeAt));
   assert.doesNotMatch(removeButton, /<CloseCircleOutlined/, "ปุ่มลบต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
-  assert.match(removeButton, />ลบ<\/button>|>ลบ$/m);
+  assert.match(removeButton, />\{t\("pos_restaurant\.remove"\)\}$/m);
   // บิลหนึ่งใบมีเมนูซ้ำกันได้หลายบรรทัด ป้ายจึงต้องบอกด้วยว่าลบบรรทัดของเมนูไหน
-  assert.match(removeButton, /aria-label=\{`ลบ \$\{item\.productName\} ออกจากบิล`\}/);
+  assert.match(removeButton, /aria-label=\{t\("pos_restaurant\.remove_line_label", \{ name: item\.productName \}\)\}/);
 
   // ปุ่มสองแบบในคอลัมน์เดียวกันต้องกว้างเท่ากัน ไม่งั้นขอบซ้ายเยื้องกันทุกบรรทัด
   const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
@@ -882,17 +882,17 @@ test("กล่องเพิ่มเมนูเป็นจอสัมผ�
   // ทุกจานที่เข้าบิลผ่านกล่องนี้ · งานจริงคือ "สองแก้ว หวานน้อย เพิ่มในบิล" ในสองสามวินาที
   // ช่องพิมพ์ตัวเลขบนแท็บเล็ตต้องเรียกคีย์บอร์ดขึ้นมาบังครึ่งจอเพื่อพิมพ์เลขตัวเดียว
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  const start = page.indexOf("okText={`เพิ่มในบิล");
+  const start = page.indexOf('okText={t("pos_restaurant.add_to_check_amount"');
   assert.ok(start > 0, "หากล่องเพิ่มเมนูไม่เจอ");
   const dialog = page.slice(start, page.indexOf("<Modal", start + 10));
   assert.doesNotMatch(dialog, /type="number"/, "จำนวนต้องเป็น stepper ไม่ใช่ช่องพิมพ์ตัวเลข");
   assert.match(dialog, /styles\.stepper/);
-  assert.match(dialog, /aria-label="เพิ่มจำนวน"/);
+  assert.match(dialog, /aria-label=\{t\("pos_restaurant\.qty_plus"\)\}/);
   assert.match(dialog, /MENU_QTY_SHORTCUTS/);
   // ยอดรวมต้องอยู่บนปุ่ม — เป็นสิ่งสุดท้ายที่ตาเห็นก่อนกด
-  assert.match(page, /okText=\{`เพิ่มในบิล · ฿\$\{money\(menuHitTotal\)\}`\}/);
+  assert.match(page, /okText=\{t\("pos_restaurant\.add_to_check_amount", \{ amount: money\(menuHitTotal\) \}\)\}/);
   // ปุ่มยกเลิกต้องเป็นไทย ไม่ปล่อยให้ antd ใส่ "Cancel" ให้
-  assert.match(page, /cancelText="ยกเลิก"/);
+  assert.match(page, /cancelText=\{t\("pos_restaurant\.cancel"\)\}/);
   // สูตรราคาต่อหน่วยต้องมีที่เดียว (เดิมเขียนซ้ำสองรอบในข้อความเดียว)
   assert.equal(page.split("modifier.priceDelta, 0)").length - 1, 1);
 });
@@ -901,9 +901,9 @@ test("กลุ่มตัวเลือกบอกกติกาครบ �
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   const group = page.slice(page.indexOf("function MenuModifierGroups"), page.indexOf("function ", page.indexOf("function MenuModifierGroups") + 10));
   // เดิมบอกแต่ขั้นต่ำ — คนหน้าร้านต้องรู้ก่อนแตะว่าเลือกได้กี่อย่าง
-  assert.match(group, /เลือกได้ 1/);
-  assert.match(group, /เลือกได้ไม่เกิน \$\{meta\.maxSelect\}/);
-  assert.match(group, /ต้องเลือกอย่างน้อย \$\{meta\.minSelect\}/);
+  assert.match(group, /t\("pos_restaurant\.modifier_pick_one"\)/);
+  assert.match(group, /t\("pos_restaurant\.modifier_pick_max", \{ max: meta\.maxSelect \}\)/);
+  assert.match(group, /t\("pos_restaurant\.modifier_pick_min", \{ min: meta\.minSelect \}\)/);
   // ชิปยังเป็น radio/checkbox จริงข้างใน จึงคุมด้วยคีย์บอร์ด/screen reader ได้
   assert.match(group, /type=\{single \? "radio" : "checkbox"\}/);
   assert.match(group, /modifier\.priceDelta > 0 && <small>/);
@@ -970,7 +970,8 @@ test("ปุ่มที่กดไปก็ล้มต้องกดไม�
     "ใบจองหาย = ส่งครัวคือทางกู้ ต้องกดได้แม้ไม่มีรายการใหม่");
   assert.match(src, /disabled=\{!check\.items\.length \|\| hasUnsent \|\| reservationLost/,
     "คิดเงินตอนใบจองหายล้มแน่นอน — ต้องกันไว้ก่อน ไม่ใช่ให้เจอ error ต่อหน้าลูกค้า");
-  assert.match(src, /ใบจองสต็อกของโต๊ะนี้หายไป/, "ต้องบอกด้วยว่าทำอะไรต่อ ไม่ใช่แค่ปิดปุ่ม");
+  assert.match(src, /t\("pos_restaurant\.reservation_lost"\)[^]{0,200}t\("pos_restaurant\.reservation_lost_action"\)/,
+    "ต้องบอกด้วยว่าทำอะไรต่อ ไม่ใช่แค่ปิดปุ่ม");
 });
 
 /**

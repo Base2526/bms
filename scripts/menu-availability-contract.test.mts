@@ -168,7 +168,7 @@ test("การ์ดที่ปิดขายต้องเงียบ ส�
   assert.match(page, /disabled=\{!item\.sellable && !soldOutToday\}/);
   assert.match(page, /if \(soldOutToday\) setSoldOutSheet\(item\); else void chooseMenu\(item\);/);
   // แผ่นเดียวกันต้องใช้ได้สองทิศ ไม่ใช่มีแต่ทางปิด
-  assert.match(page, /soldOutSheet\.availability === "SOLD_OUT_TODAY"[\s\S]{0,400}เปิดขายเดี๋ยวนี้/);
+  assert.match(page, /soldOutSheet\.availability === "SOLD_OUT_TODAY"[\s\S]{0,400}t\("pos_restaurant\.reopen_now"\)/);
   // รูปจางลงแทนการเอาอะไรไปทับ
   assert.match(css, /\.dishCardUnavailable \.dishArt \{[^}]*grayscale/);
 });
@@ -187,5 +187,5 @@ test("เวลาที่เมนูจะกลับมาขายเอ�
   assert.match(menu, /unavailableReason: row\.unavailable_reason/);
   const page = withoutComments(source("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.doesNotMatch(page, /04:00/, "จอห้าม hardcode เวลารีเซ็ตของร้าน");
-  assert.match(page, /timeOf\(item\.unavailableResetsAt\)/);
+  assert.match(page, /timeOf\(item\.unavailableResetsAt, uiLocale\)/);
 });
