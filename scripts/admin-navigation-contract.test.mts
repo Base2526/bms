@@ -365,10 +365,24 @@ test("the sidebar renders one menu definition and no placeholder badges", () => 
   for (const badge of badgeSources) {
     assert.match(sidebar, new RegExp(`${badge}:`), `badge ${badge} has no counter wired in the shell`);
   }
-  // The footer keeps the manual pinned; ADMIN_NAV_FOOTER_ROUTES is what coverage checks read.
-  const footer = sidebar.slice(sidebar.indexOf("ผู้ช่วย AI + คู่มือ"), sidebar.indexOf("{admin && ("));
+  // ADMIN_NAV_FOOTER_ROUTES is what coverage checks read, so both destinations have to stay
+  // reachable from the shell. The assistant keeps its own row while the rail is expanded; the
+  // manual (and the assistant, once the rail collapses) lives in the identity row's ⋯ menu.
+  // Reachability is the guarantee — which of the two carries a given route is presentation.
+  const accountMenu = sidebar.slice(
+    sidebar.indexOf("const accountMenuItems"),
+    sidebar.indexOf("const sidebarBody")
+  );
+  const footerBlock = sidebar.slice(
+    sidebar.indexOf("{/* ท้ายแถบ:"),
+    sidebar.indexOf("{mini && !aiOverLimit ? quotaMeter : null}")
+  );
+  // An anchor that stops matching turns slice() into "" and every includes() below into a pass.
+  assert.ok(accountMenu.length > 0, "account menu anchor moved — re-aim this slice");
+  assert.ok(footerBlock.length > 0, "footer anchor moved — re-aim this slice");
+  const footerReach = accountMenu + footerBlock;
   for (const route of ADMIN_NAV_FOOTER_ROUTES) {
-    assert.ok(footer.includes(route), `footer route ${route} is no longer rendered`);
+    assert.ok(footerReach.includes(route), `footer route ${route} is no longer reachable from the shell`);
   }
 
   // Hiding a menu entry is not authorization: the shell must not be the only check.
@@ -642,13 +656,16 @@ test("the collapsed rail gives its own breathing room and every control reads as
   assert.match(sidebar, /background: 'var\(--app-surface-2\)',\r?\n\s*border: '1px solid var\(--app-border\)',/);
   // Controls without their own box (help pair, profile) rely on hover as the only affordance.
   assert.match(source("apps/web/app/globals.css"), /\.bms-sider-quiet:hover/);
-  assert.equal((sidebar.match(/className="bms-sider-quiet"/g) ?? []).length, 3,
-    "search, the help pair and the profile row all need a hover state");
-  // The AI quota strip had no bottom padding at all while collapsed, so it sat flush against the
-  // footer border and the whole bottom cluster read as one jammed block of icons.
-  assert.match(sidebar, /padding: mini \? '0 10px 10px' : '0 10px 8px'/);
-  assert.match(sidebar, /padding: mini \? '8px 0' : '4px 8px', marginBottom: mini \? 8 : 6/);
-  assert.match(sidebar, /padding: mini \? '5px 0' : '4px', marginBottom: mini \? 12 : 8/);
+  assert.equal((sidebar.match(/className="bms-sider-quiet"/g) ?? []).length, 5,
+    "search, the assistant row, both identity targets and the collapsed avatar need a hover state");
+  // The bottom cluster used to be three containers, each with its own divider and padding pair —
+  // that is where its 191px went (223px collapsed, i.e. *more* than expanded). One container now.
+  assert.equal((sidebar.match(/borderTop: '1px solid var\(--app-border\)'/g) ?? []).length, 1,
+    "the footer needs one divider, not one per block");
+  // Every row still gets its own breathing room while collapsed, so the rail never reads as a
+  // single jammed block of icons. The 3px quota meter is the one thing flush to the edge.
+  assert.match(sidebar, /padding: mini \? '10px 10px 0' : '8px 10px 0'/);
+  assert.match(sidebar, /padding: mini \? \(aiOverLimit \? '0 10px 10px' : '10px'\) : '0 10px 8px'/);
 });
 
 test("สวิตช์พื้นที่ทำงาน: ป้ายสั้นพอดีแถบ และความหมายเต็มอยู่ที่ tooltip", () => {

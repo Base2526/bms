@@ -1,0 +1,24 @@
+-- =============================================================
+-- 9.67  New accounts default to the light theme, not the OS setting
+-- =============================================================
+-- 7.50__users_theme_preference.sql set DEFAULT 'system' on users.theme_preference.
+-- None of the INSERT INTO users call sites (BMS shop signup in lib/bms/signup.ts,
+-- admin-created staff in graphql/resolvers.ts, community registerUser/loginWithSocial)
+-- set `theme_preference` explicitly, so every new account silently inherits 'system'
+-- and SessionLayer.tsx then resolves that against prefers-color-scheme on first login.
+--
+-- Why 'system' is the wrong default for this product: the register is not theme-aware.
+-- app/(pos)/pos/page.tsx and app/(pos)/pos/display/page.tsx are light-only (pos.css
+-- carries fixed colors and neither page reads the dark tokens), while /admin and
+-- /pos/restaurant do follow the theme. A shop whose staff run a dark OS therefore got a
+-- dark back office next to a light register — on the two screens their cashiers stare at
+-- all day. Landing everyone on light makes the whole product agree with itself, and the
+-- ThemeToggle on HeaderBar still lets anyone opt into dark or back to system.
+--
+-- Only the column DEFAULT changes here — existing rows with theme_preference='system'
+-- are left alone on purpose, since there is no way to tell "explicitly chose System"
+-- apart from "never touched it" after the fact, and flipping a real System choice to
+-- Light would be wrong. This only affects accounts created from now on.
+--
+-- ROLLBACK: ALTER TABLE users ALTER COLUMN theme_preference SET DEFAULT 'system';
+ALTER TABLE users ALTER COLUMN theme_preference SET DEFAULT 'light';
