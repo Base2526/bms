@@ -30,7 +30,25 @@ const M_UPSERT = gql`
 const M_DEACTIVATE = gql`
   mutation DeactivatePromotion($id: ID!) { bmsDeactivateProductPromotion(id: $id) }
 `;
+const Q_TIERS = gql`
+  query ProductPriceTiers($productSku: String, $locationId: ID) {
+    bmsProductPriceTiers(productSku: $productSku, locationId: $locationId) {
+      productSku productName locationId locationName minQty scope size unitPrice discountPct updatedAt
+    }
+  }
+`;
+const M_REPLACE_TIERS = gql`
+  mutation ReplacePriceTiers($input: BmsReplacePriceTiersInput!) {
+    bmsReplaceProductPriceTiers(input: $input) { productSku locationId minQty scope size unitPrice discountPct }
+  }
+`;
 
+type PriceTierRow = {
+  productSku: string; productName: string | null;
+  locationId: string | null; locationName: string | null;
+  minQty: number; scope: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+  size: string | null; unitPrice: number | null; discountPct: number | null; updatedAt: string;
+};
 type PromotionRow = {
   id: string; productSku: string; productName: string | null;
   locationId: string | null; locationName: string | null;
@@ -51,6 +69,9 @@ export default function PromotionsPage() {
   const [search, setSearch] = useState("");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [form] = Form.useForm();
+  const [tierSku, setTierSku] = useState<string | null>(null);
+  const [tierLocation, setTierLocation] = useState<string>(ALL_BRANCHES);
+  const [tierDraft, setTierDraft] = useState<Array<{ minQty: number; unitPrice: number }>>([]);
 
   const list = useQuery(Q_PROMOTIONS, {
     skip: !canView,
@@ -60,6 +81,14 @@ export default function PromotionsPage() {
   const [loadProducts, products] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
   const [upsert, upsertState] = useMutation(M_UPSERT);
   const [deactivate] = useMutation(M_DEACTIVATE);
+  // ราคาส่งแยกสาขา (9.65) — อยู่หน้าเดียวกับโปรโมชันเพราะเป็นคำถามเดียวกัน
+  // ("สาขานี้ขายราคาต่างจากส่วนกลางตรงไหน") และตอบด้วยสิทธิ์ชุดเดียวกัน
+  const tierList = useQuery(Q_TIERS, {
+    skip: !canView,
+    variables: { productSku: tierSku, locationId: tierLocation === ALL_BRANCHES ? null : tierLocation },
+    fetchPolicy: "cache-and-network",
+  });
+  const [replaceTiers, replaceTiersState] = useMutation(M_REPLACE_TIERS);
 
   const kind = Form.useWatch("kind", form) ?? "N_FOR_PRICE";
 
@@ -94,6 +123,33 @@ export default function PromotionsPage() {
       form.resetFields(["buyQty", "getQty", "bundlePrice", "startsAt", "endsAt", "note"]);
       await list.refetch();
       message.success(t("admin_promotions.saved"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("admin_promotions.save_failed"));
+    }
+  }
+
+  /**
+   * บันทึกบันไดราคาส่งของ (สินค้า, สาขา) ทั้งชุด
+   *
+   * ส่งลิสต์ว่าง = เอาบันไดของสาขานี้ออก แล้วสาขากลับไปใช้ของทั้งร้าน — ต้องเป็นการกระทำ
+   * ที่ทำได้ ไม่งั้นสาขาที่เคยตั้งราคาของตัวเองจะเลิกใช้ไม่ได้เลย
+   */
+  async function saveTiers() {
+    if (!tierSku) return;
+    try {
+      await replaceTiers({
+        variables: {
+          input: {
+            productSku: tierSku,
+            locationId: tierLocation === ALL_BRANCHES ? null : tierLocation,
+            tiers: tierDraft
+              .filter((row) => Number(row.minQty) >= 2 && Number(row.unitPrice) >= 0)
+              .map((row) => ({ minQty: Math.trunc(Number(row.minQty)), scope: "PER_VARIANT_FIXED", unitPrice: Number(row.unitPrice) })),
+          },
+        },
+      });
+      await tierList.refetch();
+      message.success(t("admin_promotions.tier_saved"));
     } catch (error) {
       message.error(error instanceof Error ? error.message : t("admin_promotions.save_failed"));
     }
@@ -167,6 +223,64 @@ export default function PromotionsPage() {
           <Form.Item name="note" label={t("admin_promotions.note")}><Input.TextArea rows={2} maxLength={300} /></Form.Item>
           <Button block type="primary" loading={upsertState.loading} onClick={() => void submit()}>{t("admin_promotions.save")}</Button>
         </Form>
+      </Card>
+
+      {/* ราคาส่งตามจำนวนแยกสาขา (9.65) — บันไดของสาขา "แทนที่" ของทั้งร้านทั้งชุด
+          ไม่ใช่ผสมกัน จึงแก้ทีละบันได ไม่ใช่ทีละขั้น (เหตุผลเต็มอยู่ใน migration) */}
+      <Card title={t("admin_promotions.tier_title")}>
+        <Alert type="info" showIcon closable style={{ marginBottom: 12 }} message={t("admin_promotions.tier_hint")} />
+        <Space.Compact style={{ width: "100%", marginBottom: 10 }}>
+          <Select
+            style={{ width: "100%" }} showSearch optionFilterProp="label" allowClear
+            placeholder={t("admin_promotions.select_product")} value={tierSku}
+            onChange={(sku) => { setTierSku(sku ?? null); setTierDraft([]); }}
+            options={productRows.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
+          />
+        </Space.Compact>
+        <Select
+          style={{ width: "100%", marginBottom: 12 }} value={tierLocation}
+          onChange={(value) => { setTierLocation(value); setTierDraft([]); }}
+          options={[
+            { value: ALL_BRANCHES, label: t("admin_promotions.scope_all") },
+            ...locations.map((l: any) => ({ value: l.id, label: `${l.branchCode} · ${l.name}` })),
+          ]}
+        />
+        <Table
+          rowKey={(row: PriceTierRow) => `${row.locationId ?? "all"}-${row.scope}-${row.size ?? ""}-${row.minQty}`}
+          size="small" loading={tierList.loading} pagination={false}
+          dataSource={(tierList.data?.bmsProductPriceTiers ?? []).filter((row: PriceTierRow) =>
+            (tierLocation === ALL_BRANCHES ? row.locationId == null : row.locationId === tierLocation))}
+          locale={{ emptyText: t("admin_promotions.tier_empty") }}
+          columns={[
+            { title: t("admin_promotions.tier_min_qty"), dataIndex: "minQty", width: 110 },
+            {
+              title: t("admin_promotions.tier_unit_price"),
+              render: (_: unknown, row: PriceTierRow) => row.scope === "CROSS_VARIANT_PERCENT"
+                ? `-${row.discountPct}%`
+                : Number(row.unitPrice ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 }),
+            },
+            { title: t("admin_promotions.tier_size"), dataIndex: "size", width: 110, render: (v: string | null) => v ?? "—" },
+          ]}
+        />
+        <div style={{ marginTop: 12 }}>
+          {tierDraft.map((row, index) => <Space key={index} style={{ display: "flex", marginBottom: 8 }}>
+            <InputNumber min={2} value={row.minQty} placeholder={t("admin_promotions.tier_min_qty")}
+              onChange={(value) => setTierDraft((current) => current.map((r, i) => i === index ? { ...r, minQty: Number(value ?? 0) } : r))} />
+            <InputNumber min={0} step={0.01} value={row.unitPrice} placeholder={t("admin_promotions.tier_unit_price")}
+              onChange={(value) => setTierDraft((current) => current.map((r, i) => i === index ? { ...r, unitPrice: Number(value ?? 0) } : r))} />
+            <Button danger size="small" onClick={() => setTierDraft((current) => current.filter((_, i) => i !== index))}>
+              {t("admin_promotions.tier_remove")}
+            </Button>
+          </Space>)}
+          <Space>
+            <Button disabled={!canEdit || !tierSku} onClick={() => setTierDraft((current) => [...current, { minQty: 2, unitPrice: 0 }])}>
+              {t("admin_promotions.tier_add")}
+            </Button>
+            <Button type="primary" disabled={!canEdit || !tierSku} loading={replaceTiersState.loading} onClick={() => void saveTiers()}>
+              {t("admin_promotions.tier_save")}
+            </Button>
+          </Space>
+        </div>
       </Card>
 
       <Card

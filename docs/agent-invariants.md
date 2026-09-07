@@ -414,7 +414,8 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 ## Restaurant POS (dine-in)
 
 `lib/bms/restaurantPos.ts`, `app/(pos)/pos/restaurant`, `app/api/pos/restaurant/*`,
-`app/api/pos/kitchen/*` and migrations `9.44`-`9.45` own dine-in service. Operator detail:
+`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`
+own dine-in service. Operator detail:
 [business/pos.md § Restaurant POS](business/pos.md). Schema:
 [architecture/database.md § Restaurant POS](architecture/database.md).
 
@@ -431,6 +432,26 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   deposit hand-over in `9.0`). Without that re-stamp a different cashier closing the table is refused
   in front of the customer, and a table left open across a shift change can never be paid while its
   stock stays reserved.
+- **Seating a queued party opens its check in the same transaction that closes the entry** (`9.64`),
+  through the same `openRestaurantCheckInTx()` the floor screen uses. Two transactions can leave a
+  table holding a bill nobody can trace to a queue entry while that entry still shows as waiting —
+  both invisible. The queue is the only place in dine-in that may create a check outside the floor
+  screen, and it must never grow a second way to open one.
+- **Moving lines between checks rebuilds both amounts, and releases before it reserves.** Split
+  (`9.63`) and merge use the same `createOrderInTx()` path a later kitchen round uses — never
+  arithmetic on `amount_due`, which would be a second money formula free to drift. The source's
+  reservation is released first; reserving the destination first makes splitting the last portion of
+  a dish fail with `OUT_OF_STOCK` while that dish is already on the table. Kitchen tickets carry the
+  `check_id` that tells the kitchen which table a plate belongs to, so they must move with their
+  lines, and per-check round numbers are re-ranked rather than carried across.
+- **A merge is not a void.** Every line is still charged on the destination, so it must not require a
+  second `pos.void` approver and must not close the source as `CANCELLED` — a shop that merges bills
+  often would otherwise read as a shop that voids bills often. `MERGED` is its own terminal status
+  and records `merged_into_check_id`.
+- **A table may carry several open checks; the primary is the lowest `split_group_no` still open.**
+  Anything resolving "the table's check" — the floor card, a QR scan — must pick the primary
+  deterministically. Ordering by `opened_at` sends a guest who scanned the table QR into whichever
+  bill was split off most recently, which is someone else's.
 - **Replacing a reservation is one transaction.** `sendRestaurantKitchenRound()` locks the shift
   (`FOR KEY SHARE` — the same order `createOrderInTx()` and `finalizePosSale()` take: shift before
   stock), locks the check, cancels the superseded order with `cancelOrderInTx()`, clears its

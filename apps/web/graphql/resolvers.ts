@@ -69,6 +69,7 @@ import { bmsStoreProfileResolvers } from "@/graphql/bmsStoreProfile";
 import { bmsStockCapabilityResolvers } from "@/graphql/bmsStockCapabilities";
 import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
+import { bmsProductPriceTiersResolvers } from "@/graphql/bmsProductPriceTiers";
 import { bmsProductPromotionsResolvers } from "@/graphql/bmsProductPromotions";
 import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
 import { bmsPosResolvers } from "@/graphql/bmsPos";
@@ -2866,6 +2867,7 @@ const rawResolvers = {
     ...bmsStockCapabilityResolvers.Query,
     ...bmsRevisionsResolvers.Query,
     ...bmsCouponsResolvers.Query,
+    ...bmsProductPriceTiersResolvers.Query,
     ...bmsProductPromotionsResolvers.Query,
     ...bmsMembershipResolvers.Query,
     ...bmsPosResolvers.Query,
@@ -7585,6 +7587,7 @@ const rawResolvers = {
     ...bmsStoreProfileResolvers.Mutation,
     ...bmsStockCapabilityResolvers.Mutation,
     ...bmsCouponsResolvers.Mutation,
+    ...bmsProductPriceTiersResolvers.Mutation,
     ...bmsProductPromotionsResolvers.Mutation,
     ...bmsMembershipResolvers.Mutation,
     ...bmsPosResolvers.Mutation,

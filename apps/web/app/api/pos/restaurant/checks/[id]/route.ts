@@ -3,11 +3,13 @@ import {
   addRestaurantCheckItem,
   cancelRestaurantCheck,
   getRestaurantCheck,
+  mergeRestaurantChecks,
   moveRestaurantCheck,
   removeRestaurantCheckItem,
   sendRestaurantKitchenRound,
   settleRestaurantCheck,
   setRestaurantCheckGuestCount,
+  splitRestaurantCheck,
 } from "@/lib/bms/restaurantPos";
 import { cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
@@ -84,6 +86,37 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
       targetTableId: String(body.targetTableId ?? "").trim(),
     });
     return NextResponse.json({ check });
+  }
+  // แยกบิล/รวมบิลใช้สิทธิ์เดียวกับการย้ายโต๊ะ (`pos.sell`) โดยตั้งใจ — ทั้งสามอย่าง
+  // ไม่ทำให้เงินหรืออาหารหายไปจากระบบ แค่ย้ายว่าใครจ่ายใบไหน · การยกเลิกบิลซึ่ง *ทิ้ง*
+  // ของจริงยังบังคับผู้อนุมัติคนที่สองอยู่ข้างล่างเหมือนเดิม
+  if (action === "split") {
+    const itemIds = Array.isArray(body.itemIds) ? body.itemIds.map((id) => String(id ?? "").trim()) : [];
+    if (!itemIds.length || itemIds.some((id) => !id)) {
+      return NextResponse.json({ error: "เลือกรายการที่จะแยกไปบิลใหม่ก่อน" }, { status: 400 });
+    }
+    const result = await splitRestaurantCheck({
+      ...common,
+      deviceId: auth.device.id,
+      shiftId: auth.shift.id,
+      itemIds,
+      guestCount: body.guestCount == null ? null : Number(body.guestCount),
+    });
+    return NextResponse.json(result);
+  }
+  if (action === "merge") {
+    const targetCheckId = String(body.targetCheckId ?? "").trim();
+    if (!targetCheckId) return NextResponse.json({ error: "เลือกบิลปลายทางก่อน" }, { status: 400 });
+    const result = await mergeRestaurantChecks({
+      tenantId: auth.device.tenantId,
+      locationId: auth.device.locationId,
+      deviceId: auth.device.id,
+      shiftId: auth.shift.id,
+      actorUserId: auth.actor.userId,
+      sourceCheckId: params.id,
+      targetCheckId,
+    });
+    return NextResponse.json(result);
   }
   if (action === "cancel") {
     const reason = String(body.reason ?? "").trim();

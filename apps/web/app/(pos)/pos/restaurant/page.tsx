@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ShopOutlined, SoundOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -48,8 +48,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "QR" | "KITCHEN" | "BILLS" | "SHIFT";
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QR", "KITCHEN", "BILLS", "SHIFT"];
+type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "KITCHEN" | "BILLS" | "SHIFT";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "KITCHEN", "BILLS", "SHIFT"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -57,21 +57,27 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QR", "KITCHEN
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", qr: "QR", qrorders: "QR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
+const QUEUE_STATUS_LABEL: Record<string, string> = {
+  WAITING: "กำลังรอ", CALLED: "เรียกแล้ว", SEATED: "ได้โต๊ะแล้ว",
+  CANCELLED: "ยกเลิก", NO_SHOW: "เรียกแล้วไม่มา",
+};
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
 type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
-type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null };
-type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null };
+type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number };
+type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null; checks: FloorCheck[] };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
+type WaitlistEntry = { id: string; kind: "WALK_IN" | "RESERVATION"; status: string; serviceDate: string; queueNo: number | null; reservedFor: string | null; partySize: number; guestName: string | null; guestPhone: string | null; note: string | null; preferredTableId: string | null; preferredTableCode: string | null; seatedTableId: string | null; seatedTableCode: string | null; checkId: string | null; calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string };
+type WaitlistBoard = { entries: WaitlistEntry[]; waitingCount: number; calledCount: number; waitingGuests: number };
 const FLOOR_TABLE_SIZE = {
   round: { width: 96, height: 96 },
   rect: { width: 128, height: 76 },
 } as const;
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; lineAmount: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
-type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; items: CheckItem[] };
+type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
   kitchenStation: string | null;
@@ -422,6 +428,21 @@ export default function RestaurantPosPage() {
   const [kitchenNote, setKitchenNote] = useState("");
   const [menuQty, setMenuQty] = useState(1);
   const [openTable, setOpenTable] = useState<DiningTable | null>(null);
+  // โต๊ะที่แยกบิลแล้วมีบิลเปิดอยู่หลายใบ — แตะโต๊ะต้องถามก่อนว่าจะเปิดใบไหน
+  const [billPickerTable, setBillPickerTable] = useState<DiningTable | null>(null);
+  const [waitlist, setWaitlist] = useState<WaitlistBoard>({ entries: [], waitingCount: 0, calledCount: 0, waitingGuests: 0 });
+  const [queueFormOpen, setQueueFormOpen] = useState<"WALK_IN" | "RESERVATION" | null>(null);
+  const [queueParty, setQueueParty] = useState(2);
+  const [queueName, setQueueName] = useState("");
+  const [queuePhone, setQueuePhone] = useState("");
+  const [queueNote, setQueueNote] = useState("");
+  const [queueReservedFor, setQueueReservedFor] = useState("");
+  const [seatEntry, setSeatEntry] = useState<WaitlistEntry | null>(null);
+  const [seatTableId, setSeatTableId] = useState("");
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitItemIds, setSplitItemIds] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
   const [guestCount, setGuestCount] = useState(2);
   const [shiftModal, setShiftModal] = useState<"OPEN" | "CLOSE" | null>(null);
   const [cashAmount, setCashAmount] = useState(0);
@@ -555,6 +576,17 @@ export default function RestaurantPosPage() {
     return Math.max(height, table.positionY + size.height + 24);
   }, 520);
   const availableTables = floor.tables.filter((table) => table.status === "AVAILABLE" && table.id !== selectedTableId);
+  // บรรทัดที่ย้ายไปบิลใหม่ได้ = ทุกบรรทัดที่ยังถูกคิดเงินอยู่ · บรรทัดที่ครัวยกเลิกไปแล้ว
+  // (status CANCELLED) หลุดจากยอดไปแล้วจึงไม่มีอะไรให้ย้าย
+  const splittableItems = (check?.items ?? []).filter((item) => item.status !== "CANCELLED");
+  // ปลายทางของการรวมบิล = บิลที่เปิดอยู่ใบอื่นทั้งสาขา รวมบิลใบอื่นของโต๊ะเดียวกันด้วย
+  // (แยกไปแล้วแต่ลูกค้าเปลี่ยนใจขอจ่ายรวม เป็นเรื่องที่เกิดจริงพอ ๆ กับการขอแยก)
+  const mergeTargets = floor.tables.flatMap((table) => table.checks
+    .filter((row) => row.id !== check?.id && isOpenCheckStatus(row.status))
+    .map((row) => ({
+      id: row.id,
+      label: `${table.name}${row.splitGroupNo > 1 ? ` · บิล ${row.splitGroupNo}` : ""} · ${row.itemCount} รายการ · ฿${money(row.amountDue)}`,
+    })));
   // นาฬิกาเดินเองทุก 30 วิ เพื่อให้ "นั่งมากี่นาที" บนการ์ดโต๊ะไม่ค้าง โดยไม่ต้องยิง API
   // เริ่มที่ 0 แล้วตั้งค่าใน effect เพื่อไม่ให้ค่าที่ render ฝั่ง server ต่างจาก client
   const [now, setNow] = useState(0);
@@ -588,11 +620,22 @@ export default function RestaurantPosPage() {
   const kitchenReady = tickets.filter((ticket) => ticket.status === "READY").length;
   // แผงขวาตอนยังไม่เลือกโต๊ะ = รายการบิลที่เปิดอยู่ เรียงตามโต๊ะที่ต้องไปก่อน
   // (เดิมเป็นภาพเปล่ากลางจอ ซึ่งกินพื้นที่มากที่สุดของหน้าโดยไม่บอกอะไรเลย)
+  // หนึ่งแถวต่อ **บิล** ไม่ใช่ต่อโต๊ะ — โต๊ะที่แยกบิลไว้มีสองใบที่ต้องเก็บเงินคนละครั้ง
+  // ถ้านับต่อโต๊ะ หัวข้อจะเขียนว่า "บิลที่เปิดอยู่ · 1" ขณะที่การ์ดข้าง ๆ เขียนว่า "2 บิล"
+  // บนหน้าจอเดียวกัน และบิลใบที่สองจะกดเข้าจากแผงนี้ไม่ได้เลย
   const openChecks = useMemo(() => floor.tables
-    .filter((table) => table.check)
-    .map((table) => ({ table, state: tableState(table, tableKitchenStats) }))
-    .sort((a, b) => a.state.rank - b.state.rank || a.table.code.localeCompare(b.table.code)),
+    .flatMap((table) => table.checks.map((row) => ({
+      table,
+      check: row,
+      state: tableState({ ...table, check: row }, tableKitchenStats),
+    })))
+    .sort((a, b) => a.state.rank - b.state.rank
+      || a.table.code.localeCompare(b.table.code)
+      || a.check.splitGroupNo - b.check.splitGroupNo),
     [floor.tables, tableKitchenStats]);
+  /** ป้ายของบิลหนึ่งใบ — ใบที่สองขึ้นไปต้องบอกเลขบิล ไม่งั้นสองแถวจะอ่านเหมือนกันทุกตัวอักษร */
+  const openCheckLabel = (table: DiningTable, row: FloorCheck) =>
+    `${table.name}${row.splitGroupNo > 1 ? ` · บิล ${row.splitGroupNo}` : ""}`;
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
   const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
   const selectedQrSubmission = qrSubmissions.find((submission) => submission.id === qrSelectedId)
@@ -725,6 +768,56 @@ export default function RestaurantPosPage() {
   }
   async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
   async function loadFloor() { const data: Floor = await json("/api/pos/restaurant/floor"); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
+  async function loadWaitlist() { setWaitlist(await json("/api/pos/restaurant/waitlist")); }
+  /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
+  async function waitlistAction(action: string, extra: Record<string, unknown> = {}) {
+    await run(async () => {
+      await json("/api/pos/restaurant/waitlist", {
+        method: "POST", body: JSON.stringify(auth({ action, ...extra })),
+      });
+      await loadWaitlist();
+    });
+  }
+  async function addWaitlistEntry() {
+    const kind = queueFormOpen;
+    if (!kind) return;
+    await run(async () => {
+      const body = await json("/api/pos/restaurant/waitlist", {
+        method: "POST",
+        body: JSON.stringify(auth({
+          action: "add", kind, partySize: queueParty,
+          guestName: queueName.trim() || null, guestPhone: queuePhone.trim() || null,
+          note: queueNote.trim() || null,
+          reservedFor: kind === "RESERVATION" && queueReservedFor
+            ? new Date(queueReservedFor).toISOString()
+            : null,
+        })),
+      });
+      setQueueFormOpen(null);
+      setQueueName(""); setQueuePhone(""); setQueueNote(""); setQueueReservedFor("");
+      await loadWaitlist();
+      message.success(body.entry?.queueNo
+        ? `รับคิวแล้ว · คิวที่ ${body.entry.queueNo}`
+        : "บันทึกการจองแล้ว");
+    });
+  }
+  /**
+   * พาไปนั่ง — server เปิดบิลให้ในทรานแซกชันเดียวกับการปิดคิว จอจึงกระโดดไปที่บิลนั้นได้เลย
+   * (ขั้นตอนถัดไปของคนที่เพิ่งพาลูกค้าไปนั่งคือรับออร์เดอร์ ไม่ใช่กลับมาดูกระดานคิว)
+   */
+  async function seatWaitlistEntry() {
+    if (!seatEntry || !seatTableId) return;
+    await run(async () => {
+      const body = await json("/api/pos/restaurant/waitlist", {
+        method: "POST",
+        body: JSON.stringify(auth({ action: "seat", entryId: seatEntry.id, tableId: seatTableId })),
+      });
+      setSeatEntry(null); setSeatTableId("");
+      if (body.check) { setCheck(body.check); setSelectedTableId(body.check.tableId); setScreen("ORDER"); }
+      await Promise.all([loadFloor(), loadWaitlist()]);
+      message.success("พาไปนั่งและเปิดบิลแล้ว");
+    });
+  }
   /**
    * เสียงเตือนสังเคราะห์เอง ไม่โหลดไฟล์ — จอครัวออฟไลน์ได้และ CSP ของแอปไม่ต้องเปิดทางให้
    * ไฟล์เสียงจากที่อื่น · สองโน้ตสั้นเพื่อให้แยกออกจากเสียงแจ้งเตือนของเครื่องอื่นในร้าน
@@ -845,7 +938,7 @@ export default function RestaurantPosPage() {
     return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", "แจ้งจากครัว");
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadWaitlist()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
   /**
    * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
@@ -955,6 +1048,17 @@ export default function RestaurantPosPage() {
   useEffect(() => { if (menuOnlySoldOut && soldOutCount === 0) setMenuOnlySoldOut(false); }, [menuOnlySoldOut, soldOutCount]);
   // KDS/floor are operational screens, so stale data is more dangerous than a
   // small bounded poll. The API remains branch-scoped by the device token.
+  // ป้ายจำนวนคิวอยู่บนแถบซ้าย (เห็นทุกจอ) ด้วยเหตุผลเดียวกับป้ายออร์เดอร์ QR — ดึงเฉพาะ
+  // ตอนเปิดแท็บคิวอยู่ = ป้ายไม่มีวันขึ้นตอนพนักงานยืนหน้าผังโต๊ะ แล้วคนที่รออยู่หน้าร้าน
+  // ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น · เปิดแท็บอยู่ 10 วิ · จออื่น 30 วิ
+  useEffect(() => {
+    if (!token) return;
+    const timer = window.setInterval(
+      () => { void loadWaitlist().catch(() => {}); },
+      screen === "QUEUE" ? 10000 : 30000
+    );
+    return () => window.clearInterval(timer);
+  }, [token, screen]);
   useEffect(() => {
     if (!token || screen !== "KITCHEN") return;
     const timer = window.setInterval(() => { void Promise.all([loadTickets(), loadFloor()]).catch(() => {}); }, 5000);
@@ -973,8 +1077,25 @@ export default function RestaurantPosPage() {
     return () => window.clearInterval(timer);
   }, [token, screen]);
 
+  /** เปิดบิลที่ระบุมาแล้ว — ใช้เมื่อคนกดเลือก "ใบไหน" ไปแล้ว (แผงบิล/แถบบิล/กล่องเลือกบิล) */
+  async function openCheckById(table: DiningTable, checkId: string) {
+    await run(async () => {
+      await loadCheck(checkId);
+      setSelectedTableId(table.id);
+      setOpenTable(null);
+      setScreen("ORDER");
+    });
+  }
   async function chooseTable(table: DiningTable) {
     if (table.blocked) return;
+    // โต๊ะที่แยกบิลไว้มีบิลเปิดอยู่หลายใบ — เปิดใบแรกให้เองคือการเดาแทนคนที่ยืนอยู่ตรงนั้น
+    // แล้วสั่งอาหารเข้าบิลของอีกคนโดยไม่มีอะไรบนจอบอกว่าเข้าใบไหน
+    if (table.checks.length > 1) {
+      // ยังไม่ทำเครื่องหมายว่าเลือกโต๊ะนี้ — โต๊ะจะถูกเลือกก็ต่อเมื่อบิลใบใดใบหนึ่งโหลดสำเร็จ
+      // (กฎเดิมของหน้านี้: การเลือกโต๊ะต้องตามหลังบิลที่โหลดได้จริง ไม่ใช่ตามการแตะ)
+      setBillPickerTable(table);
+      return;
+    }
     if (table.check) {
       await run(async () => {
         await loadCheck(table.check!.id);
@@ -1085,6 +1206,41 @@ export default function RestaurantPosPage() {
   }
 
   async function action(name: string, extra: Record<string, unknown> = {}) { if (!check) return; await run(async () => { const body = await json(`/api/pos/restaurant/checks/${check.id}`, { method: "POST", body: JSON.stringify(auth({ action: name, ...extra })) }); if (body.check) setCheck(body.check); await Promise.all([loadFloor(), loadTickets()]); }); }
+  /**
+   * แยกบิล — บรรทัดที่เลือกย้ายไปเป็นบิลใหม่ของโต๊ะเดิม แล้วจอกระโดดไปยืนบนบิลใหม่
+   *
+   * ยืนบนใบใหม่โดยตั้งใจ เพราะขั้นตอนถัดไปของคนที่เพิ่งกดคือเก็บเงินใบที่เพิ่งแยกออกมา
+   * (ลูกค้าที่ขอแยกมักเป็นคนที่จะลุกก่อน) · ใบเดิมยังกดกลับได้จากผังโต๊ะ
+   */
+  async function splitCheck() {
+    if (!check || splitItemIds.length === 0) return;
+    await run(async () => {
+      const body = await json(`/api/pos/restaurant/checks/${check.id}`, {
+        method: "POST",
+        body: JSON.stringify(auth({ action: "split", itemIds: splitItemIds })),
+      });
+      setSplitOpen(false);
+      setSplitItemIds([]);
+      if (body.target) setCheck(body.target);
+      await Promise.all([loadFloor(), loadTickets()]);
+      message.success(`แยกเป็นบิลใหม่แล้ว · ฿${money(Number(body.target?.amountDue ?? 0))}`);
+    });
+  }
+  /** รวมบิล — ยกบิลที่เปิดอยู่ตอนนี้ไปรวมกับใบปลายทาง แล้วจอไปยืนบนใบปลายทาง */
+  async function mergeCheck() {
+    if (!check || !mergeTargetId) return;
+    await run(async () => {
+      const body = await json(`/api/pos/restaurant/checks/${check.id}`, {
+        method: "POST",
+        body: JSON.stringify(auth({ action: "merge", targetCheckId: mergeTargetId })),
+      });
+      setMergeOpen(false);
+      setMergeTargetId("");
+      if (body.check) setCheck(body.check);
+      await Promise.all([loadFloor(), loadTickets()]);
+      message.success(`รวม ${body.movedItems ?? 0} รายการเข้าบิลปลายทางแล้ว`);
+    });
+  }
   async function searchMembers() {
     if (memberQuery.trim().length < 3) { setMemberResults([]); return; }
     await run(async () => {
@@ -1530,6 +1686,7 @@ export default function RestaurantPosPage() {
   const railScreens = [
     { key: "ORDER" as const, short: "สั่ง", full: "สั่งอาหาร", icon: <WalletOutlined />, badge: 0 },
     { key: "FLOOR" as const, short: "โต๊ะ", full: "ผังโต๊ะ", icon: <AppstoreOutlined />, badge: unsentTableCount },
+    { key: "QUEUE" as const, short: "คิว", full: "บัตรคิวและการจองโต๊ะ", icon: <TeamOutlined />, badge: waitlist.waitingCount + waitlist.calledCount },
     { key: "QR" as const, short: "QR", full: "ออร์เดอร์ QR รอรับ", icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
     { key: "KITCHEN" as const, short: "ครัว", full: "จอครัว", icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
     { key: "BILLS" as const, short: "บิล", full: "บิลล่าสุด", icon: <FileTextOutlined />, badge: 0 },
@@ -1568,6 +1725,72 @@ export default function RestaurantPosPage() {
       {!session?.shift && <Alert type="warning" showIcon message="ยังไม่เปิดกะ — เปิดกะก่อนจึงจะเปิดโต๊ะและรับออร์เดอร์ได้" />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
 
+      {/* กระดานคิว — สองรายการในจอเดียว: คนที่ยังรอ (เรียงตามลำดับที่ควรได้โต๊ะ) และ
+          รายการที่ปิดไปแล้ววันนี้ · "รอมากี่นาที" เป็นตัวเลขที่ตัดสินว่าลูกค้าจะอยู่ต่อหรือเดินออก
+          จึงอยู่บนการ์ดทุกใบ ไม่ใช่ต้องเปิดดู */}
+      {screen === "QUEUE" && <Spin spinning={working}><section className={styles.counterScreen}>
+        <div className={styles.panelHeader}>
+          <div><h2>คิวและการจองโต๊ะ</h2><small>
+            รออยู่ {waitlist.waitingCount} คิว · {waitlist.waitingGuests} คน
+            {waitlist.calledCount > 0 ? ` · เรียกแล้วรอมา ${waitlist.calledCount}` : ""}
+          </small></div>
+          <div className={styles.queueHeadActions}>
+            <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift}
+              onClick={() => { setQueueParty(2); setQueueFormOpen("WALK_IN"); }}>+ รับคิว</button>
+            <button type="button" className={styles.btn} disabled={!session?.shift}
+              onClick={() => { setQueueParty(2); setQueueReservedFor(""); setQueueFormOpen("RESERVATION"); }}>+ จองโต๊ะ</button>
+            <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void run(loadWaitlist)}
+              title="รีเฟรชคิว" aria-label="รีเฟรชคิว"><ReloadOutlined /></button>
+          </div>
+        </div>
+        <div className={styles.panelScroll}>
+          {waitlist.entries.length === 0 && <div className={styles.empty}><p>ยังไม่มีคิวหรือการจองของวันนี้</p></div>}
+          <div className={styles.queueList}>
+            {waitlist.entries.map((entry) => {
+              const open = entry.status === "WAITING" || entry.status === "CALLED";
+              // ⚠️ "รอมากี่นาที" ใช้ได้กับคิวเดินเข้าเท่านั้น — การจองที่รับไว้เมื่อวานจะกลายเป็น
+              // "รอมา 1,400 นาที" ซึ่งไม่ใช่ความจริงของใครเลย · สิ่งที่คนถามถึงการจองคือเวลานัด
+              // และถ้าเลยเวลานัดแล้ว เลยไปนานแค่ไหน (นั่นคือจังหวะที่ต้องตัดสินว่าจะรออีกไหม)
+              const waitLabel = entry.kind === "WALK_IN"
+                ? (() => { const m = minutesSince(entry.createdAt); return m == null ? "" : ` · รอมา ${m} นาที`; })()
+                : (() => {
+                    const m = entry.reservedFor == null ? null : minutesSince(entry.reservedFor);
+                    if (m == null) return "";
+                    return m > 0 ? ` · เลยเวลานัด ${m} นาที` : ` · นัด ${timeOf(entry.reservedFor!)}`;
+                  })();
+              return <div key={entry.id} className={`${styles.queueCard} ${open ? "" : styles.queueCardClosed}`}>
+                <div className={styles.queueMark}>
+                  {entry.kind === "WALK_IN"
+                    ? <><b>{entry.queueNo}</b><small>คิว</small></>
+                    : <><ClockCircleOutlined /><small>{entry.reservedFor ? timeOf(entry.reservedFor) : "จอง"}</small></>}
+                </div>
+                <div className={styles.queueBody}>
+                  <b>{entry.guestName || (entry.kind === "WALK_IN" ? "ลูกค้าเดินเข้า" : "ลูกค้าจองโต๊ะ")} · {entry.partySize} คน</b>
+                  <small>
+                    {QUEUE_STATUS_LABEL[entry.status] ?? entry.status}
+                    {open ? waitLabel : ""}
+                    {entry.seatedTableCode ? ` · ${entry.seatedTableCode}` : ""}
+                    {entry.guestPhone ? ` · ${entry.guestPhone}` : ""}
+                  </small>
+                  {entry.note && <small className={styles.queueNote}>{entry.note}</small>}
+                </div>
+                {open && <div className={styles.queueActions}>
+                  {entry.status === "WAITING" && <button type="button" className={styles.btn}
+                    onClick={() => void waitlistAction("call", { entryId: entry.id })}>เรียกคิว</button>}
+                  <button type="button" className={`${styles.btn} ${styles.btnPrimary}`}
+                    disabled={!session?.shift || availableTables.length === 0}
+                    title={availableTables.length === 0 ? "ยังไม่มีโต๊ะว่าง" : "เลือกโต๊ะแล้วเปิดบิลให้เลย"}
+                    onClick={() => { setSeatEntry(entry); setSeatTableId(availableTables[0]?.id ?? ""); }}>พาไปนั่ง</button>
+                  <button type="button" className={styles.btn}
+                    onClick={() => void waitlistAction(entry.status === "CALLED" ? "no_show" : "cancel", { entryId: entry.id })}>
+                    {entry.status === "CALLED" ? "ไม่มา" : "ยกเลิก"}
+                  </button>
+                </div>}
+              </div>;
+            })}
+          </div>
+        </div>
+      </section></Spin>}
       {screen === "QR" && <Spin spinning={working}><section className={styles.qrScreen}>
         <div className={styles.panelHeader}>
           <div><h2>ออร์เดอร์ QR จากลูกค้า</h2><small>ตรวจรายการก่อนเพิ่มเข้าบิลโต๊ะ จองวัตถุดิบ และส่งครัว</small></div>
@@ -1668,14 +1891,14 @@ export default function RestaurantPosPage() {
           </div>
 
           {openChecks.length > 0 && <div className={styles.billStrip} role="group" aria-label="บิลที่เปิดอยู่">
-            {openChecks.map(({ table, state }) => <button key={table.id} type="button"
-              className={`${styles.billChip} ${check?.tableId === table.id ? styles.billChipActive : ""}`}
-              onClick={() => void chooseTable(table)}>
+            {openChecks.map(({ table, check: row, state }) => <button key={row.id} type="button"
+              className={`${styles.billChip} ${check?.id === row.id ? styles.billChipActive : ""}`}
+              onClick={() => void openCheckById(table, row.id)}>
               <span className={styles.billChipCode} style={{ background: state.color }}>{table.code}</span>
               <span className={styles.billChipBody}>
-                <span className={styles.billChipName}>{table.name}</span>
+                <span className={styles.billChipName}>{openCheckLabel(table, row)}</span>
                 <span className={styles.billChipState} style={{ color: state.color }}>{state.label}</span>
-                <span className={styles.billChipMeta}>{table.check!.guestCount} คน · {table.check!.itemCount} รายการ</span>
+                <span className={styles.billChipMeta}>{row.guestCount} คน · {row.itemCount} รายการ</span>
               </span>
             </button>)}
           </div>}
@@ -1789,6 +2012,9 @@ export default function RestaurantPosPage() {
                 ? `${table.check.guestCount} คน · ${table.check.itemCount} รายการ${minutes == null ? "" : ` · ${minutes} นาที`}`
                 : `${table.seats} ที่นั่ง · ว่าง`}</span>
               {table.check && <span className={styles.tableAmount}><span className={styles.baht}>฿</span>{money(table.check.amountDue)}</span>}
+              {/* โต๊ะที่แยกบิลไว้ต้องบอกจากผังเลย ไม่ใช่ให้รู้ตอนแตะแล้วเจอกล่องถาม —
+                  ยอดบนการ์ดเป็นของบิลหลักใบเดียว ป้ายนี้คือเหตุผลว่าทำไมมันไม่ใช่ยอดทั้งโต๊ะ */}
+              {table.checks.length > 1 && <span className={styles.tableSplitBadge}>{table.checks.length} บิล</span>}
             </button>;
           })}</div></div></div>
           {/* legend ต้อง "ปักหมุด" อยู่นอก panelScroll เสมอ ห้ามเอาไปไว้เป็นบรรทัดสุดท้ายในนั้น —
@@ -1811,7 +2037,7 @@ export default function RestaurantPosPage() {
           <div className={styles.checkHead}>
             <div className={styles.checkHeadRow}>
               <div className={styles.checkHeadText}>
-                <h2>{check.tableName} · {check.guestCount} คน</h2>
+                <h2>{check.tableName}{check.splitGroupNo > 1 ? ` · บิล ${check.splitGroupNo}` : ""} · {check.guestCount} คน</h2>
                 <p>{check.areaName} · เปิดบิล {timeOf(check.openedAt)}{checkMinutes == null ? "" : ` · ${checkMinutes} นาที`}{lastRound ? ` · รอบล่าสุด ${lastRound}` : ""}</p>
               </div>
               <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setMoreOpen(true)} title="จัดการบิลนี้ — ย้ายโต๊ะ · แก้จำนวนคน · ยกเลิกบิล" aria-label="จัดการบิลนี้"><MoreOutlined /></button>
@@ -1897,14 +2123,14 @@ export default function RestaurantPosPage() {
           <div className={styles.checkHead}><h2>บิลที่เปิดอยู่ · {openChecks.length}</h2></div>
           {openChecks.length === 0
             ? <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 36 }} /><h3>ยังไม่มีบิลที่เปิดอยู่</h3><p>กดโต๊ะว่างทางซ้ายเพื่อเปิดบิลใหม่</p></div></div>
-            : <ul className={styles.openList}>{openChecks.map(({ table, state }) => <li key={table.id}>
-                <button type="button" className={styles.openRow} onClick={() => void chooseTable(table)}>
+            : <ul className={styles.openList}>{openChecks.map(({ table, check: row, state }) => <li key={row.id}>
+                <button type="button" className={styles.openRow} onClick={() => void openCheckById(table, row.id)}>
                   <span className={styles.openDot} style={{ background: state.color }} aria-hidden="true" />
                   <span>
-                    <span className={styles.openName}>{table.name}</span>
-                    <span className={styles.openMeta}>{state.label}{minutesSince(table.check!.openedAt) == null ? "" : ` · ${minutesSince(table.check!.openedAt)} นาที`}</span>
+                    <span className={styles.openName}>{openCheckLabel(table, row)}</span>
+                    <span className={styles.openMeta}>{state.label}{minutesSince(row.openedAt) == null ? "" : ` · ${minutesSince(row.openedAt)} นาที`}</span>
                   </span>
-                  <span className={styles.openAmount}><span className={styles.baht}>฿</span>{money(table.check!.amountDue)}</span>
+                  <span className={styles.openAmount}><span className={styles.baht}>฿</span>{money(row.amountDue)}</span>
                 </button>
               </li>)}</ul>}
           <div className={styles.hint}>เรียงตาม <b>โต๊ะที่ต้องไปก่อน</b>: ค้างส่งครัว → พร้อมเสิร์ฟ → ครัวกำลังทำ → เสิร์ฟครบรอเก็บเงิน → ยังไม่สั่ง</div>
@@ -2198,6 +2424,12 @@ export default function RestaurantPosPage() {
     <Modal title={`จัดการบิล ${check?.tableName ?? ""}`} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> ย้ายโต๊ะ</button>
+        <button type="button" className={styles.btn} disabled={splittableItems.length < 2}
+          title={splittableItems.length < 2 ? "ต้องมีอย่างน้อยสองรายการถึงจะแยกบิลได้" : "แยกบางรายการไปเป็นบิลใหม่ของโต๊ะเดิม"}
+          onClick={() => { setMoreOpen(false); setSplitItemIds([]); setSplitOpen(true); }}><ScissorOutlined /> แยกบิล</button>
+        <button type="button" className={styles.btn} disabled={mergeTargets.length === 0}
+          title={mergeTargets.length === 0 ? "ไม่มีบิลอื่นที่เปิดอยู่ให้รวมด้วย" : "ยกบิลนี้ไปรวมกับอีกใบ"}
+          onClick={() => { setMoreOpen(false); setMergeTargetId(mergeTargets[0]?.id ?? ""); setMergeOpen(true); }}><MergeCellsOutlined /> รวมบิลนี้เข้ากับใบอื่น</button>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>แก้จำนวนคน</button>
         <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { setMoreOpen(false); openCancel(); }}><CloseCircleOutlined /> ยกเลิกบิล</button>
       </div>
@@ -2233,6 +2465,102 @@ export default function RestaurantPosPage() {
               </div>
             </>}
       </div>}
+    </Modal>
+    {/* เลือกบิลของโต๊ะที่แยกไว้ — ปุ่มละใบ พร้อมยอดและจำนวนรายการ เพราะสิ่งที่คนจำได้คือ
+        "โต๊ะนี้ใบของกลุ่มที่สั่งเบียร์" ไม่ใช่เลขใบ */}
+    <Modal title={`${billPickerTable?.name ?? ""} · ${billPickerTable?.checks.length ?? 0} บิล`}
+      open={Boolean(billPickerTable)} onCancel={() => setBillPickerTable(null)} footer={null}
+      getContainer={modalContainer} destroyOnClose>
+      <div className={styles.sheetActions}>
+        {(billPickerTable?.checks ?? []).map((row) => <button key={row.id} type="button" className={styles.btn}
+          onClick={() => { const table = billPickerTable; setBillPickerTable(null); if (table) void openCheckById(table, row.id); }}>
+          บิล {row.splitGroupNo} · {row.itemCount} รายการ · ฿{money(row.amountDue)}
+          {row.unsentCount > 0 ? ` · ค้างส่งครัว ${row.unsentCount}` : ""}
+        </button>)}
+        <div className={styles.sheetNote}>โต๊ะนี้ถูกแยกบิลไว้ · แต่ละใบจองของและเก็บเงินแยกกัน</div>
+      </div>
+    </Modal>
+    <Modal title={`แยกบิล ${check?.tableName ?? ""}`} open={splitOpen} onCancel={() => setSplitOpen(false)}
+      onOk={() => void splitCheck()} confirmLoading={working} okText="แยกไปบิลใหม่"
+      okButtonProps={{ disabled: splitItemIds.length === 0 || splitItemIds.length >= splittableItems.length }}
+      getContainer={modalContainer} destroyOnClose>
+      <div className={styles.modalGrid}>
+        <Alert type="info" showIcon message="เลือกรายการที่จะย้ายไปบิลใหม่ของโต๊ะเดิม"
+          description="บิลใหม่จองของและเก็บเงินแยกกันเหมือนบิลปกติ · ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่ใบเดิม" />
+        <div className={styles.splitList}>
+          {splittableItems.map((item) => {
+            const picked = splitItemIds.includes(item.id);
+            return <label key={item.id} className={`${styles.splitRow} ${picked ? styles.splitRowOn : ""}`}>
+              <input type="checkbox" checked={picked}
+                onChange={(event) => setSplitItemIds((current) => event.target.checked
+                  ? [...current, item.id]
+                  : current.filter((id) => id !== item.id))} />
+              <span className={styles.splitName}>{item.productName}{item.packQty > 1 ? ` × ${item.packQty}` : ""}
+                {item.modifierNames.length ? <small>{item.modifierNames.join(" · ")}</small> : null}
+                <small>{item.status === "NEW" ? "ยังไม่ส่งครัว" : `รอบ ${item.roundNo ?? 1}`}</small>
+              </span>
+              {item.lineAmount != null && <b>฿{money(item.lineAmount)}</b>}
+            </label>;
+          })}
+        </div>
+        {splitItemIds.length >= splittableItems.length && splittableItems.length > 0 &&
+          <Alert type="warning" showIcon message="ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่บิลเดิม" />}
+      </div>
+    </Modal>
+    <Modal title={`รวมบิล ${check?.tableName ?? ""}`} open={mergeOpen} onCancel={() => setMergeOpen(false)}
+      onOk={() => void mergeCheck()} confirmLoading={working} okText="รวมบิล"
+      okButtonProps={{ disabled: !mergeTargetId }} getContainer={modalContainer} destroyOnClose>
+      <div className={styles.modalGrid}>
+        {/* ⚠️ ห้ามเขียนว่า "โต๊ะจะว่างทันที" ลอย ๆ — รวมบิล 1 เข้าบิล 2 ของโต๊ะเดียวกัน
+            โต๊ะนั้นยังมีคนนั่งอยู่ · ข้อความที่จริงเฉพาะบางกรณีคือข้อความที่สอนให้คนเลิกอ่าน */}
+        <Alert type="warning" showIcon message="บิลนี้จะถูกยกไปรวมกับใบปลายทางทั้งใบ"
+          description="ทุกรายการยังถูกคิดเงินครบที่ใบปลายทาง ไม่ใช่การยกเลิกบิล · บิลนี้จะปิดลง และโต๊ะจะว่างก็ต่อเมื่อไม่มีบิลอื่นเหลืออยู่" />
+        <label>บิลปลายทาง
+          <select value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)}>
+            {mergeTargets.map((row) => <option key={row.id} value={row.id}>
+              {row.label}
+            </option>)}
+          </select>
+        </label>
+      </div>
+    </Modal>
+    <Modal title={queueFormOpen === "RESERVATION" ? "จองโต๊ะล่วงหน้า" : "รับคิวหน้าร้าน"}
+      open={Boolean(queueFormOpen)} onCancel={() => setQueueFormOpen(null)}
+      onOk={() => void addWaitlistEntry()} confirmLoading={working}
+      okText={queueFormOpen === "RESERVATION" ? "บันทึกการจอง" : "ออกบัตรคิว"}
+      okButtonProps={{ disabled: queueFormOpen === "RESERVATION" && !queueReservedFor }}
+      getContainer={modalContainer} destroyOnClose>
+      <div className={styles.modalGrid}>
+        <label>จำนวนลูกค้า<input type="number" min={1} max={500} value={queueParty}
+          onChange={(event) => setQueueParty(Number(event.target.value))} /></label>
+        {queueFormOpen === "RESERVATION" && <label>วันเวลาที่จอง<input type="datetime-local"
+          value={queueReservedFor} onChange={(event) => setQueueReservedFor(event.target.value)} /></label>}
+        <label>ชื่อลูกค้า (ไม่บังคับ)<input value={queueName} maxLength={120}
+          onChange={(event) => setQueueName(event.target.value)} placeholder="เช่น คุณเอ" /></label>
+        <label>เบอร์โทร (ไม่บังคับ)<input value={queuePhone} maxLength={40} inputMode="tel"
+          onChange={(event) => setQueuePhone(event.target.value)} /></label>
+        <label>โน้ต (ไม่บังคับ)<textarea rows={2} maxLength={300} value={queueNote}
+          onChange={(event) => setQueueNote(event.target.value)} placeholder="เช่น ขอโต๊ะริมหน้าต่าง / มีเด็กเล็ก" /></label>
+      </div>
+    </Modal>
+    <Modal title={seatEntry ? `พาไปนั่ง · ${seatEntry.partySize} คน` : ""} open={Boolean(seatEntry)}
+      onCancel={() => setSeatEntry(null)} onOk={() => void seatWaitlistEntry()} confirmLoading={working}
+      okText="เปิดโต๊ะให้เลย" okButtonProps={{ disabled: !seatTableId }}
+      getContainer={modalContainer} destroyOnClose>
+      <div className={styles.modalGrid}>
+        <Alert type="info" showIcon message="ระบบจะเปิดบิลของโต๊ะนี้ให้ทันที"
+          description="จำนวนลูกค้าของบิลใช้ขนาดปาร์ตี้ที่จดไว้ตอนรับคิว ไม่ต้องกรอกซ้ำ" />
+        {seatEntry?.preferredTableCode && <Alert type="warning" showIcon
+          message={`ลูกค้าขอโต๊ะ ${seatEntry.preferredTableCode}`}
+          description="เป็นคำขอ ไม่ใช่การล็อกโต๊ะ — เลือกโต๊ะไหนก็ได้ที่ว่างจริง" />}
+        <label>โต๊ะที่ว่าง
+          <select value={seatTableId} onChange={(event) => setSeatTableId(event.target.value)}>
+            {availableTables.map((table) => <option key={table.id} value={table.id}>
+              {table.name} · {table.code} · {table.seats} ที่นั่ง
+            </option>)}
+          </select>
+        </label>
+      </div>
     </Modal>
     <Modal title="ย้ายโต๊ะ" open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText="ย้าย" getContainer={modalContainer}><div className={styles.modalGrid}><label>โต๊ะปลายทาง<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
     <Modal title={`ยกเลิกบิล ${check?.tableName ?? ""}`} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText="ยืนยันยกเลิก" okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message="บิลนี้ส่งครัวหรือจองวัตถุดิบแล้ว" description="คนรับออร์เดอร์เริ่มยกเลิกได้ แต่ต้องให้ผู้มีสิทธิ์ pos.void ซึ่งเป็นคนละคนกด PIN อนุมัติ" />}<label>Note / เหตุผลที่ยกเลิก (จำเป็น)<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="เช่น ลูกค้าเปลี่ยนใจ เปิดผิดโต๊ะ หรือรับรายการผิด" /></label>{cancelNeedsApproval && <><label>ผู้อนุมัติ<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">เลือกผู้อนุมัติ</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>PIN ผู้อนุมัติ<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message="ไม่มีผู้อนุมัติที่พร้อมใช้งาน" description="ตั้ง PIN และมอบสิทธิ์ pos.void ให้ผู้จัดการหรือหัวหน้าก่อน" />}</>}</div></Modal>

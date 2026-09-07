@@ -586,6 +586,57 @@
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }
+
+/* ---- แยกบิล / รวมบิล (9.63) ---------------------------------------------
+   ป้าย "N บิล" อยู่มุมล่างขวาของการ์ดโต๊ะ ไม่ทับจุดสถานะ (มุมบนขวา) และไม่ทับยอดเงิน
+   ซึ่งเป็นบรรทัดสุดท้ายกลางการ์ด · ใช้สีของตัวอักษรเป็นสัญญาณ ไม่ใช่พื้นทึบ เพราะการ์ดโต๊ะ
+   มีสีสถานะของตัวเองอยู่แล้วและป้ายพื้นทึบอีกอันจะแย่งความสนใจจากสีที่บอกว่าอาหารถึงไหน */
+.tableSplitBadge {
+  position: absolute; right: 6px; bottom: 5px;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  padding: 2px 5px; border-radius: 999px;
+  color: var(--ink-2); background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.splitList { display: grid; gap: 6px; max-height: 46vh; overflow: auto; }
+/* แถวเลือกรายการเป็น label เต็มแถว — นิ้วบนแท็บเล็ตต้องแตะที่ไหนก็ได้ในแถว ไม่ใช่เล็งช่องติ๊ก */
+.splitRow {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  min-height: 48px; padding: 8px 10px; cursor: pointer;
+  border-radius: 10px; background: var(--quiet);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.splitRow input { width: 20px; height: 20px; accent-color: var(--accent); }
+.splitRowOn { background: var(--panel-2); box-shadow: inset 0 0 0 2px var(--accent); }
+.splitName { display: grid; font-size: 14px; font-weight: 600; color: var(--ink); }
+.splitName small { font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
+.splitRow b { font-variant-numeric: tabular-nums; }
+
+/* ---- คิวและการจองโต๊ะ (9.64) --------------------------------------------
+   การ์ดคิวอ่านจากซ้ายไปขวา: เลขคิว/เวลานัด → ใครกี่คนรอมานานเท่าไร → ปุ่มที่ต้องกด
+   ปุ่มอยู่ขวาสุดเสมอ ตำแหน่งเดียวกันทุกใบ นิ้วจึงไม่ต้องเล็งใหม่ทีละแถว */
+.queueHeadActions { display: flex; gap: 8px; align-items: center; }
+.queueList { display: grid; gap: 8px; padding-bottom: 8px; }
+.queueCard {
+  display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 12px; background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* คิวที่ปิดไปแล้วยังอยู่บนกระดานของวันนี้ — คำถาม "เรียกใครไปแล้วบ้าง" ตอบได้ที่เดียวนี้ */
+.queueCardClosed { background: var(--quiet); opacity: .72; }
+.queueMark {
+  display: grid; justify-items: center; gap: 1px;
+  min-height: 44px; border-radius: 10px; padding: 4px;
+  background: var(--quiet); color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.queueMark b { font-size: 20px; line-height: 1; color: var(--ink); }
+.queueMark small { font-size: 10.5px; color: var(--ink-3); }
+.queueBody { display: grid; gap: 1px; min-width: 0; }
+.queueBody b { font-size: 14.5px; }
+.queueBody small { font-size: 12px; color: var(--ink-2); }
+.queueNote { color: var(--ink-3) !important; font-style: italic; }
+.queueActions { display: flex; gap: 6px; align-items: center; }
 .lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
 .lane { border-radius: 6px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color);
   display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -782,6 +833,11 @@
   .lanes { grid-template-columns: repeat(4, 260px); }
 }
 @media (max-width: 640px) {
+  /* การ์ดคิว: ที่ 375px สามปุ่มเรียงข้างเนื้อหาไม่พอ ปุ่มสุดท้ายถูกตัดหายไปนอกจอ —
+     ย้ายแถวปุ่มลงมาอยู่ใต้เนื้อหาเต็มความกว้างแทน (ปุ่มที่กดไม่ถึงเท่ากับไม่มีปุ่ม) */
+  .queueCard { grid-template-columns: 48px minmax(0, 1fr); }
+  .queueActions { grid-column: 1 / -1; }
+  .queueActions .btn { flex: 1 1 0; justify-content: center; }
   .topbar { padding: 8px; }
   .subtitle { display: none; }
   .brand { margin-inline-end: 0; }

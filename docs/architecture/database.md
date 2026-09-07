@@ -866,7 +866,7 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`–`9.49`)
+## Restaurant POS (`9.44`–`9.49`, `9.63`–`9.64`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
 Migration `9.59` adds each table's `shape` (`round`/`rect`) and non-negative pixel coordinates
@@ -881,8 +881,14 @@ Migration `9.49` extends the same database-level chain through
 `location -> POS device -> shift -> restaurant check`, including the device id carried by the shift;
 a UUID from another branch or tenant can no longer satisfy a restaurant check FK even if supplied by
 SQL outside the service.
-`bms_restaurant_checks` is the open dine-in service state, with a partial unique index allowing only
-one OPEN/CLOSING check per table. `version` changes with cart edits and `reserved_version` records the
+`bms_restaurant_checks` is the open dine-in service state. Migration `9.63` widens the partial unique
+index to `(tenant_id, table_id, split_group_no)` so a table can carry several open bills at once —
+the primary bill is simply the lowest `split_group_no` still open, which needs no flag to maintain
+and hands the role to the next bill when the primary is paid. The same migration adds the terminal
+status `MERGED` (with `merged_into_check_id`, and `split_from_check_id` for the other direction):
+a merged bill is not a void, so counting it as `CANCELLED` would inflate every void metric by the
+number of times a shop combined bills. `MERGED` is terminal, so it carries `closed_at` and the `9.62`
+QR-expiry trigger fires on it. `version` changes with cart edits and `reserved_version` records the
 version represented by `current_order_id`; checkout requires equality so unsent food cannot bypass
 stock reservation or the kitchen. Replacing that order for a later kitchen round is atomic: the old
 PENDING order is cancelled and the new whole-check order is created through `createOrderInTx()` in
@@ -895,6 +901,21 @@ cross-instance lease: an active cashier cannot be overwritten by another registe
 attempt becomes recoverable after the bounded lease. The check changes to `PAID` inside the same POS
 transaction as payment, stock, FEFO and tax; `9.48` also repairs legacy OPEN/CLOSING checks whose
 linked order had already reached `COMPLETED` in the old two-transaction flow.
+
+`bms_product_price_tiers` gains `location_id` in `9.65` with the same meaning it has on
+`bms_product_promotions` (`9.61`): NULL is the store-wide ladder, a branch id is that branch only,
+and a branch ladder replaces the store ladder for that SKU instead of merging rungs into it. The
+rule unique index had to take the branch into the key (with `COALESCE` for the NULL scope, since
+NULL never collides with NULL) or a branch could not set a rung at a quantity the store already uses
+— the most common case there is.
+
+`bms_restaurant_waitlist` (`9.64`) holds parties that do not have a table yet — walk-in queue
+tickets and advance reservations in one table, because seating them is the same action and a second
+seating path would be free to drift. `kind` selects which of `queue_no` / `reserved_for` must be
+present, and a `SEATED` row is required to name both the table and the check it opened, so the wait a
+shop actually delivered stays measurable. `service_date` is stamped server-side from the shop
+timezone and is part of the queue-number unique index, so a shop open past midnight keeps counting
+instead of restarting at 1.
 
 `bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
 `bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order

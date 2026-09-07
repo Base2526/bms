@@ -1324,6 +1324,7 @@ export const typeDefs = /* GraphQL */ `
     # locationId = สาขาที่สนใจ → ได้โปรทั้งร้าน + โปรของสาขานั้น (permission product.view)
     bmsProductPromotions(productSku: String, locationId: ID, includeInactive: Boolean = false): [BmsProductPromotion!]!
     bmsPromotionLocations: [BmsLocation!]!
+    bmsProductPriceTiers(productSku: String, locationId: ID): [BmsProductPriceTier!]!
 
     # ===== BMS membership + แต้มสะสม (7.96) =====
     bmsLoyaltySettings: BmsLoyaltySettings!                        # permission member.view
@@ -4112,6 +4113,35 @@ export const typeDefs = /* GraphQL */ `
     totalAmount: Float!
     createdAt: String!
   }
+  type BmsProductPriceTier {
+    productSku: String!
+    productName: String
+    locationId: ID
+    locationName: String
+    minQty: Int!
+    scope: String!
+    size: String
+    unitPrice: Float
+    discountPct: Float
+    note: String
+    updatedAt: String!
+  }
+
+  input BmsPriceTierRowInput {
+    minQty: Int!
+    scope: String!
+    size: String
+    unitPrice: Float
+    discountPct: Float
+    note: String
+  }
+
+  input BmsReplacePriceTiersInput {
+    productSku: String!
+    locationId: ID
+    tiers: [BmsPriceTierRowInput!]!
+  }
+
   type BmsProductPromotion {
     id: ID!
     productSku: String!
@@ -4503,6 +4533,7 @@ export const typeDefs = /* GraphQL */ `
     # โปรโมชันต่อสินค้า: หนึ่งขอบเขต (สินค้า × สาขา/ทั้งร้าน) มีโปร active ได้ทีละหนึ่ง
     # บันทึกซ้ำ = แก้ของเดิมในขอบเขตนั้น ไม่ใช่เพิ่มตัวที่สอง (permission product.edit)
     bmsUpsertProductPromotion(input: BmsProductPromotionInput!): BmsProductPromotion!
+    bmsReplaceProductPriceTiers(input: BmsReplacePriceTiersInput!): [BmsProductPriceTier!]!
     bmsDeactivateProductPromotion(id: ID!): Boolean!
     bmsAssignCouponToCustomer(customerId: ID, channel: String, customerRef: String, conversationId: ID, code: String!, note: String): Boolean!   # แจกคูปองเข้ากระเป๋าลูกค้าโดยตรง (permission coupon.manage)
 

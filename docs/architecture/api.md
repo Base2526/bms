@@ -159,14 +159,16 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 - `POST /api/pos/restaurant/checks` (`9.44`) — open a dine-in check on a table. PIN + `pos.sell` and
   an open shift on the calling device; a second open check on the same table is `409` from the
   partial unique index, not a duplicate bill.
-- `GET|POST /api/pos/restaurant/checks/[id]` (`9.44`) — one PIN-bearing adapter for the check:
-  `add_item`, `remove_item`, `send_kitchen`, `move`, `cancel`, `settle`. Every action is scoped to the
+- `GET|POST /api/pos/restaurant/checks/[id]` (`9.44`, `9.63`) — one PIN-bearing adapter for the check:
+  `add_item`, `remove_item`, `send_kitchen`, `move`, `split`, `merge`, `cancel`, `settle`. Every action is scoped to the
   device's branch but **deliberately not to the device or shift that opened the check** — a check is
   opened on a waiter's tablet, sent from anywhere, and paid at the register, possibly after a shift
   change. An order taker with `pos.sell` may initiate `cancel` (the dedicated
   `restaurant.check.cancel` grant remains accepted for compatibility); every cancellation needs a
   note, and a sent/reserved check additionally needs a distinct `pos.void` approver. Other actions
-  stay on `pos.sell`.
+  stay on `pos.sell` — including `split` and `merge` (`9.63`), which move lines between checks but
+  never drop one: a merge closes the source as `MERGED`, not `CANCELLED`, and therefore does not
+  borrow the void approval that exists to protect food actually being thrown away.
   `send_kitchen` reserves stock by creating/refreshing one PENDING POS order — cancelling the
   superseded order and creating its replacement share one transaction, so a round that cannot be
   reserved leaves the previous reservation intact. `settle` accepts split tender, re-stamps that
@@ -178,6 +180,18 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `/admin/kitchen` stays store-wide); moving a ticket needs PIN + `restaurant.kitchen.update`
   (`9.45`, previously `order.ship`) and never moves stock. The register board polls this read every
   five seconds while it is open.
+- GraphQL `bmsProductPriceTiers` / `bmsReplaceProductPriceTiers` (`9.65`, module
+  `graphql/bmsProductPriceTiers.ts`) — branch-scoped quantity price ladders on `product.view` /
+  `product.edit`, the same gate promotions use (`8.7`): setting a rung is setting that product's
+  selling price. A branch-restricted user (`bms_user_allowed_locations`, `9.37`) cannot write the
+  store-wide ladder, which would reach branches they do not run. The write replaces one whole
+  ladder for one (product, branch) because a branch ladder replaces rather than merges.
+- `GET|POST /api/pos/restaurant/waitlist` (`9.64`) — the branch's walk-in queue and table
+  reservations. `add`, `call`, `cancel`, `no_show`, `seat`; all on PIN + `pos.sell`, the same gate as
+  opening a table, because nothing here moves money or stock and the one action that does — `seat`,
+  which opens a dine-in check — goes through the same `openRestaurantCheckInTx()` the floor screen
+  uses, inside the transaction that closes the queue entry. Queue numbers and the service day are
+  derived server-side from the shop's timezone; the client never supplies either.
 - `GET|POST /api/pos/restaurant/menu` (`9.44`, `9.55`) — the dine-in menu grid for the device's
   branch, including each item's sales-day availability so the register can grey out a dish the
   kitchen marked sold out. `POST` is the one-tap "sold out today / back on sale" toggle and needs

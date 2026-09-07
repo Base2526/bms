@@ -114,6 +114,10 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
     why: "A chain asks this before opening branch two; the answer is the scope rule, not the product form.",
   },
   { q: "can each branch run its own promotion", locale: "en", expect: "answer", expectTop: "products.branch-promotions", origin: "coverage" },
+  // 9.65 — ร้านค้าส่งที่มีหลายสาขาถามข้อนี้ก่อนเปิดสาขาที่สอง คำตอบคือกติกาขอบเขต
+  // (บันไดของสาขาแทนที่ของทั้งร้าน) ไม่ใช่ฟอร์มสินค้าซึ่งแก้ได้แค่บันไดของทั้งร้าน
+  { q: "แต่ละสาขาตั้งราคาส่งของตัวเองได้ไหม", locale: "th", expect: "answer", expectTop: "products.branch-promotions" },
+  { q: "branch quantity pricing", locale: "en", expect: "answer", expectTop: "products.branch-promotions" },
   {
     q: "ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", locale: "th", expect: "answer", expectTop: "inventory.stock-sale-blockers",
     expectTool: { name: "check_stock", permission: "product.view" },
@@ -185,6 +189,18 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "send to kitchen", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-kitchen-round" },
   { q: "ย้ายโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-settle" },
   { q: "move table", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-settle" },
+  // "แยกบิล" คือคำที่ลูกค้าพูดกับพนักงานจริง ๆ ที่โต๊ะ ไม่ใช่ชื่อฟีเจอร์ — ต้องพามาที่ไกด์
+  // ของมันเป็นอันดับหนึ่ง ไม่ใช่ไปโผล่ใต้ไกด์เก็บเงินซึ่งตอบคนละคำถาม
+  { q: "แยกบิลยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "ลูกค้าขอจ่ายแยกกันทำยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "รวมบิลสองโต๊ะ", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "split the bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "merge two tables into one bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-split-merge" },
+  { q: "รับคิวยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-waitlist" },
+  { q: "โต๊ะเต็มลูกค้าต้องรอ ทำยังไง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-waitlist" },
+  { q: "walk-in queue", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.restaurant-waitlist" },
+  { q: "ระบบมีบัตรคิวไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.waitlist" },
+  { q: "can it take table bookings", locale: "en", context: { kind: "capability" }, expect: "answer", expectTop: "restaurant.waitlist" },
   // ก่อน 9.44 คำถามนี้ถูกปักไว้ที่ inventory.stock-model เพราะนั่นเป็นคำตอบจริงเพียงข้อเดียว
   // (สูตร/ตัวเลือก/คิวครัว) · ตอนนี้มีหน้าโต๊ะจริงแล้ว คนที่ถามหมายถึงบริการหน้าร้าน
   { q: "ระบบรองรับร้านอาหารไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "restaurant.dine-in" },

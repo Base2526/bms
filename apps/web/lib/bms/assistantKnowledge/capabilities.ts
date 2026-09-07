@@ -240,15 +240,37 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     ),
   },
   {
+    id: "restaurant.waitlist", module: "pos",
+    title: both("บัตรคิวหน้าร้านและการจองโต๊ะ", "Walk-in queue and table reservations"),
+    description: both("รายการเดียวสำหรับคนที่ยังไม่มีโต๊ะ — ออกบัตรคิว รับจองล่วงหน้า เรียกคิว และพาไปนั่งซึ่งเปิดบิลโต๊ะให้ในทรานแซกชันเดียวกัน", "One list of parties without a table yet: issue queue numbers, take advance bookings, call a party, and seat them — which opens the dine-in check in the same transaction."),
+    aliases: aliases([
+      "บัตรคิว", "คิวหน้าร้าน", "รับคิว", "เรียกคิว", "จองโต๊ะ", "จองล่วงหน้า", "รอโต๊ะ",
+      "ระบบมีบัตรคิวไหม", "ระบบรับจองโต๊ะได้ไหม",
+    ], [
+      "queue ticket", "waitlist", "walk-in queue", "call a party", "table reservation",
+      "book a table ahead", "waiting list", "does it have a queue system",
+      "can it take table bookings",
+    ]),
+    status: "CONDITIONAL", route: "/admin/pos-manual", requiredPermissions: ["pos.sell"],
+    configurationDependencies: [
+      "The shop's business type must be restaurant; the queue lives on the /pos/restaurant queue tab.",
+      "The branch needs a floor plan, a paired POS device and an open shift — seating opens a real check.",
+    ],
+    limitations: both(
+      "เลขคิวเริ่มใหม่ตามวันบริการของร้าน ไม่ใช่เที่ยงคืน · โต๊ะที่ลูกค้าขอเป็นคำขอ ไม่ได้กันโต๊ะไว้ให้ · ลูกค้ากดรับคิวเองไม่ได้ พนักงานเป็นคนออกให้ทุกใบ · ไม่มีการแจ้ง SMS/LINE ตอนเรียกคิว",
+      "Queue numbers restart with the shop's service day, not at midnight. A requested table is a preference, not a hold. Customers cannot take a number themselves — staff issue every one. Calling a party is a screen action; there is no SMS/LINE notification."
+    ),
+  },
+  {
     id: "restaurant.dine-in", module: "pos",
     title: both("ขายหน้าร้านแบบร้านอาหาร (โต๊ะ/บิลเปิด)", "Restaurant dine-in service"),
-    description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, and checkout through the normal register."),
+    description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ แยกบิล/รวมบิล และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, bill splitting and merging, and checkout through the normal register."),
     aliases: aliases([
       "ร้านอาหาร", "โต๊ะ", "บิลโต๊ะ", "เปิดโต๊ะ", "ผังโต๊ะ", "ส่งครัว", "ย้ายโต๊ะ",
-      "ระบบรองรับร้านอาหารไหม",
+      "ระบบรองรับร้านอาหารไหม", "แยกบิล", "รวมบิล",
     ], [
       "restaurant", "dine-in", "table", "open check", "floor plan", "send to kitchen", "move table",
-      "does it support restaurants", "restaurant dine-in",
+      "does it support restaurants", "restaurant dine-in", "split bill", "merge bill",
     ]),
     status: "CONDITIONAL", route: "/admin/pos-manual", requiredPermissions: ["pos.sell"],
     configurationDependencies: [

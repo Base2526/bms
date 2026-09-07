@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 
 import {
   applyPromotion,
+  pickPriceTiersForLocation,
   pickPromotionForLocation,
   type Promotion,
   type ScopedPromotion,
@@ -115,5 +116,64 @@ test("migration 9.61 คงกฎ 'หนึ่งโปร active ต่อข�
   assert.ok(/uq_bms_promotions_active_sku_store[\s\S]*WHERE active AND location_id IS NULL/.test(sql));
   assert.ok(/uq_bms_promotions_active_sku_branch[\s\S]*WHERE active AND location_id IS NOT NULL/.test(sql));
   // FK แบบ composite: โปรของร้าน A ชี้ไปสาขาของร้าน B ไม่ได้โดยโครงสร้าง
+  assert.ok(/FOREIGN KEY \(tenant_id, location_id\)[\s\S]*REFERENCES bms_locations \(tenant_id, id\)/.test(sql));
+});
+
+
+// ---------------------------------------------------------------------------
+// 9.65 — บันไดราคาส่งแยกสาขา
+// ---------------------------------------------------------------------------
+
+test("บันไดของสาขาแทนที่บันไดของทั้งร้านทั้งชุด ไม่ใช่ผสมขั้นกัน", () => {
+  const store = [
+    { locationId: null, minQty: 5, scope: "PER_VARIANT_FIXED" as const, size: null, unitPrice: 90, discountPct: null },
+    { locationId: null, minQty: 10, scope: "PER_VARIANT_FIXED" as const, size: null, unitPrice: 80, discountPct: null },
+  ];
+  const branch = [
+    { locationId: "loc-1", minQty: 10, scope: "PER_VARIANT_FIXED" as const, size: null, unitPrice: 70, discountPct: null },
+  ];
+  const all = [...store, ...branch];
+
+  const atBranch = pickPriceTiersForLocation(all, "loc-1");
+  assert.deepEqual(atBranch.map((tier) => tier.minQty), [10],
+    "ขั้น 5 ชิ้นของส่วนกลางต้องไม่แทรกเข้าบันไดของสาขา — บันไดที่ไม่มีใครตั้งไว้อธิบายไม่ได้");
+  assert.equal(atBranch[0].unitPrice, 70);
+
+  assert.deepEqual(pickPriceTiersForLocation(all, "loc-2").map((tier) => tier.minQty), [5, 10],
+    "สาขาที่ไม่ได้ตั้งเองต้องใช้บันไดของทั้งร้าน");
+  assert.deepEqual(pickPriceTiersForLocation(all, null).map((tier) => tier.minQty), [5, 10],
+    "ไม่รู้ว่าขายที่สาขาไหน = ใช้บันไดรายสาขาไม่ได้ (เดาสาขาแล้วคิดเงินผิดแย่กว่าไม่ลด)");
+  assert.deepEqual(pickPriceTiersForLocation(branch, "loc-2"), [],
+    "สาขาอื่นต้องไม่ได้บันไดของ loc-1 มาแม้จะไม่มีของส่วนกลางเลย");
+  // ผลที่คืนต้องเป็น PriceTier ล้วน ไม่ติด locationId ไปให้ unitPriceForQty ตีความ
+  assert.ok(!("locationId" in (atBranch[0] as Record<string, unknown>)));
+});
+
+test("ทั้งจอพรีวิวและตอน commit ต้องเลือกบันไดด้วยฟังก์ชันตัวเดียวกัน", () => {
+  const pos = readFileSync(new URL("../apps/web/lib/bms/pos.ts", import.meta.url), "utf8");
+  const orders = readFileSync(new URL("../apps/web/lib/bms/orders.ts", import.meta.url), "utf8");
+  for (const [name, src] of [["pos.ts", pos], ["orders.ts", orders]] as const) {
+    assert.ok(/pickPriceTiersForLocation\(/.test(src),
+      `${name} ต้องเลือกบันไดผ่าน pickPriceTiersForLocation — สองสูตรจะ drift แล้วจอกับ server คิดคนละยอด`);
+    const tierQuery = src.slice(src.indexOf("FROM bms_product_price_tiers"));
+    assert.ok(/location_id IS NULL OR location_id = /.test(tierQuery.slice(0, 400)),
+      `${name} ต้องอ่านทั้งบันไดของทั้งร้านและของสาขาที่กำลังขาย`);
+  }
+  // ฟอร์มสินค้าแก้เฉพาะบันไดของทั้งร้าน — ไม่กรองสาขาตอนลบ = ล้างบันไดของทุกสาขาเงียบ ๆ
+  const products = readFileSync(new URL("../apps/web/lib/bms/products.ts", import.meta.url), "utf8");
+  const del = products.slice(products.indexOf("DELETE FROM bms_product_price_tiers"));
+  assert.ok(/location_id IS NULL/.test(del.slice(0, 200)),
+    "upsertProduct ต้องลบเฉพาะบันไดของทั้งร้าน");
+});
+
+test("migration 9.65 ให้สาขาตั้งขั้นที่จำนวนเดียวกับส่วนกลางได้", () => {
+  const sql = readFileSync(
+    new URL("../db/migrations/9.65__bms_product_price_tiers_branch_scope.sql", import.meta.url),
+    "utf8"
+  );
+  // คีย์เดิมไม่มีสาขา สาขาจึงตั้งขั้นที่ min_qty เดียวกับของส่วนกลางไม่ได้เลย
+  assert.ok(/DROP INDEX IF EXISTS uq_bms_product_price_tiers_rule\b/.test(sql));
+  assert.ok(/COALESCE\(location_id, '00000000-0000-0000-0000-000000000000'::uuid\)/.test(sql),
+    "NULL ไม่ชนกับ NULL ใน unique index — ต้องแทนด้วยค่าที่เทียบกันได้");
   assert.ok(/FOREIGN KEY \(tenant_id, location_id\)[\s\S]*REFERENCES bms_locations \(tenant_id, id\)/.test(sql));
 });

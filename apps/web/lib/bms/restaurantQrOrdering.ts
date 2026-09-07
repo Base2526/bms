@@ -235,11 +235,14 @@ export async function openRestaurantQrSession(publicTokenInput: string, currentS
     if (!tableStillAvailable.rowCount || !tokenStillActive?.rowCount) {
       throw new RestaurantCheckError("QR โต๊ะไม่ถูกต้อง ถูกยกเลิก หรือโต๊ะไม่พร้อมใช้งานแล้ว");
     }
+    // โต๊ะหนึ่งมีบิลที่เปิดอยู่ได้หลายใบตั้งแต่ `9.63` (แยกบิล) — ลูกค้าที่สแกน QR ต้องลง
+    // **บิลหลัก** เสมอ (เลข split_group_no น้อยสุด) ไม่ใช่ใบที่เพิ่งเปิดล่าสุด · เรียงด้วย
+    // opened_at อย่างเดียวจะทำให้การแยกบิลเปลี่ยนปลายทางของ QR ไปที่บิลของอีกคนเงียบ ๆ
     const check = await client.query<{ id: string; guest_count: number }>(
       `SELECT id, guest_count
          FROM bms_restaurant_checks
         WHERE tenant_id = $1 AND location_id = $2 AND table_id = $3 AND status = 'OPEN'
-        ORDER BY opened_at DESC LIMIT 1
+        ORDER BY split_group_no, opened_at LIMIT 1
         FOR UPDATE`,
       [found.tenant_id, found.location_id, found.table_id]
     );
