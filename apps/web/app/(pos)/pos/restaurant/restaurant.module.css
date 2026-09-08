@@ -583,6 +583,14 @@
 .kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
 .kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .page .kitchenChimeOn { color: var(--accent); border-color: var(--accent); }
+/* จอครัวที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอครัวที่ไม่มีออร์เดอร์เลย — สถานะของสายข้อมูล
+   จึงต้องเห็นได้จากอีกฝั่งของครัว ไม่ใช่ต้องเดินมาอ่านตัวหนังสือเล็ก ๆ
+   ⚠️ ห้ามแทรกกฎใหม่ "ก่อน" บรรทัดที่ลงท้ายด้วย , ของ selector list — เคยทำแล้วเมนู
+   ทั้งแถบกลายเป็นพื้นม่วงบน production (2026-09-04) */
+.kitchenLiveSlow { color: var(--amber); font-weight: 700; }
+.kitchenLiveSlow .kitchenLiveDot { background: var(--amber); }
+.kitchenLiveStale { color: var(--red); font-weight: 800; }
+.kitchenLiveStale .kitchenLiveDot { background: var(--red); }
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }

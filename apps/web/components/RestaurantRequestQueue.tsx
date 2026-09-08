@@ -1,5 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLiveRefresh, usePageVisible } from '@/app/hooks/useLiveRefresh';
+import { useOrderAlerts } from '@/app/hooks/useOrderAlerts';
+import OrderAlertSettingsModal from '@/components/pos/OrderAlertSettingsModal';
+import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from '@/lib/pos/orderAlertSound';
 import { agreedRestaurantQuantities, type RestaurantRequestLine } from '@/lib/bms/restaurantRequestPolicy';
 // One message set for every screen that shows why createOrderInTx refused. Writing a
 // second copy here would leave staff reading a raw enum ("INSUFFICIENT", "SOLD_OUT_TODAY")
@@ -13,6 +17,8 @@ type Request = {
   note:string; reviewNote:string|null; version:number;
   agreedItems?:RestaurantRequestLine[]|null; orderId?:string|null; checkoutUrl?:string;
 };
+/** จอนี้เห็นแค่คำขอจากแชท — ไม่ยื่นตัวเลือกเสียงของเหตุการณ์ที่หน้านี้ไม่มีทางเจอ */
+const QUEUE_ALERT_KINDS: readonly AlertKind[] = ['CHAT_REQUEST'] as const;
 type Props = { english?:boolean; canReview?:boolean; pos?:{token:string;cashierUserId:string;cashierPin:string} };
 export default function RestaurantRequestQueue({english=false,canReview=true,pos}:Props) {
   const [rows,setRows]=useState<Request[]>([]);
@@ -27,6 +33,14 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
   // previous confirmation is a payment link for the wrong customer.
   const [checkout,setCheckout]=useState<{url:string;ref:string}|null>(null);
   const [enabled,setEnabled]=useState<boolean|null>(pos ? true : null);
+  const [alertSettingsOpen,setAlertSettingsOpen]=useState(false);
+  // ⚠️ คิวนี้เคยโหลดครั้งเดียวตอน mount และฝั่งเครื่องขายต้องกดปุ่มเอง — ออร์เดอร์จากแชท/AI
+  // จึงค้างอยู่จนกว่าจะมีคนเผลอกดโหลด ไม่มีเสียง ไม่มีป้ายนับ · เป็นเส้นทางเดียวในสามเส้นทาง
+  // ที่ไม่มีสัญญาณอะไรเลย ซึ่งแปลว่ารอได้ไม่จำกัด ไม่ใช่แค่ช้า
+  const alerts=useOrderAlerts();
+  const knownPendingIds=useRef<Set<string>|null>(null);
+  const repeatRef=useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const pageVisible=usePageVisible();
   async function call(body?:Record<string,unknown>) {
     const response=await fetch(pos ? '/api/pos/restaurant/requests' : '/api/bms/restaurant-requests',{
       method:pos || body ? 'POST':'GET',
@@ -48,7 +62,33 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
     try { const data=await call();setRows(data.requests ?? []);setEnabled(data.enabled !== false); } catch(e) {setError(e instanceof Error ? e.message : String(e));}
     finally {setBusy(false);}
   }
+  /**
+   * รอบอัตโนมัติ — ไม่ตั้ง `busy` โดยตั้งใจ (busy ปิดปุ่มทั้งแผง ทุก 15 วินาทีจะกดอะไรไม่ได้เลย)
+   * และไม่เขียนทับ error ของการกดจริงด้วย: รอบเบื้องหลังที่ล้มไม่ควรลบข้อความที่คนกำลังอ่าน
+   */
+  async function silentRefresh() {
+    const data=await call();
+    const list:Request[]=data.requests ?? [];
+    setEnabled(data.enabled !== false);
+    const pending=list.filter(row=>row.status==='REQUESTED').map(row=>row.id);
+    if (newAlertIds(knownPendingIds.current,pending).length > 0) alerts.notify('CHAT_REQUEST');
+    knownPendingIds.current=new Set(pending);
+    const repeat=evaluateAlertRepeat(repeatRef.current,{
+      pending:pending.length > 0,now:Date.now(),
+      repeatSeconds:alerts.settings.repeatSeconds,maxRepeats:alerts.settings.maxRepeats,
+    });
+    repeatRef.current=repeat.state;
+    if (repeat.play) alerts.notify('CHAT_REQUEST');
+    setRows(list);
+  }
   useEffect(()=>{if (!pos) void refresh();},[]);
+  // ฝั่งเครื่องขายอ่านคิวได้ต่อเมื่อมี PIN ของผู้ปฏิบัติงาน (route บังคับ) — ยังไม่เลือกคน
+  // ก็ยังยิงไม่ได้ ปุ่มโหลดเองจึงยังต้องมีอยู่ ไม่ใช่ของซ้ำซ้อน
+  useLiveRefresh({
+    enabled: enabled !== false && (!pos || Boolean(pos.cashierUserId && pos.cashierPin)),
+    intervalMs: alertPollIntervalMs({focused:false,visible:pageVisible}),
+    onRefresh: silentRefresh,
+  });
   async function review(action:'confirm'|'contact'|'cancel') {
     if (!selected) return;
     setBusy(true);setError('');setCheckout(null);
@@ -68,13 +108,29 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
     try { agreedRestaurantQuantities(selected.items,quantities); return null; }
     catch (e) { return e instanceof Error ? e.message : String(e); }
   })();
+  const pendingCount=rows.filter(row=>row.status==='REQUESTED').length;
   const buttonStyle={padding:'8px 12px',cursor:'pointer',margin:'4px'};
   if (enabled === false || (enabled === null && !error)) return null;
   return <section style={{border:'1px solid #b8c8cc',borderRadius:12,padding:16,marginBottom:20,overflowWrap:'anywhere'}}>
     <h3>{english ? 'Restaurant requests — awaiting shop review':'คำขอร้านอาหาร — รอร้านตรวจ'}</h3>
     <p>{english ? 'Requested quantities are retained without stock reservation or payment. Call the customer if changes are needed; confirm only the quantities agreed.'
       :'เก็บจำนวนที่ลูกค้าขอครบ ยังไม่จองสต็อกและไม่เรียกชำระเงิน หากต้องปรับรายการให้โทรคุยก่อน แล้วบันทึกจำนวนที่ตกลง'}</p>
-    <button type="button" style={buttonStyle} disabled={busy} onClick={()=>void refresh()}>{english ? 'Refresh requests':'โหลดคำขอ'}</button>
+    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+      <button type="button" style={buttonStyle} disabled={busy} onClick={()=>void refresh()}>{english ? 'Refresh requests':'โหลดคำขอ'}</button>
+      {/* ป้ายนับต้องอยู่ตรงนี้ ไม่ใช่ให้ไล่นับการ์ดเอง — คำถามแรกของคนที่เดินมาที่จอนี้คือ
+          "มีอะไรรออยู่กี่รายการ" ไม่ใช่ "รายการที่สามคืออะไร" */}
+      <strong aria-live="polite">{english ? `Awaiting review: ${pendingCount}`:`รอตรวจ ${pendingCount} รายการ`}</strong>
+      <button type="button" style={buttonStyle} aria-pressed={alerts.settings.enabled} onClick={()=>{
+        const next=!alerts.settings.enabled;
+        alerts.update({enabled:next});
+        if (next) alerts.preview(alerts.settings.tones.CHAT_REQUEST);
+      }}>{alerts.settings.enabled ? (english?'Sound on':'เสียงเตือน: เปิด'):(english?'Sound off':'เสียงเตือน: ปิด')}</button>
+      <button type="button" style={buttonStyle} onClick={()=>setAlertSettingsOpen(true)}>{english?'Sound settings':'ตั้งค่าเสียง'}</button>
+    </div>
+    {/* เสียงที่ถูกเบราว์เซอร์บล็อกต้องเห็นได้ ไม่ใช่เงียบไปเฉย ๆ */}
+    {alerts.blocked && <p role="status" style={{color:'#8a6d00'}}>{english
+      ? 'Alert sound is blocked — tap anywhere on the page to enable it.'
+      :'เสียงเตือนถูกบล็อกอยู่ · แตะที่หน้าจอหนึ่งครั้งเพื่อเปิดเสียง'}</p>}
     {error && <p role="alert" style={{color:'#bb2525'}}>{error}</p>}
     {checkout && <p>{english ? `Order created for request #${checkout.ref}. Review it and share the checkout link with that customer:`:`สร้างบิลของคำขอ #${checkout.ref} แล้ว ตรวจสอบและส่งลิงก์ชำระเงินให้ลูกค้ารายนั้น:`} <a href={checkout.url} target="_blank" rel="noreferrer">{english ? 'Open checkout':'เปิดลิงก์ชำระเงิน'}</a></p>}
     {!rows.length && <p>{english ? 'No requests loaded.':'ยังไม่มีคำขอที่โหลดมา'}</p>}
@@ -117,5 +173,7 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
       <button type="button" style={buttonStyle} disabled={busy||!confirmed||!note.trim()} onClick={()=>void review('cancel')}>{english?'Cancel request':'ยกเลิกคำขอ'}</button>
       <button type="button" style={buttonStyle} disabled={busy} onClick={()=>setSelected(null)}>{english?'Close':'ปิด'}</button>
     </div>}
+    <OrderAlertSettingsModal open={alertSettingsOpen} onClose={()=>setAlertSettingsOpen(false)}
+      alerts={alerts} kinds={QUEUE_ALERT_KINDS} />
   </section>;
 }
