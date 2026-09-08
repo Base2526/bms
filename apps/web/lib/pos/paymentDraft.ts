@@ -37,6 +37,42 @@ export function appendSplitPaymentRow(
 }
 
 /**
+ * แบ่งยอดที่เหลือให้ช่องทางที่เหลืออัตโนมัติ เมื่อบิลถูกแบ่งจ่ายพอดี 2 ช่องทาง
+ *
+ * ปัญหาที่พบจริง: แคชเชียร์แก้ "ยอดช่องทางนี้" ของช่องทางที่สอง (เช่น QR 100) แต่ช่องทางแรก
+ * (เงินสด) ยังค้างเป็นยอดเต็มบิลจากตอนยังเป็นช่องทางเดียว (358) → รวมกันเกินยอดบิลเสมอ
+ * (358 + 100 = 458) ต้องนั่งคิดลบเอาเองว่าอีกช่องควรเหลือเท่าไร
+ *
+ * ทำเฉพาะกรณี **2 ช่องทางพอดี** เพราะมี "ช่องที่เหลือ" ตัวเดียวที่ไม่กำกวมว่าจะหักออกจากไหน —
+ * 3 ช่องขึ้นไปให้แคชเชียร์กรอกเองตามเดิม (หักจากช่องไหนเป็นการตัดสินใจที่เดาแทนไม่ได้)
+ *
+ * แก้ทั้งสองแถวไม่ได้ — แถวที่แคชเชียร์เพิ่งพิมพ์ต้องเชื่อค่าที่พิมพ์เป๊ะ ๆ เสมอ ตัวที่ขยับ
+ * ต้องเป็นอีกแถวหนึ่งเท่านั้น ไม่งั้นตัวเลขที่เพิ่งพิมพ์เองจะโดนเขียนทับ
+ */
+export function rebalanceSplitPayments(
+  payments: readonly PosPaymentDraft[],
+  editedId: string,
+  amountDue: number,
+): PosPaymentDraft[] {
+  if (payments.length !== 2) return payments as PosPaymentDraft[];
+  const editedIndex = payments.findIndex((payment) => payment.id === editedId);
+  if (editedIndex === -1) return payments as PosPaymentDraft[];
+  const editedRaw = payments[editedIndex].amount.trim();
+  if (editedRaw === "") return payments as PosPaymentDraft[];
+  const editedAmount = Number(editedRaw);
+  if (!Number.isFinite(editedAmount) || editedAmount < 0) return payments as PosPaymentDraft[];
+  const otherIndex = editedIndex === 0 ? 1 : 0;
+  const remaining = Math.round((amountDue - editedAmount) * 100) / 100;
+  // เหลือ <= 0 (พิมพ์เกินยอดบิล) — เว้นว่างไว้ให้ checkoutBlockReason เตือน "ต้องมากกว่า 0"
+  // แทนที่จะยัด 0 ซึ่งอ่านเหมือนแคชเชียร์ตั้งใจใส่ศูนย์
+  const nextOtherAmount = remaining > 0 ? String(remaining) : "";
+  if (payments[otherIndex].amount === nextOtherAmount) return payments as PosPaymentDraft[];
+  return payments.map((payment, index) =>
+    index === otherIndex ? { ...payment, amount: nextOtherAmount } : payment
+  );
+}
+
+/**
  * เหตุผลที่ยังกด "ยืนยันรับเงิน" ไม่ได้ — `null` = กดได้
  *
  * จอต้องกันสิ่งที่ตัวเองรู้อยู่แล้วว่าจะถูกปฏิเสธ ไม่ใช่ปล่อยให้กดแล้วค่อยล้มที่ server
