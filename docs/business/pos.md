@@ -1828,6 +1828,16 @@ proposals refreshes from every screen, not only while the QR tab happens to be o
 snapshot for referential integrity while the staff inbox displays the check's current table; the old
 browser session no longer matches that moved check and the guest must scan the destination QR.
 
+The same ready QR page keeps a floating staff-call bell above the bottom navigation on every tab.
+Guests choose water, cutlery/tissues, the bill, menu help, or a short free-text request. The request
+uses the existing table session as authority, is idempotent and rate-limited, and does not create an
+order line or kitchen work. A table cannot send another call until staff acknowledges the current
+one; the database unique index enforces this across multiple phones. `/pos/restaurant` shows a live
+branch-scoped badge and service-call board from every screen. A PIN-verified `pos.sell` operator
+acknowledges the call (the guest may call again) and marks it complete after helping the table.
+Closing or merging the check expires any call still active, while a reversible `CLOSING` attempt
+does not.
+
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
 contracts and credentials; no mock adapter is presented as live. Reservations/queue numbers,
 split/merge **checks** (payment split is supported), station-printer

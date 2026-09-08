@@ -66,8 +66,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "KITCHEN" | "BILLS" | "SHIFT";
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "KITCHEN", "BILLS", "SHIFT"];
+type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -75,7 +75,7 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR",
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
@@ -132,6 +132,18 @@ type QrSubmission = {
   rejectionReason: string | null;
   estimatedTotal: number;
   items: QrSubmissionItem[];
+};
+type ServiceCall = {
+  id: string;
+  requestCode: "WATER" | "CUTLERY" | "BILL" | "MENU_HELP" | "OTHER";
+  requestNote: string | null;
+  status: "PENDING" | "ACKNOWLEDGED";
+  tableId: string;
+  tableCode: string;
+  tableName: string;
+  createdAt: string;
+  acknowledgedAt: string | null;
+  completedAt: string | null;
 };
 type PosMember = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number; tier: { code: string; name: string } | null };
 type SettlementResult = {
@@ -432,6 +444,7 @@ export default function RestaurantPosPage() {
   const knownTicketIds = useRef<Set<string> | null>(null);
   const knownReadyTicketIds = useRef<Set<string> | null>(null);
   const knownQrSubmissionIds = useRef<Set<string> | null>(null);
+  const knownServiceCallIds = useRef<Set<string> | null>(null);
   // นาฬิกาย้ำเสียงของแต่ละกอง — เก็บใน ref เพราะมันเปลี่ยนทุกรอบ poll และไม่มีอะไรบนจอ
   // ที่ต้องวาดใหม่ตามมัน (state จะทำให้จอครัวรีเรนเดอร์เปล่า ๆ ทุก 5 วินาที)
   const ticketRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
@@ -459,6 +472,7 @@ export default function RestaurantPosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [qrSubmissions, setQrSubmissions] = useState<QrSubmission[]>([]);
+  const [serviceCalls, setServiceCalls] = useState<ServiceCall[]>([]);
   const [qrSelectedId, setQrSelectedId] = useState("");
   const [qrRejectOpen, setQrRejectOpen] = useState(false);
   const [qrRejectReason, setQrRejectReason] = useState("");
@@ -689,6 +703,7 @@ export default function RestaurantPosPage() {
     `${table.name}${row.splitGroupNo > 1 ? t("pos_restaurant.bill_suffix", { number: row.splitGroupNo }) : ""}`;
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
   const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
+  const pendingServiceCalls = serviceCalls.filter((call) => call.status === "PENDING");
   const selectedQrSubmission = qrSubmissions.find((submission) => submission.id === qrSelectedId)
     ?? pendingQrSubmissions[0] ?? qrSubmissions[0] ?? null;
   // ครัวยกเลิกตอนบิลไม่ได้เปิดอยู่ (กำลังคิดเงิน/ปิดแล้ว) → ตัดอัตโนมัติไม่ได้ ยังคิดเงินอยู่จริง
@@ -961,6 +976,15 @@ export default function RestaurantPosPage() {
       : rows.find((row) => row.status === "PENDING")?.id ?? rows[0]?.id ?? "");
     return rows;
   }
+  async function loadServiceCalls(signal?: AbortSignal) {
+    const data = await json("/api/pos/restaurant/service-calls", { signal });
+    const rows: ServiceCall[] = Array.isArray(data.calls) ? data.calls : [];
+    const pendingIds = rows.filter((row) => row.status === "PENDING").map((row) => row.id);
+    if (newAlertIds(knownServiceCallIds.current, pendingIds).length > 0) alerts.notify("QR_PENDING");
+    knownServiceCallIds.current = new Set(pendingIds);
+    setServiceCalls(rows);
+    return rows;
+  }
   async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
       const result = await json("/api/pos/restaurant/menu", {
@@ -983,7 +1007,7 @@ export default function RestaurantPosPage() {
     return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", t("pos_restaurant.reported_by_kitchen"));
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadWaitlist()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
   /**
    * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
@@ -1138,6 +1162,12 @@ export default function RestaurantPosPage() {
     enabled: Boolean(token),
     intervalMs: alertPollIntervalMs({ focused: screen === "QR", visible: pageVisible }),
     onRefresh: (signal) => loadQrSubmissions(signal),
+  });
+  // คำเรียกพนักงานมี badge บนแถบซ้ายและต้องเด้งขณะยืนอยู่ทุกจอ เช่นเดียวกับออร์เดอร์ QR
+  useLiveRefresh({
+    enabled: Boolean(token),
+    intervalMs: alertPollIntervalMs({ focused: screen === "CALLS", visible: pageVisible }),
+    onRefresh: (signal) => loadServiceCalls(signal),
   });
   // จอครัวที่แขวนไว้ต้องไม่ดับ — จอที่ดับคือจุดที่เบราว์เซอร์เริ่มหรี่ timer ตั้งแต่แรก
   // ขอเฉพาะตอนอยู่จอครัวจริง ๆ ไม่ใช่ทั้งแอป (แท็บเล็ตแคชเชียร์ที่วางเฉย ๆ ไม่ต้องกินแบต)
@@ -1296,6 +1326,19 @@ export default function RestaurantPosPage() {
       setQrRejectReason("");
       await loadQrSubmissions();
       message.success(t("pos_restaurant.toast_qr_rejected", { table: selectedQrSubmission.tableName }));
+    });
+  }
+
+  async function updateServiceCall(call: ServiceCall, action: "acknowledge" | "complete") {
+    await run(async () => {
+      await json("/api/pos/restaurant/service-calls", {
+        method: "POST",
+        body: JSON.stringify(auth({ action, callId: call.id })),
+      });
+      await loadServiceCalls();
+      message.success(action === "acknowledge"
+        ? t("pos_restaurant.toast_service_acknowledged", { table: call.tableName })
+        : t("pos_restaurant.toast_service_completed", { table: call.tableName }));
     });
   }
 
@@ -1782,6 +1825,7 @@ export default function RestaurantPosPage() {
     { key: "FLOOR" as const, short: t("pos_restaurant.rail_floor_short"), full: t("pos_restaurant.rail_floor"), icon: <AppstoreOutlined />, badge: unsentTableCount },
     { key: "QUEUE" as const, short: t("pos_restaurant.rail_queue_short"), full: t("pos_restaurant.rail_queue"), icon: <TeamOutlined />, badge: waitlist.waitingCount + waitlist.calledCount },
     { key: "QR" as const, short: "QR", full: t("pos_restaurant.rail_qr"), icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
+    { key: "CALLS" as const, short: t("pos_restaurant.rail_calls_short"), full: t("pos_restaurant.rail_calls"), icon: <span aria-hidden="true">🔔</span>, badge: pendingServiceCalls.length },
     { key: "KITCHEN" as const, short: t("pos_restaurant.rail_kitchen_short"), full: t("pos_restaurant.rail_kitchen"), icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
     { key: "BILLS" as const, short: t("pos_restaurant.rail_bills_short"), full: t("pos_restaurant.rail_bills"), icon: <FileTextOutlined />, badge: 0 },
     { key: "SHIFT" as const, short: t("pos_restaurant.rail_shift_short"), full: t("pos_restaurant.rail_shift"), icon: <SwapOutlined />, badge: 0 },
@@ -1889,6 +1933,34 @@ export default function RestaurantPosPage() {
               </div>;
             })}
           </div>
+        </div>
+      </section></Spin>}
+      {screen === "CALLS" && <Spin spinning={working}><section className={styles.counterScreen}>
+        <div className={styles.panelHeader}>
+          <div><h2>{t("pos_restaurant.service_calls_title")}</h2><small>{t("pos_restaurant.service_calls_subtitle")}</small></div>
+          <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadServiceCalls()} title={t("pos_restaurant.service_calls_refresh")} aria-label={t("pos_restaurant.service_calls_refresh")}><ReloadOutlined /></button>
+        </div>
+        <div className={styles.serviceCallGrid}>
+          {serviceCalls.length === 0 && <div className={styles.empty}><p>{t("pos_restaurant.service_calls_empty")}</p></div>}
+          {serviceCalls.map((call) => {
+            const label = call.requestCode === "WATER" ? t("pos_restaurant.service_water")
+              : call.requestCode === "CUTLERY" ? t("pos_restaurant.service_cutlery")
+              : call.requestCode === "BILL" ? t("pos_restaurant.service_bill")
+              : call.requestCode === "MENU_HELP" ? t("pos_restaurant.service_menu_help")
+              : call.requestNote || t("pos_restaurant.service_other");
+            const waiting = minutesSince(call.createdAt);
+            return <article key={call.id} className={styles.serviceCallCard} data-status={call.status}>
+              <div className={styles.serviceCallHead}><b><span aria-hidden="true">🔔</span> {t("pos_restaurant.service_called_from_table")}</b><span>{call.status === "PENDING" ? t("pos_restaurant.service_priority_high") : t("pos_restaurant.service_coming")}</span></div>
+              <div className={styles.serviceCallBody}>
+                <small>{call.tableCode}</small><strong>{call.tableName}</strong><p>{label}</p>
+                <div className={styles.serviceCallElapsed}>◷ {t("pos_restaurant.service_waited", { minutes: waiting ?? 0 })}</div>
+              </div>
+              <div className={styles.serviceCallActions}>
+                {call.status === "PENDING" ? <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady || !session?.shift} onClick={() => void updateServiceCall(call, "acknowledge")}>{t("pos_restaurant.service_acknowledge")}</button>
+                  : <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady || !session?.shift} onClick={() => void updateServiceCall(call, "complete")}>{t("pos_restaurant.service_complete")}</button>}
+              </div>
+            </article>;
+          })}
         </div>
       </section></Spin>}
       {screen === "QR" && <Spin spinning={working}><section className={styles.qrScreen}>

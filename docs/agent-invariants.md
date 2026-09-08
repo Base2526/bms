@@ -551,6 +551,14 @@ own dine-in service. Operator detail:
   phone must not be able to push a real order off the list. The register's pending count sits on the
   left rail to be seen from any screen, so its data is polled from any screen — a badge fed only
   while its own tab is open announces nothing.
+- **A table service call is not an order line (`9.69`).** Water, cutlery, bill, menu-help and a
+  validated free-text request live in `bms_restaurant_service_calls`; they never enter a basket,
+  reserve stock or create a kitchen ticket. The QR session supplies tenant, branch, table and check,
+  while the browser supplies only the request code/note and an idempotency key. A partial unique
+  index permits only one unacknowledged call per check across all phones at that table. Staff reads
+  remain branch-scoped by the device; `pos.sell` plus PIN and an open shift are required to move
+  `PENDING -> ACKNOWLEDGED -> COMPLETED`. Terminal check closure expires any active call in the same
+  trigger as the QR session and pending order proposals; `CLOSING` remains reversible and does not.
 - **Branch scope applies to floor management, not just the permission (`9.62`).**
   `restaurant.floor.manage` says a person may edit floors, never which branch's. Every floor query
   and mutation resolves the owning branch — from `locationId`, or from the area/table row when that

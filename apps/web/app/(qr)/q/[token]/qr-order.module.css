@@ -60,6 +60,22 @@
 .total { display: flex; justify-content: space-between; margin-top: 18px; font-size: 19px; }
 .submit { width: 100%; margin-top: 18px; padding: 14px; color: #fff; border: 0; border-radius: 13px; background: #176044; font-weight: 800; }
 .submit:disabled { opacity: .55; }
+.callStaffButton { position: fixed; z-index: 20; right: max(18px, calc((100% - 760px) / 2 + 18px)); bottom: 92px; display: grid; width: 54px; height: 54px; place-items: center; color: #fff; border: 4px solid #efcf91; border-radius: 50%; background: #0d6548; box-shadow: 0 5px 16px rgb(16 65 47 / 35%); font-size: 23px; }
+.callStaffButton:disabled { cursor: wait; opacity: 1; }
+.callStaffButton b { position: absolute; top: -6px; right: -4px; display: grid; min-width: 19px; height: 19px; place-items: center; padding: 0 4px; color: #563b00; border: 2px solid #fff; border-radius: 999px; background: #f2ba45; font-size: 10px; }
+.toast { position: fixed; z-index: 50; top: 12px; left: 50%; display: grid; grid-template-columns: auto 1fr; gap: 10px; width: min(calc(100% - 24px), 430px); padding: 12px 14px; transform: translateX(-50%); color: #174b39; border: 1px solid #a7d5c4; border-radius: 12px; background: #e4f5ee; box-shadow: 0 8px 28px rgb(13 55 40 / 22%); }
+.toast > span { font-size: 21px; }
+.toast b, .toast small { display: block; }
+.toast small { margin-top: 2px; color: #497063; }
+.serviceSheet { padding-bottom: 24px; }
+.serviceIntro { margin: 10px 0 14px; color: #737a74; font-size: 13px; }
+.serviceOptions { display: grid; gap: 8px; }
+.serviceOptions > button { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: center; min-height: 58px; padding: 10px 13px; text-align: left; color: inherit; border: 1px solid #d7dcd8; border-radius: 13px; background: #fff; }
+.serviceOptions > button[data-active="true"] { border-color: #176044; box-shadow: 0 0 0 2px rgb(23 96 68 / 14%); }
+.serviceOptions > button > span { font-size: 20px; text-align: center; }
+.serviceOptions > button > small { grid-column: 2; margin-top: -7px; color: #8a908b; }
+.serviceNote { display: grid; gap: 7px; margin-top: 14px; font-size: 13px; font-weight: 700; }
+.serviceNote textarea { min-height: 70px; resize: vertical; padding: 10px; border: 1px solid #d7dbd7; border-radius: 10px; font: inherit; }
 .notice { color: #6b736d; font-size: 11px; line-height: 1.55; }
 .error { margin: 10px 0; padding: 10px 12px; color: #9f352e; border-radius: 10px; background: #fce6e2; font-size: 12px; }
 .orders { display: grid; gap: 11px; }
