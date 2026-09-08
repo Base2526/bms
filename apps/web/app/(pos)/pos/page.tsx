@@ -48,6 +48,7 @@ import {
 } from "@/lib/pos/receiptI18n";
 import { selectedReturnLines, type ReturnDraft } from "@/lib/pos/returnDraft";
 import { appendSplitPaymentRow, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
+import { isEnrollablePhone } from "@/lib/pos/memberEnroll";
 import { describePosFailure as describeFailure } from "@/lib/pos/failureMessage";
 import {
   findRememberedPrinter,
@@ -9583,7 +9584,7 @@ export default function PosPage() {
                   <button
                     type="button"
                     className="pos-btn-ghost"
-                    disabled={!/^[0-9+]{8,20}$/.test(enrollPhone)}
+                    disabled={!isEnrollablePhone(enrollPhone)}
                     onClick={() => setEnrollStep("name")}
                     style={{ marginTop: "auto", padding: "10px 0", fontSize: 14 }}
                   >

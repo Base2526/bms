@@ -33,6 +33,7 @@ import {
   type PointsEarnBlock,
   type TierDiscountType,
 } from "./loyaltyMath";
+import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll";
 
 // เลขคณิตส่วนลดอยู่ใน loyaltyMath.ts (pure, เทสได้โดยไม่ต้องมี DB) — re-export
 // ให้ผู้เรียกเดิมไม่ต้องรู้ว่าย้ายไฟล์
@@ -434,8 +435,10 @@ export async function enrollMember(
     enrolledShiftId?: string | null;
   }
 ): Promise<EnrollMemberResult> {
-  const phone = input.phone.replace(/[\s-]/g, "").trim();
-  if (!/^[0-9+]{8,20}$/.test(phone)) return { status: "INVALID", reason: "เบอร์โทรไม่ถูกต้อง" };
+  // กฎของเบอร์อยู่ที่ `lib/pos/memberEnroll.ts` ที่เดียว — จอทั้งสองหน้าอ่านตัวเดียวกัน
+  // จึงไม่มีทางที่จอจะยอมส่งเบอร์ที่ตรงนี้ปฏิเสธ (หรือกันเบอร์ที่ตรงนี้รับได้)
+  const phone = normalizeEnrollPhone(input.phone);
+  if (!isEnrollablePhone(phone)) return { status: "INVALID", reason: "เบอร์โทรไม่ถูกต้อง" };
   const name = (input.name ?? "").trim();
 
   const client = await getClient();
