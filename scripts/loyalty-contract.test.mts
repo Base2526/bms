@@ -14,8 +14,10 @@ import {
   composeDiscounts,
   consumedToCoverDeficit,
   DEFAULT_LOYALTY_SETTINGS,
+  evaluatePointsEarn,
   pointsEarnedFor,
   pointsToDiscount,
+  shouldPrintMemberPoints,
   tierDiscountAmount,
   type LoyaltySettings,
   type MembershipTier,
@@ -408,4 +410,142 @@ test("ชนเพดานแล้วส่วนลดมือถูกต�
   assert.equal(r.couponDiscount, 40);
   assert.equal(r.manualDiscount, 10);    // โดนตัด 40 จากชั้นนี้ทั้งหมด
   assert.equal(r.capped, true);
+});
+// =============================================================
+// "ทำไมบิลนี้ได้ +0 แต้ม" — เคสจริงจากหน้าร้าน 2026-09-08
+// -------------------------------------------------------------
+// บิลโต๊ะ ฿69 ผูกสมาชิกแล้วได้ +0 แต้ม โดยที่ไม่มีจอไหนบอกเหตุผล พนักงานจึง
+// รู้ตอนใบเสร็จออกจากเครื่องพิมพ์แล้ว · สาเหตุอยู่ที่การตั้งค่าของร้าน ไม่ใช่บั๊ก
+// ของการคิดเลข แต่ "การไม่บอกเหตุผล" คือสิ่งที่ต้องกันไม่ให้กลับมา
+// =============================================================
+
+test("evaluatePointsEarn เป็นบันไดเดียวกับ pointsEarnedFor เสมอ", () => {
+  // ห้ามมีบันไดที่สองไว้ "หาเหตุผล" — วันที่สองบันไดต่างกัน จอจะอธิบายด้วย
+  // เงื่อนไขที่ไม่ได้ตัดสินจริง ซึ่งแย่กว่าไม่อธิบายเลย
+  const cases: LoyaltySettings[] = [
+    settings(),
+    settings({ enabled: false }),
+    settings({ earnMinSpend: 100 }),
+    settings({ earnPointsPerBaht: 0.01 }),
+    settings({ earnMode: "VISIT", visitPoints: 0 }),
+    settings({ earnMode: "VISIT", visitPoints: 3 }),
+    settings({ earnBase: "BEFORE_DISCOUNT" }),
+  ];
+  for (const s of cases) {
+    for (const [netTotal, discountAmount] of [[69, 0], [0, 0], [1000, 250], [99.5, 0.5]]) {
+      assert.equal(
+        evaluatePointsEarn(s, { netTotal, discountAmount }).points,
+        pointsEarnedFor(s, { netTotal, discountAmount }),
+        `บันไดต่างกันที่ ${JSON.stringify({ s, netTotal, discountAmount })}`
+      );
+    }
+  }
+});
+
+test("บิล ฿69 ที่ร้านตั้ง 100 บาท = 1 แต้ม ได้ 0 แต้ม และบอกว่าเพราะอัตราต่ำ", () => {
+  // เลขจริงจากเคสหน้าร้าน: 69 × 0.01 = 0.69 → ปัดลงเหลือ 0
+  const out = evaluatePointsEarn(settings({ earnPointsPerBaht: 0.01 }), {
+    netTotal: 69,
+    discountAmount: 0,
+  });
+  assert.equal(out.points, 0);
+  assert.equal(out.block, "RATE_TOO_LOW");
+  assert.equal(out.base, 69);
+  // 25 บาท = 1 แต้ม ต้องได้แต้มจริงจากยอดเดียวกัน (กันการ "แก้" ด้วยการตอบ 0 ทุกกรณี)
+  const ok = evaluatePointsEarn(settings({ earnPointsPerBaht: 0.04 }), { netTotal: 69, discountAmount: 0 });
+  assert.equal(ok.points, 2);
+  assert.equal(ok.block, null);
+});
+
+test("แต่ละด่านที่ทำให้ได้ 0 แต้ม ต้องแยกเหตุผลออกจากกันได้", () => {
+  // สี่ด่านนี้ทางแก้คนละเรื่องกันทั้งหมด (เปิดสวิตช์ / ลดขั้นต่ำ / ขึ้นอัตรา /
+  // ตั้งแต้มต่อครั้ง) เหมารวมเป็น "ไม่ได้แต้ม" เฉย ๆ = พนักงานทำอะไรต่อไม่ได้
+  assert.equal(evaluatePointsEarn(settings({ enabled: false }), { netTotal: 69, discountAmount: 0 }).block, "PROGRAM_DISABLED");
+  assert.equal(evaluatePointsEarn(settings({ earnMinSpend: 100 }), { netTotal: 69, discountAmount: 0 }).block, "BELOW_MIN_SPEND");
+  assert.equal(evaluatePointsEarn(settings({ earnPointsPerBaht: 0.01 }), { netTotal: 69, discountAmount: 0 }).block, "RATE_TOO_LOW");
+  assert.equal(evaluatePointsEarn(settings({ earnMode: "VISIT", visitPoints: 0 }), { netTotal: 69, discountAmount: 0 }).block, "NO_VISIT_POINTS");
+  // โปรแกรมปิดต้องชนะทุกด่าน — ถ้าตอบ RATE_TOO_LOW ผู้จัดการจะไปแก้อัตราซึ่งไม่ช่วยอะไร
+  assert.equal(
+    evaluatePointsEarn(settings({ enabled: false, earnPointsPerBaht: 0.01, earnMinSpend: 999 }), { netTotal: 69, discountAmount: 0 }).block,
+    "PROGRAM_DISABLED"
+  );
+  // ฐานคิดแต้มต้องคืนมาแม้โปรแกรมปิด จอจึงอธิบายได้ว่าคิดจากยอดไหน
+  assert.equal(evaluatePointsEarn(settings({ enabled: false }), { netTotal: 69, discountAmount: 31 }).base, 69);
+  assert.equal(
+    evaluatePointsEarn(settings({ enabled: false, earnBase: "BEFORE_DISCOUNT" }), { netTotal: 69, discountAmount: 31 }).base,
+    100
+  );
+});
+
+test("ใบเสร็จพิมพ์บล็อกแต้มเฉพาะตอนที่มีอะไรจะบอกจริง", () => {
+  // ร้านที่ไม่มีโปรแกรม: "แต้มที่ได้บิลนี้ +0" อ่านว่า "ร้านมีโปรแกรม แต่ฉันไม่ได้แต้ม"
+  assert.equal(shouldPrintMemberPoints({ loyaltyEnabled: false, isMember: true, pointsEarned: 0 }), false);
+  // แต่บิลที่ได้แต้มไปแล้วต้องพิมพ์เสมอ แม้ร้านปิดโปรแกรมทีหลัง — ใบเสร็จเป็น
+  // หลักฐานของตอนขาย ไม่ใช่ของการตั้งค่าวันที่พิมพ์ซ้ำ
+  assert.equal(shouldPrintMemberPoints({ loyaltyEnabled: false, isMember: true, pointsEarned: 5 }), true);
+  // โปรแกรมเปิด + เป็นสมาชิก + ได้ 0 → พิมพ์ตามจริง (จอเป็นคนอธิบายเหตุผลก่อนรับเงิน)
+  assert.equal(shouldPrintMemberPoints({ loyaltyEnabled: true, isMember: true, pointsEarned: 0 }), true);
+  // ลูกค้าที่มีแถวใน CRM แต่ไม่ได้สมัครสมาชิกไม่มีสิทธิ์ได้แต้มอยู่แล้ว
+  assert.equal(shouldPrintMemberPoints({ loyaltyEnabled: true, isMember: false, pointsEarned: 0 }), false);
+});
+
+test("พรีวิวคิดแต้มจากยอดหลังส่วนลด ด้วยฐานเดียวกับตอน commit", () => {
+  const src = readFileSync(new URL("../apps/web/lib/bms/membership.ts", import.meta.url), "utf8");
+  const start = src.indexOf("export async function previewMemberDiscount");
+  assert.ok(start >= 0, "หา previewMemberDiscount ไม่เจอ");
+  // ปลายฟังก์ชัน = `}` ที่คอลัมน์ 0 · ห้ามใช้ indexOf("\\n}") เฉย ๆ เพราะ object type
+  // ของพารามิเตอร์ก็ปิดที่คอลัมน์ 0 เหมือนกัน (`}): Promise<...>`) แล้ว slice จะสั้นเกิน
+  // เหลือแค่ signature — เทสจะแดงด้วยเหตุผลผิด (เจอมาแล้วตอนเขียนเทสนี้)
+  const end = src.slice(start).search(/\n\}\r?\n/);
+  assert.ok(end > 0, "หาปลาย previewMemberDiscount ไม่เจอ");
+  const body = src.slice(start, start + end);
+  // ต้องใช้ netTotal/totalDiscount ของ breakdown ไม่ใช่ args.subtotal ดิบ —
+  // earnPointsForOrderInTx อ่าน total_amount กับ discount_amount ของบิล
+  assert.match(body, /evaluatePointsEarn\(settings, \{\s*netTotal: breakdown\.netTotal,\s*discountAmount: breakdown\.totalDiscount,/);
+  assert.doesNotMatch(body, /evaluatePointsEarn\(settings, \{\s*netTotal: args\.subtotal/);
+  // ลูกค้าที่ไม่ได้สมัครสมาชิกต้องได้ null ไม่ใช่ 0 (0 อ่านว่า "สมัครแล้วแต่ไม่ได้แต้ม")
+  assert.match(body, /const isMember = Boolean\(member\?\.memberNo\)/);
+  assert.match(body, /pointsWillEarn: isMember \? earn\.points : null/);
+});
+
+test("จอต้องได้ผลลัพธ์ที่คิดแล้ว ไม่ใช่อัตราให้คูณเอง", () => {
+  // จอที่คูณอัตราเองคือสูตรชุดที่สอง แล้ววันหนึ่งจะสัญญาแต้มที่ ledger ไม่ได้ให้
+  for (const rel of [
+    "../apps/web/app/(pos)/pos/page.tsx",
+    "../apps/web/app/(pos)/pos/restaurant/page.tsx",
+  ]) {
+    const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+    assert.doesNotMatch(src, /earnPointsPerBaht/, `${rel} ห้ามรู้จักอัตราสะสมแต้ม`);
+    assert.doesNotMatch(src, /earnMinSpend/, `${rel} ห้ามรู้จักยอดขั้นต่ำ`);
+  }
+});
+
+test("ทั้งสองจอเตือนเรื่องแต้มก่อนรับเงิน และแปลครบทุกด่าน", () => {
+  const blocks = ["PROGRAM_DISABLED", "BELOW_MIN_SPEND", "RATE_TOO_LOW", "NO_VISIT_POINTS"];
+  const retail = readFileSync(new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url), "utf8");
+  const retailFn = retail.slice(retail.indexOf("function earnBlockText"));
+  for (const b of blocks) {
+    assert.ok(retailFn.slice(0, retailFn.indexOf("\n}")).includes(b), `หน้าค้าปลีกไม่แปลด่าน ${b}`);
+  }
+  assert.match(retail, /memberPreview\?\.pointsWillEarn != null/);
+  // แผงแลกแต้มต้องหายไปเมื่อโปรแกรมปิด — ไม่งั้นเป็นปุ่มที่ server ปฏิเสธเงียบ ๆ
+  assert.match(retail, /memberPreview\?\.loyaltyEnabled === false \? null/);
+
+  const rest = readFileSync(new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url), "utf8");
+  const restFn = rest.slice(rest.indexOf("function earnBlockText"));
+  for (const b of blocks) {
+    assert.ok(restFn.slice(0, restFn.indexOf("\n  }")).includes(b), `จอร้านอาหารไม่แปลด่าน ${b}`);
+  }
+  // ฐานคิดแต้มคือ total_amount ซึ่งไม่รวมยอดปัดเศษ — ส่ง checkoutDue คือสัญญาผิดตัวเลข
+  assert.match(rest, /const earnBasisAmount = check\?\.amountDue \?\? null/);
+  assert.doesNotMatch(rest, /amount=\$\{encodeURIComponent\(String\(checkoutDue\)\)\}/);
+});
+
+test("ทุกด่านมีข้อความครบทั้งไทยและอังกฤษ", () => {
+  // ด่านที่ไม่มีคำแปลจะโชว์ชื่อคีย์ดิบบนจอร้าน (getMessage คืนคีย์ตัวเองเมื่อหาไม่เจอ)
+  const keys = ["points_will_earn", "points_off_program", "points_off_min_spend", "points_off_rate", "points_off_visit"];
+  for (const lang of ["th", "en"]) {
+    const src = readFileSync(new URL(`../apps/web/i18n/${lang}.ts`, import.meta.url), "utf8");
+    for (const k of keys) assert.ok(src.includes(`${k}:`), `${lang}.ts ขาดคีย์ ${k}`);
+  }
 });
