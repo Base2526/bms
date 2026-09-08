@@ -234,6 +234,14 @@ test("ตั๋วครัวต้องถูกดึงจากทุก�
   assert.doesNotMatch(enabledClause, /screen/, "ตั๋วครัวกลับไปผูกกับแท็บครัวอีกแล้ว");
   // รอบยังต้องมีอยู่บนจออื่น แค่ช้าลง
   assert.match(feed, /alertPollIntervalMs\(/);
+  // เสียงทั้งสี่ต้องมาจากจุดของตัวเอง — ถอดตัวใดตัวหนึ่งออกต้องแดง ไม่ใช่รอดเพราะยังมี
+  // คำว่า notify เหลืออยู่ที่อื่นในไฟล์เดียวกัน
+  assert.match(source, /newAlertIds\(knownTicketIds\.current, openIds\)[\s\S]{0,40}alerts\.notify\("ORDER_NEW"\)/);
+  assert.match(source, /newAlertIds\(knownReadyTicketIds\.current, readyIds\)[\s\S]{0,40}alerts\.notify\("FOOD_READY"\)/);
+  assert.match(source, /newAlertIds\(knownQrSubmissionIds\.current, pendingIds\)[\s\S]{0,40}alerts\.notify\("QR_PENDING"\)/);
+  assert.match(source, /newAlertIds\(knownLateTicketIds\.current, late\)[\s\S]{0,40}alerts\.notify\("SLA_LATE"\)/);
+  assert.equal((source.match(/repeat\.play\) alerts\.notify\(/g) ?? []).length, 2,
+    "ต้องย้ำทั้งตั๋วครัวและคิว QR — สองกองนี้รอคนละคนมากด");
 });
 
 test("ทุกรอบอัตโนมัติของจอร้านอาหารต้องผ่าน useLiveRefresh ไม่ใช่ setInterval เปล่า", async () => {
@@ -259,7 +267,9 @@ test("จอครัวหลังบ้านต้องมีเสีย�
   const source = withoutComments(await read("../apps/web/app/(admin)/admin/kitchen/page.tsx"));
   // จอนี้เคยไม่มีเสียงเลย ทั้งที่ทำงานเดียวกับจอครัวที่เครื่องขาย
   assert.match(source, /useOrderAlerts\(/);
-  assert.match(source, /alerts\.notify\("ORDER_NEW"\)/);
+  assert.match(source, /newAlertIds\(knownNewIds\.current, newIds\)[\s\S]{0,40}alerts\.notify\("ORDER_NEW"\)/);
+  assert.match(source, /newAlertIds\(knownReadyIds\.current, readyIds\)[\s\S]{0,40}alerts\.notify\("FOOD_READY"\)/);
+  assert.match(source, /repeat\.play\) alerts\.notify\("ORDER_NEW"\)/);
   // pollInterval ของ Apollo เป็น timer ธรรมดา โดนหรี่ตอนแท็บถูกซ่อนเหมือนกัน และไม่มี
   // การโหลดทันทีตอนกลับมามองเห็น
   assert.doesNotMatch(source, /pollInterval/, "กลับไปใช้ pollInterval ของ Apollo แล้ว");
@@ -271,15 +281,22 @@ test("คิวคำขอจากแชทต้องดึงเอง ไ�
   // เส้นทางนี้เคยเป็นเส้นเดียวในสามเส้นที่ไม่มีสัญญาณอะไรเลย: ไม่ poll ไม่มีป้าย ไม่มีเสียง
   // แปลว่ารอได้ไม่จำกัด ไม่ใช่แค่ช้า
   assert.match(source, /useLiveRefresh\(/);
-  assert.match(source, /alerts\.notify\('CHAT_REQUEST'\)/);
   assert.match(source, /pendingCount/);
+  // ⚠️ ต้องแยกสองเสียงออกจากกัน: เสียงตอน "ของใหม่เข้ามา" กับเสียง "ย้ำจนกว่าจะมีคนรับ"
+  // assert แค่ว่ามีคำว่า notify อยู่ไหน ๆ ในไฟล์ = ถอดตัวใดตัวหนึ่งออกแล้วยังเขียว
+  assert.match(source, /newAlertIds\(knownPendingIds\.current,\s*pending\)[\s\S]{0,60}alerts\.notify\('CHAT_REQUEST'\)/);
+  assert.match(source, /repeat\.play\) alerts\.notify\('CHAT_REQUEST'\)/);
 });
 
 test("ออร์เดอร์ออนไลน์ที่เครื่องขายค้าปลีกต้องมีป้ายนับและดึงจากทุกแท็บ", async () => {
   const source = withoutComments(await read("../apps/web/app/(pos)/pos/page.tsx"));
   assert.doesNotMatch(source, /tab !== "incoming" \|\| !token/, "กลับไปดึงเฉพาะตอนเปิดแท็บออร์เดอร์เข้า");
   assert.match(source, /incomingWaitingCount/);
-  assert.match(source, /alerts\.notify\("CHAT_REQUEST"\)/);
+  assert.match(source, /newAlertIds\(knownIncomingIds\.current, waiting\)[\s\S]{0,40}alerts\.notify\("CHAT_REQUEST"\)/);
+  assert.match(source, /repeat\.play\) alerts\.notify\("CHAT_REQUEST"\)/);
+  // ป้ายต้องนับเฉพาะออร์เดอร์ที่ "ยังไม่มีใครกดรับ" (PAID) ไม่ใช่ทุกใบบนจอ —
+  // PACKING คือรับแล้วและครัวมีตั๋วไปแล้ว การนับรวมทำให้ป้ายไม่มีวันเป็นศูนย์
+  assert.match(source, /incomingOrders\.filter\(\(row\) => row\.status === "PAID"\)/);
 });
 
 test("ทุกจอที่มีเสียงต้องบอกได้เมื่อเบราว์เซอร์บล็อกเสียงอยู่", async () => {
@@ -292,7 +309,9 @@ test("ทุกจอที่มีเสียงต้องบอกได�
     "../apps/web/app/(pos)/pos/page.tsx",
   ]) {
     const source = withoutComments(await read(path));
-    assert.match(source, /alerts\.blocked/, `${path} ไม่มีทางบอกผู้ใช้ว่าเสียงถูกบล็อก`);
+    // ⚠️ ต้องมี \b — /alerts\.blocked/ เปล่า ๆ ไปแมตช์คีย์ i18n `pos_alerts.blocked_banner`
+    // ด้วย แล้วเทสเขียวทั้งที่แถบเตือนถูกถอดออกไปแล้ว (เจอจาก mutation test จริง)
+    assert.match(source, /\balerts\.blocked\b/, `${path} ไม่มีทางบอกผู้ใช้ว่าเสียงถูกบล็อก`);
   }
 });
 
@@ -312,6 +331,10 @@ test("ตัวเล่นเสียงต้องรายงานตร�
   assert.ok(play.length > 0, "หาเมธอด play ไม่เจอ — เทสนี้เลิกตรวจอะไรแล้ว");
   // context ที่ยัง suspended ต้องคืน false เพื่อให้จอขึ้นแถบ "แตะเพื่อเปิดเสียง"
   // การรายงานว่าดังแล้วทั้งที่เงียบคือสิ่งที่ทำให้บั๊กเดิมอยู่ได้นานโดยไม่มีใครเห็น
-  assert.match(play, /state === "suspended"/);
-  assert.match(play, /return false/);
+  const suspended = play.slice(play.indexOf('state === "suspended"'), play.indexOf("blocked = false;"));
+  assert.ok(suspended.length > 0, "หากิ่ง suspended ไม่เจอ");
+  // ⚠️ ต้องเล็งเข้าไปใน "กิ่ง suspended" เท่านั้น — assert /return false/ กับทั้งเมธอดจะเขียว
+  // ด้วย `return false` ของบล็อก catch ท้ายเมธอด แล้วมิวเทชันที่กลับค่าเป็น true รอดไปได้
+  assert.match(suspended, /return false;/);
+  assert.doesNotMatch(suspended, /return true;/, "กิ่งที่ถูกบล็อกต้องไม่รายงานว่าดังสำเร็จ");
 });
