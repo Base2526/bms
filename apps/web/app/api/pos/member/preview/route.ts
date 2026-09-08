@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice } from "@/lib/bms/pos";
-import { getLoyaltySettings, previewMemberDiscount, toPosMemberSummary } from "@/lib/bms/membership";
+import { previewMemberDiscount, toPosMemberSummary } from "@/lib/bms/membership";
 import { previewCouponForCustomer } from "@/lib/bms/coupons";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -46,27 +46,25 @@ async function handlePOST(req: NextRequest) {
     else couponError = check.reason;
   }
 
-  const [preview, settings] = await Promise.all([
-    previewMemberDiscount({
-      tenantId: device.tenantId,
-      customerId,
-      subtotal,
-      pointsRequested,
-      couponDiscount,
-      manualDiscount,
-    }),
-    getLoyaltySettings(device.tenantId),
-  ]);
+  const preview = await previewMemberDiscount({
+    tenantId: device.tenantId,
+    customerId,
+    subtotal,
+    pointsRequested,
+    couponDiscount,
+    manualDiscount,
+  });
 
-  // ส่งอัตราแลกไปด้วย จอจึงบอกได้ว่า "แต้ม 320 = ลดได้ ฿32" และปรับจำนวนเป็น
-  // ก้าวละ 1 หน่วยแลก (ไม่เหลือเศษแต้มที่ไม่ได้แปลงเป็นส่วนลด)
+  // อัตราแลกทำให้จอบอกได้ว่า "แต้ม 320 = ลดได้ ฿32" และปรับจำนวนเป็นก้าวละ 1 หน่วยแลก
+  // (ไม่เหลือเศษแต้มที่ไม่ได้แปลงเป็นส่วนลด) · loyaltyEnabled/pointsWillEarn ทำให้จอ
+  // เตือนได้ก่อนรับเงินว่าบิลนี้จะไม่ได้แต้มและเพราะอะไร
+  //
+  // ทั้งชุดมาจาก previewMemberDiscount ตัวเดียว — เดิม route อ่าน settings ซ้ำอีกรอบ
+  // ซึ่งเป็นสอง query ต่อการพิมพ์หนึ่งครั้ง และเปิดช่องให้สองที่อ่านค่าคนละรอบกัน
   return NextResponse.json({
     ...preview,
     member: preview.member ? toPosMemberSummary(preview.member) : null,
     couponError,
-    redeemPointsPerUnit: settings.redeemPointsPerUnit,
-    redeemBahtPerUnit: settings.redeemBahtPerUnit,
-    redeemMinPoints: settings.redeemMinPoints,
   }, { status: 200 });
 }
 

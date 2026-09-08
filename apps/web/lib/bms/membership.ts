@@ -20,14 +20,17 @@ import {
   composeDiscounts,
   consumedToCoverDeficit,
   DEFAULT_LOYALTY_SETTINGS,
+  evaluatePointsEarn,
   pointsEarnedFor,
   pointsToDiscount,
+  shouldPrintMemberPoints,
   tierDiscountAmount,
   type LoyaltyEarnBase,
   type LoyaltyEarnMode,
   type LoyaltySettings,
   type MemberDiscountBreakdown,
   type MembershipTier,
+  type PointsEarnBlock,
   type TierDiscountType,
 } from "./loyaltyMath";
 
@@ -35,7 +38,9 @@ import {
 // ให้ผู้เรียกเดิมไม่ต้องรู้ว่าย้ายไฟล์
 export {
   composeDiscounts,
+  evaluatePointsEarn,
   pointsToDiscount,
+  shouldPrintMemberPoints,
   tierDiscountAmount,
   pointsEarnedFor,
 } from "./loyaltyMath";
@@ -45,6 +50,8 @@ export type {
   LoyaltySettings,
   MemberDiscountBreakdown,
   MembershipTier,
+  PointsEarnBlock,
+  PointsEarnOutcome,
   TierDiscountType,
 } from "./loyaltyMath";
 
@@ -580,6 +587,25 @@ async function nextMemberNoInTx(client: PoolClient, tenantId: string): Promise<s
 // ---------------------------------------------------------------
 
 /** preview สำหรับจอ POS — คืนตัวเลขชุดเดียวกับที่ createOrder จะคิด */
+/**
+ * สิ่งที่จอต้องรู้เกี่ยวกับโปรแกรมสะสมแต้ม นอกเหนือจากตัวเลขส่วนลด
+ *
+ * ⚠️ ส่งเป็น "ผลลัพธ์ที่คิดแล้ว" ไม่ใช่อัตราให้จอไปคูณเอง — จอที่คูณเองคือสูตร
+ * ชุดที่สองซึ่งจะ drift แล้ววันหนึ่งจะโฆษณาแต้มที่ลูกค้าไม่ได้จริง (อัตราแลกสามตัว
+ * ล่างเป็นข้อยกเว้นที่จอต้องมีเพื่อปรับจำนวนแต้มเป็นก้าวละหน่วยแลก)
+ */
+export type MemberPreviewLoyalty = {
+  /** โปรแกรมของร้านเปิดอยู่ไหม — จอต้องเตือนตอนผูกสมาชิก ไม่ใช่ให้ไปเจอตอนใบเสร็จออก */
+  loyaltyEnabled: boolean;
+  /** แต้มที่บิลนี้จะได้ถ้าปิดการขายตอนนี้ · null = ยังไม่ได้ผูกสมาชิก (ไม่มีใครได้แต้ม) */
+  pointsWillEarn: number | null;
+  /** เหตุที่จะได้ 0 แต้ม · null = ได้แต้มจริง หรือยังไม่ได้ผูกสมาชิก */
+  pointsEarnBlock: PointsEarnBlock | null;
+  redeemPointsPerUnit: number;
+  redeemBahtPerUnit: number;
+  redeemMinPoints: number;
+};
+
 export async function previewMemberDiscount(args: {
   tenantId: string;
   customerId: string | null;
@@ -588,7 +614,7 @@ export async function previewMemberDiscount(args: {
   couponDiscount?: number;
   /** ส่วนลดมือที่หัวหน้าอนุมัติ — พรีวิวต้องรวมด้วย ไม่งั้นยอดที่จอโชว์ไม่ตรงกับที่ createOrder คิด */
   manualDiscount?: number;
-}): Promise<MemberDiscountBreakdown & { member: MemberSummary | null }> {
+}): Promise<MemberDiscountBreakdown & { member: MemberSummary | null } & MemberPreviewLoyalty> {
   const settings = await getLoyaltySettings(args.tenantId);
   const member = args.customerId ? await getMember(args.tenantId, args.customerId) : null;
   const breakdown = composeDiscounts({
@@ -600,7 +626,25 @@ export async function previewMemberDiscount(args: {
     pointsAvailable: member?.pointsUsable ?? 0,
     manualDiscount: args.manualDiscount,
   });
-  return { ...breakdown, member };
+  // ต้องใช้ฐานเดียวกับ earnPointsForOrderInTx ตอน commit: total_amount (= netTotal)
+  // กับ discount_amount (= totalDiscount) ไม่ใช่ subtotal ดิบ
+  const earn = evaluatePointsEarn(settings, {
+    netTotal: breakdown.netTotal,
+    discountAmount: breakdown.totalDiscount,
+  });
+  // ลูกค้าที่มีแถวใน CRM แต่ยังไม่สมัครสมาชิกไม่ได้แต้ม (earnPointsForOrderInTx
+  // บังคับ member_no) พรีวิวจึงต้องเงียบเหมือนกัน ไม่ใช่โชว์ 0 ให้ตีความเอง
+  const isMember = Boolean(member?.memberNo);
+  return {
+    ...breakdown,
+    member,
+    loyaltyEnabled: settings.enabled,
+    pointsWillEarn: isMember ? earn.points : null,
+    pointsEarnBlock: isMember ? earn.block : null,
+    redeemPointsPerUnit: settings.redeemPointsPerUnit,
+    redeemBahtPerUnit: settings.redeemBahtPerUnit,
+    redeemMinPoints: settings.redeemMinPoints,
+  };
 }
 
 // ---------------------------------------------------------------

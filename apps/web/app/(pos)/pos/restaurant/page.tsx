@@ -146,6 +146,16 @@ type ServiceCall = {
   completedAt: string | null;
 };
 type PosMember = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number; tier: { code: string; name: string } | null };
+/**
+ * สถานะโปรแกรมสะสมแต้ม + แต้มที่บิลนี้จะได้ — server คิดมาให้แล้วทั้งคู่
+ * (จอไม่ได้รับ "อัตรา" มาคูณเอง เพราะนั่นคือสูตรชุดที่สองที่จะ drift แล้วจอ
+ * จะสัญญาแต้มที่ ledger ไม่ได้ให้)
+ */
+type PosLoyaltyStatus = {
+  enabled: boolean;
+  pointsForAmount: number | null;
+  block: "PROGRAM_DISABLED" | "BELOW_MIN_SPEND" | "NO_VISIT_POINTS" | "RATE_TOO_LOW" | null;
+};
 type SettlementResult = {
   status: "SOLD"; orderId: string; total: number; cashTendered: number | null; cashChange: number | null;
   docNo: string | null; receiptNo: string | null; billNo: string | null;
@@ -512,6 +522,7 @@ export default function RestaurantPosPage() {
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<PosMember[]>([]);
   const [selectedMember, setSelectedMember] = useState<PosMember | null>(null);
+  const [memberLoyalty, setMemberLoyalty] = useState<PosLoyaltyStatus | null>(null);
   const [settlementReceipt, setSettlementReceipt] = useState<SettlementReceipt | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<RecentReceipt[]>([]);
   const [recentQuery, setRecentQuery] = useState("");
@@ -1378,12 +1389,48 @@ export default function RestaurantPosPage() {
       message.success(t("pos_restaurant.toast_check_merged", { count: body.movedItems ?? 0 }));
     });
   }
+  /**
+   * ฐานคิดแต้มคือ `bms_orders.total_amount` ซึ่ง **ไม่รวม** ยอดปัดเศษเงินสด
+   * จึงต้องส่ง `check.amountDue` ไม่ใช่ `checkoutDue` — ไม่งั้นตัวเลขที่จอสัญญา
+   * จะไม่ตรงกับที่ ledger ให้จริงในบิลที่ร้านเปิดปัดเศษ
+   */
+  const earnBasisAmount = check?.amountDue ?? null;
   async function searchMembers() {
     if (memberQuery.trim().length < 3) { setMemberResults([]); return; }
     await run(async () => {
-      const body = await json(`/api/pos/member?q=${encodeURIComponent(memberQuery.trim())}`);
+      const suffix = earnBasisAmount == null ? "" : `&amount=${encodeURIComponent(String(earnBasisAmount))}`;
+      const body = await json(`/api/pos/member?q=${encodeURIComponent(memberQuery.trim())}${suffix}`);
       setMemberResults(Array.isArray(body.members) ? body.members : []);
+      if (body.loyalty) setMemberLoyalty(body.loyalty as PosLoyaltyStatus);
     });
+  }
+  // ถามสถานะทันทีที่เปิดแผงคิดเงิน ไม่ต้องรอให้ค้นสมาชิกก่อน — คนที่ยังไม่ได้ค้น
+  // ก็ต้องรู้ว่าผูกสมาชิกไปแล้วจะได้แต้มไหม
+  useEffect(() => {
+    if (!checkoutOpen || !token || earnBasisAmount == null) { setMemberLoyalty(null); return; }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const body = await json(`/api/pos/member?amount=${encodeURIComponent(String(earnBasisAmount))}`, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted && body.loyalty) setMemberLoyalty(body.loyalty as PosLoyaltyStatus);
+      } catch {
+        // เงียบโดยตั้งใจ: นี่เป็นข้อมูลประกอบ ไม่ใช่ด่าน · ปุ่มคิดเงินบนจอเดียวกัน
+        // รายงานปัญหาเน็ตอยู่แล้ว การเด้ง error ซ้ำทำให้แคชเชียร์เลิกอ่าน
+      }
+    })();
+    return () => controller.abort();
+  }, [checkoutOpen, token, earnBasisAmount]);
+  /** แปลรหัสจาก server เป็นประโยค — จอไม่เดาเหตุผลเอง (server ตัดสินด้วยบันไดชุดเดียว) */
+  function earnBlockText(block: PosLoyaltyStatus["block"]): string {
+    switch (block) {
+      case "PROGRAM_DISABLED": return t("pos_restaurant.points_off_program");
+      case "BELOW_MIN_SPEND": return t("pos_restaurant.points_off_min_spend");
+      case "RATE_TOO_LOW": return t("pos_restaurant.points_off_rate");
+      case "NO_VISIT_POINTS": return t("pos_restaurant.points_off_visit");
+      default: return "";
+    }
   }
   async function loadRecentReceipts() {
     await run(async () => {
@@ -2595,7 +2642,7 @@ export default function RestaurantPosPage() {
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{t("pos_restaurant.support_consent")}</Checkbox>
     </Modal>
     <Modal title={t("pos_restaurant.take_payment_title", { table: check?.tableName ?? "" })} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText={t("pos_restaurant.confirm_payment")} okButtonProps={{ disabled: Boolean(checkoutBlock) }} width={680} getContainer={modalContainer}>{check && <div className={styles.modalGrid}>
-      <div className={styles.memberBox}><b>{t("pos_restaurant.member_optional")}</b>{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? t("pos_restaurant.member")}<small>{t("pos_restaurant.points_available", { points: checkMember.pointsUsable })}</small></span><button type="button" className={styles.btn} onClick={() => setSelectedMember(null)}>{t("pos_restaurant.remove")}</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder={t("pos_restaurant.member_search_placeholder")} /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>{t("pos_restaurant.search")}</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => setSelectedMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{t("pos_restaurant.points_count", { points: member.pointsUsable })}</b></button>)}</>}</div>
+      <div className={styles.memberBox}><b>{t("pos_restaurant.member_optional")}</b>{memberLoyalty && memberLoyalty.pointsForAmount != null && memberLoyalty.pointsForAmount > 0 ? <small className={styles.memberEarnHint}>{t("pos_restaurant.points_will_earn", { points: memberLoyalty.pointsForAmount })}</small> : memberLoyalty?.block ? <small className={styles.memberEarnWarn}>{earnBlockText(memberLoyalty.block)}</small> : null}{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? t("pos_restaurant.member")}<small>{t("pos_restaurant.points_available", { points: checkMember.pointsUsable })}</small></span><button type="button" className={styles.btn} onClick={() => setSelectedMember(null)}>{t("pos_restaurant.remove")}</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder={t("pos_restaurant.member_search_placeholder")} /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>{t("pos_restaurant.search")}</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => setSelectedMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{t("pos_restaurant.points_count", { points: member.pointsUsable })}</b></button>)}</>}</div>
       <div className={styles.total}><span>{t("pos_restaurant.amount_due")}</span><strong><span className={styles.baht}>฿</span>{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>{t("pos_restaurant.payment_method")}<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">{t("pos_restaurant.payment_cash")}</option><option value="QR">{t("pos_restaurant.payment_qr")}</option><option value="CARD">{t("pos_restaurant.payment_card")}</option></select></label><label>{t("pos_restaurant.channel_amount")}<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => rebalanceSplitPayments(current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row), payment.id, checkoutDue))} /></label>{payment.method === "CASH" ? <label>{t("pos_restaurant.cash_tendered")}<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} />
         {/* เงินทอนต้องเห็น "ตอนถือเงินลูกค้าอยู่ในมือ" ไม่ใช่หลังกดยืนยันไปแล้ว — หน้าค้าปลีก
             แสดงมาตลอด (`เงินทอนรายการนี้`) หน้านี้เคยให้แคชเชียร์คิดเองหรือรอดูในใบเสร็จ

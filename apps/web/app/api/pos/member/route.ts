@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
-import { enrollMember, searchMembers, toPosMemberSummary } from "@/lib/bms/membership";
+import { enrollMember, evaluatePointsEarn, getLoyaltySettings, searchMembers, toPosMemberSummary } from "@/lib/bms/membership";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -24,13 +24,36 @@ async function handleGET(req: NextRequest) {
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
   }
+  // แต้มที่บิลจะได้ "ไม่ขึ้นกับว่าเลือกสมาชิกคนไหน" — ขึ้นกับยอดบิลกับการตั้งค่าของ
+  // ร้านเท่านั้น จึงเป็นค่าเดียวต่อคำขอ ไม่ใช่ค่าต่อแถวในลิสต์ · จอต้องได้ค่านี้ก่อน
+  // ผูกสมาชิก ไม่ใช่ไปรู้ตอนใบเสร็จออกจากเครื่องพิมพ์แล้วว่าได้ +0
+  //
+  // ⚠️ discountAmount = 0 โดยตั้งใจ: ผู้เรียกของ `amount` คือบิลโต๊ะ ซึ่งยังไม่ใช้
+  // ส่วนลดตามชั้นสมาชิก (คิดตอนส่งครัวซึ่งยังไม่รู้ว่าใครจ่าย) ยอดที่ส่งมาจึงเท่ากับ
+  // total_amount ของบิลตรง ๆ · หน้าค้าปลีกที่มีส่วนลดหลายชั้นต้องใช้
+  // /api/pos/member/preview ซึ่งคิดจากยอดหลังหักส่วนลดจริง
+  const amountRaw = Number(req.nextUrl.searchParams.get("amount"));
+  const amount = Number.isFinite(amountRaw) && amountRaw > 0
+    ? Math.round(amountRaw * 100) / 100
+    : null;
+  const settings = await getLoyaltySettings(device.tenantId);
+  const earn = amount == null
+    ? null
+    : evaluatePointsEarn(settings, { netTotal: amount, discountAmount: 0 });
+  const loyalty = {
+    enabled: settings.enabled,
+    pointsForAmount: earn ? earn.points : null,
+    block: earn ? earn.block : null,
+  };
+
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   if (q.length < 3) {
     // กันการไล่ดูรายชื่อลูกค้าทั้งร้านจากจอขาย — ต้องรู้เบอร์/ชื่อบางส่วนก่อน
-    return NextResponse.json({ members: [] }, { status: 200 });
+    // (ยังคืน loyalty เพื่อให้จอถามสถานะโปรแกรมได้โดยไม่ต้องค้นใครก่อน)
+    return NextResponse.json({ members: [], loyalty }, { status: 200 });
   }
   const members = await searchMembers(device.tenantId, q, 10);
-  return NextResponse.json({ members: members.map(toPosMemberSummary) }, { status: 200 });
+  return NextResponse.json({ members: members.map(toPosMemberSummary), loyalty }, { status: 200 });
 }
 
 async function handlePOST(req: NextRequest) {

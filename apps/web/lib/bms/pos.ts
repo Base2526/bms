@@ -69,6 +69,7 @@ import {
   earnPointsForOrderInTx,
   reversePointsForReturnInTx,
   reviewMemberTier,
+  shouldPrintMemberPoints,
   type OrderDiscountLine,
 } from "./membership";
 
@@ -3352,14 +3353,22 @@ async function finalizePosSale(args: {
 
     // ตัวเลขสมาชิกที่ต้องพิมพ์บนใบเสร็จ — อ่านในทรานแซกชันเดียวกับที่เพิ่งเขียน
     // (ทาง replay บิลที่ PAID อยู่แล้วจะได้แต้มที่เคยให้ไป ไม่ใช่ 0)
-    const loyalty = await client.query<{ earned: string; balance: number | null }>(
+    const loyalty = await client.query<{
+      earned: string;
+      balance: number | null;
+      member_no: string | null;
+      loyalty_enabled: boolean;
+    }>(
       `SELECT COALESCE((
                 SELECT SUM(l.points) FROM bms_loyalty_ledger l
                  WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN'
               ), 0) AS earned,
-              c.points_balance AS balance
+              c.points_balance AS balance,
+              c.member_no,
+              COALESCE(ls.enabled, FALSE) AS loyalty_enabled
          FROM bms_orders o
          LEFT JOIN bms_customers c ON c.tenant_id = o.tenant_id AND c.id = o.customer_id
+         LEFT JOIN bms_loyalty_settings ls ON ls.tenant_id = o.tenant_id
         WHERE o.tenant_id = $1 AND o.id = $2`,
       [input.tenantId, orderId]
     );
@@ -3367,7 +3376,13 @@ async function finalizePosSale(args: {
 
     await client.query("COMMIT");
     const loyaltyRow = loyalty.rows[0];
-    const hasMember = loyaltyRow?.balance != null;
+    // ร้านที่ปิดโปรแกรมสะสมแต้มต้องไม่พิมพ์ "แต้มที่ได้บิลนี้ +0" — ลูกค้าอ่านว่า
+    // "ร้านมีโปรแกรม แต่ฉันไม่ได้แต้ม" · กฎอยู่ใน shouldPrintMemberPoints ที่เดียว
+    const hasMember = shouldPrintMemberPoints({
+      loyaltyEnabled: Boolean(loyaltyRow?.loyalty_enabled),
+      isMember: Boolean(loyaltyRow?.member_no),
+      pointsEarned: Number(loyaltyRow?.earned ?? 0),
+    });
     return {
       status: "SOLD",
       orderId,
@@ -3446,18 +3461,22 @@ async function findSaleByIdempotencyKey(
     rounding_amount: string | null;
     points_earned: string | null;
     points_balance: number | null;
+    member_no: string | null;
+    loyalty_enabled: boolean;
   }>(
     `SELECT o.id, o.total_amount, o.shipping_fee, o.rounding_amount AS order_rounding,
             pay.cash_tendered, pay.cash_change,
             doc.doc_no, doc.vat_rate, doc.taxable_amount, doc.exempt_amount,
             doc.vat_amount, doc.rounding_amount,
-            cust.points_balance,
+            cust.points_balance, cust.member_no,
+            COALESCE(ls.enabled, FALSE) AS loyalty_enabled,
             COALESCE((
               SELECT SUM(l.points) FROM bms_loyalty_ledger l
                WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN'
             ), 0) AS points_earned
        FROM bms_orders o
        LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
+       LEFT JOIN bms_loyalty_settings ls ON ls.tenant_id = o.tenant_id
        LEFT JOIN LATERAL (
          SELECT SUM(cash_tendered) AS cash_tendered, SUM(cash_change) AS cash_change
            FROM bms_payments
@@ -3488,8 +3507,18 @@ async function findSaleByIdempotencyKey(
     vat: mapReceiptVat(row),
     roundingAmount: rounding,
     discountLines: await loadPosReceiptDiscountLines({ query }, tenantId, row.id),
-    pointsEarned: row.points_balance == null ? null : Number(row.points_earned ?? 0),
-    pointsBalance: row.points_balance == null ? null : Number(row.points_balance),
+    // พิมพ์ซ้ำต้องบอกความจริงของ "ตอนขาย" ไม่ใช่ของการตั้งค่าวันนี้ — บิลที่ได้แต้ม
+    // ไปแล้วยังโชว์แต้มแม้ร้านปิดโปรแกรมทีหลัง (กฎเดียวกับตอนขาย)
+    ...(shouldPrintMemberPoints({
+      loyaltyEnabled: Boolean(row.loyalty_enabled),
+      isMember: Boolean(row.member_no),
+      pointsEarned: Number(row.points_earned ?? 0),
+    })
+      ? {
+        pointsEarned: Number(row.points_earned ?? 0),
+        pointsBalance: row.points_balance == null ? null : Number(row.points_balance),
+      }
+      : { pointsEarned: null, pointsBalance: null }),
     replayed: true,
   };
 }

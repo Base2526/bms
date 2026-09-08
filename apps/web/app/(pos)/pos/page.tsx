@@ -693,7 +693,35 @@ type MemberPreview = {
   redeemMinPoints: number;
   /** เหตุผลที่ใช้โค้ดนี้ไม่ได้ — null = ใช้ได้ (หรือไม่ได้กรอกโค้ด) */
   couponError: string | null;
+  /** โปรแกรมสะสมแต้มของร้านเปิดอยู่ไหม */
+  loyaltyEnabled: boolean;
+  /** แต้มที่บิลนี้จะได้ (server คิดด้วยบันไดเดียวกับตอน commit) · null = ยังไม่ผูกสมาชิก */
+  pointsWillEarn: number | null;
+  /** เหตุที่จะได้ 0 แต้ม · null = ได้แต้มจริง หรือยังไม่ผูกสมาชิก */
+  pointsEarnBlock: "PROGRAM_DISABLED" | "BELOW_MIN_SPEND" | "NO_VISIT_POINTS" | "RATE_TOO_LOW" | null;
 };
+
+/**
+ * ทำไมบิลนี้จะไม่ได้แต้ม — แปลรหัสจาก server เป็นประโยคที่พนักงานหน้าเคาน์เตอร์
+ * ทำอะไรต่อได้ · ห้ามให้จอเดาเหตุผลเอง (server เป็นคนตัดสินด้วยบันไดชุดเดียว)
+ *
+ * ไม่ชี้ไป /admin เพราะบัญชี pos_only เปิดไม่ได้ — ทางที่ถูกของคนหน้าเคาน์เตอร์
+ * คือแจ้งผู้จัดการ
+ */
+function earnBlockText(block: MemberPreview["pointsEarnBlock"]): string {
+  switch (block) {
+    case "PROGRAM_DISABLED":
+      return "โปรแกรมสะสมแต้มของร้านปิดอยู่ · บิลนี้จะไม่ได้แต้ม — แจ้งผู้จัดการ";
+    case "BELOW_MIN_SPEND":
+      return "ยอดบิลยังไม่ถึงขั้นต่ำที่ร้านตั้งไว้ · บิลนี้จะไม่ได้แต้ม";
+    case "RATE_TOO_LOW":
+      return "อัตราสะสมของร้านยังไม่ถึง 1 แต้มที่ยอดนี้ · บิลนี้จะไม่ได้แต้ม — แจ้งผู้จัดการ";
+    case "NO_VISIT_POINTS":
+      return "ร้านตั้งแต้มต่อการซื้อไว้ 0 · บิลนี้จะไม่ได้แต้ม — แจ้งผู้จัดการ";
+    default:
+      return "";
+  }
+}
 
 type ReceiptVat = {
   rate: number;
@@ -8598,10 +8626,26 @@ export default function PosPage() {
                     </button>
                   </div>
 
-                  {member.pointsUsable <= 0 ? (
-                    /* 0 แต้ม = ไม่มีอะไรให้กด — บอกแค่ว่าบิลนี้จะได้แต้ม */
+                  {/* แต้มที่บิลนี้จะได้ ต้องเห็น "ก่อนรับเงิน" ไม่ใช่ไปรู้ตอนใบเสร็จออกจาก
+                      เครื่องพิมพ์ · server เป็นคนคิดและเป็นคนบอกเหตุผลเมื่อได้ 0 จอไม่เดาเอง */}
+                  {memberPreview?.pointsWillEarn != null && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: memberPreview.pointsWillEarn > 0 ? "var(--pos-muted)" : "#c9455a",
+                      }}
+                    >
+                      {memberPreview.pointsWillEarn > 0
+                        ? `บิลนี้จะได้ ${memberPreview.pointsWillEarn} แต้ม`
+                        : earnBlockText(memberPreview.pointsEarnBlock)}
+                    </span>
+                  )}
+
+                  {/* โปรแกรมปิด = แลกแต้มไม่ได้เลย (composeDiscounts คืนส่วนลด 0) การโชว์
+                      แผงแลกไว้จึงเป็นปุ่มที่กดแล้ว server ปฏิเสธเงียบ ๆ */}
+                  {memberPreview?.loyaltyEnabled === false ? null : member.pointsUsable <= 0 ? (
                     <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
-                      ยังไม่มีแต้มสะสม · บิลนี้จะได้แต้ม
+                      ยังไม่มีแต้มสะสมให้แลก
                     </span>
                   ) : total <= 0 ? (
                     <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
@@ -8612,7 +8656,7 @@ export default function PosPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
                         แต้ม {member.pointsUsable}
-                        {memberPreview && (
+                        {memberPreview?.loyaltyEnabled && (
                           <span style={{ color: "var(--pos-muted)" }}>
                             {" = ลดได้ ฿"}
                             {baht(

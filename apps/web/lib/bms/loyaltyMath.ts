@@ -184,20 +184,82 @@ export function composeDiscounts(args: {
 }
 
 /**
- * แต้มที่บิลนี้ได้ — ฐานคิดตาม earn_base (default หลังส่วนลด กันส่วนลดปั๊มแต้ม)
- * ปัดลงเสมอ: ครึ่งแต้มไม่มีอยู่จริง และปัดขึ้นทำให้ยอดขาย 0.5 บาทได้ 1 แต้ม
+ * เหตุที่บิลได้ 0 แต้ม — เป็น "รหัส" ไม่ใช่ประโยค เพราะไฟล์นี้ห้าม import อะไรเลย
+ * (รวมทั้ง i18n) จอเป็นคนแปลเป็นข้อความของภาษานั้น
  */
+export type PointsEarnBlock =
+  | "PROGRAM_DISABLED"
+  | "BELOW_MIN_SPEND"
+  | "NO_VISIT_POINTS"
+  | "RATE_TOO_LOW";
+
+export type PointsEarnOutcome = {
+  points: number;
+  /** null = ได้แต้มจริง */
+  block: PointsEarnBlock | null;
+  /** ยอดที่ใช้เป็นฐานคิดแต้มจริงตาม earn_base — จอใช้อธิบายว่าทำไมได้เท่านี้ */
+  base: number;
+};
+
+/**
+ * แต้มที่บิลนี้ได้ + เหตุผลเมื่อได้ 0 — ฐานคิดตาม earn_base (default หลังส่วนลด
+ * กันส่วนลดปั๊มแต้ม) ปัดลงเสมอ: ครึ่งแต้มไม่มีอยู่จริง และปัดขึ้นทำให้ยอดขาย
+ * 0.5 บาทได้ 1 แต้ม
+ *
+ * ⚠️ นี่คือบันไดเงื่อนไข "ชุดเดียว" ของการให้แต้มทั้งระบบ — ทั้งตอน commit
+ * (earnPointsForOrderInTx) และตอนพรีวิวที่จอต้องอ่านตัวนี้ · ห้ามเขียนบันไดที่สอง
+ * เพื่อ "หาเหตุผล" แยก ไม่งั้นวันหนึ่งจอจะอธิบายด้วยเงื่อนไขที่ไม่ได้ตัดสินจริง
+ * ซึ่งแย่กว่าไม่อธิบายเลย
+ */
+export function evaluatePointsEarn(
+  settings: LoyaltySettings,
+  args: { netTotal: number; discountAmount: number }
+): PointsEarnOutcome {
+  // คิดฐานก่อนด่านทุกด่าน เพื่อให้จอบอกได้ว่า "ฐานคิดแต้มคือเท่าไร" แม้โปรแกรมปิด
+  const base = settings.earnBase === "BEFORE_DISCOUNT"
+    ? round2(args.netTotal + args.discountAmount)
+    : round2(args.netTotal);
+  if (!settings.enabled) return { points: 0, block: "PROGRAM_DISABLED", base };
+  if (base < settings.earnMinSpend) return { points: 0, block: "BELOW_MIN_SPEND", base };
+  const points = Math.max(0, settings.earnMode === "VISIT"
+    ? settings.visitPoints
+    : Math.floor(base * settings.earnPointsPerBaht));
+  if (points > 0) return { points, block: null, base };
+  // ผ่านทุกด่านแล้วยังได้ 0 = อัตราของร้านเองต่ำเกินกว่าจะได้ 1 แต้มจากยอดนี้
+  // (เช่น "100 บาท = 1 แต้ม" คือ 0.01 → บิล 69 บาทได้ 0.69 → ปัดลงเหลือ 0)
+  return {
+    points: 0,
+    block: settings.earnMode === "VISIT" ? "NO_VISIT_POINTS" : "RATE_TOO_LOW",
+    base,
+  };
+}
+
+/** ตัวเลขล้วนสำหรับเส้นทางที่ให้แต้มจริง — บันไดเดียวกับ evaluatePointsEarn */
 export function pointsEarnedFor(
   settings: LoyaltySettings,
   args: { netTotal: number; discountAmount: number }
 ): number {
-  if (!settings.enabled) return 0;
-  const base = settings.earnBase === "BEFORE_DISCOUNT"
-    ? round2(args.netTotal + args.discountAmount)
-    : round2(args.netTotal);
-  if (base < settings.earnMinSpend) return 0;
-  const points = settings.earnMode === "VISIT"
-    ? settings.visitPoints
-    : Math.floor(base * settings.earnPointsPerBaht);
-  return Math.max(0, points);
+  return evaluatePointsEarn(settings, args).points;
+}
+
+/**
+ * ใบเสร็จควรพิมพ์บล็อกแต้มไหม
+ *
+ * ร้านที่ปิดโปรแกรมสะสมแต้มไม่ควรพิมพ์ "แต้มที่ได้บิลนี้ +0" เพราะลูกค้าอ่านว่า
+ * "ร้านมีโปรแกรม แต่ฉันไม่ได้แต้ม" ซึ่งเป็นคนละเรื่องกับ "ร้านนี้ไม่มีโปรแกรมสะสมแต้ม"
+ *
+ * แต่บิลที่ได้แต้มไปแล้วจริงต้องพิมพ์เสมอ แม้ร้านจะปิดโปรแกรมทีหลัง — ใบเสร็จเป็น
+ * หลักฐานของสิ่งที่เกิดขึ้นตอนขาย ไม่ใช่ของการตั้งค่าวันที่พิมพ์ซ้ำ
+ *
+ * และลูกค้าที่มีแถวใน CRM แต่ไม่ได้สมัครสมาชิก (member_no ว่าง) ไม่มีสิทธิ์ได้แต้ม
+ * อยู่แล้ว (earnPointsForOrderInTx บังคับ member_no) จึงไม่ต้องเห็นบล็อกนี้
+ */
+export function shouldPrintMemberPoints(args: {
+  loyaltyEnabled: boolean;
+  isMember: boolean;
+  pointsEarned: number;
+}): boolean {
+  if (args.pointsEarned !== 0) return true;
+  if (!args.loyaltyEnabled) return false;
+  return args.isMember;
 }
