@@ -145,6 +145,7 @@ const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/restaurant-qr/menu/route.ts", "ลูกค้าที่มี table session อ่านเมนูสาขา"],
   ["app/api/bms/restaurant-qr/menu-item/route.ts", "ลูกค้าที่มี table session อ่านตัวเลือกเมนู"],
   ["app/api/bms/restaurant-qr/submissions/route.ts", "ลูกค้าที่มี table session ส่งและติดตามคำขอ"],
+  ["app/api/bms/restaurant-qr/service-calls/route.ts", "ลูกค้าที่มี table session เรียกพนักงานและดูสถานะ"],
 ]);
 
 test("every /api/bms route is guarded, or public by design with a rate limit", () => {
