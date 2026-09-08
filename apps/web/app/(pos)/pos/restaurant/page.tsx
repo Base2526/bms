@@ -1417,6 +1417,11 @@ export default function RestaurantPosPage() {
   async function searchMembers() {
     const term = memberQuery.trim();
     if (term.length < 3) { setMemberResults([]); setMemberSearchedQuery(""); return; }
+    // ล้างคำตอบเก่าก่อนยิงรอบใหม่ แม้จะค้นด้วยคำเดิมก็ตาม — ถ้ารอบล่าสุดล้ม เราต้องไม่
+    // เหลือทั้งปุ่ม "สมัครสมาชิก" หรือรายชื่อจากคำตอบก่อนหน้าให้พนักงานกดต่อโดยเข้าใจว่า
+    // server เพิ่งยืนยันแล้ว · run() แสดง error แต่กลืน exception จึงคืนสถานะตรงนี้เองไม่ได้
+    setMemberResults([]);
+    setMemberSearchedQuery("");
     await run(async () => {
       const suffix = earnBasisAmount == null ? "" : `&amount=${encodeURIComponent(String(earnBasisAmount))}`;
       const body = await json(`/api/pos/member?q=${encodeURIComponent(term)}${suffix}`);

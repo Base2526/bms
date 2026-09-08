@@ -1617,8 +1617,14 @@ the same reason — two tables drift, and the loser prints `STORE_CREDIT` at a c
 supports detail, reprint and resend. The **Shift** screen exposes cash in/out, audited no-sale drawer
 opens, the device's X report and shift close. Cash out still requires a distinct approver. A member
 selected at checkout is tenant-validated before settlement, then stamped onto the reservation order
-inside the same transaction that takes payment, awards points and closes the check. The shared
-`bms-pos-display` BroadcastChannel lets `/pos/display` show the table bill without a second transport.
+inside the same transaction that takes payment, awards points and closes the check. When the member
+search successfully returns no rows, the same checkout panel can enroll by phone and name through
+`POST /api/pos/member`; that route derives the shop, branch and register from the device, re-verifies
+the operator PIN plus `member.manage`, links an existing non-member customer instead of duplicating
+it, and returns the server-issued member for immediate selection on the check. A failed search never
+exposes the enrollment action, and the inline form avoids stacking another modal over the payment
+modal. The shared `bms-pos-display` BroadcastChannel lets `/pos/display` show the table bill without
+a second transport.
 
 The kitchen board's station chips are a **filter**, so their counts describe what pressing one
 shows — every ticket the board renders, served history included. Counting only unfinished work made

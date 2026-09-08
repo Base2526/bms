@@ -1366,6 +1366,13 @@ test("ค้นสมาชิกไม่พบต้องมีทางไ�
   // ก็ยังถูกนับว่าค้นสำเร็จ (run() กลืน error ไว้แล้ว จอจะไม่รู้เลย)
   const search = page.slice(page.indexOf("async function searchMembers"), page.indexOf("const memberNotFound"));
   assert.ok(search.length > 0);
+  const requestAt = search.indexOf("await run(");
+  assert.ok(requestAt > 0, "หา request boundary ของการค้นสมาชิกไม่เจอ");
+  const beforeRequest = search.slice(0, requestAt);
+  assert.match(beforeRequest, /setMemberResults\(\[\]\)/,
+    "ก่อนค้นรอบใหม่ต้องล้างรายชื่อเก่า ไม่งั้นรอบที่ล้มยังเลือกสมาชิกจากคำตอบเก่าได้");
+  assert.match(beforeRequest, /setMemberSearchedQuery\(""\)/,
+    "ก่อนค้นรอบใหม่ต้องถอนสถานะยืนยันเดิม แม้ค้นคำเดิมซ้ำแล้วรอบล่าสุดล้ม");
   assert.ok(search.indexOf("await json(") < search.indexOf("setMemberSearchedQuery(term)"),
     "setMemberSearchedQuery ต้องอยู่หลัง await json() เพื่อไม่ให้รอบที่ล้มถูกอ่านว่าไม่พบ");
   assert.match(search, /term\.length < 3[\s\S]{0,120}setMemberSearchedQuery\(""\)/,

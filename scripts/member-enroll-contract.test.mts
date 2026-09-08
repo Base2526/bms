@@ -82,3 +82,23 @@ test("สมัครสมาชิกที่เคาน์เตอร์�
   assert.match(post, /error:\s*result\.reason/,
     "คำตอบ INVALID ต้องส่ง error คู่กับ reason ไม่งั้นเหตุผลจริงถูกกลบ");
 });
+
+test("คู่มือร้านอาหารและ business doc อธิบายทางสมัครจากบิลโต๊ะ ไม่ใช่เฉพาะหน้าค้าปลีก", async () => {
+  const manual = await read("apps/web/app/(admin)/admin/manual/page.tsx");
+  const thRestaurant = manual.slice(
+    manual.indexOf('title: "ร้านอาหาร: เปิดโต๊ะจนส่งมอบใบเสร็จ"'),
+    manual.indexOf('title: "สแกน ค้น และจัดตะกร้า"')
+  );
+  const enRestaurant = manual.slice(
+    manual.indexOf('title: "Restaurant: from table opening to receipt hand-off"'),
+    manual.indexOf('title: "Scan, search, and build the cart"')
+  );
+  assert.match(thRestaurant, /สมัครสมาชิกใหม่[\s\S]*member\.manage[\s\S]*อัตโนมัติ/,
+    "คู่มือร้านอาหารภาษาไทยต้องบอกทางสมัคร สิทธิ์ และการผูกเข้าบิล");
+  assert.match(enRestaurant, /Sign up a new member[\s\S]*member\.manage[\s\S]*automatically/,
+    "คู่มือร้านอาหารภาษาอังกฤษต้องบอกทางสมัคร สิทธิ์ และการผูกเข้าบิล");
+
+  const business = await read("docs/business/pos.md");
+  assert.match(business, /POST \/api\/pos\/member[\s\S]*member\.manage[\s\S]*failed\s+search\s+never\s+exposes/i,
+    "business doc ต้องบันทึก route/d่านและกฎ fail-closed ของการสมัครจากบิลโต๊ะ");
+});
