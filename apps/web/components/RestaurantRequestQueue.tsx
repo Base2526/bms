@@ -37,7 +37,9 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
   // ⚠️ คิวนี้เคยโหลดครั้งเดียวตอน mount และฝั่งเครื่องขายต้องกดปุ่มเอง — ออร์เดอร์จากแชท/AI
   // จึงค้างอยู่จนกว่าจะมีคนเผลอกดโหลด ไม่มีเสียง ไม่มีป้ายนับ · เป็นเส้นทางเดียวในสามเส้นทาง
   // ที่ไม่มีสัญญาณอะไรเลย ซึ่งแปลว่ารอได้ไม่จำกัด ไม่ใช่แค่ช้า
-  const alerts=useOrderAlerts();
+  // รอให้รู้ก่อนว่าร้านนี้เปิดรับคำขอจริง — `/admin/orders` เรนเดอร์คอมโพเนนต์นี้ให้ทุกร้าน
+  // แล้วค่อยคืน null ทีหลัง แต่ hook ทำงานไปแล้ว
+  const alerts=useOrderAlerts(enabled === true);
   const knownPendingIds=useRef<Set<string>|null>(null);
   const repeatRef=useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
   const pageVisible=usePageVisible();

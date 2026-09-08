@@ -62,14 +62,17 @@ export default function OrderAlertSettingsModal({
 
     <div style={{ padding: "8px 0", opacity: settings.enabled ? 1 : 0.45 }}>
       <div style={{ marginBottom: 4 }}>{t("pos_alerts.volume")}</div>
+      {/* ⚠️ `defaultValue` ไม่ใช่ `value` โดยตั้งใจ — ทุกครั้งที่ `update` ถูกเรียกจะเขียน
+          localStorage หนึ่งครั้ง การลากแถบเลื่อนหนึ่งครั้งยิง onChange หลายสิบครั้ง
+          = เขียนดิสก์หลายสิบรอบบนแท็บเล็ตเก่าเพื่อค่าเดียวที่คนตั้งใจตั้ง
+          · โมดัลนี้ `destroyOnClose` จึง remount พร้อมค่าล่าสุดทุกครั้งที่เปิด */}
       <Slider
         min={0}
         max={100}
         disabled={!settings.enabled}
-        value={Math.round(settings.volume * 100)}
+        defaultValue={Math.round(settings.volume * 100)}
         // ปล่อยเสียงตัวอย่างตอนปล่อยนิ้ว ไม่ใช่ทุกก้าวที่ลาก — ไม่งั้นได้เสียงรัวเป็นสิบครั้ง
         onChangeComplete={(value) => { alerts.update({ volume: Number(value) / 100 }); alerts.preview(settings.tones.ORDER_NEW); }}
-        onChange={(value) => alerts.update({ volume: Number(value) / 100 })}
       />
     </div>
 

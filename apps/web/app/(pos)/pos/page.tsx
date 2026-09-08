@@ -1271,7 +1271,9 @@ export default function PosPage() {
   const [incomingLoading, setIncomingLoading] = useState(false);
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
   // เสียง/รอบอัตโนมัติของ "ออร์เดอร์เข้า" — ดูเหตุผลที่ useLiveRefresh ด้านล่าง
-  const alerts = useOrderAlerts();
+  // เปิดใช้เฉพาะร้านอาหาร — จอค้าปลีกของร้านทั่วไปไม่มีเหตุการณ์ไหนให้ดัง การสร้าง
+  // AudioContext ทิ้งไว้จึงเป็นการแตะเครื่องเสียงของแท็บเล็ตโดยไม่ได้อะไรกลับมา
+  const alerts = useOrderAlerts(session?.businessArchetype === "restaurant");
   const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
   const knownIncomingIds = useRef<Set<string> | null>(null);
   const incomingRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
@@ -2399,7 +2401,13 @@ export default function PosPage() {
       setIncomingRefunds(Array.isArray(data.refunds) ? data.refunds : []);
       setRestaurantOrdersPaused(data?.config?.paused === true);
     } catch (error: any) {
-      if (!silent) setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
+      if (!silent) {
+        setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
+        return;
+      }
+      // โยนต่อเฉพาะรอบอัตโนมัติ — hook ต้องรู้ว่ารอบนั้นล้มเพื่อขึ้นป้าย "ขาดการเชื่อมต่อ"
+      // ⚠️ ห้ามโยนในรอบที่คนกด: `mutateIncomingOrder` เรียกตัวนี้ต่อท้ายในบล็อก try ของมัน
+      // รอบรีเฟรชที่ล้มจะไปเขียนทับ "รับออร์เดอร์แล้ว" เป็น "ทำรายการไม่สำเร็จ" ทั้งที่สำเร็จไปแล้ว
       throw error;
     } finally {
       if (!silent) setIncomingLoading(false);

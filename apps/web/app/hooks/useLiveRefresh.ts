@@ -56,6 +56,7 @@ export function useLiveRefresh(options: LiveRefreshOptions): LiveRefreshState {
   const callbackRef = useRef(options.onRefresh);
   callbackRef.current = options.onRefresh;
   const inFlight = useRef(false);
+  const lastRunAt = useRef<number | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -67,6 +68,7 @@ export function useLiveRefresh(options: LiveRefreshOptions): LiveRefreshState {
     // รอบที่ยิงซ้อนกันไม่ได้ทำให้เร็วขึ้น มีแต่ทำให้คำขอกองจนคำตอบใหม่สุดมาช้าเป็นนาที
     if (inFlight.current) return;
     inFlight.current = true;
+    lastRunAt.current = Date.now();
     const controller = new AbortController();
     let watchdog: number | undefined;
     try {
@@ -92,6 +94,20 @@ export function useLiveRefresh(options: LiveRefreshOptions): LiveRefreshState {
 
   useEffect(() => {
     if (!enabled) return;
+    // ⚠️ ต้องยิงทันทีตอน effect เริ่ม ด้วยสองเหตุผลคนละเรื่อง:
+    //
+    // 1. **ป้ายสถานะจะโกหกตอนเปิดจอ** — `lastOkAt` เริ่มเป็น null ซึ่ง feedHealth ตีเป็น
+    //    STALE โดยตั้งใจ (ตรวจไม่ได้ ≠ ไม่มีปัญหา) แต่กระดานมีข้อมูลอยู่แล้วจากการโหลด
+    //    ครั้งแรกของหน้า → จอขึ้น "ขาดการเชื่อมต่อ" สีแดงคู่กับตั๋วที่แสดงอยู่เต็มจอ
+    //    ซึ่งเป็นอาการ "จอเดียวกันขัดกันเอง" ที่ทำให้คนเลิกเชื่อตัวเลขทั้งจอ
+    // 2. **รอบจะอดตายถ้าคนสลับจอถี่กว่ารอบ** — `intervalMs` เปลี่ยนตามจอที่เปิดอยู่และ
+    //    ตาม visibility ทุกครั้งที่เปลี่ยน interval ถูกตั้งใหม่ตั้งแต่ศูนย์ · สลับแท็บทุก 4
+    //    วินาทีบนรอบ 5 วินาที = ไม่มีรอบไหนได้ยิงเลยสักครั้ง
+    //
+    // แต่ยิงทุกครั้งที่ effect เริ่มก็ไม่ได้ — สลับแท็บหนึ่งครั้งจะยิงพร้อมกันทุก feed
+    // จึงยิงต่อเมื่อรอบก่อนห่างพอแล้วจริง ๆ
+    const since = lastRunAt.current === null ? Infinity : Date.now() - lastRunAt.current;
+    if (since >= intervalMs) void run();
     const timer = window.setInterval(() => { void run(); }, Math.max(1000, intervalMs));
     const wake = () => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;

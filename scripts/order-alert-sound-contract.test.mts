@@ -427,3 +427,68 @@ test("ผังโต๊ะต้องมีรอบของตัวเอ�
   assert.match(source, /onRefresh: \(signal\) => loadFloor\(signal\)/);
   assert.match(source, /focused: screen === "FLOOR"/, "ผังโต๊ะต้องไวขึ้นตอนคนกำลังดูผังอยู่");
 });
+
+// ---------------------------------------------------------------------------
+// recheck: ของที่งานรอบนี้ทำพังเอง
+// ---------------------------------------------------------------------------
+
+test("การตั้งค่าเสียงต้องมีชุดเดียวต่อหน้า ไม่ใช่ชุดใครชุดมัน", async () => {
+  const hook = withoutComments(await read("../apps/web/app/hooks/useOrderAlerts.ts"));
+  // ⚠️ `/pos` เรียก hook เอง แล้วยังเรนเดอร์ RestaurantRequestQueue ซึ่งเรียกอีกตัว
+  // ถ้าต่างคนต่างถือ state จะได้สองอย่างที่ผิดพร้อมกัน: AudioContext สองตัวต่อหน้า และ
+  // การตั้งค่าเขียนทับกันด้วยค่าที่ค้าง (ปรับความดังที่แผงหนึ่ง แล้วกดปิดเสียงที่อีกแผง
+  // → แผงที่สอง merge patch เข้ากับ settings ชุดเก่าที่มันถืออยู่ ความดังเด้งกลับเงียบ ๆ)
+  assert.match(hook, /useSyncExternalStore/, "state ต้องอยู่ระดับโมดูล ไม่ใช่ใน component");
+  assert.doesNotMatch(hook, /useState<OrderAlertSettings>/, "กลับไปถือ settings แยกกันต่อ component แล้ว");
+  assert.match(hook, /let snapshot: Snapshot/);
+  // ตัวเล่นเสียงต้องมีตัวเดียวเช่นกัน — AudioContext เป็นทรัพยากรของเครื่องเสียง
+  assert.match(hook, /if \(player\) return;/, "activate ต้องกันการสร้างตัวเล่นเสียงซ้ำ");
+});
+
+test("จอที่ไม่มีเหตุการณ์ให้ดังต้องไม่ไปแตะเครื่องเสียงของแท็บเล็ต", async () => {
+  const hook = withoutComments(await read("../apps/web/app/hooks/useOrderAlerts.ts"));
+  assert.match(hook, /export function useOrderAlerts\(active = true\)/);
+  assert.match(hook, /if \(!active\) return;/, "consumer ที่ไม่ active ต้องไม่ activate ตัวเล่นเสียง");
+
+  const pos = withoutComments(await read("../apps/web/app/(pos)/pos/page.tsx"));
+  // จอค้าปลีกของร้านทั่วไปไม่มีออร์เดอร์ออนไลน์ให้เตือนเลย
+  assert.match(pos, /useOrderAlerts\(session\?\.businessArchetype === "restaurant"\)/);
+  const queue = withoutComments(await read("../apps/web/components/RestaurantRequestQueue.tsx"));
+  // `/admin/orders` เรนเดอร์คิวนี้ให้ทุกร้านแล้วค่อยคืน null ทีหลัง — hook ทำงานไปแล้ว
+  assert.match(queue, /useOrderAlerts\(enabled === true\)/);
+});
+
+test("รอบที่คนกดเองต้องไม่โยน error ทับข้อความว่าทำรายการสำเร็จแล้ว", async () => {
+  const source = withoutComments(await read("../apps/web/app/(pos)/pos/page.tsx"));
+  const fn = source.slice(source.indexOf("async function refreshIncomingOrders"), source.indexOf("async function mutateIncomingOrder"));
+  assert.ok(fn.length > 0, "หา refreshIncomingOrders ไม่เจอ");
+  // ⚠️ `mutateIncomingOrder` เรียกตัวนี้ต่อท้าย **ในบล็อก try ของมันเอง** หลังจากรับออร์เดอร์
+  // สำเร็จไปแล้ว · ถ้ารอบรีเฟรชโยน error ข้อความจะกลายเป็น "ทำรายการไม่สำเร็จ" ทั้งที่สำเร็จ
+  // แล้วแคชเชียร์จะกดซ้ำกับงานที่ทำไปแล้ว
+  assert.match(fn, /if \(!silent\) \{[\s\S]{0,220}?return;/, "รอบที่คนกดต้องจบด้วย return ไม่ใช่ throw");
+  assert.match(fn, /throw error;/, "รอบอัตโนมัติต้องโยนต่อ ไม่งั้น hook ไม่รู้ว่ารอบนั้นล้ม");
+});
+
+test("heartbeat ของเครื่องขายต้องไม่เขียนแถวเดิมทุกคำขอ", async () => {
+  const source = withoutComments(await read("../apps/web/lib/bms/pos.ts"));
+  const update = source.slice(source.indexOf("UPDATE bms_pos_devices SET last_seen_at"), source.indexOf("UPDATE bms_pos_devices SET last_seen_at") + 320);
+  assert.ok(update.length > 0);
+  // ทุกคำขอที่ผ่าน device token เขียนแถวนี้หนึ่งครั้ง — รอบนี้เพิ่มจำนวน poll ต่อจอ
+  // การเขียนแถวเดิมซ้ำ ๆ สร้าง dead tuple ให้ autovacuum ตามเก็บโดยไม่ได้อะไรเพิ่ม
+  // (หน้าเครื่องขายแสดงแค่ "เห็นล่าสุดเมื่อไร" ความละเอียดกว่า 1 นาทีไม่มีใครใช้)
+  assert.match(update, /last_seen_at IS NULL OR last_seen_at < now\(\) - interval/,
+    "กลับไปเขียน heartbeat ทุกคำขอแล้ว");
+});
+
+test("รอบแรกต้องยิงทันทีตอน feed เริ่ม แต่ต้องไม่ยิงรัวตอนสลับจอ", async () => {
+  const hook = withoutComments(await read("../apps/web/app/hooks/useLiveRefresh.ts"));
+  // ⚠️ สองปัญหาคนละเรื่องที่ต้องแก้พร้อมกัน:
+  //   1. `lastOkAt` เริ่มเป็น null ซึ่ง feedHealth ตีเป็น STALE โดยตั้งใจ → จอขึ้น
+  //      "ขาดการเชื่อมต่อ" สีแดงคู่กับตั๋วที่แสดงอยู่เต็มจอ = จอเดียวกันขัดกันเอง
+  //   2. `intervalMs` เปลี่ยนตามจอที่เปิดอยู่ → interval ถูกตั้งใหม่ตั้งแต่ศูนย์ทุกครั้ง
+  //      สลับแท็บถี่กว่ารอบ = ไม่มีรอบไหนได้ยิงเลยสักครั้ง
+  assert.match(hook, /const since = lastRunAt\.current === null \? Infinity/);
+  assert.match(hook, /if \(since >= intervalMs\) void run\(\);/,
+    "ต้องยิงเฉพาะตอนรอบก่อนห่างพอแล้ว ไม่งั้นสลับแท็บหนึ่งครั้งยิงพร้อมกันทุก feed");
+  assert.match(hook, /lastRunAt\.current = Date\.now\(\);/);
+});

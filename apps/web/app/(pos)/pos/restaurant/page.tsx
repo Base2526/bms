@@ -1094,7 +1094,8 @@ export default function RestaurantPosPage() {
   // KDS/floor are operational screens, so stale data is more dangerous than a
   // small bounded poll. The API remains branch-scoped by the device token.
   //
-  // ⚠️ ทั้งสามรอบนี้เดินผ่าน `useLiveRefresh` ไม่ใช่ `setInterval` เปล่า ๆ เพราะ setInterval
+  // ⚠️ ทั้งสี่รอบนี้ (คิว · ตั๋วครัว · ผังโต๊ะ · ออร์เดอร์ QR) เดินผ่าน `useLiveRefresh`
+  // ไม่ใช่ `setInterval` เปล่า ๆ เพราะ setInterval
   // ตอบโจทย์จอหน้าร้านไม่ได้: เบราว์เซอร์หรี่ timer ของแท็บที่ถูกซ่อน (Chrome เหลือราว
   // 1 ครั้ง/นาทีเมื่อซ่อนครบ 5 นาที · Android freeze ทั้งหน้าเมื่อจอดับ) และของเดิม
   // **ไม่มี visibilitychange handler เลย** ครัวจึงหยิบแท็บเล็ตขึ้นมาแล้วยังต้องรอ tick ถัดไป
