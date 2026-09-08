@@ -105,6 +105,37 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
     ),
   },
   {
+    id: "limits.order-alerts",
+    guideIds: ["kitchen.board", "pos.restaurant-kitchen-round", "orders.restaurant-requests"],
+    title: both("เสียงเตือนออร์เดอร์เข้า และความเร็วที่ออร์เดอร์เด้งขึ้นจอ", "Incoming-order alert sounds and how fast orders reach the screen"),
+    items: lists(
+      [
+        "เสียงเตือนเป็นการตั้งค่า “ต่อเครื่อง” ไม่ใช่ต่อร้านและไม่ใช่ต่อบัญชี — จอครัวกับเครื่องแคชเชียร์ตั้งคนละเสียงคนละความดังได้ และการหรี่เสียงที่เคาน์เตอร์ไม่ไปปิดเสียงของครัว",
+        "เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ — หลังรีเฟรชหน้าหรือแท็บเล็ตรีบูตจะมีแถบ “เสียงเตือนถูกบล็อกอยู่” ขึ้นให้แตะหนึ่งครั้ง ไม่ใช่ระบบเสีย",
+        "แยกเสียงได้ตามเหตุการณ์: ตั๋วครัวใหม่ · ลูกค้าสั่งผ่าน QR รอรับ · คำขอจากแชท/AI รอตรวจ · อาหารพร้อมเสิร์ฟ · ตั๋วเลยเวลาที่กำหนด",
+        "เสียงย้ำจนกว่าจะมีคนกดรับ (ค่าปริยายทุก 20 วินาที สูงสุด 10 ครั้ง) — หยุดเองเมื่อครัวกด “เริ่มทำ” เพราะตั๋วออกจากกองที่รออยู่",
+        "จอที่ถูกซ่อนหรือจอที่ดับถูกเบราว์เซอร์หรี่รอบดึงข้อมูลเอง (เหลือราว 1 ครั้ง/นาที) — เปิดจอครัวค้างไว้ที่แท็บครัวจะเร็วที่สุด และระบบจะขอไม่ให้จอดับให้เอง",
+        "ป้าย “อัปเดตล่าสุด” บนจอครัวคือเวลาที่โหลดสำเร็จจริง ไม่ใช่นาฬิกา — ขึ้นสีส้ม/แดงเมื่อสายข้อมูลช้าหรือหลุด",
+        "ป้ายตัวเลขบนแถบซ้าย (ครัว/QR/คิว/ออร์เดอร์เข้า) เดินตลอดทุกจอ ไม่ต้องเปิดแท็บนั้นค้างไว้",
+        "ยังไม่มี push จากเซิร์ฟเวอร์ — ระบบใช้การดึงข้อมูลเป็นรอบ ออร์เดอร์จึงเด้งภายในไม่กี่วินาที ไม่ใช่ทันทีระดับมิลลิวินาที",
+      ],
+      [
+        "Alert sound is a per-device setting, not per-shop or per-account — the kitchen display and the register can use different sounds and volumes, and turning the counter down never mutes the kitchen.",
+        "Browsers block audio until someone interacts with the page, so after a refresh or tablet reboot a \"sound is blocked\" banner appears asking for one tap. That is not a fault.",
+        "Each event can have its own sound: new kitchen ticket, QR order waiting to be accepted, chat/AI request waiting for review, food ready to serve, and a ticket past its time target.",
+        "The alert repeats until someone acknowledges it (every 20 seconds, up to 10 times by default) and stops on its own once the kitchen starts the ticket.",
+        "Hidden or sleeping screens are throttled by the browser itself (down to about once a minute), so a kitchen display left on the kitchen tab is fastest; the app also asks the device to keep that screen awake.",
+        "The \"last updated\" pill on the kitchen board shows the last successful fetch, not the clock, and turns amber or red when the feed slows or drops.",
+        "The counters on the left rail (kitchen, QR, waitlist, incoming) keep updating from every screen — that tab does not have to stay open.",
+        "There is no server push yet: the screens poll, so orders appear within seconds rather than instantly.",
+      ]
+    ),
+    aliases: lists(
+      ["เสียงเตือน", "ไม่มีเสียง", "เสียงไม่ดัง", "ออร์เดอร์เด้งช้า", "ออร์เดอร์ไม่เด้ง", "ตั้งค่าเสียง", "เปลี่ยนเสียงเตือน", "หน้าจอไม่อัปเดต", "ป้ายไม่ขึ้น", "หน้าจอค้าง"],
+      ["alert sound", "no sound", "sound not working", "orders appear late", "order not showing", "change alert sound", "alert volume", "board not refreshing", "badge not refreshing", "screen stuck"]
+    ),
+  },
+  {
     id: "limits.stock-invariant",
     guideIds: ["inventory.stock-sale-blockers", "inventory.reservation-owners"],
     title: both("สมการสต็อกและกฎการเคลื่อนไหว (Stock Invariant)", "The stock invariant and its movement types"),

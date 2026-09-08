@@ -284,6 +284,13 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "หลายครัวในสาขาเดียวตั้งยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
   { q: "how do I set up several kitchen stations in one branch", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },
   { q: "how do I move kitchen tickets to served", locale: "en", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
+  // เสียงเตือน/ความเร็วที่ออร์เดอร์เด้ง (limits.order-alerts) — คำถามที่หน้าร้านถามจริงคือ
+  // "ทำไมไม่มีเสียง" กับ "ทำไมเด้งช้า" ไม่ใช่ "ตั้งค่าเสียงอยู่ที่ไหน" · กฎอยู่ในแคตตาล็อก
+  // ไม่ใช่บนหน้า Manual อย่างเดียว ผู้ช่วยจึงตอบได้จากทั้งสองที่
+  { q: "กระดานครัว ไม่มีเสียงเตือน", locale: "th", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
+  { q: "กระดานครัว ออร์เดอร์เด้งช้า", locale: "th", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
+  { q: "how do I change the kitchen board alert sound", locale: "en", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
+  { q: "kitchen board alert sound is silent", locale: "en", context: GUIDES, expect: "answer", expectTop: "kitchen.board", origin: "coverage" },
   { q: "ระบบรองรับร้านวัสดุก่อสร้างไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "inventory.stock-model", origin: "coverage" },
   { q: "ระบบมีคิวครัวไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "kitchen.workflow", origin: "coverage" },
   // 9.60: ออร์เดอร์ที่ลูกค้าสแกนสั่งเองคือ "คำขอ" ที่พนักงานต้องกดรับ — คำถามของคนหน้าเคาน์เตอร์
