@@ -1717,6 +1717,50 @@ check while the first is finalizing it. A stale `CLOSING` claim can be reclaimed
 lease only by the same device, shift and cashier; an already `PAID` check can replay its completed
 sale immediately. The paid audit is inserted only on the actual `CLOSING -> PAID` transition.
 
+### Incoming-order alerts and screen freshness
+
+Three paths bring work to a restaurant's screens — a server sending a round from the register, a
+guest submitting from a table QR, and a chat/AI request waiting for review — and each one now has
+its own alert sound, its own counter on the left rail, and its own automatic refresh. Before this,
+sound existed on exactly one screen (the register's kitchen board) and was off by default, so a
+newly paired tablet was silent with nothing on screen saying so.
+
+**Sound settings belong to the device, not the shop.** A kitchen display hanging over the range and
+a cashier's tablet want different tones and different volumes, and the person adjusting one is
+standing in front of it. Turning the counter down must never mute the kitchen. Settings live in that
+browser's local storage; clearing site data returns the device to the defaults, which are *on*.
+
+**Browsers block audio until someone interacts with the page.** That happens after every refresh and
+every tablet reboot, so a screen whose sound is blocked shows a banner asking for one tap rather
+than staying quiet. Reporting a sound as played while it was actually silent is what let the earlier
+bug survive unnoticed, so the player returns a failure and the screen surfaces it.
+
+**An alert repeats until someone acknowledges it** (every 20 seconds, up to 10 times by default) and
+stops on its own when the kitchen starts the ticket, because the ticket leaves the waiting pile. A
+single chime is missed by whoever was at the range when it played, which is the entire reason the
+sound exists.
+
+**Why orders could appear minutes late.** Nothing was slow on the server: kitchen tickets are
+inserted in the same transaction that sends the round and committed immediately, the route is
+`force-dynamic`, and the register fetches with `cache: "no-store"`. The delay came from the screens.
+Kitchen tickets were fetched only while the kitchen tab was open, so the rail counter could not move
+while staff stood at the floor plan — and the floor plan itself went stale with it. There was no
+`visibilitychange` handler anywhere, so picking the tablet back up still meant waiting for the next
+tick of a timer the browser had already throttled: Chrome slows timers in hidden tabs and drops them
+to roughly once a minute after five minutes, and Android may freeze the page outright when the
+screen sleeps. Every screen now fetches on becoming visible, on regaining network, and on a slower
+interval while in the background, and the kitchen board asks the device to keep the screen awake so
+it never enters that state.
+
+**The "last updated" pill reports the last successful fetch, not the clock.** It previously showed a
+ticking clock, which kept looking healthy long after the network had died — and a kitchen board
+frozen in silence reads exactly like a kitchen board with no orders, which is the most expensive
+failure in this whole area. The pill turns amber when the feed is slower than expected and red when
+it has stopped.
+
+There is no server push yet. The screens poll, so work appears within seconds rather than instantly;
+a display left on the kitchen tab is the fastest of them.
+
 ### Table QR self-ordering (`9.60`)
 
 The floor editor issues one permanent QR URL per table and can download, print or rotate it. The QR
