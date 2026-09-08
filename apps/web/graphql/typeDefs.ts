@@ -3253,6 +3253,9 @@ export const typeDefs = /* GraphQL */ `
     actualCostUsd: Float!
     unpricedProviderCalls: Int!
     estimatedCost: Float!
+    # โทเคนรวมของเดือนนี้ — ไม่ใช่หน่วยของ limit (โควตานับเป็นจำนวนครั้ง 1 credit ต่อ 1 request)
+    inputTokens: Float!
+    outputTokens: Float!
   }
   type BmsAiCreditLedgerEntry {
     id: ID!
@@ -3274,6 +3277,8 @@ export const typeDefs = /* GraphQL */ `
     unpricedProviderCalls: Int!
     actualCostUsd: Float!
     estimatedCost: Float!
+    inputTokens: Float!
+    outputTokens: Float!
   }
   type BmsAiUsageEvent {
     id: ID!

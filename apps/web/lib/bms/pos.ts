@@ -341,7 +341,7 @@ export async function upsertPosDevice(
           scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active)
        VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7,
                COALESCE($8, 'FOCUS'), COALESCE($9, 'F9'), COALESCE($10, 'Enter'),
-               COALESCE($11, 80), COALESCE($12, TRUE))
+               COALESCE($11::int, 80), COALESCE($12, TRUE))
        ON CONFLICT (tenant_id, code)
        DO UPDATE SET location_id = EXCLUDED.location_id,
                      name = EXCLUDED.name,

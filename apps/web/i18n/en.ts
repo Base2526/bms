@@ -1750,6 +1750,8 @@ const en = {
     from_total: "of {total} total",
     card_used_this_month: "Used this month",
     requests_total_month: "{count} AI requests · {calls} provider calls this month",
+    card_tokens: "Tokens used this month",
+    tokens_subtitle: "{input} in · {output} out — not counted against the quota (quota counts requests)",
     card_estimated_cost: "Provider cost from usage",
     cost_subtitle: "USD calculated from provider-reported usage and the rate card; not an invoice amount",
     unpriced_calls: "{count} provider calls have no usage data for cost calculation",

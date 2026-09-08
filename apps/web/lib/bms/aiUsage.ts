@@ -56,6 +56,14 @@ export type AiUsage = {
   actualCostUsd: number;
   unpricedProviderCalls: number;
   estimatedCost: number;
+  /**
+   * โทเคนรวมของเดือนนี้ — **ไม่ใช่หน่วยของโควตา** โควตาหัก 1 credit ต่อ 1 logical request
+   * ไม่ว่ารายการนั้นจะกินโทเคนเท่าไร (วัดจากข้อมูลจริง ~20,000 โทเคนต่อ 1 credit)
+   * มีไว้ตอบว่า "ใช้ไปเท่าไรจริง" ซึ่งเป็นคำถามที่ตัวเลขโควตาตอบไม่ได้
+   * นับเฉพาะแถวที่ finalize สำเร็จ แถวที่ไม่สำเร็จเหลือ NULL และถูกนับใน unpricedProviderCalls
+   */
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export type AiUsageContext = {
@@ -111,6 +119,9 @@ export type AiUsageBreakdownRow = {
   unpricedProviderCalls: number;
   actualCostUsd: number;
   estimatedCost: number;
+  /** ยอดรวมตอบว่า "ใช้ไปเท่าไร" แต่ตอบไม่ได้ว่าฟีเจอร์ไหนกิน — คำถามถัดไปเสมอ */
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export type RecentAiUsageEvent = {
@@ -481,8 +492,9 @@ async function reconcileStaleAiReservations(
       id: string;
       billable_credits: number;
       provider_calls: number;
+      created_at: Date | string;
     }>(
-      `SELECT id, billable_credits, provider_calls
+      `SELECT id, billable_credits, provider_calls, created_at
          FROM bms_ai_usage_events
         WHERE tenant_id = $1
           AND year_month = $2
@@ -496,31 +508,58 @@ async function reconcileStaleAiReservations(
     if (stale.rows.length === 0) return;
 
     const ids = stale.rows.map((row) => row.id);
+    // `provider_calls = 0` มีสองความหมายที่ต้องปฏิบัติต่างกัน:
+    //   (ก) request ถูก abort ก่อนถึง provider จริง → ยังไม่มีใครเสียเงิน คืน credit ถูกต้อง
+    //   (ข) เรียก provider ไปแล้วแต่ `recordAiProviderAttempt` เขียนไม่ลง → เสียเงินไปแล้ว
+    //       **คืน credit คือการแจกโควตาฟรีให้ค่าใช้ที่เกิดขึ้นจริง**
+    // แยกได้จาก incident ที่ (ข) ทิ้งไว้เท่านั้น — ตัวแถวเองหน้าตาเหมือนกันเป๊ะทั้งสองกรณี
+    // bound ด้วย created_at ของแถวที่เก่าสุดเพื่อให้วิ่งบน idx_bms_failure_incidents_cooldown
+    const oldestStaleAt = stale.rows[0]?.created_at ?? null;
+    const unrecorded = await client.query<{ event_id: string | null }>(
+      `SELECT meta->>'eventId' AS event_id
+         FROM bms_failure_incidents
+        WHERE tenant_id = $1
+          AND code = 'ai.provider_attempt_unrecorded'
+          AND created_at >= $2::timestamptz`,
+      [tenantId, oldestStaleAt]
+    );
+    const unrecordedIds = new Set(
+      unrecorded.rows.map((row) => row.event_id).filter((id): id is string => Boolean(id))
+    );
+    const refundableIds = stale.rows
+      .filter((row) => Number(row.provider_calls ?? 0) === 0 && !unrecordedIds.has(row.id))
+      .map((row) => row.id);
     const refundCredits = stale.rows.reduce(
       (sum, row) =>
-        sum + (Number(row.provider_calls ?? 0) === 0 ? Number(row.billable_credits ?? 0) : 0),
+        sum + (refundableIds.includes(row.id) ? Number(row.billable_credits ?? 0) : 0),
       0
     );
+    // สามสถานะ ไม่ใช่สอง — `refundable` เป็นชุด id ที่คำนวณมาแล้ว ห้ามกลับไปตัดสินด้วย
+    // `provider_calls = 0` ตรง ๆ ใน SQL เพราะนั่นคือเงื่อนไขที่รวมกรณี (ข) เข้ามาด้วย
     await client.query(
       `UPDATE bms_ai_usage_events
           SET status = 'failed',
-              credits_used = CASE WHEN provider_calls = 0 THEN 0 ELSE credits_used END,
-              billable_credits = CASE WHEN provider_calls = 0 THEN 0 ELSE billable_credits END,
-              actual_cost_usd = CASE WHEN provider_calls = 0 THEN 0 ELSE actual_cost_usd END,
+              credits_used = CASE WHEN id = ANY($2::uuid[]) THEN 0 ELSE credits_used END,
+              billable_credits = CASE WHEN id = ANY($2::uuid[]) THEN 0 ELSE billable_credits END,
+              actual_cost_usd = CASE WHEN id = ANY($2::uuid[]) THEN 0 ELSE actual_cost_usd END,
               error_message = COALESCE(
                 error_message,
-                CASE WHEN provider_calls = 0
-                  THEN 'provider_not_started_timeout'
+                CASE
+                  WHEN id = ANY($2::uuid[]) THEN 'provider_not_started_timeout'
+                  WHEN provider_calls = 0 THEN 'provider_attempt_unrecorded'
                   ELSE 'usage_finalization_timeout'
                 END
               ),
-              meta = meta || CASE WHEN provider_calls = 0
-                THEN '{"credit_refund_reason":"stale_provider_reservation"}'::jsonb
+              meta = meta || CASE
+                WHEN id = ANY($2::uuid[])
+                  THEN '{"credit_refund_reason":"stale_provider_reservation"}'::jsonb
+                WHEN provider_calls = 0
+                  THEN '{"cost_status":"partial_or_unavailable","stale_usage_finalization":true,"credit_kept_reason":"provider_attempt_unrecorded"}'::jsonb
                 ELSE '{"cost_status":"partial_or_unavailable","stale_usage_finalization":true}'::jsonb
               END,
               completed_at = now()
         WHERE id = ANY($1::uuid[])`,
-      [ids]
+      [ids, refundableIds]
     );
     const summary = await client.query<MonthlyUsageRow>(
       `UPDATE bms_ai_usage_monthly
@@ -570,6 +609,8 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
       provider_calls: number;
       unpriced_provider_calls: number;
       actual_cost_usd: string | number;
+      input_tokens: number;
+      output_tokens: number;
     }>(
       `SELECT COUNT(DISTINCT COALESCE(meta->>'usage_group_id', id::text)) FILTER (
                 WHERE status IN ('started','completed','failed','fallback')
@@ -577,7 +618,9 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
               COALESCE(SUM(billable_credits), 0)::int AS billable_credits,
               COALESCE(SUM(provider_calls), 0)::int AS provider_calls,
               COALESCE(SUM(unpriced_provider_calls), 0)::int AS unpriced_provider_calls,
-              COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd
+              COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd,
+              COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+              COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens
          FROM bms_ai_usage_events
         WHERE tenant_id = $1
           AND year_month = $2`,
@@ -606,6 +649,8 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
     actualCostUsd: Number(accounting?.actual_cost_usd ?? 0),
     unpricedProviderCalls: Number(accounting?.unpriced_provider_calls ?? 0),
     estimatedCost: Number(row.estimated_cost ?? 0),
+    inputTokens: Number(accounting?.input_tokens ?? 0),
+    outputTokens: Number(accounting?.output_tokens ?? 0),
   };
 }
 
@@ -914,8 +959,14 @@ export async function finalizeAiUsageEvent(
       ]
     );
     const summary = await client.query<MonthlyUsageRow>(
+      // ⚠️ `$3::numeric` ไม่ใช่การตกแต่ง — ปล่อย `COALESCE($3, 0)` เปล่า ๆ Postgres จะ infer ชนิดของ
+      // พารามิเตอร์จาก literal `0` ที่ไม่ระบุชนิด = **integer** แล้ว actualCostUsd
+      // ที่เป็นทศนิยม (เช่น 0.00014537) จะ throw `invalid input syntax for type integer`
+      // ทำให้ทรานแซกชัน rollback ทั้งก้อน → token/cost ไม่เคยลงเลย แล้วแถวค้าง 'started'
+      // จนตัวกวาด stale มาปิดเป็น 'failed' (เห็นบน BMS-LIVE แล้วจริง ก่อนแก้สำเร็จ 0%)
+      // คำสั่งที่เขียน event ห่างข้างบนใช้ `COALESCE($5, estimated_cost)` อีกฝั่งเป็น numeric จึง infer ถูกมาตลอด
       `UPDATE bms_ai_usage_monthly
-          SET estimated_cost = estimated_cost + COALESCE($3, 0),
+          SET estimated_cost = estimated_cost + COALESCE($3::numeric, 0),
               credits_consumed = GREATEST(credits_consumed - $4, 0),
               updated_at = now(),
               last_event_at = now()
@@ -1015,7 +1066,7 @@ export async function finalizeAiUsageEvent(
  */
 export async function recordAiProviderAttempt(eventId: string): Promise<void> {
   try {
-    await query(
+    const res = await query(
       `UPDATE bms_ai_usage_events
           SET provider_calls = provider_calls + 1,
               unpriced_provider_calls = unpriced_provider_calls + 1
@@ -1023,8 +1074,42 @@ export async function recordAiProviderAttempt(eventId: string): Promise<void> {
           AND completed_at IS NULL`,
       [eventId]
     );
+    if ((res.rowCount ?? 0) > 0) return;
+    // 0 แถว = ไม่ใช่ race ที่ไม่มีพิษภัย: attempt ถูกบันทึก *ก่อน* network I/O เสมอ และ finalize
+    // รันหลังลูปจบ แถวจึงต้องยังเปิดอยู่ตอนนี้ · ที่เหลือคือ id ผิด หรือแถวถูกปิดไปโดยตัวกวาด
+    // ระหว่างที่ request นี้ยังทำงาน — ทั้งสองกรณีจบลงที่ `provider_calls = 0` ซึ่งจะถูกคืน credit
+    await reportUnrecordedProviderAttempt(
+      eventId,
+      new Error("AI usage event row was not open for a provider attempt")
+    );
   } catch (err) {
     console.error("[BMS] failed to persist AI provider attempt:", err);
+    await reportUnrecordedProviderAttempt(eventId, err);
+  }
+}
+
+/**
+ * ห้าม throw และห้ามทำให้คำตอบของลูกค้าล้ม — เหตุผลเดียวกับ catch ของ finalize
+ * แต่ก็ห้ามเงียบ: การไม่มี attempt ทำให้ตัวกวาด **คืนโควตาให้ request ที่เสียเงินไปแล้ว**
+ * ถ้าไม่มีแถว incident ผูกกับ eventId ไว้ จะไม่มีทางแยกจากการ abort ที่คืนถูกต้องได้เลย
+ */
+async function reportUnrecordedProviderAttempt(eventId: string, err: unknown): Promise<void> {
+  try {
+    const owner = await query<{ tenant_id: string }>(
+      `SELECT tenant_id FROM bms_ai_usage_events WHERE id = $1`,
+      [eventId]
+    );
+    const tenantId = owner.rows[0]?.tenant_id;
+    if (!tenantId) return;
+    await reportBmsFailure({
+      tenantId,
+      code: "ai.provider_attempt_unrecorded",
+      error: err,
+      surface: "system",
+      meta: { eventId },
+    });
+  } catch (reportErr) {
+    console.error("[BMS] failed to report unrecorded AI provider attempt:", reportErr);
   }
 }
 
@@ -1156,7 +1241,9 @@ export async function listAiUsageBreakdown(tenantId: string, limit = 12): Promis
             COALESCE(SUM(billable_credits), 0)::int AS billable_credits,
             COALESCE(SUM(provider_calls), 0)::int AS provider_calls,
             COALESCE(SUM(unpriced_provider_calls), 0)::int AS unpriced_provider_calls,
-            COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd
+            COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd,
+            COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+            COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens
        FROM bms_ai_usage_events
       WHERE tenant_id = $1
         AND year_month = $2
@@ -1175,6 +1262,8 @@ export async function listAiUsageBreakdown(tenantId: string, limit = 12): Promis
     unpricedProviderCalls: Number(row.unpriced_provider_calls),
     actualCostUsd: Number(row.actual_cost_usd ?? 0),
     estimatedCost: Number(row.actual_cost_usd ?? 0),
+    inputTokens: Number(row.input_tokens ?? 0),
+    outputTokens: Number(row.output_tokens ?? 0),
   }));
 }
 

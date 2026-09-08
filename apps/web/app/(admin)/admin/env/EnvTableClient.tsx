@@ -142,6 +142,18 @@ function formatDateTime(value: string | null) {
   });
 }
 
+/**
+ * ⚠️ `?? 0` ห้ามกลับมา — แถวที่ finalize ไม่สำเร็จมี token เป็น NULL และการแสดงเป็น `0 in · 0 out`
+ * อ่านเหมือน "เรียกแล้วไม่ใช้โทเคนเลย" ซึ่งเป็นไปไม่ได้ · การโกหกแบบที่อ่านไม่ออกว่าโกหกนี้
+ * คือเหตุที่บั๊ก finalize (สำเร็จ 0%) อยู่มาได้เป็นเดือนบน BMS-LIVE โดยไม่มีใครสังเกต
+ * ใช้คำเดียวกับ formatMoney(null) เพื่อให้ "ไม่รู้" หน้าตาเหมือนกันทั้งแถว
+ */
+function formatTokens(input: number | null, output: number | null) {
+  if (input === null && output === null) return "Unavailable";
+  const one = (value: number | null) => (value === null ? "—" : value.toLocaleString());
+  return `${one(input)} in · ${one(output)} out`;
+}
+
 function formatMoney(value: number | null) {
   if (value === null) return "Unavailable";
   return `$${value.toLocaleString("en-US", {
@@ -384,7 +396,7 @@ export default function EnvTableClient({
         <Space direction="vertical" size={0}>
           <Text>{record.billableCredits} credit · {record.providerCalls} call</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {(record.inputTokens ?? 0).toLocaleString()} in · {(record.outputTokens ?? 0).toLocaleString()} out
+            {formatTokens(record.inputTokens ?? null, record.outputTokens ?? null)}
           </Text>
           {record.unpricedProviderCalls > 0 && (
             <Text type="warning" style={{ fontSize: 12 }}>
