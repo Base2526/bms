@@ -107,6 +107,12 @@ breakdown remains in event metadata as `regular_input_tokens`, `cache_creation_i
 `actual_cost_usd` is an internal cost attribution based on provider-reported usage and the configured
 rate card. It is not the provider invoice and excludes platform-wide health probes.
 
+To check whether a database is affected, run
+[`db/checks/ai-usage-consistency.sql`](../../db/checks/ai-usage-consistency.sql) — read-only, and
+written as SQL rather than a script because the production host has no Node. It reports how often the
+real finalization path succeeded, the matching incidents, monthly-counter drift against the events,
+and the share of provider calls with no token data.
+
 ## 5. Audit a charge
 
 Use `/admin/billing` in this order:
@@ -115,7 +121,8 @@ Use `/admin/billing` in this order:
 2. **Tokens used this month** shows the input/output totals the events recorded. It is labelled as
    not counting against the quota on purpose, because that is the question the credit card cannot
    answer.
-3. **Usage split** explains credits, calls, known cost, and unpriced calls by feature.
+3. **Usage split** explains credits, calls, tokens, known cost, and unpriced calls by feature — the
+   total says how much was spent, this says what spent it.
 4. **Credit ledger** shows every grant, consume, adjustment, bonus, and refund with `balance_after`.
 5. **Provider cost from usage** sums known `actual_cost_usd`; check the unpriced warning before treating
    it as complete.

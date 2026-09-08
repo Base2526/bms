@@ -88,34 +88,68 @@ branch `fix/ai-usage-token-accounting` (ตัดจาก `develop` ที่ m
   ไม่สนใจว่าเขียนลงไหม · finalize ไม่ one-shot · unknown rate เก็บ 0 แทน NULL ·
   เงื่อนไขโควตาหลุด · `getAiUsage` คืน `inputTokens: 0` คงที่
 
-### ⚠️ กับดักสามอย่างที่เจอตอนทำ (จดไว้กันเสียเวลาซ้ำ)
+### ด่านที่ CI รันจริง + ตัวตรวจที่ใช้บน production ได้
+
+- **⚠️ `gate.yml` รันแค่ typecheck + `test:pure` + build — ชุด DB ไม่มี job ใน CI**
+  ดังนั้น `ai-usage-db-contract` ซึ่งเป็นตัวที่พิสูจน์พฤติกรรมจริง **ไม่เคยถูกรันอัตโนมัติ** ·
+  เพิ่ม `scripts/ai-usage-contract.test.mts` (**6 เทส pure**) ให้บั๊กคลาสนี้มีด่านทุก PR:
+  พารามิเตอร์ที่ติดกับ literal ตัวเลขต้องระบุชนิด (กฎกว้าง ครอบ `apps/web/lib` ทั้งหมด) ·
+  ยอดต้นทุนรายเดือนต้องเป็น numeric · ตัวกวาดต้องตัดสินจากชุด id ไม่ใช่ `provider_calls` ใน SQL ·
+  code ของ incident ทั้งสองต้องมีใน `FAILURE_CATALOG` (**ไม่มี = `reportBmsFailure` ทิ้งเงียบ ๆ
+  เพราะขึ้นต้นด้วย `if (!entry) return;`**) · ค่าโทเคนที่ nullable ต้องไม่ถูกแสดงเป็น 0 ·
+  ตัวตรวจ production ต้อง read-only · **ผ่าน mutation 7 แบบ แดงถูกตัวทุกครั้ง**
+- `pos.ts` มี `COALESCE($11, 80)` รูปเดียวกัน · **วันนี้ปลอดภัย** เพราะ `scannerMaxGapMs` ถูก
+  validate เป็น `Number.isInteger` 20–1000 อยู่ก่อนแล้ว แต่ใส่ `::int` ให้เจตนาชัด และเทสจึงไม่ต้องมี
+  allowlist ที่รอวันเน่า
+- **`db/checks/ai-usage-consistency.sql` (ใหม่, read-only, เขียนด้วยมือ)** — เฟส 0 บน production
+  ต้องเป็น `.sql` เพราะเซิร์ฟเวอร์**ไม่มี Node** (`npx: command not found`) · 4 ด่าน:
+  เส้นทาง finalize สำเร็จกี่ครั้ง · incident ที่ยืนยันสาเหตุ · drift ของตัวนับรายเดือน ·
+  สัดส่วน provider call ที่ไม่มี token · **รันกับฐาน dev แล้วได้ตัวเลขจริง**: finalize สำเร็จ 0/13 ·
+  incident 13 ใบ (`invalid input syntax for type integer: "0.00232065"`) ·
+  **2026-08 มี 44.6% ของ provider call ที่ไม่มี token บันทึกไว้**
+- **⚠️ drift ของเดือนที่ `events = 0` เป็นเรื่องปกติ ไม่ใช่สัญญาณ** — เจอ 394 ที่ tenant
+  `c29f7b22` เดือน 07 ซึ่งมี **0 แถวใน `bms_ai_usage_events`** (แถวเก่าสุดของทั้งตารางคือ 2026-07-27
+  และ `7.27` ยกคอลัมน์ `count` ยุคก่อนขึ้นมาเป็น `credits_consumed`) · ตัวตรวจจึงคืนคอลัมน์ `events`
+  มาให้อ่านก่อน `credit_drift` เสมอ — ด่านที่รายงาน noise คือด่านที่คนเรียนรู้ที่จะเมิน
+- **โทเคนแยกตามฟีเจอร์** เข้า `listAiUsageBreakdown` + การ์ด "Usage split" แล้ว (ยอดรวมตอบว่า
+  ใช้ไปเท่าไร แต่ตอบไม่ได้ว่าฟีเจอร์ไหนกิน ซึ่งเป็นคำถามถัดไปเสมอ)
+
+### ⚠️ กับดักสี่อย่างที่เจอตอนทำ (จดไว้กันเสียเวลาซ้ำ)
 
 1. **`typeDefs.ts` เป็น template literal — backtick ในคอมเมนต์ปิด literal กลางคัน**
    ผมเขียน `` `limit` `` ใน SDL comment แล้วได้ `TS1005: ',' expected` ที่ชี้บรรทัดถัดไป ·
    **กับดักเดียวกับที่ไฟล์นี้จดไว้แล้วสำหรับคอมเมนต์ SQL** แค่ย้ายไฟล์
-2. **⚠️ `git checkout -- scripts` ในตัวรัน mutation ลบ subtest ที่ยังไม่ commit ทิ้ง** —
-   ผมเพิ่ม subtest ของ `getAiUsage` หลังคอมมิตแล้วรัน mutation รอบถัดไป มันหายไปเงียบ ๆ แล้ว
-   **M7 รายงานว่า "ไม่แดง" ทั้งที่จริง ๆ รันกับเทสที่ไม่มีอยู่** (จับได้จากยอด `tests 9` ที่ควรเป็น 10)
-   · **กฎ: commit เทสก่อน mutate เสมอ และให้ตัวรันคืนเฉพาะไฟล์ที่ถูก mutate ไม่ใช่ทั้งโฟลเดอร์**
+2. **⚠️ ตัวรัน mutation ที่คืนด้วย `git checkout` เชื่อถือไม่ได้ถ้าไฟล์ยังไม่ commit — เจอสองครั้ง**
+   (ก) `git checkout -- scripts` **ลบ subtest ที่ยังไม่ commit ทิ้ง** ผมเพิ่ม subtest ของ
+   `getAiUsage` หลังคอมมิตแล้วรัน mutation รอบถัดไป มันหายไปเงียบ ๆ แล้ว **M7 รายงานว่า "ไม่แดง"
+   ทั้งที่รันกับเทสที่ไม่มีอยู่** (จับได้จากยอด `tests 9` ที่ควรเป็น 10)
+   (ข) `git checkout -- db/checks` **คืนไฟล์ที่ยัง untracked ไม่ได้เลย** mutation ที่ใส่คำสั่ง
+   `UPDATE` ลงตัวตรวจ production จึงค้างอยู่ในไฟล์ และไปโผล่เป็น `gate` แดงตอนรันรอบสุดท้าย
+   · **กฎ: commit ไฟล์ก่อน mutate ทุกครั้ง แล้วตรวจ `git status` หลังชุด mutation จบ** ·
+   คืนเฉพาะไฟล์ที่ถูก mutate ไม่ใช่ทั้งโฟลเดอร์
 3. **ยอดไฟล์เทสใน `scripts/README.md` ค้างอยู่ที่ pure 80 ไฟล์** ทั้งที่ของจริง 83 (แก้เป็น
-   119 ไฟล์ = pure 83 + DB 36 แล้ว) · `34 จาก 36 ไฟล์ของชุด DB ไม่มีด่าน host ของตัวเอง`
+   120 ไฟล์ = pure 84 + DB 36 แล้ว) · `34 จาก 36 ไฟล์ของชุด DB ไม่มีด่าน host ของตัวเอง`
    ยังจริงอยู่ เพราะไฟล์ใหม่นี้มีด่านของตัวเอง (เป็นไฟล์ที่สองที่มี)
+4. **⚠️ เทสสแกนซอร์สที่ใช้ substring แดงผิดตัวได้ง่ายมาก** — ด่าน read-only ของ
+   `db/checks/*.sql` รอบแรกแดงสองครั้งเพราะ (ก) คำว่า `insert` ในข้อความไทยของ `\echo`
+   (ข) `CREATE` ที่ไปแมตช์ **substring ของ `created_at`** · ต้องตัด `\echo` ออกด้วย และเล็งด้วย
+   word boundary + คำที่ตามมาจริง (`INSERT\s+INTO`, `CREATE\s+[A-Za-z]`) ไม่ใช่ `.includes()`
+   · **กับดักเดียวกับที่ผมเจอด้วย grep ตอนตามหา `COALESCE($n, 0)` แล้วไปแมตช์คอมเมนต์ของตัวเอง**
 
 ### ยังไม่ได้ทำ (ตามลำดับที่ตกลงไว้)
 
 - **เฟส 0 บน production ยังไม่ได้รัน** — ต่อฐาน production จากเครื่องนี้ไม่ได้
-  (`POSTGRES_HOST=postgres` = ชื่อ service ใน docker network ของเซิร์ฟเวอร์) ต้อง ssh แล้วรัน psql
-  เพื่อดูว่า (ก) แถวที่ผ่าน finalize ตัวจริงแดงทั้งหมดเหมือน dev ไหม (ข) มี incident
-  `ai.usage_finalize_failed` กี่ใบ (ค) `credits_consumed` drift จาก `SUM(billable_credits)` เท่าไร
+  (`POSTGRES_HOST=postgres` = ชื่อ service ใน docker network ของเซิร์ฟเวอร์) · ตอนนี้เป็นคำสั่งเดียว:
+  `docker compose ... exec -T postgres psql -U <user> -d <db> -f - < db/checks/ai-usage-consistency.sql`
 - **⚠️ หลัง deploy ตัวเลขจะกระโดด** — cost จาก $0.0000 เป็นเลขจริง · `unpricedProviderCalls`
   ตกลงมาเยอะ · token เริ่มไม่เป็น 0 · **เป็นสัญญาณว่าแก้สำเร็จ ไม่ใช่บั๊กใหม่** จดวันที่ deploy ไว้
 - **แถวที่ล้มไปแล้วกู้ไม่ได้** — response ของ provider ไม่มีเก็บไว้ที่ไหน ห้าม backfill ด้วยการเดา
   (ต่างจาก `9.22` ที่มีหลักฐานทางอ้อมให้ยึด) · ปล่อยให้นับใน `unpricedProviderCalls` ตามที่มันมีไว้
 - **เฟส 3 (หน่วยของเพดาน) ยังไม่ตัดสิน** — เก็บ "ครั้ง" ไว้ + เพิ่มเพดาน $/เดือน เป็นด่านที่สอง
   คือทางที่แนะนำ แต่ **ต้องรอข้อมูล cost จริงครบ 1 เดือนหลัง deploy ก่อนตั้งเลข** ไม่งั้นเป็นการเดา
-- **เฟส 4 ที่ยังค้าง**: ① `credits_consumed` drift จาก `SUM(billable_credits)` (ฐาน dev เจอ 190 vs
-  179) — เทสใหม่บังคับ invariant นี้แล้วสำหรับ tenant ของตัวเอง แต่ **ยังไม่มี
-  `balanceMismatchCount` บนหน้า Billing** แบบที่ loyalty/store credit/AR มี ② รางโควตาบนแถบเมนู
+- **เฟส 4 ที่ยังค้าง**: ① `credits_consumed` drift จาก `SUM(billable_credits)` — เทสใหม่บังคับ
+  invariant นี้แล้วสำหรับ tenant ของตัวเอง และ `db/checks/ai-usage-consistency.sql` รายงานให้แล้ว
+  แต่ **ยังไม่มี `balanceMismatchCount` บนหน้า Billing** แบบที่ loyalty/store credit/AR มี ② รางโควตาบนแถบเมนู
   คิด `count/limit` ขณะที่ `remaining` คิดจาก `granted+bonus+adjusted−consumed` → ร้านที่เคยเติม
   เครดิต (dev: `adjusted = 6000`) เห็น "ใช้ไป 39%" คู่กับคงเหลือ 6,606 ③ `currentYearMonth()`
   ใช้ UTC ขณะที่รายงานอื่นใช้ `Asia/Bangkok` → การใช้งานวันที่ 1 ช่วง 00:00–07:00 ไทยตกถังเดือนก่อน

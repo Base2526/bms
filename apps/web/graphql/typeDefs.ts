@@ -3277,6 +3277,8 @@ export const typeDefs = /* GraphQL */ `
     unpricedProviderCalls: Int!
     actualCostUsd: Float!
     estimatedCost: Float!
+    inputTokens: Float!
+    outputTokens: Float!
   }
   type BmsAiUsageEvent {
     id: ID!

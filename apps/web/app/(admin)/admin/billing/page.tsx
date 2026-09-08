@@ -26,6 +26,7 @@ const Q = gql`
     }
     bmsAiUsageBreakdown(limit: 12) {
       feature requests billableCredits providerCalls unpricedProviderCalls actualCostUsd
+      inputTokens outputTokens
     }
   }
 `;
@@ -101,7 +102,7 @@ type BillingLedgerRow = {
   createdAt?: string;
 };
 
-function buildBreakdownRows(rows: Array<{ feature: string; requests: number; billableCredits: number; providerCalls: number; unpricedProviderCalls: number; actualCostUsd: number }> | undefined) {
+function buildBreakdownRows(rows: Array<{ feature: string; requests: number; billableCredits: number; providerCalls: number; unpricedProviderCalls: number; actualCostUsd: number; inputTokens: number; outputTokens: number }> | undefined) {
   const colors = ["#1677ff", "#13c2c2", "#722ed1", "#52c41a", "#fa8c16", "#eb2f96"];
   return (rows ?? []).map((row, idx) => ({
     label: labelForFeature(row.feature),
@@ -110,6 +111,7 @@ function buildBreakdownRows(rows: Array<{ feature: string; requests: number; bil
     providerCalls: row.providerCalls,
     unpricedProviderCalls: row.unpricedProviderCalls,
     actualCostUsd: row.actualCostUsd,
+    tokens: Number(row.inputTokens) + Number(row.outputTokens),
     color: colors[idx % colors.length],
   }));
 }
@@ -376,7 +378,7 @@ export default function Page() {
                         <Text strong>{formatNumber(item.value)} cr</Text>
                       </Space>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {formatNumber(item.requests)} requests · {formatNumber(item.providerCalls)} provider calls · ${Number(item.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}
+                        {formatNumber(item.requests)} requests · {formatNumber(item.providerCalls)} provider calls · {formatNumber(item.tokens)} tokens · ${Number(item.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}
                       </Text>
                       {item.unpricedProviderCalls > 0 && <Text type="warning" style={{ display: "block", fontSize: 12 }}>{t("admin_billing.unpriced_calls", { count: item.unpricedProviderCalls })}</Text>}
                       <div style={{ height: 6, background: "#f5f5f5", borderRadius: 999, marginTop: 8, overflow: "hidden" }}>

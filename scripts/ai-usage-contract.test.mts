@@ -94,6 +94,24 @@ test('both AI accounting failures are reported, and their codes exist in the cat
   }
 });
 
+test('the production consistency check stays read-only', () => {
+  // ไฟล์นี้ถูกเขียนมาให้รันกับ **ฐาน production** ด้วย psql (เซิร์ฟเวอร์ไม่มี Node)
+  // คำสั่งเขียนแม้บรรทัดเดียวเปลี่ยนมันจากเครื่องมือตรวจเป็นความเสี่ยง
+  const sql = readFileSync(path.join(REPO, 'db/checks/ai-usage-consistency.sql'), 'utf8');
+  // ตัดทั้งคอมเมนต์และบรรทัด \echo — รอบแรกเทสนี้แดงผิดตัวสองครั้ง: คำว่า "insert" ในข้อความไทย
+  // ของ \echo และ `CREATE` ที่ไปแมตช์ **substring ของ `created_at`** · ต้องเล็งด้วย word boundary
+  // และคำที่ตามมาจริง ไม่ใช่ substring เปล่า ๆ
+  const stripped = sql
+    .split('\n')
+    .filter(line => !line.trim().startsWith('--') && !line.trim().startsWith('\\echo'))
+    .join('\n');
+  const writes =
+    /\b(INSERT\s+INTO|UPDATE\s+[A-Za-z_"]|DELETE\s+FROM|DROP\s+[A-Za-z]|ALTER\s+[A-Za-z]|TRUNCATE\b|GRANT\s+[A-Za-z]|REVOKE\s+[A-Za-z]|CREATE\s+[A-Za-z])/i;
+  const hit = stripped.match(writes);
+  assert.equal(hit, null, `ตัวตรวจต้องไม่มีคำสั่งเขียน แต่พบ: ${hit?.[0] ?? ''}`);
+  assert.match(sql, /อ่านอย่างเดียว/, 'หัวไฟล์ต้องประกาศตัวเองว่าอ่านอย่างเดียว');
+});
+
 test('a nullable token count is never rendered as zero', () => {
   // `0 in · 0 out` อ่านเหมือน "เรียกแล้วไม่ใช้โทเคน" ซึ่งเป็นไปไม่ได้ · การโกหกที่อ่านไม่ออกว่าโกหก
   // คือเหตุที่บั๊ก finalize อยู่มาได้เป็นเดือนโดยไม่มีใครสังเกต

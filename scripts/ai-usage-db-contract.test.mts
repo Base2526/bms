@@ -14,6 +14,7 @@ import {
   currentYearMonth,
   finalizeAiUsageEvent,
   getAiUsage,
+  listAiUsageBreakdown,
   recordAiProviderAttempt,
   tryConsumeAiQuota,
 } from '../apps/web/lib/bms/aiUsage';
@@ -272,6 +273,18 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
     // โทเคนต้องไม่ไปโผล่ในหน่วยของโควตา — `count` คือเครดิต ไม่ใช่โทเคน
     assert.equal(usage.count, Number((await monthly()).credits_consumed));
     assert.equal(usage.limit, 1000, 'free plan quota is 1000 requests, not 1000 tokens');
+
+    // ยอดรวมตอบว่าใช้ไปเท่าไร แต่ "ฟีเจอร์ไหนกิน" คือคำถามถัดไปเสมอ
+    const breakdown = await listAiUsageBreakdown(tenantId);
+    const priced = breakdown.find(row => row.feature === 'fake_priced');
+    assert.ok(priced, 'breakdown ต้องมีแถวของฟีเจอร์ที่เพิ่งใช้');
+    assert.equal(priced.inputTokens, IN_TOKENS);
+    assert.equal(priced.outputTokens, OUT_TOKENS);
+    assert.equal(
+      breakdown.reduce((sum, row) => sum + row.inputTokens, 0),
+      Number(expected.input),
+      'โทเคนแยกตามฟีเจอร์ต้องรวมได้เท่ายอดของเดือน'
+    );
   });
 
   await t.test('an exhausted quota blocks the request instead of letting the balance go negative', async () => {

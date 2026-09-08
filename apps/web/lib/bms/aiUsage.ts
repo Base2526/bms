@@ -119,6 +119,9 @@ export type AiUsageBreakdownRow = {
   unpricedProviderCalls: number;
   actualCostUsd: number;
   estimatedCost: number;
+  /** ยอดรวมตอบว่า "ใช้ไปเท่าไร" แต่ตอบไม่ได้ว่าฟีเจอร์ไหนกิน — คำถามถัดไปเสมอ */
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export type RecentAiUsageEvent = {
@@ -1238,7 +1241,9 @@ export async function listAiUsageBreakdown(tenantId: string, limit = 12): Promis
             COALESCE(SUM(billable_credits), 0)::int AS billable_credits,
             COALESCE(SUM(provider_calls), 0)::int AS provider_calls,
             COALESCE(SUM(unpriced_provider_calls), 0)::int AS unpriced_provider_calls,
-            COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd
+            COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd,
+            COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+            COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens
        FROM bms_ai_usage_events
       WHERE tenant_id = $1
         AND year_month = $2
@@ -1257,6 +1262,8 @@ export async function listAiUsageBreakdown(tenantId: string, limit = 12): Promis
     unpricedProviderCalls: Number(row.unpriced_provider_calls),
     actualCostUsd: Number(row.actual_cost_usd ?? 0),
     estimatedCost: Number(row.actual_cost_usd ?? 0),
+    inputTokens: Number(row.input_tokens ?? 0),
+    outputTokens: Number(row.output_tokens ?? 0),
   }));
 }
 
