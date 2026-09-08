@@ -937,6 +937,14 @@ sessions while pending proposals follow the check in the staff inbox. Acceptance
 `pos.sell` action that adds the proposal and runs the existing whole-check reservation/KDS send before
 committing the accepted state; a failure rolls all of it back.
 
+Migration `9.69` adds `bms_restaurant_service_calls` for non-food requests raised from that same QR
+session. Each row carries the composite tenant/location/table/check/session chain, an allowlisted
+request code and optional bounded note, plus `PENDING -> ACKNOWLEDGED -> COMPLETED` (or `EXPIRED` on
+terminal check closure). A partial unique index allows only one `PENDING` row per check, making the
+anti-repeat rule safe across phones and app instances. These rows are deliberately separate from QR
+submission items: they never carry product data, prices, stock reservations or kitchen tickets.
+Staff transitions and their audit rows commit in one tenant transaction.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

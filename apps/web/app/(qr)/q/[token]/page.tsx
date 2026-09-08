@@ -56,6 +56,23 @@ type Submission = {
   submittedAt: string;
   reviewedAt: string | null;
 };
+type ServiceCall = {
+  id: string;
+  requestCode: "WATER" | "CUTLERY" | "BILL" | "MENU_HELP" | "OTHER";
+  requestNote: string | null;
+  status: "PENDING" | "ACKNOWLEDGED" | "COMPLETED" | "EXPIRED";
+  createdAt: string;
+  acknowledgedAt: string | null;
+  completedAt: string | null;
+};
+
+const SERVICE_OPTIONS = [
+  { code: "WATER", icon: "💧", th: "ขอน้ำเปล่าเพิ่ม", en: "More drinking water" },
+  { code: "CUTLERY", icon: "🍴", th: "ขอช้อนส้อม / ทิชชู่", en: "Cutlery / tissues" },
+  { code: "BILL", icon: "🧾", th: "ขอเช็กบิล", en: "Ask for the bill" },
+  { code: "MENU_HELP", icon: "❓", th: "สอบถามเมนู", en: "Menu question" },
+  { code: "OTHER", icon: "☝️", th: "อื่น ๆ", en: "Something else" },
+] as const;
 
 async function api<T>(url: string, init?: RequestInit, tableToken?: string): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -80,6 +97,7 @@ export default function RestaurantQrOrderPage() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [serviceCalls, setServiceCalls] = useState<ServiceCall[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedSummary, setSelectedSummary] = useState<MenuItem | null>(null);
   const [selected, setSelected] = useState<MenuDetail | null>(null);
@@ -90,17 +108,25 @@ export default function RestaurantQrOrderPage() {
   const [view, setView] = useState<"MENU" | "CART" | "ORDERS">("MENU");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [serviceOpen, setServiceOpen] = useState(false);
+  const [serviceCode, setServiceCode] = useState<ServiceCall["requestCode"] | null>(null);
+  const [serviceNote, setServiceNote] = useState("");
+  const [serviceToast, setServiceToast] = useState(false);
+  const [serviceBusy, setServiceBusy] = useState(false);
   const submitKey = useRef<string | null>(null);
+  const serviceKey = useRef<string | null>(null);
   const menuTrigger = useRef<HTMLButtonElement | null>(null);
   const sheetCloseButton = useRef<HTMLButtonElement | null>(null);
 
   const th = lang === "th";
   const menuOpen = selected !== null;
   const loadStatus = useCallback(async () => {
-    const result = await api<{ submissions: Submission[] }>(
-      "/api/bms/restaurant-qr/submissions", undefined, token
-    );
-    setSubmissions(result.submissions);
+    const [orders, calls] = await Promise.all([
+      api<{ submissions: Submission[] }>("/api/bms/restaurant-qr/submissions", undefined, token),
+      api<{ calls: ServiceCall[] }>("/api/bms/restaurant-qr/service-calls", undefined, token),
+    ]);
+    setSubmissions(orders.submissions);
+    setServiceCalls(calls.calls);
   }, [token]);
   const open = useCallback(async () => {
     try {
@@ -250,6 +276,38 @@ export default function RestaurantQrOrderPage() {
     }
   }
 
+  async function callStaff() {
+    if (!serviceCode || serviceBusy) return;
+    if (serviceCode === "OTHER" && serviceNote.trim().length < 3) {
+      setError(th ? "กรุณาระบุสิ่งที่ต้องการอย่างน้อย 3 ตัวอักษร" : "Please add at least 3 characters");
+      return;
+    }
+    setServiceBusy(true);
+    setError("");
+    serviceKey.current ||= crypto.randomUUID();
+    try {
+      await api("/api/bms/restaurant-qr/service-calls", {
+        method: "POST",
+        body: JSON.stringify({
+          idempotencyKey: serviceKey.current,
+          requestCode: serviceCode,
+          requestNote: serviceCode === "OTHER" ? serviceNote.trim() : null,
+        }),
+      }, token);
+      serviceKey.current = null;
+      setServiceOpen(false);
+      setServiceCode(null);
+      setServiceNote("");
+      setServiceToast(true);
+      window.setTimeout(() => setServiceToast(false), 3500);
+      await loadStatus();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Call failed");
+    } finally {
+      setServiceBusy(false);
+    }
+  }
+
   if (error && !bootstrap) return <div className={styles.centerState}><div><span>⚠</span><h1>{th ? "เปิด QR ไม่สำเร็จ" : "Could not open QR"}</h1><p>{error}</p></div></div>;
   if (!bootstrap) return <div className={styles.centerState}><div className={styles.spinner} /></div>;
   if (bootstrap.status !== "READY") return <div className={styles.centerState}><div><span>🍽️</span><h1>{bootstrap.tableName ?? bootstrap.tableCode}</h1><p>{bootstrap.status === "WAITING_FOR_TABLE" ? (th ? "กรุณาให้พนักงานเปิดโต๊ะก่อนเริ่มสั่งอาหาร" : "Ask a staff member to open the table before ordering") : (th ? "โต๊ะนี้ยังไม่พร้อมรับออร์เดอร์" : "This table is not accepting orders")}</p>{bootstrap.status === "WAITING_FOR_TABLE" && <small>{th ? "หน้านี้จะตรวจสอบอีกครั้งอัตโนมัติ" : "This page will refresh automatically"}</small>}</div></div>;
@@ -258,7 +316,10 @@ export default function RestaurantQrOrderPage() {
   // กติกาเดียวกับหน้าเครื่องขาย: ปุ่มที่กดแล้ว server ปฏิเสธแน่ ๆ ต้องกดไม่ได้และต้องบอกว่าติดกลุ่มไหน
   // (เคสจริง 2026-09-05 ที่หน้าร้าน: ส้มตำมีกลุ่มบังคับที่ไม่มีค่าปริยาย แล้วพนักงานกดซ้ำสี่ครั้ง)
   const unmetGroups = selected ? unmetModifierGroups(selected.modifiers, selectedModifiers) : [];
+  const pendingServiceCall = serviceCalls.find((call) => call.status === "PENDING") ?? null;
+  const activeServiceCallCount = serviceCalls.filter((call) => call.status === "PENDING" || call.status === "ACKNOWLEDGED").length;
   return <div className={styles.app}>
+    {serviceToast && <div className={styles.toast} role="status"><span aria-hidden="true">🔔</span><div><b>{th ? "แจ้งพนักงานแล้ว" : "Staff notified"}</b><small>{th ? `แจ้งเตือน · กำลังไปที่โต๊ะ ${bootstrap.tableName}` : `Request sent · coming to ${bootstrap.tableName}`}</small></div></div>}
     <header className={styles.header}>
       <div><strong>{bootstrap.storeName}</strong><small>{bootstrap.locationName}</small></div>
       <button type="button" onClick={() => setLang(th ? "en" : "th")}>{th ? "EN" : "ไทย"}</button>
@@ -300,6 +361,30 @@ export default function RestaurantQrOrderPage() {
       <button type="button" className={styles.cartButton} aria-current={view === "CART" ? "page" : undefined} onClick={() => setView("CART")}><b>{th ? "ตะกร้า" : "Cart"} · {amount(cartTotal, lang)}</b><small>{cart.reduce((sum, item) => sum + item.qty, 0)} {th ? "รายการ" : "items"}</small></button>
       <button type="button" data-active={view === "ORDERS"} aria-current={view === "ORDERS" ? "page" : undefined} onClick={() => setView("ORDERS")}><span aria-hidden="true">◷</span>{th ? "ออร์เดอร์" : "Orders"}</button>
     </nav>
+
+    <button type="button" className={styles.callStaffButton}
+      aria-label={pendingServiceCall ? (th ? "รอพนักงานรับทราบ" : "Waiting for staff") : (th ? "เรียกพนักงาน" : "Call staff")}
+      title={pendingServiceCall ? (th ? "รอพนักงานรับทราบ" : "Waiting for staff") : (th ? "เรียกพนักงาน" : "Call staff")}
+      disabled={Boolean(pendingServiceCall)} onClick={() => { setError(""); setServiceOpen(true); }}>
+      <span aria-hidden="true">🔔</span>
+      {activeServiceCallCount > 0 && <b>{activeServiceCallCount}</b>}
+    </button>
+
+    {serviceOpen && <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="service-call-title"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) setServiceOpen(false); }}>
+      <section className={`${styles.sheet} ${styles.serviceSheet}`}>
+        <div className={styles.sheetHead}><div><h2 id="service-call-title">{th ? "เรียกพนักงาน" : "Call staff"}</h2></div><button type="button" aria-label={th ? "ปิด" : "Close"} onClick={() => setServiceOpen(false)}>×</button></div>
+        <p className={styles.serviceIntro}>{th ? `เลือกเหตุผล พนักงานจะมาที่โต๊ะ ${bootstrap.tableName}` : `Choose a reason. Staff will come to ${bootstrap.tableName}.`}</p>
+        <div className={styles.serviceOptions}>{SERVICE_OPTIONS.map((option) => <button type="button" key={option.code}
+          data-active={serviceCode === option.code} onClick={() => setServiceCode(option.code)}>
+          <span aria-hidden="true">{option.icon}</span><b>{th ? option.th : option.en}</b>
+          {option.code === "OTHER" && <small>{th ? "พิมพ์สั้น ๆ ด้านล่าง" : "Add a short note below"}</small>}
+        </button>)}</div>
+        {serviceCode === "OTHER" && <label className={styles.serviceNote}>{th ? "ต้องการให้ช่วยอะไร" : "How can we help?"}<textarea autoFocus maxLength={200} value={serviceNote} onChange={(event) => setServiceNote(event.target.value)} placeholder={th ? "อย่างน้อย 3 ตัวอักษร" : "At least 3 characters"} /></label>}
+        {error && <div className={styles.error} role="alert">{error}</div>}
+        <button type="button" className={styles.submit} disabled={serviceBusy || !serviceCode || (serviceCode === "OTHER" && serviceNote.trim().length < 3)} onClick={() => void callStaff()}>{serviceBusy ? (th ? "กำลังแจ้ง..." : "Sending...") : (th ? "แจ้งพนักงาน" : "Notify staff")}</button>
+      </section>
+    </div>}
 
     {selected && <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="qr-menu-item-title" onMouseDown={(event) => { if (event.target === event.currentTarget) closeMenu(); }}>
       <section className={styles.sheet}>
