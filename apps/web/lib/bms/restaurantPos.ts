@@ -1326,12 +1326,17 @@ export async function dropKitchenCancelledLineInTx(
     amountDue = created.amountDue;
   }
 
+  // เหตุผลเดียวกับ repriceCheckAfterItemMoveInTx: ของที่เหลือหลังครัวยกเลิกอาจมีบรรทัดที่
+  // ยังไม่ส่งครัวปนอยู่ (ลูกค้าสั่งรอบใหม่ระหว่างที่ครัวกำลังทำรอบก่อน) · เดิมประกาศว่า
+  // reserved_version ตามทันเสมอ ซึ่งเปิดให้ settle ผ่านด่านแล้วเก็บเงินตามใบจองที่รวม
+  // บรรทัดนั้นไว้ด้วย · และเมื่อไม่เหลือใบจองเลย reserved_version ต้องเป็น NULL ไม่ใช่เลขรุ่น
   await client.query(
     `UPDATE bms_restaurant_checks
-        SET version = $3, reserved_version = $3, current_order_id = $4,
+        SET version = $3, reserved_version = $6, current_order_id = $4,
             amount_due = $5, updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
-    [input.tenantId, input.checkId, nextVersion, orderId, amountDue]
+    [input.tenantId, input.checkId, nextVersion, orderId, amountDue,
+      orderId == null || remaining.rows.some((row) => row.status === "NEW") ? null : nextVersion]
   );
   await client.query(
     `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
@@ -1772,6 +1777,12 @@ async function repriceCheckAfterItemMoveInTx(
   );
   const hadReservation = Boolean(check.current_order_id);
   const holdsSentFood = items.rows.some((row) => row.status === "SENT");
+  // บรรทัดที่ยังไม่ส่งครัวยังอยู่บนบิลได้หลังแยก/รวมบิล (ทั้งสองเส้นย้ายทุกบรรทัดที่ยังไม่ถูก
+  // ยกเลิก ไม่ใช่เฉพาะที่ส่งครัวแล้ว) · ใบจองรอบใหม่จึงครอบบรรทัด NEW ไปด้วย แต่ **ห้าม**
+  // ประกาศว่า reserved_version ตามทันเนื้อหาบิล เพราะนั่นคือด่านฝั่ง server ด่านเดียวที่กัน
+  // "คิดเงินทั้งที่ยังมีของไม่ได้ส่งครัว" (settleRestaurantCheck) · ปล่อยให้เท่ากันแปลว่า
+  // เหลือแต่ปุ่มบนจอเป็นตัวกัน แล้วลูกค้าจ่ายค่าอาหารที่ครัวไม่เคยได้รับคำสั่งให้ทำ
+  const holdsUnsentFood = items.rows.some((row) => row.status === "NEW");
   if (hadReservation
       && await releaseCheckReservationInTx(client, ctx.tenantId, check.current_order_id) === "BLOCKED") {
     throw new RestaurantCheckError(
@@ -1805,7 +1816,8 @@ async function repriceCheckAfterItemMoveInTx(
         SET version = $3, reserved_version = $4, current_order_id = $5, amount_due = $6,
             pos_device_id = $7, pos_shift_id = $8, updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
-    [ctx.tenantId, checkId, nextVersion, orderId == null ? null : nextVersion, orderId, amountDue,
+    [ctx.tenantId, checkId, nextVersion,
+      orderId == null || holdsUnsentFood ? null : nextVersion, orderId, amountDue,
       ctx.deviceId, ctx.shiftId]
   );
   return { orderId, amountDue };

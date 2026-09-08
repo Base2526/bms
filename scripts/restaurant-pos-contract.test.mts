@@ -1209,3 +1209,47 @@ test("ป้ายออร์เดอร์ QR รอรับต้องอ�
     "เปิดแท็บอยู่ต้องถี่กว่า แต่จออื่นต้องยังดึงอยู่");
   assert.match(page, /badge: pendingQrSubmissions\.length/);
 });
+
+/**
+ * ด่านฝั่ง server ด่านเดียวที่กัน "คิดเงินทั้งที่ยังมีของไม่ได้ส่งครัว" คือ
+ * `reserved_version === version` ใน settleRestaurantCheck (ตรึงไว้แล้วด้านบน) ·
+ * เส้นทางที่คิดยอดใหม่ให้บิล **ย้ายทุกบรรทัดที่ยังไม่ถูกยกเลิก ไม่ใช่เฉพาะที่ส่งครัวแล้ว**
+ * บิลจึงถือบรรทัด NEW ต่อได้หลังแยก/รวมบิล และหลังครัวยกเลิกบางรายการ · ถ้าเส้นทางพวกนั้น
+ * ประกาศว่า reserved_version ตามทันเนื้อหาบิล ด่านจะถูกข้ามไปเงียบ ๆ แล้วเหลือแต่ปุ่มบนจอ
+ * (`hasUnsent`) เป็นตัวกัน — ซึ่งเป็นฝั่ง client และไม่ใช่ด่าน
+ *
+ * เคสที่เจ็บจริง: บิลมี [ส่งครัวแล้ว A, ยังไม่ส่ง B] แล้วครัวยกเลิก A' อีกจาน หรือมีการรวมบิล
+ * → ใบจองรอบใหม่ครอบ B ด้วย → settle ผ่านด่าน → ลูกค้าจ่ายค่า B ที่ครัวไม่เคยได้รับคำสั่งให้ทำ
+ */
+test("เส้นทางที่คิดยอดใหม่ต้องไม่ประกาศว่าใบจองตามทัน ขณะยังมีบรรทัดที่ไม่ได้ส่งครัว", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const cases = [
+    { name: "repriceCheckAfterItemMoveInTx", end: "async function moveCheckItemsInTx" },
+    { name: "dropKitchenCancelledLineInTx", end: "type KitchenRoundInput" },
+  ];
+  for (const { name, end } of cases) {
+    const from = restaurant.indexOf(`function ${name}`);
+    assert.ok(from > 0, `ต้องมีฟังก์ชัน ${name}`);
+    const to = restaurant.indexOf(end, from);
+    assert.ok(to > from, `ต้องหาปลายของ ${name} เจอ`);
+    const body = restaurant.slice(from, to);
+
+    // เขียน reserved_version จริงในฟังก์ชันนี้ (ไม่งั้นเทสเขียวลอย ๆ กับฟังก์ชันที่ไม่เกี่ยว)
+    const write = body.indexOf("reserved_version");
+    assert.ok(write > 0, `${name} ต้องเขียน reserved_version`);
+    const params = body.slice(write, body.indexOf(");", write));
+
+    // ต้องมีตัวตรวจ "ยังมีบรรทัดที่ไม่ได้ส่งครัวไหม" อยู่ในฟังก์ชัน และต้องถูกใช้กับค่าที่เขียนลง
+    // reserved_version จริง ๆ ไม่ใช่แค่มีอยู่ลอย ๆ ที่ไหนสักแห่ง
+    const guard = /const (\w+)\s*=\s*\w+\.rows\.some\(\(row\) => row\.status === "NEW"\)/.exec(body);
+    const usesGuard = guard ? params.includes(guard[1]) : /"NEW"/.test(params);
+    assert.ok(usesGuard,
+      `${name}: ค่าที่เขียนลง reserved_version ต้องขึ้นกับว่ายังมีบรรทัด NEW เหลืออยู่หรือไม่`);
+
+    // ไม่มีใบจอง = reserved_version ต้องเป็น NULL ไม่ใช่เลขรุ่นของบิล
+    assert.match(params, /orderId == null/,
+      `${name}: ไม่มีใบจองแล้วต้องเขียน NULL ไม่ใช่ประกาศว่าตามทัน`);
+    assert.match(params, /\? null :/,
+      `${name}: reserved_version ต้องเป็นค่าที่มีเงื่อนไข ไม่ใช่ค่าคงที่`);
+  }
+});
