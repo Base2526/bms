@@ -85,8 +85,14 @@ async function handlePOST(req: NextRequest) {
     enrolledPosDeviceId: device.id,
     enrolledShiftId: openShift?.id ?? null,
   });
+  // ⚠️ INVALID ต้องมี `error` คู่กับ `reason` — ผู้เรียกที่ห่อคำตอบด้วย describePosFailure()
+  // (จอร้านอาหาร) เห็น `status` เป็นสตริงแล้วเข้า default ของตัวแปล ซึ่งอ่าน `error` เท่านั้น
+  // ถ้าไม่มี จะโชว์ "ขายไม่สำเร็จ (INVALID)" ทั้งที่ server รู้เหตุผลอยู่แล้ว (และนี่ไม่ใช่การขาย)
+  // · หน้าค้าปลีกอ่าน `reason` ก่อน จึงไม่เปลี่ยนพฤติกรรมเดิม
   return NextResponse.json(
-    result.status === "INVALID" ? result : { ...result, member: toPosMemberSummary(result.member) },
+    result.status === "INVALID"
+      ? { ...result, error: result.reason }
+      : { ...result, member: toPosMemberSummary(result.member) },
     { status: result.status === "INVALID" ? 400 : 200 }
   );
 }

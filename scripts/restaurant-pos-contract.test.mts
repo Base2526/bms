@@ -1343,3 +1343,96 @@ test("แยกบิลต้องหยิบช่องที่ว่า�
   // เพดานต้องมาจาก "ไม่มีช่องเหลือ" ไม่ใช่การเทียบเลขที่คำนวณได้กับ 20
   assert.match(split, /!nextGroup\.rowCount/);
 });
+
+/**
+ * สมัครสมาชิกที่หน้าเคาน์เตอร์ของร้านอาหาร
+ *
+ * ก่อนรอบนี้กล่องสมาชิกในแผงรับชำระ **ค้นได้อย่างเดียว** — ค้นแล้วไม่พบคือทางตัน
+ * พนักงานเหลือทางเดียวคือปล่อยขายแบบไม่ผูกสมาชิกแล้วจดชื่อไว้เอง ทั้งที่
+ * `POST /api/pos/member` (พร้อมด่าน PIN + `member.manage`) มีอยู่แล้วและหน้าค้าปลีกใช้อยู่
+ */
+test("ค้นสมาชิกไม่พบต้องมีทางไปต่อ และปุ่มสมัครต้องไม่โผล่ตอนที่รอบค้นล้ม", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+
+  // ⚠️ หัวใจของรอบนี้: "ค้นแล้วไม่พบ" ต้องแยกจาก "ยังไม่ได้ค้น" และ "ค้นแล้วล้ม" ให้ออก
+  // ถ้าอ่านจาก memberResults.length === 0 ตรง ๆ รอบที่เน็ตหลุดจะถูกอ่านว่า "ไม่มีสมาชิกคนนี้"
+  // แล้วพนักงานกดสมัคร → ได้ลูกค้าซ้ำในฐาน ซึ่ง **ลบไม่ได้** (แก้ได้แค่ mergeCustomers)
+  const notFound = page.slice(page.indexOf("const memberNotFound"));
+  assert.ok(notFound.length > 0, "หา memberNotFound ไม่เจอ");
+  assert.match(notFound.slice(0, 240), /memberSearchedQuery !== ""[\s\S]{0,160}memberResults\.length === 0/,
+    "memberNotFound ต้องพึ่งคำค้นที่ได้คำตอบจาก server แล้ว ไม่ใช่แค่ผลว่าง");
+
+  // และค่านั้นต้องถูกตั้ง **หลัง** json() คืนค่า ไม่ใช่ก่อนยิง — ไม่งั้นรอบที่ throw
+  // ก็ยังถูกนับว่าค้นสำเร็จ (run() กลืน error ไว้แล้ว จอจะไม่รู้เลย)
+  const search = page.slice(page.indexOf("async function searchMembers"), page.indexOf("const memberNotFound"));
+  assert.ok(search.length > 0);
+  const requestAt = search.indexOf("await run(");
+  assert.ok(requestAt > 0, "หา request boundary ของการค้นสมาชิกไม่เจอ");
+  const beforeRequest = search.slice(0, requestAt);
+  assert.match(beforeRequest, /setMemberResults\(\[\]\)/,
+    "ก่อนค้นรอบใหม่ต้องล้างรายชื่อเก่า ไม่งั้นรอบที่ล้มยังเลือกสมาชิกจากคำตอบเก่าได้");
+  assert.match(beforeRequest, /setMemberSearchedQuery\(""\)/,
+    "ก่อนค้นรอบใหม่ต้องถอนสถานะยืนยันเดิม แม้ค้นคำเดิมซ้ำแล้วรอบล่าสุดล้ม");
+  assert.ok(search.indexOf("await json(") < search.indexOf("setMemberSearchedQuery(term)"),
+    "setMemberSearchedQuery ต้องอยู่หลัง await json() เพื่อไม่ให้รอบที่ล้มถูกอ่านว่าไม่พบ");
+  assert.match(search, /term\.length < 3[\s\S]{0,120}setMemberSearchedQuery\(""\)/,
+    "คำค้นที่สั้นเกินต้องล้างสถานะ 'ค้นแล้ว' ทิ้ง ไม่ใช่ค้างของเดิมไว้");
+
+  // ปุ่มขึ้นเฉพาะตอนยืนยันแล้วว่าไม่มี — ปุ่มที่ลอยอยู่ตลอดคือปุ่มที่กดแล้วสร้างของซ้ำได้
+  assert.match(page, /\{memberNotFound && !enrollOpen && <>/);
+  assert.match(page, /styles\.enrollCta[\s\S]{0,200}openEnroll\(\)/);
+
+  // ยุบอยู่ในกล่องเดิม ห้ามเปิด Modal ซ้อน Modal — แผงรับชำระซ้อนอยู่แล้วหลายชั้น
+  const panel = page.slice(page.indexOf("{enrollOpen && <div className={styles.enrollPanel}>"));
+  assert.ok(panel.length > 0, "แผงสมัครต้องเป็น div ในกล่องเดิม");
+  assert.ok(!/<Modal[^>]*enrollOpen/.test(page), "ห้ามเปิด Modal ซ้อนสำหรับการสมัครสมาชิก");
+});
+
+test("สมัครสมาชิกจากบิลโต๊ะส่ง PIN ในคีย์ที่ route รับ แล้วผูกเข้าบิลใบนั้นทันที", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  // ตัดถึง effect ตัวถัดไป ไม่ใช่ชื่อฟังก์ชันที่เดาไว้ — anchor ที่ resolve ไม่ได้จะได้ slice
+  // ว่างแล้วเทสเขียวลอย ๆ (กับดักเดิมของไฟล์นี้ จึงมี assert ความยาวคุมไว้ทุกจุด)
+  const enrollAt = page.indexOf("async function enrollMember");
+  const enroll = page.slice(enrollAt, page.indexOf("useEffect(", enrollAt));
+  assert.ok(enroll.length > 0, "หา enrollMember ไม่เจอ");
+
+  // ⚠️ /api/pos/member รับ PIN ในคีย์ `pin` ไม่ใช่ `cashierPin` ของ auth() — เปลี่ยนมาใช้
+  // auth() เมื่อไหร่จะได้ 403 "PIN ไม่ถูกต้อง" ทั้งที่ PIN ถูก
+  const body = enroll.slice(enroll.indexOf("/api/pos/member"), enroll.indexOf("const member"));
+  assert.match(body, /pin:\s*actorPin/, "ต้องส่ง PIN ในคีย์ pin");
+  assert.ok(!/cashierPin/.test(body), "route นี้ไม่รู้จัก cashierPin — ห้ามใช้ auth() ที่นี่");
+  assert.match(body, /cashierUserId:\s*actorUserId/);
+  assert.ok(!/auth\(\{/.test(body), "ห้ามห่อ body ด้วย auth()");
+
+  // ยังต้องมีด่านฝั่งจอว่าเลือกผู้ปฏิบัติงานแล้ว — ไม่งั้นยิงไปให้ server ปฏิเสธเปล่า ๆ
+  assert.match(enroll, /!actorUserId \|\| !actorPin[\s\S]{0,120}need_operator_pin/);
+  // สมัครแล้วผูกเข้าบิลที่กำลังคิดเงินทันที พนักงานไม่ต้องกลับไปค้นซ้ำ
+  assert.match(enroll, /setSelectedMember\(member\)/);
+  // เลขสมาชิกมาจาก server เท่านั้น — จอห้ามคิดเอง
+  assert.ok(!/memberNo\s*[:=]\s*[`"']/.test(enroll), "จอต้องไม่ตั้งเลขสมาชิกเอง");
+  assert.match(enroll, /ALREADY_MEMBER[\s\S]{0,200}member_enrolled/,
+    "ต้องแยกข้อความ 'เป็นสมาชิกอยู่แล้ว' ออกจาก 'สมัครใหม่'");
+});
+
+test("เหตุที่ปุ่มสมัครกดไม่ได้ต้องเป็นข้อความที่เห็น ไม่ใช่ tooltip", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const reason = page.slice(page.indexOf("const enrollBlockReason"), page.indexOf("async function enrollMember"));
+  assert.ok(reason.length > 0, "หา enrollBlockReason ไม่เจอ");
+  // ครอบทั้งสามเหตุที่ทำให้กดไม่ได้ — เหตุที่ไม่มีชื่อคือปุ่มตายที่ไม่มีใครรู้ว่าต้องทำอะไร
+  assert.match(reason, /!operatorReady/);
+  assert.match(reason, /isEnrollablePhone\(enrollPhone\)/);
+  assert.match(reason, /!enrollName\.trim\(\)/);
+
+  // จอเคาน์เตอร์เป็นจอสัมผัส ไม่มี hover ให้อ่าน title (บทเรียนของหน้านี้เอง) —
+  // เหตุผลต้องถูกเรนเดอร์เป็นข้อความ
+  const panel = page.slice(page.indexOf("{enrollOpen && <div className={styles.enrollPanel}>"));
+  const submit = panel.slice(0, panel.indexOf("</div>}"));
+  assert.match(submit, /\{enrollBlockReason && <small/,
+    "เหตุที่กดไม่ได้ต้องเรนเดอร์เป็นข้อความ");
+  assert.match(submit, /disabled=\{Boolean\(enrollBlockReason\)\}/,
+    "ปุ่มต้องกดไม่ได้ด้วยเหตุเดียวกับที่แสดงให้อ่าน");
+
+  // แผงต้องถูกล้างทุกครั้งที่เปิด/ปิดแผงคิดเงิน และตอนเปลี่ยนบิล — เบอร์ของลูกค้าคนก่อน
+  // ที่ค้างอยู่คือของที่สมัครผิดคนได้ (กฎเดียวกับที่ล้างสมาชิกตอนเปลี่ยนโต๊ะ)
+  assert.match(page, /setEnrollOpen\(false\);\s*setEnrollPhone\(""\);\s*setEnrollName\(""\);\s*\}, \[checkoutOpen, check\?\.id\]\)/);
+});

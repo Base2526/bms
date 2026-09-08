@@ -1,12 +1,13 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
+import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
@@ -523,6 +524,15 @@ export default function RestaurantPosPage() {
   const [memberResults, setMemberResults] = useState<PosMember[]>([]);
   const [selectedMember, setSelectedMember] = useState<PosMember | null>(null);
   const [memberLoyalty, setMemberLoyalty] = useState<PosLoyaltyStatus | null>(null);
+  // ⚠️ "ค้นแล้วไม่พบ" ต้องแยกจาก "ยังไม่ได้ค้น" ให้ออก — `memberResults.length === 0` เป็นจริง
+  // ทั้งสองกรณี และหน้านี้ค้นตอนกดปุ่ม/Enter (ไม่ใช่ทุกคีย์เหมือนหน้าค้าปลีก) · ที่สำคัญกว่า:
+  // ถ้าเสนอ "สมัครสมาชิกใหม่" ตอนที่รอบค้นล้มเพราะเน็ตร้านหลุด จะได้ลูกค้าซ้ำในฐาน ซึ่ง
+  // **ลบไม่ได้** (bms_customers ห้าม hard delete แก้ได้แค่ mergeCustomers) — จึงบันทึกเฉพาะ
+  // คำค้นที่ได้คำตอบจาก server มาแล้วจริง ไม่ใช่ทุกครั้งที่กดค้น
+  const [memberSearchedQuery, setMemberSearchedQuery] = useState("");
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollPhone, setEnrollPhone] = useState("");
+  const [enrollName, setEnrollName] = useState("");
   const [settlementReceipt, setSettlementReceipt] = useState<SettlementReceipt | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<RecentReceipt[]>([]);
   const [recentQuery, setRecentQuery] = useState("");
@@ -634,7 +644,16 @@ export default function RestaurantPosPage() {
     setSelectedMember(null);
     setMemberQuery("");
     setMemberResults([]);
+    setMemberSearchedQuery("");
   }, [check?.id]);
+  // แผงสมัครสมาชิกเป็นของ "บิลใบนี้ + รอบคิดเงินครั้งนี้" — ปิดแผงคิดเงินแล้วเปิดใหม่ ต้องไม่
+  // เจอเบอร์/ชื่อที่พิมพ์ค้างของลูกค้าคนก่อน (เหตุผลเดียวกับที่ล้างสมาชิกตอนเปลี่ยนโต๊ะ) ·
+  // ล้างทั้งตอนเปิดและตอนปิดด้วย effect ตัวเดียว จึงไม่มีทางเหลือสถานะค้างจากทางใดทางหนึ่ง
+  useEffect(() => {
+    setEnrollOpen(false);
+    setEnrollPhone("");
+    setEnrollName("");
+  }, [checkoutOpen, check?.id]);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
   const visibleTables = activeArea ? floor.tables.filter((table) => table.areaId === activeArea) : floor.tables;
   // พิกัดเป็นข้อมูลผังจริงจากหลังบ้าน จึงต้องรักษาหน่วย px เดียวกับ editor และให้ viewport
@@ -1396,12 +1415,79 @@ export default function RestaurantPosPage() {
    */
   const earnBasisAmount = check?.amountDue ?? null;
   async function searchMembers() {
-    if (memberQuery.trim().length < 3) { setMemberResults([]); return; }
+    const term = memberQuery.trim();
+    if (term.length < 3) { setMemberResults([]); setMemberSearchedQuery(""); return; }
+    // ล้างคำตอบเก่าก่อนยิงรอบใหม่ แม้จะค้นด้วยคำเดิมก็ตาม — ถ้ารอบล่าสุดล้ม เราต้องไม่
+    // เหลือทั้งปุ่ม "สมัครสมาชิก" หรือรายชื่อจากคำตอบก่อนหน้าให้พนักงานกดต่อโดยเข้าใจว่า
+    // server เพิ่งยืนยันแล้ว · run() แสดง error แต่กลืน exception จึงคืนสถานะตรงนี้เองไม่ได้
+    setMemberResults([]);
+    setMemberSearchedQuery("");
     await run(async () => {
       const suffix = earnBasisAmount == null ? "" : `&amount=${encodeURIComponent(String(earnBasisAmount))}`;
-      const body = await json(`/api/pos/member?q=${encodeURIComponent(memberQuery.trim())}${suffix}`);
+      const body = await json(`/api/pos/member?q=${encodeURIComponent(term)}${suffix}`);
       setMemberResults(Array.isArray(body.members) ? body.members : []);
       if (body.loyalty) setMemberLoyalty(body.loyalty as PosLoyaltyStatus);
+      // หลัง json() สำเร็จเท่านั้น — รอบที่ throw (เน็ตหลุด/502) ต้องไม่ถูกอ่านว่า "ไม่มีสมาชิกคนนี้"
+      setMemberSearchedQuery(term);
+    });
+  }
+  // ค้นแล้ว server ตอบว่าไม่มีจริง และคำค้นยังเป็นคำเดิมที่ค้นไป (แก้คำค้นแล้วต้องค้นใหม่ก่อน)
+  const memberNotFound = memberSearchedQuery !== ""
+    && memberSearchedQuery === memberQuery.trim()
+    && memberResults.length === 0;
+  /**
+   * เปิดแผงสมัคร โดยยกเบอร์ที่พนักงานค้นไว้มาต่อ ไม่ต้องพิมพ์ซ้ำ (เหมือน `openEnroll()`
+   * ของหน้าค้าปลีก) — คนที่ค้นด้วย "ชื่อ" จะได้ช่องว่างไว้พิมพ์เบอร์เอง เพราะชื่อไม่ใช่เบอร์
+   */
+  function openEnroll() {
+    setEnrollPhone(isEnrollablePhone(memberSearchedQuery) ? normalizeEnrollPhone(memberSearchedQuery) : "");
+    setEnrollName("");
+    setEnrollOpen(true);
+  }
+  /**
+   * เหตุที่ปุ่มสมัครกดไม่ได้ — ต้องเป็น **ข้อความที่เห็น** ไม่ใช่ `title`
+   * จอเคาน์เตอร์เป็นจอสัมผัส ไม่มี hover ให้อ่าน tooltip (บทเรียนของหน้านี้เอง)
+   */
+  const enrollBlockReason = !operatorReady
+    ? t("pos_restaurant.need_operator_pin")
+    : !isEnrollablePhone(enrollPhone)
+      ? t("pos_restaurant.member_enroll_phone_invalid")
+      : !enrollName.trim()
+        ? t("pos_restaurant.member_enroll_name_required")
+        : null;
+  /**
+   * สมัครสมาชิกที่เครื่องขาย แล้วผูกเข้าบิลโต๊ะใบนี้ทันที — ใช้ `POST /api/pos/member`
+   * เส้นเดียวกับหน้าค้าปลีก (ตรวจ PIN + สิทธิ์ `member.manage` ในตัว route ไม่มี migration
+   * และไม่มี permission ใหม่) · เลขสมาชิกเกิดฝั่ง server เสมอ จอไม่เคยตั้งเอง
+   */
+  async function enrollMember() {
+    await run(async () => {
+      // ⚠️ route นี้รับ PIN ในคีย์ `pin` **ไม่ใช่ `cashierPin`** ของ auth() — เปลี่ยนมาใช้ auth()
+      // เมื่อไหร่จะได้ 403 "PIN ไม่ถูกต้อง" ทั้งที่ PIN ถูก (มีเทสตรึงคีย์นี้ไว้)
+      if (!actorUserId || !actorPin) throw new Error(t("pos_restaurant.need_operator_pin"));
+      const body = await json("/api/pos/member", {
+        method: "POST",
+        body: JSON.stringify({
+          cashierUserId: actorUserId,
+          pin: actorPin,
+          phone: normalizeEnrollPhone(enrollPhone),
+          name: enrollName.trim() || null,
+        }),
+      });
+      const member = body.member as PosMember | undefined;
+      if (!member) throw new Error(t("pos_restaurant.member_enroll_failed"));
+      setSelectedMember(member);
+      setEnrollOpen(false);
+      setEnrollPhone("");
+      setEnrollName("");
+      setMemberQuery("");
+      setMemberResults([]);
+      setMemberSearchedQuery("");
+      // เบอร์ที่เคยคุยผ่าน LINE มี bms_customers อยู่แล้ว — server ผูกเลขสมาชิกกับ record เดิม
+      // ไม่สร้างซ้ำ · แยกสองข้อความเพราะ "สมัครใหม่" กับ "เป็นสมาชิกอยู่แล้ว" คนละเรื่องกัน
+      message.success(body.status === "ALREADY_MEMBER"
+        ? t("pos_restaurant.member_already", { member: member.memberNo ?? member.name })
+        : t("pos_restaurant.member_enrolled", { member: member.memberNo ?? member.name }));
     });
   }
   // ถามสถานะทันทีที่เปิดแผงคิดเงิน ไม่ต้องรอให้ค้นสมาชิกก่อน — คนที่ยังไม่ได้ค้น
@@ -2642,7 +2728,27 @@ export default function RestaurantPosPage() {
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{t("pos_restaurant.support_consent")}</Checkbox>
     </Modal>
     <Modal title={t("pos_restaurant.take_payment_title", { table: check?.tableName ?? "" })} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText={t("pos_restaurant.confirm_payment")} okButtonProps={{ disabled: Boolean(checkoutBlock) }} width={680} getContainer={modalContainer}>{check && <div className={styles.modalGrid}>
-      <div className={styles.memberBox}><b>{t("pos_restaurant.member_optional")}</b>{memberLoyalty && memberLoyalty.pointsForAmount != null && memberLoyalty.pointsForAmount > 0 ? <small className={styles.memberEarnHint}>{t("pos_restaurant.points_will_earn", { points: memberLoyalty.pointsForAmount })}</small> : memberLoyalty?.block ? <small className={styles.memberEarnWarn}>{earnBlockText(memberLoyalty.block)}</small> : null}{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? t("pos_restaurant.member")}<small>{t("pos_restaurant.points_available", { points: checkMember.pointsUsable })}</small></span><button type="button" className={styles.btn} onClick={() => setSelectedMember(null)}>{t("pos_restaurant.remove")}</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder={t("pos_restaurant.member_search_placeholder")} /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>{t("pos_restaurant.search")}</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => setSelectedMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{t("pos_restaurant.points_count", { points: member.pointsUsable })}</b></button>)}</>}</div>
+      <div className={styles.memberBox}><b>{t("pos_restaurant.member_optional")}</b>{memberLoyalty && memberLoyalty.pointsForAmount != null && memberLoyalty.pointsForAmount > 0 ? <small className={styles.memberEarnHint}>{t("pos_restaurant.points_will_earn", { points: memberLoyalty.pointsForAmount })}</small> : memberLoyalty?.block ? <small className={styles.memberEarnWarn}>{earnBlockText(memberLoyalty.block)}</small> : null}{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? t("pos_restaurant.member")}<small>{t("pos_restaurant.points_available", { points: checkMember.pointsUsable })}</small></span><button type="button" className={styles.btn} onClick={() => setSelectedMember(null)}>{t("pos_restaurant.remove")}</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder={t("pos_restaurant.member_search_placeholder")} /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>{t("pos_restaurant.search")}</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => setSelectedMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{t("pos_restaurant.points_count", { points: member.pointsUsable })}</b></button>)}
+        {/* ทางไปต่อของ "ค้นแล้วไม่พบ" — เดิมกล่องนี้ตัน พนักงานได้แค่ปล่อยขายแบบไม่ผูกสมาชิก
+            แล้วจดชื่อไว้เอง · ปุ่มขึ้นเฉพาะตอน server ยืนยันแล้วว่าไม่มีเบอร์นี้ (memberNotFound)
+            ไม่ใช่ตอนที่ผลค้นว่างเพราะยังไม่ได้ค้นหรือค้นล้ม */}
+        {memberNotFound && !enrollOpen && <>
+          <small className={styles.memberHint}>{t("pos_restaurant.member_not_found")}</small>
+          <button type="button" className={styles.enrollCta} onClick={() => openEnroll()}><UserAddOutlined /> {t("pos_restaurant.member_enroll_cta")}</button>
+        </>}
+        {/* ยุบอยู่ในกล่องเดิม ไม่เปิด Modal ซ้อน Modal — แผงรับชำระซ้อนอยู่แล้วหลายชั้น
+            (สมาชิก/จ่ายเงิน/ใบเสร็จ) อีกชั้นจะบังปุ่ม "ยืนยันรับเงิน" ที่ท้ายกล่อง */}
+        {enrollOpen && <div className={styles.enrollPanel}>
+          <label>{t("pos_restaurant.member_enroll_phone")}<input value={enrollPhone} onChange={(event) => setEnrollPhone(event.target.value)} inputMode="tel" autoComplete="off" placeholder={t("pos_restaurant.member_enroll_phone_placeholder")} /></label>
+          <label>{t("pos_restaurant.member_enroll_name")}<input value={enrollName} onChange={(event) => setEnrollName(event.target.value)} autoComplete="off" placeholder={t("pos_restaurant.member_enroll_name_placeholder")} onKeyDown={(event) => { if (event.key === "Enter" && !enrollBlockReason) { event.preventDefault(); void enrollMember(); } }} /></label>
+          <small className={styles.memberHint}>{t("pos_restaurant.member_enroll_existing_note")}</small>
+          {enrollBlockReason && <small className={operatorReady ? styles.memberHint : styles.memberEarnWarn}>{enrollBlockReason}</small>}
+          <div className={styles.enrollActions}>
+            <button type="button" className={styles.btn} onClick={() => setEnrollOpen(false)}>{t("pos_restaurant.cancel")}</button>
+            <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={Boolean(enrollBlockReason)} onClick={() => void enrollMember()}>{t("pos_restaurant.member_enroll_submit")}</button>
+          </div>
+        </div>}
+      </>}</div>
       <div className={styles.total}><span>{t("pos_restaurant.amount_due")}</span><strong><span className={styles.baht}>฿</span>{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>{t("pos_restaurant.payment_method")}<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">{t("pos_restaurant.payment_cash")}</option><option value="QR">{t("pos_restaurant.payment_qr")}</option><option value="CARD">{t("pos_restaurant.payment_card")}</option></select></label><label>{t("pos_restaurant.channel_amount")}<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => rebalanceSplitPayments(current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row), payment.id, checkoutDue))} /></label>{payment.method === "CASH" ? <label>{t("pos_restaurant.cash_tendered")}<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} />
         {/* เงินทอนต้องเห็น "ตอนถือเงินลูกค้าอยู่ในมือ" ไม่ใช่หลังกดยืนยันไปแล้ว — หน้าค้าปลีก
             แสดงมาตลอด (`เงินทอนรายการนี้`) หน้านี้เคยให้แคชเชียร์คิดเองหรือรอดูในใบเสร็จ
