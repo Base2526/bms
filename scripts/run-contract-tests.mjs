@@ -20,7 +20,8 @@
 // =============================================================
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { summarizeTapFailures } from "./testing/tapFailures.mjs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -180,11 +181,60 @@ const run = spawnSync("npx", args, {
   shell: process.platform === "win32",
 });
 const exitCode = run.status ?? 1;
+const finishedAt = new Date();
 appendFileSync(runFile, [
-  `finished=${new Date().toISOString()}`,
+  `finished=${finishedAt.toISOString()}`,
   `duration_ms=${Date.now() - startedAt.getTime()}`,
   `exit=${exitCode}`,
   "",
 ].join("\n"));
-console.log(`[gate] ผลเต็มอยู่ที่ ${path.relative(REPO, tapFile)} · สรุปรอบนี้ ${path.relative(REPO, runFile)}`);
+
+/**
+ * ไฟล์ที่สามคือ "อันที่เอาไปแปะได้" — TAP เต็มก็อปส่งใครไม่ไหว (263 KB ตอนเขียว และ
+ * **หนึ่ง** assertion ที่แดงกินได้ 28 KB เพราะ assert.match ที่ล้มพิมพ์ทั้งไฟล์ต้นฉบับออกมา)
+ *
+ * **เขียนทุกรอบ ไม่ใช่เฉพาะตอนแดง** — ไฟล์เก่าที่ค้างจากรอบก่อนคือสิ่งที่จะถูกก็อปส่งต่อ
+ * โดยไม่มีใครรู้ว่ามันเป็นของรอบไหน · รอบที่เขียวจึงต้องถูกเขียนทับด้วยคำว่า "ไม่มีเทสที่แดง"
+ */
+const failureFile = path.join(OUT_DIR, `${mode}.failures.txt`);
+// พาธในหัวไฟล์ต้องอ่านรู้เรื่อง — ถ้า BMS_TEST_OUTPUT_DIR ชี้ออกนอกรีโป path.relative
+// จะได้ "../../.." ยาวเหยียดซึ่งไม่ช่วยใคร ใช้พาธเต็มแทน
+const posix = (value) => value.split(path.sep).join("/");
+const rel = (target) => {
+  const value = posix(path.relative(REPO, target));
+  return value.startsWith("..") ? posix(target) : value;
+};
+try {
+  writeFileSync(failureFile, summarizeTapFailures(readFileSync(tapFile, "utf8"), {
+    mode,
+    filter: filter || "-",
+    files: files.length,
+    commit: (commit.stdout ?? "").trim() || "unknown",
+    database: mode === "pure" ? "-" : `${process.env.POSTGRES_HOST}/${process.env.POSTGRES_DB}`,
+    started: startedAt.toISOString(),
+    finished: finishedAt.toISOString(),
+    duration_ms: Date.now() - startedAt.getTime(),
+    exit: exitCode,
+    tap: rel(tapFile),
+  }));
+} catch (error) {
+  // อ่าน TAP ไม่ได้ = ลูกตายก่อนเขียนผลลงไฟล์ · ต้องบอกตรง ๆ ไม่ใช่ทิ้งไฟล์ของรอบก่อนไว้
+  // ให้คนก็อปส่งต่อโดยเข้าใจว่าเป็นผลของรอบนี้
+  writeFileSync(failureFile, [
+    "# BMS contract tests — สรุปเฉพาะที่แดง",
+    `mode=${mode}`,
+    `exit=${exitCode}`,
+    "",
+    `⚠️ อ่านไฟล์ TAP ไม่ได้: ${error instanceof Error ? error.message : String(error)}`,
+    "   แปลว่ารอบนี้ตายก่อนตัวรันเทสจะเขียนผลลงไฟล์ — ดูข้อความบนจอแทน",
+    "",
+  ].join("\n"));
+}
+
+console.log(
+  `[gate] ผลเต็ม ${rel(tapFile)}` +
+    ` · สรุปรอบนี้ ${rel(runFile)}` +
+    ` · ${exitCode === 0 ? "ไม่มีตัวแดง" : "ตัวที่แดง — ก็อปไฟล์นี้ส่งต่อได้"} ` +
+    rel(failureFile)
+);
 process.exit(exitCode);
