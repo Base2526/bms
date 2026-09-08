@@ -51,6 +51,14 @@ async function handleGET(req: NextRequest) {
       name: station.name,
       sortOrder: station.sortOrder,
     })),
+    // เวลาที่ server ตอบ — จอเอาไปเทียบกับนาฬิกาของตัวเองไม่ได้ (เครื่องหน้าร้านตั้งเวลาเพี้ยน
+    // ได้) แต่ใช้ยืนยันได้ว่า "คำตอบนี้เป็นของรอบไหน" ตอนไล่ปัญหาจากหน้าร้าน
+    generatedAt: new Date().toISOString(),
+  }, {
+    // ⚠️ คิวครัวต้องไม่ถูกแคชที่ชั้นไหนเลยระหว่างทาง — `force-dynamic` คุมแค่แคชของ Next เอง
+    // ไม่ได้ประกาศอะไรกับ reverse proxy ที่อยู่หน้าแอป (รีโปนี้มี Caddy) · คำตอบที่ถูกแคช
+    // แม้ 60 วินาทีก็คือครัวที่เห็นออร์เดอร์ช้าโดยไม่มีอะไรบอกว่าช้าเพราะอะไร
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
 

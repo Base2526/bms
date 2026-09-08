@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -20,6 +20,7 @@ import {
   groupKitchenTickets,
   kitchenBoardStationFilters,
   kitchenElapsedSeconds,
+  pickReferenceAt,
   countKitchenDishes,
   kitchenUrgency,
   slaForStationRef,
@@ -29,7 +30,24 @@ import {
   type KitchenSla,
   type KitchenStationFilter,
 } from "@/lib/bms/kitchenBoard";
+import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
+import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
+import { useWakeLock } from "@/app/hooks/useWakeLock";
+import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
+import {
+  alertPollIntervalMs,
+  describeAgo,
+  evaluateAlertRepeat,
+  feedHealth,
+  newAlertIds,
+  IDLE_ALERT_REPEAT,
+  type AlertKind,
+  type AlertRepeatState,
+} from "@/lib/pos/orderAlertSound";
 import styles from "./restaurant.module.css";
+
+/** เหตุการณ์ที่จอนี้เห็นจริง — หน้าตั้งค่าแสดงเฉพาะชุดนี้ ไม่ยื่นตัวเลือกที่ตั้งแล้วไม่มีผล */
+const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_NEW", "QR_PENDING", "FOOD_READY", "SLA_LATE"] as const;
 
 const TOKEN_KEY = "bms.pos.deviceToken";
 // จำ "ฉันยืนอยู่จอไหน / โต๊ะไหน" ไว้ข้ามการรีเฟรช — ต่อท้ายด้วย device token เพื่อผูกกับ
@@ -404,12 +422,21 @@ export default function RestaurantPosPage() {
   const [stationList, setStationList] = useState<Array<{ id: string; name: string; sortOrder: number }>>([]);
   const [groupMenu, setGroupMenu] = useState<KitchenBoardGroup | null>(null);
   const [stationSlas, setStationSlas] = useState<Record<string, KitchenSla>>({});
-  // เสียงเตือนต้องให้คนเปิดเอง — เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ และครัวบางร้าน
-  // เปิดเพลงอยู่แล้ว การเด้งเสียงเองจึงเป็นการรบกวน ไม่ใช่ความช่วยเหลือ
-  const [chimeOn, setChimeOn] = useState(false);
+  // เสียงเตือนของ "เครื่องนี้" — ตัวตั้งค่าอยู่ที่ useOrderAlerts (localStorage ต่ออุปกรณ์)
+  //
+  // ⚠️ ต่างจาก 9.53 สองข้อ: ค่าเริ่มต้นคือ **เปิด** (เดิมปิด ทำให้แท็บเล็ตเครื่องใหม่ทุกเครื่อง
+  // เงียบสนิทโดยไม่มีอะไรบอก) และเสียงที่ถูกเบราว์เซอร์บล็อกจะ **ขึ้นแถบเตือนบนจอ** แทนที่จะ
+  // เงียบไปเฉย ๆ · ร้านที่เคยกดปิดไว้ยังถูกเคารพผ่านคีย์เดิม
+  const alerts = useOrderAlerts();
+  const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
   const knownTicketIds = useRef<Set<string> | null>(null);
-  const chimeRef = useRef(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const knownReadyTicketIds = useRef<Set<string> | null>(null);
+  const knownQrSubmissionIds = useRef<Set<string> | null>(null);
+  // นาฬิกาย้ำเสียงของแต่ละกอง — เก็บใน ref เพราะมันเปลี่ยนทุกรอบ poll และไม่มีอะไรบนจอ
+  // ที่ต้องวาดใหม่ตามมัน (state จะทำให้จอครัวรีเรนเดอร์เปล่า ๆ ทุก 5 วินาที)
+  const ticketRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const qrRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const knownLateTicketIds = useRef<Set<string> | null>(null);
   const [activeArea, setActiveArea] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
@@ -791,8 +818,8 @@ export default function RestaurantPosPage() {
     finally { workingRef.current = false; setWorking(false); }
   }
   async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
-  async function loadFloor() { const data: Floor = await json("/api/pos/restaurant/floor"); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
-  async function loadWaitlist() { setWaitlist(await json("/api/pos/restaurant/waitlist")); }
+  async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
+  async function loadWaitlist(signal?: AbortSignal) { setWaitlist(await json("/api/pos/restaurant/waitlist", { signal })); }
   /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
   async function waitlistAction(action: string, extra: Record<string, unknown> = {}) {
     await run(async () => {
@@ -842,34 +869,6 @@ export default function RestaurantPosPage() {
       message.success(t("pos_restaurant.toast_seated"));
     });
   }
-  /**
-   * เสียงเตือนสังเคราะห์เอง ไม่โหลดไฟล์ — จอครัวออฟไลน์ได้และ CSP ของแอปไม่ต้องเปิดทางให้
-   * ไฟล์เสียงจากที่อื่น · สองโน้ตสั้นเพื่อให้แยกออกจากเสียงแจ้งเตือนของเครื่องอื่นในร้าน
-   */
-  function playKitchenChime() {
-    if (!chimeRef.current) return;
-    try {
-      const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
-      if (!Ctx) return;
-      const ctx = audioCtxRef.current ?? new Ctx();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") void ctx.resume();
-      [880, 1174].forEach((hz, index) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.frequency.value = hz;
-        osc.type = "sine";
-        const at = ctx.currentTime + index * 0.16;
-        gain.gain.setValueAtTime(0.0001, at);
-        gain.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.15);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(at);
-        osc.stop(at + 0.18);
-      });
-    } catch { /* จอที่เล่นเสียงไม่ได้ต้องไม่ทำให้คิวครัวพัง */ }
-  }
-
   // ⚠️ ปุ่มกรองสถานีต้องนับ **ประชากรเดียวกับที่กระดานแสดง** ไม่ใช่เฉพาะงานที่ยังไม่จบ
   //
   // เดิมปุ่มนับเฉพาะ NEW/PREPARING/READY แต่กระดานมีเลน "เสิร์ฟแล้ว" (ประวัติ 12 ชม.) อยู่ด้วย
@@ -902,10 +901,6 @@ export default function RestaurantPosPage() {
     const timer = window.setInterval(() => setBoardNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [screen]);
-  useEffect(() => { chimeRef.current = chimeOn; }, [chimeOn]);
-  useEffect(() => {
-    try { setChimeOn(window.localStorage.getItem("bms.pos.kitchenChime") === "1"); } catch { /* โหมดส่วนตัว */ }
-  }, []);
   // สถานีที่เลือกไว้หมดงานแล้ว = ตัวกรองค้างอยู่กับช่องว่าง แล้วครัวอ่านว่าไม่มีออร์เดอร์
   useEffect(() => {
     if (!stationFilter) return;
@@ -915,25 +910,51 @@ export default function RestaurantPosPage() {
     if (!stillThere) setStationFilter(null);
   }, [stationFilters, unassignedOpen.length, stationFilter]);
 
-  async function loadTickets() {
-    const data = await json("/api/pos/kitchen/tickets?limit=200");
+  async function loadTickets(signal?: AbortSignal) {
+    const data = await json("/api/pos/kitchen/tickets?limit=200", { signal });
     const rows: KitchenTicket[] = Array.isArray(data.tickets) ? data.tickets : [];
     setStationSlas(data.stationSlas && typeof data.stationSlas === "object" ? data.stationSlas : {});
     setStationList(Array.isArray(data.stations) ? data.stations : []);
     // ตั๋วที่ "เพิ่งเข้ามา" เทียบกับรอบก่อน ไม่ใช่ทุกใบที่สถานะ NEW — ไม่งั้นจะดังทุก 5 วินาที
-    // ตราบใดที่ยังมีงานค้าง · รอบแรกหลังเปิดจอถือเป็นการตั้งต้น ไม่ใช่ของใหม่
+    // ตราบใดที่ยังมีงานค้าง · รอบแรกหลังเปิดจอถือเป็นการตั้งต้น ไม่ใช่ของใหม่ (newAlertIds)
     const open = rows.filter((row) => row.status === "NEW");
-    const seen = knownTicketIds.current;
-    if (seen && open.some((row) => !seen.has(row.id))) playKitchenChime();
-    knownTicketIds.current = new Set(open.map((row) => row.id));
+    const openIds = open.map((row) => row.id);
+    if (newAlertIds(knownTicketIds.current, openIds).length > 0) alerts.notify("ORDER_NEW");
+    knownTicketIds.current = new Set(openIds);
+    // "อาหารพร้อมเสิร์ฟ" เป็นสัญญาณของ *คนเสิร์ฟ* ไม่ใช่ของครัว — คนละเสียงโดยตั้งใจ
+    // เพราะสองเหตุการณ์นี้เรียกคนละคนให้ทำคนละอย่าง
+    const readyIds = rows.filter((row) => row.status === "READY").map((row) => row.id);
+    if (newAlertIds(knownReadyTicketIds.current, readyIds).length > 0) alerts.notify("FOOD_READY");
+    knownReadyTicketIds.current = new Set(readyIds);
+    // ย้ำจนกว่าครัวจะกด "เริ่มทำ" — ตั๋วที่ถูกกดแล้วออกจากกอง NEW เอง นาฬิกาจึงหยุดเองด้วย
+    const repeat = evaluateAlertRepeat(ticketRepeatRef.current, {
+      pending: openIds.length > 0,
+      now: Date.now(),
+      repeatSeconds: alerts.settings.repeatSeconds,
+      maxRepeats: alerts.settings.maxRepeats,
+    });
+    ticketRepeatRef.current = repeat.state;
+    if (repeat.play) alerts.notify("ORDER_NEW");
     setTickets(rows);
   }
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
-  async function loadQrSubmissions() {
-    const data = await json("/api/pos/restaurant/qr-orders");
+  async function loadQrSubmissions(signal?: AbortSignal) {
+    const data = await json("/api/pos/restaurant/qr-orders", { signal });
     const rows: QrSubmission[] = Array.isArray(data.submissions) ? data.submissions : [];
+    // ลูกค้าที่โต๊ะกดสั่งแล้วรออยู่ — เดิมมีแต่ป้ายตัวเลข ซึ่งไม่มีใครเห็นถ้ากำลังก้มดูโต๊ะอื่น
+    const pendingIds = rows.filter((row) => row.status === "PENDING").map((row) => row.id);
+    if (newAlertIds(knownQrSubmissionIds.current, pendingIds).length > 0) alerts.notify("QR_PENDING");
+    knownQrSubmissionIds.current = new Set(pendingIds);
+    const repeat = evaluateAlertRepeat(qrRepeatRef.current, {
+      pending: pendingIds.length > 0,
+      now: Date.now(),
+      repeatSeconds: alerts.settings.repeatSeconds,
+      maxRepeats: alerts.settings.maxRepeats,
+    });
+    qrRepeatRef.current = repeat.state;
+    if (repeat.play) alerts.notify("QR_PENDING");
     setQrSubmissions(rows);
     setQrSelectedId((current) => current && rows.some((row) => row.id === current)
       ? current
@@ -1072,34 +1093,83 @@ export default function RestaurantPosPage() {
   useEffect(() => { if (menuOnlySoldOut && soldOutCount === 0) setMenuOnlySoldOut(false); }, [menuOnlySoldOut, soldOutCount]);
   // KDS/floor are operational screens, so stale data is more dangerous than a
   // small bounded poll. The API remains branch-scoped by the device token.
+  //
+  // ⚠️ ทั้งสี่รอบนี้ (คิว · ตั๋วครัว · ผังโต๊ะ · ออร์เดอร์ QR) เดินผ่าน `useLiveRefresh`
+  // ไม่ใช่ `setInterval` เปล่า ๆ เพราะ setInterval
+  // ตอบโจทย์จอหน้าร้านไม่ได้: เบราว์เซอร์หรี่ timer ของแท็บที่ถูกซ่อน (Chrome เหลือราว
+  // 1 ครั้ง/นาทีเมื่อซ่อนครบ 5 นาที · Android freeze ทั้งหน้าเมื่อจอดับ) และของเดิม
+  // **ไม่มี visibilitychange handler เลย** ครัวจึงหยิบแท็บเล็ตขึ้นมาแล้วยังต้องรอ tick ถัดไป
+  // ซึ่งเป็นรอบที่เพิ่งถูกหรี่มา — นี่คือที่มาของอาการ "ส่งครัวแล้วรอ 3-5 นาทีกว่าจะเด้ง"
+  const pageVisible = usePageVisible();
   // ป้ายจำนวนคิวอยู่บนแถบซ้าย (เห็นทุกจอ) ด้วยเหตุผลเดียวกับป้ายออร์เดอร์ QR — ดึงเฉพาะ
   // ตอนเปิดแท็บคิวอยู่ = ป้ายไม่มีวันขึ้นตอนพนักงานยืนหน้าผังโต๊ะ แล้วคนที่รออยู่หน้าร้าน
-  // ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น · เปิดแท็บอยู่ 10 วิ · จออื่น 30 วิ
-  useEffect(() => {
-    if (!token) return;
-    const timer = window.setInterval(
-      () => { void loadWaitlist().catch(() => {}); },
-      screen === "QUEUE" ? 10000 : 30000
-    );
-    return () => window.clearInterval(timer);
-  }, [token, screen]);
-  useEffect(() => {
-    if (!token || screen !== "KITCHEN") return;
-    const timer = window.setInterval(() => { void Promise.all([loadTickets(), loadFloor()]).catch(() => {}); }, 5000);
-    return () => window.clearInterval(timer);
-  }, [token, screen]);
-  // ⚠️ ป้ายจำนวน "ออร์เดอร์ QR รอรับ" อยู่บนแถบซ้ายเพื่อให้เห็นจากทุกจอ — ถ้าดึงข้อมูล
+  // ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น
+  useLiveRefresh({
+    enabled: Boolean(token),
+    intervalMs: alertPollIntervalMs({ focused: screen === "QUEUE", visible: pageVisible }),
+    onRefresh: (signal) => loadWaitlist(signal),
+  });
+  // ⚠️ ตั๋วครัว **ต้องดึงจากทุกจอ ไม่ใช่เฉพาะตอนเปิดแท็บครัว** — ของเดิมผูกไว้กับ
+  // `screen === "KITCHEN"` ผลคือสองอย่างที่ผิดพร้อมกัน:
+  //   · ป้ายเลขข้างเมนู "ครัว" (kitchenCooking + kitchenReady) ไม่มีวันขยับตอนยืนหน้าผังโต๊ะ
+  //   · ผังโต๊ะเองก็ไม่ refresh เพราะ loadFloor() ผูกอยู่ใน effect เดียวกัน → เครื่อง A
+  //     เปิดโต๊ะ เครื่อง B ที่ยืนหน้าผังไม่เห็นจนกว่าจะกดอะไรสักอย่าง
+  // เป็นกับดักเดียวกับที่โค้ดนี้เขียนคอมเมนต์เตือนไว้เองแล้วสำหรับป้าย QR และป้ายคิว
+  const ticketPollMs = alertPollIntervalMs({ focused: screen === "KITCHEN", visible: pageVisible });
+  const ticketFeed = useLiveRefresh({
+    enabled: Boolean(token),
+    intervalMs: ticketPollMs,
+    // hook เก็บ callback ไว้ใน ref จึงส่ง arrow ตรง ๆ ได้ — ไม่ต้อง memo และไม่ทำให้
+    // interval ถูกสร้างใหม่ทุก render (ซึ่งจะทำให้ไม่มีรอบไหนเดินครบเวลาเลย)
+    onRefresh: (signal) => loadTickets(signal),
+  });
+  // ⚠️ ผังโต๊ะแยกรอบออกจากตั๋วครัวโดยตั้งใจ — ของเดิมยิงสองคำขอพร้อมกันทุก 5 วินาที
+  // ซึ่งชนเพดาน 6 connection ต่อโดเมนของเบราว์เซอร์เร็วเป็นสองเท่าเมื่อฝั่ง server ช้า
+  // จอครัวไม่ต้องการผังโต๊ะใหม่ทุก 5 วินาที (ใช้แค่ป้ายจำนวนบนแถบซ้ายกับแถบสรุป)
+  useLiveRefresh({
+    enabled: Boolean(token),
+    intervalMs: alertPollIntervalMs({ focused: screen === "FLOOR", visible: pageVisible }),
+    onRefresh: (signal) => loadFloor(signal),
+  });
+  // ป้ายจำนวน "ออร์เดอร์ QR รอรับ" อยู่บนแถบซ้ายเพื่อให้เห็นจากทุกจอ — ถ้าดึงข้อมูล
   // เฉพาะตอนเปิดแท็บ QR อยู่ ป้ายจะไม่มีวันขึ้นเลยตอนพนักงานยืนอยู่หน้าผังโต๊ะ (ที่ยืนจริง)
   // แล้วลูกค้าที่สั่งผ่าน QR ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น = ป้ายไม่มีความหมาย
-  // เปิดแท็บอยู่ = 5 วิ (กำลังตัดสินใจรับ/ปฏิเสธ) · จออื่น = 20 วิ พอสำหรับป้าย
+  useLiveRefresh({
+    enabled: Boolean(token),
+    intervalMs: alertPollIntervalMs({ focused: screen === "QR", visible: pageVisible }),
+    onRefresh: (signal) => loadQrSubmissions(signal),
+  });
+  // จอครัวที่แขวนไว้ต้องไม่ดับ — จอที่ดับคือจุดที่เบราว์เซอร์เริ่มหรี่ timer ตั้งแต่แรก
+  // ขอเฉพาะตอนอยู่จอครัวจริง ๆ ไม่ใช่ทั้งแอป (แท็บเล็ตแคชเชียร์ที่วางเฉย ๆ ไม่ต้องกินแบต)
+  const wakeLock = useWakeLock(screen === "KITCHEN");
+  // "จอนี้ยังได้ข้อมูลอยู่ไหม" — คิดจากเวลาที่โหลดสำเร็จครั้งล่าสุด ไม่ใช่จากนาฬิกาของเครื่อง
+  const ticketHealth = feedHealth(ticketFeed.lastOkAt, boardNow, ticketPollMs);
+  const ticketAgo = describeAgo(ticketFeed.lastOkAt, boardNow);
+  const agoLabel = ticketAgo === null ? ""
+    : ticketAgo.unit === "seconds"
+      ? t("pos_alerts.ago_seconds", { seconds: ticketAgo.value })
+      : t("pos_alerts.ago_minutes", { minutes: ticketAgo.value });
+  // เขียนคีย์เต็มทีละตัว ไม่ประกอบด้วย template — คีย์ที่ประกอบตอนรัน i18n-keys-contract
+  // ตรวจไม่ได้ แล้ววันที่คีย์หายจะไปโผล่เป็นชื่อ key ดิบบนจอครัวของร้านจริง
+  const feedLabel = ticketAgo === null ? t("pos_alerts.feed_never")
+    : ticketHealth === "STALE" ? t("pos_alerts.feed_stale", { ago: agoLabel })
+    : ticketHealth === "SLOW" ? t("pos_alerts.feed_slow", { ago: agoLabel })
+    : t("pos_alerts.feed_live", { ago: agoLabel });
+  // ตั๋วที่เลยเกณฑ์เวลาของสถานีตัวเอง — ดังตอน "ข้ามเส้น" ครั้งเดียวต่อใบ ไม่ใช่ดังซ้ำ
+  // ทุกวินาทีหลังจากนั้น · เสียงคนละตัวกับตั๋วใหม่โดยตั้งใจ ถ้าใช้เสียงเดียวกัน ครัวจะ
+  // แยกไม่ออกว่า "มีของใหม่" กับ "ของเก่ากำลังจะสาย" ซึ่งต้องทำคนละอย่าง
   useEffect(() => {
-    if (!token) return;
-    const timer = window.setInterval(
-      () => { void loadQrSubmissions().catch(() => {}); },
-      screen === "QR" ? 5000 : 20000
-    );
-    return () => window.clearInterval(timer);
-  }, [token, screen]);
+    if (screen !== "KITCHEN") return;
+    const late = tickets
+      .filter((ticket) => ticket.status === "NEW" || ticket.status === "PREPARING")
+      .filter((ticket) => kitchenUrgency(
+        kitchenElapsedSeconds(pickReferenceAt(ticket.status, ticket.createdAt), boardNow),
+        slaForStationRef(ticket, stationSlas)
+      ) === "late")
+      .map((ticket) => ticket.id);
+    if (newAlertIds(knownLateTicketIds.current, late).length > 0) alerts.notify("SLA_LATE");
+    knownLateTicketIds.current = new Set(late);
+  }, [screen, tickets, stationSlas, boardNow, alerts]);
 
   /** เปิดบิลที่ระบุมาแล้ว — ใช้เมื่อคนกดเลือก "ใบไหน" ไปแล้ว (แผงบิล/แถบบิล/กล่องเลือกบิล) */
   async function openCheckById(table: DiningTable, checkId: string) {
@@ -1748,6 +1818,11 @@ export default function RestaurantPosPage() {
       </header>
       {!session?.shift && <Alert type="warning" showIcon message={t("pos_restaurant.no_shift_blocker")} />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
+      {/* ⚠️ เสียงที่ถูกบล็อกต้อง "เห็นได้" — ของเดิมเงียบไปเฉย ๆ แล้วครัวอ่านว่าไม่มีออร์เดอร์เข้า
+          เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ ซึ่งเกิดทุกครั้งที่รีเฟรชหน้า/แท็บเล็ตรีบูต */}
+      {alerts.blocked && <Alert type="warning" showIcon
+        message={t("pos_alerts.blocked_banner")}
+        action={<Button size="small" onClick={() => alerts.preview(alerts.settings.tones.ORDER_NEW)}>{t("pos_alerts.blocked_action")}</Button>} />}
 
       {/* กระดานคิว — สองรายการในจอเดียว: คนที่ยังรอ (เรียงตามลำดับที่ควรได้โต๊ะ) และ
           รายการที่ปิดไปแล้ววันนี้ · "รอมากี่นาที" เป็นตัวเลขที่ตัดสินว่าลูกค้าจะอยู่ต่อหรือเดินออก
@@ -2197,22 +2272,30 @@ export default function RestaurantPosPage() {
               {t("pos_restaurant.no_station_count", { count: countKitchenDishes(unassignedOpen) })}
             </button>}
             <div className={styles.kitchenBarEnd}>
-              <span className={styles.kitchenLive}><span className={styles.kitchenLiveDot} aria-hidden="true" />{t("pos_restaurant.auto_updated_at", { time: timeOf(new Date(boardNow).toISOString(), uiLocale) })}</span>
-              <button type="button" className={`${styles.btn} ${styles.btnIcon} ${chimeOn ? styles.kitchenChimeOn : ""}`}
-                aria-pressed={chimeOn}
+              {/* ⚠️ ป้ายนี้เคยแสดง "นาฬิกาของเครื่อง" (boardNow ที่เดินทุกวินาที) จึงเดินสวย
+                  ตลอดแม้เน็ตตายไปแล้วสิบนาที — จอครัวที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอครัวที่
+                  ไม่มีออร์เดอร์เลย ซึ่งเป็นความล้มเหลวที่แพงที่สุดของเรื่องนี้ทั้งเรื่อง
+                  ตอนนี้อ่านจาก "เวลาที่โหลดสำเร็จครั้งล่าสุด" เท่านั้น */}
+              <span className={`${styles.kitchenLive} ${ticketHealth === "STALE" ? styles.kitchenLiveStale : ticketHealth === "SLOW" ? styles.kitchenLiveSlow : ""}`}
+                title={wakeLock.active ? t("pos_alerts.screen_awake") : undefined}>
+                <span className={styles.kitchenLiveDot} aria-hidden="true" />{feedLabel}
+              </span>
+              <button type="button" className={`${styles.btn} ${styles.btnIcon} ${alerts.settings.enabled ? styles.kitchenChimeOn : ""}`}
+                aria-pressed={alerts.settings.enabled}
                 onClick={() => {
-                  const next = !chimeOn;
-                  setChimeOn(next);
-                  chimeRef.current = next;
-                  try { window.localStorage.setItem("bms.pos.kitchenChime", next ? "1" : "0"); } catch { /* โหมดส่วนตัว */ }
+                  const next = !alerts.settings.enabled;
+                  alerts.update({ enabled: next });
                   // เล่นทันทีตอนเปิด: เป็นทั้งการทดสอบลำโพงและการปลดล็อกเสียงของเบราว์เซอร์
                   // ซึ่งต้องเกิดจากการแตะของคนเท่านั้น
-                  if (next) playKitchenChime();
+                  if (next) alerts.preview(alerts.settings.tones.ORDER_NEW);
                 }}
-                title={chimeOn ? t("pos_restaurant.chime_off") : t("pos_restaurant.chime_on")}
-                aria-label={chimeOn ? t("pos_restaurant.chime_off") : t("pos_restaurant.chime_on")}>
-                {chimeOn ? <SoundOutlined /> : <AudioMutedOutlined />}
+                title={alerts.settings.enabled ? t("pos_restaurant.chime_off") : t("pos_restaurant.chime_on")}
+                aria-label={alerts.settings.enabled ? t("pos_restaurant.chime_off") : t("pos_restaurant.chime_on")}>
+                {alerts.settings.enabled ? <SoundOutlined /> : <AudioMutedOutlined />}
               </button>
+              <button type="button" className={`${styles.btn} ${styles.btnIcon}`}
+                onClick={() => setAlertSettingsOpen(true)}
+                title={t("pos_alerts.settings")} aria-label={t("pos_alerts.settings")}><SettingOutlined /></button>
               <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadTickets()} title={t("pos_restaurant.queue_refresh")} aria-label={t("pos_restaurant.queue_refresh")}><ReloadOutlined /></button>
             </div>
           </div>
@@ -2588,5 +2671,7 @@ export default function RestaurantPosPage() {
     </Modal>
     <Modal title={t("pos_restaurant.move_table")} open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText={t("pos_restaurant.move")} getContainer={modalContainer}><div className={styles.modalGrid}><label>{t("pos_restaurant.destination_table")}<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
     <Modal title={t("pos_restaurant.cancel_check_title", { table: check?.tableName ?? "" })} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText={t("pos_restaurant.confirm_cancel")} okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message={t("pos_restaurant.cancel_requires_approval")} description={t("pos_restaurant.cancel_approval_description")} />}<label>{t("pos_restaurant.cancel_reason_label")}<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder={t("pos_restaurant.cancel_reason_example")} /></label>{cancelNeedsApproval && <><label>{t("pos_restaurant.approver")}<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">{t("pos_restaurant.approver_select")}</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>{t("pos_restaurant.approver_pin")}<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message={t("pos_restaurant.no_approver")} description={t("pos_restaurant.no_approver_description")} />}</>}</div></Modal>
+    <OrderAlertSettingsModal open={alertSettingsOpen} onClose={() => setAlertSettingsOpen(false)}
+      alerts={alerts} kinds={RESTAURANT_ALERT_KINDS} />
   </main>;
 }

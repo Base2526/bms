@@ -367,7 +367,11 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   assert.match(page, /\/api\/pos\/kitchen\/tickets/);
   assert.match(page, /appendSplitPaymentRow/);
   assert.match(page, /payments\.map\(\(payment\) =>/);
-  assert.match(page, /setInterval[\s\S]*loadTickets\(\)[\s\S]*5000/);
+  // ⚠️ เดิม assert รูปทรง `setInterval(... loadTickets() ... 5000)` ตรง ๆ ซึ่ง **ตรึงบั๊กไว้**:
+  // รอบนั้นวิ่งเฉพาะตอนเปิดแท็บครัวอยู่ ป้ายจำนวนบนแถบซ้ายจึงไม่มีวันขยับตอนยืนหน้าผังโต๊ะ
+  // และ setInterval เปล่า ๆ ก็โดนเบราว์เซอร์หรี่ตอนแท็บถูกซ่อน (ที่มาของ "รอ 3-5 นาที")
+  // ตอนนี้ตรึง "การันตี" แทนรูปทรง: ต้องมีรอบอัตโนมัติของตั๋วครัวที่ไม่ผูกกับจอที่เปิดอยู่
+  assert.match(page, /useLiveRefresh\(\{[\s\S]{0,400}?loadTickets\(signal\)/);
   // หน้าจอ POS ต้องอ่านผังเดียวกับ editor ไม่ใช่นำโต๊ะกลับไปเรียงด้วย CSS grid
   for (const field of ["shape", "positionX", "positionY"]) assert.match(page, new RegExp(field));
   assert.match(page, /transform: `translate\(\$\{table\.positionX\}px, \$\{table\.positionY\}px\)`/);
@@ -1200,13 +1204,14 @@ test("เมนูที่ตั้งว่าหมดวันนี้ต�
  */
 test("ป้ายออร์เดอร์ QR รอรับต้องอัปเดตจากทุกจอ ไม่ใช่เฉพาะตอนเปิดแท็บ QR", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  const start = page.indexOf("loadQrSubmissions().catch");
+  const start = page.indexOf("loadQrSubmissions(signal)");
   assert.ok(start > 0, "ต้องมี poll ของออร์เดอร์ QR");
-  const effect = page.slice(page.lastIndexOf("useEffect(", start), page.indexOf("}, [token, screen]);", start));
-  assert.doesNotMatch(effect, /screen !== "QR"\) return/,
-    "ห้าม return ออกเมื่อไม่ได้อยู่แท็บ QR — ป้ายบนแถบซ้ายจะไม่มีวันขึ้น");
-  assert.match(effect, /screen === "QR" \? 5000 : \d+/,
-    "เปิดแท็บอยู่ต้องถี่กว่า แต่จออื่นต้องยังดึงอยู่");
+  const hook = page.slice(page.lastIndexOf("useLiveRefresh({", start), start);
+  assert.doesNotMatch(hook, /screen !== "QR"/,
+    "ห้ามหยุดดึงเมื่อไม่ได้อยู่แท็บ QR — ป้ายบนแถบซ้ายจะไม่มีวันขึ้น");
+  // เปิดแท็บอยู่ต้องถี่กว่า แต่จออื่นต้องยังดึงอยู่ (alertPollIntervalMs บังคับทั้งสองข้อ
+  // และมีเทสของตัวเองที่ scripts/order-alert-sound-contract.test.mts)
+  assert.match(hook, /alertPollIntervalMs\(\{ focused: screen === "QR"/);
   assert.match(page, /badge: pendingQrSubmissions\.length/);
 });
 

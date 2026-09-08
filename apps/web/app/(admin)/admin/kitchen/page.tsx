@@ -2,8 +2,8 @@
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Empty, Segmented, Space, Spin, Tag, message } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
-import { useEffect, useState } from "react";
+import { ReloadOutlined, SettingOutlined, SoundOutlined, AudioMutedOutlined } from "@ant-design/icons";
+import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import {
@@ -11,6 +11,7 @@ import {
   groupKitchenTickets,
   kitchenBoardStationFilters,
   kitchenElapsedSeconds,
+  pickReferenceAt,
   kitchenUrgency,
   slaForStationRef,
   ticketMatchesStation,
@@ -18,7 +19,23 @@ import {
   type KitchenSla,
   type KitchenStationFilter,
 } from "@/lib/bms/kitchenBoard";
+import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
+import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
+import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
+import {
+  alertPollIntervalMs,
+  describeAgo,
+  evaluateAlertRepeat,
+  feedHealth,
+  newAlertIds,
+  IDLE_ALERT_REPEAT,
+  type AlertKind,
+  type AlertRepeatState,
+} from "@/lib/pos/orderAlertSound";
 import styles from "./page.module.css";
+
+/** จอนี้ไม่มีคิว QR และไม่มีคิวคำขอจากแชท — ไม่ยื่นตัวเลือกที่ตั้งแล้วไม่มีผลบนหน้านี้ */
+const KITCHEN_ALERT_KINDS: readonly AlertKind[] = ["ORDER_NEW", "FOOD_READY", "SLA_LATE"] as const;
 
 const Q_TICKETS = gql`
   query KitchenBoard($status: String) {
@@ -43,7 +60,7 @@ const M_STATUS = gql`
     bmsUpdateKitchenTicketsStatus(ids: $ids, status: $status) { id status updatedAt }
   }
 `;
-type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
+type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string; updatedAt?: string | null };
 const LANES = [
   { status: "NEW", color: "#c65b35", next: "PREPARING" },
   { status: "PREPARING", color: "#d89b24", next: "READY" },
@@ -59,7 +76,11 @@ export default function KitchenPage() {
   // เก็บ "คีย์" ไม่ใช่ชื่อ — ชื่อเปลี่ยนได้แล้ว (9.54) ถ้าผูกตัวกรองไว้กับชื่อ การแก้ชื่อ
   // สถานีระหว่างกะจะทำให้จอที่กรองอยู่กลายเป็นจอว่างโดยไม่มีใครกดอะไร
   const [stationKey, setStationKey] = useState("ALL");
-  const tickets = useQuery(Q_TICKETS, { variables: { status: null }, pollInterval: 10000, fetchPolicy: "cache-and-network" });
+  // ⚠️ ไม่ใช้ `pollInterval` ของ Apollo แล้ว — มันเป็น timer ธรรมดาที่โดนเบราว์เซอร์หรี่
+  // ตอนแท็บถูกซ่อน (Chrome เหลือราว 1 ครั้ง/นาทีเมื่อซ่อนครบ 5 นาที) และไม่มีการโหลดทันที
+  // ตอนกลับมามองเห็น · `useLiveRefresh` ทำทั้งสองอย่าง และให้ "เวลาที่โหลดสำเร็จครั้งล่าสุด"
+  // มาใช้เป็นป้ายสถานะสายข้อมูลด้วย
+  const tickets = useQuery(Q_TICKETS, { variables: { status: null }, fetchPolicy: "cache-and-network" });
   const [move, moveState] = useMutation(M_STATUS);
   const slas = useQuery(Q_SLAS, { fetchPolicy: "cache-and-network", errorPolicy: "all" });
   const stationsQuery = useQuery(Q_STATIONS, { fetchPolicy: "cache-and-network", errorPolicy: "all" });
@@ -69,6 +90,62 @@ export default function KitchenPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+  // เสียงเตือนของจอนี้ — จอครัวหลังบ้านเคย **ไม่มีเสียงเลย** ทั้งที่ทำงานเดียวกับจอครัว
+  // ที่เครื่องขาย · ใช้โมดูลตัวเดียวกันเพื่อไม่ให้สองจอมีพฤติกรรมเสียงคนละชุด
+  const alerts = useOrderAlerts();
+  const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
+  const knownNewIds = useRef<Set<string> | null>(null);
+  const knownReadyIds = useRef<Set<string> | null>(null);
+  const knownLateIds = useRef<Set<string> | null>(null);
+  const repeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const pageVisible = usePageVisible();
+  const pollMs = alertPollIntervalMs({ focused: true, visible: pageVisible });
+  const feed = useLiveRefresh({
+    enabled: true,
+    intervalMs: pollMs,
+    // ตรวจของใหม่ **ในรอบ poll เอง** ไม่ใช่ใน useEffect ที่ผูกกับ tickets.data —
+    // Apollo คืน object เดิมเมื่อข้อมูลไม่เปลี่ยน effect จึงไม่ทำงาน แล้วการย้ำเสียง
+    // (ซึ่งต้องเดินต่อแม้ข้อมูลเท่าเดิม) จะไม่มีวันเกิดขึ้น
+    // Apollo `refetch()` รับ AbortSignal ไม่ได้ — ยกเลิกคำขอจริงจึงทำไม่ได้ที่นี่
+    // แต่ตัวจับเวลาใน useLiveRefresh ยังปลดด่านกันรอบซ้อนให้ จอจึงไม่ค้างถาวร
+    onRefresh: async () => {
+      const result = await tickets.refetch();
+      const fresh: Ticket[] = result.data?.bmsKitchenTickets ?? [];
+      const newIds = fresh.filter((row) => row.status === "NEW").map((row) => row.id);
+      if (newAlertIds(knownNewIds.current, newIds).length > 0) alerts.notify("ORDER_NEW");
+      knownNewIds.current = new Set(newIds);
+      const readyIds = fresh.filter((row) => row.status === "READY").map((row) => row.id);
+      if (newAlertIds(knownReadyIds.current, readyIds).length > 0) alerts.notify("FOOD_READY");
+      knownReadyIds.current = new Set(readyIds);
+      const repeat = evaluateAlertRepeat(repeatRef.current, {
+        pending: newIds.length > 0,
+        now: Date.now(),
+        repeatSeconds: alerts.settings.repeatSeconds,
+        maxRepeats: alerts.settings.maxRepeats,
+      });
+      repeatRef.current = repeat.state;
+      if (repeat.play) alerts.notify("ORDER_NEW");
+    },
+  });
+  // ตั๋วที่เพิ่งข้ามเส้นเวลาของสถานีตัวเอง — ดังครั้งเดียวต่อใบ ไม่ใช่ทุกวินาทีหลังจากนั้น
+  useEffect(() => {
+    const fresh: Ticket[] = tickets.data?.bmsKitchenTickets ?? [];
+    const map: Record<string, KitchenSla> = {};
+    for (const row of (slas.data?.bmsKitchenStationSlas ?? []) as Array<{ station: string; stationId: string | null; warnMinutes: number; lateMinutes: number }>) {
+      const sla = { warnMinutes: row.warnMinutes, lateMinutes: row.lateMinutes };
+      map[row.station] = sla;
+      if (row.stationId) map[row.stationId] = sla;
+    }
+    const late = fresh
+      .filter((row) => row.status === "NEW" || row.status === "PREPARING")
+      .filter((row) => kitchenUrgency(
+        kitchenElapsedSeconds(pickReferenceAt(row.status, row.createdAt, row.updatedAt), now),
+        slaForStationRef(row, map)
+      ) === "late")
+      .map((row) => row.id);
+    if (newAlertIds(knownLateIds.current, late).length > 0) alerts.notify("SLA_LATE");
+    knownLateIds.current = new Set(late);
+  }, [tickets.data, slas.data, now, alerts]);
   if (!permsLoading && !canView) return <Alert closable type="error" showIcon message={t("admin_kitchen.no_permission")} />;
 
   const rows: Ticket[] = tickets.data?.bmsKitchenTickets ?? [];
@@ -97,6 +174,17 @@ export default function KitchenPage() {
     rows.filter((row) => ticketMatchesStation(row, filter)).reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
 
   const allGroups = groupKitchenTickets(visible);
+  const health = feedHealth(feed.lastOkAt, now, pollMs);
+  const ago = describeAgo(feed.lastOkAt, now);
+  const agoLabel = ago === null ? ""
+    : ago.unit === "seconds" ? t("pos_alerts.ago_seconds", { seconds: ago.value })
+    : t("pos_alerts.ago_minutes", { minutes: ago.value });
+  // คีย์เต็มทีละตัว ไม่ประกอบด้วย template — i18n-keys-contract ตรวจคีย์ที่ประกอบตอนรันไม่ได้
+  const feedLabel = ago === null ? t("pos_alerts.feed_never")
+    : health === "STALE" ? t("pos_alerts.feed_stale", { ago: agoLabel })
+    : health === "SLOW" ? t("pos_alerts.feed_slow", { ago: agoLabel })
+    : t("pos_alerts.feed_live", { ago: agoLabel });
+  const feedTone = health === "STALE" ? "red" : health === "SLOW" ? "orange" : "green";
 
   async function update(ids: string[], status: string) {
     try {
@@ -109,6 +197,8 @@ export default function KitchenPage() {
   return <main className={styles.page}>
     <section className={styles.hero}><h1>{t("admin_kitchen.title")}</h1><p>{t("admin_kitchen.subtitle")}</p></section>
     {!canMove && <Alert closable type="info" showIcon message={t("admin_kitchen.read_only")} />}
+    {alerts.blocked && <Alert closable type="warning" showIcon message={t("pos_alerts.blocked_banner")}
+      action={<Button size="small" onClick={() => alerts.preview(alerts.settings.tones.ORDER_NEW)}>{t("pos_alerts.blocked_action")}</Button>} />}
     <Space wrap style={{ justifyContent: "space-between" }}>
       <Segmented
         value={activeKey}
@@ -129,7 +219,25 @@ export default function KitchenPage() {
             : []),
         ]}
       />
-      <Button icon={<ReloadOutlined />} onClick={() => tickets.refetch()} loading={tickets.loading}>{t("admin_kitchen.refresh")}</Button>
+      <Space wrap>
+        {/* ⚠️ ป้ายนี้อ่านจาก "เวลาที่โหลดสำเร็จครั้งล่าสุด" ไม่ใช่นาฬิกาของเครื่อง —
+            จอครัวที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอครัวที่ไม่มีออร์เดอร์เลย */}
+        <Tag color={feedTone}>{feedLabel}</Tag>
+        <Button
+          icon={alerts.settings.enabled ? <SoundOutlined /> : <AudioMutedOutlined />}
+          type={alerts.settings.enabled ? "primary" : "default"}
+          aria-pressed={alerts.settings.enabled}
+          onClick={() => {
+            const next = !alerts.settings.enabled;
+            alerts.update({ enabled: next });
+            // กดเปิดคือ user gesture — เป็นทั้งการทดสอบลำโพงและการปลดล็อกเสียงของเบราว์เซอร์
+            if (next) alerts.preview(alerts.settings.tones.ORDER_NEW);
+          }}
+          title={t("pos_alerts.enabled")} aria-label={t("pos_alerts.enabled")} />
+        <Button icon={<SettingOutlined />} onClick={() => setAlertSettingsOpen(true)}
+          title={t("pos_alerts.settings")} aria-label={t("pos_alerts.settings")} />
+        <Button icon={<ReloadOutlined />} onClick={() => feed.refreshNow()} loading={tickets.loading}>{t("admin_kitchen.refresh")}</Button>
+      </Space>
     </Space>
     {tickets.error && <Alert closable type="error" showIcon message={tickets.error.message} />}
     <Spin spinning={tickets.loading || moveState.loading}>
@@ -173,5 +281,7 @@ export default function KitchenPage() {
         })}
       </div>
     </Spin>
+    <OrderAlertSettingsModal open={alertSettingsOpen} onClose={() => setAlertSettingsOpen(false)}
+      alerts={alerts} kinds={KITCHEN_ALERT_KINDS} />
   </main>;
 }

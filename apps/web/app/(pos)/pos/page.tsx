@@ -12,6 +12,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
+import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
+import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
+import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
+import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
 import {
   applyPromotion,
   canonicalPriceTiers,
@@ -60,6 +64,8 @@ import {
  * สลับเฉพาะคอลัมน์ซ้าย — คอลัมน์ยอดเงิน/ปุ่มชำระอยู่ขวาตลอด เพราะคิวหน้าร้าน
  * ซ้อนกันได้: คนแรกยังจ่ายไม่จบ คนถัดไปยื่นบิลมาขอคืนของ
  */
+/** จอค้าปลีกเห็นเฉพาะออร์เดอร์ออนไลน์/แชทที่รอคนกดรับ — ไม่มีตั๋วครัวและไม่มีคิว QR ที่นี่ */
+const POS_ALERT_KINDS: readonly AlertKind[] = ["CHAT_REQUEST"] as const;
 const POS_TABS = [
   { key: "sell", label: "ขาย" },
   { key: "incoming", label: "ออร์เดอร์เข้า" },
@@ -1264,6 +1270,15 @@ export default function PosPage() {
   const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
+  // เสียง/รอบอัตโนมัติของ "ออร์เดอร์เข้า" — ดูเหตุผลที่ useLiveRefresh ด้านล่าง
+  // เปิดใช้เฉพาะร้านอาหาร — จอค้าปลีกของร้านทั่วไปไม่มีเหตุการณ์ไหนให้ดัง การสร้าง
+  // AudioContext ทิ้งไว้จึงเป็นการแตะเครื่องเสียงของแท็บเล็ตโดยไม่ได้อะไรกลับมา
+  const alerts = useOrderAlerts(session?.businessArchetype === "restaurant");
+  const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
+  const knownIncomingIds = useRef<Set<string> | null>(null);
+  const incomingRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const posPageVisible = usePageVisible();
+  const incomingWaitingCount = incomingOrders.filter((row) => row.status === "PAID").length;
   const visiblePosTabs = session?.businessArchetype === "restaurant"
     ? POS_TABS
     : POS_TABS.filter((item) => item.key !== "incoming");
@@ -2357,20 +2372,45 @@ export default function PosPage() {
   // ตะกร้าที่พักไม่จองสต็อก จึงไม่มีอะไรต้องคืนตอนทิ้ง และของอาจหมดตอนเรียกกลับ
   // ซึ่ง createOrder จะปฏิเสธเองด้วย INSUFFICIENT — จอไม่ต้องเดาแทน
 
-  async function refreshIncomingOrders() {
+  /**
+   * `silent` = รอบอัตโนมัติเบื้องหลัง — ไม่หมุน spinner และไม่เขียนทับข้อความที่คนกำลังอ่าน
+   * รอบเบื้องหลังที่ล้มแล้วขึ้น error ทุก 15 วินาทีคือเสียงรบกวนที่สอนให้คนเลิกอ่าน notice
+   */
+  async function refreshIncomingOrders(silent = false, signal?: AbortSignal) {
     if (!token) return;
-    setIncomingLoading(true);
+    if (!silent) setIncomingLoading(true);
     try {
-      const res = await fetch("/api/pos/restaurant/incoming", { headers: authHeaders, cache: "no-store" });
+      const res = await fetch("/api/pos/restaurant/incoming", { headers: authHeaders, cache: "no-store", signal });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      setIncomingOrders(Array.isArray(data.orders) ? data.orders : []);
+      const orders: IncomingRestaurantOrder[] = Array.isArray(data.orders) ? data.orders : [];
+      // ออร์เดอร์ที่รอ "คนกดรับ" คือ PAID — PACKING คือรับแล้วและครัวมีตั๋วไปแล้ว
+      // เสียงจึงผูกกับงานที่ยังไม่มีใครทำ ไม่ใช่กับจำนวนออร์เดอร์ทั้งหมดบนจอ
+      const waiting = orders.filter((row) => row.status === "PAID").map((row) => row.id);
+      if (newAlertIds(knownIncomingIds.current, waiting).length > 0) alerts.notify("CHAT_REQUEST");
+      knownIncomingIds.current = new Set(waiting);
+      const repeat = evaluateAlertRepeat(incomingRepeatRef.current, {
+        pending: waiting.length > 0,
+        now: Date.now(),
+        repeatSeconds: alerts.settings.repeatSeconds,
+        maxRepeats: alerts.settings.maxRepeats,
+      });
+      incomingRepeatRef.current = repeat.state;
+      if (repeat.play) alerts.notify("CHAT_REQUEST");
+      setIncomingOrders(orders);
       setIncomingRefunds(Array.isArray(data.refunds) ? data.refunds : []);
       setRestaurantOrdersPaused(data?.config?.paused === true);
     } catch (error: any) {
-      setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
+      if (!silent) {
+        setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
+        return;
+      }
+      // โยนต่อเฉพาะรอบอัตโนมัติ — hook ต้องรู้ว่ารอบนั้นล้มเพื่อขึ้นป้าย "ขาดการเชื่อมต่อ"
+      // ⚠️ ห้ามโยนในรอบที่คนกด: `mutateIncomingOrder` เรียกตัวนี้ต่อท้ายในบล็อก try ของมัน
+      // รอบรีเฟรชที่ล้มจะไปเขียนทับ "รับออร์เดอร์แล้ว" เป็น "ทำรายการไม่สำเร็จ" ทั้งที่สำเร็จไปแล้ว
+      throw error;
     } finally {
-      setIncomingLoading(false);
+      if (!silent) setIncomingLoading(false);
     }
   }
 
@@ -3710,12 +3750,14 @@ export default function PosPage() {
     }
   }, [session, tab]);
 
-  // Incoming delivery is live operational work; refresh only while this tab is visible.
-  useEffect(() => {
-    if (tab !== "incoming" || !token || !session?.shift) return;
-    const timer = window.setInterval(() => { void refreshIncomingOrders(); }, 15000);
-    return () => window.clearInterval(timer);
-  }, [token, tab, session?.shift?.id]);
+  // ⚠️ ของเดิมดึงเฉพาะตอนเปิดแท็บ "ออร์เดอร์เข้า" อยู่ — แคชเชียร์ที่ยืนขายหน้าเคาน์เตอร์
+  // (ที่ยืนจริง) จึงไม่มีทางรู้เลยว่ามีออร์เดอร์ออนไลน์เข้ามา จนกว่าจะเผลอกดเข้าแท็บนั้น
+  // และไม่มีป้ายนับให้เห็นด้วย · ตอนนี้ดึงทุกแท็บ (ช้าลงเมื่อไม่ได้เปิดอยู่) พร้อมป้าย+เสียง
+  useLiveRefresh({
+    enabled: Boolean(token) && Boolean(session?.shift) && session?.businessArchetype === "restaurant",
+    intervalMs: alertPollIntervalMs({ focused: tab === "incoming", visible: posPageVisible }),
+    onRefresh: (signal) => refreshIncomingOrders(true, signal),
+  });
 
   useEffect(() => {
     if (tab !== "sell" || !token || !session?.shift) return;
@@ -5958,6 +6000,11 @@ export default function PosPage() {
           >
             <span className="pos-rail-icon" aria-hidden="true"><PosTabIcon tab={item.key} /></span>
             <span>{item.label}</span>
+            {item.key === "incoming" && incomingWaitingCount > 0 && (
+              <span className="pos-rail-count pos-rail-count--pending">
+                {incomingWaitingCount}
+              </span>
+            )}
             {item.key === "returns" && shiftReturnSummary.pendingCount > 0 && (
               <span className="pos-rail-count pos-rail-count--pending">
                 ค้าง {shiftReturnSummary.pendingCount}
@@ -6084,6 +6131,13 @@ export default function PosPage() {
       {notice && (
         <div className={`pos-note ${notice.type === "ok" ? "pos-note--ok" : "pos-note--err"}`}>
           {notice.text}
+        </div>
+      )}
+      {/* เสียงที่ถูกเบราว์เซอร์บล็อกต้องเห็นได้ — ไม่งั้นแคชเชียร์อ่านว่า "ไม่มีออร์เดอร์เข้า"
+          ทั้งที่จริงคือ "มีแต่ไม่มีเสียง" · เกิดทุกครั้งที่รีเฟรชหน้าหรือแท็บเล็ตรีบูต */}
+      {alerts.blocked && session?.businessArchetype === "restaurant" && (
+        <div className="pos-note pos-note--err" role="status">
+          เสียงเตือนออร์เดอร์เข้าถูกบล็อกอยู่ · แตะที่หน้าจอหนึ่งครั้งเพื่อเปิดเสียง
         </div>
       )}
       {hasPendingOrderWrite && (
@@ -7506,6 +7560,17 @@ export default function PosPage() {
 
       {tab === "settings" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {session?.businessArchetype === "restaurant" && (
+            <div>
+              <div style={{ fontWeight: 500, marginBottom: 8 }}>เสียงเตือนออร์เดอร์เข้า</div>
+              <div style={{ fontSize: 13, color: "#555", marginBottom: 8 }}>
+                ตั้งค่าเฉพาะเครื่องนี้ — เครื่องขายกับจอครัวตั้งคนละแบบได้
+              </div>
+              <button type="button" className="pos-btn" onClick={() => setAlertSettingsOpen(true)}>
+                {alerts.settings.enabled ? "เสียงเตือน: เปิด · ตั้งค่า" : "เสียงเตือน: ปิด · ตั้งค่า"}
+              </button>
+            </div>
+          )}
           <div>
             <div style={{ fontWeight: 500, marginBottom: 8 }}>ผู้ขายที่เครื่องนี้</div>
             {/* ช่องจริงอยู่แถบบนช่องเดียว — มีสองที่แล้วสับสนว่าต้องกรอกอันไหน */}
@@ -9830,6 +9895,8 @@ export default function PosPage() {
           </div>
         </div>
       )}
+      <OrderAlertSettingsModal open={alertSettingsOpen} onClose={() => setAlertSettingsOpen(false)}
+        alerts={alerts} kinds={POS_ALERT_KINDS} />
     </div>
   );
 }

@@ -4628,6 +4628,45 @@ const en = {
   // Content that gets stored or forwarded is deliberately absent: sold-out reasons, kitchen-note
   // shortcuts and the kitchen's own reason. The kitchen reads its tickets in the shop's working
   // language, not in whatever the cashier picked for the screen.
+  // Incoming-work alert sounds — shared by the register's kitchen board (/pos/restaurant)
+  // and the back-office board (/admin/kitchen), so it does not belong to either page's group.
+  pos_alerts: {
+    title: "Alert sounds on this device",
+    done: "Done",
+    device_scope: "These settings belong to this device only — the kitchen display and the register can differ.",
+    settings: "Alert sound settings",
+    blocked_title: "The browser is still blocking sound",
+    blocked_desc: "Tap the screen once to enable sound — browsers block audio until someone interacts with the page.",
+    blocked_action: "Tap to enable sound",
+    blocked_banner: "Alert sound is blocked · tap the screen to enable it",
+    enabled: "Alert sound",
+    volume: "Volume",
+    preview: "Preview",
+    preview_of: "Preview the sound for {kind}",
+    kind_order_new: "New kitchen ticket",
+    kind_qr_pending: "QR order waiting to be accepted",
+    kind_chat_request: "Chat/AI request waiting for review",
+    kind_food_ready: "Food ready to serve",
+    kind_sla_late: "Ticket past its time target",
+    tone_chime: "Two-note chime (original)",
+    tone_bell: "Counter bell",
+    tone_double_beep: "Double beep",
+    tone_marimba: "Marimba",
+    tone_alarm: "Urgent alarm",
+    tone_soft_ping: "Soft ping",
+    tone_none: "No sound",
+    repeat: "Repeat until acknowledged",
+    repeat_off: "Play once",
+    repeat_every: "Every {seconds} seconds",
+    repeat_hint: "Repeats only while work is still unacknowledged · stops when the kitchen starts the ticket, with a cap so it cannot ring all night.",
+    feed_live: "Updated {ago}",
+    feed_slow: "Slower than usual · last update {ago}",
+    feed_stale: "Connection lost · last update {ago}",
+    feed_never: "No successful update yet",
+    ago_seconds: "{seconds}s ago",
+    ago_minutes: "{minutes}m ago",
+    screen_awake: "The screen stays awake while the kitchen board is open",
+  },
   pos_restaurant: {
     // จอครัว โมดัลต่าง ๆ และแผงใบเสร็จ
     manage_this: "Manage this one",
