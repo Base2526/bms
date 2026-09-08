@@ -225,8 +225,7 @@ test("ตั๋วครัวต้องถูกดึงจากทุก�
   // ตัดถึง useLiveRefresh ตัวถัดไป (ของคิว QR) เพื่อไม่ให้ช่วงที่สแกนกินบล็อกอื่นเข้ามา
   const nextHook = source.indexOf("useLiveRefresh({", source.indexOf("useLiveRefresh({", start) + 1);
   const feed = source.slice(start, nextHook > start ? nextHook : start + 800);
-  assert.match(feed, /loadTickets\(\)/);
-  assert.match(feed, /loadFloor\(\)/, "ผังโต๊ะต้องรีเฟรชคู่กับตั๋ว ไม่งั้นเครื่องอื่นเปิดโต๊ะแล้วจอนี้ไม่เห็น");
+  assert.match(feed, /loadTickets\(signal\)/);
   // หัวใจของบั๊ก: enabled ห้ามผูกกับจอที่เปิดอยู่ — ผูกเมื่อไรป้ายจำนวนบนแถบซ้าย
   // (ซึ่งมองเห็นได้จากทุกจอ) จะไม่มีวันขยับตอนพนักงานยืนหน้าผังโต๊ะ
   const enabledClause = feed.slice(feed.indexOf("enabled:"), feed.indexOf("intervalMs:"));
@@ -337,4 +336,94 @@ test("ตัวเล่นเสียงต้องรายงานตร�
   // ด้วย `return false` ของบล็อก catch ท้ายเมธอด แล้วมิวเทชันที่กลับค่าเป็น true รอดไปได้
   assert.match(suspended, /return false;/);
   assert.doesNotMatch(suspended, /return true;/, "กิ่งที่ถูกบล็อกต้องไม่รายงานว่าดังสำเร็จ");
+});
+
+// ---------------------------------------------------------------------------
+// ทำไมจอครัวช้าได้ทั้งที่จอเปิดค้างอยู่ (สาเหตุที่หก)
+// ---------------------------------------------------------------------------
+//
+// รายงานรอบสอง: จอครัวเปิดค้างที่แท็บครัวและ **จอไม่ดับ** แต่ยังรอ 3-5 นาที
+// → ตัดเรื่องเบราว์เซอร์หรี่ timer ทิ้งได้ ต้นเหตุที่เหลืออยู่ที่ต้นทุนของคำขอ ไม่ใช่จังหวะของมัน
+
+test("คิวครัวต้องกรองใน UNION แต่ละกิ่ง ไม่ใช่กรองข้างนอกหลังรวมทั้งประวัติแล้ว", async () => {
+  const source = withoutComments(await read("../apps/web/lib/bms/kitchen.ts"));
+  const sql = source.slice(source.indexOf("SELECT * FROM ("), source.indexOf("ORDER BY recent."));
+  assert.ok(sql.length > 0, "หา SQL ของกระดานไม่เจอ — เทสนี้เลิกตรวจอะไรแล้ว");
+  // ⚠️ ของเดิมกรองสถานะ *หลัง* UNION → Postgres ต้องอ่านตั๋วทั้งประวัติของร้าน + join
+  // order items/checks/tables ก่อนถึงจะตัดเหลือ 200 ใบ · ต้นทุนจึงโตทุกวันที่ร้านเปิด
+  // ร้านที่ขายมาสามเดือนอ่านตั๋วหลายหมื่นใบทุก 5 วินาที
+  assert.doesNotMatch(sql, /WHERE \(\$2::text IS NULL OR all_tickets\.status/, "กลับไปกรองข้างนอก UNION แล้ว");
+  assert.equal((sql.match(/status IN \(\$\{KITCHEN_OPEN_STATUS_SQL\}\)/g) ?? []).length, 2,
+    "ตัวกรองต้องอยู่ครบทั้งสองกิ่งของ UNION — ขาดกิ่งใดกิ่งหนึ่งคือกิ่งนั้นยังอ่านทั้งประวัติ");
+  assert.equal((sql.match(/updated_at > now\(\) - \(\$4 \|\| ' hours'\)::interval/g) ?? []).length, 2);
+});
+
+test("รายการสถานะต้องเป็น literal ใน SQL และตรงกับ predicate ของ partial index", async () => {
+  const source = withoutComments(await read("../apps/web/lib/bms/kitchen.ts"));
+  const declared = source.match(/const KITCHEN_OPEN_STATUSES = \[([^\]]+)\]/);
+  assert.ok(declared, "หา KITCHEN_OPEN_STATUSES ไม่เจอ");
+  const statuses = [...declared![1].matchAll(/"([A-Z_]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(statuses, ["NEW", "PREPARING", "READY"]);
+  // ⚠️ ต้องเป็น literal ไม่ใช่ `= ANY($n)` — planner พิสูจน์ไม่ได้ว่าพารามิเตอร์ตรงกับ
+  // predicate ของ partial index เพราะค่าเพิ่งรู้ตอนรัน แล้วดัชนีที่สร้างไว้จะไม่ถูกใช้เลย
+  assert.match(source, /KITCHEN_OPEN_STATUS_SQL = KITCHEN_OPEN_STATUSES\.map/);
+  const boardSql = source.slice(source.indexOf("SELECT * FROM ("), source.indexOf("ORDER BY recent."));
+  assert.ok(boardSql.length > 0);
+  // เล็งเฉพาะ SQL ของกระดาน — ฟังก์ชันอื่นในไฟล์เดียวกัน (ยกเลิกตั๋วของบิล) ใช้ ANY($n)
+  // อย่างถูกต้อง การห้ามทั้งไฟล์จะแดงด้วยเหตุผลผิด
+  assert.doesNotMatch(boardSql, /status = ANY\(\$\d::text\[\]\)/, "กลับไปส่งสถานะเป็นพารามิเตอร์แล้ว");
+
+  const migration = await read("../db/migrations/9.68__bms_kitchen_board_indexes.sql");
+  const openPredicates = [...migration.matchAll(/WHERE status IN \(([^)]+)\)/g)]
+    .map((match) => [...match[1].matchAll(/'([A-Z_]+)'/g)].map((inner) => inner[1]));
+  assert.equal(openPredicates.length, 2, "ต้องมีดัชนีของตั๋วที่ยังไม่จบทั้งสองตาราง");
+  // predicate ที่ไม่ตรงกับ SQL เป๊ะ ๆ = ดัชนีที่ถูกสร้างทิ้งไว้โดยไม่มีใครใช้
+  for (const predicate of openPredicates) assert.deepEqual(predicate, statuses);
+  assert.equal((migration.match(/WHERE status = 'SERVED'/g) ?? []).length, 2,
+    "ช่องเสิร์ฟแล้วกรองด้วย updated_at จึงต้องมีดัชนีของตัวเอง");
+  // ตั๋วที่ยังไม่จบไม่มีขอบเวลา จึงต้องเรียงด้วย created_at ส่วนช่องเสิร์ฟแล้วกรองด้วย updated_at
+  assert.equal((migration.match(/\(tenant_id, created_at DESC\)/g) ?? []).length, 2);
+  assert.equal((migration.match(/\(tenant_id, updated_at DESC\)/g) ?? []).length, 2);
+});
+
+test("คิวครัวต้องห้ามแคชทุกชั้น ไม่ใช่แค่ปิดแคชของ Next", async () => {
+  const route = withoutComments(await read("../apps/web/app/api/pos/kitchen/tickets/route.ts"));
+  // `force-dynamic` คุมแค่แคชของ Next เอง ไม่ได้ประกาศอะไรกับ reverse proxy หน้าแอป
+  assert.match(route, /dynamic = "force-dynamic"/);
+  assert.match(route, /"Cache-Control": "no-store/);
+});
+
+test("รอบ poll ต้องมีตัวจับเวลา และต้องปลดด่านกันรอบซ้อนเสมอ", async () => {
+  const hook = withoutComments(await read("../apps/web/app/hooks/useLiveRefresh.ts"));
+  // ⚠️ ด่านกันรอบซ้อนที่ไม่มี timeout อันตรายกว่าไม่มีด่าน: คำขอที่ค้าง (เน็ตร้านหลุดครึ่งทาง —
+  // fetch ไม่มี timeout ในตัวเลย) จะทำให้ inFlight ค้าง true ตลอดกาล = จอหยุดอัปเดตถาวร
+  assert.match(hook, /inFlight\.current = true/);
+  assert.match(hook, /AbortController/);
+  assert.match(hook, /controller\.abort\(\)/);
+  assert.match(hook, /Promise\.race/, "ต้อง race ไม่ใช่แค่ abort — ผู้เรียกที่ไม่ส่ง signal ต่อจะยังค้าง");
+  const release = hook.slice(hook.indexOf("} finally {"), hook.indexOf("const refreshNow"));
+  assert.match(release, /inFlight\.current = false/, "ด่านต้องถูกปลดใน finally ไม่ใช่ในทางที่สำเร็จเท่านั้น");
+});
+
+test("ทุกจอที่ poll ต้องส่ง signal ต่อให้ fetch จริง", async () => {
+  // คำขอที่ยกเลิกไม่ได้ยังกินคิว 6 connection ของเบราว์เซอร์ต่อไปแม้เราเลิกรอคำตอบแล้ว
+  // ซึ่งเป็นครึ่งหนึ่งของอาการ "จอเปิดค้างอยู่แต่ข้อมูลช้าเป็นนาที"
+  const restaurant = withoutComments(await read("../apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  for (const loader of ["loadTickets", "loadFloor", "loadQrSubmissions", "loadWaitlist"]) {
+    assert.match(restaurant, new RegExp(`async function ${loader}\\(signal\\?: AbortSignal\\)`), `${loader} ไม่รับ signal`);
+    assert.match(restaurant, new RegExp(`onRefresh: \\(signal\\) => ${loader}\\(signal\\)`), `${loader} ไม่ถูกต่อ signal`);
+  }
+  const queue = withoutComments(await read("../apps/web/components/RestaurantRequestQueue.tsx"));
+  assert.match(queue, /cache:'no-store',signal,/);
+  const pos = withoutComments(await read("../apps/web/app/(pos)/pos/page.tsx"));
+  assert.match(pos, /cache: "no-store", signal/);
+});
+
+test("ผังโต๊ะต้องมีรอบของตัวเอง ไม่ยิงคู่กับตั๋วครัวทุกรอบ", async () => {
+  const source = withoutComments(await read("../apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  // ยิงสองคำขอต่อรอบ = ชนเพดาน 6 connection ต่อโดเมนเร็วเป็นสองเท่าเมื่อ server ช้า
+  // และจอครัวไม่ได้ต้องการผังโต๊ะใหม่ทุก 5 วินาทีอยู่แล้ว
+  assert.doesNotMatch(source, /Promise\.all\(\[loadTickets\(\), loadFloor\(\)\]\)/, "กลับไปยิงคู่กันทุกรอบแล้ว");
+  assert.match(source, /onRefresh: \(signal\) => loadFloor\(signal\)/);
+  assert.match(source, /focused: screen === "FLOOR"/, "ผังโต๊ะต้องไวขึ้นตอนคนกำลังดูผังอยู่");
 });

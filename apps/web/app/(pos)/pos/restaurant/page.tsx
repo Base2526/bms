@@ -818,8 +818,8 @@ export default function RestaurantPosPage() {
     finally { workingRef.current = false; setWorking(false); }
   }
   async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
-  async function loadFloor() { const data: Floor = await json("/api/pos/restaurant/floor"); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
-  async function loadWaitlist() { setWaitlist(await json("/api/pos/restaurant/waitlist")); }
+  async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
+  async function loadWaitlist(signal?: AbortSignal) { setWaitlist(await json("/api/pos/restaurant/waitlist", { signal })); }
   /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
   async function waitlistAction(action: string, extra: Record<string, unknown> = {}) {
     await run(async () => {
@@ -910,8 +910,8 @@ export default function RestaurantPosPage() {
     if (!stillThere) setStationFilter(null);
   }, [stationFilters, unassignedOpen.length, stationFilter]);
 
-  async function loadTickets() {
-    const data = await json("/api/pos/kitchen/tickets?limit=200");
+  async function loadTickets(signal?: AbortSignal) {
+    const data = await json("/api/pos/kitchen/tickets?limit=200", { signal });
     const rows: KitchenTicket[] = Array.isArray(data.tickets) ? data.tickets : [];
     setStationSlas(data.stationSlas && typeof data.stationSlas === "object" ? data.stationSlas : {});
     setStationList(Array.isArray(data.stations) ? data.stations : []);
@@ -940,8 +940,8 @@ export default function RestaurantPosPage() {
   // เมนูทั้งร้านโหลดครั้งเดียวไว้เรนเดอร์เป็นกริด — ไม่ต้องพิมพ์ค้นหาก่อนถึงจะเห็นเมนู
   // ต่างจาก /api/pos/search ที่ต้องมี query ก่อนถึงจะคืนอะไรมา
   async function loadMenu() { const data = await json("/api/pos/restaurant/menu"); setMenuItems(Array.isArray(data.items) ? data.items : []); }
-  async function loadQrSubmissions() {
-    const data = await json("/api/pos/restaurant/qr-orders");
+  async function loadQrSubmissions(signal?: AbortSignal) {
+    const data = await json("/api/pos/restaurant/qr-orders", { signal });
     const rows: QrSubmission[] = Array.isArray(data.submissions) ? data.submissions : [];
     // ลูกค้าที่โต๊ะกดสั่งแล้วรออยู่ — เดิมมีแต่ป้ายตัวเลข ซึ่งไม่มีใครเห็นถ้ากำลังก้มดูโต๊ะอื่น
     const pendingIds = rows.filter((row) => row.status === "PENDING").map((row) => row.id);
@@ -1106,7 +1106,7 @@ export default function RestaurantPosPage() {
   useLiveRefresh({
     enabled: Boolean(token),
     intervalMs: alertPollIntervalMs({ focused: screen === "QUEUE", visible: pageVisible }),
-    onRefresh: loadWaitlist,
+    onRefresh: (signal) => loadWaitlist(signal),
   });
   // ⚠️ ตั๋วครัว **ต้องดึงจากทุกจอ ไม่ใช่เฉพาะตอนเปิดแท็บครัว** — ของเดิมผูกไว้กับ
   // `screen === "KITCHEN"` ผลคือสองอย่างที่ผิดพร้อมกัน:
@@ -1120,7 +1120,15 @@ export default function RestaurantPosPage() {
     intervalMs: ticketPollMs,
     // hook เก็บ callback ไว้ใน ref จึงส่ง arrow ตรง ๆ ได้ — ไม่ต้อง memo และไม่ทำให้
     // interval ถูกสร้างใหม่ทุก render (ซึ่งจะทำให้ไม่มีรอบไหนเดินครบเวลาเลย)
-    onRefresh: () => Promise.all([loadTickets(), loadFloor()]),
+    onRefresh: (signal) => loadTickets(signal),
+  });
+  // ⚠️ ผังโต๊ะแยกรอบออกจากตั๋วครัวโดยตั้งใจ — ของเดิมยิงสองคำขอพร้อมกันทุก 5 วินาที
+  // ซึ่งชนเพดาน 6 connection ต่อโดเมนของเบราว์เซอร์เร็วเป็นสองเท่าเมื่อฝั่ง server ช้า
+  // จอครัวไม่ต้องการผังโต๊ะใหม่ทุก 5 วินาที (ใช้แค่ป้ายจำนวนบนแถบซ้ายกับแถบสรุป)
+  useLiveRefresh({
+    enabled: Boolean(token),
+    intervalMs: alertPollIntervalMs({ focused: screen === "FLOOR", visible: pageVisible }),
+    onRefresh: (signal) => loadFloor(signal),
   });
   // ป้ายจำนวน "ออร์เดอร์ QR รอรับ" อยู่บนแถบซ้ายเพื่อให้เห็นจากทุกจอ — ถ้าดึงข้อมูล
   // เฉพาะตอนเปิดแท็บ QR อยู่ ป้ายจะไม่มีวันขึ้นเลยตอนพนักงานยืนอยู่หน้าผังโต๊ะ (ที่ยืนจริง)
@@ -1128,7 +1136,7 @@ export default function RestaurantPosPage() {
   useLiveRefresh({
     enabled: Boolean(token),
     intervalMs: alertPollIntervalMs({ focused: screen === "QR", visible: pageVisible }),
-    onRefresh: loadQrSubmissions,
+    onRefresh: (signal) => loadQrSubmissions(signal),
   });
   // จอครัวที่แขวนไว้ต้องไม่ดับ — จอที่ดับคือจุดที่เบราว์เซอร์เริ่มหรี่ timer ตั้งแต่แรก
   // ขอเฉพาะตอนอยู่จอครัวจริง ๆ ไม่ใช่ทั้งแอป (แท็บเล็ตแคชเชียร์ที่วางเฉย ๆ ไม่ต้องกินแบต)

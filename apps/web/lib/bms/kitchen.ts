@@ -87,6 +87,13 @@ export async function enqueueKitchenTicketsInTx(
  */
 const KITCHEN_OPEN_STATUSES = ["NEW", "PREPARING", "READY"] as const;
 const KITCHEN_CLOSED_VISIBLE_HOURS = 12;
+/**
+ * ⚠️ ต้องเป็น **literal ในตัว SQL** ไม่ใช่พารามิเตอร์ — planner พิสูจน์ไม่ได้ว่า
+ * `status = ANY($n)` ตรงกับ predicate ของ partial index (`9.68`) เพราะค่าเพิ่งรู้ตอนรัน
+ * ผลคือ index ที่สร้างไว้ไม่ถูกใช้เลย แล้วจอครัวกลับไป scan ตั๋วทั้งประวัติเหมือนเดิม
+ * · ปลอดภัยจาก injection เพราะเป็นค่าคงที่ในไฟล์นี้ ไม่ได้มาจากผู้เรียก (มีเทสตรึงไว้)
+ */
+const KITCHEN_OPEN_STATUS_SQL = KITCHEN_OPEN_STATUSES.map((value) => `'${value}'`).join(", ");
 
 export async function listKitchenTickets(
   tenantId: string,
@@ -114,7 +121,12 @@ export async function listKitchenTickets(
            JOIN bms_orders o
              ON o.tenant_id = kt.tenant_id AND o.id = kt.order_id
           WHERE kt.tenant_id = $1
-            AND ($6::uuid IS NULL OR o.location_id = $6)
+            AND ($5::uuid IS NULL OR o.location_id = $5)
+            AND ($2::text IS NULL OR kt.status = $2)
+            AND ($2::text IS NOT NULL
+                 OR kt.status IN (${KITCHEN_OPEN_STATUS_SQL})
+                 OR (kt.status = 'SERVED'
+                     AND kt.updated_at > now() - ($4 || ' hours')::interval))
          UNION ALL
          SELECT 'RESTAURANT_CHECK'::text, rt.id, NULL::uuid, ci.id::text,
                 rt.check_id, tb.code, tb.name, ci.round_no, ci.kitchen_note,
@@ -128,17 +140,18 @@ export async function listKitchenTickets(
            JOIN bms_restaurant_tables tb
              ON tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
           WHERE rt.tenant_id = $1
-            AND ($6::uuid IS NULL OR rc.location_id = $6)
+            AND ($5::uuid IS NULL OR rc.location_id = $5)
+            AND ($2::text IS NULL OR rt.status = $2)
+            AND ($2::text IS NOT NULL
+                 OR rt.status IN (${KITCHEN_OPEN_STATUS_SQL})
+                 OR (rt.status = 'SERVED'
+                     AND rt.updated_at > now() - ($4 || ' hours')::interval))
        ) all_tickets
-       WHERE ($2::text IS NULL OR all_tickets.status = $2)
-         AND ($2::text IS NOT NULL
-              OR all_tickets.status = ANY($4::text[])
-              OR (all_tickets.status = 'SERVED' AND all_tickets.updated_at > now() - ($5 || ' hours')::interval))
        ORDER BY all_tickets.created_at DESC, all_tickets.id DESC
        LIMIT $3
      ) recent
      ORDER BY recent.created_at, recent.id`,
-    [tenantId, status ?? null, safeLimit, [...KITCHEN_OPEN_STATUSES],
+    [tenantId, status ?? null, safeLimit,
       String(KITCHEN_CLOSED_VISIBLE_HOURS), locationId ?? null]
   );
   return result.rows.map(mapKitchenTicket);

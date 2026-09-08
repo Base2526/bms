@@ -371,7 +371,7 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   // รอบนั้นวิ่งเฉพาะตอนเปิดแท็บครัวอยู่ ป้ายจำนวนบนแถบซ้ายจึงไม่มีวันขยับตอนยืนหน้าผังโต๊ะ
   // และ setInterval เปล่า ๆ ก็โดนเบราว์เซอร์หรี่ตอนแท็บถูกซ่อน (ที่มาของ "รอ 3-5 นาที")
   // ตอนนี้ตรึง "การันตี" แทนรูปทรง: ต้องมีรอบอัตโนมัติของตั๋วครัวที่ไม่ผูกกับจอที่เปิดอยู่
-  assert.match(page, /useLiveRefresh\(\{[\s\S]{0,400}?loadTickets\(\)/);
+  assert.match(page, /useLiveRefresh\(\{[\s\S]{0,400}?loadTickets\(signal\)/);
   // หน้าจอ POS ต้องอ่านผังเดียวกับ editor ไม่ใช่นำโต๊ะกลับไปเรียงด้วย CSS grid
   for (const field of ["shape", "positionX", "positionY"]) assert.match(page, new RegExp(field));
   assert.match(page, /transform: `translate\(\$\{table\.positionX\}px, \$\{table\.positionY\}px\)`/);
@@ -1204,7 +1204,7 @@ test("เมนูที่ตั้งว่าหมดวันนี้ต�
  */
 test("ป้ายออร์เดอร์ QR รอรับต้องอัปเดตจากทุกจอ ไม่ใช่เฉพาะตอนเปิดแท็บ QR", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  const start = page.indexOf("onRefresh: loadQrSubmissions");
+  const start = page.indexOf("loadQrSubmissions(signal)");
   assert.ok(start > 0, "ต้องมี poll ของออร์เดอร์ QR");
   const hook = page.slice(page.lastIndexOf("useLiveRefresh({", start), start);
   assert.doesNotMatch(hook, /screen !== "QR"/,

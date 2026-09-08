@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * poll ที่รู้ว่าตัวเองถูกมองอยู่หรือเปล่า
+ * poll ที่รู้ว่าตัวเองถูกมองอยู่ไหม และไม่ปล่อยให้คำขอทับกันเอง
  *
- * ⚠️ ทำไมต้องมีไฟล์นี้ — `setInterval` เปล่า ๆ ไม่พอสำหรับจอหน้าร้าน:
+ * ⚠️ ทำไมต้องมีไฟล์นี้ — `setInterval` เปล่า ๆ ไม่พอสำหรับจอหน้าร้าน มีสามเรื่องคนละเรื่อง:
  *
  * 1. **เบราว์เซอร์หรี่ timer ของแท็บที่ถูกซ่อน** Chrome หน่วง timer ของหน้าที่ไม่ได้แสดงผล
  *    และเมื่อซ่อนครบ ~5 นาทีจะเข้า intensive throttling = เดินได้ราว 1 ครั้ง/นาที ·
  *    Android ยัง freeze ทั้งหน้าเมื่อจอดับ ส่วน iOS Safari หยุด timer ไปเลย
- *    → นี่คือที่มาของอาการ "ส่งครัวแล้วรอ 3-5 นาทีกว่าจะเด้ง" ที่รายงานมาจากหน้าร้าน
- * 2. **กลับมามองแล้วต้องเห็นของจริงทันที** ของเดิมไม่มี `visibilitychange` handler เลย
- *    ครัวหยิบแท็บเล็ตขึ้นมาแล้วยังต้องรอ tick ถัดไป ซึ่งเป็นรอบที่เพิ่งถูกหรี่มา
- * 3. **เน็ตร้านหลุดแล้วกลับมา** ต้องโหลดทันที ไม่ใช่รอรอบถัดไป
+ * 2. **กลับมามองแล้วต้องเห็นของจริงทันที** และ **เน็ตร้านหลุดแล้วกลับมาก็ต้องโหลดทันที**
+ *    ไม่ใช่รอรอบถัดไป (ซึ่งเป็นรอบที่เพิ่งถูกหรี่มา)
+ * 3. **คำขอทับกันเองคือสาเหตุที่จอช้าเป็นนาทีทั้งที่จอเปิดค้างอยู่** — รอบเดิมยิงทุก 5 วินาที
+ *    โดยไม่สนว่ารอบก่อนตอบหรือยัง · พอ query ฝั่ง server ช้ากว่า 5 วินาที (จอครัวอ่านตั๋ว
+ *    ทั้งประวัติก่อน `9.68`) คำขอจะกองสะสม ชน **เพดาน 6 connection ต่อโดเมนของเบราว์เซอร์**
+ *    แล้วคำตอบใหม่สุดต้องรอคิวยาวขึ้นเรื่อย ๆ จนกลายเป็นหลายนาที · เน็ตร้านที่ค้างครึ่งทาง
+ *    ยิ่งแย่กว่า เพราะ `fetch` ไม่มี timeout ในตัวเลย คำขอที่ค้างจะกินคิวไว้จน TCP ยอมแพ้เอง
  *
  * ตัวรอบเวลาไม่ได้อยู่ที่นี่โดยตั้งใจ — ผู้เรียกส่ง `intervalMs` มาเอง เพราะ "จอไหนควรไวแค่ไหน"
  * เป็นการตัดสินใจของหน้านั้น ไม่ใช่ของ hook
@@ -22,7 +25,16 @@ export type LiveRefreshOptions = {
   /** ปิดไว้ตอนยังไม่มี token / ยังไม่เปิดกะ — hook จะไม่ยิงอะไรเลย */
   enabled: boolean;
   intervalMs: number;
-  onRefresh: () => Promise<unknown>;
+  /**
+   * ผู้เรียกต้องส่ง `signal` ต่อให้ `fetch` — คำขอที่ยกเลิกไม่ได้จะยังกินคิวของเบราว์เซอร์
+   * ต่อไปแม้เราเลิกรอคำตอบแล้ว ซึ่งเป็นครึ่งหนึ่งของปัญหาที่ timeout นี้มีไว้แก้
+   */
+  onRefresh: (signal: AbortSignal) => Promise<unknown>;
+  /**
+   * คำตอบที่มาช้ากว่านี้ไม่มีประโยชน์กับจอหน้าร้านแล้ว — และการรอต่อไปแปลว่ารอบถัดไป
+   * ก็จะไม่ได้เริ่มด้วย (ด่านกันรอบซ้อน) = จอค้างเงียบ ๆ ตลอดกาล
+   */
+  timeoutMs?: number;
 };
 
 export type LiveRefreshState = {
@@ -32,8 +44,11 @@ export type LiveRefreshState = {
   refreshNow: () => void;
 };
 
+const DEFAULT_TIMEOUT_MS = 10_000;
+
 export function useLiveRefresh(options: LiveRefreshOptions): LiveRefreshState {
   const { enabled, intervalMs } = options;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const [lastOkAt, setLastOkAt] = useState<number | null>(null);
   const [lastErrorAt, setLastErrorAt] = useState<number | null>(null);
   // ผู้เรียกส่ง arrow function ใหม่ทุก render (หน้าพวกนี้ประกาศ loader ไว้ในตัว component)
@@ -49,20 +64,29 @@ export function useLiveRefresh(options: LiveRefreshOptions): LiveRefreshState {
   }, []);
 
   const run = useCallback(async () => {
-    // รอบที่ยิงซ้อนกันไม่ได้ทำให้เร็วขึ้น มีแต่ทำให้เครื่องเก่าหน้าร้านค้าง —
-    // และคำตอบที่กลับมาไม่เรียงลำดับจะเขียนทับกันเองแบบสุ่ม
+    // รอบที่ยิงซ้อนกันไม่ได้ทำให้เร็วขึ้น มีแต่ทำให้คำขอกองจนคำตอบใหม่สุดมาช้าเป็นนาที
     if (inFlight.current) return;
     inFlight.current = true;
+    const controller = new AbortController();
+    let watchdog: number | undefined;
     try {
-      await callbackRef.current();
-      if (mounted.current) setLastOkAt(Date.now());
-    } catch {
-      // ผู้เรียกเป็นคนตัดสินว่าจะโชว์ error ยังไง — ที่นี่สนใจแค่ "รอบนี้ไม่สำเร็จ"
-      if (mounted.current) setLastErrorAt(Date.now());
+      const timedOut = new Promise<"timeout">((resolve) => {
+        watchdog = window.setTimeout(() => { controller.abort(); resolve("timeout"); }, timeoutMs);
+      });
+      // ⚠️ ต้อง race ไม่ใช่แค่ abort — ผู้เรียกที่ไม่ได้ส่ง signal ต่อให้ fetch จะค้างต่อไป
+      // แล้วด่านกันรอบซ้อนจะไม่มีวันถูกปลด = จอหยุดอัปเดตถาวรโดยไม่มีอะไรบอก
+      const outcome = await Promise.race([
+        callbackRef.current(controller.signal).then(() => "ok" as const, () => "error" as const),
+        timedOut,
+      ]);
+      if (!mounted.current) return;
+      if (outcome === "ok") setLastOkAt(Date.now());
+      else setLastErrorAt(Date.now());
     } finally {
+      if (watchdog !== undefined) window.clearTimeout(watchdog);
       inFlight.current = false;
     }
-  }, []);
+  }, [timeoutMs]);
 
   const refreshNow = useCallback(() => { void run(); }, [run]);
 

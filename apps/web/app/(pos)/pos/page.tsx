@@ -2374,11 +2374,11 @@ export default function PosPage() {
    * `silent` = รอบอัตโนมัติเบื้องหลัง — ไม่หมุน spinner และไม่เขียนทับข้อความที่คนกำลังอ่าน
    * รอบเบื้องหลังที่ล้มแล้วขึ้น error ทุก 15 วินาทีคือเสียงรบกวนที่สอนให้คนเลิกอ่าน notice
    */
-  async function refreshIncomingOrders(silent = false) {
+  async function refreshIncomingOrders(silent = false, signal?: AbortSignal) {
     if (!token) return;
     if (!silent) setIncomingLoading(true);
     try {
-      const res = await fetch("/api/pos/restaurant/incoming", { headers: authHeaders, cache: "no-store" });
+      const res = await fetch("/api/pos/restaurant/incoming", { headers: authHeaders, cache: "no-store", signal });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
       const orders: IncomingRestaurantOrder[] = Array.isArray(data.orders) ? data.orders : [];
@@ -3748,7 +3748,7 @@ export default function PosPage() {
   useLiveRefresh({
     enabled: Boolean(token) && Boolean(session?.shift) && session?.businessArchetype === "restaurant",
     intervalMs: alertPollIntervalMs({ focused: tab === "incoming", visible: posPageVisible }),
-    onRefresh: () => refreshIncomingOrders(true),
+    onRefresh: (signal) => refreshIncomingOrders(true, signal),
   });
 
   useEffect(() => {

@@ -41,13 +41,13 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
   const knownPendingIds=useRef<Set<string>|null>(null);
   const repeatRef=useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
   const pageVisible=usePageVisible();
-  async function call(body?:Record<string,unknown>) {
+  async function call(body?:Record<string,unknown>,signal?:AbortSignal) {
     const response=await fetch(pos ? '/api/pos/restaurant/requests' : '/api/bms/restaurant-requests',{
       method:pos || body ? 'POST':'GET',
       headers:{'content-type':'application/json',...(pos ? {'x-pos-device-token':pos.token}:{})},
       ...(pos || body ? {body:JSON.stringify({...body,...(pos ? {
         action:body?.action ?? 'list',cashierUserId:pos.cashierUserId,cashierPin:pos.cashierPin,
-      }:{})})}:{}),cache:'no-store',
+      }:{})})}:{}),cache:'no-store',signal,
     });
     const data=await response.json();
     if (!response.ok) {
@@ -66,8 +66,8 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
    * รอบอัตโนมัติ — ไม่ตั้ง `busy` โดยตั้งใจ (busy ปิดปุ่มทั้งแผง ทุก 15 วินาทีจะกดอะไรไม่ได้เลย)
    * และไม่เขียนทับ error ของการกดจริงด้วย: รอบเบื้องหลังที่ล้มไม่ควรลบข้อความที่คนกำลังอ่าน
    */
-  async function silentRefresh() {
-    const data=await call();
+  async function silentRefresh(signal?:AbortSignal) {
+    const data=await call(undefined,signal);
     const list:Request[]=data.requests ?? [];
     setEnabled(data.enabled !== false);
     const pending=list.filter(row=>row.status==='REQUESTED').map(row=>row.id);
@@ -87,7 +87,7 @@ export default function RestaurantRequestQueue({english=false,canReview=true,pos
   useLiveRefresh({
     enabled: enabled !== false && (!pos || Boolean(pos.cashierUserId && pos.cashierPin)),
     intervalMs: alertPollIntervalMs({focused:false,visible:pageVisible}),
-    onRefresh: silentRefresh,
+    onRefresh: (signal) => silentRefresh(signal),
   });
   async function review(action:'confirm'|'contact'|'cancel') {
     if (!selected) return;

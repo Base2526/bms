@@ -106,6 +106,8 @@ export default function KitchenPage() {
     // ตรวจของใหม่ **ในรอบ poll เอง** ไม่ใช่ใน useEffect ที่ผูกกับ tickets.data —
     // Apollo คืน object เดิมเมื่อข้อมูลไม่เปลี่ยน effect จึงไม่ทำงาน แล้วการย้ำเสียง
     // (ซึ่งต้องเดินต่อแม้ข้อมูลเท่าเดิม) จะไม่มีวันเกิดขึ้น
+    // Apollo `refetch()` รับ AbortSignal ไม่ได้ — ยกเลิกคำขอจริงจึงทำไม่ได้ที่นี่
+    // แต่ตัวจับเวลาใน useLiveRefresh ยังปลดด่านกันรอบซ้อนให้ จอจึงไม่ค้างถาวร
     onRefresh: async () => {
       const result = await tickets.refetch();
       const fresh: Ticket[] = result.data?.bmsKitchenTickets ?? [];
