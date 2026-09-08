@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { RESERVATION_LOST, RestaurantCheckError } from "./restaurantPosErrors";
+// คีย์ล็อกบิลมีสูตรเดียวทั้งระบบ (kitchen.ts ก็ขอล็อกตัวเดียวกันนี้ก่อนแตะแถวตั๋ว)
+import { lockRestaurantCheckInTx as lockCheckInTx } from "./restaurantCheckLock";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
@@ -118,12 +120,6 @@ async function withCheckLock<T>(tenantId: string, checkId: string, work: () => P
   }
 }
 
-/** ล็อกข้าม instance บน client ที่กำลังเขียนอยู่ — ต้องเรียกหลัง beginTenantTx() */
-async function lockCheckInTx(client: Pick<PoolClient, "query">, tenantId: string, checkId: string) {
-  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
-    `restaurant-check:${tenantId}:${checkId}`,
-  ]);
-}
 
 async function requireRestaurantTenant(tenantId: string) {
   const result = await query<{ business_archetype: string | null }>(
@@ -1929,13 +1925,24 @@ export async function splitRestaurantCheck(input: {
         throw new RestaurantCheckError("ต้องเหลืออย่างน้อยหนึ่งรายการไว้ที่บิลเดิม");
       }
 
+      // หา "ช่องว่างที่น้อยที่สุด" ไม่ใช่ MAX+1 — เลขบิลของโต๊ะเป็นช่อง 1..20 ที่ CHECK ของ
+      // ตารางบังคับไว้ · MAX+1 เดินหน้าอย่างเดียว ดังนั้นโต๊ะที่ปิดใบเลขน้อยแล้วแยกจากใบเลข
+      // มากซ้ำ ๆ จะไต่ชนเพดานทั้งที่เปิดอยู่ใบเดียว แล้วขึ้นข้อความ "ครบเพดาน 20 ใบ" ซึ่งไม่จริง
+      // · คืนช่องที่ว่างแล้วมาใช้ใหม่ทำให้ข้อความนั้นเป็นจริงเสมอเมื่อมันขึ้น (ลำดับเวลายังไล่ได้
+      // จาก split_from_check_id และ opened_at ไม่ได้พึ่งเลขช่อง)
       const nextGroup = await client.query<{ next_group: number }>(
-        `SELECT COALESCE(MAX(split_group_no), 0) + 1 AS next_group
-           FROM bms_restaurant_checks
-          WHERE tenant_id = $1 AND table_id = $2 AND status IN ('OPEN','CLOSING')`,
+        `SELECT n AS next_group
+           FROM generate_series(1, 20) AS n
+          WHERE NOT EXISTS (
+            SELECT 1 FROM bms_restaurant_checks c
+             WHERE c.tenant_id = $1 AND c.table_id = $2
+               AND c.status IN ('OPEN','CLOSING') AND c.split_group_no = n
+          )
+          ORDER BY n
+          LIMIT 1`,
         [input.tenantId, source.rows[0].table_id]
       );
-      if (Number(nextGroup.rows[0].next_group) > 20) {
+      if (!nextGroup.rowCount) {
         throw new RestaurantCheckError("โต๊ะนี้มีบิลที่เปิดอยู่ครบเพดานแล้ว (20 ใบ)");
       }
       const created = await client.query<{ id: string }>(
