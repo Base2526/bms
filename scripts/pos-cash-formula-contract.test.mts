@@ -92,6 +92,41 @@ test("ไฟล์รายละเอียดกะต้องแสดง�
     "แผ่นรายละเอียดต้องมีแถวของเงินที่ออกจากลิ้นชักกะนี้ ไม่งั้นยอดรวมกับรายการไม่ตรงกัน");
 });
 
+test("หน้าภาพรวมกะคิดเงินสดด้วยกติกาเดียวกับเครื่อง — บิลที่ถูกยกเลิกไม่นับเป็นเงินในลิ้นชัก", async () => {
+  const pos = code(await read("apps/web/lib/bms/pos.ts"));
+
+  // ⚠️ หน้านี้เขียน query ของตัวเอง (lateral ต่อแถว) ไม่ได้ใช้ POS_SHIFT_CASH_SQL จึงต้องมีด่านของตัวเอง
+  // ก่อนแก้ subquery ของ cash_sales ไม่กรอง voided_at เลย ขณะที่สูตรกลางกรอง และขา "คืนเงิน" ก็ตัด
+  // ใบ void ออกด้วย pr.is_void = FALSE ทั้งสองที่ → บิลเงินสดที่ถูก void ถูกนับเป็นเงินขาเข้าโดยไม่มี
+  // ขาออกมาหักล้าง = ผู้จัดการเห็น "เงินที่ควรมี" สูงกว่าที่เครื่องบอกเท่ายอดบิลที่ยกเลิก
+  // แล้วไปตามหาเงินที่ไม่เคยหาย
+  const overview = pos.slice(
+    pos.indexOf("function posShiftOverviewBaseSql"),
+    pos.indexOf("export async function listPosShiftOverview")
+  );
+  assert.ok(overview.length > 0, "ไม่พบช่วงของ query หน้าภาพรวมกะ — เล็งเทสใหม่");
+
+  // ⚠️ เล็งที่ subquery ของ bms_payments ตรง ๆ — คอลัมน์ชั้นนอกก็ชื่อ AS cash_sales เหมือนกัน
+  // (COALESCE(o.cash_sales, 0) AS cash_sales) การหาจากชื่อ alias จะได้ตัวชั้นนอกที่ไม่มี WHERE เลย
+  const paySubStart = overview.indexOf("FROM bms_payments");
+  assert.ok(paySubStart > 0, "ไม่พบ subquery ของ cash_sales — เล็งเทสใหม่");
+  const afterPay = overview.slice(paySubStart);
+  const cashSalesSub = afterPay.slice(0, afterPay.indexOf("AS cash_sales"));
+  assert.ok(cashSalesSub.length > 0, "ไม่พบปลายของ subquery cash_sales — เล็งเทสใหม่");
+  assert.match(cashSalesSub, /pay\.method = 'CASH'/, "subquery ที่เล็งไม่ใช่ตัวที่รวมเงินสด — เล็งเทสใหม่");
+  assert.match(cashSalesSub, /voided_at IS NULL/,
+    "cash_sales ของหน้าภาพรวมกะต้องตัดบิลที่ถูกยกเลิกออก เหมือน POS_SHIFT_CASH_SQL");
+
+  // เลขคณิตต้องมีชุดเดียว: ตัวห่อของหน้านี้ต้องเรียก drawerExpectedFrom ไม่ใช่คิดเอง
+  const expectedFn = pos.slice(pos.indexOf("const expected = (row: any) =>"));
+  const body = expectedFn.slice(0, expectedFn.indexOf("};"));
+  assert.ok(body.length > 0, "ไม่พบตัวห่อ expected() — เล็งเทสใหม่");
+  assert.match(body, /drawerExpectedFrom\(/,
+    "หน้าภาพรวมกะต้องคิดเงินที่ควรมีด้วย drawerExpectedFrom ไม่ใช่สูตรที่สอง");
+  assert.doesNotMatch(body, /Number\(row\.cash_refunds\)\s*\+/,
+    "เจอเลขคณิตของตัวเองในตัวห่อ — สองสูตรจะ drift แล้วสองหน้าจอตอบไม่ตรงกัน");
+});
+
 test("สรุปกะต้องมีบรรทัดปัดเศษเงินสด ไม่งั้นยอดขายกับผลรวมวิธีชำระไม่มีทางเท่ากัน", async () => {
   const pos = code(await read("apps/web/lib/bms/pos.ts"));
   const page = code(await read("apps/web/app/(pos)/pos/page.tsx"));
