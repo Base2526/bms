@@ -1286,7 +1286,15 @@ test("จอครัวต้องขอกะ+บิลให้ครบก�
   const shared = code(await read("apps/web/lib/bms/restaurantCheckLock.ts"));
   assert.match(shared, /shiftIds[\s\S]{0,80}\.sort\(\)/);
   assert.match(shared, /checkIds[\s\S]{0,80}\.sort\(\)/);
-  assert.ok(shared.indexOf("lockPosShiftInTx") < shared.indexOf("lockRestaurantCheckInTx(client, tenantId, checkId)"),
+  // ต้องเทียบลำดับ **ในตัวฟังก์ชันที่ล็อกจริง** ไม่ใช่ทั้งไฟล์ — สองชื่อนี้ถูก *ประกาศ* ไว้
+  // ก่อนหน้าอยู่แล้ว การเทียบทั้งไฟล์จึงเขียวไม่ว่าลำดับข้างในจะสลับหรือไม่
+  const scopeFrom = shared.indexOf("export async function lockCheckScopeForKitchenTicketsInTx");
+  assert.ok(scopeFrom > 0, "ต้องมีตัวขอ scope");
+  const scopeBody = shared.slice(scopeFrom);
+  const shiftAt = scopeBody.indexOf("await lockPosShiftInTx(");
+  const checkAt = scopeBody.indexOf("await lockRestaurantCheckInTx(");
+  assert.ok(shiftAt > 0 && checkAt > 0, "ต้องขอทั้งกะและบิล");
+  assert.ok(shiftAt < checkAt,
     "ต้องขอกะก่อนบิล ไม่งั้นกลับหัวกับเส้นทางส่งครัวที่ขอกะก่อน");
 });
 
