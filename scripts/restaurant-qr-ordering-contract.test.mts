@@ -65,8 +65,11 @@ test("public ordering is bounded, structured, idempotent, and only creates PENDI
   assert.equal((service.match(/modifier\.size = item\.size/g) ?? []).length, 2);
   assert.doesNotMatch(service, /return \{ session, items \}/);
   assert.doesNotMatch(service, /return \{\s*session,\s*submissions/);
-  assert.match(helpers, /rateLimit\(`restaurant-qr:/);
-  assert.match(helpers, /scope !== "open"[\s\S]{0,300}createHash\("sha256"\)/);
+  // กติกาว่ามีกี่ถัง/ถังละเท่าไร ย้ายไปเป็น pure ที่ restaurantQrRateLimit.ts แล้ว (มีเทสของ
+  // ตัวเองด้านล่าง) · ที่นี่เหลือการันตีว่า route helper ยัง **บังคับทุกถังที่แผนคืนมา** จริง
+  assert.match(helpers, /planRestaurantQrRateLimitBuckets\(/);
+  assert.match(helpers, /for \(const bucket of buckets\)[\s\S]{0,200}rateLimit\(bucket\.key, bucket\.limit/);
+  assert.match(helpers, /createHash\("sha256"\)/);
   assert.match(helpers, /x-bms-restaurant-qr/);
   assert.match(route, /"submit", 10/);
   assert.doesNotMatch(route, /tenantId\s*:\s*body/);
@@ -222,4 +225,63 @@ test("จอลูกค้าต้องกันตัวเลือกท�
     "ปุ่มเพิ่มลงตะกร้าต้องกดไม่ได้ตอนยังเลือกกลุ่มบังคับไม่ครบ");
   assert.match(page, /ยังต้องเลือก: \$\{unmetGroups/);
   assert.match(page, /Still to choose: \$\{unmetGroups/);
+});
+
+/**
+ * เพดานของหน้า QR ต้องกันได้จริง ไม่ใช่กันเฉพาะคนที่ไม่พยายามเลี่ยง
+ *
+ * เดิมแยกถังตาม "คุกกี้ที่รูปทรงถูก" **แทน** ถัง IP — แต่คุกกี้เป็นของที่ผู้เรียกถืออยู่เอง
+ * และรูปที่ผ่านเดาได้จาก regex โดยไม่ต้องมี session จริง · หมุนคุกกี้ใหม่ทุกคำขอจึงได้ถังใหม่
+ * ทุกครั้ง = ไม่มีเพดานเลยสำหรับ scope ที่ไม่ใช่ `open`
+ */
+test("เพดานของหน้า QR ต้องมีชั้น IP เสมอ — หมุนคุกกี้ใหม่ต้องไม่ได้โควตาใหม่", async () => {
+  const { planRestaurantQrRateLimitBuckets, QR_IP_BURST_FACTOR } =
+    await import("../apps/web/lib/bms/restaurantQrRateLimit.ts");
+  // digest ปลอมต้อง **ไม่ฝัง token ลงไป** ไม่งั้นเทส "คีย์ต้องไม่มี token ตัวจริง" จะแดง
+  // เพราะตัวเทสเอง ไม่ใช่เพราะโค้ด
+  const digests = new Map<string, string>();
+  const digest = (token: string) => {
+    if (!digests.has(token)) digests.set(token, `d${digests.size}`);
+    return digests.get(token)!;
+  };
+  const plan = (sessionToken: string | null, scope = "submit") =>
+    planRestaurantQrRateLimitBuckets({ scope, limit: 10, ip: "203.0.113.9", sessionToken, sessionDigest: digest });
+
+  const shaped = (suffix: string) => `${"a".repeat(40)}${suffix}`;
+  const first = plan(shaped("1"));
+  const second = plan(shaped("2"));
+
+  // ถัง IP ต้องมีทั้งสองรอบ และต้องเป็น "ใบเดียวกัน" แม้คุกกี้จะเปลี่ยน
+  const ipKey = (buckets: Array<{ key: string }>) => buckets.map((b) => b.key).filter((k) => k.includes(":ip:"));
+  assert.deepEqual(ipKey(first), ipKey(second),
+    "หมุนคุกกี้แล้วต้องยังตกถัง IP ใบเดิม ไม่งั้นเท่ากับไม่มีเพดาน");
+  assert.equal(ipKey(first).length, 1);
+
+  // ถัง session ยังต้องแยกกัน (เหตุผลที่ชั้นนี้มีอยู่: ทั้งร้านใช้ IP เดียวกัน)
+  const sessionKey = (buckets: Array<{ key: string }>) => buckets.find((b) => b.key.includes(":session:"))?.key;
+  assert.ok(sessionKey(first) && sessionKey(second));
+  assert.notEqual(sessionKey(first), sessionKey(second));
+  assert.ok(!first.some((bucket) => bucket.key.includes("a".repeat(40))),
+    "คีย์ต้องเก็บ digest ไม่ใช่ token ตัวจริง");
+
+  // ชั้น IP ต้องกว้างกว่าชั้น session พอให้ร้านเต็มร้านไม่ชนเพดานตัวเอง
+  const ipBucket = first.find((bucket) => bucket.key.includes(":ip:"))!;
+  const sessionBucket = first.find((bucket) => bucket.key.includes(":session:"))!;
+  assert.equal(sessionBucket.limit, 10);
+  assert.equal(ipBucket.limit, 10 * QR_IP_BURST_FACTOR);
+  assert.ok(QR_IP_BURST_FACTOR > 1);
+
+  // คุกกี้ที่รูปไม่ผ่าน / ไม่มีคุกกี้ → เหลือถัง IP ใบเดียวที่เพดานเดิม (ไม่ใช่เพดานคูณ)
+  for (const bad of [null, "", "สั้นไป", `${"a".repeat(200)}`]) {
+    const buckets = plan(bad);
+    assert.equal(buckets.length, 1, `คุกกี้ ${JSON.stringify(bad)} ต้องไม่ได้ถังของตัวเอง`);
+    assert.match(buckets[0].key, /:ip:/);
+    assert.equal(buckets[0].limit, 10);
+  }
+
+  // scope `open` ยังไม่มี session ให้แยก — ต้องเป็น IP ล้วนเสมอ
+  const open = plan(shaped("1"), "open");
+  assert.equal(open.length, 1);
+  assert.match(open[0].key, /:ip:/);
+  assert.equal(open[0].limit, 10);
 });

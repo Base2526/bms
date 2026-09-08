@@ -3,6 +3,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { kitchenStationColumnsSql } from "./kitchenStations";
+import { lockCheckScopeForKitchenTicketsInTx } from "./restaurantCheckLock";
 
 function mapKitchenTicket(row: any) {
   return {
@@ -321,10 +322,32 @@ async function updateKitchenTicketStatusInTx(client: PoolClient, input: UpdateKi
   }
 }
 
+/**
+ * ขอกะ+บิลของตั๋วชุดนี้ให้ครบ **ก่อน** แตะแถวตั๋ว (ลำดับ กะ → บิล → ตั๋ว)
+ *
+ * ทำเฉพาะตอนยกเลิก เพราะนั่นคือสถานะเดียวที่ไปแตะบิล (ตัดบรรทัดออกจากยอดผ่าน
+ * `onRestaurantCheckLineCancelled`) · การเลื่อนสถานะปกติ (เริ่มทำ/พร้อมเสิร์ฟ/เสิร์ฟแล้ว)
+ * แตะแค่แถวตั๋วจึงไม่มีทางเกิดวงรอ และการไปขอล็อกบิลด้วยจะทำให้ทุกครั้งที่ครัวกดปุ่ม
+ * ต้องรอการส่งครัวรอบที่กำลังจองสต็อกอยู่ให้เสร็จก่อน = จอครัวหน่วงโดยไม่จำเป็น
+ *
+ * ล็อกทั้งชุดในคำสั่งเดียวแบบเรียงลำดับ ไม่ใช่ล็อกทีละใบระหว่างวน — ไม่งั้นคำขอที่ครอบ
+ * หลายบิลจะไล่ล็อกตามลำดับที่ตั๋วเรียงมา ซึ่งต่างกันได้ในแต่ละคำขอ
+ */
+async function lockCheckScopeBeforeTickets(
+  client: PoolClient,
+  tenantId: string,
+  status: string,
+  ticketIds: string[]
+) {
+  if (String(status ?? "").trim().toUpperCase() !== "CANCELLED") return;
+  await lockCheckScopeForKitchenTicketsInTx(client, tenantId, ticketIds);
+}
+
 export async function updateKitchenTicketStatus(input: UpdateKitchenTicketInput) {
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await lockCheckScopeBeforeTickets(client, input.tenantId, input.status, [input.ticketId]);
     const ticket = await updateKitchenTicketStatusInTx(client, input);
     await client.query("COMMIT");
     return ticket;
@@ -349,7 +372,9 @@ export const KITCHEN_BULK_LIMIT = 50;
 export async function updateKitchenTicketsStatus(input: Omit<UpdateKitchenTicketInput, "ticketId"> & {
   ticketIds: string[];
 }) {
-  const ids = [...new Set((input.ticketIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  // เรียง id เสมอ — สองคำขอที่ถือตั๋วชุดเดียวกันแต่คนละลำดับจะล็อกแถวสวนทางกันแล้วรอกันเอง
+  // (ลำดับที่จอส่งมาไม่ใช่การันตี) · เรียงแล้วทุกคำขอไล่ล็อกแถวตั๋วในลำดับเดียวกัน
+  const ids = [...new Set((input.ticketIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))].sort();
   if (ids.length === 0) throw new Error("ต้องระบุตั๋วอย่างน้อยหนึ่งใบ");
   if (ids.length > KITCHEN_BULK_LIMIT) {
     throw new Error(`เลื่อนได้สูงสุด ${KITCHEN_BULK_LIMIT} รายการต่อครั้ง`);
@@ -357,6 +382,7 @@ export async function updateKitchenTicketsStatus(input: Omit<UpdateKitchenTicket
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await lockCheckScopeBeforeTickets(client, input.tenantId, input.status, ids);
     const tickets = [];
     for (const ticketId of ids) {
       tickets.push(await updateKitchenTicketStatusInTx(client, { ...input, ticketId }));

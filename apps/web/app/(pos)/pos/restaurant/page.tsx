@@ -599,10 +599,14 @@ export default function RestaurantPosPage() {
   // บรรทัดที่ย้ายไปบิลใหม่ได้ = ทุกบรรทัดที่ยังถูกคิดเงินอยู่ · บรรทัดที่ครัวยกเลิกไปแล้ว
   // (status CANCELLED) หลุดจากยอดไปแล้วจึงไม่มีอะไรให้ย้าย
   const splittableItems = (check?.items ?? []).filter((item) => item.status !== "CANCELLED");
+  // แยก/รวมบิลทำได้เฉพาะบิลที่ยังเปิดอยู่จริง · บิลที่กำลังรับชำระเงิน (CLOSING) service ปฏิเสธ
+  const checkIsOpen = check?.status === "OPEN";
   // ปลายทางของการรวมบิล = บิลที่เปิดอยู่ใบอื่นทั้งสาขา รวมบิลใบอื่นของโต๊ะเดียวกันด้วย
   // (แยกไปแล้วแต่ลูกค้าเปลี่ยนใจขอจ่ายรวม เป็นเรื่องที่เกิดจริงพอ ๆ กับการขอแยก)
   const mergeTargets = floor.tables.flatMap((table) => table.checks
-    .filter((row) => row.id !== check?.id && isOpenCheckStatus(row.status))
+    // service รับเฉพาะบิลที่ยัง OPEN ทั้งสองใบ — บิลที่อีกเครื่องกดคิดเงินไปแล้ว (CLOSING)
+    // ยังโผล่บนผังอยู่ ถ้ายื่นให้เลือกจะได้ error ที่จอรู้ล่วงหน้าได้เอง
+    .filter((row) => row.id !== check?.id && row.status === "OPEN")
     .map((row) => ({
       id: row.id,
       label: t("pos_restaurant.check_option", { table: table.name, bill: row.splitGroupNo > 1 ? t("pos_restaurant.bill_suffix", { number: row.splitGroupNo }) : "", count: row.itemCount, amount: money(row.amountDue) }),
@@ -2445,10 +2449,10 @@ export default function RestaurantPosPage() {
     <Modal title={t("pos_restaurant.manage_check_title", { table: check?.tableName ?? "" })} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> {t("pos_restaurant.move_table")}</button>
-        <button type="button" className={styles.btn} disabled={splittableItems.length < 2}
+        <button type="button" className={styles.btn} disabled={!checkIsOpen || splittableItems.length < 2}
           title={splittableItems.length < 2 ? t("pos_restaurant.split_needs_two") : t("pos_restaurant.split_hint")}
           onClick={() => { setMoreOpen(false); setSplitItemIds([]); setSplitOpen(true); }}><ScissorOutlined /> {t("pos_restaurant.split_check")}</button>
-        <button type="button" className={styles.btn} disabled={mergeTargets.length === 0}
+        <button type="button" className={styles.btn} disabled={!checkIsOpen || mergeTargets.length === 0}
           title={mergeTargets.length === 0 ? t("pos_restaurant.merge_no_target") : t("pos_restaurant.merge_hint")}
           onClick={() => { setMoreOpen(false); setMergeTargetId(mergeTargets[0]?.id ?? ""); setMergeOpen(true); }}><MergeCellsOutlined /> {t("pos_restaurant.merge_into_another")}</button>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>{t("pos_restaurant.edit_guest_count")}</button>

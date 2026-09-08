@@ -1209,3 +1209,132 @@ test("ป้ายออร์เดอร์ QR รอรับต้องอ�
     "เปิดแท็บอยู่ต้องถี่กว่า แต่จออื่นต้องยังดึงอยู่");
   assert.match(page, /badge: pendingQrSubmissions\.length/);
 });
+
+/**
+ * ด่านฝั่ง server ด่านเดียวที่กัน "คิดเงินทั้งที่ยังมีของไม่ได้ส่งครัว" คือ
+ * `reserved_version === version` ใน settleRestaurantCheck (ตรึงไว้แล้วด้านบน) ·
+ * เส้นทางที่คิดยอดใหม่ให้บิล **ย้ายทุกบรรทัดที่ยังไม่ถูกยกเลิก ไม่ใช่เฉพาะที่ส่งครัวแล้ว**
+ * บิลจึงถือบรรทัด NEW ต่อได้หลังแยก/รวมบิล และหลังครัวยกเลิกบางรายการ · ถ้าเส้นทางพวกนั้น
+ * ประกาศว่า reserved_version ตามทันเนื้อหาบิล ด่านจะถูกข้ามไปเงียบ ๆ แล้วเหลือแต่ปุ่มบนจอ
+ * (`hasUnsent`) เป็นตัวกัน — ซึ่งเป็นฝั่ง client และไม่ใช่ด่าน
+ *
+ * เคสที่เจ็บจริง: บิลมี [ส่งครัวแล้ว A, ยังไม่ส่ง B] แล้วครัวยกเลิก A' อีกจาน หรือมีการรวมบิล
+ * → ใบจองรอบใหม่ครอบ B ด้วย → settle ผ่านด่าน → ลูกค้าจ่ายค่า B ที่ครัวไม่เคยได้รับคำสั่งให้ทำ
+ */
+test("เส้นทางที่คิดยอดใหม่ต้องไม่ประกาศว่าใบจองตามทัน ขณะยังมีบรรทัดที่ไม่ได้ส่งครัว", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const cases = [
+    { name: "repriceCheckAfterItemMoveInTx", end: "async function moveCheckItemsInTx" },
+    { name: "dropKitchenCancelledLineInTx", end: "type KitchenRoundInput" },
+  ];
+  for (const { name, end } of cases) {
+    const from = restaurant.indexOf(`function ${name}`);
+    assert.ok(from > 0, `ต้องมีฟังก์ชัน ${name}`);
+    const to = restaurant.indexOf(end, from);
+    assert.ok(to > from, `ต้องหาปลายของ ${name} เจอ`);
+    const body = restaurant.slice(from, to);
+
+    // เขียน reserved_version จริงในฟังก์ชันนี้ (ไม่งั้นเทสเขียวลอย ๆ กับฟังก์ชันที่ไม่เกี่ยว)
+    const write = body.indexOf("reserved_version");
+    assert.ok(write > 0, `${name} ต้องเขียน reserved_version`);
+    const params = body.slice(write, body.indexOf(");", write));
+
+    // ต้องมีตัวตรวจ "ยังมีบรรทัดที่ไม่ได้ส่งครัวไหม" อยู่ในฟังก์ชัน และต้องถูกใช้กับค่าที่เขียนลง
+    // reserved_version จริง ๆ ไม่ใช่แค่มีอยู่ลอย ๆ ที่ไหนสักแห่ง
+    const guard = /const (\w+)\s*=\s*\w+\.rows\.some\(\(row\) => row\.status === "NEW"\)/.exec(body);
+    const usesGuard = guard ? params.includes(guard[1]) : /"NEW"/.test(params);
+    assert.ok(usesGuard,
+      `${name}: ค่าที่เขียนลง reserved_version ต้องขึ้นกับว่ายังมีบรรทัด NEW เหลืออยู่หรือไม่`);
+
+    // ไม่มีใบจอง = reserved_version ต้องเป็น NULL ไม่ใช่เลขรุ่นของบิล
+    assert.match(params, /orderId == null/,
+      `${name}: ไม่มีใบจองแล้วต้องเขียน NULL ไม่ใช่ประกาศว่าตามทัน`);
+    assert.match(params, /\? null :/,
+      `${name}: reserved_version ต้องเป็นค่าที่มีเงื่อนไข ไม่ใช่ค่าคงที่`);
+  }
+});
+
+/**
+ * กัน deadlock ด้วย lock ordering — วิธีมาตรฐาน: ทุกทรานแซกชันขอทรัพยากรลำดับเดียวกัน
+ *
+ * ลำดับของโมดูลนี้คือ **กะ → บิล → ใบจอง → สต็อก → ตั๋วครัว** · ของจริงที่เคยกลับหัว:
+ * จอครัวกดยกเลิกจานหนึ่งล็อกแถวตั๋วก่อนแล้วค่อยไปขอบิล (เพราะต้องตัดบรรทัดออกจากยอด)
+ * ส่วน "ยกเลิกทั้งบิล" ขอบิลก่อนแล้วไล่อัปเดตตั๋วทุกใบ → รอกันเป็นวงแล้วได้ `40P01`
+ * ที่หน้าจอเห็นเป็น "เซิร์ฟเวอร์ผิดพลาด"
+ *
+ * เทส DB จำลอง deadlock แบบ deterministic ไม่ได้ (ต้องให้สองทรานแซกชันชนกันพอดี)
+ * จึงตรึงที่ "ลำดับในซอร์ส" ซึ่งเป็นสิ่งที่พังจริงเวลามีคนแก้
+ */
+test("จอครัวต้องขอกะ+บิลให้ครบก่อนแตะแถวตั๋ว (ลำดับ กะ → บิล → ตั๋ว)", async () => {
+  const kitchen = code(await read("apps/web/lib/bms/kitchen.ts"));
+  for (const wrapper of ["updateKitchenTicketStatus", "updateKitchenTicketsStatus"]) {
+    const from = kitchen.indexOf(`export async function ${wrapper}(`);
+    assert.ok(from > 0, `ต้องมี ${wrapper}`);
+    const nextExport = kitchen.indexOf("export async function", from + 1);
+    const body = kitchen.slice(from, nextExport > from ? nextExport : kitchen.length);
+    const lockAt = body.indexOf("lockCheckScopeBeforeTickets");
+    const workAt = body.indexOf("updateKitchenTicketStatusInTx");
+    assert.ok(lockAt > 0, `${wrapper} ต้องขอ scope ของบิลก่อน`);
+    assert.ok(workAt > 0, `${wrapper} ต้องเรียกแกนกลางตัวเดียวกัน`);
+    assert.ok(lockAt < workAt,
+      `${wrapper}: ต้องล็อกกะ+บิลก่อนแตะตั๋ว ไม่งั้นกลับหัวกับการยกเลิกทั้งบิล`);
+    assert.ok(body.indexOf("beginTenantTx") < lockAt, `${wrapper}: ล็อกต้องอยู่ในทรานแซกชัน`);
+  }
+  // เลื่อนหลายใบต้องเรียง id ก่อน — สองคำขอที่ถือชุดเดียวกันคนละลำดับจะรอกันเอง
+  assert.match(kitchen, /const ids = \[\.\.\.new Set\([\s\S]{0,160}\]\.sort\(\)/);
+  // ล็อกทั้งชุดต้องเรียงลำดับด้วย ไม่ใช่ล็อกตามลำดับที่ตั๋วเรียงมา
+  const shared = code(await read("apps/web/lib/bms/restaurantCheckLock.ts"));
+  assert.match(shared, /shiftIds[\s\S]{0,80}\.sort\(\)/);
+  assert.match(shared, /checkIds[\s\S]{0,80}\.sort\(\)/);
+  // ต้องเทียบลำดับ **ในตัวฟังก์ชันที่ล็อกจริง** ไม่ใช่ทั้งไฟล์ — สองชื่อนี้ถูก *ประกาศ* ไว้
+  // ก่อนหน้าอยู่แล้ว การเทียบทั้งไฟล์จึงเขียวไม่ว่าลำดับข้างในจะสลับหรือไม่
+  const scopeFrom = shared.indexOf("export async function lockCheckScopeForKitchenTicketsInTx");
+  assert.ok(scopeFrom > 0, "ต้องมีตัวขอ scope");
+  const scopeBody = shared.slice(scopeFrom);
+  const shiftAt = scopeBody.indexOf("await lockPosShiftInTx(");
+  const checkAt = scopeBody.indexOf("await lockRestaurantCheckInTx(");
+  assert.ok(shiftAt > 0 && checkAt > 0, "ต้องขอทั้งกะและบิล");
+  assert.ok(shiftAt < checkAt,
+    "ต้องขอกะก่อนบิล ไม่งั้นกลับหัวกับเส้นทางส่งครัวที่ขอกะก่อน");
+});
+
+/**
+ * คีย์ advisory lock ของบิลต้องมีสูตรเดียวทั้งระบบ — คีย์คนละรูปคือล็อกคนละตัว
+ * ซึ่งอ่านว่า "ล็อกแล้ว" ทั้งที่ไม่ได้กันใครเลย (kitchen.ts กับ restaurantPos.ts
+ * ต้องขอล็อกใบเดียวกันจริง ๆ ถึงจะกันการชนกันได้)
+ */
+test("คีย์ล็อกบิลโต๊ะประกาศอยู่ที่เดียว", async () => {
+  const owners: string[] = [];
+  for (const file of [
+    "apps/web/lib/bms/restaurantCheckLock.ts",
+    "apps/web/lib/bms/restaurantPos.ts",
+    "apps/web/lib/bms/kitchen.ts",
+    "apps/web/lib/bms/restaurantQrOrdering.ts",
+    "apps/web/lib/bms/restaurantWaitlist.ts",
+  ]) {
+    // เล็งเฉพาะคีย์ของ "บิลโต๊ะ" · `restaurant-floor:` เป็นคนละทรัพยากรและมีบ้านของตัวเอง
+    if (/restaurant-check:\$\{/.test(code(await read(file)))) owners.push(file);
+  }
+  assert.deepEqual(owners, ["apps/web/lib/bms/restaurantCheckLock.ts"],
+    `คีย์ล็อกบิลต้องอยู่ไฟล์เดียว แต่เจอที่: ${owners.join(", ")}`);
+});
+
+/**
+ * เลขบิลของโต๊ะเป็น "ช่อง" 1..20 ที่ CHECK ของตารางบังคับไว้ · MAX+1 เดินหน้าอย่างเดียว
+ * ดังนั้นโต๊ะที่ปิดใบเลขน้อยแล้วแยกจากใบเลขมากซ้ำ ๆ จะไต่ชนเพดานทั้งที่เปิดอยู่ใบเดียว
+ * แล้วขึ้นข้อความ "ครบเพดาน 20 ใบ" ซึ่งไม่จริง — ข้อความที่โกหกคือข้อความที่คนเลิกอ่าน
+ */
+test("แยกบิลต้องหยิบช่องที่ว่างน้อยที่สุด ไม่ใช่เดินเลขหน้าอย่างเดียว", async () => {
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const split = restaurant.slice(
+    restaurant.indexOf("export async function splitRestaurantCheck"),
+    restaurant.indexOf("export async function mergeRestaurantChecks")
+  );
+  assert.ok(split.length > 0);
+  assert.match(split, /generate_series\(1, 20\)/);
+  assert.match(split, /NOT EXISTS[\s\S]{0,240}split_group_no = n/);
+  assert.doesNotMatch(split, /MAX\(split_group_no\)\s*,\s*0\)\s*\+\s*1/,
+    "MAX+1 ทำให้ข้อความ 'ครบเพดาน' ขึ้นทั้งที่ยังมีช่องว่าง");
+  // เพดานต้องมาจาก "ไม่มีช่องเหลือ" ไม่ใช่การเทียบเลขที่คำนวณได้กับ 20
+  assert.match(split, /!nextGroup\.rowCount/);
+});
