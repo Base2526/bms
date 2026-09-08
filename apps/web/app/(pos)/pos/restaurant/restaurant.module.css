@@ -790,7 +790,7 @@
 .serviceCallGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
 .serviceCallGrid > .empty { grid-column: 1 / -1; }
 .serviceCallCard { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 4px 14px var(--shadow-2); }
-.serviceCallHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; color: #4d3500; background: var(--amber-bg); }
+.serviceCallHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; color: var(--amber); background: var(--amber-bg); }
 .serviceCallHead > span { font-size: 11px; font-weight: 700; }
 .serviceCallCard[data-status="ACKNOWLEDGED"] .serviceCallHead { color: var(--green); background: var(--green-bg); }
 .serviceCallBody { display: grid; gap: 3px; padding: 14px; }
