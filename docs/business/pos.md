@@ -1740,17 +1740,49 @@ stops on its own when the kitchen starts the ticket, because the ticket leaves t
 single chime is missed by whoever was at the range when it played, which is the entire reason the
 sound exists.
 
-**Why orders could appear minutes late.** Nothing was slow on the server: kitchen tickets are
-inserted in the same transaction that sends the round and committed immediately, the route is
-`force-dynamic`, and the register fetches with `cache: "no-store"`. The delay came from the screens.
-Kitchen tickets were fetched only while the kitchen tab was open, so the rail counter could not move
-while staff stood at the floor plan — and the floor plan itself went stale with it. There was no
-`visibilitychange` handler anywhere, so picking the tablet back up still meant waiting for the next
-tick of a timer the browser had already throttled: Chrome slows timers in hidden tabs and drops them
-to roughly once a minute after five minutes, and Android may freeze the page outright when the
-screen sleeps. Every screen now fetches on becoming visible, on regaining network, and on a slower
-interval while in the background, and the kitchen board asks the device to keep the screen awake so
-it never enters that state.
+**Why orders could appear minutes late.** Nothing was slow at the moment of writing: kitchen tickets
+are inserted in the same transaction that sends the round and committed immediately, the route is
+`force-dynamic`, and the register fetches with `cache: "no-store"`. Everything that made an order
+take minutes to appear was on the reading side, and there were two independent causes.
+
+The first was *when* the screens asked. Kitchen tickets were fetched only while the kitchen tab was
+open, so the rail counter could not move while staff stood at the floor plan — and the floor plan
+itself went stale with it. There was no `visibilitychange` handler anywhere, so picking the tablet
+back up still meant waiting for the next tick of a timer the browser had already throttled: Chrome
+slows timers in hidden tabs and drops them to roughly once a minute after five minutes, and Android
+may freeze the page outright when the screen sleeps. Every screen now fetches on becoming visible,
+on regaining network, and on a slower interval while in the background, and the kitchen board asks
+the device to keep the screen awake so it never enters that state.
+
+The second cause is the one that bites a display left awake on the kitchen tab, where none of the
+above applies — and it is the one a shop actually reported. **The board's query cost grew with the
+shop's history rather than with how busy the kitchen was.** `listKitchenTickets()` unions the two
+ticket tables and used to filter status *outside* that union, and the indexes that existed lead with
+`station`, which the board never filters on. Postgres therefore read every ticket the shop had ever
+produced, joined it to order items or checks and tables, sorted the lot, and only then kept the most
+recent two hundred. A shop three months old was reading tens of thousands of rows every five
+seconds, and the read got slower every day it stayed open.
+
+That alone would have been survivable if each round waited for the previous one. It did not: the
+poll fired every five seconds regardless. Once a response took longer than the interval, requests
+piled up against the browser's six-connections-per-origin limit and the newest answer queued behind
+progressively more stale ones, so the visible lag grew into minutes. A stalled connection on shop
+Wi-Fi made it worse, because `fetch` has no timeout of its own.
+
+Three changes close it. The status filter now sits inside each branch of the union, and migration
+`9.68` adds partial indexes covering exactly the rows the board shows — unfinished tickets by
+creation time, served tickets by the time they were served. Those indexes stay small forever, so
+reading the board costs what the kitchen is doing now rather than what the shop did last quarter.
+The status list is written into the SQL as literals rather than passed as a parameter, because the
+planner cannot prove a runtime parameter matches a partial index predicate and would quietly ignore
+the index. And every poll now runs one at a time, aborts after ten seconds, and always releases its
+turn — a guard without a timeout would be worse than no guard, since one hung request would freeze
+the board permanently. The floor plan was also split onto its own slower cycle instead of being
+fetched alongside every ticket refresh.
+
+The kitchen queue response also carries `Cache-Control: no-store`. `force-dynamic` governs only
+Next's own caching and says nothing to a reverse proxy in front of the app, and a queue cached even
+for a minute is a kitchen seeing orders late with nothing on screen explaining why.
 
 **The "last updated" pill reports the last successful fetch, not the clock.** It previously showed a
 ticking clock, which kept looking healthy long after the network had died — and a kitchen board
