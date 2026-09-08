@@ -47,7 +47,7 @@ import {
   type ReceiptLanguageMode,
 } from "@/lib/pos/receiptI18n";
 import { selectedReturnLines, type ReturnDraft } from "@/lib/pos/returnDraft";
-import { appendSplitPaymentRow, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
+import { appendSplitPaymentRow, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure as describeFailure } from "@/lib/pos/failureMessage";
 import {
   findRememberedPrinter,
@@ -4511,6 +4511,18 @@ export default function PosPage() {
   function updatePayment(id: string, patch: Partial<PosPaymentDraft>) {
     if (hasPendingOrderWrite) return;
     setPayments((cur) => cur.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)));
+  }
+
+  // แก้ "ยอดที่แบ่งให้วิธีนี้" ของช่องทางหนึ่ง เมื่อบิลแบ่งจ่ายพอดี 2 ช่องทาง — ลดยอดของอีก
+  // ช่องทางให้เท่ากับยอดที่เหลืออัตโนมัติ ไม่งั้นแคชเชียร์ต้องนั่งคิดลบเองว่าอีกช่องควรเหลือเท่าไร
+  // (เคสจริง: เงินสด 358 ค้างจากตอนยังเป็นช่องทางเดียว + QR 100 ที่เพิ่งเพิ่ม = รวมเกินยอดบิล)
+  function updatePaymentAmount(id: string, value: string) {
+    if (hasPendingOrderWrite) return;
+    setPayments((cur) => rebalanceSplitPayments(
+      cur.map((payment) => (payment.id === id ? { ...payment, amount: value } : payment)),
+      id,
+      amountDue,
+    ));
   }
 
   // จ่ายวิธีเดียวที่ไม่ใช่เงินสด: ยอดต้องเท่ายอดบิลเสมอ และยอดบิลขยับได้ตลอด
@@ -9079,7 +9091,7 @@ export default function PosPage() {
                     </select>
                     <input
                       value={payment.amount}
-                      onChange={(e) => updatePayment(payment.id, { amount: e.target.value })}
+                      onChange={(e) => updatePaymentAmount(payment.id, e.target.value)}
                       inputMode="decimal"
                       placeholder="ยอดที่แบ่งให้วิธีนี้"
                       aria-label={`ยอดที่แบ่งให้ ${posPaymentMethodLabel(payment.method)}`}
