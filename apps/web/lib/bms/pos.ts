@@ -1595,6 +1595,7 @@ function posShiftOverviewBaseSql(whereSql: string) {
                      JOIN bms_orders po ON po.id = pay.order_id AND po.tenant_id = pay.tenant_id
                     WHERE pay.tenant_id = f.tenant_id
                       AND po.pos_shift_id = f.id
+                      AND po.voided_at IS NULL
                       AND pay.method = 'CASH'
                       AND pay.status IN ('CONFIRMED','REFUNDED')
                  ), 0) AS cash_sales
@@ -1776,8 +1777,13 @@ export async function listPosShiftOverview(
   const expected = (row: any) => {
     if (hidden(row)) return null;
     if (row.expected_cash != null) return Number(row.expected_cash);
-    return Math.round((Number(row.opening_float) + Number(row.cash_sales)
-      - Number(row.cash_refunds) + Number(row.cash_in) - Number(row.cash_out)) * 100) / 100;
+    // ห้ามคิดเลขเอง — ใช้ตัวเดียวกับที่จอเตือนตอนถอนเงินและตอนปิดกะใช้ (drawerExpectedFrom)
+    return drawerExpectedFrom(Number(row.opening_float), {
+      cashSales: Number(row.cash_sales),
+      cashRefunds: Number(row.cash_refunds),
+      cashIn: Number(row.cash_in),
+      cashOut: Number(row.cash_out),
+    });
   };
   const total = Number(rows.rows[0]?.total_count ?? summary.rows[0]?.total_shifts ?? 0);
   const s = summary.rows[0] ?? {};

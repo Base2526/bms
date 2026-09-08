@@ -18,7 +18,7 @@ const WEB = path.join(REPO, 'apps/web');
 function withoutComments(source: string): string {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
+    .split(/\r?\n/)
     .map(line => line.replace(/(^|\s)\/\/.*$/, '$1'))
     .join('\n');
 }
