@@ -1993,7 +1993,13 @@ export default function RestaurantPosPage() {
           {!session?.shift && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady} title={operatorReady ? t("pos_restaurant.open_shift") : t("pos_restaurant.need_operator_pin")} onClick={() => setShiftModal("OPEN")}>{t("pos_restaurant.open_shift")}</button>}
         </div>
       </header>
-      {!session?.shift && <Alert type="warning" showIcon message={t("pos_restaurant.no_shift_blocker")} />}
+      {/* ลำดับความสำคัญของแบนเนอร์ตรงกับลำดับที่ต้องทำจริง: เลือกผู้ปฏิบัติงาน+PIN ก่อน
+          แล้วค่อยเปิดกะ — เดิมมีแบนเนอร์เดียว (no_shift_blocker) บอกว่า "เปิดกะก่อน" ทั้งที่
+          ปุ่มเปิดกะกดไม่ได้เพราะยังไม่ได้เลือกผู้ปฏิบัติงาน ซึ่งเป็นเหตุผลที่เห็นได้แค่จาก
+          title ของปุ่ม (จอสัมผัสไม่มี hover ให้อ่าน) → พนักงานงงว่าต้องทำอะไรก่อน */}
+      {!operatorReady
+        ? <Alert type="warning" showIcon message={t("pos_restaurant.no_operator_blocker")} />
+        : !session?.shift && <Alert type="warning" showIcon message={t("pos_restaurant.no_shift_blocker")} />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
       {/* ⚠️ เสียงที่ถูกบล็อกต้อง "เห็นได้" — ของเดิมเงียบไปเฉย ๆ แล้วครัวอ่านว่าไม่มีออร์เดอร์เข้า
           เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ ซึ่งเกิดทุกครั้งที่รีเฟรชหน้า/แท็บเล็ตรีบูต */}
