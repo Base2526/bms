@@ -4802,6 +4802,11 @@ const en = {
     // แท็บคิวหน้าร้าน และออร์เดอร์ QR
     retail_mode_hint: "Returns, goods receiving, deposits, gift cards and credit sales still live on the retail screen",
     no_shift_blocker: "No shift is open — open one before seating tables or taking orders",
+    // ⚠️ Must be visible text, not just the button's title — touchscreens have no hover to
+    // read a tooltip, and the old no_shift_blocker banner said "open a shift" while the
+    // open-shift button was disabled because no operator had been selected yet, which read
+    // as contradictory.
+    no_operator_blocker: "No operator selected — tap \"Select the operator\" (top right) and enter a PIN before you can open a shift",
     queue_title: "Queue and reservations",
     queue_add_walkin: "+ Walk-in",
     queue_add_booking: "+ Reservation",
