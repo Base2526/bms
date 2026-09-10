@@ -96,6 +96,16 @@ messages + notes + orders. Since this session, a dedicated "ลูกค้า" 
 history, lifetime spend, tags, and notes the moment a conversation is opened — see
 [../ui/customer360.md](../ui/customer360.md).
 
+**Incoming-message alerts (2026-09):** `GlobalInboxNotifier` is mounted for every admin session with
+`inbox.view`, not only on the Inbox route. A committed unread customer message outside the chat the
+operator is currently viewing produces a local two-beep sound, an in-app toast and (when permitted)
+a browser notification, all deep-linking to that conversation. The realtime payload names its
+message source so staff replies and automated outbound follow-ups never alert the sender; repeated
+delivery of the same message is deduplicated by its stable message id, including across several
+open tabs on the same device. Diagnostic messages update the Inbox without ringing every coworker's
+device. Browser autoplay restrictions are surfaced through the single global sound-recovery banner
+shared with order alerts rather than failing silently.
+
 **@mention in internal notes (2026-07):** typing `@name` while writing a note opens a picker over
 `bmsAssignableStaff` (Sales/Manager/Administrator only, same list used for assign/helper); selecting
 a name inserts `@Name` into the note body for display and separately records the mentioned user's id

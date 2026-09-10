@@ -313,6 +313,14 @@ const en = {
     groupFuture: "Future",
     groupUnknown: "Unknown",
   },
+  order_notifications: {
+    open: "Open task",
+    fallback_title: "New order task",
+    open_inbox: "Open chat",
+    inbox_fallback_title: "New customer message",
+    sound_blocked: "Staff alert sound is blocked · tap to enable it",
+    enable_sound: "Enable sound",
+  },
 
   searchPage: {
     title: "Search",

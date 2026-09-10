@@ -22,6 +22,7 @@ import { isCarrier, type Carrier } from "./carriers/constants";
 import { quoteShipping, type ShippingFeeSource } from "./shippingRates";
 import type { PoolClient } from "pg";
 import { notifyOrderStatusEmail } from "./orderNotify";
+import { notifyOrderActionCommitted } from "./orderActionNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
   composeDiscounts,
@@ -1342,23 +1343,34 @@ export async function createOrder(
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
   const client = await getClient();
-  try {
-    await beginTenantTx(client, input.tenantId, { editorId: input.editorId });
-    const result = await createOrderInTx(client, input);
-    if (result.status !== "CREATED") {
-      await client.query("ROLLBACK");
-      return result;
-    }
-    await client.query("COMMIT");
-    return result;
-  } catch (err) {
+  const result = await (async (): Promise<CreateOrderResult> => {
     try {
-      await client.query("ROLLBACK");
-    } catch {}
-    throw err;
-  } finally {
-    client.release();
+      await beginTenantTx(client, input.tenantId, { editorId: input.editorId });
+      const result = await createOrderInTx(client, input);
+      if (result.status !== "CREATED") {
+        await client.query("ROLLBACK");
+      } else {
+        await client.query("COMMIT");
+      }
+      return result;
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  })();
+  if (result.status === "CREATED") {
+    await notifyOrderActionCommitted({
+      tenantId: input.tenantId,
+      orderId: result.orderId,
+      kind: "ORDER_CREATED",
+      excludeUserId: input.editorId == null ? null : String(input.editorId),
+    });
   }
+  return result;
 }
 
 export type ReorderResult = CreateOrderResult | { status: "SOURCE_NOT_FOUND" };
@@ -1568,12 +1580,14 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
   }
   void reviewMemberTierForOrder(tenantId, orderId);
   void notifyOrderStatusEmail(tenantId, orderId, "paid");
+  await notifyOrderActionCommitted({ tenantId, orderId, kind: "ORDER_PAID" });
   return true;
 }
 /** แพ็คของ: PAID → PACKING */
 export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
   const client = await getClient();
   let ok = false;
+  let createdKitchenTickets = false;
   try {
     await beginTenantTx(client, tenantId);
     const updated = await client.query<{ fulfillment_type: "DELIVERY" | "PICKUP" | null }>(
@@ -1591,6 +1605,7 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
     // packing must never create kitchen tickets just because a product happens to have a station.
     if (updated.rows[0].fulfillment_type !== null) {
       await enqueueKitchenTicketsInTx(client, tenantId, orderId);
+      createdKitchenTickets = true;
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -1600,6 +1615,9 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
     client.release();
   }
   void notifyOrderStatusEmail(tenantId, orderId, "packing");
+  if (createdKitchenTickets) {
+    await notifyOrderActionCommitted({ tenantId, orderId, kind: "KITCHEN_TICKETS_CREATED" });
+  }
   return true;
 }
 /** ปิดงาน: SHIPPED → COMPLETED */

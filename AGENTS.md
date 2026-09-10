@@ -256,8 +256,10 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**79 namespaces / 4,992 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-08 — the latest change is net **+13**:
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**80 namespaces / 4,999 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-09 — the latest change is net **+6**:
+   global order-action and Inbox alerts explain how to open the work or chat and unblock device audio; the
+   preceding change is net **+13**:
    restaurant member-enrollment labels cover the confirmed-not-found state, inline form validation,
    success/already-member outcomes and automatic attachment to the table check; the preceding change
    is net **+5**: both POS surfaces explain the server-derived points result before payment; the

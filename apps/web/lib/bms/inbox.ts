@@ -34,12 +34,16 @@ let lastInboxRealtimeErrorAt = 0;
 function publishInboxChanged(
   tenantId: string,
   conversationId: string,
-  kind: BmsInboxChangedPayload["kind"]
+  kind: BmsInboxChangedPayload["kind"],
+  messageSource?: BmsInboxChangedPayload["messageSource"],
+  messageId?: string
 ): void {
   const event: BmsInboxChangedPayload = {
     tenantId,
     conversationId,
     kind,
+    messageSource,
+    messageId,
     occurredAt: new Date().toISOString(),
   };
   // Do not make a channel webhook wait on Redis. Realtime is a delivery
@@ -165,6 +169,7 @@ export async function logConversation(
       ]
     );
     const aiMessage = messages.rows.find((message) => message.direction === "OUT");
+    const incomingMessage = messages.rows.find((message) => message.direction === "IN");
     if (quality && aiMessage) {
       try {
         await enqueueAiQualityReview(tenantId, convId, String(aiMessage.id), quality);
@@ -177,7 +182,7 @@ export async function logConversation(
     if (conv.rows[0].inserted) {
       await autoAssignConversation(tenantId, convId);
     }
-    publishInboxChanged(tenantId, convId, "MESSAGES_CHANGED");
+    publishInboxChanged(tenantId, convId, "MESSAGES_CHANGED", "customer", incomingMessage?.id);
   } catch (e) {
     console.error("[BMS] logConversation failed:", e);
   }
@@ -237,7 +242,7 @@ export async function createDiagnosticInboxMessage(
     await autoAssignConversation(tenantId, conversationId);
   }
 
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "diagnostic", msg.rows[0].id);
 
   const occurredAt = msg.rows[0].created_at instanceof Date
     ? msg.rows[0].created_at.toISOString()
@@ -1160,7 +1165,7 @@ export async function sendStaffMessage(
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, preview.slice(0, 500)]
   );
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "staff", inserted.rows[0]?.id);
 
   return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
 }
@@ -1202,7 +1207,7 @@ export async function sendFollowupMessage(
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, messagePreview(text).slice(0, 500)]
   );
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "ai", inserted.rows[0]?.id);
 
   return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
 }
@@ -1245,7 +1250,7 @@ export async function sendPharmacyIntakeMessage(
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, messagePreview(text).slice(0, 500)]
   );
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "ai", inserted.rows[0]?.id);
 
   return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
 }

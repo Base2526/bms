@@ -92,6 +92,8 @@ test("ทุกเหตุการณ์ต้องมีเสียงข�
   assert.notEqual(settings.tones.ORDER_NEW, settings.tones.SLA_LATE);
   assert.notEqual(settings.tones.ORDER_NEW, settings.tones.QR_PENDING);
   assert.notEqual(settings.tones.ORDER_NEW, settings.tones.FOOD_READY);
+  assert.notEqual(settings.tones.ORDER_ACTION, settings.tones.ORDER_NEW);
+  assert.notEqual(settings.tones.INBOX_MESSAGE, settings.tones.ORDER_ACTION);
   // เสียงแต่ละแบบต้องต่างกันด้วย "รูปทำนอง" ไม่ใช่แค่ต่างชื่อ
   const shapes = ALERT_TONES.filter((tone) => tone.steps.length > 0)
     .map((tone) => tone.steps.map((step) => `${step.hz}@${step.atMs}`).join("-"));

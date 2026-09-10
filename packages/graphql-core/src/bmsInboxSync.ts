@@ -2,6 +2,10 @@ export type BmsInboxChangedPayload = {
   tenantId: string;
   conversationId: string;
   kind: "MESSAGES_CHANGED" | "CONVERSATION_CHANGED" | "READ_CHANGED";
+  /** Cause of a message invalidation, so staff alerts never fire for their own outbound work. */
+  messageSource?: "customer" | "staff" | "ai" | "diagnostic";
+  /** Stable identity for deduplication; timestamps can collide under concurrent inbound traffic. */
+  messageId?: string;
   occurredAt: string;
 };
 

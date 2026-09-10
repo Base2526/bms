@@ -1796,8 +1796,10 @@ frozen in silence reads exactly like a kitchen board with no orders, which is th
 failure in this whole area. The pill turns amber when the feed is slower than expected and red when
 it has stopped.
 
-There is no server push yet. The screens poll, so work appears within seconds rather than instantly;
-a display left on the kitchen tab is the fastest of them.
+The POS and kitchen boards still use polling as their authoritative recovery path, so work appears
+even if a realtime event is missed. Admin staff additionally receive persistent post-commit
+order-action notifications (toast, browser notification and sound); the kitchen board's own polling
+and sound remain independent, so a Redis/WebSocket outage cannot make a live kitchen queue disappear.
 
 ### Table QR self-ordering (`9.60`)
 
