@@ -2,8 +2,13 @@
 import { Redis } from 'ioredis';
 import { RedisPubSub } from 'graphql-redis-subscriptions';
 import type { RedisOptions } from 'ioredis';
+import { safePubSubLogValue } from './events.js';
 
-const url = process.env.REDIS_URL || 'redis://redis:6379';
+const runtimeProcess = (globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+}).process;
+const runtimeEnv = runtimeProcess?.env ?? {};
+const url = runtimeEnv.REDIS_URL || 'redis://redis:6379';
 const opts: RedisOptions = { lazyConnect: true, maxRetriesPerRequest: null };
 
 export const pubsub = new RedisPubSub({
@@ -12,14 +17,14 @@ export const pubsub = new RedisPubSub({
 });
 
 // --- DEBUG HOOKS ---
-const DBG = process.env.PUBSUB_DEBUG === '1';
+const DBG = runtimeEnv.PUBSUB_DEBUG === '1';
 
 if (DBG) {
   const _origPublish = pubsub.publish.bind(pubsub);
   // พ่น log ทุกครั้งที่มี publish (ไม่ต้องแก้ callsite อื่น ๆ)
   pubsub.publish = async (triggerName: string, payload: unknown) => {
     try {
-      console.log('[pubsub][publish] = ', triggerName, JSON.stringify(payload));
+      console.log('[pubsub][publish] = ', triggerName, JSON.stringify(safePubSubLogValue(payload)));
     } catch {}
     return _origPublish(triggerName, payload as any);
   };
@@ -35,6 +40,6 @@ if (DBG) {
 
 // เผื่ออยากเรียกตรง ๆ
 export const dbgPublish = async (trigger: string, payload: any) => {
-  if (DBG) console.log('[pubsub][dbgPublish] = ', trigger, JSON.stringify(payload));
+  if (DBG) console.log('[pubsub][dbgPublish] = ', trigger, JSON.stringify(safePubSubLogValue(payload)));
   return pubsub.publish(trigger, payload);
 };

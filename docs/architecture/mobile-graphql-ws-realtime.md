@@ -1,6 +1,6 @@
 # Mobile-first GraphQL and WebSocket architecture
 
-> Status: accepted architecture and Phase 1 inventory (2026-09-10)
+> Status: Phase 1 inventory complete; Phase 2 shared event contract implemented (2026-09-10)
 >
 > Realtime security and delivery details: [production realtime audit](realtime-production-audit.md)
 > and [ADR 001](decisions/001-transactional-realtime-invalidation.md)
@@ -195,3 +195,12 @@ resolver from inventing a parallel behavior.
 No later phase may claim completion merely because a schema field exists. Completion requires the
 service path, authorization, idempotency, audit/outbox boundary, subscription, client reconciliation,
 and tests to agree.
+
+## Implementation status
+
+| Phase | Status | Evidence |
+| --- | --- | --- |
+| 1. Audit and architecture | Complete | 117 REST routes classified above; GraphQL and subscription inventory linked |
+| 2. Shared event contract | Complete | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication |
+| 3. Transactional outbox | Next | schema is designed in ADR 001; no migration is claimed yet |
+| 4–7. WS/auth, mobile operations, events, client rollout | Planned | must follow the test and rollout gates above |

@@ -1083,6 +1083,12 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   REST. The retail/restaurant POS REST APIs remain intact until device-scoped GraphQL authorization,
   parity tests, and staged client migration are complete. See
   [mobile-graphql-ws-realtime.md](architecture/mobile-graphql-ws-realtime.md).
+- **Shared realtime event contract (2026-09-10, no migration)** — `packages/realtime` now owns the
+  closed event-type/rule union, versioned minimal envelope, tenant/location/user/device topic
+  builders, runtime payload validation, safe logging projection, publish/subscribe helpers, fixtures,
+  and bounded client deduplication. Routing scope is server-shaped and topic segments reject
+  separators. Payloads accept only event-specific scalar hints and reject PII/clinical/evidence keys.
+  The existing legacy publishers are unchanged pending the transactional-outbox phase.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking

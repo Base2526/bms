@@ -25,7 +25,7 @@ whichever is wrong, in the same change.
 - [AI provider selection, BYOK, and health](#ai-provider-selection-byok-and-health)
 - [Follow-up automation scheduler](#follow-up-automation-scheduler)
 - [Redis usage (pub/sub, cache, sessions, job runs, request metrics)](#redis-usage-pubsub-cache-sessions-job-runs-request-metrics)
-- [Realtime invalidation architecture](#realtime-invalidation-architecture-planned)
+- [Realtime invalidation architecture](#realtime-invalidation-architecture)
 - [Observability (`/admin/system-health`)](#observability-adminsystem-health)
 - [i18n coverage](#i18n-coverage-what-bilingual-actually-means-today)
 - [Frontend and CSS Modules](#frontend-and-css-modules)
@@ -1049,12 +1049,13 @@ hold:
 Full history/rationale of what was found and fixed: § Multi-instance readiness in
 [CLAUDE.local.md](../CLAUDE.local.md).
 
-## Realtime invalidation architecture (planned)
+## Realtime invalidation architecture
 
 The 2026-09-10 audit is the current authority for realtime rollout work:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
-design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). These rules
-describe the target and do not claim that the outbox or wider event coverage exists today.
+design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
+event/type/topic/validation layer now exists in `packages/realtime`; the outbox, hardened gateway and
+wider event coverage do not yet exist.
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
@@ -1073,9 +1074,10 @@ describe the target and do not claim that the outbox or wider event coverage exi
   attachments, and all pharmacy clinical/evidence content.
 - Delivery is at least once. Dispatchers and clients must tolerate duplicate and out-of-order events,
   use bounded dedup/version checks, batch refetches, and treat a replay gap as a full-refetch signal.
-- Raw topic strings and `pubsub.publish()` call sites will be forbidden outside `packages/realtime`
-  after the shared event-contract phase. Until that migration, do not copy the legacy global-topic or
-  client-ID authorization patterns into new BMS subscriptions.
+- New BMS events use the types, rules, topic builders, validators, safe log projection and transport
+  helpers in `packages/realtime`; do not add another event string or raw topic. Legacy direct
+  `pubsub.publish()` call sites remain until their owning transaction is moved to the outbox. Do not
+  copy their global-topic or client-ID authorization patterns into new subscriptions.
 
 ## Observability (`/admin/system-health`)
 

@@ -45,7 +45,7 @@ type RealtimeEvent = {
   eventType: RealtimeEventType;
   schemaVersion: 1;
   tenantId: string;
-  branchId?: string;
+  locationId?: string;
   userId?: string;
   entityType: RealtimeEntityType;
   entityId: string;
@@ -71,9 +71,10 @@ structured health answers, medication suggestions, and raw mutation arguments.
 Pub/Sub topic builders are versioned and scoped from the start:
 
 ```text
-rt:v1:tenant:{tenantId}
-rt:v1:tenant:{tenantId}:branch:{branchId}
-rt:v1:user:{userId}
+bms:rt:v1:tenant:{tenantId}
+bms:rt:v1:tenant:{tenantId}:location:{locationId}
+bms:rt:v1:tenant:{tenantId}:user:{userId}
+bms:rt:v1:tenant:{tenantId}:location:{locationId}:device:{deviceId}
 ```
 
 IDs are opaque server identifiers, never secrets or PII. User events use only the user topic. Branch
@@ -95,7 +96,7 @@ A new ordered, idempotent migration will create `bms_realtime_outbox` with:
 | `id BIGSERIAL PRIMARY KEY` | efficient claim order |
 | `event_id UUID NOT NULL UNIQUE` | stable delivery/dedup identity |
 | `tenant_id UUID NOT NULL` | mandatory tenant ownership and RLS scope |
-| `branch_id UUID NULL` | optional branch audience derived by server |
+| `location_id UUID NULL` | optional branch/location audience derived by server |
 | `user_id UUID NULL` | optional user audience derived by server |
 | `event_type TEXT NOT NULL` | validated against the shared closed union before insert/publish |
 | `schema_version SMALLINT NOT NULL` | payload evolution |
