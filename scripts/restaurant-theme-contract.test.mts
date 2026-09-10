@@ -58,6 +58,9 @@ const PAIRS: Array<[string, string, number]> = [
   // เพราะ .panel ไม่มีพื้นของตัวเอง ลูกทุกตัวจึงนั่งบน --ground จริง ๆ (คำอธิบายสีท้ายผัง
   // .floorLegend · .menuToolNote · .menuEmpty) — ก่อนหน้านี้เทสตรึงไว้แค่บน --panel
   ["--ink-3", "--panel", 3], ["--ink-3", "--ground", 3],
+  // ช่องข้อความของการ์ดเมนู (.dishBody) นั่งบน --quiet — ทั้งราคา/ชื่อ (--ink), คำว่า
+  // "มีตัวเลือก" (--ink-3) และ "แตะเพื่อเปิดขาย" (--accent) จึงอ่านบนพื้นนั้นจริง
+  ["--ink-3", "--quiet", 3], ["--accent", "--quiet", 4.5], ["--ink-2", "--quiet", 4.5],
   ...(["--accent", "--red", "--amber", "--green", "--grey"] as const).flatMap(
     (c): Array<[string, string, number]> => [
       [c, "--panel", 4.5],
