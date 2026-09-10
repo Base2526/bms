@@ -86,9 +86,6 @@ export function validateRealtimeTicketClaims(
   requireUniqueStrings(value.permissions, "permissions", PERMISSION, 256);
   requireUniqueStrings(value.locationIds, "location_ids", UUID, 256);
   if (typeof value.allLocations !== "boolean") throw new RealtimeTicketError("INVALID_LOCATION_SCOPE");
-  if (value.allLocations && value.locationIds.length > 0) {
-    throw new RealtimeTicketError("INVALID_LOCATION_SCOPE");
-  }
   if (value.sessionId !== undefined) requireId(value.sessionId, "session_id");
   if (value.scope === "admin" && !value.sessionId) throw new RealtimeTicketError("SESSION_REQUIRED");
   if (value.sessionVersion !== undefined &&

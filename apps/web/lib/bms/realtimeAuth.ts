@@ -36,9 +36,12 @@ async function adminLocationScope(tenantId: string, adminId: string): Promise<{
       ORDER BY location_id`,
     [tenantId, adminId],
   );
-  return rows.length === 0
-    ? { allLocations: true, locationIds: [] }
-    : { allLocations: false, locationIds: rows.map((row) => row.location_id) };
+  if (rows.length > 0) return { allLocations: false, locationIds: rows.map((row) => row.location_id) };
+  const all = await query<{ id: string }>(
+    "SELECT id FROM bms_locations WHERE tenant_id = $1 ORDER BY id",
+    [tenantId],
+  );
+  return { allLocations: true, locationIds: all.rows.map((row) => row.id) };
 }
 
 function baseClaims(input: {

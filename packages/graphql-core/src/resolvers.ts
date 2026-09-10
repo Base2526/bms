@@ -18,6 +18,12 @@ import {
   type BmsInboxChangedPayload,
 } from "./bmsInboxSync.js";
 import type { RealtimeTicketClaims } from "../../realtime/src/wsTicket.js";
+import {
+  REALTIME_EVENT_RULES,
+  validateRealtimeEvent,
+  type RealtimeEvent,
+} from "../../realtime/src/events.js";
+import { topicForLocation, topicForTenant, topicForUser } from "../../realtime/src/topics.js";
 
 function requireRealtimeClaims(ctx: any): RealtimeTicketClaims {
   const claims = ctx?.realtime as RealtimeTicketClaims | undefined;
@@ -44,6 +50,27 @@ function requireBmsTenantId(ctx: any): string {
     });
   }
   return claims.tenantId;
+}
+
+function realtimeTopics(claims: RealtimeTicketClaims): string[] {
+  const topics = [topicForUser(claims.tenantId ?? "global", claims.subjectId)];
+  if (claims.tenantId) {
+    topics.push(topicForTenant(claims.tenantId));
+    for (const locationId of claims.locationIds) topics.push(topicForLocation(claims.tenantId, locationId));
+  }
+  return topics;
+}
+
+function canReceiveRealtimeEvent(event: RealtimeEvent, claims: RealtimeTicketClaims): boolean {
+  const rule = REALTIME_EVENT_RULES[event.eventType];
+  if (event.tenantId !== claims.tenantId) return false;
+  if (!rule.permissions.every((permission) => claims.permissions.includes(permission))) return false;
+  if (rule.audience === "user") return event.userId === claims.subjectId;
+  if (rule.audience === "location") {
+    return Boolean(event.locationId) && (claims.allLocations || claims.locationIds.includes(event.locationId!));
+  }
+  if (rule.audience === "device") return false;
+  return rule.audience === "tenant";
 }
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -250,6 +277,21 @@ export const coreResolvers = {
           const tenantId = requireBmsTenantId(ctx);
           return payload?.bmsInboxChanged?.tenantId === tenantId;
         }
+      ),
+    },
+    realtimeEvent: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => pubsub.asyncIterator(realtimeTopics(requireRealtimeClaims(ctx))),
+        (payload: { realtimeEvent?: unknown }, _vars: any, ctx: any) => {
+          try {
+            return canReceiveRealtimeEvent(
+              validateRealtimeEvent(payload?.realtimeEvent),
+              requireRealtimeClaims(ctx),
+            );
+          } catch {
+            return false;
+          }
+        },
       ),
     },
   },

@@ -148,6 +148,24 @@ export const coreTypeDefs = /* GraphQL */ `
     replies: [Comment!]!
   }
 
+  type RealtimeEvent {
+    eventId: ID!
+    eventType: String!
+    schemaVersion: Int!
+    tenantId: ID!
+    locationId: ID
+    userId: ID
+    actorType: String!
+    actorId: ID
+    deviceId: ID
+    entityType: String!
+    entityId: ID!
+    aggregateVersion: Float
+    updatedAt: String
+    occurredAt: String!
+    payload: JSON
+  }
+
   type Query { _ok: String! }
   type Mutation { 
     send(text: String!): Boolean! 
@@ -182,5 +200,9 @@ export const coreTypeDefs = /* GraphQL */ `
     # Small tenant-scoped invalidation event. Conversation data remains behind
     # the normal BMS queries so their RBAC and tenant rules stay authoritative.
     bmsInboxChanged: BmsInboxChangedPayload!
+
+    # Versioned safe invalidations. The ticket determines tenant/user/location topics;
+    # event payloads never authorize or replace the authoritative query.
+    realtimeEvent: RealtimeEvent!
   }
 `;

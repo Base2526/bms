@@ -55,10 +55,10 @@ test("admin tenant permissions require a trusted tenant and session", () => {
 });
 
 test("location scope and permission arrays are bounded and unique", () => {
-  assert.throws(() => validateRealtimeTicketClaims(claims({
+  assert.doesNotThrow(() => validateRealtimeTicketClaims(claims({
     allLocations: true,
     locationIds: ["55555555-5555-4555-8555-555555555555"],
-  }), now), /INVALID_LOCATION_SCOPE/);
+  }), now));
   assert.throws(() => validateRealtimeTicketClaims(claims({
     permissions: ["order.view", "order.view"],
   }), now), /INVALID_PERMISSIONS/);

@@ -13,6 +13,7 @@ import { GlobalStaffAlertSoundStatus } from "@/components/GlobalStaffAlertSoundS
 import { SupportActivityRecorder } from "@/components/SupportActivityRecorder";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
 import { getLangCookie, setLangCookie, isLang } from "@/lib/lang";
+import { RealtimeProvider } from "@/components/realtime/RealtimeProvider";
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system";
@@ -80,8 +81,10 @@ function GlobalWiresWrapper() {
 export default function SessionLayer({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <GlobalWiresWrapper />
-      {children}
+      <RealtimeProvider>
+        <GlobalWiresWrapper />
+        {children}
+      </RealtimeProvider>
     </SessionProvider>
   );
 }

@@ -138,6 +138,7 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // - keeps auth/first paint lighter by loading ws deps only when needed
 // ----------------------------
 type WsScope = "web" | "admin";
+export type RealtimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "degraded";
 const wsLinks: Partial<Record<WsScope, ApolloLink>> = {};
 const wsLinkLoading: Partial<Record<WsScope, Promise<ApolloLink>>> = {};
 const wsClients: Partial<Record<WsScope, { dispose: () => void }>> = {};
@@ -151,6 +152,10 @@ export function resetRealtimeConnections() {
   }
 }
 
+function emitRealtimeStatus(status: RealtimeConnectionStatus, scope: WsScope) {
+  window.dispatchEvent(new CustomEvent("bms-realtime-status", { detail: { status, scope } }));
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("backend-logout", resetRealtimeConnections);
   window.addEventListener("frontend-logout", resetRealtimeConnections);
@@ -162,6 +167,7 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
   if (wsLinkLoading[scope]) return wsLinkLoading[scope]!;
 
   wsLinkLoading[scope] = (async () => {
+    emitRealtimeStatus(navigator.onLine ? "connecting" : "offline", scope);
     const [{ GraphQLWsLink }, { createClient }] = await Promise.all([
       import("@apollo/client/link/subscriptions"),
       import("graphql-ws"),
@@ -188,9 +194,18 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
           return { ticket: body.ticket };
         },
         on: {
-          connected: () => addLog("info", "ws", "[ws] connected", { scope }),
-          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason }),
-          error: (err: any) => addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) }),
+          connected: () => {
+            emitRealtimeStatus("connected", scope);
+            addLog("info", "ws", "[ws] connected", { scope });
+          },
+          closed: (ev: any) => {
+            emitRealtimeStatus(navigator.onLine ? "reconnecting" : "offline", scope);
+            addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason });
+          },
+          error: (err: any) => {
+            emitRealtimeStatus(navigator.onLine ? "degraded" : "offline", scope);
+            addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) });
+          },
         },
       });
     const link = new GraphQLWsLink(wsClient);
