@@ -20,6 +20,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
 | [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
 | [architecture/realtime-production-audit.md](docs/architecture/realtime-production-audit.md) · [ADR 001](docs/architecture/decisions/001-transactional-realtime-invalidation.md) | Current realtime security/reliability audit · accepted phased outbox/invalidation design |
+| [architecture/mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) | Mobile/RN GraphQL primary API, REST exception inventory, POS migration gaps and phase boundaries |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |

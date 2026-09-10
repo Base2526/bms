@@ -1076,6 +1076,13 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   outbox, while keeping `apps/ws` database-free and retaining polling until recovery/load gates pass.
   No runtime behavior or database schema changed in this phase. See the
   [audit and phased plan](architecture/realtime-production-audit.md).
+- **Mobile GraphQL/WS architecture inventory (2026-09-10, documentation only)** — classified all 76
+  BMS and 41 POS REST routes into permanent HTTP surfaces, existing GraphQL compatibility paths, and
+  missing mobile/POS contracts. Normal React Native commands and reads converge on HTTPS GraphQL;
+  WebSocket remains a scoped invalidation channel; webhook/file/export/cron/signed-public flows stay
+  REST. The retail/restaurant POS REST APIs remain intact until device-scoped GraphQL authorization,
+  parity tests, and staged client migration are complete. See
+  [mobile-graphql-ws-realtime.md](architecture/mobile-graphql-ws-realtime.md).
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking

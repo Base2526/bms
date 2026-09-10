@@ -138,6 +138,11 @@ outbox dispatched to Redis while `apps/ws` remains database-free. No outbox migr
 domain event rollout exists yet. See the [full audit](realtime-production-audit.md) and
 [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
+The mobile transport decision is also locked: normal React Native/POS reads and commands converge on
+HTTPS GraphQL, while GraphQL WS carries invalidations. The current 41 POS REST routes remain
+compatibility APIs until a device-scoped GraphQL context and per-workflow parity tests exist. See the
+[mobile GraphQL/WS architecture and route inventory](mobile-graphql-ws-realtime.md).
+
 **Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·

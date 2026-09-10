@@ -2,6 +2,34 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
+## Mobile GraphQL primary API
+
+The accepted mobile contract uses GraphQL queries and mutations over HTTPS for normal React Native,
+Android, iOS, browser admin, and future POS workflows. Resolvers remain thin and call the same
+`apps/web/lib/bms/*.ts` services as compatible REST routes. GraphQL WebSocket subscriptions carry
+only scoped invalidations; clients refetch authoritative GraphQL snapshots after delivery.
+
+Current coverage is broad for admin workflows but incomplete for device-authenticated POS. The
+Phase 1 inventory, exact REST classification, POS gaps, authentication model, and migration order are
+in [mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md).
+
+## Realtime subscriptions
+
+Subscriptions run through `apps/ws` and Redis. They are not a mutation transport or source of truth.
+Existing polling and focus reconciliation remain enabled. Before wider production use, the gateway
+must close the authorization/lifecycle gaps in the
+[realtime production audit](realtime-production-audit.md), then domain mutations must write the
+transactional outbox described by [ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
+## REST exceptions and compatibility
+
+REST remains the permanent transport for file upload/download, generated exports, external
+webhooks/payment callbacks, signed public checkout/restaurant-QR flows, cron/job triggers, and
+diagnostic/stream-oriented endpoints. Existing `/api/pos/*` and admin compatibility routes stay
+available while GraphQL equivalents and parity tests are added. A REST state change and its GraphQL
+equivalent must call the same service and enqueue the same event; neither adapter may reimplement
+business rules.
+
 Two API layers exist side by side, both calling into the same `lib/bms/*.ts` services:
 
 - **REST** (`apps/web/app/api/bms/*`) — channel webhooks (public, per-tenant), a couple of
