@@ -5827,6 +5827,7 @@ const rawResolvers = {
       const author_id = String(auth.author_id);
       console.log("[Mutation] deleteMessage :", ctx, author_id);
 
+      let deletedChatId: string | null = null;
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
           `SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`,
@@ -5850,10 +5851,9 @@ const rawResolvers = {
           return false;
         }
 
-        // 4️⃣ Publish event สำหรับ subscribers
-        await pubsub.publish(topicChat(msg.chat_id), { messageDeleted: message_id });
+        deletedChatId = String(msg.chat_id);
 
-        // 5️⃣ บันทึก log
+        // 4️⃣ บันทึก log
         await addLog(
           'info',
           'message-delete',
@@ -5863,6 +5863,12 @@ const rawResolvers = {
 
         return true;
       });
+
+      // Redis I/O must happen only after commit. This legacy signal is still best effort;
+      // durable community delivery needs its own non-BMS outbox design.
+      if (result && deletedChatId) {
+        await pubsub.publish(topicChat(deletedChatId), { messageDeleted: message_id });
+      }
 
       console.log("revisionId =", revisionId, "result =", result);
       return result;

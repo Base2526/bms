@@ -140,6 +140,22 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 type WsScope = "web" | "admin";
 const wsLinks: Partial<Record<WsScope, ApolloLink>> = {};
 const wsLinkLoading: Partial<Record<WsScope, Promise<ApolloLink>>> = {};
+const wsClients: Partial<Record<WsScope, { dispose: () => void }>> = {};
+
+export function resetRealtimeConnections() {
+  for (const scope of Object.keys(wsClients) as WsScope[]) {
+    try { wsClients[scope]?.dispose(); } catch {}
+    delete wsClients[scope];
+    delete wsLinks[scope];
+    delete wsLinkLoading[scope];
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("backend-logout", resetRealtimeConnections);
+  window.addEventListener("frontend-logout", resetRealtimeConnections);
+  window.addEventListener("beforeunload", resetRealtimeConnections);
+}
 
 async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
   if (wsLinks[scope]) return wsLinks[scope]!;
@@ -151,20 +167,35 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
       import("graphql-ws"),
     ]);
 
-    const link = new GraphQLWsLink(
-      createClient({
+    const wsClient = createClient({
         url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
         lazy: true,
         retryAttempts: Infinity,
-        connectionParams: () => ({ "x-scope": scope }),
+        retryWait: async (retries) => {
+          const capped = Math.min(30_000, 500 * (2 ** Math.min(retries, 6)));
+          const jitter = Math.floor(Math.random() * Math.max(1, capped / 3));
+          await new Promise((resolve) => window.setTimeout(resolve, capped + jitter));
+        },
+        connectionParams: async () => {
+          const response = await fetch(`/api/bms/realtime/ticket?scope=${scope}`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+          });
+          if (!response.ok) throw new Error(`REALTIME_TICKET_${response.status}`);
+          const body = await response.json() as { ticket?: unknown };
+          if (typeof body.ticket !== "string") throw new Error("REALTIME_TICKET_INVALID");
+          return { ticket: body.ticket };
+        },
         on: {
           connected: () => addLog("info", "ws", "[ws] connected", { scope }),
           closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason }),
           error: (err: any) => addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) }),
         },
-      })
-    );
+      });
+    const link = new GraphQLWsLink(wsClient);
 
+    wsClients[scope] = wsClient;
     wsLinks[scope] = link;
     return link;
   })();

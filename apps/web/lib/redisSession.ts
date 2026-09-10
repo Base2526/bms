@@ -64,6 +64,25 @@ export async function isAdminSessionActive(jti: string | undefined | null): Prom
   }
 }
 
+/**
+ * Realtime tickets fail closed: a long-lived transport must never be created when
+ * revocation cannot be checked or when the token predates the session registry.
+ */
+export async function isAdminSessionActiveForRealtime(
+  jti: string | undefined | null,
+  expectedUserId: string | number,
+): Promise<boolean> {
+  if (!jti) return false;
+  try {
+    return (await client.get(sessionKey(jti))) === String(expectedUserId);
+  } catch (err: any) {
+    console.error("[redisSession] realtime check failed closed", {
+      error: err?.name || "RedisError",
+    });
+    return false;
+  }
+}
+
 export async function revokeAdminSession(jti: string | undefined | null): Promise<void> {
   if (!jti) return;
   try {

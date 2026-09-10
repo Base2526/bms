@@ -1,9 +1,5 @@
 FROM node:20-bookworm-slim
 
-ARG JWT_SECRET
-
-ENV JWT_SECRET=$JWT_SECRET
-
 RUN apt-get update && apt-get install -y \
     python3 \
     make \

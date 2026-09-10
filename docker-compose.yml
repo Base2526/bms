@@ -60,6 +60,20 @@ services:
       WS_PORT: "8080"
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      WS_MAX_CONNECTIONS_PER_IP: ${WS_MAX_CONNECTIONS_PER_IP:-100}
+      WS_MAX_CONNECTIONS_PER_USER: ${WS_MAX_CONNECTIONS_PER_USER:-10}
+      WS_MAX_CONNECTIONS_PER_TENANT: ${WS_MAX_CONNECTIONS_PER_TENANT:-1000}
+      WS_MAX_SUBSCRIPTIONS_PER_CONNECTION: ${WS_MAX_SUBSCRIPTIONS_PER_CONNECTION:-20}
+      WS_CONNECTION_INIT_TIMEOUT_MS: ${WS_CONNECTION_INIT_TIMEOUT_MS:-10000}
+      WS_IDLE_TIMEOUT_MS: ${WS_IDLE_TIMEOUT_MS:-90000}
+      WS_PING_INTERVAL_MS: ${WS_PING_INTERVAL_MS:-25000}
+      WS_AUTH_RECHECK_MS: ${WS_AUTH_RECHECK_MS:-15000}
+      WS_MAX_MESSAGE_BYTES: ${WS_MAX_MESSAGE_BYTES:-65536}
+      WS_MAX_QUERY_BYTES: ${WS_MAX_QUERY_BYTES:-16384}
+      WS_MAX_VARIABLES_BYTES: ${WS_MAX_VARIABLES_BYTES:-16384}
+      WS_MAX_BUFFERED_BYTES: ${WS_MAX_BUFFERED_BYTES:-1048576}
       # ws ไม่ต่อ Postgres เลย (subscription ทั้งหมดมาจาก Redis pub/sub) — `DATABASE_URL` ที่เคย
       # ส่งเข้ามาตรงนี้ผูกกับ apps/ws/src/db ที่เป็น dead code และถูกลบไปแล้ว
     depends_on:
@@ -84,6 +98,7 @@ services:
       REALTIME_OUTBOX_BASE_RETRY_MS: ${REALTIME_OUTBOX_BASE_RETRY_MS:-500}
       REALTIME_RETENTION_SECONDS: ${REALTIME_RETENTION_SECONDS:-604800}
       REALTIME_FAILED_RETENTION_SECONDS: ${REALTIME_FAILED_RETENTION_SECONDS:-2592000}
+      WS_TICKET_TTL_SECONDS: ${WS_TICKET_TTL_SECONDS:-60}
       # ---- multi-instance knobs (ไม่ตั้ง = พฤติกรรมเดิมทุกข้อ) ----
       # จำนวน connection ต่อ 1 instance — connection รวมที่ postgres เห็น = ค่านี้ x จำนวน replica
       # ต้องลดค่านี้ลงก่อนเพิ่ม replica ไม่งั้นชน max_connections แล้วล้มพร้อมกันทุก instance

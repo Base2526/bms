@@ -1096,6 +1096,13 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   The guarded dispatch route records job-run evidence and all three compose files carry the worker
   controls. Pure dispatcher/migration contracts pass; the local DB contract exists but has not run in
   this environment because no disposable Postgres is available.
+- **Realtime gateway security hardening (2026-09-10, no migration)** — browsers and native clients
+  now obtain a short-lived signed ticket from HTTP after authoritative session checks. The WS
+  gateway no longer chooses scope or tenant from connection parameters/cookies, rechecks admin
+  revocation, closes expired tickets, permits subscription operations only, bounds connection and
+  payload cost, validates origins, and exposes Redis-aware readiness plus graceful drain. Inbox
+  requires `inbox.view`; user feeds bind to the authenticated subject. Unsafe legacy chat/post
+  resource fields are disabled in production pending membership capabilities. Polling is retained.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking

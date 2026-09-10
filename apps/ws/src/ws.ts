@@ -1,196 +1,299 @@
-// apps/ws/src/ws.ts
+import { createServer } from "node:http";
+
 import { makeExecutableSchema } from "@graphql-tools/schema";
-import { WebSocketServer } from "ws";
-import { useServer } from "graphql-ws/lib/use/ws";
+import type { ExecutionArgs } from "graphql";
 import { GraphQLError } from "graphql/error";
-import { parse, type ExecutionArgs } from "graphql";
-import { parse as parseCookie } from "cookie";
-import jwt from "jsonwebtoken";
+import { useServer } from "graphql-ws/lib/use/ws";
+import { WebSocket, WebSocketServer } from "ws";
 
+import {
+  acquireRealtimeConnectionLease,
+  closeRealtimeRedis,
+  readRealtimeRedisValue,
+  realtimeRedisPing,
+  refreshRealtimeConnectionLease,
+  releaseRealtimeConnectionLease,
+} from "../../../packages/realtime/src/pubsub.js";
+import { verifyRealtimeTicket, type RealtimeTicketClaims } from "../../../packages/realtime/src/wsTicket.js";
 import { typeDefs, resolvers } from "./shared.js";
+import {
+  inspectSubscriptionOperation,
+  isAllowedOrigin,
+  parseAllowedOrigins,
+  positiveInteger,
+  realtimeConnectionLeaseLimits,
+} from "./security.js";
 
+const production = process.env.NODE_ENV === "production";
+const PORT = positiveInteger(process.env.WS_PORT, 8080, 1, 65_535, "WS_PORT");
+const PATH = process.env.WS_PATH || "/graphql";
+const CONNECTION_INIT_TIMEOUT_MS = positiveInteger(process.env.WS_CONNECTION_INIT_TIMEOUT_MS, 10_000, 1_000, 60_000, "WS_CONNECTION_INIT_TIMEOUT_MS");
+const IDLE_TIMEOUT_MS = positiveInteger(process.env.WS_IDLE_TIMEOUT_MS, 90_000, 15_000, 600_000, "WS_IDLE_TIMEOUT_MS");
+const PING_INTERVAL_MS = positiveInteger(process.env.WS_PING_INTERVAL_MS, 25_000, 5_000, 120_000, "WS_PING_INTERVAL_MS");
+const AUTH_RECHECK_MS = positiveInteger(process.env.WS_AUTH_RECHECK_MS, 15_000, 5_000, 60_000, "WS_AUTH_RECHECK_MS");
+const MAX_MESSAGE_BYTES = positiveInteger(process.env.WS_MAX_MESSAGE_BYTES, 65_536, 1_024, 1_048_576, "WS_MAX_MESSAGE_BYTES");
+const MAX_QUERY_BYTES = positiveInteger(process.env.WS_MAX_QUERY_BYTES, 16_384, 1_024, 262_144, "WS_MAX_QUERY_BYTES");
+const MAX_VARIABLES_BYTES = positiveInteger(process.env.WS_MAX_VARIABLES_BYTES, 16_384, 1_024, 262_144, "WS_MAX_VARIABLES_BYTES");
+const MAX_BUFFERED_BYTES = positiveInteger(process.env.WS_MAX_BUFFERED_BYTES, 1_048_576, 65_536, 16_777_216, "WS_MAX_BUFFERED_BYTES");
+const MAX_SUBSCRIPTIONS = positiveInteger(process.env.WS_MAX_SUBSCRIPTIONS_PER_CONNECTION, 20, 1, 200, "WS_MAX_SUBSCRIPTIONS_PER_CONNECTION");
+const MAX_PER_IP = positiveInteger(process.env.WS_MAX_CONNECTIONS_PER_IP, 100, 1, 10_000, "WS_MAX_CONNECTIONS_PER_IP");
+const MAX_PER_USER = positiveInteger(process.env.WS_MAX_CONNECTIONS_PER_USER, 10, 1, 1_000, "WS_MAX_CONNECTIONS_PER_USER");
+const MAX_PER_TENANT = positiveInteger(process.env.WS_MAX_CONNECTIONS_PER_TENANT, 1_000, 1, 100_000, "WS_MAX_CONNECTIONS_PER_TENANT");
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS, production);
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
-const PORT = Number(process.env.WS_PORT || 8080);
-const PATH = process.env.WS_PATH || "/graphql";
-
-// ✅ cookie name ที่เว็บใช้
-const USER_COOKIE = process.env.USER_COOKIE || "USER_COOKIE";
-// ถ้ามี admin cookie ก็เพิ่มได้
-const ADMIN_COOKIE = process.env.ADMIN_COOKIE || "ADMIN_COOKIE";
-const ACT_TENANT_COOKIE = process.env.ACT_TENANT_COOKIE || "BMS_ACT_TENANT";
-
-// ws ตรวจ token ใบเดียวกับ web — ถ้า fallback ไปคีย์ในซอร์ส ใครก็ subscribe
-// สตรีมของร้านไหนก็ได้ · ล้มตอนบูตที่นี่ได้ เพราะเป็น service ไม่ใช่ build step
 function jwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error(
-        "JWT_SECRET is not configured — refusing to verify sockets with the built-in dev key"
-      );
-    }
+    if (production) throw new Error("JWT_SECRET is required for realtime tickets");
     return "changeme_secret";
   }
   return secret;
 }
 
-function toLowerKeys(obj: any) {
-  const out: Record<string, any> = {};
-  if (!obj || typeof obj !== "object") return out;
-  for (const k of Object.keys(obj)) out[k.toLowerCase()] = (obj as any)[k];
-  return out;
+type SocketState = {
+  claims: RealtimeTicketClaims;
+  leaseKeys: string[];
+  subscriptions: number;
+  alive: boolean;
+  lastActivityAt: number;
+  expiryTimer: ReturnType<typeof setTimeout>;
+  lastAuthCheckAt: number;
+};
+
+const states = new WeakMap<WebSocket, SocketState>();
+const metrics = {
+  acceptedConnections: 0,
+  rejectedConnections: 0,
+  activeConnections: 0,
+  activeSubscriptions: 0,
+  authFailures: 0,
+  slowConsumerCloses: 0,
+};
+let draining = false;
+
+function securityLog(event: string, data: Record<string, string | number | boolean | undefined> = {}) {
+  console.log(JSON.stringify({ level: "info", component: "ws", event, ...data }));
 }
 
-function readBearer(raw: any) {
-  const s = String(raw || "").trim();
-  if (!s) return "";
-  const m = s.match(/^Bearer\s+(.+)$/i);
-  return (m?.[1] || s).trim();
-}
-
-function getScope(ctx: any): "web" | "admin" | "android" {
-  const cp = toLowerKeys(ctx?.connectionParams);
-  const fromCP = String(cp["x-scope"] || cp["scope"] || "").trim().toLowerCase();
-
-  if (fromCP === "android" || fromCP === "web" || fromCP === "admin") return fromCP as any;
-
-  // fallback จาก referer / user-agent
-  const req = ctx?.extra?.request;
-  const ref = String(req?.headers?.referer || "");
-  if (ref.includes("/admin")) return "admin";
-
-  const ua = String(req?.headers?.["user-agent"] || "").toLowerCase();
-  if (ua.includes("android") || ua.includes("okhttp")) return "android";
-
-  return "web";
-}
-
-function getTokenFromAndroid(ctx: any) {
-  const cp = toLowerKeys(ctx?.connectionParams);
-  // ✅ RN จะส่ง connectionParams.Authorization
-  return (
-    readBearer(cp["authorization"]) ||
-    readBearer(cp["auth"]) ||
-    readBearer(cp["token"]) ||
-    ""
-  );
-}
-
-function getTokenFromCookies(ctx: any, cookieName: string) {
-  const req = ctx?.extra?.request;
-  const cookieHeader = req?.headers?.cookie || "";
-  const cookies = parseCookie(String(cookieHeader || ""));
-  return String(cookies?.[cookieName] || "").trim();
-}
-
-function applyActingTenant(ctx: any, user: any) {
-  if (!user || getScope(ctx) !== "admin") return user;
-  const token = getTokenFromCookies(ctx, ACT_TENANT_COOKIE);
-  if (!token) return user;
-  try {
-    const act = jwt.verify(token, jwtSecret()) as { actTenantId?: string; by?: string | number };
-    if (act?.actTenantId && String(act.by) === String(user.id ?? user.sub)) {
-      return { ...user, tenant_id: act.actTenantId, __actingTenantId: act.actTenantId };
-    }
-  } catch {
-    // Ignore an invalid/expired acting-tenant cookie, matching HTTP behavior.
+function requestIp(request: { socket?: { remoteAddress?: string }; headers?: Record<string, unknown> }): string {
+  if (process.env.WS_TRUST_PROXY === "1") {
+    const forwarded = String(request.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+    if (forwarded) return forwarded;
   }
-  return user;
+  return String(request.socket?.remoteAddress || "unknown");
 }
 
-function unauthError(reason: string) {
-  return [
-    new GraphQLError("UNAUTHENTICATED", {
-      extensions: {
-        code: "UNAUTHENTICATED",
-        message: "Token expired or missing.",
-        reason,
-      },
-    }),
-  ];
+function ticketFromParams(params: unknown): string {
+  if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("TICKET_REQUIRED");
+  const keys = Object.keys(params);
+  if (keys.length !== 1 || keys[0] !== "ticket") throw new Error("INVALID_CONNECTION_PARAMS");
+  const ticket = (params as { ticket?: unknown }).ticket;
+  if (typeof ticket !== "string") throw new Error("TICKET_REQUIRED");
+  return ticket;
 }
 
-const wss = new WebSocketServer({
-  // host: "0.0.0.0",
-  port: PORT,
-  path: PATH,
+async function sessionIsActive(claims: RealtimeTicketClaims): Promise<boolean> {
+  if (claims.scope !== "admin") return true;
+  return Boolean(claims.sessionId) &&
+    (await readRealtimeRedisValue(`session:admin:${claims.sessionId}`)) === claims.subjectId;
+}
+
+function graphQLError(code: string) {
+  return [new GraphQLError(code, { extensions: { code } })];
+}
+
+const httpServer = createServer(async (request, response) => {
+  if (request.url === "/healthz") {
+    response.writeHead(draining ? 503 : 200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: !draining }));
+    return;
+  }
+  if (request.url === "/readyz") {
+    let redis = false;
+    try { redis = !draining && await realtimeRedisPing(); } catch { redis = false; }
+    response.writeHead(redis ? 200 : 503, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: redis, redis, draining }));
+    return;
+  }
+  if (request.url === "/metrics") {
+    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end(JSON.stringify(metrics));
+    return;
+  }
+  response.writeHead(404).end();
 });
 
-useServer(
+const wss = new WebSocketServer({
+  server: httpServer,
+  path: PATH,
+  maxPayload: MAX_MESSAGE_BYTES,
+  verifyClient: ({ origin, req }) => !draining && (
+    isAllowedOrigin(origin, ALLOWED_ORIGINS)
+    || (!origin && req.headers["x-bms-client-class"] === "native")
+  ),
+});
+
+const disposer = useServer(
   {
     schema,
-
-    connectionInitWaitTimeout: 10000,
-
-    onSubscribe: async (ctx, msg) => {
-      // ===== logging เบื้องต้น =====
-      const scope = getScope(ctx);
-      const req = ctx.extra.request; // IncomingMessage
-      const cookieHeader = req?.headers?.cookie || "";
-      const cp = ctx.connectionParams || {};
-
-      console.log("[WS] onSubscribe scope=", scope);
-      // อย่า log token เต็มๆ ใน production (อันนี้ไว้ debug)
-      // console.log("[WS] connectionParams =", cp);
-
-      // ===== 1) ดึง token ตาม scope =====
-      let token = "";
-
-      if (scope === "android") {
-        // ✅ RN ใช้ connectionParams.Authorization
-        token = getTokenFromAndroid(ctx);
-
-        // fallback: เผื่อบาง client ส่งเป็น header authorization (น้อยมาก)
-        if (!token) {
-          token = readBearer(req?.headers?.authorization);
-        }
-      } else if (scope === "admin") {
-        // admin จะใช้ cookie หรือ bearer ก็ได้
-        token = readBearer((toLowerKeys(cp)["authorization"] ?? "") as any) || getTokenFromCookies(ctx, ADMIN_COOKIE);
-      } else {
-        // web
-        // ให้ bearer มาก่อน แล้วค่อย cookie
-        token = readBearer((toLowerKeys(cp)["authorization"] ?? "") as any) || getTokenFromCookies(ctx, USER_COOKIE);
-      }
-
-      if (!token) {
-        console.log("[WS] no token (scope=", scope, ")");
-        return unauthError(scope === "android" ? "android_missing_bearer" : "missing_cookie_or_bearer");
-      }
-
-      // ===== 2) verify jwt =====
-      let user: any = null;
+    connectionInitWaitTimeout: CONNECTION_INIT_TIMEOUT_MS,
+    onConnect: async (ctx) => {
+      const socket = ctx.extra.socket as WebSocket;
       try {
-        user = jwt.verify(token, jwtSecret());
-        user = applyActingTenant(ctx, user);
-      } catch (err) {
-        console.error("[WS] invalid token", err);
-        return unauthError("invalid_or_expired_token");
+        if (draining) throw new Error("SERVER_DRAINING");
+        const claims = await verifyRealtimeTicket(ticketFromParams(ctx.connectionParams), jwtSecret());
+        if (!(await sessionIsActive(claims))) throw new Error("SESSION_REVOKED");
+        const limits = realtimeConnectionLeaseLimits({
+          ip: requestIp(ctx.extra.request as any),
+          subjectId: claims.subjectId,
+          tenantId: claims.tenantId,
+          maximumPerIp: MAX_PER_IP,
+          maximumPerUser: MAX_PER_USER,
+          maximumPerTenant: MAX_PER_TENANT,
+        });
+        if (!(await acquireRealtimeConnectionLease(limits, IDLE_TIMEOUT_MS * 2))) throw new Error("CONNECTION_LIMIT_EXCEEDED");
+        const expiryTimer = setTimeout(
+          () => socket.close(4403, "ticket expired"),
+          Math.max(1, claims.expiresAt * 1000 - Date.now()),
+        );
+        states.set(socket, {
+          claims,
+          leaseKeys: limits.map((item) => item.key),
+          subscriptions: 0,
+          alive: true,
+          lastActivityAt: Date.now(),
+          expiryTimer,
+          lastAuthCheckAt: Date.now(),
+        });
+        metrics.acceptedConnections += 1;
+        metrics.activeConnections += 1;
+        securityLog("connection.accepted", { scope: claims.scope, tenantScoped: Boolean(claims.tenantId) });
+        return true;
+      } catch (error) {
+        metrics.rejectedConnections += 1;
+        metrics.authFailures += 1;
+        securityLog("connection.rejected", { reason: error instanceof Error ? error.message : "AUTH_FAILED" });
+        return false;
       }
-
-      if (!user) {
-        return unauthError("no_user_after_verify");
+    },
+    onSubscribe: async (ctx, msg) => {
+      const socket = ctx.extra.socket as WebSocket;
+      const state = states.get(socket);
+      if (!state || state.claims.expiresAt * 1000 <= Date.now()) return graphQLError("UNAUTHENTICATED");
+      if (state.subscriptions >= MAX_SUBSCRIPTIONS) return graphQLError("SUBSCRIPTION_LIMIT_EXCEEDED");
+      try {
+        if (!(await sessionIsActive(state.claims))) return graphQLError("UNAUTHENTICATED");
+        const inspected = inspectSubscriptionOperation({
+          query: msg.payload.query,
+          operationName: msg.payload.operationName,
+          variables: msg.payload.variables,
+          maximumQueryBytes: MAX_QUERY_BYTES,
+          maximumVariablesBytes: MAX_VARIABLES_BYTES,
+          production,
+        });
+        state.subscriptions += 1;
+        metrics.activeSubscriptions += 1;
+        const identity = { id: state.claims.subjectId, tenant_id: state.claims.tenantId };
+        const execArgs: ExecutionArgs = {
+          schema,
+          document: inspected.document,
+          variableValues: msg.payload.variables,
+          operationName: inspected.operationName,
+          contextValue: {
+            scope: state.claims.scope,
+            realtime: state.claims,
+            user: identity,
+            admin: state.claims.scope === "admin" ? identity : null,
+          },
+        };
+        return execArgs;
+      } catch (error) {
+        return graphQLError(error instanceof Error ? error.message : "SUBSCRIPTION_REJECTED");
       }
-
-      // ===== 3) คืน ExecutionArgs =====
-      const execArgs: ExecutionArgs = {
-        schema,
-        document: parse(String((msg as any).payload.query)),
-        variableValues: ((msg as any).payload as any).variables,
-        operationName: ((msg as any).payload as any).operationName,
-        // ✅ contextValue จะถูกส่งไป resolver/subscription
-        contextValue: {
-          scope,
-          user,
-          // คุณจะส่งค่าอื่นเพิ่มได้ เช่น req, connectionParams ฯลฯ
-        },
-      };
-
-      return execArgs;
+    },
+    onComplete: (ctx) => {
+      const state = states.get(ctx.extra.socket as WebSocket);
+      if (state?.subscriptions) {
+        state.subscriptions -= 1;
+        metrics.activeSubscriptions = Math.max(0, metrics.activeSubscriptions - 1);
+      }
+    },
+    onDisconnect: async (ctx) => {
+      const socket = ctx.extra.socket as WebSocket;
+      const state = states.get(socket);
+      if (!state) return;
+      clearTimeout(state.expiryTimer);
+      metrics.activeConnections = Math.max(0, metrics.activeConnections - 1);
+      metrics.activeSubscriptions = Math.max(0, metrics.activeSubscriptions - state.subscriptions);
+      states.delete(socket);
+      await releaseRealtimeConnectionLease(state.leaseKeys).catch(() => undefined);
     },
   },
-  wss
+  wss,
 );
 
-console.log(`[WS] graphql-ws running at ws://0.0.0.0:${PORT}${PATH}`);
+wss.on("connection", (socket) => {
+  socket.on("message", () => {
+    const state = states.get(socket);
+    if (state) state.lastActivityAt = Date.now();
+  });
+  socket.on("pong", () => {
+    const state = states.get(socket);
+    if (state) {
+      state.alive = true;
+      state.lastActivityAt = Date.now();
+    }
+  });
+});
+
+const maintenanceTimer = setInterval(() => {
+  for (const socket of wss.clients) {
+    const state = states.get(socket);
+    if (!state) continue;
+    if (!state.alive || Date.now() - state.lastActivityAt > IDLE_TIMEOUT_MS) {
+      socket.terminate();
+      continue;
+    }
+    if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+      metrics.slowConsumerCloses += 1;
+      socket.close(4408, "slow consumer");
+      continue;
+    }
+    state.alive = false;
+    socket.ping();
+    void refreshRealtimeConnectionLease(state.leaseKeys, IDLE_TIMEOUT_MS * 2)
+      .then((renewed) => { if (!renewed) socket.close(1013, "realtime lease lost"); })
+      .catch(() => socket.close(1013, "realtime dependency unavailable"));
+    if (Date.now() - state.lastAuthCheckAt >= AUTH_RECHECK_MS) {
+      state.lastAuthCheckAt = Date.now();
+      void sessionIsActive(state.claims)
+        .then((active) => { if (!active) socket.close(4403, "session revoked"); })
+        .catch(() => socket.close(1013, "realtime dependency unavailable"));
+    }
+  }
+}, PING_INTERVAL_MS);
+maintenanceTimer.unref();
+
+async function shutdown(signal: string) {
+  if (draining) return;
+  draining = true;
+  securityLog("server.draining", { signal });
+  clearInterval(maintenanceTimer);
+  httpServer.close();
+  for (const socket of wss.clients) socket.close(1012, "service restart");
+  const forceTimer = setTimeout(() => {
+    for (const socket of wss.clients) socket.terminate();
+  }, 10_000);
+  forceTimer.unref();
+  await disposer.dispose();
+  await closeRealtimeRedis();
+  clearTimeout(forceTimer);
+}
+
+process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
+process.once("SIGINT", () => { void shutdown("SIGINT"); });
+
+httpServer.listen(PORT, "0.0.0.0", () => {
+  securityLog("server.listening", { port: PORT, path: PATH });
+});

@@ -703,13 +703,20 @@ only. `Create Msg` writes a real diagnostic conversation/message first, then pub
 keeps `IN real`/`OUT real` from Channel Health separate from `IN diag`, which is read from the
 latest diagnostic message rows.
 
-This describes current behavior, not a production-complete authorization or delivery guarantee. The
-2026-09-10 audit found that the WS resolver does not yet require `inbox.view`, can fall back to the
-default tenant, and does not perform HTTP-equivalent session revocation/fresh-identity checks. Direct
-Pub/Sub also has a commit-to-publish loss window and no replay. Keep the 20-second poll enabled until
-the security gates, transactional outbox, recovery tests, and staged rollout in the
+This describes current behavior, not a production-complete delivery guarantee. The 2026-09-10
+hardening removed the WS default-tenant fallback, requires `inbox.view`, and replaces raw cookie/JWT
+gateway auth with a short-lived ticket minted after strict revocation, fresh identity, acting-tenant,
+permission, and location checks. Direct legacy Inbox Pub/Sub still has a commit-to-publish loss
+window and no replay. Keep the 20-second poll enabled until Inbox writes use the transactional outbox
+and the recovery tests and staged rollout in the
 [realtime production audit](realtime-production-audit.md) are complete. The accepted target contract
 is recorded in [ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
+`POST /api/bms/realtime/ticket?scope=admin|web|android` is the only socket credential minting path.
+It returns `{ ticket, expiresAt }` with `Cache-Control: no-store`; tenant, permissions, and allowed
+locations are server-derived. The gateway accepts only `connectionParams.ticket`, permits one
+subscription field per operation, and exposes `/healthz`, `/readyz`, and local `/metrics`. Legacy
+chat/post subscriptions that still require resource membership are disabled in production.
 
 ## Auth scopes
 

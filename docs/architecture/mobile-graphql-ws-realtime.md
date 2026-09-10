@@ -203,5 +203,5 @@ and tests to agree.
 | 1. Audit and architecture | Complete | 117 REST routes classified above; GraphQL and subscription inventory linked |
 | 2. Shared event contract | Complete | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication |
 | 3. Transactional outbox | Implemented; live DB verification pending | migration `9.70`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, pure and DB contract suites |
-| 4. WS/auth hardening | Next | must pass cross-scope, expiry, revocation and origin/limit tests before wider subscriptions |
-| 5–7. Mobile operations, domain events, client rollout | Planned | must follow the test and rollout gates above |
+| 4. WS/auth hardening | Implemented; live socket verification pending | HTTP-minted short-lived tickets, strict admin revocation/fresh identity/acting tenant, scoped permissions/locations, subscription-only gateway, origin/size/quota/expiry/ping/drain/health controls |
+| 5–7. Mobile operations, domain events, client rollout | Planned | must follow the test and rollout gates above; legacy polling remains enabled |

@@ -17,17 +17,33 @@ import {
   topicBmsInboxChanged,
   type BmsInboxChangedPayload,
 } from "./bmsInboxSync.js";
+import type { RealtimeTicketClaims } from "../../realtime/src/wsTicket.js";
 
-const DEFAULT_BMS_TENANT_ID = "11111111-1111-1111-1111-111111111111";
-
-function requireBmsTenantId(ctx: any): string {
-  const userId = String(ctx?.user?.id ?? ctx?.user?.sub ?? "").trim();
-  if (ctx?.scope !== "admin" || !userId) {
+function requireRealtimeClaims(ctx: any): RealtimeTicketClaims {
+  const claims = ctx?.realtime as RealtimeTicketClaims | undefined;
+  if (!claims?.subjectId) {
     throw new GraphQLError("UNAUTHENTICATED", {
       extensions: { code: "UNAUTHENTICATED" },
     });
   }
-  return String(ctx?.user?.tenant_id || DEFAULT_BMS_TENANT_ID);
+  return claims;
+}
+
+function requireRealtimeUserId(ctx: any): string {
+  return requireRealtimeClaims(ctx).subjectId;
+}
+
+function requireBmsTenantId(ctx: any): string {
+  const claims = requireRealtimeClaims(ctx);
+  if (claims.scope !== "admin" || !claims.tenantId) {
+    throw new GraphQLError("FORBIDDEN", { extensions: { code: "FORBIDDEN" } });
+  }
+  if (!claims.permissions.includes("inbox.view")) {
+    throw new GraphQLError("FORBIDDEN", {
+      extensions: { code: "FORBIDDEN", permission: "inbox.view" },
+    });
+  }
+  return claims.tenantId;
 }
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -71,41 +87,39 @@ export const coreResolvers = {
       subscribe: withFilter(
         (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
           const topic = topicChat(chat_id);
-          // console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic, "ctx=", ctx);
           return pubsub.asyncIterator(topic);
         },
-        (payload, variables, ctx: any) => {
-          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id, ctx);
+        (payload, variables) => {
           return payload?.messageAdded?.chat_id === variables?.chat_id;
         }
       )
     },
     userMessageAdded: {
       subscribe: withFilter(
-        (_:any, { user_id }:{user_id:string}) => pubsub.asyncIterator(topicUser(user_id)),
-        (payload, variables) => {
-          console.log("[graphql-core withFilter : userMessageAdded]");
-          return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
+        (_:any, { user_id }:{user_id:string}, ctx: any) => {
+          const authenticatedUserId = requireRealtimeUserId(ctx);
+          if (String(user_id) !== authenticatedUserId) {
+            throw new GraphQLError("FORBIDDEN", { extensions: { code: "FORBIDDEN" } });
+          }
+          return pubsub.asyncIterator(topicUser(authenticatedUserId));
+        },
+        (payload, _variables, ctx: any) => {
+          const authenticatedUserId = requireRealtimeUserId(ctx);
+          return payload?.userMessageAdded?.to_user_ids.includes(authenticatedUserId);
         }
       )
     },
     messageDeleted: {
       subscribe: withFilter(
-        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicUser(chat_id)),
-        (payload, variables) => {
-          console.log("[graphql-core withFilter : messageDeleted]");
-          return payload.asyncIterator(topicChat(variables?.chat_id));
-        }
+        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
+        (payload) => typeof payload?.messageDeleted === "string"
       )
     },
     notificationCreated: {
       subscribe: withFilter(
         () => pubsub.asyncIterator(NOTI_TOPIC),
         (payload: any, _variables: any, ctx: any) => {
-          const user = ctx.user;
-          if (!user) return false;
-          // รับเฉพาะ noti ที่ส่งให้ user นี้
-          return payload.notificationCreated.user_id === user.id;
+          return String(payload?.notificationCreated?.user_id ?? "") === requireRealtimeUserId(ctx);
         }
       ),
     },
@@ -137,13 +151,15 @@ export const coreResolvers = {
     },
     incomingMessage: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator(INCOMING_MESSAGE),
+        (_: any, { user_id }: { user_id: string }, ctx: any) => {
+          const authenticatedUserId = requireRealtimeUserId(ctx);
+          if (String(user_id) !== authenticatedUserId) {
+            throw new GraphQLError("FORBIDDEN", { extensions: { code: "FORBIDDEN" } });
+          }
+          return pubsub.asyncIterator(INCOMING_MESSAGE);
+        },
         (payload, vars, ctx) => {
-          // ให้เฉพาะคนที่เป็น member หรือ to_user_ids มี user นี้
-
-          console.log("[INCOMING_MESSAGE] =", vars, payload);
-          
-          const uId = vars.user_id;
+          const uId = requireRealtimeUserId(ctx);
           const msg = payload.incomingMessage;
           return msg.to_user_ids.includes(uId) || msg.sender_id === uId;
         }
@@ -157,14 +173,11 @@ export const coreResolvers = {
     myPhoneBlockStatusChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyPhoneBlockStatusChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myPhoneBlockStatusChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -174,14 +187,11 @@ export const coreResolvers = {
     myBankBlockStatusChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyBankBlockStatusChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myBankBlockStatusChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -191,14 +201,11 @@ export const coreResolvers = {
     myBookmarkStatusChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyBookmarkStatusChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myBookmarkStatusChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -208,14 +215,11 @@ export const coreResolvers = {
     myContactSpamMarkChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyContactSpamMarkChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myContactSpamMarkChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -225,14 +229,11 @@ export const coreResolvers = {
     myContactSpamSettingsChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyContactSpamSettingsChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myContactSpamSettingsChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }

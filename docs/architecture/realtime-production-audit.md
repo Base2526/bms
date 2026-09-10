@@ -295,7 +295,7 @@ authoritative reconciliation.
 Each numbered item is intended to be a reviewable commit or small commit set that leaves the system
 buildable and keeps current polling behavior.
 
-### Phase 1 — secure the existing gateway
+### Phase 1 — secure the existing gateway (implemented 2026-09-10)
 
 1. **Security contract tests first.** Add source-level and socket integration tests for operation
    type, unauthenticated access, user/topic binding, tenant fallback, `inbox.view`, revocation,
@@ -335,6 +335,15 @@ Proposed Phase 1 change set:
 
 Exact module boundaries may be adjusted to reuse an existing helper cleanly, but Phase 1 must not add
 PostgreSQL to `apps/ws`, change a business mutation to WS, or remove a polling path.
+
+Implementation status: the HTTP ticket route now performs strict Redis session validation, fresh
+admin identity, signed acting-tenant validation, current permissions, and location-scope loading.
+The gateway accepts only that short-lived ticket, rechecks admin revocation, closes at expiry, and
+enforces scoped connection leases, operation/message limits, production field restrictions, origin,
+ping/pong, slow-consumer, health/readiness, metrics, and graceful drain. `bmsInboxChanged` has no
+tenant fallback and requires `inbox.view`; user feed arguments are bound to the ticket subject. The
+legacy chat/post resource subscriptions are production-disabled until an HTTP-minted membership
+capability replaces their client-selected IDs. Polling remains unchanged.
 
 ### Phase 2 — central event contract
 

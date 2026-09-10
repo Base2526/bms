@@ -1055,8 +1055,8 @@ The 2026-09-10 audit is the current authority for realtime rollout work:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
 event/type/topic/validation layer exists in `packages/realtime`, and migration `9.70` plus
-`realtimeOutbox.ts`/`realtimeDispatcher.ts` provide the durable handoff. The hardened gateway and
-wider event coverage do not yet exist.
+`realtimeOutbox.ts`/`realtimeDispatcher.ts` provide the durable handoff. The HTTP-minted ticket and
+hardened gateway exist; wider event coverage and live recovery/load proof do not yet exist.
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
@@ -1065,7 +1065,7 @@ wider event coverage do not yet exist.
 - A business event is inserted into `bms_realtime_outbox` in the same tenant transaction as its
   aggregate change. Never publish before commit, and do not rely on a direct after-commit Pub/Sub call
   for durable delivery.
-- `apps/ws` stays database-free. HTTP mints a short-lived, audience-bound ticket after fresh session,
+- `apps/ws` stays database-free. HTTP now mints a short-lived, audience-bound ticket after fresh session,
   revocation, tenant/acting-tenant, permission, and location checks; WS validates that ticket and
   rechecks its Redis context version during the connection lifetime.
 - Topics are built centrally and scoped to tenant, branch, or authenticated user. Client-supplied
@@ -1079,6 +1079,10 @@ wider event coverage do not yet exist.
   helpers in `packages/realtime`; do not add another event string or raw topic. Legacy direct
   `pubsub.publish()` call sites remain until their owning transaction is moved to the outbox. Do not
   copy their global-topic or client-ID authorization patterns into new subscriptions.
+- Production disables the legacy chat/post resource subscriptions until a server-minted membership
+  capability exists. Never re-enable them by trusting `chat_id`, `post_id`, `user_id`, `x-scope`,
+  Referer, or User-Agent. User topics come from the ticket subject; BMS Inbox requires ticket tenant
+  plus `inbox.view`.
 
 ## Observability (`/admin/system-health`)
 
