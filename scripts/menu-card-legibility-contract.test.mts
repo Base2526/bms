@@ -41,6 +41,16 @@ function rule(css: string, selector: string, from = 0): string {
   return css.slice(open + 1, close);
 }
 
+/** ต้นบล็อก override ของจอมือถือ
+ *  ⚠️ อ้างที่ `@media` ไม่ใช่ที่บรรทัด declaration ของ .dishGrid — anchor เก่าเล็งที่
+ *  `minmax(124px` ตรง ๆ แล้วแดงทันทีที่กริดเปลี่ยนเป็น `minmax(min(124px, 100%)` (2026-09-10)
+ *  ทั้งที่การันตีของเทสนี้ (ราคาใหม่กว่าชื่อ / ความสูงชื่อเป็น em) ไม่เกี่ยวกับค่านั้นเลย */
+function mobileBlock(css: string): number {
+  const at = css.indexOf("@media (max-width: 640px)");
+  assert.notEqual(at, -1, "ไม่พบบล็อก override ของจอมือถือ");
+  return at;
+}
+
 const px = (body: string, prop: string): number => {
   const m = body.match(new RegExp(`${prop}\\s*:\\s*([0-9.]+)px`));
   assert.ok(m, `กฎนี้ต้องประกาศ ${prop} เป็น px — ได้ ${JSON.stringify(body.trim())}`);
@@ -80,8 +90,7 @@ test("ราคาเป็นตัวเลขที่ใหญ่ที่�
     "ราคาต้องหนาอย่างน้อย 800");
 
   // จอมือถือ (ค่า override ท้ายไฟล์) — ลำดับต้องไม่กลับหัวเพราะแก้ทีหลังแค่ฝั่งเดียว
-  const mq = css.indexOf(".dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px");
-  assert.notEqual(mq, -1, "ไม่พบบล็อก override ของจอมือถือ");
+  const mq = mobileBlock(css);
   const nameM = rule(css, ".dishName", mq);
   const priceM = rule(css, ".dishPrice", mq);
   assert.ok(px(priceM, "font-size") > px(nameM, "font-size"),
@@ -92,7 +101,7 @@ test("ความสูงของชื่อผูกกับขนาด�
   const css = readCss();
   for (const [selector, from] of [
     [".dishName", 0],
-    [".dishName", css.indexOf(".dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px")],
+    [".dishName", mobileBlock(css)],
   ] as const) {
     const body = rule(css, selector, from);
     assert.match(body, /min-height\s*:\s*[0-9.]+em/,

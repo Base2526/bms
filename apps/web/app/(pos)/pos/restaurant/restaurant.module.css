@@ -233,7 +233,10 @@
 .page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: var(--on-solid); font-weight: 600; }
 .page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
 .page .btnDanger{ color: var(--red); }
-.page .btnIcon{ width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
+/* flex: none — .btnIcon นั่งอยู่ในแถว flex ที่มีตัวหนังสือยาวข้าง ๆ (.checkHeadRow, .topActions,
+   .panelHeader) และปริยายของ flex item คือ shrink ได้ · วัดจริงที่ 320px: ปุ่ม ⋯ ของแผงบิล
+   หดเหลือ 28px ซึ่งเป็นปุ่มที่ถือ "ย้ายโต๊ะ/ยกเลิกบิล" ไว้ — เป้าแตะที่นิ้วกดไม่โดนเท่ากับไม่มีปุ่ม */
+.page .btnIcon{ flex: none; width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
 .strip {
@@ -399,7 +402,7 @@
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
 
-.dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 12px; padding: 14px 0 4px; }
+.dishGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(164px, 100%), 1fr)); gap: 12px; padding: 14px 0 4px; }
 .page .dishCard {
   position: relative; text-align: left; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel);
   cursor: pointer; font: inherit; color: inherit; padding: 0; overflow: hidden; min-height: 0;
@@ -711,8 +714,15 @@
 .queueBody b { font-size: 14.5px; }
 .queueBody small { font-size: 12px; color: var(--ink-2); }
 .queueNote { color: var(--ink-3) !important; font-style: italic; }
-.queueActions { display: flex; gap: 6px; align-items: center; }
-.lanes { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
+/* flex-wrap — สามปุ่ม (เรียกคิว/พาไปนั่ง/ยกเลิก) ยืนแถวเดียวไม่ได้ที่ 320px:
+   วัดจริงได้ 235px ในกล่อง 208px แล้ว "ยกเลิก" ถูกดันพ้นการ์ดไป · flex: 1 1 0 หดไม่ได้
+   ต่ำกว่า min-content จึงต้องให้ตกบรรทัด ไม่ใช่ให้ล้น */
+.queueActions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* ⚠️ ขั้นต่ำ 260px ไม่ใช่ 210px — วัดจริงที่ 960px: เลนถูกบีบเหลือ ~212px แล้วตั๋วล้นออกนอกกล่อง
+   ทั้งชื่อเมนู (29px) แถวปุ่ม (5px) และหัวตั๋ว (4px) · กระดานนี้ยอมให้เลื่อนข้างอยู่แล้ว
+   (overflow-x: auto และกฎ <=900px ก็ตั้ง 260px ตายตัวไปแล้ว) การเลื่อนข้างจึงถูกกว่าการบีบ
+   ตั๋วจนอ่านไม่ออก — ตั๋วที่อ่านไม่ออกคือตั๋วที่ครัวทำผิด */
+.lanes { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 8px; flex: 1; min-height: 0; overflow-x: auto; }
 .lane { border-radius: 6px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--lane-color);
   display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* ตั๋วเลื่อนในเลน ส่วนหัวเลนตรึงไว้ */
@@ -804,7 +814,14 @@
   font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
 .modifierChip:hover { border-color: var(--ink-3); }
 .modifierChip small { font-size: 11.5px; font-weight: 700; color: var(--amber); }
-.modifierChipInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* ⚠️ ต้องมี .page นำหน้า — `.modalGrid input` (0,1,1) ในไฟล์นี้เองตั้ง `width: 100%` ซึ่ง
+   ชนะคลาสเดี่ยว ๆ (0,1,0) · ก่อนแก้ (วัดจริง 2026-09-10): input ที่ควรเป็น 1x1 เรนเดอร์
+   374x44 แบบ absolute เทียบกับ .ant-modal-content แล้วยื่นพ้นกล่องไป 195px →
+   .ant-modal-wrap เลื่อนข้างได้จริง 187px = ปัดนิ้วในกล่องเลือกตัวเลือกแล้วกล่องไถลออกนอกจอ
+   · min-height/padding/border ต้องระบุด้วย เพราะ `.pos-root input` (0,1,1) ตั้ง min-height: 44px
+   ซึ่ง min-height ชนะ height ไม่ว่า specificity จะเป็นอย่างไร */
+.page .modifierChipInput { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0;
+  border: 0; opacity: 0; pointer-events: none; }
 .modifierChipOn { background: var(--green-bg); border-color: var(--accent); color: var(--accent); }
 .modifierChipOn small { color: var(--accent); }
 .modifierChipOff { opacity: .45; cursor: not-allowed; }
@@ -851,10 +868,18 @@
 .qrLine em { color: var(--amber); font-size: 12px; font-style: normal; }
 .qrTotal { margin: 14px 0; font-size: 18px; }
 .qrActions { justify-content: flex-end; margin-top: 14px; }
-.qrActions .btn { min-width: 150px; }
+/* ⚠️ space-between + ห้ามตกบรรทัด = ปุ่มซ้ายถูกดันออกไปทางซ้ายของกล่อง ไม่ใช่ล้นทางขวา
+   วัดจริงที่ 320px: ปุ่ม "ปฏิเสธ" อยู่ที่ left -28px ซึ่ง **เลื่อนไปหาไม่ได้เลย**
+   (เลื่อนซ้ายพ้นจุดศูนย์ไม่ได้) — ปุ่มตัดสินใจของออร์เดอร์ลูกค้าที่กดไม่ได้
+   · flex: 1 1 150px + min-width: 0 = กว้างพอกันสองปุ่มตอนมีที่ และตกบรรทัดตอนไม่มี
+   (รูปเดียวกับ .enrollActions .btn และ .queueActions .btn ในไฟล์นี้) */
+.qrActions { flex-wrap: wrap; }
+.qrActions .btn { flex: 1 1 150px; min-width: 0; justify-content: center; }
 
 /* ---------- table service calls ---------- */
-.serviceCallGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
+/* min(260px, 100%) — `minmax(260px, 1fr)` เฉย ๆ ยืนกราน 260px แม้กล่องแคบกว่านั้น
+   วัดจริงที่ 320px: กล่องกว้าง 232px แต่รางกว้าง 260px = ล้น 28px */
+.serviceCallGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; margin-top: 14px; }
 .serviceCallGrid > .empty { grid-column: 1 / -1; }
 .serviceCallCard { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 4px 14px var(--shadow-2); }
 .serviceCallHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; color: var(--amber); background: var(--amber-bg); }
@@ -881,7 +906,8 @@
 .summaryGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .summaryGrid > span { display: grid; gap: 3px; padding: 10px; border-radius: 7px; background: var(--quiet); color: var(--ink-2); font-size: 12px; }
 .summaryGrid b { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
-.receiptGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+/* min(240px, 100%) — เหตุผลเดียวกับ .serviceCallGrid (วัดจริงที่ 320px: ล้น 8px) */
+.receiptGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 10px; }
 .page .receiptCard { min-height: 112px; display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .page .receiptCard:hover { border-color: var(--accent); background: var(--panel-2); }
 .receiptCard > span { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: 12px; }
@@ -970,7 +996,7 @@
 
   /* การ์ดเมนูต้องได้ 2 คอลัมน์บนมือถือ — ค่า 164px ของจอใหญ่ทำให้เหลือคอลัมน์เดียว
      (ที่ 375px เหลือพื้นที่กริด 263px ซึ่งไม่พอสำหรับ 164×2 + gap) */
-  .dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; padding: 10px 10px 14px; }
+  .dishGrid { grid-template-columns: repeat(auto-fill, minmax(min(124px, 100%), 1fr)); gap: 8px; padding: 10px 10px 14px; }
   .dishArt { height: 76px; }
   .page .dishCardPhoto .dishSelect { min-height: 182px; }
   .dishCardPhoto .dishBody { padding: 28px 10px 10px; }
@@ -992,4 +1018,17 @@
   .summaryGrid { grid-template-columns: 1fr 1fr; }
   .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
+}
+
+/* ⚠️ ต้องอยู่หลังบล็อก 640px — specificity เท่ากัน ลำดับในไฟล์เป็นตัวตัดสิน
+   แผงบิลที่จอแคบมาก: ราคา + ปุ่ม (.itemSide) กินคอลัมน์ที่สามตาม min-content ของมัน
+   ซึ่งหดไม่ได้ (ปุ่มมี min-width: 62px โดยตั้งใจ) ส่วนชื่อเมนูเป็น minmax(0, 1fr)
+   จึงยุบให้หมด · วัดจริงที่ 320px ก่อนแก้: คอลัมน์ชื่อเหลือ **54px** และแถวสูง **387px**
+   ต่อหนึ่งรายการ (ชื่อไทยตกบรรทัดละ 1-2 ตัวอักษร) = แผงที่บอกว่าลูกค้าสั่งอะไรอ่านไม่ได้เลย
+   · ย้ายแถวราคา/ปุ่มลงมาใต้ชื่อ (รูปเดียวกับ .queueActions ที่ 640px)
+   · 460px มาจากการวัด: ที่ความกว้างนี้คอลัมน์ชื่อได้ ~196px ซึ่งยังพออ่านชื่อเมนูจบในบรรทัดเดียว
+     กว้างกว่านี้จึงคงแบบแถวเดียวไว้ เพราะการซ้อนสองแถวกินความสูง ~38px ต่อรายการ */
+@media (max-width: 460px) {
+  .item { grid-template-columns: 28px minmax(0, 1fr); }
+  .itemSide { grid-column: 1 / -1; justify-content: flex-end; }
 }
