@@ -144,10 +144,14 @@ not report yet) and an admin page listing incidents (today they surface only as 
 finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
-**POS Mobile App (iOS/Android, planned)** — a React Native/Expo client for the counter register,
-built for staff (internal distribution, not a public-store consumer app). `/api/pos/*` already
-authenticates with a device token + cashier PIN instead of a browser cookie, so the existing REST
-surface can be reused as-is; the unbuilt parts are native, not backend: ESC/POS printing and
+**POS Mobile App (iOS/Android, scaffold built)** — `apps/mobile/` is a bare React Native client for
+the counter register, built for staff (internal distribution, not a public-store consumer app).
+The Group A scaffold includes the shared design language, responsive phone/tablet layouts, ten
+mock-backed operating screens, deep-link device pairing, secure token storage through iOS Keychain /
+Android Keystore, and identity verification against `GET /api/pos/session`; both native debug builds
+pass. Selling, table, kitchen, shift, cashier-login and realtime flows deliberately remain mock-only
+until the new schema/auth contract is stable — device pairing is not cashier authentication. Remaining
+native work also includes ESC/POS printing and
 cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap above — both need real hardware
 verification), barcode capture (`9.6`'s Scan Manager targets a Bluetooth-HID keyboard typing into a
 browser page, which does not translate to a native app — camera scan or native BLE/Classic pairing

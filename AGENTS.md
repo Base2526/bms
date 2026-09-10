@@ -41,6 +41,7 @@ wrong, and update the doc in the same change.
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
+| `apps/mobile/` | Bare React Native POS client — mock-first UI scaffold + secure device pairing; business flows are not backend-connected yet |
 | `apps/ws/` · `packages/` | WebSocket gateway · shared GraphQL + Redis pub/sub |
 | `db/migrations/` · `docs/` · `scripts/` | Ordered idempotent migrations · docs · log triage, AI evals, load tests |
 
