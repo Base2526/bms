@@ -125,6 +125,19 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
 | Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` |
 
+### Realtime architecture status (2026-09-10)
+
+The current GraphQL WebSocket path is production-useful only as a best-effort invalidation layer for
+Inbox plus several legacy community events. It is not yet the event backbone for BMS. Polling,
+focus refresh, mutation responses, and manual refresh remain required recovery paths.
+
+The repository audit found authorization, lifecycle, transaction-boundary, replay, and operational
+gaps that must be closed before expanding subscription coverage. The accepted direction is a
+short-lived HTTP-minted WS ticket, scoped safe invalidation events, and a PostgreSQL transactional
+outbox dispatched to Redis while `apps/ws` remains database-free. No outbox migration or wider
+domain event rollout exists yet. See the [full audit](realtime-production-audit.md) and
+[ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
 **Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·

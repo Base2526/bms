@@ -1067,6 +1067,16 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   raw permission id, and end with the way forward. The filtered list is UX only: every route still
   re-checks the approver server-side.
 
+- **Production realtime audit and accepted design (2026-09-10, documentation only)** — inventoried
+  all GraphQL subscriptions, publishers, React consumers, polling fallbacks, authentication paths,
+  and transaction boundaries. The audit found production blockers in tenant/permission enforcement,
+  client-selected chat/user scopes, session lifecycle, operation/connection bounds, observability,
+  and direct Pub/Sub durability. [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md)
+  accepts short-lived HTTP-minted WS tickets plus scoped invalidation envelopes and a transactional
+  outbox, while keeping `apps/ws` database-free and retaining polling until recovery/load gates pass.
+  No runtime behavior or database schema changed in this phase. See the
+  [audit and phased plan](architecture/realtime-production-audit.md).
+
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
 sync" above; what's missing is the carrier-issued merchant contract and credentials, then following

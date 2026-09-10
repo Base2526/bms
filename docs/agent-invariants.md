@@ -25,6 +25,7 @@ whichever is wrong, in the same change.
 - [AI provider selection, BYOK, and health](#ai-provider-selection-byok-and-health)
 - [Follow-up automation scheduler](#follow-up-automation-scheduler)
 - [Redis usage (pub/sub, cache, sessions, job runs, request metrics)](#redis-usage-pubsub-cache-sessions-job-runs-request-metrics)
+- [Realtime invalidation architecture](#realtime-invalidation-architecture-planned)
 - [Observability (`/admin/system-health`)](#observability-adminsystem-health)
 - [i18n coverage](#i18n-coverage-what-bilingual-actually-means-today)
 - [Frontend and CSS Modules](#frontend-and-css-modules)
@@ -1047,6 +1048,34 @@ hold:
 
 Full history/rationale of what was found and fixed: § Multi-instance readiness in
 [CLAUDE.local.md](../CLAUDE.local.md).
+
+## Realtime invalidation architecture (planned)
+
+The 2026-09-10 audit is the current authority for realtime rollout work:
+[architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
+design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). These rules
+describe the target and do not claim that the outbox or wider event coverage exists today.
+
+- Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
+  of truth; event payloads never become a second business-state store.
+- Keep polling, focus refresh, mutation results, and manual refresh until replay/gap recovery and load
+  tests have passed in production-like multi-instance conditions.
+- A business event is inserted into `bms_realtime_outbox` in the same tenant transaction as its
+  aggregate change. Never publish before commit, and do not rely on a direct after-commit Pub/Sub call
+  for durable delivery.
+- `apps/ws` stays database-free. HTTP mints a short-lived, audience-bound ticket after fresh session,
+  revocation, tenant/acting-tenant, permission, and location checks; WS validates that ticket and
+  rechecks its Redis context version during the connection lifetime.
+- Topics are built centrally and scoped to tenant, branch, or authenticated user. Client-supplied
+  tenant/user/resource IDs never create an authorized iterator by themselves.
+- Events carry stable ID, event type, schema version, routing IDs, entity ID, time, and only
+  allowlisted scalar hints. Exclude customer PII, message bodies, payment details, raw arguments,
+  attachments, and all pharmacy clinical/evidence content.
+- Delivery is at least once. Dispatchers and clients must tolerate duplicate and out-of-order events,
+  use bounded dedup/version checks, batch refetches, and treat a replay gap as a full-refetch signal.
+- Raw topic strings and `pubsub.publish()` call sites will be forbidden outside `packages/realtime`
+  after the shared event-contract phase. Until that migration, do not copy the legacy global-topic or
+  client-ID authorization patterns into new BMS subscriptions.
 
 ## Observability (`/admin/system-health`)
 

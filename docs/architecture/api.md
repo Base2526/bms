@@ -669,6 +669,14 @@ only. `Create Msg` writes a real diagnostic conversation/message first, then pub
 keeps `IN real`/`OUT real` from Channel Health separate from `IN diag`, which is read from the
 latest diagnostic message rows.
 
+This describes current behavior, not a production-complete authorization or delivery guarantee. The
+2026-09-10 audit found that the WS resolver does not yet require `inbox.view`, can fall back to the
+default tenant, and does not perform HTTP-equivalent session revocation/fresh-identity checks. Direct
+Pub/Sub also has a commit-to-publish loss window and no replay. Keep the 20-second poll enabled until
+the security gates, transactional outbox, recovery tests, and staged rollout in the
+[realtime production audit](realtime-production-audit.md) are complete. The accepted target contract
+is recorded in [ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
 ## Auth scopes
 
 `requireAuth(ctx)` (`lib/auth.ts`) recognizes three scopes carried via the `x-scope` header on the

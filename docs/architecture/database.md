@@ -981,3 +981,18 @@ the merchant cause. Repricing differences absorbed by the shop use the distinct
 `MERCHANT_ABSORBED` order-discount source and accumulate on conflict. The store-level approval limit
 defaults to ฿2,000. `order.line.cancel` is seeded to Manager and Cashier without widening
 `order.return`.
+
+## Planned realtime outbox (not implemented)
+
+The accepted realtime design will add a new numbered, idempotent migration for a tenant-owned
+`bms_realtime_outbox`; no such table exists in the current schema. Business services will enqueue a
+small, allowlisted invalidation envelope with the same `beginTenantTx()` client that commits the
+business change. A multi-instance-safe dispatcher will claim rows with `FOR UPDATE SKIP LOCKED`,
+publish outside the transaction, and acknowledge by stable event ID and claim token. The table will
+use forced RLS and `bms_app` grants; narrowly granted fixed-`search_path` functions will let the
+dispatcher claim across tenants without giving `apps/ws` a PostgreSQL connection.
+
+The proposed columns, indexes, payload ceiling, retry/dead-letter behavior, retention, and security
+tradeoffs are specified in [ADR 001](decisions/001-transactional-realtime-invalidation.md). Do not
+implement from this paragraph alone; the migration phase must include database and rollback/crash
+tests from the [realtime production audit](realtime-production-audit.md).

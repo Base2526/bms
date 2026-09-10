@@ -113,6 +113,13 @@ keep working as before. `admin session` revocation, `AI conversation state`, `sc
 
 ## Not yet done / known gaps
 
+- GraphQL subscriptions still use direct Redis Pub/Sub with no transactional outbox or replay. A
+  process failure after a business commit can lose an invalidation, while the legacy message-delete
+  path currently publishes before commit. The WS gateway also lacks HTTP-equivalent revocation and
+  fresh-identity checks, bounded connection/subscription controls, health/readiness, and graceful
+  drain. Keep existing polling enabled. The audited gaps and phased design are in
+  [realtime-production-audit.md](realtime-production-audit.md) and
+  [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 - `STORAGE_DRIVER=s3` has not been exercised through the real app in a browser (only verified at the
   driver-contract level — no real slip has gone through `/checkout` and back through OCR on S3 yet).
 - No migration script to move existing files into a bucket (`mc mirror` / `aws s3 sync` works by hand
