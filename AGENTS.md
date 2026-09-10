@@ -161,6 +161,14 @@ wrong, and update the doc in the same change.
   and commits stock/movement/audit/retry result together. Bluetooth HID is globally captured only
   after a configured positive prefix; timing/focus is never treated as proof of a scanner. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
+- **Native POS scaffold** — `apps/mobile/` is Group A only: responsive mock-backed screens plus
+  real device pairing. Store its long-lived device token only through `react-native-keychain`, never
+  log or render the full token, never send it over cleartext (loopback HTTP is dev-only), and derive
+  tenant/branch only from `/api/pos/session`. A paired device is still not an authenticated cashier;
+  mock PIN entry must not be described as authorization or used to enable a real mutation. Keep the
+  sell/table/kitchen/shift flows disconnected until the server schema and cashier-session contract
+  are explicitly closed. See [apps/mobile/README.md](apps/mobile/README.md) and
+  [docs/business/pos.md § Native POS client](docs/business/pos.md#native-pos-client-scaffold).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
   second money path: a check reserves stock by creating one PENDING POS order when a kitchen round is
   sent, and `settleRestaurantCheck()` closes that same order through `recordPosSale()`. A check is

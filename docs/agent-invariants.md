@@ -272,6 +272,14 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   parking/resuming/dropping a cart changes no money, stock, or document and is deliberately gated by
   the active device + open shift only. Read routes are device-scoped operational reads unless the
   payload is staff-sensitive (`shift-report` re-verifies PIN + `pos.shift.report`).
+- **The native scaffold does not widen POS authority.** `apps/mobile/` currently has real secure
+  device pairing only; sell/table/kitchen/shift and PIN screens are mock-backed. The device token is
+  stored through `react-native-keychain`, never shown whole or sent over remote HTTP, and
+  `/api/pos/session` remains the source of tenant/location identity. Treat a paired device as a
+  machine, not a cashier session, and do not connect mock actions to mutation routes until the
+  cashier-session/schema contract is settled. Client code never owns money, stock, refund or tax
+  rules. See [apps/mobile/README.md](../apps/mobile/README.md) and
+  [business/pos.md § Native POS client](business/pos.md#native-pos-client-scaffold).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.

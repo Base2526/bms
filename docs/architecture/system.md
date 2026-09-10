@@ -149,7 +149,9 @@ the counter register, built for staff (internal distribution, not a public-store
 The Group A scaffold includes the shared design language, responsive phone/tablet layouts, ten
 mock-backed operating screens, deep-link device pairing, secure token storage through iOS Keychain /
 Android Keystore, and identity verification against `GET /api/pos/session`; both native debug builds
-pass. Selling, table, kitchen, shift, cashier-login and realtime flows deliberately remain mock-only
+pass. The detailed scope and build commands live in
+[apps/mobile/README.md](../../apps/mobile/README.md). Selling, table, kitchen, shift, cashier-login
+and realtime flows deliberately remain mock-only
 until the new schema/auth contract is stable — device pairing is not cashier authentication. Remaining
 native work also includes ESC/POS printing and
 cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap above — both need real hardware

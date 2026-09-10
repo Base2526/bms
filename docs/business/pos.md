@@ -38,6 +38,44 @@ recoverable only by hand. The `pos.return` entry additionally carries an `isVoid
 void travels through the return machinery and reports counting genuine returns must not also count
 bills rung up by mistake.
 
+## Native POS client scaffold
+
+`apps/mobile/` is the Group A native client for staff-operated iOS and Android registers. It uses
+bare React Native 0.87 (not Expo), React Navigation, a theme derived from the web POS, and responsive
+phone/tablet layouts. Its ten screens cover login, device settings, retail sell/checkout/receipt,
+restaurant floor/check/table ordering, kitchen, and shift/drawer. The operating flows use in-memory
+mock data on purpose; restarting the app resets them. This section describes the native app, not the
+customer-facing table-QR "mobile menu" later in this document.
+
+Device pairing is the only live backend seam in Group A:
+
+- The app accepts the existing full POS link, a bare `pos_...` token plus server, or a
+  `bmspos://pair?t=...&h=...` deep link. A deep link pre-fills the review screen; it never silently
+  changes the paired shop.
+- The long-lived device token is stored through `react-native-keychain` (iOS Keychain / Android
+  Keystore), masked everywhere on screen, and sent only as `x-pos-device-token` to
+  `GET /api/pos/session`. Remote servers require HTTPS; HTTP is accepted only for loopback
+  development.
+- The app never asks the operator for a tenant or branch. `/api/pos/session` derives both from the
+  hashed active device token and returns the device/location identity. A 401 means the token was
+  revoked or replaced; an offline timeout is shown separately and never treated as revocation.
+- Pairing and cashier identity are deliberately separate. The current PIN screen is a mock shell;
+  it grants no permission and must not be connected to mutations until the cashier-session contract
+  is stable. The backend invariant remains device authentication plus person verification and RBAC
+  for every sensitive action.
+
+The next phase starts only after the schema/auth contract is closed and proven by the existing web
+POS. It will replace mock catalog/check/kitchen/shift state with authoritative calls and realtime
+updates; native printer, scanner and customer-display integrations remain separate hardware work.
+Do not port money, stock, refund or tax rules into the client—the existing backend services remain
+the source of truth.
+
+Verification for the scaffold is `npm run lint`, `npm test -- --runInBand`, and
+`npm run typecheck` from `apps/mobile/`, plus `xcodebuild` for an iOS Simulator target and
+`./gradlew assembleDebug` under `apps/mobile/android/`. Generated `node_modules`, Pods, native build
+directories and APKs are ignored; only source and lockfiles belong in Git. The detailed screen list,
+local setup and current exclusions live in [the mobile README](../../apps/mobile/README.md).
+
 ## Supported counter workflow
 
 1. An administrator creates an active location and POS device at `/admin/pos-devices`, issues its

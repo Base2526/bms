@@ -21,6 +21,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
+| [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
@@ -55,6 +56,17 @@ Migrations `8.0`–`9.4` add further POS features (blind close/no-sale, price ti
 serials, commission, non-stock charge lines, promotions, bundles, store credit, deposits, branch
 creation) not yet reflected in this summary — see [CLAUDE.local.md](CLAUDE.local.md) for the
 per-migration build/verify/production status of each.
+
+**Native POS scaffold (2026-09-11, no migration)** — `apps/mobile/` is now a bare React Native
+0.87 staff client, not Expo. Group A provides ten responsive phone/tablet screens, shared theme and
+navigation, mock-backed sell/table/kitchen/shift flows, plus real device pairing: `bmspos://` deep
+links, token storage in iOS Keychain / Android Keystore, and device identity verification through
+`GET /api/pos/session`. Tenant and branch come only from the server-authenticated device token; the
+app neither accepts nor stores a client-selected tenant. Both iOS Simulator and Android debug builds
+pass. This does **not** make the app a production register: cashier login, authoritative catalog,
+orders, payments, stock, kitchen updates and realtime remain disconnected until the next POS
+schema/auth contract is stable. Details and commands: [apps/mobile/README.md](apps/mobile/README.md)
+and [business/pos.md § Native POS client](docs/business/pos.md#native-pos-client-scaffold).
 
 **REST surface hardening (2026-08-24, no migration)** — `middleware.ts` only guards `/admin/**`, so
 every route under `/api/**` needs its own check. Twenty-three single-tenant-era routes had none:

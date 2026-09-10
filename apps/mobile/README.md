@@ -64,7 +64,8 @@ Backend วันนี้ (`apps/web/app/api/pos/*`) เป็น REST + device
 
 ลำดับที่ตกลงกันไว้: ปิด schema (SDL) → backend implement + auth ใหม่ → **สลับหน้าเว็บ POS เดิมมาใช้ก่อน**
 (เป็นตัวพิสูจน์ contract เพราะ business logic ผ่าน recheck มาแล้วนับสิบรอบ) → ค่อยผูก RN เข้ากับ contract
-ที่นิ่งแล้ว — ดู `CLAUDE.local.md` (ค้นคำว่า "React Native" หรือ "GraphQL ทั้งหมด") สำหรับบริบทเต็ม
+ที่นิ่งแล้ว — ดู [docs/business/pos.md § Native POS client](../../docs/business/pos.md#native-pos-client-scaffold)
+สำหรับขอบเขตที่เป็นเอกสารถาวร
 
 ## โครงสร้าง
 
