@@ -102,3 +102,74 @@ test("ความสูงของชื่อผูกกับขนาด�
   // ชื่อจะเหลือบรรทัดเดียวทุกจอ แล้วส่วนที่แยกเมนูออกจากกัน (เช่น "สูตรพิเศษ") หายก่อน
   assert.match(rule(css, ".dishName"), /-webkit-line-clamp\s*:\s*2/);
 });
+
+// ── รูปเต็มใบ + ตัวหนังสือลอยทับ (2026-09-10) ───────────────────────────────
+// สามข้อนี้พังเงียบทั้งหมด: ไม่มีอะไรฟ้องตอนคอมไพล์ และดูด้วยตาบนรูปสวย ๆ ใบเดียวก็ยังผ่าน
+
+const PAGE = "apps/web/app/(pos)/pos/restaurant/page.tsx";
+const readPage = () => readFileSync(path.join(ROOT, PAGE), "utf8")
+  .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+/** ผสมสี rgba ทับพื้นทึบ แล้วคืน contrast ตาม WCAG 2.x */
+function contrastOver(fg: [number, number, number], scrim: [number, number, number, number], behind: [number, number, number]) {
+  const mix = behind.map((b, i) => scrim[3] * scrim[i] + (1 - scrim[3]) * b) as [number, number, number];
+  const lin = (c: number) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : (((c / 255) + 0.055) / 1.055) ** 2.4);
+  const lum = ([r, g, b]: [number, number, number]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  const [a, b] = [lum(fg), lum(mix)];
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+test("ฉากบนรูปเข้มพอให้อ่านออกแม้บนรูปที่สว่างที่สุดเท่าที่เป็นไปได้", () => {
+  const css = readCss();
+  const decl = css.match(/--photo-scrim:\s*([^;]+);/);
+  assert.ok(decl, "ต้องมี --photo-scrim ในพาเลตต์");
+  // จุดสีที่เข้มที่สุดของไล่เฉด = ตำแหน่งที่ตัวหนังสือนั่งอยู่จริง (ล่างสุดของการ์ด)
+  const stops = [...decl![1].matchAll(/rgba\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)[ ,]+([\d.]+)\s*\)/g)]
+    .map((m) => [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])] as [number, number, number, number]);
+  assert.ok(stops.length >= 2, "ไล่เฉดต้องมีอย่างน้อยสองจุดสี");
+  const darkest = stops.reduce((a, b) => (b[3] > a[3] ? b : a));
+
+  const ink = css.match(/--on-photo:\s*#([0-9a-fA-F]{6})/);
+  assert.ok(ink, "ต้องมี --on-photo เป็นค่าสีตรง ๆ");
+  const fg = [0, 2, 4].map((i) => parseInt(ink![1].slice(i, i + 2), 16)) as [number, number, number];
+
+  // กรณีเลวร้ายที่สุดคือรูปขาวล้วน — ร้านอัปโหลดรูปเอง ออกแบบจากรูปที่เลือกมาแล้วคือไม่ได้ออกแบบ
+  const worst = contrastOver(fg, darkest, [255, 255, 255]);
+  assert.ok(worst >= 4.5,
+    `ตัวหนังสือบนฉากต้องผ่าน 4.5 แม้รูปเป็นขาวล้วน — ตอนนี้ได้ ${worst.toFixed(2)} ` +
+    "(ฉากจางลงเมื่อไหร่ ชื่อเมนูจะอ่านออกหรือไม่ขึ้นกับว่าร้านอัปโหลดรูปอะไร)");
+});
+
+test("แบบรูปเต็มใบใช้เฉพาะการ์ดที่มีรูปจริง", () => {
+  const page = readPage();
+  assert.match(page, /item\.imageUrl \? styles\.dishCardPhoto : ""/,
+    "dishCardPhoto ต้องผูกกับ item.imageUrl — ใส่ให้ทุกใบ = เอาฉากมืดไปทับภาพวาด SVG " +
+    "แล้วได้กริดที่มืดทั้งจอในร้านที่ยังไม่ได้อัปโหลดรูป (ซึ่งเป็นสภาพจริงวันนี้)");
+  // เมนูที่ไม่มีรูปต้องยังเดินเส้นเดิม (ภาพวาดในกรอบครึ่งบน)
+  assert.match(page, /item\.imageUrl\s*\n?\s*\? <img/,
+    "การ์ดที่ไม่มีรูปต้องยังวาด SVG ในกรอบเดิม ไม่ใช่ปล่อยว่าง");
+});
+
+test("การ์ดที่ปิดขายแบบรูปเต็มใบต้องไม่กลับไปใช้ตัวหนังสือสีหมึกบนฉากมืด", () => {
+  const css = readCss();
+  for (const part of ["dishName", "dishPrice", "dishOutNote"]) {
+    const re = new RegExp(`\\.dishCardPhoto\\.dishCardUnavailable \\.${part}\\s*\\{[^}]*color:\\s*var\\(--on-photo`);
+    assert.match(css, re,
+      `.dishCardPhoto.dishCardUnavailable .${part} ต้องทับสีหมึกของสถานะปิดขาย — ` +
+      "ไม่งั้นตัวหนังสือสีเข้มไปอยู่บนฉากมืด แล้วการ์ดที่ปิดขายอ่านไม่ออกเลย");
+  }
+});
+
+test("ฉากบนรูปมีค่าเดียวกันทั้งสองพาเลตต์ (พื้นหลังคือรูป ไม่ใช่ธีมของจอ)", () => {
+  const css = readCss();
+  const light = css.slice(css.indexOf(".page {"), css.indexOf(":global(html.dark) .page,"));
+  const dark = css.slice(css.indexOf(":global(html.dark) .page,"));
+  for (const name of ["--photo-scrim", "--on-photo", "--on-photo-soft", "--on-photo-dim"]) {
+    const a = light.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim();
+    const b = dark.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim();
+    assert.ok(a && b, `${name} ต้องประกาศทั้งสองพาเลตต์`);
+    assert.equal(b, a,
+      `${name} ต้องเท่ากันทั้งสองโหมด — ตัวหนังสือชุดนี้นั่งบน "รูปที่ร้านอัปโหลด" ` +
+      "ธีมของจอจึงไม่ได้บอกอะไรเลยว่าหลังตัวหนังสือสว่างหรือมืด");
+  }
+});

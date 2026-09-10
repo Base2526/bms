@@ -2258,7 +2258,10 @@ export default function RestaurantPosPage() {
                     const outNote = soldOutToday
                       ? [item.unavailableReason, backAt ? t("pos_restaurant.reopens_at", { time: backAt }) : null].filter(Boolean).join(" · ")
                       : t("pos_restaurant.menu_no_stock_here");
-                    return <div key={item.sku} className={`${styles.dishCard} ${!item.sellable ? styles.dishCardUnavailable : ""} ${menuManage ? "" : styles.dishCardKebab}`}>
+                    // เมนูที่มีรูปจริงเท่านั้นที่ใช้แบบรูปเต็มใบ + ตัวหนังสือลอยทับ — เมนูที่ยังไม่มีรูปคง
+                    // แบบเดิม (รูปครึ่งบน + ช่องข้อความ) เพราะเอาฉากมืดทับภาพวาด SVG แล้วได้กริดที่
+                    // มืดทั้งจอโดยไม่ได้อะไรกลับมา · เหตุผลเต็มอยู่ที่ .dishCardPhoto ใน CSS
+                    return <div key={item.sku} className={`${styles.dishCard} ${item.imageUrl ? styles.dishCardPhoto : ""} ${!item.sellable ? styles.dishCardUnavailable : ""} ${menuManage ? "" : styles.dishCardKebab}`}>
                       {/* เมนูที่ปิดวันนี้ "แตะการ์ด = เปิดขาย" — การ์ดนี้สั่งอาหารไม่ได้อยู่แล้ว
                           การแตะจึงว่างอยู่ ใช้ให้เป็นประโยชน์แทนที่จะเพิ่มปุ่มและความสูง
                           · ของที่สต็อกหมดจริงยังกดไม่ได้ เพราะไม่มีอะไรให้ "เปิด" */}
