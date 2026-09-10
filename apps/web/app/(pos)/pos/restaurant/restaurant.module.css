@@ -61,6 +61,14 @@
      แต่โหมดมืดต้องแยก: พื้นเตือนต้องอ่านออกว่า "แดง/เหลือง" ส่วนพื้นการ์ดคือสิ่งที่ตา
      กวาดผ่าน 40 ใบต่อจอ ถ้าใช้ค่าเดียวกันกริดเมนูจะกลายเป็นแถบสีทั้งจอ
      · วัดแล้วให้ห่างจาก --panel เท่า ๆ กับโหมดสว่าง (1.08–1.16 เท่า) */
+  /* ฉากบนรูปอาหารเต็มใบ + ตัวหนังสือที่ลอยทับ — **ค่าเดียวกันทั้งสองโหมดโดยตั้งใจ**
+     เพราะพื้นหลังของตัวหนังสือชุดนี้คือ "รูปที่ร้านอัปโหลดเอง" ไม่ใช่พื้นของหน้า
+     ธีมของจอจึงไม่ได้บอกอะไรเลยว่าหลังตัวหนังสือสว่างหรือมืด · วัดกรณีเลวร้ายที่สุด
+     (รูปขาวล้วน) แล้วได้ contrast 11.9 ซึ่งผ่าน 4.5 สบาย — ดู menu-card-legibility-contract */
+  --photo-scrim: linear-gradient(180deg, rgba(10, 12, 11, 0) 0%, rgba(10, 12, 11, .55) 42%, rgba(10, 12, 11, .82) 100%);
+  --on-photo: #ffffff;
+  --on-photo-soft: rgba(255, 255, 255, .82);
+  --on-photo-dim: rgba(255, 255, 255, .66);
   --tint-1: #f4f5f2;
   --tint-2: #fbe9e4;
   --tint-3: #fbf1de;
@@ -116,6 +124,11 @@
   --scrim: rgba(13, 16, 15, .78);
   --shadow-1: rgba(0, 0, 0, .58);
   --shadow-2: rgba(0, 0, 0, .48);
+  /* ค่าเดียวกับโหมดสว่างโดยตั้งใจ — ดูเหตุผลที่บล็อกข้างบน (พื้นหลังคือรูป ไม่ใช่ธีม) */
+  --photo-scrim: linear-gradient(180deg, rgba(10, 12, 11, 0) 0%, rgba(10, 12, 11, .55) 42%, rgba(10, 12, 11, .82) 100%);
+  --on-photo: #ffffff;
+  --on-photo-soft: rgba(255, 255, 255, .82);
+  --on-photo-dim: rgba(255, 255, 255, .66);
   --tint-1: #131715;
   --tint-2: #33231c;
   --tint-3: #2f2819;
@@ -455,17 +468,71 @@
   background: var(--accent); color: var(--on-solid); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
   display: grid; place-items: center; padding: 0 6px;
 }
-.dishBody { display: block; padding: 10px 12px 12px; }
+/* ช่องข้อความมีพื้นของตัวเอง (--quiet) แทนที่จะเป็นขาวเปล่าเท่ากับพื้นการ์ด — ชื่อกับราคา
+   จึงนั่งอยู่บนแถบที่มีขอบเขต ไม่ลอยต่อจากรูปอาหาร · ใช้ --quiet ตามหน้าที่ที่พาเลตต์
+   ประกาศไว้เอง ("พื้นที่ถอยหลังที่อยู่ในการ์ด") จึงไม่มีสีใหม่เข้าระบบ และโหมดมืดได้ค่า
+   ที่ถูกอยู่แล้ว (มืดกว่า --panel = ถอยหลัง ไม่ใช่ลอยขึ้นมาแบบ --panel-2)
+   ⚠️ ห้ามใช้ --tint-* ทาช่องนี้ตามสถานี: พื้นสถานีอยู่ที่ .dishArt แล้ว การทาซ้ำที่ตัวหนังสือ
+   ทำให้พื้นที่มีสีต่อการ์ดเพิ่มเท่าตัว แล้วกริด 40-50 ใบกลายเป็นแถบสีทั้งจอ (ดูคอมเมนต์ของ --tint-*) */
+/* ⚠️ เส้นคั่น 1px ไม่ใช่ของประดับ — --tint-1 (สถานีที่เป็นกลาง) มีค่าเท่ากับ --quiet
+   ทั้งสองพาเลตต์โดยตั้งใจ การ์ดของสถานีนั้นจึงกลายเป็นผืนเดียวไม่มีรอยต่อระหว่างรูปกับ
+   ช่องข้อความ (เห็นจริงในเบราว์เซอร์ 2026-09-10) · รูปอาหารจริงที่ขอบสว่างก็ชนปัญหาเดียวกัน
+   · ใช้ --line-2 แบบเดียวกับ .dishManageRow ที่คั่นแถบเดียวกันนี้อยู่แล้ว */
+.dishBody { display: block; padding: 10px 12px 12px; background: var(--quiet);
+  border-top: 1px solid var(--line-2); }
+/* ชื่อ 15px/700 ไม่ใช่ 13.5px/600 — อักษรไทยมีสระกับวรรณยุกต์ซ้อนบน-ล่าง น้ำหนักบางที่ขนาดนี้
+   ทำให้หัวตัวอักษรตันบนแท็บเล็ตที่พนักงานยืนห่างจอ 40-50 ซม. · ยังคลิป 2 บรรทัดเท่าเดิม
+   และ min-height เป็นหน่วย em จึงโตตามขนาดฟอนต์เอง การ์ดทุกใบยังสูงเท่ากัน */
 .dishName {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  font-size: 13.5px; font-weight: 600; line-height: 1.35; min-height: 2.7em; margin-bottom: 6px;
+  font-size: 15px; font-weight: 700; line-height: 1.35; min-height: 2.7em; margin-bottom: 6px;
 }
 .dishFoot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.dishPrice { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* ราคาเป็นตัวเลขที่ใหญ่ที่สุดในการ์ด — เป็นสิ่งที่คนกดตัดสินใจเร็วที่สุด · คงสีเป็น --ink
+   โดยตั้งใจ ไม่ใช้ --accent: accent เป็นสีของ "สิ่งที่เลือกอยู่" บนจอนี้ (แท็บ/ปุ่มที่ active)
+   ถ้าราคา 50 ใบเป็น accent ทั้งกริด สัญญาณนั้นจะเลิกมีความหมาย */
+.dishPrice { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dishModHint { font-size: 10.5px; color: var(--ink-3); }
 .dishStation {
   position: absolute; top: 7px; left: 7px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
 }
+/* ── การ์ดเมนูที่ *มีรูปจริง*: รูปเต็มใบ ตัวหนังสือลอยทับบนไล่เฉดมืด ─────────────
+   ⚠️ ใช้เฉพาะการ์ดที่ `item.imageUrl` ไม่ว่าง — เมนูที่ยังไม่มีรูปคงแบบเดิม (รูปครึ่งบน +
+   ช่องข้อความพื้น --quiet) โดยตั้งใจ · เหตุผล: ร้านที่ยังไม่ได้อัปโหลดรูปมีทั้งกริดเป็น
+   ภาพวาด SVG ถ้าเอาฉากมืดไปทับภาพวาดจะได้กริดที่มืดทั้งจอโดยไม่ได้อะไรกลับมา
+   (ตรวจ shop-b บนฐาน dev 2026-09-10: สินค้า 34 รายการ มีรูป 0 รายการ)
+   · แลกมาด้วยการ์ดสองหน้าตาในกริดเดียว ซึ่งยอมรับแล้วว่าดีกว่ากริดที่มืดทั้งจอ
+
+   ทำไมเป็นไล่เฉดมืดจากล่าง ไม่ใช่แผ่นฝ้าหรือฉากคลุมทั้งใบ (วัดด้วย WCAG ไม่ได้ดูด้วยตา):
+     · ไล่เฉดถึง 82% บนรูปขาวล้วน (กรณีเลวร้ายสุด) = 11.9 · บนรูปดำล้วน = 19.4
+     · ฉากคลุมทั้งใบ 42% บนรูปขาวล้วน = 2.6 → ตก และต้องดันถึง ~65% จึงผ่าน
+       ซึ่งตอนนั้นรูปอาหารก็แทบมองไม่ออกแล้ว = จ่ายค่ารูปใหญ่ไปเปล่า ๆ
+     · แผ่นฝ้าทึบผ่านเหมือนกันแต่กินรูปไปหนึ่งในสาม (กลับหัวกับโจทย์ "ขยายรูป") และ
+       backdrop-filter: blur เป็นภาระ GPU ต่อการ์ด 40-50 ใบบนแท็บเล็ตหน้าร้านที่มักเป็นเครื่องเก่า
+   ครึ่งบนของรูปไม่มีฉากทับเลย — เป็นส่วนที่พนักงานใช้จำเมนู */
+.page .dishCardPhoto { display: flex; flex-direction: column; }
+/* min-height ให้เท่าการ์ดแบบเดิม (วัดจริงในเบราว์เซอร์: 192px / จอมือถือ 182px) — กริดยืด
+   ทุกใบในแถวให้สูงเท่ากันอยู่แล้ว ค่านี้จึงมีผลเฉพาะแถวที่เป็นการ์ดรูปล้วน ไม่ให้เตี้ยกว่าเพื่อน */
+.page .dishCardPhoto .dishSelect { flex: 1; position: relative; min-height: 192px; }
+.dishCardPhoto .dishArt { position: absolute; inset: 0; height: auto; }
+.dishCardPhoto .dishBody {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  background: var(--photo-scrim); border-top: 0; color: var(--on-photo);
+  padding: 34px 12px 12px;
+}
+.dishCardPhoto .dishName, .dishCardPhoto .dishPrice { color: var(--on-photo); }
+.dishCardPhoto .dishModHint { color: var(--on-photo-soft); }
+/* ชิปสถานีเคยนั่งบนพื้นเรียบ ตอนนี้ลอยบนรูป — ต้องมีเงาของตัวเองไม่งั้นขอบชิปหายไปในรูปที่สีใกล้กัน */
+.dishCardPhoto .dishStation { box-shadow: 0 1px 3px var(--shadow-1); }
+/* ⚠️ การ์ดที่ปิดขาย: กฎ .dishCardUnavailable ทาชื่อ/ราคาเป็นสีหมึกซึ่งอ่านไม่ออกบนฉากมืด
+   ต้องเจาะจงกว่า (0,3,0 ชนะ 0,2,0) ไม่ใช่หวังว่าลำดับในไฟล์จะช่วย */
+.dishCardPhoto.dishCardUnavailable .dishName { color: var(--on-photo-soft); }
+.dishCardPhoto.dishCardUnavailable .dishPrice { color: var(--on-photo-dim); }
+.dishCardPhoto.dishCardUnavailable .dishOutNote { color: var(--on-photo-soft); }
+.dishCardPhoto .dishTapHint { color: var(--on-photo); }
+/* รูปที่ปิดขายจางลงโดยไม่ทำให้ฉากจางตาม (ฉากอยู่คนละชั้นกับ .dishArt อยู่แล้ว) */
+.dishCardPhoto.dishCardUnavailable .dishArt { filter: grayscale(1); opacity: .55; }
+
 .menuEmpty { padding: 24px 0; text-align: center; color: var(--ink-3); font-size: 13px; }
 
 .items { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
@@ -905,9 +972,11 @@
      (ที่ 375px เหลือพื้นที่กริด 263px ซึ่งไม่พอสำหรับ 164×2 + gap) */
   .dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; padding: 10px 10px 14px; }
   .dishArt { height: 76px; }
+  .page .dishCardPhoto .dishSelect { min-height: 182px; }
+  .dishCardPhoto .dishBody { padding: 28px 10px 10px; }
   .dishGlyph { width: 56px; height: 56px; }
-  .dishName { font-size: 12.5px; min-height: 2.6em; }
-  .dishPrice { font-size: 14px; }
+  .dishName { font-size: 13.5px; min-height: 2.6em; }
+  .dishPrice { font-size: 15.5px; }
   /* การ์ดแคบลงจนราคากับคำว่า "มีตัวเลือก" อยู่บรรทัดเดียวกันไม่พอ แล้วคำถูกตัดเป็น
      "มีตัว / เลือก" เบียดราคา — วางซ้อนบรรทัดแทนการบีบให้อยู่แถวเดียว */
   .dishFoot { display: block; }

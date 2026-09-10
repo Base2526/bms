@@ -1,0 +1,175 @@
+// =============================================================
+// /pos/restaurant — สัญญาความอ่านออกของการ์ดเมนู
+// -------------------------------------------------------------
+// ไม่ต้องมี DB · ตรึงสิ่งที่ผู้ใช้รายงานจากหน้าร้านจริง 2026-09-10 ("ชื่อกับราคามองไม่ค่อยชัด")
+// แล้วแก้ไป — ทั้งสามข้อเป็นเรื่องที่ถอยกลับได้เงียบ ๆ เพราะไม่มีอะไรพังตอนคอมไพล์:
+//
+//   1. ช่องข้อความต้องมีพื้นของตัวเอง (ชื่อ/ราคาลอยบนขาวเปล่าที่กลืนกับพื้นการ์ด)
+//      และพื้นนั้นต้องมาจาก --quiet **ห้ามเป็น --tint-* ตามสถานี** เพราะพื้นสถานีอยู่ที่
+//      .dishArt แล้ว การทาซ้ำที่ช่องข้อความทำให้พื้นที่มีสีต่อการ์ดเพิ่มเท่าตัว แล้วกริด
+//      40-50 ใบกลายเป็นแถบสีทั้งจอ (กับดักเดิมที่คอมเมนต์ของ --tint-* จดไว้เอง)
+//   2. ราคาต้องเป็นตัวเลขที่ใหญ่ที่สุดในการ์ดเสมอ — ทั้งจอปกติและจอมือถือ
+//   3. ความสูงของชื่อต้องเป็นหน่วย em ไม่ใช่ px — ไม่งั้นวันที่มีคนขยับขนาดฟอนต์
+//      การ์ดในแถวเดียวกันจะสูงไม่เท่ากันแล้วขอบล่างไม่ตรง
+//
+//   cd apps/web && npx tsx --test ../../scripts/menu-card-legibility-contract.test.mts
+// =============================================================
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const ROOT = path.resolve(import.meta.dirname, "..");
+const CSS = "apps/web/app/(pos)/pos/restaurant/restaurant.module.css";
+
+/** ⚠️ ตัดเฉพาะคอมเมนต์ของ CSS — ห้ามใช้ตัวกวาดที่ตัด `--...` ท้ายบรรทัดแบบของ SQL
+ *  ไม่งั้น `background: var(--quiet)` จะถูกกลืนไปทั้งบรรทัดแล้วเทสแดงด้วยเหตุผลผิด */
+const cssWithoutComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** ดึงเนื้อในของกฎที่ selector เป็น **ตัวมันเองล้วน ๆ** (ต้นบรรทัด) หลังตำแหน่งที่กำหนด
+ *  ⚠️ ห้ามใช้ indexOf(".dishName {") ตรง ๆ — มันไปเจอ `.dishCardUnavailable .dishName {`
+ *  ก่อน แล้วเทสจะไปวัดกฎของการ์ดที่ปิดขายแทนการ์ดปกติ (กับดัก substring เดิมของรีโปนี้) */
+function rule(css: string, selector: string, from = 0): string {
+  const re = new RegExp(`^[ \t]*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`, "m");
+  const rest = css.slice(from);
+  const m = re.exec(rest);
+  assert.ok(m, `ไม่พบกฎ ${selector} (ต้องเป็น selector เดี่ยวที่ต้นบรรทัด)`);
+  const open = from + m!.index + m![0].length - 1;
+  const close = css.indexOf("}", open);
+  assert.notEqual(close, -1, `กฎ ${selector} ไม่มีวงเล็บปิด`);
+  return css.slice(open + 1, close);
+}
+
+const px = (body: string, prop: string): number => {
+  const m = body.match(new RegExp(`${prop}\\s*:\\s*([0-9.]+)px`));
+  assert.ok(m, `กฎนี้ต้องประกาศ ${prop} เป็น px — ได้ ${JSON.stringify(body.trim())}`);
+  return Number(m![1]);
+};
+
+const readCss = () => cssWithoutComments(readFileSync(path.join(ROOT, CSS), "utf8"));
+
+test("ช่องข้อความของการ์ดเมนูมีพื้นจาง ๆ ของตัวเอง และไม่ใช่สีตามสถานี", () => {
+  const css = readCss();
+  const body = rule(css, ".dishBody");
+  const bg = body.match(/background\s*:\s*([^;]+);/);
+  assert.ok(bg, ".dishBody ต้องประกาศพื้นหลัง ไม่ใช่ปล่อยให้กลืนกับพื้นการ์ด");
+  assert.equal(bg![1].trim(), "var(--quiet)",
+    "พื้นช่องข้อความต้องเป็น --quiet ตามหน้าที่ที่พาเลตต์ประกาศไว้ (พื้นที่ถอยหลังในการ์ด) " +
+    "— ค่าอื่นแปลว่ามีสีใหม่เข้าระบบหรือใช้ token ผิดหน้าที่");
+  assert.doesNotMatch(bg![1], /--tint-/,
+    "ห้ามทาช่องข้อความด้วยสีสถานี — พื้นสถานีอยู่ที่ .dishArt แล้ว ทาซ้ำ = กริดกลายเป็นแถบสีทั้งจอ");
+  // --tint-1 (สถานีที่เป็นกลาง) เท่ากับ --quiet ทั้งสองพาเลตต์โดยตั้งใจ — ถ้าไม่มีเส้นคั่น
+  // การ์ดของสถานีนั้นจะไม่มีรอยต่อระหว่างรูปกับช่องข้อความเลย (เห็นจริงในเบราว์เซอร์ 2026-09-10)
+  assert.match(body, /border-top\s*:\s*1px solid var\(--line-2\)/,
+    "ช่องข้อความต้องมีเส้นคั่นจากรูป — พื้นอย่างเดียวไม่พอเมื่อสีสถานีบังเอิญเท่ากับพื้นช่องข้อความ");
+});
+
+test("ราคาเป็นตัวเลขที่ใหญ่ที่สุดในการ์ด ทั้งจอปกติและจอมือถือ", () => {
+  const css = readCss();
+  // จอปกติ
+  const name = rule(css, ".dishName");
+  const price = rule(css, ".dishPrice");
+  assert.ok(px(name, "font-size") >= 15,
+    "ชื่อเมนูต้องไม่เล็กกว่า 15px — อักษรไทยมีสระ/วรรณยุกต์ซ้อนบน-ล่าง เล็กกว่านี้หัวตัวอักษรตัน");
+  assert.ok(Number(name.match(/font-weight\s*:\s*(\d+)/)?.[1] ?? 0) >= 700,
+    "ชื่อเมนูต้องหนาอย่างน้อย 700");
+  assert.ok(px(price, "font-size") > px(name, "font-size"),
+    "ราคาต้องใหญ่กว่าชื่อ — เป็นตัวเลขที่คนกดตัดสินใจเร็วที่สุดในการ์ด");
+  assert.ok(Number(price.match(/font-weight\s*:\s*(\d+)/)?.[1] ?? 0) >= 800,
+    "ราคาต้องหนาอย่างน้อย 800");
+
+  // จอมือถือ (ค่า override ท้ายไฟล์) — ลำดับต้องไม่กลับหัวเพราะแก้ทีหลังแค่ฝั่งเดียว
+  const mq = css.indexOf(".dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px");
+  assert.notEqual(mq, -1, "ไม่พบบล็อก override ของจอมือถือ");
+  const nameM = rule(css, ".dishName", mq);
+  const priceM = rule(css, ".dishPrice", mq);
+  assert.ok(px(priceM, "font-size") > px(nameM, "font-size"),
+    "จอมือถือ: ราคายังต้องใหญ่กว่าชื่อ");
+});
+
+test("ความสูงของชื่อผูกกับขนาดฟอนต์ (em) การ์ดในแถวเดียวกันจึงสูงเท่ากันเสมอ", () => {
+  const css = readCss();
+  for (const [selector, from] of [
+    [".dishName", 0],
+    [".dishName", css.indexOf(".dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px")],
+  ] as const) {
+    const body = rule(css, selector, from);
+    assert.match(body, /min-height\s*:\s*[0-9.]+em/,
+      "min-height ของชื่อต้องเป็น em — เป็น px แล้วขยับขนาดฟอนต์เมื่อไหร่ ขอบล่างของการ์ดในแถวจะไม่ตรงกัน");
+  }
+  // การคลิปประกาศที่กฎฐานที่เดียว (บล็อกจอมือถือ override แค่ขนาด) — ถ้าหายไปจากที่นั่น
+  // ชื่อจะเหลือบรรทัดเดียวทุกจอ แล้วส่วนที่แยกเมนูออกจากกัน (เช่น "สูตรพิเศษ") หายก่อน
+  assert.match(rule(css, ".dishName"), /-webkit-line-clamp\s*:\s*2/);
+});
+
+// ── รูปเต็มใบ + ตัวหนังสือลอยทับ (2026-09-10) ───────────────────────────────
+// สามข้อนี้พังเงียบทั้งหมด: ไม่มีอะไรฟ้องตอนคอมไพล์ และดูด้วยตาบนรูปสวย ๆ ใบเดียวก็ยังผ่าน
+
+const PAGE = "apps/web/app/(pos)/pos/restaurant/page.tsx";
+const readPage = () => readFileSync(path.join(ROOT, PAGE), "utf8")
+  .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+/** ผสมสี rgba ทับพื้นทึบ แล้วคืน contrast ตาม WCAG 2.x */
+function contrastOver(fg: [number, number, number], scrim: [number, number, number, number], behind: [number, number, number]) {
+  const mix = behind.map((b, i) => scrim[3] * scrim[i] + (1 - scrim[3]) * b) as [number, number, number];
+  const lin = (c: number) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : (((c / 255) + 0.055) / 1.055) ** 2.4);
+  const lum = ([r, g, b]: [number, number, number]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  const [a, b] = [lum(fg), lum(mix)];
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+test("ฉากบนรูปเข้มพอให้อ่านออกแม้บนรูปที่สว่างที่สุดเท่าที่เป็นไปได้", () => {
+  const css = readCss();
+  const decl = css.match(/--photo-scrim:\s*([^;]+);/);
+  assert.ok(decl, "ต้องมี --photo-scrim ในพาเลตต์");
+  // จุดสีที่เข้มที่สุดของไล่เฉด = ตำแหน่งที่ตัวหนังสือนั่งอยู่จริง (ล่างสุดของการ์ด)
+  const stops = [...decl![1].matchAll(/rgba\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)[ ,]+([\d.]+)\s*\)/g)]
+    .map((m) => [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])] as [number, number, number, number]);
+  assert.ok(stops.length >= 2, "ไล่เฉดต้องมีอย่างน้อยสองจุดสี");
+  const darkest = stops.reduce((a, b) => (b[3] > a[3] ? b : a));
+
+  const ink = css.match(/--on-photo:\s*#([0-9a-fA-F]{6})/);
+  assert.ok(ink, "ต้องมี --on-photo เป็นค่าสีตรง ๆ");
+  const fg = [0, 2, 4].map((i) => parseInt(ink![1].slice(i, i + 2), 16)) as [number, number, number];
+
+  // กรณีเลวร้ายที่สุดคือรูปขาวล้วน — ร้านอัปโหลดรูปเอง ออกแบบจากรูปที่เลือกมาแล้วคือไม่ได้ออกแบบ
+  const worst = contrastOver(fg, darkest, [255, 255, 255]);
+  assert.ok(worst >= 4.5,
+    `ตัวหนังสือบนฉากต้องผ่าน 4.5 แม้รูปเป็นขาวล้วน — ตอนนี้ได้ ${worst.toFixed(2)} ` +
+    "(ฉากจางลงเมื่อไหร่ ชื่อเมนูจะอ่านออกหรือไม่ขึ้นกับว่าร้านอัปโหลดรูปอะไร)");
+});
+
+test("แบบรูปเต็มใบใช้เฉพาะการ์ดที่มีรูปจริง", () => {
+  const page = readPage();
+  assert.match(page, /item\.imageUrl \? styles\.dishCardPhoto : ""/,
+    "dishCardPhoto ต้องผูกกับ item.imageUrl — ใส่ให้ทุกใบ = เอาฉากมืดไปทับภาพวาด SVG " +
+    "แล้วได้กริดที่มืดทั้งจอในร้านที่ยังไม่ได้อัปโหลดรูป (ซึ่งเป็นสภาพจริงวันนี้)");
+  // เมนูที่ไม่มีรูปต้องยังเดินเส้นเดิม (ภาพวาดในกรอบครึ่งบน)
+  assert.match(page, /item\.imageUrl\s*\n?\s*\? <img/,
+    "การ์ดที่ไม่มีรูปต้องยังวาด SVG ในกรอบเดิม ไม่ใช่ปล่อยว่าง");
+});
+
+test("การ์ดที่ปิดขายแบบรูปเต็มใบต้องไม่กลับไปใช้ตัวหนังสือสีหมึกบนฉากมืด", () => {
+  const css = readCss();
+  for (const part of ["dishName", "dishPrice", "dishOutNote"]) {
+    const re = new RegExp(`\\.dishCardPhoto\\.dishCardUnavailable \\.${part}\\s*\\{[^}]*color:\\s*var\\(--on-photo`);
+    assert.match(css, re,
+      `.dishCardPhoto.dishCardUnavailable .${part} ต้องทับสีหมึกของสถานะปิดขาย — ` +
+      "ไม่งั้นตัวหนังสือสีเข้มไปอยู่บนฉากมืด แล้วการ์ดที่ปิดขายอ่านไม่ออกเลย");
+  }
+});
+
+test("ฉากบนรูปมีค่าเดียวกันทั้งสองพาเลตต์ (พื้นหลังคือรูป ไม่ใช่ธีมของจอ)", () => {
+  const css = readCss();
+  const light = css.slice(css.indexOf(".page {"), css.indexOf(":global(html.dark) .page,"));
+  const dark = css.slice(css.indexOf(":global(html.dark) .page,"));
+  for (const name of ["--photo-scrim", "--on-photo", "--on-photo-soft", "--on-photo-dim"]) {
+    const a = light.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim();
+    const b = dark.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim();
+    assert.ok(a && b, `${name} ต้องประกาศทั้งสองพาเลตต์`);
+    assert.equal(b, a,
+      `${name} ต้องเท่ากันทั้งสองโหมด — ตัวหนังสือชุดนี้นั่งบน "รูปที่ร้านอัปโหลด" ` +
+      "ธีมของจอจึงไม่ได้บอกอะไรเลยว่าหลังตัวหนังสือสว่างหรือมืด");
+  }
+});
