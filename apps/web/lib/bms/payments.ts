@@ -18,6 +18,7 @@ import { beginTenantTx } from "./tenant";
 import { readStoredFile } from "@/lib/storage";
 import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
+import { notifyOrderActionCommitted } from "./orderActionNotify";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
 import { earnPointsForOrderInTx, reviewMemberTierForOrder } from "./membership";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
@@ -192,6 +193,7 @@ export async function confirmPayment(
   actor: string | null = "admin"
 ): Promise<ConfirmResult> {
   const client = await getClient();
+  let committed: { paymentId: string; orderId: string; orderPaid: boolean } | null = null;
   try {
     await beginTenantTx(client, tenantId);
 
@@ -268,17 +270,21 @@ export async function confirmPayment(
 
     await client.query("COMMIT");
     const orderPaid = (ord.rowCount ?? 0) > 0;
-    if (orderPaid) {
-      void reviewMemberTierForOrder(tenantId, pay.rows[0].order_id);
-      void notifyOrderStatusEmail(tenantId, pay.rows[0].order_id, "paid");
-    }
-    return { status: "CONFIRMED", paymentId, orderPaid };
+    committed = { paymentId, orderId: pay.rows[0].order_id, orderPaid };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
   } finally {
     client.release();
   }
+  // All follow-up work runs after releasing the transaction client. Holding one pool slot while
+  // the notifier opens another connection can stall every concurrent payment at pool capacity.
+  if (committed.orderPaid) {
+    void reviewMemberTierForOrder(tenantId, committed.orderId);
+    void notifyOrderStatusEmail(tenantId, committed.orderId, "paid");
+    await notifyOrderActionCommitted({ tenantId, orderId: committed.orderId, kind: "ORDER_PAID" });
+  }
+  return { status: "CONFIRMED", paymentId: committed.paymentId, orderPaid: committed.orderPaid };
 }
 
 export type SubmitPartResult =
@@ -383,6 +389,7 @@ export async function confirmPaymentsForOrder(
 ): Promise<ConfirmSplitResult> {
   if (paymentIds.length === 0) return { status: "NOT_FOUND" };
   const client = await getClient();
+  let committed: { paymentIds: string[]; orderPaid: boolean } | null = null;
   try {
     await beginTenantTx(client, tenantId);
 
@@ -458,17 +465,19 @@ export async function confirmPaymentsForOrder(
 
     await client.query("COMMIT");
     const orderPaid = (ord.rowCount ?? 0) > 0;
-    if (orderPaid) {
-      void reviewMemberTierForOrder(tenantId, orderId);
-      void notifyOrderStatusEmail(tenantId, orderId, "paid");
-    }
-    return { status: "CONFIRMED", paymentIds, orderPaid };
+    committed = { paymentIds, orderPaid };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
   } finally {
     client.release();
   }
+  if (committed.orderPaid) {
+    void reviewMemberTierForOrder(tenantId, orderId);
+    void notifyOrderStatusEmail(tenantId, orderId, "paid");
+    await notifyOrderActionCommitted({ tenantId, orderId, kind: "ORDER_PAID" });
+  }
+  return { status: "CONFIRMED", paymentIds: committed.paymentIds, orderPaid: committed.orderPaid };
 }
 
 // ---- reject / refund (simple guarded transitions) ------------

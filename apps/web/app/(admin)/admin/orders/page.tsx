@@ -160,6 +160,7 @@ function OrdersManagement() {
   const { data, loading, error, refetch } = useQuery(Q_ORDERS, {
     variables: { search: search || null, status: filter === "ALL" ? null : filter, locationId: locationFilter, limit: 100, offset: 0 },
     fetchPolicy: "cache-and-network",
+    pollInterval: 15000,
   });
   const { data: locData } = useQuery(Q_LOCATIONS, { fetchPolicy: "cache-and-network" });
 
@@ -183,6 +184,14 @@ function OrdersManagement() {
   const busy = l1 || l2 || l3 || l4 || l5 || l6;
 
   const orders: Order[] = data?.bmsOrders || [];
+
+  // Realtime is the fast path; the 15s query poll above is the recovery path when a socket event
+  // is missed. Both use the authoritative server query rather than inserting guessed rows locally.
+  useEffect(() => {
+    const refresh = () => { void refetch(); };
+    window.addEventListener("bms:order-action", refresh);
+    return () => window.removeEventListener("bms:order-action", refresh);
+  }, [refetch]);
   const locations: Array<{ id: string; name: string; branchCode: string; active: boolean }> = locData?.bmsOrderLocations ?? [];
 
   const actionsFor = (r: Order) => {

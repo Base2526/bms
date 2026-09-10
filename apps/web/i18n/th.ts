@@ -313,6 +313,14 @@ const th = {
     groupFuture: "อนาคต",
     groupUnknown: "ไม่ทราบ",
   },
+  order_notifications: {
+    open: "เปิดดูงาน",
+    fallback_title: "มีงานออเดอร์ใหม่",
+    open_inbox: "เปิดแชท",
+    inbox_fallback_title: "มีข้อความลูกค้าใหม่",
+    sound_blocked: "เสียงแจ้งเตือนงานถูกบล็อกอยู่ · แตะเพื่อเปิดเสียง",
+    enable_sound: "เปิดเสียง",
+  },
 
   searchPage: {
     title: "ค้นหา",

@@ -8,6 +8,8 @@ import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { GlobalInboxNotifier } from "@/components/GlobalInboxNotifier";
 import { GlobalMentionNotifier } from "@/components/GlobalMentionNotifier";
 import { GlobalFailureNotifier } from "@/components/GlobalFailureNotifier";
+import { GlobalOrderNotifier } from "@/components/GlobalOrderNotifier";
+import { GlobalStaffAlertSoundStatus } from "@/components/GlobalStaffAlertSoundStatus";
 import { SupportActivityRecorder } from "@/components/SupportActivityRecorder";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
 import { getLangCookie, setLangCookie, isLang } from "@/lib/lang";
@@ -68,6 +70,8 @@ function GlobalWiresWrapper() {
       {admin?.id ? <GlobalInboxNotifier /> : null}
       {admin?.id ? <GlobalMentionNotifier /> : null}
       {admin?.id ? <GlobalFailureNotifier /> : null}
+      {admin?.id ? <GlobalOrderNotifier /> : null}
+      {admin?.id ? <GlobalStaffAlertSoundStatus /> : null}
       {supportScope ? <SupportActivityRecorder scopeKey={supportScope} /> : null}
     </>
   );

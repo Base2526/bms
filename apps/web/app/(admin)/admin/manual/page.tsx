@@ -448,7 +448,7 @@ const MENU_CARDS_TH: MenuCard[] = [
   {
     title: "Inbox",
     desc: "รับแชท, ดู Customer 360, assign staff, ตามงานต่อจากแชท",
-    bullets: ["เริ่มงานจากแชทใหม่", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback ทุกช่องทางพร้อมลิงก์กระเป๋าคูปอง ระบบเพิ่มสิทธิ์เข้า wallet ตอนส่งจริง ลูกค้าไม่ต้องกดรับ", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน แต่จะไม่ใช้คูปองจากข้อความอิสระ", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะอ่านและล้าง badge อัตโนมัติเมื่อข้อความเข้า", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
+    bullets: ["เริ่มงานจากแชทใหม่", "ข้อความลูกค้าใหม่ที่ยังไม่ได้เปิดดูจะแจ้งด้วยเสียง, toast ในระบบ และ browser notification; ถ้าเบราว์เซอร์บล็อกเสียง ระบบจะแสดงปุ่มให้เปิดเสียง", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback ทุกช่องทางพร้อมลิงก์กระเป๋าคูปอง ระบบเพิ่มสิทธิ์เข้า wallet ตอนส่งจริง ลูกค้าไม่ต้องกดรับ", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน แต่จะไม่ใช้คูปองจากข้อความอิสระ", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะอ่านและล้าง badge อัตโนมัติเมื่อข้อความเข้า", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
   },
   {
     title: "Products",
@@ -483,6 +483,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "สามหน้านี้ใช้ต่อเนื่องกัน: สร้างและตามออเดอร์ → ตรวจรับชำระ → ส่งของและตาม tracking",
     bullets: [
       "Orders ใช้ติดตามสถานะ PENDING / PAID / PACKING / SHIPPED / COMPLETED / CANCELLED / RETURNED",
+      "เมื่อมีออเดอร์ออนไลน์ใหม่หรือชำระแล้ว ระบบแจ้งพนักงานที่มีสิทธิ์และเห็นสาขานั้นด้วย toast, browser notification และเสียง; หน้า Orders รีเฟรชทันทีและยังตรวจซ้ำทุก 15 วินาที",
       "Payment ใช้ตรวจสลิป, ยืนยัน/ปฏิเสธ, และทำ refund ตามสิทธิ์",
       "Shipping ใช้สร้าง shipment, ใส่ tracking, sync carrier และปิดงานเมื่อ DELIVERED",
       "ทุกหน้ามี search เพื่อหา order id, payment id, shipment id, tracking หรือข้อมูลลูกค้าที่เกี่ยวข้อง",
@@ -1629,6 +1630,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Take chats, view Customer 360, assign staff, and carry the work on from the conversation",
     bullets: [
       "Start the day from new chats",
+      "A new unread customer message triggers sound, an in-app toast, and a browser notification; if the browser blocks audio, the app shows a button to enable it",
       "Customer 360 can create orders and print invoices, subject to your permissions",
       "Recent orders open as a preview inside Inbox first, with a button to open the full Orders page in a new tab",
       "Images and files land in the draft before sending, and one attachment can be sent at a time",
@@ -1677,6 +1679,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "These three pages are meant to be used as one flow: order tracking -> payment review -> shipping and tracking",
     bullets: [
       "Orders tracks PENDING / PAID / PACKING / SHIPPED / COMPLETED / CANCELLED / RETURNED",
+      "When a new online order arrives or becomes paid, eligible staff for that branch receive a toast, browser notification, and sound; Orders refreshes immediately and still checks every 15 seconds",
       "Payment is where staff review slips, confirm or reject payments, and process refunds when authorized",
       "Shipping creates shipments, records tracking numbers, syncs carriers, and closes work at DELIVERED",
       "Every page has search so staff can find an order id, payment id, shipment id, tracking number, or related customer fast",

@@ -56,6 +56,17 @@ roll back an order-status change. Templates live in the existing global `email_t
 `order.returned`, seeded in both `th`/`en` locale by migration `7.19`), personalized per tenant at
 render time via `getStoreProfile()`/`getTenantName()`.
 
+**Staff action alerts (2026-09):** a committed non-POS order creates a persistent, user-scoped
+notification for staff with `order.view`; reaching `PAID` notifies the staff who hold `order.ship`,
+and an accepted restaurant online order that creates kitchen tickets notifies staff with
+`restaurant.kitchen.update`. Recipient selection is server-side, tenant-scoped, honours each user's
+opt-in branch restrictions, excludes `pos_only` accounts (their operating screens already have
+their own live alerts), and carries no customer PII. The admin listener turns the notification into
+an in-app toast, browser notification and device-local sound; `/admin/orders` refreshes immediately
+from the event and also polls every 15 seconds as recovery if realtime delivery is missed. All of
+this runs after commit and is best-effort: an alert failure is logged but never rolls back or changes
+the order.
+
 Two branding fields on the store profile (migration `7.20`) let a shop make these emails
 recognizable as their own without a full per-tenant template editor (the `email_templates` table has
 no `tenant_id` — a real editor would need a schema change plus a safe HTML-editing UI, judged not

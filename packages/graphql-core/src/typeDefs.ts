@@ -64,6 +64,8 @@ export const coreTypeDefs = /* GraphQL */ `
   type BmsInboxChangedPayload {
     conversationId: ID!
     kind: String!
+    messageSource: String
+    messageId: ID
     occurredAt: String!
   }
   type User {
