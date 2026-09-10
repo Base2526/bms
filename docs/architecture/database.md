@@ -982,17 +982,24 @@ the merchant cause. Repricing differences absorbed by the shop use the distinct
 defaults to ฿2,000. `order.line.cancel` is seeded to Manager and Cashier without widening
 `order.return`.
 
-## Planned realtime outbox (not implemented)
+## Realtime outbox (`9.70`)
 
-The accepted realtime design will add a new numbered, idempotent migration for a tenant-owned
-`bms_realtime_outbox`; no such table exists in the current schema. Business services will enqueue a
-small, allowlisted invalidation envelope with the same `beginTenantTx()` client that commits the
-business change. A multi-instance-safe dispatcher will claim rows with `FOR UPDATE SKIP LOCKED`,
-publish outside the transaction, and acknowledge by stable event ID and claim token. The table will
-use forced RLS and `bms_app` grants; narrowly granted fixed-`search_path` functions will let the
-dispatcher claim across tenants without giving `apps/ws` a PostgreSQL connection.
+`bms_realtime_outbox` is the tenant-owned durable handoff between committed business changes and
+Redis. Business services call `enqueueRealtimeEventInTx()` with the same `beginTenantTx()` client
+that changes the aggregate. The row stores the central event identifiers/routing fields plus an
+allowlisted JSON payload capped at 16 KiB. Forced RLS fails closed when `bms.tenant_id` is missing,
+and `bms_app` receives only tenant-scoped SELECT/INSERT access.
 
-The proposed columns, indexes, payload ceiling, retry/dead-letter behavior, retention, and security
-tradeoffs are specified in [ADR 001](decisions/001-transactional-realtime-invalidation.md). Do not
-implement from this paragraph alone; the migration phase must include database and rollback/crash
-tests from the [realtime production audit](realtime-production-audit.md).
+The dispatcher functions run as the non-login `bms_realtime_dispatcher` role, which has only
+SELECT/UPDATE/DELETE on this table and owns fixed-`search_path`, `SECURITY DEFINER` functions. The
+ordinary app role can call claim/ack/nack/cleanup but cannot supply SQL or bypass their bounded
+parameters. Claim uses a committed lease plus `FOR UPDATE SKIP LOCKED`; Redis I/O happens after that
+claim transaction. A crash after publish and before ack may publish the same stable `event_id` again,
+so delivery remains at least once.
+
+Failed publishes return to `PENDING` with bounded exponential backoff and jitter, then become
+`FAILED` for operator visibility after the configured attempt limit. Published and failed retention
+are separate. `POST /api/bms/realtime/dispatch` is a cron-secret-gated recovery/manual entrypoint and
+records `realtime-outbox-dispatch` in job runs. A continuous production worker is still required
+before claiming low-latency delivery. See [ADR 001](decisions/001-transactional-realtime-invalidation.md)
+and the [realtime production audit](realtime-production-audit.md).

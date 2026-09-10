@@ -134,8 +134,9 @@ focus refresh, mutation responses, and manual refresh remain required recovery p
 The repository audit found authorization, lifecycle, transaction-boundary, replay, and operational
 gaps that must be closed before expanding subscription coverage. The accepted direction is a
 short-lived HTTP-minted WS ticket, scoped safe invalidation events, and a PostgreSQL transactional
-outbox dispatched to Redis while `apps/ws` remains database-free. No outbox migration or wider
-domain event rollout exists yet. See the [full audit](realtime-production-audit.md) and
+outbox dispatched to Redis while `apps/ws` remains database-free. Migration `9.70`, the event
+contract, and dispatcher are implemented; live DB verification, a continuous production worker,
+gateway hardening, and wider domain event rollout remain. See the [full audit](realtime-production-audit.md) and
 [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
 The mobile transport decision is also locked: normal React Native/POS reads and commands converge on

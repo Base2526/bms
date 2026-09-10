@@ -59,9 +59,15 @@ Details per channel: [../integrations/](../integrations/).
 
 ## REST — cron endpoints
 
-Protected by header `x-cron-secret` matching env `BMS_CRON_SECRET` (skipped if unset — fine for
-dev, must be set in production). None has a schedule wired up yet; each expects an external cron
-(GitHub Actions, system crontab, etc.) to `POST` them on an interval.
+Routes using `authorizeCronRequest()` require header `x-cron-secret` matching
+`BMS_CRON_SECRET`; an unset secret fails closed with 503 and a wrong header returns 401. The
+repository GitHub Action schedules its frequent/daily matrices only when repository secrets are
+configured. Other routes remain visible as ready-but-unscheduled on `/admin/operations-schedule`.
+
+- `POST /api/bms/realtime/dispatch` — claims committed outbox rows with `FOR UPDATE SKIP LOCKED`,
+  publishes the central invalidation envelope to Redis outside the claim transaction, then
+  acknowledges or schedules a bounded retry. This endpoint is a recovery/manual trigger; production
+  low-latency delivery still needs a continuous worker using the same dispatcher service.
 
 - `POST /api/bms/orders/release-expired?minutes=30` — cancels `RESERVED` orders older than N
   minutes, releasing their stock reservation. `lib/bms/orders.ts` `releaseExpiredOrders()`.

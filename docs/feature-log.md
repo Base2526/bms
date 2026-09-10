@@ -1089,6 +1089,13 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   and bounded client deduplication. Routing scope is server-shaped and topic segments reject
   separators. Payloads accept only event-specific scalar hints and reject PII/clinical/evidence keys.
   The existing legacy publishers are unchanged pending the transactional-outbox phase.
+- **Transactional realtime outbox (`9.70`, 2026-09-10)** — business services can insert a validated
+  invalidation with their existing tenant transaction. A narrow non-login dispatcher role claims
+  committed rows with a lease and `FOR UPDATE SKIP LOCKED`; Redis delivery happens after claim commit,
+  ack is bound to event/claim token, and failures use bounded backoff before visible `FAILED` state.
+  The guarded dispatch route records job-run evidence and all three compose files carry the worker
+  controls. Pure dispatcher/migration contracts pass; the local DB contract exists but has not run in
+  this environment because no disposable Postgres is available.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking

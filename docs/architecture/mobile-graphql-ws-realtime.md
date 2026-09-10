@@ -53,7 +53,7 @@ callbacks, public signed flows, and scheduler triggers remain REST.
 | Reason | Routes |
 | --- | --- |
 | External webhooks/callbacks | `/api/bms/facebook/webhook/[tenantId]`, `/instagram/webhook/[tenantId]`, `/lazada/webhook/[tenantId]`, `/line/webhook/[tenantId]`, `/line/webhook`, `/shopee/webhook/[tenantId]`, `/tiktok/webhook/[tenantId]`, `/tiktok/webhook`, `/web/webhook/[tenantId]` |
-| Cron/job triggers | `/api/bms/ai/check-health`, `/channels/check-health`, `/followups/run`, `/jobs/etax`, `/jobs/report-run`, `/loyalty/maintenance`, `/menu-availability/reset`, `/orders/release-expired`, `/pharmacy/assessments/expire-stale`, `/reports/send-digest`, `/shipping/sync-carriers`, `/support-diagnostics/purge-expired` |
+| Cron/job triggers | `/api/bms/ai/check-health`, `/channels/check-health`, `/followups/run`, `/jobs/etax`, `/jobs/report-run`, `/loyalty/maintenance`, `/menu-availability/reset`, `/orders/release-expired`, `/pharmacy/assessments/expire-stale`, `/realtime/dispatch`, `/reports/send-digest`, `/shipping/sync-carriers`, `/support-diagnostics/purge-expired` |
 | Upload/download/binary/export | `/api/bms/inbox/upload`, `/pharmacy/evidence/[id]/file`, `/pharmacy/evidence/upload`, `/pos-shifts/export`, `/products/upload`, `/reports/download/[id]`, `/shipment/[id]/label`, `/support-diagnostics/bundles/[id]/download`, `/support-diagnostics/export`, `/api/pos/pharmacy-evidence`, `/api/pos/shift-report/export` |
 | Signed/public browser flow | `/api/bms/checkout`, `/checkout/payment`, `/restaurant-qr/[token]`, `/restaurant-qr/menu`, `/restaurant-qr/menu-item`, `/restaurant-qr/service-calls`, `/restaurant-qr/submissions` |
 | Diagnostics/stream-oriented compatibility | `/api/bms/chat`, `/demo-chat`, `/support-diagnostics/events`, `/support-diagnostics/send`, `/api/pos/support-diagnostics` |
@@ -202,5 +202,6 @@ and tests to agree.
 | --- | --- | --- |
 | 1. Audit and architecture | Complete | 117 REST routes classified above; GraphQL and subscription inventory linked |
 | 2. Shared event contract | Complete | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication |
-| 3. Transactional outbox | Next | schema is designed in ADR 001; no migration is claimed yet |
-| 4–7. WS/auth, mobile operations, events, client rollout | Planned | must follow the test and rollout gates above |
+| 3. Transactional outbox | Implemented; live DB verification pending | migration `9.70`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, pure and DB contract suites |
+| 4. WS/auth hardening | Next | must pass cross-scope, expiry, revocation and origin/limit tests before wider subscriptions |
+| 5–7. Mobile operations, domain events, client rollout | Planned | must follow the test and rollout gates above |

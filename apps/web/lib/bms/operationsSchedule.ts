@@ -40,6 +40,19 @@ type OperationDefinition = {
 
 const DEFINITIONS: OperationDefinition[] = [
   {
+    key: "realtime-outbox-dispatch",
+    name: "Realtime Outbox Dispatch",
+    kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/realtime/dispatch/route.ts",
+    docsPath: "docs/architecture/mobile-graphql-ws-realtime.md",
+    triggerHint: "POST /api/bms/realtime/dispatch",
+    purposeFallback: "Claim committed invalidation events safely across instances and publish them to Redis.",
+    whenFallback: "Continuous worker recommended; cron endpoint is recovery/manual trigger only",
+    statusFallback: "Ready but unscheduled",
+    triggerFallback: "POST /api/bms/realtime/dispatch",
+    evidenceFallback: "Dispatcher endpoint exists; a continuous production worker has not been deployed yet.",
+  },
+  {
     key: "daily-log-triage",
     name: "Daily Log Triage",
     kind: "GitHub Action",

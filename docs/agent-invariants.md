@@ -1054,7 +1054,8 @@ Full history/rationale of what was found and fixed: § Multi-instance readiness 
 The 2026-09-10 audit is the current authority for realtime rollout work:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
-event/type/topic/validation layer now exists in `packages/realtime`; the outbox, hardened gateway and
+event/type/topic/validation layer exists in `packages/realtime`, and migration `9.70` plus
+`realtimeOutbox.ts`/`realtimeDispatcher.ts` provide the durable handoff. The hardened gateway and
 wider event coverage do not yet exist.
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source

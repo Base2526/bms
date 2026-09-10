@@ -1,6 +1,6 @@
 # ADR 001: transactional outbox and scoped invalidation events
 
-- Status: Accepted for phased implementation
+- Status: Accepted; shared event contract and migration `9.70` implemented, live DB verification pending
 - Date: 2026-09-10
 - Scope: BMS domain realtime delivery
 
