@@ -25,6 +25,7 @@ import {
   type RealtimeEvent,
 } from "../../realtime/src/events.js";
 import { topicForLocation, topicForTenant, topicForUser } from "../../realtime/src/topics.js";
+import { NAMED_REALTIME_SUBSCRIPTIONS } from "../../realtime/src/namedSubscriptions.js";
 
 const runtimeEnv = (globalThis as typeof globalThis & {
   process?: { env?: Record<string, string | undefined> };
@@ -303,5 +304,45 @@ export const coreResolvers = {
         },
       ),
     },
+    ...namedDomainSubscriptions(),
   },
 };
+
+// =============================================================
+// Named domain subscriptions (Phase 6)
+// -------------------------------------------------------------
+// Every named subscription is a filtered view of the one invalidation stream.
+// They deliberately share `realtimeTopics` + `canReceiveRealtimeEvent` instead
+// of each carrying its own auth: seventeen copies of a tenant/location/
+// permission check is seventeen chances for one of them to drift open.
+//
+// The resolver key is also the payload key, because `withFilter` receives the
+// published envelope under the field name the publisher used. The dispatcher
+// publishes one wrapper per event, so each named field reads the same
+// `realtimeEvent` payload and narrows it by event type.
+// =============================================================
+
+function namedDomainSubscriptions() {
+  const resolvers: Record<string, unknown> = {};
+  for (const [field, eventTypes] of Object.entries(NAMED_REALTIME_SUBSCRIPTIONS)) {
+    const accepted = new Set<string>(eventTypes);
+    resolvers[field] = {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => pubsub.asyncIterator(realtimeTopics(requireRealtimeClaims(ctx))),
+        (payload: any, _vars: any, ctx: any) => {
+          try {
+            const event = validateRealtimeEvent(payload?.realtimeEvent);
+            if (!accepted.has(event.eventType)) return false;
+            return canReceiveRealtimeEvent(event, requireRealtimeClaims(ctx));
+          } catch {
+            return false;
+          }
+        },
+      ),
+      // The published wrapper carries the envelope under `realtimeEvent`; the
+      // named field resolves to the same object.
+      resolve: (payload: any) => payload?.realtimeEvent,
+    };
+  }
+  return resolvers;
+}

@@ -204,5 +204,27 @@ export const coreTypeDefs = /* GraphQL */ `
     # Versioned safe invalidations. The ticket determines tenant/user/location topics;
     # event payloads never authorize or replace the authoritative query.
     realtimeEvent: RealtimeEvent!
+
+    # Named domain views over the same invalidation stream. Each one is scoped by the
+    # ticket (tenant, and location/device where the domain is branch-bound), filtered by
+    # the same central permission rule, and carries no authoritative data — the client
+    # refetches the real query. They exist so a register can subscribe to the few domains
+    # it renders instead of waking on every event in its scope.
+    bmsDeviceSessionChanged: RealtimeEvent!  # device pairing/revocation for this register
+    bmsShiftChanged: RealtimeEvent!  # shift open/close and drawer cash movement
+    bmsPosOrderChanged: RealtimeEvent!  # a sale owned by a register
+    bmsRestaurantFloorChanged: RealtimeEvent!  # zones and tables
+    bmsRestaurantCheckChanged: RealtimeEvent!  # open check lifecycle and kitchen rounds
+    bmsKitchenTicketChanged: RealtimeEvent!  # both kitchen queues (retail and restaurant)
+    bmsMenuAvailabilityChanged: RealtimeEvent!  # sold-out today and catalog availability
+    bmsQrOrderChanged: RealtimeEvent!  # table QR proposals
+    bmsIncomingOrderChanged: RealtimeEvent!  # chat/online order requests
+    bmsWaitlistChanged: RealtimeEvent!  # queue tickets and reservations
+    bmsInventoryChanged: RealtimeEvent!  # stock and reservation movement
+    bmsStockTransferChanged: RealtimeEvent!  # inter-branch transfer send/receive
+    bmsStockCountChanged: RealtimeEvent!  # stock count applied
+    bmsPaymentChanged: RealtimeEvent!  # payment submit/confirm/reject/refund
+    bmsOrderChanged: RealtimeEvent!  # order create/status/fulfilment
+    bmsNotificationCreated: RealtimeEvent!  # notification for this principal
   }
 `;

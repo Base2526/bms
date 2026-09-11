@@ -3,6 +3,105 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## recheck Phase 1-11 ของงาน mobile GraphQL/realtime — เสร็จจริง 4 เฟส (2026-09-11)
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1083**
+จาก 1075 · production build) · **migration ใหม่ `9.72` ยังไม่ได้ apply ที่ไหนเลย** ·
+**ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (Docker ไม่ได้รัน · 5432 ปิด) ·
+**ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** · **มิวเทชัน 8 แบบ แดงถูกตัวทุกครั้ง**
+
+### ⚠️ Phase 6 ขาด 16 จาก 17 subscription — codex ทำสตรีมรวมตัวเดียวแทน
+
+มีแค่ `bmsInboxChanged` (ของเดิม) · ที่เหลือถูกแทนด้วย `realtimeEvent` ตัวเดียวแบบ generic
+ซึ่งเป็นดีไซน์ที่ป้องกันได้ แต่แปลว่า **client เลือกรับเฉพาะโดเมนที่ตัวเองเรนเดอร์ไม่ได้**
+ทุกเครื่องรับทุก event ใน topic scope แล้วไปกรองเอง — แท็บเล็ตหน้าร้านจึงตื่นทุกครั้งที่สต็อก
+สาขาขยับ
+
+- ทำครบ 17 ตัวแล้ว แต่ **ไม่ได้เขียน resolver 17 ชุด** — ทุกตัวเป็น "วิวที่กรองแล้ว" ของสตรีม
+  เดียวกัน ผ่าน `NAMED_REALTIME_SUBSCRIPTIONS` · **17 ชุด auth คือ 17 โอกาสที่ตัวหนึ่งจะหลุด**
+  จึงให้ทุกตัวเดินผ่าน `realtimeTopics()` + `canReceiveRealtimeEvent()` ชุดเดียว (มีเทสบังคับ)
+- **ตารางการแมปอยู่ที่ `packages/realtime/src/namedSubscriptions.ts` ไม่ใช่ใน resolvers**
+  เพราะมันเป็นข้อมูลของสัญญา ไม่ใช่ตรรกะของ resolver · **และเพราะเทสใน `scripts/` import
+  `packages/graphql-core/src/resolvers.ts` ไม่ได้** — ไฟล์นั้น import `graphql` ซึ่ง resolve
+  จาก `scripts/` ไม่ได้ (แพ็กเกจอยู่ที่ `apps/web/node_modules` เท่านั้น) · กับดักเดิมของรอบก่อน
+- **ไม่ได้ใส่ subscription ของ "เรียกพนักงาน"** (`restaurant.table_call.*`) เพราะ brief ระบุ 17 ตัว
+  และไม่มีตัวนี้ · แต่มันเป็นจอจริงของ POS จึงบันทึกไว้ใน `GENERIC_STREAM_ONLY` ว่าเข้าถึงได้
+  ทาง `realtimeEvent` เท่านั้น **ถ้าจะให้ RN ใช้จอนี้ ต้องเพิ่มตัวที่ 18**
+
+### ⚠️ Phase 7 ขาด event 2 โดเมนที่อยู่ในลิสต์ — `9.72`
+
+`9.71` ครอบ 25 ตาราง แต่ตกสองตัวที่ brief เขียนไว้ตรงตัว:
+
+- **`bms_pos_cash_movements`** ("cash movement") — เขียนจริง 3 จุด (`pos.ts` ×2, `ar.ts` ×1)
+  เงินเข้า-ออกลิ้นชักเปลี่ยน "เงินที่ควรมี" ของกะ แต่ไม่มี event เลย
+- **`bms_kitchen_tickets`** — คิวครัวของร้าน **ค้าปลีก** จาก `9.40` (คนละตัวกับ
+  `bms_restaurant_kitchen_tickets`) · `listKitchenTickets()` UNION ทั้งสอง การครอบครึ่งเดียว
+  = ร้าน `food_beverage` ที่เปิด `KITCHEN_WORKFLOW` ได้กระดานที่ไม่อัปเดตตัวเอง
+
+`9.72` เพิ่ม trigger ให้ทั้งคู่ตามรูปของ `9.71` เป๊ะ (AFTER + enqueue อย่างเดียว +
+`OWNER TO bms_realtime_dispatcher` ซึ่งเป็น BYPASSRLS — **ลืมบรรทัดนี้แล้วทุก write ที่ trigger
+ครอบจะ rollback** เพราะ outbox เป็น FORCE RLS)
+
+- สองตารางนี้ **ไม่มี `location_id`** ต้อง derive: cash movement จาก `bms_pos_devices`,
+  ตั๋วครัวจาก `bms_orders` · rule ของทั้งคู่เป็น `audience: "location"` ซึ่ง validator บังคับว่า
+  ต้องมี scope ไม่งั้น event ตกตั้งแต่ validate
+- payload ของ cash movement ใส่แค่ `direction` **ไม่ใส่จำนวนเงิน** — ยอดเป็นรายละเอียดลิ้นชัก
+  ที่ต้องอ่านจาก query ที่มีสิทธิ์คุม ไม่ใช่ของที่ fan-out ออกไป
+- **`9.72` จงใจไม่ใส่ใน schemaReadiness** — trigger ที่ขาดแปลว่า "ไม่มี event" (realtime เงียบ)
+  ไม่ใช่โค้ดพัง ต่างจาก `9.70` ที่ตารางขาดแล้วทรานแซกชัน rollback
+
+### ⚠️ ต้นเหตุที่ทำให้สองโดเมนนั้นหายไปเงียบ ๆ — ลิสต์ที่เทสเขียนเอง
+
+`realtime-domain-contract` เทียบ event กับ `required` ที่ codex พิมพ์เอง → **มันไม่มีทางรู้ว่า
+ลืมทั้งโดเมน** เพราะแค่ไม่ใส่ชื่อนั้นลงไป · เพิ่ม
+`scripts/realtime-domain-coverage-contract.test.mts` ที่เดินกลับทาง: ไล่จาก **ตารางที่
+`lib/bms` เขียนจริง** (สแกน INSERT/UPDATE ได้ 143 ตาราง) แล้วบังคับว่าทุกตารางต้องมี trigger
+หรือถูกจัดประเภทพร้อมเหตุผล · **ตารางใหม่ที่ไม่มีใครจัดประเภท = แดงทันที**
+
+- สี่ประเภท: แถวลูกของ aggregate ที่ยิงอยู่แล้ว · ops/telemetry · ค่าตั้งค่า ·
+  **`KNOWN_GAPS` 20 ตารางที่ควรมี event แต่ยังไม่มี** (คืนของ/มัดจำ/บัตรของขวัญ/ลูกหนี้/
+  ใบกำกับ/แต้ม/PO/ของเสีย) — ใส่ไว้เพื่อให้ "ยังไม่ได้ทำ" เป็นของที่อ่านเจอ ไม่ใช่ของที่หายเงียบ
+- อีกสองด่าน: ชนิดที่ยิงต้องถูกประกาศ **และ** ชนิดที่ประกาศต้องมีคนยิง (สัญญาที่ตายแล้ว = แดง)
+- **⚠️ ตัวกรอง "ชื่อที่มีจุด" ต้องเอาโดเมนจากลิสต์กลาง ไม่ใช่เดา** — รอบแรกไปจับ
+  `app.editor_id` กับ `bms_pos_devices` เป็น event type
+
+### ที่ตรวจแล้วว่าดีจริง (จดไว้กันไล่ซ้ำ)
+
+- **Phase 4 hardening แน่นมาก**: ticket แทน Bearer บน WS (android รองรับผ่าน
+  `verifyUserFromRequest` ที่ ticket route), recheck revocation ทุก 15 วิ, ticket หมดอายุ →
+  ปิด 4403, allowed origins, lease ต่อ IP/user/tenant, เพดาน byte ของ message/query/variables/
+  buffer, max subscriptions ต่อ connection, ping/idle, `/healthz`, SIGTERM/SIGINT,
+  และ **`apps/ws` ไม่แตะ DB เลย**
+- **Phase 3 ครบ**: `9.70` คอลัมน์ครบตาม brief · RLS/grants · `FOR UPDATE SKIP LOCKED` ·
+  retry/backoff/cleanup · เทสครอบ multi-instance claim + rollback + tenant isolation
+- **Phase 9 มี rollout flag 11 ตัว แยกตาม domain แบบ fail-closed** และ client ฝั่งเบราว์เซอร์
+  mount จริงแล้ว (`RealtimeProvider` ใน `SessionLayer` + `PosRealtimeProvider`)
+- **event type ทั้ง 52 ตัวถูกยิงจริงทุกตัว** (ไม่มีสัญญาที่ตายแล้ว) — ยืนยันด้วยสคริปต์
+
+### ⚠️ ยังไม่ได้ทำ — subscription เก่าที่รับ id จาก client แล้วไม่ตรวจอะไรเลย
+
+**Phase 4 ข้อ 2 ยังค้างอยู่** (ผู้ใช้เลือกไม่ให้แก้ในรอบนี้) — `packages/graphql-core/src/resolvers.ts`:
+
+- `messageAdded(chat_id)` · `messageDeleted(chat_id)` — **ไม่เรียก `requireRealtimeUserId` ด้วยซ้ำ**
+  ส่ง chat_id อะไรมาก็ได้รับข้อความห้องนั้น
+- `commentAdded(post_id)` · `commentUpdated(post_id)` — ไม่ตรวจ
+- `commentDeleted` — filter คืน `true` = ยิงให้ทุกคนที่ subscribe
+
+ที่แก้ถูกแล้ว: `userMessageAdded`, `incomingMessage`, `notificationCreated`, `my*`,
+`bmsInboxChanged`, `realtimeEvent` และ 17 ตัวใหม่ · เป็นฟีเจอร์ชุมชนยุคก่อน BMS แต่
+**เป็นช่องรั่วจริงที่อ่านแชทห้องอื่นได้**
+
+### ยังไม่ได้ทำ (อื่น ๆ)
+
+- **`9.72` ยังไม่ได้ apply** และ trigger ทั้ง 27 ตัวยังไม่เคยยิงกับฐานจริง
+- **Phase 8**: RN doc ยังไม่มี token refresh strategy กับ offline queue
+- **Phase 10**: ไม่มีเทส android Bearer auth และไม่มีเทส "REST legacy ยังใช้ได้"
+- **Phase 11**: ยังไม่ได้แตะ `docs/business/restaurant-chat-delivery.md` และ
+  `docs/agent-invariants.md` ทั้งที่ brief ระบุไว้
+- **write amplification ของ trigger ยังไม่ได้วัด** — `AFTER INSERT OR UPDATE ON bms_inventory`
+  ยิงทุกการขยับสต็อก บิลหนึ่งใบแตะหลายแถว การ import แตะหลายพันแถว
+- **ยังไม่มี RN client** — เส้น GraphQL/subscription ใหม่ยังไม่มีผู้เรียกจากมือถือสักราย
+
 ## recheck งาน mobile GraphQL/realtime ของ codex — เจอด่านที่ไม่ได้กันอะไรเลย (2026-09-11)
 
 branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1075**
