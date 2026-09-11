@@ -14,24 +14,24 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 
 ## Documentation map
 
-| Doc | Covers |
-| --- | --- |
-| [architecture/system.md](docs/architecture/system.md) | Module build status, RBAC model, folder structure, roadmap |
-| [architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
-| [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
-| [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
+| Doc                                                                                                                                                                                                 | Covers                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [architecture/system.md](docs/architecture/system.md)                                                                                                                                               | Module build status, RBAC model, folder structure, roadmap                                                                                                       |
+| [architecture/database.md](docs/architecture/database.md)                                                                                                                                           | Tables per module, RLS/tenant scoping, migration notes                                                                                                           |
+| [architecture/api.md](docs/architecture/api.md)                                                                                                                                                     | REST routes, GraphQL modules, auth scopes, RBAC gates                                                                                                            |
+| [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md)                                  | Running >1 instance · measured admin load                                                                                                                        |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
-| [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
-| [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
-| [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
-| [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
-| [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) | Global staff assistant: capability/guide catalog, what each status word means, coverage + regression gates |
-| [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
-| [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine |
-| [scripts/README.md](scripts/README.md) | How to run every suite and tool, what pass/fail output looks like, exit codes |
-| [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
-| [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
-| [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md) | Why each built feature works the way it does (EN · TH) |
+| [apps/mobile/README.md](apps/mobile/README.md)                                                                                                                                                      | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary                                           |
+| [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md)                                                                                                                   | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund                                     |
+| [AI_GUIDELINES.md](docs/AI_GUIDELINES.md)                                                                                                                                                           | Rules for AI features and approval boundaries                                                                                                                    |
+| [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md)                                                          | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals                                                                        |
+| [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md)                                                                                                                                 | Global staff assistant: capability/guide catalog, what each status word means, coverage + regression gates                                                       |
+| [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md)                                                                                                                                           | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract                                                                           |
+| [integrations/](docs/integrations/) · [ui/](docs/ui/)                                                                                                                                               | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine                                               |
+| [scripts/README.md](scripts/README.md)                                                                                                                                                              | How to run every suite and tool, what pass/fail output looks like, exit codes                                                                                    |
+| [scripts/ai-eval/README.md](scripts/ai-eval/README.md)                                                                                                                                              | Deterministic contract suites + live-model evals                                                                                                                 |
+| [agent-invariants.md](docs/agent-invariants.md)                                                                                                                                                     | Per-domain rules in full (AGENTS.md has the short form)                                                                                                          |
+| [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md)                                                                                                       | Why each built feature works the way it does (EN · TH)                                                                                                           |
 
 ## Current status (2026-08)
 
@@ -59,7 +59,9 @@ per-migration build/verify/production status of each.
 
 **Native POS scaffold (2026-09-11, no migration)** — `apps/mobile/` is now a bare React Native
 0.87 staff client, not Expo. Group A provides ten responsive phone/tablet screens, shared theme and
-navigation, mock-backed sell/table/kitchen/shift flows, plus real device pairing: `bmspos://` deep
+navigation, an in-memory Settings preview for general/pharmacy/restaurant mock surfaces,
+mock-backed sell/table/kitchen/shift flows, checkout previews for member/coupon/approved manual
+discount, a mock barcode scan harness, plus real device pairing: `bmspos://` deep
 links, token storage in iOS Keychain / Android Keystore, and device identity verification through
 `GET /api/pos/session`. Tenant and branch come only from the server-authenticated device token; the
 app neither accepts nor stores a client-selected tenant. Both iOS Simulator and Android debug builds
@@ -70,7 +72,7 @@ and [business/pos.md § Native POS client](docs/business/pos.md#native-pos-clien
 
 **REST surface hardening (2026-08-24, no migration)** — `middleware.ts` only guards `/admin/**`, so
 every route under `/api/**` needs its own check. Twenty-three single-tenant-era routes had none:
-`/api/bms/reserve` could reserve stock in *every* shop selling a SKU without logging in, and the
+`/api/bms/reserve` could reserve stock in _every_ shop selling a SKU without logging in, and the
 order/payment/purchase/shipment/report/inbox routes let an anonymous caller act on the default shop.
 All now use `authorizeAdminRoute(<permission>)` with the tenant taken from the signed session; two
 webhook mocks that cannot check a session are 404 in production, the public demo endpoint gained a
@@ -85,16 +87,16 @@ deterministic bilingual catalog (48 capabilities, 106 guides, 20 FAQ answers, 21
 rules — counts drift as features ship; re-check with the catalog module before quoting them) covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
 no GraphQL/AI call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes
-anything a permission did not already allow. The FAQ *and* the limits/traps moved out of
+anything a permission did not already allow. The FAQ _and_ the limits/traps moved out of
 `/admin/manual` into the catalog, so the page and the assistant read one array instead of two copies. Every question the product asks
-is pinned to the entry that must *lead* its answer (`scripts/ai-eval/work-assistant-question-corpus.mts`)
+is pinned to the entry that must _lead_ its answer (`scripts/ai-eval/work-assistant-question-corpus.mts`)
 — retrieving the right guide at rank 6 is a failure, not a pass. Coverage, status vocabulary and the
 regression gates: [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
 
 **Credit sales and accounts receivable (`9.30`, written 2026-08-27)** — a `CREDIT` payment method
 completes an order and deducts stock like any other sale, but opens an AR invoice in the same
 settlement transaction instead of counting toward drawer cash; collecting the debt later is a drawer
-cash-in on the *collecting* shift, never a payment added to the old order. Credit limits are checked
+cash-in on the _collecting_ shift, never a payment added to the old order. Credit limits are checked
 before order creation and again under the account lock after stock settlement, and a return against
 `CREDIT` reduces the debt immediately — a resulting negative balance transfers to the oldest open
 invoice under that lock rather than reporting debt the customer no longer owes. `ar.writeoff` stays
@@ -178,7 +180,7 @@ feature unsafe or unusable in a real service: `9.62` stops the QR expiry trigger
 reversible `CLOSING` settlement claim — before it, **one mismatched payment silently destroyed every
 waiting proposal at that table and cut every guest's phone, permanently**; the "sold out today" gate
 moved from order-rebuild time to the moment a line enters a check, because re-gating a whole dine-in
-check made a dish marked sold out *after* it was served block that table from sending another round
+check made a dish marked sold out _after_ it was served block that table from sending another round
 or paying at all; and every floor operation (including QR rotation, which invalidates a sticker on a
 physical table) now resolves the owning branch and honours `bms_user_allowed_locations`. See
 [business/pos.md](docs/business/pos.md) § Table QR self-ordering and

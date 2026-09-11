@@ -11,6 +11,7 @@ import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import { DeviceProvider } from './src/state/DeviceContext';
+import { StoreModeProvider } from './src/state/StoreModeContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
 function ThemedStatusBar() {
@@ -29,10 +30,12 @@ export default function App() {
       <ThemeProvider>
         {/* DeviceProvider อยู่นอก navigator — "เครื่องนี้เป็นของร้านไหน" เป็นของทั้งแอป
             ไม่ใช่ของหน้าจอใดหน้าจอหนึ่ง และหน้า Login ต้องอ่านได้ก่อนเข้าแท็บ */}
-        <DeviceProvider>
-          <ThemedStatusBar />
-          <RootNavigator />
-        </DeviceProvider>
+        <StoreModeProvider>
+          <DeviceProvider>
+            <ThemedStatusBar />
+            <RootNavigator />
+          </DeviceProvider>
+        </StoreModeProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

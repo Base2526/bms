@@ -16,8 +16,31 @@ type Props = NativeStackScreenProps<SellStackParamList, 'Receipt'>;
 export default function ReceiptScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
-  const { lines, total, clear } = useCart();
-  const snapshot = useRef({ lines: [...lines], total }).current;
+  const {
+    lines,
+    subtotal,
+    tierDiscount,
+    couponDiscount,
+    appliedManualDiscount,
+    discountTotal,
+    total,
+    member,
+    coupon,
+    manualDiscount,
+    clear,
+  } = useCart();
+  const snapshot = useRef({
+    lines: [...lines],
+    subtotal,
+    tierDiscount,
+    couponDiscount,
+    appliedManualDiscount,
+    discountTotal,
+    total,
+    member,
+    coupon,
+    manualDiscount,
+  }).current;
   const itemCount = snapshot.lines.reduce((n, l) => n + l.qty, 0);
 
   useEffect(() => {
@@ -48,6 +71,46 @@ export default function ReceiptScreen({ navigation }: Props) {
             </Text>
           </View>
         ))}
+        {snapshot.member && (
+          <View style={[styles.line, { marginTop: spacing.md }]}>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              สมาชิก
+            </Text>
+            <Text style={[typography.captionStrong, { color: colors.text }]}>
+              {snapshot.member.name} · {snapshot.member.tier}
+            </Text>
+          </View>
+        )}
+        {snapshot.discountTotal > 0 && (
+          <>
+            <View style={[styles.line, { marginTop: spacing.md }]}>
+              <Text style={[typography.body, { color: colors.textMuted }]}>
+                ยอดสินค้า
+              </Text>
+              <Text style={[typography.body, { color: colors.text }]}>
+                ฿{snapshot.subtotal.toFixed(2)}
+              </Text>
+            </View>
+            {snapshot.tierDiscount > 0 && (
+              <ReceiptDiscount
+                label="ส่วนลดสมาชิก"
+                amount={snapshot.tierDiscount}
+              />
+            )}
+            {snapshot.couponDiscount > 0 && (
+              <ReceiptDiscount
+                label={`คูปอง ${snapshot.coupon?.code ?? ''}`}
+                amount={snapshot.couponDiscount}
+              />
+            )}
+            {snapshot.appliedManualDiscount > 0 && (
+              <ReceiptDiscount
+                label={`ส่วนลดพิเศษ · ${snapshot.manualDiscount?.reason ?? ''}`}
+                amount={snapshot.appliedManualDiscount}
+              />
+            )}
+          </>
+        )}
         <View
           style={{
             flexDirection: 'row',
@@ -133,6 +196,20 @@ export default function ReceiptScreen({ navigation }: Props) {
         </>
       )}
     </ScreenContainer>
+  );
+}
+
+function ReceiptDiscount({ label, amount }: { label: string; amount: number }) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={styles.line}>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>
+        {label}
+      </Text>
+      <Text style={[typography.captionStrong, { color: colors.success }]}>
+        −฿{amount.toFixed(2)}
+      </Text>
+    </View>
   );
 }
 

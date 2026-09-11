@@ -36,6 +36,8 @@ export interface DeviceIdentity {
   branchCode: string | null;
   /** retail | restaurant — ฝั่ง server ตัดสินจาก business_archetype ของร้าน */
   surface: string | null;
+  /** ค่าเต็มจาก server เช่น pharmacy; โหมด preview ใน Settings ไม่เขียนทับค่านี้ */
+  businessArchetype: string | null;
   shiftOpen: boolean;
   cashierCount: number;
 }
@@ -150,6 +152,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           branchName: body.location?.name ?? null,
           branchCode: body.location?.branchCode ?? null,
           surface: body.surface ?? null,
+          businessArchetype: body.businessArchetype ?? null,
           shiftOpen: Boolean(body.shift),
           cashierCount: Array.isArray(body.cashiers) ? body.cashiers.length : 0,
         },

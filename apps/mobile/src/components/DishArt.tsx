@@ -149,6 +149,35 @@ function GlyphSvg({
   }
 }
 
+function StoreGlyphSvg({
+  kind,
+  color,
+  size,
+}: {
+  kind: 'retail' | 'pharmacy';
+  color: string;
+  size: number;
+}) {
+  const common = { width: size, height: size, viewBox: '0 0 100 100' };
+  if (kind === 'pharmacy') {
+    return (
+      <Svg {...common}>
+        <Rect x={18} y={18} width={64} height={64} rx={18} fill={color} />
+        <Rect x={43} y={30} width={14} height={40} rx={4} fill="#fff" />
+        <Rect x={30} y={43} width={40} height={14} rx={4} fill="#fff" />
+      </Svg>
+    );
+  }
+  return (
+    <Svg {...common}>
+      <Path d="M20 35l30-16 30 16-30 17z" fill={color} opacity={0.55} />
+      <Path d="M20 35v34l30 16V52z" fill={color} opacity={0.8} />
+      <Path d="M80 35v34L50 85V52z" fill={color} />
+      <Path d="M50 19v33" stroke="#fff" strokeWidth={4} opacity={0.55} />
+    </Svg>
+  );
+}
+
 interface Props {
   name: string;
   /** ลำดับสถานีครัว — ใช้วนสีพื้นของช่องรูป (ไม่ผูกกับชื่อสถานี) */
@@ -157,6 +186,7 @@ interface Props {
   height?: number;
   /** เมนูที่ขายไม่ได้: พื้นเป็นกลาง + จาง แทน filter: grayscale ของ CSS ที่ RN ไม่มี */
   muted?: boolean;
+  artKind?: 'food' | 'retail' | 'pharmacy';
 }
 
 export function DishArt({
@@ -165,6 +195,7 @@ export function DishArt({
   imageUrl,
   height = 96,
   muted,
+  artKind = 'food',
 }: Props) {
   const { colors } = useTheme();
   const tints = colors.menuTints;
@@ -188,11 +219,17 @@ export function DishArt({
           style={styles.photo}
           resizeMode="cover"
         />
-      ) : (
+      ) : artKind === 'food' ? (
         <GlyphSvg
           glyph={glyphForDish(name)}
           color={muted ? colors.textMuted : tint.ink}
           size={Math.round(height * 0.75)}
+        />
+      ) : (
+        <StoreGlyphSvg
+          kind={artKind}
+          color={muted ? colors.textMuted : tint.ink}
+          size={Math.round(height * 0.72)}
         />
       )}
     </View>

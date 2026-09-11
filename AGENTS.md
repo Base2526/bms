@@ -31,19 +31,19 @@ wrong, and update the doc in the same change.
 
 ## Repository map
 
-| Path | Responsibility |
-| --- | --- |
-| `apps/web/lib/bms/` | Shared business services — the only BMS layer allowed to run SQL |
-| `apps/web/lib/bms/tools/` | AI tool catalog + runtime, shared by customer pipeline and staff assistant |
-| `apps/web/lib/bms/assistantKnowledge/` | Deterministic bilingual capability/guide catalog + retrieval (no DB, no network) |
-| `apps/web/lib/bms/pharmacy/` | Flag-gated pharmacy intake |
-| `apps/web/app/api/bms/` · `apps/web/graphql/` | REST/webhooks/cron · GraphQL schema + resolvers |
-| `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
-| `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
-| `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
-| `apps/mobile/` | Bare React Native POS client — mock-first UI scaffold + secure device pairing; business flows are not backend-connected yet |
-| `apps/ws/` · `packages/` | WebSocket gateway · shared GraphQL + Redis pub/sub |
-| `db/migrations/` · `docs/` · `scripts/` | Ordered idempotent migrations · docs · log triage, AI evals, load tests |
+| Path                                               | Responsibility                                                                                                              |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/lib/bms/`                                | Shared business services — the only BMS layer allowed to run SQL                                                            |
+| `apps/web/lib/bms/tools/`                          | AI tool catalog + runtime, shared by customer pipeline and staff assistant                                                  |
+| `apps/web/lib/bms/assistantKnowledge/`             | Deterministic bilingual capability/guide catalog + retrieval (no DB, no network)                                            |
+| `apps/web/lib/bms/pharmacy/`                       | Flag-gated pharmacy intake                                                                                                  |
+| `apps/web/app/api/bms/` · `apps/web/graphql/`      | REST/webhooks/cron · GraphQL schema + resolvers                                                                             |
+| `apps/web/app/(admin)/admin/`                      | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`)                                                        |
+| `apps/web/components/work-assistant/`              | Global admin assistant Drawer, shared confirm mutations, POS register guide surface                                         |
+| `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout                                               |
+| `apps/mobile/`                                     | Bare React Native POS client — mock-first UI scaffold + secure device pairing; business flows are not backend-connected yet |
+| `apps/ws/` · `packages/`                           | WebSocket gateway · shared GraphQL + Redis pub/sub                                                                          |
+| `db/migrations/` · `docs/` · `scripts/`            | Ordered idempotent migrations · docs · log triage, AI evals, load tests                                                     |
 
 ## Hard invariants (short form)
 
@@ -60,7 +60,7 @@ wrong, and update the doc in the same change.
   arguments**, not just the model's summary; an outbound recipient is reviewed and validated
   before send. See [docs/ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md).
 - **Multi-item customer requests** — one chat message can name several products at once.
-  `requestedItems.ts` (`parseRequestedItems`) is the *only* splitter for "how many things did the
+  `requestedItems.ts` (`parseRequestedItems`) is the _only_ splitter for "how many things did the
   customer ask for" — it never resolves a SKU, never converts a pack unit into a piece count, and
   never defaults a missing quantity to 1; do not write a second splitter. A pack's `packCode`
   reaches `create_order` as a name only — pieces-per-pack and pack price always come from
@@ -69,7 +69,7 @@ wrong, and update the doc in the same change.
   never let some lines through because others failed.
 - **A pharmacist's approval is spent once.** `checkPharmacySaleInTx()` takes the case row `FOR UPDATE`
   and refuses one whose `checkout_order_draft.status` is already `ORDER_CREATED`;
-  `markAssessmentOrderCreatedInTx()` spends it in the *same* transaction that reserves the stock it
+  `markAssessmentOrderCreatedInTx()` spends it in the _same_ transaction that reserves the stock it
   authorises. Never mark it after commit — the fire-and-forget version this replaced let one approved
   case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
   approval back (a fresh review is required), because releasing it would make "cancel to get another
@@ -117,7 +117,7 @@ wrong, and update the doc in the same change.
   that has not been taught about channels must keep the strict behaviour rather than silently gain a
   counter exemption.
 - **Customer-surface PII** — checkout tools resolve the customer only from the server-established
-  `(tenant_id, channel, customer_ref)`, never an id the model supplies, and return *completeness*
+  `(tenant_id, channel, customer_ref)`, never an id the model supplies, and return _completeness_
   (booleans/counts/`missingFields`), never the raw name, phone, or address.
 - **Payment channels** — never name a method the shop has not configured
   (`paymentConfiguration.ts`). No hardcoded bank/PromptPay/QR examples on the customer surface.
@@ -167,7 +167,9 @@ wrong, and update the doc in the same change.
   tenant/branch only from `/api/pos/session`. A paired device is still not an authenticated cashier;
   mock PIN entry must not be described as authorization or used to enable a real mutation. Keep the
   sell/table/kitchen/shift flows disconnected until the server schema and cashier-session contract
-  are explicitly closed. See [apps/mobile/README.md](apps/mobile/README.md) and
+  are explicitly closed. Settings' general/pharmacy/restaurant selector is preview-only and must
+  never override the server's archetype or pharmacy policy. Member/coupon/manual-discount math and
+  barcode resolution in this scaffold are test previews, never server authority. See [apps/mobile/README.md](apps/mobile/README.md) and
   [docs/business/pos.md § Native POS client](docs/business/pos.md#native-pos-client-scaffold).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
   second money path: a check reserves stock by creating one PENDING POS order when a kitchen round is
@@ -227,11 +229,11 @@ wrong, and update the doc in the same change.
   Treatment is propose-only (`NEW -> ACCEPTED -> CONTACTED`), holdout rows can never be contacted,
   and conversion attribution is bounded to 30 days before open cases expire. Keep `retention.view`
   independent from `followup.view`; sharing a page must not silently widen either permission.
-- **Every `/api/**` route carries its own guard** — `middleware.ts` only protects `/admin/**`; the
-  other branch returns `NextResponse.next()`, so a REST route with no check of its own is world-
-  reachable. Use `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`): it verifies the
-  signed session, honours the drill-down cookie, checks RBAC, and returns `tenantId`/`adminId`/`ctx`.
-  **Never read the tenant from the request body** — that rebuilds the same hole behind a login. Pass
+- **Every `/api/**`route carries its own guard** —`middleware.ts`only protects`/admin/**`; the
+other branch returns `NextResponse.next()`, so a REST route with no check of its own is world-
+reachable. Use `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`): it verifies the
+signed session, honours the drill-down cookie, checks RBAC, and returns `tenantId`/`adminId`/`ctx`.
+  **Never read the tenant from the request body\*\* — that rebuilds the same hole behind a login. Pass
   `null` as the permission only for a route that genuinely has none in the catalog. A route that is
   public on purpose (customer widget, marketing demo) needs a `rateLimit()` ceiling, because a public
   endpoint that calls a model spends the operator's money, not the caller's. Legacy single-tenant
@@ -239,12 +241,12 @@ wrong, and update the doc in the same change.
   404 in production. Guard: `scripts/inventory-tenant-scope-contract.test.mts`.
 - **Nothing touches `bms_inventory` without naming the shop** — the table is keyed by
   `(tenant_id, location_id, product_sku, size)`, so a statement filtered by sku + size alone hits that
-  product in *every* shop and branch that stocks it, returns success, and leaves no error behind.
+  product in _every_ shop and branch that stocks it, returns success, and leaves no error behind.
   A reservation is also a branch fact, not a shop-wide one, and it writes a `RESERVE` movement in the
   same transaction — the module's rule that every stock change records a movement has no exceptions.
 - **Reserved stock has no ledger of ownership** — `reserved_stock` is a running total; nothing records
   which bill owns which unit. Rebuilding "who is holding this" (`listVariantReservations()`) reads the
-  `bms_order_stock_lines` view, because a bundle reserves its *components*; counts only bills in
+  `bms_order_stock_lines` view, because a bundle reserves its _components_; counts only bills in
   `PENDING`/`PAID`/`PACKING`, because `SHIP`/cancel release; and reports the part no bill explains
   instead of hiding it, because stock can be locked with no owner to chase.
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
@@ -283,27 +285,27 @@ Four mechanisms; the first three are real, the fourth is dead:
    `admin_restaurant_floor` namespace adds 53 keys for the branch/area/table/layout editor and
    `admin_nav.restaurant_floor` adds its menu label; the preceding change is net **−23**: the
    new `admin_nav` namespace adds 75 keys (72 for the menu itself, +3 for the command palette:
-   search_placeholder, search_hint, search_empty) (task-based sidebar sections, workspace names, and every
+   search*placeholder, search_hint, search_empty) (task-based sidebar sections, workspace names, and every
    menu label, including the ones that used to be hardcoded English string literals in
-   `AdminSidebar.tsx`), and the 40 now-dead `admin.menu_*`/`admin.group_*` keys were deleted rather
-   than left behind as a second copy of every menu name — the `admin` namespace is down to 20 keys.
-   ⚠️ Menu labels are read as `t(item.labelKey)` from `lib/bms/adminNavigation.ts`, so the literal
-   scanner in `i18n-keys-contract` cannot see them — `admin-navigation-contract` resolves every one
-   against both dictionaries instead;
-   the preceding +2 are signup progress/timeout feedback;
-   the preceding +66 are the archetype-aware shop experience,
-   human-readable stock-policy, progressive-disclosure, signup and special-mode labels; the preceding +52 are the product catalog draft/readiness,
-   sales-surface, duplicate, modifier-group, and quick-ingredient labels; the preceding +2 are the Restaurant permission-group
-   and modifier-surcharge labels, the preceding +14 are bilingual shop-archetype labels, the
-   preceding +2 are store-archetype lock labels, and the preceding +7 are store-profile receipt-language labels;
-   the +20 on 2026-08-25 were `AdminSidebar.tsx`'s Store/Pharmacy
-   submenu child labels, which had been plain English string literals inside an otherwise-converted
-   file; see [agent-invariants.md § i18n coverage](docs/agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)).
-   This is what the per-user language preference switches.
-   **A key must live in the namespace its `t()` prefix names.** `getMessage()` returns the key itself
-   on a miss, so a key filed under the wrong section renders `admin_products.col_variant_price` on a
-   shop's screen while `tsc`, the build, and every test stay green — it has happened twice in two
-   commits. `scripts/i18n-keys-contract.test.mts` resolves every literal `t()` key in both languages
+   `AdminSidebar.tsx`), and the 40 now-dead `admin.menu*_`/`admin.group\__`keys were deleted rather
+than left behind as a second copy of every menu name — the`admin`namespace is down to 20 keys.
+⚠️ Menu labels are read as`t(item.labelKey)`from`lib/bms/adminNavigation.ts`, so the literal
+scanner in `i18n-keys-contract`cannot see them —`admin-navigation-contract`resolves every one
+against both dictionaries instead;
+the preceding +2 are signup progress/timeout feedback;
+the preceding +66 are the archetype-aware shop experience,
+human-readable stock-policy, progressive-disclosure, signup and special-mode labels; the preceding +52 are the product catalog draft/readiness,
+sales-surface, duplicate, modifier-group, and quick-ingredient labels; the preceding +2 are the Restaurant permission-group
+and modifier-surcharge labels, the preceding +14 are bilingual shop-archetype labels, the
+preceding +2 are store-archetype lock labels, and the preceding +7 are store-profile receipt-language labels;
+the +20 on 2026-08-25 were`AdminSidebar.tsx`'s Store/Pharmacy
+submenu child labels, which had been plain English string literals inside an otherwise-converted
+file; see [agent-invariants.md § i18n coverage](docs/agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)).
+This is what the per-user language preference switches.
+**A key must live in the namespace its `t()`prefix names.**`getMessage()`returns the key itself
+on a miss, so a key filed under the wrong section renders`admin_products.col_variant_price`on a
+shop's screen while`tsc`, the build, and every test stay green — it has happened twice in two
+commits. `scripts/i18n-keys-contract.test.mts`resolves every literal`t()` key in both languages
    and checks section-by-section parity; a key built at runtime is invisible to it and still needs
    care.
 2. `resolveBilingual()` (`lib/static-page-i18n.ts`) — page-local content objects. Use for new
@@ -317,7 +319,7 @@ Coverage: all public/auth/legal pages, storefront, checkout, nav chrome, and **5
 `admin/dev/sql-console`) — not Thai leaks.
 
 **Thai a grep will flag but that must NOT be "fixed"**: customer-facing brand voice, regexes matching
-a customer's raw typed Thai, CRM tag *values*, the CSV import template's header map,
+a customer's raw typed Thai, CRM tag _values_, the CSV import template's header map,
 `admin/playground` sample prompts, `฿`, and `admin/pharmacy-review-mockup`'s mock case data.
 
 Counts are snapshots — re-run
@@ -465,42 +467,42 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 - Deterministic contract suites need **no network or database** — run the ones covering what you
   touched (`cd apps/web && npx tsx --test ../../scripts/<path>`):
 
-| Suite | Covers |
-| --- | --- |
-| `ai-eval/runtime-contract` | tool runtime, RBAC/surface denial, propose-only, usage accounting |
-| `ai-eval/slip-reader-contract` | OCR adapters, provider fallback, cost attribution |
-| `ai-eval/customer-policy-contract` · `customer-message-routing-contract` | customer reply policy and routing |
-| `ai-eval/checkout-token-contract` | signed checkout link scope/tamper/expiry |
-| `ai-eval/archetype-policy-contract` · `restock-lifecycle-contract` · `pharmacy-intake-contract` | archetype policy · restock consent · pharmacy intake |
-| `ai-eval/work-assistant-knowledge-contract` | catalog ids/bilingual fields, permissions resolve, every guide route renders, Sidebar + Admin page coverage, page context re-ranks but never fabricates a match, register surface excludes back-office guides, capability status honesty |
-| `ai-eval/work-assistant-surface-contract` | additive GraphQL surface, page context stays a hint, deterministic help without a provider, tenant-scoped staff lookup, Drawer shows mutation args and reviews an emailed recipient |
-| `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
-| `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
-| `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |
-| `pharmacy-clinical-evidence-db-contract` | three evidence kinds, shape CHECK, cross-tenant refusal, soft delete, and `file_id` never reaching a client |
-| `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, tenant match on owned files, and every upload site's public/private + owner choice |
-| `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
-| `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
-| `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
-| `restaurant-pos-contract` | dine-in check/round/settlement source contracts: one settlement path, atomic round replacement, branch-scoped KDS, restaurant-specific permissions, server-owned modifier pricing |
-| `kitchen-board-contract` · `kitchen-station-contract` | ticket grouping/counting/SLA on the register KDS · station master (id-first matching, branch scope, name snapshot, active-but-retiring) |
-| `store-capability-gates-contract` | the capability switch list and every `isCapabilityEnabledInTx()` call site match exactly, in both directions |
+| Suite                                                                                                        | Covers                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ai-eval/runtime-contract`                                                                                   | tool runtime, RBAC/surface denial, propose-only, usage accounting                                                                                                                                                                                                                  |
+| `ai-eval/slip-reader-contract`                                                                               | OCR adapters, provider fallback, cost attribution                                                                                                                                                                                                                                  |
+| `ai-eval/customer-policy-contract` · `customer-message-routing-contract`                                     | customer reply policy and routing                                                                                                                                                                                                                                                  |
+| `ai-eval/checkout-token-contract`                                                                            | signed checkout link scope/tamper/expiry                                                                                                                                                                                                                                           |
+| `ai-eval/archetype-policy-contract` · `restock-lifecycle-contract` · `pharmacy-intake-contract`              | archetype policy · restock consent · pharmacy intake                                                                                                                                                                                                                               |
+| `ai-eval/work-assistant-knowledge-contract`                                                                  | catalog ids/bilingual fields, permissions resolve, every guide route renders, Sidebar + Admin page coverage, page context re-ranks but never fabricates a match, register surface excludes back-office guides, capability status honesty                                           |
+| `ai-eval/work-assistant-surface-contract`                                                                    | additive GraphQL surface, page context stays a hint, deterministic help without a provider, tenant-scoped staff lookup, Drawer shows mutation args and reviews an emailed recipient                                                                                                |
+| `auth-identity-contract` · `user-admin-contract`                                                             | auth identity · staff management                                                                                                                                                                                                                                                   |
+| `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract`            | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers                                                                                                                                                                 |
+| `pharmacy-approval-reuse-db-contract`                                                                        | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant)                                                                                                                                                         |
+| `pharmacy-clinical-evidence-db-contract`                                                                     | three evidence kinds, shape CHECK, cross-tenant refusal, soft delete, and `file_id` never reaching a client                                                                                                                                                                        |
+| `file-visibility-contract`                                                                                   | `/api/files` guards, fail-closed visibility check, tenant match on owned files, and every upload site's public/private + owner choice                                                                                                                                              |
+| `secret-fallback-contract`                                                                                   | every secret resolver throws in production, none is a module-level const with a string fallback                                                                                                                                                                                    |
+| `infra/multi-instance-contract`                                                                              | storage driver, fleet-wide state, cron claim-before-act                                                                                                                                                                                                                            |
+| `i18n-keys-contract`                                                                                         | every literal `t()` key resolves in th+en; per-section key parity                                                                                                                                                                                                                  |
+| `restaurant-pos-contract`                                                                                    | dine-in check/round/settlement source contracts: one settlement path, atomic round replacement, branch-scoped KDS, restaurant-specific permissions, server-owned modifier pricing                                                                                                  |
+| `kitchen-board-contract` · `kitchen-station-contract`                                                        | ticket grouping/counting/SLA on the register KDS · station master (id-first matching, branch scope, name snapshot, active-but-retiring)                                                                                                                                            |
+| `store-capability-gates-contract`                                                                            | the capability switch list and every `isCapabilityEnabledInTx()` call site match exactly, in both directions                                                                                                                                                                       |
 | `product-catalog-foundation-contract` · `product-policy-reachability-contract` · `non-stock-policy-contract` | catalog variants as serving-option truth, sales-surface channel authority, draft-only new products · every stock policy has a real settings path and matches what readiness/capability gating actually checks · `NON_STOCK` zero-consumption vs. no-snapshot-at-all stays distinct |
-| `shop-archetype-coverage-contract` | every archetype's onboarding checklist/AI examples resolve in both languages; no orphaned copy |
-| `menu-availability-contract` · `restaurant-online-order-contract` · `restaurant-order-cancellation-contract` | sold-out flag scoping/reset signals · explicit branch+fulfillment+human-accept for online orders · line cancellation reuses the return engine with an immutable cause |
-| `order-stock-lines-contract` | every stock-moving write path reads `bms_order_stock_lines`, never `bms_order_items`, for what a bill actually consumed |
-| `ar-contract` | credit-sale approval/limit math and ledger transfer of an over-collected credit to the oldest open invoice |
-| `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset |
+| `shop-archetype-coverage-contract`                                                                           | every archetype's onboarding checklist/AI examples resolve in both languages; no orphaned copy                                                                                                                                                                                     |
+| `menu-availability-contract` · `restaurant-online-order-contract` · `restaurant-order-cancellation-contract` | sold-out flag scoping/reset signals · explicit branch+fulfillment+human-accept for online orders · line cancellation reuses the return engine with an immutable cause                                                                                                              |
+| `order-stock-lines-contract`                                                                                 | every stock-moving write path reads `bms_order_stock_lines`, never `bms_order_items`, for what a bill actually consumed                                                                                                                                                            |
+| `ar-contract`                                                                                                | credit-sale approval/limit math and ledger transfer of an over-collected credit to the oldest open invoice                                                                                                                                                                         |
+| `inventory-tenant-scope-contract`                                                                            | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset                                                                                         |
 
-  Suites that need a real Postgres **write to it** — dev only, never production. They create and
-  remove their own rows (`scripts/variant-reservations-db-contract.test.mts` covers reservation
-  attribution incl. bundles and unexplained holds; `scripts/reserve-stock-db-contract.test.mts`
-  covers cross-shop/cross-branch reservation, the ledger row, and rollback). Run them from
-  `apps/web` with the `next-runtime-shim` import and `--test-concurrency=1`; the exact command lives
-  in [CLAUDE.local.md](CLAUDE.local.md).
+Suites that need a real Postgres **write to it** — dev only, never production. They create and
+remove their own rows (`scripts/variant-reservations-db-contract.test.mts` covers reservation
+attribution incl. bundles and unexplained holds; `scripts/reserve-stock-db-contract.test.mts`
+covers cross-shop/cross-branch reservation, the ledger row, and rollback). Run them from
+`apps/web` with the `next-runtime-shim` import and `--test-concurrency=1`; the exact command lives
+in [CLAUDE.local.md](CLAUDE.local.md).
 
-  The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
-  only. See [scripts/ai-eval/README.md](scripts/ai-eval/README.md).
+The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
+only. See [scripts/ai-eval/README.md](scripts/ai-eval/README.md).
 
 ## Definition of done
 

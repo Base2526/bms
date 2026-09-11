@@ -1,5 +1,7 @@
 import React from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -9,8 +11,14 @@ import { useResponsive } from '../../theme/useResponsive';
 import type { AppColors } from '../../theme/colors';
 import { typography as typographyTokens } from '../../theme/typography';
 import { mockCashMovements, mockShift } from '../../mocks/shift';
+import type {
+  RootStackParamList,
+  ShiftStackParamList,
+} from '../../navigation/types';
 
-export default function ShiftScreen() {
+type Props = NativeStackScreenProps<ShiftStackParamList, 'Shift'>;
+
+export default function ShiftScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
 
@@ -106,6 +114,18 @@ export default function ShiftScreen() {
         <Button label="เงินออก" variant="secondary" style={{ flex: 1 }} />
       </View>
       <Button label="ปิดกะ" variant="danger" fullWidth />
+      <Button
+        label="ตั้งค่าเครื่องและโหมดทดสอบ"
+        variant="ghost"
+        fullWidth
+        style={{ marginTop: spacing.sm }}
+        onPress={() =>
+          navigation
+            .getParent()
+            ?.getParent<NativeStackNavigationProp<RootStackParamList>>()
+            ?.navigate('Settings')
+        }
+      />
     </>
   );
 

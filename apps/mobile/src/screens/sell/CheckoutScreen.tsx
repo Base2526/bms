@@ -6,6 +6,8 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { QtyStepper } from '../../components/QtyStepper';
+import { SaleConfirmationModal } from '../../components/SaleConfirmationModal';
+import { CheckoutAdjustmentsCard } from '../../components/CheckoutAdjustmentsCard';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
@@ -18,10 +20,23 @@ const PAYMENT_METHODS = ['เงินสด', 'QR พร้อมเพย์',
 export default function CheckoutScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
-  const { lines, total, clear, addItem, decrementItem } = useCart();
+  const {
+    lines,
+    subtotal,
+    tierDiscount,
+    couponDiscount,
+    appliedManualDiscount,
+    discountTotal,
+    total,
+    member,
+    clear,
+    addItem,
+    decrementItem,
+  } = useCart();
   const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]>(
     PAYMENT_METHODS[0],
   );
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const itemCount = lines.reduce((n, l) => n + l.qty, 0);
 
@@ -131,6 +146,24 @@ export default function CheckoutScreen({ navigation }: Props) {
 
   const totalAndActions = (
     <>
+      {discountTotal > 0 && (
+        <View style={{ gap: spacing.xs, marginBottom: spacing.md }}>
+          <AmountRow label="ยอดสินค้า" value={subtotal} />
+          {tierDiscount > 0 && (
+            <AmountRow label="ส่วนลดสมาชิก" value={-tierDiscount} discount />
+          )}
+          {couponDiscount > 0 && (
+            <AmountRow label="ส่วนลดคูปอง" value={-couponDiscount} discount />
+          )}
+          {appliedManualDiscount > 0 && (
+            <AmountRow
+              label="ส่วนลดพิเศษ"
+              value={-appliedManualDiscount}
+              discount
+            />
+          )}
+        </View>
+      )}
       <View style={styles.totalRow}>
         <Text style={[typography.subtitle, { color: colors.text }]}>
           ยอดสุทธิ
@@ -144,7 +177,7 @@ export default function CheckoutScreen({ navigation }: Props) {
         label="ยืนยันการขาย"
         fullWidth
         disabled={lines.length === 0}
-        onPress={() => navigation.replace('Receipt')}
+        onPress={() => setConfirmOpen(true)}
       />
       <Button
         label="ล้างตะกร้าและกลับไปเมนู"
@@ -170,6 +203,9 @@ export default function CheckoutScreen({ navigation }: Props) {
           <View style={{ flex: 1 }}>{linesCard}</View>
           <View style={{ width: 380 }}>
             {paymentCard}
+            <View style={{ marginTop: spacing.md }}>
+              <CheckoutAdjustmentsCard />
+            </View>
             <View style={{ marginTop: spacing.lg }}>{totalAndActions}</View>
           </View>
         </View>
@@ -177,10 +213,55 @@ export default function CheckoutScreen({ navigation }: Props) {
         <>
           <View style={{ flex: 1, marginBottom: spacing.md }}>{linesCard}</View>
           <View style={{ marginBottom: spacing.md }}>{paymentCard}</View>
+          <View style={{ marginBottom: spacing.md }}>
+            <CheckoutAdjustmentsCard />
+          </View>
           {totalAndActions}
         </>
       )}
+
+      <SaleConfirmationModal
+        visible={confirmOpen}
+        subtotal={subtotal}
+        discountTotal={discountTotal}
+        total={total}
+        itemCount={itemCount}
+        paymentMethod={method}
+        memberName={member?.name}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          navigation.replace('Receipt');
+        }}
+      />
     </ScreenContainer>
+  );
+}
+
+function AmountRow({
+  label,
+  value,
+  discount = false,
+}: {
+  label: string;
+  value: number;
+  discount?: boolean;
+}) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={styles.line}>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>
+        {label}
+      </Text>
+      <Text
+        style={[
+          typography.captionStrong,
+          { color: discount ? colors.success : colors.text },
+        ]}
+      >
+        {value < 0 ? '−' : ''}฿{Math.abs(value).toFixed(2)}
+      </Text>
+    </View>
   );
 }
 

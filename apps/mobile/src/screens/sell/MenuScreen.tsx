@@ -1,13 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Button } from '../../components/Button';
 import { MenuGrid } from '../../components/MenuGrid';
 import { QtyStepper } from '../../components/QtyStepper';
+import { BarcodeScannerModal } from '../../components/BarcodeScannerModal';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
+import { useStoreMode } from '../../state/StoreModeContext';
+import {
+  generalMockCatalog,
+  pharmacyMockCatalog,
+  restaurantMockCatalog,
+} from '../../mocks/menu';
 import type { SellStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<SellStackParamList, 'Menu'>;
@@ -24,6 +31,22 @@ export default function MenuScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
   const { lines, addItem, decrementItem, total } = useCart();
+  const { mode } = useStoreMode();
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [lastScanned, setLastScanned] = useState('');
+
+  const catalog =
+    mode === 'restaurant'
+      ? restaurantMockCatalog
+      : mode === 'pharmacy'
+      ? pharmacyMockCatalog
+      : generalMockCatalog;
+  const screenTitle =
+    mode === 'restaurant'
+      ? 'เมนูอาหาร'
+      : mode === 'pharmacy'
+      ? 'ขายยาและสินค้า'
+      : 'ขายสินค้า';
 
   const qtyBySku = useMemo(() => {
     const map: Record<string, number> = {};
@@ -40,10 +63,27 @@ export default function MenuScreen({ navigation }: Props) {
       onDecrement={sku => decrementItem(sku)}
       areaWidth={isTablet ? width - CART_PANEL_WIDTH : width}
       artHeight={isTablet ? 116 : 96}
+      catalog={catalog}
       header={
-        <Text style={[typography.title, { color: colors.text }]}>
-          เมนูอาหาร
-        </Text>
+        <View style={styles.menuHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[typography.title, { color: colors.text }]}>
+              {screenTitle}
+            </Text>
+            {lastScanned ? (
+              <Text
+                style={[typography.captionStrong, { color: colors.success }]}
+              >
+                เพิ่มจากบาร์โค้ดแล้ว · {lastScanned}
+              </Text>
+            ) : null}
+          </View>
+          <Button
+            label="▥ สแกนบาร์โค้ด"
+            variant="secondary"
+            onPress={() => setScannerOpen(true)}
+          />
+        </View>
       }
     />
   );
@@ -193,6 +233,16 @@ export default function MenuScreen({ navigation }: Props) {
           </View>
         </>
       )}
+      <BarcodeScannerModal
+        visible={scannerOpen}
+        catalog={catalog}
+        onCancel={() => setScannerOpen(false)}
+        onScanned={item => {
+          addItem(item.sku, item.name, item.price);
+          setLastScanned(item.name);
+          setScannerOpen(false);
+        }}
+      />
     </ScreenContainer>
   );
 }
@@ -203,5 +253,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
 });

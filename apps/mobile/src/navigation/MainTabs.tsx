@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
 import { CartProvider } from '../state/CartContext';
 import { ChecksProvider } from '../state/ChecksContext';
+import { useStoreMode } from '../state/StoreModeContext';
 import {
   FloorIcon,
   KitchenIcon,
@@ -79,12 +80,20 @@ function ShiftNavigator() {
 // เมนู "ผังโต๊ะ" ไว้ให้ทุก build ก่อน — ตอนต่อ backend จริงค่อยซ่อนตามประเภทร้าน (retail vs restaurant)
 export function MainTabs() {
   const { colors } = useTheme();
+  const { mode } = useStoreMode();
+  const sellTitle =
+    mode === 'restaurant'
+      ? 'เมนูอาหาร'
+      : mode === 'pharmacy'
+      ? 'ขายยา/สินค้า'
+      : 'ขายสินค้า';
 
   return (
     // ChecksProvider ครอบทั้งแท็บ — บิลของโต๊ะถูกอ่านจากผังโต๊ะ หน้าบิล และจอสั่งอาหารของโต๊ะ
     // (ต่างจาก CartProvider ที่ผูกอยู่กับ stack ขายกลับบ้านอย่างเดียว)
     <ChecksProvider>
       <Tab.Navigator
+        key={mode}
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.primary,
@@ -99,32 +108,36 @@ export function MainTabs() {
           name="SellTab"
           component={SellNavigator}
           options={{
-            title: 'เมนูอาหาร',
+            title: sellTitle,
             tabBarIcon: ({ color, size }) => (
               <SellIcon color={color} size={size} />
             ),
           }}
         />
-        <Tab.Screen
-          name="FloorTab"
-          component={FloorNavigator}
-          options={{
-            title: 'ผังโต๊ะ',
-            tabBarIcon: ({ color, size }) => (
-              <FloorIcon color={color} size={size} />
-            ),
-          }}
-        />
-        <Tab.Screen
-          name="KitchenTab"
-          component={KitchenNavigator}
-          options={{
-            title: 'ครัว',
-            tabBarIcon: ({ color, size }) => (
-              <KitchenIcon color={color} size={size} />
-            ),
-          }}
-        />
+        {mode === 'restaurant' && (
+          <>
+            <Tab.Screen
+              name="FloorTab"
+              component={FloorNavigator}
+              options={{
+                title: 'ผังโต๊ะ',
+                tabBarIcon: ({ color, size }) => (
+                  <FloorIcon color={color} size={size} />
+                ),
+              }}
+            />
+            <Tab.Screen
+              name="KitchenTab"
+              component={KitchenNavigator}
+              options={{
+                title: 'ครัว',
+                tabBarIcon: ({ color, size }) => (
+                  <KitchenIcon color={color} size={size} />
+                ),
+              }}
+            />
+          </>
+        )}
         <Tab.Screen
           name="ShiftTab"
           component={ShiftNavigator}

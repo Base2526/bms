@@ -7,10 +7,9 @@ import { SearchField } from './SearchField';
 import { useTheme } from '../theme/ThemeProvider';
 import { columnsForWidth, padGrid } from '../theme/useResponsive';
 import {
-  mockCategories,
-  mockMenuItems,
-  mockMenuStations,
   MockMenuItem,
+  MockMenuCatalog,
+  restaurantMockCatalog,
 } from '../mocks/menu';
 
 interface Props {
@@ -23,6 +22,8 @@ interface Props {
   artHeight?: number;
   /** แถวข้อความ/ปุ่มที่วางเหนือช่องค้นหา เช่น ป้ายบอกว่ากำลังสั่งให้โต๊ะไหน */
   header?: React.ReactNode;
+  /** ร้านอาหารใช้ค่าเดิม; ร้านทั่วไป/ร้านยาส่ง catalog mock ของโหมดเข้ามา */
+  catalog?: MockMenuCatalog;
 }
 
 // กริดเมนู + ช่องค้นหา + ชิปหมวดหมู่ — ใช้ร่วมกันสองที่: แท็บ "เมนูอาหาร" (ขายกลับบ้าน)
@@ -35,9 +36,10 @@ export function MenuGrid({
   areaWidth,
   artHeight = 96,
   header,
+  catalog = restaurantMockCatalog,
 }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
-  const [category, setCategory] = useState(mockCategories[0]);
+  const [category, setCategory] = useState(catalog.categories[0]);
   const [query, setQuery] = useState('');
 
   const trimmed = query.trim();
@@ -47,22 +49,22 @@ export function MenuGrid({
   const items = useMemo(() => {
     if (trimmed) {
       const needle = trimmed.toLowerCase();
-      return mockMenuItems.filter(
+      return catalog.items.filter(
         m =>
           m.name.toLowerCase().includes(needle) ||
           m.sku.toLowerCase().includes(needle),
       );
     }
-    return mockMenuItems.filter(
-      m => category === mockCategories[0] || m.category === category,
+    return catalog.items.filter(
+      m => category === catalog.categories[0] || m.category === category,
     );
-  }, [category, trimmed]);
+  }, [catalog, category, trimmed]);
 
   const gridColumns = columnsForWidth(areaWidth);
 
   const renderCard = (item: MockMenuItem) => {
     const inCart = qtyBySku[item.sku] ?? 0;
-    const tintIndex = mockMenuStations.indexOf(item.station);
+    const tintIndex = catalog.stations.indexOf(item.station);
 
     return (
       <Pressable
@@ -89,6 +91,7 @@ export function MenuGrid({
             imageUrl={item.imageUrl}
             height={artHeight}
             muted={!item.sellable}
+            artKind={item.artKind}
           />
 
           {!item.sellable && (
@@ -104,7 +107,7 @@ export function MenuGrid({
                   { color: colors.primaryText },
                 ]}
               >
-                หมดวันนี้
+                {catalog.unavailableLabel}
               </Text>
             </View>
           )}
@@ -183,17 +186,18 @@ export function MenuGrid({
         <SearchField
           value={query}
           onChangeText={setQuery}
-          placeholder="ค้นหาเมนู หรือรหัสสินค้า"
+          placeholder={catalog.searchPlaceholder}
         />
 
         {trimmed ? (
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            ผลค้นหา “{trimmed}” · {items.length} เมนู (ค้นทุกหมวด)
+            ผลค้นหา “{trimmed}” · {items.length} {catalog.resultNoun}
+            (ค้นทุกหมวด)
           </Text>
         ) : (
           <FlatList
             horizontal
-            data={mockCategories}
+            data={catalog.categories}
             keyExtractor={c => c}
             showsHorizontalScrollIndicator={false}
             ItemSeparatorComponent={() => (
@@ -248,7 +252,7 @@ export function MenuGrid({
             }}
           >
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              ไม่พบเมนูที่ตรงกับ “{trimmed}”
+              ไม่พบ{catalog.resultNoun}ที่ตรงกับ “{trimmed}”
             </Text>
             <Button
               label="ล้างคำค้น"

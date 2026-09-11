@@ -6,8 +6,11 @@
 ## สถานะวันนี้
 
 - ✅ bare React Native (ไม่มี Expo) — `react-native@0.87.1`, React 19, TypeScript
-- ✅ Navigation: `@react-navigation` (native-stack + bottom-tabs) — Login → 4 แท็บหลัก
-  (เมนูอาหาร/ผังโต๊ะ/ครัว/กะ)
+- ✅ Navigation: `@react-navigation` (native-stack + bottom-tabs) — Login → แท็บตามโหมดร้าน
+  (ร้านทั่วไป/ร้านขายยา: ขาย + กะ · ร้านอาหาร: เมนูอาหาร + ผังโต๊ะ + ครัว + กะ)
+- ✅ Settings มี **โหมดร้านสำหรับทดสอบ** 3 แบบ: ร้านทั่วไป, ร้านขายยา, ร้านอาหาร · ค่าอยู่ใน
+  memory เฉพาะรอบที่เปิดแอป ไม่แตะ Keychain/device token และเปลี่ยนเฉพาะ mock UI เท่านั้น
+  ไม่เขียนทับ `businessArchetype` จาก server และไม่ใช้เป็นสิทธิ์ขายหรืออนุมัติยา
 - ✅ Design system: `src/theme/` — สี/spacing/typography ยกมาจาก `apps/web/app/globals.css` ตรง ๆ
   เพื่อให้ RN กับเว็บ POS เดิมมีภาษาสีเดียวกัน (ดูคอมเมนต์ใน `src/theme/colors.ts`)
 - ✅ หน้าจอทั้ง 10 หน้า (Login, ตั้งค่า/จับคู่เครื่อง, เมนู/ตะกร้า, ชำระเงิน, ใบเสร็จ, ผังโต๊ะ, บิลโต๊ะ, สั่งอาหารเข้าโต๊ะ,
@@ -24,8 +27,19 @@
   - รูปอาหารเป็น **SVG วาดในโค้ด** (`src/components/DishArt.tsx`) พอร์ตชุดเดียวกับเว็บ (ข้าว/เส้น/
     ต้ม/ยำ/เครื่องดื่ม) — ไม่โหลดจาก CDN เพราะจอขายต้องทำงานตอนเน็ตร้านหลุด · ถ้าสินค้ามีรูปจริง
     (`imageUrl`) รูปจริงชนะเสมอ
+- ✅ ร้านทั่วไปและร้านขายยามี mock catalog/หมวด/คำค้น/ภาพ fallback ของตัวเอง ไม่แสดงอาหาร
+  ผังโต๊ะ หรือครัว; สินค้าควบคุมในโหมดร้านยาเป็นเพียงตัวอย่างสถานะรอตรวจสอบ ไม่ใช่การตัดสิน
+  Product Policy ฝั่ง client
 - ✅ แก้จำนวนได้ทุกที่ที่เห็นจำนวน (`QtyStepper`) — บนการ์ดเมนู, ในแผงตะกร้า และในหน้าชำระเงิน
   · กด − จนเหลือ 0 = บรรทัดหลุดออกจากตะกร้าเอง จึงไม่มีปุ่มลบซ้อนอีกปุ่มให้ต้องเลือก
+- ✅ ก่อนบันทึกการขายมี popup สรุปยอดสุทธิ วิธีชำระเงิน และจำนวนสินค้า พร้อมคำเตือนว่าหลังยืนยัน
+  ต้องแก้ผ่านรายการคืน; บนแท็บเล็ตเป็น dialog กลางจอ และบนมือถือเป็น bottom sheet
+- ✅ หน้า checkout ทดสอบสมาชิก คูปอง และส่วนลดพิเศษได้ครบถึงใบเสร็จ: tier discount ใช้อัตโนมัติ,
+  คูปองตรวจสมาชิก/ยอดขั้นต่ำ, ส่วนลดพิเศษต้องมีเหตุผลกับ PIN ผู้อนุมัติแยก (`9999` ใน mock)
+  และสรุปแต่ละชั้นก่อนยืนยัน โดยคณิตศาสตร์ทั้งหมดระบุชัดว่าเป็น preview ฝั่ง clientที่จะถูกแทนด้วย
+  `composeDiscounts()` จาก server
+- ✅ หน้าเมนูมีปุ่มสแกนบาร์โค้ดพร้อมกรอบสแกนจำลอง, ป้อน barcode/SKU เองได้ และเพิ่มสินค้าที่
+  resolve จาก mock catalog ลงตะกร้า; ยังไม่เรียกกล้องหรือเชื่อม Bluetooth HID จริง
 - ✅ **สั่งอาหารเข้าโต๊ะได้ครบวง** (ผังโต๊ะ → เลือกโต๊ะ → สั่ง → ส่งครัว → ผังโต๊ะขยับตาม):
   - `state/ChecksContext.tsx` ถือบิลรายโต๊ะ (seed จาก `mocks/floor`) และเป็นแหล่งเดียวที่ผังโต๊ะ
     หน้าบิล และจอสั่งอาหารของโต๊ะอ่าน — ไม่งั้นการ์ดโต๊ะกับบิลจะบอกคนละยอด
@@ -81,6 +95,7 @@ apps/mobile/
                                   DishArt (รูปอาหาร SVG), icons/TabIcons (SVG)
     navigation/                — RootNavigator (Login/Main) + MainTabs (4 แท็บ, แต่ละแท็บมี stack ของตัวเอง)
     state/CartContext.tsx       — ตะกร้าขายกลับบ้าน (scope แค่ stack ขาย)
+    state/StoreModeContext.tsx  — โหมด preview 3 แบบ; ไม่ใช่ authority จาก backend
     state/ChecksContext.tsx     — บิลรายโต๊ะ (scope ทั้งแท็บ — ผังโต๊ะ/บิล/จอสั่งอาหารอ่านชุดเดียวกัน)
     screens/
       LoginScreen.tsx           — เลือกสาขา/ผู้ปฏิบัติงาน + PIN keypad (ยังไม่ยืนยันตัวตนจริง)
@@ -119,6 +134,10 @@ throw `Encoding::CompatibilityError` ไม่งั้น — เจอบน�
 - "คิดเงิน" ของบิลโต๊ะยังไม่มีปลายทาง (ปุ่มเปิดได้แล้วแต่ยังไม่พาไปหน้าชำระเงิน)
 - ไม่มี push notification, ไม่มี background fetch
 - ไม่มี native module สำหรับเครื่องพิมพ์/สแกนเนอร์/จอลูกค้า
+- หน้าสแกนบาร์โค้ดที่มีอยู่เป็น test harness เท่านั้น — native camera และเครื่องสแกนจริงยังเป็นงาน
+  hardware integration; ห้ามใช้ timing ของ keyboard เป็นหลักฐานว่าเป็น HID scanner
+- โหมดร้านขายยาใน Settings เปลี่ยนเฉพาะหน้าตาและ mock catalog — ยังไม่ต่อ Product Policy,
+  pharmacist PIN, Pharmacy Queue หรือ clinical evidence จริง; การตัดสินทั้งหมดต้องมาจาก backend
 - ESLint ปิด `react-native/no-inline-styles` เพราะสี/spacing มาจาก runtime theme และตั้ง
   `react/no-unstable-nested-components` ให้ยอม function ที่ส่งผ่าน render-prop (`renderItem`/`tabBarIcon`)
   โดยตรง — `npm run lint` ผ่านโดยไม่มี warning
