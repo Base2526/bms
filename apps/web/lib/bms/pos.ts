@@ -444,6 +444,22 @@ export type PosScanHit = {
   scaleBarcode?: string | null;
 };
 
+/** Branch-scoped available stock used by POS transport adapters after a scan resolves the variant. */
+export async function getPosVariantAvailable(
+  tenantId: string,
+  locationId: string,
+  productSku: string,
+  size: string,
+): Promise<number> {
+  const stock = await query<{ available: string }>(
+    `SELECT (current_stock - reserved_stock) AS available
+       FROM bms_inventory
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+    [tenantId, locationId, productSku, size],
+  );
+  return stock.rowCount ? Number(stock.rows[0].available) : 0;
+}
+
 /**
  * หาสินค้าจากบาร์โค้ด/QR ที่ยิงมา — ดูที่ bms_product_packs ก่อน (7.86)
  * แล้วค่อย fallback ไป bms_products.barcode ของเดิม
@@ -3529,6 +3545,19 @@ export async function getLatestPosSale(
 ): Promise<PosRecentReceipt | null> {
   const rows = await listRecentPosSales(tenantId, deviceId, 1);
   return rows[0] ?? null;
+}
+
+/** Prevent a POS transport from sending or exposing a receipt owned by another register. */
+export async function isPosOrderOwnedByDevice(
+  tenantId: string,
+  orderId: string,
+  deviceId: string,
+): Promise<boolean> {
+  const owned = await query(
+    `SELECT 1 FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND pos_device_id = $3`,
+    [tenantId, orderId, deviceId],
+  );
+  return Boolean(owned.rowCount);
 }
 
 export async function listRecentPosSales(

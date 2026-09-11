@@ -39,7 +39,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.56__bms_restaurant_online_order_acceptance.sql', 'column', 'bms_store_profile', 'restaurant_orders_paused', 'สร้างบิลไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — INSERT bms_orders อ้างคอลัมน์นี้ทุกครั้ง'),
     ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_pos_returns', 'merchant_absorbed_amount', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้'),
     ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_pos_return_items', 'cancellation_cause', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้'),
-    ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_store_profile', 'restaurant_merchant_absorb_limit', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้')
+    ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_store_profile', 'restaurant_merchant_absorb_limit', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้'),
+    ('9.70__bms_realtime_outbox.sql', 'table', 'bms_realtime_outbox', NULL, 'รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

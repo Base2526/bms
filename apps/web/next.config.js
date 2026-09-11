@@ -55,6 +55,16 @@ const nextConfig = {
     // alias ไปที่แพ็กเกจ core (src) เพื่อ dev-hot-reload
     config.resolve.alias['@core'] = path.resolve(__dirname, '../../packages/graphql-core/src');
 
+    // Shared NodeNext packages keep explicit `.js` specifiers so their compiled output runs in
+    // Node ESM. Next consumes those packages from TypeScript source during development/build, so
+    // teach webpack to resolve the source extension before looking for a not-yet-built `.js` file.
+    config.resolve.extensionAlias = {
+      ...(config.resolve.extensionAlias || {}),
+      '.js': ['.ts', '.tsx', '.js'],
+      '.mjs': ['.mts', '.mjs'],
+      '.cjs': ['.cts', '.cjs'],
+    };
+
     return config;
   },
   transpilePackages: [ "antd", "events" ],

@@ -85,7 +85,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Product Bulk Import (CSV/XLSX) | ✅ | `lib/bms/productImport.ts` · `graphql/bmsProducts.ts` (`bmsImportProducts`) · `/admin/products` `ImportModal.tsx` — see [../business/inventory.md](../business/inventory.md) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` · `adjustStock()` takes an optional `locationId` (omitted = default branch) and verifies the branch belongs to the shop · `reserveStock()` is tenant- and branch-scoped and writes a `RESERVE` movement in the same transaction · `listVariantReservations()` / `bmsVariantReservations` rebuilds "which bills hold this reserved stock" for the `/admin/products` drill-down (needs `order.view`) — see [../business/inventory.md](../business/inventory.md) |
-| Inventory — branch transfers & stock counts | ✅ | `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts` · `7.98__bms_stock_transfers_and_counts.sql` · `app/api/bms/inventory/{transfers,counts}` · `/admin/stock-transfers` + `/admin/stock-counts` — send/receive in two steps so goods in transit belong to no branch; counts apply a difference against a snapshot, never an absolute. REST-only, no GraphQL — see [../business/inventory.md](../business/inventory.md) |
+| Inventory — branch transfers & stock counts | ✅ | `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts` · `7.98__bms_stock_transfers_and_counts.sql` · REST compatibility in `app/api/bms/inventory/{transfers,counts}` · mobile GraphQL in `graphql/bmsMobileOperations.ts` · `/admin/stock-transfers` + `/admin/stock-counts` — send/receive in two steps so goods in transit belong to no branch; counts apply a difference against a snapshot, never an absolute. See [../business/inventory.md](../business/inventory.md) |
 | Product catalog foundation (variants, sales surfaces, capabilities) | ✅ | `lib/bms/{shopArchetypes,storeCapabilities,products}.ts` · `9.40`–`9.43`, `9.51`, `9.52` · `/admin/stock-models` — `bms_product_variants` is the serving/size-option truth independent of branch stock; `bms_product_sales_surfaces` makes per-channel visibility explicit and separate from `active`; a new/imported product is a draft until published; `NON_STOCK` sells with zero ingredient tracking. Only 5 of 13 capability flags gate real behavior — see [../business/inventory.md](../business/inventory.md) §§ Multi-store stock policies / Catalog lifecycle |
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
@@ -142,9 +142,10 @@ reconnect/focus, and exposes degraded state. Live DB/socket recovery and load ve
 See the [full audit](realtime-production-audit.md) and
 [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
-The mobile transport decision is also locked: normal React Native/POS reads and commands converge on
-HTTPS GraphQL, while GraphQL WS carries invalidations. The current 41 POS REST routes remain
-compatibility APIs until a device-scoped GraphQL context and per-workflow parity tests exist. See the
+The mobile transport decision is implemented server-side: normal React Native/POS reads and commands
+use HTTPS GraphQL, while GraphQL WS carries invalidations. Device-scoped GraphQL context and named
+operations now cover the normal POS workflows; the 41 POS REST routes remain compatibility APIs
+until the browser POS caller and external native app complete rollout. See the
 [mobile GraphQL/WS architecture and route inventory](mobile-graphql-ws-realtime.md).
 
 **Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label

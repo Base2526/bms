@@ -10,6 +10,7 @@ const migration = readFileSync(
 );
 const purchase = readFileSync(new URL("../apps/web/lib/bms/purchase.ts", import.meta.url), "utf8");
 const instrumentation = readFileSync(new URL("../apps/web/instrumentation.ts", import.meta.url), "utf8");
+const nodeInstrumentation = readFileSync(new URL("../apps/web/instrumentation.node.ts", import.meta.url), "utf8");
 const pump = readFileSync(new URL("../apps/web/lib/bms/realtimePump.ts", import.meta.url), "utf8");
 
 const required = [
@@ -64,7 +65,9 @@ test("pharmacy envelopes expose only case identity and safe lifecycle state", ()
 });
 
 test("web instances continuously drain with a bounded backoff and fleet-safe claim function", () => {
-  assert.match(instrumentation, /startRealtimeOutboxPump/);
+  assert.match(instrumentation, /NEXT_RUNTIME === "nodejs"/);
+  assert.match(instrumentation, /import\("\.\/instrumentation\.node"\)/);
+  assert.match(nodeInstrumentation, /startRealtimeOutboxPump/);
   assert.match(pump, /REALTIME_OUTBOX_DISPATCH_ENABLED/);
   assert.match(pump, /REALTIME_OUTBOX_POLL_MS/);
   assert.match(pump, /Math\.min\(30_000/);

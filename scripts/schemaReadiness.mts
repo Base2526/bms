@@ -129,6 +129,14 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_store_profile", name: "restaurant_merchant_absorb_limit" },
     ],
   },
+  {
+    // ตัวส่งเหตุการณ์ realtime เขียนลงตารางนี้ "ในทรานแซกชันเดียวกับงานธุรกิจ" แบบไม่มีเงื่อนไข
+    // (`enqueueRealtimeEventInTx` ไม่มีธงและไม่ได้ห่อ try/catch) ตารางที่ขาดจึงไม่ได้แปลว่า
+    // realtime เงียบ แต่แปลว่า **ทรานแซกชันนั้น rollback ทั้งก้อน**
+    file: "9.70__bms_realtime_outbox.sql",
+    impact: "รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน",
+    needs: [{ kind: "table", name: "bms_realtime_outbox" }],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

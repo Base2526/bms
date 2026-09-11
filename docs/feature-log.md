@@ -1103,6 +1103,16 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   payload cost, validates origins, and exposes Redis-aware readiness plus graceful drain. Inbox
   requires `inbox.view`; user feeds bind to the authenticated subject. Unsafe legacy chat/post
   resource fields are disabled in production pending membership capabilities. Polling is retained.
+- **Mobile/POS GraphQL server contract (2026-09-11, no migration)** — `/api/graphql` now recognizes
+  a distinct `pos` device principal from a Bearer device token without treating it as a user.
+  `graphql/bmsPosDevice.ts` provides named read and command operations for every normal retail,
+  restaurant, kitchen, shift, drawer, member, purchase and pharmacy-handoff POS route; each derives
+  tenant/location/device server-side and preserves cashier PIN, named permission, distinct approver,
+  idempotency, audit and service transaction boundaries. `graphql/bmsMobileOperations.ts` closes the
+  inventoried staff-mobile gaps for stock transfers/counts, restaurant requests, store credit,
+  commissions and POS-return reports. REST remains for binary/export/diagnostic transports and as a
+  browser-POS compatibility layer. The realtime ticket endpoint accepts the same Bearer credential;
+  WS still carries invalidations only. See the [native client contract](architecture/react-native-graphql-client.md).
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking

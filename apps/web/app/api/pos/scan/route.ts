@@ -10,9 +10,8 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, resolvePosScan } from "@/lib/bms/pos";
+import { authenticatePosDevice, getPosVariantAvailable, resolvePosScan } from "@/lib/bms/pos";
 import { listPrimaryProductImages } from "@/lib/bms/products";
-import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -43,11 +42,11 @@ async function handleGET(req: NextRequest) {
   if (!hit) return NextResponse.json({ error: "ไม่พบสินค้าจากรหัสนี้", code }, { status: 404 });
 
   // ของคงเหลือของสาขานี้ — จอขายต้องเห็นก่อนกดเพิ่มลงตะกร้า
-  const stock = await query<{ available: string }>(
-    `SELECT (current_stock - reserved_stock) AS available
-       FROM bms_inventory
-      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
-    [device.tenantId, device.locationId, hit.sku, hit.size]
+  const available = await getPosVariantAvailable(
+    device.tenantId,
+    device.locationId,
+    hit.sku,
+    hit.size,
   );
 
   // รูปเฉพาะโหมด "เช็คของ" ที่คนกำลังดูว่าใช่ตัวไหน — การยิงเพื่อ "ขาย" ไม่ขอ
@@ -63,7 +62,7 @@ async function handleGET(req: NextRequest) {
 
   return NextResponse.json({
     ...hit,
-    available: stock.rowCount ? Number(stock.rows[0].available) : 0,
+    available,
     ...imagePatch,
   });
 }

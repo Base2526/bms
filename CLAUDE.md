@@ -21,6 +21,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
 | [architecture/realtime-production-audit.md](docs/architecture/realtime-production-audit.md) · [ADR 001](docs/architecture/decisions/001-transactional-realtime-invalidation.md) | Current realtime security/reliability audit · accepted phased outbox/invalidation design |
 | [architecture/mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) | Mobile/RN GraphQL primary API, REST exception inventory, POS migration gaps and phase boundaries |
+| [architecture/react-native-graphql-client.md](docs/architecture/react-native-graphql-client.md) | Native POS HTTP GraphQL + ticketed GraphQL WS client wiring, retry and rollout contract |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
@@ -236,10 +237,10 @@ look done in code but need their migration first.
   a verified signature for webhooks, a job token for cron — and **derives the tenant server-side**.
   A route that is public by design needs a rate limit, because a public endpoint that calls a model
   spends the operator's money. Enforced by `scripts/inventory-tenant-scope-contract.test.mts`.
-- **Counter POS (`/api/pos/*`) and branch inventory ops (`/api/bms/inventory/*`) are REST-only** —
-  a register authenticates with a device token + cashier PIN, not a GraphQL session. They are
-  absent from the tool catalogue today because no wrapper registers them. A future staff tool does
-  not require GraphQL: wrap the underlying service in `lib/bms/tools/catalog.ts`, derive the tenant
-  server-side, re-check permission, preserve the service's in-transaction domain audit, and keep a
-  stock-moving action propose-only for explicit human confirmation. Never call the REST route from a
-  tool or resolver as a shortcut around those boundaries.
+- **Counter POS and branch inventory operations have GraphQL mobile adapters plus REST
+  compatibility.** A register uses `x-scope: pos` with a device Bearer token; the server derives its
+  tenant/location/device, and every mutation separately verifies cashier PIN + action permission.
+  REST and GraphQL call the same service and neither makes an operation an AI tool. A future staff
+  tool still needs a wrapper in `lib/bms/tools/catalog.ts`, server-derived tenant, immediate RBAC
+  re-check, in-transaction audit, and explicit confirmation for stock/money movement. Never call one
+  adapter from another as a shortcut.

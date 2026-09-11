@@ -20,13 +20,16 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: "INVALID_REALTIME_SCOPE" }, { status: 400 });
   }
 
+  const authorization = req.headers.get("authorization") ?? "";
+  const bearerToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? "";
+
   const issued = requestedScope === "admin"
     ? await mintAdminRealtimeTicket(
       verifyAdminSession() ?? verifyAdminFromRequest(req),
       verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value),
     )
     : requestedScope === "pos"
-      ? await mintPosRealtimeTicket(req.headers.get("x-pos-device-token") ?? "")
+      ? await mintPosRealtimeTicket(bearerToken || req.headers.get("x-pos-device-token")?.trim() || "")
       : await mintUserRealtimeTicket(
       requestedScope as "web" | "android",
       requestedScope === "android" ? verifyUserFromRequest(req) : verifyUserSession(),

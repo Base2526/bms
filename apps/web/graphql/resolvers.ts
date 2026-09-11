@@ -73,6 +73,8 @@ import { bmsProductPriceTiersResolvers } from "@/graphql/bmsProductPriceTiers";
 import { bmsProductPromotionsResolvers } from "@/graphql/bmsProductPromotions";
 import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
 import { bmsPosResolvers } from "@/graphql/bmsPos";
+import { bmsPosDeviceResolvers } from "@/graphql/bmsPosDevice";
+import { bmsMobileOperationsResolvers } from "@/graphql/bmsMobileOperations";
 import { bmsRestaurantFloorAdminResolvers } from "@/graphql/bmsRestaurantFloorAdmin";
 import { bmsArResolvers } from "@/graphql/bmsAr";
 import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
@@ -2871,6 +2873,8 @@ const rawResolvers = {
     ...bmsProductPromotionsResolvers.Query,
     ...bmsMembershipResolvers.Query,
     ...bmsPosResolvers.Query,
+    ...bmsPosDeviceResolvers.Query,
+    ...bmsMobileOperationsResolvers.Query,
     ...bmsRestaurantFloorAdminResolvers.Query,
     ...bmsArResolvers.Query,
     ...bmsReportScheduleResolvers.Query,
@@ -7597,6 +7601,8 @@ const rawResolvers = {
     ...bmsProductPromotionsResolvers.Mutation,
     ...bmsMembershipResolvers.Mutation,
     ...bmsPosResolvers.Mutation,
+    ...bmsPosDeviceResolvers.Mutation,
+    ...bmsMobileOperationsResolvers.Mutation,
     ...bmsRestaurantFloorAdminResolvers.Mutation,
     ...bmsArResolvers.Mutation,
     ...bmsReportEngineResolvers.Mutation,

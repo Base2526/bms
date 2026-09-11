@@ -1,6 +1,7 @@
 # Mobile-first GraphQL and WebSocket architecture
 
-> Status: Phase 1 inventory complete; Phase 2 shared event contract implemented (2026-09-10)
+> Status: server-side Phases 1–6 implemented (2026-09-11); external React Native and browser-POS
+> caller rollout remains before REST compatibility routes can be retired
 >
 > Realtime security and delivery details: [production realtime audit](realtime-production-audit.md)
 > and [ADR 001](decisions/001-transactional-realtime-invalidation.md)
@@ -80,16 +81,16 @@ These REST routes stay compatible while clients move to the named GraphQL operat
 The existence of a similarly named operation does not yet prove response-shape parity. Phase 9 adds
 fixture-driven REST-versus-GraphQL contract tests before moving each caller.
 
-### BMS REST gaps that need GraphQL equivalents
+### BMS REST gaps and implemented GraphQL equivalents
 
-| REST routes | Required GraphQL capability |
+| REST routes | GraphQL capability |
 | --- | --- |
-| `/api/bms/inventory/transfers` | list/create/send/receive transfer using the existing stock-transfer service |
-| `/api/bms/inventory/counts` | list/create/update/apply count using the existing stock-count service |
-| `/api/bms/restaurant-requests` | list and accept/reject incoming restaurant request |
-| `/api/bms/store-credit` | account lookup/summary and permitted adjustment/issue operations |
-| `/api/bms/commission` | commission rule/read/write operations if this back-office surface becomes mobile-visible |
-| `/api/bms/reports/pos-returns`, `/reports/pos-return-audit` | structured report queries; exported files remain REST |
+| `/api/bms/inventory/transfers` | `bmsStockTransfers`, `bmsStockTransfer` use the existing stock-transfer service |
+| `/api/bms/inventory/counts` | `bmsStockCounts`, `bmsStockCount` use the existing stock-count service and retain separate apply permission |
+| `/api/bms/restaurant-requests` | `bmsMobileRestaurantRequests`, `bmsReviewRestaurantRequest` |
+| `/api/bms/store-credit` | `bmsStoreCredit`, `bmsIssueStoreCredit` |
+| `/api/bms/commission` | `bmsCommissionRules`, `bmsCommissionReport`, `bmsCommissionRule` |
+| `/api/bms/reports/pos-returns`, `/reports/pos-return-audit` | `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`; exported files remain REST |
 | `/api/bms/reserve` | retain as legacy compatibility until its caller and idempotency contract are identified; do not expose a second reservation command blindly |
 
 ### POS device REST migration inventory
@@ -99,17 +100,17 @@ need GraphQL equivalents, but REST remains until parity tests and client rollout
 
 | Workflow | Current REST routes | GraphQL status |
 | --- | --- | --- |
-| Device/session and shifts | `/api/pos/session`, `/shift`, `/shifts`, `/shift-report` | missing POS-device context and operations |
-| Catalog/search/barcode | `/api/pos/search`, `/scan`, `/restaurant/menu` | missing POS-device queries |
-| Sale lifecycle | `/api/pos/sale`, `/last-sale`, `/recent-sales`, `/park`, `/return`, `/blind-return`, `/void` | missing POS-device queries/mutations |
-| Drawer/deposit/expenses | `/api/pos/cash-movement`, `/deposit`, `/expense`, `/no-sale` | missing POS-device queries/mutations |
-| Payments/refunds/receipts | `/api/pos/refund-settlement`, `/send-receipt` | missing POS-device mutations |
-| Members/AR/store credit | `/api/pos/member`, `/member/preview`, `/ar`, `/ar/collect`, `/store-credit` | missing POS-device queries/mutations |
-| Purchase receiving | `/api/pos/purchase` | missing POS-device mutation |
-| Pharmacy handoff | `/api/pos/pharmacy-review` | missing safe POS-device mutation; evidence upload remains REST |
-| Kitchen | `/api/pos/kitchen/tickets`, `/kitchen/tickets/[id]/status`, `/kitchen/tickets/status` | admin GraphQL exists, device-scoped GraphQL does not |
-| Restaurant checks/floor | `/api/pos/restaurant/checks`, `/restaurant/checks/[id]`, `/restaurant/floor` | missing POS-device queries/mutations |
-| Incoming/QR/service/waitlist | `/api/pos/restaurant/incoming`, `/restaurant/qr-orders`, `/restaurant/requests`, `/restaurant/service-calls`, `/restaurant/waitlist` | missing POS-device queries/mutations |
+| Device/session and shifts | `/api/pos/session`, `/shift`, `/shifts`, `/shift-report` | implemented in `bmsPosSession`, `bmsPosShift`, `bmsPosShiftHistory`, `bmsPosShiftReport` |
+| Catalog/search/barcode | `/api/pos/search`, `/scan`, `/restaurant/menu` | implemented in `bmsPosCatalogSearch`, `bmsPosScan`, `bmsPosRestaurantMenu` |
+| Sale lifecycle | `/api/pos/sale`, `/last-sale`, `/recent-sales`, `/park`, `/return`, `/blind-return`, `/void` | implemented as named POS-device queries/mutations |
+| Drawer/deposit/expenses | `/api/pos/cash-movement`, `/deposit`, `/expense`, `/no-sale` | implemented as named POS-device queries/mutations |
+| Payments/refunds/receipts | `/api/pos/refund-settlement`, `/send-receipt` | implemented in `bmsPosCompleteRefund`, `bmsPosSendReceipt` |
+| Members/AR/store credit | `/api/pos/member`, `/member/preview`, `/ar`, `/ar/collect`, `/store-credit` | implemented as named POS-device queries/mutations |
+| Purchase receiving | `/api/pos/purchase` | implemented in `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosReceivePurchase` |
+| Pharmacy handoff | `/api/pos/pharmacy-review` | implemented in `bmsPosRequestPharmacyReview`; evidence upload remains REST |
+| Kitchen | `/api/pos/kitchen/tickets`, `/kitchen/tickets/[id]/status`, `/kitchen/tickets/status` | implemented as device-scoped query/mutations |
+| Restaurant checks/floor | `/api/pos/restaurant/checks`, `/restaurant/checks/[id]`, `/restaurant/floor` | implemented as device-scoped query/mutations |
+| Incoming/QR/service/waitlist | `/api/pos/restaurant/incoming`, `/restaurant/qr-orders`, `/restaurant/requests`, `/restaurant/service-calls`, `/restaurant/waitlist` | implemented as device-scoped query/mutations |
 
 `/api/pos/pharmacy-evidence`, `/api/pos/shift-report/export`, and
 `/api/pos/support-diagnostics` remain REST for upload/export/diagnostic transport.
@@ -138,12 +139,14 @@ Three principals are distinct:
 | Principal | HTTPS GraphQL authentication | Authority |
 | --- | --- | --- |
 | Admin/staff browser or RN | admin/mobile Bearer token or secure browser cookie | fresh user, tenant, RBAC, allowed locations, optional acting tenant |
-| POS device | device Bearer/token exchanged for a short-lived GraphQL access ticket | tenant, location, device only; never user authority |
+| POS device | device Bearer token on HTTPS GraphQL; exchanged for a short-lived ticket only for WS | tenant, location, device only; never user authority |
 | Acting cashier/approver | PIN fields on the sensitive mutation, verified server-side | named action permission and evidence for that operation only |
 
 The client never supplies tenant, location, device, shift, cashier, or acting-tenant IDs as
-authority. A POS mutation derives device/location/tenant from its access ticket, finds the current
-shift server-side, verifies the cashier PIN, and keeps every existing second-person approval rule.
+authority. It supplies the selected cashier ID with the PIN only as identity evidence. A POS
+mutation derives device/location/tenant from its authenticated context, finds the current shift
+server-side (except a bounded prior-shift retry hint), verifies the cashier PIN, and keeps every
+existing second-person approval rule.
 Every money/stock/document mutation has a stable `idempotencyKey`.
 
 WS uses a shorter-lived, audience-bound ticket minted over authenticated HTTPS after the same fresh
@@ -202,6 +205,8 @@ and tests to agree.
 | --- | --- | --- |
 | 1. Audit and architecture | Complete | 117 REST routes classified above; GraphQL and subscription inventory linked |
 | 2. Shared event contract | Complete | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication |
-| 3. Transactional outbox | Implemented; live DB verification pending | migration `9.70`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, pure and DB contract suites |
+| 3. Transactional outbox | Implemented; live DB verification pending | migration `9.70`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, pure and DB contract suites. `enqueueRealtimeEventInTx` is unguarded by design, so `9.70` is registered in `scripts/schemaReadiness.mts`: without the table the owning business transaction rolls back, it does not merely lose realtime |
 | 4. WS/auth hardening | Implemented; live socket verification pending | HTTP-minted short-lived tickets, strict admin revocation/fresh identity/acting tenant, scoped permissions/locations, subscription-only gateway, origin/size/quota/expiry/ping/drain/health controls |
-| 5–7. Mobile operations, domain events, client rollout | Planned | must follow the test and rollout gates above; legacy polling remains enabled |
+| 5. Mobile/POS GraphQL | Server contract complete | `graphql/{bmsPosDevice,posDeviceAuth,bmsMobileOperations}.ts`; normal POS routes and listed BMS gaps have named operations, server-derived scope, PIN/RBAC enforcement, shared services. `scripts/mobile-graphql-contract.test.mts` asserts operations against the parsed SDL, pairs every field with a resolver both ways, builds the merged schema through `graphql/schema.ts`, and rejects any authority read that is not `device.*` (POS) or `getTenantId(ctx)` (staff) |
+| 6. Domain events | Implemented; live DB verification pending | migration `9.71`, domain event contract/fixtures, transactional publishers and pure/DB suites |
+| 7. Client rollout | Not present in this repository | browser POS stays on REST compatibility and polling; no React Native app exists in this repository. Use `react-native-graphql-client.md` in the external app, canary it, and retain REST until telemetry proves migration |

@@ -3,6 +3,94 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## recheck งาน mobile GraphQL/realtime ของ codex — เจอด่านที่ไม่ได้กันอะไรเลย (2026-09-11)
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1075**
+จาก 1071 · production build) · **ไม่มี migration ใหม่ · ไม่มี permission ใหม่** ·
+**เทส DB ไม่ได้รันสักตัว** (เครื่องนี้ Docker ไม่ได้รัน — `docker ps` ต่อ daemon ไม่ได้ · 5432 ปิด)
+· **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** · **มิวเทชัน 9 แบบ แดงถูกตัวทุกครั้ง**
+
+### ⚠️ 1. เทสของ codex เขียวทั้งที่ลบ operation ทิ้งทั้งตัว และทั้งที่ resolver รับ tenantId จากผู้เรียก
+
+`scripts/mobile-graphql-contract.test.mts` เดิมเช็คชื่อ operation ด้วย
+`assert.match(posSchema, new RegExp(word-boundary + name))` ซึ่งสแกน **ซอร์สทั้งไฟล์
+ไม่ใช่ SDL** · พิสูจน์แล้วด้วยมิวเทชัน: เปลี่ยนชื่อ `bmsPosVoid` ทั้ง SDL และ resolver
+แล้วเหลือคำนั้นไว้ใน **คอมเมนต์บรรทัดเดียว** → **เทสทั้ง 6 ตัวยังเขียว** ทั้งที่การยกเลิกบิล
+จากมือถือหายไปจากสคีมาแล้ว (กับดัก substring เดิมของรีโปนี้ที่จดไว้หลายรอบ)
+
+- **ด่านความปลอดภัยเป็นด่านที่ว่างเปล่า**: `assert.doesNotMatch()` ที่หา `tenantId:` ใน SDL
+  ตั้งใจกัน "ผู้เรียกส่ง tenant มาเอง" แต่ SDL ทั้งไฟล์เป็น
+  `input: JSON!` / `JSON!` ล้วน **จึงไม่มีฟิลด์ให้ชนตั้งแต่แรก** — assertion นี้เป็นจริงเสมอ
+  ไม่ว่าโค้ดจะทำอะไร · มิวเทชันที่ทำให้ resolver อ่าน `input.tenantId` ตรง ๆ (= ข้ามร้านได้
+  ซึ่งเป็นบั๊กที่แรงที่สุดที่ระบบนี้มีได้) **ก็ยังเขียวทั้ง 6 ตัว**
+- **ของจริงไม่ได้พัง** — ไล่แล้วทั้งไฟล์: POS อ่าน authority จาก `device.tenantId` (108 จุด)
+  และ `device.locationId` (48 จุด) **เท่านั้น ไม่มีตัวไหนมาจากผู้เรียก** · ฝั่งหลังบ้านอ่าน
+  tenant จาก `getTenantId(ctx)` และรับ `input.locationId` 2 จุด ซึ่ง **ตรงกับ REST เดิมเป๊ะ**
+  (`/api/bms/inventory/transfers` กับ `/restaurant-requests` ก็ไม่เคยตรวจ
+  `bms_user_allowed_locations`) จึงเป็น parity ไม่ใช่รูรั่วใหม่
+- เขียนเทสใหม่เป็น **10 เทส** เล็งที่ของจริงแทน: parse SDL แล้วเทียบ field จริง ·
+  จับคู่ SDL ↔ resolver **ทั้งสองทิศ** · ประกอบสคีมารวมจริงหนึ่งครั้ง · และกฎ authority
+  เล็งที่ **"อ่านมาจากอะไร"** ไม่ใช่ชื่อตัวแปร (`inputRecord(args.input).tenantId`
+  ต้องแดงเท่ากับ `input.tenantId` — รอบแรกเขียนแบบผูกชื่อตัวแปรแล้วมิวเทชัน M5 รอดไปได้)
+
+### ⚠️ 2. ไม่มีอะไรตรวจว่า "สคีมารวมยังประกอบได้" ทั้งที่ SDL พังทำให้ `/api/graphql` ตายทั้งเส้น
+
+`route.ts` เรียก `makeExecutableSchema()` **ที่ระดับโมดูล** — SDL ที่พิมพ์ผิดหรือ resolver
+ที่ไม่ตรง type ทำให้ route throw ตั้งแต่ import = **ทุก operation ของทุกคนตาย ไม่ใช่แค่ของ POS**
+· `tsc` มองไม่เห็นเพราะ SDL เป็นสตริง
+
+- แยกการประกอบออกเป็น `apps/web/graphql/schema.ts` (`buildBmsGraphqlSchema()`) แล้ว **route
+  กับเทสใช้ตัวเดียวกัน** — ไม่ใช่สำเนาที่สอง และเทสไม่ต้องไปอ้าง path ลึกใน `node_modules`
+- **⚠️ เทสใน `scripts/` import แพ็กเกจ `graphql` ตรง ๆ ไม่ได้** (ลงไว้ที่ `apps/web/node_modules`
+  เท่านั้น) แต่ import **โมดูลใต้ `apps/web`** ได้ปกติ เพราะ tsx resolve จากที่อยู่ของไฟล์นั้น
+  · นี่คือเหตุผลที่ต้องมี `schema.ts` ไม่ใช่เรียก `makeExecutableSchema` ในเทสเอง
+
+### ⚠️ 3. `9.70` ไม่ได้อยู่ใน schemaReadiness ทั้งที่ตารางขาดแล้ว "รับของเข้าคลังไม่ได้"
+
+`enqueueRealtimeEventInTx()` **ไม่มีธงและไม่ได้ห่อ try/catch** และถูกเรียกใน
+`receivePurchaseOrder()` (`purchase.ts:587`) **ในทรานแซกชันเดียวกับการรับของ ก่อน COMMIT** →
+ฐานที่ยังไม่ apply `9.70` จะ `42P01` แล้ว **rollback ทั้งก้อน = รับของเข้าคลังไม่ได้เลย**
+ทั้งจากหลังบ้านและจากเครื่องขาย (`9.6`)
+
+- เติม `9.70` เข้า `scripts/schemaReadiness.mts` + regenerate `db/checks/schema-readiness.sql`
+  (ไฟล์นั้นห้ามแก้มือ มีเทสเทียบกับตัวเรนเดอร์อยู่)
+- **`9.71` จงใจไม่ใส่** — trigger ที่ขาดแปลว่า "ไม่มี event" ซึ่งคือ realtime เงียบ ไม่ใช่โค้ดพัง
+  ตามกฎของ readiness เอง (กันฐานที่โค้ด **พัง** ไม่ใช่ฐานที่ช้า)
+- **ยังไม่ได้ไล่ `9.58`–`9.69` ว่าตัวไหนควรอยู่ใน readiness ด้วย** — readiness ค้างอยู่ที่ `9.57`
+  ซึ่งเป็นของก่อนงานรอบนี้ ไม่ใช่ของ codex
+
+### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **RLS ของ outbox ไม่บล็อก trigger** — `bms_realtime_outbox` เป็น `FORCE ROW LEVEL SECURITY`
+  และ policy **ไม่มีทาง fail-open** (ต่างจากเทมเพลต `4.2` ที่ `COALESCE(..., tenant_id)`)
+  ดูเผิน ๆ เหมือนทุก INSERT ที่ไม่ได้ตั้ง `bms.tenant_id` จะถูกปฏิเสธ · **แต่ `9.71` ตั้ง
+  `OWNER TO bms_realtime_dispatcher` ให้ trigger function ครบทั้ง 23 ตัว + ตัว emit** และ role
+  นั้นเป็น `BYPASSRLS` (สร้างใน `9.70`) → SECURITY DEFINER จึงข้าม RLS ได้จริง · tenant ยังถูก
+  บังคับด้วย `p_tenant_id` ที่แต่ละ trigger ส่งเข้ามา
+- **pump ไม่ทำให้ boot พัง** — `startRealtimeOutboxPump()` ถูกเรียกตอน import
+  `instrumentation.node.ts` ก็จริง แต่ออกทันทีเมื่อ `REALTIME_OUTBOX_DISPATCH_ENABLED !== "1"`
+  และ error ของแต่ละรอบถูก catch + backoff
+- **money path ไม่ถูกแตะ** — diff ของ `lib/bms/pos.ts` มีแค่ helper อ่านล้วน 2 ตัว
+  (`getPosVariantAvailable`, `isPosOrderOwnedByDevice`) ไม่มีการเขียน outbox ในเส้นทางขาย
+- **`bmsPosShiftReport` รับ `shiftId` จากผู้เรียกได้อย่างปลอดภัย** — ส่ง `device.id` เข้า
+  `getPosShiftReport()` เป็นตัว scope และ `getArShiftSummary()` (ซึ่งไม่ scope ด้วย device)
+  อยู่ **หลัง** ด่าน `if (!report)` จึงเข้าถึงกะของเครื่องอื่นไม่ได้
+- **resolver ครบทุก field** — ประกอบสคีมารวมจริงแล้วได้ 254 query / 280 mutation ·
+  field ที่ไม่มี resolver มี 3 ตัว (`_ok`, `globalSearchUnified`, `send`) ซึ่งเป็นของ
+  `coreTypeDefs` ที่ resolver อยู่ฝั่ง WS ตามดีไซน์เดิม **ไม่ใช่ของงานรอบนี้**
+
+### ยังไม่ได้ทำ
+
+- **เทส DB ของ `9.70`/`9.71` ยังไม่เคยรัน** และ trigger 25 ตัวของ `9.71` ยังไม่เคยยิงกับฐานจริง
+  · เคสที่ควรตรึงเมื่อมีฐาน: เขียน `bms_orders`/`bms_inventory` **นอก** `beginTenantTx`
+  (ไม่ได้ตั้ง `bms.tenant_id`) แล้ว trigger ต้องยังเขียน outbox ได้ — เป็นข้อที่พิสูจน์
+  ด้วยการอ่านอย่างเดียวไม่ได้ เพราะขึ้นกับ owner จริงของ function หลัง apply
+- **write amplification ของ `9.71` ยังไม่ได้วัด** — `AFTER INSERT OR UPDATE ON bms_inventory`
+  ยิงทุกการขยับสต็อก (บิลหนึ่งใบแตะหลายแถว · import แตะหลายพันแถว) ยังไม่รู้ต้นทุนจริง
+- **ยังไม่มี client** — เบราว์เซอร์ POS ยังใช้ REST + polling เหมือนเดิม และไม่มีแอป
+  React Native ในรีโปนี้ · เส้น GraphQL ใหม่จึง **ยังไม่มีผู้เรียกสักราย** (เพิ่มสคีมาอย่างเดียว
+  ไม่เปลี่ยนพฤติกรรมของของเดิม)
+
 ## recheck responsive layout ของ `/pos/restaurant` ทั้งเส้น — เจอของจริง 8 จุด (2026-09-10)
 
 branch `recheck/pos-restaurant-responsive` (ตัดจาก `develop` ที่ merge #203 แล้ว) ·

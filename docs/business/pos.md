@@ -7,20 +7,25 @@ tenant, branch, and register; a cashier user plus PIN identifies every sale, shi
 and refund settlement. The browser never supplies authoritative tenant, price, pack conversion, or
 stock values.
 
-### Why the counter talks REST, not GraphQL
+### GraphQL mobile contract and REST compatibility
 
-Every counter action is a REST route under `/api/pos/*`, unlike the rest of BMS. That is forced by
-the authentication model rather than chosen for style: a register authenticates with
-`x-pos-device-token` and a cashier PIN, not an admin session cookie, so it has no GraphQL context to
-run `requirePermission()` against. The equivalent checks live in the routes —
-`authenticatePosDevice()`, `verifyCashierPin()`, and `cashierHasPermission()` — and the second-person
-PIN requirement for discounts, voids, and cash-out sits there too.
+Normal counter workflows have device-scoped GraphQL queries and mutations in
+`graphql/bmsPosDevice.ts`. A native register calls `/api/graphql` with `x-scope: pos` and
+`Authorization: Bearer <device-token>`; the HTTP context authenticates the token and derives the
+tenant, branch and device. Mutations still verify a cashier PIN and the action permission, and
+discounts, voids and money leaving the drawer still require a distinct second person's PIN. A
+device principal is never promoted into a user principal.
 
-The cost is that counter actions are absent from the GraphQL schema and therefore from the AI tool
-catalogue today. GraphQL is not a prerequisite for an AI tool: a future staff tool must wrap the
-underlying service in `lib/bms/tools/catalog.ts`, preserve device/person authorization semantics,
-re-check RBAC, and remain propose-only where money or stock moves. It must not call a REST route from
-a resolver or tool as a shortcut.
+The existing `/api/pos/*` routes remain compatibility adapters for the browser POS while its callers
+migrate. Both transports call the same `lib/bms/*.ts` services; neither transport owns business
+rules. Uploads, exports and support diagnostics remain REST because they are HTTP-native. Realtime
+does not carry commands: the committed service transaction writes an outbox event, GraphQL WS sends
+the scoped invalidation, and the client refetches the authoritative GraphQL snapshot.
+
+GraphQL exposure does not automatically expose a POS command to AI. A staff tool must still wrap the
+underlying service in `lib/bms/tools/catalog.ts`, derive the tenant server-side, re-check RBAC, and
+remain propose-only where money or stock moves. It must not call either transport adapter as a
+shortcut.
 
 Auditing does not depend on the transport. `pos.sale`, `pos.return`, `pos.refund.complete`,
 `pos.void`, `pos.cash.movement`, `pos.shift.open`, and `pos.shift.close` are all written to

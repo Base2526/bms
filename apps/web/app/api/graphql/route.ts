@@ -2,14 +2,10 @@
 export const runtime = "nodejs";
 
 import { ApolloServer } from "@apollo/server";
-import { makeExecutableSchema } from "@graphql-tools/schema";
 import { startServerAndCreateNextHandler } from "@as-integrations/next";
 import { NextRequest } from "next/server";
 
-import {
-  mergedTypeDefs as typeDefs,
-  mergedResolvers as resolvers,
-} from "@/graphql";
+import { buildBmsGraphqlSchema } from "@/graphql/schema";
 
 import {
   verifyAdminSession,
@@ -21,13 +17,14 @@ import { cookies } from "next/headers";
 import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 import { isAdminSessionActive } from "@/lib/redisSession";
 import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
+import { authenticatePosDevice } from "@/lib/bms/pos";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
 import { metricsPlugin } from "@/graphql/metricsPlugin";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
-const schema = makeExecutableSchema({ typeDefs, resolvers });
+const schema = buildBmsGraphqlSchema();
 
 const server = new ApolloServer({
   schema,
@@ -50,8 +47,18 @@ async function createContext(request: NextRequest) {
 
   let admin: any = null;
   let user: any = null;
+  let posDevice: Awaited<ReturnType<typeof authenticatePosDevice>> = null;
 
-  if (scope === "android") {
+  if (scope === "pos") {
+    // A register is a device principal, never a user principal. Native POS clients use
+    // Authorization: Bearer while the existing browser can keep x-pos-device-token during
+    // migration. Neither header is allowed to choose tenant/location; authenticatePosDevice()
+    // derives both from the active hashed device row.
+    const authorization = request.headers.get("authorization") ?? "";
+    const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? "";
+    const token = bearer || request.headers.get("x-pos-device-token")?.trim() || "";
+    posDevice = token ? await authenticatePosDevice(token) : null;
+  } else if (scope === "android") {
     // ✅ RN ใช้ Bearer token
     user = verifyUserFromRequest(request);
     admin = null;
@@ -105,7 +112,7 @@ async function createContext(request: NextRequest) {
     // if (!user) user = verifyUserFromRequest(request);
   }
 
-  return { scope, admin, user, req: request };
+  return { scope, admin, user, posDevice, req: request };
 }
 
 const handler = startServerAndCreateNextHandler<NextRequest>(server, {

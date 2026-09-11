@@ -9,9 +9,11 @@ Android, iOS, browser admin, and future POS workflows. Resolvers remain thin and
 `apps/web/lib/bms/*.ts` services as compatible REST routes. GraphQL WebSocket subscriptions carry
 only scoped invalidations; clients refetch authoritative GraphQL snapshots after delivery.
 
-Current coverage is broad for admin workflows but incomplete for device-authenticated POS. The
-Phase 1 inventory, exact REST classification, POS gaps, authentication model, and migration order are
-in [mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md).
+Device-authenticated POS coverage is implemented for every normal `/api/pos/*` workflow. Binary
+pharmacy evidence, shift-report export, and support diagnostics remain REST. The exact route
+classification, authentication model, operation list, and rollout state are in
+[mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md); native client wiring is in
+[react-native-graphql-client.md](react-native-graphql-client.md).
 
 ## Realtime subscriptions
 
@@ -29,7 +31,7 @@ rollout. See the [realtime production audit](realtime-production-audit.md) and
 REST remains the permanent transport for file upload/download, generated exports, external
 webhooks/payment callbacks, signed public checkout/restaurant-QR flows, cron/job triggers, and
 diagnostic/stream-oriented endpoints. Existing `/api/pos/*` and admin compatibility routes stay
-available while GraphQL equivalents and parity tests are added. A REST state change and its GraphQL
+available while callers migrate and production telemetry is collected. A REST state change and its GraphQL
 equivalent must call the same service and enqueue the same event; neither adapter may reimplement
 business rules.
 
@@ -355,8 +357,9 @@ read/write REST equivalents of their GraphQL counterparts.
 
 ## REST — inventory transfers and stock counts (`7.98`)
 
-Unlike every other admin module these two are REST-only, and unlike `/api/pos/*` they *do* use the
-admin session: both call `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`), which runs
+These routes remain REST compatibility adapters; the mobile equivalents are `bmsStockTransfers` /
+`bmsStockTransfer` and `bmsStockCounts` / `bmsStockCount`. Unlike `/api/pos/*`, the REST adapters use
+the admin session: both call `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`), which runs
 `verifyAdminSession()` → resolves the acting tenant from the signed `BMS_ACT_TENANT` drill-down cookie
 (only when its `by` matches this admin, else the admin's own tenant) → `requirePermission()`. Failures
 return `{ error: "unauthorized" }` with `401` (no session) or `{ error: "forbidden" }` with `403` (no
@@ -714,7 +717,7 @@ and the recovery tests and staged rollout in the
 [realtime production audit](realtime-production-audit.md) are complete. The accepted target contract
 is recorded in [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
-`POST /api/bms/realtime/ticket?scope=admin|web|android` is the only socket credential minting path.
+`POST /api/bms/realtime/ticket?scope=admin|web|android|pos` is the only socket credential minting path.
 It returns `{ ticket, expiresAt }` with `Cache-Control: no-store`; tenant, permissions, and allowed
 locations are server-derived. The gateway accepts only `connectionParams.ticket`, permits one
 subscription field per operation, and exposes `/healthz`, `/readyz`, and local `/metrics`. Legacy
@@ -722,10 +725,11 @@ chat/post subscriptions that still require resource membership are disabled in p
 
 ## Auth scopes
 
-`requireAuth(ctx)` (`lib/auth.ts`) recognizes three scopes carried via the `x-scope` header on the
+The GraphQL HTTP context recognizes four scopes carried via the `x-scope` header on the
 GraphQL endpoint (`app/api/graphql/route.ts`): `admin` (cookie session, the BMS admin panel),
-`web`, and `android` (Bearer token — pre-existing infra for a consumer-facing mobile app from the
-base template, distinct from the BMS admin/staff RBAC model). See
+`web`, `android` (user Bearer token), and `pos` (POS-device Bearer token). POS context is handled by
+`requirePosDevice()` rather than `requireAuth()` because a device is not a user; each protected
+operation then verifies its cashier/approver PIN and named permission. See
 [system.md](system.md) for how tenant/RBAC context is derived once authenticated.
 
 Public web pages are intentionally session-aware: when a browser already has an admin cookie, the
