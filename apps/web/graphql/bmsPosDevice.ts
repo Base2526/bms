@@ -522,16 +522,420 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     tableId: ID
   }
 
+  type BmsPosDeviceScanner {
+    mode: String!
+    prefixKey: String!
+    suffixKey: String!
+    maxGapMs: Int!
+  }
+
+  type BmsPosDeviceSummary {
+    id: ID!
+    code: String!
+    name: String
+    registeredPosNo: String
+    scanner: BmsPosDeviceScanner!
+  }
+
+  type BmsPosLocationSummary {
+    id: ID!
+    name: String!
+    branchCode: String!
+    vatCode: String
+    pharmacistName: String
+  }
+
+  type BmsPosShiftReturnSummary {
+    returnCount: Int!
+    returnTotal: Float!
+    settledTotal: Float!
+    pendingTotal: Float!
+    pendingCount: Int!
+  }
+
+  type BmsPosApprover {
+    id: ID!
+    name: String
+    email: String
+    role: String
+    isPharmacist: Boolean!
+    hasPin: Boolean!
+    posOnly: Boolean!
+    approvals: [String!]!
+  }
+
+  type BmsPosStoreReceiptSettings {
+    taxId: String
+    receiptLanguageMode: String!
+  }
+
+  type BmsPosVatSettings {
+    registered: Boolean!
+    priceIncludesVat: Boolean!
+    rate: Float!
+    calendarEra: String!
+    cashRounding: String!
+  }
+
+  type BmsPosSessionResult {
+    device: BmsPosDeviceSummary!
+    location: BmsPosLocationSummary
+    shift: BmsPosShift
+    shiftReturnSummary: BmsPosShiftReturnSummary!
+    cashiers: [BmsPosCashier!]!
+    purchaseReceivers: [BmsPosCashier!]!
+    approvers: [BmsPosApprover!]!
+    kitchenOperators: [BmsPosCashier!]!
+    store: BmsPosStoreReceiptSettings!
+    surface: String!
+    businessArchetype: String
+    vat: BmsPosVatSettings!
+  }
+
+  type BmsPosAvailableSize {
+    size: String!
+    available: Float!
+    price: Float
+  }
+
+  type BmsPosCatalogItem {
+    sku: String!
+    name: String!
+    price: Float!
+    availableTotal: Float!
+    availability: String!
+    availableSizes: [BmsPosAvailableSize!]!
+    imageUrl: String
+  }
+
+  type BmsPosCatalogSearchResult {
+    items: [BmsPosCatalogItem!]!
+  }
+
+  type BmsPosPriceTier {
+    minQty: Int!
+    scope: String
+    size: String
+    unitPrice: Float
+    discountPct: Float
+  }
+
+  type BmsPosPromotion {
+    kind: String!
+    buyQty: Int!
+    getQty: Int
+    bundlePrice: Float
+  }
+
+  type BmsPosModifier {
+    code: String!
+    name: String!
+    priceDelta: Float!
+    groupCode: String!
+    groupName: String!
+    selectionType: String!
+    minSelect: Int!
+    maxSelect: Int
+    defaultSelected: Boolean!
+  }
+
+  type BmsPosScanResult {
+    sku: String!
+    productName: String!
+    receiptName: String!
+    size: String!
+    packCode: String!
+    unitName: String!
+    baseQty: Float!
+    packPrice: Float!
+    basePrice: Float!
+    priceTiers: [BmsPosPriceTier!]!
+    serialTracked: Boolean!
+    promotion: BmsPosPromotion
+    modifiers: [BmsPosModifier!]!
+    scaleBarcode: String
+    available: Float!
+    imageUrl: String
+  }
+
+  type BmsPosRestaurantMenuItem {
+    sku: String!
+    name: String!
+    price: Float!
+    kitchenStation: String
+    kitchenStationId: ID
+    hasModifiers: Boolean!
+    availableSizes: [BmsPosRestaurantMenuSize!]!
+    availableTotal: Float!
+    sellable: Boolean!
+    availability: String!
+    unavailableResetsAt: String
+    unavailableReason: String
+    imageUrl: String
+  }
+
+  type BmsPosRestaurantMenuSize {
+    size: String!
+    available: Float!
+  }
+
+  type BmsPosRestaurantMenuResult {
+    items: [BmsPosRestaurantMenuItem!]!
+  }
+
+  type BmsPosRestaurantFloorCheck {
+    id: ID!
+    status: String!
+    guestCount: Int!
+    amountDue: Float!
+    openedAt: String
+    itemCount: Int!
+    unsentCount: Int!
+    version: Int!
+    reservedVersion: Int
+    splitGroupNo: Int!
+  }
+
+  type BmsPosRestaurantFloorTable {
+    id: ID!
+    areaId: ID!
+    code: String!
+    name: String!
+    seats: Int!
+    shape: String!
+    positionX: Int!
+    positionY: Int!
+    blocked: Boolean!
+    active: Boolean!
+    status: String!
+    check: BmsPosRestaurantFloorCheck
+    checks: [BmsPosRestaurantFloorCheck!]!
+  }
+
+  type BmsPosRestaurantFloorResult {
+    areas: [BmsRestaurantArea!]!
+    tables: [BmsPosRestaurantFloorTable!]!
+  }
+
+  type BmsPosRestaurantCheckItem {
+    id: ID!
+    sku: String!
+    productName: String!
+    size: String!
+    packQty: Int!
+    packCode: String
+    unitName: String
+    baseQty: Float
+    packPrice: Float
+    lineAmount: Float
+    modifierCodes: [String!]!
+    modifierNames: [String!]!
+    kitchenNote: String
+    status: String!
+    roundNo: Int
+    createdAt: String
+    sentAt: String
+    kitchenStatus: String
+  }
+
+  type BmsPosRestaurantCheck {
+    id: ID!
+    tableId: ID!
+    tableCode: String!
+    tableName: String!
+    areaName: String!
+    status: String!
+    guestCount: Int!
+    note: String
+    amountDue: Float!
+    splitGroupNo: Int!
+    splitFromCheckId: ID
+    mergedIntoCheckId: ID
+    version: Int!
+    reservedVersion: Int
+    hasCurrentOrder: Boolean!
+    reservationStatus: String
+    reservationLost: Boolean!
+    openedAt: String
+    items: [BmsPosRestaurantCheckItem!]!
+  }
+
+  type BmsPosKitchenStationSummary {
+    id: ID!
+    name: String!
+    sortOrder: Int!
+  }
+
+  type BmsPosKitchenSlaEntry {
+    stationRef: String!
+    warnMinutes: Int!
+    lateMinutes: Int!
+  }
+
+  type BmsPosKitchenTicketsResult {
+    tickets: [BmsKitchenTicket!]!
+    stationSlas: [BmsPosKitchenSlaEntry!]!
+    stations: [BmsPosKitchenStationSummary!]!
+    generatedAt: String!
+  }
+
+  type BmsPosDepositItem {
+    name: String!
+    size: String
+    qty: Float!
+  }
+
+  type BmsPosDeposit {
+    id: ID!
+    orderId: ID!
+    locationId: ID!
+    customerId: ID
+    customerNote: String
+    totalAmount: Float!
+    depositPaid: Float!
+    balanceDue: Float!
+    status: String!
+    dueAt: String
+    createdAt: String!
+    overdue: Boolean!
+    customerName: String
+    customerPhone: String
+    memberNo: String
+    locationName: String
+    isOtherLocation: Boolean!
+    itemQty: Float!
+    items: [BmsPosDepositItem!]!
+  }
+
+  type BmsPosReceiptVat {
+    rate: Float!
+    taxableAmount: Float!
+    exemptAmount: Float!
+    vatAmount: Float!
+    netBeforeVat: Float!
+    roundingAmount: Float!
+  }
+
+  type BmsPosDiscountLine {
+    source: String!
+    label: String!
+    amount: Float!
+    pointsUsed: Float!
+  }
+
+  type BmsPosCreatedLinePricing {
+    source: String!
+    priceTiers: [BmsPosPriceTier!]!
+    promotion: BmsPosPromotion
+    modifierUnitPrice: Float!
+  }
+
+  type BmsPosCreatedLine {
+    sku: String!
+    name: String!
+    size: String!
+    qty: Float!
+    unitPrice: Float!
+    receiptUnitPrice: Float!
+    pricingSnapshot: BmsPosCreatedLinePricing!
+    availableAfter: Float
+    packCode: String
+    packUnitName: String
+    packQty: Float
+    packUnitPrice: Float
+    modifierCodes: [String!]
+    vatCategory: String
+  }
+
+  type BmsPosAvailableLocation {
+    id: ID!
+    name: String!
+    branchCode: String
+  }
+
+  type BmsPosPharmacyBlocker {
+    status: String!
+    sku: String!
+    salePolicy: String!
+    maxQuantity: Int
+    requested: Int
+  }
+
+  type BmsPosSaleResult {
+    status: String!
+    orderId: ID
+    saleLocationId: ID
+    posDeviceId: ID
+    shiftId: ID
+    total: Float
+    cashTendered: Float
+    cashChange: Float
+    docNo: String
+    vat: BmsPosReceiptVat
+    roundingAmount: Float
+    discountLines: [BmsPosDiscountLine!]
+    kitchenTickets: Int
+    pointsEarned: Float
+    pointsBalance: Float
+    receiptNo: String
+    billNo: String
+    replayed: Boolean
+    deposit: BmsPosDeposit
+    reason: String
+    sku: String
+    size: String
+    sellable: Float
+    requested: Float
+    packCode: String
+    expected: Float
+    received: Float
+    subtotal: Float
+    discount: Float
+    pointsUsed: Float
+    serial: String
+    code: String
+    balance: Float
+    shippingFee: Float
+    amountDue: Float
+    couponCode: String
+    preferredCarrier: String
+    items: [BmsPosCreatedLine!]
+    locationId: ID
+    fulfillmentType: String
+    promisedAt: String
+    available: Float
+    locations: [BmsPosAvailableLocation!]
+    index: Int
+    salePolicy: String
+    maxQuantity: Int
+    blockers: [BmsPosPharmacyBlocker!]
+  }
+
+  type BmsPosRestaurantOpenCheckResult {
+    check: BmsPosRestaurantCheck
+  }
+
+  type BmsPosShiftActionResult {
+    status: String!
+    shift: BmsPosShift
+    reason: String
+    partialReturnCashOut: Float
+    cashIn: Float
+    cashOut: Float
+    count: Int
+    amount: Float
+  }
+
   extend type Query {
-    bmsPosSession: JSON!
-    bmsPosCatalogSearch(q: String!): JSON!
+    bmsPosSession: BmsPosSessionResult!
+    bmsPosCatalogSearch(q: String!): BmsPosCatalogSearchResult!
     bmsPosScan(
       code: String!
       size: String
       packCode: String
       surface: String
       withImage: Boolean = false
-    ): JSON!
+    ): BmsPosScanResult!
     bmsPosLastSale: JSON
     bmsPosRecentSales(q: String, limit: Int = 5, deviceOnly: Boolean = false): JSON!
     bmsPosParkedSales: JSON!
@@ -539,10 +943,10 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosNoSales: JSON!
     bmsPosDeposits(q: String): JSON!
     bmsPosExpenses(credentials: BmsPosCredentialsInput!): JSON!
-    bmsPosKitchenTickets(status: String, limit: Int = 100): JSON!
-    bmsPosRestaurantFloor: JSON!
-    bmsPosRestaurantMenu: JSON!
-    bmsPosRestaurantCheck(id: ID!): JSON
+    bmsPosKitchenTickets(status: String, limit: Int = 100): BmsPosKitchenTicketsResult!
+    bmsPosRestaurantFloor: BmsPosRestaurantFloorResult!
+    bmsPosRestaurantMenu: BmsPosRestaurantMenuResult!
+    bmsPosRestaurantCheck(id: ID!): BmsPosRestaurantCheck
     bmsPosRestaurantIncoming: JSON!
     bmsPosRestaurantQrOrders: JSON!
     bmsPosRestaurantServiceCalls: JSON!
@@ -560,8 +964,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   extend type Mutation {
-    bmsPosSale(input: BmsPosSaleInput!): JSON!
-    bmsPosShift(input: BmsPosShiftInput!): JSON!
+    bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
+    bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
     bmsPosPark(input: BmsPosParkInput!): JSON!
     bmsPosReturn(input: BmsPosReturnInput!): JSON!
     bmsPosBlindReturn(input: BmsPosBlindReturnInput!): JSON!
@@ -580,7 +984,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): JSON!
     bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): JSON!
     bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): JSON!
-    bmsPosRestaurantOpenCheck(input: BmsPosRestaurantOpenCheckInput!): JSON!
+    bmsPosRestaurantOpenCheck(input: BmsPosRestaurantOpenCheckInput!): BmsPosRestaurantOpenCheckResult!
     bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): JSON!
     bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): JSON!
     bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): JSON!
@@ -830,7 +1234,11 @@ export const bmsPosDeviceResolvers = {
       ]);
       return {
         tickets,
-        stationSlas,
+        stationSlas: Object.entries(stationSlas).map(([stationRef, sla]) => ({
+          stationRef,
+          warnMinutes: sla.warnMinutes,
+          lateMinutes: sla.lateMinutes,
+        })),
         stations: stations.map((station) => ({ id: station.id, name: station.name, sortOrder: station.sortOrder })),
         generatedAt: new Date().toISOString(),
       };

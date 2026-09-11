@@ -191,7 +191,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 33 mobile/POS input arguments are typed while Phase 2 leaves 67 JSON outputs unchanged", () => {
+test("all 33 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({ ...operation, input: inputArgument(operation.kind, operation.name) }))
@@ -205,11 +205,84 @@ test("all 33 mobile/POS input arguments are typed while Phase 2 leaves 67 JSON o
     [],
     "typed client operations must not accept an opaque JSON input argument",
   );
+});
+
+test("the first 10 RN operations are recursively typed and only 57 JSON outputs remain", () => {
+  const expected = new Map([
+    ["Query.bmsPosSession", "BmsPosSessionResult!"],
+    ["Query.bmsPosScan", "BmsPosScanResult!"],
+    ["Query.bmsPosCatalogSearch", "BmsPosCatalogSearchResult!"],
+    ["Query.bmsPosRestaurantMenu", "BmsPosRestaurantMenuResult!"],
+    ["Query.bmsPosRestaurantFloor", "BmsPosRestaurantFloorResult!"],
+    ["Query.bmsPosRestaurantCheck", "BmsPosRestaurantCheck"],
+    ["Query.bmsPosKitchenTickets", "BmsPosKitchenTicketsResult!"],
+    ["Mutation.bmsPosSale", "BmsPosSaleResult!"],
+    ["Mutation.bmsPosRestaurantOpenCheck", "BmsPosRestaurantOpenCheckResult!"],
+    ["Mutation.bmsPosShift", "BmsPosShiftActionResult!"],
+  ]);
+  const operations = moduleOperations();
+  const typed = operations
+    .map((operation) => ({
+      key: `${operation.kind}.${operation.name}`,
+      type: String(rootField(operation.kind, operation.name).type),
+    }))
+    .filter((operation) => namedType(operation.type) !== "JSON")
+    .sort((a, b) => a.key.localeCompare(b.key));
+  assert.deepEqual(
+    typed,
+    [...expected].map(([key, type]) => ({ key, type })).sort((a, b) => a.key.localeCompare(b.key)),
+    "only the planned first 10 outputs may leave JSON in this phase",
+  );
 
   const jsonOutputs = operations.filter((operation) =>
     namedType(String(rootField(operation.kind, operation.name).type)) === "JSON"
   );
-  assert.equal(jsonOutputs.length, 67, "Phase 2 changes inputs only; JSON output countdown starts at 67");
+  assert.equal(jsonOutputs.length, 57, "typed-output countdown must move from 67 to 57");
+
+  const pending = [...new Set([...expected.values()].map(namedType))];
+  const visited = new Set<string>();
+  const opaque: string[] = [];
+  while (pending.length) {
+    const typeName = pending.pop()!;
+    if (visited.has(typeName)) continue;
+    visited.add(typeName);
+    const type = schema().getType(typeName) as any;
+    assert.ok(type && typeof type.getFields === "function", `${typeName} must be an output object`);
+    for (const field of Object.values(type.getFields()) as any[]) {
+      const child = namedType(String(field.type));
+      if (child === "JSON") opaque.push(`${typeName}.${field.name}`);
+      const candidate = schema().getType(child) as any;
+      if (candidate && typeof candidate.getFields === "function") pending.push(child);
+    }
+  }
+  assert.deepEqual(opaque.sort(), [], "a typed root must not hide another opaque JSON contract below it");
+});
+
+test("nullable runtime branches stay nullable in the first typed output batch", () => {
+  const expected = new Map([
+    ["BmsPosSessionResult.location", "BmsPosLocationSummary"],
+    ["BmsPosSessionResult.shift", "BmsPosShift"],
+    ["BmsPosScanResult.imageUrl", "String"],
+    ["BmsPosScanResult.promotion", "BmsPosPromotion"],
+    ["BmsPosRestaurantFloorTable.check", "BmsPosRestaurantFloorCheck"],
+    ["BmsPosRestaurantCheck.note", "String"],
+    ["BmsPosRestaurantCheck.openedAt", "String"],
+    ["BmsPosRestaurantCheckItem.lineAmount", "Float"],
+    ["BmsKitchenTicket.orderId", "ID"],
+    ["BmsKitchenTicket.checkId", "ID"],
+    ["BmsPosSaleResult.orderId", "ID"],
+    ["BmsPosSaleResult.reason", "String"],
+    ["BmsPosShiftActionResult.shift", "BmsPosShift"],
+  ]);
+  const actual = new Map<string, string>();
+  for (const path of expected.keys()) {
+    const [typeName, fieldName] = path.split(".");
+    const type = schema().getType(typeName) as any;
+    const field = type?.getFields?.()[fieldName];
+    assert.ok(field, `${path} must exist`);
+    actual.set(path, String(field.type));
+  }
+  assert.deepEqual(actual, expected, "fields absent/null on valid runtime branches cannot be non-null");
 });
 
 test("typed mobile/POS inputs cannot carry tenant, device, acting-tenant, location, or shift authority", () => {
