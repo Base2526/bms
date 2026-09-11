@@ -1,0 +1,50 @@
+# =============================================================
+# ฐานข้อมูลแยกสำหรับทดสอบ migration realtime (9.70 / 9.71 / 9.72)
+# -------------------------------------------------------------
+# ใช้ไฟล์นี้ "เดี่ยว ๆ" ไม่ใช่เป็น override ของ docker-compose.yml — ตั้งใจให้ไม่มีทาง
+# แตะ service, volume หรือพอร์ตของ dev stack ได้เลย แม้พิมพ์คำสั่งผิด
+#
+#   docker compose -f docker-compose.realtime-test.yml up -d
+#   docker compose -f docker-compose.realtime-test.yml down -v     # -v = ทิ้งฐานทั้งก้อน
+#
+# ทำไมต้องแยกเป็น "คนละ instance" ไม่ใช่แค่คนละ database:
+#   `9.70` รัน CREATE ROLE bms_realtime_dispatcher ... BYPASSRLS ซึ่ง **role เป็นของทั้ง
+#   cluster ไม่ใช่ของ database** แยกแค่ database จึงยังไปสร้าง/แก้ role ที่ฐาน dev เห็นด้วย
+#   และ DROP DATABASE ก็ไม่ลบ role นั้นทิ้ง · การมี instance ของตัวเองแปลว่า `down -v`
+#   ครั้งเดียวคืนสภาพได้ 100% ซึ่งเป็นสิ่งที่ต้องการเวลาทดสอบ trigger 27 ตัวที่ยังไม่เคยยิง
+#
+# ⚠️ ฐานนี้ "สร้างจาก db/migrations ไม่ได้" — `1.24__roles.sql` กับ
+# `001_normalize_roles_phase1.sql` นิยามตาราง roles คนละแบบที่อยู่ร่วมกันไม่ได้ ฐานจะสร้าง
+# เสร็จโดยไม่มี error แต่หน้า users/roles พังทั้งหมด (ดู scripts/migration-order-contract)
+# ต้อง restore จาก dump ของฐานที่ใช้งานอยู่จริงเสมอ — ดู docs/architecture/realtime-test-database.md
+# =============================================================
+
+services:
+  postgres-realtime-test:
+    image: postgres:16-alpine
+    container_name: bms-postgres-realtime-test
+    environment:
+      POSTGRES_USER: ${RT_TEST_POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${RT_TEST_POSTGRES_PASSWORD:-realtime_test_only}
+      POSTGRES_DB: ${RT_TEST_POSTGRES_DB:-bms_realtime_test}
+    ports:
+      # 5433 โดยตั้งใจ — ชนกับ dev ที่ 5432 ไม่ได้ และถ้าเผลอชี้ env ผิดจะต่อไม่ติด
+      # ซึ่งดีกว่าต่อติดฐานผิดใบแล้วรัน migration ลงไป
+      - "${RT_TEST_POSTGRES_PORT:-5433}:5432"
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+    volumes:
+      # volume คนละใบกับ `pgdata` ของ dev — ชื่อขึ้นต้นด้วย rt_test_ ให้เห็นชัดใน `docker volume ls`
+      - rt_test_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${RT_TEST_POSTGRES_USER:-app} -d ${RT_TEST_POSTGRES_DB:-bms_realtime_test}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  rt_test_pgdata:
