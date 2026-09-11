@@ -76,9 +76,21 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  // ⚠️ บรรทัดในใบคืนต้องถือ "ราคาที่คืนจริง" ไม่ใช่ราคาป้ายบนใบขาย
+  // ของเดิมเก็บ `line.unitPrice` (ราคาป้าย) คู่กับ `total` ที่หักส่วนลดแล้ว → ใบคืนใบเดียว
+  // มีบรรทัดที่บวกกันแล้วไม่เท่ายอดคืนของตัวเอง
   const selectedLines: MockCartLine[] = sale.lines
-    .map(line => ({ ...line, qty: returnQty[line.sku] ?? 0 }))
+    .map(line => ({
+      ...line,
+      qty: returnQty[line.sku] ?? 0,
+      unitPrice: Math.round(line.unitPrice * netRefundRatio * 100) / 100,
+    }))
     .filter(line => line.qty > 0);
+
+  const canCommit =
+    Boolean(reason.trim()) &&
+    returnPreview.total > 0 &&
+    returnPreview.errors.length === 0;
 
   const commitReturn = (type: 'RETURN' | 'VOID') => {
     if (!reason.trim()) {
@@ -168,11 +180,17 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         onChangeText={setReason}
         placeholder="เหตุผลคืนสินค้า/void"
         placeholderTextColor={colors.textSoft}
-        style={[styles.input, { borderColor: colors.border, color: colors.text }]}
+        style={[
+          styles.input,
+          { borderColor: colors.border, color: colors.text },
+        ]}
       />
       <AmountRow label="ยอดคืนก่อนยืนยัน" value={returnPreview.total} />
       {returnPreview.errors.map(error => (
-        <Text key={error} style={[typography.captionStrong, { color: colors.danger }]}>
+        <Text
+          key={error}
+          style={[typography.captionStrong, { color: colors.danger }]}
+        >
           {error}
         </Text>
       ))}
@@ -181,22 +199,23 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         sale.payments,
         priorAllocations,
       ).map(allocation => (
-          <Text
-            key={`${allocation.method}-${allocation.amount}`}
-            style={[typography.caption, { color: colors.textMuted }]}
-          >
-            {paymentMethodLabel(allocation.method)} ฿{allocation.amount.toFixed(2)}
-            {' · '}
-            {allocation.status === 'COMPLETED'
-              ? 'สำเร็จทันที'
-              : 'รอยืนยันการคืนเงิน'}
-          </Text>
-        ))}
+        <Text
+          key={`${allocation.method}-${allocation.amount}`}
+          style={[typography.caption, { color: colors.textMuted }]}
+        >
+          {paymentMethodLabel(allocation.method)} ฿
+          {allocation.amount.toFixed(2)}
+          {' · '}
+          {allocation.status === 'COMPLETED'
+            ? 'สำเร็จทันที'
+            : 'รอยืนยันการคืนเงิน'}
+        </Text>
+      ))}
       <Button
         label="คืนสินค้าที่เลือก"
         accessibilityLabel="ยืนยันคืนสินค้าที่เลือกแบบทดสอบ"
         fullWidth
-        disabled={returnPreview.total <= 0 || returnPreview.errors.length > 0}
+        disabled={!canCommit}
         style={{ marginTop: spacing.md }}
         onPress={() => commitReturn('RETURN')}
       />
@@ -213,6 +232,16 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           )
         }
         onPress={() => {
+          // ⚠️ ช่อง "เหตุผล" อยู่บนการ์ดนี้ ซึ่งอยู่ *หลัง* overlay ของโมดัล PIN
+          // ถ้าเปิดโมดัลทั้งที่ยังไม่มีเหตุผล คนกดจะพิมพ์ PIN เสร็จแล้วเพิ่งโดนเด้งว่า
+          // ต้องระบุเหตุผล — โดยไม่มีช่องให้กรอกในโมดัลนั้น = ทางตัน
+          if (!reason.trim()) {
+            Alert.alert(
+              'ต้องระบุเหตุผลก่อน',
+              'กรอกเหตุผลของการ void ในช่องด้านบน แล้วกดอีกครั้ง',
+            );
+            return;
+          }
           const wholeBill: Record<string, number> = {};
           for (const line of sale.lines) {
             wholeBill[line.sku] = Math.max(
@@ -240,7 +269,10 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             ประวัติคืน/void แยกต่างหาก
           </Text>
           {sale.returns.map(record => (
-            <Text key={record.id} style={[typography.caption, { color: colors.text }]}>
+            <Text
+              key={record.id}
+              style={[typography.caption, { color: colors.text }]}
+            >
               {record.type} · ฿{record.total.toFixed(2)} · {record.reason}
             </Text>
           ))}
@@ -253,7 +285,11 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
     <ScreenContainer>
       <ScreenHeader
         title={sale.receiptNo}
-        subtitle="ใบเสร็จเดิม immutable; return/void เป็นประวัติแยก"
+        subtitle={
+          sale.voided
+            ? 'บิลนี้ถูก void แล้ว — ยอดบนใบขายเดิมยังเป็นยอดตอนขาย'
+            : 'ใบเสร็จเดิม immutable; return/void เป็นประวัติแยก'
+        }
         onBack={() => navigation.goBack()}
       />
       {isTablet ? (
@@ -269,7 +305,10 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       )}
       <Modal transparent visible={voidOpen} animationType="fade">
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setVoidOpen(false)} />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setVoidOpen(false)}
+          />
           <View
             style={[
               styles.modal,
@@ -282,6 +321,14 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 Void แยกจาก Return และใช้ mock PIN ผู้อนุมัติคนที่สอง 9999
+              </Text>
+              <Text style={[typography.body, { color: colors.text }]}>
+                เหตุผล: {reason.trim() || '—'}
+              </Text>
+              <Text
+                style={[typography.captionStrong, { color: colors.danger }]}
+              >
+                ยอดที่จะคืนทั้งบิล ฿{returnPreview.total.toFixed(2)}
               </Text>
               <TextInput
                 value={voidPin}
@@ -300,7 +347,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 accessibilityLabel="ยืนยัน Void ทั้งบิลด้วย PIN ทดสอบ"
                 variant="danger"
                 fullWidth
-                disabled={voidPin !== '9999'}
+                disabled={voidPin !== '9999' || !canCommit}
                 onPress={() => commitReturn('VOID')}
               />
               <Button
@@ -322,7 +369,9 @@ function AmountRow({ label, value }: { label: string; value: number }) {
   const { colors, typography } = useTheme();
   return (
     <View style={styles.row}>
-      <Text style={[typography.body, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[typography.body, { color: colors.textMuted }]}>
+        {label}
+      </Text>
       <Text style={[typography.subtitle, { color: colors.text }]}>
         ฿{value.toFixed(2)}
       </Text>

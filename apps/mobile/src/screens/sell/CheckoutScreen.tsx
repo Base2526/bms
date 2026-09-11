@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   ScrollView,
@@ -13,6 +13,7 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { QtyStepper } from '../../components/QtyStepper';
+import { MoneyField } from '../../components/MoneyField';
 import { SaleConfirmationModal } from '../../components/SaleConfirmationModal';
 import { CheckoutAdjustmentsCard } from '../../components/CheckoutAdjustmentsCard';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -45,11 +46,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const tableId = route.params?.tableId;
   const table = tableId ? mockTables.find(t => t.id === tableId) : undefined;
   const tableSummary = tableId ? checks.summaryFor(tableId) : undefined;
-  const lines = source === 'restaurant' ? tableSummary?.lines ?? [] : cart.lines;
+  const lines =
+    source === 'restaurant' ? tableSummary?.lines ?? [] : cart.lines;
   const subtotal =
-    source === 'restaurant'
-      ? tableSummary?.amountDue ?? 0
-      : cart.subtotal;
+    source === 'restaurant' ? tableSummary?.amountDue ?? 0 : cart.subtotal;
   const total = source === 'restaurant' ? subtotal : cart.total;
   const discounts =
     source === 'restaurant'
@@ -63,6 +63,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [payments, setPayments] = useState<MockPaymentInput[]>([
     { id: 'payment-1', method: 'cash', amount: total, tendered: total },
   ]);
+  // แคชเชียร์แตะช่องชำระเงินเองแล้วหรือยัง — ตราบใดที่ยังไม่แตะ ยอดของช่องทางเดียวต้องเดินตาม
+  // ยอดสุทธิเสมอ
+  //
+  // ⚠️ หน้านี้แก้จำนวนสินค้า/ใส่สมาชิก/ใส่คูปองได้ **ในหน้าเดียวกับที่กรอกเงิน** ของเดิมตั้งยอด
+  // ช่องทางไว้ครั้งเดียวตอน mount แล้วไม่ตามอีกเลย → ขยับจำนวนทีเดียวปุ่มยืนยันก็ล็อกด้วย
+  // "ยังขาด ฿x" จนกว่าจะพิมพ์ยอดใหม่เองทุกครั้ง
+  const [paymentsTouched, setPaymentsTouched] = useState(false);
+  useEffect(() => {
+    if (paymentsTouched) return;
+    setPayments(prev =>
+      prev.length === 1 && prev[0].method === 'cash'
+        ? [{ ...prev[0], amount: total, tendered: total }]
+        : prev,
+    );
+  }, [paymentsTouched, total]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
@@ -73,6 +88,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const itemCount = lines.reduce((n, l) => n + l.qty, 0);
 
   const updatePayment = (id: string, patch: Partial<MockPaymentInput>) => {
+    setPaymentsTouched(true);
     setPayments(prev =>
       prev.map(payment =>
         payment.id === id ? { ...payment, ...patch } : payment,
@@ -81,6 +97,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   };
 
   const addPayment = (method: MockPaymentMethod) => {
+    setPaymentsTouched(true);
     setPayments(prev => [
       ...prev,
       {
@@ -191,7 +208,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       </Text>
       <ScrollView style={{ maxHeight: isTablet ? 360 : 260 }}>
         {payments.map((payment, index) => (
-          <View key={payment.id} style={{ marginTop: spacing.md, gap: spacing.sm }}>
+          <View
+            key={payment.id}
+            style={{ marginTop: spacing.md, gap: spacing.sm }}
+          >
             <View style={styles.line}>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
                 ช่องทาง {index + 1}
@@ -201,9 +221,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   label="ลบ"
                   accessibilityLabel={`ลบช่องทางชำระเงินที่ ${index + 1}`}
                   variant="ghost"
-                  onPress={() =>
-                    setPayments(prev => prev.filter(p => p.id !== payment.id))
-                  }
+                  onPress={() => {
+                    setPaymentsTouched(true);
+                    setPayments(prev => prev.filter(p => p.id !== payment.id));
+                  }}
                 />
               )}
             </View>
@@ -224,7 +245,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 />
               ))}
             </View>
-            <MoneyInput
+            <MoneyField
               label="ยอดช่องทางนี้"
               value={payment.amount}
               onChange={amount => updatePayment(payment.id, { amount })}
@@ -235,7 +256,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   {quickCashAmounts(payment.amount).map(amount => (
                     <Button
                       key={amount}
-                      label={amount === payment.amount ? 'รับพอดี' : `฿${amount}`}
+                      label={
+                        amount === payment.amount ? 'รับพอดี' : `฿${amount}`
+                      }
                       accessibilityLabel={`เงินสดรับ ${amount.toFixed(2)} บาท`}
                       variant="secondary"
                       onPress={() =>
@@ -244,14 +267,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     />
                   ))}
                 </View>
-                <MoneyInput
+                <MoneyField
                   label="เงินสดที่รับ"
                   value={payment.tendered ?? 0}
-                  onChange={tendered =>
-                    updatePayment(payment.id, { tendered })
-                  }
+                  onChange={tendered => updatePayment(payment.id, { tendered })}
                 />
-                <Text style={[typography.captionStrong, { color: colors.success }]}>
+                <Text
+                  style={[typography.captionStrong, { color: colors.success }]}
+                >
                   เงินทอน ฿
                   {calculateCashChange(
                     payment.amount,
@@ -296,13 +319,25 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         <View style={{ gap: spacing.xs, marginBottom: spacing.md }}>
           <AmountRow label="ยอดสินค้า" value={subtotal} />
           {discounts.tierDiscount > 0 && (
-            <AmountRow label="ส่วนลดสมาชิก" value={-discounts.tierDiscount} discount />
+            <AmountRow
+              label="ส่วนลดสมาชิก"
+              value={-discounts.tierDiscount}
+              discount
+            />
           )}
           {discounts.couponDiscount > 0 && (
-            <AmountRow label="ส่วนลดคูปอง" value={-discounts.couponDiscount} discount />
+            <AmountRow
+              label="ส่วนลดคูปอง"
+              value={-discounts.couponDiscount}
+              discount
+            />
           )}
           {discounts.appliedManualDiscount > 0 && (
-            <AmountRow label="ส่วนลดพิเศษ" value={-discounts.appliedManualDiscount} discount />
+            <AmountRow
+              label="ส่วนลดพิเศษ"
+              value={-discounts.appliedManualDiscount}
+              discount
+            />
           )}
         </View>
       )}
@@ -310,7 +345,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />
       <AmountRow label="คงเหลือ" value={validation.remaining} />
       {validation.errors.map(error => (
-        <Text key={error} style={[typography.captionStrong, { color: colors.danger }]}>
+        <Text
+          key={error}
+          style={[typography.captionStrong, { color: colors.danger }]}
+        >
           {error}
         </Text>
       ))}
@@ -332,7 +370,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   return (
     <ScreenContainer>
       <ScreenHeader
-        title={source === 'restaurant' ? `ชำระโต๊ะ ${table?.code ?? '-'}` : 'ชำระเงิน'}
+        title={
+          source === 'restaurant'
+            ? `ชำระโต๊ะ ${table?.code ?? '-'}`
+            : 'ชำระเงิน'
+        }
         subtitle="TEST mock payment เท่านั้น ยังไม่เรียก mutation จริง"
         onBack={() => navigation.goBack()}
       />
@@ -360,34 +402,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         total={total}
         itemCount={itemCount}
         payments={payments}
-        memberName={cart.member?.name}
+        // บิลโต๊ะบันทึก member เป็น null เสมอ (ดู recordSale) — ถ้าโชว์ชื่อสมาชิกที่ค้างอยู่
+        // ในตะกร้าค้าปลีก popup จะยืนยันสิ่งที่ใบเสร็จไม่ได้บันทึก
+        memberName={source === 'restaurant' ? undefined : cart.member?.name}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={completeSale}
       />
     </ScreenContainer>
-  );
-}
-
-function MoneyInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const { colors, typography } = useTheme();
-  return (
-    <TextInput
-      accessibilityLabel={label}
-      value={value ? String(value) : ''}
-      onChangeText={text => onChange(Number(text) || 0)}
-      placeholder={label}
-      placeholderTextColor={colors.textSoft}
-      keyboardType="decimal-pad"
-      style={[styles.input, typography.body, { borderColor: colors.border, color: colors.text }]}
-    />
   );
 }
 
@@ -403,7 +424,9 @@ function AmountRow({
   const { colors, typography } = useTheme();
   return (
     <View style={styles.line}>
-      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>
+        {label}
+      </Text>
       <Text
         style={[
           typography.captionStrong,

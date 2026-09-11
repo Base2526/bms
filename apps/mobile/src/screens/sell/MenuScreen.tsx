@@ -225,7 +225,9 @@ export default function MenuScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('Checkout', { source: 'retail' })}
         />
         <Button
-          label={`บิลพัก${parkedBills.length ? ` (${parkedBills.length})` : ''}`}
+          label={`บิลพัก${
+            parkedBills.length ? ` (${parkedBills.length})` : ''
+          }`}
           accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
           variant="secondary"
           fullWidth
@@ -270,7 +272,9 @@ export default function MenuScreen({ navigation }: Props) {
               label="ไปหน้าชำระเงิน"
               accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
               disabled={cartCount === 0}
-              onPress={() => navigation.navigate('Checkout', { source: 'retail' })}
+              onPress={() =>
+                navigation.navigate('Checkout', { source: 'retail' })
+              }
             />
           </View>
           <View
@@ -282,16 +286,20 @@ export default function MenuScreen({ navigation }: Props) {
             }}
           >
             <Button
-              label={`บิลพัก${parkedBills.length ? ` (${parkedBills.length})` : ''}`}
+              label={`บิลพัก${
+                parkedBills.length ? ` (${parkedBills.length})` : ''
+              }`}
               accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
               variant="secondary"
               fullWidth
               disabled={cartCount === 0 && parkedBills.length === 0}
               onPress={() => setParkOpen(true)}
             />
+            {/* ⚠️ ปุ่มนี้เคยชื่อ "บิลพัก/ประวัติ (N)" โดยที่ N คือจำนวนบิลพักของปุ่มข้างบน
+                แต่กดแล้วไปหน้าประวัติการขายอย่างเดียว — ป้ายบอกงานที่ปุ่มไม่ได้ทำ */}
             <Button
-              label={`บิลพัก/ประวัติ (${parkedBills.length})`}
-              accessibilityLabel="เปิดบิลพักหรือประวัติการขาย"
+              label="ประวัติการขาย"
+              accessibilityLabel="เปิดประวัติการขายล่าสุด"
               variant="ghost"
               fullWidth
               onPress={() => navigation.navigate('SalesHistory')}
@@ -311,7 +319,10 @@ export default function MenuScreen({ navigation }: Props) {
       />
       <Modal transparent visible={parkOpen} animationType="fade">
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setParkOpen(false)} />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setParkOpen(false)}
+          />
           <View
             style={[
               styles.parkModal,
@@ -374,7 +385,12 @@ export default function MenuScreen({ navigation }: Props) {
               )}
               {parkedBills.length > 0 && (
                 <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
-                  <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+                  <Text
+                    style={[
+                      typography.captionStrong,
+                      { color: colors.textMuted },
+                    ]}
+                  >
                     เรียกบิลพัก
                   </Text>
                   {parkedBills.map(bill => (
@@ -397,7 +413,11 @@ export default function MenuScreen({ navigation }: Props) {
                         onPress={() =>
                           Alert.alert('ยืนยันลบบิลพัก', bill.name, [
                             { text: 'ยกเลิก', style: 'cancel' },
-                            { text: 'ลบ', style: 'destructive', onPress: () => deleteParkedBill(bill.id) },
+                            {
+                              text: 'ลบ',
+                              style: 'destructive',
+                              onPress: () => deleteParkedBill(bill.id),
+                            },
                           ])
                         }
                       />

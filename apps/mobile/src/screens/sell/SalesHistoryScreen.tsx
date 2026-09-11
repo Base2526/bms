@@ -6,6 +6,7 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { SearchField } from '../../components/SearchField';
+import { StatusPill } from '../../components/StatusPill';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSales } from '../../state/SalesContext';
 import type { SellStackParamList } from '../../navigation/types';
@@ -62,6 +63,18 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
                   {item.receiptNo}
                 </Text>
+                {/* ⚠️ บิลที่ถูก void/คืนของแล้วต้องบอกตั้งแต่ในลิสต์ — ก่อนหน้านี้หน้าตาเหมือน
+                    บิลปกติทุกประการ คนกดพิมพ์ซ้ำจึงไม่มีทางรู้ว่าใบนี้ไม่ใช่ยอดที่ร้านได้จริง
+                    (บทเรียนเดียวกับใบเสร็จพิมพ์ซ้ำของฝั่งเว็บ) */}
+                {item.voided ? (
+                  <View style={{ marginTop: 4 }}>
+                    <StatusPill label="ถูก void แล้ว" tone="danger" />
+                  </View>
+                ) : item.returns.length > 0 ? (
+                  <View style={{ marginTop: 4 }}>
+                    <StatusPill label="มีการคืนสินค้า" tone="warning" />
+                  </View>
+                ) : null}
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   {item.source === 'restaurant'
                     ? `โต๊ะ ${item.tableCode}`
@@ -77,7 +90,9 @@ export default function SalesHistoryScreen({ navigation }: Props) {
               accessibilityLabel={`เปิดรายละเอียดใบเสร็จ ${item.receiptNo}`}
               fullWidth
               style={{ marginTop: spacing.md }}
-              onPress={() => navigation.navigate('SaleDetail', { saleId: item.id })}
+              onPress={() =>
+                navigation.navigate('SaleDetail', { saleId: item.id })
+              }
             />
           </Card>
         )}

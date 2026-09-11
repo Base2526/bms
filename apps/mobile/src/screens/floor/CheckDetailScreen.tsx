@@ -11,6 +11,7 @@ import { StatusPill, StatusTone } from '../../components/StatusPill';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useChecks } from '../../state/ChecksContext';
+import { useKitchen } from '../../state/KitchenContext';
 import { mockTables } from '../../mocks/floor';
 import type { FloorStackParamList } from '../../navigation/types';
 
@@ -18,6 +19,15 @@ type Props = NativeStackScreenProps<FloorStackParamList, 'CheckDetail'>;
 
 /** แผงบิลฝั่งขวาบนแท็บเล็ต — เหตุผลของเลข 320 เหมือนแผงตะกร้าของแท็บเมนู (ดู MenuScreen) */
 const CHECK_PANEL_WIDTH = 320;
+
+/**
+ * ที่ที่แผงบิลกินจริง = ความกว้างแผง + padding ซ้าย/ขวาของกล่องที่ห่อมันอยู่
+ *
+ * ⚠️ ต่างจากแผงตะกร้าของแท็บเมนู ตรงที่นั่น `width` กับ `padding` อยู่บน View ตัวเดียวกัน
+ * (RN เป็น border-box จึงรวมกันแล้วเท่ากับ 320 พอดี) แต่ที่นี่ padding อยู่บนกล่องชั้นนอก
+ * ถ้าหักแค่ 320 กริดจะคิดคอลัมน์จากพื้นที่ที่กว้างกว่าของจริงราว 32pt
+ */
+const CHECK_PANEL_GUTTER = 16 * 2;
 
 const LINE_STATUS_TONE: Record<string, StatusTone> = {
   NEW: 'warning',
@@ -32,6 +42,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
   const { summaryFor, addItem, decrementItem, sendRound } = useChecks();
+  const { enqueueRound } = useKitchen();
 
   const tableId = route.params.tableId;
   const table = mockTables.find(t => t.id === tableId);
@@ -42,11 +53,21 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
 
   const onSendRound = () => {
     const sent = sendRound(tableId);
-    if (sent > 0)
-      Alert.alert(
-        'ส่งครัวแล้ว',
-        `ส่ง ${sent} รายการเข้าครัวของโต๊ะ ${table?.code ?? ''}`,
-      );
+    if (sent.length === 0) return;
+    // ⚠️ ตั๋วครัวเกิดฝั่ง client ล้วน ๆ ในโครงนี้ — ของจริงต้องออกตั๋วในทรานแซกชันเดียวกับ
+    // การจองสต็อก (enqueueKitchenTicketsInTx ของฝั่งเว็บ) ที่นี่ทำเพื่อให้รอบที่ส่งไป
+    // ไปโผล่บนจอครัวจริง ๆ ไม่ใช่กดแล้วไม่มีอะไรขยับทั้งแอป
+    const ticketCount = enqueueRound(
+      table?.code ?? tableId,
+      sent.map(line => ({ sku: line.sku, name: line.name, qty: line.qty })),
+    );
+    const dishes = sent.reduce((n, line) => n + line.qty, 0);
+    Alert.alert(
+      'ส่งครัวแล้ว',
+      `ส่ง ${dishes} จาน (${ticketCount} ตั๋ว) เข้าครัวของโต๊ะ ${
+        table?.code ?? ''
+      }`,
+    );
   };
 
   const linesList = (
@@ -129,12 +150,10 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         style={{ marginTop: 8 }}
         disabled={hasUnsent || lines.length === 0}
         onPress={() =>
-          navigation
-            .getParent<any>()
-            ?.navigate('SellTab', {
-              screen: 'Checkout',
-              params: { source: 'restaurant', tableId },
-            })
+          navigation.getParent<any>()?.navigate('SellTab', {
+            screen: 'Checkout',
+            params: { source: 'restaurant', tableId },
+          })
         }
       />
       {hasUnsent && (
@@ -215,7 +234,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
               })
             }
             onDecrement={sku => decrementItem(tableId, sku)}
-            areaWidth={width - CHECK_PANEL_WIDTH}
+            areaWidth={width - CHECK_PANEL_WIDTH - CHECK_PANEL_GUTTER}
             artHeight={116}
           />
           <View

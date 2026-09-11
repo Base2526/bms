@@ -244,6 +244,8 @@ export function MenuGrid({
           item ? renderCard(item) : <View style={{ flex: 1 }} />
         }
         ListEmptyComponent={
+          // ⚠️ ไม่มีคำค้น = หมวดนี้ว่างจริง ๆ ห้ามขึ้นว่า 'ไม่พบที่ตรงกับ ""' คู่กับปุ่มล้างคำค้น
+          // ที่กดแล้วไม่เกิดอะไร (ของเดิมขึ้นข้อความนี้ทุกครั้งที่หมวดไหนไม่มีรายการ)
           <View
             style={{
               paddingVertical: spacing.xl,
@@ -252,13 +254,24 @@ export function MenuGrid({
             }}
           >
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              ไม่พบ{catalog.resultNoun}ที่ตรงกับ “{trimmed}”
+              {trimmed
+                ? `ไม่พบ${catalog.resultNoun}ที่ตรงกับ “${trimmed}”`
+                : `หมวด “${category}” ยังไม่มี${catalog.resultNoun}`}
             </Text>
-            <Button
-              label="ล้างคำค้น"
-              variant="secondary"
-              onPress={() => setQuery('')}
-            />
+            {trimmed ? (
+              <Button
+                label="ล้างคำค้น"
+                variant="secondary"
+                onPress={() => setQuery('')}
+              />
+            ) : (
+              <Button
+                label={catalog.categories[0]}
+                accessibilityLabel={`กลับไปหมวด ${catalog.categories[0]}`}
+                variant="secondary"
+                onPress={() => setCategory(catalog.categories[0])}
+              />
+            )}
           </View>
         }
       />

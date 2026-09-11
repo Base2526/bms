@@ -1,26 +1,34 @@
-export type TicketStatus = 'NEW' | 'PREPARING' | 'READY' | 'SERVED';
+import { mockMenuStations } from './menu';
+import type { KitchenTicketItem, TicketStatus } from '../lib/kitchenBoard';
 
-export interface MockKitchenTicket {
+/**
+ * ตั๋วตั้งต้นของจอครัว
+ *
+ * ⚠️ สถานีใช้ลิสต์เดียวกับแคตตาล็อกเมนู (`mockMenuStations`) — ของเดิมประกาศไว้เอง 3 ชื่อ
+ * ขณะที่เมนูมี 4 สถานี ตั๋วของ "ของหวาน" จึงอยู่บนกระดานแต่กรองหาไม่เจอเลยสักครั้ง
+ */
+export const mockKitchenStations = mockMenuStations;
+
+export interface MockKitchenSeedTicket {
   id: string;
   tableCode: string;
   roundNo: number;
   station: string;
   status: TicketStatus;
-  elapsedMinutes: number;
-  items: { name: string; qty: number }[];
+  /** กี่นาทีก่อนตอนเปิดแอป — context แปลงเป็น createdAt จริงตอน mount */
+  minutesAgo: number;
+  items: KitchenTicketItem[];
   note?: string;
 }
 
-export const mockKitchenStations = ['ครัวร้อน', 'ครัวเย็น', 'บาร์เครื่องดื่ม'];
-
-export const mockKitchenTickets: MockKitchenTicket[] = [
+export const mockKitchenSeedTickets: MockKitchenSeedTicket[] = [
   {
     id: 'kt1',
     tableCode: 'T01',
     roundNo: 1,
     station: 'ครัวร้อน',
     status: 'PREPARING',
-    elapsedMinutes: 6,
+    minutesAgo: 6,
     items: [{ name: 'ผัดไทยกุ้งสด', qty: 2 }],
   },
   {
@@ -29,7 +37,7 @@ export const mockKitchenTickets: MockKitchenTicket[] = [
     roundNo: 1,
     station: 'ครัวเย็น',
     status: 'NEW',
-    elapsedMinutes: 1,
+    minutesAgo: 1,
     items: [{ name: 'ส้มตำไทย', qty: 3 }],
     note: 'เผ็ดน้อย 2 ที่',
   },
@@ -39,7 +47,7 @@ export const mockKitchenTickets: MockKitchenTicket[] = [
     roundNo: 1,
     station: 'บาร์เครื่องดื่ม',
     status: 'READY',
-    elapsedMinutes: 4,
+    minutesAgo: 4,
     items: [{ name: 'ชามะนาวเย็น', qty: 2 }],
   },
 ];

@@ -8,6 +8,7 @@ import { NumericKeypad } from '../components/NumericKeypad';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
 import { useDevice } from '../state/DeviceContext';
+import { useSession } from '../state/SessionContext';
 import { displayHost } from '../lib/pairing';
 import {
   mockBranches,
@@ -27,6 +28,7 @@ const PIN_LENGTH = 6;
 export default function LoginScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
+  const { signIn } = useSession();
   const [branch, setBranch] = useState<MockBranch>(mockBranches[0]);
   const [cashier, setCashier] = useState<MockCashier>(mockCashiers[0]);
   const [pin, setPin] = useState('');
@@ -120,7 +122,13 @@ export default function LoginScreen({ navigation }: Props) {
         label="เข้าใช้งาน"
         fullWidth
         disabled={!canSubmit}
-        onPress={() => navigation.replace('Main')}
+        onPress={() => {
+          // ⚠️ ยังไม่ใช่การยืนยันตัวตน — แค่จำไว้ว่าใครกดเข้ามาและสาขาไหน เพื่อให้หน้ากะ/ใบเสร็จ
+          // พูดชื่อเดียวกับที่เลือกไว้ (ก่อนหน้านี้ค่าที่เลือกทั้งคู่ถูกทิ้ง แล้วหน้ากะประกาศชื่อ
+          // ผู้เปิดกะจาก mock ตายตัวซึ่งไม่ตรงกับคนที่เพิ่งล็อกอิน)
+          signIn(branch, cashier);
+          navigation.replace('Main');
+        }}
       />
     </Card>
   );

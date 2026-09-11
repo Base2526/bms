@@ -20,6 +20,21 @@ import {
 // ไม่มี network — ตอนต่อ backend จริงชั้นนี้จะกลายเป็น GraphQL mutation ของบิลโต๊ะ
 // (addRestaurantCheckItem / sendRestaurantKitchenRound) โดยจุดเรียกในหน้าจอไม่ต้องแก้
 
+/**
+ * สถานะของโต๊ะบนผังโต๊ะ
+ *
+ * ⚠️ "ไม่มีบรรทัดแล้ว = ว่าง" ต้องมาก่อนธง CLOSING ที่ mock ตั้งไว้เสมอ
+ * ของเดิมเช็ค CLOSING ก่อน โต๊ะที่ seed เป็น CLOSING (T04) จึงขึ้นว่า "กำลังคิดเงิน" ตลอดไป
+ * **แม้คิดเงินจบและบิลว่างแล้ว** = โต๊ะที่ไม่มีวันกลับมาว่างและเปิดบิลใหม่ไม่ได้
+ */
+export function tableStatusFor(
+  lineCount: number,
+  seededStatus: TableStatus | undefined,
+): TableStatus {
+  if (lineCount === 0) return 'EMPTY';
+  return seededStatus === 'CLOSING' ? 'CLOSING' : 'OCCUPIED';
+}
+
 export interface TableCheckSummary {
   lines: MockCheckLine[];
   amountDue: number;
@@ -36,8 +51,11 @@ interface ChecksContextValue {
     item: { sku: string; name: string; unitPrice: number },
   ) => void;
   decrementItem: (tableId: string, sku: string) => void;
-  /** ส่งครัว = บรรทัด NEW ทั้งหมดกลายเป็น SENT · คืนจำนวนบรรทัดที่ส่งไป */
-  sendRound: (tableId: string) => number;
+  /**
+   * ส่งครัว = บรรทัด NEW ทั้งหมดกลายเป็น SENT · คืน "บรรทัดที่ส่งไป" ไม่ใช่แค่จำนวน
+   * เพราะผู้เรียกต้องเอาไปออกตั๋วครัวต่อ (จำนวนอย่างเดียวบอกไม่ได้ว่าต้องออกตั๋วให้สถานีไหน)
+   */
+  sendRound: (tableId: string) => MockCheckLine[];
   closeCheck: (tableId: string) => void;
 }
 
@@ -105,15 +123,15 @@ export function ChecksProvider({ children }: { children: React.ReactNode }) {
   const sendRound = useCallback(
     (tableId: string) => {
       const lines = byTable[tableId] ?? [];
-      const unsent = lines.filter(l => l.status === 'NEW').length;
-      if (unsent === 0) return 0;
+      const unsent = lines.filter(l => l.status === 'NEW');
+      if (unsent.length === 0) return [];
       setByTable(prev => ({
         ...prev,
         [tableId]: (prev[tableId] ?? []).map(l =>
           l.status === 'NEW' ? { ...l, status: 'SENT' } : l,
         ),
       }));
-      return unsent;
+      return unsent.map(l => ({ ...l, status: 'SENT' as CheckLineStatus }));
     },
     [byTable],
   );
@@ -130,12 +148,7 @@ export function ChecksProvider({ children }: { children: React.ReactNode }) {
       const dishCount = lines.reduce((n, l) => n + l.qty, 0);
       // สถานะมาจากข้อมูลจริงของบิล ไม่ใช่ธงที่ตั้งไว้ตายตัว — เพิ่มรายการให้โต๊ะว่างแล้วผังโต๊ะ
       // ต้องเปลี่ยนเป็น "มีลูกค้า" ทันที ไม่งั้นสองจอบอกคนละเรื่องกัน
-      const status: TableStatus =
-        base?.status === 'CLOSING'
-          ? 'CLOSING'
-          : lines.length > 0
-          ? 'OCCUPIED'
-          : 'EMPTY';
+      const status = tableStatusFor(lines.length, base?.status);
       return {
         lines,
         amountDue,

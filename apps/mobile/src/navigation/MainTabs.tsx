@@ -4,7 +4,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
 import { CartProvider } from '../state/CartContext';
 import { ChecksProvider } from '../state/ChecksContext';
+import { KitchenProvider } from '../state/KitchenContext';
 import { SalesProvider } from '../state/SalesContext';
+import { sessionCashierName, useSession } from '../state/SessionContext';
+import { ShiftProvider } from '../state/ShiftContext';
 import { useStoreMode } from '../state/StoreModeContext';
 import {
   FloorIcon,
@@ -82,6 +85,7 @@ function ShiftNavigator() {
 export function MainTabs() {
   const { colors } = useTheme();
   const { mode } = useStoreMode();
+  const { session } = useSession();
   const sellTitle =
     mode === 'restaurant'
       ? 'เมนูอาหาร'
@@ -92,68 +96,75 @@ export function MainTabs() {
   return (
     // ChecksProvider ครอบทั้งแท็บ — บิลของโต๊ะถูกอ่านจากผังโต๊ะ หน้าบิล และจอสั่งอาหารของโต๊ะ
     // (ต่างจาก CartProvider ที่ผูกอยู่กับ stack ขายกลับบ้านอย่างเดียว)
+    // ⚠️ ลำดับของ provider มีความหมาย: ShiftProvider อ่านบิลจาก SalesProvider เพื่อคิดเงินสด
+    // ในลิ้นชัก จึงต้องอยู่ข้างใน · KitchenProvider อยู่นอก Tab.Navigator เพราะตั๋วครัวต้องข้าม
+    // แท็บได้ (ส่งครัวจากแท็บผังโต๊ะ แล้วไปเห็นที่แท็บครัว)
     <SalesProvider>
-      <CartProvider>
-        <ChecksProvider>
-      <Tab.Navigator
-        key={mode}
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarStyle: {
-            backgroundColor: colors.surface,
-            borderTopColor: colors.border,
-          },
-        }}
-      >
-        <Tab.Screen
-          name="SellTab"
-          component={SellNavigator}
-          options={{
-            title: sellTitle,
-            tabBarIcon: ({ color, size }) => (
-              <SellIcon color={color} size={size} />
-            ),
-          }}
-        />
-        {mode === 'restaurant' && (
-          <>
-            <Tab.Screen
-              name="FloorTab"
-              component={FloorNavigator}
-              options={{
-                title: 'ผังโต๊ะ',
-                tabBarIcon: ({ color, size }) => (
-                  <FloorIcon color={color} size={size} />
-                ),
-              }}
-            />
-            <Tab.Screen
-              name="KitchenTab"
-              component={KitchenNavigator}
-              options={{
-                title: 'ครัว',
-                tabBarIcon: ({ color, size }) => (
-                  <KitchenIcon color={color} size={size} />
-                ),
-              }}
-            />
-          </>
-        )}
-        <Tab.Screen
-          name="ShiftTab"
-          component={ShiftNavigator}
-          options={{
-            title: 'กะ',
-            tabBarIcon: ({ color, size }) => (
-              <ShiftIcon color={color} size={size} />
-            ),
-          }}
-        />
-      </Tab.Navigator>
-        </ChecksProvider>
-      </CartProvider>
+      <ShiftProvider openedByName={sessionCashierName(session)}>
+        <CartProvider>
+          <ChecksProvider>
+            <KitchenProvider>
+              <Tab.Navigator
+                key={mode}
+                screenOptions={{
+                  headerShown: false,
+                  tabBarActiveTintColor: colors.primary,
+                  tabBarInactiveTintColor: colors.textMuted,
+                  tabBarStyle: {
+                    backgroundColor: colors.surface,
+                    borderTopColor: colors.border,
+                  },
+                }}
+              >
+                <Tab.Screen
+                  name="SellTab"
+                  component={SellNavigator}
+                  options={{
+                    title: sellTitle,
+                    tabBarIcon: ({ color, size }) => (
+                      <SellIcon color={color} size={size} />
+                    ),
+                  }}
+                />
+                {mode === 'restaurant' && (
+                  <>
+                    <Tab.Screen
+                      name="FloorTab"
+                      component={FloorNavigator}
+                      options={{
+                        title: 'ผังโต๊ะ',
+                        tabBarIcon: ({ color, size }) => (
+                          <FloorIcon color={color} size={size} />
+                        ),
+                      }}
+                    />
+                    <Tab.Screen
+                      name="KitchenTab"
+                      component={KitchenNavigator}
+                      options={{
+                        title: 'ครัว',
+                        tabBarIcon: ({ color, size }) => (
+                          <KitchenIcon color={color} size={size} />
+                        ),
+                      }}
+                    />
+                  </>
+                )}
+                <Tab.Screen
+                  name="ShiftTab"
+                  component={ShiftNavigator}
+                  options={{
+                    title: 'กะ',
+                    tabBarIcon: ({ color, size }) => (
+                      <ShiftIcon color={color} size={size} />
+                    ),
+                  }}
+                />
+              </Tab.Navigator>
+            </KitchenProvider>
+          </ChecksProvider>
+        </CartProvider>
+      </ShiftProvider>
     </SalesProvider>
   );
 }
