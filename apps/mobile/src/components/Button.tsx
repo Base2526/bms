@@ -13,6 +13,7 @@ export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 interface Props {
   label: string;
   onPress?: () => void;
+  accessibilityLabel?: string;
   variant?: ButtonVariant;
   disabled?: boolean;
   loading?: boolean;
@@ -25,6 +26,7 @@ interface Props {
 export function Button({
   label,
   onPress,
+  accessibilityLabel,
   variant = 'primary',
   disabled,
   loading,
@@ -48,6 +50,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: isDisabled }}
       onPress={isDisabled ? undefined : onPress}
       style={({ pressed }) => [

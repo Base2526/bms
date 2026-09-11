@@ -1,5 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Button } from '../../components/Button';
@@ -30,9 +40,21 @@ export const CART_PANEL_WIDTH = 320;
 export default function MenuScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
-  const { lines, addItem, decrementItem, total } = useCart();
+  const {
+    lines,
+    addItem,
+    decrementItem,
+    total,
+    parkedBills,
+    parkCurrentBill,
+    resumeParkedBill,
+    deleteParkedBill,
+  } = useCart();
   const { mode } = useStoreMode();
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [parkOpen, setParkOpen] = useState(false);
+  const [parkName, setParkName] = useState('');
+  const [parkNote, setParkNote] = useState('');
   const [lastScanned, setLastScanned] = useState('');
 
   const catalog =
@@ -59,7 +81,7 @@ export default function MenuScreen({ navigation }: Props) {
   const grid = (
     <MenuGrid
       qtyBySku={qtyBySku}
-      onAdd={item => addItem(item.sku, item.name, item.price)}
+      onAdd={item => addItem(item.sku, item.name, item.price, item.barcode)}
       onDecrement={sku => decrementItem(sku)}
       areaWidth={isTablet ? width - CART_PANEL_WIDTH : width}
       artHeight={isTablet ? 116 : 96}
@@ -80,8 +102,15 @@ export default function MenuScreen({ navigation }: Props) {
           </View>
           <Button
             label="▥ สแกนบาร์โค้ด"
+            accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ดทดสอบ"
             variant="secondary"
             onPress={() => setScannerOpen(true)}
+          />
+          <Button
+            label="ประวัติ"
+            accessibilityLabel="เปิดประวัติการขายล่าสุด"
+            variant="secondary"
+            onPress={() => navigation.navigate('SalesHistory')}
           />
         </View>
       }
@@ -156,7 +185,9 @@ export default function MenuScreen({ navigation }: Props) {
                 qty={item.qty}
                 itemName={item.name}
                 variant="outline"
-                onIncrement={() => addItem(item.sku, item.name, item.unitPrice)}
+                onIncrement={() =>
+                  addItem(item.sku, item.name, item.unitPrice, item.barcode)
+                }
                 onDecrement={() => decrementItem(item.sku)}
               />
               <Text style={[typography.caption, { color: colors.textSoft }]}>
@@ -188,9 +219,19 @@ export default function MenuScreen({ navigation }: Props) {
         </View>
         <Button
           label="ไปหน้าชำระเงิน"
+          accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
           fullWidth
           disabled={cartCount === 0}
-          onPress={() => navigation.navigate('Checkout')}
+          onPress={() => navigation.navigate('Checkout', { source: 'retail' })}
+        />
+        <Button
+          label="พักบิล"
+          accessibilityLabel="พักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
+          variant="secondary"
+          fullWidth
+          disabled={cartCount === 0}
+          style={{ marginTop: spacing.sm }}
+          onPress={() => setParkOpen(true)}
         />
       </View>
     </View>
@@ -227,8 +268,33 @@ export default function MenuScreen({ navigation }: Props) {
             </View>
             <Button
               label="ไปหน้าชำระเงิน"
+              accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
               disabled={cartCount === 0}
-              onPress={() => navigation.navigate('Checkout')}
+              onPress={() => navigation.navigate('Checkout', { source: 'retail' })}
+            />
+          </View>
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              paddingHorizontal: spacing.lg,
+              paddingBottom: spacing.md,
+              gap: spacing.sm,
+            }}
+          >
+            <Button
+              label="พักบิล"
+              accessibilityLabel="พักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
+              variant="secondary"
+              fullWidth
+              disabled={cartCount === 0}
+              onPress={() => setParkOpen(true)}
+            />
+            <Button
+              label={`บิลพัก/ประวัติ (${parkedBills.length})`}
+              accessibilityLabel="เปิดบิลพักหรือประวัติการขาย"
+              variant="ghost"
+              fullWidth
+              onPress={() => navigation.navigate('SalesHistory')}
             />
           </View>
         </>
@@ -238,11 +304,100 @@ export default function MenuScreen({ navigation }: Props) {
         catalog={catalog}
         onCancel={() => setScannerOpen(false)}
         onScanned={item => {
-          addItem(item.sku, item.name, item.price);
+          addItem(item.sku, item.name, item.price, item.barcode);
           setLastScanned(item.name);
           setScannerOpen(false);
         }}
       />
+      <Modal transparent visible={parkOpen} animationType="fade">
+        <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setParkOpen(false)} />
+          <View
+            style={[
+              styles.parkModal,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                padding: spacing.lg,
+              },
+            ]}
+          >
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Text style={[typography.subtitle, { color: colors.text }]}>
+                พักบิล TEST
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                เก็บใน memory เท่านั้น และไม่เก็บ PIN ผู้อนุมัติส่วนลด
+              </Text>
+              <TextInput
+                value={parkName}
+                onChangeText={setParkName}
+                placeholder="ชื่อบิล เช่น ลูกค้าเสื้อแดง"
+                placeholderTextColor={colors.textSoft}
+                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              />
+              <TextInput
+                value={parkNote}
+                onChangeText={setParkNote}
+                placeholder="หมายเหตุ"
+                placeholderTextColor={colors.textSoft}
+                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              />
+              <Button
+                label="ยืนยันพักบิล"
+                accessibilityLabel="ยืนยันพักบิลทดสอบ"
+                fullWidth
+                onPress={() => {
+                  parkCurrentBill(parkName, parkNote);
+                  setParkName('');
+                  setParkNote('');
+                  setParkOpen(false);
+                }}
+              />
+              {parkedBills.length > 0 && (
+                <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
+                  <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+                    เรียกบิลพัก
+                  </Text>
+                  {parkedBills.map(bill => (
+                    <View key={bill.id} style={{ gap: spacing.xs }}>
+                      <Button
+                        label={`${bill.name} · ${bill.lines.length} รายการ`}
+                        accessibilityLabel={`เรียกบิลพัก ${bill.name}`}
+                        variant="secondary"
+                        fullWidth
+                        onPress={() => {
+                          resumeParkedBill(bill.id);
+                          setParkOpen(false);
+                        }}
+                      />
+                      <Button
+                        label="ลบบิลพัก"
+                        accessibilityLabel={`ลบบิลพัก ${bill.name}`}
+                        variant="danger"
+                        fullWidth
+                        onPress={() =>
+                          Alert.alert('ยืนยันลบบิลพัก', bill.name, [
+                            { text: 'ยกเลิก', style: 'cancel' },
+                            { text: 'ลบ', style: 'destructive', onPress: () => deleteParkedBill(bill.id) },
+                          ])
+                        }
+                      />
+                    </View>
+                  ))}
+                </View>
+              )}
+              <Button
+                label="ปิด"
+                variant="ghost"
+                fullWidth
+                style={{ marginTop: spacing.md }}
+                onPress={() => setParkOpen(false)}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -259,5 +414,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  parkModal: {
+    width: '92%',
+    maxWidth: 520,
+    maxHeight: '84%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+  },
+  input: {
+    minHeight: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginVertical: 8,
   },
 });

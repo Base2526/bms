@@ -166,10 +166,11 @@ wrong, and update the doc in the same change.
   log or render the full token, never send it over cleartext (loopback HTTP is dev-only), and derive
   tenant/branch only from `/api/pos/session`. A paired device is still not an authenticated cashier;
   mock PIN entry must not be described as authorization or used to enable a real mutation. Keep the
-  sell/table/kitchen/shift flows disconnected until the server schema and cashier-session contract
-  are explicitly closed. Settings' general/pharmacy/restaurant selector is preview-only and must
-  never override the server's archetype or pharmacy policy. Member/coupon/manual-discount math and
-  barcode resolution in this scaffold are test previews, never server authority. See [apps/mobile/README.md](apps/mobile/README.md) and
+  sell/table/kitchen/shift/payment/return flows disconnected until the server schema and cashier-session
+  contract are explicitly closed. Settings' general/pharmacy/restaurant selector is preview-only and must
+  never override the server's archetype or pharmacy policy. Member/coupon/manual-discount, split-payment,
+  parked-bill, sale-history, refund and void math in this scaffold are test previews, never server
+  authority; a resumed parked bill must never retain an approver PIN. See [apps/mobile/README.md](apps/mobile/README.md) and
   [docs/business/pos.md § Native POS client](docs/business/pos.md#native-pos-client-scaffold).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
   second money path: a check reserves stock by creating one PENDING POS order when a kitchen round is

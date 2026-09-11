@@ -58,17 +58,18 @@ creation) not yet reflected in this summary — see [CLAUDE.local.md](CLAUDE.loc
 per-migration build/verify/production status of each.
 
 **Native POS scaffold (2026-09-11, no migration)** — `apps/mobile/` is now a bare React Native
-0.87 staff client, not Expo. Group A provides ten responsive phone/tablet screens, shared theme and
+0.87 staff client, not Expo. Group A provides responsive phone/tablet screens, shared theme and
 navigation, an in-memory Settings preview for general/pharmacy/restaurant mock surfaces,
-mock-backed sell/table/kitchen/shift flows, checkout previews for member/coupon/approved manual
-discount, a mock barcode scan harness, plus real device pairing: `bmspos://` deep
-links, token storage in iOS Keychain / Android Keystore, and device identity verification through
-`GET /api/pos/session`. Tenant and branch come only from the server-authenticated device token; the
-app neither accepts nor stores a client-selected tenant. Both iOS Simulator and Android debug builds
-pass. This does **not** make the app a production register: cashier login, authoritative catalog,
-orders, payments, stock, kitchen updates and realtime remain disconnected until the next POS
-schema/auth contract is stable. Details and commands: [apps/mobile/README.md](apps/mobile/README.md)
-and [business/pos.md § Native POS client](docs/business/pos.md#native-pos-client-scaffold).
+mock-backed sell/table/kitchen/shift flows, split-payment checkout, parked bills, sale history,
+return/void previews, restaurant table checkout through the same payment workflow, a mock barcode
+scan harness, plus real device pairing: `bmspos://` deep links, token storage in iOS Keychain /
+Android Keystore, and device identity verification through `GET /api/pos/session`. Tenant and
+branch come only from the server-authenticated device token; the app neither accepts nor stores a
+client-selected tenant. This does **not** make the app a production register: cashier login,
+authoritative catalog, server discount/payment/refund previews, orders, stock, kitchen updates,
+hardware and realtime remain disconnected until the next POS schema/auth contract is stable. Details
+and commands: [apps/mobile/README.md](apps/mobile/README.md) and
+[business/pos.md § Native POS client](docs/business/pos.md#native-pos-client-scaffold).
 
 **REST surface hardening (2026-08-24, no migration)** — `middleware.ts` only guards `/admin/**`, so
 every route under `/api/**` needs its own check. Twenty-three single-tenant-era routes had none:

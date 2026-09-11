@@ -4,6 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
+import {
+  calculateCashChange,
+  paymentMethodLabel,
+  type MockPaymentInput,
+} from '../lib/paymentMath';
 
 interface Props {
   visible: boolean;
@@ -11,7 +16,7 @@ interface Props {
   discountTotal: number;
   total: number;
   itemCount: number;
-  paymentMethod: string;
+  payments: MockPaymentInput[];
   memberName?: string;
   onCancel: () => void;
   onConfirm: () => void;
@@ -29,7 +34,7 @@ export function SaleConfirmationModal({
   discountTotal,
   total,
   itemCount,
-  paymentMethod,
+  payments,
   memberName,
   onCancel,
   onConfirm,
@@ -146,7 +151,31 @@ export function SaleConfirmationModal({
             <View
               style={[styles.divider, { backgroundColor: colors.border }]}
             />
-            <SummaryRow label="วิธีชำระเงิน" value={paymentMethod} />
+            {payments.map((payment, index) => (
+              <React.Fragment key={payment.id}>
+                <SummaryRow
+                  label={`ชำระ ${index + 1}`}
+                  value={`${paymentMethodLabel(payment.method)} ฿${payment.amount.toFixed(2)}`}
+                />
+                {payment.method === 'cash' ? (
+                  <SummaryRow
+                    label="เงินทอน"
+                    value={`฿${calculateCashChange(
+                      payment.amount,
+                      payment.tendered ?? 0,
+                    ).toFixed(2)}`}
+                  />
+                ) : (
+                  <SummaryRow
+                    label="เลขอ้างอิง"
+                    value={payment.reference?.trim() || '-'}
+                  />
+                )}
+                <View
+                  style={[styles.divider, { backgroundColor: colors.border }]}
+                />
+              </React.Fragment>
+            ))}
             {memberName && (
               <>
                 <View

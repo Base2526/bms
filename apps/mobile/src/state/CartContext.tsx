@@ -18,7 +18,12 @@ import {
 //  โครงนี้ยังไม่ต่อ backend จึงยังใช้ราคาจาก mock ได้ชั่วคราว ต้องแก้ตอนต่อ GraphQL จริง)
 interface CartContextValue {
   lines: MockCartLine[];
-  addItem: (sku: string, name: string, unitPrice: number) => void;
+  addItem: (
+    sku: string,
+    name: string,
+    unitPrice: number,
+    barcode?: string,
+  ) => void;
   /** ลดทีละ 1 — เหลือ 0 แล้วบรรทัดหายไปเอง ไม่ต้องมีปุ่มลบแยกอีกปุ่ม */
   decrementItem: (sku: string) => void;
   removeLine: (sku: string) => void;
@@ -29,6 +34,10 @@ interface CartContextValue {
   setCoupon: (coupon: MockCoupon | null) => void;
   manualDiscount: ManualDiscount | null;
   setManualDiscount: (discount: ManualDiscount | null) => void;
+  parkedBills: ParkedBill[];
+  parkCurrentBill: (name: string, note: string) => void;
+  resumeParkedBill: (id: string) => void;
+  deleteParkedBill: (id: string) => void;
   subtotal: number;
   tierDiscount: number;
   couponDiscount: number;
@@ -39,6 +48,18 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+export interface ParkedBill {
+  id: string;
+  name: string;
+  note: string;
+  createdAt: string;
+  lines: MockCartLine[];
+  member: MockMember | null;
+  coupon: MockCoupon | null;
+  pointsUsed: number;
+  manualDiscount: Omit<ManualDiscount, 'approverName'> | null;
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<MockCartLine[]>([]);
   const [member, setMember] = useState<MockMember | null>(null);
@@ -46,14 +67,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [manualDiscount, setManualDiscount] = useState<ManualDiscount | null>(
     null,
   );
+  const [parkedBills, setParkedBills] = useState<ParkedBill[]>([]);
 
-  const addItem = (sku: string, name: string, unitPrice: number) => {
+  const addItem = (
+    sku: string,
+    name: string,
+    unitPrice: number,
+    barcode?: string,
+  ) => {
     setLines(prev => {
       const existing = prev.find(l => l.sku === sku);
       if (existing) {
         return prev.map(l => (l.sku === sku ? { ...l, qty: l.qty + 1 } : l));
       }
-      return [...prev, { sku, name, unitPrice, qty: 1 }];
+      return [...prev, { sku, name, unitPrice, barcode, qty: 1 }];
     });
   };
 
@@ -72,6 +99,44 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCoupon(null);
     setManualDiscount(null);
   };
+
+  const parkCurrentBill = (name: string, note: string) => {
+    if (lines.length === 0) return;
+    setParkedBills(prev => [
+      {
+        id: `parked-${Date.now()}`,
+        name: name.trim() || `บิลพัก ${prev.length + 1}`,
+        note: note.trim(),
+        createdAt: new Date().toISOString(),
+        lines: lines.map(line => ({ ...line })),
+        member,
+        coupon,
+        pointsUsed: 0,
+        manualDiscount: manualDiscount
+          ? {
+              amount: manualDiscount.amount,
+              reason: manualDiscount.reason,
+            }
+          : null,
+      },
+      ...prev,
+    ]);
+    clear();
+  };
+
+  const resumeParkedBill = (id: string) => {
+    const parked = parkedBills.find(bill => bill.id === id);
+    if (!parked) return;
+    setLines(parked.lines.map(line => ({ ...line })));
+    setMember(parked.member);
+    setCoupon(parked.coupon);
+    // ห้ามเก็บ PIN/ผู้อนุมัติของส่วนลดพิเศษในบิลพัก: resume แล้วต้องอนุมัติใหม่
+    setManualDiscount(null);
+    setParkedBills(prev => prev.filter(bill => bill.id !== id));
+  };
+
+  const deleteParkedBill = (id: string) =>
+    setParkedBills(prev => prev.filter(bill => bill.id !== id));
 
   const subtotal = useMemo(
     () => lines.reduce((sum, l) => sum + l.qty * l.unitPrice, 0),
@@ -110,6 +175,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCoupon,
         manualDiscount,
         setManualDiscount,
+        parkedBills,
+        parkCurrentBill,
+        resumeParkedBill,
+        deleteParkedBill,
         subtotal,
         tierDiscount: discounts.tierDiscount,
         couponDiscount: discounts.couponDiscount,

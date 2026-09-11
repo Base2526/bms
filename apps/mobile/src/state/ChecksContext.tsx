@@ -38,6 +38,7 @@ interface ChecksContextValue {
   decrementItem: (tableId: string, sku: string) => void;
   /** ส่งครัว = บรรทัด NEW ทั้งหมดกลายเป็น SENT · คืนจำนวนบรรทัดที่ส่งไป */
   sendRound: (tableId: string) => number;
+  closeCheck: (tableId: string) => void;
 }
 
 const ChecksContext = createContext<ChecksContextValue | null>(null);
@@ -117,6 +118,10 @@ export function ChecksProvider({ children }: { children: React.ReactNode }) {
     [byTable],
   );
 
+  const closeCheck = useCallback((tableId: string) => {
+    setByTable(prev => ({ ...prev, [tableId]: [] }));
+  }, []);
+
   const summaryFor = useCallback(
     (tableId: string): TableCheckSummary => {
       const lines = byTable[tableId] ?? EMPTY;
@@ -143,8 +148,15 @@ export function ChecksProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<ChecksContextValue>(
-    () => ({ linesFor, summaryFor, addItem, decrementItem, sendRound }),
-    [linesFor, summaryFor, addItem, decrementItem, sendRound],
+    () => ({
+      linesFor,
+      summaryFor,
+      addItem,
+      decrementItem,
+      sendRound,
+      closeCheck,
+    }),
+    [linesFor, summaryFor, addItem, decrementItem, sendRound, closeCheck],
   );
 
   return (

@@ -13,8 +13,8 @@
   ไม่เขียนทับ `businessArchetype` จาก server และไม่ใช้เป็นสิทธิ์ขายหรืออนุมัติยา
 - ✅ Design system: `src/theme/` — สี/spacing/typography ยกมาจาก `apps/web/app/globals.css` ตรง ๆ
   เพื่อให้ RN กับเว็บ POS เดิมมีภาษาสีเดียวกัน (ดูคอมเมนต์ใน `src/theme/colors.ts`)
-- ✅ หน้าจอทั้ง 10 หน้า (Login, ตั้งค่า/จับคู่เครื่อง, เมนู/ตะกร้า, ชำระเงิน, ใบเสร็จ, ผังโต๊ะ, บิลโต๊ะ, สั่งอาหารเข้าโต๊ะ,
-  จอครัว, กะ/ลิ้นชัก)
+- ✅ หน้าจอหลัก + workflow mock ถัดไป (Login, ตั้งค่า/จับคู่เครื่อง, เมนู/ตะกร้า, ชำระเงิน, ใบเสร็จ,
+  ประวัติขาย/รายละเอียดใบเสร็จ, return/void, ผังโต๊ะ, บิลโต๊ะ, สั่งอาหารเข้าโต๊ะ, จอครัว, กะ/ลิ้นชัก)
   ทำงานได้ด้วย mock data ในหน่วยความจำ ส่วนเส้นขาย/ครัว/ผังโต๊ะยังไม่เรียก network
 - ✅ Device pairing ชั้นฐาน: รับลิงก์ `bmspos://pair`/ลิงก์ POS/token, เก็บ token ใน iOS Keychain หรือ Android
   Keystore ผ่าน `react-native-keychain`, และตรวจตัวตนเครื่องกับ `GET /api/pos/session` โดย tenant/สาขามาจาก
@@ -32,7 +32,19 @@
   Product Policy ฝั่ง client
 - ✅ แก้จำนวนได้ทุกที่ที่เห็นจำนวน (`QtyStepper`) — บนการ์ดเมนู, ในแผงตะกร้า และในหน้าชำระเงิน
   · กด − จนเหลือ 0 = บรรทัดหลุดออกจากตะกร้าเอง จึงไม่มีปุ่มลบซ้อนอีกปุ่มให้ต้องเลือก
-- ✅ ก่อนบันทึกการขายมี popup สรุปยอดสุทธิ วิธีชำระเงิน และจำนวนสินค้า พร้อมคำเตือนว่าหลังยืนยัน
+- ✅ Checkout mock รองรับเงินสด/QR/บัตรเครดิตและ split payment: เงินสดกรอกยอดรับจริง มีปุ่มจำนวนด่วน
+  และ "รับพอดี", QR/Card ต้องใส่เลขอ้างอิง mock, ยอดรวมทุกช่องทางต้องเท่ากับยอดสุทธิจึงยืนยันได้,
+  แสดงยอดคงเหลือ/validation และ popup ยืนยันแสดงทุกช่องทางพร้อมเงินทอน/เลขอ้างอิง
+- ✅ พักบิล retail ใน memory พร้อมชื่อ/หมายเหตุ เรียกกลับมาได้ และลบผ่าน confirmation popup;
+  snapshot เก็บสินค้า สมาชิก คูปอง คะแนน mock และส่วนลดพิเศษ แต่ **ไม่เก็บ PIN/ผู้อนุมัติ** —
+  resume แล้วต้องอนุมัติส่วนลดพิเศษใหม่
+- ✅ ประวัติขายล่าสุดใน memory ค้นหาได้ด้วยเลขใบเสร็จ ชื่อลูกค้า เลขสมาชิก SKU/ชื่อสินค้า เปิดดูรายละเอียด
+  ใบเสร็จ และกดพิมพ์ซ้ำ mock โดยขึ้นชัดเจนว่ายังไม่ต่อเครื่องพิมพ์จริง
+- ✅ Return/Void mock จากรายละเอียดใบเสร็จ: คืนทั้งบิลหรือเลือกบางรายการได้ จำนวนคืนไม่เกินที่ขาย,
+  แสดงยอดคืนก่อนยืนยัน, refund allocation อ้างอิงช่องทางชำระเดิม เงินสดสำเร็จทันที ส่วน QR/Card
+  เป็น "รอยืนยันการคืนเงิน"; Void แยกจาก Return ต้องมีเหตุผลและ PIN ผู้อนุมัติคนที่สอง (`9999`)
+  และไม่เก็บ PIN ใน state ถาวร
+- ✅ ก่อนบันทึกการขายมี popup สรุปยอดสุทธิ วิธีชำระเงินทุกช่องทาง และจำนวนสินค้า พร้อมคำเตือนว่าหลังยืนยัน
   ต้องแก้ผ่านรายการคืน; บนแท็บเล็ตเป็น dialog กลางจอ และบนมือถือเป็น bottom sheet
 - ✅ หน้า checkout ทดสอบสมาชิก คูปอง และส่วนลดพิเศษได้ครบถึงใบเสร็จ: tier discount ใช้อัตโนมัติ,
   คูปองตรวจสมาชิก/ยอดขั้นต่ำ, ส่วนลดพิเศษต้องมีเหตุผลกับ PIN ผู้อนุมัติแยก (`9999` ใน mock)
@@ -51,6 +63,8 @@
     อาจทำเสร็จแล้ว การลบเงียบ ๆ จากบิลคือของหายโดยไม่มีใครรู้
   - "ส่งครัว" พลิก `NEW → SENT` ทั้งรอบ · **คิดเงินกดไม่ได้ตราบใดที่ยังมีบรรทัด `NEW`** และผังโต๊ะ
     ขึ้นป้าย "ยังไม่ส่งครัว" ให้เห็นตั้งแต่หน้าแรก (กติกาเดียวกับฝั่งเว็บ)
+  - "คิดเงิน" จากบิลโต๊ะไป checkout workflow ชุดเดียวกับ retail โดยใช้บิลโต๊ะเดิมใน `ChecksContext`
+    ไม่ seed cart ใหม่; จ่ายสำเร็จแบบ mock แล้วปิดบิลและโต๊ะกลับเป็นว่าง
 - ✅ Responsive/tablet — **ทุกหน้าใช้พื้นที่จริงของจอไอแพด ไม่มีหน้าไหนเป็นคอลัมน์ขนาดมือถือกลางจอ**
   (`src/theme/useResponsive.ts` + `useWindowDimensions`):
   1. กริด (เมนู/ผังโต๊ะ/ตั๋วครัว) ปรับคอลัมน์ตามความกว้าง **ของพื้นที่กริดจริง** (`columnsForWidth`)
@@ -95,12 +109,16 @@ apps/mobile/
                                   DishArt (รูปอาหาร SVG), icons/TabIcons (SVG)
     navigation/                — RootNavigator (Login/Main) + MainTabs (4 แท็บ, แต่ละแท็บมี stack ของตัวเอง)
     state/CartContext.tsx       — ตะกร้าขายกลับบ้าน (scope แค่ stack ขาย)
+                                  + parked bills ใน memory (ไม่เก็บ PIN/approver)
     state/StoreModeContext.tsx  — โหมด preview 3 แบบ; ไม่ใช่ authority จาก backend
     state/ChecksContext.tsx     — บิลรายโต๊ะ (scope ทั้งแท็บ — ผังโต๊ะ/บิล/จอสั่งอาหารอ่านชุดเดียวกัน)
+    state/SalesContext.tsx      — sale/return/void ledger จำลองใน memory; ใบเสร็จเดิม immutable
+    lib/paymentMath.ts          — pure split-payment validation/change/quick cash
+    lib/returnMath.ts           — pure return total + refund allocation ไปช่องทางเดิม
     screens/
       LoginScreen.tsx           — เลือกสาขา/ผู้ปฏิบัติงาน + PIN keypad (ยังไม่ยืนยันตัวตนจริง)
       settings/                 — จับคู่/เลิกจับคู่เครื่อง + ตรวจ device token กับ server
-      sell/                     — Menu → Checkout → Receipt (ค้าปลีก)
+      sell/                     — Menu → Checkout → Receipt → SalesHistory/SaleDetail (ค้าปลีก + restaurant checkout)
       floor/                    — Floor (ผังโต๊ะ) → CheckDetail (บิลโต๊ะ) → TableMenu (สั่งอาหาร, มือถือ)
       kitchen/                  — KitchenBoard (จอครัว, ตัวกรองสถานี)
       shift/                    — Shift (กะ/ลิ้นชัก/เงินเข้า-ออก)
@@ -131,7 +149,9 @@ throw `Encoding::CompatibilityError` ไม่งั้น — เจอบน�
 - "ส่งครัว" ยังไม่สร้างตั๋วครัวจริง — มันแค่พลิกสถานะบรรทัดเป็น `SENT` · จอครัวยังอ่านจาก
   `mocks/kitchenTickets` ชุดเดิม ไม่ได้รับรอบที่เพิ่งส่งไป (กฎจริงฝั่งเว็บ — จองสต็อก + ออกตั๋ว
   ในทรานแซกชันเดียวกัน — พอร์ตตอนต่อ backend)
-- "คิดเงิน" ของบิลโต๊ะยังไม่มีปลายทาง (ปุ่มเปิดได้แล้วแต่ยังไม่พาไปหน้าชำระเงิน)
+- การคิดเงินจริงยังไม่เกิด: checkout/return/void ทั้งหมดเป็น state ใน memory และป้าย TEST เท่านั้น
+  รอบต่อ backend ต้องเปลี่ยนเป็น server preview, cashier session, RBAC/second-person approval และ
+  idempotency key ต่อ mutation จริง
 - ไม่มี push notification, ไม่มี background fetch
 - ไม่มี native module สำหรับเครื่องพิมพ์/สแกนเนอร์/จอลูกค้า
 - หน้าสแกนบาร์โค้ดที่มีอยู่เป็น test harness เท่านั้น — native camera และเครื่องสแกนจริงยังเป็นงาน

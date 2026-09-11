@@ -123,10 +123,19 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       />
       <Button
         label="คิดเงิน"
+        accessibilityLabel={`คิดเงินโต๊ะ ${table?.code ?? ''}`}
         fullWidth
         variant="secondary"
         style={{ marginTop: 8 }}
         disabled={hasUnsent || lines.length === 0}
+        onPress={() =>
+          navigation
+            .getParent<any>()
+            ?.navigate('SellTab', {
+              screen: 'Checkout',
+              params: { source: 'restaurant', tableId },
+            })
+        }
       />
       {hasUnsent && (
         <Text

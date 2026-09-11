@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
 import { CartProvider } from '../state/CartContext';
 import { ChecksProvider } from '../state/ChecksContext';
+import { SalesProvider } from '../state/SalesContext';
 import { useStoreMode } from '../state/StoreModeContext';
 import {
   FloorIcon,
@@ -15,6 +16,8 @@ import {
 import MenuScreen from '../screens/sell/MenuScreen';
 import CheckoutScreen from '../screens/sell/CheckoutScreen';
 import ReceiptScreen from '../screens/sell/ReceiptScreen';
+import SaleDetailScreen from '../screens/sell/SaleDetailScreen';
+import SalesHistoryScreen from '../screens/sell/SalesHistoryScreen';
 import FloorScreen from '../screens/floor/FloorScreen';
 import CheckDetailScreen from '../screens/floor/CheckDetailScreen';
 import TableMenuScreen from '../screens/floor/TableMenuScreen';
@@ -37,15 +40,13 @@ const ShiftStack = createNativeStackNavigator<ShiftStackParamList>();
 
 function SellNavigator() {
   return (
-    // CartProvider ผูกอยู่แค่รอบ stack ขายของ — Sell/Checkout/Receipt แชร์ตะกร้าเดียวกัน
-    // แท็บอื่น (Floor/Kitchen/Shift) ไม่เกี่ยวกับตะกร้าเลยจึงไม่ต้องมองเห็น state นี้
-    <CartProvider>
-      <SellStack.Navigator screenOptions={{ headerShown: false }}>
-        <SellStack.Screen name="Menu" component={MenuScreen} />
-        <SellStack.Screen name="Checkout" component={CheckoutScreen} />
-        <SellStack.Screen name="Receipt" component={ReceiptScreen} />
-      </SellStack.Navigator>
-    </CartProvider>
+    <SellStack.Navigator screenOptions={{ headerShown: false }}>
+      <SellStack.Screen name="Menu" component={MenuScreen} />
+      <SellStack.Screen name="Checkout" component={CheckoutScreen} />
+      <SellStack.Screen name="Receipt" component={ReceiptScreen} />
+      <SellStack.Screen name="SalesHistory" component={SalesHistoryScreen} />
+      <SellStack.Screen name="SaleDetail" component={SaleDetailScreen} />
+    </SellStack.Navigator>
   );
 }
 
@@ -91,7 +92,9 @@ export function MainTabs() {
   return (
     // ChecksProvider ครอบทั้งแท็บ — บิลของโต๊ะถูกอ่านจากผังโต๊ะ หน้าบิล และจอสั่งอาหารของโต๊ะ
     // (ต่างจาก CartProvider ที่ผูกอยู่กับ stack ขายกลับบ้านอย่างเดียว)
-    <ChecksProvider>
+    <SalesProvider>
+      <CartProvider>
+        <ChecksProvider>
       <Tab.Navigator
         key={mode}
         screenOptions={{
@@ -149,6 +152,8 @@ export function MainTabs() {
           }}
         />
       </Tab.Navigator>
-    </ChecksProvider>
+        </ChecksProvider>
+      </CartProvider>
+    </SalesProvider>
   );
 }

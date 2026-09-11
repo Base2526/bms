@@ -27,7 +27,9 @@ describe('SaleConfirmationModal', () => {
               discountTotal={20}
               total={140}
               itemCount={4}
-              paymentMethod="เงินสด"
+              payments={[
+                { id: 'cash', method: 'cash', amount: 140, tendered: 150 },
+              ]}
               onCancel={onCancel}
               onConfirm={onConfirm}
             />

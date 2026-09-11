@@ -332,6 +332,7 @@ export const pharmacyMockCatalog: MockMenuCatalog = {
 
 export interface MockCartLine {
   sku: string;
+  barcode?: string;
   name: string;
   qty: number;
   unitPrice: number;

@@ -281,7 +281,9 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   is preview-only: it may alter mock navigation and catalog copy, but never the server archetype or
   a pharmacy policy decision. Its member/coupon/manual-discount totals and barcode resolver are also
   explicitly mock-only: production must use the server discount preview and catalog, and a manual
-  discount still needs a distinct approver. Client code never owns money, stock, refund or tax rules. See
+  discount still needs a distinct approver. The mock split-payment, parked-bill, sale-history,
+  return and void screens are memory-only workflow previews; resumed parked bills may remember the
+  discount reason/amount but not the approver or PIN. Client code never owns money, stock, refund or tax rules. See
   [apps/mobile/README.md](../apps/mobile/README.md) and
   [business/pos.md § Native POS client](business/pos.md#native-pos-client-scaffold).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a

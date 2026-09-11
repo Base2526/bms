@@ -14,8 +14,12 @@ export type RootStackParamList = {
 
 export type SellStackParamList = {
   Menu: undefined;
-  Checkout: undefined;
-  Receipt: undefined;
+  Checkout:
+    | { source?: 'retail'; tableId?: undefined }
+    | { source: 'restaurant'; tableId: string };
+  Receipt: { saleId: string };
+  SalesHistory: undefined;
+  SaleDetail: { saleId: string };
 };
 
 export type FloorStackParamList = {

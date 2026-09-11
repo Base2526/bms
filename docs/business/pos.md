@@ -54,13 +54,19 @@ restaurant retains Sell + Floor + Kitchen + Shift. It never changes the tenant's
 `business_archetype`, never overrides `/api/pos/session`, and is not pharmacy authorization. The
 pharmacy catalog's blocked example is presentation test data, not a client-side clinical decision.
 
-The sell mock now includes a barcode test harness plus checkout previews for membership tier,
-coupon, and approved manual discount. A scanned mock barcode or entered SKU resolves only against
-the selected in-memory catalog. The discount preview follows tier → coupon → manual ordering; manual
-discount entry requires a reason and a separate mock approver PIN, and the confirmation plus receipt
-show the breakdown. None of those numbers or approvals is authoritative: the production connection
-must replace the calculation with the server's existing `composeDiscounts()` preview/settlement path,
-re-check the cashier and distinct approver, and resolve every barcode from the server catalog.
+The sell mock now includes a barcode test harness, checkout previews for membership tier, coupon,
+approved manual discount, split payments, parked bills, sale history, return/void previews, and
+restaurant table checkout through the same payment screen. A scanned mock barcode or entered SKU
+resolves only against the selected in-memory catalog. The discount preview follows tier → coupon →
+manual ordering; manual discount entry requires a reason and a separate mock approver PIN, and a
+parked bill deliberately does not retain that approver/PIN when resumed. Split payment rows must
+match the net total exactly; cash shows tender/change while QR/card require a mock reference.
+Returns allocate the refund back to the original payment rows, with cash completed immediately and
+non-cash marked pending. The original receipt snapshot is not edited; return/void history is kept
+separately in memory. None of those numbers or approvals is authoritative: the production
+connection must replace the calculation with the server's existing `composeDiscounts()` and POS
+settlement/return previews, re-check the cashier and distinct approver through RBAC, resolve every
+barcode from the server catalog, and submit each mutation once with an idempotency key.
 
 Device pairing is the only live backend seam in Group A:
 
