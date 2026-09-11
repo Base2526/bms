@@ -225,11 +225,11 @@ export default function MenuScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('Checkout', { source: 'retail' })}
         />
         <Button
-          label="พักบิล"
-          accessibilityLabel="พักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
+          label={`บิลพัก${parkedBills.length ? ` (${parkedBills.length})` : ''}`}
+          accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
           variant="secondary"
           fullWidth
-          disabled={cartCount === 0}
+          disabled={cartCount === 0 && parkedBills.length === 0}
           style={{ marginTop: spacing.sm }}
           onPress={() => setParkOpen(true)}
         />
@@ -282,11 +282,11 @@ export default function MenuScreen({ navigation }: Props) {
             }}
           >
             <Button
-              label="พักบิล"
-              accessibilityLabel="พักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
+              label={`บิลพัก${parkedBills.length ? ` (${parkedBills.length})` : ''}`}
+              accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
               variant="secondary"
               fullWidth
-              disabled={cartCount === 0}
+              disabled={cartCount === 0 && parkedBills.length === 0}
               onPress={() => setParkOpen(true)}
             />
             <Button
@@ -329,31 +329,49 @@ export default function MenuScreen({ navigation }: Props) {
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 เก็บใน memory เท่านั้น และไม่เก็บ PIN ผู้อนุมัติส่วนลด
               </Text>
-              <TextInput
-                value={parkName}
-                onChangeText={setParkName}
-                placeholder="ชื่อบิล เช่น ลูกค้าเสื้อแดง"
-                placeholderTextColor={colors.textSoft}
-                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-              />
-              <TextInput
-                value={parkNote}
-                onChangeText={setParkNote}
-                placeholder="หมายเหตุ"
-                placeholderTextColor={colors.textSoft}
-                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-              />
-              <Button
-                label="ยืนยันพักบิล"
-                accessibilityLabel="ยืนยันพักบิลทดสอบ"
-                fullWidth
-                onPress={() => {
-                  parkCurrentBill(parkName, parkNote);
-                  setParkName('');
-                  setParkNote('');
-                  setParkOpen(false);
-                }}
-              />
+              {cartCount > 0 ? (
+                <>
+                  <TextInput
+                    value={parkName}
+                    onChangeText={setParkName}
+                    placeholder="ชื่อบิล เช่น ลูกค้าเสื้อแดง"
+                    placeholderTextColor={colors.textSoft}
+                    style={[
+                      styles.input,
+                      { color: colors.text, borderColor: colors.border },
+                    ]}
+                  />
+                  <TextInput
+                    value={parkNote}
+                    onChangeText={setParkNote}
+                    placeholder="หมายเหตุ"
+                    placeholderTextColor={colors.textSoft}
+                    style={[
+                      styles.input,
+                      { color: colors.text, borderColor: colors.border },
+                    ]}
+                  />
+                  <Button
+                    label="ยืนยันพักบิล"
+                    accessibilityLabel="ยืนยันพักบิลทดสอบ"
+                    fullWidth
+                    onPress={() => {
+                      parkCurrentBill(parkName, parkNote);
+                      setParkName('');
+                      setParkNote('');
+                    }}
+                  />
+                </>
+              ) : (
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted, marginTop: spacing.md },
+                  ]}
+                >
+                  ตะกร้าว่าง — เลือกบิลพักด้านล่างเพื่อเรียกกลับ
+                </Text>
+              )}
               {parkedBills.length > 0 && (
                 <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
                   <Text style={[typography.captionStrong, { color: colors.textMuted }]}>

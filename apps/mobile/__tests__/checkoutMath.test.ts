@@ -5,6 +5,7 @@ import {
 import { mockCoupons, mockMembers } from '../src/mocks/checkout';
 import {
   calculateCashChange,
+  quickCashAmounts,
   validateMockPayments,
 } from '../src/lib/paymentMath';
 import {
@@ -86,12 +87,16 @@ describe('mock split payments', () => {
     expect(result.errors).toContain('QR ต้องมีเลขอ้างอิงทดสอบ');
     expect(calculateCashChange(60, 100)).toBe(40);
   });
+
+  test('orders quick cash buttons from exact amount to rounded tenders', () => {
+    expect(quickCashAmounts(140)).toEqual([140, 200, 500, 1000]);
+  });
 });
 
 describe('mock returns', () => {
   test('rejects quantities over the sold amount', () => {
     const result = calculateMockReturnTotal([
-      { sku: 'A', soldQty: 1, returnQty: 2, unitPrice: 25 },
+      { sku: 'A', soldQty: 1, returnQty: 2, unitRefundPrice: 25 },
     ]);
     expect(result.errors).toEqual(['A จำนวนคืนมากกว่าที่ขาย']);
   });
@@ -106,5 +111,21 @@ describe('mock returns', () => {
       { method: 'cash', amount: 100, status: 'COMPLETED' },
       { method: 'card', amount: 50, status: 'PENDING' },
     ]);
+  });
+
+  test('does not reuse payment capacity already consumed by earlier returns', () => {
+    expect(
+      allocateMockRefundToOriginalPayments(
+        50,
+        [
+          { id: 'cash', method: 'cash', amount: 100, tendered: 100 },
+          { id: 'card', method: 'card', amount: 200, reference: 'CARD-1' },
+        ],
+        [
+          { method: 'cash', amount: 100, status: 'COMPLETED' },
+          { method: 'card', amount: 50, status: 'PENDING' },
+        ],
+      ),
+    ).toEqual([{ method: 'card', amount: 50, status: 'PENDING' }]);
   });
 });

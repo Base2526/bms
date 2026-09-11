@@ -72,6 +72,8 @@ export function calculateCashChange(amount: number, tendered: number): number {
 export function quickCashAmounts(totalDue: number): number[] {
   const due = roundMoney(Math.max(0, totalDue));
   if (due === 0) return [];
-  const bases = [due, 100, 500, 1000, Math.ceil(due / 100) * 100];
-  return Array.from(new Set(bases.filter(value => value >= due))).slice(0, 4);
+  const rounded = Math.ceil(due / 100) * 100;
+  return Array.from(
+    new Set([due, rounded, 100, 500, 1000].filter(value => value >= due)),
+  ).slice(0, 4);
 }

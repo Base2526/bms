@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   ScrollView,
@@ -65,6 +65,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   ]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submittedRef = useRef(false);
   const validation = useMemo(
     () => validateMockPayments(total, payments),
     [payments, total],
@@ -93,7 +94,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   };
 
   const completeSale = () => {
-    if (!validation.canConfirm || submitting) return;
+    if (!validation.canConfirm || submittedRef.current) return;
+    submittedRef.current = true;
     setSubmitting(true);
     const sale = recordSale({
       source,

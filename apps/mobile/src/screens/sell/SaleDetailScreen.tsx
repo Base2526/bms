@@ -38,16 +38,31 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const [reason, setReason] = useState('');
   const [voidPin, setVoidPin] = useState('');
   const [voidOpen, setVoidOpen] = useState(false);
+  const returnedQtyBySku = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const record of sale?.returns ?? []) {
+      for (const line of record.lines) {
+        map[line.sku] = (map[line.sku] ?? 0) + line.qty;
+      }
+    }
+    return map;
+  }, [sale]);
+  const priorAllocations = useMemo(
+    () => (sale?.returns ?? []).flatMap(record => record.allocations),
+    [sale],
+  );
+  const netRefundRatio =
+    sale && sale.subtotal > 0 ? Math.min(1, sale.total / sale.subtotal) : 1;
 
   const returnLines = useMemo(
     () =>
       (sale?.lines ?? []).map(line => ({
         sku: line.sku,
-        soldQty: line.qty,
+        soldQty: Math.max(0, line.qty - (returnedQtyBySku[line.sku] ?? 0)),
         returnQty: returnQty[line.sku] ?? 0,
-        unitPrice: line.unitPrice,
+        unitRefundPrice: line.unitPrice * netRefundRatio,
       })),
-    [returnQty, sale],
+    [netRefundRatio, returnQty, returnedQtyBySku, sale],
   );
   const returnPreview = calculateMockReturnTotal(returnLines);
 
@@ -79,6 +94,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       allocations: allocateMockRefundToOriginalPayments(
         returnPreview.total,
         sale.payments,
+        priorAllocations,
       ),
     });
     setReason('');
@@ -112,6 +128,10 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 ฿{(item.qty * item.unitPrice).toFixed(2)}
               </Text>
             </View>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              คืนแล้ว {returnedQtyBySku[item.sku] ?? 0} · คืนได้อีก{' '}
+              {Math.max(0, item.qty - (returnedQtyBySku[item.sku] ?? 0))}
+            </Text>
             <QtyStepper
               qty={returnQty[item.sku] ?? 0}
               itemName={`จำนวนคืน ${item.name}`}
@@ -119,7 +139,10 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               onIncrement={() =>
                 setReturnQty(prev => ({
                   ...prev,
-                  [item.sku]: Math.min(item.qty, (prev[item.sku] ?? 0) + 1),
+                  [item.sku]: Math.min(
+                    Math.max(0, item.qty - (returnedQtyBySku[item.sku] ?? 0)),
+                    (prev[item.sku] ?? 0) + 1,
+                  ),
                 }))
               }
               onDecrement={() =>
@@ -153,8 +176,11 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           {error}
         </Text>
       ))}
-      {allocateMockRefundToOriginalPayments(returnPreview.total, sale.payments).map(
-        allocation => (
+      {allocateMockRefundToOriginalPayments(
+        returnPreview.total,
+        sale.payments,
+        priorAllocations,
+      ).map(allocation => (
           <Text
             key={`${allocation.method}-${allocation.amount}`}
             style={[typography.caption, { color: colors.textMuted }]}
@@ -165,8 +191,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               ? 'สำเร็จทันที'
               : 'รอยืนยันการคืนเงิน'}
           </Text>
-        ),
-      )}
+        ))}
       <Button
         label="คืนสินค้าที่เลือก"
         accessibilityLabel="ยืนยันคืนสินค้าที่เลือกแบบทดสอบ"
@@ -181,10 +206,20 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         variant="danger"
         fullWidth
         style={{ marginTop: spacing.sm }}
-        disabled={sale.voided}
+        disabled={
+          sale.voided ||
+          sale.lines.every(
+            line => (returnedQtyBySku[line.sku] ?? 0) >= line.qty,
+          )
+        }
         onPress={() => {
           const wholeBill: Record<string, number> = {};
-          for (const line of sale.lines) wholeBill[line.sku] = line.qty;
+          for (const line of sale.lines) {
+            wholeBill[line.sku] = Math.max(
+              0,
+              line.qty - (returnedQtyBySku[line.sku] ?? 0),
+            );
+          }
           setReturnQty(wholeBill);
           setVoidOpen(true);
         }}
