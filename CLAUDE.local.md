@@ -24,9 +24,12 @@ branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (
   เพราะมันเป็นข้อมูลของสัญญา ไม่ใช่ตรรกะของ resolver · **และเพราะเทสใน `scripts/` import
   `packages/graphql-core/src/resolvers.ts` ไม่ได้** — ไฟล์นั้น import `graphql` ซึ่ง resolve
   จาก `scripts/` ไม่ได้ (แพ็กเกจอยู่ที่ `apps/web/node_modules` เท่านั้น) · กับดักเดิมของรอบก่อน
-- **ไม่ได้ใส่ subscription ของ "เรียกพนักงาน"** (`restaurant.table_call.*`) เพราะ brief ระบุ 17 ตัว
-  และไม่มีตัวนี้ · แต่มันเป็นจอจริงของ POS จึงบันทึกไว้ใน `GENERIC_STREAM_ONLY` ว่าเข้าถึงได้
-  ทาง `realtimeEvent` เท่านั้น **ถ้าจะให้ RN ใช้จอนี้ ต้องเพิ่มตัวที่ 18**
+- **เพิ่ม `bmsServiceCallChanged` เป็นตัวที่ 18** (`restaurant.table_call.*`) ตามที่ผู้ใช้สั่ง —
+  brief ระบุไว้ 17 ตัวและไม่มีตัวนี้ แต่ "เรียกพนักงาน" เป็นจอจริงของ POS
+  (`bmsPosRestaurantServiceCalls`) ถ้าไม่มี RN จะเข้าถึงได้ทาง `realtimeEvent` เท่านั้น
+  · **แยกจาก `bmsWaitlistChanged` โดยตั้งใจ**: การเรียกพนักงานเป็นงานของโต๊ะที่นั่งอยู่แล้ว
+  ส่วนคิวคือคนที่ยังไม่ได้โต๊ะ — คนละจอและคนละคนที่ต้องตอบสนอง
+  · สิทธิ์ใช้ `order.view` เท่ากับ event ของร้านอาหารอีก 13 ตัว ไม่ได้ตั้งใหม่
 
 ### ⚠️ Phase 7 ขาด event 2 โดเมนที่อยู่ในลิสต์ — `9.72`
 

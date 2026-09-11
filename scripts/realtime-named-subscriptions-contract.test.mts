@@ -9,14 +9,18 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const typeDefs = read("../packages/graphql-core/src/typeDefs.ts");
 const resolvers = read("../packages/graphql-core/src/resolvers.ts");
 
-/** Phase 6 ระบุชื่อไว้ 17 ตัว — ครบทุกตัวคือสัญญากับฝั่ง RN */
+/**
+ * Phase 6 ระบุชื่อไว้ 17 ตัว — ครบทุกตัวคือสัญญากับฝั่ง RN
+ * `bmsServiceCallChanged` เป็นตัวที่ 18 ที่เพิ่มทีหลัง เพราะ "เรียกพนักงาน" เป็นจอจริง
+ * ของ POS (`bmsPosRestaurantServiceCalls`) ที่ brief ไม่ได้ระบุไว้
+ */
 const REQUIRED_SUBSCRIPTIONS = [
   "bmsDeviceSessionChanged", "bmsShiftChanged", "bmsPosOrderChanged",
   "bmsRestaurantFloorChanged", "bmsRestaurantCheckChanged", "bmsKitchenTicketChanged",
   "bmsMenuAvailabilityChanged", "bmsQrOrderChanged", "bmsIncomingOrderChanged",
   "bmsWaitlistChanged", "bmsInventoryChanged", "bmsStockTransferChanged",
   "bmsStockCountChanged", "bmsPaymentChanged", "bmsOrderChanged", "bmsInboxChanged",
-  "bmsNotificationCreated",
+  "bmsNotificationCreated", "bmsServiceCallChanged",
 ] as const;
 
 /**
@@ -24,9 +28,6 @@ const REQUIRED_SUBSCRIPTIONS = [
  * ลิสต์นี้มีไว้ให้ "ยังไม่ได้ทำ" อ่านเจอ · ชนิดใหม่ที่ไม่ถูกจัดที่ = แดง
  */
 const GENERIC_STREAM_ONLY: Readonly<Record<string, string>> = {
-  // brief ของ Phase 6 ไม่ได้ระบุ subscription ของการเรียกพนักงาน ทั้งที่เป็นจอจริงของ POS
-  "restaurant.table_call.created": "no named subscription in the Phase 6 list",
-  "restaurant.table_call.status_changed": "no named subscription in the Phase 6 list",
   "purchase.received": "back-office receiving; no named subscription requested",
   "shipment.created": "shipping surface; no named subscription requested",
   "shipment.status_changed": "shipping surface; no named subscription requested",
@@ -67,7 +68,7 @@ function declaredSubscriptionFields(): Set<string> {
   return fields;
 }
 
-test("all 17 named domain subscriptions are declared in the schema", () => {
+test("all 18 named domain subscriptions are declared in the schema", () => {
   const declared = declaredSubscriptionFields();
   for (const name of REQUIRED_SUBSCRIPTIONS) {
     assert.ok(declared.has(name), `${name} must be a Subscription field`);

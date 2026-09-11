@@ -220,6 +220,7 @@ export const coreTypeDefs = /* GraphQL */ `
     bmsQrOrderChanged: RealtimeEvent!  # table QR proposals
     bmsIncomingOrderChanged: RealtimeEvent!  # chat/online order requests
     bmsWaitlistChanged: RealtimeEvent!  # queue tickets and reservations
+    bmsServiceCallChanged: RealtimeEvent!  # "เรียกพนักงาน" from a table
     bmsInventoryChanged: RealtimeEvent!  # stock and reservation movement
     bmsStockTransferChanged: RealtimeEvent!  # inter-branch transfer send/receive
     bmsStockCountChanged: RealtimeEvent!  # stock count applied

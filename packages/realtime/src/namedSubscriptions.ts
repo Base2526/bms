@@ -31,6 +31,11 @@ export const NAMED_REALTIME_SUBSCRIPTIONS: Readonly<Record<string, readonly Real
     "restaurant.customer_request.created", "restaurant.customer_request.accepted",
   ],
   bmsWaitlistChanged: ["waitlist.changed"],
+  // แยกจากคิวรอโต๊ะโดยตั้งใจ: การเรียกพนักงานเป็นงานของโต๊ะที่นั่งอยู่แล้ว
+  // ส่วนคิวคือคนที่ยังไม่ได้โต๊ะ — จอคนละจอและคนละคนที่ต้องตอบสนอง
+  bmsServiceCallChanged: [
+    "restaurant.table_call.created", "restaurant.table_call.status_changed",
+  ],
   bmsInventoryChanged: ["inventory.changed", "inventory.reservation_changed"],
   bmsStockTransferChanged: ["inventory.transfer.sent", "inventory.transfer.received"],
   bmsStockCountChanged: ["inventory.count.applied"],
