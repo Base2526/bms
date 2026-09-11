@@ -4988,3 +4988,31 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
   Phase 2 commit ไม่มี DB/migration/permission/REST/subscription/realtime change
 - **ยังไม่ได้ verify:** DB integration (เฟสนี้ไม่ใช้ DB), React Native codegen/compile จริง,
   production deployment และ output typing ของ Phase 3
+
+### GraphQL client readiness — Phase 3a: first 10 typed outputs (2026-09-11)
+
+- แปลง 10 operations ที่เป็นจอหลัก RN ตาม brief เป็น typed output ครบ:
+  session, scan, catalog search, restaurant menu/floor/check, kitchen tickets, sale,
+  restaurant open-check และ shift · JSON output countdown จาก **67 เหลือ 57**
+- สร้าง type จากค่าที่ resolver/service คืนจริง; field ที่ขึ้นกับ status หรือแถว legacy เป็น nullable
+  (รวม `BmsKitchenTicket.orderId/checkId` และ restaurant line amount) · เงินคงเป็น `Float`,
+  วันที่คงเป็น ISO `String` และไม่ได้เปลี่ยน business logic
+- `stationSlas` เดิมเป็น dynamic-key object จึงแปลงเฉพาะ GraphQL adapter เป็น typed
+  `{ stationRef, warnMinutes, lateMinutes }[]`; REST response/service map เดิมไม่เปลี่ยน และ 10 roots
+  ไม่มี nested `JSON` เหลือให้ codegen
+- ขยาย contract ให้ตรึงรายชื่อ+ชนิดของ 10 roots, countdown 57, recursive no-JSON และ nullability
+  ที่เคยทำ query ล้มได้
+- **mutation test ผ่าน:** (1) คืน `bmsPosSession` เป็น JSON, (2) ซ่อน JSON ที่
+  `BmsPosScanResult.modifiers`, (3) บังคับ nullable `lineAmount` เป็น `Float!` — แต่ละกรณีแดง
+  เฉพาะ subtest เจ้าของกฎ · คืนไฟล์ตรง SHA-256
+  `2B288211A9882BAC2574ABD6E8DEEAB9A7062AACD16DAB8B467DAC336E0995DA`
+  และ test file `D56B20A7161BBCA46E0256E1696205AB5A466411500F9ECC412120B3C2F8D5A1`
+- **verify บน clean worktree ของ commit `855be896`:** Web gate ผ่าน — typecheck,
+  pure **1,101/1,101**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · schema artifact drift test ผ่าน
+- warning เดิม: Edge trace ของ `jsonwebtoken`, Browserslist เก่า, SendGrid placeholder และ
+  Postgres `ECONNREFUSED` ตอน static generation; build ยังจบสำเร็จ
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้ · main worktree
+  ยังมี realtime/outbox diff 9 ไฟล์เดิมที่ไม่เกี่ยวข้อง จึงพิสูจน์ความสะอาดเฉพาะ phase commit
+- **ยังไม่ได้ verify:** query ค่า live จาก DB, React Native codegen/compile จริง, production deployment,
+  error-contract/client-doc phases และ output อีก 57 operations
