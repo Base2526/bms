@@ -197,3 +197,39 @@ export async function cleanupRealtimeOutbox(): Promise<{ deleted: number }> {
   );
   return { deleted };
 }
+
+const maintenanceState = globalThis as typeof globalThis & { __bmsRealtimeCleanupAt?: number };
+
+/**
+ * One dispatch pass plus retention, for every caller that drains the outbox.
+ *
+ * `cleanupRealtimeOutbox` and `bms_cleanup_realtime_outbox` existed with no caller at all,
+ * so `REALTIME_RETENTION_SECONDS` described a policy nothing ever applied: published rows
+ * accumulated for the life of the database on the hottest write path in the system (one row
+ * per inventory row an import touches). Retention that nobody runs is not retention, so the
+ * sweep rides along with the thing that is actually deployed — the dispatcher — rather than
+ * waiting for a cron entry that does not exist yet.
+ *
+ * The clock is stamped before the delete, not after: a slow sweep must not let the next
+ * dispatch iteration start a second one, and a failed sweep must wait its turn like any
+ * other rather than being retried on every pass.
+ */
+export async function runRealtimeOutboxMaintenance(): Promise<
+  RealtimeDispatchResult & { cleaned: number }
+> {
+  const dispatch = await dispatchRealtimeOutboxBatch();
+  const interval = positiveInt("REALTIME_CLEANUP_INTERVAL_MS", 3_600_000, 86_400_000);
+  if (Date.now() - (maintenanceState.__bmsRealtimeCleanupAt ?? 0) < interval) {
+    return { ...dispatch, cleaned: 0 };
+  }
+  maintenanceState.__bmsRealtimeCleanupAt = Date.now();
+  try {
+    return { ...dispatch, cleaned: (await cleanupRealtimeOutbox()).deleted };
+  } catch {
+    console.error("[realtime-outbox] retention sweep failed", {
+      errorCode: "REALTIME_CLEANUP_FAILED",
+      nextAttemptInMs: interval,
+    });
+    return { ...dispatch, cleaned: 0 };
+  }
+}

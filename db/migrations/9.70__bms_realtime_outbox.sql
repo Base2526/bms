@@ -89,6 +89,19 @@ END $$;
 GRANT USAGE ON SCHEMA public TO bms_realtime_dispatcher;
 GRANT SELECT, UPDATE, DELETE ON bms_realtime_outbox TO bms_realtime_dispatcher;
 
+-- 9.71/9.72 install SECURITY DEFINER trigger functions owned by this role, so every table
+-- they touch is checked against this role's grants. BYPASSRLS skips the row policy, never
+-- the table grant: without INSERT here (and USAGE on the sequence behind the BIGSERIAL)
+-- every business write those triggers cover fails with 42501 and rolls back — selling,
+-- receiving stock and closing a shift all stop.
+-- ⚠️ No automated test enforces this yet: the reads each trigger performs were matched to
+-- these grants by hand. Adding a table read to a trigger means adding its grant here in the
+-- same change, and the pair is only really proven by the runbook in
+-- docs/architecture/realtime-test-database.md — nothing in `scripts/` will catch a miss.
+-- ⚠️ CREATE/ALTER ROLE ... BYPASSRLS below needs a superuser connection.
+GRANT INSERT ON bms_realtime_outbox TO bms_realtime_dispatcher;
+GRANT USAGE, SELECT ON SEQUENCE bms_realtime_outbox_id_seq TO bms_realtime_dispatcher;
+
 CREATE OR REPLACE FUNCTION public.bms_claim_realtime_outbox(
   p_limit INTEGER,
   p_lease_ms INTEGER

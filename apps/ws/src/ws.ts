@@ -234,9 +234,18 @@ const disposer = useServer(
         metrics.activeSubscriptions = Math.max(0, metrics.activeSubscriptions - 1);
       }
     },
+    // The generic stream and all 18 named domain subscriptions deliver the same envelope,
+    // each under its own field name. Reading `data.realtimeEvent` only made every named
+    // subscription invisible here, so the counter that answers "is realtime delivering at
+    // all" would read zero for the native clients those subscriptions exist for. The
+    // operation is validated to carry exactly one root field, so there is exactly one value
+    // to look at; a payload without an eventId is a legacy chat subscription, not an event.
     onNext: (_ctx, _message, _args, result) => {
-      const event = (result as { data?: { realtimeEvent?: { occurredAt?: unknown } } }).data?.realtimeEvent;
-      if (!event) return;
+      const data = (result as { data?: Record<string, unknown> }).data;
+      const payload = data ? Object.values(data)[0] : undefined;
+      if (!payload || typeof payload !== "object") return;
+      const event = payload as { eventId?: unknown; occurredAt?: unknown };
+      if (typeof event.eventId !== "string") return;
       metrics.eventsDelivered += 1;
       if (typeof event.occurredAt === "string") {
         const latency = Math.max(0, Date.now() - Date.parse(event.occurredAt));

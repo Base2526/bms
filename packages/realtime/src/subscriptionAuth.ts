@@ -1,5 +1,5 @@
 import { REALTIME_EVENT_RULES, isRealtimeEventEnabled, type RealtimeEvent } from "./events.js";
-import { topicForLocation, topicForTenant, topicForUser } from "./topics.js";
+import { topicForDevice, topicForLocation, topicForTenant, topicForUser } from "./topics.js";
 import type { RealtimeTicketClaims } from "./wsTicket.js";
 
 /**
@@ -22,6 +22,13 @@ export function realtimeTopics(claims: RealtimeTicketClaims): string[] {
     topics.push(topicForTenant(claims.tenantId));
     for (const locationId of claims.locationIds) {
       topics.push(topicForLocation(claims.tenantId, locationId));
+    }
+    // เครื่องขายต้องฟังหัวข้อของตัวเองด้วย — `device.session.changed` ถูก publish ที่หัวข้อ
+    // device เท่านั้น ถ้าไม่ subscribe ตัวนี้ `bmsDeviceSessionChanged` จะไม่มีวันยิงสักครั้ง
+    // (ตัวตัดสินสิทธิ์ตอบว่า "ได้" กับ event ที่สายนี้ไม่ได้ฟังอยู่) · ticket ของ POS ถูก
+    // validate แล้วว่ามีสาขาเดียวเสมอ
+    if (claims.scope === "pos" && claims.locationIds.length === 1) {
+      topics.push(topicForDevice(claims.tenantId, claims.locationIds[0], claims.subjectId));
     }
   }
   return topics;

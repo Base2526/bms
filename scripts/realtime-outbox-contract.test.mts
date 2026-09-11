@@ -124,6 +124,11 @@ test("dispatcher reports an acknowledgement race as lease loss", async () => {
 
 test("dispatch endpoint fails closed through the shared cron guard and records the run", () => {
   assert.match(route, /authorizeCronRequest\(req\)/);
+  assert.match(route, /if \(!cron\.ok\) return cron\.response/);
   assert.match(route, /recordJobRun\("realtime-outbox-dispatch", "cron"/);
-  assert.match(route, /dispatchRealtimeOutboxBatch\(\)/);
+  // route กู้คืนต้องเดินทางเดียวกับ pump — dispatch **พร้อม** retention · เรียก
+  // `dispatchRealtimeOutboxBatch` ตรง ๆ = ทางที่สองที่ drain แต่ไม่กวาด
+  assert.match(route, /from "@\/lib\/bms\/realtimeDispatcher"/);
+  assert.doesNotMatch(route, /dispatchRealtimeOutboxBatch/);
+  assert.doesNotMatch(route, /postgresRealtimeOutboxRepository/);
 });

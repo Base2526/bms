@@ -66,6 +66,13 @@ DROP TRIGGER IF EXISTS trg_bms_realtime_order_kitchen ON bms_kitchen_tickets;
 CREATE TRIGGER trg_bms_realtime_order_kitchen AFTER INSERT OR UPDATE OF status ON bms_kitchen_tickets
 FOR EACH ROW EXECUTE FUNCTION public.bms_realtime_order_kitchen_trigger();
 
+-- The cash movement trigger resolves the branch from the device that owns the shift, so
+-- the definer role needs to read those two columns. `bms_orders` is already granted in
+-- `9.71`. BYPASSRLS does not stand in for a table grant — without this the first drawer
+-- movement of the day fails with 42501 and the cash-in rolls back.
+GRANT SELECT (id, tenant_id, location_id)
+  ON bms_pos_devices TO bms_realtime_dispatcher;
+
 -- Ownership must match `9.71`: the emit helper inserts into an outbox with
 -- FORCE ROW LEVEL SECURITY, so the definer has to be the BYPASSRLS dispatcher
 -- role or every covered write would roll back.

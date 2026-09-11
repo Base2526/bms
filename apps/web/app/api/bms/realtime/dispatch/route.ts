@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
-import { dispatchRealtimeOutboxBatch } from "@/lib/bms/realtimeDispatcher";
+import { runRealtimeOutboxMaintenance } from "@/lib/bms/realtimeDispatcher";
 import { recordJobRun } from "@/lib/bms/jobRuns";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -12,7 +12,7 @@ async function handlePOST(req: NextRequest) {
   const cron = authorizeCronRequest(req);
   if (!cron.ok) return cron.response;
   const result = await recordJobRun("realtime-outbox-dispatch", "cron", () =>
-    dispatchRealtimeOutboxBatch(),
+    runRealtimeOutboxMaintenance(),
   );
   return NextResponse.json({ ok: true, ...result });
 }

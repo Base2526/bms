@@ -1,4 +1,4 @@
-import { dispatchRealtimeOutboxBatch } from "./realtimeDispatcher";
+import { runRealtimeOutboxMaintenance } from "./realtimeDispatcher";
 
 type PumpState = { timer?: ReturnType<typeof setTimeout>; stopping: boolean; running: boolean };
 
@@ -18,7 +18,7 @@ async function tick(state: PumpState, delay: number) {
     state.running = true;
     let nextDelay = delay;
     try {
-      const result = await dispatchRealtimeOutboxBatch();
+      const result = await runRealtimeOutboxMaintenance();
       nextDelay = result.claimed > 0 ? 0 : intervalMs();
     } catch (error) {
       nextDelay = Math.min(30_000, Math.max(intervalMs(), delay * 2 || intervalMs()));

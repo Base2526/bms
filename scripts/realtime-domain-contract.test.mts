@@ -12,6 +12,7 @@ const purchase = readFileSync(new URL("../apps/web/lib/bms/purchase.ts", import.
 const instrumentation = readFileSync(new URL("../apps/web/instrumentation.ts", import.meta.url), "utf8");
 const nodeInstrumentation = readFileSync(new URL("../apps/web/instrumentation.node.ts", import.meta.url), "utf8");
 const pump = readFileSync(new URL("../apps/web/lib/bms/realtimePump.ts", import.meta.url), "utf8");
+const dispatcher = readFileSync(new URL("../apps/web/lib/bms/realtimeDispatcher.ts", import.meta.url), "utf8");
 
 const required = [
   "restaurant.check.created", "restaurant.check.updated", "restaurant.round.sent",
@@ -71,5 +72,13 @@ test("web instances continuously drain with a bounded backoff and fleet-safe cla
   assert.match(pump, /REALTIME_OUTBOX_DISPATCH_ENABLED/);
   assert.match(pump, /REALTIME_OUTBOX_POLL_MS/);
   assert.match(pump, /Math\.min\(30_000/);
-  assert.match(pump, /dispatchRealtimeOutboxBatch/);
+  // ตรึง "รอบหนึ่งของ pump ต้อง drain แล้วกวาดด้วย" ไม่ใช่ชื่อฟังก์ชัน · pump ที่เรียก
+  // `dispatchRealtimeOutboxBatch` ตรง ๆ คือ pump ที่ข้าม retention — และไม่มีผู้เรียกอื่น
+  // ของตัวกวาดเลย `REALTIME_RETENTION_SECONDS` จึงกลายเป็นนโยบายที่ไม่มีใครบังคับใช้
+  assert.doesNotMatch(pump, /dispatchRealtimeOutboxBatch/);
+  assert.match(pump, /result\.claimed > 0/);
+  assert.doesNotMatch(pump, /postgresRealtimeOutboxRepository/);
+  assert.match(dispatcher, /export async function runRealtimeOutboxMaintenance/);
+  assert.match(dispatcher, /await dispatchRealtimeOutboxBatch\(\)/);
+  assert.match(dispatcher, /cleanupRealtimeOutbox\(\)/);
 });

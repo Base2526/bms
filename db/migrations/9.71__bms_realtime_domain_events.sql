@@ -537,6 +537,20 @@ DROP TRIGGER IF EXISTS trg_bms_realtime_shift ON bms_pos_shifts;
 CREATE TRIGGER trg_bms_realtime_shift AFTER INSERT OR UPDATE ON bms_pos_shifts
 FOR EACH ROW EXECUTE FUNCTION public.bms_realtime_pos_scope_trigger();
 
+-- Reads the trigger functions above perform. SECURITY DEFINER means these run as the
+-- dispatcher role, and BYPASSRLS only skips the row policy — a missing table grant is
+-- still `permission denied`, which would roll back the business write that fired the
+-- trigger. Column-level, following 8.4: the definer never needs a whole row, and
+-- users.password_hash stays out of reach of every BMS role.
+GRANT SELECT (id, tenant_id, location_id, pos_device_id, updated_at)
+  ON bms_orders TO bms_realtime_dispatcher;
+GRANT SELECT (id, tenant_id, order_id)
+  ON bms_pos_returns TO bms_realtime_dispatcher;
+GRANT SELECT (id, tenant_id, location_id, pos_device_id, version)
+  ON bms_restaurant_checks TO bms_realtime_dispatcher;
+GRANT SELECT (id, tenant_id)
+  ON users TO bms_realtime_dispatcher;
+
 -- All trigger functions are owned by the locked, non-login dispatcher role so
 -- their trigger-only outbox insert works even for legacy autocommit writers.
 ALTER FUNCTION public.bms_emit_realtime_event(TEXT, UUID, UUID, UUID, TEXT, TEXT, BIGINT, TIMESTAMPTZ, JSONB, UUID) OWNER TO bms_realtime_dispatcher;
