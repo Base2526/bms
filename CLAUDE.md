@@ -22,6 +22,8 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/realtime-production-audit.md](docs/architecture/realtime-production-audit.md) · [ADR 001](docs/architecture/decisions/001-transactional-realtime-invalidation.md) | Current realtime security/reliability audit · accepted phased outbox/invalidation design |
 | [architecture/mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) | Mobile/RN GraphQL primary API, REST exception inventory, POS migration gaps and phase boundaries |
 | [architecture/react-native-graphql-client.md](docs/architecture/react-native-graphql-client.md) | Native POS HTTP GraphQL + ticketed GraphQL WS client wiring, retry and rollout contract |
+| [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md) · [`schema.graphql`](schema.graphql) | Why the surface was typed and in what order · the committed SDL artifact a client generates from (`npm run schema:export`; production keeps introspection off) |
+| [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that `9.70`–`9.72` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
@@ -175,6 +177,30 @@ physical table) now resolves the owning branch and honours `bms_user_allowed_loc
 [business/pos.md](docs/business/pos.md) § Table QR self-ordering and
 [agent-invariants.md § Restaurant POS](docs/agent-invariants.md#restaurant-pos-dine-in).
 
+**Transactional realtime invalidation (`9.70`–`9.72`, 2026-09-11) — written, never run.** The shared
+event contract (`packages/realtime`), the outbox migration, 27 AFTER triggers, the leased dispatcher,
+the hardened database-free WS gateway, HTTP-minted tickets, one generic invalidation stream and 18
+named views over it all exist and pass typecheck/pure tests. **None of the three migrations has been
+applied to any database and not one trigger has ever fired**, so every claim about them is a
+code-reading claim: the triggers enqueue *inside the business transaction*, which means a trigger
+that references a missing column or lacks a table grant does not make realtime quiet — it rolls back
+the sale, the stock receipt or the shift close. Prove them on the throwaway instance in
+[architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) first. The
+browser stays on REST + polling and no React Native app exists in this repo, so the 18 named
+subscriptions currently have **no caller at all**. Rollout flags gate *delivery only* — see
+[agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
+
+**Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
+POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
+`graphql-schema-artifact-contract`, all 99 operations take named input objects and return named
+output types (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
+into 32 named mutations with the old fields kept `@deprecated`, and every client-facing error carries
+an `extensions.code` while business rejections stay in `data.<operation>.status`. Four POS
+multiplexers (`bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift`) are still
+`action`-dispatched. No caller moved from REST, nothing was deleted, and the generated client has
+never been compiled — see
+[architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md).
+
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
@@ -244,3 +270,19 @@ look done in code but need their migration first.
   tool still needs a wrapper in `lib/bms/tools/catalog.ts`, server-derived tenant, immediate RBAC
   re-check, in-transaction audit, and explicit confirmation for stock/money movement. Never call one
   adapter from another as a shortcut.
+- **Realtime is an invalidation hint that shares a transaction with the money it describes.** An
+  event is enqueued into `bms_realtime_outbox` in the same tenant transaction as its aggregate
+  change; publishing happens after commit from a leased dispatcher, and `apps/ws` never connects to
+  PostgreSQL. That boundary is also the danger: **anything a realtime trigger does wrong rolls back
+  a business write**, so a trigger may only touch columns that exist on *its own* table and the
+  `SECURITY DEFINER` owner needs an explicit table grant — `BYPASSRLS` skips the row policy, never
+  the grant. Payloads carry allowlisted scalars only, never PII, message bodies, payment details or
+  pharmacy clinical content. Full rules:
+  [agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
+- **`schema.graphql` is the client contract, not a build artifact.** Production keeps introspection
+  off, so an external client generates from the committed SDL; regenerate it with
+  `npm run schema:export` in the same change that alters the schema or
+  `graphql-schema-artifact-contract` fails. A mobile operation never accepts tenant, location,
+  device or shift from its caller — the server derives scope from the device token or
+  `getTenantId(ctx)` — and a money/stock/document mutation carries an `idempotencyKey`. Old fields
+  are `@deprecated` and kept; nothing is removed while a caller may still exist.

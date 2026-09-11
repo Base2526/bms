@@ -3,6 +3,118 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## recheck realtime + GraphQL client readiness แล้วซิงก์เอกสาร — 2026-09-11
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
+**pure 1110/1110** จาก 1108/1110 ตอนเริ่ม · production build) · **ไม่มี migration ใหม่ ·
+ไม่มี permission ใหม่ · ไม่แตะ service/resolver สักบรรทัด** · **เทส DB ไม่ได้รันสักตัว**
+(Docker ไม่ได้รัน · 5432/5433/6379 ปิด) · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+
+### ⚠️ เจอของจริงที่ยังไม่แก้ 1 ตัว: trigger ที่อ้างคอลัมน์ซึ่งไม่มีบนตารางของตัวเอง
+
+`bms_realtime_pos_scope_trigger()` (`9.71:518`) ถูกผูกกับ **สองตาราง** แล้วอ้างฟิลด์ข้าม `CASE`:
+
+| ผูกกับ | อ้าง | ตารางนั้นมีจริงไหม |
+| --- | --- | --- |
+| `bms_pos_devices` | `NEW.status`, `NEW.device_id` | **ไม่มีทั้งคู่** (มี `active`) |
+| `bms_pos_shifts` | `NEW.active` | **ไม่มี** (มี `status`, `device_id`) |
+
+- **PL/pgSQL resolve `NEW.<field>` กับ row type จริง** · `CASE` จะทำให้กิ่งที่ไม่ถูกเลือก
+  "ไม่ถูก resolve" จริงไหม **อ่านโค้ดแล้วตอบไม่ได้** (ขึ้นกับว่า recfield param ถูก jump ข้าม
+  ตอน eval หรือถูก resolve ตอน prepare plan)
+- ถ้า resolve ตอน prepare → `record "new" has no field "status"` → **rollback** · trigger เป็น
+  `AFTER INSERT OR UPDATE` **ทุกคอลัมน์** จึงโดน `last_seen_at` ที่ `authenticatePosDevice`
+  เขียน (heartbeat ต่อเครื่อง) และ **ทุกการแตะแถวกะ** = เครื่องขาย authenticate ไม่ได้และขายไม่ได้
+- **ไล่ `NEW./OLD.` ของอีก 24 trigger เทียบกับ schema ทั้ง `db/migrations` แล้ว เหลือตัวนี้ตัวเดียว**
+  (`bms_realtime_floor_trigger` ผูกสองตารางเหมือนกันแต่ใช้แค่ `tenant_id/location_id/id` ซึ่งมีครบ)
+  · ตัวที่ดูเหมือนขาด (`bms_orders.location_id`, `bms_inventory.tenant_id`, …) เป็น false positive
+  ของตัวสแกน — คอลัมน์พวกนั้นมาจาก `DO … EXECUTE format('ALTER TABLE %I ADD COLUMN …')` ของ `4.x`/`7.84`
+- **ยังไม่แก้โดยตั้งใจ** — ทางแก้ที่ไม่ต้องเดาคือ `to_jsonb(NEW)->>'status'` หรือแยกเป็นสองฟังก์ชัน
+  แต่ควรทำคู่กับการรันบนฐานทดสอบ ไม่ใช่แก้ตาบอดแล้วเดาว่าหายแล้ว
+
+### ⚠️ ธง `REALTIME_*_ENABLED` ไม่ได้ปิด realtime — ปิดแค่ "ขาส่ง"
+
+`isRealtimeEventEnabled` มีผู้อ่านที่เดียวคือ `canReceiveRealtimeEvent()` (ฝั่ง ws) · trigger
+ไม่เช็คอะไรเลย และ dispatcher ก็ไม่เช็ค → apply แล้ว **event เกิดทุก write และ publish เข้า Redis
+ต่อให้ธงปิดหมด** · ปิด `REALTIME_OUTBOX_DISPATCH_ENABLED` แทนก็ไม่มีใคร drain แล้ว
+`bms_cleanup_realtime_outbox` ลบแค่ `PUBLISHED`/`FAILED` → แถว `PENDING` โตไม่มีเพดาน
+· **ทางปิดที่ต้นทางวันนี้มีทางเดียวคือ DROP trigger** ซึ่ง `9.70`/`9.71` **ไม่มีบล็อก `ROLLBACK`
+เขียนไว้** (มีแต่ `9.72`) · แก้คำที่ `agent-invariants` เคยเขียนว่าเป็น "query-only kill switch
+และไม่ต้อง rollback" แล้ว เพราะไม่จริงทั้งสองท่อน
+
+### ⚠️ คอมเมนต์สองที่โฆษณาด่านที่ไม่มีอยู่ — เขียนความจริงแทนแล้ว
+
+1. `9.70:97` เขียนว่า "Enforced by `scripts/realtime-dispatcher-grants-contract.test.mts`" ·
+   **ไฟล์นั้นไม่มีในรีโป** · เปลี่ยนเป็นบอกตรง ๆ ว่าจับคู่ grant กับ read ด้วยมือ และพิสูจน์ได้ทาง
+   runbook เท่านั้น + เตือนว่า `CREATE ROLE … BYPASSRLS` ต้องใช้ superuser
+2. `realtimeInvalidation.ts` เขียนว่า "Both directions are pinned in `realtime-client-contract`" ·
+   ไฟล์นั้นตรวจแค่ `field.startsWith(prefix)` **ไม่มี assertion ไหนเทียบ key กับ event union**
+   · ไล่มือแล้วว่าปัจจุบันครบ 17 โดเมนพอดี แต่ไม่มีอะไรกันโดเมนที่ 18 หายเงียบแบบที่ `kitchen` โดน
+
+**ที่ยังไม่มีเทส (จดไว้เป็นของค้าง)**: coverage ของ `DOMAIN_FIELDS` เทียบ event union ·
+grant ของ dispatcher เทียบ read ของ trigger · `onNext` ของ ws ที่นับ event จาก named subscription ·
+device topic ใน `realtimeTopics()` · `preflight-deploy.mts` (ยังไม่มีเทสเลยตั้งแต่เขียน)
+
+### เทสเดิม 2 ตัวต้องเล็งใหม่ (ต้นเหตุที่ gate แดงตอนเริ่ม)
+
+ทั้งคู่ตรึง **ชื่อ** `dispatchRealtimeOutboxBatch` ไว้ตรงตัว ขณะที่ working tree เปลี่ยน call site
+เป็น `runRealtimeOutboxMaintenance` (dispatch + retention) — การันตีไม่ได้หาย แค่ย้ายบ้าน
+
+- เล็งใหม่ที่ **กติกา** ไม่ใช่ชื่อ: pump และ route กู้คืน **ต้องไม่** เอ่ย
+  `dispatchRealtimeOutboxBatch` (= ทางที่ drain แต่ไม่กวาด) · ต้องไม่แตะ repository ตรง ๆ ·
+  และตัวกลางต้องทำทั้ง dispatch และ cleanup
+- **ยืนยันด้วย mutation 2 แบบ** (ย้อน pump และย้อน route กลับไปเรียก `dispatchRealtimeOutboxBatch`)
+  แดงถูกตัวทั้งสองครั้ง
+
+### เอกสารที่ซิงก์ในรอบนี้
+
+- **CLAUDE.md** — เพิ่ม `graphql-client-readiness-brief.md`, `realtime-test-database.md` และ
+  `schema.graphql` เข้าตารางเอกสาร (ก่อนหน้านี้ **ไม่มีทั้งสองไฟล์ในสารบัญ** ทั้งที่ไฟล์นี้ประกาศ
+  ตัวเองเป็น navigation index) · เพิ่มย่อหน้าสถานะของ `9.70`–`9.72` และของ surface ที่ typed แล้ว
+  (CLAUDE.md **ไม่เคยเอ่ยถึง `9.70`–`9.72` เลย**) · เพิ่มกฎ non-negotiable 2 ข้อ (ขอบเขต outbox
+  กับ `schema.graphql` เป็นสัญญาของ client)
+- **AGENTS.md** — เพิ่ม short-form invariant 2 ข้อ (realtime · typed GraphQL) · แยก
+  `packages/realtime` และ `schema.graphql` เป็นแถวของตัวเองใน repository map · เพิ่มกฎ trigger
+  ทั้งชุดใน § Database and migration rules (คอลัมน์ข้ามตาราง · definer ≠ grant · superuser ·
+  retention/`PENDING` · ต้องพิสูจน์บนฐานทดสอบ) · เพิ่ม 8 แถวของชุดเทส realtime/GraphQL ที่ตาราง
+  ไม่มีเลย · เขียนว่า `gate.yml` ไม่รันโหมด DB ("pure เขียว" ไม่เท่ากับเส้นฐานถูกเดิน)
+- **docs/agent-invariants.md** — แก้คำเรื่อง kill switch · เพิ่มกฎ trigger/grant/superuser ·
+  เพิ่มข้อว่า 18 named subscription ยังไม่มีผู้เรียกและห้ามลบ REST/polling เพราะมันมีอยู่ ·
+  เพิ่ม § Typed GraphQL surface ทั้งหัวข้อ (artifact เป็นซอร์ส · scope derive เท่านั้น ·
+  idempotency · `@deprecated` ไม่ลบ · error code vs business status · ยังไม่มีเทส parity)
+- **scripts/README.md** — ตัวเลขเก่า (120 ไฟล์ = pure 84/931 + DB 36) → **144 = pure 106/1,110 +
+  DB 38** พร้อมคำสั่งนับใหม่ · เพิ่มหัวข้อ `npm run schema:export` และ `preflight-deploy.mts`
+  (ซึ่งค้างไม่ได้เขียนมาตั้งแต่ 2026-09-07) · ลิงก์ runbook ของฐานทดสอบ realtime
+- **mobile-graphql-ws-realtime.md** — หัวเอกสารเตือนว่า migration ยังไม่ apply ที่ไหน ·
+  เพิ่มแถว "8. Typed client contract" ในตารางสถานะ · เขียนในแถว 7 ว่า named subscription
+  ไม่มีผู้เรียก
+
+### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **GRANT ของ dispatcher ครบแล้ว** — สแกน `FROM/JOIN public.<table>` ในตัว trigger ทั้งหมดได้ 6
+  ตาราง (`bms_orders`, `bms_pos_devices`, `bms_pos_returns`, `bms_restaurant_checks`, `users`,
+  outbox) และถูก grant ครบทั้งหก · FK check ไม่ต้องมี SELECT บน `bms_tenants` (RI ข้าม ACL)
+- **`onNext` ของ ws ที่แก้เป็น `Object.values(data)[0]` ถูกต้อง** — `inspectSubscriptionOperation`
+  บังคับ root field เดียวจริง (`ONE_SUBSCRIPTION_FIELD_REQUIRED`) จึงมีค่าเดียวให้อ่านเสมอ
+- **`bms_realtime_outbox_metrics()` ไม่ใช่ฟังก์ชันตาย** — `systemHealth.ts:112` เรียกอยู่
+- **`enqueueRealtimeEventInTx` มีผู้เรียกที่เดียว** (`purchase.ts:587`) → ไม่มี event ซ้ำกับ trigger
+- **`packages/*/dist` เก่าค้าง** (event union ยังเป็น 50 ตัว) แต่ gitignored และ `apps/ws` import
+  จาก `src/*.js` ตรง ๆ → ไม่กระทบ runtime **แต่ทำให้ grep หลอกคนอ่าน**
+- `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION` = 20 ขณะที่ named subscription มี 18 → client ที่ subscribe
+  ครบทุกจอ + inbox + notification ชนเพดานพอดีที่ตัวที่ 21
+
+### ยังไม่ได้ทำ (เรียงตามความแรง)
+
+1. **พิสูจน์/แก้ `bms_realtime_pos_scope_trigger()`** แล้วรัน runbook ของฐานทดสอบให้ครบ 9 ขั้น
+2. เขียน `ROLLBACK` ให้ `9.70`/`9.71` · ใส่เงื่อนไขปิดที่ต้นทาง (GUC) ถ้าจะให้ธงหมายความว่าปิดจริง
+3. เทสที่ยังไม่มี 5 ตัวในหัวข้อข้างบน
+4. เทส parity REST ↔ GraphQL (ตัวที่บล็อกการย้าย caller อยู่)
+5. แตก `bmsPosDeposit`/`bmsPosExpense`/`bmsPosPark`/`bmsPosShift` แล้วบังคับ `idempotencyKey`
+6. `KNOWN_GAPS` 20 ตารางที่ควรมี event · เปิด/ปิด subscription เก่า 5 ตัวบน production
+7. cron entry ของ `/api/bms/realtime/dispatch` (ตอนนี้ `/admin/operations-schedule` ขึ้น
+   "Ready but unscheduled" ตลอดไป ขณะที่ compose ตั้ง `REALTIME_OUTBOX_DISPATCH_ENABLED:-1`
+   ให้ pump เดินเอง — สองที่พูดไม่ตรงกัน)
+
 ## ปิดช่องว่างที่ทำได้โดยไม่ต้องมี DB (Phase 4/8/9/10/11) — 2026-09-11
 
 branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·

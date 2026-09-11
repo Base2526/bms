@@ -41,7 +41,9 @@ wrong, and update the doc in the same change.
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
-| `apps/ws/` · `packages/` | WebSocket gateway · shared GraphQL + Redis pub/sub |
+| `apps/ws/` · `packages/graphql-core/` | Subscription-only WebSocket gateway (no database connection, ever) · shared typeDefs/resolvers used by both web and ws |
+| `packages/realtime/` | The one realtime contract: event union + per-event audience/permission rules, topic builders, validation/redaction, ticket claims, `subscriptionAuth`, `NAMED_REALTIME_SUBSCRIPTIONS` |
+| `schema.graphql` | Committed SDL artifact an external client generates from (`npm run schema:export`) |
 | `db/migrations/` · `docs/` · `scripts/` | Ordered idempotent migrations · docs · log triage, AI evals, load tests |
 
 ## Hard invariants (short form)
@@ -251,6 +253,25 @@ wrong, and update the doc in the same change.
 - **Env knobs** — a new key/model/URL/rate needs an entry in the `web` service `environment:` block of
   **all three** compose files. `--env-file` does not inject it; a missing one reads as `undefined`
   with no error.
+- **Realtime invalidation** — an event is written to `bms_realtime_outbox` in the same tenant
+  transaction as the aggregate it describes; a leased dispatcher publishes after commit and
+  `apps/ws` never touches PostgreSQL. Realtime is a *hint*: Postgres and the existing reads stay
+  authoritative, delivery is at-least-once, and polling/focus refresh stays until replay and load
+  are proven. New events use the union, rules, topic builders and validators in
+  `packages/realtime` — never a new event string or a raw topic. The surface is one generic stream
+  plus 18 named views that all reuse `realtimeTopics()` + `canReceiveRealtimeEvent()` and take **no
+  arguments**; never give a named subscription its own authorization. `9.70`–`9.72` are written but
+  **applied nowhere and never executed**; see the migration rules below before touching them, and
+  [docs/agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture)
+  for the full set.
+- **Typed GraphQL client surface** — `schema.graphql` is committed because production disables
+  introspection, and `graphql-schema-artifact-contract` fails if it drifts from the executable
+  schema: run `npm run schema:export` in the same change. A mobile/POS operation never accepts
+  tenant/location/device/shift from the caller, a money/stock/document mutation carries an
+  `idempotencyKey`, and superseded fields are `@deprecated` and kept rather than removed. Client
+  errors carry `extensions.code`; business rejections (`PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`,
+  `OUT_OF_STOCK`, `SOLD_OUT_TODAY`, …) stay in `data.<operation>.status` and must not become
+  GraphQL errors.
 
 ## i18n
 
@@ -369,6 +390,29 @@ per-user-preference pattern:
   `CURRENT_DATE`: an app on `Asia/Bangkok` against a UTC database then issues duplicates every
   morning until 07:00.
 - Parameterized queries only. Preserve append-only audit/history semantics.
+- **A trigger that runs inside a business transaction can roll that business write back**, so the
+  realtime triggers (`9.71`/`9.72`) are held to stricter rules than "it compiles":
+  - **One function may only reference columns that exist on every table it is attached to.**
+    PL/pgSQL resolves `NEW.<field>` against the real row type, and a `CASE`/`IF` guard on
+    `TG_TABLE_NAME` is not proof that the other branch is never resolved. Use `to_jsonb(NEW)->>'x'`
+    or a function per table. `bms_realtime_pos_scope_trigger()` is shared by `bms_pos_devices`
+    (has `active`, no `status`/`device_id`) and `bms_pos_shifts` (has `status`/`device_id`, no
+    `active`) and **has never been executed** — treat it as unproven until the test database says
+    otherwise.
+  - **`SECURITY DEFINER` + `BYPASSRLS` does not replace a table grant.** `BYPASSRLS` skips the row
+    policy only; a missing `GRANT` is still `42501` and rolls back the caller's write. Grant every
+    table the function reads, plus `INSERT` on the outbox and `USAGE` on its sequence, at column
+    level following `8.4__grant_bms_app_read_users_roles.sql`.
+  - `9.70` runs `CREATE ROLE … BYPASSRLS`, so **that file needs a superuser connection**; it will
+    start failing the day `app` is downgraded to a non-superuser as planned.
+  - Retention (`bms_cleanup_realtime_outbox`) only deletes `PUBLISHED`/`FAILED`. Installing the
+    triggers while nothing drains the outbox grows `PENDING` without a bound, and the
+    `REALTIME_*_ENABLED` flags do not stop event production — they gate delivery. The only way to
+    stop production today is to drop the triggers, so a migration in this family needs a written
+    `ROLLBACK` block.
+  - Prove any change on the throwaway instance in
+    [docs/architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md),
+    against a restored dump. `db/migrations` cannot build an empty database (`1.24` vs `001`).
 - Document new tables, states, constraints, and dependencies in `docs/architecture/database.md` and
   the relevant business doc. If operator workflows change, update the in-app manual
   (`app/(admin)/admin/manual/page.tsx`) in the same change.
@@ -484,13 +528,28 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `order-stock-lines-contract` | every stock-moving write path reads `bms_order_stock_lines`, never `bms_order_items`, for what a bill actually consumed |
 | `ar-contract` | credit-sale approval/limit math and ledger transfer of an over-collected credit to the oldest open invoice |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset |
+| `realtime-event-contract` · `realtime-subscription-auth-contract` | envelope validation, redaction, audience→topic derivation · the one authorizer, fed real cross-tenant/cross-branch/wrong-device/missing-permission/flag-off cases instead of grepping the resolver |
+| `realtime-outbox-contract` · `realtime-domain-contract` | leased claim/ack/nack/backoff and the fail-closed dispatch endpoint · trigger shape and in-transaction enqueue |
+| `realtime-domain-coverage-contract` | walks every table `lib/bms` writes and fails unless it has a trigger or a classified reason — the guard against losing a whole domain silently (20 tables are recorded as known gaps) |
+| `realtime-named-subscriptions-contract` · `realtime-client-contract` · `realtime-ws-security-contract` · `realtime-ws-ticket-contract` | the 18 named views map to event types and share one authorizer · bounded dedup/batched invalidation/reconnect refetch · origin/size/quota/expiry/one-root-field gateway bounds · ticket minting and claims |
+| `mobile-graphql-contract` · `graphql-schema-artifact-contract` | typed inputs/outputs read from the parsed SDL, field↔resolver both ways, no caller-supplied authority, JSON countdown · committed `schema.graphql` matches the executable schema |
+| `graphql-action-alias-contract` · `graphql-error-contract` · `react-native-graphql-doc-contract` | named actions delegate to the kept `@deprecated` field with a fixed action and no duplicated service call · every client error carries a code while business status stays in `data` · every documented example validates against the real schema |
+| `mobile-transport-compat-contract` | Android reaches HTTP GraphQL and mints a ticket with a Bearer token, user-scope tickets never carry the POS permission set, and the REST routes the browser still depends on exist and still authenticate |
 
   Suites that need a real Postgres **write to it** — dev only, never production. They create and
   remove their own rows (`scripts/variant-reservations-db-contract.test.mts` covers reservation
   attribution incl. bundles and unexplained holds; `scripts/reserve-stock-db-contract.test.mts`
   covers cross-shop/cross-branch reservation, the ledger row, and rollback). Run them from
   `apps/web` with the `next-runtime-shim` import and `--test-concurrency=1`; the exact command lives
-  in [CLAUDE.local.md](CLAUDE.local.md).
+  in [CLAUDE.local.md](CLAUDE.local.md). `gate.yml` does **not** run this mode, so "pure is green"
+  never means the database path was exercised.
+
+  `realtime-outbox-db-contract` and `realtime-domain-db-contract` additionally need migrations
+  `9.70`–`9.72`, which are applied nowhere. Use the throwaway instance in
+  [docs/architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md)
+  (separate cluster because the dispatcher role is cluster-scoped, restored from a dump because
+  `db/migrations` cannot build an empty database) and record a **baseline before** applying them —
+  a suite that was already red is not a regression.
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
   only. See [scripts/ai-eval/README.md](scripts/ai-eval/README.md).

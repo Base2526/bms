@@ -7,9 +7,14 @@
 | `*-db-contract.test.mts` | เทสที่ **เขียนจริงลงฐาน** | ต้องมี |
 | `*.test.mts` อื่น ๆ (รวม `ai-eval/`) | เทส pure — อ่านซอร์ส/ตรรกะ/fake provider | ไม่ต้อง |
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
+| `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
 
-ตอนนี้: **120 ไฟล์เทส** = pure 84 ไฟล์ (931 เทส) + DB 36 ไฟล์ (425 เทส)
+ตอนนี้: **144 ไฟล์เทส** = pure 106 ไฟล์ (1,110 เทส) + DB 38 ไฟล์
 `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือ
+
+> **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้างด้วย `ls scripts/*.test.mts | wc -l`,
+> `ls scripts/*-db-contract.test.mts | wc -l`, `ls scripts/ai-eval/*.test.mts | wc -l`
+> และอ่านจำนวนเทสจากบรรทัด `# tests` ท้าย `.test-output/pure.tap`
 
 > ทำไมต้องมีตัวรันกลาง: ก่อนหน้านี้ชุดเทสถูกรันด้วยคำสั่งยาว ๆ ที่จดไว้ใน `CLAUDE.local.md`
 > แล้วต้องก็อปมาต่อชื่อไฟล์เอง ผลคือเทส DB หลายชุดไม่เคยถูกรันจริงในรอบที่แก้โค้ด —
@@ -420,6 +425,51 @@ npx tsx scripts/rotate-bms-secret-key.mts --apply    # เขียนจริ�
 
 ---
 
+## 7. `npm run schema:export` — เรนเดอร์ `schema.graphql` (ไม่ต้องมีฐาน)
+
+```bash
+cd apps/web && npm run schema:export      # เขียน <repo>/schema.graphql
+```
+
+เรียก `renderBmsGraphqlSdl()` บน `buildBmsGraphqlSchema()` ซึ่งเป็น **สคีมาตัวเดียวกับที่
+`/api/graphql` เสิร์ฟ** แล้วเรียง field แบบ lexicographic (ไม่ให้ลำดับ import สร้าง diff หลอก)
+
+- **artifact นี้เป็นซอร์สไฟล์ ไม่ใช่ของที่ build ทิ้ง** — production ปิด introspection ไว้
+  ไฟล์ที่ commit จึงเป็นสิ่งเดียวที่ client เอาไป codegen ได้
+- **แก้สคีมาแล้วต้องรันตัวนี้ในคอมมิตเดียวกัน** ไม่งั้น `graphql-schema-artifact-contract`
+  (อยู่ในชุด pure → CI จับ) แดงพร้อม diff ที่ชื่อ type
+- ⚠️ เทสใน `scripts/` import แพ็กเกจ `graphql` ตรง ๆ ไม่ได้ (อยู่ที่ `apps/web/node_modules`
+  เท่านั้น) และชื่อโฟลเดอร์ `apps/web/graphql` ชนกับชื่อแพ็กเกจภายใต้ `baseUrl="."` —
+  ตัวเรนเดอร์จึงต้องอยู่ใต้ `apps/web/graphql/` และ import subpath
+  (`graphql/utilities/index.js`) ไม่ใช่ `"graphql"`
+
+---
+
+## 8. `preflight-deploy.mts` — ตรวจก่อน deploy (อ่านอย่างเดียว ไม่ apply migration ให้)
+
+```bash
+npx tsx scripts/preflight-deploy.mts
+```
+
+resolve ว่า "ฐานเป้าหมายคือใบไหน" ครั้งเดียว (`scripts/dbEnv.mts`) แล้ว **ส่ง env ที่ resolve แล้ว
+ต่อให้ลูกทุกตัวแบบระบุชัด** — เดิมรันสองเครื่องมือจากเครื่องเดียวกันแล้วอาจตรวจฐานคนละใบโดยไม่มี
+อะไรบอก
+
+ด่านที่บล็อก: `check-schema-readiness` · `JWT_SECRET`/`BMS_SECRET_KEY` (hex 64) ·
+`check-bms-secret-key` · GRANT ของ `bms_app` (เรียกไฟล์เทสตัวเดิม **และตรวจว่าบรรทัดประกาศ
+read-only ยังอยู่ก่อนเรียก**) · `NODE_ENV=production` ต้องไม่มี `BMS_ALLOW_FAKE_SEED=1`
+
+**exit `2` = "ตรวจไม่ได้" ห้ามอ่านว่าผ่าน** — ห้าม deploy เหมือน `1` แต่ทางแก้คนละเรื่อง
+(ไปรัน migration อย่างหนึ่ง · ต่อฐานให้ได้ก่อนอีกอย่าง)
+
+รายการที่คนต้องยืนยันเอง (เทส DB ผ่าน · เปิดดูในเบราว์เซอร์แล้ว · สำรองฐานก่อน migration ·
+seed permission ใหม่ครบทุกร้าน) **จงใจเป็นคำเตือน ไม่ใช่ด่านที่บล็อก** — ด่านที่รู้อยู่แล้วว่าแดง
+คือด่านที่ทุกคนเรียนรู้ที่จะข้าม
+
+**⚠️ ยังไม่มีเทสของตัวเอง** และยังไม่เคยเห็นเส้นทาง exit `0` (เครื่องที่เขียนไม่มี Postgres)
+
+---
+
 ## ตารางสรุป exit code
 
 | exit | หมายความว่า |
@@ -449,3 +499,7 @@ npx tsx scripts/rotate-bms-secret-key.mts --apply    # เขียนจริ�
 - `scripts/ai-eval/README.md` — ชุด deterministic contract ของ AI pipeline + live-model eval
 - `scripts/bms-log-triage/README.md` · `scripts/load-test/README.md`
 - `CLAUDE.local.md` § ประตูก่อน merge/deploy — คำสั่งเต็มของเทส DB และของค้างต่อฟีเจอร์
+- `docs/architecture/realtime-test-database.md` — วิธีรันชุด DB ของ `realtime-*-db-contract`
+  ซึ่งต้องมี migration `9.70`–`9.72` ที่ยังไม่ได้ apply ที่ไหนเลย (ต้องใช้ **คนละ instance**
+  เพราะ role ของ dispatcher เป็นระดับ cluster และต้อง restore จาก dump เพราะสร้างฐานเปล่าจาก
+  `db/migrations` ไม่ได้) · **จดจำนวนที่ผ่าน/แดงก่อน apply ไว้เป็น baseline เสมอ**

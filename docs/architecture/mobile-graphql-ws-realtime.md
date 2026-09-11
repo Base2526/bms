@@ -5,6 +5,15 @@
 >
 > Realtime security and delivery details: [production realtime audit](realtime-production-audit.md)
 > and [ADR 001](decisions/001-transactional-realtime-invalidation.md)
+>
+> The surface was then made generatable — committed SDL, typed inputs/outputs, named actions, error
+> codes: [graphql-client-readiness-brief.md](graphql-client-readiness-brief.md) and
+> [`schema.graphql`](../../schema.graphql). It changed no service, no permission and no REST route.
+>
+> ⚠️ Migrations `9.70`–`9.72` are applied to **no** database and not one of the 27 triggers has ever
+> fired. Because they enqueue inside the business transaction, prove them on the throwaway instance
+> in [realtime-test-database.md](realtime-test-database.md) before believing any claim below about
+> them.
 
 ## Decision
 
@@ -211,4 +220,5 @@ and tests to agree.
 | 6. Named subscriptions | Implemented; live socket verification pending | all 17 Phase 6 subscriptions plus `bmsServiceCallChanged` (18th: the table-call surface the brief omitted, backed by `bmsPosRestaurantServiceCalls`) declared in `packages/graphql-core`; each is a filtered view of the one invalidation stream through `NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`, so tenant/location/device scope and the permission rule have a single implementation rather than seventeen. Event types with no named subscription are recorded as generic-stream-only in `scripts/realtime-named-subscriptions-contract.test.mts` |
 | 6b. Domain events | Implemented; live DB verification pending | migrations `9.71` (25 tables) and `9.72` (drawer cash movement + the retail kitchen queue), domain event contract/fixtures, transactional publishers and pure/DB suites |
 | 6c. Coverage guard | Implemented | `scripts/realtime-domain-coverage-contract.test.mts` walks every table `lib/bms` writes and fails unless each is covered by a trigger or classified with a reason, so a forgotten domain cannot stay silent. Twenty tables are recorded there as known gaps that deserve an event and do not have one yet |
-| 7. Client rollout | Not present in this repository | browser POS stays on REST compatibility and polling; no React Native app exists in this repository. Use `react-native-graphql-client.md` in the external app, canary it, and retain REST until telemetry proves migration |
+| 7. Client rollout | Not present in this repository | browser POS stays on REST compatibility and polling; no React Native app exists in this repository. Use `react-native-graphql-client.md` in the external app, canary it, and retain REST until telemetry proves migration. The 18 named subscriptions consequently have **no caller at all** — the browser mounts the generic `realtimeEvent` stream plus `bmsInboxChanged` |
+| 8. Typed client contract | Complete for generation; never generated | `schema.graphql` committed and pinned to the executable schema, 99 operations with named inputs and named outputs (no `JSON` anywhere in a response tree), eight action multiplexers split into 32 named mutations with the originals kept `@deprecated`, stable `extensions.code` on every client-facing error. Still `action`-dispatched: `bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift` (so `BmsPosDepositInput.idempotencyKey` stays nullable). No generated client has been compiled and no fixture-driven REST-versus-GraphQL response-shape suite exists yet, which is what still blocks moving a caller |
