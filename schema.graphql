@@ -1587,6 +1587,212 @@ type BmsMessageAttachment {
   url: String!
 }
 
+type BmsMobileCommissionReport {
+  from: String!
+  noRulesConfigured: Boolean!
+  rows: [BmsMobileCommissionRow!]!
+  to: String!
+  totalCommission: Float!
+}
+
+type BmsMobileCommissionReportResult {
+  report: BmsMobileCommissionReport!
+}
+
+type BmsMobileCommissionRow {
+  billCount: Int!
+  commission: Float!
+  eligibleSales: Float!
+  grossSales: Float!
+  returnedSales: Float!
+  staffId: ID!
+  staffName: String!
+}
+
+type BmsMobileCommissionRule {
+  effectiveFrom: String!
+  id: Int!
+  note: String
+  percent: Float!
+  ref: String
+  scope: String!
+}
+
+type BmsMobileCommissionRuleActionResult {
+  id: Int
+  reason: String
+  status: String!
+}
+
+type BmsMobileCommissionRulesResult {
+  rules: [BmsMobileCommissionRule!]!
+}
+
+type BmsMobileRestaurantRequest {
+  agreedItems: [BmsMobileRestaurantRequestItem!]
+  checkoutUrl: String
+  createdAt: String!
+  customerName: String
+  fulfillmentType: String!
+  id: ID!
+  items: [BmsMobileRestaurantRequestItem!]!
+  locationId: ID!
+  locationName: String!
+  note: String
+  orderId: ID
+  phone: String
+  requestedAt: String
+  reviewNote: String
+  status: String!
+  version: Int!
+}
+
+type BmsMobileRestaurantRequestActionResult {
+  checkoutUrl: String
+  failure: BmsPosSaleResult
+  orderId: ID
+  reason: String
+  status: String!
+}
+
+type BmsMobileRestaurantRequestItem {
+  modifierCodes: [String!]
+  modifierNames: [String!]
+  name: String
+  packCode: String
+  qty: Int!
+  size: String!
+  sku: String!
+  unitName: String
+}
+
+type BmsMobileRestaurantRequestsResult {
+  enabled: Boolean!
+  requests: [BmsMobileRestaurantRequest!]!
+}
+
+type BmsMobileStockCount {
+  appliedAt: String
+  countNo: String!
+  createdAt: String!
+  createdByName: String
+  id: ID!
+  items: [BmsMobileStockCountItem!]!
+  locationId: ID!
+  locationName: String
+  note: String
+  status: String!
+  varianceUnits: Int!
+}
+
+type BmsMobileStockCountActionResult {
+  adjustedItems: Int
+  countId: ID
+  countNo: String
+  current: String
+  reason: String
+  reserved: Float
+  size: String
+  sku: String
+  snapshotQty: Int
+  status: String!
+  variance: Int
+  varianceUnits: Int
+  wouldBe: Float
+}
+
+type BmsMobileStockCountItem {
+  countedQty: Int!
+  id: Int!
+  note: String
+  productName: String
+  size: String!
+  sku: String!
+  snapshotQty: Int!
+  variance: Int!
+}
+
+type BmsMobileStockCountsResult {
+  counts: [BmsMobileStockCount!]!
+  locations: [BmsLocation!]!
+}
+
+type BmsMobileStockTransfer {
+  createdAt: String!
+  createdByName: String
+  fromLocationId: ID!
+  fromLocationName: String
+  id: ID!
+  items: [BmsMobileStockTransferItem!]!
+  note: String
+  receivedAt: String
+  receivingNote: String
+  sentAt: String
+  status: String!
+  toLocationId: ID!
+  toLocationName: String
+  transferNo: String!
+}
+
+type BmsMobileStockTransferActionResult {
+  available: Float
+  current: String
+  reason: String
+  requested: Float
+  size: String
+  sku: String
+  status: String!
+  transferId: ID
+  transferNo: String
+}
+
+type BmsMobileStockTransferItem {
+  damagedQty: Int!
+  discrepancyNote: String
+  discrepancyReason: String
+  id: Int!
+  missingQty: Int
+  productName: String
+  qty: Int!
+  receivedQty: Int
+  size: String!
+  sku: String!
+}
+
+type BmsMobileStockTransfersResult {
+  locations: [BmsLocation!]!
+  transfers: [BmsMobileStockTransfer!]!
+}
+
+type BmsMobileStoreCredit {
+  balance: Float!
+  code: String!
+  createdAt: String!
+  customerId: ID
+  customerName: String
+  expiresAt: String
+  id: ID!
+  note: String
+  status: String!
+}
+
+type BmsMobileStoreCreditActionResult {
+  credit: BmsMobileStoreCredit
+  reason: String
+  status: String!
+}
+
+type BmsMobileStoreCreditOutstanding {
+  activeCards: Int!
+  balanceMismatchCount: Int!
+  outstandingAmount: Float!
+}
+
+type BmsMobileStoreCreditResult {
+  credit: BmsMobileStoreCredit
+  outstanding: BmsMobileStoreCreditOutstanding
+}
+
 type BmsModifierComponent {
   qtyDelta: Int!
   size: String!
@@ -2089,6 +2295,36 @@ type BmsPosApprover {
   role: String
 }
 
+type BmsPosArAccountResult {
+  account: BmsArAccount
+  invoices: [BmsArInvoice!]!
+}
+
+type BmsPosArReceiptAllocation {
+  amount: Float!
+  invoiceId: ID!
+  orderId: ID!
+}
+
+type BmsPosArReceiptResult {
+  allocations: [BmsPosArReceiptAllocation!]
+  balanceAfter: Float
+  outstanding: Float
+  reason: String
+  receiptId: ID
+  replayed: Boolean
+  requested: Float
+  status: String!
+}
+
+type BmsPosArShiftSummary {
+  collectedAmount: Float!
+  collectedCashAmount: Float!
+  collectedCount: Int!
+  creditSalesAmount: Float!
+  creditSalesCount: Int!
+}
+
 type BmsPosAvailableLocation {
   branchCode: String
   id: ID!
@@ -2120,6 +2356,25 @@ input BmsPosBlindReturnLineInput {
   unitRefund: Float!
 }
 
+type BmsPosCashMovement {
+  actorName: String
+  amount: Float!
+  approvedByName: String
+  createdAt: String!
+  direction: String!
+  id: ID!
+  reason: String!
+}
+
+type BmsPosCashMovementActionResult {
+  available: Float
+  drawerAfter: Float
+  movement: BmsPosCashMovement
+  reason: String
+  replayed: Boolean
+  status: String!
+}
+
 input BmsPosCashMovementInput {
   amount: Float!
   approverPin: String
@@ -2129,6 +2384,10 @@ input BmsPosCashMovementInput {
   idempotencyKey: String!
   pin: String!
   reason: String!
+}
+
+type BmsPosCashMovementsResult {
+  movements: [BmsPosCashMovement!]!
 }
 
 type BmsPosCashier {
@@ -2172,6 +2431,14 @@ input BmsPosCompleteRefundInput {
   externalRef: String
   pin: String!
   userId: ID
+}
+
+type BmsPosCompleteRefundResult {
+  allocation: BmsPosRefundAllocation
+  reason: String
+  replayed: Boolean
+  returnSettlementStatus: String
+  status: String!
 }
 
 type BmsPosCreatedLine {
@@ -2225,6 +2492,29 @@ type BmsPosDeposit {
   totalAmount: Float!
 }
 
+type BmsPosDepositActionResult {
+  deposit: BmsPosDeposit
+  docNo: String
+  expected: Float
+  forfeited: Float
+  orderId: ID
+  reason: String
+  received: Float
+  refundable: Float
+  replayed: Boolean
+  saleLocationId: ID
+  status: String!
+  total: Float
+}
+
+type BmsPosDepositCandidateOrder {
+  channel: String!
+  createdAt: String!
+  itemCount: Int!
+  orderId: ID!
+  totalAmount: Float!
+}
+
 input BmsPosDepositInput {
   action: String!
   amount: Float
@@ -2251,6 +2541,13 @@ input BmsPosDepositSerialLineInput {
   serials: [String!]!
   size: String!
   sku: String!
+}
+
+type BmsPosDepositsResult {
+  candidateOrders: [BmsPosDepositCandidateOrder!]!
+  deposits: [BmsPosDeposit!]!
+  searchQuery: String
+  searchResults: [BmsPosDeposit!]!
 }
 
 type BmsPosDevice {
@@ -2316,6 +2613,47 @@ input BmsPosEnrollMemberInput {
   pin: String!
 }
 
+type BmsPosEnrollMemberResult {
+  error: String
+  member: BmsPosMember
+  reason: String
+  status: String!
+}
+
+type BmsPosExpense {
+  actorName: String
+  actualAmount: Float
+  advancedAmount: Float!
+  approvedByName: String
+  category: String!
+  createdAt: String!
+  description: String!
+  extraCashOut: Float!
+  fundingSource: String!
+  id: ID!
+  kind: String!
+  payee: String
+  pettyCashBalanceAfter: Float
+  receiptRef: String
+  returnedAmount: Float!
+  settledAt: String
+  settledByName: String
+  settlementApprovedByName: String
+  status: String!
+}
+
+type BmsPosExpenseActionResult {
+  available: Float
+  balanceAfter: Float
+  drawerAfter: Float
+  entry: BmsPosPettyCashLedgerEntry
+  expense: BmsPosExpense
+  pettyCashAfter: Float
+  reason: String
+  replayed: Boolean
+  status: String!
+}
+
 input BmsPosExpenseInput {
   action: String!
   actualAmount: Float
@@ -2337,10 +2675,40 @@ input BmsPosExpenseInput {
   source: String
 }
 
+type BmsPosExpensesResult {
+  canManagePettyCash: Boolean!
+  canUsePersonalFunds: Boolean!
+  categories: [String!]!
+  expenses: [BmsPosExpense!]!
+  pettyCashWallet: BmsPosPettyCashWallet!
+}
+
 input BmsPosExtraLineInput {
   label: String!
   qty: Float
   unitAmount: Float!
+}
+
+type BmsPosIncomingOrder {
+  amountDue: Float!
+  channel: String!
+  createdAt: String!
+  customerRef: String
+  fulfillmentType: String!
+  id: ID!
+  items: [BmsPosIncomingOrderItem!]!
+  promisedAt: String
+  status: String!
+}
+
+type BmsPosIncomingOrderItem {
+  modifierCodes: [String!]
+  name: String
+  orderItemId: Int!
+  qty: Float!
+  size: String!
+  sku: String!
+  unitName: String
 }
 
 type BmsPosKitchenSlaEntry {
@@ -2355,12 +2723,24 @@ type BmsPosKitchenStationSummary {
   sortOrder: Int!
 }
 
+type BmsPosKitchenTicketActionResult {
+  reason: String
+  status: String
+  ticket: BmsKitchenTicket
+}
+
 input BmsPosKitchenTicketStatusInput {
   cashierUserId: ID!
   pin: String!
   status: String!
   ticketId: ID!
   userId: ID
+}
+
+type BmsPosKitchenTicketsActionResult {
+  reason: String
+  status: String
+  tickets: [BmsKitchenTicket!]
 }
 
 type BmsPosKitchenTicketsResult {
@@ -2386,12 +2766,75 @@ type BmsPosLocationSummary {
   vatCode: String
 }
 
+type BmsPosMember {
+  customerId: ID!
+  memberNo: String
+  memberSince: String
+  name: String!
+  phone: String
+  pointsBalance: Float!
+  pointsUsable: Float!
+  tier: BmsPosMemberTier
+}
+
+type BmsPosMemberLoyaltyPreview {
+  block: String
+  enabled: Boolean!
+  pointsForAmount: Float
+}
+
 input BmsPosMemberPreviewInput {
   couponCode: String
   customerId: ID
   manualDiscount: Float
   pointsToRedeem: Float
   subtotal: Float!
+}
+
+type BmsPosMemberPreviewResult {
+  capped: Boolean
+  cappedAt: Float
+  couponDiscount: Float
+  couponError: String
+  loyaltyEnabled: Boolean
+  manualDiscount: Float
+  member: BmsPosMember
+  netTotal: Float
+  pointsDiscount: Float
+  pointsEarnBlock: String
+  pointsUsed: Float
+  pointsWillEarn: Float
+  reason: String
+  redeemBahtPerUnit: Float
+  redeemMinPoints: Float
+  redeemPointsPerUnit: Float
+  status: String
+  subtotal: Float
+  tierDiscount: Float
+  tierLabel: String
+  totalDiscount: Float
+}
+
+type BmsPosMemberSearchResult {
+  loyalty: BmsPosMemberLoyaltyPreview!
+  members: [BmsPosMember!]!
+}
+
+type BmsPosMemberTier {
+  code: String!
+  discountType: String!
+  discountValue: Float!
+  id: ID!
+  name: String!
+}
+
+type BmsPosMenuAvailabilityResult {
+  availability: String
+  productSku: String
+  reason: String
+  resetsAt: String
+  status: String
+  unavailable: Boolean
 }
 
 type BmsPosModifier {
@@ -2406,10 +2849,21 @@ type BmsPosModifier {
   selectionType: String!
 }
 
+type BmsPosNoSale {
+  actorName: String
+  createdAt: String!
+  id: ID!
+  reason: String!
+}
+
 input BmsPosNoSaleInput {
   cashierUserId: ID!
   pin: String!
   reason: String!
+}
+
+type BmsPosNoSalesResult {
+  noSales: [BmsPosNoSale!]!
 }
 
 type BmsPosOperationalReadiness {
@@ -2429,6 +2883,17 @@ type BmsPosOperationalReadiness {
   warnings: [String!]!
 }
 
+type BmsPosParkActionResult {
+  cart: BmsPosParkedCart
+  caseCode: String
+  label: String
+  limit: Int
+  parked: BmsPosParkedSale
+  reason: String
+  reviewStatus: String
+  status: String!
+}
+
 input BmsPosParkInput {
   action: String
   cart: JSON
@@ -2439,6 +2904,84 @@ input BmsPosParkInput {
   subtotalHint: Float
 }
 
+type BmsPosParkedCart {
+  couponCode: String
+  extraLines: [BmsPosParkedExtraLine!]
+  lines: [BmsPosParkedCartLine!]!
+  member: BmsPosParkedCartMember
+  pharmacyReview: BmsPosParkedCartPharmacyReview
+  pointsToRedeem: String
+  version: Int!
+}
+
+type BmsPosParkedCartLine {
+  available: Float
+  basePrice: Float
+  baseQty: Float
+  imageUrl: String
+  key: String
+  modifierCodes: [String!]
+  orderItemId: Int
+  packCode: String
+  packPrice: Float
+  packQty: Int
+  priceTiers: [BmsPosPriceTier!]
+  productName: String
+  promotion: BmsPosPromotion
+  receiptName: String
+  refundablePackQty: Float
+  returnedPackQty: Float
+  scaleBarcode: String
+  serialTracked: Boolean
+  serials: [String!]
+  size: String
+  sku: String
+  unitName: String
+}
+
+type BmsPosParkedCartMember {
+  customerId: ID
+  memberNo: String
+  name: String
+  phone: String
+  pointsBalance: Float
+  pointsUsable: Float
+}
+
+type BmsPosParkedCartPharmacyReview {
+  assessmentId: ID!
+  caseCode: String!
+  requiresSafetyCheck: Boolean!
+}
+
+type BmsPosParkedExtraLine {
+  label: String!
+  unitAmount: String!
+}
+
+type BmsPosParkedPharmacyReview {
+  assessmentId: ID!
+  canResume: Boolean!
+  caseCode: String!
+  requiresSafetyCheck: Boolean!
+  status: String
+}
+
+type BmsPosParkedSale {
+  cart: BmsPosParkedCart
+  createdAt: String!
+  id: ID!
+  itemCount: Int!
+  label: String!
+  parkedByName: String
+  pharmacyReview: BmsPosParkedPharmacyReview
+  subtotalHint: Float!
+}
+
+type BmsPosParkedSalesResult {
+  parked: [BmsPosParkedSale!]!
+}
+
 input BmsPosPaymentInput {
   amount: Float!
   cashTendered: Float
@@ -2446,11 +2989,49 @@ input BmsPosPaymentInput {
   ref: String
 }
 
+type BmsPosPendingRestaurantRefund {
+  amount: Float!
+  cancelledBy: String
+  channel: String!
+  createdAt: String!
+  customerRef: String
+  id: ID!
+  method: String!
+  orderId: ID!
+}
+
+type BmsPosPettyCashLedgerEntry {
+  actorName: String
+  amount: Float!
+  balanceAfter: Float!
+  createdAt: String!
+  direction: String!
+  evidenceRef: String!
+  id: ID!
+  reason: String!
+  source: String!
+}
+
+type BmsPosPettyCashWallet {
+  balance: Float!
+  entries: [BmsPosPettyCashLedgerEntry!]!
+}
+
 type BmsPosPharmacyBlocker {
   maxQuantity: Int
   requested: Int
   salePolicy: String!
   sku: String!
+  status: String!
+}
+
+type BmsPosPharmacyReviewResult {
+  assessmentId: ID
+  caseCode: String
+  parked: BmsPosParkedSale
+  reason: String
+  requiresSafetyCheck: Boolean
+  reviewStatus: String
   status: String!
 }
 
@@ -2467,6 +3048,103 @@ type BmsPosPromotion {
   buyQty: Int!
   getQty: Int
   kind: String!
+}
+
+type BmsPosPurchaseOrdersResult {
+  orders: [BmsPurchaseOrder!]!
+}
+
+type BmsPosReceipt {
+  billNo: String
+  branchCode: String
+  cashChange: Float
+  cashTendered: Float
+  cashierName: String
+  discountLines: [BmsPosDiscountLine!]!
+  docNo: String
+  lines: [BmsPosReceiptLine!]!
+  locationName: String
+  memberName: String
+  memberNo: String
+  memberPhone: String
+  orderId: ID!
+  orderStatus: String!
+  paymentMethod: String
+  paymentRef: String
+  payments: [BmsPosReceiptPayment!]!
+  posDeviceId: ID
+  posLabel: String
+  receiptNo: String
+  refunds: [BmsPosRefundAllocation!]!
+  returnBlockedReason: String
+  returnEligible: Boolean!
+  returnEvents: [BmsPosReceiptReturnEvent!]!
+  roundingAmount: Float!
+  saleLocationId: ID!
+  shiftId: ID
+  soldAt: String!
+  sourceChannel: String!
+  total: Float!
+  vat: BmsPosReceiptVat
+  voidedAt: String
+}
+
+type BmsPosReceiptDeliveryResult {
+  channel: String
+  reason: String
+  status: String!
+  to: String
+}
+
+type BmsPosReceiptLine {
+  basePrice: Float!
+  baseQty: Float!
+  lineTotal: Float!
+  orderItemId: Int!
+  packCode: String!
+  packPrice: Float!
+  packQty: Float!
+  receiptName: String!
+  refundablePackQty: Float!
+  returnedPackQty: Float!
+  size: String!
+  sku: String!
+  unitName: String!
+}
+
+type BmsPosReceiptPayment {
+  amount: Float!
+  cashChange: Float
+  cashTendered: Float
+  id: ID!
+  method: String!
+  ref: String
+}
+
+type BmsPosReceiptReturnEvent {
+  approvedByName: String
+  creditNoteNo: String
+  id: ID!
+  isVoid: Boolean!
+  items: [BmsPosReceiptReturnItem!]!
+  note: String
+  pricingAdjustmentAmount: Float!
+  refundAmount: Float!
+  refunds: [BmsPosRefundAllocation!]!
+  remainingAmount: Float
+  returnMode: String!
+  returnedAt: String!
+  returnedByName: String
+  settlementStatus: String!
+}
+
+type BmsPosReceiptReturnItem {
+  orderItemId: Int!
+  packQty: Float!
+  receiptName: String!
+  refundAmount: Float!
+  size: String!
+  sku: String!
 }
 
 type BmsPosReceiptVat {
@@ -2492,6 +3170,45 @@ input BmsPosReceivePurchaseLineInput {
   qty: Int!
   size: String!
   sku: String!
+}
+
+type BmsPosRecentReturnSummary {
+  createdAt: String!
+  crossBranch: Boolean!
+  id: ID!
+  note: String
+  orderId: ID!
+  pendingAmount: Float!
+  reasonCode: String
+  reasonText: String
+  refundAmount: Float!
+  returnLocationName: String
+  returnMode: String!
+  returnedBy: String
+  saleLocationName: String
+  settledAmount: Float!
+  settlementStatus: String!
+  sourceChannel: String!
+}
+
+type BmsPosRecentSalesResult {
+  depositMatches: [BmsPosDeposit!]!
+  sales: [BmsPosReceipt!]!
+}
+
+type BmsPosRefundAllocation {
+  amount: Float!
+  completedAt: String
+  completedByName: String
+  externalRef: String
+  id: ID!
+  method: String!
+  paymentId: ID!
+  posReturnId: ID
+  returnMode: String
+  returnNote: String
+  returnedAt: String
+  status: String!
 }
 
 input BmsPosRequestPharmacyReviewInput {
@@ -2604,6 +3321,35 @@ input BmsPosRestaurantCheckActionInput {
   targetTableId: ID
 }
 
+type BmsPosRestaurantCheckActionResult {
+  available: Float
+  billNo: String
+  cashChange: Float
+  cashTendered: Float
+  check: BmsPosRestaurantCheck
+  discountLines: [BmsPosDiscountLine!]
+  docNo: String
+  expected: Float
+  kitchenTickets: Int
+  movedItems: Int
+  orderId: ID
+  pointsBalance: Float
+  pointsEarned: Float
+  reason: String
+  receiptNo: String
+  received: Float
+  replayed: Boolean
+  requested: Float
+  roundingAmount: Float
+  size: String
+  sku: String
+  source: BmsPosRestaurantCheck
+  status: String
+  target: BmsPosRestaurantCheck
+  total: Float
+  vat: BmsPosReceiptVat
+}
+
 input BmsPosRestaurantCheckCredentialsInput {
   cashierUserId: ID!
   pin: String!
@@ -2690,6 +3436,24 @@ input BmsPosRestaurantIncomingActionInput {
   pin: String!
 }
 
+type BmsPosRestaurantIncomingActionResult {
+  current: String
+  paused: Boolean
+  posReturnId: ID
+  reason: String
+  refundAmount: Float
+  replayed: Boolean
+  settlementStatus: String
+  status: String
+  ticketsCreated: Int
+}
+
+type BmsPosRestaurantIncomingResult {
+  config: BmsPosRestaurantOrderingConfig!
+  orders: [BmsPosIncomingOrder!]!
+  refunds: [BmsPosPendingRestaurantRefund!]!
+}
+
 input BmsPosRestaurantMenuAvailabilityInput {
   cashierUserId: ID!
   pin: String!
@@ -2747,6 +3511,29 @@ type BmsPosRestaurantOpenCheckResult {
   check: BmsPosRestaurantCheck
 }
 
+type BmsPosRestaurantOrderInterval {
+  close: String!
+  day: Int!
+  open: String!
+}
+
+type BmsPosRestaurantOrderingConfig {
+  accepting: Boolean!
+  hours: [BmsPosRestaurantOrderInterval!]!
+  paused: Boolean!
+  reason: String
+}
+
+type BmsPosRestaurantQrActionResult {
+  check: BmsPosRestaurantCheck
+  id: ID
+  kitchenTickets: Int
+  reason: String
+  replayed: Boolean
+  status: String!
+  submissionId: ID
+}
+
 input BmsPosRestaurantQrOrderActionInput {
   action: String!
   cashierUserId: ID!
@@ -2755,10 +3542,42 @@ input BmsPosRestaurantQrOrderActionInput {
   submissionId: ID!
 }
 
+type BmsPosRestaurantQrOrdersResult {
+  submissions: [BmsPosRestaurantQrSubmission!]!
+}
+
+type BmsPosRestaurantQrSubmission {
+  checkId: ID!
+  estimatedTotal: Float!
+  id: ID!
+  items: [BmsPosRestaurantQrSubmissionItem!]!
+  rejectionReason: String
+  reviewedAt: String
+  status: String!
+  submittedAt: String!
+  tableCode: String!
+  tableId: ID!
+  tableName: String!
+}
+
 input BmsPosRestaurantQrSubmissionInput {
   cashierUserId: ID!
   pin: String!
   submissionId: ID!
+}
+
+type BmsPosRestaurantQrSubmissionItem {
+  acceptedCheckItemId: ID
+  estimatedUnitPrice: Float!
+  id: ID!
+  kitchenNote: String
+  modifierCodes: [String!]!
+  modifierNames: [String!]!
+  packCode: String
+  packQty: Int!
+  productName: String!
+  size: String!
+  sku: String!
 }
 
 input BmsPosRestaurantRejectQrSubmissionInput {
@@ -2766,6 +3585,25 @@ input BmsPosRestaurantRejectQrSubmissionInput {
   pin: String!
   reason: String
   submissionId: ID!
+}
+
+type BmsPosRestaurantRequest {
+  agreedItems: [BmsPosRestaurantRequestItem!]
+  checkoutUrl: String
+  createdAt: String!
+  customerName: String
+  fulfillmentType: String!
+  id: ID!
+  items: [BmsPosRestaurantRequestItem!]!
+  locationId: ID!
+  locationName: String!
+  note: String
+  orderId: ID
+  phone: String
+  requestedAt: String
+  reviewNote: String
+  status: String!
+  version: Int!
 }
 
 input BmsPosRestaurantRequestActionInput {
@@ -2780,6 +3618,15 @@ input BmsPosRestaurantRequestActionInput {
   version: Int
 }
 
+type BmsPosRestaurantRequestActionResult {
+  checkoutUrl: String
+  failure: BmsPosSaleResult
+  orderId: ID
+  reason: String
+  requests: [BmsPosRestaurantRequest!]
+  status: String
+}
+
 input BmsPosRestaurantRequestDecisionInput {
   cashierUserId: ID!
   confirmed: Boolean!
@@ -2791,11 +3638,39 @@ input BmsPosRestaurantRequestDecisionInput {
   version: Int!
 }
 
+type BmsPosRestaurantRequestItem {
+  modifierCodes: [String!]
+  modifierNames: [String!]
+  name: String
+  packCode: String
+  qty: Int!
+  size: String!
+  sku: String!
+  unitName: String
+}
+
+type BmsPosRestaurantRequestsResult {
+  requests: [BmsPosRestaurantRequest!]!
+}
+
 input BmsPosRestaurantSeatWaitlistInput {
   cashierUserId: ID!
   entryId: ID!
   pin: String!
   tableId: ID!
+}
+
+type BmsPosRestaurantServiceCall {
+  acknowledgedAt: String
+  completedAt: String
+  createdAt: String!
+  id: ID!
+  requestCode: String!
+  requestNote: String
+  status: String!
+  tableCode: String!
+  tableId: ID!
+  tableName: String!
 }
 
 input BmsPosRestaurantServiceCallActionInput {
@@ -2805,10 +3680,20 @@ input BmsPosRestaurantServiceCallActionInput {
   pin: String!
 }
 
+type BmsPosRestaurantServiceCallActionResult {
+  id: ID
+  reason: String
+  status: String
+}
+
 input BmsPosRestaurantServiceCallInput {
   callId: ID!
   cashierUserId: ID!
   pin: String!
+}
+
+type BmsPosRestaurantServiceCallsResult {
+  calls: [BmsPosRestaurantServiceCall!]!
 }
 
 input BmsPosRestaurantSetGuestCountInput {
@@ -2853,10 +3738,97 @@ input BmsPosRestaurantWaitlistActionInput {
   tableId: ID
 }
 
+type BmsPosRestaurantWaitlistActionResult {
+  check: BmsPosRestaurantCheck
+  entry: BmsPosRestaurantWaitlistEntry
+  reason: String
+  status: String
+}
+
+type BmsPosRestaurantWaitlistEntry {
+  calledAt: String
+  checkId: ID
+  closedAt: String
+  createdAt: String!
+  guestName: String
+  guestPhone: String
+  id: ID!
+  kind: String!
+  note: String
+  partySize: Int!
+  preferredTableCode: String
+  preferredTableId: ID
+  queueNo: Int
+  reservedFor: String
+  seatedAt: String
+  seatedTableCode: String
+  seatedTableId: ID
+  serviceDate: String!
+  status: String!
+}
+
 input BmsPosRestaurantWaitlistEntryInput {
   cashierUserId: ID!
   entryId: ID!
   pin: String!
+}
+
+type BmsPosRestaurantWaitlistResult {
+  calledCount: Int!
+  entries: [BmsPosRestaurantWaitlistEntry!]!
+  waitingCount: Int!
+  waitingGuests: Int!
+}
+
+type BmsPosReturnActionResult {
+  additionalAmount: Float
+  available: Float
+  blindReturnId: ID
+  channel: String
+  creditNoteNo: String
+  crossBranch: Boolean
+  current: String
+  maxUnitRefund: Float
+  method: String
+  orderId: ID
+  orderItemId: Int
+  pointsReturned: Float
+  pointsReversed: Float
+  posReturnId: ID
+  pricingAdjustmentAmount: Float
+  reason: String
+  refundAmount: Float
+  refunds: [BmsPosRefundAllocation!]
+  remaining: Float
+  remainingAmount: Float
+  replayed: Boolean
+  requested: Float
+  returnLocationId: ID
+  returnedAt: String
+  returnedItems: [BmsPosReturnedItem!]
+  saleLocationId: ID
+  settlementStatus: String
+  sku: String
+  status: String!
+}
+
+type BmsPosReturnAuditSummaryResult {
+  anomalySignals: [String!]!
+  approvalCandidateCount: Int!
+  approvedCount: Int!
+  byCashier: [BmsPosReturnCashierSummary!]!
+  from: String!
+  highValueReturnCount: Int!
+  missingApprovalCount: Int!
+  noReceiptCount: Int!
+  noReceiptTotal: Float!
+  to: String!
+}
+
+type BmsPosReturnCashierSummary {
+  cashier: String!
+  refundTotal: Float!
+  returnCount: Int!
 }
 
 input BmsPosReturnInput {
@@ -2875,6 +3847,30 @@ input BmsPosReturnInput {
 input BmsPosReturnLineInput {
   orderItemId: Int!
   packQty: Int!
+}
+
+type BmsPosReturnReasonSummary {
+  count: Int!
+  reasonCode: String
+  reasonText: String
+}
+
+type BmsPosReturnSummaryResult {
+  from: String!
+  pendingCount: Int!
+  pendingTotal: Float!
+  recent: [BmsPosRecentReturnSummary!]!
+  refundTotal: Float!
+  returnCount: Int!
+  settledTotal: Float!
+  to: String!
+  topReasons: [BmsPosReturnReasonSummary!]!
+}
+
+type BmsPosReturnedItem {
+  orderItemId: Int!
+  packQty: Float!
+  refundAmount: Float!
 }
 
 input BmsPosSaleInput {
@@ -3034,6 +4030,28 @@ type BmsPosShiftActionResult {
   status: String!
 }
 
+type BmsPosShiftCashierSummary {
+  amount: Float!
+  billCount: Int!
+  cashier: String!
+}
+
+type BmsPosShiftHistoryItem {
+  cashVariance: Float
+  closedAt: String
+  closedByName: String
+  countedCash: Float
+  expectedCash: Float
+  id: ID!
+  openedAt: String!
+  openedByName: String
+  status: String!
+}
+
+type BmsPosShiftHistoryResult {
+  shifts: [BmsPosShiftHistoryItem!]!
+}
+
 input BmsPosShiftInput {
   action: String!
   cashierUserId: ID!
@@ -3044,12 +4062,80 @@ input BmsPosShiftInput {
   userId: ID
 }
 
+type BmsPosShiftPaymentSummary {
+  amount: Float!
+  count: Int!
+  method: String!
+}
+
+type BmsPosShiftReport {
+  billCount: Int!
+  byCashier: [BmsPosShiftCashierSummary!]!
+  byMethod: [BmsPosShiftPaymentSummary!]!
+  cashIn: Float!
+  cashOut: Float!
+  cashRefunds: Float!
+  cashVariance: Float
+  closedAt: String
+  closedByName: String
+  countedCash: Float
+  deviceCode: String!
+  discountTotal: Float!
+  expectedCash: Float
+  expectedCashHidden: Boolean!
+  expenseCount: Int!
+  expenseTotal: Float!
+  locationName: String
+  noSaleCount: Int!
+  openExpenseAmount: Float!
+  openExpenseCount: Int!
+  openedAt: String!
+  openedByName: String
+  openingFloat: Float!
+  personalExpenseCount: Int!
+  personalExpenseTotal: Float!
+  pettyCashExpenseCount: Int!
+  pettyCashExpenseTotal: Float!
+  returnCount: Int!
+  returnTotal: Float!
+  roundingTotal: Float!
+  salesTotal: Float!
+  shiftId: ID!
+  status: String!
+  voidCount: Int!
+  voidTotal: Float!
+}
+
+type BmsPosShiftReportResult {
+  receivables: BmsPosArShiftSummary!
+  report: BmsPosShiftReport!
+}
+
 type BmsPosShiftReturnSummary {
   pendingCount: Int!
   pendingTotal: Float!
   returnCount: Int!
   returnTotal: Float!
   settledTotal: Float!
+}
+
+type BmsPosSimpleActionResult {
+  reason: String
+  status: String!
+}
+
+type BmsPosStoreCreditResult {
+  credit: BmsPosStoreCreditSummary
+  reason: String
+  status: String
+}
+
+type BmsPosStoreCreditSummary {
+  balance: Float!
+  code: String!
+  customerName: String
+  expiresAt: String
+  status: String!
 }
 
 type BmsPosStoreReceiptSettings {
@@ -4757,7 +5843,7 @@ type Mutation {
   bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
   bmsAdjustLoyaltyPoints(customerId: ID!, note: String!, points: Int!): BmsLoyaltyBalance!
   bmsAdjustStock(delta: Int!, locationId: ID!, note: String, size: String!, sku: String!): BmsVariant!
-  bmsApplyStockCount(countId: ID!): JSON!
+  bmsApplyStockCount(countId: ID!): BmsMobileStockCountActionResult!
   bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, orderDraft: JSON, pharmacistResponse: String!): BmsPharmacyAssessment!
 
   """ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่"""
@@ -4772,13 +5858,13 @@ type Mutation {
   bmsCancelPurchaseOrder(id: ID!): Boolean!
   bmsCancelRestockSubscription(id: ID!): Boolean!
   bmsCancelShipment(id: ID!): Boolean!
-  bmsCancelStockCount(countId: ID!): JSON!
-  bmsCancelStockTransfer(transferId: ID!): JSON!
+  bmsCancelStockCount(countId: ID!): BmsMobileStockCountActionResult!
+  bmsCancelStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
   bmsChangePlan(planCode: String!): Boolean!
   bmsCheckAllAiProviderHealth: [BmsAiProviderHealth!]!
   bmsClearKitchenStationSla(station: String!): Boolean!
   bmsClosePosShift(countedCash: Float!, note: String, shiftId: ID!): BmsCloseShiftResult!
-  bmsCommissionRule(input: BmsCommissionRuleInput!): JSON!
+  bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
   bmsCompleteOrder(id: ID!): Boolean!
   bmsConfirmPayment(id: ID!): BmsPaymentResult!
   bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
@@ -4790,8 +5876,8 @@ type Mutation {
   bmsCreateRestaurantArea(locationId: ID!, name: String!): BmsRestaurantArea!
   bmsCreateRestaurantTable(areaId: ID!, locationId: ID!, name: String!, seats: Int!, shape: String!): BmsRestaurantTableAdmin!
   bmsCreateShipment(carrier: BmsCarrier!, note: String, orderId: ID!, trackingNo: String): BmsShipmentResult!
-  bmsCreateStockCount(input: BmsCreateStockCountInput!): JSON!
-  bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): JSON!
+  bmsCreateStockCount(input: BmsCreateStockCountInput!): BmsMobileStockCountActionResult!
+  bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): BmsMobileStockTransferActionResult!
   bmsDeactivateProductPromotion(id: ID!): Boolean!
   bmsDeleteCoupon(id: ID!): Boolean!
   bmsDeleteCustomer(id: ID!): Boolean!
@@ -4821,7 +5907,7 @@ type Mutation {
   bmsIssueFullTaxInvoice(buyer: BmsTaxInvoiceBuyerInput!, orderId: ID!): BmsIssueFullTaxInvoiceResult!
   bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
   bmsIssueRestaurantTableQr(rotate: Boolean, tableId: ID!): BmsRestaurantTableQr!
-  bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): JSON!
+  bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): BmsMobileStoreCreditActionResult!
   bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
   bmsMarkAllMentionsRead: Boolean!
   bmsMarkConversationRead(id: ID!): Boolean!
@@ -4839,60 +5925,60 @@ type Mutation {
 
   """ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ)"""
   bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
-  bmsPosBlindReturn(input: BmsPosBlindReturnInput!): JSON!
-  bmsPosCashMovement(input: BmsPosCashMovementInput!): JSON!
-  bmsPosCollectAr(input: BmsPosCollectArInput!): JSON!
-  bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): JSON!
-  bmsPosDeposit(input: BmsPosDepositInput!): JSON!
-  bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): JSON!
-  bmsPosExpense(input: BmsPosExpenseInput!): JSON!
-  bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): JSON!
-  bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): JSON!
-  bmsPosNoSale(input: BmsPosNoSaleInput!): JSON!
-  bmsPosPark(input: BmsPosParkInput!): JSON!
-  bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): JSON!
-  bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): JSON!
-  bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): JSON!
-  bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): JSON!
-  bmsPosRestaurantAcknowledgeServiceCall(input: BmsPosRestaurantServiceCallInput!): JSON!
-  bmsPosRestaurantAddCheckItem(checkId: ID!, input: BmsPosRestaurantAddCheckItemInput!): JSON!
-  bmsPosRestaurantAddWaitlistEntry(input: BmsPosRestaurantAddWaitlistInput!): JSON!
-  bmsPosRestaurantCallWaitlistEntry(input: BmsPosRestaurantWaitlistEntryInput!): JSON!
-  bmsPosRestaurantCancelCheck(checkId: ID!, input: BmsPosRestaurantCancelCheckInput!): JSON!
-  bmsPosRestaurantCancelOrderLines(input: BmsPosRestaurantCancelOrderLinesInput!): JSON!
-  bmsPosRestaurantCancelRequest(input: BmsPosRestaurantRequestDecisionInput!): JSON!
-  bmsPosRestaurantCancelWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): JSON!
-  bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): JSON! @deprecated(reason: "Use the named restaurant check mutations")
-  bmsPosRestaurantCompleteServiceCall(input: BmsPosRestaurantServiceCallInput!): JSON!
-  bmsPosRestaurantConfirmRequest(input: BmsPosRestaurantRequestDecisionInput!): JSON!
-  bmsPosRestaurantContactRequest(input: BmsPosRestaurantRequestDecisionInput!): JSON!
-  bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): JSON!
-  bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): JSON! @deprecated(reason: "Use the named incoming-order mutations")
-  bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): JSON!
-  bmsPosRestaurantMergeChecks(checkId: ID!, input: BmsPosRestaurantMergeChecksInput!): JSON!
-  bmsPosRestaurantMoveCheck(checkId: ID!, input: BmsPosRestaurantMoveCheckInput!): JSON!
-  bmsPosRestaurantNoShowWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): JSON!
+  bmsPosBlindReturn(input: BmsPosBlindReturnInput!): BmsPosReturnActionResult!
+  bmsPosCashMovement(input: BmsPosCashMovementInput!): BmsPosCashMovementActionResult!
+  bmsPosCollectAr(input: BmsPosCollectArInput!): BmsPosArReceiptResult!
+  bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): BmsPosCompleteRefundResult!
+  bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
+  bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): BmsPosEnrollMemberResult!
+  bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
+  bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): BmsPosKitchenTicketActionResult!
+  bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): BmsPosKitchenTicketsActionResult!
+  bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!
+  bmsPosPark(input: BmsPosParkInput!): BmsPosParkActionResult!
+  bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): BmsPurchaseResult!
+  bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): BmsPosPharmacyReviewResult!
+  bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): BmsPosRestaurantIncomingActionResult!
+  bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): BmsPosRestaurantQrActionResult!
+  bmsPosRestaurantAcknowledgeServiceCall(input: BmsPosRestaurantServiceCallInput!): BmsPosRestaurantServiceCallActionResult!
+  bmsPosRestaurantAddCheckItem(checkId: ID!, input: BmsPosRestaurantAddCheckItemInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantAddWaitlistEntry(input: BmsPosRestaurantAddWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
+  bmsPosRestaurantCallWaitlistEntry(input: BmsPosRestaurantWaitlistEntryInput!): BmsPosRestaurantWaitlistActionResult!
+  bmsPosRestaurantCancelCheck(checkId: ID!, input: BmsPosRestaurantCancelCheckInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantCancelOrderLines(input: BmsPosRestaurantCancelOrderLinesInput!): BmsPosRestaurantIncomingActionResult!
+  bmsPosRestaurantCancelRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
+  bmsPosRestaurantCancelWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
+  bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): BmsPosRestaurantCheckActionResult! @deprecated(reason: "Use the named restaurant check mutations")
+  bmsPosRestaurantCompleteServiceCall(input: BmsPosRestaurantServiceCallInput!): BmsPosRestaurantServiceCallActionResult!
+  bmsPosRestaurantConfirmRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
+  bmsPosRestaurantContactRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
+  bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): BmsPosRestaurantFloorResult!
+  bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): BmsPosRestaurantIncomingActionResult! @deprecated(reason: "Use the named incoming-order mutations")
+  bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): BmsPosMenuAvailabilityResult!
+  bmsPosRestaurantMergeChecks(checkId: ID!, input: BmsPosRestaurantMergeChecksInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantMoveCheck(checkId: ID!, input: BmsPosRestaurantMoveCheckInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantNoShowWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
   bmsPosRestaurantOpenCheck(input: BmsPosRestaurantOpenCheckInput!): BmsPosRestaurantOpenCheckResult!
-  bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): JSON! @deprecated(reason: "Use the named QR-submission mutations")
-  bmsPosRestaurantRejectQrSubmission(input: BmsPosRestaurantRejectQrSubmissionInput!): JSON!
-  bmsPosRestaurantRemoveCheckItem(checkId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!, itemId: ID!): JSON!
-  bmsPosRestaurantRequestAction(input: BmsPosRestaurantRequestActionInput!): JSON! @deprecated(reason: "Use bmsPosRestaurantRequests or a named request decision mutation")
-  bmsPosRestaurantSeatWaitlistEntry(input: BmsPosRestaurantSeatWaitlistInput!): JSON!
-  bmsPosRestaurantSendCheckToKitchen(checkId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!): JSON!
-  bmsPosRestaurantServiceCallAction(input: BmsPosRestaurantServiceCallActionInput!): JSON! @deprecated(reason: "Use the named service-call mutations")
-  bmsPosRestaurantSetCheckGuestCount(checkId: ID!, input: BmsPosRestaurantSetGuestCountInput!): JSON!
-  bmsPosRestaurantSetOrderingPaused(input: BmsPosRestaurantSetOrderingPausedInput!): JSON!
-  bmsPosRestaurantSettleCheck(checkId: ID!, input: BmsPosRestaurantSettleCheckInput!): JSON!
-  bmsPosRestaurantSplitCheck(checkId: ID!, input: BmsPosRestaurantSplitCheckInput!): JSON!
-  bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): JSON! @deprecated(reason: "Use the named waitlist mutations")
-  bmsPosReturn(input: BmsPosReturnInput!): JSON!
+  bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): BmsPosRestaurantQrActionResult! @deprecated(reason: "Use the named QR-submission mutations")
+  bmsPosRestaurantRejectQrSubmission(input: BmsPosRestaurantRejectQrSubmissionInput!): BmsPosRestaurantQrActionResult!
+  bmsPosRestaurantRemoveCheckItem(checkId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!, itemId: ID!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantRequestAction(input: BmsPosRestaurantRequestActionInput!): BmsPosRestaurantRequestActionResult! @deprecated(reason: "Use bmsPosRestaurantRequests or a named request decision mutation")
+  bmsPosRestaurantSeatWaitlistEntry(input: BmsPosRestaurantSeatWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
+  bmsPosRestaurantSendCheckToKitchen(checkId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantServiceCallAction(input: BmsPosRestaurantServiceCallActionInput!): BmsPosRestaurantServiceCallActionResult! @deprecated(reason: "Use the named service-call mutations")
+  bmsPosRestaurantSetCheckGuestCount(checkId: ID!, input: BmsPosRestaurantSetGuestCountInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantSetOrderingPaused(input: BmsPosRestaurantSetOrderingPausedInput!): BmsPosRestaurantIncomingActionResult!
+  bmsPosRestaurantSettleCheck(checkId: ID!, input: BmsPosRestaurantSettleCheckInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantSplitCheck(checkId: ID!, input: BmsPosRestaurantSplitCheckInput!): BmsPosRestaurantCheckActionResult!
+  bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): BmsPosRestaurantWaitlistActionResult! @deprecated(reason: "Use the named waitlist mutations")
+  bmsPosReturn(input: BmsPosReturnInput!): BmsPosReturnActionResult!
   bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
-  bmsPosSendReceipt(input: BmsPosSendReceiptInput!): JSON!
+  bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!
   bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
-  bmsPosVoid(input: BmsPosVoidInput!): JSON!
+  bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
-  bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): JSON!
+  bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
 
   """
   รับชำระที่ไม่ใช่เงินสด · เงินสดต้องทำที่เครื่องขายเพื่อให้เข้าลิ้นชักของกะ
@@ -4901,7 +5987,7 @@ type Mutation {
   bmsRecordInventoryDemand(input: BmsInventoryDemandInput!): ID!
   bmsRecordInventoryWastage(input: BmsInventoryWastageInput!): BmsInventoryWastageResult!
   bmsRecordPharmacyConsent(assessmentId: ID!, consentVersion: String!, status: String!): BmsPharmacyAssessment!
-  bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): JSON!
+  bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): BmsMobileStockCountActionResult!
   bmsReferAssessmentToDoctor(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
   bmsRefreshActions: Int!
   bmsRefreshRetention: Int!
@@ -4924,7 +6010,7 @@ type Mutation {
   bmsReviewMemberTier(customerId: ID): BmsTierReviewResult!
   bmsReviewPharmacyProductPolicy(decision: String!, productSku: String!): BmsPharmacyProductPolicy!
   bmsReviewPharmacyProtocol(decision: String!, id: ID!): BmsPharmacyProtocol!
-  bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): JSON!
+  bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): BmsMobileRestaurantRequestActionResult!
   bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
   bmsRunFollowupsNow: BmsFollowupRunResult!
   bmsRunReadOnlySql(sql: String!): BmsSqlResult!
@@ -4935,7 +6021,7 @@ type Mutation {
   bmsSendAllReadyRestockNotifications: BmsRestockSendAllResult!
   bmsSendMessage(attachment: BmsAttachmentInput, body: String, id: ID!): BmsSendResult!
   bmsSendRestockNotification(body: String!, id: ID!): BmsRestockSendResult!
-  bmsSendStockTransfer(transferId: ID!): JSON!
+  bmsSendStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
   bmsSendTestEmail(html: String, to: String!): BmsTestEmailResult!
   bmsSendTestReportNow: BmsSendReportResult!
   bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
@@ -4970,8 +6056,8 @@ type Mutation {
   bmsSignup(businessArchetype: String, email: String!, name: String, password: String!, shopName: String!): BmsSignupResult!
   bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
   bmsStartPharmacistReview(assessmentId: ID!): BmsPharmacyAssessment!
-  bmsStockCount(input: BmsStockCountInput!): JSON! @deprecated(reason: "Use the named stock-count mutations")
-  bmsStockTransfer(input: BmsStockTransferInput!): JSON! @deprecated(reason: "Use the named stock-transfer mutations")
+  bmsStockCount(input: BmsStockCountInput!): BmsMobileStockCountActionResult! @deprecated(reason: "Use the named stock-count mutations")
+  bmsStockTransfer(input: BmsStockTransferInput!): BmsMobileStockTransferActionResult! @deprecated(reason: "Use the named stock-transfer mutations")
   bmsSubmitPayment(amount: Float, method: BmsPaymentMethod!, note: String, orderId: ID!, slipRef: String, slipUrl: String): BmsPaymentResult!
   bmsSubmitPharmacyProductPolicyForReview(productSku: String!): BmsPharmacyProductPolicy!
   bmsSubmitPharmacyProtocolForReview(id: ID!): BmsPharmacyProtocol!
@@ -5343,8 +6429,8 @@ type Query {
   bmsChannelHealth: [BmsChannelHealth!]!
   bmsChannelHealthCount: Int!
   bmsChannels: [BmsChannelConfig!]!
-  bmsCommissionReport(from: String!, to: String!): JSON!
-  bmsCommissionRules: JSON!
+  bmsCommissionReport(from: String!, to: String!): BmsMobileCommissionReportResult!
+  bmsCommissionRules: BmsMobileCommissionRulesResult!
   bmsConversation(id: ID!): BmsConversation
   bmsConversationTimeline(id: ID!, limit: Int): [BmsTimelineEntry!]!
   bmsConversations(assignedTo: ID, limit: Int = 50, offset: Int = 0, search: String, status: BmsConvStatus, tag: String): [BmsConversation!]!
@@ -5400,7 +6486,7 @@ type Query {
   bmsMembers(limit: Int, offset: Int, search: String): BmsMemberPage!
   bmsMembersExpiringPoints(days: Int, limit: Int): [BmsExpiringPointsRow!]!
   bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
-  bmsMobileRestaurantRequests: JSON!
+  bmsMobileRestaurantRequests: BmsMobileRestaurantRequestsResult!
   bmsMyMentions(limit: Int, unreadOnly: Boolean): [BmsMention!]!
   bmsMyMentionsUnreadCount: Int!
   bmsMyTenant: BmsTenantInfo!
@@ -5430,40 +6516,40 @@ type Query {
   bmsPharmacyProductPolicies(limit: Int = 20, offset: Int = 0, search: String): BmsPharmacyProductPolicyPage!
   bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
   bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
-  bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): JSON!
-  bmsPosCashMovements: JSON!
+  bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): BmsPosArAccountResult!
+  bmsPosCashMovements: BmsPosCashMovementsResult!
   bmsPosCashiers: [BmsPosCashier!]!
   bmsPosCatalogSearch(q: String!): BmsPosCatalogSearchResult!
-  bmsPosDeposits(q: String): JSON!
+  bmsPosDeposits(q: String): BmsPosDepositsResult!
   bmsPosDevices: [BmsPosDevice!]!
-  bmsPosExpenses(credentials: BmsPosCredentialsInput!): JSON!
+  bmsPosExpenses(credentials: BmsPosCredentialsInput!): BmsPosExpensesResult!
   bmsPosKitchenTickets(limit: Int = 100, status: String): BmsPosKitchenTicketsResult!
-  bmsPosLastSale: JSON
-  bmsPosMemberPreview(input: BmsPosMemberPreviewInput!): JSON!
-  bmsPosMemberSearch(amount: Float, q: String): JSON!
-  bmsPosNoSales: JSON!
+  bmsPosLastSale: BmsPosReceipt
+  bmsPosMemberPreview(input: BmsPosMemberPreviewInput!): BmsPosMemberPreviewResult!
+  bmsPosMemberSearch(amount: Float, q: String): BmsPosMemberSearchResult!
+  bmsPosNoSales: BmsPosNoSalesResult!
   bmsPosOpenShift(deviceId: ID!): BmsPosShift
   bmsPosOperationalReadiness: BmsPosOperationalReadiness!
-  bmsPosParkedSales: JSON!
-  bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): JSON
-  bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): JSON!
-  bmsPosRecentSales(deviceOnly: Boolean = false, limit: Int = 5, q: String): JSON!
+  bmsPosParkedSales: BmsPosParkedSalesResult!
+  bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): BmsPurchaseOrder
+  bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): BmsPosPurchaseOrdersResult!
+  bmsPosRecentSales(deviceOnly: Boolean = false, limit: Int = 5, q: String): BmsPosRecentSalesResult!
   bmsPosRestaurantCheck(id: ID!): BmsPosRestaurantCheck
   bmsPosRestaurantFloor: BmsPosRestaurantFloorResult!
-  bmsPosRestaurantIncoming: JSON!
+  bmsPosRestaurantIncoming: BmsPosRestaurantIncomingResult!
   bmsPosRestaurantMenu: BmsPosRestaurantMenuResult!
-  bmsPosRestaurantQrOrders: JSON!
-  bmsPosRestaurantRequests(credentials: BmsPosCredentialsInput!): JSON!
-  bmsPosRestaurantServiceCalls: JSON!
-  bmsPosRestaurantWaitlist: JSON!
-  bmsPosReturnAuditSummary(from: String, to: String): JSON!
-  bmsPosReturnSummary(from: String, to: String): JSON!
+  bmsPosRestaurantQrOrders: BmsPosRestaurantQrOrdersResult!
+  bmsPosRestaurantRequests(credentials: BmsPosCredentialsInput!): BmsPosRestaurantRequestsResult!
+  bmsPosRestaurantServiceCalls: BmsPosRestaurantServiceCallsResult!
+  bmsPosRestaurantWaitlist: BmsPosRestaurantWaitlistResult!
+  bmsPosReturnAuditSummary(from: String, to: String): BmsPosReturnAuditSummaryResult!
+  bmsPosReturnSummary(from: String, to: String): BmsPosReturnSummaryResult!
   bmsPosScan(code: String!, packCode: String, size: String, surface: String, withImage: Boolean = false): BmsPosScanResult!
   bmsPosSession: BmsPosSessionResult!
-  bmsPosShiftHistory(credentials: BmsPosCredentialsInput!): JSON!
-  bmsPosShiftReport(credentials: BmsPosCredentialsInput!, shiftId: ID): JSON!
+  bmsPosShiftHistory(credentials: BmsPosCredentialsInput!): BmsPosShiftHistoryResult!
+  bmsPosShiftReport(credentials: BmsPosCredentialsInput!, shiftId: ID): BmsPosShiftReportResult!
   bmsPosStaff: [BmsPosCashier!]!
-  bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): JSON!
+  bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): BmsPosStoreCreditResult!
   bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
   bmsProductBySku(sku: String!): BmsProduct
   bmsProductCategories: [BmsProductCategory!]!
@@ -5507,11 +6593,11 @@ type Query {
   bmsShipmentTrackingEvents(limit: Int = 100, shipmentId: ID!): [BmsShipmentTrackingEvent!]!
   bmsShipments(limit: Int = 50, offset: Int = 0, orderId: ID, search: String, status: BmsShipmentStatus): [BmsShipment!]!
   bmsSqlConsoleWriteEnabled: Boolean!
-  bmsStockCounts(status: String): JSON!
+  bmsStockCounts(status: String): BmsMobileStockCountsResult!
   bmsStockMovements(limit: Int = 50, size: String, sku: String!): [BmsStockMovement!]!
-  bmsStockTransfers(status: String): JSON!
+  bmsStockTransfers(status: String): BmsMobileStockTransfersResult!
   bmsStoreCapabilities: [BmsStoreCapability!]!
-  bmsStoreCredit(code: String): JSON!
+  bmsStoreCredit(code: String): BmsMobileStoreCreditResult!
   bmsStoreProfile: BmsStoreProfile!
   bmsSupplierProducts(limit: Int = 200, search: String, supplierId: ID!): [BmsSupplierProduct!]!
   bmsSuppliers: [BmsSupplier!]!

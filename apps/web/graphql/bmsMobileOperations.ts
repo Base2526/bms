@@ -122,31 +122,293 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
     note: String
   }
 
+  type BmsMobileStockTransferItem {
+    id: Int!
+    sku: String!
+    productName: String
+    size: String!
+    qty: Int!
+    receivedQty: Int
+    damagedQty: Int!
+    missingQty: Int
+    discrepancyReason: String
+    discrepancyNote: String
+  }
+
+  type BmsMobileStockTransfer {
+    id: ID!
+    transferNo: String!
+    fromLocationId: ID!
+    fromLocationName: String
+    toLocationId: ID!
+    toLocationName: String
+    status: String!
+    note: String
+    receivingNote: String
+    createdByName: String
+    sentAt: String
+    receivedAt: String
+    createdAt: String!
+    items: [BmsMobileStockTransferItem!]!
+  }
+
+  type BmsMobileStockTransfersResult {
+    transfers: [BmsMobileStockTransfer!]!
+    locations: [BmsLocation!]!
+  }
+
+  type BmsMobileStockTransferActionResult {
+    status: String!
+    transferId: ID
+    transferNo: String
+    reason: String
+    current: String
+    sku: String
+    size: String
+    available: Float
+    requested: Float
+  }
+
+  type BmsMobileStockCountItem {
+    id: Int!
+    sku: String!
+    productName: String
+    size: String!
+    snapshotQty: Int!
+    countedQty: Int!
+    variance: Int!
+    note: String
+  }
+
+  type BmsMobileStockCount {
+    id: ID!
+    countNo: String!
+    locationId: ID!
+    locationName: String
+    status: String!
+    note: String
+    createdByName: String
+    appliedAt: String
+    createdAt: String!
+    items: [BmsMobileStockCountItem!]!
+    varianceUnits: Int!
+  }
+
+  type BmsMobileStockCountsResult {
+    counts: [BmsMobileStockCount!]!
+    locations: [BmsLocation!]!
+  }
+
+  type BmsMobileStockCountActionResult {
+    status: String!
+    countId: ID
+    countNo: String
+    reason: String
+    current: String
+    snapshotQty: Int
+    variance: Int
+    adjustedItems: Int
+    varianceUnits: Int
+    sku: String
+    size: String
+    reserved: Float
+    wouldBe: Float
+  }
+
+  type BmsMobileRestaurantRequestItem {
+    sku: String!
+    name: String
+    size: String!
+    qty: Int!
+    packCode: String
+    unitName: String
+    modifierCodes: [String!]
+    modifierNames: [String!]
+  }
+
+  type BmsMobileRestaurantRequest {
+    id: ID!
+    locationId: ID!
+    locationName: String!
+    status: String!
+    items: [BmsMobileRestaurantRequestItem!]!
+    fulfillmentType: String!
+    requestedAt: String
+    note: String
+    reviewNote: String
+    agreedItems: [BmsMobileRestaurantRequestItem!]
+    orderId: ID
+    checkoutUrl: String
+    version: Int!
+    createdAt: String!
+    customerName: String
+    phone: String
+  }
+
+  type BmsMobileRestaurantRequestsResult {
+    enabled: Boolean!
+    requests: [BmsMobileRestaurantRequest!]!
+  }
+
+  type BmsMobileRestaurantRequestActionResult {
+    status: String!
+    orderId: ID
+    checkoutUrl: String
+    reason: String
+    failure: BmsPosSaleResult
+  }
+
+  type BmsMobileStoreCredit {
+    id: ID!
+    code: String!
+    customerId: ID
+    customerName: String
+    balance: Float!
+    status: String!
+    expiresAt: String
+    note: String
+    createdAt: String!
+  }
+
+  type BmsMobileStoreCreditOutstanding {
+    activeCards: Int!
+    outstandingAmount: Float!
+    balanceMismatchCount: Int!
+  }
+
+  type BmsMobileStoreCreditResult {
+    credit: BmsMobileStoreCredit
+    outstanding: BmsMobileStoreCreditOutstanding
+  }
+
+  type BmsMobileStoreCreditActionResult {
+    status: String!
+    reason: String
+    credit: BmsMobileStoreCredit
+  }
+
+  type BmsMobileCommissionRule {
+    id: Int!
+    scope: String!
+    ref: String
+    percent: Float!
+    effectiveFrom: String!
+    note: String
+  }
+
+  type BmsMobileCommissionRulesResult {
+    rules: [BmsMobileCommissionRule!]!
+  }
+
+  type BmsMobileCommissionRow {
+    staffId: ID!
+    staffName: String!
+    eligibleSales: Float!
+    grossSales: Float!
+    returnedSales: Float!
+    commission: Float!
+    billCount: Int!
+  }
+
+  type BmsMobileCommissionReport {
+    from: String!
+    to: String!
+    rows: [BmsMobileCommissionRow!]!
+    totalCommission: Float!
+    noRulesConfigured: Boolean!
+  }
+
+  type BmsMobileCommissionReportResult {
+    report: BmsMobileCommissionReport!
+  }
+
+  type BmsMobileCommissionRuleActionResult {
+    status: String!
+    id: Int
+    reason: String
+  }
+
+  type BmsPosReturnReasonSummary {
+    reasonCode: String
+    reasonText: String
+    count: Int!
+  }
+
+  type BmsPosRecentReturnSummary {
+    id: ID!
+    orderId: ID!
+    refundAmount: Float!
+    returnMode: String!
+    sourceChannel: String!
+    crossBranch: Boolean!
+    saleLocationName: String
+    returnLocationName: String
+    settlementStatus: String!
+    settledAmount: Float!
+    pendingAmount: Float!
+    note: String
+    reasonCode: String
+    reasonText: String
+    createdAt: String!
+    returnedBy: String
+  }
+
+  type BmsPosReturnSummaryResult {
+    from: String!
+    to: String!
+    returnCount: Int!
+    refundTotal: Float!
+    settledTotal: Float!
+    pendingTotal: Float!
+    pendingCount: Int!
+    topReasons: [BmsPosReturnReasonSummary!]!
+    recent: [BmsPosRecentReturnSummary!]!
+  }
+
+  type BmsPosReturnCashierSummary {
+    cashier: String!
+    returnCount: Int!
+    refundTotal: Float!
+  }
+
+  type BmsPosReturnAuditSummaryResult {
+    from: String!
+    to: String!
+    noReceiptCount: Int!
+    noReceiptTotal: Float!
+    byCashier: [BmsPosReturnCashierSummary!]!
+    approvalCandidateCount: Int!
+    highValueReturnCount: Int!
+    approvedCount: Int!
+    missingApprovalCount: Int!
+    anomalySignals: [String!]!
+  }
+
   extend type Query {
-    bmsStockTransfers(status: String): JSON!
-    bmsStockCounts(status: String): JSON!
-    bmsMobileRestaurantRequests: JSON!
-    bmsStoreCredit(code: String): JSON!
-    bmsCommissionRules: JSON!
-    bmsCommissionReport(from: String!, to: String!): JSON!
-    bmsPosReturnSummary(from: String, to: String): JSON!
-    bmsPosReturnAuditSummary(from: String, to: String): JSON!
+    bmsStockTransfers(status: String): BmsMobileStockTransfersResult!
+    bmsStockCounts(status: String): BmsMobileStockCountsResult!
+    bmsMobileRestaurantRequests: BmsMobileRestaurantRequestsResult!
+    bmsStoreCredit(code: String): BmsMobileStoreCreditResult!
+    bmsCommissionRules: BmsMobileCommissionRulesResult!
+    bmsCommissionReport(from: String!, to: String!): BmsMobileCommissionReportResult!
+    bmsPosReturnSummary(from: String, to: String): BmsPosReturnSummaryResult!
+    bmsPosReturnAuditSummary(from: String, to: String): BmsPosReturnAuditSummaryResult!
   }
 
   extend type Mutation {
-    bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): JSON!
-    bmsSendStockTransfer(transferId: ID!): JSON!
-    bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): JSON!
-    bmsCancelStockTransfer(transferId: ID!): JSON!
-    bmsCreateStockCount(input: BmsCreateStockCountInput!): JSON!
-    bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): JSON!
-    bmsApplyStockCount(countId: ID!): JSON!
-    bmsCancelStockCount(countId: ID!): JSON!
-    bmsStockTransfer(input: BmsStockTransferInput!): JSON! @deprecated(reason: "Use the named stock-transfer mutations")
-    bmsStockCount(input: BmsStockCountInput!): JSON! @deprecated(reason: "Use the named stock-count mutations")
-    bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): JSON!
-    bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): JSON!
-    bmsCommissionRule(input: BmsCommissionRuleInput!): JSON!
+    bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): BmsMobileStockTransferActionResult!
+    bmsSendStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
+    bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
+    bmsCancelStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
+    bmsCreateStockCount(input: BmsCreateStockCountInput!): BmsMobileStockCountActionResult!
+    bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): BmsMobileStockCountActionResult!
+    bmsApplyStockCount(countId: ID!): BmsMobileStockCountActionResult!
+    bmsCancelStockCount(countId: ID!): BmsMobileStockCountActionResult!
+    bmsStockTransfer(input: BmsStockTransferInput!): BmsMobileStockTransferActionResult! @deprecated(reason: "Use the named stock-transfer mutations")
+    bmsStockCount(input: BmsStockCountInput!): BmsMobileStockCountActionResult! @deprecated(reason: "Use the named stock-count mutations")
+    bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): BmsMobileRestaurantRequestActionResult!
+    bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): BmsMobileStoreCreditActionResult!
+    bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
   }
 `;
 
@@ -155,6 +417,13 @@ function inputRecord(value: unknown): Record<string, unknown> {
     throw mobileGraphqlError("input ไม่ถูกต้อง", "BAD_USER_INPUT");
   }
   return value as Record<string, unknown>;
+}
+
+function normalizeRestaurantRequestAction(result: any) {
+  if (result?.reason && typeof result.reason === "object") {
+    return { ...result, reason: null, failure: result.reason };
+  }
+  return result;
 }
 
 function actorId(ctx: any): string {
@@ -308,7 +577,7 @@ export const bmsMobileOperationsResolvers = {
     async bmsReviewRestaurantRequest(_parent: unknown, args: { input: unknown }, ctx: any) {
       await requirePermission(ctx, "order.create");
       const input = inputRecord(args.input);
-      return reviewRestaurantRequest({
+      return normalizeRestaurantRequestAction(await reviewRestaurantRequest({
         tenantId: getTenantId(ctx),
         actorUserId: actorId(ctx),
         locationId: uuidInput(input.locationId, "สาขาไม่ถูกต้อง"),
@@ -319,7 +588,7 @@ export const bmsMobileOperationsResolvers = {
         note: typeof input.note === "string" ? input.note : "",
         kitchenNote: typeof input.kitchenNote === "string" ? input.kitchenNote : undefined,
         confirmed: input.confirmed === true,
-      });
+      }));
     },
 
     async bmsIssueStoreCredit(_parent: unknown, args: { input: unknown }, ctx: any) {

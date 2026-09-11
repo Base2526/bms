@@ -14,7 +14,7 @@ const doc = readFileSync(
   "utf8",
 );
 
-const typedOperations = [
+const coreExampleOperations = [
   "bmsPosSession",
   "bmsPosScan",
   "bmsPosCatalogSearch",
@@ -67,9 +67,9 @@ test("every documented GraphQL example validates against the executable schema",
   }
 });
 
-test("the client guide includes a real field selection for every typed RN operation", () => {
+test("the client guide includes a real field selection for every core RN screen flow", () => {
   const examples = graphqlBlocks().join("\n");
-  for (const operation of typedOperations) {
+  for (const operation of coreExampleOperations) {
     assert.match(
       examples,
       new RegExp(`\\b${operation}\\s*(?:\\(|\\{)`),
@@ -79,7 +79,11 @@ test("the client guide includes a real field selection for every typed RN operat
 });
 
 test("the typed/JSON coverage table matches the executable mobile schema exactly", () => {
-  assert.deepEqual(operationsInCoverageRow("Typed (10)"), typedOperations);
-  assert.deepEqual(operationsInCoverageRow("JSON compatibility (89)"), mobileOutputOperations("JSON"));
-  assert.equal(operationsInCoverageRow("JSON compatibility (89)").length, 89);
+  const resolverCount = [bmsPosDeviceResolvers, bmsMobileOperationsResolvers]
+    .flatMap((resolvers) => [Object.keys(resolvers.Query), Object.keys(resolvers.Mutation)])
+    .flat().length;
+  assert.equal(resolverCount, 99, "the documented typed count must cover the complete mobile/POS surface");
+  assert.deepEqual(mobileOutputOperations("JSON"), [], "the executable schema must have no opaque output roots");
+  assert.deepEqual(operationsInCoverageRow("Typed (99)"), []);
+  assert.deepEqual(operationsInCoverageRow("JSON compatibility (0)"), []);
 });

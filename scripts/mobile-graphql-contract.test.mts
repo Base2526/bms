@@ -224,39 +224,17 @@ test("all 59 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("the first 10 RN operations are recursively typed and only 89 JSON outputs remain", () => {
-  const expected = new Map([
-    ["Query.bmsPosSession", "BmsPosSessionResult!"],
-    ["Query.bmsPosScan", "BmsPosScanResult!"],
-    ["Query.bmsPosCatalogSearch", "BmsPosCatalogSearchResult!"],
-    ["Query.bmsPosRestaurantMenu", "BmsPosRestaurantMenuResult!"],
-    ["Query.bmsPosRestaurantFloor", "BmsPosRestaurantFloorResult!"],
-    ["Query.bmsPosRestaurantCheck", "BmsPosRestaurantCheck"],
-    ["Query.bmsPosKitchenTickets", "BmsPosKitchenTicketsResult!"],
-    ["Mutation.bmsPosSale", "BmsPosSaleResult!"],
-    ["Mutation.bmsPosRestaurantOpenCheck", "BmsPosRestaurantOpenCheckResult!"],
-    ["Mutation.bmsPosShift", "BmsPosShiftActionResult!"],
-  ]);
+test("all 99 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
-  const typed = operations
-    .map((operation) => ({
-      key: `${operation.kind}.${operation.name}`,
-      type: String(rootField(operation.kind, operation.name).type),
-    }))
-    .filter((operation) => namedType(operation.type) !== "JSON")
-    .sort((a, b) => a.key.localeCompare(b.key));
-  assert.deepEqual(
-    typed,
-    [...expected].map(([key, type]) => ({ key, type })).sort((a, b) => a.key.localeCompare(b.key)),
-    "only the planned first 10 outputs may leave JSON in this phase",
-  );
+  assert.equal(operations.length, 99, "the complete mobile/POS output surface must stay in the contract");
+  const jsonRoots = operations
+    .filter((operation) => namedType(String(rootField(operation.kind, operation.name).type)) === "JSON")
+    .map((operation) => `${operation.kind}.${operation.name}`);
+  assert.deepEqual(jsonRoots, [], "no mobile/POS operation may return opaque JSON");
 
-  const jsonOutputs = operations.filter((operation) =>
-    namedType(String(rootField(operation.kind, operation.name).type)) === "JSON"
-  );
-  assert.equal(jsonOutputs.length, 89, "Phase 4 aliases temporarily expand the typed-output countdown to 89");
-
-  const pending = [...new Set([...expected.values()].map(namedType))];
+  const pending = [...new Set(operations.map((operation) =>
+    namedType(String(rootField(operation.kind, operation.name).type))
+  ))];
   const visited = new Set<string>();
   const opaque: string[] = [];
   while (pending.length) {
@@ -273,6 +251,17 @@ test("the first 10 RN operations are recursively typed and only 89 JSON outputs 
     }
   }
   assert.deepEqual(opaque.sort(), [], "a typed root must not hide another opaque JSON contract below it");
+});
+
+test("typed parked-cart output normalizes both legacy arrays and current snapshots", () => {
+  const resolveCart = (bmsPosDeviceResolvers as any).BmsPosParkedSale?.cart;
+  assert.equal(typeof resolveCart, "function", "parked-sale cart needs an explicit compatibility formatter");
+  const line = { sku: "SKU-1", size: "M", packQty: 1 };
+  assert.deepEqual(resolveCart({ cart: [line] }), { version: 2, lines: [line] });
+  assert.deepEqual(
+    resolveCart({ cart: { version: 2, lines: [line], couponCode: "SAVE10" } }),
+    { version: 2, lines: [line], couponCode: "SAVE10", pharmacyReview: null },
+  );
 });
 
 test("nullable runtime branches stay nullable in the first typed output batch", () => {

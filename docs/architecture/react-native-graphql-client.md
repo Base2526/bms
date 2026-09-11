@@ -134,13 +134,13 @@ production introspection. The artifact is generated from the executable schema w
 
 | Output contract | Operations |
 | --- | --- |
-| Typed (10) | `bmsPosSession`, `bmsPosScan`, `bmsPosCatalogSearch`, `bmsPosRestaurantMenu`, `bmsPosRestaurantFloor`, `bmsPosRestaurantCheck`, `bmsPosKitchenTickets`, `bmsPosSale`, `bmsPosRestaurantOpenCheck`, `bmsPosShift` |
-| JSON compatibility (89) | `bmsPosLastSale`, `bmsPosRecentSales`, `bmsPosParkedSales`, `bmsPosCashMovements`, `bmsPosNoSales`, `bmsPosDeposits`, `bmsPosExpenses`, `bmsPosRestaurantIncoming`, `bmsPosRestaurantQrOrders`, `bmsPosRestaurantServiceCalls`, `bmsPosRestaurantWaitlist`, `bmsPosMemberSearch`, `bmsPosShiftHistory`, `bmsPosShiftReport`, `bmsPosArAccount`, `bmsPosStoreCredit`, `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosRestaurantRequests`, `bmsPosMemberPreview`, `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`, `bmsPosPark`, `bmsPosReturn`, `bmsPosBlindReturn`, `bmsPosVoid`, `bmsPosCompleteRefund`, `bmsPosCashMovement`, `bmsPosNoSale`, `bmsPosEnrollMember`, `bmsPosCollectAr`, `bmsPosReceivePurchase`, `bmsPosSendReceipt`, `bmsPosDeposit`, `bmsPosExpense`, `bmsPosRequestPharmacyReview`, `bmsPosKitchenTicketStatus`, `bmsPosKitchenTicketsStatus`, `bmsPosRestaurantFloorSetup`, `bmsPosRestaurantMenuAvailability`, `bmsPosRestaurantCheckAction`, `bmsPosRestaurantIncomingAction`, `bmsPosRestaurantQrOrderAction`, `bmsPosRestaurantRequestAction`, `bmsPosRestaurantServiceCallAction`, `bmsPosRestaurantWaitlistAction`, `bmsStockTransfers`, `bmsStockCounts`, `bmsMobileRestaurantRequests`, `bmsStoreCredit`, `bmsCommissionRules`, `bmsCommissionReport`, `bmsStockTransfer`, `bmsStockCount`, `bmsReviewRestaurantRequest`, `bmsIssueStoreCredit`, `bmsCommissionRule`, `bmsPosRestaurantAddCheckItem`, `bmsPosRestaurantRemoveCheckItem`, `bmsPosRestaurantSetCheckGuestCount`, `bmsPosRestaurantSendCheckToKitchen`, `bmsPosRestaurantMoveCheck`, `bmsPosRestaurantSplitCheck`, `bmsPosRestaurantMergeChecks`, `bmsPosRestaurantCancelCheck`, `bmsPosRestaurantSettleCheck`, `bmsPosRestaurantAcceptIncomingOrder`, `bmsPosRestaurantSetOrderingPaused`, `bmsPosRestaurantCancelOrderLines`, `bmsPosRestaurantAcceptQrSubmission`, `bmsPosRestaurantRejectQrSubmission`, `bmsPosRestaurantContactRequest`, `bmsPosRestaurantConfirmRequest`, `bmsPosRestaurantCancelRequest`, `bmsPosRestaurantAcknowledgeServiceCall`, `bmsPosRestaurantCompleteServiceCall`, `bmsPosRestaurantAddWaitlistEntry`, `bmsPosRestaurantCallWaitlistEntry`, `bmsPosRestaurantCancelWaitlistEntry`, `bmsPosRestaurantNoShowWaitlistEntry`, `bmsPosRestaurantSeatWaitlistEntry`, `bmsCreateStockTransfer`, `bmsSendStockTransfer`, `bmsReceiveStockTransfer`, `bmsCancelStockTransfer`, `bmsCreateStockCount`, `bmsRecordStockCountItem`, `bmsApplyStockCount`, `bmsCancelStockCount` |
+| Typed (99) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
+| JSON compatibility (0) | None. |
 
-All 99 operations already have typed arguments. “JSON compatibility” means only the output is still
-opaque to codegen: validate it at the client boundary and do not assume undocumented fields. Move a
-screen to generated result types only after its operation moves to the typed row. The examples below
-cover every typed operation and are checked against the executable schema.
+All 99 operations have typed arguments and typed output trees. Generate result types from the
+committed schema instead of hand-maintaining response interfaces. The examples below cover the ten
+core screen flows and are checked against the executable schema; the remaining operations are
+discoverable from the same artifact and no longer require a client-side JSON boundary validator.
 
 ### Named command migration
 
