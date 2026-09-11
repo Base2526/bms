@@ -490,6 +490,36 @@ cd apps/web && npm run test:db
 
 ---
 
+## 8.5 Realtime ของเส้นทางนี้ (เพิ่ม 2026-09-11)
+
+ทุกสถานะที่เส้นทางนี้เปลี่ยนมี event ของตัวเองแล้ว ผ่าน trigger ใน `9.71`/`9.72` ที่เขียนลง
+`bms_realtime_outbox` **ในทรานแซกชันเดียวกับงานธุรกิจ** แล้ว dispatcher ค่อย publish หลัง commit
+
+| เกิดอะไร | ตาราง | event | subscription ที่รับ |
+| --- | --- | --- | --- |
+| ลูกค้าส่งคำขอจากแชท / ร้านกดรับ | `bms_restaurant_order_requests` | `restaurant.customer_request.created` · `.accepted` | `bmsIncomingOrderChanged` |
+| บิลออนไลน์ถูกสร้าง / เปลี่ยนสถานะ | `bms_orders` | `order.created` · `order.status_changed` · `order.fulfillment_changed` | `bmsOrderChanged` |
+| ตัดรายการออกจากบิล | `bms_pos_return_items` | `order.line_cancelled` | `bmsOrderChanged` |
+| เมนูหมดวันนี้ / กลับมาขาย | `bms_product_menu_unavailability` | `menu.availability.changed` | `bmsMenuAvailabilityChanged` |
+| ตั๋วครัวเกิด / เปลี่ยนสถานะ | `bms_restaurant_kitchen_tickets` · `bms_kitchen_tickets` | `restaurant.ticket.*` · `kitchen.ticket.*` | `bmsKitchenTicketChanged` |
+| ชำระเงิน / คืนเงิน | `bms_payments` · `bms_pos_refund_allocations` | `payment.*` | `bmsPaymentChanged` |
+
+**กฎที่ห้ามละเมิดในเส้นทางนี้:**
+
+- **event เป็นแค่สัญญาณให้ไปโหลดใหม่ ไม่ใช่ข้อมูล** — จอครัวและกล่องออร์เดอร์เข้าต้อง refetch
+  จาก query เดิมเสมอ ยอดเงิน/รายการห้ามอ่านจาก payload
+- **payload ห้ามมีข้อความของลูกค้า ที่อยู่ เบอร์ หรือยอดเงิน** — validator ของ
+  `packages/realtime` ปฏิเสธคีย์กลุ่มนี้อยู่แล้ว อย่าพยายามเลี่ยงด้วยการเปลี่ยนชื่อคีย์
+- **ห้าม publish ก่อน commit** — คำขอที่ rollback แล้วต้องไม่เคยมี event
+- **polling ยังอยู่** — `useLiveRefresh` ของจอครัว/คิวคำขอยังเป็นทางหลักจนกว่า
+  `REALTIME_SUBSCRIPTIONS_ENABLED` + `REALTIME_RESTAURANT_ENABLED` จะเปิดบน production
+  และผ่าน load test · event ที่หายไปหนึ่งใบต้องไม่ทำให้ออร์เดอร์หาย
+
+**⚠️ ยังไม่ได้ apply `9.71`/`9.72` ที่ไหนเลย** — จนกว่าจะ apply ตารางเหล่านี้จะไม่มี event
+สักใบ และจอยังทำงานด้วย polling เหมือนเดิมทุกประการ
+
+---
+
 ## 9. หลักการที่ใช้ตัดสินใจตลอดงานนี้
 
 > **ใช้เครื่องยนต์เดียวกัน แต่ส่งนโยบายต่างกัน** — ไม่แตกโค้ดเป็นสองชุด

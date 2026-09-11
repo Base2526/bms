@@ -126,6 +126,63 @@ poll until production recovery/load tests are complete.
 - Continue to use REST only for pharmacy-evidence bytes, shift-report export, and support
   diagnostics.
 
+## Token and ticket refresh
+
+Two credentials with different lifetimes. Do not conflate them.
+
+| Credential | Lifetime | How it is renewed |
+| --- | --- | --- |
+| Device token (POS) / user Bearer (staff) | long-lived, stored in the keychain | replaced only by re-pairing or re-login; never auto-rotated by the client |
+| WS ticket | short-lived, audience-bound, minted over HTTPS | re-minted on every connect and on every reconnect attempt |
+
+The ticket is never cached across reconnects. `connectionParams` is a function, so
+`graphql-ws` calls it again on each attempt and mints a fresh ticket; a ticket that expires
+mid-connection makes the server close the socket with **4403 `ticket expired`**, which the retry
+loop then treats like any other drop. Never pin a ticket into a variable and reuse it.
+
+Handle these close codes distinctly:
+
+- **4403 `ticket expired`** — normal. Reconnect; the next `connectionParams` call mints a new one.
+- **Ticket mint returns 401** — the underlying token is gone or revoked. Stop retrying, clear the
+  socket, and send the user to re-login or the device to re-pair. Retrying cannot fix this and a
+  tight loop against `/api/bms/realtime/ticket` looks like an attack.
+- **`CONNECTION_LIMIT_EXCEEDED`** — too many sockets for this IP, user, or tenant. Back off with
+  the normal jitter; do not open a second socket to compensate.
+
+HTTP GraphQL carries the long-lived credential directly, so a 401 there means the same thing: stop
+and re-authenticate rather than retry.
+
+## Offline queue
+
+Only queue operations that are safe to replay. The rule is the `idempotencyKey`, not the screen.
+
+**Safe to queue** — a money/stock/document mutation that already carries a stable
+`idempotencyKey` generated before the first attempt: `bmsPosSale`, `bmsPosReturn`, `bmsPosVoid`,
+`bmsPosCashMovement`, `bmsPosDeposit`, `bmsPosReceivePurchase`. Replaying one of these with the
+same key returns the original result instead of acting twice.
+
+**Never queue**:
+
+- Anything carrying a cashier or approver PIN. A PIN is evidence for one operation at one moment;
+  holding it on disk to replay later turns it into a stored credential. Drop the queued action and
+  make the operator redo it with a fresh PIN.
+- Reads. Refetch them when the connection returns; a stale queued read is worse than no read.
+- Any action whose approval depends on current state (shift still open, check still open, stock
+  still reserved). The server re-checks and will reject it, so queueing only delays the error.
+
+Rules for the queue itself:
+
+- One key per logical action, generated **before** the first send and reused for every retry. A new
+  key means a new sale.
+- Bound the queue and the age of what it holds. An action queued hours ago usually refers to a
+  shift that has closed; surface it to the operator instead of sending it silently.
+- Flush serially, not in parallel. Two queued sales sent at once can hit the same shift row and
+  deadlock.
+- After a flush, refetch the authoritative snapshots rather than trusting local state — the server
+  may have replayed an older attempt.
+- A queued action that fails with a business status (`SHIFT_NOT_OPEN`, `PAYMENT_MISMATCH`,
+  `IDEMPOTENCY_CONFLICT`) is finished, not retryable. Show it; do not re-queue it.
+
 ## Rollout gate
 
 Ship query-only canary first, compare snapshots with the compatibility REST responses, then enable

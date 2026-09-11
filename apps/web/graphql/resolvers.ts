@@ -5871,7 +5871,17 @@ const rawResolvers = {
       // Redis I/O must happen only after commit. This legacy signal is still best effort;
       // durable community delivery needs its own non-BMS outbox design.
       if (result && deletedChatId) {
-        await pubsub.publish(topicChat(deletedChatId), { messageDeleted: message_id });
+        // ผู้รับต้องเดินทางไปกับ event เพราะ `apps/ws` ต่อฐานข้อมูลไม่ได้ — ถ้าไม่ส่งไป
+        // ตัวกรองฝั่ง subscription จะไม่มีอะไรให้ตัดสิน แล้วต้องยิงให้ทุกคนที่ subscribe
+        // ฟิลด์นี้ไม่เคยถึง client: resolver ของ subscription คืนเฉพาะ id ตาม SDL เดิม
+        const { rows: memberRows } = await query(
+          `SELECT user_id FROM chat_members WHERE chat_id = $1`,
+          [deletedChatId],
+        );
+        await pubsub.publish(topicChat(deletedChatId), {
+          messageDeleted: message_id,
+          messageDeletedAudience: memberRows.map((row: any) => String(row.user_id)),
+        });
       }
 
       console.log("revisionId =", revisionId, "result =", result);
@@ -6373,8 +6383,11 @@ const rawResolvers = {
 
       await query(`DELETE FROM comments WHERE id = $1`, [id]);
 
+      // ไม่มี post_id ใน event = ตัวกรองตัดสินอะไรไม่ได้ แล้วทุกคนที่ subscribe
+      // โพสต์ไหนก็ตามจะได้รับการลบของทุกโพสต์
       await pubsub.publish(COMMENT_DELETED, {
         commentDeleted: id,
+        commentDeletedPostId: c.post_id == null ? null : String(c.post_id),
       });
 
       return true;

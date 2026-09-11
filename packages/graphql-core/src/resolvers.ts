@@ -24,8 +24,8 @@ import {
   validateRealtimeEvent,
   type RealtimeEvent,
 } from "../../realtime/src/events.js";
-import { topicForLocation, topicForTenant, topicForUser } from "../../realtime/src/topics.js";
 import { NAMED_REALTIME_SUBSCRIPTIONS } from "../../realtime/src/namedSubscriptions.js";
+import { canReceiveRealtimeEvent, realtimeTopics } from "../../realtime/src/subscriptionAuth.js";
 
 const runtimeEnv = (globalThis as typeof globalThis & {
   process?: { env?: Record<string, string | undefined> };
@@ -56,31 +56,6 @@ function requireBmsTenantId(ctx: any): string {
     });
   }
   return claims.tenantId;
-}
-
-function realtimeTopics(claims: RealtimeTicketClaims): string[] {
-  const topics = [topicForUser(claims.tenantId ?? "global", claims.subjectId)];
-  if (claims.tenantId) {
-    topics.push(topicForTenant(claims.tenantId));
-    for (const locationId of claims.locationIds) topics.push(topicForLocation(claims.tenantId, locationId));
-  }
-  return topics;
-}
-
-function canReceiveRealtimeEvent(event: RealtimeEvent, claims: RealtimeTicketClaims): boolean {
-  const rule = REALTIME_EVENT_RULES[event.eventType];
-  if (!isRealtimeEventEnabled(event.eventType, runtimeEnv)) return false;
-  if (event.tenantId !== claims.tenantId) return false;
-  if (!rule.permissions.every((permission) => claims.permissions.includes(permission))) return false;
-  if (rule.audience === "user") return event.userId === claims.subjectId;
-  if (rule.audience === "location") {
-    return Boolean(event.locationId) && (claims.allLocations || claims.locationIds.includes(event.locationId!));
-  }
-  if (rule.audience === "device") {
-    return claims.scope === "pos" && event.deviceId === claims.subjectId &&
-      Boolean(event.locationId) && claims.locationIds.includes(event.locationId!);
-  }
-  return rule.audience === "tenant";
 }
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -121,13 +96,21 @@ export const coreResolvers = {
       )
     },
     messageAdded: {
+      // เดิมรับ chat_id มาแล้ว subscribe ได้เลยโดยไม่ตรวจอะไร — ทุกคนที่ถือ ticket
+      // อ่านแชทห้องไหนก็ได้ · ตรวจจากผู้รับที่ติดมากับข้อความ (รูปเดียวกับ
+      // `incomingMessage`) เพราะ `apps/ws` ต่อฐานข้อมูลไม่ได้
       subscribe: withFilter(
         (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
-          const topic = topicChat(chat_id);
-          return pubsub.asyncIterator(topic);
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(topicChat(chat_id));
         },
-        (payload, variables) => {
-          return payload?.messageAdded?.chat_id === variables?.chat_id;
+        (payload, variables, ctx: any) => {
+          const userId = requireRealtimeUserId(ctx);
+          const message = payload?.messageAdded;
+          if (message?.chat_id !== variables?.chat_id) return false;
+          return Array.isArray(message?.to_user_ids)
+            && (message.to_user_ids.map(String).includes(userId)
+              || String(message?.sender_id ?? "") === userId);
         }
       )
     },
@@ -148,9 +131,20 @@ export const coreResolvers = {
     },
     messageDeleted: {
       subscribe: withFilter(
-        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicChat(chat_id)),
-        (payload) => typeof payload?.messageDeleted === "string"
-      )
+        (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(topicChat(chat_id));
+        },
+        (payload, _variables, ctx: any) => {
+          const userId = requireRealtimeUserId(ctx);
+          if (typeof payload?.messageDeleted !== "string") return false;
+          // ผู้รับมาจาก publisher · ไม่มีลิสต์ = ปฏิเสธ ไม่ใช่ปล่อยผ่าน
+          return Array.isArray(payload?.messageDeletedAudience)
+            && payload.messageDeletedAudience.map(String).includes(userId);
+        }
+      ),
+      // SDL ยังเป็น `ID!` เหมือนเดิม — ลิสต์ผู้รับเป็นของ routing ไม่ใช่ของ client
+      resolve: (payload: any) => payload?.messageDeleted,
     },
     notificationCreated: {
       subscribe: withFilter(
@@ -178,13 +172,13 @@ export const coreResolvers = {
       ),
     },
     commentDeleted: {
+      // เดิมคืน `true` เสมอ = คนที่ดูโพสต์หนึ่งได้รับการลบคอมเมนต์ของทุกโพสต์
+      // โพสต์เป็นเนื้อหาสาธารณะ จึงไม่ใช่การรั่วของความลับ แต่เป็น event ที่ผิดโพสต์
       subscribe: withFilter(
         () => pubsub.asyncIterator(COMMENT_DELETED),
-        (payload, variables) => {
-          // ตอนนี้ไม่มี post_id ใน payload ถ้าอยาก filter เพิ่ม
-          return true;
-        }
+        (payload, variables) => String(payload?.commentDeletedPostId ?? "") === String(variables?.post_id ?? ""),
       ),
+      resolve: (payload: any) => payload?.commentDeleted,
     },
     incomingMessage: {
       subscribe: withFilter(

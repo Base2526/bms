@@ -38,9 +38,23 @@ test("reconnect and focus reconcile through the registered authoritative refetch
 
 test("generic domain subscription is ticket-scoped and permission-filtered", () => {
   assert.match(schema, /realtimeEvent: RealtimeEvent!/);
-  assert.match(resolvers, /REALTIME_EVENT_RULES/);
-  assert.match(resolvers, /rule\.permissions\.every/);
-  assert.match(resolvers, /claims\.locationIds/);
-  assert.match(resolvers, /event\.tenantId !== claims\.tenantId/);
-  assert.match(resolvers, /claims\.scope === "pos" && event\.deviceId === claims\.subjectId/);
+  // ตัวตัดสินย้ายไป `packages/realtime/src/subscriptionAuth.ts` แล้ว เพื่อให้ทดสอบพฤติกรรมได้
+  // (พฤติกรรมจริงถูกตรึงใน `realtime-subscription-auth-contract`) · ที่นี่ตรึงแค่ว่า resolver
+  // ยังเรียกตัวกลางตัวนั้น ไม่ได้แอบมีตัวตัดสินชุดที่สองในไฟล์ resolver
+  assert.match(resolvers, /canReceiveRealtimeEvent/);
+  assert.match(resolvers, /realtimeTopics\(requireRealtimeClaims\(ctx\)\)/);
+  assert.doesNotMatch(
+    resolvers,
+    /rule\.permissions\.every/,
+    "resolver ต้องไม่ถือสำเนาของกฎสิทธิ์เอง",
+  );
+  const auth = readFileSync(
+    new URL("../packages/realtime/src/subscriptionAuth.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(auth, /REALTIME_EVENT_RULES/);
+  assert.match(auth, /rule\.permissions\.every/);
+  assert.match(auth, /claims\.locationIds/);
+  assert.match(auth, /event\.tenantId !== claims\.tenantId/);
+  assert.match(auth, /claims\.scope === "pos" && event\.deviceId === claims\.subjectId/);
 });

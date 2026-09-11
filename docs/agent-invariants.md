@@ -1054,10 +1054,11 @@ Full history/rationale of what was found and fixed: § Multi-instance readiness 
 The 2026-09-10 audit is the current authority for realtime rollout work:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
-event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.71`,
+event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.72`,
 `realtimeOutbox.ts`, the continuous pump, and `realtimeDispatcher.ts` provide the durable handoff and
 domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; live recovery/load
-proof and bounded replay do not yet exist.
+proof and bounded replay do not yet exist. **No migration in this range has been applied to any
+database yet, and none of the 27 triggers has ever fired.**
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
@@ -1080,10 +1081,26 @@ proof and bounded replay do not yet exist.
   helpers in `packages/realtime`; do not add another event string or raw topic. Legacy direct
   `pubsub.publish()` call sites remain until their owning transaction is moved to the outbox. Do not
   copy their global-topic or client-ID authorization patterns into new subscriptions.
-- Production disables the legacy chat/post resource subscriptions until a server-minted membership
-  capability exists. Never re-enable them by trusting `chat_id`, `post_id`, `user_id`, `x-scope`,
-  Referer, or User-Agent. User topics come from the ticket subject; BMS Inbox requires ticket tenant
-  plus `inbox.view`.
+- Production disables the legacy chat/post resource subscriptions
+  (`PRODUCTION_DISABLED_SUBSCRIPTIONS` in `apps/ws/src/security.ts`). Outside production they now
+  filter on routing data the publisher attaches to the event — `to_user_ids` for `messageAdded`,
+  `messageDeletedAudience` for `messageDeleted`, `commentDeletedPostId` for `commentDeleted` —
+  because `apps/ws` cannot look membership up itself. **Never re-enable them by trusting `chat_id`,
+  `post_id`, `user_id`, `x-scope`, Referer, or User-Agent**, and never let a filter fall back to
+  `return true` when the routing field is absent: no routing data means reject. Adding a
+  resource subscription means the publisher must carry its audience. User topics come from the
+  ticket subject; BMS Inbox requires ticket tenant plus `inbox.view`.
+- The subscription surface is one invalidation stream plus 18 named views over it
+  (`NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`). Every named field reuses
+  `realtimeTopics()` and `canReceiveRealtimeEvent()` and takes **no arguments**. Do not give a named
+  subscription its own auth: one authorizer is the only reason cross-tenant scope can be reasoned
+  about, and `canReceiveRealtimeEvent()` lives in `packages/realtime/src/subscriptionAuth.ts` so it
+  can be tested behaviourally rather than by scanning the resolver for a function call.
+- A business write that mobile or admin must see needs an event. `realtime-domain-coverage-contract`
+  walks every table `lib/bms` writes and fails unless it has a trigger or an explicit
+  classification, so forgetting a whole domain is caught. Twenty tables are recorded there as known
+  gaps that still deserve an event (returns, deposits, store credit, AR, tax documents, loyalty,
+  purchase orders, wastage).
 - Production subscription rollout fails closed behind `REALTIME_SUBSCRIPTIONS_ENABLED` and separate
   order/restaurant/inventory/payment/Inbox/shipping/pharmacy/admin/POS flags. Keep the master flag at
   `0` during shadow publishing; this is the query-only kill switch and requires no rollback.

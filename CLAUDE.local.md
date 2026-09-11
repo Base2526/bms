@@ -3,6 +3,84 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## ปิดช่องว่างที่ทำได้โดยไม่ต้องมี DB (Phase 4/8/9/10/11) — 2026-09-11
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
+**pure 1094** จาก 1083 · production build) · **ไม่มี migration ใหม่** · **ไม่มี permission ใหม่** ·
+**เทส DB ไม่ได้รันสักตัว** · **มิวเทชัน 8 แบบ แดงถูกตัวทุกครั้ง**
+
+### ⚠️ แก้ความรุนแรงที่ผมรายงานเกินจริงไปรอบก่อน
+
+ผมบอกว่า `messageAdded(chat_id)` เป็น "ช่องรั่วจริงที่อ่านแชทห้องอื่นได้" · **บน production
+อ่านไม่ได้** เพราะ `PRODUCTION_DISABLED_SUBSCRIPTIONS` ใน `apps/ws/src/security.ts` ปิด
+subscription ทั้ง 5 ตัวไว้แล้ว (`time`, `messageAdded`, `messageDeleted`, `commentAdded`,
+`commentUpdated`, `commentDeleted`) → ของจริงคือ **รั่วเฉพาะ non-production** · ผมไม่ได้เช็ค
+denylist ก่อนสรุป · การแก้ยังคุ้มเพราะมันคือเงื่อนไขที่ทำให้ **เปิดกลับมาได้**
+
+### subscription เก่าตัดสินจากข้อมูลที่ publisher ส่งมา ไม่ใช่จาก id ที่ client พิมพ์
+
+`apps/ws` ต่อ DB ไม่ได้ (invariant + เทสบังคับ) จึงเช็ค membership เองไม่ได้ · ทางที่ใช้คือ
+**ให้ publisher ซึ่งมี DB พก routing data มากับ event**
+
+- `messageAdded` — กรองด้วย `to_user_ids`/`sender_id` ที่ติดมากับข้อความอยู่แล้ว
+  (รูปเดียวกับ `incomingMessage` ที่แก้ถูกไว้ก่อนหน้า)
+- `messageDeleted` — payload เดิมเป็น **id ล้วน** ไม่มีอะไรให้กรอง · publisher
+  (`apps/web/graphql/resolvers.ts`) query `chat_members` แล้วส่ง `messageDeletedAudience` มาด้วย
+  · **`resolve` คืนเฉพาะ id** SDL จึงยังเป็น `ID!` เท่าเดิม ลิสต์ผู้รับไม่เคยถึง client
+- `commentDeleted` — filter เดิมคืน `true` = ยิงการลบของ **ทุกโพสต์** ให้ทุกคน · เพิ่ม
+  `commentDeletedPostId` แล้วกรอง · โพสต์เป็นเนื้อหาสาธารณะ (ไม่มีคอลัมน์ visibility และ
+  query `posts` เป็น optional auth) จึงไม่ใช่การรั่วของความลับ แต่เป็น event ผิดโพสต์
+- **ไม่มี routing data = ปฏิเสธ ไม่ใช่ปล่อยผ่าน** — เป็นกฎที่เขียนไว้ใน agent-invariants แล้ว
+
+### ⚠️ ตัวตัดสินสิทธิ์ย้ายออกจาก resolver เพื่อให้ทดสอบพฤติกรรมได้
+
+`canReceiveRealtimeEvent()` เป็นด่านเดียวที่กันข้ามร้านบนสาย WS แต่เดิมเป็นฟังก์ชัน **ภายใน**
+ของ `packages/graphql-core/src/resolvers.ts` จึง import ไปเทสไม่ได้ · เทสที่มีอยู่ตรวจได้แค่
+"มีข้อความ `rule.permissions.every` อยู่ในไฟล์" ซึ่ง **เขียวได้แม้ฟังก์ชันจะคืน true เสมอ**
+
+- ย้ายไป `packages/realtime/src/subscriptionAuth.ts` (ไม่พึ่ง graphql เลย) พร้อม
+  `realtimeTopics()` · รับ `env` เป็นพารามิเตอร์ได้ เทสจะได้คุมธง rollout เอง
+- เทสใหม่ป้อนเคสจริง: ข้ามร้าน · ข้ามสาขา · `allLocations` · event ที่ลืม `locationId` ·
+  เครื่องอื่น · ticket ที่ไม่ใช่ POS สวมเป็นเครื่อง · ไม่มี permission · ไม่เปิดธง
+- **เทสเดิม 1 ตัวต้องเล็งใหม่** (`realtime-client-contract`) — มัน assert ว่าสตริงอยู่ใน
+  `resolvers.ts` การันตีไม่ได้หาย แค่ย้ายบ้าน · ตอนนี้บังคับกลับทางด้วยว่า resolver **ต้องไม่**
+  มี `rule.permissions.every` = ห้ามมีตัวตัดสินชุดที่สอง
+
+### ⚠️ เทสรอบแรกอ่อน 1 ตัว — จับได้ด้วยมิวเทชัน
+
+`messageDeleted` ที่ถูกแทนด้วย `return true; //` ยังเขียว เพราะ assertion แค่หาคำว่า
+`messageDeletedAudience` ซึ่ง **ยังเหลืออยู่ในบรรทัดถัดไปที่ตายแล้ว** · เปลี่ยนไปบังคับ
+`.map(String).includes(userId)` + ห้าม `return true;` ในบล็อก แล้วแดงทั้งสองรูป
+
+### schemaReadiness เติม 6 ไฟล์ (`9.60`–`9.69`)
+
+เดิมค้างที่ `9.57` · ที่สำคัญที่สุดคือสองตัวที่กระทบ **ทุกร้าน**:
+`bms_product_promotions.location_id` (`9.61`) และ `bms_product_price_tiers.location_id` (`9.65`)
+ถูก `SELECT` ใน `createOrderInTx()` **แบบไม่มีเงื่อนไข** → ฐานที่ขาด **ขายไม่ได้ทั้งระบบ**
+· อีกสี่ตัวเป็นของร้านอาหาร (`9.60` QR · `9.63` split_group_no · `9.64` waitlist ·
+`9.69` service calls) ซึ่ง service อ่านตรง ๆ อยู่แล้ว
+
+### เอกสาร
+
+- `react-native-graphql-client.md` — เพิ่ม **token/ticket refresh** (แยกอายุของ device token
+  กับ ticket · 4403 = ปกติให้ reconnect · 401 ตอน mint = หยุด อย่า retry) และ **offline queue**
+  (คิวได้เฉพาะ mutation ที่มี `idempotencyKey` · **ห้ามคิว PIN เด็ดขาด** เพราะจะกลายเป็น
+  credential ที่เก็บไว้ · flush ทีละใบ ไม่ขนาน เพราะสองบิลชนแถวกะเดียวกันแล้ว deadlock)
+- `agent-invariants.md` — อัปเดตช่วง migration เป็น `9.70`–`9.72` + บันทึกว่ายังไม่ apply ที่ไหน ·
+  กฎของ subscription เก่า · กฎ 18 named subscriptions ใช้ authorizer ตัวเดียว · กฎ coverage
+- `restaurant-chat-delivery.md` — เพิ่ม § 8.5 ตารางแมป "เกิดอะไร → ตาราง → event → subscription"
+  ของเส้นทางนี้ + ย้ำว่า polling ยังเป็นทางหลักจนกว่าจะเปิดธงบน production
+
+### ยังทำไม่ได้เพราะไม่มี DB / ไม่มี client
+
+- **apply `9.70`/`9.71`/`9.72` และรันเทส DB ทั้ง 38 ไฟล์** — trigger 27 ตัวยังไม่เคยยิง
+- **วัด write amplification** ของ trigger บน `bms_inventory`
+- **เคสที่อ่านโค้ดแล้วตอบไม่ได้**: เขียน `bms_orders`/`bms_inventory` นอก `beginTenantTx`
+  แล้ว trigger ต้องยังเขียน outbox ได้ (ขึ้นกับ owner จริงหลัง apply)
+- **event ของ 20 ตารางใน `KNOWN_GAPS`** — เขียน trigger เพิ่มได้ แต่ verify ไม่ได้ จึงยังไม่ทำ
+- **ย้าย caller ฝั่งเบราว์เซอร์ไป GraphQL** และ **แอป RN** — ไม่มีในรีโปนี้
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+
 ## recheck Phase 1-11 ของงาน mobile GraphQL/realtime — เสร็จจริง 4 เฟส (2026-09-11)
 
 branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1083**

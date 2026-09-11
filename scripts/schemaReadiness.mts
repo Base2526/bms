@@ -130,6 +130,42 @@ export const MIGRATIONS: Migration[] = [
     ],
   },
   {
+    // สองคอลัมน์นี้ถูก SELECT ใน `createOrderInTx()` แบบไม่มีเงื่อนไข = ทุกบิลของทุกร้าน
+    // ฐานที่ขาดจึงขายไม่ได้ทั้งระบบ ไม่ใช่แค่ร้านที่ตั้งโปร/ราคาส่งรายสาขา
+    file: "9.61__bms_product_promotions_branch_scope.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder อ่านโปรรายสาขาทุกบิล",
+    needs: [{ kind: "column", table: "bms_product_promotions", name: "location_id" }],
+  },
+  {
+    file: "9.65__bms_product_price_tiers_branch_scope.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder อ่านราคาส่งรายสาขาทุกบิล",
+    needs: [{ kind: "column", table: "bms_product_price_tiers", name: "location_id" }],
+  },
+  {
+    file: "9.60__bms_restaurant_qr_ordering.sql",
+    impact: "ลูกค้าสแกน QR ที่โต๊ะสั่งอาหารไม่ได้ และเครื่องขายเปิดแท็บคำขอ QR ไม่ได้",
+    needs: [
+      { kind: "table", name: "bms_restaurant_table_qr_tokens" },
+      { kind: "table", name: "bms_restaurant_qr_sessions" },
+      { kind: "table", name: "bms_restaurant_qr_submissions" },
+    ],
+  },
+  {
+    file: "9.63__bms_restaurant_check_split_merge.sql",
+    impact: "แยกบิล/รวมบิลของโต๊ะไม่ได้ และเปิดบิลโต๊ะไม่ได้ (คิวรีอ่านคอลัมน์นี้เสมอ)",
+    needs: [{ kind: "column", table: "bms_restaurant_checks", name: "split_group_no" }],
+  },
+  {
+    file: "9.64__bms_restaurant_waitlist.sql",
+    impact: "บัตรคิวหน้าร้านและการจองโต๊ะใช้ไม่ได้",
+    needs: [{ kind: "table", name: "bms_restaurant_waitlist" }],
+  },
+  {
+    file: "9.69__bms_restaurant_service_calls.sql",
+    impact: "ลูกค้ากดเรียกพนักงานจากโต๊ะไม่ได้ และแท็บเรียกพนักงานที่เครื่องขายพัง",
+    needs: [{ kind: "table", name: "bms_restaurant_service_calls" }],
+  },
+  {
     // ตัวส่งเหตุการณ์ realtime เขียนลงตารางนี้ "ในทรานแซกชันเดียวกับงานธุรกิจ" แบบไม่มีเงื่อนไข
     // (`enqueueRealtimeEventInTx` ไม่มีธงและไม่ได้ห่อ try/catch) ตารางที่ขาดจึงไม่ได้แปลว่า
     // realtime เงียบ แต่แปลว่า **ทรานแซกชันนั้น rollback ทั้งก้อน**
