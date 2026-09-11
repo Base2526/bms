@@ -1,4 +1,7 @@
 import { makeExecutableSchema } from "@graphql-tools/schema";
+// `graphql` is also this app's local folder name and tsconfig has baseUrl=".". Importing the
+// package utility subpath prevents tsx from resolving this back to graphql/index.ts.
+import { lexicographicSortSchema, printSchema } from "graphql/utilities/index.js";
 
 import { mergedTypeDefs, mergedResolvers } from "./index";
 
@@ -9,4 +12,12 @@ import { mergedTypeDefs, mergedResolvers } from "./index";
  */
 export function buildBmsGraphqlSchema() {
   return makeExecutableSchema({ typeDefs: mergedTypeDefs, resolvers: mergedResolvers });
+}
+
+/**
+ * Canonical SDL for code generation and review. Sorting makes the committed artifact independent
+ * of module registration order; a trailing newline keeps command-line diffs stable.
+ */
+export function renderBmsGraphqlSdl(): string {
+  return `${printSchema(lexicographicSortSchema(buildBmsGraphqlSchema()))}\n`;
 }

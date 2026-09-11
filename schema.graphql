@@ -1,0 +1,4909 @@
+type BankEntityDetail {
+  account: String!
+  bank_code: String!
+  bank_name: String!
+  is_reported: Boolean!
+  last_report_at: String
+  latest_post_id: ID
+  post_count: Int!
+  post_ids: [ID!]!
+  report_count: Int!
+  risk_level: Int!
+  tags: [String!]!
+  updated_at: String!
+}
+
+type BasicResponse {
+  message: String!
+  ok: Boolean!
+}
+
+enum BlockAction {
+  BLOCK
+  UNBLOCK
+}
+
+input BlockPhoneInput {
+  note: String
+  phone: String!
+  postId: ID
+}
+
+type BlockPhonePayload {
+  ok: Boolean!
+  status: PhoneSafetyStatus!
+}
+
+type BmsActingTenant {
+  id: ID!
+  name: String!
+  slug: String!
+}
+
+type BmsAction {
+  actionKey: String!
+  category: String!
+  confidence: Float!
+  deepLink: String!
+  dueAt: String
+  evidence: JSON!
+  expectedImpact: String!
+  expectedImpactEn: String!
+  firstSeenAt: String!
+  id: ID!
+  lastSeenAt: String!
+  measuredOutcome: JSON
+  ownerId: ID
+  ownerName: String
+  priority: String!
+  status: BmsActionStatus!
+  statusReason: String
+  title: String!
+  titleEn: String!
+}
+
+type BmsActionMetrics {
+  acceptanceRate: Float!
+  accepted: Int!
+  avgTimeToActionMinutes: Float!
+  completed: Int!
+  completionRate: Float!
+  days: Int!
+  measuredOutcomeCount: Int!
+  total: Int!
+}
+
+enum BmsActionStatus {
+  ACCEPTED
+  COMPLETED
+  DISMISSED
+  EXPIRED
+  NEW
+}
+
+type BmsAiConfig {
+  api_key_masked: String
+  has_key: Boolean!
+  model: String
+  provider: String!
+}
+
+type BmsAiCreditLedgerEntry {
+  amount: Int!
+  balanceAfter: Int!
+  createdAt: String!
+  entryType: String!
+  id: ID!
+  note: String
+  referenceId: String
+  referenceType: String
+  yearMonth: String!
+}
+
+type BmsAiFailureSummary {
+  days: Int!
+  errorCalls: Int!
+  handoffCount: Int!
+  topFailingTools: [BmsAiToolFailureRow!]!
+  totalToolCalls: Int!
+}
+
+type BmsAiProviderHealth {
+  last_checked_at: String
+  last_error_at: String
+  last_success_at: String
+  provider: String!
+  purpose: String!
+  status: String!
+  status_detail: String
+}
+
+type BmsAiQualityCase {
+  aiPreview: String!
+  category: String
+  channel: String!
+  conversationId: ID!
+  conversationStatus: String!
+  createdAt: String!
+  customerPreview: String!
+  id: ID!
+  messageId: ID!
+  reasonCodes: [String!]!
+  reviewedAt: String
+  reviewerName: String
+  reviewerNote: String
+  severity: String!
+  signalOutcome: String!
+  source: String!
+  status: String!
+  updatedAt: String!
+  verdict: String
+}
+
+type BmsAiQualityCaseDetail {
+  aiPreview: String!
+  category: String
+  channel: String!
+  conversationId: ID!
+  conversationStatus: String!
+  createdAt: String!
+  customerPreview: String!
+  id: ID!
+  messageId: ID!
+  messages: [BmsAiQualityMessage!]!
+  reasonCodes: [String!]!
+  reviewedAt: String
+  reviewerName: String
+  reviewerNote: String
+  severity: String!
+  signalOutcome: String!
+  source: String!
+  status: String!
+  updatedAt: String!
+  verdict: String
+}
+
+type BmsAiQualityDaily {
+  day: String!
+  handoffCount: Int!
+  successCount: Int!
+  totalTurns: Int!
+  unresolvedCount: Int!
+}
+
+type BmsAiQualityMessage {
+  body: String!
+  createdAt: String!
+  direction: String!
+  id: ID!
+  sender: String
+}
+
+type BmsAiQualityMetrics {
+  clarificationCount: Int!
+  daily: [BmsAiQualityDaily!]!
+  days: Int!
+  handoffCount: Int!
+  handoffRate: Float!
+  humanFailCount: Int!
+  pendingReviews: Int!
+  reviewedCount: Int!
+  successCount: Int!
+  successRate: Float!
+  totalTurns: Int!
+  unresolvedCount: Int!
+  unresolvedRate: Float!
+}
+
+type BmsAiSynonymCandidate {
+  firstSeenAt: String!
+  id: ID!
+  lastSeenAt: String!
+  occurrences: Int!
+  productSku: String
+  reviewedAt: String
+  status: String!
+  term: String!
+}
+
+type BmsAiToolFailureRow {
+  count: Int!
+  outcome: String!
+  tool: String!
+}
+
+type BmsAiUsage {
+  actualCostUsd: Float!
+  adjustedCredits: Int!
+  billableCredits: Int!
+  blockedRequests: Int!
+  bonusCredits: Int!
+  byokRequests: Int!
+  count: Int!
+  estimatedCost: Float!
+  grantedCredits: Int!
+  inputTokens: Float!
+  limit: Int!
+  outputTokens: Float!
+  planCode: String!
+  planName: String!
+  providerCalls: Int!
+  remaining: Int!
+  requestCount: Int!
+  sharedRequests: Int!
+  unlimited: Boolean!
+  unpricedProviderCalls: Int!
+}
+
+type BmsAiUsageBreakdown {
+  actualCostUsd: Float!
+  billableCredits: Int!
+  creditsUsed: Int!
+  estimatedCost: Float!
+  feature: String!
+  inputTokens: Float!
+  outputTokens: Float!
+  providerCalls: Int!
+  requests: Int!
+  unpricedProviderCalls: Int!
+}
+
+type BmsAiUsageEvent {
+  actualCostUsd: Float
+  billableCredits: Int!
+  channel: String
+  completedAt: String
+  configuredProvider: String
+  createdAt: String!
+  creditsUsed: Int!
+  effectiveProvider: String
+  estimatedCost: Float!
+  fallbackFrom: String
+  feature: String!
+  id: ID!
+  inputTokens: Int
+  model: String
+  outputTokens: Int
+  provider: String!
+  providerCalls: Int!
+  routingReason: String
+  sensitive: Boolean!
+  source: String!
+  status: String!
+  surface: String!
+  unpricedProviderCalls: Int!
+}
+
+type BmsArAccount {
+  """ยอดขายเชื่อที่ยังทำได้หลังรวมเครดิตคงเหลือ"""
+  availableCredit: Float!
+
+  """ยอดหนี้คงค้าง · ติดลบ = ร้านค้างลูกค้า (คืนของหลังจ่ายครบ)"""
+  balance: Float!
+  createdAt: String!
+
+  """เครดิตคงเหลือจากยอดติดลบ เช่น คืนสินค้า/void หลังจ่ายครบ"""
+  creditBalance: Float!
+  creditLimit: Float!
+
+  """วงเงินที่เหลือจากเพดานเครดิต ไม่รวมเครดิตคืนสินค้า"""
+  creditLineAvailable: Float!
+  customerId: ID!
+  customerName: String
+  customerPhone: String
+  id: ID!
+  note: String
+  openInvoiceCount: Int!
+  overdueAmount: Float!
+  status: String!
+  termsDays: Int!
+}
+
+type BmsArAging {
+  current: Float!
+  d1to30: Float!
+  d31to60: Float!
+  d61to90: Float!
+  d90plus: Float!
+  total: Float!
+}
+
+type BmsArInvoice {
+  accountId: ID!
+  amount: Float!
+  creditedAmount: Float!
+  customerId: ID!
+  customerName: String
+  daysPastDue: Int!
+
+  """เลขใบกำกับของบิลต้นทาง — ลูกค้าอ้างเลขนี้เวลามาจ่าย"""
+  docNo: String
+  dueAt: String!
+  id: ID!
+  issuedAt: String!
+  orderId: ID!
+  outstanding: Float!
+  overdue: Boolean!
+  settledAmount: Float!
+  status: String!
+}
+
+type BmsArLedgerEntry {
+  actorName: String
+  amount: Float!
+  createdAt: String!
+  id: ID!
+  invoiceId: ID!
+  kind: String!
+  note: String
+  orderId: ID
+  receiptId: ID
+}
+
+type BmsArOutstanding {
+  accountsWithBalance: Int!
+  aging: BmsArAging!
+
+  """ต้องเป็น 0 เสมอ — ไม่ 0 คือมีทางเขียนที่ลืมคำนวณยอดใหม่จาก ledger"""
+  balanceMismatchCount: Int!
+  openInvoiceCount: Int!
+  outstandingAmount: Float!
+  overdueAmount: Float!
+}
+
+type BmsArReceiptAllocation {
+  amount: Float!
+  invoiceId: ID!
+  orderId: ID!
+}
+
+type BmsArReceiptResult {
+  allocations: [BmsArReceiptAllocation!]!
+  balanceAfter: Float!
+  receiptId: ID!
+  replayed: Boolean!
+  status: String!
+}
+
+type BmsArWriteOffResult {
+  amount: Float!
+  balanceAfter: Float!
+  status: String!
+}
+
+type BmsAssistantCitation {
+  accessNote: String
+  accessRequirement: String!
+  accessible: Boolean!
+  id: String!
+  kind: String!
+  missingPermissions: [String!]!
+  path: String
+  status: String
+  summary: String!
+  title: String!
+}
+
+type BmsAssistantLink {
+  label: String!
+  path: String!
+}
+
+type BmsAssistantProposal {
+  args: JSON!
+  mutation: String!
+  summary: String!
+  tool: String!
+}
+
+type BmsAssistantResult {
+  proposals: [BmsAssistantProposal!]!
+  reply: String!
+  trace: [BmsAssistantTrace!]!
+}
+
+type BmsAssistantTrace {
+  ok: Boolean!
+  summary: String!
+  tool: String!
+}
+
+input BmsAssistantTurn {
+  role: String!
+  text: String!
+}
+
+input BmsAttachmentInput {
+  mimeType: String
+  name: String
+  url: String!
+}
+
+type BmsAuditEntry {
+  action: String!
+  actor: String
+  created_at: String!
+  id: ID!
+  meta: JSON
+  target: String
+}
+
+type BmsBilling {
+  plan: BmsPlan!
+  plans: [BmsPlan!]!
+  usage: BmsUsage!
+}
+
+type BmsBundleItem {
+  componentName: String!
+  componentSize: String!
+  componentSku: String!
+  qty: Int!
+}
+
+input BmsBundleItemInput {
+  componentSize: String!
+  componentSku: String!
+  qty: Int!
+}
+
+type BmsBusinessDoc {
+  channel: String
+  couponCode: String
+  customerRef: String
+  date: String!
+  discount: Float!
+  lines: [BmsDocLine!]!
+  note: String!
+  number: String!
+  paymentStatus: String
+  shippingFee: Float
+  store: BmsStoreSummary!
+  subtotal: Float!
+  total: Float!
+  type: String!
+}
+
+enum BmsCarrier {
+  AUSPOST
+  DHL
+  FLASH
+  KERRY
+  NZPOST
+  OTHER
+}
+
+type BmsCarrierBookingResult {
+  detail: String
+  externalShipmentId: String
+  labelUrl: String
+  shipmentId: ID
+  source: String
+  status: String!
+  trackingNo: String
+}
+
+type BmsChannelConfig {
+  access_token_masked: String
+  active: Boolean!
+  channel: String!
+  channel_secret_masked: String
+  has_secret: Boolean!
+  has_token: Boolean!
+}
+
+type BmsChannelHealth {
+  active: Boolean!
+  channel: String!
+  last_checked_at: String
+  last_error_at: String
+  last_inbound_event_at: String
+  last_outbound_success_at: String
+  status: String!
+  status_detail: String
+}
+
+type BmsChannelSales {
+  channel: String!
+  orders: Int!
+  revenue: Float!
+}
+
+type BmsCloseShiftResult {
+  amount: Float
+  count: Int
+  shift: BmsPosShift
+  status: String!
+}
+
+enum BmsConvStatus {
+  CLOSED
+  OPEN
+  PENDING
+}
+
+type BmsConversation {
+  assignedStaff: BmsStaffRef
+  channel: String!
+  createdAt: String!
+  customerAvatar: String
+  customerId: ID
+  customerName: String
+  customerRef: String
+  helpers: [BmsStaffRef!]!
+  id: ID!
+  lastMessage: String
+  lastMessageAt: String
+  messages(limit: Int): [BmsMessage!]!
+  notes(limit: Int): [BmsConversationNote!]!
+  sourceAvatar: String
+  sourceDisplayName: String
+  sourceHandle: String
+  status: BmsConvStatus!
+  systemEvents(limit: Int): [BmsSystemEvent!]!
+  tags: [String!]!
+  unread: Int!
+  updatedAt: String!
+}
+
+type BmsConversationNote {
+  author: String
+  body: String!
+  createdAt: String!
+  id: ID!
+  mentionedUserIds: [ID!]!
+}
+
+type BmsCoupon {
+  active: Boolean!
+  code: String!
+  createdAt: String!
+  expiresAt: String
+  id: ID!
+  locationIds: [ID!]!
+  maxRedemptions: Int
+  minOrderAmount: Float
+  note: String
+  perCustomerLimit: Int
+  redemptionsCount: Int!
+  startsAt: String
+  type: String!
+  updatedAt: String!
+  value: Float!
+}
+
+input BmsCouponInput {
+  active: Boolean
+  code: String!
+  expiresAt: String
+  id: ID
+  locationIds: [ID!]
+  maxRedemptions: Int
+  minOrderAmount: Float
+  note: String
+  perCustomerLimit: Int
+  startsAt: String
+  type: String!
+  value: Float!
+}
+
+type BmsCouponRedemption {
+  channel: String!
+  createdAt: String!
+  customerId: ID
+  customerName: String
+  discountAmount: Float!
+  orderId: ID!
+  status: String!
+  totalAmount: Float!
+}
+
+type BmsCouponSummary {
+  discountThisMonth: Float!
+  redemptionsThisMonth: Int!
+  topCoupons: [BmsTopCoupon!]!
+}
+
+type BmsCustomer {
+  addresses: [BmsCustomerAddress!]!
+  coupons: [BmsCustomerCoupon360!]!
+  created_at: String!
+  id: ID!
+  identities: [BmsCustomerIdentity!]!
+  loyaltyLedger: [BmsLoyaltyLedgerEntry!]!
+  membership: BmsMember
+  name: String!
+  note: String
+  order_count: Int!
+  orders: [BmsOrder!]!
+  phone: String
+  tags: [String!]!
+  total_spent: Float!
+}
+
+type BmsCustomer360 {
+  addresses: [BmsCustomerAddress360!]!
+  coupons: [BmsCustomerCoupon360!]!
+  customer: BmsCustomerProfile360
+  draftOrder: BmsCustomerDraftOrder
+  identities: [BmsCustomerIdentity360!]!
+  notes: [BmsCustomerNote360!]!
+  products: BmsCustomerProducts!
+  recentOrders: [BmsCustomerRecentOrder!]!
+  stats: BmsCustomerStats!
+}
+
+type BmsCustomerAddress {
+  address: String!
+  id: ID!
+  is_default: Boolean!
+  label: String
+}
+
+type BmsCustomerAddress360 {
+  address: String!
+  addressType: String!
+  id: ID!
+  isDefault: Boolean!
+  label: String
+}
+
+type BmsCustomerCoupon360 {
+  active: Boolean!
+  assigned: Boolean!
+  assignedAt: String
+  available: Boolean!
+  code: String!
+  customerUsedCount: Int!
+  discountPreview: Float
+  expiredAt: String
+  expiresAt: String
+  id: ID!
+  maxRedemptions: Int
+  minOrderAmount: Float
+  note: String
+  perCustomerLimit: Int
+  reason: String
+  redeemedAt: String
+  redeemedOrderId: ID
+  redemptionsCount: Int!
+  remainingRedemptions: Int
+  reservedAt: String
+  reservedOrderId: ID
+  revokedAt: String
+  source: String
+  startsAt: String
+  state: String!
+  type: String!
+  value: Float!
+  walletId: ID
+}
+
+type BmsCustomerDraftOrder {
+  channel: String!
+  couponCode: String
+  createdAt: String
+  discountAmount: Float!
+  id: ID!
+  items: [BmsCustomerOrderItem360!]!
+  totalAmount: Float!
+}
+
+type BmsCustomerFavoriteCategory {
+  category: String!
+  qty: Int!
+}
+
+type BmsCustomerIdentity {
+  channel: String!
+  external_ref: String!
+}
+
+type BmsCustomerIdentity360 {
+  channel: String!
+  externalRef: String!
+}
+
+input BmsCustomerInput {
+  id: ID
+  name: String!
+  note: String
+  phone: String
+  tags: [String!]
+}
+
+type BmsCustomerInsights {
+  cached: Boolean!
+  generatedAt: String
+  summary: String!
+}
+
+type BmsCustomerNote360 {
+  author: String
+  body: String!
+  conversationId: ID!
+  createdAt: String
+  id: ID!
+}
+
+type BmsCustomerOrderItem360 {
+  qty: Int!
+  size: String!
+  sku: String!
+  unitPrice: Float!
+}
+
+type BmsCustomerProductStat {
+  category: String
+  lastPurchasedAt: String
+  name: String!
+  orderCount: Int!
+  qty: Int!
+  revenue: Float!
+  sku: String!
+}
+
+type BmsCustomerProducts {
+  favoriteCategories: [BmsCustomerFavoriteCategory!]!
+  frequentlyPurchased: [BmsCustomerProductStat!]!
+  recentlyPurchased: [BmsCustomerProductStat!]!
+  topPurchased: [BmsCustomerProductStat!]!
+}
+
+type BmsCustomerProfile360 {
+  createdAt: String
+  email: String
+  id: ID!
+  isNewCustomer: Boolean!
+  isReturningCustomer: Boolean!
+  name: String!
+  note: String
+  orderCount: Int!
+  phone: String
+  preferredLanguage: String
+  tags: [String!]!
+  timezone: String
+  totalSpent: Float!
+}
+
+type BmsCustomerRecentOrder {
+  carrier: String
+  channel: String!
+  couponCode: String
+  createdAt: String
+  discountAmount: Float!
+  id: ID!
+  items: [BmsCustomerOrderItem360!]!
+  paymentMethod: String
+  paymentStatus: BmsPaymentStatus
+  shipmentStatus: BmsShipmentStatus
+  status: BmsOrderStatus!
+  totalAmount: Float!
+  trackingNo: String
+}
+
+type BmsCustomerStats {
+  avgOrderValue: Float!
+  avgResponseTimeSeconds: Int
+  cancelledOrders: Int!
+  completedOrders: Int!
+  lastConversationAt: String
+  lastOrderDate: String
+  lifetimeValue: Float!
+  refundCount: Int!
+  totalOrders: Int!
+}
+
+type BmsCustomerTimelineEntry {
+  at: String!
+  ref: String
+  text: String!
+  type: String!
+}
+
+type BmsDailySales {
+  day: String!
+  orders: Int!
+  revenue: Float!
+}
+
+type BmsDashboard {
+  couponSummary: BmsCouponSummary
+  customerCount: Int!
+  lowStockCount: Int!
+  orderCount: Int!
+  ordersByStatus: [BmsStatusCount!]!
+  revenueToday: Float!
+  revenueTotal: Float!
+  salesDaily: [BmsDailySales!]!
+  topCustomers: [BmsTopCustomer!]!
+  topProducts: [BmsTopProduct!]!
+}
+
+type BmsDocLine {
+  amount: Float!
+  name: String!
+  qty: Int!
+  size: String!
+  sku: String!
+  unitPrice: Float!
+}
+
+type BmsEmailReportResult {
+  fileId: Int!
+  format: String!
+  reportType: String!
+  to: String!
+}
+
+type BmsEnrollMemberResult {
+  member: BmsMember
+  reason: String
+  status: String!
+}
+
+type BmsEtaxRunResult {
+  accepted: Int!
+  failed: Int!
+  processed: Int!
+  rejected: Int!
+}
+
+type BmsEtaxSubmission {
+  attempts: Int!
+  docNo: String
+  documentId: ID!
+  id: ID!
+  lastError: String
+  nextAttemptAt: String
+  provider: String
+  providerRef: String
+  sentAt: String
+  settledAt: String
+  status: String!
+}
+
+type BmsEtaxSummary {
+  accepted: Int!
+  enabled: Boolean!
+  failed: Int!
+
+  """ ใบกำกับที่ออกแล้วแต่ยังไม่เคยเข้าคิว """
+  notQueued: Int!
+  pending: Int!
+  rejected: Int!
+  sent: Int!
+}
+
+type BmsExpiringLotItem {
+  daysToExpiry: Int!
+  expiryDate: String!
+  lotNo: String!
+  name: String!
+  qty: Int!
+  recommendedAction: String!
+  size: String!
+  sku: String!
+}
+
+type BmsExpiringPointsRow {
+  customerId: ID!
+  expiringPoints: Int!
+  firstExpiresAt: String!
+  memberNo: String
+  name: String!
+  phone: String
+}
+
+type BmsFollowupAnalytics {
+  activeJobs: Int!
+  avgIdleMinutesAtSend: Float
+  avgRetryCount: Float!
+  byGoal: [BmsFollowupAnalyticsBucket!]!
+  byIntent: [BmsFollowupAnalyticsBucket!]!
+  daily: [BmsFollowupAnalyticsDaily!]!
+  failedHistory: Int!
+  failedJobs: Int!
+  orderRate: Float!
+  orderedAfterFollowup: Int!
+  pendingJobs: Int!
+  repliedAfterFollowup: Int!
+  replyRate: Float!
+  sentHistory: Int!
+  sentJobs: Int!
+  skippedHistory: Int!
+  stoppedJobs: Int!
+  totalHistory: Int!
+  windowDays: Int!
+}
+
+type BmsFollowupAnalyticsBucket {
+  failed: Int!
+  key: String!
+  ordered: Int!
+  replied: Int!
+  sent: Int!
+  skipped: Int!
+}
+
+type BmsFollowupAnalyticsDaily {
+  day: String!
+  failed: Int!
+  ordered: Int!
+  replied: Int!
+  sent: Int!
+  skipped: Int!
+}
+
+type BmsFollowupHistoryEntry {
+  conversationId: ID!
+  createdAt: String!
+  goal: String
+  id: ID!
+  jobId: ID
+  messageBody: String
+  outcome: String!
+  reason: String
+  ruleId: ID
+}
+
+type BmsFollowupJob {
+  businessHoursOnly: Boolean!
+  conversationId: ID!
+  createdAt: String!
+  customerLifetimeValue: Float
+  customerName: String
+  id: ID!
+  idleMinutes: Int
+  intent: String!
+  lastMessageAt: String
+  lastResult: String
+  maxRetry: Int!
+  messageGoal: String!
+  nextRunAt: String!
+  priority: Int!
+  retryCount: Int!
+  ruleId: ID!
+  score: Int!
+  scoreLabel: String!
+  scoreReasons: [String!]!
+  status: String!
+  totalOrders: Int!
+  updatedAt: String!
+}
+
+type BmsFollowupRule {
+  businessHoursOnly: Boolean!
+  createdAt: String!
+  delayMinutes: Int!
+  enabled: Boolean!
+  id: ID!
+  intent: String!
+  maxRetry: Int!
+  messageGoal: String!
+  priority: Int!
+  stopConditions: [String!]!
+  template: String
+  tenantId: ID!
+  updatedAt: String!
+}
+
+input BmsFollowupRuleInput {
+  businessHoursOnly: Boolean
+  delayMinutes: Int!
+  enabled: Boolean
+  id: ID
+  intent: String!
+  maxRetry: Int
+  messageGoal: String!
+  priority: Int
+  stopConditions: [String!]
+  template: String
+}
+
+type BmsFollowupRunResult {
+  failed: Int!
+  scanned: Int!
+  sent: Int!
+  skipped: Int!
+}
+
+input BmsGenerateReportInput {
+  dateFrom: String
+  dateTo: String
+  format: String!
+  includeSummary: Boolean
+  reportType: String!
+}
+
+type BmsGenerateReportResult {
+  fileId: Int!
+  fileUrl: String!
+  format: String!
+  reportType: String!
+  summary: String
+}
+
+type BmsGeneratedReport {
+  createdAt: String!
+  fileId: Int
+  fileUrl: String
+  format: String!
+  generatedBy: String
+  id: ID!
+  params: JSON!
+  reportType: String!
+  summary: String
+}
+
+type BmsInboxChangedPayload {
+  conversationId: ID!
+  kind: String!
+  messageId: ID
+  messageSource: String
+  occurredAt: String!
+}
+
+type BmsInboxDiagnosticEventResult {
+  channel: String!
+  conversationId: ID!
+  kind: String!
+  message: String!
+  occurredAt: String!
+  ok: Boolean!
+}
+
+type BmsInboxDiagnosticLatest {
+  channel: String!
+  conversationId: ID!
+  customerRef: String!
+  lastInboundAt: String!
+}
+
+type BmsInboxDiagnosticMessageResult {
+  channel: String!
+  conversationId: ID!
+  customerRef: String!
+  message: String!
+  messageId: ID!
+  occurredAt: String!
+  ok: Boolean!
+}
+
+type BmsInventoryActionCenter {
+  expiringLots: [BmsExpiringLotItem!]!
+  lowStock: [BmsInventoryActionLowStockItem!]!
+  purchaseSuggestions: [BmsPurchaseSuggestionItem!]!
+  slowMoving: [BmsSlowMovingItem!]!
+  stockoutRisk: [BmsStockoutRiskItem!]!
+  summary: BmsInventoryActionSummary!
+}
+
+type BmsInventoryActionLowStockItem {
+  available: Int!
+  name: String!
+  reorderPoint: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsInventoryActionSummary {
+  coverageDays: Int!
+  deadStockCount: Int!
+  disclaimer: String!
+  expiringLotCount: Int!
+  expiringUnits: Int!
+  lowStockCount: Int!
+  outOfStockCount: Int!
+  purchaseSuggestionCount: Int!
+  slowMovingCount: Int!
+  stockoutWithin7DaysCount: Int!
+  totalSuggestedQty: Int!
+  windowDays: Int!
+}
+
+input BmsInventoryDemandInput {
+  kind: BmsInventoryDemandKind!
+  note: String
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+enum BmsInventoryDemandKind {
+  LOST_SALE
+  RESTOCK_REQUEST
+}
+
+type BmsInventoryLot {
+  expiryDate: String
+  id: ID!
+  locationId: ID!
+  lotNo: String!
+  note: String
+  productSku: String!
+  qty: Int!
+  receivedAt: String!
+  size: String!
+  supplierId: ID
+  unitCost: Float
+}
+
+input BmsInventoryPolicyInput {
+  leadTimeDays: Int!
+  safetyStockDays: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsInventorySummary {
+  availableUnits: Int!
+  lowStockCount: Int!
+  outOfStockCount: Int!
+  reservedUnits: Int!
+  skuCount: Int!
+  stockValue: Float!
+  totalUnits: Int!
+  variantCount: Int!
+}
+
+type BmsInventoryWastage {
+  actorName: String
+  createdAt: String!
+  id: ID!
+  locationId: ID!
+  locationName: String
+  orderId: ID
+  productName: String!
+  productSku: String!
+  qty: Int!
+  reason: String!
+  size: String!
+}
+
+input BmsInventoryWastageInput {
+  locationId: ID!
+  orderId: ID
+  productSku: String!
+  qty: Int!
+  reason: String!
+  size: String!
+}
+
+type BmsInventoryWastageResult {
+  id: ID!
+}
+
+type BmsIssueFullTaxInvoiceResult {
+  cancelledAbbreviated: BmsTaxDocument
+  document: BmsTaxDocument
+  reason: String
+  skus: [String!]
+  status: String!
+}
+
+type BmsJsConsoleLog {
+  level: String!
+  text: String!
+}
+
+type BmsJsConsoleResult {
+  durationMs: Int!
+  error: String
+  logs: [BmsJsConsoleLog!]!
+  ok: Boolean!
+  result: String
+}
+
+"""สถานีครัว (9.54) — พื้นที่ทำงานในสาขา ไม่ใช่สาขา และไม่แยกสต็อก"""
+type BmsKitchenStation {
+  active: Boolean!
+  activeProductCount: Int!
+  code: String!
+  createdAt: String!
+  description: String
+  id: ID!
+  lateMinutes: Int!
+
+  """null = ใช้ได้ทุกสาขา · มีค่า = ของสาขานั้นสาขาเดียว"""
+  locationId: ID
+  locationName: String
+  name: String!
+  productCount: Int!
+  slaConfigured: Boolean!
+  sortOrder: Int!
+  updatedAt: String!
+  warnMinutes: Int!
+}
+
+input BmsKitchenStationInput {
+  active: Boolean
+
+  """ไม่ส่ง = derive จากชื่อ (ร้านส่วนใหญ่ไม่เคยอยากตั้งรหัสเอง)"""
+  code: String
+  description: String
+  locationId: ID
+  name: String
+  sortOrder: Int
+}
+
+"""
+เกณฑ์เวลาของจอครัวต่อสถานี (9.53) — สถานีที่ยังไม่ตั้งค่าคืนค่าปริยายพร้อม configured=false
+"""
+type BmsKitchenStationSla {
+  configured: Boolean!
+  lateMinutes: Int!
+  station: String!
+
+  """null = ชื่อที่ยังไม่มีแถวหลักในตารางสถานี"""
+  stationId: ID
+  warnMinutes: Int!
+}
+
+type BmsKitchenTicket {
+  checkId: ID
+  createdAt: String!
+  id: ID!
+  kitchenNote: String
+  modifierCodes: [String!]!
+
+  """null สำหรับตั๋วของบิลโต๊ะ (ยังไม่มีออร์เดอร์ที่ปิดการขาย)"""
+  orderId: ID
+  orderItemId: ID!
+  packQty: Int
+  productName: String!
+  productSku: String!
+  qty: Int!
+  roundNo: Int
+  size: String!
+
+  """
+  ORDER = ตั๋วจากบิลที่ปิดการขายแล้ว · RESTAURANT_CHECK = ตั๋วจากบิลโต๊ะก่อนชำระเงิน
+  """
+  source: String!
+
+  """
+  ชื่อสถานี ณ เวลาที่ตั๋วถูกสร้าง (snapshot) — เปลี่ยนชื่อสถานีแล้วใบเก่าต้องไม่เปลี่ยนตาม
+  """
+  station: String
+
+  """id ของสถานี (9.54) — null สำหรับตั๋วเก่าหรือสถานีที่ยังไม่ถูกยกระดับ"""
+  stationId: ID
+  status: String!
+  tableCode: String
+  tableName: String
+  updatedAt: String!
+}
+
+type BmsLabelItem {
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsLabelShipTo {
+  address: String
+  name: String
+  phone: String
+}
+
+type BmsLocation {
+  active: Boolean!
+  address: String
+  branchCode: String!
+  code: String!
+  id: ID!
+  isHeadOffice: Boolean!
+  name: String!
+  pharmacistLicenseNo: String
+  pharmacistName: String
+  pharmacyLicenseNo: String
+  phone: String
+  vatCode: String
+}
+
+input BmsLocationInput {
+  active: Boolean
+  address: String
+  branchCode: String!
+  code: String!
+  id: ID
+  name: String!
+  phone: String
+}
+
+type BmsLotMismatch {
+  currentStock: Int!
+  locationId: ID!
+  lotTotal: Int!
+  productSku: String!
+  size: String!
+}
+
+type BmsLotRecallHit {
+  channel: String!
+  customerId: ID
+  customerName: String
+  customerPhone: String
+  orderCreatedAt: String!
+  orderId: ID!
+  productSku: String!
+  qty: Int!
+}
+
+type BmsLowStockItem {
+  available: Int!
+  branchCode: String!
+  locationId: ID!
+  locationName: String!
+  name: String!
+  reorder_point: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsLoyaltyActivityRow {
+  adjustedNet: Int!
+  earned: Int!
+  expired: Int!
+  month: String!
+  redeemed: Int!
+  reversedNet: Int!
+}
+
+type BmsLoyaltyBalance {
+  balance: Int!
+}
+
+type BmsLoyaltyExpireResult {
+  customers: Int!
+  points: Int!
+}
+
+type BmsLoyaltyLedgerEntry {
+  createdAt: String!
+  expiresAt: String
+  id: ID!
+  kind: String!
+  note: String
+  orderId: ID
+  points: Int!
+  posReturnId: ID
+}
+
+type BmsLoyaltyOutstanding {
+  balanceMismatchCount: Int!
+  expiringIn30Days: Int!
+  members: Int!
+  outstandingPoints: Int!
+  outstandingValue: Float!
+}
+
+type BmsLoyaltySettings {
+  earnBase: String!
+  earnMinSpend: Float!
+  earnMode: String!
+  earnPointsPerBaht: Float!
+  enabled: Boolean!
+  maxDiscountPct: Float!
+  pointsExpireMonths: Int!
+  redeemBahtPerUnit: Float!
+  redeemMinPoints: Int!
+  redeemPointsPerUnit: Int!
+  visitPoints: Int!
+}
+
+input BmsLoyaltySettingsInput {
+  earnBase: String
+  earnMinSpend: Float
+  earnMode: String
+  earnPointsPerBaht: Float
+  enabled: Boolean
+  maxDiscountPct: Float
+  pointsExpireMonths: Int
+  redeemBahtPerUnit: Float
+  redeemMinPoints: Int
+  redeemPointsPerUnit: Int
+  visitPoints: Int
+}
+
+type BmsMailLogEntry {
+  category: String!
+  createdAt: String!
+  error: String
+  fromEmail: String
+  html: String
+  id: ID!
+  messageId: String
+  provider: String!
+  status: String!
+  statusCode: Int
+  subject: String
+  tenantId: ID
+  tenantName: String
+  textBody: String
+  toEmail: String!
+  triggeredBy: String
+}
+
+type BmsMailLogPage {
+  items: [BmsMailLogEntry!]!
+  total: Int!
+}
+
+type BmsMailLogStats {
+  error: Int!
+  success: Int!
+  topErrorProvider: String
+  total: Int!
+}
+
+type BmsMe {
+  avatar: String
+  created_at: String
+  email: String
+  gender: String
+  id: ID!
+  is_available: Boolean!
+  is_platform_admin: Boolean!
+  language: String
+  name: String
+  permissions: [String!]!
+  phone: String
+  role: String!
+  tenant: BmsMeTenant
+  themePreference: String!
+  username: String
+}
+
+type BmsMeTenant {
+  id: ID!
+  name: String!
+  plan: String!
+  slug: String!
+}
+
+type BmsMember {
+  customerId: ID!
+  enrolledBranchCode: String
+  enrolledByName: String
+  enrolledByUserId: ID
+  enrolledLocationId: ID
+  enrolledLocationName: String
+  enrolledPosDeviceId: ID
+  enrolledPosDeviceName: String
+  enrolledRegisteredPosNo: String
+  enrolledShiftId: ID
+  enrollmentChannel: String
+  memberNo: String
+  memberSince: String
+  name: String!
+  phone: String
+  pointsBalance: Int!
+  pointsUsable: Int!
+  tier: BmsMembershipTier
+}
+
+type BmsMemberDiscountPreview {
+  capped: Boolean!
+  cappedAt: Float!
+  couponDiscount: Float!
+  manualDiscount: Float!
+  member: BmsMember
+  netTotal: Float!
+  pointsDiscount: Float!
+  pointsUsed: Int!
+  subtotal: Float!
+  tierDiscount: Float!
+  tierLabel: String
+  totalDiscount: Float!
+}
+
+type BmsMemberPage {
+  members: [BmsMember!]!
+  total: Int!
+}
+
+type BmsMembershipTier {
+  active: Boolean!
+  code: String!
+  discountType: String!
+  discountValue: Float!
+  id: ID!
+  name: String!
+  qualifyPoints: Int!
+  qualifySpend12m: Float!
+  sortOrder: Int!
+}
+
+input BmsMembershipTierInput {
+  active: Boolean!
+  code: String!
+  discountType: String!
+  discountValue: Float!
+  id: ID
+  name: String!
+  qualifyPoints: Int!
+  qualifySpend12m: Float!
+  sortOrder: Int!
+}
+
+type BmsMention {
+  author: String
+  body: String!
+  channel: String!
+  conversationId: ID!
+  createdAt: String!
+  customerName: String
+  id: ID!
+  readAt: String
+}
+
+type BmsMessage {
+  attachment: BmsMessageAttachment
+  body: String!
+  canReportDelivery: Boolean!
+  createdAt: String!
+  direction: String!
+  id: ID!
+  sender: String
+  status: String
+}
+
+type BmsMessageAttachment {
+  isImage: Boolean!
+  mimeType: String
+  name: String
+  url: String!
+}
+
+type BmsModifierComponent {
+  qtyDelta: Int!
+  size: String!
+  sku: String!
+}
+
+input BmsModifierComponentInput {
+  qtyDelta: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsOnboardingProgress {
+  completed: [String!]!
+  dismissedAt: String
+  lastSeenAt: String
+  skipped: [String!]!
+}
+
+type BmsOpenShiftResult {
+  reason: String
+  shift: BmsPosShift
+  status: String!
+}
+
+type BmsOperationalAlerts {
+  chatWaitingCount: Int!
+  packingOverdueCount: Int!
+  reservationExpiringCount: Int!
+  slipPendingCount: Int!
+}
+
+type BmsOrder {
+  amount_due: Float!
+  branchCode: String
+  channel: String!
+  coupon_code: String
+  created_at: String!
+  customer_ref: String
+  deposit_balance_due: Float!
+  deposit_paid: Float!
+  deposit_status: String
+  discountLines: [BmsOrderDiscountLine!]!
+  discount_amount: Float!
+  fulfillmentType: String
+  hasShippingAddress: Boolean!
+  id: ID!
+  items: [BmsOrderItem!]!
+  locationId: ID
+  locationName: String
+  pendingRefundAmount: Float!
+  pendingRefundCount: Int!
+  pendingRefundSince: String
+  posDeviceName: String
+  posShiftId: ID
+  preferred_carrier: BmsCarrier
+  promisedAt: String
+  registeredPosNo: String
+  shipping_fee: Float!
+  status: BmsOrderStatus!
+  total_amount: Float!
+  updated_at: String!
+}
+
+type BmsOrderDiscountLine {
+  amount: Float!
+  label: String!
+  pointsUsed: Int!
+  source: String!
+}
+
+type BmsOrderEvent {
+  actorName: String
+  at: String!
+  kind: String!
+  text: String!
+}
+
+type BmsOrderItem {
+  product_name: String
+  product_sku: String!
+  qty: Int!
+  size: String!
+  unit_price: Float!
+}
+
+input BmsOrderItemInput {
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsOrderJourney {
+  amountDue: Float!
+  assignedStaff: BmsStaffRef
+  channel: String!
+  conversationId: ID
+  depositBalanceDue: Float!
+  depositStatus: String
+  events: [BmsOrderEvent!]!
+  helpers: [BmsStaffRef!]!
+  isDeposit: Boolean!
+  orderId: ID!
+  paidTotal: Float!
+  pendingSettlementTotal: Float!
+  remainingAfterReturn: Float!
+  returnedTotal: Float!
+  status: BmsOrderStatus!
+  steps: [BmsOrderStep!]!
+}
+
+enum BmsOrderStatus {
+  CANCELLED
+  COMPLETED
+  PACKING
+  PAID
+  PENDING
+  RETURNED
+  SHIPPED
+}
+
+type BmsOrderStep {
+  actorName: String
+  at: String
+  branch: Boolean!
+  reached: Boolean!
+  status: String!
+}
+
+type BmsPackAudit {
+  name: String!
+  packs: Int!
+  sizes: Int!
+  sizesWithoutBarcode: [String!]!
+  sku: String!
+}
+
+type BmsPayment {
+  amount: Float!
+  completedRefundAmount: Float!
+  confirmedAt: String
+  createdAt: String!
+  id: ID!
+  method: BmsPaymentMethod!
+  netAmount: Float!
+  note: String
+  orderId: ID!
+  pendingRefundAmount: Float!
+  refundedAt: String
+  rejectedAt: String
+  slipRef: String
+  slipUrl: String
+  status: BmsPaymentStatus!
+  updatedAt: String!
+  verifiedBy: String
+  verifyResult: String
+}
+
+type BmsPaymentAccount {
+  accountName: String
+  accountNo: String
+  bankName: String
+  note: String
+  promptpayId: String
+  type: String!
+}
+
+input BmsPaymentAccountInput {
+  accountName: String
+  accountNo: String
+  bankName: String
+  note: String
+  promptpayId: String
+  type: String!
+}
+
+enum BmsPaymentMethod {
+  BANK_TRANSFER
+  CARD
+  CASH
+  CREDIT
+  QR
+  STORE_CREDIT
+  TIKTOK
+  WALLET
+}
+
+type BmsPaymentResult {
+  message: String
+  paymentId: ID
+  status: String!
+}
+
+enum BmsPaymentStatus {
+  CONFIRMED
+  PENDING
+  REFUNDED
+  REJECTED
+}
+
+"""
+9.29 — หนึ่งแถวต่อ (บิล, สินค้า, ไซซ์) ที่เภสัชกรกด PIN อนุมัติจ่ายที่เคาน์เตอร์
+"""
+type BmsPharmacistCounterAuthorization {
+  cashierName: String
+  createdAt: String!
+  id: ID!
+  note: String
+
+  """รหัสสั้นที่พนักงานใช้เรียกบิล (ตรงกับที่หน้า POS โชว์ตอนขายจบ)"""
+  orderCode: String!
+  orderId: ID!
+  pharmacistName: String
+  pharmacistUserId: ID!
+  policyStatus: String!
+  productName: String
+  productSku: String!
+  qty: Int!
+
+  """policy ที่ถูกปลด ณ เวลานั้น (snapshot ไม่ใช่ค่าปัจจุบันของสินค้า)"""
+  salePolicy: String!
+  size: String!
+
+  """เลขใบกำกับ/ใบเสร็จถ้าออกแล้ว — บิลมัดจำที่ยังไม่ส่งของยังไม่มี"""
+  taxDocNo: String
+}
+
+type BmsPharmacistCounterAuthorizationPage {
+  items: [BmsPharmacistCounterAuthorization!]!
+  limit: Int!
+  offset: Int!
+  total: Int!
+}
+
+type BmsPharmacyAssessment {
+  aiModelVersion: String
+  aiPromptVersion: String
+  aiSummary: String
+  aiSummaryVersion: Int!
+  anomalies: JSON!
+  approvedAt: String
+  approvedBy: ID
+  assignedPharmacistId: ID
+  biologicalSex: String!
+  breastfeedingStatus: String!
+  channelId: String
+  checkoutOrderDraft: JSON
+  closedAt: String
+  complaint: JSON!
+  completenessStatus: String!
+  conflictingFields: [String!]!
+  consentAt: String
+  consentStatus: String!
+  consentVersion: String
+  conversationId: ID
+  createdAt: String!
+  currentQuestionKey: String
+  customerConfirmationStatus: String!
+  customerConfirmationSummary: JSON!
+  customerConfirmedAt: String
+  customerId: ID
+  decisionReason: String
+  detectedRedFlags: JSON!
+  escalationReason: String
+  expiresAt: String
+  heightCm: Float
+  id: ID!
+  medicalInfo: JSON!
+  medicationSuggestions: JSON!
+  missingFields: [String!]!
+  needsManualIntake: Boolean!
+  outOfScopeReason: String
+  patientAgeYears: Int
+  patientDob: String
+  patientRelationship: String!
+  pharmacistDecisionNotes: String
+  pharmacistEdits: JSON!
+  pregnancyStatus: String!
+  protocolId: ID
+  rawMessages: JSON!
+  riskLevel: String!
+  status: String!
+  structuredAnswers: JSON!
+  tenantId: ID!
+  updatedAt: String!
+  version: Int!
+  weightKg: Float
+}
+
+type BmsPharmacyAssessmentEvent {
+  action: String!
+  actor: String!
+  assessmentId: ID!
+  createdAt: String!
+  id: ID!
+  meta: JSON!
+  nextState: String
+  previousState: String
+}
+
+type BmsPharmacyAssistantResult {
+  reply: String!
+  session: JSON!
+}
+
+input BmsPharmacyAssistantSessionInput {
+  answers: JSON
+  currentFieldKey: String
+  currentQuestionKey: String
+  phase: String
+  protocolId: String
+  protocolKey: String
+}
+
+type BmsPharmacyCatalogItem {
+  availableTotal: Int!
+  brand: String
+  category: String
+  name: String!
+  policyStatus: String!
+  price: Float!
+  productType: String!
+  salePolicy: String!
+  sku: String!
+  variants: [BmsPharmacyCatalogVariant!]!
+}
+
+type BmsPharmacyCatalogVariant {
+  available: Int!
+  size: String!
+}
+
+"""
+หลักฐานทางคลินิกของเคส (9.25) — ไม่มี fileId โดยตั้งใจ
+รูปใบสั่งยาดูได้ทาง fileUrl เท่านั้น ซึ่งเป็น route ที่ตรวจสิทธิ์
+"""
+type BmsPharmacyClinicalEvidence {
+  assessmentId: ID!
+  createdAt: String!
+  createdBy: ID
+  createdByName: String
+  fileMimetype: String
+  fileName: String
+  fileSize: Int
+  fileUrl: String
+  id: ID!
+  kind: String!
+  source: String!
+  textValue: String
+}
+
+type BmsPharmacyConversationHistory {
+  channel: String!
+  conversationId: ID!
+  customerName: String
+  customerRef: String
+  messages: [BmsPharmacyConversationHistoryMessage!]!
+  status: String!
+}
+
+type BmsPharmacyConversationHistoryMessage {
+  body: String!
+  createdAt: String!
+  direction: String!
+  id: ID!
+  sender: String
+  status: String
+}
+
+input BmsPharmacyLabCartItemInput {
+  qty: Int!
+  size: String
+  sku: String!
+}
+
+type BmsPharmacyLicenseUser {
+  email: String
+  id: ID!
+  isLicensedPharmacist: Boolean!
+  name: String!
+  pharmacistLicenseNo: String
+}
+
+type BmsPharmacyPolicyReadiness {
+  approved: Int!
+
+  """9.29 — TRUE = เปิดกะไม่ได้ถ้ารีวิว policy ยังไม่ครบ"""
+  blockShiftOnUnreviewed: Boolean!
+
+  """9.29 — เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขายได้"""
+  counterAuthorization: Boolean!
+  draft: Int!
+  missing: Int!
+  pendingReview: Int!
+  pharmacyArchetype: Boolean!
+  ready: Boolean!
+  totalProducts: Int!
+}
+
+type BmsPharmacyProductPolicy {
+  createdAt: String!
+  id: ID!
+  maxQuantity: Int
+  productName: String!
+  productSku: String!
+  productType: String!
+  registrationNo: String
+  regulatoryClass: String!
+  regulatoryEvidenceRef: String
+  regulatoryEvidenceSource: String!
+  regulatoryFramework: String!
+  reviewedAt: String
+  reviewedBy: ID
+  safetyRuleKey: String
+  salePolicy: String!
+  status: String!
+  tenantId: ID!
+  updatedAt: String!
+}
+
+input BmsPharmacyProductPolicyInput {
+  maxQuantity: Int
+  productSku: String!
+  productType: String!
+  registrationNo: String
+  regulatoryClass: String!
+  regulatoryEvidenceRef: String
+  regulatoryEvidenceSource: String!
+  regulatoryFramework: String!
+  safetyRuleKey: String
+  salePolicy: String!
+}
+
+type BmsPharmacyProductPolicyPage {
+  items: [BmsPharmacyProductPolicy!]!
+  limit: Int!
+  offset: Int!
+  total: Int!
+}
+
+type BmsPharmacyProtocol {
+  clinicallyApproved: Boolean!
+  completionRules: JSON!
+  conditionalQuestions: JSON!
+  createdAt: String!
+  displayLabel: String!
+  enabled: Boolean!
+  escalationRules: JSON!
+  id: ID!
+  name: String!
+  platformAllowed: Boolean!
+  protocolKey: String!
+  redFlagRules: JSON!
+  requiredFields: JSON!
+  reviewedAt: String
+  reviewedBy: ID
+  status: String!
+  supportedSymptomGroup: String!
+  tenantId: ID!
+  triggerTerms: [String!]!
+  updatedAt: String!
+  version: Int!
+}
+
+input BmsPharmacyProtocolInput {
+  completionRules: JSON!
+  conditionalQuestions: JSON!
+  displayLabel: String!
+  escalationRules: JSON!
+  id: ID
+  name: String!
+  protocolKey: String!
+  redFlagRules: JSON!
+  requiredFields: JSON!
+  supportedSymptomGroup: String!
+  triggerTerms: [String!]!
+  version: Int
+}
+
+type BmsPlan {
+  ai_credits_monthly: Int!
+  code: String!
+  max_ai_messages_month: Int!
+  max_channels: Int!
+  max_orders_month: Int!
+  max_products: Int!
+  max_users: Int!
+  name: String!
+  price_monthly: Float!
+}
+
+type BmsPosCashier {
+  email: String
+  hasPin: Boolean!
+  id: ID!
+  isPharmacist: Boolean!
+  name: String
+  posOnly: Boolean!
+  role: String
+}
+
+input BmsPosCredentialsInput {
+  cashierUserId: ID!
+  pin: String!
+}
+
+type BmsPosDevice {
+  active: Boolean!
+  code: String!
+  id: ID!
+  locationId: ID!
+  name: String
+  receiptPrefix: String
+  registeredPosNo: String
+  scannerMaxGapMs: Int!
+  scannerMode: String!
+  scannerPrefixKey: String!
+  scannerSuffixKey: String!
+  tenantId: ID!
+}
+
+input BmsPosDeviceInput {
+  active: Boolean
+  code: String!
+  id: ID
+  locationId: ID!
+  name: String
+  receiptPrefix: String
+  registeredPosNo: String
+  scannerMaxGapMs: Int
+  scannerMode: String
+  scannerPrefixKey: String
+  scannerSuffixKey: String
+}
+
+""" token ค่าจริงคืนครั้งเดียวตอนออกเท่านั้น ฐานข้อมูลเก็บแต่ hash """
+type BmsPosDeviceToken {
+  token: String!
+}
+
+type BmsPosOperationalReadiness {
+  activeDevices: Int!
+  activeLocations: Int!
+  blockers: [String!]!
+  cashiersReady: Int!
+  cashiersWithPin: Int!
+  openShifts: Int!
+  pairedDevices: Int!
+  pendingRefundAmount: Float!
+  pendingRefundCount: Int!
+  ready: Boolean!
+  sellableProducts: Int!
+  stockedVariants: Int!
+  unknownVatProducts: Int!
+  warnings: [String!]!
+}
+
+type BmsPosShift {
+  cashVariance: Float
+  closedAt: String
+  countedCash: Float
+  deviceId: ID!
+  expectedCash: Float
+  id: ID!
+  locationId: ID!
+  openedAt: String!
+  openedBy: ID!
+  openingFloat: Float!
+  pharmacistUserId: ID
+  status: String!
+}
+
+type BmsPriceTier {
+  discountPct: Float
+  minQty: Int!
+  scope: String!
+  size: String
+  unitPrice: Float
+}
+
+input BmsPriceTierInput {
+  discountPct: Float
+  minQty: Int!
+  scope: String
+  size: String
+  unitPrice: Float
+}
+
+input BmsPriceTierRowInput {
+  discountPct: Float
+  minQty: Int!
+  note: String
+  scope: String!
+  size: String
+  unitPrice: Float
+}
+
+type BmsProduct {
+  active: Boolean!
+  barcode: String
+  brand: String
+  catalogVariants: [BmsProductCatalogVariant!]!
+  category: String
+  costPrice: Float
+  description: String
+  imageUrl: String
+  images: [Image!]!
+  keywords: [String!]!
+  name: String!
+  price: Float!
+  priceTiers: [BmsPriceTier!]!
+  readiness: BmsProductReadiness!
+  salesSurfaces: [String!]!
+  sku: String!
+  stockPolicy: BmsProductStockPolicy
+  variants: [BmsVariant!]!
+  vatCategory: String
+  weightGrams: Int
+}
+
+type BmsProductCatalogVariant {
+  active: Boolean!
+  code: String!
+  displayName: String
+  sortOrder: Int!
+}
+
+input BmsProductCatalogVariantInput {
+  active: Boolean
+  code: String!
+  displayName: String
+  productSku: String!
+  sortOrder: Int
+}
+
+type BmsProductCategory {
+  id: ID!
+  name: String!
+}
+
+type BmsProductConnection {
+  items: [BmsProduct!]!
+  total: Int!
+}
+
+type BmsProductDuplicateResult {
+  name: String!
+  sku: String!
+}
+
+type BmsProductImportResult {
+  createCount: Int!
+  errorCount: Int!
+  quotaExceeded: Boolean!
+  quotaMessage: String
+  rows: [BmsProductImportRowResult!]!
+  updateCount: Int!
+}
+
+input BmsProductImportRowInput {
+  active: Boolean
+  barcode: String
+  base_unit: String
+  brand: String
+  category: String
+  cost_price: Float
+  creation_template: String
+  description: String
+  keywords: [String!]
+  name: String!
+  price: Float!
+  rowNumber: Int!
+  sales_surfaces: [String!]
+  sku: String!
+  stock_policy: String
+  variant_codes: [String!]
+}
+
+type BmsProductImportRowResult {
+  action: String!
+  error: String
+  rowNumber: Int!
+  sku: String
+}
+
+input BmsProductInput {
+  active: Boolean
+  barcode: String
+  base_unit: String
+  brand: String
+  category: String
+  cost_price: Float
+  creation_template: String
+  description: String
+  image_url: String
+  image_urls: [String!]
+  keywords: [String!]
+  kitchen_station: String
+
+  """
+  9.54 — id ของสถานีจาก bmsKitchenStations · ชนะ kitchen_station เมื่อส่งมาทั้งคู่
+  """
+  kitchen_station_id: ID
+  name: String!
+  price: Float!
+  price_tiers: [BmsPriceTierInput!]
+  sales_surfaces: [String!]
+  sku: String!
+  stock_policy: String
+  variant_codes: [String!]
+  vat_category: String
+  weight_grams: Int
+}
+
+type BmsProductModifier {
+  active: Boolean!
+  code: String!
+  defaultSelected: Boolean!
+  groupCode: String!
+  groupId: ID!
+  groupName: String!
+  id: ID!
+  items: [BmsModifierComponent!]!
+  maxSelect: Int
+  minSelect: Int!
+  name: String!
+  priceDelta: Float!
+  productSku: String!
+  selectionType: String!
+  size: String!
+  sortOrder: Int!
+}
+
+input BmsProductModifierInput {
+  active: Boolean
+  code: String!
+  defaultSelected: Boolean
+  groupCode: String
+  groupName: String
+  id: ID
+  items: [BmsModifierComponentInput!]!
+  maxSelect: Int
+  minSelect: Int
+  name: String!
+  priceDelta: Float
+  productSku: String!
+  selectionType: String
+  size: String!
+  sortOrder: Int
+}
+
+""" หน่วยขาย: สิ่งที่ลูกค้าซื้อจริงและมีบาร์โค้ดของตัวเอง (แผง / กล่อง) """
+type BmsProductPack {
+  active: Boolean!
+  barcode: String
+  baseQty: Int!
+  id: ID!
+  isBase: Boolean!
+  packCode: String!
+
+  """ null = คิดจากราคาสินค้า × baseQty """
+  price: Float
+  productSku: String!
+  size: String
+  unitName: String!
+}
+
+input BmsProductPackInput {
+  active: Boolean
+  barcode: String
+  baseQty: Int!
+  id: ID
+  isBase: Boolean
+  packCode: String!
+  price: Float
+  productSku: String!
+  size: String
+  unitName: String
+}
+
+type BmsProductPackList {
+  packs: [BmsProductPack!]!
+
+  """ ไซซ์ที่มีแถวสต็อกจริง """
+  sizes: [String!]!
+}
+
+type BmsProductPriceTier {
+  discountPct: Float
+  locationId: ID
+  locationName: String
+  minQty: Int!
+  note: String
+  productName: String
+  productSku: String!
+  scope: String!
+  size: String
+  unitPrice: Float
+  updatedAt: String!
+}
+
+type BmsProductPromotion {
+  active: Boolean!
+  bundlePrice: Float
+  buyQty: Int!
+  endsAt: String
+  getQty: Int
+  id: ID!
+  kind: String!
+
+  """
+  null = โปรทั้งร้าน · มีค่า = โปรของสาขานั้น และทับโปรทั้งร้านของ SKU เดียวกัน
+  """
+  locationId: ID
+  locationName: String
+  note: String
+  productName: String
+  productSku: String!
+  startsAt: String
+  updatedAt: String!
+}
+
+input BmsProductPromotionInput {
+  bundlePrice: Float
+  buyQty: Int!
+  endsAt: String
+  getQty: Int
+  kind: String!
+  locationId: ID
+  note: String
+  productSku: String!
+  startsAt: String
+}
+
+type BmsProductReadiness {
+  blockers: [BmsProductReadinessIssue!]!
+  ready: Boolean!
+  recipeCostEstimate: Float
+  recipeCostMaxEstimate: Float
+  warnings: [BmsProductReadinessIssue!]!
+}
+
+type BmsProductReadinessIssue {
+  code: String!
+  external: Boolean!
+  field: String
+  fixPath: String
+  message: String!
+}
+
+type BmsProductRecipe {
+  active: Boolean!
+  id: ID!
+  items: [BmsRecipeComponent!]!
+  outputQty: Int!
+  productSku: String!
+  size: String!
+  version: Int!
+}
+
+input BmsProductRecipeInput {
+  active: Boolean
+  id: ID
+  items: [BmsRecipeComponentInput!]!
+  outputQty: Int
+  productSku: String!
+  size: String!
+}
+
+type BmsProductStockPolicy {
+  baseUnit: String!
+  displayPrecision: Int!
+  displayUnit: String
+  expiryTracking: Boolean!
+  fefo: Boolean!
+
+  """
+  ชื่อสถานี — ค่าที่ derive จาก kitchenStationId ตั้งแต่ 9.54 (fallback ของผู้อ่านรุ่นเก่า)
+  """
+  kitchenStation: String
+  kitchenStationId: ID
+  lotTracking: Boolean!
+  productSku: String!
+  scaleItemCode: String
+  scaleSize: String
+  stockPolicy: String!
+}
+
+input BmsProductStockPolicyInput {
+  baseUnit: String
+  deactivateDerived: Boolean
+  displayPrecision: Int
+  displayUnit: String
+  expiryTracking: Boolean
+  fefo: Boolean
+
+  """
+  ทางเก่า (ชื่อล้วน) — ชื่อที่ยังไม่มีแถวหลักจะถูกยกขึ้นเป็นสถานีระดับร้านให้อัตโนมัติ
+  """
+  kitchenStation: String
+
+  """
+  ทางใหม่ (9.54) เลือกจาก bmsKitchenStations — ส่งมาคู่กับ kitchenStation ได้ แต่ id ชนะ
+  """
+  kitchenStationId: ID
+  lotTracking: Boolean
+  productSku: String!
+  scaleItemCode: String
+  scaleSize: String
+  stockPolicy: String
+}
+
+type BmsPurchaseItem {
+  qtyOrdered: Int!
+  qtyReceived: Int!
+  size: String!
+  sku: String!
+  supplierProductName: String
+  supplierSku: String
+  unitCost: Float!
+}
+
+input BmsPurchaseItemInput {
+  leadTimeDays: Int
+  minOrderQty: Int
+  packQty: Int
+  qty: Int!
+  size: String!
+  sku: String!
+  supplierBarcode: String
+  supplierProductName: String
+  supplierSku: String
+  unitCost: Float
+}
+
+type BmsPurchaseOrder {
+  createdAt: String!
+  id: ID!
+  items: [BmsPurchaseItem!]!
+  note: String
+  qtyOrdered: Int!
+  qtyReceived: Int!
+  status: BmsPurchaseStatus!
+  supplier: BmsSupplier
+  total: Float!
+  updatedAt: String!
+}
+
+type BmsPurchaseResult {
+  message: String
+  poId: ID
+  status: String!
+}
+
+enum BmsPurchaseStatus {
+  CANCELLED
+  OPEN
+  PARTIAL
+  RECEIVED
+}
+
+type BmsPurchaseSuggestionItem {
+  available: Int!
+  avgPerDay: Float!
+  classification: String!
+  demandFeedback: Int!
+  incomingQty: Int!
+  leadTimeDays: Int!
+  name: String!
+  recommendedAction: String!
+  safetyStock: Int!
+  size: String!
+  sku: String!
+  soldInWindow: Int!
+  suggestedQty: Int!
+  trendPct: Float!
+}
+
+input BmsReceiveItemInput {
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsRecipeComponent {
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+input BmsRecipeComponentInput {
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsReorderResult {
+  message: String!
+  orderId: ID
+  status: String!
+  total: Float
+}
+
+input BmsReplacePriceTiersInput {
+  locationId: ID
+  productSku: String!
+  tiers: [BmsPriceTierRowInput!]!
+}
+
+type BmsReportChannelResult {
+  channel: String!
+  error: String
+  ok: Boolean!
+}
+
+type BmsReportDelivery {
+  channel: String!
+  createdAt: String!
+  error: String
+  frequency: String!
+  id: ID!
+  payloadSnapshot: JSON
+  periodEnd: String!
+  periodKey: String!
+  periodStart: String!
+  status: String!
+}
+
+type BmsReportSubscription {
+  emailEnabled: Boolean!
+  enabled: Boolean!
+  frequency: String!
+  hasSlackWebhook: Boolean!
+  lastPeriodKey: String
+  lastSentAt: String
+  lastStatus: String
+  lineEnabled: Boolean!
+  lineUserId: String
+  platformAllowed: Boolean!
+  recipientEmail: String
+  sendDayOfMonth: Int
+  sendHour: Int!
+  sendWeekday: Int
+  slackEnabled: Boolean!
+  tenantId: ID!
+}
+
+type BmsReportSubscriptionOverview {
+  emailEnabled: Boolean!
+  enabled: Boolean!
+  frequency: String!
+  hasSlackWebhook: Boolean!
+  lastPeriodKey: String
+  lastSentAt: String
+  lastStatus: String
+  lineEnabled: Boolean!
+  lineUserId: String
+  recipientEmail: String
+  sendDayOfMonth: Int
+  sendHour: Int!
+  sendWeekday: Int
+  slackEnabled: Boolean!
+  tenantId: ID!
+  tenantName: String!
+  tenantSlug: String!
+}
+
+type BmsRestaurantArea {
+  id: ID!
+  name: String!
+  sortOrder: Int!
+  tableCount: Int!
+}
+
+type BmsRestaurantCancellationLoss {
+  absorbedAmount: Float!
+  name: String!
+  quantity: Int!
+  sku: String!
+}
+
+type BmsRestaurantFloorAdmin {
+  areas: [BmsRestaurantArea!]!
+  tables: [BmsRestaurantTableAdmin!]!
+}
+
+type BmsRestaurantTableAdmin {
+  active: Boolean!
+  areaId: ID!
+  blocked: Boolean!
+  code: String!
+  id: ID!
+  name: String!
+  positionX: Int!
+  positionY: Int!
+  seats: Int!
+  shape: String!
+  status: String!
+}
+
+input BmsRestaurantTablePatchInput {
+  areaId: ID
+  blocked: Boolean
+  name: String
+  seats: Int
+  shape: String
+}
+
+input BmsRestaurantTablePositionInput {
+  tableId: ID!
+  x: Int!
+  y: Int!
+}
+
+type BmsRestaurantTableQr {
+  createdAt: String!
+  tableCode: String!
+  tableId: ID!
+  tableName: String!
+  token: String!
+}
+
+type BmsRestockDelivery {
+  attemptNo: Int!
+  body: String!
+  channel: String!
+  completedAt: String
+  createdAt: String!
+  error: String
+  id: ID!
+  inboxMessageId: ID
+  status: String!
+  triggeredBy: String
+}
+
+type BmsRestockMetrics {
+  active: Int!
+  cancelled: Int!
+  expired: Int!
+  failedDeliveries: Int!
+  notified: Int!
+  notifiedSubscriptions: Int!
+  notifyRate: Float!
+  ordered: Int!
+  purchased: Int!
+  readyRate: Float!
+  readyToNotify: Int!
+  recoveredCustomersCount: Int!
+  recoveredFromNotified: Int!
+  recoveredOrdersCount: Int!
+  recoveredRevenue: Float!
+  recoveredSalesCount: Int!
+  recoveryRateFromNotified: Float!
+  recoveryRateOverall: Float!
+  sentDeliveries: Int!
+  total: Int!
+}
+
+type BmsRestockSendAllResult {
+  attempted: Int!
+  failed: Int!
+  sent: Int!
+}
+
+type BmsRestockSendResult {
+  attemptId: ID
+  delivered: Boolean!
+  message: String!
+  status: String!
+}
+
+type BmsRestockStatusCounts {
+  active: Int!
+  notified: Int!
+  ordered: Int!
+  readyToNotify: Int!
+  total: Int!
+}
+
+type BmsRestockSubscription {
+  available: Int!
+  channel: String!
+  consentedAt: String!
+  conversationId: ID
+  createdAt: String!
+  customerId: ID
+  customerName: String
+  customerRef: String!
+  id: ID!
+  lastNotifiedAt: String
+  orderedAt: String
+  productName: String!
+  productSku: String!
+  readyAt: String
+  recoveredRevenue: Float
+  requestedQty: Int!
+  resolvedAt: String
+  resolvedOrderId: ID
+  size: String!
+  source: String!
+  status: String!
+  updatedAt: String!
+}
+
+type BmsRestockSubscriptionConnection {
+  items: [BmsRestockSubscription!]!
+  total: Int!
+}
+
+type BmsRetentionAnalytics {
+  holdoutConverted: Int!
+  holdoutRate: Float!
+  holdoutTotal: Int!
+  incrementalLift: Float!
+  retentionRevenue: Float!
+  treatmentConverted: Int!
+  treatmentRate: Float!
+  treatmentTotal: Int!
+}
+
+type BmsRetentionCase {
+  cohort: String!
+  contactedAt: String
+  convertedAt: String
+  convertedRevenue: Float
+  customerId: ID!
+  customerName: String!
+  expectedReturnAt: String
+  frequency: Int!
+  id: ID!
+  monetary: Float!
+  reasonEn: String!
+  reasonTh: String!
+  recencyDays: Int!
+  recommendedChannel: String
+  recommendedMessageEn: String!
+  recommendedMessageTh: String!
+  recommendedOffer: String!
+  recommendedProductSku: String
+  rfmSegment: String!
+  riskScore: Int!
+  status: BmsRetentionStatus!
+}
+
+enum BmsRetentionStatus {
+  ACCEPTED
+  CONTACTED
+  CONVERTED
+  DISMISSED
+  EXPIRED
+  NEW
+}
+
+type BmsRevisionComparison {
+  diff: [BmsRevisionDiff!]!
+  fromRevisionId: ID!
+  fromSnapshot: JSON!
+  kind: BmsRevisionKind!
+  kindLabel: String!
+  toRevisionId: ID!
+  toSnapshot: JSON!
+}
+
+type BmsRevisionDiff {
+  after: JSON
+  before: JSON
+  path: String!
+}
+
+type BmsRevisionEntry {
+  created_at: String!
+  editorLabel: String
+  editor_id: ID
+  entityId: ID!
+  id: ID!
+  kind: BmsRevisionKind!
+  kindLabel: String!
+  revision_id: ID
+  snapshot: JSON!
+  tenant_id: ID!
+}
+
+enum BmsRevisionKind {
+  coupons
+  orders
+  payments
+  products
+  purchase
+  purchaseItems
+  shipments
+}
+
+type BmsRolePermissions {
+  id: ID!
+  is_super: Boolean!
+  name: String!
+  permissions: [String!]!
+}
+
+type BmsSalesByTierRow {
+  averageBasket: Float!
+  members: Int!
+  orders: Int!
+  revenue: Float!
+  tierCode: String!
+  tierName: String!
+}
+
+type BmsSalesSummary {
+  avgOrderValue: Float!
+  byChannel: [BmsChannelSales!]!
+  byDay: [BmsDailySales!]!
+  byStatus: [BmsStatusCount!]!
+  from: String!
+  netRevenue: Float!
+  orderCount: Int!
+  refundTotal: Float!
+  revenue: Float!
+  to: String!
+}
+
+type BmsSeedPharmacyQueueDemoResult {
+  assessmentId: ID
+  assessmentIds: [ID!]!
+  createdCount: Int!
+}
+
+type BmsSendReportResult {
+  overallStatus: String!
+  results: [BmsReportChannelResult!]!
+}
+
+type BmsSendResult {
+  delivered: Boolean!
+  message: String
+  status: String!
+}
+
+type BmsShipment {
+  carrier: BmsCarrier!
+  carrierBookingAttemptedAt: String
+  carrierBookingError: String
+  carrierBookingStatus: String!
+  carrierLastSyncedAt: String
+  carrierTrackingSource: String
+  createdAt: String!
+  externalShipmentId: String
+  id: ID!
+  labelUrl: String
+  marketplaceManaged: Boolean!
+  note: String
+  orderId: ID!
+  status: BmsShipmentStatus!
+  trackingNo: String
+  updatedAt: String!
+}
+
+type BmsShipmentLabel {
+  carrier: String!
+  createdAt: String!
+  items: [BmsLabelItem!]!
+  labelUrl: String
+  orderId: ID!
+  shipTo: BmsLabelShipTo!
+  shipmentId: ID!
+  trackingNo: String
+}
+
+type BmsShipmentResult {
+  carrierBookingStatus: String
+  carrierIntegration: String
+  message: String
+  shipmentId: ID
+  status: String!
+}
+
+enum BmsShipmentStatus {
+  CANCELLED
+  DELIVERED
+  IN_TRANSIT
+  PENDING
+  RETURNED
+  SHIPPED
+}
+
+type BmsShipmentTrackingEvent {
+  carrierStatus: String!
+  description: String!
+  id: ID!
+  occurredAt: String!
+  source: String!
+}
+
+type BmsShippingWeightTier {
+  maxGrams: Int!
+  surcharge: Float!
+}
+
+input BmsShippingWeightTierInput {
+  maxGrams: Int!
+  surcharge: Float!
+}
+
+type BmsShippingZoneRate {
+  fee: Float!
+  zone: String!
+}
+
+input BmsShippingZoneRateInput {
+  fee: Float!
+  zone: String!
+}
+
+type BmsSignupResult {
+  slug: String
+  status: String!
+  tenantId: ID
+}
+
+type BmsSlipVerification {
+  amountMatch: Boolean!
+  checkedAt: String!
+  expectedAmount: Float!
+  method: String!
+  provider: String
+  reason: String!
+  verified: Boolean!
+}
+
+type BmsSlowMovingItem {
+  available: Int!
+  classification: String!
+  name: String!
+  recommendedAction: String!
+  size: String!
+  sku: String!
+  soldInWindow: Int!
+  trendPct: Float!
+}
+
+type BmsSqlResult {
+  columns: [String!]!
+  durationMs: Int!
+  error: String
+  ok: Boolean!
+  rowCount: Int!
+  rows: JSON!
+}
+
+type BmsStaffRef {
+  avatar: String
+  email: String
+  id: ID!
+  isAvailable: Boolean
+  name: String
+  openCount: Int
+  role: String
+}
+
+type BmsStatusCount {
+  count: Int!
+  status: String!
+}
+
+type BmsStockMovement {
+  actor: String
+  branch_code: String
+  created_at: String!
+  id: ID!
+  location_id: ID!
+  location_name: String
+  note: String
+  product_sku: String!
+  qty: Int!
+  ref_order_id: String
+  size: String!
+  type: String!
+}
+
+type BmsStockoutRiskItem {
+  available: Int!
+  avgPerDay: Float!
+  daysToStockout: Float
+  name: String!
+  projectedStockoutDate: String
+  size: String!
+  sku: String!
+}
+
+type BmsStoreCapability {
+  capability: String!
+  config: JSON!
+  configured: Boolean!
+  enabled: Boolean!
+  gating: Boolean!
+  source: String!
+  status: String!
+}
+
+type BmsStoreProfile {
+  about: String
+  address: String
+  aiHandoffAfterFailedTurns: Int!
+  aiInterpretShortReplies: Boolean!
+  aiLanguage: String!
+  aiOrderingStyle: String!
+  aiRequiredFields: [String!]!
+  businessArchetype: String
+  businessArchetypeLocked: Boolean!
+  businessHours: String
+  businessType: String
+  contactEmail: String
+  country: String
+  currency: String
+  emailFooterText: String
+  emailThemeColor: String
+  enabledCarriers: [BmsCarrier!]!
+  logoUrl: String
+  paymentAccounts: [BmsPaymentAccount!]!
+  phone: String
+  receiptLanguageMode: String!
+  restaurantMerchantAbsorbLimit: Float!
+  restaurantOrderHours: JSON!
+  restaurantOrdersPaused: Boolean!
+  returnPolicy: String
+  shippingEstDaysMax: Int
+  shippingEstDaysMin: Int
+  shippingFlatRate: Float
+  shippingFreeThreshold: Float
+  shippingMode: String!
+  shippingOriginPostcode: String
+  shippingOriginProvince: String
+  shippingPolicy: String
+  shippingWeightTiers: [BmsShippingWeightTier!]!
+  shippingZoneRates: [BmsShippingZoneRate!]!
+  taxId: String
+  timezone: String
+  vatRegistered: Boolean!
+  website: String
+}
+
+input BmsStoreProfileInput {
+  about: String
+  address: String
+  aiHandoffAfterFailedTurns: Int
+  aiInterpretShortReplies: Boolean
+  aiLanguage: String
+  aiOrderingStyle: String
+  aiRequiredFields: [String!]
+  businessArchetype: String
+  businessHours: String
+  businessType: String
+  contactEmail: String
+  country: String
+  currency: String
+  emailFooterText: String
+  emailThemeColor: String
+  enabledCarriers: [BmsCarrier!]
+  logoUrl: String
+  paymentAccounts: [BmsPaymentAccountInput!]
+  phone: String
+  receiptLanguageMode: String
+  restaurantMerchantAbsorbLimit: Float
+  restaurantOrderHours: JSON
+  restaurantOrdersPaused: Boolean
+  returnPolicy: String
+  shippingEstDaysMax: Int
+  shippingEstDaysMin: Int
+  shippingFlatRate: Float
+  shippingFreeThreshold: Float
+  shippingMode: String
+  shippingOriginPostcode: String
+  shippingOriginProvince: String
+  shippingPolicy: String
+  shippingWeightTiers: [BmsShippingWeightTierInput!]
+  shippingZoneRates: [BmsShippingZoneRateInput!]
+  taxId: String
+  timezone: String
+  website: String
+}
+
+type BmsStoreSummary {
+  address: String
+  name: String
+  phone: String
+  taxId: String
+}
+
+type BmsSupplier {
+  email: String
+  id: ID!
+  name: String!
+  note: String
+  phone: String
+}
+
+type BmsSupplierProduct {
+  active: Boolean!
+  id: ID!
+  lastUnitCost: Float
+  leadTimeDays: Int
+  minOrderQty: Int!
+  packQty: Int!
+  productName: String!
+  size: String!
+  sku: String!
+  supplierBarcode: String
+  supplierId: ID!
+  supplierName: String!
+  supplierProductName: String
+  supplierSku: String!
+}
+
+type BmsSupportTicket {
+  closedAt: String
+  comments: [BmsSupportTicketComment!]!
+  createdAt: String!
+  diagnosticBundleId: ID
+  email: String!
+  id: ID!
+  ip: String
+  message: String!
+  name: String
+  pageUrl: String
+  phone: String
+  ref: String
+  status: String!
+  subject: String!
+  ticketId: String!
+  topic: String!
+  updatedAt: String
+  userAgent: String
+}
+
+type BmsSupportTicketComment {
+  authorEmail: String
+  authorId: ID
+  body: String!
+  createdAt: String!
+  fromStatus: String
+  id: ID!
+  toStatus: String
+}
+
+type BmsSupportTicketPage {
+  items: [BmsSupportTicket!]!
+  total: Int!
+}
+
+type BmsSyncShipmentLiveResult {
+  completedOrder: Boolean
+  detail: String
+  eventCount: Int
+  shipmentId: ID
+  shipmentStatus: BmsShipmentStatus
+  source: String
+  status: String!
+  trackingNo: String
+}
+
+type BmsSystemEvent {
+  actorName: String!
+  at: String!
+  auto: Boolean!
+  id: ID!
+  kind: String!
+  statusValue: String
+  targetName: String
+}
+
+type BmsTaxDocument {
+  buyerAddress: String
+  buyerBranchCode: String
+  buyerName: String
+  buyerPhone: String
+  buyerTaxId: String
+  cancelledAt: String
+  cancelledReason: String
+  deviceId: ID
+  docNo: String!
+  docType: String!
+  exemptAmount: Float!
+  grandTotal: Float!
+  id: ID!
+  issueDate: String!
+  issuedAt: String!
+  locationId: ID!
+  orderId: ID!
+  replacesDocumentId: ID
+  roundingAmount: Float!
+  taxableAmount: Float!
+  vatAmount: Float!
+  vatRate: Float!
+}
+
+input BmsTaxInvoiceBuyerInput {
+  address: String
+  branchCode: String
+  name: String!
+  phone: String
+  taxId: String!
+}
+
+"""
+ค่าตั้งภาษีของร้าน — มีผลกับบิลใหม่เท่านั้น เอกสารเก่าเก็บอัตราของตัวเองไว้แล้ว
+"""
+type BmsTaxSettings {
+  abbreviatedApproved: Boolean!
+
+  """BE | CE — ปีบนเอกสาร"""
+  calendarEra: String!
+
+  """NONE | 0.25 | 0.50 | 1.00 — ปัดเฉพาะบิลที่จ่ายสดล้วน"""
+  cashRounding: String!
+  priceIncludesVat: Boolean!
+  vatRate: Float!
+  vatRegistered: Boolean!
+
+  """BASE_FIRST | VAT_FIRST_TRUNCATE | VAT_FIRST_ROUND"""
+  vatRounding: String!
+}
+
+input BmsTaxSettingsInput {
+  abbreviatedApproved: Boolean!
+  calendarEra: String!
+  cashRounding: String!
+  priceIncludesVat: Boolean!
+  vatRate: Float!
+  vatRegistered: Boolean!
+  vatRounding: String!
+}
+
+type BmsTenantInfo {
+  id: ID!
+  name: String!
+  slug: String!
+}
+
+type BmsTenantRow {
+  active: Boolean!
+  created_at: String!
+  id: ID!
+  name: String!
+  orders: Int!
+  plan: String!
+  products: Int!
+  revenue: Float!
+  slug: String!
+  users: Int!
+}
+
+type BmsTestAiKeyResult {
+  message: String!
+  ok: Boolean!
+}
+
+type BmsTestChannelResult {
+  message: String!
+  ok: Boolean!
+}
+
+type BmsTestEmailResult {
+  details: [String!]!
+  message: String!
+  ok: Boolean!
+  sent: Int!
+}
+
+type BmsTierDeleteResult {
+  deactivated: Boolean!
+  deleted: Boolean!
+}
+
+type BmsTierReviewResult {
+  changed: Int!
+  reviewed: Int!
+}
+
+type BmsTimelineEntry {
+  at: String!
+  channel: String
+  entityId: ID
+  ref: String
+  status: String
+  statusAt: String
+  text: String!
+  type: String!
+}
+
+type BmsTopCoupon {
+  code: String!
+  discount: Float!
+  redemptions: Int!
+  usages: [BmsCouponRedemption!]!
+}
+
+type BmsTopCustomer {
+  id: ID!
+  name: String!
+  orders: Int!
+  spent: Float!
+  tags: [String!]!
+}
+
+type BmsTopProduct {
+  name: String!
+  qty: Int!
+  revenue: Float!
+  sku: String!
+}
+
+type BmsUnreviewedProduct {
+  name: String!
+  policyStatus: String!
+  sku: String!
+}
+
+input BmsUpdateSupportTicketInput {
+  comment: String
+  id: ID!
+  status: String
+}
+
+input BmsUpsertReportSubscriptionInput {
+  emailEnabled: Boolean
+  enabled: Boolean
+  frequency: String
+  lineEnabled: Boolean
+  lineUserId: String
+  recipientEmail: String
+  sendDayOfMonth: Int
+  sendHour: Int
+  sendWeekday: Int
+  slackEnabled: Boolean
+  slackWebhookUrl: String
+}
+
+type BmsUsage {
+  channels: Int!
+  orders_month: Int!
+  products: Int!
+  users: Int!
+}
+
+type BmsVariant {
+  available: Int!
+
+  """BASE pack ของไซซ์นี้ ใช้แก้ราคาโดยไม่สร้างแถวซ้ำ"""
+  basePackId: ID
+  branchCode: String
+  current_stock: Int!
+  inTransitQty: Int!
+  locationId: ID
+  locationName: String
+  low: Boolean!
+
+  """ราคาขายจริงของไซซ์นี้ (fallback เป็นราคาหลักของสินค้า)"""
+  price: Float
+
+  """null = ไซซ์นี้ใช้ราคาหลักของสินค้า"""
+  priceOverride: Float
+  quarantine_stock: Int!
+  reorder_point: Int!
+  reserved_stock: Int!
+  size: String!
+  transferLostQty: Int!
+}
+
+type BmsVariantReservationOrder {
+  branchCode: String
+  channel: String!
+  createdAt: String!
+  customerName: String
+  customerPhone: String
+  customerRef: String
+
+  """ไม่ null = ของถูกจองไว้เพราะมัดจำที่ยังไม่ปิด (9.0)"""
+  depositStatus: String
+  locationName: String
+  orderId: ID!
+  qty: Int!
+
+  """ไซซ์ที่บิลนี้ถืออยู่ — หนึ่งแถวต่อ (บิล × ไซซ์)"""
+  size: String!
+  status: String!
+
+  """
+  ไม่ว่าง = บิลนี้ถือของผ่านเซ็ต ของถูกจองที่ส่วนประกอบ (8.8) · เป็นลิสต์เพราะบิลเดียวมีได้หลายเซ็ต
+  """
+  viaBundleSkus: [String!]!
+}
+
+type BmsVariantReservations {
+  """ยอดที่อธิบายได้จากบิลที่ยังถือของอยู่ (PENDING/PAID/PACKING)"""
+  attributedTotal: Int!
+
+  """
+  จำนวนแถว (บิล × ไซซ์) ทั้งหมด — มากกว่าความยาว orders เมื่อรายการถูกตัดที่เพดาน
+  """
+  lineCount: Int!
+
+  """จำนวนบิลทั้งหมด (นับหัวบิล)"""
+  orderCount: Int!
+  orders: [BmsVariantReservationOrder!]!
+
+  """
+  attributedTotal - reservedTotal — บิลถือรวมกันมากกว่ายอดจองในตาราง (ข้อมูลไม่ตรงกัน)
+  """
+  overAttributed: Int!
+
+  """ยอดจองจริงในตาราง รวมทุกสาขา"""
+  reservedTotal: Int!
+
+  """null = ถามรวมทุกไซซ์ของ SKU นี้"""
+  size: String
+  sku: String!
+
+  """reservedTotal - attributedTotal — จองค้างที่ไม่มีบิลเป็นเจ้าของ"""
+  unattributed: Int!
+}
+
+type BmsVerifyShopSignupResult {
+  slug: String
+  status: String!
+  tenantId: ID
+}
+
+input BmsWorkAssistantInput {
+  currentPath: String
+  history: [BmsAssistantTurn!]
+  locale: String
+  message: String!
+  pageId: String
+}
+
+type BmsWorkAssistantResult {
+  answerType: String!
+  citations: [BmsAssistantCitation!]!
+  links: [BmsAssistantLink!]!
+  proposals: [BmsAssistantProposal!]!
+  reply: String!
+  trace: [BmsAssistantTrace!]!
+}
+
+type Bookmark {
+  user_id: ID!
+}
+
+enum BookmarkAction {
+  BOOKMARK
+  UNBOOKMARK
+}
+
+enum BookmarkTargetType {
+  POST
+}
+
+type CallHistoryLog {
+  action: String!
+  created_at: String!
+  id: ID!
+  matched_by: String
+  normalized_number: String!
+  source: String!
+  type: String!
+}
+
+type Chat {
+  created_at: String!
+  created_by: User
+  id: ID!
+  is_group: Boolean!
+  is_undeletable: Boolean!
+  last_message: Message
+  last_message_at: String
+  members: [User!]!
+  name: String
+}
+
+type ChatMemberSettings {
+  is_muted: Boolean!
+  notifications_enabled: Boolean!
+}
+
+type Comment {
+  content: String!
+  created_at: String!
+  id: ID!
+  parent_id: ID
+  post_id: ID!
+  replies: [Comment!]!
+  updated_at: String!
+  user: User!
+  user_id: ID!
+}
+
+type ContactSpamMark {
+  action: String!
+  active: Boolean!
+  contact_name: String
+  phone_normalized: String!
+  source: ContactSpamMarkSource
+  updated_at: String!
+  user_id: ID!
+}
+
+enum ContactSpamMarkSource {
+  AUTO
+  MANUAL
+  SUGGESTED
+}
+
+enum ContactSpamProtectionMode {
+  AUTO
+  OFF
+  PROMPT
+}
+
+type ContactSpamProtectionSettings {
+  auto_mark_enabled: Boolean!
+  mode: ContactSpamProtectionMode!
+  risk_threshold: Int!
+  sync_enabled: Boolean!
+  updated_at: String!
+  user_id: ID!
+}
+
+input ContactSpamProtectionSettingsInput {
+  auto_mark_enabled: Boolean!
+  mode: ContactSpamProtectionMode!
+  risk_threshold: Int!
+  sync_enabled: Boolean!
+}
+
+input CreateRoleInput {
+  description: String
+  is_active: Boolean
+  name: String!
+}
+
+type DashboardPost {
+  created_at: String
+  id: ID!
+  status: String
+  title: String
+}
+
+type DashboardUser {
+  avatar: String
+  created_at: String
+  email: String
+  id: ID!
+  name: String
+  role: String
+}
+
+type File {
+  created_at: String!
+  filename: String!
+  id: ID!
+  mimetype: String
+  original_name: String
+  relpath: String!
+  size: Int!
+  thumb: String
+  updated_at: String!
+  url: String!
+}
+
+type FileConnection {
+  items: [File!]!
+  total: Int!
+}
+
+type GlobalSearchResult {
+  bank_accounts: [SearchBankAccountResult!]!
+  phones: [SearchPhoneReportResult!]!
+  posts: [SearchPostResult!]!
+  users: [SearchUserResult!]!
+}
+
+type Image {
+  id: ID!
+  url: String!
+}
+
+scalar JSON
+
+input LogCallInput {
+  action: String!
+  created_at: String
+  matched_by: String
+  normalized_number: String!
+  source: String!
+  type: String!
+}
+
+input LoginInput {
+  email: String
+  password: String!
+  username: String
+}
+
+type LoginResult {
+  message: String
+  ok: Boolean!
+  token: String
+  user: User
+}
+
+input MeInput {
+  email: String
+  gender: String
+  language: String
+  name: String
+  notifications_enabled: Boolean
+  phone: String
+  themePreference: String
+  username: String
+}
+
+type Message {
+  audio: MessageAudio
+  chat_id: ID!
+  created_at: String!
+  deleted_at: String
+  id: ID!
+  images: [MessageImage!]!
+  is_deleted: Boolean!
+  location: MessageLocation
+  myReceipt: MessageReceipt!
+  readers: [User!]!
+  readersCount: Int!
+  reply_to: Message
+  reply_to_id: ID
+  sender: User
+  text: String!
+  to_user_ids: [ID!]!
+  type: String!
+}
+
+type MessageAudio {
+  duration_sec: Int
+  file_id: ID!
+  mime: String
+  url: String!
+}
+
+type MessageConnection {
+  hasMore: Boolean!
+  items: [Message!]!
+  nextCursor: String
+}
+
+type MessageImage {
+  file_id: ID!
+  height: Int
+  id: ID!
+  mime: String
+  url: String!
+  width: Int
+}
+
+type MessageLocation {
+  googleMapsUrl: String!
+  latitude: Float!
+  longitude: Float!
+  placeName: String
+}
+
+input MessageLocationInput {
+  googleMapsUrl: String
+  latitude: Float!
+  longitude: Float!
+  placeName: String
+}
+
+type MessageReceipt {
+  deliveredAt: String!
+  isRead: Boolean!
+  readAt: String
+}
+
+type Mutation {
+  addComment(content: String!, post_id: ID!): Comment!
+  addMember(chat_id: ID!, user_id: ID!): Boolean!
+  blockNumber(phoneNumber: String!): PhoneCenterActionPayload!
+  blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
+  bmsAddConversationHelper(id: ID!, userId: ID!): Boolean!
+  bmsAddConversationNote(body: String!, id: ID!, mentionedUserIds: [ID!]): BmsConversationNote
+  bmsAddCustomerAddress(address: String!, id: ID!, isDefault: Boolean, label: String): BmsCustomerAddress!
+  bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
+  bmsAdjustLoyaltyPoints(customerId: ID!, note: String!, points: Int!): BmsLoyaltyBalance!
+  bmsAdjustStock(delta: Int!, locationId: ID!, note: String, size: String!, sku: String!): BmsVariant!
+  bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, orderDraft: JSON, pharmacistResponse: String!): BmsPharmacyAssessment!
+
+  """ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่"""
+  bmsArchiveKitchenStation(force: Boolean = false, id: ID!): BmsKitchenStation!
+  bmsAssignConversation(id: ID!, userId: ID!): Boolean!
+  bmsAssignCouponToCustomer(channel: String, code: String!, conversationId: ID, customerId: ID, customerRef: String, note: String): Boolean!
+  bmsAssignPharmacist(assessmentId: ID!, pharmacistUserId: ID!): BmsPharmacyAssessment!
+  bmsAssistant(history: [BmsAssistantTurn!], message: String!): BmsAssistantResult!
+  bmsBackfillEtaxQueue(limit: Int = 500): Int!
+  bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
+  bmsCancelOrder(id: ID!): Boolean!
+  bmsCancelPurchaseOrder(id: ID!): Boolean!
+  bmsCancelRestockSubscription(id: ID!): Boolean!
+  bmsCancelShipment(id: ID!): Boolean!
+  bmsChangePlan(planCode: String!): Boolean!
+  bmsCheckAllAiProviderHealth: [BmsAiProviderHealth!]!
+  bmsClearKitchenStationSla(station: String!): Boolean!
+  bmsClosePosShift(countedCash: Float!, note: String, shiftId: ID!): BmsCloseShiftResult!
+  bmsCommissionRule(input: JSON!): JSON!
+  bmsCompleteOrder(id: ID!): Boolean!
+  bmsConfirmPayment(id: ID!): BmsPaymentResult!
+  bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
+  bmsCreateKitchenStation(input: BmsKitchenStationInput!): BmsKitchenStation!
+  bmsCreateOrder(channel: String, couponCode: String, customerRef: String, items: [BmsOrderItemInput!]!, locationId: ID, preferredCarrier: BmsCarrier): BmsReorderResult!
+  bmsCreatePharmacyLabOrder(items: [BmsPharmacyLabCartItemInput!]!): BmsReorderResult!
+  bmsCreateProductCategory(name: String!): BmsProductCategory!
+  bmsCreatePurchaseOrder(items: [BmsPurchaseItemInput!]!, note: String, supplierId: ID, supplierName: String): BmsPurchaseResult!
+  bmsCreateRestaurantArea(locationId: ID!, name: String!): BmsRestaurantArea!
+  bmsCreateRestaurantTable(areaId: ID!, locationId: ID!, name: String!, seats: Int!, shape: String!): BmsRestaurantTableAdmin!
+  bmsCreateShipment(carrier: BmsCarrier!, note: String, orderId: ID!, trackingNo: String): BmsShipmentResult!
+  bmsDeactivateProductPromotion(id: ID!): Boolean!
+  bmsDeleteCoupon(id: ID!): Boolean!
+  bmsDeleteCustomer(id: ID!): Boolean!
+  bmsDeleteCustomerAddress(addressId: ID!): Boolean!
+  bmsDeleteFollowupRule(id: ID!): Boolean!
+  bmsDeleteMembershipTier(id: ID!): BmsTierDeleteResult!
+  bmsDeleteProductCategory(id: ID!): Boolean!
+  bmsDeleteProductPack(id: ID!): Boolean!
+  bmsDeleteRestaurantArea(areaId: ID!): Boolean!
+  bmsDeleteRestaurantTable(tableId: ID!): Boolean!
+  bmsDeleteTenant(tenantId: ID!): Boolean!
+  bmsDismissAiQualityCase(id: ID!): BmsAiQualityCaseDetail!
+  bmsDuplicateProduct(sourceSku: String!, targetName: String!, targetSku: String!): BmsProductDuplicateResult!
+  bmsEditAssessmentSummary(assessmentId: ID!, summaryText: String!): BmsPharmacyAssessment!
+  bmsEditPharmacistDecisionNotes(assessmentId: ID!, decisionNotes: String!, expectedVersion: Int!): BmsPharmacyAssessment!
+  bmsEmailReport(fileId: Int!, subject: String, to: String!): BmsEmailReportResult!
+  bmsEmitInboxDiagnosticEvent(channel: String!, probeId: ID!): BmsInboxDiagnosticEventResult!
+  bmsEnrollMember(name: String, phone: String!): BmsEnrollMemberResult!
+  bmsEnterTenant(tenantId: ID!): Boolean!
+  bmsEscalateAssessmentToEmergency(assessmentId: ID!, reason: String!): BmsPharmacyAssessment!
+  bmsExitTenant: Boolean!
+  bmsExpireLoyaltyPoints: BmsLoyaltyExpireResult!
+  bmsGenerateInStoreBarcode: String!
+  bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
+  bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!
+  bmsImportProducts(commit: Boolean = false, items: [BmsProductImportRowInput!]!): BmsProductImportResult!
+  bmsIssueFullTaxInvoice(buyer: BmsTaxInvoiceBuyerInput!, orderId: ID!): BmsIssueFullTaxInvoiceResult!
+  bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
+  bmsIssueRestaurantTableQr(rotate: Boolean, tableId: ID!): BmsRestaurantTableQr!
+  bmsIssueStoreCredit(input: JSON!): JSON!
+  bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
+  bmsMarkAllMentionsRead: Boolean!
+  bmsMarkConversationRead(id: ID!): Boolean!
+  bmsMarkMentionRead(id: ID!): Boolean!
+  bmsMergeCustomers(keepId: ID!, mergeId: ID!): Boolean!
+  bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
+  bmsPackOrder(id: ID!): Boolean!
+  bmsPayOrder(id: ID!): Boolean!
+
+  """
+  แนบหลักฐานทางคลินิกจากหน้าคิว (เภสัชกร) — รูปอัปโหลดผ่าน REST ไม่ผ่าน GraphQL
+  """
+  bmsPharmacyAddClinicalEvidence(assessmentId: ID!, kind: String!, textValue: String!): BmsPharmacyClinicalEvidence!
+  bmsPharmacyAssistantTest(message: String!, session: BmsPharmacyAssistantSessionInput): BmsPharmacyAssistantResult!
+
+  """ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ)"""
+  bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
+  bmsPosBlindReturn(input: JSON!): JSON!
+  bmsPosCashMovement(input: JSON!): JSON!
+  bmsPosCollectAr(input: JSON!): JSON!
+  bmsPosCompleteRefund(input: JSON!): JSON!
+  bmsPosDeposit(input: JSON!): JSON!
+  bmsPosEnrollMember(input: JSON!): JSON!
+  bmsPosExpense(input: JSON!): JSON!
+  bmsPosKitchenTicketStatus(input: JSON!): JSON!
+  bmsPosKitchenTicketsStatus(input: JSON!): JSON!
+  bmsPosNoSale(input: JSON!): JSON!
+  bmsPosPark(input: JSON!): JSON!
+  bmsPosReceivePurchase(input: JSON!): JSON!
+  bmsPosRequestPharmacyReview(input: JSON!): JSON!
+  bmsPosRestaurantCheckAction(checkId: ID!, input: JSON!): JSON!
+  bmsPosRestaurantFloorSetup(input: JSON!): JSON!
+  bmsPosRestaurantIncomingAction(input: JSON!): JSON!
+  bmsPosRestaurantMenuAvailability(input: JSON!): JSON!
+  bmsPosRestaurantOpenCheck(input: JSON!): JSON!
+  bmsPosRestaurantQrOrderAction(input: JSON!): JSON!
+  bmsPosRestaurantRequestAction(input: JSON!): JSON!
+  bmsPosRestaurantServiceCallAction(input: JSON!): JSON!
+  bmsPosRestaurantWaitlistAction(input: JSON!): JSON!
+  bmsPosReturn(input: JSON!): JSON!
+  bmsPosSale(input: JSON!): JSON!
+  bmsPosSendReceipt(input: JSON!): JSON!
+  bmsPosShift(input: JSON!): JSON!
+  bmsPosVoid(input: JSON!): JSON!
+  bmsPublishProduct(sku: String!): BmsProductReadiness!
+  bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
+
+  """
+  รับชำระที่ไม่ใช่เงินสด · เงินสดต้องทำที่เครื่องขายเพื่อให้เข้าลิ้นชักของกะ
+  """
+  bmsRecordArReceipt(accountId: ID!, amount: Float!, idempotencyKey: String!, method: String!, note: String, reference: String): BmsArReceiptResult!
+  bmsRecordInventoryDemand(input: BmsInventoryDemandInput!): ID!
+  bmsRecordInventoryWastage(input: BmsInventoryWastageInput!): BmsInventoryWastageResult!
+  bmsRecordPharmacyConsent(assessmentId: ID!, consentVersion: String!, status: String!): BmsPharmacyAssessment!
+  bmsReferAssessmentToDoctor(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
+  bmsRefreshActions: Int!
+  bmsRefreshRetention: Int!
+  bmsRefundPayment(id: ID!): Boolean!
+  bmsRejectAssessment(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
+  bmsRejectPayment(id: ID!, note: String): Boolean!
+  bmsRemoveAiKey: Boolean!
+  bmsRemoveConversationHelper(id: ID!, userId: ID!): Boolean!
+  bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
+  bmsRenameRestaurantArea(areaId: ID!, name: String!): BmsRestaurantArea!
+  bmsReorderFromOrder(id: ID!): BmsReorderResult!
+  bmsReorderRestaurantAreas(locationId: ID!, orderedAreaIds: [ID!]!): [BmsRestaurantArea!]!
+  bmsReplaceProductPriceTiers(input: BmsReplacePriceTiersInput!): [BmsProductPriceTier!]!
+  bmsRequestMoreInformation(assessmentId: ID!, expectedVersion: Int!, fields: [String!]!, note: String): BmsPharmacyAssessment!
+  bmsResetStoreCapability(capability: String!): BmsStoreCapability!
+  bmsRetryMessage(id: ID!): BmsSendResult!
+  bmsReturnOrder(id: ID!): Boolean!
+  bmsReviewAiQualityCase(category: String!, id: ID!, note: String, verdict: String!): BmsAiQualityCaseDetail!
+  bmsReviewAiSynonymCandidate(decision: String!, id: ID!, productSku: String): BmsAiSynonymCandidate!
+  bmsReviewMemberTier(customerId: ID): BmsTierReviewResult!
+  bmsReviewPharmacyProductPolicy(decision: String!, productSku: String!): BmsPharmacyProductPolicy!
+  bmsReviewPharmacyProtocol(decision: String!, id: ID!): BmsPharmacyProtocol!
+  bmsReviewRestaurantRequest(input: JSON!): JSON!
+  bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
+  bmsRunFollowupsNow: BmsFollowupRunResult!
+  bmsRunReadOnlySql(sql: String!): BmsSqlResult!
+  bmsRunSandboxedJs(code: String!): BmsJsConsoleResult!
+  bmsRunSql(sql: String!): BmsSqlResult!
+  bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
+  bmsSeedPharmacyQueueDemo(answers: JSON, protocolKey: String, transcript: JSON): BmsSeedPharmacyQueueDemoResult!
+  bmsSendAllReadyRestockNotifications: BmsRestockSendAllResult!
+  bmsSendMessage(attachment: BmsAttachmentInput, body: String, id: ID!): BmsSendResult!
+  bmsSendRestockNotification(body: String!, id: ID!): BmsRestockSendResult!
+  bmsSendTestEmail(html: String, to: String!): BmsTestEmailResult!
+  bmsSendTestReportNow: BmsSendReportResult!
+  bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
+
+  """
+  posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย
+  """
+  bmsSetCashierAccountMode(posOnly: Boolean!, userId: ID!): Boolean!
+  bmsSetCashierPin(pin: String, userId: ID!): Boolean!
+  bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
+  bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
+  bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
+  bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
+  bmsSetMyAvailability(available: Boolean!): Boolean!
+  bmsSetPharmacistLicense(isLicensedPharmacist: Boolean!, licenseNo: String, userId: ID!): Boolean!
+
+  """
+  ตั้งค่าการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29) — ไม่ส่งฟิลด์ไหน = ไม่แตะฟิลด์นั้น
+  """
+  bmsSetPharmacyCounterSettings(blockShiftOnUnreviewed: Boolean, counterAuthorization: Boolean): BmsPharmacyPolicyReadiness!
+  bmsSetPharmacyProtocolEnabled(enabled: Boolean!, id: ID!): BmsPharmacyProtocol!
+  bmsSetProductActive(active: Boolean!, sku: String!): Boolean!
+  bmsSetProductBundleItems(bundleSku: String!, items: [BmsBundleItemInput!]!): [BmsBundleItem!]!
+  bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
+  bmsSetReorderPoint(locationId: ID!, reorderPoint: Int!, size: String!, sku: String!): BmsVariant!
+  bmsSetRolePermissions(permissions: [String!]!, roleId: ID!): Boolean!
+  bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
+  bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!
+  bmsSetTenantPlan(planCode: String!, tenantId: ID!): Boolean!
+  bmsSetVatCategoryForUnknown(activeOnly: Boolean, vatCategory: String!): Int!
+  bmsShipOrder(id: ID!): Boolean!
+  bmsSignup(businessArchetype: String, email: String!, name: String, password: String!, shopName: String!): BmsSignupResult!
+  bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
+  bmsStartPharmacistReview(assessmentId: ID!): BmsPharmacyAssessment!
+  bmsStockCount(input: JSON!): JSON!
+  bmsStockTransfer(input: JSON!): JSON!
+  bmsSubmitPayment(amount: Float, method: BmsPaymentMethod!, note: String, orderId: ID!, slipRef: String, slipUrl: String): BmsPaymentResult!
+  bmsSubmitPharmacyProductPolicyForReview(productSku: String!): BmsPharmacyProductPolicy!
+  bmsSubmitPharmacyProtocolForReview(id: ID!): BmsPharmacyProtocol!
+  bmsSyncShipmentLive(id: ID!): BmsSyncShipmentLiveResult!
+  bmsTestAiKey: BmsTestAiKeyResult!
+  bmsTestChannel(channel: String!): BmsTestChannelResult!
+  bmsTestPlatformAiKey(provider: String): BmsTestAiKeyResult!
+  bmsTransitionAction(id: ID!, measuredOutcome: JSON, ownerId: ID, reason: String, status: BmsActionStatus!): BmsAction!
+  bmsTransitionRetentionCase(id: ID!, reason: String, status: BmsRetentionStatus!): BmsRetentionCase!
+  bmsUpdateCustomerAddress(address: String!, addressId: ID!, label: String): BmsCustomerAddress!
+  bmsUpdateKitchenStation(id: ID!, input: BmsKitchenStationInput!): BmsKitchenStation!
+  bmsUpdateKitchenTicketStatus(id: ID!, status: String!): BmsKitchenTicket!
+  bmsUpdateKitchenTicketsStatus(ids: [ID!]!, status: String!): [BmsKitchenTicket!]!
+  bmsUpdateLoyaltySettings(input: BmsLoyaltySettingsInput!): BmsLoyaltySettings!
+  bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!
+  bmsUpdateOnboardingProgress(completed: [String!], dismissed: Boolean, skipped: [String!]): BmsOnboardingProgress!
+  bmsUpdateRestaurantTable(patch: BmsRestaurantTablePatchInput!, tableId: ID!): BmsRestaurantTableAdmin!
+  bmsUpdateSupportTicket(input: BmsUpdateSupportTicketInput!): BmsSupportTicket!
+  bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
+  bmsUpdateTracking(carrier: BmsCarrier, id: ID!, trackingNo: String): Boolean!
+  bmsUpsertArAccount(creditLimit: Float!, customerId: ID!, note: String, status: String, termsDays: Int!): BmsArAccount!
+  bmsUpsertChannel(accessToken: String, active: Boolean, channel: String!, channelSecret: String): Boolean!
+  bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!
+  bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
+  bmsUpsertFollowupRule(input: BmsFollowupRuleInput!): BmsFollowupRule!
+  bmsUpsertInventoryPolicy(input: BmsInventoryPolicyInput!): Boolean!
+  bmsUpsertKitchenStationSla(lateMinutes: Int!, station: String!, warnMinutes: Int!): BmsKitchenStationSla!
+  bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
+  bmsUpsertMembershipTier(input: BmsMembershipTierInput!): BmsMembershipTier!
+  bmsUpsertPharmacyProductPolicy(input: BmsPharmacyProductPolicyInput!): BmsPharmacyProductPolicy!
+  bmsUpsertPharmacyProtocol(input: BmsPharmacyProtocolInput!): BmsPharmacyProtocol!
+  bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
+  bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
+  bmsUpsertProductCatalogVariant(input: BmsProductCatalogVariantInput!): BmsProductCatalogVariant!
+  bmsUpsertProductModifier(input: BmsProductModifierInput!): BmsProductModifier!
+
+  """pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"""
+  bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
+  bmsUpsertProductPromotion(input: BmsProductPromotionInput!): BmsProductPromotion!
+  bmsUpsertProductRecipe(input: BmsProductRecipeInput!): BmsProductRecipe!
+  bmsUpsertProductStockPolicy(input: BmsProductStockPolicyInput!): BmsProductStockPolicy!
+  bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
+  bmsUpsertStoreCapability(capability: String!, config: JSON, enabled: Boolean!): BmsStoreCapability!
+  bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!
+  bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification
+  bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
+  bmsWorkAssistant(input: BmsWorkAssistantInput!): BmsWorkAssistantResult!
+  bmsWriteOffArInvoice(invoiceId: ID!, reason: String!): BmsArWriteOffResult!
+  bookmark(postId: ID!): ToggleBookmarkResult!
+  clonePost(id: ID!): String!
+  createChat(isGroup: Boolean!, memberIds: [ID!]!, name: String): Chat!
+  createRole(input: CreateRoleInput!): Role!
+  createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
+  deleteChat(chat_id: ID!): Boolean!
+  deleteComment(id: ID!): Boolean!
+  deleteFile(id: ID!): Boolean!
+  deleteFiles(ids: [ID!]!): Boolean!
+  deleteMessage(message_id: ID!): Boolean!
+  deletePost(id: ID!): Boolean!
+  deletePosts(ids: [ID!]!): Boolean!
+  deleteRole(id: ID!): Boolean!
+  deleteUser(id: ID!): Boolean!
+  deleteUsers(ids: [ID!]!): Boolean!
+  ingestCallLogs(logs: [LogCallInput!]!): Boolean!
+  login(input: LoginInput!): LoginResult!
+  loginAdmin(input: LoginInput!): LoginResult!
+  loginMobile(email: String!, password: String!): LoginResult!
+  loginUser(input: LoginInput!): LoginResult!
+  loginWithSocial(input: SocialLoginInput!): LoginResult!
+  markAllNotificationsRead: Boolean!
+  markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!
+  markContactSpamPhone(contact_name: String, phone: String!, source: ContactSpamMarkSource): ContactSpamMark!
+  markMessageRead(message_id: ID!): Boolean!
+  markNotificationRead(id: ID!): Boolean!
+  registerPushToken(input: RegisterPushTokenInput!): Boolean!
+  registerUser(input: RegisterInput!): Boolean!
+  renameChat(chat_id: ID!, name: String): Boolean!
+  renameFile(id: ID!, name: String!): Boolean!
+  replyComment(comment_id: ID!, content: String!): Comment!
+  reportBankAccount(input: ReportBankAccountInput!): ScamBankAccount!
+  reportNumber(category: ScamPhoneReportCategory, note: String, phoneNumber: String!): PhoneCenterActionPayload!
+  reportPhone(category: ScamPhoneReportCategory, note: String, phone: String!): PhoneCenterActionPayload!
+  reportScamBankAccount(input: ReportScamBankAccountInput!): ScamBankAccount!
+  reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
+  reportSpam(phoneNumber: String!): Boolean!
+  requestPasswordReset(email: String!): Boolean
+  resetPassword(newPassword: String!, token: String!): Boolean
+  send(text: String!): Boolean!
+  sendMessage(audio: Upload, audio_duration_sec: Int, chat_id: ID!, client_message_id: String, images: [Upload!], location: MessageLocationInput, reply_to_id: ID, text: String!, to_user_ids: [ID!]!): Message!
+  setRoleActive(id: ID!, is_active: Boolean!): Role!
+  toggleBookmark(postId: ID!): ToggleBookmarkResult!
+  unblockNumber(phoneNumber: String!): PhoneCenterActionPayload!
+  unblockPhone(input: UnblockPhoneInput!): BlockPhonePayload!
+  unblockScamPhone(input: UnblockScamPhoneInput!): ScamPhone!
+  unbookmark(postId: ID!): ToggleBookmarkResult!
+  unmarkContactSpamPhone(phone: String!): ContactSpamMark!
+  unregisterPushToken(fcmToken: String!): Boolean!
+  unreportScamBankAccount(input: UnreportScamBankAccountInput!): ScamBankAccount!
+  updateComment(content: String!, id: ID!): Comment!
+  updateMe(data: MeInput!): User!
+  updateMyChatSettings(chat_id: ID!, is_muted: Boolean, notifications_enabled: Boolean): ChatMemberSettings!
+  updateMyContactSpamProtectionSettings(input: ContactSpamProtectionSettingsInput!): ContactSpamProtectionSettings!
+  updateMyProfile(data: MyProfileInput!): User!
+  updateRole(id: ID!, input: UpdateRoleInput!): Role!
+  uploadAvatar(file: Upload!, user_id: ID!): String!
+  uploadDiagnostics(input: UploadDiagnosticsInput!): UploadDiagnosticsPayload!
+  upsertPost(data: PostInput!, id: ID, image_ids_delete: [ID!], images: [Upload!]): Post!
+  upsertUser(data: UserInput!, id: ID): User!
+  verifyEmail(token: String!): BasicResponse!
+}
+
+type MyBankBlockStatusChangedPayload {
+  account_norm: String!
+  action: BlockAction!
+  bank_name: String!
+  blocked: Boolean!
+  updated_at: String!
+  user_id: ID!
+}
+
+type MyBookmarkStatusChangedPayload {
+  action: BookmarkAction!
+  bookmarked: Boolean!
+  target_id: ID!
+  target_type: BookmarkTargetType!
+  updated_at: String!
+  user_id: ID!
+}
+
+type MyContactSpamMarkChangedPayload {
+  action: String!
+  active: Boolean!
+  contact_name: String
+  phone_normalized: String!
+  source: String
+  updated_at: String!
+  user_id: ID!
+}
+
+type MyContactSpamSettingsChangedPayload {
+  auto_mark_enabled: Boolean!
+  mode: String!
+  risk_threshold: Int!
+  sync_enabled: Boolean!
+  updated_at: String!
+  user_id: ID!
+}
+
+type MyPhoneBlockStatusChangedPayload {
+  action: BlockAction!
+  blocked: Boolean!
+  phone: String!
+  phone_normalized: String!
+  updated_at: String!
+  user_id: ID!
+}
+
+input MyProfileInput {
+  avatar: String
+  name: String
+  phone: String
+}
+
+type MyReportedBankAccount {
+  account: String!
+  bank_name: String!
+  category: ScamPhoneReportCategory
+  created_at: String!
+  note: String
+  post_id: String
+  report_count: Int!
+  risk_level: Int!
+  tags: [String!]!
+  updated_at: String!
+}
+
+type MyReportedPhone {
+  category: ScamPhoneReportCategory!
+  created_at: String!
+  note: String
+  phone: String!
+  post_id: String
+  report_count: Int!
+  risk_level: Int!
+  tags: [String!]!
+  updated_at: String!
+}
+
+type Notification {
+  created_at: String!
+  data: JSON
+  entity_id: ID!
+  entity_type: String!
+  id: ID!
+  is_read: Boolean!
+  message: String!
+  title: String!
+  type: String!
+  user_id: ID!
+}
+
+type PendingSummary {
+  errors_last24h: Int!
+  files_unclassified: Int!
+  posts_awaiting_approval: Int!
+  users_pending_invite: Int!
+}
+
+type PhoneCenterActionPayload {
+  item: PhoneCenterItem!
+  ok: Boolean!
+}
+
+enum PhoneCenterFilter {
+  ALL
+  BLOCKED
+  HISTORY
+  REPORTS
+}
+
+type PhoneCenterItem {
+  filters: [String!]!
+  in_history: Boolean!
+  last_history_at: String
+  last_report_at: String
+  latest_post_id: ID
+  my_blocked: Boolean!
+  my_blocked_at: String
+  my_reported: Boolean!
+  my_reported_at: String
+  phone: String!
+  phone_normalized: String!
+  post_count: Int!
+  post_ids: [ID!]!
+  report_count: Int!
+  risk_level: Int!
+  updated_at: String!
+}
+
+type PhoneEntityDetail {
+  filters: [String!]!
+  in_history: Boolean!
+  last_history_at: String
+  last_report_at: String
+  latest_post_id: ID
+  my_blocked: Boolean!
+  my_blocked_at: String
+  my_reported: Boolean!
+  my_reported_at: String
+  phone: String!
+  phone_normalized: String!
+  post_count: Int!
+  post_ids: [ID!]!
+  report_count: Int!
+  risk_level: Int!
+  updated_at: String!
+}
+
+type PhoneSafetyStatus {
+  blocked_by_count: Int!
+  last_blocked_at: String
+  last_report_at: String
+  my_blocked: Boolean!
+  my_blocked_at: String
+  phone: String!
+  phone_normalized: String!
+  report_count: Int!
+  risk_level: Int!
+  updated_at: String!
+}
+
+type Post {
+  author: User
+  auto_publish: Boolean!
+  bookmarks: [Bookmark!]!
+  comments_count: Int
+  created_at: String!
+  detail: String
+
+  """
+  ลิงก์ไปยังโพสต์บน Facebook Page
+  ใช้สำหรับปุ่ม "ดูโพสต์บน Facebook"
+  """
+  fb_permalink_url: String
+
+  """เวลาที่โพสต์ถูก publish จริงบน Facebook (ISO string)"""
+  fb_published_at: String
+
+  """
+  ID ของโพสต์บน Facebook (page_post_id)
+  ใช้ลบ/อัปเดตในอนาคต
+  """
+  fb_social_post_id: String
+
+  """
+  สถานะจาก social_posts
+  เช่น PENDING | PUBLISHED | FAILED | DELETED
+  """
+  fb_status: String
+  first_last_name: String
+  id: ID!
+  id_card: String
+  images: [Image!]!
+  is_bookmarked: Boolean!
+  province_id: ID
+  province_name: String
+  seller_accounts: [SellerAccount!]!
+  status: PostStatus!
+  tel_numbers: [TelNumber!]!
+  title: String
+  transfer_amount: Float
+  transfer_date: String
+  updated_at: String!
+  website: String
+}
+
+type PostConnection {
+  items: [Post!]!
+  total: Int!
+}
+
+input PostInput {
+  auto_publish: Boolean
+  detail: String
+  first_last_name: String
+  id_card: String
+  province_id: ID
+  seller_accounts: [SellerAccountInput!]
+  status: PostStatus!
+  tel_numbers: [TelNumberInput!]
+  title: String
+  transfer_amount: Float
+  transfer_date: String
+  website: String
+}
+
+enum PostStatus {
+  public
+  unpublic
+}
+
+type Query {
+  _health: String!
+  _ok: String!
+  bankDetail(accountNo: String!, bankCode: String!): BankEntityDetail!
+  bmsActingTenant: BmsActingTenant
+  bmsActionMetrics(days: Int = 30): BmsActionMetrics!
+  bmsActions(limit: Int = 50): [BmsAction!]!
+  bmsAiConfig: BmsAiConfig!
+  bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
+  bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!
+  bmsAiProviderHealth: [BmsAiProviderHealth!]!
+  bmsAiProviderHealthCount: Int!
+  bmsAiQualityCase(id: ID!): BmsAiQualityCaseDetail
+  bmsAiQualityCases(days: Int = 30, limit: Int = 50, offset: Int = 0, outcome: String, source: String, status: String): [BmsAiQualityCase!]!
+  bmsAiQualityMetrics(days: Int = 30): BmsAiQualityMetrics!
+  bmsAiSynonymCandidates(limit: Int = 50, status: String = "PENDING"): [BmsAiSynonymCandidate!]!
+  bmsAiUsage: BmsAiUsage!
+  bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
+  bmsAiUsageEvents(evalRef: String, feature: String, limit: Int = 20): [BmsAiUsageEvent!]!
+  bmsArAccount(customerId: ID, id: ID): BmsArAccount
+  bmsArAccounts(limit: Int = 200, search: String, status: String, withBalanceOnly: Boolean): [BmsArAccount!]!
+  bmsArInvoices(accountId: ID, limit: Int = 200, openOnly: Boolean, overdueOnly: Boolean): [BmsArInvoice!]!
+  bmsArLedger(accountId: ID, invoiceId: ID, limit: Int = 200): [BmsArLedgerEntry!]!
+  bmsArOutstanding: BmsArOutstanding!
+  bmsAssignableStaff: [BmsStaffRef!]!
+  bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+  bmsBilling: BmsBilling!
+  bmsChannelHealth: [BmsChannelHealth!]!
+  bmsChannelHealthCount: Int!
+  bmsChannels: [BmsChannelConfig!]!
+  bmsCommissionReport(from: String!, to: String!): JSON!
+  bmsCommissionRules: JSON!
+  bmsConversation(id: ID!): BmsConversation
+  bmsConversationTimeline(id: ID!, limit: Int): [BmsTimelineEntry!]!
+  bmsConversations(assignedTo: ID, limit: Int = 50, offset: Int = 0, search: String, status: BmsConvStatus, tag: String): [BmsConversation!]!
+  bmsCouponLocations: [BmsLocation!]!
+  bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!
+  bmsCoupons: [BmsCoupon!]!
+  bmsCustomer(id: ID!): BmsCustomer
+  bmsCustomer360(channel: String, conversationId: ID, customerId: ID, customerRef: String): BmsCustomer360
+  bmsCustomerInsights(customerId: ID!): BmsCustomerInsights
+  bmsCustomerLocations: [BmsLocation!]!
+  bmsCustomerTimeline(customerId: ID!): [BmsCustomerTimelineEntry!]!
+  bmsCustomers(enrolledLocationId: ID, limit: Int = 50, offset: Int = 0, search: String): [BmsCustomer!]!
+  bmsDashboard: BmsDashboard!
+  bmsEtaxSubmissions(limit: Int = 100, status: String): [BmsEtaxSubmission!]!
+  bmsEtaxSummary: BmsEtaxSummary!
+  bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
+  bmsFollowupAnalytics(windowDays: Int): BmsFollowupAnalytics!
+  bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
+  bmsFollowupQueue(limit: Int): [BmsFollowupJob!]!
+  bmsFollowupRules: [BmsFollowupRule!]!
+  bmsGenerateInvoice(orderId: ID!): BmsBusinessDoc
+  bmsGeneratedReports(limit: Int): [BmsGeneratedReport!]!
+  bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
+  bmsInboxUnreadCount: Int!
+  bmsInventoryActionCenter(coverageDays: Int = 30, limit: Int = 5, windowDays: Int = 30): BmsInventoryActionCenter!
+  bmsInventoryLots(locationId: ID, productSku: String, size: String): [BmsInventoryLot!]!
+  bmsInventorySummary: BmsInventorySummary!
+  bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
+  bmsIsPlatformAdmin: Boolean!
+  bmsJsConsoleEnabled: Boolean!
+  bmsKitchenBoardEnabled: Boolean!
+  bmsKitchenStationSlas: [BmsKitchenStationSla!]!
+
+  """
+  สถานีครัวของร้าน · locationId = กรอง "ใช้ได้ที่สาขานี้" (สถานีระดับร้าน + ของสาขานั้น)
+  """
+  bmsKitchenStations(includeInactive: Boolean = false, locationId: ID): [BmsKitchenStation!]!
+  bmsKitchenTickets(limit: Int = 100, status: String): [BmsKitchenTicket!]!
+  bmsLocations: [BmsLocation!]!
+  bmsLotRecall(lotId: ID!): [BmsLotRecallHit!]!
+  bmsLotReconcile: [BmsLotMismatch!]!
+  bmsLowStock: [BmsLowStockItem!]!
+  bmsLoyaltyActivity(months: Int): [BmsLoyaltyActivityRow!]!
+  bmsLoyaltyLedger(customerId: ID!, limit: Int): [BmsLoyaltyLedgerEntry!]!
+  bmsLoyaltyOutstanding: BmsLoyaltyOutstanding!
+  bmsLoyaltySettings: BmsLoyaltySettings!
+  bmsMailLog(category: String, page: Int, pageSize: Int, provider: String, q: String, status: String, tenantId: ID): BmsMailLogPage!
+  bmsMailLogEntry(id: ID!): BmsMailLogEntry
+  bmsMailLogStats: BmsMailLogStats!
+  bmsMe: BmsMe!
+  bmsMember(customerId: ID!): BmsMember
+  bmsMemberDiscountPreview(couponDiscount: Float, customerId: ID, pointsToRedeem: Int, subtotal: Float!): BmsMemberDiscountPreview!
+  bmsMembers(limit: Int, offset: Int, search: String): BmsMemberPage!
+  bmsMembersExpiringPoints(days: Int, limit: Int): [BmsExpiringPointsRow!]!
+  bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
+  bmsMobileRestaurantRequests: JSON!
+  bmsMyMentions(limit: Int, unreadOnly: Boolean): [BmsMention!]!
+  bmsMyMentionsUnreadCount: Int!
+  bmsMyTenant: BmsTenantInfo!
+  bmsOnboardingProgress: BmsOnboardingProgress!
+  bmsOperationalAlerts: BmsOperationalAlerts!
+  bmsOrder(id: ID!): BmsOrder
+  bmsOrderJourney(orderId: ID!): BmsOrderJourney
+  bmsOrderLocations: [BmsLocation!]!
+  bmsOrders(limit: Int = 50, locationId: ID, offset: Int = 0, search: String, status: BmsOrderStatus): [BmsOrder!]!
+  bmsPackToolsConfigured: Boolean!
+  bmsPayment(id: ID!): BmsPayment
+  bmsPayments(limit: Int = 50, offset: Int = 0, orderId: ID, search: String, status: BmsPaymentStatus): [BmsPayment!]!
+  bmsPermissionCatalog: [String!]!
+
+  """
+  บันทึกการจ่ายยาที่เภสัชกรอนุมัติที่เคาน์เตอร์ (9.29) — สิทธิ์ pharmacy.audit.read
+  """
+  bmsPharmacistCounterAuthorizations(from: String, limit: Int, offset: Int, to: String): BmsPharmacistCounterAuthorizationPage!
+  bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
+  bmsPharmacyAssessmentConversationHistory(assessmentId: ID!, limit: Int): BmsPharmacyConversationHistory
+  bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
+  bmsPharmacyAssessments(assignedPharmacistId: ID, channelId: String, createdAfter: String, limit: Int, offset: Int, riskLevel: String, status: String): [BmsPharmacyAssessment!]!
+  bmsPharmacyCatalog(assessmentId: ID, limit: Int, search: String): [BmsPharmacyCatalogItem!]!
+  bmsPharmacyClinicalEvidence(assessmentId: ID!): [BmsPharmacyClinicalEvidence!]!
+  bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
+  bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
+  bmsPharmacyProductPolicies(limit: Int = 20, offset: Int = 0, search: String): BmsPharmacyProductPolicyPage!
+  bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
+  bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
+  bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): JSON!
+  bmsPosCashMovements: JSON!
+  bmsPosCashiers: [BmsPosCashier!]!
+  bmsPosCatalogSearch(q: String!): JSON!
+  bmsPosDeposits(q: String): JSON!
+  bmsPosDevices: [BmsPosDevice!]!
+  bmsPosExpenses(credentials: BmsPosCredentialsInput!): JSON!
+  bmsPosKitchenTickets(limit: Int = 100, status: String): JSON!
+  bmsPosLastSale: JSON
+  bmsPosMemberPreview(input: JSON!): JSON!
+  bmsPosMemberSearch(amount: Float, q: String): JSON!
+  bmsPosNoSales: JSON!
+  bmsPosOpenShift(deviceId: ID!): BmsPosShift
+  bmsPosOperationalReadiness: BmsPosOperationalReadiness!
+  bmsPosParkedSales: JSON!
+  bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): JSON
+  bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): JSON!
+  bmsPosRecentSales(deviceOnly: Boolean = false, limit: Int = 5, q: String): JSON!
+  bmsPosRestaurantCheck(id: ID!): JSON
+  bmsPosRestaurantFloor: JSON!
+  bmsPosRestaurantIncoming: JSON!
+  bmsPosRestaurantMenu: JSON!
+  bmsPosRestaurantQrOrders: JSON!
+  bmsPosRestaurantRequests(credentials: BmsPosCredentialsInput!): JSON!
+  bmsPosRestaurantServiceCalls: JSON!
+  bmsPosRestaurantWaitlist: JSON!
+  bmsPosReturnAuditSummary(from: String, to: String): JSON!
+  bmsPosReturnSummary(from: String, to: String): JSON!
+  bmsPosScan(code: String!, packCode: String, size: String, surface: String, withImage: Boolean = false): JSON!
+  bmsPosSession: JSON!
+  bmsPosShiftHistory(credentials: BmsPosCredentialsInput!): JSON!
+  bmsPosShiftReport(credentials: BmsPosCredentialsInput!, shiftId: ID): JSON!
+  bmsPosStaff: [BmsPosCashier!]!
+  bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): JSON!
+  bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
+  bmsProductBySku(sku: String!): BmsProduct
+  bmsProductCategories: [BmsProductCategory!]!
+  bmsProductModifiers(productSku: String!, size: String): [BmsProductModifier!]!
+  bmsProductPacks(productSku: String!): BmsProductPackList!
+  bmsProductPriceTiers(locationId: ID, productSku: String): [BmsProductPriceTier!]!
+  bmsProductPromotions(includeInactive: Boolean = false, locationId: ID, productSku: String): [BmsProductPromotion!]!
+  bmsProductReadiness(productSku: String!): BmsProductReadiness!
+  bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
+  bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
+  bmsProducts(category: String, limit: Int, offset: Int, search: String): BmsProductConnection!
+  bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
+  bmsProductsNeedingPolicyReview(limit: Int = 100, offset: Int = 0): [BmsUnreviewedProduct!]!
+  bmsPromotionLocations: [BmsLocation!]!
+  bmsPublicPlans: [BmsPlan!]!
+  bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
+  bmsPurchaseOrders(limit: Int = 50, offset: Int = 0, search: String): [BmsPurchaseOrder!]!
+  bmsReportDeliveries(limit: Int): [BmsReportDelivery!]!
+  bmsReportDeliveriesForTenant(limit: Int, tenantId: ID!): [BmsReportDelivery!]!
+  bmsReportSubscription: BmsReportSubscription!
+  bmsReportSubscriptions: [BmsReportSubscriptionOverview!]!
+  bmsRestaurantCancellationLossReport: [BmsRestaurantCancellationLoss!]!
+  bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
+  bmsRestaurantFloorLocations: [BmsLocation!]!
+  bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
+  bmsRestockDeliveries(subscriptionId: ID!): [BmsRestockDelivery!]!
+  bmsRestockMetrics(search: String): BmsRestockMetrics!
+  bmsRestockReadyCount: Int!
+  bmsRestockStatusCounts(search: String): BmsRestockStatusCounts!
+  bmsRestockSubscriptions(limit: Int = 50, offset: Int = 0, search: String, status: String): BmsRestockSubscriptionConnection!
+  bmsRetentionAnalytics: BmsRetentionAnalytics!
+  bmsRetentionCases(limit: Int = 100): [BmsRetentionCase!]!
+  bmsRevisionCompare(fromRevisionId: ID!, kind: BmsRevisionKind!, toRevisionId: ID!): BmsRevisionComparison
+  bmsRevisionDetail(kind: BmsRevisionKind!, revisionId: ID!): BmsRevisionEntry
+  bmsRevisionHistory(entityId: ID!, kind: BmsRevisionKind!, limit: Int = 50): [BmsRevisionEntry!]!
+  bmsRolePermissions: [BmsRolePermissions!]!
+  bmsSalesByTier: [BmsSalesByTierRow!]!
+  bmsSalesSummary(from: String, to: String): BmsSalesSummary!
+  bmsShipment(id: ID!): BmsShipment
+  bmsShipmentLabel(id: ID!): BmsShipmentLabel
+  bmsShipmentTrackingEvents(limit: Int = 100, shipmentId: ID!): [BmsShipmentTrackingEvent!]!
+  bmsShipments(limit: Int = 50, offset: Int = 0, orderId: ID, search: String, status: BmsShipmentStatus): [BmsShipment!]!
+  bmsSqlConsoleWriteEnabled: Boolean!
+  bmsStockCounts(status: String): JSON!
+  bmsStockMovements(limit: Int = 50, size: String, sku: String!): [BmsStockMovement!]!
+  bmsStockTransfers(status: String): JSON!
+  bmsStoreCapabilities: [BmsStoreCapability!]!
+  bmsStoreCredit(code: String): JSON!
+  bmsStoreProfile: BmsStoreProfile!
+  bmsSupplierProducts(limit: Int = 200, search: String, supplierId: ID!): [BmsSupplierProduct!]!
+  bmsSuppliers: [BmsSupplier!]!
+  bmsSupportTickets(page: Int, pageSize: Int, q: String, status: String, topic: String): BmsSupportTicketPage!
+  bmsTaxDocuments(orderId: ID!): [BmsTaxDocument!]!
+  bmsTaxSettings: BmsTaxSettings!
+  bmsTenants: [BmsTenantRow!]!
+  bmsTopSellingProducts(from: String, limit: Int = 10, to: String): [BmsTopProduct!]!
+
+  """ชื่อสถานีที่ยังถูกใช้อยู่แต่ไม่มีแถวหลัก (ข้อมูลตกค้าง) — ปกติต้องว่าง"""
+  bmsUnmappedKitchenStationNames: [String!]!
+
+  """
+  ใครจองสินค้าไซซ์นี้อยู่ — อธิบายเลข reserved_stock ให้เป็นรายบิล (ต้องมีสิทธิ์ order.view)
+  """
+  bmsVariantReservations(size: String, sku: String!): BmsVariantReservations!
+  bmsWastageEnabled: Boolean!
+  comments(post_id: ID!): [Comment!]!
+  filesPaged(limit: Int!, offset: Int!, search: String): FileConnection!
+  getCallLogs(limit: Int = 100, offset: Int = 0): [CallHistoryLog!]!
+  getOrCreateDm(user_id: ID!): Chat!
+  getPhoneInfo(phone: String!): ScamPhone!
+  getSpamNumbers(limit: Int = 200, minRisk: Int = 60): [ScamPhone!]!
+  getUserBlockedNumbers: [String!]!
+  globalSearch(q: String!): GlobalSearchResult!
+  globalSearchUnified(limit: Int! = 20, q: String!): [SearchType!]!
+  latestPosts(limit: Int = 5): [Post!]!
+  latestUsers(limit: Int = 5): [DashboardUser!]!
+  me: User
+  meRole: String!
+  messages(chat_id: ID!, includeDeleted: Boolean, limit: Int, offset: Int): [Message!]!
+  messagesConnection(chat_id: ID!, cursor: String, includeDeleted: Boolean, limit: Int = 30): MessageConnection!
+  myBlockedPhoneKeys: [String!]!
+  myBlockedPhones(limit: Int = 50, offset: Int = 0): [PhoneSafetyStatus!]!
+  myBmsPermissions: [String!]!
+  myBookmarks(limit: Int, offset: Int): [Post!]!
+  myChatSettings(chat_id: ID!): ChatMemberSettings!
+  myChats: [Chat!]!
+  myContactSpamMarkedPhoneKeys: [String!]!
+  myContactSpamProtectionSettings: ContactSpamProtectionSettings!
+  myNotifications(limit: Int, offset: Int): [Notification!]!
+  myPosts(search: String): [Post!]!
+  myReportedBankAccountKeys: [String!]!
+  myReportedBankAccounts(limit: Int!, offset: Int!): [MyReportedBankAccount!]!
+  myReportedPhoneKeys: [String!]!
+  myReportedPhones(limit: Int!, offset: Int!): [MyReportedPhone!]!
+  myUnreadChatCount: Int!
+  myUnreadNotificationCount: Int!
+  pending: PendingSummary!
+  phoneCenterSearch(filter: PhoneCenterFilter = ALL, limit: Int = 50, offset: Int = 0, q: String): [PhoneCenterItem!]!
+  phoneDetail(phone: String!): PhoneEntityDetail!
+  phoneSafetyStatus(phone: String!): PhoneSafetyStatus!
+  post(id: ID!): Post
+  posts(search: String): [Post!]!
+  postsByUserId(user_id: ID!): [Post!]!
+  postsPaged(limit: Int!, offset: Int!, search: String): PostConnection!
+  relatedPostsByBank(accountNo: String!, bankCode: String!, sort: RelatedPostsSort = LATEST): [ID!]!
+  relatedPostsByPhone(phone: String!, sort: RelatedPostsSort = LATEST): [ID!]!
+  role(id: ID!): Role
+  roles: [Role!]!
+  scamPhonesDelta(cursor: String, limit: Int! = 1000, sinceVersion: String!): ScamPhoneDeltaPage!
+  scamPhonesSnapshot(cursor: String, limit: Int! = 1000): ScamPhoneSnapshotPage!
+  searchBankAccounts(limit: Int! = 20, q: String!): [SearchBankAccountResult!]!
+  searchScamBankAccounts(limit: Int! = 20, q: String!): [SearchBankAccountResult!]!
+  searchScamPhones(limit: Int! = 20, q: String!): [ScamPhone!]!
+  stats: StatsSummary!
+  unreadCount(chatId: ID!): Int!
+  user(id: ID!): User
+  users(limit: Int = 10, offset: Int = 0, search: String): UserConnection!
+  whoRead(messageId: ID!): [User!]!
+}
+
+type RealtimeEvent {
+  actorId: ID
+  actorType: String!
+  aggregateVersion: Float
+  deviceId: ID
+  entityId: ID!
+  entityType: String!
+  eventId: ID!
+  eventType: String!
+  locationId: ID
+  occurredAt: String!
+  payload: JSON
+  schemaVersion: Int!
+  tenantId: ID!
+  updatedAt: String
+  userId: ID
+}
+
+input RegisterInput {
+  agree: Boolean
+  email: String!
+  password: String!
+  phone: String
+  username: String!
+}
+
+input RegisterPushTokenInput {
+  appVersion: String
+  deviceId: String
+  fcmToken: String!
+  locale: String
+  platform: String!
+}
+
+enum RelatedPostsSort {
+  HIGHEST_RISK
+  LATEST
+  MOST_REPORTED
+}
+
+input ReportBankAccountInput {
+  account_no: String!
+  app_version: String
+  bank_name: String!
+  client_id: String!
+  device_model: String
+  note: String
+  os_version: String
+}
+
+input ReportScamBankAccountInput {
+  account: String!
+  app_version: String
+  bank_name: String!
+  client_id: String!
+  device_model: String
+  note: String
+  os_version: String
+}
+
+input ReportScamPhoneInput {
+  app_version: String
+  category: ScamPhoneReportCategory
+  client_id: String!
+  device_model: String
+  local_blocked: Boolean!
+  note: String
+  os_version: String
+  phone: String!
+}
+
+type Role {
+  created_at: String!
+  description: String
+  id: ID!
+  is_active: Boolean!
+  name: String!
+  updated_at: String!
+  user_count: Int!
+}
+
+type ScamBankAccount {
+  account: String!
+  account_no_masked: String!
+  account_norm: String!
+  bank_name: String!
+  ctx: JSON
+  is_deleted: Boolean!
+  last_report_at: String
+  post_ids: [ID!]
+  report_count: Int!
+  risk_level: Int!
+  tags: [String!]
+  updated_at: String!
+}
+
+type ScamPhone {
+  ctx: JSON
+  is_deleted: Boolean!
+  last_report_at: String
+  phone: String!
+  post_ids: [String!]!
+  report_count: Int!
+  risk_level: Int!
+  tags: [String!]!
+  updated_at: String!
+}
+
+type ScamPhoneDeltaPage {
+  cursor: String
+  items: [ScamPhone!]!
+}
+
+enum ScamPhoneReportCategory {
+  HARASS
+  OTHER
+  SALES
+  SCAM
+  SPAM
+}
+
+type ScamPhoneSnapshotPage {
+  cursor: String
+  items: [ScamPhone!]!
+}
+
+type SearchBankAccountResult {
+  account: String
+  account_no_masked: String!
+  bank_name: String!
+  ctx: JSON
+  entity_id: ID!
+  id: ID!
+  ids: [ID!]!
+  is_deleted: Boolean!
+  last_report_at: String
+  latest_post_id: ID
+  post_count: Int!
+  post_ids: [ID!]!
+  report_count: Int!
+  risk_level: Int
+  tags: [String!]!
+  updated_at: String
+}
+
+type SearchPhoneReportResult {
+  entity_id: String!
+  id: ID!
+  ids: [ID!]!
+  last_report_at: String
+  phone: String!
+  report_count: Int!
+}
+
+type SearchPostResult {
+  created_at: String
+  entity_id: ID!
+  id: ID!
+  snippet: String
+  title: String!
+}
+
+union SearchType = SearchBankAccountResult | SearchPhoneReportResult | SearchPostResult | SearchUserResult
+
+type SearchUserResult {
+  avatar: String
+  email: String
+  entity_id: ID!
+  id: ID!
+  name: String!
+  phone: String
+}
+
+type SellerAccount {
+  bank_id: String
+  bank_name: String
+  id: ID!
+  seller_account: String
+}
+
+input SellerAccountInput {
+  bank_id: String!
+  bank_name: String!
+  id: ID
+  mode: String
+  seller_account: String
+}
+
+input SocialLoginInput {
+  accessToken: String!
+  provider: String!
+}
+
+type Stats {
+  files: Int!
+  logs: Int!
+  posts: Int!
+  users: Int!
+}
+
+type StatsSummary {
+  files: Int!
+  logs: Int!
+  posts: Int!
+  users: Int!
+}
+
+type Subscription {
+  bmsDeviceSessionChanged: RealtimeEvent!
+  bmsInboxChanged: BmsInboxChangedPayload!
+  bmsIncomingOrderChanged: RealtimeEvent!
+  bmsInventoryChanged: RealtimeEvent!
+  bmsKitchenTicketChanged: RealtimeEvent!
+  bmsMenuAvailabilityChanged: RealtimeEvent!
+  bmsNotificationCreated: RealtimeEvent!
+  bmsOrderChanged: RealtimeEvent!
+  bmsPaymentChanged: RealtimeEvent!
+  bmsPosOrderChanged: RealtimeEvent!
+  bmsQrOrderChanged: RealtimeEvent!
+  bmsRestaurantCheckChanged: RealtimeEvent!
+  bmsRestaurantFloorChanged: RealtimeEvent!
+  bmsServiceCallChanged: RealtimeEvent!
+  bmsShiftChanged: RealtimeEvent!
+  bmsStockCountChanged: RealtimeEvent!
+  bmsStockTransferChanged: RealtimeEvent!
+  bmsWaitlistChanged: RealtimeEvent!
+  commentAdded(post_id: ID!): Comment!
+  commentDeleted(post_id: ID!): ID!
+  commentUpdated(post_id: ID!): Comment!
+  incomingMessage(user_id: ID!): Message!
+  messageAdded(chat_id: ID!): Message!
+  messageDeleted(chat_id: ID!): ID!
+  myBankBlockStatusChanged: MyBankBlockStatusChangedPayload!
+  myBookmarkStatusChanged: MyBookmarkStatusChangedPayload!
+  myContactSpamMarkChanged: MyContactSpamMarkChangedPayload!
+  myContactSpamSettingsChanged: MyContactSpamSettingsChangedPayload!
+  myPhoneBlockStatusChanged: MyPhoneBlockStatusChangedPayload!
+  notificationCreated: Notification!
+  realtimeEvent: RealtimeEvent!
+  time: String!
+  userMessageAdded(user_id: ID!): Message!
+}
+
+input SupportTicketInput {
+  email: String!
+  message: String!
+  name: String!
+  pageUrl: String
+  phone: String
+  ref: String
+  subject: String!
+  topic: String!
+  userAgent: String
+}
+
+type SupportTicketPayload {
+  message: String
+  ok: Boolean!
+  ticketId: String
+}
+
+type TelNumber {
+  id: ID!
+  tel: String!
+}
+
+input TelNumberInput {
+  id: ID
+  mode: String
+  tel: String!
+}
+
+type ToggleBookmarkResult {
+  executionTime: String
+  isBookmarked: Boolean!
+  status: Boolean!
+}
+
+input UnblockPhoneInput {
+  phone: String!
+}
+
+input UnblockScamPhoneInput {
+  app_version: String
+  client_id: String!
+  device_model: String
+  os_version: String
+  phone: String!
+}
+
+input UnreportScamBankAccountInput {
+  account: String!
+  app_version: String
+  bank_name: String!
+  client_id: String!
+  device_model: String
+  os_version: String
+  reason: String
+}
+
+input UpdateRoleInput {
+  description: String
+  is_active: Boolean
+  name: String
+}
+
+"""The Upload scalar type represents a file upload."""
+scalar Upload
+
+input UploadDiagnosticsInput {
+  appVersion: String
+  buildNumber: String
+  callCheckLogsJson: String
+  deviceModel: String
+  diagnosticsJson: String!
+  exportedAt: String!
+  osVersion: String
+  packageName: String
+  platform: String!
+  userId: ID
+}
+
+type UploadDiagnosticsPayload {
+  message: String
+  success: Boolean!
+  uploadId: ID
+}
+
+type User {
+  avatar: String
+  created_at: String!
+  email: String
+  id: ID!
+  is_platform_admin: Boolean!
+  language: String!
+  lastLoginAt: String
+  name: String!
+  notifications_enabled: Boolean!
+  phone: String
+  role: String!
+  roleDetails: Role
+  role_id: ID
+  tenantName: String
+  themePreference: String
+  username: String!
+}
+
+type UserConnection {
+  items: [User!]!
+  total: Int!
+}
+
+input UserInput {
+  avatar: String
+  email: String
+  name: String!
+  password: String
+  phone: String
+  role: String
+  role_id: ID
+}
