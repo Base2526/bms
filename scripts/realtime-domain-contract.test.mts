@@ -80,5 +80,8 @@ test("web instances continuously drain with a bounded backoff and fleet-safe cla
   assert.doesNotMatch(pump, /postgresRealtimeOutboxRepository/);
   assert.match(dispatcher, /export async function runRealtimeOutboxMaintenance/);
   assert.match(dispatcher, /await dispatchRealtimeOutboxBatch\(\)/);
-  assert.match(dispatcher, /cleanupRealtimeOutbox\(\)/);
+  // ⚠️ ห้าม assert แค่ `cleanupRealtimeOutbox\(\)` — มันแมตช์ **บรรทัดประกาศ** ของฟังก์ชันเอง
+  // (`export async function cleanupRealtimeOutbox(): Promise<…>`) แล้วเขียวต่อให้ไม่มีใครเรียก
+  // (มิวเทชัน M3 รอดไปเพราะรูปนั้น) · ต้องเล็งที่ "จุดที่เรียก"
+  assert.match(dispatcher, /await cleanupRealtimeOutbox\(\)/);
 });
