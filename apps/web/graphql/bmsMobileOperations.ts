@@ -67,6 +67,32 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
     note: String
   }
 
+  input BmsCreateStockTransferInput {
+    fromLocationId: ID!
+    toLocationId: ID!
+    items: [BmsStockTransferLineInput!]!
+    note: String
+  }
+
+  input BmsReceiveStockTransferInput {
+    transferId: ID!
+    received: [BmsStockTransferReceiptLineInput!]
+    receivingNote: String
+  }
+
+  input BmsCreateStockCountInput {
+    locationId: ID!
+    note: String
+  }
+
+  input BmsRecordStockCountItemInput {
+    countId: ID!
+    sku: String!
+    size: String!
+    countedQty: Int!
+    note: String
+  }
+
   input BmsReviewRestaurantRequestInput {
     locationId: ID!
     id: ID!
@@ -108,8 +134,16 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
   }
 
   extend type Mutation {
-    bmsStockTransfer(input: BmsStockTransferInput!): JSON!
-    bmsStockCount(input: BmsStockCountInput!): JSON!
+    bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): JSON!
+    bmsSendStockTransfer(transferId: ID!): JSON!
+    bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): JSON!
+    bmsCancelStockTransfer(transferId: ID!): JSON!
+    bmsCreateStockCount(input: BmsCreateStockCountInput!): JSON!
+    bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): JSON!
+    bmsApplyStockCount(countId: ID!): JSON!
+    bmsCancelStockCount(countId: ID!): JSON!
+    bmsStockTransfer(input: BmsStockTransferInput!): JSON! @deprecated(reason: "Use the named stock-transfer mutations")
+    bmsStockCount(input: BmsStockCountInput!): JSON! @deprecated(reason: "Use the named stock-count mutations")
     bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): JSON!
     bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): JSON!
     bmsCommissionRule(input: BmsCommissionRuleInput!): JSON!
@@ -327,3 +361,56 @@ export const bmsMobileOperationsResolvers = {
     },
   },
 };
+
+type CompatibilityResolver = (
+  parent: unknown,
+  args: Record<string, any>,
+  ctx: any,
+) => Promise<unknown>;
+
+function namedMobileAction(
+  resolver: CompatibilityResolver,
+  action: string,
+  parent: unknown,
+  args: Record<string, any>,
+  ctx: any,
+) {
+  return resolver(parent, { input: { ...(args.input ?? {}), action } }, ctx);
+}
+
+const compatibilityMutations = bmsMobileOperationsResolvers.Mutation as unknown as Record<string, CompatibilityResolver>;
+
+Object.assign(bmsMobileOperationsResolvers.Mutation, {
+    async bmsCreateStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockTransfer, "create", parent, args, ctx);
+    },
+    async bmsSendStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockTransfer, "send", parent, {
+        input: { transferId: args.transferId },
+      }, ctx);
+    },
+    async bmsReceiveStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockTransfer, "receive", parent, args, ctx);
+    },
+    async bmsCancelStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockTransfer, "cancel", parent, {
+        input: { transferId: args.transferId },
+      }, ctx);
+    },
+    async bmsCreateStockCount(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockCount, "create", parent, args, ctx);
+    },
+    async bmsRecordStockCountItem(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockCount, "item", parent, args, ctx);
+    },
+    async bmsApplyStockCount(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockCount, "apply", parent, {
+        input: { countId: args.countId },
+      }, ctx);
+    },
+    async bmsCancelStockCount(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedMobileAction(compatibilityMutations.bmsStockCount, "cancel", parent, {
+        input: { countId: args.countId },
+      }, ctx);
+    },
+});

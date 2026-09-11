@@ -122,6 +122,23 @@ const moduleOperations = () => ([
   ...([...mobileFields.Mutation].map((name) => ({ module: "mobile", kind: "Mutation" as const, name }))),
 ]);
 
+const namedActionAliases = new Set([
+  "bmsPosRestaurantAddCheckItem", "bmsPosRestaurantRemoveCheckItem",
+  "bmsPosRestaurantSetCheckGuestCount", "bmsPosRestaurantSendCheckToKitchen",
+  "bmsPosRestaurantMoveCheck", "bmsPosRestaurantSplitCheck", "bmsPosRestaurantMergeChecks",
+  "bmsPosRestaurantCancelCheck", "bmsPosRestaurantSettleCheck",
+  "bmsPosRestaurantAcceptIncomingOrder", "bmsPosRestaurantSetOrderingPaused",
+  "bmsPosRestaurantCancelOrderLines", "bmsPosRestaurantAcceptQrSubmission",
+  "bmsPosRestaurantRejectQrSubmission", "bmsPosRestaurantContactRequest",
+  "bmsPosRestaurantConfirmRequest", "bmsPosRestaurantCancelRequest",
+  "bmsPosRestaurantAcknowledgeServiceCall", "bmsPosRestaurantCompleteServiceCall",
+  "bmsPosRestaurantAddWaitlistEntry", "bmsPosRestaurantCallWaitlistEntry",
+  "bmsPosRestaurantCancelWaitlistEntry", "bmsPosRestaurantNoShowWaitlistEntry",
+  "bmsPosRestaurantSeatWaitlistEntry", "bmsCreateStockTransfer", "bmsSendStockTransfer",
+  "bmsReceiveStockTransfer", "bmsCancelStockTransfer", "bmsCreateStockCount",
+  "bmsRecordStockCountItem", "bmsApplyStockCount", "bmsCancelStockCount",
+]);
+
 function resolverMethod(source: string, operation: string): string {
   const clean = withoutComments(source);
   const start = new RegExp(`^    async ${operation}\\b`, "m").exec(clean);
@@ -191,13 +208,13 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 33 mobile/POS input arguments are typed", () => {
+test("all 59 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({ ...operation, input: inputArgument(operation.kind, operation.name) }))
     .filter((operation) => operation.input != null);
 
-  assert.equal(inputOperations.length, 33, "the mobile/POS surface must keep all 33 input-bearing operations");
+  assert.equal(inputOperations.length, 59, "the mobile/POS surface must keep all 59 input-bearing operations");
   assert.deepEqual(
     inputOperations
       .filter((operation) => namedType(String(operation.input.type)) === "JSON")
@@ -207,7 +224,7 @@ test("all 33 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("the first 10 RN operations are recursively typed and only 57 JSON outputs remain", () => {
+test("the first 10 RN operations are recursively typed and only 89 JSON outputs remain", () => {
   const expected = new Map([
     ["Query.bmsPosSession", "BmsPosSessionResult!"],
     ["Query.bmsPosScan", "BmsPosScanResult!"],
@@ -237,7 +254,7 @@ test("the first 10 RN operations are recursively typed and only 57 JSON outputs 
   const jsonOutputs = operations.filter((operation) =>
     namedType(String(rootField(operation.kind, operation.name).type)) === "JSON"
   );
-  assert.equal(jsonOutputs.length, 57, "typed-output countdown must move from 67 to 57");
+  assert.equal(jsonOutputs.length, 89, "Phase 4 aliases temporarily expand the typed-output countdown to 89");
 
   const pending = [...new Set([...expected.values()].map(namedType))];
   const visited = new Set<string>();
@@ -301,6 +318,7 @@ test("typed mobile/POS inputs cannot carry tenant, device, acting-tenant, locati
   // still verifies that the selected branch belongs to the context-derived tenant.
   const allowedStaffLocation = new Set([
     "BmsStockCountInput.locationId",
+    "BmsCreateStockCountInput.locationId",
     "BmsReviewRestaurantRequestInput.locationId",
   ]);
 
@@ -354,6 +372,9 @@ test("write inputs that consume client idempotency keys expose the key with acti
 test("each typed top-level input field matches what its resolver reads, in both directions", () => {
   const mismatches: string[] = [];
   for (const operation of moduleOperations()) {
+    // Named Phase 4 fields deliberately delegate their whole typed input to the compatibility
+    // resolver. The dedicated action-alias contract verifies that mapping and forbids service forks.
+    if (namedActionAliases.has(operation.name)) continue;
     const argument = inputArgument(operation.kind, operation.name);
     if (!argument || namedType(String(argument.type)) === "JSON") continue;
     const source = operation.module === "POS" ? posSchema : mobileSchema;

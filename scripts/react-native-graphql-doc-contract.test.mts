@@ -80,6 +80,6 @@ test("the client guide includes a real field selection for every typed RN operat
 
 test("the typed/JSON coverage table matches the executable mobile schema exactly", () => {
   assert.deepEqual(operationsInCoverageRow("Typed (10)"), typedOperations);
-  assert.deepEqual(operationsInCoverageRow("JSON compatibility (57)"), mobileOutputOperations("JSON"));
-  assert.equal(operationsInCoverageRow("JSON compatibility (57)").length, 57);
+  assert.deepEqual(operationsInCoverageRow("JSON compatibility (89)"), mobileOutputOperations("JSON"));
+  assert.equal(operationsInCoverageRow("JSON compatibility (89)").length, 89);
 });

@@ -522,6 +522,147 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     tableId: ID
   }
 
+  input BmsPosRestaurantAddCheckItemInput {
+    cashierUserId: ID!
+    pin: String!
+    sku: String!
+    size: String
+    packCode: String
+    packQty: Int!
+    modifierCodes: [String!]
+    kitchenNote: String
+  }
+
+  input BmsPosRestaurantCheckCredentialsInput {
+    cashierUserId: ID!
+    pin: String!
+  }
+
+  input BmsPosRestaurantSetGuestCountInput {
+    cashierUserId: ID!
+    pin: String!
+    guestCount: Int!
+  }
+
+  input BmsPosRestaurantMoveCheckInput {
+    cashierUserId: ID!
+    pin: String!
+    targetTableId: ID!
+  }
+
+  input BmsPosRestaurantSplitCheckInput {
+    cashierUserId: ID!
+    pin: String!
+    itemIds: [ID!]!
+    guestCount: Int
+  }
+
+  input BmsPosRestaurantMergeChecksInput {
+    cashierUserId: ID!
+    pin: String!
+    targetCheckId: ID!
+  }
+
+  input BmsPosRestaurantCancelCheckInput {
+    cashierUserId: ID!
+    pin: String!
+    reason: String!
+    approverUserId: ID
+    approverPin: String
+  }
+
+  input BmsPosRestaurantSettleCheckInput {
+    cashierUserId: ID!
+    pin: String!
+    customerId: ID
+    payments: [BmsPosPaymentInput!]!
+  }
+
+  input BmsPosRestaurantAcceptIncomingOrderInput {
+    cashierUserId: ID!
+    pin: String!
+    orderId: ID!
+  }
+
+  input BmsPosRestaurantSetOrderingPausedInput {
+    cashierUserId: ID!
+    pin: String!
+    paused: Boolean!
+  }
+
+  input BmsPosRestaurantCancelOrderLinesInput {
+    cashierUserId: ID!
+    pin: String!
+    orderId: ID!
+    idempotencyKey: String!
+    lines: [BmsPosRestaurantCancelLineInput!]!
+    managerUserId: ID
+    managerPin: String
+    note: String
+  }
+
+  input BmsPosRestaurantQrSubmissionInput {
+    cashierUserId: ID!
+    pin: String!
+    submissionId: ID!
+  }
+
+  input BmsPosRestaurantRejectQrSubmissionInput {
+    cashierUserId: ID!
+    pin: String!
+    submissionId: ID!
+    reason: String
+  }
+
+  input BmsPosRestaurantRequestDecisionInput {
+    cashierUserId: ID!
+    pin: String!
+    id: ID!
+    version: Int!
+    quantities: [Int!]
+    note: String!
+    kitchenNote: String
+    confirmed: Boolean!
+  }
+
+  input BmsPosRestaurantServiceCallInput {
+    cashierUserId: ID!
+    pin: String!
+    callId: ID!
+  }
+
+  input BmsPosRestaurantAddWaitlistInput {
+    cashierUserId: ID!
+    pin: String!
+    kind: String!
+    partySize: Int!
+    guestName: String
+    guestPhone: String
+    note: String
+    preferredTableId: ID
+    reservedFor: String
+  }
+
+  input BmsPosRestaurantWaitlistEntryInput {
+    cashierUserId: ID!
+    pin: String!
+    entryId: ID!
+  }
+
+  input BmsPosRestaurantCloseWaitlistInput {
+    cashierUserId: ID!
+    pin: String!
+    entryId: ID!
+    reason: String
+  }
+
+  input BmsPosRestaurantSeatWaitlistInput {
+    cashierUserId: ID!
+    pin: String!
+    entryId: ID!
+    tableId: ID!
+  }
+
   type BmsPosDeviceScanner {
     mode: String!
     prefixKey: String!
@@ -985,12 +1126,36 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): JSON!
     bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): JSON!
     bmsPosRestaurantOpenCheck(input: BmsPosRestaurantOpenCheckInput!): BmsPosRestaurantOpenCheckResult!
-    bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): JSON!
-    bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): JSON!
-    bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): JSON!
-    bmsPosRestaurantRequestAction(input: BmsPosRestaurantRequestActionInput!): JSON!
-    bmsPosRestaurantServiceCallAction(input: BmsPosRestaurantServiceCallActionInput!): JSON!
-    bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): JSON!
+    bmsPosRestaurantAddCheckItem(checkId: ID!, input: BmsPosRestaurantAddCheckItemInput!): JSON!
+    bmsPosRestaurantRemoveCheckItem(checkId: ID!, itemId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!): JSON!
+    bmsPosRestaurantSetCheckGuestCount(checkId: ID!, input: BmsPosRestaurantSetGuestCountInput!): JSON!
+    bmsPosRestaurantSendCheckToKitchen(checkId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!): JSON!
+    bmsPosRestaurantMoveCheck(checkId: ID!, input: BmsPosRestaurantMoveCheckInput!): JSON!
+    bmsPosRestaurantSplitCheck(checkId: ID!, input: BmsPosRestaurantSplitCheckInput!): JSON!
+    bmsPosRestaurantMergeChecks(checkId: ID!, input: BmsPosRestaurantMergeChecksInput!): JSON!
+    bmsPosRestaurantCancelCheck(checkId: ID!, input: BmsPosRestaurantCancelCheckInput!): JSON!
+    bmsPosRestaurantSettleCheck(checkId: ID!, input: BmsPosRestaurantSettleCheckInput!): JSON!
+    bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): JSON!
+    bmsPosRestaurantSetOrderingPaused(input: BmsPosRestaurantSetOrderingPausedInput!): JSON!
+    bmsPosRestaurantCancelOrderLines(input: BmsPosRestaurantCancelOrderLinesInput!): JSON!
+    bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): JSON!
+    bmsPosRestaurantRejectQrSubmission(input: BmsPosRestaurantRejectQrSubmissionInput!): JSON!
+    bmsPosRestaurantContactRequest(input: BmsPosRestaurantRequestDecisionInput!): JSON!
+    bmsPosRestaurantConfirmRequest(input: BmsPosRestaurantRequestDecisionInput!): JSON!
+    bmsPosRestaurantCancelRequest(input: BmsPosRestaurantRequestDecisionInput!): JSON!
+    bmsPosRestaurantAcknowledgeServiceCall(input: BmsPosRestaurantServiceCallInput!): JSON!
+    bmsPosRestaurantCompleteServiceCall(input: BmsPosRestaurantServiceCallInput!): JSON!
+    bmsPosRestaurantAddWaitlistEntry(input: BmsPosRestaurantAddWaitlistInput!): JSON!
+    bmsPosRestaurantCallWaitlistEntry(input: BmsPosRestaurantWaitlistEntryInput!): JSON!
+    bmsPosRestaurantCancelWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): JSON!
+    bmsPosRestaurantNoShowWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): JSON!
+    bmsPosRestaurantSeatWaitlistEntry(input: BmsPosRestaurantSeatWaitlistInput!): JSON!
+    bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): JSON! @deprecated(reason: "Use the named restaurant check mutations")
+    bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): JSON! @deprecated(reason: "Use the named incoming-order mutations")
+    bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): JSON! @deprecated(reason: "Use the named QR-submission mutations")
+    bmsPosRestaurantRequestAction(input: BmsPosRestaurantRequestActionInput!): JSON! @deprecated(reason: "Use bmsPosRestaurantRequests or a named request decision mutation")
+    bmsPosRestaurantServiceCallAction(input: BmsPosRestaurantServiceCallActionInput!): JSON! @deprecated(reason: "Use the named service-call mutations")
+    bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): JSON! @deprecated(reason: "Use the named waitlist mutations")
   }
 `;
 
@@ -2490,3 +2655,102 @@ export const bmsPosDeviceResolvers = {
     },
   },
 };
+
+type CompatibilityResolver = (
+  parent: unknown,
+  args: Record<string, any>,
+  ctx: any,
+) => Promise<unknown>;
+
+function namedInputAction(
+  resolver: CompatibilityResolver,
+  action: string,
+  parent: unknown,
+  args: Record<string, any>,
+  ctx: any,
+) {
+  return resolver(parent, { ...args, input: { ...(args.input ?? {}), action } }, ctx);
+}
+
+const compatibilityMutations = bmsPosDeviceResolvers.Mutation as unknown as Record<string, CompatibilityResolver>;
+
+Object.assign(bmsPosDeviceResolvers.Mutation, {
+    async bmsPosRestaurantAddCheckItem(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "add_item", parent, args, ctx);
+    },
+    async bmsPosRestaurantRemoveCheckItem(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "remove_item", parent, {
+        checkId: args.checkId,
+        input: { ...args.credentials, itemId: args.itemId },
+      }, ctx);
+    },
+    async bmsPosRestaurantSetCheckGuestCount(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "set_guest_count", parent, args, ctx);
+    },
+    async bmsPosRestaurantSendCheckToKitchen(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "send_kitchen", parent, {
+        checkId: args.checkId,
+        input: args.credentials,
+      }, ctx);
+    },
+    async bmsPosRestaurantMoveCheck(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "move", parent, args, ctx);
+    },
+    async bmsPosRestaurantSplitCheck(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "split", parent, args, ctx);
+    },
+    async bmsPosRestaurantMergeChecks(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "merge", parent, args, ctx);
+    },
+    async bmsPosRestaurantCancelCheck(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "cancel", parent, args, ctx);
+    },
+    async bmsPosRestaurantSettleCheck(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "settle", parent, args, ctx);
+    },
+    async bmsPosRestaurantAcceptIncomingOrder(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantIncomingAction, "accept", parent, args, ctx);
+    },
+    async bmsPosRestaurantSetOrderingPaused(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantIncomingAction, "pause", parent, args, ctx);
+    },
+    async bmsPosRestaurantCancelOrderLines(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantIncomingAction, "cancel_lines", parent, args, ctx);
+    },
+    async bmsPosRestaurantAcceptQrSubmission(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantQrOrderAction, "accept", parent, args, ctx);
+    },
+    async bmsPosRestaurantRejectQrSubmission(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantQrOrderAction, "reject", parent, args, ctx);
+    },
+    async bmsPosRestaurantContactRequest(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantRequestAction, "contact", parent, args, ctx);
+    },
+    async bmsPosRestaurantConfirmRequest(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantRequestAction, "confirm", parent, args, ctx);
+    },
+    async bmsPosRestaurantCancelRequest(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantRequestAction, "cancel", parent, args, ctx);
+    },
+    async bmsPosRestaurantAcknowledgeServiceCall(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantServiceCallAction, "acknowledge", parent, args, ctx);
+    },
+    async bmsPosRestaurantCompleteServiceCall(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantServiceCallAction, "complete", parent, args, ctx);
+    },
+    async bmsPosRestaurantAddWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "add", parent, args, ctx);
+    },
+    async bmsPosRestaurantCallWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "call", parent, args, ctx);
+    },
+    async bmsPosRestaurantCancelWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "cancel", parent, args, ctx);
+    },
+    async bmsPosRestaurantNoShowWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "no_show", parent, args, ctx);
+    },
+    async bmsPosRestaurantSeatWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
+      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "seat", parent, args, ctx);
+    },
+});

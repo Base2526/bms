@@ -135,12 +135,38 @@ production introspection. The artifact is generated from the executable schema w
 | Output contract | Operations |
 | --- | --- |
 | Typed (10) | `bmsPosSession`, `bmsPosScan`, `bmsPosCatalogSearch`, `bmsPosRestaurantMenu`, `bmsPosRestaurantFloor`, `bmsPosRestaurantCheck`, `bmsPosKitchenTickets`, `bmsPosSale`, `bmsPosRestaurantOpenCheck`, `bmsPosShift` |
-| JSON compatibility (57) | `bmsPosLastSale`, `bmsPosRecentSales`, `bmsPosParkedSales`, `bmsPosCashMovements`, `bmsPosNoSales`, `bmsPosDeposits`, `bmsPosExpenses`, `bmsPosRestaurantIncoming`, `bmsPosRestaurantQrOrders`, `bmsPosRestaurantServiceCalls`, `bmsPosRestaurantWaitlist`, `bmsPosMemberSearch`, `bmsPosShiftHistory`, `bmsPosShiftReport`, `bmsPosArAccount`, `bmsPosStoreCredit`, `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosRestaurantRequests`, `bmsPosMemberPreview`, `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`, `bmsPosPark`, `bmsPosReturn`, `bmsPosBlindReturn`, `bmsPosVoid`, `bmsPosCompleteRefund`, `bmsPosCashMovement`, `bmsPosNoSale`, `bmsPosEnrollMember`, `bmsPosCollectAr`, `bmsPosReceivePurchase`, `bmsPosSendReceipt`, `bmsPosDeposit`, `bmsPosExpense`, `bmsPosRequestPharmacyReview`, `bmsPosKitchenTicketStatus`, `bmsPosKitchenTicketsStatus`, `bmsPosRestaurantFloorSetup`, `bmsPosRestaurantMenuAvailability`, `bmsPosRestaurantCheckAction`, `bmsPosRestaurantIncomingAction`, `bmsPosRestaurantQrOrderAction`, `bmsPosRestaurantRequestAction`, `bmsPosRestaurantServiceCallAction`, `bmsPosRestaurantWaitlistAction`, `bmsStockTransfers`, `bmsStockCounts`, `bmsMobileRestaurantRequests`, `bmsStoreCredit`, `bmsCommissionRules`, `bmsCommissionReport`, `bmsStockTransfer`, `bmsStockCount`, `bmsReviewRestaurantRequest`, `bmsIssueStoreCredit`, `bmsCommissionRule` |
+| JSON compatibility (89) | `bmsPosLastSale`, `bmsPosRecentSales`, `bmsPosParkedSales`, `bmsPosCashMovements`, `bmsPosNoSales`, `bmsPosDeposits`, `bmsPosExpenses`, `bmsPosRestaurantIncoming`, `bmsPosRestaurantQrOrders`, `bmsPosRestaurantServiceCalls`, `bmsPosRestaurantWaitlist`, `bmsPosMemberSearch`, `bmsPosShiftHistory`, `bmsPosShiftReport`, `bmsPosArAccount`, `bmsPosStoreCredit`, `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosRestaurantRequests`, `bmsPosMemberPreview`, `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`, `bmsPosPark`, `bmsPosReturn`, `bmsPosBlindReturn`, `bmsPosVoid`, `bmsPosCompleteRefund`, `bmsPosCashMovement`, `bmsPosNoSale`, `bmsPosEnrollMember`, `bmsPosCollectAr`, `bmsPosReceivePurchase`, `bmsPosSendReceipt`, `bmsPosDeposit`, `bmsPosExpense`, `bmsPosRequestPharmacyReview`, `bmsPosKitchenTicketStatus`, `bmsPosKitchenTicketsStatus`, `bmsPosRestaurantFloorSetup`, `bmsPosRestaurantMenuAvailability`, `bmsPosRestaurantCheckAction`, `bmsPosRestaurantIncomingAction`, `bmsPosRestaurantQrOrderAction`, `bmsPosRestaurantRequestAction`, `bmsPosRestaurantServiceCallAction`, `bmsPosRestaurantWaitlistAction`, `bmsStockTransfers`, `bmsStockCounts`, `bmsMobileRestaurantRequests`, `bmsStoreCredit`, `bmsCommissionRules`, `bmsCommissionReport`, `bmsStockTransfer`, `bmsStockCount`, `bmsReviewRestaurantRequest`, `bmsIssueStoreCredit`, `bmsCommissionRule`, `bmsPosRestaurantAddCheckItem`, `bmsPosRestaurantRemoveCheckItem`, `bmsPosRestaurantSetCheckGuestCount`, `bmsPosRestaurantSendCheckToKitchen`, `bmsPosRestaurantMoveCheck`, `bmsPosRestaurantSplitCheck`, `bmsPosRestaurantMergeChecks`, `bmsPosRestaurantCancelCheck`, `bmsPosRestaurantSettleCheck`, `bmsPosRestaurantAcceptIncomingOrder`, `bmsPosRestaurantSetOrderingPaused`, `bmsPosRestaurantCancelOrderLines`, `bmsPosRestaurantAcceptQrSubmission`, `bmsPosRestaurantRejectQrSubmission`, `bmsPosRestaurantContactRequest`, `bmsPosRestaurantConfirmRequest`, `bmsPosRestaurantCancelRequest`, `bmsPosRestaurantAcknowledgeServiceCall`, `bmsPosRestaurantCompleteServiceCall`, `bmsPosRestaurantAddWaitlistEntry`, `bmsPosRestaurantCallWaitlistEntry`, `bmsPosRestaurantCancelWaitlistEntry`, `bmsPosRestaurantNoShowWaitlistEntry`, `bmsPosRestaurantSeatWaitlistEntry`, `bmsCreateStockTransfer`, `bmsSendStockTransfer`, `bmsReceiveStockTransfer`, `bmsCancelStockTransfer`, `bmsCreateStockCount`, `bmsRecordStockCountItem`, `bmsApplyStockCount`, `bmsCancelStockCount` |
 
-All 67 operations already have typed arguments. “JSON compatibility” means only the output is still
+All 99 operations already have typed arguments. “JSON compatibility” means only the output is still
 opaque to codegen: validate it at the client boundary and do not assume undocumented fields. Move a
 screen to generated result types only after its operation moves to the typed row. The examples below
 cover every typed operation and are checked against the executable schema.
+
+### Named command migration
+
+New clients must use the named mutations instead of sending an `action` discriminator. The six POS
+restaurant multiplexers and the two staff inventory multiplexers remain only as deprecated
+compatibility fields until existing callers migrate:
+
+- Check: `bmsPosRestaurantAddCheckItem`, `bmsPosRestaurantRemoveCheckItem`,
+  `bmsPosRestaurantSetCheckGuestCount`, `bmsPosRestaurantSendCheckToKitchen`,
+  `bmsPosRestaurantMoveCheck`, `bmsPosRestaurantSplitCheck`, `bmsPosRestaurantMergeChecks`,
+  `bmsPosRestaurantCancelCheck`, `bmsPosRestaurantSettleCheck`.
+- Online/QR/request: `bmsPosRestaurantAcceptIncomingOrder`,
+  `bmsPosRestaurantSetOrderingPaused`, `bmsPosRestaurantCancelOrderLines`,
+  `bmsPosRestaurantAcceptQrSubmission`, `bmsPosRestaurantRejectQrSubmission`,
+  `bmsPosRestaurantContactRequest`, `bmsPosRestaurantConfirmRequest`,
+  `bmsPosRestaurantCancelRequest`.
+- Service/waitlist: `bmsPosRestaurantAcknowledgeServiceCall`,
+  `bmsPosRestaurantCompleteServiceCall`, `bmsPosRestaurantAddWaitlistEntry`,
+  `bmsPosRestaurantCallWaitlistEntry`, `bmsPosRestaurantCancelWaitlistEntry`,
+  `bmsPosRestaurantNoShowWaitlistEntry`, `bmsPosRestaurantSeatWaitlistEntry`.
+- Inventory: `bmsCreateStockTransfer`, `bmsSendStockTransfer`, `bmsReceiveStockTransfer`,
+  `bmsCancelStockTransfer`, `bmsCreateStockCount`, `bmsRecordStockCountItem`,
+  `bmsApplyStockCount`, `bmsCancelStockCount`.
+
+Each named field has an action-specific input and delegates to the same compatibility resolver, so
+authorization, approval, audit, transaction, and idempotency behavior does not fork during rollout.
 
 ### Device bootstrap screen
 
