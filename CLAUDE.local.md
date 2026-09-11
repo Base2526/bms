@@ -5016,3 +5016,28 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
   ยังมี realtime/outbox diff 9 ไฟล์เดิมที่ไม่เกี่ยวข้อง จึงพิสูจน์ความสะอาดเฉพาะ phase commit
 - **ยังไม่ได้ verify:** query ค่า live จาก DB, React Native codegen/compile จริง, production deployment,
   error-contract/client-doc phases และ output อีก 57 operations
+
+### GraphQL client readiness — Phase 5: stable error contract (2026-09-11)
+
+- รวม client-facing GraphQL errors ไว้ที่ `mobileErrorContract.ts`: adapter ระบุ code จากชุด
+  `UNAUTHENTICATED` / `FORBIDDEN` / `BAD_USER_INPUT` / `NOT_FOUND` / `CONFLICT` และ final
+  `formatError` เติม `INTERNAL_SERVER_ERROR` ให้ exception ที่ service ยังไม่ได้ classify ทำให้
+  `errors[].extensions.code` ไม่ว่างทุกกรณี โดยยังเก็บ extension เช่น `reason`, `permission`,
+  `scanCode` และ HTTP hint เดิม
+- business rejection ไม่ถูกย้ายเป็น GraphQL error: `PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`,
+  `OUT_OF_STOCK`/`INSUFFICIENT`, `SOLD_OUT_TODAY`, `IDEMPOTENCY_CONFLICT` และ pharmacy policy
+  status ยังคืนใน `data.<operation>.status`; เอกสาร RN แยก retry/re-auth/refetch/operator action ชัดเจน
+- เพิ่ม pure contract ตรวจ formatter ทั้ง code ที่มีอยู่/หาย/ว่าง, ห้าม adapter สร้าง
+  `GraphQLError` กระจัดกระจาย, ตรึง code table ในเอกสาร และตรึงว่า business statuses ยังมาจาก service
+- **mutation test ผ่าน 2 ด่าน:** เปลี่ยน fallback จาก `INTERNAL_SERVER_ERROR` เป็น `UNKNOWN` → แดง
+  เฉพาะ formatter subtest; เอา `formatError` ออกจาก Apollo route → แดงเฉพาะ wiring subtest;
+  คืน helper SHA-256 `6A75E53C4D993EBC4AE934015A3E9D7CF6A20FEF0614FB276A447465F67B2B91`
+  และ route `4B8982E485ADE9A3DD9964D182535E1F33A4C64CF30AC7A202D479FCA5EEC3A7`
+- **verify บน clean worktree ของ commit `588c0c7e`:** focused contracts **18/18**, Web gate ผ่าน —
+  typecheck, pure **1,103/1,103**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมคือ Edge `jsonwebtoken`, Browserslist,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ตอน static generation
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้; main worktree ยังมี
+  realtime/outbox diff 9 ไฟล์เดิมซึ่งไม่รวมใน commit
+- **ยังไม่ได้ verify:** live authenticated HTTP response ทุก code, React Native client behavior,
+  production deployment, เอกสาร operation examples ของ Phase 6 และ output อีก 57 operations
