@@ -81,6 +81,56 @@ function sdlOperationFields(sdl: string): { Query: Set<string>; Mutation: Set<st
 const posFields = sdlOperationFields(bmsPosDeviceTypeDefs);
 const mobileFields = sdlOperationFields(bmsMobileOperationsTypeDefs);
 
+type OperationKind = "Query" | "Mutation";
+type InputFieldContract = { name: string; type: string };
+
+let cachedSchema: ReturnType<typeof buildBmsGraphqlSchema> | null = null;
+
+function schema() {
+  cachedSchema ??= buildBmsGraphqlSchema();
+  return cachedSchema;
+}
+
+function namedType(type: string): string {
+  return type.replace(/[\[\]!]/g, "");
+}
+
+function rootField(kind: OperationKind, name: string): any {
+  const root = kind === "Query" ? schema().getQueryType() : schema().getMutationType();
+  const field = root?.getFields()[name];
+  assert.ok(field, `${kind}.${name} must exist in the executable schema`);
+  return field;
+}
+
+function inputArgument(kind: OperationKind, name: string): any | null {
+  return rootField(kind, name).args.find((arg: any) => arg.name === "input") ?? null;
+}
+
+function inputFields(typeName: string): InputFieldContract[] {
+  const type = schema().getType(typeName) as any;
+  assert.ok(type && typeof type.getFields === "function", `${typeName} must be an input object`);
+  return Object.values(type.getFields()).map((field: any) => ({
+    name: field.name,
+    type: String(field.type),
+  }));
+}
+
+const moduleOperations = () => ([
+  ...([...posFields.Query].map((name) => ({ module: "POS", kind: "Query" as const, name }))),
+  ...([...posFields.Mutation].map((name) => ({ module: "POS", kind: "Mutation" as const, name }))),
+  ...([...mobileFields.Query].map((name) => ({ module: "mobile", kind: "Query" as const, name }))),
+  ...([...mobileFields.Mutation].map((name) => ({ module: "mobile", kind: "Mutation" as const, name }))),
+]);
+
+function resolverMethod(source: string, operation: string): string {
+  const clean = withoutComments(source);
+  const start = new RegExp(`^    async ${operation}\\b`, "m").exec(clean);
+  assert.ok(start, `${operation} must have a resolver method`);
+  const tail = clean.slice(start.index + start[0].length);
+  const next = /^    async bms[A-Za-z0-9]+\b/m.exec(tail);
+  return next ? tail.slice(0, next.index) : tail;
+}
+
 test("mobile and POS SDL is installed in the HTTP schema", () => {
   assert.ok(posFields.Query.size > 0 && posFields.Mutation.size > 0);
   assert.ok(mobileFields.Query.size > 0 && mobileFields.Mutation.size > 0);
@@ -139,6 +189,121 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   for (const operation of mobileFields.Mutation) {
     assert.ok(operation in mutationFields, `${operation} must reach the merged schema`);
   }
+});
+
+test("all 33 mobile/POS input arguments are typed while Phase 2 leaves 67 JSON outputs unchanged", () => {
+  const operations = moduleOperations();
+  const inputOperations = operations
+    .map((operation) => ({ ...operation, input: inputArgument(operation.kind, operation.name) }))
+    .filter((operation) => operation.input != null);
+
+  assert.equal(inputOperations.length, 33, "the mobile/POS surface must keep all 33 input-bearing operations");
+  assert.deepEqual(
+    inputOperations
+      .filter((operation) => namedType(String(operation.input.type)) === "JSON")
+      .map((operation) => `${operation.kind}.${operation.name}`),
+    [],
+    "typed client operations must not accept an opaque JSON input argument",
+  );
+
+  const jsonOutputs = operations.filter((operation) =>
+    namedType(String(rootField(operation.kind, operation.name).type)) === "JSON"
+  );
+  assert.equal(jsonOutputs.length, 67, "Phase 2 changes inputs only; JSON output countdown starts at 67");
+});
+
+test("typed mobile/POS inputs cannot carry tenant, device, acting-tenant, location, or shift authority", () => {
+  const roots = moduleOperations()
+    .map((operation) => inputArgument(operation.kind, operation.name))
+    .filter(Boolean)
+    .map((argument) => namedType(String(argument.type)))
+    // The preceding typed-input subtest owns JSON regressions. Skipping a scalar here keeps a
+    // single mutation tied to the one contract it broke instead of producing cascade failures.
+    .filter((typeName) => typeName !== "JSON");
+  const pending = [...new Set(roots)];
+  const visited = new Set<string>();
+  const forbidden: string[] = [];
+  const authorityFields = new Set(["tenantId", "locationId", "deviceId", "actingTenantId", "shiftId"]);
+  // These two staff operations preserve the existing REST-equivalent branch selection. The service
+  // still verifies that the selected branch belongs to the context-derived tenant.
+  const allowedStaffLocation = new Set([
+    "BmsStockCountInput.locationId",
+    "BmsReviewRestaurantRequestInput.locationId",
+  ]);
+
+  while (pending.length) {
+    const typeName = pending.pop()!;
+    if (visited.has(typeName)) continue;
+    visited.add(typeName);
+    for (const field of inputFields(typeName)) {
+      const path = `${typeName}.${field.name}`;
+      if (authorityFields.has(field.name) && !allowedStaffLocation.has(path)) forbidden.push(path);
+      const child = namedType(field.type);
+      const candidate = schema().getType(child) as any;
+      if (candidate && typeof candidate.getFields === "function") pending.push(child);
+    }
+  }
+
+  assert.deepEqual(forbidden.sort(), [], "authorization scope must be derived from GraphQL context/device");
+});
+
+test("write inputs that consume client idempotency keys expose the key with action-safe nullability", () => {
+  const alwaysRequired = [
+    "bmsPosSale",
+    "bmsPosReturn",
+    "bmsPosBlindReturn",
+    "bmsPosVoid",
+    "bmsPosCashMovement",
+    "bmsPosCollectAr",
+    "bmsPosReceivePurchase",
+    "bmsPosExpense",
+    "bmsPosRequestPharmacyReview",
+  ];
+  for (const operation of alwaysRequired) {
+    const input = inputArgument("Mutation", operation);
+    const typeName = namedType(String(input.type));
+    if (typeName === "JSON") continue;
+    const field = inputFields(typeName).find((item) => item.name === "idempotencyKey");
+    assert.equal(field?.type, "String!", `${operation} must require idempotencyKey`);
+  }
+
+  // These legacy action multiplexers include actions that do not consume a key. Phase 4 will split
+  // them into named mutations; until then the field must exist but cannot be required globally.
+  for (const operation of ["bmsPosDeposit", "bmsPosRestaurantIncomingAction"]) {
+    const input = inputArgument("Mutation", operation);
+    const typeName = namedType(String(input.type));
+    if (typeName === "JSON") continue;
+    const field = inputFields(typeName).find((item) => item.name === "idempotencyKey");
+    assert.equal(field?.type, "String", `${operation} must expose its action-scoped idempotencyKey`);
+  }
+});
+
+test("each typed top-level input field matches what its resolver reads, in both directions", () => {
+  const mismatches: string[] = [];
+  for (const operation of moduleOperations()) {
+    const argument = inputArgument(operation.kind, operation.name);
+    if (!argument || namedType(String(argument.type)) === "JSON") continue;
+    const source = operation.module === "POS" ? posSchema : mobileSchema;
+    const body = resolverMethod(source, operation.name);
+    const read = new Set(
+      [...body.matchAll(/\binput\.([A-Za-z_][A-Za-z0-9_]*)/g)]
+        .map((match) => match[1])
+        // The typed GraphQL boundary deliberately removes this legacy retry hint. Current scope is
+        // derived from the authenticated device and open shift instead.
+        .filter((field) => field !== "shiftId"),
+    );
+    if (/requirePosCashier\(device,\s*input\s*,/.test(body)) {
+      read.add("cashierUserId");
+      read.add("pin");
+    }
+    const declared = new Set(inputFields(namedType(String(argument.type))).map((field) => field.name));
+    const missing = [...read].filter((field) => !declared.has(field)).sort();
+    const unused = [...declared].filter((field) => !read.has(field)).sort();
+    if (missing.length || unused.length) {
+      mismatches.push(`${operation.name}: missing=[${missing.join(",")}] unused=[${unused.join(",")}]`);
+    }
+  }
+  assert.deepEqual(mismatches, [], "SDL and resolver input names must remain the same contract");
 });
 
 test("POS device GraphQL context accepts native Bearer auth without turning a device into a user", () => {

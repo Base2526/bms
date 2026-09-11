@@ -33,6 +33,70 @@ import { getStoreProfile } from "@/lib/bms/storeProfile";
 import { getTenantId } from "@/lib/bms/tenant";
 
 export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
+  input BmsStockTransferLineInput {
+    sku: String!
+    size: String!
+    qty: Int!
+  }
+
+  input BmsStockTransferReceiptLineInput {
+    itemId: Int!
+    qty: Int!
+    damagedQty: Int
+    reason: String
+    note: String
+  }
+
+  input BmsStockTransferInput {
+    action: String!
+    fromLocationId: ID
+    toLocationId: ID
+    items: [BmsStockTransferLineInput!]
+    note: String
+    transferId: ID
+    received: [BmsStockTransferReceiptLineInput!]
+    receivingNote: String
+  }
+
+  input BmsStockCountInput {
+    action: String!
+    locationId: ID
+    countId: ID
+    sku: String
+    size: String
+    countedQty: Int
+    note: String
+  }
+
+  input BmsReviewRestaurantRequestInput {
+    locationId: ID!
+    id: ID!
+    version: Int!
+    action: String!
+    quantities: [Int!]
+    note: String!
+    kitchenNote: String
+    confirmed: Boolean!
+  }
+
+  input BmsIssueStoreCreditInput {
+    amount: Float!
+    customerId: ID
+    code: String
+    expiresAt: String
+    note: String
+  }
+
+  input BmsCommissionRuleInput {
+    action: String
+    id: Int
+    scope: String
+    ref: String
+    percent: Float
+    effectiveFrom: String
+    note: String
+  }
+
   extend type Query {
     bmsStockTransfers(status: String): JSON!
     bmsStockCounts(status: String): JSON!
@@ -45,11 +109,11 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
   }
 
   extend type Mutation {
-    bmsStockTransfer(input: JSON!): JSON!
-    bmsStockCount(input: JSON!): JSON!
-    bmsReviewRestaurantRequest(input: JSON!): JSON!
-    bmsIssueStoreCredit(input: JSON!): JSON!
-    bmsCommissionRule(input: JSON!): JSON!
+    bmsStockTransfer(input: BmsStockTransferInput!): JSON!
+    bmsStockCount(input: BmsStockCountInput!): JSON!
+    bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): JSON!
+    bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): JSON!
+    bmsCommissionRule(input: BmsCommissionRuleInput!): JSON!
   }
 `;
 

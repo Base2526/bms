@@ -151,6 +151,377 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     pin: String!
   }
 
+  input BmsPosSaleLineInput {
+    sku: String!
+    size: String!
+    packQty: Int!
+    packCode: String
+    unitName: String
+    baseQty: Float
+    packPrice: Float
+    serials: [String!]
+    modifierCodes: [String!]
+    scaleBarcode: String
+  }
+
+  input BmsPosPaymentInput {
+    method: String!
+    amount: Float!
+    cashTendered: Float
+    ref: String
+  }
+
+  input BmsPosExtraLineInput {
+    label: String!
+    qty: Float
+    unitAmount: Float!
+  }
+
+  input BmsPosReturnLineInput {
+    orderItemId: Int!
+    packQty: Int!
+  }
+
+  input BmsPosBlindReturnLineInput {
+    sku: String!
+    size: String!
+    qty: Int!
+    unitRefund: Float!
+  }
+
+  input BmsPosReceivePurchaseLineInput {
+    sku: String!
+    size: String!
+    qty: Int!
+    lotNo: String
+    expiryDate: String
+  }
+
+  input BmsPosDepositSerialLineInput {
+    sku: String!
+    size: String!
+    serials: [String!]!
+  }
+
+  input BmsPosRestaurantCancelLineInput {
+    orderItemId: Int!
+    packQty: Int!
+    cause: String!
+  }
+
+  input BmsPosMemberPreviewInput {
+    subtotal: Float!
+    customerId: ID
+    pointsToRedeem: Float
+    couponCode: String
+    manualDiscount: Float
+  }
+
+  input BmsPosSaleInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    mode: String
+    lines: [BmsPosSaleLineInput!]!
+    payments: [BmsPosPaymentInput!]!
+    couponCode: String
+    depositCustomerNote: String
+    depositDueAt: String
+    customerId: ID
+    pointsToRedeem: Float
+    extraLines: [BmsPosExtraLineInput!]
+    manualDiscount: Float
+    discountReason: String
+    discountApproverUserId: ID
+    discountApproverPin: String
+    creditApproverUserId: ID
+    creditApproverPin: String
+    pharmacistAuthorizerUserId: ID
+    pharmacistAuthorizerPin: String
+    pharmacistAuthorizationNote: String
+    pharmacyApprovedAssessmentId: ID
+    pharmacyReviewAssessmentId: ID
+  }
+
+  input BmsPosShiftInput {
+    cashierUserId: ID!
+    pin: String!
+    userId: ID
+    action: String!
+    openingFloat: Float
+    countedCash: Float
+    note: String
+  }
+
+  input BmsPosParkInput {
+    cashierUserId: ID!
+    action: String
+    label: String
+    cart: JSON
+    itemCount: Int
+    subtotalHint: Float
+    parkedId: ID
+  }
+
+  input BmsPosReturnInput {
+    cashierUserId: ID!
+    pin: String!
+    orderId: ID!
+    mode: String!
+    note: String!
+    idempotencyKey: String!
+    preferredRefundMethod: String
+    approvalUserId: ID
+    approvalPin: String
+    lines: [BmsPosReturnLineInput!]
+  }
+
+  input BmsPosBlindReturnInput {
+    cashierUserId: ID!
+    pin: String!
+    approverUserId: ID!
+    approverPin: String!
+    reason: String!
+    customerId: ID
+    customerNote: String
+    lines: [BmsPosBlindReturnLineInput!]!
+    idempotencyKey: String!
+  }
+
+  input BmsPosVoidInput {
+    cashierUserId: ID!
+    pin: String!
+    approverUserId: ID!
+    approverPin: String!
+    orderId: ID!
+    reason: String!
+    idempotencyKey: String!
+  }
+
+  input BmsPosCompleteRefundInput {
+    cashierUserId: ID!
+    pin: String!
+    userId: ID
+    allocationId: ID!
+    externalRef: String
+  }
+
+  input BmsPosCashMovementInput {
+    cashierUserId: ID!
+    pin: String!
+    direction: String!
+    amount: Float!
+    reason: String!
+    approverUserId: ID
+    approverPin: String
+    idempotencyKey: String!
+  }
+
+  input BmsPosNoSaleInput {
+    cashierUserId: ID!
+    pin: String!
+    reason: String!
+  }
+
+  input BmsPosEnrollMemberInput {
+    cashierUserId: ID!
+    pin: String!
+    phone: String!
+    name: String
+  }
+
+  input BmsPosCollectArInput {
+    cashierUserId: ID!
+    pin: String!
+    accountId: ID!
+    amount: Float!
+    method: String!
+    reference: String
+    note: String
+    idempotencyKey: String!
+  }
+
+  input BmsPosReceivePurchaseInput {
+    cashierUserId: ID!
+    pin: String!
+    poId: ID!
+    items: [BmsPosReceivePurchaseLineInput!]!
+    idempotencyKey: String!
+  }
+
+  input BmsPosSendReceiptInput {
+    cashierUserId: ID!
+    pin: String!
+    orderId: ID!
+    channel: String!
+    to: String
+  }
+
+  input BmsPosDepositInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    orderId: ID!
+    amount: Float
+    method: String
+    idempotencyKey: String
+    customerNote: String
+    dueAt: String
+    payments: [BmsPosPaymentInput!]
+    lines: [BmsPosDepositSerialLineInput!]
+    outcome: String
+    reason: String
+  }
+
+  input BmsPosExpenseInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    idempotencyKey: String!
+    source: String
+    amount: Float
+    reason: String
+    evidenceRef: String
+    fundingSource: String
+    approverUserId: ID
+    approverPin: String
+    kind: String
+    category: String
+    description: String
+    payee: String
+    receiptRef: String
+    expenseId: ID
+    actualAmount: Float
+  }
+
+  input BmsPosRequestPharmacyReviewInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    customerId: ID
+    label: String
+    lines: [BmsPosSaleLineInput!]!
+    parkedCart: JSON
+    itemCount: Int
+    subtotalHint: Float
+  }
+
+  input BmsPosKitchenTicketStatusInput {
+    cashierUserId: ID!
+    pin: String!
+    userId: ID
+    ticketId: ID!
+    status: String!
+  }
+
+  input BmsPosKitchenTicketsStatusInput {
+    cashierUserId: ID!
+    pin: String!
+    userId: ID
+    ticketIds: [ID!]!
+    status: String!
+  }
+
+  input BmsPosRestaurantFloorSetupInput {
+    cashierUserId: ID!
+    pin: String!
+    tableCount: Int
+  }
+
+  input BmsPosRestaurantMenuAvailabilityInput {
+    cashierUserId: ID!
+    pin: String!
+    productSku: String!
+    unavailable: Boolean!
+    reason: String
+  }
+
+  input BmsPosRestaurantOpenCheckInput {
+    cashierUserId: ID!
+    pin: String!
+    tableId: ID!
+    guestCount: Int
+    note: String
+  }
+
+  input BmsPosRestaurantCheckActionInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    sku: String
+    size: String
+    packCode: String
+    packQty: Int
+    modifierCodes: [String!]
+    kitchenNote: String
+    itemId: ID
+    guestCount: Int
+    targetTableId: ID
+    itemIds: [ID!]
+    targetCheckId: ID
+    reason: String
+    approverUserId: ID
+    approverPin: String
+    customerId: ID
+    payments: [BmsPosPaymentInput!]
+  }
+
+  input BmsPosRestaurantIncomingActionInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    orderId: ID
+    paused: Boolean
+    idempotencyKey: String
+    lines: [BmsPosRestaurantCancelLineInput!]
+    managerUserId: ID
+    managerPin: String
+    note: String
+  }
+
+  input BmsPosRestaurantQrOrderActionInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    submissionId: ID!
+    reason: String
+  }
+
+  input BmsPosRestaurantRequestActionInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    id: ID
+    version: Int
+    quantities: [Int!]
+    note: String
+    kitchenNote: String
+    confirmed: Boolean
+  }
+
+  input BmsPosRestaurantServiceCallActionInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    callId: ID!
+  }
+
+  input BmsPosRestaurantWaitlistActionInput {
+    cashierUserId: ID!
+    pin: String!
+    action: String!
+    kind: String
+    partySize: Int
+    guestName: String
+    guestPhone: String
+    note: String
+    preferredTableId: ID
+    reservedFor: String
+    entryId: ID
+    reason: String
+    tableId: ID
+  }
+
   extend type Query {
     bmsPosSession: JSON!
     bmsPosCatalogSearch(q: String!): JSON!
@@ -185,37 +556,37 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): JSON!
     bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): JSON
     bmsPosRestaurantRequests(credentials: BmsPosCredentialsInput!): JSON!
-    bmsPosMemberPreview(input: JSON!): JSON!
+    bmsPosMemberPreview(input: BmsPosMemberPreviewInput!): JSON!
   }
 
   extend type Mutation {
-    bmsPosSale(input: JSON!): JSON!
-    bmsPosShift(input: JSON!): JSON!
-    bmsPosPark(input: JSON!): JSON!
-    bmsPosReturn(input: JSON!): JSON!
-    bmsPosBlindReturn(input: JSON!): JSON!
-    bmsPosVoid(input: JSON!): JSON!
-    bmsPosCompleteRefund(input: JSON!): JSON!
-    bmsPosCashMovement(input: JSON!): JSON!
-    bmsPosNoSale(input: JSON!): JSON!
-    bmsPosEnrollMember(input: JSON!): JSON!
-    bmsPosCollectAr(input: JSON!): JSON!
-    bmsPosReceivePurchase(input: JSON!): JSON!
-    bmsPosSendReceipt(input: JSON!): JSON!
-    bmsPosDeposit(input: JSON!): JSON!
-    bmsPosExpense(input: JSON!): JSON!
-    bmsPosRequestPharmacyReview(input: JSON!): JSON!
-    bmsPosKitchenTicketStatus(input: JSON!): JSON!
-    bmsPosKitchenTicketsStatus(input: JSON!): JSON!
-    bmsPosRestaurantFloorSetup(input: JSON!): JSON!
-    bmsPosRestaurantMenuAvailability(input: JSON!): JSON!
-    bmsPosRestaurantOpenCheck(input: JSON!): JSON!
-    bmsPosRestaurantCheckAction(checkId: ID!, input: JSON!): JSON!
-    bmsPosRestaurantIncomingAction(input: JSON!): JSON!
-    bmsPosRestaurantQrOrderAction(input: JSON!): JSON!
-    bmsPosRestaurantRequestAction(input: JSON!): JSON!
-    bmsPosRestaurantServiceCallAction(input: JSON!): JSON!
-    bmsPosRestaurantWaitlistAction(input: JSON!): JSON!
+    bmsPosSale(input: BmsPosSaleInput!): JSON!
+    bmsPosShift(input: BmsPosShiftInput!): JSON!
+    bmsPosPark(input: BmsPosParkInput!): JSON!
+    bmsPosReturn(input: BmsPosReturnInput!): JSON!
+    bmsPosBlindReturn(input: BmsPosBlindReturnInput!): JSON!
+    bmsPosVoid(input: BmsPosVoidInput!): JSON!
+    bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): JSON!
+    bmsPosCashMovement(input: BmsPosCashMovementInput!): JSON!
+    bmsPosNoSale(input: BmsPosNoSaleInput!): JSON!
+    bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): JSON!
+    bmsPosCollectAr(input: BmsPosCollectArInput!): JSON!
+    bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): JSON!
+    bmsPosSendReceipt(input: BmsPosSendReceiptInput!): JSON!
+    bmsPosDeposit(input: BmsPosDepositInput!): JSON!
+    bmsPosExpense(input: BmsPosExpenseInput!): JSON!
+    bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): JSON!
+    bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): JSON!
+    bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): JSON!
+    bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): JSON!
+    bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): JSON!
+    bmsPosRestaurantOpenCheck(input: BmsPosRestaurantOpenCheckInput!): JSON!
+    bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): JSON!
+    bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): JSON!
+    bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): JSON!
+    bmsPosRestaurantRequestAction(input: BmsPosRestaurantRequestActionInput!): JSON!
+    bmsPosRestaurantServiceCallAction(input: BmsPosRestaurantServiceCallActionInput!): JSON!
+    bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): JSON!
   }
 `;
 
