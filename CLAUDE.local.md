@@ -5041,3 +5041,30 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
   realtime/outbox diff 9 ไฟล์เดิมซึ่งไม่รวมใน commit
 - **ยังไม่ได้ verify:** live authenticated HTTP response ทุก code, React Native client behavior,
   production deployment, เอกสาร operation examples ของ Phase 6 และ output อีก 57 operations
+
+### GraphQL client readiness — Phase 6: React Native operation guide (2026-09-11)
+
+- ขยาย `react-native-graphql-client.md` ด้วย query/mutation ที่ copy ใช้ได้จริงสำหรับทุกจอใน
+  typed batch: bootstrap, search/scan, restaurant floor/menu/check, kitchen, sale, open check และ shift
+  พร้อม field selection ที่แนะนำและกติกา nullable/idempotency/reconciliation
+- ตาราง coverage อ่านจาก schema จริง: typed output **10 operations**, JSON compatibility
+  **57 operations** (input ของทั้ง 67 typed แล้ว) และบอกชัดว่า JSON output ต้อง validate ที่ client
+  boundary จนกว่าจะย้ายมา typed; codegen ใช้ committed root `schema.graphql` ไม่เปิด production
+  introspection
+- เพิ่ม `validateBmsGraphqlDocument()` ใต้ schema module เพราะ pure test ใน `scripts/` import package
+  `graphql` ตรง ๆ ไม่ได้ตามข้อจำกัดของ repo; เอกสารทุก fenced GraphQL block จึง parse+validate กับ
+  executable HTTP schema จริง และ coverage table เทียบ root field ของ resolver ทั้งสอง module
+- **mutation test ผ่าน 3 ด่าน:** (1) เปลี่ยน selection เป็น field ที่ไม่มี → แดงเฉพาะ document
+  validation, (2) เอา `bmsPosShift` ออกจากตัวอย่างโดยเหลือ mutation ที่ valid → แดงเฉพาะ example
+  coverage, (3) โกหก typed row ว่า `bmsPosLastSale` typed → แดงเฉพาะ table/schema contract;
+  คืนไฟล์ตรง SHA-256: guide
+  `71FB3E117106B8623FC29B90264A318209971781DF1A599E8D1ECBCA9B544FA5`, schema helper
+  `D43290B9D351F879B857092ED1C12A50179B12F21AE103EEAC03C8D9AE1EB32B`, test
+  `58CA3A9B4863001617A15B818CAA9B00EACDE0E048F31B807B318CB11B83AB9E`
+- **verify บน clean worktree ของ commit `187da680`:** focused contracts **20/20**, Web gate ผ่าน —
+  typecheck, pure **1,106/1,106**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมคือ Edge `jsonwebtoken`, Browserslist,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ตอน static generation
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้
+- **ยังไม่ได้ verify:** generated React Native project compile, query ด้วยข้อมูล/credential จริง,
+  production deployment, Phase 4 named actions และ typed output อีก 57 operations
