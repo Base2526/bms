@@ -4962,3 +4962,29 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - **ไม่ได้ทำ/ยังไม่ได้ verify:** Phase 2 typed inputs, Phase 3 typed outputs, client codegen จริง และ
   production deployment ยังไม่เริ่ม · ไม่รัน DB test เพราะเฟสนี้ไม่อ่าน/เขียน DB · ไม่มี migration,
   permission, REST, subscription หรือ realtime change ใน commit นี้
+
+### GraphQL client readiness — Phase 2: typed mobile inputs (2026-09-11)
+
+- แปลง argument `input` ของ mobile/POS surface ครบ **33/33 operations** จาก `JSON!` เป็น
+  input object ที่มีชื่อ รวม nested lines/payments/returns/receiving/restaurant lines; output ยังเป็น
+  JSON **67 operations** ตามขอบเขต Phase 2
+- SDL ไม่รับ authority ของ tenant/device/shift จาก client; `locationId` เหลือเฉพาะ 2 staff workflow
+  ที่มีอยู่เดิม (`BmsStockCountInput`, `BmsReviewRestaurantRequestInput`) และ resolver ตรวจ tenant
+  ฝั่ง server · idempotency key เป็น required ใน mutation ที่ service ใช้จริง และเป็น optional
+  เฉพาะ action multiplexer ที่แต่ละ action ใช้ไม่เหมือนกัน (รอแตก field ใน Phase 4)
+- ขยาย `mobile-graphql-contract`: ตรวจ 33 typed inputs, authority denylist, idempotency nullability และ
+  ชื่อ field สองทิศระหว่าง SDL กับ `input.foo` ที่ resolver อ่านจริง (รวม credentials ที่ helper อ่าน;
+  ตัด legacy `shiftId` ซึ่ง typed client ส่งไม่ได้)
+- **mutation test ผ่าน 4 ด่าน:** คืน `bmsPosSale` เป็น `JSON!`, เติม `deviceId`, ทำ
+  `idempotencyKey` nullable และลบ `couponCode` ทีละกรณี — แดงเฉพาะ subtest ที่เป็นเจ้าของกฎ;
+  กรณีแรกเผยว่า downstream assertions พยายาม introspect JSON จนแดงพ่วง จึงแก้ให้แต่ละด่านเป็นอิสระ
+  แล้วรัน mutation ซ้ำ · คืนไฟล์ตรงทุกไบต์ SHA-256
+  `E3E88B0E0AF96E44B1791E051851A2C11FD0E395960DF32125F9E1FE2EA3C3CA`
+- **verify บน clean worktree ของ commit `27eaaf78`:** Web gate ผ่าน — typecheck,
+  pure **1,099/1,099**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมระหว่าง build คือ SendGrid placeholder และ
+  Postgres `ECONNREFUSED` ตอน static generation แต่ไม่ทำให้ build ล้ม
+- main worktree ยังไม่สะอาดเฉพาะ realtime/outbox diff 9 ไฟล์ที่มีอยู่ก่อนงานนี้และจงใจไม่แตะ;
+  Phase 2 commit ไม่มี DB/migration/permission/REST/subscription/realtime change
+- **ยังไม่ได้ verify:** DB integration (เฟสนี้ไม่ใช้ DB), React Native codegen/compile จริง,
+  production deployment และ output typing ของ Phase 3
