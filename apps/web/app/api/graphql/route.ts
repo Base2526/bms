@@ -22,6 +22,7 @@ import { authenticatePosDevice } from "@/lib/bms/pos";
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
 import { metricsPlugin } from "@/graphql/metricsPlugin";
+import { ensureBmsGraphqlErrorCode } from "@/graphql/mobileErrorContract";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 const schema = buildBmsGraphqlSchema();
@@ -30,6 +31,7 @@ const server = new ApolloServer({
   schema,
   introspection: process.env.NODE_ENV !== "production",
   csrfPrevention: false,
+  formatError: ensureBmsGraphqlErrorCode,
   // latency/error rate ต่อ operation → /admin/system-health (fail-open, ไม่ throw)
   plugins: [metricsPlugin()],
 });

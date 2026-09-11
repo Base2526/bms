@@ -126,6 +126,28 @@ poll until production recovery/load tests are complete.
 - Continue to use REST only for pharmacy-evidence bytes, shift-report export, and support
   diagnostics.
 
+## Error contract
+
+GraphQL transport/execution failures are returned in `errors[]`; every entry has a non-empty
+`extensions.code`. Read the code, not the localized message. A response can contain both partial
+`data` and `errors`, so apply only fields that are present and then follow the action below.
+
+| `extensions.code` | Meaning | Client action |
+| --- | --- | --- |
+| `GRAPHQL_PARSE_FAILED` | The document is not valid GraphQL syntax. | Developer/configuration fault. Do not retry; report the operation/version. |
+| `GRAPHQL_VALIDATION_FAILED` | The document or field selection does not match the deployed schema. | Stop the operation and require a compatible app/schema version. |
+| `BAD_USER_INPUT` | Arguments failed boundary validation or variable coercion. | Keep the form open, highlight/correct input, then submit a new attempt. |
+| `UNAUTHENTICATED` | User/device credential is missing, expired, revoked, or in the wrong scope. | Stop retries; clear the connection and re-login or re-pair the device. |
+| `FORBIDDEN` | Identity is valid but lacks a permission, valid PIN, or required second-person approval. | Do not retry automatically; show the operator the permission/approval problem. |
+| `NOT_FOUND` | The referenced tenant-scoped object is absent or no longer visible to this principal. | Drop stale selection, refetch its parent/list, and let the operator choose again. |
+| `CONFLICT` | Current authoritative state no longer allows the command (for example, no open shift). | Refetch the affected snapshot. Never blind-retry against stale state. |
+| `INTERNAL_SERVER_ERROR` | Unexpected server/provider/infrastructure failure, including an uncategorized service exception. | Treat mutation outcome as unknown. Retry only when the operation is replay-safe, using the exact same idempotency key; otherwise ask the operator to reconcile. |
+
+Business rejections are not GraphQL errors. Results such as `PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`,
+`OUT_OF_STOCK`/`INSUFFICIENT`, `SOLD_OUT_TODAY`, `IDEMPOTENCY_CONFLICT`, and pharmacy policy
+statuses arrive in `data.<operation>.status`. They are completed decisions: branch on the typed
+status/result fields, show the next operator action, and do not put them into a transport retry loop.
+
 ## Token and ticket refresh
 
 Two credentials with different lifetimes. Do not conflate them.
@@ -189,4 +211,3 @@ Ship query-only canary first, compare snapshots with the compatibility REST resp
 idempotent mutations workflow by workflow. Keep REST and polling available until production metrics
 show no remaining compatibility caller and WS reconnect/focus reconciliation has passed on both iOS
 and Android under background/resume and network-switch scenarios.
-

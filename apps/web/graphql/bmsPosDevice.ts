@@ -1,4 +1,4 @@
-import { GraphQLError } from "graphql/error";
+import { mobileGraphqlError } from "./mobileErrorContract";
 
 import {
   AR_RECEIPT_METHODS,
@@ -1129,9 +1129,7 @@ export const bmsPosDeviceResolvers = {
           : "RETAIL_POS",
       });
       if (!hit) {
-        throw new GraphQLError("ไม่พบสินค้าจากรหัสนี้", {
-          extensions: { code: "NOT_FOUND", scanCode: code },
-        });
+        throw mobileGraphqlError("ไม่พบสินค้าจากรหัสนี้", "NOT_FOUND", { scanCode: code });
       }
       const [available, imageUrl] = await Promise.all([
         getPosVariantAvailable(device.tenantId, device.locationId, hit.sku, hit.size),
@@ -1317,9 +1315,9 @@ export const bmsPosDeviceResolvers = {
       const shiftId = optionalUuidInput(args.shiftId, "กะไม่ถูกต้อง")
         ?? (await getOpenPosShift(device.tenantId, device.id))?.id
         ?? null;
-      if (!shiftId) throw new GraphQLError("ไม่พบกะ", { extensions: { code: "NOT_FOUND" } });
+      if (!shiftId) throw mobileGraphqlError("ไม่พบกะ", "NOT_FOUND");
       const report = await getPosShiftReport(device.tenantId, shiftId, device.id);
-      if (!report) throw new GraphQLError("ไม่พบกะ", { extensions: { code: "NOT_FOUND" } });
+      if (!report) throw mobileGraphqlError("ไม่พบกะ", "NOT_FOUND");
       return { report, receivables: await getArShiftSummary(device.tenantId, shiftId) };
     },
 
@@ -1346,7 +1344,7 @@ export const bmsPosDeviceResolvers = {
       await requirePosCashier(device, args.credentials, "storecredit.redeem");
       if (!args.code.trim()) return badPosInput("ต้องระบุโค้ดบัตร");
       const credit = await findStoreCredit(device.tenantId, args.code);
-      if (!credit) throw new GraphQLError("ไม่พบบัตรนี้", { extensions: { code: "NOT_FOUND" } });
+      if (!credit) throw mobileGraphqlError("ไม่พบบัตรนี้", "NOT_FOUND");
       return {
         credit: {
           code: credit.code,
@@ -1371,11 +1369,13 @@ export const bmsPosDeviceResolvers = {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "purchase.receive");
       const order = await getPurchaseOrder(device.tenantId, uuidInput(args.poId, "ใบสั่งซื้อไม่ถูกต้อง"));
-      if (!order) throw new GraphQLError("ไม่พบใบสั่งซื้อ", { extensions: { code: "NOT_FOUND" } });
+      if (!order) throw mobileGraphqlError("ไม่พบใบสั่งซื้อ", "NOT_FOUND");
       if (order.status !== "OPEN" && order.status !== "PARTIAL") {
-        throw new GraphQLError(`ใบสั่งซื้อนี้รับต่อไม่ได้ (สถานะ ${order.status})`, {
-          extensions: { code: "CONFLICT", reason: "INVALID_STATE" },
-        });
+        throw mobileGraphqlError(
+          `ใบสั่งซื้อนี้รับต่อไม่ได้ (สถานะ ${order.status})`,
+          "CONFLICT",
+          { reason: "INVALID_STATE" },
+        );
       }
       return order;
     },
@@ -1444,8 +1444,8 @@ export const bmsPosDeviceResolvers = {
 
       const mode = input.mode === "DEPOSIT" ? "DEPOSIT" : "SALE";
       if (mode === "DEPOSIT" && !(await cashierHasPermission(device.tenantId, actor.userId, "pos.deposit.take"))) {
-        throw new GraphQLError("ไม่มีสิทธิ์รับมัดจำ", {
-          extensions: { code: "FORBIDDEN", permission: "pos.deposit.take" },
+        throw mobileGraphqlError("ไม่มีสิทธิ์รับมัดจำ", "FORBIDDEN", {
+          permission: "pos.deposit.take",
         });
       }
       const lines = parsePosSaleLines(input.lines);
@@ -1503,13 +1503,13 @@ export const bmsPosDeviceResolvers = {
             typeof input.pharmacistAuthorizerPin === "string" ? input.pharmacistAuthorizerPin : "",
           );
         if (!pharmacist.ok) {
-          throw new GraphQLError("PIN ของเภสัชกรไม่ถูกต้อง", {
-            extensions: { code: "FORBIDDEN", reason: pharmacist.reason },
+          throw mobileGraphqlError("PIN ของเภสัชกรไม่ถูกต้อง", "FORBIDDEN", {
+            reason: pharmacist.reason,
           });
         }
         if (!pharmacist.isPharmacist) {
-          throw new GraphQLError("คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต", {
-            extensions: { code: "FORBIDDEN", reason: "NOT_LICENSED_PHARMACIST" },
+          throw mobileGraphqlError("คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต", "FORBIDDEN", {
+            reason: "NOT_LICENSED_PHARMACIST",
           });
         }
         pharmacistCounterAuthorization = {
@@ -1831,7 +1831,7 @@ export const bmsPosDeviceResolvers = {
       if (!AR_RECEIPT_METHODS.includes(method)) return badPosInput(`วิธีรับชำระไม่ถูกต้อง: ${method || "(ว่าง)"}`);
       const shift = await getOpenPosShift(device.tenantId, device.id);
       if (method === "CASH" && !shift) {
-        throw new GraphQLError("รับเงินสดต้องเปิดกะก่อน", { extensions: { code: "CONFLICT" } });
+        throw mobileGraphqlError("รับเงินสดต้องเปิดกะก่อน", "CONFLICT");
       }
       return recordArReceipt({
         tenantId: device.tenantId,
@@ -1891,7 +1891,7 @@ export const bmsPosDeviceResolvers = {
       await requirePosCashier(device, input, "pos.sell");
       const orderId = uuidInput(input.orderId, "บิลไม่ถูกต้อง");
       if (!(await isPosOrderOwnedByDevice(device.tenantId, orderId, device.id))) {
-        throw new GraphQLError("ไม่พบบิลนี้ของเครื่องนี้", { extensions: { code: "NOT_FOUND" } });
+        throw mobileGraphqlError("ไม่พบบิลนี้ของเครื่องนี้", "NOT_FOUND");
       }
       return sendReceipt({
         tenantId: device.tenantId,
@@ -2270,7 +2270,7 @@ export const bmsPosDeviceResolvers = {
         const reason = textInput(input.reason);
         if (!reason) return badPosInput("ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร");
         const check = await getRestaurantCheck(device.tenantId, checkId, device.locationId);
-        if (!check) throw new GraphQLError("ไม่พบบิลโต๊ะ", { extensions: { code: "NOT_FOUND" } });
+        if (!check) throw mobileGraphqlError("ไม่พบบิลโต๊ะ", "NOT_FOUND");
         const requiresVoidApproval = ["OPEN", "CLOSING"].includes(check.status)
           && (check.hasCurrentOrder || check.items.some((item) => item.status === "SENT"));
         let approvedByUserId: string | null = null;

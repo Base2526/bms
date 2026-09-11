@@ -1,18 +1,25 @@
-import { GraphQLError } from "graphql/error";
-
 import type { PosDevice, PinVerifyResult } from "@/lib/bms/pos";
 import { cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import { isDistinctPosApprover } from "@/lib/bms/posRouteHelpers";
+import {
+  mobileGraphqlError,
+  type BmsGraphqlClientErrorCode,
+} from "./mobileErrorContract";
 
 export type PosDeviceGraphqlContext = {
   scope?: string;
   posDevice?: PosDevice | null;
 };
 
-function gqlError(message: string, code: string, extra: Record<string, unknown> = {}): never {
-  throw new GraphQLError(message, {
-    extensions: { code, http: { status: code === "UNAUTHENTICATED" ? 401 : 403 }, ...extra },
+function gqlError(
+  message: string,
+  code: BmsGraphqlClientErrorCode,
+  extra: Record<string, unknown> = {},
+): never {
+  throw mobileGraphqlError(message, code, {
+    http: { status: code === "UNAUTHENTICATED" ? 401 : 403 },
+    ...extra,
   });
 }
 

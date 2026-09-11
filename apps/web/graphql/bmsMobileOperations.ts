@@ -1,5 +1,3 @@
-import { GraphQLError } from "graphql/error";
-
 import { requireAuth } from "@/lib/auth";
 import {
   deleteCommissionRule,
@@ -31,6 +29,7 @@ import {
 import { findStoreCredit, getStoreCreditOutstanding, issueStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
 import { getTenantId } from "@/lib/bms/tenant";
+import { mobileGraphqlError } from "./mobileErrorContract";
 
 export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
   input BmsStockTransferLineInput {
@@ -119,7 +118,7 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
 
 function inputRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new GraphQLError("input ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+    throw mobileGraphqlError("input ไม่ถูกต้อง", "BAD_USER_INPUT");
   }
   return value as Record<string, unknown>;
 }
@@ -137,7 +136,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function uuidInput(value: unknown, message: string): string {
   const parsed = typeof value === "string" ? value.trim() : "";
   if (!UUID_RE.test(parsed)) {
-    throw new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
+    throw mobileGraphqlError(message, "BAD_USER_INPUT");
   }
   return parsed;
 }
@@ -199,7 +198,7 @@ export const bmsMobileOperationsResolvers = {
     async bmsCommissionReport(_parent: unknown, args: { from: string; to: string }, ctx: any) {
       await requirePermission(ctx, "commission.view");
       if (!isDate(args.from) || !isDate(args.to) || args.from > args.to) {
-        throw new GraphQLError("ช่วงวันที่ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+        throw mobileGraphqlError("ช่วงวันที่ไม่ถูกต้อง", "BAD_USER_INPUT");
       }
       return { report: await getCommissionReport(getTenantId(ctx), args.from, args.to) };
     },
@@ -242,7 +241,7 @@ export const bmsMobileOperationsResolvers = {
         receivingNote: typeof input.receivingNote === "string" ? input.receivingNote : null,
       });
       if (action === "cancel") return cancelStockTransfer({ tenantId, transferId, actorUserId: actingUserId });
-      throw new GraphQLError("action ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      throw mobileGraphqlError("action ไม่ถูกต้อง", "BAD_USER_INPUT");
     },
 
     async bmsStockCount(_parent: unknown, args: { input: unknown }, ctx: any) {
@@ -269,7 +268,7 @@ export const bmsMobileOperationsResolvers = {
       });
       if (action === "apply") return applyStockCount({ tenantId, countId, actorUserId: actingUserId });
       if (action === "cancel") return cancelStockCount({ tenantId, countId, actorUserId: actingUserId });
-      throw new GraphQLError("action ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      throw mobileGraphqlError("action ไม่ถูกต้อง", "BAD_USER_INPUT");
     },
 
     async bmsReviewRestaurantRequest(_parent: unknown, args: { input: unknown }, ctx: any) {
@@ -309,12 +308,12 @@ export const bmsMobileOperationsResolvers = {
       const tenantId = getTenantId(ctx);
       if (input.action === "delete") {
         const id = Number(input.id);
-        if (!Number.isInteger(id)) throw new GraphQLError("id ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+        if (!Number.isInteger(id)) throw mobileGraphqlError("id ไม่ถูกต้อง", "BAD_USER_INPUT");
         return { status: await deleteCommissionRule(tenantId, id) ? "DELETED" : "NOT_FOUND" };
       }
       const scope = String(input.scope ?? "").toUpperCase() as CommissionScope;
       if (!COMMISSION_SCOPES.includes(scope)) {
-        throw new GraphQLError("scope ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+        throw mobileGraphqlError("scope ไม่ถูกต้อง", "BAD_USER_INPUT");
       }
       return upsertCommissionRule({
         tenantId,
