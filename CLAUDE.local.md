@@ -5094,3 +5094,39 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้
 - **ยังไม่ได้ verify:** execute aliases ด้วย live DB/credentials, caller migration, generated RN compile,
   production deployment และ typed output ของ 89 compatibility fields
+
+### GraphQL client readiness — Phase 3b: complete typed outputs (2026-09-11)
+
+- แปลง output ที่เหลือทั้งหมดหลัง Phase 4 จนครบ **99/99 mobile/POS operations** เป็น named
+  object/list trees; executable schema ไม่มี root หรือ nested output ที่เป็น `JSON` เหลือแล้ว · `JSON`
+  สองตำแหน่งใน `bmsPosDevice.ts` เป็น input payload ของ cart/parked cart เดิม ไม่ใช่ response
+- ชนิดข้อมูลยึดจากค่าที่ resolver และ shared service คืนจริง: เงินยังเป็น `Float`, วันเวลาเป็น ISO
+  `String`, branch ที่ขึ้นกับ status/legacy row เป็น nullable และ named action aliases ใช้ result type
+  เดียวกับ compatibility resolver ที่ delegate อยู่ จึงไม่สร้าง business path ใหม่
+- เพิ่ม GraphQL-only compatibility formatting สองจุด: parked cart แบบ legacy array ถูกห่อเป็น
+  `{ version: 2, lines }`; restaurant request ที่ service คืน failure object ผ่าน `reason` ถูกแยกเป็น
+  typed `failure` เพื่อไม่ส่ง object เข้า `String` scalar · ไม่เปลี่ยน service หรือ REST response
+- ขยาย contract ให้ enumerate surface ครบ 99 operations แล้วเดิน output graph แบบ recursive เพื่อห้าม
+  `JSON` ที่ซ่อนอยู่; guide/table เปลี่ยนเป็น **Typed (99)** / **JSON compatibility (0)** และยัง validate
+  ตัวอย่าง 10 core screen flows กับ executable schema
+- **mutation test ผ่าน 4 ด่าน:** (1) คืน `bmsPosLastSale` เป็น root `JSON`, (2) ซ่อน `JSON` ที่
+  `BmsPosReceipt.payments`, (3) เปลี่ยน coverage doc เป็น `Typed (98)`, (4) เปลี่ยน legacy parked-cart
+  version จาก 2 เป็น 3 — แต่ละกรณีแดงที่ contract เจ้าของกฎและคืนกลับแล้ว · SHA-256 หลัง restore:
+  mobile `C456E04E3284DA751F01DBDD2042852C143EAF82F2C18D1230F78791B12C9D33`, POS
+  `A19F1EFE64A4A0215FF8C4368B5C0FC09A8F2C08DDAFEFC35F79FCDFB4571094`, guide
+  `9D3FAC8B7AE5375F8F6E8E5FDD562E616119EBFBD321D62CC20140947CBD7DE1`, artifact
+  `366405ECA7CD08C545A8FAA3FF991C477DB2250E1917D76272C924745155D2DF`, output contract
+  `12DDEB977D00FFC95643FB03ABC2D8B13429A9A0791C9904F85F8D19247FA9CD`, doc contract
+  `3BE9B605FD704C2AE5C65BAAD60E8535AC264AC0F1B806EE5C6454E21A6915DF`
+- **verify บน clean worktree ของ commit `0b19503c`:** focused contracts **23/23**, Web gate ผ่าน —
+  typecheck, pure **1,110/1,110**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · clean worktree ต้อง junction dependency ของ
+  `packages/realtime` และ `packages/graphql-core`; รอบก่อนเชื่อมแดงเฉพาะ module resolution ไม่ได้แก้
+  source เพื่อกลบ error
+- warning เดิมระหว่าง build: Edge trace ของ `jsonwebtoken`, Browserslist เก่า, SendGrid placeholder
+  และ Postgres `ECONNREFUSED` ตอน static generation; build จบสำเร็จและเฟสนี้ไม่ใช้ DB
+- commit นี้ไม่มี DB/migration/permission/REST/subscription/realtime change; main worktree ยังมี
+  realtime/outbox diff 9 ไฟล์เดิมซึ่งไม่รวมใน phase commit
+- **ยังไม่ได้ verify:** execute ทั้ง 99 branches ด้วย live authenticated DB data, generated React Native
+  codegen/compile, production deployment และ behavior บนอุปกรณ์จริง · ยังไม่ได้ย้าย/ลบ REST callers
+  และไม่ได้เปลี่ยนระบบเป็น WebSocket 100%; subscription/realtime transport อยู่นอก client-readiness brief นี้
