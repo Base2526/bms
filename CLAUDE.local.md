@@ -4935,3 +4935,30 @@ branch `feat/restaurant-receipt-preview` · `tsc` ผ่าน · **pure 809/809
 **ตั้งใจยังไม่ย้าย return flow เข้าหน้าร้านอาหาร:** flow เดิมครอบคลุม partial quantity, split refund,
 pending non-cash, second approver, serial, cross-branch และ immutable history/printing; การย้ายเพียงบางส่วน
 จะสร้าง money path ที่พฤติกรรมไม่เท่ากัน จึงคงลิงก์ไปโหมดค้าปลีกและควรทำเป็นรอบแยกพร้อม DB/browser tests.
+
+### GraphQL client readiness — Phase 1: committed SDL + drift gate (2026-09-11)
+
+- เพิ่ม canonical renderer `renderBmsGraphqlSdl()` จาก `buildBmsGraphqlSchema()` และคำสั่ง
+  `cd apps/web && npm run schema:export` ซึ่งเขียน `schema.graphql` จาก executable schema จริง
+  (เรียงแบบ lexicographic เพื่อไม่ให้ลำดับ import สร้าง diff หลอก) · artifact ปัจจุบัน 4,909 บรรทัด
+- เพิ่ม `graphql-schema-artifact-contract.test.mts` เข้า pure runner: เทียบ artifact กับ renderer
+  โดย normalize เฉพาะ CRLF/LF แบบเดียวกับ schema-readiness gate · endpoint production ยังปิด
+  introspection เหมือนเดิม และ client ใช้ไฟล์ที่ commit แทน
+- **กับดักที่เจอ:** ชื่อโฟลเดอร์ `apps/web/graphql` ชนกับชื่อ package `graphql` ภายใต้
+  `baseUrl="."`; import จาก `"graphql"`/`"graphql/index.js"` ถูก `tsx` resolve กลับเข้าไฟล์ local
+  และไม่มี `printSchema` · ต้อง import package subpath `graphql/utilities/index.js` · รัน test file
+  ตรง ๆ โดยไม่มี `scripts/testing/next-runtime-shim.mjs` ก็ล้มที่ `server-only`, จึงต้องผ่าน runner กลาง
+- **mutation test ผ่าน:** เปลี่ยน `BankEntityDetail` ใน artifact เป็น
+  `BankEntityDetailMutated` ชั่วคราว → แดงเฉพาะ subtest
+  `committed schema.graphql matches the executable BMS GraphQL schema` พร้อม diff ที่ชื่อ type;
+  คืนแล้ว SHA-256 ตรงก่อน mutate ทุกไบต์
+  (`7C42268635E9CC32ED7F422B072BC4DF4B7C56E2BE3336407F539450C7CADB33`) และ focused test กลับเขียว
+- **verify บน clean worktree ของ commit `6387530b`:** Web gate ผ่าน — typecheck,
+  pure **1,095/1,095**, production build 113 routes/pages (exit 0) · `apps/ws npx tsc --noEmit`
+  ผ่าน · main worktree รอบแรกแดง 2 เทสเพราะ realtime diff ที่ค้างจากก่อน Phase 1 เปลี่ยนชื่อ
+  dispatcher โดยยังไม่เปลี่ยนเทส; ไม่ใช่ Phase 1 และไม่ได้แตะ/รวม diff ชุดนั้น
+- **warning ที่ไม่ใช่ failure:** build ยังเห็น Edge trace ของ `jsonwebtoken`, Browserslist เก่า,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ระหว่าง static generation แต่ build จบ exit 0
+- **ไม่ได้ทำ/ยังไม่ได้ verify:** Phase 2 typed inputs, Phase 3 typed outputs, client codegen จริง และ
+  production deployment ยังไม่เริ่ม · ไม่รัน DB test เพราะเฟสนี้ไม่อ่าน/เขียน DB · ไม่มี migration,
+  permission, REST, subscription หรือ realtime change ใน commit นี้
