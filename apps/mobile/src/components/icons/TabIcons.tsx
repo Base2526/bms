@@ -135,3 +135,36 @@ export function ShiftIcon({ color, size = 24 }: TabIconProps) {
     </Svg>
   );
 }
+
+export function OrdersIcon({ color, size = 24 }: TabIconProps) {
+  // กระดิ่ง — แท็บ "ออร์เดอร์เข้า" คือที่ที่ของจากข้างนอกมารอให้คนกดรับ
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect
+        x={6}
+        y={4}
+        width={12}
+        height={11}
+        rx={6}
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Line
+        x1={4}
+        y1={16}
+        x2={20}
+        y2={16}
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+      />
+      <Circle
+        cx={12}
+        cy={19}
+        r={1.6}
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+      />
+    </Svg>
+  );
+}

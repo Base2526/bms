@@ -80,6 +80,24 @@
   - แถบกรองสถานีสร้างจากสถานีที่มีตั๋วจริงด้วย และปลดตัวกรองให้เองเมื่อสถานีนั้นหมดงาน
 - ✅ Login จำสาขา/ผู้ปฏิบัติงานที่เลือกไว้ (`state/SessionContext.tsx`) แล้วหน้ากะใช้ชื่อเดียวกัน
   — **ยังไม่ใช่การยืนยันตัวตน** แค่เลิกทิ้งค่าที่คนเพิ่งเลือก
+- ✅ **แจ้งเตือนเมื่อมีออร์เดอร์เข้า** — แท็บ "ออร์เดอร์เข้า" (มีทุกโหมดร้าน) รับข้อเสนอจาก
+  แชท/ออนไลน์/QR ที่โต๊ะ แล้วต้องมีคนกดรับก่อนงานถึงจะเข้าครัว (กฎเดียวกับฝั่งเว็บ:
+  การจ่ายเงินไม่เคยสร้างงานครัว มีแต่การกดรับของคน) · ปฏิเสธต้องมีเหตุผลเสมอ
+  - **ช่องทางที่การันตีได้: ป้ายตัวเลขบนแท็บ + แถบแดงบนจอ** — ขึ้นบนผังโต๊ะ จอครัว และจอขาย
+    ไม่ใช่เฉพาะแท็บออร์เดอร์ (แจ้งเตือนที่เห็นได้ต่อเมื่อเปิดแท็บนั้นอยู่ = แจ้งเตือนที่ไม่มีใครเห็น
+    — บั๊กที่ฝั่งเว็บเจอมาแล้ว)
+  - **สั่นจริง** ด้วย `Vibration` ที่มากับ RN (เพิ่ม `android.permission.VIBRATE` ใน manifest แล้ว)
+    · รูปแบบการสั่นของ "ออร์เดอร์เข้า" กับ "ตั๋วครัวใหม่" แยกจากกันด้วยจังหวะ
+  - **ย้ำซ้ำทุก 15/30/60 วินาที** จนกว่าจะมีคนกด "รับทราบ" — ออร์เดอร์ที่ไม่มีใครเห็นคือออร์เดอร์ที่หาย
+    · รับทราบแล้วเงียบจนกว่าจะมีใบใหม่ (ถ้าหยุดการย้ำไม่ได้ คนหน้าร้านจะปิดสวิตช์ใหญ่ทิ้ง
+    แล้วออร์เดอร์จริงใบถัดไปก็เงียบไปด้วย)
+  - **ค่าปริยายเปิดไว้** — ฝั่งเว็บเคยตั้งเป็นปิด แล้วแท็บเล็ตเครื่องใหม่ทุกเครื่องเริ่มต้นแบบเงียบ
+    ซึ่งพนักงานอ่านไม่ต่างจาก "ระบบนี้ไม่มีเสียงเตือน"
+  - **รอบแรกหลังเปิดแอปเป็นการตั้งต้น ไม่ใช่ของใหม่** — เปิดมาเจอของค้างอยู่แล้วต้องไม่สั่นรัว
+  - ❌ **ยังไม่มีเสียงจริง** — RN ไม่มี API เสียงในตัว ต้องมี native module (ดูหัวข้อถัดไป)
+    · UI บอกตรง ๆ ว่าเครื่องนี้ยังเล่นเสียงไม่ได้ แทนที่จะโชว์สวิตช์ที่เปิดอยู่แต่เงียบสนิท
+  - ❌ **ยังไม่มี push notification** — แจ้งเตือนได้เฉพาะตอนแอปเปิดอยู่ · แอปที่ถูกปิด/พับไว้เงียบสนิท
+    (ต้องมี FCM/APNs + backend ซึ่งอยู่นอกขอบเขตกลุ่ม A)
 - ✅ Responsive/tablet — **ทุกหน้าใช้พื้นที่จริงของจอไอแพด ไม่มีหน้าไหนเป็นคอลัมน์ขนาดมือถือกลางจอ**
   (`src/theme/useResponsive.ts` + `useWindowDimensions`):
   1. กริด (เมนู/ผังโต๊ะ/ตั๋วครัว) ปรับคอลัมน์ตามความกว้าง **ของพื้นที่กริดจริง** (`columnsForWidth`)
@@ -97,6 +115,43 @@
 - ❌ ยังไม่มี GraphQL/Apollo Client, ยังไม่มี cashier auth/session จริง, ยังไม่มี WebSocket subscription
 - ❌ ยังไม่แตะฮาร์ดแวร์ (เครื่องพิมพ์ ESC/POS, สแกนเนอร์, จอลูกค้า) — ตกลงกันไว้แล้วว่าเป็นงานฝั่ง client
   แยกทีหลัง หลัง backend/schema นิ่ง
+
+## เปิดเสียงแจ้งเตือนจริง (ต้อง build native ใหม่)
+
+React Native ไม่มี API เสียงในตัว — การเล่นเสียงต้องมี native module ซึ่งต้อง `pod install` +
+build ใหม่ทั้ง iOS/Android
+
+**เครื่องที่เขียนฟีเจอร์นี้ build native ไม่ได้** (ไม่มี Xcode/Android SDK/Java) จึง **ไม่ใส่
+dependency ที่ไม่เคยคอมไพล์ลง package.json** — โมดูลที่ไม่เคยคอมไพล์แปลว่าทุกคนในทีม build ไม่ผ่าน
+และการบอกว่า "มีเสียงแล้ว" ทั้งที่ไม่เคยได้ยิน คือบั๊กแบบเดียวกับที่ฝั่งเว็บโดนมา (ปุ่มโชว์ว่า
+เปิดเสียงอยู่แต่เงียบสนิทเพราะ AudioContext ถูกบล็อก — อยู่ได้เป็นเดือนกว่าจะมีคนเจอ)
+
+แทนที่จะเดา จึงเปิด "รู" ไว้ที่เดียวใน `src/lib/orderAlertSound.ts` · ติดตั้งโมดูลเสียงแล้วเรียก
+`registerOrderAlertSoundPlayer()` **หนึ่งครั้งตอนบูตแอป** เสียงจะทำงานทันทีโดยไม่ต้องแก้โค้ดที่อื่นเลย
+
+```ts
+// index.js (หรือ App.tsx ก่อน render) — ตัวอย่างกับ react-native-sound
+import Sound from 'react-native-sound';
+import { registerOrderAlertSoundPlayer } from './src/lib/orderAlertSound';
+
+Sound.setCategory('Playback');
+const tones = {
+  incoming_order: new Sound('order_in.mp3', Sound.MAIN_BUNDLE),
+  kitchen_ticket: new Sound('kitchen.mp3', Sound.MAIN_BUNDLE),
+};
+
+registerOrderAlertSoundPlayer({
+  play: kind => {
+    const tone = tones[kind];
+    // ⚠️ ต้องคืน false เมื่อไม่ได้ดังจริง — ตัวเรียกใช้ค่านี้ตัดสินใจว่าจะขึ้นแถบเตือนแทนไหม
+    if (!tone?.isLoaded()) return false;
+    tone.stop(() => tone.play());
+    return true;
+  },
+});
+```
+
+หลังต่อแล้วต้องยืนยันด้วยหูจริง — **เสียงเป็นของที่เทสยืนยันแทนไม่ได้**
 
 ## recheck รอบ 2026-09-11 — เจอของจริง 13 จุด แก้ครบแล้ว
 
@@ -187,16 +242,21 @@ apps/mobile/
     state/KitchenContext.tsx    — ตั๋วครัว (seed จาก mock + รอบที่ส่งครัว) scope ทั้งแท็บ
     state/ShiftContext.tsx      — กะ/ลิ้นชัก; อ่านบิลจาก SalesContext จึงต้องอยู่ใต้ SalesProvider
     state/SessionContext.tsx    — สาขา/ผู้ปฏิบัติงานที่เลือกตอน Login (ไม่ใช่ auth)
+    state/IncomingOrdersContext — คิวออร์เดอร์เข้า (แชท/ออนไลน์/QR) ที่ต้องมีคนกดรับ
+    state/OrderAlertContext     — สถานะแจ้งเตือนชุดเดียวทั้งแอป (module store ไม่ใช่ state ใน hook)
     lib/paymentMath.ts          — pure split-payment validation/change/quick cash
     lib/returnMath.ts           — pure return total + refund allocation ไปช่องทางเดิม
     lib/shiftMath.ts            — pure drawer math (สูตรเดียวของ "เงินที่ควรมีในลิ้นชัก")
     lib/kitchenBoard.ts         — pure ticket flow/เวลารอ/แตกตั๋วตามสถานี
+    lib/orderAlert.ts           — pure กติกาแจ้งเตือน (ของใหม่/ย้ำซ้ำ/รูปแบบสั่น/เตือนถึงไหม)
+    lib/orderAlertSound.ts      — จุดเสียบเสียงจริง (ยังไม่มีโมดูลเสียงติดตั้ง)
     components/MoneyField.tsx   — ช่องกรอกเงินที่พิมพ์ทศนิยมได้จริง (ดูคอมเมนต์ในไฟล์)
     screens/
       LoginScreen.tsx           — เลือกสาขา/ผู้ปฏิบัติงาน + PIN keypad (ยังไม่ยืนยันตัวตนจริง)
       settings/                 — จับคู่/เลิกจับคู่เครื่อง + ตรวจ device token กับ server
       sell/                     — Menu → Checkout → Receipt → SalesHistory/SaleDetail (ค้าปลีก + restaurant checkout)
       floor/                    — Floor (ผังโต๊ะ) → CheckDetail (บิลโต๊ะ) → TableMenu (สั่งอาหาร, มือถือ)
+      orders/                   — IncomingOrders (คิวออร์เดอร์เข้า + รับ/ปฏิเสธ + ตั้งค่าแจ้งเตือน)
       kitchen/                  — KitchenBoard (จอครัว, ตัวกรองสถานี, เลื่อน/ย้อนสถานะตั๋ว)
       shift/                    — Shift (กะ/ลิ้นชัก/เงินเข้า-ออก/ปิดกะ-นับเงิน)
     mocks/                      — ข้อมูลจำลองทั้งหมด รูปทรงใกล้เคียงกับที่ GraphQL น่าจะคืนจริง
@@ -209,7 +269,7 @@ npm install
 cd ios && export LANG=en_US.UTF-8 && pod install && cd ..
 npm run ios      # หรือ: npx react-native run-ios --simulator "iPhone 17"
 npm run android  # ต้องมี Android SDK/emulator ตั้งไว้แล้ว
-npm test         # Jest: 13 ไฟล์ / 63 เทส (pure math + pairing + smoke test ของคอมโพเนนต์)
+npm test         # Jest: 16 ไฟล์ / 88 เทส (pure math + แจ้งเตือน + pairing + smoke test)
 npm run typecheck
 npm run lint
 ```
@@ -229,7 +289,11 @@ throw `Encoding::CompatibilityError` ไม่งั้น — เจอบน�
 - การคิดเงินจริงยังไม่เกิด: checkout/return/void ทั้งหมดเป็น state ใน memory และป้าย TEST เท่านั้น
   รอบต่อ backend ต้องเปลี่ยนเป็น server preview, cashier session, RBAC/second-person approval และ
   idempotency key ต่อ mutation จริง
-- ไม่มี push notification, ไม่มี background fetch
+- ไม่มี push notification, ไม่มี background fetch — แจ้งเตือนได้เฉพาะตอนแอปเปิดอยู่เท่านั้น
+  แอปที่ถูกปิดหรือพับไว้เงียบสนิท (ต้องมี FCM/APNs + backend)
+- ออร์เดอร์เข้าเป็นของจำลอง เข้ามาได้ทางเดียวคือปุ่ม "จำลองออร์เดอร์เข้า (TEST)" ในจอคิว
+  — ตอนต่อ backend ให้แทน `simulateArrival` ด้วย subscription/poll จริง แล้ว **ถอดปุ่มนั้นทิ้ง**
+- ตั้งค่าแจ้งเตือนอยู่ในหน่วยความจำ ปิดแอปแล้วกลับค่าปริยาย (ซึ่งคือ "เปิด" จึงไม่ใช่การเงียบ)
 - ไม่มี native module สำหรับเครื่องพิมพ์/สแกนเนอร์/จอลูกค้า
 - หน้าสแกนบาร์โค้ดที่มีอยู่เป็น test harness เท่านั้น — native camera และเครื่องสแกนจริงยังเป็นงาน
   hardware integration; ห้ามใช้ timing ของ keyboard เป็นหลักฐานว่าเป็น HID scanner

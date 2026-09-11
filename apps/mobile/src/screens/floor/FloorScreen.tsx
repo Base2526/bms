@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { StatusPill, StatusTone } from '../../components/StatusPill';
+import { OrderAlertBanner } from '../../components/OrderAlertBanner';
 import { useTheme } from '../../theme/ThemeProvider';
 import { padGrid, useResponsive } from '../../theme/useResponsive';
 import { useChecks } from '../../state/ChecksContext';
@@ -25,6 +26,11 @@ export default function FloorScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
+      {/* แถบออร์เดอร์เข้าอยู่บนจอที่พนักงานยืนจริง ไม่ใช่เฉพาะแท็บออร์เดอร์ —
+          แจ้งเตือนที่เห็นได้ต่อเมื่อเปิดแท็บนั้นอยู่แล้ว คือแจ้งเตือนที่ไม่มีใครเห็น */}
+      <OrderAlertBanner
+        onOpenQueue={() => navigation.getParent<any>()?.navigate('OrdersTab')}
+      />
       <Text style={[typography.title, { color: colors.text }]}>ผังโต๊ะ</Text>
       <Text
         style={[

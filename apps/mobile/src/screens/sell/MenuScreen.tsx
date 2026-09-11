@@ -16,6 +16,7 @@ import { Button } from '../../components/Button';
 import { MenuGrid } from '../../components/MenuGrid';
 import { QtyStepper } from '../../components/QtyStepper';
 import { BarcodeScannerModal } from '../../components/BarcodeScannerModal';
+import { OrderAlertBanner } from '../../components/OrderAlertBanner';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
@@ -87,32 +88,39 @@ export default function MenuScreen({ navigation }: Props) {
       artHeight={isTablet ? 116 : 96}
       catalog={catalog}
       header={
-        <View style={styles.menuHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.title, { color: colors.text }]}>
-              {screenTitle}
-            </Text>
-            {lastScanned ? (
-              <Text
-                style={[typography.captionStrong, { color: colors.success }]}
-              >
-                เพิ่มจากบาร์โค้ดแล้ว · {lastScanned}
+        <>
+          <OrderAlertBanner
+            onOpenQueue={() =>
+              navigation.getParent<any>()?.navigate('OrdersTab')
+            }
+          />
+          <View style={styles.menuHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.title, { color: colors.text }]}>
+                {screenTitle}
               </Text>
-            ) : null}
+              {lastScanned ? (
+                <Text
+                  style={[typography.captionStrong, { color: colors.success }]}
+                >
+                  เพิ่มจากบาร์โค้ดแล้ว · {lastScanned}
+                </Text>
+              ) : null}
+            </View>
+            <Button
+              label="▥ สแกนบาร์โค้ด"
+              accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ดทดสอบ"
+              variant="secondary"
+              onPress={() => setScannerOpen(true)}
+            />
+            <Button
+              label="ประวัติ"
+              accessibilityLabel="เปิดประวัติการขายล่าสุด"
+              variant="secondary"
+              onPress={() => navigation.navigate('SalesHistory')}
+            />
           </View>
-          <Button
-            label="▥ สแกนบาร์โค้ด"
-            accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ดทดสอบ"
-            variant="secondary"
-            onPress={() => setScannerOpen(true)}
-          />
-          <Button
-            label="ประวัติ"
-            accessibilityLabel="เปิดประวัติการขายล่าสุด"
-            variant="secondary"
-            onPress={() => navigation.navigate('SalesHistory')}
-          />
-        </View>
+        </>
       }
     />
   );

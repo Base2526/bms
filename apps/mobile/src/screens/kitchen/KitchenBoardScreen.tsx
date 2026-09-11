@@ -4,6 +4,7 @@ import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { StatusPill, StatusTone } from '../../components/StatusPill';
+import { OrderAlertBanner } from '../../components/OrderAlertBanner';
 import { useTheme } from '../../theme/ThemeProvider';
 import { padGrid, useResponsive } from '../../theme/useResponsive';
 import { useKitchen } from '../../state/KitchenContext';
@@ -16,6 +17,8 @@ import {
   type TicketStatus,
 } from '../../lib/kitchenBoard';
 import { mockKitchenStations } from '../../mocks/kitchenTickets';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { KitchenStackParamList } from '../../navigation/types';
 
 const STATUS_LABEL: Record<TicketStatus, { label: string; tone: StatusTone }> =
   {
@@ -36,7 +39,9 @@ const ALL = 'ทั้งหมด';
 
 // จอครัว — ตั๋วมาจาก KitchenContext (รอบที่กด "ส่งครัว" จากบิลโต๊ะจะโผล่ที่นี่ทันที)
 // ⚠️ ยังไม่มี WS subscription: ทุกอย่างอยู่ในหน่วยความจำของเครื่องเดียว เครื่องอื่นไม่เห็นกัน
-export default function KitchenBoardScreen() {
+type Props = NativeStackScreenProps<KitchenStackParamList, 'KitchenBoard'>;
+
+export default function KitchenBoardScreen({ navigation }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const { gridColumns } = useResponsive();
   const { tickets, advanceTicket, rollbackTicket } = useKitchen();
@@ -72,6 +77,9 @@ export default function KitchenBoardScreen() {
 
   return (
     <ScreenContainer>
+      <OrderAlertBanner
+        onOpenQueue={() => navigation.getParent<any>()?.navigate('OrdersTab')}
+      />
       <View style={styles.headRow}>
         <Text style={[typography.title, { color: colors.text }]}>จอครัว</Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>

@@ -29,6 +29,10 @@ export type FloorStackParamList = {
   TableMenu: { tableId: string };
 };
 
+export type OrdersStackParamList = {
+  IncomingOrders: undefined;
+};
+
 export type KitchenStackParamList = {
   KitchenBoard: undefined;
 };
@@ -39,6 +43,7 @@ export type ShiftStackParamList = {
 
 export type MainTabParamList = {
   SellTab: undefined;
+  OrdersTab: undefined;
   FloorTab: undefined;
   KitchenTab: undefined;
   ShiftTab: undefined;

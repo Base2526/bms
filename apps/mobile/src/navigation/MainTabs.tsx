@@ -4,14 +4,20 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
 import { CartProvider } from '../state/CartContext';
 import { ChecksProvider } from '../state/ChecksContext';
+import {
+  IncomingOrdersProvider,
+  useIncomingOrders,
+} from '../state/IncomingOrdersContext';
 import { KitchenProvider } from '../state/KitchenContext';
 import { SalesProvider } from '../state/SalesContext';
 import { sessionCashierName, useSession } from '../state/SessionContext';
 import { ShiftProvider } from '../state/ShiftContext';
 import { useStoreMode } from '../state/StoreModeContext';
+import { OrderAlertWatcher } from '../components/OrderAlertWatcher';
 import {
   FloorIcon,
   KitchenIcon,
+  OrdersIcon,
   SellIcon,
   ShiftIcon,
 } from '../components/icons/TabIcons';
@@ -24,11 +30,13 @@ import SalesHistoryScreen from '../screens/sell/SalesHistoryScreen';
 import FloorScreen from '../screens/floor/FloorScreen';
 import CheckDetailScreen from '../screens/floor/CheckDetailScreen';
 import TableMenuScreen from '../screens/floor/TableMenuScreen';
+import IncomingOrdersScreen from '../screens/orders/IncomingOrdersScreen';
 import KitchenBoardScreen from '../screens/kitchen/KitchenBoardScreen';
 import ShiftScreen from '../screens/shift/ShiftScreen';
 
 import type {
   MainTabParamList,
+  OrdersStackParamList,
   SellStackParamList,
   FloorStackParamList,
   KitchenStackParamList,
@@ -38,6 +46,7 @@ import type {
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const SellStack = createNativeStackNavigator<SellStackParamList>();
 const FloorStack = createNativeStackNavigator<FloorStackParamList>();
+const OrdersStack = createNativeStackNavigator<OrdersStackParamList>();
 const KitchenStack = createNativeStackNavigator<KitchenStackParamList>();
 const ShiftStack = createNativeStackNavigator<ShiftStackParamList>();
 
@@ -63,6 +72,17 @@ function FloorNavigator() {
   );
 }
 
+function OrdersNavigator() {
+  return (
+    <OrdersStack.Navigator screenOptions={{ headerShown: false }}>
+      <OrdersStack.Screen
+        name="IncomingOrders"
+        component={IncomingOrdersScreen}
+      />
+    </OrdersStack.Navigator>
+  );
+}
+
 function KitchenNavigator() {
   return (
     <KitchenStack.Navigator screenOptions={{ headerShown: false }}>
@@ -79,13 +99,39 @@ function ShiftNavigator() {
   );
 }
 
-// แท็บล่าง 4 อัน ตรงกับ 4 หน้าจอหลักของกลุ่ม A ที่คุยกันไว้:
-// ขาย(retail) · ผังโต๊ะ(restaurant) · จอครัว · กะ/ลิ้นชัก
-// เมนู "ผังโต๊ะ" ไว้ให้ทุก build ก่อน — ตอนต่อ backend จริงค่อยซ่อนตามประเภทร้าน (retail vs restaurant)
+// แท็บล่าง: ขาย · ออร์เดอร์เข้า · (ร้านอาหารได้ ผังโต๊ะ + ครัว เพิ่ม) · กะ/ลิ้นชัก
+//
+// "ออร์เดอร์เข้า" มีให้ทุกโหมดโดยตั้งใจ — การสั่งออนไลน์/แชทไม่ใช่เรื่องของร้านอาหารอย่างเดียว
+// ส่วนผังโต๊ะ/ครัวขึ้นเฉพาะร้านอาหาร · ตอนต่อ backend จริงค่อยซ่อนตามประเภทร้านจาก server
 export function MainTabs() {
+  const { session } = useSession();
+
+  // ⚠️ ลำดับของ provider มีความหมาย: ShiftProvider อ่านบิลจาก SalesProvider เพื่อคิดเงินสด
+  // ในลิ้นชัก จึงต้องอยู่ข้างใน · KitchenProvider/IncomingOrdersProvider อยู่นอก Tab.Navigator
+  // เพราะตั๋วครัวและออร์เดอร์เข้าต้องข้ามแท็บได้ (รับที่แท็บออร์เดอร์ แล้วไปเห็นที่แท็บครัว)
+  return (
+    <SalesProvider>
+      <ShiftProvider openedByName={sessionCashierName(session)}>
+        <CartProvider>
+          <ChecksProvider>
+            <KitchenProvider>
+              <IncomingOrdersProvider>
+                {/* เฝ้าดูของใหม่ทั้งแอป — ไม่ผูกกับแท็บที่เปิดอยู่ (ดูคอมเมนต์ในไฟล์) */}
+                <OrderAlertWatcher />
+                <TabsShell />
+              </IncomingOrdersProvider>
+            </KitchenProvider>
+          </ChecksProvider>
+        </CartProvider>
+      </ShiftProvider>
+    </SalesProvider>
+  );
+}
+
+function TabsShell() {
   const { colors } = useTheme();
   const { mode } = useStoreMode();
-  const { session } = useSession();
+  const { pendingCount } = useIncomingOrders();
   const sellTitle =
     mode === 'restaurant'
       ? 'เมนูอาหาร'
@@ -94,77 +140,75 @@ export function MainTabs() {
       : 'ขายสินค้า';
 
   return (
-    // ChecksProvider ครอบทั้งแท็บ — บิลของโต๊ะถูกอ่านจากผังโต๊ะ หน้าบิล และจอสั่งอาหารของโต๊ะ
-    // (ต่างจาก CartProvider ที่ผูกอยู่กับ stack ขายกลับบ้านอย่างเดียว)
-    // ⚠️ ลำดับของ provider มีความหมาย: ShiftProvider อ่านบิลจาก SalesProvider เพื่อคิดเงินสด
-    // ในลิ้นชัก จึงต้องอยู่ข้างใน · KitchenProvider อยู่นอก Tab.Navigator เพราะตั๋วครัวต้องข้าม
-    // แท็บได้ (ส่งครัวจากแท็บผังโต๊ะ แล้วไปเห็นที่แท็บครัว)
-    <SalesProvider>
-      <ShiftProvider openedByName={sessionCashierName(session)}>
-        <CartProvider>
-          <ChecksProvider>
-            <KitchenProvider>
-              <Tab.Navigator
-                key={mode}
-                screenOptions={{
-                  headerShown: false,
-                  tabBarActiveTintColor: colors.primary,
-                  tabBarInactiveTintColor: colors.textMuted,
-                  tabBarStyle: {
-                    backgroundColor: colors.surface,
-                    borderTopColor: colors.border,
-                  },
-                }}
-              >
-                <Tab.Screen
-                  name="SellTab"
-                  component={SellNavigator}
-                  options={{
-                    title: sellTitle,
-                    tabBarIcon: ({ color, size }) => (
-                      <SellIcon color={color} size={size} />
-                    ),
-                  }}
-                />
-                {mode === 'restaurant' && (
-                  <>
-                    <Tab.Screen
-                      name="FloorTab"
-                      component={FloorNavigator}
-                      options={{
-                        title: 'ผังโต๊ะ',
-                        tabBarIcon: ({ color, size }) => (
-                          <FloorIcon color={color} size={size} />
-                        ),
-                      }}
-                    />
-                    <Tab.Screen
-                      name="KitchenTab"
-                      component={KitchenNavigator}
-                      options={{
-                        title: 'ครัว',
-                        tabBarIcon: ({ color, size }) => (
-                          <KitchenIcon color={color} size={size} />
-                        ),
-                      }}
-                    />
-                  </>
-                )}
-                <Tab.Screen
-                  name="ShiftTab"
-                  component={ShiftNavigator}
-                  options={{
-                    title: 'กะ',
-                    tabBarIcon: ({ color, size }) => (
-                      <ShiftIcon color={color} size={size} />
-                    ),
-                  }}
-                />
-              </Tab.Navigator>
-            </KitchenProvider>
-          </ChecksProvider>
-        </CartProvider>
-      </ShiftProvider>
-    </SalesProvider>
+    <Tab.Navigator
+      key={mode}
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+        },
+      }}
+    >
+      <Tab.Screen
+        name="SellTab"
+        component={SellNavigator}
+        options={{
+          title: sellTitle,
+          tabBarIcon: ({ color, size }) => (
+            <SellIcon color={color} size={size} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="OrdersTab"
+        component={OrdersNavigator}
+        options={{
+          title: 'ออร์เดอร์เข้า',
+          // ป้ายบนแท็บเป็นช่องทางแจ้งเตือนที่ "การันตีได้" — เห็นได้จากทุกแท็บโดยไม่ต้องพึ่งเสียง
+          // หรือการสั่น ซึ่งแท็บเล็ตหน้าร้านหลายรุ่นไม่มี
+          tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
+          tabBarIcon: ({ color, size }) => (
+            <OrdersIcon color={color} size={size} />
+          ),
+        }}
+      />
+      {mode === 'restaurant' && (
+        <>
+          <Tab.Screen
+            name="FloorTab"
+            component={FloorNavigator}
+            options={{
+              title: 'ผังโต๊ะ',
+              tabBarIcon: ({ color, size }) => (
+                <FloorIcon color={color} size={size} />
+              ),
+            }}
+          />
+          <Tab.Screen
+            name="KitchenTab"
+            component={KitchenNavigator}
+            options={{
+              title: 'ครัว',
+              tabBarIcon: ({ color, size }) => (
+                <KitchenIcon color={color} size={size} />
+              ),
+            }}
+          />
+        </>
+      )}
+      <Tab.Screen
+        name="ShiftTab"
+        component={ShiftNavigator}
+        options={{
+          title: 'กะ',
+          tabBarIcon: ({ color, size }) => (
+            <ShiftIcon color={color} size={size} />
+          ),
+        }}
+      />
+    </Tab.Navigator>
   );
 }
