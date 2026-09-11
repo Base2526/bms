@@ -77,6 +77,9 @@ test("every compose file injects the web ticket TTL and WS gateway controls", ()
       "WS_MAX_CONNECTIONS_PER_USER", "WS_MAX_CONNECTIONS_PER_TENANT",
       "WS_MAX_SUBSCRIPTIONS_PER_CONNECTION", "WS_CONNECTION_INIT_TIMEOUT_MS",
       "WS_IDLE_TIMEOUT_MS", "WS_MAX_MESSAGE_BYTES",
+      "REALTIME_SUBSCRIPTIONS_ENABLED", "REALTIME_ORDERS_ENABLED",
+      "REALTIME_RESTAURANT_ENABLED", "REALTIME_INVENTORY_ENABLED",
+      "REALTIME_PAYMENTS_ENABLED",
     ]) assert.match(compose, new RegExp(`${key}:`), `${key} missing from a compose file`);
   }
 });

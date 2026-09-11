@@ -63,3 +63,16 @@ test("location scope and permission arrays are bounded and unique", () => {
     permissions: ["order.view", "order.view"],
   }), now), /INVALID_PERMISSIONS/);
 });
+
+test("POS tickets require one server-derived tenant, device and location scope", () => {
+  const pos = claims({
+    scope: "pos",
+    sessionId: undefined,
+    allLocations: false,
+    locationIds: ["55555555-5555-4555-8555-555555555555"],
+  });
+  assert.doesNotThrow(() => validateRealtimeTicketClaims(pos, now));
+  assert.throws(() => validateRealtimeTicketClaims({ ...pos, tenantId: undefined }, now), /POS_SCOPE_REQUIRED/);
+  assert.throws(() => validateRealtimeTicketClaims({ ...pos, locationIds: [] }, now), /POS_SCOPE_REQUIRED/);
+  assert.throws(() => validateRealtimeTicketClaims({ ...pos, allLocations: true }, now), /POS_SCOPE_REQUIRED/);
+});

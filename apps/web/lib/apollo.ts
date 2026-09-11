@@ -137,7 +137,7 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // Lazy WebSocket link (สำหรับ Subscription)
 // - keeps auth/first paint lighter by loading ws deps only when needed
 // ----------------------------
-type WsScope = "web" | "admin";
+type WsScope = "web" | "admin" | "pos";
 export type RealtimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "degraded";
 const wsLinks: Partial<Record<WsScope, ApolloLink>> = {};
 const wsLinkLoading: Partial<Record<WsScope, Promise<ApolloLink>>> = {};
@@ -159,6 +159,7 @@ function emitRealtimeStatus(status: RealtimeConnectionStatus, scope: WsScope) {
 if (typeof window !== "undefined") {
   window.addEventListener("backend-logout", resetRealtimeConnections);
   window.addEventListener("frontend-logout", resetRealtimeConnections);
+  window.addEventListener("bms-pos-device-token-changed", resetRealtimeConnections);
   window.addEventListener("beforeunload", resetRealtimeConnections);
 }
 
@@ -183,10 +184,14 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
           await new Promise((resolve) => window.setTimeout(resolve, capped + jitter));
         },
         connectionParams: async () => {
+          const posToken = scope === "pos" ? window.localStorage.getItem("bms.pos.deviceToken") ?? "" : "";
           const response = await fetch(`/api/bms/realtime/ticket?scope=${scope}`, {
             method: "POST",
             credentials: "include",
-            headers: { "content-type": "application/json" },
+            headers: {
+              "content-type": "application/json",
+              ...(scope === "pos" ? { "x-pos-device-token": posToken } : {}),
+            },
           });
           if (!response.ok) throw new Error(`REALTIME_TICKET_${response.status}`);
           const body = await response.json() as { ticket?: unknown };
@@ -223,7 +228,11 @@ const lazyWsLink = new ApolloLink((operation) => {
 
   return new Observable((observer) => {
     let sub: any;
-    const scope: WsScope = window.location.pathname.startsWith("/admin") ? "admin" : "web";
+    const scope: WsScope = window.location.pathname.startsWith("/admin")
+      ? "admin"
+      : window.location.pathname === "/pos" || window.location.pathname.startsWith("/pos/")
+        ? "pos"
+        : "web";
     loadWsLink(scope)
       .then((link) => {
         const obs = link.request(operation);

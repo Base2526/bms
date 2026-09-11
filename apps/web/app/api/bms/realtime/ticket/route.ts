@@ -8,7 +8,7 @@ import {
   verifyUserSession,
 } from "@/lib/auth/server";
 import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
-import { mintAdminRealtimeTicket, mintUserRealtimeTicket } from "@/lib/bms/realtimeAuth";
+import { mintAdminRealtimeTicket, mintPosRealtimeTicket, mintUserRealtimeTicket } from "@/lib/bms/realtimeAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 async function handlePOST(req: NextRequest) {
   const requestedScope = (req.nextUrl.searchParams.get("scope") || "web").toLowerCase();
-  if (!(["admin", "web", "android"] as string[]).includes(requestedScope)) {
+  if (!(["admin", "web", "android", "pos"] as string[]).includes(requestedScope)) {
     return NextResponse.json({ error: "INVALID_REALTIME_SCOPE" }, { status: 400 });
   }
 
@@ -25,7 +25,9 @@ async function handlePOST(req: NextRequest) {
       verifyAdminSession() ?? verifyAdminFromRequest(req),
       verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value),
     )
-    : await mintUserRealtimeTicket(
+    : requestedScope === "pos"
+      ? await mintPosRealtimeTicket(req.headers.get("x-pos-device-token") ?? "")
+      : await mintUserRealtimeTicket(
       requestedScope as "web" | "android",
       requestedScope === "android" ? verifyUserFromRequest(req) : verifyUserSession(),
     );

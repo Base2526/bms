@@ -48,7 +48,9 @@ test("dispatcher acknowledges success and schedules a bounded retry without leak
   const first: ClaimedRealtimeEvent = {
     claimToken: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     attempts: 1,
-    event: makeRealtimeEventFixture("order.status_changed"),
+    event: makeRealtimeEventFixture("order.status_changed", {
+      locationId: "44444444-4444-4444-8444-444444444444",
+    }),
   };
   const second: ClaimedRealtimeEvent = {
     claimToken: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -56,6 +58,7 @@ test("dispatcher acknowledges success and schedules a bounded retry without leak
     event: makeRealtimeEventFixture("payment.confirmed", {
       eventId: "77777777-7777-4777-8777-777777777777",
       entityType: "payment",
+      locationId: "44444444-4444-4444-8444-444444444444",
     }),
   };
   const acked: string[] = [];

@@ -33,11 +33,11 @@ test("outbox commit/rollback, tenant isolation, claims, retry, and acknowledgeme
 
   const candidate = (eventId: string) => realtimeEvent({
     eventId,
-    eventType: "order.status_changed",
+    eventType: "dashboard.invalidated",
     tenantId,
     actorType: "SYSTEM",
-    entityType: "order",
-    entityId: randomUUID(),
+    entityType: "dashboard",
+    entityId: tenantId,
     aggregateVersion: 1,
     occurredAt: new Date().toISOString(),
   });

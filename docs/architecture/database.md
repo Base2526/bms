@@ -982,7 +982,7 @@ the merchant cause. Repricing differences absorbed by the shop use the distinct
 defaults to ฿2,000. `order.line.cancel` is seeded to Manager and Cashier without widening
 `order.return`.
 
-## Realtime outbox (`9.70`)
+## Realtime outbox and domain triggers (`9.70`–`9.71`)
 
 `bms_realtime_outbox` is the tenant-owned durable handoff between committed business changes and
 Redis. Business services call `enqueueRealtimeEventInTx()` with the same `beginTenantTx()` client
@@ -1000,6 +1000,16 @@ so delivery remains at least once.
 Failed publishes return to `PENDING` with bounded exponential backoff and jitter, then become
 `FAILED` for operator visibility after the configured attempt limit. Published and failed retention
 are separate. `POST /api/bms/realtime/dispatch` is a cron-secret-gated recovery/manual entrypoint and
-records `realtime-outbox-dispatch` in job runs. A continuous production worker is still required
-before claiming low-latency delivery. See [ADR 001](decisions/001-transactional-realtime-invalidation.md)
+records `realtime-outbox-dispatch` in job runs. Next instrumentation starts the same dispatcher as a
+continuous bounded pump on every web instance; `SKIP LOCKED` and claim tokens keep this safe when web
+scales horizontally. `REALTIME_OUTBOX_DISPATCH_ENABLED=0` stops delivery without rolling back code.
+
+Migration `9.71` installs trigger-only, fixed-`search_path` enqueue functions for orders, payments,
+refunds, inventory, transfers/counts, product/menu availability, Inbox, shipping, pharmacy,
+restaurant checks/rounds/KDS/QR/service calls/floor/waitlist, POS device/shift, notifications and
+dashboard invalidation. The triggers perform no network I/O. Purchase receipt uses
+`enqueueRealtimeEventInTx()` directly because its authoritative branch is resolved inside the
+service and is not stored on the PO row. The migration also exposes aggregate outbox counts, retry
+count and oldest unpublished lag through a narrow read function used by System Health. See
+[ADR 001](decisions/001-transactional-realtime-invalidation.md)
 and the [realtime production audit](realtime-production-audit.md).

@@ -17,6 +17,7 @@ import { resolveDefaultLocationIdInTx } from "./locations";
 import { receiveLotInTx } from "./lots";
 import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
+import { enqueueRealtimeEventInTx, realtimeEvent } from "./realtimeOutbox";
 
 // ---- types ---------------------------------------------------
 export type PoItemInput = {
@@ -582,6 +583,21 @@ export async function receivePurchaseOrder(
         [receiptId, JSON.stringify(result)]
       );
     }
+
+    await enqueueRealtimeEventInTx(client, realtimeEvent({
+      eventId: crypto.randomUUID(),
+      eventType: "purchase.received",
+      tenantId,
+      locationId,
+      actorType: options.idempotency ? "POS_DEVICE" : "ADMIN",
+      actorId: options.idempotency?.actorUserId,
+      deviceId: options.idempotency?.deviceId,
+      entityType: "purchase_order",
+      entityId: poId,
+      updatedAt: new Date().toISOString(),
+      occurredAt: new Date().toISOString(),
+      payload: { status: nextStatus },
+    }));
 
     await client.query("COMMIT");
     for (const line of lines) {

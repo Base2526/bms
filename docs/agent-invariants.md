@@ -1054,9 +1054,10 @@ Full history/rationale of what was found and fixed: § Multi-instance readiness 
 The 2026-09-10 audit is the current authority for realtime rollout work:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
-event/type/topic/validation layer exists in `packages/realtime`, and migration `9.70` plus
-`realtimeOutbox.ts`/`realtimeDispatcher.ts` provide the durable handoff. The HTTP-minted ticket and
-hardened gateway exist; wider event coverage and live recovery/load proof do not yet exist.
+event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.71`,
+`realtimeOutbox.ts`, the continuous pump, and `realtimeDispatcher.ts` provide the durable handoff and
+domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; live recovery/load
+proof and bounded replay do not yet exist.
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
@@ -1083,6 +1084,9 @@ hardened gateway exist; wider event coverage and live recovery/load proof do not
   capability exists. Never re-enable them by trusting `chat_id`, `post_id`, `user_id`, `x-scope`,
   Referer, or User-Agent. User topics come from the ticket subject; BMS Inbox requires ticket tenant
   plus `inbox.view`.
+- Production subscription rollout fails closed behind `REALTIME_SUBSCRIPTIONS_ENABLED` and separate
+  order/restaurant/inventory/payment/Inbox/shipping/pharmacy/admin/POS flags. Keep the master flag at
+  `0` during shadow publishing; this is the query-only kill switch and requires no rollback.
 
 ## Observability (`/admin/system-health`)
 

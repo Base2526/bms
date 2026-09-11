@@ -121,37 +121,66 @@ export const REALTIME_EVENT_RULES: Readonly<Record<RealtimeEventType, RealtimeEv
   "restaurant.check.cancelled": location(["order.view"]),
   "menu.availability.changed": location(["product.view"]),
   "waitlist.changed": location(["restaurant.floor.manage"]),
-  "order.created": tenant(["order.view"]),
-  "order.status_changed": tenant(["order.view"]),
-  "order.paid": tenant(["order.view"]),
-  "order.cancelled": tenant(["order.view"]),
-  "order.fulfillment_changed": tenant(["order.view"]),
-  "order.line_cancelled": tenant(["order.view"]),
-  "payment.submitted": tenant(["payment.view"]),
-  "payment.confirmed": tenant(["payment.view"]),
-  "payment.rejected": tenant(["payment.view"]),
-  "payment.refund_pending": tenant(["payment.view"]),
-  "payment.refunded": tenant(["payment.view"]),
+  "order.created": location(["order.view"]),
+  "order.status_changed": location(["order.view"]),
+  "order.paid": location(["order.view"]),
+  "order.cancelled": location(["order.view"]),
+  "order.fulfillment_changed": location(["order.view"]),
+  "order.line_cancelled": location(["order.view"]),
+  "payment.submitted": location(["payment.view"]),
+  "payment.confirmed": location(["payment.view"]),
+  "payment.rejected": location(["payment.view"]),
+  "payment.refund_pending": location(["payment.view"]),
+  "payment.refunded": location(["payment.view"]),
   "inventory.changed": location(["product.view"]),
   "inventory.reservation_changed": location(["product.view"]),
   "inventory.transfer.sent": location(["inventory.transfer"]),
   "inventory.transfer.received": location(["inventory.transfer"]),
   "inventory.count.applied": location(["inventory.count"]),
   "purchase.received": location(["purchase.view"]),
-  "product.availability.changed": location(["product.view"]),
+  "product.availability.changed": tenant(["product.view"]),
   "inbox.conversation.changed": tenant(["inbox.view"]),
   "inbox.message.created": tenant(["inbox.view"]),
   "inbox.assignment.changed": tenant(["inbox.view"]),
   "inbox.status.changed": tenant(["inbox.view"]),
-  "shipment.created": tenant(["shipping.view"]),
-  "shipment.status_changed": tenant(["shipping.view"]),
-  "shipment.booking_failed": tenant(["shipping.view"]),
+  "shipment.created": location(["shipping.view"]),
+  "shipment.status_changed": location(["shipping.view"]),
+  "shipment.booking_failed": location(["shipping.view"]),
   "pharmacy.case.created": tenant(["pharmacy.assessment.read"]),
   "pharmacy.case.status_changed": tenant(["pharmacy.assessment.read"]),
   "pharmacy.case.assigned": tenant(["pharmacy.assessment.read"]),
   "notification.created": { audience: "user", permissions: [], allowedPayloadKeys: ["source"] },
   "dashboard.invalidated": tenant(["report.view"]),
 };
+
+const DOMAIN_FLAG: Readonly<Record<string, string>> = {
+  restaurant: "REALTIME_RESTAURANT_ENABLED",
+  menu: "REALTIME_RESTAURANT_ENABLED",
+  waitlist: "REALTIME_RESTAURANT_ENABLED",
+  order: "REALTIME_ORDERS_ENABLED",
+  payment: "REALTIME_PAYMENTS_ENABLED",
+  inventory: "REALTIME_INVENTORY_ENABLED",
+  purchase: "REALTIME_INVENTORY_ENABLED",
+  product: "REALTIME_INVENTORY_ENABLED",
+  inbox: "REALTIME_INBOX_ENABLED",
+  shipment: "REALTIME_SHIPPING_ENABLED",
+  pharmacy: "REALTIME_PHARMACY_ENABLED",
+  notification: "REALTIME_ADMIN_ENABLED",
+  dashboard: "REALTIME_ADMIN_ENABLED",
+  pos: "REALTIME_POS_ENABLED",
+  shift: "REALTIME_POS_ENABLED",
+  device: "REALTIME_POS_ENABLED",
+};
+
+/** Server-side rollout gate. Missing flags fail closed and leave polling authoritative. */
+export function isRealtimeEventEnabled(
+  eventType: RealtimeEventType,
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  if (env.REALTIME_SUBSCRIPTIONS_ENABLED !== "1") return false;
+  const flag = DOMAIN_FLAG[eventType.split(".", 1)[0]];
+  return Boolean(flag) && env[flag] === "1";
+}
 
 const EVENT_TYPE_SET = new Set<string>(REALTIME_EVENT_TYPES);
 const ACTOR_TYPES = new Set<RealtimeActorType>([

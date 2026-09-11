@@ -5,6 +5,7 @@ import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 import { jwtSecret, type ActTenantPayload, type JWTPayload } from "@/lib/auth/token";
 import { isAdminSessionActiveForRealtime } from "@/lib/redisSession";
 import { loadPermissions } from "./permissions";
+import { authenticatePosDevice } from "./pos";
 import {
   REALTIME_TICKET_AUDIENCE,
   REALTIME_TICKET_VERSION,
@@ -128,5 +129,31 @@ export async function mintUserRealtimeTicket(
   });
   if (session.exp) claims.expiresAt = Math.min(claims.expiresAt, session.exp);
   if (claims.expiresAt <= claims.issuedAt) return null;
+  return { ticket: await signRealtimeTicket(claims, jwtSecret()), expiresAt: claims.expiresAt };
+}
+
+export async function mintPosRealtimeTicket(
+  deviceToken: string,
+): Promise<{ ticket: string; expiresAt: number } | null> {
+  const device = await authenticatePosDevice(deviceToken);
+  if (!device?.active) return null;
+  const claims = baseClaims({
+    scope: "pos",
+    subjectId: device.id,
+    tenantId: device.tenantId,
+    permissions: [
+      "order.view",
+      "payment.view",
+      "product.view",
+      "purchase.view",
+      "shipping.view",
+      "inventory.transfer",
+      "inventory.count",
+      "restaurant.floor.manage",
+      "pos.shift.report",
+    ],
+    allLocations: false,
+    locationIds: [device.locationId],
+  });
   return { ticket: await signRealtimeTicket(claims, jwtSecret()), expiresAt: claims.expiresAt };
 }

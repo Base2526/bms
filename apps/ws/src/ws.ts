@@ -1,10 +1,10 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 
 import { makeExecutableSchema } from "@graphql-tools/schema";
 import type { ExecutionArgs } from "graphql";
 import { GraphQLError } from "graphql/error";
 import { useServer } from "graphql-ws/lib/use/ws";
-import { WebSocket, WebSocketServer } from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 
 import {
   acquireRealtimeConnectionLease,
@@ -63,12 +63,19 @@ type SocketState = {
 
 const states = new WeakMap<WebSocket, SocketState>();
 const metrics = {
+  connectionAttempts: 0,
   acceptedConnections: 0,
   rejectedConnections: 0,
+  originRejections: 0,
   activeConnections: 0,
   activeSubscriptions: 0,
   authFailures: 0,
   slowConsumerCloses: 0,
+  eventsDelivered: 0,
+  deliveryErrors: 0,
+  eventToClientLatencyMsTotal: 0,
+  eventToClientLatencyMsMax: 0,
+  eventToClientLatencySamples: 0,
 };
 let draining = false;
 
@@ -128,10 +135,18 @@ const wss = new WebSocketServer({
   server: httpServer,
   path: PATH,
   maxPayload: MAX_MESSAGE_BYTES,
-  verifyClient: ({ origin, req }) => !draining && (
-    isAllowedOrigin(origin, ALLOWED_ORIGINS)
-    || (!origin && req.headers["x-bms-client-class"] === "native")
-  ),
+  verifyClient: ({ origin, req }: { origin: string; req: IncomingMessage }) => {
+    metrics.connectionAttempts += 1;
+    const accepted = !draining && (
+      isAllowedOrigin(origin, ALLOWED_ORIGINS)
+      || (!origin && req.headers["x-bms-client-class"] === "native")
+    );
+    if (!accepted) {
+      metrics.rejectedConnections += 1;
+      if (!draining) metrics.originRejections += 1;
+    }
+    return accepted;
+  },
 });
 
 const disposer = useServer(
@@ -219,6 +234,22 @@ const disposer = useServer(
         metrics.activeSubscriptions = Math.max(0, metrics.activeSubscriptions - 1);
       }
     },
+    onNext: (_ctx, _message, _args, result) => {
+      const event = (result as { data?: { realtimeEvent?: { occurredAt?: unknown } } }).data?.realtimeEvent;
+      if (!event) return;
+      metrics.eventsDelivered += 1;
+      if (typeof event.occurredAt === "string") {
+        const latency = Math.max(0, Date.now() - Date.parse(event.occurredAt));
+        if (Number.isFinite(latency)) {
+          metrics.eventToClientLatencyMsTotal += latency;
+          metrics.eventToClientLatencyMsMax = Math.max(metrics.eventToClientLatencyMsMax, latency);
+          metrics.eventToClientLatencySamples += 1;
+        }
+      }
+    },
+    onError: () => {
+      metrics.deliveryErrors += 1;
+    },
     onDisconnect: async (ctx) => {
       const socket = ctx.extra.socket as WebSocket;
       const state = states.get(socket);
@@ -233,12 +264,13 @@ const disposer = useServer(
   wss,
 );
 
-wss.on("connection", (socket) => {
-  socket.on("message", () => {
+wss.on("connection", (socket: WebSocket) => {
+  const eventSocket = socket as WebSocket & { on(event: "message" | "pong", listener: () => void): void };
+  eventSocket.on("message", () => {
     const state = states.get(socket);
     if (state) state.lastActivityAt = Date.now();
   });
-  socket.on("pong", () => {
+  eventSocket.on("pong", () => {
     const state = states.get(socket);
     if (state) {
       state.alive = true;

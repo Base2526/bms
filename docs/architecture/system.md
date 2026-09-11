@@ -127,17 +127,19 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 
 ### Realtime architecture status (2026-09-10)
 
-The current GraphQL WebSocket path is production-useful only as a best-effort invalidation layer for
-Inbox plus several legacy community events. It is not yet the event backbone for BMS. Polling,
-focus refresh, mutation responses, and manual refresh remain required recovery paths.
+The GraphQL WebSocket path now carries centrally validated BMS invalidations for admin and
+device-authenticated POS clients. Polling, focus refresh, mutation responses, and manual refresh
+remain required recovery paths while bounded replay and production recovery/load proof are pending.
 
 The repository audit found authorization, lifecycle, transaction-boundary, replay, and operational
 gaps that must be closed before expanding subscription coverage. The accepted direction is a
 short-lived HTTP-minted WS ticket, scoped safe invalidation events, and a PostgreSQL transactional
 outbox dispatched to Redis while `apps/ws` remains database-free. Migration `9.70`, the event
-contract, dispatcher, short-lived HTTP-minted WS ticket, gateway limits/lifecycle, and Inbox
-permission hardening are implemented. Live DB/socket verification, a continuous production worker,
-and wider domain event rollout remain. See the [full audit](realtime-production-audit.md) and
+contract, dispatcher, continuous multi-instance-safe web pump, short-lived HTTP-minted admin/POS WS
+tickets, gateway limits/lifecycle, and migration `9.71` domain triggers are implemented. The client
+deduplicates and version-checks events, batches targeted active-query refetches, reconciles on
+reconnect/focus, and exposes degraded state. Live DB/socket recovery and load verification remain.
+See the [full audit](realtime-production-audit.md) and
 [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
 The mobile transport decision is also locked: normal React Native/POS reads and commands converge on

@@ -1,0 +1,41 @@
+import type { DocumentNode } from "@apollo/client";
+
+import type { RealtimeEventType } from "../../../../packages/realtime/src/events";
+
+const COMMON_DASHBOARD_FIELDS = ["bmsDashboard", "bmsActionCenter", "bmsExecutive", "bmsToday"] as const;
+
+const DOMAIN_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  restaurant: ["bmsRestaurant", "bmsKitchen", "bmsPosRestaurant", "bmsOrders", ...COMMON_DASHBOARD_FIELDS],
+  order: ["bmsOrder", "bmsOrders", "bmsCustomers", ...COMMON_DASHBOARD_FIELDS],
+  payment: ["bmsPayment", "bmsPayments", "bmsOrders", ...COMMON_DASHBOARD_FIELDS],
+  inventory: ["bmsProduct", "bmsProducts", "bmsInventory", "bmsStock", "bmsVariantReservations", ...COMMON_DASHBOARD_FIELDS],
+  purchase: ["bmsPurchase", "bmsProducts", "bmsInventory", ...COMMON_DASHBOARD_FIELDS],
+  product: ["bmsProduct", "bmsProducts", "bmsInventory", "bmsRestaurant"],
+  menu: ["bmsProduct", "bmsProducts", "bmsRestaurant", "bmsKitchen"],
+  inbox: ["bmsInbox", "bmsConversation", "bmsConversations"],
+  shipment: ["bmsShipment", "bmsShipments", "bmsOrders", ...COMMON_DASHBOARD_FIELDS],
+  pharmacy: ["bmsPharmacy", "pharmacy"],
+  notification: ["notifications", "notification", "unreadNotification"],
+  dashboard: COMMON_DASHBOARD_FIELDS,
+  pos: ["bmsPos", "bmsOrders", "bmsProducts", ...COMMON_DASHBOARD_FIELDS],
+  shift: ["bmsPos", "bmsShift"],
+  device: ["bmsPos", "bmsDevice"],
+  waitlist: ["bmsRestaurant", "bmsWaitlist"],
+};
+
+function rootQueryFields(document: DocumentNode): string[] {
+  const result: string[] = [];
+  for (const definition of document.definitions) {
+    if (definition.kind !== "OperationDefinition" || definition.operation !== "query") continue;
+    for (const selection of definition.selectionSet.selections) {
+      if (selection.kind === "Field") result.push(selection.name.value);
+    }
+  }
+  return result;
+}
+
+export function queryNeedsRealtimeRefetch(document: DocumentNode, eventType: RealtimeEventType): boolean {
+  const domain = eventType.split(".", 1)[0];
+  const rules = DOMAIN_FIELDS[domain] ?? [];
+  return rootQueryFields(document).some((field) => rules.some((prefix) => field.startsWith(prefix)));
+}

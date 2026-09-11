@@ -6,8 +6,7 @@
     "dev": "tsx watch src/ws.ts",
     "build": "tsc",
     "start_a": "node dist/ws.js",
-
-     "start": "NODE_ENV=production tsx src/ws.ts"
+    "start": "NODE_ENV=production tsx src/ws.ts"
   },
   "dependencies": {
     "@graphql-tools/schema": "^10.0.0",
@@ -21,6 +20,7 @@
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.4.0"
   }
 }

@@ -13,6 +13,7 @@ import {
   getRedisHealth,
   getChannelHealthOverview,
   getFailureIncidentsOverview,
+  getRealtimeOutboxHealth,
 } from "@/lib/bms/systemHealth";
 import { listAiProviderHealth } from "@/lib/bms/aiProviderHealth";
 import { listLatestJobRunPerJob } from "@/lib/bms/jobRuns";
@@ -33,10 +34,11 @@ export default async function SystemHealthPage({
   const requested = Number(searchParams?.window);
   const windowMinutes = ALLOWED_WINDOWS.includes(requested) ? requested : 60;
 
-  const [db, redis, aiProviders, jobRuns, jobDefs, channelHealth, failureIncidents, requestMetrics] =
+  const [db, redis, realtimeOutbox, aiProviders, jobRuns, jobDefs, channelHealth, failureIncidents, requestMetrics] =
     await Promise.all([
       getDbHealth(),
       getRedisHealth(),
+      getRealtimeOutboxHealth(),
       listAiProviderHealth().catch((err) => ({ error: String(err?.message ?? err) })),
       listLatestJobRunPerJob().catch((err) => ({ error: String(err?.message ?? err) })),
       listOperationSchedules().catch(() => []),
@@ -52,6 +54,7 @@ export default async function SystemHealthPage({
       generatedAt={new Date().toISOString()}
       db={db}
       redis={redis}
+      realtimeOutbox={realtimeOutbox}
       aiProviders={Array.isArray(aiProviders) ? aiProviders : null}
       aiProvidersError={Array.isArray(aiProviders) ? null : aiProviders.error}
       jobRuns={Array.isArray(jobRuns) ? jobRuns : null}

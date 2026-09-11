@@ -16,10 +16,13 @@ in [mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md).
 ## Realtime subscriptions
 
 Subscriptions run through `apps/ws` and Redis. They are not a mutation transport or source of truth.
-Existing polling and focus reconciliation remain enabled. Before wider production use, the gateway
-must close the authorization/lifecycle gaps in the
-[realtime production audit](realtime-production-audit.md), then domain mutations must write the
-transactional outbox described by [ADR 001](decisions/001-transactional-realtime-invalidation.md).
+Existing polling and focus reconciliation remain enabled. Admin and POS browsers obtain short-lived
+tickets from `POST /api/bms/realtime/ticket`; tenant, location, user, device and permission scope are
+derived by HTTP and cannot be selected in the subscription. Domain writes enqueue migration `9.71`
+events in the transaction, and the client uses them only to refetch matching active queries.
+`REALTIME_SUBSCRIPTIONS_ENABLED=0` is the query-only kill switch; per-domain flags permit staged
+rollout. See the [realtime production audit](realtime-production-audit.md) and
+[ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
 ## REST exceptions and compatibility
 
@@ -64,10 +67,9 @@ Routes using `authorizeCronRequest()` require header `x-cron-secret` matching
 repository GitHub Action schedules its frequent/daily matrices only when repository secrets are
 configured. Other routes remain visible as ready-but-unscheduled on `/admin/operations-schedule`.
 
-- `POST /api/bms/realtime/dispatch` — claims committed outbox rows with `FOR UPDATE SKIP LOCKED`,
-  publishes the central invalidation envelope to Redis outside the claim transaction, then
-  acknowledges or schedules a bounded retry. This endpoint is a recovery/manual trigger; production
-  low-latency delivery still needs a continuous worker using the same dispatcher service.
+- `POST /api/bms/realtime/dispatch` — recovery/manual trigger for the same dispatcher used by the
+  continuous web-process pump. It claims committed rows with `FOR UPDATE SKIP LOCKED`, publishes to
+  Redis outside the claim transaction, then acknowledges or schedules a bounded retry.
 
 - `POST /api/bms/orders/release-expired?minutes=30` — cancels `RESERVED` orders older than N
   minutes, releasing their stock reservation. `lib/bms/orders.ts` `releaseExpiredOrders()`.

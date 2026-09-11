@@ -7,6 +7,7 @@ import {
   REALTIME_EVENT_TYPES,
   RealtimeEventValidationError,
   audienceForEvent,
+  isRealtimeEventEnabled,
   makeRealtimeEventFixture,
   publishRealtimeEvent,
   safePubSubLogValue,
@@ -30,6 +31,19 @@ test("every event type has one central audience and permission rule", () => {
     assert.ok(["tenant", "location", "user", "device"].includes(REALTIME_EVENT_RULES[type].audience));
     assert.ok(Array.isArray(REALTIME_EVENT_RULES[type].permissions));
   }
+});
+
+test("rollout flags fail closed and gate domains independently", () => {
+  assert.equal(isRealtimeEventEnabled("order.created", {}), false);
+  assert.equal(isRealtimeEventEnabled("order.created", {
+    REALTIME_SUBSCRIPTIONS_ENABLED: "1",
+    REALTIME_ORDERS_ENABLED: "1",
+  }), true);
+  assert.equal(isRealtimeEventEnabled("payment.confirmed", {
+    REALTIME_SUBSCRIPTIONS_ENABLED: "1",
+    REALTIME_ORDERS_ENABLED: "1",
+    REALTIME_PAYMENTS_ENABLED: "0",
+  }), false);
 });
 
 test("validates a minimal tenant invalidation and requires version or updatedAt", () => {

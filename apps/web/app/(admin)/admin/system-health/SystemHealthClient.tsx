@@ -8,6 +8,7 @@ import { ReloadOutlined } from "@ant-design/icons";
 import type {
   DbHealth,
   RedisHealth,
+  RealtimeOutboxHealth,
   ChannelHealthOverview,
   FailureIncidentsOverview,
 } from "@/lib/bms/systemHealth";
@@ -58,6 +59,7 @@ type Props = {
   generatedAt: string;
   db: DbHealth;
   redis: RedisHealth;
+  realtimeOutbox: RealtimeOutboxHealth;
   aiProviders: AiProviderHealth[] | null;
   aiProvidersError: string | null;
   jobRuns: JobRunRow[] | null;
@@ -74,6 +76,7 @@ export default function SystemHealthClient({
   generatedAt,
   db,
   redis,
+  realtimeOutbox,
   aiProviders,
   aiProvidersError,
   jobRuns,
@@ -107,6 +110,12 @@ export default function SystemHealthClient({
       text: `Postgres connections ใกล้เต็ม (${db.total}/${db.maxConnections})`,
     });
   if (!redis.ok) overallAlerts.push({ type: "error", text: `Redis: ${redis.error}` });
+  if (!realtimeOutbox.ok) overallAlerts.push({ type: "error", text: `Realtime outbox: ${realtimeOutbox.error}` });
+  else if (realtimeOutbox.failed > 0 || realtimeOutbox.oldestUnpublishedSeconds > 60)
+    overallAlerts.push({
+      type: realtimeOutbox.failed > 0 ? "error" : "warning",
+      text: `Realtime outbox ค้าง ${realtimeOutbox.pending + realtimeOutbox.processing} events · oldest ${realtimeOutbox.oldestUnpublishedSeconds}s · failed ${realtimeOutbox.failed}`,
+    });
   if (channelHealth.ok && channelHealth.unhealthyCount > 0)
     overallAlerts.push({ type: "warning", text: `${channelHealth.unhealthyCount} ช่องทางไม่ปกติ (ข้ามทุกร้าน)` });
   if (failureIncidents.ok && failureIncidents.last24hByTier.A > 0)
@@ -202,6 +211,21 @@ export default function SystemHealthClient({
           </Card>
         </Col>
       </Row>
+
+      <Card title="Realtime outbox" size="small" style={{ marginBottom: 16 }}>
+        {realtimeOutbox.ok ? (
+          <Row gutter={16}>
+            <Col xs={12} sm={8} md={4}><Statistic title="Pending" value={realtimeOutbox.pending} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title="Processing" value={realtimeOutbox.processing} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title="Published" value={realtimeOutbox.published} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title="Failed" value={realtimeOutbox.failed} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title="Oldest lag" value={`${realtimeOutbox.oldestUnpublishedSeconds}s`} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title="Retries" value={realtimeOutbox.retryAttempts} /></Col>
+          </Row>
+        ) : (
+          <Alert closable type="error" message="อ่าน realtime outbox ไม่ได้" description={realtimeOutbox.error} showIcon />
+        )}
+      </Card>
 
       <Card
         title="Request Latency & Error Rate"

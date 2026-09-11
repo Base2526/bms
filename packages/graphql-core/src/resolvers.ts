@@ -20,10 +20,15 @@ import {
 import type { RealtimeTicketClaims } from "../../realtime/src/wsTicket.js";
 import {
   REALTIME_EVENT_RULES,
+  isRealtimeEventEnabled,
   validateRealtimeEvent,
   type RealtimeEvent,
 } from "../../realtime/src/events.js";
 import { topicForLocation, topicForTenant, topicForUser } from "../../realtime/src/topics.js";
+
+const runtimeEnv = (globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+}).process?.env ?? {};
 
 function requireRealtimeClaims(ctx: any): RealtimeTicketClaims {
   const claims = ctx?.realtime as RealtimeTicketClaims | undefined;
@@ -63,13 +68,17 @@ function realtimeTopics(claims: RealtimeTicketClaims): string[] {
 
 function canReceiveRealtimeEvent(event: RealtimeEvent, claims: RealtimeTicketClaims): boolean {
   const rule = REALTIME_EVENT_RULES[event.eventType];
+  if (!isRealtimeEventEnabled(event.eventType, runtimeEnv)) return false;
   if (event.tenantId !== claims.tenantId) return false;
   if (!rule.permissions.every((permission) => claims.permissions.includes(permission))) return false;
   if (rule.audience === "user") return event.userId === claims.subjectId;
   if (rule.audience === "location") {
     return Boolean(event.locationId) && (claims.allLocations || claims.locationIds.includes(event.locationId!));
   }
-  if (rule.audience === "device") return false;
+  if (rule.audience === "device") {
+    return claims.scope === "pos" && event.deviceId === claims.subjectId &&
+      Boolean(event.locationId) && claims.locationIds.includes(event.locationId!);
+  }
   return rule.audience === "tenant";
 }
 

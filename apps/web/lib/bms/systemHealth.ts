@@ -100,6 +100,31 @@ export async function getRedisHealth(): Promise<RedisHealth> {
   }
 }
 
+export type RealtimeOutboxHealth =
+  | { ok: true; pending: number; processing: number; published: number; failed: number; oldestUnpublishedSeconds: number; retryAttempts: number }
+  | { ok: false; error: string };
+
+export async function getRealtimeOutboxHealth(): Promise<RealtimeOutboxHealth> {
+  try {
+    const { rows } = await query<{
+      pending: string; processing: string; published: string; failed: string;
+      oldest_unpublished_seconds: number; retry_attempts: string;
+    }>("SELECT * FROM public.bms_realtime_outbox_metrics()");
+    const row = rows[0];
+    return {
+      ok: true,
+      pending: Number(row?.pending ?? 0),
+      processing: Number(row?.processing ?? 0),
+      published: Number(row?.published ?? 0),
+      failed: Number(row?.failed ?? 0),
+      oldestUnpublishedSeconds: Math.round(Number(row?.oldest_unpublished_seconds ?? 0)),
+      retryAttempts: Number(row?.retry_attempts ?? 0),
+    };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message ?? err) };
+  }
+}
+
 export type UnhealthyChannelRow = {
   tenantId: string;
   tenantName: string;

@@ -1642,6 +1642,7 @@ export default function PosPage() {
     const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
     if (fromUrl) {
       window.localStorage.setItem(TOKEN_KEY, fromUrl);
+      window.dispatchEvent(new Event("bms-pos-device-token-changed"));
       setToken(fromUrl);
       // ล้าง token ออกจาก URL ทันที — ไม่ให้ค้างใน history/แถบที่อยู่ให้ใครเห็น
       url.searchParams.delete("t");
@@ -1834,6 +1835,7 @@ export default function PosPage() {
 
   function unpair() {
     window.localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event("bms-pos-device-token-changed"));
     // เครื่องนี้เลิกจับคู่แล้ว — ดราฟต์ที่ผูกไว้กับ token เดิมไม่มีความหมายอีกต่อไป
     if (token) {
       window.localStorage.removeItem(LOCAL_TAB_KEY_PREFIX + token);
@@ -5901,6 +5903,7 @@ export default function PosPage() {
             if (m) t = decodeURIComponent(m[1]);
             else if (raw.includes("/")) t = raw.split("/").pop() ?? raw;
             window.localStorage.setItem(TOKEN_KEY, t);
+            window.dispatchEvent(new Event("bms-pos-device-token-changed"));
             setToken(t);
             setTokenRejected(false);
             setSessionError("");

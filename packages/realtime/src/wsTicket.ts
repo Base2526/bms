@@ -1,7 +1,7 @@
 export const REALTIME_TICKET_AUDIENCE = "bms-ws" as const;
 export const REALTIME_TICKET_VERSION = 1 as const;
 
-export type RealtimeTicketScope = "admin" | "web" | "android";
+export type RealtimeTicketScope = "admin" | "web" | "android" | "pos";
 
 export type RealtimeTicketClaims = {
   version: typeof REALTIME_TICKET_VERSION;
@@ -73,7 +73,7 @@ export function validateRealtimeTicketClaims(
   if (value.version !== REALTIME_TICKET_VERSION || value.audience !== REALTIME_TICKET_AUDIENCE) {
     throw new RealtimeTicketError("INVALID_AUDIENCE");
   }
-  if (!(["admin", "web", "android"] as unknown[]).includes(value.scope)) {
+  if (!(["admin", "web", "android", "pos"] as unknown[]).includes(value.scope)) {
     throw new RealtimeTicketError("INVALID_SCOPE");
   }
   requireId(value.ticketId, "ticket_id", true);
@@ -88,6 +88,12 @@ export function validateRealtimeTicketClaims(
   if (typeof value.allLocations !== "boolean") throw new RealtimeTicketError("INVALID_LOCATION_SCOPE");
   if (value.sessionId !== undefined) requireId(value.sessionId, "session_id");
   if (value.scope === "admin" && !value.sessionId) throw new RealtimeTicketError("SESSION_REQUIRED");
+  if (value.scope === "pos") {
+    requireId(value.subjectId, "subject_id", true);
+    if (!value.tenantId || value.allLocations || value.locationIds.length !== 1) {
+      throw new RealtimeTicketError("POS_SCOPE_REQUIRED");
+    }
+  }
   if (value.sessionVersion !== undefined &&
       (!Number.isSafeInteger(value.sessionVersion) || Number(value.sessionVersion) < 0)) {
     throw new RealtimeTicketError("INVALID_SESSION_VERSION");
