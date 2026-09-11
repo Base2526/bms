@@ -41,6 +41,7 @@ wrong, and update the doc in the same change.
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
+| `apps/mobile/` | Bare React Native POS client — mock-first UI scaffold + secure device pairing; business flows are not backend-connected yet |
 | `apps/ws/` · `packages/graphql-core/` | Subscription-only WebSocket gateway (no database connection, ever) · shared typeDefs/resolvers used by both web and ws |
 | `packages/realtime/` | The one realtime contract: event union + per-event audience/permission rules, topic builders, validation/redaction, ticket claims, `subscriptionAuth`, `NAMED_REALTIME_SUBSCRIPTIONS` |
 | `schema.graphql` | Committed SDL artifact an external client generates from (`npm run schema:export`) |
