@@ -5068,3 +5068,29 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้
 - **ยังไม่ได้ verify:** generated React Native project compile, query ด้วยข้อมูล/credential จริง,
   production deployment, Phase 4 named actions และ typed output อีก 57 operations
+
+### GraphQL client readiness — Phase 4: named action mutations (2026-09-11)
+
+- แตก action multiplexers 8 กลุ่มเป็น named mutations **32 fields**: restaurant check 9,
+  incoming 3, QR 2, request decision 3, service call 2, waitlist 5, stock transfer 4 และ stock count 4
+  · input แต่ละ action ไม่มี `action` discriminator และ `cancelOrderLines.idempotencyKey` เป็น required
+- compatibility fields เดิมทั้ง 8 ยังอยู่และติด `@deprecated`; named resolver inject action คงที่แล้ว
+  delegate เข้า compatibility resolver ตัวเดิม จึงผ่าน PIN/RBAC/open-shift/second-person/idempotency/
+  service/audit/transaction path ชุดเดียว ไม่มี business logic copy และไม่ย้าย browser REST caller
+- schema artifact regenerate แล้ว; client guide ระบุชื่อใหม่และสถานะชั่วคราวว่า 10 typed output +
+  89 JSON compatibility outputs (57 เดิม + 32 aliases) ขณะที่ argument ของ 99 operations typed
+- เพิ่ม contract อ่าน executable schema ตรวจ alias/deprecation/action-free input และอ่าน method body
+  ตรวจ fixed action + compatibility delegation + ห้ามเรียก service ซ้ำใน wrapper
+- **mutation test ผ่าน 3 ด่าน:** ถอน `@deprecated` → แดงเฉพาะ compatibility subtest; สลับ
+  `add_item` เป็น `remove_item` → แดงเฉพาะ mapping subtest; เติม `action` ลง named input → แดง
+  เฉพาะ discriminator subtest · คืน SHA-256 ตรงเดิม: POS
+  `2EE70D3FC6C78DF93C0FB2E49FF534FC5B6BAA489A46394E35DC006BA4E634EE`, mobile
+  `7A84191AE4D81DD04C589E82F94C17178B6FA82FD6562ADB86D8FEF4391A0220`, test
+  `C6D1B44F174BC28593C09389D4039081E15E2993E450D2E2FFB947158539EF83`
+- **verify บน clean worktree ของ commit `00b16f9b`:** focused contracts **23/23**, Web gate ผ่าน —
+  typecheck, pure **1,109/1,109**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมคือ Edge `jsonwebtoken`, Browserslist,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ตอน static generation
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้
+- **ยังไม่ได้ verify:** execute aliases ด้วย live DB/credentials, caller migration, generated RN compile,
+  production deployment และ typed output ของ 89 compatibility fields
