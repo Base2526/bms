@@ -126,6 +126,357 @@ poll until production recovery/load tests are complete.
 - Continue to use REST only for pharmacy-evidence bytes, shift-report export, and support
   diagnostics.
 
+## Typed operation coverage
+
+Generate client types from the committed root [`schema.graphql`](../../schema.graphql), not from
+production introspection. The artifact is generated from the executable schema with
+`cd apps/web && npm run schema:export`; CI rejects drift.
+
+| Output contract | Operations |
+| --- | --- |
+| Typed (10) | `bmsPosSession`, `bmsPosScan`, `bmsPosCatalogSearch`, `bmsPosRestaurantMenu`, `bmsPosRestaurantFloor`, `bmsPosRestaurantCheck`, `bmsPosKitchenTickets`, `bmsPosSale`, `bmsPosRestaurantOpenCheck`, `bmsPosShift` |
+| JSON compatibility (57) | `bmsPosLastSale`, `bmsPosRecentSales`, `bmsPosParkedSales`, `bmsPosCashMovements`, `bmsPosNoSales`, `bmsPosDeposits`, `bmsPosExpenses`, `bmsPosRestaurantIncoming`, `bmsPosRestaurantQrOrders`, `bmsPosRestaurantServiceCalls`, `bmsPosRestaurantWaitlist`, `bmsPosMemberSearch`, `bmsPosShiftHistory`, `bmsPosShiftReport`, `bmsPosArAccount`, `bmsPosStoreCredit`, `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosRestaurantRequests`, `bmsPosMemberPreview`, `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`, `bmsPosPark`, `bmsPosReturn`, `bmsPosBlindReturn`, `bmsPosVoid`, `bmsPosCompleteRefund`, `bmsPosCashMovement`, `bmsPosNoSale`, `bmsPosEnrollMember`, `bmsPosCollectAr`, `bmsPosReceivePurchase`, `bmsPosSendReceipt`, `bmsPosDeposit`, `bmsPosExpense`, `bmsPosRequestPharmacyReview`, `bmsPosKitchenTicketStatus`, `bmsPosKitchenTicketsStatus`, `bmsPosRestaurantFloorSetup`, `bmsPosRestaurantMenuAvailability`, `bmsPosRestaurantCheckAction`, `bmsPosRestaurantIncomingAction`, `bmsPosRestaurantQrOrderAction`, `bmsPosRestaurantRequestAction`, `bmsPosRestaurantServiceCallAction`, `bmsPosRestaurantWaitlistAction`, `bmsStockTransfers`, `bmsStockCounts`, `bmsMobileRestaurantRequests`, `bmsStoreCredit`, `bmsCommissionRules`, `bmsCommissionReport`, `bmsStockTransfer`, `bmsStockCount`, `bmsReviewRestaurantRequest`, `bmsIssueStoreCredit`, `bmsCommissionRule` |
+
+All 67 operations already have typed arguments. “JSON compatibility” means only the output is still
+opaque to codegen: validate it at the client boundary and do not assume undocumented fields. Move a
+screen to generated result types only after its operation moves to the typed row. The examples below
+cover every typed operation and are checked against the executable schema.
+
+### Device bootstrap screen
+
+Fetch once after pairing and refetch after reconnect, foreground, shift change, or a relevant
+invalidation. Keep `shift.id` as returned state; never send it back as authority.
+
+```graphql
+query PosBootstrap {
+  bmsPosSession {
+    device {
+      id
+      code
+      name
+      registeredPosNo
+      scanner { mode prefixKey suffixKey maxGapMs }
+    }
+    location { id name branchCode vatCode pharmacistName }
+    shift {
+      id
+      locationId
+      deviceId
+      status
+      openedBy
+      openedAt
+      openingFloat
+      pharmacistUserId
+    }
+    shiftReturnSummary { returnCount returnTotal settledTotal pendingTotal pendingCount }
+    cashiers { id name email role isPharmacist hasPin posOnly }
+    purchaseReceivers { id name role hasPin }
+    approvers { id name role isPharmacist hasPin approvals }
+    kitchenOperators { id name role hasPin }
+    store { taxId receiptLanguageMode }
+    surface
+    businessArchetype
+    vat { registered priceIncludesVat rate calendarEra cashRounding }
+  }
+}
+```
+
+### Product search and scanner screen
+
+Use catalog search for operator text and scan for an exact barcode/PLU. Request images only on a
+screen that renders them; `withImage` otherwise stays false.
+
+```graphql
+query PosCatalogSearch($q: String!) {
+  bmsPosCatalogSearch(q: $q) {
+    items {
+      sku
+      name
+      price
+      availableTotal
+      availability
+      availableSizes { size available price }
+      imageUrl
+    }
+  }
+}
+
+query PosScan($code: String!, $size: String, $packCode: String, $surface: String) {
+  bmsPosScan(code: $code, size: $size, packCode: $packCode, surface: $surface) {
+    sku
+    productName
+    receiptName
+    size
+    packCode
+    unitName
+    baseQty
+    packPrice
+    basePrice
+    priceTiers { minQty scope size unitPrice discountPct }
+    promotion { kind buyQty getQty bundlePrice }
+    serialTracked
+    modifiers {
+      code
+      name
+      priceDelta
+      groupCode
+      groupName
+      selectionType
+      minSelect
+      maxSelect
+      defaultSelected
+    }
+    scaleBarcode
+    available
+  }
+}
+```
+
+### Restaurant floor and menu screens
+
+These two snapshots are independent so an invalidation can refetch only the visible surface.
+
+```graphql
+query RestaurantFloor {
+  bmsPosRestaurantFloor {
+    areas { id name sortOrder tableCount }
+    tables {
+      id
+      areaId
+      code
+      name
+      seats
+      shape
+      positionX
+      positionY
+      blocked
+      active
+      status
+      check { id status guestCount amountDue itemCount unsentCount version reservedVersion }
+      checks { id status amountDue itemCount splitGroupNo }
+    }
+  }
+}
+
+query RestaurantMenu {
+  bmsPosRestaurantMenu {
+    items {
+      sku
+      name
+      price
+      kitchenStation
+      kitchenStationId
+      hasModifiers
+      availableSizes { size available }
+      availableTotal
+      sellable
+      availability
+      unavailableResetsAt
+      unavailableReason
+      imageUrl
+    }
+  }
+}
+```
+
+### Restaurant check screen
+
+The root is nullable because the check can disappear between floor selection and detail fetch.
+Treat `version`/`reservedVersion` as state display and reconciliation fields, not client authority.
+
+```graphql
+query RestaurantCheck($id: ID!) {
+  bmsPosRestaurantCheck(id: $id) {
+    id
+    tableId
+    tableCode
+    tableName
+    areaName
+    status
+    guestCount
+    note
+    amountDue
+    splitGroupNo
+    splitFromCheckId
+    mergedIntoCheckId
+    version
+    reservedVersion
+    hasCurrentOrder
+    reservationStatus
+    reservationLost
+    openedAt
+    items {
+      id
+      sku
+      productName
+      size
+      packQty
+      packCode
+      unitName
+      lineAmount
+      modifierCodes
+      modifierNames
+      kitchenNote
+      status
+      roundNo
+      sentAt
+      kitchenStatus
+    }
+  }
+}
+```
+
+### Kitchen board
+
+`stationSlas` is a list because station identifiers are dynamic data, not GraphQL field names.
+`orderId` and `checkId` are both nullable; select both and branch on `source`.
+
+```graphql
+query KitchenBoard($status: String, $limit: Int = 100) {
+  bmsPosKitchenTickets(status: $status, limit: $limit) {
+    generatedAt
+    stations { id name sortOrder }
+    stationSlas { stationRef warnMinutes lateMinutes }
+    tickets {
+      id
+      source
+      orderId
+      checkId
+      tableCode
+      tableName
+      roundNo
+      kitchenNote
+      orderItemId
+      stationId
+      station
+      status
+      modifierCodes
+      productSku
+      productName
+      size
+      packQty
+      qty
+      createdAt
+      updatedAt
+    }
+  }
+}
+```
+
+### Retail checkout screen
+
+Generate `$input.idempotencyKey` before the first send. The result is a nullable superset because
+different business outcomes populate different fields; always branch on `status` first.
+
+```graphql
+mutation CompletePosSale($input: BmsPosSaleInput!) {
+  bmsPosSale(input: $input) {
+    status
+    orderId
+    saleLocationId
+    posDeviceId
+    shiftId
+    total
+    cashTendered
+    cashChange
+    docNo
+    receiptNo
+    billNo
+    replayed
+    reason
+    code
+    sku
+    size
+    requested
+    available
+    vat { rate taxableAmount exemptAmount vatAmount netBeforeVat roundingAmount }
+    discountLines { source label amount pointsUsed }
+    pointsEarned
+    pointsBalance
+    items {
+      sku
+      name
+      size
+      qty
+      unitPrice
+      receiptUnitPrice
+      availableAfter
+      packCode
+      packUnitName
+      packQty
+      packUnitPrice
+      modifierCodes
+      vatCategory
+      pricingSnapshot {
+        source
+        modifierUnitPrice
+        priceTiers { minQty scope size unitPrice discountPct }
+        promotion { kind buyQty getQty bundlePrice }
+      }
+    }
+    blockers { status sku salePolicy maxQuantity requested }
+  }
+}
+```
+
+### Open-table dialog
+
+The response `check` is nullable for a completed business rejection; inspect GraphQL errors first,
+then the returned object.
+
+```graphql
+mutation OpenRestaurantCheck($input: BmsPosRestaurantOpenCheckInput!) {
+  bmsPosRestaurantOpenCheck(input: $input) {
+    check {
+      id
+      tableId
+      tableCode
+      tableName
+      status
+      guestCount
+      amountDue
+      version
+      reservedVersion
+      openedAt
+    }
+  }
+}
+```
+
+### Shift dialog
+
+The same typed mutation currently carries `action: "open" | "close"`; use the fields returned for
+that action and branch on `status`. A close with an unknown transport outcome must be reconciled from
+`bmsPosSession` before another attempt.
+
+```graphql
+mutation ChangePosShift($input: BmsPosShiftInput!) {
+  bmsPosShift(input: $input) {
+    status
+    reason
+    partialReturnCashOut
+    cashIn
+    cashOut
+    count
+    amount
+    shift {
+      id
+      locationId
+      deviceId
+      status
+      openedBy
+      openedAt
+      openingFloat
+      pharmacistUserId
+      closedAt
+      expectedCash
+      countedCash
+      cashVariance
+    }
+  }
+}
+```
+
 ## Error contract
 
 GraphQL transport/execution failures are returned in `errors[]`; every entry has a non-empty

@@ -1,7 +1,9 @@
 import { makeExecutableSchema } from "@graphql-tools/schema";
 // `graphql` is also this app's local folder name and tsconfig has baseUrl=".". Importing the
 // package utility subpath prevents tsx from resolving this back to graphql/index.ts.
+import { parse } from "graphql/language/index.js";
 import { lexicographicSortSchema, printSchema } from "graphql/utilities/index.js";
+import { validate } from "graphql/validation/index.js";
 
 import { mergedTypeDefs, mergedResolvers } from "./index";
 
@@ -20,4 +22,13 @@ export function buildBmsGraphqlSchema() {
  */
 export function renderBmsGraphqlSdl(): string {
   return `${printSchema(lexicographicSortSchema(buildBmsGraphqlSchema()))}\n`;
+}
+
+/** Validate committed client examples against the same executable schema served over HTTP. */
+export function validateBmsGraphqlDocument(source: string): string[] {
+  try {
+    return validate(buildBmsGraphqlSchema(), parse(source)).map((error) => error.message);
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
 }
