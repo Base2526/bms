@@ -94,8 +94,20 @@
   - **ค่าปริยายเปิดไว้** — ฝั่งเว็บเคยตั้งเป็นปิด แล้วแท็บเล็ตเครื่องใหม่ทุกเครื่องเริ่มต้นแบบเงียบ
     ซึ่งพนักงานอ่านไม่ต่างจาก "ระบบนี้ไม่มีเสียงเตือน"
   - **รอบแรกหลังเปิดแอปเป็นการตั้งต้น ไม่ใช่ของใหม่** — เปิดมาเจอของค้างอยู่แล้วต้องไม่สั่นรัว
-  - ❌ **ยังไม่มีเสียงจริง** — RN ไม่มี API เสียงในตัว ต้องมี native module (ดูหัวข้อถัดไป)
-    · UI บอกตรง ๆ ว่าเครื่องนี้ยังเล่นเสียงไม่ได้ แทนที่จะโชว์สวิตช์ที่เปิดอยู่แต่เงียบสนิท
+  - **เสียงจริงด้วย `react-native-sound@0.13` (TurboModule รองรับ New Architecture)** —
+    ⚠️ **ต้อง `pod install` + build native ใหม่** ก่อนถึงจะได้ยิน · โหลด JS ใหม่บน binary เก่า
+    จะเงียบ แล้ว UI จะบอกตรง ๆ ว่า "เครื่องนี้ยังไม่มีโมดูลเสียง" ตามความจริง
+    - ไฟล์เสียงสร้างเองด้วย `node scripts/make-alert-tones.mjs` (WAV 16-bit ไม่มี dependency)
+      — ออร์เดอร์เข้าเป็นสามจังหวะไล่เสียงสูงขึ้น · ตั๋วครัวสองจังหวะเสียงต่ำกว่า แยกออกจากกัน
+      ได้ด้วยหูโดยไม่ต้องมองจอ · **เก็บตัวสร้างไว้ในรีโปแทน commit ไบนารีเปล่า ๆ** เพราะไฟล์เสียง
+      ที่สร้างซ้ำไม่ได้ = วันที่อยากแก้ ต้องไปหาไฟล์ต้นฉบับที่ไม่มีอยู่จริง
+    - ⚠️ **ชื่อไฟล์ต่างกันสองแพลตฟอร์ม**: Android อ่าน `res/raw` ด้วย `getIdentifier()` ซึ่งใช้
+      ชื่อ **ไม่มีนามสกุล** ส่วน iOS หาในบันเดิลด้วยชื่อเต็ม — ส่งผิดแพลตฟอร์มคือเงียบสนิท
+      โดยไม่มี error (มีเทสตรึงไว้)
+    - `Sound.setCategory('Playback')` ให้ดังแม้ iPhone/iPad อยู่โหมดเงียบ — ไม่งั้นแท็บเล็ตที่
+      ใครเผลอเลื่อนสวิตช์จะเงียบทั้งกะโดยไม่มีอะไรบอก
+    - ❌ **ยังไม่เคยได้ยินจริง** — เครื่องที่เขียนไม่มี Xcode/Android SDK/Java จึง build native
+      ไม่ได้ · **เสียงเป็นของที่เทสยืนยันแทนหูไม่ได้ ต้องลองบนเครื่องจริงก่อนเชื่อ**
   - ❌ **ยังไม่มี push notification** — แจ้งเตือนได้เฉพาะตอนแอปเปิดอยู่ · แอปที่ถูกปิด/พับไว้เงียบสนิท
     (ต้องมี FCM/APNs + backend ซึ่งอยู่นอกขอบเขตกลุ่ม A)
 - ✅ Responsive/tablet — **ทุกหน้าใช้พื้นที่จริงของจอไอแพด ไม่มีหน้าไหนเป็นคอลัมน์ขนาดมือถือกลางจอ**
@@ -116,42 +128,40 @@
 - ❌ ยังไม่แตะฮาร์ดแวร์ (เครื่องพิมพ์ ESC/POS, สแกนเนอร์, จอลูกค้า) — ตกลงกันไว้แล้วว่าเป็นงานฝั่ง client
   แยกทีหลัง หลัง backend/schema นิ่ง
 
-## เปิดเสียงแจ้งเตือนจริง (ต้อง build native ใหม่)
+## เสียงแจ้งเตือน — ⚠️ ต้อง build native ใหม่ก่อนถึงจะได้ยิน
 
-React Native ไม่มี API เสียงในตัว — การเล่นเสียงต้องมี native module ซึ่งต้อง `pod install` +
-build ใหม่ทั้ง iOS/Android
+ติดตั้ง `react-native-sound@0.13` ไว้แล้ว (TurboModule รองรับ New Architecture) และต่อสายครบ
+ตั้งแต่ `index.js` → `src/lib/soundPlayer.ts` → `src/lib/orderAlertSound.ts` แต่ **native module
+ยังไม่อยู่ในเครื่องจนกว่าจะ build ใหม่**:
 
-**เครื่องที่เขียนฟีเจอร์นี้ build native ไม่ได้** (ไม่มี Xcode/Android SDK/Java) จึง **ไม่ใส่
-dependency ที่ไม่เคยคอมไพล์ลง package.json** — โมดูลที่ไม่เคยคอมไพล์แปลว่าทุกคนในทีม build ไม่ผ่าน
-และการบอกว่า "มีเสียงแล้ว" ทั้งที่ไม่เคยได้ยิน คือบั๊กแบบเดียวกับที่ฝั่งเว็บโดนมา (ปุ่มโชว์ว่า
-เปิดเสียงอยู่แต่เงียบสนิทเพราะ AudioContext ถูกบล็อก — อยู่ได้เป็นเดือนกว่าจะมีคนเจอ)
-
-แทนที่จะเดา จึงเปิด "รู" ไว้ที่เดียวใน `src/lib/orderAlertSound.ts` · ติดตั้งโมดูลเสียงแล้วเรียก
-`registerOrderAlertSoundPlayer()` **หนึ่งครั้งตอนบูตแอป** เสียงจะทำงานทันทีโดยไม่ต้องแก้โค้ดที่อื่นเลย
-
-```ts
-// index.js (หรือ App.tsx ก่อน render) — ตัวอย่างกับ react-native-sound
-import Sound from 'react-native-sound';
-import { registerOrderAlertSoundPlayer } from './src/lib/orderAlertSound';
-
-Sound.setCategory('Playback');
-const tones = {
-  incoming_order: new Sound('order_in.mp3', Sound.MAIN_BUNDLE),
-  kitchen_ticket: new Sound('kitchen.mp3', Sound.MAIN_BUNDLE),
-};
-
-registerOrderAlertSoundPlayer({
-  play: kind => {
-    const tone = tones[kind];
-    // ⚠️ ต้องคืน false เมื่อไม่ได้ดังจริง — ตัวเรียกใช้ค่านี้ตัดสินใจว่าจะขึ้นแถบเตือนแทนไหม
-    if (!tone?.isLoaded()) return false;
-    tone.stop(() => tone.play());
-    return true;
-  },
-});
+```bash
+npm install
+cd ios && export LANG=en_US.UTF-8 && pod install && cd ..
+npm run ios      # หรือ npm run android
 ```
 
-หลังต่อแล้วต้องยืนยันด้วยหูจริง — **เสียงเป็นของที่เทสยืนยันแทนไม่ได้**
+**โหลด JS ใหม่บน binary เก่าจะเงียบสนิท** ซึ่งถูกต้องแล้ว — ตอนนั้น `setupOrderAlertSound()`
+ไม่ลงทะเบียนอะไร แล้ว UI จะขึ้นว่า "เครื่องนี้ยังไม่มีโมดูลเสียง" ตามความจริง แทนที่จะโชว์สวิตช์
+ที่เปิดอยู่แต่เงียบ (บั๊กแบบนี้ฝั่งเว็บใช้เวลาเป็นเดือนกว่าจะมีคนเจอ)
+
+### ไฟล์เสียง
+
+สร้างด้วย `node scripts/make-alert-tones.mjs` (Node ล้วน ไม่มี dependency) → เขียนลง
+`android/app/src/main/res/raw/` และ `ios/BmsPos/` พร้อมกัน · ไฟล์ iOS ถูกลงทะเบียนใน
+`project.pbxproj` (PBXBuildFile + PBXFileReference + group + Resources phase) แล้ว
+
+อยากเปลี่ยนเสียง: แก้ความถี่/จังหวะใน `scripts/make-alert-tones.mjs` แล้วรันใหม่
+· ถ้าจะเปลี่ยนเป็นไฟล์ mp3/wav ของตัวเอง ให้วางทับชื่อเดิม (`order_in` / `kitchen`)
+แล้วอัปเดตนามสกุลใน `src/lib/soundPlayer.ts`
+
+⚠️ **ชื่อไฟล์ต้องเป็น `[a-z0-9_]` เท่านั้น** — Android ใช้ชื่อไฟล์เป็น resource id ของ `res/raw`
+ตัวพิมพ์ใหญ่หรือขีดกลางทำให้ build ไม่ผ่าน
+
+### ยังไม่เคยได้ยินจริง
+
+เครื่องที่เขียนไม่มี Xcode/Android SDK/Java จึง build native ไม่ได้เลย — ที่ยืนยันได้คือ
+typecheck, lint, และเทสที่ mock ไลบรารีไว้ (เรียกถูก API ไหม · ชื่อไฟล์ถูกแพลตฟอร์มไหม ·
+รายงาน `false` ตอนโหลดไม่สำเร็จไหม) · **เสียงเป็นของที่เทสยืนยันแทนหูไม่ได้ ต้องลองเองก่อนเชื่อ**
 
 ## recheck รอบ 2026-09-11 — เจอของจริง 13 จุด แก้ครบแล้ว
 
@@ -249,7 +259,8 @@ apps/mobile/
     lib/shiftMath.ts            — pure drawer math (สูตรเดียวของ "เงินที่ควรมีในลิ้นชัก")
     lib/kitchenBoard.ts         — pure ticket flow/เวลารอ/แตกตั๋วตามสถานี
     lib/orderAlert.ts           — pure กติกาแจ้งเตือน (ของใหม่/ย้ำซ้ำ/รูปแบบสั่น/เตือนถึงไหม)
-    lib/orderAlertSound.ts      — จุดเสียบเสียงจริง (ยังไม่มีโมดูลเสียงติดตั้ง)
+    lib/orderAlertSound.ts      — จุดเสียบเสียง (registry) — คืน false เสมอถ้าไม่ได้ดังจริง
+    lib/soundPlayer.ts          — ตัวเล่นเสียงจริงด้วย react-native-sound (ต้อง build native)
     components/MoneyField.tsx   — ช่องกรอกเงินที่พิมพ์ทศนิยมได้จริง (ดูคอมเมนต์ในไฟล์)
     screens/
       LoginScreen.tsx           — เลือกสาขา/ผู้ปฏิบัติงาน + PIN keypad (ยังไม่ยืนยันตัวตนจริง)
@@ -269,7 +280,7 @@ npm install
 cd ios && export LANG=en_US.UTF-8 && pod install && cd ..
 npm run ios      # หรือ: npx react-native run-ios --simulator "iPhone 17"
 npm run android  # ต้องมี Android SDK/emulator ตั้งไว้แล้ว
-npm test         # Jest: 16 ไฟล์ / 88 เทส (pure math + แจ้งเตือน + pairing + smoke test)
+npm test         # Jest: 17 ไฟล์ / 93 เทส (pure math + แจ้งเตือน + เสียง + pairing + smoke test)
 npm run typecheck
 npm run lint
 ```
