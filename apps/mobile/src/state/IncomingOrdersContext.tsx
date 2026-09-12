@@ -3,107 +3,120 @@ import React, {
   useCallback,
   useContext,
   useMemo,
-  useState,
 } from 'react';
+import { useMutation, useQuery } from '@apollo/client';
 import {
-  mockIncomingOrderTemplates,
-  type IncomingOrderChannel,
-  type MockIncomingOrder,
-} from '../mocks/incomingOrders';
-
-// คิว "ออร์เดอร์เข้า" — ข้อเสนอจากแชท/ออนไลน์/QR ที่โต๊ะ ที่ยังต้องมีคนกดรับ
-//
-// ⚠️ ยังไม่มี network: ออร์เดอร์เข้ามาได้ทางเดียวคือปุ่ม "จำลองออร์เดอร์เข้า" ในจอคิว
-// ตอนต่อ backend ให้แทน `simulateArrival` ด้วย subscription/poll จริง โดยจุดเรียกที่หน้าจอ
-// และเส้นทางแจ้งเตือนไม่ต้องแก้เลย
-//
-// ⚠️ ห้ามให้ออร์เดอร์ที่เข้ามากลายเป็นงานของครัวเอง — ต้องมีคนกดรับก่อนเสมอ
-// (กฎเดียวกับฝั่งเว็บ: การจ่ายเงินไม่เคยสร้างงานครัว มีแต่การกดรับของคนเท่านั้น)
+  MobileRestaurantAcceptIncomingDocument,
+  MobileRestaurantIncomingDocument,
+} from '../graphql/generated';
+import type { PosIncomingOrder } from '../types/pos';
+import { useSession } from './SessionContext';
+import { useStoreMode } from './StoreModeContext';
 
 interface IncomingOrdersContextValue {
-  orders: MockIncomingOrder[];
-  pending: MockIncomingOrder[];
+  orders: PosIncomingOrder[];
+  pending: PosIncomingOrder[];
   pendingCount: number;
-  /** id ของใบที่รออยู่ — ใช้เทียบว่ามีใบใหม่โผล่ไหม */
   pendingIds: string[];
-  simulateArrival: (channel?: IncomingOrderChannel) => MockIncomingOrder;
-  acceptOrder: (id: string) => MockIncomingOrder | null;
-  rejectOrder: (id: string, reason: string) => string | null;
+  loading: boolean;
+  error: string | null;
+  acceptOrder: (id: string) => Promise<{ ticketsCreated: number } | string>;
+  refresh: () => Promise<void>;
 }
 
-const IncomingOrdersContext = createContext<IncomingOrdersContextValue | null>(
-  null,
-);
+const IncomingOrdersContext =
+  createContext<IncomingOrdersContextValue | null>(null);
 
 export function IncomingOrdersProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [orders, setOrders] = useState<MockIncomingOrder[]>([]);
-
-  const simulateArrival = useCallback((channel?: IncomingOrderChannel) => {
-    const pool = channel
-      ? mockIncomingOrderTemplates.filter(t => t.channel === channel)
-      : mockIncomingOrderTemplates;
-    const template =
-      pool[Math.floor(Math.random() * pool.length)] ??
-      mockIncomingOrderTemplates[0];
-    const order: MockIncomingOrder = {
-      ...template,
-      lines: template.lines.map(line => ({ ...line })),
-      id: `incoming-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      receivedAt: new Date().toISOString(),
-      status: 'PENDING',
-    };
-    setOrders(prev => [order, ...prev]);
-    return order;
-  }, []);
-
-  const acceptOrder = useCallback((id: string) => {
-    let accepted: MockIncomingOrder | null = null;
-    setOrders(prev =>
-      prev.map(order => {
-        if (order.id !== id || order.status !== 'PENDING') return order;
-        accepted = { ...order, status: 'ACCEPTED' };
-        return accepted;
-      }),
-    );
-    return accepted;
-  }, []);
-
-  const rejectOrder = useCallback((id: string, reason: string) => {
-    // ⚠️ เหตุผลบังคับ — ลูกค้าที่ถูกปฏิเสธต้องได้คำตอบว่าทำไม (กฎเดียวกับฝั่งเว็บ)
-    if (!reason.trim()) return 'ต้องระบุเหตุผลที่ปฏิเสธ';
-    setOrders(prev =>
-      prev.map(order =>
-        order.id === id && order.status === 'PENDING'
-          ? { ...order, status: 'REJECTED', rejectReason: reason.trim() }
-          : order,
-      ),
-    );
-    return null;
-  }, []);
-
+  const { session } = useSession();
+  const { mode } = useStoreMode();
+  const query = useQuery(MobileRestaurantIncomingDocument, {
+    skip: !session || mode !== 'restaurant',
+    notifyOnNetworkStatusChange: true,
+  });
+  const [accept] = useMutation(MobileRestaurantAcceptIncomingDocument);
+  const orders = useMemo<PosIncomingOrder[]>(
+    () =>
+      (query.data?.bmsPosRestaurantIncoming.orders ?? []).map(order => ({
+        id: order.id,
+        channel: order.channel,
+        customerName: order.customerRef ?? 'ลูกค้า',
+        fulfillmentType: order.fulfillmentType,
+        amountDue: order.amountDue,
+        receivedAt: order.createdAt,
+        promisedAt: order.promisedAt,
+        status: order.status,
+        lines: order.items.map(item => ({
+          orderItemId: item.orderItemId,
+          sku: item.sku,
+          name: item.name ?? item.sku,
+          qty: item.qty,
+          size: item.size,
+          unitName: item.unitName,
+          modifierCodes: item.modifierCodes ?? [],
+        })),
+      })),
+    [query.data],
+  );
   const pending = useMemo(
-    () => orders.filter(order => order.status === 'PENDING'),
+    () => orders.filter(order => order.status === 'PAID'),
     [orders],
   );
   const pendingIds = useMemo(() => pending.map(order => order.id), [pending]);
 
+  const acceptOrder = useCallback(
+    async (id: string): Promise<{ ticketsCreated: number } | string> => {
+      if (!session) return 'กรุณาเข้าใช้งานใหม่';
+      try {
+        const response = await accept({
+          variables: {
+            input: {
+              orderId: id,
+              cashierUserId: session.credentials.cashierUserId,
+              pin: session.credentials.pin,
+            },
+          },
+        });
+        const result = response.data?.bmsPosRestaurantAcceptIncomingOrder;
+        if (result?.status !== 'ACCEPTED') {
+          return result?.reason ?? result?.status ?? 'รับออร์เดอร์ไม่สำเร็จ';
+        }
+        await query.refetch();
+        return { ticketsCreated: result.ticketsCreated ?? 0 };
+      } catch (error) {
+        return error instanceof Error ? error.message : 'รับออร์เดอร์ไม่สำเร็จ';
+      }
+    },
+    [accept, query, session],
+  );
+  const refresh = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
   const value = useMemo<IncomingOrdersContextValue>(
     () => ({
       orders,
       pending,
       pendingCount: pending.length,
       pendingIds,
-      simulateArrival,
+      loading: query.loading,
+      error: query.error?.message ?? null,
       acceptOrder,
-      rejectOrder,
+      refresh,
     }),
-    [acceptOrder, orders, pending, pendingIds, rejectOrder, simulateArrival],
+    [
+      acceptOrder,
+      orders,
+      pending,
+      pendingIds,
+      query.error?.message,
+      query.loading,
+      refresh,
+    ],
   );
-
   return (
     <IncomingOrdersContext.Provider value={value}>
       {children}
@@ -112,11 +125,11 @@ export function IncomingOrdersProvider({
 }
 
 export function useIncomingOrders(): IncomingOrdersContextValue {
-  const ctx = useContext(IncomingOrdersContext);
-  if (!ctx) {
+  const context = useContext(IncomingOrdersContext);
+  if (!context) {
     throw new Error(
       'useIncomingOrders ต้องถูกเรียกใต้ <IncomingOrdersProvider>',
     );
   }
-  return ctx;
+  return context;
 }

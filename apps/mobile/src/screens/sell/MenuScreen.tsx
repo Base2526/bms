@@ -20,12 +20,8 @@ import { OrderAlertBanner } from '../../components/OrderAlertBanner';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
+import { useCatalog } from '../../state/CatalogContext';
 import { useStoreMode } from '../../state/StoreModeContext';
-import {
-  generalMockCatalog,
-  pharmacyMockCatalog,
-  restaurantMockCatalog,
-} from '../../mocks/menu';
 import type { SellStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<SellStackParamList, 'Menu'>;
@@ -37,7 +33,7 @@ type Props = NativeStackScreenProps<SellStackParamList, 'Menu'>;
 export const CART_PANEL_WIDTH = 320;
 
 // แท็บ "เมนูอาหาร" = ขายที่ไม่ผูกโต๊ะ (กลับบ้าน/สั่งที่เคาน์เตอร์)
-// การสั่งให้โต๊ะอยู่ที่แท็บ "ผังโต๊ะ" → เลือกโต๊ะ → สั่งอาหาร (บิลของโต๊ะอยู่ใน ChecksContext)
+// การสั่งให้โต๊ะอยู่ที่แท็บ "ผังโต๊ะ" และเขียนเข้า restaurant check บน server
 export default function MenuScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
@@ -52,18 +48,20 @@ export default function MenuScreen({ navigation }: Props) {
     deleteParkedBill,
   } = useCart();
   const { mode } = useStoreMode();
+  const {
+    catalog,
+    loading: catalogLoading,
+    error: catalogError,
+    refetch,
+    resolveScan,
+    setSearchQuery,
+  } = useCatalog();
   const [scannerOpen, setScannerOpen] = useState(false);
   const [parkOpen, setParkOpen] = useState(false);
   const [parkName, setParkName] = useState('');
   const [parkNote, setParkNote] = useState('');
   const [lastScanned, setLastScanned] = useState('');
 
-  const catalog =
-    mode === 'restaurant'
-      ? restaurantMockCatalog
-      : mode === 'pharmacy'
-      ? pharmacyMockCatalog
-      : generalMockCatalog;
   const screenTitle =
     mode === 'restaurant'
       ? 'เมนูอาหาร'
@@ -82,11 +80,12 @@ export default function MenuScreen({ navigation }: Props) {
   const grid = (
     <MenuGrid
       qtyBySku={qtyBySku}
-      onAdd={item => addItem(item.sku, item.name, item.price, item.barcode)}
+      onAdd={addItem}
       onDecrement={sku => decrementItem(sku)}
       areaWidth={isTablet ? width - CART_PANEL_WIDTH : width}
       artHeight={isTablet ? 116 : 96}
       catalog={catalog}
+      onSearchChange={mode === 'restaurant' ? undefined : setSearchQuery}
       header={
         <>
           <OrderAlertBanner
@@ -99,6 +98,17 @@ export default function MenuScreen({ navigation }: Props) {
               <Text style={[typography.title, { color: colors.text }]}>
                 {screenTitle}
               </Text>
+              {catalogLoading ? (
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  กำลังโหลดรายการจากเซิร์ฟเวอร์…
+                </Text>
+              ) : catalogError ? (
+                <Pressable onPress={() => refetch().catch(() => undefined)}>
+                  <Text style={[typography.caption, { color: colors.danger }]}>
+                    {catalogError} · แตะเพื่อลองใหม่
+                  </Text>
+                </Pressable>
+              ) : null}
               {lastScanned ? (
                 <Text
                   style={[typography.captionStrong, { color: colors.success }]}
@@ -109,7 +119,7 @@ export default function MenuScreen({ navigation }: Props) {
             </View>
             <Button
               label="▥ สแกนบาร์โค้ด"
-              accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ดทดสอบ"
+              accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ด"
               variant="secondary"
               onPress={() => setScannerOpen(true)}
             />
@@ -194,7 +204,19 @@ export default function MenuScreen({ navigation }: Props) {
                 itemName={item.name}
                 variant="outline"
                 onIncrement={() =>
-                  addItem(item.sku, item.name, item.unitPrice, item.barcode)
+                  addItem({
+                    sku: item.sku,
+                    name: item.name,
+                    price: item.unitPrice,
+                    category: 'สินค้า',
+                    station: 'สินค้า',
+                    sellable: true,
+                    imageUrl: item.imageUrl,
+                    size: item.size,
+                    packCode: item.packCode,
+                    unitName: item.unitName,
+                    baseQty: item.baseQty,
+                  })
                 }
                 onDecrement={() => decrementItem(item.sku)}
               />
@@ -236,7 +258,7 @@ export default function MenuScreen({ navigation }: Props) {
           label={`บิลพัก${
             parkedBills.length ? ` (${parkedBills.length})` : ''
           }`}
-          accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
+          accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบัน"
           variant="secondary"
           fullWidth
           disabled={cartCount === 0 && parkedBills.length === 0}
@@ -297,7 +319,7 @@ export default function MenuScreen({ navigation }: Props) {
               label={`บิลพัก${
                 parkedBills.length ? ` (${parkedBills.length})` : ''
               }`}
-              accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบันไว้ในหน่วยความจำทดสอบ"
+              accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบัน"
               variant="secondary"
               fullWidth
               disabled={cartCount === 0 && parkedBills.length === 0}
@@ -317,10 +339,10 @@ export default function MenuScreen({ navigation }: Props) {
       )}
       <BarcodeScannerModal
         visible={scannerOpen}
-        catalog={catalog}
+        resolveCode={resolveScan}
         onCancel={() => setScannerOpen(false)}
         onScanned={item => {
-          addItem(item.sku, item.name, item.price, item.barcode);
+          addItem(item);
           setLastScanned(item.name);
           setScannerOpen(false);
         }}
@@ -343,10 +365,10 @@ export default function MenuScreen({ navigation }: Props) {
           >
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                พักบิล TEST
+                พักบิล
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                เก็บใน memory เท่านั้น และไม่เก็บ PIN ผู้อนุมัติส่วนลด
+                เก็บบนเซิร์ฟเวอร์และเรียกต่อได้จากเครื่องขายที่ได้รับสิทธิ์
               </Text>
               {cartCount > 0 ? (
                 <>
@@ -372,10 +394,14 @@ export default function MenuScreen({ navigation }: Props) {
                   />
                   <Button
                     label="ยืนยันพักบิล"
-                    accessibilityLabel="ยืนยันพักบิลทดสอบ"
+                    accessibilityLabel="ยืนยันพักบิล"
                     fullWidth
-                    onPress={() => {
-                      parkCurrentBill(parkName, parkNote);
+                    onPress={async () => {
+                      const failure = await parkCurrentBill(parkName, parkNote);
+                      if (failure) {
+                        Alert.alert('พักบิลไม่สำเร็จ', failure);
+                        return;
+                      }
                       setParkName('');
                       setParkNote('');
                     }}
@@ -408,9 +434,11 @@ export default function MenuScreen({ navigation }: Props) {
                         accessibilityLabel={`เรียกบิลพัก ${bill.name}`}
                         variant="secondary"
                         fullWidth
-                        onPress={() => {
-                          resumeParkedBill(bill.id);
-                          setParkOpen(false);
+                        onPress={async () => {
+                          const failure = await resumeParkedBill(bill.id);
+                          if (failure)
+                            Alert.alert('เรียกบิลไม่สำเร็จ', failure);
+                          else setParkOpen(false);
                         }}
                       />
                       <Button
@@ -424,7 +452,12 @@ export default function MenuScreen({ navigation }: Props) {
                             {
                               text: 'ลบ',
                               style: 'destructive',
-                              onPress: () => deleteParkedBill(bill.id),
+                              onPress: () => {
+                                deleteParkedBill(bill.id).then(failure => {
+                                  if (failure)
+                                    Alert.alert('ลบบิลไม่สำเร็จ', failure);
+                                });
+                              },
                             },
                           ])
                         }

@@ -1,7 +1,4 @@
-/**
- * โหมดนี้มีไว้ preview หน้าจอระหว่างที่ backend contract ยังไม่นิ่งเท่านั้น
- * ไม่ใช่ business_archetype, tenant authority หรือสิทธิ์ขายยา
- */
+/** Client rendering mode derived from the paired device's server bootstrap. */
 export type PreviewStoreMode = 'general' | 'pharmacy' | 'restaurant';
 
 export const PREVIEW_STORE_MODES: ReadonlyArray<{
@@ -17,7 +14,7 @@ export const PREVIEW_STORE_MODES: ReadonlyArray<{
   {
     value: 'pharmacy',
     label: 'ร้านขายยา',
-    description: 'หน้าขายแบบร้านยา (กฎเภสัชยังเป็น mock)',
+    description: 'หน้าขายแบบร้านยาตามกฎจากเซิร์ฟเวอร์',
   },
   {
     value: 'restaurant',

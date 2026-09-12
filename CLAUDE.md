@@ -23,7 +23,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) | Mobile/RN GraphQL primary API, REST exception inventory, POS migration gaps and phase boundaries |
 | [architecture/react-native-graphql-client.md](docs/architecture/react-native-graphql-client.md) | Native POS HTTP GraphQL + ticketed GraphQL WS client wiring, retry and rollout contract |
 | [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md) · [`schema.graphql`](schema.graphql) | Why the surface was typed and in what order · the committed SDL artifact a client generates from (`npm run schema:export`; production keeps introspection off) |
-| [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that `9.70`–`9.72` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
+| [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that `9.70`–`9.74` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
 | [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
@@ -178,28 +178,26 @@ physical table) now resolves the owning branch and honours `bms_user_allowed_loc
 [business/pos.md](docs/business/pos.md) § Table QR self-ordering and
 [agent-invariants.md § Restaurant POS](docs/agent-invariants.md#restaurant-pos-dine-in).
 
-**Transactional realtime invalidation (`9.70`–`9.72`, 2026-09-11) — written, never run.** The shared
-event contract (`packages/realtime`), the outbox migration, 27 AFTER triggers, the leased dispatcher,
-the hardened database-free WS gateway, HTTP-minted tickets, one generic invalidation stream and 18
-named views over it all exist and pass typecheck/pure tests. **None of the three migrations has been
-applied to any database and not one trigger has ever fired**, so every claim about them is a
-code-reading claim: the triggers enqueue *inside the business transaction*, which means a trigger
-that references a missing column or lacks a table grant does not make realtime quiet — it rolls back
-the sale, the stock receipt or the shift close. Prove them on the throwaway instance in
-[architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) first. The
-browser stays on REST + polling and no React Native app exists in this repo, so the 18 named
-subscriptions currently have **no caller at all**. Rollout flags gate *delivery only* — see
+**Transactional realtime invalidation (`9.70`–`9.74`, updated 2026-09-12).** The shared event
+contract, outbox, domain triggers, leased dispatcher, hardened database-free WS gateway,
+HTTP-minted tickets, one generic stream and 17 named views pass pure and local DB contracts.
+`9.73` fixed the first POS device row-shape failure and `9.74` split the device/shift trigger
+functions permanently. A live local probe has also proved HTTP ticket minting and PostgreSQL ->
+outbox dispatcher -> Redis -> two WS instances. Browser POS and `apps/mobile` now call named views;
+RN also compiles generated Apollo operations and verifies cashier PIN through GraphQL. Keep REST and
+polling until per-workflow parity plus production recovery/load proof pass. Rollout flags gate
+*delivery only* — see
 [agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
 
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
 POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
-`graphql-schema-artifact-contract`, all 99 operations take named input objects and return named
+`graphql-schema-artifact-contract`, all 100 operations take named input objects and return named
 output types (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
 into 32 named mutations with the old fields kept `@deprecated`, and every client-facing error carries
 an `extensions.code` while business rejections stay in `data.<operation>.status`. Four POS
 multiplexers (`bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift`) are still
-`action`-dispatched. No caller moved from REST, nothing was deleted, and the generated client has
-never been compiled — see
+`action`-dispatched. RN bootstrap/PIN auth moved first and generated documents compile; remaining
+business workflows retain compatibility routes until their parity tests land — see
 [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md).
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).

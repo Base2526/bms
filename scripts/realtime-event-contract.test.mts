@@ -59,6 +59,21 @@ test("validates a minimal tenant invalidation and requires version or updatedAt"
   );
 });
 
+test("accepts every PostgreSQL UUID shape, including deterministic legacy ids", () => {
+  const event = makeRealtimeEventFixture();
+  assert.equal(
+    validateRealtimeEvent({
+      ...event,
+      tenantId: "11111111-1111-1111-1111-111111111111",
+    }).tenantId,
+    "11111111-1111-1111-1111-111111111111",
+  );
+  assert.throws(
+    () => validateRealtimeEvent({ ...event, tenantId: "not-a-uuid" }),
+    /tenantId is invalid/,
+  );
+});
+
 test("location, user, and device events cannot omit their server routing scope", () => {
   assert.throws(() => validateRealtimeEvent(makeRealtimeEventFixture("inventory.changed")), /locationId is required/);
   assert.throws(() => validateRealtimeEvent(makeRealtimeEventFixture("notification.created")), /userId is required/);

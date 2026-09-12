@@ -1,14 +1,23 @@
-import type { MockMenuCatalog, MockMenuItem } from '../mocks/menu';
+interface BarcodeCatalogItem {
+  sku: string;
+  barcode?: string;
+  sellable: boolean;
+  unavailableNote?: string | null;
+}
 
-export type BarcodeResolution =
-  | { ok: true; item: MockMenuItem }
+interface BarcodeCatalog<TItem extends BarcodeCatalogItem> {
+  items: TItem[];
+}
+
+export type BarcodeResolution<TItem extends BarcodeCatalogItem> =
+  | { ok: true; item: TItem }
   | { ok: false; message: string };
 
 /** Mock-only resolver. Production must ask the server catalog and re-check sellability there. */
-export function resolveMockBarcode(
-  catalog: MockMenuCatalog,
+export function resolveMockBarcode<TItem extends BarcodeCatalogItem>(
+  catalog: BarcodeCatalog<TItem>,
   rawCode: string,
-): BarcodeResolution {
+): BarcodeResolution<TItem> {
   const normalized = rawCode.trim().toLowerCase();
   const item = catalog.items.find(
     candidate =>

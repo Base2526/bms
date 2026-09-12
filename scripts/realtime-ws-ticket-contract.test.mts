@@ -38,6 +38,15 @@ test("signed ticket round-trips without cookies or client-selected scope", async
   assert.equal(ticket.split(".").length, 2);
 });
 
+test("ticket claims accept PostgreSQL UUIDs without requiring RFC version bits", () => {
+  assert.doesNotThrow(() => validateRealtimeTicketClaims(claims({
+    tenantId: "11111111-1111-1111-1111-111111111111",
+  }), now));
+  assert.throws(() => validateRealtimeTicketClaims(claims({
+    tenantId: "not-a-uuid",
+  }), now), /INVALID_TENANT_ID/);
+});
+
 test("tamper, expiry, excessive lifetime, and wrong audience fail closed", async () => {
   const ticket = await signRealtimeTicket(claims(), secret);
   await assert.rejects(() => verifyRealtimeTicket(`${ticket}x`, secret, now), /INVALID_TICKET_SIGNATURE/);

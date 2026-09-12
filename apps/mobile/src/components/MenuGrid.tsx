@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button } from './Button';
 import { DishArt } from './DishArt';
@@ -6,24 +6,21 @@ import { QtyStepper } from './QtyStepper';
 import { SearchField } from './SearchField';
 import { useTheme } from '../theme/ThemeProvider';
 import { columnsForWidth, padGrid } from '../theme/useResponsive';
-import {
-  MockMenuItem,
-  MockMenuCatalog,
-  restaurantMockCatalog,
-} from '../mocks/menu';
+import type { PosMenuCatalog, PosMenuItem } from '../types/pos';
 
 interface Props {
   /** จำนวนที่อยู่ในตะกร้า/บิลแล้ว ต่อ SKU — ใช้แสดงปุ่มเพิ่ม/ลดบนการ์ด */
   qtyBySku: Record<string, number>;
-  onAdd: (item: MockMenuItem) => void;
+  onAdd: (item: PosMenuItem) => void;
   onDecrement: (sku: string) => void;
   /** ความกว้างของพื้นที่กริดจริง (หักแผงข้างออกแล้ว) — ใช้คำนวณจำนวนคอลัมน์ */
   areaWidth: number;
   artHeight?: number;
   /** แถวข้อความ/ปุ่มที่วางเหนือช่องค้นหา เช่น ป้ายบอกว่ากำลังสั่งให้โต๊ะไหน */
   header?: React.ReactNode;
-  /** ร้านอาหารใช้ค่าเดิม; ร้านทั่วไป/ร้านยาส่ง catalog mock ของโหมดเข้ามา */
-  catalog?: MockMenuCatalog;
+  /** catalog ที่อ่านจาก GraphQL ตาม surface ของเครื่อง */
+  catalog: PosMenuCatalog;
+  onSearchChange?: (query: string) => void;
 }
 
 // กริดเมนู + ช่องค้นหา + ชิปหมวดหมู่ — ใช้ร่วมกันสองที่: แท็บ "เมนูอาหาร" (ขายกลับบ้าน)
@@ -36,13 +33,20 @@ export function MenuGrid({
   areaWidth,
   artHeight = 96,
   header,
-  catalog = restaurantMockCatalog,
+  catalog,
+  onSearchChange,
 }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const [category, setCategory] = useState(catalog.categories[0]);
   const [query, setQuery] = useState('');
 
   const trimmed = query.trim();
+
+  useEffect(() => {
+    if (!onSearchChange) return;
+    const timer = setTimeout(() => onSearchChange(trimmed), 250);
+    return () => clearTimeout(timer);
+  }, [onSearchChange, trimmed]);
 
   // มีคำค้น = ค้นทั้งเมนู ไม่สนหมวดที่เลือกอยู่ — พิมพ์ "ชา" ตอนยืนอยู่หมวดอาหารจานหลัก
   // แล้วได้ผลลัพธ์ว่าง คือคำตอบที่ผิดสำหรับคนที่กำลังรีบหาเมนูให้ลูกค้า
@@ -62,7 +66,7 @@ export function MenuGrid({
 
   const gridColumns = columnsForWidth(areaWidth);
 
-  const renderCard = (item: MockMenuItem) => {
+  const renderCard = (item: PosMenuItem) => {
     const inCart = qtyBySku[item.sku] ?? 0;
     const tintIndex = catalog.stations.indexOf(item.station);
 

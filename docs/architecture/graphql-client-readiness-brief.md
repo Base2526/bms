@@ -209,6 +209,6 @@ Phase 1 → 2 → 3 (ชุดแรก 10 ตัว) → 5 → 6 แล้ว�
 - เพิ่ม operation ใหม่ที่ยังไม่มี
 - เปลี่ยนชนิดของเงินจาก `Float`
 - แตะ subscription (18 ตัวเสร็จแล้ว) และ realtime/outbox
-- apply migration `9.70`–`9.72` หรือเปิดธง `REALTIME_*`
+- apply migration `9.70`–`9.74` หรือเปิดธง `REALTIME_*`
 - ย้าย caller ฝั่งเบราว์เซอร์จาก REST ไป GraphQL — เป็นงานคนละรอบที่ต้องมี flag ของตัวเอง
 - ลบ REST ใด ๆ

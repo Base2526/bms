@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { gql, useApolloClient, useSubscription } from "@apollo/client";
+import { gql, useApolloClient, useSubscription, type DocumentNode } from "@apollo/client";
 
 import { BoundedEventDeduplicator, validateRealtimeEvent, type RealtimeEvent } from "../../../../packages/realtime/src/events";
 import type { RealtimeConnectionStatus } from "@/lib/apollo";
@@ -9,14 +9,215 @@ import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
 import { queryNeedsRealtimeRefetch } from "./realtimeInvalidation";
 
+const REALTIME_EVENT_FIELDS = gql`
+  fragment RealtimeEventFields on RealtimeEvent {
+    eventId eventType schemaVersion tenantId locationId userId actorType actorId deviceId
+    entityType entityId aggregateVersion updatedAt occurredAt payload
+  }
+`;
+
 const S_REALTIME = gql`
+  ${REALTIME_EVENT_FIELDS}
   subscription RealtimeEvents {
     realtimeEvent {
-      eventId eventType schemaVersion tenantId locationId userId actorType actorId deviceId
-      entityType entityId aggregateVersion updatedAt occurredAt payload
+      ...RealtimeEventFields
     }
   }
 `;
+
+const S_POS_DEVICE_SESSION_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosDeviceSessionChanged {
+    bmsDeviceSessionChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_SHIFT_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosShiftChanged {
+    bmsShiftChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_ORDER_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosOrderChanged {
+    bmsPosOrderChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_RESTAURANT_FLOOR_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosRestaurantFloorChanged {
+    bmsRestaurantFloorChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_RESTAURANT_CHECK_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosRestaurantCheckChanged {
+    bmsRestaurantCheckChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_KITCHEN_TICKET_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosKitchenTicketChanged {
+    bmsKitchenTicketChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_MENU_AVAILABILITY_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosMenuAvailabilityChanged {
+    bmsMenuAvailabilityChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_QR_ORDER_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosQrOrderChanged {
+    bmsQrOrderChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_INCOMING_ORDER_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosIncomingOrderChanged {
+    bmsIncomingOrderChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_WAITLIST_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosWaitlistChanged {
+    bmsWaitlistChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_SERVICE_CALL_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosServiceCallChanged {
+    bmsServiceCallChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_INVENTORY_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosInventoryChanged {
+    bmsInventoryChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_STOCK_TRANSFER_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosStockTransferChanged {
+    bmsStockTransferChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_STOCK_COUNT_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosStockCountChanged {
+    bmsStockCountChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_PAYMENT_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosPaymentChanged {
+    bmsPaymentChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+const S_POS_BMS_ORDER_CHANGED = gql`
+  ${REALTIME_EVENT_FIELDS}
+  subscription PosBmsOrderChanged {
+    bmsOrderChanged {
+      ...RealtimeEventFields
+    }
+  }
+`;
+
+type RealtimeSubscriptionSpec = {
+  document: DocumentNode;
+  fieldName: string;
+};
+
+const ADMIN_REALTIME_SUBSCRIPTIONS: readonly RealtimeSubscriptionSpec[] = [
+  { document: S_REALTIME, fieldName: "realtimeEvent" },
+];
+
+const POS_REALTIME_SUBSCRIPTIONS: readonly RealtimeSubscriptionSpec[] = [
+  { document: S_POS_DEVICE_SESSION_CHANGED, fieldName: "bmsDeviceSessionChanged" },
+  { document: S_POS_SHIFT_CHANGED, fieldName: "bmsShiftChanged" },
+  { document: S_POS_ORDER_CHANGED, fieldName: "bmsPosOrderChanged" },
+  { document: S_POS_RESTAURANT_FLOOR_CHANGED, fieldName: "bmsRestaurantFloorChanged" },
+  { document: S_POS_RESTAURANT_CHECK_CHANGED, fieldName: "bmsRestaurantCheckChanged" },
+  { document: S_POS_KITCHEN_TICKET_CHANGED, fieldName: "bmsKitchenTicketChanged" },
+  { document: S_POS_MENU_AVAILABILITY_CHANGED, fieldName: "bmsMenuAvailabilityChanged" },
+  { document: S_POS_QR_ORDER_CHANGED, fieldName: "bmsQrOrderChanged" },
+  { document: S_POS_INCOMING_ORDER_CHANGED, fieldName: "bmsIncomingOrderChanged" },
+  { document: S_POS_WAITLIST_CHANGED, fieldName: "bmsWaitlistChanged" },
+  { document: S_POS_SERVICE_CALL_CHANGED, fieldName: "bmsServiceCallChanged" },
+  { document: S_POS_INVENTORY_CHANGED, fieldName: "bmsInventoryChanged" },
+  { document: S_POS_STOCK_TRANSFER_CHANGED, fieldName: "bmsStockTransferChanged" },
+  { document: S_POS_STOCK_COUNT_CHANGED, fieldName: "bmsStockCountChanged" },
+  { document: S_POS_PAYMENT_CHANGED, fieldName: "bmsPaymentChanged" },
+  { document: S_POS_BMS_ORDER_CHANGED, fieldName: "bmsOrderChanged" },
+];
+
+function RealtimeSubscription({
+  enabled,
+  spec,
+  onEvent,
+  onSubscriptionError,
+}: {
+  enabled: boolean;
+  spec: RealtimeSubscriptionSpec;
+  onEvent: (raw: unknown) => void;
+  onSubscriptionError: () => void;
+}) {
+  useSubscription(spec.document, {
+    skip: !enabled,
+    onData: ({ data }) => {
+      const payload = data.data as Record<string, unknown> | null | undefined;
+      onEvent(payload?.[spec.fieldName]);
+    },
+    onError: onSubscriptionError,
+  });
+  return null;
+}
 
 type RealtimeContextValue = {
   status: RealtimeConnectionStatus;
@@ -34,10 +235,12 @@ function RealtimeTransportProvider({
   children,
   enabled,
   scopeKey,
+  subscriptions,
 }: {
   children: React.ReactNode;
   enabled: boolean;
   scopeKey: string;
+  subscriptions: readonly RealtimeSubscriptionSpec[];
 }) {
   const apollo = useApolloClient();
   const [status, setStatus] = React.useState<RealtimeConnectionStatus>(
@@ -107,34 +310,34 @@ function RealtimeTransportProvider({
     };
   }, []);
 
-  useSubscription(S_REALTIME, {
-    skip: !enabled,
-    onData: ({ data }) => {
-      try {
-        const next = validateRealtimeEvent(data.data?.realtimeEvent);
-        if (!dedup.current.remember(next.eventId)) return;
-        const aggregateKey = `${next.tenantId}:${next.locationId ?? ""}:${next.entityType}:${next.entityId}`;
-        const prior = aggregateState.current.get(aggregateKey);
-        const nextUpdatedAt = next.updatedAt ? Date.parse(next.updatedAt) : undefined;
-        const stale = next.aggregateVersion !== undefined && prior?.version !== undefined
-          ? next.aggregateVersion <= prior.version
-          : nextUpdatedAt !== undefined && prior?.updatedAt !== undefined
-            ? nextUpdatedAt < prior.updatedAt
-            : false;
-        queueInvalidation(next);
-        if (stale) return;
-        aggregateState.current.set(aggregateKey, {
-          version: next.aggregateVersion ?? prior?.version,
-          updatedAt: nextUpdatedAt ?? prior?.updatedAt,
-        });
-        setEvent(next);
-        setLastEventAt(Date.now());
-      } catch {
-        setStatus("degraded");
-      }
-    },
-    onError: () => setStatus(typeof navigator !== "undefined" && navigator.onLine ? "degraded" : "offline"),
-  });
+  const handleRealtimeEvent = React.useCallback((raw: unknown) => {
+    try {
+      const next = validateRealtimeEvent(raw);
+      if (!dedup.current.remember(next.eventId)) return;
+      const aggregateKey = `${next.tenantId}:${next.locationId ?? ""}:${next.entityType}:${next.entityId}`;
+      const prior = aggregateState.current.get(aggregateKey);
+      const nextUpdatedAt = next.updatedAt ? Date.parse(next.updatedAt) : undefined;
+      const stale = next.aggregateVersion !== undefined && prior?.version !== undefined
+        ? next.aggregateVersion <= prior.version
+        : nextUpdatedAt !== undefined && prior?.updatedAt !== undefined
+          ? nextUpdatedAt < prior.updatedAt
+          : false;
+      queueInvalidation(next);
+      if (stale) return;
+      aggregateState.current.set(aggregateKey, {
+        version: next.aggregateVersion ?? prior?.version,
+        updatedAt: nextUpdatedAt ?? prior?.updatedAt,
+      });
+      setEvent(next);
+      setLastEventAt(Date.now());
+    } catch {
+      setStatus("degraded");
+    }
+  }, [queueInvalidation]);
+
+  const handleSubscriptionError = React.useCallback(() => {
+    setStatus(typeof navigator !== "undefined" && navigator.onLine ? "degraded" : "offline");
+  }, []);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -157,14 +360,31 @@ function RealtimeTransportProvider({
   }, [enabled, scopeKey, refetchForEvents]);
 
   const value = React.useMemo(() => ({ status, event, lastEventAt }), [status, event, lastEventAt]);
-  return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
+  return (
+    <RealtimeContext.Provider value={value}>
+      {subscriptions.map((spec) => (
+        <RealtimeSubscription
+          key={spec.fieldName}
+          enabled={enabled}
+          spec={spec}
+          onEvent={handleRealtimeEvent}
+          onSubscriptionError={handleSubscriptionError}
+        />
+      ))}
+      {children}
+    </RealtimeContext.Provider>
+  );
 }
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const { admin } = useSessionCtx();
   const scopeKey = admin?.id ? `${admin.id}:${admin.tenant_id ?? "platform"}` : "none";
   return (
-    <RealtimeTransportProvider enabled={Boolean(admin?.id)} scopeKey={scopeKey}>
+    <RealtimeTransportProvider
+      enabled={Boolean(admin?.id)}
+      scopeKey={scopeKey}
+      subscriptions={ADMIN_REALTIME_SUBSCRIPTIONS}
+    >
       {children}
     </RealtimeTransportProvider>
   );
@@ -187,7 +407,11 @@ export function PosRealtimeProvider({ children }: { children: React.ReactNode })
     };
   }, []);
   return (
-    <RealtimeTransportProvider enabled={enabled} scopeKey={`pos:${tokenGeneration}`}>
+    <RealtimeTransportProvider
+      enabled={enabled}
+      scopeKey={`pos:${tokenGeneration}`}
+      subscriptions={POS_REALTIME_SUBSCRIPTIONS}
+    >
       {children}
       {enabled ? <PosRealtimeIndicator /> : null}
     </RealtimeTransportProvider>

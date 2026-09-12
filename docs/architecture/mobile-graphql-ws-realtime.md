@@ -1,7 +1,9 @@
 # Mobile-first GraphQL and WebSocket architecture
 
-> Status: server-side Phases 1–6 implemented (2026-09-11); external React Native and browser-POS
-> caller rollout remains before REST compatibility routes can be retired
+> Status: server contract, database contract suites, multi-instance socket verification, browser
+> named-subscription rollout, and the in-repository React Native retail/restaurant/shift callers are
+> implemented (2026-09-12). REST compatibility routes and polling remain for browser/external-client
+> rollout and recovery.
 >
 > Realtime security and delivery details: [production realtime audit](realtime-production-audit.md)
 > and [ADR 001](decisions/001-transactional-realtime-invalidation.md)
@@ -10,10 +12,10 @@
 > codes: [graphql-client-readiness-brief.md](graphql-client-readiness-brief.md) and
 > [`schema.graphql`](../../schema.graphql). It changed no service, no permission and no REST route.
 >
-> ⚠️ Migrations `9.70`–`9.72` are applied to **no** database and not one of the 27 triggers has ever
-> fired. Because they enqueue inside the business transaction, prove them on the throwaway instance
-> in [realtime-test-database.md](realtime-test-database.md) before believing any claim below about
-> them.
+> Migrations `9.70`–`9.74` have DB contract coverage. `9.73` records the first POS row-shape fix and
+> `9.74` permanently splits device and shift trigger functions. Production rollout still follows
+> [realtime-test-database.md](realtime-test-database.md) and must not infer migration state from this
+> repository.
 
 ## Decision
 
@@ -214,11 +216,11 @@ and tests to agree.
 | --- | --- | --- |
 | 1. Audit and architecture | Complete | 117 REST routes classified above; GraphQL and subscription inventory linked |
 | 2. Shared event contract | Complete | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication |
-| 3. Transactional outbox | Implemented; live DB verification pending | migration `9.70`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, pure and DB contract suites. `enqueueRealtimeEventInTx` is unguarded by design, so `9.70` is registered in `scripts/schemaReadiness.mts`: without the table the owning business transaction rolls back, it does not merely lose realtime |
-| 4. WS/auth hardening | Implemented; live socket verification pending | HTTP-minted short-lived tickets, strict admin revocation/fresh identity/acting tenant, scoped permissions/locations, subscription-only gateway, origin/size/quota/expiry/ping/drain/health controls |
+| 3. Transactional outbox | Implemented and DB-verified | migrations `9.70`–`9.74`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, and pure/DB contract suites. `enqueueRealtimeEventInTx` is unguarded by design, so a missing outbox rolls back the owning write rather than silently losing realtime |
+| 4. WS/auth hardening | Implemented and multi-instance verified | HTTP-minted short-lived tickets, strict admin revocation/fresh identity/acting tenant, scoped permissions/locations, subscription-only gateway, native-client classification, origin/size/quota/expiry/ping/drain/health controls, and Redis fan-out across multiple WS instances |
 | 5. Mobile/POS GraphQL | Server contract complete | `graphql/{bmsPosDevice,posDeviceAuth,bmsMobileOperations}.ts`; normal POS routes and listed BMS gaps have named operations, server-derived scope, PIN/RBAC enforcement, shared services. `scripts/mobile-graphql-contract.test.mts` asserts operations against the parsed SDL, pairs every field with a resolver both ways, builds the merged schema through `graphql/schema.ts`, and rejects any authority read that is not `device.*` (POS) or `getTenantId(ctx)` (staff) |
-| 6. Named subscriptions | Implemented; live socket verification pending | all 17 Phase 6 subscriptions plus `bmsServiceCallChanged` (18th: the table-call surface the brief omitted, backed by `bmsPosRestaurantServiceCalls`) declared in `packages/graphql-core`; each is a filtered view of the one invalidation stream through `NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`, so tenant/location/device scope and the permission rule have a single implementation rather than seventeen. Event types with no named subscription are recorded as generic-stream-only in `scripts/realtime-named-subscriptions-contract.test.mts` |
-| 6b. Domain events | Implemented; live DB verification pending | migrations `9.71` (25 tables) and `9.72` (drawer cash movement + the retail kitchen queue), domain event contract/fixtures, transactional publishers and pure/DB suites |
+| 6. Named subscriptions | Implemented and called | all 17 named views are declared in `packages/graphql-core`; each filters the one invalidation stream through `NAMED_REALTIME_SUBSCRIPTIONS`. Browser POS and React Native now mount the views relevant to their principal and current surface |
+| 6b. Domain events | Implemented and DB-verified | migrations `9.71`–`9.74`, domain event contract/fixtures, exact POS device/shift payload assertions, and transactional publisher pure/DB suites |
 | 6c. Coverage guard | Implemented | `scripts/realtime-domain-coverage-contract.test.mts` walks every table `lib/bms` writes and fails unless each is covered by a trigger or classified with a reason, so a forgotten domain cannot stay silent. Twenty tables are recorded there as known gaps that deserve an event and do not have one yet |
-| 7. Client rollout | Not present in this repository | browser POS stays on REST compatibility and polling; no React Native app exists in this repository. Use `react-native-graphql-client.md` in the external app, canary it, and retain REST until telemetry proves migration. The 18 named subscriptions consequently have **no caller at all** — the browser mounts the generic `realtimeEvent` stream plus `bmsInboxChanged` |
-| 8. Typed client contract | Complete for generation; never generated | `schema.graphql` committed and pinned to the executable schema, 99 operations with named inputs and named outputs (no `JSON` anywhere in a response tree), eight action multiplexers split into 32 named mutations with the originals kept `@deprecated`, stable `extensions.code` on every client-facing error. Still `action`-dispatched: `bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift` (so `BmsPosDepositInput.idempotencyKey` stays nullable). No generated client has been compiled and no fixture-driven REST-versus-GraphQL response-shape suite exists yet, which is what still blocks moving a caller |
+| 7. Client rollout | RN core complete; browser/external rollout remains | `apps/mobile` uses generated Apollo operations for catalog, sale/return/void, parked bills, shift/cash, restaurant checks/incoming orders and kitchen tickets; runtime screens/state import no mock data. It also has native socket classification, PIN verification, surface-scoped named subscriptions, bounded deduplication, batched active-query refetch, foreground recovery and degraded polling. Browser POS retains REST and polling while using named invalidation views; native hardware/pharmacy-review UI remain separate rollout work |
+| 8. Typed client contract | Generated and compiled | `schema.graphql` is pinned to the executable schema; all 100 mobile/POS operations have named inputs and typed output trees, stable `extensions.code`, and generated typed documents in `apps/mobile/src/graphql/generated.ts`. The remaining rollout gate is per-workflow REST-versus-GraphQL parity, not client generation |

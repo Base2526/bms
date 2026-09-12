@@ -9,22 +9,21 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
-import type { MockMenuCatalog, MockMenuItem } from '../mocks/menu';
-import { resolveMockBarcode } from '../lib/barcode';
+import type { PosMenuItem } from '../types/pos';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
 
 interface Props {
   visible: boolean;
-  catalog: MockMenuCatalog;
   onCancel: () => void;
-  onScanned: (item: MockMenuItem) => void;
+  resolveCode: (code: string) => Promise<PosMenuItem>;
+  onScanned: (item: PosMenuItem) => void;
 }
 
 export function BarcodeScannerModal({
   visible,
-  catalog,
   onCancel,
+  resolveCode,
   onScanned,
 }: Props) {
   const { colors, spacing, radius, typography } = useTheme();
@@ -32,24 +31,33 @@ export function BarcodeScannerModal({
   const insets = useSafeAreaInsets();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setCode('');
       setError('');
+      setLoading(false);
     }
   }, [visible]);
 
-  const resolveCode = (rawCode: string) => {
-    const result = resolveMockBarcode(catalog, rawCode);
-    if (!result.ok) {
-      setError(result.message);
-      return;
+  const submit = async () => {
+    const normalized = code.trim();
+    if (!normalized || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const item = await resolveCode(normalized);
+      if (!item.sellable) throw new Error(item.unavailableNote ?? 'ขายสินค้านี้ไม่ได้ตอนนี้');
+      onScanned(item);
+    } catch (scanError) {
+      setError(
+        scanError instanceof Error ? scanError.message : 'อ่านรหัสสินค้าไม่สำเร็จ',
+      );
+    } finally {
+      setLoading(false);
     }
-    onScanned(result.item);
   };
-
-  const sample = catalog.items.find(item => item.sellable && item.barcode);
 
   return (
     <Modal
@@ -94,50 +102,21 @@ export function BarcodeScannerModal({
           <Text style={[typography.title, { color: colors.text }]}>
             สแกนบาร์โค้ด
           </Text>
-          <Text
-            style={[
-              typography.caption,
-              { color: colors.textMuted, marginTop: spacing.xs },
-            ]}
-          >
-            โหมดทดสอบ — ป้อนรหัสหรือยิงบาร์โค้ดตัวอย่าง ยังไม่เปิดกล้องจริง
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            ยิงบาร์โค้ดจากเครื่องสแกน หรือกรอก SKU แล้วให้เซิร์ฟเวอร์ตรวจสินค้าและสต็อก
           </Text>
-
-          <View
-            style={[
-              styles.scanFrame,
-              {
-                marginTop: spacing.lg,
-                borderColor: colors.primary,
-                borderRadius: radius.lg,
-                backgroundColor: colors.surface2,
-              },
-            ]}
-          >
-            <Text style={[styles.barcodeGlyph, { color: colors.text }]}>
-              ▥ ▥ ▥ ▥ ▥
-            </Text>
-            <View
-              style={[styles.scanLine, { backgroundColor: colors.primary }]}
-            />
-            <Text
-              style={[typography.captionStrong, { color: colors.textMuted }]}
-            >
-              วางบาร์โค้ดให้อยู่ในกรอบ
-            </Text>
-          </View>
-
           <TextInput
             value={code}
             onChangeText={next => {
               setCode(next);
               setError('');
             }}
-            onSubmitEditing={() => resolveCode(code)}
-            placeholder="กรอกบาร์โค้ดหรือ SKU"
+            onSubmitEditing={submit}
+            placeholder="บาร์โค้ดหรือ SKU"
             placeholderTextColor={colors.textSoft}
             autoCapitalize="characters"
             autoCorrect={false}
+            autoFocus
             returnKeyType="done"
             style={[
               typography.body,
@@ -163,29 +142,14 @@ export function BarcodeScannerModal({
               {error}
             </Text>
           ) : null}
-
           <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
             <Button
-              label="เพิ่มสินค้าจากรหัส"
+              label={loading ? 'กำลังตรวจสินค้า…' : 'เพิ่มสินค้าจากรหัส'}
               fullWidth
-              disabled={!code.trim()}
-              onPress={() => resolveCode(code)}
+              disabled={!code.trim() || loading}
+              onPress={submit}
             />
-            <Button
-              label={`สแกนตัวอย่าง${sample ? ` · ${sample.barcode}` : ''}`}
-              variant="secondary"
-              fullWidth
-              disabled={!sample}
-              onPress={() =>
-                sample && resolveCode(sample.barcode ?? sample.sku)
-              }
-            />
-            <Button
-              label="ยกเลิก"
-              variant="ghost"
-              fullWidth
-              onPress={onCancel}
-            />
+            <Button label="ยกเลิก" variant="ghost" fullWidth onPress={onCancel} />
           </View>
         </View>
       </View>
@@ -204,14 +168,4 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 12,
   },
-  scanFrame: {
-    height: 150,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    overflow: 'hidden',
-  },
-  barcodeGlyph: { fontSize: 34, fontWeight: '800', letterSpacing: 3 },
-  scanLine: { position: 'absolute', left: 28, right: 28, height: 2 },
 });

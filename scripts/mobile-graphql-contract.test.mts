@@ -208,13 +208,13 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 59 mobile/POS input arguments are typed", () => {
+test("all 60 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({ ...operation, input: inputArgument(operation.kind, operation.name) }))
     .filter((operation) => operation.input != null);
 
-  assert.equal(inputOperations.length, 59, "the mobile/POS surface must keep all 59 input-bearing operations");
+  assert.equal(inputOperations.length, 60, "the mobile/POS surface must keep all 60 input-bearing operations");
   assert.deepEqual(
     inputOperations
       .filter((operation) => namedType(String(operation.input.type)) === "JSON")
@@ -224,9 +224,9 @@ test("all 59 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 99 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 100 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
-  assert.equal(operations.length, 99, "the complete mobile/POS output surface must stay in the contract");
+  assert.equal(operations.length, 100, "the complete mobile/POS output surface must stay in the contract");
   const jsonRoots = operations
     .filter((operation) => namedType(String(rootField(operation.kind, operation.name).type)) === "JSON")
     .map((operation) => `${operation.kind}.${operation.name}`);
@@ -421,7 +421,7 @@ test("normal POS REST workflows have named GraphQL equivalents", () => {
     "bmsPosPurchaseOrder", "bmsPosMemberPreview",
   ];
   const mutations = [
-    "bmsPosSale", "bmsPosShift", "bmsPosPark", "bmsPosReturn", "bmsPosBlindReturn",
+    "bmsPosVerifyCashier", "bmsPosSale", "bmsPosShift", "bmsPosPark", "bmsPosReturn", "bmsPosBlindReturn",
     "bmsPosVoid", "bmsPosCompleteRefund", "bmsPosCashMovement", "bmsPosNoSale",
     "bmsPosEnrollMember", "bmsPosCollectAr", "bmsPosReceivePurchase", "bmsPosSendReceipt",
     "bmsPosDeposit", "bmsPosExpense", "bmsPosRequestPharmacyReview",

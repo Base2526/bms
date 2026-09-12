@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMutation, useQuery } from '@apollo/client';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Card } from '../components/Card';
@@ -11,29 +12,68 @@ import { useDevice } from '../state/DeviceContext';
 import { useSession } from '../state/SessionContext';
 import { displayHost } from '../lib/pairing';
 import {
-  mockBranches,
-  mockCashiers,
-  MockBranch,
-  MockCashier,
-} from '../mocks/devices';
+  isPosPinLengthValid,
+  POS_PIN_MAX_LENGTH,
+  visiblePosPinSlots,
+} from '../lib/posPin';
+import {
+  PosBootstrapDocument,
+  VerifyPosCashierDocument,
+} from '../graphql/generated';
+import type {
+  PosSessionBranch,
+  PosSessionCashier,
+} from '../state/SessionContext';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-const PIN_LENGTH = 6;
-
-// ⚠️ หน้าจอนี้เป็น "เปลือก" เท่านั้น (กลุ่ม A) — ไม่มีการยืนยันตัวตนจริงใด ๆ
-// รอปิด schema/auth (login แบบ session ต่อคน, idle-timeout, สลับผู้ใช้) ให้นิ่งก่อน
-// ถึงจะต่อ mutation จริงตรงนี้ — ดูการวิเคราะห์ที่คุยกันไว้ก่อนเริ่มงานนี้
 export default function LoginScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
+  const { status: pairStatus } = useDevice();
   const { signIn } = useSession();
-  const [branch, setBranch] = useState<MockBranch>(mockBranches[0]);
-  const [cashier, setCashier] = useState<MockCashier>(mockCashiers[0]);
+  const { data, loading, error, refetch } = useQuery(PosBootstrapDocument, {
+    skip: pairStatus !== 'PAIRED',
+    notifyOnNetworkStatusChange: true,
+  });
+  const [verifyCashier, { loading: verifying }] = useMutation(
+    VerifyPosCashierDocument,
+  );
+  const [cashierId, setCashierId] = useState<string | null>(null);
   const [pin, setPin] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const canSubmit = pin.length >= 4;
+  const branch = useMemo<PosSessionBranch | null>(() => {
+    const location = data?.bmsPosSession.location;
+    return location
+      ? { id: location.id, name: location.name, code: location.branchCode }
+      : null;
+  }, [data]);
+  const cashiers = useMemo<PosSessionCashier[]>(
+    () =>
+      (data?.bmsPosSession.cashiers ?? []).map(item => ({
+        id: item.id,
+        name: item.name ?? item.email ?? item.id,
+        role: item.role ?? 'Cashier',
+      })),
+    [data],
+  );
+  const cashier = cashiers.find(item => item.id === cashierId) ?? cashiers[0];
+
+  useEffect(() => {
+    if (!cashierId && cashiers[0]) setCashierId(cashiers[0].id);
+    if (cashierId && !cashiers.some(item => item.id === cashierId)) {
+      setCashierId(cashiers[0]?.id ?? null);
+    }
+  }, [cashierId, cashiers]);
+
+  const canSubmit =
+    isPosPinLengthValid(pin) &&
+    !!branch &&
+    !!cashier &&
+    !loading &&
+    !verifying;
 
   const branchCard = (
     <Card style={{ marginBottom: spacing.md }}>
@@ -46,14 +86,15 @@ export default function LoginScreen({ navigation }: Props) {
         สาขา
       </Text>
       <View style={styles.chipWrap}>
-        {mockBranches.map(item => (
-          <Chip
-            key={item.id}
-            label={item.name}
-            selected={item.id === branch.id}
-            onPress={() => setBranch(item)}
-          />
-        ))}
+        {branch ? (
+          <Chip label={branch.name} selected onPress={() => undefined} />
+        ) : (
+          <Text style={[typography.body, { color: colors.textMuted }]}>
+            {loading
+              ? 'กำลังอ่านสาขาจากเครื่อง…'
+              : 'ยังอ่านสาขาจากเครื่องไม่ได้'}
+          </Text>
+        )}
       </View>
     </Card>
   );
@@ -69,12 +110,16 @@ export default function LoginScreen({ navigation }: Props) {
         ผู้ปฏิบัติงาน
       </Text>
       <View style={styles.chipWrap}>
-        {mockCashiers.map(item => (
+        {cashiers.map(item => (
           <Chip
             key={item.id}
             label={item.name}
             selected={item.id === cashier.id}
-            onPress={() => setCashier(item)}
+            onPress={() => {
+              setCashierId(item.id);
+              setPin('');
+              setLoginError(null);
+            }}
           />
         ))}
       </View>
@@ -86,10 +131,10 @@ export default function LoginScreen({ navigation }: Props) {
     // ก้อนใหญ่ระหว่างจุด PIN กับแป้นตัวเลข ซึ่งอ่านเหมือนหน้าจอโหลดไม่เสร็จ
     <Card style={isTablet ? undefined : { flex: 1 }}>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        PIN
+        PIN 4–8 หลัก
       </Text>
       <View style={styles.pinRow}>
-        {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+        {Array.from({ length: visiblePosPinSlots(pin) }).map((_, i) => (
           <View
             key={i}
             style={[
@@ -112,24 +157,65 @@ export default function LoginScreen({ navigation }: Props) {
         ]}
       >
         <NumericKeypad
-          onDigit={d => setPin(p => (p.length < PIN_LENGTH ? p + d : p))}
+          onDigit={d =>
+            setPin(p => (p.length < POS_PIN_MAX_LENGTH ? p + d : p))
+          }
           onBackspace={() => setPin(p => p.slice(0, -1))}
           onClear={() => setPin('')}
         />
       </View>
 
       <Button
-        label="เข้าใช้งาน"
+        label={verifying ? 'กำลังตรวจ PIN…' : 'เข้าใช้งาน'}
         fullWidth
         disabled={!canSubmit}
-        onPress={() => {
-          // ⚠️ ยังไม่ใช่การยืนยันตัวตน — แค่จำไว้ว่าใครกดเข้ามาและสาขาไหน เพื่อให้หน้ากะ/ใบเสร็จ
-          // พูดชื่อเดียวกับที่เลือกไว้ (ก่อนหน้านี้ค่าที่เลือกทั้งคู่ถูกทิ้ง แล้วหน้ากะประกาศชื่อ
-          // ผู้เปิดกะจาก mock ตายตัวซึ่งไม่ตรงกับคนที่เพิ่งล็อกอิน)
-          signIn(branch, cashier);
-          navigation.replace('Main');
+        onPress={async () => {
+          if (!branch || !cashier) return;
+          setLoginError(null);
+          try {
+            const result = await verifyCashier({
+              variables: {
+                input: { cashierUserId: cashier.id, pin },
+              },
+            });
+            const verified = result.data?.bmsPosVerifyCashier;
+            if (!verified) throw new Error('เซิร์ฟเวอร์ไม่คืนข้อมูลพนักงาน');
+            signIn(
+              branch,
+              {
+                id: verified.id,
+                name: verified.name ?? verified.email ?? verified.id,
+                role: verified.role ?? 'Cashier',
+              },
+              pin,
+            );
+            navigation.replace('Main');
+          } catch (submitError) {
+            setLoginError(
+              submitError instanceof Error
+                ? submitError.message
+                : 'ตรวจ PIN ไม่สำเร็จ',
+            );
+          } finally {
+            setPin('');
+          }
         }}
       />
+      {(loginError || error) && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => refetch().catch(() => undefined)}
+        >
+          <Text
+            style={[
+              typography.body,
+              { color: colors.danger, marginTop: spacing.sm },
+            ]}
+          >
+            {loginError ?? error?.message} · แตะเพื่อลองใหม่
+          </Text>
+        </Pressable>
+      )}
     </Card>
   );
 
@@ -166,10 +252,11 @@ export default function LoginScreen({ navigation }: Props) {
                 กำลังจะเข้าใช้งาน
               </Text>
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                {cashier.name}
+                {cashier?.name ?? 'ยังไม่ได้เลือกพนักงาน'}
               </Text>
               <Text style={[typography.body, { color: colors.textMuted }]}>
-                {branch.name} · {branch.code} · {cashier.role}
+                {branch?.name ?? 'ไม่ทราบสาขา'} · {branch?.code ?? '—'} ·{' '}
+                {cashier?.role ?? '—'}
               </Text>
             </Card>
           </View>
@@ -187,7 +274,7 @@ export default function LoginScreen({ navigation }: Props) {
 }
 
 // สรุปการจับคู่เครื่องแบบบรรทัดเดียว — สถานะมาจากผลถามเซิร์ฟเวอร์จริง ไม่ใช่จากค่าที่เก็บไว้
-// (เก็บ token ไว้ ≠ token ยังใช้ได้ · ตัวที่บอกได้คือ /api/pos/session เท่านั้น)
+// (เก็บ token ไว้ ≠ token ยังใช้ได้ · ตัวที่บอกได้คือ GraphQL bmsPosSession เท่านั้น)
 function DeviceStrip({ onPress }: { onPress: () => void }) {
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
   const { status, target, verify } = useDevice();
@@ -202,7 +289,15 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
     tone = 'bad';
   } else if (verify.kind === 'OK') {
     const b = verify.info.branchName ?? 'ไม่ทราบสาขา';
-    label = `${b} · เครื่อง ${verify.info.deviceCode} · ${displayHost(
+    const storeType =
+      verify.info.businessArchetype === 'restaurant'
+        ? 'ร้านอาหาร'
+        : verify.info.businessArchetype === 'pharmacy'
+        ? 'ร้านขายยา'
+        : 'ร้านทั่วไป';
+    label = `${storeType} · ${b} · เครื่อง ${
+      verify.info.deviceCode
+    } · ${displayHost(
       target.serverUrl,
     )}`;
     tone = 'ok';

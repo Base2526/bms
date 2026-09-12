@@ -1,5 +1,4 @@
-// param list ของแต่ละ navigator — แยกไฟล์เดียวไว้กันหน้าจอ import กันเองมั่ว ๆ
-// ยังไม่มี prop จริงจาก backend (id ที่ผ่านกันตอนนี้คือ mock id ในโครง)
+// param list ของแต่ละ navigator — ids มาจาก GraphQL และ server เป็นผู้ตรวจ scope ซ้ำเสมอ
 
 export type RootStackParamList = {
   Login: undefined;

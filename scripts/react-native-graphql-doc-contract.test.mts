@@ -82,8 +82,8 @@ test("the typed/JSON coverage table matches the executable mobile schema exactly
   const resolverCount = [bmsPosDeviceResolvers, bmsMobileOperationsResolvers]
     .flatMap((resolvers) => [Object.keys(resolvers.Query), Object.keys(resolvers.Mutation)])
     .flat().length;
-  assert.equal(resolverCount, 99, "the documented typed count must cover the complete mobile/POS surface");
+  assert.equal(resolverCount, 100, "the documented typed count must cover the complete mobile/POS surface");
   assert.deepEqual(mobileOutputOperations("JSON"), [], "the executable schema must have no opaque output roots");
-  assert.deepEqual(operationsInCoverageRow("Typed (99)"), []);
+  assert.deepEqual(operationsInCoverageRow("Typed (100)"), []);
   assert.deepEqual(operationsInCoverageRow("JSON compatibility (0)"), []);
 });

@@ -3,39 +3,72 @@ import React, {
   useCallback,
   useContext,
   useMemo,
+  useEffect,
+  useRef,
   useState,
 } from 'react';
-import { mockBranches, mockCashiers } from '../mocks/devices';
-import type { MockBranch, MockCashier } from '../mocks/devices';
+import { useDevice } from './DeviceContext';
 
-// ⚠️ ไม่ใช่ session จริง — เก็บแค่ "ใครกดเข้าใช้งานที่หน้า Login และเลือกสาขาไหน"
-// เพื่อให้หน้าจออื่น (กะ/ใบเสร็จ) พูดชื่อเดียวกับที่คนเลือกไว้
-//
-// ก่อนหน้านี้ LoginScreen ทิ้งค่าที่เลือกทั้งคู่แล้ว `navigation.replace('Main')` เฉย ๆ
-// หน้ากะจึงประกาศชื่อผู้เปิดกะจาก mock ตายตัว = เข้าใช้งานเป็นคนหนึ่งแต่กะบอกอีกชื่อหนึ่ง
-//
-// ตอนต่อ backend ของจริงชั้นนี้จะถูกแทนด้วย cashier session (auth ต่อคน + idle timeout)
-// และ "สาขา" ต้องมาจาก device token ฝั่ง server เท่านั้น ห้ามมาจากสิ่งที่คนเลือกที่จอ
-export interface MockSession {
-  branch: MockBranch;
-  cashier: MockCashier;
+export interface PosSessionBranch {
+  id: string;
+  name: string;
+  code: string;
+}
+
+export interface PosSessionCashier {
+  id: string;
+  name: string;
+  role: string;
+}
+
+// PIN อยู่ใน React memory เฉพาะช่วงที่ cashier login และไม่ลง Keychain/AsyncStorage/log
+// เพราะ backend ต้องตรวจ credentials ซ้ำในทุกคำสั่งขาย เงิน สต็อก และครัว
+export interface PosSession {
+  branch: PosSessionBranch;
+  cashier: PosSessionCashier;
+  credentials: { cashierUserId: string; pin: string };
   signedInAt: string;
 }
 
 interface SessionContextValue {
-  session: MockSession | null;
-  signIn: (branch: MockBranch, cashier: MockCashier) => void;
+  session: PosSession | null;
+  signIn: (
+    branch: PosSessionBranch,
+    cashier: PosSessionCashier,
+    pin: string,
+  ) => void;
   signOut: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<MockSession | null>(null);
+  const { status, target } = useDevice();
+  const [session, setSession] = useState<PosSession | null>(null);
+  const pairingKey = target ? `${target.serverUrl}:${target.token}` : null;
+  const previousPairingKey = useRef(pairingKey);
 
-  const signIn = useCallback((branch: MockBranch, cashier: MockCashier) => {
-    setSession({ branch, cashier, signedInAt: new Date().toISOString() });
-  }, []);
+  useEffect(() => {
+    if (
+      status !== 'PAIRED' ||
+      previousPairingKey.current !== pairingKey
+    ) {
+      setSession(null);
+    }
+    previousPairingKey.current = pairingKey;
+  }, [pairingKey, status]);
+
+  const signIn = useCallback(
+    (branch: PosSessionBranch, cashier: PosSessionCashier, pin: string) => {
+      setSession({
+        branch,
+        cashier,
+        credentials: { cashierUserId: cashier.id, pin },
+        signedInAt: new Date().toISOString(),
+      });
+    },
+    [],
+  );
 
   const signOut = useCallback(() => setSession(null), []);
 
@@ -54,11 +87,10 @@ export function useSession(): SessionContextValue {
   return ctx;
 }
 
-/** ชื่อที่เอาไปแสดงได้เสมอ — ยังไม่ได้ล็อกอินให้ตกกลับไปที่ mock ตัวแรก */
-export function sessionCashierName(session: MockSession | null): string {
-  return session?.cashier.name ?? mockCashiers[0].name;
+export function sessionCashierName(session: PosSession | null): string {
+  return session?.cashier.name ?? 'ยังไม่ได้เข้าใช้งาน';
 }
 
-export function sessionBranchName(session: MockSession | null): string {
-  return session?.branch.name ?? mockBranches[0].name;
+export function sessionBranchName(session: PosSession | null): string {
+  return session?.branch.name ?? 'ยังไม่ทราบสาขา';
 }

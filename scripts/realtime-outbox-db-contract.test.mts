@@ -19,6 +19,7 @@ test("outbox commit/rollback, tenant isolation, claims, retry, and acknowledgeme
     "local test DB required",
   );
   await query(migration);
+  await query("DELETE FROM bms_realtime_outbox");
   const tenantId = (await query<{ id: string }>(
     "INSERT INTO bms_tenants(name, slug) VALUES($1, $2) RETURNING id",
     ["FAKE realtime outbox", `fake-realtime-${randomUUID()}`],
@@ -28,6 +29,7 @@ test("outbox commit/rollback, tenant isolation, claims, retry, and acknowledgeme
     ["FAKE realtime foreign", `fake-realtime-foreign-${randomUUID()}`],
   )).rows[0].id;
   t.after(async () => {
+    await query("DELETE FROM bms_realtime_outbox WHERE tenant_id = ANY($1::uuid[])", [[tenantId, foreignTenantId]]);
     await query("DELETE FROM bms_tenants WHERE id = ANY($1::uuid[])", [[tenantId, foreignTenantId]]);
   });
 

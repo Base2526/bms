@@ -94,7 +94,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.93` — see [../business/pos.md](../business/pos.md) |
 | POS — parked bills, drawer cash, void, shift report | ✅ | `lib/bms/pos.ts` · `7.97__bms_pos_park_cash_void.sql` · `app/api/pos/{park,cash-movement,void,shift-report}` — a manual discount, a void, and cash out each need a second person's PIN; a void reuses the return machinery under `isVoid` and stamps the bill inside that same transaction |
 | POS — restaurant dine-in (floor, checks, kitchen rounds) | ✅ | `lib/bms/restaurantPos.ts` · `app/(pos)/pos/restaurant` · `app/api/pos/{restaurant,kitchen}/*` · `/admin/kitchen` · migrations `9.44`–`9.45` — a check reserves stock when a kitchen round is sent and settles through the one `recordPosSale()` path; modifier surcharges are server-owned catalog data; floor/kitchen/cancel use `restaurant.*` permissions — see [../business/pos.md](../business/pos.md) |
-| Native POS mobile scaffold | 🧪 mock-first | `apps/mobile/` — bare React Native POS client with responsive mock-backed sell/table/kitchen/shift flows and secure device pairing; business flows stay disconnected from backend authority until the mobile GraphQL/cashier-session contract is closed — see [../../apps/mobile/README.md](../../apps/mobile/README.md) |
+| Native POS mobile client | ✅ core GraphQL workflows | `apps/mobile/` — bare React Native POS with secure device pairing, cashier PIN/RBAC, generated GraphQL retail/restaurant/shift commands and named WS invalidation; hardware and pharmacy-review integrations remain — see [../../apps/mobile/README.md](../../apps/mobile/README.md) |
 | Kitchen stations (registered work areas, SLA) | ✅ | `lib/bms/kitchenStations.ts` · `9.53`–`9.54` · `/admin/kitchen`, register KDS — a station is a registered row (id, active flag, sort order, optional branch) matched id-first then by a name snapshot, never a free-text label; per-station SLA colors the board; deactivating a station never blocks tickets already routed to it — see [../business/pos.md](../business/pos.md) § Kitchen stations |
 | Restaurant chat ordering + delivery | ✅ | `lib/bms/{menuAvailability,restaurantOrdering}.ts` · `9.55`–`9.57` · `app/api/pos/restaurant/{menu,incoming}` — branch-scoped "sold out today" flag with dual-signal reset (cron + shift-open, both keyed off `resets_at`); an online order needs an explicit branch and `DELIVERY`/`PICKUP` before payment creates any kitchen work; line cancellation reuses the POS return engine with an immutable cause and merchant-absorbed repricing — see [../business/restaurant-chat-delivery.md](../business/restaurant-chat-delivery.md) |
 | Membership, tiers & loyalty points | ✅ | `lib/bms/{membership,loyaltyMath}.ts` · `graphql/bmsMembership.ts` · `7.96__bms_membership_and_loyalty.sql` · `/admin/loyalty` — points are a ledger, not a balance column, and reverse proportionally on a return; outstanding points are an accounting liability (`bmsLoyaltyOutstanding`) — see [../business/pos.md](../business/pos.md) |
@@ -139,14 +139,16 @@ outbox dispatched to Redis while `apps/ws` remains database-free. Migration `9.7
 contract, dispatcher, continuous multi-instance-safe web pump, short-lived HTTP-minted admin/POS WS
 tickets, gateway limits/lifecycle, and migration `9.71` domain triggers are implemented. The client
 deduplicates and version-checks events, batches targeted active-query refetches, reconciles on
-reconnect/focus, and exposes degraded state. Live DB/socket recovery and load verification remain.
+  reconnect/focus, and exposes degraded state. The DB contract and multi-instance Redis/WS live
+  smoke pass; production soak/load monitoring remains.
 See the [full audit](realtime-production-audit.md) and
 [ADR 001](decisions/001-transactional-realtime-invalidation.md).
 
 The mobile transport decision is implemented server-side: normal React Native/POS reads and commands
 use HTTPS GraphQL, while GraphQL WS carries invalidations. Device-scoped GraphQL context and named
-operations now cover the normal POS workflows; the 41 POS REST routes remain compatibility APIs
-until the browser POS caller and external native app complete rollout. See the
+operations now cover the normal POS workflows, and the in-repository RN client calls the core
+retail/restaurant/shift subset. The 41 POS REST routes remain compatibility APIs until browser and
+external-client rollout completes. See the
 [mobile GraphQL/WS architecture and route inventory](mobile-graphql-ws-realtime.md).
 
 **Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
@@ -168,18 +170,16 @@ not report yet) and an admin page listing incidents (today they surface only as 
 finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
-**POS Mobile App (iOS/Android, planned)** — a React Native/Expo client for the counter register,
-built for staff (internal distribution, not a public-store consumer app). `/api/pos/*` already
-authenticates with a device token + cashier PIN instead of a browser cookie, so the existing REST
-surface can be reused as-is; the unbuilt parts are native, not backend: ESC/POS printing and
+**POS Mobile native integrations (iOS/Android)** — the bare React Native counter client is built for
+staff and uses GraphQL with a device token plus cashier PIN. The remaining parts are native rather
+than a second business path: ESC/POS printing and
 cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap above — both need real hardware
 verification), barcode capture (`9.6`'s Scan Manager targets a Bluetooth-HID keyboard typing into a
 browser page, which does not translate to a native app — camera scan or native BLE/Classic pairing
 needs its own design), and the customer-facing display (`/pos/display` uses a same-browser
-`BroadcastChannel`, which does not reach a second device). Before shipping on a channel with weaker
-connectivity than the counter's LAN, apply and DB-verify `9.5__bms_pos_cash_movement_idempotency.sql`
-(written but not yet applied — see [CLAUDE.local.md](../../CLAUDE.local.md)), the one cash-movement
-path that still lacks an idempotency key ·
+`BroadcastChannel`, which does not reach a second device). Every environment must include
+`9.5__bms_pos_cash_movement_idempotency.sql`; the RN cash-movement caller keeps one key across an
+unknown network result ·
 **Insurance Sales Inbox (planned, new BMS module)** — policy/premium/claim domain sold primarily
 through LINE chat, built as a tenant module (not a separate product) so it inherits multi-tenant
 RLS/RBAC, the Omnichannel Inbox (`lib/bms/inbox.ts`, LINE webhook/reply/push already built), and the

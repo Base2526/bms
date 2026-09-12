@@ -1893,7 +1893,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
 
   extend type Query {
     bmsPosSession: BmsPosSessionResult!
-    bmsPosCatalogSearch(q: String!): BmsPosCatalogSearchResult!
+    bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
     bmsPosScan(
       code: String!
       size: String
@@ -1929,6 +1929,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   extend type Mutation {
+    bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
     bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
     bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
     bmsPosPark(input: BmsPosParkInput!): BmsPosParkActionResult!
@@ -2115,15 +2116,14 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosCatalogSearch(_parent: unknown, args: { q: string }, ctx: any) {
+    async bmsPosCatalogSearch(_parent: unknown, args: { q?: string | null }, ctx: any) {
       const device = requirePosDevice(ctx);
       const q = normalizePosSearchQuery(args.q);
-      if (!q) return { items: [] };
       const { items } = await listSellableProducts(device.tenantId, {
-        search: q,
+        search: q || undefined,
         inStockOnly: true,
-        sort: "relevance",
-        limit: 8,
+        sort: q ? "relevance" : "availability",
+        limit: 20,
         locationId: device.locationId,
         salesSurface: "RETAIL_POS",
       });
@@ -2464,6 +2464,18 @@ export const bmsPosDeviceResolvers = {
   },
 
   Mutation: {
+    async bmsPosVerifyCashier(_parent: unknown, args: { input: unknown }, ctx: any) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(device, input, "pos.sell");
+      const cashiers = await listPosCashiers(device.tenantId);
+      const cashier = cashiers.find((candidate) => candidate.id === actor.userId);
+      if (!cashier) {
+        throw mobileGraphqlError("ไม่พบพนักงานที่ยืนยันแล้วในร้าน", "FORBIDDEN");
+      }
+      return cashier;
+    },
+
     async bmsPosSale(_parent: unknown, args: { input: unknown }, ctx: any) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);

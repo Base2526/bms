@@ -1,29 +1,26 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
+import React, { createContext, useCallback, useContext, useMemo } from 'react';
+import { useMutation, useQuery } from '@apollo/client';
 import {
-  cashRefundsOf,
-  cashSalesOf,
-  cashVariance,
-  drawerExpectedFrom,
-  parseAmountInput,
-  summarizeMovements,
-  validateCashOut,
-  type CashMovementType,
-} from '../lib/shiftMath';
-import { mockCashMovements, mockShift } from '../mocks/shift';
-import type { MockCashMovement } from '../mocks/shift';
-import { useSales } from './SalesContext';
+  MobilePosCashMovementDocument,
+  MobilePosCashMovementsDocument,
+  MobilePosShiftDocument,
+  MobilePosShiftHistoryDocument,
+  MobilePosShiftReportDocument,
+  PosBootstrapDocument,
+} from '../graphql/generated';
+import { createIdempotencyKey } from '../lib/operation';
+import type { CashMovementType } from '../lib/shiftMath';
+import { useSession } from './SessionContext';
 
-// กะ/ลิ้นชักของรอบที่เปิดแอป — ยังเป็น state ในหน่วยความจำล้วน ไม่มี network
-//
-// ⚠️ ตัวเลขทุกตัวบนหน้ากะต้อง "คำนวณจากของที่เกิดขึ้นจริง" ไม่ใช่ค่าที่เขียนไว้:
-// เงินสดที่เข้าลิ้นชักมาจากบิลใน SalesContext + เงินเข้า/ออกที่บันทึกไว้ในนี้
-// ถ้าปล่อยให้เป็นเลขคงที่ จอจะบอกคนละเรื่องกับรายการที่แสดงอยู่ข้าง ๆ กันเอง
+export interface ShiftMovement {
+  id: string;
+  type: CashMovementType;
+  amount: number;
+  reason: string;
+  at: string;
+  actorName: string | null;
+  approvedByName: string | null;
+}
 
 export interface ShiftCloseSummary {
   closedAt: string;
@@ -32,188 +29,290 @@ export interface ShiftCloseSummary {
   variance: number;
 }
 
+interface MovementApproval {
+  approverUserId?: string;
+  approverPin?: string;
+}
+
 interface ShiftContextValue {
+  isOpen: boolean;
   openedAt: string;
   openedByName: string;
   openingFloat: number;
-  movements: MockCashMovement[];
-  /** เงินสดจากการขายในกะนี้ (mock ที่ seed ไว้ + บิลที่เพิ่งขายในแอป) */
+  movements: ShiftMovement[];
   cashSales: number;
-  /** เงินสดที่จ่ายคืนออกไปจริง (การคืนทาง QR/บัตรยังไม่ออกจากลิ้นชัก) */
   cashRefunds: number;
   movementIn: number;
   movementOut: number;
   expectedCash: number;
   closeSummary: ShiftCloseSummary | null;
-  /** คืน error เป็นข้อความ ถ้า null แปลว่าบันทึกแล้ว */
+  loading: boolean;
+  error: string | null;
   addMovement: (
     type: CashMovementType,
     amountText: string,
     reason: string,
-  ) => string | null;
-  closeShift: (countedCashText: string) => string | null;
-  reopenShift: (openedByName: string) => void;
+    approval?: MovementApproval,
+    idempotencyKey?: string,
+  ) => Promise<string | null>;
+  closeShift: (countedCashText: string) => Promise<string | null>;
+  reopenShift: (openingFloat?: number) => Promise<string | null>;
 }
 
 const ShiftContext = createContext<ShiftContextValue | null>(null);
 
-function clockLabel(date: Date): string {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes(),
-  ).padStart(2, '0')}`;
-}
-
 export function ShiftProvider({
   children,
-  openedByName,
 }: {
   children: React.ReactNode;
-  openedByName: string;
+  openedByName?: string;
 }) {
-  const { sales } = useSales();
-  const [openedAt, setOpenedAt] = useState(mockShift.openedAt);
-  const [openingFloat, setOpeningFloat] = useState(mockShift.openingFloat);
-  const [seededCashSales, setSeededCashSales] = useState(
-    mockShift.seededCashSales,
-  );
-  const [movements, setMovements] = useState<MockCashMovement[]>(() => [
-    ...mockCashMovements,
-  ]);
-  const [closeSummary, setCloseSummary] = useState<ShiftCloseSummary | null>(
-    null,
-  );
-  const [reopenedBy, setReopenedBy] = useState<string | null>(null);
-  // เวลาที่กะปัจจุบันเริ่ม — 0 = กะแรกของรอบที่เปิดแอป (นับบิลทั้งหมดที่ขายในแอป)
-  // ⚠️ ledger ของการขายไม่ถูกล้างตอนเปิดกะใหม่ ถ้าไม่มีเส้นนี้ เงินของกะที่ปิดไปแล้วจะถูกนับ
-  // เข้าลิ้นชักของกะใหม่อีกรอบ แล้วยอด "ควรมี" จะบวมขึ้นทุกครั้งที่เปิดกะ
-  const [shiftStartedAtMs, setShiftStartedAtMs] = useState(0);
+  const { session } = useSession();
+  const credentials = session?.credentials;
+  const bootstrap = useQuery(PosBootstrapDocument, {
+    skip: !session,
+    notifyOnNetworkStatusChange: true,
+  });
+  const shift = bootstrap.data?.bmsPosSession.shift ?? null;
+  const movementsQuery = useQuery(MobilePosCashMovementsDocument, {
+    skip: !session || !shift,
+    notifyOnNetworkStatusChange: true,
+  });
+  const historyQuery = useQuery(MobilePosShiftHistoryDocument, {
+    variables: {
+      credentials: credentials ?? { cashierUserId: '', pin: '' },
+    },
+    skip: !credentials,
+    notifyOnNetworkStatusChange: true,
+  });
+  const latestClosedShift =
+    historyQuery.data?.bmsPosShiftHistory.shifts.find(
+      item => item.status === 'CLOSED',
+    ) ?? null;
+  const reportShiftId = shift?.id ?? latestClosedShift?.id ?? null;
+  const reportQuery = useQuery(MobilePosShiftReportDocument, {
+    variables: {
+      credentials: credentials ?? { cashierUserId: '', pin: '' },
+      shiftId: reportShiftId ?? '',
+    },
+    skip: !credentials || !reportShiftId,
+    notifyOnNetworkStatusChange: true,
+  });
+  const [shiftMutation] = useMutation(MobilePosShiftDocument);
+  const [movementMutation] = useMutation(MobilePosCashMovementDocument);
+  const report = reportQuery.data?.bmsPosShiftReport.report;
 
-  const { movementIn, movementOut } = useMemo(
-    () => summarizeMovements(movements),
-    [movements],
-  );
-  const cashSales = useMemo(
-    () => seededCashSales + cashSalesOf(sales, shiftStartedAtMs),
-    [sales, seededCashSales, shiftStartedAtMs],
-  );
-  const cashRefunds = useMemo(
-    () => cashRefundsOf(sales, shiftStartedAtMs),
-    [sales, shiftStartedAtMs],
-  );
-
-  const expectedCash = useMemo(
+  const movements = useMemo<ShiftMovement[]>(
     () =>
-      drawerExpectedFrom({
-        openingFloat,
-        cashSales,
-        cashRefunds,
-        movementIn,
-        movementOut,
-      }),
-    [cashRefunds, cashSales, movementIn, movementOut, openingFloat],
+      (shift
+        ? movementsQuery.data?.bmsPosCashMovements.movements ?? []
+        : []
+      ).map(movement => ({
+        id: movement.id,
+        type: movement.direction === 'OUT' ? 'OUT' : 'IN',
+        amount: movement.amount,
+        reason: movement.reason,
+        at: new Date(movement.createdAt).toLocaleTimeString('th-TH', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        actorName: movement.actorName,
+        approvedByName: movement.approvedByName,
+      })),
+    [movementsQuery.data, shift],
   );
+
+  const refresh = useCallback(async () => {
+    await bootstrap.refetch();
+    await historyQuery.refetch();
+    if (shift) {
+      await movementsQuery.refetch();
+      await reportQuery.refetch();
+    }
+  }, [bootstrap, historyQuery, movementsQuery, reportQuery, shift]);
 
   const addMovement = useCallback(
-    (type: CashMovementType, amountText: string, reason: string) => {
-      if (closeSummary) return 'กะนี้ปิดไปแล้ว — เปิดกะใหม่ก่อน';
-      const parsed = parseAmountInput(amountText);
-      if (!parsed.ok) return parsed.error ?? 'จำนวนเงินไม่ถูกต้อง';
-      if (!reason.trim()) return 'ต้องระบุเหตุผลของเงินเข้า/ออก';
-      if (type === 'OUT') {
-        const overdraft = validateCashOut(parsed.amount, expectedCash);
-        if (overdraft) return overdraft;
+    async (
+      type: CashMovementType,
+      amountText: string,
+      reason: string,
+      approval: MovementApproval = {},
+      idempotencyKey = createIdempotencyKey('cash'),
+    ) => {
+      if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
+      const amount = Number(amountText);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return 'จำนวนเงินต้องมากกว่า 0';
       }
-      setMovements(prev => [
-        {
-          id: `cm-${Date.now()}`,
-          type,
-          amount: parsed.amount,
-          reason: reason.trim(),
-          at: clockLabel(new Date()),
-        },
-        ...prev,
-      ]);
-      return null;
+      if (!reason.trim()) return 'ต้องระบุเหตุผลของเงินเข้า/ออก';
+      if (
+        type === 'OUT' &&
+        (!approval.approverUserId || !approval.approverPin)
+      ) {
+        return 'เงินออกต้องมีผู้อนุมัติคนที่สองและ PIN';
+      }
+      try {
+        const response = await movementMutation({
+          variables: {
+            input: {
+              cashierUserId: credentials.cashierUserId,
+              pin: credentials.pin,
+              direction: type,
+              amount,
+              reason: reason.trim(),
+              idempotencyKey,
+              approverUserId: approval.approverUserId ?? null,
+              approverPin: approval.approverPin ?? null,
+            },
+          },
+        });
+        const result = response.data?.bmsPosCashMovement;
+        if (result?.status !== 'RECORDED') {
+          return result?.reason ?? result?.status ?? 'บันทึกเงินไม่สำเร็จ';
+        }
+        await refresh();
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : 'บันทึกเงินไม่สำเร็จ';
+      }
     },
-    [closeSummary, expectedCash],
+    [credentials, movementMutation, refresh],
   );
 
   const closeShift = useCallback(
-    (countedCashText: string) => {
-      if (closeSummary) return 'กะนี้ปิดไปแล้ว';
-      const trimmed = countedCashText.trim();
-      if (!trimmed) return 'กรอกยอดเงินสดที่นับได้';
-      const counted = Number(trimmed);
-      if (!Number.isFinite(counted) || counted < 0) {
+    async (countedCashText: string) => {
+      if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
+      const countedCash = Number(countedCashText);
+      if (!Number.isFinite(countedCash) || countedCash < 0) {
         return 'ยอดเงินสดที่นับได้ต้องเป็นตัวเลขไม่ติดลบ';
       }
-      setCloseSummary({
-        closedAt: clockLabel(new Date()),
-        countedCash: Math.round(counted * 100) / 100,
-        expectedCash,
-        variance: cashVariance(counted, expectedCash),
-      });
-      return null;
+      try {
+        const response = await shiftMutation({
+          variables: {
+            input: {
+              action: 'CLOSE',
+              cashierUserId: credentials.cashierUserId,
+              pin: credentials.pin,
+              countedCash,
+              openingFloat: null,
+              note: null,
+              userId: null,
+            },
+          },
+        });
+        const result = response.data?.bmsPosShift;
+        if (result?.status !== 'CLOSED') {
+          return result?.reason ?? result?.status ?? 'ปิดกะไม่สำเร็จ';
+        }
+        await Promise.all([bootstrap.refetch(), historyQuery.refetch()]);
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : 'ปิดกะไม่สำเร็จ';
+      }
     },
-    [closeSummary, expectedCash],
+    [bootstrap, credentials, historyQuery, shiftMutation],
   );
 
-  // เปิดกะใหม่ = เริ่มนับใหม่จากศูนย์ ยกเว้นเงินทอนตั้งต้นที่ยกยอดที่นับได้จริงมาเป็นตัวตั้ง
-  // (ยอดขายของกะก่อนหน้าไม่ตามมา — ไม่งั้นสรุปกะใหม่จะรวมเงินที่ปิดไปแล้ว)
   const reopenShift = useCallback(
-    (name: string) => {
-      setOpeningFloat(closeSummary?.countedCash ?? openingFloat);
-      setSeededCashSales(0);
-      setMovements([]);
-      setCloseSummary(null);
-      setOpenedAt(clockLabel(new Date()));
-      setReopenedBy(name);
-      setShiftStartedAtMs(Date.now());
+    async (openingFloat = shift?.countedCash ?? 0) => {
+      if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
+      if (!Number.isFinite(openingFloat) || openingFloat < 0) {
+        return 'เงินทอนตั้งต้นต้องเป็นตัวเลขไม่ติดลบ';
+      }
+      try {
+        const response = await shiftMutation({
+          variables: {
+            input: {
+              action: 'OPEN',
+              cashierUserId: credentials.cashierUserId,
+              pin: credentials.pin,
+              openingFloat,
+              countedCash: null,
+              note: null,
+              userId: null,
+            },
+          },
+        });
+        const result = response.data?.bmsPosShift;
+        if (result?.status !== 'OPENED') {
+          return result?.reason ?? result?.status ?? 'เปิดกะไม่สำเร็จ';
+        }
+        await refresh();
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : 'เปิดกะไม่สำเร็จ';
+      }
     },
-    [closeSummary, openingFloat],
+    [credentials, refresh, shift, shiftMutation],
   );
 
+  const closeSummary = useMemo(
+    () =>
+      report?.status === 'CLOSED' && report.countedCash != null
+        ? {
+            closedAt: report.closedAt ?? '',
+            countedCash: report.countedCash,
+            expectedCash: report.expectedCash ?? 0,
+            variance: report.cashVariance ?? 0,
+          }
+        : null,
+    [report],
+  );
   const value = useMemo<ShiftContextValue>(
     () => ({
-      openedAt,
-      openedByName: reopenedBy ?? openedByName,
-      openingFloat,
+      isOpen: shift?.status === 'OPEN',
+      openedAt: shift?.openedAt ?? report?.openedAt ?? 'ยังไม่เปิดกะ',
+      openedByName: report?.openedByName ?? session?.cashier.name ?? '-',
+      openingFloat: shift?.openingFloat ?? report?.openingFloat ?? 0,
       movements,
-      cashSales,
-      cashRefunds,
-      movementIn,
-      movementOut,
-      expectedCash,
+      cashSales:
+        report?.byMethod.find(item => item.method === 'CASH')?.amount ?? 0,
+      cashRefunds: report?.cashRefunds ?? 0,
+      movementIn: report?.cashIn ?? 0,
+      movementOut: report?.cashOut ?? 0,
+      expectedCash: report?.expectedCash ?? shift?.expectedCash ?? 0,
       closeSummary,
+      loading:
+        bootstrap.loading ||
+        historyQuery.loading ||
+        movementsQuery.loading ||
+        reportQuery.loading,
+      error:
+        bootstrap.error?.message ??
+        historyQuery.error?.message ??
+        movementsQuery.error?.message ??
+        reportQuery.error?.message ??
+        null,
       addMovement,
       closeShift,
       reopenShift,
     }),
     [
       addMovement,
-      cashRefunds,
-      cashSales,
+      bootstrap.error?.message,
+      bootstrap.loading,
       closeShift,
       closeSummary,
-      expectedCash,
-      movementIn,
-      movementOut,
+      historyQuery.error?.message,
+      historyQuery.loading,
       movements,
-      openedAt,
-      openedByName,
-      openingFloat,
+      movementsQuery.error?.message,
+      movementsQuery.loading,
       reopenShift,
-      reopenedBy,
+      report,
+      reportQuery.error?.message,
+      reportQuery.loading,
+      session?.cashier.name,
+      shift,
     ],
   );
-
   return (
     <ShiftContext.Provider value={value}>{children}</ShiftContext.Provider>
   );
 }
 
 export function useShift(): ShiftContextValue {
-  const ctx = useContext(ShiftContext);
-  if (!ctx) throw new Error('useShift ต้องถูกเรียกใต้ <ShiftProvider>');
-  return ctx;
+  const context = useContext(ShiftContext);
+  if (!context) throw new Error('useShift ต้องถูกเรียกใต้ <ShiftProvider>');
+  return context;
 }

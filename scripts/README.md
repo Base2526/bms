@@ -9,7 +9,7 @@
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
 
-ตอนนี้: **144 ไฟล์เทส** = pure 106 ไฟล์ (1,110 เทส) + DB 38 ไฟล์
+ตอนนี้: **144 ไฟล์เทส** = pure 106 ไฟล์ (1,115 เทส) + DB 38 ไฟล์
 `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือ
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้างด้วย `ls scripts/*.test.mts | wc -l`,
@@ -254,7 +254,7 @@ not ok 1 - restaurant intake -> callback -> atomic order; original demand, retri
 **แยกให้ออก**: exit `2` = ด่านปฏิเสธ ยังไม่ได้แตะฐาน · exit `1` = รันแล้วมีอะไรแดง
 (รวมกรณีต่อฐานไม่ได้) — อย่างหลังไม่ได้แปลว่าโค้ดผิด ให้ดูว่า Postgres ขึ้นอยู่หรือยัง
 
-### `npm run test:all` = pure + db (114 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
+### `npm run test:all` = pure + db (144 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
 
 ---
 
@@ -310,6 +310,23 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'server-only' imported from
 
 เทสที่ import โมดูลฝั่ง server (เช่น `lib/bms/tools/catalog.ts`) ต้องมี shim ตัวนี้
 ส่วนเทสที่แตะแต่โมดูล pure รันได้โดยไม่มี — จึงพลาดง่ายและอาการไม่เหมือนเทสแดง
+
+### Live realtime fan-out smoke
+
+หลังเปิด web, Redis และ WS อย่างน้อยสอง instance ให้พิสูจน์เส้นจริงจาก domain event ผ่าน
+outbox dispatcher และ Redis ไปถึงทุก socket ด้วย:
+
+```bash
+cd apps/web
+set -a; source ../../.env.dev; set +a
+POSTGRES_HOST=localhost \
+BMS_REALTIME_WS_URLS=ws://127.0.0.1:8081/graphql,ws://127.0.0.1:8083/graphql \
+npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
+  ../../scripts/realtime-live-smoke.mts
+```
+
+สคริปต์รับ ticket ผ่าน HTTP route จริง ใช้ native socket header สร้างข้อมูล throwaway และลบทิ้ง
+เมื่อจบ จึงต้องรันกับฐาน local เท่านั้น
 
 ---
 
@@ -500,6 +517,6 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 - `scripts/bms-log-triage/README.md` · `scripts/load-test/README.md`
 - `CLAUDE.local.md` § ประตูก่อน merge/deploy — คำสั่งเต็มของเทส DB และของค้างต่อฟีเจอร์
 - `docs/architecture/realtime-test-database.md` — วิธีรันชุด DB ของ `realtime-*-db-contract`
-  ซึ่งต้องมี migration `9.70`–`9.72` ที่ยังไม่ได้ apply ที่ไหนเลย (ต้องใช้ **คนละ instance**
+  ซึ่งต้องมี migration `9.70`–`9.74` (ต้องใช้ **คนละ instance** สำหรับ production-like rollout
   เพราะ role ของ dispatcher เป็นระดับ cluster และต้อง restore จาก dump เพราะสร้างฐานเปล่าจาก
   `db/migrations` ไม่ได้) · **จดจำนวนที่ผ่าน/แดงก่อน apply ไว้เป็น baseline เสมอ**

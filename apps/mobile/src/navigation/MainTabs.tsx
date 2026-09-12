@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
 import { CartProvider } from '../state/CartContext';
-import { ChecksProvider } from '../state/ChecksContext';
+import { CatalogProvider } from '../state/CatalogContext';
 import {
   IncomingOrdersProvider,
   useIncomingOrders,
@@ -112,8 +112,8 @@ export function MainTabs() {
   return (
     <SalesProvider>
       <ShiftProvider openedByName={sessionCashierName(session)}>
-        <CartProvider>
-          <ChecksProvider>
+        <CatalogProvider>
+          <CartProvider>
             <KitchenProvider>
               <IncomingOrdersProvider>
                 {/* เฝ้าดูของใหม่ทั้งแอป — ไม่ผูกกับแท็บที่เปิดอยู่ (ดูคอมเมนต์ในไฟล์) */}
@@ -121,8 +121,8 @@ export function MainTabs() {
                 <TabsShell />
               </IncomingOrdersProvider>
             </KitchenProvider>
-          </ChecksProvider>
-        </CartProvider>
+          </CartProvider>
+        </CatalogProvider>
       </ShiftProvider>
     </SalesProvider>
   );
@@ -162,21 +162,19 @@ function TabsShell() {
           ),
         }}
       />
-      <Tab.Screen
-        name="OrdersTab"
-        component={OrdersNavigator}
-        options={{
-          title: 'ออร์เดอร์เข้า',
-          // ป้ายบนแท็บเป็นช่องทางแจ้งเตือนที่ "การันตีได้" — เห็นได้จากทุกแท็บโดยไม่ต้องพึ่งเสียง
-          // หรือการสั่น ซึ่งแท็บเล็ตหน้าร้านหลายรุ่นไม่มี
-          tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
-          tabBarIcon: ({ color, size }) => (
-            <OrdersIcon color={color} size={size} />
-          ),
-        }}
-      />
       {mode === 'restaurant' && (
         <>
+          <Tab.Screen
+            name="OrdersTab"
+            component={OrdersNavigator}
+            options={{
+              title: 'ออร์เดอร์เข้า',
+              tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
+              tabBarIcon: ({ color, size }) => (
+                <OrdersIcon color={color} size={size} />
+              ),
+            }}
+          />
           <Tab.Screen
             name="FloorTab"
             component={FloorNavigator}

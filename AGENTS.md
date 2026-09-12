@@ -41,10 +41,10 @@ wrong, and update the doc in the same change.
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
-| `apps/mobile/` | Bare React Native POS client — mock-first UI scaffold + secure device pairing; business flows are not backend-connected yet |
+| `apps/mobile/` | Bare React Native POS — secure device pairing, generated Apollo GraphQL reads/commands, cashier PIN/RBAC, and named WS invalidation for retail/restaurant/shift workflows |
 | `apps/ws/` · `packages/graphql-core/` | Subscription-only WebSocket gateway (no database connection, ever) · shared typeDefs/resolvers used by both web and ws |
 | `packages/realtime/` | The one realtime contract: event union + per-event audience/permission rules, topic builders, validation/redaction, ticket claims, `subscriptionAuth`, `NAMED_REALTIME_SUBSCRIPTIONS` |
-| `schema.graphql` | Committed SDL artifact an external client generates from (`npm run schema:export`) |
+| `schema.graphql` | Committed SDL artifact used by in-repo RN codegen and external clients (`npm run schema:export`) |
 | `db/migrations/` · `docs/` · `scripts/` | Ordered idempotent migrations · docs · log triage, AI evals, load tests |
 
 ## Hard invariants (short form)
@@ -260,9 +260,10 @@ wrong, and update the doc in the same change.
   authoritative, delivery is at-least-once, and polling/focus refresh stays until replay and load
   are proven. New events use the union, rules, topic builders and validators in
   `packages/realtime` — never a new event string or a raw topic. The surface is one generic stream
-  plus 18 named views that all reuse `realtimeTopics()` + `canReceiveRealtimeEvent()` and take **no
-  arguments**; never give a named subscription its own authorization. `9.70`–`9.72` are written but
-  **applied nowhere and never executed**; see the migration rules below before touching them, and
+  plus 17 named views that all reuse `realtimeTopics()` + `canReceiveRealtimeEvent()` and take **no
+  arguments**; never give a named subscription its own authorization. `9.70`–`9.74` have local DB
+  contract coverage, including exact POS trigger payloads; production migration state is separate,
+  so see the migration rules below before touching them, and
   [docs/agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture)
   for the full set.
 - **Typed GraphQL client surface** — `schema.graphql` is committed because production disables
@@ -532,7 +533,7 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `realtime-event-contract` · `realtime-subscription-auth-contract` | envelope validation, redaction, audience→topic derivation · the one authorizer, fed real cross-tenant/cross-branch/wrong-device/missing-permission/flag-off cases instead of grepping the resolver |
 | `realtime-outbox-contract` · `realtime-domain-contract` | leased claim/ack/nack/backoff and the fail-closed dispatch endpoint · trigger shape and in-transaction enqueue |
 | `realtime-domain-coverage-contract` | walks every table `lib/bms` writes and fails unless it has a trigger or a classified reason — the guard against losing a whole domain silently (20 tables are recorded as known gaps) |
-| `realtime-named-subscriptions-contract` · `realtime-client-contract` · `realtime-ws-security-contract` · `realtime-ws-ticket-contract` | the 18 named views map to event types and share one authorizer · bounded dedup/batched invalidation/reconnect refetch · origin/size/quota/expiry/one-root-field gateway bounds · ticket minting and claims |
+| `realtime-named-subscriptions-contract` · `realtime-client-contract` · `realtime-ws-security-contract` · `realtime-ws-ticket-contract` | the 17 named views map to event types and share one authorizer · bounded dedup/batched invalidation/reconnect refetch · origin/size/quota/expiry/one-root-field gateway bounds · ticket minting and claims |
 | `mobile-graphql-contract` · `graphql-schema-artifact-contract` | typed inputs/outputs read from the parsed SDL, field↔resolver both ways, no caller-supplied authority, JSON countdown · committed `schema.graphql` matches the executable schema |
 | `graphql-action-alias-contract` · `graphql-error-contract` · `react-native-graphql-doc-contract` | named actions delegate to the kept `@deprecated` field with a fixed action and no duplicated service call · every client error carries a code while business status stays in `data` · every documented example validates against the real schema |
 | `mobile-transport-compat-contract` | Android reaches HTTP GraphQL and mints a ticket with a Bearer token, user-scope tickets never carry the POS permission set, and the REST routes the browser still depends on exist and still authenticate |
@@ -546,7 +547,7 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
   never means the database path was exercised.
 
   `realtime-outbox-db-contract` and `realtime-domain-db-contract` additionally need migrations
-  `9.70`–`9.72`, which are applied nowhere. Use the throwaway instance in
+  `9.70`–`9.74`. They pass the local DB contracts, but production-like rollout still uses the throwaway instance in
   [docs/architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md)
   (separate cluster because the dispatcher role is cluster-scoped, restored from a dump because
   `db/migrations` cannot build an empty database) and record a **baseline before** applying them —

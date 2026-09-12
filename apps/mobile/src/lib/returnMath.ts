@@ -1,5 +1,11 @@
-import type { MockCartLine } from '../mocks/menu';
 import type { MockPaymentInput, MockPaymentMethod } from './paymentMath';
+
+interface ReturnableCartLine {
+  sku: string;
+  name: string;
+  qty: number;
+  unitPrice: number;
+}
 
 export interface MockReturnLineInput {
   sku: string;
@@ -64,7 +70,9 @@ export function allocateMockRefundToOriginalPayments(
   return allocations;
 }
 
-export function wholeBillReturnLines(lines: MockCartLine[]): MockReturnLineInput[] {
+export function wholeBillReturnLines(
+  lines: ReturnableCartLine[],
+): MockReturnLineInput[] {
   return lines.map(line => ({
     sku: line.sku,
     soldQty: line.qty,

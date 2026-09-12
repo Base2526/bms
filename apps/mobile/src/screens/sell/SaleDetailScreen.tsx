@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -10,129 +10,204 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useMutation, useQuery } from '@apollo/client';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { QtyStepper } from '../../components/QtyStepper';
-import { useTheme } from '../../theme/ThemeProvider';
-import { useResponsive } from '../../theme/useResponsive';
-import { useSales } from '../../state/SalesContext';
 import {
-  allocateMockRefundToOriginalPayments,
-  calculateMockReturnTotal,
-} from '../../lib/returnMath';
+  MobilePosReturnDocument,
+  MobilePosVoidDocument,
+  PosBootstrapDocument,
+} from '../../graphql/generated';
+import { createIdempotencyKey } from '../../lib/operation';
 import { paymentMethodLabel } from '../../lib/paymentMath';
-import type { MockCartLine } from '../../mocks/menu';
+import { useSales } from '../../state/SalesContext';
+import { useSession } from '../../state/SessionContext';
+import { useTheme } from '../../theme/ThemeProvider';
 import type { SellStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<SellStackParamList, 'SaleDetail'>;
+type Action = 'RETURN' | 'VOID';
+type ReturnReason =
+  | 'DAMAGED'
+  | 'WRONG_ITEM'
+  | 'CUSTOMER_CHANGE'
+  | 'PRICE_ERROR'
+  | 'QUALITY_ISSUE'
+  | 'OTHER';
+
+const RETURN_REASONS: Array<{ code: ReturnReason; label: string }> = [
+  { code: 'DAMAGED', label: 'สินค้าเสียหาย' },
+  { code: 'WRONG_ITEM', label: 'สินค้าผิด' },
+  { code: 'CUSTOMER_CHANGE', label: 'ลูกค้าเปลี่ยนใจ' },
+  { code: 'PRICE_ERROR', label: 'ราคาผิด' },
+  { code: 'QUALITY_ISSUE', label: 'ปัญหาคุณภาพ' },
+  { code: 'OTHER', label: 'อื่น ๆ' },
+];
 
 export default function SaleDetailScreen({ route, navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
-  const { isTablet } = useResponsive();
-  const { findSale, appendReturn } = useSales();
+  const { session } = useSession();
+  const { findSale, refresh, loading } = useSales();
   const sale = findSale(route.params.saleId);
-  const [returnQty, setReturnQty] = useState<Record<string, number>>({});
+  const bootstrap = useQuery(PosBootstrapDocument);
+  const allApprovers = (bootstrap.data?.bmsPosSession.approvers ?? []).filter(
+    approver => approver.id !== session?.cashier.id,
+  );
+  const [returnMutation] = useMutation(MobilePosReturnDocument);
+  const [voidMutation] = useMutation(MobilePosVoidDocument);
+  const [action, setAction] = useState<Action | null>(null);
+  const approvers = allApprovers.filter(approver =>
+    action === 'VOID'
+      ? approver.approvals.includes('pos.void')
+      : approver.approvals.some(permission =>
+          ['payment.refund', 'pos.return.cross_branch'].includes(permission),
+        ),
+  );
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [returnReason, setReturnReason] = useState<ReturnReason>('OTHER');
   const [reason, setReason] = useState('');
-  const [voidPin, setVoidPin] = useState('');
-  const [voidOpen, setVoidOpen] = useState(false);
-  const returnedQtyBySku = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const record of sale?.returns ?? []) {
-      for (const line of record.lines) {
-        map[line.sku] = (map[line.sku] ?? 0) + line.qty;
-      }
-    }
-    return map;
-  }, [sale]);
-  const priorAllocations = useMemo(
-    () => (sale?.returns ?? []).flatMap(record => record.allocations),
-    [sale],
-  );
-  const netRefundRatio =
-    sale && sale.subtotal > 0 ? Math.min(1, sale.total / sale.subtotal) : 1;
+  const [approverId, setApproverId] = useState('');
+  const [approverPin, setApproverPin] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const returnKey = useRef<string | null>(null);
+  const voidKey = useRef<string | null>(null);
 
-  const returnLines = useMemo(
+  const selectedLines = useMemo(
     () =>
-      (sale?.lines ?? []).map(line => ({
-        sku: line.sku,
-        soldQty: Math.max(0, line.qty - (returnedQtyBySku[line.sku] ?? 0)),
-        returnQty: returnQty[line.sku] ?? 0,
-        unitRefundPrice: line.unitPrice * netRefundRatio,
-      })),
-    [netRefundRatio, returnQty, returnedQtyBySku, sale],
+      (sale?.lines ?? []).flatMap(line => {
+        const qty = quantities[line.orderItemId] ?? 0;
+        return qty > 0 ? [{ line, qty }] : [];
+      }),
+    [quantities, sale?.lines],
   );
-  const returnPreview = calculateMockReturnTotal(returnLines);
+  const estimatedRefund = selectedLines.reduce(
+    (sum, selected) => sum + selected.qty * selected.line.unitPrice,
+    0,
+  );
 
   if (!sale) {
     return (
       <ScreenContainer>
-        <Text style={[typography.title, { color: colors.danger }]}>
-          ไม่พบใบเสร็จ TEST
-        </Text>
+        <ScreenHeader
+          title={loading ? 'กำลังโหลดใบเสร็จ…' : 'ไม่พบใบเสร็จ'}
+          onBack={() => navigation.goBack()}
+        />
       </ScreenContainer>
     );
   }
 
-  // ⚠️ บรรทัดในใบคืนต้องถือ "ราคาที่คืนจริง" ไม่ใช่ราคาป้ายบนใบขาย
-  // ของเดิมเก็บ `line.unitPrice` (ราคาป้าย) คู่กับ `total` ที่หักส่วนลดแล้ว → ใบคืนใบเดียว
-  // มีบรรทัดที่บวกกันแล้วไม่เท่ายอดคืนของตัวเอง
-  const selectedLines: MockCartLine[] = sale.lines
-    .map(line => ({
-      ...line,
-      qty: returnQty[line.sku] ?? 0,
-      unitPrice: Math.round(line.unitPrice * netRefundRatio * 100) / 100,
-    }))
-    .filter(line => line.qty > 0);
-
-  const canCommit =
-    Boolean(reason.trim()) &&
-    returnPreview.total > 0 &&
-    returnPreview.errors.length === 0;
-
-  const commitReturn = (type: 'RETURN' | 'VOID') => {
-    if (!reason.trim()) {
-      Alert.alert('ต้องระบุเหตุผล', 'Return/Void ต้องมีเหตุผลใน mock นี้');
-      return;
-    }
-    if (returnPreview.total <= 0 || returnPreview.errors.length > 0) return;
-    appendReturn(sale.id, {
-      type,
-      reason: reason.trim(),
-      lines: selectedLines,
-      total: returnPreview.total,
-      allocations: allocateMockRefundToOriginalPayments(
-        returnPreview.total,
-        sale.payments,
-        priorAllocations,
-      ),
-    });
+  const close = () => {
+    setAction(null);
+    setReturnReason('OTHER');
     setReason('');
-    setReturnQty({});
-    setVoidPin('');
-    setVoidOpen(false);
-    Alert.alert(
-      type === 'VOID' ? 'Void สำเร็จใน mock' : 'บันทึกคืนสินค้า mock แล้ว',
-      'ใบเสร็จเดิมไม่ถูกแก้ไข ประวัติคืนถูกเพิ่มแยกต่างหาก',
-    );
+    setApproverId('');
+    setApproverPin('');
   };
 
-  const detail = (
-    <Card style={{ flex: 1 }}>
-      <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        รายละเอียดใบเสร็จ TEST · {sale.receiptNo}
-      </Text>
-      <FlatList
-        data={sale.lines}
-        keyExtractor={line => line.sku}
-        ItemSeparatorComponent={() => (
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        )}
-        renderItem={({ item }) => (
-          <View style={{ gap: spacing.sm }}>
-            <View style={styles.row}>
+  const submit = async () => {
+    if (!session || !action || submitting) return;
+    if (!reason.trim()) {
+      Alert.alert('ต้องระบุเหตุผล', 'การคืนสินค้าและ Void ต้องมีเหตุผล');
+      return;
+    }
+    if (action === 'RETURN' && selectedLines.length === 0) {
+      Alert.alert('ยังไม่ได้เลือกรายการ', 'เลือกจำนวนสินค้าที่ต้องการคืน');
+      return;
+    }
+    if (action === 'VOID' && (!approverId || !approverPin)) {
+      Alert.alert('ต้องมีผู้อนุมัติ', 'Void ต้องใช้ PIN ของผู้อนุมัติคนที่สอง');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (action === 'RETURN') {
+        returnKey.current ??= createIdempotencyKey('return');
+        const response = await returnMutation({
+          variables: {
+            input: {
+              cashierUserId: session.credentials.cashierUserId,
+              pin: session.credentials.pin,
+              orderId: sale.id,
+              mode: 'PARTIAL',
+              note: `[${returnReason}] ${reason.trim()}`,
+              idempotencyKey: returnKey.current,
+              preferredRefundMethod: null,
+              approvalUserId: approverId || null,
+              approvalPin: approverPin || null,
+              lines: selectedLines.map(selected => ({
+                orderItemId: selected.line.orderItemId,
+                packQty: selected.qty,
+              })),
+            },
+          },
+        });
+        const result = response.data?.bmsPosReturn;
+        if (result?.status !== 'RETURNED') {
+          returnKey.current = null;
+          throw new Error(
+            result?.reason ?? result?.status ?? 'คืนสินค้าไม่สำเร็จ',
+          );
+        }
+        returnKey.current = null;
+        Alert.alert(
+          'คืนสินค้าสำเร็จ',
+          `ยอดคืนตามเซิร์ฟเวอร์ ฿${(result.refundAmount ?? 0).toFixed(2)}`,
+        );
+      } else {
+        voidKey.current ??= createIdempotencyKey('void');
+        const response = await voidMutation({
+          variables: {
+            input: {
+              cashierUserId: session.credentials.cashierUserId,
+              pin: session.credentials.pin,
+              orderId: sale.id,
+              reason: reason.trim(),
+              idempotencyKey: voidKey.current,
+              approverUserId: approverId,
+              approverPin,
+            },
+          },
+        });
+        const result = response.data?.bmsPosVoid;
+        if (result?.status !== 'RETURNED') {
+          voidKey.current = null;
+          throw new Error(result?.reason ?? result?.status ?? 'Void ไม่สำเร็จ');
+        }
+        voidKey.current = null;
+        Alert.alert(
+          'Void สำเร็จ',
+          `ยอดคืน ฿${(result.refundAmount ?? 0).toFixed(2)}`,
+        );
+      }
+      await refresh();
+      close();
+    } catch (error) {
+      Alert.alert(
+        action === 'VOID' ? 'Void ไม่สำเร็จ' : 'คืนสินค้าไม่สำเร็จ',
+        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ScreenContainer>
+      <ScreenHeader
+        title={sale.receiptNo}
+        subtitle={new Date(sale.createdAt).toLocaleString('th-TH')}
+        onBack={() => navigation.goBack()}
+      />
+      <Card>
+        <FlatList
+          data={sale.lines}
+          keyExtractor={line => String(line.orderItemId)}
+          renderItem={({ item }) => (
+            <View style={[styles.row, { marginBottom: spacing.sm }]}>
               <Text style={[typography.body, { color: colors.text, flex: 1 }]}>
                 {item.name} × {item.qty}
               </Text>
@@ -140,175 +215,57 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 ฿{(item.qty * item.unitPrice).toFixed(2)}
               </Text>
             </View>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              คืนแล้ว {returnedQtyBySku[item.sku] ?? 0} · คืนได้อีก{' '}
-              {Math.max(0, item.qty - (returnedQtyBySku[item.sku] ?? 0))}
-            </Text>
-            <QtyStepper
-              qty={returnQty[item.sku] ?? 0}
-              itemName={`จำนวนคืน ${item.name}`}
-              variant="outline"
-              onIncrement={() =>
-                setReturnQty(prev => ({
-                  ...prev,
-                  [item.sku]: Math.min(
-                    Math.max(0, item.qty - (returnedQtyBySku[item.sku] ?? 0)),
-                    (prev[item.sku] ?? 0) + 1,
-                  ),
-                }))
-              }
-              onDecrement={() =>
-                setReturnQty(prev => ({
-                  ...prev,
-                  [item.sku]: Math.max(0, (prev[item.sku] ?? 0) - 1),
-                }))
-              }
-            />
-          </View>
-        )}
-      />
-    </Card>
-  );
-
-  const actions = (
-    <Card>
-      <Text style={[typography.captionStrong, { color: colors.warning }]}>
-        Return/Void TEST
-      </Text>
-      <TextInput
-        value={reason}
-        onChangeText={setReason}
-        placeholder="เหตุผลคืนสินค้า/void"
-        placeholderTextColor={colors.textSoft}
-        style={[
-          styles.input,
-          { borderColor: colors.border, color: colors.text },
-        ]}
-      />
-      <AmountRow label="ยอดคืนก่อนยืนยัน" value={returnPreview.total} />
-      {returnPreview.errors.map(error => (
-        <Text
-          key={error}
-          style={[typography.captionStrong, { color: colors.danger }]}
-        >
-          {error}
-        </Text>
-      ))}
-      {allocateMockRefundToOriginalPayments(
-        returnPreview.total,
-        sale.payments,
-        priorAllocations,
-      ).map(allocation => (
-        <Text
-          key={`${allocation.method}-${allocation.amount}`}
-          style={[typography.caption, { color: colors.textMuted }]}
-        >
-          {paymentMethodLabel(allocation.method)} ฿
-          {allocation.amount.toFixed(2)}
-          {' · '}
-          {allocation.status === 'COMPLETED'
-            ? 'สำเร็จทันที'
-            : 'รอยืนยันการคืนเงิน'}
-        </Text>
-      ))}
-      <Button
-        label="คืนสินค้าที่เลือก"
-        accessibilityLabel="ยืนยันคืนสินค้าที่เลือกแบบทดสอบ"
-        fullWidth
-        disabled={!canCommit}
-        style={{ marginTop: spacing.md }}
-        onPress={() => commitReturn('RETURN')}
-      />
-      <Button
-        label="Void ทั้งบิล"
-        accessibilityLabel="เริ่ม Void ทั้งบิล ต้องมี PIN ผู้อนุมัติคนที่สอง"
-        variant="danger"
-        fullWidth
-        style={{ marginTop: spacing.sm }}
-        disabled={
-          sale.voided ||
-          sale.lines.every(
-            line => (returnedQtyBySku[line.sku] ?? 0) >= line.qty,
-          )
-        }
-        onPress={() => {
-          // ⚠️ ช่อง "เหตุผล" อยู่บนการ์ดนี้ ซึ่งอยู่ *หลัง* overlay ของโมดัล PIN
-          // ถ้าเปิดโมดัลทั้งที่ยังไม่มีเหตุผล คนกดจะพิมพ์ PIN เสร็จแล้วเพิ่งโดนเด้งว่า
-          // ต้องระบุเหตุผล — โดยไม่มีช่องให้กรอกในโมดัลนั้น = ทางตัน
-          if (!reason.trim()) {
-            Alert.alert(
-              'ต้องระบุเหตุผลก่อน',
-              'กรอกเหตุผลของการ void ในช่องด้านบน แล้วกดอีกครั้ง',
-            );
-            return;
-          }
-          const wholeBill: Record<string, number> = {};
-          for (const line of sale.lines) {
-            wholeBill[line.sku] = Math.max(
-              0,
-              line.qty - (returnedQtyBySku[line.sku] ?? 0),
-            );
-          }
-          setReturnQty(wholeBill);
-          setVoidOpen(true);
-        }}
-      />
-      <Button
-        label="พิมพ์ซ้ำ mock"
-        accessibilityLabel="พิมพ์ซ้ำแบบทดสอบ ยังไม่ต่อเครื่องพิมพ์จริง"
-        variant="secondary"
-        fullWidth
-        style={{ marginTop: spacing.sm }}
-        onPress={() =>
-          Alert.alert('พิมพ์ซ้ำ mock', 'ยังไม่ต่อเครื่องพิมพ์ ESC/POS จริง')
-        }
-      />
-      {sale.returns.length > 0 && (
-        <View style={{ marginTop: spacing.md, gap: spacing.xs }}>
-          <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            ประวัติคืน/void แยกต่างหาก
+          )}
+        />
+        <View style={[styles.row, { marginTop: spacing.md }]}>
+          <Text style={[typography.subtitle, { color: colors.text }]}>รวม</Text>
+          <Text style={[typography.subtitle, { color: colors.text }]}>
+            ฿{sale.total.toFixed(2)}
           </Text>
-          {sale.returns.map(record => (
-            <Text
-              key={record.id}
-              style={[typography.caption, { color: colors.text }]}
-            >
-              {record.type} · ฿{record.total.toFixed(2)} · {record.reason}
-            </Text>
-          ))}
         </View>
-      )}
-    </Card>
-  );
+        {sale.payments.map(payment => (
+          <Text
+            key={payment.id}
+            style={[typography.caption, { color: colors.textMuted }]}
+          >
+            {paymentMethodLabel(payment.method)} ฿{payment.amount.toFixed(2)}
+          </Text>
+        ))}
+      </Card>
+      {sale.returns.map(record => (
+        <Card key={record.id} style={{ marginTop: spacing.md }}>
+          <Text style={[typography.bodyStrong, { color: colors.warning }]}>
+            {record.type} · ฿{record.total.toFixed(2)}
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            {record.reason} · {record.settlementStatus}
+          </Text>
+        </Card>
+      ))}
+      <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+        <Button
+          label="คืนสินค้า"
+          fullWidth
+          disabled={!sale.returnEligible || sale.voided}
+          onPress={() => setAction('RETURN')}
+        />
+        <Button
+          label="Void ทั้งบิล"
+          variant="danger"
+          fullWidth
+          disabled={!sale.returnEligible || sale.voided}
+          onPress={() => setAction('VOID')}
+        />
+        {!sale.returnEligible && sale.returnBlockedReason ? (
+          <Text style={[typography.caption, { color: colors.danger }]}>
+            {sale.returnBlockedReason}
+          </Text>
+        ) : null}
+      </View>
 
-  return (
-    <ScreenContainer>
-      <ScreenHeader
-        title={sale.receiptNo}
-        subtitle={
-          sale.voided
-            ? 'บิลนี้ถูก void แล้ว — ยอดบนใบขายเดิมยังเป็นยอดตอนขาย'
-            : 'ใบเสร็จเดิม immutable; return/void เป็นประวัติแยก'
-        }
-        onBack={() => navigation.goBack()}
-      />
-      {isTablet ? (
-        <View style={[styles.panes, { gap: spacing.lg }]}>
-          <View style={{ flex: 1 }}>{detail}</View>
-          <View style={{ width: 390 }}>{actions}</View>
-        </View>
-      ) : (
-        <>
-          <View style={{ flex: 1, marginBottom: spacing.md }}>{detail}</View>
-          {actions}
-        </>
-      )}
-      <Modal transparent visible={voidOpen} animationType="fade">
+      <Modal transparent visible={action !== null} animationType="fade">
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setVoidOpen(false)}
-          />
+          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
           <View
             style={[
               styles.modal,
@@ -316,24 +273,113 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             ]}
           >
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={[typography.subtitle, { color: colors.text }]}>
-                ยืนยัน Void TEST
+              <Text style={[typography.title, { color: colors.text }]}>
+                {action === 'VOID' ? 'Void ทั้งบิล' : 'คืนสินค้า'}
               </Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                Void แยกจาก Return และใช้ mock PIN ผู้อนุมัติคนที่สอง 9999
-              </Text>
-              <Text style={[typography.body, { color: colors.text }]}>
-                เหตุผล: {reason.trim() || '—'}
-              </Text>
-              <Text
-                style={[typography.captionStrong, { color: colors.danger }]}
-              >
-                ยอดที่จะคืนทั้งบิล ฿{returnPreview.total.toFixed(2)}
-              </Text>
+              {action === 'RETURN'
+                ? sale.lines.map(line => (
+                    <View key={line.orderItemId} style={styles.row}>
+                      <Text
+                        style={[
+                          typography.body,
+                          { color: colors.text, flex: 1 },
+                        ]}
+                      >
+                        {line.name}
+                      </Text>
+                      <QtyStepper
+                        qty={quantities[line.orderItemId] ?? 0}
+                        itemName={line.name}
+                        onIncrement={() =>
+                          setQuantities(previous => ({
+                            ...previous,
+                            [line.orderItemId]: Math.min(
+                              line.refundablePackQty,
+                              (previous[line.orderItemId] ?? 0) + 1,
+                            ),
+                          }))
+                        }
+                        onDecrement={() =>
+                          setQuantities(previous => ({
+                            ...previous,
+                            [line.orderItemId]: Math.max(
+                              0,
+                              (previous[line.orderItemId] ?? 0) - 1,
+                            ),
+                          }))
+                        }
+                      />
+                    </View>
+                  ))
+                : null}
+              {action === 'RETURN' ? (
+                <>
+                  <Text
+                    style={[
+                      typography.caption,
+                      { color: colors.textMuted, marginTop: spacing.sm },
+                    ]}
+                  >
+                    ประมาณการ ฿{estimatedRefund.toFixed(2)} · ยอดจริงคำนวณจาก
+                    snapshot และนโยบายคืนสินค้าที่เซิร์ฟเวอร์
+                  </Text>
+                  <Text
+                    style={[
+                      typography.captionStrong,
+                      { color: colors.textMuted },
+                    ]}
+                  >
+                    ประเภทเหตุผล
+                  </Text>
+                  <View style={styles.reasonGrid}>
+                    {RETURN_REASONS.map(option => (
+                      <Button
+                        key={option.code}
+                        label={option.label}
+                        variant={
+                          returnReason === option.code ? 'primary' : 'secondary'
+                        }
+                        onPress={() => setReturnReason(option.code)}
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : null}
               <TextInput
-                value={voidPin}
-                onChangeText={setVoidPin}
-                placeholder="PIN ผู้อนุมัติคนที่สอง"
+                value={reason}
+                onChangeText={setReason}
+                placeholder="เหตุผล"
+                placeholderTextColor={colors.textSoft}
+                style={[
+                  styles.input,
+                  { borderColor: colors.border, color: colors.text },
+                ]}
+              />
+              <Text
+                style={[typography.captionStrong, { color: colors.textMuted }]}
+              >
+                ผู้อนุมัติ {action === 'VOID' ? '(บังคับ)' : '(เมื่อกฎกำหนด)'}
+              </Text>
+              <View style={{ gap: spacing.sm }}>
+                {approvers.map(approver => (
+                  <Button
+                    key={approver.id}
+                    label={`${approver.name ?? approver.id}${
+                      approver.hasPin ? '' : ' · ยังไม่ได้ตั้ง PIN'
+                    }`}
+                    variant={
+                      approverId === approver.id ? 'primary' : 'secondary'
+                    }
+                    fullWidth
+                    disabled={!approver.hasPin}
+                    onPress={() => setApproverId(approver.id)}
+                  />
+                ))}
+              </View>
+              <TextInput
+                value={approverPin}
+                onChangeText={setApproverPin}
+                placeholder="PIN ผู้อนุมัติ"
                 placeholderTextColor={colors.textSoft}
                 keyboardType="number-pad"
                 secureTextEntry
@@ -343,19 +389,17 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 ]}
               />
               <Button
-                label="ยืนยัน Void"
-                accessibilityLabel="ยืนยัน Void ทั้งบิลด้วย PIN ทดสอบ"
-                variant="danger"
+                label={submitting ? 'กำลังบันทึก…' : 'ยืนยัน'}
+                variant={action === 'VOID' ? 'danger' : 'primary'}
                 fullWidth
-                disabled={voidPin !== '9999' || !canCommit}
-                onPress={() => commitReturn('VOID')}
+                disabled={submitting}
+                onPress={submit}
               />
               <Button
                 label="ยกเลิก"
                 variant="secondary"
                 fullWidth
-                style={{ marginTop: spacing.sm }}
-                onPress={() => setVoidOpen(false)}
+                onPress={close}
               />
             </ScrollView>
           </View>
@@ -365,29 +409,22 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   );
 }
 
-function AmountRow({ label, value }: { label: string; value: number }) {
-  const { colors, typography } = useTheme();
-  return (
-    <View style={styles.row}>
-      <Text style={[typography.body, { color: colors.textMuted }]}>
-        {label}
-      </Text>
-      <Text style={[typography.subtitle, { color: colors.text }]}>
-        ฿{value.toFixed(2)}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  panes: { flex: 1, flexDirection: 'row' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
   },
-  divider: { height: StyleSheet.hairlineWidth, marginVertical: 12 },
+  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  modal: {
+    width: '92%',
+    maxWidth: 560,
+    maxHeight: '88%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: 20,
+  },
   input: {
     minHeight: 48,
     borderWidth: StyleSheet.hairlineWidth,
@@ -395,13 +432,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginVertical: 12,
   },
-  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  modal: {
-    width: '92%',
-    maxWidth: 520,
-    maxHeight: '82%',
-    padding: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+  reasonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
@@ -22,7 +22,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
     return (
       <ScreenContainer>
         <Text style={[typography.title, { color: colors.danger }]}>
-          ไม่พบใบเสร็จ TEST
+          ไม่พบใบเสร็จ
         </Text>
         <Button label="กลับไปขาย" onPress={() => navigation.navigate('Menu')} />
       </ScreenContainer>
@@ -32,7 +32,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
   const paper = (
     <Card style={{ flex: 1 }}>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        ใบเสร็จ TEST · {sale.receiptNo}
+        ใบเสร็จ · {sale.receiptNo}
       </Text>
       <ScrollView>
         {sale.lines.map(l => (
@@ -69,21 +69,12 @@ export default function ReceiptScreen({ route, navigation }: Props) {
 
   const summary = (
     <Card>
-      <Text style={[typography.captionStrong, { color: colors.warning }]}>
-        TEST MODE
+      <Text style={[typography.captionStrong, { color: colors.success }]}>
+        บันทึกบนเซิร์ฟเวอร์แล้ว
       </Text>
       <Text style={[typography.body, { color: colors.textMuted }]}>
-        ยังไม่ต่อเครื่องพิมพ์จริง และยังไม่เรียก mutation/backend
+        เปิดดูหรือคืนสินค้าได้จากประวัติการขาย
       </Text>
-      <Button
-        label="พิมพ์ซ้ำ mock"
-        accessibilityLabel="พิมพ์ใบเสร็จซ้ำแบบทดสอบ"
-        fullWidth
-        style={{ marginTop: spacing.md }}
-        onPress={() =>
-          Alert.alert('พิมพ์ซ้ำ mock', 'ยังไม่ต่อเครื่องพิมพ์ ESC/POS จริง')
-        }
-      />
       <Button
         label="ดูประวัติ"
         accessibilityLabel="เปิดประวัติการขาย"
@@ -104,7 +95,12 @@ export default function ReceiptScreen({ route, navigation }: Props) {
 
   return (
     <ScreenContainer>
-      <Text style={[typography.title, { color: colors.success, marginBottom: spacing.lg }]}>
+      <Text
+        style={[
+          typography.title,
+          { color: colors.success, marginBottom: spacing.lg },
+        ]}
+      >
         ขายสำเร็จ
       </Text>
       {isTablet ? (
@@ -126,7 +122,9 @@ function AmountLine({ label, amount }: { label: string; amount: number }) {
   const { colors, typography } = useTheme();
   return (
     <View style={styles.line}>
-      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>
+        {label}
+      </Text>
       <Text style={[typography.captionStrong, { color: colors.text }]}>
         {amount < 0 ? '−' : ''}฿{Math.abs(amount).toFixed(2)}
       </Text>

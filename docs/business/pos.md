@@ -43,61 +43,35 @@ recoverable only by hand. The `pos.return` entry additionally carries an `isVoid
 void travels through the return machinery and reports counting genuine returns must not also count
 bills rung up by mistake.
 
-## Native POS client scaffold
+## Native POS client
 
-`apps/mobile/` is the Group A native client for staff-operated iOS and Android registers. It uses
-bare React Native 0.87 (not Expo), React Navigation, a theme derived from the web POS, and responsive
-phone/tablet layouts. Its ten screens cover login, device settings, retail sell/checkout/receipt,
-restaurant floor/check/table ordering, kitchen, and shift/drawer. The operating flows use in-memory
-mock data on purpose; restarting the app resets them. This section describes the native app, not the
-customer-facing table-QR "mobile menu" later in this document.
+`apps/mobile/` is the bare React Native 0.87 client for staff-operated iOS and Android registers.
+It uses generated HTTPS GraphQL operations for device bootstrap/PIN, catalog and barcode reads,
+discount preview, parked bills, sale/return/void, shift/drawer, restaurant checks and settlement,
+incoming orders, and kitchen tickets. Runtime screens and state providers import no mock data.
+GraphQL WS carries named invalidations only; Apollo refetches the authoritative snapshot.
 
-Until backend-driven capabilities are connected, Settings also exposes an explicitly labelled test
-mode for `general`, `pharmacy`, and `restaurant`. The in-memory choice lasts for the current app run
-and changes mock navigation/catalog presentation only: general and pharmacy show Sell + Shift, while
-restaurant retains Sell + Floor + Kitchen + Shift. It never changes the tenant's
-`business_archetype`, never overrides `/api/pos/session`, and is not pharmacy authorization. The
-pharmacy catalog's blocked example is presentation test data, not a client-side clinical decision.
+The app accepts a full POS link, a bare `pos_...` token plus server, or a
+`bmspos://pair?t=...&h=...` deep link. The long-lived device token lives in
+`react-native-keychain`, is masked on screen, and authenticates both GraphQL and ticket minting.
+Tenant, branch, device, shift and store archetype are always server-derived. Cashier and
+second-person PINs live only in React memory and are rechecked with action-specific RBAC on every
+sensitive mutation. Manual discount, void and cash-out selectors filter the server approver list by
+the exact permission and exclude the acting cashier; that filtering is UX, not authorization.
 
-The sell mock now includes a barcode test harness, checkout previews for membership tier, coupon,
-approved manual discount, split payments, parked bills, sale history, return/void previews, and
-restaurant table checkout through the same payment screen. A scanned mock barcode or entered SKU
-resolves only against the selected in-memory catalog. The discount preview follows tier → coupon →
-manual ordering; manual discount entry requires a reason and a separate mock approver PIN, and a
-parked bill deliberately does not retain that approver/PIN when resumed. Split payment rows must
-match the net total exactly; cash shows tender/change while QR/card require a mock reference.
-Returns allocate the refund back to the original payment rows, with cash completed immediately and
-non-cash marked pending. The original receipt snapshot is not edited; return/void history is kept
-separately in memory. None of those numbers or approvals is authoritative: the production
-connection must replace the calculation with the server's existing `composeDiscounts()` and POS
-settlement/return previews, re-check the cashier and distinct approver through RBAC, resolve every
-barcode from the server catalog, and submit each mutation once with an idempotency key.
+Money commands preserve one idempotency key across an unknown network result. Return notes use the
+server's structured reason code, and parked-bill actions use the resolver's exact
+`park`/`resume`/`drop` contract. Shift-bound reads are skipped until a shift is open. Named events
+remain hints: the client deduplicates, batches refetches, reconciles on foreground/reconnect, and
+keeps degraded polling.
 
-Device pairing is the only live backend seam in Group A:
+Native printing, real camera/HID capture, customer display, background push, pharmacy
+review/evidence, and richer variant/modifier selection remain separate platform/specialist work.
+The barcode overlay resolves against the server but is an input harness, not a camera or verified
+scanner adapter. Unsupported approval-gated sales fail closed on the server. Do not port money,
+stock, refund, pharmacy or tax rules into the client.
 
-- The app accepts the existing full POS link, a bare `pos_...` token plus server, or a
-  `bmspos://pair?t=...&h=...` deep link. A deep link pre-fills the review screen; it never silently
-  changes the paired shop.
-- The long-lived device token is stored through `react-native-keychain` (iOS Keychain / Android
-  Keystore), masked everywhere on screen, and sent only as `x-pos-device-token` to
-  `GET /api/pos/session`. Remote servers require HTTPS; HTTP is accepted only for loopback
-  development.
-- The app never asks the operator for a tenant or branch. `/api/pos/session` derives both from the
-  hashed active device token and returns the device/location identity. A 401 means the token was
-  revoked or replaced; an offline timeout is shown separately and never treated as revocation.
-- Pairing and cashier identity are deliberately separate. The current PIN screen is a mock shell;
-  it grants no permission and must not be connected to mutations until the cashier-session contract
-  is stable. The backend invariant remains device authentication plus person verification and RBAC
-  for every sensitive action.
-
-The next phase starts only after the schema/auth contract is closed and proven by the existing web
-POS. It will replace mock catalog/check/kitchen/shift state with authoritative calls and realtime
-updates; native printer, real camera/HID scanner capture and customer-display integrations remain
-separate hardware work. The current barcode overlay is a flow test harness, not a hardware adapter.
-Do not port money, stock, refund or tax rules into the client—the existing backend services remain
-the source of truth.
-
-Verification for the scaffold is `npm run lint`, `npm test -- --runInBand`, and
+Verification for the client is `npm run lint`, `npm test -- --runInBand`, and
 `npm run typecheck` from `apps/mobile/`, plus `xcodebuild` for an iOS Simulator target and
 `./gradlew assembleDebug` under `apps/mobile/android/`. Generated `node_modules`, Pods, native build
 directories and APKs are ignored; only source and lockfiles belong in Git. The detailed screen list,

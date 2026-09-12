@@ -26,7 +26,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
         sale.member?.name,
         sale.member?.memberNo,
         sale.tableCode,
-        ...sale.lines.flatMap(line => [line.sku, line.barcode, line.name]),
+        ...sale.lines.flatMap(line => [line.sku, line.name]),
       ]
         .filter(Boolean)
         .join(' ')
@@ -38,8 +38,8 @@ export default function SalesHistoryScreen({ navigation }: Props) {
   return (
     <ScreenContainer>
       <ScreenHeader
-        title="ประวัติการขาย TEST"
-        subtitle="ค้นหาใบเสร็จ ลูกค้า สมาชิก SKU หรือ barcode จาก mock session นี้"
+        title="ประวัติการขาย"
+        subtitle="ค้นหาใบเสร็จ ลูกค้า สมาชิก หรือ SKU จากข้อมูลบนเซิร์ฟเวอร์"
         onBack={() => navigation.goBack()}
       />
       <SearchField
@@ -53,7 +53,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
         contentContainerStyle={{ gap: spacing.md, paddingTop: spacing.md }}
         ListEmptyComponent={
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            ยังไม่มีประวัติขายใน memory รอบนี้
+            ไม่พบประวัติการขาย
           </Text>
         }
         renderItem={({ item }) => (

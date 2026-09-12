@@ -18,6 +18,24 @@ import { useKitchen } from '../state/KitchenContext';
 export function OrderAlertWatcher() {
   const { pendingIds, pendingCount } = useIncomingOrders();
   const { tickets } = useKitchen();
+  return (
+    <OrderAlertEffects
+      pendingIds={pendingIds}
+      pendingCount={pendingCount}
+      tickets={tickets}
+    />
+  );
+}
+
+export function OrderAlertEffects({
+  pendingIds,
+  pendingCount,
+  tickets,
+}: {
+  pendingIds: string[];
+  pendingCount: number;
+  tickets: Array<{ id: string; status: string }>;
+}) {
   const { settings, lastAlertAtMs, acknowledged } = useOrderAlerts();
 
   // ⚠️ รอบแรกเป็นการ "ตั้งต้น" ไม่ใช่ของใหม่ — เปิดแอปมาเจอของค้างอยู่แล้วต้องไม่เตือนรัว

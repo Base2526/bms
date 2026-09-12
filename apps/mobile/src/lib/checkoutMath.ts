@@ -1,4 +1,14 @@
-import type { MockCoupon, MockMember } from '../mocks/checkout';
+interface DiscountMember {
+  tierDiscountPct: number;
+}
+
+interface DiscountCoupon {
+  discountType: 'fixed' | 'percent';
+  discountValue: number;
+  minimumSubtotal: number;
+  maximumDiscount?: number;
+  memberOnly?: boolean;
+}
 
 export interface ManualDiscount {
   amount: number;
@@ -27,8 +37,8 @@ export function calculateMockDiscounts({
   manualDiscount,
 }: {
   subtotal: number;
-  member: MockMember | null;
-  coupon: MockCoupon | null;
+  member: DiscountMember | null;
+  coupon: DiscountCoupon | null;
   manualDiscount: ManualDiscount | null;
 }): CheckoutDiscounts {
   const safeSubtotal = Math.max(0, subtotal);
@@ -74,7 +84,7 @@ export function calculateMockDiscounts({
 }
 
 export function couponEligibilityError(
-  coupon: MockCoupon,
+  coupon: DiscountCoupon,
   subtotal: number,
   hasMember: boolean,
 ): string | null {

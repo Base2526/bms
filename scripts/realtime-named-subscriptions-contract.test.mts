@@ -68,7 +68,7 @@ function declaredSubscriptionFields(): Set<string> {
   return fields;
 }
 
-test("all 18 named domain subscriptions are declared in the schema", () => {
+test("all 17 named domain subscriptions are declared in the schema", () => {
   const declared = declaredSubscriptionFields();
   for (const name of REQUIRED_SUBSCRIPTIONS) {
     assert.ok(declared.has(name), `${name} must be a Subscription field`);

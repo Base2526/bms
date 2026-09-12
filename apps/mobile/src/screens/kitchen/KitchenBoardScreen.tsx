@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -16,7 +23,6 @@ import {
   ticketUrgency,
   type TicketStatus,
 } from '../../lib/kitchenBoard';
-import { mockKitchenStations } from '../../mocks/kitchenTickets';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { KitchenStackParamList } from '../../navigation/types';
 
@@ -37,14 +43,13 @@ const NEXT_ACTION: Record<TicketStatus, string> = {
 
 const ALL = 'ทั้งหมด';
 
-// จอครัว — ตั๋วมาจาก KitchenContext (รอบที่กด "ส่งครัว" จากบิลโต๊ะจะโผล่ที่นี่ทันที)
-// ⚠️ ยังไม่มี WS subscription: ทุกอย่างอยู่ในหน่วยความจำของเครื่องเดียว เครื่องอื่นไม่เห็นกัน
+// จอครัวอ่าน snapshot จาก GraphQL และ named subscription จะสั่ง refetch เมื่อเครื่องอื่นเปลี่ยนงาน
 type Props = NativeStackScreenProps<KitchenStackParamList, 'KitchenBoard'>;
 
 export default function KitchenBoardScreen({ navigation }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const { gridColumns } = useResponsive();
-  const { tickets, advanceTicket, rollbackTicket } = useKitchen();
+  const { tickets, stations, advanceTicket, rollbackTicket } = useKitchen();
   const [station, setStation] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -55,8 +60,8 @@ export default function KitchenBoardScreen({ navigation }: Props) {
   }, []);
 
   const filters = useMemo(
-    () => stationFilters(mockKitchenStations, tickets),
-    [tickets],
+    () => stationFilters(stations, tickets),
+    [stations, tickets],
   );
 
   const visible = useMemo(
@@ -201,7 +206,12 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                       item.tableCode
                     } รอบ ${item.roundNo} ${item.station}`}
                     fullWidth
-                    onPress={() => advanceTicket(item.id)}
+                    onPress={() => {
+                      advanceTicket(item.id).then(failure => {
+                        if (failure)
+                          Alert.alert('เปลี่ยนสถานะไม่สำเร็จ', failure);
+                      });
+                    }}
                   />
                 )}
                 {back && (
@@ -210,7 +220,11 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                     accessibilityLabel={`ย้อนสถานะตั๋ว ${item.tableCode} รอบ ${item.roundNo} ${item.station}`}
                     variant="ghost"
                     fullWidth
-                    onPress={() => rollbackTicket(item.id)}
+                    onPress={() => {
+                      rollbackTicket(item.id).then(failure => {
+                        if (failure) Alert.alert('ย้อนสถานะไม่สำเร็จ', failure);
+                      });
+                    }}
                   />
                 )}
               </View>

@@ -50,6 +50,16 @@
 
 jachoei.com {
    tls /certs/jachoei.com.pem /certs/jachoei.com-key.pem
-   reverse_proxy /graphql* ws:8080
+
+   @ws {
+     path /graphql
+     header Connection *Upgrade*
+     header Upgrade websocket
+   }
+   reverse_proxy @ws ws:8080
+
+   @gql_http path /graphql*
+   reverse_proxy @gql_http web:3000
+
    reverse_proxy web:3000
 }

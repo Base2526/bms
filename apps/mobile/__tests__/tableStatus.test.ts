@@ -1,4 +1,4 @@
-import { tableStatusFor } from '../src/state/ChecksContext';
+import { tableStatusFor } from '../src/lib/tableStatus';
 
 describe('tableStatusFor', () => {
   it('โต๊ะที่มีรายการคือโต๊ะที่มีลูกค้า ไม่ว่า mock จะ seed ไว้ว่าอะไร', () => {

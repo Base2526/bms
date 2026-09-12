@@ -24,12 +24,16 @@ describe('DeviceProvider', () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
-          device: { code: 'POS-01', name: 'Front' },
-          location: { name: 'Main', branchCode: 'MAIN' },
-          surface: 'restaurant',
-          businessArchetype: 'restaurant',
-          shift: { id: 'shift-1' },
-          cashiers: [{ id: 'cashier-1' }],
+          data: {
+            bmsPosSession: {
+              device: { code: 'POS-01', name: 'Front' },
+              location: { name: 'Main', branchCode: 'MAIN' },
+              surface: 'restaurant',
+              businessArchetype: 'restaurant',
+              shift: { id: 'shift-1' },
+              cashiers: [{ id: 'cashier-1' }],
+            },
+          },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
@@ -60,9 +64,14 @@ describe('DeviceProvider', () => {
       expect.objectContaining({ service: 'com.bms.pos.device' }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://shop.example.com/api/pos/session',
+      'https://shop.example.com/api/graphql',
       expect.objectContaining({
-        headers: { 'x-pos-device-token': TARGET.token },
+        method: 'POST',
+        headers: expect.objectContaining({
+          authorization: `Bearer ${TARGET.token}`,
+          'x-pos-device-token': TARGET.token,
+          'x-scope': 'pos',
+        }),
       }),
     );
     expect(device!.verify).toEqual({
@@ -78,6 +87,46 @@ describe('DeviceProvider', () => {
         cashierCount: 1,
       },
     });
+
+    await act(async () => {
+      tree!.unmount();
+    });
+  });
+
+  test('treats a GraphQL UNAUTHENTICATED error as a revoked device token', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          errors: [
+            {
+              message: 'token rejected',
+              extensions: { code: 'UNAUTHENTICATED' },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    let device: ReturnType<typeof useDevice> | undefined;
+    function Probe() {
+      device = useDevice();
+      return null;
+    }
+
+    let tree: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      tree = ReactTestRenderer.create(
+        <DeviceProvider>
+          <Probe />
+        </DeviceProvider>,
+      );
+    });
+    await act(async () => {
+      await device!.pair(TARGET);
+    });
+
+    expect(device!.verify.kind).toBe('REJECTED');
 
     await act(async () => {
       tree!.unmount();

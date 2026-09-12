@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useQuery } from '@apollo/client';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -20,8 +21,10 @@ import { useResponsive } from '../../theme/useResponsive';
 import type { AppColors } from '../../theme/colors';
 import { typography as typographyTokens } from '../../theme/typography';
 import { useShift } from '../../state/ShiftContext';
-import { useSession, sessionCashierName } from '../../state/SessionContext';
+import { useSession } from '../../state/SessionContext';
+import { PosBootstrapDocument } from '../../graphql/generated';
 import type { CashMovementType } from '../../lib/shiftMath';
+import { createIdempotencyKey } from '../../lib/operation';
 import type {
   RootStackParamList,
   ShiftStackParamList,
@@ -29,16 +32,18 @@ import type {
 
 type Props = NativeStackScreenProps<ShiftStackParamList, 'Shift'>;
 
-// หน้ากะ/ลิ้นชัก
-//
-// ⚠️ ทุกตัวเลขบนหน้านี้คำนวณจาก ShiftContext เสมอ ห้ามกลับไปอ่านค่าคงที่จาก mock
-// ของเดิมแสดง "เงินที่ควรมี ฿6,560" ที่เขียนไว้ตายตัว คู่กับรายการเงินเข้า/ออกบนจอเดียวกัน
-// ที่บวกได้ 6,860 และปุ่มทั้งสามปุ่มไม่มี onPress เลยสักปุ่ม
+// ทุกยอดบนหน้านี้มาจาก shift report ของ server เพื่อให้ยอดขาย คืนเงิน และลิ้นชักตรงกัน
 export default function ShiftScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
-  const { session } = useSession();
   const shift = useShift();
+  const { session, signOut } = useSession();
+  const bootstrap = useQuery(PosBootstrapDocument);
+  const approvers = (bootstrap.data?.bmsPosSession.approvers ?? []).filter(
+    approver =>
+      approver.id !== session?.cashier.id &&
+      approver.approvals.includes('pos.cash.movement'),
+  );
 
   const [movementType, setMovementType] = useState<CashMovementType | null>(
     null,
@@ -47,18 +52,35 @@ export default function ShiftScreen({ navigation }: Props) {
   const [reason, setReason] = useState('');
   const [closing, setClosing] = useState(false);
   const [countedCash, setCountedCash] = useState('');
+  const [opening, setOpening] = useState(false);
+  const [openingFloat, setOpeningFloat] = useState('');
   const [error, setError] = useState('');
+  const [approverId, setApproverId] = useState('');
+  const [approverPin, setApproverPin] = useState('');
+  const [movementKey, setMovementKey] = useState('');
 
   const closeMovement = () => {
     setMovementType(null);
     setAmount('');
     setReason('');
+    setApproverId('');
+    setApproverPin('');
+    setMovementKey('');
     setError('');
   };
 
-  const submitMovement = () => {
+  const submitMovement = async () => {
     if (!movementType) return;
-    const failure = shift.addMovement(movementType, amount, reason);
+    const failure = await shift.addMovement(
+      movementType,
+      amount,
+      reason,
+      {
+        approverUserId: approverId || undefined,
+        approverPin: approverPin || undefined,
+      },
+      movementKey,
+    );
     if (failure) {
       setError(failure);
       return;
@@ -66,14 +88,25 @@ export default function ShiftScreen({ navigation }: Props) {
     closeMovement();
   };
 
-  const submitClose = () => {
-    const failure = shift.closeShift(countedCash);
+  const submitClose = async () => {
+    const failure = await shift.closeShift(countedCash);
     if (failure) {
       setError(failure);
       return;
     }
     setClosing(false);
     setCountedCash('');
+    setError('');
+  };
+
+  const submitOpen = async () => {
+    const failure = await shift.reopenShift(Number(openingFloat));
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    setOpening(false);
+    setOpeningFloat('');
     setError('');
   };
 
@@ -143,7 +176,7 @@ export default function ShiftScreen({ navigation }: Props) {
   const closedCard = shift.closeSummary && (
     <Card style={{ marginTop: spacing.md }}>
       <Text style={[typography.captionStrong, { color: colors.warning }]}>
-        ปิดกะแล้ว (TEST) · {shift.closeSummary.closedAt}
+        ปิดกะแล้ว · {shift.closeSummary.closedAt}
       </Text>
       <Row
         label="นับได้จริง"
@@ -234,38 +267,46 @@ export default function ShiftScreen({ navigation }: Props) {
       >
         <Button
           label="เงินเข้า"
-          accessibilityLabel="บันทึกเงินเข้าลิ้นชักแบบทดสอบ"
+          accessibilityLabel="บันทึกเงินเข้าลิ้นชัก"
           variant="secondary"
           style={{ flex: 1 }}
-          disabled={Boolean(shift.closeSummary)}
+          disabled={!shift.isOpen}
           onPress={() => {
             setError('');
             setMovementType('IN');
+            setMovementKey(createIdempotencyKey('cash'));
           }}
         />
         <Button
           label="เงินออก"
-          accessibilityLabel="บันทึกเงินออกจากลิ้นชักแบบทดสอบ"
+          accessibilityLabel="บันทึกเงินออกจากลิ้นชัก"
           variant="secondary"
           style={{ flex: 1 }}
-          disabled={Boolean(shift.closeSummary)}
+          disabled={!shift.isOpen}
           onPress={() => {
             setError('');
             setMovementType('OUT');
+            setMovementKey(createIdempotencyKey('cash'));
           }}
         />
       </View>
-      {shift.closeSummary ? (
+      {!shift.isOpen ? (
         <Button
           label="เปิดกะใหม่"
-          accessibilityLabel="เปิดกะใหม่แบบทดสอบ ยกยอดที่นับได้มาเป็นเงินทอนตั้งต้น"
+          accessibilityLabel="เปิดกะใหม่"
           fullWidth
-          onPress={() => shift.reopenShift(sessionCashierName(session))}
+          onPress={() => {
+            setError('');
+            setOpeningFloat(
+              shift.closeSummary?.countedCash.toFixed(2) ?? '0.00',
+            );
+            setOpening(true);
+          }}
         />
       ) : (
         <Button
           label="ปิดกะ"
-          accessibilityLabel="ปิดกะและนับเงินในลิ้นชักแบบทดสอบ"
+          accessibilityLabel="ปิดกะและนับเงินในลิ้นชัก"
           variant="danger"
           fullWidth
           onPress={() => {
@@ -276,7 +317,7 @@ export default function ShiftScreen({ navigation }: Props) {
         />
       )}
       <Button
-        label="ตั้งค่าเครื่องและโหมดทดสอบ"
+        label="ตั้งค่าเครื่อง"
         variant="ghost"
         fullWidth
         style={{ marginTop: spacing.sm }}
@@ -286,6 +327,19 @@ export default function ShiftScreen({ navigation }: Props) {
             ?.getParent<NativeStackNavigationProp<RootStackParamList>>()
             ?.navigate('Settings')
         }
+      />
+      <Button
+        label="เปลี่ยนผู้ปฏิบัติงาน"
+        variant="secondary"
+        fullWidth
+        style={{ marginTop: spacing.sm }}
+        onPress={() => {
+          signOut();
+          navigation
+            .getParent()
+            ?.getParent<NativeStackNavigationProp<RootStackParamList>>()
+            ?.reset({ index: 0, routes: [{ name: 'Login' }] });
+        }}
       />
     </>
   );
@@ -348,8 +402,7 @@ export default function ShiftScreen({ navigation }: Props) {
                   : 'เงินออกจากลิ้นชัก'}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                บันทึกใน memory เท่านั้น · ยอดนี้มีผลกับ “เงินที่ควรมีในลิ้นชัก”
-                ทันที
+                รายการจะบันทึกในลิ้นชักของกะปัจจุบันบนเซิร์ฟเวอร์
               </Text>
               <TextInput
                 accessibilityLabel="จำนวนเงิน"
@@ -363,6 +416,47 @@ export default function ShiftScreen({ navigation }: Props) {
                   { borderColor: colors.border, color: colors.text },
                 ]}
               />
+              {movementType === 'OUT' ? (
+                <>
+                  <Text
+                    style={[
+                      typography.captionStrong,
+                      { color: colors.textMuted },
+                    ]}
+                  >
+                    ผู้อนุมัติคนที่สอง
+                  </Text>
+                  <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
+                    {approvers.map(approver => (
+                      <Button
+                        key={approver.id}
+                        label={`${approver.name ?? approver.id}${
+                          approver.hasPin ? '' : ' · ยังไม่ได้ตั้ง PIN'
+                        }`}
+                        variant={
+                          approverId === approver.id ? 'primary' : 'secondary'
+                        }
+                        fullWidth
+                        disabled={!approver.hasPin}
+                        onPress={() => setApproverId(approver.id)}
+                      />
+                    ))}
+                  </View>
+                  <TextInput
+                    accessibilityLabel="PIN ผู้อนุมัติเงินออก"
+                    value={approverPin}
+                    onChangeText={setApproverPin}
+                    placeholder="PIN ผู้อนุมัติ"
+                    placeholderTextColor={colors.textSoft}
+                    keyboardType="number-pad"
+                    secureTextEntry
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, color: colors.text },
+                    ]}
+                  />
+                </>
+              ) : null}
               <TextInput
                 accessibilityLabel="เหตุผล"
                 value={reason}
@@ -419,7 +513,7 @@ export default function ShiftScreen({ navigation }: Props) {
           >
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                ปิดกะ TEST
+                ปิดกะ
               </Text>
               {/* ไม่บอก "ควรมีเท่าไร" ก่อนนับ — การนับแบบเห็นคำตอบก่อนไม่ใช่การนับ
                   (ฝั่งเว็บมีโหมดนับปิดตาด้วยเหตุผลเดียวกัน) */}
@@ -447,7 +541,7 @@ export default function ShiftScreen({ navigation }: Props) {
               ) : null}
               <Button
                 label="ยืนยันปิดกะ"
-                accessibilityLabel="ยืนยันปิดกะแบบทดสอบ"
+                accessibilityLabel="ยืนยันปิดกะ"
                 variant="danger"
                 fullWidth
                 style={{ marginTop: spacing.md }}
@@ -461,6 +555,65 @@ export default function ShiftScreen({ navigation }: Props) {
                 onPress={() => setClosing(false)}
               />
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        visible={opening}
+        animationType="fade"
+        onRequestClose={() => setOpening(false)}
+      >
+        <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setOpening(false)}
+          />
+          <View
+            style={[
+              styles.modal,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[typography.subtitle, { color: colors.text }]}>
+              เปิดกะ
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              ตรวจนับเงินทอนตั้งต้นก่อนเริ่มรับชำระ
+            </Text>
+            <TextInput
+              accessibilityLabel="เงินทอนตั้งต้น"
+              value={openingFloat}
+              onChangeText={setOpeningFloat}
+              placeholder="เงินทอนตั้งต้น"
+              placeholderTextColor={colors.textSoft}
+              keyboardType="decimal-pad"
+              style={[
+                styles.input,
+                { borderColor: colors.border, color: colors.text },
+              ]}
+            />
+            {error ? (
+              <Text
+                style={[typography.captionStrong, { color: colors.danger }]}
+              >
+                {error}
+              </Text>
+            ) : null}
+            <Button
+              label="ยืนยันเปิดกะ"
+              fullWidth
+              style={{ marginTop: spacing.md }}
+              onPress={submitOpen}
+            />
+            <Button
+              label="ยกเลิก"
+              variant="secondary"
+              fullWidth
+              style={{ marginTop: spacing.sm }}
+              onPress={() => setOpening(false)}
+            />
           </View>
         </View>
       </Modal>

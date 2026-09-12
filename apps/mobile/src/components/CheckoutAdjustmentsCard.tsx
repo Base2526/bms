@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -8,19 +8,16 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useQuery } from '@apollo/client';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
 import { Card } from './Card';
 import {
-  MOCK_DISCOUNT_APPROVER_PIN,
-  mockCoupons,
-  mockMembers,
-} from '../mocks/checkout';
-import {
-  calculateMockDiscounts,
-  couponEligibilityError,
-} from '../lib/checkoutMath';
+  MobilePosMembersDocument,
+  PosBootstrapDocument,
+} from '../graphql/generated';
 import { useCart } from '../state/CartContext';
+import { useSession } from '../state/SessionContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
 
@@ -30,58 +27,79 @@ export function CheckoutAdjustmentsCard() {
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
-  const {
-    subtotal,
-    member,
-    setMember,
-    coupon,
-    setCoupon,
-    manualDiscount,
-    setManualDiscount,
-  } = useCart();
+  const cart = useCart();
+  const { session } = useSession();
   const [tool, setTool] = useState<Tool | null>(null);
+  const [search, setSearch] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [approverId, setApproverId] = useState('');
   const [approverPin, setApproverPin] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    setError('');
-    if (tool === 'coupon') setCouponCode(coupon?.code ?? '');
-    if (tool === 'discount') {
-      setAmount(manualDiscount?.amount.toString() ?? '');
-      setReason(manualDiscount?.reason ?? '');
-      setApproverPin('');
-    }
-  }, [coupon, manualDiscount, tool]);
+  const members = useQuery(MobilePosMembersDocument, {
+    variables: { q: search.trim() || null, amount: cart.subtotal },
+    skip: tool !== 'member',
+  });
+  const bootstrap = useQuery(PosBootstrapDocument);
+  const approvers = (bootstrap.data?.bmsPosSession.approvers ?? []).filter(
+    item => item.id !== session?.cashier.id,
+  );
+  const discountApprovers = approvers.filter(item =>
+    item.approvals.includes('pos.discount.approve'),
+  );
+  const approver =
+    discountApprovers.find(item => item.id === approverId && item.hasPin) ??
+    discountApprovers.find(item => item.hasPin) ??
+    null;
 
-  const close = () => setTool(null);
+  const rows = useMemo(
+    () => [
+      {
+        key: 'member' as const,
+        title: 'สมาชิก',
+        value: cart.member
+          ? [cart.member.name, cart.member.memberNo].filter(Boolean).join(' · ')
+          : 'ค้นหาชื่อ เบอร์ หรือเลขสมาชิก',
+      },
+      {
+        key: 'coupon' as const,
+        title: 'คูปอง',
+        value: cart.coupon?.code ?? 'กรอกรหัสคูปอง',
+      },
+      {
+        key: 'discount' as const,
+        title: 'ส่วนลดพิเศษ',
+        value: cart.manualDiscount
+          ? `฿${cart.manualDiscount.amount.toFixed(2)} · ${
+              cart.manualDiscount.reason
+            }`
+          : 'ต้องมีเหตุผลและผู้อนุมัติ',
+      },
+    ],
+    [cart.coupon?.code, cart.manualDiscount, cart.member],
+  );
+
+  const close = () => {
+    setTool(null);
+    setError('');
+    setApproverPin('');
+  };
 
   const applyCoupon = () => {
-    const found = mockCoupons.find(
-      item => item.code === couponCode.trim().toUpperCase(),
-    );
-    if (!found) {
-      setError('ไม่พบคูปองนี้ในข้อมูลทดสอบ');
+    const code = couponCode.trim().toUpperCase();
+    if (!code) {
+      setError('กรอกรหัสคูปอง');
       return;
     }
-    const eligibilityError = couponEligibilityError(
-      found,
-      subtotal,
-      Boolean(member),
-    );
-    if (eligibilityError) {
-      setError(eligibilityError);
-      return;
-    }
-    setCoupon(found);
+    cart.setCoupon({ code });
     close();
   };
 
-  const applyManualDiscount = () => {
-    const parsedAmount = Number(amount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+  const applyDiscount = () => {
+    const parsed = Number(amount);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
       setError('กรอกจำนวนส่วนลดที่มากกว่า 0');
       return;
     }
@@ -89,128 +107,77 @@ export function CheckoutAdjustmentsCard() {
       setError('ต้องระบุเหตุผลของส่วนลด');
       return;
     }
-    if (approverPin !== MOCK_DISCOUNT_APPROVER_PIN) {
-      setError('PIN ผู้อนุมัติไม่ถูกต้อง (โหมดทดสอบใช้ 9999)');
+    if (!approver || !approverPin) {
+      setError('เลือกผู้อนุมัติและกรอก PIN');
       return;
     }
-
-    const proposed = {
-      amount: parsedAmount,
+    cart.setManualDiscount({
+      amount: parsed,
       reason: reason.trim(),
-      approverName: 'ผู้จัดการทดสอบ',
-    };
-    const preview = calculateMockDiscounts({
-      subtotal,
-      member,
-      coupon,
-      manualDiscount: proposed,
+      approverUserId: approver.id,
+      approverName: approver.name ?? approver.id,
+      approverPin,
     });
-    if (preview.manualDiscount !== parsedAmount) {
-      setError(
-        `ส่วนลดรวมเกินเพดานทดสอบ 30% — ใส่ส่วนลดพิเศษได้อีกไม่เกิน ฿${preview.manualDiscount.toFixed(
-          2,
-        )}`,
-      );
-      return;
-    }
-    setManualDiscount(proposed);
-    setApproverPin('');
     close();
   };
-
-  const rows: Array<{
-    key: Tool;
-    title: string;
-    value: string;
-    active: boolean;
-  }> = [
-    {
-      key: 'member',
-      title: 'สมาชิก',
-      value: member
-        ? `${member.name} · ${member.tier} ลด ${member.tierDiscountPct}%`
-        : 'ค้นหาด้วยเบอร์หรือเลขสมาชิก',
-      active: Boolean(member),
-    },
-    {
-      key: 'coupon',
-      title: 'คูปอง',
-      value: coupon ? `${coupon.code} · ${coupon.label}` : 'กรอกรหัสคูปอง',
-      active: Boolean(coupon),
-    },
-    {
-      key: 'discount',
-      title: 'ส่วนลดพิเศษ',
-      value: manualDiscount
-        ? `฿${manualDiscount.amount.toFixed(2)} · ${manualDiscount.reason}`
-        : 'ต้องมีเหตุผลและ PIN ผู้อนุมัติ',
-      active: Boolean(manualDiscount),
-    },
-  ];
 
   return (
     <>
       <Card>
-        <View style={styles.cardHeader}>
-          <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            สิทธิประโยชน์และส่วนลด
-          </Text>
-          <Text
+        <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+          สิทธิประโยชน์และส่วนลด
+        </Text>
+        {rows.map((row, index) => (
+          <Pressable
+            key={row.key}
+            accessibilityRole="button"
+            onPress={() => {
+              setError('');
+              setTool(row.key);
+              if (row.key === 'coupon') {
+                setCouponCode(cart.coupon?.code ?? '');
+              }
+              if (row.key === 'discount') {
+                setAmount(cart.manualDiscount?.amount.toString() ?? '');
+                setReason(cart.manualDiscount?.reason ?? '');
+                setApproverId(
+                  cart.manualDiscount?.approverUserId ??
+                    discountApprovers.find(item => item.hasPin)?.id ??
+                    '',
+                );
+              }
+            }}
             style={[
-              typography.captionStrong,
+              styles.toolRow,
               {
-                color: colors.warning,
-                backgroundColor: colors.warningBg,
-                borderRadius: radius.pill,
-                paddingHorizontal: spacing.sm,
-                paddingVertical: spacing.xs,
+                minHeight: 54,
+                borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
+                borderTopColor: colors.border,
               },
             ]}
           >
-            TEST
-          </Text>
-        </View>
-        <View style={{ marginTop: spacing.sm }}>
-          {rows.map((row, index) => (
-            <Pressable
-              key={row.key}
-              accessibilityRole="button"
-              accessibilityLabel={`${row.title} ${row.value}`}
-              onPress={() => setTool(row.key)}
-              style={({ pressed }) => [
-                styles.toolRow,
-                {
-                  minHeight: 54,
-                  paddingVertical: spacing.sm,
-                  borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
-                  borderTopColor: colors.border,
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    typography.bodyStrong,
-                    { color: row.active ? colors.primary : colors.text },
-                  ]}
-                >
-                  {row.active ? '✓ ' : '+ '}
-                  {row.title}
-                </Text>
-                <Text
-                  numberOfLines={2}
-                  style={[typography.caption, { color: colors.textMuted }]}
-                >
-                  {row.value}
-                </Text>
-              </View>
-              <Text style={[typography.subtitle, { color: colors.textMuted }]}>
-                ›
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                {row.title}
               </Text>
-            </Pressable>
-          ))}
-        </View>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {row.value}
+              </Text>
+            </View>
+            <Text style={[typography.subtitle, { color: colors.textMuted }]}>
+              ›
+            </Text>
+          </Pressable>
+        ))}
+        {cart.previewLoading ? (
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…
+          </Text>
+        ) : cart.previewError ? (
+          <Text style={[typography.caption, { color: colors.danger }]}>
+            {cart.previewError}
+          </Text>
+        ) : null}
       </Card>
 
       <Modal
@@ -238,12 +205,10 @@ export function CheckoutAdjustmentsCard() {
               styles.modalCard,
               {
                 width: isTablet ? 520 : '100%',
-                maxHeight: isTablet ? '82%' : '88%',
-                paddingHorizontal: isTablet ? spacing.xxl : spacing.xl,
-                paddingTop: isTablet ? spacing.xxl : spacing.xl,
-                paddingBottom: isTablet
-                  ? spacing.xxl
-                  : spacing.xl + insets.bottom,
+                maxHeight: '88%',
+                paddingHorizontal: spacing.xl,
+                paddingTop: spacing.xl,
+                paddingBottom: spacing.xl + (isTablet ? 0 : insets.bottom),
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
                 borderRadius: isTablet ? radius.lg : 0,
@@ -253,98 +218,65 @@ export function CheckoutAdjustmentsCard() {
             ]}
           >
             <ScrollView keyboardShouldPersistTaps="handled">
-              {tool === 'member' && (
+              {tool === 'member' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
                     เลือกสมาชิก
                   </Text>
-                  <Text
-                    style={[
-                      typography.caption,
-                      { color: colors.textMuted, marginTop: spacing.xs },
-                    ]}
-                  >
-                    ข้อมูลจำลองสำหรับทดสอบ tier และคะแนน
-                  </Text>
-                  <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
-                    {mockMembers.map(option => (
-                      <Pressable
-                        key={option.id}
-                        onPress={() => {
-                          setMember(option);
-                          close();
-                        }}
-                        style={({ pressed }) => [
-                          styles.option,
-                          {
-                            padding: spacing.md,
-                            borderRadius: radius.md,
-                            borderColor:
-                              member?.id === option.id
-                                ? colors.primary
-                                : colors.border,
-                            backgroundColor: pressed
-                              ? colors.surface2
-                              : colors.surface,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            typography.bodyStrong,
-                            { color: colors.text },
-                          ]}
-                        >
-                          {option.name}
-                        </Text>
-                        <Text
-                          style={[
-                            typography.caption,
-                            { color: colors.textMuted },
-                          ]}
-                        >
-                          {option.memberNo} · {option.phone}
-                        </Text>
-                        <Text
-                          style={[
-                            typography.captionStrong,
-                            { color: colors.primary, marginTop: spacing.xs },
-                          ]}
-                        >
-                          {option.tier} · ลด {option.tierDiscountPct}% ·{' '}
-                          {option.points.toLocaleString()} คะแนน
-                        </Text>
-                      </Pressable>
-                    ))}
+                  <FormInput
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder="ชื่อ เบอร์ หรือเลขสมาชิก"
+                  />
+                  <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+                    {(members.data?.bmsPosMemberSearch.members ?? []).map(
+                      option => (
+                        <Button
+                          key={option.customerId}
+                          label={[option.name, option.memberNo]
+                            .filter(Boolean)
+                            .join(' · ')}
+                          variant="secondary"
+                          fullWidth
+                          onPress={() => {
+                            cart.setMember({
+                              id: option.customerId,
+                              memberNo: option.memberNo,
+                              name: option.name,
+                              phone: option.phone,
+                              tier: option.tier?.name ?? null,
+                              tierDiscountPct:
+                                option.tier?.discountType === 'PERCENT'
+                                  ? option.tier.discountValue
+                                  : 0,
+                              points: option.pointsBalance,
+                              pointsUsable: option.pointsUsable,
+                            });
+                            close();
+                          }}
+                        />
+                      ),
+                    )}
                   </View>
-                  {member && (
+                  {cart.member ? (
                     <Button
                       label="นำสมาชิกออกจากบิล"
                       variant="ghost"
                       fullWidth
                       style={{ marginTop: spacing.md }}
                       onPress={() => {
-                        setMember(null);
-                        if (coupon?.memberOnly) setCoupon(null);
+                        cart.setMember(null);
                         close();
                       }}
                     />
-                  )}
+                  ) : null}
                 </>
-              )}
+              ) : null}
 
-              {tool === 'coupon' && (
+              {tool === 'coupon' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
                     ใช้คูปอง
-                  </Text>
-                  <Text
-                    style={[
-                      typography.caption,
-                      { color: colors.textMuted, marginTop: spacing.xs },
-                    ]}
-                  >
-                    ลองใช้ SAVE20 หรือ MEMBER10
                   </Text>
                   <FormInput
                     value={couponCode}
@@ -353,38 +285,29 @@ export function CheckoutAdjustmentsCard() {
                     autoCapitalize="characters"
                   />
                   <Button
-                    label="ตรวจสอบและใช้คูปอง"
+                    label="ตรวจสอบกับเซิร์ฟเวอร์"
                     fullWidth
-                    style={{ marginTop: spacing.lg }}
+                    style={{ marginTop: spacing.md }}
                     onPress={applyCoupon}
                   />
-                  {coupon && (
+                  {cart.coupon ? (
                     <Button
                       label="นำคูปองออก"
                       variant="ghost"
                       fullWidth
-                      style={{ marginTop: spacing.sm }}
                       onPress={() => {
-                        setCoupon(null);
+                        cart.setCoupon(null);
                         close();
                       }}
                     />
-                  )}
+                  ) : null}
                 </>
-              )}
+              ) : null}
 
-              {tool === 'discount' && (
+              {tool === 'discount' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
                     ส่วนลดพิเศษ
-                  </Text>
-                  <Text
-                    style={[
-                      typography.caption,
-                      { color: colors.textMuted, marginTop: spacing.xs },
-                    ]}
-                  >
-                    โหมดทดสอบใช้ PIN ผู้อนุมัติ 9999 · PIN จะไม่ถูกเก็บ
                   </Text>
                   <FormInput
                     value={amount}
@@ -397,6 +320,30 @@ export function CheckoutAdjustmentsCard() {
                     onChangeText={setReason}
                     placeholder="เหตุผลส่วนลด"
                   />
+                  <Text
+                    style={[
+                      typography.captionStrong,
+                      { color: colors.textMuted, marginTop: spacing.md },
+                    ]}
+                  >
+                    ผู้อนุมัติ
+                  </Text>
+                  <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+                    {discountApprovers.map(option => (
+                      <Button
+                        key={option.id}
+                        label={`${option.name ?? option.id}${
+                          option.hasPin ? '' : ' · ยังไม่ได้ตั้ง PIN'
+                        }`}
+                        variant={
+                          approver?.id === option.id ? 'primary' : 'secondary'
+                        }
+                        fullWidth
+                        disabled={!option.hasPin}
+                        onPress={() => setApproverId(option.id)}
+                      />
+                    ))}
+                  </View>
                   <FormInput
                     value={approverPin}
                     onChangeText={setApproverPin}
@@ -405,25 +352,13 @@ export function CheckoutAdjustmentsCard() {
                     secureTextEntry
                   />
                   <Button
-                    label="อนุมัติส่วนลด"
+                    label="ใช้ส่วนลด"
                     fullWidth
-                    style={{ marginTop: spacing.lg }}
-                    onPress={applyManualDiscount}
+                    style={{ marginTop: spacing.md }}
+                    onPress={applyDiscount}
                   />
-                  {manualDiscount && (
-                    <Button
-                      label="นำส่วนลดพิเศษออก"
-                      variant="ghost"
-                      fullWidth
-                      style={{ marginTop: spacing.sm }}
-                      onPress={() => {
-                        setManualDiscount(null);
-                        close();
-                      }}
-                    />
-                  )}
                 </>
-              )}
+              ) : null}
 
               {error ? (
                 <Text
@@ -486,7 +421,6 @@ function FormInput({
           borderColor: colors.border,
           borderRadius: radius.md,
           color: colors.text,
-          backgroundColor: colors.surface,
         },
       ]}
     />
@@ -494,11 +428,6 @@ function FormInput({
 }
 
 const styles = StyleSheet.create({
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   toolRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -514,5 +443,4 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 12,
   },
-  option: { borderWidth: StyleSheet.hairlineWidth },
 });

@@ -8,6 +8,8 @@ const core = readFileSync(new URL("../packages/graphql-core/src/resolvers.ts", i
 const dockerfile = readFileSync(new URL("../apps/ws/Dockerfile", import.meta.url), "utf8");
 const ticketRoute = readFileSync(new URL("../apps/web/app/api/bms/realtime/ticket/route.ts", import.meta.url), "utf8");
 const realtimeAuth = readFileSync(new URL("../apps/web/lib/bms/realtimeAuth.ts", import.meta.url), "utf8");
+const caddyServer = readFileSync(new URL("../apps/web/Caddyfile.server", import.meta.url), "utf8");
+const caddyLocal = readFileSync(new URL("../apps/web/Caddyfile.local", import.meta.url), "utf8");
 const composeFiles = ["docker-compose.yml", "docker-compose.dev.yml", "docker-compose.prod.yml"]
   .map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
 
@@ -81,5 +83,21 @@ test("every compose file injects the web ticket TTL and WS gateway controls", ()
       "REALTIME_RESTAURANT_ENABLED", "REALTIME_INVENTORY_ENABLED",
       "REALTIME_PAYMENTS_ENABLED",
     ]) assert.match(compose, new RegExp(`${key}:`), `${key} missing from a compose file`);
+  }
+});
+
+test("Caddy routes only websocket upgrades to the WS gateway and keeps HTTP GraphQL on web", () => {
+  for (const [name, caddy] of [["server", caddyServer], ["local", caddyLocal]] as const) {
+    const activeLines = caddy
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .join("\n");
+
+    assert.match(activeLines, /@ws\s*\{[\s\S]*path \/graphql[\s\S]*header Connection \*Upgrade\*[\s\S]*header Upgrade websocket[\s\S]*\}/, `${name} Caddyfile must gate WS by upgrade headers`);
+    assert.match(activeLines, /reverse_proxy @ws ws:8080/, `${name} Caddyfile must send websocket upgrades to ws`);
+    assert.match(activeLines, /@gql_http path \/graphql\*/, `${name} Caddyfile must keep an HTTP GraphQL matcher`);
+    assert.match(activeLines, /reverse_proxy @gql_http web:3000/, `${name} Caddyfile must send HTTP GraphQL to web`);
+    assert.doesNotMatch(activeLines, /reverse_proxy \/graphql\* ws:8080/, `${name} Caddyfile must not send every /graphql request to ws`);
   }
 });

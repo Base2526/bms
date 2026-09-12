@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,8 +17,6 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useDevice } from '../../state/DeviceContext';
 import { useStoreMode } from '../../state/StoreModeContext';
-import { PREVIEW_STORE_MODES } from '../../lib/storeMode';
-import type { PreviewStoreMode } from '../../lib/storeMode';
 import {
   displayHost,
   maskToken,
@@ -36,21 +33,18 @@ const STATUS_PANEL_WIDTH = 360;
 // หน้าตั้งค่าเครื่อง — ตอบคำถามเดียว: "ไอแพดเครื่องนี้เป็นของร้านไหน"
 //
 // ⚠️ คำตอบไม่ได้มาจากค่าที่กรอกที่นี่ — สิ่งที่กรอกคือ **token** ส่วนคำตอบว่าเป็นของร้าน/สาขาไหน
-// มาจากเซิร์ฟเวอร์ตอนกด "ทดสอบการเชื่อมต่อ" เท่านั้น (`GET /api/pos/session`)
+// มาจากเซิร์ฟเวอร์ตอนกด "ทดสอบการเชื่อมต่อ" เท่านั้น (`bmsPosSession`)
 // ห้ามเพิ่มช่องให้เลือกร้าน/สาขาเองเด็ดขาด — เป็นกฎของทั้งระบบว่า tenant มาจาก token ฝั่ง server
 export default function DeviceSettingsScreen({ route, navigation }: Props) {
   const { colors, spacing, typography, radius, minTouchTarget } = useTheme();
   const { isTablet } = useResponsive();
   const { status, target, storeError, verify, pair, unpair, runVerify } =
     useDevice();
-  const { mode, setMode } = useStoreMode();
+  const { mode } = useStoreMode();
 
   const [input, setInput] = useState('');
   const [serverInput, setServerInput] = useState('');
   const [saving, setSaving] = useState(false);
-  function selectMode(next: PreviewStoreMode) {
-    if (next !== mode) setMode(next);
-  }
 
   // ลิงก์ `bmspos://pair?t=...` ที่เปิดแอปขึ้นมา — react-navigation แกะ query ให้เป็น route params
   // **เติมลงช่องให้เฉย ๆ ไม่บันทึกเอง** โดยตั้งใจ: ลิงก์ที่ใครส่งมาก็ได้สามารถชี้เครื่องนี้ไป
@@ -99,6 +93,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           onPress: async () => {
             try {
               await unpair();
+              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
             } catch (e: any) {
               Alert.alert('เลิกจับคู่ไม่สำเร็จ', String(e?.message ?? e));
             }
@@ -128,9 +123,18 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
       <Card>
         <View style={styles.rowBetween}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            โหมดร้านสำหรับทดสอบ
+            ประเภทร้านจากเซิร์ฟเวอร์
           </Text>
-          <StatusPill label="TEST" tone="warning" />
+          <StatusPill
+            label={
+              mode === 'restaurant'
+                ? 'ร้านอาหาร'
+                : mode === 'pharmacy'
+                ? 'ร้านขายยา'
+                : 'ร้านทั่วไป'
+            }
+            tone="success"
+          />
         </View>
         <Text
           style={[
@@ -138,47 +142,9 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
             { color: colors.textSoft, marginTop: spacing.xs },
           ]}
         >
-          เลือกเพื่อดูหน้าจอ mock ในรอบที่เปิดแอปนี้เท่านั้น
-          ไม่เปลี่ยนประเภทร้านบนเซิร์ฟเวอร์ และไม่ใช้เป็นสิทธิ์ขายหรืออนุมัติยา
+          แอปอ่านค่านี้จากเครื่องที่จับคู่ไว้ ไม่รับ tenant สาขา
+          หรือประเภทร้านจากผู้ใช้
         </Text>
-        <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-          {PREVIEW_STORE_MODES.map(option => {
-            const selected = option.value === mode;
-            return (
-              <Pressable
-                key={option.value}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                onPress={() => selectMode(option.value)}
-                style={{
-                  minHeight: minTouchTarget,
-                  borderRadius: radius.md,
-                  borderWidth: selected ? 2 : StyleSheet.hairlineWidth,
-                  borderColor: selected ? colors.primary : colors.border,
-                  backgroundColor: selected
-                    ? colors.menuTints[0].bg
-                    : colors.surface2,
-                  paddingHorizontal: spacing.md,
-                  paddingVertical: spacing.sm,
-                  justifyContent: 'center',
-                }}
-              >
-                <Text
-                  style={[
-                    typography.bodyStrong,
-                    { color: selected ? colors.primary : colors.text },
-                  ]}
-                >
-                  {selected ? '✓ ' : ''}
-                  {option.label}
-                </Text>
-                <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  {option.description}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
       </Card>
 
       <Card>
@@ -294,7 +260,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
                 label="ผู้ปฏิบัติงานที่ขายได้"
                 value={`${verify.info.cashierCount} คน`}
               />
-              {/* ⚠️ ชื่อร้าน (tenant) ไม่มีใน /api/pos/session — payload มีแค่สาขา/เครื่อง/เลขผู้เสียภาษี
+              {/* ชื่อร้าน (tenant) ไม่อยู่ใน bmsPosSession — payload มีแค่สาขา/เครื่อง/เลขผู้เสียภาษี
                   ถ้าอยากให้จอบอก "ร้านชื่ออะไร" ต้องเพิ่มฟิลด์ที่ route ฝั่งเว็บก่อน */}
               <Text
                 style={[

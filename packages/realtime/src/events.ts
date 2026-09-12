@@ -200,7 +200,10 @@ const ROOT_KEYS = new Set([
   "actorId", "deviceId", "entityType", "entityId", "aggregateVersion", "updatedAt", "occurredAt",
   "payload",
 ]);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL's uuid type validates the textual shape but does not require RFC
+// version/variant bits. Tenant ids imported from older systems and deterministic
+// test fixtures are still valid database UUIDs and must remain routable.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const FORBIDDEN_PAYLOAD_KEY = /(name|email|phone|address|token|secret|password|pin|card|bank|prescription|clinical|evidence|attachment|file|message|body|note|raw|args)/i;
 

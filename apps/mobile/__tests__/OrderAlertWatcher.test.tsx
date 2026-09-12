@@ -1,12 +1,7 @@
 import React from 'react';
 import { Vibration } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
-import { OrderAlertWatcher } from '../src/components/OrderAlertWatcher';
-import {
-  IncomingOrdersProvider,
-  useIncomingOrders,
-} from '../src/state/IncomingOrdersContext';
-import { KitchenProvider, useKitchen } from '../src/state/KitchenContext';
+import { OrderAlertEffects } from '../src/components/OrderAlertWatcher';
 import {
   __resetOrderAlertStateForTest,
   getOrderAlertSnapshot,
@@ -25,31 +20,27 @@ jest.spyOn(Vibration, 'cancel').mockImplementation(() => {});
  * ตัวนี้จึงประกอบ provider จริงแล้วสั่งให้ออร์เดอร์เข้ามา
  */
 function harness() {
-  const api: {
-    arrive: () => void;
-    sendTicket: () => void;
-  } = { arrive: () => {}, sendTicket: () => {} };
-
-  function Probe() {
-    const { simulateArrival } = useIncomingOrders();
-    const { enqueueRound } = useKitchen();
-    api.arrive = () => simulateArrival();
-    api.sendTicket = () =>
-      enqueueRound('T09', [
-        { sku: 'MENU-PADTHAI', name: 'ผัดไทยกุ้งสด', qty: 1 },
-      ]);
-    return null;
-  }
-
-  const tree = (
-    <KitchenProvider>
-      <IncomingOrdersProvider>
-        <OrderAlertWatcher />
-        <Probe />
-      </IncomingOrdersProvider>
-    </KitchenProvider>
+  let order = 0;
+  let ticket = 0;
+  const render = () => (
+    <OrderAlertEffects
+      pendingIds={Array.from({ length: order }, (_, index) => `order-${index}`)}
+      pendingCount={order}
+      tickets={Array.from({ length: ticket }, (_, index) => ({
+        id: `ticket-${index}`,
+        status: 'NEW',
+      }))}
+    />
   );
-  return { api, tree };
+  return {
+    render,
+    arrive: () => {
+      order += 1;
+    },
+    sendTicket: () => {
+      ticket += 1;
+    },
+  };
 }
 
 describe('OrderAlertWatcher', () => {
@@ -80,41 +71,44 @@ describe('OrderAlertWatcher', () => {
   };
 
   it('เปิดแอปมาเจอของค้างอยู่แล้ว ต้องไม่เตือนรัวตั้งแต่แรก', async () => {
-    const { tree } = harness();
-    await mount(tree);
-    // ⚠️ mock มีตั๋วครัวค้างอยู่ 1 ใบสถานะ NEW ตั้งแต่ seed — รอบแรกเป็นการตั้งต้น ห้ามเตือน
+    const test = harness();
+    await mount(test.render());
     expect(vibrateSpy).not.toHaveBeenCalled();
     expect(getOrderAlertSnapshot().lastAlertAtMs).toBeNull();
   });
 
   it('ออร์เดอร์เข้าใหม่หนึ่งใบ = แจ้งเตือนหนึ่งครั้ง', async () => {
-    const { api, tree } = harness();
-    await mount(tree);
+    const test = harness();
+    await mount(test.render());
+    test.arrive();
     await ReactTestRenderer.act(() => {
-      api.arrive();
+      mounted?.update(test.render());
     });
     expect(vibrateSpy).toHaveBeenCalledTimes(1);
     expect(getOrderAlertSnapshot().lastKind).toBe('incoming_order');
   });
 
   it('ตั๋วครัวใบใหม่ก็แจ้งเตือน และแยกชนิดออกจากออร์เดอร์เข้า', async () => {
-    const { api, tree } = harness();
-    await mount(tree);
+    const test = harness();
+    await mount(test.render());
+    test.sendTicket();
     await ReactTestRenderer.act(() => {
-      api.sendTicket();
+      mounted?.update(test.render());
     });
     expect(vibrateSpy).toHaveBeenCalledTimes(1);
     expect(getOrderAlertSnapshot().lastKind).toBe('kitchen_ticket');
   });
 
   it('ออร์เดอร์เข้าสองใบติดกันเตือนสองครั้ง ไม่ใช่ครั้งเดียว', async () => {
-    const { api, tree } = harness();
-    await mount(tree);
+    const test = harness();
+    await mount(test.render());
+    test.arrive();
     await ReactTestRenderer.act(() => {
-      api.arrive();
+      mounted?.update(test.render());
     });
+    test.arrive();
     await ReactTestRenderer.act(() => {
-      api.arrive();
+      mounted?.update(test.render());
     });
     expect(vibrateSpy).toHaveBeenCalledTimes(2);
   });

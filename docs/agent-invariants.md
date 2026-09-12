@@ -273,20 +273,17 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   parking/resuming/dropping a cart changes no money, stock, or document and is deliberately gated by
   the active device + open shift only. Read routes are device-scoped operational reads unless the
   payload is staff-sensitive (`shift-report` re-verifies PIN + `pos.shift.report`).
-- **The native scaffold does not widen POS authority.** `apps/mobile/` currently has real secure
-  device pairing only; sell/table/kitchen/shift and PIN screens are mock-backed. The device token is
-  stored through `react-native-keychain`, never shown whole or sent over remote HTTP, and
-  `/api/pos/session` remains the source of tenant/location identity. Treat a paired device as a
-  machine, not a cashier session, and do not connect mock actions to mutation routes until the
-  cashier-session/schema contract is settled. The Settings selector for general/pharmacy/restaurant
-  is preview-only: it may alter mock navigation and catalog copy, but never the server archetype or
-  a pharmacy policy decision. Its member/coupon/manual-discount totals and barcode resolver are also
-  explicitly mock-only: production must use the server discount preview and catalog, and a manual
-  discount still needs a distinct approver. The mock split-payment, parked-bill, sale-history,
-  return and void screens are memory-only workflow previews; resumed parked bills may remember the
-  discount reason/amount but not the approver or PIN. Client code never owns money, stock, refund or tax rules. See
+- **The native client does not widen POS authority.** `apps/mobile/` uses the generated HTTPS
+  GraphQL contract for bootstrap/PIN, catalog, sale, parked bills, return/void, shift/cash,
+  restaurant checks, incoming orders and kitchen tickets; GraphQL WS carries only named
+  invalidations. The device token is stored through `react-native-keychain`, while cashier PINs and
+  second-person PINs live only in React memory. Tenant/location/device/shift and store archetype are
+  server-derived, every sensitive command rechecks PIN/RBAC, and runtime screens/state import no
+  mock data. Manual discount, void and cash-out callers filter the server approver list by the exact
+  permission, but that filter is UX only; the resolver remains the guard. Client code never owns
+  money, stock, refund, pharmacy or tax rules. See
   [apps/mobile/README.md](../apps/mobile/README.md) and
-  [business/pos.md § Native POS client](business/pos.md#native-pos-client-scaffold).
+  [business/pos.md § Native POS client](business/pos.md#native-pos-client).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.
@@ -1065,14 +1062,15 @@ Full history/rationale of what was found and fixed: § Multi-instance readiness 
 
 ## Realtime invalidation architecture
 
-The 2026-09-10 audit is the current authority for realtime rollout work:
+The 2026-09-10 audit records the original findings and rollout design; current implementation
+status lives in the mobile GraphQL client and realtime architecture documents:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
-event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.72`,
+event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.74`,
 `realtimeOutbox.ts`, the continuous pump, and `realtimeDispatcher.ts` provide the durable handoff and
-domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; live recovery/load
-proof and bounded replay do not yet exist. **No migration in this range has been applied to any
-database yet, and none of the 27 triggers has ever fired.**
+domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; DB contract suites
+exercise the triggers and live local verification covers Redis fan-out across multiple WS instances.
+Production migration state, recovery/load proof, and bounded replay remain separate rollout gates.
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
@@ -1104,7 +1102,7 @@ database yet, and none of the 27 triggers has ever fired.**
   `return true` when the routing field is absent: no routing data means reject. Adding a
   resource subscription means the publisher must carry its audience. User topics come from the
   ticket subject; BMS Inbox requires ticket tenant plus `inbox.view`.
-- The subscription surface is one invalidation stream plus 18 named views over it
+- The subscription surface is one invalidation stream plus 17 named views over it
   (`NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`). Every named field reuses
   `realtimeTopics()` and `canReceiveRealtimeEvent()` and takes **no arguments**. Do not give a named
   subscription its own auth: one authorizer is the only reason cross-tenant scope can be reasoned
@@ -1139,17 +1137,17 @@ database yet, and none of the 27 triggers has ever fired.**
     [architecture/realtime-test-database.md](architecture/realtime-test-database.md), against a
     restored dump, with a recorded pre-migration baseline. Reading the SQL cannot answer whether a
     trigger enqueues successfully from a writer that never set `bms.tenant_id`.
-- The browser and POS tablets are still on REST + polling and there is no React Native app in this
-  repository, so the 18 named subscriptions have **no caller today**. Do not delete a REST route, a
-  polling loop or a `useLiveRefresh` cycle on the grounds that a subscription exists; the generic
-  stream is what the browser actually mounts (`RealtimeProvider`, `PosRealtimeProvider`), and
+- Browser POS and `apps/mobile` now mount named subscriptions; RN uses Apollo + `graphql-ws` and
+  chooses base/restaurant views by the server-derived surface. Do not delete a REST route, polling
+  loop or `useLiveRefresh` cycle merely because a subscription exists: business-screen caller parity
+  and production recovery/load proof are still incomplete. The shared
   `realtimeInvalidation.ts` must have an entry for every event domain or that domain refetches
   nothing and reads on screen exactly like realtime being switched off.
 
 ## Typed GraphQL surface for external clients
 
-The mobile/POS GraphQL surface is meant to be code-generated by an app that lives outside this
-repository. Rationale and phase order:
+The mobile/POS GraphQL surface is code-generated in `apps/mobile`, and remains suitable for external
+clients. Rationale and phase order:
 [architecture/graphql-client-readiness-brief.md](architecture/graphql-client-readiness-brief.md);
 per-screen examples: [architecture/react-native-graphql-client.md](architecture/react-native-graphql-client.md).
 
@@ -1174,7 +1172,7 @@ per-screen examples: [architecture/react-native-graphql-client.md](architecture/
   still exist and still work; the 32 named mutations inject a fixed action and delegate to the same
   compatibility resolver, so there is one service call, one PIN/RBAC check, one audit row and one
   transaction — never a copied code path. Do not remove an operation while a caller may still exist;
-  browser and native callers have not migrated.
+  some browser and native business callers have not migrated.
 - **Errors and business rejections are different channels.** Every client-facing GraphQL error
   carries `extensions.code` from one set (`UNAUTHENTICATED`, `FORBIDDEN`, `BAD_USER_INPUT`,
   `NOT_FOUND`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) assigned in `mobileErrorContract.ts` and

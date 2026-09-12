@@ -1,4 +1,4 @@
-# ฐานทดสอบแยกสำหรับ migration realtime (`9.70`–`9.72`)
+# ฐานทดสอบแยกสำหรับ migration realtime (`9.70`–`9.74`)
 
 > compose: [`docker-compose.realtime-test.yml`](../../docker-compose.realtime-test.yml) ·
 > สถาปัตยกรรม: [mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md) ·
@@ -9,7 +9,9 @@
 `bms_realtime_outbox` **ในทรานแซกชันเดียวกับงานธุรกิจ** แปลว่า trigger ที่อ้างคอลัมน์ผิด
 ไม่ได้ทำให้ "realtime เงียบ" แต่ทำให้ **การขาย/รับของ/ปิดกะ rollback ทั้งก้อน**
 
-ณ วันที่เขียน trigger ทั้ง 27 ตัว **ยังไม่เคยยิงกับฐานจริงสักครั้ง** จึงต้องทดสอบบนฐานที่ทิ้งได้
+การรัน local ปี 2026-09-12 พบ row-shape bug ของ POS device จริง จึงมี `9.73` แก้ฉุกเฉินและ
+`9.74` แยก device/shift function ถาวร ชุด DB contract ผ่านแล้ว แต่การ deploy แต่ละ environment
+ยังต้องใช้ฐานที่ทิ้งได้และเก็บ baseline ตาม runbook นี้
 
 ## ทำไมต้องเป็นคนละ instance ไม่ใช่แค่คนละ database
 
@@ -18,7 +20,7 @@
 | ตาราง / ฟังก์ชัน / trigger | ต่อ database | ✅ พอ |
 | **role (`bms_realtime_dispatcher`, `BYPASSRLS`)** | **ต่อ cluster** | ❌ **ไม่พอ** |
 
-`9.70` รัน `CREATE ROLE bms_realtime_dispatcher NOLOGIN BYPASSRLS` และ `9.71`/`9.72` รัน
+`9.70` รัน `CREATE ROLE bms_realtime_dispatcher NOLOGIN BYPASSRLS` และ `9.71`–`9.74` รัน
 `ALTER FUNCTION … OWNER TO` role นั้น · role อยู่ระดับ cluster ดังนั้นถึงแยก database
 มันก็ไปโผล่ที่ฐาน dev ด้วย และ `DROP DATABASE` ไม่ลบมันทิ้ง
 
@@ -83,7 +85,9 @@ POSTGRES_USER=app POSTGRES_PASSWORD=realtime_test_only \
 ```bash
 for f in 9.70__bms_realtime_outbox \
          9.71__bms_realtime_domain_events \
-         9.72__bms_realtime_cash_and_kitchen_events; do
+         9.72__bms_realtime_cash_and_kitchen_events \
+         9.73__bms_realtime_pos_scope_trigger_fix \
+         9.74__bms_realtime_pos_trigger_split; do
   docker compose -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
     psql -U app -d bms_realtime_test -v ON_ERROR_STOP=1 -1 < db/migrations/$f.sql || break
 done

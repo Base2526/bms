@@ -1,315 +1,109 @@
-# BMS POS — Mobile (React Native, bare — ไม่ใช้ Expo)
+# BMS POS Mobile
 
-โครง "กลุ่ม A" ของแผน RN POS: navigation + design system + หน้าจอ mock data เท่านั้น
-**ยังไม่ต่อ backend จริง** — ดูเหตุผลของการแบ่งงานเป็นกลุ่ม A/B และลำดับที่ตกลงกันไว้ก่อนเริ่มงานนี้
+Bare React Native POS client (`react-native@0.87.1`, no Expo). The app uses HTTPS GraphQL for
+authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS
+services remain the source of truth.
 
-## สถานะวันนี้
+## Current Status
 
-- ✅ bare React Native (ไม่มี Expo) — `react-native@0.87.1`, React 19, TypeScript
-- ✅ Navigation: `@react-navigation` (native-stack + bottom-tabs) — Login → แท็บตามโหมดร้าน
-  (ร้านทั่วไป/ร้านขายยา: ขาย + กะ · ร้านอาหาร: เมนูอาหาร + ผังโต๊ะ + ครัว + กะ)
-- ✅ Settings มี **โหมดร้านสำหรับทดสอบ** 3 แบบ: ร้านทั่วไป, ร้านขายยา, ร้านอาหาร · ค่าอยู่ใน
-  memory เฉพาะรอบที่เปิดแอป ไม่แตะ Keychain/device token และเปลี่ยนเฉพาะ mock UI เท่านั้น
-  ไม่เขียนทับ `businessArchetype` จาก server และไม่ใช้เป็นสิทธิ์ขายหรืออนุมัติยา
-- ✅ Design system: `src/theme/` — สี/spacing/typography ยกมาจาก `apps/web/app/globals.css` ตรง ๆ
-  เพื่อให้ RN กับเว็บ POS เดิมมีภาษาสีเดียวกัน (ดูคอมเมนต์ใน `src/theme/colors.ts`)
-- ✅ หน้าจอหลัก + workflow mock ถัดไป (Login, ตั้งค่า/จับคู่เครื่อง, เมนู/ตะกร้า, ชำระเงิน, ใบเสร็จ,
-  ประวัติขาย/รายละเอียดใบเสร็จ, return/void, ผังโต๊ะ, บิลโต๊ะ, สั่งอาหารเข้าโต๊ะ, จอครัว, กะ/ลิ้นชัก)
-  ทำงานได้ด้วย mock data ในหน่วยความจำ ส่วนเส้นขาย/ครัว/ผังโต๊ะยังไม่เรียก network
-- ✅ Device pairing ชั้นฐาน: รับลิงก์ `bmspos://pair`/ลิงก์ POS/token, เก็บ token ใน iOS Keychain หรือ Android
-  Keystore ผ่าน `react-native-keychain`, และตรวจตัวตนเครื่องกับ `GET /api/pos/session` โดย tenant/สาขามาจาก
-  server เท่านั้น ไม่รับจากค่าที่ client กรอก
-- ✅ ไอคอนแท็บล่าง — วาดเองด้วย `react-native-svg` (`src/components/icons/TabIcons.tsx`) ไม่ใช้ icon
-  font เพราะต้องลิงก์ฟอนต์เพิ่มทั้ง iOS/Android ซึ่งเป็นจุดพังบ่อยของ RN
-- ✅ จอเมนูอาหาร (แท็บแรก) ทำตามกริดเมนูของ `/pos/restaurant` บนเว็บ: การ์ด **รูป + ชื่อ + ราคา**,
-  ช่องค้นหา (ค้นชื่อและ SKU · มีคำค้น = ค้นทุกหมวด), ป้ายจำนวนที่อยู่ในตะกร้า, การ์ดที่ขายไม่ได้
-  จางลง + ป้าย "หมดวันนี้" + เหตุผลใต้ชื่อ
-  - รูปอาหารเป็น **SVG วาดในโค้ด** (`src/components/DishArt.tsx`) พอร์ตชุดเดียวกับเว็บ (ข้าว/เส้น/
-    ต้ม/ยำ/เครื่องดื่ม) — ไม่โหลดจาก CDN เพราะจอขายต้องทำงานตอนเน็ตร้านหลุด · ถ้าสินค้ามีรูปจริง
-    (`imageUrl`) รูปจริงชนะเสมอ
-- ✅ ร้านทั่วไปและร้านขายยามี mock catalog/หมวด/คำค้น/ภาพ fallback ของตัวเอง ไม่แสดงอาหาร
-  ผังโต๊ะ หรือครัว; สินค้าควบคุมในโหมดร้านยาเป็นเพียงตัวอย่างสถานะรอตรวจสอบ ไม่ใช่การตัดสิน
-  Product Policy ฝั่ง client
-- ✅ แก้จำนวนได้ทุกที่ที่เห็นจำนวน (`QtyStepper`) — บนการ์ดเมนู, ในแผงตะกร้า และในหน้าชำระเงิน
-  · กด − จนเหลือ 0 = บรรทัดหลุดออกจากตะกร้าเอง จึงไม่มีปุ่มลบซ้อนอีกปุ่มให้ต้องเลือก
-- ✅ Checkout mock รองรับเงินสด/QR/บัตรเครดิตและ split payment: เงินสดกรอกยอดรับจริง มีปุ่มจำนวนด่วน
-  และ "รับพอดี", QR/Card ต้องใส่เลขอ้างอิง mock, ยอดรวมทุกช่องทางต้องเท่ากับยอดสุทธิจึงยืนยันได้,
-  แสดงยอดคงเหลือ/validation และ popup ยืนยันแสดงทุกช่องทางพร้อมเงินทอน/เลขอ้างอิง
-- ✅ พักบิล retail ใน memory พร้อมชื่อ/หมายเหตุ เรียกกลับมาได้ และลบผ่าน confirmation popup;
-  snapshot เก็บสินค้า สมาชิก คูปอง คะแนน mock และส่วนลดพิเศษ แต่ **ไม่เก็บ PIN/ผู้อนุมัติ** —
-  resume แล้วต้องอนุมัติส่วนลดพิเศษใหม่
-- ✅ ประวัติขายล่าสุดใน memory ค้นหาได้ด้วยเลขใบเสร็จ ชื่อลูกค้า เลขสมาชิก SKU/ชื่อสินค้า เปิดดูรายละเอียด
-  ใบเสร็จ และกดพิมพ์ซ้ำ mock โดยขึ้นชัดเจนว่ายังไม่ต่อเครื่องพิมพ์จริง
-- ✅ Return/Void mock จากรายละเอียดใบเสร็จ: คืนทั้งบิลหรือเลือกบางรายการได้ จำนวนคืนไม่เกินที่ขาย,
-  แสดงยอดคืนก่อนยืนยัน, refund allocation อ้างอิงช่องทางชำระเดิม เงินสดสำเร็จทันที ส่วน QR/Card
-  เป็น "รอยืนยันการคืนเงิน"; Void แยกจาก Return ต้องมีเหตุผลและ PIN ผู้อนุมัติคนที่สอง (`9999`)
-  และไม่เก็บ PIN ใน state ถาวร
-- ✅ ก่อนบันทึกการขายมี popup สรุปยอดสุทธิ วิธีชำระเงินทุกช่องทาง และจำนวนสินค้า พร้อมคำเตือนว่าหลังยืนยัน
-  ต้องแก้ผ่านรายการคืน; บนแท็บเล็ตเป็น dialog กลางจอ และบนมือถือเป็น bottom sheet
-- ✅ หน้า checkout ทดสอบสมาชิก คูปอง และส่วนลดพิเศษได้ครบถึงใบเสร็จ: tier discount ใช้อัตโนมัติ,
-  คูปองตรวจสมาชิก/ยอดขั้นต่ำ, ส่วนลดพิเศษต้องมีเหตุผลกับ PIN ผู้อนุมัติแยก (`9999` ใน mock)
-  และสรุปแต่ละชั้นก่อนยืนยัน โดยคณิตศาสตร์ทั้งหมดระบุชัดว่าเป็น preview ฝั่ง clientที่จะถูกแทนด้วย
-  `composeDiscounts()` จาก server
-- ✅ หน้าเมนูมีปุ่มสแกนบาร์โค้ดพร้อมกรอบสแกนจำลอง, ป้อน barcode/SKU เองได้ และเพิ่มสินค้าที่
-  resolve จาก mock catalog ลงตะกร้า; ยังไม่เรียกกล้องหรือเชื่อม Bluetooth HID จริง
-- ✅ **สั่งอาหารเข้าโต๊ะได้ครบวง** (ผังโต๊ะ → เลือกโต๊ะ → สั่ง → ส่งครัว → ผังโต๊ะขยับตาม):
-  - `state/ChecksContext.tsx` ถือบิลรายโต๊ะ (seed จาก `mocks/floor`) และเป็นแหล่งเดียวที่ผังโต๊ะ
-    หน้าบิล และจอสั่งอาหารของโต๊ะอ่าน — ไม่งั้นการ์ดโต๊ะกับบิลจะบอกคนละยอด
-  - **แท็บเล็ต**: หน้าบิลมีกริดเมนูฝั่งกว้าง + แผงบิลขวา 320pt สั่งได้จากหน้าเดียวจบ
-    (รูปเดียวกับจอสั่งอาหารของ `/pos/restaurant` บนเว็บ) · **มือถือ**: ปุ่ม "สั่งอาหาร" ไปหน้า
-    `TableMenu` ที่หัวจอบอกตลอดว่ากำลังสั่งให้โต๊ะไหน
-  - กริดเมนูเป็นคอมโพเนนต์เดียวกันทั้งแท็บขายกลับบ้านและบิลโต๊ะ (`components/MenuGrid.tsx`)
-  - บรรทัดที่ยัง `NEW` แก้จำนวนได้ · ที่ `SENT`/`SERVED` แก้ไม่ได้ ขึ้นว่า "แก้ที่จอครัว" เพราะครัว
-    อาจทำเสร็จแล้ว การลบเงียบ ๆ จากบิลคือของหายโดยไม่มีใครรู้
-  - "ส่งครัว" พลิก `NEW → SENT` ทั้งรอบ · **คิดเงินกดไม่ได้ตราบใดที่ยังมีบรรทัด `NEW`** และผังโต๊ะ
-    ขึ้นป้าย "ยังไม่ส่งครัว" ให้เห็นตั้งแต่หน้าแรก (กติกาเดียวกับฝั่งเว็บ)
-  - "คิดเงิน" จากบิลโต๊ะไป checkout workflow ชุดเดียวกับ retail โดยใช้บิลโต๊ะเดิมใน `ChecksContext`
-    ไม่ seed cart ใหม่; จ่ายสำเร็จแบบ mock แล้วปิดบิลและโต๊ะกลับเป็นว่าง
-- ✅ **กะ/ลิ้นชักทำงานจริงแล้ว (mock)** — บันทึกเงินเข้า/ออกพร้อมเหตุผล, ปิดกะด้วยการนับเงิน
-  แล้วเห็นผลต่างขาด/เกิน, และเปิดกะใหม่โดยยกยอดที่นับได้มาเป็นเงินทอนตั้งต้น
-  - **"เงินที่ควรมีในลิ้นชัก" มีสูตรเดียวคือ `drawerExpectedFrom()`** (`lib/shiftMath.ts`, pure)
-    = ตั้งต้น + ขายเงินสด − คืนเงินสด + เข้า − ออก · ยอดขายเงินสดมาจากบิลใน `SalesContext` จริง
-    ไม่ใช่ตัวเลขที่เขียนไว้ · **ห้ามใส่ `expectedCash` เป็นค่าคงที่กลับเข้า `mocks/shift.ts` อีก**
-  - การคืนทาง QR/บัตรที่ยัง "รอยืนยัน" ไม่ถูกหักออกจากลิ้นชัก (เงินยังไม่ออกจริง)
-  - เบิกเงินออกเกินยอดที่มีในลิ้นชักไม่ได้
-- ✅ **จอครัวรับรอบที่เพิ่งส่งครัวจริง** — กด "ส่งครัว" ที่บิลโต๊ะแล้วตั๋วโผล่ที่แท็บครัวทันที
-  - **หนึ่งรอบแตกเป็นตั๋ว "ต่อสถานี"** ไม่ใช่ใบเดียวปนกัน (ครัวร้อนกับบาร์เป็นคนละคน ตั๋วที่ปนกัน
-    ทำให้ปุ่มของคนหนึ่งไปขยับงานของอีกคน) · รายการที่หาสถานีไม่เจอไปลงช่อง "ไม่ระบุสถานี" แทนที่จะหาย
-  - เลื่อนสถานะได้ทีละขั้น `NEW → PREPARING → READY → SERVED` และ **ย้อนกลับได้ทีละขั้น** (กดผิดเกิดจริง)
-  - เวลารอนับจาก `createdAt` ของตั๋วและเดินเอง ไม่ใช่เลขที่ประทับไว้ · ตั๋วที่เสิร์ฟแล้วไม่ขึ้นสีเร่ง
-  - แถบกรองสถานีสร้างจากสถานีที่มีตั๋วจริงด้วย และปลดตัวกรองให้เองเมื่อสถานีนั้นหมดงาน
-- ✅ Login จำสาขา/ผู้ปฏิบัติงานที่เลือกไว้ (`state/SessionContext.tsx`) แล้วหน้ากะใช้ชื่อเดียวกัน
-  — **ยังไม่ใช่การยืนยันตัวตน** แค่เลิกทิ้งค่าที่คนเพิ่งเลือก
-- ✅ **แจ้งเตือนเมื่อมีออร์เดอร์เข้า** — แท็บ "ออร์เดอร์เข้า" (มีทุกโหมดร้าน) รับข้อเสนอจาก
-  แชท/ออนไลน์/QR ที่โต๊ะ แล้วต้องมีคนกดรับก่อนงานถึงจะเข้าครัว (กฎเดียวกับฝั่งเว็บ:
-  การจ่ายเงินไม่เคยสร้างงานครัว มีแต่การกดรับของคน) · ปฏิเสธต้องมีเหตุผลเสมอ
-  - **ช่องทางที่การันตีได้: ป้ายตัวเลขบนแท็บ + แถบแดงบนจอ** — ขึ้นบนผังโต๊ะ จอครัว และจอขาย
-    ไม่ใช่เฉพาะแท็บออร์เดอร์ (แจ้งเตือนที่เห็นได้ต่อเมื่อเปิดแท็บนั้นอยู่ = แจ้งเตือนที่ไม่มีใครเห็น
-    — บั๊กที่ฝั่งเว็บเจอมาแล้ว)
-  - **สั่นจริง** ด้วย `Vibration` ที่มากับ RN (เพิ่ม `android.permission.VIBRATE` ใน manifest แล้ว)
-    · รูปแบบการสั่นของ "ออร์เดอร์เข้า" กับ "ตั๋วครัวใหม่" แยกจากกันด้วยจังหวะ
-  - **ย้ำซ้ำทุก 15/30/60 วินาที** จนกว่าจะมีคนกด "รับทราบ" — ออร์เดอร์ที่ไม่มีใครเห็นคือออร์เดอร์ที่หาย
-    · รับทราบแล้วเงียบจนกว่าจะมีใบใหม่ (ถ้าหยุดการย้ำไม่ได้ คนหน้าร้านจะปิดสวิตช์ใหญ่ทิ้ง
-    แล้วออร์เดอร์จริงใบถัดไปก็เงียบไปด้วย)
-  - **ค่าปริยายเปิดไว้** — ฝั่งเว็บเคยตั้งเป็นปิด แล้วแท็บเล็ตเครื่องใหม่ทุกเครื่องเริ่มต้นแบบเงียบ
-    ซึ่งพนักงานอ่านไม่ต่างจาก "ระบบนี้ไม่มีเสียงเตือน"
-  - **รอบแรกหลังเปิดแอปเป็นการตั้งต้น ไม่ใช่ของใหม่** — เปิดมาเจอของค้างอยู่แล้วต้องไม่สั่นรัว
-  - **เสียงจริงด้วย `react-native-sound@0.13` (TurboModule รองรับ New Architecture)** —
-    ⚠️ **ต้อง `pod install` + build native ใหม่** ก่อนถึงจะได้ยิน · โหลด JS ใหม่บน binary เก่า
-    จะเงียบ แล้ว UI จะบอกตรง ๆ ว่า "เครื่องนี้ยังไม่มีโมดูลเสียง" ตามความจริง
-    - ไฟล์เสียงสร้างเองด้วย `node scripts/make-alert-tones.mjs` (WAV 16-bit ไม่มี dependency)
-      — ออร์เดอร์เข้าเป็นสามจังหวะไล่เสียงสูงขึ้น · ตั๋วครัวสองจังหวะเสียงต่ำกว่า แยกออกจากกัน
-      ได้ด้วยหูโดยไม่ต้องมองจอ · **เก็บตัวสร้างไว้ในรีโปแทน commit ไบนารีเปล่า ๆ** เพราะไฟล์เสียง
-      ที่สร้างซ้ำไม่ได้ = วันที่อยากแก้ ต้องไปหาไฟล์ต้นฉบับที่ไม่มีอยู่จริง
-    - ⚠️ **ชื่อไฟล์ต่างกันสองแพลตฟอร์ม**: Android อ่าน `res/raw` ด้วย `getIdentifier()` ซึ่งใช้
-      ชื่อ **ไม่มีนามสกุล** ส่วน iOS หาในบันเดิลด้วยชื่อเต็ม — ส่งผิดแพลตฟอร์มคือเงียบสนิท
-      โดยไม่มี error (มีเทสตรึงไว้)
-    - `Sound.setCategory('Playback')` ให้ดังแม้ iPhone/iPad อยู่โหมดเงียบ — ไม่งั้นแท็บเล็ตที่
-      ใครเผลอเลื่อนสวิตช์จะเงียบทั้งกะโดยไม่มีอะไรบอก
-    - ❌ **ยังไม่เคยได้ยินจริง** — เครื่องที่เขียนไม่มี Xcode/Android SDK/Java จึง build native
-      ไม่ได้ · **เสียงเป็นของที่เทสยืนยันแทนหูไม่ได้ ต้องลองบนเครื่องจริงก่อนเชื่อ**
-  - ❌ **ยังไม่มี push notification** — แจ้งเตือนได้เฉพาะตอนแอปเปิดอยู่ · แอปที่ถูกปิด/พับไว้เงียบสนิท
-    (ต้องมี FCM/APNs + backend ซึ่งอยู่นอกขอบเขตกลุ่ม A)
-- ✅ Responsive/tablet — **ทุกหน้าใช้พื้นที่จริงของจอไอแพด ไม่มีหน้าไหนเป็นคอลัมน์ขนาดมือถือกลางจอ**
-  (`src/theme/useResponsive.ts` + `useWindowDimensions`):
-  1. กริด (เมนู/ผังโต๊ะ/ตั๋วครัว) ปรับคอลัมน์ตามความกว้าง **ของพื้นที่กริดจริง** (`columnsForWidth`)
-     พร้อม `padGrid()` เติมช่องว่างแถวสุดท้าย ไม่งั้นการ์ด 2 ใบสุดท้ายยืดเป็นใบละครึ่งจอ
-  2. หน้าที่มี "รายการ + การกระทำ" เป็น **สองแผง** บนแท็บเล็ต · มือถือเรียงลงมาเหมือนเดิม:
-     - **เมนูอาหาร**: กริดฝั่งกว้าง + **แผงตะกร้า** ขวา 320pt (แก้จำนวนได้ในแผง)
-     - **บิลโต๊ะ / ชำระเงิน / ใบเสร็จ / กะ**: รายการฝั่งกว้าง · สรุป+ปุ่มอยู่แผงข้าง
-     - **Login**: เลือกสาขา/ผู้ปฏิบัติงานฝั่งซ้าย · แป้น PIN ขวา · ทั้งสองแผงจัดกลางแนวตั้ง
-  - ยืนยันแล้วทั้ง iPhone 17 (402pt) และ iPad Air 13" (1024pt)
-- ✅ ปุ่มย้อนกลับบนหน้าที่ถูก push (`ScreenHeader`) — บิลโต๊ะและหน้าชำระเงิน · navigator ตั้ง
-  `headerShown: false` ทั้งแอป หน้าพวกนี้จึงต้องมีทางออกของตัวเอง (ก่อนหน้านี้เข้าไปแล้วออกไม่ได้
-  นอกจากปัดขอบจอ ซึ่งบนแท็บเล็ตในกล่องกันกระแทกทำได้ยาก)
-- ✅ build ผ่านจริงบน iOS Simulator (pod install + xcodebuild) — ยืนยันแล้วทั้งมือถือและแท็บเล็ต
-- ✅ Android debug APK build ผ่านจริงด้วย `./gradlew assembleDebug` (RN New Architecture + Keychain + deep link)
-- ❌ ยังไม่มี GraphQL/Apollo Client, ยังไม่มี cashier auth/session จริง, ยังไม่มี WebSocket subscription
-- ❌ ยังไม่แตะฮาร์ดแวร์ (เครื่องพิมพ์ ESC/POS, สแกนเนอร์, จอลูกค้า) — ตกลงกันไว้แล้วว่าเป็นงานฝั่ง client
-  แยกทีหลัง หลัง backend/schema นิ่ง
+The in-repository RN workflows are connected to the generated GraphQL contract:
 
-## เสียงแจ้งเตือน — ⚠️ ต้อง build native ใหม่ก่อนถึงจะได้ยิน
+- secure device pairing with the device token in Keychain;
+- server bootstrap, cashier selection, PIN verification, and in-memory cashier credentials;
+- retail/pharmacy catalog browse and server-backed search, barcode/SKU resolution, cart, member,
+  coupon and discount preview;
+- sale, split cash/QR/card payment, receipt, sale history, partial return, void, parked bills;
+- shift open/close, shift report, cash in/out, and required second-person approval;
+- restaurant floor, checks, add/remove item, kitchen round, settlement, incoming-order acceptance;
+- kitchen ticket board and status updates;
+- named GraphQL subscriptions, bounded event deduplication, batched active-query refetch,
+  foreground/reconnect recovery, and degraded polling.
 
-ติดตั้ง `react-native-sound@0.13` ไว้แล้ว (TurboModule รองรับ New Architecture) และต่อสายครบ
-ตั้งแต่ `index.js` → `src/lib/soundPlayer.ts` → `src/lib/orderAlertSound.ts` แต่ **native module
-ยังไม่อยู่ในเครื่องจนกว่าจะ build ใหม่**:
+All tenant, location, device, and shift scope is server-derived. Money operations retain their
+idempotency key across an unknown network result. Cash out, void, and manual discount filter the
+server-provided approver list by the required permission and still receive server-side PIN/RBAC
+validation.
+
+The files under `src/mocks/` and the old pure calculation helpers are test fixtures only. Runtime
+screens, components, and state providers do not import mock data.
+
+## Architecture
+
+```text
+React Native screen
+  -> generated Apollo query/mutation over HTTPS
+  -> thin GraphQL resolver
+  -> BMS service + PostgreSQL transaction
+  -> authoritative response
+
+PostgreSQL transaction -> realtime outbox -> dispatcher -> Redis -> GraphQL WS
+  -> named invalidation -> active Apollo query refetch
+```
+
+Important paths:
+
+- `src/graphql/operations.graphql`: RN operations and named subscriptions.
+- `src/graphql/generated.ts`: generated typed documents; do not edit manually.
+- `src/graphql/BmsGraphqlProvider.tsx`: Apollo HTTP/WS transport and auth headers.
+- `src/state/RealtimeContext.tsx`: reconnect, deduplication, batching, and degraded refresh.
+- `src/state/SessionContext.tsx`: cashier PIN held in React memory only.
+- `src/state/{Catalog,Cart,Sales,Shift,Kitchen,IncomingOrders}Context.tsx`: authoritative workflow
+  adapters.
+- `../../schema.graphql`: committed executable schema artifact used by codegen.
+
+## Run
 
 ```bash
 npm install
-cd ios && export LANG=en_US.UTF-8 && pod install && cd ..
-npm run ios      # หรือ npm run android
-```
-
-**โหลด JS ใหม่บน binary เก่าจะเงียบสนิท** ซึ่งถูกต้องแล้ว — ตอนนั้น `setupOrderAlertSound()`
-ไม่ลงทะเบียนอะไร แล้ว UI จะขึ้นว่า "เครื่องนี้ยังไม่มีโมดูลเสียง" ตามความจริง แทนที่จะโชว์สวิตช์
-ที่เปิดอยู่แต่เงียบ (บั๊กแบบนี้ฝั่งเว็บใช้เวลาเป็นเดือนกว่าจะมีคนเจอ)
-
-### ไฟล์เสียง
-
-สร้างด้วย `node scripts/make-alert-tones.mjs` (Node ล้วน ไม่มี dependency) → เขียนลง
-`android/app/src/main/res/raw/` และ `ios/BmsPos/` พร้อมกัน · ไฟล์ iOS ถูกลงทะเบียนใน
-`project.pbxproj` (PBXBuildFile + PBXFileReference + group + Resources phase) แล้ว
-
-อยากเปลี่ยนเสียง: แก้ความถี่/จังหวะใน `scripts/make-alert-tones.mjs` แล้วรันใหม่
-· ถ้าจะเปลี่ยนเป็นไฟล์ mp3/wav ของตัวเอง ให้วางทับชื่อเดิม (`order_in` / `kitchen`)
-แล้วอัปเดตนามสกุลใน `src/lib/soundPlayer.ts`
-
-⚠️ **ชื่อไฟล์ต้องเป็น `[a-z0-9_]` เท่านั้น** — Android ใช้ชื่อไฟล์เป็น resource id ของ `res/raw`
-ตัวพิมพ์ใหญ่หรือขีดกลางทำให้ build ไม่ผ่าน
-
-### ยังไม่เคยได้ยินจริง
-
-เครื่องที่เขียนไม่มี Xcode/Android SDK/Java จึง build native ไม่ได้เลย — ที่ยืนยันได้คือ
-typecheck, lint, และเทสที่ mock ไลบรารีไว้ (เรียกถูก API ไหม · ชื่อไฟล์ถูกแพลตฟอร์มไหม ·
-รายงาน `false` ตอนโหลดไม่สำเร็จไหม) · **เสียงเป็นของที่เทสยืนยันแทนหูไม่ได้ ต้องลองเองก่อนเชื่อ**
-
-## recheck รอบ 2026-09-11 — เจอของจริง 13 จุด แก้ครบแล้ว
-
-`npm run typecheck` · `npm run lint` · `npm test` ผ่านทั้งหมด (**13 ไฟล์ / 63 เทส** จาก 7/24) ·
-**ยังไม่ได้เปิดดูจริงในเบราว์เซอร์/ซิมูเลเตอร์รอบนี้** — ผ่าน typecheck + lint + เทสเท่านั้น ·
-**ทุกจุดที่มีเทสผ่าน mutation test แล้ว 9 แบบ แดงถูกตัวทุกครั้ง**
-
-### ที่พังจริงและแก้แล้ว
-
-1. **⚠️ กรอกยอดเงินที่มีสตางค์ไม่ได้เลย** — ช่องเงินในหน้าชำระเงินผูก `value` กับตัวเลขแล้วแปลงกลับ
-   ทุกคีย์ พิมพ์ "10." แล้ว `Number("10.")` = 10 เขียนทับช่องกลับเป็น "10" ทันที · "0" ก็หายเพราะ
-   `value ? ... : ''` จึงพิมพ์ "0.75" ไม่ได้ด้วย → แยกเป็น `components/MoneyField.tsx` ที่เก็บข้อความ
-   ที่กำลังพิมพ์ไว้เอง (มีเทสตรึง 4 ข้อ)
-2. **⚠️ ปุ่มสามปุ่มบนหน้ากะไม่มี `onPress` เลย** (เงินเข้า / เงินออก / ปิดกะ) — กดแล้วไม่เกิดอะไร
-   ทั้งที่ README เดิมเขียนว่าหน้ากะ "ทำงานได้ด้วย mock data"
-3. **⚠️ ตัวเลขบนหน้ากะขัดกันเอง** — `mocks/shift.ts` ประกาศ `expectedCash: 6560` ไว้ตายตัว ขณะที่
-   รายการเงินเข้า/ออกบนจอเดียวกันบวกได้ 6860 และบิลที่เพิ่งขายในแอปไม่เคยขยับลิ้นชักเลย
-   → ถอดค่าคงที่ทิ้ง แล้วคิดจาก `drawerExpectedFrom()` ที่เดียว
-4. **⚠️ โต๊ะ T04 ไม่มีวันกลับมาว่าง** — `summaryFor` เช็คธง `CLOSING` ของ mock ก่อนเสมอ คิดเงินจบ
-   บิลว่างแล้วผังโต๊ะยังขึ้น "กำลังคิดเงิน" ตลอดไป (ขัดกับคอมเมนต์ของตัวเองที่บอกว่าสถานะมาจากบิลจริง)
-5. **⚠️ กด "ส่งครัว" แล้วไม่มีอะไรขยับทั้งแอป** — จอครัวอ่าน `mocks/kitchenTickets` ตรง ๆ และ
-   **แตะอะไรไม่ได้เลยสักปุ่ม** = แท็บที่เปิดมาดูเฉย ๆ → เพิ่ม `KitchenContext` + เลื่อน/ย้อนสถานะ
-6. **⚠️ สถานีของจอครัวกับของเมนูเป็นคนละลิสต์** (3 ชื่อ vs 4 ชื่อ) ตั๋วของ "ของหวาน" จึงอยู่บน
-   กระดานแต่กรองหาไม่เจอเลย → ใช้ลิสต์เดียวกัน + เติมสถานีที่มีตั๋วจริงเข้าไปด้วย
-7. **แก้จำนวน/ใส่คูปองในหน้าชำระเงินแล้วปุ่มยืนยันล็อก** — ยอดของช่องทางถูกตั้งครั้งเดียวตอนเข้าหน้า
-   แล้วไม่ตามยอดสุทธิอีกเลย ต้องพิมพ์ยอดใหม่เองทุกครั้ง → ช่องทางเดียวที่ยังไม่มีใครแตะเดินตามยอด
-8. **Void เป็นทางตัน** — ปุ่มยืนยันในโมดัล PIN กดได้ทั้งที่ยังไม่กรอกเหตุผล แล้วเด้ง Alert ว่าต้องมี
-   เหตุผล โดยที่ **ช่องเหตุผลอยู่หลัง overlay ของโมดัลนั้นเอง** → ขอเหตุผลก่อนเปิดโมดัล และโชว์
-   เหตุผล/ยอดที่จะคืนในโมดัลให้ยืนยัน
-9. **ใบคืนถือราคาป้าย แต่ยอดคืนหักส่วนลดแล้ว** — บรรทัดในใบคืนบวกกันแล้วไม่เท่ายอดของใบตัวเอง
-10. **popup ยืนยันการขายโชว์ชื่อสมาชิกในบิลโต๊ะ** ทั้งที่ `recordSale` บันทึก `member: null` เสมอ
-11. **ประวัติการขายไม่บอกว่าบิลไหนถูก void/คืนของ** — หน้าตาเหมือนบิลปกติทุกประการ
-12. **ชิป "ยอดนิยม" โชว์ทุกเมนู** (ไม่มีเมนูไหนอยู่หมวดนั้นเลย — ชิปตัวแรกถูกใช้เป็น "แสดงทั้งหมด")
-    และหมวดที่ไม่มีรายการขึ้นว่า `ไม่พบ…ที่ตรงกับ ""` คู่กับปุ่มล้างคำค้นที่กดแล้วไม่เกิดอะไร
-13. **มือถือมีปุ่ม "บิลพัก" สองปุ่มติดกัน** ปุ่มที่สองเขียน `บิลพัก/ประวัติ (N)` โดย N คือจำนวนบิลพัก
-    ของปุ่มแรก แต่กดแล้วไปหน้าประวัติการขายอย่างเดียว
-
-จุดเล็กที่แก้ไปด้วย: Login เคยทิ้งสาขา/ผู้ปฏิบัติงานที่เลือก · กริดเมนูบนหน้าบิลโต๊ะคิดคอลัมน์จาก
-พื้นที่ที่กว้างกว่าของจริง 32pt (ไม่ได้หัก padding ของแผงบิล)
-
-**และบั๊กที่รอบนี้สร้างขึ้นมาเองแล้วจับได้ตอน recheck ซ้ำ**: ledger การขายไม่ถูกล้างตอนเปิดกะใหม่
-เงินของกะที่ปิดไปแล้วจึงถูกนับเข้าลิ้นชักของกะใหม่อีกรอบ → ตัดด้วยเวลาที่กะเริ่ม และ**ใบคืนตัดด้วย
-เวลาของใบคืนเอง ไม่ใช่ของบิลต้นทาง** (เงินออกจากลิ้นชักของกะที่จ่ายคืน)
-
-### เทสที่เพิ่ม (เดิม `paymentMath`/`returnMath` ไม่มีเทสสักตัว ทั้งที่เป็นเส้นเงิน)
-
-`paymentMath` (8) · `returnMath` (6) · `shiftMath` (11) · `kitchenBoard` (7) · `MoneyField` (4) ·
-`tableStatus` (3)
-
-### ยังไม่ได้ทำ (จงใจ)
-
-- **ยังไม่เปิดดูในซิมูเลเตอร์รอบนี้** — หน้ากะ/จอครัวที่เขียนใหม่ผ่านแค่ typecheck + lint + เทส
-- ปิดกะแล้วยัง **ขายต่อได้** — ของจริงต้องบล็อกการขายจนกว่าจะเปิดกะใหม่ (ต้องมี auth/สิทธิ์จริงก่อน)
-- เงินเข้า/ออกและการปิดกะ **ไม่ต้องใช้ PIN ผู้อนุมัติคนที่สอง** ซึ่งฝั่งเว็บบังคับ (`pos.cash.movement`)
-- ยกเลิกตั๋วบนจอครัวยังไม่มี — และการเลื่อนสถานะไม่ย้อนกลับไปแตะบรรทัดในบิล
-- แตะสถานะตั๋วบนจอครัวไม่ทำให้บรรทัดในบิลโต๊ะเป็น `SERVED` (สองที่ยังเดินแยกกัน)
-
-## ทำไมถึงหยุดแค่นี้ก่อน (สำคัญ — อย่าข้ามไปต่อ Group B เอง)
-
-Backend วันนี้ (`apps/web/app/api/pos/*`) เป็น REST + device-token + PIN-ต่อบิล ไม่ใช่ GraphQL/session
-กำลังวางแผนเปลี่ยนเป็น GraphQL ทั้งหมด + auth แบบ cashier login (session ต่อคน) + WS subscription
-สำหรับจอครัว/ออร์เดอร์เข้า — **schema/auth ยังไม่นิ่ง** การผูกหน้าจอเข้ากับ backend ตอนนี้จะต้องแก้ซ้ำแน่นอน
-โดยเฉพาะ `LoginScreen` ซึ่งเป็นหน้าที่ auth model ใหม่กระทบโดยตรง (idle-timeout, สลับผู้ใช้, PIN vs password)
-
-ลำดับที่ตกลงกันไว้: ปิด schema (SDL) → backend implement + auth ใหม่ → **สลับหน้าเว็บ POS เดิมมาใช้ก่อน**
-(เป็นตัวพิสูจน์ contract เพราะ business logic ผ่าน recheck มาแล้วนับสิบรอบ) → ค่อยผูก RN เข้ากับ contract
-ที่นิ่งแล้ว — ดู [docs/business/pos.md § Native POS client](../../docs/business/pos.md#native-pos-client-scaffold)
-สำหรับขอบเขตที่เป็นเอกสารถาวร
-
-## โครงสร้าง
-
-```
-apps/mobile/
-  App.tsx                      — root: SafeAreaProvider + ThemeProvider + RootNavigator
-  src/
-    theme/                     — สี/spacing/typography + ThemeProvider (context) + useResponsive
-                                  (breakpoint แท็บเล็ต + จำนวนคอลัมน์กริดตามความกว้างพื้นที่จริง)
-    components/                — Button, Card, StatusPill, NumericKeypad, ScreenContainer,
-                                  ScreenHeader (ปุ่มย้อนกลับ), SearchField, QtyStepper,
-                                  MenuGrid (กริดเมนู+ค้นหา ใช้ร่วมกันทั้งขายกลับบ้านและบิลโต๊ะ),
-                                  DishArt (รูปอาหาร SVG), icons/TabIcons (SVG)
-    navigation/                — RootNavigator (Login/Main) + MainTabs (4 แท็บ, แต่ละแท็บมี stack ของตัวเอง)
-    state/CartContext.tsx       — ตะกร้าขายกลับบ้าน (scope แค่ stack ขาย)
-                                  + parked bills ใน memory (ไม่เก็บ PIN/approver)
-    state/StoreModeContext.tsx  — โหมด preview 3 แบบ; ไม่ใช่ authority จาก backend
-    state/ChecksContext.tsx     — บิลรายโต๊ะ (scope ทั้งแท็บ — ผังโต๊ะ/บิล/จอสั่งอาหารอ่านชุดเดียวกัน)
-    state/SalesContext.tsx      — sale/return/void ledger จำลองใน memory; ใบเสร็จเดิม immutable
-    state/KitchenContext.tsx    — ตั๋วครัว (seed จาก mock + รอบที่ส่งครัว) scope ทั้งแท็บ
-    state/ShiftContext.tsx      — กะ/ลิ้นชัก; อ่านบิลจาก SalesContext จึงต้องอยู่ใต้ SalesProvider
-    state/SessionContext.tsx    — สาขา/ผู้ปฏิบัติงานที่เลือกตอน Login (ไม่ใช่ auth)
-    state/IncomingOrdersContext — คิวออร์เดอร์เข้า (แชท/ออนไลน์/QR) ที่ต้องมีคนกดรับ
-    state/OrderAlertContext     — สถานะแจ้งเตือนชุดเดียวทั้งแอป (module store ไม่ใช่ state ใน hook)
-    lib/paymentMath.ts          — pure split-payment validation/change/quick cash
-    lib/returnMath.ts           — pure return total + refund allocation ไปช่องทางเดิม
-    lib/shiftMath.ts            — pure drawer math (สูตรเดียวของ "เงินที่ควรมีในลิ้นชัก")
-    lib/kitchenBoard.ts         — pure ticket flow/เวลารอ/แตกตั๋วตามสถานี
-    lib/orderAlert.ts           — pure กติกาแจ้งเตือน (ของใหม่/ย้ำซ้ำ/รูปแบบสั่น/เตือนถึงไหม)
-    lib/orderAlertSound.ts      — จุดเสียบเสียง (registry) — คืน false เสมอถ้าไม่ได้ดังจริง
-    lib/soundPlayer.ts          — ตัวเล่นเสียงจริงด้วย react-native-sound (ต้อง build native)
-    components/MoneyField.tsx   — ช่องกรอกเงินที่พิมพ์ทศนิยมได้จริง (ดูคอมเมนต์ในไฟล์)
-    screens/
-      LoginScreen.tsx           — เลือกสาขา/ผู้ปฏิบัติงาน + PIN keypad (ยังไม่ยืนยันตัวตนจริง)
-      settings/                 — จับคู่/เลิกจับคู่เครื่อง + ตรวจ device token กับ server
-      sell/                     — Menu → Checkout → Receipt → SalesHistory/SaleDetail (ค้าปลีก + restaurant checkout)
-      floor/                    — Floor (ผังโต๊ะ) → CheckDetail (บิลโต๊ะ) → TableMenu (สั่งอาหาร, มือถือ)
-      orders/                   — IncomingOrders (คิวออร์เดอร์เข้า + รับ/ปฏิเสธ + ตั้งค่าแจ้งเตือน)
-      kitchen/                  — KitchenBoard (จอครัว, ตัวกรองสถานี, เลื่อน/ย้อนสถานะตั๋ว)
-      shift/                    — Shift (กะ/ลิ้นชัก/เงินเข้า-ออก/ปิดกะ-นับเงิน)
-    mocks/                      — ข้อมูลจำลองทั้งหมด รูปทรงใกล้เคียงกับที่ GraphQL น่าจะคืนจริง
-```
-
-## รัน
-
-```bash
-npm install
-cd ios && export LANG=en_US.UTF-8 && pod install && cd ..
-npm run ios      # หรือ: npx react-native run-ios --simulator "iPhone 17"
-npm run android  # ต้องมี Android SDK/emulator ตั้งไว้แล้ว
-npm test         # Jest: 17 ไฟล์ / 93 เทส (pure math + แจ้งเตือน + เสียง + pairing + smoke test)
-npm run typecheck
+npm run graphql:codegen
 npm run lint
+npm run typecheck
+npm test -- --runInBand
+
+cd ios && export LANG=en_US.UTF-8 && pod install && cd ..
+npm run ios
+npm run android
 ```
 
-`export LANG=en_US.UTF-8` ก่อน `pod install` จำเป็นบนเครื่องที่ locale ไม่ใช่ UTF-8 (CocoaPods 1.16
-throw `Encoding::CompatibilityError` ไม่งั้น — เจอบนเครื่อง dev เครื่องนี้)
+Use a URL reachable from the simulator/device when pairing. `localhost` inside Android does not
+refer to the development Mac; use the emulator host alias or a LAN address as appropriate.
 
-## ของที่ตั้งใจไม่ทำในรอบนี้ (กันไล่ซ้ำ)
+When the local Caddy endpoint uses an `mkcert` certificate, install its root CA into each newly
+created or reset iOS Simulator before pairing:
 
-- ไม่มี Apollo Client / GraphQL codegen — รอ schema นิ่ง
-- ไม่มี auth flow จริง (`LoginScreen` กด "เข้าใช้งาน" แล้วเข้าได้เลยถ้า PIN ≥ 4 หลัก ไม่ตรวจอะไร)
-- ไม่มี WebSocket/subscription — จอครัว/ผังโต๊ะ/ตะกร้า/กะ เป็น state ในหน่วยความจำของ **เครื่องเดียว**
-  (รีสตาร์ทแอป = ทุกอย่างกลับไปเป็นค่าเริ่มต้นของ mock · เครื่องอื่นไม่เห็นตั๋วครัวของกัน)
-- "ส่งครัว" สร้างตั๋วครัวใน memory ของเครื่องเดียว **ไม่ใช่ตั๋วจริง** — ไม่มีการจองสต็อกและไม่ได้
-  อยู่ในทรานแซกชันเดียวกับบิลแบบฝั่งเว็บ (`enqueueKitchenTicketsInTx`) ตอนต่อ backend ต้องย้าย
-  การสร้างตั๋วไปอยู่กับ mutation ส่งครัว แล้ว `state/KitchenContext.tsx` เหลือเป็นแค่ cache ของผล
-- การคิดเงินจริงยังไม่เกิด: checkout/return/void ทั้งหมดเป็น state ใน memory และป้าย TEST เท่านั้น
-  รอบต่อ backend ต้องเปลี่ยนเป็น server preview, cashier session, RBAC/second-person approval และ
-  idempotency key ต่อ mutation จริง
-- ไม่มี push notification, ไม่มี background fetch — แจ้งเตือนได้เฉพาะตอนแอปเปิดอยู่เท่านั้น
-  แอปที่ถูกปิดหรือพับไว้เงียบสนิท (ต้องมี FCM/APNs + backend)
-- ออร์เดอร์เข้าเป็นของจำลอง เข้ามาได้ทางเดียวคือปุ่ม "จำลองออร์เดอร์เข้า (TEST)" ในจอคิว
-  — ตอนต่อ backend ให้แทน `simulateArrival` ด้วย subscription/poll จริง แล้ว **ถอดปุ่มนั้นทิ้ง**
-- ตั้งค่าแจ้งเตือนอยู่ในหน่วยความจำ ปิดแอปแล้วกลับค่าปริยาย (ซึ่งคือ "เปิด" จึงไม่ใช่การเงียบ)
-- ไม่มี native module สำหรับเครื่องพิมพ์/สแกนเนอร์/จอลูกค้า
-- หน้าสแกนบาร์โค้ดที่มีอยู่เป็น test harness เท่านั้น — native camera และเครื่องสแกนจริงยังเป็นงาน
-  hardware integration; ห้ามใช้ timing ของ keyboard เป็นหลักฐานว่าเป็น HID scanner
-- โหมดร้านขายยาใน Settings เปลี่ยนเฉพาะหน้าตาและ mock catalog — ยังไม่ต่อ Product Policy,
-  pharmacist PIN, Pharmacy Queue หรือ clinical evidence จริง; การตัดสินทั้งหมดต้องมาจาก backend
-- ESLint ปิด `react-native/no-inline-styles` เพราะสี/spacing มาจาก runtime theme และตั้ง
-  `react/no-unstable-nested-components` ให้ยอม function ที่ส่งผ่าน render-prop (`renderItem`/`tabBarIcon`)
-  โดยตรง — `npm run lint` ผ่านโดยไม่มี warning
+```bash
+npm run ios:trust-local-ca
+```
+
+Keep App Transport Security enabled. A physical device or production endpoint must use a CA that
+the device already trusts, or have an organization-managed CA profile installed explicitly.
+
+## Native Alerts
+
+Alert tones use `react-native-sound`. After dependency or resource changes, run `pod install` and
+rebuild the native app; reloading JavaScript on an old binary cannot install a native module.
+
+Tone resources are reproducible:
+
+```bash
+node scripts/make-alert-tones.mjs
+```
+
+Android resource names must stay lowercase `[a-z0-9_]`. Sound behavior still needs verification on
+real iOS and Android hardware because unit tests can validate API calls but cannot prove audible
+output.
+
+## Remaining Native Integrations
+
+These are not replaced by GraphQL and remain separate rollout work:
+
+- camera scanning and verified Bluetooth/USB scanner integration;
+- ESC/POS printing, cash-drawer kick, and customer display hardware;
+- FCM/APNs push while the app is suspended or terminated;
+- persistence/sync policy for per-device alert preferences;
+- real-device iOS/Android sound, reconnect, and poor-network soak tests;
+- pharmacy review/evidence UI for approval-gated products and richer variant/modifier selectors.
+
+Until those hardware and specialist workflows land, the server fails closed for unsupported or
+approval-gated sales. REST compatibility routes and polling remain for the browser POS rollout; do
+not remove them based only on this RN migration.

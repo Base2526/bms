@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   ScrollView,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useMutation, useQuery } from '@apollo/client';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
@@ -19,9 +21,15 @@ import { CheckoutAdjustmentsCard } from '../../components/CheckoutAdjustmentsCar
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
-import { useChecks } from '../../state/ChecksContext';
 import { useSales } from '../../state/SalesContext';
-import { mockTables } from '../../mocks/floor';
+import { useSession } from '../../state/SessionContext';
+import {
+  MobilePosSaleDocument,
+  MobileRestaurantCheckDocument,
+  MobileRestaurantFloorDocument,
+  MobileRestaurantSettleCheckDocument,
+} from '../../graphql/generated';
+import { createIdempotencyKey } from '../../lib/operation';
 import {
   calculateCashChange,
   paymentMethodLabel,
@@ -40,16 +48,39 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const cart = useCart();
-  const checks = useChecks();
-  const { recordSale } = useSales();
+  const { refresh: refreshSales } = useSales();
+  const { session } = useSession();
   const source = route.params?.source ?? 'retail';
   const tableId = route.params?.tableId;
-  const table = tableId ? mockTables.find(t => t.id === tableId) : undefined;
-  const tableSummary = tableId ? checks.summaryFor(tableId) : undefined;
-  const lines =
-    source === 'restaurant' ? tableSummary?.lines ?? [] : cart.lines;
+  const floor = useQuery(MobileRestaurantFloorDocument, {
+    skip: source !== 'restaurant',
+  });
+  const table = tableId
+    ? floor.data?.bmsPosRestaurantFloor.tables.find(item => item.id === tableId)
+    : undefined;
+  const restaurantCheck = useQuery(MobileRestaurantCheckDocument, {
+    variables: { id: table?.check?.id ?? '' },
+    skip: source !== 'restaurant' || !table?.check?.id,
+  });
+  const check = restaurantCheck.data?.bmsPosRestaurantCheck;
+  const lines = source === 'restaurant'
+    ? (check?.items ?? []).map(item => ({
+        key: item.id,
+        sku: item.sku,
+        name: item.productName,
+        qty: item.packQty,
+        unitPrice: item.packPrice ?? 0,
+        size: item.size,
+        packCode: item.packCode ?? '',
+        unitName: item.unitName ?? '',
+        baseQty: item.baseQty ?? 1,
+        modifierCodes: item.modifierCodes,
+        serials: [],
+        status: item.status,
+      }))
+    : cart.lines;
   const subtotal =
-    source === 'restaurant' ? tableSummary?.amountDue ?? 0 : cart.subtotal;
+    source === 'restaurant' ? check?.amountDue ?? 0 : cart.subtotal;
   const total = source === 'restaurant' ? subtotal : cart.total;
   const discounts =
     source === 'restaurant'
@@ -81,6 +112,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
+  const idempotencyRef = useRef<string | null>(null);
+  const [sell] = useMutation(MobilePosSaleDocument);
+  const [settleCheck] = useMutation(MobileRestaurantSettleCheckDocument);
   const validation = useMemo(
     () => validateMockPayments(total, payments),
     [payments, total],
@@ -110,38 +144,115 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     ]);
   };
 
-  const completeSale = () => {
-    if (!validation.canConfirm || submittedRef.current) return;
+  const completeSale = async () => {
+    if (!validation.canConfirm || submittedRef.current || !session) return;
     submittedRef.current = true;
     setSubmitting(true);
-    const sale = recordSale({
-      source,
-      tableId,
-      tableCode: table?.code,
-      lines: lines.map(line => ({ ...line })),
-      subtotal,
-      tierDiscount: discounts.tierDiscount,
-      couponDiscount: discounts.couponDiscount,
-      manualDiscountAmount: discounts.appliedManualDiscount,
-      discountTotal: discounts.discountTotal,
-      total,
-      member: source === 'restaurant' ? null : cart.member,
-      coupon: source === 'restaurant' ? null : cart.coupon,
-      manualDiscount: source === 'restaurant' ? null : cart.manualDiscount,
-      payments: payments.map(payment => ({ ...payment })),
-    });
-    if (source === 'restaurant' && tableId) checks.closeCheck(tableId);
-    if (source === 'retail') cart.clear();
-    setConfirmOpen(false);
-    navigation.replace('Receipt', { saleId: sale.id });
+    const paymentInput = payments.map(payment => ({
+      method: payment.method.toUpperCase(),
+      amount: payment.amount,
+      cashTendered:
+        payment.method === 'cash' ? payment.tendered ?? payment.amount : null,
+      ref: payment.reference?.trim() || null,
+    }));
+    try {
+      let orderId: string;
+      if (source === 'restaurant') {
+        if (!check) throw new Error('ไม่พบบิลโต๊ะสำหรับชำระเงิน');
+        const response = await settleCheck({
+          variables: {
+            checkId: check.id,
+            input: {
+              cashierUserId: session.credentials.cashierUserId,
+              pin: session.credentials.pin,
+              customerId: null,
+              payments: paymentInput,
+            },
+          },
+        });
+        const result = response.data?.bmsPosRestaurantSettleCheck;
+        if (result?.status !== 'SOLD' || !result.orderId) {
+          throw new Error(
+            result?.reason ?? result?.status ?? 'ชำระบิลไม่สำเร็จ',
+          );
+        }
+        orderId = result.orderId;
+      } else {
+        idempotencyRef.current ??= createIdempotencyKey('sale');
+        const response = await sell({
+          variables: {
+            input: {
+              cashierUserId: session.credentials.cashierUserId,
+              pin: session.credentials.pin,
+              idempotencyKey: idempotencyRef.current,
+              mode: 'SALE',
+              lines: cart.lines.map(line => ({
+                sku: line.sku,
+                size: line.size,
+                packCode: line.packCode || null,
+                packQty: line.qty,
+                baseQty: line.baseQty,
+                packPrice: null,
+                unitName: line.unitName || null,
+                modifierCodes: line.modifierCodes,
+                scaleBarcode: line.scaleBarcode ?? null,
+                serials: line.serials,
+              })),
+              payments: paymentInput,
+              customerId: cart.member?.id ?? null,
+              couponCode: cart.coupon?.code ?? null,
+              pointsToRedeem: 0,
+              manualDiscount: cart.manualDiscount?.amount ?? null,
+              discountReason: cart.manualDiscount?.reason ?? null,
+              discountApproverUserId:
+                cart.manualDiscount?.approverUserId ?? null,
+              discountApproverPin: cart.manualDiscount?.approverPin ?? null,
+              extraLines: null,
+              creditApproverPin: null,
+              creditApproverUserId: null,
+              depositCustomerNote: null,
+              depositDueAt: null,
+              pharmacistAuthorizationNote: null,
+              pharmacistAuthorizerPin: null,
+              pharmacistAuthorizerUserId: null,
+              pharmacyApprovedAssessmentId: null,
+              pharmacyReviewAssessmentId: null,
+            },
+          },
+        });
+        const result = response.data?.bmsPosSale;
+        if (result?.status !== 'SOLD' || !result.orderId) {
+          idempotencyRef.current = null;
+          throw new Error(
+            result?.reason ?? result?.status ?? 'บันทึกการขายไม่สำเร็จ',
+          );
+        }
+        orderId = result.orderId;
+        cart.clear();
+      }
+      await refreshSales();
+      idempotencyRef.current = null;
+      setConfirmOpen(false);
+      navigation.replace('Receipt', { saleId: orderId });
+    } catch (error) {
+      setConfirmOpen(false);
+      Alert.alert(
+        'ขายไม่สำเร็จ',
+        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+      );
+    } finally {
+      submittedRef.current = false;
+      setSubmitting(false);
+    }
   };
 
   const linesCard = (
     <Card style={{ flex: 1 }}>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        รายการ TEST ({itemCount})
+        รายการ ({itemCount})
       </Text>
-      {source === 'restaurant' && tableSummary?.hasUnsent ? (
+      {source === 'restaurant' &&
+      check?.items.some(item => item.status === 'NEW') ? (
         <Text style={[typography.captionStrong, { color: colors.danger }]}>
           มีรายการ NEW ที่ยังไม่ส่งครัว จึงชำระไม่ได้
         </Text>
@@ -174,12 +285,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   itemName={item.name}
                   variant="outline"
                   onIncrement={() =>
-                    cart.addItem(
-                      item.sku,
-                      item.name,
-                      item.unitPrice,
-                      item.barcode,
-                    )
+                    cart.addItem({
+                      ...item,
+                      price: item.unitPrice,
+                      category: 'สินค้า',
+                      station: 'สินค้า',
+                      sellable: true,
+                    })
                   }
                   onDecrement={() => cart.decrementItem(item.sku)}
                 />
@@ -201,10 +313,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const paymentCard = (
     <Card>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        Split payment TEST
+        แบ่งชำระ
       </Text>
       <Text style={[typography.caption, { color: colors.textMuted }]}>
-        ของจริงต้องใช้ server preview, cashier session, RBAC และ idempotency key
+        ยอดและสิทธิ์จะถูกตรวจซ้ำที่เซิร์ฟเวอร์ก่อนบันทึก
       </Text>
       <ScrollView style={{ maxHeight: isTablet ? 360 : 260 }}>
         {payments.map((payment, index) => (
@@ -288,7 +400,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 onChangeText={reference =>
                   updatePayment(payment.id, { reference })
                 }
-                placeholder="เลขอ้างอิง mock"
+                placeholder="เลขอ้างอิง"
                 placeholderTextColor={colors.textSoft}
                 style={[
                   styles.input,
@@ -354,12 +466,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ))}
       <Button
         label="ยืนยันการขาย"
-        accessibilityLabel="ยืนยันการขายทดสอบพร้อมป้องกันกดซ้ำ"
+        accessibilityLabel="ยืนยันการขายพร้อมป้องกันกดซ้ำ"
         fullWidth
         loading={submitting}
         disabled={
           lines.length === 0 ||
-          Boolean(tableSummary?.hasUnsent) ||
+          Boolean(check?.items.some(item => item.status === 'NEW')) ||
           !validation.canConfirm
         }
         onPress={() => setConfirmOpen(true)}
@@ -375,7 +487,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             ? `ชำระโต๊ะ ${table?.code ?? '-'}`
             : 'ชำระเงิน'
         }
-        subtitle="TEST mock payment เท่านั้น ยังไม่เรียก mutation จริง"
+        subtitle="ราคา สต็อก สิทธิ์ และผลชำระตรวจโดยเซิร์ฟเวอร์"
         onBack={() => navigation.goBack()}
       />
       {isTablet ? (

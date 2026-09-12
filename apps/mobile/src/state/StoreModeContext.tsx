@@ -1,29 +1,32 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
+import { useQuery } from '@apollo/client';
 import type { PreviewStoreMode } from '../lib/storeMode';
+import { PosBootstrapDocument } from '../graphql/generated';
+import { useDevice } from './DeviceContext';
 
 interface StoreModeContextValue {
   mode: PreviewStoreMode;
-  setMode: (mode: PreviewStoreMode) => void;
 }
 
 const StoreModeContext = createContext<StoreModeContextValue | null>(null);
 
+function serverMode(value: string | null | undefined): PreviewStoreMode {
+  if (value === 'restaurant') return 'restaurant';
+  if (value === 'pharmacy') return 'pharmacy';
+  return 'general';
+}
+
 export function StoreModeProvider({ children }: { children: React.ReactNode }) {
-  // ค่า preview อยู่ในหน่วยความจำเท่านั้นโดยตั้งใจ: ไม่ใช่ config จริงและต้องไม่พึ่ง native
-  // storage จนทำให้ tester เลือกโหมดไม่ได้เมื่อกำลังรัน JS ใหม่บน binary เก่า
-  const [mode, setModeState] = useState<PreviewStoreMode>('restaurant');
-
-  const setMode = useCallback((next: PreviewStoreMode) => {
-    setModeState(next);
-  }, []);
-
-  const value = useMemo(() => ({ mode, setMode }), [mode, setMode]);
+  const { status, verify } = useDevice();
+  const bootstrap = useQuery(PosBootstrapDocument, {
+    skip: status !== 'PAIRED',
+  });
+  const verifiedArchetype =
+    verify.kind === 'OK' ? verify.info.businessArchetype : null;
+  const mode = serverMode(
+    bootstrap.data?.bmsPosSession.businessArchetype ?? verifiedArchetype,
+  );
+  const value = useMemo(() => ({ mode }), [mode]);
   return (
     <StoreModeContext.Provider value={value}>
       {children}

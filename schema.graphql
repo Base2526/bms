@@ -5975,6 +5975,7 @@ type Mutation {
   bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
   bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!
   bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
+  bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
@@ -6519,7 +6520,7 @@ type Query {
   bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): BmsPosArAccountResult!
   bmsPosCashMovements: BmsPosCashMovementsResult!
   bmsPosCashiers: [BmsPosCashier!]!
-  bmsPosCatalogSearch(q: String!): BmsPosCatalogSearchResult!
+  bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
   bmsPosDeposits(q: String): BmsPosDepositsResult!
   bmsPosDevices: [BmsPosDevice!]!
   bmsPosExpenses(credentials: BmsPosCredentialsInput!): BmsPosExpensesResult!

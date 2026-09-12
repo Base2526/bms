@@ -7,8 +7,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { print } from 'graphql';
 import { clearPairing, loadPairing, savePairing } from '../lib/deviceStore';
+import {
+  PosBootstrapDocument,
+  type PosBootstrapQuery,
+} from '../graphql/generated';
 import type { PairingTarget } from '../lib/pairing';
+import { graphqlHttpUrl } from '../lib/realtime';
 
 // "เครื่องนี้เป็นของร้านไหน" — state ระดับแอป
 //
@@ -110,8 +116,15 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
     try {
-      const res = await fetch(`${candidate.serverUrl}/api/pos/session`, {
-        headers: { 'x-pos-device-token': candidate.token },
+      const res = await fetch(graphqlHttpUrl(candidate.serverUrl), {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${candidate.token}`,
+          'x-pos-device-token': candidate.token,
+          'x-scope': 'pos',
+        },
+        body: JSON.stringify({ query: print(PosBootstrapDocument) }),
         signal: controller.signal,
       });
       if (seq !== verifySeq.current) return;
@@ -134,8 +147,32 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
       // URL ที่ชี้ผิดโดเมนมักตอบ 200 พร้อมหน้า HTML — ถ้าไม่ดักตรงนี้จะได้ error ของ JSON parser
       // ที่อ่านไม่รู้เรื่อง ทั้งที่ปัญหาจริงคือ "ใส่เซิร์ฟเวอร์ผิด"
-      const body = await res.json().catch(() => null);
-      if (!body || typeof body !== 'object' || !body.device) {
+      const body = (await res.json().catch(() => null)) as {
+        data?: PosBootstrapQuery;
+        errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+      } | null;
+      if (
+        body?.errors?.some(
+          error => error.extensions?.code === 'UNAUTHENTICATED',
+        )
+      ) {
+        setVerify({
+          kind: 'REJECTED',
+          message:
+            'เซิร์ฟเวอร์ไม่รับ token ของเครื่องนี้ — มักเกิดจากมีคนกด “ออก token” ใหม่ให้เครื่องนี้ ตัวเก่าจะใช้ไม่ได้ทันที',
+        });
+        return;
+      }
+      if (body?.errors?.length) {
+        setVerify({
+          kind: 'SERVER_ERROR',
+          message:
+            body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
+        });
+        return;
+      }
+      const session = body?.data?.bmsPosSession;
+      if (!session?.device) {
         setVerify({
           kind: 'SERVER_ERROR',
           message:
@@ -147,14 +184,14 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       setVerify({
         kind: 'OK',
         info: {
-          deviceCode: String(body.device.code ?? '—'),
-          deviceName: body.device.name ?? null,
-          branchName: body.location?.name ?? null,
-          branchCode: body.location?.branchCode ?? null,
-          surface: body.surface ?? null,
-          businessArchetype: body.businessArchetype ?? null,
-          shiftOpen: Boolean(body.shift),
-          cashierCount: Array.isArray(body.cashiers) ? body.cashiers.length : 0,
+          deviceCode: String(session.device.code ?? '—'),
+          deviceName: session.device.name ?? null,
+          branchName: session.location?.name ?? null,
+          branchCode: session.location?.branchCode ?? null,
+          surface: session.surface ?? null,
+          businessArchetype: session.businessArchetype ?? null,
+          shiftOpen: Boolean(session.shift),
+          cashierCount: session.cashiers.length,
         },
       });
     } catch (e: any) {
@@ -166,7 +203,9 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           ? `ไม่ได้คำตอบภายใน ${
               VERIFY_TIMEOUT_MS / 1000
             } วินาที — เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบ`
-          : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(e?.message ?? e)})`,
+          : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(
+              e?.message ?? e,
+            )}) — ถ้าเป็นเซิร์ฟเวอร์ทดสอบ HTTPS ให้ตรวจว่าเครื่องเชื่อถือ local CA แล้ว`,
       });
     } finally {
       clearTimeout(timer);
@@ -193,7 +232,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ถามเซิร์ฟเวอร์หนึ่งครั้งตอนเปิดแอปถ้าเครื่องจับคู่ไว้แล้ว — หน้า Login จะได้บอกได้ว่า
-  // "เครื่องนี้เป็นของสาขาไหน" ตั้งแต่ก่อนใครกดอะไร (เว็บก็เรียก /api/pos/session ตอน mount เหมือนกัน)
+  // "เครื่องนี้เป็นของสาขาไหน" ตั้งแต่ก่อนใครกดอะไรผ่าน bmsPosSession
   // เครื่องที่ยังไม่จับคู่ไม่ยิงอะไรเลยสักคำขอ
   useEffect(() => {
     if (status !== 'PAIRED' || verifiedOnce.current) return;

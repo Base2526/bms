@@ -20,8 +20,12 @@ only for the current operation body and must not be cached or added to WS connec
 
 ## Apollo setup
 
-The external React Native app can use this factory. `getDeviceToken()` should read from secure
-storage. `httpUrl` and `wsUrl` must be explicit environment values in release builds.
+The repository implementation is
+`apps/mobile/src/graphql/BmsGraphqlProvider.tsx`, generated from `schema.graphql` by
+`apps/mobile/codegen.ts`. The condensed factory below shows the same boundary. `getDeviceToken()`
+must read from secure storage. `httpUrl` and `wsUrl` must be explicit environment values in release
+builds. React Native sockets send `x-bms-client-class: native`; this is required for iOS, where a
+native socket may not send an `Origin` header.
 
 ```ts
 import { ApolloClient, ApolloLink, HttpLink, InMemoryCache, split } from "@apollo/client";
@@ -29,6 +33,12 @@ import { setContext } from "@apollo/client/link/context";
 import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { createClient } from "graphql-ws";
+
+class NativeWebSocket extends WebSocket {
+  constructor(url: string, protocols?: string | string[]) {
+    super(url, protocols, { headers: { "x-bms-client-class": "native" } });
+  }
+}
 
 type NativeBmsClientOptions = {
   httpUrl: string;
@@ -51,6 +61,7 @@ export function createNativeBmsClient(options: NativeBmsClientOptions) {
   const http = auth.concat(new HttpLink({ uri: options.httpUrl }));
   const ws = new GraphQLWsLink(createClient({
     url: options.wsUrl,
+    webSocketImpl: NativeWebSocket,
     lazy: true,
     retryAttempts: Infinity,
     retryWait: async (attempt) => {
@@ -86,11 +97,13 @@ export function createNativeBmsClient(options: NativeBmsClientOptions) {
 
 ## Invalidation subscription
 
-Subscribe once after device pairing. Treat every event as a hint, not data authority.
+Subscribe after device pairing. Use the named, argument-free views for the active surface and treat
+every event as a hint, not data authority. The current client opens seven base POS views and seven
+additional restaurant views, leaving capacity below the gateway's per-socket limit.
 
 ```graphql
-subscription NativeRealtimeEvents {
-  realtimeEvent {
+subscription MobileShiftChanged {
+  bmsShiftChanged {
     eventId
     eventType
     schemaVersion
@@ -134,10 +147,10 @@ production introspection. The artifact is generated from the executable schema w
 
 | Output contract | Operations |
 | --- | --- |
-| Typed (99) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
+| Typed (100) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
 | JSON compatibility (0) | None. |
 
-All 99 operations have typed arguments and typed output trees. Generate result types from the
+All 100 operations have typed arguments and typed output trees. Generate result types from the
 committed schema instead of hand-maintaining response interfaces. The examples below cover the ten
 core screen flows and are checked against the executable schema; the remaining operations are
 discoverable from the same artifact and no longer require a client-side JSON boundary validator.
