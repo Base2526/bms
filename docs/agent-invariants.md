@@ -16,6 +16,7 @@ whichever is wrong, in the same change.
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
 - [POS and tax](#pos-and-tax)
 - [Restaurant POS (dine-in)](#restaurant-pos-dine-in)
+- [Board game cafe](#board-game-cafe)
 - [Product catalog: variants, sales surfaces, and stock policies](#product-catalog-variants-sales-surfaces-and-stock-policies)
 - [Restaurant online ordering (chat, delivery, sold-out)](#restaurant-online-ordering-chat-delivery-sold-out)
 - [Membership and loyalty points](#membership-and-loyalty-points)
@@ -425,7 +426,7 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 ## Restaurant POS (dine-in)
 
 `lib/bms/restaurantPos.ts`, `app/(pos)/pos/restaurant`, `app/api/pos/restaurant/*`,
-`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`
+`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`, `9.78`
 own dine-in service. Operator detail:
 [business/pos.md § Restaurant POS](business/pos.md). Schema:
 [architecture/database.md § Restaurant POS](architecture/database.md).
@@ -435,6 +436,11 @@ own dine-in service. Operator detail:
   is cooked; settling closes _that_ order through `recordPosSale()`. Never add a payment, drawer,
   lot or tax-document path for the restaurant surface — every one of those already has a single
   formula, and a second one drifts silently.
+- **Service mode is check state, not fulfillment.** `DINE_IN` checks require a real table; `TAKEAWAY`
+  checks deliberately have `table_id = NULL` and no table QR/session identity. The final POS order
+  stores `restaurant_service_mode` only as a receipt/history snapshot. Do not add dine-in/takeaway
+  values to `bms_orders.fulfillment_type`; that field remains the online restaurant `DELIVERY`/`PICKUP`
+  contract.
 - **A check belongs to a branch, not to a device, shift or person.** A waiter's tablet opens it, any
   station sends it, and the register settles it — often after a shift change. The only scope check is
   the device's `location_id`, taken from the authenticated device and never from the body. Because
@@ -580,6 +586,42 @@ own dine-in service. Operator detail:
 - **Not built, and not to be faked**: split/merge of checks across tables (splitting _payment_ is
   supported), reservations/queue numbers, per-station printer routing,
   offline-first sync, and delivery-aggregator integrations.
+
+## Board game cafe
+
+`lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
+and migrations `9.79`–`9.83` own timed play sessions and the playable game library. The operating
+brief is [business/board-game-cafe.md](business/board-game-cafe.md).
+
+- **Time, retail goods, and playable copies stay separate.** Snacks, drinks, accessories, and games
+  sold to take home remain Products/Inventory. Participant time is calculated from rate snapshots on
+  the session. A library copy is an asset with checkout/return/condition state and borrowing it never
+  moves sellable stock.
+- **The session freezes the bill before POS receives it.** Opening snapshots hourly rate, minimum,
+  rounding, and grace per participant. Closing requires every checked-out copy to be returned and
+  writes `charge_snapshot` plus `amount_due`; POS reads that frozen result and never accepts an amount
+  supplied by the browser. `recordPosSale()` validates branch/state again and marks the session
+  `PAID` in the same transaction as payment, stock, tax, drawer, receipt, and audit.
+- **One table has at most one active session.** `OPEN` and `CLOSING` share a partial unique index.
+  Mutations use tenant transactions, advisory/idempotency locks, and location checks derived from the
+  authenticated actor/device. Replaying a key with a different request hash is an error.
+- **Alerts are a projection of time.** `ENDING_SOON` and `OVERDUE` are computed from `expected_end_at`,
+  `alert_before_minutes`, and current time. They are not a mutable status column and cannot replace a
+  fresh authoritative read.
+- **Member identity comes from CRM.** A MEMBER participant references an existing customer/member;
+  public/member-search responses expose only the bounded identity needed to select that member. ID
+  card and email collection belong to CRM/private-document controls, not session notes.
+- **Public discovery is explicit and aggregate-only.** Choosing the archetype never publishes a
+  branch. Coordinates and `public_visible` must be set deliberately; the public route is rate-limited
+  and returns no table ids, session ids, participant names, customer ids, or other operational data.
+- **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
+  rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
+  removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
+  receipt is left pointing at deleted fixture state.
+- **Not built:** monthly/yearly subscription contracts, encrypted identity-document storage specific
+  to subscriptions, reservations/waitlists, and dedicated board-game profitability/utilization
+  reports. Extend CRM/reporting/payment domains for these; do not create parallel customer or money
+  ledgers.
 
 ## Product catalog: variants, sales surfaces, and stock policies
 
@@ -1066,7 +1108,7 @@ The 2026-09-10 audit records the original findings and rollout design; current i
 status lives in the mobile GraphQL client and realtime architecture documents:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
-event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.74`,
+event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.77`,
 `realtimeOutbox.ts`, the continuous pump, and `realtimeDispatcher.ts` provide the durable handoff and
 domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; DB contract suites
 exercise the triggers and live local verification covers Redis fan-out across multiple WS instances.
@@ -1102,17 +1144,18 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   `return true` when the routing field is absent: no routing data means reject. Adding a
   resource subscription means the publisher must carry its audience. User topics come from the
   ticket subject; BMS Inbox requires ticket tenant plus `inbox.view`.
-- The subscription surface is one invalidation stream plus 17 named views over it
+- The subscription surface is one invalidation stream plus 18 named views over it
   (`NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`). Every named field reuses
   `realtimeTopics()` and `canReceiveRealtimeEvent()` and takes **no arguments**. Do not give a named
   subscription its own auth: one authorizer is the only reason cross-tenant scope can be reasoned
   about, and `canReceiveRealtimeEvent()` lives in `packages/realtime/src/subscriptionAuth.ts` so it
   can be tested behaviourally rather than by scanning the resolver for a function call.
 - A business write that mobile or admin must see needs an event. `realtime-domain-coverage-contract`
-  walks every table `lib/bms` writes and fails unless it has a trigger or an explicit
-  classification, so forgetting a whole domain is caught. Twenty tables are recorded there as known
-  gaps that still deserve an event (returns, deposits, store credit, AR, tax documents, loyalty,
-  purchase orders, wastage).
+  walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that exact
+  operation has a trigger or an explicit classification. Migration `9.76` closes the prior 20 table
+  gaps covering returns, deposits, store credit, AR, tax documents, loyalty, purchase orders,
+  wastage, and related POS shift operations; `9.77` adds the parked-sale `DELETE` that table-only
+  coverage originally missed.
 - Production subscription rollout fails closed behind `REALTIME_SUBSCRIPTIONS_ENABLED` and separate
   order/restaurant/inventory/payment/Inbox/shipping/pharmacy/admin/POS flags. Keep the master flag at
   `0` during shadow publishing. **Know what the flags do and do not stop:** they are read only by
@@ -1143,6 +1186,9 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   and production recovery/load proof are still incomplete. The shared
   `realtimeInvalidation.ts` must have an entry for every event domain or that domain refetches
   nothing and reads on screen exactly like realtime being switched off.
+- POS device authentication updates `bms_pos_devices.last_seen_at` as throttled bookkeeping. Keep
+  that column and `receipt_seq` out of the `device.session.changed` trigger (`9.75`): otherwise an RN
+  GraphQL request can emit an invalidation whose response is to verify and refetch GraphQL again.
 
 ## Typed GraphQL surface for external clients
 
@@ -1226,9 +1272,10 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-09
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **80 namespaces / 5,003 leaf keys per language**,
-  at exact th↔en parity — the latest +6 are the global order-action and Inbox alert controls; the earlier +415
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-14
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **81 namespaces / 5,149 leaf keys per language**,
+  at exact th↔en parity — the latest +2 cover board-game fake-data guidance/summary; the preceding +24 cover board-game time alerts, member lookup and opt-in public
+  nearby-store discovery; the earlier +6 are the global order-action and Inbox alert controls; the earlier +415
   are the complete bilingual restaurant POS surface in the
   new `pos_restaurant` namespace; `pos-restaurant-i18n-contract` now refuses hardcoded Thai UI copy
   there while excluding the shared baht symbol and Thai product-name matcher regexes. The earlier +16

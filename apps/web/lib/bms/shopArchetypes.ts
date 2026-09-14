@@ -11,6 +11,7 @@ export const SHOP_ARCHETYPE_OPTIONS = [
   { value: "pet_supply", label: "Pet Supply" },
   { value: "building_materials", label: "Building Materials" },
   { value: "restaurant", label: "Restaurant" },
+  { value: "board_game_cafe", label: "Board Game Cafe" },
   { value: "other", label: "Other" },
 ] as const;
 
@@ -32,6 +33,7 @@ export function localizedShopArchetypeOptions(t: Translate): Array<{ value: Shop
     pet_supply: t("shop_archetypes.pet_supply"),
     building_materials: t("shop_archetypes.building_materials"),
     restaurant: t("shop_archetypes.restaurant"),
+    board_game_cafe: t("shop_archetypes.board_game_cafe"),
     other: t("shop_archetypes.other"),
   };
   return SHOP_ARCHETYPE_OPTIONS.map(({ value }) => ({ value, label: labels[value] }));
@@ -126,6 +128,8 @@ export function commercePolicyForArchetype(value: string | null | undefined): Ar
       return { salesMotion: "spec_quantity_quote", discovery: "ยืนยันสเปก หน่วยขาย และจำนวนที่ต้องใช้ก่อนสรุปราคา", basket: "เสนอสินค้าที่ใช้ร่วมกันจากข้อมูล compatibility ที่ตรวจสอบแล้ว", repeatPurchase: "เน้นใบเสนอราคาและ reorder ตามหน่วยเดิม", fulfillment: "สรุปทั้งหน่วยขายและปริมาณหน่วยฐาน รวมถึงเงื่อนไขจัดส่งของชิ้นใหญ่" };
     case "restaurant":
       return { salesMotion: "menu_kitchen_checkout", discovery: "รับหลายเมนูและยืนยันเฉพาะตัวเลือกหรือ modifier ที่ร้านตั้งไว้", basket: "เสนอ add-on เดียวจากเมนูจริง", repeatPurchase: "ใช้ reorder สำหรับเมนูเดิม", fulfillment: "ยืนยันรายการ ตัวเลือก และเวลารับหรือจัดส่งก่อนส่งเข้าครัว" };
+    case "board_game_cafe":
+      return { salesMotion: "time_session_visit", discovery: "ตอบจากราคาเวลาเล่น กฎสมาชิก เกมที่ร้านเผยแพร่ และสินค้าจริงเท่านั้น แยกค่าเล่น เกมให้ยืม และสินค้าที่ขายออกจากกันเสมอ", basket: "เสนอเครื่องดื่ม/ขนมหรือสินค้าเสริมจาก catalog ได้หนึ่งรายการเมื่อเกี่ยวข้อง แต่ห้ามคำนวณค่าเวลาแทน backend", repeatPurchase: "เน้นสมาชิก แพ็กเกจเวลา การจองโต๊ะ และการกลับมาเล่นซ้ำมากกว่า restock", fulfillment: "อธิบายเวลาเปิด ราคาเบื้องต้น วิธีจอง/ติดต่อ และให้ POS/backend เป็นผู้คำนวณค่าเล่นจริงตอนปิด session" };
     default:
       return { salesMotion: "catalog_guided", discovery: "ค้น catalog ก่อนและถามข้อมูลที่ขาดทีละ 1 ข้อ", basket: "เสนอทางเลือกหรือสินค้าที่เกี่ยวข้องจาก catalog เท่านั้น", repeatPurchase: "ใช้ reorder/restock ตามเจตนาที่ลูกค้ายืนยัน", fulfillment: "ใช้เฉพาะ payment/shipping policy ที่ร้านตั้งค่าไว้" };
   }
@@ -212,6 +216,13 @@ export function onboardingChecklistKeysForArchetype(value: string | null | undef
         "checklist_restaurant_2",
         "checklist_restaurant_3",
         "checklist_restaurant_4",
+      ];
+    case "board_game_cafe":
+      return [
+        "checklist_board_game_cafe_1",
+        "checklist_board_game_cafe_2",
+        "checklist_board_game_cafe_3",
+        "checklist_board_game_cafe_4",
       ];
     case "gifts_seasonal":
       return [

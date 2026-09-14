@@ -98,6 +98,7 @@ const OPS_TELEMETRY = [
   "bms_ai_credit_ledger", "bms_ai_quality_reviews", "bms_ai_synonym_candidates",
   "bms_generated_reports", "bms_realtime_outbox", "bms_retention_cases",
   "bms_followup_history", "bms_followup_jobs", "bms_etax_submissions",
+  "bms_board_game_idempotency_results",
 ];
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */
@@ -118,6 +119,14 @@ const CONFIGURATION = [
   "bms_conversation_helpers", "bms_conversation_intents", "bms_conversation_notes",
   "bms_actions", "bms_pharmacy_clinical_evidence", "bms_pos_purchase_receipts",
   "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens",
+  "bms_board_game_areas", "bms_board_game_public_locations", "bms_board_game_tables",
+  "bms_board_game_time_rates", "bms_board_game_titles",
+];
+
+/** Operational state whose owning page performs authoritative 15-second polling plus post-write refresh. */
+const POLLED_OPERATIONAL_SURFACE = [
+  "bms_board_game_copies", "bms_board_game_sessions",
+  "bms_board_game_session_games", "bms_board_game_session_participants",
 ];
 
 /**
@@ -140,6 +149,7 @@ for (const [reason, tables] of [
   ["child of an aggregate that already emits", CHILD_OF_AGGREGATE],
   ["ops/telemetry, not a mobile-visible business state", OPS_TELEMETRY],
   ["configuration read on demand, not a live surface", CONFIGURATION],
+  ["authoritative polling plus post-write refresh; no realtime event contract", POLLED_OPERATIONAL_SURFACE],
   ["known gap: deserves an event, not built yet", KNOWN_GAPS],
 ] as const) {
   for (const table of tables) CLASSIFIED.set(table, reason);

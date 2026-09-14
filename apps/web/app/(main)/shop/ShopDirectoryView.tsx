@@ -45,6 +45,7 @@ export default function ShopDirectoryView({
         results: "results",
         shopsLabel: "public shops",
         productsLabel: "active products",
+        boardGameCafes: "Board game cafes near me",
         allShops: "Recommended",
         largest: "Most products",
         recent: "Latest",
@@ -67,6 +68,7 @@ export default function ShopDirectoryView({
         results: "ผลลัพธ์",
         shopsLabel: "ร้าน public",
         productsLabel: "สินค้าที่เปิดขาย",
+        boardGameCafes: "ร้านบอร์ดเกมใกล้ฉัน",
         allShops: "แนะนำ",
         largest: "สินค้าเยอะ",
         recent: "ล่าสุด",
@@ -127,6 +129,7 @@ export default function ShopDirectoryView({
         <div className={styles.stats}>
           <span className={styles.statPill}>{shops.length} {copy.shopsLabel}</span>
           <span className={styles.statPill}>{totalProducts} {copy.productsLabel}</span>
+          <Link href="/board-game" className={styles.discoveryLink}>{copy.boardGameCafes}</Link>
         </div>
       </header>
 

@@ -2104,3 +2104,263 @@ export async function seedFakeMembers(tenantId: string, count: number) {
     memberNos: enrolled.rows.map((r) => r.member_no),
   };
 }
+
+const BOARD_GAME_SEED_TITLES = [
+  { title: "Catan", min: 3, max: 4, minutes: 90, difficulty: "MEDIUM", tags: ["strategy", "family"] },
+  { title: "Ticket to Ride", min: 2, max: 5, minutes: 60, difficulty: "LIGHT", tags: ["family", "route"] },
+  { title: "Splendor", min: 2, max: 4, minutes: 45, difficulty: "LIGHT", tags: ["cards", "engine-building"] },
+  { title: "Azul", min: 2, max: 4, minutes: 45, difficulty: "LIGHT", tags: ["abstract", "family"] },
+  { title: "Wingspan", min: 1, max: 5, minutes: 90, difficulty: "MEDIUM", tags: ["strategy", "engine-building"] },
+  { title: "Pandemic", min: 2, max: 4, minutes: 60, difficulty: "MEDIUM", tags: ["cooperative", "family"] },
+  { title: "Dixit", min: 3, max: 8, minutes: 45, difficulty: "LIGHT", tags: ["party", "storytelling"] },
+  { title: "7 Wonders", min: 3, max: 7, minutes: 45, difficulty: "MEDIUM", tags: ["cards", "strategy"] },
+  { title: "Carcassonne", min: 2, max: 5, minutes: 45, difficulty: "LIGHT", tags: ["tile", "family"] },
+  { title: "Terraforming Mars", min: 1, max: 5, minutes: 150, difficulty: "HEAVY", tags: ["strategy", "expert"] },
+] as const;
+
+/** Complete operator-facing fixtures for the board-game module. All rows carry a FAKE marker. */
+export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: number) {
+  const tableCount = Math.min(Math.max(Math.trunc(requestedTables) || 8, 4), 30);
+  const locationId = await resolveDefaultLocationId(tenantId);
+  const token = short().toUpperCase();
+  const client = await getClient();
+
+  try {
+    await beginTenantTx(client, tenantId);
+    const profile = await client.query<{ business_archetype: string | null }>(
+      `SELECT business_archetype FROM bms_store_profiles WHERE tenant_id = $1`,
+      [tenantId]
+    );
+    if (profile.rows[0]?.business_archetype !== "board_game_cafe") {
+      throw new Error("ต้องเลือก Shop archetype เป็น board_game_cafe ก่อนสร้างข้อมูลทดสอบ");
+    }
+
+    const areaIds = [uuid(), uuid()];
+    await bulkInsert(client, "bms_board_game_areas", [
+      "id", "tenant_id", "location_id", "name", "sort_order",
+    ], [
+      [areaIds[0], tenantId, locationId, `FAKE Main Zone ${token}`, 10],
+      [areaIds[1], tenantId, locationId, `FAKE Quiet Zone ${token}`, 20],
+    ]);
+
+    const tableRows = Array.from({ length: tableCount }, (_, index) => ({
+      id: uuid(),
+      areaId: areaIds[index % areaIds.length],
+      code: `FAKE-${token}-${String(index + 1).padStart(2, "0")}`,
+      name: `FAKE Table ${index + 1}`,
+      seats: [4, 4, 6, 8][index % 4],
+      blocked: index === tableCount - 1,
+    }));
+    await bulkInsert(client, "bms_board_game_tables", [
+      "id", "tenant_id", "location_id", "area_id", "code", "name", "seats", "sort_order", "blocked",
+    ], tableRows.map((row, index) => [
+      row.id, tenantId, locationId, row.areaId, row.code, row.name, row.seats, index + 1, row.blocked,
+    ]));
+
+    const rateRows = [
+      { id: uuid(), code: `FAKE_GENERAL_${token}`, name: "FAKE ทั่วไป 50 บาท/ชม.", type: "GENERAL", price: 50, minimum: 60, rounding: 30, grace: 10 },
+      { id: uuid(), code: `FAKE_STUDENT_${token}`, name: "FAKE นักเรียน 40 บาท/ชม.", type: "STUDENT", price: 40, minimum: 60, rounding: 30, grace: 10 },
+      { id: uuid(), code: `FAKE_MEMBER_${token}`, name: "FAKE สมาชิก 35 บาท/ชม.", type: "MEMBER", price: 35, minimum: 60, rounding: 30, grace: 10 },
+      { id: uuid(), code: `FAKE_CHILD_${token}`, name: "FAKE เด็ก 30 บาท/ชม.", type: "CHILD", price: 30, minimum: 60, rounding: 15, grace: 10 },
+    ];
+    await bulkInsert(client, "bms_board_game_time_rates", [
+      "id", "tenant_id", "code", "name", "customer_type", "price_per_hour",
+      "minimum_minutes", "rounding_minutes", "grace_minutes", "sort_order",
+    ], rateRows.map((row, index) => [
+      row.id, tenantId, row.code, row.name, row.type, row.price,
+      row.minimum, row.rounding, row.grace, index + 1,
+    ]));
+
+    const titleRows = BOARD_GAME_SEED_TITLES.map((game, index) => ({
+      ...game,
+      id: uuid(),
+      title: `FAKE ${game.title} ${token}`,
+      publicVisible: index < 6,
+    }));
+    await bulkInsert(client, "bms_board_game_titles", [
+      "id", "tenant_id", "title", "min_players", "max_players", "typical_minutes",
+      "difficulty", "language", "tags", "public_visible",
+    ], titleRows.map((row) => [
+      row.id, tenantId, row.title, row.min, row.max, row.minutes,
+      row.difficulty, "TH/EN", row.tags, row.publicVisible,
+    ]));
+
+    const copyRows: Array<{ id: string; titleId: string; code: string; status: string; note: string | null }> = titleRows.flatMap((title, titleIndex) => [0, 1].map((copyIndex) => ({
+      id: uuid(),
+      titleId: title.id,
+      code: `FAKE-${token}-G${String(titleIndex + 1).padStart(2, "0")}-${copyIndex + 1}`,
+      status: titleIndex === titleRows.length - 1 && copyIndex === 1 ? "DAMAGED" : "AVAILABLE",
+      note: titleIndex === titleRows.length - 1 && copyIndex === 1 ? "FAKE กล่องมีรอยและรอตรวจอุปกรณ์" : null,
+    })));
+    await bulkInsert(client, "bms_board_game_copies", [
+      "id", "tenant_id", "title_id", "location_id", "copy_code", "status", "condition_note", "acquired_at",
+    ], copyRows.map((row, index) => [
+      row.id, tenantId, row.titleId, locationId, row.code, row.status, row.note,
+      new Date(Date.now() - (30 + index * 3) * 864e5),
+    ]));
+
+    const memberRows = await client.query<{ id: string }>(
+      `SELECT id FROM bms_customers
+        WHERE tenant_id = $1 AND member_no IS NOT NULL AND deleted_at IS NULL
+          AND 'fake' = ANY(tags)
+        ORDER BY member_since NULLS LAST, created_at
+        LIMIT 8`,
+      [tenantId]
+    );
+    const activeCount = Math.min(Math.max(3, Math.ceil(tableCount / 2)), tableCount - 1);
+    const sessions: Array<{ id: string; status: string; tableId: string; startedAt: Date; endedAt: Date | null }> = [];
+    const participants: Array<{ id: string; sessionId: string; rateId: string | null }> = [];
+
+    for (let index = 0; index < activeCount; index++) {
+      const id = uuid();
+      const startedAt = new Date(Date.now() - (35 + index * 22) * 60000);
+      const isClosing = index === activeCount - 1;
+      const fixedDuration = index > 0;
+      const duration = fixedDuration ? (index <= 2 ? 60 : 120) : null;
+      const expectedEndAt = duration ? new Date(startedAt.getTime() + duration * 60000) : null;
+      const endedAt = isClosing ? new Date() : null;
+      const guestCount = 2 + (index % 4);
+      await client.query(
+        `INSERT INTO bms_board_game_sessions
+           (id, tenant_id, location_id, table_id, status, billing_mode, guest_count,
+            expected_duration_minutes, started_at, expected_end_at, ended_at, alert_before_minutes,
+            note, open_idempotency_key, open_request_hash,
+            settlement_idempotency_key, settlement_request_hash, charge_snapshot, amount_due)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,15,$12,$13,$14,$15,$16,'[]'::jsonb,0)`,
+        [
+          id, tenantId, locationId, tableRows[index].id, isClosing ? "CLOSING" : "OPEN",
+          fixedDuration ? "FIXED_DURATION" : "OPEN_ENDED", guestCount, duration,
+          startedAt, expectedEndAt, endedAt, `FAKE session ${token}`,
+          `fake-open-${token}-${index}`, `fake-open-hash-${token}-${index}`,
+          isClosing ? `fake-settle-${token}-${index}` : null,
+          isClosing ? `fake-settle-hash-${token}-${index}` : null,
+        ]
+      );
+      sessions.push({ id, status: isClosing ? "CLOSING" : "OPEN", tableId: tableRows[index].id, startedAt, endedAt });
+
+      const chargeLines: Array<Record<string, unknown>> = [];
+      for (let personIndex = 0; personIndex < guestCount; personIndex++) {
+        const participantId = uuid();
+        const requestedRate = rateRows[(index + personIndex) % rateRows.length];
+        const memberId = requestedRate.type === "MEMBER" ? memberRows.rows[personIndex % Math.max(memberRows.rows.length, 1)]?.id ?? null : null;
+        const rate = requestedRate.type === "MEMBER" && !memberId ? rateRows[0] : requestedRate;
+        const billingGroupNo = personIndex % 2 === 0 ? 1 : 2;
+        await client.query(
+          `INSERT INTO bms_board_game_session_participants
+             (id, tenant_id, session_id, rate_id, customer_id, display_name, participant_type,
+              billable, hourly_rate_snapshot, minimum_minutes_snapshot, rounding_minutes_snapshot,
+              grace_minutes_snapshot, billing_group_no, joined_at, left_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8,$9,$10,$11,$12,$13,$14)`,
+          [
+            participantId, tenantId, id, rate.id, memberId,
+            memberId ? `FAKE Member ${personIndex + 1}` : `FAKE Guest ${personIndex + 1}`,
+            rate.type, rate.price, rate.minimum, rate.rounding, rate.grace,
+            billingGroupNo, startedAt, endedAt,
+          ]
+        );
+        participants.push({ id: participantId, sessionId: id, rateId: rate.id });
+        if (isClosing) {
+          const minutes = Math.max(rate.minimum, Math.ceil(((endedAt!.getTime() - startedAt.getTime()) / 60000 - rate.grace) / rate.rounding) * rate.rounding);
+          const amount = Math.round((minutes / 60) * rate.price * 100) / 100;
+          chargeLines.push({ participantId, label: `${rate.name} / กลุ่ม ${billingGroupNo}`, minutes, hourlyRate: rate.price, amount, billingGroupNo });
+        }
+      }
+      if (isClosing) {
+        const amountDue = chargeLines.reduce((sum, line) => sum + Number(line.amount), 0);
+        await client.query(
+          `UPDATE bms_board_game_sessions SET charge_snapshot = $3::jsonb, amount_due = $4
+            WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, id, JSON.stringify(chargeLines), amountDue]
+        );
+      }
+    }
+
+    const cancelledSessionId = uuid();
+    const cancelledStart = new Date(Date.now() - 2 * 864e5);
+    const cancelledEnd = new Date(cancelledStart.getTime() + 25 * 60000);
+    await client.query(
+      `INSERT INTO bms_board_game_sessions
+         (id, tenant_id, location_id, table_id, status, billing_mode, guest_count,
+          started_at, ended_at, note, open_idempotency_key, open_request_hash,
+          cancel_idempotency_key, cancel_request_hash)
+       VALUES ($1,$2,$3,$4,'CANCELLED','OPEN_ENDED',0,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        cancelledSessionId, tenantId, locationId, tableRows[0].id, cancelledStart, cancelledEnd,
+        `FAKE cancelled session ${token}`, `fake-open-${token}-cancelled`, `fake-open-hash-${token}-cancelled`,
+        `fake-cancel-${token}`, `fake-cancel-hash-${token}`,
+      ]
+    );
+    sessions.push({ id: cancelledSessionId, status: "CANCELLED", tableId: tableRows[0].id, startedAt: cancelledStart, endedAt: cancelledEnd });
+
+    const openSessions = sessions.filter((session) => session.status === "OPEN");
+    const activeLoans = Math.min(openSessions.length, 3);
+    for (let index = 0; index < activeLoans; index++) {
+      await client.query(
+        `INSERT INTO bms_board_game_session_games
+           (tenant_id, session_id, copy_id, checked_out_at)
+         VALUES ($1,$2,$3,$4)`,
+        [tenantId, openSessions[index].id, copyRows[index].id, openSessions[index].startedAt]
+      );
+      await client.query(
+        `UPDATE bms_board_game_copies SET status = 'IN_USE', updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, copyRows[index].id]
+      );
+      copyRows[index].status = "IN_USE";
+    }
+    await client.query(
+      `INSERT INTO bms_board_game_session_games
+         (tenant_id, session_id, copy_id, status, checked_out_at, returned_at, return_note)
+       VALUES ($1,$2,$3,'RETURNED',$4,$5,$6)`,
+      [tenantId, cancelledSessionId, copyRows[activeLoans].id, cancelledStart, cancelledEnd, `FAKE คืนครบ ${token}`]
+    );
+    await client.query(
+      `INSERT INTO bms_board_game_session_games
+         (tenant_id, session_id, copy_id, status, checked_out_at, returned_at, return_note)
+       VALUES ($1,$2,$3,'ISSUE',$4,$5,$6)`,
+      [tenantId, cancelledSessionId, copyRows[activeLoans + 1].id, cancelledStart, cancelledEnd, `FAKE พบชิ้นส่วนไม่ครบ ${token}`]
+    );
+    await client.query(
+      `UPDATE bms_board_game_copies SET status = 'NEEDS_CHECK', condition_note = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, copyRows[activeLoans + 1].id, `FAKE พบชิ้นส่วนไม่ครบ ${token}`]
+    );
+    copyRows[activeLoans + 1].status = "NEEDS_CHECK";
+
+    const publicProfile = await client.query<{ id: string }>(
+      `INSERT INTO bms_board_game_public_locations
+         (tenant_id, location_id, public_visible, display_name, summary, opening_hours)
+       SELECT $1,$2,FALSE,$3,$4,$5
+        WHERE NOT EXISTS (
+          SELECT 1 FROM bms_board_game_public_locations WHERE tenant_id = $1 AND location_id = $2
+        )
+       RETURNING id`,
+      [tenantId, locationId, `FAKE Board Game Cafe ${token}`, "FAKE โปรไฟล์ตัวอย่างสำหรับตรวจหน้าค้นหาร้านใกล้ฉัน", "ทุกวัน 11:00-23:00"]
+    );
+
+    await client.query("COMMIT");
+    return {
+      created: [
+        ...tableRows.map((row) => ({ id: row.id, code: row.code, name: row.name, type: "table" })),
+        ...titleRows.map((row) => ({ id: row.id, name: row.title, type: "game" })),
+        ...sessions.map((row) => ({ id: row.id, name: row.status, type: "session" })),
+      ],
+      summary: {
+        areas: areaIds.length,
+        tables: tableRows.length,
+        rates: rateRows.length,
+        titles: titleRows.length,
+        copies: copyRows.length,
+        sessions: sessions.length,
+        participants: participants.length,
+        activeLoans,
+        publicProfiles: publicProfile.rowCount ?? 0,
+      },
+    };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}

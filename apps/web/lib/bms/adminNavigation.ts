@@ -157,6 +157,11 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     visible: (ctx) => ctx.archetype === "restaurant" && ctx.can("restaurant.floor.manage"),
   },
   {
+    id: "sales.board-game", route: "/admin/board-game", labelKey: "admin_nav.board_game",
+    section: "sales", workspace: "SHOP",
+    visible: (ctx) => ctx.archetype === "board_game_cafe" && ctx.can("board_game.session.manage"),
+  },
+  {
     id: "sales.pos-manual", route: "/admin/pos-manual", labelKey: "admin_nav.pos_manual",
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("pos.sell"),
   },
@@ -458,6 +463,7 @@ const PLATFORM_SECTION_ORDER: readonly AdminNavSectionId[] = [
 // ⚠️ อ้างถึงรายการที่ pinned ไม่ได้ — แถบด่วนเรียงคงที่ ใส่ไปก็ไม่มีผล (มีเทสคุม)
 const ARCHETYPE_EMPHASIS: Record<string, readonly string[]> = {
   restaurant: ["sales.kitchen", "sales.restaurant-floor", "sales.pos-shifts", "inventory.stock-models", "inventory.products", "inventory.wastage"],
+  board_game_cafe: ["sales.board-game", "sales.pos-shifts", "inventory.products", "inventory.purchase", "customers.customers"],
   mini_mart: ["sales.pos-shifts", "inventory.products", "inventory.product-packs", "inventory.purchase", "inventory.stock-counts"],
   fashion: ["sales.orders", "inventory.products", "sales.shipment", "customers.customers"],
   pharmacy: ["inventory.products", "sales.pos-shifts", "settings.pos-readiness"],

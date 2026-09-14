@@ -30,6 +30,64 @@ async function handleDELETE(req: NextRequest) {
   // ลบตามลำดับ FK: restock + orders + conversations + PO ก่อน (cascade items/payments/shipments/messages/notes/deliveries)
   //   → suppliers → products (cascade inventory) → customers · ข้ามตัวที่ยังมีของอ้างถึง (กัน FK error)
   //   ทุก DELETE scope ด้วย tenant_id = ร้านของผู้ล็อกอิน
+    const resBoardGameOrders = await query(
+      `DELETE FROM bms_orders o
+        WHERE o.tenant_id = $1
+          AND EXISTS (
+            SELECT 1 FROM bms_board_game_sessions s
+            LEFT JOIN bms_board_game_tables t
+              ON t.tenant_id = s.tenant_id AND t.id = s.table_id
+             WHERE s.tenant_id = o.tenant_id AND s.id = o.board_game_session_id
+               AND (s.open_idempotency_key LIKE 'fake-open-%' OR t.code LIKE 'FAKE-%')
+          )
+        RETURNING o.id`,
+      [tenantId]
+    );
+    const resBoardGameSessions = await query(
+      `DELETE FROM bms_board_game_sessions s
+        WHERE s.tenant_id = $1
+          AND (
+            s.open_idempotency_key LIKE 'fake-open-%'
+            OR EXISTS (
+              SELECT 1 FROM bms_board_game_tables t
+               WHERE t.tenant_id = s.tenant_id AND t.id = s.table_id AND t.code LIKE 'FAKE-%'
+            )
+          )
+        RETURNING s.id`,
+      [tenantId]
+    );
+    const resBoardGameProfiles = await query(
+      `DELETE FROM bms_board_game_public_locations
+        WHERE tenant_id = $1 AND public_visible = FALSE AND display_name LIKE 'FAKE %'
+        RETURNING id`,
+      [tenantId]
+    );
+    const resBoardGameCopies = await query(
+      `DELETE FROM bms_board_game_copies WHERE tenant_id = $1 AND copy_code LIKE 'FAKE-%' RETURNING id`,
+      [tenantId]
+    );
+    const resBoardGameTitles = await query(
+      `DELETE FROM bms_board_game_titles WHERE tenant_id = $1 AND title LIKE 'FAKE %' RETURNING id`,
+      [tenantId]
+    );
+    const resBoardGameTables = await query(
+      `DELETE FROM bms_board_game_tables WHERE tenant_id = $1 AND code LIKE 'FAKE-%' RETURNING id`,
+      [tenantId]
+    );
+    const resBoardGameAreas = await query(
+      `DELETE FROM bms_board_game_areas WHERE tenant_id = $1 AND name LIKE 'FAKE %' RETURNING id`,
+      [tenantId]
+    );
+    const resBoardGameRates = await query(
+      `DELETE FROM bms_board_game_time_rates WHERE tenant_id = $1 AND code ~ '^FAKE_' RETURNING id`,
+      [tenantId]
+    );
+    const resBoardGameIdempotency = await query(
+      `DELETE FROM bms_board_game_idempotency_results
+        WHERE tenant_id = $1 AND idempotency_key LIKE 'fake-%'
+        RETURNING idempotency_key`,
+      [tenantId]
+    );
     const resRestock = await query(`DELETE FROM bms_restock_subscriptions WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resOrders = await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resConversations = await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
@@ -66,7 +124,10 @@ async function handleDELETE(req: NextRequest) {
     );
 
     const deleted =
-      resPosts.rows.length + resUsers.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
+      resPosts.rows.length + resUsers.rows.length + resBoardGameOrders.rows.length + resBoardGameSessions.rows.length +
+      resBoardGameProfiles.rows.length + resBoardGameCopies.rows.length + resBoardGameTitles.rows.length +
+      resBoardGameTables.rows.length + resBoardGameAreas.rows.length + resBoardGameRates.rows.length +
+      resBoardGameIdempotency.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
       resPosShifts.rows.length + resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
       resSupportTickets.rows.length + resEvalRuns.rows.length;
 
@@ -75,6 +136,15 @@ async function handleDELETE(req: NextRequest) {
       deleted,
       posts: resPosts.rows.length,
       users: resUsers.rows.length,
+      bmsBoardGameOrders: resBoardGameOrders.rows.length,
+      bmsBoardGameSessions: resBoardGameSessions.rows.length,
+      bmsBoardGameProfiles: resBoardGameProfiles.rows.length,
+      bmsBoardGameCopies: resBoardGameCopies.rows.length,
+      bmsBoardGameTitles: resBoardGameTitles.rows.length,
+      bmsBoardGameTables: resBoardGameTables.rows.length,
+      bmsBoardGameAreas: resBoardGameAreas.rows.length,
+      bmsBoardGameRates: resBoardGameRates.rows.length,
+      bmsBoardGameIdempotency: resBoardGameIdempotency.rows.length,
       bmsRestockSubscriptions: resRestock.rows.length,
       bmsOrders: resOrders.rows.length,
       bmsConversations: resConversations.rows.length,

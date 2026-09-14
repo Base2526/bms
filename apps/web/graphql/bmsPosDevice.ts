@@ -223,6 +223,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     idempotencyKey: String!
     mode: String
     lines: [BmsPosSaleLineInput!]!
+    boardGameSessionId: ID
     payments: [BmsPosPaymentInput!]!
     couponCode: String
     depositCustomerNote: String
@@ -2492,7 +2493,16 @@ export const bmsPosDeviceResolvers = {
         });
       }
       const lines = parsePosSaleLines(input.lines);
-      if (!lines.length) return badPosInput("ต้องมีรายการสินค้าอย่างน้อย 1 รายการ");
+      const boardGameSessionId = optionalUuidInput(
+        input.boardGameSessionId,
+        "session บอร์ดเกมไม่ถูกต้อง",
+      );
+      if (!lines.length && !boardGameSessionId) {
+        return badPosInput("ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ");
+      }
+      if (mode === "DEPOSIT" && boardGameSessionId) {
+        return badPosInput("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
+      }
       const parsedPayments = parsePosPayments(input.payments);
       if (!parsedPayments.ok) return badPosInput(parsedPayments.error);
 
@@ -2577,6 +2587,7 @@ export const bmsPosDeviceResolvers = {
         idempotencyKey,
         mode,
         lines,
+        boardGameSessionId,
         payments: parsedPayments.payments,
         couponCode: typeof input.couponCode === "string" ? input.couponCode : null,
         depositCustomerNote: textInput(input.depositCustomerNote).slice(0, 200) || null,

@@ -28,6 +28,16 @@ export function receiptDocumentTitle(
     : receiptLabel(mode, "ใบเสร็จรับเงิน", "Receipt");
 }
 
+export function restaurantServiceLabel(
+  mode: ReceiptLanguageMode,
+  value: "DINE_IN" | "TAKEAWAY" | "PICKUP" | "DELIVERY",
+): string {
+  if (value === "TAKEAWAY") return receiptLabel(mode, "กลับบ้าน", "Take away");
+  if (value === "DINE_IN") return receiptLabel(mode, "กินในร้าน", "Dine-in");
+  if (value === "PICKUP") return receiptLabel(mode, "รับเอง", "Pickup");
+  return receiptLabel(mode, "จัดส่ง", "Delivery");
+}
+
 /**
  * ป้ายวิธีชำระเงินบนใบเสร็จ/ประวัติบิล
  *

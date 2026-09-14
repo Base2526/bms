@@ -3874,6 +3874,7 @@ type BmsPosReturnedItem {
 }
 
 input BmsPosSaleInput {
+  boardGameSessionId: ID
   cashierUserId: ID!
   couponCode: String
   creditApproverPin: String

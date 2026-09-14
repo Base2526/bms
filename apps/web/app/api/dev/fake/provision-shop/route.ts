@@ -19,6 +19,8 @@ import {
   seedFakePurchase,
   seedFakeCoupons,
   seedFakeRestockSubscriptions,
+  seedFakeMembers,
+  seedFakeBoardGameCafe,
 } from "@/lib/bms/devSeed";
 import { seedFakePosDevices } from "@/lib/bms/devPosSeed";
 import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
@@ -76,6 +78,13 @@ async function handlePOST(req: NextRequest) {
     const restockResult = counts.restockSubscriptions > 0
       ? await seedFakeRestockSubscriptions(shop.tenantId, counts.restockSubscriptions)
       : { summary: { restockSubscriptions: 0, restockDeliveries: 0, restockConversations: 0 } };
+    const boardGameResult = businessArchetype === "board_game_cafe"
+      ? await (async () => {
+          const members = await seedFakeMembers(shop.tenantId, 12);
+          const boardGame = await seedFakeBoardGameCafe(shop.tenantId, 12);
+          return { ...boardGame.summary, members: members.members };
+        })()
+      : null;
     const groundTruth = await generateFakeGroundTruth(shop.tenantId, {
       label: `${shop.name} full-store seed`,
       generatedBy: guard.actor?.id,
@@ -102,6 +111,7 @@ async function handlePOST(req: NextRequest) {
         ...convResult.summary,
         ...poResult.summary,
         ...restockResult.summary,
+        ...(boardGameResult ? { boardGame: boardGameResult } : {}),
       },
     });
   } catch (e: any) {

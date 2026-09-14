@@ -94,6 +94,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.93` — see [../business/pos.md](../business/pos.md) |
 | POS — parked bills, drawer cash, void, shift report | ✅ | `lib/bms/pos.ts` · `7.97__bms_pos_park_cash_void.sql` · `app/api/pos/{park,cash-movement,void,shift-report}` — a manual discount, a void, and cash out each need a second person's PIN; a void reuses the return machinery under `isVoid` and stamps the bill inside that same transaction |
 | POS — restaurant dine-in (floor, checks, kitchen rounds) | ✅ | `lib/bms/restaurantPos.ts` · `app/(pos)/pos/restaurant` · `app/api/pos/{restaurant,kitchen}/*` · `/admin/kitchen` · migrations `9.44`–`9.45` — a check reserves stock when a kitchen round is sent and settles through the one `recordPosSale()` path; modifier surcharges are server-owned catalog data; floor/kitchen/cancel use `restaurant.*` permissions — see [../business/pos.md](../business/pos.md) |
+| Board game cafe operations | ✅ | `lib/bms/boardGameCafe.ts` · `/admin/board-game` · `/board-game` · `app/api/{bms,pos}/board-game/*` · migrations `9.79`–`9.83` — timed participants/bill groups, rate snapshots, game-copy loans, atomic POS handoff/receipt lines, opt-in aggregate public discovery, and removable dev fixtures — see [../business/board-game-cafe.md](../business/board-game-cafe.md) |
 | Native POS mobile client | ✅ core GraphQL workflows | `apps/mobile/` — bare React Native POS with secure device pairing, cashier PIN/RBAC, generated GraphQL retail/restaurant/shift commands and named WS invalidation; hardware and pharmacy-review integrations remain — see [../../apps/mobile/README.md](../../apps/mobile/README.md) |
 | Kitchen stations (registered work areas, SLA) | ✅ | `lib/bms/kitchenStations.ts` · `9.53`–`9.54` · `/admin/kitchen`, register KDS — a station is a registered row (id, active flag, sort order, optional branch) matched id-first then by a name snapshot, never a free-text label; per-station SLA colors the board; deactivating a station never blocks tickets already routed to it — see [../business/pos.md](../business/pos.md) § Kitchen stations |
 | Restaurant chat ordering + delivery | ✅ | `lib/bms/{menuAvailability,restaurantOrdering}.ts` · `9.55`–`9.57` · `app/api/pos/restaurant/{menu,incoming}` — branch-scoped "sold out today" flag with dual-signal reset (cron + shift-open, both keyed off `resets_at`); an online order needs an explicit branch and `DELIVERY`/`PICKUP` before payment creates any kitchen work; line cancellation reuses the POS return engine with an immutable cause and merchant-absorbed repricing — see [../business/restaurant-chat-delivery.md](../business/restaurant-chat-delivery.md) |
@@ -124,7 +125,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
-| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` |
+| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — includes one-click `board_game_cafe` members/floor/rates/sessions/library/loan/discovery fixtures and FK-ordered cleanup |
 
 ### Realtime architecture status (2026-09-10)
 
@@ -151,7 +152,8 @@ retail/restaurant/shift subset. The 41 POS REST routes remain compatibility APIs
 external-client rollout completes. See the
 [mobile GraphQL/WS architecture and route inventory](mobile-graphql-ws-realtime.md).
 
-**Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
+**Roadmap remaining:** board-game monthly/yearly subscription contracts, private identity-document
+collection, reservations/waitlists, and dedicated utilization/profit reports · TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·
 e-Tax XML submission to the Revenue Department (`lib/bms/etax/*`, `7.94`) is built and flag-gated off
@@ -167,7 +169,7 @@ owner) — needs an admin-to-LINE-user-id binding that doesn't exist yet, separa
 LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
 not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
-finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
+ finishing admin i18n (57 of 99 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
 **POS Mobile native integrations (iOS/Android)** — the bare React Native counter client is built for

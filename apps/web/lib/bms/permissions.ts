@@ -122,6 +122,15 @@ export const BMS_PERMISSIONS = [
   "restaurant.floor.manage",
   "restaurant.kitchen.update",
   "restaurant.check.cancel",
+  // Board game cafe — แยกงานเวลา/โต๊ะ/คลังเกมเล่นออกจาก POS สินค้าและ inventory
+  "board_game.session.manage",
+  "board_game.session.override_time",
+  "board_game.session.cancel",
+  "board_game.floor.manage",
+  "board_game.rate.manage",
+  "board_game.library.view",
+  "board_game.library.manage",
+  "board_game.reports.view",
   // ชุดข้อมูลวิเคราะห์ที่ร้านยินยอมส่งให้ทีม Support (9.46)
   "support.logs.view",
   "support.logs.export",

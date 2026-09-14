@@ -779,6 +779,8 @@ type Receipt = {
   pointsBalance?: number | null;
   /** ส่วนลดแยกบรรทัดตามที่มา (tier / คูปอง / แต้ม) — ยอดรวมมาจาก server */
   discountLines?: Array<{ source: string; label: string; amount: number; pointsUsed: number }>;
+  /** ค่าบริการที่ server บันทึกไว้ รวมค่าเวลาเล่นบอร์ดเกม */
+  extraLines?: Array<{ label: string; qty: number; unitAmount: number; amount: number }>;
   paymentLabel: string;
   paymentRef: string | null;
   payments: Array<{
@@ -892,7 +894,13 @@ type Session = {
     hasPin: boolean; approvals: string[];
   }>;
   purchaseReceivers: Array<{ id: string; name: string | null; email: string | null; role: string | null; hasPin: boolean }>;
-  store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode };
+  store?: {
+    taxId: string | null;
+    receiptLanguageMode: ReceiptLanguageMode;
+    address?: string | null;
+    phone?: string | null;
+    logoUrl?: string | null;
+  };
   surface?: "retail" | "restaurant";
   businessArchetype?: string | null;
   vat: {
@@ -902,6 +910,16 @@ type Session = {
     calendarEra: string;
     cashRounding?: CashRounding;
   };
+};
+
+type BoardGameCheckout = {
+  id: string;
+  tableCode: string;
+  tableName: string;
+  startedAt: string;
+  endedAt: string;
+  amountDue: number;
+  chargeLineCount: number;
 };
 
 const METHODS = [
@@ -1543,6 +1561,9 @@ export default function PosPage() {
   // ---- ค่าบริการ/ค่าถุง (8.6) ----
   // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
   const [extraLines, setExtraLines] = useState<Array<{ label: string; unitAmount: string }>>([]);
+  const [boardGameCheckoutId, setBoardGameCheckoutId] = useState("");
+  const [boardGameCheckout, setBoardGameCheckout] = useState<BoardGameCheckout | null>(null);
+  const [boardGameCheckoutLoading, setBoardGameCheckoutLoading] = useState(false);
   const [receiptTo, setReceiptTo] = useState("");
   const [sendingReceipt, setSendingReceipt] = useState(false);
   // ---- คืนไม่มีใบเสร็จ (8.2) ----
@@ -1639,6 +1660,7 @@ export default function PosPage() {
     // หน้าแอดมินให้ลิงก์เต็มไปเลย เพราะการก๊อป token เปล่า ๆ แล้วเอาไปวางในช่อง URL
     // เป็นสิ่งที่เกิดขึ้นจริง (เจอมาแล้ว) — วางลิงก์ในช่อง URL แล้วต้องทำงานเลย
     const url = new URL(window.location.href);
+    setBoardGameCheckoutId((url.searchParams.get("boardGameSessionId") ?? "").trim());
     const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
     if (fromUrl) {
       window.localStorage.setItem(TOKEN_KEY, fromUrl);
@@ -1669,6 +1691,9 @@ export default function PosPage() {
       setPointsToRedeem(snapshot.pointsToRedeem ?? "");
       setCouponCode(snapshot.couponCode ?? "");
       setExtraLines(snapshot.extraLines ?? []);
+      if (typeof saved.body.boardGameSessionId === "string") {
+        setBoardGameCheckoutId(saved.body.boardGameSessionId);
+      }
       setPharmacyReviewLink(saved.pharmacyReviewLink ?? (
         snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
           ? {
@@ -1721,6 +1746,45 @@ export default function PosPage() {
   }, [session?.shift?.id]);
 
   const authHeaders = useMemo(() => ({ "x-pos-device-token": token }), [token]);
+
+  useEffect(() => {
+    if (!token || !session?.location?.id || !boardGameCheckoutId) {
+      setBoardGameCheckout(null);
+      return;
+    }
+    let cancelled = false;
+    setBoardGameCheckoutLoading(true);
+    void fetch(`/api/pos/board-game/session?id=${encodeURIComponent(boardGameCheckoutId)}`, {
+      headers: authHeaders,
+      cache: "no-store",
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+        if (!cancelled) {
+          setBoardGameCheckout(data.checkout as BoardGameCheckout);
+          setNotice(null);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setBoardGameCheckout(null);
+          setNotice({ type: "error", text: `เปิดบิลเวลาเล่นไม่สำเร็จ: ${String(error?.message ?? error)}` });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBoardGameCheckoutLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [authHeaders, boardGameCheckoutId, session?.location?.id, token]);
+
+  function clearBoardGameCheckout() {
+    setBoardGameCheckoutId("");
+    setBoardGameCheckout(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("boardGameSessionId");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }
 
   async function postPosPurchase(payload: Record<string, unknown>) {
     const res = await fetch("/api/pos/purchase", {
@@ -2030,7 +2094,7 @@ export default function PosPage() {
     : 0;
   /** ส่วนลดทุกชนิดใช้ฐานสินค้าเท่านั้น ค่าถุง/ค่าบริการบวกหลังหักส่วนลด */
   const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
-  const payableBeforeRounding = Math.round((netTotal + extraTotal) * 100) / 100;
+  const payableBeforeRounding = Math.round((netTotal + extraTotal + (boardGameCheckout?.amountDue ?? 0)) * 100) / 100;
   const memberPreviewRequestKey = JSON.stringify({
     customerId: member?.customerId ?? null,
     subtotal: total,
@@ -3914,6 +3978,13 @@ export default function PosPage() {
           .map((x) => ({
             name: x.label.trim(), size: null, qty: 1, unitName: "", amount: Number(x.unitAmount),
           })),
+        ...(boardGameCheckout ? [{
+          name: `ค่าเล่นบอร์ดเกม · ${boardGameCheckout.tableName}`,
+          size: null,
+          qty: 1,
+          unitName: "",
+          amount: boardGameCheckout.amountDue,
+        }] : []),
       ],
       itemCount,
       total,
@@ -3926,7 +3997,7 @@ export default function PosPage() {
         ? { total: justSold.total, tendered: null, change: justSold.change }
         : null,
     });
-  }, [cart, extraLines, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
+  }, [cart, extraLines, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
 
   const pharmacyReviewOfferCartKey = useMemo(
     () => JSON.stringify(cart.map((line) => [line.key, line.packQty, line.size, line.packCode])),
@@ -3994,7 +4065,8 @@ export default function PosPage() {
   const payBlockedReason: string | null = (() => {
     if (hasPendingDepositSale) return "มีรายการมัดจำรอตรวจสอบ — ไปแท็บมัดจำและกดตรวจรายการเดิม";
     if (blindOpen) return "กำลังอยู่ในโหมดคืนไม่มีใบเสร็จ — ยืนยันคืนหรือยกเลิกรายการนี้ก่อน";
-    if (cart.length === 0) return "ยังไม่มีสินค้าในบิล";
+    if (boardGameCheckoutLoading) return "กำลังโหลดบิลเวลาเล่น";
+    if (cart.length === 0 && !boardGameCheckout) return "ยังไม่มีสินค้าในบิล";
     if (!session?.shift) return "ยังไม่ได้เปิดกะ";
     if (!cashierId) return "เลือกผู้ขายก่อน";
     if (!pin) return "ใส่ PIN ของผู้ขาย";
@@ -4280,6 +4352,7 @@ export default function PosPage() {
         refunds: Array.isArray(data.sale.refunds) ? data.sale.refunds : [],
         returnEvents: Array.isArray(data.sale.returnEvents) ? data.sale.returnEvents : [],
         discountLines: Array.isArray(data.sale.discountLines) ? data.sale.discountLines : [],
+        extraLines: Array.isArray(data.sale.extraLines) ? data.sale.extraLines : [],
       };
       setReceipt(serverReceipt);
       window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(serverReceipt));
@@ -4366,6 +4439,7 @@ export default function PosPage() {
           refunds: Array.isArray(sale.refunds) ? sale.refunds : [],
           returnEvents: Array.isArray(sale.returnEvents) ? sale.returnEvents : [],
           discountLines: Array.isArray(sale.discountLines) ? sale.discountLines : [],
+          extraLines: Array.isArray(sale.extraLines) ? sale.extraLines : [],
         }))
       );
     } catch {}
@@ -4739,6 +4813,11 @@ export default function PosPage() {
       qty: l.packQty,
       amount: l.packPrice * l.packQty,
     }));
+    const receiptExtraLines: ReceiptLine[] = (r.extraLines ?? []).map((line) => ({
+      name: line.label,
+      qty: line.qty,
+      amount: line.amount,
+    }));
     const salePayments = r.payments.length > 0 ? r.payments : [{
       method: "CASH",
       label: r.paymentLabel,
@@ -4750,6 +4829,9 @@ export default function PosPage() {
     return ({
       languageMode: receiptLanguageMode,
       storeName: r.storeName ?? session?.location?.name ?? "",
+      storeAddress: session?.store?.address ?? null,
+      storePhone: session?.store?.phone ?? null,
+      storeLogoUrl: session?.store?.logoUrl ?? null,
       locationId: r.saleLocationId ?? session?.location?.id ?? null,
       branchCode: r.branchCode ?? session?.location?.branchCode ?? null,
       taxId: r.taxId ?? session?.store?.taxId ?? null,
@@ -4809,8 +4891,9 @@ export default function PosPage() {
         tendered: payment.tendered,
         change: payment.change,
       })),
-      lines,
-      itemCount: r.lines.reduce((n, l) => n + l.packQty, 0),
+      lines: [...lines, ...receiptExtraLines],
+      itemCount: r.lines.reduce((n, l) => n + l.packQty, 0)
+        + receiptExtraLines.reduce((n, line) => n + line.qty, 0),
       total: r.refundTotal ?? r.total,
       tendered: nonSaleReceipt ? null : r.tendered,
       change: nonSaleReceipt ? null : r.change,
@@ -5120,7 +5203,7 @@ export default function PosPage() {
   }
 
   async function pay() {
-    if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy) return;
+    if (!session?.shift || (cart.length === 0 && !boardGameCheckout) || !cashierId || !pin || busy) return;
     if (blindOpen) {
       setNotice({ type: "error", text: "กำลังอยู่ในโหมดคืนไม่มีใบเสร็จ — ต้องยืนยันคืนหรือยกเลิกรายการนี้ก่อนขาย" });
       return;
@@ -5194,6 +5277,7 @@ export default function PosPage() {
         pharmacyReviewAssessmentId: pharmacyReviewLink?.status !== "APPROVED"
           ? pharmacyReviewLink?.assessmentId ?? null
           : null,
+        boardGameSessionId: boardGameCheckout?.id ?? null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -5295,6 +5379,7 @@ export default function PosPage() {
           pointsEarned: data.pointsEarned ?? null,
           pointsBalance: data.pointsBalance ?? null,
           discountLines: Array.isArray(data.discountLines) ? data.discountLines : [],
+          extraLines: Array.isArray(data.extraLines) ? data.extraLines : [],
         };
         setReceipt(nextReceipt);
         setJustSold({
@@ -5315,6 +5400,7 @@ export default function PosPage() {
           }${Number(data.kitchenTickets ?? 0) > 0 ? ` · เข้าครัว ${Number(data.kitchenTickets)} รายการ` : ""}${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
+        clearBoardGameCheckout();
         // สมาชิก/คูปองผูกกับบิล ไม่ใช่กับเครื่อง — ต้องล้างทุกบิล ไม่งั้นลูกค้า
         // คนถัดไปได้ส่วนลด/แต้มของคนก่อน
         clearBillCustomerState();
@@ -7868,7 +7954,9 @@ export default function PosPage() {
               {lookupMode ? "โหมดเช็คของ (ยิงแล้วไม่เข้าตะกร้า)" : "เช็คของ"}
             </button>
             <span style={{ fontSize: 13, color: "#666" }}>
-              {cart.length === 0 ? "ยังไม่มีรายการ" : `${cart.length} รายการในตะกร้า`}
+              {cart.length === 0
+                ? (boardGameCheckout ? `บิลเวลาเล่น ${boardGameCheckout.tableName}` : "ยังไม่มีรายการ")
+                : `${cart.length} รายการในตะกร้า`}
             </span>
           </div>
 
@@ -8454,6 +8542,17 @@ export default function PosPage() {
                   .map((x, i) => (
                     <div key={i}>{x.label.trim()} +฿{baht(Number(x.unitAmount))}</div>
                   ))}
+              </div>
+            )}
+            {boardGameCheckout && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>ค่าเล่นบอร์ดเกม · {boardGameCheckout.tableName}</span>
+                  <b>฿{baht(boardGameCheckout.amountDue)}</b>
+                </div>
+                <span style={{ color: "var(--pos-muted)", fontSize: 12 }}>
+                  {boardGameCheckout.chargeLineCount} คน · ปิดเวลา {new Date(boardGameCheckout.endedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                </span>
               </div>
             )}
             {/* ส่วนลดต้องเห็นแยกบรรทัดที่จอ ลูกค้าถามได้ว่าลดจากอะไร (7.96) */}
@@ -9408,6 +9507,7 @@ export default function PosPage() {
             disabled={hasPendingOrderWrite}
             onClick={() => {
               setCart([]);
+              clearBoardGameCheckout();
               setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
               resetToSimpleCash();
               clearBillCustomerState();
@@ -9965,4 +10065,3 @@ export default function PosPage() {
  * บาร์โค้ดเลขบิลบนจอและใน print dialog
  * (ทาง ESC/POS ใช้คำสั่งบาร์โค้ดของเครื่องพิมพ์เอง ไม่ได้ส่งภาพนี้ไป)
  */
-

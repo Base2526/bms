@@ -30,6 +30,18 @@ type ProvisionSummary = {
   posShifts?: number;
   posOrdersWithOperations?: number;
   ordersByChannel?: Record<string, number>;
+  boardGame?: {
+    members: number;
+    areas: number;
+    tables: number;
+    rates: number;
+    titles: number;
+    copies: number;
+    sessions: number;
+    participants: number;
+    activeLoans: number;
+    publicProfiles: number;
+  };
 };
 
 type ProvisionResult = {
@@ -93,12 +105,13 @@ const KINDS = [
   { label: 'BMS Coupons', value: 'bms-coupons' },
   // ต้อง seed Customers (และควร Orders) ก่อน — ปุ่มนี้ยกลูกค้าเดิมขึ้นเป็นสมาชิก
   { label: 'BMS Members + Points', value: 'bms-members' },
+  { label: 'BMS Board Game Cafe', value: 'bms-board-game' },
   { label: 'BMS AI Usage', value: 'bms-ai-usage' },
   { label: 'BMS Pharmacy Assessments', value: 'bms-pharmacy-assessments' },
   { label: 'Support Tickets', value: 'support-tickets' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-members' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-members' | 'bms-board-game' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
 
 export default function DevFakePage() {
   const { t } = useI18n();
@@ -467,6 +480,21 @@ export default function DevFakePage() {
             })}
           </div>
           <div style={{ marginTop: 8 }}>{channelOrderSummary(provisioned.summary)}</div>
+          {provisioned.summary.boardGame && (
+            <Alert
+              closable
+              style={{ marginTop: 12 }}
+              type="success"
+              showIcon
+              message={t('admin_dev_fake.board_game_summary', {
+                tables: provisioned.summary.boardGame.tables,
+                sessions: provisioned.summary.boardGame.sessions,
+                games: provisioned.summary.boardGame.titles,
+                copies: provisioned.summary.boardGame.copies,
+                members: provisioned.summary.boardGame.members,
+              })}
+            />
+          )}
           {provisioned.groundTruth && (
             <Alert closable
               style={{ marginTop: 12 }}
@@ -597,6 +625,7 @@ export default function DevFakePage() {
           <b>Conversations</b>{t('admin_dev_fake.seed_desc_p4')}<b>Coupons</b>{t('admin_dev_fake.seed_desc_p5')}<code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
           <b>Restock Subscriptions</b>{t('admin_dev_fake.seed_desc_p6')}
           <b>Pharmacy Assessments</b>{t('admin_dev_fake.seed_desc_p7')}
+          <b>Board Game Cafe</b>{t('admin_dev_fake.seed_desc_board_game')}
           <b>AI Usage</b>{t('admin_dev_fake.seed_desc_p8')}<code>bms_ai_usage_monthly</code>{t('admin_dev_fake.seed_desc_p9')}
           <b>Cleanup</b>{t('admin_dev_fake.seed_desc_p10')}</>}
       />

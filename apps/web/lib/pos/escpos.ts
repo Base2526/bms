@@ -148,6 +148,9 @@ export type ReceiptLine = {
 export type ReceiptPayload = {
   languageMode?: ReceiptLanguageMode;
   storeName: string;
+  storeAddress?: string | null;
+  storePhone?: string | null;
+  storeLogoUrl?: string | null;
   locationId?: string | null;
   branchCode: string | null;
   taxId: string | null;
@@ -167,6 +170,8 @@ export type ReceiptPayload = {
   barcodeValue?: string | null;
   /** เลขที่บิลที่คนอ่าน (ต่างจาก docNo ซึ่งเป็นเลขใบกำกับ) */
   billNo?: string | null;
+  /** Restaurant service label printed on both preview and ESC/POS receipts. */
+  serviceModeLabel?: string | null;
   at: string;
   cashier: string | null;
   /** บรรทัดอธิบายใต้หัวใบ เช่น "ราคาสินค้าเป็นราคาป้าย ณ ตอนขาย ส่วนลดแสดงแยกด้านล่าง" */
@@ -226,6 +231,14 @@ function money(n: number, mode: ReceiptLanguageMode): string {
   return n.toLocaleString(receiptLocale(mode), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function wrappedLines(text: string, columns: number): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+  const out: string[] = [];
+  for (let i = 0; i < clean.length; i += columns) out.push(clean.slice(i, i + columns));
+  return out;
+}
+
 /**
  * ประกอบใบกำกับภาษีอย่างย่อ — โครงตามใบจริงของ 7-Eleven ที่ใช้อ้างอิงตอนออกแบบ
  * (ชื่อร้าน+สาขา / เลขผู้เสียภาษี+VAT Included / POS# / รายการ / ยอด / เงินทอน)
@@ -236,6 +249,8 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   const label = (thai: string, english: string) => receiptLabel(mode, thai, english);
 
   b.align(1).bold(true).line(payload.storeName).bold(false);
+  for (const line of wrappedLines(payload.storeAddress ?? "", opts.columns ?? 42)) b.line(line);
+  if (payload.storePhone) b.line(`${label("โทร", "Tel")} ${payload.storePhone}`);
   if (payload.branchCode) b.line(`(${label("สาขา", "Branch")} ${payload.branchCode})`);
   if (payload.taxId) b.line(`TAX#${payload.taxId}${payload.vatIncluded ? ` (${label("รวม VAT", "VAT Included")})` : ""}`);
   if (payload.posNo) b.line(`POS#${payload.posNo}`);
@@ -248,6 +263,7 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
 
   b.align(0);
   if (payload.billNo) b.columnsLine(label("เลขที่บิล", "Bill No"), payload.billNo);
+  if (payload.serviceModeLabel) b.columnsLine(label("ประเภท", "Type"), payload.serviceModeLabel);
   for (const note of payload.notes ?? []) b.line(note);
   b.divider();
   for (const l of payload.lines) {
