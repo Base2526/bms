@@ -53,6 +53,7 @@ test("takeaway uses the restaurant check pipeline without inventing a table", as
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const orders = code(await read("apps/web/lib/bms/orders.ts"));
   const graphql = code(await read("apps/web/graphql/bmsPosDevice.ts"));
+  const manual = code(await read("apps/web/app/(admin)/admin/manual/page.tsx"));
 
   assert.match(migration, /service_mode TEXT NOT NULL DEFAULT 'DINE_IN'/);
   assert.match(migration, /ALTER COLUMN table_id DROP NOT NULL/);
@@ -84,6 +85,13 @@ test("takeaway uses the restaurant check pipeline without inventing a table", as
     graphql,
     /serviceMode\s*===\s*"DINE_IN"\s*\?\s*uuidInput\(input\.tableId/,
   );
+
+  assert.match(manual, /รองรับทั้ง DINE_IN และ TAKEAWAY/);
+  assert.match(manual, /บิลกลับบ้านไม่ใช้โต๊ะและไม่สร้าง QR/);
+  assert.match(manual, /service mode ไว้กับออเดอร์/);
+  assert.match(manual, /One \/pos\/restaurant device handles both DINE_IN and TAKEAWAY/);
+  assert.match(manual, /A take-away check owns no table or QR/);
+  assert.match(manual, /TAKEAWAY has no table\/QR and currently cannot be moved, split, or merged/);
 });
 
 test("web and mobile classify savory menu art before generic drink words", async () => {

@@ -86,12 +86,12 @@ test("สมัครสมาชิกที่เคาน์เตอร์�
 test("คู่มือร้านอาหารและ business doc อธิบายทางสมัครจากบิลโต๊ะ ไม่ใช่เฉพาะหน้าค้าปลีก", async () => {
   const manual = await read("apps/web/app/(admin)/admin/manual/page.tsx");
   const thRestaurant = manual.slice(
-    manual.indexOf('title: "ร้านอาหาร: เปิดโต๊ะจนส่งมอบใบเสร็จ"'),
-    manual.indexOf('title: "สแกน ค้น และจัดตะกร้า"')
+    manual.indexOf('title: "ร้านอาหาร: เปิดโต๊ะหรือบิลกลับบ้านจนส่งมอบใบเสร็จ"'),
+    manual.indexOf('title: "ร้านบอร์ดเกม: เปิด session จนส่งยอดไปเก็บเงิน"')
   );
   const enRestaurant = manual.slice(
-    manual.indexOf('title: "Restaurant: from table opening to receipt hand-off"'),
-    manual.indexOf('title: "Scan, search, and build the cart"')
+    manual.indexOf('title: "Restaurant: from table or take-away opening to receipt hand-off"'),
+    manual.indexOf('title: "Board-game cafe: from opening a session to POS settlement"')
   );
   assert.match(thRestaurant, /สมัครสมาชิกใหม่[\s\S]*member\.manage[\s\S]*อัตโนมัติ/,
     "คู่มือร้านอาหารภาษาไทยต้องบอกทางสมัคร สิทธิ์ และการผูกเข้าบิล");

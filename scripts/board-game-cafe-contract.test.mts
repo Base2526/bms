@@ -28,6 +28,21 @@ test("board-game migration keeps products, time rates and playable assets separa
   assert.doesNotMatch(sql, /ALTER TABLE bms_products[\s\S]{0,220}(time|hour|session|board_game)/i);
 });
 
+test("admin manual documents the complete board-game operating boundary in both languages", () => {
+  const manual = read("apps/web/app/(admin)/admin/manual/page.tsx");
+
+  assert.match(manual, /ร้านบอร์ดเกม: เปิด session จนส่งยอดไปเก็บเงิน/);
+  assert.match(manual, /ตั้งเรตทั่วไป นักเรียน เด็ก หรือสมาชิกแยกจาก Products/);
+  assert.match(manual, /เกมที่ขายขาดยังเป็นสินค้าและสต็อกปกติ/);
+  assert.match(manual, /หยุดเวลาและคิดราคา/);
+  assert.match(manual, /ไปเก็บเงินที่ POS/);
+  assert.match(manual, /ยังไม่มีสัญญาสมาชิกรายเดือน\/รายปีหรือที่เก็บเลขบัตรประชาชนแบบเข้ารหัส/);
+  assert.match(manual, /Board-game cafe: from opening a session to POS settlement/);
+  assert.match(manual, /checking one out changes asset status without reducing retail stock/);
+  assert.match(manual, /does not yet provide monthly\/yearly subscription contracts or encrypted national-ID storage/);
+  assert.match(manual, /they do not automatically issue separate receipts/);
+});
+
 test("board-game tenant tables have RLS, bms_app grants, revisions and permissions", () => {
   const sql = read("db/migrations/9.80__bms_board_game_cafe_core.sql");
   for (const table of [
