@@ -3,7 +3,7 @@ import { GraphQLError } from "graphql/error";
 import { query, runInTransaction } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { normalizePhone } from "@/lib/phone";
-import { pubsub } from "@/lib/pubsub";
+import { publishRealtimeHint } from "@/lib/pubsub";
 
 import {
   topicMyPhoneBlockStatusChanged,
@@ -517,7 +517,7 @@ async function blockPhoneResolver(_parent: any, { input }: any, ctx: any) {
       blocked: true,
       updated_at: status?.my_blocked_at || new Date().toISOString(),
     };
-    await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
+    await publishRealtimeHint(topicMyPhoneBlockStatusChanged(userId), {
       myPhoneBlockStatusChanged: payload,
     });
   } catch (e) {
@@ -568,7 +568,7 @@ async function unblockPhoneResolver(_parent: any, { input }: any, ctx: any) {
       blocked: false,
       updated_at: new Date().toISOString(),
     };
-    await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
+    await publishRealtimeHint(topicMyPhoneBlockStatusChanged(userId), {
       myPhoneBlockStatusChanged: payload,
     });
   } catch (e) {

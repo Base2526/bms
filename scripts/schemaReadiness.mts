@@ -173,6 +173,26 @@ export const MIGRATIONS: Migration[] = [
     impact: "รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน",
     needs: [{ kind: "table", name: "bms_realtime_outbox" }],
   },
+  {
+    // `createOrderInTx()` เขียนคอลัมน์นี้ใน INSERT ของ **ทุกบิลทุกช่องทางของทุกร้าน** และ
+    // `finalizePosSale()` SELECT มันกลับมาทุกการขาย — ไม่มีกิ่งไหนข้ามได้ ฐานที่ขาดไฟล์นี้
+    // จึง "ขายไม่ได้เลยสักใบ" ไม่ใช่ "ฟีเจอร์บอร์ดเกมใช้ไม่ได้" · ตัวตารางของโมดูลบอร์ดเกม
+    // (`9.79`–`9.83`) จงใจไม่อยู่ในลิสต์ เพราะทุก query ของมันถูกกั้นด้วย `boardGameSessionId`
+    file: "9.82__bms_board_game_pos_settlement.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล",
+    needs: [{ kind: "column", table: "bms_orders", name: "board_game_session_id" }],
+  },
+  {
+    // เหตุผลเดียวกับ `9.82` สำหรับ `bms_orders.restaurant_service_mode` · ส่วน
+    // `bms_restaurant_checks.service_mode` ถูกอ่านโดย `listKitchenTickets()` และทุก query
+    // ของบิลโต๊ะ — ขาดแล้วจอครัวและ POS ร้านอาหารตายทั้งหน้า ไม่ใช่แค่โหมดรับกลับบ้าน
+    file: "9.87__bms_restaurant_service_mode.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า",
+    needs: [
+      { kind: "column", table: "bms_orders", name: "restaurant_service_mode" },
+      { kind: "column", table: "bms_restaurant_checks", name: "service_mode" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

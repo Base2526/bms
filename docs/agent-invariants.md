@@ -1116,6 +1116,23 @@ Production migration state, recovery/load proof, and bounded replay remain separ
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
+- **`apps/ws` and `apps/web` are one deployable unit.** The gateway accepts exactly one connection
+  parameter shape (`{ ticket }`); any other shape closes the socket with `4403`, and `graphql-ws`
+  treats 4403 as retryable, so an older client reconnects every ≤30s forever while realtime stays
+  dead. Never ship one without the other. `WS_ALLOWED_ORIGINS` has no safe default — empty means the
+  gateway throws at import, a loopback value means it boots and 401s every browser — so
+  `docker-compose.prod.yml` uses `${VAR:?…}` and `preflight-deploy.mts` blocks on both cases.
+- **A hint that fails must not fail the write it describes.** Legacy `pubsub.publish()` sites run
+  after their row is committed, so a Redis outage there means "the screen learns late", never
+  "sending failed". Use `publishRealtimeHint()` from `packages/realtime/src/pubsub.ts`: it still
+  awaits, so ordering is unchanged, and only swallows the failure. The outbox dispatcher is the
+  exception — `publishRealtimeEvent()` must keep throwing so the row is nacked and retried instead
+  of acked as delivered.
+- Every Redis command on the realtime path is bounded by `REALTIME_REDIS_COMMAND_TIMEOUT_MS`.
+  `maxRetriesPerRequest: null` alone means "queue forever", which turned a Redis outage into
+  `/readyz` never answering and valid sockets hanging open with neither `connection_ack` nor a close
+  frame — the client then sits on "connecting" and never retries. Fail fast; the layers above
+  (connection rejection, 503, dispatcher backoff, client `retryWait`) already handle it.
 - Keep polling, focus refresh, mutation results, and manual refresh until replay/gap recovery and load
   tests have passed in production-like multi-instance conditions.
 - A business event is inserted into `bms_realtime_outbox` in the same tenant transaction as its
@@ -1135,15 +1152,20 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   helpers in `packages/realtime`; do not add another event string or raw topic. Legacy direct
   `pubsub.publish()` call sites remain until their owning transaction is moved to the outbox. Do not
   copy their global-topic or client-ID authorization patterns into new subscriptions.
-- Production disables the legacy chat/post resource subscriptions
-  (`PRODUCTION_DISABLED_SUBSCRIPTIONS` in `apps/ws/src/security.ts`). Outside production they now
-  filter on routing data the publisher attaches to the event — `to_user_ids` for `messageAdded`,
-  `messageDeletedAudience` for `messageDeleted`, `commentDeletedPostId` for `commentDeleted` —
-  because `apps/ws` cannot look membership up itself. **Never re-enable them by trusting `chat_id`,
-  `post_id`, `user_id`, `x-scope`, Referer, or User-Agent**, and never let a filter fall back to
-  `return true` when the routing field is absent: no routing data means reject. Adding a
+- The legacy chat/post resource subscriptions are served on production again, because they now
+  filter on routing data the publisher attaches to the event — `messageAddedAudience` for
+  `messageAdded`, `messageDeletedAudience` for `messageDeleted`, `commentDeletedPostId` for
+  `commentDeleted`, `post_id` for the other two — and every one of them calls
+  `requireRealtimeUserId(ctx)`, because `apps/ws` cannot look membership up itself. **Never trust
+  `chat_id`, `post_id`, `user_id`, `x-scope`, Referer, or User-Agent**, and never let a filter fall
+  back to `return true` when the routing field is absent: no routing data means reject. Adding a
   resource subscription means the publisher must carry its audience. User topics come from the
   ticket subject; BMS Inbox requires ticket tenant plus `inbox.view`.
+  `PRODUCTION_DISABLED_SUBSCRIPTIONS` in `apps/ws/src/security.ts` now holds only `time`, a debug
+  ticker no screen consumes. That list is a list of features missing from production, not a
+  setting: a name added there is a screen that silently stops updating with no error anywhere,
+  so `realtime-ws-security-contract` pins its exact contents and pairs "served" with "checks who
+  is asking".
 - The subscription surface is one invalidation stream plus 18 named views over it
   (`NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`). Every named field reuses
   `realtimeTopics()` and `canReceiveRealtimeEvent()` and takes **no arguments**. Do not give a named

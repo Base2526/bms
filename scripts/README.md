@@ -9,7 +9,7 @@
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
 
-ตอนนี้: **144 ไฟล์เทส** = pure 106 ไฟล์ (1,115 เทส) + DB 38 ไฟล์
+ตอนนี้: **148 ไฟล์เทส** = pure 110 ไฟล์ (1,160 เทส) + DB 38 ไฟล์
 `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือ
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้างด้วย `ls scripts/*.test.mts | wc -l`,
@@ -396,6 +396,12 @@ docker compose ... exec -T postgres psql -U <user> -d <db> < db/checks/schema-re
 > (เกิดจริงกับ `9.66` — ของที่ commit ไว้ตกแถวคอลัมน์ไป ทำให้ตัวตรวจบนเซิร์ฟเวอร์
 > มองไม่เห็นคอลัมน์ที่ทำให้จอครัวตาย)
 
+> **ลิสต์เองก็ขาดได้ และนั่นแย่กว่าไฟล์ที่ไม่ตรง** — ลิสต์ที่ขาดไฟล์ตอบว่า "ฐานพร้อม" แล้ว deploy
+> ไปขายไม่ได้สักบิล · `schema-readiness-coverage-contract` เดินกลับทางจาก **คอลัมน์ที่
+> `createOrderInTx()` เขียนจริง** แล้วบังคับว่าตัวที่มาจาก migration ในช่วงที่ลิสต์ครอบต้องถูก
+> ประกาศไว้ · เส้นแบ่งอ่านจากลิสต์เอง ไม่ได้ฝังเลขไว้ · ด่านนี้คือตัวที่เจอว่า `9.82`
+> (`board_game_session_id`) กับ `9.87` (`restaurant_service_mode`) หายไปทั้งคู่
+
 ---
 
 ## 5. `check-bms-secret-key.mts` — คีย์เข้ารหัสใช้งานได้จริงไหม (อ่านอย่างเดียว)
@@ -474,7 +480,10 @@ resolve ว่า "ฐานเป้าหมายคือใบไหน" �
 
 ด่านที่บล็อก: `check-schema-readiness` · `JWT_SECRET`/`BMS_SECRET_KEY` (hex 64) ·
 `check-bms-secret-key` · GRANT ของ `bms_app` (เรียกไฟล์เทสตัวเดิม **และตรวจว่าบรรทัดประกาศ
-read-only ยังอยู่ก่อนเรียก**) · `NODE_ENV=production` ต้องไม่มี `BMS_ALLOW_FAKE_SEED=1`
+read-only ยังอยู่ก่อนเรียก**) · `NODE_ENV=production` ต้องไม่มี `BMS_ALLOW_FAKE_SEED=1` ·
+**env ของ realtime/WS** (`WS_ALLOWED_ORIGINS` ต้องตั้งและต้องไม่ใช่ localhost · `JWT_SECRET`
+ต้องยาวอย่างน้อย 12 ตัวอักษร ไม่งั้นเซ็น/ตรวจ ticket ไม่ได้เลย) · เตือนเมื่อ `WS_TRUST_PROXY`
+ไม่ใช่ `1`
 
 **exit `2` = "ตรวจไม่ได้" ห้ามอ่านว่าผ่าน** — ห้าม deploy เหมือน `1` แต่ทางแก้คนละเรื่อง
 (ไปรัน migration อย่างหนึ่ง · ต่อฐานให้ได้ก่อนอีกอย่าง)

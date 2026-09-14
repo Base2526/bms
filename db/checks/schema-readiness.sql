@@ -48,7 +48,10 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.63__bms_restaurant_check_split_merge.sql', 'column', 'bms_restaurant_checks', 'split_group_no', 'แยกบิล/รวมบิลของโต๊ะไม่ได้ และเปิดบิลโต๊ะไม่ได้ (คิวรีอ่านคอลัมน์นี้เสมอ)'),
     ('9.64__bms_restaurant_waitlist.sql', 'table', 'bms_restaurant_waitlist', NULL, 'บัตรคิวหน้าร้านและการจองโต๊ะใช้ไม่ได้'),
     ('9.69__bms_restaurant_service_calls.sql', 'table', 'bms_restaurant_service_calls', NULL, 'ลูกค้ากดเรียกพนักงานจากโต๊ะไม่ได้ และแท็บเรียกพนักงานที่เครื่องขายพัง'),
-    ('9.70__bms_realtime_outbox.sql', 'table', 'bms_realtime_outbox', NULL, 'รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน')
+    ('9.70__bms_realtime_outbox.sql', 'table', 'bms_realtime_outbox', NULL, 'รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน'),
+    ('9.82__bms_board_game_pos_settlement.sql', 'column', 'bms_orders', 'board_game_session_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
+    ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_orders', 'restaurant_service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
+    ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_restaurant_checks', 'service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

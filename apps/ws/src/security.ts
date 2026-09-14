@@ -1,12 +1,20 @@
 import { Kind, getOperationAST, parse } from "graphql";
 
+/**
+ * ⚠️ ลิสต์นี้คือ "ฟีเจอร์ที่หายไปจาก production" ไม่ใช่แค่ค่าตั้งค่า — ใส่ชื่อเพิ่มเมื่อใด
+ * ผู้ใช้จะเห็นจอที่ไม่อัปเดตเอง โดยไม่มี error ที่ไหนบอกว่าทำไม
+ *
+ * เดิมลิสต์นี้ถือ 5 subscription ของแชท/คอมเมนต์ไว้ด้วย เพราะตอนนั้นมันรับ `chat_id`/`post_id`
+ * จากผู้เรียกแล้ว **ไม่ตรวจอะไรเลย** (`messageAdded`/`messageDeleted` ไม่เรียก
+ * `requireRealtimeUserId` ด้วยซ้ำ และ `commentDeleted` คืน `true` เสมอ) · ตอนนี้ทั้งห้าตัว
+ * ตัดสินจาก routing data ที่ publisher แนบมา + ต้องถือ ticket ที่ระบุตัวตนได้ จึงถูกเปิดกลับ
+ * — ปล่อยให้ปิดไว้ทั้งที่แก้แล้วเท่ากับทิ้งข้อความสดในห้องแชทและคอมเมนต์สดของโพสต์ไปเฉย ๆ
+ *
+ * `time` ยังปิดอยู่เพราะเป็นตัวจับเวลาสำหรับดีบั๊ก ไม่มีหน้าจอไหนของสินค้านี้ใช้ และมันยิง
+ * ทุกวินาทีเข้าทุก connection
+ */
 export const PRODUCTION_DISABLED_SUBSCRIPTIONS = new Set([
   "time",
-  "messageAdded",
-  "messageDeleted",
-  "commentAdded",
-  "commentUpdated",
-  "commentDeleted",
 ]);
 
 export function positiveInteger(value: string | undefined, fallback: number, minimum: number, maximum: number, name: string): number {

@@ -62,6 +62,10 @@ services:
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # ⚠️ ไม่ตั้ง = ทุก connection ที่ผ่าน reverse proxy เห็นเป็น IP เดียวกัน แล้วเพดาน
+      # `WS_MAX_CONNECTIONS_PER_IP` กลายเป็นเพดานรวมของทั้งแพลตฟอร์ม ไม่ใช่ต่อผู้ใช้
+      WS_TRUST_PROXY: ${WS_TRUST_PROXY:-1}
+      REALTIME_REDIS_COMMAND_TIMEOUT_MS: ${REALTIME_REDIS_COMMAND_TIMEOUT_MS:-2000}
       WS_MAX_CONNECTIONS_PER_IP: ${WS_MAX_CONNECTIONS_PER_IP:-100}
       WS_MAX_CONNECTIONS_PER_USER: ${WS_MAX_CONNECTIONS_PER_USER:-10}
       WS_MAX_CONNECTIONS_PER_TENANT: ${WS_MAX_CONNECTIONS_PER_TENANT:-1000}
@@ -110,6 +114,7 @@ services:
       REALTIME_OUTBOX_POLL_MS: ${REALTIME_OUTBOX_POLL_MS:-250}
       REALTIME_RETENTION_SECONDS: ${REALTIME_RETENTION_SECONDS:-604800}
       REALTIME_FAILED_RETENTION_SECONDS: ${REALTIME_FAILED_RETENTION_SECONDS:-2592000}
+      REALTIME_REDIS_COMMAND_TIMEOUT_MS: ${REALTIME_REDIS_COMMAND_TIMEOUT_MS:-2000}
       WS_TICKET_TTL_SECONDS: ${WS_TICKET_TTL_SECONDS:-60}
       # ---- multi-instance knobs (ไม่ตั้ง = พฤติกรรมเดิมทุกข้อ) ----
       # จำนวน connection ต่อ 1 instance — connection รวมที่ postgres เห็น = ค่านี้ x จำนวน replica

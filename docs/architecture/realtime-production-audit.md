@@ -379,3 +379,50 @@ must exist before any production tenant opt-in.
 - [x] Reviewed explicit polling and operational reconciliation paths.
 - [x] Reviewed Redis, multi-instance, POS/restaurant, tenancy/RBAC, and pharmacy invariants.
 - [x] No implementation or migration is claimed by this document.
+
+## Deployment requirements (verified 2026-09-14)
+
+The gateway and the web app are **one deployable unit**. `apps/ws` accepts exactly one connection
+parameter shape — `{ ticket }` minted by `POST /api/bms/realtime/ticket` — so shipping either side
+alone closes every browser socket with `4403 Forbidden`. `graphql-ws` deliberately treats 4403 as
+retryable, so an old client against a new gateway reconnects every ≤30s forever while realtime stays
+dead. Deploy `web` and `ws` together, always.
+
+### Environment the gateway needs
+
+| Variable | Required | If it is wrong |
+| --- | --- | --- |
+| `WS_ALLOWED_ORIGINS` | **yes** on production | Empty → `apps/ws` throws at import and the container crash-loops. Set to a loopback host on a real server → the process boots but `verifyClient` answers HTTP 401 to every browser, which reads from outside exactly like "realtime is broken". `docker-compose.prod.yml` uses `${WS_ALLOWED_ORIGINS:?…}` so `docker compose up` stops before creating the container instead. |
+| `JWT_SECRET` | **yes**, ≥ 12 characters | Shorter than 12 → `hmacKey()` throws on both mint and verify, so no ticket is ever issued or accepted. |
+| `WS_TRUST_PROXY` | recommended `1` | Unset behind Caddy, every socket shares the proxy's address, so `WS_MAX_CONNECTIONS_PER_IP` (default 100) becomes a platform-wide ceiling instead of a per-user one. Spoofing `X-Forwarded-For` is bounded: the lease is taken **after** ticket verification, so the per-user (10) and per-tenant (1000) limits still apply. |
+| `REDIS_URL` | yes | Every connection checks session revocation and takes a connection lease in Redis. |
+| `REALTIME_REDIS_COMMAND_TIMEOUT_MS` | default 2000 | Bounds every Redis command. Without it an outage makes `/readyz` never answer and leaves valid sockets open with neither `connection_ack` nor a close frame. |
+| `REALTIME_SUBSCRIPTIONS_ENABLED` | default `0` | Master kill switch read by `canReceiveRealtimeEvent()`. `0` means the generic stream and all 18 named views deliver nothing; the outbox still fills and the dispatcher still publishes. |
+
+### Migrations that must be applied before the web image starts
+
+`createOrderInTx()` writes `restaurant_service_mode` (`9.87`) and `board_game_session_id` (`9.82`)
+into **every order of every channel of every tenant**, and `finalizePosSale()` reads the latter back
+on every sale. A database missing either column cannot complete a single sale. Both are declared in
+`scripts/schemaReadiness.mts`; `scripts/schema-readiness-coverage-contract.test.mts` walks backwards
+from the actual `INSERT INTO bms_orders` column list and fails if a column added by a migration in
+the covered range is missing from that list, which is how these two were found.
+
+Order: `9.70` → `9.71` → `9.72` → `9.73` → `9.74` → `9.79`–`9.83` → `9.84` → `9.85` → `9.86` → `9.87`.
+`9.70` needs a **superuser** connection (`CREATE ROLE … BYPASSRLS`).
+
+### Behaviour to expect on the first deploy
+
+- Admin sessions minted before the Redis session registry, or any session whose
+  `session:admin:<jti>` key is gone (a Redis restart), cannot mint a ticket. Realtime returns after
+  the next login. This is fail-closed on purpose: a long-lived transport must never outlive a
+  revocation check it could not perform.
+- `time` is the only subscription disabled on production. The five chat/comment subscriptions were
+  disabled while they trusted a client-supplied `chat_id`/`post_id`; they now filter on routing data
+  the publisher attaches and require an identified ticket, so they are served again.
+- Rejections caused by a Redis outage are counted as `dependencyFailures`, not `authFailures`, so
+  `/metrics` does not read like a credential-stuffing attack during an infrastructure incident.
+
+Run `npx tsx scripts/preflight-deploy.mts` with the target environment loaded: it blocks on schema
+readiness, on the secrets, and on the realtime/WS environment above, and warns when `WS_TRUST_PROXY`
+is not `1`.

@@ -2,7 +2,7 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { pubsub } from "@/lib/pubsub";
+import { publishRealtimeHint } from "@/lib/pubsub";
 import { getTenantId } from "@/lib/bms/tenant";
 import { listChannelsMasked, upsertChannel } from "@/lib/bms/channels";
 import { listChannelHealth, countUnhealthyChannels, testChannelConnection } from "@/lib/bms/channelHealth";
@@ -114,7 +114,7 @@ export const bmsChannelsResolvers = {
         occurredAt,
       };
 
-      await pubsub.publish(topicBmsInboxChanged(tenantId), { bmsInboxChanged: event });
+      await publishRealtimeHint(topicBmsInboxChanged(tenantId), { bmsInboxChanged: event });
       await audit(ctx, "inbox.diagnostic_event", args.channel, {
         conversationId: event.conversationId,
         occurredAt,

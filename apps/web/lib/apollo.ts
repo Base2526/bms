@@ -178,6 +178,11 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
         url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
         lazy: true,
         retryAttempts: Infinity,
+        // ⚠️ ค่าปริยายของ graphql-ws คือ "รอ ack ตลอดกาล" · gateway ตอบ ack หลังตรวจ ticket
+        // และถาม Redis ว่า session ยังไม่ถูก revoke — ถ้า Redis ตอบช้าหรือไม่ตอบ socket จะ
+        // เปิดค้างโดยไม่มีทั้ง ack และ close แล้วจอค้างที่ "กำลังเชื่อมต่อ" โดยไม่ retry เลย
+        // ตั้งเพดานไว้เพื่อให้กลายเป็น close แล้วเข้าเส้นทาง retryWait ที่มีอยู่แล้ว
+        connectionAckWaitTimeout: 15_000,
         retryWait: async (retries) => {
           const capped = Math.min(30_000, 500 * (2 ** Math.min(retries, 6)));
           const jitter = Math.floor(Math.random() * Math.max(1, capped / 3));

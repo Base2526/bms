@@ -2,7 +2,7 @@ import crypto, { randomUUID }  from "crypto";
 import { GraphQLError } from "graphql/error";
 import bcrypt from 'bcryptjs';
 import { query, runInTransaction } from "@/lib/db";
-import { pubsub } from "@/lib/pubsub";
+import { publishRealtimeHint } from "@/lib/pubsub";
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import path from "path";
@@ -5166,12 +5166,17 @@ const rawResolvers = {
       }
 
       // ===== Step 3: publish realtime =====
-      await pubsub.publish(topicChat(fullMessage.chat_id), {
-        messageAdded: fullMessage, // ✅ รูปแบบเดียวกับที่ return ให้ client
-      });
-
       const targetUserIds = [...cleanTo, author_id]; // คนรับทุกคน + คนส่งเอง (จะใช้เช็คว่า tab ไหนเปิดอยู่)
-      await pubsub.publish(INCOMING_MESSAGE, {
+
+      await publishRealtimeHint(topicChat(fullMessage.chat_id), {
+        messageAdded: fullMessage, // ✅ รูปแบบเดียวกับที่ return ให้ client
+        // routing data ของ `messageAdded` — `apps/ws` ต่อฐานข้อมูลไม่ได้ จึงตัดสินผู้รับจาก
+        // สิ่งที่ publisher แนบมาเท่านั้น (รูปเดียวกับ `messageDeletedAudience`) ·
+        // `fullMessage.to_user_ids` ตัดผู้ส่งออกไปแล้ว ถ้าใช้ตัวนั้นเป็นผู้รับ แท็บที่สอง
+        // ของคนส่งเองจะไม่เห็นข้อความที่ตัวเองเพิ่งส่ง
+        messageAddedAudience: targetUserIds.map((id) => String(id)),
+      });
+      await publishRealtimeHint(INCOMING_MESSAGE, {
         incomingMessage: fullMessage,
         targetUserIds,
       });
@@ -5878,7 +5883,7 @@ const rawResolvers = {
           `SELECT user_id FROM chat_members WHERE chat_id = $1`,
           [deletedChatId],
         );
-        await pubsub.publish(topicChat(deletedChatId), {
+        await publishRealtimeHint(topicChat(deletedChatId), {
           messageDeleted: message_id,
           messageDeletedAudience: memberRows.map((row: any) => String(row.user_id)),
         });
@@ -6050,7 +6055,7 @@ const rawResolvers = {
           updated_at: new Date().toISOString(),
         };
 
-        await pubsub.publish(topicMyBookmarkStatusChanged(author_id), {
+        await publishRealtimeHint(topicMyBookmarkStatusChanged(author_id), {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
@@ -6106,7 +6111,7 @@ const rawResolvers = {
           updated_at: new Date().toISOString(),
         };
 
-        await pubsub.publish(topicMyBookmarkStatusChanged(author_id), {
+        await publishRealtimeHint(topicMyBookmarkStatusChanged(author_id), {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
@@ -6154,7 +6159,7 @@ const rawResolvers = {
           updated_at: new Date().toISOString(),
         };
 
-        await pubsub.publish(topicMyBookmarkStatusChanged(author_id), {
+        await publishRealtimeHint(topicMyBookmarkStatusChanged(author_id), {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
@@ -6264,7 +6269,7 @@ const rawResolvers = {
       };
 
       // broadcast subscription → ส่ง object แบบเดียวกับที่ mutation คืน
-      await pubsub.publish(COMMENT_ADDED, {
+      await publishRealtimeHint(COMMENT_ADDED, {
         commentAdded: gqlComment,
       });
 
@@ -6332,7 +6337,7 @@ const rawResolvers = {
         replies: [] as any[], // reply ใหม่ยังไม่มีลูกตัวเอง
       };
 
-      await pubsub.publish(COMMENT_ADDED, {
+      await publishRealtimeHint(COMMENT_ADDED, {
         commentAdded: gqlReply,
       });
 
@@ -6363,7 +6368,7 @@ const rawResolvers = {
 
       const updated = rows[0];
 
-      await pubsub.publish(COMMENT_UPDATED, {
+      await publishRealtimeHint(COMMENT_UPDATED, {
         commentUpdated: updated,
       });
 
@@ -6385,7 +6390,7 @@ const rawResolvers = {
 
       // ไม่มี post_id ใน event = ตัวกรองตัดสินอะไรไม่ได้ แล้วทุกคนที่ subscribe
       // โพสต์ไหนก็ตามจะได้รับการลบของทุกโพสต์
-      await pubsub.publish(COMMENT_DELETED, {
+      await publishRealtimeHint(COMMENT_DELETED, {
         commentDeleted: id,
         commentDeletedPostId: c.post_id == null ? null : String(c.post_id),
       });
@@ -7259,7 +7264,7 @@ const rawResolvers = {
           blocked: true,
           updated_at: new Date().toISOString(),
         };
-        await pubsub.publish(topicMyBankBlockStatusChanged(authorIdSafe), {
+        await publishRealtimeHint(topicMyBankBlockStatusChanged(authorIdSafe), {
           myBankBlockStatusChanged: payload,
         });
       } catch (e) {
@@ -7372,7 +7377,7 @@ const rawResolvers = {
           blocked: false,
           updated_at: new Date().toISOString(),
         };
-        await pubsub.publish(topicMyBankBlockStatusChanged(authorIdSafe), {
+        await publishRealtimeHint(topicMyBankBlockStatusChanged(authorIdSafe), {
           myBankBlockStatusChanged: payload,
         });
       } catch (e) {

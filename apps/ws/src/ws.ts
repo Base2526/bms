@@ -70,6 +70,10 @@ const metrics = {
   activeConnections: 0,
   activeSubscriptions: 0,
   authFailures: 0,
+  // แยกจาก authFailures โดยตั้งใจ — Redis ล่มทำให้ onConnect ปฏิเสธเหมือนกัน ถ้านับรวมกัน
+  // ตัวเลขบนหน้า /metrics จะอ่านว่า "มีคนพยายามปลอม ticket เป็นพัน" ตอนที่ของจริงคือ
+  // dependency ล่ม แล้วคนที่กำลังไล่เหตุจะไล่ผิดทาง
+  dependencyFailures: 0,
   slowConsumerCloses: 0,
   eventsDelivered: 0,
   deliveryErrors: 0,
@@ -187,8 +191,16 @@ const disposer = useServer(
         return true;
       } catch (error) {
         metrics.rejectedConnections += 1;
-        metrics.authFailures += 1;
-        securityLog("connection.rejected", { reason: error instanceof Error ? error.message : "AUTH_FAILED" });
+        const reason = error instanceof Error ? error.message : "AUTH_FAILED";
+        // `RealtimeTicketError` มี `code` เสมอ · อย่างอื่น (Redis timeout, lease อ่านไม่ได้)
+        // ไม่ใช่ความผิดของผู้เรียก
+        const isAuth = typeof (error as { code?: unknown })?.code === "string"
+          || reason === "TICKET_REQUIRED" || reason === "INVALID_CONNECTION_PARAMS"
+          || reason === "SESSION_REVOKED" || reason === "CONNECTION_LIMIT_EXCEEDED"
+          || reason === "SERVER_DRAINING";
+        if (isAuth) metrics.authFailures += 1;
+        else metrics.dependencyFailures += 1;
+        securityLog("connection.rejected", { reason, kind: isAuth ? "auth" : "dependency" });
         return false;
       }
     },

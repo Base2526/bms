@@ -108,9 +108,13 @@ export const coreResolvers = {
           const userId = requireRealtimeUserId(ctx);
           const message = payload?.messageAdded;
           if (message?.chat_id !== variables?.chat_id) return false;
-          return Array.isArray(message?.to_user_ids)
-            && (message.to_user_ids.map(String).includes(userId)
-              || String(message?.sender_id ?? "") === userId);
+          // ผู้รับมาจาก publisher ซึ่งเป็นฝั่งที่มีฐานข้อมูล · `messageAddedAudience` รวมผู้ส่ง
+          // ไว้ด้วย เพราะ `to_user_ids` ของข้อความ **ตัดตัวผู้ส่งออกไปแล้ว** แท็บที่สองของคน
+          // ส่งเองจึงไม่เคยได้ข้อความของตัวเอง · ไม่มี routing data = ปฏิเสธ ไม่ใช่ปล่อยผ่าน
+          const audience = Array.isArray(payload?.messageAddedAudience)
+            ? payload.messageAddedAudience
+            : message?.to_user_ids;
+          return Array.isArray(audience) && audience.map(String).includes(userId);
         }
       )
     },
@@ -154,20 +158,30 @@ export const coreResolvers = {
         }
       ),
     },
+    // โพสต์เป็นเนื้อหาสาธารณะ ตัวกรองจึงเป็น post_id ไม่ใช่สิทธิ์ · แต่ยัง `requireRealtimeUserId`
+    // เพื่อให้ทุก subscription ในไฟล์นี้มีกติกาเดียวกันว่า "ต้องถือ ticket ที่ระบุตัวตนได้"
+    // สายที่ไม่มีตัวตนจะไม่มีวันไหลผ่านมาถึงตรงนี้อยู่แล้ว การเขียนไว้ทำให้ข้อนั้นทดสอบได้
     commentAdded: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator(COMMENT_ADDED),
-        (payload, variables) => {
-          // filter ตาม post_id
-          return payload.commentAdded.post_id === variables.post_id;
+        (_: any, _args: any, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(COMMENT_ADDED);
+        },
+        (payload, variables, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return String(payload?.commentAdded?.post_id ?? "") === String(variables?.post_id ?? "");
         }
       ),
     },
     commentUpdated: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator(COMMENT_UPDATED),
-        (payload, variables) => {
-          return payload.commentUpdated.post_id === variables.post_id;
+        (_: any, _args: any, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(COMMENT_UPDATED);
+        },
+        (payload, variables, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return String(payload?.commentUpdated?.post_id ?? "") === String(variables?.post_id ?? "");
         }
       ),
     },
@@ -175,8 +189,14 @@ export const coreResolvers = {
       // เดิมคืน `true` เสมอ = คนที่ดูโพสต์หนึ่งได้รับการลบคอมเมนต์ของทุกโพสต์
       // โพสต์เป็นเนื้อหาสาธารณะ จึงไม่ใช่การรั่วของความลับ แต่เป็น event ที่ผิดโพสต์
       subscribe: withFilter(
-        () => pubsub.asyncIterator(COMMENT_DELETED),
-        (payload, variables) => String(payload?.commentDeletedPostId ?? "") === String(variables?.post_id ?? ""),
+        (_: any, _args: any, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(COMMENT_DELETED);
+        },
+        (payload, variables, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return String(payload?.commentDeletedPostId ?? "") === String(variables?.post_id ?? "");
+        },
       ),
       resolve: (payload: any) => payload?.commentDeleted,
     },

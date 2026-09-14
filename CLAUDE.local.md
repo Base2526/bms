@@ -3,6 +3,142 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## ปิดช่องที่ทำให้ deploy ws ขึ้น production แล้วพัง — 2026-09-14
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
+**pure 1,160/1,160** จาก 1,151 · production build 113 หน้า) · **ไม่มี migration ใหม่ ·
+ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (Docker daemon ไม่ได้รัน) ·
+**มิวเทชัน 17 แบบ แดงถูก subtest ทุกครั้ง**
+
+### พิสูจน์ด้วยการรันจริง ไม่ใช่อ่านโค้ด
+
+บูต `apps/ws` ด้วย env แบบ production แล้วยิง handshake เข้าไปจริง · และเขียน RESP server
+ขนาดเล็กแทน Redis (Docker ไม่ได้รัน) เพื่อเดินเส้นทางความสุขให้ครบ:
+
+- **`{ x-scope: "admin" }` ของ client เดิม → ปิด 4403 Forbidden** · ไม่ส่ง params เลยก็ 4403 ·
+  origin ไม่ตรง → **HTTP 401 ตั้งแต่ upgrade**
+- **ticket ถูก + Redis ล่ม → เดิมแขวน 9 วินาทีไม่มีทั้ง ack ไม่มี close** · หลังแก้ปิดใน 2.0 วิ
+- **`/readyz` เดิมไม่ตอบเลย** (curl timeout ที่ 5 วิ) · หลังแก้ตอบ 503 ใน 2.02 วิ
+- **เส้นทางความสุขครบวง**: ticket → `connection_ack` → subscribe → publish เข้า Redis →
+  `canReceiveRealtimeEvent` → `next` ถึง client · `eventsDelivered: 1`
+- **ยิง 3 event บนหัวข้อเดียวกัน ได้ 1 ใบ**: ของร้านตัวเองผ่าน · **ของร้านอื่นไม่ผ่าน** ·
+  โดเมนที่ธงปิดอยู่ไม่ผ่าน
+
+### ⚠️ 1. `WS_ALLOWED_ORIGINS` ไม่ได้ตั้ง = คอนเทนเนอร์ crash-loop และไม่มีเอกสารไหนบอก
+
+`parseAllowedOrigins()` throw ที่ **ระดับโมดูล** (`ws.ts:42` เป็น top-level const) และ
+`docker-compose.prod.yml` เขียน `${WS_ALLOWED_ORIGINS}` เปล่า ๆ ไม่มี default ·
+`grep -rn "WS_ALLOWED_ORIGINS" docs *.md` ได้ **ผลว่าง** และรีโปไม่มี `.env.example`
+
+- fail-closed ถูกแล้ว **แต่ปล่อยให้ไปตายในคอนเทนเนอร์คือ crash-loop ที่ต้องไปขุดใน log** ·
+  เปลี่ยนเป็น `${WS_ALLOWED_ORIGINS:?...}` → `docker compose up` หยุดตั้งแต่ยังไม่สร้าง
+  คอนเทนเนอร์ พร้อมบอกว่าต้องตั้งอะไร
+- **ตั้งเป็น localhost บนเซิร์ฟเวอร์จริงอันตรายกว่าไม่ตั้ง** — บูตผ่าน แต่ `verifyClient` ตอบ 401
+  ให้ทุกเบราว์เซอร์ ซึ่งอ่านจากข้างนอกไม่ต่างจาก "realtime พัง" · `preflight-deploy.mts`
+  บล็อกทั้งสองกรณี + บล็อก `JWT_SECRET` ที่สั้นกว่า 12 ตัวอักษร (`hmacKey()` throw ทั้งตอน
+  mint และ verify) + เตือนเมื่อ `WS_TRUST_PROXY` ไม่ใช่ `1`
+
+### ⚠️ 2. ws กับ web แยก deploy ไม่ได้ — และ client เดิมจะ reconnect วนตลอดไป
+
+`ticketFromParams()` รับ **คีย์เดียวชื่อ `ticket`** เท่านั้น ส่วน `develop` ส่ง
+`connectionParams: () => ({ "x-scope": scope })` · และ `graphql-ws@6` **จงใจไม่ใส่ 4403 ใน
+ลิสต์ fatal** (คอมเมนต์ในซอร์สเขียนว่า "might grant access out after retry") คู่กับ
+`retryAttempts: Infinity` → ทุกเบราว์เซอร์ reconnect ทุก ≤30 วิ ตลอดไป ขณะที่ realtime ตาย
+
+### ⚠️ 3. `9.82`/`9.87` ไม่อยู่ใน schemaReadiness = ด่านตรวจบอกว่า "พร้อม" แล้วขายไม่ได้สักบิล
+
+`createOrderInTx()` INSERT `restaurant_service_mode` (`9.87`) กับ `board_game_session_id`
+(`9.82`) ใน **ทุกบิลทุกช่องทางของทุกร้าน** และ `finalizePosSale()` SELECT ตัวหลังกลับมาทุกการขาย
+· ทั้งสองไฟล์ **ไม่มีชื่ออยู่ในลิสต์เลย** → `db/checks/schema-readiness.sql` ที่รันบนเซิร์ฟเวอร์
+(ทางเดียวที่ใช้ได้ เพราะเครื่องนั้นไม่มี Node) จะรายงานว่าฐานพร้อม
+
+- เติมทั้งสองเข้าลิสต์ + regenerate ไฟล์ `.sql`
+- **`9.79`–`9.83` จงใจไม่ใส่** — ทุก query ของโมดูลบอร์ดเกมถูกกั้นด้วย `boardGameSessionId`
+  ตัวที่ไม่มีเงื่อนไขคือ *คอลัมน์* ไม่ใช่ตาราง
+- **ด่านใหม่ `schema-readiness-coverage-contract` (3 เทส)** เดินกลับทางจากคอลัมน์ที่
+  `INSERT INTO bms_orders` เขียนจริง แล้วบังคับว่าตัวที่มาจาก migration **ในช่วงที่ลิสต์ครอบ**
+  ต้องถูกประกาศ · **เส้นแบ่งอ่านจากลิสต์เอง ไม่ได้ฝังเลขไว้** (ลิสต์ประกาศตัวเองว่าครอบเฉพาะ
+  ของใหม่ ของเก่ากว่านั้นขาดแล้วเห็นเองตั้งแต่หน้าแรก) · บวกด่านว่าไฟล์ที่อ้างต้องมีจริง
+  และของที่ประกาศต้องถูกสร้างโดยไฟล์นั้นจริง (ผูก column กับ table ไม่ใช่หาคำว่า ADD COLUMN ลอย ๆ)
+
+### ⚠️ 4. Redis ล่ม = แขวน ไม่ใช่ล้ม
+
+`pubsub.ts` มีแต่ `maxRetriesPerRequest: null` ซึ่งแปลว่า "คิวคำสั่งไว้ตลอดกาล" ไม่ใช่ "ทนทาน"
+
+- เพิ่ม `commandTimeout` (`REALTIME_REDIS_COMMAND_TIMEOUT_MS` ปริยาย 2000) ·
+  **อ่านค่าแบบ clamp ไม่ throw** เพราะโมดูลนี้ถูก import โดยทั้ง web และ ws ค่าที่พิมพ์ผิด
+  ต้องไม่ทำให้ทั้งสอง service ตายตั้งแต่ boot
+- `commandTimeout` ของ subscriber จับเฉพาะ **คำสั่ง** (subscribe/ping) ไม่จับการรอรับข้อความ
+  สายที่เงียบอยู่จึงไม่ถูกตัดทิ้ง
+- **ผู้ฟัง `error` ของทั้งสองสาย** — ไม่มีแล้ว ioredis พ่น "Unhandled error event" พร้อม stack
+  ทุกครั้งที่ retry (หลายพันบรรทัด/นาที กลบ error จริง) · ยุบเหลือบรรทัดเดียวต่อสายต่อ 30 วิ
+  พร้อม `errorCode: REALTIME_REDIS_UNAVAILABLE`
+- ฝั่งเบราว์เซอร์เพิ่ม `connectionAckWaitTimeout: 15_000` — ค่าปริยายของ graphql-ws คือ
+  **รอ ack ตลอดกาล** จอจึงค้างที่ "กำลังเชื่อมต่อ" โดยไม่เข้า `retryWait` ที่เขียนไว้แล้ว
+- **และเพราะ timeout ทำให้ความล้มเกิดเร็วขึ้นมาก จึงต้องทำให้ hint ไม่ลากงานธุรกิจล้มตาม** —
+  `pubsub.publish()` ของยุคเดิม 19 จุดเกิด **หลัง** แถวถูก commit แล้ว (แชท/คอมเมนต์/บุ๊กมาร์ก/
+  แจ้งเตือน/กล่องข้อความ) · ก่อนหน้านี้ Redis ล่ม = mutation ล้มทั้งที่ข้อความถูกบันทึกไปแล้ว
+  · ย้ายไป `publishRealtimeHint()` ซึ่ง **ยัง `await` เหมือนเดิม** (ลำดับโค้ดไม่เปลี่ยน) แค่กลืน
+  ความล้มแล้ว log · **ห้ามใช้กับ `publishRealtimeEvent()` ของ dispatcher** ที่นั่นต้อง throw
+  เพื่อให้ nack แล้ว retry (มีเทสห้ามสองทิศ)
+
+### ⚠️ 5. เพดานต่อ IP กลายเป็นเพดานรวมของทั้งแพลตฟอร์ม
+
+`WS_TRUST_PROXY` **ไม่ได้ตั้งที่ไหนเลย** (มีแค่ในซอร์ส) → หลัง Caddy ทุก socket เห็นเป็น IP
+เดียว แล้ว `WS_MAX_CONNECTIONS_PER_IP` (ปริยาย 100) กลายเป็นเพดานรวม · ใส่ `:-1` ทั้งสาม compose
+
+- **ปลอม `X-Forwarded-For` มีขอบเขต** — lease ถูกขอ **หลัง** verify ticket จึงยังชนเพดาน
+  ต่อผู้ใช้ (10) และต่อร้าน (1000) อยู่ดี
+
+### ⚠️ 6. subscription 5 ตัวถูกปิดบน production ทั้งที่แก้ auth แล้ว
+
+`PRODUCTION_DISABLED_SUBSCRIPTIONS` เป็นของ **ใหม่ในรอบนี้** (`git show develop:apps/ws/src/security.ts`
+= ไม่มีไฟล์) ปิด `messageAdded`/`messageDeleted`/`commentAdded`/`commentUpdated`/`commentDeleted`
+ซึ่ง **มีผู้เรียกจริงอยู่** (`chat/page.tsx:932`, `CommentsSection.tsx:336`) = ข้อความใหม่กับ
+คอมเมนต์ใหม่ไม่ขึ้นเองอีกต่อไป
+
+- เหลือ `time` ตัวเดียว (ตัวจับเวลาดีบั๊ก ไม่มีจอไหนใช้ และยิงทุกวินาทีเข้าทุก connection)
+- **เปิดกลับได้เพราะแก้แล้วเท่านั้น** — เติม `requireRealtimeUserId(ctx)` ให้ comment ทั้งสามตัว
+  (เดิมไม่มีเลย) และเพิ่ม `messageAddedAudience` ฝั่ง publisher
+- **`fullMessage.to_user_ids` ตัดตัวผู้ส่งออกไปแล้ว** (`resolvers.ts:4750`) ใช้มันเป็นผู้รับ =
+  แท็บที่สองของคนส่งเองไม่เคยเห็นข้อความที่ตัวเองเพิ่งส่ง · `messageAddedAudience` รวมผู้ส่ง
+- เทสตรึงสองทิศ: ลิสต์ที่ปิดต้องเท่ากับ `["time"]` เป๊ะ **และ** ทุกตัวที่เสิร์ฟต้องเรียก
+  `requireRealtimeUserId` ในบล็อกของตัวเอง
+
+### ⚠️ 7. metric ที่โกหกตอนเกิดเหตุ
+
+Redis ล่มทำให้ `onConnect` ปฏิเสธเหมือน ticket ปลอม แล้วนับรวมเข้า `authFailures` →
+หน้า `/metrics` อ่านว่า "มีคนพยายามปลอม ticket เป็นพัน" ตอนที่ของจริงคือ dependency ล่ม
+· แยกเป็น `dependencyFailures` + `kind: "auth" | "dependency"` ใน log ·
+**วัดจริงแล้ว**: ticket ปลอม + client เดิม = `auth 2` · Redis ล่ม = `dependency 1`
+
+### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **build ของ ws ไม่มีปัญหา** — lockfile ทั้ง 3 prefix sync กับ package.json ·
+  `.dockerignore` ตัด `**/dist` แต่ ws import `packages/*/src/*.js` ตรง ๆ (tsx resolve เป็น .ts)
+  จึงไม่ต้องใช้ dist · `npx tsc --noEmit` ที่ `apps/ws` exit 0
+- **`REALTIME_SUBSCRIPTIONS_ENABLED` ปริยาย `0` จริง** → 18 named subscription ไม่ส่งอะไรเลย
+- **outbox pump ไม่ทำ web ล้ม** — catch + backoff สูงสุด 30 วิ (migration ขาด = log รก ไม่ใช่แอปตาย)
+- **grant ของ `bms_realtime_dispatcher` ครบ** — `9.85` อ่าน `bms_orders(id,tenant_id,location_id,
+  pos_device_id)` / `bms_pos_devices(id,tenant_id,location_id)` / `bms_pos_blind_returns` ·
+  granted ครบทุกคอลัมน์จาก `9.71`/`9.72`/`9.85`
+- **20 ตารางของ `9.85` มี `tenant_id NOT NULL` ครบทุกตัว** (ไล่ทีละตัว) → ไม่มีเคส NULL ชน
+  NOT NULL ของ outbox แล้ว rollback การเขียนธุรกิจ · `9.86` handle `TG_OP = 'DELETE'` ถูก
+- **subscription ต่อ connection สูงสุด 16** (POS) < เพดาน 20
+- Caddy: `/graphql` + upgrade → `ws:8080` ไม่เปลี่ยน · **`apps/web/Caddyfile` ไม่อยู่ใน git**
+  (มีแต่ `.local`/`.server`) เซิร์ฟเวอร์ถือสำเนาของตัวเอง — แก้ `Caddyfile.server` ในรีโป
+  ไม่ถึง production เอง
+
+### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ `docker build` ภาพจริง และยังไม่ได้รันชุดเทส DB 38 ไฟล์** — Docker daemon ไม่ได้รัน
+  (`npipe:////./pipe/dockerDesktopLinuxEngine` ต่อไม่ได้) · trigger 27 ตัวยังไม่เคยยิงกับฐานจริง
+- **ยังไม่ได้ทดสอบกับ Redis ตัวจริง** — เส้นทางความสุขพิสูจน์ผ่าน RESP server ที่เขียนเอง
+  (รองรับ info/ping/get/eval/pexpire/subscribe/publish) ซึ่งพอสำหรับ ioredis +
+  graphql-redis-subscriptions แต่ไม่ใช่ Redis จริง
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — การ์ดแชท/คอมเมนต์ที่เปิดกลับมา ผ่านแค่เทส + build
+- `apps/ws` ยังไม่มี `restart:` policy · healthcheck ขึ้น unhealthy ได้แต่ไม่มีอะไรรีสตาร์ทให้
+
 ## ตรวจ working tree และปิดงาน mobile POS/realtime — 2026-09-14
 
 branch `audit/realtime-production-architecture` · web production build ผ่าน · web pure **1,150/1,150**

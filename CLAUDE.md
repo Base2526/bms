@@ -191,6 +191,10 @@ RN also compiles generated Apollo operations and verifies cashier PIN through Gr
 polling until per-workflow parity plus production recovery/load proof pass. Rollout flags gate
 *delivery only* — see
 [agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
+**`apps/ws` and `apps/web` deploy together or not at all**, `WS_ALLOWED_ORIGINS` has no safe
+default, and every Redis command on this path is time-bounded — the deployment requirements and
+what each gets wrong are in
+[architecture/realtime-production-audit.md](docs/architecture/realtime-production-audit.md#deployment-requirements-verified-2026-09-14).
 
 **Board game cafe (`9.79`–`9.83`, 2026-09-14).** The `board_game_cafe` archetype now has an
 operational module for timed table play without turning play time into a Product field. Board-game
@@ -294,6 +298,13 @@ look done in code but need their migration first.
   the grant. Payloads carry allowlisted scalars only, never PII, message bodies, payment details or
   pharmacy clinical content. Full rules:
   [agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
+- **A column the order path writes unconditionally is a deploy blocker, not a feature flag.**
+  `createOrderInTx()` writes every column in its `INSERT` for every channel of every tenant, so a
+  database missing one cannot complete a single sale. Declare it in `scripts/schemaReadiness.mts`
+  and regenerate `db/checks/schema-readiness.sql` in the same change — a readiness list that is
+  missing a file answers "ready" and is worse than no check at all.
+  `schema-readiness-coverage-contract` walks back from the real `INSERT` column list and fails when
+  one is undeclared.
 - **`schema.graphql` is the client contract, not a build artifact.** Production keeps introspection
   off, so an external client generates from the committed SDL; regenerate it with
   `npm run schema:export` in the same change that alters the schema or
