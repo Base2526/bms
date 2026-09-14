@@ -13,6 +13,8 @@ import {
 } from '../graphql/generated';
 import type { PosMenuCatalog, PosMenuItem } from '../types/pos';
 import { useStoreMode } from './StoreModeContext';
+import { useDevice } from './DeviceContext';
+import { serverAssetUrl } from '../lib/realtime';
 
 interface CatalogContextValue {
   catalog: PosMenuCatalog;
@@ -20,6 +22,11 @@ interface CatalogContextValue {
   error: string | null;
   refetch: () => Promise<void>;
   resolveScan: (code: string) => Promise<PosMenuItem>;
+  resolveVariant: (
+    code: string,
+    size?: string | null,
+    packCode?: string | null,
+  ) => Promise<PosMenuItem>;
   setSearchQuery: (query: string) => void;
 }
 
@@ -33,6 +40,7 @@ function unique(values: Array<string | null | undefined>): string[] {
 
 export function CatalogProvider({ children }: { children: React.ReactNode }) {
   const { mode } = useStoreMode();
+  const { target } = useDevice();
   const [searchQuery, setSearchQuery] = useState('');
   const restaurant = useQuery(MobileRestaurantMenuDocument, {
     skip: mode !== 'restaurant',
@@ -63,13 +71,14 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             category: item.kitchenStation ?? 'เมนูอื่น',
             station: item.kitchenStation ?? 'เมนูอื่น',
             sellable: item.sellable,
-            imageUrl: item.imageUrl,
+            imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
             unavailableNote: item.unavailableReason,
             artKind: 'food',
             size: item.availableSizes[0]?.size ?? '',
             packCode: '',
             unitName: '',
             baseQty: 1,
+            availableSizes: item.availableSizes,
           }))
         : (retail.data?.bmsPosCatalogSearch.items ?? []).map(item => ({
             sku: item.sku,
@@ -79,7 +88,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             station: 'สินค้า',
             sellable:
               item.availability === 'AVAILABLE' && item.availableTotal > 0,
-            imageUrl: item.imageUrl,
+            imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
             unavailableNote:
               item.availability === 'AVAILABLE' ? null : item.availability,
             artKind,
@@ -87,6 +96,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             packCode: '',
             unitName: '',
             baseQty: 1,
+            availableSizes: item.availableSizes,
           }));
     const noun = mode === 'restaurant' ? 'เมนู' : 'สินค้า';
     return {
@@ -108,11 +118,24 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
     mode,
     restaurant.data?.bmsPosRestaurantMenu.items,
     retail.data?.bmsPosCatalogSearch.items,
+    target?.serverUrl,
   ]);
 
-  const resolveScan = useCallback(
-    async (code: string): Promise<PosMenuItem> => {
-      const response = await scan({ variables: { code: code.trim() } });
+  const resolveVariant = useCallback(
+    async (
+      code: string,
+      size: string | null = null,
+      packCode: string | null = null,
+    ): Promise<PosMenuItem> => {
+      const response = await scan({
+        variables: {
+          code: code.trim(),
+          size,
+          packCode,
+          surface:
+            mode === 'restaurant' ? 'RESTAURANT_POS' : 'RETAIL_POS',
+        },
+      });
       const item = response.data?.bmsPosScan;
       if (!item) throw new Error('ไม่พบสินค้าจากรหัสนี้');
       return {
@@ -122,7 +145,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         category: 'สินค้า',
         station: 'สินค้า',
         sellable: item.available >= item.baseQty,
-        imageUrl: item.imageUrl,
+        imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
         unavailableNote:
           item.available >= item.baseQty ? null : 'จำนวนคงเหลือไม่พอ',
         artKind:
@@ -135,9 +158,21 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         packCode: item.packCode,
         unitName: item.unitName,
         baseQty: item.baseQty,
+        serialTracked: item.serialTracked,
+        scaleBarcode: item.scaleBarcode,
+        modifiers: item.modifiers.map(modifier => ({
+          ...modifier,
+          selectionType:
+            modifier.selectionType === 'SINGLE' ? 'SINGLE' : 'MULTIPLE',
+        })),
+        packs: item.packs,
       };
     },
-    [mode, scan],
+    [mode, scan, target?.serverUrl],
+  );
+  const resolveScan = useCallback(
+    (code: string) => resolveVariant(code),
+    [resolveVariant],
   );
 
   const refetch = useCallback(async () => {
@@ -154,6 +189,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         null,
       refetch,
       resolveScan,
+      resolveVariant,
       setSearchQuery,
     }),
     [
@@ -161,6 +197,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       mode,
       refetch,
       resolveScan,
+      resolveVariant,
       restaurant.error,
       restaurant.loading,
       retail.error,

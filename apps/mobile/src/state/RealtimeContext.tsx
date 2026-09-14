@@ -76,14 +76,20 @@ const RESTAURANT_SUBSCRIPTIONS: SubscriptionSpec[] = [
     document: MobileRestaurantCheckChangedDocument,
     field: 'bmsRestaurantCheckChanged',
   },
-  { document: MobileKitchenTicketChangedDocument, field: 'bmsKitchenTicketChanged' },
+  {
+    document: MobileKitchenTicketChangedDocument,
+    field: 'bmsKitchenTicketChanged',
+  },
   {
     document: MobileMenuAvailabilityChangedDocument,
     field: 'bmsMenuAvailabilityChanged',
   },
   { document: MobileQrOrderChangedDocument, field: 'bmsQrOrderChanged' },
   { document: MobileWaitlistChangedDocument, field: 'bmsWaitlistChanged' },
-  { document: MobileServiceCallChangedDocument, field: 'bmsServiceCallChanged' },
+  {
+    document: MobileServiceCallChangedDocument,
+    field: 'bmsServiceCallChanged',
+  },
 ];
 
 function RealtimeSubscription({
@@ -115,8 +121,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const client = useApolloClient();
   const { realtimeStatus } = useBmsGraphqlTransport();
   const { status: pairStatus, target, verify, runVerify } = useDevice();
+  const enabled =
+    pairStatus === 'PAIRED' && !!target && verify.kind !== 'REJECTED';
   const bootstrap = useQuery(PosBootstrapDocument, {
-    skip: pairStatus !== 'PAIRED',
+    skip: !enabled,
   });
   const [event, setEvent] = useState<MobileRealtimeEvent | null>(null);
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
@@ -124,7 +132,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const deduplicator = useRef(new BoundedRealtimeDeduplicator());
   const latestByEntity = useRef(new Map<string, number | string>());
   const invalidationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const enabled = pairStatus === 'PAIRED' && !!target;
   const isRestaurant =
     bootstrap.data?.bmsPosSession.businessArchetype === 'restaurant' ||
     (verify.kind === 'OK' && verify.info.businessArchetype === 'restaurant');
@@ -148,7 +155,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
       const entityKey = `${candidate.entityType}:${candidate.entityId}`;
       const cursor =
-        candidate.aggregateVersion ?? candidate.updatedAt ?? candidate.occurredAt;
+        candidate.aggregateVersion ??
+        candidate.updatedAt ??
+        candidate.occurredAt;
       const previous = latestByEntity.current.get(entityKey);
       if (
         previous !== undefined &&

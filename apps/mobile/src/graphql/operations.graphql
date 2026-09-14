@@ -90,6 +90,9 @@ query PosBootstrap {
     store {
       taxId
       receiptLanguageMode
+      address
+      phone
+      logoUrl
     }
     surface
     businessArchetype
@@ -128,6 +131,7 @@ fragment MobilePosReceiptFields on BmsPosReceipt {
   memberName
   memberNo
   sourceChannel
+  restaurantServiceMode
   paymentMethod
   paymentRef
   cashTendered
@@ -207,6 +211,7 @@ fragment MobilePosReceiptFields on BmsPosReceipt {
 
 fragment MobileRestaurantCheckFields on BmsPosRestaurantCheck {
   id
+  serviceMode
   tableId
   tableCode
   tableName
@@ -218,6 +223,8 @@ fragment MobileRestaurantCheckFields on BmsPosRestaurantCheck {
   openedAt
   reservationStatus
   reservationLost
+  hasCurrentOrder
+  splitGroupNo
   items {
     id
     sku
@@ -280,8 +287,19 @@ query MobilePosCatalog($q: String = "") {
   }
 }
 
-query MobilePosScan($code: String!) {
-  bmsPosScan(code: $code, surface: "POS", withImage: true) {
+query MobilePosScan(
+  $code: String!
+  $size: String
+  $packCode: String
+  $surface: String = "RETAIL_POS"
+) {
+  bmsPosScan(
+    code: $code
+    size: $size
+    packCode: $packCode
+    surface: $surface
+    withImage: true
+  ) {
     sku
     size
     productName
@@ -295,8 +313,22 @@ query MobilePosScan($code: String!) {
     serialTracked
     scaleBarcode
     imageUrl
-    modifierCodes: modifiers {
+    modifiers {
       code
+      name
+      priceDelta
+      groupCode
+      groupName
+      selectionType
+      minSelect
+      maxSelect
+      defaultSelected
+    }
+    packs {
+      code
+      unitName
+      baseQty
+      price
     }
   }
 }
@@ -324,10 +356,26 @@ query MobilePosParkedSales {
       itemCount
       subtotalHint
       parkedByName
+      pharmacyReview {
+        assessmentId
+        caseCode
+        status
+        canResume
+        requiresSafetyCheck
+      }
       cart {
         version
         couponCode
         pointsToRedeem
+        extraLines {
+          label
+          unitAmount
+        }
+        pharmacyReview {
+          assessmentId
+          caseCode
+          requiresSafetyCheck
+        }
         member {
           customerId
           memberNo
@@ -513,6 +561,8 @@ query MobileRestaurantFloor {
       check {
         id
         status
+        serviceMode
+        splitGroupNo
         version
         itemCount
         unsentCount
@@ -523,6 +573,8 @@ query MobileRestaurantFloor {
       checks {
         id
         status
+        serviceMode
+        splitGroupNo
         version
         itemCount
         unsentCount
@@ -530,6 +582,17 @@ query MobileRestaurantFloor {
         guestCount
         openedAt
       }
+    }
+    takeawayChecks {
+      id
+      status
+      serviceMode
+      version
+      itemCount
+      unsentCount
+      amountDue
+      guestCount
+      openedAt
     }
   }
 }
@@ -641,6 +704,18 @@ mutation MobilePosSale($input: BmsPosSaleInput!) {
     pointsUsed
     pointsEarned
     pointsBalance
+    blockers {
+      sku
+      status
+      salePolicy
+      requested
+      maxQuantity
+    }
+    code
+    available
+    requested
+    serial
+    roundingAmount
     replayed
   }
 }
@@ -654,6 +729,21 @@ mutation MobilePosReturn($input: BmsPosReturnInput!) {
     refundAmount
     settlementStatus
     creditNoteNo
+    returnedAt
+    returnedItems {
+      orderItemId
+      packQty
+      refundAmount
+    }
+    refunds {
+      id
+      paymentId
+      method
+      amount
+      status
+      externalRef
+      completedAt
+    }
     replayed
   }
 }
@@ -823,6 +913,848 @@ mutation MobileRestaurantAcceptIncoming(
     reason
     ticketsCreated
     replayed
+  }
+}
+
+query MobilePosNoSales {
+  bmsPosNoSales {
+    noSales {
+      id
+      reason
+      actorName
+      createdAt
+    }
+  }
+}
+
+query MobilePosDeposits($q: String) {
+  bmsPosDeposits(q: $q) {
+    searchQuery
+    deposits {
+      id
+      orderId
+      locationId
+      locationName
+      customerId
+      customerName
+      customerPhone
+      memberNo
+      customerNote
+      totalAmount
+      depositPaid
+      balanceDue
+      dueAt
+      status
+      overdue
+      isOtherLocation
+      itemQty
+      createdAt
+      items {
+        name
+        size
+        qty
+      }
+    }
+    searchResults {
+      id
+      orderId
+      locationId
+      locationName
+      customerId
+      customerName
+      customerPhone
+      memberNo
+      customerNote
+      totalAmount
+      depositPaid
+      balanceDue
+      dueAt
+      status
+      overdue
+      isOtherLocation
+      itemQty
+      createdAt
+      items {
+        name
+        size
+        qty
+      }
+    }
+    candidateOrders {
+      orderId
+      channel
+      totalAmount
+      itemCount
+      createdAt
+    }
+  }
+}
+
+query MobilePosExpenses($credentials: BmsPosCredentialsInput!) {
+  bmsPosExpenses(credentials: $credentials) {
+    canManagePettyCash
+    canUsePersonalFunds
+    categories
+    pettyCashWallet {
+      balance
+      entries {
+        id
+        direction
+        amount
+        source
+        reason
+        evidenceRef
+        balanceAfter
+        actorName
+        createdAt
+      }
+    }
+    expenses {
+      id
+      kind
+      category
+      description
+      payee
+      receiptRef
+      fundingSource
+      advancedAmount
+      actualAmount
+      returnedAmount
+      extraCashOut
+      status
+      actorName
+      approvedByName
+      settledByName
+      settlementApprovedByName
+      pettyCashBalanceAfter
+      createdAt
+      settledAt
+    }
+  }
+}
+
+query MobilePosArAccount(
+  $credentials: BmsPosCredentialsInput!
+  $customerId: ID!
+) {
+  bmsPosArAccount(credentials: $credentials, customerId: $customerId) {
+    account {
+      id
+      customerId
+      creditLimit
+      balance
+      availableCredit
+      status
+    }
+    invoices {
+      id
+      orderId
+      amount
+      outstanding
+      status
+      issuedAt
+      dueAt
+    }
+  }
+}
+
+query MobilePosStoreCredit(
+  $credentials: BmsPosCredentialsInput!
+  $code: String!
+) {
+  bmsPosStoreCredit(credentials: $credentials, code: $code) {
+    status
+    reason
+    credit {
+      code
+      customerName
+      balance
+      status
+      expiresAt
+    }
+  }
+}
+
+query MobilePosPurchaseOrders($credentials: BmsPosCredentialsInput!) {
+  bmsPosPurchaseOrders(credentials: $credentials) {
+    orders {
+      id
+      status
+      qtyOrdered
+      qtyReceived
+      total
+      note
+      createdAt
+      updatedAt
+      supplier {
+        id
+        name
+      }
+      items {
+        sku
+        size
+        qtyOrdered
+        qtyReceived
+        unitCost
+        supplierSku
+        supplierProductName
+      }
+    }
+  }
+}
+
+query MobilePosPurchaseOrder(
+  $credentials: BmsPosCredentialsInput!
+  $poId: ID!
+) {
+  bmsPosPurchaseOrder(credentials: $credentials, poId: $poId) {
+    id
+    status
+    qtyOrdered
+    qtyReceived
+    total
+    note
+    createdAt
+    updatedAt
+    supplier {
+      id
+      name
+    }
+    items {
+      sku
+      size
+      qtyOrdered
+      qtyReceived
+      unitCost
+      supplierSku
+      supplierProductName
+    }
+  }
+}
+
+query MobileRestaurantQrOrders {
+  bmsPosRestaurantQrOrders {
+    submissions {
+      id
+      checkId
+      tableId
+      tableCode
+      tableName
+      status
+      estimatedTotal
+      submittedAt
+      reviewedAt
+      rejectionReason
+      items {
+        id
+        sku
+        size
+        productName
+        packCode
+        packQty
+        estimatedUnitPrice
+        modifierCodes
+        modifierNames
+        kitchenNote
+        acceptedCheckItemId
+      }
+    }
+  }
+}
+
+query MobileRestaurantServiceCalls {
+  bmsPosRestaurantServiceCalls {
+    calls {
+      id
+      tableId
+      tableCode
+      tableName
+      requestCode
+      requestNote
+      status
+      createdAt
+      acknowledgedAt
+      completedAt
+    }
+  }
+}
+
+query MobileRestaurantWaitlist {
+  bmsPosRestaurantWaitlist {
+    waitingCount
+    waitingGuests
+    calledCount
+    entries {
+      id
+      kind
+      partySize
+      guestName
+      guestPhone
+      note
+      preferredTableId
+      preferredTableCode
+      reservedFor
+      serviceDate
+      queueNo
+      status
+      calledAt
+      seatedAt
+      seatedTableId
+      seatedTableCode
+      closedAt
+      checkId
+      createdAt
+    }
+  }
+}
+
+query MobileRestaurantRequests($credentials: BmsPosCredentialsInput!) {
+  bmsPosRestaurantRequests(credentials: $credentials) {
+    requests {
+      id
+      status
+      version
+      locationId
+      locationName
+      customerName
+      phone
+      fulfillmentType
+      requestedAt
+      note
+      reviewNote
+      orderId
+      checkoutUrl
+      createdAt
+      items {
+        sku
+        size
+        name
+        qty
+        packCode
+        unitName
+        modifierCodes
+        modifierNames
+      }
+      agreedItems {
+        sku
+        size
+        name
+        qty
+        packCode
+        unitName
+        modifierCodes
+        modifierNames
+      }
+    }
+  }
+}
+
+mutation MobilePosBlindReturn($input: BmsPosBlindReturnInput!) {
+  bmsPosBlindReturn(input: $input) {
+    status
+    reason
+    blindReturnId
+    refundAmount
+    returnedAt
+    settlementStatus
+    returnLocationId
+    replayed
+  }
+}
+
+mutation MobilePosCompleteRefund($input: BmsPosCompleteRefundInput!) {
+  bmsPosCompleteRefund(input: $input) {
+    status
+    reason
+    returnSettlementStatus
+    replayed
+    allocation {
+      id
+      method
+      amount
+      paymentId
+      completedAt
+      externalRef
+    }
+  }
+}
+
+mutation MobilePosNoSale($input: BmsPosNoSaleInput!) {
+  bmsPosNoSale(input: $input) {
+    status
+    reason
+  }
+}
+
+mutation MobilePosEnrollMember($input: BmsPosEnrollMemberInput!) {
+  bmsPosEnrollMember(input: $input) {
+    status
+    reason
+    error
+    member {
+      customerId
+      memberNo
+      name
+      phone
+      pointsBalance
+      pointsUsable
+      memberSince
+      tier {
+        id
+        code
+        name
+        discountType
+        discountValue
+      }
+    }
+  }
+}
+
+mutation MobilePosCollectAr($input: BmsPosCollectArInput!) {
+  bmsPosCollectAr(input: $input) {
+    status
+    reason
+    receiptId
+    balanceAfter
+    outstanding
+    requested
+    replayed
+    allocations {
+      invoiceId
+      orderId
+      amount
+    }
+  }
+}
+
+mutation MobilePosReceivePurchase($input: BmsPosReceivePurchaseInput!) {
+  bmsPosReceivePurchase(input: $input) {
+    status
+    message
+    poId
+  }
+}
+
+mutation MobilePosSendReceipt($input: BmsPosSendReceiptInput!) {
+  bmsPosSendReceipt(input: $input) {
+    status
+    channel
+    to
+    reason
+  }
+}
+
+mutation MobilePosDeposit($input: BmsPosDepositInput!) {
+  bmsPosDeposit(input: $input) {
+    status
+    reason
+    replayed
+    refundable
+    forfeited
+    expected
+    received
+    orderId
+    saleLocationId
+    total
+    docNo
+    deposit {
+      id
+      orderId
+      totalAmount
+      depositPaid
+      balanceDue
+      status
+      dueAt
+    }
+  }
+}
+
+mutation MobilePosExpense($input: BmsPosExpenseInput!) {
+  bmsPosExpense(input: $input) {
+    status
+    reason
+    drawerAfter
+    pettyCashAfter
+    balanceAfter
+    available
+    replayed
+    expense {
+      id
+      kind
+      category
+      description
+      fundingSource
+      advancedAmount
+      actualAmount
+      returnedAmount
+      extraCashOut
+      status
+      createdAt
+      settledAt
+    }
+    entry {
+      id
+      direction
+      amount
+      source
+      reason
+      evidenceRef
+      balanceAfter
+      createdAt
+    }
+  }
+}
+
+mutation MobilePosRequestPharmacyReview(
+  $input: BmsPosRequestPharmacyReviewInput!
+) {
+  bmsPosRequestPharmacyReview(input: $input) {
+    status
+    reason
+    assessmentId
+    caseCode
+    reviewStatus
+    requiresSafetyCheck
+    parked {
+      id
+      label
+      createdAt
+      itemCount
+      subtotalHint
+    }
+  }
+}
+
+mutation MobileKitchenTicketsStatus($input: BmsPosKitchenTicketsStatusInput!) {
+  bmsPosKitchenTicketsStatus(input: $input) {
+    status
+    reason
+    tickets {
+      ...MobileKitchenTicketFields
+    }
+  }
+}
+
+mutation MobileRestaurantFloorSetup($input: BmsPosRestaurantFloorSetupInput!) {
+  bmsPosRestaurantFloorSetup(input: $input) {
+    areas {
+      id
+      name
+    }
+    tables {
+      id
+      areaId
+      code
+      name
+      seats
+      status
+      active
+      blocked
+      shape
+      positionX
+      positionY
+    }
+    takeawayChecks {
+      id
+      status
+      serviceMode
+      itemCount
+      unsentCount
+      amountDue
+      guestCount
+      openedAt
+      version
+    }
+  }
+}
+
+mutation MobileRestaurantMenuAvailability(
+  $input: BmsPosRestaurantMenuAvailabilityInput!
+) {
+  bmsPosRestaurantMenuAvailability(input: $input) {
+    status
+    reason
+    productSku
+    unavailable
+    resetsAt
+  }
+}
+
+mutation MobileRestaurantSetGuestCount(
+  $checkId: ID!
+  $input: BmsPosRestaurantSetGuestCountInput!
+) {
+  bmsPosRestaurantSetCheckGuestCount(checkId: $checkId, input: $input) {
+    status
+    reason
+    check {
+      ...MobileRestaurantCheckFields
+    }
+  }
+}
+
+mutation MobileRestaurantMoveCheck(
+  $checkId: ID!
+  $input: BmsPosRestaurantMoveCheckInput!
+) {
+  bmsPosRestaurantMoveCheck(checkId: $checkId, input: $input) {
+    status
+    reason
+    check {
+      ...MobileRestaurantCheckFields
+    }
+  }
+}
+
+mutation MobileRestaurantSplitCheck(
+  $checkId: ID!
+  $input: BmsPosRestaurantSplitCheckInput!
+) {
+  bmsPosRestaurantSplitCheck(checkId: $checkId, input: $input) {
+    status
+    reason
+    check {
+      ...MobileRestaurantCheckFields
+    }
+    target {
+      ...MobileRestaurantCheckFields
+    }
+  }
+}
+
+mutation MobileRestaurantMergeChecks(
+  $checkId: ID!
+  $input: BmsPosRestaurantMergeChecksInput!
+) {
+  bmsPosRestaurantMergeChecks(checkId: $checkId, input: $input) {
+    status
+    reason
+    check {
+      ...MobileRestaurantCheckFields
+    }
+    target {
+      ...MobileRestaurantCheckFields
+    }
+  }
+}
+
+mutation MobileRestaurantCancelCheck(
+  $checkId: ID!
+  $input: BmsPosRestaurantCancelCheckInput!
+) {
+  bmsPosRestaurantCancelCheck(checkId: $checkId, input: $input) {
+    status
+    reason
+    check {
+      ...MobileRestaurantCheckFields
+    }
+  }
+}
+
+mutation MobileRestaurantSetOrderingPaused(
+  $input: BmsPosRestaurantSetOrderingPausedInput!
+) {
+  bmsPosRestaurantSetOrderingPaused(input: $input) {
+    status
+    reason
+    paused
+  }
+}
+
+mutation MobileRestaurantCancelOrderLines(
+  $input: BmsPosRestaurantCancelOrderLinesInput!
+) {
+  bmsPosRestaurantCancelOrderLines(input: $input) {
+    status
+    reason
+    posReturnId
+    refundAmount
+    settlementStatus
+    replayed
+  }
+}
+
+mutation MobileRestaurantAcceptQrSubmission(
+  $input: BmsPosRestaurantQrSubmissionInput!
+) {
+  bmsPosRestaurantAcceptQrSubmission(input: $input) {
+    status
+    reason
+    id
+    submissionId
+    kitchenTickets
+    replayed
+    check {
+      ...MobileRestaurantCheckFields
+    }
+  }
+}
+
+mutation MobileRestaurantRejectQrSubmission(
+  $input: BmsPosRestaurantRejectQrSubmissionInput!
+) {
+  bmsPosRestaurantRejectQrSubmission(input: $input) {
+    status
+    reason
+    id
+    submissionId
+  }
+}
+
+mutation MobileRestaurantContactRequest(
+  $input: BmsPosRestaurantRequestDecisionInput!
+) {
+  bmsPosRestaurantContactRequest(input: $input) {
+    status
+    reason
+    orderId
+    checkoutUrl
+  }
+}
+
+mutation MobileRestaurantConfirmRequest(
+  $input: BmsPosRestaurantRequestDecisionInput!
+) {
+  bmsPosRestaurantConfirmRequest(input: $input) {
+    status
+    reason
+    orderId
+    checkoutUrl
+    failure {
+      status
+      reason
+    }
+  }
+}
+
+mutation MobileRestaurantCancelRequest(
+  $input: BmsPosRestaurantRequestDecisionInput!
+) {
+  bmsPosRestaurantCancelRequest(input: $input) {
+    status
+    reason
+  }
+}
+
+mutation MobileRestaurantAcknowledgeServiceCall(
+  $input: BmsPosRestaurantServiceCallInput!
+) {
+  bmsPosRestaurantAcknowledgeServiceCall(input: $input) {
+    status
+    reason
+    id
+  }
+}
+
+mutation MobileRestaurantCompleteServiceCall(
+  $input: BmsPosRestaurantServiceCallInput!
+) {
+  bmsPosRestaurantCompleteServiceCall(input: $input) {
+    status
+    reason
+    id
+  }
+}
+
+mutation MobileRestaurantAddWaitlistEntry(
+  $input: BmsPosRestaurantAddWaitlistInput!
+) {
+  bmsPosRestaurantAddWaitlistEntry(input: $input) {
+    status
+    reason
+    entry {
+      id
+      kind
+      partySize
+      guestName
+      guestPhone
+      queueNo
+      status
+      reservedFor
+      createdAt
+    }
+  }
+}
+
+mutation MobileRestaurantCallWaitlistEntry(
+  $input: BmsPosRestaurantWaitlistEntryInput!
+) {
+  bmsPosRestaurantCallWaitlistEntry(input: $input) {
+    status
+    reason
+    entry {
+      id
+      kind
+      partySize
+      guestName
+      guestPhone
+      queueNo
+      status
+      calledAt
+      createdAt
+    }
+  }
+}
+
+mutation MobileRestaurantCancelWaitlistEntry(
+  $input: BmsPosRestaurantCloseWaitlistInput!
+) {
+  bmsPosRestaurantCancelWaitlistEntry(input: $input) {
+    status
+    reason
+    entry {
+      id
+      kind
+      partySize
+      guestName
+      queueNo
+      status
+      closedAt
+      createdAt
+    }
+  }
+}
+
+mutation MobileRestaurantNoShowWaitlistEntry(
+  $input: BmsPosRestaurantCloseWaitlistInput!
+) {
+  bmsPosRestaurantNoShowWaitlistEntry(input: $input) {
+    status
+    reason
+    entry {
+      id
+      kind
+      partySize
+      guestName
+      queueNo
+      status
+      closedAt
+      createdAt
+    }
+  }
+}
+
+mutation MobileRestaurantSeatWaitlistEntry(
+  $input: BmsPosRestaurantSeatWaitlistInput!
+) {
+  bmsPosRestaurantSeatWaitlistEntry(input: $input) {
+    status
+    reason
+    entry {
+      id
+      kind
+      partySize
+      guestName
+      queueNo
+      status
+      seatedAt
+      seatedTableId
+      seatedTableCode
+      createdAt
+    }
+    check {
+      ...MobileRestaurantCheckFields
+    }
   }
 }
 

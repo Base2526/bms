@@ -3,6 +3,19 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## ตรวจ working tree และปิดงาน mobile POS/realtime — 2026-09-14
+
+branch `audit/realtime-production-architecture` · web production build ผ่าน · web pure **1,150/1,150**
+และ DB **427/427** ผ่าน · mobile typecheck/lint และ Jest **109/109** ผ่าน · `apps/ws` กับ
+`packages/realtime` build ผ่าน · GraphQL codegen รันซ้ำแล้วได้ผลเหมือนเดิม
+
+- migration ที่ยังไม่เคย commit ถูกเลื่อนจากเลข `9.75`–`9.78` เป็น `9.84`–`9.87` เพราะ remote
+  มี board-game migrations `9.79`–`9.83` แล้ว การใช้เลขต่ำต่อจะเสี่ยงถูก environment ที่เดินหน้าไปแล้วข้าม
+- `9.84`–`9.86` ปิด heartbeat noise, business-event coverage และ parked-sale delete;
+  `9.87` เพิ่ม restaurant dine-in/takeaway snapshot
+- isolated realtime migration runbook ยังต้องมี baseline dump ก่อนจึงจะรันครบแบบ production-like ได้;
+  รอบนี้พิสูจน์บนฐาน local และ contract suites แล้ว
+
 ## recheck realtime + GraphQL client readiness แล้วซิงก์เอกสาร — 2026-09-11
 
 branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
@@ -10,7 +23,7 @@ branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (
 ไม่มี permission ใหม่ · ไม่แตะ service/resolver สักบรรทัด** · **เทส DB ไม่ได้รันสักตัว**
 (Docker ไม่ได้รัน · 5432/5433/6379 ปิด) · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
 
-### ⚠️ เจอของจริงที่ยังไม่แก้ 1 ตัว: trigger ที่อ้างคอลัมน์ซึ่งไม่มีบนตารางของตัวเอง
+### ✅ แก้แล้วใน `9.74`: trigger ที่เคยอ้างคอลัมน์ซึ่งไม่มีบนตารางของตัวเอง
 
 `bms_realtime_pos_scope_trigger()` (`9.71:518`) ถูกผูกกับ **สองตาราง** แล้วอ้างฟิลด์ข้าม `CASE`:
 
@@ -29,8 +42,13 @@ branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (
   (`bms_realtime_floor_trigger` ผูกสองตารางเหมือนกันแต่ใช้แค่ `tenant_id/location_id/id` ซึ่งมีครบ)
   · ตัวที่ดูเหมือนขาด (`bms_orders.location_id`, `bms_inventory.tenant_id`, …) เป็น false positive
   ของตัวสแกน — คอลัมน์พวกนั้นมาจาก `DO … EXECUTE format('ALTER TABLE %I ADD COLUMN …')` ของ `4.x`/`7.84`
-- **ยังไม่แก้โดยตั้งใจ** — ทางแก้ที่ไม่ต้องเดาคือ `to_jsonb(NEW)->>'status'` หรือแยกเป็นสองฟังก์ชัน
-  แต่ควรทำคู่กับการรันบนฐานทดสอบ ไม่ใช่แก้ตาบอดแล้วเดาว่าหายแล้ว
+- `9.73` ใส่ branch ตาม `TG_TABLE_NAME` เป็น hotfix และ `9.74` ปิดความเสี่ยงถาวรด้วยการแยกเป็น
+  `bms_realtime_pos_device_trigger()` กับ `bms_realtime_pos_shift_trigger()` พร้อมย้าย trigger
+  แต่ละตารางไปยังฟังก์ชันของตัวเองและลบ shared function เดิม · DB contract มีเคส insert ทั้ง
+  device/shift และตรวจ payload ตรงตัว แต่ยังต้องรันบนฐานทดสอบที่เปิดใช้งานจริง
+- `9.84` จำกัด device trigger ให้ข้าม `last_seen_at`/`receipt_seq`/`updated_at` bookkeeping ซึ่ง
+  ก่อนหน้านี้ทำให้ request จาก RN สร้าง `device.session.changed` แล้ววนกลับไป verify/refetch GraphQL
+  โดยไม่มี session/config change จริง
 
 ### ⚠️ ธง `REALTIME_*_ENABLED` ไม่ได้ปิด realtime — ปิดแค่ "ขาส่ง"
 
@@ -105,7 +123,7 @@ device topic ใน `realtimeTopics()` · `preflight-deploy.mts` (ยังไ�
 
 ### ยังไม่ได้ทำ (เรียงตามความแรง)
 
-1. **พิสูจน์/แก้ `bms_realtime_pos_scope_trigger()`** แล้วรัน runbook ของฐานทดสอบให้ครบ 9 ขั้น
+1. รัน runbook ของฐานทดสอบให้ครบ 9 ขั้นเพื่อพิสูจน์ `9.70`–`9.74` และ `9.84`–`9.86` บน PostgreSQL จริง
 2. เขียน `ROLLBACK` ให้ `9.70`/`9.71` · ใส่เงื่อนไขปิดที่ต้นทาง (GUC) ถ้าจะให้ธงหมายความว่าปิดจริง
 3. เทสที่ยังไม่มี 5 ตัวในหัวข้อข้างบน
 4. เทส parity REST ↔ GraphQL (ตัวที่บล็อกการย้าย caller อยู่)

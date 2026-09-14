@@ -728,6 +728,11 @@
 }
 .pos-receipt-head, .pos-receipt-foot { text-align: center; }
 .pos-receipt-head b { display: block; font-size: 13.5px; }
+.pos-receipt-logo {
+  display: block; width: auto; height: auto; max-width: 96px; max-height: 56px;
+  object-fit: contain; margin: 0 auto 6px;
+}
+.pos-receipt-muted { color: #333; font-size: 11px; line-height: 1.35; word-break: break-word; }
 .pos-receipt-foot { margin-top: 10px; }
 .pos-receipt-foot .pos-receipt-row { text-align: left; }
 .pos-receipt-rule { border-top: 1px dashed #bbb; margin: 8px 0; }

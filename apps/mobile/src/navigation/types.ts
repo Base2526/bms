@@ -15,7 +15,7 @@ export type SellStackParamList = {
   Menu: undefined;
   Checkout:
     | { source?: 'retail'; tableId?: undefined }
-    | { source: 'restaurant'; tableId: string };
+    | { source: 'restaurant'; tableId?: string; checkId?: string };
   Receipt: { saleId: string };
   SalesHistory: undefined;
   SaleDetail: { saleId: string };
@@ -23,7 +23,7 @@ export type SellStackParamList = {
 
 export type FloorStackParamList = {
   Floor: undefined;
-  CheckDetail: { tableId: string };
+  CheckDetail: { tableId?: string; checkId?: string; serviceMode?: 'DINE_IN' | 'TAKEAWAY' };
   /** จอสั่งอาหารของโต๊ะ — ใช้เฉพาะมือถือ (แท็บเล็ตสั่งได้จากหน้าบิลเลย) */
   TableMenu: { tableId: string };
 };
@@ -40,10 +40,15 @@ export type ShiftStackParamList = {
   Shift: undefined;
 };
 
+export type OperationsStackParamList = {
+  Operations: undefined;
+};
+
 export type MainTabParamList = {
   SellTab: undefined;
   OrdersTab: undefined;
   FloorTab: undefined;
   KitchenTab: undefined;
   ShiftTab: undefined;
+  OperationsTab: undefined;
 };

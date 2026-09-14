@@ -151,10 +151,14 @@ export type CreateOrderInput = {
   posShiftId?: string | null;
   cashierUserId?: string | null;
   idempotencyKey?: string | null;
+  /** POS catalog surface chosen by the server-side POS caller. */
+  posSalesSurface?: "RETAIL_POS" | "RESTAURANT_POS" | null;
   /** Server-validated restaurant check settled by this order. */
   restaurantCheckId?: string | null;
   /** Server-validated board-game session settled by this POS order. */
   boardGameSessionId?: string | null;
+  /** Snapshot for restaurant receipts/history; separate from online fulfillmentType. */
+  restaurantServiceMode?: "DINE_IN" | "TAKEAWAY" | null;
   /**
    * Server-derived only: the reviewed chat request (9.66) this order was created from.
    *
@@ -488,7 +492,7 @@ export async function createOrderInTx(
   let items = mergeItems(input.items);
   const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
     ? "RESTAURANT_POS"
-    : input.channel === "pos" ? "RETAIL_POS" : "ONLINE_ORDER";
+    : input.channel === "pos" ? input.posSalesSurface ?? "RETAIL_POS" : "ONLINE_ORDER";
   const ordering = input.channel === "pos"
     ? null
     : await restaurantOrderingStateInTx(client, tenantId);
@@ -1212,16 +1216,20 @@ export async function createOrderInTx(
 
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     // total_amount = ค่าสินค้า − ส่วนลด + ค่าบริการ (ไม่รวมค่าส่ง — 7.47)
+    const restaurantServiceMode = input.restaurantCheckId
+      ? input.restaurantServiceMode === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN"
+      : null;
     const ord = await client.query<{ id: string }>(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
                                pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id,
-                               fulfillment_type, promised_at, board_game_session_id)
-       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                               fulfillment_type, promised_at, restaurant_service_mode, board_game_session_id)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING id`,
       [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
         locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
         input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null,
-        input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate, boardGameSessionId]
+        input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate, restaurantServiceMode,
+        boardGameSessionId]
     );
     const orderId = ord.rows[0].id;
 

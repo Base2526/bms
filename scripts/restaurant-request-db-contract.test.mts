@@ -60,7 +60,10 @@ test('restaurant intake -> callback -> atomic order; original demand, retries an
   // "หยุดรับชั่วคราว" (and closing time) stops *new* demand. It must not block clearing the
   // backlog it created: intake still refuses, the human confirmation still goes through.
   await query(`UPDATE bms_store_profile SET restaurant_orders_paused=TRUE WHERE tenant_id=$1`,[tenantId]);
-  await assert.rejects(()=>receiveRestaurantRequest({...input,confirmedFingerprint:quote.fingerprint}),/พักรับคำขอ/);
+  assert.deepEqual(
+    await receiveRestaurantRequest({...input,confirmedFingerprint:quote.fingerprint}),
+    {status:'ORDERING_PAUSED'}
+  );
   const agreed={...review,version:2,quantities:[2]};
   const results=await Promise.all([1,2].map(()=>reviewRestaurantRequest(agreed)));
   assert.equal(results[0].status,'CONFIRMED');

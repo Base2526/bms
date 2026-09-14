@@ -426,7 +426,7 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 ## Restaurant POS (dine-in)
 
 `lib/bms/restaurantPos.ts`, `app/(pos)/pos/restaurant`, `app/api/pos/restaurant/*`,
-`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`, `9.78`
+`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`, `9.87`
 own dine-in service. Operator detail:
 [business/pos.md § Restaurant POS](business/pos.md). Schema:
 [architecture/database.md § Restaurant POS](architecture/database.md).
@@ -1108,7 +1108,7 @@ The 2026-09-10 audit records the original findings and rollout design; current i
 status lives in the mobile GraphQL client and realtime architecture documents:
 [architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
 design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
-event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.77`,
+event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.74` and `9.84`–`9.86`,
 `realtimeOutbox.ts`, the continuous pump, and `realtimeDispatcher.ts` provide the durable handoff and
 domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; DB contract suites
 exercise the triggers and live local verification covers Redis fan-out across multiple WS instances.
@@ -1152,9 +1152,9 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   can be tested behaviourally rather than by scanning the resolver for a function call.
 - A business write that mobile or admin must see needs an event. `realtime-domain-coverage-contract`
   walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that exact
-  operation has a trigger or an explicit classification. Migration `9.76` closes the prior 20 table
+  operation has a trigger or an explicit classification. Migration `9.85` closes the prior 20 table
   gaps covering returns, deposits, store credit, AR, tax documents, loyalty, purchase orders,
-  wastage, and related POS shift operations; `9.77` adds the parked-sale `DELETE` that table-only
+  wastage, and related POS shift operations; `9.86` adds the parked-sale `DELETE` that table-only
   coverage originally missed.
 - Production subscription rollout fails closed behind `REALTIME_SUBSCRIPTIONS_ENABLED` and separate
   order/restaurant/inventory/payment/Inbox/shipping/pharmacy/admin/POS flags. Keep the master flag at
@@ -1187,7 +1187,7 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   `realtimeInvalidation.ts` must have an entry for every event domain or that domain refetches
   nothing and reads on screen exactly like realtime being switched off.
 - POS device authentication updates `bms_pos_devices.last_seen_at` as throttled bookkeeping. Keep
-  that column and `receipt_seq` out of the `device.session.changed` trigger (`9.75`): otherwise an RN
+  that column and `receipt_seq` out of the `device.session.changed` trigger (`9.84`): otherwise an RN
   GraphQL request can emit an invalidation whose response is to verify and refetch GraphQL again.
 
 ## Typed GraphQL surface for external clients

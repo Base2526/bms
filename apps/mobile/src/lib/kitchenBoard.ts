@@ -1,8 +1,6 @@
-// กติกาของกระดานครัว — โมดูล pure ไม่ import อะไรเลย
-//
-// ⚠️ ตั๋วครัวในโครงนี้เกิดฝั่ง client ล้วน ๆ (ไม่มีการจองสต็อกและไม่มีทรานแซกชันเดียวกับบิล
-// แบบฝั่งเว็บ) — ตอนต่อ backend ตัวสร้างตั๋วต้องย้ายไปอยู่กับ mutation ส่งครัว
-// ที่นี่เก็บไว้แค่ "รูปร่างของตั๋ว" เพื่อให้จอครัวไม่เป็นจอที่แตะอะไรไม่ได้เลย
+// กติกา pure ของกระดานครัว ไม่มี network หรือ state ภายในโมดูลนี้
+// ตั๋วจริงและการเปลี่ยนสถานะมาจาก GraphQL/WS โดยฐานข้อมูลเป็น source of truth
+// ส่วนไฟล์นี้ดูแลเฉพาะรูปร่าง ลำดับสถานะ การจับเวลา และการจัดกลุ่มสำหรับ UI
 
 export type TicketStatus = 'NEW' | 'PREPARING' | 'READY' | 'SERVED';
 
@@ -16,6 +14,7 @@ export interface KitchenTicket {
   tableCode: string;
   roundNo: number;
   station: string;
+  stationId?: string;
   status: TicketStatus;
   /** เวลาที่ตั๋วเข้าครัว (ISO) — จอคำนวณ "รอมากี่นาที" จากค่านี้ ไม่ใช่เลขที่ประทับไว้ตายตัว */
   createdAt: string;
@@ -59,7 +58,7 @@ export function elapsedMinutes(fromIso: string, now: number): number {
   return Math.max(0, Math.floor((now - started) / 60000));
 }
 
-/** เกณฑ์สีของเวลารอ — ค่าคงที่ชุดเดียว ยังไม่แยกตามสถานี (ฝั่งเว็บตั้งรายสถานีได้) */
+/** ค่า fallback ของเวลารอ เมื่อสถานีนั้นยังไม่ได้ตั้ง SLA จาก server */
 export const TICKET_WARN_MINUTES = 5;
 export const TICKET_LATE_MINUTES = 10;
 
@@ -68,10 +67,12 @@ export type TicketUrgency = 'normal' | 'warn' | 'late';
 export function ticketUrgency(
   minutes: number,
   status: TicketStatus,
+  warnMinutes = TICKET_WARN_MINUTES,
+  lateMinutes = TICKET_LATE_MINUTES,
 ): TicketUrgency {
   if (status === 'SERVED') return 'normal';
-  if (minutes >= TICKET_LATE_MINUTES) return 'late';
-  if (minutes >= TICKET_WARN_MINUTES) return 'warn';
+  if (minutes >= lateMinutes) return 'late';
+  if (minutes >= warnMinutes) return 'warn';
   return 'normal';
 }
 

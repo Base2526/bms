@@ -132,4 +132,55 @@ describe('DeviceProvider', () => {
       tree!.unmount();
     });
   });
+
+  test('records an authoritative auth rejection without verifying the token again', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            bmsPosSession: {
+              device: { code: 'POS-01', name: 'Front' },
+              location: { name: 'Main', branchCode: 'MAIN' },
+              surface: 'retail',
+              businessArchetype: 'general',
+              shift: null,
+              cashiers: [],
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    let device: ReturnType<typeof useDevice> | undefined;
+    function Probe() {
+      device = useDevice();
+      return null;
+    }
+
+    let tree: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      tree = ReactTestRenderer.create(
+        <DeviceProvider>
+          <Probe />
+        </DeviceProvider>,
+      );
+    });
+    await act(async () => {
+      await device!.pair(TARGET);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      device!.markAuthenticationRejected();
+      device!.markAuthenticationRejected();
+    });
+
+    expect(device!.verify.kind).toBe('REJECTED');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      tree!.unmount();
+    });
+  });
 });

@@ -41,14 +41,15 @@ let baselineMaxSeq = 0;
 const base = (sku: string) => ({ sku, name: `FAKE ${TAG} ${sku}`, price: 100, active: true });
 
 test("setup: two shops", async () => {
-  const ts = await query<{ id: string }>(`SELECT id FROM bms_tenants ORDER BY created_at LIMIT 2`);
-  assert.equal(ts.rowCount, 2, "เทสนี้ต้องมีร้านอย่างน้อย 2 ร้านในฐาน");
-  tenantA = ts.rows[0].id;
-  tenantB = ts.rows[1].id;
-
-  for (const t of [tenantA, tenantB]) {
-    await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku LIKE $2`, [t, `FAKE-${TAG}-%`]);
-  }
+  const suffix = crypto.randomUUID();
+  tenantA = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    [`FAKE ${TAG} A`, `fake-${TAG}-a-${suffix}`]
+  )).rows[0].id;
+  tenantB = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    [`FAKE ${TAG} B`, `fake-${TAG}-b-${suffix}`]
+  )).rows[0].id;
 
   const used = await query<{ barcode: string }>(
     `SELECT barcode FROM bms_products WHERE tenant_id = $1 AND barcode ~ '^2[0-9]{12}$'`,
@@ -113,4 +114,5 @@ test("teardown", async () => {
   for (const t of [tenantA, tenantB]) {
     await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku LIKE $2`, [t, `FAKE-${TAG}-%`]);
   }
+  await query(`DELETE FROM bms_tenants WHERE id = ANY($1::uuid[])`, [[tenantA, tenantB]]);
 });

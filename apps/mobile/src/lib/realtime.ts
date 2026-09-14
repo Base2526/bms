@@ -37,6 +37,18 @@ export function realtimeTicketUrl(serverUrl: string): string {
   return `${serverUrl.replace(/\/+$/, '')}/api/bms/realtime/ticket?scope=pos`;
 }
 
+export function serverAssetUrl(
+  serverUrl: string | null | undefined,
+  assetUrl: string | null | undefined,
+): string | null {
+  const url = assetUrl?.trim();
+  if (!url) return null;
+  if (/^(https?:|data:|file:|blob:)/i.test(url)) return url;
+  if (!serverUrl) return url;
+  const base = serverUrl.replace(/\/+$/, '');
+  return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
+}
+
 export function nativeWebSocketOptions(): {
   headers: Record<string, string>;
 } {

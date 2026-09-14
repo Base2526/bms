@@ -19,10 +19,18 @@ import { REALTIME_EVENT_TYPES } from "../packages/realtime/src/events.ts";
 
 const REPO = new URL("../", import.meta.url);
 const BMS_LIB = new URL("apps/web/lib/bms/", REPO);
+const INBOX = readFileSync(new URL("apps/web/lib/bms/inbox.ts", REPO), "utf8");
 const MIGRATIONS = [
   "db/migrations/9.71__bms_realtime_domain_events.sql",
   "db/migrations/9.72__bms_realtime_cash_and_kitchen_events.sql",
+  "db/migrations/9.73__bms_realtime_pos_scope_trigger_fix.sql",
+  "db/migrations/9.74__bms_realtime_pos_trigger_split.sql",
+  "db/migrations/9.84__bms_realtime_pos_device_heartbeat_filter.sql",
+  "db/migrations/9.85__bms_realtime_remaining_business_events.sql",
+  "db/migrations/9.86__bms_realtime_parked_sale_delete.sql",
 ];
+
+type DmlOperation = "INSERT" | "UPDATE" | "DELETE";
 
 function read(relative: string): string {
   return readFileSync(new URL(relative, REPO), "utf8");
@@ -37,6 +45,13 @@ function withoutComments(source: string): string {
     .join("\n");
 }
 
+function withoutSqlLineComments(source: string): string {
+  return source
+    .split(/\r?\n/)
+    .map((line) => line.replace(/--.*$/, ""))
+    .join("\n");
+}
+
 function businessLibFiles(dir: URL): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -47,28 +62,83 @@ function businessLibFiles(dir: URL): string[] {
   return out;
 }
 
-/** ตารางที่ `lib/bms` เขียนจริง (INSERT/UPDATE) — ไม่ใช่ลิสต์ที่พิมพ์เอง */
-function tablesWrittenByBusinessLayer(): Set<string> {
-  const tables = new Set<string>();
+/** ตารางและ operation ที่ `lib/bms` เขียนจริง — ไม่ใช่ลิสต์ที่พิมพ์เอง */
+function writesByBusinessLayer(): Map<string, Set<DmlOperation>> {
+  const writes = new Map<string, Set<DmlOperation>>();
   for (const source of businessLibFiles(BMS_LIB)) {
-    for (const match of withoutComments(source)
-      .matchAll(/\b(?:INSERT\s+INTO|UPDATE)\s+(bms_[a-z0-9_]+)/gi)) {
-      tables.add(match[1].toLowerCase());
+    for (const match of withoutComments(source).matchAll(
+      /\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\.)?(bms_[a-z0-9_]+)/gi,
+    )) {
+      const operation = match[1].toUpperCase().startsWith("INSERT")
+        ? "INSERT"
+        : match[1].toUpperCase().startsWith("DELETE")
+          ? "DELETE"
+          : "UPDATE";
+      const table = match[2].toLowerCase();
+      const operations = writes.get(table) ?? new Set<DmlOperation>();
+      operations.add(operation);
+      writes.set(table, operations);
     }
   }
-  return tables;
+  return writes;
 }
 
-/** ตารางที่มี AFTER trigger ยิง event — อ่านจาก migration ไม่ใช่จากความจำ */
-function tablesWithRealtimeTrigger(): Set<string> {
-  const tables = new Set<string>();
+/** operation ของ trigger ชุดล่าสุด อ่านตามลำดับ migration และชื่อ trigger จริง */
+function realtimeTriggerOperations(): Map<string, Set<DmlOperation>> {
+  const triggers = new Map<string, { table: string; operations: Set<DmlOperation> }>();
   for (const migration of MIGRATIONS) {
-    for (const block of read(migration).matchAll(/CREATE\s+TRIGGER\b([\s\S]*?)FOR\s+EACH\s+ROW/gi)) {
-      const targets = [...block[1].matchAll(/\bON\s+([a-z0-9_]+)/gi)];
-      if (targets.length) tables.add(targets[targets.length - 1][1].toLowerCase());
+    const source = withoutSqlLineComments(read(migration));
+    const actions: Array<
+      | { index: number; kind: "drop"; name: string }
+      | { index: number; kind: "create"; name: string; body: string }
+    > = [];
+    for (const match of source.matchAll(/DROP\s+TRIGGER\s+IF\s+EXISTS\s+([a-z0-9_]+)/gi)) {
+      actions.push({ index: match.index, kind: "drop", name: match[1].toLowerCase() });
+    }
+    for (const match of source.matchAll(
+      /CREATE\s+TRIGGER\s+([a-z0-9_]+)([\s\S]*?)FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION[\s\S]*?;/gi,
+    )) {
+      actions.push({
+        index: match.index,
+        kind: "create",
+        name: match[1].toLowerCase(),
+        body: match[2],
+      });
+    }
+    actions.sort((a, b) => a.index - b.index);
+
+    for (const action of actions) {
+      if (action.kind === "drop") {
+        triggers.delete(action.name);
+        continue;
+      }
+      const targets = [...action.body.matchAll(/\bON\s+(?:public\.)?([a-z0-9_]+)/gi)];
+      assert.ok(targets.length > 0, `${action.name} has no target table`);
+      const target = targets[targets.length - 1];
+      const eventClause = action.body.slice(0, target.index);
+      const operations = new Set<DmlOperation>();
+      for (const match of eventClause.matchAll(/\b(INSERT|UPDATE|DELETE)\b/gi)) {
+        operations.add(match[1].toUpperCase() as DmlOperation);
+      }
+      assert.ok(operations.size > 0, `${action.name} has no DML operation`);
+      triggers.set(action.name, {
+        table: target[1].toLowerCase(),
+        operations,
+      });
     }
   }
-  return tables;
+
+  const byTable = new Map<string, Set<DmlOperation>>();
+  for (const trigger of triggers.values()) {
+    const operations = byTable.get(trigger.table) ?? new Set<DmlOperation>();
+    for (const operation of trigger.operations) operations.add(operation);
+    byTable.set(trigger.table, operations);
+  }
+  return byTable;
+}
+
+function tablesWithRealtimeTrigger(): Set<string> {
+  return new Set(realtimeTriggerOperations().keys());
 }
 
 // -------------------------------------------------------------
@@ -129,45 +199,75 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_board_game_session_games", "bms_board_game_session_participants",
 ];
 
-/**
- * ⚠️ ช่องว่างที่รู้ตัว — ควรมี event แต่ยังไม่ได้ทำ
- * อยู่ในลิสต์นี้เพื่อให้ "ยังไม่ได้ทำ" เป็นของที่อ่านเจอ ไม่ใช่ของที่เงียบหาย
- * เพิ่ม trigger ให้ตัวไหนแล้ว ต้องย้ายออกจากลิสต์นี้ (มีเทสบังคับ)
- */
-const KNOWN_GAPS = [
-  "bms_pos_returns", "bms_pos_blind_returns", "bms_pos_blind_return_items",
-  "bms_pos_deposits", "bms_pos_expenses", "bms_pos_no_sales", "bms_pos_parked_sales",
-  "bms_pos_petty_cash_ledger", "bms_pos_petty_cash_wallets",
-  "bms_pos_pharmacist_authorizations", "bms_store_credits", "bms_store_credit_ledger",
-  "bms_ar_accounts", "bms_ar_invoices", "bms_ar_ledger", "bms_ar_receipts",
-  "bms_tax_documents", "bms_loyalty_ledger", "bms_purchase_orders",
-  "bms_inventory_wastage",
-];
-
 const CLASSIFIED = new Map<string, string>();
 for (const [reason, tables] of [
   ["child of an aggregate that already emits", CHILD_OF_AGGREGATE],
   ["ops/telemetry, not a mobile-visible business state", OPS_TELEMETRY],
   ["configuration read on demand, not a live surface", CONFIGURATION],
   ["authoritative polling plus post-write refresh; no realtime event contract", POLLED_OPERATIONAL_SURFACE],
-  ["known gap: deserves an event, not built yet", KNOWN_GAPS],
 ] as const) {
   for (const table of tables) CLASSIFIED.set(table, reason);
 }
 
-test("every table the business layer writes is classified for realtime coverage", () => {
-  const written = tablesWrittenByBusinessLayer();
-  const triggered = tablesWithRealtimeTrigger();
-  assert.ok(written.size > 100, "table scan must actually find the business writes");
-  assert.ok(triggered.size > 20, "trigger scan must actually find the migrations");
+/** การลบทั้ง tenant ไม่มี subscriber เหลืออยู่ และ outbox ของ tenant ถูก cascade ทิ้ง */
+const OPERATION_EXEMPTIONS = new Map<string, string>([
+  ["bms_messages:UPDATE", "outbound delivery metadata; conversation invalidation is emitted after delivery"],
+  ["bms_orders:DELETE", "platform tenant teardown"],
+  ["bms_pos_expenses:DELETE", "platform tenant teardown"],
+  ["bms_pos_petty_cash_ledger:DELETE", "platform tenant teardown"],
+  ["bms_pos_shifts:DELETE", "platform tenant teardown"],
+  ["bms_products:DELETE", "platform tenant teardown"],
+  ["bms_products:INSERT", "draft/config creation; publish is the active-state UPDATE"],
+  ["bms_purchase_orders:DELETE", "platform tenant teardown"],
+  ["bms_restaurant_order_requests:DELETE", "platform tenant teardown"],
+  ["bms_stock_counts:INSERT", "draft count creation does not change inventory"],
+  ["bms_stock_transfers:INSERT", "draft transfer creation does not move inventory"],
+]);
 
-  const unclassified = [...written]
-    .filter((table) => !triggered.has(table) && !CLASSIFIED.has(table))
-    .sort();
+test("every business-layer write operation is classified for realtime coverage", () => {
+  const writes = writesByBusinessLayer();
+  const triggerOperations = realtimeTriggerOperations();
+  assert.ok(writes.size > 100, "table scan must actually find the business writes");
+  assert.ok(triggerOperations.size > 20, "trigger scan must actually find the migrations");
+
+  const unclassified: string[] = [];
+  for (const [table, operations] of writes) {
+    if (CLASSIFIED.has(table)) continue;
+    const covered = triggerOperations.get(table) ?? new Set<DmlOperation>();
+    for (const operation of operations) {
+      if (
+        !covered.has(operation) &&
+        !OPERATION_EXEMPTIONS.has(`${table}:${operation}`)
+      ) {
+        unclassified.push(`${table}:${operation}`);
+      }
+    }
+  }
+  unclassified.sort();
   assert.deepEqual(
     unclassified,
     [],
-    "ตารางใหม่ต้องมี trigger หรือถูกจัดประเภทพร้อมเหตุผล — ไม่งั้นทั้งโดเมนหายเงียบ",
+    "ทุก INSERT/UPDATE/DELETE ต้องมี trigger หรือเหตุผลยกเว้น — ไม่งั้นบาง operation จะหายเงียบ",
+  );
+});
+
+test("operation exemptions stay explicit, exercised, and uncovered", () => {
+  const writes = writesByBusinessLayer();
+  const triggerOperations = realtimeTriggerOperations();
+  for (const key of OPERATION_EXEMPTIONS.keys()) {
+    const [table, operation] = key.split(":") as [string, DmlOperation];
+    assert.ok(writes.get(table)?.has(operation), `${key} exemption is no longer exercised`);
+    assert.ok(
+      !triggerOperations.get(table)?.has(operation),
+      `${key} is covered now and must be removed from OPERATION_EXEMPTIONS`,
+    );
+  }
+});
+
+test("message delivery metadata keeps its explicit conversation invalidation", () => {
+  assert.match(
+    INBOX,
+    /UPDATE bms_messages SET meta[\s\S]{0,500}publishInboxChanged\(tenantId, row\.conversation_id, "CONVERSATION_CHANGED"\)/,
   );
 });
 

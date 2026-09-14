@@ -17,7 +17,11 @@ import {
   searchDeposits,
   takeDeposit,
 } from "@/lib/bms/deposits";
-import { listKitchenTickets, updateKitchenTicketStatus, updateKitchenTicketsStatus } from "@/lib/bms/kitchen";
+import {
+  listKitchenTickets,
+  updateKitchenTicketStatus,
+  updateKitchenTicketsStatus,
+} from "@/lib/bms/kitchen";
 import { getKitchenStationSlaMap } from "@/lib/bms/kitchenSla";
 import { listKitchenStations } from "@/lib/bms/kitchenStations";
 import { getLocation } from "@/lib/bms/locations";
@@ -86,7 +90,10 @@ import {
   type PosPettyCashFundingSource,
 } from "@/lib/bms/posExpenses";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/bms/payments";
-import { listPrimaryProductImages, listSellableProducts } from "@/lib/bms/products";
+import {
+  listPrimaryProductImages,
+  listSellableProducts,
+} from "@/lib/bms/products";
 import {
   getPurchaseOrder,
   listReceivablePurchaseOrders,
@@ -119,9 +126,18 @@ import {
   setRestaurantCheckGuestCount,
   splitRestaurantCheck,
 } from "@/lib/bms/restaurantPos";
-import { listRestaurantQrSubmissions, rejectRestaurantQrSubmission } from "@/lib/bms/restaurantQrOrdering";
-import { listRestaurantRequests, reviewRestaurantRequest } from "@/lib/bms/restaurantRequests";
-import { listRestaurantServiceCalls, updateRestaurantServiceCall } from "@/lib/bms/restaurantServiceCalls";
+import {
+  listRestaurantQrSubmissions,
+  rejectRestaurantQrSubmission,
+} from "@/lib/bms/restaurantQrOrdering";
+import {
+  listRestaurantRequests,
+  reviewRestaurantRequest,
+} from "@/lib/bms/restaurantRequests";
+import {
+  listRestaurantServiceCalls,
+  updateRestaurantServiceCall,
+} from "@/lib/bms/restaurantServiceCalls";
 import {
   addRestaurantWaitlistEntry,
   callRestaurantWaitlistEntry,
@@ -440,7 +456,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   input BmsPosRestaurantOpenCheckInput {
     cashierUserId: ID!
     pin: String!
-    tableId: ID!
+    tableId: ID
+    serviceMode: String
     guestCount: Int
     note: String
   }
@@ -709,6 +726,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   type BmsPosStoreReceiptSettings {
     taxId: String
     receiptLanguageMode: String!
+    address: String
+    phone: String
+    logoUrl: String
   }
 
   type BmsPosVatSettings {
@@ -781,6 +801,13 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     defaultSelected: Boolean!
   }
 
+  type BmsPosPackOption {
+    code: String!
+    unitName: String!
+    baseQty: Float!
+    price: Float!
+  }
+
   type BmsPosScanResult {
     sku: String!
     productName: String!
@@ -795,6 +822,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     serialTracked: Boolean!
     promotion: BmsPosPromotion
     modifiers: [BmsPosModifier!]!
+    packs: [BmsPosPackOption!]!
     scaleBarcode: String
     available: Float!
     imageUrl: String
@@ -828,6 +856,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   type BmsPosRestaurantFloorCheck {
     id: ID!
     status: String!
+    serviceMode: String
     guestCount: Int!
     amountDue: Float!
     openedAt: String
@@ -857,6 +886,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   type BmsPosRestaurantFloorResult {
     areas: [BmsRestaurantArea!]!
     tables: [BmsPosRestaurantFloorTable!]!
+    takeawayChecks: [BmsPosRestaurantFloorCheck!]!
   }
 
   type BmsPosRestaurantCheckItem {
@@ -882,7 +912,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
 
   type BmsPosRestaurantCheck {
     id: ID!
-    tableId: ID!
+    serviceMode: String!
+    tableId: ID
     tableCode: String!
     tableName: String!
     areaName: String!
@@ -1140,6 +1171,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     receiptNo: String
     billNo: String
     sourceChannel: String!
+    restaurantServiceMode: String
     returnEligible: Boolean!
     returnBlockedReason: String
     saleLocationId: ID!
@@ -1903,13 +1935,20 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
       withImage: Boolean = false
     ): BmsPosScanResult!
     bmsPosLastSale: BmsPosReceipt
-    bmsPosRecentSales(q: String, limit: Int = 5, deviceOnly: Boolean = false): BmsPosRecentSalesResult!
+    bmsPosRecentSales(
+      q: String
+      limit: Int = 5
+      deviceOnly: Boolean = false
+    ): BmsPosRecentSalesResult!
     bmsPosParkedSales: BmsPosParkedSalesResult!
     bmsPosCashMovements: BmsPosCashMovementsResult!
     bmsPosNoSales: BmsPosNoSalesResult!
     bmsPosDeposits(q: String): BmsPosDepositsResult!
     bmsPosExpenses(credentials: BmsPosCredentialsInput!): BmsPosExpensesResult!
-    bmsPosKitchenTickets(status: String, limit: Int = 100): BmsPosKitchenTicketsResult!
+    bmsPosKitchenTickets(
+      status: String
+      limit: Int = 100
+    ): BmsPosKitchenTicketsResult!
     bmsPosRestaurantFloor: BmsPosRestaurantFloorResult!
     bmsPosRestaurantMenu: BmsPosRestaurantMenuResult!
     bmsPosRestaurantCheck(id: ID!): BmsPosRestaurantCheck
@@ -1919,14 +1958,34 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosRestaurantWaitlist: BmsPosRestaurantWaitlistResult!
     bmsPosMemberSearch(q: String, amount: Float): BmsPosMemberSearchResult!
 
-    bmsPosShiftHistory(credentials: BmsPosCredentialsInput!): BmsPosShiftHistoryResult!
-    bmsPosShiftReport(credentials: BmsPosCredentialsInput!, shiftId: ID): BmsPosShiftReportResult!
-    bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): BmsPosArAccountResult!
-    bmsPosStoreCredit(credentials: BmsPosCredentialsInput!, code: String!): BmsPosStoreCreditResult!
-    bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): BmsPosPurchaseOrdersResult!
-    bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): BmsPurchaseOrder
-    bmsPosRestaurantRequests(credentials: BmsPosCredentialsInput!): BmsPosRestaurantRequestsResult!
-    bmsPosMemberPreview(input: BmsPosMemberPreviewInput!): BmsPosMemberPreviewResult!
+    bmsPosShiftHistory(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosShiftHistoryResult!
+    bmsPosShiftReport(
+      credentials: BmsPosCredentialsInput!
+      shiftId: ID
+    ): BmsPosShiftReportResult!
+    bmsPosArAccount(
+      credentials: BmsPosCredentialsInput!
+      customerId: ID!
+    ): BmsPosArAccountResult!
+    bmsPosStoreCredit(
+      credentials: BmsPosCredentialsInput!
+      code: String!
+    ): BmsPosStoreCreditResult!
+    bmsPosPurchaseOrders(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosPurchaseOrdersResult!
+    bmsPosPurchaseOrder(
+      credentials: BmsPosCredentialsInput!
+      poId: ID!
+    ): BmsPurchaseOrder
+    bmsPosRestaurantRequests(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosRestaurantRequestsResult!
+    bmsPosMemberPreview(
+      input: BmsPosMemberPreviewInput!
+    ): BmsPosMemberPreviewResult!
   }
 
   extend type Mutation {
@@ -1937,73 +1996,183 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosReturn(input: BmsPosReturnInput!): BmsPosReturnActionResult!
     bmsPosBlindReturn(input: BmsPosBlindReturnInput!): BmsPosReturnActionResult!
     bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
-    bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): BmsPosCompleteRefundResult!
-    bmsPosCashMovement(input: BmsPosCashMovementInput!): BmsPosCashMovementActionResult!
+    bmsPosCompleteRefund(
+      input: BmsPosCompleteRefundInput!
+    ): BmsPosCompleteRefundResult!
+    bmsPosCashMovement(
+      input: BmsPosCashMovementInput!
+    ): BmsPosCashMovementActionResult!
     bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!
-    bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): BmsPosEnrollMemberResult!
+    bmsPosEnrollMember(
+      input: BmsPosEnrollMemberInput!
+    ): BmsPosEnrollMemberResult!
     bmsPosCollectAr(input: BmsPosCollectArInput!): BmsPosArReceiptResult!
-    bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): BmsPurchaseResult!
-    bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!
+    bmsPosReceivePurchase(
+      input: BmsPosReceivePurchaseInput!
+    ): BmsPurchaseResult!
+    bmsPosSendReceipt(
+      input: BmsPosSendReceiptInput!
+    ): BmsPosReceiptDeliveryResult!
     bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
     bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
-    bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): BmsPosPharmacyReviewResult!
-    bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): BmsPosKitchenTicketActionResult!
-    bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): BmsPosKitchenTicketsActionResult!
-    bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): BmsPosRestaurantFloorResult!
-    bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): BmsPosMenuAvailabilityResult!
-    bmsPosRestaurantOpenCheck(input: BmsPosRestaurantOpenCheckInput!): BmsPosRestaurantOpenCheckResult!
-    bmsPosRestaurantAddCheckItem(checkId: ID!, input: BmsPosRestaurantAddCheckItemInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantRemoveCheckItem(checkId: ID!, itemId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantSetCheckGuestCount(checkId: ID!, input: BmsPosRestaurantSetGuestCountInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantSendCheckToKitchen(checkId: ID!, credentials: BmsPosRestaurantCheckCredentialsInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantMoveCheck(checkId: ID!, input: BmsPosRestaurantMoveCheckInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantSplitCheck(checkId: ID!, input: BmsPosRestaurantSplitCheckInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantMergeChecks(checkId: ID!, input: BmsPosRestaurantMergeChecksInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantCancelCheck(checkId: ID!, input: BmsPosRestaurantCancelCheckInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantSettleCheck(checkId: ID!, input: BmsPosRestaurantSettleCheckInput!): BmsPosRestaurantCheckActionResult!
-    bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): BmsPosRestaurantIncomingActionResult!
-    bmsPosRestaurantSetOrderingPaused(input: BmsPosRestaurantSetOrderingPausedInput!): BmsPosRestaurantIncomingActionResult!
-    bmsPosRestaurantCancelOrderLines(input: BmsPosRestaurantCancelOrderLinesInput!): BmsPosRestaurantIncomingActionResult!
-    bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): BmsPosRestaurantQrActionResult!
-    bmsPosRestaurantRejectQrSubmission(input: BmsPosRestaurantRejectQrSubmissionInput!): BmsPosRestaurantQrActionResult!
-    bmsPosRestaurantContactRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
-    bmsPosRestaurantConfirmRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
-    bmsPosRestaurantCancelRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
-    bmsPosRestaurantAcknowledgeServiceCall(input: BmsPosRestaurantServiceCallInput!): BmsPosRestaurantServiceCallActionResult!
-    bmsPosRestaurantCompleteServiceCall(input: BmsPosRestaurantServiceCallInput!): BmsPosRestaurantServiceCallActionResult!
-    bmsPosRestaurantAddWaitlistEntry(input: BmsPosRestaurantAddWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
-    bmsPosRestaurantCallWaitlistEntry(input: BmsPosRestaurantWaitlistEntryInput!): BmsPosRestaurantWaitlistActionResult!
-    bmsPosRestaurantCancelWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
-    bmsPosRestaurantNoShowWaitlistEntry(input: BmsPosRestaurantCloseWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
-    bmsPosRestaurantSeatWaitlistEntry(input: BmsPosRestaurantSeatWaitlistInput!): BmsPosRestaurantWaitlistActionResult!
-    bmsPosRestaurantCheckAction(checkId: ID!, input: BmsPosRestaurantCheckActionInput!): BmsPosRestaurantCheckActionResult! @deprecated(reason: "Use the named restaurant check mutations")
-    bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): BmsPosRestaurantIncomingActionResult! @deprecated(reason: "Use the named incoming-order mutations")
-    bmsPosRestaurantQrOrderAction(input: BmsPosRestaurantQrOrderActionInput!): BmsPosRestaurantQrActionResult! @deprecated(reason: "Use the named QR-submission mutations")
-    bmsPosRestaurantRequestAction(input: BmsPosRestaurantRequestActionInput!): BmsPosRestaurantRequestActionResult! @deprecated(reason: "Use bmsPosRestaurantRequests or a named request decision mutation")
-    bmsPosRestaurantServiceCallAction(input: BmsPosRestaurantServiceCallActionInput!): BmsPosRestaurantServiceCallActionResult! @deprecated(reason: "Use the named service-call mutations")
-    bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): BmsPosRestaurantWaitlistActionResult! @deprecated(reason: "Use the named waitlist mutations")
+    bmsPosRequestPharmacyReview(
+      input: BmsPosRequestPharmacyReviewInput!
+    ): BmsPosPharmacyReviewResult!
+    bmsPosKitchenTicketStatus(
+      input: BmsPosKitchenTicketStatusInput!
+    ): BmsPosKitchenTicketActionResult!
+    bmsPosKitchenTicketsStatus(
+      input: BmsPosKitchenTicketsStatusInput!
+    ): BmsPosKitchenTicketsActionResult!
+    bmsPosRestaurantFloorSetup(
+      input: BmsPosRestaurantFloorSetupInput!
+    ): BmsPosRestaurantFloorResult!
+    bmsPosRestaurantMenuAvailability(
+      input: BmsPosRestaurantMenuAvailabilityInput!
+    ): BmsPosMenuAvailabilityResult!
+    bmsPosRestaurantOpenCheck(
+      input: BmsPosRestaurantOpenCheckInput!
+    ): BmsPosRestaurantOpenCheckResult!
+    bmsPosRestaurantAddCheckItem(
+      checkId: ID!
+      input: BmsPosRestaurantAddCheckItemInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantRemoveCheckItem(
+      checkId: ID!
+      itemId: ID!
+      credentials: BmsPosRestaurantCheckCredentialsInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantSetCheckGuestCount(
+      checkId: ID!
+      input: BmsPosRestaurantSetGuestCountInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantSendCheckToKitchen(
+      checkId: ID!
+      credentials: BmsPosRestaurantCheckCredentialsInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantMoveCheck(
+      checkId: ID!
+      input: BmsPosRestaurantMoveCheckInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantSplitCheck(
+      checkId: ID!
+      input: BmsPosRestaurantSplitCheckInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantMergeChecks(
+      checkId: ID!
+      input: BmsPosRestaurantMergeChecksInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantCancelCheck(
+      checkId: ID!
+      input: BmsPosRestaurantCancelCheckInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantSettleCheck(
+      checkId: ID!
+      input: BmsPosRestaurantSettleCheckInput!
+    ): BmsPosRestaurantCheckActionResult!
+    bmsPosRestaurantAcceptIncomingOrder(
+      input: BmsPosRestaurantAcceptIncomingOrderInput!
+    ): BmsPosRestaurantIncomingActionResult!
+    bmsPosRestaurantSetOrderingPaused(
+      input: BmsPosRestaurantSetOrderingPausedInput!
+    ): BmsPosRestaurantIncomingActionResult!
+    bmsPosRestaurantCancelOrderLines(
+      input: BmsPosRestaurantCancelOrderLinesInput!
+    ): BmsPosRestaurantIncomingActionResult!
+    bmsPosRestaurantAcceptQrSubmission(
+      input: BmsPosRestaurantQrSubmissionInput!
+    ): BmsPosRestaurantQrActionResult!
+    bmsPosRestaurantRejectQrSubmission(
+      input: BmsPosRestaurantRejectQrSubmissionInput!
+    ): BmsPosRestaurantQrActionResult!
+    bmsPosRestaurantContactRequest(
+      input: BmsPosRestaurantRequestDecisionInput!
+    ): BmsPosRestaurantRequestActionResult!
+    bmsPosRestaurantConfirmRequest(
+      input: BmsPosRestaurantRequestDecisionInput!
+    ): BmsPosRestaurantRequestActionResult!
+    bmsPosRestaurantCancelRequest(
+      input: BmsPosRestaurantRequestDecisionInput!
+    ): BmsPosRestaurantRequestActionResult!
+    bmsPosRestaurantAcknowledgeServiceCall(
+      input: BmsPosRestaurantServiceCallInput!
+    ): BmsPosRestaurantServiceCallActionResult!
+    bmsPosRestaurantCompleteServiceCall(
+      input: BmsPosRestaurantServiceCallInput!
+    ): BmsPosRestaurantServiceCallActionResult!
+    bmsPosRestaurantAddWaitlistEntry(
+      input: BmsPosRestaurantAddWaitlistInput!
+    ): BmsPosRestaurantWaitlistActionResult!
+    bmsPosRestaurantCallWaitlistEntry(
+      input: BmsPosRestaurantWaitlistEntryInput!
+    ): BmsPosRestaurantWaitlistActionResult!
+    bmsPosRestaurantCancelWaitlistEntry(
+      input: BmsPosRestaurantCloseWaitlistInput!
+    ): BmsPosRestaurantWaitlistActionResult!
+    bmsPosRestaurantNoShowWaitlistEntry(
+      input: BmsPosRestaurantCloseWaitlistInput!
+    ): BmsPosRestaurantWaitlistActionResult!
+    bmsPosRestaurantSeatWaitlistEntry(
+      input: BmsPosRestaurantSeatWaitlistInput!
+    ): BmsPosRestaurantWaitlistActionResult!
+    bmsPosRestaurantCheckAction(
+      checkId: ID!
+      input: BmsPosRestaurantCheckActionInput!
+    ): BmsPosRestaurantCheckActionResult!
+      @deprecated(reason: "Use the named restaurant check mutations")
+    bmsPosRestaurantIncomingAction(
+      input: BmsPosRestaurantIncomingActionInput!
+    ): BmsPosRestaurantIncomingActionResult!
+      @deprecated(reason: "Use the named incoming-order mutations")
+    bmsPosRestaurantQrOrderAction(
+      input: BmsPosRestaurantQrOrderActionInput!
+    ): BmsPosRestaurantQrActionResult!
+      @deprecated(reason: "Use the named QR-submission mutations")
+    bmsPosRestaurantRequestAction(
+      input: BmsPosRestaurantRequestActionInput!
+    ): BmsPosRestaurantRequestActionResult!
+      @deprecated(
+        reason: "Use bmsPosRestaurantRequests or a named request decision mutation"
+      )
+    bmsPosRestaurantServiceCallAction(
+      input: BmsPosRestaurantServiceCallActionInput!
+    ): BmsPosRestaurantServiceCallActionResult!
+      @deprecated(reason: "Use the named service-call mutations")
+    bmsPosRestaurantWaitlistAction(
+      input: BmsPosRestaurantWaitlistActionInput!
+    ): BmsPosRestaurantWaitlistActionResult!
+      @deprecated(reason: "Use the named waitlist mutations")
   }
 `;
 
 function recordInput(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return badPosInput("input ไม่ถูกต้อง");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return badPosInput("input ไม่ถูกต้อง");
   return value as Record<string, unknown>;
 }
 
 function normalizeParkedCartOutput(value: unknown) {
   if (Array.isArray(value)) return { version: 2, lines: value };
-  const cart = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const rawReview = cart.pharmacyReview && typeof cart.pharmacyReview === "object"
-    ? cart.pharmacyReview as Record<string, unknown>
-    : null;
-  const assessmentId = typeof rawReview?.assessmentId === "string" ? rawReview.assessmentId.trim() : "";
+  const cart =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  const rawReview =
+    cart.pharmacyReview && typeof cart.pharmacyReview === "object"
+      ? (cart.pharmacyReview as Record<string, unknown>)
+      : null;
+  const assessmentId =
+    typeof rawReview?.assessmentId === "string"
+      ? rawReview.assessmentId.trim()
+      : "";
   const pharmacyReview = assessmentId
     ? {
         ...rawReview,
         assessmentId,
-        caseCode: typeof rawReview?.caseCode === "string" && rawReview.caseCode.trim()
-          ? rawReview.caseCode.trim()
-          : assessmentId.slice(0, 8),
+        caseCode:
+          typeof rawReview?.caseCode === "string" && rawReview.caseCode.trim()
+            ? rawReview.caseCode.trim()
+            : assessmentId.slice(0, 8),
         requiresSafetyCheck: rawReview?.requiresSafetyCheck === true,
       }
     : null;
@@ -2040,12 +2209,20 @@ function optionalUuidInput(value: unknown, message: string): string | null {
 }
 
 function isIsoDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000-")) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000-"))
+    return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
-function boundedLimit(value: number | null | undefined, fallback: number, maximum: number): number {
+function boundedLimit(
+  value: number | null | undefined,
+  fallback: number,
+  maximum: number,
+): number {
   if (value == null || !Number.isFinite(value)) return fallback;
   return Math.min(Math.max(Math.trunc(value), 1), maximum);
 }
@@ -2064,20 +2241,34 @@ export const bmsPosDeviceResolvers = {
   Query: {
     async bmsPosSession(_parent: unknown, _args: unknown, ctx: any) {
       const device = requirePosDevice(ctx);
-      const [shift, location, cashiers, purchaseReceivers, approvers, kitchenOperators, vat, store] =
-        await Promise.all([
-          getOpenPosShift(device.tenantId, device.id),
-          getLocation(device.tenantId, device.locationId),
-          listPosCashiers(device.tenantId),
-          listPosPurchaseReceivers(device.tenantId),
-          listPosApprovers(device.tenantId),
-          listPosKitchenOperators(device.tenantId),
-          getVatSettings(device.tenantId),
-          getStoreProfile(device.tenantId),
-        ]);
+      const [
+        shift,
+        location,
+        cashiers,
+        purchaseReceivers,
+        approvers,
+        kitchenOperators,
+        vat,
+        store,
+      ] = await Promise.all([
+        getOpenPosShift(device.tenantId, device.id),
+        getLocation(device.tenantId, device.locationId),
+        listPosCashiers(device.tenantId),
+        listPosPurchaseReceivers(device.tenantId),
+        listPosApprovers(device.tenantId),
+        listPosKitchenOperators(device.tenantId),
+        getVatSettings(device.tenantId),
+        getStoreProfile(device.tenantId),
+      ]);
       const shiftReturnSummary = shift
         ? await getPosShiftReturnSummary(device.tenantId, device.id, shift.id)
-        : { returnCount: 0, returnTotal: 0, settledTotal: 0, pendingTotal: 0, pendingCount: 0 };
+        : {
+            returnCount: 0,
+            returnTotal: 0,
+            settledTotal: 0,
+            pendingTotal: 0,
+            pendingCount: 0,
+          };
       return {
         device: {
           id: device.id,
@@ -2091,21 +2282,30 @@ export const bmsPosDeviceResolvers = {
             maxGapMs: device.scannerMaxGapMs,
           },
         },
-        location: location ? {
-          id: location.id,
-          name: location.name,
-          branchCode: location.branchCode,
-          vatCode: location.vatCode,
-          pharmacistName: location.pharmacistName,
-        } : null,
+        location: location
+          ? {
+              id: location.id,
+              name: location.name,
+              branchCode: location.branchCode,
+              vatCode: location.vatCode,
+              pharmacistName: location.pharmacistName,
+            }
+          : null,
         shift,
         shiftReturnSummary,
         cashiers,
         purchaseReceivers,
         approvers,
         kitchenOperators,
-        store: { taxId: store.taxId, receiptLanguageMode: store.receiptLanguageMode },
-        surface: store.businessArchetype === "restaurant" ? "restaurant" : "retail",
+        store: {
+          taxId: store.taxId,
+          receiptLanguageMode: store.receiptLanguageMode,
+          address: store.address,
+          phone: store.phone,
+          logoUrl: store.logoUrl,
+        },
+        surface:
+          store.businessArchetype === "restaurant" ? "restaurant" : "retail",
         businessArchetype: store.businessArchetype ?? null,
         vat: {
           registered: vat.vatRegistered,
@@ -2117,7 +2317,11 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosCatalogSearch(_parent: unknown, args: { q?: string | null }, ctx: any) {
+    async bmsPosCatalogSearch(
+      _parent: unknown,
+      args: { q?: string | null },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const q = normalizePosSearchQuery(args.q);
       const { items } = await listSellableProducts(device.tenantId, {
@@ -2128,7 +2332,10 @@ export const bmsPosDeviceResolvers = {
         locationId: device.locationId,
         salesSurface: "RETAIL_POS",
       });
-      const imagesBySku = await listPrimaryProductImages(device.tenantId, items.map((item) => item.sku));
+      const imagesBySku = await listPrimaryProductImages(
+        device.tenantId,
+        items.map((item) => item.sku),
+      );
       return {
         items: items.map((item) => ({
           sku: item.sku,
@@ -2142,13 +2349,17 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosScan(_parent: unknown, args: {
-      code: string;
-      size?: string | null;
-      packCode?: string | null;
-      surface?: string | null;
-      withImage?: boolean | null;
-    }, ctx: any) {
+    async bmsPosScan(
+      _parent: unknown,
+      args: {
+        code: string;
+        size?: string | null;
+        packCode?: string | null;
+        surface?: string | null;
+        withImage?: boolean | null;
+      },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const code = String(args.code ?? "").trim();
       if (!code) return badPosInput("ต้องระบุ code");
@@ -2156,20 +2367,34 @@ export const bmsPosDeviceResolvers = {
         size: args.size?.trim() || null,
         locationId: device.locationId,
         packCode: args.packCode?.trim() || null,
-        surface: args.surface?.trim().toUpperCase() === "RESTAURANT_POS"
-          ? "RESTAURANT_POS"
-          : "RETAIL_POS",
+        surface:
+          args.surface?.trim().toUpperCase() === "RESTAURANT_POS"
+            ? "RESTAURANT_POS"
+            : "RETAIL_POS",
       });
       if (!hit) {
-        throw mobileGraphqlError("ไม่พบสินค้าจากรหัสนี้", "NOT_FOUND", { scanCode: code });
+        throw mobileGraphqlError("ไม่พบสินค้าจากรหัสนี้", "NOT_FOUND", {
+          scanCode: code,
+        });
       }
       const [available, imageUrl] = await Promise.all([
-        getPosVariantAvailable(device.tenantId, device.locationId, hit.sku, hit.size),
+        getPosVariantAvailable(
+          device.tenantId,
+          device.locationId,
+          hit.sku,
+          hit.size,
+        ),
         args.withImage
-          ? listPrimaryProductImages(device.tenantId, [hit.sku]).then((images) => images.get(hit.sku) ?? null)
+          ? listPrimaryProductImages(device.tenantId, [hit.sku]).then(
+              (images) => images.get(hit.sku) ?? null,
+            )
           : Promise.resolve(undefined),
       ]);
-      return { ...hit, available, ...(args.withImage ? { imageUrl: imageUrl ?? null } : {}) };
+      return {
+        ...hit,
+        available,
+        ...(args.withImage ? { imageUrl: imageUrl ?? null } : {}),
+      };
     },
 
     async bmsPosLastSale(_parent: unknown, _args: unknown, ctx: any) {
@@ -2179,30 +2404,44 @@ export const bmsPosDeviceResolvers = {
         getLocation(device.tenantId, device.locationId),
         getVatSettings(device.tenantId),
       ]);
-      return sale ? decoratePosSale(sale as Record<string, unknown>, {
-        storeName: location?.name ?? null,
-        branchCode: location?.branchCode ?? null,
-        posLabel: device.registeredPosNo ?? device.code,
-        vatRegistered: vat.vatRegistered,
-      }) : null;
+      return sale
+        ? decoratePosSale(sale as Record<string, unknown>, {
+            storeName: location?.name ?? null,
+            branchCode: location?.branchCode ?? null,
+            posLabel: device.registeredPosNo ?? device.code,
+            vatRegistered: vat.vatRegistered,
+          })
+        : null;
     },
 
-    async bmsPosRecentSales(_parent: unknown, args: {
-      q?: string | null;
-      limit?: number | null;
-      deviceOnly?: boolean | null;
-    }, ctx: any) {
+    async bmsPosRecentSales(
+      _parent: unknown,
+      args: {
+        q?: string | null;
+        limit?: number | null;
+        deviceOnly?: boolean | null;
+      },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const q = normalizePosSearchQuery(args.q);
       const sales = await listRecentPosSales(
         device.tenantId,
         device.id,
         boundedLimit(args.limit, 5, 50),
-        { query: q || null, locationId: device.locationId, deviceOnly: args.deviceOnly === true },
+        {
+          query: q || null,
+          locationId: device.locationId,
+          deviceOnly: args.deviceOnly === true,
+        },
       );
-      const depositMatches = sales.length === 0 && q
-        ? await searchDeposits(device.tenantId, q, { locationId: device.locationId, limit: 5 })
-        : [];
+      const depositMatches =
+        sales.length === 0 && q
+          ? await searchDeposits(device.tenantId, q, {
+              locationId: device.locationId,
+              limit: 5,
+            })
+          : [];
       return { sales, depositMatches };
     },
 
@@ -2224,27 +2463,59 @@ export const bmsPosDeviceResolvers = {
       return { noSales: await listNoSales(device.tenantId, shift.id) };
     },
 
-    async bmsPosDeposits(_parent: unknown, args: { q?: string | null }, ctx: any) {
+    async bmsPosDeposits(
+      _parent: unknown,
+      args: { q?: string | null },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const q = args.q?.trim() ?? "";
       const [deposits, candidateOrders, searchResults] = await Promise.all([
-        listDeposits(device.tenantId, "OPEN", { locationId: device.locationId }),
+        listDeposits(device.tenantId, "OPEN", {
+          locationId: device.locationId,
+        }),
         listDepositCandidateOrders(device.tenantId, device.locationId),
-        q ? searchDeposits(device.tenantId, q, { locationId: device.locationId }) : Promise.resolve([]),
+        q
+          ? searchDeposits(device.tenantId, q, {
+              locationId: device.locationId,
+            })
+          : Promise.resolve([]),
       ]);
-      return { deposits, candidateOrders, searchResults, searchQuery: q || null };
+      return {
+        deposits,
+        candidateOrders,
+        searchResults,
+        searchQuery: q || null,
+      };
     },
 
-    async bmsPosExpenses(_parent: unknown, args: { credentials: PosCashierCredentials }, ctx: any) {
+    async bmsPosExpenses(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
-      const actor = await requirePosCashier(device, args.credentials, "pos.expense.create");
+      const actor = await requirePosCashier(
+        device,
+        args.credentials,
+        "pos.expense.create",
+      );
       const shift = await requireOpenPosShift(device);
-      const [expenses, wallet, canUsePersonalFunds, canManagePettyCash] = await Promise.all([
-        listPosExpenses(device.tenantId, shift.id, device.id),
-        getPosPettyCashWallet(device.tenantId, device.locationId),
-        cashierHasPermission(device.tenantId, actor.userId, "pos.expense.personal"),
-        cashierHasPermission(device.tenantId, actor.userId, "pos.petty_cash.manage"),
-      ]);
+      const [expenses, wallet, canUsePersonalFunds, canManagePettyCash] =
+        await Promise.all([
+          listPosExpenses(device.tenantId, shift.id, device.id),
+          getPosPettyCashWallet(device.tenantId, device.locationId),
+          cashierHasPermission(
+            device.tenantId,
+            actor.userId,
+            "pos.expense.personal",
+          ),
+          cashierHasPermission(
+            device.tenantId,
+            actor.userId,
+            "pos.petty_cash.manage",
+          ),
+        ]);
       return {
         expenses,
         categories: POS_EXPENSE_CATEGORIES,
@@ -2254,13 +2525,24 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosKitchenTickets(_parent: unknown, args: { status?: string | null; limit?: number | null }, ctx: any) {
+    async bmsPosKitchenTickets(
+      _parent: unknown,
+      args: { status?: string | null; limit?: number | null },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const status = args.status?.trim().toUpperCase() || null;
       const [tickets, stationSlas, stations] = await Promise.all([
-        listKitchenTickets(device.tenantId, status, boundedLimit(args.limit, 100, 200), device.locationId),
+        listKitchenTickets(
+          device.tenantId,
+          status,
+          boundedLimit(args.limit, 100, 200),
+          device.locationId,
+        ),
         getKitchenStationSlaMap(device.tenantId),
-        listKitchenStations(device.tenantId, { locationId: device.locationId }).catch(() => []),
+        listKitchenStations(device.tenantId, {
+          locationId: device.locationId,
+        }).catch(() => []),
       ]);
       return {
         tickets,
@@ -2269,7 +2551,11 @@ export const bmsPosDeviceResolvers = {
           warnMinutes: sla.warnMinutes,
           lateMinutes: sla.lateMinutes,
         })),
-        stations: stations.map((station) => ({ id: station.id, name: station.name, sortOrder: station.sortOrder })),
+        stations: stations.map((station) => ({
+          id: station.id,
+          name: station.name,
+          sortOrder: station.sortOrder,
+        })),
         generatedAt: new Date().toISOString(),
       };
     },
@@ -2281,12 +2567,22 @@ export const bmsPosDeviceResolvers = {
 
     async bmsPosRestaurantMenu(_parent: unknown, _args: unknown, ctx: any) {
       const device = requirePosDevice(ctx);
-      return { items: await listRestaurantMenu(device.tenantId, device.locationId) };
+      return {
+        items: await listRestaurantMenu(device.tenantId, device.locationId),
+      };
     },
 
-    async bmsPosRestaurantCheck(_parent: unknown, args: { id: string }, ctx: any) {
+    async bmsPosRestaurantCheck(
+      _parent: unknown,
+      args: { id: string },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
-      return getRestaurantCheck(device.tenantId, uuidInput(args.id, "บิลโต๊ะไม่ถูกต้อง"), device.locationId);
+      return getRestaurantCheck(
+        device.tenantId,
+        uuidInput(args.id, "บิลโต๊ะไม่ถูกต้อง"),
+        device.locationId,
+      );
     },
 
     async bmsPosRestaurantIncoming(_parent: unknown, _args: unknown, ctx: any) {
@@ -2301,12 +2597,26 @@ export const bmsPosDeviceResolvers = {
 
     async bmsPosRestaurantQrOrders(_parent: unknown, _args: unknown, ctx: any) {
       const device = requirePosDevice(ctx);
-      return { submissions: await listRestaurantQrSubmissions(device.tenantId, device.locationId) };
+      return {
+        submissions: await listRestaurantQrSubmissions(
+          device.tenantId,
+          device.locationId,
+        ),
+      };
     },
 
-    async bmsPosRestaurantServiceCalls(_parent: unknown, _args: unknown, ctx: any) {
+    async bmsPosRestaurantServiceCalls(
+      _parent: unknown,
+      _args: unknown,
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
-      return { calls: await listRestaurantServiceCalls(device.tenantId, device.locationId) };
+      return {
+        calls: await listRestaurantServiceCalls(
+          device.tenantId,
+          device.locationId,
+        ),
+      };
     },
 
     async bmsPosRestaurantWaitlist(_parent: unknown, _args: unknown, ctx: any) {
@@ -2314,13 +2624,24 @@ export const bmsPosDeviceResolvers = {
       return listRestaurantWaitlist(device.tenantId, device.locationId);
     },
 
-    async bmsPosMemberSearch(_parent: unknown, args: { q?: string | null; amount?: number | null }, ctx: any) {
+    async bmsPosMemberSearch(
+      _parent: unknown,
+      args: { q?: string | null; amount?: number | null },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
-      const amount = Number.isFinite(args.amount) && Number(args.amount) > 0
-        ? Math.round(Number(args.amount) * 100) / 100
-        : null;
+      const amount =
+        Number.isFinite(args.amount) && Number(args.amount) > 0
+          ? Math.round(Number(args.amount) * 100) / 100
+          : null;
       const settings = await getLoyaltySettings(device.tenantId);
-      const earn = amount == null ? null : evaluatePointsEarn(settings, { netTotal: amount, discountAmount: 0 });
+      const earn =
+        amount == null
+          ? null
+          : evaluatePointsEarn(settings, {
+              netTotal: amount,
+              discountAmount: 0,
+            });
       const loyalty = {
         enabled: settings.enabled,
         pointsForAmount: earn?.points ?? null,
@@ -2332,31 +2653,53 @@ export const bmsPosDeviceResolvers = {
       return { members: members.map(toPosMemberSummary), loyalty };
     },
 
-    async bmsPosShiftHistory(_parent: unknown, args: { credentials: PosCashierCredentials }, ctx: any) {
+    async bmsPosShiftHistory(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "pos.shift.report");
-      return { shifts: await listPosShiftHistory(device.tenantId, device.id, 12) };
+      return {
+        shifts: await listPosShiftHistory(device.tenantId, device.id, 12),
+      };
     },
 
-    async bmsPosShiftReport(_parent: unknown, args: {
-      credentials: PosCashierCredentials;
-      shiftId?: string | null;
-    }, ctx: any) {
+    async bmsPosShiftReport(
+      _parent: unknown,
+      args: {
+        credentials: PosCashierCredentials;
+        shiftId?: string | null;
+      },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "pos.shift.report");
-      const shiftId = optionalUuidInput(args.shiftId, "กะไม่ถูกต้อง")
-        ?? (await getOpenPosShift(device.tenantId, device.id))?.id
-        ?? null;
+      const shiftId =
+        optionalUuidInput(args.shiftId, "กะไม่ถูกต้อง") ??
+        (await getOpenPosShift(device.tenantId, device.id))?.id ??
+        null;
       if (!shiftId) throw mobileGraphqlError("ไม่พบกะ", "NOT_FOUND");
-      const report = await getPosShiftReport(device.tenantId, shiftId, device.id);
+      const report = await getPosShiftReport(
+        device.tenantId,
+        shiftId,
+        device.id,
+      );
       if (!report) throw mobileGraphqlError("ไม่พบกะ", "NOT_FOUND");
-      return { report, receivables: await getArShiftSummary(device.tenantId, shiftId) };
+      return {
+        report,
+        receivables: await getArShiftSummary(device.tenantId, shiftId),
+      };
     },
 
-    async bmsPosArAccount(_parent: unknown, args: {
-      credentials: PosCashierCredentials;
-      customerId: string;
-    }, ctx: any) {
+    async bmsPosArAccount(
+      _parent: unknown,
+      args: {
+        credentials: PosCashierCredentials;
+        customerId: string;
+      },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "ar.view");
       const customerId = uuidInput(args.customerId, "ลูกค้าไม่ถูกต้อง");
@@ -2364,14 +2707,22 @@ export const bmsPosDeviceResolvers = {
       if (!account) return { account: null, invoices: [] };
       return {
         account,
-        invoices: await listArInvoices(device.tenantId, { accountId: account.id, openOnly: true, limit: 50 }),
+        invoices: await listArInvoices(device.tenantId, {
+          accountId: account.id,
+          openOnly: true,
+          limit: 50,
+        }),
       };
     },
 
-    async bmsPosStoreCredit(_parent: unknown, args: {
-      credentials: PosCashierCredentials;
-      code: string;
-    }, ctx: any) {
+    async bmsPosStoreCredit(
+      _parent: unknown,
+      args: {
+        credentials: PosCashierCredentials;
+        code: string;
+      },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "storecredit.redeem");
       if (!args.code.trim()) return badPosInput("ต้องระบุโค้ดบัตร");
@@ -2388,19 +2739,32 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosPurchaseOrders(_parent: unknown, args: { credentials: PosCashierCredentials }, ctx: any) {
+    async bmsPosPurchaseOrders(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "purchase.receive");
-      return { orders: await listReceivablePurchaseOrders(device.tenantId, 50) };
+      return {
+        orders: await listReceivablePurchaseOrders(device.tenantId, 50),
+      };
     },
 
-    async bmsPosPurchaseOrder(_parent: unknown, args: {
-      credentials: PosCashierCredentials;
-      poId: string;
-    }, ctx: any) {
+    async bmsPosPurchaseOrder(
+      _parent: unknown,
+      args: {
+        credentials: PosCashierCredentials;
+        poId: string;
+      },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "purchase.receive");
-      const order = await getPurchaseOrder(device.tenantId, uuidInput(args.poId, "ใบสั่งซื้อไม่ถูกต้อง"));
+      const order = await getPurchaseOrder(
+        device.tenantId,
+        uuidInput(args.poId, "ใบสั่งซื้อไม่ถูกต้อง"),
+      );
       if (!order) throw mobileGraphqlError("ไม่พบใบสั่งซื้อ", "NOT_FOUND");
       if (order.status !== "OPEN" && order.status !== "PARTIAL") {
         throw mobileGraphqlError(
@@ -2412,29 +2776,50 @@ export const bmsPosDeviceResolvers = {
       return order;
     },
 
-    async bmsPosRestaurantRequests(_parent: unknown, args: { credentials: PosCashierCredentials }, ctx: any) {
+    async bmsPosRestaurantRequests(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
-      const actor = await requirePosCashier(device, args.credentials, "pos.sell");
+      const actor = await requirePosCashier(
+        device,
+        args.credentials,
+        "pos.sell",
+      );
       await requireOpenPosShift(device);
-      return { requests: await listRestaurantRequests({
-        tenantId: device.tenantId,
-        locationId: device.locationId,
-        actorUserId: actor.userId,
-      }) };
+      return {
+        requests: await listRestaurantRequests({
+          tenantId: device.tenantId,
+          locationId: device.locationId,
+          actorUserId: actor.userId,
+        }),
+      };
     },
 
-    async bmsPosMemberPreview(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosMemberPreview(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const subtotal = Number(input.subtotal);
-      if (!Number.isFinite(subtotal) || subtotal < 0) return badPosInput("subtotal ไม่ถูกต้อง");
-      const customerId = optionalUuidInput(input.customerId, "ลูกค้าไม่ถูกต้อง");
-      const pointsRequested = Number.isFinite(Number(input.pointsToRedeem)) ? Number(input.pointsToRedeem) : 0;
+      if (!Number.isFinite(subtotal) || subtotal < 0)
+        return badPosInput("subtotal ไม่ถูกต้อง");
+      const customerId = optionalUuidInput(
+        input.customerId,
+        "ลูกค้าไม่ถูกต้อง",
+      );
+      const pointsRequested = Number.isFinite(Number(input.pointsToRedeem))
+        ? Number(input.pointsToRedeem)
+        : 0;
       const couponCode = textInput(input.couponCode);
       const manualRaw = Number(input.manualDiscount);
-      const manualDiscount = Number.isFinite(manualRaw) && manualRaw > 0
-        ? Math.round(manualRaw * 100) / 100
-        : 0;
+      const manualDiscount =
+        Number.isFinite(manualRaw) && manualRaw > 0
+          ? Math.round(manualRaw * 100) / 100
+          : 0;
       let couponDiscount = 0;
       let couponError: string | null = null;
       if (couponCode) {
@@ -2449,13 +2834,13 @@ export const bmsPosDeviceResolvers = {
         else couponError = check.reason;
       }
       const preview = await previewMemberDiscount({
-          tenantId: device.tenantId,
-          customerId,
-          subtotal,
-          pointsRequested,
-          couponDiscount,
-          manualDiscount,
-        });
+        tenantId: device.tenantId,
+        customerId,
+        subtotal,
+        pointsRequested,
+        couponDiscount,
+        manualDiscount,
+      });
       return {
         ...preview,
         member: preview.member ? toPosMemberSummary(preview.member) : null,
@@ -2465,14 +2850,23 @@ export const bmsPosDeviceResolvers = {
   },
 
   Mutation: {
-    async bmsPosVerifyCashier(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosVerifyCashier(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
       const cashiers = await listPosCashiers(device.tenantId);
-      const cashier = cashiers.find((candidate) => candidate.id === actor.userId);
+      const cashier = cashiers.find(
+        (candidate) => candidate.id === actor.userId,
+      );
       if (!cashier) {
-        throw mobileGraphqlError("ไม่พบพนักงานที่ยืนยันแล้วในร้าน", "FORBIDDEN");
+        throw mobileGraphqlError(
+          "ไม่พบพนักงานที่ยืนยันแล้วในร้าน",
+          "FORBIDDEN",
+        );
       }
       return cashier;
     },
@@ -2483,11 +2877,20 @@ export const bmsPosDeviceResolvers = {
       const actor = await requirePosCashier(device, input, "pos.sell");
       const idempotencyKey = textInput(input.idempotencyKey);
       if (!idempotencyKey || idempotencyKey.length > 240) {
-        return badPosInput("idempotencyKey จำเป็นและต้องยาวไม่เกิน 240 ตัวอักษร");
+        return badPosInput(
+          "idempotencyKey จำเป็นและต้องยาวไม่เกิน 240 ตัวอักษร",
+        );
       }
 
       const mode = input.mode === "DEPOSIT" ? "DEPOSIT" : "SALE";
-      if (mode === "DEPOSIT" && !(await cashierHasPermission(device.tenantId, actor.userId, "pos.deposit.take"))) {
+      if (
+        mode === "DEPOSIT" &&
+        !(await cashierHasPermission(
+          device.tenantId,
+          actor.userId,
+          "pos.deposit.take",
+        ))
+      ) {
         throw mobileGraphqlError("ไม่มีสิทธิ์รับมัดจำ", "FORBIDDEN", {
           permission: "pos.deposit.take",
         });
@@ -2497,17 +2900,20 @@ export const bmsPosDeviceResolvers = {
         input.boardGameSessionId,
         "session บอร์ดเกมไม่ถูกต้อง",
       );
-      if (!lines.length && !boardGameSessionId) {
+      if (!lines.length && !boardGameSessionId)
         return badPosInput("ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ");
-      }
-      if (mode === "DEPOSIT" && boardGameSessionId) {
+      if (mode === "DEPOSIT" && boardGameSessionId)
         return badPosInput("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
-      }
       const parsedPayments = parsePosPayments(input.payments);
       if (!parsedPayments.ok) return badPosInput(parsedPayments.error);
 
-      let manualApproval: { amount: number; userId: string; reason: string } | null = null;
-      const requestedDiscount = Math.round(Number(input.manualDiscount ?? 0) * 100) / 100;
+      let manualApproval: {
+        amount: number;
+        userId: string;
+        reason: string;
+      } | null = null;
+      const requestedDiscount =
+        Math.round(Number(input.manualDiscount ?? 0) * 100) / 100;
       if (Number.isFinite(requestedDiscount) && requestedDiscount > 0) {
         const reason = textInput(input.discountReason);
         if (!reason) return badPosInput("ส่วนลดหน้าร้านต้องระบุเหตุผล");
@@ -2515,27 +2921,43 @@ export const bmsPosDeviceResolvers = {
         const approver = await requirePosSecondPerson(
           device,
           actor.userId,
-          { userId: input.discountApproverUserId, pin: input.discountApproverPin },
+          {
+            userId: input.discountApproverUserId,
+            pin: input.discountApproverPin,
+          },
           "pos.discount.approve",
           {
             required: "ส่วนลดหน้าร้านต้องให้ผู้มีสิทธิ์อนุมัติกด PIN",
             samePerson: "ผู้อนุมัติส่วนลดต้องเป็นคนละคนกับพนักงานขาย",
           },
         );
-        manualApproval = { amount: requestedDiscount, userId: approver.userId, reason };
+        manualApproval = {
+          amount: requestedDiscount,
+          userId: approver.userId,
+          reason,
+        };
       }
 
       let creditApprovedBy: string | null = null;
-      const wantsCredit = parsedPayments.payments.some((payment) => payment.method === "CREDIT");
+      const wantsCredit = parsedPayments.payments.some(
+        (payment) => payment.method === "CREDIT",
+      );
       if (wantsCredit) {
-        if (mode === "DEPOSIT") return badPosInput("มัดจำเป็นการรับเงิน ไม่ใช่การขายเชื่อ");
-        if (await cashierHasPermission(device.tenantId, actor.userId, "ar.sell")) {
+        if (mode === "DEPOSIT")
+          return badPosInput("มัดจำเป็นการรับเงิน ไม่ใช่การขายเชื่อ");
+        if (
+          await cashierHasPermission(device.tenantId, actor.userId, "ar.sell")
+        ) {
           creditApprovedBy = actor.userId;
         } else {
-          const creditApprover = await requirePosCashier(device, {
-            cashierUserId: input.creditApproverUserId,
-            pin: input.creditApproverPin,
-          }, "ar.sell");
+          const creditApprover = await requirePosCashier(
+            device,
+            {
+              cashierUserId: input.creditApproverUserId,
+              pin: input.creditApproverPin,
+            },
+            "ar.sell",
+          );
           creditApprovedBy = creditApprover.userId;
         }
       }
@@ -2544,26 +2966,36 @@ export const bmsPosDeviceResolvers = {
         pharmacistUserId: string;
         note?: string | null;
       } | null = null;
-      const pharmacistId = optionalUuidInput(input.pharmacistAuthorizerUserId, "เภสัชกรไม่ถูกต้อง");
+      const pharmacistId = optionalUuidInput(
+        input.pharmacistAuthorizerUserId,
+        "เภสัชกรไม่ถูกต้อง",
+      );
       if (pharmacistId) {
         const note = textInput(input.pharmacistAuthorizationNote);
         if (note.length > 500) return badPosInput("บันทึกของเภสัชกรยาวเกินไป");
-        const pharmacist = pharmacistId === actor.userId
-          ? actor
-          : await verifyCashierPin(
-            device.tenantId,
-            pharmacistId,
-            typeof input.pharmacistAuthorizerPin === "string" ? input.pharmacistAuthorizerPin : "",
-          );
+        const pharmacist =
+          pharmacistId === actor.userId
+            ? actor
+            : await verifyCashierPin(
+                device.tenantId,
+                pharmacistId,
+                typeof input.pharmacistAuthorizerPin === "string"
+                  ? input.pharmacistAuthorizerPin
+                  : "",
+              );
         if (!pharmacist.ok) {
           throw mobileGraphqlError("PIN ของเภสัชกรไม่ถูกต้อง", "FORBIDDEN", {
             reason: pharmacist.reason,
           });
         }
         if (!pharmacist.isPharmacist) {
-          throw mobileGraphqlError("คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต", "FORBIDDEN", {
-            reason: "NOT_LICENSED_PHARMACIST",
-          });
+          throw mobileGraphqlError(
+            "คนนี้ไม่ได้บันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาต",
+            "FORBIDDEN",
+            {
+              reason: "NOT_LICENSED_PHARMACIST",
+            },
+          );
         }
         pharmacistCounterAuthorization = {
           pharmacistUserId: pharmacist.userId,
@@ -2574,10 +3006,12 @@ export const bmsPosDeviceResolvers = {
       // The current shift is authoritative. A supplied shiftId is accepted only as a retry hint
       // after a lost response; recordPosSale rechecks that it belongs to this device and key.
       const currentShift = await getOpenPosShift(device.tenantId, device.id);
-      const shiftId = currentShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
+      const shiftId =
+        currentShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
       if (!shiftId) {
         return { status: "SHIFT_NOT_OPEN" };
       }
+      const profile = await getStoreProfile(device.tenantId);
 
       return recordPosSale({
         tenantId: device.tenantId,
@@ -2588,20 +3022,34 @@ export const bmsPosDeviceResolvers = {
         mode,
         lines,
         boardGameSessionId,
+        salesSurface:
+          profile.businessArchetype === "restaurant"
+            ? "RESTAURANT_POS"
+            : "RETAIL_POS",
         payments: parsedPayments.payments,
-        couponCode: typeof input.couponCode === "string" ? input.couponCode : null,
-        depositCustomerNote: textInput(input.depositCustomerNote).slice(0, 200) || null,
+        couponCode:
+          typeof input.couponCode === "string" ? input.couponCode : null,
+        depositCustomerNote:
+          textInput(input.depositCustomerNote).slice(0, 200) || null,
         depositDueAt: textInput(input.depositDueAt) || null,
         customerId: optionalUuidInput(input.customerId, "ลูกค้าไม่ถูกต้อง"),
-        pointsToRedeem: Number.isFinite(Number(input.pointsToRedeem)) ? Number(input.pointsToRedeem) : null,
+        pointsToRedeem: Number.isFinite(Number(input.pointsToRedeem))
+          ? Number(input.pointsToRedeem)
+          : null,
         extraLines: parsePosExtraLines(input.extraLines),
         manualDiscount: manualApproval?.amount ?? null,
         discountApprovedBy: manualApproval?.userId ?? null,
         discountReason: manualApproval?.reason ?? null,
         creditApprovedBy,
-        pharmacyApprovedAssessmentId: optionalUuidInput(input.pharmacyApprovedAssessmentId, "เคสร้านยาไม่ถูกต้อง"),
+        pharmacyApprovedAssessmentId: optionalUuidInput(
+          input.pharmacyApprovedAssessmentId,
+          "เคสร้านยาไม่ถูกต้อง",
+        ),
         pharmacistCounterAuthorization,
-        pharmacyReviewAssessmentId: optionalUuidInput(input.pharmacyReviewAssessmentId, "เคสร้านยาไม่ถูกต้อง"),
+        pharmacyReviewAssessmentId: optionalUuidInput(
+          input.pharmacyReviewAssessmentId,
+          "เคสร้านยาไม่ถูกต้อง",
+        ),
       });
     },
 
@@ -2610,11 +3058,16 @@ export const bmsPosDeviceResolvers = {
       const input = recordInput(args.input);
       const action = textInput(input.action).toLowerCase();
       const credentials = {
-        cashierUserId: textInput(input.cashierUserId) || textInput(input.userId),
+        cashierUserId:
+          textInput(input.cashierUserId) || textInput(input.userId),
         pin: input.pin,
       };
       if (action === "open") {
-        const actor = await requirePosCashier(device, credentials, "pos.shift.open");
+        const actor = await requirePosCashier(
+          device,
+          credentials,
+          "pos.shift.open",
+        );
         return openPosShift({
           tenantId: device.tenantId,
           deviceId: device.id,
@@ -2624,10 +3077,15 @@ export const bmsPosDeviceResolvers = {
         });
       }
       if (action === "close") {
-        const actor = await requirePosCashier(device, credentials, "pos.shift.close");
+        const actor = await requirePosCashier(
+          device,
+          credentials,
+          "pos.shift.close",
+        );
         const shift = await requireOpenPosShift(device);
         const countedCash = Number(input.countedCash);
-        if (!Number.isFinite(countedCash) || countedCash < 0) return badPosInput("ต้องระบุยอดเงินที่นับได้");
+        if (!Number.isFinite(countedCash) || countedCash < 0)
+          return badPosInput("ต้องระบุยอดเงินที่นับได้");
         return closePosShift({
           tenantId: device.tenantId,
           shiftId: shift.id,
@@ -2658,7 +3116,8 @@ export const bmsPosDeviceResolvers = {
         });
       }
       const parkedId = uuidInput(input.parkedId, "บิลที่พักไว้ไม่ถูกต้อง");
-      if (action === "resume") return resumeParkedSale(device.tenantId, shift.id, parkedId);
+      if (action === "resume")
+        return resumeParkedSale(device.tenantId, shift.id, parkedId);
       if (action === "drop") {
         const ok = await deleteParkedSale(device.tenantId, shift.id, parkedId);
         return { status: ok ? "DROPPED" : "NOT_FOUND" };
@@ -2674,15 +3133,27 @@ export const bmsPosDeviceResolvers = {
       const mode = textInput(input.mode).toUpperCase();
       const note = textInput(input.note);
       const idempotencyKey = textInput(input.idempotencyKey);
-      if (mode !== "FULL" && mode !== "PARTIAL") return badPosInput("mode ต้องเป็น FULL หรือ PARTIAL");
-      if (!/^\[(DAMAGED|WRONG_ITEM|CUSTOMER_CHANGE|PRICE_ERROR|QUALITY_ISSUE|OTHER)\]\s+\S/.test(note)) {
-        return badPosInput("ต้องเลือกประเภทเหตุผลและระบุรายละเอียดการคืนสินค้า");
+      if (mode !== "FULL" && mode !== "PARTIAL")
+        return badPosInput("mode ต้องเป็น FULL หรือ PARTIAL");
+      if (
+        !/^\[(DAMAGED|WRONG_ITEM|CUSTOMER_CHANGE|PRICE_ERROR|QUALITY_ISSUE|OTHER)\]\s+\S/.test(
+          note,
+        )
+      ) {
+        return badPosInput(
+          "ต้องเลือกประเภทเหตุผลและระบุรายละเอียดการคืนสินค้า",
+        );
       }
       if (!idempotencyKey || idempotencyKey.length > 240) {
-        return badPosInput("idempotencyKey จำเป็นและต้องยาวไม่เกิน 240 ตัวอักษร");
+        return badPosInput(
+          "idempotencyKey จำเป็นและต้องยาวไม่เกิน 240 ตัวอักษร",
+        );
       }
       const preferredRaw = textInput(input.preferredRefundMethod).toUpperCase();
-      if (preferredRaw && !PAYMENT_METHODS.includes(preferredRaw as PaymentMethod)) {
+      if (
+        preferredRaw &&
+        !PAYMENT_METHODS.includes(preferredRaw as PaymentMethod)
+      ) {
         return badPosInput("preferredRefundMethod ไม่ใช่วิธีชำระเงินที่รองรับ");
       }
       const approvedByUserId = await verifyOptionalPosPerson(
@@ -2691,15 +3162,27 @@ export const bmsPosDeviceResolvers = {
         input.approvalPin,
       );
       const rawLines = Array.isArray(input.lines) ? input.lines : [];
-      const lines = rawLines.map((line: any) => ({
-        orderItemId: Number(line?.orderItemId),
-        packQty: Number(line?.packQty),
-      })).filter((line) => Number.isInteger(line.orderItemId) && Number.isInteger(line.packQty) && line.packQty > 0);
-      if (mode === "PARTIAL" && (lines.length === 0 || lines.length !== rawLines.length)) {
+      const lines = rawLines
+        .map((line: any) => ({
+          orderItemId: Number(line?.orderItemId),
+          packQty: Number(line?.packQty),
+        }))
+        .filter(
+          (line) =>
+            Number.isInteger(line.orderItemId) &&
+            Number.isInteger(line.packQty) &&
+            line.packQty > 0,
+        );
+      if (
+        mode === "PARTIAL" &&
+        (lines.length === 0 || lines.length !== rawLines.length)
+      ) {
         return badPosInput("การคืนบางรายการต้องมี lines ที่ถูกต้องทุกบรรทัด");
       }
-      if (mode === "FULL" && rawLines.length > 0) return badPosInput("การคืนทั้งบิลต้องไม่ส่ง lines");
-      const shiftId = (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
+      if (mode === "FULL" && rawLines.length > 0)
+        return badPosInput("การคืนทั้งบิลต้องไม่ส่ง lines");
+      const shiftId =
+        (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
       const common = {
         tenantId: device.tenantId,
         deviceId: device.id,
@@ -2708,7 +3191,9 @@ export const bmsPosDeviceResolvers = {
         actorUserId: actor.userId,
         note,
         approvedByUserId,
-        preferredRefundMethod: preferredRaw ? preferredRaw as PaymentMethod : null,
+        preferredRefundMethod: preferredRaw
+          ? (preferredRaw as PaymentMethod)
+          : null,
         idempotencyKey,
       };
       return mode === "PARTIAL"
@@ -2716,7 +3201,11 @@ export const bmsPosDeviceResolvers = {
         : returnPosSale(common);
     },
 
-    async bmsPosBlindReturn(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosBlindReturn(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const shift = await requireOpenPosShift(device);
       const input = recordInput(args.input);
@@ -2732,7 +3221,8 @@ export const bmsPosDeviceResolvers = {
         },
       );
       const idempotencyKey = textInput(input.idempotencyKey);
-      if (!idempotencyKey || idempotencyKey.length > 240) return badPosInput("ต้องมี idempotencyKey");
+      if (!idempotencyKey || idempotencyKey.length > 240)
+        return badPosInput("ต้องมี idempotencyKey");
       return blindReturnPosSale({
         tenantId: device.tenantId,
         deviceId: device.id,
@@ -2741,8 +3231,9 @@ export const bmsPosDeviceResolvers = {
         approvedByUserId: approver.userId,
         reason: typeof input.reason === "string" ? input.reason : "",
         customerId: optionalUuidInput(input.customerId, "ลูกค้าไม่ถูกต้อง"),
-        customerNote: typeof input.customerNote === "string" ? input.customerNote : null,
-        lines: Array.isArray(input.lines) ? input.lines as any[] : [],
+        customerNote:
+          typeof input.customerNote === "string" ? input.customerNote : null,
+        lines: Array.isArray(input.lines) ? (input.lines as any[]) : [],
         idempotencyKey,
       });
     },
@@ -2779,15 +3270,28 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosCompleteRefund(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosCompleteRefund(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
-      const actor = await requirePosCashier(device, {
-        cashierUserId: textInput(input.cashierUserId) || textInput(input.userId),
-        pin: input.pin,
-      }, "payment.refund");
-      const allocationId = uuidInput(input.allocationId, "allocationId ไม่ถูกต้อง");
-      const shiftId = (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
+      const actor = await requirePosCashier(
+        device,
+        {
+          cashierUserId:
+            textInput(input.cashierUserId) || textInput(input.userId),
+          pin: input.pin,
+        },
+        "payment.refund",
+      );
+      const allocationId = uuidInput(
+        input.allocationId,
+        "allocationId ไม่ถูกต้อง",
+      );
+      const shiftId =
+        (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
       return completePosRefundAllocation({
         tenantId: device.tenantId,
         deviceId: device.id,
@@ -2795,16 +3299,26 @@ export const bmsPosDeviceResolvers = {
         shiftId,
         allocationId,
         actorUserId: actor.userId,
-        externalRef: typeof input.externalRef === "string" ? input.externalRef : null,
+        externalRef:
+          typeof input.externalRef === "string" ? input.externalRef : null,
       });
     },
 
-    async bmsPosCashMovement(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosCashMovement(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const shift = await requireOpenPosShift(device);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
-      const direction = input.direction === "OUT" ? "OUT" : input.direction === "IN" ? "IN" : null;
+      const direction =
+        input.direction === "OUT"
+          ? "OUT"
+          : input.direction === "IN"
+            ? "IN"
+            : null;
       if (!direction) return badPosInput("direction ต้องเป็น IN หรือ OUT");
       const idempotencyKey = textInput(input.idempotencyKey);
       if (!idempotencyKey || idempotencyKey.length > 240) {
@@ -2851,7 +3365,11 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosEnrollMember(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosEnrollMember(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "member.manage");
@@ -2872,7 +3390,11 @@ export const bmsPosDeviceResolvers = {
         : { ...result, member: toPosMemberSummary(result.member) };
     },
 
-    async bmsPosCollectAr(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosCollectAr(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "ar.collect");
@@ -2882,7 +3404,8 @@ export const bmsPosDeviceResolvers = {
       if (!idempotencyKey || idempotencyKey.length > 240) {
         return badPosInput("ต้องมี idempotencyKey ที่ยาวไม่เกิน 240 ตัวอักษร");
       }
-      if (!AR_RECEIPT_METHODS.includes(method)) return badPosInput(`วิธีรับชำระไม่ถูกต้อง: ${method || "(ว่าง)"}`);
+      if (!AR_RECEIPT_METHODS.includes(method))
+        return badPosInput(`วิธีรับชำระไม่ถูกต้อง: ${method || "(ว่าง)"}`);
       const shift = await getOpenPosShift(device.tenantId, device.id);
       if (method === "CASH" && !shift) {
         throw mobileGraphqlError("รับเงินสดต้องเปิดกะก่อน", "CONFLICT");
@@ -2902,7 +3425,11 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosReceivePurchase(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosReceivePurchase(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "purchase.receive");
@@ -2912,13 +3439,19 @@ export const bmsPosDeviceResolvers = {
         return badPosInput("idempotencyKey จำเป็นและต้องไม่เกิน 200 ตัวอักษร");
       }
       const rawItems = Array.isArray(input.items) ? input.items : [];
-      if (!rawItems.length || rawItems.length > 200) return badPosInput("รับสินค้าได้ 1–200 รายการต่อครั้ง");
-      if (rawItems.some((raw: any) =>
-        (typeof raw?.sku === "string" && raw.sku.trim().length > 200)
-        || (typeof raw?.size === "string" && raw.size.trim().length > 100)
-        || (typeof raw?.lotNo === "string" && raw.lotNo.trim().length > 100)
-        || (typeof raw?.expiryDate === "string" && raw.expiryDate !== "" && !isIsoDate(raw.expiryDate))
-      )) {
+      if (!rawItems.length || rawItems.length > 200)
+        return badPosInput("รับสินค้าได้ 1–200 รายการต่อครั้ง");
+      if (
+        rawItems.some(
+          (raw: any) =>
+            (typeof raw?.sku === "string" && raw.sku.trim().length > 200) ||
+            (typeof raw?.size === "string" && raw.size.trim().length > 100) ||
+            (typeof raw?.lotNo === "string" && raw.lotNo.trim().length > 100) ||
+            (typeof raw?.expiryDate === "string" &&
+              raw.expiryDate !== "" &&
+              !isIsoDate(raw.expiryDate)),
+        )
+      ) {
         return badPosInput("lot หรือวันหมดอายุไม่ถูกต้อง");
       }
       const items: ReceiveInput[] = rawItems.map((raw: any) => ({
@@ -2926,25 +3459,59 @@ export const bmsPosDeviceResolvers = {
         size: typeof raw?.size === "string" ? raw.size.trim() : "",
         qty: Number(raw?.qty),
         lotNo: typeof raw?.lotNo === "string" ? raw.lotNo.trim() || null : null,
-        expiryDate: typeof raw?.expiryDate === "string" && isIsoDate(raw.expiryDate) ? raw.expiryDate : null,
+        expiryDate:
+          typeof raw?.expiryDate === "string" && isIsoDate(raw.expiryDate)
+            ? raw.expiryDate
+            : null,
       }));
-      if (items.some((item) => !item.sku || item.sku.length > 200 || !item.size || item.size.length > 100
-        || !Number.isInteger(item.qty) || item.qty <= 0 || (item.expiryDate != null && !item.lotNo))) {
+      if (
+        items.some(
+          (item) =>
+            !item.sku ||
+            item.sku.length > 200 ||
+            !item.size ||
+            item.size.length > 100 ||
+            !Number.isInteger(item.qty) ||
+            item.qty <= 0 ||
+            (item.expiryDate != null && !item.lotNo),
+        )
+      ) {
         return badPosInput("รายการรับสินค้าไม่ถูกต้อง");
       }
-      return receivePurchaseOrder(device.tenantId, poId, items, actor.userId, actor.userId, {
-        locationId: device.locationId,
-        idempotency: { deviceId: device.id, actorUserId: actor.userId, key: idempotencyKey },
-        audit: { actor: actor.userId, action: "purchase.receive", meta: { surface: "graphql-pos", deviceId: device.id } },
-      });
+      return receivePurchaseOrder(
+        device.tenantId,
+        poId,
+        items,
+        actor.userId,
+        actor.userId,
+        {
+          locationId: device.locationId,
+          idempotency: {
+            deviceId: device.id,
+            actorUserId: actor.userId,
+            key: idempotencyKey,
+          },
+          audit: {
+            actor: actor.userId,
+            action: "purchase.receive",
+            meta: { surface: "graphql-pos", deviceId: device.id },
+          },
+        },
+      );
     },
 
-    async bmsPosSendReceipt(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosSendReceipt(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       await requirePosCashier(device, input, "pos.sell");
       const orderId = uuidInput(input.orderId, "บิลไม่ถูกต้อง");
-      if (!(await isPosOrderOwnedByDevice(device.tenantId, orderId, device.id))) {
+      if (
+        !(await isPosOrderOwnedByDevice(device.tenantId, orderId, device.id))
+      ) {
         throw mobileGraphqlError("ไม่พบบิลนี้ของเครื่องนี้", "NOT_FOUND");
       }
       return sendReceipt({
@@ -2959,14 +3526,18 @@ export const bmsPosDeviceResolvers = {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const action = textInput(input.action).toLowerCase();
-      const permission = action === "close" ? "pos.deposit.cancel" : "pos.deposit.take";
+      const permission =
+        action === "close" ? "pos.deposit.cancel" : "pos.deposit.take";
       const actor = await requirePosCashier(device, input, permission);
       const openShift = await getOpenPosShift(device.tenantId, device.id);
-      const shiftId = openShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
+      const shiftId =
+        openShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
       if (!shiftId) return { status: "SHIFT_NOT_OPEN" };
       const orderId = textInput(input.orderId);
       if (!isPosUuid(orderId)) {
-        return badPosInput("เลขนี้ไม่ใช่บิลในระบบ กรุณาเลือกบิลจากรายการ ไม่ใช่เลขบาร์โค้ดสินค้า");
+        return badPosInput(
+          "เลขนี้ไม่ใช่บิลในระบบ กรุณาเลือกบิลจากรายการ ไม่ใช่เลขบาร์โค้ดสินค้า",
+        );
       }
       const idempotencyKey = textInput(input.idempotencyKey);
       if (action === "take" || action === "add") {
@@ -2975,30 +3546,34 @@ export const bmsPosDeviceResolvers = {
         const method = textInput(input.method).toUpperCase() || "CASH";
         const parsed = parsePosPayments([{ method, amount }]);
         if (!parsed.ok) return badPosInput(parsed.error);
-        if (method === "STORE_CREDIT") return badPosInput("ยังไม่รองรับเครดิตร้านสำหรับเงินมัดจำ");
+        if (method === "STORE_CREDIT")
+          return badPosInput("ยังไม่รองรับเครดิตร้านสำหรับเงินมัดจำ");
         return action === "take"
           ? takeDeposit({
-            tenantId: device.tenantId,
-            orderId,
-            amount,
-            method,
-            deviceId: device.id,
-            shiftId,
-            expectedLocationId: device.locationId,
-            customerNote: typeof input.customerNote === "string" ? input.customerNote : null,
-            dueAt: typeof input.dueAt === "string" ? input.dueAt : null,
-            createdBy: actor.userId,
-            idempotencyKey,
-          })
+              tenantId: device.tenantId,
+              orderId,
+              amount,
+              method,
+              deviceId: device.id,
+              shiftId,
+              expectedLocationId: device.locationId,
+              customerNote:
+                typeof input.customerNote === "string"
+                  ? input.customerNote
+                  : null,
+              dueAt: typeof input.dueAt === "string" ? input.dueAt : null,
+              createdBy: actor.userId,
+              idempotencyKey,
+            })
           : addToDeposit({
-            tenantId: device.tenantId,
-            orderId,
-            amount,
-            method,
-            actorUserId: actor.userId,
-            locationId: device.locationId,
-            idempotencyKey,
-          });
+              tenantId: device.tenantId,
+              orderId,
+              amount,
+              method,
+              actorUserId: actor.userId,
+              locationId: device.locationId,
+              idempotencyKey,
+            });
       }
       if (action === "settle") {
         const parsed = parsePosPayments(input.payments);
@@ -3010,13 +3585,17 @@ export const bmsPosDeviceResolvers = {
           cashierUserId: actor.userId,
           orderId,
           payments: parsed.payments,
-          serialLines: Array.isArray(input.lines) ? (input.lines as any[]).map((line) => ({
-            sku: String(line?.sku ?? "").trim(),
-            size: String(line?.size ?? "").trim(),
-            serials: Array.isArray(line?.serials)
-              ? line.serials.map((value: unknown) => String(value ?? "").trim()).filter(Boolean)
-              : [],
-          })) : [],
+          serialLines: Array.isArray(input.lines)
+            ? (input.lines as any[]).map((line) => ({
+                sku: String(line?.sku ?? "").trim(),
+                size: String(line?.size ?? "").trim(),
+                serials: Array.isArray(line?.serials)
+                  ? line.serials
+                      .map((value: unknown) => String(value ?? "").trim())
+                      .filter(Boolean)
+                  : [],
+              }))
+            : [],
         });
       }
       if (action === "close") {
@@ -3036,12 +3615,15 @@ export const bmsPosDeviceResolvers = {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const action = textInput(input.action).toLowerCase();
-      const permission = action === "fund" ? "pos.petty_cash.manage" : "pos.expense.create";
+      const permission =
+        action === "fund" ? "pos.petty_cash.manage" : "pos.expense.create";
       const actor = await requirePosCashier(device, input, permission);
       if (action === "fund") {
-        const source = input.source === "OWNER_PERSONAL" || input.source === "BUSINESS_ACCOUNT"
-          ? input.source as PosPettyCashFundingSource
-          : null;
+        const source =
+          input.source === "OWNER_PERSONAL" ||
+          input.source === "BUSINESS_ACCOUNT"
+            ? (input.source as PosPettyCashFundingSource)
+            : null;
         if (!source) return badPosInput("แหล่งเงินสดย่อยไม่ถูกต้อง");
         return fundPosPettyCash({
           tenantId: device.tenantId,
@@ -3049,28 +3631,39 @@ export const bmsPosDeviceResolvers = {
           source,
           amount: Number(input.amount),
           reason: typeof input.reason === "string" ? input.reason : "",
-          evidenceRef: typeof input.evidenceRef === "string" ? input.evidenceRef : "",
+          evidenceRef:
+            typeof input.evidenceRef === "string" ? input.evidenceRef : "",
           actorUserId: actor.userId,
-          idempotencyKey: typeof input.idempotencyKey === "string" ? input.idempotencyKey : "",
+          idempotencyKey:
+            typeof input.idempotencyKey === "string"
+              ? input.idempotencyKey
+              : "",
         });
       }
-      if (action !== "create" && action !== "settle") return badPosInput("action ต้องเป็น create, settle หรือ fund");
+      if (action !== "create" && action !== "settle")
+        return badPosInput("action ต้องเป็น create, settle หรือ fund");
       const openShift = await getOpenPosShift(device.tenantId, device.id);
-      const shiftId = openShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
+      const shiftId =
+        openShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
       if (!shiftId) return { status: "SHIFT_NOT_OPEN" };
       const idempotencyKey = textInput(input.idempotencyKey);
       if (!idempotencyKey || idempotencyKey.length > 180) {
         return badPosInput("idempotencyKey จำเป็นและต้องไม่เกิน 180 ตัวอักษร");
       }
-      if (input.fundingSource != null && input.fundingSource !== "DRAWER"
-          && input.fundingSource !== "PERSONAL" && input.fundingSource !== "PETTY_CASH") {
+      if (
+        input.fundingSource != null &&
+        input.fundingSource !== "DRAWER" &&
+        input.fundingSource !== "PERSONAL" &&
+        input.fundingSource !== "PETTY_CASH"
+      ) {
         return badPosInput("แหล่งเงินค่าใช้จ่ายไม่ถูกต้อง");
       }
-      const fundingSource: PosExpenseFundingSource = input.fundingSource === "PERSONAL"
-        ? "PERSONAL"
-        : input.fundingSource === "PETTY_CASH"
-          ? "PETTY_CASH"
-          : "DRAWER";
+      const fundingSource: PosExpenseFundingSource =
+        input.fundingSource === "PERSONAL"
+          ? "PERSONAL"
+          : input.fundingSource === "PETTY_CASH"
+            ? "PETTY_CASH"
+            : "DRAWER";
       let approvedByUserId: string | null = null;
       if (action === "settle" || fundingSource === "DRAWER") {
         const approver = await requirePosSecondPerson(
@@ -3085,16 +3678,26 @@ export const bmsPosDeviceResolvers = {
         );
         approvedByUserId = approver.userId;
       } else if (fundingSource === "PERSONAL") {
-        await requirePosPermissionForActor(device, actor.userId, "pos.expense.personal");
+        await requirePosPermissionForActor(
+          device,
+          actor.userId,
+          "pos.expense.personal",
+        );
       }
-      const receiptRef = typeof input.receiptRef === "string" ? input.receiptRef : null;
+      const receiptRef =
+        typeof input.receiptRef === "string" ? input.receiptRef : null;
       if (action === "create") {
-        const kind = input.kind === "DIRECT" || input.kind === "ADVANCE" ? input.kind as PosExpenseKind : null;
-        const category = typeof input.category === "string"
-          && (POS_EXPENSE_CATEGORIES as readonly string[]).includes(input.category)
-          ? input.category as PosExpenseCategory
-          : null;
-        if (!kind || !category) return badPosInput("รูปแบบหรือหมวดค่าใช้จ่ายไม่ถูกต้อง");
+        const kind =
+          input.kind === "DIRECT" || input.kind === "ADVANCE"
+            ? (input.kind as PosExpenseKind)
+            : null;
+        const category =
+          typeof input.category === "string" &&
+          (POS_EXPENSE_CATEGORIES as readonly string[]).includes(input.category)
+            ? (input.category as PosExpenseCategory)
+            : null;
+        if (!kind || !category)
+          return badPosInput("รูปแบบหรือหมวดค่าใช้จ่ายไม่ถูกต้อง");
         return createPosExpense({
           tenantId: device.tenantId,
           shiftId,
@@ -3102,7 +3705,8 @@ export const bmsPosDeviceResolvers = {
           locationId: device.locationId,
           kind,
           category,
-          description: typeof input.description === "string" ? input.description : "",
+          description:
+            typeof input.description === "string" ? input.description : "",
           payee: typeof input.payee === "string" ? input.payee : null,
           amount: Number(input.amount),
           receiptRef,
@@ -3112,7 +3716,10 @@ export const bmsPosDeviceResolvers = {
           idempotencyKey,
         });
       }
-      const expenseId = uuidInput(input.expenseId, "รายการค่าใช้จ่ายไม่ถูกต้อง");
+      const expenseId = uuidInput(
+        input.expenseId,
+        "รายการค่าใช้จ่ายไม่ถูกต้อง",
+      );
       return settlePosExpense({
         tenantId: device.tenantId,
         shiftId,
@@ -3126,17 +3733,25 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosRequestPharmacyReview(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRequestPharmacyReview(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
       const currentShift = await getOpenPosShift(device.tenantId, device.id);
-      const shiftId = currentShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
+      const shiftId =
+        currentShift?.id ?? optionalUuidInput(input.shiftId, "กะไม่ถูกต้อง");
       const idempotencyKey = textInput(input.idempotencyKey);
-      if (!shiftId || !idempotencyKey) return badPosInput("ต้องเปิดกะและมี idempotencyKey");
-      if (idempotencyKey.length > 240) return badPosInput("idempotencyKey ต้องยาวไม่เกิน 240 ตัวอักษร");
+      if (!shiftId || !idempotencyKey)
+        return badPosInput("ต้องเปิดกะและมี idempotencyKey");
+      if (idempotencyKey.length > 240)
+        return badPosInput("idempotencyKey ต้องยาวไม่เกิน 240 ตัวอักษร");
       const lines = parsePosSaleLines(input.lines);
-      if (!lines.length) return badPosInput("ต้องมีรายการสินค้าอย่างน้อย 1 รายการ");
+      if (!lines.length)
+        return badPosInput("ต้องมีรายการสินค้าอย่างน้อย 1 รายการ");
       return requestPosPharmacyReview({
         tenantId: device.tenantId,
         deviceId: device.id,
@@ -3152,13 +3767,22 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosKitchenTicketStatus(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosKitchenTicketStatus(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
-      const actor = await requirePosCashier(device, {
-        cashierUserId: textInput(input.cashierUserId) || textInput(input.userId),
-        pin: input.pin,
-      }, "restaurant.kitchen.update");
+      const actor = await requirePosCashier(
+        device,
+        {
+          cashierUserId:
+            textInput(input.cashierUserId) || textInput(input.userId),
+          pin: input.pin,
+        },
+        "restaurant.kitchen.update",
+      );
       const ticketId = uuidInput(input.ticketId, "ticketId ไม่ถูกต้อง");
       const status = textInput(input.status).toUpperCase();
       if (!status) return badPosInput("ต้องระบุ ticketId และ status");
@@ -3174,18 +3798,28 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosKitchenTicketsStatus(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosKitchenTicketsStatus(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
-      const actor = await requirePosCashier(device, {
-        cashierUserId: textInput(input.cashierUserId) || textInput(input.userId),
-        pin: input.pin,
-      }, "restaurant.kitchen.update");
+      const actor = await requirePosCashier(
+        device,
+        {
+          cashierUserId:
+            textInput(input.cashierUserId) || textInput(input.userId),
+          pin: input.pin,
+        },
+        "restaurant.kitchen.update",
+      );
       const status = textInput(input.status).toUpperCase();
       const ticketIds = Array.isArray(input.ticketIds)
         ? input.ticketIds.map((id) => uuidInput(id, "ticketIds ไม่ถูกต้อง"))
         : [];
-      if (!status || !ticketIds.length) return badPosInput("ต้องระบุ status และ ticketIds");
+      if (!status || !ticketIds.length)
+        return badPosInput("ต้องระบุ status และ ticketIds");
       return {
         tickets: await updateKitchenTicketsStatus({
           tenantId: device.tenantId,
@@ -3198,10 +3832,18 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosRestaurantFloorSetup(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantFloorSetup(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
-      const actor = await requirePosCashier(device, input, "restaurant.floor.manage");
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "restaurant.floor.manage",
+      );
       await requireOpenPosShift(device);
       return createDefaultRestaurantFloor({
         tenantId: device.tenantId,
@@ -3211,7 +3853,11 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosRestaurantMenuAvailability(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantMenuAvailability(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
@@ -3230,12 +3876,21 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosRestaurantOpenCheck(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantOpenCheck(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
       const shift = await requireOpenPosShift(device);
-      const tableId = uuidInput(input.tableId, "โต๊ะไม่ถูกต้อง");
+      const serviceMode =
+        input.serviceMode === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN";
+      const tableId =
+        serviceMode === "DINE_IN"
+          ? uuidInput(input.tableId, "โต๊ะไม่ถูกต้อง")
+          : null;
       return {
         check: await openRestaurantCheck({
           tenantId: device.tenantId,
@@ -3243,6 +3898,7 @@ export const bmsPosDeviceResolvers = {
           deviceId: device.id,
           shiftId: shift.id,
           tableId,
+          serviceMode,
           guestCount: Number(input.guestCount ?? 1),
           note: typeof input.note === "string" ? input.note : null,
           actorUserId: actor.userId,
@@ -3250,13 +3906,21 @@ export const bmsPosDeviceResolvers = {
       };
     },
 
-    async bmsPosRestaurantCheckAction(_parent: unknown, args: { checkId: string; input: unknown }, ctx: any) {
+    async bmsPosRestaurantCheckAction(
+      _parent: unknown,
+      args: { checkId: string; input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const action = textInput(input.action).toLowerCase();
       const actor = await requirePosCashier(device, input, "pos.sell");
       if (action === "cancel") {
-        await requirePosPermissionForActor(device, actor.userId, "restaurant.check.cancel");
+        await requirePosPermissionForActor(
+          device,
+          actor.userId,
+          "restaurant.check.cancel",
+        );
       }
       const shift = await requireOpenPosShift(device);
       const checkId = uuidInput(args.checkId, "บิลโต๊ะไม่ถูกต้อง");
@@ -3267,49 +3931,76 @@ export const bmsPosDeviceResolvers = {
         actorUserId: actor.userId,
       };
       if (action === "add_item") {
-        return { check: await addRestaurantCheckItem({
-          ...common,
-          sku: textInput(input.sku),
-          size: typeof input.size === "string" ? input.size : null,
-          packCode: typeof input.packCode === "string" ? input.packCode : null,
-          packQty: Number(input.packQty ?? 1),
-          modifierCodes: Array.isArray(input.modifierCodes) ? input.modifierCodes.map(String) : [],
-          kitchenNote: typeof input.kitchenNote === "string" ? input.kitchenNote : null,
-        }) };
+        return {
+          check: await addRestaurantCheckItem({
+            ...common,
+            sku: textInput(input.sku),
+            size: typeof input.size === "string" ? input.size : null,
+            packCode:
+              typeof input.packCode === "string" ? input.packCode : null,
+            packQty: Number(input.packQty ?? 1),
+            modifierCodes: Array.isArray(input.modifierCodes)
+              ? input.modifierCodes.map(String)
+              : [],
+            kitchenNote:
+              typeof input.kitchenNote === "string" ? input.kitchenNote : null,
+          }),
+        };
       }
       if (action === "remove_item") {
-        return { check: await removeRestaurantCheckItem({
-          ...common,
-          itemId: uuidInput(input.itemId, "รายการในบิลไม่ถูกต้อง"),
-        }) };
+        return {
+          check: await removeRestaurantCheckItem({
+            ...common,
+            itemId: uuidInput(input.itemId, "รายการในบิลไม่ถูกต้อง"),
+          }),
+        };
       }
       if (action === "set_guest_count") {
-        return { check: await setRestaurantCheckGuestCount({ ...common, guestCount: Number(input.guestCount ?? 0) }) };
+        return {
+          check: await setRestaurantCheckGuestCount({
+            ...common,
+            guestCount: Number(input.guestCount ?? 0),
+          }),
+        };
       }
       if (action === "send_kitchen") {
-        return sendRestaurantKitchenRound({ ...common, deviceId: device.id, shiftId: shift.id });
+        return sendRestaurantKitchenRound({
+          ...common,
+          deviceId: device.id,
+          shiftId: shift.id,
+        });
       }
       if (action === "move") {
-        return { check: await moveRestaurantCheck({
-          ...common,
-          targetTableId: uuidInput(input.targetTableId, "โต๊ะปลายทางไม่ถูกต้อง"),
-        }) };
+        return {
+          check: await moveRestaurantCheck({
+            ...common,
+            targetTableId: uuidInput(
+              input.targetTableId,
+              "โต๊ะปลายทางไม่ถูกต้อง",
+            ),
+          }),
+        };
       }
       if (action === "split") {
         const itemIds = Array.isArray(input.itemIds)
           ? input.itemIds.map((id) => uuidInput(id, "รายการที่จะแยกไม่ถูกต้อง"))
           : [];
-        if (!itemIds.length) return badPosInput("เลือกรายการที่จะแยกไปบิลใหม่ก่อน");
+        if (!itemIds.length)
+          return badPosInput("เลือกรายการที่จะแยกไปบิลใหม่ก่อน");
         return splitRestaurantCheck({
           ...common,
           deviceId: device.id,
           shiftId: shift.id,
           itemIds,
-          guestCount: input.guestCount == null ? null : Number(input.guestCount),
+          guestCount:
+            input.guestCount == null ? null : Number(input.guestCount),
         });
       }
       if (action === "merge") {
-        const targetCheckId = uuidInput(input.targetCheckId, "บิลปลายทางไม่ถูกต้อง");
+        const targetCheckId = uuidInput(
+          input.targetCheckId,
+          "บิลปลายทางไม่ถูกต้อง",
+        );
         return mergeRestaurantChecks({
           tenantId: device.tenantId,
           locationId: device.locationId,
@@ -3323,10 +4014,16 @@ export const bmsPosDeviceResolvers = {
       if (action === "cancel") {
         const reason = textInput(input.reason);
         if (!reason) return badPosInput("ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร");
-        const check = await getRestaurantCheck(device.tenantId, checkId, device.locationId);
+        const check = await getRestaurantCheck(
+          device.tenantId,
+          checkId,
+          device.locationId,
+        );
         if (!check) throw mobileGraphqlError("ไม่พบบิลโต๊ะ", "NOT_FOUND");
-        const requiresVoidApproval = ["OPEN", "CLOSING"].includes(check.status)
-          && (check.hasCurrentOrder || check.items.some((item) => item.status === "SENT"));
+        const requiresVoidApproval =
+          ["OPEN", "CLOSING"].includes(check.status) &&
+          (check.hasCurrentOrder ||
+            check.items.some((item) => item.status === "SENT"));
         let approvedByUserId: string | null = null;
         if (requiresVoidApproval) {
           const approver = await requirePosSecondPerson(
@@ -3357,15 +4054,20 @@ export const bmsPosDeviceResolvers = {
       return badPosInput("action ไม่ถูกต้อง");
     },
 
-    async bmsPosRestaurantIncomingAction(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantIncomingAction(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const action = textInput(input.action);
-      const permission = action === "pause"
-        ? "restaurant.floor.manage"
-        : action === "cancel_lines"
-          ? "order.line.cancel"
-          : "restaurant.kitchen.update";
+      const permission =
+        action === "pause"
+          ? "restaurant.floor.manage"
+          : action === "cancel_lines"
+            ? "order.line.cancel"
+            : "restaurant.kitchen.update";
       const actor = await requirePosCashier(device, input, permission);
       await requireOpenPosShift(device);
       if (action === "accept") {
@@ -3388,14 +4090,29 @@ export const bmsPosDeviceResolvers = {
         const orderId = uuidInput(input.orderId, "ออร์เดอร์ไม่ถูกต้อง");
         const idempotencyKey = textInput(input.idempotencyKey);
         const rawLines = Array.isArray(input.lines) ? input.lines : [];
-        const lines = rawLines.map((line: any) => ({
-          orderItemId: Number(line?.orderItemId),
-          packQty: Number(line?.packQty),
-          cause: String(line?.cause ?? ""),
-        })).filter((line) => Number.isInteger(line.orderItemId) && Number.isInteger(line.packQty)
-          && line.packQty > 0 && ["MERCHANT_OUT_OF_STOCK", "CUSTOMER_CHANGED"].includes(line.cause));
-        if (!idempotencyKey || !lines.length || lines.length !== rawLines.length) {
-          return badPosInput("ต้องระบุออร์เดอร์ รายการ ต้นเหตุ และ idempotencyKey ให้ถูกต้องทุกบรรทัด");
+        const lines = rawLines
+          .map((line: any) => ({
+            orderItemId: Number(line?.orderItemId),
+            packQty: Number(line?.packQty),
+            cause: String(line?.cause ?? ""),
+          }))
+          .filter(
+            (line) =>
+              Number.isInteger(line.orderItemId) &&
+              Number.isInteger(line.packQty) &&
+              line.packQty > 0 &&
+              ["MERCHANT_OUT_OF_STOCK", "CUSTOMER_CHANGED"].includes(
+                line.cause,
+              ),
+          );
+        if (
+          !idempotencyKey ||
+          !lines.length ||
+          lines.length !== rawLines.length
+        ) {
+          return badPosInput(
+            "ต้องระบุออร์เดอร์ รายการ ต้นเหตุ และ idempotencyKey ให้ถูกต้องทุกบรรทัด",
+          );
         }
         let managerApprovedByUserId: string | null = null;
         if (textInput(input.managerUserId) || textInput(input.managerPin)) {
@@ -3425,12 +4142,19 @@ export const bmsPosDeviceResolvers = {
       return badPosInput("คำสั่งไม่ถูกต้อง");
     },
 
-    async bmsPosRestaurantQrOrderAction(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantQrOrderAction(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
       const shift = await requireOpenPosShift(device);
-      const submissionId = uuidInput(input.submissionId, "ออร์เดอร์ QR ไม่ถูกต้อง");
+      const submissionId = uuidInput(
+        input.submissionId,
+        "ออร์เดอร์ QR ไม่ถูกต้อง",
+      );
       const action = textInput(input.action);
       if (action === "accept") {
         return acceptRestaurantQrSubmission({
@@ -3454,38 +4178,56 @@ export const bmsPosDeviceResolvers = {
       return badPosInput("คำสั่งไม่ถูกต้อง");
     },
 
-    async bmsPosRestaurantRequestAction(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantRequestAction(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
       await requireOpenPosShift(device);
       if (input.action === "list") {
-        return { requests: await listRestaurantRequests({
+        return {
+          requests: await listRestaurantRequests({
+            tenantId: device.tenantId,
+            locationId: device.locationId,
+            actorUserId: actor.userId,
+          }),
+        };
+      }
+      return normalizeRestaurantRequestAction(
+        await reviewRestaurantRequest({
           tenantId: device.tenantId,
           locationId: device.locationId,
           actorUserId: actor.userId,
-        }) };
-      }
-      return normalizeRestaurantRequestAction(await reviewRestaurantRequest({
-        tenantId: device.tenantId,
-        locationId: device.locationId,
-        actorUserId: actor.userId,
-        id: uuidInput(input.id, "คำขอไม่ถูกต้อง"),
-        version: input.version as any,
-        action: input.action as any,
-        quantities: input.quantities as any,
-        note: typeof input.note === "string" ? input.note : "",
-        kitchenNote: typeof input.kitchenNote === "string" ? input.kitchenNote : undefined,
-        confirmed: input.confirmed === true,
-      }));
+          id: uuidInput(input.id, "คำขอไม่ถูกต้อง"),
+          version: input.version as any,
+          action: input.action as any,
+          quantities: input.quantities as any,
+          note: typeof input.note === "string" ? input.note : "",
+          kitchenNote:
+            typeof input.kitchenNote === "string"
+              ? input.kitchenNote
+              : undefined,
+          confirmed: input.confirmed === true,
+        }),
+      );
     },
 
-    async bmsPosRestaurantServiceCallAction(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantServiceCallAction(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
       await requireOpenPosShift(device);
-      const action = input.action === "acknowledge" || input.action === "complete" ? input.action : null;
+      const action =
+        input.action === "acknowledge" || input.action === "complete"
+          ? input.action
+          : null;
       const callId = uuidInput(input.callId, "คำขอไม่ถูกต้อง");
       if (!action) return badPosInput("คำขอหรือการทำงานไม่ถูกต้อง");
       return updateRestaurantServiceCall({
@@ -3497,7 +4239,11 @@ export const bmsPosDeviceResolvers = {
       });
     },
 
-    async bmsPosRestaurantWaitlistAction(_parent: unknown, args: { input: unknown }, ctx: any) {
+    async bmsPosRestaurantWaitlistAction(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
       const device = requirePosDevice(ctx);
       const input = recordInput(args.input);
       const actor = await requirePosCashier(device, input, "pos.sell");
@@ -3509,26 +4255,39 @@ export const bmsPosDeviceResolvers = {
         actorUserId: actor.userId,
       };
       if (action === "add") {
-        return { entry: await addRestaurantWaitlistEntry({
-          ...common,
-          kind: input.kind === "RESERVATION" ? "RESERVATION" : "WALK_IN",
-          partySize: Number(input.partySize ?? 0),
-          guestName: typeof input.guestName === "string" ? input.guestName : null,
-          guestPhone: typeof input.guestPhone === "string" ? input.guestPhone : null,
-          note: typeof input.note === "string" ? input.note : null,
-          preferredTableId: optionalUuidInput(input.preferredTableId, "โต๊ะที่ต้องการไม่ถูกต้อง"),
-          reservedFor: typeof input.reservedFor === "string" ? input.reservedFor : null,
-        }) };
+        return {
+          entry: await addRestaurantWaitlistEntry({
+            ...common,
+            kind: input.kind === "RESERVATION" ? "RESERVATION" : "WALK_IN",
+            partySize: Number(input.partySize ?? 0),
+            guestName:
+              typeof input.guestName === "string" ? input.guestName : null,
+            guestPhone:
+              typeof input.guestPhone === "string" ? input.guestPhone : null,
+            note: typeof input.note === "string" ? input.note : null,
+            preferredTableId: optionalUuidInput(
+              input.preferredTableId,
+              "โต๊ะที่ต้องการไม่ถูกต้อง",
+            ),
+            reservedFor:
+              typeof input.reservedFor === "string" ? input.reservedFor : null,
+          }),
+        };
       }
       const entryId = uuidInput(input.entryId, "คิวไม่ถูกต้อง");
-      if (action === "call") return { entry: await callRestaurantWaitlistEntry({ ...common, entryId }) };
+      if (action === "call")
+        return {
+          entry: await callRestaurantWaitlistEntry({ ...common, entryId }),
+        };
       if (action === "cancel" || action === "no_show") {
-        return { entry: await closeRestaurantWaitlistEntry({
-          ...common,
-          entryId,
-          status: action === "cancel" ? "CANCELLED" : "NO_SHOW",
-          reason: typeof input.reason === "string" ? input.reason : null,
-        }) };
+        return {
+          entry: await closeRestaurantWaitlistEntry({
+            ...common,
+            entryId,
+            status: action === "cancel" ? "CANCELLED" : "NO_SHOW",
+            reason: typeof input.reason === "string" ? input.reason : null,
+          }),
+        };
       }
       if (action === "seat") {
         const tableId = uuidInput(input.tableId, "โต๊ะไม่ถูกต้อง");
@@ -3558,88 +4317,336 @@ function namedInputAction(
   args: Record<string, any>,
   ctx: any,
 ) {
-  return resolver(parent, { ...args, input: { ...(args.input ?? {}), action } }, ctx);
+  return resolver(
+    parent,
+    { ...args, input: { ...(args.input ?? {}), action } },
+    ctx,
+  );
 }
 
-const compatibilityMutations = bmsPosDeviceResolvers.Mutation as unknown as Record<string, CompatibilityResolver>;
+const compatibilityMutations =
+  bmsPosDeviceResolvers.Mutation as unknown as Record<
+    string,
+    CompatibilityResolver
+  >;
 
 Object.assign(bmsPosDeviceResolvers.Mutation, {
-    async bmsPosRestaurantAddCheckItem(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "add_item", parent, args, ctx);
-    },
-    async bmsPosRestaurantRemoveCheckItem(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "remove_item", parent, {
+  async bmsPosRestaurantAddCheckItem(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "add_item",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantRemoveCheckItem(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "remove_item",
+      parent,
+      {
         checkId: args.checkId,
         input: { ...args.credentials, itemId: args.itemId },
-      }, ctx);
-    },
-    async bmsPosRestaurantSetCheckGuestCount(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "set_guest_count", parent, args, ctx);
-    },
-    async bmsPosRestaurantSendCheckToKitchen(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "send_kitchen", parent, {
+      },
+      ctx,
+    );
+  },
+  async bmsPosRestaurantSetCheckGuestCount(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "set_guest_count",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantSendCheckToKitchen(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "send_kitchen",
+      parent,
+      {
         checkId: args.checkId,
         input: args.credentials,
-      }, ctx);
-    },
-    async bmsPosRestaurantMoveCheck(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "move", parent, args, ctx);
-    },
-    async bmsPosRestaurantSplitCheck(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "split", parent, args, ctx);
-    },
-    async bmsPosRestaurantMergeChecks(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "merge", parent, args, ctx);
-    },
-    async bmsPosRestaurantCancelCheck(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "cancel", parent, args, ctx);
-    },
-    async bmsPosRestaurantSettleCheck(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantCheckAction, "settle", parent, args, ctx);
-    },
-    async bmsPosRestaurantAcceptIncomingOrder(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantIncomingAction, "accept", parent, args, ctx);
-    },
-    async bmsPosRestaurantSetOrderingPaused(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantIncomingAction, "pause", parent, args, ctx);
-    },
-    async bmsPosRestaurantCancelOrderLines(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantIncomingAction, "cancel_lines", parent, args, ctx);
-    },
-    async bmsPosRestaurantAcceptQrSubmission(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantQrOrderAction, "accept", parent, args, ctx);
-    },
-    async bmsPosRestaurantRejectQrSubmission(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantQrOrderAction, "reject", parent, args, ctx);
-    },
-    async bmsPosRestaurantContactRequest(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantRequestAction, "contact", parent, args, ctx);
-    },
-    async bmsPosRestaurantConfirmRequest(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantRequestAction, "confirm", parent, args, ctx);
-    },
-    async bmsPosRestaurantCancelRequest(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantRequestAction, "cancel", parent, args, ctx);
-    },
-    async bmsPosRestaurantAcknowledgeServiceCall(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantServiceCallAction, "acknowledge", parent, args, ctx);
-    },
-    async bmsPosRestaurantCompleteServiceCall(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantServiceCallAction, "complete", parent, args, ctx);
-    },
-    async bmsPosRestaurantAddWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "add", parent, args, ctx);
-    },
-    async bmsPosRestaurantCallWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "call", parent, args, ctx);
-    },
-    async bmsPosRestaurantCancelWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "cancel", parent, args, ctx);
-    },
-    async bmsPosRestaurantNoShowWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "no_show", parent, args, ctx);
-    },
-    async bmsPosRestaurantSeatWaitlistEntry(parent: unknown, args: Record<string, any>, ctx: any) {
-      return namedInputAction(compatibilityMutations.bmsPosRestaurantWaitlistAction, "seat", parent, args, ctx);
-    },
+      },
+      ctx,
+    );
+  },
+  async bmsPosRestaurantMoveCheck(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "move",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantSplitCheck(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "split",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantMergeChecks(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "merge",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantCancelCheck(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "cancel",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantSettleCheck(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantCheckAction,
+      "settle",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantAcceptIncomingOrder(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantIncomingAction,
+      "accept",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantSetOrderingPaused(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantIncomingAction,
+      "pause",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantCancelOrderLines(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantIncomingAction,
+      "cancel_lines",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantAcceptQrSubmission(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantQrOrderAction,
+      "accept",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantRejectQrSubmission(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantQrOrderAction,
+      "reject",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantContactRequest(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantRequestAction,
+      "contact",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantConfirmRequest(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantRequestAction,
+      "confirm",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantCancelRequest(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantRequestAction,
+      "cancel",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantAcknowledgeServiceCall(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantServiceCallAction,
+      "acknowledge",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantCompleteServiceCall(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantServiceCallAction,
+      "complete",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantAddWaitlistEntry(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantWaitlistAction,
+      "add",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantCallWaitlistEntry(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantWaitlistAction,
+      "call",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantCancelWaitlistEntry(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantWaitlistAction,
+      "cancel",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantNoShowWaitlistEntry(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantWaitlistAction,
+      "no_show",
+      parent,
+      args,
+      ctx,
+    );
+  },
+  async bmsPosRestaurantSeatWaitlistEntry(
+    parent: unknown,
+    args: Record<string, any>,
+    ctx: any,
+  ) {
+    return namedInputAction(
+      compatibilityMutations.bmsPosRestaurantWaitlistAction,
+      "seat",
+      parent,
+      args,
+      ctx,
+    );
+  },
 });

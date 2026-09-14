@@ -17,12 +17,14 @@ import { MenuGrid } from '../../components/MenuGrid';
 import { QtyStepper } from '../../components/QtyStepper';
 import { BarcodeScannerModal } from '../../components/BarcodeScannerModal';
 import { OrderAlertBanner } from '../../components/OrderAlertBanner';
+import { ProductOptionsModal } from '../../components/ProductOptionsModal';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
 import { useCatalog } from '../../state/CatalogContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import type { SellStackParamList } from '../../navigation/types';
+import type { PosMenuItem } from '../../types/pos';
 
 type Props = NativeStackScreenProps<SellStackParamList, 'Menu'>;
 
@@ -54,6 +56,7 @@ export default function MenuScreen({ navigation }: Props) {
     error: catalogError,
     refetch,
     resolveScan,
+    resolveVariant,
     setSearchQuery,
   } = useCatalog();
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -61,6 +64,7 @@ export default function MenuScreen({ navigation }: Props) {
   const [parkName, setParkName] = useState('');
   const [parkNote, setParkNote] = useState('');
   const [lastScanned, setLastScanned] = useState('');
+  const [configuring, setConfiguring] = useState<PosMenuItem | null>(null);
 
   const screenTitle =
     mode === 'restaurant'
@@ -80,7 +84,7 @@ export default function MenuScreen({ navigation }: Props) {
   const grid = (
     <MenuGrid
       qtyBySku={qtyBySku}
-      onAdd={addItem}
+      onAdd={setConfiguring}
       onDecrement={sku => decrementItem(sku)}
       areaWidth={isTablet ? width - CART_PANEL_WIDTH : width}
       artHeight={isTablet ? 116 : 96}
@@ -342,9 +346,19 @@ export default function MenuScreen({ navigation }: Props) {
         resolveCode={resolveScan}
         onCancel={() => setScannerOpen(false)}
         onScanned={item => {
-          addItem(item);
+          setConfiguring(item);
           setLastScanned(item.name);
           setScannerOpen(false);
+        }}
+      />
+      <ProductOptionsModal
+        item={configuring}
+        restaurant={mode === 'restaurant'}
+        resolveVariant={resolveVariant}
+        onClose={() => setConfiguring(null)}
+        onConfirm={({ item, modifierCodes }) => {
+          addItem({ ...item, selectedModifierCodes: modifierCodes });
+          setConfiguring(null);
         }}
       />
       <Modal transparent visible={parkOpen} animationType="fade">
@@ -430,10 +444,22 @@ export default function MenuScreen({ navigation }: Props) {
                   {parkedBills.map(bill => (
                     <View key={bill.id} style={{ gap: spacing.xs }}>
                       <Button
-                        label={`${bill.name} · ${bill.lines.length} รายการ`}
+                        label={`${bill.name} · ${bill.lines.length} รายการ${
+                          bill.pharmacyReview
+                            ? ` · เคส ${bill.pharmacyReview.caseCode} ${
+                                bill.pharmacyReview.canResume
+                                  ? 'อนุมัติแล้ว'
+                                  : bill.pharmacyReview.status ?? 'รอตรวจ'
+                              }`
+                            : ''
+                        }`}
                         accessibilityLabel={`เรียกบิลพัก ${bill.name}`}
                         variant="secondary"
                         fullWidth
+                        disabled={
+                          Boolean(bill.pharmacyReview) &&
+                          !bill.pharmacyReview?.canResume
+                        }
                         onPress={async () => {
                           const failure = await resumeParkedBill(bill.id);
                           if (failure)

@@ -1,23 +1,25 @@
 # =============================================================
-# ฐานข้อมูลแยกสำหรับทดสอบ migration realtime (9.70 / 9.71 / 9.72)
+# ฐานข้อมูลแยกสำหรับทดสอบ migration realtime (9.70–9.74, 9.84–9.86)
 # -------------------------------------------------------------
 # ใช้ไฟล์นี้ "เดี่ยว ๆ" ไม่ใช่เป็น override ของ docker-compose.yml — ตั้งใจให้ไม่มีทาง
 # แตะ service, volume หรือพอร์ตของ dev stack ได้เลย แม้พิมพ์คำสั่งผิด
 #
-#   docker compose -f docker-compose.realtime-test.yml up -d
-#   docker compose -f docker-compose.realtime-test.yml down -v     # -v = ทิ้งฐานทั้งก้อน
+#   docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml up -d
+#   docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml down -v
 #
 # ทำไมต้องแยกเป็น "คนละ instance" ไม่ใช่แค่คนละ database:
 #   `9.70` รัน CREATE ROLE bms_realtime_dispatcher ... BYPASSRLS ซึ่ง **role เป็นของทั้ง
 #   cluster ไม่ใช่ของ database** แยกแค่ database จึงยังไปสร้าง/แก้ role ที่ฐาน dev เห็นด้วย
 #   และ DROP DATABASE ก็ไม่ลบ role นั้นทิ้ง · การมี instance ของตัวเองแปลว่า `down -v`
-#   ครั้งเดียวคืนสภาพได้ 100% ซึ่งเป็นสิ่งที่ต้องการเวลาทดสอบ trigger 27 ตัวที่ยังไม่เคยยิง
+#   ครั้งเดียวคืนสภาพได้ 100% ซึ่งเป็นสิ่งที่ต้องการเวลาทดสอบ trigger ทั้งชุดโดยไม่แตะ dev
 #
 # ⚠️ ฐานนี้ "สร้างจาก db/migrations ไม่ได้" — `1.24__roles.sql` กับ
 # `001_normalize_roles_phase1.sql` นิยามตาราง roles คนละแบบที่อยู่ร่วมกันไม่ได้ ฐานจะสร้าง
 # เสร็จโดยไม่มี error แต่หน้า users/roles พังทั้งหมด (ดู scripts/migration-order-contract)
 # ต้อง restore จาก dump ของฐานที่ใช้งานอยู่จริงเสมอ — ดู docs/architecture/realtime-test-database.md
 # =============================================================
+
+name: bms-realtime-test
 
 services:
   postgres-realtime-test:
@@ -40,6 +42,10 @@ services:
     volumes:
       # volume คนละใบกับ `pgdata` ของ dev — ชื่อขึ้นต้นด้วย rt_test_ ให้เห็นชัดใน `docker volume ls`
       - rt_test_pgdata:/var/lib/postgresql/data
+      # policy และ ACL ใน dump อ้าง bms_app จึงต้องมี role ก่อน restore
+      - ./scripts/testing/realtime-test-bootstrap.sql:/docker-entrypoint-initdb.d/010-realtime-test-bootstrap.sql:ro
+    networks:
+      - realtime-test
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${RT_TEST_POSTGRES_USER:-app} -d ${RT_TEST_POSTGRES_DB:-bms_realtime_test}"]
       interval: 5s
@@ -48,3 +54,8 @@ services:
 
 volumes:
   rt_test_pgdata:
+    name: bms-realtime-test-pgdata
+
+networks:
+  realtime-test:
+    name: bms-realtime-test-network

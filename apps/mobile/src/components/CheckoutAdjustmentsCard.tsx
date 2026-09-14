@@ -8,22 +8,36 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
 import { Card } from './Card';
 import {
   MobilePosMembersDocument,
+  MobilePosEnrollMemberDocument,
   PosBootstrapDocument,
 } from '../graphql/generated';
 import { useCart } from '../state/CartContext';
 import { useSession } from '../state/SessionContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
+import type { PosMember } from '../types/pos';
 
-type Tool = 'member' | 'coupon' | 'discount';
+type Tool = 'member' | 'points' | 'coupon' | 'discount' | 'extra';
 
-export function CheckoutAdjustmentsCard() {
+type MemberSelection = {
+  member: PosMember | null;
+  setMember: (member: PosMember | null) => void;
+  amount: number;
+};
+
+export function CheckoutAdjustmentsCard({
+  memberOnly = false,
+  memberSelection,
+}: {
+  memberOnly?: boolean;
+  memberSelection?: MemberSelection;
+}) {
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -37,9 +51,21 @@ export function CheckoutAdjustmentsCard() {
   const [approverId, setApproverId] = useState('');
   const [approverPin, setApproverPin] = useState('');
   const [error, setError] = useState('');
+  const [memberPhone, setMemberPhone] = useState('');
+  const [memberName, setMemberName] = useState('');
+  const [points, setPoints] = useState('');
+  const [extraLabel, setExtraLabel] = useState('');
+  const [extraAmount, setExtraAmount] = useState('');
+  const [working, setWorking] = useState(false);
+  const [enrollMember] = useMutation(MobilePosEnrollMemberDocument);
+  const selectedMember = memberSelection ? memberSelection.member : cart.member;
+  const setSelectedMember = memberSelection
+    ? memberSelection.setMember
+    : cart.setMember;
+  const memberAmount = memberSelection ? memberSelection.amount : cart.subtotal;
 
   const members = useQuery(MobilePosMembersDocument, {
-    variables: { q: search.trim() || null, amount: cart.subtotal },
+    variables: { q: search.trim() || null, amount: memberAmount },
     skip: tool !== 'member',
   });
   const bootstrap = useQuery(PosBootstrapDocument);
@@ -54,14 +80,32 @@ export function CheckoutAdjustmentsCard() {
     discountApprovers.find(item => item.hasPin) ??
     null;
 
-  const rows = useMemo(
-    () => [
+  const rows = useMemo(() => {
+    const allRows = [
+      {
+        key: 'points' as const,
+        title: 'ใช้แต้ม',
+        value: selectedMember
+          ? cart.pointsToRedeem > 0
+            ? `${cart.pointsToRedeem} แต้ม`
+            : `ใช้ได้ ${Math.floor(selectedMember.pointsUsable)} แต้ม`
+          : 'เลือกสมาชิกก่อนใช้แต้ม',
+      },
       {
         key: 'member' as const,
         title: 'สมาชิก',
-        value: cart.member
-          ? [cart.member.name, cart.member.memberNo].filter(Boolean).join(' · ')
+        value: selectedMember
+          ? [selectedMember.name, selectedMember.memberNo]
+              .filter(Boolean)
+              .join(' · ')
           : 'ค้นหาชื่อ เบอร์ หรือเลขสมาชิก',
+      },
+      {
+        key: 'extra' as const,
+        title: 'ค่าบริการ / ถุง',
+        value: cart.extraLines.length
+          ? `${cart.extraLines.length} รายการ · ฿${cart.extraTotal.toFixed(2)}`
+          : 'เพิ่มรายการนอกสินค้า',
       },
       {
         key: 'coupon' as const,
@@ -77,9 +121,17 @@ export function CheckoutAdjustmentsCard() {
             }`
           : 'ต้องมีเหตุผลและผู้อนุมัติ',
       },
-    ],
-    [cart.coupon?.code, cart.manualDiscount, cart.member],
-  );
+    ];
+    return memberOnly ? allRows.filter(row => row.key === 'member') : allRows;
+  }, [
+    cart.coupon?.code,
+    cart.extraLines.length,
+    cart.extraTotal,
+    cart.manualDiscount,
+    cart.pointsToRedeem,
+    memberOnly,
+    selectedMember,
+  ]);
 
   const close = () => {
     setTool(null);
@@ -125,7 +177,7 @@ export function CheckoutAdjustmentsCard() {
     <>
       <Card>
         <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-          สิทธิประโยชน์และส่วนลด
+          {memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'}
         </Text>
         {rows.map((row, index) => (
           <Pressable
@@ -145,6 +197,9 @@ export function CheckoutAdjustmentsCard() {
                     discountApprovers.find(item => item.hasPin)?.id ??
                     '',
                 );
+              }
+              if (row.key === 'points') {
+                setPoints(String(cart.pointsToRedeem || 0));
               }
             }}
             style={[
@@ -169,11 +224,11 @@ export function CheckoutAdjustmentsCard() {
             </Text>
           </Pressable>
         ))}
-        {cart.previewLoading ? (
+        {!memberOnly && cart.previewLoading ? (
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…
           </Text>
-        ) : cart.previewError ? (
+        ) : !memberOnly && cart.previewError ? (
           <Text style={[typography.caption, { color: colors.danger }]}>
             {cart.previewError}
           </Text>
@@ -239,7 +294,7 @@ export function CheckoutAdjustmentsCard() {
                           variant="secondary"
                           fullWidth
                           onPress={() => {
-                            cart.setMember({
+                            setSelectedMember({
                               id: option.customerId,
                               memberNo: option.memberNo,
                               name: option.name,
@@ -258,14 +313,131 @@ export function CheckoutAdjustmentsCard() {
                       ),
                     )}
                   </View>
-                  {cart.member ? (
+                  {selectedMember ? (
                     <Button
                       label="นำสมาชิกออกจากบิล"
                       variant="ghost"
                       fullWidth
                       style={{ marginTop: spacing.md }}
                       onPress={() => {
-                        cart.setMember(null);
+                        setSelectedMember(null);
+                        close();
+                      }}
+                    />
+                  ) : null}
+                  <Text
+                    style={[
+                      typography.subtitle,
+                      { color: colors.text, marginTop: spacing.lg },
+                    ]}
+                  >
+                    สมัครสมาชิกใหม่
+                  </Text>
+                  <FormInput
+                    value={memberPhone}
+                    onChangeText={setMemberPhone}
+                    placeholder="เบอร์โทรศัพท์"
+                    keyboardType="phone-pad"
+                  />
+                  <FormInput
+                    value={memberName}
+                    onChangeText={setMemberName}
+                    placeholder="ชื่อสมาชิก (ไม่บังคับ)"
+                  />
+                  <Button
+                    label={working ? 'กำลังสมัคร…' : 'สมัครและเลือกสมาชิก'}
+                    fullWidth
+                    disabled={working || !memberPhone.trim()}
+                    style={{ marginTop: spacing.md }}
+                    onPress={async () => {
+                      if (!session) return;
+                      setWorking(true);
+                      setError('');
+                      try {
+                        const response = await enrollMember({
+                          variables: {
+                            input: {
+                              cashierUserId: session.credentials.cashierUserId,
+                              pin: session.credentials.pin,
+                              phone: memberPhone.trim(),
+                              name: memberName.trim() || null,
+                            },
+                          },
+                        });
+                        const result = response.data?.bmsPosEnrollMember;
+                        if (!result?.member) {
+                          setError(
+                            result?.reason ??
+                              result?.error ??
+                              result?.status ??
+                              'สมัครสมาชิกไม่สำเร็จ',
+                          );
+                          return;
+                        }
+                        setSelectedMember({
+                          id: result.member.customerId,
+                          memberNo: result.member.memberNo,
+                          name: result.member.name,
+                          phone: result.member.phone,
+                          tier: result.member.tier?.name ?? null,
+                          tierDiscountPct:
+                            result.member.tier?.discountType === 'PERCENT'
+                              ? result.member.tier.discountValue
+                              : 0,
+                          points: result.member.pointsBalance,
+                          pointsUsable: result.member.pointsUsable,
+                        });
+                        close();
+                      } catch (cause) {
+                        setError(
+                          cause instanceof Error
+                            ? cause.message
+                            : 'สมัครสมาชิกไม่สำเร็จ',
+                        );
+                      } finally {
+                        setWorking(false);
+                      }
+                    }}
+                  />
+                </>
+              ) : null}
+
+              {tool === 'points' ? (
+                <>
+                  <Text style={[typography.title, { color: colors.text }]}>
+                    ใช้แต้มสมาชิก
+                  </Text>
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    เซิร์ฟเวอร์จะจำกัดแต้มตามยอดและกติกาของร้านอีกครั้ง
+                  </Text>
+                  <FormInput
+                    value={points}
+                    onChangeText={setPoints}
+                    placeholder="จำนวนแต้ม"
+                    keyboardType="number-pad"
+                  />
+                  <Button
+                    label="ใช้แต้ม"
+                    fullWidth
+                    disabled={!selectedMember}
+                    onPress={() => {
+                      const parsed = Math.max(
+                        0,
+                        Math.floor(Number(points) || 0),
+                      );
+                      cart.setPointsToRedeem(parsed);
+                      close();
+                    }}
+                  />
+                  {cart.pointsToRedeem > 0 ? (
+                    <Button
+                      label="ยกเลิกการใช้แต้ม"
+                      variant="ghost"
+                      fullWidth
+                      onPress={() => {
+                        cart.setPointsToRedeem(0);
                         close();
                       }}
                     />
@@ -360,6 +532,74 @@ export function CheckoutAdjustmentsCard() {
                 </>
               ) : null}
 
+              {tool === 'extra' ? (
+                <>
+                  <Text style={[typography.title, { color: colors.text }]}>
+                    ค่าบริการ / ถุง
+                  </Text>
+                  {cart.extraLines.map(line => (
+                    <View key={line.id} style={styles.extraRow}>
+                      <Text
+                        style={[
+                          typography.body,
+                          { color: colors.text, flex: 1 },
+                        ]}
+                      >
+                        {line.label} · ฿
+                        {(line.qty * line.unitAmount).toFixed(2)}
+                      </Text>
+                      <Button
+                        label="ลบ"
+                        variant="ghost"
+                        onPress={() =>
+                          cart.setExtraLines(
+                            cart.extraLines.filter(item => item.id !== line.id),
+                          )
+                        }
+                      />
+                    </View>
+                  ))}
+                  <FormInput
+                    value={extraLabel}
+                    onChangeText={setExtraLabel}
+                    placeholder="ชื่อรายการ"
+                  />
+                  <FormInput
+                    value={extraAmount}
+                    onChangeText={setExtraAmount}
+                    placeholder="จำนวนเงิน"
+                    keyboardType="decimal-pad"
+                  />
+                  <Button
+                    label="เพิ่มรายการ"
+                    fullWidth
+                    onPress={() => {
+                      const parsed = Number(extraAmount);
+                      if (
+                        !extraLabel.trim() ||
+                        !Number.isFinite(parsed) ||
+                        parsed <= 0
+                      ) {
+                        setError('กรอกชื่อและจำนวนเงินที่มากกว่า 0');
+                        return;
+                      }
+                      cart.setExtraLines([
+                        ...cart.extraLines,
+                        {
+                          id: `extra-${Date.now()}`,
+                          label: extraLabel.trim(),
+                          qty: 1,
+                          unitAmount: parsed,
+                        },
+                      ]);
+                      setExtraLabel('');
+                      setExtraAmount('');
+                      setError('');
+                    }}
+                  />
+                </>
+              ) : null}
+
               {error ? (
                 <Text
                   style={[
@@ -396,7 +636,7 @@ function FormInput({
   value: string;
   onChangeText: (next: string) => void;
   placeholder: string;
-  keyboardType?: 'default' | 'decimal-pad' | 'number-pad';
+  keyboardType?: 'default' | 'decimal-pad' | 'number-pad' | 'phone-pad';
   secureTextEntry?: boolean;
   autoCapitalize?: 'none' | 'characters';
 }) {
@@ -442,5 +682,11 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 10 },
     elevation: 12,
+  },
+  extraRow: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 });

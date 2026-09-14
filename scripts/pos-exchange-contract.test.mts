@@ -5,9 +5,27 @@ import { fileURLToPath } from "node:url";
 
 import { selectedReturnLines } from "../apps/web/lib/pos/returnDraft.ts";
 
-const posPagePath = fileURLToPath(new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url));
+const posPagePath = fileURLToPath(
+  new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url)
+);
+const mobileSaleDetailPath = fileURLToPath(
+  new URL(
+    "../apps/mobile/src/screens/sell/SaleDetailScreen.tsx",
+    import.meta.url
+  )
+);
+const mobileOperationsPath = fileURLToPath(
+  new URL("../apps/mobile/src/graphql/operations.graphql", import.meta.url)
+);
+const mobileCartPath = fileURLToPath(
+  new URL("../apps/mobile/src/state/CartContext.tsx", import.meta.url)
+);
 
-function functionSource(source: string, startMarker: string, endMarker: string) {
+function functionSource(
+  source: string,
+  startMarker: string,
+  endMarker: string
+) {
   const start = source.indexOf(startMarker);
   const end = source.indexOf(endMarker, start);
   assert.ok(start >= 0 && end > start, `${startMarker} must exist`);
@@ -41,21 +59,55 @@ test("exchange commits the receipt return before replacing the sale cart", () =>
   const cartWrite = handler.indexOf("setCart(refreshedCart)");
   const sellTab = handler.indexOf('setTab("sell")');
 
-  assert.ok(returnCall >= 0, "exchange must use the permission/idempotency-gated return route");
-  assert.ok(successGuard > returnCall, "exchange must verify the committed return result");
-  assert.ok(cartWrite > successGuard, "the new sale cart must appear only after return success");
-  assert.ok(sellTab > cartWrite, "the cashier must be taken to the visible sale workflow");
-  assert.match(handler, /clearBillCustomerState\(\)/, "old customer/discount/approval state must not leak into the replacement sale");
-  assert.match(handler, /returnIdempotencyKey\(row, "PARTIAL", lines, preferredRefundMethod\)/);
+  assert.ok(
+    returnCall >= 0,
+    "exchange must use the permission/idempotency-gated return route"
+  );
+  assert.ok(
+    successGuard > returnCall,
+    "exchange must verify the committed return result"
+  );
+  assert.ok(
+    cartWrite > successGuard,
+    "the new sale cart must appear only after return success"
+  );
+  assert.ok(
+    sellTab > cartWrite,
+    "the cashier must be taken to the visible sale workflow"
+  );
+  assert.match(
+    handler,
+    /clearBillCustomerState\(\)/,
+    "old customer/discount/approval state must not leak into the replacement sale"
+  );
+  assert.match(
+    handler,
+    /returnIdempotencyKey\(row, "PARTIAL", lines, preferredRefundMethod\)/
+  );
 });
 
 test("all three return actions report missing operator credentials instead of silently doing nothing", () => {
   const source = readFileSync(posPagePath, "utf8");
-  const full = functionSource(source, "async function returnReceipt", "async function partialReturnReceipt");
-  const partial = functionSource(source, "async function partialReturnReceipt", "async function completeRefundSettlement");
-  const exchange = functionSource(source, "async function startExchangeFromReceipt", "const activeReceiptRefundSummary");
+  const full = functionSource(
+    source,
+    "async function returnReceipt",
+    "async function partialReturnReceipt"
+  );
+  const partial = functionSource(
+    source,
+    "async function partialReturnReceipt",
+    "async function completeRefundSettlement"
+  );
+  const exchange = functionSource(
+    source,
+    "async function startExchangeFromReceipt",
+    "const activeReceiptRefundSummary"
+  );
 
-  assert.match(source, /function ensureReturnOperatorReady\(actionLabel: string\)/);
+  assert.match(
+    source,
+    /function ensureReturnOperatorReady\(actionLabel: string\)/
+  );
   assert.match(source, /เลือกพนักงานและใส่ PIN ก่อน\$\{actionLabel\}/);
   assert.match(full, /ensureReturnOperatorReady\("คืนทั้งบิล"\)/);
   assert.match(partial, /ensureReturnOperatorReady\("คืนบางรายการ"\)/);
@@ -64,20 +116,44 @@ test("all three return actions report missing operator credentials instead of si
 
 test("partial and full return buttons send the correct modes and show the committed return receipt", () => {
   const source = readFileSync(posPagePath, "utf8");
-  const full = functionSource(source, "async function returnReceipt", "async function partialReturnReceipt");
-  const partial = functionSource(source, "async function partialReturnReceipt", "async function completeRefundSettlement");
+  const full = functionSource(
+    source,
+    "async function returnReceipt",
+    "async function partialReturnReceipt"
+  );
+  const partial = functionSource(
+    source,
+    "async function partialReturnReceipt",
+    "async function completeRefundSettlement"
+  );
 
-  assert.match(full, /async function returnReceipt\(row: Receipt\)/, "full return must use the exact row the cashier clicked");
+  assert.match(
+    full,
+    /async function returnReceipt\(row: Receipt\)/,
+    "full return must use the exact row the cashier clicked"
+  );
   assert.match(full, /mode: "FULL"/);
-  assert.match(full, /returnIdempotencyKey\(row, "FULL", \[\], preferredRefundMethod\)/);
+  assert.match(
+    full,
+    /returnIdempotencyKey\(row, "FULL", \[\], preferredRefundMethod\)/
+  );
   assert.match(full, /data\.status === "RETURNED"/);
   assert.match(full, /setReceiptModalOpen\(true\)/);
-  assert.match(full, /setReturnDrafts\(\(cur\) => \(\{ \.\.\.cur, \[orderId\]: \{\} \}\)\)/);
+  assert.match(
+    full,
+    /setReturnDrafts\(\(cur\) => \(\{ \.\.\.cur, \[orderId\]: \{\} \}\)\)/
+  );
   assert.match(full, /กดซ้ำได้ ระบบใช้คีย์เดิมและไม่คืนซ้ำ/);
 
   assert.match(partial, /mode: "PARTIAL"/);
-  assert.match(partial, /selectedReturnLines\(row\.lines, returnDrafts\[row\.orderId\] \?\? \{\}\)/);
-  assert.match(partial, /returnIdempotencyKey\(row, "PARTIAL", lines, preferredRefundMethod\)/);
+  assert.match(
+    partial,
+    /selectedReturnLines\(row\.lines, returnDrafts\[row\.orderId\] \?\? \{\}\)/
+  );
+  assert.match(
+    partial,
+    /returnIdempotencyKey\(row, "PARTIAL", lines, preferredRefundMethod\)/
+  );
   assert.match(partial, /data\.status === "PARTIAL_RETURNED"/);
   assert.match(partial, /setReceiptModalOpen\(true\)/);
   assert.match(partial, /กดซ้ำได้ ระบบใช้คีย์เดิมและไม่คืนซ้ำ/);
@@ -89,5 +165,46 @@ test("exchange action cannot overwrite a pending sale or start without a selecte
     source,
     /disabled=\{busy \|\| hasPendingOrderWrite \|\| getPartialRefundPreview\(row\) <= 0 \|\| needsRefundMethodChoice\}/
   );
-  assert.match(source, /ตะกร้าขายปัจจุบันมี \$\{cart\.length\} รายการและจะถูกแทนที่/);
+  assert.match(
+    source,
+    /ตะกร้าขายปัจจุบันมี \$\{cart\.length\} รายการและจะถูกแทนที่/
+  );
+});
+
+test("mobile exchange commits the return before replacing the cart and navigates to sale", () => {
+  const source = readFileSync(mobileSaleDetailPath, "utf8");
+  const operations = readFileSync(mobileOperationsPath, "utf8");
+  const cartSource = readFileSync(mobileCartPath, "utf8");
+  const returnCall = source.indexOf("await returnMutation({");
+  const successGuard = source.indexOf("result?.status !== 'RETURNED'");
+  const serverSeed = source.indexOf("result.returnedItems ?? []");
+  const cartWrite = source.indexOf(
+    "cart.replaceForExchange(replacementLines, replacementMember)"
+  );
+  const saleNavigation = source.indexOf("navigation.popToTop()");
+
+  assert.ok(
+    returnCall >= 0,
+    "mobile exchange must use the guarded return mutation"
+  );
+  assert.ok(
+    successGuard > returnCall,
+    "mobile exchange must verify the committed return"
+  );
+  assert.ok(
+    serverSeed > successGuard,
+    "replacement quantities must come from the server result"
+  );
+  assert.ok(
+    cartWrite > serverSeed,
+    "the current cart must only be replaced after return success"
+  );
+  assert.ok(
+    saleNavigation > cartWrite,
+    "the cashier must be returned to the sale screen"
+  );
+  assert.match(source, /refundOptions\.length > 1 && !selectedRefundMethod/);
+  assert.match(source, /cart\.lines\.length > 0/);
+  assert.match(cartSource, /replaceForExchange[\s\S]*setCoupon\(null\)/);
+  assert.match(operations, /mutation MobilePosReturn[\s\S]*returnedItems\s*\{/);
 });

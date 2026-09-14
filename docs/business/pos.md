@@ -1471,7 +1471,19 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`–`9.64`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`–`9.64`, `9.87`)
+
+### Dine-in and takeaway checks (`9.87`)
+
+Restaurant counter service mode belongs to the **check**, not to the online-order fulfillment field.
+`bms_restaurant_checks.service_mode` is `DINE_IN` for a table check and `TAKEAWAY` for a branch
+queue check with no table. `bms_orders.fulfillment_type` stays the online restaurant contract
+(`DELIVERY`/`PICKUP`) and must not grow a `DINE_IN` value just to print a counter receipt.
+
+The final POS order snapshots the check mode in `bms_orders.restaurant_service_mode` so receipts,
+reprints and history do not infer it later from mutable floor state. Takeaway checks do not get a
+fake table or table QR session; they appear in the open-check rail and kitchen board with a takeaway
+label, and table-only actions such as move, split and merge stay dine-in only.
 
 ### Walk-in queue and table reservations (`9.64`)
 

@@ -1,6 +1,8 @@
 import {
   allocateMockRefundToOriginalPayments,
   calculateMockReturnTotal,
+  exchangeSeedLines,
+  refundPaymentOptions,
   wholeBillReturnLines,
 } from '../src/lib/returnMath';
 
@@ -63,6 +65,54 @@ describe('returnMath', () => {
     expect(lines).toEqual([
       { sku: 'A', soldQty: 2, returnQty: 2, unitRefundPrice: 50 },
       { sku: 'B', soldQty: 1, returnQty: 1, unitRefundPrice: 30 },
+    ]);
+  });
+
+  it('สร้างบิลเปลี่ยนจากจำนวนที่เซิร์ฟเวอร์ยืนยันและผูกกับ order item เดิม', () => {
+    const lines = [
+      { orderItemId: 11, refundablePackQty: 2, sku: 'A', size: 'S' },
+      { orderItemId: 12, refundablePackQty: 1, sku: 'A', size: 'L' },
+    ];
+    expect(
+      exchangeSeedLines('order-1', lines, [
+        { orderItemId: 11, packQty: 9 },
+        { orderItemId: 999, packQty: 1 },
+      ]),
+    ).toEqual([
+      {
+        key: 'exchange-order-1-0-11',
+        line: lines[0],
+        qty: 2,
+      },
+    ]);
+  });
+
+  it('ช่องทางคืนเงินหัก allocation เดิมตาม payment id และรวมตามวิธีชำระ', () => {
+    expect(
+      refundPaymentOptions(
+        [
+          { id: 'cash-1', method: 'cash', amount: 100 },
+          { id: 'cash-2', method: 'cash', amount: 50 },
+          { id: 'qr-1', method: 'qr', amount: 200 },
+        ],
+        [
+          {
+            paymentId: 'cash-1',
+            method: 'cash',
+            amount: 100,
+            status: 'COMPLETED',
+          },
+          {
+            paymentId: 'qr-1',
+            method: 'qr',
+            amount: 40,
+            status: 'PENDING',
+          },
+        ],
+      ),
+    ).toEqual([
+      { method: 'cash', available: 50 },
+      { method: 'qr', available: 160 },
     ]);
   });
 });

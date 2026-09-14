@@ -1,4 +1,4 @@
-# ฐานทดสอบแยกสำหรับ migration realtime (`9.70`–`9.74`)
+# ฐานทดสอบแยกสำหรับ migration realtime (`9.70`–`9.74`, `9.84`–`9.86`)
 
 > compose: [`docker-compose.realtime-test.yml`](../../docker-compose.realtime-test.yml) ·
 > สถาปัตยกรรม: [mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md) ·
@@ -10,8 +10,11 @@
 ไม่ได้ทำให้ "realtime เงียบ" แต่ทำให้ **การขาย/รับของ/ปิดกะ rollback ทั้งก้อน**
 
 การรัน local ปี 2026-09-12 พบ row-shape bug ของ POS device จริง จึงมี `9.73` แก้ฉุกเฉินและ
-`9.74` แยก device/shift function ถาวร ชุด DB contract ผ่านแล้ว แต่การ deploy แต่ละ environment
-ยังต้องใช้ฐานที่ทิ้งได้และเก็บ baseline ตาม runbook นี้
+`9.74` แยก device/shift function ถาวร; `9.84` กัน heartbeat/receipt counter ออกจาก device
+invalidation เพื่อไม่ให้ RN refetch GraphQL โดยไม่มี state change; `9.85` ปิด 20
+business-table coverage gaps ที่เหลือ; และ `9.86` เพิ่ม invalidation ตอน resume/discard ลบบิลพัก
+ซึ่งด่านแบบตรวจเพียงว่าตารางมี trigger มองไม่เห็น แต่การ deploy แต่ละ environment ยังต้องใช้ฐาน
+ที่ทิ้งได้และเก็บ baseline ตาม runbook นี้
 
 ## ทำไมต้องเป็นคนละ instance ไม่ใช่แค่คนละ database
 
@@ -20,7 +23,7 @@
 | ตาราง / ฟังก์ชัน / trigger | ต่อ database | ✅ พอ |
 | **role (`bms_realtime_dispatcher`, `BYPASSRLS`)** | **ต่อ cluster** | ❌ **ไม่พอ** |
 
-`9.70` รัน `CREATE ROLE bms_realtime_dispatcher NOLOGIN BYPASSRLS` และ `9.71`–`9.74` รัน
+`9.70` รัน `CREATE ROLE bms_realtime_dispatcher NOLOGIN BYPASSRLS` และ migration realtime หลังจากนั้นรัน
 `ALTER FUNCTION … OWNER TO` role นั้น · role อยู่ระดับ cluster ดังนั้นถึงแยก database
 มันก็ไปโผล่ที่ฐาน dev ด้วย และ `DROP DATABASE` ไม่ลบมันทิ้ง
 
@@ -44,17 +47,18 @@ instance ของตัวเองทำให้ `down -v` ครั้งเ
 
 ```bash
 docker compose ... exec -T postgres \
-  pg_dump -U <user> -d <db> --no-owner --no-privileges -Fc > bms-dev.dump
+  pg_dump -U <user> -d <db> --no-owner -Fc > bms-dev.dump
 ```
 
-`--no-owner --no-privileges` เพราะฐานทดสอบมี role คนละชุด · ถ้าไม่ใส่ restore จะพ่น error
-เรื่อง owner เต็มไปหมดแล้วกลบ error จริง
+ใช้ `--no-owner` เพราะฐานทดสอบมี owner คนละตัว แต่ **ห้ามใส่ `--no-privileges`**: DB contract
+เขียนผ่าน `SET LOCAL ROLE bms_app` และต้องได้ ACL ของ role นี้กลับมาด้วย ตัว compose bootstrap
+`bms_app` แบบ `NOLOGIN NOBYPASSRLS` ไว้ก่อน restore โดยอัตโนมัติ จึงรับทั้ง policy และ ACL ได้
 
 ### 2. ยกฐานทดสอบขึ้น
 
 ```bash
-docker compose -f docker-compose.realtime-test.yml up -d
-docker compose -f docker-compose.realtime-test.yml ps     # รอ healthy
+docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml up -d
+docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml ps     # รอ healthy
 ```
 
 พอร์ตคือ **5433** ไม่ใช่ 5432 — ถ้าเผลอชี้ env ผิดจะต่อไม่ติด ซึ่งดีกว่าต่อติดฐานผิดใบ
@@ -62,9 +66,13 @@ docker compose -f docker-compose.realtime-test.yml ps     # รอ healthy
 ### 3. restore
 
 ```bash
-docker compose -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
-  pg_restore -U app -d bms_realtime_test --no-owner --no-privileges < bms-dev.dump
+docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
+  pg_restore -U app -d bms_realtime_test --no-owner < bms-dev.dump
 ```
+
+dump เก่าที่สร้างด้วย `--no-privileges` ใช้พิสูจน์ targeted realtime contract ได้หลังรัน
+`4.3__bms_rls_role.sql` เพื่อคืนสิทธิ์ตารางแกน แต่ไม่เหมาะเป็น baseline ของ `test:db` ทั้งชุด
+เพราะ GRANT จาก migration รุ่นหลังถูกตัดทิ้งไปแล้ว
 
 ### 4. ยืนยันว่า "ก่อนรัน migration" ฐานนี้ใช้งานได้จริง
 
@@ -87,8 +95,11 @@ for f in 9.70__bms_realtime_outbox \
          9.71__bms_realtime_domain_events \
          9.72__bms_realtime_cash_and_kitchen_events \
          9.73__bms_realtime_pos_scope_trigger_fix \
-         9.74__bms_realtime_pos_trigger_split; do
-  docker compose -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
+         9.74__bms_realtime_pos_trigger_split \
+         9.84__bms_realtime_pos_device_heartbeat_filter \
+         9.85__bms_realtime_remaining_business_events \
+         9.86__bms_realtime_parked_sale_delete; do
+  docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
     psql -U app -d bms_realtime_test -v ON_ERROR_STOP=1 -1 < db/migrations/$f.sql || break
 done
 ```
@@ -101,7 +112,7 @@ done
 ### 6. ยืนยันว่า schema พร้อม
 
 ```bash
-docker compose -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
+docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml exec -T postgres-realtime-test \
   psql -U app -d bms_realtime_test < db/checks/schema-readiness.sql
 ```
 
@@ -142,7 +153,7 @@ SELECT p.proname, r.rolname, r.rolbypassrls
 ### 9. ทิ้งเมื่อเสร็จ
 
 ```bash
-docker compose -f docker-compose.realtime-test.yml down -v
+docker compose -p bms-realtime-test -f docker-compose.realtime-test.yml down -v
 ```
 
 ## สิ่งที่ฐานนี้ยังตอบไม่ได้

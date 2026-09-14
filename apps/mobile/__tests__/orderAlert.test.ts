@@ -20,6 +20,9 @@ describe('orderAlert', () => {
     expect(DEFAULT_ORDER_ALERT_SETTINGS.sound).toBe(true);
     expect(DEFAULT_ORDER_ALERT_SETTINGS.vibrate).toBe(true);
     expect(DEFAULT_ORDER_ALERT_SETTINGS.kinds.incoming_order).toBe(true);
+    expect(DEFAULT_ORDER_ALERT_SETTINGS.kinds.qr_order).toBe(true);
+    expect(DEFAULT_ORDER_ALERT_SETTINGS.kinds.service_call).toBe(true);
+    expect(DEFAULT_ORDER_ALERT_SETTINGS.kinds.waitlist).toBe(true);
     expect(DEFAULT_ORDER_ALERT_SETTINGS.repeatSeconds).toBeGreaterThan(0);
   });
 

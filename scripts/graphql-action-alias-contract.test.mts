@@ -45,10 +45,10 @@ const aliases = new Map<string, { legacy: string; action: string; source: string
 const legacyFields = [...new Set([...aliases.values()].map(({ legacy }) => legacy))].sort();
 
 function resolverMethod(source: string, operation: string): string {
-  const start = new RegExp(`^    async ${operation}\\b`, "m").exec(source);
+  const start = new RegExp(`^[ \\t]+async ${operation}\\b`, "m").exec(source);
   assert.ok(start, `${operation} must have a named resolver method`);
   const tail = source.slice(start.index + start[0].length);
-  const next = /^    async bms[A-Za-z0-9]+\b/m.exec(tail);
+  const next = /^[ \t]+async bms[A-Za-z0-9]+\b/m.exec(tail);
   return next ? tail.slice(0, next.index) : tail;
 }
 

@@ -49,15 +49,31 @@ type Props = NativeStackScreenProps<KitchenStackParamList, 'KitchenBoard'>;
 export default function KitchenBoardScreen({ navigation }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const { gridColumns } = useResponsive();
-  const { tickets, stations, advanceTicket, rollbackTicket } = useKitchen();
+  const {
+    tickets,
+    stations,
+    loading,
+    error,
+    generatedAt,
+    stationSlas,
+    advanceTicket,
+    rollbackTicket,
+    setTicketsStatus,
+    refresh,
+  } = useKitchen();
   const [station, setStation] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   // นาฬิกาเดินเอง — "รอมากี่นาที" ที่ค้างอยู่กับที่คือตัวเลขที่ครัวใช้ตัดสินใจไม่ได้
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timer);
   }, []);
+  useEffect(() => {
+    const timer = setInterval(() => refresh().catch(() => undefined), 30000);
+    return () => clearInterval(timer);
+  }, [refresh]);
 
   const filters = useMemo(
     () => stationFilters(stations, tickets),
@@ -91,6 +107,15 @@ export default function KitchenBoardScreen({ navigation }: Props) {
           ค้างอยู่ {openCount} ใบ · จาก {visible.length} ใบบนกระดาน
         </Text>
       </View>
+      <Text style={[typography.caption, { color: error ? colors.danger : colors.textMuted }]}>
+        {error
+          ? `เชื่อมต่อครัวมีปัญหา: ${error}`
+          : loading
+            ? 'กำลังอัปเดตงานครัว…'
+            : generatedAt
+              ? `อัปเดตล่าสุด ${new Date(generatedAt).toLocaleTimeString('th-TH')}`
+              : 'รอข้อมูลล่าสุดจากเซิร์ฟเวอร์'}
+      </Text>
 
       <FlatList
         horizontal
@@ -131,6 +156,30 @@ export default function KitchenBoardScreen({ navigation }: Props) {
           );
         }}
       />
+      <View style={[styles.bulkRow, { marginBottom: spacing.md }]}>
+        {([
+          ['NEW', 'PREPARING', 'เริ่มทั้งหมด'],
+          ['PREPARING', 'READY', 'พร้อมทั้งหมด'],
+          ['READY', 'SERVED', 'เสิร์ฟทั้งหมด'],
+        ] as const).map(([from, to, label]) => {
+          const ids = visible.filter(ticket => ticket.status === from).map(ticket => ticket.id);
+          return (
+            <Button
+              key={from}
+              label={`${label}${ids.length ? ` (${ids.length})` : ''}`}
+              variant="secondary"
+              disabled={!ids.length || bulkWorking}
+              loading={bulkWorking && ids.length > 0}
+              onPress={async () => {
+                setBulkWorking(true);
+                const failure = await setTicketsStatus(ids, to);
+                setBulkWorking(false);
+                if (failure) Alert.alert('เปลี่ยนสถานะไม่สำเร็จ', failure);
+              }}
+            />
+          );
+        })}
+      </View>
 
       <FlatList
         key={`kitchen-grid-${gridColumns}`}
@@ -148,7 +197,13 @@ export default function KitchenBoardScreen({ navigation }: Props) {
           if (!item) return <View style={{ flex: 1 }} />;
           const status = STATUS_LABEL[item.status];
           const minutes = elapsedMinutes(item.createdAt, now);
-          const urgency = ticketUrgency(minutes, item.status);
+          const sla = stationSlas[item.stationId ?? item.station] ?? stationSlas[item.station];
+          const urgency = ticketUrgency(
+            minutes,
+            item.status,
+            sla?.warnMinutes,
+            sla?.lateMinutes,
+          );
           const forward = nextTicketStatus(item.status);
           const back = previousTicketStatus(item.status);
           const clockColor =
@@ -248,4 +303,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  bulkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 });

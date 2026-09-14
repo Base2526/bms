@@ -440,6 +440,13 @@ export type PosScanHit = {
     maxSelect: number | null;
     defaultSelected: boolean;
   }>;
+  /** Active selling units for this exact variant; display only, commit resolves the code again. */
+  packs: Array<{
+    code: string;
+    unitName: string;
+    baseQty: number;
+    price: number;
+  }>;
   /** Raw prefix-22 label; the server re-parses this at commit. */
   scaleBarcode?: string | null;
 };
@@ -687,6 +694,19 @@ export async function resolvePosScan(
 
   const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
   if (basePrice == null) return null;
+  const packOptions = await query<{
+    pack_code: string;
+    unit_name: string | null;
+    base_qty: number;
+    price: string | null;
+  }>(
+    `SELECT pack_code, unit_name, base_qty, price
+       FROM bms_product_packs
+      WHERE tenant_id = $1 AND product_sku = $2 AND active
+        AND (size IS NULL OR upper(size) = upper($3))
+      ORDER BY (pack_code = 'BASE') DESC, base_qty, pack_code`,
+    [tenantId, row.sku, row.size],
+  );
   const baseQty = embeddedBaseQty ?? row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
   const resolvedPackCode = row.pack_code ?? "BASE";
@@ -720,6 +740,25 @@ export async function resolvePosScan(
       maxSelect: modifier.max_select == null ? null : Number(modifier.max_select),
       defaultSelected: Boolean(modifier.default_selected),
     })),
+    packs: [
+      {
+        code: 'BASE',
+        unitName: 'ชิ้น',
+        baseQty: 1,
+        price: basePrice,
+      },
+      ...packOptions.rows
+        .filter((pack) => pack.pack_code !== 'BASE')
+        .map((pack) => ({
+          code: pack.pack_code,
+          unitName: pack.unit_name ?? 'แพ็ก',
+          baseQty: Number(pack.base_qty),
+          price:
+            pack.price == null
+              ? basePrice * Number(pack.base_qty)
+              : Number(pack.price),
+        })),
+    ],
     scaleBarcode,
   };
 }
@@ -2055,6 +2094,11 @@ export type PosSaleInput = {
   /** SALE = รับเต็มยอดและส่งของทันที; DEPOSIT = จองของและรับมัดจำงวดแรก */
   mode?: "SALE" | "DEPOSIT";
   lines: PosSaleLine[];
+  /**
+   * Which catalog surface the POS cart came from.
+   * Restaurant counter sales use restaurant menu rows without a table check.
+   */
+  salesSurface?: "RETAIL_POS" | "RESTAURANT_POS";
   /** Set only by the restaurant service after checking device, shift and open-check ownership. */
   restaurantCheckId?: string | null;
   /** Board-game session id; createOrder validates branch, state and frozen charges server-side. */
@@ -2349,6 +2393,8 @@ export type PosRecentReceipt = {
   billNo: string | null;
   /** ช่องทางบิลต้นทาง; marketplace แสดงผลได้แต่ต้องคืนผ่านแพลตฟอร์ม */
   sourceChannel: string;
+  fulfillmentType: "DELIVERY" | "PICKUP" | null;
+  restaurantServiceMode: "DINE_IN" | "TAKEAWAY" | null;
   returnEligible: boolean;
   returnBlockedReason: "MARKETPLACE_MANAGED" | null;
   saleLocationId: string;
@@ -2840,7 +2886,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     tenantId,
     shift.location_id,
     input.lines,
-    input.restaurantCheckId ? "RESTAURANT_POS" : "RETAIL_POS"
+    input.restaurantCheckId ? "RESTAURANT_POS" : input.salesSurface ?? "RETAIL_POS"
   );
   if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
   const items = canonical.items;
@@ -2967,6 +3013,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     posShiftId: shift.id,
     cashierUserId: input.cashierUserId,
     idempotencyKey: key,
+    posSalesSurface: input.restaurantCheckId ? "RESTAURANT_POS" : input.salesSurface ?? "RETAIL_POS",
     restaurantCheckId: input.restaurantCheckId ?? null,
     boardGameSessionId,
     editorId: input.cashierUserId,
@@ -3678,6 +3725,8 @@ export async function listRecentPosSales(
     extra_total: string;
     shipping_fee: string | null;
     status: string;
+    fulfillment_type: "DELIVERY" | "PICKUP" | null;
+    restaurant_service_mode: "DINE_IN" | "TAKEAWAY" | null;
     sold_at: string | Date;
     cashier_name: string | null;
     payment_method: PaymentMethod | null;
@@ -3707,6 +3756,8 @@ export async function listRecentPosSales(
             o.discount_amount,
             o.shipping_fee,
             o.rounding_amount AS order_rounding,
+            o.fulfillment_type,
+            o.restaurant_service_mode,
             o.status,
             COALESCE(o.paid_at, o.created_at) AS sold_at,
             dev.code AS pos_device_code,
@@ -4077,6 +4128,8 @@ export async function listRecentPosSales(
     receiptNo: row.doc_no ?? null,
     billNo: row.doc_no ?? null,
     sourceChannel: row.channel,
+    fulfillmentType: row.fulfillment_type ?? null,
+    restaurantServiceMode: row.restaurant_service_mode ?? null,
     returnEligible: !COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel),
     returnBlockedReason: COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel)
       ? "MARKETPLACE_MANAGED"

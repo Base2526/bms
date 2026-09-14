@@ -15,6 +15,7 @@ import type { SchemaBmsPosParkInput } from '../graphql/generated';
 import type {
   PosCartLine,
   PosCoupon,
+  PosExtraLine,
   PosManualDiscount,
   PosMember,
   PosMenuItem,
@@ -32,6 +33,16 @@ export interface ParkedBill {
   coupon: PosCoupon | null;
   pointsUsed: number;
   manualDiscount: null;
+  extraLines: PosExtraLine[];
+  pharmacyReview: PosPharmacyReview | null;
+}
+
+export interface PosPharmacyReview {
+  assessmentId: string;
+  caseCode: string;
+  status: string | null;
+  canResume: boolean;
+  requiresSafetyCheck: boolean;
 }
 
 interface CartContextValue {
@@ -39,18 +50,26 @@ interface CartContextValue {
   addItem: (item: PosMenuItem) => void;
   decrementItem: (key: string) => void;
   removeLine: (key: string) => void;
+  updateLine: (key: string, patch: Partial<PosCartLine>) => void;
   clear: () => void;
+  replaceForExchange: (lines: PosCartLine[], member: PosMember | null) => void;
   member: PosMember | null;
   setMember: (member: PosMember | null) => void;
   coupon: PosCoupon | null;
   setCoupon: (coupon: PosCoupon | null) => void;
   manualDiscount: PosManualDiscount | null;
   setManualDiscount: (discount: PosManualDiscount | null) => void;
+  pointsToRedeem: number;
+  setPointsToRedeem: (points: number) => void;
+  extraLines: PosExtraLine[];
+  setExtraLines: (lines: PosExtraLine[]) => void;
+  pharmacyReview: PosPharmacyReview | null;
   parkedBills: ParkedBill[];
   parkCurrentBill: (name: string, note: string) => Promise<string | null>;
   resumeParkedBill: (id: string) => Promise<string | null>;
   deleteParkedBill: (id: string) => Promise<string | null>;
   subtotal: number;
+  extraTotal: number;
   tierDiscount: number;
   couponDiscount: number;
   appliedManualDiscount: number;
@@ -70,6 +89,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [coupon, setCoupon] = useState<PosCoupon | null>(null);
   const [manualDiscount, setManualDiscount] =
     useState<PosManualDiscount | null>(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const [extraLines, setExtraLines] = useState<PosExtraLine[]>([]);
+  const [pharmacyReview, setPharmacyReview] =
+    useState<PosPharmacyReview | null>(null);
   const subtotal = useMemo(
     () => lines.reduce((sum, line) => sum + line.qty * line.unitPrice, 0),
     [lines],
@@ -81,9 +104,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       customerId: member?.id ?? null,
       couponCode: coupon?.code ?? null,
       manualDiscount: manualDiscount?.amount ?? null,
-      pointsToRedeem: 0,
+      pointsToRedeem,
     }),
-    [coupon?.code, manualDiscount?.amount, member?.id, subtotal],
+    [
+      coupon?.code,
+      manualDiscount?.amount,
+      member?.id,
+      pointsToRedeem,
+      subtotal,
+    ],
   );
   const preview = useQuery(MobilePosMemberPreviewDocument, {
     variables: { input: previewInput },
@@ -117,7 +146,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           packCode: item.packCode,
           unitName: item.unitName,
           baseQty: item.baseQty,
-          modifierCodes: [],
+          modifierCodes: item.selectedModifierCodes ?? [],
+          serialTracked: item.serialTracked,
+          scaleBarcode: item.scaleBarcode,
           serials: [],
           imageUrl: item.imageUrl,
         },
@@ -141,12 +172,45 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setLines(previous => previous.filter(line => line.key !== key)),
     [],
   );
+  const updateLine = useCallback((key: string, patch: Partial<PosCartLine>) => {
+    setLines(previous =>
+      previous.map(line => (line.key === key ? { ...line, ...patch } : line)),
+    );
+  }, []);
   const clear = useCallback(() => {
     setLines([]);
     setMember(null);
     setCoupon(null);
     setManualDiscount(null);
+    setPointsToRedeem(0);
+    setExtraLines([]);
+    setPharmacyReview(null);
   }, []);
+  const replaceForExchange = useCallback(
+    (replacementLines: PosCartLine[], replacementMember: PosMember | null) => {
+      setLines(replacementLines);
+      setMember(replacementMember);
+      setCoupon(null);
+      setManualDiscount(null);
+      setPointsToRedeem(0);
+      setExtraLines([]);
+      setPharmacyReview(null);
+    },
+    [],
+  );
+
+  const extraTotal = useMemo(
+    () =>
+      extraLines.reduce(
+        (sum, line) =>
+          sum +
+          (line.label.trim() && line.qty > 0 && line.unitAmount > 0
+            ? line.qty * line.unitAmount
+            : 0),
+        0,
+      ),
+    [extraLines],
+  );
 
   const parkedBills = useMemo<ParkedBill[]>(
     () =>
@@ -171,6 +235,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               unitName: line.unitName ?? '',
               baseQty: line.baseQty ?? 1,
               modifierCodes: line.modifierCodes ?? [],
+              serialTracked: line.serialTracked ?? false,
               scaleBarcode: line.scaleBarcode,
               serials: line.serials ?? [],
               imageUrl: line.imageUrl,
@@ -197,6 +262,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           : null,
         pointsUsed: Number(parked.cart?.pointsToRedeem ?? 0),
         manualDiscount: null,
+        extraLines: (parked.cart?.extraLines ?? []).map((line, index) => ({
+          id: `parked-extra-${parked.id}-${index}`,
+          label: line.label,
+          qty: 1,
+          unitAmount: Number(line.unitAmount ?? 0),
+        })),
+        pharmacyReview: parked.pharmacyReview
+          ? {
+              assessmentId: parked.pharmacyReview.assessmentId,
+              caseCode: parked.pharmacyReview.caseCode,
+              status: parked.pharmacyReview.status ?? null,
+              canResume: parked.pharmacyReview.canResume,
+              requiresSafetyCheck: parked.pharmacyReview.requiresSafetyCheck,
+            }
+          : null,
       })),
     [parkedQuery.data],
   );
@@ -240,14 +320,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
         subtotalHint: subtotal,
         cart: {
-          version: 1,
+          version: 2,
           couponCode: coupon?.code ?? null,
-          pointsToRedeem: '0',
+          pointsToRedeem: String(pointsToRedeem),
+          extraLines: extraLines
+            .filter(
+              line => line.label.trim() && line.qty > 0 && line.unitAmount > 0,
+            )
+            .map(line => ({
+              label:
+                line.qty === 1
+                  ? line.label.trim()
+                  : `${line.label.trim()} × ${line.qty}`,
+              unitAmount: String(line.qty * line.unitAmount),
+            })),
           member: member
             ? {
                 customerId: member.id,
                 memberNo: member.memberNo,
                 name: member.name,
+              }
+            : null,
+          pharmacyReview: pharmacyReview
+            ? {
+                assessmentId: pharmacyReview.assessmentId,
+                caseCode: pharmacyReview.caseCode,
+                requiresSafetyCheck: pharmacyReview.requiresSafetyCheck,
               }
             : null,
           lines: lines.map(line => ({
@@ -261,6 +359,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             packPrice: line.unitPrice,
             baseQty: line.baseQty,
             modifierCodes: line.modifierCodes,
+            serialTracked: line.serialTracked,
             scaleBarcode: line.scaleBarcode,
             serials: line.serials,
           })),
@@ -269,7 +368,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (!failure) clear();
       return failure;
     },
-    [clear, coupon?.code, lines, member, mutatePark, subtotal],
+    [
+      clear,
+      coupon?.code,
+      extraLines,
+      lines,
+      member,
+      mutatePark,
+      pharmacyReview,
+      pointsToRedeem,
+      subtotal,
+    ],
   );
 
   const resumeParkedBill = useCallback(
@@ -282,6 +391,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setMember(parked.member);
         setCoupon(parked.coupon);
         setManualDiscount(null);
+        setPointsToRedeem(parked.pointsUsed);
+        setExtraLines(parked.extraLines);
+        setPharmacyReview(parked.pharmacyReview);
       }
       return failure;
     },
@@ -294,7 +406,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 
   const serverPreview = preview.data?.bmsPosMemberPreview;
-  const total = serverPreview?.netTotal ?? subtotal;
+  const total = (serverPreview?.netTotal ?? subtotal) + extraTotal;
   const tierDiscount = serverPreview?.tierDiscount ?? 0;
   const couponDiscount = serverPreview?.couponDiscount ?? 0;
   const appliedManualDiscount = serverPreview?.manualDiscount ?? 0;
@@ -306,18 +418,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       addItem,
       decrementItem,
       removeLine,
+      updateLine,
       clear,
+      replaceForExchange,
       member,
       setMember,
       coupon,
       setCoupon,
       manualDiscount,
       setManualDiscount,
+      pointsToRedeem,
+      setPointsToRedeem,
+      extraLines,
+      setExtraLines,
+      pharmacyReview,
       parkedBills,
       parkCurrentBill,
       resumeParkedBill,
       deleteParkedBill,
       subtotal,
+      extraTotal,
       tierDiscount,
       couponDiscount,
       appliedManualDiscount,
@@ -338,12 +458,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       discountTotal,
       lines,
       manualDiscount,
+      pointsToRedeem,
+      extraLines,
+      pharmacyReview,
+      extraTotal,
       member,
       parkCurrentBill,
       parkedBills,
       preview.error?.message,
       preview.loading,
       removeLine,
+      replaceForExchange,
+      updateLine,
       resumeParkedBill,
       serverPreview?.couponError,
       subtotal,

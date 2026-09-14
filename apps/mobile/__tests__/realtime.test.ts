@@ -6,6 +6,7 @@ import {
   realtimeTicketUrl,
   realtimeWsUrl,
   reconnectDelayMs,
+  serverAssetUrl,
 } from '../src/lib/realtime';
 
 describe('mobile GraphQL realtime helpers', () => {
@@ -25,6 +26,19 @@ describe('mobile GraphQL realtime helpers', () => {
     expect(nativeWebSocketOptions()).toEqual({
       headers: { 'x-bms-client-class': 'native' },
     });
+  });
+
+  test('resolves server-relative asset URLs for native image loading', () => {
+    expect(serverAssetUrl('https://bms.example/', '/api/files/42')).toBe(
+      'https://bms.example/api/files/42',
+    );
+    expect(serverAssetUrl('https://bms.example/base', 'api/files/42')).toBe(
+      'https://bms.example/base/api/files/42',
+    );
+    expect(
+      serverAssetUrl('https://bms.example', 'https://cdn.example/a.jpg'),
+    ).toBe('https://cdn.example/a.jpg');
+    expect(serverAssetUrl('https://bms.example', '  ')).toBeNull();
   });
 
   test('uses bounded exponential backoff with jitter', () => {

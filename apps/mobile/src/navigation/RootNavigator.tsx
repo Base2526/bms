@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -10,6 +10,8 @@ import LoginScreen from '../screens/LoginScreen';
 import DeviceSettingsScreen from '../screens/settings/DeviceSettingsScreen';
 import { MainTabs } from './MainTabs';
 import { useTheme } from '../theme/ThemeProvider';
+import { useDevice } from '../state/DeviceContext';
+import { useSession } from '../state/SessionContext';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -29,6 +31,13 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator() {
   const { scheme, colors } = useTheme();
+  const { verify } = useDevice();
+  const { signOut } = useSession();
+  const authenticationRejected = verify.kind === 'REJECTED';
+
+  useEffect(() => {
+    if (authenticationRejected) signOut();
+  }, [authenticationRejected, signOut]);
 
   const navTheme = {
     ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
@@ -43,7 +52,11 @@ export function RootNavigator() {
   };
 
   return (
-    <NavigationContainer theme={navTheme} linking={linking}>
+    <NavigationContainer
+      key={authenticationRejected ? 'authentication-rejected' : 'authenticated'}
+      theme={navTheme}
+      linking={linking}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Main" component={MainTabs} />

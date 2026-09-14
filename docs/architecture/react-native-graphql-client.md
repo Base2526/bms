@@ -562,7 +562,12 @@ Handle these close codes distinctly:
   the normal jitter; do not open a second socket to compensate.
 
 HTTP GraphQL carries the long-lived credential directly, so a 401 there means the same thing: stop
-and re-authenticate rather than retry.
+and re-authenticate rather than retry. The in-repository RN client treats an HTTP GraphQL or ticket
+mint 401 as authoritative: it marks the device token rejected without issuing another
+`PosBootstrap`, stops HTTP bootstrap/refetch work and WS retries, clears the in-memory cashier
+session, and returns to Login/Settings for re-pairing. Re-running the verifier on that same 401 can
+oscillate `REJECTED -> CHECKING` and remount Login into a request loop. A timeout or network failure
+never clears the pairing or marks the token rejected.
 
 ## Offline queue
 

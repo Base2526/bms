@@ -48,8 +48,10 @@ const catOf = async (sku: string): Promise<string> => {
 const base = (sku: string) => ({ sku, name: `FAKE ${TAG} ${sku}`, price: 100, active: true });
 
 test("setup", async () => {
-  tenantId = (await query<{ id: string }>(`SELECT id FROM bms_tenants ORDER BY created_at LIMIT 1`)).rows[0].id;
-  await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku LIKE $2`, [tenantId, `FAKE-${TAG}-%`]);
+  tenantId = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    [`FAKE ${TAG}`, `fake-${TAG}-${crypto.randomUUID()}`]
+  )).rows[0].id;
 
   const others = await query<{ sku: string }>(
     `SELECT sku FROM bms_products
@@ -116,4 +118,5 @@ test("teardown: remove test products and put real ones back to UNKNOWN", async (
       [tenantId, preexistingUnknown]
     );
   }
+  await query(`DELETE FROM bms_tenants WHERE id = $1`, [tenantId]);
 });

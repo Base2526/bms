@@ -129,7 +129,10 @@ export async function listKitchenTickets(
                      AND kt.updated_at > now() - ($4 || ' hours')::interval))
          UNION ALL
          SELECT 'RESTAURANT_CHECK'::text, rt.id, NULL::uuid, ci.id::text,
-                rt.check_id, tb.code, tb.name, ci.round_no, ci.kitchen_note,
+                rt.check_id,
+                COALESCE(tb.code, CASE WHEN rc.service_mode = 'TAKEAWAY' THEN 'TAKEAWAY' END) AS table_code,
+                COALESCE(tb.name, CASE WHEN rc.service_mode = 'TAKEAWAY' THEN 'Take away #' || left(rt.check_id::text, 8) END) AS table_name,
+                ci.round_no, ci.kitchen_note,
                 rt.station, rt.station_id, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
                 ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty
            FROM bms_restaurant_kitchen_tickets rt
@@ -137,7 +140,7 @@ export async function listKitchenTickets(
              ON ci.tenant_id = rt.tenant_id AND ci.id = rt.check_item_id
            JOIN bms_restaurant_checks rc
              ON rc.tenant_id = rt.tenant_id AND rc.id = rt.check_id
-           JOIN bms_restaurant_tables tb
+           LEFT JOIN bms_restaurant_tables tb
              ON tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
           WHERE rt.tenant_id = $1
             AND ($5::uuid IS NULL OR rc.location_id = $5)
@@ -298,15 +301,17 @@ async function updateKitchenTicketStatusInTx(client: PoolClient, input: UpdateKi
       : await client.query(
           `UPDATE bms_restaurant_kitchen_tickets rt SET status = $3, updated_at = now()
             FROM bms_restaurant_check_items ci,
-                 bms_restaurant_checks rc,
-                 bms_restaurant_tables tb
+                 bms_restaurant_checks rc
+            LEFT JOIN bms_restaurant_tables tb
+              ON tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
             WHERE rt.tenant_id = $1 AND rt.id = $2
               AND ci.tenant_id = rt.tenant_id AND ci.id = rt.check_item_id
               AND rc.tenant_id = rt.tenant_id AND rc.id = rt.check_id
-              AND tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
             RETURNING 'RESTAURANT_CHECK'::text AS source, rt.id, NULL::uuid AS order_id,
-                      ci.id::text AS order_item_id, rt.check_id, tb.code AS table_code,
-                      tb.name AS table_name, ci.round_no, ci.kitchen_note, rt.station,
+                      ci.id::text AS order_item_id, rt.check_id,
+                      COALESCE(tb.code, CASE WHEN rc.service_mode = 'TAKEAWAY' THEN 'TAKEAWAY' END) AS table_code,
+                      COALESCE(tb.name, CASE WHEN rc.service_mode = 'TAKEAWAY' THEN 'Take away #' || left(rt.check_id::text, 8) END) AS table_name,
+                      ci.round_no, ci.kitchen_note, rt.station,
                       rt.station_id, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
                       ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty AS qty`,
           [input.tenantId, input.ticketId, status]

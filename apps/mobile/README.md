@@ -12,10 +12,15 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - server bootstrap, cashier selection, PIN verification, and in-memory cashier credentials;
 - retail/pharmacy catalog browse and server-backed search, barcode/SKU resolution, cart, member,
   coupon and discount preview;
-- sale, split cash/QR/card payment, receipt, sale history, partial return, void, parked bills;
-- shift open/close, shift report, cash in/out, and required second-person approval;
-- restaurant floor, checks, add/remove item, kitchen round, settlement, incoming-order acceptance;
-- kitchen ticket board and status updates;
+- sale/deposit, split cash/QR/card/bank/wallet/store-credit/credit payment, receipt delivery,
+  sale history, partial/full return, exchange cart, refund completion, void, and parked bills;
+- shift open/close, shift report, cash in/out, no-sale, expenses, deposits, petty cash, purchase
+  receiving, AR collection, store-credit lookup, and required second-person approval;
+- pharmacy counter authorization and parked pharmacist-review handoff/resume;
+- restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
+  settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
+  QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
+- kitchen ticket board, station SLA, bulk status updates, and fallback refresh;
 - named GraphQL subscriptions, bounded event deduplication, batched active-query refetch,
   foreground/reconnect recovery, and degraded polling.
 
@@ -67,6 +72,9 @@ npm run android
 
 Use a URL reachable from the simulator/device when pairing. `localhost` inside Android does not
 refer to the development Mac; use the emulator host alias or a LAN address as appropriate.
+The paired origin must route both `/api/graphql` to the web service and WebSocket upgrades on
+`/graphql` to the WS service. Port `3000` alone reaches Next.js HTTP but not the compose WS service
+on `8081`; use the local Caddy HTTPS origin for full GraphQL + realtime testing.
 
 When the local Caddy endpoint uses an `mkcert` certificate, install its root CA into each newly
 created or reset iOS Simulator before pairing:
@@ -102,8 +110,8 @@ These are not replaced by GraphQL and remain separate rollout work:
 - FCM/APNs push while the app is suspended or terminated;
 - persistence/sync policy for per-device alert preferences;
 - real-device iOS/Android sound, reconnect, and poor-network soak tests;
-- pharmacy review/evidence UI for approval-gated products and richer variant/modifier selectors.
+- pharmacy evidence capture/upload for approval-gated products.
 
-Until those hardware and specialist workflows land, the server fails closed for unsupported or
-approval-gated sales. REST compatibility routes and polling remain for the browser POS rollout; do
-not remove them based only on this RN migration.
+Until those hardware and specialist workflows land, the server fails closed for unsupported
+evidence-required sales. REST compatibility routes and polling remain for the browser POS rollout;
+do not remove them based only on this RN migration.

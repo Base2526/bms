@@ -272,7 +272,7 @@ wrong, and update the doc in the same change.
   are proven. New events use the union, rules, topic builders and validators in
   `packages/realtime` — never a new event string or a raw topic. The surface is one generic stream
   plus 18 named views that all reuse `realtimeTopics()` + `canReceiveRealtimeEvent()` and take **no
-  arguments**; never give a named subscription its own authorization. `9.70`–`9.77` have local DB
+  arguments**; never give a named subscription its own authorization. `9.70`–`9.74` and `9.84`–`9.86` have local DB
   contract coverage, including exact POS trigger payloads; production migration state is separate,
   so see the migration rules below before touching them, and
   [docs/agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture)
@@ -418,7 +418,7 @@ per-user-preference pattern:
     `bms_realtime_pos_shift_trigger()` because `bms_pos_devices` has `active` while
     `bms_pos_shifts` has `status`/`device_id`. Do not collapse those functions back into one shared
     `NEW.status`/`NEW.active` implementation without proving it on the throwaway database.
-    `9.75` also keeps `last_seen_at`/receipt-counter bookkeeping out of the device trigger; otherwise
+    `9.84` also keeps `last_seen_at`/receipt-counter bookkeeping out of the device trigger; otherwise
     authenticating an RN GraphQL request emits `device.session.changed` and prompts a needless
     verify/refetch cycle.
   - **`SECURITY DEFINER` + `BYPASSRLS` does not replace a table grant.** `BYPASSRLS` skips the row
@@ -552,7 +552,7 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset |
 | `realtime-event-contract` · `realtime-subscription-auth-contract` | envelope validation, redaction, audience→topic derivation · the one authorizer, fed real cross-tenant/cross-branch/wrong-device/missing-permission/flag-off cases instead of grepping the resolver |
 | `realtime-outbox-contract` · `realtime-domain-contract` | leased claim/ack/nack/backoff and the fail-closed dispatch endpoint · trigger shape and in-transaction enqueue |
-| `realtime-domain-coverage-contract` | walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that operation has a trigger or an explicit reason — the guard against a whole domain or one write kind going silent; `9.76` closed the prior 20 table gaps and `9.77` closed parked-sale deletion |
+| `realtime-domain-coverage-contract` | walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that operation has a trigger or an explicit reason — the guard against a whole domain or one write kind going silent; `9.85` closed the prior 20 table gaps and `9.86` closed parked-sale deletion |
 | `realtime-named-subscriptions-contract` · `realtime-client-contract` · `realtime-ws-security-contract` · `realtime-ws-ticket-contract` | the 18 named views map to event types and share one authorizer · bounded dedup/batched invalidation/reconnect refetch · origin/size/quota/expiry/one-root-field gateway bounds · ticket minting and claims |
 | `mobile-graphql-contract` · `graphql-schema-artifact-contract` | typed inputs/outputs read from the parsed SDL, field↔resolver both ways, no caller-supplied authority, JSON countdown · committed `schema.graphql` matches the executable schema |
 | `graphql-action-alias-contract` · `graphql-error-contract` · `react-native-graphql-doc-contract` | named actions delegate to the kept `@deprecated` field with a fixed action and no duplicated service call · every client error carries a code while business status stays in `data` · every documented example validates against the real schema |
@@ -567,7 +567,7 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
   never means the database path was exercised.
 
   `realtime-outbox-db-contract` and `realtime-domain-db-contract` additionally need migrations
-  `9.70`–`9.77`. They have local DB contract coverage, but production-like rollout still uses the throwaway instance in
+  `9.70`–`9.74` and `9.84`–`9.86`. They have local DB contract coverage, but production-like rollout still uses the throwaway instance in
   [docs/architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md)
   (separate cluster because the dispatcher role is cluster-scoped, restored from a dump because
   `db/migrations` cannot build an empty database) and record a **baseline before** applying them —

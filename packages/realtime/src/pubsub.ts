@@ -18,8 +18,18 @@ export const pubsub = new RedisPubSub({
   subscriber,
 });
 
+export function isRealtimeRedisPong(value: unknown): boolean {
+  if (typeof value === 'string') return value.toUpperCase() === 'PONG';
+  return Array.isArray(value) && value.some(
+    (item) => typeof item === 'string' && item.toUpperCase() === 'PONG',
+  );
+}
+
 export async function realtimeRedisPing(): Promise<boolean> {
-  return (await publisher.ping()) === 'PONG' && (await subscriber.ping()) === 'PONG';
+  // Redis returns ["pong", ""] for PING once this connection is in subscriber
+  // mode. Treat both that shape and the normal publisher response as healthy.
+  return isRealtimeRedisPong(await publisher.ping())
+    && isRealtimeRedisPong(await subscriber.ping());
 }
 
 export async function readRealtimeRedisValue(key: string): Promise<string | null> {

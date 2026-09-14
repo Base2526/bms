@@ -3,11 +3,19 @@
 // พอร์ตกติกามาจากฝั่งเว็บ (`apps/web/lib/pos/orderAlertSound.ts`) ไม่ได้คิดชุดที่สองขึ้นมาเอง —
 // สองชุดจะ drift แล้ววันหนึ่งจอสองจอของร้านเดียวกันเตือนคนละแบบ
 
-export type OrderAlertKind = 'incoming_order' | 'kitchen_ticket';
+export type OrderAlertKind =
+  | 'incoming_order'
+  | 'kitchen_ticket'
+  | 'qr_order'
+  | 'service_call'
+  | 'waitlist';
 
 export const ORDER_ALERT_KINDS: OrderAlertKind[] = [
   'incoming_order',
   'kitchen_ticket',
+  'qr_order',
+  'service_call',
+  'waitlist',
 ];
 
 export interface OrderAlertSettings {
@@ -28,7 +36,13 @@ export interface OrderAlertSettings {
  */
 export const DEFAULT_ORDER_ALERT_SETTINGS: OrderAlertSettings = {
   enabled: true,
-  kinds: { incoming_order: true, kitchen_ticket: true },
+  kinds: {
+    incoming_order: true,
+    kitchen_ticket: true,
+    qr_order: true,
+    service_call: true,
+    waitlist: true,
+  },
   vibrate: true,
   sound: true,
   repeatSeconds: 30,
@@ -108,6 +122,9 @@ export function shouldRepeatAlert(input: RepeatInput): boolean {
 export const ORDER_ALERT_VIBRATION: Record<OrderAlertKind, number[]> = {
   incoming_order: [0, 260, 140, 260, 140, 260],
   kitchen_ticket: [0, 180, 120, 180],
+  qr_order: [0, 260, 140, 260, 140, 260],
+  service_call: [0, 320, 120, 320, 120, 320],
+  waitlist: [0, 220, 120, 220],
 };
 
 export type AlertChannelResult = 'played' | 'skipped' | 'unavailable';

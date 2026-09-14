@@ -10,6 +10,7 @@ import {
   hasOrderAlertSoundPlayer,
   registerOrderAlertSoundPlayer,
 } from '../src/lib/orderAlertSound';
+import { DEFAULT_ORDER_ALERT_SETTINGS } from '../src/lib/orderAlert';
 
 // สอดส่อง Vibration ตัวจริงของ RN แทนการ mock ด้วย path ภายใน (path ย้ายได้ทุกเวอร์ชัน
 // แล้วเทสจะพังด้วยเหตุผลที่ไม่เกี่ยวกับสิ่งที่กำลังตรึง)
@@ -78,7 +79,10 @@ describe('เส้นทางแจ้งเตือนจริง', () => {
 
   it('ปิดเฉพาะชนิดเหตุการณ์ได้ โดยชนิดอื่นยังเตือน', () => {
     updateOrderAlertSettings({
-      kinds: { incoming_order: true, kitchen_ticket: false },
+      kinds: {
+        ...DEFAULT_ORDER_ALERT_SETTINGS.kinds,
+        kitchen_ticket: false,
+      },
     });
     expect(fireOrderAlert('kitchen_ticket').vibration).toBe('skipped');
     expect(fireOrderAlert('incoming_order').vibration).toBe('played');

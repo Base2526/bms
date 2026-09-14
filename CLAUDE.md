@@ -23,7 +23,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) | Mobile/RN GraphQL primary API, REST exception inventory, POS migration gaps and phase boundaries |
 | [architecture/react-native-graphql-client.md](docs/architecture/react-native-graphql-client.md) | Native POS HTTP GraphQL + ticketed GraphQL WS client wiring, retry and rollout contract |
 | [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md) · [`schema.graphql`](schema.graphql) | Why the surface was typed and in what order · the committed SDL artifact a client generates from (`npm run schema:export`; production keeps introspection off) |
-| [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that `9.70`–`9.77` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
+| [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that realtime migrations `9.70`–`9.74` and `9.84`–`9.86` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
 | [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
@@ -178,12 +178,12 @@ physical table) now resolves the owning branch and honours `bms_user_allowed_loc
 [business/pos.md](docs/business/pos.md) § Table QR self-ordering and
 [agent-invariants.md § Restaurant POS](docs/agent-invariants.md#restaurant-pos-dine-in).
 
-**Transactional realtime invalidation (`9.70`–`9.77`, updated 2026-09-13).** The shared event
+**Transactional realtime invalidation (`9.70`–`9.74`, `9.84`–`9.86`, updated 2026-09-14).** The shared event
 contract, outbox, domain triggers, leased dispatcher, hardened database-free WS gateway,
 HTTP-minted tickets, one generic stream and 18 named views pass pure and local DB contracts.
 `9.73` fixed the first POS device row-shape failure and `9.74` split the device/shift trigger
-functions permanently; `9.75` filters heartbeat noise, `9.76` closes the final 20 known
-business-table coverage gaps, and `9.77` invalidates parked bills when resume/discard deletes them.
+functions permanently; `9.84` filters heartbeat noise, `9.85` closes the final 20 known
+business-table coverage gaps, and `9.86` invalidates parked bills when resume/discard deletes them.
 The coverage guard now checks each `INSERT`/`UPDATE`/`DELETE`, not only whether a table has some
 trigger. A live local probe has also proved HTTP ticket minting and PostgreSQL ->
 outbox dispatcher -> Redis -> two WS instances. Browser POS and `apps/mobile` now call named views;

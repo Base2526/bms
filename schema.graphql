@@ -2883,6 +2883,13 @@ type BmsPosOperationalReadiness {
   warnings: [String!]!
 }
 
+type BmsPosPackOption {
+  baseQty: Float!
+  code: String!
+  price: Float!
+  unitName: String!
+}
+
 type BmsPosParkActionResult {
   cart: BmsPosParkedCart
   caseCode: String
@@ -3076,6 +3083,7 @@ type BmsPosReceipt {
   posLabel: String
   receiptNo: String
   refunds: [BmsPosRefundAllocation!]!
+  restaurantServiceMode: String
   returnBlockedReason: String
   returnEligible: Boolean!
   returnEvents: [BmsPosReceiptReturnEvent!]!
@@ -3290,11 +3298,12 @@ type BmsPosRestaurantCheck {
   reservationLost: Boolean!
   reservationStatus: String
   reservedVersion: Int
+  serviceMode: String!
   splitFromCheckId: ID
   splitGroupNo: Int!
   status: String!
   tableCode: String!
-  tableId: ID!
+  tableId: ID
   tableName: String!
   version: Int!
 }
@@ -3390,6 +3399,7 @@ type BmsPosRestaurantFloorCheck {
   itemCount: Int!
   openedAt: String
   reservedVersion: Int
+  serviceMode: String
   splitGroupNo: Int!
   status: String!
   unsentCount: Int!
@@ -3399,6 +3409,7 @@ type BmsPosRestaurantFloorCheck {
 type BmsPosRestaurantFloorResult {
   areas: [BmsRestaurantArea!]!
   tables: [BmsPosRestaurantFloorTable!]!
+  takeawayChecks: [BmsPosRestaurantFloorCheck!]!
 }
 
 input BmsPosRestaurantFloorSetupInput {
@@ -3504,7 +3515,8 @@ input BmsPosRestaurantOpenCheckInput {
   guestCount: Int
   note: String
   pin: String!
-  tableId: ID!
+  serviceMode: String
+  tableId: ID
 }
 
 type BmsPosRestaurantOpenCheckResult {
@@ -3971,6 +3983,7 @@ type BmsPosScanResult {
   modifiers: [BmsPosModifier!]!
   packCode: String!
   packPrice: Float!
+  packs: [BmsPosPackOption!]!
   priceTiers: [BmsPosPriceTier!]!
   productName: String!
   promotion: BmsPosPromotion
@@ -4140,6 +4153,9 @@ type BmsPosStoreCreditSummary {
 }
 
 type BmsPosStoreReceiptSettings {
+  address: String
+  logoUrl: String
+  phone: String
   receiptLanguageMode: String!
   taxId: String
 }

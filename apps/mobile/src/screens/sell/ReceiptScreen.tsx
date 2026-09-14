@@ -34,6 +34,13 @@ export default function ReceiptScreen({ route, navigation }: Props) {
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
         ใบเสร็จ · {sale.receiptNo}
       </Text>
+      {sale.restaurantServiceMode ? (
+        <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+          {sale.restaurantServiceMode === 'TAKEAWAY'
+            ? 'บริการ · กลับบ้าน'
+            : 'บริการ · กินในร้าน'}
+        </Text>
+      ) : null}
       <ScrollView>
         {sale.lines.map(l => (
           <View key={l.sku} style={styles.line}>

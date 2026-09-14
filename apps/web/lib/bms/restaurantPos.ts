@@ -26,6 +26,15 @@ import {
 
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"] as const;
 const SETTLEMENT_LEASE_MINUTES = 5;
+export type RestaurantServiceMode = "DINE_IN" | "TAKEAWAY";
+
+function normalizeRestaurantServiceMode(value: unknown): RestaurantServiceMode {
+  return value === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN";
+}
+
+function takeawayLabel(id: string) {
+  return `Take away #${id.slice(0, 8)}`;
+}
 
 type CheckItemRow = {
   id: string;
@@ -133,7 +142,7 @@ async function requireRestaurantTenant(tenantId: string) {
 
 export async function listRestaurantFloor(tenantId: string, locationId: string) {
   await requireRestaurantTenant(tenantId);
-  const [areas, tables] = await Promise.all([
+  const [areas, tables, takeawayChecks] = await Promise.all([
     query<any>(
       `SELECT a.id, a.name, a.sort_order,
               COUNT(t.id) FILTER (WHERE t.active)::integer AS table_count
@@ -150,13 +159,14 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
     query<any>(
       `WITH open_checks AS (
          SELECT c.id, c.table_id, c.status, c.guest_count, c.amount_due, c.opened_at,
-                c.version, c.reserved_version, c.split_group_no,
+                c.version, c.reserved_version, c.split_group_no, c.service_mode,
                 COUNT(i.id) FILTER (WHERE i.status <> 'CANCELLED')::integer AS item_count,
                 COUNT(i.id) FILTER (WHERE i.status = 'NEW')::integer AS unsent_count
            FROM bms_restaurant_checks c
            LEFT JOIN bms_restaurant_check_items i
              ON i.tenant_id = c.tenant_id AND i.check_id = c.id
           WHERE c.tenant_id = $1 AND c.location_id = $2 AND c.status = ANY($3::text[])
+            AND c.service_mode = 'DINE_IN'
           GROUP BY c.id
        )
        SELECT t.id, t.area_id, t.code, t.name, t.seats, t.shape,
@@ -168,7 +178,7 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
                     'amountDue', oc.amount_due, 'openedAt', oc.opened_at,
                     'itemCount', oc.item_count, 'unsentCount', oc.unsent_count,
                     'version', oc.version, 'reservedVersion', oc.reserved_version,
-                    'splitGroupNo', oc.split_group_no
+                    'splitGroupNo', oc.split_group_no, 'serviceMode', oc.service_mode
                   ) ORDER BY oc.split_group_no
                 ) FILTER (WHERE oc.id IS NOT NULL),
                 '[]'::json
@@ -178,6 +188,21 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
         WHERE t.tenant_id = $1 AND t.location_id = $2 AND t.active
         GROUP BY t.id
         ORDER BY t.sort_order, t.code`,
+      [tenantId, locationId, [...OPEN_CHECK_STATUSES]]
+    ),
+    query<any>(
+      `SELECT c.id, c.status, c.guest_count, c.amount_due, c.opened_at,
+              c.version, c.reserved_version, c.split_group_no, c.service_mode,
+              COUNT(i.id) FILTER (WHERE i.status <> 'CANCELLED')::integer AS item_count,
+              COUNT(i.id) FILTER (WHERE i.status = 'NEW')::integer AS unsent_count
+         FROM bms_restaurant_checks c
+         LEFT JOIN bms_restaurant_check_items i
+           ON i.tenant_id = c.tenant_id AND i.check_id = c.id
+        WHERE c.tenant_id = $1 AND c.location_id = $2
+          AND c.status = ANY($3::text[]) AND c.service_mode = 'TAKEAWAY'
+        GROUP BY c.id
+        ORDER BY c.opened_at DESC, c.id DESC
+        LIMIT 50`,
       [tenantId, locationId, [...OPEN_CHECK_STATUSES]]
     ),
   ]);
@@ -200,6 +225,7 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
         version: Number(entry.version),
         reservedVersion: entry.reservedVersion == null ? null : Number(entry.reservedVersion),
         splitGroupNo: Number(entry.splitGroupNo),
+        serviceMode: normalizeRestaurantServiceMode(entry.serviceMode),
       }));
       return {
         id: row.id,
@@ -219,6 +245,20 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
         checks,
       };
     }),
+    takeawayChecks: takeawayChecks.rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      guestCount: Number(row.guest_count),
+      amountDue: Number(row.amount_due),
+      openedAt: iso(row.opened_at),
+      itemCount: Number(row.item_count),
+      unsentCount: Number(row.unsent_count),
+      version: Number(row.version),
+      reservedVersion: row.reserved_version == null ? null : Number(row.reserved_version),
+      splitGroupNo: Number(row.split_group_no ?? 1),
+      serviceMode: normalizeRestaurantServiceMode(row.service_mode),
+      label: takeawayLabel(row.id),
+    })),
   };
 }
 
@@ -780,7 +820,8 @@ export type OpenRestaurantCheckInput = {
   locationId: string;
   deviceId: string;
   shiftId: string;
-  tableId: string;
+  tableId?: string | null;
+  serviceMode?: RestaurantServiceMode | null;
   guestCount: number;
   note?: string | null;
   actorUserId: string;
@@ -804,26 +845,31 @@ export async function openRestaurantCheckInTx(
     [input.tenantId, input.shiftId, input.deviceId, input.locationId]
   );
   if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนเปิดโต๊ะ");
-  const table = await client.query(
-    `SELECT 1 FROM bms_restaurant_tables
-      WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active AND NOT blocked
-      FOR UPDATE`,
-    [input.tenantId, input.tableId, input.locationId]
-  );
-  if (!table.rowCount) throw new RestaurantCheckError("โต๊ะนี้ไม่พร้อมใช้งาน");
+  const serviceMode = normalizeRestaurantServiceMode(input.serviceMode);
+  const tableId = typeof input.tableId === "string" && input.tableId.trim() ? input.tableId.trim() : null;
+  if (serviceMode === "DINE_IN" && !tableId) throw new RestaurantCheckError("ต้องระบุโต๊ะ");
+  if (serviceMode === "DINE_IN") {
+    const table = await client.query(
+      `SELECT 1 FROM bms_restaurant_tables
+        WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND active AND NOT blocked
+        FOR UPDATE`,
+      [input.tenantId, tableId, input.locationId]
+    );
+    if (!table.rowCount) throw new RestaurantCheckError("โต๊ะนี้ไม่พร้อมใช้งาน");
+  }
   const inserted = await client.query<{ id: string }>(
     `INSERT INTO bms_restaurant_checks
-       (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, guest_count, note, opened_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       (tenant_id, location_id, table_id, service_mode, pos_device_id, pos_shift_id, guest_count, note, opened_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      RETURNING id`,
-    [input.tenantId, input.locationId, input.tableId, input.deviceId, input.shiftId,
+    [input.tenantId, input.locationId, tableId, serviceMode, input.deviceId, input.shiftId,
       Math.min(Math.max(Math.trunc(input.guestCount), 1), 500), input.note?.trim() || null, input.actorUserId]
   );
   await client.query(
     `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
      VALUES ($1,$2,'restaurant.check_open',$3,$4::jsonb)`,
     [input.tenantId, `user:${input.actorUserId}`, inserted.rows[0].id,
-      JSON.stringify({ tableId: input.tableId, guestCount: input.guestCount })]
+      JSON.stringify({ tableId, serviceMode, guestCount: input.guestCount })]
   );
   return inserted.rows[0].id;
 }
@@ -853,8 +899,8 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
     `SELECT c.*, t.code AS table_code, t.name AS table_name, a.name AS area_name,
             o.status AS reservation_status
        FROM bms_restaurant_checks c
-       JOIN bms_restaurant_tables t ON t.tenant_id = c.tenant_id AND t.id = c.table_id
-       JOIN bms_restaurant_areas a ON a.tenant_id = t.tenant_id AND a.id = t.area_id
+       LEFT JOIN bms_restaurant_tables t ON t.tenant_id = c.tenant_id AND t.id = c.table_id
+       LEFT JOIN bms_restaurant_areas a ON a.tenant_id = t.tenant_id AND a.id = t.area_id
        LEFT JOIN bms_orders o ON o.tenant_id = c.tenant_id AND o.id = c.current_order_id
       WHERE c.tenant_id = $1 AND c.id = $2
         AND ($3::uuid IS NULL OR c.location_id = $3)`,
@@ -907,12 +953,15 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
     [tenantId, checkId]
   );
   const row = result.rows[0];
+  const serviceMode = normalizeRestaurantServiceMode(row.service_mode);
+  const fallbackLabel = serviceMode === "TAKEAWAY" ? takeawayLabel(row.id) : "Table";
   return {
     id: row.id,
+    serviceMode,
     tableId: row.table_id,
-    tableCode: row.table_code,
-    tableName: row.table_name,
-    areaName: row.area_name,
+    tableCode: row.table_code ?? "TAKEAWAY",
+    tableName: row.table_name ?? fallbackLabel,
+    areaName: row.area_name ?? "Take away",
     status: row.status,
     guestCount: Number(row.guest_count),
     note: row.note,
@@ -1314,6 +1363,7 @@ export async function dropKitchenCancelledLineInTx(
       editorId: input.actorUserId,
       idempotencyKey: `restaurant:${input.checkId}:v${nextVersion}`,
       restaurantCheckId: input.checkId,
+      restaurantServiceMode: normalizeRestaurantServiceMode(check.service_mode),
     });
     if (created.status !== "CREATED") {
       throw new RestaurantCheckError(`คิดยอดใหม่หลังครัวยกเลิกไม่สำเร็จ (${created.status}) — ยังไม่ยกเลิกตั๋ว`);
@@ -1416,6 +1466,7 @@ async function sendRestaurantKitchenRoundInTx(
     editorId: input.actorUserId,
     idempotencyKey: `restaurant:${input.checkId}:v${check.version}`,
     restaurantCheckId: input.checkId,
+    restaurantServiceMode: normalizeRestaurantServiceMode(check.service_mode),
   });
   if (created.status !== "CREATED") return created;
 
@@ -1670,7 +1721,8 @@ export async function moveRestaurantCheck(input: {
       const moved = await client.query<{ previous_table_id: string }>(
         `WITH current AS (
            SELECT table_id AS previous_table_id FROM bms_restaurant_checks
-            WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
+            WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+              AND status = 'OPEN' AND service_mode = 'DINE_IN'
             FOR UPDATE
          )
          UPDATE bms_restaurant_checks c
@@ -1800,6 +1852,7 @@ async function repriceCheckAfterItemMoveInTx(
       editorId: ctx.actorUserId,
       idempotencyKey: `restaurant:${checkId}:v${nextVersion}`,
       restaurantCheckId: checkId,
+      restaurantServiceMode: normalizeRestaurantServiceMode(check.service_mode),
     });
     if (created.status !== "CREATED") {
       throw new RestaurantCheckError(`คิดยอดใหม่ไม่สำเร็จ (${created.status}) — ยังไม่มีอะไรถูกย้าย`);
@@ -1903,13 +1956,16 @@ export async function splitRestaurantCheck(input: {
       );
       if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะของเครื่องนี้ก่อนแยกบิล");
       await lockCheckInTx(client, input.tenantId, input.checkId);
-      const source = await client.query<{ table_id: string; guest_count: number }>(
-        `SELECT table_id, guest_count FROM bms_restaurant_checks
+      const source = await client.query<{ table_id: string | null; guest_count: number; service_mode: string }>(
+        `SELECT table_id, guest_count, service_mode FROM bms_restaurant_checks
           WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status = 'OPEN'
           FOR UPDATE`,
         [input.tenantId, input.checkId, input.locationId]
       );
       if (!source.rowCount) throw new RestaurantCheckError("บิลนี้ไม่อยู่ในสาขาหรือสถานะที่แยกบิลได้");
+      if (source.rows[0].service_mode !== "DINE_IN" || !source.rows[0].table_id) {
+        throw new RestaurantCheckError("แยกบิลได้เฉพาะบิลโต๊ะ");
+      }
 
       const picked = await client.query<{ picked: number; remaining: number }>(
         `SELECT COUNT(*) FILTER (WHERE id = ANY($3::uuid[]))::int AS picked,
@@ -2038,14 +2094,14 @@ export async function mergeRestaurantChecks(input: {
       for (const checkId of [input.sourceCheckId, input.targetCheckId].sort()) {
         await lockCheckInTx(client, input.tenantId, checkId);
       }
-      const both = await client.query<{ id: string; status: string }>(
-        `SELECT id, status FROM bms_restaurant_checks
+      const both = await client.query<{ id: string; status: string; service_mode: string }>(
+        `SELECT id, status, service_mode FROM bms_restaurant_checks
           WHERE tenant_id = $1 AND location_id = $2 AND id = ANY($3::uuid[])
           ORDER BY id
           FOR UPDATE`,
         [input.tenantId, input.locationId, [input.sourceCheckId, input.targetCheckId]]
       );
-      if (both.rowCount !== 2 || both.rows.some((row) => row.status !== "OPEN")) {
+      if (both.rowCount !== 2 || both.rows.some((row) => row.status !== "OPEN" || row.service_mode !== "DINE_IN")) {
         throw new RestaurantCheckError("รวมบิลได้เฉพาะบิลที่เปิดอยู่ในสาขาเดียวกันและยังไม่ได้กดคิดเงิน");
       }
       const moved = await moveCheckItemsInTx(client, {

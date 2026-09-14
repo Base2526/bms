@@ -8,17 +8,20 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# 1) คัดลอก package.json root (เผื่อใช้ dependency บางตัวร่วมกัน)
-COPY package*.json ./
+# Copy manifests first so source edits keep the dependency layers cached.
+COPY apps/ws/package*.json ./apps/ws/
+COPY packages/realtime/package*.json ./packages/realtime/
+COPY packages/graphql-core/package*.json ./packages/graphql-core/
 
-# 2) คัดลอกโค้ด apps/ws + packages ที่เกี่ยวข้อง
-COPY apps ./apps
-COPY packages ./packages
-
-# 3) ติดตั้ง dependencies เฉพาะของ ws และ shared packages
 RUN npm --prefix ./apps/ws ci \
  && npm --prefix ./packages/realtime ci \
  && npm --prefix ./packages/graphql-core ci
+
+# The gateway only imports these three source trees. Keeping the build context
+# narrow avoids transferring the web/mobile workspaces and local artifacts.
+COPY apps/ws ./apps/ws
+COPY packages/realtime ./packages/realtime
+COPY packages/graphql-core ./packages/graphql-core
 
 WORKDIR /app/apps/ws
 
@@ -26,5 +29,4 @@ ENV NODE_ENV=production
 
 EXPOSE 8080
 
-# 4) รันด้วย tsx ตรง ๆ (ตาม script ใน package.json)
 CMD ["npm", "run", "start"]

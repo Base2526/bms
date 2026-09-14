@@ -22,16 +22,18 @@ import {
 const ASSET: Record<OrderAlertKind, string> = {
   incoming_order: 'order_in',
   kitchen_ticket: 'kitchen',
+  qr_order: 'order_in',
+  service_call: 'order_in',
+  waitlist: 'order_in',
 };
 
-function assetName(kind: OrderAlertKind): string {
-  const base = ASSET[kind];
+function assetName(base: string): string {
   return Platform.OS === 'android' ? base : `${base}.wav`;
 }
 
 type LoadedSound = InstanceType<typeof Sound>;
 
-const loaded = new Map<OrderAlertKind, LoadedSound>();
+const loaded = new Map<string, LoadedSound>();
 
 /**
  * เตรียมเสียงไว้ล่วงหน้า
@@ -48,19 +50,19 @@ export function setupOrderAlertSound(): void {
   // ไม่งั้นแท็บเล็ตที่ใครเผลอเลื่อนสวิตช์จะเงียบทั้งกะโดยไม่มีอะไรบอก
   Sound.setCategory('Playback', false);
 
-  (Object.keys(ASSET) as OrderAlertKind[]).forEach(kind => {
+  [...new Set(Object.values(ASSET))].forEach(asset => {
     // ⚠️ ห้ามอ้างถึงตัวแปรที่กำลังประกาศจากใน callback ของ constructor
     // react-native-sound เรียก callback แบบ async จึงดูเหมือนไม่มีปัญหา แต่ถ้าวันไหนมันเรียก
     // แบบ sync (หรือถูก mock ให้ sync) ตัวแปรจะยังอยู่ใน TDZ แล้วพังทั้งการตั้งค่าเสียง
     const instance: LoadedSound = new Sound(
-      assetName(kind),
+      assetName(asset),
       Sound.MAIN_BUNDLE,
       error => {
         if (error) {
           // โหลดไม่ได้ = เอาออกจากทะเบียน ปล่อยให้ play() รายงานว่าเล่นไม่ได้
-          loaded.delete(kind);
+          loaded.delete(asset);
           console.warn(
-            `[orderAlert] โหลดเสียง ${assetName(kind)} ไม่สำเร็จ`,
+            `[orderAlert] โหลดเสียง ${assetName(asset)} ไม่สำเร็จ`,
             error,
           );
         }
@@ -68,12 +70,12 @@ export function setupOrderAlertSound(): void {
     );
     // เก็บไว้เสมอแล้วให้ `isLoaded()` เป็นด่านจริงตอนเล่น — ครอบทั้ง callback แบบ sync และ async
     // โดยไม่ต้องเดาว่าไลบรารีเรียกแบบไหน · ความดังใช้ค่าปริยาย (1.0) ตามระดับเสียงสื่อของเครื่อง
-    loaded.set(kind, instance);
+    loaded.set(asset, instance);
   });
 
   const player: OrderAlertSoundPlayer = {
     play: kind => {
-      const sound = loaded.get(kind);
+      const sound = loaded.get(ASSET[kind]);
       // ⚠️ ต้องคืน false เมื่อยังโหลดไม่เสร็จ/โหลดไม่ได้ — การรายงานว่าดังทั้งที่เงียบ
       // คือบั๊กที่ฝั่งเว็บใช้เวลาเป็นเดือนกว่าจะมีคนเจอ
       if (!sound || !sound.isLoaded()) return false;

@@ -10,8 +10,8 @@ const typeDefs = read("../packages/graphql-core/src/typeDefs.ts");
 const resolvers = read("../packages/graphql-core/src/resolvers.ts");
 
 /**
- * Phase 6 ระบุชื่อไว้ 17 ตัว — ครบทุกตัวคือสัญญากับฝั่ง RN
- * `bmsServiceCallChanged` เป็นตัวที่ 18 ที่เพิ่มทีหลัง เพราะ "เรียกพนักงาน" เป็นจอจริง
+ * Phase 6 ระบุชื่อไว้ 17 ตัว และ `bmsServiceCallChanged` เป็นตัวที่ 18 ที่เพิ่มทีหลัง
+ * เพราะ "เรียกพนักงาน" เป็นจอจริง
  * ของ POS (`bmsPosRestaurantServiceCalls`) ที่ brief ไม่ได้ระบุไว้
  */
 const REQUIRED_SUBSCRIPTIONS = [
@@ -68,7 +68,7 @@ function declaredSubscriptionFields(): Set<string> {
   return fields;
 }
 
-test("all 17 named domain subscriptions are declared in the schema", () => {
+test("all 18 named domain subscriptions are declared in the schema", () => {
   const declared = declaredSubscriptionFields();
   for (const name of REQUIRED_SUBSCRIPTIONS) {
     assert.ok(declared.has(name), `${name} must be a Subscription field`);
@@ -94,7 +94,7 @@ test("every named subscription maps to registered event types and has a resolver
 });
 
 /**
- * 17 ชุด auth = 17 โอกาสที่ตัวหนึ่งจะหลุด · ทุกตัวต้องเดินผ่านตัวตัดสินกลางตัวเดียว
+ * 18 ชุด auth = 18 โอกาสที่ตัวหนึ่งจะหลุด · ทุกตัวต้องเดินผ่านตัวตัดสินกลางตัวเดียว
  * และต้องไม่รับ argument จาก client (ไม่มีทางให้ส่ง tenant/location มาเอง)
  */
 test("named subscriptions share one auth path and accept no client arguments", () => {

@@ -15,8 +15,11 @@ import { ORDER_ALERT_KINDS, type OrderAlertKind } from '../lib/orderAlert';
 import { fireOrderAlert } from '../state/OrderAlertContext';
 
 const KIND_LABEL: Record<OrderAlertKind, string> = {
-  incoming_order: 'ออร์เดอร์เข้าจากแชท/ออนไลน์/QR',
+  incoming_order: 'ออร์เดอร์เข้าจากแชท/ออนไลน์',
   kitchen_ticket: 'ตั๋วครัวใบใหม่',
+  qr_order: 'คำสั่งใหม่จาก QR โต๊ะ',
+  service_call: 'ลูกค้าเรียกพนักงาน',
+  waitlist: 'คิวหรือการจองโต๊ะใหม่',
 };
 
 const REPEAT_CHOICES = [0, 15, 30, 60];

@@ -1,9 +1,4 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-} from 'react';
+import React, { createContext, useCallback, useContext, useMemo } from 'react';
 import { useQuery } from '@apollo/client';
 import { MobilePosSalesDocument } from '../graphql/generated';
 import type { MockPaymentInput } from '../lib/paymentMath';
@@ -33,6 +28,7 @@ export interface SaleSnapshot {
   receiptNo: string;
   createdAt: string;
   source: 'retail' | 'restaurant';
+  restaurantServiceMode: 'DINE_IN' | 'TAKEAWAY' | null;
   tableCode?: string;
   lines: SaleLine[];
   subtotal: number;
@@ -58,7 +54,17 @@ const SalesContext = createContext<SalesContextValue | null>(null);
 
 function paymentMethod(value: string): MockPaymentInput['method'] {
   const normalized = value.toLowerCase();
-  return normalized === 'cash' || normalized === 'card' ? normalized : 'qr';
+  return [
+    'cash',
+    'qr',
+    'card',
+    'bank_transfer',
+    'wallet',
+    'store_credit',
+    'credit',
+  ].includes(normalized)
+    ? (normalized as MockPaymentInput['method'])
+    : 'qr';
 }
 
 export function SalesProvider({ children }: { children: React.ReactNode }) {
@@ -92,9 +98,12 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
           id: receipt.orderId,
           receiptNo: receipt.receiptNo ?? receipt.billNo ?? receipt.orderId,
           createdAt: receipt.soldAt,
-          source: receipt.sourceChannel.includes('RESTAURANT')
-            ? 'restaurant'
-            : 'retail',
+          source: receipt.restaurantServiceMode ? 'restaurant' : 'retail',
+          restaurantServiceMode:
+            receipt.restaurantServiceMode === 'DINE_IN' ||
+            receipt.restaurantServiceMode === 'TAKEAWAY'
+              ? receipt.restaurantServiceMode
+              : null,
           lines,
           subtotal: lines.reduce(
             (sum, line) => sum + line.qty * line.unitPrice,
@@ -153,9 +162,12 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
             }),
             total: event.refundAmount,
             allocations: event.refunds.map(refund => ({
+              id: refund.id,
+              paymentId: refund.paymentId,
               method: paymentMethod(refund.method),
               amount: refund.amount,
               status: refund.completedAt ? 'COMPLETED' : 'PENDING',
+              externalRef: refund.externalRef ?? undefined,
             })),
             settlementStatus: event.settlementStatus,
           })),
@@ -185,7 +197,9 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
     [findSale, query.error?.message, query.loading, refresh, sales],
   );
 
-  return <SalesContext.Provider value={value}>{children}</SalesContext.Provider>;
+  return (
+    <SalesContext.Provider value={value}>{children}</SalesContext.Provider>
+  );
 }
 
 export function useSales(): SalesContextValue {

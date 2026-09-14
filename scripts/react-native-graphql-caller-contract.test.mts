@@ -72,10 +72,10 @@ test("RN money callers retain stable retry keys and filter second-person permiss
     checkout,
     /idempotencyRef\.current \?\?= createIdempotencyKey\('sale'\)/
   );
-  assert.match(
-    detail,
-    /returnKey\.current \?\?= createIdempotencyKey\('return'\)/
-  );
+  assert.match(detail, /returnKey\.current \?\?= createIdempotencyKey\(/);
+  assert.match(detail, /'exchange-return'/);
+  assert.match(detail, /'full-return'/);
+  assert.match(detail, /mode: action === 'RETURN_FULL' \? 'FULL' : 'PARTIAL'/);
   assert.match(detail, /voidKey\.current \?\?= createIdempotencyKey\('void'\)/);
   assert.match(
     detail,

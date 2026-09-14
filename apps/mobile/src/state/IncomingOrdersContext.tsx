@@ -20,6 +20,7 @@ interface IncomingOrdersContextValue {
   pendingIds: string[];
   loading: boolean;
   error: string | null;
+  orderingPaused: boolean;
   acceptOrder: (id: string) => Promise<{ ticketsCreated: number } | string>;
   refresh: () => Promise<void>;
 }
@@ -104,6 +105,7 @@ export function IncomingOrdersProvider({
       pendingIds,
       loading: query.loading,
       error: query.error?.message ?? null,
+      orderingPaused: query.data?.bmsPosRestaurantIncoming.config.paused ?? false,
       acceptOrder,
       refresh,
     }),
@@ -114,6 +116,7 @@ export function IncomingOrdersProvider({
       pendingIds,
       query.error?.message,
       query.loading,
+      query.data?.bmsPosRestaurantIncoming.config.paused,
       refresh,
     ],
   );

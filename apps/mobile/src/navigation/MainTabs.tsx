@@ -10,6 +10,10 @@ import {
 } from '../state/IncomingOrdersContext';
 import { KitchenProvider } from '../state/KitchenContext';
 import { SalesProvider } from '../state/SalesContext';
+import {
+  RestaurantOperationsProvider,
+  useRestaurantOperations,
+} from '../state/RestaurantOperationsContext';
 import { sessionCashierName, useSession } from '../state/SessionContext';
 import { ShiftProvider } from '../state/ShiftContext';
 import { useStoreMode } from '../state/StoreModeContext';
@@ -33,6 +37,7 @@ import TableMenuScreen from '../screens/floor/TableMenuScreen';
 import IncomingOrdersScreen from '../screens/orders/IncomingOrdersScreen';
 import KitchenBoardScreen from '../screens/kitchen/KitchenBoardScreen';
 import ShiftScreen from '../screens/shift/ShiftScreen';
+import OperationsScreen from '../screens/operations/OperationsScreen';
 
 import type {
   MainTabParamList,
@@ -41,6 +46,7 @@ import type {
   FloorStackParamList,
   KitchenStackParamList,
   ShiftStackParamList,
+  OperationsStackParamList,
 } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -49,6 +55,7 @@ const FloorStack = createNativeStackNavigator<FloorStackParamList>();
 const OrdersStack = createNativeStackNavigator<OrdersStackParamList>();
 const KitchenStack = createNativeStackNavigator<KitchenStackParamList>();
 const ShiftStack = createNativeStackNavigator<ShiftStackParamList>();
+const OperationsStack = createNativeStackNavigator<OperationsStackParamList>();
 
 function SellNavigator() {
   return (
@@ -99,6 +106,14 @@ function ShiftNavigator() {
   );
 }
 
+function OperationsNavigator() {
+  return (
+    <OperationsStack.Navigator screenOptions={{ headerShown: false }}>
+      <OperationsStack.Screen name="Operations" component={OperationsScreen} />
+    </OperationsStack.Navigator>
+  );
+}
+
 // แท็บล่าง: ขาย · ออร์เดอร์เข้า · (ร้านอาหารได้ ผังโต๊ะ + ครัว เพิ่ม) · กะ/ลิ้นชัก
 //
 // "ออร์เดอร์เข้า" มีให้ทุกโหมดโดยตั้งใจ — การสั่งออนไลน์/แชทไม่ใช่เรื่องของร้านอาหารอย่างเดียว
@@ -116,9 +131,11 @@ export function MainTabs() {
           <CartProvider>
             <KitchenProvider>
               <IncomingOrdersProvider>
-                {/* เฝ้าดูของใหม่ทั้งแอป — ไม่ผูกกับแท็บที่เปิดอยู่ (ดูคอมเมนต์ในไฟล์) */}
-                <OrderAlertWatcher />
-                <TabsShell />
+                <RestaurantOperationsProvider>
+                  {/* เฝ้าดูของใหม่ทั้งแอป — ไม่ผูกกับแท็บที่เปิดอยู่ (ดูคอมเมนต์ในไฟล์) */}
+                  <OrderAlertWatcher />
+                  <TabsShell />
+                </RestaurantOperationsProvider>
               </IncomingOrdersProvider>
             </KitchenProvider>
           </CartProvider>
@@ -132,6 +149,8 @@ function TabsShell() {
   const { colors } = useTheme();
   const { mode } = useStoreMode();
   const { pendingCount } = useIncomingOrders();
+  const { totalPendingCount: restaurantPendingCount } =
+    useRestaurantOperations();
   const sellTitle =
     mode === 'restaurant'
       ? 'เมนูอาหาร'
@@ -197,6 +216,20 @@ function TabsShell() {
           />
         </>
       )}
+      <Tab.Screen
+        name="OperationsTab"
+        component={OperationsNavigator}
+        options={{
+          title: mode === 'restaurant' ? 'คิว/QR' : 'งาน',
+          tabBarBadge:
+            mode === 'restaurant' && restaurantPendingCount > 0
+              ? restaurantPendingCount
+              : undefined,
+          tabBarIcon: ({ color, size }) => (
+            <OrdersIcon color={color} size={size} />
+          ),
+        }}
+      />
       <Tab.Screen
         name="ShiftTab"
         component={ShiftNavigator}

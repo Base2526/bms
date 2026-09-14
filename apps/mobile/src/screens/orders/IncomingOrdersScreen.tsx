@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useMutation, useQuery } from '@apollo/client';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -11,6 +19,13 @@ import { useIncomingOrders } from '../../state/IncomingOrdersContext';
 import { useOrderAlerts } from '../../state/OrderAlertContext';
 import { describeAgo } from '../../lib/orderAlert';
 import type { PosIncomingOrder } from '../../types/pos';
+import {
+  MobileRestaurantCancelOrderLinesDocument,
+  MobileRestaurantSetOrderingPausedDocument,
+  PosBootstrapDocument,
+} from '../../graphql/generated';
+import { createIdempotencyKey } from '../../lib/operation';
+import { useSession } from '../../state/SessionContext';
 
 const CHANNEL_LABEL: Record<string, string> = {
   LINE: 'LINE',
@@ -22,11 +37,116 @@ const CHANNEL_LABEL: Record<string, string> = {
 export default function IncomingOrdersScreen() {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
-  const { orders, pending, loading, error, acceptOrder, refresh } =
-    useIncomingOrders();
+  const {
+    orders,
+    pending,
+    loading,
+    error,
+    orderingPaused,
+    acceptOrder,
+    refresh,
+  } = useIncomingOrders();
+  const { session } = useSession();
+  const bootstrap = useQuery(PosBootstrapDocument);
+  const [setPaused] = useMutation(MobileRestaurantSetOrderingPausedDocument);
+  const [cancelLines] = useMutation(MobileRestaurantCancelOrderLinesDocument);
   const { settings, soundAvailable, acknowledge } = useOrderAlerts();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  const [managerId, setManagerId] = useState('');
+  const [managerPin, setManagerPin] = useState('');
+  const [cancelNote, setCancelNote] = useState('');
+  const cancelKeys = useRef<Record<string, string>>({});
+  const managers = (bootstrap.data?.bmsPosSession.approvers ?? []).filter(
+    approver =>
+      approver.id !== session?.cashier.id &&
+      approver.hasPin &&
+      approver.approvals.includes('restaurant.floor.manage'),
+  );
+
+  const togglePaused = async () => {
+    if (!session || workingId) return;
+    setWorkingId('pause');
+    try {
+      const response = await setPaused({
+        variables: {
+          input: {
+            cashierUserId: session.credentials.cashierUserId,
+            pin: session.credentials.pin,
+            paused: !orderingPaused,
+          },
+        },
+      });
+      const result = response.data?.bmsPosRestaurantSetOrderingPaused;
+      if (!result || result.reason)
+        throw new Error(result?.reason ?? 'เปลี่ยนสถานะรับออร์เดอร์ไม่สำเร็จ');
+      await refresh();
+    } catch (cause) {
+      Alert.alert(
+        'ทำรายการไม่สำเร็จ',
+        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+      );
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
+  const cancelLine = async (
+    order: PosIncomingOrder,
+    orderItemId: number,
+    qty: number,
+  ) => {
+    if (!session || workingId) return;
+    const intent = `${order.id}:${orderItemId}`;
+    const idempotencyKey =
+      cancelKeys.current[intent] ??
+      (cancelKeys.current[intent] = createIdempotencyKey(
+        'restaurant-cancel-line',
+      ));
+    setWorkingId(`cancel-${orderItemId}`);
+    try {
+      const response = await cancelLines({
+        variables: {
+          input: {
+            cashierUserId: session.credentials.cashierUserId,
+            pin: session.credentials.pin,
+            orderId: order.id,
+            idempotencyKey,
+            lines: [
+              {
+                orderItemId,
+                packQty: Math.max(1, Math.trunc(qty)),
+                cause: 'MERCHANT_OUT_OF_STOCK',
+              },
+            ],
+            managerUserId: managerId || null,
+            managerPin: managerPin || null,
+            note: cancelNote.trim() || null,
+          },
+        },
+      });
+      const result = response.data?.bmsPosRestaurantCancelOrderLines;
+      if (
+        !result ||
+        result.reason ||
+        !['RETURNED', 'CANCELLED', 'COMPLETED'].includes(result.status ?? '')
+      ) {
+        delete cancelKeys.current[intent];
+        throw new Error(
+          result?.reason ?? result?.status ?? 'ยกเลิกรายการไม่สำเร็จ',
+        );
+      }
+      delete cancelKeys.current[intent];
+      await refresh();
+    } catch (cause) {
+      Alert.alert(
+        'ยกเลิกรายการไม่สำเร็จ',
+        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+      );
+    } finally {
+      setWorkingId(null);
+    }
+  };
 
   const onAccept = async (order: PosIncomingOrder) => {
     if (workingId) return;
@@ -38,7 +158,10 @@ export default function IncomingOrdersScreen() {
       return;
     }
     acknowledge();
-    Alert.alert('รับออร์เดอร์แล้ว', `ส่งเข้าครัว ${result.ticketsCreated} ตั๋ว`);
+    Alert.alert(
+      'รับออร์เดอร์แล้ว',
+      `ส่งเข้าครัว ${result.ticketsCreated} ตั๋ว`,
+    );
   };
 
   return (
@@ -59,6 +182,53 @@ export default function IncomingOrdersScreen() {
           variant="secondary"
           onPress={() => setSettingsOpen(true)}
         />
+        <Button
+          label={orderingPaused ? 'เปิดรับออนไลน์' : 'พักรับออนไลน์'}
+          variant={orderingPaused ? 'primary' : 'secondary'}
+          loading={workingId === 'pause'}
+          onPress={togglePaused}
+        />
+      </View>
+      {orderingPaused ? (
+        <Text style={[typography.captionStrong, { color: colors.warning }]}>
+          หยุดรับออร์เดอร์ออนไลน์ชั่วคราว
+        </Text>
+      ) : null}
+      <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
+        <TextInput
+          value={cancelNote}
+          onChangeText={setCancelNote}
+          placeholder="หมายเหตุกรณียกเลิกรายการออนไลน์"
+          placeholderTextColor={colors.textSoft}
+          style={[
+            styles.input,
+            { color: colors.text, borderColor: colors.border },
+          ]}
+        />
+        <View style={styles.managerRow}>
+          {managers.map(manager => (
+            <Button
+              key={manager.id}
+              label={manager.name ?? manager.id}
+              variant={managerId === manager.id ? 'primary' : 'secondary'}
+              onPress={() => setManagerId(manager.id)}
+            />
+          ))}
+        </View>
+        {managerId ? (
+          <TextInput
+            value={managerPin}
+            onChangeText={setManagerPin}
+            placeholder="PIN ผู้จัดการ"
+            keyboardType="number-pad"
+            secureTextEntry
+            placeholderTextColor={colors.textSoft}
+            style={[
+              styles.input,
+              { color: colors.text, borderColor: colors.border },
+            ]}
+          />
+        ) : null}
       </View>
       {error ? (
         <Button
@@ -103,9 +273,21 @@ export default function IncomingOrdersScreen() {
             <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
               {item.lines.map(line => (
                 <View key={line.orderItemId} style={styles.row}>
-                  <Text style={[typography.body, { color: colors.text, flex: 1 }]}>
+                  <Text
+                    style={[typography.body, { color: colors.text, flex: 1 }]}
+                  >
                     {line.name} × {line.qty}
                   </Text>
+                  {item.status !== 'PAID' ? (
+                    <Button
+                      label="หมด / ยกเลิก"
+                      variant="danger"
+                      loading={workingId === `cancel-${line.orderItemId}`}
+                      onPress={() =>
+                        cancelLine(item, line.orderItemId, line.qty)
+                      }
+                    />
+                  ) : null}
                 </View>
               ))}
             </View>
@@ -152,5 +334,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  managerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  input: {
+    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    paddingHorizontal: 12,
   },
 });

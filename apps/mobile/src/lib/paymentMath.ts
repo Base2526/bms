@@ -1,4 +1,11 @@
-export type MockPaymentMethod = 'cash' | 'qr' | 'card';
+export type MockPaymentMethod =
+  | 'cash'
+  | 'qr'
+  | 'card'
+  | 'bank_transfer'
+  | 'wallet'
+  | 'store_credit'
+  | 'credit';
 
 export interface MockPaymentInput {
   id: string;
@@ -22,7 +29,11 @@ const roundMoney = (value: number) => Math.round(value * 100) / 100;
 export function paymentMethodLabel(method: MockPaymentMethod): string {
   if (method === 'cash') return 'เงินสด';
   if (method === 'qr') return 'QR';
-  return 'บัตรเครดิต';
+  if (method === 'card') return 'บัตรเครดิต';
+  if (method === 'bank_transfer') return 'โอนเงิน';
+  if (method === 'wallet') return 'วอลเล็ท';
+  if (method === 'store_credit') return 'เครดิตร้าน';
+  return 'ขายเชื่อ';
 }
 
 export function validateMockPayments(
@@ -44,7 +55,7 @@ export function validateMockPayments(
       if (tendered < payment.amount) {
         errors.push('เงินสดที่รับต้องไม่น้อยกว่ายอดเงินสด');
       }
-    } else if (!payment.reference?.trim()) {
+    } else if (payment.method !== 'credit' && !payment.reference?.trim()) {
       errors.push(`${paymentMethodLabel(payment.method)} ต้องมีเลขอ้างอิงทดสอบ`);
     }
   }

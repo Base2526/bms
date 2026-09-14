@@ -59,6 +59,7 @@ interface DeviceContextValue {
   pair: (target: PairingTarget) => Promise<void>;
   unpair: () => Promise<void>;
   runVerify: () => Promise<void>;
+  markAuthenticationRejected: () => void;
 }
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
@@ -66,6 +67,8 @@ const DeviceContext = createContext<DeviceContextValue | null>(null);
 /** fetch ไม่มี timeout ในตัว — คำขอที่ค้างครึ่งทาง (เน็ตร้านหลุดกลางคัน) จะทำให้ปุ่ม
  *  "ทดสอบการเชื่อมต่อ" หมุนค้างตลอดกาลโดยไม่มีอะไรบอก */
 const VERIFY_TIMEOUT_MS = 10_000;
+const REJECTED_TOKEN_MESSAGE =
+  'เซิร์ฟเวอร์ไม่รับ token ของเครื่องนี้ — มักเกิดจากมีคนกด “ออก token” ใหม่ให้เครื่องนี้ ตัวเก่าจะใช้ไม่ได้ทันที';
 
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<PairingStatus>('LOADING');
@@ -109,108 +112,114 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     setVerify({ kind: 'IDLE' });
   }, []);
 
-  const verifyTarget = useCallback(async (candidate: PairingTarget) => {
-    const seq = ++verifySeq.current;
-    setVerify({ kind: 'CHECKING' });
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
-    try {
-      const res = await fetch(graphqlHttpUrl(candidate.serverUrl), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${candidate.token}`,
-          'x-pos-device-token': candidate.token,
-          'x-scope': 'pos',
-        },
-        body: JSON.stringify({ query: print(PosBootstrapDocument) }),
-        signal: controller.signal,
-      });
-      if (seq !== verifySeq.current) return;
-
-      if (res.status === 401) {
-        setVerify({
-          kind: 'REJECTED',
-          message:
-            'เซิร์ฟเวอร์ไม่รับ token ของเครื่องนี้ — มักเกิดจากมีคนกด “ออก token” ใหม่ให้เครื่องนี้ ตัวเก่าจะใช้ไม่ได้ทันที',
-        });
-        return;
-      }
-      if (!res.ok) {
-        setVerify({
-          kind: 'SERVER_ERROR',
-          message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
-        });
-        return;
-      }
-
-      // URL ที่ชี้ผิดโดเมนมักตอบ 200 พร้อมหน้า HTML — ถ้าไม่ดักตรงนี้จะได้ error ของ JSON parser
-      // ที่อ่านไม่รู้เรื่อง ทั้งที่ปัญหาจริงคือ "ใส่เซิร์ฟเวอร์ผิด"
-      const body = (await res.json().catch(() => null)) as {
-        data?: PosBootstrapQuery;
-        errors?: Array<{ message?: string; extensions?: { code?: string } }>;
-      } | null;
-      if (
-        body?.errors?.some(
-          error => error.extensions?.code === 'UNAUTHENTICATED',
-        )
-      ) {
-        setVerify({
-          kind: 'REJECTED',
-          message:
-            'เซิร์ฟเวอร์ไม่รับ token ของเครื่องนี้ — มักเกิดจากมีคนกด “ออก token” ใหม่ให้เครื่องนี้ ตัวเก่าจะใช้ไม่ได้ทันที',
-        });
-        return;
-      }
-      if (body?.errors?.length) {
-        setVerify({
-          kind: 'SERVER_ERROR',
-          message:
-            body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
-        });
-        return;
-      }
-      const session = body?.data?.bmsPosSession;
-      if (!session?.device) {
-        setVerify({
-          kind: 'SERVER_ERROR',
-          message:
-            'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
-        });
-        return;
-      }
-
-      setVerify({
-        kind: 'OK',
-        info: {
-          deviceCode: String(session.device.code ?? '—'),
-          deviceName: session.device.name ?? null,
-          branchName: session.location?.name ?? null,
-          branchCode: session.location?.branchCode ?? null,
-          surface: session.surface ?? null,
-          businessArchetype: session.businessArchetype ?? null,
-          shiftOpen: Boolean(session.shift),
-          cashierCount: session.cashiers.length,
-        },
-      });
-    } catch (e: any) {
-      if (seq !== verifySeq.current) return;
-      const aborted = e?.name === 'AbortError';
-      setVerify({
-        kind: 'OFFLINE',
-        message: aborted
-          ? `ไม่ได้คำตอบภายใน ${
-              VERIFY_TIMEOUT_MS / 1000
-            } วินาที — เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบ`
-          : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(
-              e?.message ?? e,
-            )}) — ถ้าเป็นเซิร์ฟเวอร์ทดสอบ HTTPS ให้ตรวจว่าเครื่องเชื่อถือ local CA แล้ว`,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+  const markAuthenticationRejected = useCallback(() => {
+    // GraphQL/WS already received an authoritative 401. Verifying the same
+    // token again would flip REJECTED -> CHECKING and remount Login forever.
+    verifySeq.current += 1;
+    setVerify(current =>
+      current.kind === 'REJECTED'
+        ? current
+        : { kind: 'REJECTED', message: REJECTED_TOKEN_MESSAGE },
+    );
   }, []);
+
+  const verifyTarget = useCallback(
+    async (candidate: PairingTarget) => {
+      const seq = ++verifySeq.current;
+      setVerify({ kind: 'CHECKING' });
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
+      try {
+        const res = await fetch(graphqlHttpUrl(candidate.serverUrl), {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${candidate.token}`,
+            'x-pos-device-token': candidate.token,
+            'x-scope': 'pos',
+          },
+          body: JSON.stringify({ query: print(PosBootstrapDocument) }),
+          signal: controller.signal,
+        });
+        if (seq !== verifySeq.current) return;
+
+        if (res.status === 401) {
+          markAuthenticationRejected();
+          return;
+        }
+        if (!res.ok) {
+          setVerify({
+            kind: 'SERVER_ERROR',
+            message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
+          });
+          return;
+        }
+
+        // URL ที่ชี้ผิดโดเมนมักตอบ 200 พร้อมหน้า HTML — ถ้าไม่ดักตรงนี้จะได้ error ของ JSON parser
+        // ที่อ่านไม่รู้เรื่อง ทั้งที่ปัญหาจริงคือ "ใส่เซิร์ฟเวอร์ผิด"
+        const body = (await res.json().catch(() => null)) as {
+          data?: PosBootstrapQuery;
+          errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+        } | null;
+        if (
+          body?.errors?.some(
+            error => error.extensions?.code === 'UNAUTHENTICATED',
+          )
+        ) {
+          markAuthenticationRejected();
+          return;
+        }
+        if (body?.errors?.length) {
+          setVerify({
+            kind: 'SERVER_ERROR',
+            message:
+              body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
+          });
+          return;
+        }
+        const session = body?.data?.bmsPosSession;
+        if (!session?.device) {
+          setVerify({
+            kind: 'SERVER_ERROR',
+            message:
+              'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
+          });
+          return;
+        }
+
+        setVerify({
+          kind: 'OK',
+          info: {
+            deviceCode: String(session.device.code ?? '—'),
+            deviceName: session.device.name ?? null,
+            branchName: session.location?.name ?? null,
+            branchCode: session.location?.branchCode ?? null,
+            surface: session.surface ?? null,
+            businessArchetype: session.businessArchetype ?? null,
+            shiftOpen: Boolean(session.shift),
+            cashierCount: session.cashiers.length,
+          },
+        });
+      } catch (e: any) {
+        if (seq !== verifySeq.current) return;
+        const aborted = e?.name === 'AbortError';
+        setVerify({
+          kind: 'OFFLINE',
+          message: aborted
+            ? `ไม่ได้คำตอบภายใน ${
+                VERIFY_TIMEOUT_MS / 1000
+              } วินาที — เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบ`
+            : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(
+                e?.message ?? e,
+              )}) — ถ้าเป็นเซิร์ฟเวอร์ทดสอบ HTTPS ให้ตรวจว่าเครื่องเชื่อถือ local CA แล้ว`,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    [markAuthenticationRejected],
+  );
 
   const runVerify = useCallback(async () => {
     if (!target) return;
@@ -241,8 +250,26 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   }, [status, runVerify]);
 
   const value = useMemo<DeviceContextValue>(
-    () => ({ status, target, storeError, verify, pair, unpair, runVerify }),
-    [status, target, storeError, verify, pair, unpair, runVerify],
+    () => ({
+      status,
+      target,
+      storeError,
+      verify,
+      pair,
+      unpair,
+      runVerify,
+      markAuthenticationRejected,
+    }),
+    [
+      status,
+      target,
+      storeError,
+      verify,
+      pair,
+      unpair,
+      runVerify,
+      markAuthenticationRejected,
+    ],
   );
 
   return (

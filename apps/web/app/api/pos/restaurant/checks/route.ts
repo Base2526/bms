@@ -10,14 +10,16 @@ async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const auth = await authenticateRestaurantMutation(req, body, "pos.sell");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const serviceMode = body.serviceMode === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN";
   const tableId = typeof body.tableId === "string" ? body.tableId.trim() : "";
-  if (!tableId) return NextResponse.json({ error: "ต้องระบุโต๊ะ" }, { status: 400 });
+  if (serviceMode === "DINE_IN" && !tableId) return NextResponse.json({ error: "ต้องระบุโต๊ะ" }, { status: 400 });
   const check = await openRestaurantCheck({
     tenantId: auth.device.tenantId,
     locationId: auth.device.locationId,
     deviceId: auth.device.id,
     shiftId: auth.shift.id,
-    tableId,
+    tableId: serviceMode === "DINE_IN" ? tableId : null,
+    serviceMode,
     guestCount: Number(body.guestCount ?? 1),
     note: typeof body.note === "string" ? body.note : null,
     actorUserId: auth.actor.userId,

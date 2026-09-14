@@ -60,7 +60,9 @@ async function mintRealtimeTicket(
       signal: controller.signal,
     });
     if (!response.ok) {
-      const error = new Error(`realtime ticket returned HTTP ${response.status}`);
+      const error = new Error(
+        `realtime ticket returned HTTP ${response.status}`,
+      );
       Object.assign(error, { status: response.status });
       throw error;
     }
@@ -77,6 +79,7 @@ async function mintRealtimeTicket(
 function makeClient(
   target: PairingTarget | null,
   setRealtimeStatus: (status: MobileRealtimeStatus) => void,
+  markAuthenticationRejected: () => void,
 ): {
   apollo: ApolloClient<NormalizedCacheObject>;
   ws: Client | null;
@@ -85,6 +88,13 @@ function makeClient(
   let active = true;
   const reportStatus = (status: MobileRealtimeStatus) => {
     if (active) setRealtimeStatus(status);
+  };
+  let authenticationRejected = false;
+  const reportAuthenticationRequired = () => {
+    if (!active || authenticationRejected) return;
+    authenticationRejected = true;
+    reportStatus('authentication_required');
+    markAuthenticationRejected();
   };
   const authLink = new ApolloLink((operation, forward) => {
     operation.setContext(({ headers = {} }) => ({
@@ -106,7 +116,7 @@ function makeClient(
       (networkError &&
         'statusCode' in networkError &&
         networkError.statusCode === 401);
-    if (unauthenticated) reportStatus('authentication_required');
+    if (unauthenticated) reportAuthenticationRequired();
   });
 
   const httpLink = new HttpLink({
@@ -129,7 +139,7 @@ function makeClient(
           setTimeout(resolve, reconnectDelayMs(retryCount)),
         );
       },
-      shouldRetry: () => !authFailed,
+      shouldRetry: () => !authFailed && !authenticationRejected,
       connectionParams: async () => {
         reportStatus('connecting');
         try {
@@ -142,9 +152,8 @@ function makeClient(
             typeof error === 'object' &&
             'status' in error &&
             error.status === 401;
-          reportStatus(
-            authFailed ? 'authentication_required' : 'degraded',
-          );
+          if (authFailed) reportAuthenticationRequired();
+          else reportStatus('degraded');
           throw error;
         }
       },
@@ -199,13 +208,15 @@ export function BmsGraphqlProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { status, target } = useDevice();
+  const { status, target, verify, markAuthenticationRejected } = useDevice();
   const [realtimeStatus, setRealtimeStatus] =
     useState<MobileRealtimeStatus>('offline');
-  const pairedTarget = status === 'PAIRED' ? target : null;
+  const pairedTarget =
+    status === 'PAIRED' && verify.kind !== 'REJECTED' ? target : null;
   const bundle = useMemo(
-    () => makeClient(pairedTarget, setRealtimeStatus),
-    [pairedTarget],
+    () =>
+      makeClient(pairedTarget, setRealtimeStatus, markAuthenticationRejected),
+    [pairedTarget, markAuthenticationRejected],
   );
 
   useEffect(() => {
@@ -213,10 +224,7 @@ export function BmsGraphqlProvider({
     return bundle.stop;
   }, [bundle, pairedTarget]);
 
-  const transport = useMemo(
-    () => ({ realtimeStatus }),
-    [realtimeStatus],
-  );
+  const transport = useMemo(() => ({ realtimeStatus }), [realtimeStatus]);
 
   return (
     <BmsGraphqlTransportContext.Provider value={transport}>

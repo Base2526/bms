@@ -22,6 +22,10 @@ jest.spyOn(Vibration, 'cancel').mockImplementation(() => {});
 function harness() {
   let order = 0;
   let ticket = 0;
+  let qr = 0;
+  let serviceCall = 0;
+  let waitlist = 0;
+  let restaurantOperationsInitialized = true;
   const render = () => (
     <OrderAlertEffects
       pendingIds={Array.from({ length: order }, (_, index) => `order-${index}`)}
@@ -30,6 +34,16 @@ function harness() {
         id: `ticket-${index}`,
         status: 'NEW',
       }))}
+      qrIds={Array.from({ length: qr }, (_, index) => `qr-${index}`)}
+      serviceCallIds={Array.from(
+        { length: serviceCall },
+        (_, index) => `call-${index}`,
+      )}
+      waitlistIds={Array.from(
+        { length: waitlist },
+        (_, index) => `wait-${index}`,
+      )}
+      restaurantOperationsInitialized={restaurantOperationsInitialized}
     />
   );
   return {
@@ -39,6 +53,18 @@ function harness() {
     },
     sendTicket: () => {
       ticket += 1;
+    },
+    receiveQr: () => {
+      qr += 1;
+    },
+    receiveServiceCall: () => {
+      serviceCall += 1;
+    },
+    receiveWaitlist: () => {
+      waitlist += 1;
+    },
+    setRestaurantOperationsInitialized: (ready: boolean) => {
+      restaurantOperationsInitialized = ready;
     },
   };
 }
@@ -111,5 +137,42 @@ describe('OrderAlertWatcher', () => {
       mounted?.update(test.render());
     });
     expect(vibrateSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['QR โต๊ะ', 'receiveQr', 'qr_order'],
+    ['เรียกพนักงาน', 'receiveServiceCall', 'service_call'],
+    ['คิวใหม่', 'receiveWaitlist', 'waitlist'],
+  ] as const)(
+    '%s ใหม่เตือนได้แม้อยู่คนละหน้าจอ',
+    async (_label, action, kind) => {
+      const test = harness();
+      await mount(test.render());
+      test[action]();
+      await ReactTestRenderer.act(() => {
+        mounted?.update(test.render());
+      });
+      expect(vibrateSpy).toHaveBeenCalledTimes(1);
+      expect(getOrderAlertSnapshot().lastKind).toBe(kind);
+    },
+  );
+
+  it('ข้อมูลร้านอาหารที่โหลดครั้งแรกเป็น baseline ไม่ถูกแจ้งว่าเพิ่งเข้ามา', async () => {
+    const test = harness();
+    test.setRestaurantOperationsInitialized(false);
+    test.receiveQr();
+    await mount(test.render());
+    test.setRestaurantOperationsInitialized(true);
+    await ReactTestRenderer.act(() => {
+      mounted?.update(test.render());
+    });
+    expect(vibrateSpy).not.toHaveBeenCalled();
+
+    test.receiveQr();
+    await ReactTestRenderer.act(() => {
+      mounted?.update(test.render());
+    });
+    expect(vibrateSpy).toHaveBeenCalledTimes(1);
+    expect(getOrderAlertSnapshot().lastKind).toBe('qr_order');
   });
 });

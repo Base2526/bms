@@ -31,10 +31,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export default function LoginScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
-  const { status: pairStatus } = useDevice();
+  const { status: pairStatus, verify } = useDevice();
   const { signIn } = useSession();
   const { data, loading, error, refetch } = useQuery(PosBootstrapDocument, {
-    skip: pairStatus !== 'PAIRED',
+    skip: pairStatus !== 'PAIRED' || verify.kind === 'REJECTED',
     notifyOnNetworkStatusChange: true,
   });
   const [verifyCashier, { loading: verifying }] = useMutation(
@@ -69,11 +69,7 @@ export default function LoginScreen({ navigation }: Props) {
   }, [cashierId, cashiers]);
 
   const canSubmit =
-    isPosPinLengthValid(pin) &&
-    !!branch &&
-    !!cashier &&
-    !loading &&
-    !verifying;
+    isPosPinLengthValid(pin) && !!branch && !!cashier && !loading && !verifying;
 
   const branchCard = (
     <Card style={{ marginBottom: spacing.md }}>
@@ -297,9 +293,7 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
         : 'ร้านทั่วไป';
     label = `${storeType} · ${b} · เครื่อง ${
       verify.info.deviceCode
-    } · ${displayHost(
-      target.serverUrl,
-    )}`;
+    } · ${displayHost(target.serverUrl)}`;
     tone = 'ok';
   } else if (verify.kind === 'REJECTED') {
     label = `token ถูกยกเลิก — แตะเพื่อจับคู่ใหม่ (${displayHost(

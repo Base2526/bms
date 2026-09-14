@@ -19,7 +19,7 @@ function serverMode(value: string | null | undefined): PreviewStoreMode {
 export function StoreModeProvider({ children }: { children: React.ReactNode }) {
   const { status, verify } = useDevice();
   const bootstrap = useQuery(PosBootstrapDocument, {
-    skip: status !== 'PAIRED',
+    skip: status !== 'PAIRED' || verify.kind === 'REJECTED',
   });
   const verifiedArchetype =
     verify.kind === 'OK' ? verify.info.businessArchetype : null;

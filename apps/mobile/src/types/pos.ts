@@ -12,6 +12,31 @@ export interface PosMenuItem {
   packCode: string;
   unitName: string;
   baseQty: number;
+  serialTracked?: boolean;
+  scaleBarcode?: string | null;
+  modifiers?: PosModifier[];
+  selectedModifierCodes?: string[];
+  packs?: PosPackOption[];
+  availableSizes?: Array<{ size: string; available: number; price?: number | null }>;
+}
+
+export interface PosPackOption {
+  code: string;
+  unitName: string;
+  baseQty: number;
+  price: number;
+}
+
+export interface PosModifier {
+  code: string;
+  name: string;
+  priceDelta: number;
+  groupCode: string;
+  groupName: string;
+  selectionType: 'SINGLE' | 'MULTIPLE';
+  minSelect: number;
+  maxSelect: number | null;
+  defaultSelected: boolean;
 }
 
 export interface PosMenuCatalog {
@@ -34,6 +59,7 @@ export interface PosCartLine {
   unitName: string;
   baseQty: number;
   modifierCodes: string[];
+  serialTracked?: boolean;
   scaleBarcode?: string | null;
   serials: string[];
   imageUrl?: string | null;
@@ -60,6 +86,13 @@ export interface PosManualDiscount {
   approverUserId: string;
   approverName: string;
   approverPin: string;
+}
+
+export interface PosExtraLine {
+  id: string;
+  label: string;
+  qty: number;
+  unitAmount: number;
 }
 
 export interface PosTable {

@@ -2,7 +2,7 @@
 
 > Status: server contract, database contract suites, multi-instance socket verification, browser
 > named-subscription rollout, and the in-repository React Native retail/restaurant/shift callers are
-> implemented (2026-09-12). REST compatibility routes and polling remain for browser/external-client
+> implemented (2026-09-13). REST compatibility routes and polling remain for browser/external-client
 > rollout and recovery.
 >
 > Realtime security and delivery details: [production realtime audit](realtime-production-audit.md)
@@ -12,7 +12,7 @@
 > codes: [graphql-client-readiness-brief.md](graphql-client-readiness-brief.md) and
 > [`schema.graphql`](../../schema.graphql). It changed no service, no permission and no REST route.
 >
-> Migrations `9.70`–`9.74` have DB contract coverage. `9.73` records the first POS row-shape fix and
+> Migrations `9.70`–`9.74` and `9.84`–`9.86` have DB contract coverage. `9.73` records the first POS row-shape fix and
 > `9.74` permanently splits device and shift trigger functions. Production rollout still follows
 > [realtime-test-database.md](realtime-test-database.md) and must not infer migration state from this
 > repository.
@@ -49,26 +49,26 @@ outbox dispatcher -> Redis -> GraphQL WS subscription -> invalidate/refetch Grap
 The inventory covers every route under `app/api/bms/**` and `app/api/pos/**`, the GraphQL schema,
 subscription publishers/consumers, and direct REST calls from React surfaces at revision `a3898e82`.
 
-| Surface | Count | Current state |
-| --- | ---: | --- |
-| `/api/bms/**/route.ts` | 76 | Mixed admin compatibility, public/signed flows, webhooks, jobs, files, and exports |
-| `/api/pos/**/route.ts` | 41 | Device-token + cashier-PIN contract; all normal counter workflows currently use REST |
-| GraphQL queries | 218 | Broad admin/community read coverage; no POS-device GraphQL context |
-| GraphQL mutations | 247 | Broad admin/community command coverage; no transport-equivalent POS-device contract |
-| GraphQL subscriptions | 15 | Inbox plus legacy community sync; security gaps and full matrix are in the realtime audit |
+| Surface                | Count | Current state                                                                             |
+| ---------------------- | ----: | ----------------------------------------------------------------------------------------- |
+| `/api/bms/**/route.ts` |    76 | Mixed admin compatibility, public/signed flows, webhooks, jobs, files, and exports        |
+| `/api/pos/**/route.ts` |    41 | Device-token + cashier-PIN contract; all normal counter workflows currently use REST      |
+| GraphQL queries        |   218 | Broad admin/community read coverage; no POS-device GraphQL context                        |
+| GraphQL mutations      |   247 | Broad admin/community command coverage; no transport-equivalent POS-device contract       |
+| GraphQL subscriptions  |    15 | Inbox plus legacy community sync; security gaps and full matrix are in the realtime audit |
 
 ### REST that remains REST permanently
 
 These paths are HTTP-native. Some may also gain a GraphQL metadata/query operation, but bytes,
 callbacks, public signed flows, and scheduler triggers remain REST.
 
-| Reason | Routes |
-| --- | --- |
-| External webhooks/callbacks | `/api/bms/facebook/webhook/[tenantId]`, `/instagram/webhook/[tenantId]`, `/lazada/webhook/[tenantId]`, `/line/webhook/[tenantId]`, `/line/webhook`, `/shopee/webhook/[tenantId]`, `/tiktok/webhook/[tenantId]`, `/tiktok/webhook`, `/web/webhook/[tenantId]` |
-| Cron/job triggers | `/api/bms/ai/check-health`, `/channels/check-health`, `/followups/run`, `/jobs/etax`, `/jobs/report-run`, `/loyalty/maintenance`, `/menu-availability/reset`, `/orders/release-expired`, `/pharmacy/assessments/expire-stale`, `/realtime/dispatch`, `/reports/send-digest`, `/shipping/sync-carriers`, `/support-diagnostics/purge-expired` |
-| Upload/download/binary/export | `/api/bms/inbox/upload`, `/pharmacy/evidence/[id]/file`, `/pharmacy/evidence/upload`, `/pos-shifts/export`, `/products/upload`, `/reports/download/[id]`, `/shipment/[id]/label`, `/support-diagnostics/bundles/[id]/download`, `/support-diagnostics/export`, `/api/pos/pharmacy-evidence`, `/api/pos/shift-report/export` |
-| Signed/public browser flow | `/api/bms/checkout`, `/checkout/payment`, `/restaurant-qr/[token]`, `/restaurant-qr/menu`, `/restaurant-qr/menu-item`, `/restaurant-qr/service-calls`, `/restaurant-qr/submissions` |
-| Diagnostics/stream-oriented compatibility | `/api/bms/chat`, `/demo-chat`, `/support-diagnostics/events`, `/support-diagnostics/send`, `/api/pos/support-diagnostics` |
+| Reason                                    | Routes                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| External webhooks/callbacks               | `/api/bms/facebook/webhook/[tenantId]`, `/instagram/webhook/[tenantId]`, `/lazada/webhook/[tenantId]`, `/line/webhook/[tenantId]`, `/line/webhook`, `/shopee/webhook/[tenantId]`, `/tiktok/webhook/[tenantId]`, `/tiktok/webhook`, `/web/webhook/[tenantId]`                                                                                 |
+| Cron/job triggers                         | `/api/bms/ai/check-health`, `/channels/check-health`, `/followups/run`, `/jobs/etax`, `/jobs/report-run`, `/loyalty/maintenance`, `/menu-availability/reset`, `/orders/release-expired`, `/pharmacy/assessments/expire-stale`, `/realtime/dispatch`, `/reports/send-digest`, `/shipping/sync-carriers`, `/support-diagnostics/purge-expired` |
+| Upload/download/binary/export             | `/api/bms/inbox/upload`, `/pharmacy/evidence/[id]/file`, `/pharmacy/evidence/upload`, `/pos-shifts/export`, `/products/upload`, `/reports/download/[id]`, `/shipment/[id]/label`, `/support-diagnostics/bundles/[id]/download`, `/support-diagnostics/export`, `/api/pos/pharmacy-evidence`, `/api/pos/shift-report/export`                  |
+| Signed/public browser flow                | `/api/bms/checkout`, `/checkout/payment`, `/restaurant-qr/[token]`, `/restaurant-qr/menu`, `/restaurant-qr/menu-item`, `/restaurant-qr/service-calls`, `/restaurant-qr/submissions`                                                                                                                                                          |
+| Diagnostics/stream-oriented compatibility | `/api/bms/chat`, `/demo-chat`, `/support-diagnostics/events`, `/support-diagnostics/send`, `/api/pos/support-diagnostics`                                                                                                                                                                                                                    |
 
 Every state-changing route in this group must still call the same service and enqueue the same outbox
 event as its GraphQL equivalent. Keeping REST does not exempt it from authorization, idempotency,
@@ -78,50 +78,50 @@ audit, or realtime rules.
 
 These REST routes stay compatible while clients move to the named GraphQL operations.
 
-| REST routes | Existing GraphQL contract |
-| --- | --- |
-| `/api/bms/inbox`, `/inbox/[id]/reply` | `bmsConversations`, `bmsConversation`, `bmsSendMessage` and related Inbox mutations |
-| `/api/bms/order`, `/order/[id]/{pay,pack,ship,complete,cancel,return}` | `bmsCreateOrder`, `bmsPayOrder`, `bmsPackOrder`, `bmsShipOrder`, `bmsCompleteOrder`, `bmsCancelOrder`, `bmsReturnOrder` |
-| `/api/bms/payment`, `/payment/[id]/{confirm,reject,refund,verify}` | `bmsPayments`, `bmsPayment`, `bmsSubmitPayment`, `bmsConfirmPayment`, `bmsRejectPayment`, `bmsRefundPayment`, `bmsVerifyPaymentSlip` |
-| `/api/bms/purchase`, `/purchase/[id]`, `/purchase/[id]/{receive,cancel}` | `bmsPurchaseOrders`, `bmsPurchaseOrder`, `bmsCreatePurchaseOrder`, `bmsReceivePurchaseOrder`, `bmsCancelPurchaseOrder` |
-| `/api/bms/shipment`, `/shipment/[id]/{status,tracking}` | `bmsShipments`, `bmsShipment`, `bmsCreateShipment`, `bmsSetShipmentStatus`, `bmsUpdateTracking` |
-| `/api/bms/reports/{generate,inventory,sales,top-products}` | `bmsGenerateReport`, `bmsInventorySummary`, `bmsSalesSummary`, `bmsTopSellingProducts` |
-| `/api/bms/pos-shifts` | existing admin POS shift queries/mutations (`bmsPosOpenShift`, `bmsOpenPosShift`, `bmsClosePosShift`) |
-| `/api/bms/onboarding/sample-data` | compatibility-only setup command; not a normal mobile workflow |
+| REST routes                                                              | Existing GraphQL contract                                                                                                            |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/api/bms/inbox`, `/inbox/[id]/reply`                                    | `bmsConversations`, `bmsConversation`, `bmsSendMessage` and related Inbox mutations                                                  |
+| `/api/bms/order`, `/order/[id]/{pay,pack,ship,complete,cancel,return}`   | `bmsCreateOrder`, `bmsPayOrder`, `bmsPackOrder`, `bmsShipOrder`, `bmsCompleteOrder`, `bmsCancelOrder`, `bmsReturnOrder`              |
+| `/api/bms/payment`, `/payment/[id]/{confirm,reject,refund,verify}`       | `bmsPayments`, `bmsPayment`, `bmsSubmitPayment`, `bmsConfirmPayment`, `bmsRejectPayment`, `bmsRefundPayment`, `bmsVerifyPaymentSlip` |
+| `/api/bms/purchase`, `/purchase/[id]`, `/purchase/[id]/{receive,cancel}` | `bmsPurchaseOrders`, `bmsPurchaseOrder`, `bmsCreatePurchaseOrder`, `bmsReceivePurchaseOrder`, `bmsCancelPurchaseOrder`               |
+| `/api/bms/shipment`, `/shipment/[id]/{status,tracking}`                  | `bmsShipments`, `bmsShipment`, `bmsCreateShipment`, `bmsSetShipmentStatus`, `bmsUpdateTracking`                                      |
+| `/api/bms/reports/{generate,inventory,sales,top-products}`               | `bmsGenerateReport`, `bmsInventorySummary`, `bmsSalesSummary`, `bmsTopSellingProducts`                                               |
+| `/api/bms/pos-shifts`                                                    | existing admin POS shift queries/mutations (`bmsPosOpenShift`, `bmsOpenPosShift`, `bmsClosePosShift`)                                |
+| `/api/bms/onboarding/sample-data`                                        | compatibility-only setup command; not a normal mobile workflow                                                                       |
 
 The existence of a similarly named operation does not yet prove response-shape parity. Phase 9 adds
 fixture-driven REST-versus-GraphQL contract tests before moving each caller.
 
 ### BMS REST gaps and implemented GraphQL equivalents
 
-| REST routes | GraphQL capability |
-| --- | --- |
-| `/api/bms/inventory/transfers` | `bmsStockTransfers`, `bmsStockTransfer` use the existing stock-transfer service |
-| `/api/bms/inventory/counts` | `bmsStockCounts`, `bmsStockCount` use the existing stock-count service and retain separate apply permission |
-| `/api/bms/restaurant-requests` | `bmsMobileRestaurantRequests`, `bmsReviewRestaurantRequest` |
-| `/api/bms/store-credit` | `bmsStoreCredit`, `bmsIssueStoreCredit` |
-| `/api/bms/commission` | `bmsCommissionRules`, `bmsCommissionReport`, `bmsCommissionRule` |
-| `/api/bms/reports/pos-returns`, `/reports/pos-return-audit` | `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`; exported files remain REST |
-| `/api/bms/reserve` | retain as legacy compatibility until its caller and idempotency contract are identified; do not expose a second reservation command blindly |
+| REST routes                                                 | GraphQL capability                                                                                                                          |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/bms/inventory/transfers`                              | `bmsStockTransfers`, `bmsStockTransfer` use the existing stock-transfer service                                                             |
+| `/api/bms/inventory/counts`                                 | `bmsStockCounts`, `bmsStockCount` use the existing stock-count service and retain separate apply permission                                 |
+| `/api/bms/restaurant-requests`                              | `bmsMobileRestaurantRequests`, `bmsReviewRestaurantRequest`                                                                                 |
+| `/api/bms/store-credit`                                     | `bmsStoreCredit`, `bmsIssueStoreCredit`                                                                                                     |
+| `/api/bms/commission`                                       | `bmsCommissionRules`, `bmsCommissionReport`, `bmsCommissionRule`                                                                            |
+| `/api/bms/reports/pos-returns`, `/reports/pos-return-audit` | `bmsPosReturnSummary`, `bmsPosReturnAuditSummary`; exported files remain REST                                                               |
+| `/api/bms/reserve`                                          | retain as legacy compatibility until its caller and idempotency contract are identified; do not expose a second reservation command blindly |
 
 ### POS device REST migration inventory
 
 All routes below authenticate a device separately from the acting cashier. Normal mobile workflows
 need GraphQL equivalents, but REST remains until parity tests and client rollout pass.
 
-| Workflow | Current REST routes | GraphQL status |
-| --- | --- | --- |
-| Device/session and shifts | `/api/pos/session`, `/shift`, `/shifts`, `/shift-report` | implemented in `bmsPosSession`, `bmsPosShift`, `bmsPosShiftHistory`, `bmsPosShiftReport` |
-| Catalog/search/barcode | `/api/pos/search`, `/scan`, `/restaurant/menu` | implemented in `bmsPosCatalogSearch`, `bmsPosScan`, `bmsPosRestaurantMenu` |
-| Sale lifecycle | `/api/pos/sale`, `/last-sale`, `/recent-sales`, `/park`, `/return`, `/blind-return`, `/void` | implemented as named POS-device queries/mutations |
-| Drawer/deposit/expenses | `/api/pos/cash-movement`, `/deposit`, `/expense`, `/no-sale` | implemented as named POS-device queries/mutations |
-| Payments/refunds/receipts | `/api/pos/refund-settlement`, `/send-receipt` | implemented in `bmsPosCompleteRefund`, `bmsPosSendReceipt` |
-| Members/AR/store credit | `/api/pos/member`, `/member/preview`, `/ar`, `/ar/collect`, `/store-credit` | implemented as named POS-device queries/mutations |
-| Purchase receiving | `/api/pos/purchase` | implemented in `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosReceivePurchase` |
-| Pharmacy handoff | `/api/pos/pharmacy-review` | implemented in `bmsPosRequestPharmacyReview`; evidence upload remains REST |
-| Kitchen | `/api/pos/kitchen/tickets`, `/kitchen/tickets/[id]/status`, `/kitchen/tickets/status` | implemented as device-scoped query/mutations |
-| Restaurant checks/floor | `/api/pos/restaurant/checks`, `/restaurant/checks/[id]`, `/restaurant/floor` | implemented as device-scoped query/mutations |
-| Incoming/QR/service/waitlist | `/api/pos/restaurant/incoming`, `/restaurant/qr-orders`, `/restaurant/requests`, `/restaurant/service-calls`, `/restaurant/waitlist` | implemented as device-scoped query/mutations |
+| Workflow                     | Current REST routes                                                                                                                  | GraphQL status                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Device/session and shifts    | `/api/pos/session`, `/shift`, `/shifts`, `/shift-report`                                                                             | implemented in `bmsPosSession`, `bmsPosShift`, `bmsPosShiftHistory`, `bmsPosShiftReport` |
+| Catalog/search/barcode       | `/api/pos/search`, `/scan`, `/restaurant/menu`                                                                                       | implemented in `bmsPosCatalogSearch`, `bmsPosScan`, `bmsPosRestaurantMenu`               |
+| Sale lifecycle               | `/api/pos/sale`, `/last-sale`, `/recent-sales`, `/park`, `/return`, `/blind-return`, `/void`                                         | implemented as named POS-device queries/mutations                                        |
+| Drawer/deposit/expenses      | `/api/pos/cash-movement`, `/deposit`, `/expense`, `/no-sale`                                                                         | implemented as named POS-device queries/mutations                                        |
+| Payments/refunds/receipts    | `/api/pos/refund-settlement`, `/send-receipt`                                                                                        | implemented in `bmsPosCompleteRefund`, `bmsPosSendReceipt`                               |
+| Members/AR/store credit      | `/api/pos/member`, `/member/preview`, `/ar`, `/ar/collect`, `/store-credit`                                                          | implemented as named POS-device queries/mutations                                        |
+| Purchase receiving           | `/api/pos/purchase`                                                                                                                  | implemented in `bmsPosPurchaseOrders`, `bmsPosPurchaseOrder`, `bmsPosReceivePurchase`    |
+| Pharmacy handoff             | `/api/pos/pharmacy-review`                                                                                                           | implemented in `bmsPosRequestPharmacyReview`; evidence upload remains REST               |
+| Kitchen                      | `/api/pos/kitchen/tickets`, `/kitchen/tickets/[id]/status`, `/kitchen/tickets/status`                                                | implemented as device-scoped query/mutations                                             |
+| Restaurant checks/floor      | `/api/pos/restaurant/checks`, `/restaurant/checks/[id]`, `/restaurant/floor`                                                         | implemented as device-scoped query/mutations                                             |
+| Incoming/QR/service/waitlist | `/api/pos/restaurant/incoming`, `/restaurant/qr-orders`, `/restaurant/requests`, `/restaurant/service-calls`, `/restaurant/waitlist` | implemented as device-scoped query/mutations                                             |
 
 `/api/pos/pharmacy-evidence`, `/api/pos/shift-report/export`, and
 `/api/pos/support-diagnostics` remain REST for upload/export/diagnostic transport.
@@ -147,11 +147,11 @@ Client migration order is therefore:
 
 Three principals are distinct:
 
-| Principal | HTTPS GraphQL authentication | Authority |
-| --- | --- | --- |
-| Admin/staff browser or RN | admin/mobile Bearer token or secure browser cookie | fresh user, tenant, RBAC, allowed locations, optional acting tenant |
-| POS device | device Bearer token on HTTPS GraphQL; exchanged for a short-lived ticket only for WS | tenant, location, device only; never user authority |
-| Acting cashier/approver | PIN fields on the sensitive mutation, verified server-side | named action permission and evidence for that operation only |
+| Principal                 | HTTPS GraphQL authentication                                                         | Authority                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Admin/staff browser or RN | admin/mobile Bearer token or secure browser cookie                                   | fresh user, tenant, RBAC, allowed locations, optional acting tenant |
+| POS device                | device Bearer token on HTTPS GraphQL; exchanged for a short-lived ticket only for WS | tenant, location, device only; never user authority                 |
+| Acting cashier/approver   | PIN fields on the sensitive mutation, verified server-side                           | named action permission and evidence for that operation only        |
 
 The client never supplies tenant, location, device, shift, cashier, or acting-tenant IDs as
 authority. It supplies the selected cashier ID with the PIN only as identity evidence. A POS
@@ -169,19 +169,19 @@ Logout, revocation, expiry, or acting-tenant change closes the old subscription 
 Names are provisional until each service signature is mapped; they are grouped here to prevent a
 resolver from inventing a parallel behavior.
 
-| Workflow | Query snapshot | Mutation command | Realtime invalidation |
-| --- | --- | --- | --- |
-| Session/device | `bmsMobileSession`, `bmsPosSession` | token exchange/refresh over HTTPS | `bmsDeviceSessionChanged` |
-| Shift/drawer | current shift/report | open/close shift, cash movement, no-sale, deposit/expense | `bmsShiftChanged` |
-| Product/menu | search/scan/menu snapshot | sold-out/back-on-sale | `bmsMenuAvailabilityChanged`, `bmsInventoryChanged` |
-| Retail sale | cart lookup/recent sale | sale/park/return/void/refund settlement | `bmsPosOrderChanged`, `bmsPaymentChanged` |
-| Restaurant floor/check | floor/check snapshots | open/move/add/remove/send/settle/cancel | `bmsRestaurantFloorChanged`, `bmsRestaurantCheckChanged` |
-| Kitchen | branch ticket list | ticket status transition | `bmsKitchenTicketChanged` |
-| Online/QR/waitlist | incoming/QR/waitlist lists | accept/reject/call/seat/cancel/no-show | matching scoped domain subscription |
-| Members/credit | lookup/preview/account | enroll/collect/redeem as permitted | order/customer invalidation where a real workflow needs it |
-| Inventory operations | summary/transfer/count | transfer/count/receive | inventory/transfer/count invalidations |
-| Inbox/notifications | existing BMS queries | existing BMS mutations | hardened Inbox plus user notification events |
-| Pharmacy | case-safe operational metadata | existing permission-gated handoff/review operations | case ID + safe status + time only |
+| Workflow               | Query snapshot                      | Mutation command                                          | Realtime invalidation                                      |
+| ---------------------- | ----------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
+| Session/device         | `bmsMobileSession`, `bmsPosSession` | token exchange/refresh over HTTPS                         | `bmsDeviceSessionChanged`                                  |
+| Shift/drawer           | current shift/report                | open/close shift, cash movement, no-sale, deposit/expense | `bmsShiftChanged`                                          |
+| Product/menu           | search/scan/menu snapshot           | sold-out/back-on-sale                                     | `bmsMenuAvailabilityChanged`, `bmsInventoryChanged`        |
+| Retail sale            | cart lookup/recent sale             | sale/park/return/void/refund settlement                   | `bmsPosOrderChanged`, `bmsPaymentChanged`                  |
+| Restaurant floor/check | floor/check snapshots               | open/move/add/remove/send/settle/cancel                   | `bmsRestaurantFloorChanged`, `bmsRestaurantCheckChanged`   |
+| Kitchen                | branch ticket list                  | ticket status transition                                  | `bmsKitchenTicketChanged`                                  |
+| Online/QR/waitlist     | incoming/QR/waitlist lists          | accept/reject/call/seat/cancel/no-show                    | matching scoped domain subscription                        |
+| Members/credit         | lookup/preview/account              | enroll/collect/redeem as permitted                        | order/customer invalidation where a real workflow needs it |
+| Inventory operations   | summary/transfer/count              | transfer/count/receive                                    | inventory/transfer/count invalidations                     |
+| Inbox/notifications    | existing BMS queries                | existing BMS mutations                                    | hardened Inbox plus user notification events               |
+| Pharmacy               | case-safe operational metadata      | existing permission-gated handoff/review operations       | case ID + safe status + time only                          |
 
 ## REST compatibility policy
 
@@ -212,15 +212,15 @@ and tests to agree.
 
 ## Implementation status
 
-| Phase | Status | Evidence |
-| --- | --- | --- |
-| 1. Audit and architecture | Complete | 117 REST routes classified above; GraphQL and subscription inventory linked |
-| 2. Shared event contract | Complete | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication |
-| 3. Transactional outbox | Implemented and DB-verified | migrations `9.70`–`9.74`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, and pure/DB contract suites. `enqueueRealtimeEventInTx` is unguarded by design, so a missing outbox rolls back the owning write rather than silently losing realtime |
-| 4. WS/auth hardening | Implemented and multi-instance verified | HTTP-minted short-lived tickets, strict admin revocation/fresh identity/acting tenant, scoped permissions/locations, subscription-only gateway, native-client classification, origin/size/quota/expiry/ping/drain/health controls, and Redis fan-out across multiple WS instances |
-| 5. Mobile/POS GraphQL | Server contract complete | `graphql/{bmsPosDevice,posDeviceAuth,bmsMobileOperations}.ts`; normal POS routes and listed BMS gaps have named operations, server-derived scope, PIN/RBAC enforcement, shared services. `scripts/mobile-graphql-contract.test.mts` asserts operations against the parsed SDL, pairs every field with a resolver both ways, builds the merged schema through `graphql/schema.ts`, and rejects any authority read that is not `device.*` (POS) or `getTenantId(ctx)` (staff) |
-| 6. Named subscriptions | Implemented and called | all 17 named views are declared in `packages/graphql-core`; each filters the one invalidation stream through `NAMED_REALTIME_SUBSCRIPTIONS`. Browser POS and React Native now mount the views relevant to their principal and current surface |
-| 6b. Domain events | Implemented and DB-verified | migrations `9.71`–`9.74`, domain event contract/fixtures, exact POS device/shift payload assertions, and transactional publisher pure/DB suites |
-| 6c. Coverage guard | Implemented | `scripts/realtime-domain-coverage-contract.test.mts` walks every table `lib/bms` writes and fails unless each is covered by a trigger or classified with a reason, so a forgotten domain cannot stay silent. Twenty tables are recorded there as known gaps that deserve an event and do not have one yet |
-| 7. Client rollout | RN core complete; browser/external rollout remains | `apps/mobile` uses generated Apollo operations for catalog, sale/return/void, parked bills, shift/cash, restaurant checks/incoming orders and kitchen tickets; runtime screens/state import no mock data. It also has native socket classification, PIN verification, surface-scoped named subscriptions, bounded deduplication, batched active-query refetch, foreground recovery and degraded polling. Browser POS retains REST and polling while using named invalidation views; native hardware/pharmacy-review UI remain separate rollout work |
-| 8. Typed client contract | Generated and compiled | `schema.graphql` is pinned to the executable schema; all 100 mobile/POS operations have named inputs and typed output trees, stable `extensions.code`, and generated typed documents in `apps/mobile/src/graphql/generated.ts`. The remaining rollout gate is per-workflow REST-versus-GraphQL parity, not client generation |
+| Phase                     | Status                                             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Audit and architecture | Complete                                           | 117 REST routes classified above; GraphQL and subscription inventory linked                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 2. Shared event contract  | Complete                                           | `packages/realtime/src/{events,topics,transport,fixtures}.ts`; central event/rule union, scoped topic builders, validation, safe logging, publish/subscribe helpers and bounded deduplication                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 3. Transactional outbox   | Implemented and DB-verified                        | migrations `9.70`–`9.74` and `9.84`–`9.86`, in-transaction helper, leased claim/ack/nack/cleanup functions, dispatcher service, guarded recovery endpoint, and pure/DB contract suites. `9.84` excludes POS heartbeat/receipt-counter writes from device invalidation, `9.85` covers the remaining business tables, and `9.86` covers parked-sale deletion. `enqueueRealtimeEventInTx` is unguarded by design, so a missing outbox rolls back the owning write rather than silently losing realtime                                                                                                                                                                                                                                                                      |
+| 4. WS/auth hardening      | Implemented and multi-instance verified            | HTTP-minted short-lived tickets, strict admin revocation/fresh identity/acting tenant, scoped permissions/locations, subscription-only gateway, native-client classification, origin/size/quota/expiry/ping/drain/health controls, and Redis fan-out across multiple WS instances                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 5. Mobile/POS GraphQL     | Server contract complete                           | `graphql/{bmsPosDevice,posDeviceAuth,bmsMobileOperations}.ts`; normal POS routes and listed BMS gaps have named operations, server-derived scope, PIN/RBAC enforcement, shared services. `scripts/mobile-graphql-contract.test.mts` asserts operations against the parsed SDL, pairs every field with a resolver both ways, builds the merged schema through `graphql/schema.ts`, and rejects any authority read that is not `device.*` (POS) or `getTenantId(ctx)` (staff)                                                                                                                                                                                                                                                                            |
+| 6. Named subscriptions    | Implemented and called                             | all 18 named views are declared in `packages/graphql-core`; each filters the one invalidation stream through `NAMED_REALTIME_SUBSCRIPTIONS`. Browser POS and React Native now mount the views relevant to their principal and current surface                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 6b. Domain events         | Implemented and DB-verified                        | migrations `9.71`–`9.74` and `9.84`–`9.86`, domain event contract/fixtures, exact POS device/shift/parked-delete payload assertions, and transactional publisher pure/DB suites                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 6c. Coverage guard        | Implemented                                        | `scripts/realtime-domain-coverage-contract.test.mts` walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that exact operation is covered by a trigger or classified with a reason. `9.85` removed the prior 20-table known-gap list; `9.86` and the operation-aware guard close the parked-sale delete blind spot                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 7. Client rollout         | RN core complete; browser/external rollout remains | `apps/mobile` uses generated Apollo operations for retail/pharmacy sales, partial/full returns, exchange, refunds/voids, parked pharmacist-review handoff, shift and branch operations, restaurant dine-in/takeaway checks, incoming queues and KDS. Money/stock callers retain the same idempotency key after an unknown network result. Runtime screens/state import no mock data. It also has native socket classification, PIN verification, surface-scoped named subscriptions, bounded deduplication, batched active-query refetch, foreground recovery and degraded polling. Browser POS retains REST and polling while using named invalidation views; printer/scanner/push/pharmacy-evidence native integrations remain separate rollout work |
+| 8. Typed client contract  | Generated and compiled                             | `schema.graphql` is pinned to the executable schema; all 100 mobile/POS operations have named inputs and typed output trees, stable `extensions.code`, and generated typed documents in `apps/mobile/src/graphql/generated.ts`. The remaining rollout gate is per-workflow REST-versus-GraphQL parity, not client generation                                                                                                                                                                                                                                                                                                                                                                                                                           |

@@ -13,9 +13,8 @@ const COMMON_DASHBOARD_FIELDS = ["bmsDashboard", "bmsActionCenter", "bmsExecutiv
  * queue from 9.40 got its events in 9.72 while this map still only knew `restaurant`, so a
  * food_beverage shop with KITCHEN_WORKFLOW watched a board that never refreshed itself.
  *
- * ⚠️ Nothing compares these keys to the event union yet. `realtime-client-contract` checks
- * the prefix-match rule, not coverage, so the 18th domain can go missing exactly the way
- * `kitchen` did. Adding an event type means checking this map by hand until that test exists.
+ * `realtime-client-contract` compares these keys with the central event union, so a new
+ * domain cannot silently arrive without an authoritative-query invalidation rule.
  */
 export const DOMAIN_FIELDS: Readonly<Record<string, readonly string[]>> = {
   restaurant: ["bmsRestaurant", "bmsKitchen", "bmsPosRestaurant", "bmsOrders", ...COMMON_DASHBOARD_FIELDS],

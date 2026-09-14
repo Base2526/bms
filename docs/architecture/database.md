@@ -866,7 +866,7 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`–`9.49`, `9.63`–`9.64`)
+## Restaurant POS (`9.44`–`9.49`, `9.63`–`9.64`, `9.87`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
 Migration `9.59` adds each table's `shape` (`round`/`rect`) and non-negative pixel coordinates
@@ -881,7 +881,13 @@ Migration `9.49` extends the same database-level chain through
 `location -> POS device -> shift -> restaurant check`, including the device id carried by the shift;
 a UUID from another branch or tenant can no longer satisfy a restaurant check FK even if supplied by
 SQL outside the service.
-`bms_restaurant_checks` is the open dine-in service state. Migration `9.63` widens the partial unique
+`bms_restaurant_checks` is the open restaurant service state. Migration `9.87` adds
+`service_mode`: `DINE_IN` rows keep a non-null `table_id`, while `TAKEAWAY` rows deliberately keep
+`table_id` null and are branch queue checks rather than fake tables. `bms_orders.restaurant_service_mode`
+snapshots that value for POS receipts/history; `bms_orders.fulfillment_type` remains only the online
+`DELIVERY`/`PICKUP` contract.
+
+Migration `9.63` widens the partial unique
 index to `(tenant_id, table_id, split_group_no)` so a table can carry several open bills at once —
 the primary bill is simply the lowest `split_group_no` still open, which needs no flag to maintain
 and hands the role to the next bill when the primary is paid. The same migration adds the terminal

@@ -23,10 +23,10 @@ interface Props {
 }
 
 /**
- * ด่านยืนยันสุดท้ายของ mock checkout
+ * ด่านยืนยันสุดท้ายก่อนส่งคำสั่งขายจริง
  *
- * ตอนต่อ backend ปุ่มยืนยันต้องเรียก settlement เพียงครั้งเดียวด้วย idempotency key
- * และรอผลสำเร็จก่อนพาไปใบเสร็จ — modal นี้ยังไม่ใช่หลักฐานว่าขายสำเร็จ
+ * ปุ่มยืนยันเรียก settlement เพียงครั้งเดียวด้วย idempotency key และรอผลสำเร็จ
+ * ก่อนพาไปใบเสร็จ โดย modal นี้เองยังไม่ใช่หลักฐานว่าขายสำเร็จ
  */
 export function SaleConfirmationModal({
   visible,

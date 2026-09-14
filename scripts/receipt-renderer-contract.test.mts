@@ -61,6 +61,8 @@ test("ทั้งสองเครื่องขายประกอบ payl
   const restaurant = code(await read(RESTAURANT));
 
   assert.match(retail, /function receiptPayloadOf\(r: Receipt\): ReceiptPayload/);
+  assert.match(retail, /const receiptExtraLines: ReceiptLine\[\] = \(r\.extraLines \?\? \[\]\)/);
+  assert.match(retail, /lines: \[\.\.\.lines, \.\.\.receiptExtraLines\]/);
   assert.match(retail, /function receiptToEscPos\(r: Receipt\) \{\s*return buildReceipt\(receiptPayloadOf\(r\)\);\s*\}/);
   assert.match(retail, /<ReceiptPaper payload=\{receiptPayloadOf\(receipt\)\} \/>/);
 

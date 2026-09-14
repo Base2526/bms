@@ -75,7 +75,13 @@ async function handleGET(req: NextRequest) {
     // ใครกด PIN อนุมัติงานไหนได้ — จอกรอง dropdown จากชุดนี้ ไม่ใช่จากรายชื่อคนขาย
     approvers,
     kitchenOperators,
-    store: { taxId: store.taxId, receiptLanguageMode: store.receiptLanguageMode },
+    store: {
+      taxId: store.taxId,
+      receiptLanguageMode: store.receiptLanguageMode,
+      address: store.address,
+      phone: store.phone,
+      logoUrl: store.logoUrl,
+    },
     surface: store.businessArchetype === "restaurant" ? "restaurant" : "retail",
     businessArchetype: store.businessArchetype ?? null,
     vat: {

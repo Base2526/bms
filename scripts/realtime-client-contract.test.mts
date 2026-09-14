@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { REALTIME_EVENT_TYPES } from "../packages/realtime/src/events.ts";
+
 const provider = readFileSync(new URL("../apps/web/components/realtime/RealtimeProvider.tsx", import.meta.url), "utf8");
 const invalidation = readFileSync(new URL("../apps/web/components/realtime/realtimeInvalidation.ts", import.meta.url), "utf8");
 const apollo = readFileSync(new URL("../apps/web/lib/apollo.ts", import.meta.url), "utf8");
@@ -13,9 +15,12 @@ const clientProviders = readFileSync(new URL("../apps/web/app/ClientProviders.ts
 const mobileRealtime = readFileSync(new URL("../apps/mobile/src/lib/realtime.ts", import.meta.url), "utf8");
 const mobileRealtimeProvider = readFileSync(new URL("../apps/mobile/src/state/RealtimeContext.tsx", import.meta.url), "utf8");
 const mobileGraphqlProvider = readFileSync(new URL("../apps/mobile/src/graphql/BmsGraphqlProvider.tsx", import.meta.url), "utf8");
+const mobileStoreModeProvider = readFileSync(new URL("../apps/mobile/src/state/StoreModeContext.tsx", import.meta.url), "utf8");
+const mobileLoginScreen = readFileSync(new URL("../apps/mobile/src/screens/LoginScreen.tsx", import.meta.url), "utf8");
 const mobileOperations = readFileSync(new URL("../apps/mobile/src/graphql/operations.graphql", import.meta.url), "utf8");
 const mobileApp = readFileSync(new URL("../apps/mobile/App.tsx", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("../apps/mobile/src/navigation/MainTabs.tsx", import.meta.url), "utf8");
+const mobileRootNavigator = readFileSync(new URL("../apps/mobile/src/navigation/RootNavigator.tsx", import.meta.url), "utf8");
 
 test("shared client layer exposes status, bounded dedup and batched invalidation", () => {
   assert.match(provider, /RealtimeProvider/);
@@ -33,6 +38,18 @@ test("shared client layer exposes status, bounded dedup and batched invalidation
   assert.match(provider, /POS_REALTIME_SUBSCRIPTIONS/);
   assert.match(ticketRoute, /mintPosRealtimeTicket/);
   assert.match(ticketRoute, /x-pos-device-token/);
+});
+
+test("every realtime event domain has a browser invalidation rule", () => {
+  const configured = new Set(
+    [...invalidation.matchAll(/^\s{2}([a-z][a-z0-9_]*):\s*/gm)].map((match) => match[1]),
+  );
+  const domains = new Set(REALTIME_EVENT_TYPES.map((type) => type.split(".", 1)[0]));
+  assert.deepEqual(
+    [...domains].filter((domain) => !configured.has(domain)).sort(),
+    [],
+    "new event domains must invalidate at least one authoritative browser query",
+  );
 });
 
 test("reconnect and focus reconcile through the registered authoritative refetch callback", () => {
@@ -97,6 +114,10 @@ test("React Native POS uses generated operations through Apollo and graphql-ws",
   assert.match(mobileGraphqlProvider, /retryAttempts: Infinity/);
   assert.match(mobileGraphqlProvider, /reconnectDelayMs/);
   assert.match(mobileGraphqlProvider, /authorization: target \? `Bearer/);
+  assert.match(mobileGraphqlProvider, /reportAuthenticationRequired/);
+  assert.match(mobileGraphqlProvider, /markAuthenticationRejected\(\)/);
+  assert.match(mobileGraphqlProvider, /verify\.kind !== 'REJECTED'/);
+  assert.doesNotMatch(mobileGraphqlProvider, /runVerify/);
   assert.match(mobileOperations, /query PosBootstrap/);
   assert.match(mobileOperations, /mutation VerifyPosCashier/);
   assert.match(mobileOperations, /subscription MobileDeviceSessionChanged/);
@@ -109,7 +130,13 @@ test("React Native POS uses generated operations through Apollo and graphql-ws",
   assert.match(mobileRealtimeProvider, /DEGRADED_RECONCILE_MS/);
   assert.match(mobileRealtimeProvider, /BASE_SUBSCRIPTIONS/);
   assert.match(mobileRealtimeProvider, /RESTAURANT_SUBSCRIPTIONS/);
+  assert.match(mobileRealtimeProvider, /verify\.kind !== 'REJECTED'/);
+  assert.match(mobileStoreModeProvider, /verify\.kind === 'REJECTED'/);
+  assert.match(mobileLoginScreen, /verify\.kind === 'REJECTED'/);
   assert.match(mobileApp, /<BmsGraphqlProvider>/);
   assert.match(mobileApp, /<RealtimeProvider>/);
   assert.doesNotMatch(mobileTabs, /<RealtimeProvider>/);
+  assert.match(mobileRootNavigator, /verify\.kind === 'REJECTED'/);
+  assert.match(mobileRootNavigator, /if \(authenticationRejected\) signOut\(\)/);
+  assert.match(mobileRootNavigator, /key=\{authenticationRejected/);
 });
