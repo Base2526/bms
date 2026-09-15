@@ -113,9 +113,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const boardGameCheckout = useQuery(MobilePosBoardGameCheckoutDocument, {
     variables: {
       credentials: session?.credentials ?? { cashierUserId: '', pin: '' },
-      id: boardGameParams?.boardGameSessionId ?? '',
+      id: boardGameParams?.boardGameBillingGroupId ?? '',
     },
-    skip: !session || !boardGameParams?.boardGameSessionId,
+    skip: !session || !boardGameParams?.boardGameBillingGroupId,
   });
   const boardGameBill = boardGameCheckout.data?.bmsPosBoardGameCheckout;
   const restaurantItems = (check?.items ?? []).filter(
@@ -144,9 +144,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         {
           key: `board-game-${boardGameBill.id}`,
           sku: '__BOARD_GAME_TIME__',
-          name: `ค่าเล่นบอร์ดเกม · ${boardGameBill.tableCode} ${boardGameBill.tableName}`,
+          name: `บิลบอร์ดเกม · ${boardGameBill.tableCode} ${
+            boardGameBill.tableName
+          }${
+            boardGameBill.sessionGroupCount > 1
+              ? ` · กลุ่ม ${boardGameBill.groupNo}`
+              : ''
+          }`,
           qty: 1,
-          unitPrice: boardGameBill.amountDue,
+          unitPrice: boardGameBill.totalDue,
           size: 'SERVICE',
           packCode: '',
           unitName: 'session',
@@ -162,11 +168,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const subtotal =
     source === 'restaurant'
       ? check?.amountDue ?? 0
-      : cart.subtotal + (boardGameBill?.amountDue ?? 0);
+      : cart.subtotal + (boardGameBill?.totalDue ?? 0);
   const payableBeforeRounding = round2(
     source === 'restaurant'
       ? subtotal
-      : cart.total + (boardGameBill?.amountDue ?? 0),
+      : cart.total + (boardGameBill?.totalDue ?? 0),
   );
   const discounts =
     source === 'restaurant'
@@ -243,7 +249,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     setPayments([
       { id: 'payment-1', method: 'cash', amount: total, tendered: total },
     ]);
-  }, [boardGameParams?.boardGameSessionId, restaurantCheckId, source, total]);
+  }, [
+    boardGameParams?.boardGameBillingGroupId,
+    restaurantCheckId,
+    source,
+    total,
+  ]);
   const paymentTarget =
     saleMode === 'DEPOSIT' ? Number(depositAmount) || 0 : total;
   const validation = useMemo(
@@ -386,7 +397,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               pin: session.credentials.pin,
               idempotencyKey: idempotencyRef.current,
               mode: saleMode,
-              boardGameSessionId: boardGameParams?.boardGameSessionId ?? null,
+              boardGameBillingGroupId:
+                boardGameParams?.boardGameBillingGroupId ?? null,
               lines: cart.lines.map(line => ({
                 sku: line.sku,
                 size: line.size,

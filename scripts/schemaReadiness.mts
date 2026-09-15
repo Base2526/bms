@@ -177,7 +177,7 @@ export const MIGRATIONS: Migration[] = [
     // `createOrderInTx()` เขียนคอลัมน์นี้ใน INSERT ของ **ทุกบิลทุกช่องทางของทุกร้าน** และ
     // `finalizePosSale()` SELECT มันกลับมาทุกการขาย — ไม่มีกิ่งไหนข้ามได้ ฐานที่ขาดไฟล์นี้
     // จึง "ขายไม่ได้เลยสักใบ" ไม่ใช่ "ฟีเจอร์บอร์ดเกมใช้ไม่ได้" · ตัวตารางของโมดูลบอร์ดเกม
-    // (`9.79`–`9.83`) จงใจไม่อยู่ในลิสต์ เพราะทุก query ของมันถูกกั้นด้วย `boardGameSessionId`
+    // (`9.79`–`9.83`) จงใจไม่อยู่ในลิสต์ เพราะทุก query ของมันถูกกั้นด้วย `boardGameBillingGroupId`
     file: "9.82__bms_board_game_pos_settlement.sql",
     impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล",
     needs: [{ kind: "column", table: "bms_orders", name: "board_game_session_id" }],
@@ -201,6 +201,31 @@ export const MIGRATIONS: Migration[] = [
     file: "9.88__bms_inventory_operation_idempotency.sql",
     impact: "โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)",
     needs: [{ kind: "table", name: "bms_inventory_operation_idempotency" }],
+  },
+  {
+    // เหตุผลเดียวกับ `9.82` เป๊ะ ๆ: `createOrderInTx()` เพิ่มคอลัมน์นี้เข้าไปใน INSERT ของ
+    // **ทุกบิลทุกช่องทางของทุกร้าน** และ `finalizePosSale()` SELECT มันกลับมาทุกการขาย
+    // ฐานที่ขาดไฟล์นี้จึงขายไม่ได้เลยสักใบ ไม่ใช่แค่ฟีเจอร์บอร์ดเกมใช้ไม่ได้
+    // · ตัวตาราง `bms_board_game_billing_groups` อยู่ในลิสต์ด้วย เพราะ `9.89` ย้ายเงินไปไว้ที่นั่น
+    //   ทั้งหมด — เส้นทางปิดโต๊ะ/เก็บเงินอ่านตารางนี้เสมอเมื่อร้านเป็นบอร์ดเกม
+    file: "9.89__bms_board_game_billing_groups.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล",
+    needs: [
+      { kind: "column", table: "bms_orders", name: "board_game_billing_group_id" },
+      { kind: "table", name: "bms_board_game_billing_groups" },
+      { kind: "column", table: "bms_board_game_session_participants", name: "billing_group_id" },
+    ],
+  },
+  {
+    // `createOrderInTx()` อ่านตารางนี้ทุกครั้งที่บิลมี `boardGameBillingGroupId` — ซึ่งคือ
+    // ทุกการเก็บเงินของร้านบอร์ดเกม · และ `tab_amount` ถูกเขียนทุกครั้งที่มีของเข้าบิล
+    // ฐานที่ขาดไฟล์นี้จึงเก็บเงินโต๊ะบอร์ดเกมไม่ได้เลยสักใบ (ร้านอื่นไม่กระทบ)
+    file: "9.90__bms_board_game_group_tab_items.sql",
+    impact: "ร้านบอร์ดเกมเก็บเงินไม่ได้ทุกโต๊ะ — createOrder อ่านรายการบนบิลทุกครั้ง",
+    needs: [
+      { kind: "table", name: "bms_board_game_group_items" },
+      { kind: "column", table: "bms_board_game_billing_groups", name: "tab_amount" },
+    ],
   },
 ];
 

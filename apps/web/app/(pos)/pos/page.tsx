@@ -931,9 +931,19 @@ type Session = {
 };
 
 type BoardGameCheckout = {
+  /** id ของ **กลุ่มบิล** (`9.89`) ไม่ใช่ของโต๊ะ — โต๊ะที่แยกกลุ่มมีบิลรออยู่หลายใบ */
   id: string;
+  sessionId: string;
+  groupNo: number;
+  sessionGroupCount: number;
   tableCode: string;
   tableName: string;
+  /** ของที่สั่งเข้าบิลระหว่างเล่น (`9.90`) — server จองไว้แล้วและจะรวมให้ตอนสร้างบิล */
+  tabAmount: number;
+  /** ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (`9.92`) — บิลเก่ากว่านั้นไม่มีคีย์นี้ */
+  passCoveredAmount?: number;
+  tabItemCount: number;
+  totalDue: number;
   startedAt: string;
   endedAt: string;
   amountDue: number;
@@ -1685,7 +1695,7 @@ export default function PosPage() {
     // หน้าแอดมินให้ลิงก์เต็มไปเลย เพราะการก๊อป token เปล่า ๆ แล้วเอาไปวางในช่อง URL
     // เป็นสิ่งที่เกิดขึ้นจริง (เจอมาแล้ว) — วางลิงก์ในช่อง URL แล้วต้องทำงานเลย
     const url = new URL(window.location.href);
-    setBoardGameCheckoutId((url.searchParams.get("boardGameSessionId") ?? "").trim());
+    setBoardGameCheckoutId((url.searchParams.get("boardGameBillingGroupId") ?? "").trim());
     const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
     if (fromUrl) {
       window.localStorage.setItem(TOKEN_KEY, fromUrl);
@@ -1716,8 +1726,8 @@ export default function PosPage() {
       setPointsToRedeem(snapshot.pointsToRedeem ?? "");
       setCouponCode(snapshot.couponCode ?? "");
       setExtraLines(snapshot.extraLines ?? []);
-      if (typeof saved.body.boardGameSessionId === "string") {
-        setBoardGameCheckoutId(saved.body.boardGameSessionId);
+      if (typeof saved.body.boardGameBillingGroupId === "string") {
+        setBoardGameCheckoutId(saved.body.boardGameBillingGroupId);
       }
       setPharmacyReviewLink(saved.pharmacyReviewLink ?? (
         snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
@@ -1807,7 +1817,7 @@ export default function PosPage() {
     setBoardGameCheckoutId("");
     setBoardGameCheckout(null);
     const url = new URL(window.location.href);
-    url.searchParams.delete("boardGameSessionId");
+    url.searchParams.delete("boardGameBillingGroupId");
     window.history.replaceState({}, "", url.pathname + url.search);
   }
 
@@ -2123,7 +2133,7 @@ export default function PosPage() {
     : 0;
   /** ส่วนลดทุกชนิดใช้ฐานสินค้าเท่านั้น ค่าถุง/ค่าบริการบวกหลังหักส่วนลด */
   const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
-  const payableBeforeRounding = Math.round((netTotal + extraTotal + (boardGameCheckout?.amountDue ?? 0)) * 100) / 100;
+  const payableBeforeRounding = Math.round((netTotal + extraTotal + (boardGameCheckout?.totalDue ?? 0)) * 100) / 100;
   const memberPreviewRequestKey = JSON.stringify({
     customerId: member?.customerId ?? null,
     subtotal: total,
@@ -4009,11 +4019,13 @@ export default function PosPage() {
             name: x.label.trim(), size: null, qty: 1, unitName: "", amount: Number(x.unitAmount),
           })),
         ...(boardGameCheckout ? [{
-          name: `ค่าเล่นบอร์ดเกม · ${boardGameCheckout.tableName}`,
+          name: boardGameCheckout.sessionGroupCount > 1
+            ? `ค่าเล่นบอร์ดเกม · ${boardGameCheckout.tableName} กลุ่ม ${boardGameCheckout.groupNo}`
+            : `ค่าเล่นบอร์ดเกม · ${boardGameCheckout.tableName}`,
           size: null,
           qty: 1,
           unitName: "",
-          amount: boardGameCheckout.amountDue,
+          amount: boardGameCheckout.totalDue,
         }] : []),
       ],
       itemCount,
@@ -5307,7 +5319,7 @@ export default function PosPage() {
         pharmacyReviewAssessmentId: pharmacyReviewLink?.status !== "APPROVED"
           ? pharmacyReviewLink?.assessmentId ?? null
           : null,
-        boardGameSessionId: boardGameCheckout?.id ?? null,
+        boardGameBillingGroupId: boardGameCheckout?.id ?? null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -6544,8 +6556,8 @@ export default function PosPage() {
           token={token ?? ""}
           cashierUserId={cashierId}
           pin={pin}
-          onCheckout={(sessionId) => {
-            setBoardGameCheckoutId(sessionId);
+          onCheckout={(billingGroupId) => {
+            setBoardGameCheckoutId(billingGroupId);
             switchTab("sell");
           }}
         />
@@ -8590,12 +8602,24 @@ export default function PosPage() {
             {boardGameCheckout && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span>ค่าเล่นบอร์ดเกม · {boardGameCheckout.tableName}</span>
-                  <b>฿{baht(boardGameCheckout.amountDue)}</b>
+                  <span>
+                    ค่าเล่นบอร์ดเกม · {boardGameCheckout.tableName}
+                    {boardGameCheckout.sessionGroupCount > 1 ? ` กลุ่ม ${boardGameCheckout.groupNo}` : ""}
+                  </span>
+                  <b>฿{baht(boardGameCheckout.totalDue)}</b>
                 </div>
                 <span style={{ color: "var(--pos-muted)", fontSize: 12 }}>
                   {boardGameCheckout.chargeLineCount} คน · ปิดเวลา {new Date(boardGameCheckout.endedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                  {boardGameCheckout.tabItemCount > 0
+                    ? ` · ของที่สั่งไว้ ${boardGameCheckout.tabItemCount} รายการ ฿${baht(boardGameCheckout.tabAmount)} (รวมให้ตอนเก็บเงิน)`
+                    : ""}
                 </span>
+                {/* `9.92`: ค่าเล่นที่ถูกกว่าที่ลูกค้าคาดต้องมีบรรทัดอธิบาย ไม่งั้นแคชเชียร์ตอบไม่ได้ว่าหายไปไหน */}
+                {(boardGameCheckout.passCoveredAmount ?? 0) > 0 && (
+                  <span style={{ color: "var(--pos-muted)", fontSize: 12, display: "block" }}>
+                    แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿{baht(boardGameCheckout.passCoveredAmount ?? 0)}
+                  </span>
+                )}
               </div>
             )}
             {/* ส่วนลดต้องเห็นแยกบรรทัดที่จอ ลูกค้าถามได้ว่าลดจากอะไร (7.96) */}

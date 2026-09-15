@@ -9,7 +9,8 @@
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
 
-ตอนนี้: **148 ไฟล์เทส** = pure 110 ไฟล์ (1,160 เทส) + DB 38 ไฟล์
+ตอนนี้: **160 ไฟล์เทส** = pure 118 ไฟล์ (1,255 เทส) + DB 42 ไฟล์ (475 เทส) — นับใหม่ 2026-09-15
+ด้วยตัวรันเอง (`run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง)
 `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือ
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้างด้วย `ls scripts/*.test.mts | wc -l`,

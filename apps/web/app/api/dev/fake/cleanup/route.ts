@@ -56,6 +56,20 @@ async function handleDELETE(req: NextRequest) {
         RETURNING s.id`,
       [tenantId]
     );
+    const resBoardGameSeatings = await query(
+      `DELETE FROM bms_board_game_seatings st
+        WHERE st.tenant_id = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM bms_board_game_sessions s
+             WHERE s.tenant_id = st.tenant_id AND s.seating_id = st.id
+          )
+          AND EXISTS (
+            SELECT 1 FROM bms_board_game_tables t
+             WHERE t.tenant_id = st.tenant_id AND t.id = st.table_id AND t.code LIKE 'FAKE-%'
+          )
+        RETURNING st.id`,
+      [tenantId]
+    );
     const resBoardGameProfiles = await query(
       `DELETE FROM bms_board_game_public_locations
         WHERE tenant_id = $1 AND public_visible = FALSE AND display_name LIKE 'FAKE %'
@@ -125,7 +139,7 @@ async function handleDELETE(req: NextRequest) {
 
     const deleted =
       resPosts.rows.length + resUsers.rows.length + resBoardGameOrders.rows.length + resBoardGameSessions.rows.length +
-      resBoardGameProfiles.rows.length + resBoardGameCopies.rows.length + resBoardGameTitles.rows.length +
+      resBoardGameSeatings.rows.length + resBoardGameProfiles.rows.length + resBoardGameCopies.rows.length + resBoardGameTitles.rows.length +
       resBoardGameTables.rows.length + resBoardGameAreas.rows.length + resBoardGameRates.rows.length +
       resBoardGameIdempotency.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
       resPosShifts.rows.length + resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
@@ -138,6 +152,7 @@ async function handleDELETE(req: NextRequest) {
       users: resUsers.rows.length,
       bmsBoardGameOrders: resBoardGameOrders.rows.length,
       bmsBoardGameSessions: resBoardGameSessions.rows.length,
+      bmsBoardGameSeatings: resBoardGameSeatings.rows.length,
       bmsBoardGameProfiles: resBoardGameProfiles.rows.length,
       bmsBoardGameCopies: resBoardGameCopies.rows.length,
       bmsBoardGameTitles: resBoardGameTitles.rows.length,

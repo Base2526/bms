@@ -183,17 +183,26 @@ wrong, and update the doc in the same change.
   to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
   `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
-- **Board game cafe (`9.79`–`9.83`)** — play time, sellable goods, and playable game copies are
-  three different domains. A session freezes participant-rate snapshots and becomes a normal POS
-  order only after `CLOSING`; settlement validates the branch and session again, then marks the
-  session `PAID` in the same payment transaction. Never type time fees as a Product SKU or reduce
-  inventory when a library copy is borrowed. Fixed-duration alerts are computed from timestamps,
-  not persisted as authority. Public nearby-store discovery is per-branch opt-in and may expose only
-  published profile fields, rates/game highlights, and aggregate availability, never table/session/
-  participant/customer identifiers. Dev fixtures use `FAKE` markers and cleanup must remove linked
-  board-game orders before sessions. Native POS derives its branch from the paired device, freezes
-  charges before handing the session to the existing sale mutation, and must never submit its
-  display-only time line as a Product SKU. Full detail:
+- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.92`)** — play time, sellable goods, and playable game
+  copies are three different domains. A billing group, never the table session, owns the frozen
+  charge, snack tab and settling order. One group may close and pay while every other group keeps
+  accruing time; the table remains occupied until no group is `OPEN` or `CLOSING`. A checked-out
+  game belongs to the session, so it may remain with groups still playing but blocks the final open
+  group from closing. Settlement validates branch and group again, then marks that group `PAID` in
+  the same payment transaction. Never type time fees as a Product SKU or reduce inventory when a
+  library copy is borrowed. Fixed-duration alerts are computed from timestamps, not persisted as
+  authority. Public nearby-store discovery is per-branch opt-in and may expose only published profile
+  fields, rates/game highlights, and aggregate availability, never table/session/participant/customer
+  identifiers. Dev fixtures use `FAKE` markers and cleanup must remove linked board-game orders before
+  sessions. The table itself belongs to a **seating** (`9.91`), not to a visit: moving a party or
+  merging two tables changes only where people sit and must never touch a session, billing group, tab
+  row or order, and a table is free only when every session sharing its seating is settled. Read the
+  current table from the seating — `bms_board_game_sessions.table_id` is the table the visit *opened*
+  at. A member pass (`9.92`) is an entitlement with the same rules as play time — no SKU, no stock —
+  snapshotted at sale time, with its minute balance a cache of the pass ledger; coverage is applied
+  only when a billing group is closed, inside that transaction, never while previewing a bill.
+  Native POS derives its branch from the paired device, hands the billing-group id to the
+  existing sale mutation, and must never submit its display-only time line as a Product SKU. Full detail:
   [business/board-game-cafe.md](docs/business/board-game-cafe.md) and
   [agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
 - **Product catalog truth (`9.40`–`9.43`, `9.51`, `9.52`)** — a product's serving/size options live
@@ -294,8 +303,11 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,149 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-14 — the latest change is net **+2**:
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,208 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-15 — net **+50** against the same recursive
+   count of `HEAD`: board-game one-group close and close-all, the seating move/merge controls, and the
+   member-pass catalogue/sale/cancel screen in both languages;
+   the preceding change is net **+2**:
    board-game fake-data guidance and the one-click fixture summary; the preceding change is net **+24**:
    board-game time alerts, member lookup and public nearby-store discovery cover publishing controls,
    coordinates, aggregate availability and public-preview guidance in both languages; the preceding change is net **+120**:

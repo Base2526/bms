@@ -314,9 +314,18 @@ function boardGameDelegatedBody(body: string): string | null {
   assert.ok(switchAt > dispatcherAt, "the dispatcher must switch on action");
   // ส่วนหัวก่อน switch อ่าน field ที่ทุกคำสั่งใช้ร่วมกัน (idempotencyKey)
   text += clean.slice(dispatcherAt, switchAt);
-  const caseAt = clean.indexOf(`case "${action}": {`, switchAt);
+  // คำสั่งที่ใช้ body ร่วมกันเขียนเป็น `case "a":` แล้ว fall-through ลง `case "b": {`
+  // การบังคับให้มี `{` ติดกับ label ทำให้ตัวแรกอ่านว่า "dispatcher ไม่รับคำสั่งนี้"
+  const caseAt = clean.indexOf(`case "${action}":`, switchAt);
   assert.ok(caseAt > switchAt, `the dispatcher must handle "${action}"`);
-  text += braceBlockAt(clean, clean.indexOf("{", caseAt));
+  const bodyAt = /^(?:\s*case "[a-z.]+":)*\s*\{/.exec(
+    clean.slice(caseAt + `case "${action}":`.length),
+  );
+  assert.ok(bodyAt, `the "${action}" case must open a block, possibly after fall-through labels`);
+  text += braceBlockAt(
+    clean,
+    caseAt + `case "${action}":`.length + bodyAt[0].length - 1,
+  );
 
   // ตัวแปลงผู้เล่นอ่าน field ระดับบนสุดแทน case นั้นเมื่อเพิ่มผู้เล่นทีละคน
   if (/participantDraft\(input\)/.test(text)) {
@@ -413,7 +422,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 76 mobile/POS input arguments are typed", () => {
+test("all 81 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -424,8 +433,8 @@ test("all 76 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    76,
-    "the mobile/POS surface must keep all 76 input-bearing operations",
+    81,
+    "the mobile/POS surface must keep all 81 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -436,11 +445,11 @@ test("all 76 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 121 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 126 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    121,
+    126,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -1009,10 +1018,33 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   assert.match(boardGame, /MobilePosMembersDocument/);
   assert.match(boardGame, /customerId: selectedMember\?\.customerId \?\? null/);
   assert.match(boardGame, /billingGroupNo/);
+  assert.match(boardGame, /MobilePosCloseBoardGameBillingGroupDocument/);
+  assert.match(boardGame, /billingGroupId: group\.id/);
   assert.match(boardGame, /MobilePosCheckoutBoardGameCopyDocument/);
   assert.match(boardGame, /MobilePosReturnBoardGameCopyDocument/);
+  // `9.91`: import เอกสารไว้เฉย ๆ = คำสั่งที่แอปเอื้อมไม่ถึง · ต้องถูก *เรียก* พร้อมโต๊ะปลายทาง
+  // และต้องเลือกย้าย/รวมจากสภาพของโต๊ะปลายทาง ไม่ใช่ให้คนหน้าเครื่องเดาเอง
+  for (const document of [
+    "MobilePosMoveBoardGameSeatingDocument",
+    "MobilePosMergeBoardGameSeatingDocument",
+    // `9.93`: แอปให้ยืมกล่องเกมได้แต่บันทึกบัตรไม่ได้ = ด่านตอนปิดบิลไล่ให้ไปหาเบราว์เซอร์
+    "MobilePosTakeBoardGameIdentityHoldDocument",
+    "MobilePosReleaseBoardGameIdentityHoldDocument",
+  ]) {
+    assert.match(boardGame, new RegExp(`useMutation\\(\\s*${document}`), `${document} is never used`);
+  }
+  assert.match(boardGame, /const merging = Boolean\(target\.openSession\)/);
+  assert.match(boardGame, /merging\s*\n?\s*\?\s*mergeSeating\s*\n?\s*:\s*moveSeating/);
+  assert.match(boardGame, /targetTableId: target\.id/);
   assert.match(boardGame, /source: 'board_game'/);
-  assert.match(checkout, /boardGameSessionId/);
+  // `9.93`: จอเครื่องขายหันออกทางลูกค้า — สี่ตัวท้ายพอให้หาบัตรในลิ้นชัก เลขเต็มไม่มีที่นี่
+  assert.match(boardGame, /documentNumberTail/);
+  assert.ok(
+    !/reveal/i.test(boardGame),
+    "the native register must have no way to read a stored ID number",
+  );
+  assert.match(checkout, /boardGameBillingGroupId/);
+  assert.doesNotMatch(checkout, /boardGameSessionId/);
   assert.match(checkout, /MobilePosBoardGameCheckoutDocument/);
   assert.match(checkout, /item\.sku === '__BOARD_GAME_TIME__'/);
   assert.doesNotMatch(

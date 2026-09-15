@@ -76,12 +76,65 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
       WHERE tenant_id = $1 AND id = (SELECT id FROM bms_board_game_sessions WHERE tenant_id = $1 LIMIT 1)`,
     [shop.tenantId]
   );
+  // `9.89` เพิ่มวงรอบชุดที่สองด้วยเหตุผลเดียวกัน: บิลชี้ไปที่ **กลุ่ม** ที่มันเก็บเงิน และกลุ่ม
+  // ชี้กลับมาที่บิลใบนั้น · ปลดแค่ฝั่ง session แล้วลบร้านจะยังติดที่ฝั่งกลุ่ม
+  const linkedGroup = await query(
+    `WITH g AS (
+       SELECT id FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND session_id = (SELECT board_game_session_id FROM bms_orders
+                                                WHERE tenant_id = $1 AND board_game_session_id IS NOT NULL LIMIT 1)
+        LIMIT 1
+     )
+     UPDATE bms_orders SET board_game_billing_group_id = (SELECT id FROM g)
+      WHERE tenant_id = $1 AND board_game_session_id IS NOT NULL AND (SELECT id FROM g) IS NOT NULL
+      RETURNING id`,
+    [shop.tenantId]
+  );
+  assert.equal(linkedGroup.rowCount, 1, "ไม่มีกลุ่มบิลให้ผูก — วงรอบ FK ของ 9.89 จะไม่ถูกเดิน");
+  await query(
+    `UPDATE bms_board_game_billing_groups
+        SET current_order_id = (SELECT id FROM bms_orders
+                                 WHERE tenant_id = $1 AND board_game_billing_group_id IS NOT NULL LIMIT 1)
+      WHERE tenant_id = $1
+        AND id = (SELECT board_game_billing_group_id FROM bms_orders
+                   WHERE tenant_id = $1 AND board_game_billing_group_id IS NOT NULL LIMIT 1)`,
+    [shop.tenantId]
+  );
+
+  // `9.92` และ `9.93` เก็บหลักฐานที่ผูกกับลูกค้า/พนักงานแบบ RESTRICT อีกสองแบบ · seeder
+  // ไม่สร้างทั้งคู่ เคสจึงต้องปั้นเอง ไม่งั้นการลบร้านที่ "เคยขายแพ็กเกจ" หรือ "เคยรับบัตรไว้"
+  // จะพังบน production โดยไม่มีเทสไหนเคยเดินผ่านมัน (แพ็กเกจพังจริงมาแล้ว — ไม่มี cascade
+  // ใดปลดมันก่อน `bms_customers` ถูกลบ)
+  const pass = await query(
+    `INSERT INTO bms_board_game_member_passes
+       (tenant_id, customer_id, plan_code, plan_name, kind, price_paid, expires_at, issued_by)
+     SELECT $1, c.id, 'FAKE_LIFECYCLE', 'FAKE pass', 'UNLIMITED', 0, now() + interval '30 days',
+            (SELECT id FROM users WHERE tenant_id = $1 LIMIT 1)
+       FROM bms_customers c WHERE c.tenant_id = $1 LIMIT 1
+     RETURNING id`,
+    [shop.tenantId]
+  );
+  assert.equal(pass.rowCount, 1, "ไม่มีลูกค้าให้ออกแพ็กเกจ — วงรอบ RESTRICT ของ 9.92 จะไม่ถูกเดิน");
+  const hold = await query(
+    `INSERT INTO bms_board_game_identity_holds
+       (tenant_id, location_id, session_id, customer_id, document_kind, holder_name, taken_by)
+     SELECT $1, s.location_id, s.id,
+            (SELECT id FROM bms_customers WHERE tenant_id = $1 LIMIT 1),
+            'NATIONAL_ID', 'FAKE holder',
+            (SELECT id FROM users WHERE tenant_id = $1 LIMIT 1)
+       FROM bms_board_game_sessions s WHERE s.tenant_id = $1 LIMIT 1
+     RETURNING id`,
+    [shop.tenantId]
+  );
+  assert.equal(hold.rowCount, 1, "ไม่มี session ให้ผูกบัตร — cascade ของ 9.93 จะไม่ถูกเดิน");
 
   await deleteTenant(shop.tenantId);
   const left = await query<{ n: string }>(`SELECT count(*)::text AS n FROM bms_tenants WHERE id = $1`, [shop.tenantId]);
   assert.equal(left.rows[0].n, "0");
   for (const table of ["bms_orders", "bms_order_items", "bms_customers", "bms_board_game_sessions",
-    "bms_board_game_session_participants", "bms_board_game_titles", "users"]) {
+    "bms_board_game_billing_groups", "bms_board_game_seatings",
+    "bms_board_game_session_participants", "bms_board_game_titles",
+    "bms_board_game_member_passes", "bms_board_game_identity_holds", "users"]) {
     const rows = await query<{ n: string }>(
       `SELECT count(*)::text AS n FROM ${table} WHERE tenant_id = $1`, [shop.tenantId]);
     assert.equal(rows.rows[0].n, "0", `${table} ยังมีแถวค้างหลังลบร้าน`);

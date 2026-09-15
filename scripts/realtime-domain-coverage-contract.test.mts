@@ -198,6 +198,10 @@ const CONFIGURATION = [
 const POLLED_OPERATIONAL_SURFACE = [
   "bms_board_game_copies", "bms_board_game_sessions",
   "bms_board_game_session_games", "bms_board_game_session_participants",
+  "bms_board_game_billing_groups", "bms_board_game_group_items",
+  "bms_board_game_seatings",
+  "bms_board_game_pass_plans", "bms_board_game_member_passes", "bms_board_game_pass_ledger",
+  "bms_board_game_identity_holds",
 ];
 
 const CLASSIFIED = new Map<string, string>();

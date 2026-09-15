@@ -2218,6 +2218,7 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
 
     for (let index = 0; index < activeCount; index++) {
       const id = uuid();
+      const seatingId = uuid();
       const startedAt = new Date(Date.now() - (35 + index * 22) * 60000);
       const isClosing = index === activeCount - 1;
       const fixedDuration = index > 0;
@@ -2226,14 +2227,22 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
       const endedAt = isClosing ? new Date() : null;
       const guestCount = 2 + (index % 4);
       await client.query(
+        `INSERT INTO bms_board_game_seatings
+           (id, tenant_id, location_id, table_id, origin_session_id, status, opened_at, closed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          seatingId, tenantId, locationId, tableRows[index].id, id, "ACTIVE", startedAt, null,
+        ]
+      );
+      await client.query(
         `INSERT INTO bms_board_game_sessions
-           (id, tenant_id, location_id, table_id, status, billing_mode, guest_count,
+           (id, tenant_id, location_id, table_id, seating_id, status, billing_mode, guest_count,
             expected_duration_minutes, started_at, expected_end_at, ended_at, alert_before_minutes,
             note, open_idempotency_key, open_request_hash,
             settlement_idempotency_key, settlement_request_hash, charge_snapshot, amount_due)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,15,$12,$13,$14,$15,$16,'[]'::jsonb,0)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,15,$13,$14,$15,$16,$17,'[]'::jsonb,0)`,
         [
-          id, tenantId, locationId, tableRows[index].id, isClosing ? "CLOSING" : "OPEN",
+          id, tenantId, locationId, tableRows[index].id, seatingId, isClosing ? "CLOSING" : "OPEN",
           fixedDuration ? "FIXED_DURATION" : "OPEN_ENDED", guestCount, duration,
           startedAt, expectedEndAt, endedAt, `FAKE session ${token}`,
           `fake-open-${token}-${index}`, `fake-open-hash-${token}-${index}`,
@@ -2243,21 +2252,45 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
       );
       sessions.push({ id, status: isClosing ? "CLOSING" : "OPEN", tableId: tableRows[index].id, startedAt, endedAt });
 
-      const chargeLines: Array<Record<string, unknown>> = [];
+      // กลุ่มบิล (`9.89`) เป็นเจ้าของเงิน — ผู้เล่นต้องมีกลุ่มเสมอ (`billing_group_id` NOT NULL)
+      // และยอด/บรรทัดค่าเล่นของบิลที่ปิดแล้วอยู่บนกลุ่ม ไม่ใช่บน session อีกต่อไป
+      const groupIdByNo = new Map<number, string>();
+      async function fakeBillingGroup(groupNo: number): Promise<string> {
+        const existing = groupIdByNo.get(groupNo);
+        if (existing) return existing;
+        const groupId = uuid();
+        await client.query(
+          `INSERT INTO bms_board_game_billing_groups
+             (id, tenant_id, location_id, session_id, group_no, status, ended_at,
+              settlement_idempotency_key, settlement_request_hash)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            groupId, tenantId, locationId, id, groupNo, isClosing ? "CLOSING" : "OPEN",
+            endedAt,
+            isClosing ? `fake-settle-${token}-${index}-g${groupNo}` : null,
+            isClosing ? `fake-settle-hash-${token}-${index}-g${groupNo}` : null,
+          ]
+        );
+        groupIdByNo.set(groupNo, groupId);
+        return groupId;
+      }
+
+      const chargeLinesByGroup = new Map<number, Array<Record<string, unknown>>>();
       for (let personIndex = 0; personIndex < guestCount; personIndex++) {
         const participantId = uuid();
         const requestedRate = rateRows[(index + personIndex) % rateRows.length];
         const memberId = requestedRate.type === "MEMBER" ? memberRows.rows[personIndex % Math.max(memberRows.rows.length, 1)]?.id ?? null : null;
         const rate = requestedRate.type === "MEMBER" && !memberId ? rateRows[0] : requestedRate;
         const billingGroupNo = personIndex % 2 === 0 ? 1 : 2;
+        const billingGroupId = await fakeBillingGroup(billingGroupNo);
         await client.query(
           `INSERT INTO bms_board_game_session_participants
-             (id, tenant_id, session_id, rate_id, customer_id, display_name, participant_type,
-              billable, hourly_rate_snapshot, minimum_minutes_snapshot, rounding_minutes_snapshot,
-              grace_minutes_snapshot, billing_group_no, joined_at, left_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8,$9,$10,$11,$12,$13,$14)`,
+             (id, tenant_id, session_id, billing_group_id, rate_id, customer_id, display_name,
+              participant_type, billable, hourly_rate_snapshot, minimum_minutes_snapshot,
+              rounding_minutes_snapshot, grace_minutes_snapshot, billing_group_no, joined_at, left_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,$10,$11,$12,$13,$14,$15)`,
           [
-            participantId, tenantId, id, rate.id, memberId,
+            participantId, tenantId, id, billingGroupId, rate.id, memberId,
             memberId ? `FAKE Member ${personIndex + 1}` : `FAKE Guest ${personIndex + 1}`,
             rate.type, rate.price, rate.minimum, rate.rounding, rate.grace,
             billingGroupNo, startedAt, endedAt,
@@ -2267,32 +2300,58 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
         if (isClosing) {
           const minutes = Math.max(rate.minimum, Math.ceil(((endedAt!.getTime() - startedAt.getTime()) / 60000 - rate.grace) / rate.rounding) * rate.rounding);
           const amount = Math.round((minutes / 60) * rate.price * 100) / 100;
-          chargeLines.push({ participantId, label: `${rate.name} / กลุ่ม ${billingGroupNo}`, minutes, hourlyRate: rate.price, amount, billingGroupNo });
+          const lines = chargeLinesByGroup.get(billingGroupNo) ?? [];
+          lines.push({ participantId, label: `${rate.name} / กลุ่ม ${billingGroupNo}`, minutes, hourlyRate: rate.price, amount, billingGroupNo });
+          chargeLinesByGroup.set(billingGroupNo, lines);
         }
       }
       if (isClosing) {
-        const amountDue = chargeLines.reduce((sum, line) => sum + Number(line.amount), 0);
-        await client.query(
-          `UPDATE bms_board_game_sessions SET charge_snapshot = $3::jsonb, amount_due = $4
-            WHERE tenant_id = $1 AND id = $2`,
-          [tenantId, id, JSON.stringify(chargeLines), amountDue]
-        );
+        for (const [groupNo, lines] of chargeLinesByGroup) {
+          const amountDue = lines.reduce((sum, line) => sum + Number(line.amount), 0);
+          await client.query(
+            `UPDATE bms_board_game_billing_groups
+                SET charge_snapshot = $3::jsonb, amount_due = $4
+              WHERE tenant_id = $1 AND id = $2`,
+            [tenantId, groupIdByNo.get(groupNo), JSON.stringify(lines), amountDue]
+          );
+        }
       }
     }
 
     const cancelledSessionId = uuid();
+    const cancelledSeatingId = uuid();
     const cancelledStart = new Date(Date.now() - 2 * 864e5);
     const cancelledEnd = new Date(cancelledStart.getTime() + 25 * 60000);
     await client.query(
+      `INSERT INTO bms_board_game_seatings
+         (id, tenant_id, location_id, table_id, origin_session_id, status, opened_at, closed_at)
+       VALUES ($1,$2,$3,$4,$5,'CLOSED',$6,$7)`,
+      [
+        cancelledSeatingId, tenantId, locationId, tableRows[0].id,
+        cancelledSessionId, cancelledStart, cancelledEnd,
+      ]
+    );
+    await client.query(
       `INSERT INTO bms_board_game_sessions
-         (id, tenant_id, location_id, table_id, status, billing_mode, guest_count,
+         (id, tenant_id, location_id, table_id, seating_id, status, billing_mode, guest_count,
           started_at, ended_at, note, open_idempotency_key, open_request_hash,
           cancel_idempotency_key, cancel_request_hash)
-       VALUES ($1,$2,$3,$4,'CANCELLED','OPEN_ENDED',0,$5,$6,$7,$8,$9,$10,$11)`,
+       VALUES ($1,$2,$3,$4,$5,'CANCELLED','OPEN_ENDED',0,$6,$7,$8,$9,$10,$11,$12)`,
       [
-        cancelledSessionId, tenantId, locationId, tableRows[0].id, cancelledStart, cancelledEnd,
+        cancelledSessionId, tenantId, locationId, tableRows[0].id, cancelledSeatingId,
+        cancelledStart, cancelledEnd,
         `FAKE cancelled session ${token}`, `fake-open-${token}-cancelled`, `fake-open-hash-${token}-cancelled`,
         `fake-cancel-${token}`, `fake-cancel-hash-${token}`,
+      ]
+    );
+    await client.query(
+      `INSERT INTO bms_board_game_billing_groups
+         (tenant_id, location_id, session_id, group_no, status, ended_at,
+          cancel_idempotency_key, cancel_request_hash, cancel_reason)
+       VALUES ($1,$2,$3,1,'CANCELLED',$4,$5,$6,$7)`,
+      [
+        tenantId, locationId, cancelledSessionId, cancelledEnd,
+        `fake-cancel-${token}-g1`, `fake-cancel-hash-${token}-g1`, `FAKE cancelled ${token}`,
       ]
     );
     sessions.push({ id: cancelledSessionId, status: "CANCELLED", tableId: tableRows[0].id, startedAt: cancelledStart, endedAt: cancelledEnd });

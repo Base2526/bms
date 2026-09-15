@@ -147,10 +147,10 @@ production introspection. The artifact is generated from the executable schema w
 
 | Output contract | Operations |
 | --- | --- |
-| Typed (121) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
+| Typed (126) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
 | JSON compatibility (0) | None. |
 
-All 121 operations have typed arguments and typed output trees. Generate result types from the
+All 122 operations have typed arguments and typed output trees. Generate result types from the
 committed schema instead of hand-maintaining response interfaces. The examples below cover the ten
 core screen flows and are checked against the executable schema; the remaining operations are
 discoverable from the same artifact and no longer require a client-side JSON boundary validator.

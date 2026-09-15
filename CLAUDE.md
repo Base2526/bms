@@ -209,9 +209,82 @@ discovery draft. Monthly/yearly subscription contracts, encrypted identity-docum
 advanced board-game analytics remain a later CRM/reporting phase. See
 [business/board-game-cafe.md](docs/business/board-game-cafe.md).
 
+**A board-game bill belongs to a group, not a table (`9.89`, 2026-09-15).** `9.80` put the money on
+the table session — one settlement key, one frozen snapshot, one settling order — so a split table
+could produce only one bill and "this group pays and leaves" had nowhere to be recorded.
+`bms_board_game_billing_groups` now owns the settlement state; the session owns seating and timing.
+An unsplit table still produces exactly one bill, because one group is created for it. Closing a
+table closes every open group into **one bill each**, charging only that group's people, and the
+table's status is derived from its groups — paying one bill never frees a table where another group
+is still playing. Every operation that names a bill takes a group id; a table id is ambiguous the
+moment the table is split. The session's own money columns are kept as history and are no longer
+written. This is phase 1 of moving the billing unit from the table toward the person; table moves
+that do not touch billing build on it.
+
+**A board-game bill can be ordered onto during play (`9.90`, 2026-09-15).** Phase 2: staff add
+snacks and drinks to a group's tab while the table is still playing, and the stock is reserved at
+that moment — because the drink is already gone, and an unreserved one can be promised to a second
+table that only finds out at settlement. `bms_board_game_group_items` is the tab; the group's
+PENDING order is a reservation derived from it and rebuilt whenever the lines change. Settlement
+releases that reservation **inside the same transaction** that builds the final bill, so stock is
+never briefly free. Closing a table bills the tab and the play time on one order. See
+[business/board-game-cafe.md](docs/business/board-game-cafe.md) and
+[agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
+
+**A board-game group can pay while the others keep playing (Phase 3, 2026-09-15).** The register can
+freeze one `OPEN` billing group, settle its time plus tab through the existing POS flow, and leave
+every other group accruing time on the same occupied table. The session status remains derived from
+all groups, so paying the early bill never frees the table. Game loans belong to the session: an
+early group may leave while a copy remains in use, but the final open group cannot close until all
+copies are returned. Browser REST and native GraphQL expose the same `group.close` operation and
+checkout is addressed by billing-group id throughout.
+
+**A board-game table can be moved or merged without touching a bill (`9.91`, 2026-09-15).** Phase 4
+splits *where a party sits* from *whose visit it is*: `bms_board_game_seatings` is the current
+physical occupancy of one table, and a session points at the seating it currently occupies. Moving
+sends the selected party to a free table — the seating itself when the party sits alone, a detached
+new seating when the table had been merged, so merging is not a one-way door. Merging sends every
+party at a table into an occupied destination and closes the source as `MERGED`; several sessions
+then share one card on the floor while each keeps its own clock, tab and bills. Neither command
+touches a session, billing group, tab row or order. `bms_board_game_sessions.table_id` becomes
+history — the table the visit *opened* at — so every "which table is this?" read goes through the
+seating, and a table is free only once every session sharing it is settled or cancelled. See
+[business/board-game-cafe.md](docs/business/board-game-cafe.md) and
+[agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
+
+**A board-game member can pay for play time in advance (`9.92`, 2026-09-15).** Phase 5 sells a
+monthly unlimited pass or an hour bundle as an **entitlement, not a Product** — no SKU, no stock,
+with the plan's price/kind/minutes snapshotted onto the member's contract so a later price change
+never rewrites what was sold. The minute balance is a cache of `bms_board_game_pass_ledger`.
+Coverage is applied when a billing group is **closed**, which is the one moment a group claims
+settlement exclusively: the passes are locked, the frozen charge snapshot records the gross amount,
+covered minutes and covered amount per person, and the minutes are spent in the same transaction —
+a preview never spends a quota. An unlimited pass leaves exactly ฿0, and such a bill is the only
+sale in the platform allowed to settle with no payment lines. Closing twice spends nothing twice,
+and cancelling a table that was already closed gives the minutes back. Selling a pass is its own
+permission (`board_game.pass.manage`) in the shape gift cards already use; taking the money still
+goes through the existing POS sale. See
+[business/board-game-cafe.md](docs/business/board-game-cafe.md) and
+[agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
+
+**A board-game cafe holds a card, not an ID database (`9.93`, 2026-09-16).** Phase 6: the card a
+cafe keeps while a game box is out becomes a record instead of a slip of paper. A hold belongs to
+the **visit**, not to the member, and the number is optional — a shop that only keeps the physical
+card still gets the gate, and requiring the number would push it back to paper. When typed, the
+number goes through `encryptSecret()` before it touches the table and only its last four characters
+ever leave the server. **Handing the card back erases the name, the number and the tail in the same
+transaction**, leaving a tombstone that still answers "did it go back, and who handed it over"; a
+hold that is still `HELD` keeps its number on purpose, because that is the incident it was recorded
+for. **A table cannot end while a card is held** — at all three exits (last billing group, whole
+table, cancel), and only at the last group so an early-paying party still leaves normally. Reading a
+stored number back is its own permission (`board_game.identity.reveal`, Manager), exists only in the
+back office, and is audited every time: a register is a shared screen that faces the customer. See
+[business/board-game-cafe.md](docs/business/board-game-cafe.md) and
+[agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
+
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
 POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
-`graphql-schema-artifact-contract`, all 121 operations take named input objects and return named
+`graphql-schema-artifact-contract`, all 122 operations take named input objects and return named
 output types (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
 into 32 named mutations with the old fields kept `@deprecated`, and every client-facing error carries
 an `extensions.code` while business rejections stay in `data.<operation>.status`. Four POS

@@ -131,6 +131,11 @@ export const BMS_PERMISSIONS = [
   "board_game.library.view",
   "board_game.library.manage",
   "board_game.reports.view",
+  "board_game.pass.manage",
+  // อ่านเลขบัตรที่ร้านรับไว้ค้ำกล่องเกมกลับออกมา (`9.93`) — seed ให้ Manager เท่านั้น
+  // การรับบัตรเป็นงานเคาน์เตอร์ (ใช้ board_game.session.manage) แต่การเปิดดูเลข
+  // เป็นการกระทำคนละอย่าง และเป็นอย่างเดียวที่ต้องอธิบายได้ว่าทำไมถึงอ่าน
+  "board_game.identity.reveal",
   // ชุดข้อมูลวิเคราะห์ที่ร้านยินยอมส่งให้ทีม Support (9.46)
   "support.logs.view",
   "support.logs.export",

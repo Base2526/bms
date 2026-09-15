@@ -22,6 +22,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
+import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { resolveStockConsumptionInTx } from "./stockConsumption";
 import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx, enqueueKitchenTicketsInTx } from "./kitchen";
@@ -2101,8 +2102,8 @@ export type PosSaleInput = {
   salesSurface?: "RETAIL_POS" | "RESTAURANT_POS";
   /** Set only by the restaurant service after checking device, shift and open-check ownership. */
   restaurantCheckId?: string | null;
-  /** Board-game session id; createOrder validates branch, state and frozen charges server-side. */
-  boardGameSessionId?: string | null;
+  /** Board-game billing group id (`9.89`); createOrder validates branch, state and frozen charges server-side. */
+  boardGameBillingGroupId?: string | null;
   /** Cross-instance claim created by the restaurant service for this settlement only. */
   restaurantSettlementAttemptId?: string | null;
   /** SALE จ่ายผสมได้และต้องครบยอด; DEPOSIT รับงวดแรกด้วย 1 วิธีและต้องต่ำกว่ายอดบิล */
@@ -2824,8 +2825,8 @@ async function refreshUnknownPosOrderVatInTx(
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
   const { tenantId } = input;
   const isDeposit = input.mode === "DEPOSIT";
-  const boardGameSessionId = input.boardGameSessionId?.trim() || null;
-  if (isDeposit && boardGameSessionId) {
+  const boardGameBillingGroupId = input.boardGameBillingGroupId?.trim() || null;
+  if (isDeposit && boardGameBillingGroupId) {
     return { status: "DEPOSIT_INVALID", reason: "ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน" };
   }
 
@@ -2856,7 +2857,13 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       ref: payment.ref?.trim() || null,
     }))
     .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
-  if (requestedPayments.length === 0) return { status: "PAYMENT_FAILED", reason: "ต้องระบุการชำระเงิน" };
+  // บิลที่ไม่มีวิธีชำระเลยคือบิลที่ไม่มีใครจ่าย — ยกเว้นทางเดียว: บิลค่าเล่นบอร์ดเกมที่
+  // แพ็กเกจสมาชิกจ่ายให้ครบ (`9.92`) ยอดเป็น ฿0 จริง ๆ จึงไม่มีอะไรให้รับ · ปล่อยผ่านด่านนี้
+  // แล้วให้ด่าน "ยอดชำระต้องเท่ายอดที่ต้องจ่าย" ตัดสินแทน — ส่งศูนย์มากับบิลที่ยังมียอดค้าง
+  // จะตกเป็น PAYMENT_MISMATCH ตามความจริง ไม่ใช่ผ่านไปเงียบ ๆ
+  if (requestedPayments.length === 0 && !input.boardGameBillingGroupId) {
+    return { status: "PAYMENT_FAILED", reason: "ต้องระบุการชำระเงิน" };
+  }
   if (isDeposit && requestedPayments.length !== 1) {
     return { status: "DEPOSIT_INVALID", reason: "มัดจำครั้งแรกรับได้ครั้งละ 1 วิธีชำระเงิน" };
   }
@@ -2890,7 +2897,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   );
   if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
   const items = canonical.items;
-  if (items.length === 0 && !boardGameSessionId) return { status: "EMPTY" };
+  if (items.length === 0 && !boardGameBillingGroupId) return { status: "EMPTY" };
 
   // ---- เลขเครื่อง (8.3) ----
   // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
@@ -3015,7 +3022,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     idempotencyKey: key,
     posSalesSurface: input.restaurantCheckId ? "RESTAURANT_POS" : input.salesSurface ?? "RETAIL_POS",
     restaurantCheckId: input.restaurantCheckId ?? null,
-    boardGameSessionId,
+    boardGameBillingGroupId,
     editorId: input.cashierUserId,
     couponCode: input.couponCode ?? null,
     customerId: input.customerId ?? null,
@@ -3237,9 +3244,9 @@ async function finalizePosSale(args: {
       total_amount: string;
       shipping_fee: string | null;
       rounding_amount: string | null;
-      board_game_session_id: string | null;
+      board_game_billing_group_id: string | null;
     }>(
-      `SELECT status, total_amount, shipping_fee, rounding_amount, board_game_session_id FROM bms_orders
+      `SELECT status, total_amount, shipping_fee, rounding_amount, board_game_billing_group_id FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 AND pos_shift_id = $3
           AND pos_device_id = $4 AND cashier_user_id = $5
         FOR UPDATE`,
@@ -3284,26 +3291,26 @@ async function finalizePosSale(args: {
         }
       }
     }
-    if (input.boardGameSessionId) {
-      if (current.board_game_session_id !== input.boardGameSessionId.toLowerCase()) {
-        throw new Error("บิลไม่ตรงกับ session บอร์ดเกมที่เลือก");
+    if (input.boardGameBillingGroupId) {
+      if (current.board_game_billing_group_id !== input.boardGameBillingGroupId.toLowerCase()) {
+        throw new Error("บิลไม่ตรงกับกลุ่มบิลบอร์ดเกมที่เลือก");
       }
-      const boardGameSession = await client.query(
+      const boardGameGroup = await client.query(
         `SELECT 1
-           FROM bms_board_game_sessions
+           FROM bms_board_game_billing_groups
           WHERE tenant_id = $1 AND id = $2 AND location_id = $3
             AND (
               (status = 'CLOSING' AND current_order_id IS NULL)
               OR (status = 'PAID' AND current_order_id = $4)
             )
           FOR UPDATE`,
-        [input.tenantId, input.boardGameSessionId, shift.location_id, orderId]
+        [input.tenantId, input.boardGameBillingGroupId, shift.location_id, orderId]
       );
-      if (!boardGameSession.rowCount) {
-        throw new Error("session บอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว");
+      if (!boardGameGroup.rowCount) {
+        throw new Error("บิลบอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว");
       }
-    } else if (current.board_game_session_id) {
-      throw new Error("บิลนี้ต้องระบุ session บอร์ดเกมก่อนรับชำระ");
+    } else if (current.board_game_billing_group_id) {
+      throw new Error("บิลนี้ต้องระบุกลุ่มบิลบอร์ดเกมก่อนรับชำระ");
     }
     const roundingAmount = args.roundingAmount ?? Number(current.rounding_amount ?? 0);
     if (Math.abs(Number(current.rounding_amount ?? 0) - roundingAmount) > 0.001) {
@@ -3474,24 +3481,30 @@ async function finalizePosSale(args: {
       );
     }
 
-    if (input.boardGameSessionId) {
-      const paidSession = await client.query(
-        `UPDATE bms_board_game_sessions
+    if (input.boardGameBillingGroupId) {
+      const paidGroup = await client.query<{ session_id: string }>(
+        `UPDATE bms_board_game_billing_groups
             SET status = 'PAID', current_order_id = $3, closed_by = $4,
-                guest_count = 0, version = version + 1, updated_at = now()
+                version = version + 1, updated_at = now()
           WHERE tenant_id = $1 AND id = $2
             AND (
               (status = 'CLOSING' AND current_order_id IS NULL)
               OR (status = 'PAID' AND current_order_id = $3)
-            )`,
-        [input.tenantId, input.boardGameSessionId, orderId, input.cashierUserId]
+            )
+          RETURNING session_id`,
+        [input.tenantId, input.boardGameBillingGroupId, orderId, input.cashierUserId]
       );
-      if (!paidSession.rowCount) throw new Error("ปิด session บอร์ดเกมใน transaction ชำระเงินไม่สำเร็จ");
+      if (!paidGroup.rowCount) throw new Error("ปิดบิลบอร์ดเกมใน transaction ชำระเงินไม่สำเร็จ");
+      // โต๊ะว่างก็ต่อเมื่อ **ทุก** กลุ่มจบแล้ว — กลุ่มที่เหลือยังเล่น/ยังไม่จ่าย โต๊ะต้องยังไม่ถูกปล่อย
+      // สูตรตัดสินสถานะโต๊ะมีชุดเดียวที่ `boardGameCafe.ts` · เขียนซ้ำที่นี่เมื่อไร วันหนึ่ง
+      // สองที่จะตอบไม่ตรงกันว่าโต๊ะนี้เปิดใหม่ได้หรือยัง
+      const sessionId = paidGroup.rows[0].session_id;
+      await refreshSessionFromGroupsInTx(client, input.tenantId, sessionId);
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-         VALUES ($1,$2,'board_game.session_paid',$3,$4::jsonb)`,
-        [input.tenantId, `user:${input.cashierUserId}`, input.boardGameSessionId,
-          JSON.stringify({ orderId, amount: amountDue })]
+         VALUES ($1,$2,'board_game.billing_group_paid',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.cashierUserId}`, input.boardGameBillingGroupId,
+          JSON.stringify({ orderId, sessionId, amount: amountDue })]
       );
     }
 

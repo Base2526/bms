@@ -63,13 +63,13 @@ async function handlePOST(req: NextRequest) {
   }
 
   const lines = parsePosSaleLines(body.lines);
-  const boardGameSessionId = typeof body.boardGameSessionId === "string"
-    ? body.boardGameSessionId.trim()
+  const boardGameBillingGroupId = typeof body.boardGameBillingGroupId === "string"
+    ? body.boardGameBillingGroupId.trim()
     : "";
-  if (lines.length === 0 && !boardGameSessionId) {
+  if (lines.length === 0 && !boardGameBillingGroupId) {
     return badRequest("ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ");
   }
-  if (mode === "DEPOSIT" && boardGameSessionId) {
+  if (mode === "DEPOSIT" && boardGameBillingGroupId) {
     return badRequest("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
   }
 
@@ -188,7 +188,7 @@ async function handlePOST(req: NextRequest) {
     idempotencyKey,
     mode,
     lines,
-    boardGameSessionId: boardGameSessionId || null,
+    boardGameBillingGroupId: boardGameBillingGroupId || null,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
     // ป้ายชี้ตัวของบิลมัดจำ — เป็นข้อความที่พนักงานพิมพ์เพื่อหาใบนี้เจอทีหลัง ไม่ใช่ค่า

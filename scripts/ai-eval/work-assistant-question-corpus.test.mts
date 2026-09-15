@@ -58,7 +58,9 @@ test("the pinned corpus still covers the questions it was written for", () => {
   // (+5 จาก `9.63` แยกบิล/รวมบิล · +5 จาก `9.64` บัตรคิว/จองโต๊ะ · +2 จาก `9.65` ราคาส่ง
   //  แยกสาขา · +3 จากแท็บโต๊ะ/เวลาบนเครื่องขาย ซึ่งก่อนหน้านี้คำตอบเดียวที่มีคือไกด์ของ
   //  `/admin/board-game` ที่บัญชี `pos_only` เปิดไม่ได้ — ทุกชุดเป็นคำที่คนหน้าร้านพูดจริง)
-  assert.equal(CORPUS_REAL_QUESTIONS.length, 82, "a pinned question disappeared or was added without review");
+  //  +3 จาก `9.89` โต๊ะบอร์ดเกมออกได้หลายบิล: "แยกบิล" เป็นคำที่พนักงานพูดเอง และ
+  //  "โต๊ะยังไม่ว่างทั้งที่จ่ายแล้ว" คืออาการที่อ่านเหมือนระบบพัง ทั้งที่เป็นกติกาที่ตั้งใจ
+  assert.equal(CORPUS_REAL_QUESTIONS.length, 99, "a pinned question disappeared or was added without review");
   assert.equal(WORK_ASSISTANT_QUESTION_CORPUS.filter((item) => item.expect === "no-match").length, 2, "empty-answer guards changed");
 
   const seen = new Set<string>();

@@ -54,8 +54,16 @@ export function ensureBmsGraphqlErrorCode(
   error: GraphQLFormattedError,
   originalError?: unknown,
 ): GraphQLFormattedError {
-  const declared = typeof error.extensions?.code === "string" && error.extensions.code.trim()
-    ? error.extensions.code
+  // ⚠️ "adapter ระบุรหัสมาเอง" หมายถึงรหัสที่ **ไคลเอนต์แก้เองได้** เท่านั้น
+  //
+  // Apollo เติม `INTERNAL_SERVER_ERROR` ลง `extensions.code` ให้ตั้งแต่ก่อน `formatError` ทำงาน
+  // ถ้านับค่านั้นว่า "ระบุมาแล้ว" ตัวจัดประเภทข้างล่างจะไม่มีวันได้ทำงานในเส้นทางจริงเลย —
+  // ซึ่งเป็นสิ่งที่เกิดขึ้นจริง: การปฏิเสธตามกติกาของบอร์ดเกมทุกตัวออกไปเป็น 500 ที่เอกสารสัญญา
+  // ของไคลเอนต์สั่งให้ยิงซ้ำด้วยคีย์เดิม = วนล้มแบบเดิมตลอดไป · เทสเดิมเขียวเพราะป้อน error ที่
+  // ยังไม่มี code เข้ามา ซึ่งไม่ใช่รูปที่ Apollo ส่งให้จริง
+  const rawCode = typeof error.extensions?.code === "string" ? error.extensions.code.trim() : "";
+  const declared = (BMS_GRAPHQL_CLIENT_ERROR_CODES as readonly string[]).includes(rawCode)
+    ? rawCode
     : null;
   const cause = rootCause(originalError);
   const conflict = isIdempotencyConflictError(cause);
@@ -71,7 +79,8 @@ export function ensureBmsGraphqlErrorCode(
   const code = declared
     ?? (conflict ? "CONFLICT" : null)
     ?? rejectedCode
-    ?? "INTERNAL_SERVER_ERROR";
+    // รหัสอื่นที่ไม่ใช่ชุดของไคลเอนต์ (รวม INTERNAL_SERVER_ERROR ของ Apollo) เก็บไว้ตามเดิม
+    ?? (rawCode || "INTERNAL_SERVER_ERROR");
   return {
     ...error,
     extensions: {

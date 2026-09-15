@@ -7,6 +7,7 @@ import {
   ensureBmsGraphqlErrorCode,
   mobileGraphqlError,
 } from "../apps/web/graphql/mobileErrorContract";
+import { BoardGamePosError } from "../apps/web/lib/bms/boardGamePosOperations";
 import { buildBmsGraphqlSchema } from "../apps/web/graphql/schema";
 import {
   IDEMPOTENCY_CONFLICT_MESSAGE,
@@ -29,6 +30,32 @@ test("the final GraphQL formatter always emits a stable error code", () => {
     extensions: { code: "CONFLICT", reason: "SHIFT_NOT_OPEN" },
   });
   assert.deepEqual(preserved.extensions, { code: "CONFLICT", reason: "SHIFT_NOT_OPEN" });
+
+  // ⚠️ รูปที่ Apollo ส่งให้จริงคือ error ที่ **มี** `INTERNAL_SERVER_ERROR` ติดมาแล้ว —
+  // ป้อนแต่ error ที่ยังไม่มี code คือการทดสอบรูปที่ไม่มีอยู่จริงในเส้นทางจริง และเป็นเหตุที่
+  // การปฏิเสธตามกติกาของบอร์ดเกมออกไปเป็น 500 อยู่นานโดยที่เทสชุดนี้เขียวตลอด
+  const apolloDefaulted = ensureBmsGraphqlErrorCode(
+    { message: "โต๊ะถูกปิดไปแล้ว", extensions: { code: "INTERNAL_SERVER_ERROR" } },
+    { originalError: new BoardGamePosError("โต๊ะถูกปิดไปแล้ว") },
+  );
+  assert.equal(
+    apolloDefaulted.extensions?.code,
+    "CONFLICT",
+    "รหัสปริยายของ Apollo ต้องไม่ชนะตัวจัดประเภท ไม่งั้นไคลเอนต์จะยิงซ้ำคำขอที่ไม่มีวันสำเร็จ",
+  );
+  const apolloDefaultedConflict = ensureBmsGraphqlErrorCode(
+    { message: "คีย์ซ้ำ", extensions: { code: "INTERNAL_SERVER_ERROR" } },
+    { originalError: new IdempotencyConflictError("คีย์ซ้ำ", "identity.hold") },
+  );
+  assert.equal(apolloDefaultedConflict.extensions?.code, "CONFLICT");
+  // ...แต่ของที่พังจริงยังต้องเป็น 500 ที่มี stack ใน system_logs
+  assert.equal(
+    ensureBmsGraphqlErrorCode(
+      { message: "boom", extensions: { code: "INTERNAL_SERVER_ERROR" } },
+      { originalError: new TypeError("boom") },
+    ).extensions?.code,
+    "INTERNAL_SERVER_ERROR",
+  );
 
   const missing = ensureBmsGraphqlErrorCode({ message: "database unavailable" });
   assert.equal(missing.extensions?.code, "INTERNAL_SERVER_ERROR");
@@ -158,5 +185,5 @@ test("every idempotency-key rejection throws the typed conflict, never a bare Er
     });
   }
   assert.deepEqual(offenders, [], "การชนคีย์ต้องเป็น IdempotencyConflictError เท่านั้น");
-  assert.equal(typed, 5, "ทั้งสต็อกสาขาและบอร์ดเกมต้องใช้คลาสเดียวกันครบทุกจุด");
+  assert.equal(typed, 7, "ทั้งสต็อกสาขาและบอร์ดเกมต้องใช้คลาสเดียวกันครบทุกจุด");
 });

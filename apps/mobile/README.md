@@ -21,7 +21,9 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
 - board-game floor and timed sessions, fixed-duration alerts, member lookup, participant bill groups,
-  playable-copy checkout/return/issue handling, and payment through the existing POS checkout;
+  one-group-at-a-time close while others keep playing, moving a party to a free table or merging two
+  occupied tables without touching a bill, playable-copy checkout/return/issue handling,
+  and payment through the existing POS checkout;
 - branch stock transfer create/send/receive/cancel with explicit damaged/missing evidence, plus stock
   count create/line entry/apply/cancel using the server-owned snapshot-delta rule;
 - kitchen ticket board, station SLA, bulk status updates, and fallback refresh;

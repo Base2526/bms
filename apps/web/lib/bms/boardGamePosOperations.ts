@@ -15,10 +15,12 @@
  * `BOARD_GAME_POS_ACTIONS` ซึ่งเป็นที่เดียวที่ประกาศว่าคำสั่งไหนใช้สิทธิ์อะไร
  */
 import {
+  addBoardGameGroupItem,
   addBoardGameParticipant,
   adjustBoardGameSessionTiming,
   cancelBoardGameSession,
   checkoutBoardGameCopy,
+  closeBoardGameBillingGroupForBilling,
   closeBoardGameSessionForBilling,
   getBoardGameCheckoutForPos,
   getBoardGameSession,
@@ -26,11 +28,20 @@ import {
   listBoardGameFloor,
   listBoardGameLibrary,
   listBoardGameTimeRates,
+  locationOfBoardGameBillingGroup,
   locationOfBoardGameLoan,
   locationOfBoardGameSession,
+  mergeBoardGameSeating,
+  moveBoardGameSeating,
   openBoardGameSession,
+  removeBoardGameGroupItem,
   returnBoardGameCopy,
 } from "./boardGameCafe";
+import {
+  locationOfBoardGameIdentityHold,
+  releaseBoardGameIdentityHold,
+  takeBoardGameIdentityHold,
+} from "./boardGameIdentity";
 import { isIdempotencyConflictError } from "./idempotencyErrors";
 import { isPosUuid } from "./posRouteHelpers";
 
@@ -123,10 +134,17 @@ export type BoardGamePosAction =
   | "participant.add"
   | "participant.leave"
   | "timing"
+  | "group.close"
+  | "seating.move"
+  | "seating.merge"
   | "close"
   | "cancel"
   | "copy.checkout"
-  | "copy.return";
+  | "copy.return"
+  | "tab.add"
+  | "tab.remove"
+  | "identity.hold"
+  | "identity.release";
 
 export type BoardGamePosActionSpec = {
   /** สิทธิ์หลักที่ต้องถือ — ตัวที่ผู้เรียกใช้ตอนตรวจ PIN */
@@ -180,6 +198,25 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,
   },
+  // คนหนึ่งจ่ายและออกก่อน โดยกลุ่มอื่นยังเล่นต่อ (Phase 3) — เป็นการตรึงยอดเงินของบิลหนึ่งใบ
+  // จึงต้องใช้สิทธิ์จัดการ session และมีกะเปิดเหมือนการปิดทั้งโต๊ะ
+  "group.close": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: true,
+  },
+  // ย้าย/รวมโต๊ะเปลี่ยนเฉพาะตำแหน่งบนผัง ไม่แตะเงินหรือสต็อก จึงไม่บังคับกะเปิด
+  // แต่ยังต้องยืนยัน PIN และสิทธิ์จัดการ session เหมือนทุกการเปลี่ยนผู้ที่นั่งอยู่จริง
+  "seating.move": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "seating.merge": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
   close: {
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
@@ -187,6 +224,37 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
   },
   cancel: {
     permission: "board_game.session.cancel",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  // สั่งของเข้าบิลระหว่างเล่น (`9.90`) = การขาย ของออกจากตู้และถูกจองทันที · สิทธิ์จึงเป็น
+  // `pos.sell` ไม่ใช่สิทธิ์จัดการโต๊ะ และต้องมีกะเปิดเพราะของที่จองไปผูกกับกะนั้น
+  "tab.add": {
+    permission: "pos.sell",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: true,
+  },
+  // เอาของออกจากบิลก่อนเก็บเงินคือการแก้ยอดที่ลูกค้าจะจ่าย จึงใช้สิทธิ์เดียวกับการขาย
+  // ไม่ใช่สิทธิ์อ่านผังโต๊ะ · แถวที่ถูกเอาออกยังอยู่ในประวัติเสมอ
+  "tab.remove": {
+    permission: "pos.sell",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: true,
+  },
+  // รับบัตร/คืนบัตรที่ค้ำกล่องเกมไว้ (`9.93`) — เป็นงานของเคาน์เตอร์ที่เกิดพร้อมกับการยื่นกล่อง
+  // จึงใช้สิทธิ์เดียวกับการจัดการโต๊ะ ไม่ใช่สิทธิ์ของตัวเอง: สิทธิ์ที่ทุกคนหน้าเคาน์เตอร์ต้องมี
+  // อยู่แล้วเพิ่มความปลอดภัยเป็นศูนย์ แต่เพิ่มโอกาสที่ร้านจะเลิกใช้แล้วกลับไปใช้กระดาษ
+  //
+  // ⚠️ **การอ่านเลขบัตรกลับออกมาไม่มีที่เครื่องขาย** — เครื่องขายเป็นจอที่แชร์กันและหันออก
+  // ทางลูกค้า การวาง "เปิดดูเลขบัตร" ไว้ห่างหนึ่งแตะบนจอนั้นคือการวางผิดที่ · reveal อยู่หลังบ้าน
+  // อย่างเดียว (`board_game.identity.reveal`)
+  "identity.hold": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "identity.release": {
+    permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,
   },
@@ -274,6 +342,19 @@ async function sessionAtScope(scope: BoardGamePosScope, value: unknown): Promise
   return sessionId;
 }
 
+/**
+ * กลุ่มบิล (`9.89`) เป็น id คนละตัวกับ session — ด่านสาขาจึงต้องเป็นของตัวเอง
+ *
+ * ใช้ด่านของ session แทนไม่ได้: เครื่องที่ส่ง id ของกลุ่มมาจะถูกอ่านเป็น "ไม่พบ session"
+ * ทั้งที่กลุ่มนั้นมีจริงในสาขานี้ และที่แย่กว่าคือทางกลับกัน — id ของสาขาอื่นจะหลุดด่านไป
+ */
+async function billingGroupAtScope(scope: BoardGamePosScope, value: unknown): Promise<string> {
+  const billingGroupId = uuid(value, "กลุ่มบิลบอร์ดเกมไม่ถูกต้อง");
+  const locationId = await locationOfBoardGameBillingGroup(scope.tenantId, billingGroupId);
+  if (locationId !== scope.locationId) return notFound("ไม่พบบิลบอร์ดเกมในสาขานี้");
+  return billingGroupId;
+}
+
 async function loanAtScope(scope: BoardGamePosScope, value: unknown): Promise<string> {
   const loanId = uuid(value, "รายการยืมเกมไม่ถูกต้อง");
   const locationId = await locationOfBoardGameLoan(scope.tenantId, loanId);
@@ -299,10 +380,13 @@ export async function loadBoardGamePosSession(scope: BoardGamePosScope, sessionI
   return callService(() => getBoardGameSession(scope.tenantId, sessionId));
 }
 
-export async function loadBoardGamePosCheckout(scope: BoardGamePosScope, sessionIdInput: unknown) {
-  const sessionId = await sessionAtScope(scope, sessionIdInput);
+export async function loadBoardGamePosCheckout(
+  scope: BoardGamePosScope,
+  billingGroupIdInput: unknown,
+) {
+  const billingGroupId = await billingGroupAtScope(scope, billingGroupIdInput);
   return callService(() =>
-    getBoardGameCheckoutForPos(scope.tenantId, scope.locationId, sessionId));
+    getBoardGameCheckoutForPos(scope.tenantId, scope.locationId, billingGroupId));
 }
 
 /**
@@ -388,6 +472,29 @@ export async function runBoardGamePosMutation(
         actorUserId,
       ));
     }
+    case "group.close": {
+      if (!scope.shiftId) return badInput("ต้องเปิดกะของเครื่องนี้ก่อน");
+      const billingGroupId = await billingGroupAtScope(scope, input.billingGroupId);
+      return callService(() => closeBoardGameBillingGroupForBilling(
+        scope.tenantId,
+        billingGroupId,
+        { idempotencyKey: key },
+        actorUserId,
+      ));
+    }
+    case "seating.move":
+    case "seating.merge": {
+      const sessionId = await sessionAtScope(scope, input.sessionId);
+      const targetTableId = uuid(input.targetTableId, "โต๊ะปลายทางไม่ถูกต้อง");
+      const relocate = action === "seating.move" ? moveBoardGameSeating : mergeBoardGameSeating;
+      return callService(() => relocate(
+        scope.tenantId,
+        sessionId,
+        targetTableId,
+        { idempotencyKey: key },
+        actorUserId,
+      ));
+    }
     case "cancel": {
       const sessionId = await sessionAtScope(scope, input.sessionId);
       // service บังคับเหตุผลอยู่แล้ว แต่ปฏิเสธด้วย throw ธรรมดา — ด่านของ input เป็นงานของชั้นนี้
@@ -397,6 +504,79 @@ export async function runBoardGamePosMutation(
         scope.tenantId,
         sessionId,
         { idempotencyKey: key, reason },
+        actorUserId,
+      ));
+    }
+    case "tab.add": {
+      const shiftId = scope.shiftId;
+      if (!shiftId) return badInput("ต้องเปิดกะของเครื่องนี้ก่อน");
+      const billingGroupId = await billingGroupAtScope(scope, input.billingGroupId);
+      const sku = text(input.sku);
+      if (!sku) return badInput("ต้องระบุสินค้า");
+      return callService(() => addBoardGameGroupItem(
+        scope.tenantId,
+        {
+          billingGroupId,
+          locationId: scope.locationId,
+          idempotencyKey: key,
+          sku,
+          size: text(input.size) || null,
+          packCode: text(input.packCode) || null,
+          packQty: input.packQty == null ? 1 : Number(input.packQty),
+          modifierCodes: Array.isArray(input.modifierCodes)
+            ? input.modifierCodes.map((code) => text(code)).filter(Boolean)
+            : [],
+          note: text(input.note) || null,
+          deviceId: scope.deviceId,
+          shiftId,
+        },
+        actorUserId,
+      ));
+    }
+    case "tab.remove": {
+      const shiftId = scope.shiftId;
+      if (!shiftId) return badInput("ต้องเปิดกะของเครื่องนี้ก่อน");
+      const billingGroupId = await billingGroupAtScope(scope, input.billingGroupId);
+      return callService(() => removeBoardGameGroupItem(
+        scope.tenantId,
+        {
+          billingGroupId,
+          locationId: scope.locationId,
+          itemId: uuid(input.itemId, "รายการบนบิลไม่ถูกต้อง"),
+          idempotencyKey: key,
+          reason: text(input.reason) || null,
+          deviceId: scope.deviceId,
+          shiftId,
+        },
+        actorUserId,
+      ));
+    }
+    case "identity.hold": {
+      const sessionId = await sessionAtScope(scope, input.sessionId);
+      return callService(() => takeBoardGameIdentityHold(
+        scope.tenantId,
+        {
+          sessionId,
+          idempotencyKey: key,
+          documentKind: input.documentKind,
+          holderName: input.holderName,
+          documentNumber: input.documentNumber,
+          loanId: text(input.loanId) || null,
+          customerId: text(input.customerId) || null,
+          note: input.note,
+        },
+        actorUserId,
+      ));
+    }
+    case "identity.release": {
+      // ด่านสาขาผ่าน session ที่บัตรผูกอยู่ — `holdId` ของสาขาอื่นต้องอ่านว่า "ไม่พบ" ไม่ใช่ปล่อยผ่าน
+      const holdId = uuid(input.holdId, "บัตรที่รับไว้ไม่ถูกต้อง");
+      const locationId = await locationOfBoardGameIdentityHold(scope.tenantId, holdId);
+      if (locationId !== scope.locationId) return notFound("ไม่พบบัตรที่รับไว้ในสาขานี้");
+      return callService(() => releaseBoardGameIdentityHold(
+        scope.tenantId,
+        holdId,
+        { note: input.note },
         actorUserId,
       ));
     }

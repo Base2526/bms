@@ -91,26 +91,66 @@ test("board-game hardening migration upgrades legacy rows and converges constrai
   assert.match(sql, /DROP COLUMN IF EXISTS alert_status/);
 });
 
-test("board-game payment reuses POS and atomically links the paid session", () => {
+test("board-game payment reuses POS and atomically links the paid bill", () => {
   const sql = read("db/migrations/9.82__bms_board_game_pos_settlement.sql");
+  const groupSql = read("db/migrations/9.89__bms_board_game_billing_groups.sql");
   const orders = read("apps/web/lib/bms/orders.ts");
   const pos = read("apps/web/lib/bms/pos.ts");
   const restRoute = read("apps/web/app/api/pos/sale/route.ts");
   const graphql = read("apps/web/graphql/bmsPosDevice.ts");
 
   assert.match(sql, /ADD COLUMN IF NOT EXISTS board_game_session_id UUID/);
-  assert.match(sql, /uq_bms_orders_active_board_game_session/);
   assert.match(sql, /status IN \('PENDING', 'PAID', 'COMPLETED'\)/);
   assert.match(sql, /restaurant_check_id IS NULL OR board_game_session_id IS NULL/);
+  // `9.89` ย้ายการอ้างสิทธิ์ "บิลที่ยังทำงานอยู่" จากโต๊ะไปที่กลุ่ม — index เดิมคือสิ่งที่ทำให้
+  // กลุ่มที่สองของโต๊ะเดียวกันเก็บเงินไม่ได้เลย จึงต้องถูกทิ้ง ไม่ใช่เก็บไว้คู่กัน
+  assert.match(groupSql, /DROP INDEX IF EXISTS uq_bms_orders_active_board_game_session/);
+  assert.match(groupSql, /uq_bms_orders_active_board_game_group[\s\S]{0,200}board_game_billing_group_id IS NOT NULL/);
   assert.match(orders, /charge_snapshot/);
-  assert.match(orders, /status = 'CLOSING' AND current_order_id IS NULL/);
+  // `9.90` เปิดทางให้บิลถูกประกอบได้ทั้งตอนยังเล่น (ใบจองของ tab) และตอนปิด (บวกค่าเล่น)
+  // สิ่งที่ยังต้องจริงเสมอคือ **ปล่อยใบที่ถือสิทธิ์อยู่ก่อนจองใหม่ ในทรานแซกชันเดียวกัน**
+  // ไม่งั้นจะมีช่วงที่เครื่องอื่นขายของที่ลูกค้าถืออยู่ในมือไปได้
+  assert.match(orders, /g\.status IN \('OPEN', 'CLOSING'\)/);
+  assert.match(orders, /board_game_billing_group_id = \$2 AND status = 'PENDING'[\s\S]{0,400}cancelOrderInTx\(client, tenantId, row\.id\)/);
+  // รายการบน tab เป็นของ server เสมอ — คนหน้าเครื่องส่งเข้ามาเองไม่ได้
+  assert.match(orders, /FROM bms_board_game_group_items[\s\S]{0,200}status = 'ACTIVE'/);
   assert.match(orders, /Board game time \/ ค่าเล่นบอร์ดเกม/);
-  assert.match(orders, /boardGameSessionId\]\s*\)/);
-  assert.match(pos, /SET status = 'PAID', current_order_id = \$3/);
-  assert.match(pos, /board_game\.session_paid/);
-  assert.match(pos, /session บอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว/);
-  assert.match(restRoute, /lines\.length === 0 && !boardGameSessionId/);
-  assert.match(graphql, /boardGameSessionId: ID/);
+  // order เก็บทั้งกลุ่มที่ถูกเก็บเงิน และโต๊ะที่บิลนั้นมาจาก — โต๊ะเป็นประวัติ กลุ่มคือสิ่งที่จ่าย
+  assert.match(orders, /boardGameSessionId, boardGameBillingGroupId\]\s*\)/);
+  assert.match(orders, /board_game_session_id,\s*\n\s*board_game_billing_group_id\)/);
+  assert.match(pos, /UPDATE bms_board_game_billing_groups\s*\n\s*SET status = 'PAID', current_order_id = \$3/);
+  assert.match(pos, /board_game\.billing_group_paid/);
+  assert.match(pos, /บิลบอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว/);
+  assert.match(restRoute, /lines\.length === 0 && !boardGameBillingGroupId/);
+  assert.match(graphql, /boardGameBillingGroupId: ID/);
+});
+
+test("the register charges what the server will compute, tab included", () => {
+  const page = read("apps/web/app/(pos)/pos/page.tsx");
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  // ⚠️ ของที่สั่งเข้าบิลระหว่างเล่น (`9.90`) ถูก server ใส่เข้าบิลเสมอ · จอที่บวกแค่ค่าเล่น
+  // จะส่งยอดขาดไปเท่ามูลค่าของบน tab แล้ว recordPosSale ทิ้งบิลทั้งใบด้วย PAYMENT_MISMATCH
+  // ต่อหน้าลูกค้า — โดยที่ไม่มีอะไรบนจอบอกว่าขาดอะไรไป
+  const payable = page.slice(page.indexOf("const payableBeforeRounding"));
+  assert.ok(payable.length > 0, "หาบรรทัดที่คิดยอดที่ต้องจ่ายไม่เจอ");
+  assert.match(payable.slice(0, 200), /boardGameCheckout\?\.totalDue/);
+  assert.doesNotMatch(payable.slice(0, 200), /boardGameCheckout\?\.amountDue/);
+  // และ totalDue ต้องเป็นผลรวมที่ server คิด ไม่ใช่เลขที่จอบวกเอง
+  assert.match(service, /totalDue: money\(Number\(row\.amount_due\) \+ Number\(row\.tab_amount\)\)/);
+});
+
+test("paying one bill never frees a table whose other groups are still playing", () => {
+  const pos = read("apps/web/lib/bms/pos.ts");
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  // สูตรตัดสินสถานะโต๊ะมีชุดเดียว — pos.ts ต้องเรียกใช้ ไม่ใช่เขียน UPDATE ของตัวเอง
+  assert.match(pos, /refreshSessionFromGroupsInTx\(client, input\.tenantId, sessionId\)/);
+  assert.doesNotMatch(pos, /UPDATE bms_board_game_sessions/);
+  // สูตรอยู่ในไฟล์ leaf ของตัวเอง (`9.90`) เพื่อไม่ให้ pos.ts กับโมดูลบอร์ดเกม import วนกัน
+  const formula = read("apps/web/lib/bms/boardGameSessionStatus.ts");
+  assert.doesNotMatch(formula, /^import .* from "\.\/(pos|boardGameCafe|orders)"/m);
+  assert.match(service, /from "\.\/boardGameSessionStatus"/);
+  assert.match(formula, /WHEN count\(\*\) FILTER \(WHERE g\.status = 'OPEN'\) > 0 THEN 'OPEN'/);
+  assert.match(formula, /WHEN count\(\*\) FILTER \(WHERE g\.status = 'CLOSING'\) > 0 THEN 'CLOSING'/);
 });
 
 test("board-game service refuses non-board-game tenants before writes", () => {
@@ -124,6 +164,7 @@ test("board-game service refuses non-board-game tenants before writes", () => {
     "addBoardGameParticipant",
     "leaveBoardGameParticipant",
     "adjustBoardGameSessionTiming",
+    "closeBoardGameBillingGroupForBilling",
     "closeBoardGameSessionForBilling",
     "cancelBoardGameSession",
     "createBoardGameTitle",
@@ -141,6 +182,7 @@ test("board-game service refuses non-board-game tenants before writes", () => {
   }
   assert.match(service, /ลูกค้าที่คิดค่าเล่นต้องเลือกเรทราคา/);
   assert.match(service, /กรุณารับคืนเกมทุกกล่องก่อนปิดบิล/);
+  assert.match(service, /กรุณารับคืนเกมทุกกล่องก่อนปิดบิลสุดท้าย/);
   assert.match(service, /p\.minimum_minutes_snapshot AS minimum_minutes/);
   assert.doesNotMatch(service, /COALESCE\(r\.minimum_minutes/);
   assert.match(service, /pg_advisory_xact_lock/);
@@ -204,12 +246,23 @@ test("public board-game discovery is explicit, aggregate-only and rate limited",
   assert.match(sql, /TO bms_app/);
   assert.match(service, /profile\.public_visible AND location\.active/);
   assert.match(service, /store\.business_archetype = 'board_game_cafe'/);
-  assert.match(service, /session\.status IN \('OPEN', 'CLOSING'\)/);
   assert.match(service, /title\.public_visible/);
-  assert.doesNotMatch(
-    service.slice(service.indexOf("export async function listPublicBoardGameCafes")),
-    /customer_id|display_name AS customer/i
+  // ตัดเฉพาะตัวฟังก์ชัน ไม่ใช่ตั้งแต่ตรงนั้นจนจบไฟล์ — ของที่เขียนทีหลังในไฟล์เดียวกัน
+  // (เช่นแพ็กเกจสมาชิกที่อ่าน customer_id) จะทำให้ด่านนี้แดงด้วยเหตุผลที่ไม่ใช่ของมัน
+  const publicFn = functionBody(service, /export async function listPublicBoardGameCafes\(/);
+  // `9.91`: โต๊ะว่างตัดสินจาก "ที่นั่ง" ไม่ใช่จาก session — หลังรวมโต๊ะ session หลายก้อนนั่งที่เดียวกัน
+  // การนับจาก session จึงบอกคนนอกร้านว่าโต๊ะว่างทั้งที่มีคนนั่งอยู่
+  assert.match(
+    publicFn,
+    /NOT EXISTS \(\s*SELECT 1 FROM bms_board_game_seatings[\s\S]{0,400}?seating\.status = 'ACTIVE'/,
+    "public availability must exclude tables held by an active seating"
   );
+  assert.doesNotMatch(
+    publicFn,
+    /session\.status IN/,
+    "occupancy is the seating's, not the session's"
+  );
+  assert.doesNotMatch(publicFn, /customer_id|display_name AS customer/i);
   assert.match(publicRoute, /rateLimit\(`/);
   assert.doesNotMatch(publicRoute, /authorizeAdminRoute/);
   assert.match(adminRoute, /authorizeAdminRoute\("board_game\.floor\.manage"\)/);
@@ -237,8 +290,11 @@ test("POS board-game checkout read is device and branch scoped", () => {
   const service = read("apps/web/lib/bms/boardGameCafe.ts");
   assert.match(route, /authenticatePosDevice/);
   assert.doesNotMatch(route, /tenantId.*searchParams|body\.tenantId/);
-  assert.match(service, /s\.tenant_id = \$1 AND s\.location_id = \$2 AND s\.id = \$3/);
-  assert.match(service, /s\.status = 'CLOSING' AND s\.current_order_id IS NULL/);
+  // บิลที่รอเก็บเงินคีย์ด้วย **กลุ่ม** (`9.89`) ไม่ใช่โต๊ะ — โต๊ะที่แยกบิลมีหลายใบรออยู่พร้อมกัน
+  assert.match(service, /g\.tenant_id = \$1 AND g\.location_id = \$2 AND g\.id = \$3/);
+  // บิลที่ปิดแล้วและมีของบน tab ยังถือใบจองอยู่ — เงื่อนไขจึงเป็นสถานะ ไม่ใช่ช่องออร์เดอร์ที่ว่าง
+  assert.match(service, /g\.status = 'CLOSING'`/);
+  assert.match(service, /locationOfBoardGameBillingGroup/);
 });
 
 test("board-game billable minutes apply grace, rounding and minimum time", () => {
@@ -314,4 +370,178 @@ test("public roadmap reflects completed board-game work and current mobile rollo
   assert.match(roadmap, /quarter: "Q6 - POS mobile"[\s\S]{0,180}status: "in_progress"/);
   assert.match(roadmap, /quarter: "Q5 - ร้านบอร์ดเกมคาเฟ่"[\s\S]{0,220}status: "done"/);
   assert.match(roadmap, /quarter: "Q6 - POS มือถือ"[\s\S]{0,220}status: "in_progress"/);
+});
+
+/**
+ * `9.91` แยก "ที่นั่ง" ออกจาก "visit" — ชุด DB พิสูจน์พฤติกรรมจริง แต่ `gate.yml` รันเฉพาะชุด pure
+ * ตัวเหล่านี้จึงเป็นด่านเดียวที่ยิงทุก PR · ตรึงกติกา ไม่ใช่รูปทรงของ SQL
+ */
+function functionBody(source: string, signature: RegExp): string {
+  const at = signature.exec(source);
+  assert.ok(at, `expected to find ${signature}`);
+  // ข้ามลิสต์พารามิเตอร์ก่อน ไม่งั้น `{ idempotencyKey: string }` ของ input จะถูกอ่านว่าเป็นตัวฟังก์ชัน
+  // แล้วเทสทั้งชุดจะเขียว/แดงโดยไม่เคยเห็นโค้ดที่กำลังตรึงอยู่เลย
+  let paren = 0;
+  let cursor = source.indexOf("(", at!.index);
+  assert.ok(cursor > 0, `expected a parameter list for ${signature}`);
+  for (; cursor < source.length; cursor += 1) {
+    if (source[cursor] === "(") paren += 1;
+    else if (source[cursor] === ")") {
+      paren -= 1;
+      if (paren === 0) break;
+    }
+  }
+  const open = source.indexOf("{", cursor);
+  assert.ok(open > 0, `expected a body for ${signature}`);
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  assert.fail(`unbalanced body for ${signature}`);
+}
+
+test("`9.91` gives the table to a seating and retires the one-session-per-table index", () => {
+  const sql = read("db/migrations/9.91__bms_board_game_seatings.sql");
+
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS bms_board_game_seatings/);
+  assert.match(sql, /ALTER TABLE bms_board_game_seatings ENABLE ROW LEVEL SECURITY/);
+  assert.match(sql, /ALTER TABLE bms_board_game_seatings FORCE ROW LEVEL SECURITY/);
+  assert.match(sql, /GRANT SELECT, INSERT, UPDATE, DELETE ON bms_board_game_seatings TO bms_app/);
+  assert.match(sql, /create_revision_trigger\('bms_board_game_seatings'\)/);
+
+  // โต๊ะเป็นของที่นั่ง ไม่ใช่ของ visit — ดัชนีเดิมบังคับ "หนึ่งโต๊ะหนึ่ง session" ซึ่งทำให้รวมโต๊ะไม่ได้เลย
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX[^;]*uq_bms_board_game_seatings_active_table[\s\S]*?\(tenant_id, table_id\)[\s\S]*?WHERE status = 'ACTIVE'/,
+  );
+  assert.match(sql, /DROP INDEX IF EXISTS uq_bms_board_game_sessions_open_table/);
+
+  // session ต้องชี้ที่นั่งของตัวเองเสมอ และที่นั่งนั้นต้องอยู่สาขาเดียวกัน
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS seating_id UUID/);
+  assert.match(sql, /ALTER COLUMN seating_id SET NOT NULL/);
+  assert.match(
+    sql,
+    /FOREIGN KEY \(tenant_id, location_id, seating_id\)\s*\n?\s*REFERENCES bms_board_game_seatings\(tenant_id, location_id, id\)/,
+  );
+  assert.match(sql, /VALIDATE CONSTRAINT bms_board_game_sessions_seating_location_fk/);
+});
+
+test("a board-game table is free only when no seating is active on it", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+
+  // เปิดโต๊ะทับต้องถูกกันด้วย "ที่นั่ง" — session ตัดสินไม่ได้แล้ว เพราะโต๊ะที่รวมไว้มีหลาย session
+  const open = functionBody(service, /export async function openBoardGameSession\(/);
+  assert.match(
+    open,
+    /FROM bms_board_game_seatings[\s\S]*?status = 'ACTIVE'[\s\S]*?FOR UPDATE/,
+    "opening must read the destination table's active seating",
+  );
+  // การอ่านอย่างเดียวไม่ใช่ด่าน — ผลของมันต้องเป็นตัวปฏิเสธจริง ๆ ไม่งั้นเทสเขียวกับโค้ดที่
+  // ถาม แล้วทิ้งคำตอบ ซึ่งเป็นกับดักเดิมของเทสสแกนซอร์สในรีโปนี้
+  assert.match(
+    open,
+    /if \(occupied\.rowCount\) throw new Error\(/,
+    "the answer must reject the open, not merely be read",
+  );
+  assert.doesNotMatch(
+    open,
+    /FROM bms_board_game_sessions[\s\S]*?status IN \('OPEN'/,
+    "occupancy is the seating's, not the session's",
+  );
+  // ล็อกแถวโต๊ะก่อน แล้วค่อยดูว่ามีที่นั่งไหม — ไม่งั้นการย้ายโต๊ะแทรกระหว่างตรวจกับเขียนได้
+  assert.ok(
+    open.indexOf("FROM bms_board_game_tables") < open.indexOf("FROM bms_board_game_seatings"),
+    "the destination table row must be locked before its occupancy is read",
+  );
+
+  const floor = functionBody(service, /export async function listBoardGameFloor\(/);
+  assert.match(floor, /JOIN bms_board_game_seatings st[\s\S]*?st\.status = 'ACTIVE'/);
+});
+
+test("moving or merging a board-game table never touches money, time or players", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const relocate = functionBody(service, /async function relocateBoardGameSeating\(/);
+
+  // ทั้งหมดของ `9.91` คือ "เปลี่ยนที่นั่ง ไม่เปลี่ยนบิล" — เขียนตารางเงินเมื่อไรคือคนละฟีเจอร์
+  for (const forbidden of [
+    "bms_board_game_billing_groups",
+    "bms_board_game_group_items",
+    "bms_orders",
+    "bms_board_game_session_participants",
+    "charge_snapshot",
+    "amount_due",
+    "started_at",
+    "expected_end_at",
+  ]) {
+    assert.ok(
+      !relocate.includes(forbidden),
+      `relocating a seating must not read or write ${forbidden}`,
+    );
+  }
+  // คอลัมน์เดียวของ session ที่ถูกแตะคือ "ตอนนี้นั่งที่ไหน"
+  const sessionWrites = [...relocate.matchAll(/UPDATE bms_board_game_sessions\s*\n?\s*SET ([a-z_]+)/g)]
+    .map((match) => match[1]);
+  assert.deepEqual([...new Set(sessionWrites)], ["seating_id"]);
+});
+
+test("move and merge refuse each other's job instead of guessing", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const relocate = functionBody(service, /async function relocateBoardGameSeating\(/);
+
+  // การเดาแทนคนกดคือการย้ายลูกค้าที่เขาไม่ได้เลือก · สองทางนี้ต้องปฏิเสธกันและกันตรง ๆ
+  assert.match(
+    relocate,
+    /if \(action === "move" && destination\.rowCount\) \{\s*\n\s*throw new Error\(/,
+  );
+  assert.match(
+    relocate,
+    /if \(action === "merge" && !destination\.rowCount\) \{\s*\n\s*throw new Error\(/,
+  );
+  assert.match(relocate, /table_id === targetTableId[\s\S]{0,120}throw new Error\(/);
+  // ทั้งร้านมีล็อกผังใบเดียว ไม่งั้น A→B กับ B→A พร้อมกันจะวนรอกัน
+  assert.match(relocate, /pg_advisory_xact_lock[\s\S]{0,160}seating-floor/);
+});
+
+test("merging a board-game table is not a one-way door", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const relocate = functionBody(service, /async function relocateBoardGameSeating\(/);
+
+  // โต๊ะที่รวมไว้มีหลายชุด — ย้ายต้องแยกเฉพาะชุดที่เลือก ไม่งั้นกดจากการ์ดของชุดหนึ่งจะลากอีกชุดไปด้วย
+  const detach = relocate.slice(relocate.indexOf('action === "move" && sourceSessionIds.length > 1'));
+  assert.ok(detach.length > 0, "move must special-case a seating that several sessions share");
+  assert.match(detach, /INSERT INTO bms_board_game_seatings/);
+  assert.match(detach, /movedSessionIds = \[sessionId\]/);
+  assert.match(
+    detach,
+    /WHERE tenant_id = \$1 AND id = \$2`,\s*\n\s*\[tenantId, sessionId, movedSeatingId\]/,
+    "only the selected session may be re-seated",
+  );
+});
+
+test("the seating status formula lives once, next to the session's", () => {
+  const status = read("apps/web/lib/bms/boardGameSessionStatus.ts");
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+
+  // ที่นั่งว่างเมื่อทุก session ที่ยังผูกอยู่จบแล้ว — สูตรสองชุดจะเริ่มเถียงกันว่าโต๊ะเปิดใหม่ได้หรือยัง
+  assert.match(status, /export async function refreshBoardGameSeatingInTx\(/);
+  assert.match(
+    status,
+    /s\.status IN \('OPEN', 'CLOSING'\)[\s\S]*?THEN 'ACTIVE' ELSE 'CLOSED' END/,
+  );
+  assert.match(status, /AND st\.status <> 'MERGED'/, "a merged seating is history and never reopens");
+  // ปิดกลุ่มสุดท้ายของ session แล้วที่นั่งต้องถูกคิดใหม่เองจากสูตรเดียวกัน — ทุกผู้เรียกรวมถึง pos.ts
+  assert.match(status, /RETURNING s\.seating_id/);
+  assert.match(status, /if \(seatingId\) await refreshBoardGameSeatingInTx\(/);
+
+  // การเขียนสถานะที่นั่งนอกสูตรมีได้ทางเดียว: ปิดที่นั่งต้นทางเป็น MERGED ตอนรวมโต๊ะ
+  const derived = [...service.matchAll(/UPDATE bms_board_game_seatings\s*\n?\s*SET ([a-z_]+ = [^,\n]+)/g)]
+    .map((match) => match[1].trim());
+  assert.deepEqual(
+    derived.filter((assignment) => assignment.startsWith("status")),
+    ["status = 'MERGED'"],
+  );
 });

@@ -171,16 +171,26 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   // Board game cafe (9.79-9.83) holds the same kind of evidence with RESTRICT FKs: a session
   // points at the settling order/user/device/shift, a participant at the customer, a title at
   // the product it is sold as, and a copy at the purchase order it arrived on.  `bms_orders`
-  // points back at the session (9.82), so the two cannot simply be deleted in either order --
-  // release that one reference first, then the session subtree goes as a unit (participants and
-  // session games cascade from the session, copies from the title).
+  // points back at the session (9.82) and at the billing group that the order settles (9.89),
+  // while the group points at that same order -- neither side can be deleted first, so release
+  // both references here.  After that the session subtree goes as a unit (billing groups,
+  // participants and session games all cascade from the session, copies from the title).
   await client.query(
-    `UPDATE bms_orders SET board_game_session_id = NULL
-      WHERE tenant_id = ANY($1::uuid[]) AND board_game_session_id IS NOT NULL`,
+    `UPDATE bms_orders SET board_game_session_id = NULL, board_game_billing_group_id = NULL
+      WHERE tenant_id = ANY($1::uuid[])
+        AND (board_game_session_id IS NOT NULL OR board_game_billing_group_id IS NOT NULL)`,
     [tenantIds]
   );
   await client.query(`DELETE FROM bms_board_game_sessions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_titles WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Member passes (`9.92`) are a contract between the shop and one member, so they hold the
+  // customer and the issuing user with RESTRICT FKs -- and unlike the session subtree nothing
+  // cascades them away before those two rows go.  Without this line a shop that ever sold a
+  // pass cannot be deleted at all, and the failure surfaces as an FK error on `bms_customers`
+  // that says nothing about passes.  The ledger cascades from the pass.
+  await client.query(`DELETE FROM bms_board_game_member_passes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Identity holds (`9.93`) need no line of their own: they cascade from the session deleted
+  // just above, so they are gone before `bms_customers` and `users` are touched.
   // POS operations retain user/device/purchase evidence with RESTRICT FKs.
   await client.query(`DELETE FROM bms_pos_expenses WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_petty_cash_ledger WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);

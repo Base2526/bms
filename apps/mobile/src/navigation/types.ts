@@ -16,7 +16,7 @@ export type SellStackParamList = {
   Checkout:
     | { source?: 'retail'; tableId?: undefined }
     | { source: 'restaurant'; tableId?: string; checkId?: string }
-    | { source: 'board_game'; boardGameSessionId: string };
+    | { source: 'board_game'; boardGameBillingGroupId: string };
   Receipt: { saleId: string };
   SalesHistory: undefined;
   SaleDetail: { saleId: string };
