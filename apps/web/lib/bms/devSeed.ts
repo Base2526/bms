@@ -2128,7 +2128,7 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
   try {
     await beginTenantTx(client, tenantId);
     const profile = await client.query<{ business_archetype: string | null }>(
-      `SELECT business_archetype FROM bms_store_profiles WHERE tenant_id = $1`,
+      `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
       [tenantId]
     );
     if (profile.rows[0]?.business_archetype !== "board_game_cafe") {
