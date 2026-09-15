@@ -17,17 +17,45 @@ import {
   topicBmsInboxChanged,
   type BmsInboxChangedPayload,
 } from "./bmsInboxSync.js";
+import type { RealtimeTicketClaims } from "../../realtime/src/wsTicket.js";
+import {
+  REALTIME_EVENT_RULES,
+  isRealtimeEventEnabled,
+  validateRealtimeEvent,
+  type RealtimeEvent,
+} from "../../realtime/src/events.js";
+import { NAMED_REALTIME_SUBSCRIPTIONS } from "../../realtime/src/namedSubscriptions.js";
+import { canReceiveRealtimeEvent, realtimeTopics } from "../../realtime/src/subscriptionAuth.js";
 
-const DEFAULT_BMS_TENANT_ID = "11111111-1111-1111-1111-111111111111";
+const runtimeEnv = (globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+}).process?.env ?? {};
 
-function requireBmsTenantId(ctx: any): string {
-  const userId = String(ctx?.user?.id ?? ctx?.user?.sub ?? "").trim();
-  if (ctx?.scope !== "admin" || !userId) {
+function requireRealtimeClaims(ctx: any): RealtimeTicketClaims {
+  const claims = ctx?.realtime as RealtimeTicketClaims | undefined;
+  if (!claims?.subjectId) {
     throw new GraphQLError("UNAUTHENTICATED", {
       extensions: { code: "UNAUTHENTICATED" },
     });
   }
-  return String(ctx?.user?.tenant_id || DEFAULT_BMS_TENANT_ID);
+  return claims;
+}
+
+function requireRealtimeUserId(ctx: any): string {
+  return requireRealtimeClaims(ctx).subjectId;
+}
+
+function requireBmsTenantId(ctx: any): string {
+  const claims = requireRealtimeClaims(ctx);
+  if (claims.scope !== "admin" || !claims.tenantId) {
+    throw new GraphQLError("FORBIDDEN", { extensions: { code: "FORBIDDEN" } });
+  }
+  if (!claims.permissions.includes("inbox.view")) {
+    throw new GraphQLError("FORBIDDEN", {
+      extensions: { code: "FORBIDDEN", permission: "inbox.view" },
+    });
+  }
+  return claims.tenantId;
 }
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
@@ -68,82 +96,121 @@ export const coreResolvers = {
       )
     },
     messageAdded: {
+      // เดิมรับ chat_id มาแล้ว subscribe ได้เลยโดยไม่ตรวจอะไร — ทุกคนที่ถือ ticket
+      // อ่านแชทห้องไหนก็ได้ · ตรวจจากผู้รับที่ติดมากับข้อความ (รูปเดียวกับ
+      // `incomingMessage`) เพราะ `apps/ws` ต่อฐานข้อมูลไม่ได้
       subscribe: withFilter(
         (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
-          const topic = topicChat(chat_id);
-          // console.log("[SUB INIT] subscribe chat_id=", chat_id, "topic=", topic, "ctx=", ctx);
-          return pubsub.asyncIterator(topic);
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(topicChat(chat_id));
         },
         (payload, variables, ctx: any) => {
-          console.log("[graphql-core withFilter : messageAdded] ", payload?.messageAdded, variables?.chat_id, ctx);
-          return payload?.messageAdded?.chat_id === variables?.chat_id;
+          const userId = requireRealtimeUserId(ctx);
+          const message = payload?.messageAdded;
+          if (message?.chat_id !== variables?.chat_id) return false;
+          // ผู้รับมาจาก publisher ซึ่งเป็นฝั่งที่มีฐานข้อมูล · `messageAddedAudience` รวมผู้ส่ง
+          // ไว้ด้วย เพราะ `to_user_ids` ของข้อความ **ตัดตัวผู้ส่งออกไปแล้ว** แท็บที่สองของคน
+          // ส่งเองจึงไม่เคยได้ข้อความของตัวเอง · ไม่มี routing data = ปฏิเสธ ไม่ใช่ปล่อยผ่าน
+          const audience = Array.isArray(payload?.messageAddedAudience)
+            ? payload.messageAddedAudience
+            : message?.to_user_ids;
+          return Array.isArray(audience) && audience.map(String).includes(userId);
         }
       )
     },
     userMessageAdded: {
       subscribe: withFilter(
-        (_:any, { user_id }:{user_id:string}) => pubsub.asyncIterator(topicUser(user_id)),
-        (payload, variables) => {
-          console.log("[graphql-core withFilter : userMessageAdded]");
-          return payload?.userMessageAdded?.to_user_ids.includes(variables?.user_id);
+        (_:any, { user_id }:{user_id:string}, ctx: any) => {
+          const authenticatedUserId = requireRealtimeUserId(ctx);
+          if (String(user_id) !== authenticatedUserId) {
+            throw new GraphQLError("FORBIDDEN", { extensions: { code: "FORBIDDEN" } });
+          }
+          return pubsub.asyncIterator(topicUser(authenticatedUserId));
+        },
+        (payload, _variables, ctx: any) => {
+          const authenticatedUserId = requireRealtimeUserId(ctx);
+          return payload?.userMessageAdded?.to_user_ids.includes(authenticatedUserId);
         }
       )
     },
     messageDeleted: {
       subscribe: withFilter(
-        (_:any, { chat_id }:{chat_id:string}) => pubsub.asyncIterator(topicUser(chat_id)),
-        (payload, variables) => {
-          console.log("[graphql-core withFilter : messageDeleted]");
-          return payload.asyncIterator(topicChat(variables?.chat_id));
+        (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(topicChat(chat_id));
+        },
+        (payload, _variables, ctx: any) => {
+          const userId = requireRealtimeUserId(ctx);
+          if (typeof payload?.messageDeleted !== "string") return false;
+          // ผู้รับมาจาก publisher · ไม่มีลิสต์ = ปฏิเสธ ไม่ใช่ปล่อยผ่าน
+          return Array.isArray(payload?.messageDeletedAudience)
+            && payload.messageDeletedAudience.map(String).includes(userId);
         }
-      )
+      ),
+      // SDL ยังเป็น `ID!` เหมือนเดิม — ลิสต์ผู้รับเป็นของ routing ไม่ใช่ของ client
+      resolve: (payload: any) => payload?.messageDeleted,
     },
     notificationCreated: {
       subscribe: withFilter(
         () => pubsub.asyncIterator(NOTI_TOPIC),
         (payload: any, _variables: any, ctx: any) => {
-          const user = ctx.user;
-          if (!user) return false;
-          // รับเฉพาะ noti ที่ส่งให้ user นี้
-          return payload.notificationCreated.user_id === user.id;
+          return String(payload?.notificationCreated?.user_id ?? "") === requireRealtimeUserId(ctx);
         }
       ),
     },
+    // โพสต์เป็นเนื้อหาสาธารณะ ตัวกรองจึงเป็น post_id ไม่ใช่สิทธิ์ · แต่ยัง `requireRealtimeUserId`
+    // เพื่อให้ทุก subscription ในไฟล์นี้มีกติกาเดียวกันว่า "ต้องถือ ticket ที่ระบุตัวตนได้"
+    // สายที่ไม่มีตัวตนจะไม่มีวันไหลผ่านมาถึงตรงนี้อยู่แล้ว การเขียนไว้ทำให้ข้อนั้นทดสอบได้
     commentAdded: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator(COMMENT_ADDED),
-        (payload, variables) => {
-          // filter ตาม post_id
-          return payload.commentAdded.post_id === variables.post_id;
+        (_: any, _args: any, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(COMMENT_ADDED);
+        },
+        (payload, variables, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return String(payload?.commentAdded?.post_id ?? "") === String(variables?.post_id ?? "");
         }
       ),
     },
     commentUpdated: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator(COMMENT_UPDATED),
-        (payload, variables) => {
-          return payload.commentUpdated.post_id === variables.post_id;
+        (_: any, _args: any, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(COMMENT_UPDATED);
+        },
+        (payload, variables, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return String(payload?.commentUpdated?.post_id ?? "") === String(variables?.post_id ?? "");
         }
       ),
     },
     commentDeleted: {
+      // เดิมคืน `true` เสมอ = คนที่ดูโพสต์หนึ่งได้รับการลบคอมเมนต์ของทุกโพสต์
+      // โพสต์เป็นเนื้อหาสาธารณะ จึงไม่ใช่การรั่วของความลับ แต่เป็น event ที่ผิดโพสต์
       subscribe: withFilter(
-        () => pubsub.asyncIterator(COMMENT_DELETED),
-        (payload, variables) => {
-          // ตอนนี้ไม่มี post_id ใน payload ถ้าอยาก filter เพิ่ม
-          return true;
-        }
+        (_: any, _args: any, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return pubsub.asyncIterator(COMMENT_DELETED);
+        },
+        (payload, variables, ctx: any) => {
+          requireRealtimeUserId(ctx);
+          return String(payload?.commentDeletedPostId ?? "") === String(variables?.post_id ?? "");
+        },
       ),
+      resolve: (payload: any) => payload?.commentDeleted,
     },
     incomingMessage: {
       subscribe: withFilter(
-        () => pubsub.asyncIterator(INCOMING_MESSAGE),
+        (_: any, { user_id }: { user_id: string }, ctx: any) => {
+          const authenticatedUserId = requireRealtimeUserId(ctx);
+          if (String(user_id) !== authenticatedUserId) {
+            throw new GraphQLError("FORBIDDEN", { extensions: { code: "FORBIDDEN" } });
+          }
+          return pubsub.asyncIterator(INCOMING_MESSAGE);
+        },
         (payload, vars, ctx) => {
-          // ให้เฉพาะคนที่เป็น member หรือ to_user_ids มี user นี้
-
-          console.log("[INCOMING_MESSAGE] =", vars, payload);
-          
-          const uId = vars.user_id;
+          const uId = requireRealtimeUserId(ctx);
           const msg = payload.incomingMessage;
           return msg.to_user_ids.includes(uId) || msg.sender_id === uId;
         }
@@ -157,14 +224,11 @@ export const coreResolvers = {
     myPhoneBlockStatusChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyPhoneBlockStatusChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myPhoneBlockStatusChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -174,14 +238,11 @@ export const coreResolvers = {
     myBankBlockStatusChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyBankBlockStatusChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myBankBlockStatusChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -191,14 +252,11 @@ export const coreResolvers = {
     myBookmarkStatusChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyBookmarkStatusChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myBookmarkStatusChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -208,14 +266,11 @@ export const coreResolvers = {
     myContactSpamMarkChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyContactSpamMarkChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myContactSpamMarkChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -225,14 +280,11 @@ export const coreResolvers = {
     myContactSpamSettingsChanged: {
       subscribe: withFilter(
         (_: any, _args: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
-          if (!userId) {
-            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
-          }
+          const userId = requireRealtimeUserId(ctx);
           return pubsub.asyncIterator(topicMyContactSpamSettingsChanged(userId));
         },
         (payload: any, _vars: any, ctx: any) => {
-          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const userId = requireRealtimeUserId(ctx);
           const pUserId = String(payload?.myContactSpamSettingsChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
@@ -251,5 +303,60 @@ export const coreResolvers = {
         }
       ),
     },
+    realtimeEvent: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => pubsub.asyncIterator(realtimeTopics(requireRealtimeClaims(ctx))),
+        (payload: { realtimeEvent?: unknown }, _vars: any, ctx: any) => {
+          try {
+            return canReceiveRealtimeEvent(
+              validateRealtimeEvent(payload?.realtimeEvent),
+              requireRealtimeClaims(ctx),
+            );
+          } catch {
+            return false;
+          }
+        },
+      ),
+    },
+    ...namedDomainSubscriptions(),
   },
 };
+
+// =============================================================
+// Named domain subscriptions (Phase 6)
+// -------------------------------------------------------------
+// Every named subscription is a filtered view of the one invalidation stream.
+// They deliberately share `realtimeTopics` + `canReceiveRealtimeEvent` instead
+// of each carrying its own auth: seventeen copies of a tenant/location/
+// permission check is seventeen chances for one of them to drift open.
+//
+// The resolver key is also the payload key, because `withFilter` receives the
+// published envelope under the field name the publisher used. The dispatcher
+// publishes one wrapper per event, so each named field reads the same
+// `realtimeEvent` payload and narrows it by event type.
+// =============================================================
+
+function namedDomainSubscriptions() {
+  const resolvers: Record<string, unknown> = {};
+  for (const [field, eventTypes] of Object.entries(NAMED_REALTIME_SUBSCRIPTIONS)) {
+    const accepted = new Set<string>(eventTypes);
+    resolvers[field] = {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => pubsub.asyncIterator(realtimeTopics(requireRealtimeClaims(ctx))),
+        (payload: any, _vars: any, ctx: any) => {
+          try {
+            const event = validateRealtimeEvent(payload?.realtimeEvent);
+            if (!accepted.has(event.eventType)) return false;
+            return canReceiveRealtimeEvent(event, requireRealtimeClaims(ctx));
+          } catch {
+            return false;
+          }
+        },
+      ),
+      // The published wrapper carries the envelope under `realtimeEvent`; the
+      // named field resolves to the same object.
+      resolve: (payload: any) => payload?.realtimeEvent,
+    };
+  }
+  return resolvers;
+}

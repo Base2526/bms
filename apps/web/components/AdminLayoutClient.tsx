@@ -6,6 +6,8 @@ import { LogoutOutlined, EyeOutlined } from "@ant-design/icons";
 import AdminSidebar from "@/components/AdminSidebar";
 import { useI18n } from "@/lib/i18nContext";
 import WorkAssistantDrawer from "@/components/work-assistant/WorkAssistantDrawer";
+import { useRealtimeStatus } from "@/components/realtime/RealtimeProvider";
+import { useSessionCtx } from "@/lib/session-context";
 
 const { Content } = Layout;
 
@@ -39,6 +41,33 @@ function ImpersonationBanner() {
   );
 }
 
+function RealtimeStatusBanner() {
+  const { t } = useI18n();
+  const { admin } = useSessionCtx();
+  const { status } = useRealtimeStatus();
+  if (!admin?.id || status === "connected") return null;
+  const key = status === "offline"
+    ? "admin.realtime_offline"
+    : status === "degraded"
+      ? "admin.realtime_degraded"
+      : status === "reconnecting"
+        ? "admin.realtime_reconnecting"
+        : "admin.realtime_connecting";
+  return (
+    <div role="status" aria-live="polite" style={{
+      marginBottom: 12,
+      border: "1px solid var(--app-border)",
+      borderRadius: 8,
+      padding: "8px 12px",
+      color: "var(--text-secondary)",
+      background: "var(--app-surface-2)",
+      fontSize: 13,
+    }}>
+      {t(key)}
+    </div>
+  );
+}
+
 export default function AdminLayoutClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hideHeader = pathname === "/admin/login";
@@ -51,6 +80,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       <Layout style={{ minWidth: 0 }}>
         <Content style={{ padding: "clamp(12px, 4vw, 24px)", minWidth: 0, overflowX: "auto" }}>
           <ImpersonationBanner />
+          <RealtimeStatusBanner />
           {children}
         </Content>
         <WorkAssistantDrawer />

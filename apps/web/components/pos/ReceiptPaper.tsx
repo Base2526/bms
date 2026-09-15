@@ -62,7 +62,12 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
   return (
     <div id={RECEIPT_PRINT_ID} className="pos-receipt-paper">
       <div className="pos-receipt-head">
+        {payload.storeLogoUrl && (
+          <img className="pos-receipt-logo" src={payload.storeLogoUrl} alt="" />
+        )}
         <b>{payload.storeName}</b>
+        {payload.storeAddress && <div className="pos-receipt-muted">{payload.storeAddress}</div>}
+        {payload.storePhone && <div className="pos-receipt-muted">{label("โทร", "Tel")} {payload.storePhone}</div>}
         {payload.branchCode && <div>({label("สาขา", "Branch")} {payload.branchCode})</div>}
         {payload.taxId && <div>TAX#{payload.taxId}{payload.vatIncluded ? ` (${label("รวม VAT", "VAT Included")})` : ""}</div>}
         {payload.posNo && <div>POS#{payload.posNo}</div>}
@@ -70,6 +75,7 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
       </div>
 
       {payload.billNo && <Row left={label("เลขที่บิล", "Bill No")} right={payload.billNo} />}
+      {payload.serviceModeLabel && <Row left={label("ประเภท", "Type")} right={payload.serviceModeLabel} />}
       {(payload.notes ?? []).map((note, index) => (
         <div className="pos-receipt-note" key={`note-${index}`}>{note}</div>
       ))}

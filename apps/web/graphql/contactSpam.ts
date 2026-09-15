@@ -3,7 +3,7 @@ import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { query, runInTransaction } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { pubsub } from "@/lib/pubsub";
+import { publishRealtimeHint } from "@/lib/pubsub";
 
 import {
   topicMyContactSpamMarkChanged,
@@ -160,7 +160,7 @@ export const contactSpamResolvers = {
       });
 
       const payload = shapeSettings(row);
-      await pubsub.publish(topicMyContactSpamSettingsChanged(userId), {
+      await publishRealtimeHint(topicMyContactSpamSettingsChanged(userId), {
         myContactSpamSettingsChanged: payload,
       });
 
@@ -202,7 +202,7 @@ export const contactSpamResolvers = {
       });
 
       const payload = { ...shapeMark(row, userId), action: "MARK", active: true };
-      await pubsub.publish(topicMyContactSpamMarkChanged(userId), {
+      await publishRealtimeHint(topicMyContactSpamMarkChanged(userId), {
         myContactSpamMarkChanged: payload,
       });
 
@@ -241,7 +241,7 @@ export const contactSpamResolvers = {
       });
 
       const payload = { ...shapeMark(row, userId), action: "UNMARK", active: false };
-      await pubsub.publish(topicMyContactSpamMarkChanged(userId), {
+      await publishRealtimeHint(topicMyContactSpamMarkChanged(userId), {
         myContactSpamMarkChanged: payload,
       });
 

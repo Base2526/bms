@@ -65,6 +65,25 @@
   font-weight: 700;
 }
 
+.discoveryLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #fff;
+  border: 1px solid #266c55;
+  border-radius: 8px;
+  background: #266c55;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.discoveryLink:hover {
+  color: #fff;
+  background: #1f5946;
+}
+
 .directoryToolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

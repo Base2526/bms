@@ -104,6 +104,7 @@ Use stable snake_case ids so UI labels can evolve without data migrations.
 | `pet_supply` | Pet Supply | packs, lots/expiry, and optional weighed goods |
 | `building_materials` | Building Materials | multiple sale units, measured goods, and serials |
 | `restaurant` | Restaurant | recipes, modifiers, kitchen tickets, and wastage |
+| `board_game_cafe` | Board Game Cafe | time-based play sessions, game-library assets, snacks, and memberships |
 | `other` | Other | no archetype-specific defaults |
 
 The signup UI renders these stable ids through the shared `shop_archetypes.*` labels in
@@ -164,6 +165,7 @@ Initial mapping on verification:
 | `pet_supply` | `general` |
 | `building_materials` | `home` |
 | `restaurant` | `food` |
+| `board_game_cafe` | `general` |
 | `other` | `general` |
 
 Since `9.40`, `business_archetype` selects only an initial capability preset. Effective behaviour is

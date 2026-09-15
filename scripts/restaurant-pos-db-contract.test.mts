@@ -306,6 +306,42 @@ test("the database rejects a restaurant check using another branch's device and 
   );
 });
 
+test("takeaway is a tableless restaurant check in the branch queue", async () => {
+  const before = await listRestaurantFloor(tenantId, locationId);
+  const availableTables = before.tables.filter((table) => table.status === "AVAILABLE").length;
+  const check = await openRestaurantCheck({
+    tenantId,
+    locationId,
+    deviceId,
+    shiftId: shiftA,
+    tableId: null,
+    serviceMode: "TAKEAWAY",
+    guestCount: 1,
+    note: "รับกลับบ้าน",
+    actorUserId: waiterId,
+  });
+
+  assert.equal(check?.serviceMode, "TAKEAWAY");
+  assert.equal(check?.tableId, null);
+  assert.equal(check?.tableCode, "TAKEAWAY");
+
+  const opened = await listRestaurantFloor(tenantId, locationId);
+  assert.equal(opened.tables.filter((table) => table.status === "AVAILABLE").length, availableTables);
+  assert.equal(opened.takeawayChecks.some((entry) => entry.id === check?.id), true);
+
+  await cancelRestaurantCheck({
+    tenantId,
+    locationId,
+    checkId: check!.id,
+    actorUserId: waiterId,
+    reason: "ปิดหลังทดสอบ Takeaway",
+  });
+  assert.equal(
+    (await listRestaurantFloor(tenantId, locationId)).takeawayChecks.some((entry) => entry.id === check?.id),
+    false
+  );
+});
+
 test("one table holds at most one open check", async () => {
   const first = await openRestaurantCheck({
     tenantId, locationId, deviceId, shiftId: shiftA,

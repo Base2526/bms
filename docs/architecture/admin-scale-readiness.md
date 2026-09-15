@@ -123,6 +123,13 @@ Checklist:
 - `apps/ws/`
 - code path ที่ใช้ notification / subscription / inbox realtime
 
+**Realtime review (2026-09-10):** Redis Pub/Sub is shared across instances, but that alone does not
+make delivery or authorization production-ready. The audit found no transactional replay, several
+unsafe legacy subscription scopes, HTTP/WS session-check drift, and no bounded gateway lifecycle or
+delivery metrics. Keep polling during horizontal-scale tests and use the security/outbox/recovery
+gates in [realtime-production-audit.md](./realtime-production-audit.md); the durable design is
+[ADR 001](./decisions/001-transactional-realtime-invalidation.md).
+
 Deliverable:
 
 - checklist ผ่านครบว่าเพิ่ม web instances ได้โดยไม่ทำให้ session/realtime เพี้ยน
@@ -374,6 +381,8 @@ Deliverable:
 - [system.md](./system.md)
 - [database.md](./database.md)
 - [api.md](./api.md)
+- [realtime-production-audit.md](./realtime-production-audit.md)
+- [ADR 001: transactional outbox and scoped invalidation events](./decisions/001-transactional-realtime-invalidation.md)
 - [dashboard.md](../ui/dashboard.md)
 - [customer360.md](../ui/customer360.md)
 - [inbox-diagnostics.md](../ui/inbox-diagnostics.md)

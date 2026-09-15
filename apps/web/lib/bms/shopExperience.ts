@@ -182,6 +182,18 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     descriptionKey: "shop_archetypes.description_restaurant",
     importExample: ["MENU-KAPRAO", "", "ข้าวกะเพรา", "เมนูปรุงสด", "79", "", "อาหารจานเดียว", "", "กะเพรา|ผัดกะเพรา", "QUICK_MENU", "NON_STOCK", "PIECE", "STD", "RESTAURANT_POS|CUSTOMER_AI|ONLINE_ORDER"],
   },
+  board_game_cafe: {
+    archetype: "board_game_cafe",
+    recommendedTemplates: GENERAL_TEMPLATE,
+    recommendedCapabilities: ["PACK", "MULTI_BARCODE"],
+    primarySalesSurfaces: RETAIL_SURFACES,
+    recommendedStockSections: [],
+    restockEmphasis: false,
+    showWastageInNavigation: false,
+    specialMode: "NONE",
+    descriptionKey: "shop_archetypes.description_board_game_cafe",
+    importExample: ["BGC-SLEEVE-STD", "", "ซองใส่การ์ดขนาดมาตรฐาน", "สินค้าเสริมสำหรับขายหน้าร้าน ไม่ใช่เกมที่ให้ยืมเล่น", "120", "70", "Board Game Accessories", "", "ซองการ์ด|board game|sleeve", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+  },
   other: {
     archetype: "other",
     recommendedTemplates: GENERAL_TEMPLATE,

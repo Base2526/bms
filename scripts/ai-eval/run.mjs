@@ -145,6 +145,11 @@ const SHOP_ARCHETYPE_OPTIONS = [
   "gadgets_accessories",
   "b2b_wholesale",
   "gifts_seasonal",
+  "pharmacy",
+  "pet_supply",
+  "building_materials",
+  "restaurant",
+  "board_game_cafe",
   "other",
 ];
 

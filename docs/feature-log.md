@@ -1067,6 +1067,53 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   raw permission id, and end with the way forward. The filtered list is UX only: every route still
   re-checks the approver server-side.
 
+- **Production realtime audit and accepted design (2026-09-10, documentation only)** — inventoried
+  all GraphQL subscriptions, publishers, React consumers, polling fallbacks, authentication paths,
+  and transaction boundaries. The audit found production blockers in tenant/permission enforcement,
+  client-selected chat/user scopes, session lifecycle, operation/connection bounds, observability,
+  and direct Pub/Sub durability. [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md)
+  accepts short-lived HTTP-minted WS tickets plus scoped invalidation envelopes and a transactional
+  outbox, while keeping `apps/ws` database-free and retaining polling until recovery/load gates pass.
+  No runtime behavior or database schema changed in this phase. See the
+  [audit and phased plan](architecture/realtime-production-audit.md).
+- **Mobile GraphQL/WS architecture inventory (2026-09-10, documentation only)** — classified all 76
+  BMS and 41 POS REST routes into permanent HTTP surfaces, existing GraphQL compatibility paths, and
+  missing mobile/POS contracts. Normal React Native commands and reads converge on HTTPS GraphQL;
+  WebSocket remains a scoped invalidation channel; webhook/file/export/cron/signed-public flows stay
+  REST. The retail/restaurant POS REST APIs remain intact until device-scoped GraphQL authorization,
+  parity tests, and staged client migration are complete. See
+  [mobile-graphql-ws-realtime.md](architecture/mobile-graphql-ws-realtime.md).
+- **Shared realtime event contract (2026-09-10, no migration)** — `packages/realtime` now owns the
+  closed event-type/rule union, versioned minimal envelope, tenant/location/user/device topic
+  builders, runtime payload validation, safe logging projection, publish/subscribe helpers, fixtures,
+  and bounded client deduplication. Routing scope is server-shaped and topic segments reject
+  separators. Payloads accept only event-specific scalar hints and reject PII/clinical/evidence keys.
+  The existing legacy publishers are unchanged pending the transactional-outbox phase.
+- **Transactional realtime outbox (`9.70`, 2026-09-10)** — business services can insert a validated
+  invalidation with their existing tenant transaction. A narrow non-login dispatcher role claims
+  committed rows with a lease and `FOR UPDATE SKIP LOCKED`; Redis delivery happens after claim commit,
+  ack is bound to event/claim token, and failures use bounded backoff before visible `FAILED` state.
+  The guarded dispatch route records job-run evidence and all three compose files carry the worker
+  controls. Pure dispatcher/migration contracts pass; the local DB contract exists but has not run in
+  this environment because no disposable Postgres is available.
+- **Realtime gateway security hardening (2026-09-10, no migration)** — browsers and native clients
+  now obtain a short-lived signed ticket from HTTP after authoritative session checks. The WS
+  gateway no longer chooses scope or tenant from connection parameters/cookies, rechecks admin
+  revocation, closes expired tickets, permits subscription operations only, bounds connection and
+  payload cost, validates origins, and exposes Redis-aware readiness plus graceful drain. Inbox
+  requires `inbox.view`; user feeds bind to the authenticated subject. Unsafe legacy chat/post
+  resource fields are disabled in production pending membership capabilities. Polling is retained.
+- **Mobile/POS GraphQL server contract (2026-09-11, no migration)** — `/api/graphql` now recognizes
+  a distinct `pos` device principal from a Bearer device token without treating it as a user.
+  `graphql/bmsPosDevice.ts` provides named read and command operations for every normal retail,
+  restaurant, kitchen, shift, drawer, member, purchase and pharmacy-handoff POS route; each derives
+  tenant/location/device server-side and preserves cashier PIN, named permission, distinct approver,
+  idempotency, audit and service transaction boundaries. `graphql/bmsMobileOperations.ts` closes the
+  inventoried staff-mobile gaps for stock transfers/counts, restaurant requests, store credit,
+  commissions and POS-return reports. REST remains for binary/export/diagnostic transports and as a
+  browser-POS compatibility layer. The realtime ticket endpoint accepts the same Bearer credential;
+  WS still carries invalidations only. See the [native client contract](architecture/react-native-graphql-client.md).
+
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
 sync" above; what's missing is the carrier-issued merchant contract and credentials, then following

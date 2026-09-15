@@ -1,0 +1,224 @@
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react';
+import { useLazyQuery, useQuery } from '@apollo/client';
+import {
+  MobilePosCatalogDocument,
+  MobilePosScanDocument,
+  MobileRestaurantMenuDocument,
+} from '../graphql/generated';
+import type { PosMenuCatalog, PosMenuItem } from '../types/pos';
+import { normalizePriceTiers, normalizePromotion } from '../lib/cartPricing';
+import { useStoreMode } from './StoreModeContext';
+import { useDevice } from './DeviceContext';
+import { serverAssetUrl } from '../lib/realtime';
+
+interface CatalogContextValue {
+  catalog: PosMenuCatalog;
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
+  resolveScan: (code: string) => Promise<PosMenuItem>;
+  resolveVariant: (
+    code: string,
+    size?: string | null,
+    packCode?: string | null,
+  ) => Promise<PosMenuItem>;
+  setSearchQuery: (query: string) => void;
+}
+
+const CatalogContext = createContext<CatalogContextValue | null>(null);
+
+function unique(values: Array<string | null | undefined>): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value))),
+  ];
+}
+
+export function CatalogProvider({ children }: { children: React.ReactNode }) {
+  const { mode } = useStoreMode();
+  const { target } = useDevice();
+  const [searchQuery, setSearchQuery] = useState('');
+  const restaurant = useQuery(MobileRestaurantMenuDocument, {
+    skip: mode !== 'restaurant',
+    notifyOnNetworkStatusChange: true,
+  });
+  const retail = useQuery(MobilePosCatalogDocument, {
+    variables: { q: searchQuery },
+    skip: mode === 'restaurant',
+    notifyOnNetworkStatusChange: true,
+  });
+  const [scan] = useLazyQuery(MobilePosScanDocument, {
+    fetchPolicy: 'network-only',
+  });
+
+  const catalog = useMemo<PosMenuCatalog>(() => {
+    const artKind =
+      mode === 'restaurant'
+        ? ('food' as const)
+        : mode === 'pharmacy'
+        ? ('pharmacy' as const)
+        : ('retail' as const);
+    const items: PosMenuItem[] =
+      mode === 'restaurant'
+        ? (restaurant.data?.bmsPosRestaurantMenu.items ?? []).map(item => ({
+            sku: item.sku,
+            name: item.name,
+            price: item.price,
+            category: item.kitchenStation ?? 'เมนูอื่น',
+            station: item.kitchenStation ?? 'เมนูอื่น',
+            sellable: item.sellable,
+            imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
+            unavailableNote: item.unavailableReason,
+            artKind: 'food',
+            size: item.availableSizes[0]?.size ?? '',
+            packCode: '',
+            unitName: '',
+            baseQty: 1,
+            availableSizes: item.availableSizes,
+          }))
+        : (retail.data?.bmsPosCatalogSearch.items ?? []).map(item => ({
+            sku: item.sku,
+            name: item.name,
+            price: item.availableSizes[0]?.price ?? item.price,
+            category: 'สินค้า',
+            station: 'สินค้า',
+            sellable:
+              item.availability === 'AVAILABLE' && item.availableTotal > 0,
+            imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
+            unavailableNote:
+              item.availability === 'AVAILABLE' ? null : item.availability,
+            artKind,
+            size: item.availableSizes[0]?.size ?? '',
+            packCode: '',
+            unitName: '',
+            baseQty: 1,
+            availableSizes: item.availableSizes,
+          }));
+    const noun = mode === 'restaurant' ? 'เมนู' : 'สินค้า';
+    return {
+      categories: [
+        mode === 'restaurant' ? 'เมนูทั้งหมด' : 'สินค้าทั้งหมด',
+        ...unique(items.map(item => item.category)),
+      ],
+      stations: unique(items.map(item => item.station)),
+      items,
+      searchPlaceholder:
+        mode === 'restaurant'
+          ? 'ค้นหาเมนู หรือ SKU'
+          : 'ค้นหาสินค้า บาร์โค้ด หรือ SKU',
+      resultNoun: noun,
+      unavailableLabel:
+        mode === 'restaurant' ? 'ขายไม่ได้ตอนนี้' : 'สต็อกไม่พอ',
+    };
+  }, [
+    mode,
+    restaurant.data?.bmsPosRestaurantMenu.items,
+    retail.data?.bmsPosCatalogSearch.items,
+    target?.serverUrl,
+  ]);
+
+  const resolveVariant = useCallback(
+    async (
+      code: string,
+      size: string | null = null,
+      packCode: string | null = null,
+    ): Promise<PosMenuItem> => {
+      const response = await scan({
+        variables: {
+          code: code.trim(),
+          size,
+          packCode,
+          surface:
+            mode === 'restaurant' ? 'RESTAURANT_POS' : 'RETAIL_POS',
+        },
+      });
+      const item = response.data?.bmsPosScan;
+      if (!item) throw new Error('ไม่พบสินค้าจากรหัสนี้');
+      return {
+        sku: item.sku,
+        name: item.receiptName || item.productName,
+        price: item.packPrice,
+        // ราคาส่ง/โปรคิดจากราคาป้ายต่อหน่วยฐาน ไม่ใช่ราคาต่อหน่วยขาย — ต้องแยกเก็บทั้งคู่
+        basePrice: item.basePrice,
+        packBasePrice: item.packPrice,
+        modifierUnitPrice: 0,
+        priceTiers: normalizePriceTiers(item.priceTiers),
+        promotion: normalizePromotion(item.promotion),
+        category: 'สินค้า',
+        station: 'สินค้า',
+        sellable: item.available >= item.baseQty,
+        imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
+        unavailableNote:
+          item.available >= item.baseQty ? null : 'จำนวนคงเหลือไม่พอ',
+        artKind:
+          mode === 'restaurant'
+            ? 'food'
+            : mode === 'pharmacy'
+            ? 'pharmacy'
+            : 'retail',
+        size: item.size,
+        packCode: item.packCode,
+        unitName: item.unitName,
+        baseQty: item.baseQty,
+        serialTracked: item.serialTracked,
+        scaleBarcode: item.scaleBarcode,
+        modifiers: item.modifiers.map(modifier => ({
+          ...modifier,
+          selectionType:
+            modifier.selectionType === 'SINGLE' ? 'SINGLE' : 'MULTIPLE',
+        })),
+        packs: item.packs,
+      };
+    },
+    [mode, scan, target?.serverUrl],
+  );
+  const resolveScan = useCallback(
+    (code: string) => resolveVariant(code),
+    [resolveVariant],
+  );
+
+  const refetch = useCallback(async () => {
+    if (mode === 'restaurant') await restaurant.refetch();
+    else await retail.refetch();
+  }, [mode, restaurant, retail]);
+
+  const value = useMemo<CatalogContextValue>(
+    () => ({
+      catalog,
+      loading: mode === 'restaurant' ? restaurant.loading : retail.loading,
+      error:
+        (mode === 'restaurant' ? restaurant.error : retail.error)?.message ??
+        null,
+      refetch,
+      resolveScan,
+      resolveVariant,
+      setSearchQuery,
+    }),
+    [
+      catalog,
+      mode,
+      refetch,
+      resolveScan,
+      resolveVariant,
+      restaurant.error,
+      restaurant.loading,
+      retail.error,
+      retail.loading,
+      setSearchQuery,
+    ],
+  );
+  return (
+    <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>
+  );
+}
+
+export function useCatalog(): CatalogContextValue {
+  const value = useContext(CatalogContext);
+  if (!value) throw new Error('useCatalog ต้องอยู่ใต้ <CatalogProvider>');
+  return value;
+}

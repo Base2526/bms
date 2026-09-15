@@ -36,3 +36,7 @@ db/*.dump
 .pnpm-store/
 # ผลการรันชุดเทส (scripts/run-contract-tests.mjs) — 249 KB ต่อรอบ และเป็นของเครื่องนั้น
 .test-output/
+
+# editor-local settings and generated repository snapshots
+.vscode/
+repomix-output.xml

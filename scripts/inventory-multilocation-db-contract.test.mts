@@ -27,6 +27,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
+import { IdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
 import { adjustStock, listVariants, setReorderPoint } from "../apps/web/lib/bms/products.ts";
 import {
   cancelStockTransfer,
@@ -308,6 +309,128 @@ test("a count that would drop stock below what customers reserved is refused", a
   );
 });
 
+// ---- 9.88: คีย์กันรายการซ้ำของเครื่องขาย native ------------------------
+//
+// เครื่องขายมือถือทำคำสั่งสต็อกหายไปกับสายเน็ตได้ตลอด (HTTPS ตอบไม่ถึงเครื่องหลังจาก commit ไปแล้ว)
+// สิ่งที่ต้องพิสูจน์มีสองชั้นและ **ไม่เหมือนกัน**:
+//
+//   - `create` ไม่มี state machine กัน — ยิงซ้ำคือได้ใบที่สองจริง ๆ นี่คือการซ้ำที่เสียหายจริง
+//   - `send`/`apply` มี state machine กันการขยับสต็อกซ้ำอยู่แล้ว สิ่งที่ replay ให้คือ
+//     **คำตอบที่ถูก** แทน `WRONG_STATE` ซึ่งอ่านว่า "ทำไม่สำเร็จ" ทั้งที่ของออกจากชั้นไปแล้ว
+
+test("ยิงสร้างใบโอนซ้ำด้วยคีย์เดิม ต้องได้ใบเดิม ไม่ใช่ใบที่สอง", async () => {
+  const key = `${TAG}-create-replay`;
+  const request = {
+    tenantId, fromLocationId: mainLocation, toLocationId: branchLocation,
+    items: [{ sku: SKU, size: SIZE, qty: 2 }], createdBy: actorId,
+    idempotencyKey: key,
+  };
+  const first = await createStockTransfer(request);
+  if (first.status !== "CREATED") return assert.fail("สร้างใบโอนไม่สำเร็จ");
+  const second = await createStockTransfer(request);
+  if (second.status !== "CREATED") return assert.fail("ยิงซ้ำต้องได้คำตอบเดิม ไม่ใช่ error");
+
+  assert.equal(second.transferId, first.transferId, "คีย์เดิมต้องคืนใบเดิม");
+  assert.equal(second.transferNo, first.transferNo);
+
+  const rows = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_stock_transfers WHERE tenant_id = $1 AND transfer_no = $2`,
+    [tenantId, first.transferNo]
+  );
+  assert.equal(Number(rows.rows[0].n), 1, "ต้องไม่มีใบที่สองเกิดขึ้นในฐาน");
+  await cancelStockTransfer({ tenantId, transferId: first.transferId, actorUserId: actorId });
+});
+
+test("ส่งของซ้ำด้วยคีย์เดิม ต้องได้คำตอบเดิม และสต็อกขยับครั้งเดียว", async () => {
+  await adjustStock(tenantId, SKU, SIZE, 20, `${TAG} เติมของให้เทส replay`, "test", actorId, mainLocation);
+  const created = await createStockTransfer({
+    tenantId, fromLocationId: mainLocation, toLocationId: branchLocation,
+    items: [{ sku: SKU, size: SIZE, qty: 3 }], createdBy: actorId,
+  });
+  if (created.status !== "CREATED") return assert.fail("สร้างใบโอนไม่สำเร็จ");
+
+  const before = await stockAt(mainLocation);
+  const key = `${TAG}-send-replay`;
+  const first = await sendStockTransfer({
+    tenantId, transferId: created.transferId, actorUserId: actorId, idempotencyKey: key,
+  });
+  assert.equal(first.status, "OK");
+  assert.equal(await stockAt(mainLocation), before - 3);
+
+  const replay = await sendStockTransfer({
+    tenantId, transferId: created.transferId, actorUserId: actorId, idempotencyKey: key,
+  });
+  assert.equal(replay.status, "OK",
+    "คำขอที่ตอบไม่ถึงเครื่องแล้วกดซ้ำ ต้องได้ความจริง ไม่ใช่ WRONG_STATE ที่อ่านว่าทำไม่สำเร็จ");
+  assert.equal(await stockAt(mainLocation), before - 3, "ของต้องออกจากชั้นครั้งเดียว");
+
+  await receiveStockTransfer({ tenantId, transferId: created.transferId, actorUserId: actorId });
+});
+
+test("กด apply ใบนับซ้ำด้วยคีย์เดิม ต้องได้ตัวเลขเดิม และไม่ปรับสต็อกซ้ำ", async () => {
+  const before = await stockAt(mainLocation);
+  const created = await createStockCount({ tenantId, locationId: mainLocation, createdBy: actorId });
+  if (created.status !== "CREATED") return assert.fail("สร้างใบนับไม่สำเร็จ");
+  await recordCountItem({
+    tenantId, countId: created.countId, sku: SKU, size: SIZE,
+    countedQty: before - 2, actorUserId: actorId,
+  });
+
+  const key = `${TAG}-apply-replay`;
+  const first = await applyStockCount({
+    tenantId, countId: created.countId, actorUserId: actorId, idempotencyKey: key,
+  });
+  assert.equal(first.status, "APPLIED");
+  assert.equal(await stockAt(mainLocation), before - 2);
+
+  const replay = await applyStockCount({
+    tenantId, countId: created.countId, actorUserId: actorId, idempotencyKey: key,
+  });
+  assert.equal(replay.status, "APPLIED", "การนับที่ลงไปแล้วต้องรายงานว่าลงแล้ว ไม่ใช่ WRONG_STATE");
+  assert.equal(
+    replay.status === "APPLIED" ? replay.varianceUnits : null,
+    first.status === "APPLIED" ? first.varianceUnits : null,
+    "ตัวเลขส่วนต่างที่บัญชีต้องเห็นต้องเป็นชุดเดิม"
+  );
+  assert.equal(await stockAt(mainLocation), before - 2, "สต็อกต้องถูกปรับครั้งเดียว");
+});
+
+test("คีย์เดิมกับข้อมูลคนละชุดถูกปฏิเสธเป็น conflict ไม่ใช่สร้างใบที่สอง", async () => {
+  const key = `${TAG}-conflict`;
+  const first = await createStockTransfer({
+    tenantId, fromLocationId: mainLocation, toLocationId: branchLocation,
+    items: [{ sku: SKU, size: SIZE, qty: 1 }], createdBy: actorId, idempotencyKey: key,
+  });
+  if (first.status !== "CREATED") return assert.fail("สร้างใบโอนไม่สำเร็จ");
+
+  const countBefore = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_stock_transfers WHERE tenant_id = $1`, [tenantId]
+  );
+  await assert.rejects(
+    () => createStockTransfer({
+      tenantId, fromLocationId: mainLocation, toLocationId: branchLocation,
+      items: [{ sku: SKU, size: SIZE, qty: 9 }], createdBy: actorId, idempotencyKey: key,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof IdempotencyConflictError,
+        "ต้องเป็นการปฏิเสธตามกติกา เพื่อให้ GraphQL ตอบ CONFLICT ไม่ใช่ 500 ที่สั่งให้ยิงซ้ำคีย์เดิม");
+      return true;
+    }
+  );
+  const countAfter = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_stock_transfers WHERE tenant_id = $1`, [tenantId]
+  );
+  assert.equal(countAfter.rows[0].n, countBefore.rows[0].n, "คำขอที่ถูกปฏิเสธต้องไม่ทิ้งใบไว้");
+
+  const stored = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_inventory_operation_idempotency
+      WHERE tenant_id = $1 AND idempotency_key = $2`,
+    [tenantId, key]
+  );
+  assert.equal(Number(stored.rows[0].n), 1, "คีย์หนึ่งใบต้องผูกกับผลลัพธ์ชุดเดียว");
+  await cancelStockTransfer({ tenantId, transferId: first.transferId, actorUserId: actorId });
+});
+
 test("teardown: remove every row this suite created", async () => {
   const counts = await query<{ id: string }>(`SELECT id FROM bms_stock_counts WHERE tenant_id = $1`, [tenantId]);
   const transfers = await query<{ id: string }>(`SELECT id FROM bms_stock_transfers WHERE tenant_id = $1`, [tenantId]);
@@ -319,6 +442,8 @@ test("teardown: remove every row this suite created", async () => {
     await query(`DELETE FROM bms_stock_transfer_items WHERE tenant_id = $1 AND transfer_id = ANY($2::uuid[])`,
       [tenantId, transfers.rows.map((r) => r.id)]);
   }
+  await query(`DELETE FROM bms_inventory_operation_idempotency WHERE tenant_id = $1 AND idempotency_key LIKE $2`,
+    [tenantId, `${TAG}-%`]);
   await query(`DELETE FROM bms_stock_counts WHERE tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_stock_transfers WHERE tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);

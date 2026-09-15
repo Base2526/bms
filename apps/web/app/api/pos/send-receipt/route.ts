@@ -10,9 +10,8 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, verifyCashierPin } from "@/lib/bms/pos";
+import { authenticatePosDevice, isPosOrderOwnedByDevice, verifyCashierPin } from "@/lib/bms/pos";
 import { sendReceipt } from "@/lib/bms/receiptDelivery";
-import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -34,11 +33,9 @@ async function handlePOST(req: NextRequest) {
   const auth = await verifyCashierPin(device.tenantId, cashierUserId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
 
-  const owned = await query(
-    `SELECT 1 FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND pos_device_id = $3`,
-    [device.tenantId, orderId, device.id]
-  );
-  if (!owned.rowCount) return NextResponse.json({ error: "ไม่พบบิลนี้ของเครื่องนี้" }, { status: 404 });
+  if (!(await isPosOrderOwnedByDevice(device.tenantId, orderId, device.id))) {
+    return NextResponse.json({ error: "ไม่พบบิลนี้ของเครื่องนี้" }, { status: 404 });
+  }
 
   const result = await sendReceipt({
     tenantId: device.tenantId,

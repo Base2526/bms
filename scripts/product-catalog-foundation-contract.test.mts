@@ -124,17 +124,23 @@ test("P2 workflows keep copied and imported products as drafts", () => {
   assert.match(importer, /"ช่องทางขาย"/);
 });
 
-// เก็บเงินบิลโต๊ะเดินผ่าน recordPosSale ตัวเดียวกับบิลค้าปลีก ถ้า canonicalize ตรึงเป็น
-// RETAIL_POS เมนูที่เปิดขายแค่ที่โต๊ะ (เทมเพลต PREPARED_MENU ตั้ง RESTAURANT_POS ตัวเดียว)
-// จะสั่งได้ ครัวทำเสร็จ แต่คิดเงินไม่ได้ — ล้มกลางโต๊ะเป็น INVALID_PACK
-test("settling a dine-in check checks the restaurant surface, not the retail one", () => {
+// เก็บเงินบิลโต๊ะและบิลเคาน์เตอร์ร้านอาหารเดินผ่าน recordPosSale ตัวเดียวกับบิลค้าปลีก ถ้า
+// canonicalize ตรึงเป็น RETAIL_POS เมนูที่เปิดขายแค่ RESTAURANT_POS
+// (เทมเพลต PREPARED_MENU) จะสั่งได้ แต่คิดเงินไม่ได้ — ล้มเป็น INVALID_PACK
+test("restaurant POS sales check the restaurant surface, not the retail one", () => {
   const pos = withoutComments(source("apps/web/lib/bms/pos.ts"));
+  const gql = withoutComments(source("apps/web/graphql/bmsPosDevice.ts"));
   assert.doesNotMatch(pos, /surface\.surface = 'RETAIL_POS'/);
   assert.match(pos, /salesSurface: "RETAIL_POS" \| "RESTAURANT_POS"/);
+  assert.match(pos, /posSalesSurface: input\.restaurantCheckId \? "RESTAURANT_POS" : input\.salesSurface \?\? "RETAIL_POS"/);
   assert.match(
     pos,
-    /canonicalizePosSaleLines\([\s\S]{0,120}input\.restaurantCheckId \? "RESTAURANT_POS" : "RETAIL_POS"/
+    /canonicalizePosSaleLines\([\s\S]{0,140}input\.restaurantCheckId \? "RESTAURANT_POS" : input\.salesSurface \?\? "RETAIL_POS"/
   );
+  const orders = withoutComments(source("apps/web/lib/bms/orders.ts"));
+  assert.match(orders, /posSalesSurface\?: "RETAIL_POS" \| "RESTAURANT_POS" \| null/);
+  assert.match(orders, /input\.channel === "pos" \? input\.posSalesSurface \?\? "RETAIL_POS" : "ONLINE_ORDER"/);
+  assert.match(gql, /businessArchetype === "restaurant"\s*\?\s*"RESTAURANT_POS"\s*:\s*"RETAIL_POS"/);
 });
 
 // ตัวอย่างข้อมูลเข้าฐานด้วย INSERT ตรง ไม่ผ่าน upsertProduct จึงไม่มีใครใส่ช่องทางขายให้

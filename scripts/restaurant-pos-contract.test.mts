@@ -46,45 +46,147 @@ test("restaurant migration owns floor, checks, rounds, RLS and one-open-check co
   assert.match(sql, /bms_orders_restaurant_check_fk/);
 });
 
+test("takeaway uses the restaurant check pipeline without inventing a table", async () => {
+  const migration = code(
+    await read("db/migrations/9.87__bms_restaurant_service_mode.sql"),
+  );
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const orders = code(await read("apps/web/lib/bms/orders.ts"));
+  const graphql = code(await read("apps/web/graphql/bmsPosDevice.ts"));
+  const manual = code(await read("apps/web/app/(admin)/admin/manual/page.tsx"));
+
+  assert.match(migration, /service_mode TEXT NOT NULL DEFAULT 'DINE_IN'/);
+  assert.match(migration, /ALTER COLUMN table_id DROP NOT NULL/);
+  assert.match(migration, /service_mode = 'DINE_IN' AND table_id IS NOT NULL/);
+  assert.match(migration, /service_mode = 'TAKEAWAY' AND table_id IS NULL/);
+  assert.match(migration, /restaurant_service_mode TEXT/);
+  assert.match(
+    migration,
+    /WHERE table_id IS NOT NULL AND status IN \('OPEN', 'CLOSING'\)/,
+  );
+
+  assert.match(restaurant, /serviceMode === "DINE_IN" && !tableId/);
+  assert.match(restaurant, /tableId, serviceMode, input\.deviceId/);
+  assert.match(restaurant, /c\.service_mode = 'DINE_IN'/);
+  assert.match(restaurant, /c\.service_mode = 'TAKEAWAY'/);
+  assert.match(
+    restaurant,
+    /restaurantServiceMode: normalizeRestaurantServiceMode\(check\.service_mode\)/,
+  );
+  assert.match(restaurant, /service_mode !== "DINE_IN"/);
+
+  assert.match(orders, /restaurant_service_mode/);
+  assert.match(orders, /input\.restaurantServiceMode === "TAKEAWAY"/);
+  assert.match(
+    graphql,
+    /serviceMode\s*=\s*input\.serviceMode\s*===\s*"TAKEAWAY"/,
+  );
+  assert.match(
+    graphql,
+    /serviceMode\s*===\s*"DINE_IN"\s*\?\s*uuidInput\(input\.tableId/,
+  );
+
+  assert.match(manual, /รองรับทั้ง DINE_IN และ TAKEAWAY/);
+  assert.match(manual, /บิลกลับบ้านไม่ใช้โต๊ะและไม่สร้าง QR/);
+  assert.match(manual, /service mode ไว้กับออเดอร์/);
+  assert.match(manual, /One \/pos\/restaurant device handles both DINE_IN and TAKEAWAY/);
+  assert.match(manual, /A take-away check owns no table or QR/);
+  assert.match(manual, /TAKEAWAY has no table\/QR and currently cannot be moved, split, or merged/);
+});
+
+test("web and mobile classify savory menu art before generic drink words", async () => {
+  const web = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const mobile = code(await read("apps/mobile/src/components/DishArt.tsx"));
+
+  for (const source of [web, mobile]) {
+    const soup = source.indexOf("ต้ม|แกง|ซุป|โจ๊ก|ก๋วยเตี๋ยว");
+    const salad = source.indexOf("ตำ|ยำ|สลัด|ลาบ|น้ำตก");
+    const drink = source.indexOf("ชา|กาแฟ|น้ำ|โอเลี้ยง|โซดา|นม");
+    assert.ok(soup >= 0 && salad >= 0 && drink >= 0);
+    assert.ok(soup < drink);
+    assert.ok(salad < drink);
+  }
+});
+
 test("restaurant floor hierarchy cannot cross branches inside one tenant", async () => {
-  const sql = code(await read("db/migrations/9.47__bms_restaurant_pos_location_integrity.sql"));
+  const sql = code(
+    await read("db/migrations/9.47__bms_restaurant_pos_location_integrity.sql"),
+  );
   assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, area_id\)/);
-  assert.match(sql, /REFERENCES bms_restaurant_areas\(tenant_id, location_id, id\)/);
+  assert.match(
+    sql,
+    /REFERENCES bms_restaurant_areas\(tenant_id, location_id, id\)/,
+  );
   assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, table_id\)/);
-  assert.match(sql, /REFERENCES bms_restaurant_tables\(tenant_id, location_id, id\)/);
-  assert.match(sql, /VALIDATE CONSTRAINT bms_restaurant_tables_area_location_fk/);
-  assert.match(sql, /VALIDATE CONSTRAINT bms_restaurant_checks_table_location_fk/);
+  assert.match(
+    sql,
+    /REFERENCES bms_restaurant_tables\(tenant_id, location_id, id\)/,
+  );
+  assert.match(
+    sql,
+    /VALIDATE CONSTRAINT bms_restaurant_tables_area_location_fk/,
+  );
+  assert.match(
+    sql,
+    /VALIDATE CONSTRAINT bms_restaurant_checks_table_location_fk/,
+  );
 });
 
 test("restaurant settlement has a recoverable cross-instance claim", async () => {
-  const sql = code(await read("db/migrations/9.48__bms_restaurant_pos_settlement_claim.sql"));
+  const sql = code(
+    await read("db/migrations/9.48__bms_restaurant_pos_settlement_claim.sql"),
+  );
   assert.match(sql, /ADD COLUMN IF NOT EXISTS settlement_attempt_id UUID/);
-  assert.match(sql, /ADD COLUMN IF NOT EXISTS settlement_started_at TIMESTAMPTZ/);
-  assert.match(sql, /settlement_attempt_id IS NULL\) = \(settlement_started_at IS NULL/);
-  assert.match(sql, /status = 'CLOSING'\) = \(settlement_attempt_id IS NOT NULL/);
+  assert.match(
+    sql,
+    /ADD COLUMN IF NOT EXISTS settlement_started_at TIMESTAMPTZ/,
+  );
+  assert.match(
+    sql,
+    /settlement_attempt_id IS NULL\) = \(settlement_started_at IS NULL/,
+  );
+  assert.match(
+    sql,
+    /status = 'CLOSING'\) = \(settlement_attempt_id IS NOT NULL/,
+  );
   assert.match(sql, /c\.status IN \('OPEN', 'CLOSING'\)/);
   assert.match(sql, /o\.status = 'COMPLETED'/);
 });
 
 test("POS device, shift and restaurant check share one tenant location", async () => {
-  const sql = code(await read("db/migrations/9.49__bms_pos_device_shift_location_integrity.sql"));
+  const sql = code(
+    await read(
+      "db/migrations/9.49__bms_pos_device_shift_location_integrity.sql",
+    ),
+  );
   assert.match(sql, /FOREIGN KEY \(tenant_id, location_id\)/);
   assert.match(sql, /REFERENCES bms_locations\(tenant_id, id\)/);
   assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, device_id\)/);
   assert.match(sql, /REFERENCES bms_pos_devices\(tenant_id, location_id, id\)/);
-  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, pos_device_id, pos_shift_id\)/);
-  assert.match(sql, /REFERENCES bms_pos_shifts\(tenant_id, location_id, device_id, id\)/);
+  assert.match(
+    sql,
+    /FOREIGN KEY \(tenant_id, location_id, pos_device_id, pos_shift_id\)/,
+  );
+  assert.match(
+    sql,
+    /REFERENCES bms_pos_shifts\(tenant_id, location_id, device_id, id\)/,
+  );
 });
 
 test("restaurant writes require device, PIN and permission at the route boundary", async () => {
   const auth = code(await read("apps/web/app/api/pos/restaurant/routeAuth.ts"));
-  const checks = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const checks = code(
+    await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"),
+  );
   assert.match(auth, /authenticatePosDevice/);
   assert.match(auth, /verifyCashierPin/);
   assert.match(auth, /cashierHasPermission/);
   assert.match(auth, /getOpenPosShift/);
   // ผู้ที่รับออร์เดอร์ด้วย pos.sell ต้องเป็นคนเริ่ม cancel ได้เอง โดยสิทธิ์เฉพาะเดิมยังใช้ได้
-  assert.match(checks, /action === "cancel" \? \["pos\.sell", "restaurant\.check\.cancel"\] as const : "pos\.sell"/);
+  assert.match(
+    checks,
+    /action === "cancel" \? \["pos\.sell", "restaurant\.check\.cancel"\] as const : "pos\.sell"/,
+  );
   assert.match(auth, /permissionChecks\.some\(Boolean\)/);
   assert.match(checks, /parsePosPayments/);
   assert.doesNotMatch(checks, /tenantId\s*:\s*body/);
@@ -93,30 +195,58 @@ test("restaurant writes require device, PIN and permission at the route boundary
 });
 
 test("cancelling a sent restaurant check requires a distinct pos.void approver", async () => {
-  const route = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const route = code(
+    await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"),
+  );
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(route, /check\.hasCurrentOrder \|\| check\.items\.some/);
-  assert.match(route, /isDistinctPosApprover\(auth\.actor\.userId, approverId\)/);
-  assert.match(route, /verifyCashierPin\(auth\.device\.tenantId, approverId, approverPin\)/);
-  assert.match(route, /cashierHasPermission\(auth\.device\.tenantId, approver\.userId, "pos\.void"\)/);
+  assert.match(
+    route,
+    /isDistinctPosApprover\(auth\.actor\.userId, approverId\)/,
+  );
+  assert.match(
+    route,
+    /verifyCashierPin\(auth\.device\.tenantId, approverId, approverPin\)/,
+  );
+  assert.match(
+    route,
+    /cashierHasPermission\(auth\.device\.tenantId, approver\.userId, "pos\.void"\)/,
+  );
   assert.match(restaurant, /AS requires_void_approval/);
   assert.match(restaurant, /requires_void_approval && \(/);
-  assert.match(restaurant, /approvedByUserId: input\.approvedByUserId \?\? null/);
-  assert.match(restaurant, /finally \{\s*client\.release\(\);\s*\}\s*if \(releasedOrderId\)/);
+  assert.match(
+    restaurant,
+    /approvedByUserId: input\.approvedByUserId \?\? null/,
+  );
+  assert.match(
+    restaurant,
+    /finally \{\s*client\.release\(\);\s*\}\s*if \(releasedOrderId\)/,
+  );
   assert.match(page, /person\.approvals\.includes\("pos\.void"\)/);
-  assert.match(page, /approverUserId: cancelNeedsApproval \? cancelApproverId : null/);
+  assert.match(
+    page,
+    /approverUserId: cancelNeedsApproval \? cancelApproverId : null/,
+  );
   assert.doesNotMatch(page, /window\.prompt/);
 });
 
 test("the order taker must leave a cancellation note at both route and service boundaries", async () => {
-  const route = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const route = code(
+    await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"),
+  );
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
 
   assert.match(route, /if \(!reason\).*ต้องระบุ Note/);
-  assert.match(restaurant, /const cancellationNote = String\(input\.reason \?\? ""\)\.trim\(\)\.slice\(0, 300\)/);
-  assert.match(restaurant, /if \(!cancellationNote\) throw new RestaurantCheckError/);
+  assert.match(
+    restaurant,
+    /const cancellationNote = String\(input\.reason \?\? ""\)\.trim\(\)\.slice\(0, 300\)/,
+  );
+  assert.match(
+    restaurant,
+    /if \(!cancellationNote\) throw new RestaurantCheckError/,
+  );
   assert.match(restaurant, /`ยกเลิก: \$\{cancellationNote\}`/);
   assert.match(restaurant, /reason: cancellationNote/);
   assert.match(page, /t\("pos_restaurant\.cancel_reason_label"\)/);
@@ -148,17 +278,29 @@ test("check serialization never parks a pool connection while it waits", async (
 test("a dine-in check is not chained to the device, shift or cashier that opened it", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   // finalizePosSale() ล็อกบิลด้วย cashier_user_id ด้วย — ไม่ประทับใหม่ = คนละคนคิดเงินไม่ได้
-  assert.match(restaurant, /UPDATE bms_orders(?: o)?\s+SET pos_device_id = \$3, pos_shift_id = \$4, cashier_user_id = \$5/);
+  assert.match(
+    restaurant,
+    /UPDATE bms_orders(?: o)?\s+SET pos_device_id = \$3, pos_shift_id = \$4, cashier_user_id = \$5/,
+  );
   // และการค้นบิลตอนคิดเงิน/ส่งครัวห้ามผูกกับกะ/เครื่องที่เปิดโต๊ะ (กะเปลี่ยนระหว่างมื้อได้)
-  assert.doesNotMatch(restaurant, /AND pos_device_id = \$4 AND pos_shift_id = \$5 AND status IN/);
-  assert.doesNotMatch(restaurant, /AND location_id = \$3 AND pos_shift_id = \$4/);
+  assert.doesNotMatch(
+    restaurant,
+    /AND pos_device_id = \$4 AND pos_shift_id = \$5 AND status IN/,
+  );
+  assert.doesNotMatch(
+    restaurant,
+    /AND location_id = \$3 AND pos_shift_id = \$4/,
+  );
 });
 
 test("a check can always be finished or cancelled — CLOSING is never a dead end", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   assert.match(restaurant, /async function reopenClosingCheck/);
   // เก็บเงินล้มแบบ throw ก็ต้องคืนสถานะ ไม่ใช่เฉพาะผลลัพธ์ที่ไม่ใช่ SOLD
-  assert.match(restaurant, /\.catch\(async \(error\) => \{\s*await reopenClosingCheck/);
+  assert.match(
+    restaurant,
+    /\.catch\(async \(error\) => \{\s*await reopenClosingCheck/,
+  );
   assert.match(restaurant, /c\.status IN \('OPEN','CLOSING'\)/);
   // ห้ามยกเลิกบิลที่เก็บเงินไปแล้ว
   assert.match(restaurant, /o\.status NOT IN \('PENDING','CANCELLED'\)/);
@@ -169,11 +311,20 @@ test("one settlement attempt owns CLOSING and POS closes the check atomically", 
   const pos = code(await read("apps/web/lib/bms/pos.ts"));
   assert.match(restaurant, /const settlementAttemptId = randomUUID\(\)/);
   assert.match(restaurant, /settlement_started_at, '-infinity'::timestamptz/);
-  assert.match(restaurant, /settlement_attempt_id = \$7, settlement_started_at = now\(\)/);
-  assert.match(restaurant, /restaurantSettlementAttemptId: settlementAttemptId/);
+  assert.match(
+    restaurant,
+    /settlement_attempt_id = \$7, settlement_started_at = now\(\)/,
+  );
+  assert.match(
+    restaurant,
+    /restaurantSettlementAttemptId: settlementAttemptId/,
+  );
   assert.match(restaurant, /c\.settlement_attempt_id = \$3/);
   assert.match(pos, /AND settlement_attempt_id = \$5\s+FOR UPDATE/);
-  assert.match(pos, /SET status = 'PAID', closed_by = \$3, closed_at = now\(\)/);
+  assert.match(
+    pos,
+    /SET status = 'PAID', closed_by = \$3, closed_at = now\(\)/,
+  );
   assert.match(pos, /restaurant\.check_paid/);
   assert.doesNotMatch(restaurant, /SET status = 'PAID', closed_by/);
 });
@@ -183,10 +334,15 @@ test("the settlement key is read from the reservation order, never rebuilt", asy
   // (ลูกค้าสั่งเพิ่มหลังกดคิดเงินล้มไปครั้งหนึ่ง) คีย์เก่าจะไม่ชนอะไรแล้ว recordPosSale
   // สร้างออร์เดอร์ใบที่สอง = จองสต็อกซ้ำ และใบจองเดิมค้าง PENDING ตลอดไป
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  const settle = restaurant.slice(restaurant.indexOf("export async function settleRestaurantCheck"));
+  const settle = restaurant.slice(
+    restaurant.indexOf("export async function settleRestaurantCheck"),
+  );
   assert.match(settle, /o\.idempotency_key AS order_key/);
   assert.match(settle, /key = String\(check\.order_key \?\? ""\)\.trim\(\)/);
-  assert.doesNotMatch(settle, /`restaurant:\$\{input\.checkId\}:v\$\{check\.version\}`/);
+  assert.doesNotMatch(
+    settle,
+    /`restaurant:\$\{input\.checkId\}:v\$\{check\.version\}`/,
+  );
   assert.doesNotMatch(restaurant, /check\.settlement_idempotency_key \|\|/);
 });
 
@@ -196,46 +352,82 @@ test("a replacement reservation is atomic and gives the old key back", async () 
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const orders = code(await read("apps/web/lib/bms/orders.ts"));
   // การคืน reservation ย้ายเข้า releaseCheckReservationInTx() แล้ว — การันตีเดิมไม่ได้หายไป
-  assert.match(restaurant, /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/);
-  assert.match(restaurant, /await cancelOrderInTx\(client, tenantId, orderId\)/);
+  assert.match(
+    restaurant,
+    /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/,
+  );
+  assert.match(
+    restaurant,
+    /await cancelOrderInTx\(client, tenantId, orderId\)/,
+  );
   assert.match(restaurant, /createOrderInTx\(client,/);
   assert.match(restaurant, /SET idempotency_key = NULL/);
   assert.match(restaurant, /created\.status !== "CREATED"\) return created/);
-  assert.match(restaurant, /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\);\s*return result/);
+  assert.match(
+    restaurant,
+    /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\);\s*return result/,
+  );
   assert.doesNotMatch(restaurant, /releaseReservationOrder/);
   // public createOrder ยังเป็นเจ้าของ transaction เดิม แต่ workflow ใหญ่เรียกแกน in-tx ได้
   assert.match(orders, /export async function createOrderInTx\(/);
   assert.match(orders, /const result = await createOrderInTx\(client, input\)/);
-  assert.match(orders, /result\.status !== "CREATED"[\s\S]*ROLLBACK[\s\S]*COMMIT/);
+  assert.match(
+    orders,
+    /result\.status !== "CREATED"[\s\S]*ROLLBACK[\s\S]*COMMIT/,
+  );
 });
 
 test("restaurant operations use restaurant permissions instead of shipping/device aliases", async () => {
   const permissions = code(await read("apps/web/lib/bms/permissions.ts"));
-  const floor = code(await read("apps/web/app/api/pos/restaurant/floor/route.ts"));
-  const kitchenRoute = code(await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"));
-  const kitchenResolver = code(await read("apps/web/graphql/bmsStockCapabilities.ts"));
-  const migration = code(await read("db/migrations/9.45__bms_restaurant_modifier_pricing_rbac.sql"));
+  const floor = code(
+    await read("apps/web/app/api/pos/restaurant/floor/route.ts"),
+  );
+  const kitchenRoute = code(
+    await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"),
+  );
+  const kitchenResolver = code(
+    await read("apps/web/graphql/bmsStockCapabilities.ts"),
+  );
+  const migration = code(
+    await read("db/migrations/9.45__bms_restaurant_modifier_pricing_rbac.sql"),
+  );
   for (const permission of [
-    "restaurant.floor.manage", "restaurant.kitchen.update", "restaurant.check.cancel",
+    "restaurant.floor.manage",
+    "restaurant.kitchen.update",
+    "restaurant.check.cancel",
   ]) {
-    assert.ok(permissions.includes(`"${permission}"`), `permission catalog ขาด ${permission}`);
-    assert.ok(migration.includes(`'${permission}'`), `migration ไม่ seed ${permission}`);
+    assert.ok(
+      permissions.includes(`"${permission}"`),
+      `permission catalog ขาด ${permission}`,
+    );
+    assert.ok(
+      migration.includes(`'${permission}'`),
+      `migration ไม่ seed ${permission}`,
+    );
   }
   assert.match(floor, /"restaurant\.floor\.manage"/);
   assert.doesNotMatch(floor, /"pos\.device\.manage"/);
   assert.match(kitchenRoute, /"restaurant\.kitchen\.update"/);
   assert.doesNotMatch(kitchenRoute, /"order\.ship"/);
-  assert.match(kitchenResolver, /requirePermission\(ctx, "restaurant\.kitchen\.update"\)/);
+  assert.match(
+    kitchenResolver,
+    /requirePermission\(ctx, "restaurant\.kitchen\.update"\)/,
+  );
 });
 
 test("modifier surcharge is catalog-owned and reaches the immutable sale snapshot", async () => {
-  const migration = code(await read("db/migrations/9.45__bms_restaurant_modifier_pricing_rbac.sql"));
+  const migration = code(
+    await read("db/migrations/9.45__bms_restaurant_modifier_pricing_rbac.sql"),
+  );
   const productRecipes = code(await read("apps/web/lib/bms/productRecipes.ts"));
   const orders = code(await read("apps/web/lib/bms/orders.ts"));
   const consumption = code(await read("apps/web/lib/bms/stockConsumption.ts"));
   const commission = code(await read("apps/web/lib/bms/commission.ts"));
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(migration, /ADD COLUMN IF NOT EXISTS price_delta NUMERIC\(12,2\) NOT NULL DEFAULT 0/);
+  assert.match(
+    migration,
+    /ADD COLUMN IF NOT EXISTS price_delta NUMERIC\(12,2\) NOT NULL DEFAULT 0/,
+  );
   assert.match(migration, /CHECK \(price_delta >= 0\)/);
   assert.match(productRecipes, /price_delta = EXCLUDED\.price_delta/);
   assert.match(orders, /FROM bms_product_modifiers/);
@@ -243,18 +435,29 @@ test("modifier surcharge is catalog-owned and reaches the immutable sale snapsho
   assert.match(orders, /modifierUnitPrice/);
   assert.match(orders, /pricingSnapshot:[\s\S]*modifierUnitPrice/);
   assert.match(consumption, /MODIFIER_REQUIRES_RECIPE:/);
-  assert.match(commission, /COALESCE\(oi\.pack_unit_price \* oi\.pack_qty, oi\.unit_price \* oi\.qty\)/);
+  assert.match(
+    commission,
+    /COALESCE\(oi\.pack_unit_price \* oi\.pack_qty, oi\.unit_price \* oi\.qty\)/,
+  );
   assert.match(page, /modifier\.priceDelta/);
 });
 
 test("restaurant settlement locks the check across instances and safely replays a paid check", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  const settle = restaurant.slice(restaurant.indexOf("export async function settleRestaurantCheck"));
+  const settle = restaurant.slice(
+    restaurant.indexOf("export async function settleRestaurantCheck"),
+  );
   assert.match(settle, /beginTenantTx\(prepare, input\.tenantId/);
-  assert.match(settle, /lockCheckInTx\(prepare, input\.tenantId, input\.checkId\)/);
+  assert.match(
+    settle,
+    /lockCheckInTx\(prepare, input\.tenantId, input\.checkId\)/,
+  );
   assert.match(settle, /FOR UPDATE OF c, o/);
   assert.match(settle, /c\.status IN \('OPEN','CLOSING','PAID'\)/);
-  assert.match(settle, /check\.order_device_id !== input\.deviceId[\s\S]*check\.order_shift_id !== input\.shiftId[\s\S]*check\.order_cashier_user_id !== input\.actorUserId/);
+  assert.match(
+    settle,
+    /check\.order_device_id !== input\.deviceId[\s\S]*check\.order_shift_id !== input\.shiftId[\s\S]*check\.order_cashier_user_id !== input\.actorUserId/,
+  );
   assert.match(settle, /if \(check\.status !== "PAID"\)/);
   assert.match(settle, /settlement_started_at, '-infinity'::timestamptz/);
   assert.match(settle, /restaurantSettlementAttemptId: settlementAttemptId/);
@@ -265,12 +468,21 @@ test("whole-check cancellation releases its order inside the check transaction",
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const cancelBlock = restaurant.slice(
     restaurant.indexOf("export async function cancelRestaurantCheck"),
-    restaurant.indexOf("async function reopenClosingCheck")
+    restaurant.indexOf("async function reopenClosingCheck"),
   );
   assert.match(cancelBlock, /beginTenantTx\(client, input\.tenantId/);
-  assert.match(cancelBlock, /lockCheckInTx\(client, input\.tenantId, input\.checkId\)/);
-  assert.match(cancelBlock, /releaseCheckReservationInTx\(client, input\.tenantId, reservationId\)/);
-  assert.match(cancelBlock, /UPDATE bms_restaurant_kitchen_tickets[\s\S]*UPDATE bms_restaurant_checks[\s\S]*restaurant\.check_cancel[\s\S]*COMMIT/);
+  assert.match(
+    cancelBlock,
+    /lockCheckInTx\(client, input\.tenantId, input\.checkId\)/,
+  );
+  assert.match(
+    cancelBlock,
+    /releaseCheckReservationInTx\(client, input\.tenantId, reservationId\)/,
+  );
+  assert.match(
+    cancelBlock,
+    /UPDATE bms_restaurant_kitchen_tickets[\s\S]*UPDATE bms_restaurant_checks[\s\S]*restaurant\.check_cancel[\s\S]*COMMIT/,
+  );
   assert.doesNotMatch(cancelBlock, /cancelOrder\(/);
 });
 
@@ -278,13 +490,19 @@ test("failed later rounds roll back to the previous sent-item reservation", asyn
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const send = restaurant.slice(
     restaurant.indexOf("async function sendRestaurantKitchenRoundInTx"),
-    restaurant.indexOf("export async function moveRestaurantCheck")
+    restaurant.indexOf("export async function moveRestaurantCheck"),
   );
   assert.match(send, /beginTenantTx\(client, input\.tenantId/);
-  assert.match(send, /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/);
+  assert.match(
+    send,
+    /releaseCheckReservationInTx\(client, input\.tenantId, check\.current_order_id\)/,
+  );
   assert.match(send, /createOrderInTx\(client,/);
   assert.match(send, /created\.status !== "CREATED"\) return created/);
-  assert.match(send, /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\)/);
+  assert.match(
+    send,
+    /result\.status !== "SENT"\) \{\s*await client\.query\("ROLLBACK"\)/,
+  );
   assert.doesNotMatch(send, /restoreSentReservation/);
   assert.doesNotMatch(restaurant, /await query\(\s*`UPDATE bms_restaurant_/);
   assert.doesNotMatch(restaurant, /await query<[^>]+>\(\s*`UPDATE bms_orders/);
@@ -292,13 +510,16 @@ test("failed later rounds roll back to the previous sent-item reservation", asyn
 
 test("dine-in kitchen tickets cover every sent line and follow the store capability", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  assert.match(restaurant, /isCapabilityEnabledInTx\(client, input\.tenantId, "KITCHEN_WORKFLOW"\)/);
+  assert.match(
+    restaurant,
+    /isCapabilityEnabledInTx\(client, input\.tenantId, "KITCHEN_WORKFLOW"\)/,
+  );
   // บิลโต๊ะทุกบรรทัดคือของที่ต้องเสิร์ฟ — กรอง RECIPE = น้ำ/เบียร์/ของหวานไม่ขึ้นจอครัว
   // ตัดมาเฉพาะเส้นทางส่งครัว: กฎนี้พูดถึงการออกตั๋ว ไม่ใช่ทั้งไฟล์ (เดิมเช็คทั้งไฟล์ได้เพราะ
   // มีที่เดียวที่เอ่ยถึง RECIPE — พอ listRestaurantMenu เกิดขึ้นก็ต้องระบุขอบเขตให้ตรงกฎ)
   const send = restaurant.slice(
     restaurant.indexOf("export async function sendRestaurantKitchenRound"),
-    restaurant.indexOf("export async function moveRestaurantCheck")
+    restaurant.indexOf("export async function moveRestaurantCheck"),
   );
   assert.ok(send.length > 0, "หา sendRestaurantKitchenRound ไม่เจอ");
   assert.doesNotMatch(send, /stock_policy = 'RECIPE'/);
@@ -308,7 +529,7 @@ test("the dine-in menu grid uses its explicit sales surface without filtering by
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const menu = restaurant.slice(
     restaurant.indexOf("export async function listRestaurantMenu"),
-    restaurant.indexOf("export async function createDefaultRestaurantFloor")
+    restaurant.indexOf("export async function createDefaultRestaurantFloor"),
   );
   assert.ok(menu.length > 0, "หา listRestaurantMenu ไม่เจอ");
   // เหตุผลเดียวกับตั๋วครัว: ของที่ขายเป็นชิ้น (น้ำ/ของหวาน) ไม่มีสูตร กรอง RECIPE แล้วสั่งไม่ได้
@@ -329,38 +550,68 @@ test("kitchen board accepts tickets without an order id and stays branch-aware",
   const typeDefs = code(await read("apps/web/graphql/typeDefs.ts"));
   const board = code(await read("apps/web/app/(admin)/admin/kitchen/page.tsx"));
   const kitchen = code(await read("apps/web/lib/bms/kitchen.ts"));
-  const posQueue = code(await read("apps/web/app/api/pos/kitchen/tickets/route.ts"));
-  const posMove = code(await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"));
+  const posQueue = code(
+    await read("apps/web/app/api/pos/kitchen/tickets/route.ts"),
+  );
+  const posMove = code(
+    await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"),
+  );
   // ตั๋วบิลโต๊ะเกิดก่อนมีออร์เดอร์ที่ปิดการขาย → orderId เป็น null ได้
   // ตัดเอาเฉพาะบล็อกของ type นี้ก่อน — regex ที่วิ่งข้ามบล็อกจะไปเจอ orderId ของ type อื่น
   const block = typeDefs.slice(typeDefs.indexOf("type BmsKitchenTicket {"));
   const ticketType = block.slice(0, block.search(/\r?\n  }/));
-  assert.ok(ticketType.includes("type BmsKitchenTicket {"), "หา type BmsKitchenTicket ไม่เจอ");
+  assert.ok(
+    ticketType.includes("type BmsKitchenTicket {"),
+    "หา type BmsKitchenTicket ไม่เจอ",
+  );
   assert.match(ticketType, /\r?\n    orderId: ID\r?\n/);
   assert.doesNotMatch(ticketType, /orderId: ID!/);
-  for (const field of ["source: String!", "checkId: ID", "tableName: String", "roundNo: Int"]) {
+  for (const field of [
+    "source: String!",
+    "checkId: ID",
+    "tableName: String",
+    "roundNo: Int",
+  ]) {
     assert.ok(ticketType.includes(field), `BmsKitchenTicket ขาดฟิลด์ ${field}`);
   }
   // เลขบิลต้องอยู่ใต้เงื่อนไข และตั๋วที่ไม่มีเลขบิลต้องมีอะไรอ่านแทน (โต๊ะ/รอบ)
   // การตัดสินใจนั้นย้ายไปอยู่ใน kitchenGroupLabel() ที่กระดานทั้งสองฝั่งใช้ร่วมกัน —
   // กระดานหลังบ้านจึงต้องไม่แตะ orderId เองอีก (เทสของโมดูลคุมพฤติกรรมนั้นแยก)
   assert.match(board, /group\.tableLabel \?\? t\("admin_kitchen\.dine_in"\)/);
-  assert.doesNotMatch(board, /ticket\.orderId\.slice/,
-    "อย่าหั่นเลขบิลตรง ๆ ที่หน้าจอ — ตั๋วบิลโต๊ะไม่มี orderId");
+  assert.doesNotMatch(
+    board,
+    /ticket\.orderId\.slice/,
+    "อย่าหั่นเลขบิลตรง ๆ ที่หน้าจอ — ตั๋วบิลโต๊ะไม่มี orderId",
+  );
   assert.doesNotMatch(board, /·\s*#\{ticket\.orderId\.slice/);
   // ชื่อโต๊ะ/รหัสโต๊ะเป็นทางเลือกสำรองของหัวใบ — ตอนนี้อยู่ใน kitchenGroupLabel()
   const boardModule = code(await read("apps/web/lib/bms/kitchenBoard.ts"));
-  assert.match(boardModule, /clean\(ticket\.tableName\) \?\? clean\(ticket\.tableCode\)/);
+  assert.match(
+    boardModule,
+    /clean\(ticket\.tableName\) \?\? clean\(ticket\.tableCode\)/,
+  );
   // จอครัวของเครื่องหน้าร้านเห็นและเลื่อนได้เฉพาะสาขาตัวเอง
   assert.match(kitchen, /locationId\?: string \| null/);
-  assert.match(posQueue, /listKitchenTickets\(device\.tenantId, status, limit, device\.locationId\)/);
+  assert.match(
+    posQueue,
+    /listKitchenTickets\(device\.tenantId, status, limit, device\.locationId\)/,
+  );
   assert.match(posMove, /expectedLocationId: device\.locationId/);
 });
 
 test("restaurant screen exposes floor, kitchen round, move and settlement actions", async () => {
   const page = await read("apps/web/app/(pos)/pos/restaurant/page.tsx");
-  const css = await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css");
-  for (const action of ["add_item", "remove_item", "send_kitchen", "move", "cancel", "settle"]) {
+  const css = await read(
+    "apps/web/app/(pos)/pos/restaurant/restaurant.module.css",
+  );
+  for (const action of [
+    "add_item",
+    "remove_item",
+    "send_kitchen",
+    "move",
+    "cancel",
+    "settle",
+  ]) {
     assert.match(page, new RegExp(`"${action}"`));
   }
   assert.match(page, /\/api\/pos\/restaurant\/floor/);
@@ -373,27 +624,47 @@ test("restaurant screen exposes floor, kitchen round, move and settlement action
   // ตอนนี้ตรึง "การันตี" แทนรูปทรง: ต้องมีรอบอัตโนมัติของตั๋วครัวที่ไม่ผูกกับจอที่เปิดอยู่
   assert.match(page, /useLiveRefresh\(\{[\s\S]{0,400}?loadTickets\(signal\)/);
   // หน้าจอ POS ต้องอ่านผังเดียวกับ editor ไม่ใช่นำโต๊ะกลับไปเรียงด้วย CSS grid
-  for (const field of ["shape", "positionX", "positionY"]) assert.match(page, new RegExp(field));
-  assert.match(page, /transform: `translate\(\$\{table\.positionX\}px, \$\{table\.positionY\}px\)`/);
+  for (const field of ["shape", "positionX", "positionY"])
+    assert.match(page, new RegExp(field));
+  assert.match(
+    page,
+    /transform: `translate\(\$\{table\.positionX\}px, \$\{table\.positionY\}px\)`/,
+  );
   assert.match(page, /styles\.tableRect/);
   assert.match(page, /styles\.tableRound/);
-  assert.match(page, /<RestaurantTableChairs seats=\{table\.seats\} shape=\{shape\}/);
+  assert.match(
+    page,
+    /<RestaurantTableChairs seats=\{table\.seats\} shape=\{shape\}/,
+  );
   assert.doesNotMatch(css, /\.tableGrid\s*\{/);
 });
 
 test("admin and POS render the same bounded chair visual from the table seat count", async () => {
-  const admin = await read("apps/web/app/(admin)/admin/restaurant-floor/page.tsx");
+  const admin = await read(
+    "apps/web/app/(admin)/admin/restaurant-floor/page.tsx",
+  );
   const chairs = await read("apps/web/components/RestaurantTableChairs.tsx");
-  assert.match(admin, /<RestaurantTableChairs seats=\{table\.seats\} shape=\{table\.shape\}/);
+  assert.match(
+    admin,
+    /<RestaurantTableChairs seats=\{table\.seats\} shape=\{table\.shape\}/,
+  );
   assert.match(chairs, /const MAX_VISIBLE_CHAIRS = 12/);
-  assert.match(chairs, /Math\.min\(MAX_VISIBLE_CHAIRS, Math\.max\(0, Math\.floor\(seats\)\)\)/);
-  assert.match(chairs, /shape === "rect"[\s\S]*rectChairs\(visibleCount\)[\s\S]*roundChair/);
+  assert.match(
+    chairs,
+    /Math\.min\(MAX_VISIBLE_CHAIRS, Math\.max\(0, Math\.floor\(seats\)\)\)/,
+  );
+  assert.match(
+    chairs,
+    /shape === "rect"[\s\S]*rectChairs\(visibleCount\)[\s\S]*roundChair/,
+  );
   assert.match(chairs, /aria-hidden="true"/);
 });
 
 test("restaurant register keeps settlement receipts and counter screens on the same device", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  const route = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const route = code(
+    await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"),
+  );
   const service = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const pos = code(await read("apps/web/lib/bms/pos.ts"));
 
@@ -407,27 +678,54 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.match(page, /\/api\/pos\/shift-report/);
   assert.match(page, /new BroadcastChannel\("bms-pos-display"\)/);
   assert.match(page, /event\.data\?\.type === "hello"/);
-  assert.match(page, /finished: \{[\s\S]*total: settlementReceipt\.result\.total[\s\S]*tendered: settlementReceipt\.result\.cashTendered[\s\S]*change: settlementReceipt\.result\.cashChange/);
+  assert.match(
+    page,
+    /finished: \{[\s\S]*total: settlementReceipt\.result\.total[\s\S]*tendered: settlementReceipt\.result\.cashTendered[\s\S]*change: settlementReceipt\.result\.cashChange/,
+  );
   assert.doesNotMatch(page, /finished: true/);
-  assert.match(page, /const checkMember = memberCheckIdRef\.current === \(check\?\.id \?\? null\) \? selectedMember : null/);
+  assert.match(
+    page,
+    /const checkMember = memberCheckIdRef\.current === \(check\?\.id \?\? null\) \? selectedMember : null/,
+  );
   assert.match(page, /memberCheckIdRef\.current === checkId/);
   // ส่งสำเนาทางอีเมล/LINE ถูกถอดออกจากเครื่องขายร้านอาหาร — จอนี้พิมพ์อย่างเดียว
   assert.doesNotMatch(page, /send-receipt|receiptTo|ส่งอีเมล|ส่ง LINE/);
   assert.match(page, /recent-sales\?limit=20&deviceOnly=1/);
-  assert.match(page, /cashMovementRequestRef\.current\?\.signature !== signature/);
+  assert.match(
+    page,
+    /cashMovementRequestRef\.current\?\.signature !== signature/,
+  );
   assert.match(page, /idempotencyKey: cashMovementRequestRef\.current\.key/);
-  assert.doesNotMatch(page, /idempotencyKey: `restaurant-cash-\$\{crypto\.randomUUID\(\)\}`/);
-  assert.match(page, /cashMoveDirection === "IN" && !cashMoveExternalConfirmed/);
+  assert.doesNotMatch(
+    page,
+    /idempotencyKey: `restaurant-cash-\$\{crypto\.randomUUID\(\)\}`/,
+  );
+  assert.match(
+    page,
+    /cashMoveDirection === "IN" && !cashMoveExternalConfirmed/,
+  );
 
-  const settle = page.slice(page.indexOf("async function settle()"), page.indexOf("function openCancel"));
+  const settle = page.slice(
+    page.indexOf("async function settle()"),
+    page.indexOf("function openCancel"),
+  );
   assert.match(settle, /const settledCheck = check/);
-  assert.match(settle, /setSettlementReceipt\(\{[\s\S]*result,[\s\S]*check: settledCheck/);
+  assert.match(
+    settle,
+    /setSettlementReceipt\(\{[\s\S]*result,[\s\S]*check: settledCheck/,
+  );
   assert.match(settle, /customerId: checkMember\?\.customerId \?\? null/);
   assert.doesNotMatch(settle, /message\.success\(`ปิดบิลแล้ว/);
 
-  const receipt = page.slice(page.indexOf("function receiptPayload"), page.indexOf("function receiptBytes"));
-  assert.doesNotMatch(receipt, /buildReceipt\(/,
-    "ตัวประกอบ payload ต้องไม่ผูกกับ renderer ตัวใดตัวหนึ่ง");
+  const receipt = page.slice(
+    page.indexOf("function receiptPayload"),
+    page.indexOf("function receiptBytes"),
+  );
+  assert.doesNotMatch(
+    receipt,
+    /buildReceipt\(/,
+    "ตัวประกอบ payload ต้องไม่ผูกกับ renderer ตัวใดตัวหนึ่ง",
+  );
   assert.match(receipt, /result\.total/);
   assert.match(receipt, /result\.cashTendered/);
   assert.match(receipt, /result\.cashChange/);
@@ -438,41 +736,89 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   // ที่เพี้ยนจากเวลาขายจริง 7 ชั่วโมง (เจอตอนเรนเดอร์กระดาษขึ้นจอครั้งแรก)
   assert.match(receipt, /at: localReceiptTime\(/);
   assert.doesNotMatch(receipt, /at: current \? receipt\.at : receipt\.soldAt/);
-  assert.match(page, /function localReceiptTime\(iso: string, mode: ReceiptLanguageMode\)[\s\S]*toLocaleString\(receiptLocale\(mode\)\)/);
+  assert.match(
+    page,
+    /function localReceiptTime\(iso: string, mode: ReceiptLanguageMode\)[\s\S]*toLocaleString\(receiptLocale\(mode\)\)/,
+  );
   assert.match(receipt, /for \(const line of lines\) itemCount \+= line\.qty/);
-  assert.doesNotMatch(receipt, /\.reduce\(|packPrice\s*\*|lineAmount\s*[+*]/,
-    "ใบเสร็จต้องยก snapshot/ผล settle มาแสดง ไม่คำนวณเงินซ้ำที่จอ");
+  assert.doesNotMatch(
+    receipt,
+    /\.reduce\(|packPrice\s*\*|lineAmount\s*[+*]/,
+    "ใบเสร็จต้องยก snapshot/ผล settle มาแสดง ไม่คำนวณเงินซ้ำที่จอ",
+  );
   assert.match(page, /sendToPrinter\(receiptBytes\(receipt\)/);
   // 8.0 บังคับว่าการเปิดลิ้นชักที่ไม่ได้มาจากการขายต้องผ่าน pos.nosale + เหตุผล + นับในสรุปกะ
   // · ถ้าการพิมพ์ซ้ำเปิดลิ้นชักด้วย แท็บบิลจะกลายเป็นปุ่มเปิดลิ้นชักที่ไม่มี PIN ไม่มีร่องรอย
-  assert.match(page, /async function printReceipt\(receipt: ReceiptSelection, openDrawer = false\)/);
-  assert.match(page, /if \(openDrawer\) await sendToPrinter\(buildDrawerKick\(\), printer\)/);
-  assert.match(page, /printReceipt\(settlementReceipt, settlementReceipt\.result\.cashTendered != null\)/);
+  assert.match(
+    page,
+    /async function printReceipt\(receipt: ReceiptSelection, openDrawer = false\)/,
+  );
+  assert.match(
+    page,
+    /if \(openDrawer\) await sendToPrinter\(buildDrawerKick\(\), printer\)/,
+  );
+  assert.match(
+    page,
+    /printReceipt\(settlementReceipt, settlementReceipt\.result\.cashTendered != null\)/,
+  );
   assert.match(page, /printReceipt\(selectedReceipt\)/);
   assert.doesNotMatch(page, /printReceipt\(selectedReceipt, /);
   // บิลที่ถูกยกเลิก/คืนของต้องติดป้ายก่อนพิมพ์ซ้ำ (กฎเดียวกับ 9.22 ของหน้าค้าปลีก)
-  assert.match(page, /function billHistoryNote\(receipt: RecentReceipt, t: Translate\)/);
-  assert.match(page, /receipt\.voidedAt\) return t\("pos_restaurant\.bill_voided"\)/);
-  assert.match(page, /receipt\.orderStatus === "RETURNED"\) return t\("pos_restaurant\.bill_returned"\)/);
-  assert.match(page, /billHistoryNote\(selectedReceipt, t\) \? t\("pos_restaurant\.print_original_sale"\) : t\("pos_restaurant\.reprint"\)/);
+  assert.match(
+    page,
+    /function billHistoryNote\(receipt: RecentReceipt, t: Translate\)/,
+  );
+  assert.match(
+    page,
+    /receipt\.voidedAt\) return t\("pos_restaurant\.bill_voided"\)/,
+  );
+  assert.match(
+    page,
+    /receipt\.orderStatus === "RETURNED"\) return t\("pos_restaurant\.bill_returned"\)/,
+  );
+  assert.match(
+    page,
+    /billHistoryNote\(selectedReceipt, t\) \? t\("pos_restaurant\.print_original_sale"\) : t\("pos_restaurant\.reprint"\)/,
+  );
   // ใบเสร็จบนจอกับไบต์ที่ส่งเข้าเครื่องพิมพ์ต้องมาจาก payload ก้อนเดียว ไม่งั้น drift
-  assert.match(page, /function receiptPayload\(receipt: ReceiptSelection\): ReceiptPayload \| null/);
+  assert.match(
+    page,
+    /function receiptPayload\(receipt: ReceiptSelection\): ReceiptPayload \| null/,
+  );
   assert.match(page, /return buildReceipt\(payload\)/);
-  assert.match(page, /<ReceiptPaper payload=\{receiptPayload\(settlementReceipt\)!\} \/>/);
-  assert.match(page, /<ReceiptPaper payload=\{receiptPayload\(selectedReceipt\)!\} \/>/);
+  assert.match(
+    page,
+    /<ReceiptPaper payload=\{receiptPayload\(settlementReceipt\)!\} \/>/,
+  );
+  assert.match(
+    page,
+    /<ReceiptPaper payload=\{receiptPayload\(selectedReceipt\)!\} \/>/,
+  );
   // ทางพิมพ์สำรอง: เครื่องพิมพ์ไม่ติดต้องยังได้กระดาษ (หน้าค้าปลีกมีมาตลอด หน้านี้เพิ่งมี)
   assert.match(page, /if \(!isWebUsbSupported\(\)\)/);
-  assert.match(page, /function printViaBrowser\(\)[\s\S]*data-pos-print-target[\s\S]*window\.print\(\)/);
+  assert.match(
+    page,
+    /function printViaBrowser\(\)[\s\S]*data-pos-print-target[\s\S]*window\.print\(\)/,
+  );
   // rAF ไม่ทำงานเมื่อแท็บถูกซ่อน — พึ่งตัวเดียว = กดพิมพ์แล้วเงียบไปเลย ต้องมีตัวสำรอง
   // และต้องยิงครั้งเดียว ไม่งั้นได้ print dialog ซ้อนกันสองใบ
-  const viaBrowser = page.slice(page.indexOf("function printViaBrowser"), page.indexOf("async function printReceipt"));
+  const viaBrowser = page.slice(
+    page.indexOf("function printViaBrowser"),
+    page.indexOf("async function printReceipt"),
+  );
   assert.match(viaBrowser, /requestAnimationFrame\(fire\)/);
   assert.match(viaBrowser, /setTimeout\(fire, \d+\)/);
   assert.match(viaBrowser, /if \(printed\) return;/);
   // กฎ @media print เล็งที่ #pos-receipt ใบเดียว — กล่องที่ปิดแล้วต้องไม่ค้างใน DOM
   // ต้องผูกกับ "กล่องใบเสร็จสองใบนี้" ไม่ใช่แค่นับจำนวนคำในไฟล์ — modal อื่นก็มีคำนี้
-  assert.match(page, /open=\{Boolean\(settlementReceipt\)\}[\s\S]{0,240}?destroyOnClose>/);
-  assert.match(page, /open=\{Boolean\(selectedReceipt\)\}[\s\S]{0,240}?destroyOnClose>/);
+  assert.match(
+    page,
+    /open=\{Boolean\(settlementReceipt\)\}[\s\S]{0,240}?destroyOnClose>/,
+  );
+  assert.match(
+    page,
+    /open=\{Boolean\(selectedReceipt\)\}[\s\S]{0,240}?destroyOnClose>/,
+  );
   const paper = code(await read("apps/web/components/pos/ReceiptPaper.tsx"));
   assert.match(paper, /id=\{RECEIPT_PRINT_ID\}/);
   assert.match(paper, /payload\.discountLines/);
@@ -481,33 +827,60 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.doesNotMatch(paper, /[-+*/]=|\.reduce\(|Number\(/);
 
   assert.match(route, /customerId: typeof body\.customerId === "string"/);
-  assert.match(service, /SELECT 1 FROM bms_customers[\s\S]*tenant_id = \$1 AND id = \$2 AND deleted_at IS NULL AND member_no IS NOT NULL/);
+  assert.match(
+    service,
+    /SELECT 1 FROM bms_customers[\s\S]*tenant_id = \$1 AND id = \$2 AND deleted_at IS NULL AND member_no IS NOT NULL/,
+  );
   // ยอดบรรทัดบนใบเสร็จของบิลโต๊ะต้องบวกลงตัวกับ `receipt_gross` ที่ loadPosReceiptDiscountLines
   // ใช้ตั้งบรรทัด "ส่วนลดราคาส่ง/โปรโมชั่น" (9.22) — สองสูตรนี้ต้องคูณฐานเดียวกันเสมอ
   // · createOrderInTx รวม check line ที่ sku/size/pack/modifier เดียวกันเป็น order line เดียว
   //   ตัวคูณฝั่ง check จึงต้องเป็นจำนวนของ **บรรทัดนั้น** (ci.pack_qty) ไม่ใช่ของ order line
   //   ที่รวมแล้ว ไม่งั้นโต๊ะที่สั่งเมนูเดิมซ้ำสองรอบจะพิมพ์ยอดเต็มของกลุ่มออกมาทุกบรรทัด
   assert.match(service, /receipt_unit_price \* ci\.pack_qty/);
-  assert.doesNotMatch(service, /receipt_unit_price \* oi\./,
-    "ห้ามคูณด้วยจำนวนของ order line ที่รวมบรรทัดอื่นไว้แล้ว");
-  assert.match(pos, /SUM\(COALESCE\(oi\.pack_qty, oi\.qty\) \* oi\.receipt_unit_price\)/,
-    "ฝั่ง receipt_gross ต้องยังคูณ receipt_unit_price ด้วยจำนวนหน่วยขายเหมือนกัน");
-  assert.match(service, /lineAmount: row\.line_amount == null \? null : Number\(row\.line_amount\)/);
-  assert.match(service, /check\.status === "PAID"[\s\S]*order_customer_id[\s\S]*!== customerId/);
+  assert.doesNotMatch(
+    service,
+    /receipt_unit_price \* oi\./,
+    "ห้ามคูณด้วยจำนวนของ order line ที่รวมบรรทัดอื่นไว้แล้ว",
+  );
+  assert.match(
+    pos,
+    /SUM\(COALESCE\(oi\.pack_qty, oi\.qty\) \* oi\.receipt_unit_price\)/,
+    "ฝั่ง receipt_gross ต้องยังคูณ receipt_unit_price ด้วยจำนวนหน่วยขายเหมือนกัน",
+  );
+  assert.match(
+    service,
+    /lineAmount: row\.line_amount == null \? null : Number\(row\.line_amount\)/,
+  );
+  assert.match(
+    service,
+    /check\.status === "PAID"[\s\S]*order_customer_id[\s\S]*!== customerId/,
+  );
   assert.match(service, /wasSettlementReplay = check\.status !== "OPEN"/);
   assert.match(service, /replayed: result\.replayed && wasSettlementReplay/);
   // จำนวนตั๋วครัวบนใบเสร็จต้องนับจากตั๋วจริง ไม่ใช่จำนวนบรรทัด — ร้านที่ปิด KITCHEN_WORKFLOW
   // ไม่มีตั๋วสักใบ (sendRestaurantKitchenRound gate ไว้) การรายงานจำนวนบรรทัดคือตัวเลขที่โกหก
-  assert.match(service, /FROM bms_restaurant_kitchen_tickets t[\s\S]*i\.status = 'SENT'/);
+  assert.match(
+    service,
+    /FROM bms_restaurant_kitchen_tickets t[\s\S]*i\.status = 'SENT'/,
+  );
   assert.match(service, /kitchenTickets: kitchenTicketCount/);
   assert.doesNotMatch(service, /kitchenTickets: items\.rows\.length/);
   assert.match(pos, /SET customer_id = \$3/);
-  assert.match(pos, /throw new RestaurantCheckError\("ไม่สามารถผูกสมาชิกกับบิลโต๊ะนี้ได้/);
+  assert.match(
+    pos,
+    /throw new RestaurantCheckError\("ไม่สามารถผูกสมาชิกกับบิลโต๊ะนี้ได้/,
+  );
   assert.match(pos, /Boolean\(q\) && !opts\.deviceOnly/);
   assert.match(pos, /COALESCE\(o\.paid_at, o\.created_at\) AS sold_at/);
-  assert.match(pos, /ORDER BY \(o\.pos_device_id = \$2\) DESC, COALESCE\(o\.paid_at, o\.created_at\) DESC/);
-  assert.ok(pos.indexOf("SET customer_id = $3") < pos.indexOf("await earnPointsForOrderInTx"),
-    "ต้องประทับสมาชิกก่อนให้แต้มใน transaction ปิดบิล");
+  assert.match(
+    pos,
+    /ORDER BY \(o\.pos_device_id = \$2\) DESC, COALESCE\(o\.paid_at, o\.created_at\) DESC/,
+  );
+  assert.ok(
+    pos.indexOf("SET customer_id = $3") <
+      pos.indexOf("await earnPointsForOrderInTx"),
+    "ต้องประทับสมาชิกก่อนให้แต้มใน transaction ปิดบิล",
+  );
 });
 
 test("restaurant floor correlates kitchen state by check id, not a reusable table name", async () => {
@@ -524,16 +897,31 @@ test("restaurant UI serializes mutations and changes table selection only after 
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(page, /if \(workingRef\.current\) return/);
   assert.match(page, /workingRef\.current = true/);
-  assert.match(page, /finally \{ workingRef\.current = false; setWorking\(false\); \}/);
+  assert.match(
+    page,
+    /finally \{ workingRef\.current = false; setWorking\(false\); \}/,
+  );
   // ⚠️ ต้องเป็น "openCheck(" ที่มีวงเล็บ — ตั้งแต่ `9.63` มี openCheckById() อยู่ก่อนหน้า
   // chooseTable ในไฟล์ การตัดด้วยชื่อที่ไม่มีวงเล็บจะได้ช่วงว่างแล้วเทสเขียวโดยไม่ตรวจอะไรเลย
-  const chooseTable = page.slice(page.indexOf("async function chooseTable"), page.indexOf("async function openCheck("));
+  const chooseTable = page.slice(
+    page.indexOf("async function chooseTable"),
+    page.indexOf("async function openCheck("),
+  );
   assert.ok(chooseTable.length > 0, "การตัดช่วงต้องได้ตัวฟังก์ชันจริง");
-  assert.ok(chooseTable.indexOf("await loadCheck") < chooseTable.indexOf("setSelectedTableId"));
+  assert.ok(
+    chooseTable.indexOf("await loadCheck") <
+      chooseTable.indexOf("setSelectedTableId"),
+  );
   // เส้นทาง "เลือกบิลไปแล้ว" (แผงบิล · แถบบิล · กล่องเลือกบิลของโต๊ะที่แยกไว้) ต้องอยู่ใต้กฎเดียวกัน
-  const openById = page.slice(page.indexOf("async function openCheckById"), page.indexOf("async function chooseTable"));
+  const openById = page.slice(
+    page.indexOf("async function openCheckById"),
+    page.indexOf("async function chooseTable"),
+  );
   assert.ok(openById.length > 0);
-  assert.ok(openById.indexOf("await loadCheck") < openById.indexOf("setSelectedTableId"));
+  assert.ok(
+    openById.indexOf("await loadCheck") <
+      openById.indexOf("setSelectedTableId"),
+  );
 });
 
 test("the check footer never claims a total the bill does not have", async () => {
@@ -541,9 +929,15 @@ test("the check footer never claims a total the bill does not have", async () =>
   // โต๊ะว่างเปล่าขึ้นคำเตือน "มีรายการที่ยังไม่ส่งครัว" และป้าย "ยอดบิลปัจจุบัน ฿0.00" ก็โกหก
   // เมื่อมีอาหารรออยู่ในบิลแล้ว (amount_due ขยับตอนส่งครัวเท่านั้น)
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(page, /const hasUnsent = Boolean\(check\?\.items\.some\(\(item\) => item\.status === "NEW"\)\)/);
+  assert.match(
+    page,
+    /const hasUnsent = Boolean\(check\?\.items\.some\(\(item\) => item\.status === "NEW"\)\)/,
+  );
   assert.doesNotMatch(page, /check\.version !== check\.reservedVersion/);
-  assert.match(page, /hasUnsent \? t\("pos_restaurant\.amount_sent"\) : t\("pos_restaurant\.amount_current"\)/);
+  assert.match(
+    page,
+    /hasUnsent \? t\("pos_restaurant\.amount_sent"\) : t\("pos_restaurant\.amount_current"\)/,
+  );
   // ยอดที่แสดงต้องมาจาก server เสมอ ห้ามรวมเองที่จอ (สูตรเงินชุดที่สอง)
   assert.doesNotMatch(page, /items\.reduce\(/);
 });
@@ -552,7 +946,9 @@ test("restaurants keep a way back to the retail register", async () => {
   // คืนสินค้า / รับของเข้าคลัง / มัดจำ / บัตรของขวัญ / ขายเชื่อ อยู่ที่ /pos เท่านั้น
   // การ redirect แบบไม่มีทางออกทำให้ร้านอาหารทำงานเหล่านั้นไม่ได้เลย
   const retail = code(await read("apps/web/app/(pos)/pos/page.tsx"));
-  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const restaurant = code(
+    await read("apps/web/app/(pos)/pos/restaurant/page.tsx"),
+  );
   assert.match(retail, /get\("surface"\) !== "retail"/);
   assert.match(restaurant, /\/pos\?surface=retail/);
 });
@@ -562,9 +958,14 @@ test("a rejected kitchen round tells staff what to do, not an HTTP code", async 
   // ต้นเหตุ: createOrderInTx ตอบเป็น "สถานะ" ({status:"INSUFFICIENT", available, requested})
   // ไม่มีฟิลด์ error/reason ตัว json() ของหน้าร้านอาหารจึงตกไปที่รหัส HTTP
   // ซึ่งบอกคนหน้าเคาน์เตอร์ไม่ได้ว่าของขาดกี่ชิ้นหรือต้องทำอะไรต่อ
-  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const restaurant = code(
+    await read("apps/web/app/(pos)/pos/restaurant/page.tsx"),
+  );
   assert.match(restaurant, /describePosFailure/);
-  assert.match(restaurant, /typeof body\?\.status === "string"[\s\S]{0,80}describePosFailure\(body\)/);
+  assert.match(
+    restaurant,
+    /typeof body\?\.status === "string"[\s\S]{0,80}describePosFailure\(body\)/,
+  );
 
   // ข้อความชุดเดียวกับหน้าค้าปลีก — สองหน้าเรียก service เดียวกัน เขียนคนละชุดแล้ววันหนึ่ง
   // ข้อความจะไม่ตรงกันโดยไม่มีอะไรฟ้อง
@@ -574,39 +975,75 @@ test("a rejected kitchen round tells staff what to do, not an HTTP code", async 
 
   // ทุกสถานะที่ createOrderInTx ปฏิเสธได้ต้องมีคำแปล ไม่ใช่ตกไปที่ default
   const messages = code(await read("apps/web/lib/pos/failureMessage.ts"));
-  for (const status of ["INSUFFICIENT", "NOT_FOUND", "PACK_NOT_FOUND", "BUNDLE_INCOMPLETE", "INVALID_ITEM", "EMPTY"]) {
-    assert.match(messages, new RegExp(`case "${status}":`), `ไม่มีคำแปลของ ${status}`);
+  for (const status of [
+    "INSUFFICIENT",
+    "NOT_FOUND",
+    "PACK_NOT_FOUND",
+    "BUNDLE_INCOMPLETE",
+    "INVALID_ITEM",
+    "EMPTY",
+  ]) {
+    assert.match(
+      messages,
+      new RegExp(`case "${status}":`),
+      `ไม่มีคำแปลของ ${status}`,
+    );
   }
 });
 
 test("a kitchen cancellation drops the line from the bill instead of charging for it", async () => {
   const kitchen = code(await read("apps/web/lib/bms/kitchen.ts"));
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  const posRoute = code(await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"));
-  const adminResolver = code(await read("apps/web/graphql/bmsStockCapabilities.ts"));
-  const migration = code(await read("db/migrations/9.50__bms_restaurant_cancelled_line_keeps_sent_at.sql"));
+  const posRoute = code(
+    await read("apps/web/app/api/pos/kitchen/tickets/[id]/status/route.ts"),
+  );
+  const adminResolver = code(
+    await read("apps/web/graphql/bmsStockCapabilities.ts"),
+  );
+  const migration = code(
+    await read(
+      "db/migrations/9.50__bms_restaurant_cancelled_line_keeps_sent_at.sql",
+    ),
+  );
 
   // hook เป็น required ไม่ใช่ optional — ผู้เรียกที่ลืมส่งต้องไม่ compile ไม่ใช่เงียบแล้ว
   // เก็บเงินค่าอาหารที่ครัวยกเลิก · `?:` ที่นี่คือการเปิดทางให้สองจอให้ผลต่างกัน
-  assert.match(kitchen, /onRestaurantCheckLineCancelled:\s*RestaurantCheckLineCancelHook/);
+  assert.match(
+    kitchen,
+    /onRestaurantCheckLineCancelled:\s*RestaurantCheckLineCancelHook/,
+  );
   assert.doesNotMatch(kitchen, /onRestaurantCheckLineCancelled\?:/);
   // kitchen.ts ต้องไม่ import restaurantPos ตรง ๆ (จะเกิดวง kitchen → restaurantPos → orders → kitchen)
   assert.doesNotMatch(kitchen, /from "\.\/restaurantPos"/);
   // ต้องเรียก hook ก่อน COMMIT = อยู่ในทรานแซกชันเดียวกับการเปลี่ยนสถานะตั๋ว
   const cancelBlock = kitchen.slice(
     kitchen.indexOf('source === "RESTAURANT_CHECK" && status === "CANCELLED"'),
-    kitchen.indexOf('await client.query("COMMIT")', kitchen.indexOf('source === "RESTAURANT_CHECK" && status === "CANCELLED"'))
+    kitchen.indexOf(
+      'await client.query("COMMIT")',
+      kitchen.indexOf(
+        'source === "RESTAURANT_CHECK" && status === "CANCELLED"',
+      ),
+    ),
   );
-  assert.ok(cancelBlock.length > 0, "หา block ที่เรียก hook ก่อน COMMIT ไม่เจอ");
+  assert.ok(
+    cancelBlock.length > 0,
+    "หา block ที่เรียก hook ก่อน COMMIT ไม่เจอ",
+  );
   assert.match(cancelBlock, /onRestaurantCheckLineCancelled\(/);
 
   // ทั้งสองจอ (เครื่องขาย + กระดานหลังบ้าน) ต้องให้ผลเดียวกัน
-  assert.match(posRoute, /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/);
-  assert.match(adminResolver, /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/);
+  assert.match(
+    posRoute,
+    /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/,
+  );
+  assert.match(
+    adminResolver,
+    /onRestaurantCheckLineCancelled:\s*dropKitchenCancelledLineInTx/,
+  );
 
   const drop = restaurant.slice(
     restaurant.indexOf("export async function dropKitchenCancelledLineInTx"),
-    restaurant.indexOf("export async function sendRestaurantKitchenRound")
+    restaurant.indexOf("export async function sendRestaurantKitchenRound"),
   );
   assert.ok(drop.length > 0, "หา dropKitchenCancelledLineInTx ไม่เจอ");
   // ยอดใหม่ต้องมาจาก createOrderInTx เส้นทางเดียวกับการส่งครัว — ห้ามลบราคาบรรทัดออกจาก
@@ -618,7 +1055,7 @@ test("a kitchen cancellation drops the line from the bill instead of charging fo
   // กับการส่งครัวที่วิ่งพร้อมกัน
   assert.ok(
     drop.indexOf("FOR KEY SHARE") < drop.indexOf("lockCheckInTx"),
-    "ต้องล็อกกะก่อนล็อกบิล"
+    "ต้องล็อกกะก่อนล็อกบิล",
   );
   // บิลที่ปิด/กำลังคิดเงินแล้วห้ามถูกแก้ยอด — ตั๋วยกเลิกได้ แต่เงินที่ออกใบไปแล้วแตะไม่ได้
   assert.match(drop, /status = 'OPEN'/);
@@ -637,14 +1074,24 @@ test("a kitchen cancellation drops the line from the bill instead of charging fo
  * 1 โมดัล = หาย 175px · 3 โมดัล = หาย 233px) และปุ่ม "คิดเงิน" ลอยขึ้นจากขอบจอ
  */
 test("the page grid declares its own single row so modal portals cannot steal height", async () => {
-  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
-  const pageGrid = css.split("\n").find((line) => line.includes(".page {") && line.includes("display: grid"));
+  const css = code(
+    await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"),
+  );
+  const pageGrid = css
+    .split("\n")
+    .find((line) => line.includes(".page {") && line.includes("display: grid"));
   assert.ok(pageGrid, ".page must still be the grid shell");
-  assert.match(pageGrid!, /grid-template-rows:\s*100%/,
-    "an implicit row lets every antd portal root shrink the app — declare the row explicitly");
+  assert.match(
+    pageGrid!,
+    /grid-template-rows:\s*100%/,
+    "an implicit row lets every antd portal root shrink the app — declare the row explicitly",
+  );
   // จอแคบปล่อยให้หน้าเลื่อนตามเนื้อหาโดยตั้งใจ แถวจึงต้องกลับเป็น auto ที่ breakpoint นั้น
-  assert.match(css, /min-height: 100dvh;[^}]*grid-template-rows:\s*auto/,
-    "the <=900px breakpoint lets the page grow, so the fixed row must be released there");
+  assert.match(
+    css,
+    /min-height: 100dvh;[^}]*grid-template-rows:\s*auto/,
+    "the <=900px breakpoint lets the page grow, so the fixed row must be released there",
+  );
 });
 
 test("modals still portal into the page root so the CSS-module theme applies", async () => {
@@ -661,32 +1108,60 @@ test("modals still portal into the page root so the CSS-module theme applies", a
  * (content 2905 / client 519) หัวเลนอยู่กับที่ และทั้งกระดาน/หน้าไม่เลื่อนตาม
  */
 test("each kitchen lane scrolls on its own while its header stays put", async () => {
-  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
-  const rule = (name: string) => css.split("\n").find((line) => line.trimStart().startsWith(name + " {"));
+  const css = code(
+    await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"),
+  );
+  const rule = (name: string) =>
+    css.split("\n").find((line) => line.trimStart().startsWith(name + " {"));
 
   const board = rule(".kitchenBoard");
   assert.ok(board, ".kitchenBoard must exist");
-  assert.match(board!, /overflow:\s*hidden/, "the board itself must not be the scroller");
-  assert.match(board!, /display:\s*flex/, "it has to bound .lanes for the lanes to be scrollable");
+  assert.match(
+    board!,
+    /overflow:\s*hidden/,
+    "the board itself must not be the scroller",
+  );
+  assert.match(
+    board!,
+    /display:\s*flex/,
+    "it has to bound .lanes for the lanes to be scrollable",
+  );
 
   const lanes = rule(".lanes");
-  assert.match(lanes!, /min-height:\s*0/, "a grid item defaults to min-height:auto and would never scroll");
+  assert.match(
+    lanes!,
+    /min-height:\s*0/,
+    "a grid item defaults to min-height:auto and would never scroll",
+  );
 
   const laneScroll = rule(".laneScroll");
-  assert.ok(laneScroll, "tickets need their own scroll box so .laneHead can stay pinned");
+  assert.ok(
+    laneScroll,
+    "tickets need their own scroll box so .laneHead can stay pinned",
+  );
   assert.match(laneScroll!, /overflow-y:\s*auto/);
   assert.match(laneScroll!, /min-height:\s*0/);
 
-  assert.match(rule(".laneHead")!, /flex:\s*none/, "the header must not shrink away as tickets pile up");
+  assert.match(
+    rule(".laneHead")!,
+    /flex:\s*none/,
+    "the header must not shrink away as tickets pile up",
+  );
 
   const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   // ใบสั่งต้องอยู่ "ใน" กล่องที่เลื่อน ไม่ใช่ลูกโดยตรงของเลน (ไม่งั้นหัวเลนเลื่อนหายไปด้วย)
-  assert.match(src, /styles\.laneScroll\}>[\s\S]{0,600}styles\.ticket\}/,
-    "tickets must be rendered inside the scroll box, not dropped straight into the lane");
+  assert.match(
+    src,
+    /styles\.laneScroll\}>[\s\S]{0,600}styles\.ticket\}/,
+    "tickets must be rendered inside the scroll box, not dropped straight into the lane",
+  );
 
   // จอแคบเลื่อนทั้งหน้าตามปกติ — เลนจึงต้องคืน overflow ที่ breakpoint นั้น
-  assert.match(css, /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
-    "the <=900px breakpoint scrolls the page as a document, so per-lane scrolling is released");
+  assert.match(
+    css,
+    /\.laneScroll \{ overflow: visible; \}|, \.laneScroll \{ overflow: visible; \}/,
+    "the <=900px breakpoint scrolls the page as a document, so per-lane scrolling is released",
+  );
 });
 
 test("จอที่เปิดอยู่ถูกจำไว้ข้ามรีเฟรช และ ?screen= ชนะค่าที่จำไว้", async () => {
@@ -694,7 +1169,10 @@ test("จอที่เปิดอยู่ถูกจำไว้ข้า�
   // ถูกเรียกจาก loadTickets ของ interval นั้น — จอที่เด้งกลับ ORDER หลังรีเฟรชจึง "หยุด
   // ดึงตั๋วและหยุดส่งเสียง" ไม่ใช่แค่แสดงจอผิด และ pos_only เปิด /admin/kitchen แทนไม่ได้
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(page, /LOCAL_SCREEN_KEY_PREFIX = "bms\.pos\.restaurantScreen\."/);
+  assert.match(
+    page,
+    /LOCAL_SCREEN_KEY_PREFIX = "bms\.pos\.restaurantScreen\."/,
+  );
   // ผูกกับ device token — เบราว์เซอร์เดียวที่ pair หลายเครื่องต้องไม่เห็นค่าของกันและกัน
   assert.match(page, /setItem\(LOCAL_SCREEN_KEY_PREFIX \+ token, screen\)/);
   assert.match(page, /getItem\(LOCAL_SCREEN_KEY_PREFIX \+ token\)/);
@@ -703,29 +1181,50 @@ test("จอที่เปิดอยู่ถูกจำไว้ข้า�
   assert.match(page, /localViewRestoredRef\.current = true/);
   // (removeItem ตอน TTL หมดอายุอยู่ใน effect ที่คืนค่าเอง จึงไม่นับ — ตัวที่ทับของได้คือ setItem
   //  กับ effect ที่ลบเมื่อไม่มีบิล)
-  const writes = [...page.matchAll(/localStorage\.setItem\(\s*(?:LOCAL_(?:SCREEN|CHECK)_KEY_PREFIX|key)/g)];
-  assert.equal(writes.length, 2, "ต้องมีจุดเขียนสองจุดเท่านั้น: จอที่เปิด และบิลที่ทำอยู่");
+  const writes = [
+    ...page.matchAll(
+      /localStorage\.setItem\(\s*(?:LOCAL_(?:SCREEN|CHECK)_KEY_PREFIX|key)/g,
+    ),
+  ];
+  assert.equal(
+    writes.length,
+    2,
+    "ต้องมีจุดเขียนสองจุดเท่านั้น: จอที่เปิด และบิลที่ทำอยู่",
+  );
   for (const write of writes) {
     const before = page.slice(Math.max(0, write.index! - 460), write.index!);
-    assert.match(before, /!viewRestored\) return/,
-      "ทุกจุดที่เขียนต้องรอให้การคืนค่าเสร็จก่อน (viewRestored) ไม่ใช่แค่เริ่มไปแล้ว");
+    assert.match(
+      before,
+      /!viewRestored\) return/,
+      "ทุกจุดที่เขียนต้องรอให้การคืนค่าเสร็จก่อน (viewRestored) ไม่ใช่แค่เริ่มไปแล้ว",
+    );
   }
-  const persistCheck = page.indexOf("const key = LOCAL_CHECK_KEY_PREFIX + token;");
+  const persistCheck = page.indexOf(
+    "const key = LOCAL_CHECK_KEY_PREFIX + token;",
+  );
   assert.ok(persistCheck > 0, "หา effect ที่จำบิลไม่เจอ");
-  assert.match(page.slice(Math.max(0, persistCheck - 240), persistCheck), /!viewRestored\) return/,
-    "effect ที่ลบบิลเมื่อไม่มีบิลต้องรอการคืนค่าเสร็จ ไม่งั้นมันลบของที่จำไว้ตอน mount");
+  assert.match(
+    page.slice(Math.max(0, persistCheck - 240), persistCheck),
+    /!viewRestored\) return/,
+    "effect ที่ลบบิลเมื่อไม่มีบิลต้องรอการคืนค่าเสร็จ ไม่งั้นมันลบของที่จำไว้ตอน mount",
+  );
   // การคืนบิลเป็น async — ธงต้องปักหลังงานจบจริง ไม่ใช่ตอนสั่งให้เริ่ม
   assert.match(page, /\.finally\(\(\) => setViewRestored\(true\)\)/);
   // ลิงก์ที่ปักหมุดไว้ที่จอครัวต้องชนะค่าที่จำไว้ ไม่งั้นล้าง site data แล้วจอครัวเปลี่ยนหน้าเอง
   assert.match(page, /SCREEN_FROM_URL/);
-  assert.match(page, /if \(fromUrl\) setScreen\(fromUrl\);\s*else if \(savedScreen/);
+  assert.match(
+    page,
+    /if \(fromUrl\) setScreen\(fromUrl\);\s*else if \(savedScreen/,
+  );
   // ⚠️ ห้ามเขียนจอที่เปิดอยู่กลับลง URL — เคยทำแล้วทุกการโหลดกลายเป็น "ลิงก์ที่ปักหมุด"
   // แล้วการคืนบิลถูกข้ามเงียบ ๆ · พารามิเตอร์นี้ต้องมาจากคนที่ตั้งใจใส่เท่านั้น
   assert.doesNotMatch(page, /searchParams\.set\(\s*"screen"/);
   assert.doesNotMatch(page, /history\.(replaceState|pushState)/);
   assert.doesNotMatch(page, /router\.(push|replace)\([^)]*screen=/);
   // การปักหมุดจอต้องไม่ข้ามการคืนบิล — ทั้งสองอย่างเป็นคนละคำถามกัน
-  const restore = page.slice(page.indexOf("localViewRestoredRef.current = true"));
+  const restore = page.slice(
+    page.indexOf("localViewRestoredRef.current = true"),
+  );
   const urlBranch = restore.slice(0, restore.indexOf("LOCAL_CHECK_MAX_AGE_MS"));
   assert.doesNotMatch(urlBranch, /if \(fromUrl\) \{[\s\S]{0,200}return;/);
 });
@@ -736,10 +1235,16 @@ test("บิลที่จำไว้ต้องมีอายุ ยืน�
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(page, /LOCAL_CHECK_MAX_AGE_MS/);
   assert.match(page, /Date\.now\(\) - savedAt > LOCAL_CHECK_MAX_AGE_MS/);
-  assert.match(page, /loadCheck\(id\)[\s\S]{0,220}isOpenCheckStatus\(restored\.status\)/);
+  assert.match(
+    page,
+    /loadCheck\(id\)[\s\S]{0,220}isOpenCheckStatus\(restored\.status\)/,
+  );
   assert.match(page, /if \(check && isOpenCheckStatus\(check\.status\)\)/);
   // เก็บแค่ id + เวลา — ยอดเงิน/รายการต้องมาจาก server เสมอ ห้ามมีสูตรเงินชุดที่สองใน localStorage
-  assert.match(page, /JSON\.stringify\(\{ id: check\.id, savedAt: Date\.now\(\) \}\)/);
+  assert.match(
+    page,
+    /JSON\.stringify\(\{ id: check\.id, savedAt: Date\.now\(\) \}\)/,
+  );
   assert.doesNotMatch(page, /LOCAL_CHECK_KEY_PREFIX[\s\S]{0,400}amountDue/);
 });
 
@@ -747,18 +1252,45 @@ test("ห้ามจำ PIN ผู้ปฏิบัติงาน โหม�
   // ตัวกรองที่ค้างข้ามรีเฟรช = ซ่อนงานจริง (จอครัวปลดตัวกรองเองเมื่อไม่มีงานด้วยเหตุผลนี้)
   // และกลับมาอยู่ในโหมดแจ้งของหมด = แตะการ์ดแล้วปิดเมนู ไม่ใช่สั่งอาหาร
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  for (const banned of ["actorPin", "actorUserId", "menuManage", "menuOnlySoldOut", "menuCategory", "stationFilter"]) {
-    assert.doesNotMatch(page, new RegExp(`localStorage\\.setItem\\([^)]*${banned}`),
-      `${banned} ต้องไม่ถูกเก็บลง localStorage`);
-    assert.doesNotMatch(page, new RegExp(`set(Menu|Actor|Station)[A-Za-z]*\\(\\s*(JSON\\.parse\\()?window\\.localStorage`),
-      `${banned} ต้องไม่ถูกคืนค่าจาก localStorage`);
+  for (const banned of [
+    "actorPin",
+    "actorUserId",
+    "menuManage",
+    "menuOnlySoldOut",
+    "menuCategory",
+    "stationFilter",
+  ]) {
+    assert.doesNotMatch(
+      page,
+      new RegExp(`localStorage\\.setItem\\([^)]*${banned}`),
+      `${banned} ต้องไม่ถูกเก็บลง localStorage`,
+    );
+    assert.doesNotMatch(
+      page,
+      new RegExp(
+        `set(Menu|Actor|Station)[A-Za-z]*\\(\\s*(JSON\\.parse\\()?window\\.localStorage`,
+      ),
+      `${banned} ต้องไม่ถูกคืนค่าจาก localStorage`,
+    );
   }
   // คีย์ที่หน้านี้เก็บได้มีสามตัวเท่านั้น: token (ของเดิม), จอที่เปิด, บิลที่ทำอยู่ + เสียงเตือน
-  const keys = [...page.matchAll(/localStorage\.(?:set|get|remove)Item\(\s*([A-Za-z_][\w.]*|"[^"]+")/g)]
-    .map((match) => match[1]);
-  const allowed = new Set(["TOKEN_KEY", '"bms.pos.kitchenChime"', "key",
-    "LOCAL_SCREEN_KEY_PREFIX", "LOCAL_CHECK_KEY_PREFIX"]);
-  for (const found of keys) assert.ok(allowed.has(found), `คีย์ localStorage ที่ไม่ได้ประกาศไว้: ${found}`);
+  const keys = [
+    ...page.matchAll(
+      /localStorage\.(?:set|get|remove)Item\(\s*([A-Za-z_][\w.]*|"[^"]+")/g,
+    ),
+  ].map((match) => match[1]);
+  const allowed = new Set([
+    "TOKEN_KEY",
+    '"bms.pos.kitchenChime"',
+    "key",
+    "LOCAL_SCREEN_KEY_PREFIX",
+    "LOCAL_CHECK_KEY_PREFIX",
+  ]);
+  for (const found of keys)
+    assert.ok(
+      allowed.has(found),
+      `คีย์ localStorage ที่ไม่ได้ประกาศไว้: ${found}`,
+    );
 });
 
 test("ทุกกฎที่ทาสีปุ่มต้องเจาะจงกว่า .pos-root button ของ pos.css", async () => {
@@ -767,12 +1299,18 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
   // เงียบ ๆ โดยไม่มี error ที่ไหน · เคยกินไปแล้วสามรอบ: .btnPrimary (แก้ไปนานแล้ว),
   // .menuToolOn ตอน :hover, และ .kitchenFilterOn ที่ไม่เคยทำงานเลยแม้แต่ครั้งเดียว
   const page = await read("apps/web/app/(pos)/pos/restaurant/page.tsx");
-  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const css = code(
+    await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"),
+  );
 
   // เก็บชื่อคลาสที่อยู่บน <button> จริง — เดินตัวอักษรเพื่อหาปลาย tag เพราะ className
   // เป็น template literal ที่มี ${...} ซ้อนอยู่ (regex สั้น ๆ จะตัดกลางทางแล้วมองไม่เห็น)
   const onButtons = new Set<string>();
-  for (let at = page.indexOf("<button"); at >= 0; at = page.indexOf("<button", at + 1)) {
+  for (
+    let at = page.indexOf("<button");
+    at >= 0;
+    at = page.indexOf("<button", at + 1)
+  ) {
     let depth = 0;
     let end = at;
     while (end < page.length) {
@@ -782,59 +1320,90 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
       else if (ch === ">" && depth === 0) break;
       end += 1;
     }
-    for (const [, name] of page.slice(at, end).matchAll(/styles\.(\w+)/g)) onButtons.add(name);
+    for (const [, name] of page.slice(at, end).matchAll(/styles\.(\w+)/g))
+      onButtons.add(name);
   }
   assert.ok(onButtons.size > 8, `หาคลาสของปุ่มไม่เจอ (${onButtons.size})`);
 
-  const PAINTS = /(?:^|;|\{)\s*(?:background|border(?:-color|-radius|-width)?|color|font|font-weight|padding|height|min-height)\s*:/;
+  const PAINTS =
+    /(?:^|;|\{)\s*(?:background|border(?:-color|-radius|-width)?|color|font|font-weight|padding|height|min-height)\s*:/;
   const offenders: string[] = [];
-  for (const [, , selector, body] of css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)) {
+  for (const [, , selector, body] of css.matchAll(
+    /(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g,
+  )) {
     if (!PAINTS.test(body)) continue;
     if (selector.includes(".page")) continue;
     for (const name of onButtons) {
       // นับเฉพาะกฎที่ "จบ" ที่คลาสของปุ่มเอง — `.x .y` (สองคลาส) เจาะจงพอแล้ว
-      if (new RegExp(`^\\.${name}(?![\\w-])[^ ]*$`).test(selector.trim())) offenders.push(selector.trim());
+      if (new RegExp(`^\\.${name}(?![\\w-])[^ ]*$`).test(selector.trim()))
+        offenders.push(selector.trim());
     }
   }
-  assert.deepEqual(offenders, [],
-    `กฎเหล่านี้ทาสีปุ่มแต่ไม่มี .page นำหน้า จึงแพ้ .pos-root button: ${offenders.join(" · ")}`);
+  assert.deepEqual(
+    offenders,
+    [],
+    `กฎเหล่านี้ทาสีปุ่มแต่ไม่มี .page นำหน้า จึงแพ้ .pos-root button: ${offenders.join(" · ")}`,
+  );
 
   // ปุ่มที่ทาพื้นทึบแล้วใช้ตัวหนังสือสีอ่อน **ต้องประกาศ :hover ของตัวเองเสมอ** —
   // pos.css เปลี่ยนพื้นเป็น --pos-sunken ตอน hover แล้วตัวหนังสือสีขาวจะหายไปกับพื้น
   // และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุด = เห็นปุ่มว่างเปล่าเป็นปกติ
-  const rules = [...css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)].map(([, , sel, body]) => ({
-    sel: sel.trim(), body,
-  }));
-  const LIGHT_INK = /(?<![-\w])color\s*:\s*(?:white|#fff(?:fff)?|var\(--panel\))\s*(?:;|$)/i;
+  const rules = [...css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)].map(
+    ([, , sel, body]) => ({
+      sel: sel.trim(),
+      body,
+    }),
+  );
+  const LIGHT_INK =
+    /(?<![-\w])color\s*:\s*(?:white|#fff(?:fff)?|var\(--panel\))\s*(?:;|$)/i;
   const missingHover: string[] = [];
   // ตัด :not(...) ออกก่อนถามว่า "กฎนี้เป็นของปุ่มตัวไหน" — `.railBtn:hover:not(.railBtnActive)`
   // เอ่ยถึง railBtnActive เพื่อ *ยกเว้น* มัน ไม่ใช่เพื่อทาสีให้มัน (รอบแรกเทสเขียวเพราะข้อนี้)
   const withoutNot = (sel: string) => sel.replace(/:not\([^)]*\)/g, "");
   for (const name of onButtons) {
-    const owns = (sel: string) => new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
-    const painted = rules.some((rule) => owns(rule.sel) && !rule.sel.includes(":hover")
-      && /(?:^|;|\{)\s*background\s*:/.test(rule.body) && LIGHT_INK.test(rule.body));
+    const owns = (sel: string) =>
+      new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
+    const painted = rules.some(
+      (rule) =>
+        owns(rule.sel) &&
+        !rule.sel.includes(":hover") &&
+        /(?:^|;|\{)\s*background\s*:/.test(rule.body) &&
+        LIGHT_INK.test(rule.body),
+    );
     if (!painted) continue;
-    const hovered = rules.some((rule) => owns(rule.sel) && rule.sel.includes(":hover")
-      && /(?:^|;|\{)\s*background\s*:/.test(rule.body));
+    const hovered = rules.some(
+      (rule) =>
+        owns(rule.sel) &&
+        rule.sel.includes(":hover") &&
+        /(?:^|;|\{)\s*background\s*:/.test(rule.body),
+    );
     if (!hovered) missingHover.push(name);
   }
-  assert.deepEqual(missingHover, [],
-    `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`);
+  assert.deepEqual(
+    missingHover,
+    [],
+    `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`,
+  );
 
   // ด่านที่สาม — คนละกลไกกับ specificity: pos.css ตั้ง `min-height: 44px` ให้ทุก <button>
   // คุณสมบัติที่กฎของเรา "ไม่ได้ประกาศ" จึงตกมาจากตรงนั้น · ปุ่มที่เขียน height: 34px แล้วไม่เขียน
   // min-height จะได้กล่อง 34×44 (สูงกว่ากว้าง) แล้วไอคอนดูไม่อยู่กลาง — เจอจริงที่ปุ่ม ⋯ ของการ์ดเมนู
   const missingMinHeight: string[] = [];
   for (const name of onButtons) {
-    const owns = (sel: string) => new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
+    const owns = (sel: string) =>
+      new RegExp(`\\.${name}(?![\\w-])`).test(withoutNot(sel));
     const own = rules.filter((rule) => owns(rule.sel));
-    const setsHeight = own.some((rule) => /(?:^|;|\{)\s*height\s*:/.test(rule.body));
+    const setsHeight = own.some((rule) =>
+      /(?:^|;|\{)\s*height\s*:/.test(rule.body),
+    );
     const setsMin = own.some((rule) => /min-height\s*:/.test(rule.body));
     if (setsHeight && !setsMin) missingMinHeight.push(name);
   }
-  assert.deepEqual(missingMinHeight, [],
-    `ปุ่มที่ตั้ง height แต่ไม่ตั้ง min-height จะถูก min-height:44px ของ pos.css ยืด: ${missingMinHeight.join(" · ")}`);
+  assert.deepEqual(
+    missingMinHeight,
+    [],
+    `ปุ่มที่ตั้ง height แต่ไม่ตั้ง min-height จะถูก min-height:44px ของ pos.css ยืด: ${missingMinHeight.join(" · ")}`,
+  );
 });
 
 test("ช่องกรองเมนูมีปุ่มล้าง ขึ้นเฉพาะตอนมีข้อความ และคืนโฟกัสให้พิมพ์ต่อ", async () => {
@@ -842,7 +1411,10 @@ test("ช่องกรองเมนูมีปุ่มล้าง ขึ�
   // ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่ · ปุ่มที่ขึ้นตลอดเวลาแม้ช่องว่างคือปุ่มที่
   // กดแล้วไม่เกิดอะไร ซึ่งสอนให้คนเลิกเชื่อปุ่มบนแถบนี้
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(page, /\{search && <button type="button" className=\{styles\.searchClear\}/);
+  assert.match(
+    page,
+    /\{search && <button type="button" className=\{styles\.searchClear\}/,
+  );
   assert.match(page, /aria-label=\{t\("pos_restaurant\.clear_search"\)\}/);
   // คืนโฟกัสหลังล้าง — ไม่งั้นต้องแตะช่องอีกครั้งก่อนพิมพ์คำใหม่
   assert.match(page, /setSearch\(""\); searchRef\.current\?\.focus\(\)/);
@@ -857,28 +1429,56 @@ test("ปุ่มสั่งซ้ำเป็นข้อความ แล�
   const at = page.indexOf("styles.itemAgain");
   assert.ok(at > 0, "หาปุ่มสั่งซ้ำไม่เจอ");
   const button = page.slice(at, page.indexOf("</button>", at));
-  assert.doesNotMatch(button, /<ReloadOutlined/, "ปุ่มนี้ต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
-  assert.match(button, /dropped \|\| stillCharged \? t\("pos_restaurant\.order_again_new"\) : t\("pos_restaurant\.order_again"\)/);
+  assert.doesNotMatch(
+    button,
+    /<ReloadOutlined/,
+    "ปุ่มนี้ต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า",
+  );
+  assert.match(
+    button,
+    /dropped \|\| stillCharged \? t\("pos_restaurant\.order_again_new"\) : t\("pos_restaurant\.order_again"\)/,
+  );
   // ป้ายสำหรับ screen reader ต้องบอกทั้งประโยคเหมือนเดิม ไม่ใช่แค่คำบนปุ่ม
-  assert.match(button, /aria-label=\{t\("pos_restaurant\.order_line_again_label", \{ name: item\.productName,/);
+  assert.match(
+    button,
+    /aria-label=\{t\("pos_restaurant\.order_line_again_label", \{ name: item\.productName,/,
+  );
 
   // ปุ่มลบบรรทัดที่ยังไม่ส่งครัวอยู่คอลัมน์เดียวกัน ต้องเป็นคำเหมือนกัน — ปุ่มเดียวที่เป็น
   // สัญลักษณ์ทำให้ตาต้องสลับวิธีอ่านกลางคอลัมน์ และ ⊗ อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
   const removeAt = page.indexOf("styles.itemRemove");
   assert.ok(removeAt > 0, "หาปุ่มลบไม่เจอ");
-  const removeButton = page.slice(removeAt, page.indexOf("</button>", removeAt));
-  assert.doesNotMatch(removeButton, /<CloseCircleOutlined/, "ปุ่มลบต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า");
+  const removeButton = page.slice(
+    removeAt,
+    page.indexOf("</button>", removeAt),
+  );
+  assert.doesNotMatch(
+    removeButton,
+    /<CloseCircleOutlined/,
+    "ปุ่มลบต้องเป็นข้อความ ไม่ใช่ไอคอนเปล่า",
+  );
   assert.match(removeButton, />\{t\("pos_restaurant\.remove"\)\}$/m);
   // บิลหนึ่งใบมีเมนูซ้ำกันได้หลายบรรทัด ป้ายจึงต้องบอกด้วยว่าลบบรรทัดของเมนูไหน
-  assert.match(removeButton, /aria-label=\{t\("pos_restaurant\.remove_line_label", \{ name: item\.productName \}\)\}/);
+  assert.match(
+    removeButton,
+    /aria-label=\{t\("pos_restaurant\.remove_line_label", \{ name: item\.productName \}\)\}/,
+  );
 
   // ปุ่มสองแบบในคอลัมน์เดียวกันต้องกว้างเท่ากัน ไม่งั้นขอบซ้ายเยื้องกันทุกบรรทัด
-  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const css = code(
+    await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"),
+  );
   for (const name of ["itemAgain", "itemRemove"]) {
-    const rule = css.slice(css.indexOf(`.page .${name}{`) >= 0
-      ? css.indexOf(`.page .${name}{`) : css.indexOf(`.page .${name} {`));
-    assert.match(rule.slice(0, rule.indexOf("}")), /min-width:\s*62px/,
-      `${name} ต้องมี min-width เท่ากับอีกปุ่มในคอลัมน์`);
+    const rule = css.slice(
+      css.indexOf(`.page .${name}{`) >= 0
+        ? css.indexOf(`.page .${name}{`)
+        : css.indexOf(`.page .${name} {`),
+    );
+    assert.match(
+      rule.slice(0, rule.indexOf("}")),
+      /min-width:\s*62px/,
+      `${name} ต้องมี min-width เท่ากับอีกปุ่มในคอลัมน์`,
+    );
   }
 });
 
@@ -889,12 +1489,19 @@ test("กล่องเพิ่มเมนูเป็นจอสัมผ�
   const start = page.indexOf('okText={t("pos_restaurant.add_to_check_amount"');
   assert.ok(start > 0, "หากล่องเพิ่มเมนูไม่เจอ");
   const dialog = page.slice(start, page.indexOf("<Modal", start + 10));
-  assert.doesNotMatch(dialog, /type="number"/, "จำนวนต้องเป็น stepper ไม่ใช่ช่องพิมพ์ตัวเลข");
+  assert.doesNotMatch(
+    dialog,
+    /type="number"/,
+    "จำนวนต้องเป็น stepper ไม่ใช่ช่องพิมพ์ตัวเลข",
+  );
   assert.match(dialog, /styles\.stepper/);
   assert.match(dialog, /aria-label=\{t\("pos_restaurant\.qty_plus"\)\}/);
   assert.match(dialog, /MENU_QTY_SHORTCUTS/);
   // ยอดรวมต้องอยู่บนปุ่ม — เป็นสิ่งสุดท้ายที่ตาเห็นก่อนกด
-  assert.match(page, /okText=\{t\("pos_restaurant\.add_to_check_amount", \{ amount: money\(menuHitTotal\) \}\)\}/);
+  assert.match(
+    page,
+    /okText=\{t\("pos_restaurant\.add_to_check_amount", \{ amount: money\(menuHitTotal\) \}\)\}/,
+  );
   // ปุ่มยกเลิกต้องเป็นไทย ไม่ปล่อยให้ antd ใส่ "Cancel" ให้
   assert.match(page, /cancelText=\{t\("pos_restaurant\.cancel"\)\}/);
   // สูตรราคาต่อหน่วยต้องมีที่เดียว (เดิมเขียนซ้ำสองรอบในข้อความเดียว)
@@ -903,17 +1510,32 @@ test("กล่องเพิ่มเมนูเป็นจอสัมผ�
 
 test("กลุ่มตัวเลือกบอกกติกาครบ และส่วนต่างราคาต้องเห็นก่อนกด", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  const group = page.slice(page.indexOf("function MenuModifierGroups"), page.indexOf("function ", page.indexOf("function MenuModifierGroups") + 10));
+  const group = page.slice(
+    page.indexOf("function MenuModifierGroups"),
+    page.indexOf("function ", page.indexOf("function MenuModifierGroups") + 10),
+  );
   // เดิมบอกแต่ขั้นต่ำ — คนหน้าร้านต้องรู้ก่อนแตะว่าเลือกได้กี่อย่าง
   assert.match(group, /t\("pos_restaurant\.modifier_pick_one"\)/);
-  assert.match(group, /t\("pos_restaurant\.modifier_pick_max", \{ max: meta\.maxSelect \}\)/);
-  assert.match(group, /t\("pos_restaurant\.modifier_pick_min", \{ min: meta\.minSelect \}\)/);
+  assert.match(
+    group,
+    /t\("pos_restaurant\.modifier_pick_max", \{ max: meta\.maxSelect \}\)/,
+  );
+  assert.match(
+    group,
+    /t\("pos_restaurant\.modifier_pick_min", \{ min: meta\.minSelect \}\)/,
+  );
   // ชิปยังเป็น radio/checkbox จริงข้างใน จึงคุมด้วยคีย์บอร์ด/screen reader ได้
   assert.match(group, /type=\{single \? "radio" : "checkbox"\}/);
   assert.match(group, /modifier\.priceDelta > 0 && <small>/);
-  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const css = code(
+    await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"),
+  );
   assert.match(css, /\.modifierChipInput \{[^}]*opacity: 0/);
-  assert.match(css, /\.modifierChip:focus-within/, "ชิปที่ซ่อน input ต้องยังเห็น focus ตอนใช้คีย์บอร์ด");
+  assert.match(
+    css,
+    /\.modifierChip:focus-within/,
+    "ชิปที่ซ่อน input ต้องยังเห็น focus ตอนใช้คีย์บอร์ด",
+  );
 });
 
 test("antd locale ผูกกับภาษาผู้ใช้ ไม่ปล่อยให้ปุ่มในตัวเป็นอังกฤษ", async () => {
@@ -923,8 +1545,11 @@ test("antd locale ผูกกับภาษาผู้ใช้ ไม่ป�
   assert.match(provider, /locale=\{lang === "en" \? enUS : thTH\}/);
   // ต้องอยู่ใต้ I18nProvider ไม่งั้น useI18n() คืนค่า default ของ context แทนภาษาจริง
   const providers = code(await read("apps/web/app/ClientProviders.tsx"));
-  assert.ok(providers.indexOf("<I18nProvider") < providers.indexOf("<AntdThemeProvider"),
-    "I18nProvider ต้องห่อ AntdThemeProvider");
+  assert.ok(
+    providers.indexOf("<I18nProvider") <
+      providers.indexOf("<AntdThemeProvider"),
+    "I18nProvider ต้องห่อ AntdThemeProvider",
+  );
 });
 
 /**
@@ -934,19 +1559,33 @@ test("antd locale ผูกกับภาษาผู้ใช้ ไม่ป�
  */
 test("cron ปล่อยบิลหมดอายุต้องไม่กวาดใบจองของบิลโต๊ะ", async () => {
   const src = code(await read("apps/web/lib/bms/orders.ts"));
-  const statement = src.slice(src.indexOf("export async function releaseExpiredOrders"));
-  const candidates = statement.slice(statement.indexOf("SELECT id FROM bms_orders"), statement.indexOf("const released"));
-  assert.match(candidates, /restaurant_check_id IS NULL/,
-    "ใบจองของบิลโต๊ะไม่หมดอายุตามเวลา — มันจบเมื่อคิดเงินหรือยกเลิกบิลเท่านั้น");
+  const statement = src.slice(
+    src.indexOf("export async function releaseExpiredOrders"),
+  );
+  const candidates = statement.slice(
+    statement.indexOf("SELECT id FROM bms_orders"),
+    statement.indexOf("const released"),
+  );
+  assert.match(
+    candidates,
+    /restaurant_check_id IS NULL/,
+    "ใบจองของบิลโต๊ะไม่หมดอายุตามเวลา — มันจบเมื่อคิดเงินหรือยกเลิกบิลเท่านั้น",
+  );
 });
 
 test("การส่งครัวตัดสินจากสถานะใบจอง ไม่ใช่แค่ว่ามี current_order_id", async () => {
   const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   assert.match(src, /const reservationAlive = reservationStatus === "PENDING"/);
-  assert.match(src, /if \(unsent\.length === 0 && reservationAlive/,
-    "ใบจองที่ถูกยกเลิกแล้วต้องไม่ถูกนับว่า 'ส่งครัวครบแล้ว' ไม่งั้นไปล้มตอนคิดเงินแทน");
-  assert.match(src, /reservationLost: Boolean\(row\.current_order_id\) && row\.reservation_status !== "PENDING"/,
-    "จอต้องรู้สถานะใบจองจาก server ที่เดียว ไม่ใช่เดาเอง");
+  assert.match(
+    src,
+    /if \(unsent\.length === 0 && reservationAlive/,
+    "ใบจองที่ถูกยกเลิกแล้วต้องไม่ถูกนับว่า 'ส่งครัวครบแล้ว' ไม่งั้นไปล้มตอนคิดเงินแทน",
+  );
+  assert.match(
+    src,
+    /reservationLost: Boolean\(row\.current_order_id\) && row\.reservation_status !== "PENDING"/,
+    "จอต้องรู้สถานะใบจองจาก server ที่เดียว ไม่ใช่เดาเอง",
+  );
 });
 
 /**
@@ -956,26 +1595,43 @@ test("การส่งครัวตัดสินจากสถานะ�
  */
 test("การปฏิเสธของบิลโต๊ะต้องเป็น RestaurantCheckError และ route ต้องตอบ 409 ไม่ใช่ 500", async () => {
   const service = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  assert.doesNotMatch(service, /throw new Error\(/,
-    "throw new Error() จะกลายเป็น 500 ที่ข้อความถูกลบทิ้งบน production");
+  assert.doesNotMatch(
+    service,
+    /throw new Error\(/,
+    "throw new Error() จะกลายเป็น 500 ที่ข้อความถูกลบทิ้งบน production",
+  );
 
   const wrapper = code(await read("apps/web/lib/log/routeError.ts"));
   const guard = wrapper.indexOf("isRestaurantCheckError(error)");
   assert.ok(guard > 0, "withRouteErrorLog ต้องรู้จักการปฏิเสธตามกฎธุรกิจ");
-  assert.ok(guard < wrapper.indexOf("return errorResponse("),
-    "ต้องตอบ 409 ก่อนถึงเส้นทาง log+500 ไม่งั้นกฎธุรกิจปกติจะกลบ error จริงใน system_logs");
+  assert.ok(
+    guard < wrapper.indexOf("return errorResponse("),
+    "ต้องตอบ 409 ก่อนถึงเส้นทาง log+500 ไม่งั้นกฎธุรกิจปกติจะกลบ error จริงใน system_logs",
+  );
   assert.match(wrapper.slice(guard, guard + 400), /status: 409/);
 });
 
 test("ปุ่มที่กดไปก็ล้มต้องกดไม่ได้ และปุ่มที่กู้ได้ต้องกดได้", async () => {
   const src = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(src, /const reservationLost = Boolean\(check\?\.reservationLost\)/);
-  assert.match(src, /disabled=\{!hasUnsent && !reservationLost\}[^]{0,120}send_kitchen/,
-    "ใบจองหาย = ส่งครัวคือทางกู้ ต้องกดได้แม้ไม่มีรายการใหม่");
-  assert.match(src, /disabled=\{!check\.items\.length \|\| hasUnsent \|\| reservationLost/,
-    "คิดเงินตอนใบจองหายล้มแน่นอน — ต้องกันไว้ก่อน ไม่ใช่ให้เจอ error ต่อหน้าลูกค้า");
-  assert.match(src, /t\("pos_restaurant\.reservation_lost"\)[^]{0,200}t\("pos_restaurant\.reservation_lost_action"\)/,
-    "ต้องบอกด้วยว่าทำอะไรต่อ ไม่ใช่แค่ปิดปุ่ม");
+  assert.match(
+    src,
+    /const reservationLost = Boolean\(check\?\.reservationLost\)/,
+  );
+  assert.match(
+    src,
+    /disabled=\{!hasUnsent && !reservationLost\}[^]{0,120}send_kitchen/,
+    "ใบจองหาย = ส่งครัวคือทางกู้ ต้องกดได้แม้ไม่มีรายการใหม่",
+  );
+  assert.match(
+    src,
+    /disabled=\{!check\.items\.length \|\| hasUnsent \|\| reservationLost/,
+    "คิดเงินตอนใบจองหายล้มแน่นอน — ต้องกันไว้ก่อน ไม่ใช่ให้เจอ error ต่อหน้าลูกค้า",
+  );
+  assert.match(
+    src,
+    /t\("pos_restaurant\.reservation_lost"\)[^]{0,200}t\("pos_restaurant\.reservation_lost_action"\)/,
+    "ต้องบอกด้วยว่าทำอะไรต่อ ไม่ใช่แค่ปิดปุ่ม",
+  );
 });
 
 /**
@@ -985,14 +1641,26 @@ test("ปุ่มที่กดไปก็ล้มต้องกดไม�
  */
 test("การแทนใบจองของบิลโต๊ะต้องผ่านตัวเดียว ไม่ให้ผู้เรียกแปล false เอง", async () => {
   const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
-  assert.match(src, /"RELEASED" \| "ALREADY_GONE" \| "BLOCKED"/,
-    "ต้องแยก 'ยกเลิกไปแล้ว' ออกจาก 'ยกเลิกไม่ได้'");
-  assert.equal((src.match(/releaseCheckReservationInTx\(client/g) ?? []).length, 4,
-    "ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล · คิดยอดใหม่หลังแยก/รวมบิล ต้องเรียกตัวเดียวกันครบทั้งสี่");
-  assert.doesNotMatch(src, /const \w+ = await cancelOrderInTx\(/,
-    "ห้ามเรียก cancelOrderInTx ตรง ๆ นอก helper อีก");
-  assert.equal((src.match(/if \(released === "RELEASED"\) releasedOrderId/g) ?? []).length, 1,
-    "งานหลัง commit ต้องทำเฉพาะใบที่รอบนี้เป็นคนยกเลิกเอง");
+  assert.match(
+    src,
+    /"RELEASED" \| "ALREADY_GONE" \| "BLOCKED"/,
+    "ต้องแยก 'ยกเลิกไปแล้ว' ออกจาก 'ยกเลิกไม่ได้'",
+  );
+  assert.equal(
+    (src.match(/releaseCheckReservationInTx\(client/g) ?? []).length,
+    4,
+    "ส่งครัว · ครัวยกเลิกรายการ · ยกเลิกบิล · คิดยอดใหม่หลังแยก/รวมบิล ต้องเรียกตัวเดียวกันครบทั้งสี่",
+  );
+  assert.doesNotMatch(
+    src,
+    /const \w+ = await cancelOrderInTx\(/,
+    "ห้ามเรียก cancelOrderInTx ตรง ๆ นอก helper อีก",
+  );
+  assert.equal(
+    (src.match(/if \(released === "RELEASED"\) releasedOrderId/g) ?? []).length,
+    1,
+    "งานหลัง commit ต้องทำเฉพาะใบที่รอบนี้เป็นคนยกเลิกเอง",
+  );
 });
 
 /**
@@ -1005,68 +1673,106 @@ test("แยกบิล/รวมบิลต้องคิดยอดให�
   const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const fn = src.slice(
     src.indexOf("async function repriceCheckAfterItemMoveInTx"),
-    src.indexOf("async function moveCheckItemsInTx")
+    src.indexOf("async function moveCheckItemsInTx"),
   );
   assert.ok(fn.length > 0, "ต้องมีตัวคิดยอดใหม่ตัวเดียวให้ทั้งสองเส้นทางใช้");
-  assert.match(fn, /createOrderInTx\(client/,
-    "ยอดใหม่ต้องมาจากเส้นทางสร้างออร์เดอร์เดิม ไม่ใช่สูตรเงินชุดที่สอง");
+  assert.match(
+    fn,
+    /createOrderInTx\(client/,
+    "ยอดใหม่ต้องมาจากเส้นทางสร้างออร์เดอร์เดิม ไม่ใช่สูตรเงินชุดที่สอง",
+  );
   assert.doesNotMatch(fn, /amount_due\s*[+-]=/, "ห้ามบวก/ลบยอดเดิมเอง");
 
   // ปล่อยของที่ใบต้นทางจองไว้ก่อนเสมอ ไม่งั้นเมนูที่เหลือชิ้นสุดท้ายจะแยกบิลไม่ได้
   const split = src.slice(
     src.indexOf("export async function splitRestaurantCheck"),
-    src.indexOf("export async function mergeRestaurantChecks")
+    src.indexOf("export async function mergeRestaurantChecks"),
   );
   assert.ok(
-    split.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.checkId)")
-      < split.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, targetId)"),
-    "ต้องคืนใบจองของต้นทางก่อนให้ปลายทางจอง ไม่งั้นสองใบแย่งของก้อนเดียวกัน"
+    split.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.checkId)") <
+      split.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, targetId)"),
+    "ต้องคืนใบจองของต้นทางก่อนให้ปลายทางจอง ไม่งั้นสองใบแย่งของก้อนเดียวกัน",
   );
-  const merge = src.slice(src.indexOf("export async function mergeRestaurantChecks"));
+  const merge = src.slice(
+    src.indexOf("export async function mergeRestaurantChecks"),
+  );
   assert.ok(
-    merge.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.sourceCheckId)")
-      < merge.indexOf("repriceCheckAfterItemMoveInTx(client, ctx, input.targetCheckId)"),
-    "รวมบิลก็ต้องคืนของต้นทางก่อนด้วยเหตุผลเดียวกัน"
+    merge.indexOf(
+      "repriceCheckAfterItemMoveInTx(client, ctx, input.sourceCheckId)",
+    ) <
+      merge.indexOf(
+        "repriceCheckAfterItemMoveInTx(client, ctx, input.targetCheckId)",
+      ),
+    "รวมบิลก็ต้องคืนของต้นทางก่อนด้วยเหตุผลเดียวกัน",
   );
 });
 
 test("รวมบิลต้องไม่ถูกนับเป็นบิลที่ถูกยกเลิก และตั๋วครัวต้องตามบรรทัดไป", async () => {
-  const migration = code(await read("db/migrations/9.63__bms_restaurant_check_split_merge.sql"));
+  const migration = code(
+    await read("db/migrations/9.63__bms_restaurant_check_split_merge.sql"),
+  );
   const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
 
   assert.match(migration, /'OPEN', 'CLOSING', 'PAID', 'CANCELLED', 'MERGED'/);
-  assert.match(migration, /\(status IN \('PAID', 'CANCELLED', 'MERGED'\)\) = \(closed_at IS NOT NULL\)/);
+  assert.match(
+    migration,
+    /\(status IN \('PAID', 'CANCELLED', 'MERGED'\)\) = \(closed_at IS NOT NULL\)/,
+  );
   // trigger ของ 9.62 ต้องนับ MERGED เป็นสถานะปลายทาง ไม่งั้นโทรศัพท์ที่โต๊ะต้นทางยังยิง
   // คำขอเข้าบิลที่ปิดไปแล้วได้ตลอดไป (อาการเดียวกับที่ 9.62 เพิ่งปิดไป)
   assert.match(migration, /NEW\.status IN \('PAID', 'CANCELLED', 'MERGED'\)/);
   assert.doesNotMatch(migration, /NEW\.status <> 'OPEN'/);
-  assert.match(migration, /uq_bms_restaurant_checks_open_table[\s\S]{0,200}split_group_no/);
+  assert.match(
+    migration,
+    /uq_bms_restaurant_checks_open_table[\s\S]{0,200}split_group_no/,
+  );
 
   assert.match(src, /SET status = 'MERGED', merged_into_check_id/);
   const move = src.slice(
     src.indexOf("async function moveCheckItemsInTx"),
-    src.indexOf("export async function splitRestaurantCheck")
+    src.indexOf("export async function splitRestaurantCheck"),
   );
-  assert.match(move, /UPDATE bms_restaurant_kitchen_tickets[\s\S]{0,200}SET check_id/,
-    "ตั๋วครัวต้องตามบรรทัดไป ไม่งั้นกระดานครัวบอกโต๊ะผิดให้คนยกอาหาร");
-  assert.match(move, /DENSE_RANK\(\) OVER \(ORDER BY round_no\)/,
-    "เลขรอบเป็นของบิลใบนั้น ยกเลขเดิมข้ามบิลไปจะได้ 'รอบ 1' ซ้ำสองกลุ่ม");
+  assert.match(
+    move,
+    /UPDATE bms_restaurant_kitchen_tickets[\s\S]{0,200}SET check_id/,
+    "ตั๋วครัวต้องตามบรรทัดไป ไม่งั้นกระดานครัวบอกโต๊ะผิดให้คนยกอาหาร",
+  );
+  assert.match(
+    move,
+    /DENSE_RANK\(\) OVER \(ORDER BY round_no\)/,
+    "เลขรอบเป็นของบิลใบนั้น ยกเลขเดิมข้ามบิลไปจะได้ 'รอบ 1' ซ้ำสองกลุ่ม",
+  );
 });
 
 test("โต๊ะที่แยกบิลแล้วต้องไม่โผล่ซ้ำบนผัง และลูกค้าที่สแกน QR ต้องลงบิลหลักเสมอ", async () => {
   const src = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const floor = src.slice(
     src.indexOf("export async function listRestaurantFloor"),
-    src.indexOf("type RestaurantFloorActor")
+    src.indexOf("type RestaurantFloorActor"),
   );
-  assert.match(floor, /json_agg\(/, "หลายบิลต่อโต๊ะต้องรวมเป็น array ไม่ใช่ join ตรง ๆ");
+  assert.match(
+    floor,
+    /json_agg\(/,
+    "หลายบิลต่อโต๊ะต้องรวมเป็น array ไม่ใช่ join ตรง ๆ",
+  );
   assert.match(floor, /ORDER BY oc\.split_group_no/);
-  assert.match(floor, /check: checks\[0\] \?\? null/, "บิลหลัก = เลขน้อยสุดที่ยังเปิดอยู่");
+  assert.match(
+    floor,
+    /check: checks\[0\] \?\? null/,
+    "บิลหลัก = เลขน้อยสุดที่ยังเปิดอยู่",
+  );
 
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  assert.match(page, /table\.checks\.length > 1/, "ผังต้องบอกว่าโต๊ะไหนแยกบิลไว้");
-  assert.match(page, /setBillPickerTable\(table\)/,
-    "แตะโต๊ะที่มีหลายบิลต้องถามก่อนว่าใบไหน ไม่ใช่เดาแทนคนที่ยืนอยู่ตรงนั้น");
+  assert.match(
+    page,
+    /table\.checks\.length > 1/,
+    "ผังต้องบอกว่าโต๊ะไหนแยกบิลไว้",
+  );
+  assert.match(
+    page,
+    /setBillPickerTable\(table\)/,
+    "แตะโต๊ะที่มีหลายบิลต้องถามก่อนว่าใบไหน ไม่ใช่เดาแทนคนที่ยืนอยู่ตรงนั้น",
+  );
 });
 
 /**
@@ -1078,24 +1784,49 @@ test("โต๊ะที่แยกบิลแล้วต้องไม่�
  */
 test("พาคิวไปนั่งต้องเปิดบิลด้วยเส้นทางเดิม ในทรานแซกชันเดียวกับการปิดคิว", async () => {
   const src = code(await read("apps/web/lib/bms/restaurantWaitlist.ts"));
-  const seat = src.slice(src.indexOf("export async function seatRestaurantWaitlistEntry"));
+  const seat = src.slice(
+    src.indexOf("export async function seatRestaurantWaitlistEntry"),
+  );
   assert.ok(seat.length > 0);
-  assert.match(seat, /openRestaurantCheckInTx\(client, \{/,
-    "ต้องเปิดบิลบน client เดียวกับที่ปิดคิว");
-  assert.doesNotMatch(seat, /await openRestaurantCheck\(/,
-    "ห้ามเรียกตัวที่เปิดทรานแซกชันของตัวเอง — ครึ่งหลังล้มแล้วจะเหลือบิลกำพร้า");
-  assert.match(seat, /guestCount: Number\(entry\.rows\[0\]\.party_size\)/,
-    "จำนวนลูกค้าของบิลมาจากขนาดปาร์ตี้ที่จดไว้ตอนรับคิว ไม่ใช่ถามซ้ำ");
-  assert.match(seat, /status IN \('WAITING','CALLED'\)[\s\S]{0,40}FOR UPDATE/,
-    "กดซ้ำต้องไม่เปิดบิลใบที่สองให้คิวเดิม");
+  assert.match(
+    seat,
+    /openRestaurantCheckInTx\(client, \{/,
+    "ต้องเปิดบิลบน client เดียวกับที่ปิดคิว",
+  );
+  assert.doesNotMatch(
+    seat,
+    /await openRestaurantCheck\(/,
+    "ห้ามเรียกตัวที่เปิดทรานแซกชันของตัวเอง — ครึ่งหลังล้มแล้วจะเหลือบิลกำพร้า",
+  );
+  assert.match(
+    seat,
+    /guestCount: Number\(entry\.rows\[0\]\.party_size\)/,
+    "จำนวนลูกค้าของบิลมาจากขนาดปาร์ตี้ที่จดไว้ตอนรับคิว ไม่ใช่ถามซ้ำ",
+  );
+  assert.match(
+    seat,
+    /status IN \('WAITING','CALLED'\)[\s\S]{0,40}FOR UPDATE/,
+    "กดซ้ำต้องไม่เปิดบิลใบที่สองให้คิวเดิม",
+  );
 
   // เลขคิวต้องคีย์ด้วยวันบริการของร้าน ไม่ใช่วันตามปฏิทินของเซิร์ฟเวอร์
-  const migration = code(await read("db/migrations/9.64__bms_restaurant_waitlist.sql"));
-  assert.match(migration, /uq_bms_restaurant_waitlist_queue_no[\s\S]{0,200}service_date, queue_no/);
+  const migration = code(
+    await read("db/migrations/9.64__bms_restaurant_waitlist.sql"),
+  );
+  assert.match(
+    migration,
+    /uq_bms_restaurant_waitlist_queue_no[\s\S]{0,200}service_date, queue_no/,
+  );
   assert.match(migration, /\(kind = 'WALK_IN'\) = \(queue_no IS NOT NULL\)/);
-  assert.match(migration, /status <> 'SEATED' OR \(seated_table_id IS NOT NULL AND check_id IS NOT NULL\)/);
-  assert.match(src, /menu_availability_reset_time/,
-    "วันบริการของคิวต้องใช้เส้นแบ่งวันเดียวกับเมนูหมดวันนี้ ไม่ใช่เส้นที่สอง");
+  assert.match(
+    migration,
+    /status <> 'SEATED' OR \(seated_table_id IS NOT NULL AND check_id IS NOT NULL\)/,
+  );
+  assert.match(
+    src,
+    /menu_availability_reset_time/,
+    "วันบริการของคิวต้องใช้เส้นแบ่งวันเดียวกับเมนูหมดวันนี้ ไม่ใช่เส้นที่สอง",
+  );
 });
 
 /**
@@ -1106,13 +1837,16 @@ test("cancelOrder จากหลังบ้านต้องปฏิเส�
   const src = code(await read("apps/web/lib/bms/orders.ts"));
   const fn = src.slice(
     src.indexOf("export async function cancelOrder("),
-    src.indexOf("export async function releaseExpiredOrders")
+    src.indexOf("export async function releaseExpiredOrders"),
   );
-  assert.match(fn, /bms_restaurant_checks[\s\S]*c\.status IN \('OPEN','CLOSING'\)/);
+  assert.match(
+    fn,
+    /bms_restaurant_checks[\s\S]*c\.status IN \('OPEN','CLOSING'\)/,
+  );
   assert.match(fn, /ยกเลิกที่หน้าร้านอาหาร/);
   assert.ok(
     fn.indexOf("dineIn.rowCount") < fn.indexOf("cancelOrderInTx"),
-    "ต้องตรวจก่อนแตะสถานะบิล ไม่ใช่ยกเลิกไปแล้วค่อยบ่น"
+    "ต้องตรวจก่อนแตะสถานะบิล ไม่ใช่ยกเลิกไปแล้วค่อยบ่น",
   );
 });
 
@@ -1133,26 +1867,44 @@ test("กลุ่มตัวเลือกแบบเลือกได้�
 
   // เปลี่ยนไซซ์ต้อง re-scan แล้วรีเซ็ตตัวเลือกเป็นค่าปริยายของไซซ์ใหม่ —
   // ตัวเลือกผูกกับ (sku, ไซซ์) ยกของเดิมมาใช้ต่อ = ส่งรหัสที่ไซซ์ใหม่ไม่รู้จักให้ server
-  const load = page.slice(page.indexOf("async function loadMenuHit"), page.indexOf("async function chooseMenu"));
+  const load = page.slice(
+    page.indexOf("async function loadMenuHit"),
+    page.indexOf("async function chooseMenu"),
+  );
   assert.match(load, /\/api\/pos\/scan\?code=/);
   assert.match(load, /defaultSelected/);
 
   // ⚠️ ห้ามคัดไซซ์ที่เลือกได้ด้วยสต็อก — เมนู RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0
   // ตามดีไซน์ (9.51/9.52) กรองด้วยสต็อกแล้วอาหารเกือบทุกจานจะไม่มีไซซ์ให้เลือกสักอัน
-  const sizeChips = page.slice(page.indexOf('<span className={styles.fieldLabel}>ขนาด'), page.indexOf('<span className={styles.fieldLabel}>จำนวน'));
-  assert.doesNotMatch(sizeChips, /variant\.available/,
-    "ชิปไซซ์ห้ามอ่านสต็อกของไซซ์นั้น");
-  assert.doesNotMatch(sizeChips, /disabled/,
-    "ห้ามปิดไซซ์ไหนด้วยสต็อก — RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0 ตามดีไซน์");
+  const sizeChips = page.slice(
+    page.indexOf("<span className={styles.fieldLabel}>ขนาด"),
+    page.indexOf("<span className={styles.fieldLabel}>จำนวน"),
+  );
+  assert.doesNotMatch(
+    sizeChips,
+    /variant\.available/,
+    "ชิปไซซ์ห้ามอ่านสต็อกของไซซ์นั้น",
+  );
+  assert.doesNotMatch(
+    sizeChips,
+    /disabled/,
+    "ห้ามปิดไซซ์ไหนด้วยสต็อก — RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0 ตามดีไซน์",
+  );
 
   // ⚠️ ปุ่มเลือกไซซ์จะเป็นแค่ปุ่มหลอกถ้า server ไม่เคารพไซซ์ที่ขอมา — `resolvePosScan`
   // หาไซซ์จาก `bms_inventory` เป็นหลัก แต่เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองมีแค่แถวใน
   // `bms_product_variants` (upsertProduct ไม่เคยสร้างแถวสต็อก) ถ้าไม่มีกิ่งนี้ การขอไซซ์
   // ที่ไม่ใช่ min(code) จะได้ไซซ์อื่นกลับมาเงียบ ๆ (พิสูจน์กับ dev DB แล้ว: ขอ 'L' ได้ 'S')
   const pos = code(await read("apps/web/lib/bms/pos.ts"));
-  const sizeCoalesce = pos.slice(pos.indexOf("            COALESCE("), pos.indexOf("AS size"));
-  assert.match(sizeCoalesce, /FROM bms_product_variants variant[\s\S]*?upper\(variant\.code\) = upper\(\$3::text\)/,
-    "resolvePosScan ต้องยอมรับไซซ์ที่ขอมาจากแคตตาล็อกด้วย ไม่ใช่จากตารางสต็อกอย่างเดียว");
+  const sizeCoalesce = pos.slice(
+    pos.indexOf("            COALESCE("),
+    pos.indexOf("AS size"),
+  );
+  assert.match(
+    sizeCoalesce,
+    /FROM bms_product_variants variant[\s\S]*?upper\(variant\.code\) = upper\(\$3::text\)/,
+    "resolvePosScan ต้องยอมรับไซซ์ที่ขอมาจากแคตตาล็อกด้วย ไม่ใช่จากตารางสต็อกอย่างเดียว",
+  );
 });
 
 /**
@@ -1172,24 +1924,33 @@ test("เมนูที่ตั้งว่าหมดวันนี้ต�
   // createOrderInTx: บิลโต๊ะข้ามด่านนี้ ช่องทางอื่นยังโดนเหมือนเดิม
   const gate = orders.slice(
     orders.indexOf("const requestedSkus ="),
-    orders.indexOf('return { status: "SOLD_OUT_TODAY"')
+    orders.indexOf('return { status: "SOLD_OUT_TODAY"'),
   );
-  assert.match(gate, /input\.restaurantCheckId \? \[\] :/,
-    "บิลโต๊ะต้องไม่ถูกกรองซ้ำตอนคิดยอด");
-  assert.match(gate, /FROM bms_product_menu_unavailability/,
-    "ช่องทางที่ไม่ใช่บิลโต๊ะยังต้องถูกกรองเหมือนเดิม");
+  assert.match(
+    gate,
+    /input\.restaurantCheckId \? \[\] :/,
+    "บิลโต๊ะต้องไม่ถูกกรองซ้ำตอนคิดยอด",
+  );
+  assert.match(
+    gate,
+    /FROM bms_product_menu_unavailability/,
+    "ช่องทางที่ไม่ใช่บิลโต๊ะยังต้องถูกกรองเหมือนเดิม",
+  );
 
   // ด่านจริงย้ายมาอยู่ที่จุดที่บรรทัดเข้าบิล — ครอบทั้งพนักงานกดเพิ่มและการรับออร์เดอร์ QR
   const resolve = restaurant.slice(
-    restaurant.indexOf("export async function resolveRestaurantCheckItemRequest"),
-    restaurant.indexOf("export async function addRestaurantCheckItem")
+    restaurant.indexOf(
+      "export async function resolveRestaurantCheckItemRequest",
+    ),
+    restaurant.indexOf("export async function addRestaurantCheckItem"),
   );
   assert.match(resolve, /FROM bms_product_menu_unavailability/);
   assert.match(resolve, /resets_at > now\(\)/);
   assert.match(resolve, /หมดวันนี้/);
   assert.ok(
-    resolve.indexOf("bms_product_menu_unavailability") > resolve.indexOf("resolvePosScan"),
-    "ต้องถามหลัง resolve เพื่อใช้ sku ที่ resolve แล้ว ไม่ใช่ค่าที่ browser ส่งมา"
+    resolve.indexOf("bms_product_menu_unavailability") >
+      resolve.indexOf("resolvePosScan"),
+    "ต้องถามหลัง resolve เพื่อใช้ sku ที่ resolve แล้ว ไม่ใช่ค่าที่ browser ส่งมา",
   );
 
   // เส้นทางค้าปลีกยังคืน SOLD_OUT_TODAY ได้ — ต้องมีคำตอบที่บอกได้ว่าต้องทำอะไรต่อ
@@ -1207,8 +1968,11 @@ test("ป้ายออร์เดอร์ QR รอรับต้องอ�
   const start = page.indexOf("loadQrSubmissions(signal)");
   assert.ok(start > 0, "ต้องมี poll ของออร์เดอร์ QR");
   const hook = page.slice(page.lastIndexOf("useLiveRefresh({", start), start);
-  assert.doesNotMatch(hook, /screen !== "QR"/,
-    "ห้ามหยุดดึงเมื่อไม่ได้อยู่แท็บ QR — ป้ายบนแถบซ้ายจะไม่มีวันขึ้น");
+  assert.doesNotMatch(
+    hook,
+    /screen !== "QR"/,
+    "ห้ามหยุดดึงเมื่อไม่ได้อยู่แท็บ QR — ป้ายบนแถบซ้ายจะไม่มีวันขึ้น",
+  );
   // เปิดแท็บอยู่ต้องถี่กว่า แต่จออื่นต้องยังดึงอยู่ (alertPollIntervalMs บังคับทั้งสองข้อ
   // และมีเทสของตัวเองที่ scripts/order-alert-sound-contract.test.mts)
   assert.match(hook, /alertPollIntervalMs\(\{ focused: screen === "QR"/);
@@ -1229,7 +1993,10 @@ test("ป้ายออร์เดอร์ QR รอรับต้องอ�
 test("เส้นทางที่คิดยอดใหม่ต้องไม่ประกาศว่าใบจองตามทัน ขณะยังมีบรรทัดที่ไม่ได้ส่งครัว", async () => {
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const cases = [
-    { name: "repriceCheckAfterItemMoveInTx", end: "async function moveCheckItemsInTx" },
+    {
+      name: "repriceCheckAfterItemMoveInTx",
+      end: "async function moveCheckItemsInTx",
+    },
     { name: "dropKitchenCancelledLineInTx", end: "type KitchenRoundInput" },
   ];
   for (const { name, end } of cases) {
@@ -1246,16 +2013,27 @@ test("เส้นทางที่คิดยอดใหม่ต้อง�
 
     // ต้องมีตัวตรวจ "ยังมีบรรทัดที่ไม่ได้ส่งครัวไหม" อยู่ในฟังก์ชัน และต้องถูกใช้กับค่าที่เขียนลง
     // reserved_version จริง ๆ ไม่ใช่แค่มีอยู่ลอย ๆ ที่ไหนสักแห่ง
-    const guard = /const (\w+)\s*=\s*\w+\.rows\.some\(\(row\) => row\.status === "NEW"\)/.exec(body);
+    const guard =
+      /const (\w+)\s*=\s*\w+\.rows\.some\(\(row\) => row\.status === "NEW"\)/.exec(
+        body,
+      );
     const usesGuard = guard ? params.includes(guard[1]) : /"NEW"/.test(params);
-    assert.ok(usesGuard,
-      `${name}: ค่าที่เขียนลง reserved_version ต้องขึ้นกับว่ายังมีบรรทัด NEW เหลืออยู่หรือไม่`);
+    assert.ok(
+      usesGuard,
+      `${name}: ค่าที่เขียนลง reserved_version ต้องขึ้นกับว่ายังมีบรรทัด NEW เหลืออยู่หรือไม่`,
+    );
 
     // ไม่มีใบจอง = reserved_version ต้องเป็น NULL ไม่ใช่เลขรุ่นของบิล
-    assert.match(params, /orderId == null/,
-      `${name}: ไม่มีใบจองแล้วต้องเขียน NULL ไม่ใช่ประกาศว่าตามทัน`);
-    assert.match(params, /\? null :/,
-      `${name}: reserved_version ต้องเป็นค่าที่มีเงื่อนไข ไม่ใช่ค่าคงที่`);
+    assert.match(
+      params,
+      /orderId == null/,
+      `${name}: ไม่มีใบจองแล้วต้องเขียน NULL ไม่ใช่ประกาศว่าตามทัน`,
+    );
+    assert.match(
+      params,
+      /\? null :/,
+      `${name}: reserved_version ต้องเป็นค่าที่มีเงื่อนไข ไม่ใช่ค่าคงที่`,
+    );
   }
 });
 
@@ -1272,35 +2050,53 @@ test("เส้นทางที่คิดยอดใหม่ต้อง�
  */
 test("จอครัวต้องขอกะ+บิลให้ครบก่อนแตะแถวตั๋ว (ลำดับ กะ → บิล → ตั๋ว)", async () => {
   const kitchen = code(await read("apps/web/lib/bms/kitchen.ts"));
-  for (const wrapper of ["updateKitchenTicketStatus", "updateKitchenTicketsStatus"]) {
+  for (const wrapper of [
+    "updateKitchenTicketStatus",
+    "updateKitchenTicketsStatus",
+  ]) {
     const from = kitchen.indexOf(`export async function ${wrapper}(`);
     assert.ok(from > 0, `ต้องมี ${wrapper}`);
     const nextExport = kitchen.indexOf("export async function", from + 1);
-    const body = kitchen.slice(from, nextExport > from ? nextExport : kitchen.length);
+    const body = kitchen.slice(
+      from,
+      nextExport > from ? nextExport : kitchen.length,
+    );
     const lockAt = body.indexOf("lockCheckScopeBeforeTickets");
     const workAt = body.indexOf("updateKitchenTicketStatusInTx");
     assert.ok(lockAt > 0, `${wrapper} ต้องขอ scope ของบิลก่อน`);
     assert.ok(workAt > 0, `${wrapper} ต้องเรียกแกนกลางตัวเดียวกัน`);
-    assert.ok(lockAt < workAt,
-      `${wrapper}: ต้องล็อกกะ+บิลก่อนแตะตั๋ว ไม่งั้นกลับหัวกับการยกเลิกทั้งบิล`);
-    assert.ok(body.indexOf("beginTenantTx") < lockAt, `${wrapper}: ล็อกต้องอยู่ในทรานแซกชัน`);
+    assert.ok(
+      lockAt < workAt,
+      `${wrapper}: ต้องล็อกกะ+บิลก่อนแตะตั๋ว ไม่งั้นกลับหัวกับการยกเลิกทั้งบิล`,
+    );
+    assert.ok(
+      body.indexOf("beginTenantTx") < lockAt,
+      `${wrapper}: ล็อกต้องอยู่ในทรานแซกชัน`,
+    );
   }
   // เลื่อนหลายใบต้องเรียง id ก่อน — สองคำขอที่ถือชุดเดียวกันคนละลำดับจะรอกันเอง
-  assert.match(kitchen, /const ids = \[\.\.\.new Set\([\s\S]{0,160}\]\.sort\(\)/);
+  assert.match(
+    kitchen,
+    /const ids = \[\.\.\.new Set\([\s\S]{0,160}\]\.sort\(\)/,
+  );
   // ล็อกทั้งชุดต้องเรียงลำดับด้วย ไม่ใช่ล็อกตามลำดับที่ตั๋วเรียงมา
   const shared = code(await read("apps/web/lib/bms/restaurantCheckLock.ts"));
   assert.match(shared, /shiftIds[\s\S]{0,80}\.sort\(\)/);
   assert.match(shared, /checkIds[\s\S]{0,80}\.sort\(\)/);
   // ต้องเทียบลำดับ **ในตัวฟังก์ชันที่ล็อกจริง** ไม่ใช่ทั้งไฟล์ — สองชื่อนี้ถูก *ประกาศ* ไว้
   // ก่อนหน้าอยู่แล้ว การเทียบทั้งไฟล์จึงเขียวไม่ว่าลำดับข้างในจะสลับหรือไม่
-  const scopeFrom = shared.indexOf("export async function lockCheckScopeForKitchenTicketsInTx");
+  const scopeFrom = shared.indexOf(
+    "export async function lockCheckScopeForKitchenTicketsInTx",
+  );
   assert.ok(scopeFrom > 0, "ต้องมีตัวขอ scope");
   const scopeBody = shared.slice(scopeFrom);
   const shiftAt = scopeBody.indexOf("await lockPosShiftInTx(");
   const checkAt = scopeBody.indexOf("await lockRestaurantCheckInTx(");
   assert.ok(shiftAt > 0 && checkAt > 0, "ต้องขอทั้งกะและบิล");
-  assert.ok(shiftAt < checkAt,
-    "ต้องขอกะก่อนบิล ไม่งั้นกลับหัวกับเส้นทางส่งครัวที่ขอกะก่อน");
+  assert.ok(
+    shiftAt < checkAt,
+    "ต้องขอกะก่อนบิล ไม่งั้นกลับหัวกับเส้นทางส่งครัวที่ขอกะก่อน",
+  );
 });
 
 /**
@@ -1320,8 +2116,11 @@ test("คีย์ล็อกบิลโต๊ะประกาศอยู�
     // เล็งเฉพาะคีย์ของ "บิลโต๊ะ" · `restaurant-floor:` เป็นคนละทรัพยากรและมีบ้านของตัวเอง
     if (/restaurant-check:\$\{/.test(code(await read(file)))) owners.push(file);
   }
-  assert.deepEqual(owners, ["apps/web/lib/bms/restaurantCheckLock.ts"],
-    `คีย์ล็อกบิลต้องอยู่ไฟล์เดียว แต่เจอที่: ${owners.join(", ")}`);
+  assert.deepEqual(
+    owners,
+    ["apps/web/lib/bms/restaurantCheckLock.ts"],
+    `คีย์ล็อกบิลต้องอยู่ไฟล์เดียว แต่เจอที่: ${owners.join(", ")}`,
+  );
 });
 
 /**
@@ -1333,13 +2132,16 @@ test("แยกบิลต้องหยิบช่องที่ว่า�
   const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
   const split = restaurant.slice(
     restaurant.indexOf("export async function splitRestaurantCheck"),
-    restaurant.indexOf("export async function mergeRestaurantChecks")
+    restaurant.indexOf("export async function mergeRestaurantChecks"),
   );
   assert.ok(split.length > 0);
   assert.match(split, /generate_series\(1, 20\)/);
   assert.match(split, /NOT EXISTS[\s\S]{0,240}split_group_no = n/);
-  assert.doesNotMatch(split, /MAX\(split_group_no\)\s*,\s*0\)\s*\+\s*1/,
-    "MAX+1 ทำให้ข้อความ 'ครบเพดาน' ขึ้นทั้งที่ยังมีช่องว่าง");
+  assert.doesNotMatch(
+    split,
+    /MAX\(split_group_no\)\s*,\s*0\)\s*\+\s*1/,
+    "MAX+1 ทำให้ข้อความ 'ครบเพดาน' ขึ้นทั้งที่ยังมีช่องว่าง",
+  );
   // เพดานต้องมาจาก "ไม่มีช่องเหลือ" ไม่ใช่การเทียบเลขที่คำนวณได้กับ 20
   assert.match(split, /!nextGroup\.rowCount/);
 });
@@ -1359,33 +2161,56 @@ test("ค้นสมาชิกไม่พบต้องมีทางไ�
   // แล้วพนักงานกดสมัคร → ได้ลูกค้าซ้ำในฐาน ซึ่ง **ลบไม่ได้** (แก้ได้แค่ mergeCustomers)
   const notFound = page.slice(page.indexOf("const memberNotFound"));
   assert.ok(notFound.length > 0, "หา memberNotFound ไม่เจอ");
-  assert.match(notFound.slice(0, 240), /memberSearchedQuery !== ""[\s\S]{0,160}memberResults\.length === 0/,
-    "memberNotFound ต้องพึ่งคำค้นที่ได้คำตอบจาก server แล้ว ไม่ใช่แค่ผลว่าง");
+  assert.match(
+    notFound.slice(0, 240),
+    /memberSearchedQuery !== ""[\s\S]{0,160}memberResults\.length === 0/,
+    "memberNotFound ต้องพึ่งคำค้นที่ได้คำตอบจาก server แล้ว ไม่ใช่แค่ผลว่าง",
+  );
 
   // และค่านั้นต้องถูกตั้ง **หลัง** json() คืนค่า ไม่ใช่ก่อนยิง — ไม่งั้นรอบที่ throw
   // ก็ยังถูกนับว่าค้นสำเร็จ (run() กลืน error ไว้แล้ว จอจะไม่รู้เลย)
-  const search = page.slice(page.indexOf("async function searchMembers"), page.indexOf("const memberNotFound"));
+  const search = page.slice(
+    page.indexOf("async function searchMembers"),
+    page.indexOf("const memberNotFound"),
+  );
   assert.ok(search.length > 0);
   const requestAt = search.indexOf("await run(");
   assert.ok(requestAt > 0, "หา request boundary ของการค้นสมาชิกไม่เจอ");
   const beforeRequest = search.slice(0, requestAt);
-  assert.match(beforeRequest, /setMemberResults\(\[\]\)/,
-    "ก่อนค้นรอบใหม่ต้องล้างรายชื่อเก่า ไม่งั้นรอบที่ล้มยังเลือกสมาชิกจากคำตอบเก่าได้");
-  assert.match(beforeRequest, /setMemberSearchedQuery\(""\)/,
-    "ก่อนค้นรอบใหม่ต้องถอนสถานะยืนยันเดิม แม้ค้นคำเดิมซ้ำแล้วรอบล่าสุดล้ม");
-  assert.ok(search.indexOf("await json(") < search.indexOf("setMemberSearchedQuery(term)"),
-    "setMemberSearchedQuery ต้องอยู่หลัง await json() เพื่อไม่ให้รอบที่ล้มถูกอ่านว่าไม่พบ");
-  assert.match(search, /term\.length < 3[\s\S]{0,120}setMemberSearchedQuery\(""\)/,
-    "คำค้นที่สั้นเกินต้องล้างสถานะ 'ค้นแล้ว' ทิ้ง ไม่ใช่ค้างของเดิมไว้");
+  assert.match(
+    beforeRequest,
+    /setMemberResults\(\[\]\)/,
+    "ก่อนค้นรอบใหม่ต้องล้างรายชื่อเก่า ไม่งั้นรอบที่ล้มยังเลือกสมาชิกจากคำตอบเก่าได้",
+  );
+  assert.match(
+    beforeRequest,
+    /setMemberSearchedQuery\(""\)/,
+    "ก่อนค้นรอบใหม่ต้องถอนสถานะยืนยันเดิม แม้ค้นคำเดิมซ้ำแล้วรอบล่าสุดล้ม",
+  );
+  assert.ok(
+    search.indexOf("await json(") <
+      search.indexOf("setMemberSearchedQuery(term)"),
+    "setMemberSearchedQuery ต้องอยู่หลัง await json() เพื่อไม่ให้รอบที่ล้มถูกอ่านว่าไม่พบ",
+  );
+  assert.match(
+    search,
+    /term\.length < 3[\s\S]{0,120}setMemberSearchedQuery\(""\)/,
+    "คำค้นที่สั้นเกินต้องล้างสถานะ 'ค้นแล้ว' ทิ้ง ไม่ใช่ค้างของเดิมไว้",
+  );
 
   // ปุ่มขึ้นเฉพาะตอนยืนยันแล้วว่าไม่มี — ปุ่มที่ลอยอยู่ตลอดคือปุ่มที่กดแล้วสร้างของซ้ำได้
   assert.match(page, /\{memberNotFound && !enrollOpen && <>/);
   assert.match(page, /styles\.enrollCta[\s\S]{0,200}openEnroll\(\)/);
 
   // ยุบอยู่ในกล่องเดิม ห้ามเปิด Modal ซ้อน Modal — แผงรับชำระซ้อนอยู่แล้วหลายชั้น
-  const panel = page.slice(page.indexOf("{enrollOpen && <div className={styles.enrollPanel}>"));
+  const panel = page.slice(
+    page.indexOf("{enrollOpen && <div className={styles.enrollPanel}>"),
+  );
   assert.ok(panel.length > 0, "แผงสมัครต้องเป็น div ในกล่องเดิม");
-  assert.ok(!/<Modal[^>]*enrollOpen/.test(page), "ห้ามเปิด Modal ซ้อนสำหรับการสมัครสมาชิก");
+  assert.ok(
+    !/<Modal[^>]*enrollOpen/.test(page),
+    "ห้ามเปิด Modal ซ้อนสำหรับการสมัครสมาชิก",
+  );
 });
 
 test("สมัครสมาชิกจากบิลโต๊ะส่ง PIN ในคีย์ที่ route รับ แล้วผูกเข้าบิลใบนั้นทันที", async () => {
@@ -1398,25 +2223,43 @@ test("สมัครสมาชิกจากบิลโต๊ะส่ง P
 
   // ⚠️ /api/pos/member รับ PIN ในคีย์ `pin` ไม่ใช่ `cashierPin` ของ auth() — เปลี่ยนมาใช้
   // auth() เมื่อไหร่จะได้ 403 "PIN ไม่ถูกต้อง" ทั้งที่ PIN ถูก
-  const body = enroll.slice(enroll.indexOf("/api/pos/member"), enroll.indexOf("const member"));
+  const body = enroll.slice(
+    enroll.indexOf("/api/pos/member"),
+    enroll.indexOf("const member"),
+  );
   assert.match(body, /pin:\s*actorPin/, "ต้องส่ง PIN ในคีย์ pin");
-  assert.ok(!/cashierPin/.test(body), "route นี้ไม่รู้จัก cashierPin — ห้ามใช้ auth() ที่นี่");
+  assert.ok(
+    !/cashierPin/.test(body),
+    "route นี้ไม่รู้จัก cashierPin — ห้ามใช้ auth() ที่นี่",
+  );
   assert.match(body, /cashierUserId:\s*actorUserId/);
   assert.ok(!/auth\(\{/.test(body), "ห้ามห่อ body ด้วย auth()");
 
   // ยังต้องมีด่านฝั่งจอว่าเลือกผู้ปฏิบัติงานแล้ว — ไม่งั้นยิงไปให้ server ปฏิเสธเปล่า ๆ
-  assert.match(enroll, /!actorUserId \|\| !actorPin[\s\S]{0,120}need_operator_pin/);
+  assert.match(
+    enroll,
+    /!actorUserId \|\| !actorPin[\s\S]{0,120}need_operator_pin/,
+  );
   // สมัครแล้วผูกเข้าบิลที่กำลังคิดเงินทันที พนักงานไม่ต้องกลับไปค้นซ้ำ
   assert.match(enroll, /setSelectedMember\(member\)/);
   // เลขสมาชิกมาจาก server เท่านั้น — จอห้ามคิดเอง
-  assert.ok(!/memberNo\s*[:=]\s*[`"']/.test(enroll), "จอต้องไม่ตั้งเลขสมาชิกเอง");
-  assert.match(enroll, /ALREADY_MEMBER[\s\S]{0,200}member_enrolled/,
-    "ต้องแยกข้อความ 'เป็นสมาชิกอยู่แล้ว' ออกจาก 'สมัครใหม่'");
+  assert.ok(
+    !/memberNo\s*[:=]\s*[`"']/.test(enroll),
+    "จอต้องไม่ตั้งเลขสมาชิกเอง",
+  );
+  assert.match(
+    enroll,
+    /ALREADY_MEMBER[\s\S]{0,200}member_enrolled/,
+    "ต้องแยกข้อความ 'เป็นสมาชิกอยู่แล้ว' ออกจาก 'สมัครใหม่'",
+  );
 });
 
 test("เหตุที่ปุ่มสมัครกดไม่ได้ต้องเป็นข้อความที่เห็น ไม่ใช่ tooltip", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
-  const reason = page.slice(page.indexOf("const enrollBlockReason"), page.indexOf("async function enrollMember"));
+  const reason = page.slice(
+    page.indexOf("const enrollBlockReason"),
+    page.indexOf("async function enrollMember"),
+  );
   assert.ok(reason.length > 0, "หา enrollBlockReason ไม่เจอ");
   // ครอบทั้งสามเหตุที่ทำให้กดไม่ได้ — เหตุที่ไม่มีชื่อคือปุ่มตายที่ไม่มีใครรู้ว่าต้องทำอะไร
   assert.match(reason, /!operatorReady/);
@@ -1425,14 +2268,25 @@ test("เหตุที่ปุ่มสมัครกดไม่ได้�
 
   // จอเคาน์เตอร์เป็นจอสัมผัส ไม่มี hover ให้อ่าน title (บทเรียนของหน้านี้เอง) —
   // เหตุผลต้องถูกเรนเดอร์เป็นข้อความ
-  const panel = page.slice(page.indexOf("{enrollOpen && <div className={styles.enrollPanel}>"));
+  const panel = page.slice(
+    page.indexOf("{enrollOpen && <div className={styles.enrollPanel}>"),
+  );
   const submit = panel.slice(0, panel.indexOf("</div>}"));
-  assert.match(submit, /\{enrollBlockReason && <small/,
-    "เหตุที่กดไม่ได้ต้องเรนเดอร์เป็นข้อความ");
-  assert.match(submit, /disabled=\{Boolean\(enrollBlockReason\)\}/,
-    "ปุ่มต้องกดไม่ได้ด้วยเหตุเดียวกับที่แสดงให้อ่าน");
+  assert.match(
+    submit,
+    /\{enrollBlockReason && <small/,
+    "เหตุที่กดไม่ได้ต้องเรนเดอร์เป็นข้อความ",
+  );
+  assert.match(
+    submit,
+    /disabled=\{Boolean\(enrollBlockReason\)\}/,
+    "ปุ่มต้องกดไม่ได้ด้วยเหตุเดียวกับที่แสดงให้อ่าน",
+  );
 
   // แผงต้องถูกล้างทุกครั้งที่เปิด/ปิดแผงคิดเงิน และตอนเปลี่ยนบิล — เบอร์ของลูกค้าคนก่อน
   // ที่ค้างอยู่คือของที่สมัครผิดคนได้ (กฎเดียวกับที่ล้างสมาชิกตอนเปลี่ยนโต๊ะ)
-  assert.match(page, /setEnrollOpen\(false\);\s*setEnrollPhone\(""\);\s*setEnrollName\(""\);\s*\}, \[checkoutOpen, check\?\.id\]\)/);
+  assert.match(
+    page,
+    /setEnrollOpen\(false\);\s*setEnrollPhone\(""\);\s*setEnrollName\(""\);\s*\}, \[checkoutOpen, check\?\.id\]\)/,
+  );
 });

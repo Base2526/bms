@@ -12,6 +12,9 @@
 // =============================================================
 
 import { writeLogServer } from "@/lib/log/writeLog.server";
+import { startRealtimeOutboxPump } from "@/lib/bms/realtimePump";
+
+startRealtimeOutboxPump();
 
 const describe = (err: any) => ({
   errorMessage: err?.message ? String(err.message) : String(err),

@@ -19,8 +19,14 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/system.md](docs/architecture/system.md) | Module build status, RBAC model, folder structure, roadmap |
 | [architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
 | [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
+| [architecture/realtime-production-audit.md](docs/architecture/realtime-production-audit.md) · [ADR 001](docs/architecture/decisions/001-transactional-realtime-invalidation.md) | Current realtime security/reliability audit · accepted phased outbox/invalidation design |
+| [architecture/mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) | Mobile/RN GraphQL primary API, REST exception inventory, POS migration gaps and phase boundaries |
+| [architecture/react-native-graphql-client.md](docs/architecture/react-native-graphql-client.md) | Native POS HTTP GraphQL + ticketed GraphQL WS client wiring, retry and rollout contract |
+| [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md) · [`schema.graphql`](schema.graphql) | Why the surface was typed and in what order · the committed SDL artifact a client generates from (`npm run schema:export`; production keeps introspection off) |
+| [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that realtime migrations `9.70`–`9.74` and `9.84`–`9.86` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
-| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
+| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [board-game-cafe.md](docs/business/board-game-cafe.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter/native POS · Board Game Cafe · customer identity/inbox |
+| [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
@@ -172,6 +178,48 @@ physical table) now resolves the owning branch and honours `bms_user_allowed_loc
 [business/pos.md](docs/business/pos.md) § Table QR self-ordering and
 [agent-invariants.md § Restaurant POS](docs/agent-invariants.md#restaurant-pos-dine-in).
 
+**Transactional realtime invalidation (`9.70`–`9.74`, `9.84`–`9.86`, updated 2026-09-14).** The shared event
+contract, outbox, domain triggers, leased dispatcher, hardened database-free WS gateway,
+HTTP-minted tickets, one generic stream and 18 named views pass pure and local DB contracts.
+`9.73` fixed the first POS device row-shape failure and `9.74` split the device/shift trigger
+functions permanently; `9.84` filters heartbeat noise, `9.85` closes the final 20 known
+business-table coverage gaps, and `9.86` invalidates parked bills when resume/discard deletes them.
+The coverage guard now checks each `INSERT`/`UPDATE`/`DELETE`, not only whether a table has some
+trigger. A live local probe has also proved HTTP ticket minting and PostgreSQL ->
+outbox dispatcher -> Redis -> two WS instances. Browser POS and `apps/mobile` now call named views;
+RN also compiles generated Apollo operations and verifies cashier PIN through GraphQL. Keep REST and
+polling until per-workflow parity plus production recovery/load proof pass. Rollout flags gate
+*delivery only* — see
+[agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
+**`apps/ws` and `apps/web` deploy together or not at all**, `WS_ALLOWED_ORIGINS` has no safe
+default, and every Redis command on this path is time-bounded — the deployment requirements and
+what each gets wrong are in
+[architecture/realtime-production-audit.md](docs/architecture/realtime-production-audit.md#deployment-requirements-verified-2026-09-14).
+
+**Board game cafe (`9.79`–`9.83`, 2026-09-14).** The `board_game_cafe` archetype now has an
+operational module for timed table play without turning play time into a Product field. Board-game
+tables, time rates, participants/bill groups, fixed-duration alerts, member lookup, playable game
+library copies, POS handoff, receipts/reprints and opt-in public nearby-store discovery are wired
+through `apps/web/lib/bms/boardGameCafe.ts`, thin REST routes, `/admin/board-game`, `/pos`, and the
+public `/board-game` directory. Settlement still uses the existing POS order/payment path, while
+public discovery exposes only published profile data, rates, game highlights and aggregate table
+availability. The platform-admin fake seeder now creates a removable full operator dataset for this
+archetype, including members, alert states, split billing groups, loans/issues and an unpublished
+discovery draft. Monthly/yearly subscription contracts, encrypted identity-document storage and
+advanced board-game analytics remain a later CRM/reporting phase. See
+[business/board-game-cafe.md](docs/business/board-game-cafe.md).
+
+**Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
+POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
+`graphql-schema-artifact-contract`, all 121 operations take named input objects and return named
+output types (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
+into 32 named mutations with the old fields kept `@deprecated`, and every client-facing error carries
+an `extensions.code` while business rejections stay in `data.<operation>.status`. Four POS
+multiplexers (`bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift`) are still
+`action`-dispatched. RN bootstrap/PIN auth moved first and generated documents compile; remaining
+business workflows retain compatibility routes until their parity tests land — see
+[architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md).
+
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
@@ -234,10 +282,33 @@ look done in code but need their migration first.
   a verified signature for webhooks, a job token for cron — and **derives the tenant server-side**.
   A route that is public by design needs a rate limit, because a public endpoint that calls a model
   spends the operator's money. Enforced by `scripts/inventory-tenant-scope-contract.test.mts`.
-- **Counter POS (`/api/pos/*`) and branch inventory ops (`/api/bms/inventory/*`) are REST-only** —
-  a register authenticates with a device token + cashier PIN, not a GraphQL session. They are
-  absent from the tool catalogue today because no wrapper registers them. A future staff tool does
-  not require GraphQL: wrap the underlying service in `lib/bms/tools/catalog.ts`, derive the tenant
-  server-side, re-check permission, preserve the service's in-transaction domain audit, and keep a
-  stock-moving action propose-only for explicit human confirmation. Never call the REST route from a
-  tool or resolver as a shortcut around those boundaries.
+- **Counter POS and branch inventory operations have GraphQL mobile adapters plus REST
+  compatibility.** A register uses `x-scope: pos` with a device Bearer token; the server derives its
+  tenant/location/device, and every mutation separately verifies cashier PIN + action permission.
+  REST and GraphQL call the same service and neither makes an operation an AI tool. A future staff
+  tool still needs a wrapper in `lib/bms/tools/catalog.ts`, server-derived tenant, immediate RBAC
+  re-check, in-transaction audit, and explicit confirmation for stock/money movement. Never call one
+  adapter from another as a shortcut.
+- **Realtime is an invalidation hint that shares a transaction with the money it describes.** An
+  event is enqueued into `bms_realtime_outbox` in the same tenant transaction as its aggregate
+  change; publishing happens after commit from a leased dispatcher, and `apps/ws` never connects to
+  PostgreSQL. That boundary is also the danger: **anything a realtime trigger does wrong rolls back
+  a business write**, so a trigger may only touch columns that exist on *its own* table and the
+  `SECURITY DEFINER` owner needs an explicit table grant — `BYPASSRLS` skips the row policy, never
+  the grant. Payloads carry allowlisted scalars only, never PII, message bodies, payment details or
+  pharmacy clinical content. Full rules:
+  [agent-invariants.md § Realtime invalidation](docs/agent-invariants.md#realtime-invalidation-architecture).
+- **A column the order path writes unconditionally is a deploy blocker, not a feature flag.**
+  `createOrderInTx()` writes every column in its `INSERT` for every channel of every tenant, so a
+  database missing one cannot complete a single sale. Declare it in `scripts/schemaReadiness.mts`
+  and regenerate `db/checks/schema-readiness.sql` in the same change — a readiness list that is
+  missing a file answers "ready" and is worse than no check at all.
+  `schema-readiness-coverage-contract` walks back from the real `INSERT` column list and fails when
+  one is undeclared.
+- **`schema.graphql` is the client contract, not a build artifact.** Production keeps introspection
+  off, so an external client generates from the committed SDL; regenerate it with
+  `npm run schema:export` in the same change that alters the schema or
+  `graphql-schema-artifact-contract` fails. A mobile operation never accepts tenant, location,
+  device or shift from its caller — the server derives scope from the device token or
+  `getTenantId(ctx)` — and a money/stock/document mutation carries an `idempotencyKey`. Old fields
+  are `@deprecated` and kept; nothing is removed while a caller may still exist.

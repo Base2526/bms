@@ -866,7 +866,7 @@ tenant-scoped by `(tenant_id, user_id, location_id)`, has tenant RLS and `bms_ap
 deliberately optional for backward compatibility: no rows for a user preserves existing tenant-wide
 RBAC until each page/mutation is wired to enforce the allow-list.
 
-## Restaurant POS (`9.44`–`9.49`, `9.63`–`9.64`)
+## Restaurant POS (`9.44`–`9.49`, `9.63`–`9.64`, `9.87`)
 
 `bms_restaurant_areas` and `bms_restaurant_tables` are branch-owned floor configuration.
 Migration `9.59` adds each table's `shape` (`round`/`rect`) and non-negative pixel coordinates
@@ -881,7 +881,13 @@ Migration `9.49` extends the same database-level chain through
 `location -> POS device -> shift -> restaurant check`, including the device id carried by the shift;
 a UUID from another branch or tenant can no longer satisfy a restaurant check FK even if supplied by
 SQL outside the service.
-`bms_restaurant_checks` is the open dine-in service state. Migration `9.63` widens the partial unique
+`bms_restaurant_checks` is the open restaurant service state. Migration `9.87` adds
+`service_mode`: `DINE_IN` rows keep a non-null `table_id`, while `TAKEAWAY` rows deliberately keep
+`table_id` null and are branch queue checks rather than fake tables. `bms_orders.restaurant_service_mode`
+snapshots that value for POS receipts/history; `bms_orders.fulfillment_type` remains only the online
+`DELIVERY`/`PICKUP` contract.
+
+Migration `9.63` widens the partial unique
 index to `(tenant_id, table_id, split_group_no)` so a table can carry several open bills at once —
 the primary bill is simply the lowest `split_group_no` still open, which needs no flag to maintain
 and hands the role to the next bill when the primary is paid. The same migration adds the terminal
@@ -949,6 +955,21 @@ Staff transitions and their audit rows commit in one tenant transaction.
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.
 
+## Board game cafe and native inventory replay (`9.79`–`9.83`, `9.88`)
+
+Board-game cafe service state is separate from normal POS carts. Areas and tables describe the
+branch floor; sessions and participants preserve timed attendance plus rate snapshots; titles and
+physical copies form a lending library; session-game rows record each checkout and return. Closing
+a session freezes its time charges, while payment still settles through the existing POS order and
+payment transaction. Public discovery reads only an explicitly published branch profile and
+aggregate availability, never active-session or customer rows.
+
+`bms_inventory_operation_idempotency` stores the canonical request hash and exact success result for
+mobile transfer/count commands. Its key is `(tenant_id, action, idempotency_key)`, it is protected by
+forced tenant RLS, and the service records it in the same transaction as the inventory mutation.
+This table is required before releasing the Q6B native POS client: retries after an unknown network
+result must replay the original response rather than move or adjust stock twice.
+
 ## Product catalog foundation (`9.51`)
 
 `bms_product_variants` stores product options independently of branch stock. Its composite primary
@@ -981,3 +1002,35 @@ the merchant cause. Repricing differences absorbed by the shop use the distinct
 `MERCHANT_ABSORBED` order-discount source and accumulate on conflict. The store-level approval limit
 defaults to ฿2,000. `order.line.cancel` is seeded to Manager and Cashier without widening
 `order.return`.
+
+## Realtime outbox and domain triggers (`9.70`–`9.71`)
+
+`bms_realtime_outbox` is the tenant-owned durable handoff between committed business changes and
+Redis. Business services call `enqueueRealtimeEventInTx()` with the same `beginTenantTx()` client
+that changes the aggregate. The row stores the central event identifiers/routing fields plus an
+allowlisted JSON payload capped at 16 KiB. Forced RLS fails closed when `bms.tenant_id` is missing,
+and `bms_app` receives only tenant-scoped SELECT/INSERT access.
+
+The dispatcher functions run as the non-login `bms_realtime_dispatcher` role, which has only
+SELECT/UPDATE/DELETE on this table and owns fixed-`search_path`, `SECURITY DEFINER` functions. The
+ordinary app role can call claim/ack/nack/cleanup but cannot supply SQL or bypass their bounded
+parameters. Claim uses a committed lease plus `FOR UPDATE SKIP LOCKED`; Redis I/O happens after that
+claim transaction. A crash after publish and before ack may publish the same stable `event_id` again,
+so delivery remains at least once.
+
+Failed publishes return to `PENDING` with bounded exponential backoff and jitter, then become
+`FAILED` for operator visibility after the configured attempt limit. Published and failed retention
+are separate. `POST /api/bms/realtime/dispatch` is a cron-secret-gated recovery/manual entrypoint and
+records `realtime-outbox-dispatch` in job runs. Next instrumentation starts the same dispatcher as a
+continuous bounded pump on every web instance; `SKIP LOCKED` and claim tokens keep this safe when web
+scales horizontally. `REALTIME_OUTBOX_DISPATCH_ENABLED=0` stops delivery without rolling back code.
+
+Migration `9.71` installs trigger-only, fixed-`search_path` enqueue functions for orders, payments,
+refunds, inventory, transfers/counts, product/menu availability, Inbox, shipping, pharmacy,
+restaurant checks/rounds/KDS/QR/service calls/floor/waitlist, POS device/shift, notifications and
+dashboard invalidation. The triggers perform no network I/O. Purchase receipt uses
+`enqueueRealtimeEventInTx()` directly because its authoritative branch is resolved inside the
+service and is not stored on the PO row. The migration also exposes aggregate outbox counts, retry
+count and oldest unpublished lag through a narrow read function used by System Health. See
+[ADR 001](decisions/001-transactional-realtime-invalidation.md)
+and the [realtime production audit](realtime-production-audit.md).

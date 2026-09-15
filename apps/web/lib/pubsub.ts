@@ -9,4 +9,4 @@
 // (which only exists under packages/realtime/dist/, not src/) and failed the build. Next's default
 // webpack `resolve.extensions` already includes ".ts", so the extension-less specifier resolves to
 // pubsub.ts directly under this project's "moduleResolution": "Bundler".
-export { pubsub } from "../../../packages/realtime/src/pubsub";
+export { pubsub, publishRealtimeHint } from "../../../packages/realtime/src/pubsub";

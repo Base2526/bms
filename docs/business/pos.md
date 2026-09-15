@@ -7,20 +7,25 @@ tenant, branch, and register; a cashier user plus PIN identifies every sale, shi
 and refund settlement. The browser never supplies authoritative tenant, price, pack conversion, or
 stock values.
 
-### Why the counter talks REST, not GraphQL
+### GraphQL mobile contract and REST compatibility
 
-Every counter action is a REST route under `/api/pos/*`, unlike the rest of BMS. That is forced by
-the authentication model rather than chosen for style: a register authenticates with
-`x-pos-device-token` and a cashier PIN, not an admin session cookie, so it has no GraphQL context to
-run `requirePermission()` against. The equivalent checks live in the routes —
-`authenticatePosDevice()`, `verifyCashierPin()`, and `cashierHasPermission()` — and the second-person
-PIN requirement for discounts, voids, and cash-out sits there too.
+Normal counter workflows have device-scoped GraphQL queries and mutations in
+`graphql/bmsPosDevice.ts`. A native register calls `/api/graphql` with `x-scope: pos` and
+`Authorization: Bearer <device-token>`; the HTTP context authenticates the token and derives the
+tenant, branch and device. Mutations still verify a cashier PIN and the action permission, and
+discounts, voids and money leaving the drawer still require a distinct second person's PIN. A
+device principal is never promoted into a user principal.
 
-The cost is that counter actions are absent from the GraphQL schema and therefore from the AI tool
-catalogue today. GraphQL is not a prerequisite for an AI tool: a future staff tool must wrap the
-underlying service in `lib/bms/tools/catalog.ts`, preserve device/person authorization semantics,
-re-check RBAC, and remain propose-only where money or stock moves. It must not call a REST route from
-a resolver or tool as a shortcut.
+The existing `/api/pos/*` routes remain compatibility adapters for the browser POS while its callers
+migrate. Both transports call the same `lib/bms/*.ts` services; neither transport owns business
+rules. Uploads, exports and support diagnostics remain REST because they are HTTP-native. Realtime
+does not carry commands: the committed service transaction writes an outbox event, GraphQL WS sends
+the scoped invalidation, and the client refetches the authoritative GraphQL snapshot.
+
+GraphQL exposure does not automatically expose a POS command to AI. A staff tool must still wrap the
+underlying service in `lib/bms/tools/catalog.ts`, derive the tenant server-side, re-check RBAC, and
+remain propose-only where money or stock moves. It must not call either transport adapter as a
+shortcut.
 
 Auditing does not depend on the transport. `pos.sale`, `pos.return`, `pos.refund.complete`,
 `pos.void`, `pos.cash.movement`, `pos.shift.open`, and `pos.shift.close` are all written to
@@ -37,6 +42,45 @@ bill fully refunded but not stamped, which the retry path then rejected with `AL
 recoverable only by hand. The `pos.return` entry additionally carries an `isVoid` flag, because a
 void travels through the return machinery and reports counting genuine returns must not also count
 bills rung up by mistake.
+
+## Native POS client
+
+`apps/mobile/` is the bare React Native 0.87 client for staff-operated iOS and Android registers.
+It uses generated HTTPS GraphQL operations for device bootstrap/PIN, catalog and barcode reads,
+discount preview, parked bills, sale/return/void, shift/drawer, restaurant checks and settlement,
+incoming orders, kitchen tickets, board-game timed sessions and game loans, and branch stock
+transfers/counts. Runtime screens and state providers import no mock data.
+GraphQL WS carries named invalidations only; Apollo refetches the authoritative snapshot.
+
+The app accepts a full POS link, a bare `pos_...` token plus server, or a
+`bmspos://pair?t=...&h=...` deep link. The long-lived device token lives in
+`react-native-keychain`, is masked on screen, and authenticates both GraphQL and ticket minting.
+Tenant, branch, device, shift and store archetype are always server-derived. Cashier and
+second-person PINs live only in React memory and are rechecked with action-specific RBAC on every
+sensitive mutation. Manual discount, void and cash-out selectors filter the server approver list by
+the exact permission and exclude the acting cashier; that filtering is UX, not authorization.
+
+Money, board-game and stock commands preserve one idempotency key across an unknown network result.
+Board-game time fees are display-only service lines in the client and are resolved from the frozen
+session by the server; they are never submitted as product SKUs. Transfer/count screens derive the
+working branch from the paired device and expose only a destination or aggregate ID for the server
+to validate. Return notes use the
+server's structured reason code, and parked-bill actions use the resolver's exact
+`park`/`resume`/`drop` contract. Shift-bound reads are skipped until a shift is open. Named events
+remain hints: the client deduplicates, batches refetches, reconciles on foreground/reconnect, and
+keeps degraded polling.
+
+Native printing, real camera/HID capture, customer display, background push, pharmacy
+review/evidence, and richer variant/modifier selection remain separate platform/specialist work.
+The barcode overlay resolves against the server but is an input harness, not a camera or verified
+scanner adapter. Unsupported approval-gated sales fail closed on the server. Do not port money,
+stock, refund, pharmacy or tax rules into the client.
+
+Verification for the client is `npm run lint`, `npm test -- --runInBand`, and
+`npm run typecheck` from `apps/mobile/`, plus `xcodebuild` for an iOS Simulator target and
+`./gradlew assembleDebug` under `apps/mobile/android/`. Generated `node_modules`, Pods, native build
+directories and APKs are ignored; only source and lockfiles belong in Git. The detailed screen list,
+local setup and current exclusions live in [the mobile README](../../apps/mobile/README.md).
 
 ## Supported counter workflow
 
@@ -75,7 +119,7 @@ bills rung up by mistake.
    `payment.refund` records the external refund reference. A shift cannot close while any refund
    allocation from that shift is pending.
 10. Closing a shift calculates expected cash from opening float + cash collected - completed cash
-   refunds, then records counted cash and variance.
+    refunds, then records counted cash and variance.
 
 Managers can review all drawers at `/admin/pos-shifts` with `pos.shift.report.all`. The page filters
 by shift-open date in Asia/Bangkok, location, device, status, involved person, and operational
@@ -139,12 +183,12 @@ customer's first purchase branch as their enrollment branch.
 
 Four independent discount layers can stack on one bill, applied in a fixed order:
 
-| Layer | Source | Reversible |
-| --- | --- | --- |
-| 1. Tier discount | `bms_membership_tiers` via `bms_customers.tier_id`, auto-applied | yes |
-| 2. Coupon | existing `bms_coupons` (unchanged) | hard — redemption count already incremented |
-| 3. Points redemption | `bms_loyalty_ledger`, at the shop's configured rate | yes |
-| 4. Manual discount | keyed at the counter, needs supervisor approval (below) | yes — trimmed first when the cap binds |
+| Layer                | Source                                                           | Reversible                                  |
+| -------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
+| 1. Tier discount     | `bms_membership_tiers` via `bms_customers.tier_id`, auto-applied | yes                                         |
+| 2. Coupon            | existing `bms_coupons` (unchanged)                               | hard — redemption count already incremented |
+| 3. Points redemption | `bms_loyalty_ledger`, at the shop's configured rate              | yes                                         |
+| 4. Manual discount   | keyed at the counter, needs supervisor approval (below)          | yes — trimmed first when the cap binds      |
 
 Tier qualification and the sales-by-tier report count successful orders only: `PAID`, `PACKING`,
 `SHIPPED`, and `COMPLETED`. A `PENDING` order has not produced revenue and must not upgrade a
@@ -167,7 +211,7 @@ a bill recovered after a reload has to be re-approved rather than silently repla
 
 `createOrder` rejects the bill outright (`DISCOUNT_UNAPPROVED`) in two cases: an amount with no
 approver/reason attached, and an amount that the per-bill cap would trim. The second one matters —
-`composeDiscounts` trims the manual layer *first* because it is the most reversible, so a silent
+`composeDiscounts` trims the manual layer _first_ because it is the most reversible, so a silent
 trim would charge the customer more than the counter quoted. Failing loudly and making staff re-key
 is the correct outcome.
 
@@ -197,7 +241,7 @@ so run it against dev only; see CLAUDE.local.md for the exact command.
 
 **The total of all layers still lands in `bms_orders.discount_amount`.** VAT base and the
 abbreviated tax invoice read that column (`computeVat({ discountAmount })`), so a member discount
-must never be deducted at cash-collection time. `bms_order_discounts` only records *where* that
+must never be deducted at cash-collection time. `bms_order_discounts` only records _where_ that
 total came from, one row per source, and its rows always sum to `discount_amount`.
 
 ### Points rules as implemented
@@ -353,7 +397,7 @@ owing a customer with nobody having approved it — enforced by a `CHECK` on the
 
 Redemption happens **inside the sale transaction**, with `FOR UPDATE` on the card row: one card can be
 scanned at two registers at once (someone buys a card as a gift and both people use it), and without
-the lock both would read the old balance and overspend. Validation happens *before* `createOrder`, so a
+the lock both would read the old balance and overspend. Validation happens _before_ `createOrder`, so a
 bad code or a short balance costs no stock, no points, no coupon.
 
 `STORE_CREDIT` is a payment method but **not cash** — the shop took the money when the card was sold,
@@ -383,14 +427,14 @@ the system; `storecredit.redeem` goes to everyone who sells, since taking a gift
 ## Promotions: buy-X-get-Y and N-for-a-price (8.7)
 
 Coupons need a code the customer knows. Wholesale steps change the per-unit price. Neither answers
-*"buy 3 get 1 free"* or *"3 for ฿100"*, which are the offers Thai retail runs most.
+_"buy 3 get 1 free"_ or _"3 for ฿100"_, which are the offers Thai retail runs most.
 
 **A promotion is not a fifth discount layer.** There are already four (tier → coupon → points →
 manual) under one per-bill cap (`max_discount_pct`), and putting promotions there breaks two things at
 once. A promotion the shop advertised on a shelf could get **trimmed** because that bill happened to
 hit the cap — the shop breaking its word to a customer because of its own internal rule, which is
 unexplainable at the counter. And the receipt would show full prices with a large discount at the
-bottom, when the customer's understanding is that "3 for ฿100" *is* the price of those three.
+bottom, when the customer's understanding is that "3 for ฿100" _is_ the price of those three.
 
 So it is a line-pricing mechanism like `8.1`: computed from the SKU's total quantity on the bill, and
 never subject to the discount cap.
@@ -442,10 +486,10 @@ row `8.7` ever wrote, so applying the migration changes no bill), a branch id is
 
 **A branch offer overrides the store-wide offer for the same product.** That does not reopen the
 "which one wins" problem `8.7` closed, because the answer fits in one sentence a cashier can say:
-*this branch set its own offer, over head office's*. What is deliberately **not** the rule is "pick
+_this branch set its own offer, over head office's_. What is deliberately **not** the rule is "pick
 the cheaper one" — which is cheaper depends on how many the customer picked up (buy-2-get-1 and
 3-for-฿100 trade places by quantity), so the same bill would be priced by different offers depending
-on basket size. Comparing against the *normal* price still happens, unchanged.
+on basket size. Comparing against the _normal_ price still happens, unchanged.
 
 One function decides it, `pickPromotionForLocation()` in `lib/bms/pricing.ts`, and both readers call
 it: the register previewing a line through `resolvePosScan()` and `createOrder()` recomputing at
@@ -493,7 +537,7 @@ inventory line; it is a service charge attached to a bill, so a separate table m
 leaves the working paths untouched.
 
 **Charges are inside the VAT base.** A service fee charged by a VAT-registered business is taxable, so
-the tax document's line loader unions them in. Adding the amount to the total *after* VAT is computed
+the tax document's line loader unions them in. Adding the amount to the total _after_ VAT is computed
 would make every invoice report a base smaller than the money taken — under-declaring by the sum of
 every service fee the shop ever charged.
 
@@ -514,7 +558,7 @@ their mind about, rather than telling the cashier the row didn't make it onto th
 
 ## Wholesale steps (8.1)
 
-The system had two pricing mechanisms and neither answered *"buy ten, get the wholesale price"*.
+The system had two pricing mechanisms and neither answered _"buy ten, get the wholesale price"_.
 `bms_product_packs` (`7.86`) prices a **container** — a box of ten strips at ฿230 — which is about
 packaging, not quantity; a customer buying ten loose strips got nothing. Membership tiers (`7.96`)
 take a percentage off the **whole bill** and are not tied to any product.
@@ -746,7 +790,7 @@ loud all the time, and the bill may have no customer attached at all. That addre
 back to the customer profile: typing an email to get one receipt is not consent to be stored.
 
 LINE identities live in `bms_customer_identities` (`7.74`), not on `bms_customers`. Reading the wrong
-table would tell customers who *have* linked LINE that they have not, so there is a test pinning it.
+table would tell customers who _have_ linked LINE that they have not, so there is a test pinning it.
 
 ## Sales commission (8.5)
 
@@ -782,8 +826,8 @@ applied from the previous month.
 
 ## Serial numbers (8.3)
 
-Lots (`7.85`) answer *which batch did this come from*. Serials answer *who bought **this** unit, and
-when* — the question asked when someone arrives with a warranty claim and no receipt. A lot is a
+Lots (`7.85`) answer _which batch did this come from_. Serials answer _who bought **this** unit, and
+when_ — the question asked when someone arrives with a warranty claim and no receipt. A lot is a
 group; a serial is a piece.
 
 Set `serial_tracked` on a product and the counter must supply one serial per base unit before the sale
@@ -866,12 +910,12 @@ Two internal controls the shift work in `7.97` left open.
 ### Blind close
 
 `closePosShift()` always computed expected cash on the server, but the shift report added in `7.97`
-would happily show it *before* the count — so whoever counted the drawer could read the answer and
+would happily show it _before_ the count — so whoever counted the drawer could read the answer and
 type it back, and variance was zero forever. A control that cannot be failed is not a control.
 
 With `bms_store_profile.pos_blind_close` on (**the default**), `getPosShiftReport()` returns
 `expectedCash: null` for a shift that is still open, with `expectedCashHidden: true` so the screen can
-say *why* the number is missing rather than looking broken. After the shift closes, everything shows.
+say _why_ the number is missing rather than looking broken. After the shift closes, everything shows.
 
 It hides the number from everyone, managers included. A blind close with exceptions is not blind: a
 number on a screen cannot be stopped from being repeated to the person doing the counting.
@@ -933,7 +977,7 @@ totals, not yesterday's already-signed Z report.
 **There is one cash formula, `POS_SHIFT_CASH_SQL`, and every consumer reads it.** Expected cash is
 asked for in five places — the guard that refuses to pay out more than the drawer holds, the close,
 the X/Z sheet, the back-office shift overview, and the XLSX detail workbook. Three of them used to
-key completed refunds on the *return's* shift instead of the shift that actually handed over the
+key completed refunds on the _return's_ shift instead of the shift that actually handed over the
 money, so the rule stated in the paragraph above held only for the two report surfaces. That matters
 because the online line-cancellation path (`9.57`) always writes its allocation `PENDING`, **even when
 the method is cash**, and a register confirms the payout later: `pr.shift_id` is null (no device took
@@ -1049,7 +1093,7 @@ amount it sends matches what the server computes — a mismatch would cancel the
 `UNKNOWN`, and four places read it: the order line snapshot, the tax invoice's taxable/exempt split,
 the e-Tax XML, and the go-live blocker on `/admin/pos-readiness`. Nothing wrote it. `upsertProduct()`
 listed thirteen columns and this was not one of them, there was no mutation and no form field, so a
-VAT-registered shop hit *"สินค้าที่เปิดขายยังไม่ระบุประเภท VAT N รายการ"* with no way to clear it
+VAT-registered shop hit _"สินค้าที่เปิดขายยังไม่ระบุประเภท VAT N รายการ"_ with no way to clear it
 short of hand-written SQL.
 
 It is now editable per product on `/admin/products`, and settable in one shot from
@@ -1060,7 +1104,7 @@ Three rules the write path enforces:
 - **Omitting the field keeps the stored value.** The upsert uses
   `COALESCE($14, bms_products.vat_category)` rather than `EXCLUDED`, because bulk import and any
   caller that predates the field would otherwise reset every product to `UNKNOWN` on the next save —
-  wiping a shop's tax classification silently. An unrecognised value is treated as *not supplied*
+  wiping a shop's tax classification silently. An unrecognised value is treated as _not supplied_
   for the same reason, rather than throwing and failing a whole import over one bad cell.
 - **A new product is `UNKNOWN`, never guessed.** Defaulting to `V` would be right most of the time
   and wrong invisibly the rest, on a field that ends up on filed tax documents.
@@ -1248,25 +1292,25 @@ in [the pharmacy README](../../apps/web/lib/bms/pharmacy/README.md).
 
 ## Selling on credit / accounts receivable (9.30)
 
-Before this, no payment method meant *"no money yet"*. A shop whose regulars open a tab and settle at
+Before this, no payment method meant _"no money yet"_. A shop whose regulars open a tab and settle at
 month end — wholesalers, builders' merchants, anyone supplying the restaurants on their street — could
 not use this POS at all. Not inconveniently: at all.
 
 **Credit is the mirror image of a deposit, not a variant of it.**
 
-| | Deposit (9.0) | Credit sale (9.30) |
-| --- | --- | --- |
-| Goods | reserved, still in the shop | **delivered, deducted from stock** |
-| Order | stays `PENDING` | completes in full — lots, tax invoice, points |
-| Money | partly collected up front | **not collected at all yet** |
-| What it creates | a reservation to chase | a **receivable** — an asset on the balance sheet |
+|                 | Deposit (9.0)               | Credit sale (9.30)                               |
+| --------------- | --------------------------- | ------------------------------------------------ |
+| Goods           | reserved, still in the shop | **delivered, deducted from stock**               |
+| Order           | stays `PENDING`             | completes in full — lots, tax invoice, points    |
+| Money           | partly collected up front   | **not collected at all yet**                     |
+| What it creates | a reservation to chase      | a **receivable** — an asset on the balance sheet |
 
 ### Why credit is a payment method and not an unpaid bill
 
 The rule that payment rows must equal the bill exactly is what stops money collected from diverging
 from what the system computed, and it **is not relaxed**. Making the unpaid remainder a payment row
 (`bms_payments.method = 'CREDIT'`) means the entire completion path is reused untouched — including
-the return path, which already allocates refunds back against *the payment rows that paid*. Returning
+the return path, which already allocates refunds back against _the payment rows that paid_. Returning
 a credit sale therefore reduces the debt on its own, with no new code deciding what a refund means.
 
 Modelling it as an unpaid order instead would have required a second return path, a second void path
@@ -1298,8 +1342,8 @@ stock, and again inside the transaction that deducts stock, under `SELECT … FO
 account row, because two registers can sell to the same customer at the same time. Two formulas
 deciding the same thing drift, and the screen would start promising sales the server refuses.
 
-`ON_HOLD` blocks new credit but still accepts payment — suspending an account means *stop lending*,
-not *stop collecting*. `CLOSED` requires a zero balance; closing an account that still owes money is
+`ON_HOLD` blocks new credit but still accepts payment — suspending an account means _stop lending_,
+not _stop collecting_. `CLOSED` requires a zero balance; closing an account that still owes money is
 how a debt disappears from the report while the money is still outstanding.
 
 ### Who may sell on credit
@@ -1313,7 +1357,7 @@ decided, which survives either way.
 ### Collecting
 
 One receipt (`bms_ar_receipts`) settles oldest-due-first across as many invoices as it covers. Aging
-is the only tool that says *which* debt is stale, and it cannot answer that if payments just decrement
+is the only tool that says _which_ debt is stale, and it cannot answer that if payments just decrement
 a single running balance.
 
 - **Overpayment is refused, not absorbed.** Money handed over above the outstanding total at a
@@ -1432,7 +1476,19 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
-## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`–`9.64`)
+## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`–`9.64`, `9.87`)
+
+### Dine-in and takeaway checks (`9.87`)
+
+Restaurant counter service mode belongs to the **check**, not to the online-order fulfillment field.
+`bms_restaurant_checks.service_mode` is `DINE_IN` for a table check and `TAKEAWAY` for a branch
+queue check with no table. `bms_orders.fulfillment_type` stays the online restaurant contract
+(`DELIVERY`/`PICKUP`) and must not grow a `DINE_IN` value just to print a counter receipt.
+
+The final POS order snapshots the check mode in `bms_orders.restaurant_service_mode` so receipts,
+reprints and history do not infer it later from mutable floor state. Takeaway checks do not get a
+fake table or table QR session; they appear in the open-check rail and kitchen board with a takeaway
+label, and table-only actions such as move, split and merge stay dine-in only.
 
 ### Walk-in queue and table reservations (`9.64`)
 
@@ -1485,7 +1541,7 @@ The primitive is **moving lines between checks**; split and merge are the two di
   settles through `recordPosSale()` like any other — so no partial-payment mechanism was needed, and
   the rule that a bill must be paid exactly is untouched. At least one line has to stay on the
   original.
-- **Merge** moves *every* line onto a destination check and closes the source as **`MERGED`**.
+- **Merge** moves _every_ line onto a destination check and closes the source as **`MERGED`**.
   A merge is not a void: no food was thrown away and every line is still charged, so it needs no
   second approver. It gets its own terminal status rather than reusing `CANCELLED` because
   a shop that merges bills often would otherwise look like a shop that voids bills often.
@@ -1496,7 +1552,7 @@ What follows the lines, and what does not:
 - **The amount is always rebuilt, never adjusted.** Both sides release their reservation and rebuild
   it through `createOrderInTx()`, the same path a later kitchen round uses. Adding or subtracting
   line prices from `amount_due` would be a second money formula, free to drift from the first.
-- **Release before reserve.** The source's reservation is returned *before* the destination reserves,
+- **Release before reserve.** The source's reservation is returned _before_ the destination reserves,
   or the two bills contend for the same stock and a split of the last portion of a dish fails with
   `OUT_OF_STOCK` while that dish is already on the table.
 - **Kitchen tickets follow, and round numbers are renumbered.** A ticket's `check_id` is the only
@@ -1521,13 +1577,13 @@ rechecks the flag at its selected location, so a stale screen or chat result can
 
 The flag is an **intake** rule, and where the intake happens differs by surface. Online, chat and
 the retail register intake a whole cart at order creation, so `createOrderInTx()` rechecks there. A
-dine-in check does not: it hands the *entire* check to `createOrderInTx()` again every time the
+dine-in check does not: it hands the _entire_ check to `createOrderInTx()` again every time the
 amount has to be rebuilt — the next kitchen round, or a line the kitchen cancelled. Re-gating there
-meant a dish marked sold out *after* it was cooked and served locked the whole table: the next round
+meant a dish marked sold out _after_ it was cooked and served locked the whole table: the next round
 could not be sent, so `reserved_version` never caught up to `version`, so the check could not be
 paid, and a line already sent to the kitchen cannot be removed. The only exit was voiding a bill the
 guests had eaten. The dine-in intake is therefore `resolveRestaurantCheckItemRequest()` — the moment
-a line *enters* a check, whether a waiter typed it or staff accepted it from a table QR — and
+a line _enters_ a check, whether a waiter typed it or staff accepted it from a table QR — and
 `createOrderInTx()` skips the gate when it is rebuilding a check's reservation.
 
 Both reset signals honour the same `resets_at` stamp on the row: the guarded cron (every 15 minutes,
@@ -1563,7 +1619,6 @@ What matters at the counter:
   has food in the kitchen keeps its button on the board, and deactivating one that selling menu items
   still point at asks for confirmation first.
 - **Per-station printer routing is not built.** The schema reserves a column for it; nothing reads it.
-
 
 A dine-in check is settled by the same `recordPosSale()` engine as a retail bill, so the line
 re-validation inside that engine takes the **bill's own** sales surface: `RESTAURANT_POS` when a
@@ -1634,7 +1689,7 @@ places — the register's kitchen badge and the floor summary strip. A served ti
 when it was served, not when it was ordered, for the same reason `READY` already did: a slip ordered
 yesterday and served a minute ago showed "65h" in red, which is how a colour stops meaning anything.
 
-Every restaurant mutation resolves tenant *and branch* from the device and verifies a staff PIN. What
+Every restaurant mutation resolves tenant _and branch_ from the device and verifies a staff PIN. What
 it deliberately does **not** pin down is the register or the shift: a check is opened on a waiter's
 tablet, added to from anywhere in the branch, and paid at the counter — often after a shift change.
 Binding a check to the device or shift that opened it made those checks unpayable and stranded their
@@ -1734,7 +1789,7 @@ newly paired tablet was silent with nothing on screen saying so.
 **Sound settings belong to the device, not the shop.** A kitchen display hanging over the range and
 a cashier's tablet want different tones and different volumes, and the person adjusting one is
 standing in front of it. Turning the counter down must never mute the kitchen. Settings live in that
-browser's local storage; clearing site data returns the device to the defaults, which are *on*.
+browser's local storage; clearing site data returns the device to the defaults, which are _on_.
 
 **Browsers block audio until someone interacts with the page.** That happens after every refresh and
 every tablet reboot, so a screen whose sound is blocked shows a banner asking for one tap rather
@@ -1751,7 +1806,7 @@ are inserted in the same transaction that sends the round and committed immediat
 `force-dynamic`, and the register fetches with `cache: "no-store"`. Everything that made an order
 take minutes to appear was on the reading side, and there were two independent causes.
 
-The first was *when* the screens asked. Kitchen tickets were fetched only while the kitchen tab was
+The first was _when_ the screens asked. Kitchen tickets were fetched only while the kitchen tab was
 open, so the rail counter could not move while staff stood at the floor plan — and the floor plan
 itself went stale with it. There was no `visibilitychange` handler anywhere, so picking the tablet
 back up still meant waiting for the next tick of a timer the browser had already throttled: Chrome
@@ -1763,7 +1818,7 @@ the device to keep the screen awake so it never enters that state.
 The second cause is the one that bites a display left awake on the kitchen tab, where none of the
 above applies — and it is the one a shop actually reported. **The board's query cost grew with the
 shop's history rather than with how busy the kitchen was.** `listKitchenTickets()` unions the two
-ticket tables and used to filter status *outside* that union, and the indexes that existed lead with
+ticket tables and used to filter status _outside_ that union, and the indexes that existed lead with
 `station`, which the board never filters on. Postgres therefore read every ticket the shop had ever
 produced, joined it to order items or checks and tables, sorted the lot, and only then kept the most
 recent two hundred. A shop three months old was reading tens of thousands of rows every five
@@ -1866,7 +1921,7 @@ shop on the floor plan.
 
 Ten counter actions need someone with the right permission, and six of them need a second person to
 walk over and type a PIN. Every one of those pickers used to filter the staff list on "has a PIN"
-alone — never on whether that person could actually approve *this* action. So the sequence at the
+alone — never on whether that person could actually approve _this_ action. So the sequence at the
 counter was: pick a name, fetch them, they type their PIN in front of the customer, and only then
 the server answers "ไม่มีสิทธิ์". The system knew the answer before the name was picked.
 
@@ -1877,7 +1932,7 @@ approver list while being the only person in the shop who can approve. People wh
 permission but have not set a PIN are still listed, disabled, saying so; disappearing without a
 reason is what sends staff to ask why the right person is missing.
 
-A refusal now names the job in words a cashier uses and the roles in *this* shop that hold it —
+A refusal now names the job in words a cashier uses and the roles in _this_ shop that hold it —
 never the raw permission id, which means nothing at a counter. A job another person can approve ends
 with "ให้คนที่มีสิทธิ์เดินมากด PIN อนุมัติ"; a job that only a permission grant can unlock ends with
 where to grant it. Two rules the code keeps: `Administrator` holds every permission implicitly and
@@ -1897,6 +1952,7 @@ the option, and `scaleBarcode` was discarded, so a weighed line was priced as on
 such bill died on `PAYMENT_MISMATCH`. Adding a line field means adding it to that parser, and pinning
 it in `scripts/pos-contract.test.mts` — a DB contract that calls `createOrder()` directly never
 crosses the route and will not catch it.
+
 # Restaurant chat and online orders
 
 Restaurant chat orders carry an explicit active branch, `DELIVERY`/`PICKUP`, and an optional promised

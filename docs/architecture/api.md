@@ -2,6 +2,39 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
+## Mobile GraphQL primary API
+
+The accepted mobile contract uses GraphQL queries and mutations over HTTPS for normal React Native,
+Android, iOS, browser admin, and future POS workflows. Resolvers remain thin and call the same
+`apps/web/lib/bms/*.ts` services as compatible REST routes. GraphQL WebSocket subscriptions carry
+only scoped invalidations; clients refetch authoritative GraphQL snapshots after delivery.
+
+Device-authenticated POS coverage is implemented for every normal `/api/pos/*` workflow. Binary
+pharmacy evidence, shift-report export, and support diagnostics remain REST. The exact route
+classification, authentication model, operation list, and rollout state are in
+[mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md); native client wiring is in
+[react-native-graphql-client.md](react-native-graphql-client.md).
+
+## Realtime subscriptions
+
+Subscriptions run through `apps/ws` and Redis. They are not a mutation transport or source of truth.
+Existing polling and focus reconciliation remain enabled. Admin and POS browsers obtain short-lived
+tickets from `POST /api/bms/realtime/ticket`; tenant, location, user, device and permission scope are
+derived by HTTP and cannot be selected in the subscription. Domain writes enqueue migration `9.71`
+events in the transaction, and the client uses them only to refetch matching active queries.
+`REALTIME_SUBSCRIPTIONS_ENABLED=0` is the query-only kill switch; per-domain flags permit staged
+rollout. See the [realtime production audit](realtime-production-audit.md) and
+[ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
+## REST exceptions and compatibility
+
+REST remains the permanent transport for file upload/download, generated exports, external
+webhooks/payment callbacks, signed public checkout/restaurant-QR flows, cron/job triggers, and
+diagnostic/stream-oriented endpoints. Existing `/api/pos/*` and admin compatibility routes stay
+available while callers migrate and production telemetry is collected. A REST state change and its GraphQL
+equivalent must call the same service and enqueue the same event; neither adapter may reimplement
+business rules.
+
 Two API layers exist side by side, both calling into the same `lib/bms/*.ts` services:
 
 - **REST** (`apps/web/app/api/bms/*`) — channel webhooks (public, per-tenant), a couple of
@@ -31,9 +64,14 @@ Details per channel: [../integrations/](../integrations/).
 
 ## REST — cron endpoints
 
-Protected by header `x-cron-secret` matching env `BMS_CRON_SECRET` (skipped if unset — fine for
-dev, must be set in production). None has a schedule wired up yet; each expects an external cron
-(GitHub Actions, system crontab, etc.) to `POST` them on an interval.
+Routes using `authorizeCronRequest()` require header `x-cron-secret` matching
+`BMS_CRON_SECRET`; an unset secret fails closed with 503 and a wrong header returns 401. The
+repository GitHub Action schedules its frequent/daily matrices only when repository secrets are
+configured. Other routes remain visible as ready-but-unscheduled on `/admin/operations-schedule`.
+
+- `POST /api/bms/realtime/dispatch` — recovery/manual trigger for the same dispatcher used by the
+  continuous web-process pump. It claims committed rows with `FOR UPDATE SKIP LOCKED`, publishes to
+  Redis outside the claim transaction, then acknowledges or schedules a bounded retry.
 
 - `POST /api/bms/orders/release-expired?minutes=30` — cancels `RESERVED` orders older than N
   minutes, releasing their stock reservation. `lib/bms/orders.ts` `releaseExpiredOrders()`.
@@ -319,8 +357,9 @@ read/write REST equivalents of their GraphQL counterparts.
 
 ## REST — inventory transfers and stock counts (`7.98`)
 
-Unlike every other admin module these two are REST-only, and unlike `/api/pos/*` they *do* use the
-admin session: both call `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`), which runs
+These routes remain REST compatibility adapters; the mobile equivalents are `bmsStockTransfers` /
+`bmsStockTransfer` and `bmsStockCounts` / `bmsStockCount`. Unlike `/api/pos/*`, the REST adapters use
+the admin session: both call `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`), which runs
 `verifyAdminSession()` → resolves the acting tenant from the signed `BMS_ACT_TENANT` drill-down cookie
 (only when its `by` matches this admin, else the admin's own tenant) → `requirePermission()`. Failures
 return `{ error: "unauthorized" }` with `401` (no session) or `{ error: "forbidden" }` with `403` (no
@@ -386,7 +425,9 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/credit reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`, `bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing |
-| `bmsPos.ts` | POS back-office: locations, devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Actual counter selling never goes through GraphQL — see `/api/pos/*` above |
+| `bmsPos.ts` | POS back-office: locations, devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Counter selling is **not** here — the browser register uses `/api/pos/*` and the native register uses `bmsPosDevice.ts` |
+| `bmsPosDevice.ts` | Device-scoped surface for the native register (`apps/mobile`), authenticated by a device Bearer token plus a cashier PIN re-checked on every mutation — not by an admin session. Covers selling, returns/void, shift and drawer, restaurant checks/kitchen, branch stock transfers and counts, and board-game sessions/library. Tenant, branch, device and shift are derived from the authenticated device and are never accepted as input; money/stock/document mutations require `idempotencyKey`, and a key already spent on a different request body is refused as `CONFLICT` (`reason: IDEMPOTENCY_CONFLICT`), never a 500. Every operation calls the same `lib/bms/*` service the REST route calls — one adapter never calls the other |
+| `bmsMobileOperations.ts` | The remaining mobile back-office gaps that are not device-scoped. Ordinary `getTenantId(ctx)` + `requirePermission()` resolvers over the same services as their REST compatibility routes |
 | `bmsStockCapabilities.ts` | Multi-store stock model (`9.40`–`9.41`, `9.51`): tenant capability overrides (`bmsStoreCapabilities`, `bmsUpsertStoreCapability`, `bmsResetStoreCapability`), per-product stock policies (`bmsProductStockPolicy`, `bmsUpsertProductStockPolicy`), versioned recipes and grouped modifiers (`bmsProductRecipes`, `bmsProductModifiers`, `bmsUpsertProductRecipe`, `bmsUpsertProductModifier`), readiness (`bmsProductReadiness`), the kitchen station master (`bmsKitchenStations`, `bmsUnmappedKitchenStationNames`, `bmsCreateKitchenStation`, `bmsUpdateKitchenStation`, `bmsArchiveKitchenStation` — `9.54`, read `product.view` / manage `product.edit`), kitchen tickets and wastage. Reads use `product.view` / `order.view`, model edits use `product.edit`, ticket moves use `restaurant.kitchen.update`, and write-off uses `stock.adjust`. Modifier surcharge and group constraints are server-owned and re-resolved during order creation. |
 
 Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
@@ -669,12 +710,28 @@ only. `Create Msg` writes a real diagnostic conversation/message first, then pub
 keeps `IN real`/`OUT real` from Channel Health separate from `IN diag`, which is read from the
 latest diagnostic message rows.
 
+This describes current behavior, not a production-complete delivery guarantee. The 2026-09-10
+hardening removed the WS default-tenant fallback, requires `inbox.view`, and replaces raw cookie/JWT
+gateway auth with a short-lived ticket minted after strict revocation, fresh identity, acting-tenant,
+permission, and location checks. Direct legacy Inbox Pub/Sub still has a commit-to-publish loss
+window and no replay. Keep the 20-second poll enabled until Inbox writes use the transactional outbox
+and the recovery tests and staged rollout in the
+[realtime production audit](realtime-production-audit.md) are complete. The accepted target contract
+is recorded in [ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
+`POST /api/bms/realtime/ticket?scope=admin|web|android|pos` is the only socket credential minting path.
+It returns `{ ticket, expiresAt }` with `Cache-Control: no-store`; tenant, permissions, and allowed
+locations are server-derived. The gateway accepts only `connectionParams.ticket`, permits one
+subscription field per operation, and exposes `/healthz`, `/readyz`, and local `/metrics`. Legacy
+chat/post subscriptions that still require resource membership are disabled in production.
+
 ## Auth scopes
 
-`requireAuth(ctx)` (`lib/auth.ts`) recognizes three scopes carried via the `x-scope` header on the
+The GraphQL HTTP context recognizes four scopes carried via the `x-scope` header on the
 GraphQL endpoint (`app/api/graphql/route.ts`): `admin` (cookie session, the BMS admin panel),
-`web`, and `android` (Bearer token — pre-existing infra for a consumer-facing mobile app from the
-base template, distinct from the BMS admin/staff RBAC model). See
+`web`, `android` (user Bearer token), and `pos` (POS-device Bearer token). POS context is handled by
+`requirePosDevice()` rather than `requireAuth()` because a device is not a user; each protected
+operation then verifies its cashier/approver PIN and named permission. See
 [system.md](system.md) for how tenant/RBAC context is derived once authenticated.
 
 Public web pages are intentionally session-aware: when a browser already has an admin cookie, the

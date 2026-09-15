@@ -129,6 +129,79 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_store_profile", name: "restaurant_merchant_absorb_limit" },
     ],
   },
+  {
+    // สองคอลัมน์นี้ถูก SELECT ใน `createOrderInTx()` แบบไม่มีเงื่อนไข = ทุกบิลของทุกร้าน
+    // ฐานที่ขาดจึงขายไม่ได้ทั้งระบบ ไม่ใช่แค่ร้านที่ตั้งโปร/ราคาส่งรายสาขา
+    file: "9.61__bms_product_promotions_branch_scope.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder อ่านโปรรายสาขาทุกบิล",
+    needs: [{ kind: "column", table: "bms_product_promotions", name: "location_id" }],
+  },
+  {
+    file: "9.65__bms_product_price_tiers_branch_scope.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder อ่านราคาส่งรายสาขาทุกบิล",
+    needs: [{ kind: "column", table: "bms_product_price_tiers", name: "location_id" }],
+  },
+  {
+    file: "9.60__bms_restaurant_qr_ordering.sql",
+    impact: "ลูกค้าสแกน QR ที่โต๊ะสั่งอาหารไม่ได้ และเครื่องขายเปิดแท็บคำขอ QR ไม่ได้",
+    needs: [
+      { kind: "table", name: "bms_restaurant_table_qr_tokens" },
+      { kind: "table", name: "bms_restaurant_qr_sessions" },
+      { kind: "table", name: "bms_restaurant_qr_submissions" },
+    ],
+  },
+  {
+    file: "9.63__bms_restaurant_check_split_merge.sql",
+    impact: "แยกบิล/รวมบิลของโต๊ะไม่ได้ และเปิดบิลโต๊ะไม่ได้ (คิวรีอ่านคอลัมน์นี้เสมอ)",
+    needs: [{ kind: "column", table: "bms_restaurant_checks", name: "split_group_no" }],
+  },
+  {
+    file: "9.64__bms_restaurant_waitlist.sql",
+    impact: "บัตรคิวหน้าร้านและการจองโต๊ะใช้ไม่ได้",
+    needs: [{ kind: "table", name: "bms_restaurant_waitlist" }],
+  },
+  {
+    file: "9.69__bms_restaurant_service_calls.sql",
+    impact: "ลูกค้ากดเรียกพนักงานจากโต๊ะไม่ได้ และแท็บเรียกพนักงานที่เครื่องขายพัง",
+    needs: [{ kind: "table", name: "bms_restaurant_service_calls" }],
+  },
+  {
+    // ตัวส่งเหตุการณ์ realtime เขียนลงตารางนี้ "ในทรานแซกชันเดียวกับงานธุรกิจ" แบบไม่มีเงื่อนไข
+    // (`enqueueRealtimeEventInTx` ไม่มีธงและไม่ได้ห่อ try/catch) ตารางที่ขาดจึงไม่ได้แปลว่า
+    // realtime เงียบ แต่แปลว่า **ทรานแซกชันนั้น rollback ทั้งก้อน**
+    file: "9.70__bms_realtime_outbox.sql",
+    impact: "รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน",
+    needs: [{ kind: "table", name: "bms_realtime_outbox" }],
+  },
+  {
+    // `createOrderInTx()` เขียนคอลัมน์นี้ใน INSERT ของ **ทุกบิลทุกช่องทางของทุกร้าน** และ
+    // `finalizePosSale()` SELECT มันกลับมาทุกการขาย — ไม่มีกิ่งไหนข้ามได้ ฐานที่ขาดไฟล์นี้
+    // จึง "ขายไม่ได้เลยสักใบ" ไม่ใช่ "ฟีเจอร์บอร์ดเกมใช้ไม่ได้" · ตัวตารางของโมดูลบอร์ดเกม
+    // (`9.79`–`9.83`) จงใจไม่อยู่ในลิสต์ เพราะทุก query ของมันถูกกั้นด้วย `boardGameSessionId`
+    file: "9.82__bms_board_game_pos_settlement.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล",
+    needs: [{ kind: "column", table: "bms_orders", name: "board_game_session_id" }],
+  },
+  {
+    // เหตุผลเดียวกับ `9.82` สำหรับ `bms_orders.restaurant_service_mode` · ส่วน
+    // `bms_restaurant_checks.service_mode` ถูกอ่านโดย `listKitchenTickets()` และทุก query
+    // ของบิลโต๊ะ — ขาดแล้วจอครัวและ POS ร้านอาหารตายทั้งหน้า ไม่ใช่แค่โหมดรับกลับบ้าน
+    file: "9.87__bms_restaurant_service_mode.sql",
+    impact: "ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า",
+    needs: [
+      { kind: "column", table: "bms_orders", name: "restaurant_service_mode" },
+      { kind: "column", table: "bms_restaurant_checks", name: "service_mode" },
+    ],
+  },
+  {
+    // ทุก mutation โอน/นับสต็อกของเครื่องขาย native บังคับ `idempotencyKey: String!` แล้ว
+    // `replayInventoryResult()` อ่านตารางนี้ **ก่อน** แตะสต็อก โดยไม่มีธงและไม่ได้ห่อ try/catch
+    // → ฐานที่ไม่มีตารางได้ 42P01 แล้ว rollback ทั้งก้อนทุกครั้ง
+    // · เส้น REST ของหลังบ้านไม่ส่งคีย์ จึงไม่แตะตารางนี้และไม่กระทบ
+    file: "9.88__bms_inventory_operation_idempotency.sql",
+    impact: "โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)",
+    needs: [{ kind: "table", name: "bms_inventory_operation_idempotency" }],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

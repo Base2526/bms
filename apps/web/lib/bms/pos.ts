@@ -440,9 +440,32 @@ export type PosScanHit = {
     maxSelect: number | null;
     defaultSelected: boolean;
   }>;
+  /** Active selling units for this exact variant; display only, commit resolves the code again. */
+  packs: Array<{
+    code: string;
+    unitName: string;
+    baseQty: number;
+    price: number;
+  }>;
   /** Raw prefix-22 label; the server re-parses this at commit. */
   scaleBarcode?: string | null;
 };
+
+/** Branch-scoped available stock used by POS transport adapters after a scan resolves the variant. */
+export async function getPosVariantAvailable(
+  tenantId: string,
+  locationId: string,
+  productSku: string,
+  size: string,
+): Promise<number> {
+  const stock = await query<{ available: string }>(
+    `SELECT (current_stock - reserved_stock) AS available
+       FROM bms_inventory
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+    [tenantId, locationId, productSku, size],
+  );
+  return stock.rowCount ? Number(stock.rows[0].available) : 0;
+}
 
 /**
  * หาสินค้าจากบาร์โค้ด/QR ที่ยิงมา — ดูที่ bms_product_packs ก่อน (7.86)
@@ -671,6 +694,19 @@ export async function resolvePosScan(
 
   const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
   if (basePrice == null) return null;
+  const packOptions = await query<{
+    pack_code: string;
+    unit_name: string | null;
+    base_qty: number;
+    price: string | null;
+  }>(
+    `SELECT pack_code, unit_name, base_qty, price
+       FROM bms_product_packs
+      WHERE tenant_id = $1 AND product_sku = $2 AND active
+        AND (size IS NULL OR upper(size) = upper($3))
+      ORDER BY (pack_code = 'BASE') DESC, base_qty, pack_code`,
+    [tenantId, row.sku, row.size],
+  );
   const baseQty = embeddedBaseQty ?? row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
   const resolvedPackCode = row.pack_code ?? "BASE";
@@ -704,6 +740,25 @@ export async function resolvePosScan(
       maxSelect: modifier.max_select == null ? null : Number(modifier.max_select),
       defaultSelected: Boolean(modifier.default_selected),
     })),
+    packs: [
+      {
+        code: 'BASE',
+        unitName: 'ชิ้น',
+        baseQty: 1,
+        price: basePrice,
+      },
+      ...packOptions.rows
+        .filter((pack) => pack.pack_code !== 'BASE')
+        .map((pack) => ({
+          code: pack.pack_code,
+          unitName: pack.unit_name ?? 'แพ็ก',
+          baseQty: Number(pack.base_qty),
+          price:
+            pack.price == null
+              ? basePrice * Number(pack.base_qty)
+              : Number(pack.price),
+        })),
+    ],
     scaleBarcode,
   };
 }
@@ -2039,8 +2094,15 @@ export type PosSaleInput = {
   /** SALE = รับเต็มยอดและส่งของทันที; DEPOSIT = จองของและรับมัดจำงวดแรก */
   mode?: "SALE" | "DEPOSIT";
   lines: PosSaleLine[];
+  /**
+   * Which catalog surface the POS cart came from.
+   * Restaurant counter sales use restaurant menu rows without a table check.
+   */
+  salesSurface?: "RETAIL_POS" | "RESTAURANT_POS";
   /** Set only by the restaurant service after checking device, shift and open-check ownership. */
   restaurantCheckId?: string | null;
+  /** Board-game session id; createOrder validates branch, state and frozen charges server-side. */
+  boardGameSessionId?: string | null;
   /** Cross-instance claim created by the restaurant service for this settlement only. */
   restaurantSettlementAttemptId?: string | null;
   /** SALE จ่ายผสมได้และต้องครบยอด; DEPOSIT รับงวดแรกด้วย 1 วิธีและต้องต่ำกว่ายอดบิล */
@@ -2125,6 +2187,13 @@ export type PosReceiptDiscountLine = {
   pointsUsed: number;
 };
 
+export type PosReceiptExtraLine = {
+  label: string;
+  qty: number;
+  unitAmount: number;
+  amount: number;
+};
+
 /**
  * ส่วนลดที่ต้องพิมพ์ให้ผลรวมรายการบนกระดาษตรงกับยอดสุทธิจริง
  *
@@ -2198,6 +2267,27 @@ async function loadPosReceiptDiscountLines(
   return result;
 }
 
+async function loadPosReceiptExtraLines(
+  db: {
+    query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>>;
+  },
+  tenantId: string,
+  orderId: string
+): Promise<PosReceiptExtraLine[]> {
+  const result = await db.query<{ label: string; qty: string; unit_amount: string }>(
+    `SELECT label, qty, unit_amount
+       FROM bms_order_extra_lines
+      WHERE tenant_id = $1 AND order_id = $2
+      ORDER BY id`,
+    [tenantId, orderId]
+  );
+  return result.rows.map((row) => {
+    const qty = Number(row.qty);
+    const unitAmount = Number(row.unit_amount);
+    return { label: row.label, qty, unitAmount, amount: Math.round(qty * unitAmount * 100) / 100 };
+  });
+}
+
 /** แถวจาก bms_tax_documents → ตัวเลขที่ใบเสร็จใช้ · null = บิลนี้ไม่มีใบกำกับ */
 function mapReceiptVat(row: {
   vat_rate?: string | number | null;
@@ -2238,6 +2328,8 @@ export type PosSaleResult =
       roundingAmount: number;
       /** ส่วนลดแยกตามที่มา สำหรับพิมพ์บนใบเสร็จ (7.96) */
       discountLines: PosReceiptDiscountLine[];
+      /** ค่าบริการ/ค่าถุง/ค่าเวลา ตาม snapshot ที่ถูกบันทึกในออร์เดอร์ */
+      extraLines: PosReceiptExtraLine[];
       /**
        * จำนวนรายการที่เข้าคิวครัวจากบิลนี้ (9.40) · 0 = ไม่มี
        * หน้าขายต้องบอกแคชเชียร์ว่าครัวรับไปแล้วกี่รายการ ไม่งั้นไม่มีทางรู้ว่าตั๋วออกหรือยัง
@@ -2301,6 +2393,8 @@ export type PosRecentReceipt = {
   billNo: string | null;
   /** ช่องทางบิลต้นทาง; marketplace แสดงผลได้แต่ต้องคืนผ่านแพลตฟอร์ม */
   sourceChannel: string;
+  fulfillmentType: "DELIVERY" | "PICKUP" | null;
+  restaurantServiceMode: "DINE_IN" | "TAKEAWAY" | null;
   returnEligible: boolean;
   returnBlockedReason: "MARKETPLACE_MANAGED" | null;
   saleLocationId: string;
@@ -2330,6 +2424,8 @@ export type PosRecentReceipt = {
   cashierName: string | null;
   /** ราคาส่ง/โปรโมชัน + ส่วนลดระดับบิล ตาม snapshot ตอนขาย */
   discountLines: PosReceiptDiscountLine[];
+  /** ค่าบริการที่ไม่ใช่สินค้า รวมค่าเวลาเล่นบอร์ดเกม */
+  extraLines: PosReceiptExtraLine[];
   payments: Array<{
     id: string;
     method: PaymentMethod;
@@ -2728,6 +2824,10 @@ async function refreshUnknownPosOrderVatInTx(
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
   const { tenantId } = input;
   const isDeposit = input.mode === "DEPOSIT";
+  const boardGameSessionId = input.boardGameSessionId?.trim() || null;
+  if (isDeposit && boardGameSessionId) {
+    return { status: "DEPOSIT_INVALID", reason: "ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน" };
+  }
 
   const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
     `SELECT id, location_id, device_id FROM bms_pos_shifts
@@ -2786,11 +2886,11 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     tenantId,
     shift.location_id,
     input.lines,
-    input.restaurantCheckId ? "RESTAURANT_POS" : "RETAIL_POS"
+    input.restaurantCheckId ? "RESTAURANT_POS" : input.salesSurface ?? "RETAIL_POS"
   );
   if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
   const items = canonical.items;
-  if (items.length === 0) return { status: "EMPTY" };
+  if (items.length === 0 && !boardGameSessionId) return { status: "EMPTY" };
 
   // ---- เลขเครื่อง (8.3) ----
   // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
@@ -2913,7 +3013,9 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     posShiftId: shift.id,
     cashierUserId: input.cashierUserId,
     idempotencyKey: key,
+    posSalesSurface: input.restaurantCheckId ? "RESTAURANT_POS" : input.salesSurface ?? "RETAIL_POS",
     restaurantCheckId: input.restaurantCheckId ?? null,
+    boardGameSessionId,
     editorId: input.cashierUserId,
     couponCode: input.couponCode ?? null,
     customerId: input.customerId ?? null,
@@ -3130,8 +3232,14 @@ async function finalizePosSale(args: {
       if (!stamped.rowCount) throw new Error("บิลมัดจำไม่ได้อยู่สถานะรอชำระ");
     }
 
-    const orderLock = await client.query<{ status: string; total_amount: string; shipping_fee: string | null; rounding_amount: string | null }>(
-      `SELECT status, total_amount, shipping_fee, rounding_amount FROM bms_orders
+    const orderLock = await client.query<{
+      status: string;
+      total_amount: string;
+      shipping_fee: string | null;
+      rounding_amount: string | null;
+      board_game_session_id: string | null;
+    }>(
+      `SELECT status, total_amount, shipping_fee, rounding_amount, board_game_session_id FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 AND pos_shift_id = $3
           AND pos_device_id = $4 AND cashier_user_id = $5
         FOR UPDATE`,
@@ -3175,6 +3283,27 @@ async function finalizePosSale(args: {
           throw new RestaurantCheckError("ไม่สามารถผูกสมาชิกกับบิลโต๊ะนี้ได้ กรุณาค้นหาและเลือกใหม่");
         }
       }
+    }
+    if (input.boardGameSessionId) {
+      if (current.board_game_session_id !== input.boardGameSessionId.toLowerCase()) {
+        throw new Error("บิลไม่ตรงกับ session บอร์ดเกมที่เลือก");
+      }
+      const boardGameSession = await client.query(
+        `SELECT 1
+           FROM bms_board_game_sessions
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+            AND (
+              (status = 'CLOSING' AND current_order_id IS NULL)
+              OR (status = 'PAID' AND current_order_id = $4)
+            )
+          FOR UPDATE`,
+        [input.tenantId, input.boardGameSessionId, shift.location_id, orderId]
+      );
+      if (!boardGameSession.rowCount) {
+        throw new Error("session บอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว");
+      }
+    } else if (current.board_game_session_id) {
+      throw new Error("บิลนี้ต้องระบุ session บอร์ดเกมก่อนรับชำระ");
     }
     const roundingAmount = args.roundingAmount ?? Number(current.rounding_amount ?? 0);
     if (Math.abs(Number(current.rounding_amount ?? 0) - roundingAmount) > 0.001) {
@@ -3345,6 +3474,27 @@ async function finalizePosSale(args: {
       );
     }
 
+    if (input.boardGameSessionId) {
+      const paidSession = await client.query(
+        `UPDATE bms_board_game_sessions
+            SET status = 'PAID', current_order_id = $3, closed_by = $4,
+                guest_count = 0, version = version + 1, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2
+            AND (
+              (status = 'CLOSING' AND current_order_id IS NULL)
+              OR (status = 'PAID' AND current_order_id = $3)
+            )`,
+        [input.tenantId, input.boardGameSessionId, orderId, input.cashierUserId]
+      );
+      if (!paidSession.rowCount) throw new Error("ปิด session บอร์ดเกมใน transaction ชำระเงินไม่สำเร็จ");
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'board_game.session_paid',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.cashierUserId}`, input.boardGameSessionId,
+          JSON.stringify({ orderId, amount: amountDue })]
+      );
+    }
+
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'pos.sale', $3, $4)`,
@@ -3372,7 +3522,10 @@ async function finalizePosSale(args: {
         WHERE o.tenant_id = $1 AND o.id = $2`,
       [input.tenantId, orderId]
     );
-    const receiptDiscountLines = await loadPosReceiptDiscountLines(client, input.tenantId, orderId);
+    const [receiptDiscountLines, receiptExtraLines] = await Promise.all([
+      loadPosReceiptDiscountLines(client, input.tenantId, orderId),
+      loadPosReceiptExtraLines(client, input.tenantId, orderId),
+    ]);
 
     await client.query("COMMIT");
     const loyaltyRow = loyalty.rows[0];
@@ -3400,6 +3553,7 @@ async function finalizePosSale(args: {
       // และร้านเปิดคิวครัวไว้ไหม · 0 = ไม่มีอะไรเข้าครัว (ไม่ต้องแสดงอะไร)
       kitchenTickets: fulfilled.kitchenTickets,
       discountLines: receiptDiscountLines,
+      extraLines: receiptExtraLines,
       pointsEarned: hasMember ? Number(loyaltyRow?.earned ?? 0) : null,
       pointsBalance: hasMember ? Number(loyaltyRow?.balance ?? 0) : null,
       // ผู้เรียกที่รู้ค่าปัดเศษจริงจะเขียนทับให้ (recordPosSale) — ทางที่มาถึงตรงนี้
@@ -3507,6 +3661,7 @@ async function findSaleByIdempotencyKey(
     vat: mapReceiptVat(row),
     roundingAmount: rounding,
     discountLines: await loadPosReceiptDiscountLines({ query }, tenantId, row.id),
+    extraLines: await loadPosReceiptExtraLines({ query }, tenantId, row.id),
     // พิมพ์ซ้ำต้องบอกความจริงของ "ตอนขาย" ไม่ใช่ของการตั้งค่าวันนี้ — บิลที่ได้แต้ม
     // ไปแล้วยังโชว์แต้มแม้ร้านปิดโปรแกรมทีหลัง (กฎเดียวกับตอนขาย)
     ...(shouldPrintMemberPoints({
@@ -3529,6 +3684,19 @@ export async function getLatestPosSale(
 ): Promise<PosRecentReceipt | null> {
   const rows = await listRecentPosSales(tenantId, deviceId, 1);
   return rows[0] ?? null;
+}
+
+/** Prevent a POS transport from sending or exposing a receipt owned by another register. */
+export async function isPosOrderOwnedByDevice(
+  tenantId: string,
+  orderId: string,
+  deviceId: string,
+): Promise<boolean> {
+  const owned = await query(
+    `SELECT 1 FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND pos_device_id = $3`,
+    [tenantId, orderId, deviceId],
+  );
+  return Boolean(owned.rowCount);
 }
 
 export async function listRecentPosSales(
@@ -3557,6 +3725,8 @@ export async function listRecentPosSales(
     extra_total: string;
     shipping_fee: string | null;
     status: string;
+    fulfillment_type: "DELIVERY" | "PICKUP" | null;
+    restaurant_service_mode: "DINE_IN" | "TAKEAWAY" | null;
     sold_at: string | Date;
     cashier_name: string | null;
     payment_method: PaymentMethod | null;
@@ -3586,6 +3756,8 @@ export async function listRecentPosSales(
             o.discount_amount,
             o.shipping_fee,
             o.rounding_amount AS order_rounding,
+            o.fulfillment_type,
+            o.restaurant_service_mode,
             o.status,
             COALESCE(o.paid_at, o.created_at) AS sold_at,
             dev.code AS pos_device_code,
@@ -3735,6 +3907,32 @@ export async function listRecentPosSales(
     const existing = linesByOrder.get(line.order_id) ?? [];
     existing.push(mapped);
     linesByOrder.set(line.order_id, existing);
+  }
+
+  const extraLinesRes = await query<{
+    order_id: string;
+    label: string;
+    qty: string;
+    unit_amount: string;
+  }>(
+    `SELECT order_id, label, qty, unit_amount
+       FROM bms_order_extra_lines
+      WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])
+      ORDER BY order_id, id`,
+    [tenantId, orderIds]
+  );
+  const extraLinesByOrder = new Map<string, PosReceiptExtraLine[]>();
+  for (const row of extraLinesRes.rows) {
+    const qty = Number(row.qty);
+    const unitAmount = Number(row.unit_amount);
+    const existing = extraLinesByOrder.get(row.order_id) ?? [];
+    existing.push({
+      label: row.label,
+      qty,
+      unitAmount,
+      amount: Math.round(qty * unitAmount * 100) / 100,
+    });
+    extraLinesByOrder.set(row.order_id, existing);
   }
 
   const storedDiscounts = await query<{
@@ -3930,6 +4128,8 @@ export async function listRecentPosSales(
     receiptNo: row.doc_no ?? null,
     billNo: row.doc_no ?? null,
     sourceChannel: row.channel,
+    fulfillmentType: row.fulfillment_type ?? null,
+    restaurantServiceMode: row.restaurant_service_mode ?? null,
     returnEligible: !COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel),
     returnBlockedReason: COUNTER_RETURN_UNSUPPORTED_CHANNELS.has(row.channel)
       ? "MARKETPLACE_MANAGED"
@@ -3960,6 +4160,7 @@ export async function listRecentPosSales(
     memberName: row.member_no ? (row.member_name ?? null) : null,
     memberPhone: row.member_phone ?? null,
     discountLines: discountLinesByOrder.get(row.id) ?? [],
+    extraLines: extraLinesByOrder.get(row.id) ?? [],
     payments: paymentsByOrder.get(row.id) ?? [],
     refunds: refundsByOrder.get(row.id) ?? [],
     returnEvents: returnEventsByOrder.get(row.id) ?? [],

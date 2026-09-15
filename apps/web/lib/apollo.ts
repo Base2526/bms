@@ -137,34 +137,90 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // Lazy WebSocket link (สำหรับ Subscription)
 // - keeps auth/first paint lighter by loading ws deps only when needed
 // ----------------------------
-type WsScope = "web" | "admin";
+type WsScope = "web" | "admin" | "pos";
+export type RealtimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "degraded";
 const wsLinks: Partial<Record<WsScope, ApolloLink>> = {};
 const wsLinkLoading: Partial<Record<WsScope, Promise<ApolloLink>>> = {};
+const wsClients: Partial<Record<WsScope, { dispose: () => void }>> = {};
+
+export function resetRealtimeConnections() {
+  for (const scope of Object.keys(wsClients) as WsScope[]) {
+    try { wsClients[scope]?.dispose(); } catch {}
+    delete wsClients[scope];
+    delete wsLinks[scope];
+    delete wsLinkLoading[scope];
+  }
+}
+
+function emitRealtimeStatus(status: RealtimeConnectionStatus, scope: WsScope) {
+  window.dispatchEvent(new CustomEvent("bms-realtime-status", { detail: { status, scope } }));
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("backend-logout", resetRealtimeConnections);
+  window.addEventListener("frontend-logout", resetRealtimeConnections);
+  window.addEventListener("bms-pos-device-token-changed", resetRealtimeConnections);
+  window.addEventListener("beforeunload", resetRealtimeConnections);
+}
 
 async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
   if (wsLinks[scope]) return wsLinks[scope]!;
   if (wsLinkLoading[scope]) return wsLinkLoading[scope]!;
 
   wsLinkLoading[scope] = (async () => {
+    emitRealtimeStatus(navigator.onLine ? "connecting" : "offline", scope);
     const [{ GraphQLWsLink }, { createClient }] = await Promise.all([
       import("@apollo/client/link/subscriptions"),
       import("graphql-ws"),
     ]);
 
-    const link = new GraphQLWsLink(
-      createClient({
+    const wsClient = createClient({
         url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
         lazy: true,
         retryAttempts: Infinity,
-        connectionParams: () => ({ "x-scope": scope }),
-        on: {
-          connected: () => addLog("info", "ws", "[ws] connected", { scope }),
-          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason }),
-          error: (err: any) => addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) }),
+        // ⚠️ ค่าปริยายของ graphql-ws คือ "รอ ack ตลอดกาล" · gateway ตอบ ack หลังตรวจ ticket
+        // และถาม Redis ว่า session ยังไม่ถูก revoke — ถ้า Redis ตอบช้าหรือไม่ตอบ socket จะ
+        // เปิดค้างโดยไม่มีทั้ง ack และ close แล้วจอค้างที่ "กำลังเชื่อมต่อ" โดยไม่ retry เลย
+        // ตั้งเพดานไว้เพื่อให้กลายเป็น close แล้วเข้าเส้นทาง retryWait ที่มีอยู่แล้ว
+        connectionAckWaitTimeout: 15_000,
+        retryWait: async (retries) => {
+          const capped = Math.min(30_000, 500 * (2 ** Math.min(retries, 6)));
+          const jitter = Math.floor(Math.random() * Math.max(1, capped / 3));
+          await new Promise((resolve) => window.setTimeout(resolve, capped + jitter));
         },
-      })
-    );
+        connectionParams: async () => {
+          const posToken = scope === "pos" ? window.localStorage.getItem("bms.pos.deviceToken") ?? "" : "";
+          const response = await fetch(`/api/bms/realtime/ticket?scope=${scope}`, {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "content-type": "application/json",
+              ...(scope === "pos" ? { "x-pos-device-token": posToken } : {}),
+            },
+          });
+          if (!response.ok) throw new Error(`REALTIME_TICKET_${response.status}`);
+          const body = await response.json() as { ticket?: unknown };
+          if (typeof body.ticket !== "string") throw new Error("REALTIME_TICKET_INVALID");
+          return { ticket: body.ticket };
+        },
+        on: {
+          connected: () => {
+            emitRealtimeStatus("connected", scope);
+            addLog("info", "ws", "[ws] connected", { scope });
+          },
+          closed: (ev: any) => {
+            emitRealtimeStatus(navigator.onLine ? "reconnecting" : "offline", scope);
+            addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason });
+          },
+          error: (err: any) => {
+            emitRealtimeStatus(navigator.onLine ? "degraded" : "offline", scope);
+            addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) });
+          },
+        },
+      });
+    const link = new GraphQLWsLink(wsClient);
 
+    wsClients[scope] = wsClient;
     wsLinks[scope] = link;
     return link;
   })();
@@ -177,7 +233,11 @@ const lazyWsLink = new ApolloLink((operation) => {
 
   return new Observable((observer) => {
     let sub: any;
-    const scope: WsScope = window.location.pathname.startsWith("/admin") ? "admin" : "web";
+    const scope: WsScope = window.location.pathname.startsWith("/admin")
+      ? "admin"
+      : window.location.pathname === "/pos" || window.location.pathname.startsWith("/pos/")
+        ? "pos"
+        : "web";
     loadWsLink(scope)
       .then((link) => {
         const obs = link.request(operation);

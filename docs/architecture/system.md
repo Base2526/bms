@@ -85,7 +85,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Product Bulk Import (CSV/XLSX) | ✅ | `lib/bms/productImport.ts` · `graphql/bmsProducts.ts` (`bmsImportProducts`) · `/admin/products` `ImportModal.tsx` — see [../business/inventory.md](../business/inventory.md) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` · `adjustStock()` takes an optional `locationId` (omitted = default branch) and verifies the branch belongs to the shop · `reserveStock()` is tenant- and branch-scoped and writes a `RESERVE` movement in the same transaction · `listVariantReservations()` / `bmsVariantReservations` rebuilds "which bills hold this reserved stock" for the `/admin/products` drill-down (needs `order.view`) — see [../business/inventory.md](../business/inventory.md) |
-| Inventory — branch transfers & stock counts | ✅ | `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts` · `7.98__bms_stock_transfers_and_counts.sql` · `app/api/bms/inventory/{transfers,counts}` · `/admin/stock-transfers` + `/admin/stock-counts` — send/receive in two steps so goods in transit belong to no branch; counts apply a difference against a snapshot, never an absolute. REST-only, no GraphQL — see [../business/inventory.md](../business/inventory.md) |
+| Inventory — branch transfers & stock counts | ✅ | `lib/bms/{stockTransfers,stockCounts,dailyDocNo,inventoryIdempotency}.ts` · migrations `7.98` + `9.88` · REST compatibility in `app/api/bms/inventory/{transfers,counts}` · admin GraphQL in `graphql/bmsMobileOperations.ts` · device-scoped native POS GraphQL in `graphql/bmsPosDevice.ts` · `/admin/stock-transfers` + `/admin/stock-counts` + `apps/mobile` — send/receive in two steps so goods in transit belong to no branch; counts apply a difference against a snapshot, never an absolute. See [../business/inventory.md](../business/inventory.md) |
 | Product catalog foundation (variants, sales surfaces, capabilities) | ✅ | `lib/bms/{shopArchetypes,storeCapabilities,products}.ts` · `9.40`–`9.43`, `9.51`, `9.52` · `/admin/stock-models` — `bms_product_variants` is the serving/size-option truth independent of branch stock; `bms_product_sales_surfaces` makes per-channel visibility explicit and separate from `active`; a new/imported product is a draft until published; `NON_STOCK` sells with zero ingredient tracking. Only 5 of 13 capability flags gate real behavior — see [../business/inventory.md](../business/inventory.md) §§ Multi-store stock policies / Catalog lifecycle |
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
@@ -94,6 +94,8 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.93` — see [../business/pos.md](../business/pos.md) |
 | POS — parked bills, drawer cash, void, shift report | ✅ | `lib/bms/pos.ts` · `7.97__bms_pos_park_cash_void.sql` · `app/api/pos/{park,cash-movement,void,shift-report}` — a manual discount, a void, and cash out each need a second person's PIN; a void reuses the return machinery under `isVoid` and stamps the bill inside that same transaction |
 | POS — restaurant dine-in (floor, checks, kitchen rounds) | ✅ | `lib/bms/restaurantPos.ts` · `app/(pos)/pos/restaurant` · `app/api/pos/{restaurant,kitchen}/*` · `/admin/kitchen` · migrations `9.44`–`9.45` — a check reserves stock when a kitchen round is sent and settles through the one `recordPosSale()` path; modifier surcharges are server-owned catalog data; floor/kitchen/cancel use `restaurant.*` permissions — see [../business/pos.md](../business/pos.md) |
+| Board game cafe operations | ✅ | `lib/bms/boardGameCafe.ts` · `/admin/board-game` · `/board-game` · `app/api/{bms,pos}/board-game/*` · `apps/mobile` · migrations `9.79`–`9.83` — timed participants/bill groups, rate snapshots, game-copy loans, atomic POS handoff/receipt lines, opt-in aggregate public discovery, and removable dev fixtures — see [../business/board-game-cafe.md](../business/board-game-cafe.md) |
+| Native POS mobile client | ✅ core + Q6B workflows | `apps/mobile/` — bare React Native POS with secure device pairing, cashier PIN/RBAC, generated GraphQL retail/restaurant/board-game/branch-inventory/shift commands and named WS invalidation; hardware and pharmacy-review integrations remain — see [../../apps/mobile/README.md](../../apps/mobile/README.md) |
 | Kitchen stations (registered work areas, SLA) | ✅ | `lib/bms/kitchenStations.ts` · `9.53`–`9.54` · `/admin/kitchen`, register KDS — a station is a registered row (id, active flag, sort order, optional branch) matched id-first then by a name snapshot, never a free-text label; per-station SLA colors the board; deactivating a station never blocks tickets already routed to it — see [../business/pos.md](../business/pos.md) § Kitchen stations |
 | Restaurant chat ordering + delivery | ✅ | `lib/bms/{menuAvailability,restaurantOrdering}.ts` · `9.55`–`9.57` · `app/api/pos/restaurant/{menu,incoming}` — branch-scoped "sold out today" flag with dual-signal reset (cron + shift-open, both keyed off `resets_at`); an online order needs an explicit branch and `DELIVERY`/`PICKUP` before payment creates any kitchen work; line cancellation reuses the POS return engine with an immutable cause and merchant-absorbed repricing — see [../business/restaurant-chat-delivery.md](../business/restaurant-chat-delivery.md) |
 | Membership, tiers & loyalty points | ✅ | `lib/bms/{membership,loyaltyMath}.ts` · `graphql/bmsMembership.ts` · `7.96__bms_membership_and_loyalty.sql` · `/admin/loyalty` — points are a ledger, not a balance column, and reverse proportionally on a return; outstanding points are an accounting liability (`bmsLoyaltyOutstanding`) — see [../business/pos.md](../business/pos.md) |
@@ -123,9 +125,35 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
-| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` |
+| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — includes one-click `board_game_cafe` members/floor/rates/sessions/library/loan/discovery fixtures and FK-ordered cleanup |
 
-**Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
+### Realtime architecture status (2026-09-10)
+
+The GraphQL WebSocket path now carries centrally validated BMS invalidations for admin and
+device-authenticated POS clients. Polling, focus refresh, mutation responses, and manual refresh
+remain required recovery paths while bounded replay and production recovery/load proof are pending.
+
+The repository audit found authorization, lifecycle, transaction-boundary, replay, and operational
+gaps that must be closed before expanding subscription coverage. The accepted direction is a
+short-lived HTTP-minted WS ticket, scoped safe invalidation events, and a PostgreSQL transactional
+outbox dispatched to Redis while `apps/ws` remains database-free. Migration `9.70`, the event
+contract, dispatcher, continuous multi-instance-safe web pump, short-lived HTTP-minted admin/POS WS
+tickets, gateway limits/lifecycle, and migration `9.71` domain triggers are implemented. The client
+deduplicates and version-checks events, batches targeted active-query refetches, reconciles on
+  reconnect/focus, and exposes degraded state. The DB contract and multi-instance Redis/WS live
+  smoke pass; production soak/load monitoring remains.
+See the [full audit](realtime-production-audit.md) and
+[ADR 001](decisions/001-transactional-realtime-invalidation.md).
+
+The mobile transport decision is implemented server-side: normal React Native/POS reads and commands
+use HTTPS GraphQL, while GraphQL WS carries invalidations. Device-scoped GraphQL context and named
+operations now cover the normal POS workflows, and the in-repository RN client calls the core
+retail/restaurant/board-game/branch-inventory/shift workflows. The 41 POS REST routes remain compatibility APIs until browser and
+external-client rollout completes. See the
+[mobile GraphQL/WS architecture and route inventory](mobile-graphql-ws-realtime.md).
+
+**Roadmap remaining:** board-game monthly/yearly subscription contracts, private identity-document
+collection, reservations/waitlists, and dedicated utilization/profit reports · TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·
 e-Tax XML submission to the Revenue Department (`lib/bms/etax/*`, `7.94`) is built and flag-gated off
@@ -141,21 +169,19 @@ owner) — needs an admin-to-LINE-user-id binding that doesn't exist yet, separa
 LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
 not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
-finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
+ finishing admin i18n (57 of 99 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
-**POS Mobile App (iOS/Android, planned)** — a React Native/Expo client for the counter register,
-built for staff (internal distribution, not a public-store consumer app). `/api/pos/*` already
-authenticates with a device token + cashier PIN instead of a browser cookie, so the existing REST
-surface can be reused as-is; the unbuilt parts are native, not backend: ESC/POS printing and
+**POS Mobile native integrations (iOS/Android)** — the bare React Native counter client is built for
+staff and uses GraphQL with a device token plus cashier PIN. The remaining parts are native rather
+than a second business path: ESC/POS printing and
 cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap above — both need real hardware
 verification), barcode capture (`9.6`'s Scan Manager targets a Bluetooth-HID keyboard typing into a
 browser page, which does not translate to a native app — camera scan or native BLE/Classic pairing
 needs its own design), and the customer-facing display (`/pos/display` uses a same-browser
-`BroadcastChannel`, which does not reach a second device). Before shipping on a channel with weaker
-connectivity than the counter's LAN, apply and DB-verify `9.5__bms_pos_cash_movement_idempotency.sql`
-(written but not yet applied — see [CLAUDE.local.md](../../CLAUDE.local.md)), the one cash-movement
-path that still lacks an idempotency key ·
+`BroadcastChannel`, which does not reach a second device). Every environment must include
+`9.5__bms_pos_cash_movement_idempotency.sql`; the RN cash-movement caller keeps one key across an
+unknown network result ·
 **Insurance Sales Inbox (planned, new BMS module)** — policy/premium/claim domain sold primarily
 through LINE chat, built as a tenant module (not a separate product) so it inherits multi-tenant
 RLS/RBAC, the Omnichannel Inbox (`lib/bms/inbox.ts`, LINE webhook/reply/push already built), and the

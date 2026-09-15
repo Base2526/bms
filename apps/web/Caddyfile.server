@@ -5,7 +5,7 @@
 #  reverse_proxy web:3000
 #}
 
-jachoei.com {
+bms.jachoei.com {
    tls whosscam.io@gmail.com
 
    encode zstd gzip
@@ -29,6 +29,10 @@ jachoei.com {
    reverse_proxy web:3000
 }
 
+jachoei.com {
+   redir https://bms.jachoei.com{uri} 308
+}
+
 #www.whosscam.com {
 #   tls whosscam.io@gmail.com
 #   redir https://whosscam.com{uri} 308
@@ -36,7 +40,7 @@ jachoei.com {
 
 www.jachoei.com {
    tls whosscam.io@gmail.com
-   redir https://jachoei.com{uri} 308
+   redir https://bms.jachoei.com{uri} 308
 }
 
 

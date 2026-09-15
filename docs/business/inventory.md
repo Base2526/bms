@@ -390,25 +390,29 @@ counter needs to see *what changed*, and a manager signing the count off needs t
 one place before pressing apply. The apply button is disabled, with the reason spelled out, for
 anyone holding `inventory.count` but not `inventory.count.apply`.
 
-### Why this module is REST, not GraphQL
+The native POS reaches the same work from `งาน -> สต็อกสาขา`. The destination is selectable for a
+transfer, but the source branch and every stock-count branch come from the paired device. The receive
+screen requires a controlled reason plus note for damaged or missing units. Applying a count remains
+a separate permission and shows the first-entry snapshot, counted quantity, and variance before
+confirmation.
 
-Every other BMS module exposes its writes through GraphQL. These two do not, on purpose:
-`/api/bms/inventory/transfers` and `/api/bms/inventory/counts` are plain REST routes authorised by
-`authorizeAdminRoute()`, which performs the same session check, drill-down tenant resolution, and
-`requirePermission()` call the resolvers use.
+### Admin REST and mobile GraphQL
 
-The reason is the counting workflow. A shelf count is one short request per scanned line, hundreds
-of times, from a handheld browser on shop wifi; a single-purpose REST endpoint keeps that loop
-small and lets the route return the snapshot and variance for that one line without a round trip
-through the schema. Nothing about the module needs a client-composed query — both screens want the
-whole list every time.
+The admin screens keep `/api/bms/inventory/transfers` and `/api/bms/inventory/counts` as guarded REST
+compatibility adapters. The native POS uses typed device-scoped GraphQL operations in
+`graphql/bmsPosDevice.ts`. Both adapters call `lib/bms/stockTransfers.ts` and
+`lib/bms/stockCounts.ts`; neither owns transfer or count rules.
 
-The cost is real and worth naming: these mutations are invisible to anything that consumes the
-GraphQL schema, including the AI tool catalogue. If a tool ever needs to move stock between
-branches, it needs a validated wrapper in `lib/bms/tools/catalog.ts`, not necessarily a GraphQL
-mutation. That wrapper must derive the tenant from `ExecCtx`, enforce `inventory.transfer`, keep the
-service's in-transaction audit, and propose the movement for human confirmation rather than execute
-it immediately. Calling the REST route from a resolver or tool is not an acceptable shortcut.
+Every native mutation verifies the cashier PIN and action permission. Tenant, source/count branch,
+device, and shift authority are server-derived. `9.88` adds tenant-scoped inventory operation
+idempotency: the service takes an advisory transaction lock, compares a canonical request hash, and
+stores the exact success response in the same transaction as the stock movement. An unknown network
+result can therefore be retried with the original key without sending, receiving, or applying twice.
+
+GraphQL exposure still does not make these commands AI tools. A future tool must be a validated
+wrapper in `lib/bms/tools/catalog.ts`, derive the tenant from `ExecCtx`, enforce the exact permission,
+and remain propose-only where stock moves. Calling either transport adapter from a tool is not an
+acceptable shortcut.
 
 ### What lands in the audit log
 
@@ -429,8 +433,8 @@ Individual counted lines (`recordCountItem`) are deliberately **not** audited: o
 hundreds of them and they would bury everything else in the log. The reviewable fact is who accepted
 the variance, which is the apply entry.
 
-These routes have no GraphQL context, so they store `actor` as a raw `users.id` rather than the
-email a resolver would have written. `listAudit()` resolves it back to an email on read, which also
+Both REST and POS GraphQL adapters pass the verified actor as a raw `users.id` into the shared
+service. `listAudit()` resolves it back to an email on read, which also
 repairs the POS rows (`pos.sale`, `pos.return`, `pos.void`, …) that have always been stored that
 way — searching `/admin/audit` by email now reaches them.
 
@@ -447,6 +451,17 @@ every existing caller keeps resolving the default location.
 
 - Apply `7.98__bms_stock_transfers_and_counts.sql` with `psql -1`. Without the single transaction a
   mid-file failure leaves half the tables behind and they have to be dropped by hand.
+- Before releasing a Q6B native POS build, apply
+  `9.88__bms_inventory_operation_idempotency.sql`. The mobile transfer/count mutations require this
+  table to replay an unknown network result safely; deploying the client first makes every one of
+  those writes fail instead of silently falling back to a non-idempotent path. `9.88` is listed in
+  `scripts/schemaReadiness.mts`, so `db/checks/schema-readiness.sql` names it on a database that is
+  missing it — the failure is otherwise a bare `42P01` rollback with nothing pointing at the cause.
+- A retry that carries the original key but a *changed* body is refused, not applied: the first
+  request already committed under that key. The server answers `CONFLICT`
+  (`extensions.reason = IDEMPOTENCY_CONFLICT`), never a 500, because the documented client action
+  for a 500 is "retry with the exact same key" — which for this case loops forever. The register
+  releases the key, refetches, and lets the operator act on the real state.
 - Confirm the migration seeded `inventory.transfer` and `inventory.count` to Manager and Warehouse,
   and `inventory.count.apply` to Manager only. Missing seeds mean `/admin/stock-transfers` and
   `/admin/stock-counts` return 403 with no visible error — the app does not log out on 403.

@@ -30,7 +30,7 @@ test("high-repeat and variant businesses emphasize restock while food and wholes
   for (const value of ["mini_mart", "fashion", "home_kitchen", "beauty_personal_care", "gadgets_accessories", "pet_supply", "building_materials"]) {
     assert.equal(archetypeNeedsRestockEmphasis(value), true, value);
   }
-  for (const value of ["food_beverage", "restaurant", "b2b_wholesale", "gifts_seasonal", "other"]) {
+  for (const value of ["food_beverage", "restaurant", "b2b_wholesale", "gifts_seasonal", "board_game_cafe", "other"]) {
     assert.equal(archetypeNeedsRestockEmphasis(value), false, value);
   }
 });

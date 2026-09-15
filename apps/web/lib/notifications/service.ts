@@ -1,5 +1,5 @@
 import { query, runInTransaction } from "@/lib/db";
-import { pubsub } from "@/lib/pubsub";
+import { publishRealtimeHint } from "@/lib/pubsub";
 import { v4 as uuidv4 } from 'uuid';
 
 const NOTI_TOPIC = 'NOTIFICATION_CREATED';
@@ -57,7 +57,7 @@ export async function createNotification(input: CreateNotificationInput) {
   const notification = rows[0];
 
   // broadcast ไป subscription
-  await pubsub.publish(NOTI_TOPIC, {
+  await publishRealtimeHint(NOTI_TOPIC, {
     notificationCreated: notification,
   });
 

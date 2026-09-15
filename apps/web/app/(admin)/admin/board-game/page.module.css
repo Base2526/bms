@@ -1,0 +1,221 @@
+.page {
+  width: 100%;
+}
+
+.center {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+}
+
+.locationSelect {
+  min-width: 220px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.metrics > div {
+  border-left: 4px solid #32745e;
+  background: #f6f8f7;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.metrics span,
+.metrics strong {
+  display: block;
+}
+
+.metrics span {
+  color: #5d6763;
+  font-size: 13px;
+}
+
+.metrics strong {
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.area {
+  margin-bottom: 24px;
+}
+
+.area h4,
+.panel h4 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.tableGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.tableCard {
+  min-height: 126px;
+  border: 1px solid #cfd6d3;
+  border-radius: 6px;
+  padding: 14px;
+  background: #fff;
+  color: #202723;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.tableCard:hover {
+  border-color: #32745e;
+  box-shadow: 0 2px 8px rgb(26 62 50 / 12%);
+}
+
+.tableTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tableTop strong {
+  overflow-wrap: anywhere;
+}
+
+.status_OPEN {
+  border-left: 5px solid #337fb7;
+}
+
+.status_CLOSING {
+  border-left: 5px solid #d69a22;
+  background: #fffaf0;
+}
+
+.status_BLOCKED {
+  border-left: 5px solid #89908d;
+  background: #f3f4f4;
+  color: #6b716e;
+}
+
+.status_AVAILABLE {
+  border-left: 5px solid #3d8a68;
+}
+
+.panel {
+  padding: 4px 0 20px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 28px;
+}
+
+.discoveryPanel {
+  grid-column: 1 / -1;
+  border-top: 1px solid #d9dfdc;
+  padding-top: 20px;
+}
+
+.coordinateRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.coordinateRow :global(.ant-input-number) {
+  width: 100%;
+}
+
+.coordinateRow > button {
+  margin-bottom: 24px;
+}
+
+.discoveryNotice {
+  margin-bottom: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.participantRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(170px, 1.35fr) minmax(170px, 1.35fr) minmax(120px, .8fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.participantRow :global(.ant-form-item) {
+  margin-bottom: 0;
+}
+
+.full {
+  width: 100%;
+}
+
+.inlineForm {
+  margin-top: 12px;
+  row-gap: 8px;
+}
+
+.rateSelect {
+  width: 180px;
+}
+
+.memberSelect {
+  width: 210px;
+}
+
+.gameSelect {
+  width: min(100%, 420px);
+  margin-top: 12px;
+}
+
+@media (max-width: 760px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settingsGrid,
+  .formGrid,
+  .participantRow,
+  .coordinateRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .coordinateRow > button {
+    margin: -12px 0 20px;
+  }
+
+  .locationSelect {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .tableGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 430px) {
+  .tableGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

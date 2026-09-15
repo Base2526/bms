@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
-import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
+import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
@@ -11,7 +11,11 @@ import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll"
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
-import { posPaymentMethodLabel, receiptDocumentTitle, receiptLocale, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
+import { posPaymentMethodLabel, receiptDocumentTitle,
+  receiptLabel,
+  receiptLocale,
+  restaurantServiceLabel,
+  type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
@@ -86,10 +90,17 @@ const queueStatusLabels = (t: Translate): Record<string, string> => ({
   NO_SHOW: t("pos_restaurant.queue_no_show"),
 });
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
-type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
-type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number };
-type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null; checks: FloorCheck[] };
-type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[] };
+type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
+type RestaurantServiceMode = "DINE_IN" | "TAKEAWAY";
+type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number;
+  serviceMode?: RestaurantServiceMode;
+};
+type DiningTable = { id: string; areaId: string; code: string; name: string; seats: number; shape: "round" | "rect"; positionX: number; positionY: number; blocked: boolean; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED"; check: FloorCheck | null; checks: FloorCheck[];
+};
+type TakeawayCheck = FloorCheck & { label: string; serviceMode: "TAKEAWAY" };
+type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[];
+  takeawayChecks?: TakeawayCheck[];
+};
 type WaitlistEntry = { id: string; kind: "WALK_IN" | "RESERVATION"; status: string; serviceDate: string; queueNo: number | null; reservedFor: string | null; partySize: number; guestName: string | null; guestPhone: string | null; note: string | null; preferredTableId: string | null; preferredTableCode: string | null; seatedTableId: string | null; seatedTableCode: string | null; checkId: string | null; calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string };
 type WaitlistBoard = { entries: WaitlistEntry[]; waitingCount: number; calledCount: number; waitingGuests: number };
 const FLOOR_TABLE_SIZE = {
@@ -97,7 +108,10 @@ const FLOOR_TABLE_SIZE = {
   rect: { width: 128, height: 76 },
 } as const;
 type CheckItem = { id: string; sku: string; productName: string; size: string; packQty: number; packCode: string | null; unitName: string | null; packPrice: number | null; lineAmount: number | null; modifierCodes: string[]; modifierNames: string[]; kitchenNote: string | null; status: "NEW" | "SENT" | "CANCELLED"; roundNo: number | null; sentAt: string | null; kitchenStatus: string | null };
-type RestaurantCheck = { id: string; tableId: string; tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
+type RestaurantCheck = { id: string;
+  serviceMode: RestaurantServiceMode;
+  tableId: string | null;
+  tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
   kitchenStation: string | null;
@@ -178,6 +192,8 @@ type RecentReceipt = {
   total: number; cashTendered: number | null; cashChange: number | null; soldAt: string;
   cashierName: string | null; locationName: string | null; branchCode: string | null; posLabel: string | null;
   posDeviceId: string | null; shiftId: string | null; orderStatus: string; voidedAt: string | null;
+  fulfillmentType: "DELIVERY" | "PICKUP" | null;
+  restaurantServiceMode: RestaurantServiceMode | null;
   vat: SettlementResult["vat"]; roundingAmount: number;
   memberName: string | null; memberNo: string | null; pointsEarned?: number | null; pointsBalance?: number | null;
   discountLines: SettlementResult["discountLines"];
@@ -206,6 +222,18 @@ function billHistoryNote(receipt: RecentReceipt, t: Translate): string {
   if (receipt.voidedAt) return t("pos_restaurant.bill_voided");
   if (receipt.orderStatus === "RETURNED") return t("pos_restaurant.bill_returned");
   return "";
+}
+function serviceModeLabel(
+  input: {
+    serviceMode?: RestaurantServiceMode | null;
+    fulfillmentType?: "DELIVERY" | "PICKUP" | null;
+  },
+  mode: ReceiptLanguageMode,
+): string | null {
+  if (input.serviceMode) return restaurantServiceLabel(mode, input.serviceMode);
+  if (input.fulfillmentType)
+    return restaurantServiceLabel(mode, input.fulfillmentType);
+  return null;
 }
 type ShiftReport = { status: "OPEN" | "CLOSED"; openedAt: string; closedAt: string | null; salesTotal: number; billCount: number; returnCount: number; returnTotal: number; cashIn: number; cashOut: number; noSaleCount: number; expectedCash: number | null; expectedCashHidden: boolean; countedCash: number | null; cashVariance: number | null; byMethod: Array<{ method: string; count: number; amount: number }> };
 type CustomerDisplayPayload = {
@@ -275,11 +303,13 @@ const DISH_ART: Record<string, (a: string) => JSX.Element> = {
 
 // เลือกภาพจากคำในชื่อเมนูที่คนไทยใช้จริง — เมนูที่จับคำไม่ได้ตกไปที่จานข้าว
 // ตั้งใจไม่สุ่ม เพราะการ์ดเดิมต้องได้ภาพเดิมทุกครั้งที่เปิดหน้า ไม่งั้นพนักงานจำตำแหน่งไม่ได้
+// ตรวจหมวดอาหารก่อนคำว่า "น้ำ" ที่กว้างมาก ไม่งั้นต้มยำกุ้งน้ำข้นกับลาบน้ำตกจะกลายเป็นเครื่องดื่ม
 const DISH_ART_WORDS: Array<[RegExp, keyof typeof DISH_ART]> = [
-  [/ชา|กาแฟ|น้ำ|โอเลี้ยง|โซดา|นม|สมูทตี้|เบียร์|ปั่น/, "DRINK"],
+  [/^ข้าว(?!เหนียว)/, "RICE"],
   [/ต้ม|แกง|ซุป|โจ๊ก|ก๋วยเตี๋ยว/, "SOUP"],
   [/ตำ|ยำ|สลัด|ลาบ|น้ำตก/, "SALAD"],
   [/ผัดไทย|ผัดหมี่|เส้น|หมี่|สปาเก็ตตี้|พาสต้า|ราดหน้า/, "NOODLE"],
+  [/ชา|กาแฟ|น้ำ|โอเลี้ยง|โซดา|นม|สมูทตี้|เบียร์|ปั่น/, "DRINK"],
 ];
 function dishArt(name: string, color: string) {
   for (const [words, key] of DISH_ART_WORDS) if (words.test(name)) return DISH_ART[key](color);
@@ -391,7 +421,13 @@ function tableState(
   kitchen: Map<string, { cooking: number; ready: number }>,
   t: Translate
 ): { key: TableStateKey; label: string; rank: number; color: string } {
-  const check = table.check;
+  return checkState(table.check, kitchen, t);
+}
+function checkState(
+  check: FloorCheck | null,
+  kitchen: Map<string, { cooking: number; ready: number }>,
+  t: Translate,
+): { key: TableStateKey; label: string; rank: number; color: string } {
   const stats = check ? kitchen.get(check.id) : undefined;
   if (!check) return { key: "idle", label: "", rank: 99, color: "var(--grey)" };
   if (check.unsentCount > 0) return { key: "unsent", label: t("pos_restaurant.table_unsent", { count: check.unsentCount }), rank: 0, color: "var(--red)" };
@@ -674,6 +710,10 @@ export default function RestaurantPosPage() {
   const checkIsOpen = check?.status === "OPEN";
   // ปลายทางของการรวมบิล = บิลที่เปิดอยู่ใบอื่นทั้งสาขา รวมบิลใบอื่นของโต๊ะเดียวกันด้วย
   // (แยกไปแล้วแต่ลูกค้าเปลี่ยนใจขอจ่ายรวม เป็นเรื่องที่เกิดจริงพอ ๆ กับการขอแยก)
+  const checkSupportsTableActions =
+    check?.serviceMode === "DINE_IN" && Boolean(check.tableId);
+  // ปลายทางของการรวมบิล = บิลที่เปิดอยู่ใบอื่นทั้งสาขา รวมบิลใบอื่นของโต๊ะเดียวกันด้วย
+  // (แยกไปแล้วแต่ลูกค้าเปลี่ยนใจขอจ่ายรวม เป็นเรื่องที่เกิดจริงพอ ๆ กับการขอแยก)
   const mergeTargets = floor.tables.flatMap((table) => table.checks
     // service รับเฉพาะบิลที่ยัง OPEN ทั้งสองใบ — บิลที่อีกเครื่องกดคิดเงินไปแล้ว (CLOSING)
     // ยังโผล่บนผังอยู่ ถ้ายื่นให้เลือกจะได้ error ที่จอรู้ล่วงหน้าได้เอง
@@ -700,12 +740,17 @@ export default function RestaurantPosPage() {
     }
     return map;
   }, [tickets]);
-  const occupiedTables = floor.tables.filter((table) => table.status === "OCCUPIED");
+  const occupiedTables = floor.tables.filter((table) => table.status === "OCCUPIED",
+  );
+  const openTakeawayChecks = floor.takeawayChecks ?? [];
   // ยอดรวมนี้เป็นการ "บวกตัวเลขที่ server ส่งมาแล้ว" เพื่อดูภาพรวมกะเท่านั้น
   // ไม่เคยถูกส่งกลับไปเป็นยอดชำระ — ยอดที่คิดเงินยังมาจาก check.amountDue ของ server เสมอ
-  const openAmountTotal = occupiedTables.reduce((sum, table) => sum + (table.check?.amountDue ?? 0), 0);
-  const unsentItemTotal = occupiedTables.reduce((sum, table) => sum + (table.check?.unsentCount ?? 0), 0);
-  const unsentTableCount = occupiedTables.filter((table) => (table.check?.unsentCount ?? 0) > 0).length;
+  const openAmountTotal = occupiedTables.reduce((sum, table) => sum + (table.check?.amountDue ?? 0), 0,
+    ) + openTakeawayChecks.reduce((sum, row) => sum + row.amountDue, 0);
+  const unsentItemTotal = occupiedTables.reduce((sum, table) => sum + (table.check?.unsentCount ?? 0),
+      0,
+    ) + openTakeawayChecks.reduce((sum, row) => sum + row.unsentCount, 0);
+  const unsentTableCount = occupiedTables.filter((table) => (table.check?.unsentCount ?? 0) > 0).length + openTakeawayChecks.filter((row) => row.unsentCount > 0).length;
   const longestSeated = occupiedTables.reduce<{ minutes: number; code: string } | null>((longest, table) => {
     const minutes = table.check ? minutesSince(table.check.openedAt) : null;
     if (minutes == null) return longest;
@@ -718,19 +763,30 @@ export default function RestaurantPosPage() {
   // หนึ่งแถวต่อ **บิล** ไม่ใช่ต่อโต๊ะ — โต๊ะที่แยกบิลไว้มีสองใบที่ต้องเก็บเงินคนละครั้ง
   // ถ้านับต่อโต๊ะ หัวข้อจะเขียนว่า "บิลที่เปิดอยู่ · 1" ขณะที่การ์ดข้าง ๆ เขียนว่า "2 บิล"
   // บนหน้าจอเดียวกัน และบิลใบที่สองจะกดเข้าจากแผงนี้ไม่ได้เลย
-  const openChecks = useMemo(() => floor.tables
-    .flatMap((table) => table.checks.map((row) => ({
-      table,
-      check: row,
-      state: tableState({ ...table, check: row }, tableKitchenStats, t),
-    })))
-    .sort((a, b) => a.state.rank - b.state.rank
-      || a.table.code.localeCompare(b.table.code)
-      || a.check.splitGroupNo - b.check.splitGroupNo),
-    [floor.tables, tableKitchenStats, t]);
   /** ป้ายของบิลหนึ่งใบ — ใบที่สองขึ้นไปต้องบอกเลขบิล ไม่งั้นสองแถวจะอ่านเหมือนกันทุกตัวอักษร */
   const openCheckLabel = (table: DiningTable, row: FloorCheck) =>
     `${table.name}${row.splitGroupNo > 1 ? t("pos_restaurant.bill_suffix", { number: row.splitGroupNo }) : ""}`;
+  const openChecks = useMemo(() => [
+    ...floor.tables.flatMap((table) => table.checks.map((row) => ({
+      table,
+      check: row,
+      state: checkState(row, tableKitchenStats, t),
+      label: openCheckLabel(table, row),
+    }))),
+    ...(floor.takeawayChecks ?? []).map((row) => ({
+      table: null,
+      check: row,
+      state: checkState(row, tableKitchenStats, t),
+      label: `${t("pos_restaurant.takeaway_short")} #${row.id.slice(0, 8)}`,
+    })),
+  ].sort((a, b) => a.state.rank - b.state.rank
+    || (a.table?.code ?? "TAKEAWAY").localeCompare(b.table?.code ?? "TAKEAWAY")
+    || a.check.splitGroupNo - b.check.splitGroupNo), [
+      floor.tables,
+      floor.takeawayChecks,
+      tableKitchenStats,
+      t,
+    ]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
   const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
   const pendingServiceCalls = serviceCalls.filter((call) => call.status === "PENDING");
@@ -794,10 +850,12 @@ export default function RestaurantPosPage() {
   // แล้วเจอ error ต่อหน้าลูกค้า (เกณฑ์มาจาก server ที่เดียว ไม่ให้จอเดาเอง)
   const reservationLost = Boolean(check?.reservationLost);
   const paymentTotal = Math.round(payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
-  const checkoutDue = check == null ? 0 : Math.round((check.amountDue + (
-    payments.length === 1 && payments[0].method === "CASH"
-      ? cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")
-      : 0
+  // ⚠️ เดิมปัดเศษเฉพาะตอนมีช่องทางเดียว ขณะที่ server ปัดเมื่อ **ทุกช่องทาง** เป็นเงินสด
+  // → บิลที่แบ่งจ่ายเงินสดสองช่องทางจอไม่ปัดแต่ server ปัด แล้วบิลถูกทิ้งทั้งใบ
+  const checkoutDue = check == null ? 0 : Math.round((check.amountDue + cashRoundingForPayments(
+    check.amountDue,
+    session?.vat.cashRounding ?? "NONE",
+    payments
   )) * 100) / 100;
   // เหตุผลเดียวที่ทั้งปุ่มยืนยัน แถบสรุป และ settle() ใช้ร่วมกัน — สามที่ตัดสินเองจะ drift
   // แล้ววันหนึ่งปุ่มกดได้แต่ settle ปฏิเสธ (หรือแย่กว่า: กดได้แล้ว server ปฏิเสธกลางบิล)
@@ -909,7 +967,8 @@ export default function RestaurantPosPage() {
         body: JSON.stringify(auth({ action: "seat", entryId: seatEntry.id, tableId: seatTableId })),
       });
       setSeatEntry(null); setSeatTableId("");
-      if (body.check) { setCheck(body.check); setSelectedTableId(body.check.tableId); setScreen("ORDER"); }
+      if (body.check) { setCheck(body.check); setSelectedTableId(body.check.tableId ?? "");
+        setScreen("ORDER"); }
       await Promise.all([loadFloor(), loadWaitlist()]);
       message.success(t("pos_restaurant.toast_seated"));
     });
@@ -1080,7 +1139,7 @@ export default function RestaurantPosPage() {
       // ยืนยันกับ server ทุกครั้ง — บิลอาจถูกเก็บเงิน/ยกเลิก/ย้ายโต๊ะที่เครื่องอื่นไปแล้ว
       void loadCheck(id)
         .then((restored) => {
-          if (restored && isOpenCheckStatus(restored.status)) setSelectedTableId(restored.tableId);
+          if (restored && isOpenCheckStatus(restored.status)) setSelectedTableId(restored.tableId ?? "");
           else setCheck(null);
         })
         .catch(() => setCheck(null))
@@ -1232,10 +1291,10 @@ export default function RestaurantPosPage() {
   }, [screen, tickets, stationSlas, boardNow, alerts]);
 
   /** เปิดบิลที่ระบุมาแล้ว — ใช้เมื่อคนกดเลือก "ใบไหน" ไปแล้ว (แผงบิล/แถบบิล/กล่องเลือกบิล) */
-  async function openCheckById(table: DiningTable, checkId: string) {
+  async function openCheckById(table: DiningTable | null, checkId: string) {
     await run(async () => {
       await loadCheck(checkId);
-      setSelectedTableId(table.id);
+      setSelectedTableId(table?.id ?? "");
       setOpenTable(null);
       setScreen("ORDER");
     });
@@ -1265,6 +1324,19 @@ export default function RestaurantPosPage() {
     setOpenTable(table);
   }
   async function openCheck() { if (!openTable) return; await run(async () => { const body = await json("/api/pos/restaurant/checks", { method: "POST", body: JSON.stringify(auth({ tableId: openTable.id, guestCount })) }); setOpenTable(null); setCheck(body.check); setScreen("ORDER"); await loadFloor(); }); }
+  async function openTakeawayCheck() {
+    await run(async () => {
+      const body = await json("/api/pos/restaurant/checks", {
+        method: "POST",
+        body: JSON.stringify(auth({ serviceMode: "TAKEAWAY", guestCount: 1 })),
+      });
+      setOpenTable(null);
+      setSelectedTableId("");
+      setCheck(body.check);
+      setScreen("ORDER");
+      await loadFloor();
+    });
+  }
   /**
    * ยิงสแกนของไซซ์หนึ่ง แล้วตั้งตัวเลือกเป็นค่าปริยาย **ของไซซ์นั้น**
    *
@@ -1558,6 +1630,9 @@ export default function RestaurantPosPage() {
     return {
       languageMode: mode,
       storeName: session?.location?.name ?? "BMS Restaurant",
+      storeAddress: session?.store?.address ?? null,
+      storePhone: session?.store?.phone ?? null,
+      storeLogoUrl: session?.store?.logoUrl ?? null,
       locationId: session?.location?.id ?? null,
       branchCode: session?.location?.branchCode ?? null,
       taxId: session?.store?.taxId ?? null,
@@ -1568,6 +1643,15 @@ export default function RestaurantPosPage() {
       docTitle: receiptDocumentTitle(mode, "sale", Boolean(session?.vat.registered)),
       docNo: result.docNo,
       orderId: result.orderId,
+      serviceModeLabel: current
+        ? serviceModeLabel({ serviceMode: receipt.check.serviceMode }, mode)
+        : serviceModeLabel(
+            {
+              serviceMode: receipt.restaurantServiceMode,
+              fulfillmentType: receipt.fulfillmentType,
+            },
+            mode,
+          ),
       // ⚠️ ต้องแปลงเป็นเวลาท้องถิ่นก่อน — `buildReceipt` พิมพ์ค่านี้ตรง ๆ
       //
       // เดิมส่ง ISO ดิบเข้าไป ใบเสร็จจึงพิมพ์ "2026-09-05T03:17:15.933Z" ซึ่งอ่านไม่ออก
@@ -2202,12 +2286,13 @@ export default function RestaurantPosPage() {
           </div>
 
           {openChecks.length > 0 && <div className={styles.billStrip} role="group" aria-label={t("pos_restaurant.open_checks")}>
-            {openChecks.map(({ table, check: row, state }) => <button key={row.id} type="button"
+            {openChecks.map(({ table, check: row, state, label }) => <button key={row.id} type="button"
               className={`${styles.billChip} ${check?.id === row.id ? styles.billChipActive : ""}`}
               onClick={() => void openCheckById(table, row.id)}>
-              <span className={styles.billChipCode} style={{ background: state.color }}>{table.code}</span>
+              <span className={styles.billChipCode} style={{ background: state.color }}>{table?.code ??
+                                    t("pos_restaurant.takeaway_short")}</span>
               <span className={styles.billChipBody}>
-                <span className={styles.billChipName}>{openCheckLabel(table, row)}</span>
+                <span className={styles.billChipName}>{label}</span>
                 <span className={styles.billChipState} style={{ color: state.color }}>{state.label}</span>
                 <span className={styles.billChipMeta}>{t("pos_restaurant.people_items", { people: row.guestCount, items: row.itemCount })}</span>
               </span>
@@ -2301,8 +2386,23 @@ export default function RestaurantPosPage() {
                   })}</div>}</div>
             </>}
         </> : floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>{t("pos_restaurant.floor_empty")}</h2><p>{t("pos_restaurant.floor_seed_hint")}</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>{t("pos_restaurant.floor_seed")}</button></div></div> : <>
-          <div className={styles.panelHeader}><div><h2>{t("pos_restaurant.rail_floor")}</h2><small>{t("pos_restaurant.floor_table_counts", { free: floor.tables.filter((row) => row.status === "AVAILABLE").length, occupied: floor.tables.filter((row) => row.status === "OCCUPIED").length })}</small></div><span className={styles.livePill}>LIVE</span></div>
-          <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
+          <div className={styles.panelHeader}><div><h2>{t("pos_restaurant.rail_floor")}</h2><small>{t("pos_restaurant.floor_table_counts", { free: floor.tables.filter((row) => row.status === "AVAILABLE").length, occupied: floor.tables.filter((row) => row.status === "OCCUPIED").length })}</small></div>
+                        <div className={styles.searchRow}><button
+                            type="button"
+                            className={`${styles.btn} ${styles.btnPrimary}`}
+                            disabled={!session?.shift || !operatorReady}
+                            title={
+                              !operatorReady
+                                ? t("pos_restaurant.need_operator_pin")
+                                : t("pos_restaurant.open_takeaway")
+                            }
+                            onClick={() => void openTakeawayCheck()}
+                          >
+                            {t("pos_restaurant.open_takeaway")}
+                          </button>
+                          <span className={styles.livePill}>LIVE</span></div>
+          </div>
+                      <div className={styles.areaTabs}>{floor.areas.map((area) => <button key={area.id} type="button" className={`${styles.areaButton} ${activeArea === area.id ? styles.areaButtonActive : ""}`} aria-pressed={activeArea === area.id} onClick={() => setActiveArea(area.id)}>{area.name} · {floor.tables.filter((table) => table.areaId === area.id).length}</button>)}</div>
           {/* การ์ดโต๊ะตอบสามคำถามที่พนักงานถามจริง: นั่งมานานแค่ไหน · ค้างส่งครัวกี่รายการ · เสิร์ฟครบพร้อมเก็บเงินหรือยัง
               สถานะอ่านจากจุดสีที่มุมการ์ด (tableDot) + ป้ายข้อความ (tableStatus) ใต้ชื่อโต๊ะ — คำอธิบายว่า
               สีไหนหมายถึงอะไรอยู่ที่แถบ .floorLegend ท้ายผัง (ตั้งใจวางไว้ล่างสุด ไม่ใช่บนสุด: กริดโต๊ะ
@@ -2430,18 +2530,18 @@ export default function RestaurantPosPage() {
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent && !reservationLost} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> {t("pos_restaurant.send_kitchen")}{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
-              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
+              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingForPayments(check.amountDue, session?.vat.cashRounding ?? "NONE", [{ method: "CASH", amount: check.amountDue }])) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
             </div>
           </div>
         </> : <>
           <div className={styles.checkHead}><h2>{t("pos_restaurant.open_checks_count", { count: openChecks.length })}</h2></div>
           {openChecks.length === 0
             ? <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 36 }} /><h3>{t("pos_restaurant.no_open_check")}</h3><p>{t("pos_restaurant.no_open_check_hint")}</p></div></div>
-            : <ul className={styles.openList}>{openChecks.map(({ table, check: row, state }) => <li key={row.id}>
+            : <ul className={styles.openList}>{openChecks.map(({ table, check: row, state, label }) => <li key={row.id}>
                 <button type="button" className={styles.openRow} onClick={() => void openCheckById(table, row.id)}>
                   <span className={styles.openDot} style={{ background: state.color }} aria-hidden="true" />
                   <span>
-                    <span className={styles.openName}>{openCheckLabel(table, row)}</span>
+                    <span className={styles.openName}>{label}</span>
                     <span className={styles.openMeta}>{state.label}{minutesSince(row.openedAt) == null ? "" : t("pos_restaurant.minutes_suffix", { minutes: minutesSince(row.openedAt)! })}</span>
                   </span>
                   <span className={styles.openAmount}><span className={styles.baht}>฿</span>{money(row.amountDue)}</span>
@@ -2765,12 +2865,33 @@ export default function RestaurantPosPage() {
         {cashChangeOf(payment) != null && <span className={styles.cashChange}>{t("pos_restaurant.payment_change")} <b>฿{money(cashChangeOf(payment)!)}</b></span>}</label> : <label>{t("pos_restaurant.reference_no")}<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>{t("pos_restaurant.remove_payment_channel", { number: index + 1 })}</button>}</div>)}<button type="button" className={styles.btn} onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>{t("pos_restaurant.add_payment_channel")}</button><Alert type={checkoutBlock ? "warning" : "success"} showIcon message={checkoutBlock ? t("pos_restaurant.payment_total_blocked", { amount: money(paymentTotal), reason: checkoutBlock }) : t("pos_restaurant.payment_total_complete", { amount: money(paymentTotal) })} /></div>}</Modal>
     <Modal title={t("pos_restaurant.manage_check_title", { table: check?.tableName ?? "" })} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
-        <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> {t("pos_restaurant.move_table")}</button>
-        <button type="button" className={styles.btn} disabled={!checkIsOpen || splittableItems.length < 2}
-          title={splittableItems.length < 2 ? t("pos_restaurant.split_needs_two") : t("pos_restaurant.split_hint")}
+        <button type="button" className={styles.btn}
+            disabled={
+              !checkIsOpen ||
+              !checkSupportsTableActions ||
+              availableTables.length === 0
+            }
+            title={
+              !checkSupportsTableActions
+                ? t("pos_restaurant.dine_in_only_action")
+                : availableTables.length === 0
+                  ? t("pos_restaurant.no_available_table")
+                  : t("pos_restaurant.move_table")
+            }
+            onClick={() => { setMoreOpen(false); setTargetTableId(availableTables[0]?.id ?? ""); setMoveOpen(true); }}><SwapOutlined /> {t("pos_restaurant.move_table")}</button>
+        <button type="button" className={styles.btn} disabled={!checkIsOpen ||
+              !checkSupportsTableActions || splittableItems.length < 2}
+          title={
+              !checkSupportsTableActions
+                ? t("pos_restaurant.dine_in_only_action")
+                : splittableItems.length < 2 ? t("pos_restaurant.split_needs_two") : t("pos_restaurant.split_hint")}
           onClick={() => { setMoreOpen(false); setSplitItemIds([]); setSplitOpen(true); }}><ScissorOutlined /> {t("pos_restaurant.split_check")}</button>
-        <button type="button" className={styles.btn} disabled={!checkIsOpen || mergeTargets.length === 0}
-          title={mergeTargets.length === 0 ? t("pos_restaurant.merge_no_target") : t("pos_restaurant.merge_hint")}
+        <button type="button" className={styles.btn} disabled={!checkIsOpen ||
+              !checkSupportsTableActions || mergeTargets.length === 0}
+          title={
+              !checkSupportsTableActions
+                ? t("pos_restaurant.dine_in_only_action")
+                : mergeTargets.length === 0 ? t("pos_restaurant.merge_no_target") : t("pos_restaurant.merge_hint")}
           onClick={() => { setMoreOpen(false); setMergeTargetId(mergeTargets[0]?.id ?? ""); setMergeOpen(true); }}><MergeCellsOutlined /> {t("pos_restaurant.merge_into_another")}</button>
         <button type="button" className={styles.btn} onClick={() => { setMoreOpen(false); setGuestEdit(String(check?.guestCount ?? 1)); setGuestOpen(true); }}>{t("pos_restaurant.edit_guest_count")}</button>
         <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { setMoreOpen(false); openCancel(); }}><CloseCircleOutlined /> {t("pos_restaurant.cancel_check")}</button>

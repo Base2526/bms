@@ -9,6 +9,7 @@ import { client } from "@/lib/apollo";
 import { I18nProvider } from "@/lib/i18nContext";
 import type { Lang } from "@/i18n";
 import AntdThemeProvider from "@/app/AntdThemeProvider";
+import { PosRealtimeProvider } from "@/components/realtime/RealtimeProvider";
 
 // ssr:false = server ส่ง placeholder เปล่าให้เสมอสำหรับทุกอย่างใต้ SessionLayer (รวม
 // AdminSidebar) เพราะ session มาจาก cookie ที่รู้ได้แค่ฝั่ง client (SWR ไป /api/auth/me)
@@ -49,6 +50,7 @@ export default function ClientProviders({
 }) {
   const pathname = usePathname() || "";
   const onPublicStandaloneRoute = skipsSessionLayer(pathname);
+  const onPosRoute = pathname === "/pos" || pathname.startsWith("/pos/");
 
   return (
     <ApolloProvider client={client}>
@@ -57,7 +59,9 @@ export default function ClientProviders({
           แทนภาษาที่ผู้ใช้เลือกไว้จริง */}
       <I18nProvider lang={lang}>
         <AntdThemeProvider>
-          {onPublicStandaloneRoute ? children : <SessionLayer>{children}</SessionLayer>}
+          {onPosRoute
+            ? <PosRealtimeProvider>{children}</PosRealtimeProvider>
+            : onPublicStandaloneRoute ? children : <SessionLayer>{children}</SessionLayer>}
         </AntdThemeProvider>
       </I18nProvider>
     </ApolloProvider>

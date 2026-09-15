@@ -16,6 +16,7 @@ whichever is wrong, in the same change.
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
 - [POS and tax](#pos-and-tax)
 - [Restaurant POS (dine-in)](#restaurant-pos-dine-in)
+- [Board game cafe](#board-game-cafe)
 - [Product catalog: variants, sales surfaces, and stock policies](#product-catalog-variants-sales-surfaces-and-stock-policies)
 - [Restaurant online ordering (chat, delivery, sold-out)](#restaurant-online-ordering-chat-delivery-sold-out)
 - [Membership and loyalty points](#membership-and-loyalty-points)
@@ -25,6 +26,7 @@ whichever is wrong, in the same change.
 - [AI provider selection, BYOK, and health](#ai-provider-selection-byok-and-health)
 - [Follow-up automation scheduler](#follow-up-automation-scheduler)
 - [Redis usage (pub/sub, cache, sessions, job runs, request metrics)](#redis-usage-pubsub-cache-sessions-job-runs-request-metrics)
+- [Realtime invalidation architecture](#realtime-invalidation-architecture)
 - [Observability (`/admin/system-health`)](#observability-adminsystem-health)
 - [i18n coverage](#i18n-coverage-what-bilingual-actually-means-today)
 - [Frontend and CSS Modules](#frontend-and-css-modules)
@@ -128,7 +130,7 @@ sheet but the first from CSV exports while XLSX/PDF stayed correct.
 
 The staff assistant can also email a generated report (`email_report` tool, `lib/bms/reportEmail.ts`,
 `bmsEmailReport` mutation, permission `report.email`). It generates the file the same non-sensitive way
-as `generate_report`, but the *send* is always a proposal (`sensitive: true`) because the recipient is
+as `generate_report`, but the _send_ is always a proposal (`sensitive: true`) because the recipient is
 free text from the chat message and is never independently verified — a human must review/edit the
 address and press Confirm in `/admin/assistant` before anything is emailed. `lib/mailer.ts`'s
 `sendEmail()` gained optional `attachments` support for this; do not add a second, parallel way to send
@@ -202,12 +204,12 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   `amount: null` so `submitPayment*` derives it from `bms_orders.total_amount`.
 - **Payment submission is idempotent by design.** `submitPaymentOnce()` locks the order row
   (`SELECT ... FOR UPDATE`) and returns an existing `PENDING`/`CONFIRMED` payment as
-  `ALREADY_SUBMITTED` instead of creating a duplicate. A `REJECTED` payment is deliberately *not*
+  `ALREADY_SUBMITTED` instead of creating a duplicate. A `REJECTED` payment is deliberately _not_
   active, so a customer can upload a replacement slip. Keep `submitPayment()` (staff path)
   non-reusing; the two behaviors share `submitPaymentInternal()` via overloads.
 - **Uploads stay untrusted.** Slips are limited to JPG/PNG/WEBP, 8 MB, and a pixel bound, and are
   re-validated by decoding with `sharp` — MIME type alone is not proof of an image.
-- **Only configured receiving accounts are offered.** The method must be `BANK_TRANSFER`/`QR` *and*
+- **Only configured receiving accounts are offered.** The method must be `BANK_TRANSFER`/`QR` _and_
   backed by a currently configured BANK/PromptPay account (`paymentConfiguration.ts`). This matches
   the chat-surface rule: never surface a payment channel the shop cannot actually receive money on.
 - **The checkout never confirms payment.** It creates `PENDING` only; a human still clicks Confirm
@@ -266,12 +268,23 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 [../docs/business/pos.md](business/pos.md).
 
 - **A device token is not a user.** `/api/pos/*` resolves tenant/location from the hashed active
-  device row (`x-pos-device-token`), never from a client-supplied value. Every *mutating* route
+  device row (`x-pos-device-token`), never from a client-supplied value. Every _mutating_ route
   additionally verifies the selected cashier's PIN and an action-specific permission (`pos.sell`,
   `pos.shift.open`/`pos.shift.close`, `order.return`, `payment.refund`) except `/api/pos/park`:
   parking/resuming/dropping a cart changes no money, stock, or document and is deliberately gated by
   the active device + open shift only. Read routes are device-scoped operational reads unless the
   payload is staff-sensitive (`shift-report` re-verifies PIN + `pos.shift.report`).
+- **The native client does not widen POS authority.** `apps/mobile/` uses the generated HTTPS
+  GraphQL contract for bootstrap/PIN, catalog, sale, parked bills, return/void, shift/cash,
+  restaurant checks, incoming orders and kitchen tickets; GraphQL WS carries only named
+  invalidations. The device token is stored through `react-native-keychain`, while cashier PINs and
+  second-person PINs live only in React memory. Tenant/location/device/shift and store archetype are
+  server-derived, every sensitive command rechecks PIN/RBAC, and runtime screens/state import no
+  mock data. Manual discount, void and cash-out callers filter the server approver list by the exact
+  permission, but that filter is UX only; the resolver remains the guard. Client code never owns
+  money, stock, refund, pharmacy or tax rules. See
+  [apps/mobile/README.md](../apps/mobile/README.md) and
+  [business/pos.md § Native POS client](business/pos.md#native-pos-client).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.
@@ -311,8 +324,7 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   rounding adjustment by design while `bms_payments.amount` includes it, so without `roundingTotal`
   the sales figure and the payment-method breakdown printed beneath it cannot reconcile on any shop
   with `cash_rounding` enabled.
-- **Every route under `/api/pos/**` carries its own guard, and `scripts/pos-route-guard-contract.test.mts`
-  enforces it.** `middleware.ts` covers `/admin/**` only, and these routes authenticate with a device
+- **Every route under `/api/pos/**`carries its own guard, and`scripts/pos-route-guard-contract.test.mts`enforces it.**`middleware.ts`covers`/admin/\*\*` only, and these routes authenticate with a device
   token plus a cashier PIN rather than a session. Device authentication is mandatory; any route that
   writes must verify a person's PIN — a register left on a counter is not anybody's identity — unless
   it is listed with a reason that still holds (today: parking a bill, which touches no money, stock or
@@ -414,16 +426,21 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 ## Restaurant POS (dine-in)
 
 `lib/bms/restaurantPos.ts`, `app/(pos)/pos/restaurant`, `app/api/pos/restaurant/*`,
-`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`
+`app/api/pos/kitchen/*`, `lib/bms/restaurantWaitlist.ts` and migrations `9.44`-`9.45`, `9.63`-`9.64`, `9.87`
 own dine-in service. Operator detail:
 [business/pos.md § Restaurant POS](business/pos.md). Schema:
 [architecture/database.md § Restaurant POS](architecture/database.md).
 
 - **One money path, two surfaces.** A check is service state, not a second ledger. Sending a kitchen
   round creates/refreshes exactly one `PENDING` POS order that reserves ingredients before the food
-  is cooked; settling closes *that* order through `recordPosSale()`. Never add a payment, drawer,
+  is cooked; settling closes _that_ order through `recordPosSale()`. Never add a payment, drawer,
   lot or tax-document path for the restaurant surface — every one of those already has a single
   formula, and a second one drifts silently.
+- **Service mode is check state, not fulfillment.** `DINE_IN` checks require a real table; `TAKEAWAY`
+  checks deliberately have `table_id = NULL` and no table QR/session identity. The final POS order
+  stores `restaurant_service_mode` only as a receipt/history snapshot. Do not add dine-in/takeaway
+  values to `bms_orders.fulfillment_type`; that field remains the online restaurant `DELIVERY`/`PICKUP`
+  contract.
 - **A check belongs to a branch, not to a device, shift or person.** A waiter's tablet opens it, any
   station sends it, and the register settles it — often after a shift change. The only scope check is
   the device's `location_id`, taken from the authenticated device and never from the body. Because
@@ -476,7 +493,7 @@ own dine-in service. Operator detail:
   `restaurant.check_paid` audit row is written only on the real `CLOSING -> PAID` transition, so a
   replay cannot duplicate it, and the idempotency key is read from the reservation order row itself —
   a separately stored copy can drift from the order actually being paid.
-- **A modifier's price is catalog data, never a payload.** The register submits modifier *codes*;
+- **A modifier's price is catalog data, never a payload.** The register submits modifier _codes_;
   `createOrderInTx()` resolves each active `bms_product_modifiers.price_delta` for that exact
   `(sku, size, code)` inside the tenant transaction, rejects an unknown code, adds the non-negative
   surcharge after tier/promotion pricing, and stores it in the line's sale-time `pricingSnapshot`.
@@ -488,7 +505,7 @@ own dine-in service. Operator detail:
   (`MODIFIER_REQUIRES_RECIPE`) rather than charging the surcharge while silently skipping the
   configured ingredient movement.
 - **Restaurant work has its own permissions (`9.45`).** `restaurant.floor.manage` creates the branch
-  floor and `restaurant.kitchen.update` moves a kitchen ticket (the REST route *and* the
+  floor and `restaurant.kitchen.update` moves a kitchen ticket (the REST route _and_ the
   `/admin/kitchen` board). The order taker holding `pos.sell` may initiate whole-check cancellation,
   but must leave a non-empty cancellation note; after any kitchen send/reservation, a different
   person with `pos.void` must still approve it. Opening, adding, sending, moving and settling also
@@ -538,7 +555,7 @@ own dine-in service. Operator detail:
   lines must be sent or removed first so acceptance cannot silently send an unrelated draft. A dish
   the branch marked sold out that day is refused here with the dish named: acceptance is an intake,
   and an intake is where the sold-out flag belongs.
-- **An old scan cannot order for the next guest — but only a *closed* check ends a scan (`9.62`).**
+- **An old scan cannot order for the next guest — but only a _closed_ check ends a scan (`9.62`).**
   Reaching a terminal status (`PAID`/`CANCELLED`) revokes every session and expires pending
   proposals in the check transaction; QR rotation also revokes its sessions. `CLOSING` must **not**:
   it is the reversible settlement claim taken the instant a cashier presses checkout (`9.48`), and
@@ -566,14 +583,50 @@ own dine-in service. Operator detail:
   scope; the branch picker reads the same scoped list so the UI cannot offer what the server refuses.
   Rotating another branch's QR invalidates the sticker physically on its table and cuts the guests
   seated at it, which is the widest blast radius on this surface.
-- **Not built, and not to be faked**: split/merge of checks across tables (splitting *payment* is
+- **Not built, and not to be faked**: split/merge of checks across tables (splitting _payment_ is
   supported), reservations/queue numbers, per-station printer routing,
   offline-first sync, and delivery-aggregator integrations.
+
+## Board game cafe
+
+`lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
+and migrations `9.79`–`9.83` own timed play sessions and the playable game library. The operating
+brief is [business/board-game-cafe.md](business/board-game-cafe.md).
+
+- **Time, retail goods, and playable copies stay separate.** Snacks, drinks, accessories, and games
+  sold to take home remain Products/Inventory. Participant time is calculated from rate snapshots on
+  the session. A library copy is an asset with checkout/return/condition state and borrowing it never
+  moves sellable stock.
+- **The session freezes the bill before POS receives it.** Opening snapshots hourly rate, minimum,
+  rounding, and grace per participant. Closing requires every checked-out copy to be returned and
+  writes `charge_snapshot` plus `amount_due`; POS reads that frozen result and never accepts an amount
+  supplied by the browser. `recordPosSale()` validates branch/state again and marks the session
+  `PAID` in the same transaction as payment, stock, tax, drawer, receipt, and audit.
+- **One table has at most one active session.** `OPEN` and `CLOSING` share a partial unique index.
+  Mutations use tenant transactions, advisory/idempotency locks, and location checks derived from the
+  authenticated actor/device. Replaying a key with a different request hash is an error.
+- **Alerts are a projection of time.** `ENDING_SOON` and `OVERDUE` are computed from `expected_end_at`,
+  `alert_before_minutes`, and current time. They are not a mutable status column and cannot replace a
+  fresh authoritative read.
+- **Member identity comes from CRM.** A MEMBER participant references an existing customer/member;
+  public/member-search responses expose only the bounded identity needed to select that member. ID
+  card and email collection belong to CRM/private-document controls, not session notes.
+- **Public discovery is explicit and aggregate-only.** Choosing the archetype never publishes a
+  branch. Coordinates and `public_visible` must be set deliberately; the public route is rate-limited
+  and returns no table ids, session ids, participant names, customer ids, or other operational data.
+- **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
+  rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
+  removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
+  receipt is left pointing at deleted fixture state.
+- **Not built:** monthly/yearly subscription contracts, encrypted identity-document storage specific
+  to subscriptions, reservations/waitlists, and dedicated board-game profitability/utilization
+  reports. Extend CRM/reporting/payment domains for these; do not create parallel customer or money
+  ledgers.
 
 ## Product catalog: variants, sales surfaces, and stock policies
 
 `lib/bms/{shopArchetypes,storeCapabilities,stockConsumption,products}.ts` and migrations
-`9.40`–`9.43`, `9.51`, `9.52` own what a product *is* (its serving options, which channels may sell
+`9.40`–`9.43`, `9.51`, `9.52` own what a product _is_ (its serving options, which channels may sell
 it, how its stock is consumed) independently of how many units are on a shelf.
 
 - **A store capability is a real switch only if something calls `isCapabilityEnabledInTx()` for
@@ -590,7 +643,7 @@ it, how its stock is consumed) independently of how many units are on a shelf.
 - **`bms_product_variants` (`9.51`) is the one source of truth for a product's serving/size
   options — never `bms_inventory`.** A `RECIPE` or `NON_STOCK` item's own inventory row is
   deliberately held at zero (`"A recipe menu may have a variant while its own inventory remains
-  zero"`, verbatim from the migration comment); reading `bms_inventory` to answer "what sizes does
+zero"`, verbatim from the migration comment); reading `bms_inventory` to answer "what sizes does
   this product have" returns nothing for exactly the items this system exists to sell, and the
   model has no way to recover because `create_order` requires a size. Writing to
   `bms_inventory`/`bms_product_packs`/`bms_product_recipes`/`bms_product_modifiers` syncs a variant
@@ -640,7 +693,7 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
 [CLAUDE.local.md](../CLAUDE.local.md) for the incident-by-incident record.
 
 - **Every restaurant-only branch gates on `business_archetype === 'restaurant'` specifically, read
-  in its own statement.** `restaurantOrderingStateInTx()` runs for every non-POS order of *every*
+  in its own statement.** `restaurantOrderingStateInTx()` runs for every non-POS order of _every_
   tenant, so it reads `business_archetype` first and only names the `9.56` columns
   (`restaurant_order_hours`, `restaurant_orders_paused`) once the archetype is confirmed — naming
   them in the same `SELECT` would make a database without `9.56` fail every online order of every
@@ -672,14 +725,14 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
   never let one tenant's failure `throw` out of that loop — catch it, record it, and keep going, or
   every tenant queued after the first bad row stops being swept, forever, the same shape as the
   `orders/release-expired` cron bug.
-- **The sold-out flag is an *intake* rule, and a dine-in check's intake is not order creation
+- **The sold-out flag is an _intake_ rule, and a dine-in check's intake is not order creation
   (`9.62`).** Online, chat and the retail register intake a cart once, at `createOrderInTx()`, so
-  that is where they are gated. A dine-in check re-submits its *whole* content to `createOrderInTx()`
+  that is where they are gated. A dine-in check re-submits its _whole_ content to `createOrderInTx()`
   every time the amount must be rebuilt (next kitchen round, kitchen-cancelled line), so gating there
   locks the table the moment a dish is marked sold out after being cooked: the round cannot be sent,
   `reserved_version` never catches up to `version`, the check cannot be paid, and a line already sent
   to the kitchen cannot be removed — leaving only "void a bill the guests ate". The dine-in gate
-  therefore lives in `resolveRestaurantCheckItemRequest()`, the one place a line *enters* a check
+  therefore lives in `resolveRestaurantCheckItemRequest()`, the one place a line _enters_ a check
   (waiter-typed or QR-accepted), and `createOrderInTx()` skips the gate whenever `restaurantCheckId`
   is set. Any surface that returns `SOLD_OUT_TODAY` to a register must also have a case in
   `describePosFailure()`; a raw status code tells a cashier nothing about which dish or how to fix it.
@@ -772,7 +825,7 @@ an operator note, and the audit preserves those per-line facts. Never add damage
 
 `apps/web/middleware.ts` matches `/api/:path*`, but its body only guards paths starting with
 `/admin`; every other request falls into a branch that returns `NextResponse.next()`. **A REST route
-under `/api/**` is therefore reachable by anyone unless it checks for itself.** Nothing in the build,
+under `/api/**` is therefore reachable by anyone unless it checks for itself.\*\* Nothing in the build,
 the type checker, or a code review makes that visible — a handler simply works, and works for
 strangers too.
 
@@ -780,28 +833,28 @@ Twenty-three routes written when BMS served one shop had no check at all and rea
 `DEFAULT_TENANT_ID` constant, plus two webhook mocks that cannot have one. What that allowed, before
 2026-08-24:
 
-| Route | What an anonymous caller could do |
-| --- | --- |
-| `POST /api/bms/reserve` | Reserve stock. `reserveStock()` filtered on `product_sku` + `size` only, so the `UPDATE` hit that product in **every tenant and branch** that stocked it — verified in the dev database, where `NIKE-AIR/XL` exists in two tenants |
-| `POST /api/bms/order/[id]/pay` · `/complete` | Mark a bill paid or complete |
-| `POST /api/bms/purchase/[id]/receive` | Book goods into the warehouse — stock out of nowhere |
-| `POST /api/bms/payment/[id]/verify` | Pass a payment slip |
-| `POST /api/bms/shipment/[id]/status` | Move a shipment's state |
-| `POST /api/bms/inbox/[id]/reply` | Send a message to a customer as the shop |
-| `GET /api/bms/reports/{sales,inventory,top-products}` | Read the shop's sales and stock |
-| `POST /api/bms/{line,tiktok}/webhook` (no `[tenantId]`) | Run the AI pipeline and write fake customer chat into the default shop's inbox — the model spend lands on the operator |
+| Route                                                   | What an anonymous caller could do                                                                                                                                                                                                  |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/bms/reserve`                                 | Reserve stock. `reserveStock()` filtered on `product_sku` + `size` only, so the `UPDATE` hit that product in **every tenant and branch** that stocked it — verified in the dev database, where `NIKE-AIR/XL` exists in two tenants |
+| `POST /api/bms/order/[id]/pay` · `/complete`            | Mark a bill paid or complete                                                                                                                                                                                                       |
+| `POST /api/bms/purchase/[id]/receive`                   | Book goods into the warehouse — stock out of nowhere                                                                                                                                                                               |
+| `POST /api/bms/payment/[id]/verify`                     | Pass a payment slip                                                                                                                                                                                                                |
+| `POST /api/bms/shipment/[id]/status`                    | Move a shipment's state                                                                                                                                                                                                            |
+| `POST /api/bms/inbox/[id]/reply`                        | Send a message to a customer as the shop                                                                                                                                                                                           |
+| `GET /api/bms/reports/{sales,inventory,top-products}`   | Read the shop's sales and stock                                                                                                                                                                                                    |
+| `POST /api/bms/{line,tiktok}/webhook` (no `[tenantId]`) | Run the AI pipeline and write fake customer chat into the default shop's inbox — the model spend lands on the operator                                                                                                             |
 
 The rules that follow from it:
 
 - **Use `authorizeAdminRoute(permission)`** (`lib/bms/adminRouteAuth.ts`). It verifies the signed
-  admin session, applies the drill-down cookie *only* when that cookie was signed for this admin,
+  admin session, applies the drill-down cookie _only_ when that cookie was signed for this admin,
   checks RBAC, and returns `{ tenantId, adminId, admin, ctx }`. `ctx` is the same shape resolvers pass
   to `requirePermission()`/`audit()`, so a service like `generateReport()` that takes a ctx needs no
   hand-built object. The helper exists because this sequence was copy-pasted into eight routes, and
   each copy was a chance to drop the acting-tenant check that keeps one shop's admin out of another's
   data.
 - **The tenant never comes from the request body.** Accepting it rebuilds the original hole behind a
-  login. A *branch* may come from the body — one shop legitimately has several — because an id
+  login. A _branch_ may come from the body — one shop legitimately has several — because an id
   belonging to another shop matches no row and returns `NOT_FOUND`.
 - **Mirror the permission of the GraphQL resolver that performs the same action** (`order.pay`,
   `order.ship`, `purchase.receive`, `payment.confirm`, `shipping.update`, `report.view`,
@@ -872,7 +925,7 @@ their provider independently:
   `BMS_AI_SENSITIVE_PROVIDER` instead, overriding both the tenant's own BYOK provider and the default
   shared one), then the deterministic template fallback. Every branch tags its usage event's `meta`
   with `routingReason`/`configuredProvider`/`effectiveProvider`/`fallbackFrom` so `bmsAiUsageEvents`
-  (tenant-scoped, `ai_quality.view` permission) and the platform `/admin/env` page can show *why* a
+  (tenant-scoped, `ai_quality.view` permission) and the platform `/admin/env` page can show _why_ a
   call used the provider it did. Customer DeepSeek tool-loop payloads disable its default thinking
   mode. A retryable failure on the first shared DeepSeek attempt may use shared Anthropic once, but
   only before any tool has run; it reuses the same usage event/credit. BYOK and any post-tool failure
@@ -886,7 +939,7 @@ their provider independently:
   BYOK provider choice has no effect on OCR; OCR always uses the platform-wide shared provider.
 - **Usage accounting keeps three dimensions separate** (`lib/bms/aiUsage.ts`, migration `7.82`) and an
   agent must not collapse them again: `billable_credits` = what the tenant was charged (one credit per
-  *logical* request on a finite plan, **zero** on an unlimited plan), `provider_calls` = actual provider
+  _logical_ request on a finite plan, **zero** on an unlimited plan), `provider_calls` = actual provider
   attempts, `actual_cost_usd` = metered cost attributed from provider-reported tokens against the
   configured rate card. Rules that are load-bearing:
   - **A retry or provider fallback is not a second sale.** Attempts belonging to one logical request
@@ -896,7 +949,7 @@ their provider independently:
   - **Unknown cost is `NULL`, never `0`.** If no attempt reported usage, leave `actual_cost_usd` null;
     if only some did, keep the known cost and count the rest in `unpriced_provider_calls`. Every
     summary surfaces `unpricedProviderCalls` so partial knowledge is never rendered as a complete
-    total. `actual_cost_usd` is cost *attribution*, not a provider invoice — do not label it as one in
+    total. `actual_cost_usd` is cost _attribution_, not a provider invoice — do not label it as one in
     UI or docs, and do not fold platform health probes into a tenant's total.
   - **Finalization is one-shot and refunds are atomic.** `finalizeAiUsageEvent()` may run from
     overlapping cleanup paths, so it must stay idempotent per event. A reservation that ends with
@@ -919,7 +972,7 @@ their provider independently:
   configured yet — see CLAUDE.local.md).
 - **Failure incidents** (`lib/bms/failureAlert.ts`, migration `7.36`, tenant-scoped) record and alert
   on failures that actually reached a customer or degraded a reply — a different dimension from the two
-  health tables above, which only record *connection status*. Report through `reportBmsFailure()` only;
+  health tables above, which only record _connection status_. Report through `reportBmsFailure()` only;
   it never throws, and callers must keep it out of the transaction that produced the failure. Three
   rules an agent must not get wrong:
   - **Never hook alerting off a tool's audit `outcome`.** `auditAttempt()` in `tools/runtime.ts` looks
@@ -928,7 +981,7 @@ their provider independently:
     "ไม่พบสินค้า". Alerting there pages the shop every time a customer asks for a product it does not
     stock. Report next to the existing `console.error` sites, which already filter correctly.
   - **Choose the tier by who can act on it, not by severity.** Tier A (customer saw an error or got no
-    reply) alerts the shop *and* platform admins; Tier B (degraded but answered) alerts platform admins
+    reply) alerts the shop _and_ platform admins; Tier B (degraded but answered) alerts platform admins
     only. A Tier A code raised on a `staff` surface is auto-downgraded to B, since the admin already
     sees the error on their own screen. New codes go in `FAILURE_CATALOG` with an explicit tier.
   - **Keep the notification step time-bounded.** It is `await`ed so an alert is not lost when a
@@ -988,7 +1041,7 @@ reuse `sharedRedisClient` exported from `lib/cache.ts` and namespace your own ke
   newly created product is visible on the very next AI tool call; adding a cache there reintroduces
   exactly the staleness that design avoids.
 - **Admin session revocation** (`apps/web/lib/redisSession.ts`) — the admin JWT (`ADMIN_COOKIE`) is
-  still stateless and still carries its own `exp`; this only adds the ability to revoke it *before*
+  still stateless and still carries its own `exp`; this only adds the ability to revoke it _before_
   `exp` (logout). Enforced once, in `createContext()` in `app/api/graphql/route.ts`, which is the
   choke point nearly every admin action goes through. Fail-open on Redis error (trust the JWT alone,
   same behavior as before this existed) rather than locking out every admin during a Redis outage.
@@ -1029,6 +1082,7 @@ protection exactly when Redis is unhealthy.
 every default unchanged from single-instance behavior. If you add a new per-request file write, a
 new rate-limited endpoint, or a new cron/scheduled job, check these invariants before assuming they
 hold:
+
 - File bytes go through `lib/storageDrivers/` (`readStoredFile`/`statStoredFile`/
   `openStoredFileStream`/`persistWebFile`/`persistUploadStream`/`persistBuffer` — all re-exported from
   `lib/storage.ts`). Never build a path from `STORAGE_DIR`/`relpath` yourself; a path built outside
@@ -1047,6 +1101,166 @@ hold:
 
 Full history/rationale of what was found and fixed: § Multi-instance readiness in
 [CLAUDE.local.md](../CLAUDE.local.md).
+
+## Realtime invalidation architecture
+
+The 2026-09-10 audit records the original findings and rollout design; current implementation
+status lives in the mobile GraphQL client and realtime architecture documents:
+[architecture/realtime-production-audit.md](architecture/realtime-production-audit.md). Its accepted
+design is [ADR 001](architecture/decisions/001-transactional-realtime-invalidation.md). The shared
+event/type/topic/validation layer exists in `packages/realtime`; migrations `9.70`–`9.74` and `9.84`–`9.86`,
+`realtimeOutbox.ts`, the continuous pump, and `realtimeDispatcher.ts` provide the durable handoff and
+domain coverage. HTTP-minted admin/POS tickets and the hardened gateway exist; DB contract suites
+exercise the triggers and live local verification covers Redis fan-out across multiple WS instances.
+Production migration state, recovery/load proof, and bounded replay remain separate rollout gates.
+
+- Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
+  of truth; event payloads never become a second business-state store.
+- **`apps/ws` and `apps/web` are one deployable unit.** The gateway accepts exactly one connection
+  parameter shape (`{ ticket }`); any other shape closes the socket with `4403`, and `graphql-ws`
+  treats 4403 as retryable, so an older client reconnects every ≤30s forever while realtime stays
+  dead. Never ship one without the other. `WS_ALLOWED_ORIGINS` has no safe default — empty means the
+  gateway throws at import, a loopback value means it boots and 401s every browser — so
+  `docker-compose.prod.yml` uses `${VAR:?…}` and `preflight-deploy.mts` blocks on both cases.
+- **A hint that fails must not fail the write it describes.** Legacy `pubsub.publish()` sites run
+  after their row is committed, so a Redis outage there means "the screen learns late", never
+  "sending failed". Use `publishRealtimeHint()` from `packages/realtime/src/pubsub.ts`: it still
+  awaits, so ordering is unchanged, and only swallows the failure. The outbox dispatcher is the
+  exception — `publishRealtimeEvent()` must keep throwing so the row is nacked and retried instead
+  of acked as delivered.
+- Every Redis command on the realtime path is bounded by `REALTIME_REDIS_COMMAND_TIMEOUT_MS`.
+  `maxRetriesPerRequest: null` alone means "queue forever", which turned a Redis outage into
+  `/readyz` never answering and valid sockets hanging open with neither `connection_ack` nor a close
+  frame — the client then sits on "connecting" and never retries. Fail fast; the layers above
+  (connection rejection, 503, dispatcher backoff, client `retryWait`) already handle it.
+- Keep polling, focus refresh, mutation results, and manual refresh until replay/gap recovery and load
+  tests have passed in production-like multi-instance conditions.
+- A business event is inserted into `bms_realtime_outbox` in the same tenant transaction as its
+  aggregate change. Never publish before commit, and do not rely on a direct after-commit Pub/Sub call
+  for durable delivery.
+- `apps/ws` stays database-free. HTTP now mints a short-lived, audience-bound ticket after fresh session,
+  revocation, tenant/acting-tenant, permission, and location checks; WS validates that ticket and
+  rechecks its Redis context version during the connection lifetime.
+- Topics are built centrally and scoped to tenant, branch, or authenticated user. Client-supplied
+  tenant/user/resource IDs never create an authorized iterator by themselves.
+- Events carry stable ID, event type, schema version, routing IDs, entity ID, time, and only
+  allowlisted scalar hints. Exclude customer PII, message bodies, payment details, raw arguments,
+  attachments, and all pharmacy clinical/evidence content.
+- Delivery is at least once. Dispatchers and clients must tolerate duplicate and out-of-order events,
+  use bounded dedup/version checks, batch refetches, and treat a replay gap as a full-refetch signal.
+- New BMS events use the types, rules, topic builders, validators, safe log projection and transport
+  helpers in `packages/realtime`; do not add another event string or raw topic. Legacy direct
+  `pubsub.publish()` call sites remain until their owning transaction is moved to the outbox. Do not
+  copy their global-topic or client-ID authorization patterns into new subscriptions.
+- The legacy chat/post resource subscriptions are served on production again, because they now
+  filter on routing data the publisher attaches to the event — `messageAddedAudience` for
+  `messageAdded`, `messageDeletedAudience` for `messageDeleted`, `commentDeletedPostId` for
+  `commentDeleted`, `post_id` for the other two — and every one of them calls
+  `requireRealtimeUserId(ctx)`, because `apps/ws` cannot look membership up itself. **Never trust
+  `chat_id`, `post_id`, `user_id`, `x-scope`, Referer, or User-Agent**, and never let a filter fall
+  back to `return true` when the routing field is absent: no routing data means reject. Adding a
+  resource subscription means the publisher must carry its audience. User topics come from the
+  ticket subject; BMS Inbox requires ticket tenant plus `inbox.view`.
+  `PRODUCTION_DISABLED_SUBSCRIPTIONS` in `apps/ws/src/security.ts` now holds only `time`, a debug
+  ticker no screen consumes. That list is a list of features missing from production, not a
+  setting: a name added there is a screen that silently stops updating with no error anywhere,
+  so `realtime-ws-security-contract` pins its exact contents and pairs "served" with "checks who
+  is asking".
+- The subscription surface is one invalidation stream plus 18 named views over it
+  (`NAMED_REALTIME_SUBSCRIPTIONS` in `packages/realtime`). Every named field reuses
+  `realtimeTopics()` and `canReceiveRealtimeEvent()` and takes **no arguments**. Do not give a named
+  subscription its own auth: one authorizer is the only reason cross-tenant scope can be reasoned
+  about, and `canReceiveRealtimeEvent()` lives in `packages/realtime/src/subscriptionAuth.ts` so it
+  can be tested behaviourally rather than by scanning the resolver for a function call.
+- A business write that mobile or admin must see needs an event. `realtime-domain-coverage-contract`
+  walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that exact
+  operation has a trigger or an explicit classification. Migration `9.85` closes the prior 20 table
+  gaps covering returns, deposits, store credit, AR, tax documents, loyalty, purchase orders,
+  wastage, and related POS shift operations; `9.86` adds the parked-sale `DELETE` that table-only
+  coverage originally missed.
+- Production subscription rollout fails closed behind `REALTIME_SUBSCRIPTIONS_ENABLED` and separate
+  order/restaurant/inventory/payment/Inbox/shipping/pharmacy/admin/POS flags. Keep the master flag at
+  `0` during shadow publishing. **Know what the flags do and do not stop:** they are read only by
+  `canReceiveRealtimeEvent()`, so they gate *delivery to a subscriber*. They do not stop the triggers
+  from enqueuing, and they do not stop the dispatcher from publishing to Redis. Turning realtime
+  "off" by flag still pays the full write amplification. Setting
+  `REALTIME_OUTBOX_DISPATCH_ENABLED=0` instead stops the publishing but leaves nobody draining the
+  outbox, and `bms_cleanup_realtime_outbox` only deletes `PUBLISHED`/`FAILED` — `PENDING` then grows
+  without a bound. The only switch that stops event *production* is dropping the triggers, which is
+  why a migration in this family needs a written `ROLLBACK` block.
+- **A realtime trigger shares the business transaction, so its failure modes are business failure
+  modes.** Before adding or editing one:
+  - Only reference columns that exist on every table the function is attached to. PL/pgSQL resolves
+    `NEW.<field>` against the actual row type; a `TG_TABLE_NAME` guard is not proof the other
+    branch's field is never resolved. Use `to_jsonb(NEW)->>'x'`, or one function per table.
+  - `SECURITY DEFINER` + `BYPASSRLS` is not a table grant. `BYPASSRLS` skips the row policy only;
+    a missing `GRANT` is `42501` and rolls back the write that fired the trigger. Grant every table
+    the function reads, plus `INSERT` on the outbox and `USAGE` on its sequence, column-level per
+    `8.4`.
+  - `9.70` runs `CREATE ROLE … BYPASSRLS` and therefore needs a superuser connection.
+  - Prove it on the throwaway instance in
+    [architecture/realtime-test-database.md](architecture/realtime-test-database.md), against a
+    restored dump, with a recorded pre-migration baseline. Reading the SQL cannot answer whether a
+    trigger enqueues successfully from a writer that never set `bms.tenant_id`.
+- Browser POS and `apps/mobile` now mount named subscriptions; RN uses Apollo + `graphql-ws` and
+  chooses base/restaurant views by the server-derived surface. Do not delete a REST route, polling
+  loop or `useLiveRefresh` cycle merely because a subscription exists: business-screen caller parity
+  and production recovery/load proof are still incomplete. The shared
+  `realtimeInvalidation.ts` must have an entry for every event domain or that domain refetches
+  nothing and reads on screen exactly like realtime being switched off.
+- POS device authentication updates `bms_pos_devices.last_seen_at` as throttled bookkeeping. Keep
+  that column and `receipt_seq` out of the `device.session.changed` trigger (`9.84`): otherwise an RN
+  GraphQL request can emit an invalidation whose response is to verify and refetch GraphQL again.
+
+## Typed GraphQL surface for external clients
+
+The mobile/POS GraphQL surface is code-generated in `apps/mobile`, and remains suitable for external
+clients. Rationale and phase order:
+[architecture/graphql-client-readiness-brief.md](architecture/graphql-client-readiness-brief.md);
+per-screen examples: [architecture/react-native-graphql-client.md](architecture/react-native-graphql-client.md).
+
+- **`schema.graphql` is a committed source file, not a build output.** Production disables
+  introspection, so the artifact is the only thing a generator can read. Regenerate it with
+  `cd apps/web && npm run schema:export` in the same change that alters the schema; the artifact is
+  rendered from `buildBmsGraphqlSchema()` — the same executable schema `/api/graphql` serves — and
+  `graphql-schema-artifact-contract` fails on drift. Sort order is lexicographic so import order
+  cannot produce a phantom diff.
+- **Scope is derived, never accepted.** No mobile input type carries `tenantId`, `deviceId` or
+  `shiftId`. A POS operation reads authority from the authenticated device (`device.tenantId`,
+  `device.locationId`); a staff operation reads it from `getTenantId(ctx)`. The two surviving
+  `locationId` inputs (`BmsStockCountInput`, `BmsReviewRestaurantRequestInput`) are REST parity, and
+  the resolver still verifies the branch belongs to the tenant. `mobile-graphql-contract` targets
+  *what a value is read from*, not the variable's name, so `inputRecord(args.input).tenantId` fails
+  the same way `input.tenantId` does.
+- **Money, stock and document mutations carry `idempotencyKey`.** It is required wherever the
+  service uses it. It is nullable only on the remaining `action`-dispatched multiplexers, whose
+  actions do not agree on whether they need one — `bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark` and
+  `bmsPosShift` are still in that shape. Splitting one of them is what makes its key required.
+- **Superseded fields are `@deprecated` and kept.** The eight action multiplexers that were split
+  still exist and still work; the 32 named mutations inject a fixed action and delegate to the same
+  compatibility resolver, so there is one service call, one PIN/RBAC check, one audit row and one
+  transaction — never a copied code path. Do not remove an operation while a caller may still exist;
+  some browser and native business callers have not migrated.
+- **Errors and business rejections are different channels.** Every client-facing GraphQL error
+  carries `extensions.code` from one set (`UNAUTHENTICATED`, `FORBIDDEN`, `BAD_USER_INPUT`,
+  `NOT_FOUND`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) assigned in `mobileErrorContract.ts` and
+  back-filled by the route's `formatError`. A business outcome the operator must read
+  (`PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`, `OUT_OF_STOCK`, `SOLD_OUT_TODAY`, `IDEMPOTENCY_CONFLICT`,
+  pharmacy policy statuses) stays in `data.<operation>.status` — promoting one to a thrown error
+  breaks the client's retry/re-auth/operator-action split and is a regression, not a tidy-up.
+- **A spent idempotency key is `CONFLICT`, never `INTERNAL_SERVER_ERROR`.** A service that finds the
+  key already bound to a different request hash throws `IdempotencyConflictError`
+  (`lib/bms/idempotencyErrors.ts`) and the route's `formatError` classifies it, so one leaf class
+  covers every throw site in `inventoryIdempotency.ts` and `boardGameCafe.ts` instead of a wrapper
+  list each new mutation can forget to join. The code matters because the documented client action
+  for `INTERNAL_SERVER_ERROR` is "retry with the exact same key": for this case that is an infinite
+  loop the operator cannot leave. The mirror rule on the client is that a key survives *only* an
+  unknown outcome — every client-facing code is decided before anything is written, so the next
+  attempt is a new intent and mints a new key.
+- **A named operation existing does not prove parity with the REST route it shadows.** There is no
+  fixture-driven REST-versus-GraphQL response-shape suite yet, so moving a caller is still blocked on
+  writing one. `mobile-transport-compat-contract` only proves the REST routes still exist and still
+  authenticate.
 
 ## Observability (`/admin/system-health`)
 
@@ -1077,7 +1291,7 @@ What it does **not** answer yet, so don't assume it does:
   to the Docker socket, which is a real privilege escalation surface. That is a decision to take
   explicitly, not a feature to add quietly.
 
-Rank operations by *total* time (calls × avg), not p95 — a fast query called constantly usually costs
+Rank operations by _total_ time (calls × avg), not p95 — a fast query called constantly usually costs
 the database more than a slow one called rarely. The table defaults to that sort for this reason.
 
 Full history/rationale, including the percentile-math test approach and what still isn't verified in a
@@ -1089,9 +1303,10 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-09
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **80 namespaces / 4,999 leaf keys per language**,
-  at exact th↔en parity — the latest +6 are the global order-action and Inbox alert controls; the earlier +415
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-14
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **81 namespaces / 5,149 leaf keys per language**,
+  at exact th↔en parity — the latest +2 cover board-game fake-data guidance/summary; the preceding +24 cover board-game time alerts, member lookup and opt-in public
+  nearby-store discovery; the earlier +6 are the global order-action and Inbox alert controls; the earlier +415
   are the complete bilingual restaurant POS surface in the
   new `pos_restaurant` namespace; `pos-restaurant-i18n-contract` now refuses hardcoded Thai UI copy
   there while excluding the shared baht symbol and Thai product-name matcher regexes. The earlier +16
@@ -1109,14 +1324,14 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
   `roadmap`) plus `/support`, `/help`, and `/demo` (added 2026-08 — `/demo` additionally needed its
   keyword-based intent matcher extended to recognize both languages, since it's an interactive
   simulated chat, not static prose, and the customer's raw typed/starter text drives its logic
-  regardless of UI language). Reach for this pattern for any new prose-heavy public page; it is *not*
+  regardless of UI language). Reach for this pattern for any new prose-heavy public page; it is _not_
   a shared dictionary, so don't expect keys to be visible to other pages.
 - **Inline `lang === "en" ? {...} : {...}"` ternary** — functionally identical to `resolveBilingual()`
   but not routed through the shared helper. Used by the public product storefront
   (`app/(main)/shop/**`, all 8 files: `ShopDirectoryView.tsx`, `PublicProductCard.tsx`,
   `ShopLandingView.tsx`, `ShopProductsView.tsx`, `PublicProductView.tsx`, and the 3 route `page.tsx`
   metadata builders) and `/checkout`'s layout metadata. Fine as-is; prefer `resolveBilingual()` for
-  *new* pages so there's one less pattern to remember, but don't "fix" these into it — they work.
+  _new_ pages so there's one less pattern to remember, but don't "fix" these into it — they work.
 - **`apps/web/lib/i18n.ts` + `lib/useTranslation.ts` + `apps/web/locales/`** — dead code. `grep` for
   `useTranslation(` outside its own definition returns zero hits anywhere in the app. Do not extend
   this; if you're touching it, delete it instead.
@@ -1140,8 +1355,8 @@ those are no longer the gap this paragraph used to flag. The remaining **30** fi
 groups, neither of which is a Thai leak: trivial `layout.tsx`/`loading.tsx` guards with no user-visible
 copy, and the **English-only legacy platform-admin pages** — `admin/roles`, `admin/logs` (×3),
 `admin/files`, `admin/posts` + `admin/post/**`, `admin/operations-schedule`, `admin/dev/sql-console`.
-Those predate BMS, contain no Thai at all, and would need translating *into* Thai rather than out of
-it. **2026-08-25 correction**: "converted" for `AdminSidebar.tsx` had meant the group *labels*
+Those predate BMS, contain no Thai at all, and would need translating _into_ Thai rather than out of
+it. **2026-08-25 correction**: "converted" for `AdminSidebar.tsx` had meant the group _labels_
 (`t('admin.group_shop')`, `t('admin.group_pharmacy')`, …) — the ~18 child menu item labels inside the
 Store and Pharmacy submenus (`'Products'`, `'Orders'`, `'Pharmacy Intake Lab'`, etc., plus the
 `pharmacyQueueLink()` badge label) were still plain English string literals passed straight to
@@ -1150,7 +1365,7 @@ Store and Pharmacy submenus (`'Products'`, `'Orders'`, `'Pharmacy Intake Lab'`, 
 **2026-09-03 update**: those keys are gone. The menu moved to `lib/bms/adminNavigation.ts`, whose
 entries carry a `labelKey` in the new `admin_nav` namespace, so all 40 `admin.menu_*`/`admin.group_*`
 keys became dead and were deleted rather than left as a second copy of every menu name. ⚠️ Labels are
-now read as `t(item.labelKey)` — a *variable* — so the literal-scanning audit described in this
+now read as `t(item.labelKey)` — a _variable_ — so the literal-scanning audit described in this
 paragraph cannot see them at all; `scripts/admin-navigation-contract.test.mts` resolves every
 `labelKey` and section label against both dictionaries instead, and that is the check to keep. Verified 2026-08-23
 by dictionary audit (before the shop-archetype label pass): `i18n/th.ts` and `i18n/en.ts` were at exact key parity
@@ -1169,7 +1384,7 @@ age, not a Thai leak**: the legacy pre-BMS community pages `/my/posts`, `/my/pro
 `/profile/[id]` — never localized either direction, out of scope. **Thai that a grep will flag but that
 must NOT be "fixed"**: customer-facing brand-voice copy (the Inbox suggested-reply templates, the
 restock notification body) stays Thai regardless of the staff member's UI language, same rule as
-`applyGenderParticle()`; regexes that match a *customer's* raw typed Thai (`/สลิป|โอน|ชำระ/` in
+`applyGenderParticle()`; regexes that match a _customer's_ raw typed Thai (`/สลิป|โอน|ชำระ/` in
 `admin/inbox/page.tsx`) detect what a customer wrote, not UI copy; CRM tag **values**
 (`ลูกค้าใหม่`/`ลูกค้าประจำ` in `admin/customers` and `admin/dashboard`) are stored data, not labels;
 the Thai column headers in `admin/products/ImportModal.tsx` are the CSV/XLSX template's header-matching
@@ -1184,7 +1399,7 @@ the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not delib
 just not done).
 
 If you're asked to "make X bilingual," check which of the mechanisms above (if any) the file already
-uses before adding translated strings — most *admin* files use none, and adding real 2-language
+uses before adding translated strings — most _admin_ files use none, and adding real 2-language
 support to the admin app is a from-scratch, many-file effort (extract strings into new dictionary
 namespaces, not just add keys to existing ones), not a small addition to what's already there. Before
 trusting any specific file/namespace/line claim in this section, verify it against the current code —

@@ -318,6 +318,51 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     relatedCapabilityIds: ["restaurant.dine-in", "restaurant.qr-ordering"],
   },
   {
+    id: "board-game.run-cafe", module: "board-game", pageId: "board-game", route: "/admin/board-game",
+    title: both("ดูแลโต๊ะ เวลา และเกมของร้านบอร์ดเกม", "Run board-game tables, time and game loans"),
+    summary: both("เปิดโต๊ะตามเวลาจริงหรือเวลาที่กำหนด แยกเรตและกลุ่มชำระ ยืมคืนเกม แล้วส่งยอดไปชำระผ่าน POS เดิม", "Open an elapsed-time or fixed-duration table, separate rates and bill groups, manage game loans, then send the frozen charge to the existing POS checkout."),
+    aliases: aliases([
+      "เปิดโต๊ะบอร์ดเกม", "คิดค่าเล่นรายชั่วโมง", "เตือนหมดเวลา", "แยกบิลค่าเล่น", "ยืมเกม", "คืนเกม",
+      "ตั้งราคาเด็กนักเรียนสมาชิก", "ร้านบอร์ดเกมใกล้ฉัน", "เผยแพร่ร้านบอร์ดเกม",
+    ], [
+      "open a board-game table", "hourly play charge", "time alert", "split play bill", "check out a game", "return a game",
+      "student member child rates", "board-game cafe near me", "publish board-game cafe",
+    ]),
+    requiredPermissions: ["board_game.session.manage"],
+    prerequisites: lists([
+      "ร้านต้องใช้ประเภทธุรกิจ Board Game Cafe และมีสาขา โซน โต๊ะ และเรตที่เปิดใช้งาน",
+      "การแก้ผัง เรต คลังเกม ยกเลิก session และแก้เวลาย้อนหลังใช้สิทธิ์แยกกัน",
+    ], [
+      "The shop must use the Board Game Cafe archetype and have an active branch, area, table and rate.",
+      "Floor, rate, library, cancellation and time-override actions each require their own permission.",
+    ]),
+    steps: lists([
+      "เลือกสาขา แล้วแตะโต๊ะว่างเพื่อเปิดแบบจับเวลาตามจริงหรือกำหนดระยะเวลาและเวลาที่ต้องเตือน",
+      "เพิ่มผู้เล่น เลือกเรตทั่วไป นักเรียน เด็ก หรือสมาชิก และกำหนดกลุ่มชำระของแต่ละคนในบิลเดียว",
+      "ยืมเกมด้วยรหัสสำเนาจริง และรับคืนก่อนปิด session พร้อมบันทึกปัญหาชิ้นส่วนหรือสภาพเกมเมื่อพบ",
+      "กดปิดเพื่อคิดเงินให้ระบบตรึงเวลา เรต และยอด แล้วเปิด POS เพื่อรับชำระผ่านเส้นทางขายเดิม",
+      "ตั้งโซน โต๊ะ เรต คลังเกม และข้อมูลสาธารณะจากแท็บ Library และ Settings ตามสิทธิ์ของบัญชี",
+    ], [
+      "Choose a branch, then select an available table and open elapsed-time or fixed-duration play with an alert threshold.",
+      "Add participants, choose general, student, child or member rates, and assign each person to a bill group within the same session.",
+      "Check out a physical copy and return every loan before closing, recording missing parts or condition issues when found.",
+      "Close for billing to freeze time, rates and amount, then open POS and collect payment through the existing sale path.",
+      "Manage areas, tables, rates, the game library and the public listing from Library and Settings when permitted.",
+    ]),
+    warnings: lists([
+      "ค่าเวลาเป็น snapshot ต่อผู้เล่นตอนเปิดหรือเพิ่มคน การแก้เรตภายหลังไม่เปลี่ยน session เดิม",
+      "CLOSING ตรึงยอดแล้ว ห้ามเพิ่มคน ย้ายกลุ่ม หรือยืมเกม; การชำระสำเร็จต้องเกิดผ่าน POS เท่านั้น",
+      "ระบบค้นหาร้านใกล้ฉันเผยแพร่เฉพาะสาขาที่ร้านเปิด public และกรอกพิกัดเอง ไม่เปิดข้อมูลสมาชิกหรือข้อมูลส่วนตัว",
+      "หน้าผัง refresh หลังทุกคำสั่งและทุก 15 วินาที จึงควรตรวจยอดและสถานะล่าสุดก่อนรับเงิน",
+    ], [
+      "Each participant keeps a rate snapshot when opened or added; later rate edits do not rewrite an existing session.",
+      "CLOSING freezes the charge, so participants, bill groups and loans can no longer change; successful payment must go through POS.",
+      "Nearby discovery exposes only branches explicitly published with shop-managed coordinates, never member or personal data.",
+      "The floor refreshes after every command and every 15 seconds, so verify the latest amount and state before taking payment.",
+    ]),
+    relatedCapabilityIds: [],
+  },
+  {
     id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",
     title: both("ตัดของเสียออกจากสต็อก", "Write off wasted stock"),
     summary: both("ตัดของที่ขายต่อไม่ได้ พร้อมบันทึก movement และ audit ไว้ทุกครั้ง", "Write off stock that can no longer be sold, with a movement and an audit entry every time."),

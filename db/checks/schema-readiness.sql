@@ -39,7 +39,20 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.56__bms_restaurant_online_order_acceptance.sql', 'column', 'bms_store_profile', 'restaurant_orders_paused', 'สร้างบิลไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — INSERT bms_orders อ้างคอลัมน์นี้ทุกครั้ง'),
     ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_pos_returns', 'merchant_absorbed_amount', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้'),
     ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_pos_return_items', 'cancellation_cause', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้'),
-    ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_store_profile', 'restaurant_merchant_absorb_limit', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้')
+    ('9.57__bms_restaurant_order_line_cancellation.sql', 'column', 'bms_store_profile', 'restaurant_merchant_absorb_limit', 'ตัดรายการออกจากออร์เดอร์ออนไลน์ไม่ได้'),
+    ('9.61__bms_product_promotions_branch_scope.sql', 'column', 'bms_product_promotions', 'location_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder อ่านโปรรายสาขาทุกบิล'),
+    ('9.65__bms_product_price_tiers_branch_scope.sql', 'column', 'bms_product_price_tiers', 'location_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder อ่านราคาส่งรายสาขาทุกบิล'),
+    ('9.60__bms_restaurant_qr_ordering.sql', 'table', 'bms_restaurant_table_qr_tokens', NULL, 'ลูกค้าสแกน QR ที่โต๊ะสั่งอาหารไม่ได้ และเครื่องขายเปิดแท็บคำขอ QR ไม่ได้'),
+    ('9.60__bms_restaurant_qr_ordering.sql', 'table', 'bms_restaurant_qr_sessions', NULL, 'ลูกค้าสแกน QR ที่โต๊ะสั่งอาหารไม่ได้ และเครื่องขายเปิดแท็บคำขอ QR ไม่ได้'),
+    ('9.60__bms_restaurant_qr_ordering.sql', 'table', 'bms_restaurant_qr_submissions', NULL, 'ลูกค้าสแกน QR ที่โต๊ะสั่งอาหารไม่ได้ และเครื่องขายเปิดแท็บคำขอ QR ไม่ได้'),
+    ('9.63__bms_restaurant_check_split_merge.sql', 'column', 'bms_restaurant_checks', 'split_group_no', 'แยกบิล/รวมบิลของโต๊ะไม่ได้ และเปิดบิลโต๊ะไม่ได้ (คิวรีอ่านคอลัมน์นี้เสมอ)'),
+    ('9.64__bms_restaurant_waitlist.sql', 'table', 'bms_restaurant_waitlist', NULL, 'บัตรคิวหน้าร้านและการจองโต๊ะใช้ไม่ได้'),
+    ('9.69__bms_restaurant_service_calls.sql', 'table', 'bms_restaurant_service_calls', NULL, 'ลูกค้ากดเรียกพนักงานจากโต๊ะไม่ได้ และแท็บเรียกพนักงานที่เครื่องขายพัง'),
+    ('9.70__bms_realtime_outbox.sql', 'table', 'bms_realtime_outbox', NULL, 'รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน'),
+    ('9.82__bms_board_game_pos_settlement.sql', 'column', 'bms_orders', 'board_game_session_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
+    ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_orders', 'restaurant_service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
+    ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_restaurant_checks', 'service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
+    ('9.88__bms_inventory_operation_idempotency.sql', 'table', 'bms_inventory_operation_idempotency', NULL, 'โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

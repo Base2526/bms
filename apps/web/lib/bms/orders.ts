@@ -151,8 +151,14 @@ export type CreateOrderInput = {
   posShiftId?: string | null;
   cashierUserId?: string | null;
   idempotencyKey?: string | null;
+  /** POS catalog surface chosen by the server-side POS caller. */
+  posSalesSurface?: "RETAIL_POS" | "RESTAURANT_POS" | null;
   /** Server-validated restaurant check settled by this order. */
   restaurantCheckId?: string | null;
+  /** Server-validated board-game session settled by this POS order. */
+  boardGameSessionId?: string | null;
+  /** Snapshot for restaurant receipts/history; separate from online fulfillmentType. */
+  restaurantServiceMode?: "DINE_IN" | "TAKEAWAY" | null;
   /**
    * Server-derived only: the reviewed chat request (9.66) this order was created from.
    *
@@ -471,15 +477,22 @@ export async function createOrderInTx(
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
+  const boardGameSessionId = input.boardGameSessionId?.trim() || null;
   const validation = validateOrderItems(input.items);
   if (!validation.ok) {
-    if (validation.index === -1) return { status: "EMPTY" };
-    return { status: "INVALID_ITEM", index: validation.index, reason: validation.reason };
+    if (validation.index === -1 && !boardGameSessionId) return { status: "EMPTY" };
+    if (validation.index === -1) {
+      // A frozen board-game session is a billable service and may be the only
+      // line on a POS bill. Its amount is loaded below; the caller cannot use
+      // this exception to create a generic empty order.
+    } else {
+      return { status: "INVALID_ITEM", index: validation.index, reason: validation.reason };
+    }
   }
   let items = mergeItems(input.items);
   const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
     ? "RESTAURANT_POS"
-    : input.channel === "pos" ? "RETAIL_POS" : "ONLINE_ORDER";
+    : input.channel === "pos" ? input.posSalesSurface ?? "RETAIL_POS" : "ONLINE_ORDER";
   const ordering = input.channel === "pos"
     ? null
     : await restaurantOrderingStateInTx(client, tenantId);
@@ -540,6 +553,59 @@ export async function createOrderInTx(
       ? input.fulfillmentType
       : null;
   if (restaurantOnlineOrder && fulfillmentType === null) return { status: "FULFILLMENT_REQUIRED" };
+
+  let boardGameExtraLines: Array<{
+    label: string;
+    qty: number;
+    unitAmount: number;
+    vatCategory: VatCategory;
+  }> = [];
+  if (boardGameSessionId) {
+    if (input.channel !== "pos" || input.restaurantCheckId || !input.posDeviceId || !input.posShiftId) {
+      return { status: "INVALID_ITEM", index: -1, reason: "session บอร์ดเกมชำระได้ผ่าน POS เท่านั้น" };
+    }
+    const session = await client.query<{
+      amount_due: string;
+      charge_snapshot: unknown;
+    }>(
+      `SELECT amount_due, charge_snapshot
+         FROM bms_board_game_sessions
+        WHERE tenant_id = $1 AND id::text = $2 AND location_id = $3
+          AND status = 'CLOSING' AND current_order_id IS NULL
+        FOR UPDATE`,
+      [tenantId, boardGameSessionId, locationId]
+    );
+    if (!session.rowCount) {
+      return { status: "INVALID_ITEM", index: -1, reason: "session บอร์ดเกมไม่พร้อมชำระในสาขานี้" };
+    }
+    const snapshot = session.rows[0].charge_snapshot;
+    if (!Array.isArray(snapshot)) {
+      return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลค่าเล่นบอร์ดเกมไม่สมบูรณ์" };
+    }
+    const groups = new Map<number, number>();
+    for (const raw of snapshot) {
+      const line = raw as Record<string, unknown>;
+      const group = Number(line.billingGroupNo);
+      const amount = Math.round(Number(line.amount) * 100) / 100;
+      if (!Number.isInteger(group) || group < 1 || group > 20 || !Number.isFinite(amount) || amount < 0) {
+        return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลค่าเล่นบอร์ดเกมไม่สมบูรณ์" };
+      }
+      groups.set(group, Math.round(((groups.get(group) ?? 0) + amount) * 100) / 100);
+    }
+    const snapshotTotal = Math.round([...groups.values()].reduce((sum, amount) => sum + amount, 0) * 100) / 100;
+    const amountDue = Math.round(Number(session.rows[0].amount_due) * 100) / 100;
+    if (!Number.isFinite(amountDue) || Math.abs(snapshotTotal - amountDue) > 0.01) {
+      return { status: "INVALID_ITEM", index: -1, reason: "ยอดค่าเล่นบอร์ดเกมไม่ตรงกับ snapshot" };
+    }
+    boardGameExtraLines = [...groups.entries()].map(([group, amount]) => ({
+      label: groups.size === 1
+        ? "Board game time / ค่าเล่นบอร์ดเกม"
+        : `Board game time / ค่าเล่นบอร์ดเกม กลุ่ม ${group}`,
+      qty: 1,
+      unitAmount: amount,
+      vatCategory: "V",
+    }));
+  }
   const promisedAtDate = input.promisedAt == null ? null : new Date(input.promisedAt);
   if (promisedAtDate && !Number.isFinite(promisedAtDate.getTime())) {
     return { status: "INVALID_ITEM", index: -1, reason: "เวลาที่สัญญาไว้ไม่ถูกต้อง" };
@@ -569,11 +635,15 @@ export async function createOrderInTx(
   }
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
+    if (mergedValidation.index === -1 && boardGameSessionId) {
+      // The server-validated session charge is the order's service line.
+    } else {
     return {
       status: "INVALID_ITEM",
       index: mergedValidation.index,
       reason: "จำนวนรวมของรายการซ้ำมากเกินกว่าที่ระบบบันทึกได้",
     };
+    }
   }
 
     // ---- ลำดับการล็อกของบิลหน้าร้าน: กะก่อน แล้วค่อยสต็อก ------------
@@ -1062,7 +1132,7 @@ export async function createOrderInTx(
     // จึงไม่เข้า tier/coupon/แต้ม/ส่วนลดมือ: คิดส่วนลดจาก productSubtotal ก่อน
     // แล้วค่อยบวก extraTotal กลับเข้า finalTotal
     const productSubtotal = total;
-    const extraLines = (input.extraLines ?? [])
+    const extraLines = [...(input.extraLines ?? []), ...boardGameExtraLines]
       .map((x) => ({
         label: String(x?.label ?? "").trim(),
         qty: Number(x?.qty ?? 1),
@@ -1146,16 +1216,20 @@ export async function createOrderInTx(
 
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     // total_amount = ค่าสินค้า − ส่วนลด + ค่าบริการ (ไม่รวมค่าส่ง — 7.47)
+    const restaurantServiceMode = input.restaurantCheckId
+      ? input.restaurantServiceMode === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN"
+      : null;
     const ord = await client.query<{ id: string }>(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
                                pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id,
-                               fulfillment_type, promised_at)
-       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                               fulfillment_type, promised_at, restaurant_service_mode, board_game_session_id)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING id`,
       [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
         locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
         input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null,
-        input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate]
+        input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate, restaurantServiceMode,
+        boardGameSessionId]
     );
     const orderId = ord.rows[0].id;
 

@@ -122,6 +122,45 @@ if (!process.env.BMS_CHECKOUT_SECRET) {
   );
 }
 
+// ---- 2b. env ของ realtime/WS ----
+// ตัวแปรพวกนี้ไม่มีอยู่ในเอกสารไหนก่อนรอบนี้ และสองตัวแรกล้มแบบ "เงียบแต่พังทั้งฟีเจอร์":
+//   · `WS_ALLOWED_ORIGINS` ว่าง → `apps/ws` throw ตั้งแต่ import = คอนเทนเนอร์ crash-loop
+//   · ตั้งเป็น localhost บนเซิร์ฟเวอร์จริง → บูตได้ แต่ `verifyClient` ตอบ 401 ให้ทุกเบราว์เซอร์
+//     ซึ่งอ่านจากข้างนอกไม่ต่างจาก "realtime ไม่ทำงาน"
+//   · `JWT_SECRET` สั้นกว่า 12 ตัวอักษร → `hmacKey()` throw ทั้งตอน mint และตอน verify ticket
+//
+// ห้าม import `apps/ws/src/security.ts` มาใช้ซ้ำที่นี่ — ไฟล์นั้น import `graphql` ซึ่ง resolve
+// จาก `scripts/` ไม่ได้ (แพ็กเกจอยู่ใต้ apps/* เท่านั้น) กับดักเดิมที่จดไว้ใน CLAUDE.local.md
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"];
+const wsProblems: string[] = [];
+if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 12) {
+  wsProblems.push("JWT_SECRET สั้นกว่า 12 ตัวอักษร — เซ็น/ตรวจ realtime ticket ไม่ได้เลย");
+}
+const allowedOrigins = String(process.env.WS_ALLOWED_ORIGINS || "")
+  .split(",").map((item) => item.trim()).filter(Boolean);
+if (allowedOrigins.length === 0) {
+  wsProblems.push("WS_ALLOWED_ORIGINS ไม่ได้ตั้ง — apps/ws จะ throw ตั้งแต่บูตบน production");
+} else {
+  for (const origin of allowedOrigins) {
+    let host = "";
+    try { host = new URL(origin).hostname; } catch { host = ""; }
+    if (!host) {
+      wsProblems.push(`WS_ALLOWED_ORIGINS มีค่าที่ไม่ใช่ URL: ${origin}`);
+    } else if (LOOPBACK_HOSTS.includes(host)) {
+      wsProblems.push(`WS_ALLOWED_ORIGINS ยังชี้ ${host} (${origin}) — เบราว์เซอร์ของจริงจะโดน 401 ทุกราย`);
+    }
+  }
+}
+if (wsProblems.length) block("env ของ realtime/WS", wsProblems.join(" · "));
+else pass("env ของ realtime/WS ตั้งครบและชี้โดเมนจริง");
+
+if (process.env.WS_TRUST_PROXY !== "1") {
+  warn(
+    "WS_TRUST_PROXY ไม่ได้ตั้งเป็น 1",
+    "ws จะเห็นทุก connection ที่ผ่าน Caddy เป็น IP เดียว แล้ว WS_MAX_CONNECTIONS_PER_IP กลายเป็นเพดานรวมของทั้งแพลตฟอร์ม"
+  );
+}
+
 // ---- 3. คีย์เข้ารหัสใช้ได้จริงกับข้อมูลที่เก็บไว้ ----
 const secretKey = runChild(["tsx", path.join(ROOT, "scripts", "check-bms-secret-key.mts")]);
 if (secretKey.status === 0) {
