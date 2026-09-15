@@ -193,6 +193,15 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_restaurant_checks", name: "service_mode" },
     ],
   },
+  {
+    // ทุก mutation โอน/นับสต็อกของเครื่องขาย native บังคับ `idempotencyKey: String!` แล้ว
+    // `replayInventoryResult()` อ่านตารางนี้ **ก่อน** แตะสต็อก โดยไม่มีธงและไม่ได้ห่อ try/catch
+    // → ฐานที่ไม่มีตารางได้ 42P01 แล้ว rollback ทั้งก้อนทุกครั้ง
+    // · เส้น REST ของหลังบ้านไม่ส่งคีย์ จึงไม่แตะตารางนี้และไม่กระทบ
+    file: "9.88__bms_inventory_operation_idempotency.sql",
+    impact: "โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)",
+    needs: [{ kind: "table", name: "bms_inventory_operation_idempotency" }],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

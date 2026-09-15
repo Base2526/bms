@@ -25,6 +25,7 @@ import { useSales } from '../../state/SalesContext';
 import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import {
+  MobilePosBoardGameCheckoutDocument,
   MobilePosRequestPharmacyReviewDocument,
   MobilePosSaleDocument,
   MobileRestaurantCheckDocument,
@@ -32,6 +33,7 @@ import {
   MobileRestaurantSettleCheckDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
+import { cartLineVariantLabel } from '../../lib/cartLine';
 import { createIdempotencyKey } from '../../lib/operation';
 import {
   calculateCashChange,
@@ -66,7 +68,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const { mode: storeMode } = useStoreMode();
   const restaurantParams =
     route.params?.source === 'restaurant' ? route.params : null;
-  const source = restaurantParams ? 'restaurant' : 'retail';
+  const boardGameParams =
+    route.params?.source === 'board_game' ? route.params : null;
+  const source = boardGameParams
+    ? 'board_game'
+    : restaurantParams
+    ? 'restaurant'
+    : 'retail';
   const tableId = restaurantParams?.tableId;
   const routedCheckId = restaurantParams?.checkId;
   const floor = useQuery(MobileRestaurantFloorDocument, {
@@ -95,10 +103,18 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     skip: source !== 'restaurant' || !restaurantCheckId,
   });
   const check = restaurantCheck.data?.bmsPosRestaurantCheck;
+  const boardGameCheckout = useQuery(MobilePosBoardGameCheckoutDocument, {
+    variables: {
+      credentials: session?.credentials ?? { cashierUserId: '', pin: '' },
+      id: boardGameParams?.boardGameSessionId ?? '',
+    },
+    skip: !session || !boardGameParams?.boardGameSessionId,
+  });
+  const boardGameBill = boardGameCheckout.data?.bmsPosBoardGameCheckout;
   const restaurantItems = (check?.items ?? []).filter(
     item => item.status !== 'CANCELLED',
   );
-  const lines =
+  const productLines =
     source === 'restaurant'
       ? restaurantItems.map(item => ({
           key: item.id,
@@ -116,9 +132,34 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           status: item.status,
         }))
       : cart.lines;
+  const lines = boardGameBill
+    ? [
+        {
+          key: `board-game-${boardGameBill.id}`,
+          sku: '__BOARD_GAME_TIME__',
+          name: `ค่าเล่นบอร์ดเกม · ${boardGameBill.tableCode} ${boardGameBill.tableName}`,
+          qty: 1,
+          unitPrice: boardGameBill.amountDue,
+          size: 'SERVICE',
+          packCode: '',
+          unitName: 'session',
+          baseQty: 1,
+          modifierCodes: [] as string[],
+          serialTracked: false,
+          serials: [] as string[],
+          status: 'CLOSING',
+        },
+        ...productLines,
+      ]
+    : productLines;
   const subtotal =
-    source === 'restaurant' ? check?.amountDue ?? 0 : cart.subtotal;
-  const total = source === 'restaurant' ? subtotal : cart.total;
+    source === 'restaurant'
+      ? check?.amountDue ?? 0
+      : cart.subtotal + (boardGameBill?.amountDue ?? 0);
+  const total =
+    source === 'restaurant'
+      ? subtotal
+      : cart.total + (boardGameBill?.amountDue ?? 0);
   const discounts =
     source === 'restaurant'
       ? {
@@ -167,13 +208,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [pharmacistPin, setPharmacistPin] = useState('');
   const [pharmacistNote, setPharmacistNote] = useState('');
   useEffect(() => {
-    if (source !== 'restaurant') return;
+    if (source === 'retail') return;
     setSaleMode('SALE');
     setPaymentsTouched(false);
     setPayments([
       { id: 'payment-1', method: 'cash', amount: total, tendered: total },
     ]);
-  }, [restaurantCheckId, source, total]);
+  }, [boardGameParams?.boardGameSessionId, restaurantCheckId, source, total]);
   const paymentTarget =
     saleMode === 'DEPOSIT' ? Number(depositAmount) || 0 : total;
   const validation = useMemo(
@@ -195,7 +236,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       approver.approvals.includes('ar.sell'),
   );
   const usesCredit =
-    source === 'retail' &&
+    source !== 'restaurant' &&
     payments.some(payment => payment.method === 'credit');
   const pharmacistCandidates = (
     bootstrap.data?.bmsPosSession.cashiers ?? []
@@ -219,6 +260,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     payments.every(payment =>
       RESTAURANT_PAYMENT_METHODS.includes(payment.method),
     );
+  const boardGameReady = source !== 'board_game' || Boolean(boardGameBill);
 
   const updatePayment = (id: string, patch: Partial<MockPaymentInput>) => {
     setPaymentsTouched(true);
@@ -247,6 +289,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     if (
       !validation.canConfirm ||
       !restaurantPaymentsValid ||
+      !boardGameReady ||
       submittedRef.current ||
       !session
     )
@@ -291,7 +334,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               pin: session.credentials.pin,
               idempotencyKey: idempotencyRef.current,
               mode: saleMode,
-              boardGameSessionId: null,
+              boardGameSessionId: boardGameParams?.boardGameSessionId ?? null,
               lines: cart.lines.map(line => ({
                 sku: line.sku,
                 size: line.size,
@@ -460,7 +503,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ) : null}
       <FlatList
         data={lines}
-        keyExtractor={(l, i) => `${l.sku}-${i}`}
+        keyExtractor={l => l.key}
         ItemSeparatorComponent={() => (
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
         )}
@@ -472,14 +515,26 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         renderItem={({ item }) => (
           <View style={{ gap: spacing.sm }}>
             <View style={styles.line}>
-              <Text style={[typography.body, { color: colors.text, flex: 1 }]}>
-                {item.name}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.body, { color: colors.text }]}>
+                  {item.name}
+                </Text>
+                {/* ไซซ์/หน่วยขาย/ตัวเลือก — หน้าจ่ายเงินคือจุดสุดท้ายที่แก้ได้ก่อนรับเงิน
+                    ค่าเวลาบอร์ดเกมไม่มีรุ่น (size 'SERVICE' เป็นค่าที่ server ต้องการ ไม่ใช่ป้าย) */}
+                {item.sku !== '__BOARD_GAME_TIME__' &&
+                cartLineVariantLabel(item) ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    {cartLineVariantLabel(item)}
+                  </Text>
+                ) : null}
+              </View>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
                 ฿{(item.qty * item.unitPrice).toFixed(2)}
               </Text>
             </View>
-            {source === 'retail' ? (
+            {source !== 'restaurant' && item.sku !== '__BOARD_GAME_TIME__' ? (
               <>
                 <View style={styles.line}>
                   <QtyStepper
@@ -493,9 +548,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                         category: 'สินค้า',
                         station: 'สินค้า',
                         sellable: true,
+                        selectedModifierCodes: item.modifierCodes,
                       })
                     }
-                    onDecrement={() => cart.decrementItem(item.sku)}
+                    onDecrement={() => cart.decrementItem(item.key)}
                   />
                   <Text
                     style={[typography.caption, { color: colors.textSoft }]}
@@ -539,7 +595,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               </>
             ) : (
               <Text style={[typography.caption, { color: colors.textSoft }]}>
-                คิดเงินจากบิลร้านอาหารเดิม ไม่สร้าง cart ใหม่
+                {item.sku === '__BOARD_GAME_TIME__'
+                  ? 'ยอดค่าเวลาถูก freeze จาก session และตรวจซ้ำที่เซิร์ฟเวอร์'
+                  : 'คิดเงินจากบิลร้านอาหารเดิม ไม่สร้าง cart ใหม่'}
               </Text>
             )}
           </View>
@@ -891,6 +949,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           Boolean(check?.items.some(item => item.status === 'NEW')) ||
           !validation.canConfirm ||
           !restaurantPaymentsValid ||
+          !boardGameReady ||
           !serialsReady ||
           !depositReady ||
           (usesCredit && !activeMember) ||
@@ -915,6 +974,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   ? `#${check.id.slice(0, 8)}`
                   : table?.code ?? check?.tableCode ?? '-'
               }`
+            : source === 'board_game'
+            ? `ชำระโต๊ะ ${boardGameBill?.tableCode ?? '-'}`
             : 'ชำระเงิน'
         }
         subtitle="ราคา สต็อก สิทธิ์ และผลชำระตรวจโดยเซิร์ฟเวอร์"

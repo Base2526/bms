@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
 import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { ScreenContainer } from '../../components/ScreenContainer';
@@ -50,19 +52,47 @@ import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
 import { useTheme } from '../../theme/ThemeProvider';
+import type { OperationsStackParamList } from '../../navigation/types';
 
 type Section = 'REGISTER' | 'RESTAURANT' | 'SUPPORT';
 type RestaurantView = 'OVERVIEW' | 'QUEUE' | 'QR' | 'CALLS' | 'REQUESTS';
 
+const LOCKED_TITLE: Record<Section, string> = {
+  RESTAURANT: 'งานเข้า',
+  REGISTER: 'เคาน์เตอร์',
+  SUPPORT: 'สถานะระบบ',
+};
+
 class BusinessResultError extends Error {}
 
-export default function OperationsScreen() {
+/**
+ * จอนี้ถูกใช้สองที่โดยตั้งใจ ไม่ใช่เพราะขี้เกียจแยกไฟล์:
+ *
+ *  - แท็บ "งานเข้า"  → `section="RESTAURANT"` + `locked` = เห็นเฉพาะคิว/QR/เรียก/คำขอ
+ *  - แท็บ "เพิ่มเติม" → ไม่ส่งอะไร = เห็นเคาน์เตอร์/สถานะระบบ และปุ่มไปสต็อกสาขา/กะ
+ *
+ * แยกด้วย props ไม่ใช่ route params เพราะมันอยู่คนละสแตกกัน — `useNavigation` จึงถูก
+ * ผูกกับสแตกของ "เพิ่มเติม" ตัวเดียว และปุ่มที่ใช้มัน (สต็อกสาขา/กะ) ถูกซ่อนตอน `locked`
+ */
+type Props = {
+  /** ส่วนที่เปิดค้างไว้ตอนเข้าจอ */
+  section?: Section;
+  /** ซ่อนตัวสลับส่วน — แท็บที่พามาที่นี่ตั้งใจให้เห็นส่วนเดียว */
+  locked?: boolean;
+};
+
+export default function OperationsScreen({
+  section: initialSection,
+  locked = false,
+}: Props) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<OperationsStackParamList>>();
   const { colors, spacing, typography } = useTheme();
   const { session } = useSession();
   const { mode } = useStoreMode();
   const credentials = session?.credentials;
   const [section, setSection] = useState<Section>(
-    mode === 'restaurant' ? 'RESTAURANT' : 'REGISTER',
+    initialSection ?? (mode === 'restaurant' ? 'RESTAURANT' : 'REGISTER'),
   );
   const [restaurantView, setRestaurantView] =
     useState<RestaurantView>('OVERVIEW');
@@ -246,27 +276,40 @@ export default function OperationsScreen() {
   return (
     <ScreenContainer>
       <Text style={[typography.title, { color: colors.text }]}>
-        งานหน้าร้าน
+        {/* ชื่อจอต้องตรงกับป้ายของแท็บที่พามา — จอเดียวรับสามบทบาทแล้วแต่ว่าถูกล็อกที่ส่วนไหน */}
+        {locked
+          ? LOCKED_TITLE[section]
+          : mode === 'restaurant'
+          ? 'เพิ่มเติม'
+          : 'งานหน้าร้าน'}
       </Text>
-      <View style={styles.wrap}>
-        <Button
-          label="เคาน์เตอร์"
-          variant={section === 'REGISTER' ? 'primary' : 'secondary'}
-          onPress={() => setSection('REGISTER')}
-        />
-        {mode === 'restaurant' ? (
+      {locked ? null : (
+        <View style={styles.wrap}>
           <Button
-            label="ร้านอาหาร"
-            variant={section === 'RESTAURANT' ? 'primary' : 'secondary'}
-            onPress={() => setSection('RESTAURANT')}
+            label="เคาน์เตอร์"
+            variant={section === 'REGISTER' ? 'primary' : 'secondary'}
+            onPress={() => setSection('REGISTER')}
           />
-        ) : null}
-        <Button
-          label="สถานะระบบ"
-          variant={section === 'SUPPORT' ? 'primary' : 'secondary'}
-          onPress={() => setSection('SUPPORT')}
-        />
-      </View>
+          <Button
+            label="สถานะระบบ"
+            variant={section === 'SUPPORT' ? 'primary' : 'secondary'}
+            onPress={() => setSection('SUPPORT')}
+          />
+          <Button
+            label="สต็อกสาขา"
+            variant="secondary"
+            onPress={() => navigation.navigate('Inventory')}
+          />
+          {/* เฉพาะร้านอาหาร — โหมดอื่นยังมีแท็บกะอยู่บนแถบ การมีปุ่มซ้ำคือสองทางไปที่เดียวกัน */}
+          {mode === 'restaurant' ? (
+            <Button
+              label="กะ/ลิ้นชัก"
+              variant="secondary"
+              onPress={() => navigation.navigate('Shift')}
+            />
+          ) : null}
+        </View>
+      )}
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xl }}

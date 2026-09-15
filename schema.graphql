@@ -2356,6 +2356,231 @@ input BmsPosBlindReturnLineInput {
   unitRefund: Float!
 }
 
+input BmsPosBoardGameAddParticipantInput {
+  billingGroupNo: Int = 1
+  cashierUserId: ID!
+  customerId: ID
+  displayName: String
+  idempotencyKey: String!
+  participantType: String
+  pin: String!
+  rateId: ID
+  sessionId: ID!
+}
+
+type BmsPosBoardGameArea {
+  id: ID!
+  name: String!
+  sortOrder: Int!
+}
+
+type BmsPosBoardGameBilling {
+  amountDue: Float!
+  endedAt: String!
+  lines: [BmsPosBoardGameChargeLine!]!
+  replayed: Boolean!
+  sessionId: ID!
+}
+
+type BmsPosBoardGameChargeLine {
+  amount: Float!
+  billableMinutes: Int!
+  billingGroupNo: Int!
+  displayName: String
+  hourlyRate: Float!
+  participantId: ID!
+  participantType: String!
+}
+
+type BmsPosBoardGameCheckout {
+  amountDue: Float!
+  chargeLineCount: Int!
+  endedAt: String!
+  id: ID!
+  startedAt: String!
+  tableCode: String!
+  tableName: String!
+}
+
+input BmsPosBoardGameCheckoutCopyInput {
+  cashierUserId: ID!
+  copyId: ID!
+  idempotencyKey: String!
+  pin: String!
+  sessionId: ID!
+}
+
+type BmsPosBoardGameCopy {
+  conditionNote: String
+  copyCode: String!
+  id: ID!
+  locationId: ID!
+  status: String!
+}
+
+type BmsPosBoardGameFloor {
+  areas: [BmsPosBoardGameArea!]!
+  tables: [BmsPosBoardGameTable!]!
+}
+
+input BmsPosBoardGameLeaveParticipantInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  participantId: ID!
+  pin: String!
+  sessionId: ID!
+}
+
+type BmsPosBoardGameLoan {
+  checkedOutAt: String
+  copyCode: String
+  copyId: ID
+  copyStatus: String
+  id: ID!
+  replayed: Boolean
+  returnedAt: String
+  status: String
+  title: String
+}
+
+input BmsPosBoardGameOpenInput {
+  alertBeforeMinutes: Int = 15
+  billingMode: String!
+  cashierUserId: ID!
+  expectedDurationMinutes: Int
+  idempotencyKey: String!
+  note: String
+  participants: [BmsPosBoardGameParticipantInput!]!
+  pin: String!
+  tableId: ID!
+}
+
+type BmsPosBoardGameParticipant {
+  billable: Boolean
+  billingGroupNo: Int
+  displayName: String
+  graceMinutes: Int
+  hourlyRate: Float
+  id: ID!
+  joinedAt: String
+  leftAt: String
+  minimumMinutes: Int
+  participantType: String
+  replayed: Boolean
+  roundingMinutes: Int
+}
+
+input BmsPosBoardGameParticipantInput {
+  billingGroupNo: Int = 1
+  customerId: ID
+  displayName: String
+  participantType: String
+  rateId: ID
+}
+
+type BmsPosBoardGameRate {
+  active: Boolean!
+  code: String!
+  customerType: String!
+  graceMinutes: Int!
+  id: ID!
+  minimumMinutes: Int!
+  name: String!
+  pricePerHour: Float!
+  roundingMinutes: Int!
+  sortOrder: Int!
+}
+
+input BmsPosBoardGameReturnCopyInput {
+  cashierUserId: ID!
+  copyStatus: String
+  idempotencyKey: String!
+  loanId: ID!
+  pin: String!
+  returnNote: String
+  status: String
+}
+
+type BmsPosBoardGameSession {
+  alertBeforeMinutes: Int!
+  alertStatus: String!
+  amountDue: Float!
+  billingMode: String!
+  currentOrderId: ID
+  endedAt: String
+  expectedEndAt: String
+  games: [BmsPosBoardGameLoan!]!
+  guestCount: Int!
+  id: ID!
+  locationId: ID!
+  participants: [BmsPosBoardGameParticipant!]!
+  startedAt: String!
+  status: String!
+  tableId: ID!
+}
+
+input BmsPosBoardGameSessionActionInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+  reason: String
+  sessionId: ID!
+}
+
+type BmsPosBoardGameSessionSummary {
+  alertBeforeMinutes: Int
+  alertStatus: String
+  amountDue: Float
+  billingMode: String
+  endedAt: String
+  expectedEndAt: String
+  guestCount: Int
+  id: ID
+  replayed: Boolean
+  sessionId: ID
+  startedAt: String
+  status: String
+}
+
+type BmsPosBoardGameTable {
+  areaId: ID!
+  blocked: Boolean!
+  code: String!
+  id: ID!
+  name: String!
+  openSession: BmsPosBoardGameSessionSummary
+  seats: Int!
+  sortOrder: Int!
+}
+
+input BmsPosBoardGameTimingInput {
+  alertBeforeMinutes: Int!
+  billingMode: String!
+  cashierUserId: ID!
+  expectedDurationMinutes: Int
+  idempotencyKey: String!
+  pin: String!
+  sessionId: ID!
+}
+
+type BmsPosBoardGameTitle {
+  copies: [BmsPosBoardGameCopy!]!
+  difficulty: String
+  id: ID!
+  language: String
+  maxPlayers: Int
+  minPlayers: Int
+  publicVisible: Boolean!
+  title: String!
+  typicalMinutes: Int
+}
+
+type BmsPosBoardGameWorkspace {
+  floor: BmsPosBoardGameFloor!
+  library: [BmsPosBoardGameTitle!]!
+  rates: [BmsPosBoardGameRate!]!
+}
+
 type BmsPosCashMovement {
   actorName: String
   amount: Float!
@@ -4136,6 +4361,67 @@ type BmsPosShiftReturnSummary {
 type BmsPosSimpleActionResult {
   reason: String
   status: String!
+}
+
+input BmsPosStockCountActionInput {
+  cashierUserId: ID!
+  countId: ID!
+  idempotencyKey: String!
+  pin: String!
+}
+
+input BmsPosStockCountCreateInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  note: String
+  pin: String!
+}
+
+input BmsPosStockCountItemInput {
+  cashierUserId: ID!
+  countId: ID!
+  countedQty: Int!
+  idempotencyKey: String!
+  note: String
+  pin: String!
+  size: String!
+  sku: String!
+}
+
+type BmsPosStockCountsResult {
+  counts: [BmsMobileStockCount!]!
+  deviceLocationId: ID!
+}
+
+input BmsPosStockTransferActionInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+  transferId: ID!
+}
+
+input BmsPosStockTransferCreateInput {
+  cashierUserId: ID!
+  destinationId: ID!
+  idempotencyKey: String!
+  items: [BmsStockTransferLineInput!]!
+  note: String
+  pin: String!
+}
+
+input BmsPosStockTransferReceiveInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+  received: [BmsStockTransferReceiptLineInput!]
+  receivingNote: String
+  transferId: ID!
+}
+
+type BmsPosStockTransfersResult {
+  destinations: [BmsLocation!]!
+  deviceLocationId: ID!
+  transfers: [BmsMobileStockTransfer!]!
 }
 
 type BmsPosStoreCreditResult {
@@ -5942,18 +6228,32 @@ type Mutation {
 
   """ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ)"""
   bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
+  bmsPosAddBoardGameParticipant(input: BmsPosBoardGameAddParticipantInput!): BmsPosBoardGameParticipant!
+  bmsPosAdjustBoardGameTiming(input: BmsPosBoardGameTimingInput!): BmsPosBoardGameSessionSummary!
+  bmsPosApplyStockCount(input: BmsPosStockCountActionInput!): BmsMobileStockCountActionResult!
   bmsPosBlindReturn(input: BmsPosBlindReturnInput!): BmsPosReturnActionResult!
+  bmsPosCancelBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameSessionSummary!
+  bmsPosCancelStockCount(input: BmsPosStockCountActionInput!): BmsMobileStockCountActionResult!
+  bmsPosCancelStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosCashMovement(input: BmsPosCashMovementInput!): BmsPosCashMovementActionResult!
+  bmsPosCheckoutBoardGameCopy(input: BmsPosBoardGameCheckoutCopyInput!): BmsPosBoardGameLoan!
+  bmsPosCloseBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameBilling!
   bmsPosCollectAr(input: BmsPosCollectArInput!): BmsPosArReceiptResult!
   bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): BmsPosCompleteRefundResult!
+  bmsPosCreateStockCount(input: BmsPosStockCountCreateInput!): BmsMobileStockCountActionResult!
+  bmsPosCreateStockTransfer(input: BmsPosStockTransferCreateInput!): BmsMobileStockTransferActionResult!
   bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
   bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): BmsPosEnrollMemberResult!
   bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
   bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): BmsPosKitchenTicketActionResult!
   bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): BmsPosKitchenTicketsActionResult!
+  bmsPosLeaveBoardGameParticipant(input: BmsPosBoardGameLeaveParticipantInput!): BmsPosBoardGameParticipant!
   bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!
+  bmsPosOpenBoardGameSession(input: BmsPosBoardGameOpenInput!): BmsPosBoardGameSessionSummary!
   bmsPosPark(input: BmsPosParkInput!): BmsPosParkActionResult!
   bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): BmsPurchaseResult!
+  bmsPosReceiveStockTransfer(input: BmsPosStockTransferReceiveInput!): BmsMobileStockTransferActionResult!
+  bmsPosRecordStockCountItem(input: BmsPosStockCountItemInput!): BmsMobileStockCountActionResult!
   bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): BmsPosPharmacyReviewResult!
   bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): BmsPosRestaurantIncomingActionResult!
   bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): BmsPosRestaurantQrActionResult!
@@ -5989,8 +6289,10 @@ type Mutation {
   bmsPosRestaurantSplitCheck(checkId: ID!, input: BmsPosRestaurantSplitCheckInput!): BmsPosRestaurantCheckActionResult!
   bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): BmsPosRestaurantWaitlistActionResult! @deprecated(reason: "Use the named waitlist mutations")
   bmsPosReturn(input: BmsPosReturnInput!): BmsPosReturnActionResult!
+  bmsPosReturnBoardGameCopy(input: BmsPosBoardGameReturnCopyInput!): BmsPosBoardGameLoan!
   bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
   bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!
+  bmsPosSendStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
@@ -6535,6 +6837,9 @@ type Query {
   bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
   bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
   bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): BmsPosArAccountResult!
+  bmsPosBoardGameCheckout(credentials: BmsPosCredentialsInput!, id: ID!): BmsPosBoardGameCheckout
+  bmsPosBoardGameSession(credentials: BmsPosCredentialsInput!, id: ID!): BmsPosBoardGameSession
+  bmsPosBoardGameWorkspace(credentials: BmsPosCredentialsInput!): BmsPosBoardGameWorkspace!
   bmsPosCashMovements: BmsPosCashMovementsResult!
   bmsPosCashiers: [BmsPosCashier!]!
   bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
@@ -6567,6 +6872,8 @@ type Query {
   bmsPosShiftHistory(credentials: BmsPosCredentialsInput!): BmsPosShiftHistoryResult!
   bmsPosShiftReport(credentials: BmsPosCredentialsInput!, shiftId: ID): BmsPosShiftReportResult!
   bmsPosStaff: [BmsPosCashier!]!
+  bmsPosStockCounts(credentials: BmsPosCredentialsInput!): BmsPosStockCountsResult!
+  bmsPosStockTransfers(credentials: BmsPosCredentialsInput!): BmsPosStockTransfersResult!
   bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): BmsPosStoreCreditResult!
   bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
   bmsProductBySku(sku: String!): BmsProduct

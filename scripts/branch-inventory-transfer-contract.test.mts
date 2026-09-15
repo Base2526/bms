@@ -13,8 +13,14 @@ test("branch inventory variants expose location, transit, and quarantine", async
   ]);
   assert.match(service, /loc\.name AS location_name/);
   assert.match(service, /tr\.status = 'IN_TRANSIT'/);
-  assert.match(schema, /locationId: ID[\s\S]*quarantine_stock: Int![\s\S]*inTransitQty: Int![\s\S]*transferLostQty: Int!/);
-  assert.match(page, /rowKey=\{\(variant: Variant\) => `\$\{variant\.locationId\}:\$\{variant\.size\}`\}/);
+  assert.match(
+    schema,
+    /locationId: ID[\s\S]*quarantine_stock: Int![\s\S]*inTransitQty: Int![\s\S]*transferLostQty: Int!/,
+  );
+  assert.match(
+    page,
+    /rowKey=\{\(variant: Variant\) => `\$\{variant\.locationId\}:\$\{variant\.size\}`\}/,
+  );
 });
 
 test("stock adjustments and reorder points require an explicit branch", async () => {
@@ -45,6 +51,31 @@ test("transfer discrepancy evidence cannot silently become sellable stock", asyn
   assert.match(page, /หมายเหตุส่วนต่าง/);
 });
 
+test("device scope lookup addresses an exact transfer or count instead of only the latest page", async () => {
+  const [transfers, counts, posDevice] = await Promise.all([
+    read("apps/web/lib/bms/stockTransfers.ts"),
+    read("apps/web/lib/bms/stockCounts.ts"),
+    read("apps/web/graphql/bmsPosDevice.ts"),
+  ]);
+  assert.match(transfers, /AND \(\$4::uuid IS NULL OR t\.id = \$4\)/);
+  assert.match(transfers, /listStockTransfers\(tenantId, null, 1, id\)/);
+  assert.match(
+    transfers,
+    /AND \(\$5::uuid IS NULL OR t\.from_location = \$5 OR t\.to_location = \$5\)/,
+  );
+  assert.match(counts, /AND \(\$4::uuid IS NULL OR c\.id = \$4\)/);
+  assert.match(counts, /listStockCounts\(tenantId, null, 1, id\)/);
+  assert.match(counts, /AND \(\$5::uuid IS NULL OR c\.location_id = \$5\)/);
+  assert.match(
+    posDevice,
+    /listStockTransfers\(device\.tenantId, null, 200, null, device\.locationId\)/,
+  );
+  assert.match(
+    posDevice,
+    /listStockCounts\([\s\S]*?device\.tenantId,[\s\S]*?200,[\s\S]*?device\.locationId,[\s\S]*?\)/,
+  );
+});
+
 test("product inventory separates transfer losses from company-held stock", async () => {
   const [migration, service, schema, page] = await Promise.all([
     read("db/migrations/9.36__bms_stock_transfer_loss_visibility.sql"),
@@ -69,7 +100,10 @@ test("orders expose and filter by sale branch without borrowing product permissi
   assert.match(schema, /bmsOrders\([^)]*locationId: ID/);
   assert.match(schema, /bmsOrderLocations: \[BmsLocation!\]!/);
   assert.match(schema, /bmsCreateOrder\([^)]*locationId: ID/);
-  assert.match(schema, /type BmsOrder[\s\S]*locationId: ID[\s\S]*locationName: String[\s\S]*branchCode: String[\s\S]*posDeviceName: String/);
+  assert.match(
+    schema,
+    /type BmsOrder[\s\S]*locationId: ID[\s\S]*locationName: String[\s\S]*branchCode: String[\s\S]*posDeviceName: String/,
+  );
   assert.match(resolver, /listLocationsForUser\(tenantId, userId\)/);
   assert.match(resolver, /resolveWritableLocationId/);
   assert.match(resolver, /LEFT JOIN bms_locations loc/);
@@ -84,7 +118,15 @@ test("orders expose and filter by sale branch without borrowing product permissi
 });
 
 test("coupon branch scope is stored, visible, and enforced at POS/order settlement", async () => {
-  const [migration, service, orders, posPreview, couponsResolver, schema, page] = await Promise.all([
+  const [
+    migration,
+    service,
+    orders,
+    posPreview,
+    couponsResolver,
+    schema,
+    page,
+  ] = await Promise.all([
     read("db/migrations/9.37__bms_branch_visibility_and_policy_scope.sql"),
     read("apps/web/lib/bms/coupons.ts"),
     read("apps/web/lib/bms/orders.ts"),
@@ -99,11 +141,23 @@ test("coupon branch scope is stored, visible, and enforced at POS/order settleme
   assert.match(service, /location_ids/);
   assert.match(service, /couponAllowsLocation/);
   assert.match(service, /replaceCouponLocationsInTx/);
-  assert.match(orders, /applyCouponInTx\(client, tenantId, input\.couponCode, customerId, total, locationId\)/);
-  assert.match(posPreview, /previewCouponForCustomer\(device\.tenantId, couponCode, customerId, subtotal, device\.locationId\)/);
+  assert.match(
+    orders,
+    /applyCouponInTx\(client, tenantId, input\.couponCode, customerId, total, locationId\)/,
+  );
+  assert.match(
+    posPreview,
+    /previewCouponForCustomer\(device\.tenantId, couponCode, customerId, subtotal, device\.locationId\)/,
+  );
   assert.match(couponsResolver, /bmsCouponLocations/);
-  assert.match(couponsResolver, /listLocationsForUser\(getTenantId\(ctx\), String\(auth\.author_id \|\| ""\)\)/);
-  assert.match(couponsResolver, /ผู้ใช้ที่ถูกจำกัดสาขาต้องเลือกสาขาของคูปองอย่างน้อย 1 สาขา/);
+  assert.match(
+    couponsResolver,
+    /listLocationsForUser\(getTenantId\(ctx\), String\(auth\.author_id \|\| ""\)\)/,
+  );
+  assert.match(
+    couponsResolver,
+    /ผู้ใช้ที่ถูกจำกัดสาขาต้องเลือกสาขาของคูปองอย่างน้อย 1 สาขา/,
+  );
   assert.match(couponsResolver, /ไม่มีสิทธิ์ตั้งคูปองให้สาขานี้/);
   assert.match(schema, /BmsCoupon[\s\S]*locationIds: \[ID!\]!/);
   assert.match(schema, /input BmsCouponInput[\s\S]*locationIds: \[ID!\]/);
@@ -113,13 +167,24 @@ test("coupon branch scope is stored, visible, and enforced at POS/order settleme
 });
 
 test("branch access policy has an explicit tenant-scoped foundation", async () => {
-  const migration = await read("db/migrations/9.37__bms_branch_visibility_and_policy_scope.sql");
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_user_allowed_locations/);
-  assert.match(migration, /tenant_id\s+UUID NOT NULL REFERENCES bms_tenants\(id\)/);
+  const migration = await read(
+    "db/migrations/9.37__bms_branch_visibility_and_policy_scope.sql",
+  );
+  assert.match(
+    migration,
+    /CREATE TABLE IF NOT EXISTS bms_user_allowed_locations/,
+  );
+  assert.match(
+    migration,
+    /tenant_id\s+UUID NOT NULL REFERENCES bms_tenants\(id\)/,
+  );
   assert.match(migration, /user_id\s+UUID NOT NULL REFERENCES users\(id\)/);
   assert.match(migration, /location_id\s+UUID NOT NULL/);
   assert.match(migration, /bms_user_allowed_locations_tenant_isolation/);
-  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON bms_user_allowed_locations TO bms_app/);
+  assert.match(
+    migration,
+    /GRANT SELECT, INSERT, UPDATE, DELETE ON bms_user_allowed_locations TO bms_app/,
+  );
   const locations = await read("apps/web/lib/bms/locations.ts");
   assert.match(locations, /userHasLocationScope/);
   assert.match(locations, /listLocationsForUser/);
@@ -127,14 +192,16 @@ test("branch access policy has an explicit tenant-scoped foundation", async () =
 });
 
 test("POS member enrollment stores server-derived branch attribution and exposes it in Customers", async () => {
-  const [migration, route, service, resolver, schema, page] = await Promise.all([
-    read("db/migrations/9.38__bms_member_enrollment_attribution.sql"),
-    read("apps/web/app/api/pos/member/route.ts"),
-    read("apps/web/lib/bms/membership.ts"),
-    read("apps/web/graphql/bmsCustomers.ts"),
-    read("apps/web/graphql/typeDefs.ts"),
-    read("apps/web/app/(admin)/admin/customers/page.tsx"),
-  ]);
+  const [migration, route, service, resolver, schema, page] = await Promise.all(
+    [
+      read("db/migrations/9.38__bms_member_enrollment_attribution.sql"),
+      read("apps/web/app/api/pos/member/route.ts"),
+      read("apps/web/lib/bms/membership.ts"),
+      read("apps/web/graphql/bmsCustomers.ts"),
+      read("apps/web/graphql/typeDefs.ts"),
+      read("apps/web/app/(admin)/admin/customers/page.tsx"),
+    ],
+  );
   assert.match(migration, /ADD COLUMN IF NOT EXISTS enrollment_channel TEXT/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS enrolled_location_id UUID/);
   assert.match(migration, /bms_customers_enrolled_location_fk/);
@@ -147,7 +214,10 @@ test("POS member enrollment stores server-derived branch attribution and exposes
   assert.match(service, /enrollment_channel = \$5/);
   assert.match(resolver, /bmsCustomerLocations/);
   assert.match(schema, /bmsCustomers\([^)]*enrolledLocationId: ID/);
-  assert.match(schema, /type BmsMember[\s\S]*enrollmentChannel: String[\s\S]*enrolledLocationName: String/);
+  assert.match(
+    schema,
+    /type BmsMember[\s\S]*enrollmentChannel: String[\s\S]*enrolledLocationName: String/,
+  );
   assert.match(page, /filter_enrollment_branch/);
   assert.match(page, /enrolledLocationName/);
   assert.match(page, /enrollment_branch_unknown/);

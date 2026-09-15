@@ -51,7 +51,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.70__bms_realtime_outbox.sql', 'table', 'bms_realtime_outbox', NULL, 'รับของเข้าคลังจาก PO ไม่ได้ (ทั้งหลังบ้านและที่เครื่องขาย) — ทรานแซกชันล้มทั้งก้อน'),
     ('9.82__bms_board_game_pos_settlement.sql', 'column', 'bms_orders', 'board_game_session_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
     ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_orders', 'restaurant_service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
-    ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_restaurant_checks', 'service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า')
+    ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_restaurant_checks', 'service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
+    ('9.88__bms_inventory_operation_idempotency.sql', 'table', 'bms_inventory_operation_idempotency', NULL, 'โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

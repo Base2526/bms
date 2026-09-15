@@ -169,6 +169,7 @@ const OPS_TELEMETRY = [
   "bms_generated_reports", "bms_realtime_outbox", "bms_retention_cases",
   "bms_followup_history", "bms_followup_jobs", "bms_etax_submissions",
   "bms_board_game_idempotency_results",
+  "bms_inventory_operation_idempotency",
 ];
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */

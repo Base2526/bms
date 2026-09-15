@@ -1758,6 +1758,368 @@ mutation MobileRestaurantSeatWaitlistEntry(
   }
 }
 
+fragment MobilePosStockTransferFields on BmsMobileStockTransfer {
+  id
+  transferNo
+  fromLocationId
+  fromLocationName
+  toLocationId
+  toLocationName
+  status
+  note
+  receivingNote
+  createdByName
+  sentAt
+  receivedAt
+  createdAt
+  items {
+    id
+    sku
+    productName
+    size
+    qty
+    receivedQty
+    damagedQty
+    missingQty
+    discrepancyReason
+    discrepancyNote
+  }
+}
+
+query MobilePosStockTransfers($credentials: BmsPosCredentialsInput!) {
+  bmsPosStockTransfers(credentials: $credentials) {
+    deviceLocationId
+    destinations {
+      id
+      code
+      name
+      active
+    }
+    transfers {
+      ...MobilePosStockTransferFields
+    }
+  }
+}
+
+mutation MobilePosCreateStockTransfer($input: BmsPosStockTransferCreateInput!) {
+  bmsPosCreateStockTransfer(input: $input) {
+    status
+    transferId
+    transferNo
+    reason
+  }
+}
+
+mutation MobilePosSendStockTransfer($input: BmsPosStockTransferActionInput!) {
+  bmsPosSendStockTransfer(input: $input) {
+    status
+    reason
+    current
+    sku
+    size
+    available
+    requested
+  }
+}
+
+mutation MobilePosReceiveStockTransfer($input: BmsPosStockTransferReceiveInput!) {
+  bmsPosReceiveStockTransfer(input: $input) {
+    status
+    reason
+    current
+  }
+}
+
+mutation MobilePosCancelStockTransfer($input: BmsPosStockTransferActionInput!) {
+  bmsPosCancelStockTransfer(input: $input) {
+    status
+    reason
+    current
+  }
+}
+
+fragment MobilePosStockCountFields on BmsMobileStockCount {
+  id
+  countNo
+  locationId
+  locationName
+  status
+  note
+  createdByName
+  appliedAt
+  createdAt
+  varianceUnits
+  items {
+    id
+    sku
+    productName
+    size
+    snapshotQty
+    countedQty
+    variance
+    note
+  }
+}
+
+query MobilePosStockCounts($credentials: BmsPosCredentialsInput!) {
+  bmsPosStockCounts(credentials: $credentials) {
+    deviceLocationId
+    counts {
+      ...MobilePosStockCountFields
+    }
+  }
+}
+
+mutation MobilePosCreateStockCount($input: BmsPosStockCountCreateInput!) {
+  bmsPosCreateStockCount(input: $input) {
+    status
+    countId
+    countNo
+    reason
+  }
+}
+
+mutation MobilePosRecordStockCountItem($input: BmsPosStockCountItemInput!) {
+  bmsPosRecordStockCountItem(input: $input) {
+    status
+    reason
+    current
+    snapshotQty
+    variance
+  }
+}
+
+mutation MobilePosApplyStockCount($input: BmsPosStockCountActionInput!) {
+  bmsPosApplyStockCount(input: $input) {
+    status
+    reason
+    current
+    adjustedItems
+    varianceUnits
+    sku
+    size
+    reserved
+    wouldBe
+  }
+}
+
+mutation MobilePosCancelStockCount($input: BmsPosStockCountActionInput!) {
+  bmsPosCancelStockCount(input: $input) {
+    status
+    reason
+    current
+  }
+}
+
+fragment MobilePosBoardGameSessionSummaryFields on BmsPosBoardGameSessionSummary {
+  id
+  sessionId
+  status
+  billingMode
+  guestCount
+  startedAt
+  expectedEndAt
+  endedAt
+  alertBeforeMinutes
+  alertStatus
+  amountDue
+  replayed
+}
+
+query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
+  bmsPosBoardGameWorkspace(credentials: $credentials) {
+    floor {
+      areas {
+        id
+        name
+        sortOrder
+      }
+      tables {
+        id
+        areaId
+        code
+        name
+        seats
+        sortOrder
+        blocked
+        openSession {
+          ...MobilePosBoardGameSessionSummaryFields
+        }
+      }
+    }
+    rates {
+      id
+      code
+      name
+      customerType
+      pricePerHour
+      minimumMinutes
+      roundingMinutes
+      graceMinutes
+      active
+      sortOrder
+    }
+    library {
+      id
+      title
+      minPlayers
+      maxPlayers
+      typicalMinutes
+      difficulty
+      language
+      publicVisible
+      copies {
+        id
+        locationId
+        copyCode
+        status
+        conditionNote
+      }
+    }
+  }
+}
+
+query MobilePosBoardGameSession(
+  $credentials: BmsPosCredentialsInput!
+  $id: ID!
+) {
+  bmsPosBoardGameSession(credentials: $credentials, id: $id) {
+    id
+    status
+    billingMode
+    guestCount
+    startedAt
+    expectedEndAt
+    endedAt
+    alertBeforeMinutes
+    alertStatus
+    amountDue
+    locationId
+    tableId
+    currentOrderId
+    participants {
+      id
+      displayName
+      participantType
+      billable
+      hourlyRate
+      minimumMinutes
+      roundingMinutes
+      graceMinutes
+      billingGroupNo
+      joinedAt
+      leftAt
+    }
+    games {
+      id
+      copyId
+      copyCode
+      title
+      status
+      checkedOutAt
+      returnedAt
+      copyStatus
+    }
+  }
+}
+
+query MobilePosBoardGameCheckout(
+  $credentials: BmsPosCredentialsInput!
+  $id: ID!
+) {
+  bmsPosBoardGameCheckout(credentials: $credentials, id: $id) {
+    id
+    tableCode
+    tableName
+    startedAt
+    endedAt
+    amountDue
+    chargeLineCount
+  }
+}
+
+mutation MobilePosOpenBoardGameSession($input: BmsPosBoardGameOpenInput!) {
+  bmsPosOpenBoardGameSession(input: $input) {
+    ...MobilePosBoardGameSessionSummaryFields
+  }
+}
+
+mutation MobilePosAddBoardGameParticipant(
+  $input: BmsPosBoardGameAddParticipantInput!
+) {
+  bmsPosAddBoardGameParticipant(input: $input) {
+    id
+    displayName
+    participantType
+    billable
+    hourlyRate
+    billingGroupNo
+    joinedAt
+    replayed
+  }
+}
+
+mutation MobilePosLeaveBoardGameParticipant(
+  $input: BmsPosBoardGameLeaveParticipantInput!
+) {
+  bmsPosLeaveBoardGameParticipant(input: $input) {
+    id
+    leftAt
+    replayed
+  }
+}
+
+mutation MobilePosAdjustBoardGameTiming($input: BmsPosBoardGameTimingInput!) {
+  bmsPosAdjustBoardGameTiming(input: $input) {
+    ...MobilePosBoardGameSessionSummaryFields
+  }
+}
+
+mutation MobilePosCloseBoardGameSession(
+  $input: BmsPosBoardGameSessionActionInput!
+) {
+  bmsPosCloseBoardGameSession(input: $input) {
+    sessionId
+    amountDue
+    endedAt
+    replayed
+    lines {
+      participantId
+      displayName
+      participantType
+      billingGroupNo
+      billableMinutes
+      hourlyRate
+      amount
+    }
+  }
+}
+
+mutation MobilePosCancelBoardGameSession(
+  $input: BmsPosBoardGameSessionActionInput!
+) {
+  bmsPosCancelBoardGameSession(input: $input) {
+    ...MobilePosBoardGameSessionSummaryFields
+  }
+}
+
+mutation MobilePosCheckoutBoardGameCopy($input: BmsPosBoardGameCheckoutCopyInput!) {
+  bmsPosCheckoutBoardGameCopy(input: $input) {
+    id
+    checkedOutAt
+    replayed
+  }
+}
+
+mutation MobilePosReturnBoardGameCopy($input: BmsPosBoardGameReturnCopyInput!) {
+  bmsPosReturnBoardGameCopy(input: $input) {
+    id
+    returnedAt
+    copyStatus
+    replayed
+  }
+}
+
 subscription MobileDeviceSessionChanged {
   bmsDeviceSessionChanged {
     ...MobileRealtimeEventFields

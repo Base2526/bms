@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -26,6 +27,8 @@ import {
 } from '../../graphql/generated';
 import { createIdempotencyKey } from '../../lib/operation';
 import { useSession } from '../../state/SessionContext';
+import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
+import type { OrdersStackParamList } from '../../navigation/types';
 
 const CHANNEL_LABEL: Record<string, string> = {
   LINE: 'LINE',
@@ -34,7 +37,9 @@ const CHANNEL_LABEL: Record<string, string> = {
   QR_TABLE: 'QR ที่โต๊ะ',
 };
 
-export default function IncomingOrdersScreen() {
+type Props = NativeStackScreenProps<OrdersStackParamList, 'IncomingOrders'>;
+
+export default function IncomingOrdersScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const {
@@ -51,6 +56,8 @@ export default function IncomingOrdersScreen() {
   const [setPaused] = useMutation(MobileRestaurantSetOrderingPausedDocument);
   const [cancelLines] = useMutation(MobileRestaurantCancelOrderLinesDocument);
   const { settings, soundAvailable, acknowledge } = useOrderAlerts();
+  const { activeWaitlistCount, pendingQrCount, pendingServiceCallCount } =
+    useRestaurantOperations();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [managerId, setManagerId] = useState('');
@@ -194,6 +201,26 @@ export default function IncomingOrdersScreen() {
           หยุดรับออร์เดอร์ออนไลน์ชั่วคราว
         </Text>
       ) : null}
+      {/* คิว · QR · เรียกพนักงาน · คำขอจากแชท เป็นงานชนิดเดียวกับออร์เดอร์เข้า — "มีคนรอเราตอบ"
+          จึงอยู่ใต้แท็บเดียวกัน · เลขบนปุ่มคือเลขเดียวกับที่รวมเป็น badge บนแถบล่าง
+          ถ้าเลขบนแถบกับที่นี่ไม่ตรงกัน แปลว่ามีถังที่ badge นับแต่กดเข้าไปไม่ถึง */}
+      <View style={[styles.row, { marginBottom: spacing.sm }]}>
+        <Button
+          label={`คิว ${activeWaitlistCount}`}
+          variant="secondary"
+          onPress={() => navigation.navigate('RestaurantOps')}
+        />
+        <Button
+          label={`QR ${pendingQrCount}`}
+          variant="secondary"
+          onPress={() => navigation.navigate('RestaurantOps')}
+        />
+        <Button
+          label={`เรียก ${pendingServiceCallCount}`}
+          variant="secondary"
+          onPress={() => navigation.navigate('RestaurantOps')}
+        />
+      </View>
       <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
         <TextInput
           value={cancelNote}

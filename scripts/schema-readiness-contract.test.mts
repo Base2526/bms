@@ -9,6 +9,7 @@
 // =============================================================
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { MIGRATIONS, renderReadinessSql } from "./schemaReadiness.mts";
@@ -48,4 +49,33 @@ test("SQL ที่ generate ต้องครอบทุกอย่างใ
   }
   assert.match(sql, /to_regclass\('public\.' \|\| r\.tbl\)/);
   assert.match(sql, /information_schema\.columns/);
+});
+
+/**
+ * ตารางที่ service อ่าน "ก่อนแตะสต็อก โดยไม่มีธงและไม่ได้ห่อ try/catch" ต้องอยู่ในลิสต์เสมอ
+ *
+ * `replayInventoryResult()` ยิง SELECT ตัวนี้เป็นคำสั่งแรกของทุก mutation โอน/นับสต็อกที่มา
+ * จากเครื่องขาย native (SDL บังคับ `idempotencyKey: String!`) ฐานที่ยังไม่ apply `9.88` จึงได้
+ * 42P01 แล้ว rollback ทั้งก้อน — ไล่หาไม่เจอเลยถ้าตัวตรวจ readiness ไม่รู้จักไฟล์นี้
+ *
+ * ด่านนี้เดินจาก **ซอร์สจริง** ไปหาลิสต์ ไม่ใช่จากชื่อที่เทสพิมพ์เอง
+ */
+test("ตารางที่โมดูล idempotency อ่านทุกครั้ง ต้องถูกคุมด้วย readiness", () => {
+  const source = readFileSync(
+    new URL("../apps/web/lib/bms/inventoryIdempotency.ts", import.meta.url),
+    "utf8",
+  );
+  const tables = [...source.matchAll(/(?:FROM|INSERT INTO)\s+([a-z_][a-z0-9_]*)/g)]
+    .map((match) => match[1]);
+  assert.ok(tables.length > 0, "ต้องอ่านชื่อตารางจากซอร์สได้จริง");
+  const covered = new Set(
+    MIGRATIONS.flatMap((migration) =>
+      migration.needs.map((need) => (need.kind === "table" ? need.name : need.table)),
+    ),
+  );
+  assert.deepEqual(
+    [...new Set(tables)].filter((table) => !covered.has(table)),
+    [],
+    "เพิ่มไฟล์ migration ของตารางนี้เข้า MIGRATIONS แล้ว regenerate db/checks/schema-readiness.sql",
+  );
 });

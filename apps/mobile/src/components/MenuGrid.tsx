@@ -204,6 +204,9 @@ export function MenuGrid({
             data={catalog.categories}
             keyExtractor={c => c}
             showsHorizontalScrollIndicator={false}
+            // แถบชิป ไม่ใช่ตัวเลื่อนที่ต้องกินพื้นที่ — วันนี้พ่ออยู่ในกล่องสูงตามเนื้อหาจึงยังไม่มีอาการ
+            // แต่ค่าปริยายของ RN คือ flexGrow: 1 พอวันไหนพ่อมีความสูงแน่นอน ชิปจะไปแย่งที่กับกริด
+            style={{ flexGrow: 0 }}
             ItemSeparatorComponent={() => (
               <View style={{ width: spacing.sm }} />
             )}

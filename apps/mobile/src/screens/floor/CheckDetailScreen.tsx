@@ -17,6 +17,7 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { MenuGrid } from '../../components/MenuGrid';
+import { cartLineVariantLabel } from '../../lib/cartLine';
 import {
   ProductOptionsModal,
   type ConfiguredProduct,
@@ -399,6 +400,14 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
               <Text style={[typography.body, { color: colors.text }]}>
                 {item.productName} × {item.packQty}
               </Text>
+              {/* ไซซ์/ตัวเลือก — server ส่ง size กับ modifierNames มาให้อยู่แล้วแต่ไม่เคยถูกเขียนลงจอ
+                  บิลที่มี "ชาเย็น × 1" สองบรรทัดโดยไม่บอกว่าหวานน้อย/หวานปกติ อ่านแล้วตอบไม่ได้ว่า
+                  ครัวทำถูกไหม และเป็นบรรทัดที่พนักงานต้องตัดสินใจว่าจะลบอันไหน */}
+              {cartLineVariantLabel(item) ? (
+                <Text style={[typography.caption, { color: colors.text }]}>
+                  {cartLineVariantLabel(item)}
+                </Text>
+              ) : null}
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 {item.kitchenStatus ?? item.status}
               </Text>

@@ -20,6 +20,7 @@ import { OrderAlertBanner } from '../../components/OrderAlertBanner';
 import { ProductOptionsModal } from '../../components/ProductOptionsModal';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
+import { cartLineVariantLabel } from '../../lib/cartLine';
 import { useCart } from '../../state/CartContext';
 import { useCatalog } from '../../state/CatalogContext';
 import { useStoreMode } from '../../state/StoreModeContext';
@@ -43,6 +44,7 @@ export default function MenuScreen({ navigation }: Props) {
     lines,
     addItem,
     decrementItem,
+    decrementSku,
     total,
     parkedBills,
     parkCurrentBill,
@@ -73,9 +75,11 @@ export default function MenuScreen({ navigation }: Props) {
       ? 'ขายยาและสินค้า'
       : 'ขายสินค้า';
 
+  // การ์ดใบเดียวแทนทุกไซซ์/หน่วยขายของ sku นั้น เลขบนการ์ดจึงต้องเป็น "ผลรวมของทุกบรรทัด"
+  // ⚠️ เดิมเขียนทับด้วยบรรทัดสุดท้าย: ตะกร้ามี S/M/L อย่างละ 1 แล้วการ์ดโชว์ 1 ทั้งที่มี 3
   const qtyBySku = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const l of lines) map[l.sku] = l.qty;
+    for (const l of lines) map[l.sku] = (map[l.sku] ?? 0) + l.qty;
     return map;
   }, [lines]);
 
@@ -85,7 +89,7 @@ export default function MenuScreen({ navigation }: Props) {
     <MenuGrid
       qtyBySku={qtyBySku}
       onAdd={setConfiguring}
-      onDecrement={sku => decrementItem(sku)}
+      onDecrement={sku => decrementSku(sku)}
       areaWidth={isTablet ? width - CART_PANEL_WIDTH : width}
       artHeight={isTablet ? 116 : 96}
       catalog={catalog}
@@ -162,7 +166,7 @@ export default function MenuScreen({ navigation }: Props) {
 
       <FlatList
         data={lines}
-        keyExtractor={l => l.sku}
+        keyExtractor={l => l.key}
         ItemSeparatorComponent={() => (
           <View
             style={{
@@ -186,12 +190,23 @@ export default function MenuScreen({ navigation }: Props) {
                 gap: spacing.sm,
               }}
             >
-              <Text
-                style={[typography.body, { color: colors.text, flex: 1 }]}
-                numberOfLines={2}
-              >
-                {item.name}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[typography.body, { color: colors.text }]}
+                  numberOfLines={2}
+                >
+                  {item.name}
+                </Text>
+                {/* บรรทัดที่เขียนแต่ชื่อสินค้าเหมือนกันหลายบรรทัด = อ่านแล้วไม่รู้ว่ากดผิดหรือเปล่า */}
+                {cartLineVariantLabel(item) ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                    numberOfLines={2}
+                  >
+                    {cartLineVariantLabel(item)}
+                  </Text>
+                ) : null}
+              </View>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
                 ฿{(item.qty * item.unitPrice).toFixed(2)}
               </Text>
@@ -220,9 +235,10 @@ export default function MenuScreen({ navigation }: Props) {
                     packCode: item.packCode,
                     unitName: item.unitName,
                     baseQty: item.baseQty,
+                    selectedModifierCodes: item.modifierCodes,
                   })
                 }
-                onDecrement={() => decrementItem(item.sku)}
+                onDecrement={() => decrementItem(item.key)}
               />
               <Text style={[typography.caption, { color: colors.textSoft }]}>
                 ฿{item.unitPrice.toFixed(2)} / หน่วย

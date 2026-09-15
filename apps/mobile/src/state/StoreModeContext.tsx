@@ -13,6 +13,7 @@ const StoreModeContext = createContext<StoreModeContextValue | null>(null);
 function serverMode(value: string | null | undefined): PreviewStoreMode {
   if (value === 'restaurant') return 'restaurant';
   if (value === 'pharmacy') return 'pharmacy';
+  if (value === 'board_game_cafe') return 'board_game_cafe';
   return 'general';
 }
 

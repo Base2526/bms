@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, { Circle, Line, Rect } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
 // ไอคอนของแท็บล่าง — วาดเองด้วยรูปทรงพื้นฐาน (Rect/Circle/Line) ไม่ใช้ icon font
 // (react-native-vector-icons ต้องลิงก์ฟอนต์เพิ่มทั้ง iOS/Android ซึ่งเป็นจุดพังบ่อยของ RN —
@@ -164,6 +164,66 @@ export function OrdersIcon({ color, size = 24 }: TabIconProps) {
         r={1.6}
         stroke={color}
         strokeWidth={STROKE_WIDTH}
+      />
+    </Svg>
+  );
+}
+
+export function MoreIcon({ color, size = 24 }: TabIconProps) {
+  // สามจุด — แท็บ "เพิ่มเติม" ไม่ได้เป็นงานชนิดใดชนิดหนึ่ง มันคือที่เก็บงานที่ไม่ได้ทำทุกวัน
+  // (กะ · สต็อกสาขา · เคาน์เตอร์ · สถานะระบบ) ไอคอนจึงต้องไม่สื่อว่าเป็นงานอะไรเป็นพิเศษ
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={5.5} cy={12} r={1.7} stroke={color} strokeWidth={STROKE_WIDTH} />
+      <Circle cx={12} cy={12} r={1.7} stroke={color} strokeWidth={STROKE_WIDTH} />
+      <Circle cx={18.5} cy={12} r={1.7} stroke={color} strokeWidth={STROKE_WIDTH} />
+    </Svg>
+  );
+}
+
+export function InventoryIcon({ color, size = 24 }: TabIconProps) {
+  // กล่อง — สต็อกสาขา (โอนของ/นับของ)
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 8.2 12 4.4l8 3.8v7.6L12 19.6 4 15.8Z"
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Line x1={4} y1={8.2} x2={12} y2={12} stroke={color} strokeWidth={STROKE_WIDTH} />
+      <Line x1={20} y1={8.2} x2={12} y2={12} stroke={color} strokeWidth={STROKE_WIDTH} />
+      <Line x1={12} y1={12} x2={12} y2={19.6} stroke={color} strokeWidth={STROKE_WIDTH} />
+    </Svg>
+  );
+}
+
+export function CounterIcon({ color, size = 24 }: TabIconProps) {
+  // สลิป — งานเคาน์เตอร์ที่ทิ้งหลักฐานเป็นใบ (No sale · คืนของ · เงินทดรอง · ลูกหนี้)
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M6 3.6h12v16.8l-2.4-1.6-2.4 1.6-2.4-1.6-2.4 1.6-2.4-1.6Z"
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Line x1={9} y1={8.4} x2={15} y2={8.4} stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+      <Line x1={9} y1={12.2} x2={15} y2={12.2} stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function SupportIcon({ color, size = 24 }: TabIconProps) {
+  // คลื่นชีพจร — สถานะเครื่องและการเชื่อมต่อ
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 12h3.6l2.1-5.4 3.3 11.4 2.4-6h6.6"
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </Svg>
   );

@@ -147,10 +147,10 @@ production introspection. The artifact is generated from the executable schema w
 
 | Output contract | Operations |
 | --- | --- |
-| Typed (100) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
+| Typed (121) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
 | JSON compatibility (0) | None. |
 
-All 100 operations have typed arguments and typed output trees. Generate result types from the
+All 121 operations have typed arguments and typed output trees. Generate result types from the
 committed schema instead of hand-maintaining response interfaces. The examples below cover the ten
 core screen flows and are checked against the executable schema; the remaining operations are
 discoverable from the same artifact and no longer require a client-side JSON boundary validator.
@@ -530,7 +530,7 @@ GraphQL transport/execution failures are returned in `errors[]`; every entry has
 | `UNAUTHENTICATED` | User/device credential is missing, expired, revoked, or in the wrong scope. | Stop retries; clear the connection and re-login or re-pair the device. |
 | `FORBIDDEN` | Identity is valid but lacks a permission, valid PIN, or required second-person approval. | Do not retry automatically; show the operator the permission/approval problem. |
 | `NOT_FOUND` | The referenced tenant-scoped object is absent or no longer visible to this principal. | Drop stale selection, refetch its parent/list, and let the operator choose again. |
-| `CONFLICT` | Current authoritative state no longer allows the command (for example, no open shift). | Refetch the affected snapshot. Never blind-retry against stale state. |
+| `CONFLICT` | Current authoritative state no longer allows the command (for example, no open shift), **or the idempotency key was already spent on a different request body** (`extensions.reason = IDEMPOTENCY_CONFLICT`). | Release that operation's key, refetch the affected snapshot, and let the operator decide again. Never blind-retry against stale state, and never resend under the spent key. |
 | `INTERNAL_SERVER_ERROR` | Unexpected server/provider/infrastructure failure, including an uncategorized service exception. | Treat mutation outcome as unknown. Retry only when the operation is replay-safe, using the exact same idempotency key; otherwise ask the operator to reconcile. |
 
 Business rejections are not GraphQL errors. Results such as `PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`,
@@ -599,6 +599,12 @@ Rules for the queue itself:
   may have replayed an older attempt.
 - A queued action that fails with a business status (`SHIFT_NOT_OPEN`, `PAYMENT_MISMATCH`,
   `IDEMPOTENCY_CONFLICT`) is finished, not retryable. Show it; do not re-queue it.
+- Keep a key only while the outcome is genuinely unknown — a dropped connection or
+  `INTERNAL_SERVER_ERROR`. Every client-facing code (`BAD_USER_INPUT`, `FORBIDDEN`, `NOT_FOUND`,
+  `UNAUTHENTICATED`, `CONFLICT`) is decided *before* anything is written, so the next attempt is a
+  new intent and needs a new key. Holding the old key there is the loop that has no exit: the
+  operator corrects what the error asked for, the body no longer matches the hash the key is bound
+  to, and every retry comes back `CONFLICT`.
 
 ## Rollout gate
 

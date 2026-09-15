@@ -353,12 +353,13 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         status: "in_progress",
         tags: ["pos", "mobile", "cashier", "realtime"],
         goals: [
-          "Run retail, restaurant, shift, and branch workflows on phones and tablets through the existing device-token + cashier PIN model",
+          "Run retail, restaurant, board-game, shift, and branch workflows on phones and tablets through the existing device-token + cashier PIN model",
           "Finish native hardware and release verification without duplicating pricing, tax, stock, or authorization logic",
         ],
         deliverables: [
           "Done: bare React Native app with generated Apollo operations, device pairing, PIN/RBAC, retail and restaurant workflows, returns, shifts, and named realtime invalidation",
           "Done: stable idempotency keys survive unknown network outcomes for money and stock actions",
+          "Done: Q6B feature parity for Board Game tables/time/members/game loans/POS checkout plus branch Stock Transfer and snapshot-delta Stock Count",
           "Remaining: real-device printer, scanner, cash-drawer, push, and pharmacy-evidence integration verification",
           "Remaining: internal TestFlight / Play distribution and production recovery/load evidence",
         ],
@@ -648,12 +649,13 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         status: "in_progress",
         tags: ["pos", "mobile", "cashier", "realtime"],
         goals: [
-          "ให้มือถือ/แท็บเล็ตทำ workflow Retail, Restaurant, Shift และ Branch ผ่าน Device token + Cashier PIN เดิม",
+          "ให้มือถือ/แท็บเล็ตทำ workflow Retail, Restaurant, Board Game, Shift และ Branch ผ่าน Device token + Cashier PIN เดิม",
           "ปิดงาน Native hardware และการปล่อยใช้งาน โดยไม่ทำ Logic ราคา ภาษี สต็อก หรือสิทธิ์ซ้ำในแอป",
         ],
         deliverables: [
           "เสร็จแล้ว: Bare React Native + generated Apollo, device pairing, PIN/RBAC, ขาย/คืน/กะ, restaurant workflow และ named realtime invalidation",
           "เสร็จแล้ว: idempotency key เดิมถูกเก็บไว้เมื่อผลลัพธ์ network ไม่แน่นอนใน action เงิน/สต็อก",
+          "เสร็จแล้ว: Q6B Feature parity สำหรับโต๊ะ/เวลา/สมาชิก/ยืมคืนเกม/ชำระเงิน Board Game รวมถึง Stock Transfer และ Stock Count แบบ snapshot-delta",
           "คงเหลือ: ตรวจ printer, scanner, cash drawer, push และ pharmacy evidence บนอุปกรณ์จริง",
           "คงเหลือ: Internal TestFlight / Play distribution และหลักฐาน production recovery/load",
         ],

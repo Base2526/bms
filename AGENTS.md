@@ -41,7 +41,7 @@ wrong, and update the doc in the same change.
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
-| `apps/mobile/` | Bare React Native POS — secure device pairing, generated Apollo GraphQL reads/commands, cashier PIN/RBAC, and named WS invalidation for retail/restaurant/shift workflows |
+| `apps/mobile/` | Bare React Native POS — secure device pairing, generated Apollo GraphQL reads/commands, cashier PIN/RBAC, and named WS invalidation for retail/restaurant/board-game/branch-inventory/shift workflows |
 | `apps/ws/` · `packages/graphql-core/` | Subscription-only WebSocket gateway (no database connection, ever) · shared typeDefs/resolvers used by both web and ws |
 | `packages/realtime/` | The one realtime contract: event union + per-event audience/permission rules, topic builders, validation/redaction, ticket claims, `subscriptionAuth`, `NAMED_REALTIME_SUBSCRIPTIONS` |
 | `schema.graphql` | Committed SDL artifact used by in-repo RN codegen and external clients (`npm run schema:export`) |
@@ -191,7 +191,9 @@ wrong, and update the doc in the same change.
   not persisted as authority. Public nearby-store discovery is per-branch opt-in and may expose only
   published profile fields, rates/game highlights, and aggregate availability, never table/session/
   participant/customer identifiers. Dev fixtures use `FAKE` markers and cleanup must remove linked
-  board-game orders before sessions. Full detail:
+  board-game orders before sessions. Native POS derives its branch from the paired device, freezes
+  charges before handing the session to the existing sale mutation, and must never submit its
+  display-only time line as a Product SKU. Full detail:
   [business/board-game-cafe.md](docs/business/board-game-cafe.md) and
   [agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
 - **Product catalog truth (`9.40`–`9.43`, `9.51`, `9.52`)** — a product's serving/size options live
@@ -224,7 +226,9 @@ wrong, and update the doc in the same change.
   `counted − snapshot` (snapshot taken when the line was first entered), never an absolute, so sales
   during the count survive; applying is refused if it would drop stock below what customers reserved.
   `inventory.count` and `inventory.count.apply` are separate on purpose — walking the shelves and
-  signing off the shrinkage are different jobs.
+  signing off the shrinkage are different jobs. Native POS operations derive the source/count branch
+  from the authenticated device, verify cashier PIN/RBAC, and use the `9.88` transaction-scoped
+  idempotency record so an unknown response cannot send, receive, or apply twice.
 - **Decision intelligence (`9.12`–`9.14`)** — Q1/Q2 recommendations are advisory: refreshing an
   action never creates a PO or mutates stock, and lost-sale/restock feedback must represent observed
   demand rather than a guess. Q3 retention uses identified customers and paid orders only. A

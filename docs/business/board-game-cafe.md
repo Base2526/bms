@@ -61,6 +61,20 @@ public profile after an operator has published it.
 - Public discovery must be opt-in and read only published/aggregate data.
 - Any action that changes money, such as editing `started_at`, waiving overtime, changing a rate, or discounting a session, needs permission and audit.
 
+## Native POS
+
+When the paired store archetype is `board_game_cafe`, `apps/mobile` shows a dedicated `โต๊ะ/เวลา`
+tab. It reads the branch floor, rates, sessions, and playable-copy availability through generated
+device-scoped GraphQL operations. Staff can open an open-ended or fixed-duration session, choose
+existing members, assign participant bill groups, receive ending-soon/overdue popups, add time,
+record people leaving, and check game copies out or back in with an issue note.
+
+Closing a session freezes the server-calculated participant charge lines. The app then opens the
+normal POS checkout, where snacks and other sellable products can share the bill. The time amount is
+shown as a service line but is never sent as a SKU; settlement supplies only the session ID and the
+server validates the branch/status and links the paid order atomically. All mutations retain one
+idempotency key across an unknown network result.
+
 ## Reuse Existing BMS
 
 Reuse existing services for:

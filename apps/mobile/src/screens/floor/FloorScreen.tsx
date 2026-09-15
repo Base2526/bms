@@ -485,6 +485,13 @@ export default function FloorScreen({ navigation }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            // ⚠️ ScrollView ของ RN ตั้ง `flexGrow: 1` มาให้เองทั้งแนวตั้งและแนวนอน
+            // (Libraries/Components/ScrollView/ScrollView.js → baseHorizontal) แถบแนวนอนที่วางอยู่ใน
+            // คอลัมน์ซึ่ง "มีความสูงแน่นอน" จึงไปแย่งที่กับผังโต๊ะที่เป็น flex: 1 แล้วแบ่งกันคนละครึ่งจอ
+            // · ผลที่เห็นบนไอแพด: บิลกลับบ้านใบเดียวกินครึ่งจอบน ผังโต๊ะถูกบีบลงครึ่งล่างและถูกย่อสเกล
+            // (viewportHeight มาจาก onLayout ของกล่องผัง) · การ์ดยังถูกยืดสูงเต็มแถบเพราะ content
+            // container แนวนอนของ RN ตั้ง alignItems: stretch
+            style={{ flexGrow: 0 }}
             contentContainerStyle={{
               gap: spacing.sm,
               paddingTop: spacing.md,
@@ -536,6 +543,9 @@ export default function FloorScreen({ navigation }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            // แถบเลือกโซน — เหตุผลเดียวกับแถบบิลกลับบ้านข้างบน · ร้านที่มีหลายโซนจะโดนหนักกว่า
+            // เพราะกลายเป็นสามตัวที่ flexGrow: 1 แบ่งจอกันคนละสามส่วน
+            style={{ flexGrow: 0 }}
             contentContainerStyle={{
               gap: spacing.sm,
               paddingTop: spacing.md,
@@ -580,7 +590,13 @@ export default function FloorScreen({ navigation }: Props) {
               setFloorAreaHeight(Math.round(event.nativeEvent.layout.height))
             }
           >
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {/* ตัวนี้ตรงข้ามกับสองแถบข้างบน — เป็นตัวเลื่อนผังโต๊ะที่ต้องกินพื้นที่ที่เหลือทั้งหมด
+                จึงประกาศ flexGrow: 1 ไว้ชัด ๆ แทนที่จะพึ่งค่าปริยายของ RN */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ flexGrow: 1 }}
+            >
               <View
                 style={[
                   styles.floorCanvas,

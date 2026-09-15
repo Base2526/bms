@@ -1,8 +1,9 @@
 # Mobile-first GraphQL and WebSocket architecture
 
 > Status: server contract, database contract suites, multi-instance socket verification, browser
-> named-subscription rollout, and the in-repository React Native retail/restaurant/shift callers are
-> implemented (2026-09-13). REST compatibility routes and polling remain for browser/external-client
+> named-subscription rollout, and the in-repository React Native retail/restaurant/board-game/
+> branch-inventory/shift callers are implemented (2026-09-14). REST compatibility routes and
+> polling remain for browser/external-client
 > rollout and recovery.
 >
 > Realtime security and delivery details: [production realtime audit](realtime-production-audit.md)
@@ -16,6 +17,8 @@
 > `9.74` permanently splits device and shift trigger functions. Production rollout still follows
 > [realtime-test-database.md](realtime-test-database.md) and must not infer migration state from this
 > repository.
+> Inventory command idempotency for native POS is added by `9.88`; its result record commits in the
+> same tenant transaction as the transfer/count mutation.
 
 ## Decision
 
@@ -49,7 +52,7 @@ outbox dispatcher -> Redis -> GraphQL WS subscription -> invalidate/refetch Grap
 The inventory covers every route under `app/api/bms/**` and `app/api/pos/**`, the GraphQL schema,
 subscription publishers/consumers, and direct REST calls from React surfaces at revision `a3898e82`.
 
-| Surface                | Count | Current state                                                                             |
+| Surface                | Count | State at audited revision                                                                 |
 | ---------------------- | ----: | ----------------------------------------------------------------------------------------- |
 | `/api/bms/**/route.ts` |    76 | Mixed admin compatibility, public/signed flows, webhooks, jobs, files, and exports        |
 | `/api/pos/**/route.ts` |    41 | Device-token + cashier-PIN contract; all normal counter workflows currently use REST      |
@@ -122,6 +125,8 @@ need GraphQL equivalents, but REST remains until parity tests and client rollout
 | Kitchen                      | `/api/pos/kitchen/tickets`, `/kitchen/tickets/[id]/status`, `/kitchen/tickets/status`                                                | implemented as device-scoped query/mutations                                             |
 | Restaurant checks/floor      | `/api/pos/restaurant/checks`, `/restaurant/checks/[id]`, `/restaurant/floor`                                                         | implemented as device-scoped query/mutations                                             |
 | Incoming/QR/service/waitlist | `/api/pos/restaurant/incoming`, `/restaurant/qr-orders`, `/restaurant/requests`, `/restaurant/service-calls`, `/restaurant/waitlist` | implemented as device-scoped query/mutations                                             |
+| Branch transfer/count        | admin REST compatibility routes only                                                                                                 | implemented as device-scoped queries/mutations with server-derived branch and stable keys |
+| Board-game cafe              | board-game admin REST routes                                                                                                          | implemented as device-scoped floor/session/library queries and named mutations             |
 
 `/api/pos/pharmacy-evidence`, `/api/pos/shift-report/export`, and
 `/api/pos/support-diagnostics` remain REST for upload/export/diagnostic transport.
@@ -180,6 +185,7 @@ resolver from inventing a parallel behavior.
 | Online/QR/waitlist     | incoming/QR/waitlist lists          | accept/reject/call/seat/cancel/no-show                    | matching scoped domain subscription                        |
 | Members/credit         | lookup/preview/account              | enroll/collect/redeem as permitted                        | order/customer invalidation where a real workflow needs it |
 | Inventory operations   | summary/transfer/count              | transfer/count/receive                                    | inventory/transfer/count invalidations                     |
+| Board-game cafe        | floor/session/library/checkout      | open/adjust/close/cancel, participant and copy operations | bounded polling until a board-game event contract is added |
 | Inbox/notifications    | existing BMS queries                | existing BMS mutations                                    | hardened Inbox plus user notification events               |
 | Pharmacy               | case-safe operational metadata      | existing permission-gated handoff/review operations       | case ID + safe status + time only                          |
 
@@ -222,5 +228,5 @@ and tests to agree.
 | 6. Named subscriptions    | Implemented and called                             | all 18 named views are declared in `packages/graphql-core`; each filters the one invalidation stream through `NAMED_REALTIME_SUBSCRIPTIONS`. Browser POS and React Native now mount the views relevant to their principal and current surface                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 6b. Domain events         | Implemented and DB-verified                        | migrations `9.71`–`9.74` and `9.84`–`9.86`, domain event contract/fixtures, exact POS device/shift/parked-delete payload assertions, and transactional publisher pure/DB suites                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 6c. Coverage guard        | Implemented                                        | `scripts/realtime-domain-coverage-contract.test.mts` walks every `INSERT`/`UPDATE`/`DELETE` against tables `lib/bms` writes and fails unless that exact operation is covered by a trigger or classified with a reason. `9.85` removed the prior 20-table known-gap list; `9.86` and the operation-aware guard close the parked-sale delete blind spot                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 7. Client rollout         | RN core complete; browser/external rollout remains | `apps/mobile` uses generated Apollo operations for retail/pharmacy sales, partial/full returns, exchange, refunds/voids, parked pharmacist-review handoff, shift and branch operations, restaurant dine-in/takeaway checks, incoming queues and KDS. Money/stock callers retain the same idempotency key after an unknown network result. Runtime screens/state import no mock data. It also has native socket classification, PIN verification, surface-scoped named subscriptions, bounded deduplication, batched active-query refetch, foreground recovery and degraded polling. Browser POS retains REST and polling while using named invalidation views; printer/scanner/push/pharmacy-evidence native integrations remain separate rollout work |
-| 8. Typed client contract  | Generated and compiled                             | `schema.graphql` is pinned to the executable schema; all 100 mobile/POS operations have named inputs and typed output trees, stable `extensions.code`, and generated typed documents in `apps/mobile/src/graphql/generated.ts`. The remaining rollout gate is per-workflow REST-versus-GraphQL parity, not client generation                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 7. Client rollout         | RN Q6B complete; browser/external rollout remains  | `apps/mobile` uses generated Apollo operations for retail/pharmacy sales, returns/exchange/refunds/voids, shifts, restaurant checks/queues/KDS, Board Game floor/time/member/bill-group/game-loan/POS checkout, and branch Stock Transfer/Stock Count. Money, board-game, and stock callers retain the same idempotency key after an unknown network result. Runtime screens/state import no mock data. Named stock invalidations refetch the active inventory view; Board Game uses bounded polling until its event contract exists. Browser POS retains REST and polling; printer/scanner/push/pharmacy-evidence native integrations remain separate rollout work |
+| 8. Typed client contract  | Generated and compiled                             | `schema.graphql` is pinned to the executable schema; all 121 mobile/POS operations have named inputs and typed output trees, stable `extensions.code`, and generated typed documents in `apps/mobile/src/graphql/generated.ts`. The remaining rollout gate is per-workflow REST-versus-GraphQL parity, not client generation                                                                                                                                                                                                                                                                                                                                                                                                                           |

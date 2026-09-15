@@ -1,6 +1,10 @@
 import { createHash } from "crypto";
 import type { QueryResult, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
+import {
+  IDEMPOTENCY_CONFLICT_MESSAGE,
+  IdempotencyConflictError,
+} from "./idempotencyErrors";
 import { listLocationsForUser } from "./locations";
 import { beginTenantTx } from "./tenant";
 
@@ -364,7 +368,7 @@ async function replayActionInTx<T>(
   );
   if (!existing.rowCount) return null;
   if (existing.rows[0].request_hash !== hash) {
-    throw new Error("idempotencyKey นี้เคยใช้กับข้อมูลที่ต่างกัน");
+    throw new IdempotencyConflictError(IDEMPOTENCY_CONFLICT_MESSAGE, action);
   }
   return existing.rows[0].result;
 }
@@ -780,7 +784,8 @@ export async function openBoardGameSession(
       [tenantId, key]
     );
     if (replay.rowCount) {
-      if (replay.rows[0].open_request_hash !== hash) throw new Error("idempotencyKey นี้เคยใช้กับข้อมูลเปิดโต๊ะที่ต่างกัน");
+      if (replay.rows[0].open_request_hash !== hash)
+        throw new IdempotencyConflictError(IDEMPOTENCY_CONFLICT_MESSAGE, "open");
       await client.query("COMMIT");
       return mapSessionRow(replay.rows[0], true);
     }
@@ -1520,7 +1525,10 @@ export async function closeBoardGameSessionForBilling(
     const row = session.rows[0];
     if (row.status === "CLOSING" || row.status === "PAID") {
       if (row.settlement_idempotency_key !== key || row.settlement_request_hash !== hash) {
-        throw new Error("session นี้เริ่มปิดบิลด้วยคำขออื่นแล้ว");
+        throw new IdempotencyConflictError(
+          "session นี้เริ่มปิดบิลด้วยคำขออื่นแล้ว",
+          "settlement",
+        );
       }
       await client.query("COMMIT");
       return {
@@ -1602,7 +1610,10 @@ export async function cancelBoardGameSession(
     const row = session.rows[0];
     if (row.status === "CANCELLED") {
       if (row.cancel_idempotency_key !== key || row.cancel_request_hash !== hash) {
-        throw new Error("session นี้ถูกยกเลิกด้วยคำขออื่นแล้ว");
+        throw new IdempotencyConflictError(
+          "session นี้ถูกยกเลิกด้วยคำขออื่นแล้ว",
+          "cancel",
+        );
       }
       await client.query("COMMIT");
       return { sessionId: scopedSessionId, status: "CANCELLED" as const, replayed: true };

@@ -1248,6 +1248,15 @@ per-screen examples: [architecture/react-native-graphql-client.md](architecture/
   (`PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`, `OUT_OF_STOCK`, `SOLD_OUT_TODAY`, `IDEMPOTENCY_CONFLICT`,
   pharmacy policy statuses) stays in `data.<operation>.status` — promoting one to a thrown error
   breaks the client's retry/re-auth/operator-action split and is a regression, not a tidy-up.
+- **A spent idempotency key is `CONFLICT`, never `INTERNAL_SERVER_ERROR`.** A service that finds the
+  key already bound to a different request hash throws `IdempotencyConflictError`
+  (`lib/bms/idempotencyErrors.ts`) and the route's `formatError` classifies it, so one leaf class
+  covers every throw site in `inventoryIdempotency.ts` and `boardGameCafe.ts` instead of a wrapper
+  list each new mutation can forget to join. The code matters because the documented client action
+  for `INTERNAL_SERVER_ERROR` is "retry with the exact same key": for this case that is an infinite
+  loop the operator cannot leave. The mirror rule on the client is that a key survives *only* an
+  unknown outcome — every client-facing code is decided before anything is written, so the next
+  attempt is a new intent and mints a new key.
 - **A named operation existing does not prove parity with the REST route it shadows.** There is no
   fixture-driven REST-versus-GraphQL response-shape suite yet, so moving a caller is still blocked on
   writing one. `mobile-transport-compat-contract` only proves the REST routes still exist and still

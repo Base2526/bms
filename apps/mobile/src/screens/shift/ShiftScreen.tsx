@@ -27,10 +27,10 @@ import type { CashMovementType } from '../../lib/shiftMath';
 import { createIdempotencyKey } from '../../lib/operation';
 import type {
   RootStackParamList,
-  ShiftStackParamList,
+  OperationsStackParamList,
 } from '../../navigation/types';
 
-type Props = NativeStackScreenProps<ShiftStackParamList, 'Shift'>;
+type Props = NativeStackScreenProps<OperationsStackParamList, 'Shift'>;
 
 // ทุกยอดบนหน้านี้มาจาก shift report ของ server เพื่อให้ยอดขาย คืนเงิน และลิ้นชักตรงกัน
 export default function ShiftScreen({ navigation }: Props) {

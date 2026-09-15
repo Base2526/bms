@@ -24,6 +24,8 @@ import {
   MobileRestaurantFloorChangedDocument,
   MobileServiceCallChangedDocument,
   MobileShiftChangedDocument,
+  MobileStockCountChangedDocument,
+  MobileStockTransferChangedDocument,
   MobileWaitlistChangedDocument,
   PosBootstrapDocument,
 } from '../graphql/generated';
@@ -63,6 +65,14 @@ const BASE_SUBSCRIPTIONS: SubscriptionSpec[] = [
     field: 'bmsIncomingOrderChanged',
   },
   { document: MobileInventoryChangedDocument, field: 'bmsInventoryChanged' },
+  {
+    document: MobileStockTransferChangedDocument,
+    field: 'bmsStockTransferChanged',
+  },
+  {
+    document: MobileStockCountChangedDocument,
+    field: 'bmsStockCountChanged',
+  },
   { document: MobilePaymentChangedDocument, field: 'bmsPaymentChanged' },
   { document: MobileOrderChangedDocument, field: 'bmsOrderChanged' },
 ];

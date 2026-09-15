@@ -10,7 +10,10 @@ import {
 } from "../apps/web/graphql/schema";
 
 const doc = readFileSync(
-  new URL("../docs/architecture/react-native-graphql-client.md", import.meta.url),
+  new URL(
+    "../docs/architecture/react-native-graphql-client.md",
+    import.meta.url,
+  ),
   "utf8",
 );
 
@@ -28,13 +31,19 @@ const coreExampleOperations = [
 ].sort();
 
 function graphqlBlocks(): string[] {
-  return [...doc.matchAll(/```graphql\r?\n([\s\S]*?)```/g)].map((match) => match[1]);
+  return [...doc.matchAll(/```graphql\r?\n([\s\S]*?)```/g)].map(
+    (match) => match[1],
+  );
 }
 
 function operationsInCoverageRow(label: string): string[] {
-  const line = doc.split(/\r?\n/).find((candidate) => candidate.startsWith(`| ${label} |`));
+  const line = doc
+    .split(/\r?\n/)
+    .find((candidate) => candidate.startsWith(`| ${label} |`));
   assert.ok(line, `coverage table must have a ${label} row`);
-  return [...line.matchAll(/`(bms[A-Za-z0-9]+)`/g)].map((match) => match[1]).sort();
+  return [...line.matchAll(/`(bms[A-Za-z0-9]+)`/g)]
+    .map((match) => match[1])
+    .sort();
 }
 
 function mobileOutputOperations(outputTypeName: string): string[] {
@@ -43,12 +52,14 @@ function mobileOutputOperations(outputTypeName: string): string[] {
   const resolverSets = [bmsPosDeviceResolvers, bmsMobileOperationsResolvers];
   for (const resolvers of resolverSets) {
     for (const kind of ["Query", "Mutation"] as const) {
-      const root = kind === "Query" ? schema.getQueryType() : schema.getMutationType();
+      const root =
+        kind === "Query" ? schema.getQueryType() : schema.getMutationType();
       assert.ok(root, `${kind} root must exist`);
       for (const name of Object.keys(resolvers[kind])) {
         const field = root.getFields()[name];
         assert.ok(field, `${kind}.${name} must exist`);
-        if (String(field.type).replace(/[\[\]!]/g, "") === outputTypeName) names.add(name);
+        if (String(field.type).replace(/[\[\]!]/g, "") === outputTypeName)
+          names.add(name);
       }
     }
   }
@@ -57,7 +68,10 @@ function mobileOutputOperations(outputTypeName: string): string[] {
 
 test("every documented GraphQL example validates against the executable schema", () => {
   const blocks = graphqlBlocks();
-  assert.ok(blocks.length >= 9, "expected subscription plus typed screen examples");
+  assert.ok(
+    blocks.length >= 9,
+    "expected subscription plus typed screen examples",
+  );
   for (const [index, block] of blocks.entries()) {
     assert.deepEqual(
       validateBmsGraphqlDocument(block),
@@ -80,10 +94,21 @@ test("the client guide includes a real field selection for every core RN screen 
 
 test("the typed/JSON coverage table matches the executable mobile schema exactly", () => {
   const resolverCount = [bmsPosDeviceResolvers, bmsMobileOperationsResolvers]
-    .flatMap((resolvers) => [Object.keys(resolvers.Query), Object.keys(resolvers.Mutation)])
+    .flatMap((resolvers) => [
+      Object.keys(resolvers.Query),
+      Object.keys(resolvers.Mutation),
+    ])
     .flat().length;
-  assert.equal(resolverCount, 100, "the documented typed count must cover the complete mobile/POS surface");
-  assert.deepEqual(mobileOutputOperations("JSON"), [], "the executable schema must have no opaque output roots");
-  assert.deepEqual(operationsInCoverageRow("Typed (100)"), []);
+  assert.equal(
+    resolverCount,
+    121,
+    "the documented typed count must cover the complete mobile/POS surface",
+  );
+  assert.deepEqual(
+    mobileOutputOperations("JSON"),
+    [],
+    "the executable schema must have no opaque output roots",
+  );
+  assert.deepEqual(operationsInCoverageRow("Typed (121)"), []);
   assert.deepEqual(operationsInCoverageRow("JSON compatibility (0)"), []);
 });

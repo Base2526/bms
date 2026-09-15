@@ -25,7 +25,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md) · [`schema.graphql`](schema.graphql) | Why the surface was typed and in what order · the committed SDL artifact a client generates from (`npm run schema:export`; production keeps introspection off) |
 | [architecture/realtime-test-database.md](docs/architecture/realtime-test-database.md) | Runbook for the throwaway Postgres that realtime migrations `9.70`–`9.74` and `9.84`–`9.86` must be proven on — why a separate instance, why a dump is required, and what the run cannot answer |
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
-| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
+| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [board-game-cafe.md](docs/business/board-game-cafe.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter/native POS · Board Game Cafe · customer identity/inbox |
 | [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
@@ -211,7 +211,7 @@ advanced board-game analytics remain a later CRM/reporting phase. See
 
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
 POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
-`graphql-schema-artifact-contract`, all 100 operations take named input objects and return named
+`graphql-schema-artifact-contract`, all 121 operations take named input objects and return named
 output types (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
 into 32 named mutations with the old fields kept `@deprecated`, and every client-facing error carries
 an `extensions.code` while business rejections stay in `data.<operation>.status`. Four POS

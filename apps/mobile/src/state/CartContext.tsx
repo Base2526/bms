@@ -20,6 +20,7 @@ import type {
   PosMember,
   PosMenuItem,
 } from '../types/pos';
+import { cartLineKey } from '../lib/cartLine';
 import { useSession } from './SessionContext';
 import { useShift } from './ShiftContext';
 
@@ -48,7 +49,10 @@ export interface PosPharmacyReview {
 interface CartContextValue {
   lines: PosCartLine[];
   addItem: (item: PosMenuItem) => void;
+  /** ลดจำนวนบรรทัดเดียวที่ระบุด้วย line.key — ห้ามส่ง sku มา (ดู decrementSku) */
   decrementItem: (key: string) => void;
+  /** ลดจำนวนจากการ์ดสินค้า ซึ่งรู้แค่ sku — ลดที่บรรทัดล่าสุดของ sku นั้นบรรทัดเดียว */
+  decrementSku: (sku: string) => void;
   removeLine: (key: string) => void;
   updateLine: (key: string, patch: Partial<PosCartLine>) => void;
   clear: () => void;
@@ -126,7 +130,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [parkMutation] = useMutation(MobilePosParkDocument);
 
   const addItem = useCallback((item: PosMenuItem) => {
-    const key = `${item.sku}:${item.size}:${item.packCode}`;
+    const modifierCodes = item.selectedModifierCodes ?? [];
+    const key = cartLineKey({
+      sku: item.sku,
+      size: item.size,
+      packCode: item.packCode,
+      modifierCodes,
+    });
+    const modifierNames = (item.modifiers ?? [])
+      .filter(modifier => modifierCodes.includes(modifier.code))
+      .map(modifier => modifier.name);
     setLines(previous => {
       const existing = previous.find(line => line.key === key);
       if (existing) {
@@ -146,7 +159,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           packCode: item.packCode,
           unitName: item.unitName,
           baseQty: item.baseQty,
-          modifierCodes: item.selectedModifierCodes ?? [],
+          modifierCodes,
+          modifierNames,
           serialTracked: item.serialTracked,
           scaleBarcode: item.scaleBarcode,
           serials: [],
@@ -156,16 +170,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // ⚠️ เทียบ key เท่านั้น — เดิมยอมรับ sku ด้วย (`line.sku === key`) ซึ่งแมตช์ **ทุกบรรทัด**
+  // ที่ sku เดียวกัน: กดลดที่บรรทัด L ของสินค้าที่มี S/M/L อยู่ในตะกร้า แล้วหายไปทั้งสามบรรทัด
   const decrementItem = useCallback((key: string) => {
     setLines(previous =>
       previous.flatMap(line =>
-        line.key === key || line.sku === key
+        line.key === key
           ? line.qty > 1
             ? [{ ...line, qty: line.qty - 1 }]
             : []
           : [line],
       ),
     );
+  }, []);
+  // การ์ดสินค้าในกริดรู้แค่ sku (การ์ดใบเดียวแทนทุกไซซ์) — ลดที่บรรทัดล่าสุดของ sku นั้น
+  // คือบรรทัดที่เพิ่งถูกเพิ่ม ซึ่งตรงกับสิ่งที่คนกดกำลังแก้
+  const decrementSku = useCallback((sku: string) => {
+    setLines(previous => {
+      let target = -1;
+      for (let index = previous.length - 1; index >= 0; index -= 1) {
+        if (previous[index].sku === sku) {
+          target = index;
+          break;
+        }
+      }
+      if (target < 0) return previous;
+      return previous.flatMap((line, index) =>
+        index === target
+          ? line.qty > 1
+            ? [{ ...line, qty: line.qty - 1 }]
+            : []
+          : [line],
+      );
+    });
   }, []);
   const removeLine = useCallback(
     (key: string) =>
@@ -225,7 +262,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             {
               key:
                 line.key ??
-                `${line.sku}:${line.size ?? ''}:${line.packCode ?? ''}`,
+                cartLineKey({
+                  sku: line.sku,
+                  size: line.size,
+                  packCode: line.packCode,
+                  modifierCodes: line.modifierCodes,
+                }),
               sku: line.sku,
               name: line.receiptName ?? line.productName ?? line.sku,
               qty: line.packQty ?? 1,
@@ -417,6 +459,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       lines,
       addItem,
       decrementItem,
+      decrementSku,
       removeLine,
       updateLine,
       clear,
@@ -454,6 +497,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       coupon,
       couponDiscount,
       decrementItem,
+      decrementSku,
       deleteParkedBill,
       discountTotal,
       lines,

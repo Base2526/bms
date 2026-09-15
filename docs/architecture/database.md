@@ -955,6 +955,21 @@ Staff transitions and their audit rows commit in one tenant transaction.
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.
 
+## Board game cafe and native inventory replay (`9.79`–`9.83`, `9.88`)
+
+Board-game cafe service state is separate from normal POS carts. Areas and tables describe the
+branch floor; sessions and participants preserve timed attendance plus rate snapshots; titles and
+physical copies form a lending library; session-game rows record each checkout and return. Closing
+a session freezes its time charges, while payment still settles through the existing POS order and
+payment transaction. Public discovery reads only an explicitly published branch profile and
+aggregate availability, never active-session or customer rows.
+
+`bms_inventory_operation_idempotency` stores the canonical request hash and exact success result for
+mobile transfer/count commands. Its key is `(tenant_id, action, idempotency_key)`, it is protected by
+forced tenant RLS, and the service records it in the same transaction as the inventory mutation.
+This table is required before releasing the Q6B native POS client: retries after an unknown network
+result must replay the original response rather than move or adjust stock twice.
+
 ## Product catalog foundation (`9.51`)
 
 `bms_product_variants` stores product options independently of branch stock. Its composite primary

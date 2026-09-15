@@ -1,5 +1,9 @@
 /** Client rendering mode derived from the paired device's server bootstrap. */
-export type PreviewStoreMode = 'general' | 'pharmacy' | 'restaurant';
+export type PreviewStoreMode =
+  | 'general'
+  | 'pharmacy'
+  | 'restaurant'
+  | 'board_game_cafe';
 
 export const PREVIEW_STORE_MODES: ReadonlyArray<{
   value: PreviewStoreMode;
@@ -21,8 +25,18 @@ export const PREVIEW_STORE_MODES: ReadonlyArray<{
     label: 'ร้านอาหาร',
     description: 'เมนู ผังโต๊ะ ครัว และกะ',
   },
+  {
+    value: 'board_game_cafe',
+    label: 'ร้านบอร์ดเกม',
+    description: 'ขายสินค้า จับเวลา โต๊ะ เกม และกะ',
+  },
 ];
 
 export function isPreviewStoreMode(value: unknown): value is PreviewStoreMode {
-  return value === 'general' || value === 'pharmacy' || value === 'restaurant';
+  return (
+    value === 'general' ||
+    value === 'pharmacy' ||
+    value === 'restaurant' ||
+    value === 'board_game_cafe'
+  );
 }

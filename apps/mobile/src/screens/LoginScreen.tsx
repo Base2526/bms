@@ -303,9 +303,23 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
   } else if (verify.kind === 'CHECKING') {
     label = `กำลังตรวจกับ ${displayHost(target.serverUrl)}…`;
     tone = 'warn';
+  } else if (verify.kind === 'OFFLINE') {
+    // ต่อไม่ถึงเลย — ยังไม่มี response ให้พูดถึง คำตอบดิบของ URLSession คือเบาะแสเดียวที่มี
+    label = `${displayHost(target.serverUrl)} · ต่อไม่ถึงเซิร์ฟเวอร์ (${
+      verify.cause
+    })`;
+    tone = 'warn';
+  } else if (verify.kind === 'SERVER_ERROR') {
+    // ต่อถึงแล้วแต่คำตอบใช้ไม่ได้ — คนละเรื่องกับต่อไม่ถึง และพาไปทำคนละอย่าง
+    label = `${displayHost(target.serverUrl)} · เซิร์ฟเวอร์ตอบผิดปกติ (${
+      verify.cause
+    })`;
+    tone = 'bad';
   } else {
-    // OFFLINE / SERVER_ERROR / IDLE — เครื่องยังจับคู่อยู่ แค่ยังยืนยันไม่ได้ตอนนี้
-    label = `${displayHost(target.serverUrl)} · ยังตรวจกับเซิร์ฟเวอร์ไม่ได้`;
+    // IDLE — ยังไม่เคยถามเลย ไม่ใช่ความล้ม · เหมารวมกับสองอันบนคือการบอกว่าพังทั้งที่ยังไม่ได้ลอง
+    label = `${displayHost(
+      target.serverUrl,
+    )} · ยังไม่ได้ตรวจกับเซิร์ฟเวอร์ — แตะเพื่อทดสอบ`;
     tone = 'warn';
   }
 

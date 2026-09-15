@@ -59,6 +59,9 @@ export interface PosCartLine {
   unitName: string;
   baseQty: number;
   modifierCodes: string[];
+  /** ชื่อตัวเลือกที่เลือกไว้ — เก็บตอนเพิ่มเพราะบรรทัดในตะกร้าไม่มีทางย้อนไปถาม catalog ได้อีก
+   *  และแคชเชียร์ต้องอ่านออกว่าบรรทัดไหนคือ "หวานน้อย" โดยไม่ต้องแปลรหัสเอง */
+  modifierNames?: string[];
   serialTracked?: boolean;
   scaleBarcode?: string | null;
   serials: string[];

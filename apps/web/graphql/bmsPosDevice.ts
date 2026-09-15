@@ -24,7 +24,24 @@ import {
 } from "@/lib/bms/kitchen";
 import { getKitchenStationSlaMap } from "@/lib/bms/kitchenSla";
 import { listKitchenStations } from "@/lib/bms/kitchenStations";
-import { getLocation } from "@/lib/bms/locations";
+import { getLocation, listLocations } from "@/lib/bms/locations";
+import {
+  addBoardGameParticipant,
+  adjustBoardGameSessionTiming,
+  cancelBoardGameSession,
+  checkoutBoardGameCopy,
+  closeBoardGameSessionForBilling,
+  getBoardGameCheckoutForPos,
+  getBoardGameSession,
+  leaveBoardGameParticipant,
+  listBoardGameFloor,
+  listBoardGameLibrary,
+  listBoardGameTimeRates,
+  locationOfBoardGameLoan,
+  locationOfBoardGameSession,
+  openBoardGameSession,
+  returnBoardGameCopy,
+} from "@/lib/bms/boardGameCafe";
 import {
   evaluatePointsEarn,
   enrollMember,
@@ -148,6 +165,22 @@ import {
 import { setMenuTemporarilyUnavailable } from "@/lib/bms/menuAvailability";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
+import {
+  applyStockCount,
+  cancelStockCount,
+  createStockCount,
+  getStockCount,
+  listStockCounts,
+  recordCountItem,
+} from "@/lib/bms/stockCounts";
+import {
+  cancelStockTransfer,
+  createStockTransfer,
+  getStockTransfer,
+  listStockTransfers,
+  receiveStockTransfer,
+  sendStockTransfer,
+} from "@/lib/bms/stockTransfers";
 import { getVatSettings } from "@/lib/bms/taxDocuments";
 
 import {
@@ -1924,6 +1957,292 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     check: BmsPosRestaurantCheck
   }
 
+  input BmsPosStockTransferCreateInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    destinationId: ID!
+    items: [BmsStockTransferLineInput!]!
+    note: String
+  }
+
+  input BmsPosStockTransferActionInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    transferId: ID!
+  }
+
+  input BmsPosStockTransferReceiveInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    transferId: ID!
+    received: [BmsStockTransferReceiptLineInput!]
+    receivingNote: String
+  }
+
+  input BmsPosStockCountCreateInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    note: String
+  }
+
+  input BmsPosStockCountItemInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    countId: ID!
+    sku: String!
+    size: String!
+    countedQty: Int!
+    note: String
+  }
+
+  input BmsPosStockCountActionInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    countId: ID!
+  }
+
+  type BmsPosStockTransfersResult {
+    transfers: [BmsMobileStockTransfer!]!
+    destinations: [BmsLocation!]!
+    deviceLocationId: ID!
+  }
+
+  type BmsPosStockCountsResult {
+    counts: [BmsMobileStockCount!]!
+    deviceLocationId: ID!
+  }
+
+  input BmsPosBoardGameParticipantInput {
+    rateId: ID
+    customerId: ID
+    displayName: String
+    participantType: String
+    billingGroupNo: Int = 1
+  }
+
+  input BmsPosBoardGameOpenInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    tableId: ID!
+    billingMode: String!
+    expectedDurationMinutes: Int
+    alertBeforeMinutes: Int = 15
+    participants: [BmsPosBoardGameParticipantInput!]!
+    note: String
+  }
+
+  input BmsPosBoardGameAddParticipantInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    rateId: ID
+    customerId: ID
+    displayName: String
+    participantType: String
+    billingGroupNo: Int = 1
+  }
+
+  input BmsPosBoardGameLeaveParticipantInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    participantId: ID!
+  }
+
+  input BmsPosBoardGameTimingInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    billingMode: String!
+    expectedDurationMinutes: Int
+    alertBeforeMinutes: Int!
+  }
+
+  input BmsPosBoardGameSessionActionInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    reason: String
+  }
+
+  input BmsPosBoardGameCheckoutCopyInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    copyId: ID!
+  }
+
+  input BmsPosBoardGameReturnCopyInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    loanId: ID!
+    status: String
+    copyStatus: String
+    returnNote: String
+  }
+
+  type BmsPosBoardGameRate {
+    id: ID!
+    code: String!
+    name: String!
+    customerType: String!
+    pricePerHour: Float!
+    minimumMinutes: Int!
+    roundingMinutes: Int!
+    graceMinutes: Int!
+    active: Boolean!
+    sortOrder: Int!
+  }
+
+  type BmsPosBoardGameSessionSummary {
+    id: ID
+    sessionId: ID
+    status: String
+    billingMode: String
+    guestCount: Int
+    startedAt: String
+    expectedEndAt: String
+    endedAt: String
+    alertBeforeMinutes: Int
+    alertStatus: String
+    amountDue: Float
+    replayed: Boolean
+  }
+
+  type BmsPosBoardGameArea {
+    id: ID!
+    name: String!
+    sortOrder: Int!
+  }
+
+  type BmsPosBoardGameTable {
+    id: ID!
+    areaId: ID!
+    code: String!
+    name: String!
+    seats: Int!
+    sortOrder: Int!
+    blocked: Boolean!
+    openSession: BmsPosBoardGameSessionSummary
+  }
+
+  type BmsPosBoardGameFloor {
+    areas: [BmsPosBoardGameArea!]!
+    tables: [BmsPosBoardGameTable!]!
+  }
+
+  type BmsPosBoardGameCopy {
+    id: ID!
+    locationId: ID!
+    copyCode: String!
+    status: String!
+    conditionNote: String
+  }
+
+  type BmsPosBoardGameTitle {
+    id: ID!
+    title: String!
+    minPlayers: Int
+    maxPlayers: Int
+    typicalMinutes: Int
+    difficulty: String
+    language: String
+    publicVisible: Boolean!
+    copies: [BmsPosBoardGameCopy!]!
+  }
+
+  type BmsPosBoardGameWorkspace {
+    floor: BmsPosBoardGameFloor!
+    rates: [BmsPosBoardGameRate!]!
+    library: [BmsPosBoardGameTitle!]!
+  }
+
+  type BmsPosBoardGameParticipant {
+    id: ID!
+    displayName: String
+    participantType: String
+    billable: Boolean
+    hourlyRate: Float
+    minimumMinutes: Int
+    roundingMinutes: Int
+    graceMinutes: Int
+    billingGroupNo: Int
+    joinedAt: String
+    leftAt: String
+    replayed: Boolean
+  }
+
+  type BmsPosBoardGameLoan {
+    id: ID!
+    copyId: ID
+    copyCode: String
+    title: String
+    status: String
+    checkedOutAt: String
+    returnedAt: String
+    copyStatus: String
+    replayed: Boolean
+  }
+
+  type BmsPosBoardGameChargeLine {
+    participantId: ID!
+    displayName: String
+    participantType: String!
+    billingGroupNo: Int!
+    billableMinutes: Int!
+    hourlyRate: Float!
+    amount: Float!
+  }
+
+  type BmsPosBoardGameBilling {
+    sessionId: ID!
+    amountDue: Float!
+    lines: [BmsPosBoardGameChargeLine!]!
+    endedAt: String!
+    replayed: Boolean!
+  }
+
+  type BmsPosBoardGameSession {
+    id: ID!
+    status: String!
+    billingMode: String!
+    guestCount: Int!
+    startedAt: String!
+    expectedEndAt: String
+    endedAt: String
+    alertBeforeMinutes: Int!
+    alertStatus: String!
+    amountDue: Float!
+    locationId: ID!
+    tableId: ID!
+    currentOrderId: ID
+    participants: [BmsPosBoardGameParticipant!]!
+    games: [BmsPosBoardGameLoan!]!
+  }
+
+  type BmsPosBoardGameCheckout {
+    id: ID!
+    tableCode: String!
+    tableName: String!
+    startedAt: String!
+    endedAt: String!
+    amountDue: Float!
+    chargeLineCount: Int!
+  }
+
   extend type Query {
     bmsPosSession: BmsPosSessionResult!
     bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
@@ -1986,6 +2305,23 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosMemberPreview(
       input: BmsPosMemberPreviewInput!
     ): BmsPosMemberPreviewResult!
+    bmsPosStockTransfers(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosStockTransfersResult!
+    bmsPosStockCounts(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosStockCountsResult!
+    bmsPosBoardGameWorkspace(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosBoardGameWorkspace!
+    bmsPosBoardGameSession(
+      credentials: BmsPosCredentialsInput!
+      id: ID!
+    ): BmsPosBoardGameSession
+    bmsPosBoardGameCheckout(
+      credentials: BmsPosCredentialsInput!
+      id: ID!
+    ): BmsPosBoardGameCheckout
   }
 
   extend type Mutation {
@@ -2013,6 +2349,54 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosSendReceipt(
       input: BmsPosSendReceiptInput!
     ): BmsPosReceiptDeliveryResult!
+    bmsPosCreateStockTransfer(
+      input: BmsPosStockTransferCreateInput!
+    ): BmsMobileStockTransferActionResult!
+    bmsPosSendStockTransfer(
+      input: BmsPosStockTransferActionInput!
+    ): BmsMobileStockTransferActionResult!
+    bmsPosReceiveStockTransfer(
+      input: BmsPosStockTransferReceiveInput!
+    ): BmsMobileStockTransferActionResult!
+    bmsPosCancelStockTransfer(
+      input: BmsPosStockTransferActionInput!
+    ): BmsMobileStockTransferActionResult!
+    bmsPosCreateStockCount(
+      input: BmsPosStockCountCreateInput!
+    ): BmsMobileStockCountActionResult!
+    bmsPosRecordStockCountItem(
+      input: BmsPosStockCountItemInput!
+    ): BmsMobileStockCountActionResult!
+    bmsPosApplyStockCount(
+      input: BmsPosStockCountActionInput!
+    ): BmsMobileStockCountActionResult!
+    bmsPosCancelStockCount(
+      input: BmsPosStockCountActionInput!
+    ): BmsMobileStockCountActionResult!
+    bmsPosOpenBoardGameSession(
+      input: BmsPosBoardGameOpenInput!
+    ): BmsPosBoardGameSessionSummary!
+    bmsPosAddBoardGameParticipant(
+      input: BmsPosBoardGameAddParticipantInput!
+    ): BmsPosBoardGameParticipant!
+    bmsPosLeaveBoardGameParticipant(
+      input: BmsPosBoardGameLeaveParticipantInput!
+    ): BmsPosBoardGameParticipant!
+    bmsPosAdjustBoardGameTiming(
+      input: BmsPosBoardGameTimingInput!
+    ): BmsPosBoardGameSessionSummary!
+    bmsPosCloseBoardGameSession(
+      input: BmsPosBoardGameSessionActionInput!
+    ): BmsPosBoardGameBilling!
+    bmsPosCancelBoardGameSession(
+      input: BmsPosBoardGameSessionActionInput!
+    ): BmsPosBoardGameSessionSummary!
+    bmsPosCheckoutBoardGameCopy(
+      input: BmsPosBoardGameCheckoutCopyInput!
+    ): BmsPosBoardGameLoan!
+    bmsPosReturnBoardGameCopy(
+      input: BmsPosBoardGameReturnCopyInput!
+    ): BmsPosBoardGameLoan!
     bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
     bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
     bmsPosRequestPharmacyReview(
@@ -2206,6 +2590,77 @@ function optionalUuidInput(value: unknown, message: string): string | null {
   if (!parsed) return null;
   if (!isPosUuid(parsed)) return badPosInput(message);
   return parsed;
+}
+
+type PosDeviceScope = {
+  tenantId: string;
+  locationId: string;
+};
+
+async function requireBoardGameSessionAtDevice(
+  device: PosDeviceScope,
+  sessionIdInput: unknown,
+) {
+  const sessionId = uuidInput(sessionIdInput, "session บอร์ดเกมไม่ถูกต้อง");
+  const locationId = await locationOfBoardGameSession(
+    device.tenantId,
+    sessionId,
+  );
+  if (locationId !== device.locationId) {
+    throw mobileGraphqlError("ไม่พบ session บอร์ดเกมในสาขานี้", "NOT_FOUND");
+  }
+  return sessionId;
+}
+
+async function requireBoardGameLoanAtDevice(
+  device: PosDeviceScope,
+  loanIdInput: unknown,
+) {
+  const loanId = uuidInput(loanIdInput, "รายการยืมเกมไม่ถูกต้อง");
+  const locationId = await locationOfBoardGameLoan(device.tenantId, loanId);
+  if (locationId !== device.locationId) {
+    throw mobileGraphqlError("ไม่พบรายการยืมเกมในสาขานี้", "NOT_FOUND");
+  }
+  return loanId;
+}
+
+async function requireStockTransferAtDevice(
+  device: PosDeviceScope,
+  transferIdInput: unknown,
+  side: "SOURCE" | "DESTINATION",
+) {
+  const transferId = uuidInput(transferIdInput, "ใบโอนไม่ถูกต้อง");
+  const transfer = await getStockTransfer(device.tenantId, transferId);
+  const locationId =
+    side === "SOURCE" ? transfer?.fromLocationId : transfer?.toLocationId;
+  if (!transfer || locationId !== device.locationId) {
+    throw mobileGraphqlError("ไม่พบใบโอนสำหรับสาขาของเครื่องนี้", "NOT_FOUND");
+  }
+  return { transferId, transfer };
+}
+
+async function requireStockCountAtDevice(
+  device: PosDeviceScope,
+  countIdInput: unknown,
+) {
+  const countId = uuidInput(countIdInput, "ใบนับสต็อกไม่ถูกต้อง");
+  const count = await getStockCount(device.tenantId, countId);
+  const { locationId: countLocationId = null } = count ?? {};
+  if (!count || countLocationId !== device.locationId) {
+    throw mobileGraphqlError(
+      "ไม่พบใบนับสต็อกสำหรับสาขาของเครื่องนี้",
+      "NOT_FOUND",
+    );
+  }
+  return { countId, count };
+}
+
+function posIdempotencyKey(value: unknown): string {
+  const key = textInput(value);
+  if (key.length < 8 || key.length > 200) {
+    return badPosInput("idempotencyKey ต้องยาว 8-200 ตัวอักษร");
+  }
+  return key;
 }
 
 function isIsoDate(value: string): boolean {
@@ -2847,6 +3302,106 @@ export const bmsPosDeviceResolvers = {
         couponError,
       };
     },
+
+    async bmsPosStockTransfers(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      await requirePosCashier(device, args.credentials, "inventory.transfer");
+      const [transfers, locations] = await Promise.all([
+        listStockTransfers(device.tenantId, null, 200, null, device.locationId),
+        listLocations(device.tenantId),
+      ]);
+      return {
+        transfers: transfers.filter(
+          (transfer) =>
+            transfer.fromLocationId === device.locationId ||
+            transfer.toLocationId === device.locationId,
+        ),
+        destinations: locations.filter(
+          (location) => location.active && location.id !== device.locationId,
+        ),
+        deviceLocationId: device.locationId,
+      };
+    },
+
+    async bmsPosStockCounts(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      await requirePosCashier(device, args.credentials, "inventory.count");
+      const counts = await listStockCounts(
+        device.tenantId,
+        null,
+        200,
+        null,
+        device.locationId,
+      );
+      return {
+        counts: counts.filter(
+          ({ locationId }) => locationId === device.locationId,
+        ),
+        deviceLocationId: device.locationId,
+      };
+    },
+
+    async bmsPosBoardGameWorkspace(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const actor = await requirePosCashier(
+        device,
+        args.credentials,
+        "board_game.session.manage",
+      );
+      await requirePosPermissionForActor(
+        device,
+        actor.userId,
+        "board_game.library.view",
+      );
+      const [floor, rates, library] = await Promise.all([
+        listBoardGameFloor(device.tenantId, device.locationId),
+        listBoardGameTimeRates(device.tenantId),
+        listBoardGameLibrary(device.tenantId, device.locationId),
+      ]);
+      return { floor, rates, library };
+    },
+
+    async bmsPosBoardGameSession(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials; id: string },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      await requirePosCashier(
+        device,
+        args.credentials,
+        "board_game.session.manage",
+      );
+      const sessionId = await requireBoardGameSessionAtDevice(device, args.id);
+      return getBoardGameSession(device.tenantId, sessionId);
+    },
+
+    async bmsPosBoardGameCheckout(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials; id: string },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      await requirePosCashier(device, args.credentials, "pos.sell");
+      const sessionId = await requireBoardGameSessionAtDevice(device, args.id);
+      return getBoardGameCheckoutForPos(
+        device.tenantId,
+        device.locationId,
+        sessionId,
+      );
+    },
   },
 
   Mutation: {
@@ -2901,7 +3456,9 @@ export const bmsPosDeviceResolvers = {
         "session บอร์ดเกมไม่ถูกต้อง",
       );
       if (!lines.length && !boardGameSessionId)
-        return badPosInput("ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ");
+        return badPosInput(
+          "ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ",
+        );
       if (mode === "DEPOSIT" && boardGameSessionId)
         return badPosInput("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
       const parsedPayments = parsePosPayments(input.payments);
@@ -3520,6 +4077,481 @@ export const bmsPosDeviceResolvers = {
         channel: input.channel === "line" ? "line" : "email",
         to: typeof input.to === "string" ? input.to : null,
       });
+    },
+
+    async bmsPosCreateStockTransfer(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "inventory.transfer",
+      );
+      const rows = Array.isArray(input.items) ? input.items : [];
+      return createStockTransfer({
+        tenantId: device.tenantId,
+        fromLocationId: device.locationId,
+        toLocationId: uuidInput(input.destinationId, "สาขาปลายทางไม่ถูกต้อง"),
+        items: rows.map((value) => {
+          const row = recordInput(value);
+          return {
+            sku: textInput(row.sku),
+            size: textInput(row.size),
+            qty: Number(row.qty),
+          };
+        }),
+        note: textInput(input.note) || null,
+        createdBy: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosSendStockTransfer(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "inventory.transfer",
+      );
+      const { transferId } = await requireStockTransferAtDevice(
+        device,
+        input.transferId,
+        "SOURCE",
+      );
+      return sendStockTransfer({
+        tenantId: device.tenantId,
+        transferId,
+        actorUserId: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosReceiveStockTransfer(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "inventory.transfer",
+      );
+      const { transferId } = await requireStockTransferAtDevice(
+        device,
+        input.transferId,
+        "DESTINATION",
+      );
+      const received = Array.isArray(input.received)
+        ? input.received.map((value) => {
+            const row = recordInput(value);
+            return {
+              itemId: Number(row.itemId),
+              qty: Number(row.qty),
+              damagedQty: Number(row.damagedQty ?? 0),
+              reason: textInput(row.reason) || null,
+              note: textInput(row.note) || null,
+            };
+          })
+        : undefined;
+      return receiveStockTransfer({
+        tenantId: device.tenantId,
+        transferId,
+        actorUserId: actor.userId,
+        received,
+        receivingNote: textInput(input.receivingNote) || null,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosCancelStockTransfer(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "inventory.transfer",
+      );
+      const { transferId } = await requireStockTransferAtDevice(
+        device,
+        input.transferId,
+        "SOURCE",
+      );
+      return cancelStockTransfer({
+        tenantId: device.tenantId,
+        transferId,
+        actorUserId: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosCreateStockCount(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(device, input, "inventory.count");
+      return createStockCount({
+        tenantId: device.tenantId,
+        locationId: device.locationId,
+        note: textInput(input.note) || null,
+        createdBy: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosRecordStockCountItem(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(device, input, "inventory.count");
+      const { countId } = await requireStockCountAtDevice(
+        device,
+        input.countId,
+      );
+      return recordCountItem({
+        tenantId: device.tenantId,
+        countId,
+        sku: textInput(input.sku),
+        size: textInput(input.size),
+        countedQty: Number(input.countedQty),
+        note: textInput(input.note) || null,
+        actorUserId: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosApplyStockCount(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "inventory.count.apply",
+      );
+      const { countId } = await requireStockCountAtDevice(
+        device,
+        input.countId,
+      );
+      return applyStockCount({
+        tenantId: device.tenantId,
+        countId,
+        actorUserId: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosCancelStockCount(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(device, input, "inventory.count");
+      const { countId } = await requireStockCountAtDevice(
+        device,
+        input.countId,
+      );
+      return cancelStockCount({
+        tenantId: device.tenantId,
+        countId,
+        actorUserId: actor.userId,
+        idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+      });
+    },
+
+    async bmsPosOpenBoardGameSession(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.manage",
+      );
+      const shift = await requireOpenPosShift(device);
+      const participants = Array.isArray(input.participants)
+        ? input.participants.map((value) => {
+            const row = recordInput(value);
+            return {
+              rateId: optionalUuidInput(row.rateId, "อัตราค่าบริการไม่ถูกต้อง"),
+              customerId: optionalUuidInput(row.customerId, "สมาชิกไม่ถูกต้อง"),
+              displayName: textInput(row.displayName) || null,
+              participantType: textInput(row.participantType) || undefined,
+              billingGroupNo: Number(row.billingGroupNo ?? 1),
+            };
+          })
+        : [];
+      return openBoardGameSession(
+        device.tenantId,
+        {
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+          locationId: device.locationId,
+          tableId: uuidInput(input.tableId, "โต๊ะบอร์ดเกมไม่ถูกต้อง"),
+          billingMode:
+            textInput(input.billingMode).toUpperCase() === "FIXED_DURATION"
+              ? "FIXED_DURATION"
+              : "OPEN_ENDED",
+          expectedDurationMinutes:
+            input.expectedDurationMinutes == null
+              ? null
+              : Number(input.expectedDurationMinutes),
+          alertBeforeMinutes: Number(input.alertBeforeMinutes ?? 15),
+          participants: participants as any,
+          posDeviceId: device.id,
+          posShiftId: shift.id,
+          note: textInput(input.note) || null,
+        },
+        actor.userId,
+      );
+    },
+
+    async bmsPosAddBoardGameParticipant(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.manage",
+      );
+      const sessionId = await requireBoardGameSessionAtDevice(
+        device,
+        input.sessionId,
+      );
+      return addBoardGameParticipant(
+        device.tenantId,
+        {
+          sessionId,
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+          rateId: optionalUuidInput(input.rateId, "อัตราค่าบริการไม่ถูกต้อง"),
+          customerId: optionalUuidInput(input.customerId, "สมาชิกไม่ถูกต้อง"),
+          displayName: textInput(input.displayName) || null,
+          participantType: textInput(input.participantType) || undefined,
+          billingGroupNo: Number(input.billingGroupNo ?? 1),
+        } as any,
+        actor.userId,
+      );
+    },
+
+    async bmsPosLeaveBoardGameParticipant(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.manage",
+      );
+      const sessionId = await requireBoardGameSessionAtDevice(
+        device,
+        input.sessionId,
+      );
+      return leaveBoardGameParticipant(
+        device.tenantId,
+        {
+          sessionId,
+          participantId: uuidInput(input.participantId, "ผู้เล่นไม่ถูกต้อง"),
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+        },
+        actor.userId,
+      );
+    },
+
+    async bmsPosAdjustBoardGameTiming(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.override_time",
+      );
+      const sessionId = await requireBoardGameSessionAtDevice(
+        device,
+        input.sessionId,
+      );
+      return adjustBoardGameSessionTiming(
+        device.tenantId,
+        sessionId,
+        {
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+          billingMode:
+            textInput(input.billingMode).toUpperCase() === "FIXED_DURATION"
+              ? "FIXED_DURATION"
+              : "OPEN_ENDED",
+          expectedDurationMinutes:
+            input.expectedDurationMinutes == null
+              ? null
+              : Number(input.expectedDurationMinutes),
+          alertBeforeMinutes: Number(input.alertBeforeMinutes),
+        },
+        actor.userId,
+      );
+    },
+
+    async bmsPosCloseBoardGameSession(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.manage",
+      );
+      await requireOpenPosShift(device);
+      const sessionId = await requireBoardGameSessionAtDevice(
+        device,
+        input.sessionId,
+      );
+      return closeBoardGameSessionForBilling(
+        device.tenantId,
+        sessionId,
+        {
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+          note: textInput(input.reason) || null,
+        },
+        actor.userId,
+      );
+    },
+
+    async bmsPosCancelBoardGameSession(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.cancel",
+      );
+      const sessionId = await requireBoardGameSessionAtDevice(
+        device,
+        input.sessionId,
+      );
+      // service บังคับเหตุผลตามกติกา (ยกเลิกโต๊ะที่นับเวลาไปแล้วต้องอธิบายได้) แต่มันปฏิเสธด้วย
+      // throw ธรรมดา ซึ่งออกไปเป็น 500 · ด่านของ input เป็นงานของ resolver ในโมดูลนี้มาตลอด
+      const reason = textInput(input.reason);
+      if (!reason) return badPosInput("ยกเลิก session ต้องระบุเหตุผล");
+      return cancelBoardGameSession(
+        device.tenantId,
+        sessionId,
+        {
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+          reason,
+        },
+        actor.userId,
+      );
+    },
+
+    async bmsPosCheckoutBoardGameCopy(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.manage",
+      );
+      await requirePosPermissionForActor(
+        device,
+        actor.userId,
+        "board_game.library.view",
+      );
+      const sessionId = await requireBoardGameSessionAtDevice(
+        device,
+        input.sessionId,
+      );
+      return checkoutBoardGameCopy(
+        device.tenantId,
+        {
+          sessionId,
+          copyId: uuidInput(input.copyId, "กล่องเกมไม่ถูกต้อง"),
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+        },
+        actor.userId,
+      );
+    },
+
+    async bmsPosReturnBoardGameCopy(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(
+        device,
+        input,
+        "board_game.session.manage",
+      );
+      const copyStatus = textInput(input.copyStatus).toUpperCase() || null;
+      if (copyStatus && !["AVAILABLE", "NEEDS_CHECK"].includes(copyStatus)) {
+        await requirePosPermissionForActor(
+          device,
+          actor.userId,
+          "board_game.library.manage",
+        );
+      }
+      const loanId = await requireBoardGameLoanAtDevice(device, input.loanId);
+      return returnBoardGameCopy(
+        device.tenantId,
+        {
+          loanId,
+          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
+          status:
+            textInput(input.status).toUpperCase() === "ISSUE"
+              ? "ISSUE"
+              : "RETURNED",
+          copyStatus,
+          returnNote: textInput(input.returnNote) || null,
+        },
+        actor.userId,
+      );
     },
 
     async bmsPosDeposit(_parent: unknown, args: { input: unknown }, ctx: any) {

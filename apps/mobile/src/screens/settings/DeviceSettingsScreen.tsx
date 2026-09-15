@@ -27,6 +27,20 @@ import type { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
+/**
+ * เวลาแบบ 24 ชม. ตามเครื่อง — ตั้งใจโชว์ "วินาที" ด้วย
+ *
+ * เพราะคำถามที่ปุ่มทดสอบต้องตอบคือ "กดแล้วมันไปถามจริงไหม" ซึ่งการกดสองครั้งติดกันในนาทีเดียว
+ * ต้องเห็นตัวเลขขยับ · ถ้าโชว์แค่ HH:MM การกดซ้ำจะยังอ่านว่าไม่มีอะไรเกิดขึ้นเหมือนเดิม
+ */
+function formatCheckedAt(at: number): string {
+  const time = new Date(at);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(
+    time.getSeconds(),
+  )} น.`;
+}
+
 /** แผงขวาบนแท็บเล็ต — เท่ากับแผงตะกร้า/แผงบิลของหน้าอื่น ให้ความกว้างของแอปเป็นภาษาเดียวกัน */
 const STATUS_PANEL_WIDTH = 360;
 
@@ -38,8 +52,16 @@ const STATUS_PANEL_WIDTH = 360;
 export default function DeviceSettingsScreen({ route, navigation }: Props) {
   const { colors, spacing, typography, radius, minTouchTarget } = useTheme();
   const { isTablet } = useResponsive();
-  const { status, target, storeError, verify, pair, unpair, runVerify } =
-    useDevice();
+  const {
+    status,
+    target,
+    storeError,
+    verify,
+    lastCheckedAt,
+    pair,
+    unpair,
+    runVerify,
+  } = useDevice();
   const { mode } = useStoreMode();
 
   const [input, setInput] = useState('');
@@ -290,6 +312,24 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               <Text style={typography.caption}>
                 ต่อไม่ได้ ≠ token ผิด — ยังไม่ต้องเลิกจับคู่
               </Text>
+            </Text>
+          )}
+
+          {/* คำตอบที่ผ่านแล้วหน้าตาเหมือนกันทุกตัวอักษรไม่ว่าจะถามเมื่อกี้หรือเมื่อเปิดแอป —
+              ไม่มีบรรทัดนี้ การกด "ทดสอบการเชื่อมต่อ" ตอนทุกอย่างปกติจะอ่านไม่ออกว่าปุ่มทำงานไหม
+              และคำตอบค้างจอจากเช้าก็อ่านว่าเป็นคำตอบสด */}
+          {verify.kind !== 'IDLE' && lastCheckedAt != null && (
+            <Text
+              style={[
+                typography.caption,
+                { color: colors.textSoft, marginTop: spacing.sm },
+              ]}
+            >
+              {verify.kind === 'CHECKING'
+                ? `กำลังถามใหม่ · คำตอบก่อนหน้าเมื่อ ${formatCheckedAt(
+                    lastCheckedAt,
+                  )}`
+                : `ตรวจล่าสุด ${formatCheckedAt(lastCheckedAt)}`}
             </Text>
           )}
 

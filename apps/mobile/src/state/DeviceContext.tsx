@@ -30,10 +30,18 @@ export type VerifyState =
   /** 401 — token ถูกยกเลิกหรือมีการออก token ใหม่ให้เครื่องนี้ ต้องไปจับคู่ใหม่ */
   | { kind: 'REJECTED'; message: string }
   /** เซิร์ฟเวอร์ตอบ แต่ตอบว่าพัง (5xx / เจอหน้า HTML แทน JSON เพราะ URL ผิด) */
-  | { kind: 'SERVER_ERROR'; message: string }
+  | { kind: 'SERVER_ERROR'; message: string; cause: string }
   /** ต่อไม่ถึงเลย — **ห้ามอ่านว่า token ผิด** (บทเรียนของเว็บ: เน็ตร้านสะดุดทีเดียว
    *  แล้วไล่พนักงานไปจับคู่ใหม่กลางกะ คือทางที่ทำให้ร้านเลิกเชื่อหน้าจอ) */
-  | { kind: 'OFFLINE'; message: string };
+  | { kind: 'OFFLINE'; message: string; cause: string };
+
+/**
+ * `cause` = คำตอบดิบสั้น ๆ ที่ต้องเอาไปแปะบนแถบแคบ ๆ ได้ (`HTTP 502`, `Network request failed`,
+ * `TIMEOUT 10s`) ส่วน `message` เป็นประโยคอธิบายเต็มสำหรับหน้าตั้งค่าที่มีที่ให้อ่าน
+ *
+ * แยกกันเพราะแถบบนหน้าล็อกอินตัดเหลือสองบรรทัด — ยัดประโยคยาวลงไปแล้วส่วนที่ถูกตัดทิ้ง
+ * คือส่วนที่บอกว่าพังเพราะอะไร เหลือแต่ "ยังตรวจกับเซิร์ฟเวอร์ไม่ได้" ซึ่งทำอะไรต่อไม่ได้
+ */
 
 export interface DeviceIdentity {
   deviceCode: string;
@@ -56,6 +64,14 @@ interface DeviceContextValue {
   /** เหตุผลที่อ่านค่าจาก Keychain ไม่ได้ — ต่างจาก "ยังไม่เคยจับคู่" */
   storeError: string | null;
   verify: VerifyState;
+  /**
+   * เวลาที่ "คำตอบรอบล่าสุด" กลับมาถึงเครื่อง (epoch ms) — `null` คือยังไม่เคยได้คำตอบเลย
+   *
+   * ต้องมีเพราะการ์ดผลตรวจที่ผ่านแล้วหน้าตาเหมือนกันทุกตัวอักษรไม่ว่าจะถามเมื่อกี้หรือ
+   * เมื่อเปิดแอปตอนเช้า · ไม่มีเวลากำกับ = กด "ทดสอบการเชื่อมต่อ" แล้วอ่านไม่ออกว่าปุ่มทำงานไหม
+   * และคำตอบเก่าค้างจอก็อ่านว่าเป็นคำตอบสด
+   */
+  lastCheckedAt: number | null;
   pair: (target: PairingTarget) => Promise<void>;
   unpair: () => Promise<void>;
   runVerify: () => Promise<void>;
@@ -75,6 +91,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const [target, setTarget] = useState<PairingTarget | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
   const [verify, setVerify] = useState<VerifyState>({ kind: 'IDLE' });
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   // กันผลของรอบเก่ามาเขียนทับรอบใหม่ (กดทดสอบรัว ๆ ตอนเน็ตช้า)
   const verifySeq = useRef(0);
   // แยกจาก status เพราะการเปลี่ยน token ขณะที่ status ยังเป็น PAIRED
@@ -110,6 +127,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     setStatus('UNPAIRED');
     setStoreError(null);
     setVerify({ kind: 'IDLE' });
+    setLastCheckedAt(null);
   }, []);
 
   const markAuthenticationRejected = useCallback(() => {
@@ -127,6 +145,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     async (candidate: PairingTarget) => {
       const seq = ++verifySeq.current;
       setVerify({ kind: 'CHECKING' });
+      // ทุกทางออกที่ "ได้คำตอบแล้ว" ต้องประทับเวลา ไม่ใช่เฉพาะทางที่ผ่าน — คำตอบที่ล้มซ้ำ
+      // ด้วยข้อความเดิมก็อ่านไม่ออกเหมือนกันว่าเพิ่งถามไปหรือค้างมาจากรอบก่อน
+      const settle = (next: VerifyState) => {
+        setVerify(next);
+        setLastCheckedAt(Date.now());
+      };
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
@@ -146,12 +170,14 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
         if (res.status === 401) {
           markAuthenticationRejected();
+          setLastCheckedAt(Date.now());
           return;
         }
         if (!res.ok) {
-          setVerify({
+          settle({
             kind: 'SERVER_ERROR',
             message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
+            cause: `HTTP ${res.status}`,
           });
           return;
         }
@@ -168,27 +194,30 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           )
         ) {
           markAuthenticationRejected();
+          setLastCheckedAt(Date.now());
           return;
         }
         if (body?.errors?.length) {
-          setVerify({
+          settle({
             kind: 'SERVER_ERROR',
             message:
               body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
+            cause: body.errors[0]?.extensions?.code ?? 'GRAPHQL_ERROR',
           });
           return;
         }
         const session = body?.data?.bmsPosSession;
         if (!session?.device) {
-          setVerify({
+          settle({
             kind: 'SERVER_ERROR',
             message:
               'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
+            cause: 'ไม่ใช่ข้อมูลเครื่องขาย',
           });
           return;
         }
 
-        setVerify({
+        settle({
           kind: 'OK',
           info: {
             deviceCode: String(session.device.code ?? '—'),
@@ -204,7 +233,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       } catch (e: any) {
         if (seq !== verifySeq.current) return;
         const aborted = e?.name === 'AbortError';
-        setVerify({
+        settle({
           kind: 'OFFLINE',
           message: aborted
             ? `ไม่ได้คำตอบภายใน ${
@@ -213,6 +242,9 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(
                 e?.message ?? e,
               )}) — ถ้าเป็นเซิร์ฟเวอร์ทดสอบ HTTPS ให้ตรวจว่าเครื่องเชื่อถือ local CA แล้ว`,
+          cause: aborted
+            ? `TIMEOUT ${VERIFY_TIMEOUT_MS / 1000}s`
+            : String(e?.message ?? e),
         });
       } finally {
         clearTimeout(timer);
@@ -255,6 +287,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       target,
       storeError,
       verify,
+      lastCheckedAt,
       pair,
       unpair,
       runVerify,
@@ -265,6 +298,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       target,
       storeError,
       verify,
+      lastCheckedAt,
       pair,
       unpair,
       runVerify,

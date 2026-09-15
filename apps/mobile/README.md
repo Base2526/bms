@@ -20,12 +20,16 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
+- board-game floor and timed sessions, fixed-duration alerts, member lookup, participant bill groups,
+  playable-copy checkout/return/issue handling, and payment through the existing POS checkout;
+- branch stock transfer create/send/receive/cancel with explicit damaged/missing evidence, plus stock
+  count create/line entry/apply/cancel using the server-owned snapshot-delta rule;
 - kitchen ticket board, station SLA, bulk status updates, and fallback refresh;
 - named GraphQL subscriptions, bounded event deduplication, batched active-query refetch,
   foreground/reconnect recovery, and degraded polling.
 
-All tenant, location, device, and shift scope is server-derived. Money operations retain their
-idempotency key across an unknown network result. Cash out, void, and manual discount filter the
+All tenant, location, device, and shift scope is server-derived. Money and stock operations retain
+their idempotency key across an unknown network result. Cash out, void, and manual discount filter the
 server-provided approver list by the required permission and still receive server-side PIN/RBAC
 validation.
 
@@ -52,6 +56,10 @@ Important paths:
 - `src/graphql/BmsGraphqlProvider.tsx`: Apollo HTTP/WS transport and auth headers.
 - `src/state/RealtimeContext.tsx`: reconnect, deduplication, batching, and degraded refresh.
 - `src/state/SessionContext.tsx`: cashier PIN held in React memory only.
+- `src/screens/boardGame/BoardGameScreen.tsx`: board-game floor, timed session, member, bill-group,
+  alert, and game-loan workflow.
+- `src/screens/inventory/InventoryScreen.tsx`: branch transfer and stock-count workflow, reached from
+  the `งาน` tab so restaurant mode does not overload the bottom navigation.
 - `src/state/{Catalog,Cart,Sales,Shift,Kitchen,IncomingOrders}Context.tsx`: authoritative workflow
   adapters.
 - `../../schema.graphql`: committed executable schema artifact used by codegen.

@@ -48,7 +48,8 @@ bills rung up by mistake.
 `apps/mobile/` is the bare React Native 0.87 client for staff-operated iOS and Android registers.
 It uses generated HTTPS GraphQL operations for device bootstrap/PIN, catalog and barcode reads,
 discount preview, parked bills, sale/return/void, shift/drawer, restaurant checks and settlement,
-incoming orders, and kitchen tickets. Runtime screens and state providers import no mock data.
+incoming orders, kitchen tickets, board-game timed sessions and game loans, and branch stock
+transfers/counts. Runtime screens and state providers import no mock data.
 GraphQL WS carries named invalidations only; Apollo refetches the authoritative snapshot.
 
 The app accepts a full POS link, a bare `pos_...` token plus server, or a
@@ -59,7 +60,11 @@ second-person PINs live only in React memory and are rechecked with action-speci
 sensitive mutation. Manual discount, void and cash-out selectors filter the server approver list by
 the exact permission and exclude the acting cashier; that filtering is UX, not authorization.
 
-Money commands preserve one idempotency key across an unknown network result. Return notes use the
+Money, board-game and stock commands preserve one idempotency key across an unknown network result.
+Board-game time fees are display-only service lines in the client and are resolved from the frozen
+session by the server; they are never submitted as product SKUs. Transfer/count screens derive the
+working branch from the paired device and expose only a destination or aggregate ID for the server
+to validate. Return notes use the
 server's structured reason code, and parked-bill actions use the resolver's exact
 `park`/`resume`/`drop` contract. Shift-bound reads are skipped until a shift is open. Named events
 remain hints: the client deduplicates, batches refetches, reconciles on foreground/reconnect, and
