@@ -66,6 +66,9 @@ const mobileOrderAlertWatcher = read(
 const mobileGraphqlOperations = read(
   "../apps/mobile/src/graphql/operations.graphql",
 );
+const boardGamePosOperations = read(
+  "../apps/web/lib/bms/boardGamePosOperations.ts",
+);
 const inventoryIdempotency = read(
   "../apps/web/lib/bms/inventoryIdempotency.ts",
 );
@@ -236,6 +239,96 @@ const namedActionAliases = new Set([
   "bmsApplyStockCount",
   "bmsCancelStockCount",
 ]);
+
+/** ตัดบล็อก `{ ... }` ที่เริ่มตรง openIndex ออกมาโดยนับวงเล็บเอง */
+function braceBlockAt(source: string, openIndex: number): string {
+  assert.equal(source[openIndex], "{", "expected a block to open here");
+  let depth = 0;
+  for (let index = openIndex; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    else if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(openIndex, index + 1);
+    }
+  }
+  assert.fail("unbalanced block");
+}
+
+function bodyOfTopLevelFunction(source: string, header: RegExp): string {
+  const clean = withoutComments(source);
+  const start = header.exec(clean);
+  assert.ok(start, `${header} must match a declaration`);
+  const tail = clean.slice(start.index);
+  const end = /\n}\n/.exec(tail);
+  assert.ok(end, "a top-level function must close at column 0");
+  return tail.slice(0, end.index);
+}
+
+/**
+ * เส้นบอร์ดเกมย้าย **ตารางสิทธิ์และการอ่าน input** ไปไว้ที่
+ * `lib/bms/boardGamePosOperations.ts` เพราะ REST ของเบราว์เซอร์ (`/api/pos/board-game`)
+ * ต้องตัดสินเหมือนกันเป๊ะ · ตัว resolver จึงไม่มี `input.<field>` ให้สแกนอีกแล้ว
+ *
+ * ถ้าเทสอ่านแค่ตัว resolver มันจะเห็นว่า "ไม่มีใครอ่าน field ไหนเลย" ซึ่งเขียวได้ทั้งตอนที่ SDL
+ * ประกาศ field ที่ไม่มีใครใช้ และตอนที่โค้ดอ่าน field ที่ไม่มีใน SDL — การันตีไม่ได้หายไป
+ * แค่ย้ายบ้าน เทสจึงต้องเดินตามไปอ่านของจริงที่นั่น
+ */
+function boardGameDelegatedBody(body: string): string | null {
+  const authorized =
+    /boardGamePosAccess\(\s*ctx\s*,\s*args\.input\s*,\s*"([a-z.]+)"\s*\)/.exec(
+      body,
+    );
+  if (!authorized) return null;
+  const action = authorized[1];
+  const executed =
+    /runBoardGamePosMutation\(\s*access\.scope\s*,\s*access\.actorUserId\s*,\s*"([a-z.]+)"/.exec(
+      body,
+    );
+  assert.ok(executed, `${action} must run through runBoardGamePosMutation`);
+  // อนุญาตด้วยสิทธิ์ของคำสั่งหนึ่งแล้วไปทำอีกคำสั่งหนึ่ง = ด่านสิทธิ์ที่ไม่ได้กันอะไรเลย
+  assert.equal(
+    executed[1],
+    action,
+    "a board-game resolver must execute the action it authorized",
+  );
+
+  const clean = withoutComments(boardGamePosOperations);
+  // ด่าน PIN อยู่ใน boardGamePosAccess ของโมดูล POS — ยกมาด้วย ไม่งั้น cashierUserId/pin
+  // จะถูกอ่านว่าไม่มีใครใช้ ทั้งที่เป็นสิ่งที่ผู้เรียกต้องส่งมาทุกคำสั่ง
+  let text = bodyOfTopLevelFunction(
+    posSchema,
+    /async function boardGamePosAccess\(/,
+  );
+
+  const quoted = clean.indexOf(`  "${action}": {`);
+  const specAt = quoted >= 0 ? quoted : clean.indexOf(`  ${action}: {`);
+  assert.ok(specAt >= 0, `BOARD_GAME_POS_ACTIONS must declare "${action}"`);
+  // สิทธิ์เพิ่มเติมของบางคำสั่งอ่าน input เอง (คืนกล่องเกมในสถานะที่ไม่ใช่ปกติ)
+  text += braceBlockAt(clean, clean.indexOf("{", specAt));
+
+  const dispatcherAt = clean.indexOf(
+    "export async function runBoardGamePosMutation",
+  );
+  assert.ok(dispatcherAt >= 0, "runBoardGamePosMutation must exist");
+  const switchAt = clean.indexOf("switch (action)", dispatcherAt);
+  assert.ok(switchAt > dispatcherAt, "the dispatcher must switch on action");
+  // ส่วนหัวก่อน switch อ่าน field ที่ทุกคำสั่งใช้ร่วมกัน (idempotencyKey)
+  text += clean.slice(dispatcherAt, switchAt);
+  const caseAt = clean.indexOf(`case "${action}": {`, switchAt);
+  assert.ok(caseAt > switchAt, `the dispatcher must handle "${action}"`);
+  text += braceBlockAt(clean, clean.indexOf("{", caseAt));
+
+  // ตัวแปลงผู้เล่นอ่าน field ระดับบนสุดแทน case นั้นเมื่อเพิ่มผู้เล่นทีละคน
+  if (/participantDraft\(input\)/.test(text)) {
+    const draftAt = clean.indexOf("function participantDraft(");
+    assert.ok(draftAt >= 0, "participantDraft must exist");
+    text += braceBlockAt(
+      clean,
+      clean.indexOf("{", clean.indexOf(")", draftAt)),
+    ).replace(/\brow\./g, "input.");
+  }
+  return text;
+}
 
 function resolverMethod(source: string, operation: string): string {
   const clean = withoutComments(source);
@@ -561,7 +654,9 @@ test("each typed top-level input field matches what its resolver reads, in both 
     const argument = inputArgument(operation.kind, operation.name);
     if (!argument || namedType(String(argument.type)) === "JSON") continue;
     const source = operation.module === "POS" ? posSchema : mobileSchema;
-    const body = resolverMethod(source, operation.name);
+    const resolverBody = resolverMethod(source, operation.name);
+    const delegated = boardGameDelegatedBody(resolverBody);
+    const body = delegated ? `${resolverBody}\n${delegated}` : resolverBody;
     const read = new Set(
       [...body.matchAll(/\binput\.([A-Za-z_][A-Za-z0-9_]*)/g)]
         .map((match) => match[1])

@@ -1,5 +1,6 @@
 import { GraphQLError, type GraphQLFormattedError } from "graphql/error";
 
+import { isBoardGamePosError } from "@/lib/bms/boardGamePosOperations";
 import { isIdempotencyConflictError } from "@/lib/bms/idempotencyErrors";
 
 export const BMS_GRAPHQL_CLIENT_ERROR_CODES = [
@@ -56,13 +57,27 @@ export function ensureBmsGraphqlErrorCode(
   const declared = typeof error.extensions?.code === "string" && error.extensions.code.trim()
     ? error.extensions.code
     : null;
-  const conflict = isIdempotencyConflictError(rootCause(originalError));
-  const code = conflict && !declared ? "CONFLICT" : declared ?? "INTERNAL_SERVER_ERROR";
+  const cause = rootCause(originalError);
+  const conflict = isIdempotencyConflictError(cause);
+  // การปฏิเสธของเส้นบอร์ดเกมมาจาก `throw new Error(...)` ในชั้น service เหมือนกัน — ปล่อยไว้
+  // จะได้ `INTERNAL_SERVER_ERROR` ซึ่งแปลว่า "ยิงซ้ำด้วยคีย์เดิม" · `REJECTED` ตอบเป็น CONFLICT
+  // เพราะส่วนใหญ่คือ "สถานะจริงตอนนี้ไม่ให้ทำแล้ว" ซึ่งต้องดึงของจริงมาดูก่อน ไม่ใช่ยิงซ้ำ
+  const rejected = isBoardGamePosError(cause) ? cause : null;
+  const rejectedCode = rejected
+    ? (rejected.reason === "BAD_INPUT"
+      ? "BAD_USER_INPUT"
+      : rejected.reason === "NOT_FOUND" ? "NOT_FOUND" : "CONFLICT")
+    : null;
+  const code = declared
+    ?? (conflict ? "CONFLICT" : null)
+    ?? rejectedCode
+    ?? "INTERNAL_SERVER_ERROR";
   return {
     ...error,
     extensions: {
       ...error.extensions,
       ...(conflict ? { reason: "IDEMPOTENCY_CONFLICT" } : {}),
+      ...(rejected && !declared && !conflict ? { reason: `BOARD_GAME_${rejected.reason}` } : {}),
       code,
     },
   };

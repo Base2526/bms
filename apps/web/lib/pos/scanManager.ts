@@ -18,7 +18,7 @@ export type ScanContext =
   | "DISABLED";
 
 export type ScanContextInput = {
-  tab: "sell" | "incoming" | "returns" | "stock" | "deposits" | "shift" | "settings";
+  tab: "sell" | "boardgame" | "incoming" | "returns" | "stock" | "deposits" | "shift" | "settings";
   lookupMode: boolean;
   blindReturnOpen: boolean;
   hasPendingSale: boolean;

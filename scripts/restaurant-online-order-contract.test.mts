@@ -104,9 +104,10 @@ test("incoming orders are visible on POS and mirrored in admin", () => {
   assert.match(pos, /key: "incoming"/);
   assert.match(pos, /\/api\/pos\/restaurant\/incoming/);
   assert.match(pos, /รับออร์เดอร์/);
-  // Tolerate line wrapping: the guarantee is that the incoming tab is gated on the archetype,
-  // not that the ternary fits on one line.
-  assert.match(pos, /businessArchetype === "restaurant"\s*\?\s*POS_TABS/);
+  // The guarantee is that the incoming tab is gated on the archetype, not the shape of the
+  // expression that does it — the register now filters one tab list per archetype rule, because
+  // the board game cafe added a tab of its own to the same rail.
+  assert.match(pos, /item\.key === "incoming"\) return archetype === "restaurant"/);
   assert.match(admin, /fulfillmentType/);
   assert.match(admin, /btn_accept/);
 });

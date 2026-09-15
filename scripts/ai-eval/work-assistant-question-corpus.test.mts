@@ -53,11 +53,12 @@ const describe = (item: CorpusCase) =>
   `${item.locale}${item.context?.pageId ? `/${item.context.pageId}` : ""} "${item.q}"`;
 
 test("the pinned corpus still covers the questions it was written for", () => {
-  // 79 questions people actually ask (chips + hand-verified), plus coverage questions for the
+  // 82 questions people actually ask (chips + hand-verified), plus coverage questions for the
   // rest of the catalog, plus 2 guards that must stay unanswerable.
   // (+5 จาก `9.63` แยกบิล/รวมบิล · +5 จาก `9.64` บัตรคิว/จองโต๊ะ · +2 จาก `9.65` ราคาส่ง
-  //  แยกสาขา — ทุกชุดเป็นคำที่คนหน้าร้านพูดจริง ไม่ใช่ชื่อฟีเจอร์)
-  assert.equal(CORPUS_REAL_QUESTIONS.length, 79, "a pinned question disappeared or was added without review");
+  //  แยกสาขา · +3 จากแท็บโต๊ะ/เวลาบนเครื่องขาย ซึ่งก่อนหน้านี้คำตอบเดียวที่มีคือไกด์ของ
+  //  `/admin/board-game` ที่บัญชี `pos_only` เปิดไม่ได้ — ทุกชุดเป็นคำที่คนหน้าร้านพูดจริง)
+  assert.equal(CORPUS_REAL_QUESTIONS.length, 82, "a pinned question disappeared or was added without review");
   assert.equal(WORK_ASSISTANT_QUESTION_CORPUS.filter((item) => item.expect === "no-match").length, 2, "empty-answer guards changed");
 
   const seen = new Set<string>();
