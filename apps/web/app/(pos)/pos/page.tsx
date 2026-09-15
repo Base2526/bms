@@ -15,6 +15,7 @@ import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
 import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
+import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
 import {
   applyPromotion,
@@ -70,6 +71,7 @@ import {
 const POS_ALERT_KINDS: readonly AlertKind[] = ["CHAT_REQUEST"] as const;
 const POS_TABS = [
   { key: "sell", label: "ขาย" },
+  { key: "boardgame", label: "โต๊ะ/เวลา" },
   { key: "incoming", label: "ออร์เดอร์เข้า" },
   { key: "returns", label: "คืน" },
   { key: "stock", label: "รับของ" },
@@ -96,6 +98,18 @@ function PosTabIcon({ tab }: { tab: PosTab }) {
         <rect x="8.6" y="5" width="2" height="14" rx="1" />
         <rect x="12" y="5" width="3.4" height="14" rx="1" />
         <rect x="17.6" y="5" width="3.4" height="14" rx="1" />
+      </svg>
+    );
+  }
+  if (tab === "boardgame") {
+    // ลูกเต๋า + นาฬิกา = โต๊ะที่คิดเงินตามเวลา ไม่ใช่สินค้า
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="3" y="12.5" width="8.5" height="8.5" rx="1.6" />
+        <circle cx="7.25" cy="16.75" r="1" fill="currentColor" stroke="none" />
+        <circle cx="16" cy="8" r="5" />
+        <path d="M16 5.2V8l1.9 1.2" />
       </svg>
     );
   }
@@ -1330,9 +1344,16 @@ export default function PosPage() {
   const incomingRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
   const posPageVisible = usePageVisible();
   const incomingWaitingCount = incomingOrders.filter((row) => row.status === "PAID").length;
-  const visiblePosTabs = session?.businessArchetype === "restaurant"
-    ? POS_TABS
-    : POS_TABS.filter((item) => item.key !== "incoming");
+  // แท็บที่เป็นของประเภทร้าน — ออเดอร์เข้ามีเฉพาะร้านอาหาร · โต๊ะ/เวลามีเฉพาะร้านบอร์ดเกม
+  // แท็บที่กดแล้วไม่มีอะไรให้ทำคือแท็บที่สอนให้คนเลิกเชื่อแท็บที่เหลือ
+  const visiblePosTabs = useMemo(() => {
+    const archetype = session?.businessArchetype ?? null;
+    return POS_TABS.filter((item) => {
+      if (item.key === "incoming") return archetype === "restaurant";
+      if (item.key === "boardgame") return archetype === "board_game_cafe";
+      return true;
+    });
+  }, [session?.businessArchetype]);
   // ทุกบิลผูกกับคนนี้ — ต้องเห็นบนแถบบนตลอด ไม่ใช่ซ่อนอยู่ในแท็บตั้งค่า
   const currentCashierName = useMemo(() => {
     const found = (session?.cashiers ?? []).find((c) => c.id === cashierId);
@@ -3847,11 +3868,12 @@ export default function PosPage() {
     if (tab === "deposits") void refreshDeposits();
   }, [token, tab, session?.shift?.id]);
 
+  // แท็บที่ถูกซ่อนไปตามประเภทร้านต้องไม่ค้างเป็นแท็บที่เปิดอยู่ (เช่น ตัวที่จำไว้จากกะก่อน)
+  // อ่านจากลิสต์เดียวกับที่แถบเมนูใช้ — สองลิสต์คือสองกติกาที่ drift กันได้
   useEffect(() => {
-    if (session && session.businessArchetype !== "restaurant" && tab === "incoming") {
-      setTab("sell");
-    }
-  }, [session, tab]);
+    if (!session) return;
+    if (!visiblePosTabs.some((item) => item.key === tab)) setTab("sell");
+  }, [session, tab, visiblePosTabs]);
 
   // ⚠️ ของเดิมดึงเฉพาะตอนเปิดแท็บ "ออร์เดอร์เข้า" อยู่ — แคชเชียร์ที่ยืนขายหน้าเคาน์เตอร์
   // (ที่ยืนจริง) จึงไม่มีทางรู้เลยว่ามีออร์เดอร์ออนไลน์เข้ามา จนกว่าจะเผลอกดเข้าแท็บนั้น
@@ -6515,6 +6537,19 @@ export default function PosPage() {
         </div>
       </div>
       </>)}
+
+      {/* โต๊ะ/เวลาเล่น — ร้านบอร์ดเกมคาเฟ่เท่านั้น · ปิดเวลาแล้วบิลมารวมที่แท็บขายใบเดียว */}
+      {tab === "boardgame" && (
+        <BoardGamePanel
+          token={token ?? ""}
+          cashierUserId={cashierId}
+          pin={pin}
+          onCheckout={(sessionId) => {
+            setBoardGameCheckoutId(sessionId);
+            switchTab("sell");
+          }}
+        />
+      )}
 
       {tab === "incoming" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

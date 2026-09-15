@@ -26,22 +26,14 @@ import { getKitchenStationSlaMap } from "@/lib/bms/kitchenSla";
 import { listKitchenStations } from "@/lib/bms/kitchenStations";
 import { getLocation, listLocations } from "@/lib/bms/locations";
 import {
-  addBoardGameParticipant,
-  adjustBoardGameSessionTiming,
-  cancelBoardGameSession,
-  checkoutBoardGameCopy,
-  closeBoardGameSessionForBilling,
-  getBoardGameCheckoutForPos,
-  getBoardGameSession,
-  leaveBoardGameParticipant,
-  listBoardGameFloor,
-  listBoardGameLibrary,
-  listBoardGameTimeRates,
-  locationOfBoardGameLoan,
-  locationOfBoardGameSession,
-  openBoardGameSession,
-  returnBoardGameCopy,
-} from "@/lib/bms/boardGameCafe";
+  BOARD_GAME_POS_ACTIONS,
+  loadBoardGamePosCheckout,
+  loadBoardGamePosSession,
+  loadBoardGamePosWorkspace,
+  runBoardGamePosMutation,
+  type BoardGamePosAction,
+  type BoardGamePosScope,
+} from "@/lib/bms/boardGamePosOperations";
 import {
   evaluatePointsEarn,
   enrollMember,
@@ -2597,31 +2589,39 @@ type PosDeviceScope = {
   locationId: string;
 };
 
-async function requireBoardGameSessionAtDevice(
-  device: PosDeviceScope,
-  sessionIdInput: unknown,
-) {
-  const sessionId = uuidInput(sessionIdInput, "session บอร์ดเกมไม่ถูกต้อง");
-  const locationId = await locationOfBoardGameSession(
-    device.tenantId,
-    sessionId,
-  );
-  if (locationId !== device.locationId) {
-    throw mobileGraphqlError("ไม่พบ session บอร์ดเกมในสาขานี้", "NOT_FOUND");
+/**
+ * ด่านของคำสั่งบอร์ดเกม — เครื่อง + คน + สิทธิ์ + กะ
+ *
+ * สิทธิ์ที่ต้องถือไม่ได้เขียนไว้ที่นี่ แต่อ่านจาก `BOARD_GAME_POS_ACTIONS` ซึ่งเป็นตารางเดียว
+ * ที่ REST ฝั่งเบราว์เซอร์อ่านด้วย — ตัวตัดสินสิทธิ์สองชุดคือจุดที่สองฝั่งเริ่มอนุญาตไม่เท่ากัน
+ */
+async function boardGamePosAccess(
+  ctx: unknown,
+  rawInput: unknown,
+  action: BoardGamePosAction,
+): Promise<{
+  scope: BoardGamePosScope;
+  actorUserId: string;
+  input: Record<string, unknown>;
+}> {
+  const device = requirePosDevice(ctx as any);
+  const spec = BOARD_GAME_POS_ACTIONS[action];
+  const input = recordInput(rawInput);
+  const actor = await requirePosCashier(device, input, spec.permission);
+  for (const permission of spec.extraPermissions(input)) {
+    await requirePosPermissionForActor(device, actor.userId, permission);
   }
-  return sessionId;
-}
-
-async function requireBoardGameLoanAtDevice(
-  device: PosDeviceScope,
-  loanIdInput: unknown,
-) {
-  const loanId = uuidInput(loanIdInput, "รายการยืมเกมไม่ถูกต้อง");
-  const locationId = await locationOfBoardGameLoan(device.tenantId, loanId);
-  if (locationId !== device.locationId) {
-    throw mobileGraphqlError("ไม่พบรายการยืมเกมในสาขานี้", "NOT_FOUND");
-  }
-  return loanId;
+  const shift = spec.requiresOpenShift ? await requireOpenPosShift(device) : null;
+  return {
+    scope: {
+      tenantId: device.tenantId,
+      locationId: device.locationId,
+      deviceId: device.id,
+      shiftId: shift?.id ?? null,
+    },
+    actorUserId: actor.userId,
+    input,
+  };
 }
 
 async function requireStockTransferAtDevice(
@@ -3354,23 +3354,8 @@ export const bmsPosDeviceResolvers = {
       args: { credentials: PosCashierCredentials },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const actor = await requirePosCashier(
-        device,
-        args.credentials,
-        "board_game.session.manage",
-      );
-      await requirePosPermissionForActor(
-        device,
-        actor.userId,
-        "board_game.library.view",
-      );
-      const [floor, rates, library] = await Promise.all([
-        listBoardGameFloor(device.tenantId, device.locationId),
-        listBoardGameTimeRates(device.tenantId),
-        listBoardGameLibrary(device.tenantId, device.locationId),
-      ]);
-      return { floor, rates, library };
+      const { scope } = await boardGamePosAccess(ctx, args.credentials, "workspace");
+      return loadBoardGamePosWorkspace(scope);
     },
 
     async bmsPosBoardGameSession(
@@ -3378,14 +3363,8 @@ export const bmsPosDeviceResolvers = {
       args: { credentials: PosCashierCredentials; id: string },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      await requirePosCashier(
-        device,
-        args.credentials,
-        "board_game.session.manage",
-      );
-      const sessionId = await requireBoardGameSessionAtDevice(device, args.id);
-      return getBoardGameSession(device.tenantId, sessionId);
+      const { scope } = await boardGamePosAccess(ctx, args.credentials, "session");
+      return loadBoardGamePosSession(scope, args.id);
     },
 
     async bmsPosBoardGameCheckout(
@@ -3393,14 +3372,8 @@ export const bmsPosDeviceResolvers = {
       args: { credentials: PosCashierCredentials; id: string },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      await requirePosCashier(device, args.credentials, "pos.sell");
-      const sessionId = await requireBoardGameSessionAtDevice(device, args.id);
-      return getBoardGameCheckoutForPos(
-        device.tenantId,
-        device.locationId,
-        sessionId,
-      );
+      const { scope } = await boardGamePosAccess(ctx, args.credentials, "checkout");
+      return loadBoardGamePosCheckout(scope, args.id);
     },
   },
 
@@ -4289,47 +4262,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.manage",
-      );
-      const shift = await requireOpenPosShift(device);
-      const participants = Array.isArray(input.participants)
-        ? input.participants.map((value) => {
-            const row = recordInput(value);
-            return {
-              rateId: optionalUuidInput(row.rateId, "อัตราค่าบริการไม่ถูกต้อง"),
-              customerId: optionalUuidInput(row.customerId, "สมาชิกไม่ถูกต้อง"),
-              displayName: textInput(row.displayName) || null,
-              participantType: textInput(row.participantType) || undefined,
-              billingGroupNo: Number(row.billingGroupNo ?? 1),
-            };
-          })
-        : [];
-      return openBoardGameSession(
-        device.tenantId,
-        {
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-          locationId: device.locationId,
-          tableId: uuidInput(input.tableId, "โต๊ะบอร์ดเกมไม่ถูกต้อง"),
-          billingMode:
-            textInput(input.billingMode).toUpperCase() === "FIXED_DURATION"
-              ? "FIXED_DURATION"
-              : "OPEN_ENDED",
-          expectedDurationMinutes:
-            input.expectedDurationMinutes == null
-              ? null
-              : Number(input.expectedDurationMinutes),
-          alertBeforeMinutes: Number(input.alertBeforeMinutes ?? 15),
-          participants: participants as any,
-          posDeviceId: device.id,
-          posShiftId: shift.id,
-          note: textInput(input.note) || null,
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "open");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "open",
+        access.input,
       );
     },
 
@@ -4338,29 +4276,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.manage",
-      );
-      const sessionId = await requireBoardGameSessionAtDevice(
-        device,
-        input.sessionId,
-      );
-      return addBoardGameParticipant(
-        device.tenantId,
-        {
-          sessionId,
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-          rateId: optionalUuidInput(input.rateId, "อัตราค่าบริการไม่ถูกต้อง"),
-          customerId: optionalUuidInput(input.customerId, "สมาชิกไม่ถูกต้อง"),
-          displayName: textInput(input.displayName) || null,
-          participantType: textInput(input.participantType) || undefined,
-          billingGroupNo: Number(input.billingGroupNo ?? 1),
-        } as any,
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "participant.add");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "participant.add",
+        access.input,
       );
     },
 
@@ -4369,25 +4290,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.manage",
-      );
-      const sessionId = await requireBoardGameSessionAtDevice(
-        device,
-        input.sessionId,
-      );
-      return leaveBoardGameParticipant(
-        device.tenantId,
-        {
-          sessionId,
-          participantId: uuidInput(input.participantId, "ผู้เล่นไม่ถูกต้อง"),
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "participant.leave");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "participant.leave",
+        access.input,
       );
     },
 
@@ -4396,33 +4304,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.override_time",
-      );
-      const sessionId = await requireBoardGameSessionAtDevice(
-        device,
-        input.sessionId,
-      );
-      return adjustBoardGameSessionTiming(
-        device.tenantId,
-        sessionId,
-        {
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-          billingMode:
-            textInput(input.billingMode).toUpperCase() === "FIXED_DURATION"
-              ? "FIXED_DURATION"
-              : "OPEN_ENDED",
-          expectedDurationMinutes:
-            input.expectedDurationMinutes == null
-              ? null
-              : Number(input.expectedDurationMinutes),
-          alertBeforeMinutes: Number(input.alertBeforeMinutes),
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "timing");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "timing",
+        access.input,
       );
     },
 
@@ -4431,26 +4318,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.manage",
-      );
-      await requireOpenPosShift(device);
-      const sessionId = await requireBoardGameSessionAtDevice(
-        device,
-        input.sessionId,
-      );
-      return closeBoardGameSessionForBilling(
-        device.tenantId,
-        sessionId,
-        {
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-          note: textInput(input.reason) || null,
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "close");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "close",
+        access.input,
       );
     },
 
@@ -4459,29 +4332,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.cancel",
-      );
-      const sessionId = await requireBoardGameSessionAtDevice(
-        device,
-        input.sessionId,
-      );
-      // service บังคับเหตุผลตามกติกา (ยกเลิกโต๊ะที่นับเวลาไปแล้วต้องอธิบายได้) แต่มันปฏิเสธด้วย
-      // throw ธรรมดา ซึ่งออกไปเป็น 500 · ด่านของ input เป็นงานของ resolver ในโมดูลนี้มาตลอด
-      const reason = textInput(input.reason);
-      if (!reason) return badPosInput("ยกเลิก session ต้องระบุเหตุผล");
-      return cancelBoardGameSession(
-        device.tenantId,
-        sessionId,
-        {
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-          reason,
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "cancel");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "cancel",
+        access.input,
       );
     },
 
@@ -4490,30 +4346,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.manage",
-      );
-      await requirePosPermissionForActor(
-        device,
-        actor.userId,
-        "board_game.library.view",
-      );
-      const sessionId = await requireBoardGameSessionAtDevice(
-        device,
-        input.sessionId,
-      );
-      return checkoutBoardGameCopy(
-        device.tenantId,
-        {
-          sessionId,
-          copyId: uuidInput(input.copyId, "กล่องเกมไม่ถูกต้อง"),
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "copy.checkout");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "copy.checkout",
+        access.input,
       );
     },
 
@@ -4522,35 +4360,12 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const device = requirePosDevice(ctx);
-      const input = recordInput(args.input);
-      const actor = await requirePosCashier(
-        device,
-        input,
-        "board_game.session.manage",
-      );
-      const copyStatus = textInput(input.copyStatus).toUpperCase() || null;
-      if (copyStatus && !["AVAILABLE", "NEEDS_CHECK"].includes(copyStatus)) {
-        await requirePosPermissionForActor(
-          device,
-          actor.userId,
-          "board_game.library.manage",
-        );
-      }
-      const loanId = await requireBoardGameLoanAtDevice(device, input.loanId);
-      return returnBoardGameCopy(
-        device.tenantId,
-        {
-          loanId,
-          idempotencyKey: posIdempotencyKey(input.idempotencyKey),
-          status:
-            textInput(input.status).toUpperCase() === "ISSUE"
-              ? "ISSUE"
-              : "RETURNED",
-          copyStatus,
-          returnNote: textInput(input.returnNote) || null,
-        },
-        actor.userId,
+      const access = await boardGamePosAccess(ctx, args.input, "copy.return");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "copy.return",
+        access.input,
       );
     },
 

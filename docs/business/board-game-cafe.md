@@ -61,7 +61,28 @@ public profile after an operator has published it.
 - Public discovery must be opt-in and read only published/aggregate data.
 - Any action that changes money, such as editing `started_at`, waiving overtime, changing a rate, or discounting a session, needs permission and audit.
 
-## Native POS
+## Register surfaces (browser and native)
+
+Both registers carry the same `โต๊ะ/เวลา` tab, gated on the `board_game_cafe` archetype, and both
+decide with the same code. The browser register (`/pos`) reaches it over REST
+(`POST /api/pos/board-game`) because the POS layout deliberately carries no Apollo provider; the
+native register reaches it over GraphQL (`bmsPosBoardGame*`). Both adapters call
+`lib/bms/boardGamePosOperations.ts`, which owns the three things that must never differ between
+surfaces:
+
+| Owned by the shared module | Why it cannot live in an adapter |
+| --- | --- |
+| The permission of each command (`BOARD_GAME_POS_ACTIONS`) | Two permission tables drift, and the surface that keeps the old rule keeps allowing what the other already refuses — silently |
+| The branch check for a session or a loan id | An id from another branch must be "not found" on both surfaces, not just the one that remembered to check |
+| Input normalization into what the service accepts | Two normalizers mean the same screen action charges differently depending on which register the staff picked up |
+
+Only authentication (device token + PIN body vs. device Bearer + credentials input) and the error
+shape (HTTP status vs. `extensions.code`) belong to the adapters. A rule rejection is answered as a
+decision on both — `409`/`CONFLICT` with the reason the counter needs — and never as the masked
+`500`/`INTERNAL_SERVER_ERROR` whose client contract tells the caller to retry the same key forever.
+
+Before this, the web could only open tables from `/admin/board-game`, which a `pos_only` cashier
+cannot reach at all — so the shop's most frequent action was the one its register could not do.
 
 When the paired store archetype is `board_game_cafe`, `apps/mobile` shows a dedicated `โต๊ะ/เวลา`
 tab. It reads the branch floor, rates, sessions, and playable-copy availability through generated

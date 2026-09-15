@@ -243,6 +243,19 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   the kitchen tickets in **one** transaction, so a partially accepted round cannot exist. A menu
   marked sold out that day is refused at acceptance with the dish named, and acceptance is blocked
   while the check still holds staff-typed lines that were never sent.
+- `POST /api/pos/board-game` (`9.79`–`9.83`) — one PIN-bearing adapter for the register's
+  **table/time** tab: `workspace` (floor, time rates, playable library), `session`, and the writing
+  commands `open`, `participant.add`, `participant.leave`, `timing`, `close`, `cancel`,
+  `copy.checkout`, `copy.return`. Reads require a PIN too, because the floor carries member and
+  guest names and the GraphQL equivalent (`bmsPosBoardGame*`) demands the same — which is why every
+  action is `POST`: a PIN must never reach an access log through a query string. Permissions, the
+  branch check and input normalization all come from `lib/bms/boardGamePosOperations.ts`, the same
+  module the native register reaches through GraphQL, so neither surface can drift into allowing
+  what the other refuses. A rule rejection answers `400`/`404`/`409` carrying the reason the counter
+  needs; only a real fault stays a `500`.
+- `GET /api/pos/board-game/session?id=` (`9.79`) — the closed time bill handed to the Sell tab.
+  Device token only: it is the handoff target of the `/admin/board-game` link and loads before a
+  cashier has typed a PIN.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift
