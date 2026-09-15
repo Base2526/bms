@@ -29,6 +29,16 @@ export default function ReceiptScreen({ route, navigation }: Props) {
     );
   }
 
+  const lineTotal = sale.lines.reduce(
+    (sum, line) => sum + line.qty * line.unitPrice,
+    0,
+  );
+  const otherCharges =
+    Math.round(
+      (sale.total - (lineTotal - sale.discountTotal + sale.roundingAmount)) *
+        100,
+    ) / 100;
+
   const paper = (
     <Card style={{ flex: 1 }}>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
@@ -42,8 +52,10 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         </Text>
       ) : null}
       <ScrollView>
+        {/* ⚠️ คีย์ด้วย orderItemId ไม่ใช่ sku — บิลใบเดียวมีสินค้าตัวเดียวกันหลายไซซ์ได้
+            (บทเรียนเดียวกับตะกร้าที่เคยคีย์ด้วย sku แล้วบรรทัดยุบทับกัน) */}
         {sale.lines.map(l => (
-          <View key={l.sku} style={styles.line}>
+          <View key={l.orderItemId} style={styles.line}>
             <Text style={[typography.body, { color: colors.text, flex: 1 }]}>
               {l.name} × {l.qty}
             </Text>
@@ -54,6 +66,15 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         ))}
         {sale.discountTotal > 0 && (
           <AmountLine label="ส่วนลดรวม" amount={-sale.discountTotal} />
+        )}
+        {/* ค่าบริการ/ค่าถุง (8.6) ไม่มีช่องของตัวเองในใบเสร็จที่ server ส่งมา แต่มันอยู่ใน
+            ยอดสุทธิ · หาส่วนต่างจากยอดที่เหลือแทนการเงียบ ไม่งั้นรายการบนกระดาษบวกแล้ว
+            ไม่เท่ากับยอดสุทธิบรรทัดล่างโดยไม่มีอะไรอธิบาย */}
+        {otherCharges > 0.004 && (
+          <AmountLine label="ค่าบริการ / อื่น ๆ" amount={otherCharges} />
+        )}
+        {sale.roundingAmount !== 0 && (
+          <AmountLine label="ปัดเศษเงินสด" amount={sale.roundingAmount} />
         )}
         {sale.payments.map(payment => (
           <AmountLine

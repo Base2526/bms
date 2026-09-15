@@ -227,6 +227,13 @@ export default function MenuScreen({ navigation }: Props) {
                     sku: item.sku,
                     name: item.name,
                     price: item.unitPrice,
+                    // ราคาป้าย/ขั้นราคาส่ง/โปร ต้องเดินทางไปกับปุ่ม + ด้วย ไม่งั้นบรรทัดที่ถูก
+                    // สร้างใหม่จากปุ่มนี้จะไม่มี snapshot แล้วยอดเพี้ยนจากที่ server คิด
+                    basePrice: item.basePrice,
+                    packBasePrice: item.packBasePrice,
+                    modifierUnitPrice: item.modifierUnitPrice,
+                    priceTiers: item.priceTiers,
+                    promotion: item.promotion,
                     category: 'สินค้า',
                     station: 'สินค้า',
                     sellable: true,

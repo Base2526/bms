@@ -313,6 +313,21 @@ query MobilePosScan(
     serialTracked
     scaleBarcode
     imageUrl
+    # ราคาส่ง (8.1) และโปร (8.7) — เครื่องขายต้องพรีวิวยอดด้วยกฎเดียวกับ createOrder
+    # ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด แล้วบิลถูกทิ้งทั้งใบ (PAYMENT_MISMATCH)
+    priceTiers {
+      minQty
+      scope
+      size
+      unitPrice
+      discountPct
+    }
+    promotion {
+      kind
+      buyQty
+      getQty
+      bundlePrice
+    }
     modifiers {
       code
       name
@@ -449,6 +464,11 @@ query MobilePosMemberPreview($input: BmsPosMemberPreviewInput!) {
     pointsDiscount
     pointsUsed
     pointsWillEarn
+    # อัตราแลกแต้มของร้าน — จอต้องปัดจำนวนแต้มเป็นก้าวละหน่วยแลกก่อนส่ง
+    # ไม่งั้น createOrder ปฏิเสธทั้งบิลด้วย POINTS_INVALID (pointsUsed ต้องเท่าที่ขอเป๊ะ)
+    redeemPointsPerUnit
+    redeemMinPoints
+    redeemBahtPerUnit
     pointsBalance: cappedAt
     member {
       customerId

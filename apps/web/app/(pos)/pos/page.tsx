@@ -24,7 +24,8 @@ import {
   syncSkuPricingSnapshot,
 } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
-import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
+import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
+import { cartLineCharge } from "@/lib/pos/cartCharge";
 // เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" ต้องเป็นชุดเดียวกับ server (ไฟล์นี้ pure ไม่มี import อื่น)
 import { isPharmacistReviewableBlock } from "@/lib/bms/pharmacy/productPolicyDecision";
 import {
@@ -270,8 +271,15 @@ type ScanHit = {
     | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
     | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number }
     | null;
-  /** ตัวเลือกที่ server อนุญาตสำหรับ SKU+size นี้; มีผลต่อ stock ไม่ใช่ราคา */
-  modifiers?: Array<{ code: string; name: string }>;
+  /**
+   * ตัวเลือกที่ server อนุญาตสำหรับ SKU+size นี้
+   *
+   * ⚠️ `priceDelta` **เข้ายอดบิล** — `createOrderInTx()` บวก `priceDelta × จำนวนหน่วยขาย`
+   * ท้ายสุดหลังราคาส่ง/โปร · คอมเมนต์เดิมตรงนี้เขียนว่า "มีผลต่อ stock ไม่ใช่ราคา" ซึ่งเลิก
+   * จริงตั้งแต่ 9.45 และทำให้จอไม่เคยบวกส่วนเพิ่มเลย → บิลที่มีตัวเลือกแบบมีราคาโดน
+   * PAYMENT_MISMATCH แล้วถูกทิ้งทั้งใบ
+   */
+  modifiers?: Array<{ code: string; name: string; priceDelta?: number }>;
   available: number;
   /** รูปหลัก — มีค่าเฉพาะการยิงโหมด "เช็คของ" (?withImage=1) เท่านั้น */
   imageUrl?: string | null;
@@ -301,6 +309,11 @@ function cartPricingSignature(line: ScanHit): string {
     basePrice: line.basePrice,
     priceTiers: canonicalPriceTiers(line.priceTiers ?? []),
     promotion: line.promotion ?? null,
+    // ส่วนเพิ่มของตัวเลือกเข้ายอดบิล การแก้ราคาตัวเลือกกลางบิลจึงต้องนับเป็น "ราคาเปลี่ยน"
+    // เหมือนราคาป้าย ไม่งั้นแคชเชียร์รับเงินด้วยยอดเก่าแล้ว server ปฏิเสธ
+    modifiers: [...(line.modifiers ?? [])]
+      .map((modifier) => [modifier.code, Number(modifier.priceDelta ?? 0)] as const)
+      .sort((a, b) => a[0].localeCompare(b[0])),
     serialTracked: line.serialTracked === true,
   });
 }
@@ -363,17 +376,8 @@ function ApproverOptions({ session, permission, excludeUserId, placeholder }: {
   </>;
 }
 
-function cartLineCharge(line: CartLine, tierPrice: number | undefined) {
-  const shelfUnitPrice = line.scaleBarcode ? line.basePrice : line.packPrice;
-  const unitPrice = tierPrice ?? shelfUnitPrice;
-  const chargedQty = line.scaleBarcode ? line.packQty * line.baseQty : line.packQty;
-  return {
-    shelfUnitPrice,
-    unitPrice,
-    chargedQty,
-    amount: Math.round(unitPrice * chargedQty * 100) / 100,
-  };
-}
+// cartLineCharge / modifierUnitPriceOf ย้ายไป @/lib/pos/cartCharge แล้ว — เป็นเลขที่คนจ่ายจริง
+// จึงต้องเทสได้โดยไม่ต้องเรนเดอร์จอทั้งหน้า
 
 function cartLineKey(hit: ScanHit, modifierCodes: readonly string[] = []): string {
   const modifiers = [...modifierCodes].map((code) => code.trim().toUpperCase()).filter(Boolean).sort();
@@ -2073,11 +2077,15 @@ export default function PosPage() {
     for (const line of cart) {
       const key = variantPricingKey(line.sku, line.size);
       const promo = isFixedPricePack(line.packCode) ? null : promoBySku.get(key);
+      const charge = cartLineCharge(line, tierPriceByKey.get(line.key));
       if (promo) {
         if (!chargedPromo.has(key)) { chargedPromo.add(key); sum += promo.amount; }
+        // โปรคิดยอดสินค้าครั้งเดียวต่อ SKU+ไซซ์ แต่ตัวเลือกเป็นของ "บรรทัด" ไม่ใช่ของกลุ่ม
+        // และ createOrderInTx บวก modifierTotal ทุกบรรทัดไม่ว่าจะเข้าโปรหรือไม่
+        sum += charge.modifierAmount;
         continue;
       }
-      sum += cartLineCharge(line, tierPriceByKey.get(line.key)).amount;
+      sum += charge.amount;
     }
     return Math.round(sum * 100) / 100;
   }, [cart, tierPriceByKey, promoBySku]);
@@ -3944,17 +3952,17 @@ export default function PosPage() {
   // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
   // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
   // และบิลถูกยกเลิกทิ้ง · ก่อนกรอกจำนวนเงิน ใช้ "วิธีจ่ายที่เลือกไว้" ตัดสินแทน
-  const roundingDelta = useMemo(() => {
-    const mode = session?.vat.cashRounding ?? "NONE";
-    if (mode === "NONE" || payableBeforeRounding <= 0) return 0;
-    const withAmount = payments.filter((p) => (Number(p.amount) || 0) > 0);
-    const considered = withAmount.length > 0 ? withAmount : payments;
-    if (considered.length === 0 || !considered.every((p) => p.method === "CASH")) return 0;
+  const roundingDelta = useMemo(
     // server ปัดเศษจากยอด "สินค้าหลังหักส่วนลด + ค่าบริการ" (createOrder คืน
     // amountDue = finalTotal) ไม่ใช่จากฐานส่วนลดอย่างเดียว
     // ปัดจากยอดก่อนส่วนลดจะได้เลขคนละตัวแล้วบิลถูกยกเลิกทิ้ง
-    return cashRoundingDelta(payableBeforeRounding, mode);
-  }, [session?.vat.cashRounding, payableBeforeRounding, payments]);
+    () => cashRoundingForPayments(
+      payableBeforeRounding,
+      session?.vat.cashRounding ?? "NONE",
+      payments
+    ),
+    [session?.vat.cashRounding, payableBeforeRounding, payments]
+  );
   /** ยอดที่ต้องเก็บจริง = ยอดสินค้า − ส่วนลด + ค่าบริการ + ปัดเศษ */
   const amountDue = useMemo(
     () => Math.round((payableBeforeRounding + roundingDelta) * 100) / 100,

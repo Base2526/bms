@@ -187,8 +187,17 @@ export function ProductOptionsModal({
                 const surcharge = (resolved.modifiers ?? [])
                   .filter(modifier => selected.includes(modifier.code))
                   .reduce((sum, modifier) => sum + modifier.priceDelta, 0);
+                // ⚠️ ราคาที่โชว์รวมตัวเลือกแล้ว แต่ต้องเก็บ "ราคาก่อนตัวเลือก" ไว้ด้วย
+                // เพราะ createOrderInTx คิดราคาส่ง/โปรจากราคาป้าย แล้วค่อยบวกตัวเลือกท้ายสุด
+                // ถ้ายุบเป็นราคาเดียว ตัวเลือกจะถูกลดตามโปรไปด้วย = ยอดไม่ตรงกับ server
+                const packBasePrice = resolved.packBasePrice ?? resolved.price;
                 onConfirm({
-                  item: { ...resolved, price: resolved.price + surcharge },
+                  item: {
+                    ...resolved,
+                    price: packBasePrice + surcharge,
+                    packBasePrice,
+                    modifierUnitPrice: surcharge,
+                  },
                   modifierCodes: selected,
                   kitchenNote: note.trim() || null,
                 });

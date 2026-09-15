@@ -31,8 +31,11 @@ export interface SaleSnapshot {
   restaurantServiceMode: 'DINE_IN' | 'TAKEAWAY' | null;
   tableCode?: string;
   lines: SaleLine[];
+  /** ผลรวมราคาป้ายของทุกบรรทัด (receipt gross) — ส่วนลดราคาส่ง/โปรอยู่ใน discountTotal */
   subtotal: number;
   discountTotal: number;
+  /** ยอดปัดเศษเงินสดของบิลนี้ บวก/ลบได้ · ไม่ใช่ส่วนลด จึงไม่แตะฐาน VAT */
+  roundingAmount: number;
   total: number;
   member: PosMember | null;
   payments: MockPaymentInput[];
@@ -113,6 +116,7 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
             (sum, line) => sum + line.amount,
             0,
           ),
+          roundingAmount: receipt.roundingAmount,
           total: receipt.total,
           member: receipt.memberName
             ? {

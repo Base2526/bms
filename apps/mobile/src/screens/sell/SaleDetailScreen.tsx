@@ -282,6 +282,13 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                   name: latest.name,
                   qty: seed.qty,
                   unitPrice: latest.price,
+                  // บิลเปลี่ยนสินค้าคิดยอดใหม่ทั้งใบ จึงต้องพกกติกาของราคาไปด้วย
+                  // ไม่งั้นบิลใหม่ที่เข้าขั้นราคาส่งจะโดน PAYMENT_MISMATCH ตอนรับเงิน
+                  basePrice: latest.basePrice,
+                  packBasePrice: latest.packBasePrice ?? latest.price,
+                  modifierUnitPrice: 0,
+                  priceTiers: latest.priceTiers,
+                  promotion: latest.promotion ?? null,
                   size: latest.size,
                   packCode: latest.packCode,
                   unitName: latest.unitName,

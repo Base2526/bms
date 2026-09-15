@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
-import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
+import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
@@ -850,10 +850,12 @@ export default function RestaurantPosPage() {
   // แล้วเจอ error ต่อหน้าลูกค้า (เกณฑ์มาจาก server ที่เดียว ไม่ให้จอเดาเอง)
   const reservationLost = Boolean(check?.reservationLost);
   const paymentTotal = Math.round(payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
-  const checkoutDue = check == null ? 0 : Math.round((check.amountDue + (
-    payments.length === 1 && payments[0].method === "CASH"
-      ? cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")
-      : 0
+  // ⚠️ เดิมปัดเศษเฉพาะตอนมีช่องทางเดียว ขณะที่ server ปัดเมื่อ **ทุกช่องทาง** เป็นเงินสด
+  // → บิลที่แบ่งจ่ายเงินสดสองช่องทางจอไม่ปัดแต่ server ปัด แล้วบิลถูกทิ้งทั้งใบ
+  const checkoutDue = check == null ? 0 : Math.round((check.amountDue + cashRoundingForPayments(
+    check.amountDue,
+    session?.vat.cashRounding ?? "NONE",
+    payments
   )) * 100) / 100;
   // เหตุผลเดียวที่ทั้งปุ่มยืนยัน แถบสรุป และ settle() ใช้ร่วมกัน — สามที่ตัดสินเองจะ drift
   // แล้ววันหนึ่งปุ่มกดได้แต่ settle ปฏิเสธ (หรือแย่กว่า: กดได้แล้ว server ปฏิเสธกลางบิล)
@@ -2528,7 +2530,7 @@ export default function RestaurantPosPage() {
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent && !reservationLost} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> {t("pos_restaurant.send_kitchen")}{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
-              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingDelta(check.amountDue, session?.vat.cashRounding ?? "NONE")) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
+              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingForPayments(check.amountDue, session?.vat.cashRounding ?? "NONE", [{ method: "CASH", amount: check.amountDue }])) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
             </div>
           </div>
         </> : <>

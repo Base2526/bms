@@ -21,8 +21,15 @@ import type {
   PosMenuItem,
 } from '../types/pos';
 import { cartLineKey } from '../lib/cartLine';
+import {
+  cartLinePricingSignature,
+  cartProductSubtotal,
+} from '../lib/cartPricing';
+import { useCatalog } from './CatalogContext';
 import { useSession } from './SessionContext';
 import { useShift } from './ShiftContext';
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
 
 export interface ParkedBill {
   id: string;
@@ -57,6 +64,11 @@ interface CartContextValue {
   updateLine: (key: string, patch: Partial<PosCartLine>) => void;
   clear: () => void;
   replaceForExchange: (lines: PosCartLine[], member: PosMember | null) => void;
+  /**
+   * ยิงสแกนทุกบรรทัดซ้ำก่อนรับเงิน · `changed: true` = ราคาขยับ ยอดถูกอัปเดตแล้ว
+   * และ **ห้ามรับเงินรอบนั้น** — ต้องให้คนตรวจยอดใหม่ก่อน
+   */
+  refreshPricing: () => Promise<{ changed: boolean; error: string | null }>;
   member: PosMember | null;
   setMember: (member: PosMember | null) => void;
   coupon: PosCoupon | null;
@@ -78,7 +90,14 @@ interface CartContextValue {
   couponDiscount: number;
   appliedManualDiscount: number;
   discountTotal: number;
+  /** ยอดสินค้าหลังหักส่วนลด + ค่าบริการ — **ยังไม่ปัดเศษเงินสด** (ขึ้นกับวิธีจ่าย) */
   total: number;
+  /**
+   * จำนวนแต้มที่ server บอกว่าจะหักจริง — ต้องส่งค่านี้ตอนขาย ไม่ใช่ค่าที่แคชเชียร์พิมพ์
+   * (createOrderInTx ปฏิเสธทั้งบิลเมื่อ pointsUsed ไม่เท่าที่ขอเป๊ะ)
+   */
+  pointsUsed: number;
+  pointsDiscount: number;
   previewLoading: boolean;
   previewError: string | null;
 }
@@ -88,6 +107,7 @@ const CartContext = createContext<CartContextValue | null>(null);
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { session } = useSession();
   const { isOpen: isShiftOpen } = useShift();
+  const { resolveVariant } = useCatalog();
   const [lines, setLines] = useState<PosCartLine[]>([]);
   const [member, setMember] = useState<PosMember | null>(null);
   const [coupon, setCoupon] = useState<PosCoupon | null>(null);
@@ -97,10 +117,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [extraLines, setExtraLines] = useState<PosExtraLine[]>([]);
   const [pharmacyReview, setPharmacyReview] =
     useState<PosPharmacyReview | null>(null);
-  const subtotal = useMemo(
-    () => lines.reduce((sum, line) => sum + line.qty * line.unitPrice, 0),
-    [lines],
-  );
+  // ⚠️ ห้ามกลับไปเป็น `qty × unitPrice` — ยอดนี้ต้องเท่ากับที่ createOrderInTx คิดตอน commit
+  // ทุกสตางค์ ไม่งั้น recordPosSale ตอบ PAYMENT_MISMATCH แล้วยกเลิกบิลทิ้งทั้งใบ
+  // (ราคาส่ง 8.1 / โปร 8.7 คิดจากจำนวนรวมทั้งตะกร้า ไม่ใช่ต่อบรรทัด)
+  const subtotal = useMemo(() => cartProductSubtotal(lines), [lines]);
 
   const previewInput = useMemo(
     () => ({
@@ -141,20 +161,40 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       .filter(modifier => modifierCodes.includes(modifier.code))
       .map(modifier => modifier.name);
     setLines(previous => {
-      const existing = previous.find(line => line.key === key);
+      // ⚠️ ขั้นราคาส่งและโปรมีขอบเขตระดับ SKU ไม่ใช่ SKU+ไซซ์ — การสแกนรอบล่าสุดคือ
+      // กติกาที่ใหม่ที่สุดของ **ทุกไซซ์** ที่อยู่ในตะกร้าแล้ว ไม่ใช่ของบรรทัดที่เพิ่งกด
+      // ถ้าไม่ซิงก์ ไซซ์ M อาจถูกคิดด้วยกฎเก่าขณะที่ XL ใช้กฎใหม่ แล้วยอดไม่ตรงกับ server
+      const synced =
+        item.priceTiers || item.promotion !== undefined
+          ? previous.map(line =>
+              line.sku === item.sku
+                ? {
+                    ...line,
+                    priceTiers: item.priceTiers,
+                    promotion: item.promotion ?? null,
+                  }
+                : line,
+            )
+          : previous;
+      const existing = synced.find(line => line.key === key);
       if (existing) {
-        return previous.map(line =>
+        return synced.map(line =>
           line.key === key ? { ...line, qty: line.qty + 1 } : line,
         );
       }
       return [
-        ...previous,
+        ...synced,
         {
           key,
           sku: item.sku,
           name: item.name,
           qty: 1,
           unitPrice: item.price,
+          basePrice: item.basePrice,
+          packBasePrice: item.packBasePrice ?? item.price,
+          modifierUnitPrice: item.modifierUnitPrice ?? 0,
+          priceTiers: item.priceTiers,
+          promotion: item.promotion ?? null,
           size: item.size,
           packCode: item.packCode,
           unitName: item.unitName,
@@ -423,13 +463,106 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
+  /**
+   * ยิงสแกนบรรทัดเดิมซ้ำเพื่อเอา "กติกาที่ตัดสินราคา ณ ตอนนี้" มาแปะบรรทัด
+   *
+   * ใช้สองที่: ตอนเรียกบิลพักกลับ (payload ของ parked cart ไม่มีช่องเก็บขั้นราคาส่ง/โปร/
+   * ชื่อตัวเลือก) และตอนตรวจราคาซ้ำก่อนรับเงิน · กติกาที่ได้คือกติกาที่ server จะใช้ตอน commit
+   */
+  const rescanLine = useCallback(
+    async (
+      line: PosCartLine,
+    ): Promise<{ line: PosCartLine; error: string | null }> => {
+      try {
+        const latest = await resolveVariant(
+          line.scaleBarcode ?? line.sku,
+          line.size,
+          line.packCode || null,
+        );
+        const allowed = new Set((latest.modifiers ?? []).map(m => m.code));
+        const closed = line.modifierCodes.find(code => !allowed.has(code));
+        if (closed) {
+          return {
+            line,
+            error: `ตัวเลือก ${closed} ของ ${line.name} ถูกปิดแล้ว กรุณาลบรายการและเพิ่มใหม่`,
+          };
+        }
+        const selected = (latest.modifiers ?? []).filter(modifier =>
+          line.modifierCodes.includes(modifier.code),
+        );
+        const modifierUnitPrice = selected.reduce(
+          (sum, modifier) => sum + modifier.priceDelta,
+          0,
+        );
+        const packBasePrice = latest.packBasePrice ?? latest.price;
+        return {
+          error: null,
+          line: {
+            ...line,
+            unitPrice: packBasePrice + modifierUnitPrice,
+            basePrice: latest.basePrice,
+            packBasePrice,
+            modifierUnitPrice,
+            priceTiers: latest.priceTiers,
+            promotion: latest.promotion ?? null,
+            // ชื่อตัวเลือกไม่ได้ถูกเก็บลงบิลพัก — ประกอบใหม่จากรหัสที่เก็บไว้
+            modifierNames: selected.map(modifier => modifier.name),
+          } satisfies PosCartLine,
+        };
+      } catch (cause) {
+        return {
+          line,
+          error:
+            cause instanceof Error
+              ? cause.message
+              : `ตรวจราคาล่าสุดของ ${line.name} ไม่สำเร็จ`,
+        };
+      }
+    },
+    [resolveVariant],
+  );
+
+  /** บรรทัดที่สแกนไม่ผ่านตอนเรียกบิลพักกลับ คงค่าที่ติดมาไว้ — ให้ไปตกด่านตรวจก่อนรับเงินแทน */
+  const refreshParkedLines = useCallback(
+    async (parkedLines: PosCartLine[]): Promise<PosCartLine[]> =>
+      (await Promise.all(parkedLines.map(rescanLine))).map(result => result.line),
+    [rescanLine],
+  );
+
+  /**
+   * ตรวจราคาซ้ำก่อนรับเงิน — รูปเดียวกับ `refreshCartPricingBeforePay()` ของจอเว็บ
+   *
+   * ⚠️ ตะกร้าถือ snapshot ของกติกา ณ ตอนที่สแกน · ร้านที่แก้ราคา/เปิด-ปิดโปรระหว่างที่บิล
+   * ค้างอยู่บนจอ (หรือบิลพักที่ถูกเรียกกลับมาทีหลัง) จะทำให้ยอดที่จอโชว์ไม่ใช่ยอดที่ server
+   * คิดตอน commit แล้วบิลถูกทิ้งทั้งใบด้วย PAYMENT_MISMATCH โดยแคชเชียร์ไม่รู้สาเหตุ
+   *
+   * `changed: true` = อัปเดตยอดให้แล้ว **ห้ามรับเงินรอบนี้** ต้องให้คนตรวจยอดใหม่ก่อน
+   */
+  const refreshPricing = useCallback(async (): Promise<{
+    changed: boolean;
+    error: string | null;
+  }> => {
+    if (lines.length === 0) return { changed: false, error: null };
+    const results = await Promise.all(lines.map(rescanLine));
+    const failure = results.find(result => result.error);
+    if (failure) return { changed: false, error: failure.error };
+    const refreshed = results.map(result => result.line);
+    const changed = refreshed.some(
+      (line, index) =>
+        cartLinePricingSignature(line) !==
+        cartLinePricingSignature(lines[index]),
+    );
+    if (changed) setLines(refreshed);
+    return { changed, error: null };
+  }, [lines, rescanLine]);
+
   const resumeParkedBill = useCallback(
     async (id: string) => {
       const parked = parkedBills.find(bill => bill.id === id);
       if (!parked) return 'ไม่พบบิลพัก';
       const failure = await mutatePark({ action: 'resume', parkedId: id });
       if (!failure) {
-        setLines(parked.lines);
+        setLines(await refreshParkedLines(parked.lines));
         setMember(parked.member);
         setCoupon(parked.coupon);
         setManualDiscount(null);
@@ -439,7 +572,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
       return failure;
     },
-    [mutatePark, parkedBills],
+    [mutatePark, parkedBills, refreshParkedLines],
   );
 
   const deleteParkedBill = useCallback(
@@ -448,11 +581,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 
   const serverPreview = preview.data?.bmsPosMemberPreview;
-  const total = (serverPreview?.netTotal ?? subtotal) + extraTotal;
   const tierDiscount = serverPreview?.tierDiscount ?? 0;
   const couponDiscount = serverPreview?.couponDiscount ?? 0;
   const appliedManualDiscount = serverPreview?.manualDiscount ?? 0;
   const discountTotal = serverPreview?.totalDiscount ?? 0;
+  const pointsUsed = Math.max(0, Math.floor(serverPreview?.pointsUsed ?? 0));
+  const pointsDiscount = serverPreview?.pointsDiscount ?? 0;
+  // ⚠️ หักส่วนลดจาก subtotal **ปัจจุบัน** ไม่ใช่ใช้ netTotal ของพรีวิวตรง ๆ — Apollo คืน
+  // ผลรอบก่อนระหว่างกำลังโหลดรอบใหม่ ถ้าเอา netTotal มาใช้ ยอดจะเป็นของตะกร้าใบก่อน
+  // (แคชเชียร์กดเพิ่มของแล้วกดรับเงินทันทีจะเก็บเงินตามยอดเก่า)
+  const total = round2(
+    Math.max(0, round2(subtotal - discountTotal)) + extraTotal,
+  );
 
   const value = useMemo<CartContextValue>(
     () => ({
@@ -464,6 +604,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       updateLine,
       clear,
       replaceForExchange,
+      refreshPricing,
       member,
       setMember,
       coupon,
@@ -486,6 +627,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       appliedManualDiscount,
       discountTotal,
       total,
+      pointsUsed,
+      pointsDiscount,
       previewLoading: preview.loading,
       previewError:
         preview.error?.message ?? serverPreview?.couponError ?? null,
@@ -509,8 +652,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       member,
       parkCurrentBill,
       parkedBills,
+      pointsDiscount,
+      pointsUsed,
       preview.error?.message,
       preview.loading,
+      refreshPricing,
       removeLine,
       replaceForExchange,
       updateLine,

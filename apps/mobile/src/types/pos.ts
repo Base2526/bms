@@ -1,7 +1,18 @@
+import type { PriceTier, Promotion } from '../lib/cartPricing';
+
 export interface PosMenuItem {
   sku: string;
   name: string;
+  /** ราคาต่อหน่วยขายที่จะเขียนลงบรรทัด = packBasePrice + ส่วนเพิ่มของตัวเลือกที่เลือก */
   price: number;
+  /** ราคาป้ายต่อหน่วยฐาน (ไม่รวมตัวเลือก) — ฐานของราคาส่ง/โปร */
+  basePrice?: number;
+  /** ราคาต่อหน่วยขาย ก่อนบวกตัวเลือก */
+  packBasePrice?: number;
+  /** ส่วนเพิ่มของตัวเลือกที่เลือกไว้ ต่อหน่วยขาย */
+  modifierUnitPrice?: number;
+  priceTiers?: PriceTier[];
+  promotion?: Promotion | null;
   category: string;
   station: string;
   sellable: boolean;
@@ -53,7 +64,18 @@ export interface PosCartLine {
   sku: string;
   name: string;
   qty: number;
+  /** ราคาที่โชว์ต่อหน่วยขาย = packBasePrice + modifierUnitPrice */
   unitPrice: number;
+  /**
+   * snapshot ของกติกาที่ตัดสินราคา — ต้องติดมากับบรรทัด ไม่ใช่ไปถาม catalog ตอนคิดยอด
+   * (สินค้าตัวเดียวกันคนละไซซ์ใช้ขั้นราคาส่งชุดเดียวกัน แต่ราคาป้ายคนละตัว)
+   * ไม่มีค่า = บรรทัดยุคก่อน snapshot ซึ่งตกไปคิดแบบ `qty × unitPrice` ตามเดิม
+   */
+  basePrice?: number;
+  packBasePrice?: number;
+  modifierUnitPrice?: number;
+  priceTiers?: PriceTier[];
+  promotion?: Promotion | null;
   size: string;
   packCode: string;
   unitName: string;

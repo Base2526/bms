@@ -153,13 +153,39 @@ export default function ShiftScreen({ navigation }: Props) {
           colors={colors}
         />
       )}
+      {/* ยอดขายไม่รวมยอดปัดเศษ แต่เงินที่รับรวม — ไม่มีบรรทัดนี้ ผลรวมเงินสดจะไม่เท่ากับ
+          ยอดขายบนกระดาษใบเดียวกันโดยไม่มีอะไรอธิบายส่วนต่าง */}
+      {shift.roundingTotal !== 0 && (
+        <Row
+          label="ปัดเศษเงินสด"
+          value={`${shift.roundingTotal < 0 ? '−' : '+'}฿${Math.abs(
+            shift.roundingTotal,
+          ).toFixed(2)}`}
+          colors={colors}
+        />
+      )}
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
-      <Row
-        label="เงินที่ควรมีในลิ้นชัก"
-        value={`฿${shift.expectedCash.toFixed(2)}`}
-        colors={colors}
-        strong
-      />
+      {/* ⚠️ `expectedCash` เป็น null ได้สองแบบ: โหมดนับปิดตา (ตั้งใจซ่อน) หรือยังโหลดไม่เสร็จ
+          ทั้งสองแบบห้ามแสดงเป็น ฿0.00 — เลขที่ผิดอ่านง่ายกว่าคำว่า "ยังไม่รู้" และคนจะเชื่อมัน */}
+      {shift.expectedCashHidden ? (
+        <Row
+          label="เงินที่ควรมีในลิ้นชัก"
+          value="ซ่อนไว้จนกว่าจะปิดกะ (โหมดนับปิดตา)"
+          colors={colors}
+          strong
+        />
+      ) : (
+        <Row
+          label="เงินที่ควรมีในลิ้นชัก"
+          value={
+            shift.expectedCash == null
+              ? 'ยังไม่ได้รับจากเซิร์ฟเวอร์'
+              : `฿${shift.expectedCash.toFixed(2)}`
+          }
+          colors={colors}
+          strong
+        />
+      )}
       {/* การคืนทาง QR/บัตรไม่ได้เอาเงินออกจากลิ้นชัก — บอกไว้ตรงนี้เพราะไม่งั้นตัวเลข
           "คืนเงินสด" จะอ่านเหมือนไม่ครบเมื่อมีการคืนแบบไม่ใช่เงินสดปนอยู่ */}
       <Text

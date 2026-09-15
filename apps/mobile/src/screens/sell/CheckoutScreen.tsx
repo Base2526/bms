@@ -34,6 +34,11 @@ import {
   PosBootstrapDocument,
 } from '../../graphql/generated';
 import { cartLineVariantLabel } from '../../lib/cartLine';
+import {
+  cashRoundingForPayments,
+  isCashRounding,
+  payableWithRounding,
+} from '../../lib/cartPricing';
 import { createIdempotencyKey } from '../../lib/operation';
 import {
   calculateCashChange,
@@ -47,6 +52,8 @@ import type { SellStackParamList } from '../../navigation/types';
 import type { PosMember } from '../../types/pos';
 
 type Props = NativeStackScreenProps<SellStackParamList, 'Checkout'>;
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
 
 const PAYMENT_METHODS: MockPaymentMethod[] = [
   'cash',
@@ -156,10 +163,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     source === 'restaurant'
       ? check?.amountDue ?? 0
       : cart.subtotal + (boardGameBill?.amountDue ?? 0);
-  const total =
+  const payableBeforeRounding = round2(
     source === 'restaurant'
       ? subtotal
-      : cart.total + (boardGameBill?.amountDue ?? 0);
+      : cart.total + (boardGameBill?.amountDue ?? 0),
+  );
   const discounts =
     source === 'restaurant'
       ? {
@@ -169,9 +177,32 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           discountTotal: 0,
         }
       : cart;
+  const bootstrap = useQuery(PosBootstrapDocument);
+  const [saleMode, setSaleMode] = useState<'SALE' | 'DEPOSIT'>('SALE');
   const [payments, setPayments] = useState<MockPaymentInput[]>([
-    { id: 'payment-1', method: 'cash', amount: total, tendered: total },
+    {
+      id: 'payment-1',
+      method: 'cash',
+      amount: payableBeforeRounding,
+      tendered: payableBeforeRounding,
+    },
   ]);
+  // ปัดเศษเงินสด (7.95) — `recordPosSale()` ปัดเองทุกเส้นทาง (ค้าปลีก บิลโต๊ะ บอร์ดเกม)
+  // เฉพาะบิลที่ **ทุกช่องทางเป็นเงินสด** แล้วเทียบยอดที่เครื่องส่งมากับยอดที่ปัดแล้ว
+  // ไม่ปัดที่จอ = ร้านที่เปิดปัดเศษขายจากมือถือไม่ได้เลย (PAYMENT_MISMATCH ทุกบิล)
+  //
+  // การรับมัดจำไม่ถูกปัด — `takeInitialPosDeposit()` ทำงานก่อนขั้นตอนปัดเศษ และของจะถูกปัด
+  // ตอนรับของจริง ปัดที่นี่ด้วยจะทำให้ยอดบนจอไม่ตรงกับบิลที่เปิดค้างไว้
+  const cashRoundingMode = bootstrap.data?.bmsPosSession.vat.cashRounding;
+  const roundingDelta =
+    saleMode === 'DEPOSIT'
+      ? 0
+      : cashRoundingForPayments(
+          payableBeforeRounding,
+          isCashRounding(cashRoundingMode) ? cashRoundingMode : 'NONE',
+          payments,
+        );
+  const total = payableWithRounding(payableBeforeRounding, roundingDelta);
   // แคชเชียร์แตะช่องชำระเงินเองแล้วหรือยัง — ตราบใดที่ยังไม่แตะ ยอดของช่องทางเดียวต้องเดินตาม
   // ยอดสุทธิเสมอ
   //
@@ -197,10 +228,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     MobilePosRequestPharmacyReviewDocument,
   );
   const [settleCheck] = useMutation(MobileRestaurantSettleCheckDocument);
-  const bootstrap = useQuery(PosBootstrapDocument);
   const [creditApproverId, setCreditApproverId] = useState('');
   const [creditApproverPin, setCreditApproverPin] = useState('');
-  const [saleMode, setSaleMode] = useState<'SALE' | 'DEPOSIT'>('SALE');
   const [depositAmount, setDepositAmount] = useState('');
   const [depositNote, setDepositNote] = useState('');
   const [depositDueAt, setDepositDueAt] = useState('');
@@ -221,6 +250,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     () => validateMockPayments(paymentTarget, payments),
     [paymentTarget, payments],
   );
+  /** ตะกร้าค้าปลีกเท่านั้นที่มีชั้นส่วนลดของ server — บิลโต๊ะ/บอร์ดเกมได้ยอดสำเร็จรูปมาแล้ว */
+  const discountPending = source === 'retail' && cart.previewLoading;
   const itemCount = lines.reduce((n, l) => n + l.qty, 0);
   const serialsReady = lines.every(line => {
     if (!line.serialTracked) return true;
@@ -296,6 +327,27 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       return;
     submittedRef.current = true;
     setSubmitting(true);
+    // ⚠️ ตรวจราคาซ้ำก่อนส่ง — ตะกร้าถือกติกา ณ ตอนที่สแกน ร้านที่แก้ราคา/เปิด-ปิดโปรระหว่าง
+    // ที่บิลค้างบนจอ (หรือบิลพักที่เพิ่งเรียกกลับ) จะทำให้ยอดที่จอโชว์ไม่ใช่ยอดที่ server คิด
+    // แล้วบิลถูกทิ้งทั้งใบ · หยุดก่อนออกคีย์กันบิลซ้ำ เพื่อไม่ให้คีย์ถูกเผาทิ้งโดยเปล่าประโยชน์
+    if (source === 'retail') {
+      const recheck = await cart.refreshPricing();
+      if (recheck.error || recheck.changed) {
+        submittedRef.current = false;
+        setSubmitting(false);
+        setConfirmOpen(false);
+        if (recheck.changed) {
+          setPaymentsTouched(false);
+          setPayments([{ id: 'payment-1', method: 'cash', amount: 0 }]);
+        }
+        Alert.alert(
+          recheck.error ? 'ตรวจราคาไม่สำเร็จ' : 'ราคามีการเปลี่ยนแปลง',
+          recheck.error ??
+            'ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่',
+        );
+        return;
+      }
+    }
     const paymentInput = payments.map(payment => ({
       method: payment.method.toUpperCase(),
       amount: payment.amount,
@@ -350,7 +402,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               payments: paymentInput,
               customerId: cart.member?.id ?? null,
               couponCode: cart.coupon?.code ?? null,
-              pointsToRedeem: cart.pointsToRedeem,
+              // ⚠️ ส่งจำนวนแต้มที่ **พรีวิวบอกว่าจะหักจริง** ไม่ใช่ที่แคชเชียร์พิมพ์ —
+              // createOrderInTx ปฏิเสธทั้งบิลเมื่อหักได้ไม่เท่าที่ขอ (เศษแต้มที่ไม่ครบ
+              // หน่วยแลก ต่ำกว่าขั้นต่ำ หรือชนเพดานส่วนลดของบิล) และยอดที่จอโชว์ก็มาจาก
+              // พรีวิวตัวเดียวกันนี้อยู่แล้ว
+              pointsToRedeem: cart.pointsUsed,
               manualDiscount: cart.manualDiscount?.amount ?? null,
               discountReason: cart.manualDiscount?.reason ?? null,
               discountApproverUserId:
@@ -928,6 +984,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           )}
         </View>
       )}
+      {/* ไม่มีบรรทัดนี้ ยอดสุทธิจะไม่เท่ากับยอดสินค้าหักส่วนลดโดยไม่มีอะไรบนจอเดียวกันอธิบาย */}
+      {roundingDelta !== 0 && (
+        <>
+          <AmountRow label="ยอดก่อนปัดเศษ" value={payableBeforeRounding} />
+          <AmountRow label="ปัดเศษเงินสด" value={roundingDelta} />
+        </>
+      )}
       <AmountRow label="ยอดสุทธิ" value={total} />
       <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />
       <AmountRow label="คงเหลือ" value={validation.remaining} />
@@ -939,12 +1002,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           {error}
         </Text>
       ))}
+      {/* ส่วนลดกำลังถูกคำนวณใหม่ที่เซิร์ฟเวอร์ — ยอดที่เห็นตอนนี้ยังเป็นของรอบก่อน
+          ปุ่มที่กดได้ระหว่างนี้คือปุ่มที่เก็บเงินตามยอดที่ยังไม่ใช่คำตอบสุดท้าย */}
+      {discountPending && (
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          กำลังคำนวณส่วนลดกับเซิร์ฟเวอร์…
+        </Text>
+      )}
       <Button
         label="ยืนยันการขาย"
         accessibilityLabel="ยืนยันการขายพร้อมป้องกันกดซ้ำ"
         fullWidth
         loading={submitting}
         disabled={
+          discountPending ||
           lines.length === 0 ||
           Boolean(check?.items.some(item => item.status === 'NEW')) ||
           !validation.canConfirm ||

@@ -12,6 +12,7 @@ import {
   MobileRestaurantMenuDocument,
 } from '../graphql/generated';
 import type { PosMenuCatalog, PosMenuItem } from '../types/pos';
+import { normalizePriceTiers, normalizePromotion } from '../lib/cartPricing';
 import { useStoreMode } from './StoreModeContext';
 import { useDevice } from './DeviceContext';
 import { serverAssetUrl } from '../lib/realtime';
@@ -142,6 +143,12 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         sku: item.sku,
         name: item.receiptName || item.productName,
         price: item.packPrice,
+        // ราคาส่ง/โปรคิดจากราคาป้ายต่อหน่วยฐาน ไม่ใช่ราคาต่อหน่วยขาย — ต้องแยกเก็บทั้งคู่
+        basePrice: item.basePrice,
+        packBasePrice: item.packPrice,
+        modifierUnitPrice: 0,
+        priceTiers: normalizePriceTiers(item.priceTiers),
+        promotion: normalizePromotion(item.promotion),
         category: 'สินค้า',
         station: 'สินค้า',
         sellable: item.available >= item.baseQty,

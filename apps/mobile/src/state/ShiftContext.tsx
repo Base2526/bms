@@ -44,7 +44,18 @@ interface ShiftContextValue {
   cashRefunds: number;
   movementIn: number;
   movementOut: number;
-  expectedCash: number;
+  /**
+   * `null` = ยังบอกไม่ได้ ไม่ใช่ศูนย์
+   *
+   * ⚠️ โหมดนับปิดตา (8.0) ทำให้ server คืน `expectedCash: null` ระหว่างกะยังเปิด โดยตั้งใจ
+   * — คนนับต้องไม่เห็นคำตอบก่อนกรอกยอดที่นับได้ · ของเดิมเขียน `?? 0` แล้วจอขึ้น
+   * "เงินที่ควรมีในลิ้นชัก ฿0.00" ซึ่งเป็นตัวเลขที่ผิดและอ่านเหมือนลิ้นชักว่าง
+   */
+  expectedCash: number | null;
+  /** true = ถูกซ่อนเพราะโหมดนับปิดตา ไม่ใช่เพราะคำนวณไม่ได้ */
+  expectedCashHidden: boolean;
+  /** ยอดปัดเศษเงินสดสะสมของกะ — ไม่มีบรรทัดนี้ ผลรวมวิธีชำระจะไม่เท่ากับยอดขาย */
+  roundingTotal: number;
   closeSummary: ShiftCloseSummary | null;
   loading: boolean;
   error: string | null;
@@ -246,14 +257,19 @@ export function ShiftProvider({
     [credentials, refresh, shift, shiftMutation],
   );
 
+  // ⚠️ การ์ด "ปิดกะแล้ว" ต้องมีตัวเลขครบทั้งสามตัวถึงจะขึ้น — เดิม `?? 0` ทำให้กะที่ server
+  // ยังไม่ได้ส่งยอดกลับมาขึ้นเป็น "ควรมี ฿0.00 · ขาด ฿X" ซึ่งเป็นการกล่าวหาว่าเงินหายทั้งลิ้นชัก
   const closeSummary = useMemo(
     () =>
-      report?.status === 'CLOSED' && report.countedCash != null
+      report?.status === 'CLOSED' &&
+      report.countedCash != null &&
+      report.expectedCash != null &&
+      report.cashVariance != null
         ? {
             closedAt: report.closedAt ?? '',
             countedCash: report.countedCash,
-            expectedCash: report.expectedCash ?? 0,
-            variance: report.cashVariance ?? 0,
+            expectedCash: report.expectedCash,
+            variance: report.cashVariance,
           }
         : null,
     [report],
@@ -270,7 +286,9 @@ export function ShiftProvider({
       cashRefunds: report?.cashRefunds ?? 0,
       movementIn: report?.cashIn ?? 0,
       movementOut: report?.cashOut ?? 0,
-      expectedCash: report?.expectedCash ?? shift?.expectedCash ?? 0,
+      expectedCash: report?.expectedCash ?? shift?.expectedCash ?? null,
+      expectedCashHidden: report?.expectedCashHidden ?? false,
+      roundingTotal: report?.roundingTotal ?? 0,
       closeSummary,
       loading:
         bootstrap.loading ||

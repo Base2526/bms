@@ -85,9 +85,14 @@ export function CheckoutAdjustmentsCard({
       {
         key: 'points' as const,
         title: 'ใช้แต้ม',
+        // ⚠️ ต้องบอก "แต้มที่หักจริง" ที่ server ตอบกลับมา ไม่ใช่ตัวเลขที่แคชเชียร์พิมพ์ —
+        // เศษที่ไม่ครบหน่วยแลก/ต่ำกว่าขั้นต่ำ/ชนเพดานส่วนลด จะถูกตัดออกเงียบ ๆ แล้ว
+        // ยอดที่จอโชว์กับจำนวนแต้มที่บอกลูกค้าจะไม่ใช่เรื่องเดียวกัน
         value: selectedMember
           ? cart.pointsToRedeem > 0
-            ? `${cart.pointsToRedeem} แต้ม`
+            ? cart.pointsUsed === cart.pointsToRedeem
+              ? `${cart.pointsUsed} แต้ม`
+              : `ขอ ${cart.pointsToRedeem} · หักได้จริง ${cart.pointsUsed} แต้ม`
             : `ใช้ได้ ${Math.floor(selectedMember.pointsUsable)} แต้ม`
           : 'เลือกสมาชิกก่อนใช้แต้ม',
       },
@@ -129,6 +134,7 @@ export function CheckoutAdjustmentsCard({
     cart.extraTotal,
     cart.manualDiscount,
     cart.pointsToRedeem,
+    cart.pointsUsed,
     memberOnly,
     selectedMember,
   ]);
