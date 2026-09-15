@@ -2,6 +2,64 @@
 
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
+## ⚠️ ปุ่ม "สร้างร้านทดสอบ" ล้มทุกครั้ง — และปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านจริงค้างตลอดไป — 2026-09-15
+
+branch `audit/realtime-production-architecture` · **ไม่มี migration · ไม่มี permission ใหม่** ·
+typecheck ผ่าน · **pure 1,226/1,226** จาก 1,222 · production build ผ่าน ·
+**เดินเส้นทางจริงกับ dev DB แล้ว** (provision → seed 800 บิล → ลบร้านทิ้ง เหลือ 0 แถว) ·
+**มิวเทชัน 7 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+### 1. `9.22` เพิ่ม `receipt_unit_price` NOT NULL แต่ไม่มีใครไปเติมให้ seeder
+
+`createOrderInTx()` ถูกแก้ให้เขียนคอลัมน์นี้ แต่ `devSeed.ts` เขียน `bms_order_items` เองอีกทาง
+(`bulkInsert`) แล้วลิสต์คอลัมน์ไม่มีตัวนี้ → `23502` ทุกครั้ง
+
+- **รัศมีไม่ใช่แค่เครื่องมือ dev**: `onboardingSampleData.ts` เรียก `seedFakeOrders()` ตัวเดียวกัน
+  = ปุ่ม **"สร้างข้อมูลตัวอย่าง" ของร้านที่เพิ่งสมัครจริง** ทำ products/customers สำเร็จ แล้วตาย
+  ที่ขั้น orders · ขั้นที่ผ่านแล้วถูกบันทึกไว้ รอบถัดไปจึง **มาตายที่เดิมตลอดไป**
+- ฝั่งร้านทดสอบ route ลบร้านที่ seed ไม่จบทิ้ง ผู้ใช้จึงเห็นแค่ "สร้างไม่สำเร็จ + ร้านถูกลบแล้ว"
+- อีกจุดที่พังเหมือนกันคือ `seedFakeRestockSubscriptions()` (บิลกู้ยอดจากลูกค้าที่รอของ)
+- **ค่าที่ใส่คือ `v.price` เท่ากับ `unit_price`** — แถว seed ไม่ได้เดินผ่าน `createOrderInTx`
+  จึงไม่มีกฎราคาส่ง/โปรมาลดราคา ราคาป้ายกับราคาที่คิดจริงเท่ากันเสมอ (มีเทสตรึงว่าต้องเท่ากัน)
+
+### 2. เจอระหว่าง verify: ลบร้านบอร์ดเกมไม่ได้เลย (วงรอบ RESTRICT)
+
+พอ seed ผ่านแล้ว ร้าน `board_game_cafe` **ลบทิ้งไม่ได้** ซึ่งเป็นสิ่งที่หน้าจอบอกให้ทำต่อ
+
+- `bms_board_game_session_participants` → `bms_customers` เป็น RESTRICT และ `deleteTenantRows()`
+  ลบ `bms_customers` ก่อน · `bms_board_game_titles` → `bms_products` ก็เหมือนกัน
+- **และ `9.82` ทำให้ `bms_orders.board_game_session_id` ชี้กลับมาที่ session** ขณะที่ session
+  ชี้ไปที่บิล → ลบข้างไหนก่อนก็ติดอีกข้าง · ต้อง **ปลด `board_game_session_id` เป็น NULL ก่อน**
+  แล้วค่อยลบ session (participants/session_games cascade ตาม · copies cascade จาก titles)
+- เป็นกับดักเดียวกับที่ `9.66` เคยเจอ (`bms_restaurant_order_requests`) ซึ่งมีบรรทัดแก้อยู่แล้ว
+  ในไฟล์เดียวกัน — ของใหม่ที่ถือหลักฐานด้วย FK แบบ RESTRICT ต้องมาเติมตรงนี้ทุกครั้ง
+
+### เทส
+
+- **`scripts/insert-required-columns-contract.test.mts` (4 เทส pure)** — ชั้นถัดไปของ
+  `sql-table-reference-contract` (ชื่อตารางถูก แต่ลิสต์คอลัมน์ขาด) · อ่าน "คอลัมน์ที่ห้ามว่าง"
+  จาก `db/migrations` (NOT NULL + ไม่มี DEFAULT + ไม่ใช่ serial) แล้วเทียบกับทุก
+  `INSERT INTO t (...)` และทุก `bulkInsert(client, "t", [...])` ใน `apps/web`/`packages`
+  · **เทียบกับ `information_schema` ของ dev DB แล้ว: false positive 0 ตัวในทุกตารางที่ seeder แตะ**
+    และทั้งสคีมาเหลือ 3 ตัว ซึ่งเป็นตารางยุคก่อน BMS ที่ migration สองไฟล์นิยามขัดกันเอง
+    (`roles`, `scam_phones_summary`) จึงยกเว้นไว้ **แบบต้องตรงเป๊ะ** ไม่ใช่ allowlist
+  · ที่ยอมรับไว้: คอลัมน์ที่เพิ่มด้วย `DO $$ ... EXECUTE format()` (tenant_id/location_id ยุค 4.0)
+    อ่านไม่ออก → ตกเป็น "ไม่บังคับ" (มองข้าม ไม่ใช่รายงานผิด)
+- **`scripts/test-shop-lifecycle-db-contract.test.mts` (1 เทส DB, ~1.4 วิ)** — เดิน provision →
+  seed → ลบจริง · **เทสสแกนซอร์สจับบั๊กทั้งสองตัวนี้ไม่ได้** เพราะ SQL อยู่ใน template literal
+  · ผูกบิลกับ session ทั้งสองทิศด้วยมือก่อนลบ เพราะ seeder ไม่สร้างเคสที่ทำให้วงรอบ RESTRICT ชนกัน
+
+### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ apply/ทดสอบกับ production** — แก้แล้วต้อง deploy ก่อนปุ่มถึงจะใช้ได้
+  · ร้านจริงที่เคยกด "สร้างข้อมูลตัวอย่าง" แล้วค้าง จะมีแถว `bms_onboarding_seed_runs`
+    สถานะ `FAILED` ค้างอยู่ — กดใหม่หลัง deploy จะเดินต่อจากขั้น orders เองโดยไม่ต้องล้างอะไร
+- **ยังไม่ได้เปิดดูจริงในเบราว์เซอร์** — ยืนยันด้วยการเรียก service จริงกับ dev DB เท่านั้น
+- `deleteTenantRows()` ยังเป็นลิสต์ที่เขียนด้วยมือ — ตารางใหม่ที่ถือหลักฐานด้วย FK แบบ RESTRICT
+  จะพังอีกแบบเดิม · ตัวที่กันได้จริงคือเทสที่ **ลบร้านของตัวเองจริง** (ไฟล์ใหม่ทำแล้วเฉพาะ
+  archetype บอร์ดเกม ยังไม่ครอบร้านอาหาร/ร้านยา)
+- ชุด DB ไม่มี job ใน `gate.yml` ตามเดิม — ด่านที่ CI รันจริงคือตัว pure เท่านั้น
+
 
 ## ⚠️ RN คิดยอดตะกร้าเอง — ร้านที่ตั้งราคาส่ง/โปร/ปัดเศษ ขายจากมือถือไม่ได้เลย — 2026-09-15
 
