@@ -60,7 +60,9 @@ function writeActions(): BoardGamePosAction[] {
   const clean = withoutComments(operations);
   const at = clean.indexOf("export async function runBoardGamePosMutation");
   assert.ok(at >= 0, "runBoardGamePosMutation must exist");
-  const found = [...clean.slice(at).matchAll(/case "([a-z.]+)": \{/g)].map(
+  // `case "a":` ที่ fall-through ลงไปยัง body ของ `case "b": {` ก็คือคำสั่งที่ dispatcher รับไว้
+  // เหมือนกัน · การบังคับให้มี `{` ต่อท้ายทำให้คำสั่งที่ใช้ body ร่วมกันหายไปจากงบทั้งหมดเงียบ ๆ
+  const found = [...clean.slice(at).matchAll(/case "([a-z.]+)":/g)].map(
     (match) => match[1],
   );
   assert.ok(found.length > 0, "the dispatcher must handle at least one action");
@@ -71,6 +73,40 @@ function writeActions(): BoardGamePosAction[] {
     );
   }
   return found as BoardGamePosAction[];
+}
+
+/**
+ * ชื่อคำสั่งที่ปุ่มบนจอส่งเข้า `run(ชื่องาน, คำสั่ง, payload)` — อ่าน **อาร์กิวเมนต์ที่สอง**
+ * ทั้งก้อน ไม่ใช่จับ literal ที่อยู่ติดกับคอมมา · ปุ่มเดียวเลือกคำสั่งด้วยเงื่อนไขได้
+ * (ย้ายโต๊ะ/รวมโต๊ะใช้ปุ่มเดียวกัน) และ regex ที่อ่านไม่ออกจะรายงานว่าเบราว์เซอร์เอื้อมไม่ถึง
+ * ทั้งที่ปุ่มอยู่ตรงนั้น — หรือแย่กว่านั้น เงียบไปเมื่อคำสั่งจริงหายไป
+ */
+function runActionArguments(clean: string): string[] {
+  const args: string[] = [];
+  for (const match of clean.matchAll(/\brun\(/g)) {
+    let depth = 0;
+    let comma = 0;
+    let start = -1;
+    for (let i = match.index! + match[0].length; i < clean.length; i += 1) {
+      const ch = clean[i];
+      if (ch === "(" || ch === "[" || ch === "{") depth += 1;
+      else if (ch === ")" || ch === "]" || ch === "}") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (ch === "," && depth === 0) {
+        comma += 1;
+        if (comma === 1) start = i + 1;
+        else if (comma === 2) {
+          args.push(clean.slice(start, i));
+          start = -1;
+          break;
+        }
+      }
+    }
+    assert.ok(start === -1, "run(...) must pass a name, an action and a payload");
+  }
+  assert.ok(args.length > 0, "the register panel must call run(...) somewhere");
+  return args;
 }
 
 test("every board-game command decides its permissions in one table, not per surface", () => {
@@ -113,8 +149,9 @@ test("an open shift is required exactly where the money lands in that shift", ()
     .filter((action) => BOARD_GAME_POS_ACTIONS[action].requiresOpenShift)
     .sort();
   // เปิดโต๊ะประทับเครื่อง/กะลง session · ปิดเวลาคือการออกยอดให้กะนั้นเก็บเงิน
+  // สั่ง/เอาของออกจากบิล (`9.90`) จองและปล่อยสต็อกจริงในกะนั้น จึงต้องมีกะเปิดเหมือนกัน
   // ที่เหลือเป็นการแก้รายการของโต๊ะที่เปิดไปแล้ว การบังคับกะจะทำให้แก้ข้ามกะไม่ได้
-  assert.deepEqual(requiring, ["close", "open"]);
+  assert.deepEqual(requiring, ["close", "group.close", "open", "tab.add", "tab.remove"]);
 });
 
 test("reading the floor needs the library, and an odd return needs the library owner", () => {
@@ -216,9 +253,9 @@ test("the browser register reaches every board-game command that writes", () => 
   const clean = withoutComments(panel);
   const used = new Set<string>([
     ...[...clean.matchAll(/call\(\s*'([a-z.]+)'/g)].map((match) => match[1]),
-    ...[...clean.matchAll(
-      /run\(\s*(?:'[^']*'|`[^`]*`)\s*,\s*'([a-z.]+)'/g,
-    )].map((match) => match[1]),
+    ...runActionArguments(clean).flatMap(
+      (argument) => [...argument.matchAll(/'([a-z.]+)'/g)].map((match) => match[1]),
+    ),
   ]);
 
   // คำสั่งที่พิมพ์ผิดจะถูก route ปฏิเสธเป็น 400 ตอนมีคนกดจริงเท่านั้น
@@ -249,8 +286,10 @@ test("the board-game tab belongs to the cafe archetype and never steals the scan
     "the tab must be gated by the shop archetype",
   );
   assert.match(clean, /<BoardGamePanel/);
-  // ปิดเวลาแล้วต้องส่งบิลไปเก็บเงินที่แท็บขาย ไม่ใช่คิดเงินซ้ำในแท็บนี้
-  assert.match(clean, /setBoardGameCheckoutId\(sessionId\);/);
+  // ปิดเวลาแล้วต้องส่งบิลไปเก็บเงินที่แท็บขาย ไม่ใช่คิดเงินซ้ำในแท็บนี้ · สิ่งที่ส่งต่อคือ
+  // **กลุ่มบิล** (`9.89`) ไม่ใช่โต๊ะ — โต๊ะที่แยกบิลมีหลายใบ การส่ง id ของโต๊ะไปจึงกำกวม
+  assert.match(clean, /setBoardGameCheckoutId\(billingGroupId\);/);
+  assert.doesNotMatch(clean, /boardGameSessionId/);
 
   const base = {
     lookupMode: false,

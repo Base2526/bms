@@ -264,7 +264,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     idempotencyKey: String!
     mode: String
     lines: [BmsPosSaleLineInput!]!
-    boardGameSessionId: ID
+    boardGameBillingGroupId: ID
     payments: [BmsPosPaymentInput!]!
     couponCode: String
     depositCustomerNote: String
@@ -2068,12 +2068,53 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     reason: String
   }
 
+  """ปิดเฉพาะบิลหนึ่งกลุ่ม ขณะที่กลุ่มอื่นบนโต๊ะยังเล่นต่อได้ (Board Game Phase 3)"""
+  input BmsPosBoardGameBillingGroupActionInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    billingGroupId: ID!
+  }
+
+  """ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91)"""
+  input BmsPosBoardGameSeatingActionInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    targetTableId: ID!
+  }
+
   input BmsPosBoardGameCheckoutCopyInput {
     cashierUserId: ID!
     pin: String!
     idempotencyKey: String!
     sessionId: ID!
     copyId: ID!
+  }
+
+  """รับบัตรไว้ค้ำกล่องเกม (9.93) — เลขไม่บังคับ และไม่เคยถูกส่งกลับออกมาทางใดเลย"""
+  input BmsPosBoardGameTakeIdentityHoldInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+    documentKind: String!
+    holderName: String!
+    """เข้ารหัสก่อนเก็บเสมอ · ปล่อยว่างได้เมื่อร้านเก็บแต่ตัวบัตรจริง"""
+    documentNumber: String
+    loanId: ID
+    customerId: ID
+    note: String
+  }
+
+  """คืนบัตรให้ลูกค้า — ล้างชื่อ เลข และสี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน (9.93)"""
+  input BmsPosBoardGameReleaseIdentityHoldInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    holdId: ID!
+    note: String
   }
 
   input BmsPosBoardGameReturnCopyInput {
@@ -2102,6 +2143,10 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   type BmsPosBoardGameSessionSummary {
     id: ID
     sessionId: ID
+    "ที่นั่งจริงบนผัง (9.91) — หลาย session แชร์ค่านี้หลังรวมโต๊ะ"
+    seatingId: ID
+    sessionIds: [ID!]
+    sessionCount: Int
     status: String
     billingMode: String
     guestCount: Int
@@ -2111,6 +2156,10 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     alertBeforeMinutes: Int
     alertStatus: String
     amountDue: Float
+    "จำนวนกลุ่มบิลของโต๊ะนี้ (9.89) — มากกว่า 1 แปลว่าโต๊ะนี้แยกบิล"
+    billingGroupCount: Int
+    "จำนวนบิลของโต๊ะนี้ที่ปิดเวลาแล้วแต่ยังไม่ได้เก็บเงิน"
+    awaitingPaymentCount: Int
     replayed: Boolean
   }
 
@@ -2172,6 +2221,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     roundingMinutes: Int
     graceMinutes: Int
     billingGroupNo: Int
+    "กลุ่มบิลที่ผู้เล่นคนนี้อยู่ (9.89) — เป็นตัวตัดสินว่าบิลใบไหนเก็บเงินคนนี้"
+    billingGroupId: ID
+    billingGroupStatus: String
     joinedAt: String
     leftAt: String
     replayed: Boolean
@@ -2189,6 +2241,31 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     replayed: Boolean
   }
 
+  """
+  บัตรที่ร้านถือไว้ค้ำกล่องเกม (9.93)
+
+  **ไม่มีเลขเต็มในชนิดนี้โดยตั้งใจ** — มีแต่สี่ตัวท้ายไว้จับคู่กับบัตรในลิ้นชัก ·
+  การอ่านเลขกลับออกมาอยู่หลังบ้านอย่างเดียว (board_game.identity.reveal) และลง audit ทุกครั้ง
+  """
+  type BmsPosBoardGameIdentityHold {
+    id: ID!
+    loanId: ID
+    customerId: ID
+    documentKind: String!
+    """null หลังคืนบัตร — ชื่อถูกล้างไปพร้อมเลข"""
+    holderName: String
+    documentNumberTail: String
+    hasDocumentNumber: Boolean!
+    status: String!
+    note: String
+    takenAt: String!
+    takenByName: String
+    returnedAt: String
+    returnedByName: String
+    purgedAt: String
+    replayed: Boolean
+  }
+
   type BmsPosBoardGameChargeLine {
     participantId: ID!
     displayName: String
@@ -2199,11 +2276,55 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     amount: Float!
   }
 
+  """รายการที่สั่งเข้าบิลระหว่างเล่น (9.90) — server จองสต็อกให้แล้วตั้งแต่ตอนเพิ่ม"""
+  type BmsPosBoardGameTabItem {
+    id: ID!
+    sku: String!
+    productName: String!
+    size: String!
+    packCode: String
+    unitName: String
+    packQty: Int!
+    modifierNames: [String!]!
+    note: String
+    addedAt: String
+  }
+
+  """
+  กลุ่มบิลของโต๊ะบอร์ดเกม (9.89) — หน่วยที่บิลหนึ่งใบเก็บเงิน
+  โต๊ะที่แยกกลุ่มจะคืนหลายรายการ และแต่ละรายการเก็บเงินแยกใบกัน
+  """
+  type BmsPosBoardGameBillingGroup {
+    id: ID!
+    groupNo: Int!
+    status: String!
+    "ค่าเล่นที่แช่ไว้ตอนปิด — ยังเล่นอยู่จะเป็น 0"
+    amountDue: Float!
+    "ยอดของที่สั่งเข้าบิลระหว่างเล่น (9.90)"
+    tabAmount: Float!
+    tabItems: [BmsPosBoardGameTabItem!]!
+    endedAt: String
+    currentOrderId: ID
+    chargeSnapshot: [BmsPosBoardGameChargeLine!]!
+  }
+
   type BmsPosBoardGameBilling {
     sessionId: ID!
+    "บิลที่เพิ่งถูกปิด — หนึ่งรายการต่อหนึ่งกลุ่ม ต้องเก็บเงินทีละใบ"
+    groups: [BmsPosBoardGameBillingGroup!]!
     amountDue: Float!
     lines: [BmsPosBoardGameChargeLine!]!
-    endedAt: String!
+    endedAt: String
+    replayed: Boolean!
+  }
+
+  type BmsPosBoardGameSeatingActionResult {
+    action: String!
+    seatingId: ID!
+    sourceSeatingId: ID!
+    fromTableId: ID!
+    toTableId: ID!
+    sessionIds: [ID!]!
     replayed: Boolean!
   }
 
@@ -2220,13 +2341,28 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     amountDue: Float!
     locationId: ID!
     tableId: ID!
-    currentOrderId: ID
+    seatingId: ID!
+    currentOrderId: ID @deprecated(reason: "9.89 ย้ายบิลไปที่กลุ่ม — ใช้ billingGroups[].currentOrderId แทน โต๊ะหนึ่งมีได้หลายบิล")
+    "กลุ่มบิลทั้งหมดของโต๊ะนี้ (9.89)"
+    billingGroups: [BmsPosBoardGameBillingGroup!]!
     participants: [BmsPosBoardGameParticipant!]!
     games: [BmsPosBoardGameLoan!]!
+    """บัตรที่รับไว้ของโต๊ะนี้ (9.93) — ใบที่ยัง HELD บล็อกการปิดบิลใบสุดท้าย"""
+    identityHolds: [BmsPosBoardGameIdentityHold!]!
   }
 
   type BmsPosBoardGameCheckout {
+    "id ของกลุ่มบิล (9.89) ไม่ใช่ session"
     id: ID!
+    sessionId: ID!
+    groupNo: Int!
+    "จำนวนกลุ่มบิลของโต๊ะนี้ — ใช้บอกพนักงานว่ายังมีบิลอื่นของโต๊ะเดียวกันรออยู่ไหม"
+    sessionGroupCount: Int!
+    "ยอดของที่สั่งไว้ระหว่างเล่น (9.90)"
+    tabAmount: Float!
+    tabItemCount: Int!
+    "ค่าเล่น + ของที่สั่งไว้ = ยอดที่ต้องเก็บจริง"
+    totalDue: Float!
     tableCode: String!
     tableName: String!
     startedAt: String!
@@ -2380,6 +2516,15 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosCloseBoardGameSession(
       input: BmsPosBoardGameSessionActionInput!
     ): BmsPosBoardGameBilling!
+    bmsPosCloseBoardGameBillingGroup(
+      input: BmsPosBoardGameBillingGroupActionInput!
+    ): BmsPosBoardGameBilling!
+    bmsPosMoveBoardGameSeating(
+      input: BmsPosBoardGameSeatingActionInput!
+    ): BmsPosBoardGameSeatingActionResult!
+    bmsPosMergeBoardGameSeating(
+      input: BmsPosBoardGameSeatingActionInput!
+    ): BmsPosBoardGameSeatingActionResult!
     bmsPosCancelBoardGameSession(
       input: BmsPosBoardGameSessionActionInput!
     ): BmsPosBoardGameSessionSummary!
@@ -2389,6 +2534,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosReturnBoardGameCopy(
       input: BmsPosBoardGameReturnCopyInput!
     ): BmsPosBoardGameLoan!
+    bmsPosTakeBoardGameIdentityHold(
+      input: BmsPosBoardGameTakeIdentityHoldInput!
+    ): BmsPosBoardGameIdentityHold!
+    bmsPosReleaseBoardGameIdentityHold(
+      input: BmsPosBoardGameReleaseIdentityHoldInput!
+    ): BmsPosBoardGameIdentityHold!
     bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
     bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
     bmsPosRequestPharmacyReview(
@@ -3424,15 +3575,15 @@ export const bmsPosDeviceResolvers = {
         });
       }
       const lines = parsePosSaleLines(input.lines);
-      const boardGameSessionId = optionalUuidInput(
-        input.boardGameSessionId,
+      const boardGameBillingGroupId = optionalUuidInput(
+        input.boardGameBillingGroupId,
         "session บอร์ดเกมไม่ถูกต้อง",
       );
-      if (!lines.length && !boardGameSessionId)
+      if (!lines.length && !boardGameBillingGroupId)
         return badPosInput(
           "ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ",
         );
-      if (mode === "DEPOSIT" && boardGameSessionId)
+      if (mode === "DEPOSIT" && boardGameBillingGroupId)
         return badPosInput("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
       const parsedPayments = parsePosPayments(input.payments);
       if (!parsedPayments.ok) return badPosInput(parsedPayments.error);
@@ -3551,7 +3702,7 @@ export const bmsPosDeviceResolvers = {
         idempotencyKey,
         mode,
         lines,
-        boardGameSessionId,
+        boardGameBillingGroupId,
         salesSurface:
           profile.businessArchetype === "restaurant"
             ? "RESTAURANT_POS"
@@ -4327,6 +4478,48 @@ export const bmsPosDeviceResolvers = {
       );
     },
 
+    async bmsPosCloseBoardGameBillingGroup(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "group.close");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "group.close",
+        access.input,
+      );
+    },
+
+    async bmsPosMoveBoardGameSeating(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "seating.move");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "seating.move",
+        access.input,
+      );
+    },
+
+    async bmsPosMergeBoardGameSeating(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "seating.merge");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "seating.merge",
+        access.input,
+      );
+    },
+
     async bmsPosCancelBoardGameSession(
       _parent: unknown,
       args: { input: unknown },
@@ -4365,6 +4558,34 @@ export const bmsPosDeviceResolvers = {
         access.scope,
         access.actorUserId,
         "copy.return",
+        access.input,
+      );
+    },
+
+    async bmsPosTakeBoardGameIdentityHold(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "identity.hold");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "identity.hold",
+        access.input,
+      );
+    },
+
+    async bmsPosReleaseBoardGameIdentityHold(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "identity.release");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "identity.release",
         access.input,
       );
     },

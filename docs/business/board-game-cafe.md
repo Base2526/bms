@@ -5,17 +5,177 @@ often mixed with snacks, drinks, retail accessories, memberships, and a play-lib
 
 ## Domain Boundary
 
-Keep three concepts separate:
+Keep four concepts separate:
 
 | Concept | Source of truth | Why |
 | --- | --- | --- |
 | Sellable goods | Product + Inventory | Snacks, drinks, sleeves, dice, and games sold as retail stock still leave the shelf through POS. |
 | Play time | Board-game session/rate module | Time charges depend on participants, start/end time, rounding, grace periods, discounts, and membership rules. |
+| **What a bill settles** | **Billing group (`9.89`)** | A table visit and a bill are not the same thing. One table can owe several bills, and each is paid by a different person at a different moment. |
 | Play-library games | Game Library assets | A playable game copy is borrowed, returned, inspected, damaged, or retired. It is not sold and should not reduce stock when played. |
 
 The register opens a board-game session, calculates time charges in the backend, adds sellable
 products to the same bill, then settles through the existing POS/payment path. Board-game sessions do
 not create a second payment flow.
+
+### The bill belongs to a group, not to a table (`9.89`)
+
+`9.80` put the money on the *session*: one settlement key, one frozen `charge_snapshot`, one
+`current_order_id`, and `9.82`'s unique index claimed that order per session. `billing_group_no`
+already existed on a participant and reached the charge lines, but every group still settled inside
+the same order — so a split table could produce only one bill, and "this group pays and leaves" had
+nowhere to be recorded.
+
+`bms_board_game_billing_groups` now owns the money; the session owns seating and timing only.
+
+| Rule | Why it is that way |
+| --- | --- |
+| Opening a table creates one group per group number the staff typed | A table nobody split gets exactly one group, so its bill is identical to before. |
+| Closing a table closes **every open group**, one bill each | The register settles them one at a time; the counter sees which groups are still unpaid. |
+| The table's status is derived from its groups | It stays occupied while any group is open or unpaid, which is what decides whether the table can be reopened. Paying one bill must never free a table where people are still playing. |
+| A closed group refuses new players | Its charge lines were frozen at close, so a late arrival could never be charged. |
+| The order records both the group and the session | The group is what was paid; the session is which table visit it came from, which outlives the tab. |
+| The session's own money columns are history | Nothing writes `amount_due`, `charge_snapshot`, `current_order_id` or the settlement keys on a session any more. A column that *some* code still writes is how two sources of truth start. |
+
+### Ordering onto a bill while people are still playing (`9.90`)
+
+`bms_board_game_group_items` is the tab: what a group has ordered so far. It is the source of
+truth; the group's PENDING order is a **reservation derived from it**, rebuilt whenever the lines
+change — the same shape a restaurant check uses for its kitchen rounds.
+
+| Rule | Why it is that way |
+| --- | --- |
+| Adding a line reserves stock immediately | The drink is gone the moment it is handed over. Inventory that still counts it is wrong for hours, and without a reservation two tables can both be promised the last box — the second one finding out at settlement, after it was drunk. |
+| A removed line is kept as `CANCELLED` | "We never ordered that" is the dispute this table exists to answer. Deleting the row answers nothing. |
+| The old reservation is released **inside the settlement transaction** | Releasing it any earlier opens a window where another register can sell what this table is already holding. |
+| Serial-tracked products cannot go on a tab | Serial numbers (`8.3`) are collected from the register's cart. A tab line never passes that gate, so it would be sold with no serial recorded. |
+| The register charges `totalDue` (time + tab) | The server always bills both. A screen that adds only the play time sends a short amount and the whole bill is thrown away as `PAYMENT_MISMATCH` in front of the customer. |
+| Cancelling a table releases every reserved line | A group that walks out must not keep stock reserved against a table nobody is sitting at. Only a group that has actually **been paid** blocks cancellation. |
+
+The tab's value lives in `tab_amount`, separate from `amount_due`, which `9.89` defined as the
+frozen play-time charge. One column holding both would mean closing the table silently overwrites
+the snack total with the time total.
+
+The status formula lives once, in `refreshSessionFromGroupsInTx()`. `pos.ts` calls it rather than
+writing its own `UPDATE`; two copies would eventually disagree about whether a table is free.
+
+### One group pays while the table keeps playing (Phase 3)
+
+A cashier can close one `OPEN` billing group instead of freezing the whole session. The command
+stores that group's end time, play-time snapshot, tab value and idempotency claim, then hands its
+group id to the existing POS checkout. Other groups stay `OPEN`: their clocks keep running, their
+tabs remain editable, and new participants may still join an open group.
+
+The table remains occupied after that bill is paid because session status is still derived from all
+groups. A participant in a closed group cannot be marked as leaving or edited afterwards—the frozen
+charge is the receipt evidence. A checked-out game belongs to the session rather than one bill, so
+it does not block an early group from leaving; it does block the **last** open group from closing
+until every copy is returned. Closing the last group with an asset still out would create a table
+with no active players but no responsible open bill.
+
+Both browser and native registers address checkout by `billingGroupId`. A group's PENDING order may
+already exist as the reservation for its snack tab, so `currentOrderId` is not evidence that payment
+finished; `CLOSING` is the authoritative "awaiting payment" state and `PAID` is the terminal one.
+
+### Moving and merging tables without touching a bill (Phase 4)
+
+Through `9.90` the session owned `table_id`, so the floor could not record what a cafe actually
+does. `9.91` introduces a **seating**: the current physical occupancy of one table. One `ACTIVE`
+seating owns one table; a session — one party's visit, with its clocks, participants, loans and
+billing groups — points at the seating it is currently sitting at.
+
+* **Move** sends the selected party to a free table. When that party is alone at the table the
+  seating itself moves, keeping its id and opening time; when the table had been merged, only the
+  selected party is detached onto a new seating, so merging is not a one-way door.
+* **Merge** sends every party at this table into an occupied destination's seating and closes the
+  source seating as `MERGED`. Several sessions then share one seating and appear as one card on the
+  floor, while each keeps its own clock, tab and bills.
+
+Neither command touches a session, billing group, tab row or order: ids, frozen charge lines and
+PENDING reservation orders survive both unchanged. Each command refuses the other's job — moving
+onto an occupied table and merging into a free one are both rejections — because a silent guess
+relocates people the operator did not choose.
+
+`bms_board_game_sessions.table_id` becomes history: the table the visit opened at. Anything asking
+"which table is this party at now?" reads the seating, or it shows a guest a table they left an hour
+ago. A table is free only when every session sharing its seating is settled or cancelled, so the
+public directory and the floor both count occupancy from `ACTIVE` seatings rather than sessions.
+
+### Member passes: time the member already paid for (Phase 5)
+
+A cafe sells a monthly unlimited pass or an hour bundle. `9.92` records it as an entitlement, not
+as a Product: like play time itself it has no SKU and never moves stock. `bms_board_game_pass_plans`
+is what the shop sells; `bms_board_game_member_passes` is one member's contract with the plan's
+price, kind and minutes **snapshotted at sale time**, so raising a price never rewrites a contract
+already sold; `bms_board_game_pass_ledger` is every movement of minutes, with the balance on the
+contract row as a cache of it.
+
+Coverage is applied where the money is decided — when a billing group is **closed**. That is the
+moment a group claims settlement exclusively, so it is also the only safe moment to spend a quota:
+the passes are locked, the charge lines are computed against them, the frozen snapshot records
+`grossAmount`, `coveredMinutes` and `coveredAmount` per person, and the minutes are spent in the
+same transaction. A preview never spends anything, or two tables open at once would each be quoted
+the same last hour.
+
+Rules worth knowing before changing any of it:
+
+* An unlimited pass must leave **exactly** zero — the covered amount is subtracted as the whole
+  line, never recomputed from minutes, or a satang is left on a bill nobody can explain.
+* A line that costs nothing (an observer, or a rate of zero) never burns a member's quota.
+* A member holding several active passes uses the one that can actually help: unlimited first, then
+  one with minutes left, then the soonest to expire.
+* Closing the same bill twice spends nothing twice — the ledger is unique per
+  (pass, billing group, participant) — and cancelling a table that was already closed gives the
+  minutes back, because nobody paid.
+* A bill fully covered by a pass totals ฿0. The register may settle it with no payment lines at
+  all; that exception exists for this one path and the "payments must equal the amount due" check
+  still decides whether zero is the right answer.
+
+Selling a pass is a guarded action of its own (`board_game.pass.manage`), the same shape gift cards
+use (`8.9`): taking the money still goes through the existing POS sale, and the contract records
+which order paid for it. Cancelling a pass stops it covering anything; refunds go through the POS
+refund path like any other money.
+
+### The card at the counter while a box is out (Phase 6)
+
+A cafe hands a two-thousand-baht boxed game to a stranger who sat down twenty minutes ago and holds
+an ID card until the box comes back. `9.93` turns that slip of paper in the drawer into a record the
+shop can act on: `bms_board_game_identity_holds` belongs to the **visit**, not to the member, because
+the question it answers is "whose card is in the drawer right now".
+
+The number is optional — a shop that only keeps the physical card still gets the gate below, and
+requiring it would push that shop back to paper, which is worse in every direction. When it is typed
+it goes through `encryptSecret()` before it touches the table, the same envelope channel tokens use;
+production refuses to encrypt without `BMS_SECRET_KEY`, which is the right answer for an ID number.
+Screens show only the last four characters, because a "find this card in the drawer" that needed a
+decrypt forty times a day would stop the decrypt being an exceptional act.
+
+Rules worth knowing before changing any of it:
+
+* **Handing the card back erases it.** The number exists to answer "who walked out with our game";
+  once the card is in the guest's hand there is no question left, so the name, the number and the
+  last four are cleared in the same transaction and `purged_at` is stamped. The row survives as a
+  tombstone — type, times and the two staff members — so "did we give it back, and who handed it
+  over" is still answerable. A hold that is still `HELD` deliberately keeps its number: that is the
+  incident the number was recorded for.
+* **A table cannot end while a card is still held.** The gate sits at all three exits a table has —
+  closing the last billing group, closing the whole table, and cancelling it — because leaving one
+  open would make the other two decorative. It is the last group only: a party that pays and leaves
+  early closes normally while the rest keep playing, exactly like a game copy still on the table.
+* Taking a game box back is **not** the same as giving the card back. The system records a physical
+  act; it cannot perform one.
+* **Reading a stored number is its own act.** `board_game.identity.reveal` (Manager) gates it, it
+  exists only in the back office, and every read writes an audit row. The register never has it: a
+  register is a shared screen that faces the customer, so "show the ID number" one tap away is the
+  wrong place for it. Taking and returning a card use `board_game.session.manage`, which everyone at
+  the counter already holds.
+* No photograph of the document is stored. Type, name and (optionally) number is the whole record.
+
+Both registers reach it: the browser over `POST /api/pos/board-game` and the native app over
+`bmsPosTakeBoardGameIdentityHold` / `bmsPosReleaseBoardGameIdentityHold`, through the one shared
+command table. The floor tab of `/admin/board-game` also lists **every card the branch is still
+holding**, because "is anything left in the drawer" is a closing-time question and answering it one
+table at a time means nobody answers it.
 
 ## Implemented Shape
 
@@ -26,19 +186,23 @@ The first operational release includes:
 3. Participant rates: general, student, member, observer/guardian.
 4. Time-billing rules: minimum minutes, rounding minutes, grace period, overtime behaviour.
 5. Session alerts for ending-soon and overdue states.
-6. POS bill generation using existing order/payment settlement.
+6. POS bill generation using existing order/payment settlement, including one-group-at-a-time close.
 7. Game Library: title + physical copy with condition/status.
 8. Purchase receiving destination: stock for resale or Game Library for play copies.
 9. Existing CRM customer/member identity linkage and POS split-payment support.
 10. Public discovery: opt-in listing, location, opening hours, published rates, game highlights, and aggregate availability.
+11. Floor moves: relocating a party to a free table and merging two occupied tables, without touching any bill.
+12. Member passes: monthly unlimited or hour-bundle contracts that cover play time when a bill is frozen.
+13. Identity holds: an encrypted record of the card held while a game box is out, erased when it goes back.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Dedicated monthly/yearly subscription contracts, encrypted identity-document storage, and advanced
-board-game analytics are intentionally a later phase. They should extend the existing CRM and report
-domains instead of duplicating customer or payment records inside this module.
+Advanced board-game analytics and reservations/waitlists are intentionally a later phase, as is
+automatic renewal of a member pass — renewing on a schedule needs a stored payment instrument this
+platform does not have, so today a pass is sold again by hand. They should extend the existing CRM
+and report domains instead of duplicating customer or payment records inside this module.
 
 ## Dev/Test Fixtures
 
@@ -60,6 +224,7 @@ public profile after an operator has published it.
 - Play-library copies have copy codes and condition/status, not sellable SKU stock.
 - Public discovery must be opt-in and read only published/aggregate data.
 - Any action that changes money, such as editing `started_at`, waiving overtime, changing a rate, or discounting a session, needs permission and audit.
+- A bill is always addressed by its billing group id. Handing the register a table id is ambiguous the moment a table is split, and an operation that guesses will one day charge the wrong people.
 
 ## Register surfaces (browser and native)
 
@@ -92,8 +257,8 @@ record people leaving, and check game copies out or back in with an issue note.
 
 Closing a session freezes the server-calculated participant charge lines. The app then opens the
 normal POS checkout, where snacks and other sellable products can share the bill. The time amount is
-shown as a service line but is never sent as a SKU; settlement supplies only the session ID and the
-server validates the branch/status and links the paid order atomically. All mutations retain one
+shown as a service line but is never sent as a SKU; settlement supplies only the billing-group ID and
+the server validates the branch/status and links the paid order atomically. All mutations retain one
 idempotency key across an unknown network result.
 
 ## Reuse Existing BMS

@@ -4,10 +4,13 @@ import {
   addBoardGameParticipant,
   adjustBoardGameSessionTiming,
   cancelBoardGameSession,
+  closeBoardGameBillingGroupForBilling,
   closeBoardGameSessionForBilling,
   getBoardGameSession,
   leaveBoardGameParticipant,
   locationOfBoardGameSession,
+  mergeBoardGameSeating,
+  moveBoardGameSeating,
 } from "@/lib/bms/boardGameCafe";
 import { requirePermission } from "@/lib/bms/permissions";
 import { withRouteErrorLog } from "@/lib/log/routeError";
@@ -92,6 +95,38 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
       }
       const billing = await closeBoardGameSessionForBilling(auth.tenantId, params.id, body, String(auth.adminId));
       return NextResponse.json({ billing });
+    }
+    if (action === "close_group_for_billing") {
+      if (body.endedAt != null) {
+        try {
+          await requirePermission(auth.ctx, "board_game.session.override_time");
+        } catch {
+          return NextResponse.json({ error: "ไม่มีสิทธิ์กำหนดเวลาปิดเอง" }, { status: 403 });
+        }
+      }
+      const billingGroupId = String(body.billingGroupId ?? "");
+      const current = await getBoardGameSession(auth.tenantId, params.id);
+      if (!current.billingGroups.some((group) => group.id === billingGroupId)) {
+        return NextResponse.json({ error: "ไม่พบกลุ่มบิลใน session นี้" }, { status: 404 });
+      }
+      const billing = await closeBoardGameBillingGroupForBilling(
+        auth.tenantId,
+        billingGroupId,
+        body,
+        String(auth.adminId),
+      );
+      return NextResponse.json({ billing });
+    }
+    if (action === "move_seating" || action === "merge_seating") {
+      const relocate = action === "move_seating" ? moveBoardGameSeating : mergeBoardGameSeating;
+      const seating = await relocate(
+        auth.tenantId,
+        params.id,
+        String(body.targetTableId ?? ""),
+        body,
+        String(auth.adminId),
+      );
+      return NextResponse.json({ seating });
     }
     if (action === "cancel") {
       try {

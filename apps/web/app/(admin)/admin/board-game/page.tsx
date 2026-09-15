@@ -5,7 +5,7 @@ import {
   Select, Space, Spin, Switch, Table, Tabs, Tag, Typography, message,
 } from "antd";
 import {
-  ClockCircleOutlined, DollarOutlined, EditOutlined, PlusOutlined,
+  ClockCircleOutlined, DollarOutlined, EditOutlined, EyeOutlined, PlusOutlined,
   EnvironmentOutlined, ReloadOutlined, StopOutlined, SwapOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,8 +21,19 @@ type Rate = {
 };
 type OpenSession = {
   id: string; status: "OPEN" | "CLOSING"; billingMode: "OPEN_ENDED" | "FIXED_DURATION";
+  seatingId?: string; sessionIds?: string[]; sessionCount?: number;
   guestCount: number; startedAt: string; expectedEndAt: string | null;
   alertStatus: "NORMAL" | "ENDING_SOON" | "OVERDUE"; amountDue: number;
+  billingGroupCount?: number; awaitingPaymentCount?: number;
+};
+/** กลุ่มบิล (`9.89`) — โต๊ะหนึ่งออกได้หลายใบ และแต่ละใบเก็บเงินแยกกัน */
+type BillingGroup = {
+  id: string; groupNo: number; status: "OPEN" | "CLOSING" | "PAID" | "CANCELLED";
+  /** ค่าเล่นที่แช่ไว้ตอนปิด */
+  amountDue: number;
+  /** ของที่สั่งเข้าบิลระหว่างเล่น (`9.90`) */
+  tabAmount: number;
+  endedAt: string | null; currentOrderId: string | null;
 };
 type FloorArea = { id: string; name: string; sortOrder: number };
 type FloorTable = {
@@ -32,12 +43,26 @@ type FloorTable = {
 type Floor = { areas: FloorArea[]; tables: FloorTable[]; openCounts: Record<string, number> };
 type Participant = {
   id: string; displayName: string | null; participantType: string; billable: boolean;
-  hourlyRate: number; billingGroupNo: number; joinedAt: string; leftAt: string | null;
+  hourlyRate: number; billingGroupNo: number; billingGroupId: string;
+  billingGroupStatus: "OPEN" | "CLOSING" | "PAID" | "CANCELLED";
+  joinedAt: string; leftAt: string | null;
 };
 type SessionDetail = OpenSession & {
-  tableId: string; locationId: string; endedAt: string | null; currentOrderId: string | null;
+  tableId: string; seatingId: string; locationId: string; endedAt: string | null;
+  billingGroups: BillingGroup[];
   participants: Participant[];
   games: Array<{ id: string; copyId: string; copyCode: string; title: string; status: string; checkedOutAt: string }>;
+  identityHolds: IdentityHold[];
+};
+/**
+ * บัตรที่ร้านถือไว้ค้ำกล่องเกม (`9.93`) — เลขเต็มไม่เคยมาถึงรูปนี้ · มีแต่สี่ตัวท้ายไว้จับคู่กับ
+ * บัตรในลิ้นชัก และการอ่านเลขกลับออกมาเป็นคำขอของตัวเองที่ต้องมี `board_game.identity.reveal`
+ */
+type IdentityHold = {
+  id: string; loanId: string | null; documentKind: string;
+  holderName: string | null; documentNumberTail: string | null; hasDocumentNumber: boolean;
+  status: "HELD" | "RETURNED"; note: string | null;
+  takenAt: string; returnedAt: string | null;
 };
 type GameTitle = {
   id: string; title: string; minPlayers: number | null; maxPlayers: number | null;
@@ -51,6 +76,16 @@ type PublicProfile = {
   latitude: number | null; longitude: number | null; publishRates: boolean; publishAvailability: boolean;
 };
 type MemberOption = { customerId: string; name: string; memberNo: string | null };
+type PassPlan = {
+  id: string; locationId: string | null; code: string; name: string;
+  kind: "UNLIMITED" | "MINUTES"; price: number; durationDays: number;
+  includedMinutes: number | null; active: boolean; sortOrder: number; note: string | null;
+};
+type MemberPass = {
+  id: string; customerId: string; customerName: string | null; planName: string;
+  kind: "UNLIMITED" | "MINUTES"; remainingMinutes: number | null; pricePaid: number;
+  startsAt: string; expiresAt: string; status: "ACTIVE" | "EXPIRED" | "CANCELLED";
+};
 
 const emptyFloor: Floor = { areas: [], tables: [], openCounts: {} };
 const key = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
@@ -68,6 +103,8 @@ export default function BoardGamePage() {
   const canManageSession = can("board_game.session.manage");
   const canManageFloor = can("board_game.floor.manage");
   const canManageRate = can("board_game.rate.manage");
+  const canManagePass = can("board_game.pass.manage");
+  const canRevealIdentity = can("board_game.identity.reveal");
   const canManageLibrary = can("board_game.library.manage");
   const canCancel = can("board_game.session.cancel");
   const [locations, setLocations] = useState<Location[]>([]);
@@ -79,11 +116,16 @@ export default function BoardGamePage() {
   const [openTable, setOpenTable] = useState<FloorTable | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [relocateTargetId, setRelocateTargetId] = useState("");
   const [rateModal, setRateModal] = useState<Rate | "new" | null>(null);
   const [areaModal, setAreaModal] = useState(false);
   const [tableModal, setTableModal] = useState(false);
   const [titleModal, setTitleModal] = useState(false);
   const [copyTitle, setCopyTitle] = useState<GameTitle | null>(null);
+  const [passPlans, setPassPlans] = useState<PassPlan[]>([]);
+  const [memberPasses, setMemberPasses] = useState<MemberPass[]>([]);
+  const [planModal, setPlanModal] = useState<PassPlan | "new" | null>(null);
+  const [issuing, setIssuing] = useState(false);
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
   const [memberSearching, setMemberSearching] = useState(false);
   const notifiedAlerts = useRef(new Set<string>());
@@ -96,6 +138,10 @@ export default function BoardGamePage() {
   const [titleForm] = Form.useForm();
   const [copyForm] = Form.useForm();
   const [discoveryForm] = Form.useForm();
+  const [planForm] = Form.useForm();
+  const [issueForm] = Form.useForm();
+  const [identityForm] = Form.useForm();
+  const [heldCards, setHeldCards] = useState<IdentityHold[]>([]);
 
   const activeRates = useMemo(() => rates.filter((rate) => rate.active), [rates]);
   const availableCopies = useMemo(() => library.flatMap((title) =>
@@ -103,6 +149,78 @@ export default function BoardGamePage() {
       value: copy.id, label: `${title.title} · ${copy.copyCode}`,
     }))
   ), [library]);
+
+  // แพ็กเกจสมาชิก (`9.92`) — แคตตาล็อกที่ร้านขาย และสัญญาที่สมาชิกถืออยู่
+  const refreshPasses = useCallback(async () => {
+    if (!canManageSession) return;
+    const data = await api<{ plans: PassPlan[]; passes: MemberPass[] }>("/api/bms/board-game/passes");
+    setPassPlans(data.plans);
+    setMemberPasses(data.passes);
+  }, [canManageSession]);
+
+  async function savePlan(values: any) {
+    try {
+      await api("/api/bms/board-game/passes", {
+        method: "POST",
+        body: JSON.stringify({
+          ...values,
+          action: "plan",
+          id: planModal === "new" ? null : planModal?.id ?? null,
+        }),
+      });
+      setPlanModal(null);
+      await refreshPasses();
+      message.success(t("common.saved"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.save_failed"));
+    }
+  }
+
+  async function issuePass(values: any) {
+    setIssuing(true);
+    try {
+      // คีย์ใหม่ต่อการกดหนึ่งครั้ง · กดซ้ำเพราะเน็ตช้าต้องได้สัญญาใบเดิม ไม่ใช่ใบที่สอง
+      const { pass } = await api<{ pass: MemberPass }>("/api/bms/board-game/passes", {
+        method: "POST",
+        body: JSON.stringify({ ...values, action: "issue", idempotencyKey: crypto.randomUUID() }),
+      });
+      issueForm.resetFields();
+      await refreshPasses();
+      message.success(t("admin_board_game.pass_sold", { plan: pass.planName }));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.save_failed"));
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  function cancelPass(pass: MemberPass) {
+    let reason = "";
+    Modal.confirm({
+      title: t("admin_board_game.cancel_pass_title"),
+      // ยกเลิกแพ็กเกจไม่คืนเงินให้เอง — การคืนเงินเดินทางคืนเงินของ POS เหมือนของอย่างอื่น
+      content: (
+        <div>
+          <Typography.Paragraph type="secondary">{t("admin_board_game.cancel_pass_hint")}</Typography.Paragraph>
+          <Input.TextArea rows={2} onChange={(event) => { reason = event.target.value; }}
+            placeholder={t("admin_board_game.cancel_pass_reason")} />
+        </div>
+      ),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        if (!reason.trim()) {
+          message.error(t("admin_board_game.cancel_pass_reason"));
+          throw new Error("reason required");
+        }
+        await api("/api/bms/board-game/passes", {
+          method: "POST",
+          body: JSON.stringify({ action: "cancel", passId: pass.id, reason }),
+        });
+        await refreshPasses();
+        message.success(t("common.saved"));
+      },
+    });
+  }
 
   const refreshBase = useCallback(async () => {
     if (!canManageSession) return;
@@ -120,12 +238,18 @@ export default function BoardGamePage() {
     if (!selectedLocationId) return;
     setLoading(true);
     try {
-      const [floorData, libraryData] = await Promise.all([
+      const [floorData, libraryData, holdsData] = await Promise.all([
         api<{ floor: Floor }>(`/api/bms/board-game/floor?locationId=${encodeURIComponent(selectedLocationId)}`),
         api<{ titles: GameTitle[] }>(`/api/bms/board-game/library?locationId=${encodeURIComponent(selectedLocationId)}`),
+        // "ตอนนี้เราถือบัตรใครอยู่บ้าง" เป็นคำถามของลิ้นชัก ไม่ใช่ของโต๊ะใดโต๊ะหนึ่ง — ดูทีละโต๊ะ
+        // แปลว่าต้องเปิดทุกโต๊ะเพื่อจะรู้ว่ามีบัตรค้างไหม ซึ่งไม่มีใครทำตอนปิดร้าน
+        api<{ holds: IdentityHold[] }>(
+          `/api/bms/board-game/identity?locationId=${encodeURIComponent(selectedLocationId)}&openOnly=1`
+        ),
       ]);
       setFloor(floorData.floor);
       setLibrary(libraryData.titles);
+      setHeldCards(holdsData.holds);
     } catch (error) {
       message.error(error instanceof Error ? error.message : t("admin_board_game.load_failed"));
     } finally {
@@ -142,6 +266,7 @@ export default function BoardGamePage() {
   }, [canManageFloor, discoveryForm, locationId]);
 
   useEffect(() => { void refreshBase().catch((error) => message.error(String(error?.message ?? error))); }, [refreshBase]);
+  useEffect(() => { void refreshPasses().catch(() => undefined); }, [refreshPasses]);
   useEffect(() => { if (locationId) void refreshLocation(locationId); }, [locationId, refreshLocation]);
   useEffect(() => {
     if (locationId && canManageFloor) {
@@ -255,7 +380,35 @@ export default function BoardGamePage() {
   async function closeForBilling() {
     if (!detail) return;
     const data = await sessionAction("close_for_billing");
+    const groups = (data.billing?.groups ?? []) as BillingGroup[];
     message.success(t("admin_board_game.close_success", { amount: Number(data.billing.amountDue).toFixed(2) }));
+    if (groups.length > 1) {
+      // โต๊ะที่แยกบิลต้องเก็บเงินทีละใบ ปุ่มเดียวจึงพาไปได้ไม่ครบ
+      message.info(t("admin_board_game.close_split_hint", { count: groups.length }));
+    }
+  }
+
+  async function closeGroupForBilling(group: BillingGroup) {
+    const data = await sessionAction("close_group_for_billing", { billingGroupId: group.id });
+    const closed = (data.billing?.groups ?? [])[0] as BillingGroup | undefined;
+    message.success(t("admin_board_game.close_group_success", { group: group.groupNo }));
+    if (closed) {
+      window.location.href = `/pos?boardGameBillingGroupId=${encodeURIComponent(closed.id)}`;
+    }
+  }
+
+  async function relocateSeating() {
+    if (!detail || !relocateTargetId) return;
+    const target = floor.tables.find((table) => table.id === relocateTargetId);
+    if (!target) return;
+    const merging = Boolean(target.openSession);
+    await sessionAction(merging ? "merge_seating" : "move_seating", {
+      targetTableId: target.id,
+    });
+    setRelocateTargetId("");
+    message.success(t(merging
+      ? "admin_board_game.merge_seating_success"
+      : "admin_board_game.move_seating_success", { table: target.name }));
   }
 
   function cancelSession() {
@@ -303,6 +456,47 @@ export default function BoardGamePage() {
     });
     if (detail) await Promise.all([refreshDetail(detail.id), refreshLocation()]);
     message.success(t("admin_board_game.game_returned"));
+  }
+
+  async function takeIdentityHold() {
+    if (!detail) return;
+    const values = await identityForm.validateFields();
+    await api("/api/bms/board-game/identity", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "take",
+        sessionId: detail.id,
+        idempotencyKey: key("identity-hold"),
+        documentKind: values.documentKind,
+        holderName: values.holderName,
+        documentNumber: values.documentNumber ?? "",
+        loanId: values.loanId ?? null,
+      }),
+    });
+    identityForm.resetFields();
+    await Promise.all([refreshDetail(detail.id), refreshLocation()]);
+    message.success(t("admin_board_game.identity_taken"));
+  }
+
+  async function releaseIdentityHold(holdId: string) {
+    await api("/api/bms/board-game/identity", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "release", holdId }),
+    });
+    await Promise.all([detail ? refreshDetail(detail.id) : Promise.resolve(), refreshLocation()]);
+    message.success(t("admin_board_game.identity_released"));
+  }
+
+  /**
+   * อ่านเลขกลับออกมา — ลง audit ทุกครั้งฝั่ง server · แสดงด้วย `message` ที่หายไปเอง แทนการ
+   * เก็บลง state เพราะเลขที่ค้างอยู่บนจอคือเลขที่คนถัดไปที่เดินผ่านก็อ่านได้
+   */
+  async function revealIdentityNumber(holdId: string) {
+    const data = await api<{ documentNumber: string | null }>("/api/bms/board-game/identity", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "reveal", holdId }),
+    });
+    message.info(data.documentNumber ?? t("admin_board_game.identity_no_number"), 12);
   }
 
   async function saveRate() {
@@ -379,6 +573,7 @@ export default function BoardGamePage() {
 
   const locale = lang === "en" ? "en-GB" : "th-TH";
   const time = (value: string | null) => value ? new Date(value).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) : "-";
+  const day = (value: string | null) => value ? new Date(value).toLocaleDateString(locale) : "-";
   const elapsed = (startedAt: string) => Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 60_000));
   const tableStatus = (table: FloorTable) => table.blocked ? "BLOCKED" : table.openSession?.status ?? "AVAILABLE";
 
@@ -422,6 +617,9 @@ export default function BoardGamePage() {
                               <span>{session.guestCount} {t("admin_board_game.people")}{session.expectedEndAt ? ` · ${t("admin_board_game.ends_at")} ${time(session.expectedEndAt)}` : ""}</span>
                               {session.alertStatus !== "NORMAL" && <b>{t(`admin_board_game.alert_${session.alertStatus.toLowerCase()}`)}</b>}
                               {session.status === "CLOSING" && <b>฿{session.amountDue.toFixed(2)}</b>}
+                              {(session.sessionCount ?? 1) > 1 && <b>
+                                {t("admin_board_game.merged_session_count", { count: session.sessionCount ?? 1 })}
+                              </b>}
                             </>
                           )}
                         </button>
@@ -430,6 +628,33 @@ export default function BoardGamePage() {
                   </div>
                 </section>
               ))}
+              {/* บัตรที่ค้างอยู่ทั้งสาขา (`9.93`) — อยู่บนแท็บผังโต๊ะเพราะเป็นสิ่งที่ต้องเห็นตอนปิดร้าน
+                  โดยไม่ต้องเปิดทีละโต๊ะ · เลขเต็มไม่มาถึงจอนี้ มีแต่สี่ตัวท้าย */}
+              {heldCards.length > 0 && (
+                <section className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <Typography.Title level={4}>
+                      {t("admin_board_game.identity_open_title", { count: heldCards.length })}
+                    </Typography.Title>
+                  </div>
+                  <List size="small" dataSource={heldCards} renderItem={(hold) => (
+                    <List.Item actions={canManageSession ? [
+                      <Button key="release" size="small" icon={<SwapOutlined />}
+                        onClick={() => void releaseIdentityHold(hold.id)}>
+                        {t("admin_board_game.identity_release")}
+                      </Button>,
+                    ] : []}>
+                      <span>
+                        {hold.holderName ?? "-"} · {t(`admin_board_game.identity_kind_${hold.documentKind.toLowerCase()}`)}
+                        {hold.documentNumberTail
+                          ? ` · ${t("admin_board_game.identity_tail", { tail: hold.documentNumberTail })}`
+                          : ` · ${t("admin_board_game.identity_no_number")}`}
+                        {" · "}{time(hold.takenAt)}
+                      </span>
+                    </List.Item>
+                  )} />
+                </section>
+              )}
               {!floor.areas.length && <Empty description={t("admin_board_game.no_floor")} />}
             </>
           ) },
@@ -445,6 +670,84 @@ export default function BoardGamePage() {
                 </List.Item>
               )} />
             </section>
+          ) },
+          { key: "passes", label: t("admin_board_game.tab_passes"), forceRender: true, children: (
+            <div className={styles.settingsGrid}>
+              <section className={styles.panel}>
+                <div className={styles.panelHeader}>
+                  <div>
+                    <Typography.Title level={4}>{t("admin_board_game.pass_plans_title")}</Typography.Title>
+                    <Typography.Text type="secondary">{t("admin_board_game.pass_plans_description")}</Typography.Text>
+                  </div>
+                  {canManagePass && <Button icon={<PlusOutlined />}
+                    onClick={() => { planForm.resetFields(); planForm.setFieldsValue({ kind: "UNLIMITED", durationDays: 30 }); setPlanModal("new"); }}>
+                    {t("admin_board_game.add_pass_plan")}
+                  </Button>}
+                </div>
+                <Table rowKey="id" size="small" pagination={false} dataSource={passPlans} columns={[
+                  { title: t("admin_board_game.pass_plan_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}</> },
+                  {
+                    title: t("admin_board_game.pass_kind"),
+                    render: (_, row) => row.kind === "UNLIMITED"
+                      ? t("admin_board_game.pass_unlimited")
+                      : t("admin_board_game.pass_minutes_of", { minutes: row.includedMinutes ?? 0 }),
+                  },
+                  { title: t("admin_board_game.price"), render: (_, row) => `฿${row.price.toFixed(2)}` },
+                  { title: t("admin_board_game.pass_duration"), render: (_, row) => t("admin_board_game.pass_days", { days: row.durationDays }) },
+                  { title: "", render: (_, row) => canManagePass
+                    ? <Button aria-label={t("common.edit")} icon={<EditOutlined />}
+                        onClick={() => { planForm.setFieldsValue(row); setPlanModal(row); }} />
+                    : null },
+                ]} />
+              </section>
+
+              {canManagePass && <section className={styles.panel}>
+                <div className={styles.panelHeader}>
+                  <Typography.Title level={4}>{t("admin_board_game.sell_pass_title")}</Typography.Title>
+                </div>
+                <Typography.Text type="secondary">{t("admin_board_game.sell_pass_hint")}</Typography.Text>
+                <Form form={issueForm} layout="vertical" onFinish={issuePass} style={{ marginTop: 12 }}>
+                  <Form.Item name="customerId" label={t("admin_board_game.member")}
+                    rules={[{ required: true, message: t("admin_board_game.member_required") }]}>
+                    <Select showSearch allowClear filterOption={false} loading={memberSearching}
+                      onSearch={searchMemberOptions} options={memberSelectOptions}
+                      placeholder={t("admin_board_game.member_search_placeholder")} />
+                  </Form.Item>
+                  <Form.Item name="planId" label={t("admin_board_game.pass_plan")}
+                    rules={[{ required: true, message: t("admin_board_game.pass_plan_required") }]}>
+                    <Select options={passPlans.filter((row) => row.active).map((row) => ({
+                      value: row.id,
+                      label: `${row.name} · ฿${row.price.toFixed(2)} · ${t("admin_board_game.pass_days", { days: row.durationDays })}`,
+                    }))} />
+                  </Form.Item>
+                  <Button type="primary" htmlType="submit" loading={issuing}>{t("admin_board_game.sell_pass")}</Button>
+                </Form>
+              </section>}
+
+              <section className={`${styles.panel} ${styles.discoveryPanel}`}>
+                <div className={styles.panelHeader}>
+                  <Typography.Title level={4}>{t("admin_board_game.member_passes_title")}</Typography.Title>
+                </div>
+                <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={memberPasses} columns={[
+                  { title: t("admin_board_game.member"), render: (_, row) => row.customerName ?? row.customerId },
+                  { title: t("admin_board_game.pass_plan"), dataIndex: "planName" },
+                  {
+                    title: t("admin_board_game.pass_remaining"),
+                    render: (_, row) => row.kind === "UNLIMITED"
+                      ? t("admin_board_game.pass_unlimited")
+                      : t("admin_board_game.pass_minutes_of", { minutes: row.remainingMinutes ?? 0 }),
+                  },
+                  { title: t("admin_board_game.pass_expires"), render: (_, row) => time(row.expiresAt) },
+                  {
+                    title: t("common.status"),
+                    render: (_, row) => <Tag>{t(`admin_board_game.pass_status_${row.status.toLowerCase()}`)}</Tag>,
+                  },
+                  { title: "", render: (_, row) => canManagePass && row.status === "ACTIVE"
+                    ? <Button danger size="small" onClick={() => cancelPass(row)}>{t("common.cancel")}</Button>
+                    : null },
+                ]} />
+              </section>
+            </div>
           ) },
           { key: "settings", label: t("admin_board_game.tab_settings"), forceRender: true, children: (
             <div className={styles.settingsGrid}>
@@ -531,8 +834,41 @@ export default function BoardGamePage() {
         </Form>
       </Modal>
 
-      <Modal open={Boolean(detail)} title={detail ? t("admin_board_game.session_title", { table: floor.tables.find((row) => row.id === detail.tableId)?.name ?? "" }) : ""} footer={null} onCancel={() => setDetail(null)} width={820}>
+      <Modal open={Boolean(detail)} title={detail ? t("admin_board_game.session_title", { table: floor.tables.find((row) => row.id === detail.tableId)?.name ?? "" }) : ""} footer={null} onCancel={() => { setDetail(null); setRelocateTargetId(""); }} width={820}>
         {detailLoading || !detail ? <Spin /> : <Space direction="vertical" size="large" className={styles.full}>
+          {(() => {
+            const currentTable = floor.tables.find((row) => row.id === detail.tableId);
+            const sessionIds = currentTable?.openSession?.sessionIds ?? [detail.id];
+            const targets = floor.tables.filter((row) => !row.blocked && row.id !== detail.tableId);
+            return <Space direction="vertical" className={styles.full}>
+              {sessionIds.length > 1 && <Space wrap>
+                <Typography.Text type="secondary">{t("admin_board_game.sessions_at_seating")}</Typography.Text>
+                {sessionIds.map((id, index) => <Button key={id} size="small"
+                  type={id === detail.id ? "primary" : "default"}
+                  onClick={() => void refreshDetail(id)}>
+                  {t("admin_board_game.session_number", { number: index + 1 })}
+                </Button>)}
+              </Space>}
+              <Alert type="info" showIcon closable message={t(sessionIds.length > 1
+                ? "admin_board_game.relocate_hint_shared"
+                : "admin_board_game.relocate_hint")} />
+              <Space wrap>
+                <Select value={relocateTargetId || undefined} className={styles.rateSelect}
+                  placeholder={t("admin_board_game.target_table")}
+                  options={targets.map((row) => ({
+                    value: row.id,
+                    label: `${row.name} · ${t(row.openSession
+                      ? "admin_board_game.target_merge"
+                      : "admin_board_game.target_move")}`,
+                  }))}
+                  onChange={setRelocateTargetId} />
+                <Button icon={<SwapOutlined />} disabled={!relocateTargetId}
+                  onClick={() => void relocateSeating()}>
+                  {t("admin_board_game.relocate_confirm")}
+                </Button>
+              </Space>
+            </Space>;
+          })()}
           <Descriptions size="small" column={{ xs: 1, sm: 2 }} items={[
             { key: "status", label: t("common.status"), children: <Tag>{t(`admin_board_game.session_${detail.status.toLowerCase()}`)}</Tag> },
             { key: "start", label: t("admin_board_game.started_at"), children: time(detail.startedAt) },
@@ -541,7 +877,7 @@ export default function BoardGamePage() {
           ]} />
           <div>
             <Typography.Title level={5}>{t("admin_board_game.participants")}</Typography.Title>
-            <List size="small" dataSource={detail.participants} renderItem={(row) => <List.Item actions={detail.status === "OPEN" && !row.leftAt ? [<Button key="leave" onClick={() => void leaveParticipant(row.id)}>{t("admin_board_game.mark_left")}</Button>] : []}>
+            <List size="small" dataSource={detail.participants} renderItem={(row) => <List.Item actions={row.billingGroupStatus === "OPEN" && !row.leftAt ? [<Button key="leave" onClick={() => void leaveParticipant(row.id)}>{t("admin_board_game.mark_left")}</Button>] : []}>
               <span>{row.displayName || t(`admin_board_game.type_${row.participantType.toLowerCase()}`)} · ฿{row.hourlyRate}/{t("admin_board_game.hour_short")} · {t("admin_board_game.bill_group")} {row.billingGroupNo}</span>
             </List.Item>} />
             {detail.status === "OPEN" && <Form form={participantForm} layout="inline" className={styles.inlineForm} onFinish={() => void addParticipant()}>
@@ -566,9 +902,92 @@ export default function BoardGamePage() {
             <List size="small" locale={{ emptyText: t("admin_board_game.no_games_at_table") }} dataSource={detail.games} renderItem={(game) => <List.Item actions={game.status === "CHECKED_OUT" ? [<Button key="return" icon={<SwapOutlined />} onClick={() => void returnGame(game.id)}>{t("admin_board_game.return_game")}</Button>] : []}>{game.title} · {game.copyCode} · {t(`admin_board_game.loan_${game.status.toLowerCase()}`)}</List.Item>} />
             {detail.status === "OPEN" && <Select showSearch optionFilterProp="label" className={styles.gameSelect} placeholder={t("admin_board_game.checkout_game")} options={availableCopies} onSelect={(copyId) => void checkoutGame(copyId)} />}
           </div>
+          {/* บัตรที่รับไว้ค้ำกล่องเกม (`9.93`)
+              คืนบัตร = ล้างชื่อ/เลข/สี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน แถวที่เหลือตอบได้แค่ว่า
+              "รับไว้แล้วคืนไปแล้ว ใครเป็นคนยื่นให้" ซึ่งเป็นคำถามที่ต้องตอบได้เมื่อลูกค้ากลับมาทวง */}
+          <div>
+            <Typography.Title level={5}>{t("admin_board_game.identity_holds")}</Typography.Title>
+            <List size="small" locale={{ emptyText: t("admin_board_game.identity_none") }}
+              dataSource={detail.identityHolds}
+              renderItem={(hold) => <List.Item actions={hold.status === "HELD" ? [
+                ...(canRevealIdentity && hold.hasDocumentNumber
+                  ? [<Button key="reveal" size="small" icon={<EyeOutlined />}
+                      onClick={() => void revealIdentityNumber(hold.id)}>
+                      {t("admin_board_game.identity_reveal")}
+                    </Button>]
+                  : []),
+                ...(canManageSession
+                  ? [<Button key="release" size="small" icon={<SwapOutlined />}
+                      onClick={() => void releaseIdentityHold(hold.id)}>
+                      {t("admin_board_game.identity_release")}
+                    </Button>]
+                  : []),
+              ] : []}>
+                {hold.status === "RETURNED"
+                  ? <span>
+                      <Tag>{t("admin_board_game.identity_returned")}</Tag>
+                      {t(`admin_board_game.identity_kind_${hold.documentKind.toLowerCase()}`)} · {time(hold.returnedAt)}
+                    </span>
+                  : <span>
+                      {hold.holderName ?? "-"} · {t(`admin_board_game.identity_kind_${hold.documentKind.toLowerCase()}`)}
+                      {hold.documentNumberTail
+                        ? ` · ${t("admin_board_game.identity_tail", { tail: hold.documentNumberTail })}`
+                        : ` · ${t("admin_board_game.identity_no_number")}`}
+                    </span>}
+              </List.Item>} />
+            {detail.status === "OPEN" && canManageSession && (
+              <Form form={identityForm} layout="inline" className={styles.inlineForm}
+                onFinish={() => void takeIdentityHold()}>
+                <Form.Item name="documentKind" initialValue="NATIONAL_ID" rules={[{ required: true }]}>
+                  <Select className={styles.rateSelect}
+                    options={["NATIONAL_ID", "STUDENT_ID", "DRIVER_LICENSE", "PASSPORT", "OTHER"].map((value) => ({
+                      value, label: t(`admin_board_game.identity_kind_${value.toLowerCase()}`),
+                    }))} />
+                </Form.Item>
+                <Form.Item name="holderName" rules={[{ required: true }]}>
+                  <Input placeholder={t("admin_board_game.identity_holder_name")} />
+                </Form.Item>
+                {/* เลขไม่บังคับโดยตั้งใจ — อ่านเหตุผลที่หัวไฟล์ lib/bms/boardGameIdentity.ts */}
+                <Form.Item name="documentNumber">
+                  <Input placeholder={t("admin_board_game.identity_number_optional")} />
+                </Form.Item>
+                <Form.Item name="loanId">
+                  <Select allowClear className={styles.gameSelect}
+                    placeholder={t("admin_board_game.identity_for_loan")}
+                    options={detail.games
+                      .filter((game) => game.status === "CHECKED_OUT")
+                      .map((game) => ({ value: game.id, label: `${game.title} · ${game.copyCode}` }))} />
+                </Form.Item>
+                <Button htmlType="submit" icon={<PlusOutlined />}>
+                  {t("admin_board_game.identity_take")}
+                </Button>
+              </Form>
+            )}
+          </div>
           <Space wrap>
-            {detail.status === "OPEN" && <Button type="primary" icon={<DollarOutlined />} onClick={() => void closeForBilling()}>{t("admin_board_game.close_for_billing")}</Button>}
-            {detail.status === "CLOSING" && <Button type="primary" icon={<DollarOutlined />} href={`/pos?boardGameSessionId=${encodeURIComponent(detail.id)}`}>{t("admin_board_game.open_pos")}</Button>}
+            {detail.billingGroups.length > 1 && detail.billingGroups
+              .filter((group) => group.status === "OPEN")
+              .map((group) => (
+                <Button key={`close-${group.id}`} icon={<DollarOutlined />}
+                  onClick={() => void closeGroupForBilling(group)}>
+                  {t("admin_board_game.close_group_for_billing", { group: group.groupNo })}
+                </Button>
+              ))}
+            {detail.status === "OPEN" && <Button type="primary" icon={<DollarOutlined />} onClick={() => void closeForBilling()}>
+              {detail.billingGroups.length > 1
+                ? t("admin_board_game.close_all_groups")
+                : t("admin_board_game.close_for_billing")}
+            </Button>}
+            {detail.billingGroups
+              .filter((group) => group.status === "CLOSING")
+              .map((group) => (
+                <Button key={group.id} type="primary" icon={<DollarOutlined />}
+                  href={`/pos?boardGameBillingGroupId=${encodeURIComponent(group.id)}`}>
+                  {detail.billingGroups.length > 1
+                    ? `${t("admin_board_game.open_pos")} · ${t("admin_board_game.bill_group")} ${group.groupNo} (฿${(group.amountDue + group.tabAmount).toFixed(2)})`
+                    : t("admin_board_game.open_pos")}
+                </Button>
+              ))}
             {canCancel && <Button danger icon={<StopOutlined />} onClick={cancelSession}>{t("admin_board_game.cancel_session")}</Button>}
           </Space>
         </Space>}
@@ -579,6 +998,30 @@ export default function BoardGamePage() {
           <Form.Item name="name" label={t("admin_board_game.rate_name")} rules={[{ required: true }]}><Input /></Form.Item>
           <div className={styles.formGrid}><Form.Item name="customerType" label={t("admin_board_game.customer_type")}><Select options={["GENERAL", "STUDENT", "MEMBER", "CHILD", "CUSTOM"].map((value) => ({ value, label: t(`admin_board_game.type_${value.toLowerCase()}`) }))} /></Form.Item><Form.Item name="pricePerHour" label={t("admin_board_game.price_hour")} rules={[{ required: true }]}><InputNumber min={0} /></Form.Item></div>
           <div className={styles.formGrid}><Form.Item name="minimumMinutes" label={t("admin_board_game.minimum_minutes")}><InputNumber min={0} /></Form.Item><Form.Item name="roundingMinutes" label={t("admin_board_game.rounding")}><InputNumber min={1} /></Form.Item><Form.Item name="graceMinutes" label={t("admin_board_game.grace_minutes")}><InputNumber min={0} /></Form.Item></div>
+          <Form.Item name="active" label={t("common.active")} valuePropName="checked"><Switch /></Form.Item>
+        </Form>
+      </Modal>
+      <Modal open={Boolean(planModal)} title={t("admin_board_game.pass_plan_editor")}
+        onCancel={() => setPlanModal(null)} onOk={() => void planForm.submit()}>
+        <Form form={planForm} layout="vertical" onFinish={savePlan}
+          initialValues={{ kind: "UNLIMITED", price: 0, durationDays: 30, active: true, sortOrder: 0 }}>
+          <Form.Item name="name" label={t("admin_board_game.pass_plan_name")} rules={[{ required: true }]}><Input /></Form.Item>
+          <div className={styles.formGrid}>
+            <Form.Item name="kind" label={t("admin_board_game.pass_kind")}>
+              <Select options={["UNLIMITED", "MINUTES"].map((value) => ({
+                value, label: t(`admin_board_game.pass_kind_${value.toLowerCase()}`),
+              }))} />
+            </Form.Item>
+            <Form.Item name="price" label={t("admin_board_game.price")} rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
+            <Form.Item name="durationDays" label={t("admin_board_game.pass_duration")} rules={[{ required: true }]}><InputNumber min={1} max={3650} /></Form.Item>
+          </div>
+          {/* แบบไม่อั้นไม่มีโควตาให้กรอก — ช่องที่กรอกแล้วไม่มีผลคือช่องที่สอนให้คนเลิกเชื่อฟอร์ม */}
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.kind !== next.kind}>
+            {({ getFieldValue }) => getFieldValue("kind") === "MINUTES" ? (
+              <Form.Item name="includedMinutes" label={t("admin_board_game.pass_included_minutes")}
+                rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
+            ) : null}
+          </Form.Item>
           <Form.Item name="active" label={t("common.active")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>

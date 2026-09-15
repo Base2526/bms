@@ -11,10 +11,11 @@ async function handleGET(req: NextRequest) {
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
   }
-  const sessionId = req.nextUrl.searchParams.get("id")?.trim();
-  if (!sessionId) return NextResponse.json({ error: "id is required" }, { status: 400 });
+  // `id` = กลุ่มบิล (`9.89`) ไม่ใช่ session — โต๊ะที่แยกกลุ่มมีบิลรออยู่หลายใบพร้อมกัน
+  const billingGroupId = req.nextUrl.searchParams.get("id")?.trim();
+  if (!billingGroupId) return NextResponse.json({ error: "id is required" }, { status: 400 });
   try {
-    const checkout = await getBoardGameCheckoutForPos(device.tenantId, device.locationId, sessionId);
+    const checkout = await getBoardGameCheckoutForPos(device.tenantId, device.locationId, billingGroupId);
     return NextResponse.json({ checkout });
   } catch (error) {
     return NextResponse.json(

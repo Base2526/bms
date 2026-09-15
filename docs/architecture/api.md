@@ -237,25 +237,44 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 - `GET|POST /api/pos/restaurant/incoming` (`9.56`) — chat/online food orders waiting for a human
   accept. Payment alone never creates kitchen work; the `PAID -> PACKING` accept does, and it needs
   PIN + `pos.sell`.
+- `GET|POST /api/bms/board-game/passes` (`9.92`) — member passes. `GET` returns the plan catalogue
+  and the contracts members hold and needs only `board_game.session.manage`, because the counter has
+  to know what the person at the table already paid for before explaining a bill. `POST` carries
+  `plan`, `issue` or `cancel` and needs `board_game.pass.manage` — all three change what the shop
+  owes a customer. Price and minutes always come from the plan server-side; issuing takes an
+  `idempotencyKey` and a key already spent on a different request answers `409`, never a `500`.
 - `GET|POST /api/pos/restaurant/qr-orders` (`9.60`) — the staff inbox for table-QR proposals. `GET`
   lists the last 24 hours for the device's branch; `POST` takes `accept` or `reject` with PIN +
   `pos.sell`. Accepting adds the customer's lines to the existing check, reserves stock and issues
   the kitchen tickets in **one** transaction, so a partially accepted round cannot exist. A menu
   marked sold out that day is refused at acceptance with the dish named, and acceptance is blocked
   while the check still holds staff-typed lines that were never sent.
+- `GET|POST /api/bms/board-game/identity` (`9.93`) — the card held while a game box is out. `GET`
+  lists a table's cards, or what the branch is holding right now, with `board_game.session.manage`;
+  `POST` carries `take`, `release` or `reveal`. Taking and returning use the same counter permission,
+  but `reveal` requires `board_game.identity.reveal` (Manager) and writes an audit row every time —
+  reading a stored number is a different act from holding a card. Returning a card erases the name,
+  the number and the last four in the same transaction; the row stays as proof it went back. The
+  number itself never appears in any other response, only its last four characters.
 - `POST /api/pos/board-game` (`9.79`–`9.83`) — one PIN-bearing adapter for the register's
   **table/time** tab: `workspace` (floor, time rates, playable library), `session`, and the writing
-  commands `open`, `participant.add`, `participant.leave`, `timing`, `close`, `cancel`,
-  `copy.checkout`, `copy.return`. Reads require a PIN too, because the floor carries member and
-  guest names and the GraphQL equivalent (`bmsPosBoardGame*`) demands the same — which is why every
+  commands `open`, `participant.add`, `participant.leave`, `timing`, `tab.add`, `tab.remove`,
+  `seating.move`, `seating.merge`, `group.close`, `close`, `cancel`, `copy.checkout`,
+  `copy.return`, `identity.hold`, `identity.release`. **There is deliberately no `identity.reveal`
+  here**: a register is a shared screen facing the customer, so reading a stored ID number back is
+  back-office only — the native register (`bmsPosTakeBoardGameIdentityHold` /
+  `bmsPosReleaseBoardGameIdentityHold`) has the same two commands and the same omission. Reads require a PIN too, because the floor carries member and guest names and the GraphQL equivalent (`bmsPosBoardGame*`) demands the same — which is why every
   action is `POST`: a PIN must never reach an access log through a query string. Permissions, the
   branch check and input normalization all come from `lib/bms/boardGamePosOperations.ts`, the same
   module the native register reaches through GraphQL, so neither surface can drift into allowing
   what the other refuses. A rule rejection answers `400`/`404`/`409` carrying the reason the counter
   needs; only a real fault stays a `500`.
-- `GET /api/pos/board-game/session?id=` (`9.79`) — the closed time bill handed to the Sell tab.
-  Device token only: it is the handoff target of the `/admin/board-game` link and loads before a
-  cashier has typed a PIN.
+- `GET /api/pos/board-game/session?id=` (`9.79`, re-keyed by `9.89`) — the closed time bill handed
+  to the Sell tab. `id` is a **billing group**, not a session: one table visit can hand the register
+  several bills, so naming the table cannot say which one is being paid. The response carries
+  `sessionId`, `groupNo` and `sessionGroupCount` so the counter can see that another bill of the
+  same table is still waiting. Device token only: it is the handoff target of the
+  `/admin/board-game` link and loads before a cashier has typed a PIN.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift

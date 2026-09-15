@@ -2376,10 +2376,42 @@ type BmsPosBoardGameArea {
 
 type BmsPosBoardGameBilling {
   amountDue: Float!
-  endedAt: String!
+  endedAt: String
+
+  """บิลที่เพิ่งถูกปิด — หนึ่งรายการต่อหนึ่งกลุ่ม ต้องเก็บเงินทีละใบ"""
+  groups: [BmsPosBoardGameBillingGroup!]!
   lines: [BmsPosBoardGameChargeLine!]!
   replayed: Boolean!
   sessionId: ID!
+}
+
+"""
+กลุ่มบิลของโต๊ะบอร์ดเกม (9.89) — หน่วยที่บิลหนึ่งใบเก็บเงิน
+โต๊ะที่แยกกลุ่มจะคืนหลายรายการ และแต่ละรายการเก็บเงินแยกใบกัน
+"""
+type BmsPosBoardGameBillingGroup {
+  """ค่าเล่นที่แช่ไว้ตอนปิด — ยังเล่นอยู่จะเป็น 0"""
+  amountDue: Float!
+  chargeSnapshot: [BmsPosBoardGameChargeLine!]!
+  currentOrderId: ID
+  endedAt: String
+  groupNo: Int!
+  id: ID!
+  status: String!
+
+  """ยอดของที่สั่งเข้าบิลระหว่างเล่น (9.90)"""
+  tabAmount: Float!
+  tabItems: [BmsPosBoardGameTabItem!]!
+}
+
+"""
+ปิดเฉพาะบิลหนึ่งกลุ่ม ขณะที่กลุ่มอื่นบนโต๊ะยังเล่นต่อได้ (Board Game Phase 3)
+"""
+input BmsPosBoardGameBillingGroupActionInput {
+  billingGroupId: ID!
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
 }
 
 type BmsPosBoardGameChargeLine {
@@ -2396,10 +2428,26 @@ type BmsPosBoardGameCheckout {
   amountDue: Float!
   chargeLineCount: Int!
   endedAt: String!
+  groupNo: Int!
+
+  """id ของกลุ่มบิล (9.89) ไม่ใช่ session"""
   id: ID!
+
+  """
+  จำนวนกลุ่มบิลของโต๊ะนี้ — ใช้บอกพนักงานว่ายังมีบิลอื่นของโต๊ะเดียวกันรออยู่ไหม
+  """
+  sessionGroupCount: Int!
+  sessionId: ID!
   startedAt: String!
+
+  """ยอดของที่สั่งไว้ระหว่างเล่น (9.90)"""
+  tabAmount: Float!
+  tabItemCount: Int!
   tableCode: String!
   tableName: String!
+
+  """ค่าเล่น + ของที่สั่งไว้ = ยอดที่ต้องเก็บจริง"""
+  totalDue: Float!
 }
 
 input BmsPosBoardGameCheckoutCopyInput {
@@ -2421,6 +2469,32 @@ type BmsPosBoardGameCopy {
 type BmsPosBoardGameFloor {
   areas: [BmsPosBoardGameArea!]!
   tables: [BmsPosBoardGameTable!]!
+}
+
+"""
+บัตรที่ร้านถือไว้ค้ำกล่องเกม (9.93)
+
+**ไม่มีเลขเต็มในชนิดนี้โดยตั้งใจ** — มีแต่สี่ตัวท้ายไว้จับคู่กับบัตรในลิ้นชัก ·
+การอ่านเลขกลับออกมาอยู่หลังบ้านอย่างเดียว (board_game.identity.reveal) และลง audit ทุกครั้ง
+"""
+type BmsPosBoardGameIdentityHold {
+  customerId: ID
+  documentKind: String!
+  documentNumberTail: String
+  hasDocumentNumber: Boolean!
+
+  """null หลังคืนบัตร — ชื่อถูกล้างไปพร้อมเลข"""
+  holderName: String
+  id: ID!
+  loanId: ID
+  note: String
+  purgedAt: String
+  replayed: Boolean
+  returnedAt: String
+  returnedByName: String
+  status: String!
+  takenAt: String!
+  takenByName: String
 }
 
 input BmsPosBoardGameLeaveParticipantInput {
@@ -2457,7 +2531,13 @@ input BmsPosBoardGameOpenInput {
 
 type BmsPosBoardGameParticipant {
   billable: Boolean
+
+  """
+  กลุ่มบิลที่ผู้เล่นคนนี้อยู่ (9.89) — เป็นตัวตัดสินว่าบิลใบไหนเก็บเงินคนนี้
+  """
+  billingGroupId: ID
   billingGroupNo: Int
+  billingGroupStatus: String
   displayName: String
   graceMinutes: Int
   hourlyRate: Float
@@ -2491,6 +2571,17 @@ type BmsPosBoardGameRate {
   sortOrder: Int!
 }
 
+"""
+คืนบัตรให้ลูกค้า — ล้างชื่อ เลข และสี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน (9.93)
+"""
+input BmsPosBoardGameReleaseIdentityHoldInput {
+  cashierUserId: ID!
+  holdId: ID!
+  idempotencyKey: String!
+  note: String
+  pin: String!
+}
+
 input BmsPosBoardGameReturnCopyInput {
   cashierUserId: ID!
   copyStatus: String
@@ -2501,19 +2592,47 @@ input BmsPosBoardGameReturnCopyInput {
   status: String
 }
 
+"""
+ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91)
+"""
+input BmsPosBoardGameSeatingActionInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+  sessionId: ID!
+  targetTableId: ID!
+}
+
+type BmsPosBoardGameSeatingActionResult {
+  action: String!
+  fromTableId: ID!
+  replayed: Boolean!
+  seatingId: ID!
+  sessionIds: [ID!]!
+  sourceSeatingId: ID!
+  toTableId: ID!
+}
+
 type BmsPosBoardGameSession {
   alertBeforeMinutes: Int!
   alertStatus: String!
   amountDue: Float!
+
+  """กลุ่มบิลทั้งหมดของโต๊ะนี้ (9.89)"""
+  billingGroups: [BmsPosBoardGameBillingGroup!]!
   billingMode: String!
-  currentOrderId: ID
+  currentOrderId: ID @deprecated(reason: "9.89 ย้ายบิลไปที่กลุ่ม — ใช้ billingGroups[].currentOrderId แทน โต๊ะหนึ่งมีได้หลายบิล")
   endedAt: String
   expectedEndAt: String
   games: [BmsPosBoardGameLoan!]!
   guestCount: Int!
   id: ID!
+
+  """บัตรที่รับไว้ของโต๊ะนี้ (9.93) — ใบที่ยัง HELD บล็อกการปิดบิลใบสุดท้าย"""
+  identityHolds: [BmsPosBoardGameIdentityHold!]!
   locationId: ID!
   participants: [BmsPosBoardGameParticipant!]!
+  seatingId: ID!
   startedAt: String!
   status: String!
   tableId: ID!
@@ -2531,15 +2650,42 @@ type BmsPosBoardGameSessionSummary {
   alertBeforeMinutes: Int
   alertStatus: String
   amountDue: Float
+
+  """จำนวนบิลของโต๊ะนี้ที่ปิดเวลาแล้วแต่ยังไม่ได้เก็บเงิน"""
+  awaitingPaymentCount: Int
+
+  """จำนวนกลุ่มบิลของโต๊ะนี้ (9.89) — มากกว่า 1 แปลว่าโต๊ะนี้แยกบิล"""
+  billingGroupCount: Int
   billingMode: String
   endedAt: String
   expectedEndAt: String
   guestCount: Int
   id: ID
   replayed: Boolean
+
+  """ที่นั่งจริงบนผัง (9.91) — หลาย session แชร์ค่านี้หลังรวมโต๊ะ"""
+  seatingId: ID
+  sessionCount: Int
   sessionId: ID
+  sessionIds: [ID!]
   startedAt: String
   status: String
+}
+
+"""
+รายการที่สั่งเข้าบิลระหว่างเล่น (9.90) — server จองสต็อกให้แล้วตั้งแต่ตอนเพิ่ม
+"""
+type BmsPosBoardGameTabItem {
+  addedAt: String
+  id: ID!
+  modifierNames: [String!]!
+  note: String
+  packCode: String
+  packQty: Int!
+  productName: String!
+  size: String!
+  sku: String!
+  unitName: String
 }
 
 type BmsPosBoardGameTable {
@@ -2551,6 +2697,24 @@ type BmsPosBoardGameTable {
   openSession: BmsPosBoardGameSessionSummary
   seats: Int!
   sortOrder: Int!
+}
+
+"""
+รับบัตรไว้ค้ำกล่องเกม (9.93) — เลขไม่บังคับ และไม่เคยถูกส่งกลับออกมาทางใดเลย
+"""
+input BmsPosBoardGameTakeIdentityHoldInput {
+  cashierUserId: ID!
+  customerId: ID
+  documentKind: String!
+
+  """เข้ารหัสก่อนเก็บเสมอ · ปล่อยว่างได้เมื่อร้านเก็บแต่ตัวบัตรจริง"""
+  documentNumber: String
+  holderName: String!
+  idempotencyKey: String!
+  loanId: ID
+  note: String
+  pin: String!
+  sessionId: ID!
 }
 
 input BmsPosBoardGameTimingInput {
@@ -4111,7 +4275,7 @@ type BmsPosReturnedItem {
 }
 
 input BmsPosSaleInput {
-  boardGameSessionId: ID
+  boardGameBillingGroupId: ID
   cashierUserId: ID!
   couponCode: String
   creditApproverPin: String
@@ -6237,6 +6401,7 @@ type Mutation {
   bmsPosCancelStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosCashMovement(input: BmsPosCashMovementInput!): BmsPosCashMovementActionResult!
   bmsPosCheckoutBoardGameCopy(input: BmsPosBoardGameCheckoutCopyInput!): BmsPosBoardGameLoan!
+  bmsPosCloseBoardGameBillingGroup(input: BmsPosBoardGameBillingGroupActionInput!): BmsPosBoardGameBilling!
   bmsPosCloseBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameBilling!
   bmsPosCollectAr(input: BmsPosCollectArInput!): BmsPosArReceiptResult!
   bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): BmsPosCompleteRefundResult!
@@ -6248,12 +6413,15 @@ type Mutation {
   bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): BmsPosKitchenTicketActionResult!
   bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): BmsPosKitchenTicketsActionResult!
   bmsPosLeaveBoardGameParticipant(input: BmsPosBoardGameLeaveParticipantInput!): BmsPosBoardGameParticipant!
+  bmsPosMergeBoardGameSeating(input: BmsPosBoardGameSeatingActionInput!): BmsPosBoardGameSeatingActionResult!
+  bmsPosMoveBoardGameSeating(input: BmsPosBoardGameSeatingActionInput!): BmsPosBoardGameSeatingActionResult!
   bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!
   bmsPosOpenBoardGameSession(input: BmsPosBoardGameOpenInput!): BmsPosBoardGameSessionSummary!
   bmsPosPark(input: BmsPosParkInput!): BmsPosParkActionResult!
   bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): BmsPurchaseResult!
   bmsPosReceiveStockTransfer(input: BmsPosStockTransferReceiveInput!): BmsMobileStockTransferActionResult!
   bmsPosRecordStockCountItem(input: BmsPosStockCountItemInput!): BmsMobileStockCountActionResult!
+  bmsPosReleaseBoardGameIdentityHold(input: BmsPosBoardGameReleaseIdentityHoldInput!): BmsPosBoardGameIdentityHold!
   bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): BmsPosPharmacyReviewResult!
   bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): BmsPosRestaurantIncomingActionResult!
   bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): BmsPosRestaurantQrActionResult!
@@ -6294,6 +6462,7 @@ type Mutation {
   bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!
   bmsPosSendStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
+  bmsPosTakeBoardGameIdentityHold(input: BmsPosBoardGameTakeIdentityHoldInput!): BmsPosBoardGameIdentityHold!
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!

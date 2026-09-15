@@ -590,27 +590,103 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83` own timed play sessions and the playable game library. The operating
-brief is [business/board-game-cafe.md](business/board-game-cafe.md).
+and migrations `9.79`–`9.83` and `9.89`–`9.92` own timed play sessions, where a party is sitting,
+what a bill settles, and the
+playable game library. The operating brief is
+[business/board-game-cafe.md](business/board-game-cafe.md).
 
 - **Time, retail goods, and playable copies stay separate.** Snacks, drinks, accessories, and games
   sold to take home remain Products/Inventory. Participant time is calculated from rate snapshots on
   the session. A library copy is an asset with checkout/return/condition state and borrowing it never
   moves sellable stock.
-- **The session freezes the bill before POS receives it.** Opening snapshots hourly rate, minimum,
+- **A bill belongs to a billing group, never to a table (`9.89`).** `bms_board_game_billing_groups`
+  owns the settlement key, the frozen `charge_snapshot`, the `amount_due` and the settling order; the
+  session owns seating and timing only. Opening a table creates one group per group number the staff
+  typed, so an unsplit table still produces exactly one bill. Every operation that names a bill takes
+  a **group id**: a table id is ambiguous the moment the table is split, and an operation that
+  guesses will one day charge the wrong people. The session's own money columns are history —
+  writing them again is how two rows start disagreeing about what the table owes.
+- **A bill can be ordered onto while people are still playing (`9.90`).**
+  `bms_board_game_group_items` is the tab and the group's PENDING order is a reservation derived
+  from it. Adding a line reserves stock **now**, because the drink is already gone; the old
+  reservation is released **inside the transaction that builds the next order**, so stock is never
+  briefly free for another register to sell. Tab lines are server-owned: a caller cannot put an
+  item on a bill without it passing through the add path that reserved it. Serial-tracked products
+  are refused on a tab, since serials are collected from the register's cart and a tab line never
+  reaches that gate. `tab_amount` is the tab's value and stays separate from `amount_due`, the
+  frozen play-time charge — one column for both means closing the table overwrites the snack total.
+  The register must charge `totalDue` (time + tab): billing only the time sends a short amount and
+  the whole bill is discarded as `PAYMENT_MISMATCH` at the counter.
+- **The group freezes the bill before POS receives it.** Opening snapshots hourly rate, minimum,
   rounding, and grace per participant. Closing requires every checked-out copy to be returned and
-  writes `charge_snapshot` plus `amount_due`; POS reads that frozen result and never accepts an amount
-  supplied by the browser. `recordPosSale()` validates branch/state again and marks the session
-  `PAID` in the same transaction as payment, stock, tax, drawer, receipt, and audit.
-- **One table has at most one active session.** `OPEN` and `CLOSING` share a partial unique index.
-  Mutations use tenant transactions, advisory/idempotency locks, and location checks derived from the
-  authenticated actor/device. Replaying a key with a different request hash is an error.
+  writes `charge_snapshot` plus `amount_due` **on each group**, charging only that group's people;
+  POS reads that frozen result and never accepts an amount supplied by the browser. `recordPosSale()`
+  validates branch/state again and marks the *group* `PAID` in the same transaction as payment,
+  stock, tax, drawer, receipt, and audit. A closed group refuses new players, because their time
+  could never reach the lines that were already frozen.
+- **One group may pay and leave while the others keep playing (Phase 3).** Closing one group freezes
+  only that group's time and tab; other groups remain `OPEN`, keep accruing time and may accept new
+  participants or tab items. Paying the early bill does not free the table. A game loan belongs to
+  the whole session: it may stay checked out while another group is still open, but the last open
+  group cannot close until every copy is returned. Awaiting payment is `g.status = 'CLOSING'`, not
+  `current_order_id IS NULL`—a group with tab items already has a PENDING reservation order before
+  checkout.
+- **The table belongs to a seating, the money to a session, and both statuses are derived (`9.91`).**
+  A seating is the current physical occupancy: one `ACTIVE` seating owns one table (partial unique
+  index), and several sessions may share it after a merge. A session is `OPEN` while any of its
+  groups is; a seating is `ACTIVE` while any of its sessions is. Both formulas live once, in
+  `refreshSessionFromGroupsInTx()` and `refreshBoardGameSeatingInTx()`; `pos.ts` calls the first
+  instead of writing its own `UPDATE`, because two copies eventually disagree about whether the
+  table can be reopened. Paying one bill must never free a table where anyone is still playing.
+  `bms_board_game_sessions.table_id` is now history — the table a visit *opened* at. Every "which
+  table is this?" read goes through the seating; reading the session's column shows the guest a
+  table they left an hour ago.
+- **Moving and merging change position only (`9.91`).** Neither touches a session, billing group,
+  tab row or order, so bills, clocks and game loans keep their ids across both. `move` relocates the
+  selected party to a **free** table — the seating itself when it holds one session, a detached new
+  seating when the table was merged — and `merge` sends every session at this table into the
+  destination's seating, closing the source as `MERGED`. Each refuses the other's job rather than
+  guessing: moving onto an occupied table and merging into a free one are both rejections, because a
+  silent guess moves people the operator did not choose. One tenant-level advisory lock serialises
+  floor moves, and both the opening path and a relocation lock the destination `bms_board_game_tables`
+  row, so a table cannot be claimed twice between check and write. Locks are taken sessions-first,
+  then seatings — the same order settlement uses.
+- **Every mutation is scoped and retry-safe.** They use tenant transactions, advisory/idempotency
+  locks, and location checks derived from the authenticated actor/device. Closing a table derives one
+  settlement key per group from the caller's single key, so a retry is stable; replaying a key with a
+  different request hash is an error.
+- **A member pass is an entitlement, never a Product (`9.92`).** It has no SKU and never moves
+  stock, exactly like play time. The plan is snapshotted onto the member's contract at sale time, so
+  a price change never rewrites a contract already sold, and the minute balance is a **cache of the
+  ledger** — the rule store credit (`8.9`) and points (`7.96`) already follow. Coverage is applied
+  when a billing group is **closed**: the passes are locked first, the frozen snapshot records the
+  gross amount, covered minutes and covered amount per person, and the minutes are spent in that
+  same transaction. A preview never spends a quota, or two tables open at once are each quoted the
+  same last hour. An unlimited pass must leave exactly zero (subtract the whole line, never
+  recompute from minutes); a line that costs nothing never burns a quota; a member holding several
+  passes uses the one that can help (unlimited, then minutes left, then soonest to expire); closing
+  twice spends nothing twice and cancelling a closed table gives the minutes back. A fully covered
+  bill totals ฿0 and is the **only** sale allowed to settle with no payment lines — every other
+  channel still requires one, and the amount-equals-payments check still decides.
 - **Alerts are a projection of time.** `ENDING_SOON` and `OVERDUE` are computed from `expected_end_at`,
   `alert_before_minutes`, and current time. They are not a mutable status column and cannot replace a
   fresh authoritative read.
 - **Member identity comes from CRM.** A MEMBER participant references an existing customer/member;
-  public/member-search responses expose only the bounded identity needed to select that member. ID
-  card and email collection belong to CRM/private-document controls, not session notes.
+  public/member-search responses expose only the bounded identity needed to select that member.
+  An identity document held as collateral is a separate record (`9.93`), never a session note.
+- **A held identity document is erased the moment it goes back (`9.93`).** A card belongs to the
+  **visit**, not to the member. The number is optional; when typed it is stored through
+  `encryptSecret()` and only its last four characters ever leave the server. **Releasing a hold
+  purges the name, the number and the tail in the same transaction** and stamps `purged_at`, leaving
+  a tombstone that still answers "did it go back, and who handed it over"; a hold that is still
+  `HELD` keeps its number on purpose, because that is the incident it was recorded for. **A table
+  cannot end while a card is held** — the gate sits at all three exits (last billing group, whole
+  table, cancel), and only at the last group, so an early-paying party still leaves normally.
+  Returning a game copy does not release a card: the system records a physical act, it cannot
+  perform one. **Reading a stored number back is its own permission** (`board_game.identity.reveal`,
+  Manager), exists only in the back office, and writes an audit row every time — a register is a
+  shared screen facing the customer. No photograph of a document is stored. Both registers reach
+  taking and returning through the one shared command table; neither reaches the reveal.
 - **Public discovery is explicit and aggregate-only.** Choosing the archetype never publishes a
   branch. Coordinates and `public_visible` must be set deliberately; the public route is rate-limited
   and returns no table ids, session ids, participant names, customer ids, or other operational data.
@@ -618,8 +694,8 @@ brief is [business/board-game-cafe.md](business/board-game-cafe.md).
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
-- **Not built:** monthly/yearly subscription contracts, encrypted identity-document storage specific
-  to subscriptions, reservations/waitlists, and dedicated board-game profitability/utilization
+- **Not built:** automatic renewal of a member pass (it needs a stored payment instrument this
+  platform does not have), reservations/waitlists, and dedicated board-game profitability/utilization
   reports. Extend CRM/reporting/payment domains for these; do not create parallel customer or money
   ledgers.
 
@@ -1232,6 +1308,17 @@ per-screen examples: [architecture/react-native-graphql-client.md](architecture/
   the resolver still verifies the branch belongs to the tenant. `mobile-graphql-contract` targets
   *what a value is read from*, not the variable's name, so `inputRecord(args.input).tenantId` fails
   the same way `input.tenantId` does.
+- **A business rejection must never leave as `INTERNAL_SERVER_ERROR`, and Apollo's default does not
+  count as a code.** `ensureBmsGraphqlErrorCode` classifies the root cause — an idempotency clash and
+  a board-game rule rejection become `CONFLICT` (or `BAD_USER_INPUT`/`NOT_FOUND`), while a real fault
+  stays a 500 with a stack in `system_logs`. ⚠️ Apollo fills `extensions.code` with
+  `INTERNAL_SERVER_ERROR` **before** `formatError` runs, so "a code is already set" must mean *one of
+  the five client-facing codes*; treating any string as already-declared makes the classifier
+  unreachable in the real pipeline, which is what happened — every board-game rejection reached the
+  app as a 500, and the client contract reads that as "retry with the same key", i.e. an unbreakable
+  loop. A unit test that feeds a code-less error proves nothing about that path: pin the
+  Apollo-shaped input.
+
 - **Money, stock and document mutations carry `idempotencyKey`.** It is required wherever the
   service uses it. It is nullable only on the remaining `action`-dispatched multiplexers, whose
   actions do not agree on whether they need one — `bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark` and

@@ -2562,10 +2562,39 @@ export type SchemaBmsPosBoardGameArea = {
 export type SchemaBmsPosBoardGameBilling = {
   __typename?: 'BmsPosBoardGameBilling';
   amountDue: Scalars['Float']['output'];
-  endedAt: Scalars['String']['output'];
+  endedAt: Maybe<Scalars['String']['output']>;
+  /** บิลที่เพิ่งถูกปิด — หนึ่งรายการต่อหนึ่งกลุ่ม ต้องเก็บเงินทีละใบ */
+  groups: Array<SchemaBmsPosBoardGameBillingGroup>;
   lines: Array<SchemaBmsPosBoardGameChargeLine>;
   replayed: Scalars['Boolean']['output'];
   sessionId: Scalars['ID']['output'];
+};
+
+/**
+ * กลุ่มบิลของโต๊ะบอร์ดเกม (9.89) — หน่วยที่บิลหนึ่งใบเก็บเงิน
+ * โต๊ะที่แยกกลุ่มจะคืนหลายรายการ และแต่ละรายการเก็บเงินแยกใบกัน
+ */
+export type SchemaBmsPosBoardGameBillingGroup = {
+  __typename?: 'BmsPosBoardGameBillingGroup';
+  /** ค่าเล่นที่แช่ไว้ตอนปิด — ยังเล่นอยู่จะเป็น 0 */
+  amountDue: Scalars['Float']['output'];
+  chargeSnapshot: Array<SchemaBmsPosBoardGameChargeLine>;
+  currentOrderId: Maybe<Scalars['ID']['output']>;
+  endedAt: Maybe<Scalars['String']['output']>;
+  groupNo: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+  /** ยอดของที่สั่งเข้าบิลระหว่างเล่น (9.90) */
+  tabAmount: Scalars['Float']['output'];
+  tabItems: Array<SchemaBmsPosBoardGameTabItem>;
+};
+
+/** ปิดเฉพาะบิลหนึ่งกลุ่ม ขณะที่กลุ่มอื่นบนโต๊ะยังเล่นต่อได้ (Board Game Phase 3) */
+export type SchemaBmsPosBoardGameBillingGroupActionInput = {
+  billingGroupId: Scalars['ID']['input'];
+  cashierUserId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
+  pin: Scalars['String']['input'];
 };
 
 export type SchemaBmsPosBoardGameChargeLine = {
@@ -2584,10 +2613,20 @@ export type SchemaBmsPosBoardGameCheckout = {
   amountDue: Scalars['Float']['output'];
   chargeLineCount: Scalars['Int']['output'];
   endedAt: Scalars['String']['output'];
+  groupNo: Scalars['Int']['output'];
+  /** id ของกลุ่มบิล (9.89) ไม่ใช่ session */
   id: Scalars['ID']['output'];
+  /** จำนวนกลุ่มบิลของโต๊ะนี้ — ใช้บอกพนักงานว่ายังมีบิลอื่นของโต๊ะเดียวกันรออยู่ไหม */
+  sessionGroupCount: Scalars['Int']['output'];
+  sessionId: Scalars['ID']['output'];
   startedAt: Scalars['String']['output'];
+  /** ยอดของที่สั่งไว้ระหว่างเล่น (9.90) */
+  tabAmount: Scalars['Float']['output'];
+  tabItemCount: Scalars['Int']['output'];
   tableCode: Scalars['String']['output'];
   tableName: Scalars['String']['output'];
+  /** ค่าเล่น + ของที่สั่งไว้ = ยอดที่ต้องเก็บจริง */
+  totalDue: Scalars['Float']['output'];
 };
 
 export type SchemaBmsPosBoardGameCheckoutCopyInput = {
@@ -2611,6 +2650,32 @@ export type SchemaBmsPosBoardGameFloor = {
   __typename?: 'BmsPosBoardGameFloor';
   areas: Array<SchemaBmsPosBoardGameArea>;
   tables: Array<SchemaBmsPosBoardGameTable>;
+};
+
+/**
+ * บัตรที่ร้านถือไว้ค้ำกล่องเกม (9.93)
+ *
+ * **ไม่มีเลขเต็มในชนิดนี้โดยตั้งใจ** — มีแต่สี่ตัวท้ายไว้จับคู่กับบัตรในลิ้นชัก ·
+ * การอ่านเลขกลับออกมาอยู่หลังบ้านอย่างเดียว (board_game.identity.reveal) และลง audit ทุกครั้ง
+ */
+export type SchemaBmsPosBoardGameIdentityHold = {
+  __typename?: 'BmsPosBoardGameIdentityHold';
+  customerId: Maybe<Scalars['ID']['output']>;
+  documentKind: Scalars['String']['output'];
+  documentNumberTail: Maybe<Scalars['String']['output']>;
+  hasDocumentNumber: Scalars['Boolean']['output'];
+  /** null หลังคืนบัตร — ชื่อถูกล้างไปพร้อมเลข */
+  holderName: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  loanId: Maybe<Scalars['ID']['output']>;
+  note: Maybe<Scalars['String']['output']>;
+  purgedAt: Maybe<Scalars['String']['output']>;
+  replayed: Maybe<Scalars['Boolean']['output']>;
+  returnedAt: Maybe<Scalars['String']['output']>;
+  returnedByName: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  takenAt: Scalars['String']['output'];
+  takenByName: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsPosBoardGameLeaveParticipantInput = {
@@ -2649,7 +2714,10 @@ export type SchemaBmsPosBoardGameOpenInput = {
 export type SchemaBmsPosBoardGameParticipant = {
   __typename?: 'BmsPosBoardGameParticipant';
   billable: Maybe<Scalars['Boolean']['output']>;
+  /** กลุ่มบิลที่ผู้เล่นคนนี้อยู่ (9.89) — เป็นตัวตัดสินว่าบิลใบไหนเก็บเงินคนนี้ */
+  billingGroupId: Maybe<Scalars['ID']['output']>;
   billingGroupNo: Maybe<Scalars['Int']['output']>;
+  billingGroupStatus: Maybe<Scalars['String']['output']>;
   displayName: Maybe<Scalars['String']['output']>;
   graceMinutes: Maybe<Scalars['Int']['output']>;
   hourlyRate: Maybe<Scalars['Float']['output']>;
@@ -2684,6 +2752,15 @@ export type SchemaBmsPosBoardGameRate = {
   sortOrder: Scalars['Int']['output'];
 };
 
+/** คืนบัตรให้ลูกค้า — ล้างชื่อ เลข และสี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน (9.93) */
+export type SchemaBmsPosBoardGameReleaseIdentityHoldInput = {
+  cashierUserId: Scalars['ID']['input'];
+  holdId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
+  note: InputMaybe<Scalars['String']['input']>;
+  pin: Scalars['String']['input'];
+};
+
 export type SchemaBmsPosBoardGameReturnCopyInput = {
   cashierUserId: Scalars['ID']['input'];
   copyStatus: InputMaybe<Scalars['String']['input']>;
@@ -2694,20 +2771,46 @@ export type SchemaBmsPosBoardGameReturnCopyInput = {
   status: InputMaybe<Scalars['String']['input']>;
 };
 
+/** ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91) */
+export type SchemaBmsPosBoardGameSeatingActionInput = {
+  cashierUserId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
+  pin: Scalars['String']['input'];
+  sessionId: Scalars['ID']['input'];
+  targetTableId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsPosBoardGameSeatingActionResult = {
+  __typename?: 'BmsPosBoardGameSeatingActionResult';
+  action: Scalars['String']['output'];
+  fromTableId: Scalars['ID']['output'];
+  replayed: Scalars['Boolean']['output'];
+  seatingId: Scalars['ID']['output'];
+  sessionIds: Array<Scalars['ID']['output']>;
+  sourceSeatingId: Scalars['ID']['output'];
+  toTableId: Scalars['ID']['output'];
+};
+
 export type SchemaBmsPosBoardGameSession = {
   __typename?: 'BmsPosBoardGameSession';
   alertBeforeMinutes: Scalars['Int']['output'];
   alertStatus: Scalars['String']['output'];
   amountDue: Scalars['Float']['output'];
+  /** กลุ่มบิลทั้งหมดของโต๊ะนี้ (9.89) */
+  billingGroups: Array<SchemaBmsPosBoardGameBillingGroup>;
   billingMode: Scalars['String']['output'];
+  /** @deprecated 9.89 ย้ายบิลไปที่กลุ่ม — ใช้ billingGroups[].currentOrderId แทน โต๊ะหนึ่งมีได้หลายบิล */
   currentOrderId: Maybe<Scalars['ID']['output']>;
   endedAt: Maybe<Scalars['String']['output']>;
   expectedEndAt: Maybe<Scalars['String']['output']>;
   games: Array<SchemaBmsPosBoardGameLoan>;
   guestCount: Scalars['Int']['output'];
   id: Scalars['ID']['output'];
+  /** บัตรที่รับไว้ของโต๊ะนี้ (9.93) — ใบที่ยัง HELD บล็อกการปิดบิลใบสุดท้าย */
+  identityHolds: Array<SchemaBmsPosBoardGameIdentityHold>;
   locationId: Scalars['ID']['output'];
   participants: Array<SchemaBmsPosBoardGameParticipant>;
+  seatingId: Scalars['ID']['output'];
   startedAt: Scalars['String']['output'];
   status: Scalars['String']['output'];
   tableId: Scalars['ID']['output'];
@@ -2726,15 +2829,38 @@ export type SchemaBmsPosBoardGameSessionSummary = {
   alertBeforeMinutes: Maybe<Scalars['Int']['output']>;
   alertStatus: Maybe<Scalars['String']['output']>;
   amountDue: Maybe<Scalars['Float']['output']>;
+  /** จำนวนบิลของโต๊ะนี้ที่ปิดเวลาแล้วแต่ยังไม่ได้เก็บเงิน */
+  awaitingPaymentCount: Maybe<Scalars['Int']['output']>;
+  /** จำนวนกลุ่มบิลของโต๊ะนี้ (9.89) — มากกว่า 1 แปลว่าโต๊ะนี้แยกบิล */
+  billingGroupCount: Maybe<Scalars['Int']['output']>;
   billingMode: Maybe<Scalars['String']['output']>;
   endedAt: Maybe<Scalars['String']['output']>;
   expectedEndAt: Maybe<Scalars['String']['output']>;
   guestCount: Maybe<Scalars['Int']['output']>;
   id: Maybe<Scalars['ID']['output']>;
   replayed: Maybe<Scalars['Boolean']['output']>;
+  /** ที่นั่งจริงบนผัง (9.91) — หลาย session แชร์ค่านี้หลังรวมโต๊ะ */
+  seatingId: Maybe<Scalars['ID']['output']>;
+  sessionCount: Maybe<Scalars['Int']['output']>;
   sessionId: Maybe<Scalars['ID']['output']>;
+  sessionIds: Maybe<Array<Scalars['ID']['output']>>;
   startedAt: Maybe<Scalars['String']['output']>;
   status: Maybe<Scalars['String']['output']>;
+};
+
+/** รายการที่สั่งเข้าบิลระหว่างเล่น (9.90) — server จองสต็อกให้แล้วตั้งแต่ตอนเพิ่ม */
+export type SchemaBmsPosBoardGameTabItem = {
+  __typename?: 'BmsPosBoardGameTabItem';
+  addedAt: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  modifierNames: Array<Scalars['String']['output']>;
+  note: Maybe<Scalars['String']['output']>;
+  packCode: Maybe<Scalars['String']['output']>;
+  packQty: Scalars['Int']['output'];
+  productName: Scalars['String']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  unitName: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsPosBoardGameTable = {
@@ -2747,6 +2873,21 @@ export type SchemaBmsPosBoardGameTable = {
   openSession: Maybe<SchemaBmsPosBoardGameSessionSummary>;
   seats: Scalars['Int']['output'];
   sortOrder: Scalars['Int']['output'];
+};
+
+/** รับบัตรไว้ค้ำกล่องเกม (9.93) — เลขไม่บังคับ และไม่เคยถูกส่งกลับออกมาทางใดเลย */
+export type SchemaBmsPosBoardGameTakeIdentityHoldInput = {
+  cashierUserId: Scalars['ID']['input'];
+  customerId: InputMaybe<Scalars['ID']['input']>;
+  documentKind: Scalars['String']['input'];
+  /** เข้ารหัสก่อนเก็บเสมอ · ปล่อยว่างได้เมื่อร้านเก็บแต่ตัวบัตรจริง */
+  documentNumber: InputMaybe<Scalars['String']['input']>;
+  holderName: Scalars['String']['input'];
+  idempotencyKey: Scalars['String']['input'];
+  loanId: InputMaybe<Scalars['ID']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  pin: Scalars['String']['input'];
+  sessionId: Scalars['ID']['input'];
 };
 
 export type SchemaBmsPosBoardGameTimingInput = {
@@ -4412,7 +4553,7 @@ export type SchemaBmsPosReturnedItem = {
 };
 
 export type SchemaBmsPosSaleInput = {
-  boardGameSessionId: InputMaybe<Scalars['ID']['input']>;
+  boardGameBillingGroupId: InputMaybe<Scalars['ID']['input']>;
   cashierUserId: Scalars['ID']['input'];
   couponCode: InputMaybe<Scalars['String']['input']>;
   creditApproverPin: InputMaybe<Scalars['String']['input']>;
@@ -6617,6 +6758,7 @@ export type SchemaMutation = {
   bmsPosCancelStockTransfer: SchemaBmsMobileStockTransferActionResult;
   bmsPosCashMovement: SchemaBmsPosCashMovementActionResult;
   bmsPosCheckoutBoardGameCopy: SchemaBmsPosBoardGameLoan;
+  bmsPosCloseBoardGameBillingGroup: SchemaBmsPosBoardGameBilling;
   bmsPosCloseBoardGameSession: SchemaBmsPosBoardGameBilling;
   bmsPosCollectAr: SchemaBmsPosArReceiptResult;
   bmsPosCompleteRefund: SchemaBmsPosCompleteRefundResult;
@@ -6628,12 +6770,15 @@ export type SchemaMutation = {
   bmsPosKitchenTicketStatus: SchemaBmsPosKitchenTicketActionResult;
   bmsPosKitchenTicketsStatus: SchemaBmsPosKitchenTicketsActionResult;
   bmsPosLeaveBoardGameParticipant: SchemaBmsPosBoardGameParticipant;
+  bmsPosMergeBoardGameSeating: SchemaBmsPosBoardGameSeatingActionResult;
+  bmsPosMoveBoardGameSeating: SchemaBmsPosBoardGameSeatingActionResult;
   bmsPosNoSale: SchemaBmsPosSimpleActionResult;
   bmsPosOpenBoardGameSession: SchemaBmsPosBoardGameSessionSummary;
   bmsPosPark: SchemaBmsPosParkActionResult;
   bmsPosReceivePurchase: SchemaBmsPurchaseResult;
   bmsPosReceiveStockTransfer: SchemaBmsMobileStockTransferActionResult;
   bmsPosRecordStockCountItem: SchemaBmsMobileStockCountActionResult;
+  bmsPosReleaseBoardGameIdentityHold: SchemaBmsPosBoardGameIdentityHold;
   bmsPosRequestPharmacyReview: SchemaBmsPosPharmacyReviewResult;
   bmsPosRestaurantAcceptIncomingOrder: SchemaBmsPosRestaurantIncomingActionResult;
   bmsPosRestaurantAcceptQrSubmission: SchemaBmsPosRestaurantQrActionResult;
@@ -6680,6 +6825,7 @@ export type SchemaMutation = {
   bmsPosSendReceipt: SchemaBmsPosReceiptDeliveryResult;
   bmsPosSendStockTransfer: SchemaBmsMobileStockTransferActionResult;
   bmsPosShift: SchemaBmsPosShiftActionResult;
+  bmsPosTakeBoardGameIdentityHold: SchemaBmsPosBoardGameIdentityHold;
   bmsPosVerifyCashier: SchemaBmsPosCashier;
   bmsPosVoid: SchemaBmsPosReturnActionResult;
   bmsPublishProduct: SchemaBmsProductReadiness;
@@ -7374,6 +7520,11 @@ export type SchemaMutationBmsPosCheckoutBoardGameCopyArgs = {
 };
 
 
+export type SchemaMutationBmsPosCloseBoardGameBillingGroupArgs = {
+  input: SchemaBmsPosBoardGameBillingGroupActionInput;
+};
+
+
 export type SchemaMutationBmsPosCloseBoardGameSessionArgs = {
   input: SchemaBmsPosBoardGameSessionActionInput;
 };
@@ -7429,6 +7580,16 @@ export type SchemaMutationBmsPosLeaveBoardGameParticipantArgs = {
 };
 
 
+export type SchemaMutationBmsPosMergeBoardGameSeatingArgs = {
+  input: SchemaBmsPosBoardGameSeatingActionInput;
+};
+
+
+export type SchemaMutationBmsPosMoveBoardGameSeatingArgs = {
+  input: SchemaBmsPosBoardGameSeatingActionInput;
+};
+
+
 export type SchemaMutationBmsPosNoSaleArgs = {
   input: SchemaBmsPosNoSaleInput;
 };
@@ -7456,6 +7617,11 @@ export type SchemaMutationBmsPosReceiveStockTransferArgs = {
 
 export type SchemaMutationBmsPosRecordStockCountItemArgs = {
   input: SchemaBmsPosStockCountItemInput;
+};
+
+
+export type SchemaMutationBmsPosReleaseBoardGameIdentityHoldArgs = {
+  input: SchemaBmsPosBoardGameReleaseIdentityHoldInput;
 };
 
 
@@ -7667,6 +7833,11 @@ export type SchemaMutationBmsPosSendStockTransferArgs = {
 
 export type SchemaMutationBmsPosShiftArgs = {
   input: SchemaBmsPosShiftInput;
+};
+
+
+export type SchemaMutationBmsPosTakeBoardGameIdentityHoldArgs = {
+  input: SchemaBmsPosBoardGameTakeIdentityHoldInput;
 };
 
 
@@ -10585,6 +10756,14 @@ export type BmsPosBoardGameAddParticipantInput = {
   sessionId: string | number;
 };
 
+/** ปิดเฉพาะบิลหนึ่งกลุ่ม ขณะที่กลุ่มอื่นบนโต๊ะยังเล่นต่อได้ (Board Game Phase 3) */
+export type BmsPosBoardGameBillingGroupActionInput = {
+  billingGroupId: string | number;
+  cashierUserId: string | number;
+  idempotencyKey: string;
+  pin: string;
+};
+
 export type BmsPosBoardGameCheckoutCopyInput = {
   cashierUserId: string | number;
   copyId: string | number;
@@ -10621,6 +10800,15 @@ export type BmsPosBoardGameParticipantInput = {
   rateId: string | number | null | undefined;
 };
 
+/** คืนบัตรให้ลูกค้า — ล้างชื่อ เลข และสี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน (9.93) */
+export type BmsPosBoardGameReleaseIdentityHoldInput = {
+  cashierUserId: string | number;
+  holdId: string | number;
+  idempotencyKey: string;
+  note: string | null | undefined;
+  pin: string;
+};
+
 export type BmsPosBoardGameReturnCopyInput = {
   cashierUserId: string | number;
   copyStatus: string | null | undefined;
@@ -10631,11 +10819,35 @@ export type BmsPosBoardGameReturnCopyInput = {
   status: string | null | undefined;
 };
 
+/** ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91) */
+export type BmsPosBoardGameSeatingActionInput = {
+  cashierUserId: string | number;
+  idempotencyKey: string;
+  pin: string;
+  sessionId: string | number;
+  targetTableId: string | number;
+};
+
 export type BmsPosBoardGameSessionActionInput = {
   cashierUserId: string | number;
   idempotencyKey: string;
   pin: string;
   reason: string | null | undefined;
+  sessionId: string | number;
+};
+
+/** รับบัตรไว้ค้ำกล่องเกม (9.93) — เลขไม่บังคับ และไม่เคยถูกส่งกลับออกมาทางใดเลย */
+export type BmsPosBoardGameTakeIdentityHoldInput = {
+  cashierUserId: string | number;
+  customerId: string | number | null | undefined;
+  documentKind: string;
+  /** เข้ารหัสก่อนเก็บเสมอ · ปล่อยว่างได้เมื่อร้านเก็บแต่ตัวบัตรจริง */
+  documentNumber: string | null | undefined;
+  holderName: string;
+  idempotencyKey: string;
+  loanId: string | number | null | undefined;
+  note: string | null | undefined;
+  pin: string;
   sessionId: string | number;
 };
 
@@ -11004,7 +11216,7 @@ export type BmsPosReturnLineInput = {
 };
 
 export type BmsPosSaleInput = {
-  boardGameSessionId: string | number | null | undefined;
+  boardGameBillingGroupId: string | number | null | undefined;
   cashierUserId: string | number;
   couponCode: string | null | undefined;
   creditApproverPin: string | null | undefined;
@@ -11731,14 +11943,14 @@ export type MobilePosCancelStockCountMutationVariables = Exact<{
 
 export type MobilePosCancelStockCountMutation = { bmsPosCancelStockCount: { status: string, reason: string | null, current: string | null } };
 
-export type MobilePosBoardGameSessionSummaryFieldsFragment = { id: string | null, sessionId: string | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, replayed: boolean | null };
+export type MobilePosBoardGameSessionSummaryFieldsFragment = { id: string | null, sessionId: string | null, seatingId: string | null, sessionIds: Array<string> | null, sessionCount: number | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, billingGroupCount: number | null, awaitingPaymentCount: number | null, replayed: boolean | null };
 
 export type MobilePosBoardGameWorkspaceQueryVariables = Exact<{
   credentials: BmsPosCredentialsInput;
 }>;
 
 
-export type MobilePosBoardGameWorkspaceQuery = { bmsPosBoardGameWorkspace: { floor: { areas: Array<{ id: string, name: string, sortOrder: number }>, tables: Array<{ id: string, areaId: string, code: string, name: string, seats: number, sortOrder: number, blocked: boolean, openSession: { id: string | null, sessionId: string | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, replayed: boolean | null } | null }> }, rates: Array<{ id: string, code: string, name: string, customerType: string, pricePerHour: number, minimumMinutes: number, roundingMinutes: number, graceMinutes: number, active: boolean, sortOrder: number }>, library: Array<{ id: string, title: string, minPlayers: number | null, maxPlayers: number | null, typicalMinutes: number | null, difficulty: string | null, language: string | null, publicVisible: boolean, copies: Array<{ id: string, locationId: string, copyCode: string, status: string, conditionNote: string | null }> }> } };
+export type MobilePosBoardGameWorkspaceQuery = { bmsPosBoardGameWorkspace: { floor: { areas: Array<{ id: string, name: string, sortOrder: number }>, tables: Array<{ id: string, areaId: string, code: string, name: string, seats: number, sortOrder: number, blocked: boolean, openSession: { id: string | null, sessionId: string | null, seatingId: string | null, sessionIds: Array<string> | null, sessionCount: number | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, billingGroupCount: number | null, awaitingPaymentCount: number | null, replayed: boolean | null } | null }> }, rates: Array<{ id: string, code: string, name: string, customerType: string, pricePerHour: number, minimumMinutes: number, roundingMinutes: number, graceMinutes: number, active: boolean, sortOrder: number }>, library: Array<{ id: string, title: string, minPlayers: number | null, maxPlayers: number | null, typicalMinutes: number | null, difficulty: string | null, language: string | null, publicVisible: boolean, copies: Array<{ id: string, locationId: string, copyCode: string, status: string, conditionNote: string | null }> }> } };
 
 export type MobilePosBoardGameSessionQueryVariables = Exact<{
   credentials: BmsPosCredentialsInput;
@@ -11746,7 +11958,7 @@ export type MobilePosBoardGameSessionQueryVariables = Exact<{
 }>;
 
 
-export type MobilePosBoardGameSessionQuery = { bmsPosBoardGameSession: { id: string, status: string, billingMode: string, guestCount: number, startedAt: string, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number, alertStatus: string, amountDue: number, locationId: string, tableId: string, currentOrderId: string | null, participants: Array<{ id: string, displayName: string | null, participantType: string | null, billable: boolean | null, hourlyRate: number | null, minimumMinutes: number | null, roundingMinutes: number | null, graceMinutes: number | null, billingGroupNo: number | null, joinedAt: string | null, leftAt: string | null }>, games: Array<{ id: string, copyId: string | null, copyCode: string | null, title: string | null, status: string | null, checkedOutAt: string | null, returnedAt: string | null, copyStatus: string | null }> } | null };
+export type MobilePosBoardGameSessionQuery = { bmsPosBoardGameSession: { id: string, status: string, billingMode: string, guestCount: number, startedAt: string, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number, alertStatus: string, amountDue: number, locationId: string, tableId: string, seatingId: string, billingGroups: Array<{ id: string, groupNo: number, status: string, amountDue: number, tabAmount: number, endedAt: string | null, currentOrderId: string | null, chargeSnapshot: Array<{ participantId: string, displayName: string | null, participantType: string, billingGroupNo: number, billableMinutes: number, hourlyRate: number, amount: number }>, tabItems: Array<{ id: string, sku: string, productName: string, size: string, packCode: string | null, unitName: string | null, packQty: number, modifierNames: Array<string>, note: string | null, addedAt: string | null }> }>, participants: Array<{ id: string, displayName: string | null, participantType: string | null, billable: boolean | null, hourlyRate: number | null, minimumMinutes: number | null, roundingMinutes: number | null, graceMinutes: number | null, billingGroupNo: number | null, billingGroupId: string | null, billingGroupStatus: string | null, joinedAt: string | null, leftAt: string | null }>, games: Array<{ id: string, copyId: string | null, copyCode: string | null, title: string | null, status: string | null, checkedOutAt: string | null, returnedAt: string | null, copyStatus: string | null }>, identityHolds: Array<{ id: string, loanId: string | null, documentKind: string, holderName: string | null, documentNumberTail: string | null, hasDocumentNumber: boolean, status: string, note: string | null, takenAt: string, returnedAt: string | null }> } | null };
 
 export type MobilePosBoardGameCheckoutQueryVariables = Exact<{
   credentials: BmsPosCredentialsInput;
@@ -11754,14 +11966,14 @@ export type MobilePosBoardGameCheckoutQueryVariables = Exact<{
 }>;
 
 
-export type MobilePosBoardGameCheckoutQuery = { bmsPosBoardGameCheckout: { id: string, tableCode: string, tableName: string, startedAt: string, endedAt: string, amountDue: number, chargeLineCount: number } | null };
+export type MobilePosBoardGameCheckoutQuery = { bmsPosBoardGameCheckout: { id: string, sessionId: string, groupNo: number, sessionGroupCount: number, tableCode: string, tableName: string, startedAt: string, endedAt: string, amountDue: number, tabAmount: number, tabItemCount: number, totalDue: number, chargeLineCount: number } | null };
 
 export type MobilePosOpenBoardGameSessionMutationVariables = Exact<{
   input: BmsPosBoardGameOpenInput;
 }>;
 
 
-export type MobilePosOpenBoardGameSessionMutation = { bmsPosOpenBoardGameSession: { id: string | null, sessionId: string | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, replayed: boolean | null } };
+export type MobilePosOpenBoardGameSessionMutation = { bmsPosOpenBoardGameSession: { id: string | null, sessionId: string | null, seatingId: string | null, sessionIds: Array<string> | null, sessionCount: number | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, billingGroupCount: number | null, awaitingPaymentCount: number | null, replayed: boolean | null } };
 
 export type MobilePosAddBoardGameParticipantMutationVariables = Exact<{
   input: BmsPosBoardGameAddParticipantInput;
@@ -11769,6 +11981,27 @@ export type MobilePosAddBoardGameParticipantMutationVariables = Exact<{
 
 
 export type MobilePosAddBoardGameParticipantMutation = { bmsPosAddBoardGameParticipant: { id: string, displayName: string | null, participantType: string | null, billable: boolean | null, hourlyRate: number | null, billingGroupNo: number | null, joinedAt: string | null, replayed: boolean | null } };
+
+export type MobilePosCloseBoardGameBillingGroupMutationVariables = Exact<{
+  input: BmsPosBoardGameBillingGroupActionInput;
+}>;
+
+
+export type MobilePosCloseBoardGameBillingGroupMutation = { bmsPosCloseBoardGameBillingGroup: { sessionId: string, amountDue: number, endedAt: string | null, replayed: boolean, groups: Array<{ id: string, groupNo: number, status: string, amountDue: number, tabAmount: number, endedAt: string | null, currentOrderId: string | null }>, lines: Array<{ participantId: string, displayName: string | null, participantType: string, billingGroupNo: number, billableMinutes: number, hourlyRate: number, amount: number }> } };
+
+export type MobilePosMoveBoardGameSeatingMutationVariables = Exact<{
+  input: BmsPosBoardGameSeatingActionInput;
+}>;
+
+
+export type MobilePosMoveBoardGameSeatingMutation = { bmsPosMoveBoardGameSeating: { action: string, seatingId: string, sourceSeatingId: string, fromTableId: string, toTableId: string, sessionIds: Array<string>, replayed: boolean } };
+
+export type MobilePosMergeBoardGameSeatingMutationVariables = Exact<{
+  input: BmsPosBoardGameSeatingActionInput;
+}>;
+
+
+export type MobilePosMergeBoardGameSeatingMutation = { bmsPosMergeBoardGameSeating: { action: string, seatingId: string, sourceSeatingId: string, fromTableId: string, toTableId: string, sessionIds: Array<string>, replayed: boolean } };
 
 export type MobilePosLeaveBoardGameParticipantMutationVariables = Exact<{
   input: BmsPosBoardGameLeaveParticipantInput;
@@ -11782,21 +12015,21 @@ export type MobilePosAdjustBoardGameTimingMutationVariables = Exact<{
 }>;
 
 
-export type MobilePosAdjustBoardGameTimingMutation = { bmsPosAdjustBoardGameTiming: { id: string | null, sessionId: string | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, replayed: boolean | null } };
+export type MobilePosAdjustBoardGameTimingMutation = { bmsPosAdjustBoardGameTiming: { id: string | null, sessionId: string | null, seatingId: string | null, sessionIds: Array<string> | null, sessionCount: number | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, billingGroupCount: number | null, awaitingPaymentCount: number | null, replayed: boolean | null } };
 
 export type MobilePosCloseBoardGameSessionMutationVariables = Exact<{
   input: BmsPosBoardGameSessionActionInput;
 }>;
 
 
-export type MobilePosCloseBoardGameSessionMutation = { bmsPosCloseBoardGameSession: { sessionId: string, amountDue: number, endedAt: string, replayed: boolean, lines: Array<{ participantId: string, displayName: string | null, participantType: string, billingGroupNo: number, billableMinutes: number, hourlyRate: number, amount: number }> } };
+export type MobilePosCloseBoardGameSessionMutation = { bmsPosCloseBoardGameSession: { sessionId: string, amountDue: number, endedAt: string | null, replayed: boolean, groups: Array<{ id: string, groupNo: number, status: string, amountDue: number, tabAmount: number, endedAt: string | null, currentOrderId: string | null }>, lines: Array<{ participantId: string, displayName: string | null, participantType: string, billingGroupNo: number, billableMinutes: number, hourlyRate: number, amount: number }> } };
 
 export type MobilePosCancelBoardGameSessionMutationVariables = Exact<{
   input: BmsPosBoardGameSessionActionInput;
 }>;
 
 
-export type MobilePosCancelBoardGameSessionMutation = { bmsPosCancelBoardGameSession: { id: string | null, sessionId: string | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, replayed: boolean | null } };
+export type MobilePosCancelBoardGameSessionMutation = { bmsPosCancelBoardGameSession: { id: string | null, sessionId: string | null, seatingId: string | null, sessionIds: Array<string> | null, sessionCount: number | null, status: string | null, billingMode: string | null, guestCount: number | null, startedAt: string | null, expectedEndAt: string | null, endedAt: string | null, alertBeforeMinutes: number | null, alertStatus: string | null, amountDue: number | null, billingGroupCount: number | null, awaitingPaymentCount: number | null, replayed: boolean | null } };
 
 export type MobilePosCheckoutBoardGameCopyMutationVariables = Exact<{
   input: BmsPosBoardGameCheckoutCopyInput;
@@ -11811,6 +12044,20 @@ export type MobilePosReturnBoardGameCopyMutationVariables = Exact<{
 
 
 export type MobilePosReturnBoardGameCopyMutation = { bmsPosReturnBoardGameCopy: { id: string, returnedAt: string | null, copyStatus: string | null, replayed: boolean | null } };
+
+export type MobilePosTakeBoardGameIdentityHoldMutationVariables = Exact<{
+  input: BmsPosBoardGameTakeIdentityHoldInput;
+}>;
+
+
+export type MobilePosTakeBoardGameIdentityHoldMutation = { bmsPosTakeBoardGameIdentityHold: { id: string, documentKind: string, holderName: string | null, documentNumberTail: string | null, hasDocumentNumber: boolean, status: string, takenAt: string, replayed: boolean | null } };
+
+export type MobilePosReleaseBoardGameIdentityHoldMutationVariables = Exact<{
+  input: BmsPosBoardGameReleaseIdentityHoldInput;
+}>;
+
+
+export type MobilePosReleaseBoardGameIdentityHoldMutation = { bmsPosReleaseBoardGameIdentityHold: { id: string, status: string, returnedAt: string | null, purgedAt: string | null, replayed: boolean | null } };
 
 export type MobileDeviceSessionChangedSubscriptionVariables = Exact<{ [key: string]: never; }>;
 
@@ -11898,7 +12145,7 @@ export const MobileRestaurantCheckFieldsFragmentDoc = {"kind":"Document","defini
 export const MobileKitchenTicketFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobileKitchenTicketFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsKitchenTicket"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"checkId"}},{"kind":"Field","name":{"kind":"Name","value":"orderId"}},{"kind":"Field","name":{"kind":"Name","value":"orderItemId"}},{"kind":"Field","name":{"kind":"Name","value":"source"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"roundNo"}},{"kind":"Field","name":{"kind":"Name","value":"station"}},{"kind":"Field","name":{"kind":"Name","value":"stationId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"productSku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qty"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"kitchenNote"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]} as unknown as DocumentNode<MobileKitchenTicketFieldsFragment, unknown>;
 export const MobilePosStockTransferFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosStockTransferFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsMobileStockTransfer"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"transferNo"}},{"kind":"Field","name":{"kind":"Name","value":"fromLocationId"}},{"kind":"Field","name":{"kind":"Name","value":"fromLocationName"}},{"kind":"Field","name":{"kind":"Name","value":"toLocationId"}},{"kind":"Field","name":{"kind":"Name","value":"toLocationName"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"receivingNote"}},{"kind":"Field","name":{"kind":"Name","value":"createdByName"}},{"kind":"Field","name":{"kind":"Name","value":"sentAt"}},{"kind":"Field","name":{"kind":"Name","value":"receivedAt"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qty"}},{"kind":"Field","name":{"kind":"Name","value":"receivedQty"}},{"kind":"Field","name":{"kind":"Name","value":"damagedQty"}},{"kind":"Field","name":{"kind":"Name","value":"missingQty"}},{"kind":"Field","name":{"kind":"Name","value":"discrepancyReason"}},{"kind":"Field","name":{"kind":"Name","value":"discrepancyNote"}}]}}]}}]} as unknown as DocumentNode<MobilePosStockTransferFieldsFragment, unknown>;
 export const MobilePosStockCountFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosStockCountFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsMobileStockCount"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"countNo"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdByName"}},{"kind":"Field","name":{"kind":"Name","value":"appliedAt"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"varianceUnits"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"snapshotQty"}},{"kind":"Field","name":{"kind":"Name","value":"countedQty"}},{"kind":"Field","name":{"kind":"Name","value":"variance"}},{"kind":"Field","name":{"kind":"Name","value":"note"}}]}}]}}]} as unknown as DocumentNode<MobilePosStockCountFieldsFragment, unknown>;
-export const MobilePosBoardGameSessionSummaryFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosBoardGameSessionSummaryFieldsFragment, unknown>;
+export const MobilePosBoardGameSessionSummaryFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosBoardGameSessionSummaryFieldsFragment, unknown>;
 export const PosBootstrapDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"PosBootstrap"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosSession"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"device"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"registeredPosNo"}},{"kind":"Field","name":{"kind":"Name","value":"scanner"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"mode"}},{"kind":"Field","name":{"kind":"Name","value":"prefixKey"}},{"kind":"Field","name":{"kind":"Name","value":"suffixKey"}},{"kind":"Field","name":{"kind":"Name","value":"maxGapMs"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"location"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"branchCode"}},{"kind":"Field","name":{"kind":"Name","value":"vatCode"}},{"kind":"Field","name":{"kind":"Name","value":"pharmacistName"}}]}},{"kind":"Field","name":{"kind":"Name","value":"shift"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"deviceId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"openedBy"}},{"kind":"Field","name":{"kind":"Name","value":"openedAt"}},{"kind":"Field","name":{"kind":"Name","value":"openingFloat"}},{"kind":"Field","name":{"kind":"Name","value":"countedCash"}},{"kind":"Field","name":{"kind":"Name","value":"expectedCash"}},{"kind":"Field","name":{"kind":"Name","value":"cashVariance"}},{"kind":"Field","name":{"kind":"Name","value":"closedAt"}},{"kind":"Field","name":{"kind":"Name","value":"pharmacistUserId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"shiftReturnSummary"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"returnCount"}},{"kind":"Field","name":{"kind":"Name","value":"returnTotal"}},{"kind":"Field","name":{"kind":"Name","value":"settledTotal"}},{"kind":"Field","name":{"kind":"Name","value":"pendingTotal"}},{"kind":"Field","name":{"kind":"Name","value":"pendingCount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"cashiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"isPharmacist"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}},{"kind":"Field","name":{"kind":"Name","value":"posOnly"}}]}},{"kind":"Field","name":{"kind":"Name","value":"purchaseReceivers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}}]}},{"kind":"Field","name":{"kind":"Name","value":"approvers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"isPharmacist"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}},{"kind":"Field","name":{"kind":"Name","value":"approvals"}}]}},{"kind":"Field","name":{"kind":"Name","value":"kitchenOperators"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}}]}},{"kind":"Field","name":{"kind":"Name","value":"store"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taxId"}},{"kind":"Field","name":{"kind":"Name","value":"receiptLanguageMode"}},{"kind":"Field","name":{"kind":"Name","value":"address"}},{"kind":"Field","name":{"kind":"Name","value":"phone"}},{"kind":"Field","name":{"kind":"Name","value":"logoUrl"}}]}},{"kind":"Field","name":{"kind":"Name","value":"surface"}},{"kind":"Field","name":{"kind":"Name","value":"businessArchetype"}},{"kind":"Field","name":{"kind":"Name","value":"vat"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"registered"}},{"kind":"Field","name":{"kind":"Name","value":"priceIncludesVat"}},{"kind":"Field","name":{"kind":"Name","value":"rate"}},{"kind":"Field","name":{"kind":"Name","value":"calendarEra"}},{"kind":"Field","name":{"kind":"Name","value":"cashRounding"}}]}}]}}]}}]} as unknown as DocumentNode<PosBootstrapQuery, PosBootstrapQueryVariables>;
 export const VerifyPosCashierDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"VerifyPosCashier"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosVerifyCashier"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"isPharmacist"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}},{"kind":"Field","name":{"kind":"Name","value":"posOnly"}}]}}]}}]} as unknown as DocumentNode<VerifyPosCashierMutation, VerifyPosCashierMutationVariables>;
 export const MobilePosCatalogDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosCatalog"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"q"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}},"defaultValue":{"kind":"StringValue","value":"","block":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCatalogSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"q"},"value":{"kind":"Variable","name":{"kind":"Name","value":"q"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"price"}},{"kind":"Field","name":{"kind":"Name","value":"availability"}},{"kind":"Field","name":{"kind":"Name","value":"availableTotal"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"availableSizes"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"available"}},{"kind":"Field","name":{"kind":"Name","value":"price"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosCatalogQuery, MobilePosCatalogQueryVariables>;
@@ -11982,17 +12229,22 @@ export const MobilePosCreateStockCountDocument = {"kind":"Document","definitions
 export const MobilePosRecordStockCountItemDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosRecordStockCountItem"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockCountItemInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRecordStockCountItem"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}},{"kind":"Field","name":{"kind":"Name","value":"snapshotQty"}},{"kind":"Field","name":{"kind":"Name","value":"variance"}}]}}]}}]} as unknown as DocumentNode<MobilePosRecordStockCountItemMutation, MobilePosRecordStockCountItemMutationVariables>;
 export const MobilePosApplyStockCountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosApplyStockCount"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockCountActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosApplyStockCount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}},{"kind":"Field","name":{"kind":"Name","value":"adjustedItems"}},{"kind":"Field","name":{"kind":"Name","value":"varianceUnits"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"reserved"}},{"kind":"Field","name":{"kind":"Name","value":"wouldBe"}}]}}]}}]} as unknown as DocumentNode<MobilePosApplyStockCountMutation, MobilePosApplyStockCountMutationVariables>;
 export const MobilePosCancelStockCountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCancelStockCount"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockCountActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCancelStockCount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}}]}}]}}]} as unknown as DocumentNode<MobilePosCancelStockCountMutation, MobilePosCancelStockCountMutationVariables>;
-export const MobilePosBoardGameWorkspaceDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameWorkspace"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameWorkspace"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"floor"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"areas"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tables"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"areaId"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"seats"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}},{"kind":"Field","name":{"kind":"Name","value":"blocked"}},{"kind":"Field","name":{"kind":"Name","value":"openSession"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"rates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"customerType"}},{"kind":"Field","name":{"kind":"Name","value":"pricePerHour"}},{"kind":"Field","name":{"kind":"Name","value":"minimumMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"roundingMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"graceMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}}]}},{"kind":"Field","name":{"kind":"Name","value":"library"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"minPlayers"}},{"kind":"Field","name":{"kind":"Name","value":"maxPlayers"}},{"kind":"Field","name":{"kind":"Name","value":"typicalMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"language"}},{"kind":"Field","name":{"kind":"Name","value":"publicVisible"}},{"kind":"Field","name":{"kind":"Name","value":"copies"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"copyCode"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"conditionNote"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosBoardGameWorkspaceQuery, MobilePosBoardGameWorkspaceQueryVariables>;
-export const MobilePosBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"currentOrderId"}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billable"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"minimumMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"roundingMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"graceMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"joinedAt"}},{"kind":"Field","name":{"kind":"Name","value":"leftAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"games"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"copyId"}},{"kind":"Field","name":{"kind":"Name","value":"copyCode"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"checkedOutAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"copyStatus"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameSessionQuery, MobilePosBoardGameSessionQueryVariables>;
-export const MobilePosBoardGameCheckoutDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameCheckout"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"chargeLineCount"}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameCheckoutQuery, MobilePosBoardGameCheckoutQueryVariables>;
-export const MobilePosOpenBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosOpenBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameOpenInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosOpenBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosOpenBoardGameSessionMutation, MobilePosOpenBoardGameSessionMutationVariables>;
+export const MobilePosBoardGameWorkspaceDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameWorkspace"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameWorkspace"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"floor"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"areas"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tables"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"areaId"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"seats"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}},{"kind":"Field","name":{"kind":"Name","value":"blocked"}},{"kind":"Field","name":{"kind":"Name","value":"openSession"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"rates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"customerType"}},{"kind":"Field","name":{"kind":"Name","value":"pricePerHour"}},{"kind":"Field","name":{"kind":"Name","value":"minimumMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"roundingMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"graceMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}}]}},{"kind":"Field","name":{"kind":"Name","value":"library"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"minPlayers"}},{"kind":"Field","name":{"kind":"Name","value":"maxPlayers"}},{"kind":"Field","name":{"kind":"Name","value":"typicalMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"language"}},{"kind":"Field","name":{"kind":"Name","value":"publicVisible"}},{"kind":"Field","name":{"kind":"Name","value":"copies"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"copyCode"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"conditionNote"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosBoardGameWorkspaceQuery, MobilePosBoardGameWorkspaceQueryVariables>;
+export const MobilePosBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"currentOrderId"}},{"kind":"Field","name":{"kind":"Name","value":"chargeSnapshot"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"participantId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billableMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tabItems"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"modifierNames"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"addedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billable"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"minimumMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"roundingMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"graceMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupId"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupStatus"}},{"kind":"Field","name":{"kind":"Name","value":"joinedAt"}},{"kind":"Field","name":{"kind":"Name","value":"leftAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"games"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"copyId"}},{"kind":"Field","name":{"kind":"Name","value":"copyCode"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"checkedOutAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"copyStatus"}}]}},{"kind":"Field","name":{"kind":"Name","value":"identityHolds"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"loanId"}},{"kind":"Field","name":{"kind":"Name","value":"documentKind"}},{"kind":"Field","name":{"kind":"Name","value":"holderName"}},{"kind":"Field","name":{"kind":"Name","value":"documentNumberTail"}},{"kind":"Field","name":{"kind":"Name","value":"hasDocumentNumber"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"takenAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameSessionQuery, MobilePosBoardGameSessionQueryVariables>;
+export const MobilePosBoardGameCheckoutDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameCheckout"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"sessionGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"tabItemCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalDue"}},{"kind":"Field","name":{"kind":"Name","value":"chargeLineCount"}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameCheckoutQuery, MobilePosBoardGameCheckoutQueryVariables>;
+export const MobilePosOpenBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosOpenBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameOpenInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosOpenBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosOpenBoardGameSessionMutation, MobilePosOpenBoardGameSessionMutationVariables>;
 export const MobilePosAddBoardGameParticipantDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosAddBoardGameParticipant"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameAddParticipantInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosAddBoardGameParticipant"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billable"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"joinedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosAddBoardGameParticipantMutation, MobilePosAddBoardGameParticipantMutationVariables>;
+export const MobilePosCloseBoardGameBillingGroupDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCloseBoardGameBillingGroup"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameBillingGroupActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCloseBoardGameBillingGroup"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}},{"kind":"Field","name":{"kind":"Name","value":"groups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"currentOrderId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"participantId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billableMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosCloseBoardGameBillingGroupMutation, MobilePosCloseBoardGameBillingGroupMutationVariables>;
+export const MobilePosMoveBoardGameSeatingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosMoveBoardGameSeating"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSeatingActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosMoveBoardGameSeating"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"action"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sourceSeatingId"}},{"kind":"Field","name":{"kind":"Name","value":"fromTableId"}},{"kind":"Field","name":{"kind":"Name","value":"toTableId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosMoveBoardGameSeatingMutation, MobilePosMoveBoardGameSeatingMutationVariables>;
+export const MobilePosMergeBoardGameSeatingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosMergeBoardGameSeating"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSeatingActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosMergeBoardGameSeating"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"action"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sourceSeatingId"}},{"kind":"Field","name":{"kind":"Name","value":"fromTableId"}},{"kind":"Field","name":{"kind":"Name","value":"toTableId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosMergeBoardGameSeatingMutation, MobilePosMergeBoardGameSeatingMutationVariables>;
 export const MobilePosLeaveBoardGameParticipantDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosLeaveBoardGameParticipant"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameLeaveParticipantInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosLeaveBoardGameParticipant"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"leftAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosLeaveBoardGameParticipantMutation, MobilePosLeaveBoardGameParticipantMutationVariables>;
-export const MobilePosAdjustBoardGameTimingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosAdjustBoardGameTiming"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameTimingInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosAdjustBoardGameTiming"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosAdjustBoardGameTimingMutation, MobilePosAdjustBoardGameTimingMutationVariables>;
-export const MobilePosCloseBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCloseBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCloseBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"participantId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billableMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosCloseBoardGameSessionMutation, MobilePosCloseBoardGameSessionMutationVariables>;
-export const MobilePosCancelBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCancelBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCancelBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosCancelBoardGameSessionMutation, MobilePosCancelBoardGameSessionMutationVariables>;
+export const MobilePosAdjustBoardGameTimingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosAdjustBoardGameTiming"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameTimingInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosAdjustBoardGameTiming"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosAdjustBoardGameTimingMutation, MobilePosAdjustBoardGameTimingMutationVariables>;
+export const MobilePosCloseBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCloseBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCloseBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}},{"kind":"Field","name":{"kind":"Name","value":"groups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"currentOrderId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"participantId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billableMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosCloseBoardGameSessionMutation, MobilePosCloseBoardGameSessionMutationVariables>;
+export const MobilePosCancelBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCancelBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCancelBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosCancelBoardGameSessionMutation, MobilePosCancelBoardGameSessionMutationVariables>;
 export const MobilePosCheckoutBoardGameCopyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCheckoutBoardGameCopy"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameCheckoutCopyInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCheckoutBoardGameCopy"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"checkedOutAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosCheckoutBoardGameCopyMutation, MobilePosCheckoutBoardGameCopyMutationVariables>;
 export const MobilePosReturnBoardGameCopyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosReturnBoardGameCopy"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameReturnCopyInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosReturnBoardGameCopy"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"copyStatus"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosReturnBoardGameCopyMutation, MobilePosReturnBoardGameCopyMutationVariables>;
+export const MobilePosTakeBoardGameIdentityHoldDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosTakeBoardGameIdentityHold"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameTakeIdentityHoldInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosTakeBoardGameIdentityHold"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"documentKind"}},{"kind":"Field","name":{"kind":"Name","value":"holderName"}},{"kind":"Field","name":{"kind":"Name","value":"documentNumberTail"}},{"kind":"Field","name":{"kind":"Name","value":"hasDocumentNumber"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"takenAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosTakeBoardGameIdentityHoldMutation, MobilePosTakeBoardGameIdentityHoldMutationVariables>;
+export const MobilePosReleaseBoardGameIdentityHoldDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosReleaseBoardGameIdentityHold"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameReleaseIdentityHoldInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosReleaseBoardGameIdentityHold"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"purgedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosReleaseBoardGameIdentityHoldMutation, MobilePosReleaseBoardGameIdentityHoldMutationVariables>;
 export const MobileDeviceSessionChangedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"MobileDeviceSessionChanged"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsDeviceSessionChanged"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobileRealtimeEventFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobileRealtimeEventFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"RealtimeEvent"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventId"}},{"kind":"Field","name":{"kind":"Name","value":"eventType"}},{"kind":"Field","name":{"kind":"Name","value":"schemaVersion"}},{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"actorType"}},{"kind":"Field","name":{"kind":"Name","value":"actorId"}},{"kind":"Field","name":{"kind":"Name","value":"deviceId"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"aggregateVersion"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"occurredAt"}},{"kind":"Field","name":{"kind":"Name","value":"payload"}}]}}]} as unknown as DocumentNode<MobileDeviceSessionChangedSubscription, MobileDeviceSessionChangedSubscriptionVariables>;
 export const MobileShiftChangedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"MobileShiftChanged"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsShiftChanged"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobileRealtimeEventFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobileRealtimeEventFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"RealtimeEvent"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventId"}},{"kind":"Field","name":{"kind":"Name","value":"eventType"}},{"kind":"Field","name":{"kind":"Name","value":"schemaVersion"}},{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"actorType"}},{"kind":"Field","name":{"kind":"Name","value":"actorId"}},{"kind":"Field","name":{"kind":"Name","value":"deviceId"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"aggregateVersion"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"occurredAt"}},{"kind":"Field","name":{"kind":"Name","value":"payload"}}]}}]} as unknown as DocumentNode<MobileShiftChangedSubscription, MobileShiftChangedSubscriptionVariables>;
 export const MobilePosOrderChangedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"MobilePosOrderChanged"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosOrderChanged"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobileRealtimeEventFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobileRealtimeEventFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"RealtimeEvent"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventId"}},{"kind":"Field","name":{"kind":"Name","value":"eventType"}},{"kind":"Field","name":{"kind":"Name","value":"schemaVersion"}},{"kind":"Field","name":{"kind":"Name","value":"tenantId"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"actorType"}},{"kind":"Field","name":{"kind":"Name","value":"actorId"}},{"kind":"Field","name":{"kind":"Name","value":"deviceId"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"aggregateVersion"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"occurredAt"}},{"kind":"Field","name":{"kind":"Name","value":"payload"}}]}}]} as unknown as DocumentNode<MobilePosOrderChangedSubscription, MobilePosOrderChangedSubscriptionVariables>;

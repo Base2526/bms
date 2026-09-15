@@ -105,6 +105,43 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
     ),
   },
   {
+    // 9.93: บัตรที่ร้านบอร์ดเกมขอไว้ตอนยื่นกล่องเกม · กฎชุดนี้ตอบคำถามที่ร้านถามจริงสามข้อ
+    // "เก็บเลขบัตรได้ไหม" · "ลูกค้ากลับไปแล้วบัตรยังอยู่ทำไง" · "ทำไมปิดบิลไม่ได้"
+    id: "limits.board-game-identity",
+    guideIds: ["board-game.run-cafe", "pos.board-game-table"],
+    title: both("บัตรที่รับไว้ค้ำกล่องเกม", "Cards held against a game box"),
+    items: lists(
+      [
+        "บัตรผูกกับ “การมาเล่นครั้งนี้” ไม่ใช่กับสมาชิก — ตอบคำถามว่าตอนนี้ถือบัตรของใครอยู่ในลิ้นชัก",
+        "เลขบัตรไม่บังคับ · ถ้ากรอก ระบบเข้ารหัสก่อนเก็บและจอแสดงแค่สี่ตัวท้ายไว้หาบัตรในลิ้นชัก",
+        "คืนบัตรแล้วระบบลบชื่อ เลข และสี่ตัวท้ายทิ้งทันที เหลือไว้แค่ว่ารับไว้เมื่อไร คืนเมื่อไร และใครเป็นคนยื่นให้",
+        "บัตรที่ยังไม่คืนจะเก็บเลขไว้ต่อโดยตั้งใจ เพราะนั่นคือเรื่องที่ยังไม่จบ",
+        "ปิดบิลใบสุดท้ายของโต๊ะ หรือยกเลิกโต๊ะ ไม่ได้จนกว่าจะคืนบัตรครบ — กันลูกค้าจ่ายเงินแล้วเดินออกไปโดยลืมบัตร",
+        "กลุ่มที่จ่ายก่อนแล้วกลับบ้านปิดบิลได้ตามปกติแม้ยังถือบัตรของโต๊ะอยู่ ด่านอยู่ที่กลุ่มสุดท้ายเท่านั้น",
+        "รับคืนกล่องเกมแล้วไม่ได้แปลว่าบัตรถูกคืน ต้องกดคืนบัตรอีกครั้งเมื่อยื่นบัตรให้ลูกค้าจริง",
+        "อ่านเลขที่เก็บไว้กลับออกมาได้เฉพาะที่หลังบ้าน ด้วยสิทธิ์ board_game.identity.reveal (ปกติคือ Manager) และทุกครั้งที่อ่านถูกบันทึกไว้",
+        "เครื่องขายไม่มีทางอ่านเลขเต็มเลย เพราะเป็นจอที่แชร์กันและหันออกทางลูกค้า",
+        "ระบบไม่เก็บรูปถ่ายบัตร เก็บแค่ชนิดเอกสาร ชื่อบนบัตร และเลข (ถ้ากรอก)",
+      ],
+      [
+        "A card belongs to the visit, not to the member — it answers whose card is in the drawer right now.",
+        "The number is optional; when typed it is encrypted before it is stored, and screens show only the last 4 so staff can find the card in the drawer.",
+        "Handing the card back erases the name, the number and the last 4 immediately, leaving only when it was taken, when it went back, and who handed it over.",
+        "A card still at the counter keeps its number on purpose: that is the incident that has not ended.",
+        "The last bill of a table cannot be closed, and the table cannot be cancelled, while a card is still held — this is what stops a guest paying and walking out without their card.",
+        "A group that pays and leaves early closes normally even while the table still holds a card; the gate is on the final group only.",
+        "Taking a game box back is not the same as giving the card back — press it again when the card is physically in the guest's hand.",
+        "Reading a stored number back is back-office only, needs board_game.identity.reveal (normally Manager), and every read is recorded.",
+        "The register can never show the full number: it is a shared screen that faces the customer.",
+        "No photo of the document is stored — only the document type, the name on it, and the number when typed.",
+      ]
+    ),
+    aliases: lists(
+      ["บัตรค้ำ", "ยึดบัตร", "รับบัตรไว้", "บัตรประชาชนลูกค้า", "คืนบัตร", "ลูกค้าลืมบัตร", "เก็บเลขบัตร", "ปิดบิลบอร์ดเกมไม่ได้", "เลขบัตรเข้ารหัส"],
+      ["hold a card", "keep an ID card", "collateral card", "give the card back", "guest forgot their card", "store an ID number", "cannot close the board-game bill", "encrypted ID number"]
+    ),
+  },
+  {
     id: "limits.order-alerts",
     guideIds: ["kitchen.board", "pos.restaurant-kitchen-round", "orders.restaurant-requests"],
     title: both("เสียงเตือนออร์เดอร์เข้า และความเร็วที่ออร์เดอร์เด้งขึ้นจอ", "Incoming-order alert sounds and how fast orders reach the screen"),

@@ -155,8 +155,13 @@ export type CreateOrderInput = {
   posSalesSurface?: "RETAIL_POS" | "RESTAURANT_POS" | null;
   /** Server-validated restaurant check settled by this order. */
   restaurantCheckId?: string | null;
-  /** Server-validated board-game session settled by this POS order. */
-  boardGameSessionId?: string | null;
+  /**
+   * Server-validated board-game billing group settled by this POS order (`9.89`).
+   * The session it belongs to is derived here, never supplied by the caller: one
+   * table visit can hand the register several bills, so naming the table cannot
+   * say which one is being paid.
+   */
+  boardGameBillingGroupId?: string | null;
   /** Snapshot for restaurant receipts/history; separate from online fulfillmentType. */
   restaurantServiceMode?: "DINE_IN" | "TAKEAWAY" | null;
   /**
@@ -477,10 +482,11 @@ export async function createOrderInTx(
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
-  const boardGameSessionId = input.boardGameSessionId?.trim() || null;
+  const boardGameBillingGroupId = input.boardGameBillingGroupId?.trim() || null;
+  let boardGameSessionId: string | null = null;
   const validation = validateOrderItems(input.items);
   if (!validation.ok) {
-    if (validation.index === -1 && !boardGameSessionId) return { status: "EMPTY" };
+    if (validation.index === -1 && !boardGameBillingGroupId) return { status: "EMPTY" };
     if (validation.index === -1) {
       // A frozen board-game session is a billable service and may be the only
       // line on a POS bill. Its amount is loaded below; the caller cannot use
@@ -560,51 +566,128 @@ export async function createOrderInTx(
     unitAmount: number;
     vatCategory: VatCategory;
   }> = [];
-  if (boardGameSessionId) {
+  if (boardGameBillingGroupId) {
     if (input.channel !== "pos" || input.restaurantCheckId || !input.posDeviceId || !input.posShiftId) {
-      return { status: "INVALID_ITEM", index: -1, reason: "session บอร์ดเกมชำระได้ผ่าน POS เท่านั้น" };
+      return { status: "INVALID_ITEM", index: -1, reason: "บิลบอร์ดเกมชำระได้ผ่าน POS เท่านั้น" };
     }
-    const session = await client.query<{
+    // ล็อกกลุ่มบิล ไม่ใช่ทั้งโต๊ะ — อีกกลุ่มของโต๊ะเดียวกันต้องเก็บเงินพร้อมกันได้ (`9.89`)
+    const group = await client.query<{
+      id: string;
+      status: string;
       amount_due: string;
       charge_snapshot: unknown;
+      session_id: string;
+      group_no: number;
+      current_order_id: string | null;
+      session_group_count: string;
     }>(
-      `SELECT amount_due, charge_snapshot
-         FROM bms_board_game_sessions
-        WHERE tenant_id = $1 AND id::text = $2 AND location_id = $3
-          AND status = 'CLOSING' AND current_order_id IS NULL
-        FOR UPDATE`,
-      [tenantId, boardGameSessionId, locationId]
+      `SELECT g.id, g.status, g.amount_due, g.charge_snapshot, g.session_id, g.group_no,
+              g.current_order_id,
+              (SELECT count(*) FROM bms_board_game_billing_groups og
+                WHERE og.tenant_id = g.tenant_id AND og.session_id = g.session_id
+                  AND og.status <> 'CANCELLED') AS session_group_count
+         FROM bms_board_game_billing_groups g
+        WHERE g.tenant_id = $1 AND g.id::text = $2 AND g.location_id = $3
+          AND g.status IN ('OPEN', 'CLOSING')
+        FOR UPDATE OF g`,
+      [tenantId, boardGameBillingGroupId, locationId]
     );
-    if (!session.rowCount) {
-      return { status: "INVALID_ITEM", index: -1, reason: "session บอร์ดเกมไม่พร้อมชำระในสาขานี้" };
+    if (!group.rowCount) {
+      return { status: "INVALID_ITEM", index: -1, reason: "บิลบอร์ดเกมไม่พร้อมชำระในสาขานี้" };
     }
-    const snapshot = session.rows[0].charge_snapshot;
-    if (!Array.isArray(snapshot)) {
-      return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลค่าเล่นบอร์ดเกมไม่สมบูรณ์" };
+    const groupRow = group.rows[0];
+    boardGameSessionId = groupRow.session_id;
+
+    // ⚠️ ปล่อยใบจองของ tab **ในทรานแซกชันนี้** ก่อนจองใหม่ (`9.90`)
+    //
+    // tab ที่เปิดอยู่ถือของไว้ให้โต๊ะนี้แล้ว · ถ้าปล่อยคืนก่อนเข้าทรานแซกชันนี้ จะมีช่วงที่
+    // เครื่องอื่นขายกล่องสุดท้ายไปได้ทั้งที่ลูกค้าถือของอยู่ในมือแล้ว — ทำที่นี่จึงไม่มีช่องว่างเลย
+    // อ่าน "ใบที่ถืออยู่จริง" จากตาราง order ไม่ใช่จาก `current_order_id` — การรับชำระที่ล้ม
+    // กลางทางทิ้งใบ PENDING ไว้โดยที่กลุ่มเลิกชี้ไปหามันแล้ว · ใบนั้นยังถือสิทธิ์ตาม
+    // `uq_bms_orders_active_board_game_group` อยู่ ถ้าไม่ปล่อย รอบถัดไปจะชนคีย์ซ้ำที่อ่านไม่ออก
+    const live = await client.query<{ id: string }>(
+      `SELECT id FROM bms_orders
+        WHERE tenant_id = $1 AND board_game_billing_group_id = $2 AND status = 'PENDING'
+        FOR UPDATE`,
+      [tenantId, groupRow.id]
+    );
+    for (const row of live.rows) {
+      const released = await cancelOrderInTx(client, tenantId, row.id);
+      if (!released) {
+        return {
+          status: "INVALID_ITEM",
+          index: -1,
+          reason: "ใบจองของบิลบอร์ดเกมนี้อยู่สถานะที่ปล่อยคืนไม่ได้ — ให้ผู้ดูแลตรวจบิลนี้ก่อน",
+        };
+      }
     }
-    const groups = new Map<number, number>();
-    for (const raw of snapshot) {
-      const line = raw as Record<string, unknown>;
-      const group = Number(line.billingGroupNo);
-      const amount = Math.round(Number(line.amount) * 100) / 100;
-      if (!Number.isInteger(group) || group < 1 || group > 20 || !Number.isFinite(amount) || amount < 0) {
+    if (groupRow.current_order_id) {
+      await client.query(
+        `UPDATE bms_board_game_billing_groups
+            SET current_order_id = NULL, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, groupRow.id]
+      );
+    }
+
+    // รายการบน tab เป็นของ **server** เสมอ — คนหน้าเครื่องส่งมาเองไม่ได้ ไม่งั้นบิลจะมี
+    // ของที่ไม่เคยผ่านการเพิ่มเข้า tab และไม่เคยถูกจอง
+    const tabItems = await client.query<{
+      product_sku: string; size: string; pack_code: string | null; unit_name: string | null;
+      pack_qty: number; base_qty: number; modifier_codes: string[] | null;
+    }>(
+      `SELECT product_sku, size, pack_code, unit_name, pack_qty, base_qty, modifier_codes
+         FROM bms_board_game_group_items
+        WHERE tenant_id = $1 AND billing_group_id = $2 AND status = 'ACTIVE'
+        ORDER BY added_at, id`,
+      [tenantId, groupRow.id]
+    );
+    if (tabItems.rowCount) {
+      items = mergeItems([
+        ...items,
+        ...tabItems.rows.map((row) => ({
+          sku: row.product_sku,
+          size: row.size,
+          qty: Number(row.pack_qty) * Math.max(1, Number(row.base_qty ?? 1)),
+          packCode: row.pack_code,
+          packUnitName: row.unit_name,
+          packQty: Number(row.pack_qty),
+          modifierCodes: row.modifier_codes ?? [],
+        })),
+      ]);
+    }
+
+    if (groupRow.status === "CLOSING") {
+      const snapshot = groupRow.charge_snapshot;
+      if (!Array.isArray(snapshot)) {
         return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลค่าเล่นบอร์ดเกมไม่สมบูรณ์" };
       }
-      groups.set(group, Math.round(((groups.get(group) ?? 0) + amount) * 100) / 100);
+      let snapshotTotal = 0;
+      for (const raw of snapshot) {
+        const line = raw as Record<string, unknown>;
+        const amount = Math.round(Number(line.amount) * 100) / 100;
+        if (!Number.isFinite(amount) || amount < 0) {
+          return { status: "INVALID_ITEM", index: -1, reason: "ข้อมูลค่าเล่นบอร์ดเกมไม่สมบูรณ์" };
+        }
+        snapshotTotal = Math.round((snapshotTotal + amount) * 100) / 100;
+      }
+      const amountDue = Math.round(Number(groupRow.amount_due) * 100) / 100;
+      if (!Number.isFinite(amountDue) || Math.abs(snapshotTotal - amountDue) > 0.01) {
+        return { status: "INVALID_ITEM", index: -1, reason: "ยอดค่าเล่นบอร์ดเกมไม่ตรงกับ snapshot" };
+      }
+      boardGameExtraLines = [{
+        // บอกหมายเลขกลุ่มเฉพาะตอนที่โต๊ะนั้นแยกบิลจริง ไม่งั้นใบเสร็จของโต๊ะปกติจะมีเลขที่ไม่มีความหมาย
+        label: Number(groupRow.session_group_count) > 1
+          ? `Board game time / ค่าเล่นบอร์ดเกม กลุ่ม ${Number(groupRow.group_no)}`
+          : "Board game time / ค่าเล่นบอร์ดเกม",
+        qty: 1,
+        unitAmount: amountDue,
+        vatCategory: "V",
+      }];
+    } else if (!items.length) {
+      // กลุ่มที่ยังเล่นอยู่และไม่มีอะไรบน tab ไม่มีอะไรให้จอง — ใบจองเปล่าคือบิล ฿0 ที่ไม่มีใครตั้งใจ
+      return { status: "INVALID_ITEM", index: -1, reason: "บิลบอร์ดเกมนี้ยังไม่มีรายการให้จอง" };
     }
-    const snapshotTotal = Math.round([...groups.values()].reduce((sum, amount) => sum + amount, 0) * 100) / 100;
-    const amountDue = Math.round(Number(session.rows[0].amount_due) * 100) / 100;
-    if (!Number.isFinite(amountDue) || Math.abs(snapshotTotal - amountDue) > 0.01) {
-      return { status: "INVALID_ITEM", index: -1, reason: "ยอดค่าเล่นบอร์ดเกมไม่ตรงกับ snapshot" };
-    }
-    boardGameExtraLines = [...groups.entries()].map(([group, amount]) => ({
-      label: groups.size === 1
-        ? "Board game time / ค่าเล่นบอร์ดเกม"
-        : `Board game time / ค่าเล่นบอร์ดเกม กลุ่ม ${group}`,
-      qty: 1,
-      unitAmount: amount,
-      vatCategory: "V",
-    }));
   }
   const promisedAtDate = input.promisedAt == null ? null : new Date(input.promisedAt);
   if (promisedAtDate && !Number.isFinite(promisedAtDate.getTime())) {
@@ -635,7 +718,7 @@ export async function createOrderInTx(
   }
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
-    if (mergedValidation.index === -1 && boardGameSessionId) {
+    if (mergedValidation.index === -1 && boardGameBillingGroupId) {
       // The server-validated session charge is the order's service line.
     } else {
     return {
@@ -1222,14 +1305,15 @@ export async function createOrderInTx(
     const ord = await client.query<{ id: string }>(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
                                pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id,
-                               fulfillment_type, promised_at, restaurant_service_mode, board_game_session_id)
-       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                               fulfillment_type, promised_at, restaurant_service_mode, board_game_session_id,
+                               board_game_billing_group_id)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
        RETURNING id`,
       [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
         locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
         input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null,
         input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate, restaurantServiceMode,
-        boardGameSessionId]
+        boardGameSessionId, boardGameBillingGroupId]
     );
     const orderId = ord.rows[0].id;
 

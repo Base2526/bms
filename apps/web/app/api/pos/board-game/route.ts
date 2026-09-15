@@ -97,7 +97,7 @@ async function handlePOST(req: NextRequest) {
       return NextResponse.json({ session: await loadBoardGamePosSession(scope, body.sessionId) });
     }
     if (action === "checkout") {
-      return NextResponse.json({ checkout: await loadBoardGamePosCheckout(scope, body.sessionId) });
+      return NextResponse.json({ checkout: await loadBoardGamePosCheckout(scope, body.billingGroupId) });
     }
     const result = await runBoardGamePosMutation(scope, actor.userId, action, body);
     return NextResponse.json({ result });

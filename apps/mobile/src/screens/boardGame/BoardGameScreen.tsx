@@ -27,11 +27,16 @@ import {
   MobilePosBoardGameWorkspaceDocument,
   MobilePosCancelBoardGameSessionDocument,
   MobilePosCheckoutBoardGameCopyDocument,
+  MobilePosCloseBoardGameBillingGroupDocument,
   MobilePosCloseBoardGameSessionDocument,
   MobilePosLeaveBoardGameParticipantDocument,
+  MobilePosMergeBoardGameSeatingDocument,
   MobilePosMembersDocument,
   MobilePosOpenBoardGameSessionDocument,
+  MobilePosMoveBoardGameSeatingDocument,
+  MobilePosReleaseBoardGameIdentityHoldDocument,
   MobilePosReturnBoardGameCopyDocument,
+  MobilePosTakeBoardGameIdentityHoldDocument,
   type MobilePosMembersQuery,
   type MobilePosBoardGameWorkspaceQuery,
 } from '../../graphql/generated';
@@ -57,6 +62,25 @@ type ParticipantDraft = {
   billingGroupNo: number;
 };
 type Member = MobilePosMembersQuery['bmsPosMemberSearch']['members'][number];
+
+/**
+ * ป้ายชนิดเอกสาร (`9.93`) — ลิสต์เดียวกับ `BOARD_GAME_IDENTITY_KINDS` ของ service ·
+ * ชนิดที่จอไม่รู้จักแสดงเป็นรหัสดิบแทนการซ่อน เพราะบัตรที่ไม่มีป้ายคือบัตรที่หาไม่เจอในลิ้นชัก
+ */
+const IDENTITY_KIND_ORDER = [
+  'NATIONAL_ID',
+  'STUDENT_ID',
+  'DRIVER_LICENSE',
+  'PASSPORT',
+  'OTHER',
+];
+const IDENTITY_KIND_LABEL: Record<string, string> = {
+  NATIONAL_ID: 'บัตรประชาชน',
+  STUDENT_ID: 'บัตรนักเรียน/นักศึกษา',
+  DRIVER_LICENSE: 'ใบขับขี่',
+  PASSPORT: 'พาสปอร์ต',
+  OTHER: 'อื่น ๆ',
+};
 
 function elapsedLabel(startedAt: string | null | undefined, now: number) {
   if (!startedAt) return '-';
@@ -96,6 +120,9 @@ export default function BoardGameScreen({ navigation }: Props) {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [participants, setParticipants] = useState<ParticipantDraft[]>([]);
   const [returnNote, setReturnNote] = useState('');
+  const [holderName, setHolderName] = useState('');
+  const [documentNumber, setDocumentNumber] = useState('');
+  const [documentKind, setDocumentKind] = useState('NATIONAL_ID');
   const [cancelReason, setCancelReason] = useState('');
   const [working, setWorking] = useState('');
   const notified = useRef(new Set<string>());
@@ -123,10 +150,21 @@ export default function BoardGameScreen({ navigation }: Props) {
     MobilePosLeaveBoardGameParticipantDocument,
   );
   const [adjustTiming] = useMutation(MobilePosAdjustBoardGameTimingDocument);
+  const [closeBillingGroup] = useMutation(
+    MobilePosCloseBoardGameBillingGroupDocument,
+  );
   const [closeSession] = useMutation(MobilePosCloseBoardGameSessionDocument);
+  const [moveSeating] = useMutation(MobilePosMoveBoardGameSeatingDocument);
+  const [mergeSeating] = useMutation(MobilePosMergeBoardGameSeatingDocument);
   const [cancelSession] = useMutation(MobilePosCancelBoardGameSessionDocument);
   const [checkoutCopy] = useMutation(MobilePosCheckoutBoardGameCopyDocument);
   const [returnCopy] = useMutation(MobilePosReturnBoardGameCopyDocument);
+  const [takeIdentityHold] = useMutation(
+    MobilePosTakeBoardGameIdentityHoldDocument,
+  );
+  const [releaseIdentityHold] = useMutation(
+    MobilePosReleaseBoardGameIdentityHoldDocument,
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000);
@@ -149,6 +187,12 @@ export default function BoardGameScreen({ navigation }: Props) {
   const selectedSession = sessionQuery.data?.bmsPosBoardGameSession;
   const selectedTable = data?.floor.tables.find(
     table => table.id === selectedSession?.tableId,
+  );
+  // `9.91`: โต๊ะที่ถูกรวมไว้มีหลายชุดนั่งร่วมกัน — ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดที่กำลังดูอยู่
+  // ปุ่มเดียวจึงมีสองความหมาย และจอต้องบอกก่อนกด ไม่ใช่ให้รู้ตอนอีกชุดหายไปจากโต๊ะ
+  const sharedSeating = (selectedTable?.openSession?.sessionCount ?? 1) > 1;
+  const relocateTargets = (data?.floor.tables ?? []).filter(
+    table => !table.blocked && table.id !== selectedSession?.tableId,
   );
   const availableCopies = useMemo(
     () =>
@@ -266,6 +310,13 @@ export default function BoardGameScreen({ navigation }: Props) {
     setMemberSearch('');
     setSelectedMember(null);
     setParticipantRateId(activeRates[0]?.id ?? '');
+  };
+
+  const openBillingGroupCheckout = (billingGroupId: string) => {
+    navigation.getParent<any>()?.navigate('SellTab', {
+      screen: 'Checkout',
+      params: { source: 'board_game', boardGameBillingGroupId: billingGroupId },
+    });
   };
 
   const inputStyle = [
@@ -572,29 +623,173 @@ export default function BoardGameScreen({ navigation }: Props) {
                 · เตือนก่อน {selectedSession.alertBeforeMinutes} นาที
               </Text>
             ) : null}
+            <Text style={[typography.bodyStrong, { color: colors.text }]}>
+              ย้าย / รวมโต๊ะ
+            </Text>
+            <Text style={[typography.caption, { color: colors.textSoft }]}>
+              {sharedSeating
+                ? 'โต๊ะนี้มีหลายชุดนั่งร่วมกัน — ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดนี้ออกไป ส่วนรวมโต๊ะจะพาไปทั้งโต๊ะ'
+                : 'เวลา บิล ของบน tab และเกมที่ยืมยังเป็นของเดิมทุกใบ เปลี่ยนแค่ว่านั่งโต๊ะไหน'}
+            </Text>
+            <ScrollView
+              horizontal
+              // ค่าปริยายของ RN คือ flexGrow: 1 — แถบชิปต้องประกาศเอง ไม่ใช่รอดเพราะพ่อบังเอิญไม่มีความสูงแน่นอน
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={styles.horizontalList}
+            >
+              {relocateTargets.map(target => {
+                const merging = Boolean(target.openSession);
+                const busyKey = `seating-${target.id}`;
+                return (
+                  <Button
+                    key={target.id}
+                    label={`${target.code} · ${
+                      merging ? 'รวมโต๊ะ' : sharedSeating ? 'แยกมาที่นี่' : 'ย้ายมาที่นี่'
+                    }`}
+                    variant="secondary"
+                    loading={working === busyKey}
+                    onPress={() =>
+                      Alert.alert(
+                        merging
+                          ? `รวมกับโต๊ะ ${target.code}`
+                          : `ย้ายไปโต๊ะ ${target.code}`,
+                        merging
+                          ? 'ทุกชุดที่โต๊ะนี้จะไปนั่งรวมกับโต๊ะปลายทาง โดยบิลและเวลาของแต่ละชุดยังแยกเดิม'
+                          : sharedSeating
+                          ? 'เฉพาะชุดที่กำลังดูอยู่จะย้ายไปโต๊ะนั้น ชุดอื่นยังอยู่โต๊ะเดิม'
+                          : 'ทั้งโต๊ะจะย้ายไปโต๊ะนั้น โดยบิลและเวลายังเป็นของเดิม',
+                        [
+                          { text: 'กลับ' },
+                          {
+                            text: 'ยืนยัน',
+                            onPress: () => {
+                              run(busyKey, async () => {
+                                const relocate = merging
+                                  ? mergeSeating
+                                  : moveSeating;
+                                await relocate({
+                                  variables: {
+                                    input: {
+                                      ...inputCredentials,
+                                      idempotencyKey: retryKey(busyKey),
+                                      sessionId: selectedSession.id,
+                                      targetTableId: target.id,
+                                    },
+                                  },
+                                });
+                              });
+                            },
+                          },
+                        ],
+                      )
+                    }
+                  />
+                );
+              })}
+            </ScrollView>
+            {relocateTargets.length === 0 ? (
+              <Text style={[typography.caption, { color: colors.textSoft }]}>
+                สาขานี้ไม่มีโต๊ะอื่นให้ย้ายไป
+              </Text>
+            ) : null}
             {selectedSession.status === 'CLOSING' ? (
               <>
                 <Text style={[typography.numeric, { color: colors.text }]}>
                   ฿{selectedSession.amountDue.toFixed(2)}
                 </Text>
-                <Button
-                  label="ไปชำระเงิน"
-                  fullWidth
-                  onPress={() =>
-                    navigation
-                      .getParent<any>()
-                      ?.navigate('SellTab', {
-                        screen: 'Checkout',
-                        params: {
-                          source: 'board_game',
-                          boardGameSessionId: selectedSession.id,
-                        },
-                      })
-                  }
-                />
+                {selectedSession.billingGroups
+                  .filter(group => group.status === 'CLOSING')
+                  .map(group => (
+                    <Button
+                      key={group.id}
+                      label={`ไปชำระกลุ่ม ${group.groupNo} · ฿${(
+                        group.amountDue + group.tabAmount
+                      ).toFixed(2)}`}
+                      fullWidth
+                      onPress={() => openBillingGroupCheckout(group.id)}
+                    />
+                  ))}
               </>
             ) : (
               <>
+                {selectedSession.billingGroups.length > 1 ? (
+                  <>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      กลุ่มบิล
+                    </Text>
+                    {selectedSession.billingGroups.map(group => (
+                      <View key={group.id} style={styles.between}>
+                        <Text
+                          style={[
+                            typography.body,
+                            { color: colors.text, flex: 1 },
+                          ]}
+                        >
+                          กลุ่ม {group.groupNo} ·{' '}
+                          {group.status === 'OPEN'
+                            ? 'กำลังเล่น'
+                            : group.status === 'CLOSING'
+                            ? 'รอชำระ'
+                            : 'ชำระแล้ว'}
+                          {' · '}฿
+                          {(group.amountDue + group.tabAmount).toFixed(2)}
+                        </Text>
+                        {group.status === 'OPEN' ? (
+                          <Button
+                            label="ปิดบิล/เก็บเงิน"
+                            variant="secondary"
+                            loading={working === `close-group-${group.id}`}
+                            onPress={() =>
+                              Alert.alert(
+                                `ปิดบิลกลุ่ม ${group.groupNo}`,
+                                'ค่าเวลาของกลุ่มนี้จะหยุดตรงนี้ ส่วนกลุ่มอื่นยังเล่นต่อ',
+                                [
+                                  { text: 'กลับ' },
+                                  {
+                                    text: 'ยืนยัน',
+                                    onPress: () => {
+                                      run(
+                                        `close-group-${group.id}`,
+                                        async () => {
+                                          const response =
+                                            await closeBillingGroup({
+                                              variables: {
+                                                input: {
+                                                  ...inputCredentials,
+                                                  idempotencyKey: retryKey(
+                                                    `close-group-${group.id}`,
+                                                  ),
+                                                  billingGroupId: group.id,
+                                                },
+                                              },
+                                            });
+                                          const closed =
+                                            response.data
+                                              ?.bmsPosCloseBoardGameBillingGroup
+                                              .groups[0];
+                                          if (!closed?.id)
+                                            throw new Error('ปิดบิลไม่สำเร็จ');
+                                          openBillingGroupCheckout(closed.id);
+                                        },
+                                      );
+                                    },
+                                  },
+                                ],
+                              )
+                            }
+                          />
+                        ) : group.status === 'CLOSING' ? (
+                          <Button
+                            label="ไปชำระ"
+                            onPress={() => openBillingGroupCheckout(group.id)}
+                          />
+                        ) : null}
+                      </View>
+                    ))}
+                  </>
+                ) : null}
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
                   ผู้เล่น
                 </Text>
@@ -617,7 +812,8 @@ export default function BoardGameScreen({ navigation }: Props) {
                       {participant.billingGroupNo ?? 1}
                       {participant.leftAt ? ' · ออกแล้ว' : ''}
                     </Text>
-                    {!participant.leftAt ? (
+                    {!participant.leftAt &&
+                    participant.billingGroupStatus === 'OPEN' ? (
                       <Button
                         label="ออก"
                         variant="ghost"
@@ -858,6 +1054,121 @@ export default function BoardGameScreen({ navigation }: Props) {
                   </Text>
                 ) : null}
 
+                {/* บัตรที่รับไว้ค้ำกล่องเกม (`9.93`)
+                    อยู่ติดกับกล่องเกมเพราะเป็นการกระทำเดียวกันที่เคาน์เตอร์: ยื่นกล่อง รับบัตร ·
+                    **จอนี้ไม่มีทางอ่านเลขเต็ม** — เครื่องขายเป็นจอที่แชร์กันและหันออกทางลูกค้า
+                    การอ่านเลขอยู่หลังบ้านอย่างเดียว (board_game.identity.reveal) */}
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  บัตรที่รับไว้
+                </Text>
+                {selectedSession.identityHolds.filter(
+                  hold => hold.status === 'HELD',
+                ).length === 0 ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    ไม่ได้ถือบัตรของโต๊ะนี้ไว้
+                  </Text>
+                ) : null}
+                {selectedSession.identityHolds
+                  .filter(hold => hold.status === 'HELD')
+                  .map(hold => (
+                    <View key={hold.id} style={styles.between}>
+                      <Text
+                        style={[
+                          typography.body,
+                          { color: colors.text, flex: 1 },
+                        ]}
+                      >
+                        {hold.holderName ?? '-'} ·{' '}
+                        {IDENTITY_KIND_LABEL[hold.documentKind] ??
+                          hold.documentKind}
+                        {hold.documentNumberTail
+                          ? ` · ลงท้าย ${hold.documentNumberTail}`
+                          : ' · ไม่ได้บันทึกเลข'}
+                      </Text>
+                      <Button
+                        label="คืนบัตร"
+                        variant="secondary"
+                        loading={working === `id-release-${hold.id}`}
+                        onPress={() =>
+                          run(`id-release-${hold.id}`, async () => {
+                            await releaseIdentityHold({
+                              variables: {
+                                input: {
+                                  ...inputCredentials,
+                                  idempotencyKey: retryKey(
+                                    `id-release-${hold.id}`,
+                                  ),
+                                  holdId: hold.id,
+                                  note: null,
+                                },
+                              },
+                            });
+                          })
+                        }
+                      />
+                    </View>
+                  ))}
+                <ScrollView
+                  horizontal
+                  style={{ flexGrow: 0 }}
+                  contentContainerStyle={styles.horizontalList}
+                >
+                  {IDENTITY_KIND_ORDER.map(kind => (
+                    <Button
+                      key={kind}
+                      label={IDENTITY_KIND_LABEL[kind]}
+                      variant={documentKind === kind ? 'primary' : 'secondary'}
+                      onPress={() => setDocumentKind(kind)}
+                    />
+                  ))}
+                </ScrollView>
+                <TextInput
+                  value={holderName}
+                  onChangeText={setHolderName}
+                  placeholder="ชื่อบนบัตร"
+                  placeholderTextColor={colors.textSoft}
+                  style={inputStyle}
+                />
+                {/* เลขไม่บังคับ — ร้านที่เก็บแต่ตัวบัตรจริงก็ยังได้ด่านตอนปิดบิล */}
+                <TextInput
+                  value={documentNumber}
+                  onChangeText={setDocumentNumber}
+                  placeholder="เลขบัตร (ไม่บังคับ)"
+                  placeholderTextColor={colors.textSoft}
+                  style={inputStyle}
+                />
+                <Button
+                  label="รับบัตรไว้"
+                  variant="secondary"
+                  disabled={!holderName.trim()}
+                  loading={working === 'identity-hold'}
+                  onPress={() =>
+                    run('identity-hold', async () => {
+                      await takeIdentityHold({
+                        variables: {
+                          input: {
+                            ...inputCredentials,
+                            idempotencyKey: retryKey('identity-hold'),
+                            sessionId: selectedSession.id,
+                            documentKind,
+                            holderName: holderName.trim(),
+                            documentNumber: documentNumber.trim() || null,
+                            // ผูกกับกล่องเกมและสมาชิกทำที่หลังบ้าน — จอเครื่องขายเก็บแค่
+                            // สิ่งที่คนหน้าเคาน์เตอร์เห็นอยู่ตรงหน้า
+                            loanId: null,
+                            customerId: null,
+                            note: null,
+                          },
+                        },
+                      });
+                      setHolderName('');
+                      setDocumentNumber('');
+                    })
+                  }
+                />
+
                 <TextInput
                   value={cancelReason}
                   onChangeText={setCancelReason}
@@ -905,7 +1216,11 @@ export default function BoardGameScreen({ navigation }: Props) {
                     />
                   ) : null}
                   <Button
-                    label="ปิดเวลา/คิดเงิน"
+                    label={
+                      selectedSession.billingGroups.length > 1
+                        ? 'ปิดเวลาทุกกลุ่ม'
+                        : 'ปิดเวลา/คิดเงิน'
+                    }
                     loading={working === `close-session-${selectedSession.id}`}
                     onPress={() =>
                       Alert.alert(
@@ -933,17 +1248,19 @@ export default function BoardGameScreen({ navigation }: Props) {
                                   });
                                   const bill =
                                     response.data?.bmsPosCloseBoardGameSession;
-                                  if (!bill?.sessionId)
+                                  if (
+                                    !bill?.sessionId ||
+                                    bill.groups.length === 0
+                                  )
                                     throw new Error('ปิดเวลาไม่สำเร็จ');
-                                  navigation
-                                    .getParent<any>()
-                                    ?.navigate('SellTab', {
-                                      screen: 'Checkout',
-                                      params: {
-                                        source: 'board_game',
-                                        boardGameSessionId: bill.sessionId,
-                                      },
-                                    });
+                                  if (bill.groups.length === 1) {
+                                    openBillingGroupCheckout(bill.groups[0].id);
+                                  } else {
+                                    Alert.alert(
+                                      'ปิดเวลาทุกกลุ่มแล้ว',
+                                      `มี ${bill.groups.length} บิลรอชำระ เลือกเก็บทีละกลุ่ม`,
+                                    );
+                                  }
                                 },
                               );
                             },

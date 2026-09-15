@@ -52,7 +52,12 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.82__bms_board_game_pos_settlement.sql', 'column', 'bms_orders', 'board_game_session_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
     ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_orders', 'restaurant_service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
     ('9.87__bms_restaurant_service_mode.sql', 'column', 'bms_restaurant_checks', 'service_mode', 'ขายไม่ได้ทั้งระบบ (createOrder INSERT ทุกบิล) และจอครัว/บิลโต๊ะร้านอาหารพังทั้งหน้า'),
-    ('9.88__bms_inventory_operation_idempotency.sql', 'table', 'bms_inventory_operation_idempotency', NULL, 'โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)')
+    ('9.88__bms_inventory_operation_idempotency.sql', 'table', 'bms_inventory_operation_idempotency', NULL, 'โอนสต็อกและนับสต็อกจากเครื่องขาย native ล้มทุกครั้ง (หลังบ้านยังทำได้)'),
+    ('9.89__bms_board_game_billing_groups.sql', 'column', 'bms_orders', 'board_game_billing_group_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
+    ('9.89__bms_board_game_billing_groups.sql', 'table', 'bms_board_game_billing_groups', NULL, 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
+    ('9.89__bms_board_game_billing_groups.sql', 'column', 'bms_board_game_session_participants', 'billing_group_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
+    ('9.90__bms_board_game_group_tab_items.sql', 'table', 'bms_board_game_group_items', NULL, 'ร้านบอร์ดเกมเก็บเงินไม่ได้ทุกโต๊ะ — createOrder อ่านรายการบนบิลทุกครั้ง'),
+    ('9.90__bms_board_game_group_tab_items.sql', 'column', 'bms_board_game_billing_groups', 'tab_amount', 'ร้านบอร์ดเกมเก็บเงินไม่ได้ทุกโต๊ะ — createOrder อ่านรายการบนบิลทุกครั้ง')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

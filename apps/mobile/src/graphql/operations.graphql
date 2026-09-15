@@ -1842,7 +1842,9 @@ mutation MobilePosSendStockTransfer($input: BmsPosStockTransferActionInput!) {
   }
 }
 
-mutation MobilePosReceiveStockTransfer($input: BmsPosStockTransferReceiveInput!) {
+mutation MobilePosReceiveStockTransfer(
+  $input: BmsPosStockTransferReceiveInput!
+) {
   bmsPosReceiveStockTransfer(input: $input) {
     status
     reason
@@ -1934,6 +1936,9 @@ mutation MobilePosCancelStockCount($input: BmsPosStockCountActionInput!) {
 fragment MobilePosBoardGameSessionSummaryFields on BmsPosBoardGameSessionSummary {
   id
   sessionId
+  seatingId
+  sessionIds
+  sessionCount
   status
   billingMode
   guestCount
@@ -1943,6 +1948,8 @@ fragment MobilePosBoardGameSessionSummaryFields on BmsPosBoardGameSessionSummary
   alertBeforeMinutes
   alertStatus
   amountDue
+  billingGroupCount
+  awaitingPaymentCount
   replayed
 }
 
@@ -2016,7 +2023,37 @@ query MobilePosBoardGameSession(
     amountDue
     locationId
     tableId
-    currentOrderId
+    seatingId
+    billingGroups {
+      id
+      groupNo
+      status
+      amountDue
+      tabAmount
+      endedAt
+      currentOrderId
+      chargeSnapshot {
+        participantId
+        displayName
+        participantType
+        billingGroupNo
+        billableMinutes
+        hourlyRate
+        amount
+      }
+      tabItems {
+        id
+        sku
+        productName
+        size
+        packCode
+        unitName
+        packQty
+        modifierNames
+        note
+        addedAt
+      }
+    }
     participants {
       id
       displayName
@@ -2027,6 +2064,8 @@ query MobilePosBoardGameSession(
       roundingMinutes
       graceMinutes
       billingGroupNo
+      billingGroupId
+      billingGroupStatus
       joinedAt
       leftAt
     }
@@ -2040,6 +2079,18 @@ query MobilePosBoardGameSession(
       returnedAt
       copyStatus
     }
+    identityHolds {
+      id
+      loanId
+      documentKind
+      holderName
+      documentNumberTail
+      hasDocumentNumber
+      status
+      note
+      takenAt
+      returnedAt
+    }
   }
 }
 
@@ -2049,11 +2100,17 @@ query MobilePosBoardGameCheckout(
 ) {
   bmsPosBoardGameCheckout(credentials: $credentials, id: $id) {
     id
+    sessionId
+    groupNo
+    sessionGroupCount
     tableCode
     tableName
     startedAt
     endedAt
     amountDue
+    tabAmount
+    tabItemCount
+    totalDue
     chargeLineCount
   }
 }
@@ -2075,6 +2132,63 @@ mutation MobilePosAddBoardGameParticipant(
     hourlyRate
     billingGroupNo
     joinedAt
+    replayed
+  }
+}
+
+mutation MobilePosCloseBoardGameBillingGroup(
+  $input: BmsPosBoardGameBillingGroupActionInput!
+) {
+  bmsPosCloseBoardGameBillingGroup(input: $input) {
+    sessionId
+    amountDue
+    endedAt
+    replayed
+    groups {
+      id
+      groupNo
+      status
+      amountDue
+      tabAmount
+      endedAt
+      currentOrderId
+    }
+    lines {
+      participantId
+      displayName
+      participantType
+      billingGroupNo
+      billableMinutes
+      hourlyRate
+      amount
+    }
+  }
+}
+
+mutation MobilePosMoveBoardGameSeating(
+  $input: BmsPosBoardGameSeatingActionInput!
+) {
+  bmsPosMoveBoardGameSeating(input: $input) {
+    action
+    seatingId
+    sourceSeatingId
+    fromTableId
+    toTableId
+    sessionIds
+    replayed
+  }
+}
+
+mutation MobilePosMergeBoardGameSeating(
+  $input: BmsPosBoardGameSeatingActionInput!
+) {
+  bmsPosMergeBoardGameSeating(input: $input) {
+    action
+    seatingId
+    sourceSeatingId
+    fromTableId
+    toTableId
+    sessionIds
     replayed
   }
 }
@@ -2103,6 +2217,15 @@ mutation MobilePosCloseBoardGameSession(
     amountDue
     endedAt
     replayed
+    groups {
+      id
+      groupNo
+      status
+      amountDue
+      tabAmount
+      endedAt
+      currentOrderId
+    }
     lines {
       participantId
       displayName
@@ -2123,7 +2246,9 @@ mutation MobilePosCancelBoardGameSession(
   }
 }
 
-mutation MobilePosCheckoutBoardGameCopy($input: BmsPosBoardGameCheckoutCopyInput!) {
+mutation MobilePosCheckoutBoardGameCopy(
+  $input: BmsPosBoardGameCheckoutCopyInput!
+) {
   bmsPosCheckoutBoardGameCopy(input: $input) {
     id
     checkedOutAt
@@ -2136,6 +2261,33 @@ mutation MobilePosReturnBoardGameCopy($input: BmsPosBoardGameReturnCopyInput!) {
     id
     returnedAt
     copyStatus
+    replayed
+  }
+}
+
+mutation MobilePosTakeBoardGameIdentityHold(
+  $input: BmsPosBoardGameTakeIdentityHoldInput!
+) {
+  bmsPosTakeBoardGameIdentityHold(input: $input) {
+    id
+    documentKind
+    holderName
+    documentNumberTail
+    hasDocumentNumber
+    status
+    takenAt
+    replayed
+  }
+}
+
+mutation MobilePosReleaseBoardGameIdentityHold(
+  $input: BmsPosBoardGameReleaseIdentityHoldInput!
+) {
+  bmsPosReleaseBoardGameIdentityHold(input: $input) {
+    id
+    status
+    returnedAt
+    purgedAt
     replayed
   }
 }
