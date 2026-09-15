@@ -131,6 +131,13 @@ Rules worth knowing before changing any of it:
   all; that exception exists for this one path and the "payments must equal the amount due" check
   still decides whether zero is the right answer.
 
+A plan may belong to one branch (`location_id`) or to every branch (`NULL`). That is enforced in the
+service and at the route, and the catalogue a screen receives is filtered to the branches the account
+actually runs — a screen that offers a plan the server will refuse is lying to the person using it.
+The minute balance on a contract is a cache of the ledger, and `boardGamePassOutstanding()` measures
+it: `balanceMismatchCount` must be zero before books close, the same rule points and store credit
+already follow.
+
 Selling a pass is a guarded action of its own (`board_game.pass.manage`), the same shape gift cards
 use (`8.9`): taking the money still goes through the existing POS sale, and the contract records
 which order paid for it. Cancelling a pass stops it covering anything; refunds go through the POS

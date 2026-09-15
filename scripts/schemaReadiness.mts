@@ -227,6 +227,52 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_board_game_billing_groups", name: "tab_amount" },
     ],
   },
+  {
+    // ตารางหลักของโมดูล — เส้นทางเปิด/อ่าน/ปิด/ยกเลิกโต๊ะอ่านมันทุกครั้ง · ฐานที่มี `9.89`-`9.93`
+    // แต่ขาดไฟล์นี้เป็นไปไม่ได้ในทางปฏิบัติ (FK ของ `9.89` ชี้มาที่ session) แต่ลิสต์นี้ตอบคำถาม
+    // "ฐานนี้รันโค้ดปัจจุบันได้ไหม" — การประกาศให้ครบไม่มีต้นทุน ส่วนการเว้นไว้ทำให้คำตอบไม่ครบ
+    file: "9.80__bms_board_game_cafe_core.sql",
+    impact: "ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่",
+    needs: [
+      { kind: "table", name: "bms_board_game_tables" },
+      { kind: "table", name: "bms_board_game_sessions" },
+      { kind: "table", name: "bms_board_game_session_participants" },
+      { kind: "table", name: "bms_board_game_session_games" },
+      { kind: "table", name: "bms_board_game_titles" },
+      { kind: "table", name: "bms_board_game_copies" },
+    ],
+  },
+  {
+    // ⚠️ `9.91`–`9.93` มีรัศมีเท่ากับ `9.90` เป๊ะ ๆ — กั้นด้วย archetype เหมือนกัน แต่เมื่อร้าน
+    // เป็นบอร์ดเกมแล้วทุกเส้นทางแตะมันทุกครั้ง · การเว้นไว้เพราะ "กั้นด้วย archetype แล้ว"
+    // ทำให้ `db/checks/schema-readiness.sql` (ตัวเดียวที่รันบนเซิร์ฟเวอร์ production ได้ เพราะ
+    // ที่นั่นไม่มี Node) ตอบว่า "พร้อม" กับฐานที่ apply ไม่ครบ แล้วร้านเปิดโต๊ะไม่ได้สักโต๊ะ —
+    // ซึ่งเป็นสิ่งที่ CLAUDE.md เรียกว่า "แย่กว่าไม่มีตัวตรวจเลย"
+    file: "9.91__bms_board_game_seatings.sql",
+    impact: "ร้านบอร์ดเกมเปิดโต๊ะไม่ได้เลย — openBoardGameSession เขียน seating_id ทุกครั้ง",
+    needs: [
+      { kind: "table", name: "bms_board_game_seatings" },
+      { kind: "column", table: "bms_board_game_sessions", name: "seating_id" },
+    ],
+  },
+  {
+    // ปิดบิลทุกกลุ่มล็อกและอ่านแพ็กเกจก่อนคิดยอดเสมอ (`closeOpenBillingGroupInTx`)
+    // ไม่ว่าสมาชิกคนนั้นจะถือแพ็กเกจหรือไม่
+    file: "9.92__bms_board_game_member_passes.sql",
+    impact: "ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง",
+    needs: [
+      { kind: "table", name: "bms_board_game_pass_plans" },
+      { kind: "table", name: "bms_board_game_member_passes" },
+      { kind: "table", name: "bms_board_game_pass_ledger" },
+    ],
+  },
+  {
+    // ด่าน "คืนบัตรก่อนจบโต๊ะ" อ่านตารางนี้ที่ทางออกทั้งสามของโต๊ะ และ getBoardGameSession
+    // อ่านมันทุกครั้งที่เปิดการ์ดโต๊ะ
+    file: "9.93__bms_board_game_identity_holds.sql",
+    impact: "ร้านบอร์ดเกมปิดบิล/ยกเลิก/เปิดดูโต๊ะไม่ได้เลย — ด่านคืนบัตรอ่านตารางนี้ทุกครั้ง",
+    needs: [{ kind: "table", name: "bms_board_game_identity_holds" }],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

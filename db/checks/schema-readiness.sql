@@ -57,7 +57,19 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.89__bms_board_game_billing_groups.sql', 'table', 'bms_board_game_billing_groups', NULL, 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
     ('9.89__bms_board_game_billing_groups.sql', 'column', 'bms_board_game_session_participants', 'billing_group_id', 'ขายไม่ได้ทั้งระบบ (ทุกร้าน ทุกช่องทาง) — createOrder INSERT คอลัมน์นี้ทุกบิล'),
     ('9.90__bms_board_game_group_tab_items.sql', 'table', 'bms_board_game_group_items', NULL, 'ร้านบอร์ดเกมเก็บเงินไม่ได้ทุกโต๊ะ — createOrder อ่านรายการบนบิลทุกครั้ง'),
-    ('9.90__bms_board_game_group_tab_items.sql', 'column', 'bms_board_game_billing_groups', 'tab_amount', 'ร้านบอร์ดเกมเก็บเงินไม่ได้ทุกโต๊ะ — createOrder อ่านรายการบนบิลทุกครั้ง')
+    ('9.90__bms_board_game_group_tab_items.sql', 'column', 'bms_board_game_billing_groups', 'tab_amount', 'ร้านบอร์ดเกมเก็บเงินไม่ได้ทุกโต๊ะ — createOrder อ่านรายการบนบิลทุกครั้ง'),
+    ('9.80__bms_board_game_cafe_core.sql', 'table', 'bms_board_game_tables', NULL, 'ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่'),
+    ('9.80__bms_board_game_cafe_core.sql', 'table', 'bms_board_game_sessions', NULL, 'ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่'),
+    ('9.80__bms_board_game_cafe_core.sql', 'table', 'bms_board_game_session_participants', NULL, 'ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่'),
+    ('9.80__bms_board_game_cafe_core.sql', 'table', 'bms_board_game_session_games', NULL, 'ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่'),
+    ('9.80__bms_board_game_cafe_core.sql', 'table', 'bms_board_game_titles', NULL, 'ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่'),
+    ('9.80__bms_board_game_cafe_core.sql', 'table', 'bms_board_game_copies', NULL, 'ร้านบอร์ดเกมใช้อะไรไม่ได้เลย — ตารางโต๊ะ/เวลา/คลังเกมยังไม่มีอยู่'),
+    ('9.91__bms_board_game_seatings.sql', 'table', 'bms_board_game_seatings', NULL, 'ร้านบอร์ดเกมเปิดโต๊ะไม่ได้เลย — openBoardGameSession เขียน seating_id ทุกครั้ง'),
+    ('9.91__bms_board_game_seatings.sql', 'column', 'bms_board_game_sessions', 'seating_id', 'ร้านบอร์ดเกมเปิดโต๊ะไม่ได้เลย — openBoardGameSession เขียน seating_id ทุกครั้ง'),
+    ('9.92__bms_board_game_member_passes.sql', 'table', 'bms_board_game_pass_plans', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง'),
+    ('9.92__bms_board_game_member_passes.sql', 'table', 'bms_board_game_member_passes', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง'),
+    ('9.92__bms_board_game_member_passes.sql', 'table', 'bms_board_game_pass_ledger', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง'),
+    ('9.93__bms_board_game_identity_holds.sql', 'table', 'bms_board_game_identity_holds', NULL, 'ร้านบอร์ดเกมปิดบิล/ยกเลิก/เปิดดูโต๊ะไม่ได้เลย — ด่านคืนบัตรอ่านตารางนี้ทุกครั้ง')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL
