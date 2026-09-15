@@ -168,6 +168,19 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   // RESTRICT FKs on purpose (they are the evidence of what was asked for), so they must go
   // before all three or the whole purge fails on this one table.
   await client.query(`DELETE FROM bms_restaurant_order_requests WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Board game cafe (9.79-9.83) holds the same kind of evidence with RESTRICT FKs: a session
+  // points at the settling order/user/device/shift, a participant at the customer, a title at
+  // the product it is sold as, and a copy at the purchase order it arrived on.  `bms_orders`
+  // points back at the session (9.82), so the two cannot simply be deleted in either order --
+  // release that one reference first, then the session subtree goes as a unit (participants and
+  // session games cascade from the session, copies from the title).
+  await client.query(
+    `UPDATE bms_orders SET board_game_session_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND board_game_session_id IS NOT NULL`,
+    [tenantIds]
+  );
+  await client.query(`DELETE FROM bms_board_game_sessions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_board_game_titles WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // POS operations retain user/device/purchase evidence with RESTRICT FKs.
   await client.query(`DELETE FROM bms_pos_expenses WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_petty_cash_ledger WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);

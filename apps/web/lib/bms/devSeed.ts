@@ -1190,7 +1190,9 @@ export async function seedFakeOrders(
     for (const v of chosen) {
       const qty = preset.qtyBase + R(Math.max(1, preset.qtyMax - preset.qtyBase + 1));
       total += Number(v.price) * qty;
-      items.push([tenantId, locationId, id, v.sku, v.size, qty, v.price]);
+      // receipt_unit_price = ราคาป้ายก่อนหักราคาส่ง/โปร (9.22) · แถว seed ไม่ได้เดินผ่าน
+      // createOrderInTx จึงไม่มีกฎไหนมาลดราคา ราคาป้ายกับราคาที่คิดจริงจึงเท่ากันเสมอ
+      items.push([tenantId, locationId, id, v.sku, v.size, qty, v.price, v.price]);
     }
     let posDeviceId: string | null = null;
     let posShiftId: string | null = null;
@@ -1257,7 +1259,8 @@ export async function seedFakeOrders(
       ["tenant_id", "location_id", "id", "channel", "customer_ref", "customer_id", "status", "total_amount",
         "pos_device_id", "pos_shift_id", "cashier_user_id", "idempotency_key", "created_at", "updated_at"], orders);
     await bulkInsert(client, "bms_order_items",
-      ["tenant_id", "location_id", "order_id", "product_sku", "size", "qty", "unit_price"], items);
+      ["tenant_id", "location_id", "order_id", "product_sku", "size", "qty", "unit_price",
+        "receipt_unit_price"], items);
     await bulkInsert(client, "bms_payments",
       ["tenant_id", "order_id", "method", "amount", "status", "verified_by", "created_at"], payments);
     await bulkInsert(client, "bms_shipments",
@@ -1730,7 +1733,8 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
         tenantId, locationId, recoveredOrderId, conversation.channel, conversation.customerRef,
         conversation.customerId, "PAID", recoveredRevenue!.toFixed(2), resolvedAt, resolvedAt,
       ]);
-      recoveryItems.push([tenantId, locationId, recoveredOrderId, variant.sku, variant.size, requestedQty, variant.price]);
+      recoveryItems.push([tenantId, locationId, recoveredOrderId, variant.sku, variant.size, requestedQty,
+        variant.price, variant.price]);
       recoveryPayments.push([
         tenantId, recoveredOrderId, "BANK_TRANSFER", recoveredRevenue!.toFixed(2),
         "CONFIRMED", "seed@fake:restock", resolvedAt,
@@ -1790,7 +1794,8 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
     await bulkInsert(client, "bms_orders",
       ["tenant_id", "location_id", "id", "channel", "customer_ref", "customer_id", "status", "total_amount", "created_at", "updated_at"], recoveryOrders);
     await bulkInsert(client, "bms_order_items",
-      ["tenant_id", "location_id", "order_id", "product_sku", "size", "qty", "unit_price"], recoveryItems);
+      ["tenant_id", "location_id", "order_id", "product_sku", "size", "qty", "unit_price",
+        "receipt_unit_price"], recoveryItems);
     await bulkInsert(client, "bms_payments",
       ["tenant_id", "order_id", "method", "amount", "status", "verified_by", "created_at"], recoveryPayments);
     await bulkInsert(client, "bms_restock_subscriptions",

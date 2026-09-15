@@ -402,6 +402,13 @@ docker compose ... exec -T postgres psql -U <user> -d <db> < db/checks/schema-re
 > ประกาศไว้ · เส้นแบ่งอ่านจากลิสต์เอง ไม่ได้ฝังเลขไว้ · ด่านนี้คือตัวที่เจอว่า `9.82`
 > (`board_game_session_id`) กับ `9.87` (`restaurant_service_mode`) หายไปทั้งคู่
 
+> **ชั้นถัดไปของกับดักเดียวกัน: ชื่อตารางถูก แต่ลิสต์คอลัมน์ขาด** — `sql-table-reference-contract`
+> กัน "ตารางที่ไม่มีอยู่จริง" ส่วน `insert-required-columns-contract` อ่านคอลัมน์ที่ห้ามว่าง
+> (NOT NULL + ไม่มี DEFAULT) จาก `db/migrations` แล้วบังคับว่าทุก `INSERT INTO t (...)` และทุก
+> `bulkInsert(client, "t", [...])` ใน `apps/web`/`packages` ต้องส่งค่าครบ · ด่านนี้คือตัวที่เจอว่า
+> seeder ไม่เคยส่ง `bms_order_items.receipt_unit_price` (`9.22`) ซึ่งทำให้ปุ่ม "สร้างร้านทดสอบ"
+> และปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านจริงล้มด้วย `23502` ทุกครั้ง
+
 ---
 
 ## 5. `check-bms-secret-key.mts` — คีย์เข้ารหัสใช้งานได้จริงไหม (อ่านอย่างเดียว)

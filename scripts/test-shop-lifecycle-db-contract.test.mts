@@ -1,0 +1,90 @@
+// เดินเส้นทางของปุ่ม "สร้างร้านทดสอบ" จริง: provision -> seed -> ลบทิ้ง
+// Writes only its own throwaway tenants (slug ขึ้นต้น test-). Run against a local migrated
+// test database, never production.
+//
+// ทำไมต้องเดินของจริง: SQL ของ seeder อยู่ใน template literal ทั้งหมด เทสที่ไม่ยิงคำสั่งจริง
+// จึงยืนยันได้แค่ว่า "โค้ดคอมไพล์ผ่าน" — สองบั๊กที่ไฟล์นี้ตรึงไว้เป็นของที่ต้องรันถึงจะเห็น:
+//   1. `9.22` ทำให้ bms_order_items.receipt_unit_price เป็น NOT NULL แต่ seeder ไม่ได้ส่งค่า
+//      → ปุ่มสร้างร้านทดสอบล้ม 23502 ทุกครั้ง และปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านจริง
+//      ค้างที่ขั้น orders ตลอดไป
+//   2. หลักฐานของโมดูลบอร์ดเกม (`9.79`-`9.83`) ผูกกับ customer/order/user ด้วย FK แบบ RESTRICT
+//      และ `9.82` ทำให้ bms_orders ชี้กลับมาที่ session → ลำดับ DELETE ติดวงรอบ ลบร้านไม่ได้เลย
+//
+//   cd apps/web && POSTGRES_HOST=localhost ... npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
+//     --test ../../scripts/test-shop-lifecycle-db-contract.test.mts
+import assert from "node:assert/strict";
+import test from "node:test";
+import { query } from "../apps/web/lib/db";
+import { provisionTestShop } from "../apps/web/lib/bms/testShop";
+import { deleteTenant } from "../apps/web/lib/bms/platform";
+import {
+  seedFakeStaff, seedFakeProducts, seedFakeCustomers, seedFakeOrders,
+  seedFakeRestockSubscriptions, seedFakeMembers, seedFakeBoardGameCafe,
+} from "../apps/web/lib/bms/devSeed";
+import { seedFakePosDevices } from "../apps/web/lib/bms/devPosSeed";
+
+test("ร้านทดสอบบอร์ดเกม: seed ครบแล้วลบทิ้งได้จริง", async (t) => {
+  assert.ok(
+    ["localhost", "127.0.0.1", "::1", "postgres", "db"].includes(process.env.POSTGRES_HOST ?? ""),
+    "local test DB required"
+  );
+  let tenantId: string | null = null;
+  t.after(async () => {
+    // กันร้านค้างเมื่อ assert ล้มก่อนถึงขั้นลบ — deleteTenant กันตัวเองด้วย slug อยู่แล้ว
+    if (tenantId) await deleteTenant(tenantId).catch(() => {});
+  });
+
+  const shop = await provisionTestShop({ name: "lifecycle contract", businessArchetype: "board_game_cafe" });
+  tenantId = shop.tenantId;
+  assert.ok(shop.slug.startsWith("test-"), "provisionTestShop ต้องการันตี slug ที่ลบได้");
+
+  await seedFakeStaff(shop.tenantId, 4, undefined, "board_game_cafe");
+  await seedFakePosDevices(shop.tenantId, 2);
+  await seedFakeProducts(shop.tenantId, 8, "board_game_cafe");
+  await seedFakeCustomers(shop.tenantId, 6);
+  const orders = await seedFakeOrders(shop.tenantId, 12, "board_game_cafe");
+  await seedFakeRestockSubscriptions(shop.tenantId, 4);
+  await seedFakeMembers(shop.tenantId, 4);
+  await seedFakeBoardGameCafe(shop.tenantId, 4);
+
+  assert.ok(orders.summary.orders > 0, "seed ไม่ได้สร้างบิลเลย — เทสนี้จะยืนยันอะไรไม่ได้");
+  const items = await query<{ n: string; nullish: string; mismatched: string }>(
+    `SELECT count(*)::text AS n,
+            count(*) FILTER (WHERE receipt_unit_price IS NULL)::text AS nullish,
+            count(*) FILTER (WHERE receipt_unit_price <> unit_price)::text AS mismatched
+       FROM bms_order_items WHERE tenant_id = $1`,
+    [shop.tenantId]
+  );
+  assert.ok(Number(items.rows[0].n) > 0, "ไม่มีรายการในบิลเลย");
+  assert.equal(items.rows[0].nullish, "0");
+  // แถว seed ไม่ได้เดินผ่านกฎราคาส่ง/โปร ราคาป้ายกับราคาที่คิดจริงจึงต้องเท่ากันเสมอ
+  assert.equal(items.rows[0].mismatched, "0");
+
+  // ผูกบิลกับ session ทั้งสองทิศแบบที่ร้านจริงทำตอนปิดบิลโต๊ะบอร์ดเกม — seeder ไม่สร้างเคสนี้
+  // แต่เป็นเคสที่ทำให้ RESTRICT ทั้งสองข้างชนกันจนลบร้านไม่ได้
+  const linked = await query(
+    `WITH s AS (SELECT id FROM bms_board_game_sessions WHERE tenant_id = $1 LIMIT 1),
+          o AS (SELECT id FROM bms_orders WHERE tenant_id = $1 LIMIT 1)
+     UPDATE bms_orders SET board_game_session_id = (SELECT id FROM s)
+      WHERE tenant_id = $1 AND id = (SELECT id FROM o) AND (SELECT id FROM s) IS NOT NULL
+     RETURNING id`,
+    [shop.tenantId]
+  );
+  assert.equal(linked.rowCount, 1, "ไม่มี session/บิลให้ผูก — เคสที่เทสนี้มีไว้ตรึงจะไม่ถูกเดิน");
+  await query(
+    `UPDATE bms_board_game_sessions SET current_order_id = (SELECT id FROM bms_orders WHERE tenant_id = $1 LIMIT 1)
+      WHERE tenant_id = $1 AND id = (SELECT id FROM bms_board_game_sessions WHERE tenant_id = $1 LIMIT 1)`,
+    [shop.tenantId]
+  );
+
+  await deleteTenant(shop.tenantId);
+  const left = await query<{ n: string }>(`SELECT count(*)::text AS n FROM bms_tenants WHERE id = $1`, [shop.tenantId]);
+  assert.equal(left.rows[0].n, "0");
+  for (const table of ["bms_orders", "bms_order_items", "bms_customers", "bms_board_game_sessions",
+    "bms_board_game_session_participants", "bms_board_game_titles", "users"]) {
+    const rows = await query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM ${table} WHERE tenant_id = $1`, [shop.tenantId]);
+    assert.equal(rows.rows[0].n, "0", `${table} ยังมีแถวค้างหลังลบร้าน`);
+  }
+  tenantId = null;
+});
