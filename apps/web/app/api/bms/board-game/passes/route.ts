@@ -38,8 +38,9 @@ async function handleGET(req: NextRequest) {
       listBoardGameMemberPasses(auth.tenantId, {
         customerId: url.searchParams.get("customerId"),
         activeOnly: url.searchParams.get("activeOnly") === "1",
+        visibleLocationIds: visible,
       }),
-      boardGamePassOutstanding(auth.tenantId),
+      boardGamePassOutstanding(auth.tenantId, visible),
     ]);
     return NextResponse.json({ plans, passes, outstanding });
   } catch (error) {

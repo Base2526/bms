@@ -46,6 +46,7 @@ const lacks = (source: string, re: RegExp, message: string) =>
 const migration = read("db/migrations/9.93__bms_board_game_identity_holds.sql");
 const service = withoutComments(read("apps/web/lib/bms/boardGameIdentity.ts"));
 const cafe = withoutComments(read("apps/web/lib/bms/boardGameCafe.ts"));
+const pos = withoutComments(read("apps/web/lib/bms/pos.ts"));
 const operations = withoutComments(read("apps/web/lib/bms/boardGamePosOperations.ts"));
 const panel = withoutComments(read("apps/web/components/pos/BoardGamePanel.tsx"));
 const adminRoute = withoutComments(read("apps/web/app/api/bms/board-game/identity/route.ts"));
@@ -175,6 +176,27 @@ test("a card must go back before the visit can end, through every exit a table h
     branch.indexOf("bms_board_game_identity_holds") < branch.indexOf("closeOpenBillingGroupInTx"),
     "ด่านบัตรของการปิดกลุ่มต้องอยู่ในกิ่งกลุ่มสุดท้าย ก่อนที่ยอดจะถูกแช่",
   );
+});
+
+test("a hold cannot arrive after billing starts, and final POS settlement has a defensive guard", () => {
+  const take = service.slice(
+    service.indexOf("export async function takeBoardGameIdentityHold"),
+    service.indexOf("export async function releaseBoardGameIdentityHold"),
+  );
+  has(take, /status = 'OPEN'/, "รับบัตรได้เฉพาะ session ที่ยัง OPEN");
+  lacks(take, /status IN \('OPEN','CLOSING'\)/,
+    "CLOSING ผ่านด่านคืนบัตรมาแล้ว ห้ามสอดบัตรเข้ามาทีหลัง");
+  has(take, /status = 'CHECKED_OUT'/,
+    "ถ้าผูกใบยืม ต้องเป็นกล่องที่ยังอยู่กับโต๊ะ ไม่ใช่ประวัติที่คืนแล้ว");
+
+  const boardGamePayment = pos.slice(pos.indexOf("async function finalizePosSale"));
+  const sessionLockAt = boardGamePayment.indexOf("FROM bms_board_game_sessions");
+  const groupLockAt = boardGamePayment.indexOf("FROM bms_board_game_billing_groups", sessionLockAt);
+  const orderLockAt = boardGamePayment.indexOf("FROM bms_orders", groupLockAt);
+  assert.ok(sessionLockAt >= 0 && sessionLockAt < groupLockAt && groupLockAt < orderLockAt,
+    "POS ต้องล็อก session → group → order ให้ตรงกับ close/cancel เพื่อไม่ deadlock");
+  has(boardGamePayment, /bms_board_game_identity_holds[\s\S]{0,160}status = 'HELD'/,
+    "การจ่ายกลุ่มสุดท้ายต้องมีด่านป้องกันข้อมูล HELD เก่าด้วย");
 });
 
 test("the card number staff type is normalized the same way every time", () => {

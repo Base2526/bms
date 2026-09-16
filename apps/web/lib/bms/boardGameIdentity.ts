@@ -263,11 +263,12 @@ export async function takeBoardGameIdentityHold(
       return { ...replay, replayed: true };
     }
 
-    // session ต้องเปิดอยู่จริงในร้านนี้ — รับบัตรไว้กับโต๊ะที่จ่ายเงินไปแล้วคือบัตรที่ไม่มีใคร
-    // ถูกบังคับให้คืน (ด่านปิดบิลจะไม่มีวันเห็นมัน)
+    // รับบัตรได้เฉพาะขณะ session ยัง OPEN เท่านั้น ไม่ใช่ CLOSING: close-for-billing ล็อก
+    // session ก่อนตรวจบัตร แล้วเปลี่ยนเป็น CLOSING ใน transaction เดียวกัน ดังนั้นเงื่อนไขนี้
+    // ปิด race ที่คำขอรับบัตรมาทีหลังด่านปิดบิลและทำให้โต๊ะจ่ายเสร็จทั้งที่บัตรยังอยู่ในลิ้นชัก
     const session = await client.query<{ location_id: string }>(
       `SELECT location_id FROM bms_board_game_sessions
-        WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','CLOSING')
+        WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'
         FOR UPDATE`,
       [tenantId, sessionId]
     );
@@ -275,10 +276,11 @@ export async function takeBoardGameIdentityHold(
     if (loanId) {
       const loan = await client.query(
         `SELECT 1 FROM bms_board_game_session_games
-          WHERE tenant_id = $1 AND id = $2 AND session_id = $3`,
+          WHERE tenant_id = $1 AND id = $2 AND session_id = $3
+            AND status = 'CHECKED_OUT'`,
         [tenantId, loanId, sessionId]
       );
-      if (!loan.rowCount) throw new Error("รายการยืมเกมไม่ใช่ของโต๊ะนี้");
+      if (!loan.rowCount) throw new Error("รายการยืมเกมไม่ใช่กล่องที่โต๊ะนี้กำลังยืมอยู่");
     }
     if (customerId) {
       const customer = await client.query(

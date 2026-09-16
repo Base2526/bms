@@ -590,7 +590,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83` and `9.89`–`9.92` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83` and `9.89`–`9.94` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).
@@ -673,7 +673,10 @@ playable game library. The operating brief is
   `issueBoardGameMemberPass` as well as the route, because a caller that skips the route (a test, an
   internal job, a future surface) would otherwise sell across branches with nothing to say so. The
   catalogue a screen receives is filtered the same way: offering a plan that will be refused on
-  submit is a screen lying to the person using it.
+  submit is a screen lying to the person using it. Since `9.94`, the member contract itself
+  snapshots `location_id`: coverage, lists, totals and cancellation authorization read that immutable
+  scope, never the current plan. Moving a plan therefore cannot move old customer entitlements, and
+  a pass sold at one branch cannot cover time at another.
 - **The pass minute balance is a cache, and the cache is measured.**
   `boardGamePassOutstanding()` recomputes every `MINUTES` balance from `bms_board_game_pass_ledger`
   and reports `balanceMismatchCount`, exactly as loyalty points (`7.96`) and store credit (`8.9`)
@@ -702,6 +705,10 @@ playable game library. The operating brief is
   `HELD` keeps its number on purpose, because that is the incident it was recorded for. **A table
   cannot end while a card is held** — the gate sits at all three exits (last billing group, whole
   table, cancel), and only at the last group, so an early-paying party still leaves normally.
+  A new hold is accepted only while the session is `OPEN`, so none can arrive after the close gate
+  changes it to `CLOSING`; final POS settlement repeats the held-card guard for pre-`9.94` rows.
+  POS locks session → billing group → order, the same order as close/cancel, to avoid a deadlock at
+  the exact moment the counter takes payment.
   Returning a game copy does not release a card: the system records a physical act, it cannot
   perform one. **Reading a stored number back is its own permission** (`board_game.identity.reveal`,
   Manager), exists only in the back office, and writes an audit row every time — a register is a

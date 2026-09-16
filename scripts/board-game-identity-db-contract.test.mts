@@ -288,6 +288,11 @@ test("a card recorded against a game box follows the same rules as the box", asy
   await returnBoardGameCopy(
     tenantId, { loanId: loan.id, idempotencyKey: key("give-back") }, staffId
   );
+  await assert.rejects(
+    () => take(session.id, { loanId: loan.id, holderName: "FAKE returned loan" }),
+    /กำลังยืมอยู่/,
+    "บัตรใหม่ห้ามผูกกับประวัติกล่องที่คืนแล้ว",
+  );
   const stillHeld = await listBoardGameIdentityHolds(tenantId, { sessionId: session.id, openOnly: true });
   assert.equal(stillHeld.length, 1, "รับเกมคืนไม่ได้แปลว่าบัตรถูกคืนไปแล้ว");
   await assert.rejects(
@@ -339,6 +344,11 @@ test("a card can only be taken against a table that is still open in this shop",
 
   // โต๊ะที่จ่ายเงินไปแล้วรับบัตรใหม่ไม่ได้ — ด่านตอนปิดบิลจะไม่มีวันเห็นมัน
   await closeBoardGameSessionForBilling(tenantId, session.id, { idempotencyKey: key("close") }, staffId);
+  await assert.rejects(
+    () => take(session.id),
+    /ไม่พบโต๊ะที่ยังเปิดอยู่/,
+    "ทันทีที่โต๊ะเป็น CLOSING ต้องรับบัตรเพิ่มไม่ได้ ไม่ต้องรอให้จ่ายเป็น PAID",
+  );
   await query(
     `UPDATE bms_board_game_sessions SET status = 'PAID' WHERE tenant_id = $1 AND id = $2`,
     [tenantId, session.id]

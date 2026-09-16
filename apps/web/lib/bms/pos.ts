@@ -3212,6 +3212,74 @@ async function finalizePosSale(args: {
     );
     if (!shiftLock.rowCount) throw new Error("กะถูกปิดแล้วก่อนบันทึกการขาย");
 
+    // Board-game lock order is session -> billing group -> order everywhere.  Close/cancel already
+    // use that order; locking the order first here let one transaction hold the order while waiting
+    // for a group whose closer held it while waiting for that order (deadlock).  The session lock
+    // also serializes two registers settling different groups of the same visit.
+    let lockedBoardGameSessionId: string | null = null;
+    if (input.boardGameBillingGroupId) {
+      const owner = await client.query<{
+        session_id: string;
+        status: string;
+        current_order_id: string | null;
+      }>(
+        `SELECT session_id, status, current_order_id
+           FROM bms_board_game_billing_groups
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3`,
+        [input.tenantId, input.boardGameBillingGroupId, shift.location_id]
+      );
+      if (!owner.rowCount) throw new Error("ไม่พบกลุ่มบิลบอร์ดเกมในสาขาของเครื่องนี้");
+      lockedBoardGameSessionId = owner.rows[0].session_id;
+      const sessionLock = await client.query(
+        `SELECT 1 FROM bms_board_game_sessions
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+          FOR UPDATE`,
+        [input.tenantId, lockedBoardGameSessionId, shift.location_id]
+      );
+      if (!sessionLock.rowCount) throw new Error("ไม่พบ session ของกลุ่มบิลบอร์ดเกม");
+
+      const boardGameGroup = await client.query<{ status: string }>(
+        `SELECT status
+           FROM bms_board_game_billing_groups
+          WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+            AND session_id = $4
+            AND (
+              (status = 'CLOSING' AND current_order_id IS NULL)
+              OR (status = 'PAID' AND current_order_id = $5)
+            )
+          FOR UPDATE`,
+        [input.tenantId, input.boardGameBillingGroupId, shift.location_id,
+          lockedBoardGameSessionId, orderId]
+      );
+      if (!boardGameGroup.rowCount) {
+        throw new Error("บิลบอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว");
+      }
+
+      // Defensive exit guard for data created before 9.94. New holds cannot be added once a
+      // session is CLOSING, but an old HELD row must still block the payment that would end the
+      // final group and release the table.
+      if (boardGameGroup.rows[0].status === "CLOSING") {
+        const otherUnfinished = await client.query(
+          `SELECT 1 FROM bms_board_game_billing_groups
+            WHERE tenant_id = $1 AND session_id = $2 AND id <> $3
+              AND status IN ('OPEN','CLOSING')
+            LIMIT 1`,
+          [input.tenantId, lockedBoardGameSessionId, input.boardGameBillingGroupId]
+        );
+        if (!otherUnfinished.rowCount) {
+          const heldDocument = await client.query(
+            `SELECT 1 FROM bms_board_game_identity_holds
+              WHERE tenant_id = $1 AND session_id = $2 AND status = 'HELD'
+              LIMIT 1`,
+            [input.tenantId, lockedBoardGameSessionId]
+          );
+          if (heldDocument.rowCount) {
+            throw new Error("กรุณาคืนบัตรที่รับไว้ให้ลูกค้าก่อนชำระบิลสุดท้าย");
+          }
+        }
+      }
+    }
+
     if (args.depositSettlement) {
       const deposit = await client.query<{ deposit_paid: string; total_amount: string }>(
         `SELECT deposit_paid, total_amount
@@ -3294,20 +3362,6 @@ async function finalizePosSale(args: {
     if (input.boardGameBillingGroupId) {
       if (current.board_game_billing_group_id !== input.boardGameBillingGroupId.toLowerCase()) {
         throw new Error("บิลไม่ตรงกับกลุ่มบิลบอร์ดเกมที่เลือก");
-      }
-      const boardGameGroup = await client.query(
-        `SELECT 1
-           FROM bms_board_game_billing_groups
-          WHERE tenant_id = $1 AND id = $2 AND location_id = $3
-            AND (
-              (status = 'CLOSING' AND current_order_id IS NULL)
-              OR (status = 'PAID' AND current_order_id = $4)
-            )
-          FOR UPDATE`,
-        [input.tenantId, input.boardGameBillingGroupId, shift.location_id, orderId]
-      );
-      if (!boardGameGroup.rowCount) {
-        throw new Error("บิลบอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว");
       }
     } else if (current.board_game_billing_group_id) {
       throw new Error("บิลนี้ต้องระบุกลุ่มบิลบอร์ดเกมก่อนรับชำระ");
@@ -3499,6 +3553,9 @@ async function finalizePosSale(args: {
       // สูตรตัดสินสถานะโต๊ะมีชุดเดียวที่ `boardGameCafe.ts` · เขียนซ้ำที่นี่เมื่อไร วันหนึ่ง
       // สองที่จะตอบไม่ตรงกันว่าโต๊ะนี้เปิดใหม่ได้หรือยัง
       const sessionId = paidGroup.rows[0].session_id;
+      if (sessionId !== lockedBoardGameSessionId) {
+        throw new Error("session ของกลุ่มบิลบอร์ดเกมเปลี่ยนระหว่างรับชำระ");
+      }
       await refreshSessionFromGroupsInTx(client, input.tenantId, sessionId);
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)

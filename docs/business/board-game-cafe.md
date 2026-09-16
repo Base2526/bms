@@ -134,6 +134,9 @@ Rules worth knowing before changing any of it:
 A plan may belong to one branch (`location_id`) or to every branch (`NULL`). That is enforced in the
 service and at the route, and the catalogue a screen receives is filtered to the branches the account
 actually runs — a screen that offers a plan the server will refuse is lying to the person using it.
+`9.94` snapshots that scope onto the member's contract too. Coverage and every scoped read use the
+contract's branch, not the plan's current branch, so editing the catalogue later cannot move an old
+entitlement or let it pay for a visit at another branch.
 The minute balance on a contract is a cache of the ledger, and `boardGamePassOutstanding()` measures
 it: `balanceMismatchCount` must be zero before books close, the same rule points and store credit
 already follow.
@@ -169,6 +172,9 @@ Rules worth knowing before changing any of it:
   closing the last billing group, closing the whole table, and cancelling it — because leaving one
   open would make the other two decorative. It is the last group only: a party that pays and leaves
   early closes normally while the rest keep playing, exactly like a game copy still on the table.
+  A card can be taken only while the session is `OPEN`; once billing changes it to `CLOSING`, no
+  late request can slip a new card in behind that gate. Final POS settlement checks again for old
+  `HELD` rows, and locks session → billing group → order in the same order as close/cancel.
 * Taking a game box back is **not** the same as giving the card back. The system records a physical
   act; it cannot perform one.
 * **Reading a stored number is its own act.** `board_game.identity.reveal` (Manager) gates it, it

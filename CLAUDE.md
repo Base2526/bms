@@ -282,6 +282,14 @@ back office, and is audited every time: a register is a shared screen that faces
 [business/board-game-cafe.md](docs/business/board-game-cafe.md) and
 [agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
 
+**Board-game branch and checkout hardening (`9.94`, 2026-09-16).** A sold member pass now snapshots
+its branch, so editing a plan cannot move old entitlements and a branch pass cannot cover another
+branch's visit; scoped lists and outstanding totals use the same contract scope. Pass issuance
+rejects a missing branch for branch plans, validates linked orders in-tenant, and hashes every
+semantic field for idempotency. Identity holds can be taken only while a session is `OPEN`, final
+POS settlement rechecks old held-card rows, and the settlement lock order is session → billing group
+→ order to match close/cancel and remove the payment-time deadlock.
+
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
 POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
 `graphql-schema-artifact-contract`, all 122 operations take named input objects and return named
