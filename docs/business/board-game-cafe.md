@@ -286,6 +286,26 @@ route until `9.94`. What a pass paid is server data (`passCoveredAmount`), shown
 both registers; deriving "a member pass covered this" from a zero total instead would put a claim on
 a customer-facing screen that is false whenever the zero came from somewhere else.
 
+### What a register may print as money, and what it must fit on a phone
+
+`bms_board_game_billing_groups.amount_due` is the play charge **frozen at close** (`9.89`; the
+only write is in `closeOpenBillingGroupInTx`). A group that is still OPEN therefore holds 0 — a 0
+that means "not frozen yet", not "owes nothing". `/admin/board-game` and the native register have
+always shown the amount only once the session is `CLOSING`; a surface that prints it in every state
+tells the counter that a table two hours into its session owes nothing. The browser register now
+follows the same rule: a floor tile shows money only when a bill is actually waiting to be
+collected, and the session card splits "frozen and waiting" from "the open group’s tab" instead of
+adding them into one number that has no name.
+
+The register is also used one-handed on a phone, so two layout rules hold for this tab:
+
+| Rule | Why |
+| --- | --- |
+| A row that pairs text with buttons must wrap, and its text column must be allowed to shrink | Measured at 320px before this was enforced: the game-return buttons ended 7px past the viewport with no horizontal scroller to reach them, and "report a damaged box" is the only way a shop records that liability |
+| The floor grid narrows its track on phones, and every track stays wrapped in `min(<px>, 100%)` | A 168px track gives **one column** at both 320px and 375px, which turns the floor plan into a list; a bare `minmax(<px>, 1fr)` insists on its minimum even when the box is narrower and overflows instead |
+
+Both rules are pinned by `scripts/board-game-register-contract.test.mts`.
+
 ## Reuse Existing BMS
 
 Reuse existing services for:

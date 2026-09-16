@@ -753,3 +753,93 @@
   }
 }
 .pos-receipt-note { color: #555; font-size: 11px; line-height: 1.5; margin: 4px 0; }
+
+/* ---- แท็บโต๊ะ/เวลาเล่น (components/pos/BoardGamePanel.tsx) ---------------
+   บล็อกนี้เคยเป็น inline style ล้วนทั้งแท็บ ซึ่งพังสองอย่างที่วัดได้บนจอโทรศัพท์:
+
+   • **ปุ่มหลุดออกนอกจอแล้วกดไม่ถึง** — แถว "เกมที่ยืม" เป็น
+     `justify-content: space-between` ที่ไม่มี `flex-wrap` ส่วนคอลัมน์ข้อความไม่มี
+     `min-width: 0` และ `.pos-ret-btn` เป็น `white-space: nowrap` · วัดที่ 320px:
+     แถวกว้าง 240 จบที่ x=280 แต่กลุ่มปุ่มกว้าง 181 ไปจบที่ **x=327** = พ้นจอ 7px
+     โดยที่หน้าไม่มี scroller แนวนอนให้เลื่อนไปหา (`scrollWidth === 320`)
+     · ที่ 375px แถวเดียวกันได้ 106 + 8 + 181 = **295 เท่าความกว้างพอดีเป๊ะ** ชื่อเกม
+     ที่ยาวกว่านี้อีกนิดเดียวก็ล้นเหมือนกัน
+     ปุ่มที่หลุดคือ "คืนแบบมีปัญหา" ซึ่งเป็นทางเดียวที่ร้านบันทึกว่ากล่องหาย/พัง
+   • **ผังโต๊ะกลายเป็นรายการแนวตั้ง** — ราง `minmax(min(168px,100%),1fr)` ทำให้
+     `auto-fill` ได้ **คอลัมน์เดียวทั้งที่ 320 และ 375** (พื้นที่จริง 270/295px)
+     ผังที่แสดงโต๊ะละแถวไม่ใช่ผัง มันคือลิสต์ — ซึ่งเป็นสิ่งเดียวที่จอนี้มีไว้แทน
+
+   กฎของบล็อกนี้: ทุกแถวต้องยุบตัวเองได้ก่อนจะล้น · ปุ่มที่กินเต็มแถวต้องตัดบรรทัดได้
+   ไม่ใช่ยืดออกนอกกรอบ · และตัวเลขเงินต้องมาจากค่าที่ server แช่ไว้จริงเท่านั้น
+   ------------------------------------------------------------------------- */
+
+/* ผังโต๊ะ — รางแคบลงบนจอเล็กเพื่อให้ยังเห็นหลายโต๊ะพร้อมกัน
+   `min(<px>, 100%)` บังคับไว้ตามกฎของรีโป: `repeat(auto-fill, minmax(<px>, 1fr))`
+   เปล่า ๆ จะยืนกรานความกว้างขั้นต่ำแม้กล่องแคบกว่านั้น แล้วล้นออกข้าง */
+.pos-bg-floor {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(168px, 100%), 1fr));
+  gap: 8px;
+}
+.pos-bg-table {
+  text-align: left; padding: 10px; border-radius: 10px; min-height: 92px;
+  border: 2px solid var(--pos-line);
+  background: var(--pos-surface);
+}
+.pos-bg-table--open { background: var(--pos-accent-bg); }
+.pos-bg-table--on { border-color: var(--pos-accent); }
+.pos-bg-table:disabled { opacity: 0.5; cursor: not-allowed; }
+.pos-bg-table-code { font-weight: 700; }
+.pos-bg-table-sub { font-size: 12px; color: var(--pos-muted); }
+.pos-bg-table-body { margin-top: 6px; font-size: 12px; }
+.pos-bg-table-money { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* แถวรายการ: ข้อความซ้าย ปุ่มขวา — ปุ่มตกลงบรรทัดถัดไปเองเมื่อที่ไม่พอ
+   แทนที่จะยืดออกนอกกรอบ (นั่นคือทั้งหมดของ R1 ข้างบน) */
+.pos-bg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 4px 0; flex-wrap: wrap;
+}
+.pos-bg-row-main { font-size: 13px; flex: 1 1 60%; min-width: 0; }
+.pos-bg-row-main--past { opacity: 0.55; }
+.pos-bg-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* แถวฟอร์ม — ช่องกรอกยืดเต็มความกว้างที่เหลือ ไม่ใช่ตรึงเป็นพิกเซล */
+.pos-bg-form {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 8px;
+}
+.pos-bg-field { font-size: 12px; flex: 1 1 180px; min-width: 0; }
+.pos-bg-field > input, .pos-bg-field > select { display: block; width: 100%; }
+/* ช่องตัวเลขสั้น ๆ (นาที/จำนวน/กลุ่มบิล) — ยังหดได้ ไม่ตรึงความกว้าง */
+.pos-bg-field--num { flex: 0 1 120px; }
+
+/* ปุ่มที่จบงานของทั้งบล็อก — กินเต็มแถวและ **ตัดบรรทัดได้**
+   `.pos-ret-btn` เป็น nowrap ซึ่งถูกสำหรับปุ่มในแถว แต่ป้ายอย่าง
+   "ไปเก็บเงินกลุ่ม 2 (฿245.00)" เหลือที่ว่างแค่ราวหนึ่งบรรทัดในกล่อง 240px ที่ 320px ·
+   วัดแล้ว: พอป้ายยาวพ้นราว 214px ตัวหนังสือจะ **พ้นกรอบปุ่มออกไปวาดทับของข้าง ๆ**
+   (textRight 314 บนปุ่มที่จบที่ 280) เพราะปุ่มถูกยืดเต็มคอลัมน์อยู่แล้ว มันจึงไม่โต
+   ตามป้าย · ให้ตัดบรรทัดได้ = เอาหน้าผานั้นออกไป ไม่ใช่รอให้ร้านแรกเดินไปเจอ */
+.pos-root .pos-bg-action {
+  white-space: normal; text-align: center; justify-content: center;
+  width: 100%; line-height: 1.35;
+}
+.pos-bg-actions-stack { display: flex; flex-direction: column; gap: 6px; }
+
+/* สถานะสายข้อมูล — จอที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอที่ข้อมูลถูกต้อง
+   (กฎเดียวกับจอครัวและจอร้านอาหารซึ่งใช้ feedHealth() ตัวเดียวกัน) */
+.pos-bg-feed { font-size: 11px; color: var(--pos-muted); white-space: nowrap; }
+.pos-bg-feed--slow { color: var(--pos-warn); }
+.pos-bg-feed--stale { color: var(--pos-danger); font-weight: 600; }
+
+/* ยอดเงินของหัวการ์ด — ชิดขวาเมื่อมันอยู่คอลัมน์ขวาจริง ๆ เท่านั้น
+   inline style ทำแบบนี้ไม่ได้ เพราะ media query ข้างล่างจะแพ้มันเสมอ */
+.pos-bg-head-money { text-align: right; }
+
+@media (max-width: 520px) {
+  /* วัดแล้ว: พื้นที่จริงเหลือ 270px ที่ 320px และ ~295px ที่ 375px — ราง 124px
+     จึงได้สองคอลัมน์ทั้งสองเครื่อง ส่วน 168px ได้คอลัมน์เดียวทั้งคู่ · 132px ยังไม่พอ เพราะ 132×2 + gap 8 = 272 > 270 */
+  .pos-bg-floor { grid-template-columns: repeat(auto-fill, minmax(min(124px, 100%), 1fr)); }
+  .pos-bg-table { padding: 8px; min-height: 86px; }
+  /* ยอดเงินของหัวการ์ดลงมาอยู่ใต้ชื่อโต๊ะ แทนที่จะเบียดกันสองคอลัมน์ในจอกว้าง 320 */
+  .pos-bg-head-money { text-align: left; }
+}
