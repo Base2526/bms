@@ -69,7 +69,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.92__bms_board_game_member_passes.sql', 'table', 'bms_board_game_pass_plans', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง'),
     ('9.92__bms_board_game_member_passes.sql', 'table', 'bms_board_game_member_passes', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง'),
     ('9.92__bms_board_game_member_passes.sql', 'table', 'bms_board_game_pass_ledger', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้เลย — เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง'),
-    ('9.93__bms_board_game_identity_holds.sql', 'table', 'bms_board_game_identity_holds', NULL, 'ร้านบอร์ดเกมปิดบิล/ยกเลิก/เปิดดูโต๊ะไม่ได้เลย — ด่านคืนบัตรอ่านตารางนี้ทุกครั้ง')
+    ('9.93__bms_board_game_identity_holds.sql', 'table', 'bms_board_game_identity_holds', NULL, 'ร้านบอร์ดเกมปิดบิล/ยกเลิก/เปิดดูโต๊ะไม่ได้เลย — ด่านคืนบัตรอ่านตารางนี้ทุกครั้ง'),
+    ('9.94__bms_board_game_branch_scope_and_identity_hardening.sql', 'column', 'bms_board_game_member_passes', 'location_id', 'ร้านบอร์ดเกมปิดบิล/เปิดหน้าแพ็กเกจไม่ได้ — โค้ดอ่านสาขา snapshot ของสิทธิ์ทุกครั้ง')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

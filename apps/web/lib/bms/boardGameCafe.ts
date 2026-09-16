@@ -604,11 +604,11 @@ async function boardGameEntityLocation(
     // แพ็กเกจของสาขาเดียว (`9.92`) — `NULL` แปลว่าขายได้ทุกสาขา ไม่ใช่ "ไม่พบ" · ผู้เรียก
     // แยกสองอย่างนี้ด้วย `boardGamePlanIsBranchScoped()` ไม่ใช่ด้วยค่าที่คืนมาตัวเดียว
     passPlan: `SELECT location_id FROM bms_board_game_pass_plans WHERE tenant_id = $1 AND id = $2`,
-    memberPass: `SELECT plan.location_id
-                   FROM bms_board_game_member_passes pass
-                   LEFT JOIN bms_board_game_pass_plans plan
-                     ON plan.tenant_id = pass.tenant_id AND plan.id = pass.plan_id
-                  WHERE pass.tenant_id = $1 AND pass.id = $2`,
+    // สาขาเป็น snapshot ของสัญญาที่ขายแล้ว (`9.94`) ห้ามตาม plan ปัจจุบัน เพราะการแก้
+    // แคตตาล็อกภายหลังต้องไม่ย้ายสิทธิ์เก่าข้ามสาขา
+    memberPass: `SELECT location_id
+                   FROM bms_board_game_member_passes
+                  WHERE tenant_id = $1 AND id = $2`,
   } as const;
   const result = await query<{ location_id: string }>(statements[kind], [tenantId, entityId]);
   return result.rows[0]?.location_id ?? null;
@@ -2355,6 +2355,7 @@ export type BoardGamePassPlan = {
 
 export type BoardGameMemberPass = {
   id: string;
+  locationId: string | null;
   customerId: string;
   customerName: string | null;
   planId: string | null;
@@ -2399,6 +2400,7 @@ function mapPassPlan(row: any): BoardGamePassPlan {
 function mapMemberPass(row: any): BoardGameMemberPass {
   return {
     id: row.id,
+    locationId: row.location_id ?? null,
     customerId: row.customer_id,
     customerName: row.customer_name ?? null,
     planId: row.plan_id ?? null,
@@ -2516,7 +2518,7 @@ export async function upsertBoardGamePassPlan(
   }
 }
 
-const MEMBER_PASS_COLUMNS = `p.id, p.customer_id, p.plan_id, p.plan_code, p.plan_name, p.kind,
+const MEMBER_PASS_COLUMNS = `p.id, p.location_id, p.customer_id, p.plan_id, p.plan_code, p.plan_name, p.kind,
   p.included_minutes, p.remaining_minutes, p.price_paid, p.starts_at, p.expires_at,
   p.status, p.order_id, p.cancel_reason, p.note`;
 
@@ -2539,35 +2541,44 @@ export type BoardGamePassOutstanding = {
 };
 
 export async function boardGamePassOutstanding(
-  tenantId: string
+  tenantId: string,
+  visibleLocationIds?: string[] | null
 ): Promise<BoardGamePassOutstanding> {
   await requireBoardGameCafeTenant({ query }, tenantId);
+  const scope = Array.isArray(visibleLocationIds)
+    ? visibleLocationIds.map((id) => uuid(id, "locationId"))
+    : null;
   const result = await query<{
     minute_passes: string; unlimited_passes: string; outstanding: string;
     expiring: string; mismatch: string;
   }>(
-    `SELECT
-       (SELECT COUNT(*) FROM bms_board_game_member_passes
-         WHERE tenant_id = $1 AND status = 'ACTIVE' AND kind = 'MINUTES'
+    `WITH scoped AS (
+       SELECT * FROM bms_board_game_member_passes
+        WHERE tenant_id = $1
+          AND ($2::uuid[] IS NULL OR location_id IS NULL OR location_id = ANY($2::uuid[]))
+     )
+     SELECT
+       (SELECT COUNT(*) FROM scoped
+         WHERE status = 'ACTIVE' AND kind = 'MINUTES'
            AND expires_at > now()) AS minute_passes,
-       (SELECT COUNT(*) FROM bms_board_game_member_passes
-         WHERE tenant_id = $1 AND status = 'ACTIVE' AND kind = 'UNLIMITED'
+       (SELECT COUNT(*) FROM scoped
+         WHERE status = 'ACTIVE' AND kind = 'UNLIMITED'
            AND expires_at > now()) AS unlimited_passes,
-       COALESCE((SELECT SUM(remaining_minutes) FROM bms_board_game_member_passes
-         WHERE tenant_id = $1 AND status = 'ACTIVE' AND remaining_minutes IS NOT NULL
+       COALESCE((SELECT SUM(remaining_minutes) FROM scoped
+         WHERE status = 'ACTIVE' AND remaining_minutes IS NOT NULL
            AND expires_at > now()), 0) AS outstanding,
-       COALESCE((SELECT SUM(remaining_minutes) FROM bms_board_game_member_passes
-         WHERE tenant_id = $1 AND status = 'ACTIVE' AND remaining_minutes IS NOT NULL
+       COALESCE((SELECT SUM(remaining_minutes) FROM scoped
+         WHERE status = 'ACTIVE' AND remaining_minutes IS NOT NULL
            AND expires_at > now() AND expires_at <= now() + interval '30 days'), 0) AS expiring,
        -- ยอดที่แคชไว้ต้องเท่ากับผลรวมของ ledger เสมอ · ledger เก็บขาใช้เป็นเลขติดลบ ขาคืนเป็นบวก
        -- แพ็กเกจไม่อั้นไม่มียอดให้เทียบ (NULL) จึงไม่นับเข้า drift
-       (SELECT COUNT(*) FROM bms_board_game_member_passes p
-         WHERE p.tenant_id = $1 AND p.remaining_minutes IS NOT NULL
+       (SELECT COUNT(*) FROM scoped p
+         WHERE p.remaining_minutes IS NOT NULL
            AND p.remaining_minutes <> GREATEST(0, COALESCE(p.included_minutes, 0) + COALESCE((
              SELECT SUM(l.minutes) FROM bms_board_game_pass_ledger l
               WHERE l.tenant_id = p.tenant_id AND l.pass_id = p.id AND l.kind <> 'ISSUE'), 0))
          ) AS mismatch`,
-    [tenantId]
+    [tenantId, scope]
   );
   const row = result.rows[0];
   return {
@@ -2581,11 +2592,18 @@ export async function boardGamePassOutstanding(
 
 export async function listBoardGameMemberPasses(
   tenantId: string,
-  input: { customerId?: string | null; activeOnly?: boolean | null } = {}
+  input: {
+    customerId?: string | null;
+    activeOnly?: boolean | null;
+    visibleLocationIds?: string[] | null;
+  } = {}
 ): Promise<BoardGameMemberPass[]> {
   await requireBoardGameCafeTenant({ query }, tenantId);
   const customerId = input.customerId ? uuid(input.customerId, "customerId") : null;
   const activeOnly = Boolean(input.activeOnly);
+  const scope = Array.isArray(input.visibleLocationIds)
+    ? input.visibleLocationIds.map((id) => uuid(id, "locationId"))
+    : null;
   const result = await query(
     `SELECT ${MEMBER_PASS_COLUMNS}, c.name AS customer_name
        FROM bms_board_game_member_passes p
@@ -2593,9 +2611,10 @@ export async function listBoardGameMemberPasses(
       WHERE p.tenant_id = $1
         AND ($2::uuid IS NULL OR p.customer_id = $2::uuid)
         AND (NOT $3::boolean OR (p.status = 'ACTIVE' AND p.expires_at > now()))
+        AND ($4::uuid[] IS NULL OR p.location_id IS NULL OR p.location_id = ANY($4::uuid[]))
       ORDER BY p.expires_at DESC, p.created_at DESC
       LIMIT 200`,
-    [tenantId, customerId, activeOnly]
+    [tenantId, customerId, activeOnly, scope]
   );
   return result.rows.map(mapMemberPass);
 }
@@ -2623,10 +2642,18 @@ export async function issueBoardGameMemberPass(
   const customerId = uuid(input.customerId, "customerId");
   const planId = uuid(input.planId, "planId");
   const orderId = input.orderId ? uuid(input.orderId, "orderId") : null;
+  const locationId = input.locationId ? uuid(input.locationId, "locationId") : null;
   const key = requestKey(input.idempotencyKey);
   const note = optionalText(input.note, "หมายเหตุ", 500);
   const requestedStart = optionalDate(input.startsAt, "วันเริ่มใช้");
-  const hash = requestHash({ customerId, planId, startsAt: requestedStart?.toISOString() ?? null });
+  const hash = requestHash({
+    customerId,
+    planId,
+    startsAt: requestedStart?.toISOString() ?? null,
+    orderId,
+    note,
+    locationId,
+  });
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
@@ -2663,8 +2690,19 @@ export async function issueBoardGameMemberPass(
     // ตรงที่เงินเกิด ไม่ใช่เฉพาะที่ route — ผู้เรียกที่ไม่ผ่าน route (เทส, งานภายใน, เส้นทางใหม่
     // ในอนาคต) จะขายข้ามสาขาได้เงียบ ๆ ถ้าด่านอยู่ข้างนอกอย่างเดียว
     const planLocationId: string | null = plan.rows[0].location_id ?? null;
-    if (planLocationId && input.locationId && uuid(input.locationId, "locationId") !== planLocationId) {
+    if (planLocationId && locationId !== planLocationId) {
       throw new Error("แพ็กเกจนี้ขายได้เฉพาะสาขาที่ผูกไว้");
+    }
+    if (orderId) {
+      const linkedOrder = await client.query(
+        `SELECT 1 FROM bms_orders
+          WHERE tenant_id = $1 AND id = $2
+            AND ($3::uuid IS NULL OR location_id = $3::uuid)`,
+        [tenantId, orderId, planLocationId]
+      );
+      if (!linkedOrder.rowCount) {
+        throw new Error("บิลที่ผูกแพ็กเกจไม่อยู่ในร้านหรือสาขาที่ขายแพ็กเกจนี้");
+      }
     }
     const row = plan.rows[0];
     const startsAt = requestedStart ?? new Date();
@@ -2672,14 +2710,14 @@ export async function issueBoardGameMemberPass(
     const includedMinutes = row.included_minutes == null ? null : Number(row.included_minutes);
     const inserted = await client.query<any>(
       `INSERT INTO bms_board_game_member_passes
-          (tenant_id, customer_id, plan_id, plan_code, plan_name, kind, included_minutes,
-           price_paid, remaining_minutes, starts_at, expires_at, order_id,
+          (tenant_id, location_id, customer_id, plan_id, plan_code, plan_name, kind,
+           included_minutes, price_paid, remaining_minutes, starts_at, expires_at, order_id,
            issue_idempotency_key, issue_request_hash, issued_by, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING ${MEMBER_PASS_COLUMNS.replace(/\bp\./g, "")}`,
       [
-        tenantId, customerId, row.id, row.code, row.name, row.kind, includedMinutes,
-        Number(row.price), includedMinutes, startsAt, expiresAt, orderId,
+        tenantId, planLocationId, customerId, row.id, row.code, row.name, row.kind,
+        includedMinutes, Number(row.price), includedMinutes, startsAt, expiresAt, orderId,
         key, hash, actorUserId ?? null, note,
       ]
     );
@@ -2758,6 +2796,16 @@ async function activePassesForGroupInTx(
         AND pass.status = 'ACTIVE'
         AND pass.starts_at <= $3::timestamptz
         AND pass.expires_at > $3::timestamptz
+        -- NULL = ใช้ได้ทั้งร้าน; ใบผูกสาขาใช้ได้เฉพาะสาขาของกลุ่มบิลนั้น สาขาเป็น
+        -- snapshot บนใบ (9.94) ไม่อ่านจาก plan ที่อาจถูกย้ายภายหลัง
+        AND (
+          pass.location_id IS NULL
+          OR pass.location_id = (
+            SELECT bill.location_id
+              FROM bms_board_game_billing_groups bill
+             WHERE bill.tenant_id = $1 AND bill.id = $2
+          )
+        )
         AND pass.customer_id IN (
           SELECT part.customer_id
             FROM bms_board_game_session_participants part

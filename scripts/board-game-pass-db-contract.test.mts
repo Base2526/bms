@@ -30,6 +30,7 @@ import {
   issueBoardGameMemberPass,
   listBoardGameMemberPasses,
   listBoardGamePassPlans,
+  locationOfBoardGameMemberPass,
   locationOfBoardGamePassPlan,
   openBoardGameSession,
   upsertBoardGamePassPlan,
@@ -482,6 +483,15 @@ test("a pass built for one branch cannot be sold at another", async () => {
     /เฉพาะสาขา/,
     "ขายแพ็กเกจของอีกสาขาที่สาขานี้ไม่ได้",
   );
+  await assert.rejects(
+    () => issueBoardGameMemberPass(
+      tenantId,
+      { customerId: buyer, planId: branchPlan.id, idempotencyKey: key("issue-missing") },
+      staffId
+    ),
+    /เฉพาะสาขา/,
+    "ผู้เรียก service โดยตรงห้ามละสาขาเพื่อข้ามด่านแพ็กเกจผูกสาขา",
+  );
   // ...แต่ขายที่สาขาของมันเองได้ตามปกติ
   const ok = await issueBoardGameMemberPass(
     tenantId,
@@ -489,6 +499,35 @@ test("a pass built for one branch cannot be sold at another", async () => {
     staffId
   );
   assert.equal(ok.status, "ACTIVE");
+  assert.equal(ok.locationId, otherBranch);
+  assert.equal(await locationOfBoardGameMemberPass(tenantId, ok.id), otherBranch);
+
+  // ย้าย plan ภายหลังต้องไม่ย้ายสัญญาที่ขายไปแล้ว
+  await upsertBoardGamePassPlan(
+    tenantId,
+    {
+      id: branchPlan.id,
+      name: branchPlan.name,
+      kind: branchPlan.kind,
+      price: branchPlan.price,
+      durationDays: branchPlan.durationDays,
+      includedMinutes: branchPlan.includedMinutes,
+      locationId,
+      active: branchPlan.active,
+      sortOrder: branchPlan.sortOrder,
+      note: branchPlan.note,
+    },
+    staffId
+  );
+  assert.equal(await locationOfBoardGameMemberPass(tenantId, ok.id), otherBranch,
+    "สิทธิ์เก่าต้องคงสาขาที่ขาย แม้แคตตาล็อกถูกย้าย");
+
+  const wrongBranchSession = await openWithMember(tables.T1, 30, buyer);
+  const wrongBranchBill = await closeBoardGameSessionForBilling(
+    tenantId, wrongBranchSession.id, { idempotencyKey: key("close-wrong-branch") }, staffId
+  );
+  assert.ok(wrongBranchBill.amountDue > 0, "แพ็กเกจของสาขาอื่นต้องไม่ช่วยจ่ายค่าเวลา");
+  await payGroup(wrongBranchBill.groups[0].id, wrongBranchBill.amountDue);
 
   // แพ็กเกจระดับร้าน (location_id เป็น NULL) ขายได้ทุกสาขาตามนิยามของมันเอง
   const shopWide = (await listBoardGamePassPlans(tenantId)).find((plan) => plan.locationId == null);
@@ -502,11 +541,13 @@ test("a pass built for one branch cannot be sold at another", async () => {
 
   // แคตตาล็อกที่กรองตามสาขาต้องซ่อนแพ็กเกจของสาขาอื่น แต่ยังเห็นแพ็กเกจระดับร้าน
   const visibleHere = await listBoardGamePassPlans(tenantId, [locationId]);
-  assert.ok(
-    !visibleHere.some((plan) => plan.id === branchPlan.id),
-    "แพ็กเกจของอีกสาขาต้องไม่โผล่ให้เลือก — จอที่ยื่นตัวเลือกที่กดแล้วโดนปฏิเสธคือจอที่หลอกคนใช้",
-  );
+  assert.ok(visibleHere.some((plan) => plan.id === branchPlan.id),
+    "หลังย้ายแคตตาล็อกมาสาขานี้ plan ต้องมองเห็น แต่สิทธิ์เก่ายังคงอยู่สาขาเดิม");
   assert.ok(visibleHere.some((plan) => plan.id === shopWide.id), "แพ็กเกจระดับร้านต้องยังเห็นได้");
+  const visiblePasses = await listBoardGameMemberPasses(tenantId, { visibleLocationIds: [locationId] });
+  assert.ok(!visiblePasses.some((pass) => pass.id === ok.id), "สัญญาของสาขาอื่นต้องไม่รั่วในรายการ");
+  const visibleOutstanding = await boardGamePassOutstanding(tenantId, [locationId]);
+  assert.ok(visibleOutstanding.activeUnlimitedPasses >= 1, "แพ็กเกจระดับร้านยังต้องอยู่ในยอดที่มองเห็น");
 });
 
 test("the cached minute balance is measured against the ledger, not trusted", async () => {

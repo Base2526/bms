@@ -237,8 +237,9 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 - `GET|POST /api/pos/restaurant/incoming` (`9.56`) — chat/online food orders waiting for a human
   accept. Payment alone never creates kitchen work; the `PAID -> PACKING` accept does, and it needs
   PIN + `pos.sell`.
-- `GET|POST /api/bms/board-game/passes` (`9.92`) — member passes. `GET` returns the plan catalogue
-  and the contracts members hold and needs only `board_game.session.manage`, because the counter has
+- `GET|POST /api/bms/board-game/passes` (`9.92`, hardened in `9.94`) — member passes. `GET` returns
+  the plan catalogue and contracts members hold, both filtered to tenant-wide or actor-accessible
+  branches, and needs only `board_game.session.manage`, because the counter has
   to know what the person at the table already paid for before explaining a bill. `POST` carries
   `plan`, `issue` or `cancel` and needs `board_game.pass.manage` — all three change what the shop
   owes a customer. Price and minutes always come from the plan server-side; issuing takes an

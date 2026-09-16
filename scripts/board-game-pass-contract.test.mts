@@ -185,6 +185,19 @@ test("`9.92` keeps the balance in a ledger and the shape of each kind honest", (
   assert.match(sql, /uq_bms_board_game_member_passes_issue_key/);
 });
 
+test("`9.94` snapshots branch scope and adds tenant-composite references", () => {
+  const sql = read("db/migrations/9.94__bms_board_game_branch_scope_and_identity_hardening.sql");
+  assert.match(sql, /ADD COLUMN location_id UUID/);
+  assert.match(sql, /IF NOT EXISTS \([\s\S]*?column_name = 'location_id'/,
+    "rerunning the migration must not resnapshot a pass from a plan moved later");
+  assert.match(sql, /SET location_id = plan\.location_id/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id\)[\s\S]*?bms_locations\(tenant_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, customer_id\)[\s\S]*?bms_customers\(tenant_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, order_id\)[\s\S]*?bms_orders\(tenant_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, pass_id\)[\s\S]*?bms_board_game_member_passes\(tenant_id, id\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, location_id, session_id\)[\s\S]*?bms_board_game_sessions\(tenant_id, location_id, id\)/);
+});
+
 test("minutes are spent when the bill is frozen, never while previewing it", () => {
   const service = read("apps/web/lib/bms/boardGameCafe.ts");
 

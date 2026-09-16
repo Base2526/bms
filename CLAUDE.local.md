@@ -3,6 +3,23 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## apply `9.89`–`9.93` เข้า production แล้ว — 2026-09-16
+
+**ผู้ใช้แจ้งว่า apply ครบทั้งห้าไฟล์เรียงเลขแล้ว** · **ยังไม่ได้ verify จากเครื่องนี้** — เครื่องนี้ไม่มีทั้ง
+Docker, `psql` และไฟล์ `.env*` จึงต่อฐาน production ไม่ได้เลย · บรรทัด "ยังไม่ได้ apply เข้า production"
+ในหัวข้อของ `9.89`–`9.93` ข้างล่าง **เป็นบันทึกของเซสชันนั้น ไม่ใช่สถานะวันนี้**
+
+- **สิทธิ์ใหม่สองตัว seed มากับ migration เอง** — `board_game.pass.manage` (`9.92`) และ
+  `board_game.identity.reveal` (`9.93`) INSERT เข้า `bms_role_permissions` ให้ role **Manager** ของทุกร้าน
+  ที่มีอยู่ ณ เวลาที่ apply · `Administrator` ได้ทุกสิทธิ์โดยปริยายอยู่แล้ว · **ร้านที่สมัครหลังจากนี้ไม่ได้มาจาก
+  migration** ต้องมาจากเส้นทาง seed ของการสร้างร้าน
+- **ยังต้อง deploy โค้ดตามไปด้วย** — apply อย่างเดียวไม่เปิดฟีเจอร์ ฐานมีตารางแต่ยังไม่มีใครเรียก
+- ตรวจซ้ำแบบ read-only บนเซิร์ฟเวอร์ได้ (เครื่องนั้นไม่มี Node):
+  `psql ... -f - < db/checks/schema-readiness.sql` ต้องขึ้น ✅ ครบทุกไฟล์ รวม `9.80` และ `9.89`–`9.93`
+  ซึ่งถูกเพิ่มเข้าลิสต์ตอน recheck 2026-09-16
+- **ย้อนกลับยากแล้ว**: ทิ้ง `bms_board_game_identity_holds` ได้ก็ต่อเมื่อ
+  `SELECT count(*) FROM bms_board_game_identity_holds WHERE status='HELD'` = 0
+
 ## recheck ทั้ง branch `feat/board-game-checkin-billing` — เจอของหลุด 3 จุด — 2026-09-16
 
 branch `recheck/board-game-checkin-billing` · **ไม่มี migration ใหม่** · **ไม่มี permission ใหม่** ·
@@ -78,7 +95,7 @@ typecheck web+ws ผ่าน · **pure 1,266/1,266** (จาก 1,262) · produ
   ซึ่งถูกต้องวันนี้เพราะยอดไม่ถูกแตะ แต่ถ้าวันหนึ่งการยกเลิกต้องคืน/ริบนาที ต้องลง ledger ด้วย
 - **ยังไม่ได้ทดสอบฟอร์มสาขาของแพ็กเกจด้วยตา** — เซสชันนี้ไม่มี browser (รีโปไม่มี Playwright)
   ที่ยืนยันแล้วคือเส้นทาง service + route ผ่านเทส DB ที่สร้างสาขาที่สองจริง
-- **ยังไม่ได้ apply `9.89`–`9.93` เข้า production** (ของเดิม)
+- ~~ยังไม่ได้ apply `9.89`–`9.93` เข้า production~~ — **apply แล้ว 2026-09-16** (ดูหัวข้อบนสุด)
 
 ## `9.93` บัตรที่รับไว้ค้ำกล่องเกม — เฟส 6 (รายการถัดไปของ roadmap) — 2026-09-16
 

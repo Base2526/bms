@@ -145,7 +145,7 @@ test("a board-game table cannot be opened or closed against a database the check
 
 test("the generated readiness SQL still carries every board-game migration", () => {
   const sql = read("db/checks/schema-readiness.sql");
-  for (const file of ["9.89", "9.90", "9.91", "9.92", "9.93"]) {
+  for (const file of ["9.89", "9.90", "9.91", "9.92", "9.93", "9.94"]) {
     has(sql, new RegExp(`'${file.replace(".", "\\.")}__`), `${file} หายจากไฟล์ที่ generate ไว้`);
   }
 });
@@ -157,9 +157,13 @@ test("a branch-scoped pass is a rule the server keeps, not a column nobody check
   has(issue, /location_id/, "การขายต้องอ่านสาขาของแพ็กเกจออกมาก่อน");
   has(
     issue,
-    /planLocationId[\s\S]{0,200}throw new Error/,
-    "แพ็กเกจที่ผูกสาขาไว้ต้องขายข้ามสาขาไม่ได้",
+    /planLocationId\s*&&\s*locationId\s*!==\s*planLocationId[\s\S]{0,120}throw new Error/,
+    "แพ็กเกจที่ผูกสาขาไว้ต้องปฏิเสธทั้งสาขาผิดและผู้เรียกที่ไม่ส่งสาขา",
   );
+  has(issue, /orderId[\s\S]{0,300}FROM bms_orders[\s\S]{0,160}tenant_id = \$1/,
+    "บิลที่ผูกกับแพ็กเกจต้องถูกตรวจว่าเป็นของร้านเดียวกัน");
+  has(issue, /INSERT INTO bms_board_game_member_passes[\s\S]{0,180}location_id/,
+    "สิทธิ์ที่ขายแล้วต้อง snapshot สาขาไว้ ไม่ตามแคตตาล็อกที่แก้ภายหลัง");
 
   // และ route ต้องกันไว้ก่อนถึง service ทั้งสามคำสั่ง
   // ⚠️ ขอบของบล็อกต้องเป็น "คำสั่งถัดไป" ไม่ใช่จำนวนตัวอักษรคงที่ — หน้าต่างที่กว้างเกินจะไป
@@ -179,11 +183,19 @@ test("a branch-scoped pass is a rule the server keeps, not a column nobody check
   // แคตตาล็อกที่ส่งให้จอต้องถูกกรองตามสาขาที่บัญชีนี้ดูแล ไม่งั้นจอยื่นตัวเลือกที่กดแล้วโดน 403
   has(passRoute, /listLocationsForUser/, "GET ต้องกรองแคตตาล็อกตามสาขาที่ผู้เรียกดูแล");
   has(passRoute, /listBoardGamePassPlans\(auth\.tenantId, visible\)/, "และต้องส่งลิสต์นั้นเข้าไปจริง");
+  has(passRoute, /visibleLocationIds: visible/, "รายการสิทธิ์สมาชิกต้องถูกกรองด้วยสาขาเดียวกัน");
+  has(passRoute, /boardGamePassOutstanding\(auth\.tenantId, visible\)/,
+    "ยอดรวมต้องไม่เปิดเผยตัวเลขของสาขาที่ผู้เรียกดูแลไม่ได้");
   // แพ็กเกจระดับร้าน (NULL) ต้องไม่หายไปจากตัวกรอง
   has(
     functionBody(cafe, "listBoardGamePassPlans"),
     /location_id IS NULL OR location_id = ANY/,
     "แพ็กเกจระดับร้านต้องเห็นได้ทุกคนตามนิยามของมันเอง",
+  );
+  has(
+    functionBody(cafe, "activePassesForGroupInTx"),
+    /pass\.location_id IS NULL[\s\S]{0,220}bill\.location_id/,
+    "สิทธิ์ผูกสาขาต้องช่วยจ่ายได้เฉพาะกลุ่มบิลในสาขานั้น",
   );
 });
 

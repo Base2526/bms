@@ -90,7 +90,7 @@ type PassPlan = {
   includedMinutes: number | null; active: boolean; sortOrder: number; note: string | null;
 };
 type MemberPass = {
-  id: string; customerId: string; customerName: string | null; planName: string;
+  id: string; locationId: string | null; customerId: string; customerName: string | null; planName: string;
   kind: "UNLIMITED" | "MINUTES"; remainingMinutes: number | null; pricePaid: number;
   startsAt: string; expiresAt: string; status: "ACTIVE" | "EXPIRED" | "CANCELLED";
 };
@@ -791,6 +791,13 @@ export default function BoardGamePage() {
                 <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={memberPasses} columns={[
                   { title: t("admin_board_game.member"), render: (_, row) => row.customerName ?? row.customerId },
                   { title: t("admin_board_game.pass_plan"), dataIndex: "planName" },
+                  {
+                    title: t("admin_board_game.pass_plan_branch"),
+                    render: (_, row) => row.locationId
+                      ? (locations.find((location) => location.id === row.locationId)?.name
+                         ?? t("admin_board_game.pass_plan_branch_unknown"))
+                      : t("admin_board_game.pass_plan_all_branches"),
+                  },
                   {
                     title: t("admin_board_game.pass_remaining"),
                     render: (_, row) => row.kind === "UNLIMITED"
