@@ -37,7 +37,12 @@ services:
       - "8081:8080"
     volumes:
       - ./apps/ws:/app/apps/ws
+      # The source bind mount comes from macOS, but esbuild/tsx must use Linux binaries
+      # inside the container. Keep every dependency tree behind its own Docker volume.
+      - ws_node_modules:/app/apps/ws/node_modules
       - ./packages:/app/packages
+      - realtime_node_modules:/app/packages/realtime/node_modules
+      - graphql_core_node_modules:/app/packages/graphql-core/node_modules
 
   web:
     command: >
@@ -98,5 +103,8 @@ services:
       - "443:443"
 
 volumes:
+  ws_node_modules:
+  realtime_node_modules:
+  graphql_core_node_modules:
   web_node_modules:
   web_next_cache:

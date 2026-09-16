@@ -13,6 +13,7 @@ const caddyLocal = readFileSync(new URL("../apps/web/Caddyfile.local", import.me
 const composeFiles = ["docker-compose.yml", "docker-compose.dev.yml", "docker-compose.prod.yml"]
   .map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
 const composeProd = readFileSync(new URL("../docker-compose.prod.yml", import.meta.url), "utf8");
+const composeDev = readFileSync(new URL("../docker-compose.dev.yml", import.meta.url), "utf8");
 const pubsub = readFileSync(new URL("../packages/realtime/src/pubsub.ts", import.meta.url), "utf8");
 const browserClient = readFileSync(new URL("../apps/web/lib/apollo.ts", import.meta.url), "utf8");
 const webResolvers = readFileSync(new URL("../apps/web/graphql/resolvers.ts", import.meta.url), "utf8");
@@ -141,6 +142,20 @@ test("production compose refuses to start rather than boot a gateway that reject
     composeProd.includes("WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:?"),
     "docker-compose.prod.yml ต้องบังคับ WS_ALLOWED_ORIGINS ด้วย ${VAR:?...} ไม่ใช่ปล่อยว่างแล้วให้คอนเทนเนอร์ crash-loop",
   );
+});
+
+test("development WS keeps Linux dependencies outside macOS bind mounts", () => {
+  // `./apps/ws:/app/apps/ws` also exposes the host's node_modules unless a narrower volume
+  // shadows it. A macOS esbuild binary makes `tsx watch` stay alive while the actual gateway
+  // crashes, so Docker reports "running" but Caddy returns 502 forever.
+  for (const mount of [
+    "ws_node_modules:/app/apps/ws/node_modules",
+    "realtime_node_modules:/app/packages/realtime/node_modules",
+    "graphql_core_node_modules:/app/packages/graphql-core/node_modules",
+  ]) {
+    assert.ok(composeDev.includes(`- ${mount}`), `${mount} must isolate Linux dependencies`);
+    assert.match(composeDev, new RegExp(`^  ${mount.split(":")[0]}:$`, "m"));
+  }
 });
 
 test("realtime Redis commands fail fast instead of hanging, and log once instead of flooding", () => {
