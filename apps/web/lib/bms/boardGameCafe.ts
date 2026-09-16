@@ -242,6 +242,7 @@ function mapSessionRow(row: any, replayed = false) {
     startedAt: iso(row.started_at),
     expectedEndAt: iso(row.expected_end_at),
     endedAt: iso(row.ended_at),
+    alertBeforeMinutes: Number(row.alert_before_minutes ?? 15),
     alertStatus: computedAlertStatus(row),
     amountDue: Number(row.amount_due),
     replayed,

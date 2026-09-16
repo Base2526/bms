@@ -981,6 +981,26 @@ test("RN login strip names the failure class and the raw cause", () => {
   );
 });
 
+test("RN phone login keeps the PIN reachable when the cashier list is long", () => {
+  const screen = withoutComments(mobileLoginScreen);
+  assert.match(screen, /import \{[^}]*ScrollView[^}]*\} from 'react-native'/);
+  assert.match(
+    screen,
+    /:\s*\(\s*<ScrollView[\s\S]{0,500}\{branchCard\}[\s\S]{0,100}\{cashierCard\}[\s\S]{0,100}\{pinCard\}[\s\S]{0,100}<\/ScrollView>/,
+    "the complete phone flow must scroll together so a long cashier list cannot hide PIN",
+  );
+  assert.match(
+    screen,
+    /phoneScrollContent:\s*\{\s*flexGrow:\s*1/,
+    "the phone scroll area must still fill the available height when the cashier list is short",
+  );
+  assert.match(
+    screen,
+    /const pinCard =\s*\(\s*<Card>/,
+    "the PIN card must contribute its full keypad height to the scrollable content",
+  );
+});
+
 test("RN device settings proves the connection test actually ran", () => {
   const screen = withoutComments(mobileDeviceSettingsScreen);
   assert.match(screen, /lastCheckedAt/, "จอต้องอ่านเวลาที่คำตอบกลับมาถึงเครื่อง");
@@ -1019,15 +1039,53 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   const checkout = withoutComments(mobileCheckoutScreen);
   assert.match(boardGame, /MobilePosBoardGameWorkspaceDocument/);
   assert.match(boardGame, /\['ENDING_SOON', 'OVERDUE'\]/);
+  assert.match(
+    boardGame,
+    /for \(const table of data\?\.floor\.tables \?\? \[\]\)[\s\S]{0,700}pending\.push\([\s\S]{0,250}\n    \}\n\n    if \(pending\.length === 0\) return;/,
+    "time alerts must be collected and shown in one dialog instead of one alert per table",
+  );
+  assert.match(
+    boardGame,
+    /`แจ้งเตือนเวลา \$\{pending\.length\} โต๊ะ`[\s\S]{0,300}text: 'ดูผังโต๊ะ'/,
+    "the combined time alert must summarize all affected tables and return to the floor",
+  );
+  assert.match(
+    boardGame,
+    /<ScreenHeader[\s\S]{0,500}view\.kind === 'floor' \? undefined : \(\) => navigation\.goBack\(\)/,
+    "pushed open-table and detail routes must expose the standard header back action",
+  );
+  assert.match(
+    mobileMainTabs,
+    /name="BoardGameOpen"[\s\S]{0,150}component=\{BoardGameOpenScreen\}[\s\S]{0,150}name="BoardGameDetail"[\s\S]{0,150}component=\{BoardGameDetailScreen\}/,
+    "open-table and detail must be real native-stack routes, not in-place state swaps",
+  );
+  assert.doesNotMatch(
+    boardGame,
+    /label="กลับผัง"/,
+    "detail routes must not duplicate the standard header back control",
+  );
   assert.match(boardGame, /MobilePosMembersDocument/);
-  assert.match(boardGame, /customerId: selectedMember\?\.customerId \?\? null/);
+  assert.match(
+    boardGame,
+    /customerId:\s*index === 0\s*\?\s*selectedMember\?\.customerId \?\? null\s*:\s*null/,
+  );
   assert.match(boardGame, /billingGroupNo/);
+  assert.match(boardGame, /const shift = useShift\(\)/);
+  assert.match(
+    boardGame,
+    /!shift\.isOpen[\s\S]{0,160}ยังไม่ได้เปิดกะ/,
+    "opening a timed table must explain the open-shift prerequisite before submit",
+  );
+  assert.match(boardGame, /navigate\(['"]ShiftTab['"]\)/);
   assert.match(boardGame, /MobilePosCloseBoardGameBillingGroupDocument/);
   assert.match(boardGame, /billingGroupId: group\.id/);
   // `9.91`: โต๊ะที่รวมไว้มีหลายชุดนั่งร่วมกัน — จอต้องให้เลือกชุดก่อนทำรายการ ไม่งั้นทุกปุ่ม
   // ทำงานกับชุดที่ระบบเลือกให้เอง
   assert.match(boardGame, /seatingSessionIds\.map/);
-  assert.match(boardGame, /setSelectedSessionId\(id\)/);
+  assert.match(
+    boardGame,
+    /navigation\.replace\('BoardGameDetail',\s*\{\s*sessionId: id/,
+  );
   // `9.90`: บิลที่สั่งของเข้าไปได้ต้องแสดงของที่สั่งไว้ ไม่งั้นเอาออกก็ไม่รู้ว่าเอาอะไรออก
   assert.match(boardGame, /group\.tabItems\.map/);
   assert.match(boardGame, /MobilePosCheckoutBoardGameCopyDocument/);

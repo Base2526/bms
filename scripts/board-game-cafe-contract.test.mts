@@ -91,6 +91,18 @@ test("board-game hardening migration upgrades legacy rows and converges constrai
   assert.match(sql, /DROP COLUMN IF EXISTS alert_status/);
 });
 
+test("board-game session detail fulfills its non-null alert contract", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const graphql = read("apps/web/graphql/bmsPosDevice.ts");
+
+  assert.match(graphql, /type BmsPosBoardGameSession[\s\S]{0,260}alertBeforeMinutes: Int!/);
+  assert.match(
+    service,
+    /function mapSessionRow[\s\S]{0,500}alertBeforeMinutes:\s*Number\(row\.alert_before_minutes \?\? 15\)/,
+    "the detail query must not null the whole session after a successful open",
+  );
+});
+
 test("board-game payment reuses POS and atomically links the paid bill", () => {
   const sql = read("db/migrations/9.82__bms_board_game_pos_settlement.sql");
   const groupSql = read("db/migrations/9.89__bms_board_game_billing_groups.sql");

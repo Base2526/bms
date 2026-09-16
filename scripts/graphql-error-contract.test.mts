@@ -72,10 +72,11 @@ test("the final GraphQL formatter always emits a stable error code", () => {
 
 test("mobile adapters use the central error contract while business statuses remain data", () => {
   const route = withoutComments(read("../apps/web/app/api/graphql/route.ts"));
+  const posDeviceAuth = withoutComments(read("../apps/web/graphql/posDeviceAuth.ts"));
   const adapters = [
     read("../apps/web/graphql/bmsPosDevice.ts"),
     read("../apps/web/graphql/bmsMobileOperations.ts"),
-    read("../apps/web/graphql/posDeviceAuth.ts"),
+    posDeviceAuth,
   ].map(withoutComments).join("\n");
   const businessServices = withoutComments([
     read("../apps/web/lib/bms/pos.ts"),
@@ -85,6 +86,16 @@ test("mobile adapters use the central error contract while business statuses rem
 
   assert.match(route, /formatError:\s*ensureBmsGraphqlErrorCode/);
   assert.doesNotMatch(adapters, /new\s+GraphQLError\s*\(/);
+  assert.doesNotMatch(
+    posDeviceAuth,
+    /code\s*===\s*["']UNAUTHENTICATED["']\s*\?\s*401\s*:\s*403/,
+    "a GraphQL conflict/input/not-found error must stay in errors[] instead of becoming opaque HTTP 403",
+  );
+  assert.match(
+    posDeviceAuth,
+    /code\s*===\s*["']UNAUTHENTICATED["'][\s\S]{0,80}http:\s*\{\s*status:\s*401\s*\}[\s\S]{0,40}:\s*\{\}/,
+    "only rejected device credentials should become a transport-level HTTP error",
+  );
   assert.deepEqual(BMS_GRAPHQL_CLIENT_ERROR_CODES, [
     "UNAUTHENTICATED",
     "FORBIDDEN",
