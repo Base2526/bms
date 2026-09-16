@@ -2112,6 +2112,7 @@ query MobilePosBoardGameCheckout(
     tabItemCount
     totalDue
     chargeLineCount
+    passCoveredAmount
   }
 }
 
@@ -2189,6 +2190,29 @@ mutation MobilePosMergeBoardGameSeating(
     fromTableId
     toTableId
     sessionIds
+    replayed
+  }
+}
+
+mutation MobilePosAddBoardGameTabItem($input: BmsPosBoardGameTabAddInput!) {
+  bmsPosAddBoardGameTabItem(input: $input) {
+    itemId
+    billingGroupId
+    sku
+    productName
+    packQty
+    tabAmount
+    replayed
+  }
+}
+
+mutation MobilePosRemoveBoardGameTabItem(
+  $input: BmsPosBoardGameTabRemoveInput!
+) {
+  bmsPosRemoveBoardGameTabItem(input: $input) {
+    itemId
+    billingGroupId
+    tabAmount
     replayed
   }
 }

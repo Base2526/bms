@@ -266,13 +266,25 @@ When the paired store archetype is `board_game_cafe`, `apps/mobile` shows a dedi
 tab. It reads the branch floor, rates, sessions, and playable-copy availability through generated
 device-scoped GraphQL operations. Staff can open an open-ended or fixed-duration session, choose
 existing members, assign participant bill groups, receive ending-soon/overdue popups, add time,
-record people leaving, and check game copies out or back in with an issue note.
+record people leaving, add snacks and drinks to a group's tab or take them off again, and check game
+copies out or back in with an issue note. On a merged table the app lists the parties sharing the
+seating and makes the staff pick one before any command runs — a button that silently acts on
+whichever party the screen happened to select is a button that charges the wrong people.
 
 Closing a session freezes the server-calculated participant charge lines. The app then opens the
 normal POS checkout, where snacks and other sellable products can share the bill. The time amount is
 shown as a service line but is never sent as a SKU; settlement supplies only the billing-group ID and
 the server validates the branch/status and links the paid order atomically. All mutations retain one
 idempotency key across an unknown network result.
+
+Both registers also have to be able to settle a bill that has nothing left to collect: a member pass
+can cover the whole time charge (`9.92`), and a group of non-billable spectators or a visit still
+inside its grace window reaches ฿0 with no pass involved at all. `recordPosSale()` has allowed that
+since `9.92`, but each adapter parses its own payment rows first, so the exception has to exist at
+every edge — the browser sends `payments: []` when the amount is zero and was refused by its own
+route until `9.94`. What a pass paid is server data (`passCoveredAmount`), shown on the bill line by
+both registers; deriving "a member pass covered this" from a zero total instead would put a claim on
+a customer-facing screen that is false whenever the zero came from somewhere else.
 
 ## Reuse Existing BMS
 

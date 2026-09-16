@@ -122,6 +122,12 @@ test("POS payment parser accepts valid methods and rejects bad inputs", () => {
     { method: "CASH", amount: 100, cashTendered: 120 },
     { method: "CARD", amount: 50, ref: "EDC-001" },
   ]).ok, true);
+  assert.equal(parsePosPayments([]).ok, false, "ordinary sales still require a payment");
+  assert.deepEqual(
+    parsePosPayments([], { allowEmpty: true }),
+    { ok: true, payments: [] },
+    "a verified zero-total flow may deliberately carry no payment rows",
+  );
 });
 
 test("entering split payment clears a stale cash tender from the single-payment form", () => {

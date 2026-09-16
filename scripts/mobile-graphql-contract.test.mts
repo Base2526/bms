@@ -422,7 +422,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 81 mobile/POS input arguments are typed", () => {
+test("all 83 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -433,8 +433,8 @@ test("all 81 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    81,
-    "the mobile/POS surface must keep all 81 input-bearing operations",
+    83,
+    "the mobile/POS surface must keep all 83 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -445,11 +445,11 @@ test("all 81 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 126 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 128 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    126,
+    128,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -616,12 +616,14 @@ test("write inputs that consume client idempotency keys expose the key with acti
     "bmsPosCancelStockCount",
     "bmsPosOpenBoardGameSession",
     "bmsPosAddBoardGameParticipant",
+    "bmsPosAddBoardGameTabItem",
     "bmsPosLeaveBoardGameParticipant",
     "bmsPosAdjustBoardGameTiming",
     "bmsPosCloseBoardGameSession",
     "bmsPosCancelBoardGameSession",
     "bmsPosCheckoutBoardGameCopy",
     "bmsPosReturnBoardGameCopy",
+    "bmsPosRemoveBoardGameTabItem",
   ];
   for (const operation of alwaysRequired) {
     const input = inputArgument("Mutation", operation);
@@ -794,12 +796,14 @@ test("normal POS REST workflows have named GraphQL equivalents", () => {
     "bmsPosCancelStockCount",
     "bmsPosOpenBoardGameSession",
     "bmsPosAddBoardGameParticipant",
+    "bmsPosAddBoardGameTabItem",
     "bmsPosLeaveBoardGameParticipant",
     "bmsPosAdjustBoardGameTiming",
     "bmsPosCloseBoardGameSession",
     "bmsPosCancelBoardGameSession",
     "bmsPosCheckoutBoardGameCopy",
     "bmsPosReturnBoardGameCopy",
+    "bmsPosRemoveBoardGameTabItem",
   ];
   for (const operation of queries) {
     assert.ok(
@@ -1020,6 +1024,12 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   assert.match(boardGame, /billingGroupNo/);
   assert.match(boardGame, /MobilePosCloseBoardGameBillingGroupDocument/);
   assert.match(boardGame, /billingGroupId: group\.id/);
+  // `9.91`: โต๊ะที่รวมไว้มีหลายชุดนั่งร่วมกัน — จอต้องให้เลือกชุดก่อนทำรายการ ไม่งั้นทุกปุ่ม
+  // ทำงานกับชุดที่ระบบเลือกให้เอง
+  assert.match(boardGame, /seatingSessionIds\.map/);
+  assert.match(boardGame, /setSelectedSessionId\(id\)/);
+  // `9.90`: บิลที่สั่งของเข้าไปได้ต้องแสดงของที่สั่งไว้ ไม่งั้นเอาออกก็ไม่รู้ว่าเอาอะไรออก
+  assert.match(boardGame, /group\.tabItems\.map/);
   assert.match(boardGame, /MobilePosCheckoutBoardGameCopyDocument/);
   assert.match(boardGame, /MobilePosReturnBoardGameCopyDocument/);
   // `9.91`: import เอกสารไว้เฉย ๆ = คำสั่งที่แอปเอื้อมไม่ถึง · ต้องถูก *เรียก* พร้อมโต๊ะปลายทาง
@@ -1030,6 +1040,10 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
     // `9.93`: แอปให้ยืมกล่องเกมได้แต่บันทึกบัตรไม่ได้ = ด่านตอนปิดบิลไล่ให้ไปหาเบราว์เซอร์
     "MobilePosTakeBoardGameIdentityHoldDocument",
     "MobilePosReleaseBoardGameIdentityHoldDocument",
+    // `9.90`: เบราว์เซอร์สั่งของเข้าบิลได้ตั้งแต่ต้น แอปเพิ่งเอื้อมถึง — import เฉย ๆ
+    // ไม่นับ เพราะจอที่แสดงรายการได้แต่เพิ่ม/เอาออกไม่ได้คือจอที่ต้องไปหาเบราว์เซอร์อยู่ดี
+    "MobilePosAddBoardGameTabItemDocument",
+    "MobilePosRemoveBoardGameTabItemDocument",
   ]) {
     assert.match(boardGame, new RegExp(`useMutation\\(\\s*${document}`), `${document} is never used`);
   }
@@ -1047,6 +1061,76 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   assert.doesNotMatch(checkout, /boardGameSessionId/);
   assert.match(checkout, /MobilePosBoardGameCheckoutDocument/);
   assert.match(checkout, /item\.sku === '__BOARD_GAME_TIME__'/);
+  // ⚠️ เล็งที่ **กฎ** ไม่ใช่ที่ชื่อตัวแปร — บิลบอร์ดเกมที่ไม่เหลือยอดต้องส่ง payment list ว่าง
+  // (`9.92`) ไม่ใช่ CASH ฿0 ซึ่งทั้งจอและ server ปฏิเสธ · อ่านชื่อธงจากจุดที่ตัดสินจริง
+  // แล้วไล่กลับไปอ่านการประกาศของมัน ไม่งั้นเปลี่ยนชื่อธงแล้วเทสแดงทั้งที่การันตีไม่ได้หาย
+  const zeroDueFlag = /const (\w+) =\s+source === 'board_game'/.exec(checkout);
+  assert.ok(
+    zeroDueFlag,
+    "the checkout must decide the zero-due board-game case from what it is settling",
+  );
+  // แถวที่ส่งไปจริงกับแถวที่จอยืนยันแสดงต้องเป็นชุดเดียวกัน — ไม่งั้นจอบอกว่าไม่มียอดต้องชำระ
+  // แล้วหน้ายืนยันบอกว่ารับเงินสด ฿0 ซึ่งเป็นจอที่ขัดกันเองต่อหน้าลูกค้า
+  const sent = /const paymentInput = (\w+)\.map\(/.exec(checkout);
+  const shown = /payments=\{(\w+)\}/.exec(checkout);
+  assert.ok(sent && shown, "the checkout must build one list of payment rows");
+  assert.equal(
+    shown[1],
+    sent[1],
+    "the confirmation screen must show the rows the sale is about to send",
+  );
+  const listAt = checkout.indexOf(`const ${sent[1]} =`);
+  const list = checkout.slice(listAt, listAt + 160);
+  assert.ok(
+    listAt > 0 && list.includes(zeroDueFlag[1]) && /\?\s*\[\]/.test(list),
+    "a board-game bill with nothing left to pay must be settled with no payment rows",
+  );
+  const zeroDueAt = checkout.indexOf(`const ${zeroDueFlag[1]} =`);
+  assert.ok(
+    zeroDueAt > 0 && checkout.slice(zeroDueAt, zeroDueAt + 200).includes("paymentTarget"),
+    "the zero-due flag must read the amount still to collect, not a screen state",
+  );
+  // ⚠️ "แพ็กเกจสมาชิกจ่ายให้" เป็นข้อเท็จจริงที่ server รายงาน ไม่ใช่ข้อสรุปจากยอดที่เหลือ —
+  // ยอดศูนย์เกิดได้โดยไม่มีแพ็กเกจเลย (โต๊ะที่มีแต่ผู้ชมที่ไม่คิดเงิน หรือเวลาที่ยังไม่พ้น grace)
+  // การอ้างจากยอดรวมคือการบอกแคชเชียร์ในสิ่งที่ไม่จริง บนจอที่หันออกทางลูกค้า
+  assert.ok(
+    /boardGameBill\?\.passCoveredAmount/.test(checkout),
+    "the pass-covered amount must be read from the bill the server returned",
+  );
+  for (const at of [...checkout.matchAll(/แพ็กเกจสมาชิก/g)].map((m) => m.index)) {
+    assert.ok(
+      /passCoveredAmount/.test(checkout.slice(Math.max(0, at - 200), at + 200)),
+      "every claim that a member pass paid must be guarded by the amount the server reported",
+    );
+  }
+  // บิลที่จ่ายแทนไปบางส่วนยังมียอดให้เก็บ แผงรับเงินจึงไม่ถูกซ่อน — บรรทัดอธิบายต้องอยู่กับ
+  // ตัวบิลด้วย ไม่ใช่อยู่แต่ในกิ่งของบิล ฿0
+  assert.ok(
+    /item\.sku === '__BOARD_GAME_TIME__' && passCoveredAmount > 0/.test(checkout),
+    "a partly covered bill must say so on the bill line, not only when nothing is left to pay",
+  );
+  // `9.90`: แอปสั่งของเข้าบิลได้แล้ว ยอดก้อนเดียวจึงอธิบายให้ลูกค้าไม่ได้ว่ามาจากอะไร
+  //
+  // ⚠️ ห้าม assert แค่ว่า "ชื่อฟิลด์อยู่ในไฟล์" — ชื่อที่อยู่ในกิ่งที่ตายแล้วก็ยังอยู่ในไฟล์
+  // (กับดักเดิมของเทสสแกนซอร์สในรีโปนี้) · ตรึง **เงื่อนไขที่ตัดสิน** ว่าบรรทัดนั้นถูกวาด
+  const breakdownAt = checkout.indexOf("boardGameBill.chargeLineCount");
+  assert.ok(
+    breakdownAt > 0,
+    "the board-game line must show how its amount was built",
+  );
+  const breakdown = checkout.slice(
+    Math.max(0, breakdownAt - 200),
+    breakdownAt + 500,
+  );
+  assert.ok(
+    /item\.sku === '__BOARD_GAME_TIME__' && boardGameBill \?/.test(breakdown),
+    "the breakdown belongs to the board-game line the cashier is settling",
+  );
+  assert.ok(
+    /boardGameBill\.tabItemCount > 0/.test(breakdown) &&
+      /boardGameBill\.tabAmount\.toFixed/.test(breakdown),
+    "what was ordered during play must be readable apart from the time charge",
+  );
   assert.doesNotMatch(
     mobileGraphqlOperations.slice(
       mobileGraphqlOperations.indexOf("mutation MobilePosSale"),

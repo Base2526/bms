@@ -142,6 +142,10 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 - `POST /api/pos/shifts` — PIN + `pos.shift.report`; recent shifts belonging to the authenticated device. The PIN stays in the JSON body, never the URL.
 - `POST /api/pos/shift-report/export` — PIN + `pos.shift.report`; device-scoped XLSX source ledger for one X/Z report. The PIN stays in the JSON body.
 - `POST /api/pos/sale` — server-resolved product/pack prices, multi-payment, idempotent atomic close.
+  At least one payment row is required, with one exception: a request naming a
+  `boardGameBillingGroupId` may send `payments: []`, because a member pass (`9.92`) can leave the
+  bill at ฿0. `recordPosSale()` still locks that group in the shift's branch and compares the
+  frozen amount with what was sent, so a bill that still owes money ends as `PAYMENT_MISMATCH`.
   A payment row with `method: "CREDIT"` (`9.30`) sells on account: the bill completes in full and a
   receivable is raised instead of money arriving. It requires a customer, and the seller must hold
   `ar.sell` or supply `creditApproverUserId` + `creditApproverPin` from someone who does — unlike a
@@ -268,8 +272,11 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   action is `POST`: a PIN must never reach an access log through a query string. Permissions, the
   branch check and input normalization all come from `lib/bms/boardGamePosOperations.ts`, the same
   module the native register reaches through GraphQL, so neither surface can drift into allowing
-  what the other refuses. A rule rejection answers `400`/`404`/`409` carrying the reason the counter
-  needs; only a real fault stays a `500`.
+  what the other refuses. Every writing command also has to be *reachable* from both: the tab pair
+  reached the native register only with the `9.94` work
+  (`bmsPosAddBoardGameTabItem` / `bmsPosRemoveBoardGameTabItem`), so the contract now fails in both
+  directions instead of only when the browser falls behind. A rule rejection answers
+  `400`/`404`/`409` carrying the reason the counter needs; only a real fault stays a `500`.
 - `GET /api/pos/board-game/session?id=` (`9.79`, re-keyed by `9.89`) — the closed time bill handed
   to the Sell tab. `id` is a **billing group**, not a session: one table visit can hand the register
   several bills, so naming the table cannot say which one is being paid. The response carries

@@ -10,10 +10,14 @@
  *   2. **การปฏิเสธตามกติกาเป็นคำตอบ ไม่ใช่ 500** — และบั๊ก/ฐานข้อมูลล้มต้องยังเป็น 500
  *   3. **เบราว์เซอร์เอื้อมถึงทุกคำสั่งที่เขียนข้อมูลได้** — คำสั่งที่มีแต่ใน RN คือฟีเจอร์ที่
  *      ร้านซึ่งใช้เบราว์เซอร์อย่างเดียวไม่มีทางใช้ได้เลย โดยไม่มีอะไรฟ้อง
+ *   4. **และแอปก็เอื้อมถึงทุกคำสั่งเหมือนกัน** — ด่านข้อ 3 ตรวจทางเดียวมาตลอด `tab.add`/
+ *      `tab.remove` จึงอยู่ในตารางตั้งแต่ `9.90` โดยไม่มี mutation ให้แอปเรียกเลยจนถึง `9.94`
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { ensureBmsGraphqlErrorCode } from "../apps/web/graphql/mobileErrorContract";
 import {
@@ -32,11 +36,35 @@ import { resolveScanContext } from "../apps/web/lib/pos/scanManager";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
+/**
+ * ไฟล์ `.ts`/`.tsx` ทั้งหมดใต้โฟลเดอร์หนึ่ง — ข้าม `node_modules`/`.next` ซึ่งไม่ใช่ซอร์สของเรา
+ *
+ * ใช้เดินหาผู้เรียกที่ยังไม่มีอยู่: กฎที่ตรวจเฉพาะไฟล์ที่เทสพิมพ์ชื่อไว้เองจะไม่มีวันรู้ว่ามี
+ * adapter ตัวที่สามเพิ่มเข้ามา ซึ่งเป็นรูปของความล้มเหลวที่เงียบที่สุดในรีโปนี้
+ */
+function typescriptFilesUnder(relative: string): string[] {
+  const root = fileURLToPath(new URL(relative, import.meta.url));
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry.name)) found.push(full);
+    }
+  };
+  walk(root);
+  assert.ok(found.length > 0, `${relative} must contain TypeScript sources to scan`);
+  return found;
+}
+
 const operations = read("../apps/web/lib/bms/boardGamePosOperations.ts");
 const restRoute = read("../apps/web/app/api/pos/board-game/route.ts");
 const posResolvers = read("../apps/web/graphql/bmsPosDevice.ts");
 const panel = read("../apps/web/components/pos/BoardGamePanel.tsx");
 const registerPage = read("../apps/web/app/(pos)/pos/page.tsx");
+const saleRestRoute = read("../apps/web/app/api/pos/sale/route.ts");
+const posRouteHelpers = read("../apps/web/lib/bms/posRouteHelpers.ts");
 
 /**
  * คอมเมนต์ในไฟล์เหล่านี้อธิบายกฎที่เทสตรึงอยู่ การสแกนซอร์สดิบจึงทำให้คอมเมนต์ "ทำให้ผ่าน"
@@ -301,4 +329,84 @@ test("the board-game tab belongs to the cafe archetype and never steals the scan
   // แท็บนี้ไม่มีอะไรให้ยิงบาร์โค้ด — ปล่อยให้สแกนเนอร์ติดอาวุธไว้คือการยิงของเข้าตะกร้า
   // ของแท็บอื่นโดยที่คนหน้าเครื่องไม่เห็นว่ามันไปไหน
   assert.equal(resolveScanContext({ ...base, tab: "boardgame" }), "DISABLED");
+});
+
+test("the native register reaches every board-game command that writes", () => {
+  const clean = withoutComments(posResolvers);
+  // ชื่อคำสั่งอ่านจาก **ด่านสิทธิ์** ของ resolver จริง ไม่ใช่ลิสต์ที่เทสพิมพ์เอง · ตัว
+  // `mobile-graphql-contract` บังคับอยู่แล้วว่า resolver ต้อง execute คำสั่งเดียวกับที่ขออนุญาต
+  // และ SDL กับ resolver ต้องตรงกันสองทิศ ดังนั้นการนับจากตรงนี้ = การนับจาก mutation ที่มีจริง
+  const used = new Set(
+    [...clean.matchAll(/boardGamePosAccess\(\s*ctx\s*,\s*args\.input\s*,\s*"([a-z.]+)"/g)]
+      .map((match) => match[1]),
+  );
+  for (const action of used) {
+    assert.ok(
+      isBoardGamePosAction(action),
+      `the native adapter authorizes "${action}" which the shared table does not declare`,
+    );
+  }
+
+  // ⚠️ ด้านกลับของเทสตัวบน · `tab.add`/`tab.remove` มีตั้งแต่ `9.90` แต่เพิ่งมี mutation
+  // ตอน `9.94` — ตลอดช่วงนั้นแอปแสดงของบนบิลไม่ได้และสั่งของเข้าบิลไม่ได้เลย โดยไม่มีอะไรฟ้อง
+  // เพราะด่านที่มีอยู่ตรวจแต่ฝั่งเบราว์เซอร์
+  const missing = writeActions().filter((action) => !used.has(action));
+  assert.deepEqual(
+    missing,
+    [],
+    "every writing command must be reachable from the native register, not only from the browser",
+  );
+});
+
+test("a board-game bill with nothing left to pay can be settled from both registers", () => {
+  // `9.92`: แพ็กเกจสมาชิกครอบคลุมค่าเล่นได้เต็มจำนวน บิลจึงเป็น ฿0 จริงและไม่มีอะไรให้รับ ·
+  // `recordPosSale()` ยกเว้นด่าน "ต้องระบุการชำระเงิน" ให้ตั้งแต่ `9.92` แต่ตัวแยก payload
+  // ของแต่ละ adapter ปฏิเสธก่อนถึง service — ข้อยกเว้นจึงต้องอยู่ที่ **ทุกขอบ** ไม่ใช่ที่ service
+  // อย่างเดียว ไม่งั้นเบราว์เซอร์ (ซึ่งส่ง `payments: []` เมื่อยอดเป็นศูนย์) เก็บบิลไม่ได้เลยสักใบ
+  for (const [label, source] of [
+    ["the browser register route", withoutComments(saleRestRoute)],
+    ["the native register adapter", withoutComments(posResolvers)],
+  ] as const) {
+    // เล็งจาก "จุดที่รู้แล้วว่ากำลังเก็บบิลบอร์ดเกมใบไหน" ไม่ใช่ `parsePosPayments` ตัวแรกของไฟล์ —
+    // ไฟล์ของ adapter มีผู้เรียกตัวแยกนี้หลายจุด (มัดจำ/บิลโต๊ะ) ที่ต้องเข้มเหมือนเดิม
+    const scopeAt = source.indexOf("boardGameBillingGroupId = ");
+    assert.ok(scopeAt > 0, `${label} must derive the board-game bill it is settling`);
+    const at = source.indexOf("parsePosPayments(", scopeAt);
+    assert.ok(at > scopeAt, `${label} must parse its payment rows on the sale path`);
+    assert.ok(
+      /allowEmpty:\s*Boolean\(boardGameBillingGroupId\)/.test(source.slice(at, at + 200)),
+      `${label} must let a zero-total board-game bill settle with no payment rows`,
+    );
+  }
+
+  // ⚠️ ด่านนี้กว้างกว่าสอง adapter โดยตั้งใจ — ทางลัดที่จะทำให้บิลค้าปลีกที่ไม่มีใครจ่ายผ่านได้
+  // คือผู้เรียกรายที่สามที่เปิด `allowEmpty` แบบไม่มีเงื่อนไข ซึ่งจะไม่มีใครเห็นถ้าตรวจแค่สองไฟล์
+  const optIns: string[] = [];
+  for (const file of typescriptFilesUnder("../apps/web")) {
+    const source = withoutComments(readFileSync(file, "utf8"));
+    for (const match of source.matchAll(/allowEmpty:\s*([^,\n}]+)/g)) {
+      const where = file.replace(/\\/g, "/").split("/apps/web/")[1] ?? file;
+      optIns.push(`${where}: ${match[1].trim()}`);
+    }
+  }
+  assert.deepEqual(
+    optIns.filter((entry) => !entry.endsWith("Boolean(boardGameBillingGroupId)")),
+    [],
+    "the empty-payment path may only open for the board-game bill the caller named",
+  );
+  assert.equal(optIns.length, 2, "both registers, and only those two, may opt in");
+
+  // ค่าปริยายของตัวแยกเองต้องยังปฏิเสธ — `scripts/pos-contract.test.mts` เรียกของจริงมาตรึงไว้
+  assert.ok(
+    /payments\.length > 0 \|\| options\.allowEmpty === true/.test(
+      withoutComments(posRouteHelpers),
+    ),
+    "an empty payment list must stay a rejection unless the caller opted in",
+  );
+  // id ที่ไม่ใช่ uuid เคยตกด่าน "ต้องระบุการชำระเงิน" ไปก่อน · พอบิล ฿0 ผ่านด่านนั้นได้ มันจะ
+  // เดินต่อไปถึง `WHERE id = $2` แล้วได้ 22P02 เป็น 500 ที่ข้อความจริงถูกลบทิ้งบน production
+  assert.ok(
+    /isPosUuid\(boardGameBillingGroupId\)/.test(withoutComments(saleRestRoute)),
+    "the browser route must reject a malformed board-game id instead of handing it to Postgres",
+  );
 });
