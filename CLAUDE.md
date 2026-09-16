@@ -292,8 +292,8 @@ POS settlement rechecks old held-card rows, and the settlement lock order is ses
 
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
 POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
-`graphql-schema-artifact-contract`, all 122 operations take named input objects and return named
-output types (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
+`graphql-schema-artifact-contract`, every mobile/POS operation takes a named input object and returns
+a named output type (no `JSON` left in any response tree), eight REST-ism action multiplexers were split
 into 32 named mutations with the old fields kept `@deprecated`, and every client-facing error carries
 an `extensions.code` while business rejections stay in `data.<operation>.status`. Four POS
 multiplexers (`bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift`) are still

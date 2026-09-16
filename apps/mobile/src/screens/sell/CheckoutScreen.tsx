@@ -303,6 +303,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       RESTAURANT_PAYMENT_METHODS.includes(payment.method),
     );
   const boardGameReady = source !== 'board_game' || Boolean(boardGameBill);
+  // บิลบอร์ดเกมที่ไม่เหลือยอดต้องชำระ — settle ด้วย payment list ว่าง ไม่ใช่สร้าง CASH ฿0
+  // ซึ่งทั้ง `validateMockPayments` (ต้องมียอด > 0) และ `recordPosSale` ปฏิเสธ
+  //
+  // ⚠️ ห้ามตั้งชื่อ/เขียนข้อความว่า "แพ็กเกจสมาชิกครอบคลุม" จากเงื่อนไขนี้ — ยอดศูนย์เกิดได้
+  // โดยไม่มีแพ็กเกจเลย (โต๊ะที่มีแต่ผู้ชมที่ไม่คิดเงิน หรือเวลาที่ยังไม่พ้น grace) · ใครจ่ายแทน
+  // เป็นข้อมูลของ server (`passCoveredAmount`) ไม่ใช่สิ่งที่จอเดาจากยอดรวม
+  const zeroDueBoardGameBill =
+    source === 'board_game' && Boolean(boardGameBill) && paymentTarget <= 0;
+  const passCoveredAmount = boardGameBill?.passCoveredAmount ?? 0;
+  const canConfirmPayment = validation.canConfirm || zeroDueBoardGameBill;
+  // แถวชำระเงินที่จะถูกส่งจริง — จอยืนยันต้องแสดงชุดเดียวกันนี้ ไม่ใช่ state ของฟอร์มซึ่งยังค้าง
+  // CASH ฿0 อยู่ · ไม่งั้นจอบอกว่า "ไม่มียอดต้องชำระ" แล้วหน้ายืนยันบอกว่ารับเงินสด ฿0 ทอน ฿0
+  // ซึ่งเป็นจอที่ขัดกันเอง และเป็นเหตุที่คนเลิกเชื่อตัวเลขทั้งจอ
+  const settlementPayments = zeroDueBoardGameBill ? [] : payments;
 
   const updatePayment = (id: string, patch: Partial<MockPaymentInput>) => {
     setPaymentsTouched(true);
@@ -329,7 +343,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const completeSale = async () => {
     if (
-      !validation.canConfirm ||
+      !canConfirmPayment ||
       !restaurantPaymentsValid ||
       !boardGameReady ||
       submittedRef.current ||
@@ -359,7 +373,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         return;
       }
     }
-    const paymentInput = payments.map(payment => ({
+    const paymentInput = settlementPayments.map(payment => ({
       method: payment.method.toUpperCase(),
       amount: payment.amount,
       cashTendered:
@@ -597,6 +611,32 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     {cartLineVariantLabel(item)}
                   </Text>
                 ) : null}
+                {/* ค่าเล่นกับของที่สั่งระหว่างเล่นเป็นคนละก้อน (`9.90`) — ยอดรวมก้อนเดียว
+                    ทำให้แคชเชียร์อธิบายไม่ได้ว่ามาจากอะไร · เบราว์เซอร์แยกให้ดูมาตั้งแต่ต้น */}
+                {item.sku === '__BOARD_GAME_TIME__' && boardGameBill ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    {boardGameBill.chargeLineCount} คน · ปิดเวลา{' '}
+                    {new Date(boardGameBill.endedAt).toLocaleTimeString(
+                      'th-TH',
+                      { hour: '2-digit', minute: '2-digit' },
+                    )}
+                    {boardGameBill.tabItemCount > 0
+                      ? ` · ของที่สั่งไว้ ${
+                          boardGameBill.tabItemCount
+                        } รายการ ฿${boardGameBill.tabAmount.toFixed(2)}`
+                      : ''}
+                  </Text>
+                ) : null}
+                {/* `9.92`: ค่าเล่นที่ถูกกว่าที่ลูกค้าคาดต้องมีบรรทัดอธิบาย ไม่งั้นแคชเชียร์
+                    ตอบไม่ได้ว่าหายไปไหน — เลขมาจาก server ไม่ใช่การเดาจากยอดที่เหลือ */}
+                {item.sku === '__BOARD_GAME_TIME__' && passCoveredAmount > 0 ? (
+                  <Text style={[typography.caption, { color: colors.success }]}>
+                    แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿
+                    {passCoveredAmount.toFixed(2)}
+                  </Text>
+                ) : null}
               </View>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
                 ฿{(item.qty * item.unitPrice).toFixed(2)}
@@ -767,114 +807,145 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           />
         </View>
       ) : null}
-      <ScrollView style={{ maxHeight: isTablet ? 360 : 260 }}>
-        {payments.map((payment, index) => (
-          <View
-            key={payment.id}
-            style={{ marginTop: spacing.md, gap: spacing.sm }}
-          >
-            <View style={styles.line}>
-              <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                ช่องทาง {index + 1}
-              </Text>
-              {payments.length > 1 && (
-                <Button
-                  label="ลบ"
-                  accessibilityLabel={`ลบช่องทางชำระเงินที่ ${index + 1}`}
-                  variant="ghost"
-                  onPress={() => {
-                    setPaymentsTouched(true);
-                    setPayments(prev => prev.filter(p => p.id !== payment.id));
-                  }}
-                />
-              )}
-            </View>
-            <View style={styles.methodRow}>
-              {availablePaymentMethods.map(method => (
-                <Button
-                  key={method}
-                  label={paymentMethodLabel(method)}
-                  accessibilityLabel={`เลือก${paymentMethodLabel(method)}`}
-                  variant={payment.method === method ? 'primary' : 'secondary'}
-                  onPress={() =>
-                    updatePayment(payment.id, {
-                      method,
-                      reference: method === 'cash' ? undefined : '',
-                      tendered: method === 'cash' ? payment.amount : undefined,
-                    })
-                  }
-                />
-              ))}
-            </View>
-            <MoneyField
-              label="ยอดช่องทางนี้"
-              value={payment.amount}
-              onChange={amount => updatePayment(payment.id, { amount })}
-            />
-            {payment.method === 'cash' ? (
-              <>
-                <View style={styles.methodRow}>
-                  {quickCashAmounts(payment.amount).map(amount => (
+      {zeroDueBoardGameBill ? (
+        <Text
+          style={[
+            typography.bodyStrong,
+            { color: colors.success, marginTop: spacing.md },
+          ]}
+        >
+          {passCoveredAmount > 0
+            ? `แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿${passCoveredAmount.toFixed(
+                2,
+              )} · ไม่มียอดต้องชำระ`
+            : 'บิลนี้ไม่มียอดต้องชำระ'}
+        </Text>
+      ) : (
+        <>
+          <ScrollView style={{ maxHeight: isTablet ? 360 : 260 }}>
+            {payments.map((payment, index) => (
+              <View
+                key={payment.id}
+                style={{ marginTop: spacing.md, gap: spacing.sm }}
+              >
+                <View style={styles.line}>
+                  <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                    ช่องทาง {index + 1}
+                  </Text>
+                  {payments.length > 1 && (
                     <Button
-                      key={amount}
-                      label={
-                        amount === payment.amount ? 'รับพอดี' : `฿${amount}`
+                      label="ลบ"
+                      accessibilityLabel={`ลบช่องทางชำระเงินที่ ${index + 1}`}
+                      variant="ghost"
+                      onPress={() => {
+                        setPaymentsTouched(true);
+                        setPayments(prev =>
+                          prev.filter(p => p.id !== payment.id),
+                        );
+                      }}
+                    />
+                  )}
+                </View>
+                <View style={styles.methodRow}>
+                  {availablePaymentMethods.map(method => (
+                    <Button
+                      key={method}
+                      label={paymentMethodLabel(method)}
+                      accessibilityLabel={`เลือก${paymentMethodLabel(method)}`}
+                      variant={
+                        payment.method === method ? 'primary' : 'secondary'
                       }
-                      accessibilityLabel={`เงินสดรับ ${amount.toFixed(2)} บาท`}
-                      variant="secondary"
                       onPress={() =>
-                        updatePayment(payment.id, { tendered: amount })
+                        updatePayment(payment.id, {
+                          method,
+                          reference: method === 'cash' ? undefined : '',
+                          tendered:
+                            method === 'cash' ? payment.amount : undefined,
+                        })
                       }
                     />
                   ))}
                 </View>
                 <MoneyField
-                  label="เงินสดที่รับ"
-                  value={payment.tendered ?? 0}
-                  onChange={tendered => updatePayment(payment.id, { tendered })}
+                  label="ยอดช่องทางนี้"
+                  value={payment.amount}
+                  onChange={amount => updatePayment(payment.id, { amount })}
                 />
-                <Text
-                  style={[typography.captionStrong, { color: colors.success }]}
-                >
-                  เงินทอน ฿
-                  {calculateCashChange(
-                    payment.amount,
-                    payment.tendered ?? 0,
-                  ).toFixed(2)}
-                </Text>
-              </>
-            ) : payment.method === 'credit' ? (
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ขายเชื่อจะใช้สมาชิกในบิลและตรวจวงเงินที่เซิร์ฟเวอร์
-              </Text>
-            ) : (
-              <TextInput
-                value={payment.reference ?? ''}
-                onChangeText={reference =>
-                  updatePayment(payment.id, { reference })
-                }
-                placeholder="เลขอ้างอิง"
-                placeholderTextColor={colors.textSoft}
-                style={[
-                  styles.input,
-                  { borderColor: colors.border, color: colors.text },
-                ]}
+                {payment.method === 'cash' ? (
+                  <>
+                    <View style={styles.methodRow}>
+                      {quickCashAmounts(payment.amount).map(amount => (
+                        <Button
+                          key={amount}
+                          label={
+                            amount === payment.amount ? 'รับพอดี' : `฿${amount}`
+                          }
+                          accessibilityLabel={`เงินสดรับ ${amount.toFixed(
+                            2,
+                          )} บาท`}
+                          variant="secondary"
+                          onPress={() =>
+                            updatePayment(payment.id, { tendered: amount })
+                          }
+                        />
+                      ))}
+                    </View>
+                    <MoneyField
+                      label="เงินสดที่รับ"
+                      value={payment.tendered ?? 0}
+                      onChange={tendered =>
+                        updatePayment(payment.id, { tendered })
+                      }
+                    />
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        { color: colors.success },
+                      ]}
+                    >
+                      เงินทอน ฿
+                      {calculateCashChange(
+                        payment.amount,
+                        payment.tendered ?? 0,
+                      ).toFixed(2)}
+                    </Text>
+                  </>
+                ) : payment.method === 'credit' ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    ขายเชื่อจะใช้สมาชิกในบิลและตรวจวงเงินที่เซิร์ฟเวอร์
+                  </Text>
+                ) : (
+                  <TextInput
+                    value={payment.reference ?? ''}
+                    onChangeText={reference =>
+                      updatePayment(payment.id, { reference })
+                    }
+                    placeholder="เลขอ้างอิง"
+                    placeholderTextColor={colors.textSoft}
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, color: colors.text },
+                    ]}
+                  />
+                )}
+              </View>
+            ))}
+          </ScrollView>
+          <View style={[styles.methodRow, { marginTop: spacing.md }]}>
+            {availablePaymentMethods.map(method => (
+              <Button
+                key={method}
+                label={`+ ${paymentMethodLabel(method)}`}
+                accessibilityLabel={`เพิ่มช่องทาง${paymentMethodLabel(method)}`}
+                variant="secondary"
+                onPress={() => addPayment(method)}
               />
-            )}
+            ))}
           </View>
-        ))}
-      </ScrollView>
-      <View style={[styles.methodRow, { marginTop: spacing.md }]}>
-        {availablePaymentMethods.map(method => (
-          <Button
-            key={method}
-            label={`+ ${paymentMethodLabel(method)}`}
-            accessibilityLabel={`เพิ่มช่องทาง${paymentMethodLabel(method)}`}
-            variant="secondary"
-            onPress={() => addPayment(method)}
-          />
-        ))}
-      </View>
+        </>
+      )}
       {usesCredit ? (
         <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
@@ -1006,7 +1077,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <AmountRow label="ยอดสุทธิ" value={total} />
       <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />
       <AmountRow label="คงเหลือ" value={validation.remaining} />
-      {validation.errors.map(error => (
+      {(zeroDueBoardGameBill ? [] : validation.errors).map(error => (
         <Text
           key={error}
           style={[typography.captionStrong, { color: colors.danger }]}
@@ -1030,7 +1101,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           discountPending ||
           lines.length === 0 ||
           Boolean(check?.items.some(item => item.status === 'NEW')) ||
-          !validation.canConfirm ||
+          !canConfirmPayment ||
           !restaurantPaymentsValid ||
           !boardGameReady ||
           !serialsReady ||
@@ -1109,7 +1180,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         discountTotal={discounts.discountTotal}
         total={paymentTarget}
         itemCount={itemCount}
-        payments={payments}
+        payments={settlementPayments}
         memberName={activeMember?.name}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={completeSale}

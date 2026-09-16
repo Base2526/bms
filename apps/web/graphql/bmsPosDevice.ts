@@ -2085,6 +2085,31 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     targetTableId: ID!
   }
 
+  """เพิ่มสินค้าที่ส่งมอบแล้วเข้ากลุ่มบิล และจองสต็อกในสาขาของเครื่องทันที (9.90)"""
+  input BmsPosBoardGameTabAddInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    billingGroupId: ID!
+    """บาร์โค้ดหรือ SKU — server เป็นผู้ resolve สินค้า ราคา และหน่วยขาย"""
+    sku: String!
+    size: String
+    packCode: String
+    packQty: Int = 1
+    modifierCodes: [String!]
+    note: String
+  }
+
+  """เอาสินค้าออกจากกลุ่มบิล แต่เก็บแถว CANCELLED ไว้เป็นหลักฐาน (9.90)"""
+  input BmsPosBoardGameTabRemoveInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    billingGroupId: ID!
+    itemId: ID!
+    reason: String
+  }
+
   input BmsPosBoardGameCheckoutCopyInput {
     cashierUserId: ID!
     pin: String!
@@ -2328,6 +2353,16 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     replayed: Boolean!
   }
 
+  type BmsPosBoardGameTabActionResult {
+    itemId: ID!
+    billingGroupId: ID!
+    sku: String
+    productName: String
+    packQty: Int
+    tabAmount: Float!
+    replayed: Boolean!
+  }
+
   type BmsPosBoardGameSession {
     id: ID!
     status: String!
@@ -2369,6 +2404,14 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     endedAt: String!
     amountDue: Float!
     chargeLineCount: Int!
+    """
+    ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (9.92) · 0 = ไม่มีแพ็กเกจช่วยจ่าย
+
+    ค่าเล่นที่ถูกกว่าที่ลูกค้าคาดต้องมีบรรทัดอธิบายที่จอ ไม่งั้นแคชเชียร์ตอบไม่ได้ว่าหายไปไหน ·
+    service คืนค่านี้มาตั้งแต่ 9.92 และเบราว์เซอร์ (REST) แสดงอยู่แล้ว — แอปไม่มี field ให้อ่าน
+    จึงต้องเดาเอง ซึ่งเป็นที่มาของข้อความที่บอกว่า "แพ็กเกจจ่ายให้" กับบิลที่ไม่มีแพ็กเกจเลย
+    """
+    passCoveredAmount: Float!
   }
 
   extend type Query {
@@ -2525,6 +2568,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosMergeBoardGameSeating(
       input: BmsPosBoardGameSeatingActionInput!
     ): BmsPosBoardGameSeatingActionResult!
+    bmsPosAddBoardGameTabItem(
+      input: BmsPosBoardGameTabAddInput!
+    ): BmsPosBoardGameTabActionResult!
+    bmsPosRemoveBoardGameTabItem(
+      input: BmsPosBoardGameTabRemoveInput!
+    ): BmsPosBoardGameTabActionResult!
     bmsPosCancelBoardGameSession(
       input: BmsPosBoardGameSessionActionInput!
     ): BmsPosBoardGameSessionSummary!
@@ -3585,7 +3634,12 @@ export const bmsPosDeviceResolvers = {
         );
       if (mode === "DEPOSIT" && boardGameBillingGroupId)
         return badPosInput("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
-      const parsedPayments = parsePosPayments(input.payments);
+      // `9.92`: บิลที่ member pass ครอบคลุมเต็มจำนวนมีค่า ฿0 และต้องส่ง payment ว่างได้
+      // เฉพาะเมื่อมี billing-group id เท่านั้น · recordPosSale ยังล็อกกลุ่มและตรวจยอดจริงซ้ำ
+      // ดังนั้นการส่ง [] มากับบิลที่ยังค้างเงินจะจบที่ PAYMENT_MISMATCH ไม่ใช่ขายฟรี
+      const parsedPayments = parsePosPayments(input.payments, {
+        allowEmpty: Boolean(boardGameBillingGroupId),
+      });
       if (!parsedPayments.ok) return badPosInput(parsedPayments.error);
 
       let manualApproval: {
@@ -4516,6 +4570,34 @@ export const bmsPosDeviceResolvers = {
         access.scope,
         access.actorUserId,
         "seating.merge",
+        access.input,
+      );
+    },
+
+    async bmsPosAddBoardGameTabItem(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "tab.add");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "tab.add",
+        access.input,
+      );
+    },
+
+    async bmsPosRemoveBoardGameTabItem(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "tab.remove");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "tab.remove",
         access.input,
       );
     },

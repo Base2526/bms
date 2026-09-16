@@ -102,7 +102,21 @@ export function parsePosSaleLines(rawLines: unknown): ParsedPosSaleLine[] {
     .filter((line) => line.sku && line.size && Number.isInteger(line.packQty) && line.packQty > 0);
 }
 
-export function parsePosPayments(rawPayments: unknown): { ok: true; payments: ParsedPosPaymentInput[] } | { ok: false; error: string } {
+/**
+ * แยกรายการชำระเงินจาก body
+ *
+ * ⚠️ `allowEmpty` ไม่ใช่สวิตช์ทั่วไป — เปิดได้เฉพาะเส้นทางที่ **มีตัวตัดสินยอดอีกชั้นรออยู่**
+ * วันนี้มีทางเดียวคือบิลค่าเล่นบอร์ดเกมที่ส่ง `boardGameBillingGroupId` มาด้วย ซึ่งแพ็กเกจ
+ * สมาชิก (`9.92`) อาจครอบคลุมเต็มจำนวนจนยอดเป็น ฿0 จริง ๆ · `recordPosSale()` ล็อกกลุ่มบิล
+ * อ่านยอดที่แช่ไว้ แล้วเทียบกับผลรวมที่ส่งมาเสมอ บิลที่ยังค้างเงินจึงตกเป็น `PAYMENT_MISMATCH`
+ *
+ * เปิดให้เส้นทางอื่นเมื่อไร = บิลที่ไม่มีใครจ่ายผ่านด่านเดียวที่กันเรื่องนี้ไว้
+ * (`scripts/pos-contract.test.mts` ตรึงไว้ว่าค่าปริยายยังต้องปฏิเสธ)
+ */
+export function parsePosPayments(
+  rawPayments: unknown,
+  options: { allowEmpty?: boolean } = {},
+): { ok: true; payments: ParsedPosPaymentInput[] } | { ok: false; error: string } {
   const list = Array.isArray(rawPayments) ? rawPayments : [];
   const payments: ParsedPosPaymentInput[] = [];
   for (const payment of list as any[]) {
@@ -125,7 +139,7 @@ export function parsePosPayments(rawPayments: unknown): { ok: true; payments: Pa
       ref: payment?.ref ? String(payment.ref) : null,
     });
   }
-  return payments.length > 0
+  return payments.length > 0 || options.allowEmpty === true
     ? { ok: true, payments }
     : { ok: false, error: "ต้องระบุการชำระเงินอย่างน้อย 1 รายการ" };
 }

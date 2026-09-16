@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
-import { isDistinctPosApprover, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { isDistinctPosApprover, isPosUuid, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -72,8 +72,25 @@ async function handlePOST(req: NextRequest) {
   if (mode === "DEPOSIT" && boardGameBillingGroupId) {
     return badRequest("ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน");
   }
+  // id ที่ไม่ใช่ uuid เคยตกด่าน "ต้องระบุการชำระเงิน" ไปก่อนเสมอ · พอบิล ฿0 ผ่านด่านนั้นได้
+  // มันจะเดินต่อไปถึง `WHERE id = $2` ของ Postgres แล้วได้ 22P02 เป็น 500 ที่ข้อความจริง
+  // ถูก errorResponse() ลบทิ้งบน production · ตรวจรูปทรงที่นี่ให้เท่ากับ adapter ของ GraphQL
+  if (boardGameBillingGroupId && !isPosUuid(boardGameBillingGroupId)) {
+    return badRequest("บิลบอร์ดเกมไม่ถูกต้อง");
+  }
 
-  const paymentParse = parsePosPayments(body.payments);
+  // บิลบอร์ดเกมที่แพ็กเกจสมาชิกครอบคลุมเต็มจำนวนมียอด ฿0 จริง จึงไม่มีอะไรให้รับ (`9.92`)
+  //
+  // ⚠️ ข้อยกเว้นนี้ต้องอยู่ที่ **ทุกขอบของ adapter** ไม่ใช่เฉพาะใน `recordPosSale()` — service
+  // ยกเว้นให้ตั้งแต่ `9.92` แต่ตัวแยก payload ของ route ยังปฏิเสธก่อนถึง service ผลคือเบราว์เซอร์
+  // ซึ่งส่ง `payments: []` เมื่อยอดเป็นศูนย์ เก็บบิลที่แพ็กเกจจ่ายให้ครบไม่ได้เลยสักใบ
+  //
+  // กว้างแค่ไหน: เฉพาะคำขอที่พก `boardGameBillingGroupId` มา · `recordPosSale()` ยังล็อกกลุ่ม
+  // ในสาขาของกะ อ่านยอดที่แช่ไว้ แล้วเทียบกับผลรวมที่ส่งมา — ส่งศูนย์มากับบิลที่ยังค้างเงิน
+  // จึงจบที่ `PAYMENT_MISMATCH` ตามความจริง ไม่ใช่ขายฟรี
+  const paymentParse = parsePosPayments(body.payments, {
+    allowEmpty: Boolean(boardGameBillingGroupId),
+  });
   if (!paymentParse.ok) return badRequest(paymentParse.error);
   const payments = paymentParse.payments;
 

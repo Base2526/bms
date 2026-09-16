@@ -651,6 +651,14 @@ playable game library. The operating brief is
   floor moves, and both the opening path and a relocation lock the destination `bms_board_game_tables`
   row, so a table cannot be claimed twice between check and write. Locks are taken sessions-first,
   then seatings — the same order settlement uses.
+- **Both registers reach every command, and the contract checks both directions.** The browser
+  (`POST /api/pos/board-game`) and the native app (`bmsPosBoardGame*`) dispatch the same
+  `BOARD_GAME_POS_ACTIONS` table through `lib/bms/boardGamePosOperations.ts`; only authentication and
+  the error shape belong to an adapter. `scripts/board-game-pos-parity-contract` reads the write
+  actions out of the real dispatcher — never a list the test types itself — and fails when either
+  surface cannot reach one. Checking only the browser is how `tab.add`/`tab.remove` sat in the table
+  from `9.90` until `9.94` with no mutation for the app to call: the native register could show a
+  tab it had no way to add to, and nothing was red.
 - **Every mutation is scoped and retry-safe.** They use tenant transactions, advisory/idempotency
   locks, and location checks derived from the authenticated actor/device. Closing a table derives one
   settlement key per group from the caller's single key, so a retry is stable; replaying a key with a
@@ -667,7 +675,14 @@ playable game library. The operating brief is
   passes uses the one that can help (unlimited, then minutes left, then soonest to expire); closing
   twice spends nothing twice and cancelling a closed table gives the minutes back. A fully covered
   bill totals ฿0 and is the **only** sale allowed to settle with no payment lines — every other
-  channel still requires one, and the amount-equals-payments check still decides.
+  channel still requires one, and the amount-equals-payments check still decides. That exception has
+  to exist at **every adapter edge, not only in `recordPosSale()`**: each register parses its own
+  payment rows before the service ever runs, so the browser route refused its own ฿0 bills from
+  `9.92` until `9.94` while the service would have accepted them. It opens only for a request that
+  names a `boardGameBillingGroupId`, and only that request — `scripts/board-game-pos-parity-contract`
+  walks `apps/web` and fails on any other opt-in. A ฿0 total is also not proof that a pass paid:
+  non-billable spectators and a visit still inside its grace window reach zero with no pass at all,
+  so the amount a pass covered is read from `passCoveredAmount`, never inferred from the total.
 - **A branch-scoped pass is a rule the server keeps.** `bms_board_game_pass_plans.location_id`
   declares "this pass belongs to that branch only" — `NULL` means every branch. The check lives in
   `issueBoardGameMemberPass` as well as the route, because a caller that skips the route (a test, an

@@ -2434,6 +2434,15 @@ type BmsPosBoardGameCheckout {
   id: ID!
 
   """
+  ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (9.92) · 0 = ไม่มีแพ็กเกจช่วยจ่าย
+  
+  ค่าเล่นที่ถูกกว่าที่ลูกค้าคาดต้องมีบรรทัดอธิบายที่จอ ไม่งั้นแคชเชียร์ตอบไม่ได้ว่าหายไปไหน ·
+  service คืนค่านี้มาตั้งแต่ 9.92 และเบราว์เซอร์ (REST) แสดงอยู่แล้ว — แอปไม่มี field ให้อ่าน
+  จึงต้องเดาเอง ซึ่งเป็นที่มาของข้อความที่บอกว่า "แพ็กเกจจ่ายให้" กับบิลที่ไม่มีแพ็กเกจเลย
+  """
+  passCoveredAmount: Float!
+
+  """
   จำนวนกลุ่มบิลของโต๊ะนี้ — ใช้บอกพนักงานว่ายังมีบิลอื่นของโต๊ะเดียวกันรออยู่ไหม
   """
   sessionGroupCount: Int!
@@ -2672,6 +2681,34 @@ type BmsPosBoardGameSessionSummary {
   status: String
 }
 
+type BmsPosBoardGameTabActionResult {
+  billingGroupId: ID!
+  itemId: ID!
+  packQty: Int
+  productName: String
+  replayed: Boolean!
+  sku: String
+  tabAmount: Float!
+}
+
+"""
+เพิ่มสินค้าที่ส่งมอบแล้วเข้ากลุ่มบิล และจองสต็อกในสาขาของเครื่องทันที (9.90)
+"""
+input BmsPosBoardGameTabAddInput {
+  billingGroupId: ID!
+  cashierUserId: ID!
+  idempotencyKey: String!
+  modifierCodes: [String!]
+  note: String
+  packCode: String
+  packQty: Int = 1
+  pin: String!
+  size: String
+
+  """บาร์โค้ดหรือ SKU — server เป็นผู้ resolve สินค้า ราคา และหน่วยขาย"""
+  sku: String!
+}
+
 """
 รายการที่สั่งเข้าบิลระหว่างเล่น (9.90) — server จองสต็อกให้แล้วตั้งแต่ตอนเพิ่ม
 """
@@ -2686,6 +2723,16 @@ type BmsPosBoardGameTabItem {
   size: String!
   sku: String!
   unitName: String
+}
+
+"""เอาสินค้าออกจากกลุ่มบิล แต่เก็บแถว CANCELLED ไว้เป็นหลักฐาน (9.90)"""
+input BmsPosBoardGameTabRemoveInput {
+  billingGroupId: ID!
+  cashierUserId: ID!
+  idempotencyKey: String!
+  itemId: ID!
+  pin: String!
+  reason: String
 }
 
 type BmsPosBoardGameTable {
@@ -6393,6 +6440,7 @@ type Mutation {
   """ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ)"""
   bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
   bmsPosAddBoardGameParticipant(input: BmsPosBoardGameAddParticipantInput!): BmsPosBoardGameParticipant!
+  bmsPosAddBoardGameTabItem(input: BmsPosBoardGameTabAddInput!): BmsPosBoardGameTabActionResult!
   bmsPosAdjustBoardGameTiming(input: BmsPosBoardGameTimingInput!): BmsPosBoardGameSessionSummary!
   bmsPosApplyStockCount(input: BmsPosStockCountActionInput!): BmsMobileStockCountActionResult!
   bmsPosBlindReturn(input: BmsPosBlindReturnInput!): BmsPosReturnActionResult!
@@ -6422,6 +6470,7 @@ type Mutation {
   bmsPosReceiveStockTransfer(input: BmsPosStockTransferReceiveInput!): BmsMobileStockTransferActionResult!
   bmsPosRecordStockCountItem(input: BmsPosStockCountItemInput!): BmsMobileStockCountActionResult!
   bmsPosReleaseBoardGameIdentityHold(input: BmsPosBoardGameReleaseIdentityHoldInput!): BmsPosBoardGameIdentityHold!
+  bmsPosRemoveBoardGameTabItem(input: BmsPosBoardGameTabRemoveInput!): BmsPosBoardGameTabActionResult!
   bmsPosRequestPharmacyReview(input: BmsPosRequestPharmacyReviewInput!): BmsPosPharmacyReviewResult!
   bmsPosRestaurantAcceptIncomingOrder(input: BmsPosRestaurantAcceptIncomingOrderInput!): BmsPosRestaurantIncomingActionResult!
   bmsPosRestaurantAcceptQrSubmission(input: BmsPosRestaurantQrSubmissionInput!): BmsPosRestaurantQrActionResult!

@@ -22,6 +22,7 @@ import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import {
   MobilePosAddBoardGameParticipantDocument,
+  MobilePosAddBoardGameTabItemDocument,
   MobilePosAdjustBoardGameTimingDocument,
   MobilePosBoardGameSessionDocument,
   MobilePosBoardGameWorkspaceDocument,
@@ -34,6 +35,7 @@ import {
   MobilePosMembersDocument,
   MobilePosOpenBoardGameSessionDocument,
   MobilePosMoveBoardGameSeatingDocument,
+  MobilePosRemoveBoardGameTabItemDocument,
   MobilePosReleaseBoardGameIdentityHoldDocument,
   MobilePosReturnBoardGameCopyDocument,
   MobilePosTakeBoardGameIdentityHoldDocument,
@@ -124,6 +126,9 @@ export default function BoardGameScreen({ navigation }: Props) {
   const [documentNumber, setDocumentNumber] = useState('');
   const [documentKind, setDocumentKind] = useState('NATIONAL_ID');
   const [cancelReason, setCancelReason] = useState('');
+  const [tabDrafts, setTabDrafts] = useState<
+    Record<string, { sku: string; qty: string }>
+  >({});
   const [working, setWorking] = useState('');
   const notified = useRef(new Set<string>());
   const operationKeys = useRef<Record<string, string>>({});
@@ -146,6 +151,7 @@ export default function BoardGameScreen({ navigation }: Props) {
   const [addParticipant] = useMutation(
     MobilePosAddBoardGameParticipantDocument,
   );
+  const [addTabItem] = useMutation(MobilePosAddBoardGameTabItemDocument);
   const [leaveParticipant] = useMutation(
     MobilePosLeaveBoardGameParticipantDocument,
   );
@@ -156,6 +162,7 @@ export default function BoardGameScreen({ navigation }: Props) {
   const [closeSession] = useMutation(MobilePosCloseBoardGameSessionDocument);
   const [moveSeating] = useMutation(MobilePosMoveBoardGameSeatingDocument);
   const [mergeSeating] = useMutation(MobilePosMergeBoardGameSeatingDocument);
+  const [removeTabItem] = useMutation(MobilePosRemoveBoardGameTabItemDocument);
   const [cancelSession] = useMutation(MobilePosCancelBoardGameSessionDocument);
   const [checkoutCopy] = useMutation(MobilePosCheckoutBoardGameCopyDocument);
   const [returnCopy] = useMutation(MobilePosReturnBoardGameCopyDocument);
@@ -188,6 +195,9 @@ export default function BoardGameScreen({ navigation }: Props) {
   const selectedTable = data?.floor.tables.find(
     table => table.id === selectedSession?.tableId,
   );
+  const seatingSessionIds =
+    selectedTable?.openSession?.sessionIds ??
+    (selectedSession ? [selectedSession.id] : []);
   // `9.91`: โต๊ะที่ถูกรวมไว้มีหลายชุดนั่งร่วมกัน — ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดที่กำลังดูอยู่
   // ปุ่มเดียวจึงมีสองความหมาย และจอต้องบอกก่อนกด ไม่ใช่ให้รู้ตอนอีกชุดหายไปจากโต๊ะ
   const sharedSeating = (selectedTable?.openSession?.sessionCount ?? 1) > 1;
@@ -203,6 +213,24 @@ export default function BoardGameScreen({ navigation }: Props) {
       ),
     [data?.library],
   );
+
+  // Session ที่อีกเครื่องชำระ/ยกเลิกจบแล้วไม่ควรค้างเป็นจอ "กำลังเล่น" ที่กดทุกคำสั่งแล้วถูกปฏิเสธ
+  // ข้อมูล authoritative ยังมาจาก server; เมื่อกลายเป็น terminal ให้กลับผังซึ่งสะท้อน seating ล่าสุด
+  //
+  // ครอบเฉพาะ "session ยังอยู่แต่จบแล้ว" · เคส "หา session ไม่เจอ" ไม่ต้องมีด่านที่นี่ เพราะ
+  // `sessionAtScope()` โยน NOT_FOUND ไม่ได้คืน null และ Apollo ของแอปใช้ errorPolicy ปริยาย
+  // (`none`) → `data` เป็น undefined ไม่ใช่ `{ bmsPosBoardGameSession: null }` · การ์ด
+  // "เปิดรายละเอียดโต๊ะไม่สำเร็จ" พร้อมปุ่มกลับผังรับเคสนั้นอยู่แล้ว และการเด้งกลับเองจะกลืน
+  // ข้อความที่บอกว่าทำไมเปิดไม่ได้
+  useEffect(() => {
+    if (
+      selectedSession &&
+      !['OPEN', 'CLOSING'].includes(selectedSession.status)
+    ) {
+      setSelectedSessionId('');
+      workspace.refetch().catch(() => undefined);
+    }
+  }, [selectedSession, workspace]);
 
   useEffect(() => {
     for (const table of data?.floor.tables ?? []) {
@@ -623,6 +651,35 @@ export default function BoardGameScreen({ navigation }: Props) {
                 · เตือนก่อน {selectedSession.alertBeforeMinutes} นาที
               </Text>
             ) : null}
+            {seatingSessionIds.length > 1 ? (
+              <>
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  ชุดลูกค้าที่นั่งร่วมโต๊ะนี้
+                </Text>
+                <Text style={[typography.caption, { color: colors.textSoft }]}>
+                  แต่ละชุดมีเวลา ผู้เล่น เกม และบิลของตัวเอง
+                  เลือกชุดก่อนทำรายการ
+                </Text>
+                <ScrollView
+                  horizontal
+                  style={{ flexGrow: 0 }}
+                  contentContainerStyle={styles.horizontalList}
+                >
+                  {seatingSessionIds.map((id, index) => (
+                    <Button
+                      key={id}
+                      label={`ชุด ${index + 1}${
+                        id === selectedSession.id ? ' · กำลังดู' : ''
+                      }`}
+                      variant={
+                        id === selectedSession.id ? 'primary' : 'secondary'
+                      }
+                      onPress={() => setSelectedSessionId(id)}
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
             <Text style={[typography.bodyStrong, { color: colors.text }]}>
               ย้าย / รวมโต๊ะ
             </Text>
@@ -644,7 +701,11 @@ export default function BoardGameScreen({ navigation }: Props) {
                   <Button
                     key={target.id}
                     label={`${target.code} · ${
-                      merging ? 'รวมโต๊ะ' : sharedSeating ? 'แยกมาที่นี่' : 'ย้ายมาที่นี่'
+                      merging
+                        ? 'รวมโต๊ะ'
+                        : sharedSeating
+                        ? 'แยกมาที่นี่'
+                        : 'ย้ายมาที่นี่'
                     }`}
                     variant="secondary"
                     loading={working === busyKey}
@@ -790,6 +851,153 @@ export default function BoardGameScreen({ navigation }: Props) {
                     ))}
                   </>
                 ) : null}
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  ของที่สั่งเข้าบิล
+                </Text>
+                <Text style={[typography.caption, { color: colors.textSoft }]}>
+                  ของที่ส่งให้ลูกค้าแล้วจะถูกจองสต็อกทันที
+                  และรวมกับค่าเวลาเมื่อชำระ
+                </Text>
+                {selectedSession.billingGroups.map(group => {
+                  const draft = tabDrafts[group.id] ?? { sku: '', qty: '1' };
+                  return (
+                    <View key={`tab-${group.id}`} style={{ gap: spacing.sm }}>
+                      {selectedSession.billingGroups.length > 1 ? (
+                        <Text
+                          style={[
+                            typography.captionStrong,
+                            { color: colors.text },
+                          ]}
+                        >
+                          กลุ่ม {group.groupNo} · ของบนบิล ฿
+                          {group.tabAmount.toFixed(2)}
+                        </Text>
+                      ) : null}
+                      {group.tabItems.length === 0 ? (
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          ยังไม่มีสินค้าในบิลนี้
+                        </Text>
+                      ) : null}
+                      {group.tabItems.map(item => (
+                        <View key={item.id} style={styles.between}>
+                          <Text
+                            style={[
+                              typography.body,
+                              { color: colors.text, flex: 1 },
+                            ]}
+                          >
+                            {item.productName} × {item.packQty}
+                            {item.unitName ? ` ${item.unitName}` : ''}
+                            {item.modifierNames.length
+                              ? ` · ${item.modifierNames.join(', ')}`
+                              : ''}
+                          </Text>
+                          {group.status === 'OPEN' ? (
+                            <Button
+                              label="เอาออก"
+                              variant="danger"
+                              loading={working === `tab-remove-${item.id}`}
+                              onPress={() =>
+                                run(`tab-remove-${item.id}`, async () => {
+                                  await removeTabItem({
+                                    variables: {
+                                      input: {
+                                        ...inputCredentials,
+                                        idempotencyKey: retryKey(
+                                          `tab-remove-${item.id}`,
+                                        ),
+                                        billingGroupId: group.id,
+                                        itemId: item.id,
+                                        reason: null,
+                                      },
+                                    },
+                                  });
+                                })
+                              }
+                            />
+                          ) : null}
+                        </View>
+                      ))}
+                      {group.status === 'OPEN' ? (
+                        <View style={styles.row}>
+                          <TextInput
+                            value={draft.sku}
+                            onChangeText={sku =>
+                              setTabDrafts(previous => ({
+                                ...previous,
+                                [group.id]: { ...draft, sku },
+                              }))
+                            }
+                            placeholder="บาร์โค้ด / SKU"
+                            placeholderTextColor={colors.textSoft}
+                            autoCapitalize="characters"
+                            style={[inputStyle, styles.flex]}
+                          />
+                          <TextInput
+                            value={draft.qty}
+                            onChangeText={qty =>
+                              setTabDrafts(previous => ({
+                                ...previous,
+                                [group.id]: { ...draft, qty },
+                              }))
+                            }
+                            placeholder="จำนวน"
+                            placeholderTextColor={colors.textSoft}
+                            keyboardType="number-pad"
+                            style={[inputStyle, styles.groupInput]}
+                          />
+                          <Button
+                            label="เพิ่มเข้าบิล"
+                            disabled={!draft.sku.trim()}
+                            loading={working === `tab-add-${group.id}`}
+                            onPress={() => {
+                              const qty = Number(draft.qty);
+                              if (
+                                !Number.isInteger(qty) ||
+                                qty < 1 ||
+                                qty > 9999
+                              ) {
+                                Alert.alert(
+                                  'จำนวนไม่ถูกต้อง',
+                                  'ระบุจำนวนเต็มตั้งแต่ 1 ถึง 9,999',
+                                );
+                                return;
+                              }
+                              run(`tab-add-${group.id}`, async () => {
+                                await addTabItem({
+                                  variables: {
+                                    input: {
+                                      ...inputCredentials,
+                                      idempotencyKey: retryKey(
+                                        `tab-add-${group.id}`,
+                                      ),
+                                      billingGroupId: group.id,
+                                      sku: draft.sku.trim(),
+                                      size: null,
+                                      packCode: null,
+                                      packQty: qty,
+                                      modifierCodes: [],
+                                      note: null,
+                                    },
+                                  },
+                                });
+                                setTabDrafts(previous => ({
+                                  ...previous,
+                                  [group.id]: { sku: '', qty: '1' },
+                                }));
+                              });
+                            }}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
                   ผู้เล่น
                 </Text>
