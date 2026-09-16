@@ -240,13 +240,17 @@ test("FIXED ที่มากกว่ายอดบิลถูกตัด�
   assert.equal(rn.ok && rn.discount, 500);
 });
 
-test("ยอดบิล 0 ลดได้ 0 ทั้งสองแบบ", async () => {
+test("ยอดสินค้าที่ร่วมส่วนลดเป็น 0 ปฏิเสธคูปองและไม่เผาสิทธิ์", async () => {
   const pct = stubClient(couponRow({ type: "PERCENT", value: "50.00" }));
   const rp = await apply(pct, "HALF", 0);
-  assert.equal(rp.ok && rp.discount, 0);
+  assert.equal(rp.ok, false);
+  assert.match(rp.ok ? "" : rp.reason, /มีสินค้าที่ร่วมส่วนลด/);
+  assert.equal(pct.sql.some((sql) => /UPDATE bms_coupons/i.test(sql)), false);
   const fixed = stubClient(couponRow({ type: "FIXED", value: "50.00" }));
   const rf = await apply(fixed, "CASH50", 0);
-  assert.equal(rf.ok && rf.discount, 0);
+  assert.equal(rf.ok, false);
+  assert.match(rf.ok ? "" : rf.reason, /มีสินค้าที่ร่วมส่วนลด/);
+  assert.equal(fixed.sql.some((sql) => /UPDATE bms_coupons/i.test(sql)), false);
 });
 
 // ---------------------------------------------------------------

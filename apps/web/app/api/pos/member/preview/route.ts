@@ -9,9 +9,10 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice } from "@/lib/bms/pos";
+import { authenticatePosDevice, getOpenPosShift, previewBoardGamePosPricing } from "@/lib/bms/pos";
 import { previewMemberDiscount, toPosMemberSummary } from "@/lib/bms/membership";
 import { previewCouponForCustomer } from "@/lib/bms/coupons";
+import { isPosUuid, parsePosExtraLines, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -36,6 +37,37 @@ async function handlePOST(req: NextRequest) {
   // อย่างเดียว การอนุมัติจริงเกิดที่ /api/pos/sale
   const manualRaw = Number(body.manualDiscount);
   const manualDiscount = Number.isFinite(manualRaw) && manualRaw > 0 ? Math.round(manualRaw * 100) / 100 : 0;
+
+  const boardGameBillingGroupId = typeof body.boardGameBillingGroupId === "string"
+    ? body.boardGameBillingGroupId.trim()
+    : "";
+  if (boardGameBillingGroupId) {
+    if (!isPosUuid(boardGameBillingGroupId)) {
+      return NextResponse.json({ error: "กลุ่มบิลบอร์ดเกมไม่ถูกต้อง" }, { status: 400 });
+    }
+    const shift = await getOpenPosShift(device.tenantId, device.id);
+    if (!shift || shift.locationId !== device.locationId) {
+      return NextResponse.json({ error: "ยังไม่ได้เปิดกะของเครื่องนี้" }, { status: 409 });
+    }
+    const preview = await previewBoardGamePosPricing({
+      tenantId: device.tenantId,
+      locationId: device.locationId,
+      deviceId: device.id,
+      shiftId: shift.id,
+      actorUserId: shift.openedBy,
+      billingGroupId: boardGameBillingGroupId,
+      lines: parsePosSaleLines(body.lines),
+      customerId,
+      couponCode,
+      pointsToRedeem: pointsRequested,
+      manualDiscount,
+      extraLines: parsePosExtraLines(body.extraLines),
+    });
+    return NextResponse.json({
+      ...preview,
+      member: preview.member ? toPosMemberSummary(preview.member) : null,
+    }, { status: 200 });
+  }
 
   // คูปองต้องตรวจด้วยกฎเดิมของมัน (ยอดขั้นต่ำ/จำนวนครั้ง/ต่อคน) ไม่ใช่คิด % เอง
   let couponDiscount = 0;
@@ -62,6 +94,8 @@ async function handlePOST(req: NextRequest) {
   // ทั้งชุดมาจาก previewMemberDiscount ตัวเดียว — เดิม route อ่าน settings ซ้ำอีกรอบ
   // ซึ่งเป็นสอง query ต่อการพิมพ์หนึ่งครั้ง และเปิดช่องให้สองที่อ่านค่าคนละรอบกัน
   return NextResponse.json({
+    status: couponError ? "COUPON_INVALID" : "READY",
+    reason: couponError,
     ...preview,
     member: preview.member ? toPosMemberSummary(preview.member) : null,
     couponError,

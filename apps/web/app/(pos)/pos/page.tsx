@@ -696,7 +696,10 @@ type ShiftHistoryItem = {
 };
 
 type MemberPreview = {
+  status: string | null;
+  reason: string | null;
   subtotal: number;
+  amountDue: number | null;
   tierDiscount: number;
   tierLabel: string | null;
   couponDiscount: number;
@@ -2133,14 +2136,34 @@ export default function PosPage() {
     : 0;
   /** ส่วนลดทุกชนิดใช้ฐานสินค้าเท่านั้น ค่าถุง/ค่าบริการบวกหลังหักส่วนลด */
   const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
-  const payableBeforeRounding = Math.round((netTotal + extraTotal + (boardGameCheckout?.totalDue ?? 0)) * 100) / 100;
-  const memberPreviewRequestKey = JSON.stringify({
+  const fallbackPayableBeforeRounding = Math.round(
+    (netTotal + extraTotal + (boardGameCheckout?.totalDue ?? 0)) * 100
+  ) / 100;
+  const payableBeforeRounding = boardGameCheckout && memberPreview?.status === "READY"
+    && memberPreview.amountDue != null
+    ? Math.round(Number(memberPreview.amountDue) * 100) / 100
+    : fallbackPayableBeforeRounding;
+  const memberPreviewRequestBody = {
     customerId: member?.customerId ?? null,
     subtotal: total,
     pointsToRedeem: Number(pointsToRedeem) || 0,
     couponCode: couponCode.trim().toUpperCase() || null,
     manualDiscount: approvedDiscount?.amount ?? 0,
-  });
+    boardGameBillingGroupId: boardGameCheckout?.id ?? null,
+    lines: cart.map((line) => ({
+      sku: line.sku,
+      size: line.size,
+      packQty: line.packQty,
+      packCode: line.packCode,
+      scaleBarcode: line.scaleBarcode ?? null,
+      modifierCodes: line.modifierCodes ?? [],
+      serials: line.serials?.length ? line.serials : undefined,
+    })),
+    extraLines: extraLines
+      .map((line) => ({ label: line.label.trim(), unitAmount: Number(line.unitAmount) }))
+      .filter((line) => line.label && Number.isFinite(line.unitAmount) && line.unitAmount > 0),
+  };
+  const memberPreviewRequestKey = JSON.stringify(memberPreviewRequestBody);
 
   async function searchMember(term: string) {
     const q = term.trim();
@@ -3924,12 +3947,12 @@ export default function PosPage() {
   // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
   // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
   useEffect(() => {
-    if (!token || total <= 0) {
+    if (!token || (!boardGameCheckout && total <= 0)) {
       setMemberPreview(null);
       setMemberPreviewAppliedKey(null);
       return;
     }
-    if (!member && !pointsToRedeem && !couponCode.trim() && !approvedDiscount) {
+    if (!boardGameCheckout && !member && !pointsToRedeem && !couponCode.trim() && !approvedDiscount) {
       setMemberPreview(null);
       setMemberPreviewAppliedKey(null);
       return;
@@ -3941,13 +3964,7 @@ export default function PosPage() {
           method: "POST",
           headers: { ...authHeaders, "content-type": "application/json" },
           signal: controller.signal,
-          body: JSON.stringify({
-            customerId: member?.customerId ?? null,
-            subtotal: total,
-            pointsToRedeem: Number(pointsToRedeem) || 0,
-            couponCode: couponCode.trim() || null,
-            manualDiscount: approvedDiscount?.amount ?? 0,
-          }),
+          body: JSON.stringify(memberPreviewRequestBody),
         });
         if (!res.ok) {
           setMemberPreview(null);
@@ -3964,7 +3981,8 @@ export default function PosPage() {
           const used = Math.max(0, Math.floor(Number(preview.pointsUsed) || 0));
           // ระหว่างกำลังพิมพ์อาจมีค่า 3 หรือ 30 ชั่วคราว อย่ารีบล้างช่องก่อนครบ
           // หน่วยแรก; เมื่อออกจากช่อง normalizeTypedPoints จะจัดการค่าที่ไม่ครบเอง
-          if (requested >= redeemPointsPerUnit && used !== requested) {
+          const previewRedeemUnit = Number(preview.redeemPointsPerUnit) || redeemPointsPerUnit;
+          if (requested >= previewRedeemUnit && used !== requested) {
             setPointsToRedeem(used > 0 ? String(used) : "");
           }
         }
@@ -3979,7 +3997,7 @@ export default function PosPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [token, authHeaders, member, total, pointsToRedeem, couponCode, approvedDiscount, memberPreviewRequestKey]);
+  }, [token, authHeaders, boardGameCheckout, total, member, pointsToRedeem, couponCode, approvedDiscount, memberPreviewRequestKey]);
 
   // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
   // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
@@ -4117,12 +4135,15 @@ export default function PosPage() {
     if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED" && !pharmacistAuth) {
       return `รอเภสัชกรอนุมัติเคส ${pharmacyReviewLink.caseCode}`;
     }
-    const needsDiscountPreview = Boolean(member || pointsToRedeem || couponCode.trim() || approvedDiscount);
+    const needsDiscountPreview = Boolean(boardGameCheckout || member || pointsToRedeem || couponCode.trim() || approvedDiscount);
     if (needsDiscountPreview && (
       !memberPreview
       || memberPreviewAppliedKey !== memberPreviewRequestKey
-      || Math.abs(Number(memberPreview.subtotal) - total) > 0.001
+      || (!boardGameCheckout && Math.abs(Number(memberPreview.subtotal) - total) > 0.001)
     )) return "กำลังตรวจราคาสมาชิก คูปอง และแต้มล่าสุด";
+    if (needsDiscountPreview && memberPreview?.status !== "READY") {
+      return memberPreview?.reason || memberPreview?.couponError || "ตรวจราคาบิลล่าสุดไม่สำเร็จ";
+    }
     if (paymentSummary.remaining > 0.01) return `ยังรับเงินไม่ครบ — ขาด ฿${baht(paymentSummary.remaining)}`;
     if (paymentSummary.remaining < -0.01) return `ยอดรับเกินไป ฿${baht(Math.abs(paymentSummary.remaining))}`;
     if (!canSell) return "ยังขายไม่ได้";
@@ -5256,9 +5277,47 @@ export default function PosPage() {
       const savedAttempt = (() => {
         try { return JSON.parse(window.localStorage.getItem(PENDING_SALE_KEY) ?? "null"); } catch { return null; }
       })();
+      let confirmedMemberPreview = memberPreview;
       // บิลใหม่ต้องอ่านราคา/ขั้นราคา/โปรล่าสุดก่อนรับเงิน ส่วนบิล recovery ต้องยิง
       // body+idempotency key เดิมเท่านั้นเพื่อถามผลของรายการเดิม ห้ามเปลี่ยนตะกร้ากลางทาง
       if (!savedAttempt?.body && await refreshCartPricingBeforePay()) return;
+      // ของในแท็บบอร์ดเกมอาจถูกเพิ่มจากอีกเครื่องหลังจอเปิดอยู่ และราคาส่ง/โปร/คูปอง
+      // คิดจากสินค้าในแท็บรวมกับตะกร้าหน้าเครื่อง จึงต้อง quote ผ่าน transaction เดียวกับ
+      // ตอนขายอีกครั้งก่อนรับเงิน ไม่ใช้ยอด preview เก่าที่ค้างอยู่บนจอ
+      if (!savedAttempt?.body && boardGameCheckout) {
+        const previewResponse = await fetch("/api/pos/member/preview", {
+          method: "POST",
+          headers: { ...authHeaders, "content-type": "application/json" },
+          body: JSON.stringify(memberPreviewRequestBody),
+        });
+        const latestPreview = await previewResponse.json().catch(() => null) as MemberPreview | null;
+        if (!previewResponse.ok || !latestPreview || latestPreview.status !== "READY" || latestPreview.amountDue == null) {
+          setNotice({
+            type: "error",
+            text: latestPreview?.reason || latestPreview?.couponError || "ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ",
+          });
+          return;
+        }
+        const pricingSignature = (value: MemberPreview | null) => JSON.stringify({
+          amountDue: value?.amountDue ?? null,
+          subtotal: value?.subtotal ?? null,
+          totalDiscount: value?.totalDiscount ?? null,
+          pointsUsed: value?.pointsUsed ?? null,
+        });
+        const pricingChanged = pricingSignature(latestPreview) !== pricingSignature(memberPreview);
+        confirmedMemberPreview = latestPreview;
+        setMemberPreview(latestPreview);
+        setMemberPreviewAppliedKey(memberPreviewRequestKey);
+        if (pricingChanged) {
+          setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+          resetToSimpleCash();
+          setNotice({
+            type: "error",
+            text: "ยอดสินค้า ส่วนลด หรือเวลาเล่นมีการเปลี่ยนแปลง · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่",
+          });
+          return;
+        }
+      }
       // บิลค้างที่มีส่วนลดมือ: PIN ผู้อนุมัติไม่ได้ถูกเก็บไว้ (โดยตั้งใจ) ถ้ารีโหลดจอไป
       // แล้วต้องให้หัวหน้ากดอนุมัติใหม่ ไม่ใช่ปล่อยให้ยิงไปโดน 400 ที่อ่านไม่รู้เรื่อง
       if (savedAttempt?.body?.manualDiscount > 0 && !approvedDiscount) {
@@ -5296,7 +5355,7 @@ export default function PosPage() {
         idempotencyKey: `${session.device.code}-${session.shift.id.slice(0, 8)}-${crypto.randomUUID()}`,
         // สมาชิก (7.96) — server ตรวจซ้ำว่า id นี้เป็นลูกค้าของร้านนี้ และล็อกยอดแต้มใน tx
         customerId: member?.customerId ?? null,
-        pointsToRedeem: memberPreview?.pointsUsed ?? 0,
+        pointsToRedeem: confirmedMemberPreview?.pointsUsed ?? 0,
         couponCode: couponCode.trim() || null,
         // ส่วนลดมือ: server ตรวจ PIN + สิทธิ์ pos.discount.approve ซ้ำอีกชั้นเสมอ
         manualDiscount: approvedDiscount?.amount ?? 0,
@@ -8625,7 +8684,7 @@ export default function PosPage() {
             {/* ส่วนลดต้องเห็นแยกบรรทัดที่จอ ลูกค้าถามได้ว่าลดจากอะไร (7.96) */}
             {discountTotal > 0 && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
-                <span>ยอดสินค้า ฿{baht(total)}</span>
+                <span>ยอดสินค้าที่ร่วมส่วนลด ฿{baht(boardGameCheckout ? Number(memberPreview?.subtotal ?? 0) : total)}</span>
                 {memberPreview?.tierDiscount ? (
                   <div>{memberPreview.tierLabel ?? "ส่วนลดสมาชิก"} −฿{baht(memberPreview.tierDiscount)}</div>
                 ) : null}
@@ -8642,6 +8701,11 @@ export default function PosPage() {
                   </div>
                 ) : null}
                 {memberPreview?.capped && <div style={{ color: "#c9455a" }}>ส่วนลดถูกตัดเพราะชนเพดานของร้าน</div>}
+              </div>
+            )}
+            {memberPreview?.status && memberPreview.status !== "READY" && (
+              <div className="pos-total-break" style={{ color: "#c9455a", borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                {memberPreview.reason || memberPreview.couponError || "ตรวจราคาบิลล่าสุดไม่สำเร็จ"}
               </div>
             )}
             {/* ปัดเศษต้องเห็นบนจอ ไม่ใช่โผล่มาเฉพาะบนใบเสร็จ — ลูกค้าถามว่าทำไมไม่ตรงป้าย */}

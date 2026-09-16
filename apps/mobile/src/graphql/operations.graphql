@@ -454,6 +454,7 @@ query MobilePosMemberPreview($input: BmsPosMemberPreviewInput!) {
     status
     reason
     subtotal
+    amountDue
     netTotal
     totalDiscount
     tierDiscount

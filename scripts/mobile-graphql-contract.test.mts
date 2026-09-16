@@ -1064,7 +1064,7 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   // ⚠️ เล็งที่ **กฎ** ไม่ใช่ที่ชื่อตัวแปร — บิลบอร์ดเกมที่ไม่เหลือยอดต้องส่ง payment list ว่าง
   // (`9.92`) ไม่ใช่ CASH ฿0 ซึ่งทั้งจอและ server ปฏิเสธ · อ่านชื่อธงจากจุดที่ตัดสินจริง
   // แล้วไล่กลับไปอ่านการประกาศของมัน ไม่งั้นเปลี่ยนชื่อธงแล้วเทสแดงทั้งที่การันตีไม่ได้หาย
-  const zeroDueFlag = /const (\w+) =\s+source === 'board_game'/.exec(checkout);
+  const zeroDueFlag = /const (\w+) =\s+source === 'board_game'[\s\S]{0,180}paymentTarget <= 0;/.exec(checkout);
   assert.ok(
     zeroDueFlag,
     "the checkout must decide the zero-due board-game case from what it is settling",

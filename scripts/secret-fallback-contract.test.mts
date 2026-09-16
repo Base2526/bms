@@ -30,6 +30,7 @@ const SECRET_RESOLVERS: Array<{ file: string; env: string }> = [
   { file: "apps/web/lib/auth/token.ts", env: "JWT_SECRET" },
   { file: "apps/web/lib/bms/crypto.ts", env: "BMS_SECRET_KEY" },
   { file: "apps/web/lib/bms/checkoutToken.ts", env: "BMS_CHECKOUT_SECRET" },
+  { file: "apps/web/lib/bms/coupons.ts", env: "BMS_COUPON_WALLET_SECRET" },
   { file: "apps/ws/src/ws.ts", env: "JWT_SECRET" },
 ];
 

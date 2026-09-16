@@ -34,9 +34,17 @@ type MemberSelection = {
 export function CheckoutAdjustmentsCard({
   memberOnly = false,
   memberSelection,
+  amountOverride,
+  pointsUsedOverride,
+  previewLoadingOverride,
+  previewErrorOverride,
 }: {
   memberOnly?: boolean;
   memberSelection?: MemberSelection;
+  amountOverride?: number;
+  pointsUsedOverride?: number;
+  previewLoadingOverride?: boolean;
+  previewErrorOverride?: string | null;
 }) {
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
@@ -62,7 +70,12 @@ export function CheckoutAdjustmentsCard({
   const setSelectedMember = memberSelection
     ? memberSelection.setMember
     : cart.setMember;
-  const memberAmount = memberSelection ? memberSelection.amount : cart.subtotal;
+  const memberAmount = amountOverride ?? (memberSelection ? memberSelection.amount : cart.subtotal);
+  const pointsUsed = pointsUsedOverride ?? cart.pointsUsed;
+  const previewLoading = previewLoadingOverride ?? cart.previewLoading;
+  const previewError = previewErrorOverride === undefined
+    ? cart.previewError
+    : previewErrorOverride;
 
   const members = useQuery(MobilePosMembersDocument, {
     variables: { q: search.trim() || null, amount: memberAmount },
@@ -90,9 +103,9 @@ export function CheckoutAdjustmentsCard({
         // ยอดที่จอโชว์กับจำนวนแต้มที่บอกลูกค้าจะไม่ใช่เรื่องเดียวกัน
         value: selectedMember
           ? cart.pointsToRedeem > 0
-            ? cart.pointsUsed === cart.pointsToRedeem
-              ? `${cart.pointsUsed} แต้ม`
-              : `ขอ ${cart.pointsToRedeem} · หักได้จริง ${cart.pointsUsed} แต้ม`
+            ? pointsUsed === cart.pointsToRedeem
+              ? `${pointsUsed} แต้ม`
+              : `ขอ ${cart.pointsToRedeem} · หักได้จริง ${pointsUsed} แต้ม`
             : `ใช้ได้ ${Math.floor(selectedMember.pointsUsable)} แต้ม`
           : 'เลือกสมาชิกก่อนใช้แต้ม',
       },
@@ -134,8 +147,8 @@ export function CheckoutAdjustmentsCard({
     cart.extraTotal,
     cart.manualDiscount,
     cart.pointsToRedeem,
-    cart.pointsUsed,
     memberOnly,
+    pointsUsed,
     selectedMember,
   ]);
 
@@ -230,13 +243,13 @@ export function CheckoutAdjustmentsCard({
             </Text>
           </Pressable>
         ))}
-        {!memberOnly && cart.previewLoading ? (
+        {!memberOnly && previewLoading ? (
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…
           </Text>
-        ) : !memberOnly && cart.previewError ? (
+        ) : !memberOnly && previewError ? (
           <Text style={[typography.caption, { color: colors.danger }]}>
-            {cart.previewError}
+            {previewError}
           </Text>
         ) : null}
       </Card>

@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveRefresh, usePageVisible } from '@/app/hooks/useLiveRefresh';
+import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
 
 type Props = {
   token: string;
@@ -165,7 +166,48 @@ function alertLabel(status: string | null | undefined) {
 function tableStateLabel(session: { status: string; alertStatus: string } | null) {
   if (!session) return 'ว่าง';
   if (session.status === 'CLOSING') return 'รอเก็บเงิน';
+  // โต๊ะที่จบไปแล้วยังค้างบนจอได้ — อีกเครื่องเก็บเงิน/ยกเลิกระหว่างที่การ์ดเปิดอยู่ ·
+  // ถ้าปล่อยตกไป alertLabel() มันจะอ่านว่า "กำลังเล่น" ซึ่งเป็นคำตอบที่ผิดที่สุดที่จะให้
+  if (session.status === 'PAID') return 'เก็บเงินแล้ว';
+  if (session.status === 'CANCELLED') return 'ยกเลิกแล้ว';
   return alertLabel(session.alertStatus);
+}
+
+/** โต๊ะที่จบแล้ว — ไม่มีอะไรให้สั่งต่อ มีแต่ให้ปิดการ์ดทิ้ง */
+function isTerminalSession(status: string) {
+  return status === 'PAID' || status === 'CANCELLED';
+}
+
+/**
+ * เงินของโต๊ะที่ "ตั้งไว้แล้วจริง ๆ" แยกจากเวลาที่ยังเดินอยู่
+ *
+ * ⚠️ `amount_due` ของกลุ่มบิลคือ **ค่าเล่นที่ถูกแช่ไว้ตอนปิดบิล** (`9.89` เขียนกฎนี้ไว้เอง
+ * และเส้นเดียวที่เขียนคอลัมน์นี้คือ `closeOpenBillingGroupInTx`) กลุ่มที่ยังเล่นอยู่จึงเป็น
+ * 0 เสมอ — 0 ที่แปลว่า "ยังไม่ถูกแช่" ไม่ใช่ "ไม่ติดเงิน"
+ *
+ * การพิมพ์เลขนั้นออกมาตรง ๆ บนโต๊ะที่เล่นมาสองชั่วโมงคือการบอกพนักงานว่าโต๊ะนี้ไม่ติดอะไร ·
+ * `/admin/board-game` แสดงยอดเฉพาะตอน CLOSING และแอป RN ก็ทำแบบเดียวกัน — จอนี้เคยเป็น
+ * ที่เดียวที่ยังพิมพ์ทุกสถานะ
+ */
+function moneySoFar(groups: Array<{ status: string; amountDue: number; tabAmount: number }>) {
+  let settled = 0;
+  let openTab = 0;
+  let stillPlaying = false;
+  for (const group of groups) {
+    if (group.status === 'CANCELLED') continue;
+    if (group.status === 'OPEN') {
+      stillPlaying = true;
+      openTab += Number(group.tabAmount) || 0;
+    } else {
+      settled += (Number(group.amountDue) || 0) + (Number(group.tabAmount) || 0);
+    }
+  }
+  return { settled, openTab, stillPlaying };
+}
+
+/** ป้ายสถานะสายข้อมูล — คำและสีมาจากกฎเดียวกับจอครัว/จอร้านอาหาร */
+function feedTone(health: 'LIVE' | 'SLOW' | 'STALE') {
+  return health === 'STALE' ? 'pos-bg-feed--stale' : health === 'SLOW' ? 'pos-bg-feed--slow' : '';
 }
 
 /**
@@ -184,6 +226,16 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [selectedId, setSelectedId] = useState('');
+  /**
+   * ⚠️ `run()` ถูกประกาศใหม่ทุก render จึงปิดทับ `selectedId` **ของ render นั้น** ·
+   * callback `after` ที่ล้างการเลือก (ยกเลิกโต๊ะ) จึงถูกทับทันทีด้วยการโหลด session
+   * ตัวเดิมกลับมาในบรรทัดถัดไป = การ์ดของโต๊ะที่เพิ่งยกเลิกเด้งกลับขึ้นจอ พร้อมป้าย
+   * "กำลังเล่น" และฟอร์มยกเลิกที่กดแล้วล้มซ้ำ
+   *
+   * ref คือความจริงของ "ตอนนี้กำลังดูโต๊ะไหน" ส่วน state มีไว้ให้ React วาดใหม่เท่านั้น —
+   * ทุกที่ที่ **ตัดสินใจ** ต้องอ่าน ref ไม่ใช่ state
+   */
+  const selectedIdRef = useRef('');
   const [openingTable, setOpeningTable] = useState<Table | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -229,6 +281,11 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
 
   const pageVisible = usePageVisible();
 
+  const selectTable = useCallback((sessionId: string) => {
+    selectedIdRef.current = sessionId;
+    setSelectedId(sessionId);
+  }, []);
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(timer);
@@ -266,12 +323,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     setSession((data.session ?? null) as SessionDetail | null);
   }, [call]);
 
-  useLiveRefresh({
+  const feed = useLiveRefresh({
     enabled: ready,
     intervalMs: pageVisible ? 10_000 : 60_000,
     onRefresh: async (signal) => {
       await loadWorkspace(signal);
-      if (selectedId) await loadSession(selectedId, signal);
+      const open = selectedIdRef.current;
+      if (open) await loadSession(open, signal);
     },
   });
 
@@ -336,15 +394,23 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     [workspace],
   );
 
-  async function run(name: string, action: string, payload: Record<string, unknown>, after?: () => void) {
+  async function run(
+    name: string,
+    action: string,
+    payload: Record<string, unknown>,
+    after?: (data: Record<string, any>) => void,
+  ) {
     if (busy) return;
     setBusy(name); setError(''); setNotice('');
     try {
       const data = await call(action, { idempotencyKey: keyFor(name), ...payload });
       dropKey(name);
-      after?.();
+      // `after` อาจเปลี่ยนโต๊ะที่กำลังดู (ยกเลิกโต๊ะ = เลิกดู · เปิดโต๊ะ = ไปดูโต๊ะใหม่)
+      // จึงอ่าน ref **หลัง** มันทำงาน ไม่ใช่ค่าที่ปิดทับไว้ตั้งแต่ตอน render
+      after?.(data);
       await loadWorkspace();
-      if (selectedId) await loadSession(selectedId);
+      const open = selectedIdRef.current;
+      if (open) await loadSession(open);
       return data;
     } catch (e: any) {
       if (e?.decided) dropKey(name);
@@ -353,6 +419,24 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     } finally {
       setBusy('');
     }
+  }
+
+  /**
+   * เพิ่มของเข้าบิล — ปุ่มกับ Enter ของเครื่องสแกนต้องเดินทางเดียวกัน
+   * สองทางที่ตัดสินเองจะ drift แล้ววันหนึ่งการยิงบาร์โค้ดกับการกดปุ่มส่งค่าคนละชุด
+   */
+  function addTabItem(billingGroupId: string) {
+    if (busy) return;
+    if (tabGroupId !== billingGroupId) { setTabGroupId(billingGroupId); return; }
+    const sku = tabSku.trim();
+    if (!sku) { setError('ยิงบาร์โค้ดหรือพิมพ์รหัสสินค้าก่อน'); return; }
+    const qty = Number(tabQty);
+    if (!Number.isFinite(qty) || qty < 1) { setError('ใส่จำนวนอย่างน้อย 1'); return; }
+    void run('tab-add', 'tab.add', {
+      billingGroupId,
+      sku,
+      packQty: Math.round(qty),
+    }, () => { setTabSku(''); setTabQty('1'); setNotice('เพิ่มเข้าบิลแล้ว'); });
   }
 
   function resetOpenForm() {
@@ -390,6 +474,18 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     );
   }
 
+  const pollMs = pageVisible ? 10_000 : 60_000;
+  const health = feedHealth(feed.lastOkAt, now, pollMs);
+  const ago = describeAgo(feed.lastOkAt, now);
+  const agoText = ago
+    ? ago.unit === 'seconds' ? `${ago.value} วินาทีที่แล้ว` : `${ago.value} นาทีที่แล้ว`
+    : 'ยังไม่เคยโหลดสำเร็จ';
+  const feedText = health === 'LIVE'
+    ? `อัปเดตล่าสุด ${agoText}`
+    : health === 'SLOW'
+      ? `ข้อมูลช้ากว่าปกติ · ${agoText}`
+      : 'ยังไม่ได้ข้อมูลใหม่ — ตัวเลขบนจอนี้อาจไม่ตรงกับหน้าร้าน';
+
   const openForm = openingTable && !openingTable.openSession;
   const activeTable = session
     ? (workspace?.floor.tables ?? []).find((table) => table.id === session.tableId) ?? null
@@ -401,6 +497,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   // `9.91`: โต๊ะที่ถูกรวมไว้ ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดที่เลือก ส่วนรวมโต๊ะพาไปทั้งโต๊ะ —
   // ปุ่มเดียวทำสองความหมาย จอจึงต้องบอกก่อนกด ไม่ใช่ให้รู้ตอนอีกชุดหายไปจากโต๊ะ
   const sharedSeating = (activeSeating?.sessionCount ?? 1) > 1;
+  const money = moneySoFar(session?.billingGroups ?? []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -411,10 +508,16 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             ค่าเล่นคิดจากเวลาและคนในโต๊ะ ไม่ใช่สินค้า — ปิดโต๊ะแล้วยอดจะไปรวมกับขนม/เครื่องดื่มในบิลเดียวที่แท็บขาย
           </div>
         </div>
-        <button type="button" className="pos-ret-btn" disabled={Boolean(busy)}
-          onClick={() => void loadWorkspace().catch((e) => setError(e?.message ?? 'โหลดไม่สำเร็จ'))}>
-          โหลดใหม่
-        </button>
+        {/* ⚠️ จอที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอที่ข้อมูลถูกต้อง — ป้ายนี้อ่านจาก "เวลาที่โหลด
+            สำเร็จครั้งล่าสุด" ของ useLiveRefresh ไม่ใช่จากนาฬิกาของเครื่อง (ซึ่งเดินสวยเสมอ
+            แม้เน็ตตายไปแล้ว) · กฎเดียวกับจอครัวและจอร้านอาหาร */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className={`pos-bg-feed ${feedTone(health)}`.trim()}>{feedText}</span>
+          <button type="button" className="pos-ret-btn" disabled={Boolean(busy)}
+            onClick={() => void loadWorkspace().catch((e) => setError(e?.message ?? 'โหลดไม่สำเร็จ'))}>
+            โหลดใหม่
+          </button>
+        </div>
       </div>
 
       {error && <div className="pos-card" style={{ padding: 10, borderColor: '#e8bdb8', color: 'var(--pos-danger)' }}>{error}</div>}
@@ -428,7 +531,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               <button key={table.id} type="button"
                 className={`pos-chip ${table.openSession?.alertStatus === 'OVERDUE' ? 'pos-chip--warn' : 'pos-chip--personal'}`}
                 style={{ border: 'none', cursor: 'pointer' }}
-                onClick={() => { setSelectedId(table.openSession!.id); setOpeningTable(null); }}>
+                onClick={() => { selectTable(table.openSession!.id); setOpeningTable(null); }}>
                 {table.code} · {tableStateLabel(table.openSession)}
               </button>
             ))}
@@ -440,7 +543,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
       {(workspace?.floor.areas ?? []).map((area) => (
         <div key={area.id} className="pos-block">
           <div className="pos-block-title">{area.name}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(168px, 100%), 1fr))', gap: 8 }}>
+          <div className="pos-bg-floor">
             {(tablesByArea.get(area.id) ?? []).map((table) => {
               const open = table.openSession;
               const selected = open
@@ -448,38 +551,37 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 : openingTable?.id === table.id;
               return (
                 <button key={table.id} type="button" disabled={table.blocked}
+                  className={`pos-bg-table ${open ? 'pos-bg-table--open' : ''} ${selected ? 'pos-bg-table--on' : ''}`.replace(/\s+/g, ' ').trim()}
                   onClick={() => {
                     setError(''); setNotice('');
-                    if (open) { setSelectedId(open.id); setOpeningTable(null); }
-                    else { setOpeningTable(table); setSelectedId(''); setSession(null); }
+                    if (open) { selectTable(open.id); setOpeningTable(null); }
+                    else { setOpeningTable(table); selectTable(''); setSession(null); }
                   }}
-                  style={{
-                    textAlign: 'left', padding: 10, borderRadius: 10, minHeight: 92,
-                    border: `2px solid ${selected ? 'var(--pos-accent)' : 'var(--pos-line)'}`,
-                    background: open ? 'var(--pos-accent-bg)' : 'var(--pos-panel, #fff)',
-                    opacity: table.blocked ? 0.5 : 1,
-                    cursor: table.blocked ? 'not-allowed' : 'pointer',
-                  }}>
-                  <div style={{ fontWeight: 700 }}>{table.code}</div>
-                  <div style={{ fontSize: 12, color: 'var(--pos-muted)' }}>{table.name} · {table.seats} ที่</div>
+                >
+                  <div className="pos-bg-table-code">{table.code}</div>
+                  <div className="pos-bg-table-sub">{table.name} · {table.seats} ที่</div>
                   {open ? (
-                    <div style={{ marginTop: 6, fontSize: 12 }}>
+                    <div className="pos-bg-table-body">
                       <div>{tableStateLabel(open)} · {elapsedLabel(open.startedAt, now)}</div>
-                      <div style={{ fontWeight: 700 }}>฿{baht(open.amountDue)}</div>
+                      {/* ⚠️ ยอดขึ้นเฉพาะตอนมีบิลที่ปิดเวลาแล้วรอเก็บจริง — `amountDue` ของโต๊ะที่
+                          ยังเล่นอยู่คือค่าเล่นที่ "ยังไม่ถูกแช่" ซึ่งเป็น 0 เสมอ ไม่ใช่ 0 เพราะไม่ติดเงิน */}
+                      {open.awaitingPaymentCount > 0
+                        ? <div className="pos-bg-table-money">฿{baht(open.amountDue)}</div>
+                        : <div className="pos-bg-table-sub">ยังไม่ปิดเวลา</div>}
                       {open.billingGroupCount > 1 && (
-                        <div style={{ color: 'var(--pos-muted)' }}>
+                        <div className="pos-bg-table-sub">
                           แยก {open.billingGroupCount} บิล
                           {open.awaitingPaymentCount > 0 ? ` · รอเก็บ ${open.awaitingPaymentCount}` : ''}
                         </div>
                       )}
                       {(open.sessionCount ?? 1) > 1 && (
-                        <div style={{ color: 'var(--pos-muted)' }}>
+                        <div className="pos-bg-table-sub">
                           รวมจาก {open.sessionCount} โต๊ะ · บิลยังแยกเดิม
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--pos-muted)' }}>
+                    <div className="pos-bg-table-body pos-bg-table-sub">
                       {table.blocked ? 'ปิดใช้งาน' : 'ว่าง'}
                     </div>
                   )}
@@ -508,52 +610,48 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <div className="pos-bg-form">
             {billingMode === 'FIXED_DURATION' && (
-              <label style={{ fontSize: 12 }}>
+              <label className="pos-bg-field pos-bg-field--num">
                 เวลาที่ซื้อ (นาที)
-                <input value={duration} onChange={(e) => setDuration(e.target.value)} inputMode="numeric"
-                  style={{ display: 'block', width: 120 }} />
+                <input value={duration} onChange={(e) => setDuration(e.target.value)} inputMode="numeric" />
               </label>
             )}
-            <label style={{ fontSize: 12 }}>
+            <label className="pos-bg-field pos-bg-field--num">
               เตือนก่อนหมดเวลา (นาที)
-              <input value={alertBefore} onChange={(e) => setAlertBefore(e.target.value)} inputMode="numeric"
-                style={{ display: 'block', width: 120 }} />
+              <input value={alertBefore} onChange={(e) => setAlertBefore(e.target.value)} inputMode="numeric" />
             </label>
-            <label style={{ fontSize: 12, flex: '1 1 220px' }}>
+            <label className="pos-bg-field">
               โน้ต
-              <input value={note} onChange={(e) => setNote(e.target.value)} style={{ display: 'block', width: '100%' }} />
+              <input value={note} onChange={(e) => setNote(e.target.value)} />
             </label>
           </div>
 
           <div className="pos-block" style={{ marginTop: 12 }}>
             <div className="pos-block-title">ผู้เล่น</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <label style={{ fontSize: 12, flex: '1 1 180px' }}>
+            <div className="pos-bg-form" style={{ marginTop: 0 }}>
+              <label className="pos-bg-field">
                 ชื่อผู้เล่น
                 <input value={selectedMember?.name ?? draftName} disabled={Boolean(selectedMember)}
-                  onChange={(e) => setDraftName(e.target.value)} style={{ display: 'block', width: '100%' }} />
+                  onChange={(e) => setDraftName(e.target.value)} />
               </label>
-              <label style={{ fontSize: 12, flex: '1 1 180px' }}>
+              <label className="pos-bg-field">
                 ค้นสมาชิก (ไม่บังคับ)
                 <input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)}
-                  placeholder="เบอร์โทร / ชื่อ" style={{ display: 'block', width: '100%' }} />
+                  placeholder="เบอร์โทร / ชื่อ" />
               </label>
-              <label style={{ fontSize: 12 }}>
+              <label className="pos-bg-field">
                 อัตรา
-                <select value={draftRateId} onChange={(e) => setDraftRateId(e.target.value)}
-                  style={{ display: 'block', minWidth: 170 }}>
+                <select value={draftRateId} onChange={(e) => setDraftRateId(e.target.value)}>
                   <option value="">{rates[0] ? `${rates[0].name} (฿${baht(rates[0].pricePerHour)}/ชม.)` : 'ยังไม่มีอัตรา'}</option>
                   {rates.map((rate) => (
                     <option key={rate.id} value={rate.id}>{rate.name} · ฿{baht(rate.pricePerHour)}/ชม.</option>
                   ))}
                 </select>
               </label>
-              <label style={{ fontSize: 12 }}>
+              <label className="pos-bg-field pos-bg-field--num">
                 กลุ่มบิล
-                <input value={draftGroup} onChange={(e) => setDraftGroup(e.target.value)} inputMode="numeric"
-                  style={{ display: 'block', width: 90 }} />
+                <input value={draftGroup} onChange={(e) => setDraftGroup(e.target.value)} inputMode="numeric" />
               </label>
               <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={addDraft}>เพิ่มผู้เล่น</button>
             </div>
@@ -575,8 +673,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 {drafts.map((draft) => {
                   const rate = rates.find((item) => item.id === draft.rateId);
                   return (
-                    <div key={draft.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                      <div style={{ fontSize: 13 }}>
+                    <div key={draft.key} className="pos-bg-row">
+                      <div className="pos-bg-row-main">
                         {draft.displayName}
                         <span style={{ color: 'var(--pos-muted)' }}>
                           {' · '}{rate?.name ?? 'อัตราเริ่มต้น'}{' · กลุ่ม '}{draft.billingGroupNo}
@@ -596,7 +694,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             </div>
           </div>
 
-          <button type="button" className="pos-ret-btn pos-ret-btn--solid" style={{ marginTop: 12 }}
+          <button type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-action" style={{ marginTop: 12 }}
             disabled={busy === 'open' || drafts.length === 0}
             onClick={() => void run('open', 'open', {
               tableId: openingTable.id,
@@ -610,14 +708,40 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 displayName: draft.displayName,
                 billingGroupNo: draft.billingGroupNo,
               })),
-            }, () => { resetOpenForm(); setNotice('เปิดโต๊ะแล้ว'); })}>
+            }, (data) => {
+              resetOpenForm();
+              setNotice('เปิดโต๊ะแล้ว');
+              // ไปยืนที่โต๊ะที่เพิ่งเปิดทันที — ขั้นถัดไปของคนหน้าเคาน์เตอร์คือยื่นกล่องเกม
+              // และรับบัตร ซึ่งทั้งคู่ทำได้จากการ์ดของโต๊ะนั้นเท่านั้น
+              const openedId = typeof data?.result?.id === 'string' ? data.result.id : '';
+              if (openedId) selectTable(openedId);
+            })}>
             {busy === 'open' ? 'กำลังเปิด…' : `เปิดโต๊ะ (${drafts.length} คน)`}
           </button>
         </div>
       )}
 
+      {/* โต๊ะที่จบไปแล้วระหว่างที่การ์ดเปิดอยู่ (อีกเครื่องเก็บเงิน/ยกเลิก) — การ์ดเต็มของโต๊ะที่
+          จบแล้วมีแต่ปุ่มที่กดแล้วล้ม จึงเหลือแค่บอกว่าเกิดอะไรขึ้นและทางกลับไปที่ผัง */}
+      {session && isTerminalSession(session.status) && (
+        <div className="pos-card" style={{ padding: 14 }}>
+          <div className="pos-block-title" style={{ marginBottom: 2 }}>
+            {activeTable ? `${activeTable.code} · ${activeTable.name}` : 'โต๊ะนี้'} · {tableStateLabel(session)}
+          </div>
+          <div className="pos-block-hint">
+            {session.status === 'PAID'
+              ? 'บิลของโต๊ะนี้ถูกเก็บเงินครบแล้ว'
+              : 'โต๊ะนี้ถูกยกเลิกแล้ว — ไม่มีการเก็บค่าเล่นของรอบนี้'}
+          </div>
+          <button type="button" className="pos-ret-btn pos-bg-action" style={{ marginTop: 10 }}
+            onClick={() => { selectTable(''); setSession(null); setNotice(''); setError(''); }}>
+            กลับไปที่ผังโต๊ะ
+          </button>
+        </div>
+      )}
+
       {/* ---------------- โต๊ะที่เปิดอยู่ ---------------- */}
-      {session && (
+      {session && !isTerminalSession(session.status) && (
         <div className="pos-card" style={{ padding: 14 }}>
           <div className="pos-shift-head">
             <div>
@@ -630,10 +754,24 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 {session.expectedEndAt ? ` · ถึง ${new Date(session.expectedEndAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 12, color: 'var(--pos-muted)' }}>ยอดถึงตอนนี้</div>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>฿{baht(session.amountDue)}</div>
-              <div style={{ fontSize: 11, color: 'var(--pos-muted)' }}>ค่าเล่น + ของที่สั่ง</div>
+            {/* ⚠️ ห้ามพิมพ์ `session.amountDue` ก้อนเดียวแล้วเรียกมันว่า "ยอดถึงตอนนี้" —
+                ค่าเล่นของกลุ่มที่ยังเล่นอยู่ยังไม่ถูกแช่ จึงเป็น 0 · เลขที่ออกมาคือ
+                "เงินที่ตั้งไว้แล้ว" ไม่ใช่ "เงินที่ลูกค้าติดอยู่ตอนนี้" และสองอย่างนี้
+                ต่างกันเท่าค่าเล่นทั้งโต๊ะ */}
+            <div className="pos-bg-head-money">
+              <div style={{ fontSize: 12, color: 'var(--pos-muted)' }}>
+                {money.settled > 0 ? 'ยอดที่ปิดแล้ว รอเก็บเงิน' : 'ของที่สั่งไว้บนบิล'}
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>
+                ฿{baht(money.settled > 0 ? money.settled : money.openTab)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--pos-muted)' }}>
+                {money.settled > 0 && money.openTab > 0
+                  ? `ของที่สั่งของกลุ่มที่ยังเล่น ฿${baht(money.openTab)}`
+                  : money.stillPlaying
+                    ? 'ค่าเล่นของกลุ่มที่ยังเล่นอยู่จะคิดตอนปิดเวลา'
+                    : 'ค่าเล่น + ของที่สั่ง'}
+              </div>
             </div>
           </div>
 
@@ -645,7 +783,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 <button key={id} type="button"
                   className={`pos-chip ${id === session.id ? 'pos-chip--personal' : ''}`}
                   style={{ border: 'none', cursor: 'pointer' }}
-                  onClick={() => setSelectedId(id)}>
+                  onClick={() => selectTable(id)}>
                   ชุด {index + 1}{id === session.id ? ' · กำลังดู' : ''}
                 </button>
               ))}
@@ -659,8 +797,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 ? 'โต๊ะนี้มีหลายชุดนั่งร่วมกัน — ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดที่กำลังดูอยู่ออกไป ส่วนรวมโต๊ะจะพาไปทั้งโต๊ะ'
                 : 'ย้ายไปโต๊ะว่าง หรือรวมเข้ากับโต๊ะที่มีลูกค้าอยู่ได้ โดยเวลา บิล และของบน tab ของทุกกลุ่มยังแยกเหมือนเดิม'}
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
-              <label style={{ fontSize: 12, flex: '1 1 220px' }}>
+            <div className="pos-bg-form">
+              <label className="pos-bg-field">
                 โต๊ะปลายทาง
                 <select value={seatingTargetId} onChange={(e) => setSeatingTargetId(e.target.value)}
                   style={{ display: 'block', width: '100%' }}>
@@ -701,9 +839,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           <div className="pos-block" style={{ marginTop: 10 }}>
             <div className="pos-block-title">ผู้เล่น ({session.participants.filter((p) => !p.leftAt).length} คนในโต๊ะ)</div>
             {session.participants.map((participant) => (
-              <div key={participant.id}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                <div style={{ fontSize: 13, opacity: participant.leftAt ? 0.55 : 1 }}>
+              <div key={participant.id} className="pos-bg-row">
+                <div className={`pos-bg-row-main ${participant.leftAt ? 'pos-bg-row-main--past' : ''}`.trim()}>
                   {participant.displayName ?? 'ไม่ระบุชื่อ'}
                   <span style={{ color: 'var(--pos-muted)' }}>
                     {' · กลุ่ม '}{participant.billingGroupNo}
@@ -726,25 +863,24 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             ))}
 
             {session.status === 'OPEN' && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
-                <label style={{ fontSize: 12, flex: '1 1 160px' }}>
+              <div className="pos-bg-form">
+                <label className="pos-bg-field">
                   เพิ่มผู้เล่น
                   <input value={draftName} onChange={(e) => setDraftName(e.target.value)}
-                    placeholder="ชื่อผู้เล่น" style={{ display: 'block', width: '100%' }} />
+                    placeholder="ชื่อผู้เล่น" />
                 </label>
-                <label style={{ fontSize: 12 }}>
+                <label className="pos-bg-field">
                   อัตรา
-                  <select value={draftRateId} onChange={(e) => setDraftRateId(e.target.value)} style={{ display: 'block', minWidth: 160 }}>
+                  <select value={draftRateId} onChange={(e) => setDraftRateId(e.target.value)}>
                     <option value="">อัตราเริ่มต้น</option>
                     {rates.map((rate) => (
                       <option key={rate.id} value={rate.id}>{rate.name} · ฿{baht(rate.pricePerHour)}/ชม.</option>
                     ))}
                   </select>
                 </label>
-                <label style={{ fontSize: 12 }}>
+                <label className="pos-bg-field pos-bg-field--num">
                   กลุ่มบิล
-                  <input value={draftGroup} onChange={(e) => setDraftGroup(e.target.value)} inputMode="numeric"
-                    style={{ display: 'block', width: 90 }} />
+                  <input value={draftGroup} onChange={(e) => setDraftGroup(e.target.value)} inputMode="numeric" />
                 </label>
                 <button type="button" className="pos-ret-btn pos-ret-btn--open" disabled={busy === 'add-participant'}
                   onClick={() => {
@@ -770,21 +906,19 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             </div>
             {session.billingGroups.map((group) => (
               <div key={group.id} style={{ marginTop: 8 }}>
-                {session.billingGroups.length > 1 && (
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>
-                    กลุ่ม {group.groupNo}
-                    <span style={{ color: 'var(--pos-muted)', fontWeight: 400 }}>
-                      {' · ของบนบิล ฿'}{baht(group.tabAmount)}
-                    </span>
-                  </div>
-                )}
+                <div style={{ fontSize: 12, fontWeight: 700 }}>
+                  {session.billingGroups.length > 1 ? `กลุ่ม ${group.groupNo}` : 'บิลของโต๊ะนี้'}
+                  <span style={{ color: 'var(--pos-muted)', fontWeight: 400 }}>
+                    {' · ของบนบิล ฿'}{baht(group.tabAmount)}
+                    {group.status === 'CLOSING' ? ` · ค่าเล่นที่ปิดแล้ว ฿${baht(group.amountDue)}` : ''}
+                  </span>
+                </div>
                 {group.tabItems.length === 0 && (
                   <div className="pos-block-hint">ยังไม่มีของบนบิลนี้</div>
                 )}
                 {group.tabItems.map((item) => (
-                  <div key={item.id}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                    <div style={{ fontSize: 13 }}>
+                  <div key={item.id} className="pos-bg-row">
+                    <div className="pos-bg-row-main">
                       {item.productName} × {item.packQty}
                       <span style={{ color: 'var(--pos-muted)' }}>
                         {item.unitName ? ` ${item.unitName}` : ''}
@@ -803,32 +937,28 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                   </div>
                 ))}
                 {group.status === 'OPEN' && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 6 }}>
-                    <label style={{ fontSize: 12, flex: '1 1 200px' }}>
+                  <div className="pos-bg-form">
+                    <label className="pos-bg-field">
                       บาร์โค้ด / รหัสสินค้า
+                      {/* ⚠️ แท็บนี้ปิดตัวจับบาร์โค้ดรวมของเครื่องขายไว้โดยตั้งใจ
+                          (`resolveScanContext` คืน DISABLED) เครื่องสแกนจึงพิมพ์รหัสลงช่องนี้
+                          ตรง ๆ แล้วจบด้วย Enter · ช่องนี้ไม่ได้อยู่ใน <form> การไม่รับ Enter
+                          แปลว่ายิงบาร์โค้ดแล้ว "ไม่มีอะไรเกิดขึ้น" ทั้งที่ placeholder สัญญาไว้ */}
                       <input
                         value={tabGroupId === group.id ? tabSku : ''}
                         onChange={(e) => { setTabGroupId(group.id); setTabSku(e.target.value); }}
-                        placeholder="ยิงบาร์โค้ดหรือพิมพ์รหัส"
-                        style={{ display: 'block', width: '100%' }} />
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTabItem(group.id); } }}
+                        placeholder="ยิงบาร์โค้ดหรือพิมพ์รหัส" />
                     </label>
-                    <label style={{ fontSize: 12 }}>
+                    <label className="pos-bg-field pos-bg-field--num">
                       จำนวน
                       <input value={tabGroupId === group.id ? tabQty : '1'} inputMode="numeric"
                         onChange={(e) => { setTabGroupId(group.id); setTabQty(e.target.value); }}
-                        style={{ display: 'block', width: 90 }} />
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTabItem(group.id); } }} />
                     </label>
                     <button type="button" className="pos-ret-btn pos-ret-btn--open"
                       disabled={busy === 'tab-add' || tabGroupId !== group.id || !tabSku.trim()}
-                      onClick={() => {
-                        const qty = Number(tabQty);
-                        if (!Number.isFinite(qty) || qty < 1) { setError('ใส่จำนวนอย่างน้อย 1'); return; }
-                        void run('tab-add', 'tab.add', {
-                          billingGroupId: group.id,
-                          sku: tabSku.trim(),
-                          packQty: Math.round(qty),
-                        }, () => { setTabSku(''); setTabQty('1'); setNotice('เพิ่มเข้าบิลแล้ว'); });
-                      }}>
+                      onClick={() => addTabItem(group.id)}>
                       เพิ่มเข้าบิล
                     </button>
                   </div>
@@ -842,13 +972,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             <div className="pos-block-title">เกมที่ยืม</div>
             {session.games.length === 0 && <div className="pos-block-hint">ยังไม่ได้ยืมกล่องเกม</div>}
             {session.games.map((loan) => (
-              <div key={loan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                <div style={{ fontSize: 13 }}>
+              <div key={loan.id} className="pos-bg-row">
+                <div className="pos-bg-row-main">
                   {loan.title ?? 'เกม'}
                   <span style={{ color: 'var(--pos-muted)' }}>{' · '}{loan.copyCode ?? '-'}{' · '}{loan.status}</span>
                 </div>
                 {!loan.returnedAt && (
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="pos-bg-row-actions">
                     <button type="button" className="pos-ret-btn" disabled={busy === `return-${loan.id}`}
                       onClick={() => void run(`return-${loan.id}`, 'copy.return', {
                         loanId: loan.id, status: 'RETURNED', copyStatus: 'AVAILABLE', returnNote,
@@ -867,10 +997,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             ))}
 
             {session.status === 'OPEN' && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
-                <label style={{ fontSize: 12, flex: '1 1 220px' }}>
+              <div className="pos-bg-form">
+                <label className="pos-bg-field">
                   ให้ยืมกล่องเกม
-                  <select value={copyId} onChange={(e) => setCopyId(e.target.value)} style={{ display: 'block', width: '100%' }}>
+                  <select value={copyId} onChange={(e) => setCopyId(e.target.value)}>
                     <option value="">เลือกกล่องที่ว่าง</option>
                     {(workspace?.library ?? []).map((title) => (
                       title.copies
@@ -881,10 +1011,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                     ))}
                   </select>
                 </label>
-                <label style={{ fontSize: 12, flex: '1 1 160px' }}>
+                <label className="pos-bg-field">
                   โน้ตตอนคืน
-                  <input value={returnNote} onChange={(e) => setReturnNote(e.target.value)}
-                    style={{ display: 'block', width: '100%' }} />
+                  <input value={returnNote} onChange={(e) => setReturnNote(e.target.value)} />
                 </label>
                 <button type="button" className="pos-ret-btn pos-ret-btn--open" disabled={!copyId || busy === 'checkout-copy'}
                   onClick={() => void run('checkout-copy', 'copy.checkout', {
@@ -906,8 +1035,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               <div className="pos-block-hint">ไม่ได้ถือบัตรของโต๊ะนี้ไว้</div>
             )}
             {session.identityHolds.map((hold) => (
-              <div key={hold.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                <div style={{ fontSize: 13 }}>
+              <div key={hold.id} className="pos-bg-row">
+                <div className="pos-bg-row-main">
                   {hold.status === 'RETURNED'
                     ? <span style={{ color: 'var(--pos-muted)' }}>คืนบัตรแล้ว · {IDENTITY_KIND_LABEL[hold.documentKind] ?? hold.documentKind}</span>
                     : <>
@@ -930,30 +1059,28 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             ))}
 
             {session.status === 'OPEN' && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
-                <label style={{ fontSize: 12, flex: '1 1 130px' }}>
+              <div className="pos-bg-form">
+                <label className="pos-bg-field">
                   ชนิดบัตร
-                  <select value={idKind} onChange={(e) => setIdKind(e.target.value)} style={{ display: 'block', width: '100%' }}>
+                  <select value={idKind} onChange={(e) => setIdKind(e.target.value)}>
                     {Object.entries(IDENTITY_KIND_LABEL).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
                 </label>
-                <label style={{ fontSize: 12, flex: '1 1 160px' }}>
+                <label className="pos-bg-field">
                   ชื่อบนบัตร
-                  <input value={idHolder} onChange={(e) => setIdHolder(e.target.value)}
-                    style={{ display: 'block', width: '100%' }} />
+                  <input value={idHolder} onChange={(e) => setIdHolder(e.target.value)} />
                 </label>
                 {/* เลขไม่บังคับ — ร้านที่เก็บบัตรจริงไว้โดยไม่พิมพ์เลขก็ยังได้ด่านตอนปิดบิล
                     การบังคับพิมพ์จะไล่ร้านกลับไปใช้กระดาษ ซึ่งแย่กว่าทุกทาง */}
-                <label style={{ fontSize: 12, flex: '1 1 160px' }}>
+                <label className="pos-bg-field">
                   เลขบัตร (ไม่บังคับ)
-                  <input value={idNumber} onChange={(e) => setIdNumber(e.target.value)}
-                    style={{ display: 'block', width: '100%' }} />
+                  <input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} />
                 </label>
-                <label style={{ fontSize: 12, flex: '1 1 180px' }}>
+                <label className="pos-bg-field">
                   ค้ำกล่องเกม (ไม่บังคับ)
-                  <select value={idLoanId} onChange={(e) => setIdLoanId(e.target.value)} style={{ display: 'block', width: '100%' }}>
+                  <select value={idLoanId} onChange={(e) => setIdLoanId(e.target.value)}>
                     <option value="">ไม่ระบุกล่อง</option>
                     {session.games.filter((loan) => !loan.returnedAt).map((loan) => (
                       <option key={loan.id} value={loan.id}>{loan.title ?? 'เกม'} · {loan.copyCode ?? '-'}</option>
@@ -985,16 +1112,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                   ? `ซื้อไว้ ${plannedMinutes(session)} นาที`
                   : 'เปิดยาว — คิดตามเวลาที่เล่นจริง ยังไม่ได้ซื้อเวลาไว้ล่วงหน้า'}
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
-                <label style={{ fontSize: 12 }}>
+              <div className="pos-bg-form">
+                <label className="pos-bg-field pos-bg-field--num">
                   เวลาที่ซื้อ (นาที)
-                  <input value={planMinutes} onChange={(e) => setPlanMinutes(e.target.value)} inputMode="numeric"
-                    style={{ display: 'block', width: 120 }} />
+                  <input value={planMinutes} onChange={(e) => setPlanMinutes(e.target.value)} inputMode="numeric" />
                 </label>
-                <label style={{ fontSize: 12 }}>
+                <label className="pos-bg-field pos-bg-field--num">
                   เตือนก่อนหมดเวลา (นาที)
-                  <input value={planAlert} onChange={(e) => setPlanAlert(e.target.value)} inputMode="numeric"
-                    style={{ display: 'block', width: 140 }} />
+                  <input value={planAlert} onChange={(e) => setPlanAlert(e.target.value)} inputMode="numeric" />
                 </label>
                 {session.billingMode === 'FIXED_DURATION' && (
                   <button type="button" className="pos-ret-btn" disabled={busy === 'timing'}
@@ -1038,14 +1163,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           {/* ปิดโต๊ะ / ยกเลิก */}
           <div className="pos-block" style={{ marginTop: 10 }}>
             {session.billingGroups.length > 1 && session.billingGroups.some((group) => group.status === 'OPEN') && (
-              <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="pos-bg-actions-stack" style={{ marginBottom: 8 }}>
                 <div className="pos-block-hint">
                   คนที่กลับก่อน: ปิดเฉพาะบิลของกลุ่มนั้นได้ กลุ่มอื่นยังจับเวลาและสั่งของต่อเหมือนเดิม
                 </div>
                 {session.billingGroups
                   .filter((group) => group.status === 'OPEN')
                   .map((group) => (
-                    <button key={group.id} type="button" className="pos-ret-btn pos-ret-btn--open"
+                    <button key={group.id} type="button" className="pos-ret-btn pos-ret-btn--open pos-bg-action"
                       disabled={busy === `group-close-${group.id}`}
                       onClick={() => void run(`group-close-${group.id}`, 'group.close', {
                         billingGroupId: group.id,
@@ -1061,9 +1186,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                   ))}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="pos-bg-actions-stack">
               {session.status === 'OPEN' && (
-                <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={busy === 'close'}
+                <button type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-action" disabled={busy === 'close'}
                   onClick={() => void run('close', 'close', { sessionId: session.id }, undefined)
                     .then((data) => {
                       if (!data) return;
@@ -1086,7 +1211,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
 
             {/* บิลที่ปิดเวลาแล้วแต่ยังไม่ได้เก็บเงิน — หนึ่งปุ่มต่อหนึ่งบิล */}
             {session.billingGroups.some((group) => group.status === 'CLOSING') && (
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="pos-bg-actions-stack" style={{ marginTop: 8 }}>
                 {session.billingGroups.length > 1 && (
                   <div className="pos-block-hint">
                     โต๊ะนี้แยกเป็น {session.billingGroups.length} บิล — เก็บเงินทีละใบ ใบที่จ่ายแล้วจะหายไปเอง
@@ -1095,7 +1220,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 {session.billingGroups
                   .filter((group) => group.status === 'CLOSING')
                   .map((group) => (
-                    <button key={group.id} type="button" className="pos-ret-btn pos-ret-btn--solid"
+                    <button key={group.id} type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-action"
                       onClick={() => { setNotice('ส่งบิลไปแท็บขายแล้ว'); onCheckout(group.id); }}>
                       {session.billingGroups.length > 1
                         ? `ไปเก็บเงินกลุ่ม ${group.groupNo} (฿${baht(group.amountDue + group.tabAmount)})`
@@ -1115,17 +1240,17 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             )}
 
             {session.status !== 'PAID' && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 10 }}>
-                <label style={{ fontSize: 12, flex: '1 1 240px' }}>
+              <div className="pos-bg-form" style={{ marginTop: 10 }}>
+                <label className="pos-bg-field">
                   เหตุผลที่ยกเลิกโต๊ะ
                   <input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
-                    placeholder="เช่น ลูกค้าเปลี่ยนใจก่อนเริ่มเล่น" style={{ display: 'block', width: '100%' }} />
+                    placeholder="เช่น ลูกค้าเปลี่ยนใจก่อนเริ่มเล่น" />
                 </label>
                 <button type="button" className="pos-ret-btn pos-ret-btn--danger"
                   disabled={!cancelReason.trim() || busy === 'cancel'}
                   onClick={() => void run('cancel', 'cancel', {
                     sessionId: session.id, reason: cancelReason.trim(),
-                  }, () => { setCancelReason(''); setSelectedId(''); setSession(null); setNotice('ยกเลิกโต๊ะแล้ว'); })}>
+                  }, () => { setCancelReason(''); selectTable(''); setSession(null); setNotice('ยกเลิกโต๊ะแล้ว'); })}>
                   ยกเลิกโต๊ะ
                 </button>
               </div>

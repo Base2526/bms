@@ -385,7 +385,7 @@ test("the register still routes every money number through the shared rules", as
     );
     assertHas(
       source,
-      /pointsToRedeem:\s*cart\.pointsUsed/,
+      /source === 'board_game'[\s\S]{0,180}confirmedBoardGamePreview\?\.pointsUsed \?\? 0[\s\S]{0,80}: cart\.pointsUsed/,
       "ต้องส่งแต้มที่พรีวิวบอกว่าหักได้จริง ไม่ใช่ตัวเลขที่แคชเชียร์พิมพ์"
     );
   });

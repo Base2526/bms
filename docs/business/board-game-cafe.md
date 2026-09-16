@@ -50,6 +50,7 @@ change — the same shape a restaurant check uses for its kitchen rounds.
 | The old reservation is released **inside the settlement transaction** | Releasing it any earlier opens a window where another register can sell what this table is already holding. |
 | Serial-tracked products cannot go on a tab | Serial numbers (`8.3`) are collected from the register's cart. A tab line never passes that gate, so it would be sold with no serial recorded. |
 | The register charges `totalDue` (time + tab) | The server always bills both. A screen that adds only the play time sends a short amount and the whole bill is thrown away as `PAYMENT_MISMATCH` in front of the customer. |
+| Discounts preview the combined product basket | Wholesale tiers, product promotions, member tiers, coupons, points, and manual discounts use the tab products plus any products added at checkout. Both registers quote that basket through `createOrderInTx()` in an always-rolled-back transaction and recheck it immediately before payment. Play time and service/extra lines remain outside the discount base. A coupon is rejected when that product base is zero, so a service-only bill cannot consume a redemption for ฿0. |
 | Cancelling a table releases every reserved line | A group that walks out must not keep stock reserved against a table nobody is sitting at. Only a group that has actually **been paid** blocks cancellation. |
 
 The tab's value lives in `tab_amount`, separate from `amount_due`, which `9.89` defined as the
@@ -285,6 +286,26 @@ every edge — the browser sends `payments: []` when the amount is zero and was 
 route until `9.94`. What a pass paid is server data (`passCoveredAmount`), shown on the bill line by
 both registers; deriving "a member pass covered this" from a zero total instead would put a claim on
 a customer-facing screen that is false whenever the zero came from somewhere else.
+
+### What a register may print as money, and what it must fit on a phone
+
+`bms_board_game_billing_groups.amount_due` is the play charge **frozen at close** (`9.89`; the
+only write is in `closeOpenBillingGroupInTx`). A group that is still OPEN therefore holds 0 — a 0
+that means "not frozen yet", not "owes nothing". `/admin/board-game` and the native register have
+always shown the amount only once the session is `CLOSING`; a surface that prints it in every state
+tells the counter that a table two hours into its session owes nothing. The browser register now
+follows the same rule: a floor tile shows money only when a bill is actually waiting to be
+collected, and the session card splits "frozen and waiting" from "the open group’s tab" instead of
+adding them into one number that has no name.
+
+The register is also used one-handed on a phone, so two layout rules hold for this tab:
+
+| Rule | Why |
+| --- | --- |
+| A row that pairs text with buttons must wrap, and its text column must be allowed to shrink | Measured at 320px before this was enforced: the game-return buttons ended 7px past the viewport with no horizontal scroller to reach them, and "report a damaged box" is the only way a shop records that liability |
+| The floor grid narrows its track on phones, and every track stays wrapped in `min(<px>, 100%)` | A 168px track gives **one column** at both 320px and 375px, which turns the floor plan into a list; a bare `minmax(<px>, 1fr)` insists on its minimum even when the box is narrower and overflows instead |
+
+Both rules are pinned by `scripts/board-game-register-contract.test.mts`.
 
 ## Reuse Existing BMS
 

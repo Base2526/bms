@@ -125,17 +125,37 @@ test("board-game payment reuses POS and atomically links the paid bill", () => {
   assert.match(graphql, /boardGameBillingGroupId: ID/);
 });
 
-test("the register charges what the server will compute, tab included", () => {
+test("both registers preview board-game discounts on the combined server-priced basket", () => {
   const page = read("apps/web/app/(pos)/pos/page.tsx");
   const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const pos = read("apps/web/lib/bms/pos.ts");
+  const route = read("apps/web/app/api/pos/member/preview/route.ts");
+  const graphql = read("apps/web/graphql/bmsPosDevice.ts");
+  const mobile = read("apps/mobile/src/screens/sell/CheckoutScreen.tsx");
+  const mobileOperation = read("apps/mobile/src/graphql/operations.graphql");
   // ⚠️ ของที่สั่งเข้าบิลระหว่างเล่น (`9.90`) ถูก server ใส่เข้าบิลเสมอ · จอที่บวกแค่ค่าเล่น
   // จะส่งยอดขาดไปเท่ามูลค่าของบน tab แล้ว recordPosSale ทิ้งบิลทั้งใบด้วย PAYMENT_MISMATCH
-  // ต่อหน้าลูกค้า — โดยที่ไม่มีอะไรบนจอบอกว่าขาดอะไรไป
-  const payable = page.slice(page.indexOf("const payableBeforeRounding"));
-  assert.ok(payable.length > 0, "หาบรรทัดที่คิดยอดที่ต้องจ่ายไม่เจอ");
-  assert.match(payable.slice(0, 200), /boardGameCheckout\?\.totalDue/);
-  assert.doesNotMatch(payable.slice(0, 200), /boardGameCheckout\?\.amountDue/);
-  // และ totalDue ต้องเป็นผลรวมที่ server คิด ไม่ใช่เลขที่จอบวกเอง
+  // ต่อหน้าลูกค้า · ส่วนลด/คูปองยิ่งห้ามคิดจาก cart อย่างเดียว เพราะฐานจริงรวม tab ด้วย
+  assert.match(pos, /export async function previewBoardGamePosPricing/);
+  assert.match(pos, /created = await createOrderInTx\(client,/);
+  assert.match(pos, /await client\.query\("ROLLBACK"\)/);
+  assert.match(route, /boardGameBillingGroupId[\s\S]{0,1600}previewBoardGamePosPricing\(/);
+  assert.match(graphql, /boardGameBillingGroupId: ID/);
+  assert.match(graphql, /type BmsPosMemberPreviewResult[\s\S]{0,300}amountDue: Float/);
+
+  assert.match(page, /boardGameBillingGroupId: boardGameCheckout\?\.id/);
+  assert.match(page, /lines: cart\.map/);
+  assert.match(page, /memberPreview\.amountDue/);
+  assert.match(page, /ตรวจยอดบิลบอร์ดเกมล่าสุด/);
+
+  assert.match(mobileOperation, /bmsPosMemberPreview[\s\S]{0,300}amountDue/);
+  assert.match(mobile, /boardGameBillingGroupId:[\s\S]{0,300}cart\.lines\.map/);
+  assert.match(mobile, /boardGamePreview\.amountDue/);
+  assert.match(mobile, /boardGamePricing\.refetch\(\)/);
+
+  // totalDue ที่ใช้เป็น fallback ระหว่างรอ preview ยังต้องมาจาก server ไม่ใช่เลขที่จอบวกเอง
+  assert.match(page, /boardGameCheckout\?\.totalDue/);
+  assert.match(mobile, /boardGameBill\?\.totalDue/);
   assert.match(service, /totalDue: money\(Number\(row\.amount_due\) \+ Number\(row\.tab_amount\)\)/);
 });
 

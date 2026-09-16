@@ -3220,14 +3220,18 @@ type BmsPosMemberLoyaltyPreview {
 }
 
 input BmsPosMemberPreviewInput {
+  boardGameBillingGroupId: ID
   couponCode: String
   customerId: ID
+  extraLines: [BmsPosExtraLineInput!]
+  lines: [BmsPosSaleLineInput!]
   manualDiscount: Float
   pointsToRedeem: Float
   subtotal: Float!
 }
 
 type BmsPosMemberPreviewResult {
+  amountDue: Float
   capped: Boolean
   cappedAt: Float
   couponDiscount: Float
