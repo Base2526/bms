@@ -415,6 +415,11 @@ export async function previewCouponForCustomer(
 ): Promise<CouponPreviewResult> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, reason: "โค้ดส่วนลดไม่ถูกต้อง" };
+  // A service-only bill would otherwise consume one redemption while granting
+  // ฿0. Reject before locking the coupon or touching its counter.
+  if (subtotal <= 0) {
+    return { ok: false, reason: "คูปองใช้ได้เมื่อบิลมีสินค้าที่ร่วมส่วนลดเท่านั้น" };
+  }
 
   const res = await query(
     `SELECT ${ROW_COLUMNS} FROM bms_coupons WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
@@ -477,14 +482,17 @@ function base64UrlDecode(value: string): string {
 }
 
 function couponTokenSecret(): string {
-  return (
+  const secret =
     process.env.BMS_COUPON_WALLET_SECRET ||
     process.env.BMS_COUPON_CLAIM_SECRET ||
     process.env.NEXTAUTH_SECRET ||
     process.env.AUTH_SECRET ||
-    process.env.JWT_SECRET ||
-    "dev-only-coupon-wallet-secret"
-  );
+    process.env.JWT_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Coupon wallet secret is not configured");
+  }
+  return "dev-only-coupon-wallet-secret";
 }
 
 function signCouponTokenPayload(encodedPayload: string): string {
@@ -897,6 +905,9 @@ export async function applyCouponInTx(
 ): Promise<CouponApplyResult> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, reason: "โค้ดส่วนลดไม่ถูกต้อง" };
+  if (subtotal <= 0) {
+    return { ok: false, reason: "คูปองใช้ได้เมื่อบิลมีสินค้าที่ร่วมส่วนลดเท่านั้น" };
+  }
 
   const res = await client.query(
     `SELECT ${ROW_COLUMNS} FROM bms_coupons WHERE tenant_id = $1 AND code = $2 FOR UPDATE`,

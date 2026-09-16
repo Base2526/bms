@@ -67,6 +67,7 @@ import {
   openPosShift,
   parkSale,
   partiallyReturnPosSale,
+  previewBoardGamePosPricing,
   recordCashMovement,
   recordNoSale,
   recordPosSale,
@@ -256,6 +257,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     pointsToRedeem: Float
     couponCode: String
     manualDiscount: Float
+    boardGameBillingGroupId: ID
+    lines: [BmsPosSaleLineInput!]
+    extraLines: [BmsPosExtraLineInput!]
   }
 
   input BmsPosSaleInput {
@@ -1696,6 +1700,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     status: String
     reason: String
     subtotal: Float
+    amountDue: Float
     tierDiscount: Float
     tierLabel: String
     couponDiscount: Float
@@ -3475,6 +3480,31 @@ export const bmsPosDeviceResolvers = {
         Number.isFinite(manualRaw) && manualRaw > 0
           ? Math.round(manualRaw * 100) / 100
           : 0;
+      const boardGameBillingGroupId = optionalUuidInput(
+        input.boardGameBillingGroupId,
+        "กลุ่มบิลบอร์ดเกมไม่ถูกต้อง",
+      );
+      if (boardGameBillingGroupId) {
+        const shift = await requireOpenPosShift(device);
+        const preview = await previewBoardGamePosPricing({
+          tenantId: device.tenantId,
+          locationId: device.locationId,
+          deviceId: device.id,
+          shiftId: shift.id,
+          actorUserId: shift.openedBy,
+          billingGroupId: boardGameBillingGroupId,
+          lines: parsePosSaleLines(input.lines),
+          customerId,
+          couponCode,
+          pointsToRedeem: pointsRequested,
+          manualDiscount,
+          extraLines: parsePosExtraLines(input.extraLines),
+        });
+        return {
+          ...preview,
+          member: preview.member ? toPosMemberSummary(preview.member) : null,
+        };
+      }
       let couponDiscount = 0;
       let couponError: string | null = null;
       if (couponCode) {
@@ -3497,6 +3527,8 @@ export const bmsPosDeviceResolvers = {
         manualDiscount,
       });
       return {
+        status: couponError ? "COUPON_INVALID" : "READY",
+        reason: couponError,
         ...preview,
         member: preview.member ? toPosMemberSummary(preview.member) : null,
         couponError,

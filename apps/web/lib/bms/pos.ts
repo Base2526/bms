@@ -23,7 +23,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
-import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
+import { createOrder, createOrderInTx, cancelOrder, type OrderItemInput } from "./orders";
 import { resolveStockConsumptionInTx } from "./stockConsumption";
 import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { parseScaleBarcode } from "./barcode";
@@ -67,7 +67,10 @@ import { RestaurantCheckError } from "./restaurantPosErrors";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { sendStaffMessage } from "./inbox";
 import {
+  evaluatePointsEarn,
   earnPointsForOrderInTx,
+  getLoyaltySettings,
+  getMember,
   reversePointsForReturnInTx,
   reviewMemberTier,
   shouldPrintMemberPoints,
@@ -2626,6 +2629,189 @@ async function canonicalizePosSaleLines(
     }
   }
   return { ok: true, items, serialLines };
+}
+
+export type BoardGamePosPricingPreview = {
+  status: string;
+  reason: string | null;
+  subtotal: number | null;
+  amountDue: number | null;
+  netTotal: number | null;
+  tierDiscount: number;
+  tierLabel: string | null;
+  couponDiscount: number;
+  couponError: string | null;
+  pointsDiscount: number;
+  pointsUsed: number;
+  manualDiscount: number;
+  totalDiscount: number;
+  capped: boolean;
+  cappedAt: number;
+  loyaltyEnabled: boolean;
+  pointsWillEarn: number | null;
+  pointsEarnBlock: string | null;
+  redeemPointsPerUnit: number;
+  redeemBahtPerUnit: number;
+  redeemMinPoints: number;
+  member: Awaited<ReturnType<typeof getMember>>;
+};
+
+/**
+ * Quote a board-game POS bill through the same order path used at settlement.
+ *
+ * A board-game group can already own product lines on its tab.  Previewing only
+ * the register cart makes percentage discounts, coupon minimums, wholesale
+ * tiers and promotions disagree with settlement.  Running createOrderInTx in a
+ * transaction that is always rolled back gives the counter the authoritative
+ * combined product subtotal without leaving an order, reservation, coupon use,
+ * points redemption or audit row behind.
+ */
+export async function previewBoardGamePosPricing(input: {
+  tenantId: string;
+  locationId: string;
+  deviceId: string;
+  shiftId: string;
+  actorUserId: string;
+  billingGroupId: string;
+  lines: PosSaleLine[];
+  customerId?: string | null;
+  couponCode?: string | null;
+  pointsToRedeem?: number | null;
+  manualDiscount?: number | null;
+  extraLines?: Array<{ label: string; qty?: number; unitAmount: number }> | null;
+}): Promise<BoardGamePosPricingPreview> {
+  const canonical = await canonicalizePosSaleLines(
+    input.tenantId,
+    input.locationId,
+    input.lines,
+    "RETAIL_POS"
+  );
+  if (!canonical.ok) {
+    return {
+      status: "INVALID_PACK", reason: `หน่วยขายของ ${canonical.sku} ไม่ถูกต้อง`,
+      subtotal: null, amountDue: null, netTotal: null,
+      tierDiscount: 0, tierLabel: null, couponDiscount: 0, couponError: null,
+      pointsDiscount: 0, pointsUsed: 0, manualDiscount: 0, totalDiscount: 0,
+      capped: false, cappedAt: 0, loyaltyEnabled: false, pointsWillEarn: null,
+      pointsEarnBlock: null, redeemPointsPerUnit: 100, redeemBahtPerUnit: 10,
+      redeemMinPoints: 100, member: null,
+    };
+  }
+
+  const client = await getClient();
+  let created: Awaited<ReturnType<typeof createOrderInTx>>;
+  let boardGameTimeAmount = 0;
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    const group = await client.query<{ amount_due: string }>(
+      `SELECT amount_due FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+          AND status = 'CLOSING'
+        FOR UPDATE`,
+      [input.tenantId, input.billingGroupId, input.locationId]
+    );
+    if (!group.rowCount) {
+      await client.query("ROLLBACK");
+      return {
+        status: "NOT_FOUND", reason: "ไม่พบบิลบอร์ดเกมที่รอชำระในสาขานี้",
+        subtotal: null, amountDue: null, netTotal: null,
+        tierDiscount: 0, tierLabel: null, couponDiscount: 0, couponError: null,
+        pointsDiscount: 0, pointsUsed: 0, manualDiscount: 0, totalDiscount: 0,
+        capped: false, cappedAt: 0, loyaltyEnabled: false, pointsWillEarn: null,
+        pointsEarnBlock: null, redeemPointsPerUnit: 100, redeemBahtPerUnit: 10,
+        redeemMinPoints: 100, member: null,
+      };
+    }
+    boardGameTimeAmount = Number(group.rows[0].amount_due);
+    created = await createOrderInTx(client, {
+      tenantId: input.tenantId,
+      channel: POS_CHANNEL,
+      items: canonical.items,
+      locationId: input.locationId,
+      posDeviceId: input.deviceId,
+      posShiftId: input.shiftId,
+      cashierUserId: input.actorUserId,
+      editorId: input.actorUserId,
+      idempotencyKey: `boardgame-preview:${crypto.randomUUID()}`,
+      posSalesSurface: "RETAIL_POS",
+      boardGameBillingGroupId: input.billingGroupId,
+      customerId: input.customerId ?? null,
+      couponCode: input.couponCode ?? null,
+      pointsToRedeem: input.pointsToRedeem ?? null,
+      extraLines: input.extraLines ?? null,
+      manualDiscount: input.manualDiscount ?? null,
+      // Preview proves arithmetic, not approval.  The sale adapter still checks
+      // the distinct approver's PIN and permission immediately before commit.
+      discountApprovedBy: Number(input.manualDiscount ?? 0) > 0
+        ? input.actorUserId
+        : null,
+      discountReason: Number(input.manualDiscount ?? 0) > 0 ? "POS pricing preview" : null,
+    });
+    await client.query("ROLLBACK");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const settings = await getLoyaltySettings(input.tenantId);
+  const member = input.customerId ? await getMember(input.tenantId, input.customerId) : null;
+  if (created.status !== "CREATED") {
+    const reason = "reason" in created ? created.reason : `พรีวิวยอดไม่สำเร็จ (${created.status})`;
+    return {
+      status: created.status, reason,
+      subtotal: null, amountDue: null, netTotal: null,
+      tierDiscount: 0, tierLabel: null, couponDiscount: 0,
+      couponError: created.status === "COUPON_INVALID" ? reason : null,
+      pointsDiscount: 0, pointsUsed: 0, manualDiscount: 0, totalDiscount: 0,
+      capped: false, cappedAt: 0, loyaltyEnabled: settings.enabled, pointsWillEarn: null,
+      pointsEarnBlock: null, redeemPointsPerUnit: settings.redeemPointsPerUnit,
+      redeemBahtPerUnit: settings.redeemBahtPerUnit, redeemMinPoints: settings.redeemMinPoints,
+      member,
+    };
+  }
+
+  const extraTotal = Math.round((input.extraLines ?? []).reduce(
+    (sum, line) => sum + Number(line.unitAmount) * Number(line.qty ?? 1), 0
+  ) * 100) / 100;
+  const productSubtotal = Math.max(
+    0,
+    Math.round((created.subtotal - boardGameTimeAmount - extraTotal) * 100) / 100
+  );
+  const amountFor = (source: OrderDiscountLine["source"]) =>
+    created.discountLines.find((line) => line.source === source)?.amount ?? 0;
+  const tierLine = created.discountLines.find((line) => line.source === "TIER") ?? null;
+  const earn = evaluatePointsEarn(settings, {
+    netTotal: created.total,
+    discountAmount: created.discount,
+  });
+  const isMember = Boolean(member?.memberNo);
+  const cappedAt = Math.round(productSubtotal * (settings.maxDiscountPct / 100) * 100) / 100;
+  return {
+    status: "READY",
+    reason: null,
+    subtotal: productSubtotal,
+    amountDue: created.amountDue,
+    netTotal: created.amountDue,
+    tierDiscount: amountFor("TIER"),
+    tierLabel: tierLine?.label ?? null,
+    couponDiscount: amountFor("COUPON"),
+    couponError: null,
+    pointsDiscount: amountFor("POINTS"),
+    pointsUsed: created.pointsUsed,
+    manualDiscount: amountFor("MANUAL"),
+    totalDiscount: created.discount,
+    capped: created.discount >= cappedAt - 0.001 && cappedAt < productSubtotal,
+    cappedAt,
+    loyaltyEnabled: settings.enabled,
+    pointsWillEarn: isMember ? earn.points : null,
+    pointsEarnBlock: isMember ? earn.block : null,
+    redeemPointsPerUnit: settings.redeemPointsPerUnit,
+    redeemBahtPerUnit: settings.redeemBahtPerUnit,
+    redeemMinPoints: settings.redeemMinPoints,
+    member,
+  };
 }
 
 /**

@@ -26,6 +26,7 @@ import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import {
   MobilePosBoardGameCheckoutDocument,
+  MobilePosMemberPreviewDocument,
   MobilePosRequestPharmacyReviewDocument,
   MobilePosSaleDocument,
   MobileRestaurantCheckDocument,
@@ -118,6 +119,54 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     skip: !session || !boardGameParams?.boardGameBillingGroupId,
   });
   const boardGameBill = boardGameCheckout.data?.bmsPosBoardGameCheckout;
+  const boardGamePricingInput = useMemo(
+    () => ({
+      subtotal: cart.subtotal,
+      boardGameBillingGroupId:
+        source === 'board_game'
+          ? boardGameParams?.boardGameBillingGroupId ?? null
+          : null,
+      customerId: cart.member?.id ?? null,
+      pointsToRedeem: cart.pointsToRedeem,
+      couponCode: cart.coupon?.code ?? null,
+      manualDiscount: cart.manualDiscount?.amount ?? null,
+      lines: cart.lines.map(line => ({
+        sku: line.sku,
+        size: line.size,
+        packCode: line.packCode || null,
+        packQty: line.qty,
+        baseQty: line.baseQty,
+        packPrice: null,
+        unitName: line.unitName || null,
+        modifierCodes: line.modifierCodes,
+        scaleBarcode: line.scaleBarcode ?? null,
+        serials: line.serials,
+      })),
+      extraLines: cart.extraLines.map(line => ({
+        label: line.label,
+        qty: line.qty,
+        unitAmount: line.unitAmount,
+      })),
+    }),
+    [
+      boardGameParams?.boardGameBillingGroupId,
+      cart.coupon?.code,
+      cart.extraLines,
+      cart.lines,
+      cart.manualDiscount?.amount,
+      cart.member?.id,
+      cart.pointsToRedeem,
+      cart.subtotal,
+      source,
+    ],
+  );
+  const boardGamePricing = useQuery(MobilePosMemberPreviewDocument, {
+    variables: { input: boardGamePricingInput },
+    skip: source !== 'board_game' || !session || !boardGameBill,
+    fetchPolicy: 'network-only',
+    notifyOnNetworkStatusChange: true,
+  });
+  const boardGamePreview = boardGamePricing.data?.bmsPosMemberPreview;
   const restaurantItems = (check?.items ?? []).filter(
     item => item.status !== 'CANCELLED',
   );
@@ -165,13 +214,22 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         ...productLines,
       ]
     : productLines;
-  const subtotal =
+  const fallbackSubtotal =
     source === 'restaurant'
       ? check?.amountDue ?? 0
       : cart.subtotal + (boardGameBill?.totalDue ?? 0);
+  const subtotal =
+    source === 'board_game' && boardGamePreview?.amountDue != null
+      ? round2(
+          boardGamePreview.amountDue +
+            (boardGamePreview.totalDiscount ?? 0),
+        )
+      : fallbackSubtotal;
   const payableBeforeRounding = round2(
     source === 'restaurant'
       ? subtotal
+      : source === 'board_game' && boardGamePreview?.amountDue != null
+      ? boardGamePreview.amountDue
       : cart.total + (boardGameBill?.totalDue ?? 0),
   );
   const discounts =
@@ -181,6 +239,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           couponDiscount: 0,
           appliedManualDiscount: 0,
           discountTotal: 0,
+        }
+      : source === 'board_game' && boardGamePreview
+      ? {
+          tierDiscount: boardGamePreview.tierDiscount ?? 0,
+          couponDiscount: boardGamePreview.couponDiscount ?? 0,
+          appliedManualDiscount: boardGamePreview.manualDiscount ?? 0,
+          discountTotal: boardGamePreview.totalDiscount ?? 0,
         }
       : cart;
   const bootstrap = useQuery(PosBootstrapDocument);
@@ -261,8 +326,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     () => validateMockPayments(paymentTarget, payments),
     [paymentTarget, payments],
   );
-  /** ตะกร้าค้าปลีกเท่านั้นที่มีชั้นส่วนลดของ server — บิลโต๊ะ/บอร์ดเกมได้ยอดสำเร็จรูปมาแล้ว */
-  const discountPending = source === 'retail' && cart.previewLoading;
+  const discountPending =
+    (source === 'retail' && cart.previewLoading) ||
+    (source === 'board_game' && boardGamePricing.loading);
   const itemCount = lines.reduce((n, l) => n + l.qty, 0);
   const serialsReady = lines.every(line => {
     if (!line.serialTracked) return true;
@@ -302,7 +368,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     payments.every(payment =>
       RESTAURANT_PAYMENT_METHODS.includes(payment.method),
     );
-  const boardGameReady = source !== 'board_game' || Boolean(boardGameBill);
+  const boardGameReady =
+    source !== 'board_game' ||
+    (Boolean(boardGameBill) &&
+      boardGamePreview?.status === 'READY' &&
+      boardGamePreview.amountDue != null &&
+      !boardGamePricing.error);
   // บิลบอร์ดเกมที่ไม่เหลือยอดต้องชำระ — settle ด้วย payment list ว่าง ไม่ใช่สร้าง CASH ฿0
   // ซึ่งทั้ง `validateMockPayments` (ต้องมียอด > 0) และ `recordPosSale` ปฏิเสธ
   //
@@ -352,6 +423,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       return;
     submittedRef.current = true;
     setSubmitting(true);
+    let confirmedBoardGamePreview = boardGamePreview;
     // ⚠️ ตรวจราคาซ้ำก่อนส่ง — ตะกร้าถือกติกา ณ ตอนที่สแกน ร้านที่แก้ราคา/เปิด-ปิดโปรระหว่าง
     // ที่บิลค้างบนจอ (หรือบิลพักที่เพิ่งเรียกกลับ) จะทำให้ยอดที่จอโชว์ไม่ใช่ยอดที่ server คิด
     // แล้วบิลถูกทิ้งทั้งใบ · หยุดก่อนออกคีย์กันบิลซ้ำ เพื่อไม่ให้คีย์ถูกเผาทิ้งโดยเปล่าประโยชน์
@@ -369,6 +441,58 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           recheck.error ? 'ตรวจราคาไม่สำเร็จ' : 'ราคามีการเปลี่ยนแปลง',
           recheck.error ??
             'ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่',
+        );
+        return;
+      }
+    }
+    if (source === 'board_game') {
+      try {
+        const recheck = await boardGamePricing.refetch();
+        const latest = recheck.data?.bmsPosMemberPreview;
+        if (
+          !latest ||
+          latest.status !== 'READY' ||
+          latest.amountDue == null
+        ) {
+          throw new Error(
+            latest?.reason ??
+              latest?.couponError ??
+              'ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ',
+          );
+        }
+        const signature = (
+          value: typeof latest | typeof boardGamePreview | undefined,
+        ) =>
+          JSON.stringify({
+            amountDue: value?.amountDue ?? null,
+            subtotal: value?.subtotal ?? null,
+            totalDiscount: value?.totalDiscount ?? null,
+            pointsUsed: value?.pointsUsed ?? null,
+          });
+        confirmedBoardGamePreview = latest;
+        if (signature(latest) !== signature(boardGamePreview)) {
+          submittedRef.current = false;
+          setSubmitting(false);
+          setConfirmOpen(false);
+          setPaymentsTouched(false);
+          setPayments([
+            { id: 'payment-1', method: 'cash', amount: 0, tendered: 0 },
+          ]);
+          Alert.alert(
+            'ยอดบิลมีการเปลี่ยนแปลง',
+            'ยอดสินค้า ส่วนลด หรือเวลาเล่นเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่',
+          );
+          return;
+        }
+      } catch (error) {
+        submittedRef.current = false;
+        setSubmitting(false);
+        setConfirmOpen(false);
+        Alert.alert(
+          'ตรวจยอดไม่สำเร็จ',
+          error instanceof Error
+            ? error.message
+            : 'ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ',
         );
         return;
       }
@@ -432,7 +556,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               // createOrderInTx ปฏิเสธทั้งบิลเมื่อหักได้ไม่เท่าที่ขอ (เศษแต้มที่ไม่ครบ
               // หน่วยแลก ต่ำกว่าขั้นต่ำ หรือชนเพดานส่วนลดของบิล) และยอดที่จอโชว์ก็มาจาก
               // พรีวิวตัวเดียวกันนี้อยู่แล้ว
-              pointsToRedeem: cart.pointsUsed,
+              pointsToRedeem:
+                source === 'board_game'
+                  ? confirmedBoardGamePreview?.pointsUsed ?? 0
+                  : cart.pointsUsed,
               manualDiscount: cart.manualDiscount?.amount ?? null,
               discountReason: cart.manualDiscount?.reason ?? null,
               discountApproverUserId:
@@ -1092,6 +1219,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           กำลังคำนวณส่วนลดกับเซิร์ฟเวอร์…
         </Text>
       )}
+      {source === 'board_game' && !discountPending && !boardGameReady && (
+        <Text style={[typography.captionStrong, { color: colors.danger }]}>
+          {boardGamePricing.error?.message ??
+            boardGamePreview?.reason ??
+            boardGamePreview?.couponError ??
+            'ยังตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ'}
+        </Text>
+      )}
       <Button
         label="ยืนยันการขาย"
         accessibilityLabel="ยืนยันการขายพร้อมป้องกันกดซ้ำ"
@@ -1141,6 +1276,27 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <View style={{ width: 400, gap: spacing.md }}>
             <CheckoutAdjustmentsCard
               memberOnly={source === 'restaurant'}
+              amountOverride={
+                source === 'board_game'
+                  ? boardGamePreview?.subtotal ?? cart.subtotal
+                  : undefined
+              }
+              pointsUsedOverride={
+                source === 'board_game'
+                  ? boardGamePreview?.pointsUsed ?? 0
+                  : undefined
+              }
+              previewLoadingOverride={
+                source === 'board_game' ? boardGamePricing.loading : undefined
+              }
+              previewErrorOverride={
+                source === 'board_game'
+                  ? boardGamePricing.error?.message ??
+                    boardGamePreview?.reason ??
+                    boardGamePreview?.couponError ??
+                    null
+                  : undefined
+              }
               memberSelection={
                 source === 'restaurant'
                   ? {
@@ -1160,6 +1316,27 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <View style={{ flex: 1, marginBottom: spacing.md }}>{linesCard}</View>
           <CheckoutAdjustmentsCard
             memberOnly={source === 'restaurant'}
+            amountOverride={
+              source === 'board_game'
+                ? boardGamePreview?.subtotal ?? cart.subtotal
+                : undefined
+            }
+            pointsUsedOverride={
+              source === 'board_game'
+                ? boardGamePreview?.pointsUsed ?? 0
+                : undefined
+            }
+            previewLoadingOverride={
+              source === 'board_game' ? boardGamePricing.loading : undefined
+            }
+            previewErrorOverride={
+              source === 'board_game'
+                ? boardGamePricing.error?.message ??
+                  boardGamePreview?.reason ??
+                  boardGamePreview?.couponError ??
+                  null
+                : undefined
+            }
             memberSelection={
               source === 'restaurant'
                 ? {

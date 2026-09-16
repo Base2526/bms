@@ -50,6 +50,7 @@ change — the same shape a restaurant check uses for its kitchen rounds.
 | The old reservation is released **inside the settlement transaction** | Releasing it any earlier opens a window where another register can sell what this table is already holding. |
 | Serial-tracked products cannot go on a tab | Serial numbers (`8.3`) are collected from the register's cart. A tab line never passes that gate, so it would be sold with no serial recorded. |
 | The register charges `totalDue` (time + tab) | The server always bills both. A screen that adds only the play time sends a short amount and the whole bill is thrown away as `PAYMENT_MISMATCH` in front of the customer. |
+| Discounts preview the combined product basket | Wholesale tiers, product promotions, member tiers, coupons, points, and manual discounts use the tab products plus any products added at checkout. Both registers quote that basket through `createOrderInTx()` in an always-rolled-back transaction and recheck it immediately before payment. Play time and service/extra lines remain outside the discount base. A coupon is rejected when that product base is zero, so a service-only bill cannot consume a redemption for ฿0. |
 | Cancelling a table releases every reserved line | A group that walks out must not keep stock reserved against a table nobody is sitting at. Only a group that has actually **been paid** blocks cancellation. |
 
 The tab's value lives in `tab_amount`, separate from `amount_due`, which `9.89` defined as the

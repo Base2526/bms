@@ -129,6 +129,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       couponCode: coupon?.code ?? null,
       manualDiscount: manualDiscount?.amount ?? null,
       pointsToRedeem,
+      boardGameBillingGroupId: null,
+      lines: null,
+      extraLines: null,
     }),
     [
       coupon?.code,
