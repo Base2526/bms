@@ -2398,6 +2398,13 @@ function mapPassPlan(row: any): BoardGamePassPlan {
 }
 
 function mapMemberPass(row: any): BoardGameMemberPass {
+  const expiresAt = isoRequired(row.expires_at, "วันหมดอายุแพ็กเกจ");
+  // Coverage and activeOnly already use expires_at as authority. Return the same truth to the UI
+  // even before a maintenance job materialises EXPIRED on the row; showing ACTIVE here invited a
+  // counter operator to promise a benefit the closing transaction would correctly refuse.
+  const status = row.status === "ACTIVE" && new Date(expiresAt).getTime() <= Date.now()
+    ? "EXPIRED"
+    : row.status;
   return {
     id: row.id,
     locationId: row.location_id ?? null,
@@ -2411,8 +2418,8 @@ function mapMemberPass(row: any): BoardGameMemberPass {
     remainingMinutes: row.remaining_minutes == null ? null : Number(row.remaining_minutes),
     pricePaid: Number(row.price_paid),
     startsAt: isoRequired(row.starts_at, "วันเริ่มใช้แพ็กเกจ"),
-    expiresAt: isoRequired(row.expires_at, "วันหมดอายุแพ็กเกจ"),
-    status: row.status,
+    expiresAt,
+    status,
     orderId: row.order_id ?? null,
     cancelReason: row.cancel_reason ?? null,
     note: row.note ?? null,

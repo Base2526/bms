@@ -227,6 +227,15 @@ test("minutes are spent when the bill is frozen, never while previewing it", () 
   assert.match(cancelBody, /await reversePassMinutesForGroupInTx\(/);
 });
 
+test("an elapsed pass is never presented to the counter as ACTIVE", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const map = service.slice(
+    service.indexOf("function mapMemberPass"),
+    service.indexOf("export async function listBoardGamePassPlans"),
+  );
+  assert.match(map, /row\.status === "ACTIVE"[\s\S]*?new Date\(expiresAt\)[\s\S]*?"EXPIRED"/);
+});
+
 test("only a fully covered board-game bill may settle with no payment at all", () => {
   const pos = read("apps/web/lib/bms/pos.ts");
 
