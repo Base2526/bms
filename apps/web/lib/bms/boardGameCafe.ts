@@ -587,7 +587,7 @@ export async function listBoardGameLocations(tenantId: string, actorUserId: stri
 async function boardGameEntityLocation(
   tenantId: string,
   entityIdInput: string,
-  kind: "area" | "table" | "session" | "billingGroup" | "copy" | "loan"
+  kind: "area" | "table" | "session" | "billingGroup" | "copy" | "loan" | "passPlan" | "memberPass"
 ): Promise<string | null> {
   const entityId = uuid(entityIdInput, `${kind}Id`);
   const statements = {
@@ -601,6 +601,14 @@ async function boardGameEntityLocation(
              JOIN bms_board_game_sessions s
                ON s.tenant_id = g.tenant_id AND s.id = g.session_id
             WHERE g.tenant_id = $1 AND g.id = $2`,
+    // แพ็กเกจของสาขาเดียว (`9.92`) — `NULL` แปลว่าขายได้ทุกสาขา ไม่ใช่ "ไม่พบ" · ผู้เรียก
+    // แยกสองอย่างนี้ด้วย `boardGamePlanIsBranchScoped()` ไม่ใช่ด้วยค่าที่คืนมาตัวเดียว
+    passPlan: `SELECT location_id FROM bms_board_game_pass_plans WHERE tenant_id = $1 AND id = $2`,
+    memberPass: `SELECT plan.location_id
+                   FROM bms_board_game_member_passes pass
+                   LEFT JOIN bms_board_game_pass_plans plan
+                     ON plan.tenant_id = pass.tenant_id AND plan.id = pass.plan_id
+                  WHERE pass.tenant_id = $1 AND pass.id = $2`,
   } as const;
   const result = await query<{ location_id: string }>(statements[kind], [tenantId, entityId]);
   return result.rows[0]?.location_id ?? null;
@@ -618,6 +626,22 @@ export const locationOfBoardGameCopy = (tenantId: string, copyId: string) =>
   boardGameEntityLocation(tenantId, copyId, "copy");
 export const locationOfBoardGameLoan = (tenantId: string, loanId: string) =>
   boardGameEntityLocation(tenantId, loanId, "loan");
+/**
+ * สาขาของแพ็กเกจ (`9.92`) — `null` มีสองความหมายที่ห้ามยุบเป็นอันเดียว: แพ็กเกจที่ขายได้
+ * ทุกสาขา กับแพ็กเกจที่ไม่มีอยู่จริง · ผู้เรียกต้องตรวจว่ามีแถวอยู่ก่อนด้วย `boardGamePlanExists`
+ */
+export const locationOfBoardGamePassPlan = (tenantId: string, planId: string) =>
+  boardGameEntityLocation(tenantId, planId, "passPlan");
+export const locationOfBoardGameMemberPass = (tenantId: string, passId: string) =>
+  boardGameEntityLocation(tenantId, passId, "memberPass");
+
+export async function boardGamePlanExists(tenantId: string, planId: string): Promise<boolean> {
+  const result = await query(
+    `SELECT 1 FROM bms_board_game_pass_plans WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, uuid(planId, "planId")]
+  );
+  return Boolean(result.rowCount);
+}
 
 export async function upsertBoardGameTimeRate(
   tenantId: string,
@@ -2393,15 +2417,29 @@ function mapMemberPass(row: any): BoardGameMemberPass {
   };
 }
 
-export async function listBoardGamePassPlans(tenantId: string): Promise<BoardGamePassPlan[]> {
+/**
+ * แคตตาล็อกแพ็กเกจ · `visibleLocationIds` = สาขาที่ผู้เรียกดูแลอยู่จริง
+ *
+ * แพ็กเกจของสาขา (`location_id` มีค่า) ต้องไม่โผล่ให้คนที่ไม่ได้ดูแลสาขานั้นเห็น ไม่งั้นเขาจะ
+ * เลือกมันไปขายได้ · แพ็กเกจระดับร้าน (`NULL`) เห็นได้ทุกคนตามนิยามของมันเอง ·
+ * ไม่ส่งลิสต์มา = ไม่กรอง (ใช้กับเส้นทางภายในและเทสที่ขอบเขตถูกตัดสินมาก่อนแล้ว)
+ */
+export async function listBoardGamePassPlans(
+  tenantId: string,
+  visibleLocationIds?: string[] | null
+): Promise<BoardGamePassPlan[]> {
   await requireBoardGameCafeTenant({ query }, tenantId);
+  const scope = Array.isArray(visibleLocationIds)
+    ? visibleLocationIds.map((id) => uuid(id, "locationId"))
+    : null;
   const result = await query(
     `SELECT id, location_id, code, name, kind, price, duration_days, included_minutes,
             active, sort_order, note
        FROM bms_board_game_pass_plans
       WHERE tenant_id = $1
+        AND ($2::uuid[] IS NULL OR location_id IS NULL OR location_id = ANY($2::uuid[]))
       ORDER BY active DESC, sort_order, name`,
-    [tenantId]
+    [tenantId, scope]
   );
   return result.rows.map(mapPassPlan);
 }
@@ -2482,6 +2520,65 @@ const MEMBER_PASS_COLUMNS = `p.id, p.customer_id, p.plan_id, p.plan_code, p.plan
   p.included_minutes, p.remaining_minutes, p.price_paid, p.starts_at, p.expires_at,
   p.status, p.order_id, p.cancel_reason, p.note`;
 
+/**
+ * ยอดคงค้างของแพ็กเกจ + ตัวจับ drift ของยอดที่แคชไว้ (`9.92`)
+ *
+ * `9.92` ประกาศไว้ที่ migration เองว่า "ยอดนาทีเป็น cache ของ ledger — ตัวนับที่บางเส้นทางลืม
+ * อัปเดตจะเพี้ยนเงียบ ๆ แล้วไม่มีใครรู้ว่าเริ่มเมื่อไร" แต่ไม่มีอะไรทำให้ข้อนั้น *ตรวจได้จริง* ·
+ * แต้ม (`7.96`) และเครดิตร้าน (`8.9`) ต่างก็มี `balanceMismatchCount` ของตัวเอง นี่คือตัวเดียวกัน
+ *
+ * `outstandingMinutes` คือเวลาที่ร้าน "ติดค้าง" สมาชิกอยู่ — แพ็กเกจไม่อั้นไม่มีจำนวนนาทีให้นับ
+ * จึงรายงานแยกเป็นจำนวนใบ ไม่ใช่ยัดเป็น 0 ซึ่งอ่านว่า "ใช้หมดแล้ว"
+ */
+export type BoardGamePassOutstanding = {
+  activeMinutePasses: number;
+  activeUnlimitedPasses: number;
+  outstandingMinutes: number;
+  expiringIn30Days: number;
+  balanceMismatchCount: number;
+};
+
+export async function boardGamePassOutstanding(
+  tenantId: string
+): Promise<BoardGamePassOutstanding> {
+  await requireBoardGameCafeTenant({ query }, tenantId);
+  const result = await query<{
+    minute_passes: string; unlimited_passes: string; outstanding: string;
+    expiring: string; mismatch: string;
+  }>(
+    `SELECT
+       (SELECT COUNT(*) FROM bms_board_game_member_passes
+         WHERE tenant_id = $1 AND status = 'ACTIVE' AND kind = 'MINUTES'
+           AND expires_at > now()) AS minute_passes,
+       (SELECT COUNT(*) FROM bms_board_game_member_passes
+         WHERE tenant_id = $1 AND status = 'ACTIVE' AND kind = 'UNLIMITED'
+           AND expires_at > now()) AS unlimited_passes,
+       COALESCE((SELECT SUM(remaining_minutes) FROM bms_board_game_member_passes
+         WHERE tenant_id = $1 AND status = 'ACTIVE' AND remaining_minutes IS NOT NULL
+           AND expires_at > now()), 0) AS outstanding,
+       COALESCE((SELECT SUM(remaining_minutes) FROM bms_board_game_member_passes
+         WHERE tenant_id = $1 AND status = 'ACTIVE' AND remaining_minutes IS NOT NULL
+           AND expires_at > now() AND expires_at <= now() + interval '30 days'), 0) AS expiring,
+       -- ยอดที่แคชไว้ต้องเท่ากับผลรวมของ ledger เสมอ · ledger เก็บขาใช้เป็นเลขติดลบ ขาคืนเป็นบวก
+       -- แพ็กเกจไม่อั้นไม่มียอดให้เทียบ (NULL) จึงไม่นับเข้า drift
+       (SELECT COUNT(*) FROM bms_board_game_member_passes p
+         WHERE p.tenant_id = $1 AND p.remaining_minutes IS NOT NULL
+           AND p.remaining_minutes <> GREATEST(0, COALESCE(p.included_minutes, 0) + COALESCE((
+             SELECT SUM(l.minutes) FROM bms_board_game_pass_ledger l
+              WHERE l.tenant_id = p.tenant_id AND l.pass_id = p.id AND l.kind <> 'ISSUE'), 0))
+         ) AS mismatch`,
+    [tenantId]
+  );
+  const row = result.rows[0];
+  return {
+    activeMinutePasses: Number(row?.minute_passes ?? 0),
+    activeUnlimitedPasses: Number(row?.unlimited_passes ?? 0),
+    outstandingMinutes: Number(row?.outstanding ?? 0),
+    expiringIn30Days: Number(row?.expiring ?? 0),
+    balanceMismatchCount: Number(row?.mismatch ?? 0),
+  };
+}
+
 export async function listBoardGameMemberPasses(
   tenantId: string,
   input: { customerId?: string | null; activeOnly?: boolean | null } = {}
@@ -2518,6 +2615,8 @@ export async function issueBoardGameMemberPass(
     startsAt?: string | Date | null;
     orderId?: string | null;
     note?: string | null;
+    /** สาขาที่กำลังขาย — ใช้ตรวจกับแพ็กเกจที่ผูกสาขาไว้ · ผู้เรียกต้อง derive เอง ห้ามรับจาก body */
+    locationId?: string | null;
   },
   actorUserId?: string | null
 ): Promise<BoardGameMemberPass & { replayed: boolean }> {
@@ -2553,12 +2652,20 @@ export async function issueBoardGameMemberPass(
     );
     if (!member.rowCount) throw new Error("ไม่พบลูกค้ารายนี้ในร้าน");
     const plan = await client.query<any>(
-      `SELECT id, code, name, kind, price, duration_days, included_minutes
+      `SELECT id, location_id, code, name, kind, price, duration_days, included_minutes
          FROM bms_board_game_pass_plans
-        WHERE tenant_id = $1 AND id = $2 AND active`,
+        WHERE tenant_id = $1 AND id = $2 AND active
+        FOR UPDATE`,
       [tenantId, planId]
     );
     if (!plan.rowCount) throw new Error("ไม่พบแพ็กเกจที่เปิดขายอยู่");
+    // `9.92` ประกาศไว้ที่คอลัมน์เองว่า "มีค่า = แพ็กเกจของสาขานั้นสาขาเดียว" · ด่านนั้นต้องอยู่
+    // ตรงที่เงินเกิด ไม่ใช่เฉพาะที่ route — ผู้เรียกที่ไม่ผ่าน route (เทส, งานภายใน, เส้นทางใหม่
+    // ในอนาคต) จะขายข้ามสาขาได้เงียบ ๆ ถ้าด่านอยู่ข้างนอกอย่างเดียว
+    const planLocationId: string | null = plan.rows[0].location_id ?? null;
+    if (planLocationId && input.locationId && uuid(input.locationId, "locationId") !== planLocationId) {
+      throw new Error("แพ็กเกจนี้ขายได้เฉพาะสาขาที่ผูกไว้");
+    }
     const row = plan.rows[0];
     const startsAt = requestedStart ?? new Date();
     const expiresAt = boardGamePassExpiry(startsAt, Number(row.duration_days));

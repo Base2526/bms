@@ -58,6 +58,14 @@ type SessionDetail = OpenSession & {
  * บัตรที่ร้านถือไว้ค้ำกล่องเกม (`9.93`) — เลขเต็มไม่เคยมาถึงรูปนี้ · มีแต่สี่ตัวท้ายไว้จับคู่กับ
  * บัตรในลิ้นชัก และการอ่านเลขกลับออกมาเป็นคำขอของตัวเองที่ต้องมี `board_game.identity.reveal`
  */
+/**
+ * เวลาที่ร้านติดค้างสมาชิกอยู่ + ตัวจับ drift ของยอดที่แคชไว้ (`9.92`)
+ * — รูปเดียวกับ `balanceMismatchCount` ของแต้มและเครดิตร้าน
+ */
+type PassOutstanding = {
+  activeMinutePasses: number; activeUnlimitedPasses: number;
+  outstandingMinutes: number; expiringIn30Days: number; balanceMismatchCount: number;
+};
 type IdentityHold = {
   id: string; loanId: string | null; documentKind: string;
   holderName: string | null; documentNumberTail: string | null; hasDocumentNumber: boolean;
@@ -124,6 +132,7 @@ export default function BoardGamePage() {
   const [copyTitle, setCopyTitle] = useState<GameTitle | null>(null);
   const [passPlans, setPassPlans] = useState<PassPlan[]>([]);
   const [memberPasses, setMemberPasses] = useState<MemberPass[]>([]);
+  const [passOutstanding, setPassOutstanding] = useState<PassOutstanding | null>(null);
   const [planModal, setPlanModal] = useState<PassPlan | "new" | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
@@ -153,9 +162,12 @@ export default function BoardGamePage() {
   // แพ็กเกจสมาชิก (`9.92`) — แคตตาล็อกที่ร้านขาย และสัญญาที่สมาชิกถืออยู่
   const refreshPasses = useCallback(async () => {
     if (!canManageSession) return;
-    const data = await api<{ plans: PassPlan[]; passes: MemberPass[] }>("/api/bms/board-game/passes");
+    const data = await api<{ plans: PassPlan[]; passes: MemberPass[]; outstanding: PassOutstanding }>(
+      "/api/bms/board-game/passes"
+    );
     setPassPlans(data.plans);
     setMemberPasses(data.passes);
+    setPassOutstanding(data.outstanding ?? null);
   }, [canManageSession]);
 
   async function savePlan(values: any) {
@@ -673,6 +685,45 @@ export default function BoardGamePage() {
           ) },
           { key: "passes", label: t("admin_board_game.tab_passes"), forceRender: true, children: (
             <div className={styles.settingsGrid}>
+              {/* เวลาที่ร้านติดค้างสมาชิกอยู่ — ต้องส่งให้บัญชีก่อนปิดงบ เหมือนแต้มและเครดิตร้าน ·
+                  `balanceMismatchCount` ต้องเป็น 0 เสมอ ไม่ 0 = มีเส้นทางเขียนที่ลืมคิดยอดใหม่
+                  จาก ledger แล้ว **ห้ามปิดงบ** จนกว่าจะรู้ว่าเริ่มเพี้ยนตรงไหน */}
+              {passOutstanding && (
+                <section className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <Typography.Title level={4}>{t("admin_board_game.pass_outstanding_title")}</Typography.Title>
+                  </div>
+                  <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 4 }} items={[
+                    {
+                      key: "minutes",
+                      label: t("admin_board_game.pass_outstanding_minutes"),
+                      children: t("admin_board_game.pass_minutes_of", { minutes: passOutstanding.outstandingMinutes }),
+                    },
+                    {
+                      key: "unlimited",
+                      // ไม่อั้นไม่มีจำนวนนาทีให้นับ — รายงานเป็นจำนวนใบ ไม่ใช่ยัดเป็น 0
+                      label: t("admin_board_game.pass_outstanding_unlimited"),
+                      children: passOutstanding.activeUnlimitedPasses,
+                    },
+                    {
+                      key: "expiring",
+                      label: t("admin_board_game.pass_outstanding_expiring"),
+                      children: t("admin_board_game.pass_minutes_of", { minutes: passOutstanding.expiringIn30Days }),
+                    },
+                    {
+                      key: "mismatch",
+                      label: t("admin_board_game.pass_outstanding_mismatch"),
+                      children: passOutstanding.balanceMismatchCount === 0
+                        ? <Tag color="green">0</Tag>
+                        : <Tag color="red">{passOutstanding.balanceMismatchCount}</Tag>,
+                    },
+                  ]} />
+                  {passOutstanding.balanceMismatchCount > 0 && (
+                    <Alert type="error" showIcon closable
+                      message={t("admin_board_game.pass_outstanding_mismatch_warning")} />
+                  )}
+                </section>
+              )}
               <section className={styles.panel}>
                 <div className={styles.panelHeader}>
                   <div>
@@ -691,6 +742,15 @@ export default function BoardGamePage() {
                     render: (_, row) => row.kind === "UNLIMITED"
                       ? t("admin_board_game.pass_unlimited")
                       : t("admin_board_game.pass_minutes_of", { minutes: row.includedMinutes ?? 0 }),
+                  },
+                  {
+                    // แพ็กเกจของสาขาที่ขายได้เฉพาะสาขานั้น (`9.92`) — ไม่บอกก็มองไม่ออกว่าทำไม
+                    // แพ็กเกจใบหนึ่งขายที่นี่ไม่ได้
+                    title: t("admin_board_game.pass_plan_branch"),
+                    render: (_, row) => row.locationId
+                      ? (locations.find((location) => location.id === row.locationId)?.name
+                         ?? t("admin_board_game.pass_plan_branch_unknown"))
+                      : t("admin_board_game.pass_plan_all_branches"),
                   },
                   { title: t("admin_board_game.price"), render: (_, row) => `฿${row.price.toFixed(2)}` },
                   { title: t("admin_board_game.pass_duration"), render: (_, row) => t("admin_board_game.pass_days", { days: row.durationDays }) },
@@ -1006,6 +1066,12 @@ export default function BoardGamePage() {
         <Form form={planForm} layout="vertical" onFinish={savePlan}
           initialValues={{ kind: "UNLIMITED", price: 0, durationDays: 30, active: true, sortOrder: 0 }}>
           <Form.Item name="name" label={t("admin_board_game.pass_plan_name")} rules={[{ required: true }]}><Input /></Form.Item>
+          {/* ว่าง = ขายได้ทุกสาขา · เลือกสาขา = แพ็กเกจของสาขานั้นสาขาเดียว (`9.92` ประกาศกฎนี้
+              ไว้ที่คอลัมน์เอง) · ตัวเลือกมีเฉพาะสาขาที่บัญชีนี้ดูแล ไม่งั้นจะผูกให้สาขาที่ตัวเองแตะไม่ได้ */}
+          <Form.Item name="locationId" label={t("admin_board_game.pass_plan_branch")}>
+            <Select allowClear placeholder={t("admin_board_game.pass_plan_all_branches")}
+              options={locations.map((location) => ({ value: location.id, label: location.name }))} />
+          </Form.Item>
           <div className={styles.formGrid}>
             <Form.Item name="kind" label={t("admin_board_game.pass_kind")}>
               <Select options={["UNLIMITED", "MINUTES"].map((value) => ({

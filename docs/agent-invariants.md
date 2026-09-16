@@ -668,6 +668,26 @@ playable game library. The operating brief is
   twice spends nothing twice and cancelling a closed table gives the minutes back. A fully covered
   bill totals ฿0 and is the **only** sale allowed to settle with no payment lines — every other
   channel still requires one, and the amount-equals-payments check still decides.
+- **A branch-scoped pass is a rule the server keeps.** `bms_board_game_pass_plans.location_id`
+  declares "this pass belongs to that branch only" — `NULL` means every branch. The check lives in
+  `issueBoardGameMemberPass` as well as the route, because a caller that skips the route (a test, an
+  internal job, a future surface) would otherwise sell across branches with nothing to say so. The
+  catalogue a screen receives is filtered the same way: offering a plan that will be refused on
+  submit is a screen lying to the person using it.
+- **The pass minute balance is a cache, and the cache is measured.**
+  `boardGamePassOutstanding()` recomputes every `MINUTES` balance from `bms_board_game_pass_ledger`
+  and reports `balanceMismatchCount`, exactly as loyalty points (`7.96`) and store credit (`8.9`)
+  do. An unlimited pass has no balance to compare and is counted as contracts, not as zero minutes.
+  `balanceMismatchCount` must be 0 before books close; anything else means some write path stopped
+  recomputing and nobody can say when it started. Fixtures must reach their state the way the
+  system does — writing a balance with no matching ledger row makes the guard report a drift that
+  is not real, and a guard that cries wolf is one nobody reads.
+- **Everything the open/read/close/cancel paths of a table touch is declared in
+  `scripts/schemaReadiness.mts`.** `db/checks/schema-readiness.sql` is the only tool that runs on
+  the production server (no Node there). "It is gated by the archetype anyway" is not a reason to
+  leave a migration out: once a shop *is* a board-game cafe every one of those paths reads those
+  tables on every action, so an undeclared file makes the check answer "ready" for a database that
+  cannot open a single table — which CLAUDE.md already calls worse than having no check.
 - **Alerts are a projection of time.** `ENDING_SOON` and `OVERDUE` are computed from `expected_end_at`,
   `alert_before_minutes`, and current time. They are not a mutable status column and cannot replace a
   fresh authoritative read.

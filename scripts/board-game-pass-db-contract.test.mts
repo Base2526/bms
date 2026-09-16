@@ -22,6 +22,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
 import {
+  boardGamePassOutstanding,
   cancelBoardGameMemberPass,
   cancelBoardGameSession,
   closeBoardGameSessionForBilling,
@@ -29,6 +30,7 @@ import {
   issueBoardGameMemberPass,
   listBoardGameMemberPasses,
   listBoardGamePassPlans,
+  locationOfBoardGamePassPlan,
   openBoardGameSession,
   upsertBoardGamePassPlan,
 } from "../apps/web/lib/bms/boardGameCafe.ts";
@@ -426,10 +428,18 @@ test("a member holding a spent bundle and a fresh one is covered by the one that
   const spent = await issueBoardGameMemberPass(
     tenantId, { customerId: stacked, planId: small.id, idempotencyKey: key("issue") }, staffId
   );
+  // ⚠️ ปั้นใบที่ใช้หมดแล้วต้องเขียน ledger ให้ตรงกันด้วย — ตั้งแต่ยอดเป็น cache ของ ledger
+  // (`9.92`) การตั้งยอดเป็น 0 เฉย ๆ คือการปั้นสถานะที่ระบบจริงไปถึงไม่ได้ แล้วตัวจับ drift
+  // จะรายงานว่าเพี้ยน ทั้งที่ของจริงไม่ได้เพี้ยน — fixture ที่โกหกทำให้ด่านจริงเลิกมีความหมาย
   await query(
     `UPDATE bms_board_game_member_passes SET remaining_minutes = 0
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, spent.id]
+  );
+  await query(
+    `INSERT INTO bms_board_game_pass_ledger (tenant_id, pass_id, kind, minutes, note)
+     VALUES ($1,$2,'ADJUST',$3,'FAKE spent before this test')`,
+    [tenantId, spent.id, -60]
   );
   const fresh = await issueBoardGameMemberPass(
     tenantId, { customerId: stacked, planId: small.id, idempotencyKey: key("issue") }, staffId
@@ -444,6 +454,94 @@ test("a member holding a spent bundle and a fresh one is covered by the one that
   assert.equal(Number((await passRow(fresh.id)).remaining_minutes), 0);
   assert.equal(Number((await passRow(spent.id)).remaining_minutes), 0, "ใบที่หมดแล้วต้องไม่ติดลบ");
   await payGroup(closed.groups[0].id, 0);
+});
+
+test("a pass built for one branch cannot be sold at another", async () => {
+  // `9.92` ประกาศกฎนี้ไว้ที่คอลัมน์เอง — ก่อนรอบนี้ไม่มีอะไรบังคับเลย: คอลัมน์ที่ประกาศกฎแล้ว
+  // ไม่มีใครตรวจแย่กว่าไม่มีคอลัมน์ เพราะคนอ่านเชื่อว่ามีการกันอยู่
+  const otherBranch = (await query<{ id: string }>(
+    `INSERT INTO bms_locations (tenant_id, code, name, branch_code)
+     VALUES ($1,'BR2',$2,'00002') RETURNING id`,
+    [tenantId, `FAKE ${TAG} second branch`]
+  )).rows[0].id;
+
+  const branchPlan = await upsertBoardGamePassPlan(
+    tenantId,
+    { name: "FAKE branch-only pass", kind: "UNLIMITED", price: 500, durationDays: 30, locationId: otherBranch },
+    staffId
+  );
+  assert.equal(await locationOfBoardGamePassPlan(tenantId, branchPlan.id), otherBranch);
+
+  const buyer = await newMember("branch-scope");
+  await assert.rejects(
+    () => issueBoardGameMemberPass(
+      tenantId,
+      { customerId: buyer, planId: branchPlan.id, idempotencyKey: key("issue-wrong"), locationId },
+      staffId
+    ),
+    /เฉพาะสาขา/,
+    "ขายแพ็กเกจของอีกสาขาที่สาขานี้ไม่ได้",
+  );
+  // ...แต่ขายที่สาขาของมันเองได้ตามปกติ
+  const ok = await issueBoardGameMemberPass(
+    tenantId,
+    { customerId: buyer, planId: branchPlan.id, idempotencyKey: key("issue-right"), locationId: otherBranch },
+    staffId
+  );
+  assert.equal(ok.status, "ACTIVE");
+
+  // แพ็กเกจระดับร้าน (location_id เป็น NULL) ขายได้ทุกสาขาตามนิยามของมันเอง
+  const shopWide = (await listBoardGamePassPlans(tenantId)).find((plan) => plan.locationId == null);
+  assert.ok(shopWide, "ต้องมีแพ็กเกจระดับร้านอยู่ในชุดทดสอบ");
+  const anywhere = await issueBoardGameMemberPass(
+    tenantId,
+    { customerId: buyer, planId: shopWide.id, idempotencyKey: key("issue-shopwide"), locationId },
+    staffId
+  );
+  assert.equal(anywhere.status, "ACTIVE");
+
+  // แคตตาล็อกที่กรองตามสาขาต้องซ่อนแพ็กเกจของสาขาอื่น แต่ยังเห็นแพ็กเกจระดับร้าน
+  const visibleHere = await listBoardGamePassPlans(tenantId, [locationId]);
+  assert.ok(
+    !visibleHere.some((plan) => plan.id === branchPlan.id),
+    "แพ็กเกจของอีกสาขาต้องไม่โผล่ให้เลือก — จอที่ยื่นตัวเลือกที่กดแล้วโดนปฏิเสธคือจอที่หลอกคนใช้",
+  );
+  assert.ok(visibleHere.some((plan) => plan.id === shopWide.id), "แพ็กเกจระดับร้านต้องยังเห็นได้");
+});
+
+test("the cached minute balance is measured against the ledger, not trusted", async () => {
+  const before = await boardGamePassOutstanding(tenantId);
+  assert.equal(
+    before.balanceMismatchCount,
+    0,
+    "สถานะที่เทสชุดนี้สร้างไว้ต้องเป็นสถานะที่ระบบจริงไปถึงได้ — drift ตรงนี้คือ fixture ที่โกหก",
+  );
+  assert.ok(before.activeUnlimitedPasses > 0, "ต้องนับแพ็กเกจไม่อั้นเป็นจำนวนใบ ไม่ใช่ยัดเป็น 0 นาที");
+
+  // ทำให้ยอดที่แคชไว้เพี้ยนโดยไม่แตะ ledger — นี่คือรูปของบั๊กที่กฎข้อนี้มีไว้จับ
+  const bundle = (await query<{ id: string; remaining_minutes: string }>(
+    `SELECT id, remaining_minutes FROM bms_board_game_member_passes
+      WHERE tenant_id = $1 AND kind = 'MINUTES' AND remaining_minutes IS NOT NULL
+      ORDER BY created_at LIMIT 1`,
+    [tenantId]
+  )).rows[0];
+  assert.ok(bundle, "ต้องมีแพ็กเกจแบบโควตาให้ทดสอบ");
+  await query(
+    `UPDATE bms_board_game_member_passes SET remaining_minutes = remaining_minutes + 99
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, bundle.id]
+  );
+  assert.equal(
+    (await boardGamePassOutstanding(tenantId)).balanceMismatchCount,
+    1,
+    "ยอดที่ไม่ตรงกับ ledger ต้องถูกจับได้ ไม่ใช่เพี้ยนเงียบ ๆ",
+  );
+  await query(
+    `UPDATE bms_board_game_member_passes SET remaining_minutes = $3
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, bundle.id, Number(bundle.remaining_minutes)]
+  );
+  assert.equal((await boardGamePassOutstanding(tenantId)).balanceMismatchCount, 0);
 });
 
 test("teardown: the throwaway cafe leaves nothing behind", async () => {
