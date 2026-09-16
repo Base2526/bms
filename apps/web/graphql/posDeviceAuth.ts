@@ -17,8 +17,14 @@ function gqlError(
   code: BmsGraphqlClientErrorCode,
   extra: Record<string, unknown> = {},
 ): never {
+  // Resolver errors must stay in GraphQL `errors[]` so the native client can read
+  // `extensions.code`, `reason`, and the operator-facing message. Giving every
+  // non-auth error HTTP 403 makes Apollo treat CONFLICT/BAD_USER_INPUT/NOT_FOUND as
+  // an opaque network failure ("Response not successful") and discards the remedy.
+  // Only a rejected device credential is a transport-level authentication failure.
+  const transport = code === "UNAUTHENTICATED" ? { http: { status: 401 } } : {};
   throw mobileGraphqlError(message, code, {
-    http: { status: code === "UNAUTHENTICATED" ? 401 : 403 },
+    ...transport,
     ...extra,
   });
 }

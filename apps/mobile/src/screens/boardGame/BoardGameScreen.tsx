@@ -11,11 +11,15 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
-import { useFocusEffect } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import type {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { ScreenContainer } from '../../components/ScreenContainer';
@@ -49,9 +53,29 @@ import {
 } from '../../lib/operation';
 import type { BoardGameStackParamList } from '../../navigation/types';
 import { useSession } from '../../state/SessionContext';
+import { useShift } from '../../state/ShiftContext';
 import { useTheme } from '../../theme/ThemeProvider';
 
-type Props = NativeStackScreenProps<BoardGameStackParamList, 'BoardGame'>;
+type FloorProps = NativeStackScreenProps<BoardGameStackParamList, 'BoardGame'>;
+type OpenProps = NativeStackScreenProps<
+  BoardGameStackParamList,
+  'BoardGameOpen'
+>;
+type DetailProps = NativeStackScreenProps<
+  BoardGameStackParamList,
+  'BoardGameDetail'
+>;
+type BoardGameView =
+  | { kind: 'floor' }
+  | { kind: 'open'; tableId: string }
+  | { kind: 'detail'; sessionId: string };
+type WorkspaceProps = {
+  navigation: NativeStackNavigationProp<
+    BoardGameStackParamList,
+    keyof BoardGameStackParamList
+  >;
+  view: BoardGameView;
+};
 type Table =
   MobilePosBoardGameWorkspaceQuery['bmsPosBoardGameWorkspace']['floor']['tables'][number];
 type ParticipantDraft = {
@@ -64,6 +88,29 @@ type ParticipantDraft = {
   billingGroupNo: number;
 };
 type Member = MobilePosMembersQuery['bmsPosMemberSearch']['members'][number];
+
+const DURATION_PRESETS = [60, 90, 120, 180] as const;
+const ALERT_PRESETS = [5, 10, 15, 30] as const;
+
+function durationLabel(minutes: number) {
+  if (minutes === 60) return '1 ชม.';
+  if (minutes === 90) return '1.5 ชม.';
+  if (minutes % 60 === 0) return `${minutes / 60} ชม.`;
+  return `${minutes} นาที`;
+}
+
+function bahtLabel(amount: number) {
+  return Number.isInteger(amount)
+    ? amount.toLocaleString('th-TH')
+    : amount.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+}
+
+function rateLabel(name: string, pricePerHour: number) {
+  // ร้านเก่าบางแห่งบันทึกราคาไว้ในชื่ออัตราแล้ว อย่าต่อราคาให้ซ้ำบนปุ่ม
+  return /(?:฿|บาท)/.test(name)
+    ? name
+    : `${name} ฿${bahtLabel(pricePerHour)} / ชม.`;
+}
 
 /**
  * ป้ายชนิดเอกสาร (`9.93`) — ลิสต์เดียวกับ `BOARD_GAME_IDENTITY_KINDS` ของ service ·
@@ -101,14 +148,40 @@ function alertLabel(status: string | null | undefined) {
   return 'กำลังเล่น';
 }
 
-export default function BoardGameScreen({ navigation }: Props) {
+export default function BoardGameScreen({ navigation }: FloorProps) {
+  return (
+    <BoardGameWorkspace navigation={navigation} view={{ kind: 'floor' }} />
+  );
+}
+
+export function BoardGameOpenScreen({ navigation, route }: OpenProps) {
+  return (
+    <BoardGameWorkspace
+      navigation={navigation}
+      view={{ kind: 'open', tableId: route.params.tableId }}
+    />
+  );
+}
+
+export function BoardGameDetailScreen({ navigation, route }: DetailProps) {
+  return (
+    <BoardGameWorkspace
+      navigation={navigation}
+      view={{ kind: 'detail', sessionId: route.params.sessionId }}
+    />
+  );
+}
+
+function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const { colors, spacing, typography } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
   const { session } = useSession();
+  const shift = useShift();
+  const isFocused = useIsFocused();
   const credentials = session?.credentials;
   const inputCredentials = credentials ?? { cashierUserId: '', pin: '' };
   const [now, setNow] = useState(Date.now());
-  const [selectedSessionId, setSelectedSessionId] = useState('');
-  const [openingTable, setOpeningTable] = useState<Table | null>(null);
+  const selectedSessionId = view.kind === 'detail' ? view.sessionId : '';
   const [billingMode, setBillingMode] = useState<
     'OPEN_ENDED' | 'FIXED_DURATION'
   >('OPEN_ENDED');
@@ -118,6 +191,7 @@ export default function BoardGameScreen({ navigation }: Props) {
   const [participantName, setParticipantName] = useState('');
   const [participantRateId, setParticipantRateId] = useState('');
   const [participantGroup, setParticipantGroup] = useState('1');
+  const [participantCount, setParticipantCount] = useState(1);
   const [memberSearch, setMemberSearch] = useState('');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [participants, setParticipants] = useState<ParticipantDraft[]>([]);
@@ -187,10 +261,20 @@ export default function BoardGameScreen({ navigation }: Props) {
   );
 
   const data = workspace.data?.bmsPosBoardGameWorkspace;
+  const openingTable =
+    view.kind === 'open'
+      ? data?.floor.tables.find(table => table.id === view.tableId) ?? null
+      : null;
   const activeRates = useMemo(
     () => (data?.rates ?? []).filter(rate => rate.active),
     [data?.rates],
   );
+
+  useEffect(() => {
+    if (!participantRateId && activeRates[0]) {
+      setParticipantRateId(activeRates[0].id);
+    }
+  }, [activeRates, participantRateId]);
   const selectedSession = sessionQuery.data?.bmsPosBoardGameSession;
   const selectedTable = data?.floor.tables.find(
     table => table.id === selectedSession?.tableId,
@@ -220,19 +304,27 @@ export default function BoardGameScreen({ navigation }: Props) {
   // ครอบเฉพาะ "session ยังอยู่แต่จบแล้ว" · เคส "หา session ไม่เจอ" ไม่ต้องมีด่านที่นี่ เพราะ
   // `sessionAtScope()` โยน NOT_FOUND ไม่ได้คืน null และ Apollo ของแอปใช้ errorPolicy ปริยาย
   // (`none`) → `data` เป็น undefined ไม่ใช่ `{ bmsPosBoardGameSession: null }` · การ์ด
-  // "เปิดรายละเอียดโต๊ะไม่สำเร็จ" พร้อมปุ่มกลับผังรับเคสนั้นอยู่แล้ว และการเด้งกลับเองจะกลืน
-  // ข้อความที่บอกว่าทำไมเปิดไม่ได้
+  // "เปิดรายละเอียดโต๊ะไม่สำเร็จ" พร้อมปุ่มย้อนกลับมาตรฐานบนหัวจอรับเคสนั้นอยู่แล้ว
+  // และการเด้งกลับเองจะกลืนข้อความที่บอกว่าทำไมเปิดไม่ได้
   useEffect(() => {
     if (
       selectedSession &&
       !['OPEN', 'CLOSING'].includes(selectedSession.status)
     ) {
-      setSelectedSessionId('');
+      navigation.popToTop();
       workspace.refetch().catch(() => undefined);
     }
-  }, [selectedSession, workspace]);
+  }, [navigation, selectedSession, workspace]);
 
   useEffect(() => {
+    // route เปิด/รายละเอียดมี workspace ของตัวเองเพื่อให้ transition เป็น native stack จริง
+    // แต่ alert เวลาเป็นหน้าที่ของผังเท่านั้น ไม่เช่นนั้นการ push หน้าจะเตือนชุดเดิมซ้ำทันที
+    if (view.kind !== 'floor' || !isFocused) return;
+    const pending: Array<{
+      table: Table;
+      sessionId: string;
+      status: string;
+    }> = [];
     for (const table of data?.floor.tables ?? []) {
       const current = table.openSession;
       if (
@@ -243,21 +335,62 @@ export default function BoardGameScreen({ navigation }: Props) {
       const key = `${current.id}:${current.alertStatus}`;
       if (notified.current.has(key)) continue;
       notified.current.add(key);
+      pending.push({
+        table,
+        sessionId: current.id,
+        status: current.alertStatus ?? '',
+      });
+    }
+
+    if (pending.length === 0) return;
+
+    const message = pending
+      .map(
+        item =>
+          `${item.table.code} ${item.table.name} · ${alertLabel(item.status)}`,
+      )
+      .join('\n');
+    if (pending.length === 1) {
+      const item = pending[0];
       Alert.alert(
-        current.alertStatus === 'OVERDUE'
-          ? 'โต๊ะเกินเวลาแล้ว'
-          : 'โต๊ะใกล้หมดเวลา',
-        `${table.code} ${table.name} · ${alertLabel(current.alertStatus)}`,
+        item.status === 'OVERDUE' ? 'โต๊ะเกินเวลาแล้ว' : 'โต๊ะใกล้หมดเวลา',
+        message,
         [
           { text: 'รับทราบ' },
           {
             text: 'เปิดโต๊ะ',
-            onPress: () => setSelectedSessionId(current.id ?? ''),
+            onPress: () =>
+              navigation.push('BoardGameDetail', {
+                sessionId: item.sessionId,
+              }),
           },
         ],
       );
+      return;
     }
-  }, [data?.floor.tables]);
+
+    const overdueCount = pending.filter(
+      item => item.status === 'OVERDUE',
+    ).length;
+    const endingSoonCount = pending.length - overdueCount;
+    const summary = [
+      overdueCount > 0 ? `เกินเวลา ${overdueCount}` : '',
+      endingSoonCount > 0 ? `ใกล้หมดเวลา ${endingSoonCount}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    Alert.alert(
+      `แจ้งเตือนเวลา ${pending.length} โต๊ะ`,
+      `${summary}\n\n${message}`,
+      [
+        { text: 'รับทราบ' },
+        {
+          text: 'ดูผังโต๊ะ',
+          onPress: () => navigation.popToTop(),
+        },
+      ],
+    );
+  }, [data?.floor.tables, isFocused, navigation, view.kind]);
 
   const run = async (key: string, action: () => Promise<void>) => {
     if (!credentials || working) return;
@@ -301,25 +434,29 @@ export default function BoardGameScreen({ navigation }: Props) {
       Alert.alert('ข้อมูลผู้เล่นไม่ครบ', 'เลือกอัตราและระบุกลุ่มบิล 1-20');
       return;
     }
-    setParticipants(previous => [
-      ...previous,
-      {
-        key: `${Date.now()}-${previous.length}`,
-        customerId: selectedMember?.customerId ?? null,
-        memberNo: selectedMember?.memberNo ?? null,
-        displayName: participantName.trim(),
+    const count = selectedMember ? 1 : participantCount;
+    setParticipants(previous => {
+      const startedAt = Date.now();
+      const additions = Array.from({ length: count }, (_, index) => ({
+        key: `${startedAt}-${previous.length + index}`,
+        customerId: index === 0 ? selectedMember?.customerId ?? null : null,
+        memberNo: index === 0 ? selectedMember?.memberNo ?? null : null,
+        displayName: index === 0 ? participantName.trim() : '',
         rateId: rate.id,
         participantType: rate.customerType,
         billingGroupNo: group,
-      },
-    ]);
+      }));
+      return [...previous, ...additions];
+    });
     setParticipantName('');
+    setParticipantCount(1);
     setMemberSearch('');
     setSelectedMember(null);
   };
 
   const chooseMember = (member: Member) => {
     setSelectedMember(member);
+    setParticipantCount(1);
     setParticipantName(member.name);
     setMemberSearch(member.memberNo ?? member.name);
     const memberRate = activeRates.find(rate => rate.customerType === 'MEMBER');
@@ -329,15 +466,12 @@ export default function BoardGameScreen({ navigation }: Props) {
   const beginOpen = (table: Table) => {
     if (table.blocked) return;
     if (table.openSession?.id) {
-      setSelectedSessionId(table.openSession.id);
+      navigation.push('BoardGameDetail', {
+        sessionId: table.openSession.id,
+      });
       return;
     }
-    setOpeningTable(table);
-    setSelectedSessionId('');
-    setParticipants([]);
-    setMemberSearch('');
-    setSelectedMember(null);
-    setParticipantRateId(activeRates[0]?.id ?? '');
+    navigation.push('BoardGameOpen', { tableId: table.id });
   };
 
   const openBillingGroupCheckout = (billingGroupId: string) => {
@@ -356,11 +490,123 @@ export default function BoardGameScreen({ navigation }: Props) {
     },
   ];
 
+  const durationValue = Number(durationMinutes);
+  const alertValue = Number(alertBeforeMinutes);
+  const fixedDurationValid =
+    durationMinutes.trim() !== '' &&
+    Number.isInteger(durationValue) &&
+    durationValue >= 1 &&
+    durationValue <= 1440;
+  const alertValid =
+    alertBeforeMinutes.trim() !== '' &&
+    Number.isInteger(alertValue) &&
+    alertValue >= 0 &&
+    alertValue <= 120;
+  const selectedBillingGroup = Number(participantGroup);
+  const draftBillingGroups = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const participant of participants) {
+      counts.set(
+        participant.billingGroupNo,
+        (counts.get(participant.billingGroupNo) ?? 0) + 1,
+      );
+    }
+    if (
+      Number.isInteger(selectedBillingGroup) &&
+      selectedBillingGroup >= 1 &&
+      selectedBillingGroup <= 20 &&
+      !counts.has(selectedBillingGroup)
+    ) {
+      counts.set(selectedBillingGroup, 0);
+    }
+    return [...counts.entries()].sort(([left], [right]) => left - right);
+  }, [participants, selectedBillingGroup]);
+  const nextBillingGroup =
+    Math.max(0, ...draftBillingGroups.map(([group]) => group)) + 1;
+  const hourlyTotal = participants.reduce((sum, participant) => {
+    const rate = activeRates.find(item => item.id === participant.rateId);
+    return sum + Number(rate?.pricePerHour ?? 0);
+  }, 0);
+  const expectedEndAt =
+    billingMode === 'FIXED_DURATION' && fixedDurationValid
+      ? new Date(now + durationValue * 60000)
+      : null;
+  const expectedEndLabel = expectedEndAt
+    ? `${
+        expectedEndAt.toDateString() === new Date(now).toDateString()
+          ? ''
+          : 'พรุ่งนี้ '
+      }${expectedEndAt.toLocaleTimeString('th-TH', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`
+    : null;
+  const estimatedTotal =
+    billingMode === 'FIXED_DURATION' && fixedDurationValid
+      ? hourlyTotal * (durationValue / 60)
+      : null;
+  const openBlockReason = shift.loading
+    ? 'กำลังตรวจสอบสถานะกะ...'
+    : shift.error
+    ? 'ตรวจสอบสถานะกะไม่สำเร็จ กรุณาลองใหม่'
+    : !shift.isOpen
+    ? 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อนเริ่มจับเวลา'
+    : activeRates.length === 0
+    ? 'ยังไม่มีอัตราค่าเล่นที่เปิดใช้ กรุณาตั้งค่าจาก Admin ก่อน'
+    : participants.length === 0
+    ? 'เพิ่มผู้เล่นอย่างน้อย 1 คนก่อนเริ่มจับเวลา'
+    : billingMode === 'FIXED_DURATION' && !fixedDurationValid
+    ? 'ระบุเวลาที่ซื้อระหว่าง 1–1,440 นาที'
+    : billingMode === 'FIXED_DURATION' && !alertValid
+    ? 'ระบุเวลาแจ้งเตือนระหว่าง 0–120 นาที'
+    : null;
+  const wideOpenPanel = windowWidth >= 760;
+
+  const submitOpenSession = () => {
+    if (!openingTable || openBlockReason) return;
+    void run(`open-${openingTable.id}`, async () => {
+      const response = await openSession({
+        variables: {
+          input: {
+            ...inputCredentials,
+            idempotencyKey: retryKey(`open-${openingTable.id}`),
+            tableId: openingTable.id,
+            billingMode,
+            expectedDurationMinutes:
+              billingMode === 'FIXED_DURATION' ? durationValue : null,
+            alertBeforeMinutes: alertValue,
+            note: sessionNote.trim() || null,
+            participants: participants.map(item => ({
+              rateId: item.rateId,
+              customerId: item.customerId,
+              displayName: item.displayName || null,
+              participantType: item.participantType,
+              billingGroupNo: item.billingGroupNo,
+            })),
+          },
+        },
+      });
+      const result = response.data?.bmsPosOpenBoardGameSession;
+      const id = result?.id ?? result?.sessionId;
+      if (!id) throw new Error('เปิดโต๊ะไม่สำเร็จ');
+      navigation.replace('BoardGameDetail', { sessionId: id });
+    });
+  };
+
   return (
     <ScreenContainer>
       <ScreenHeader
-        title="Board Game"
+        title={
+          view.kind === 'open'
+            ? openingTable
+              ? `เปิดโต๊ะ ${openingTable.code}`
+              : 'เปิดโต๊ะ'
+            : view.kind === 'detail'
+            ? 'รายละเอียดโต๊ะ'
+            : 'Board Game'
+        }
         subtitle={`${session?.branch.name ?? '-'} · โต๊ะ เวลา ผู้เล่น และเกม`}
+        onBack={view.kind === 'floor' ? undefined : () => navigation.goBack()}
       />
       <ScrollView
         contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xxl }}
@@ -396,214 +642,719 @@ export default function BoardGameScreen({ navigation }: Props) {
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>
               เปิดรายละเอียดโต๊ะไม่สำเร็จ
             </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {sessionQuery.error.message}
+            </Text>
             <Button
-              label="กลับผัง"
-              variant="secondary"
-              onPress={() => setSelectedSessionId('')}
+              label="ลองใหม่"
+              variant="primary"
+              onPress={() => sessionQuery.refetch()}
             />
           </Card>
         ) : null}
         {openingTable ? (
           <Card style={{ gap: spacing.md }}>
             <View style={styles.between}>
-              <Text style={[typography.subtitle, { color: colors.text }]}>
-                เปิด {openingTable.code} · {openingTable.name}
-              </Text>
-              <Button
-                label="ปิด"
-                variant="ghost"
-                onPress={() => setOpeningTable(null)}
-              />
-            </View>
-            <View style={styles.wrap}>
-              <Button
-                label="ไม่กำหนดเวลา"
-                variant={billingMode === 'OPEN_ENDED' ? 'primary' : 'secondary'}
-                onPress={() => setBillingMode('OPEN_ENDED')}
-              />
-              <Button
-                label="กำหนดเวลา"
-                variant={
-                  billingMode === 'FIXED_DURATION' ? 'primary' : 'secondary'
-                }
-                onPress={() => setBillingMode('FIXED_DURATION')}
-              />
-            </View>
-            {billingMode === 'FIXED_DURATION' ? (
-              <View style={styles.row}>
-                <TextInput
-                  value={durationMinutes}
-                  onChangeText={setDurationMinutes}
-                  placeholder="นาทีที่ซื้อ"
-                  placeholderTextColor={colors.textSoft}
-                  keyboardType="number-pad"
-                  style={[inputStyle, styles.flex]}
-                />
-                <TextInput
-                  value={alertBeforeMinutes}
-                  onChangeText={setAlertBeforeMinutes}
-                  placeholder="เตือนก่อน"
-                  placeholderTextColor={colors.textSoft}
-                  keyboardType="number-pad"
-                  style={[inputStyle, styles.flex]}
-                />
+              <View style={styles.flex}>
+                <Text style={[typography.subtitle, { color: colors.text }]}>
+                  เปิดโต๊ะ {openingTable.code} · {openingTable.name}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textSoft }]}>
+                  {openingTable.seats} ที่นั่ง · ตั้งเวลา เพิ่มผู้เล่น
+                  และตรวจสรุปก่อนเริ่ม
+                </Text>
               </View>
-            ) : null}
-            <Text style={[typography.bodyStrong, { color: colors.text }]}>
-              ผู้เล่นและกลุ่มบิล
-            </Text>
-            <View style={styles.wrap}>
-              {activeRates.map(rate => (
-                <Button
-                  key={rate.id}
-                  label={`${rate.name} ฿${rate.pricePerHour}/ชม.`}
-                  variant={
-                    participantRateId === rate.id ? 'primary' : 'secondary'
-                  }
-                  onPress={() => setParticipantRateId(rate.id)}
-                />
-              ))}
             </View>
-            {activeRates.length === 0 ? (
-              <Text
-                style={[typography.captionStrong, { color: colors.danger }]}
-              >
-                ยังไม่มีอัตราค่าบริการที่เปิดใช้ กรุณาตั้งค่าจาก Admin
-              </Text>
-            ) : null}
-            <TextInput
-              value={memberSearch}
-              onChangeText={value => {
-                setMemberSearch(value);
-                setSelectedMember(null);
-              }}
-              placeholder="ค้นหาสมาชิกด้วยชื่อ เลขสมาชิก หรือเบอร์โทร"
-              placeholderTextColor={colors.textSoft}
-              style={inputStyle}
-            />
-            {memberSearch.trim().length >= 3 && !selectedMember ? (
-              <View style={styles.wrap}>
-                {(members.data?.bmsPosMemberSearch.members ?? [])
-                  .slice(0, 5)
-                  .map(member => (
-                    <Button
-                      key={member.customerId}
-                      label={`${member.name}${
-                        member.memberNo ? ` · ${member.memberNo}` : ''
-                      }`}
-                      variant="secondary"
-                      onPress={() => chooseMember(member)}
-                    />
-                  ))}
-              </View>
-            ) : null}
-            {selectedMember ? (
-              <Text
-                style={[typography.captionStrong, { color: colors.success }]}
-              >
-                สมาชิกที่เลือก: {selectedMember.name}
-                {selectedMember.memberNo ? ` · ${selectedMember.memberNo}` : ''}
-              </Text>
-            ) : null}
-            <View style={styles.row}>
-              <TextInput
-                value={participantName}
-                onChangeText={setParticipantName}
-                placeholder="ชื่อเรียก (ไม่บังคับ)"
-                placeholderTextColor={colors.textSoft}
-                style={[inputStyle, styles.flex]}
-              />
-              <TextInput
-                value={participantGroup}
-                onChangeText={setParticipantGroup}
-                placeholder="กลุ่มบิล"
-                placeholderTextColor={colors.textSoft}
-                keyboardType="number-pad"
-                style={[inputStyle, styles.groupInput]}
-              />
-            </View>
-            <Button
-              label="เพิ่มผู้เล่น"
-              variant="secondary"
-              disabled={!participantRateId}
-              onPress={addDraftParticipant}
-            />
-            {participants.map((participant, index) => {
-              const rate = activeRates.find(
-                item => item.id === participant.rateId,
-              );
-              return (
-                <View key={participant.key} style={styles.between}>
-                  <Text
-                    style={[typography.body, { color: colors.text, flex: 1 }]}
+            <View
+              style={[
+                styles.openPanel,
+                wideOpenPanel ? styles.openPanelWide : null,
+              ]}
+            >
+              <View style={styles.openForm}>
+                <View style={styles.sectionHeading}>
+                  <View
+                    style={[
+                      styles.stepBadge,
+                      { backgroundColor: colors.primary },
+                    ]}
                   >
-                    {participant.displayName || `ผู้เล่น ${index + 1}`}
-                    {participant.memberNo
-                      ? ` · ${participant.memberNo}`
-                      : ''} · {rate?.name ?? '-'} · บิล{' '}
-                    {participant.billingGroupNo}
-                  </Text>
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        { color: colors.primaryText },
+                      ]}
+                    >
+                      1
+                    </Text>
+                  </View>
+                  <View style={styles.flex}>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      เวลา
+                    </Text>
+                    <Text
+                      style={[typography.caption, { color: colors.textSoft }]}
+                    >
+                      เลือกว่าจะคิดค่าเล่นของโต๊ะนี้แบบไหน
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.wrap}>
                   <Button
-                    label="ลบ"
-                    variant="ghost"
-                    onPress={() =>
-                      setParticipants(rows =>
-                        rows.filter(item => item.key !== participant.key),
-                      )
+                    label="คิดตามเวลาจริง"
+                    accessibilityLabel="คิดตามเวลาจริง เริ่มจับเวลาเลยและคิดเงินตอนปิดโต๊ะ"
+                    variant={
+                      billingMode === 'OPEN_ENDED' ? 'primary' : 'secondary'
                     }
+                    onPress={() => setBillingMode('OPEN_ENDED')}
+                  />
+                  <Button
+                    label="ซื้อเวลาไว้ก่อน"
+                    accessibilityLabel="ซื้อเวลาไว้ก่อน ระบบเตือนก่อนหมดเวลา"
+                    variant={
+                      billingMode === 'FIXED_DURATION' ? 'primary' : 'secondary'
+                    }
+                    onPress={() => setBillingMode('FIXED_DURATION')}
                   />
                 </View>
-              );
-            })}
-            <TextInput
-              value={sessionNote}
-              onChangeText={setSessionNote}
-              placeholder="หมายเหตุโต๊ะ"
-              placeholderTextColor={colors.textSoft}
-              style={inputStyle}
-            />
-            <Button
-              label="เริ่มจับเวลา"
-              fullWidth
-              loading={working === `open-${openingTable.id}`}
-              disabled={
-                participants.length === 0 ||
-                (billingMode === 'FIXED_DURATION' &&
-                  Number(durationMinutes) <= 0)
-              }
-              onPress={() =>
-                run(`open-${openingTable.id}`, async () => {
-                  const response = await openSession({
-                    variables: {
-                      input: {
-                        ...inputCredentials,
-                        idempotencyKey: retryKey(`open-${openingTable.id}`),
-                        tableId: openingTable.id,
-                        billingMode,
-                        expectedDurationMinutes:
-                          billingMode === 'FIXED_DURATION'
-                            ? Number(durationMinutes)
-                            : null,
-                        alertBeforeMinutes: Number(alertBeforeMinutes),
-                        note: sessionNote.trim() || null,
-                        participants: participants.map(item => ({
-                          rateId: item.rateId,
-                          customerId: item.customerId,
-                          displayName: item.displayName || null,
-                          participantType: item.participantType,
-                          billingGroupNo: item.billingGroupNo,
-                        })),
-                      },
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {billingMode === 'OPEN_ENDED'
+                    ? 'เริ่มจับเวลาเลย แล้วคิดเงินตามเวลาจริงตอนปิดบิล'
+                    : 'กำหนดเวลาที่ซื้อไว้ ระบบจะแจ้งเตือนพนักงานก่อนหมดเวลา'}
+                </Text>
+
+                {billingMode === 'FIXED_DURATION' ? (
+                  <>
+                    <View style={styles.fieldBlock}>
+                      <Text
+                        style={[typography.bodyStrong, { color: colors.text }]}
+                      >
+                        เวลาที่ซื้อ
+                      </Text>
+                      <View style={styles.wrap}>
+                        {DURATION_PRESETS.map(minutes => (
+                          <Button
+                            key={minutes}
+                            label={durationLabel(minutes)}
+                            variant={
+                              durationValue === minutes
+                                ? 'primary'
+                                : 'secondary'
+                            }
+                            onPress={() => setDurationMinutes(String(minutes))}
+                          />
+                        ))}
+                        <Button
+                          label="กำหนดเอง"
+                          variant={
+                            DURATION_PRESETS.includes(
+                              durationValue as (typeof DURATION_PRESETS)[number],
+                            )
+                              ? 'secondary'
+                              : 'primary'
+                          }
+                          onPress={() => {
+                            if (
+                              DURATION_PRESETS.includes(
+                                durationValue as (typeof DURATION_PRESETS)[number],
+                              )
+                            )
+                              setDurationMinutes('');
+                          }}
+                        />
+                      </View>
+                      {!DURATION_PRESETS.includes(
+                        durationValue as (typeof DURATION_PRESETS)[number],
+                      ) ? (
+                        <View style={styles.fieldBlock}>
+                          <Text
+                            style={[
+                              typography.captionStrong,
+                              { color: colors.text },
+                            ]}
+                          >
+                            จำนวนนาที
+                          </Text>
+                          <TextInput
+                            accessibilityLabel="จำนวนนาทีที่ซื้อ"
+                            value={durationMinutes}
+                            onChangeText={setDurationMinutes}
+                            placeholder="เช่น 150"
+                            placeholderTextColor={colors.textSoft}
+                            keyboardType="number-pad"
+                            style={inputStyle}
+                          />
+                        </View>
+                      ) : null}
+                      {expectedEndLabel ? (
+                        <Text
+                          style={[
+                            typography.captionStrong,
+                            { color: colors.success },
+                          ]}
+                        >
+                          เริ่มตอนนี้ → หมดเวลาประมาณ {expectedEndLabel} น.
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.fieldBlock}>
+                      <Text
+                        style={[typography.bodyStrong, { color: colors.text }]}
+                      >
+                        เตือนก่อนหมดเวลา
+                      </Text>
+                      <Text
+                        style={[typography.caption, { color: colors.textSoft }]}
+                      >
+                        ผังโต๊ะจะแจ้งเตือนพนักงานตามเวลาที่เลือก
+                      </Text>
+                      <View style={styles.wrap}>
+                        {ALERT_PRESETS.map(minutes => (
+                          <Button
+                            key={minutes}
+                            label={`${minutes} นาที`}
+                            variant={
+                              alertValue === minutes ? 'primary' : 'secondary'
+                            }
+                            onPress={() =>
+                              setAlertBeforeMinutes(String(minutes))
+                            }
+                          />
+                        ))}
+                        <Button
+                          label="กำหนดเอง"
+                          variant={
+                            ALERT_PRESETS.includes(
+                              alertValue as (typeof ALERT_PRESETS)[number],
+                            )
+                              ? 'secondary'
+                              : 'primary'
+                          }
+                          onPress={() => {
+                            if (
+                              ALERT_PRESETS.includes(
+                                alertValue as (typeof ALERT_PRESETS)[number],
+                              )
+                            )
+                              setAlertBeforeMinutes('');
+                          }}
+                        />
+                      </View>
+                      {!ALERT_PRESETS.includes(
+                        alertValue as (typeof ALERT_PRESETS)[number],
+                      ) ? (
+                        <TextInput
+                          accessibilityLabel="แจ้งเตือนล่วงหน้ากี่นาที"
+                          value={alertBeforeMinutes}
+                          onChangeText={setAlertBeforeMinutes}
+                          placeholder="0–120 นาที"
+                          placeholderTextColor={colors.textSoft}
+                          keyboardType="number-pad"
+                          style={inputStyle}
+                        />
+                      ) : null}
+                    </View>
+                  </>
+                ) : null}
+
+                <View style={styles.divider} />
+                <View style={styles.sectionHeading}>
+                  <View
+                    style={[
+                      styles.stepBadge,
+                      { backgroundColor: colors.primary },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        { color: colors.primaryText },
+                      ]}
+                    >
+                      2
+                    </Text>
+                  </View>
+                  <View style={styles.flex}>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      ใครเล่นบ้าง
+                    </Text>
+                    <Text
+                      style={[typography.caption, { color: colors.textSoft }]}
+                    >
+                      ค่าเล่นคิดเป็นรายคน เลือกอัตราแล้วเพิ่มลงโต๊ะ
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.fieldBlock}>
+                  <Text
+                    style={[typography.captionStrong, { color: colors.text }]}
+                  >
+                    อัตราค่าเล่น
+                  </Text>
+                  <View style={styles.wrap}>
+                    {activeRates.map(rate => (
+                      <Button
+                        key={rate.id}
+                        label={rateLabel(rate.name, rate.pricePerHour)}
+                        variant={
+                          participantRateId === rate.id
+                            ? 'primary'
+                            : 'secondary'
+                        }
+                        onPress={() => setParticipantRateId(rate.id)}
+                      />
+                    ))}
+                  </View>
+                  {activeRates.length === 0 ? (
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        { color: colors.danger },
+                      ]}
+                    >
+                      ยังไม่มีอัตราค่าบริการที่เปิดใช้ กรุณาตั้งค่าจาก Admin
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.fieldBlock}>
+                  <Text
+                    style={[typography.captionStrong, { color: colors.text }]}
+                  >
+                    ค้นสมาชิก (ไม่บังคับ)
+                  </Text>
+                  <Text
+                    style={[typography.caption, { color: colors.textSoft }]}
+                  >
+                    พิมพ์อย่างน้อย 3 ตัว
+                    เลือกสมาชิกแล้วระบบจะใช้อัตราสมาชิกให้อัตโนมัติ
+                  </Text>
+                  <TextInput
+                    accessibilityLabel="ค้นหาสมาชิกด้วยชื่อ เลขสมาชิก หรือเบอร์โทร"
+                    value={memberSearch}
+                    onChangeText={value => {
+                      setMemberSearch(value);
+                      setSelectedMember(null);
+                    }}
+                    placeholder="ชื่อ เลขสมาชิก หรือเบอร์โทร"
+                    placeholderTextColor={colors.textSoft}
+                    style={inputStyle}
+                  />
+                  {memberSearch.trim().length >= 3 && !selectedMember ? (
+                    <View style={styles.wrap}>
+                      {(members.data?.bmsPosMemberSearch.members ?? [])
+                        .slice(0, 5)
+                        .map(member => (
+                          <Button
+                            key={member.customerId}
+                            label={`${member.name}${
+                              member.memberNo ? ` · ${member.memberNo}` : ''
+                            }`}
+                            variant="secondary"
+                            onPress={() => chooseMember(member)}
+                          />
+                        ))}
+                    </View>
+                  ) : null}
+                  {selectedMember ? (
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        { color: colors.success },
+                      ]}
+                    >
+                      เลือกแล้ว: {selectedMember.name}
+                      {selectedMember.memberNo
+                        ? ` · ${selectedMember.memberNo}`
+                        : ''}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.fieldBlock}>
+                  <Text
+                    style={[typography.captionStrong, { color: colors.text }]}
+                  >
+                    ชื่อเรียก (ไม่บังคับ)
+                  </Text>
+                  <TextInput
+                    accessibilityLabel="ชื่อเรียกผู้เล่น"
+                    value={participantName}
+                    onChangeText={setParticipantName}
+                    placeholder="เช่น พี่นก"
+                    placeholderTextColor={colors.textSoft}
+                    style={inputStyle}
+                  />
+                </View>
+
+                <View style={styles.fieldBlock}>
+                  <Text
+                    style={[typography.captionStrong, { color: colors.text }]}
+                  >
+                    จำนวนคน
+                  </Text>
+                  <Text
+                    style={[typography.caption, { color: colors.textSoft }]}
+                  >
+                    เพิ่มหลายคนพร้อมกันได้เมื่อไม่ได้เลือกสมาชิก
+                  </Text>
+                  <View style={styles.quantityControl}>
+                    <Button
+                      label="−"
+                      accessibilityLabel="ลดจำนวนคน"
+                      variant="secondary"
+                      disabled={
+                        Boolean(selectedMember) || participantCount <= 1
+                      }
+                      onPress={() =>
+                        setParticipantCount(count => Math.max(1, count - 1))
+                      }
+                    />
+                    <Text
+                      accessibilityLabel={`จำนวน ${participantCount} คน`}
+                      style={[
+                        typography.subtitle,
+                        styles.quantityValue,
+                        { color: colors.text },
+                      ]}
+                    >
+                      {participantCount}
+                    </Text>
+                    <Button
+                      label="+"
+                      accessibilityLabel="เพิ่มจำนวนคน"
+                      variant="secondary"
+                      disabled={
+                        Boolean(selectedMember) || participantCount >= 20
+                      }
+                      onPress={() =>
+                        setParticipantCount(count => Math.min(20, count + 1))
+                      }
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.fieldBlock}>
+                  <Text
+                    style={[typography.captionStrong, { color: colors.text }]}
+                  >
+                    ใส่ไว้บิลไหน
+                  </Text>
+                  <Text
+                    style={[typography.caption, { color: colors.textSoft }]}
+                  >
+                    คนที่จ่ายด้วยกันให้อยู่บิลเดียวกัน ถ้าแยกจ่ายให้เปิดบิลใหม่
+                  </Text>
+                  <View style={styles.wrap}>
+                    {draftBillingGroups.map(([group, count]) => (
+                      <Button
+                        key={group}
+                        label={`บิล ${group} · ${count} คน`}
+                        variant={
+                          selectedBillingGroup === group
+                            ? 'primary'
+                            : 'secondary'
+                        }
+                        onPress={() => setParticipantGroup(String(group))}
+                      />
+                    ))}
+                    {nextBillingGroup <= 20 && participants.length > 0 ? (
+                      <Button
+                        label="เปิดบิลใหม่"
+                        variant="secondary"
+                        onPress={() =>
+                          setParticipantGroup(String(nextBillingGroup))
+                        }
+                      />
+                    ) : null}
+                  </View>
+                </View>
+
+                <Button
+                  label={
+                    participantCount > 1 && !selectedMember
+                      ? `เพิ่ม ${participantCount} คนลงโต๊ะ`
+                      : 'เพิ่มลงโต๊ะ'
+                  }
+                  variant="secondary"
+                  disabled={!participantRateId}
+                  onPress={addDraftParticipant}
+                />
+
+                {participants.length > 0 ? (
+                  <View style={styles.participantList}>
+                    {participants.map((participant, index) => {
+                      const rate = activeRates.find(
+                        item => item.id === participant.rateId,
+                      );
+                      return (
+                        <View
+                          key={participant.key}
+                          style={[
+                            styles.participantRow,
+                            { borderColor: colors.border },
+                          ]}
+                        >
+                          <View style={styles.flex}>
+                            <Text
+                              style={[
+                                typography.bodyStrong,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {participant.displayName ||
+                                `ผู้เล่น ${index + 1}`}
+                              {participant.memberNo
+                                ? ` · ${participant.memberNo}`
+                                : ''}
+                            </Text>
+                            <Text
+                              style={[
+                                typography.caption,
+                                { color: colors.textMuted },
+                              ]}
+                            >
+                              {rate
+                                ? rateLabel(rate.name, rate.pricePerHour)
+                                : '-'}{' '}
+                              · บิล {participant.billingGroupNo}
+                            </Text>
+                          </View>
+                          <Button
+                            label="ลบ"
+                            variant="ghost"
+                            onPress={() =>
+                              setParticipants(rows =>
+                                rows.filter(
+                                  item => item.key !== participant.key,
+                                ),
+                              )
+                            }
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                <View style={styles.divider} />
+                <View style={styles.sectionHeading}>
+                  <View
+                    style={[
+                      styles.stepBadge,
+                      { backgroundColor: colors.primary },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        { color: colors.primaryText },
+                      ]}
+                    >
+                      3
+                    </Text>
+                  </View>
+                  <View style={styles.flex}>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      หมายเหตุ
+                    </Text>
+                    <Text
+                      style={[typography.caption, { color: colors.textSoft }]}
+                    >
+                      ไม่บังคับ ใช้บอกข้อมูลที่พนักงานคนอื่นควรรู้
+                    </Text>
+                  </View>
+                </View>
+                <TextInput
+                  accessibilityLabel="หมายเหตุโต๊ะ"
+                  value={sessionNote}
+                  onChangeText={setSessionNote}
+                  placeholder="เช่น จองไว้ถึง 21:00 หรือขอโต๊ะเงียบ ๆ"
+                  placeholderTextColor={colors.textSoft}
+                  style={inputStyle}
+                />
+              </View>
+
+              <View
+                style={[
+                  styles.openSummary,
+                  wideOpenPanel ? styles.openSummaryWide : null,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[typography.subtitle, { color: colors.text }]}>
+                  สรุปก่อนเริ่ม
+                </Text>
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  {openingTable.code} · {openingTable.name}
+                </Text>
+                <View style={styles.summaryRows}>
+                  <View style={styles.between}>
+                    <Text
+                      style={[typography.caption, { color: colors.textMuted }]}
+                    >
+                      เวลา
+                    </Text>
+                    <Text
+                      style={[typography.captionStrong, { color: colors.text }]}
+                    >
+                      {billingMode === 'FIXED_DURATION' && fixedDurationValid
+                        ? `ซื้อไว้ ${durationLabel(durationValue)}`
+                        : billingMode === 'FIXED_DURATION'
+                        ? 'ยังไม่ได้ระบุเวลา'
+                        : 'คิดตามเวลาจริง'}
+                    </Text>
+                  </View>
+                  {expectedEndLabel ? (
+                    <View style={styles.between}>
+                      <Text
+                        style={[
+                          typography.caption,
+                          { color: colors.textMuted },
+                        ]}
+                      >
+                        หมดเวลาประมาณ
+                      </Text>
+                      <Text
+                        style={[
+                          typography.captionStrong,
+                          { color: colors.text },
+                        ]}
+                      >
+                        {expectedEndLabel} น.
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.between}>
+                    <Text
+                      style={[typography.caption, { color: colors.textMuted }]}
+                    >
+                      ผู้เล่น
+                    </Text>
+                    <Text
+                      style={[typography.captionStrong, { color: colors.text }]}
+                    >
+                      {participants.length} คน ·{' '}
+                      {
+                        draftBillingGroups.filter(([, count]) => count > 0)
+                          .length
+                      }{' '}
+                      บิล
+                    </Text>
+                  </View>
+                </View>
+
+                {participants.length > 0 ? (
+                  <View style={styles.summaryParticipants}>
+                    {participants.map((participant, index) => {
+                      const rate = activeRates.find(
+                        item => item.id === participant.rateId,
+                      );
+                      return (
+                        <Text
+                          key={participant.key}
+                          style={[
+                            typography.caption,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {participant.displayName || `ผู้เล่น ${index + 1}`} ·{' '}
+                          {rate?.name ?? '-'} · บิล {participant.billingGroupNo}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    ยังไม่มีผู้เล่นในโต๊ะนี้
+                  </Text>
+                )}
+
+                <View
+                  style={[styles.summaryTotal, { borderColor: colors.border }]}
+                >
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    ค่าเล่นรวม
+                  </Text>
+                  <Text style={[typography.title, { color: colors.text }]}>
+                    ฿{bahtLabel(hourlyTotal)} / ชม.
+                  </Text>
+                  {estimatedTotal != null && participants.length > 0 ? (
+                    <Text
+                      style={[typography.caption, { color: colors.textMuted }]}
+                    >
+                      {durationLabel(durationValue)} ≈ ฿
+                      {bahtLabel(estimatedTotal)} · ยังไม่รวมของที่สั่งเข้าโต๊ะ
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View
+                  style={[
+                    styles.readinessBox,
+                    {
+                      backgroundColor: openBlockReason
+                        ? colors.warningBg
+                        : colors.successBg,
                     },
-                  });
-                  const result = response.data?.bmsPosOpenBoardGameSession;
-                  const id = result?.id ?? result?.sessionId;
-                  if (!id) throw new Error('เปิดโต๊ะไม่สำเร็จ');
-                  setOpeningTable(null);
-                  setSelectedSessionId(id);
-                })
-              }
-            />
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typography.captionStrong,
+                      {
+                        color: openBlockReason
+                          ? colors.warning
+                          : colors.success,
+                      },
+                    ]}
+                  >
+                    {openBlockReason ?? 'ครบแล้ว พร้อมเริ่มจับเวลา'}
+                  </Text>
+                </View>
+                <Button
+                  label="เริ่มจับเวลา"
+                  accessibilityLabel={
+                    openBlockReason
+                      ? `ยังเริ่มจับเวลาไม่ได้: ${openBlockReason}`
+                      : 'เริ่มจับเวลา นาฬิกาจะเริ่มเดินทันที'
+                  }
+                  fullWidth
+                  loading={working === `open-${openingTable.id}`}
+                  disabled={Boolean(openBlockReason)}
+                  onPress={submitOpenSession}
+                />
+                {!shift.loading && !shift.error && !shift.isOpen ? (
+                  <Button
+                    label="ไปเปิดกะ"
+                    variant="secondary"
+                    fullWidth
+                    onPress={() =>
+                      navigation.getParent<any>()?.navigate('ShiftTab')
+                    }
+                  />
+                ) : null}
+                <Text style={[typography.caption, { color: colors.textSoft }]}>
+                  กดแล้วนาฬิกาจะเริ่มเดินทันที
+                </Text>
+              </View>
+            </View>
           </Card>
         ) : null}
 
@@ -635,11 +1386,6 @@ export default function BoardGameScreen({ navigation }: Props) {
                   · {elapsedLabel(selectedSession.startedAt, now)}
                 </Text>
               </View>
-              <Button
-                label="กลับผัง"
-                variant="ghost"
-                onPress={() => setSelectedSessionId('')}
-              />
             </View>
             {selectedSession.expectedEndAt ? (
               <Text style={[typography.body, { color: colors.text }]}>
@@ -674,7 +1420,11 @@ export default function BoardGameScreen({ navigation }: Props) {
                       variant={
                         id === selectedSession.id ? 'primary' : 'secondary'
                       }
-                      onPress={() => setSelectedSessionId(id)}
+                      onPress={() =>
+                        navigation.replace('BoardGameDetail', {
+                          sessionId: id,
+                        })
+                      }
                     />
                   ))}
                 </ScrollView>
@@ -1504,7 +2254,7 @@ export default function BoardGameScreen({ navigation }: Props) {
                                   },
                                 });
                                 setCancelReason('');
-                                setSelectedSessionId('');
+                                navigation.popToTop();
                               },
                             );
                           },
@@ -1615,6 +2365,47 @@ const styles = StyleSheet.create({
   },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   flex: { flex: 1, minWidth: 0 },
+  openPanel: { gap: 16 },
+  openPanelWide: { flexDirection: 'row', alignItems: 'flex-start' },
+  openForm: { flex: 1, minWidth: 0, gap: 12 },
+  openSummary: {
+    minWidth: 0,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
+  },
+  openSummaryWide: { width: 292, flexShrink: 0 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  fieldBlock: { gap: 6 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#94a3b833' },
+  quantityControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  quantityValue: { minWidth: 48, textAlign: 'center' },
+  participantList: { gap: 6 },
+  participantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingLeft: 12,
+  },
+  summaryRows: { gap: 6 },
+  summaryParticipants: { gap: 4 },
+  summaryTotal: {
+    gap: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 12,
+  },
+  readinessBox: { borderRadius: 10, padding: 12 },
   groupInput: { width: 76 },
   input: {
     minHeight: 44,

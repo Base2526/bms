@@ -62,6 +62,8 @@ export type OperationsStackParamList = {
 
 export type BoardGameStackParamList = {
   BoardGame: undefined;
+  BoardGameOpen: { tableId: string };
+  BoardGameDetail: { sessionId: string };
 };
 
 /**

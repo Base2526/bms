@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -123,9 +123,9 @@ export default function LoginScreen({ navigation }: Props) {
   );
 
   const pinCard = (
-    // บนแท็บเล็ตการ์ดหุ้มเนื้อหาพอดีแล้วจัดกลางแนวตั้ง — ถ้ายืดเต็มความสูง 1366pt จะได้ช่องว่าง
-    // ก้อนใหญ่ระหว่างจุด PIN กับแป้นตัวเลข ซึ่งอ่านเหมือนหน้าจอโหลดไม่เสร็จ
-    <Card style={isTablet ? undefined : { flex: 1 }}>
+    // ให้การ์ดสูงตามเนื้อหาจริงทั้งมือถือและแท็บเล็ต การใส่ flex: 1 ใน ScrollView จะตัดแป้นตัวเลข
+    // ส่วนล่างออกจาก content size ทำให้เห็น PIN แต่เลื่อนต่อไปถึงปุ่มเข้าใช้งานไม่ได้
+    <Card>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
         PIN 4–8 หลัก
       </Text>
@@ -145,13 +145,7 @@ export default function LoginScreen({ navigation }: Props) {
         ))}
       </View>
 
-      {/* มือถือ: ดันแป้นลงล่างของการ์ด (นิ้วโป้งอยู่ครึ่งล่างของจอเสมอ) · แท็บเล็ต: ชิดเนื้อหาปกติ */}
-      <View
-        style={[
-          { marginTop: spacing.lg, marginBottom: spacing.lg },
-          !isTablet && { flex: 1, justifyContent: 'flex-end' },
-        ]}
-      >
+      <View style={{ marginTop: spacing.lg, marginBottom: spacing.lg }}>
         <NumericKeypad
           onDigit={d =>
             setPin(p => (p.length < POS_PIN_MAX_LENGTH ? p + d : p))
@@ -259,11 +253,16 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={{ width: 420 }}>{pinCard}</View>
         </View>
       ) : (
-        <>
+        <ScrollView
+          style={styles.phoneScroll}
+          contentContainerStyle={styles.phoneScrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator
+        >
           {branchCard}
           {cashierCard}
           {pinCard}
-        </>
+        </ScrollView>
       )}
     </ScreenContainer>
   );
@@ -407,6 +406,10 @@ const styles = StyleSheet.create({
   // ห่อบรรทัดแทน FlatList แนวนอน — บนแท็บเล็ตมีที่พอให้เห็นทุกตัวเลือกพร้อมกัน
   // ไม่ต้องเลื่อนหาชื่อตัวเองตอนเข้ากะ
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  // รายชื่อพนักงานอาจยาวเกินจอมือถือ ต้องให้ทั้งรายชื่อและการ์ด PIN อยู่ใน scroll เดียวกัน
+  // flexGrow ทำให้พื้นที่เลื่อนกินความสูงที่เหลือของจอแม้รายชื่อมีเพียงไม่กี่คน
+  phoneScroll: { flex: 1 },
+  phoneScrollContent: { flexGrow: 1, paddingBottom: 24 },
   strip: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   pinRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   pinDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },

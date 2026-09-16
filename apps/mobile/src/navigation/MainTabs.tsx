@@ -43,7 +43,10 @@ import IncomingOrdersScreen from '../screens/orders/IncomingOrdersScreen';
 import KitchenBoardScreen from '../screens/kitchen/KitchenBoardScreen';
 import ShiftScreen from '../screens/shift/ShiftScreen';
 import OperationsScreen from '../screens/operations/OperationsScreen';
-import BoardGameScreen from '../screens/boardGame/BoardGameScreen';
+import BoardGameScreen, {
+  BoardGameDetailScreen,
+  BoardGameOpenScreen,
+} from '../screens/boardGame/BoardGameScreen';
 import InventoryScreen from '../screens/inventory/InventoryScreen';
 
 import type {
@@ -125,7 +128,7 @@ function InventoryTabNavigator() {
   return (
     <OperationsStack.Navigator screenOptions={{ headerShown: false }}>
       <OperationsStack.Screen name="Inventory">
-        {(props) => <InventoryScreen {...props} asTabRoot />}
+        {props => <InventoryScreen {...props} asTabRoot />}
       </OperationsStack.Screen>
     </OperationsStack.Navigator>
   );
@@ -165,6 +168,14 @@ function BoardGameNavigator() {
   return (
     <BoardGameStack.Navigator screenOptions={{ headerShown: false }}>
       <BoardGameStack.Screen name="BoardGame" component={BoardGameScreen} />
+      <BoardGameStack.Screen
+        name="BoardGameOpen"
+        component={BoardGameOpenScreen}
+      />
+      <BoardGameStack.Screen
+        name="BoardGameDetail"
+        component={BoardGameDetailScreen}
+      />
     </BoardGameStack.Navigator>
   );
 }
@@ -215,11 +226,7 @@ function TabsShell() {
   const { totalPendingCount: restaurantPendingCount } =
     useRestaurantOperations();
   const sellTitle =
-    mode === 'restaurant'
-      ? 'เมนู'
-      : mode === 'pharmacy'
-      ? 'ขายยา'
-      : 'ขาย';
+    mode === 'restaurant' ? 'เมนู' : mode === 'pharmacy' ? 'ขายยา' : 'ขาย';
   // badge เดียวต้องเป็นผลรวมจริงของทุกถังที่กดเข้าไปถึงได้จากแท็บนี้ —
   // นับไม่ครบคือบอกว่าไม่มีงานทั้งที่มี · นับเกินคือส่งคนไปหาของที่ไม่มีอยู่
   const inboxCount = pendingCount + restaurantPendingCount;
