@@ -32,10 +32,26 @@ type MemberSelection = {
   setMember: (member: PosMember | null) => void;
   amount: number;
 };
+type BenefitsSelection = {
+  coupon: { code: string } | null;
+  setCoupon: (coupon: { code: string } | null) => void;
+  pointsToRedeem: number;
+  setPointsToRedeem: (points: number) => void;
+  manualDiscount: {
+    amount: number;
+    reason: string;
+    approverUserId: string;
+    approverName: string;
+    approverPin: string;
+  } | null;
+  setManualDiscount: (discount: BenefitsSelection['manualDiscount']) => void;
+};
 
 export function CheckoutAdjustmentsCard({
   memberOnly = false,
+  hideExtra = false,
   memberSelection,
+  benefitsSelection,
   amountOverride,
   pointsUsedOverride,
   previewLoadingOverride,
@@ -43,7 +59,9 @@ export function CheckoutAdjustmentsCard({
   presentation = 'stacked',
 }: {
   memberOnly?: boolean;
+  hideExtra?: boolean;
   memberSelection?: MemberSelection;
+  benefitsSelection?: BenefitsSelection;
   amountOverride?: number;
   pointsUsedOverride?: number;
   previewLoadingOverride?: boolean;
@@ -75,6 +93,12 @@ export function CheckoutAdjustmentsCard({
   const setSelectedMember = memberSelection
     ? memberSelection.setMember
     : cart.setMember;
+  const coupon = benefitsSelection?.coupon ?? cart.coupon;
+  const setCoupon = benefitsSelection?.setCoupon ?? cart.setCoupon;
+  const pointsToRedeem = benefitsSelection?.pointsToRedeem ?? cart.pointsToRedeem;
+  const setPointsToRedeem = benefitsSelection?.setPointsToRedeem ?? cart.setPointsToRedeem;
+  const manualDiscount = benefitsSelection?.manualDiscount ?? cart.manualDiscount;
+  const setManualDiscount = benefitsSelection?.setManualDiscount ?? cart.setManualDiscount;
   const memberAmount =
     amountOverride ??
     (memberSelection ? memberSelection.amount : cart.subtotal);
@@ -119,10 +143,10 @@ export function CheckoutAdjustmentsCard({
         // เศษที่ไม่ครบหน่วยแลก/ต่ำกว่าขั้นต่ำ/ชนเพดานส่วนลด จะถูกตัดออกเงียบ ๆ แล้ว
         // ยอดที่จอโชว์กับจำนวนแต้มที่บอกลูกค้าจะไม่ใช่เรื่องเดียวกัน
         value: selectedMember
-          ? cart.pointsToRedeem > 0
-            ? pointsUsed === cart.pointsToRedeem
+          ? pointsToRedeem > 0
+            ? pointsUsed === pointsToRedeem
               ? `${pointsUsed} แต้ม`
-              : `ขอ ${cart.pointsToRedeem} · หักได้จริง ${pointsUsed} แต้ม`
+              : `ขอ ${pointsToRedeem} · หักได้จริง ${pointsUsed} แต้ม`
             : `ใช้ได้ ${Math.floor(selectedMember.pointsUsable)} แต้ม`
           : 'เลือกสมาชิกก่อนใช้แต้ม',
       },
@@ -136,26 +160,28 @@ export function CheckoutAdjustmentsCard({
       {
         key: 'coupon' as const,
         title: 'คูปอง',
-        value: cart.coupon?.code ?? 'กรอกรหัสคูปอง',
+        value: coupon?.code ?? 'กรอกรหัสคูปอง',
       },
       {
         key: 'discount' as const,
         title: 'ส่วนลดพิเศษ',
-        value: cart.manualDiscount
-          ? `฿${cart.manualDiscount.amount.toFixed(2)} · ${
-              cart.manualDiscount.reason
+        value: manualDiscount
+          ? `฿${manualDiscount.amount.toFixed(2)} · ${
+              manualDiscount.reason
             }`
           : 'ต้องมีเหตุผลและผู้อนุมัติ',
       },
     ];
-    return memberOnly ? allRows.filter(row => row.key === 'member') : allRows;
+    if (memberOnly) return allRows.filter(row => row.key === 'member');
+    return hideExtra ? allRows.filter(row => row.key !== 'extra') : allRows;
   }, [
-    cart.coupon?.code,
+    coupon?.code,
     cart.extraLines.length,
     cart.extraTotal,
-    cart.manualDiscount,
-    cart.pointsToRedeem,
+    manualDiscount,
+    pointsToRedeem,
     memberOnly,
+    hideExtra,
     pointsUsed,
     selectedMember,
   ]);
@@ -172,7 +198,7 @@ export function CheckoutAdjustmentsCard({
       setError('กรอกรหัสคูปอง');
       return;
     }
-    cart.setCoupon({ code });
+    setCoupon({ code });
     close();
   };
 
@@ -190,7 +216,7 @@ export function CheckoutAdjustmentsCard({
       setError('เลือกผู้อนุมัติและกรอก PIN');
       return;
     }
-    cart.setManualDiscount({
+    setManualDiscount({
       amount: parsed,
       reason: reason.trim(),
       approverUserId: approver.id,
@@ -204,19 +230,19 @@ export function CheckoutAdjustmentsCard({
     setError('');
     setTool(nextTool);
     if (nextTool === 'coupon') {
-      setCouponCode(cart.coupon?.code ?? '');
+      setCouponCode(coupon?.code ?? '');
     }
     if (nextTool === 'discount') {
-      setAmount(cart.manualDiscount?.amount.toString() ?? '');
-      setReason(cart.manualDiscount?.reason ?? '');
+      setAmount(manualDiscount?.amount.toString() ?? '');
+      setReason(manualDiscount?.reason ?? '');
       setApproverId(
-        cart.manualDiscount?.approverUserId ??
+        manualDiscount?.approverUserId ??
           discountApprovers.find(item => item.hasPin)?.id ??
           '',
       );
     }
     if (nextTool === 'points') {
-      setPoints(String(cart.pointsToRedeem || 0));
+      setPoints(String(pointsToRedeem || 0));
     }
   };
 
@@ -224,10 +250,10 @@ export function CheckoutAdjustmentsCard({
     ? Number(Boolean(selectedMember))
     : [
         selectedMember,
-        cart.pointsToRedeem > 0,
-        cart.extraLines.length > 0,
-        cart.coupon,
-        cart.manualDiscount,
+        pointsToRedeem > 0,
+        !hideExtra && cart.extraLines.length > 0,
+        coupon,
+        manualDiscount,
       ].filter(Boolean).length;
 
   const visibleRows =
@@ -329,7 +355,7 @@ export function CheckoutAdjustmentsCard({
         {presentation === 'horizontal' ? (
           <View style={styles.horizontalTools}>
             {rowButtons}
-            {!memberOnly ? (
+            {!memberOnly && !hideExtra ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="ค่าบริการหรือถุง"
@@ -562,17 +588,17 @@ export function CheckoutAdjustmentsCard({
                         0,
                         Math.floor(Number(points) || 0),
                       );
-                      cart.setPointsToRedeem(parsed);
+                      setPointsToRedeem(parsed);
                       close();
                     }}
                   />
-                  {cart.pointsToRedeem > 0 ? (
+                  {pointsToRedeem > 0 ? (
                     <Button
                       label="ยกเลิกการใช้แต้ม"
                       variant="ghost"
                       fullWidth
                       onPress={() => {
-                        cart.setPointsToRedeem(0);
+                        setPointsToRedeem(0);
                         close();
                       }}
                     />
@@ -597,13 +623,13 @@ export function CheckoutAdjustmentsCard({
                     style={{ marginTop: spacing.md }}
                     onPress={applyCoupon}
                   />
-                  {cart.coupon ? (
+                  {coupon ? (
                     <Button
                       label="นำคูปองออก"
                       variant="ghost"
                       fullWidth
                       onPress={() => {
-                        cart.setCoupon(null);
+                        setCoupon(null);
                         close();
                       }}
                     />

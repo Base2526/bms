@@ -17,6 +17,7 @@ import {
   type OrderItemInput,
 } from "./orders";
 import {
+  applyRestaurantPosPricingInTx,
   recordPosSale,
   resolvePosScan,
   type PosPaymentInput,
@@ -2305,6 +2306,11 @@ export async function settleRestaurantCheck(input: {
   checkId: string;
   actorUserId: string;
   customerId?: string | null;
+  couponCode?: string | null;
+  pointsToRedeem?: number | null;
+  manualDiscount?: number | null;
+  discountApprovedBy?: string | null;
+  discountReason?: string | null;
   payments: PosPaymentInput[];
 }): Promise<PosSaleResult> {
   const customerId = String(input.customerId ?? "").trim() || null;
@@ -2395,6 +2401,19 @@ export async function settleRestaurantCheck(input: {
             input.actorUserId, input.checkId, key]
         );
         if (!restamped.rowCount) throw new RestaurantCheckError("บิลจองเปลี่ยนสถานะระหว่างเริ่มคิดเงิน");
+        await applyRestaurantPosPricingInTx(prepare, {
+          tenantId: input.tenantId,
+          locationId: input.locationId,
+          checkId: input.checkId,
+          orderId: check.current_order_id,
+          actorUserId: input.actorUserId,
+          customerId,
+          couponCode: input.couponCode ?? null,
+          pointsToRedeem: input.pointsToRedeem ?? null,
+          manualDiscount: input.manualDiscount ?? null,
+          discountApprovedBy: input.discountApprovedBy ?? null,
+          discountReason: input.discountReason ?? null,
+        });
       } else if (!(
         (check.status === "CLOSING" || check.status === "PAID")
         && check.order_status === "COMPLETED"
@@ -2472,6 +2491,11 @@ export async function settleRestaurantCheck(input: {
       lines: items.rows.map(toPosLine),
       payments: input.payments,
       customerId,
+      couponCode: input.couponCode ?? null,
+      pointsToRedeem: input.pointsToRedeem ?? null,
+      manualDiscount: input.manualDiscount ?? null,
+      discountApprovedBy: input.discountApprovedBy ?? null,
+      discountReason: input.discountReason ?? null,
     }).catch(async (error) => {
       await reopenClosingCheck(
         input.tenantId,

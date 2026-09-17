@@ -62,16 +62,29 @@ import {
   issueCreditNote,
   type TenantVatSettings,
 } from "./taxDocuments";
-import { redeemCustomerCouponForOrderInTx, releaseCouponForOrdersInTx, releaseCustomerCouponReservationsInTx } from "./coupons";
+import {
+  applyCouponInTx,
+  previewCouponForCustomer,
+  redeemCustomerCouponForOrderInTx,
+  releaseCouponForOrdersInTx,
+  releaseCustomerCouponReservationsInTx,
+  reserveCustomerCouponInTx,
+} from "./coupons";
 import { couponEligibilitySubtotal, merchantAbsorbApproval, type RestaurantCancellationCause } from "./restaurantCancellationPolicy";
 import { RestaurantCheckError } from "./restaurantPosErrors";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { sendStaffMessage } from "./inbox";
 import {
+  composeDiscounts,
   evaluatePointsEarn,
   earnPointsForOrderInTx,
   getLoyaltySettings,
+  getLoyaltySettingsInTx,
   getMember,
+  getMemberForOrderInTx,
+  previewMemberDiscount,
+  recordOrderDiscountsInTx,
+  redeemPointsInTx,
   reversePointsForReturnInTx,
   reviewMemberTier,
   shouldPrintMemberPoints,
@@ -2656,6 +2669,294 @@ export type BoardGamePosPricingPreview = {
   redeemMinPoints: number;
   member: Awaited<ReturnType<typeof getMember>>;
 };
+
+export type RestaurantPosPricingPreview = BoardGamePosPricingPreview;
+
+/**
+ * Quote the currently reserved restaurant order.  The kitchen order already owns immutable
+ * sale-time prices and stock, so previewing catalog lines again would both drift after a menu
+ * price edit and double-count the reservation.  Gross product subtotal is reconstructed from
+ * the pending order snapshot (`total + discount - non-discountable extras`).
+ */
+export async function previewRestaurantPosPricing(input: {
+  tenantId: string;
+  locationId: string;
+  checkId: string;
+  customerId?: string | null;
+  couponCode?: string | null;
+  pointsToRedeem?: number | null;
+  manualDiscount?: number | null;
+}): Promise<RestaurantPosPricingPreview> {
+  const order = await query<{
+    total_amount: string;
+    discount_amount: string;
+    extra_total: string;
+  }>(
+    `SELECT o.total_amount, o.discount_amount,
+            COALESCE((SELECT SUM(x.qty * x.unit_amount)
+                        FROM bms_order_extra_lines x
+                       WHERE x.tenant_id = o.tenant_id AND x.order_id = o.id), 0) AS extra_total
+       FROM bms_restaurant_checks c
+       JOIN bms_orders o ON o.tenant_id = c.tenant_id AND o.id = c.current_order_id
+      WHERE c.tenant_id = $1 AND c.id = $2 AND c.location_id = $3
+        AND c.status IN ('OPEN','CLOSING') AND o.status = 'PENDING'`,
+    [input.tenantId, input.checkId, input.locationId]
+  );
+  if (!order.rowCount) {
+    const settings = await getLoyaltySettings(input.tenantId);
+    return {
+      status: "NOT_FOUND", reason: "บิลโต๊ะไม่พร้อมคิดเงิน", subtotal: null, amountDue: null, netTotal: null,
+      tierDiscount: 0, tierLabel: null, couponDiscount: 0, couponError: null,
+      pointsDiscount: 0, pointsUsed: 0, manualDiscount: 0, totalDiscount: 0,
+      capped: false, cappedAt: 0, loyaltyEnabled: settings.enabled, pointsWillEarn: null,
+      pointsEarnBlock: null, redeemPointsPerUnit: settings.redeemPointsPerUnit,
+      redeemBahtPerUnit: settings.redeemBahtPerUnit, redeemMinPoints: settings.redeemMinPoints,
+      member: null,
+    };
+  }
+  const row = order.rows[0];
+  const extraTotal = Number(row.extra_total ?? 0);
+  const subtotal = Math.max(0, Math.round(
+    (Number(row.total_amount) + Number(row.discount_amount ?? 0) - extraTotal) * 100
+  ) / 100);
+  const customerId = input.customerId?.trim() || null;
+  const couponCode = input.couponCode?.trim() || "";
+  let couponDiscount = 0;
+  let couponError: string | null = null;
+  if (couponCode) {
+    const coupon = await previewCouponForCustomer(
+      input.tenantId,
+      couponCode,
+      customerId,
+      subtotal,
+      input.locationId
+    );
+    if (coupon.ok) couponDiscount = coupon.discount;
+    else couponError = coupon.reason;
+  }
+  const preview = await previewMemberDiscount({
+    tenantId: input.tenantId,
+    customerId,
+    subtotal,
+    pointsRequested: input.pointsToRedeem ?? 0,
+    couponDiscount,
+    manualDiscount: input.manualDiscount ?? 0,
+  });
+  const requestedManual = Math.max(
+    0,
+    Math.round(Number(input.manualDiscount ?? 0) * 100) / 100
+  );
+  const memberError = customerId && !preview.member?.memberNo
+    ? "ไม่พบสมาชิกนี้ในร้าน"
+    : null;
+  const manualError = requestedManual > 0 && preview.manualDiscount !== requestedManual
+    ? `ส่วนลดรวมเกินเพดานของบิล — ส่วนลดมือลดได้สูงสุด ฿${preview.manualDiscount.toFixed(2)}`
+    : null;
+  return {
+    status: couponError
+      ? "COUPON_INVALID"
+      : memberError
+        ? "MEMBER_NOT_FOUND"
+        : manualError
+          ? "DISCOUNT_UNAPPROVED"
+          : "READY",
+    reason: couponError ?? memberError ?? manualError,
+    subtotal,
+    amountDue: Math.round((preview.netTotal + extraTotal) * 100) / 100,
+    netTotal: Math.round((preview.netTotal + extraTotal) * 100) / 100,
+    tierDiscount: preview.tierDiscount,
+    tierLabel: preview.tierLabel,
+    couponDiscount: preview.couponDiscount,
+    couponError,
+    pointsDiscount: preview.pointsDiscount,
+    pointsUsed: preview.pointsUsed,
+    manualDiscount: preview.manualDiscount,
+    totalDiscount: preview.totalDiscount,
+    capped: preview.capped,
+    cappedAt: preview.cappedAt,
+    loyaltyEnabled: preview.loyaltyEnabled,
+    pointsWillEarn: preview.pointsWillEarn,
+    pointsEarnBlock: preview.pointsEarnBlock,
+    redeemPointsPerUnit: preview.redeemPointsPerUnit,
+    redeemBahtPerUnit: preview.redeemBahtPerUnit,
+    redeemMinPoints: preview.redeemMinPoints,
+    member: preview.member,
+  };
+}
+
+/**
+ * Attach the member and freeze restaurant discounts on its existing PENDING order.
+ * This runs in the check-claim transaction: a coupon/points balance is reserved together with
+ * the transition to CLOSING, and the normal POS settlement then charges exactly this frozen total.
+ */
+export async function applyRestaurantPosPricingInTx(
+  client: PoolClient,
+  input: {
+    tenantId: string;
+    locationId: string;
+    checkId: string;
+    orderId: string;
+    actorUserId: string;
+    customerId?: string | null;
+    couponCode?: string | null;
+    pointsToRedeem?: number | null;
+    manualDiscount?: number | null;
+    discountApprovedBy?: string | null;
+    discountReason?: string | null;
+  }
+): Promise<{ amountDue: number; pointsUsed: number }> {
+  const locked = await client.query<{
+    total_amount: string;
+    discount_amount: string;
+    coupon_code: string | null;
+    customer_id: string | null;
+    extra_total: string;
+    discount_count: string;
+    redeemed_points: string;
+    manual_amount: string;
+    discount_approved_by: string | null;
+    discount_reason: string | null;
+  }>(
+    `SELECT o.total_amount, o.discount_amount, o.coupon_code, o.customer_id,
+            COALESCE((SELECT SUM(x.qty * x.unit_amount)
+                        FROM bms_order_extra_lines x
+                       WHERE x.tenant_id = o.tenant_id AND x.order_id = o.id), 0) AS extra_total,
+            (SELECT COUNT(*) FROM bms_order_discounts d
+              WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id)::text AS discount_count,
+            COALESCE((SELECT SUM(d.points_used) FROM bms_order_discounts d
+                       WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+                         AND d.source = 'POINTS'), 0)::text AS redeemed_points,
+            COALESCE((SELECT SUM(d.amount) FROM bms_order_discounts d
+                        WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+                          AND d.source = 'MANUAL'), 0)::text AS manual_amount,
+            o.discount_approved_by, o.discount_reason
+       FROM bms_orders o
+      WHERE o.tenant_id = $1 AND o.id = $2 AND o.location_id = $3
+        AND o.restaurant_check_id = $4 AND o.status = 'PENDING'
+      FOR UPDATE`,
+    [input.tenantId, input.orderId, input.locationId, input.checkId]
+  );
+  if (!locked.rowCount) throw new RestaurantCheckError("บิลจองของโต๊ะไม่พร้อมคิดเงิน");
+  const row = locked.rows[0];
+  const customerId = input.customerId?.trim() || null;
+  const couponCode = input.couponCode?.trim().toUpperCase() || null;
+  const requestedPoints = Math.max(0, Math.floor(Number(input.pointsToRedeem ?? 0)));
+  const manualDiscount = Math.max(0, Math.round(Number(input.manualDiscount ?? 0) * 100) / 100);
+
+  // A failed payment leaves the frozen restaurant pricing on the same reserved order.  An exact
+  // retry is safe; changing the member/benefits requires reopening a fresh pricing attempt rather
+  // than consuming a second coupon or a second points ledger row.
+  if (Number(row.discount_count) > 0 || Number(row.discount_amount) > 0 || row.coupon_code) {
+    if ((row.customer_id ?? null) !== customerId
+        || (row.coupon_code ?? null) !== couponCode
+        || Number(row.redeemed_points) !== requestedPoints
+        || Number(row.manual_amount) !== manualDiscount
+        || (manualDiscount > 0 && (
+          row.discount_approved_by !== (input.discountApprovedBy ?? null)
+          || row.discount_reason !== (input.discountReason?.trim() || null)
+        ))) {
+      throw new RestaurantCheckError("บิลนี้ล็อกสิทธิ์สมาชิก/คูปอง/แต้มจากรอบรับชำระก่อนแล้ว กรุณาใช้ค่าเดิม");
+    }
+    return { amountDue: Number(row.total_amount), pointsUsed: Number(row.redeemed_points) };
+  }
+
+  let member: Awaited<ReturnType<typeof getMemberForOrderInTx>> = null;
+  if (customerId) {
+    member = await getMemberForOrderInTx(client, input.tenantId, customerId);
+    if (!member?.memberNo) throw new RestaurantCheckError("ไม่พบสมาชิกนี้ในร้าน");
+  }
+  if (requestedPoints > 0 && !member?.memberNo) {
+    throw new RestaurantCheckError("แลกแต้มได้เฉพาะลูกค้าที่เป็นสมาชิก");
+  }
+  if (manualDiscount > 0 && !(input.discountApprovedBy && input.discountReason?.trim())) {
+    throw new RestaurantCheckError("ส่วนลดมือต้องมีผู้อนุมัติและเหตุผล");
+  }
+
+  const extraTotal = Number(row.extra_total ?? 0);
+  const productSubtotal = Math.max(0, Math.round(
+    (Number(row.total_amount) + Number(row.discount_amount ?? 0) - extraTotal) * 100
+  ) / 100);
+  let couponDiscount = 0;
+  let appliedCouponId: string | null = null;
+  let appliedCouponCode: string | null = null;
+  if (couponCode) {
+    const coupon = await applyCouponInTx(
+      client, input.tenantId, couponCode, customerId, productSubtotal, input.locationId
+    );
+    if (!coupon.ok) throw new RestaurantCheckError(coupon.reason);
+    couponDiscount = coupon.discount;
+    appliedCouponId = coupon.couponId;
+    appliedCouponCode = coupon.code;
+  }
+  const settings = await getLoyaltySettingsInTx(client, input.tenantId);
+  const breakdown = composeDiscounts({
+    settings,
+    subtotal: productSubtotal,
+    tier: member?.tier ?? null,
+    couponDiscount,
+    pointsRequested: requestedPoints,
+    pointsAvailable: member?.pointsUsable ?? 0,
+    manualDiscount,
+  });
+  if (manualDiscount > 0 && breakdown.manualDiscount !== manualDiscount) {
+    throw new RestaurantCheckError(
+      `ส่วนลดรวมเกินเพดาน ${settings.maxDiscountPct}% ของบิล — ส่วนลดมือลดได้สูงสุด ฿${breakdown.manualDiscount.toFixed(2)}`
+    );
+  }
+  if (requestedPoints > 0 && breakdown.pointsUsed !== requestedPoints) {
+    throw new RestaurantCheckError(
+      (member?.pointsUsable ?? 0) < requestedPoints
+        ? `แต้มไม่พอ (ขอแลก ${requestedPoints} แต้ม แต่ใช้ได้ ${member?.pointsUsable ?? 0} แต้ม)`
+        : `แลกแต้มจำนวนนี้กับบิลนี้ไม่ได้ (ขั้นต่ำ ${settings.redeemMinPoints} แต้ม และต้องไม่เกินเพดานส่วนลด)`
+    );
+  }
+  const totalAmount = Math.round((productSubtotal - breakdown.totalDiscount + extraTotal) * 100) / 100;
+  await client.query(
+    `UPDATE bms_orders
+        SET customer_id = $3, total_amount = $4, discount_amount = $5,
+            coupon_code = $6, coupon_id = $7, discount_approved_by = $8,
+            discount_reason = $9, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+    [input.tenantId, input.orderId, customerId, totalAmount, breakdown.totalDiscount,
+      appliedCouponCode, appliedCouponId, input.discountApprovedBy ?? null,
+      input.discountReason?.trim() || null]
+  );
+  await client.query(
+    `UPDATE bms_restaurant_checks
+        SET amount_due = $3, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND current_order_id = $4
+        AND status IN ('OPEN','CLOSING')`,
+    [input.tenantId, input.checkId, totalAmount, input.orderId]
+  );
+  await reserveCustomerCouponInTx(client, input.tenantId, customerId, appliedCouponId, input.orderId);
+  if (breakdown.pointsUsed > 0 && customerId) {
+    const redeemed = await redeemPointsInTx(client, {
+      tenantId: input.tenantId,
+      customerId,
+      orderId: input.orderId,
+      points: breakdown.pointsUsed,
+      discount: breakdown.pointsDiscount,
+      actorUserId: input.actorUserId,
+    });
+    if (!redeemed.ok) throw new RestaurantCheckError(redeemed.reason);
+  }
+  const manualLabel = `ส่วนลดหน้าร้าน — ${input.discountReason?.trim() ?? ""}`.trim();
+  await recordOrderDiscountsInTx(client, input.tenantId, input.orderId, [
+    ...(breakdown.tierDiscount > 0 && member?.tier
+      ? [{ source: "TIER" as const, refId: member.tier.id, label: breakdown.tierLabel ?? `สมาชิก ${member.tier.name}`, amount: breakdown.tierDiscount }]
+      : []),
+    ...(breakdown.couponDiscount > 0
+      ? [{ source: "COUPON" as const, refId: appliedCouponId, label: `คูปอง ${appliedCouponCode ?? ""}`.trim(), amount: breakdown.couponDiscount }]
+      : []),
+    ...(breakdown.pointsDiscount > 0
+      ? [{ source: "POINTS" as const, label: `แลก ${breakdown.pointsUsed} แต้ม`, amount: breakdown.pointsDiscount, pointsUsed: breakdown.pointsUsed }]
+      : []),
+    ...(breakdown.manualDiscount > 0
+      ? [{ source: "MANUAL" as const, label: manualLabel, amount: breakdown.manualDiscount }]
+      : []),
+  ]);
+  return { amountDue: totalAmount, pointsUsed: breakdown.pointsUsed };
+}
 
 /**
  * Quote a board-game POS bill through the same order path used at settlement.

@@ -2290,3 +2290,45 @@ test("เหตุที่ปุ่มสมัครกดไม่ได้�
     /setEnrollOpen\(false\);\s*setEnrollPhone\(""\);\s*setEnrollName\(""\);\s*\}, \[checkoutOpen, check\?\.id\]\)/,
   );
 });
+
+test("บิลโต๊ะใช้คูปอง แต้ม และส่วนลดมือผ่านยอด snapshot เดิมทั้ง Web/RN", async () => {
+  const pos = code(await read("apps/web/lib/bms/pos.ts"));
+  const restaurant = code(await read("apps/web/lib/bms/restaurantPos.ts"));
+  const rest = code(await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"));
+  const graphql = code(await read("apps/web/graphql/bmsPosDevice.ts"));
+  const web = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const mobile = code(await read("apps/mobile/src/screens/sell/CheckoutScreen.tsx"));
+
+  assert.match(pos, /export async function previewRestaurantPosPricing/);
+  assert.match(pos, /Number\(row\.total_amount\) \+ Number\(row\.discount_amount/,
+    "preview ต้องกู้ยอดก่อนลดจาก snapshot เดิม ไม่อ่านราคาเมนูปัจจุบัน");
+  assert.match(pos, /applyCouponInTx\(/);
+  assert.match(pos, /redeemPointsInTx\(/);
+  assert.match(pos, /recordOrderDiscountsInTx\(/);
+  assert.match(pos, /manualError[\s\S]{0,500}DISCOUNT_UNAPPROVED/,
+    "preview ต้องบล็อกส่วนลดมือที่โดนเพดานก่อนรับเงิน ทั้ง Web และ RN");
+  assert.match(pos, /memberError[\s\S]{0,400}MEMBER_NOT_FOUND/,
+    "preview กับ commit ต้องยอมรับเฉพาะสมาชิกชุดเดียวกัน");
+  assert.match(pos, /UPDATE bms_restaurant_checks[\s\S]{0,160}amount_due = \$3/,
+    "ยอดบน check ต้องตามยอด order หลังล็อกสิทธิ์");
+
+  const settle = restaurant.slice(restaurant.indexOf("export async function settleRestaurantCheck"));
+  assert.match(settle, /applyRestaurantPosPricingInTx\(prepare/);
+  assert.ok(
+    settle.indexOf("applyRestaurantPosPricingInTx(prepare") < settle.indexOf('prepare.query("COMMIT")'),
+    "สิทธิ์ต้องล็อกใน transaction เดียวกับ settlement claim",
+  );
+  for (const adapter of [rest, graphql]) {
+    assert.match(adapter, /pos\.discount\.approve/);
+    assert.match(adapter, /discountApproverPin/);
+    assert.match(adapter, /pointsToRedeem/);
+    assert.match(adapter, /couponCode/);
+  }
+  for (const screen of [web, mobile]) {
+    assert.match(screen, /restaurantCheckId/);
+    assert.match(screen, /pointsUsed/,
+      "จอต้องส่งแต้มที่ server preview ยอมรับ ไม่ใช่ตัวเลขดิบที่พิมพ์");
+    assert.match(screen, /couponCode/);
+    assert.match(screen, /manualDiscount/);
+  }
+});

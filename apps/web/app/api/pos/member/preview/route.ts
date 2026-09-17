@@ -9,7 +9,12 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, getOpenPosShift, previewBoardGamePosPricing } from "@/lib/bms/pos";
+import {
+  authenticatePosDevice,
+  getOpenPosShift,
+  previewBoardGamePosPricing,
+  previewRestaurantPosPricing,
+} from "@/lib/bms/pos";
 import { previewMemberDiscount, toPosMemberSummary } from "@/lib/bms/membership";
 import { previewCouponForCustomer } from "@/lib/bms/coupons";
 import { isPosUuid, parsePosExtraLines, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
@@ -37,6 +42,28 @@ async function handlePOST(req: NextRequest) {
   // อย่างเดียว การอนุมัติจริงเกิดที่ /api/pos/sale
   const manualRaw = Number(body.manualDiscount);
   const manualDiscount = Number.isFinite(manualRaw) && manualRaw > 0 ? Math.round(manualRaw * 100) / 100 : 0;
+
+  const restaurantCheckId = typeof body.restaurantCheckId === "string"
+    ? body.restaurantCheckId.trim()
+    : "";
+  if (restaurantCheckId) {
+    if (!isPosUuid(restaurantCheckId)) {
+      return NextResponse.json({ error: "บิลโต๊ะไม่ถูกต้อง" }, { status: 400 });
+    }
+    const preview = await previewRestaurantPosPricing({
+      tenantId: device.tenantId,
+      locationId: device.locationId,
+      checkId: restaurantCheckId,
+      customerId,
+      couponCode,
+      pointsToRedeem: pointsRequested,
+      manualDiscount,
+    });
+    return NextResponse.json({
+      ...preview,
+      member: preview.member ? toPosMemberSummary(preview.member) : null,
+    }, { status: 200 });
+  }
 
   const boardGameBillingGroupId = typeof body.boardGameBillingGroupId === "string"
     ? body.boardGameBillingGroupId.trim()

@@ -171,6 +171,20 @@ type PosLoyaltyStatus = {
   pointsForAmount: number | null;
   block: "PROGRAM_DISABLED" | "BELOW_MIN_SPEND" | "NO_VISIT_POINTS" | "RATE_TOO_LOW" | null;
 };
+type RestaurantPricingPreview = {
+  status: string;
+  reason: string | null;
+  subtotal: number | null;
+  amountDue: number | null;
+  tierDiscount: number;
+  couponDiscount: number;
+  couponError: string | null;
+  pointsDiscount: number;
+  pointsUsed: number;
+  manualDiscount: number;
+  totalDiscount: number;
+  pointsWillEarn: number | null;
+};
 type SettlementResult = {
   status: "SOLD"; orderId: string; total: number; cashTendered: number | null; cashChange: number | null;
   docNo: string | null; receiptNo: string | null; billNo: string | null;
@@ -560,6 +574,15 @@ export default function RestaurantPosPage() {
   const [memberResults, setMemberResults] = useState<PosMember[]>([]);
   const [selectedMember, setSelectedMember] = useState<PosMember | null>(null);
   const [memberLoyalty, setMemberLoyalty] = useState<PosLoyaltyStatus | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [pointsToRedeem, setPointsToRedeem] = useState("");
+  const [manualDiscount, setManualDiscount] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
+  const [discountApproverId, setDiscountApproverId] = useState("");
+  const [discountApproverPin, setDiscountApproverPin] = useState("");
+  const [pricingPreview, setPricingPreview] = useState<RestaurantPricingPreview | null>(null);
+  const [pricingError, setPricingError] = useState<string | null>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
   // ⚠️ "ค้นแล้วไม่พบ" ต้องแยกจาก "ยังไม่ได้ค้น" ให้ออก — `memberResults.length === 0` เป็นจริง
   // ทั้งสองกรณี และหน้านี้ค้นตอนกดปุ่ม/Enter (ไม่ใช่ทุกคีย์เหมือนหน้าค้าปลีก) · ที่สำคัญกว่า:
   // ถ้าเสนอ "สมัครสมาชิกใหม่" ตอนที่รอบค้นล้มเพราะเน็ตร้านหลุด จะได้ลูกค้าซ้ำในฐาน ซึ่ง
@@ -606,6 +629,7 @@ export default function RestaurantPosPage() {
   const displayPayloadRef = useRef<CustomerDisplayPayload | null>(null);
   const memberCheckIdRef = useRef<string | null>(null);
   const cashMovementRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const pricingRequestRef = useRef(0);
   // Member selection belongs to one check only. This synchronous guard prevents even one render
   // of a newly selected table from inheriting the previous table's customer before the cleanup
   // effect below runs.
@@ -647,20 +671,22 @@ export default function RestaurantPosPage() {
         qty: item.packQty, unitName: item.unitName ?? "", amount: item.lineAmount!,
       })),
       itemCount,
-      total: check.amountDue,
-      discountTotal: 0,
-      amountDue: check.amountDue,
+      total: pricingPreview?.subtotal ?? check.amountDue,
+      discountTotal: pricingPreview?.totalDiscount ?? 0,
+      amountDue: pricingPreview?.amountDue ?? check.amountDue,
       memberName: checkMember?.name ?? null,
       pointsEarned: null,
       finished: null,
     };
     displayPayloadRef.current = payload;
     displayChannel.current?.postMessage(payload);
-  }, [check, checkMember, settlementReceipt]);
+  }, [check, checkMember, pricingPreview, settlementReceipt]);
   useEffect(() => {
     if (!settlementReceipt) return;
     const payload: CustomerDisplayPayload = {
-      lines: [], itemCount: 0, total: settlementReceipt.result.total, discountTotal: 0,
+      lines: [], itemCount: 0,
+      total: settlementReceipt.result.total + settlementReceipt.result.discountLines.reduce((sum, line) => sum + line.amount, 0),
+      discountTotal: settlementReceipt.result.discountLines.reduce((sum, line) => sum + line.amount, 0),
       amountDue: settlementReceipt.result.total,
       memberName: settlementReceipt.member?.name ?? null,
       pointsEarned: settlementReceipt.result.pointsEarned,
@@ -686,10 +712,27 @@ export default function RestaurantPosPage() {
   // เจอเบอร์/ชื่อที่พิมพ์ค้างของลูกค้าคนก่อน (เหตุผลเดียวกับที่ล้างสมาชิกตอนเปลี่ยนโต๊ะ) ·
   // ล้างทั้งตอนเปิดและตอนปิดด้วย effect ตัวเดียว จึงไม่มีทางเหลือสถานะค้างจากทางใดทางหนึ่ง
   useEffect(() => {
+    pricingRequestRef.current += 1;
     setEnrollOpen(false);
     setEnrollPhone("");
     setEnrollName("");
   }, [checkoutOpen, check?.id]);
+  useEffect(() => {
+    setCouponCode("");
+    setPointsToRedeem("");
+    setManualDiscount("");
+    setDiscountReason("");
+    setDiscountApproverPin("");
+    setPricingPreview(null);
+    setPricingError(null);
+  }, [check?.id]);
+  useEffect(() => {
+    if (!checkoutOpen || !check?.id) return;
+    const timer = window.setTimeout(() => {
+      void loadPricingPreview().catch(() => undefined);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [checkoutOpen, check?.id, check?.amountDue, checkMember?.customerId, couponCode, pointsToRedeem, manualDiscount]);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
   const visibleTables = activeArea ? floor.tables.filter((table) => table.areaId === activeArea) : floor.tables;
   // พิกัดเป็นข้อมูลผังจริงจากหลังบ้าน จึงต้องรักษาหน่วย px เดียวกับ editor และให้ viewport
@@ -852,14 +895,27 @@ export default function RestaurantPosPage() {
   const paymentTotal = Math.round(payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
   // ⚠️ เดิมปัดเศษเฉพาะตอนมีช่องทางเดียว ขณะที่ server ปัดเมื่อ **ทุกช่องทาง** เป็นเงินสด
   // → บิลที่แบ่งจ่ายเงินสดสองช่องทางจอไม่ปัดแต่ server ปัด แล้วบิลถูกทิ้งทั้งใบ
-  const checkoutDue = check == null ? 0 : Math.round((check.amountDue + cashRoundingForPayments(
-    check.amountDue,
+  const checkoutBaseDue = pricingPreview?.amountDue ?? check?.amountDue ?? 0;
+  const checkoutDue = check == null ? 0 : Math.round((checkoutBaseDue + cashRoundingForPayments(
+    checkoutBaseDue,
     session?.vat.cashRounding ?? "NONE",
     payments
   )) * 100) / 100;
   // เหตุผลเดียวที่ทั้งปุ่มยืนยัน แถบสรุป และ settle() ใช้ร่วมกัน — สามที่ตัดสินเองจะ drift
   // แล้ววันหนึ่งปุ่มกดได้แต่ settle ปฏิเสธ (หรือแย่กว่า: กดได้แล้ว server ปฏิเสธกลางบิล)
-  const checkoutBlock = check == null ? null : checkoutBlockReason(payments, checkoutDue);
+  const paymentBlock = check == null ? null : checkoutBlockReason(payments, checkoutDue);
+  const manualApprovalBlock = Number(manualDiscount) > 0 && !discountReason.trim()
+    ? t("pos_restaurant.discount_reason_required")
+    : Number(manualDiscount) > 0 && (!discountApproverId || !discountApproverPin)
+      ? t("pos_restaurant.discount_approver_required")
+      : null;
+  const checkoutBlock = checkoutOpen && !pricingPreview
+    ? t("pos_restaurant.discount_preview_loading")
+    : pricingLoading
+      ? t("pos_restaurant.discount_preview_loading")
+      : pricingError ?? (pricingPreview && pricingPreview.status !== "READY"
+        ? pricingPreview.reason ?? t("pos_restaurant.discount_preview_failed")
+        : manualApprovalBlock ?? paymentBlock);
   /** เงินทอนของช่องทางเงินสดแถวนี้ — `null` = ยังไม่ได้กรอก/กรอกน้อยกว่ายอด (ไม่มีเงินทอนให้บอก) */
   const cashChangeOf = (payment: PosPaymentDraft) => {
     if (payment.method !== "CASH" || !payment.tendered.trim()) return null;
@@ -871,6 +927,9 @@ export default function RestaurantPosPage() {
     || check?.items.some((item) => item.status === "SENT"));
   const voidApprovers = (session?.approvers ?? []).filter((person) =>
     person.hasPin && person.id !== actorUserId && person.approvals.includes("pos.void")
+  );
+  const discountApprovers = (session?.approvers ?? []).filter((person) =>
+    person.hasPin && person.id !== actorUserId && person.approvals.includes("pos.discount.approve")
   );
 
   async function json(url: string, init?: RequestInit) {
@@ -1767,10 +1826,66 @@ export default function RestaurantPosPage() {
       message.success(t("pos_restaurant.toast_receipt_printed"));
     });
   }
+  async function loadPricingPreview(): Promise<RestaurantPricingPreview> {
+    if (!check) throw new Error(t("pos_restaurant.discount_preview_failed"));
+    const requestId = ++pricingRequestRef.current;
+    setPricingLoading(true);
+    try {
+      const preview = await json("/api/pos/member/preview", {
+        method: "POST",
+        body: JSON.stringify({
+          subtotal: check.amountDue,
+          restaurantCheckId: check.id,
+          customerId: checkMember?.customerId ?? null,
+          couponCode: couponCode.trim() || null,
+          pointsToRedeem: Number(pointsToRedeem) || 0,
+          manualDiscount: Number(manualDiscount) || 0,
+        }),
+      }) as RestaurantPricingPreview;
+      let previewError = preview.status === "READY" ? null
+        : preview.reason ?? preview.couponError ?? t("pos_restaurant.discount_preview_failed");
+      const requestedManual = Math.round((Number(manualDiscount) || 0) * 100) / 100;
+      if (!previewError && requestedManual > 0 && preview.manualDiscount !== requestedManual) {
+        previewError = t("pos_restaurant.manual_discount_capped", { amount: money(preview.manualDiscount) });
+      }
+      if (requestId === pricingRequestRef.current) {
+        setPricingPreview(preview);
+        setPricingError(previewError);
+      }
+      if (requestId === pricingRequestRef.current && !previewError && preview.amountDue != null && payments.length === 1) {
+        const current = payments[0];
+        const rounded = Math.round((preview.amountDue + cashRoundingForPayments(
+          preview.amountDue,
+          session?.vat.cashRounding ?? "NONE",
+          [{ method: current.method, amount: preview.amountDue }]
+        )) * 100) / 100;
+        setPayments([{ ...current, amount: String(rounded), tendered: current.method === "CASH" ? String(rounded) : "" }]);
+      }
+      return preview;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : t("pos_restaurant.discount_preview_failed");
+      if (requestId === pricingRequestRef.current) setPricingError(reason);
+      throw error;
+    } finally {
+      if (requestId === pricingRequestRef.current) setPricingLoading(false);
+    }
+  }
+
   async function settle() {
     if (!check) return;
-    const blocked = checkoutBlockReason(payments, checkoutDue);
-    if (blocked) { message.error(blocked); return; }
+    const latestPricing = await loadPricingPreview().catch((error) => {
+      message.error(error instanceof Error ? error.message : t("pos_restaurant.discount_preview_failed"));
+      return null;
+    });
+    if (!latestPricing || latestPricing.status !== "READY" || latestPricing.amountDue == null) return;
+    if (!pricingPreview
+      || latestPricing.amountDue !== pricingPreview.amountDue
+      || latestPricing.totalDiscount !== pricingPreview.totalDiscount
+      || latestPricing.pointsUsed !== pricingPreview.pointsUsed) {
+      message.warning(t("pos_restaurant.discount_preview_changed"));
+      return;
+    }
+    if (checkoutBlock) { message.error(checkoutBlock); return; }
     await run(async () => {
       const settledCheck = check;
       const settledPayments = payments.map((payment) => {
@@ -1789,6 +1904,12 @@ export default function RestaurantPosPage() {
         body: JSON.stringify(auth({
           action: "settle",
           customerId: checkMember?.customerId ?? null,
+          couponCode: couponCode.trim() || null,
+          pointsToRedeem: latestPricing.pointsUsed,
+          manualDiscount: Number(manualDiscount) || null,
+          discountReason: discountReason.trim() || null,
+          discountApproverUserId: discountApproverId || null,
+          discountApproverPin: discountApproverPin || null,
           payments: payments.map((payment) => ({
             method: payment.method,
             amount: Number(payment.amount),
@@ -2530,7 +2651,7 @@ export default function RestaurantPosPage() {
             <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent && !reservationLost} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> {t("pos_restaurant.send_kitchen")}{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
-              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingForPayments(check.amountDue, session?.vat.cashRounding ?? "NONE", [{ method: "CASH", amount: check.amountDue }])) * 100) / 100; setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
+              <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingForPayments(check.amountDue, session?.vat.cashRounding ?? "NONE", [{ method: "CASH", amount: check.amountDue }])) * 100) / 100; setDiscountApproverId(discountApprovers[0]?.id ?? ""); setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
             </div>
           </div>
         </> : <>
@@ -2858,11 +2979,26 @@ export default function RestaurantPosPage() {
           </div>
         </div>}
       </>}</div>
+      <div className={styles.memberBox}>
+        <b>{t("pos_restaurant.discount_benefits")}</b>
+        <div className={styles.modalGrid}>
+          <label>{t("pos_restaurant.coupon_code")}<input value={couponCode} onChange={(event) => setCouponCode(event.target.value.toUpperCase())} /></label>
+          <label>{t("pos_restaurant.points_redeem")}<input type="number" min={0} step={1} disabled={!checkMember} value={pointsToRedeem} onChange={(event) => setPointsToRedeem(event.target.value)} /></label>
+          <label>{t("pos_restaurant.manual_discount")}<input type="number" min={0} step="0.01" value={manualDiscount} onChange={(event) => setManualDiscount(event.target.value)} /></label>
+          {Number(manualDiscount) > 0 && <>
+            <label>{t("pos_restaurant.discount_reason")}<input maxLength={200} value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} /></label>
+            <label>{t("pos_restaurant.discount_approver")}<select value={discountApproverId} onChange={(event) => setDiscountApproverId(event.target.value)}><option value="">{t("pos_restaurant.select_approver")}</option>{discountApprovers.map((person) => <option key={person.id} value={person.id}>{person.name ?? person.email ?? person.id}</option>)}</select></label>
+            <label>{t("pos_restaurant.approver_pin")}<input type="password" inputMode="numeric" value={discountApproverPin} onChange={(event) => setDiscountApproverPin(event.target.value)} /></label>
+          </>}
+        </div>
+        {pricingPreview && pricingPreview.totalDiscount > 0 && <small className={styles.memberEarnHint}>{t("pos_restaurant.discount_summary", { tier: money(pricingPreview.tierDiscount), coupon: money(pricingPreview.couponDiscount), points: money(pricingPreview.pointsDiscount), manual: money(pricingPreview.manualDiscount), total: money(pricingPreview.totalDiscount) })}</small>}
+        {pricingError && <small className={styles.memberEarnWarn}>{pricingError}</small>}
+      </div>
       <div className={styles.total}><span>{t("pos_restaurant.amount_due")}</span><strong><span className={styles.baht}>฿</span>{money(checkoutDue)}</strong></div>{payments.map((payment, index) => <div className={styles.modalGrid} key={payment.id}><label>{t("pos_restaurant.payment_method")}<select value={payment.method} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, method: event.target.value, tendered: "", ref: "" } : row))}><option value="CASH">{t("pos_restaurant.payment_cash")}</option><option value="QR">{t("pos_restaurant.payment_qr")}</option><option value="CARD">{t("pos_restaurant.payment_card")}</option></select></label><label>{t("pos_restaurant.channel_amount")}<input type="number" min={0.01} step="0.01" value={payment.amount} onChange={(event) => setPayments((current) => rebalanceSplitPayments(current.map((row) => row.id === payment.id ? { ...row, amount: event.target.value } : row), payment.id, checkoutDue))} /></label>{payment.method === "CASH" ? <label>{t("pos_restaurant.cash_tendered")}<input type="number" min={Number(payment.amount) || 0} step="0.01" value={payment.tendered} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, tendered: event.target.value } : row))} />
         {/* เงินทอนต้องเห็น "ตอนถือเงินลูกค้าอยู่ในมือ" ไม่ใช่หลังกดยืนยันไปแล้ว — หน้าค้าปลีก
             แสดงมาตลอด (`เงินทอนรายการนี้`) หน้านี้เคยให้แคชเชียร์คิดเองหรือรอดูในใบเสร็จ
             · ขึ้นเฉพาะตอนกรอกครบและไม่ติดกฎ ไม่งั้นจะโชว์เลขทอนของยอดที่ยังผิดอยู่ */}
-        {cashChangeOf(payment) != null && <span className={styles.cashChange}>{t("pos_restaurant.payment_change")} <b>฿{money(cashChangeOf(payment)!)}</b></span>}</label> : <label>{t("pos_restaurant.reference_no")}<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>{t("pos_restaurant.remove_payment_channel", { number: index + 1 })}</button>}</div>)}<button type="button" className={styles.btn} onClick={() => setPayments((current) => appendSplitPaymentRow(current, check.amountDue, `pay-${Date.now()}`))}>{t("pos_restaurant.add_payment_channel")}</button><Alert type={checkoutBlock ? "warning" : "success"} showIcon message={checkoutBlock ? t("pos_restaurant.payment_total_blocked", { amount: money(paymentTotal), reason: checkoutBlock }) : t("pos_restaurant.payment_total_complete", { amount: money(paymentTotal) })} /></div>}</Modal>
+        {cashChangeOf(payment) != null && <span className={styles.cashChange}>{t("pos_restaurant.payment_change")} <b>฿{money(cashChangeOf(payment)!)}</b></span>}</label> : <label>{t("pos_restaurant.reference_no")}<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>{t("pos_restaurant.remove_payment_channel", { number: index + 1 })}</button>}</div>)}<button type="button" className={styles.btn} onClick={() => setPayments((current) => appendSplitPaymentRow(current, checkoutDue, `pay-${Date.now()}`))}>{t("pos_restaurant.add_payment_channel")}</button><Alert type={checkoutBlock ? "warning" : "success"} showIcon message={checkoutBlock ? t("pos_restaurant.payment_total_blocked", { amount: money(paymentTotal), reason: checkoutBlock }) : t("pos_restaurant.payment_total_complete", { amount: money(paymentTotal) })} /></div>}</Modal>
     <Modal title={t("pos_restaurant.manage_check_title", { table: check?.tableName ?? "" })} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
         <button type="button" className={styles.btn}

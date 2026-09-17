@@ -436,6 +436,13 @@ own dine-in service. Operator detail:
   is cooked; settling closes _that_ order through `recordPosSale()`. Never add a payment, drawer,
   lot or tax-document path for the restaurant surface — every one of those already has a single
   formula, and a second one drifts silently.
+- **Restaurant benefits belong to the reserved order snapshot.** Tier, coupon, points and an approved
+  manual discount are frozen on the existing `PENDING` order inside the settlement-claim
+  transaction. Preview reconstructs the discountable product subtotal from that order; it must not
+  re-price the current catalog or discount service/extra lines. A payment failure keeps those
+  benefits frozen and accepts only an exact retry, while cancellation/rebuild releases them through
+  the normal order path. Both Web and RN require the same distinct `pos.discount.approve` second
+  person for a manual discount.
 - **Service mode is check state, not fulfillment.** `DINE_IN` checks require a real table; `TAKEAWAY`
   checks deliberately have `table_id = NULL` and no table QR/session identity. The final POS order
   stores `restaurant_service_mode` only as a receipt/history snapshot. Do not add dine-in/takeaway
@@ -895,7 +902,8 @@ numbers, tiers, discounts, and points. Operator detail and the go-live checklist
   return reversal appends to `bms_loyalty_ledger` and updates the cached balance in the same tenant
   transaction. Negative balances are valid after returning goods whose earned points were spent.
 - **Discount composition has one implementation.** `composeDiscounts()` applies tier discount,
-  coupon, manual discount, then points redemption under the configured per-bill cap. POS previews
+  coupon, points redemption, then manual discount under the configured per-bill cap. When the cap
+  binds it trims manual first, then points, coupon and tier; POS previews
   and settlement must use the same math; a manual discount still needs a distinct second person with
   `pos.discount.approve` at the route boundary.
 - **Returns reverse proportionally and idempotently.** A partial return claws back only its share of
