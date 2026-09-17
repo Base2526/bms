@@ -19,6 +19,7 @@ import {
   isBoardGamePosAction,
   isBoardGamePosError,
   loadBoardGamePosCheckout,
+  loadBoardGamePosServiceCalls,
   loadBoardGamePosSession,
   loadBoardGamePosWorkspace,
   runBoardGamePosMutation,
@@ -91,7 +92,11 @@ async function handlePOST(req: NextRequest) {
 
   try {
     if (action === "workspace") {
-      return NextResponse.json(await loadBoardGamePosWorkspace(scope));
+      const [workspace, serviceCalls] = await Promise.all([
+        loadBoardGamePosWorkspace(scope),
+        loadBoardGamePosServiceCalls(scope),
+      ]);
+      return NextResponse.json({ ...workspace, serviceCalls });
     }
     if (action === "session") {
       return NextResponse.json({ session: await loadBoardGamePosSession(scope, body.sessionId) });

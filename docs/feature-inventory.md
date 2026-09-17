@@ -244,8 +244,8 @@ BMS **ไม่ใช่แชทบอท** — AI ไม่เคยเขี�
 | ฟีเจอร์ | สถานะ | migration · หน้าจอ |
 | --- | :---: | --- |
 | แดชบอร์ด + **Action Center** — งานที่ต้องทำวันนี้พร้อมหลักฐานว่าทำไมถึงขึ้นมา (เป็นคำแนะนำ ไม่ลงมือเอง) | ✅ | `9.12` · `/admin/dashboard` |
-| รายงานขาย · สต็อก · สินค้าขายดี · กำไรขั้นต้น | ✅ | — · `/admin/reports` |
-| สร้างเอกสาร/ส่งออก XLSX · CSV · PDF (สั่งจากจอ จาก GraphQL หรือให้ AI สั่ง) | ✅ | `7.53` |
+| Report Center: รายงานกลาง + เทียบช่วงก่อนหน้า + กระทบยอดเงิน/เงินสด/ledger + aging/cover + supplier fill rate/lead time + discount/promotion signals + customer segments และโมดูลตาม Shop archetype (restaurant: โต๊ะ/ครัว/QR, pharmacy: policy/lot/expiry แบบไม่เปิดข้อมูลคนไข้, board-game: session/library/pass, retail/wholesale: variant/pack/lot/serial/wastage/AR) พร้อมตัวกรองสาขา | ✅ | `9.97` · `/admin/reports` |
+| สร้างเอกสาร/ส่งออก XLSX · CSV · PDF สำหรับ Sales/Inventory/Profit/Products/Payments/Purchases/Customers/Operations/Specialized (สั่งจากจอ จาก GraphQL หรือให้ AI สั่ง) | ✅ | `7.53`, `9.95`, `9.97` |
 | ส่งสรุปยอดเข้าอีเมล / Slack / LINE + ตารางเวลาส่ง | ⚙️ | `7.37` · `/admin/report-schedule` |
 | Live dashboard สาธารณะ (เฟส 1 ข้อมูลจริง) | ✅ | `/live-dashboard` |
 

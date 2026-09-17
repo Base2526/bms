@@ -41,6 +41,7 @@ export const NAMED_REALTIME_SUBSCRIPTIONS: Readonly<Record<string, readonly Real
   // ส่วนคิวคือคนที่ยังไม่ได้โต๊ะ — จอคนละจอและคนละคนที่ต้องตอบสนอง
   bmsServiceCallChanged: [
     "restaurant.table_call.created", "restaurant.table_call.status_changed",
+    "board_game.table_call.created", "board_game.table_call.status_changed",
   ],
   bmsInventoryChanged: [
     "inventory.changed", "inventory.reservation_changed", "inventory.wastage.recorded",

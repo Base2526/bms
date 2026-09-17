@@ -21,6 +21,9 @@ jest.mock('react-native-data-scanner', () => ({
   },
 }));
 
+// QR rendering is an SVG detail; the smoke test only verifies provider/navigation wiring.
+jest.mock('react-native-qrcode-svg', () => 'QRCode');
+
 test('renders correctly', async () => {
   await ReactTestRenderer.act(() => {
     ReactTestRenderer.create(<App />);

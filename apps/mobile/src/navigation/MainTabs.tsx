@@ -6,6 +6,7 @@ import { useIncomingOrders } from '../state/IncomingOrdersContext';
 import { useRestaurantOperations } from '../state/RestaurantOperationsContext';
 import { useStoreMode } from '../state/StoreModeContext';
 import { useResponsive } from '../theme/useResponsive';
+import { useBoardGameService } from '../state/BoardGameServiceContext';
 import {
   FloorIcon,
   InventoryIcon,
@@ -139,6 +140,7 @@ function TabsShell() {
   const { pendingCount } = useIncomingOrders();
   const { totalPendingCount: restaurantPendingCount } =
     useRestaurantOperations();
+  const { pendingCount: boardGameServiceCallCount } = useBoardGameService();
   const sellTitle =
     mode === 'restaurant' ? 'เมนู' : mode === 'pharmacy' ? 'ขายยา' : 'ขาย';
   // badge เดียวต้องเป็นผลรวมจริงของทุกถังที่กดเข้าไปถึงได้จากแท็บนี้ —
@@ -155,9 +157,24 @@ function TabsShell() {
         tabBarLabelPosition: 'below-icon',
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        // Android adjustResize จะย่อทั้งฉากเมื่อคีย์บอร์ดขึ้น ถ้ายังคงแถบแท็บไว้ พื้นที่ฟอร์ม
+        // จะเหลือน้อยและปุ่ม submit หลุดจอ จึงซ่อนเฉพาะช่วงที่คีย์บอร์ดเปิด
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          lineHeight: 17,
+          fontWeight: '600',
+        },
+        tabBarItemStyle: {
+          minHeight: 56,
+          paddingTop: 4,
+        },
+        tabBarIconStyle: { marginTop: 2 },
+        tabBarBadgeStyle: { fontSize: 11, lineHeight: 16 },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
+          minHeight: 62,
           // ผัง Board Game, สต็อก, งาน และกะบน iPad มี sidebar ที่พาไปทุกส่วนหลักอยู่แล้ว
           // จึงใช้พื้นที่เต็มสูงเหมือน mockup; เมื่อออกไปแท็บอื่น bottom bar จะกลับมาเอง
           display:
@@ -224,6 +241,10 @@ function TabsShell() {
           component={BoardGameNavigator}
           options={{
             title: 'โต๊ะ/เวลา',
+            tabBarBadge:
+              boardGameServiceCallCount > 0
+                ? boardGameServiceCallCount
+                : undefined,
             tabBarIcon: ({ color, size }) => (
               <FloorIcon color={color} size={size} />
             ),

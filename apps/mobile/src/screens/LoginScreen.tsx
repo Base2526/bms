@@ -292,20 +292,18 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.pinPane}>{pinCard}</View>
         </View>
       ) : (
-        <>
+        <ScrollView
+          style={styles.phoneScroll}
+          contentContainerStyle={styles.phoneScrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {title}
           {deviceStrip}
-          <ScrollView
-            style={styles.phoneScroll}
-            contentContainerStyle={styles.phoneScrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {branchCard}
-            {cashierCard}
-            {pinCard}
-          </ScrollView>
-        </>
+          {branchCard}
+          {cashierCard}
+          {pinCard}
+        </ScrollView>
       )}
 
       <CashierPickerModal

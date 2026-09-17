@@ -42,6 +42,11 @@ import {
   releaseBoardGameIdentityHold,
   takeBoardGameIdentityHold,
 } from "./boardGameIdentity";
+import {
+  issueBoardGameGuestAccess,
+  listBoardGameServiceCalls,
+  updateBoardGameServiceCall,
+} from "./boardGameServiceCalls";
 import { isIdempotencyConflictError } from "./idempotencyErrors";
 import { isPosUuid } from "./posRouteHelpers";
 
@@ -144,7 +149,10 @@ export type BoardGamePosAction =
   | "tab.add"
   | "tab.remove"
   | "identity.hold"
-  | "identity.release";
+  | "identity.release"
+  | "service.access"
+  | "service.acknowledge"
+  | "service.complete";
 
 export type BoardGamePosActionSpec = {
   /** สิทธิ์หลักที่ต้องถือ — ตัวที่ผู้เรียกใช้ตอนตรวจ PIN */
@@ -254,6 +262,21 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     requiresOpenShift: false,
   },
   "identity.release": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "service.access": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "service.acknowledge": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "service.complete": {
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,
@@ -387,6 +410,10 @@ export async function loadBoardGamePosCheckout(
   const billingGroupId = await billingGroupAtScope(scope, billingGroupIdInput);
   return callService(() =>
     getBoardGameCheckoutForPos(scope.tenantId, scope.locationId, billingGroupId));
+}
+
+export async function loadBoardGamePosServiceCalls(scope: BoardGamePosScope) {
+  return listBoardGameServiceCalls(scope.tenantId, scope.locationId);
 }
 
 /**
@@ -579,6 +606,25 @@ export async function runBoardGamePosMutation(
         { note: input.note },
         actorUserId,
       ));
+    }
+    case "service.access": {
+      const sessionId = await sessionAtScope(scope, input.sessionId);
+      return callService(() => issueBoardGameGuestAccess({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        sessionId,
+        actorUserId,
+      }));
+    }
+    case "service.acknowledge":
+    case "service.complete": {
+      return callService(() => updateBoardGameServiceCall({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        callId: uuid(input.callId, "คำเรียกพนักงานไม่ถูกต้อง"),
+        actorUserId,
+        action: action === "service.acknowledge" ? "acknowledge" : "complete",
+      }));
     }
     case "copy.checkout": {
       const sessionId = await sessionAtScope(scope, input.sessionId);

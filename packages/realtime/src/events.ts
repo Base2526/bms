@@ -25,6 +25,8 @@ export const REALTIME_EVENT_TYPES = [
   "restaurant.qr_submission.status_changed",
   "restaurant.table_call.created",
   "restaurant.table_call.status_changed",
+  "board_game.table_call.created",
+  "board_game.table_call.status_changed",
   "restaurant.check.paid",
   "restaurant.check.cancelled",
   "menu.availability.changed",
@@ -142,6 +144,8 @@ export const REALTIME_EVENT_RULES: Readonly<Record<RealtimeEventType, RealtimeEv
   "restaurant.qr_submission.status_changed": location(["order.view"]),
   "restaurant.table_call.created": location(["order.view"]),
   "restaurant.table_call.status_changed": location(["order.view"]),
+  "board_game.table_call.created": location(["board_game.session.manage"]),
+  "board_game.table_call.status_changed": location(["board_game.session.manage"]),
   "restaurant.check.paid": location(["order.view"]),
   "restaurant.check.cancelled": location(["order.view"]),
   "menu.availability.changed": location(["product.view"]),
@@ -187,6 +191,7 @@ export const REALTIME_EVENT_RULES: Readonly<Record<RealtimeEventType, RealtimeEv
 
 const DOMAIN_FLAG: Readonly<Record<string, string>> = {
   restaurant: "REALTIME_RESTAURANT_ENABLED",
+  board_game: "REALTIME_POS_ENABLED",
   menu: "REALTIME_RESTAURANT_ENABLED",
   waitlist: "REALTIME_RESTAURANT_ENABLED",
   // จอครัวอ่านตั๋วสองตารางรวมกัน (bms_kitchen_tickets + bms_restaurant_kitchen_tickets)

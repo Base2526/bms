@@ -1229,9 +1229,10 @@ export const typeDefs = /* GraphQL */ `
     bmsRestockMetrics(search: String): BmsRestockMetrics!
 
     # ===== BMS Reports (admin) =====
-    bmsSalesSummary(from: String, to: String): BmsSalesSummary!
-    bmsInventorySummary: BmsInventorySummary!
-    bmsTopSellingProducts(from: String, to: String, limit: Int = 10): [BmsTopProduct!]!
+    bmsSalesSummary(from: String, to: String, locationId: ID): BmsSalesSummary!
+    bmsInventorySummary(locationId: ID): BmsInventorySummary!
+    bmsTopSellingProducts(from: String, to: String, limit: Int = 10, locationId: ID): [BmsTopProduct!]!
+    bmsManagementReport(from: String, to: String, locationId: ID): BmsManagementReport!
 
     # ===== BMS AI Report & Document Generation (MVP core) =====
     bmsGeneratedReports(limit: Int): [BmsGeneratedReport!]!
@@ -2441,15 +2442,282 @@ export const typeDefs = /* GraphQL */ `
     reservedUnits: Int!
     availableUnits: Int!
     stockValue: Float!
+    stockRetailValue: Float!
+    stockCostValue: Float
+    knownStockCostValue: Float!
+    missingCostVariantCount: Int!
     lowStockCount: Int!
     outOfStockCount: Int!
   }
 
+  type BmsReportBucket { key: String! count: Int! amount: Float! }
+  type BmsReportBranch {
+    locationId: ID!
+    code: String!
+    name: String!
+    orders: Int!
+    revenue: Float!
+  }
+  type BmsReportProductPerformance {
+    sku: String!
+    name: String!
+    category: String
+    qty: Int!
+    revenue: Float!
+    profit: Float
+    marginPct: Float
+    missingCost: Boolean!
+  }
+  type BmsReportProducts {
+    activeSkuCount: Int!
+    soldSkuCount: Int!
+    unsoldSkuCount: Int!
+    missingCostSkuCount: Int!
+    top: [BmsReportProductPerformance!]!
+    slow: [BmsReportProductPerformance!]!
+  }
+  type BmsProfitDay {
+    day: String!
+    revenue: Float!
+    cost: Float
+    knownCost: Float!
+    profit: Float
+    missingCostLineCount: Int!
+  }
+  type BmsProfitSummary {
+    method: String!
+    disclaimer: String!
+    from: String!
+    to: String!
+    revenue: Float!
+    cost: Float
+    knownCost: Float!
+    profit: Float
+    marginPct: Float
+    complete: Boolean!
+    authoritative: Boolean!
+    legacyCostLineCount: Int!
+    missingCostLineCount: Int!
+    missingCostSkuCount: Int!
+    missingCostRevenue: Float!
+    byDay: [BmsProfitDay!]!
+  }
+  type BmsPaymentReport {
+    receivedAmount: Float!
+    refundedAmount: Float!
+    pendingAmount: Float!
+    pendingCount: Int!
+    byMethod: [BmsReportBucket!]!
+    byStatus: [BmsReportBucket!]!
+  }
+  type BmsPurchaseReport {
+    poCount: Int!
+    orderedAmount: Float!
+    openAmount: Float!
+    openCount: Int!
+    byStatus: [BmsReportBucket!]!
+    bySupplier: [BmsReportBucket!]!
+  }
+  type BmsCustomerReport {
+    totalCustomers: Int!
+    newCustomers: Int!
+    purchasingCustomers: Int!
+    repeatCustomers: Int!
+    repeatRate: Float!
+    anonymousOrders: Int!
+    identifiedRevenue: Float!
+    avgRevenuePerCustomer: Float!
+  }
+  type BmsFulfillmentReport {
+    shipmentCount: Int!
+    deliveredCount: Int!
+    inProgressCount: Int!
+    exceptionCount: Int!
+    avgDeliveryHours: Float!
+    byStatus: [BmsReportBucket!]!
+  }
+  type BmsControlReport {
+    discountAmount: Float!
+    voidCount: Int!
+    voidAmount: Float!
+    noSaleCount: Int!
+    cashIn: Float!
+    cashOut: Float!
+    absoluteCashVariance: Float!
+    closedShiftCount: Int!
+    wastageQty: Int!
+    stockMovements: [BmsReportBucket!]!
+  }
+  type BmsLiabilityReport {
+    loyaltyPoints: Int!
+    loyaltyValue: Float!
+    storeCreditAmount: Float!
+    arOutstandingAmount: Float!
+    arOverdueAmount: Float!
+    balanceMismatchCount: Int!
+  }
+  type BmsPeriodComparison {
+    previousFrom: String!
+    previousTo: String!
+    currentNetRevenue: Float!
+    previousNetRevenue: Float!
+    revenueChangePct: Float
+    currentOrderCount: Int!
+    previousOrderCount: Int!
+    orderChangePct: Float
+    currentProfit: Float
+    previousProfit: Float
+    profitChangePct: Float
+  }
+  type BmsReconciliationReport {
+    paidOrderCount: Int!
+    paidOrderAmount: Float!
+    paymentReceivedAmount: Float!
+    completedRefundAmount: Float!
+    netPaymentAmount: Float!
+    netOrderAmount: Float!
+    paymentDifference: Float!
+    taxDocumentCount: Int!
+    taxDocumentAmount: Float!
+    expectedCash: Float!
+    countedCash: Float!
+    cashDifference: Float!
+    varianceShiftCount: Int!
+    mismatchCount: Int!
+  }
+  type BmsInventoryAgingReport {
+    stockedVariantCount: Int!
+    missingCostVariantCount: Int!
+    stockUnits: Int!
+    knownCostValue: Float!
+    age31To60Count: Int!
+    age61To90Count: Int!
+    age91To180Count: Int!
+    age180PlusCount: Int!
+    deadStockUnits: Int!
+    deadStockValue: Float!
+    estimatedDaysCover: Float
+    method: String!
+  }
+  type BmsSupplierPerformance {
+    supplier: String!
+    poCount: Int!
+    orderedAmount: Float!
+    receivedAmount: Float!
+    orderedQty: Int!
+    receivedQty: Int!
+    fillRate: Float!
+    avgLeadDays: Float!
+    openPoCount: Int!
+  }
+  type BmsDiscountPerformance {
+    paidOrderCount: Int!
+    discountedOrderCount: Int!
+    beforeDiscountRevenue: Float!
+    netRevenue: Float!
+    discountAmount: Float!
+    discountRate: Float!
+    promotionLineCount: Int!
+  }
+  type BmsReportProfile {
+    archetype: String
+    group: String!
+    moduleKeys: [String!]!
+  }
+  type BmsCatalogControlReport {
+    activeVariantCount: Int!
+    productsWithVariants: Int!
+    multiVariantProductCount: Int!
+    activePackCount: Int!
+    productsWithPacks: Int!
+    alternatePackCount: Int!
+    stockedLotCount: Int!
+    lotUnits: Int!
+    expiredLotCount: Int!
+    expiredUnits: Int!
+    expiringLotCount: Int!
+    expiringUnits: Int!
+    lotsMissingExpiry: Int!
+    serialTrackedSkuCount: Int!
+    serialInStockCount: Int!
+    serialSoldCount: Int!
+    serialReturnedCount: Int!
+  }
+  type BmsRestaurantOperationsReport {
+    checkCount: Int!
+    paidCheckCount: Int!
+    cancelledCheckCount: Int!
+    guestCount: Int!
+    avgTableMinutes: Float!
+    kitchenTicketCount: Int!
+    servedTicketCount: Int!
+    cancelledTicketCount: Int!
+    avgKitchenMinutes: Float!
+    qrSubmissionCount: Int!
+    qrAcceptedCount: Int!
+    qrRejectedCount: Int!
+  }
+  type BmsPharmacyOperationsReport {
+    policyCount: Int!
+    approvedPolicyCount: Int!
+    draftPolicyCount: Int!
+    pendingReviewPolicyCount: Int!
+    retiredPolicyCount: Int!
+    missingPolicySkuCount: Int!
+  }
+  type BmsBoardGameOperationsReport {
+    sessionCount: Int!
+    paidSessionCount: Int!
+    cancelledSessionCount: Int!
+    guestCount: Int!
+    avgPlayMinutes: Float!
+    paidBillingGroupCount: Int!
+    openBillingGroupCount: Int!
+    settledAmount: Float!
+    titleCount: Int!
+    copyCount: Int!
+    availableCopyCount: Int!
+    attentionCopyCount: Int!
+    checkedOutCopyCount: Int!
+    activePassCount: Int!
+    minutePassCount: Int!
+    remainingPassMinutes: Int!
+  }
+  type BmsArchetypeReport {
+    profile: BmsReportProfile!
+    catalog: BmsCatalogControlReport!
+    restaurant: BmsRestaurantOperationsReport
+    pharmacy: BmsPharmacyOperationsReport
+    boardGame: BmsBoardGameOperationsReport
+  }
+  type BmsManagementReport {
+    from: String!
+    to: String!
+    locationId: ID
+    archetype: BmsArchetypeReport!
+    profit: BmsProfitSummary!
+    comparison: BmsPeriodComparison!
+    reconciliation: BmsReconciliationReport!
+    inventoryAging: BmsInventoryAgingReport!
+    supplierPerformance: [BmsSupplierPerformance!]!
+    discountPerformance: BmsDiscountPerformance!
+    customerSegments: [BmsReportBucket!]!
+    branches: [BmsReportBranch!]!
+    products: BmsReportProducts!
+    payments: BmsPaymentReport!
+    purchases: BmsPurchaseReport!
+    customers: BmsCustomerReport!
+    fulfillment: BmsFulfillmentReport!
+    controls: BmsControlReport!
+    liabilities: BmsLiabilityReport!
+  }
+
   # ===== BMS AI Report & Document Generation (MVP core) =====
   input BmsGenerateReportInput {
-    reportType: String!   # SALES / INVENTORY / PROFIT
+    reportType: String!   # SALES / INVENTORY / PROFIT / PRODUCTS / PAYMENTS / PURCHASES / CUSTOMERS / OPERATIONS / SPECIALIZED
     dateFrom: String       # YYYY-MM-DD, ไม่ใช้กับ INVENTORY
     dateTo: String
+    locationId: ID         # optional branch filter; tenant ownership is enforced server-side
     format: String!        # XLSX / CSV / PDF
     includeSummary: Boolean
   }

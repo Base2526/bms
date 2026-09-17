@@ -183,7 +183,7 @@ wrong, and update the doc in the same change.
   to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
   `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
-- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`)** — play time, sellable goods, and playable game
+- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`)** — play time, sellable goods, and playable game
   copies are three different domains. A billing group, never the table session, owns the frozen
   charge, snack tab and settling order. One group may close and pay while every other group keeps
   accruing time; the table remains occupied until no group is `OPEN` or `CLOSING`. A checked-out
@@ -205,6 +205,10 @@ wrong, and update the doc in the same change.
   plan moved later and never covers a visit at another branch. Identity holds may be taken only while
   the session is `OPEN`; final POS settlement rechecks that no card is still held, and settlement
   locks session → billing group → order to match close/cancel.
+  A guest service bell (`9.96`) is session-scoped and operational only: it never changes time, bill,
+  stock, or copy condition. Move/merge resolves the current table from seating, terminal sessions
+  revoke the guest token and expire active calls, and a reported game issue still needs the existing
+  copy-condition workflow after staff physically inspect it.
   Native POS derives its branch from the paired device, hands the billing-group id to the
   existing sale mutation, and must never submit its display-only time line as a Product SKU. Full detail:
   [business/board-game-cafe.md](docs/business/board-game-cafe.md) and

@@ -6,6 +6,7 @@ import { CatalogProvider } from '../state/CatalogContext';
 import { IncomingOrdersProvider } from '../state/IncomingOrdersContext';
 import { KitchenProvider } from '../state/KitchenContext';
 import { RestaurantOperationsProvider } from '../state/RestaurantOperationsContext';
+import { BoardGameServiceProvider } from '../state/BoardGameServiceContext';
 import { SalesProvider } from '../state/SalesContext';
 import { sessionCashierName, useSession } from '../state/SessionContext';
 import { ShiftProvider } from '../state/ShiftContext';
@@ -52,7 +53,8 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
               <KitchenProvider>
                 <IncomingOrdersProvider>
                   <RestaurantOperationsProvider>
-                    <OrderAlertWatcher />
+                    <BoardGameServiceProvider>
+                      <OrderAlertWatcher />
                     <Stack.Navigator screenOptions={{ headerShown: false }}>
                       <Stack.Screen name="Tabs" component={MainTabs} />
                       <Stack.Screen
@@ -99,7 +101,8 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
                         name="BoardGameDetail"
                         component={BoardGameDetailScreen}
                       />
-                    </Stack.Navigator>
+                      </Stack.Navigator>
+                    </BoardGameServiceProvider>
                   </RestaurantOperationsProvider>
                 </IncomingOrdersProvider>
               </KitchenProvider>

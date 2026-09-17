@@ -28,6 +28,7 @@ const MIGRATIONS = [
   "db/migrations/9.84__bms_realtime_pos_device_heartbeat_filter.sql",
   "db/migrations/9.85__bms_realtime_remaining_business_events.sql",
   "db/migrations/9.86__bms_realtime_parked_sale_delete.sql",
+  "db/migrations/9.96__bms_board_game_service_calls.sql",
 ];
 
 type DmlOperation = "INSERT" | "UPDATE" | "DELETE";
@@ -96,7 +97,7 @@ function realtimeTriggerOperations(): Map<string, Set<DmlOperation>> {
       actions.push({ index: match.index, kind: "drop", name: match[1].toLowerCase() });
     }
     for (const match of source.matchAll(
-      /CREATE\s+TRIGGER\s+([a-z0-9_]+)([\s\S]*?)FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION[\s\S]*?;/gi,
+      /CREATE\s+TRIGGER\s+(trg_bms_realtime_[a-z0-9_]+)([\s\S]*?)FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION[\s\S]*?;/gi,
     )) {
       actions.push({
         index: match.index,
@@ -192,6 +193,7 @@ const CONFIGURATION = [
   "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens",
   "bms_board_game_areas", "bms_board_game_public_locations", "bms_board_game_tables",
   "bms_board_game_time_rates", "bms_board_game_titles",
+  "bms_board_game_guest_tokens",
 ];
 
 /** Operational state whose owning page performs authoritative 15-second polling plus post-write refresh. */

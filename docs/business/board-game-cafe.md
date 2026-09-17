@@ -244,6 +244,28 @@ making the whole cleanup fail or deleting that history.
 
 ## Register surfaces (browser and native)
 
+### Guest service bell (`9.96`)
+
+An open board-game session can issue a session-scoped `/bg/[token]` QR from the native register.
+The guest can request game/rules help, report missing or damaged pieces, ask for food/drinks, request
+the bill or more time, report a spill, or enter a short free-text request. The request is operational
+work only: it never changes play time, freezes a bill, adds a sellable line, moves stock, or changes a
+game-copy condition automatically.
+
+The native floor keeps a live branch-scoped bell badge, marks the affected table, and lets a
+PIN-verified `board_game.session.manage` operator acknowledge then complete the request. New calls
+reuse the global POS sound/vibration pipeline. A request belongs to the board-game session, while its
+displayed table is resolved from the session's current seating, so moving or merging tables does not
+send staff to the scan-time table. Only one active request may exist per session; the public route is
+rate-limited and idempotent, and another request becomes available after staff completes the current
+one. Paying or cancelling the session revokes its guest token and expires any active calls in the
+same database transition.
+
+`GAME_ISSUE` deliberately does not mark a copy damaged. After checking the physical game, staff use
+the existing return/condition workflow to choose `NEEDS_CHECK`, `MISSING_PARTS`, `DAMAGED`, or another
+authoritative copy status. Completing a service call means the guest was helped, not that the asset
+was repaired.
+
 Both registers carry the same `โต๊ะ/เวลา` tab, gated on the `board_game_cafe` archetype, and both
 decide with the same code. The browser register (`/pos`) reaches it over REST
 (`POST /api/pos/board-game`) because the POS layout deliberately carries no Apollo provider; the

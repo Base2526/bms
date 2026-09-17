@@ -184,7 +184,7 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
     id: "reports.export", module: "reports",
     title: both("ส่งออกรายงาน", "Report export"),
-    description: both("สร้างรายงานยอดขาย สต็อก และกำไรโดยประมาณ", "Generate sales, inventory, and estimated-profit reports."),
+    description: both("สร้างรายงานยอดขาย สต็อก กำไร กระทบยอด และรายงานบริหาร", "Generate sales, inventory, profit, reconciliation, and management reports."),
     aliases: aliases(["รายงาน", "export", "PDF", "Excel", "CSV"], ["reports", "export", "PDF", "Excel", "CSV"]),
     status: "AVAILABLE", route: "/admin/reports", requiredPermissions: ["report.view"],
     configurationDependencies: [], formats: ["XLSX", "CSV", "PDF"],

@@ -75,7 +75,17 @@ type Rate = {
 };
 type Copy = { id: string; locationId: string; copyCode: string; status: string; conditionNote: string | null };
 type Title = { id: string; title: string; copies: Copy[] };
-type Workspace = { floor: { areas: Area[]; tables: Table[] }; rates: Rate[]; library: Title[] };
+type ServiceCall = {
+  id: string; sessionId: string; tableCode: string; tableName: string;
+  requestCode: string; requestNote: string | null; status: 'PENDING' | 'ACKNOWLEDGED';
+  createdAt: string;
+};
+type Workspace = {
+  floor: { areas: Area[]; tables: Table[] };
+  rates: Rate[];
+  library: Title[];
+  serviceCalls: ServiceCall[];
+};
 
 type Participant = {
   id: string; displayName: string | null; participantType: string; billable: boolean;
@@ -175,6 +185,18 @@ function alertLabel(status: string | null | undefined) {
   return 'กำลังเล่น';
 }
 
+function serviceCallLabel(code: string) {
+  return ({
+    GAME_HELP: 'ช่วยสอนเกม',
+    GAME_ISSUE: 'ชิ้นส่วนขาด / เกมชำรุด',
+    FOOD_DRINK: 'อาหารหรือเครื่องดื่ม',
+    BILL: 'ขอคิดเงิน',
+    EXTEND_TIME: 'ขอต่อเวลา',
+    CLEANUP: 'น้ำหก / ทำความสะอาด',
+    OTHER: 'อื่น ๆ',
+  } as Record<string, string>)[code] ?? code;
+}
+
 /**
  * โต๊ะที่ปิดเวลาแล้วยังไม่ได้เก็บเงินคือโต๊ะที่ยังว่างไม่ได้ แต่ก็ไม่ได้เล่นอยู่ — ป้าย
  * "กำลังเล่น" บนโต๊ะที่ครัวเรียกเก็บเงินไปแล้วคือสิ่งที่ทำให้พนักงานเดินไปถามลูกค้าผิดเรื่อง
@@ -259,6 +281,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [now, setNow] = useState(() => Date.now());
   const [detailTab, setDetailTab] = useState<'overview' | 'tab' | 'games'>('overview');
   const [showCloseChoices, setShowCloseChoices] = useState(false);
+  const [guestLink, setGuestLink] = useState('');
 
   // ฟอร์มเปิดโต๊ะ
   const [billingMode, setBillingMode] = useState<'OPEN_ENDED' | 'FIXED_DURATION'>('OPEN_ENDED');
@@ -535,6 +558,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   // ปุ่มเดียวทำสองความหมาย จอจึงต้องบอกก่อนกด ไม่ใช่ให้รู้ตอนอีกชุดหายไปจากโต๊ะ
   const sharedSeating = (activeSeating?.sessionCount ?? 1) > 1;
   const money = moneySoFar(session?.billingGroups ?? []);
+  const sessionCalls = (workspace?.serviceCalls ?? []).filter(
+    (item) => item.sessionId === session?.id,
+  );
   const floorTables = workspace?.floor.tables ?? [];
   const availableCount = floorTables.filter((table) => !table.blocked && !table.openSession).length;
   const playingCount = floorTables.filter((table) => table.openSession?.status === 'OPEN').length;
@@ -831,6 +857,55 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             <div><b>{session.billingGroups.length}</b><span>กลุ่มบิล</span></div>
             <div><b>{session.games.filter((loan) => !loan.returnedAt).length}</b><span>เกมยืม</span></div>
             <div><b>{session.identityHolds.filter((hold) => hold.status === 'HELD').length}</b><span>บัตรที่ถือ</span></div>
+          </div>
+
+          <div className="pos-bg-section">
+            <div className="pos-shift-head">
+              <div>
+                <div className="pos-block-title">🔔 เรียกพนักงาน</div>
+                <div className="pos-block-hint">ออกลิงก์ให้ลูกค้าสแกน และรับงานของโต๊ะนี้</div>
+              </div>
+              <button type="button" className="pos-ret-btn"
+                disabled={busy === 'service-access'}
+                onClick={() => void run('service-access', 'service.access', {
+                  sessionId: session.id,
+                }, (data) => {
+                  const publicToken = data?.result?.token;
+                  if (typeof publicToken !== 'string') return;
+                  setGuestLink(new URL(`/bg/${publicToken}`, window.location.origin).toString());
+                  setNotice('สร้างลิงก์เรียกพนักงานแล้ว');
+                })}>
+                {busy === 'service-access' ? 'กำลังสร้าง…' : 'สร้างลิงก์ลูกค้า'}
+              </button>
+            </div>
+            {guestLink && (
+              <div className="pos-bg-row" style={{ marginTop: 8 }}>
+                <a href={guestLink} target="_blank" rel="noreferrer" className="pos-bg-row-main">
+                  เปิดหน้าลูกค้า / ใช้สร้าง QR
+                </a>
+                <button type="button" className="pos-ret-btn"
+                  onClick={() => void navigator.clipboard?.writeText(guestLink)}>
+                  คัดลอกลิงก์
+                </button>
+              </div>
+            )}
+            {sessionCalls.map((item) => (
+              <div key={item.id} className="pos-bg-row" style={{ marginTop: 8 }}>
+                <div className="pos-bg-row-main">
+                  {serviceCallLabel(item.requestCode)}{item.requestNote ? ` · ${item.requestNote}` : ''}
+                </div>
+                <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                  disabled={busy === `service-${item.id}`}
+                  onClick={() => void run(
+                    `service-${item.id}`,
+                    item.status === 'PENDING' ? 'service.acknowledge' : 'service.complete',
+                    { callId: item.id },
+                    () => setNotice(item.status === 'PENDING' ? 'รับทราบคำเรียกแล้ว' : 'ปิดงานแล้ว'),
+                  )}>
+                  {item.status === 'PENDING' ? 'รับทราบ' : 'เสร็จสิ้น'}
+                </button>
+              </div>
+            ))}
           </div>
 
           <div className="pos-bg-detail-tabs" role="tablist" aria-label="งานของโต๊ะนี้">

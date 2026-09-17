@@ -1218,7 +1218,7 @@ const getDashboardTool: BmsTool = {
 const generateReportTool: BmsTool = {
   name: "generate_report",
   description:
-    "Generate a downloadable report file (Excel/CSV/PDF) for Sales, Inventory, or Profit and return a download link. " +
+    "Generate a downloadable report file (Excel/CSV/PDF) for Sales, Inventory, Profit, Products, Payments, Purchases, Customers, or Operations and return a download link. " +
     "Produces a real file the user can open/download — use this instead of get_sales_summary/get_inventory_summary " +
     "when the user explicitly asks to export/download/generate a document (e.g. 'export sales to Excel', " +
     "'generate a PDF profit report'), not when they're just asking a question you can answer in chat.",
@@ -1327,7 +1327,7 @@ const emailReportTool: BmsTool = {
           format: generated.format,
           isKnownRecipient: known,
         },
-        summary: `ส่งรายงาน${generated.reportType === "SALES" ? "ยอดขาย" : generated.reportType === "INVENTORY" ? "สต็อกสินค้า" : "กำไร"} (${generated.format}) ไปที่ ${to}`,
+        summary: `ส่งรายงาน ${generated.reportType} (${generated.format}) ไปที่ ${to}`,
       },
     };
   },
