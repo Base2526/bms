@@ -90,6 +90,8 @@ type WaitlistEntry = {
   confirmedAt: string | null; checkedInAt: string | null;
   source: 'STAFF' | 'PUBLIC'; reviewedAt: string | null; rejectionReason: string | null;
   reminderStatus: string; reminderSentAt: string | null;
+  decisionNotificationStatus: string; depositPolicy: string; depositAmount: number;
+  depositStatus: string; depositDueAt: string | null; depositRefundEligibleUntil: string | null;
   seatedTableId: string | null; seatedTableCode: string | null; seatedSessionId: string | null;
   calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string;
 };
@@ -759,6 +761,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               const now = Date.now();
               const canArrive = Number.isFinite(reservedAt)
                 && now >= reservedAt - 2 * 60 * 60_000 && now <= reservedAt + 6 * 60 * 60_000;
+              const depositReady = entry.depositStatus === 'NOT_REQUIRED' || entry.depositStatus === 'PAID';
               const canMarkNoShow = Number.isFinite(reservedAt) && now >= reservedAt;
               return (
                 <div key={entry.id} className="pos-bg-row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
@@ -769,6 +772,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                       {' · '}{entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'}
                       {' · '}{entry.reservedDurationMinutes ?? 0} นาที
                       {entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
+                      {entry.depositAmount > 0 ? ` · มัดจำ ฿${entry.depositAmount.toFixed(2)} (${entry.depositStatus})` : ''}
+                      {entry.source === 'PUBLIC' ? ` · แจ้งผล ${entry.decisionNotificationStatus}` : ''}
                     </span>
                   </div>
                   <div className="pos-bg-row-actions">
@@ -813,7 +818,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                       แก้ไข/เลื่อน
                     </button>
                     <button type="button" className="pos-ret-btn"
-                      disabled={!canArrive || busy === `reservation-checkin-${entry.id}`}
+                      disabled={!canArrive || !depositReady || busy === `reservation-checkin-${entry.id}`}
                       onClick={() => void run(`reservation-checkin-${entry.id}`, 'reservation.check_in',
                         { entryId: entry.id }, () => setNotice('เช็กอินและออกเลขคิวแล้ว'))}>
                       เช็กอิน

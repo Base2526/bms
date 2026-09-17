@@ -17,9 +17,11 @@ import { useI18n } from "@/lib/i18nContext";
 
 // ---- Types --------------------------------------------------
 type PayStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "REFUNDED";
-type PayMethod = "BANK_TRANSFER" | "QR" | "CARD" | "TIKTOK" | "CASH" | "WALLET" | "STORE_CREDIT" | "CREDIT";
+type PayMethod = "BANK_TRANSFER" | "QR" | "CARD" | "TIKTOK" | "CASH" | "WALLET" | "STORE_CREDIT" | "CREDIT" | "RESERVATION_DEPOSIT";
 type Payment = {
-  id: string; orderId: string; method: PayMethod; amount: number; status: PayStatus;
+  id: string; orderId: string | null; targetType: string; reservationId: string | null;
+  reservationDepositStatus: string | null; sourcePaymentId: string | null;
+  method: PayMethod; amount: number; status: PayStatus;
   completedRefundAmount: number; pendingRefundAmount: number; netAmount: number;
   slipUrl: string | null; slipRef: string | null; verifyResult: string | null;
   note: string | null; verifiedBy: string | null; createdAt: string; updatedAt: string;
@@ -29,7 +31,8 @@ type Payment = {
 const Q_PAYMENTS = gql`
   query BmsPayments($search: String, $status: BmsPaymentStatus, $limit: Int) {
     bmsPayments(search: $search, status: $status, limit: $limit) {
-      id orderId method amount completedRefundAmount pendingRefundAmount netAmount
+      id orderId targetType reservationId reservationDepositStatus sourcePaymentId
+      method amount completedRefundAmount pendingRefundAmount netAmount
       status slipUrl slipRef verifyResult note verifiedBy createdAt updatedAt
     }
   }
@@ -64,7 +67,7 @@ function statusLabels(t: (key: string) => string): Record<PayStatus, string> {
     REFUNDED: t("admin_payment.status_refunded"),
   };
 }
-const SUBMIT_METHODS: Exclude<PayMethod, "CREDIT">[] = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"];
+const SUBMIT_METHODS: PayMethod[] = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"];
 function methodLabels(t: (key: string) => string): Record<PayMethod, string> {
   return {
     BANK_TRANSFER: t("admin_payment.method_bank_transfer"),
@@ -75,6 +78,7 @@ function methodLabels(t: (key: string) => string): Record<PayMethod, string> {
     WALLET: t("admin_payment.method_wallet"),
     STORE_CREDIT: t("admin_payment.method_store_credit"),
     CREDIT: t("admin_payment.method_credit"),
+    RESERVATION_DEPOSIT: t("admin_payment.method_reservation_deposit"),
   };
 }
 const FILTERS = ["ALL", "PENDING", "CONFIRMED", "REJECTED", "REFUNDED"] as const;
@@ -184,7 +188,10 @@ function PaymentManagement() {
           </Popconfirm>
         );
       }
-    } else if (r.status === "CONFIRMED" && can("payment.refund")) {
+    } else if (r.status === "CONFIRMED" && !r.sourcePaymentId
+      && (!r.reservationId || r.reservationDepositStatus === "REFUND_PENDING")
+      && r.completedRefundAmount <= 0 && r.pendingRefundAmount <= 0
+      && can("payment.refund")) {
       btns.push(
         <Popconfirm key="refund" title={t("admin_payment.refund_confirm_title")} description={t("admin_payment.refund_confirm_desc")} okText={t("admin_payment.refund_ok_text")} okButtonProps={{ danger: true }} cancelText={t("admin_payment.no_text")} disabled={busy} onConfirm={() => refund(v)}>
           <Button type="link" size="small" danger icon={<RollbackOutlined />} disabled={busy}>{t("admin_payment.btn_refund")}</Button>
@@ -198,8 +205,12 @@ function PaymentManagement() {
     () => [
       { title: "Payment", dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
-      { title: "Order", dataIndex: "orderId", key: "orderId", width: 100,
-        render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
+      { title: t("admin_payment.col_target"), key: "target", width: 150,
+        render: (_: unknown, r: Payment) => <Typography.Text code>
+          {r.orderId
+            ? `${t("admin_payment.target_order")} ${r.orderId.slice(0, 8)}`
+            : `${t("admin_payment.target_reservation")} ${r.reservationId?.slice(0, 8) ?? "-"}`}
+        </Typography.Text> },
       { title: t("admin_payment.col_method"), dataIndex: "method", key: "method", width: 130,
         render: (m: PayMethod) => METHOD_LABEL[m] || m },
       { title: t("admin_payment.col_amount"), dataIndex: "amount", key: "amount", width: 190, align: "right" as const,
@@ -269,7 +280,11 @@ function PaymentManagement() {
               }
               extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
               fields={[
-                { label: t("admin_payment.field_order"), value: <Typography.Text code>{r.orderId.slice(0, 8)}</Typography.Text> },
+                { label: t("admin_payment.col_target"), value: <Typography.Text code>
+                  {r.orderId
+                    ? `${t("admin_payment.target_order")} ${r.orderId.slice(0, 8)}`
+                    : `${t("admin_payment.target_reservation")} ${r.reservationId?.slice(0, 8) ?? "-"}`}
+                </Typography.Text> },
                 { label: t("admin_payment.col_amount"), value: <PaymentAmountBreakdown payment={r} /> },
                 {
                   label: t("admin_payment.col_ref_slip"),

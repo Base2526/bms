@@ -1205,11 +1205,15 @@ export async function getManagementReport(
           WHERE a.tenant_id=$1 AND a.status='COMPLETED'
             AND ($4::uuid IS NULL OR pr.return_location_id=$4::uuid)
          UNION ALL
-         SELECT p.amount, COALESCE(p.refunded_at,p.updated_at) AS occurred_at
+         SELECT CASE WHEN p.refunded_amount > 0 THEN p.refunded_amount ELSE p.amount END,
+                COALESCE(p.refunded_at,p.updated_at) AS occurred_at
            FROM bms_payments p
-           JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
-          WHERE p.tenant_id=$1 AND p.status='REFUNDED'
-            AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
+           LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+           LEFT JOIN bms_board_game_waitlist w
+             ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
+          WHERE p.tenant_id=$1 AND (p.status='REFUNDED' OR p.refunded_amount > 0)
+            AND p.source_payment_id IS NULL
+            AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
             AND NOT EXISTS (
               SELECT 1 FROM bms_pos_refund_allocations a
                WHERE a.tenant_id=p.tenant_id AND a.payment_id=p.id
@@ -1217,30 +1221,42 @@ export async function getManagementReport(
        )
        SELECT
          COALESCE((SELECT SUM(p.amount) FROM bms_payments p
-                    JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+                    LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+                    LEFT JOIN bms_board_game_waitlist w
+                      ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
                    WHERE p.tenant_id=$1 AND p.status IN ('CONFIRMED','REFUNDED')
-                     AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
+                     AND p.source_payment_id IS NULL
+                     AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
                      AND COALESCE(p.confirmed_at,p.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
                      AND COALESCE(p.confirmed_at,p.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS received,
          COALESCE((SELECT SUM(amount) FROM refund_events
                    WHERE occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
                      AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS refunded,
          COALESCE((SELECT SUM(p.amount) FROM bms_payments p
-                    JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+                    LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+                    LEFT JOIN bms_board_game_waitlist w
+                      ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
                    WHERE p.tenant_id=$1 AND p.status='PENDING'
-                     AND ($4::uuid IS NULL OR o.location_id=$4::uuid)),0) AS pending,
+                     AND p.source_payment_id IS NULL
+                     AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)),0) AS pending,
          (SELECT COUNT(*)::int FROM bms_payments p
-           JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+           LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+           LEFT JOIN bms_board_game_waitlist w
+             ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
           WHERE p.tenant_id=$1 AND p.status='PENDING'
-            AND ($4::uuid IS NULL OR o.location_id=$4::uuid)) AS pending_count`,
+            AND p.source_payment_id IS NULL
+            AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)) AS pending_count`,
       params
     ),
     query(
       `SELECT p.method AS key, COUNT(*)::int AS count, COALESCE(SUM(p.amount),0) AS amount
-         FROM bms_payments p
-         JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+       FROM bms_payments p
+         LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+         LEFT JOIN bms_board_game_waitlist w
+           ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
         WHERE p.tenant_id=$1 AND p.status IN ('CONFIRMED','REFUNDED')
-          AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
+          AND p.source_payment_id IS NULL
+          AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
           AND COALESCE(p.confirmed_at,p.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND COALESCE(p.confirmed_at,p.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY p.method ORDER BY amount DESC`,
@@ -1248,9 +1264,12 @@ export async function getManagementReport(
     ),
     query(
       `SELECT p.status AS key, COUNT(*)::int AS count, COALESCE(SUM(p.amount),0) AS amount
-         FROM bms_payments p
-         JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
-        WHERE p.tenant_id=$1 AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
+       FROM bms_payments p
+         LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+         LEFT JOIN bms_board_game_waitlist w
+           ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
+        WHERE p.tenant_id=$1 AND p.source_payment_id IS NULL
+          AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
           AND p.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND p.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY p.status ORDER BY count DESC`,

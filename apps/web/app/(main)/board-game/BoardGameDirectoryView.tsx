@@ -8,6 +8,11 @@ import styles from "./page.module.css";
 
 type SearchState = "idle" | "locating" | "loading" | "error";
 
+function newBookingToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+}
+
 export default function BoardGameDirectoryView({
   initialCafes,
   lang,
@@ -23,6 +28,7 @@ export default function BoardGameDirectoryView({
   const [bookingBusy, setBookingBusy] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [bookingResult, setBookingResult] = useState<{ token: string; status: string } | null>(null);
+  const [bookingRequestToken, setBookingRequestToken] = useState("");
   const copy = lang === "en" ? {
     title: "Board game cafes",
     subtitle: "Find published cafes, compare play rates and see aggregate table availability before you go.",
@@ -58,6 +64,10 @@ export default function BoardGameDirectoryView({
     requested: "Request sent. Keep this page open until you save the management link.",
     cancelRequest: "Cancel request",
     cancelled: "Request cancelled",
+    bookingTerms: "Times use the cafe's timezone. The request must be made at least {minutes} minutes ahead.",
+    depositNone: "No reservation deposit",
+    depositFixed: "Deposit after confirmation: THB {amount}",
+    depositPercent: "Deposit after confirmation: {percent}% of the estimated play fee",
   } : {
     title: "ค้นหาร้านบอร์ดเกม",
     subtitle: "ดูร้านที่เปิดเผยข้อมูล เปรียบเทียบค่าเล่น และเช็กจำนวนโต๊ะว่างแบบรวมก่อนเดินทาง",
@@ -93,6 +103,10 @@ export default function BoardGameDirectoryView({
     requested: "ส่งคำขอแล้ว กรุณาเก็บลิงก์จัดการรายการนี้ไว้",
     cancelRequest: "ยกเลิกคำขอ",
     cancelled: "ยกเลิกคำขอแล้ว",
+    bookingTerms: "วันเวลาอ้างอิงเขตเวลาของร้าน และต้องจองล่วงหน้าอย่างน้อย {minutes} นาที",
+    depositNone: "ไม่เก็บมัดจำการจอง",
+    depositFixed: "หลังร้านยืนยัน ต้องชำระมัดจำ {amount} บาท",
+    depositPercent: "หลังร้านยืนยัน ต้องชำระมัดจำ {percent}% ของค่าเล่นโดยประมาณ",
   };
 
   async function submitBooking(event: FormEvent<HTMLFormElement>) {
@@ -101,14 +115,14 @@ export default function BoardGameDirectoryView({
     setBookingBusy(true); setBookingError("");
     try {
       const form = new FormData(event.currentTarget);
-      const bytes = crypto.getRandomValues(new Uint8Array(32));
-      const token = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+      const token = bookingRequestToken || newBookingToken();
+      if (!bookingRequestToken) setBookingRequestToken(token);
       const response = await fetch("/api/board-game/bookings", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
           tenantSlug: bookingCafe.tenantSlug, locationId: bookingCafe.locationId,
           requestToken: token, guestName: form.get("guestName"), guestPhone: form.get("guestPhone"),
-          guestEmail: form.get("guestEmail"), reservedFor: new Date(String(form.get("reservedFor"))).toISOString(),
+          guestEmail: form.get("guestEmail"), reservedLocal: form.get("reservedFor"), locale: lang,
           durationMinutes: Number(form.get("durationMinutes")), partySize: Number(form.get("partySize")),
           note: form.get("note"),
         }),
@@ -234,6 +248,7 @@ export default function BoardGameDirectoryView({
               {cafe.publicPhone && <a href={`tel:${cafe.publicPhone}`}>{copy.call} {cafe.publicPhone}</a>}
               {cafe.bookingEnabled && <button type="button" onClick={() => {
                 setBookingCafe(cafe); setBookingResult(null); setBookingError("");
+                setBookingRequestToken(newBookingToken());
               }}>{copy.book}</button>}
               <Link href={`/shop/${encodeURIComponent(cafe.tenantSlug)}`}>{copy.details}</Link>
             </div>
@@ -254,6 +269,15 @@ export default function BoardGameDirectoryView({
               <button type="button" disabled={bookingBusy} onClick={cancelBooking}>{copy.cancelRequest}</button>
             </>}
           </div> : <form className={styles.bookingForm} onSubmit={submitBooking}>
+            <p className={styles.fullField}>
+              {copy.bookingTerms.replace("{minutes}", String(bookingCafe.reservationMinAdvanceMinutes))}
+              {" · "}{bookingCafe.timezone}
+              {" · "}{bookingCafe.reservationDepositPolicy === "FIXED"
+                ? copy.depositFixed.replace("{amount}", bookingCafe.reservationDepositAmount.toFixed(2))
+                : bookingCafe.reservationDepositPolicy === "PERCENT"
+                  ? copy.depositPercent.replace("{percent}", bookingCafe.reservationDepositPercent.toFixed(0))
+                  : copy.depositNone}
+            </p>
             <label>{copy.name}<input name="guestName" required maxLength={120} /></label>
             <label>{copy.phone}<input name="guestPhone" type="tel" maxLength={40} /></label>
             <label>{copy.email}<input name="guestEmail" type="email" required maxLength={254} /></label>

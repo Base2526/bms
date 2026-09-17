@@ -17,7 +17,9 @@ async function handlePOST(req: NextRequest) {
   try {
     const body = await req.json();
     const reservation = await requestPublicBoardGameReservation(body);
-    return NextResponse.json({ reservation }, { status: 201 });
+    return NextResponse.json({ reservation }, {
+      status: 201, headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : "ส่งคำขอจองไม่สำเร็จ",

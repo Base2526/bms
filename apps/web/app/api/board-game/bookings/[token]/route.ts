@@ -18,7 +18,9 @@ async function handleGET(req: NextRequest, { params }: { params: { token: string
   const limited = await guard(req);
   if (!limited.ok) return NextResponse.json({ error: "rate limit exceeded" }, { status: 429 });
   try {
-    return NextResponse.json({ reservation: await getPublicBoardGameReservation(params.token) });
+    return NextResponse.json({ reservation: await getPublicBoardGameReservation(params.token) }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "ไม่พบคำขอจอง" }, { status: 404 });
   }
@@ -32,7 +34,9 @@ async function handlePATCH(req: NextRequest, { params }: { params: { token: stri
     if (String(body?.action).toUpperCase() !== "CANCEL") {
       return NextResponse.json({ error: "รองรับเฉพาะการยกเลิก" }, { status: 400 });
     }
-    return NextResponse.json({ reservation: await cancelPublicBoardGameReservation(params.token) });
+    return NextResponse.json({ reservation: await cancelPublicBoardGameReservation(params.token) }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "ยกเลิกไม่สำเร็จ" }, { status: 400 });
   }

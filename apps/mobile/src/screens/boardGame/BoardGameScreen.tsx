@@ -799,6 +799,7 @@ function BoardGameFloor({
             const canArrive = Number.isFinite(reservedAt)
               && currentTime >= reservedAt - 2 * 60 * 60_000
               && currentTime <= reservedAt + 6 * 60 * 60_000;
+            const depositReady = entry.depositStatus === 'NOT_REQUIRED' || entry.depositStatus === 'PAID';
             const canMarkNoShow = Number.isFinite(reservedAt) && currentTime >= reservedAt;
             return (
               <View key={entry.id} style={{ gap: spacing.xs }}>
@@ -808,6 +809,9 @@ function BoardGameFloor({
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   {entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'} · {entry.reservedDurationMinutes ?? 0} นาที{entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
                 </Text>
+                {entry.depositAmount > 0 ? <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  มัดจำ ฿{Number(entry.depositAmount).toFixed(2)} · {entry.depositStatus} · แจ้งผล {entry.decisionNotificationStatus}
+                </Text> : null}
                 {entry.status === 'REQUESTED' ? <>
                   <View style={styles.wrap}>
                     {tables.filter(item => !item.blocked && item.seats >= entry.partySize).map(item => (
@@ -850,7 +854,7 @@ function BoardGameFloor({
                     setReservationTableId(entry.reservedTableId ?? '');
                   }} />
                   <Button label="เช็กอิน" variant="secondary"
-                    disabled={!canArrive}
+                    disabled={!canArrive || !depositReady}
                     loading={workingQueueId === `reservation-checkin-${entry.id}`}
                     onPress={() => runQueueAction(`reservation-checkin-${entry.id}`, idempotencyKey =>
                       checkInReservation({ variables: { input: { ...credentials!, idempotencyKey, entryId: entry.id } } })

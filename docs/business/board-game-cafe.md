@@ -214,15 +214,16 @@ The first operational release includes:
     check-in, cancellation/no-show, and atomic seating into that same session path.
 16. Public reservation requests: opt-in per branch, staff review before a table is promised, opaque
     customer cancellation, and retryable email reminders for confirmed bookings.
+17. Reservation completion: branch-local request time, bounded request expiry, immediate decision
+    email, customer status polling, configurable deposits, private slip review, and deposit credit
+    applied through the existing POS payment path.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Reservation deposits and advanced board-game analytics are later phases, as is automatic renewal of
-a member pass. Deposits and scheduled renewal need a payment
-contract this platform does not currently have, so they must extend the existing CRM/payment/report
-domains instead of inventing customer or money records inside this module.
+Advanced board-game analytics and automatic member-pass renewal remain later phases. Renewal needs a
+stored payment-instrument contract the platform does not currently have.
 
 ### Walk-in queue (`9.99`)
 
@@ -295,10 +296,28 @@ with `FOR UPDATE SKIP LOCKED`, sends through the configured email provider, and 
 bounded `FAILED` reason with at most three attempts. A stale `SENDING` claim becomes retryable after
 30 minutes. Delivery is operational evidence only; the reservation row remains authoritative.
 
-`10.1` intentionally does not take a deposit. `bms_payments.order_id` is mandatory and the existing
-POS deposit aggregate reserves sellable stock. Pretending a table is a Product would corrupt stock,
-tax, refund, and reporting semantics. A later deposit phase must first add a generalized payable to
-the payment domain and define fixed/percentage, refund, cancellation, no-show, and tax policy.
+### Reservation completion and deposits (`10.2`)
+
+The browser sends the requested wall-clock value unchanged and the service converts it with the
+published branch timezone. A stable browser-generated request token is reused after an uncertain
+response, so a retry returns the original row or rejects different request data instead of creating a
+second booking. Unreviewed requests expire at the earlier of their configured TTL or requested time.
+The customer status page polls and refreshes on focus; staff decisions are emailed immediately with
+bounded retry evidence, independently of the later booking reminder.
+
+A branch can require no deposit, a fixed amount, or a percentage of the estimated general play-time
+charge. The policy, amount, due time and cancellation refund cutoff are snapshotted when staff confirm
+the table. Customer proof is an image stored as a tenant-owned private file; the payment stays
+`PENDING` until a user with `payment.confirm` confirms it. An unpaid confirmed booking expires after
+its payment window, and check-in/seating require `NOT_REQUIRED` or `PAID`.
+
+The money remains in `bms_payments`: `payable_type = BOARD_GAME_RESERVATION` is the cash receipt,
+while a `RESERVATION_DEPOSIT` payment on the real POS order is an internal tender linked back to that
+receipt. `bms_board_game_reservation_deposit_applications` prevents one deposit from being used twice.
+Tax and loyalty use the real gross sale; only the amount collected at settlement is reduced. A timely
+cancellation creates a refund-pending state, a late cancellation/no-show forfeits it, and any balance
+left after all billing groups settle can be partially refunded in the same payment ledger. The deposit
+is never a Product SKU, never moves stock and never becomes a second board-game billing ledger.
 
 ## Dev/Test Fixtures
 

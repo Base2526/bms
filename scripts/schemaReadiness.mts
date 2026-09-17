@@ -319,6 +319,19 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_board_game_public_locations", name: "booking_enabled" },
     ],
   },
+  {
+    // POS, public status, payment review and reports all read these fields unconditionally.
+    file: "10.2__bms_board_game_reservation_completion.sql",
+    impact: "รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "deposit_status" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "customer_locale" },
+      { kind: "column", table: "bms_board_game_public_locations", name: "reservation_deposit_policy" },
+      { kind: "column", table: "bms_payments", name: "payable_type" },
+      { kind: "column", table: "bms_payments", name: "refunded_amount" },
+      { kind: "table", name: "bms_board_game_reservation_deposit_applications" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

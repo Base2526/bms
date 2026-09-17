@@ -2668,9 +2668,55 @@ export type BoardGamePosPricingPreview = {
   redeemBahtPerUnit: number;
   redeemMinPoints: number;
   member: Awaited<ReturnType<typeof getMember>>;
+  /** Confirmed reservation money available as an internal tender for this visit. */
+  reservationDepositApplied?: number;
+  /** Sale total before applying that tender. Tax and loyalty continue to use this amount. */
+  grossAmountDue?: number | null;
 };
 
 export type RestaurantPosPricingPreview = BoardGamePosPricingPreview;
+
+async function boardGameReservationDepositAvailable(
+  client: {
+    query<T extends QueryResultRow = QueryResultRow>(
+      text: string,
+      params?: any[],
+    ): Promise<QueryResult<T>>;
+  },
+  tenantId: string,
+  billingGroupId: string,
+) {
+  const result = await client.query<{
+    reservation_id: string; source_payment_id: string; remaining: string;
+  }>(
+    `SELECT reservation.id AS reservation_id,
+            reservation.deposit_payment_id AS source_payment_id,
+            GREATEST(0, reservation.deposit_amount - COALESCE((
+              SELECT SUM(application.amount)
+                FROM bms_board_game_reservation_deposit_applications application
+               WHERE application.tenant_id = reservation.tenant_id
+                 AND application.reservation_id = reservation.id
+            ), 0)) AS remaining
+       FROM bms_board_game_billing_groups billing_group
+       JOIN bms_board_game_waitlist reservation
+         ON reservation.tenant_id = billing_group.tenant_id
+        AND reservation.seated_session_id = billing_group.session_id
+        AND reservation.kind = 'RESERVATION' AND reservation.deposit_status = 'PAID'
+       JOIN bms_payments payment
+         ON payment.tenant_id = reservation.tenant_id
+        AND payment.id = reservation.deposit_payment_id
+        AND payment.payable_type = 'BOARD_GAME_RESERVATION' AND payment.status = 'CONFIRMED'
+      WHERE billing_group.tenant_id = $1 AND billing_group.id = $2
+      ORDER BY reservation.created_at LIMIT 1`,
+    [tenantId, billingGroupId],
+  );
+  const row = result.rows[0];
+  return row ? {
+    reservationId: row.reservation_id,
+    sourcePaymentId: row.source_payment_id,
+    remaining: Math.max(0, Math.round(Number(row.remaining) * 100) / 100),
+  } : null;
+}
 
 /**
  * Quote the currently reserved restaurant order.  The kitchen order already owns immutable
@@ -3003,6 +3049,7 @@ export async function previewBoardGamePosPricing(input: {
   const client = await getClient();
   let created: Awaited<ReturnType<typeof createOrderInTx>>;
   let boardGameTimeAmount = 0;
+  let depositAvailable = 0;
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
     const group = await client.query<{ amount_due: string }>(
@@ -3049,6 +3096,12 @@ export async function previewBoardGamePosPricing(input: {
         : null,
       discountReason: Number(input.manualDiscount ?? 0) > 0 ? "POS pricing preview" : null,
     });
+    if (created.status === "CREATED") {
+      const deposit = await boardGameReservationDepositAvailable(
+        client, input.tenantId, input.billingGroupId,
+      );
+      depositAvailable = Math.min(Number(created.amountDue), deposit?.remaining ?? 0);
+    }
     await client.query("ROLLBACK");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -3094,8 +3147,10 @@ export async function previewBoardGamePosPricing(input: {
     status: "READY",
     reason: null,
     subtotal: productSubtotal,
-    amountDue: created.amountDue,
+    amountDue: Math.max(0, Math.round((created.amountDue - depositAvailable) * 100) / 100),
     netTotal: created.amountDue,
+    grossAmountDue: created.amountDue,
+    reservationDepositApplied: depositAvailable,
     tierDiscount: amountFor("TIER"),
     tierLabel: tierLine?.label ?? null,
     couponDiscount: amountFor("COUPON"),
@@ -3364,7 +3419,10 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   );
   if (invalidCash) return { status: "PAYMENT_FAILED", reason: "เงินสดที่รับมาต้องไม่น้อยกว่ายอดเงินสด" };
   const roundingSettings = await getVatSettings(tenantId);
-  const cashOnly = requestedPayments.every((payment) => payment.method === "CASH");
+  // An empty payment list can be legitimate when a member pass or reservation deposit covers the
+  // whole bill, but it is not a cash tender and must not gain cash-rounding treatment.
+  const cashOnly = requestedPayments.length > 0
+    && requestedPayments.every((payment) => payment.method === "CASH");
   const applyCashRounding = (baseDue: number) => {
     const roundingAmount = cashOnly && roundingSettings.cashRounding !== "NONE"
       ? cashRoundingDelta(baseDue, roundingSettings.cashRounding)
@@ -3451,15 +3509,26 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     if (existing.status !== "PENDING" && existing.status !== "PAID") {
       return { status: "PAYMENT_FAILED", reason: `คีย์บิลนี้ถูกใช้กับสถานะ ${existing.status} แล้ว` };
     }
-    const rounded = applyCashRounding(existing.amountDue);
+    const deposit = boardGameBillingGroupId
+      ? await boardGameReservationDepositAvailable({ query }, tenantId, boardGameBillingGroupId)
+      : null;
+    const depositCredit = Math.min(existing.amountDue, deposit?.remaining ?? 0);
+    const rounded = applyCashRounding(Math.max(0, existing.amountDue - depositCredit));
     const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
     if (Math.abs(paid - rounded.amountDue) > 0.01) {
       return { status: "PAYMENT_MISMATCH", expected: rounded.amountDue, received: paid };
     }
     return finalizePosSale({
-      input, shift, orderId: existing.orderId, amountDue: rounded.amountDue,
+      input, shift, orderId: existing.orderId,
+      amountDue: Math.round((existing.amountDue + rounded.roundingAmount) * 100) / 100,
       payments: requestedPayments, replayed: true, serialLines: canonical.serialLines,
       roundingAmount: rounded.roundingAmount,
+      reservationDepositCredit: deposit && depositCredit > 0
+        ? { ...deposit, amount: Math.min(
+          Math.round((existing.amountDue + rounded.roundingAmount) * 100) / 100,
+          deposit.remaining,
+        ) }
+        : null,
     });
   }
 
@@ -3542,15 +3611,26 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
         }
         return takeInitialPosDeposit({ input, shift, orderId: pending.orderId, payments: requestedPayments });
       }
-      const rounded = applyCashRounding(pending.amountDue);
+      const deposit = boardGameBillingGroupId
+        ? await boardGameReservationDepositAvailable({ query }, tenantId, boardGameBillingGroupId)
+        : null;
+      const depositCredit = Math.min(pending.amountDue, deposit?.remaining ?? 0);
+      const rounded = applyCashRounding(Math.max(0, pending.amountDue - depositCredit));
       const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
       if (Math.abs(paid - rounded.amountDue) > 0.01) {
         return { status: "PAYMENT_MISMATCH", expected: rounded.amountDue, received: paid };
       }
       return finalizePosSale({
-        input, shift, orderId: pending.orderId, amountDue: rounded.amountDue,
+        input, shift, orderId: pending.orderId,
+        amountDue: Math.round((pending.amountDue + rounded.roundingAmount) * 100) / 100,
         payments: requestedPayments, replayed: true, serialLines: canonical.serialLines,
         roundingAmount: rounded.roundingAmount,
+        reservationDepositCredit: deposit && depositCredit > 0
+          ? { ...deposit, amount: Math.min(
+            Math.round((pending.amountDue + rounded.roundingAmount) * 100) / 100,
+            deposit.remaining,
+          ) }
+          : null,
       });
     }
     return { status: "PAYMENT_FAILED", reason: "คีย์บิลซ้ำแต่สถานะเดิมไม่สามารถทำต่อได้" };
@@ -3575,18 +3655,23 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     // (คืนใบอนุมัติเมื่อยกเลิกบิล) เปิดช่องให้ยกเลิกเพื่อเอาใบอนุมัติกลับมาใช้ซ้ำ
     return taken;
   }
-  const rounded = applyCashRounding(created.amountDue);
-  const amountDue = rounded.amountDue;
+  const deposit = boardGameBillingGroupId
+    ? await boardGameReservationDepositAvailable({ query }, tenantId, boardGameBillingGroupId)
+    : null;
+  const depositCredit = Math.min(created.amountDue, deposit?.remaining ?? 0);
+  const rounded = applyCashRounding(Math.max(0, created.amountDue - depositCredit));
+  const amountToCollect = rounded.amountDue;
+  const amountDue = Math.round((created.amountDue + rounded.roundingAmount) * 100) / 100;
 
   // ปัดเศษเงินสด (7.95) — เฉพาะบิลที่จ่ายสดล้วน เพราะบัตร/QR รับเต็มจำนวนได้อยู่แล้ว
   // ยอดปัดเก็บแยกบนบิล ไม่ใช่ส่วนลด จึงไม่แตะฐาน VAT (ตรงกับบรรทัด
   // "ยอดเงินปัดเศษ" บนใบกำกับจริงที่ใช้อ้างอิง)
   const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
-  if (Math.abs(paid - amountDue) > 0.01) {
+  if (Math.abs(paid - amountToCollect) > 0.01) {
     await cancelOrder(tenantId, orderId);
     return {
       status: "PAYMENT_MISMATCH",
-      expected: amountDue,
+      expected: amountToCollect,
       received: paid,
       subtotal: created.subtotal,
       discount: created.discount,
@@ -3597,6 +3682,9 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     input, shift, orderId, amountDue, payments: requestedPayments, replayed: false,
     serialLines: canonical.serialLines,
     roundingAmount: rounded.roundingAmount,
+    reservationDepositCredit: deposit && depositCredit > 0
+      ? { ...deposit, amount: Math.min(amountDue, deposit.remaining) }
+      : null,
   });
   if (sold.status === "SERIAL_ALREADY_SOLD") {
     // createOrder จองสต็อกใน transaction ก่อนหน้าไว้แล้ว คู่แข่งอาจขาย serial
@@ -3686,6 +3774,9 @@ async function finalizePosSale(args: {
    * ค่า expected ใช้จับ add/settle ที่ชนกัน ไม่ให้คำขอเก่าปิดยอดใหม่เงียบ ๆ
    */
   depositSettlement?: { expectedDepositPaid: number; expectedTotal: number };
+  reservationDepositCredit?: {
+    reservationId: string; sourcePaymentId: string; remaining: number; amount: number;
+  } | null;
 }): Promise<PosSaleResult> {
   const { input, shift, orderId, amountDue, payments, replayed } = args;
   const vatSettings = await getVatSettings(input.tenantId);
@@ -3896,6 +3987,75 @@ async function finalizePosSale(args: {
         );
       }
 
+      let reservationDepositApplied = 0;
+      if (args.reservationDepositCredit) {
+        if (!input.boardGameBillingGroupId) throw new Error("มัดจำการจองใช้ได้เฉพาะบิลบอร์ดเกม");
+        const reservation = await client.query<{
+          id: string; deposit_payment_id: string; deposit_amount: string; deposit_status: string;
+        }>(
+          `SELECT w.id, w.deposit_payment_id, w.deposit_amount, w.deposit_status
+             FROM bms_board_game_waitlist w
+             JOIN bms_board_game_billing_groups billing_group
+               ON billing_group.tenant_id = w.tenant_id
+              AND billing_group.session_id = w.seated_session_id
+            WHERE w.tenant_id = $1 AND w.id = $2 AND billing_group.id = $3
+              AND w.deposit_status = 'PAID'
+            FOR UPDATE OF w`,
+          [input.tenantId, args.reservationDepositCredit.reservationId,
+            input.boardGameBillingGroupId],
+        );
+        const reservationRow = reservation.rows[0];
+        if (!reservationRow
+          || reservationRow.deposit_payment_id !== args.reservationDepositCredit.sourcePaymentId) {
+          throw new Error("มัดจำการจองเปลี่ยนระหว่างรับชำระ กรุณาโหลดบิลใหม่");
+        }
+        const source = await client.query<{ status: string }>(
+          `SELECT status FROM bms_payments
+            WHERE tenant_id = $1 AND id = $2 AND payable_type = 'BOARD_GAME_RESERVATION'
+            FOR UPDATE`,
+          [input.tenantId, reservationRow.deposit_payment_id],
+        );
+        if (source.rows[0]?.status !== "CONFIRMED") {
+          throw new Error("มัดจำการจองไม่ได้อยู่สถานะยืนยันแล้ว");
+        }
+        const applications = await client.query<{ total: string }>(
+          `SELECT COALESCE(SUM(amount), 0) AS total
+             FROM bms_board_game_reservation_deposit_applications
+            WHERE tenant_id = $1 AND reservation_id = $2`,
+          [input.tenantId, reservationRow.id],
+        );
+        const remaining = Math.max(0, Math.round((Number(reservationRow.deposit_amount)
+          - Number(applications.rows[0]?.total ?? 0)) * 100) / 100);
+        reservationDepositApplied = Math.min(amountDue, remaining);
+        if (Math.abs(reservationDepositApplied - args.reservationDepositCredit.amount) > 0.01) {
+          throw new Error("ยอดมัดจำคงเหลือเปลี่ยนระหว่างรับชำระ กรุณาโหลดบิลใหม่");
+        }
+        const appliedPayment = await client.query<{ id: string }>(
+          `INSERT INTO bms_payments
+             (tenant_id, order_id, payable_type, source_payment_id, method, amount, status,
+              note, verified_by, confirmed_at, updated_at)
+           VALUES ($1,$2,'ORDER',$3,'RESERVATION_DEPOSIT',$4,'CONFIRMED',
+                   'ใช้มัดจำการจองโต๊ะกับบิลจริง',$5,now(),now())
+           RETURNING id`,
+          [input.tenantId, orderId, reservationRow.deposit_payment_id,
+            reservationDepositApplied, input.cashierUserId],
+        );
+        await client.query(
+          `INSERT INTO bms_board_game_reservation_deposit_applications
+             (tenant_id, reservation_id, source_payment_id, billing_group_id, order_id,
+              applied_payment_id, amount)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [input.tenantId, reservationRow.id, reservationRow.deposit_payment_id,
+            input.boardGameBillingGroupId, orderId, appliedPayment.rows[0].id,
+            reservationDepositApplied],
+        );
+      }
+
+      const externalTotal = Math.round(payments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
+      if (Math.abs(externalTotal + reservationDepositApplied - amountDue) > 0.01) {
+        throw new Error(`ยอดชำระไม่ตรง (ต้องเก็บ ${amountDue - reservationDepositApplied})`);
+      }
+
       for (const payment of payments) {
         const tendered = payment.method === "CASH"
           ? (payment.cashTendered == null ? payment.amount : Number(payment.cashTendered))
@@ -4045,6 +4205,28 @@ async function finalizePosSale(args: {
         throw new Error("session ของกลุ่มบิลบอร์ดเกมเปลี่ยนระหว่างรับชำระ");
       }
       await refreshSessionFromGroupsInTx(client, input.tenantId, sessionId);
+      const unfinishedGroups = await client.query(
+        `SELECT 1 FROM bms_board_game_billing_groups
+          WHERE tenant_id = $1 AND session_id = $2 AND status IN ('OPEN','CLOSING') LIMIT 1`,
+        [input.tenantId, sessionId],
+      );
+      if (!unfinishedGroups.rowCount) {
+        await client.query(
+          `UPDATE bms_board_game_waitlist reservation
+              SET deposit_status = CASE
+                    WHEN COALESCE((SELECT SUM(application.amount)
+                                     FROM bms_board_game_reservation_deposit_applications application
+                                    WHERE application.tenant_id = reservation.tenant_id
+                                      AND application.reservation_id = reservation.id), 0)
+                         >= reservation.deposit_amount THEN 'APPLIED'
+                    ELSE 'REFUND_PENDING'
+                  END,
+                  updated_at = now()
+            WHERE reservation.tenant_id = $1 AND reservation.seated_session_id = $2
+              AND reservation.deposit_status = 'PAID'`,
+          [input.tenantId, sessionId],
+        );
+      }
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'board_game.billing_group_paid',$3,$4::jsonb)`,

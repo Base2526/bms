@@ -81,7 +81,13 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_waitlist', 'source', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
     ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_waitlist', 'guest_email', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
     ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_waitlist', 'reminder_status', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
-    ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_public_locations', 'booking_enabled', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง')
+    ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_public_locations', 'booking_enabled', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_waitlist', 'deposit_status', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_waitlist', 'customer_locale', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_public_locations', 'reservation_deposit_policy', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_payments', 'payable_type', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_payments', 'refunded_amount', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'table', 'bms_board_game_reservation_deposit_applications', NULL, 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

@@ -1717,6 +1717,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     reason: String
     subtotal: Float
     amountDue: Float
+    grossAmountDue: Float
+    reservationDepositApplied: Float
     tierDiscount: Float
     tierLabel: String
     couponDiscount: Float
@@ -2426,6 +2428,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     rejectionReason: String
     reminderStatus: String!
     reminderSentAt: String
+    decisionNotificationStatus: String!
+    depositPolicy: String!
+    depositAmount: Float!
+    depositStatus: String!
+    depositDueAt: String
+    depositRefundEligibleUntil: String
     seatedTableId: ID
     seatedTableCode: String
     seatedSessionId: ID

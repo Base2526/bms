@@ -104,6 +104,14 @@ export type BoardGamePublicLocationProfile = {
   publishAvailability: boolean;
   bookingEnabled: boolean;
   reservationReminderMinutes: number;
+  timezone: string;
+  reservationMinAdvanceMinutes: number;
+  reservationRequestTtlMinutes: number;
+  reservationDepositPolicy: "NONE" | "FIXED" | "PERCENT";
+  reservationDepositAmount: number;
+  reservationDepositPercent: number;
+  reservationDepositPaymentWindowMinutes: number;
+  reservationDepositRefundCutoffHours: number;
 };
 
 export type PublicBoardGameCafe = BoardGamePublicLocationProfile & {
@@ -2112,6 +2120,18 @@ function mapPublicLocationProfile(row: any): BoardGamePublicLocationProfile {
     publishAvailability: row.publish_availability == null ? true : Boolean(row.publish_availability),
     bookingEnabled: Boolean(row.booking_enabled),
     reservationReminderMinutes: Number(row.reservation_reminder_minutes ?? 180),
+    timezone: row.timezone || "Asia/Bangkok",
+    reservationMinAdvanceMinutes: Number(row.reservation_min_advance_minutes ?? 120),
+    reservationRequestTtlMinutes: Number(row.reservation_request_ttl_minutes ?? 1440),
+    reservationDepositPolicy: row.reservation_deposit_policy ?? "NONE",
+    reservationDepositAmount: Number(row.reservation_deposit_amount ?? 0),
+    reservationDepositPercent: Number(row.reservation_deposit_percent ?? 0),
+    reservationDepositPaymentWindowMinutes: Number(
+      row.reservation_deposit_payment_window_minutes ?? 60,
+    ),
+    reservationDepositRefundCutoffHours: Number(
+      row.reservation_deposit_refund_cutoff_hours ?? 24,
+    ),
   };
 }
 
@@ -2127,8 +2147,14 @@ export async function getBoardGamePublicLocationProfile(
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
             profile.publish_rates, profile.publish_availability, profile.booking_enabled,
-            profile.reservation_reminder_minutes
+            profile.reservation_reminder_minutes,
+            profile.reservation_min_advance_minutes, profile.reservation_request_ttl_minutes,
+            profile.reservation_deposit_policy, profile.reservation_deposit_amount,
+            profile.reservation_deposit_percent, profile.reservation_deposit_payment_window_minutes,
+            profile.reservation_deposit_refund_cutoff_hours,
+            COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone
        FROM bms_locations l
+       JOIN bms_store_profile store ON store.tenant_id = l.tenant_id
        LEFT JOIN bms_board_game_public_locations profile
          ON profile.tenant_id = l.tenant_id AND profile.location_id = l.id
       WHERE l.tenant_id = $1 AND l.id = $2 AND l.active`,
@@ -2154,6 +2180,13 @@ export async function upsertBoardGamePublicLocationProfile(
     publishAvailability?: boolean | null;
     bookingEnabled?: boolean | null;
     reservationReminderMinutes?: number | string | null;
+    reservationMinAdvanceMinutes?: number | string | null;
+    reservationRequestTtlMinutes?: number | string | null;
+    reservationDepositPolicy?: string | null;
+    reservationDepositAmount?: number | string | null;
+    reservationDepositPercent?: number | string | null;
+    reservationDepositPaymentWindowMinutes?: number | string | null;
+    reservationDepositRefundCutoffHours?: number | string | null;
   },
   actorUserId?: string | null
 ): Promise<BoardGamePublicLocationProfile> {
@@ -2184,6 +2217,48 @@ export async function upsertBoardGamePublicLocationProfile(
     || reservationReminderMinutes < 30 || reservationReminderMinutes > 10080) {
     throw new Error("เวลาแจ้งเตือนต้องอยู่ระหว่าง 30 ถึง 10080 นาที");
   }
+  const reservationMinAdvanceMinutes = Number(input.reservationMinAdvanceMinutes ?? 120);
+  const reservationRequestTtlMinutes = Number(input.reservationRequestTtlMinutes ?? 1440);
+  const reservationDepositPolicy = String(input.reservationDepositPolicy ?? "NONE").toUpperCase();
+  const reservationDepositAmount = Number(input.reservationDepositAmount ?? 0);
+  const reservationDepositPercent = Number(input.reservationDepositPercent ?? 0);
+  const reservationDepositPaymentWindowMinutes = Number(
+    input.reservationDepositPaymentWindowMinutes ?? 60,
+  );
+  const reservationDepositRefundCutoffHours = Number(
+    input.reservationDepositRefundCutoffHours ?? 24,
+  );
+  if (!Number.isInteger(reservationMinAdvanceMinutes)
+    || reservationMinAdvanceMinutes < 30 || reservationMinAdvanceMinutes > 43200) {
+    throw new Error("เวลาจองล่วงหน้าต้องอยู่ระหว่าง 30 ถึง 43200 นาที");
+  }
+  if (!Number.isInteger(reservationRequestTtlMinutes)
+    || reservationRequestTtlMinutes < 30 || reservationRequestTtlMinutes > 10080) {
+    throw new Error("อายุคำขอจองต้องอยู่ระหว่าง 30 ถึง 10080 นาที");
+  }
+  if (!["NONE", "FIXED", "PERCENT"].includes(reservationDepositPolicy)) {
+    throw new Error("นโยบายมัดจำไม่ถูกต้อง");
+  }
+  if (!Number.isFinite(reservationDepositAmount) || reservationDepositAmount < 0
+    || reservationDepositAmount > 1_000_000) throw new Error("ยอดมัดจำคงที่ไม่ถูกต้อง");
+  if (!Number.isFinite(reservationDepositPercent) || reservationDepositPercent < 0
+    || reservationDepositPercent > 100) throw new Error("เปอร์เซ็นต์มัดจำไม่ถูกต้อง");
+  if (reservationDepositPolicy === "FIXED" && reservationDepositAmount <= 0) {
+    throw new Error("นโยบายมัดจำคงที่ต้องมียอดมากกว่า 0");
+  }
+  if (reservationDepositPolicy === "PERCENT" && reservationDepositPercent <= 0) {
+    throw new Error("นโยบายมัดจำเปอร์เซ็นต์ต้องมากกว่า 0");
+  }
+  if (!Number.isInteger(reservationDepositPaymentWindowMinutes)
+    || reservationDepositPaymentWindowMinutes < 15
+    || reservationDepositPaymentWindowMinutes > 1440) {
+    throw new Error("เวลารอชำระมัดจำต้องอยู่ระหว่าง 15 ถึง 1440 นาที");
+  }
+  if (!Number.isInteger(reservationDepositRefundCutoffHours)
+    || reservationDepositRefundCutoffHours < 0
+    || reservationDepositRefundCutoffHours > 168) {
+    throw new Error("ระยะเวลาคืนมัดจำต้องอยู่ระหว่าง 0 ถึง 168 ชั่วโมง");
+  }
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
@@ -2197,8 +2272,11 @@ export async function upsertBoardGamePublicLocationProfile(
       `INSERT INTO bms_board_game_public_locations
           (tenant_id, location_id, public_visible, display_name, summary,
            public_address, public_phone, opening_hours, latitude, longitude,
-           publish_rates, publish_availability, booking_enabled, reservation_reminder_minutes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           publish_rates, publish_availability, booking_enabled, reservation_reminder_minutes,
+           reservation_min_advance_minutes, reservation_request_ttl_minutes,
+           reservation_deposit_policy, reservation_deposit_amount, reservation_deposit_percent,
+           reservation_deposit_payment_window_minutes, reservation_deposit_refund_cutoff_hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (tenant_id, location_id) DO UPDATE SET
           public_visible = EXCLUDED.public_visible,
           display_name = EXCLUDED.display_name,
@@ -2212,11 +2290,21 @@ export async function upsertBoardGamePublicLocationProfile(
           publish_availability = EXCLUDED.publish_availability,
           booking_enabled = EXCLUDED.booking_enabled,
           reservation_reminder_minutes = EXCLUDED.reservation_reminder_minutes,
+          reservation_min_advance_minutes = EXCLUDED.reservation_min_advance_minutes,
+          reservation_request_ttl_minutes = EXCLUDED.reservation_request_ttl_minutes,
+          reservation_deposit_policy = EXCLUDED.reservation_deposit_policy,
+          reservation_deposit_amount = EXCLUDED.reservation_deposit_amount,
+          reservation_deposit_percent = EXCLUDED.reservation_deposit_percent,
+          reservation_deposit_payment_window_minutes = EXCLUDED.reservation_deposit_payment_window_minutes,
+          reservation_deposit_refund_cutoff_hours = EXCLUDED.reservation_deposit_refund_cutoff_hours,
           updated_at = now()`,
       [
         tenantId, locationId, publicVisible, displayName, summary, publicAddress,
         publicPhone, openingHours, latitude, longitude, publishRates, publishAvailability,
-        bookingEnabled, reservationReminderMinutes,
+        bookingEnabled, reservationReminderMinutes, reservationMinAdvanceMinutes,
+        reservationRequestTtlMinutes, reservationDepositPolicy, reservationDepositAmount,
+        reservationDepositPercent, reservationDepositPaymentWindowMinutes,
+        reservationDepositRefundCutoffHours,
       ]
     );
     await auditInTx(client, tenantId, actorUserId, "board_game.public_profile_upsert", locationId, {
@@ -2225,6 +2313,13 @@ export async function upsertBoardGamePublicLocationProfile(
       publishAvailability,
       bookingEnabled,
       reservationReminderMinutes,
+      reservationMinAdvanceMinutes,
+      reservationRequestTtlMinutes,
+      reservationDepositPolicy,
+      reservationDepositAmount,
+      reservationDepositPercent,
+      reservationDepositPaymentWindowMinutes,
+      reservationDepositRefundCutoffHours,
     });
     await client.query("COMMIT");
     return await getBoardGamePublicLocationProfile(tenantId, locationId);
@@ -2270,8 +2365,13 @@ export async function listPublicBoardGameCafes(input: {
             profile.opening_hours, profile.latitude, profile.longitude,
             profile.publish_rates, profile.publish_availability, profile.booking_enabled,
             profile.reservation_reminder_minutes,
+            profile.reservation_min_advance_minutes, profile.reservation_request_ttl_minutes,
+            profile.reservation_deposit_policy, profile.reservation_deposit_amount,
+            profile.reservation_deposit_percent, profile.reservation_deposit_payment_window_minutes,
+            profile.reservation_deposit_refund_cutoff_hours,
             location.name AS location_name, tenant.slug AS tenant_slug,
             tenant.name AS shop_name, store.logo_url,
+            COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone,
             CASE WHEN profile.publish_availability THEN (
               SELECT COUNT(*)::int FROM bms_board_game_tables table_row
                WHERE table_row.tenant_id = profile.tenant_id

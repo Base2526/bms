@@ -2080,13 +2080,17 @@ type BmsPayment {
   method: BmsPaymentMethod!
   netAmount: Float!
   note: String
-  orderId: ID!
+  orderId: ID
   pendingRefundAmount: Float!
   refundedAt: String
   rejectedAt: String
+  reservationDepositStatus: String
+  reservationId: ID
   slipRef: String
   slipUrl: String
+  sourcePaymentId: ID
   status: BmsPaymentStatus!
+  targetType: String!
   updatedAt: String!
   verifiedBy: String
   verifyResult: String
@@ -2116,6 +2120,7 @@ enum BmsPaymentMethod {
   CASH
   CREDIT
   QR
+  RESERVATION_DEPOSIT
   STORE_CREDIT
   TIKTOK
   WALLET
@@ -3083,6 +3088,12 @@ type BmsPosBoardGameWaitlistEntry {
   closedAt: String
   confirmedAt: String
   createdAt: String!
+  decisionNotificationStatus: String!
+  depositAmount: Float!
+  depositDueAt: String
+  depositPolicy: String!
+  depositRefundEligibleUntil: String
+  depositStatus: String!
   guestEmail: String
   guestName: String
   guestPhone: String
@@ -3605,6 +3616,7 @@ type BmsPosMemberPreviewResult {
   cappedAt: Float
   couponDiscount: Float
   couponError: String
+  grossAmountDue: Float
   loyaltyEnabled: Boolean
   manualDiscount: Float
   member: BmsPosMember
@@ -3617,6 +3629,7 @@ type BmsPosMemberPreviewResult {
   redeemBahtPerUnit: Float
   redeemMinPoints: Float
   redeemPointsPerUnit: Float
+  reservationDepositApplied: Float
   status: String
   subtotal: Float
   tierDiscount: Float

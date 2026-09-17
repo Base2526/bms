@@ -73,7 +73,7 @@ async function auditPaymentTransitionInTx(
   client: Awaited<ReturnType<typeof getClient>>,
   tenantId: string,
   actor: string | null,
-  action: "payment.confirm" | "payment.reject" | "payment.refund",
+  action: "payment.confirm" | "payment.reject" | "payment.refund" | "payment.partial_refund",
   paymentId: string,
   meta: Record<string, unknown> = {}
 ) {
@@ -193,12 +193,16 @@ export async function confirmPayment(
   actor: string | null = "admin"
 ): Promise<ConfirmResult> {
   const client = await getClient();
-  let committed: { paymentId: string; orderId: string; orderPaid: boolean } | null = null;
+  let committed: { paymentId: string; orderId: string | null; orderPaid: boolean } | null = null;
   try {
     await beginTenantTx(client, tenantId);
 
-    const pay = await client.query<{ status: string; order_id: string; amount: string }>(
-      `SELECT status, order_id, amount FROM bms_payments
+    const pay = await client.query<{
+      status: string; order_id: string | null; amount: string; payable_type: string;
+      board_game_reservation_id: string | null; method: string;
+    }>(
+      `SELECT status, order_id, amount, payable_type, board_game_reservation_id, method
+         FROM bms_payments
         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, paymentId]
     );
@@ -212,33 +216,81 @@ export async function confirmPayment(
       return { status: "INVALID_STATE", current };
     }
 
-    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
+    if (pay.rows[0].payable_type === "BOARD_GAME_RESERVATION") {
+      const reservation = await client.query<{
+        status: string; deposit_status: string; deposit_amount: string; deposit_payment_id: string | null;
+      }>(
+        `SELECT status, deposit_status, deposit_amount, deposit_payment_id
+           FROM bms_board_game_waitlist
+          WHERE tenant_id = $1 AND id = $2 AND kind = 'RESERVATION' AND source = 'PUBLIC'
+          FOR UPDATE`,
+        [tenantId, pay.rows[0].board_game_reservation_id],
+      );
+      const target = reservation.rows[0];
+      if (!target) {
+        await client.query("ROLLBACK");
+        return { status: "NOT_FOUND" };
+      }
+      if (target.status !== "CONFIRMED" || target.deposit_status !== "SUBMITTED"
+        || target.deposit_payment_id !== paymentId) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID_ORDER_STATE", current: `${target.status}/${target.deposit_status}` };
+      }
+      const expected = Number(target.deposit_amount);
+      const actual = Number(pay.rows[0].amount);
+      if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID_AMOUNT", expected, actual: Number.isFinite(actual) ? actual : 0 };
+      }
+      await client.query(
+        `UPDATE bms_payments SET status = 'CONFIRMED', verified_by = $3,
+                confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, paymentId, actor],
+      );
+      await client.query(
+        `UPDATE bms_board_game_waitlist
+            SET deposit_status = 'PAID', deposit_paid_at = COALESCE(deposit_paid_at, now()),
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, pay.rows[0].board_game_reservation_id],
+      );
+      await auditPaymentTransitionInTx(client, tenantId, actor, "payment.confirm", paymentId, {
+        boardGameReservationId: pay.rows[0].board_game_reservation_id,
+        orderPaid: false,
+      });
+      await client.query("COMMIT");
+      committed = { paymentId, orderId: null, orderPaid: false };
+    } else {
+      if (!pay.rows[0].order_id) throw new Error("order payment has no order target");
+
+      const orderRes = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
       `SELECT total_amount, shipping_fee, rounding_amount, status
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
       [tenantId, pay.rows[0].order_id]
     );
-    if (orderRes.rowCount === 0) {
+      if (orderRes.rowCount === 0) {
       await client.query("ROLLBACK");
       return { status: "NOT_FOUND" };
-    }
-    if (orderRes.rows[0].status !== "PENDING") {
+      }
+      if (orderRes.rows[0].status !== "PENDING") {
       const current = orderRes.rows[0].status;
       await client.query("ROLLBACK");
       return { status: "INVALID_ORDER_STATE", current };
-    }
+      }
     // + ยอดปัดเศษเงินสด (7.95) — ลูกค้าจ่ายยอดที่ปัดแล้ว ไม่ใช่ยอดดิบ
-    const expected = Number(orderRes.rows[0].total_amount)
+      const expected = Number(orderRes.rows[0].total_amount)
       + Number(orderRes.rows[0].shipping_fee ?? 0)
       + Number(orderRes.rows[0].rounding_amount ?? 0);
-    const actual = Number(pay.rows[0].amount);
-    if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
+      const actual = Number(pay.rows[0].amount);
+      if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
       await client.query("ROLLBACK");
       return { status: "INVALID_AMOUNT", expected, actual: Number.isFinite(actual) ? actual : 0 };
-    }
+      }
 
-    await client.query(
+      await client.query(
       `UPDATE bms_payments
           SET status = 'CONFIRMED', verified_by = $3,
               confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
@@ -249,28 +301,29 @@ export async function confirmPayment(
     // The locked order was verified PENDING above, so payment + order move as
     // one invariant. Never confirm money while silently leaving a conflicting
     // order state behind.
-    const ord = await client.query(
+      const ord = await client.query(
       `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
       [tenantId, pay.rows[0].order_id]
     );
-    if ((ord.rowCount ?? 0) !== 1) {
+      if ((ord.rowCount ?? 0) !== 1) {
       throw new Error("payment/order state changed while confirming");
-    }
-    if ((ord.rowCount ?? 0) > 0) {
+      }
+      if ((ord.rowCount ?? 0) > 0) {
       await redeemCustomerCouponForOrderInTx(client, tenantId, pay.rows[0].order_id);
       // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึง PAID ไม่ใช่แค่หน้าร้าน
       await earnPointsForOrderInTx(client, { tenantId, orderId: pay.rows[0].order_id, actorUserId: actor });
       await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId: pay.rows[0].order_id, client });
-    }
-    await auditPaymentTransitionInTx(client, tenantId, actor, "payment.confirm", paymentId, {
+      }
+      await auditPaymentTransitionInTx(client, tenantId, actor, "payment.confirm", paymentId, {
       orderId: pay.rows[0].order_id,
       orderPaid: true,
-    });
+      });
 
-    await client.query("COMMIT");
-    const orderPaid = (ord.rowCount ?? 0) > 0;
-    committed = { paymentId, orderId: pay.rows[0].order_id, orderPaid };
+      await client.query("COMMIT");
+      const orderPaid = (ord.rowCount ?? 0) > 0;
+      committed = { paymentId, orderId: pay.rows[0].order_id, orderPaid };
+    }
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
@@ -279,7 +332,7 @@ export async function confirmPayment(
   }
   // All follow-up work runs after releasing the transaction client. Holding one pool slot while
   // the notifier opens another connection can stall every concurrent payment at pool capacity.
-  if (committed.orderPaid) {
+  if (committed.orderPaid && committed.orderId) {
     void reviewMemberTierForOrder(tenantId, committed.orderId);
     void notifyOrderStatusEmail(tenantId, committed.orderId, "paid");
     await notifyOrderActionCommitted({ tenantId, orderId: committed.orderId, kind: "ORDER_PAID" });
@@ -498,9 +551,81 @@ async function setStatus(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
+    const locked = await client.query<{
+      status: string; payable_type: string; board_game_reservation_id: string | null;
+      source_payment_id: string | null; amount: string; refunded_amount: string;
+    }>(
+      `SELECT status, payable_type, board_game_reservation_id, source_payment_id,
+              amount, refunded_amount
+         FROM bms_payments WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [tenantId, paymentId],
+    );
+    const payment = locked.rows[0];
+    if (!payment || !from.includes(payment.status)) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    if (payment.source_payment_id) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    if (to === "REFUNDED") {
+      const allocatedRefund = await client.query(
+        `SELECT 1 FROM bms_pos_refund_allocations
+          WHERE tenant_id = $1 AND payment_id = $2 LIMIT 1`,
+        [tenantId, paymentId],
+      );
+      if (allocatedRefund.rowCount) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+    }
+    if (to === "REFUNDED" && payment.payable_type === "BOARD_GAME_RESERVATION") {
+      const reservation = await client.query<{ deposit_status: string }>(
+        `SELECT deposit_status FROM bms_board_game_waitlist
+          WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+        [tenantId, payment.board_game_reservation_id],
+      );
+      if (reservation.rows[0]?.deposit_status !== "REFUND_PENDING") {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      const applied = await client.query<{ total: string }>(
+        `SELECT COALESCE(SUM(amount), 0) AS total
+           FROM bms_board_game_reservation_deposit_applications
+          WHERE tenant_id = $1 AND source_payment_id = $2`,
+        [tenantId, paymentId],
+      );
+      const appliedAmount = Number(applied.rows[0]?.total ?? 0);
+      const refundableAmount = Math.max(0, Math.round((Number(payment.amount)
+        - appliedAmount - Number(payment.refunded_amount ?? 0)) * 100) / 100);
+      if (refundableAmount <= 0) {
+        await client.query("ROLLBACK"); return false;
+      }
+      if (appliedAmount > 0) {
+        await client.query(
+          `UPDATE bms_payments
+              SET refunded_amount = refunded_amount + $3, refunded_at = COALESCE(refunded_at, now()),
+                  verified_by = COALESCE($4, verified_by), updated_at = now()
+            WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, paymentId, refundableAmount, actor ?? null],
+        );
+        await client.query(
+          `UPDATE bms_board_game_waitlist
+              SET deposit_status = 'APPLIED', updated_at = now()
+            WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, payment.board_game_reservation_id],
+        );
+        await auditPaymentTransitionInTx(client, tenantId, actor ?? null,
+          "payment.partial_refund", paymentId, { amount: refundableAmount, appliedAmount });
+        await client.query("COMMIT");
+        return true;
+      }
+    }
     const res = await client.query(
       `UPDATE bms_payments
           SET status = $4,
+              refunded_amount = CASE WHEN $4 = 'REFUNDED' THEN amount ELSE refunded_amount END,
               note = COALESCE($5, note),
               verified_by = COALESCE($6, verified_by),
               ${lifecycleColumn} = COALESCE(${lifecycleColumn}, now()),
@@ -511,6 +636,17 @@ async function setStatus(
     if ((res.rowCount ?? 0) === 0) {
       await client.query("ROLLBACK");
       return false;
+    }
+    if (payment.payable_type === "BOARD_GAME_RESERVATION" && payment.board_game_reservation_id) {
+      await client.query(
+        `UPDATE bms_board_game_waitlist
+            SET deposit_status = $3,
+                deposit_payment_id = CASE WHEN $3 = 'PENDING' THEN NULL ELSE deposit_payment_id END,
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, payment.board_game_reservation_id,
+          to === "REJECTED" ? "PENDING" : "REFUNDED"],
+      );
     }
     await auditPaymentTransitionInTx(
       client,
@@ -546,9 +682,15 @@ export function refundPayment(tenantId: string, paymentId: string, actor?: strin
 // ---- read ----------------------------------------------------
 export async function getPayment(tenantId: string, id: string) {
   const res = await query(
-    `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
+    `SELECT id, order_id, payable_type, board_game_reservation_id, source_payment_id,
+            refunded_amount,
+            (SELECT deposit_status FROM bms_board_game_waitlist reservation
+              WHERE reservation.tenant_id = bms_payments.tenant_id
+                AND reservation.id = bms_payments.board_game_reservation_id
+            ) AS reservation_deposit_status,
+            method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
             confirmed_at, rejected_at, refunded_at, created_at, updated_at,
-            COALESCE((
+            refunded_amount + COALESCE((
               SELECT SUM(a.amount)
                 FROM bms_pos_refund_allocations a
                WHERE a.tenant_id = bms_payments.tenant_id
@@ -576,9 +718,15 @@ export async function listPayments(
   const offset = Math.max(Number(opts.offset ?? 0), 0);
   const search = opts.search?.trim() || null;
   const res = await query(
-    `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
+    `SELECT id, order_id, payable_type, board_game_reservation_id, source_payment_id,
+            refunded_amount,
+            (SELECT deposit_status FROM bms_board_game_waitlist reservation
+              WHERE reservation.tenant_id = bms_payments.tenant_id
+                AND reservation.id = bms_payments.board_game_reservation_id
+            ) AS reservation_deposit_status,
+            method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
             confirmed_at, rejected_at, refunded_at, created_at, updated_at,
-            COALESCE((
+            refunded_amount + COALESCE((
               SELECT SUM(a.amount)
                 FROM bms_pos_refund_allocations a
                WHERE a.tenant_id = bms_payments.tenant_id
@@ -600,6 +748,7 @@ export async function listPayments(
           $6::text IS NULL
           OR id::text ILIKE '%' || $6 || '%'
           OR order_id::text ILIKE '%' || $6 || '%'
+          OR COALESCE(board_game_reservation_id::text, '') ILIKE '%' || $6 || '%'
           OR method ILIKE '%' || $6 || '%'
           OR COALESCE(slip_ref, '') ILIKE '%' || $6 || '%'
           OR COALESCE(verified_by, '') ILIKE '%' || $6 || '%'

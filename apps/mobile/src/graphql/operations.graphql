@@ -455,6 +455,8 @@ query MobilePosMemberPreview($input: BmsPosMemberPreviewInput!) {
     reason
     subtotal
     amountDue
+    grossAmountDue
+    reservationDepositApplied
     netTotal
     totalDiscount
     tierDiscount
@@ -2046,6 +2048,12 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         rejectionReason
         reminderStatus
         reminderSentAt
+        decisionNotificationStatus
+        depositPolicy
+        depositAmount
+        depositStatus
+        depositDueAt
+        depositRefundEligibleUntil
         seatedTableId
         seatedTableCode
         seatedSessionId
@@ -2093,6 +2101,12 @@ fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
   rejectionReason
   reminderStatus
   reminderSentAt
+  decisionNotificationStatus
+  depositPolicy
+  depositAmount
+  depositStatus
+  depositDueAt
+  depositRefundEligibleUntil
   seatedTableId
   seatedTableCode
   seatedSessionId

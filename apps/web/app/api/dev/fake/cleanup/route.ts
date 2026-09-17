@@ -13,6 +13,19 @@ async function handleDELETE(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
+    const fakeBoardGameReservationScope = `
+      w.tenant_id = $1 AND (
+        EXISTS (SELECT 1 FROM bms_board_game_sessions s
+                 WHERE s.tenant_id = w.tenant_id AND s.id = w.seated_session_id
+                   AND s.open_idempotency_key LIKE 'fake-open-%')
+        OR EXISTS (SELECT 1 FROM bms_board_game_tables t
+                   WHERE t.tenant_id = w.tenant_id
+                     AND t.id IN (w.seated_table_id, w.reserved_table_id)
+                     AND t.code LIKE 'FAKE-%')
+        OR EXISTS (SELECT 1 FROM bms_board_game_areas a
+                   WHERE a.tenant_id = w.tenant_id AND a.id = w.preferred_area_id
+                     AND a.name LIKE 'FAKE %')
+      )`;
 
     // posts/users เป็น fixtures ระดับระบบ (ไม่ใช่ BMS)
     // `posts` ไม่มีคอลัมน์ tenant_id เลย (มีแค่ author_id) — เดิมจึงลบข้ามร้านทุกครั้ง
@@ -31,6 +44,48 @@ async function handleDELETE(req: NextRequest) {
   // ลบตามลำดับ FK: restock + orders + conversations + PO ก่อน (cascade items/payments/shipments/messages/notes/deliveries)
   //   → suppliers → products (cascade inventory) → customers · ข้ามตัวที่ยังมีของอ้างถึง (กัน FK error)
   //   ทุก DELETE scope ด้วย tenant_id = ร้านของผู้ล็อกอิน
+    // 10.2 links a reservation cash receipt to an internal tender on the eventual order. Unwind
+    // those restrictive evidence links before deleting either the fake order or queue row.
+    await query(
+      `DELETE FROM bms_pos_refund_allocations allocation
+        USING bms_payments applied, bms_payments source, bms_board_game_waitlist w
+        WHERE allocation.tenant_id = $1
+          AND applied.tenant_id = allocation.tenant_id AND applied.id = allocation.payment_id
+          AND source.tenant_id = applied.tenant_id AND source.id = applied.source_payment_id
+          AND w.tenant_id = source.tenant_id AND w.id = source.board_game_reservation_id
+          AND ${fakeBoardGameReservationScope}`,
+      [tenantId]
+    );
+    await query(
+      `DELETE FROM bms_board_game_reservation_deposit_applications application
+        USING bms_board_game_waitlist w
+        WHERE application.tenant_id = $1
+          AND w.tenant_id = application.tenant_id AND w.id = application.reservation_id
+          AND ${fakeBoardGameReservationScope}`,
+      [tenantId]
+    );
+    await query(
+      `DELETE FROM bms_payments applied
+        USING bms_payments source, bms_board_game_waitlist w
+        WHERE applied.tenant_id = $1 AND applied.source_payment_id = source.id
+          AND source.tenant_id = applied.tenant_id
+          AND w.tenant_id = source.tenant_id AND w.id = source.board_game_reservation_id
+          AND ${fakeBoardGameReservationScope}`,
+      [tenantId]
+    );
+    await query(
+      `UPDATE bms_board_game_waitlist w SET deposit_payment_id = NULL
+        WHERE ${fakeBoardGameReservationScope} AND w.deposit_payment_id IS NOT NULL`,
+      [tenantId]
+    );
+    await query(
+      `DELETE FROM bms_payments source
+        USING bms_board_game_waitlist w
+        WHERE source.tenant_id = $1 AND source.payable_type = 'BOARD_GAME_RESERVATION'
+          AND w.tenant_id = source.tenant_id AND w.id = source.board_game_reservation_id
+          AND ${fakeBoardGameReservationScope}`,
+      [tenantId]
+    );
     const resBoardGameOrders = await query(
       `DELETE FROM bms_orders o
         WHERE o.tenant_id = $1
@@ -46,18 +101,7 @@ async function handleDELETE(req: NextRequest) {
     );
     const resBoardGameWaitlist = await query(
       `DELETE FROM bms_board_game_waitlist w
-        WHERE w.tenant_id = $1
-          AND (
-            EXISTS (SELECT 1 FROM bms_board_game_sessions s
-                     WHERE s.tenant_id = w.tenant_id AND s.id = w.seated_session_id
-                       AND s.open_idempotency_key LIKE 'fake-open-%')
-            OR EXISTS (SELECT 1 FROM bms_board_game_tables t
-                       WHERE t.tenant_id = w.tenant_id AND t.id = w.seated_table_id
-                         AND t.code LIKE 'FAKE-%')
-            OR EXISTS (SELECT 1 FROM bms_board_game_areas a
-                       WHERE a.tenant_id = w.tenant_id AND a.id = w.preferred_area_id
-                         AND a.name LIKE 'FAKE %')
-          )
+        WHERE ${fakeBoardGameReservationScope}
         RETURNING w.id`,
       [tenantId]
     );

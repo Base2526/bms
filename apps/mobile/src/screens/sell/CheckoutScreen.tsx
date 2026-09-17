@@ -259,7 +259,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ? restaurantPreview.subtotal
       : source === 'board_game' && boardGamePreview?.amountDue != null
       ? round2(
-          boardGamePreview.amountDue + (boardGamePreview.totalDiscount ?? 0),
+          (boardGamePreview.grossAmountDue ?? boardGamePreview.amountDue)
+            + (boardGamePreview.totalDiscount ?? 0),
         )
       : fallbackSubtotal;
   const payableBeforeRounding = round2(
@@ -1551,6 +1552,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <AmountRow label="ยอดก่อนปัดเศษ" value={payableBeforeRounding} />
           <AmountRow label="ปัดเศษเงินสด" value={roundingDelta} />
         </>
+      )}
+      {source === 'board_game' && (boardGamePreview?.reservationDepositApplied ?? 0) > 0 && (
+        <AmountRow label="ใช้มัดจำการจอง" value={-Number(boardGamePreview?.reservationDepositApplied ?? 0)} discount />
       )}
       <AmountRow label="ยอดสุทธิ" value={total} />
       <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />

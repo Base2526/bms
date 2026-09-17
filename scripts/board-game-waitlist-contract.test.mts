@@ -10,6 +10,7 @@ const read = (relative: string) => readFileSync(path.join(root, relative), "utf8
 const migration = read("db/migrations/9.99__bms_board_game_waitlist.sql");
 const reservationMigration = read("db/migrations/10.0__bms_board_game_advance_reservations.sql");
 const publicMigration = read("db/migrations/10.1__bms_board_game_public_reservations.sql");
+const completionMigration = read("db/migrations/10.2__bms_board_game_reservation_completion.sql");
 const service = read("apps/web/lib/bms/boardGameWaitlist.ts");
 const cafe = read("apps/web/lib/bms/boardGameCafe.ts");
 const operations = read("apps/web/lib/bms/boardGamePosOperations.ts");
@@ -20,6 +21,11 @@ const expiryRoute = read("apps/web/app/api/bms/board-game/reservations/expire/ro
 const reminderRoute = read("apps/web/app/api/bms/board-game/reservations/remind/route.ts");
 const publicRoute = read("apps/web/app/api/board-game/bookings/route.ts");
 const publicManageRoute = read("apps/web/app/api/board-game/bookings/[token]/route.ts");
+const publicPaymentRoute = read("apps/web/app/api/board-game/bookings/[token]/payment/route.ts");
+const publicDirectory = read("apps/web/app/(main)/board-game/BoardGameDirectoryView.tsx");
+const publicManage = read("apps/web/app/(main)/board-game/booking/[token]/BookingManageView.tsx");
+const payments = read("apps/web/lib/bms/payments.ts");
+const pos = read("apps/web/lib/bms/pos.ts");
 const cronWorkflow = read(".github/workflows/bms-cron.yml");
 const cleanup = read("apps/web/app/api/dev/fake/cleanup/route.ts");
 const platform = read("apps/web/lib/bms/platform.ts");
@@ -56,7 +62,7 @@ test("10.0 adds a future table window without creating another session or money 
   assert.match(service, /reserved_for < \$4::timestamptz \+ make_interval/);
   assert.match(service, /status = 'WAITING', checked_in_at = now\(\)/);
   assert.match(service, /โต๊ะนี้ยังมี session ที่ยืนยันไม่ได้ว่าจะจบก่อนเวลาจอง/);
-  assert.doesNotMatch(service, /INSERT INTO bms_payments|INSERT INTO bms_orders/,
+  assert.doesNotMatch(reservationMigration, /INSERT INTO bms_payments|INSERT INTO bms_orders/,
     "a table reservation must not invent a second payment or order path");
 });
 
@@ -104,14 +110,47 @@ test("10.1 public bookings are review requests with opaque management and bounde
   assert.match(reminderRoute, /authorizeCronRequest\(req\)/);
   assert.match(reminderRoute, /recordJobRun\("board-game-reservation-reminders"/);
   assert.match(cronWorkflow, /board-game-reservation-reminders[\s\S]*\/api\/bms\/board-game\/reservations\/remind/);
-  assert.doesNotMatch(service, /INSERT INTO bms_payments|INSERT INTO bms_pos_deposits/,
+  assert.doesNotMatch(publicMigration, /INSERT INTO bms_payments|INSERT INTO bms_pos_deposits/,
     "public table requests and reminders must not create a parallel money path");
+});
+
+test("10.2 completes deposits, expiry, timezone-safe requests and delivery evidence", () => {
+  assert.match(completionMigration, /payable_type = 'BOARD_GAME_RESERVATION'/);
+  assert.match(completionMigration, /bms_board_game_reservation_deposit_applications/);
+  assert.match(completionMigration, /source_payment_id/);
+  assert.match(completionMigration, /refunded_amount/);
+  assert.match(service, /reservedLocal/);
+  assert.match(service, /AT TIME ZONE \$2/);
+  assert.match(service, /request_expires_at/);
+  assert.match(service, /decision_notification_status = 'SENDING'/);
+  assert.match(service, /submitPublicBoardGameReservationDeposit/);
+  assert.match(service, /deposit_refund_eligible_until >= now\(\)[\s\S]*'REFUND_PENDING'/,
+    "staff cancellation must leave eligible confirmed deposits in the refund queue");
+  assert.match(service, /\$5 = 'NO_SHOW'[\s\S]*deposit_status = 'PAID'[\s\S]*'FORFEITED'/,
+    "a staff-recorded no-show must forfeit a paid deposit just like cron expiry");
+  assert.match(payments, /payable_type === "BOARD_GAME_RESERVATION"/);
+  assert.match(payments, /deposit_status !== "REFUND_PENDING"/,
+    "reservation money must be cancelled or left over after settlement before staff can refund it");
+  assert.match(pos, /RESERVATION_DEPOSIT/);
+  assert.match(pos, /reservationDepositCredit/);
+  assert.match(pos, /requestedPayments\.length > 0[\s\S]*requestedPayments\.every\([\s\S]*method === "CASH"/,
+    "a fully deposit-funded bill must not be mistaken for a cash-only payment");
+  assert.match(pos, /amount: Math\.min\(amountDue, deposit\.remaining\)/,
+    "cash rounding must cap the applied deposit at the final rounded order total");
+  assert.match(publicPaymentRoute, /persistWebFile[\s\S]*"private"/);
+  assert.match(publicPaymentRoute, /rateLimit\(`board-game-public-booking-payment:/);
+  assert.match(publicDirectory, /bookingRequestToken \|\| newBookingToken\(\)/);
+  assert.match(publicDirectory, /reservedLocal: form\.get\("reservedFor"\)/);
+  assert.match(publicManage, /window\.setInterval[\s\S]*15_000/);
+  assert.match(publicManage, /type="file"/);
 });
 
 test("rescheduling remains serialized and stale confirmed bookings expire through guarded cron", () => {
   assert.match(service, /boardGameIdempotency\("reservation\.update"/);
   assert.match(service, /new Set\(\[current\.rows\[0\]\.reserved_table_id, input\.tableId\]\)\]\.sort\(\)/);
   assert.match(service, /id <> \$4[\s\S]*reserved_for < \$5::timestamptz/);
+  assert.match(service, /deposit_refund_eligible_until \+ \(\$5::timestamptz - reserved_for\)/,
+    "rescheduling must move the refund cutoff by the same interval as the booking");
   assert.match(service, /FOR UPDATE SKIP LOCKED[\s\S]*SET status = 'NO_SHOW'/);
   assert.match(expiryRoute, /authorizeCronRequest\(req\)/);
   assert.match(expiryRoute, /recordJobRun\("board-game-reservation-expiry"/);
@@ -130,8 +169,16 @@ test("availability is capacity-aware guidance, not a promise", () => {
 
 test("queue history is removed before sessions during fixture and test-tenant cleanup", () => {
   assert.ok(
+    cleanup.indexOf("DELETE FROM bms_board_game_reservation_deposit_applications") <
+      cleanup.indexOf("DELETE FROM bms_board_game_waitlist w"),
+  );
+  assert.ok(
     cleanup.indexOf("DELETE FROM bms_board_game_waitlist") <
       cleanup.indexOf("DELETE FROM bms_board_game_sessions"),
+  );
+  assert.ok(
+    platform.indexOf("DELETE FROM bms_board_game_reservation_deposit_applications") <
+      platform.indexOf("DELETE FROM bms_board_game_waitlist"),
   );
   assert.ok(
     platform.indexOf("DELETE FROM bms_board_game_waitlist") <
