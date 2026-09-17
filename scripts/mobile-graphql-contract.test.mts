@@ -39,6 +39,9 @@ const mobileBoardGameScreen = read(
 const mobileInventoryScreen = read(
   "../apps/mobile/src/screens/inventory/InventoryScreen.tsx",
 );
+const mobileTabletMainNavigation = read(
+  "../apps/mobile/src/components/TabletMainNavigation.tsx",
+);
 const mobileFloorScreen = read(
   "../apps/mobile/src/screens/floor/FloorScreen.tsx",
 );
@@ -53,6 +56,9 @@ const mobileReceiptScreen = read(
   "../apps/mobile/src/screens/sell/ReceiptScreen.tsx",
 );
 const mobileMainTabs = read("../apps/mobile/src/navigation/MainTabs.tsx");
+const mobileAppNavigator = read(
+  "../apps/mobile/src/navigation/AppNavigator.tsx",
+);
 const mobileDeviceSettingsScreen = read(
   "../apps/mobile/src/screens/settings/DeviceSettingsScreen.tsx",
 );
@@ -1055,9 +1061,14 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
     "pushed open-table and detail routes must expose the standard header back action",
   );
   assert.match(
-    mobileMainTabs,
+    mobileAppNavigator,
     /name="BoardGameOpen"[\s\S]{0,150}component=\{BoardGameOpenScreen\}[\s\S]{0,150}name="BoardGameDetail"[\s\S]{0,150}component=\{BoardGameDetailScreen\}/,
-    "open-table and detail must be real native-stack routes, not in-place state swaps",
+    "open-table and detail must be native-stack routes above the tabs, not in-place state swaps",
+  );
+  assert.doesNotMatch(
+    mobileMainTabs,
+    /name="BoardGame(?:Open|Detail)"/,
+    "detail routes inside the tab navigator leave the tab bar visible during the workflow",
   );
   assert.doesNotMatch(
     boardGame,
@@ -1076,7 +1087,7 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
     /!shift\.isOpen[\s\S]{0,160}ยังไม่ได้เปิดกะ/,
     "opening a timed table must explain the open-shift prerequisite before submit",
   );
-  assert.match(boardGame, /navigate\(['"]ShiftTab['"]\)/);
+  assert.match(boardGame, /navigate\('Tabs',\s*\{\s*screen: 'ShiftTab'\s*\}\)/);
   assert.match(boardGame, /MobilePosCloseBoardGameBillingGroupDocument/);
   assert.match(boardGame, /billingGroupId: group\.id/);
   // `9.91`: โต๊ะที่รวมไว้มีหลายชุดนั่งร่วมกัน — จอต้องให้เลือกชุดก่อนทำรายการ ไม่งั้นทุกปุ่ม
@@ -1209,16 +1220,49 @@ test("RN branch inventory keeps branch authority server-side and makes discrepan
   assert.match(inventory, /hasDiscrepancy\(row\)/);
   assert.match(inventory, /snapshotQty/);
   assert.match(inventory, /MobilePosApplyStockCountDocument/);
-  assert.match(inventory, /skip: !credentials \|\| mode !== 'TRANSFER'/);
-  assert.match(inventory, /skip: !credentials \|\| mode !== 'COUNT'/);
-  assert.match(
-    inventory,
-    /mode === 'TRANSFER' \? transfers\.error : counts\.error/,
-  );
+  // ภาพรวมต้องอ่านทั้งงานโอนและใบนับพร้อมกัน แต่เมื่อเข้า workflow ใด workflow หนึ่ง
+  // อีก query ต้องหยุด เพื่อไม่ยิงงานหลังร้านที่จอไม่ได้ใช้
+  assert.match(inventory, /skip: !credentials \|\| mode === 'COUNT'/);
+  assert.match(inventory, /skip: !credentials \|\| mode === 'TRANSFER'/);
+  assert.match(inventory, /mode === 'OVERVIEW'/);
+  assert.match(inventory, /transfers\.error \?\? counts\.error/);
+  assert.match(inventory, /<InventoryOverview/);
   assert.match(inventory, /run\(`count-item-\$\{selectedCount\.id\}`/);
   assert.match(
     inventory,
     /retryKey\(\s*`count-item-\$\{selectedCount\.id\}`\s*,?\s*\)/,
+  );
+});
+
+test("RN tablet Board Game, inventory, and operations share one stable main navigation", () => {
+  assert.match(
+    mobileBoardGameScreen,
+    /<TabletMainNavigation\s+activeTab="BoardGameTab"/,
+  );
+  assert.match(
+    mobileInventoryScreen,
+    /<TabletMainNavigation\s+activeTab="InventoryTab"/,
+  );
+  assert.match(
+    mobileOperationsScreen,
+    /<TabletMainNavigation\s+activeTab="OperationsTab"/,
+  );
+  const positions = [
+    "'SellTab'",
+    "'BoardGameTab'",
+    "'InventoryTab'",
+    "'OperationsTab'",
+    "'ShiftTab'",
+  ].map((tab) => mobileTabletMainNavigation.indexOf(tab));
+  assert.ok(
+    positions.every((position, index) =>
+      index === 0 ? position >= 0 : position > positions[index - 1],
+    ),
+    "tablet main navigation must keep the same five-item order on every screen",
+  );
+  assert.match(
+    mobileTabletMainNavigation,
+    /accessibilityState=\{\{ selected \}\}/,
   );
 });
 
@@ -1438,7 +1482,11 @@ test("RN tab bar fits both the phone bar and the tablet rail", () => {
   // มือถือ: กะถูกยุบเข้า "เพิ่มเติม" เฉพาะร้านอาหารซึ่งเป็นโหมดเดียวที่แน่นจนป้ายถูกตัด
   assert.equal(has("phone/restaurant", "ShiftTab"), false);
   assert.equal(has("phone/retail", "ShiftTab"), true);
-  assert.match(tabs, /OperationsStack\.Screen name="Shift"/, "ยุบแล้วต้องยังหาเจอ");
+  assert.match(
+    mobileAppNavigator,
+    /name="ShiftDetail"/,
+    "ยุบแล้วต้องยังหาเจอ และต้องเปิดเหนือแท็บเพื่อให้มี Back มาตรฐาน",
+  );
 
   // แท็บเล็ต: รางมีที่ — ของที่ถูกยุบเพราะข้อจำกัดของแถบล่างต้องกลับมาเป็นปลายทางของตัวเอง
   // ไม่งั้นคือคิดค่าผ่านทางเป็นจำนวนแตะโดยไม่ได้ประหยัดพื้นที่อะไร
@@ -1477,6 +1525,52 @@ test("RN tab bar fits both the phone bar and the tablet rail", () => {
   );
 });
 
+test("RN full-screen workflows live above tabs and share the operational providers", () => {
+  const app = withoutComments(mobileAppNavigator);
+  const tabs = withoutComments(mobileMainTabs);
+  const details = [
+    "Checkout",
+    "Receipt",
+    "SalesHistory",
+    "SaleDetail",
+    "CheckDetail",
+    "RestaurantOps",
+    "InventoryDetail",
+    "ShiftDetail",
+    "BoardGameOpen",
+    "BoardGameDetail",
+  ];
+
+  assert.match(app, /<Stack\.Screen name="Tabs" component=\{MainTabs\}/);
+  for (const route of details) {
+    assert.match(
+      app,
+      new RegExp(`name="${route}"`),
+      `${route} must be in AppStack`,
+    );
+    assert.doesNotMatch(
+      tabs,
+      new RegExp(`name="${route}"`),
+      `${route} inside a tab stack would leave the tab bar visible`,
+    );
+  }
+
+  assert.ok(
+    app.indexOf("<SalesProvider>") < app.indexOf("<Stack.Navigator"),
+    "sale/cart/shift providers must wrap both tabs and pushed workflows",
+  );
+  assert.match(
+    app,
+    /name="RestaurantOps"[\s\S]{0,350}onBack=\{\(\) => navigation\.goBack\(\)\}/,
+    "a full-screen inbox detail needs an explicit standard back action",
+  );
+  assert.match(
+    app,
+    /name="ShiftDetail"[\s\S]{0,220}<ShiftScreen onBack=/,
+    "shift opened from More must not become a dead end after the tabs are hidden",
+  );
+});
+
 test("RN keeps restaurant queue, QR orders, and service calls visible across every tab", () => {
   const operations = withoutComments(mobileOperationsScreen);
   const context = withoutComments(mobileRestaurantOperationsContext);
@@ -1490,7 +1584,7 @@ test("RN keeps restaurant queue, QR orders, and service calls visible across eve
     context,
     /initialized:[\s\S]*!qr\.loading[\s\S]*!calls\.loading[\s\S]*!waitlist\.loading/,
   );
-  assert.match(tabs, /<RestaurantOperationsProvider>/);
+  assert.match(mobileAppNavigator, /<RestaurantOperationsProvider>/);
   // badge เดียวของแท็บ "งานเข้า" ต้องเป็นผลรวมของทุกถังที่กดเข้าไปถึงได้จากแท็บนั้น
   // — นับไม่ครบคือบอกว่าไม่มีงานทั้งที่มี · นับเกินคือส่งคนไปหาของที่กดเข้าไปไม่เจอ
   assert.match(
@@ -1500,9 +1594,9 @@ test("RN keeps restaurant queue, QR orders, and service calls visible across eve
   );
   assert.match(tabs, /tabBarBadge: inboxCount > 0 \? inboxCount : undefined/);
   assert.match(
-    tabs,
+    mobileAppNavigator,
     /name="RestaurantOps"[\s\S]{0,200}section="RESTAURANT"/,
-    "คิว/QR/เรียก ต้องอยู่ในสแตกเดียวกับออร์เดอร์เข้า ไม่ใช่ใต้แท็บงานหลังร้าน",
+    "คิว/QR/เรียก ต้องเป็นรายละเอียดเหนือแท็บ ไม่ใช่ปนกับงานหลังร้าน",
   );
   assert.match(watcher, /fireOrderAlert\('service_call'\)/);
   assert.match(watcher, /fireOrderAlert\('qr_order'\)/);

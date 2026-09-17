@@ -18,6 +18,7 @@ import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 import { isAdminSessionActive } from "@/lib/redisSession";
 import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 import { authenticatePosDevice } from "@/lib/bms/pos";
+import { query } from "@/lib/db";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
@@ -86,11 +87,30 @@ async function createContext(request: NextRequest) {
     }
 
     // drill-down: platform admin กำลัง "เข้าดูมุมร้าน" → override tenant_id
-    // เชื่อ token ได้เพราะเซ็นแล้ว + ผูกกับ admin.id (มินต์โดย bmsEnterTenant ที่ตรวจ platform admin แล้ว)
+    // ลายเซ็นพิสูจน์ว่า cookie ไม่ถูกปลอม แต่ tenant อาจถูกลบหลัง cookie ถูกมินต์
+    // (เช่นหน้า fake-data ลบร้าน scenario ที่กำลัง drill-down อยู่) และสิทธิ์ platform
+    // admin อาจถูกถอดภายหลัง จึงต้องยืนยันทั้งสองอย่างสดก่อนใช้เป็น authority.
     if (admin) {
-      const act = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
-      if (act?.actTenantId && String(act.by) === String(admin.id)) {
-        admin = { ...admin, tenant_id: act.actTenantId, __actingTenantId: act.actTenantId } as any;
+      const cookieStore = cookies();
+      const actingCookie = cookieStore.get(ACT_TENANT_COOKIE)?.value;
+      const act = verifyActTenant(actingCookie);
+      const boundToCurrentPlatformAdmin =
+        admin.is_platform_admin === true &&
+        !!act?.actTenantId &&
+        String(act.by) === String(admin.id);
+
+      if (boundToCurrentPlatformAdmin) {
+        const tenant = await query<{ id: string }>(
+          `SELECT id FROM bms_tenants WHERE id = $1 LIMIT 1`,
+          [act!.actTenantId]
+        );
+        if (tenant.rows[0]) {
+          admin = { ...admin, tenant_id: act!.actTenantId, __actingTenantId: act!.actTenantId } as any;
+        } else {
+          cookieStore.delete(ACT_TENANT_COOKIE);
+        }
+      } else if (actingCookie) {
+        cookieStore.delete(ACT_TENANT_COOKIE);
       }
     }
 

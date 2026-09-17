@@ -71,7 +71,7 @@ import {
 const POS_ALERT_KINDS: readonly AlertKind[] = ["CHAT_REQUEST"] as const;
 const POS_TABS = [
   { key: "sell", label: "ขาย" },
-  { key: "boardgame", label: "โต๊ะ/เวลา" },
+  { key: "boardgame", label: "โต๊ะ" },
   { key: "incoming", label: "ออร์เดอร์เข้า" },
   { key: "returns", label: "คืน" },
   { key: "stock", label: "รับของ" },
@@ -1417,6 +1417,8 @@ export default function PosPage() {
   // คูปองใช้ร่วมกับส่วนลดสมาชิกได้ — server เป็นคนตรวจกฎของโค้ด (ยอดขั้นต่ำ/
   // จำนวนครั้ง/ต่อคน) จอแค่ส่งโค้ดไปแล้วแสดงผล
   const [couponCode, setCouponCode] = useState("");
+  // แบบหน้าขายวางคูปองเป็น action รอง ไม่ใช่ช่องกรอกที่กินพื้นที่ทุกบิล
+  const [couponOpen, setCouponOpen] = useState(false);
   // ---- ส่วนลดมือ ----
   // เก็บ "ที่ขอ" แยกจาก "ที่อนุมัติแล้ว" โดยตั้งใจ: พนักงานพิมพ์จำนวนได้ตลอด แต่ยอด
   // จะเข้าไปคิดในพรีวิว/บิลก็ต่อเมื่อหัวหน้ากด PIN ผ่านแล้วเท่านั้น ถ้าใช้ตัวแปรเดียว
@@ -1728,6 +1730,7 @@ export default function PosPage() {
       setMember(snapshot.member ?? null);
       setPointsToRedeem(snapshot.pointsToRedeem ?? "");
       setCouponCode(snapshot.couponCode ?? "");
+      setCouponOpen(Boolean(snapshot.couponCode?.trim()));
       setExtraLines(snapshot.extraLines ?? []);
       if (typeof saved.body.boardGameBillingGroupId === "string") {
         setBoardGameCheckoutId(saved.body.boardGameBillingGroupId);
@@ -1759,6 +1762,7 @@ export default function PosPage() {
       setMember(snapshot.member ?? null);
       setPointsToRedeem(snapshot.pointsToRedeem ?? "");
       setCouponCode(snapshot.couponCode ?? "");
+      setCouponOpen(Boolean(snapshot.couponCode?.trim()));
       setExtraLines(snapshot.extraLines ?? []);
       setPharmacyReviewLink(saved.pharmacyReviewLink ?? (
         snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
@@ -2343,6 +2347,7 @@ export default function PosPage() {
   function clearBillCustomerState() {
     clearMember();
     setCouponCode("");
+    setCouponOpen(false);
     clearManualDiscount();
     clearPharmacyReviewState();
     // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
@@ -2430,6 +2435,7 @@ export default function PosPage() {
       confirmDiscardBlindReturnDraft(`ไปแท็บ${tabLabel}`, { nextTab });
       return;
     }
+    if (nextTab === "boardgame" && notice?.type === "ok") setNotice(null);
     setTab(nextTab);
   }
 
@@ -2490,6 +2496,7 @@ export default function PosPage() {
     setMember(snapshot.member ?? null);
     setPointsToRedeem(snapshot.pointsToRedeem ?? "");
     setCouponCode(snapshot.couponCode ?? "");
+    setCouponOpen(Boolean(snapshot.couponCode?.trim()));
     setExtraLines(snapshot.extraLines ?? []);
     setPharmacyReviewLink(
       snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
@@ -6123,8 +6130,8 @@ export default function PosPage() {
         .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
         /* หน้าไม่เลื่อนทั้งหน้า — ให้แต่ละคอลัมน์เลื่อนของตัวเอง ปุ่มชำระเงิน
            จึงอยู่ที่เดิมเสมอแม้ตะกร้าจะยาว */
-        .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: hidden; }
-        .pos-rail { width: 68px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+        .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; overflow: hidden; }
+        .pos-rail { width: 58px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 5px;
                     background: #fff; border-right: 1px solid var(--pos-line, #eee); }
         .pos-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
                            height: 56px; width: 100%; border-radius: 10px; font-size: 11px; white-space: nowrap;
@@ -6339,7 +6346,7 @@ export default function PosPage() {
       {/* บอกให้ชัดว่าขาดอะไรถึงยังขายไม่ได้ — เดิมจอเงียบ คนหน้าร้านเดาเองไม่ถูก
           ช่องเลือกผู้ขาย/PIN อยู่ในนี้เลย เพราะรีเฟรชหน้าทีไร PIN หายจากหน่วยความจำ
           ถ้าให้ไปหาในแท็บตั้งค่าคือเพิ่มคลิกให้กับสิ่งที่ต้องทำบ่อยที่สุดหลังรีเฟรช */}
-      {session && !canSell && (
+      {session && !canSell && tab !== "boardgame" && (
         <div style={{ background: "#fff", padding: 12, borderRadius: 8 }}>
           <div style={{ fontWeight: 500, marginBottom: 6 }}>ยังขายไม่ได้ — เหลืออีก:</div>
           <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.9 }}>
@@ -6377,8 +6384,11 @@ export default function PosPage() {
           ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลหรือรับเงินซ้ำ
         </div>
       )}
-      <div className="pos-main-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1, minHeight: 0 }}>
-      <section className="pos-card pos-pane">
+      <div
+        className={`pos-main-grid${tab === "boardgame" ? " pos-main-grid--boardgame" : ""}${tab === "sell" ? " pos-main-grid--sell" : ""}`}
+        style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1, minHeight: 0 }}
+      >
+      <section className={`pos-card pos-pane${tab === "sell" ? " pos-sale-basket" : ""}`}>
       {tab === "returns" && (<>
       <div style={{ fontSize: 13 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -8055,23 +8065,32 @@ export default function PosPage() {
               ))}
             </div>
           )}
-          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => { setLookupMode((v) => !v); setLookup(null); scanRef.current?.focus(); }}
-              style={{
-                padding: "6px 14px", fontSize: 13, borderRadius: 6,
-                background: lookupMode ? "#faad14" : "#fff",
-                color: lookupMode ? "#fff" : "#000",
-                border: "1px solid #d9d9d9",
-              }}
-            >
-              {lookupMode ? "โหมดเช็คของ (ยิงแล้วไม่เข้าตะกร้า)" : "เช็คของ"}
-            </button>
-            <span style={{ fontSize: 13, color: "#666" }}>
-              {cart.length === 0
-                ? (boardGameCheckout ? `บิลเวลาเล่น ${boardGameCheckout.tableName}` : "ยังไม่มีรายการ")
-                : `${cart.length} รายการในตะกร้า`}
-            </span>
+          <div className="pos-sale-basket-head">
+            <div>
+              <div className="pos-sale-basket-title">รายการขาย</div>
+              <div className="pos-sale-basket-meta">
+                {cart.length === 0
+                  ? (boardGameCheckout ? `บิลเวลาเล่น ${boardGameCheckout.tableName}` : "ยังไม่มีรายการ")
+                  : `${cart.length} รายการ · ${itemCount} ชิ้น`}
+                {session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}
+              </div>
+            </div>
+            <div className="pos-sale-basket-actions">
+              <button
+                type="button"
+                disabled={hasPendingOrderWrite || cart.length === 0}
+                onClick={() => setParkOpen(true)}
+              >
+                พักบิล
+              </button>
+              <button
+                type="button"
+                aria-pressed={lookupMode}
+                onClick={() => { setLookupMode((v) => !v); setLookup(null); scanRef.current?.focus(); }}
+              >
+                {lookupMode ? "ออกจากโหมดเช็คของ" : "เช็คของ"}
+              </button>
+            </div>
           </div>
 
           {lookup && (
@@ -8115,7 +8134,15 @@ export default function PosPage() {
               </div>
             </div>
           )}
-          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="pos-sale-lines">
+            {cart.length > 0 && (
+              <div className="pos-sale-line-header" aria-hidden="true">
+                <span>สินค้า</span>
+                <span>ราคา</span>
+                <span>จำนวน</span>
+                <span>รวม</span>
+              </div>
+            )}
             {cart.map((l) => (
               <div key={l.key} className="pos-line-item">
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -8185,6 +8212,9 @@ export default function PosPage() {
                     </div>
                   )}
                 </div>
+                <div className="pos-line-unit-price">
+                  ฿{baht(cartLineCharge(l, tierPriceByKey.get(l.key)).unitPrice)}
+                </div>
                 <div className="pos-qty">
                   <button onClick={() => changeQty(l.key, -1)} aria-label="ลดจำนวน">−</button>
                   <span className="pos-qty-value">{l.packQty}</span>
@@ -8200,6 +8230,13 @@ export default function PosPage() {
                 </div>
               </div>
             ))}
+            {cart.length === 0 && !boardGameCheckout && (
+              <div className="pos-sale-empty" role="status">
+                <span className="pos-sale-empty-icon" aria-hidden="true">▣</span>
+                <strong>ยังไม่มีสินค้าในบิล</strong>
+                <span>ยิงบาร์โค้ดหรือค้นหาสินค้าเพื่อเริ่มขาย</span>
+              </div>
+            )}
           </div>
       </>)}
 
@@ -8642,11 +8679,33 @@ export default function PosPage() {
       </>)}
         </section>
 
-        <section className="pos-card pos-pane" style={{ display: "flex", flexDirection: "column" }}>
-          <div className="pos-total">
+        <section className={`pos-card pos-pane${tab === "sell" ? " pos-sale-checkout" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
+          {tab === "sell" && (
+            <div className="pos-sale-totalbar">
+              <div className="pos-total-row">
+                <span className="pos-sale-total-label">ยอดชำระ · {itemCount} ชิ้น</span>
+                <span className="pos-total-value">฿{baht(amountDue)}</span>
+              </div>
+              <div className="pos-sale-summary">
+                <div><span>ยอดสินค้า</span><strong>฿{baht(total)}</strong></div>
+                {extraTotal > 0 && <div><span>ค่าบริการเพิ่มเติม</span><strong>฿{baht(extraTotal)}</strong></div>}
+                {boardGameCheckout && <div><span>ค่าเล่นบอร์ดเกม</span><strong>฿{baht(boardGameCheckout.totalDue)}</strong></div>}
+                <div><span>ส่วนลด</span><strong>−฿{baht(discountTotal)}</strong></div>
+                <div className="pos-sale-summary-total"><span>ยอดสุทธิ</span><strong>฿{baht(amountDue)}</strong></div>
+              </div>
+            </div>
+          )}
+          <div className={tab === "sell" ? "pos-sale-checkout-scroll" : undefined}>
+          <div className={`pos-total${tab === "sell" ? " pos-sale-adjustments" : ""}`}>
             <div className="pos-total-row">
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
               <span className="pos-total-value">฿{baht(amountDue)}</span>
+            </div>
+            <div className="pos-sale-summary">
+              <div><span>ยอดสินค้า</span><strong>฿{baht(total)}</strong></div>
+              {extraTotal > 0 && <div><span>ค่าบริการเพิ่มเติม</span><strong>฿{baht(extraTotal)}</strong></div>}
+              <div><span>ส่วนลด</span><strong>−฿{baht(discountTotal)}</strong></div>
+              <div className="pos-sale-summary-total"><span>ยอดสุทธิ</span><strong>฿{baht(amountDue)}</strong></div>
             </div>
             {/* ค่าบริการต้องเห็นแยกบรรทัด ไม่ใช่กลืนไปในยอดรวม — ลูกค้าถามได้ว่าคิดอะไรเพิ่ม */}
             {extraTotal > 0 && (
@@ -8714,40 +8773,48 @@ export default function PosPage() {
                 <span>ยอดก่อนปัดเศษ ฿{baht(payableBeforeRounding)} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
               </div>
             )}
+            <div className="pos-sale-discount-tools">
             {/* คูปอง — แยกจากแถบสมาชิกเพราะใช้ได้ทั้งลูกค้าทั่วไปและสมาชิก
                 กฎของโค้ดตรวจที่ server ทั้งหมด จอไม่คิด % เอง */}
-            <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  placeholder="โค้ดส่วนลด"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
-                />
-                {couponCode !== "" && (
-                  <button type="button" className="pos-btn-ghost" onClick={() => setCouponCode("")}>
-                    ล้าง
-                  </button>
+            <details
+              className="pos-sale-coupon"
+              open={couponOpen}
+              onToggle={(event) => setCouponOpen(event.currentTarget.open)}
+            >
+              <summary>โค้ดส่วนลด</summary>
+              <div className="pos-sale-coupon-body">
+                <div className="pos-sale-coupon-row">
+                  <input
+                    placeholder="กรอกโค้ดส่วนลด"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    style={{ textTransform: "uppercase" }}
+                  />
+                  {couponCode !== "" && (
+                    <button type="button" className="pos-btn-ghost" onClick={() => setCouponCode("")}>
+                      ล้าง
+                    </button>
+                  )}
+                </div>
+                {couponCode.trim() !== "" && memberPreview?.couponError && (
+                  <span className="pos-sale-coupon-status is-error">{memberPreview.couponError}</span>
+                )}
+                {couponCode.trim() !== "" && !memberPreview?.couponError && (memberPreview?.couponDiscount ?? 0) > 0 && (
+                  <span className="pos-sale-coupon-status is-ok">
+                    ใช้โค้ดได้ −฿{baht(memberPreview!.couponDiscount)}
+                  </span>
                 )}
               </div>
-              {couponCode.trim() !== "" && memberPreview?.couponError && (
-                <span style={{ fontSize: 12, color: "#c9455a" }}>{memberPreview.couponError}</span>
-              )}
-              {couponCode.trim() !== "" && !memberPreview?.couponError && (memberPreview?.couponDiscount ?? 0) > 0 && (
-                <span style={{ fontSize: 12, color: "#12805c" }}>
-                  ใช้โค้ดได้ −฿{baht(memberPreview!.couponDiscount)}
-                </span>
-              )}
-            </div>
+            </details>
             {/* ส่วนลดหน้าร้าน — ชั้นที่ 4 ต่อจาก tier/คูปอง/แต้ม ทุกบาทต้องมีหัวหน้ากด PIN
                 ปุ่มยุบไว้เพราะบิลส่วนใหญ่ไม่มีส่วนลดมือ กางเฉพาะตอนจะใช้ */}
-            <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", fontSize: 12, marginBottom: 6 }}>
+            <div className={`pos-total-break pos-sale-manual-discount${approvedDiscount || discountOpen ? " is-open" : ""}`}>
+              {(approvedDiscount || discountOpen) && <div className="pos-sale-manual-label">
                 ส่วนลดหน้าร้าน
                 <PosHelp title="ส่วนลดที่หัวหน้าอนุมัติ">
                   ส่วนลดนี้หักต่อจากสิทธิ์สมาชิก คูปอง และแต้ม เหตุผลกับผู้อนุมัติจะถูกบันทึกกับบิล และผู้อนุมัติต้องเป็นคนละคนกับผู้ขาย
                 </PosHelp>
-              </div>
+              </div>}
               {approvedDiscount ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
                   <span style={{ fontSize: 12 }}>
@@ -8769,7 +8836,7 @@ export default function PosPage() {
                   style={{ fontSize: 12 }}
                   onClick={() => { setDiscountOpen(true); setDiscountError(null); }}
                 >
-                  + ส่วนลดหน้าร้าน (ต้องมีหัวหน้าอนุมัติ)
+                  ส่วนลดหน้าร้าน
                 </button>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
@@ -8823,8 +8890,13 @@ export default function PosPage() {
                 </div>
               )}
             </div>
+            </div>
             {/* แถบสมาชิก — วางบนแผงชำระเงินเพราะพนักงานถามลูกค้าตอนกำลังจะรับเงิน */}
-            <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+            <div className="pos-total-break pos-sale-member">
+              <div className="pos-sale-member-heading">
+                <strong>ลูกค้า / สมาชิก</strong>
+                {!member && <span>ค้นหาด้วยเบอร์โทรหรือเลขสมาชิกก่อนรับชำระ</span>}
+              </div>
               {member ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {/* ชั้นสมาชิกเป็น badge — อ่านแวบเดียวได้ ไม่ต้องอ่านทั้งบรรทัด
@@ -9098,12 +9170,20 @@ export default function PosPage() {
               ตอนเป็นบิลเงินสดรายการเดียว (ค่าเริ่มต้นของทุกบิล) และปุ่มเดียวที่เปิด
               ฟอร์มนั้นได้ก็อยู่ในกล่องที่ถูกซ่อนเอง = QR/บัตร/วอลเล็ท กดไม่ถึงเลย */}
           {!justSold && payments.length === 1 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+            <div className="pos-sale-payment-methods">
+              <div className="pos-sale-payment-head">
+                <span>วิธีชำระเงิน</span>
+                <PosHelp title="จ่ายหลายวิธี" align="right">
+                  แบ่งยอดบิลเป็นหลายช่องทาง เช่น เงินสดบางส่วนและบัตรส่วนที่เหลือ ยอดของทุกแถวต้องรวมกันเท่ากับยอดชำระ
+                </PosHelp>
+              </div>
+              <div className="pos-sale-method-grid">
               {METHODS.map((m) => {
                 const active = payments[0]?.method === m.key;
                 return (
                   <button
                     key={m.key}
+                    className="pos-sale-method"
                     aria-pressed={active}
                     onClick={() => {
                       setSplitMode(false);
@@ -9115,12 +9195,6 @@ export default function PosPage() {
                         amount: m.key === "CASH" ? "" : amountDue > 0 ? String(amountDue) : "",
                       });
                     }}
-                    style={{
-                      flex: "1 1 0", minWidth: 78, minHeight: 44, padding: "8px 10px", fontSize: 14,
-                      background: active ? "#e8f0fe" : undefined,
-                      borderColor: active ? "#b5d4f4" : undefined,
-                      fontWeight: active ? 500 : 400,
-                    }}
                   >
                     {m.label}
                   </button>
@@ -9130,6 +9204,7 @@ export default function PosPage() {
                   ปุ่มที่กดแล้วโดนปฏิเสธทุกครั้งแย่กว่าปุ่มที่ไม่มี */}
               {arAccount?.status === "ACTIVE" && (
                 <button
+                  className="pos-sale-method"
                   aria-pressed={payments[0]?.method === "CREDIT"}
                   onClick={() => {
                     setSplitMode(false);
@@ -9140,22 +9215,14 @@ export default function PosPage() {
                       amount: amountDue > 0 ? String(amountDue) : "",
                     });
                   }}
-                  style={{
-                    flex: "1 1 0", minWidth: 92, minHeight: 44, padding: "8px 10px", fontSize: 14,
-                    background: payments[0]?.method === "CREDIT" ? "#fff4e6" : undefined,
-                    borderColor: payments[0]?.method === "CREDIT" ? "#ffbb70" : undefined,
-                    fontWeight: payments[0]?.method === "CREDIT" ? 500 : 400,
-                  }}
                 >
                   ขายเชื่อ
                 </button>
               )}
-              <button onClick={addPaymentRow} style={{ flex: "1 1 0", minWidth: 90, minHeight: 44, fontSize: 13 }}>
+              <button className="pos-sale-method" onClick={addPaymentRow}>
                 + จ่ายผสม
               </button>
-              <PosHelp title="จ่ายหลายวิธี" align="right">
-                แบ่งยอดบิลเป็นหลายช่องทาง เช่น เงินสดบางส่วนและบัตรส่วนที่เหลือ ยอดของทุกแถวต้องรวมกันเท่ากับยอดชำระ
-              </PosHelp>
+              </div>
             </div>
           )}
 
@@ -9280,7 +9347,7 @@ export default function PosPage() {
           {/* บิลเงินสดล้วนคือ 95% ของบิล — ให้พิมพ์ช่องเดียวจบ
               ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก */}
           {simpleCash && !justSold && (
-            <div style={{ marginTop: 12 }}>
+            <div className="pos-sale-cash">
               <div className="pos-cash-field">
                 <label htmlFor="pos-cash-input">รับเงินมา</label>
                 <input
@@ -9622,8 +9689,9 @@ export default function PosPage() {
             </div>
           )}
 
-          <div style={{ flex: 1 }} />
-          {!justSold && (<>
+          </div>
+          {tab !== "sell" && <div style={{ flex: 1 }} />}
+          {!justSold && (<div className={tab === "sell" ? "pos-sale-checkout-footer" : undefined}>
           {/* ปุ่มเทาที่ยังโชว์ยอดเงินอ่านไม่ออกว่าติดอะไร — ให้มันบอกเหตุผลบนตัวเอง
               เหตุผลจริงเคยอยู่ในข้อความตัวเล็กมุมขวาซึ่งไม่มีใครมอง */}
           <button
@@ -9632,9 +9700,19 @@ export default function PosPage() {
             onClick={() => void pay()}
             style={{ marginTop: 12 }}
           >
-            {busy ? "กำลังบันทึก…" : payBlockedReason ?? `ชำระเงิน ฿${baht(amountDue)}`}
+            {busy ? "กำลังบันทึก…" : payBlockedReason ?? `รับชำระ ฿${baht(amountDue)}`}
           </button>
+          {tab === "sell" && (
+            <div className="pos-sale-status">
+              <span aria-hidden="true">✓</span>
+              <span>{payBlockedReason ?? "เลือกวิธีชำระและระบุยอดรับเงิน"}</span>
+            </div>
+          )}
+          <details className="pos-sale-bill-options" open={tab !== "sell"}>
+            <summary>{tab === "sell" ? "ตัวเลือกบิล" : "ตัวเลือกบิล · ล้างบิล / ค่าบริการ"}</summary>
+            <div className="pos-sale-bill-options-body">
           <button
+            className="pos-sale-clear-bill"
             disabled={hasPendingOrderWrite}
             onClick={() => {
               setCart([]);
@@ -9652,15 +9730,6 @@ export default function PosPage() {
             style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
           >
             ล้างบิล
-          </button>
-          {/* พักบิล (7.97) — ลูกค้าลืมของ/หาเงินไม่ทัน แล้วคิวข้างหลังรอ
-              วางคู่กับ "ล้างบิล" เพราะเป็นทางเลือกของกันและกันตอนต้องเคลียร์เคาน์เตอร์ */}
-          <button
-            disabled={hasPendingOrderWrite || cart.length === 0}
-            onClick={() => setParkOpen(true)}
-            style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
-          >
-            พักบิล
           </button>
           {/* ค่าบริการ/ค่าถุง (8.6) — ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า
               แต่รวมในยอดที่ลูกค้าจ่ายและอยู่ในฐาน VAT เหมือนบรรทัดสินค้า
@@ -9706,7 +9775,9 @@ export default function PosPage() {
               ใช้กับรายการที่ไม่ใช่สินค้าในคลัง เช่น ค่าถุงหรือค่าบริการ ชื่อและยอดที่กรอกจะแสดงให้ลูกค้าเห็นบนใบเสร็จ
             </PosHelp>
           </div>
-          </>)}
+            </div>
+          </details>
+          </div>)}
         </section>
       </div>
       </div>

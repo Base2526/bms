@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Button } from '../../components/Button';
@@ -25,9 +26,112 @@ import { useCart } from '../../state/CartContext';
 import { useCatalog } from '../../state/CatalogContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import type { SellStackParamList } from '../../navigation/types';
+import {
+  getAppNavigation,
+  getTabNavigation,
+} from '../../navigation/parentNavigation';
 import type { PosMenuItem } from '../../types/pos';
 
 type Props = NativeStackScreenProps<SellStackParamList, 'Menu'>;
+
+type MenuActionKind = 'scan' | 'history';
+
+function MenuActionGlyph({
+  kind,
+  color,
+}: {
+  kind: MenuActionKind;
+  color: string;
+}) {
+  if (kind === 'scan') {
+    return (
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M8 4H5a1 1 0 0 0-1 1v3M16 4h3a1 1 0 0 1 1 1v3M8 20H5a1 1 0 0 1-1-1v-3M16 20h3a1 1 0 0 0 1-1v-3"
+          stroke={color}
+          strokeWidth={2}
+          strokeLinecap="round"
+        />
+        <Line x1={8} y1={8} x2={8} y2={16} stroke={color} strokeWidth={2} />
+        <Line x1={11} y1={8} x2={11} y2={16} stroke={color} strokeWidth={1.5} />
+        <Line x1={14} y1={8} x2={14} y2={16} stroke={color} strokeWidth={2} />
+        <Line x1={17} y1={8} x2={17} y2={16} stroke={color} strokeWidth={1.5} />
+      </Svg>
+    );
+  }
+
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12} r={8.5} stroke={color} strokeWidth={2} />
+      <Line
+        x1={12}
+        y1={7}
+        x2={12}
+        y2={12.5}
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line
+        x1={12}
+        y1={12.5}
+        x2={15.5}
+        y2={14.5}
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function MenuActionButton({
+  kind,
+  label,
+  onPress,
+}: {
+  kind: MenuActionKind;
+  label: string;
+  onPress: () => void;
+}) {
+  const { colors, radius, minTouchTarget } = useTheme();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconButton,
+        {
+          width: minTouchTarget,
+          height: minTouchTarget,
+          borderRadius: radius.md,
+          borderColor: colors.border,
+          backgroundColor: pressed ? colors.surface3 : colors.surface2,
+        },
+      ]}
+    >
+      <MenuActionGlyph kind={kind} color={colors.text} />
+    </Pressable>
+  );
+}
+
+function EmptyCartGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={56} height={56} viewBox="0 0 56 56" fill="none">
+      <Path
+        d="M10 13h6l4.2 22.5h23.1l4.2-16.5H18"
+        stroke={color}
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx={24} cy={43} r={2.8} fill={color} />
+      <Circle cx={40} cy={43} r={2.8} fill={color} />
+    </Svg>
+  );
+}
 
 /** ความกว้างแผงตะกร้าบนแท็บเล็ต
  *  320 ไม่ใช่เลขสวย ๆ — วัดจากจอจริง: ไอแพดแนวตั้ง 1024pt ถ้าแผงกว้าง 360 จะเหลือที่ให้กริด 664
@@ -91,19 +195,23 @@ export default function MenuScreen({ navigation }: Props) {
       onAdd={setConfiguring}
       onDecrement={sku => decrementSku(sku)}
       areaWidth={isTablet ? width - CART_PANEL_WIDTH : width}
-      artHeight={isTablet ? 116 : 96}
+      artHeight={isTablet ? 116 : 88}
+      compact={!isTablet}
       catalog={catalog}
       onSearchChange={mode === 'restaurant' ? undefined : setSearchQuery}
       header={
         <>
           <OrderAlertBanner
             onOpenQueue={() =>
-              navigation.getParent<any>()?.navigate('OrdersTab')
+              getTabNavigation(navigation).navigate('OrdersTab')
             }
           />
           <View style={styles.menuHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={[typography.title, { color: colors.text }]}>
+              <Text
+                style={[typography.title, { color: colors.text }]}
+                numberOfLines={1}
+              >
                 {screenTitle}
               </Text>
               {catalogLoading ? (
@@ -125,18 +233,39 @@ export default function MenuScreen({ navigation }: Props) {
                 </Text>
               ) : null}
             </View>
-            <Button
-              label="▥ สแกนบาร์โค้ด"
-              accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ด"
-              variant="secondary"
-              onPress={() => setScannerOpen(true)}
-            />
-            <Button
-              label="ประวัติ"
-              accessibilityLabel="เปิดประวัติการขายล่าสุด"
-              variant="secondary"
-              onPress={() => navigation.navigate('SalesHistory')}
-            />
+            {isTablet ? (
+              <>
+                <Button
+                  label="▥ สแกนบาร์โค้ด"
+                  accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ด"
+                  variant="secondary"
+                  onPress={() => setScannerOpen(true)}
+                />
+                <Button
+                  label="ประวัติ"
+                  accessibilityLabel="เปิดประวัติการขายล่าสุด"
+                  variant="secondary"
+                  onPress={() =>
+                    getAppNavigation(navigation).navigate('SalesHistory')
+                  }
+                />
+              </>
+            ) : (
+              <View style={styles.menuActions}>
+                <MenuActionButton
+                  kind="scan"
+                  label="เปิดหน้าต่างสแกนบาร์โค้ด"
+                  onPress={() => setScannerOpen(true)}
+                />
+                <MenuActionButton
+                  kind="history"
+                  label="เปิดประวัติการขายล่าสุด"
+                  onPress={() =>
+                    getAppNavigation(navigation).navigate('SalesHistory')
+                  }
+                />
+              </View>
+            )}
           </View>
         </>
       }
@@ -167,6 +296,9 @@ export default function MenuScreen({ navigation }: Props) {
       <FlatList
         data={lines}
         keyExtractor={l => l.key}
+        contentContainerStyle={
+          lines.length === 0 ? styles.emptyCartContent : undefined
+        }
         ItemSeparatorComponent={() => (
           <View
             style={{
@@ -177,9 +309,18 @@ export default function MenuScreen({ navigation }: Props) {
           />
         )}
         ListEmptyComponent={
-          <Text style={[typography.body, { color: colors.textMuted }]}>
-            ยังไม่มีรายการ — แตะเมนูเพื่อเพิ่ม
-          </Text>
+          <View style={styles.emptyCartState}>
+            <EmptyCartGlyph color={colors.textSoft} />
+            <Text style={[typography.bodyStrong, { color: colors.textMuted }]}>
+              ยังไม่มีรายการ
+            </Text>
+            <Text
+              style={[typography.caption, { color: colors.textSoft }]}
+              numberOfLines={2}
+            >
+              เพิ่มสินค้าลงในตะกร้าเพื่อเริ่มขาย
+            </Text>
+          </View>
         }
         renderItem={({ item }) => (
           <View style={{ gap: spacing.sm }}>
@@ -279,7 +420,11 @@ export default function MenuScreen({ navigation }: Props) {
           accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
           fullWidth
           disabled={cartCount === 0}
-          onPress={() => navigation.navigate('Checkout', { source: 'retail' })}
+          onPress={() =>
+            getAppNavigation(navigation).navigate('Checkout', {
+              source: 'retail',
+            })
+          }
         />
         <Button
           label={`บิลพัก${
@@ -313,53 +458,36 @@ export default function MenuScreen({ navigation }: Props) {
               {
                 backgroundColor: colors.surface,
                 borderTopColor: colors.border,
-                padding: spacing.lg,
+                paddingHorizontal: spacing.lg,
+                paddingVertical: spacing.md,
               },
             ]}
           >
-            <View>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {cartCount} รายการ
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`เปิดบิลพักหรือพักตะกร้าปัจจุบัน · ${cartCount} รายการ · ${total.toFixed(
+                2,
+              )} บาท`}
+              disabled={cartCount === 0 && parkedBills.length === 0}
+              hitSlop={8}
+              onPress={() => setParkOpen(true)}
+            >
+              <Text
+                style={[typography.subtitle, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {cartCount} รายการ · ฿{total.toFixed(2)}
               </Text>
-              <Text style={[typography.subtitle, { color: colors.text }]}>
-                ฿{total.toFixed(2)}
-              </Text>
-            </View>
+            </Pressable>
             <Button
-              label="ไปหน้าชำระเงิน"
+              label="ชำระเงิน"
               accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
               disabled={cartCount === 0}
               onPress={() =>
-                navigation.navigate('Checkout', { source: 'retail' })
+                getAppNavigation(navigation).navigate('Checkout', {
+                  source: 'retail',
+                })
               }
-            />
-          </View>
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              paddingHorizontal: spacing.lg,
-              paddingBottom: spacing.md,
-              gap: spacing.sm,
-            }}
-          >
-            <Button
-              label={`บิลพัก${
-                parkedBills.length ? ` (${parkedBills.length})` : ''
-              }`}
-              accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบัน"
-              variant="secondary"
-              fullWidth
-              disabled={cartCount === 0 && parkedBills.length === 0}
-              onPress={() => setParkOpen(true)}
-            />
-            {/* ⚠️ ปุ่มนี้เคยชื่อ "บิลพัก/ประวัติ (N)" โดยที่ N คือจำนวนบิลพักของปุ่มข้างบน
-                แต่กดแล้วไปหน้าประวัติการขายอย่างเดียว — ป้ายบอกงานที่ปุ่มไม่ได้ทำ */}
-            <Button
-              label="ประวัติการขาย"
-              accessibilityLabel="เปิดประวัติการขายล่าสุด"
-              variant="ghost"
-              fullWidth
-              onPress={() => navigation.navigate('SalesHistory')}
             />
           </View>
         </>
@@ -384,7 +512,12 @@ export default function MenuScreen({ navigation }: Props) {
           setConfiguring(null);
         }}
       />
-      <Modal transparent visible={parkOpen} animationType="fade">
+      <Modal
+        transparent
+        visible={parkOpen}
+        animationType="fade"
+        onRequestClose={() => setParkOpen(false)}
+      >
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
           <Pressable
             style={StyleSheet.absoluteFill}
@@ -542,6 +675,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  menuActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  emptyCartContent: { flexGrow: 1, justifyContent: 'center' },
+  emptyCartState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
   },
   overlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   parkModal: {

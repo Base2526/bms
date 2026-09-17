@@ -16,6 +16,8 @@ interface Props {
   /** ความกว้างของพื้นที่กริดจริง (หักแผงข้างออกแล้ว) — ใช้คำนวณจำนวนคอลัมน์ */
   areaWidth: number;
   artHeight?: number;
+  /** การ์ดเตี้ยลงสำหรับจอมือถือ เพื่อให้เห็นสินค้าได้มากขึ้นโดยเป้าแตะยังเต็มทั้งการ์ด */
+  compact?: boolean;
   /** แถวข้อความ/ปุ่มที่วางเหนือช่องค้นหา เช่น ป้ายบอกว่ากำลังสั่งให้โต๊ะไหน */
   header?: React.ReactNode;
   /** catalog ที่อ่านจาก GraphQL ตาม surface ของเครื่อง */
@@ -32,6 +34,7 @@ export function MenuGrid({
   onDecrement,
   areaWidth,
   artHeight = 96,
+  compact = false,
   header,
   catalog,
   onSearchChange,
@@ -137,17 +140,17 @@ export function MenuGrid({
               {
                 backgroundColor: colors.surface2,
                 borderTopColor: colors.border,
-                padding: spacing.md,
+                padding: compact ? spacing.sm : spacing.md,
               },
             ]}
           >
             <Text
-              numberOfLines={item.sellable ? 2 : 1}
+              numberOfLines={compact || !item.sellable ? 1 : 2}
               style={[
                 typography.bodyStrong,
                 {
                   color: item.sellable ? colors.text : colors.textMuted,
-                  minHeight: item.sellable ? 41 : 20,
+                  minHeight: compact ? 21 : item.sellable ? 41 : 20,
                   marginBottom: 4,
                 },
               ]}
@@ -184,7 +187,13 @@ export function MenuGrid({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ padding: spacing.lg, paddingBottom: 0, gap: spacing.md }}>
+      <View
+        style={{
+          padding: spacing.lg,
+          paddingBottom: 0,
+          gap: compact ? spacing.sm : spacing.md,
+        }}
+      >
         {header}
 
         <SearchField
@@ -244,8 +253,14 @@ export function MenuGrid({
         data={padGrid(items, gridColumns)}
         keyExtractor={(m, i) => m?.sku ?? `filler-${i}`}
         numColumns={gridColumns}
-        contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}
-        columnWrapperStyle={{ gap: spacing.md, alignItems: 'stretch' }}
+        contentContainerStyle={{
+          padding: compact ? spacing.md : spacing.lg,
+          gap: compact ? spacing.sm : spacing.md,
+        }}
+        columnWrapperStyle={{
+          gap: compact ? spacing.sm : spacing.md,
+          alignItems: 'stretch',
+        }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) =>
           item ? renderCard(item) : <View style={{ flex: 1 }} />

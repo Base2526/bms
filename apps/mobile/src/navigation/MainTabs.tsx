@@ -2,25 +2,11 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
-import { CartProvider } from '../state/CartContext';
-import { CatalogProvider } from '../state/CatalogContext';
-import {
-  IncomingOrdersProvider,
-  useIncomingOrders,
-} from '../state/IncomingOrdersContext';
-import { KitchenProvider } from '../state/KitchenContext';
-import { SalesProvider } from '../state/SalesContext';
-import {
-  RestaurantOperationsProvider,
-  useRestaurantOperations,
-} from '../state/RestaurantOperationsContext';
-import { sessionCashierName, useSession } from '../state/SessionContext';
-import { ShiftProvider } from '../state/ShiftContext';
+import { useIncomingOrders } from '../state/IncomingOrdersContext';
+import { useRestaurantOperations } from '../state/RestaurantOperationsContext';
 import { useStoreMode } from '../state/StoreModeContext';
 import { useResponsive } from '../theme/useResponsive';
-import { OrderAlertWatcher } from '../components/OrderAlertWatcher';
 import {
-  CounterIcon,
   FloorIcon,
   InventoryIcon,
   KitchenIcon,
@@ -28,25 +14,15 @@ import {
   OrdersIcon,
   SellIcon,
   ShiftIcon,
-  SupportIcon,
 } from '../components/icons/TabIcons';
 
 import MenuScreen from '../screens/sell/MenuScreen';
-import CheckoutScreen from '../screens/sell/CheckoutScreen';
-import ReceiptScreen from '../screens/sell/ReceiptScreen';
-import SaleDetailScreen from '../screens/sell/SaleDetailScreen';
-import SalesHistoryScreen from '../screens/sell/SalesHistoryScreen';
 import FloorScreen from '../screens/floor/FloorScreen';
-import CheckDetailScreen from '../screens/floor/CheckDetailScreen';
-import TableMenuScreen from '../screens/floor/TableMenuScreen';
 import IncomingOrdersScreen from '../screens/orders/IncomingOrdersScreen';
 import KitchenBoardScreen from '../screens/kitchen/KitchenBoardScreen';
 import ShiftScreen from '../screens/shift/ShiftScreen';
 import OperationsScreen from '../screens/operations/OperationsScreen';
-import BoardGameScreen, {
-  BoardGameDetailScreen,
-  BoardGameOpenScreen,
-} from '../screens/boardGame/BoardGameScreen';
+import BoardGameScreen from '../screens/boardGame/BoardGameScreen';
 import InventoryScreen from '../screens/inventory/InventoryScreen';
 
 import type {
@@ -55,6 +31,7 @@ import type {
   SellStackParamList,
   FloorStackParamList,
   KitchenStackParamList,
+  InventoryStackParamList,
   OperationsStackParamList,
   ShiftStackParamList,
   BoardGameStackParamList,
@@ -66,6 +43,7 @@ const FloorStack = createNativeStackNavigator<FloorStackParamList>();
 const OrdersStack = createNativeStackNavigator<OrdersStackParamList>();
 const KitchenStack = createNativeStackNavigator<KitchenStackParamList>();
 const ShiftStack = createNativeStackNavigator<ShiftStackParamList>();
+const InventoryStack = createNativeStackNavigator<InventoryStackParamList>();
 const OperationsStack = createNativeStackNavigator<OperationsStackParamList>();
 const BoardGameStack = createNativeStackNavigator<BoardGameStackParamList>();
 
@@ -73,10 +51,6 @@ function SellNavigator() {
   return (
     <SellStack.Navigator screenOptions={{ headerShown: false }}>
       <SellStack.Screen name="Menu" component={MenuScreen} />
-      <SellStack.Screen name="Checkout" component={CheckoutScreen} />
-      <SellStack.Screen name="Receipt" component={ReceiptScreen} />
-      <SellStack.Screen name="SalesHistory" component={SalesHistoryScreen} />
-      <SellStack.Screen name="SaleDetail" component={SaleDetailScreen} />
     </SellStack.Navigator>
   );
 }
@@ -85,8 +59,6 @@ function FloorNavigator() {
   return (
     <FloorStack.Navigator screenOptions={{ headerShown: false }}>
       <FloorStack.Screen name="Floor" component={FloorScreen} />
-      <FloorStack.Screen name="CheckDetail" component={CheckDetailScreen} />
-      <FloorStack.Screen name="TableMenu" component={TableMenuScreen} />
     </FloorStack.Navigator>
   );
 }
@@ -98,11 +70,6 @@ function OrdersNavigator() {
         name="IncomingOrders"
         component={IncomingOrdersScreen}
       />
-      {/* คิว/QR/เรียก/คำขอ — จอเดียวกับ "เพิ่มเติม" แต่ล็อกไว้ที่ส่วนร้านอาหาร
-          เพื่อไม่ให้แท็บนี้พาไปเจองานหลังร้านที่ไม่มีใครรออยู่ */}
-      <OrdersStack.Screen name="RestaurantOps">
-        {() => <OperationsScreen section="RESTAURANT" locked />}
-      </OrdersStack.Screen>
     </OrdersStack.Navigator>
   );
 }
@@ -123,34 +90,14 @@ function ShiftNavigator() {
   );
 }
 
-// ปลายทางของรางบนแท็บเล็ต — จอเดียวกับที่มือถือเข้าผ่าน "เพิ่มเติม" แค่ไม่ต้องผ่านชั้นกลาง
+// ปลายทางตรงบนแท็บเล็ต — จอเดียวกับที่มือถือเข้าผ่าน "เพิ่มเติม" แค่ไม่ต้องผ่านชั้นกลาง
 function InventoryTabNavigator() {
   return (
-    <OperationsStack.Navigator screenOptions={{ headerShown: false }}>
-      <OperationsStack.Screen name="Inventory">
-        {props => <InventoryScreen {...props} asTabRoot />}
-      </OperationsStack.Screen>
-    </OperationsStack.Navigator>
-  );
-}
-
-function CounterNavigator() {
-  return (
-    <OperationsStack.Navigator screenOptions={{ headerShown: false }}>
-      <OperationsStack.Screen name="Operations">
-        {() => <OperationsScreen section="REGISTER" locked />}
-      </OperationsStack.Screen>
-    </OperationsStack.Navigator>
-  );
-}
-
-function SupportNavigator() {
-  return (
-    <OperationsStack.Navigator screenOptions={{ headerShown: false }}>
-      <OperationsStack.Screen name="Operations">
-        {() => <OperationsScreen section="SUPPORT" locked />}
-      </OperationsStack.Screen>
-    </OperationsStack.Navigator>
+    <InventoryStack.Navigator screenOptions={{ headerShown: false }}>
+      <InventoryStack.Screen name="Inventory">
+        {() => <InventoryScreen asTabRoot />}
+      </InventoryStack.Screen>
+    </InventoryStack.Navigator>
   );
 }
 
@@ -158,8 +105,6 @@ function OperationsNavigator() {
   return (
     <OperationsStack.Navigator screenOptions={{ headerShown: false }}>
       <OperationsStack.Screen name="Operations" component={OperationsScreen} />
-      <OperationsStack.Screen name="Inventory" component={InventoryScreen} />
-      <OperationsStack.Screen name="Shift" component={ShiftScreen} />
     </OperationsStack.Navigator>
   );
 }
@@ -168,14 +113,6 @@ function BoardGameNavigator() {
   return (
     <BoardGameStack.Navigator screenOptions={{ headerShown: false }}>
       <BoardGameStack.Screen name="BoardGame" component={BoardGameScreen} />
-      <BoardGameStack.Screen
-        name="BoardGameOpen"
-        component={BoardGameOpenScreen}
-      />
-      <BoardGameStack.Screen
-        name="BoardGameDetail"
-        component={BoardGameDetailScreen}
-      />
     </BoardGameStack.Navigator>
   );
 }
@@ -192,30 +129,7 @@ function BoardGameNavigator() {
 // ไว้ใน badge เดียว — ก่อนหน้านี้เป็นสองแท็บที่ **ใช้ไอคอนเดียวกัน** และมี badge ทั้งคู่
 // จึงแยกด้วยตาไม่ออกว่าอันไหนคืออะไร
 export function MainTabs() {
-  const { session } = useSession();
-
-  // ⚠️ ลำดับของ provider มีความหมาย: ShiftProvider อ่านบิลจาก SalesProvider เพื่อคิดเงินสด
-  // ในลิ้นชัก จึงต้องอยู่ข้างใน · KitchenProvider/IncomingOrdersProvider อยู่นอก Tab.Navigator
-  // เพราะตั๋วครัวและออร์เดอร์เข้าต้องข้ามแท็บได้ (รับที่แท็บออร์เดอร์ แล้วไปเห็นที่แท็บครัว)
-  return (
-    <SalesProvider>
-      <ShiftProvider openedByName={sessionCashierName(session)}>
-        <CatalogProvider>
-          <CartProvider>
-            <KitchenProvider>
-              <IncomingOrdersProvider>
-                <RestaurantOperationsProvider>
-                  {/* เฝ้าดูของใหม่ทั้งแอป — ไม่ผูกกับแท็บที่เปิดอยู่ (ดูคอมเมนต์ในไฟล์) */}
-                  <OrderAlertWatcher />
-                  <TabsShell />
-                </RestaurantOperationsProvider>
-              </IncomingOrdersProvider>
-            </KitchenProvider>
-          </CartProvider>
-        </CatalogProvider>
-      </ShiftProvider>
-    </SalesProvider>
-  );
+  return <TabsShell />;
 }
 
 function TabsShell() {
@@ -234,25 +148,28 @@ function TabsShell() {
   return (
     <Tab.Navigator
       key={mode}
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
-        // ⚠️ แถบล่างเต็มความกว้างบนไอแพด 13" ยืดแท็บละ ~340pt จนไอคอนลอยอยู่กลางช่องว่าง
-        // — อ่านออกมาเป็น "แอปมือถือที่ถูกยืดใส่จอใหญ่" ซึ่งเป็นคำที่ `useResponsive.ts`
-        // จดไว้เองว่าโดนทักมาแล้วสองรอบ · เครื่องขายบนแท็บเล็ตวางแนวตั้งตลอดเวลา แถบซ้ายจึง
-        // อยู่ในระยะนิ้วโป้งและคืนความสูงให้เนื้อหาไปด้วย
-        tabBarPosition: isTablet ? 'left' : 'bottom',
-        // ราง (material) ไม่ยืดเป็นช่องเท่า ๆ กันแบบ uikit — จำเป็นเมื่อวางแนวตั้ง
-        tabBarVariant: isTablet ? 'material' : 'uikit',
+        tabBarPosition: 'bottom',
+        tabBarVariant: 'uikit',
         tabBarLabelPosition: 'below-icon',
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           backgroundColor: colors.surface,
-          ...(isTablet
-            ? { borderRightColor: colors.border, borderRightWidth: 1 }
-            : { borderTopColor: colors.border }),
+          borderTopColor: colors.border,
+          // ผัง Board Game, สต็อก, งาน และกะบน iPad มี sidebar ที่พาไปทุกส่วนหลักอยู่แล้ว
+          // จึงใช้พื้นที่เต็มสูงเหมือน mockup; เมื่อออกไปแท็บอื่น bottom bar จะกลับมาเอง
+          display:
+            isTablet &&
+            (['BoardGameTab', 'InventoryTab', 'ShiftTab'].includes(
+              route.name,
+            ) ||
+              (route.name === 'OperationsTab' && mode !== 'restaurant'))
+              ? 'none'
+              : 'flex',
         },
-      }}
+      })}
     >
       {mode === 'restaurant' && (
         <Tab.Screen
@@ -313,21 +230,9 @@ function TabsShell() {
           }}
         />
       )}
-      {/* ⚠️ "เพิ่มเติม" มีอยู่เพราะแถบล่างมี 5 ช่อง — รางแนวตั้งไม่มีข้อจำกัดนั้น
-          บนแท็บเล็ตจึงกางของที่ถูกยุบออกมาเป็นปลายทางของตัวเองแทนที่จะซ่อนต่อ */}
-      {!isTablet && (
-        <Tab.Screen
-          name="OperationsTab"
-          component={OperationsNavigator}
-          options={{
-            title: mode === 'restaurant' ? 'เพิ่มเติม' : 'งาน',
-            tabBarIcon: ({ color, size }) => (
-              <MoreIcon color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-      {isTablet && (
+      {/* Board Game ใช้ 5 ช่องตาม mockup ทั้ง iPhone/iPad; ร้านค้าทั่วไปยังคงแยกสต็อกเป็น
+          ทางตรงเฉพาะแท็บเล็ตเพื่อไม่ให้แถบมือถือแน่นเกินไป */}
+      {(mode === 'board_game_cafe' || (isTablet && mode !== 'restaurant')) && (
         <Tab.Screen
           name="InventoryTab"
           component={InventoryTabNavigator}
@@ -339,22 +244,19 @@ function TabsShell() {
           }}
         />
       )}
-      {isTablet && (
-        <Tab.Screen
-          name="CounterTab"
-          component={CounterNavigator}
-          options={{
-            title: 'เคาน์เตอร์',
-            tabBarIcon: ({ color, size }) => (
-              <CounterIcon color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-      {/* ⚠️ กะยุบเข้า "เพิ่มเติม" เฉพาะโหมดร้านอาหาร ซึ่งเป็นโหมดเดียวที่แถบแน่นจนป้ายถูกตัด
-          · โหมดอื่นมีแค่ 3 แท็บอยู่แล้ว การยุบไม่ได้แก้ปัญหาอะไร มีแต่ทำให้เหลือ 2 แท็บ
-          ลอยอยู่บนแถบกว้าง ๆ ของไอแพด */}
-      {(isTablet || mode !== 'restaurant') && (
+      <Tab.Screen
+        name="OperationsTab"
+        component={OperationsNavigator}
+        options={{
+          title: mode === 'restaurant' ? 'เพิ่มเติม' : 'งาน',
+          tabBarIcon: ({ color, size }) => (
+            <MoreIcon color={color} size={size} />
+          ),
+        }}
+      />
+      {/* ร้านอาหารใช้ครบ 5 ช่องกับงานหน้าร้านที่แตะทั้งวันแล้ว กะจึงอยู่ใต้ "เพิ่มเติม"
+          ส่วนโหมดอื่นยังมีที่และคงทางเข้ากะโดยตรงไว้ */}
+      {mode !== 'restaurant' && (
         <Tab.Screen
           name="ShiftTab"
           component={ShiftNavigator}
@@ -362,18 +264,6 @@ function TabsShell() {
             title: 'กะ',
             tabBarIcon: ({ color, size }) => (
               <ShiftIcon color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-      {isTablet && (
-        <Tab.Screen
-          name="SupportTab"
-          component={SupportNavigator}
-          options={{
-            title: 'สถานะ',
-            tabBarIcon: ({ color, size }) => (
-              <SupportIcon color={color} size={size} />
             ),
           }}
         />

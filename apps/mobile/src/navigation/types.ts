@@ -1,3 +1,5 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
 // param list ของแต่ละ navigator — ids มาจาก GraphQL และ server เป็นผู้ตรวจ scope ซ้ำเสมอ
 
 export type RootStackParamList = {
@@ -13,33 +15,41 @@ export type RootStackParamList = {
 
 export type SellStackParamList = {
   Menu: undefined;
+};
+
+export type AppStackParamList = {
+  /** แถบแท็บมีเฉพาะหน้าหลัก งานที่ drill down จะถูก push เหนือ route นี้ */
+  Tabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Checkout:
     | { source?: 'retail'; tableId?: undefined }
     | { source: 'restaurant'; tableId?: string; checkId?: string }
     | { source: 'board_game'; boardGameBillingGroupId: string };
-  Receipt: { saleId: string };
+  Receipt: {
+    saleId: string;
+    source: 'retail' | 'restaurant' | 'board_game';
+  };
   SalesHistory: undefined;
   SaleDetail: { saleId: string };
-};
-
-export type FloorStackParamList = {
-  Floor: undefined;
   CheckDetail: {
     tableId?: string;
     checkId?: string;
     serviceMode?: 'DINE_IN' | 'TAKEAWAY';
   };
-  /** จอสั่งอาหารของโต๊ะ — ใช้เฉพาะมือถือ (แท็บเล็ตสั่งได้จากหน้าบิลเลย) */
-  TableMenu: { tableId: string };
+  RestaurantOps:
+    | { initialView?: 'OVERVIEW' | 'QUEUE' | 'QR' | 'CALLS' | 'REQUESTS' }
+    | undefined;
+  InventoryDetail: undefined;
+  ShiftDetail: undefined;
+  BoardGameOpen: { tableId: string };
+  BoardGameDetail: { sessionId: string };
+};
+
+export type FloorStackParamList = {
+  Floor: undefined;
 };
 
 export type OrdersStackParamList = {
   IncomingOrders: undefined;
-  /**
-   * คิว · QR · เรียกพนักงาน · คำขอจากแชท — งานที่ "มีคนรออยู่ปลายทาง" เหมือนออร์เดอร์เข้า
-   * จึงอยู่ในสแตกเดียวกันใต้แท็บ "งานเข้า" ไม่ใช่ไปปนกับงานหลังร้านที่ทำนาน ๆ ครั้ง
-   */
-  RestaurantOps: undefined;
 };
 
 export type KitchenStackParamList = {
@@ -50,20 +60,16 @@ export type ShiftStackParamList = {
   Shift: undefined;
 };
 
+export type InventoryStackParamList = {
+  Inventory: undefined;
+};
+
 export type OperationsStackParamList = {
   Operations: undefined;
-  Inventory: undefined;
-  /**
-   * เปิด/ปิดกะสำหรับ **โหมดร้านอาหาร** ซึ่งถอดแท็บกะออกจากแถบเพื่อเอารางไปให้งานที่ใช้ทั้งวัน
-   * · โหมดอื่นยังมีแท็บกะของตัวเอง (`ShiftStackParamList`) เพราะแถบไม่ได้แน่น
-   */
-  Shift: undefined;
 };
 
 export type BoardGameStackParamList = {
   BoardGame: undefined;
-  BoardGameOpen: { tableId: string };
-  BoardGameDetail: { sessionId: string };
 };
 
 /**
@@ -82,12 +88,11 @@ export type MainTabParamList = {
   OperationsTab: undefined;
   ShiftTab: undefined;
   /**
-   * สามตัวนี้เป็นของ **รางด้านซ้ายบนแท็บเล็ตเท่านั้น**
+   * สต็อกเป็นปลายทางตรงของร้าน Board Game ทุกขนาดจอตาม register mockup และของร้านอื่นบน
+   * **แท็บเล็ต non-restaurant เท่านั้น**
    *
-   * บนมือถือมันอยู่ใต้ "เพิ่มเติม" เพราะแถบล่างมี 5 ช่อง — ข้อจำกัดนั้นไม่มีอยู่บนรางแนวตั้ง
-   * ที่สูงเต็มจอ การซ่อนต่อไปคือการคิดค่าผ่านทางเป็นจำนวนแตะ โดยไม่ได้ประหยัดพื้นที่อะไร
+   * ร้านอาหารใช้ห้าช่องกับงานหน้าร้านครบแล้วจึงอยู่ใต้ "เพิ่มเติม" เพื่อให้แถบล่างทุกขนาดจอ
+   * มีไม่เกินห้าช่อง
    */
   InventoryTab: undefined;
-  CounterTab: undefined;
-  SupportTab: undefined;
 };

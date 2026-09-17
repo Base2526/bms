@@ -33,10 +33,10 @@ import { useCatalog } from '../../state/CatalogContext';
 import { useSales } from '../../state/SalesContext';
 import { useSession } from '../../state/SessionContext';
 import { useTheme } from '../../theme/ThemeProvider';
-import type { SellStackParamList } from '../../navigation/types';
+import type { AppStackParamList } from '../../navigation/types';
 import type { PosCartLine, PosMember } from '../../types/pos';
 
-type Props = NativeStackScreenProps<SellStackParamList, 'SaleDetail'>;
+type Props = NativeStackScreenProps<AppStackParamList, 'SaleDetail'>;
 type Action = 'RETURN' | 'RETURN_FULL' | 'EXCHANGE' | 'VOID';
 type ReturnReason =
   | 'DAMAGED'
@@ -185,8 +185,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       refundOptions.length === 1
         ? refundOptions[0].method
         : refundOptions.some(option => option.method === preferredRefundMethod)
-          ? preferredRefundMethod
-          : null;
+        ? preferredRefundMethod
+        : null;
     if (isReturnAction && refundOptions.length > 1 && !selectedRefundMethod) {
       Alert.alert(
         'ต้องเลือกช่องทางคืนเงิน',
@@ -224,8 +224,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           action === 'EXCHANGE'
             ? 'exchange-return'
             : action === 'RETURN_FULL'
-              ? 'full-return'
-              : 'return',
+            ? 'full-return'
+            : 'return',
         );
         const response = await returnMutation({
           variables: {
@@ -398,8 +398,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         action === 'VOID'
           ? 'Void ไม่สำเร็จ'
           : action === 'EXCHANGE'
-            ? 'เปลี่ยนสินค้าไม่สำเร็จ'
-            : 'คืนสินค้าไม่สำเร็จ',
+          ? 'เปลี่ยนสินค้าไม่สำเร็จ'
+          : 'คืนสินค้าไม่สำเร็จ',
         error instanceof Error ? error.message : 'กรุณาลองใหม่',
       );
     } finally {
@@ -415,8 +415,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           sale.restaurantServiceMode === 'TAKEAWAY'
             ? ' · กลับบ้าน'
             : sale.restaurantServiceMode === 'DINE_IN'
-              ? ' · กินในร้าน'
-              : ''
+            ? ' · กินในร้าน'
+            : ''
         }`}
         onBack={() => navigation.goBack()}
       />
@@ -615,7 +615,12 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         ) : null}
       </View>
 
-      <Modal transparent visible={action !== null} animationType="fade">
+      <Modal
+        transparent
+        visible={action !== null}
+        animationType="fade"
+        onRequestClose={close}
+      >
         <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={close} />
           <View
@@ -629,10 +634,10 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 {action === 'VOID'
                   ? 'Void ทั้งบิล'
                   : action === 'EXCHANGE'
-                    ? 'เปลี่ยนสินค้า'
-                    : action === 'RETURN_FULL'
-                      ? 'คืนทั้งบิล'
-                      : 'คืนสินค้า'}
+                  ? 'เปลี่ยนสินค้า'
+                  : action === 'RETURN_FULL'
+                  ? 'คืนทั้งบิล'
+                  : 'คืนสินค้า'}
               </Text>
               {action === 'RETURN' || action === 'EXCHANGE'
                 ? sale.lines.map(line => (
@@ -789,8 +794,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                   submitting
                     ? 'กำลังบันทึก…'
                     : action === 'EXCHANGE'
-                      ? 'รับคืนและเปิดบิลใหม่'
-                      : 'ยืนยัน'
+                    ? 'รับคืนและเปิดบิลใหม่'
+                    : 'ยืนยัน'
                 }
                 variant={action === 'VOID' ? 'danger' : 'primary'}
                 fullWidth

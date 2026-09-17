@@ -68,6 +68,7 @@ interface ShiftContextValue {
   ) => Promise<string | null>;
   closeShift: (countedCashText: string) => Promise<string | null>;
   reopenShift: (openingFloat?: number) => Promise<string | null>;
+  refresh: () => Promise<void>;
 }
 
 const ShiftContext = createContext<ShiftContextValue | null>(null);
@@ -304,6 +305,7 @@ export function ShiftProvider({
       addMovement,
       closeShift,
       reopenShift,
+      refresh,
     }),
     [
       addMovement,
@@ -317,6 +319,7 @@ export function ShiftProvider({
       movementsQuery.error?.message,
       movementsQuery.loading,
       reopenShift,
+      refresh,
       report,
       reportQuery.error?.message,
       reportQuery.loading,

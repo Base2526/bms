@@ -29,6 +29,7 @@ import { createIdempotencyKey } from '../../lib/operation';
 import { useSession } from '../../state/SessionContext';
 import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
 import type { OrdersStackParamList } from '../../navigation/types';
+import { getAppNavigation } from '../../navigation/parentNavigation';
 
 const CHANNEL_LABEL: Record<string, string> = {
   LINE: 'LINE',
@@ -208,17 +209,29 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
         <Button
           label={`คิว ${activeWaitlistCount}`}
           variant="secondary"
-          onPress={() => navigation.navigate('RestaurantOps')}
+          onPress={() =>
+            getAppNavigation(navigation).navigate('RestaurantOps', {
+              initialView: 'QUEUE',
+            })
+          }
         />
         <Button
           label={`QR ${pendingQrCount}`}
           variant="secondary"
-          onPress={() => navigation.navigate('RestaurantOps')}
+          onPress={() =>
+            getAppNavigation(navigation).navigate('RestaurantOps', {
+              initialView: 'QR',
+            })
+          }
         />
         <Button
           label={`เรียก ${pendingServiceCallCount}`}
           variant="secondary"
-          onPress={() => navigation.navigate('RestaurantOps')}
+          onPress={() =>
+            getAppNavigation(navigation).navigate('RestaurantOps', {
+              initialView: 'CALLS',
+            })
+          }
         />
       </View>
       <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>

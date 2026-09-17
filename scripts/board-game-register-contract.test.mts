@@ -26,6 +26,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 
 const PANEL_PATH = "../apps/web/components/pos/BoardGamePanel.tsx";
 const CSS_PATH = "../apps/web/app/(pos)/pos/pos.css";
+const PAGE_PATH = "../apps/web/app/(pos)/pos/page.tsx";
 
 function withoutComments(source: string): string {
   return source
@@ -37,6 +38,7 @@ function withoutComments(source: string): string {
 
 const panel = withoutComments(read(PANEL_PATH));
 const css = withoutComments(read(CSS_PATH));
+const page = withoutComments(read(PAGE_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -127,6 +129,80 @@ const PHONE_MEDIA = rules.map((rule) => rule.media).find(
   (media) => media != null && /max-width:\s*520px/.test(media),
 ) ?? null;
 
+test("the board-game workspace uses the full register instead of leaving an empty payment pane", () => {
+  assert.match(
+    page,
+    /tab\s*===\s*["']boardgame["'][\s\S]{0,100}pos-main-grid--boardgame/,
+    "the board-game tab must opt into its dedicated full-width grid",
+  );
+  assert.equal(
+    declaration(".pos-main-grid--boardgame", "grid-template-columns"),
+    "minmax(0, 1fr) !important",
+    "the board-game workspace must own the full available width",
+  );
+  assert.equal(
+    declaration(".pos-main-grid--boardgame > .pos-pane:last-child", "display"),
+    "none !important",
+    "the empty checkout pane must not keep taking half the board-game screen",
+  );
+});
+
+test("an open table is a scannable workspace instead of one long form", () => {
+  assert.equal(
+    declaration(".pos-bg-master-detail", "display"),
+    "grid",
+    "the floor and selected table must share one master-detail workspace",
+  );
+  assert.match(
+    declaration(".pos-bg-master-detail", "grid-template-columns") ?? "",
+    /56fr[\s\S]*44fr/,
+    "the floor should keep slightly more room than the selected-table detail",
+  );
+  assert.equal(
+    declaration(".pos-bg-master-pane", "overflow-y"),
+    "auto",
+    "the floor must scroll independently so the selected-table detail stays visible",
+  );
+  assert.equal(
+    declaration(".pos-bg-detail-pane", "overflow-y"),
+    "auto",
+    "the selected-table detail must scroll without pushing the floor away",
+  );
+  assert.match(
+    panel,
+    /<details className="[^"]*pos-bg-advanced-menu[^"]*">[\s\S]*?งานเพิ่มเติม · ย้ายโต๊ะ \/ แก้เวลา \/ ยกเลิก/,
+    "rare move, timing, and cancellation work must share one collapsed advanced menu",
+  );
+  assert.match(
+    panel,
+    /role="tablist" aria-label="งานของโต๊ะนี้"/,
+    "the detail pane must split overview, tab items, and games instead of stacking every form",
+  );
+  for (const value of ["overview", "tab", "games"]) {
+    assert.match(panel, new RegExp(`detailTab === '${value}'`), `the ${value} detail view must render on demand`);
+  }
+  assert.match(
+    panel,
+    /className="[^"]*pos-bg-section--checkout[^"]*"[\s\S]{0,180}หยุดเวลา \/ เก็บเงิน/,
+    "the primary session completion action must have its own prominent section",
+  );
+  assert.match(panel, /pos-bg-primary-action/, "the primary close / collect action must match the visual spec");
+  assert.match(panel, /pos-bg-floor-stats/, "the floor must expose the same four status pills as the visual spec");
+  assert.match(panel, /pos-bg-section--preclose/, "overview must preview games and held identity before closing");
+  assert.match(panel, /pos-bg-quick-actions/, "overview must keep add-player and add-time actions in the two-button row from the visual spec");
+  assert.match(
+    panel,
+    /showCloseChoices\s*&&[\s\S]{0,180}billingGroups\.length\s*>\s*1/,
+    "split-bill choices must stay hidden until the primary action asks for them",
+  );
+  assert.ok(!panel.includes("โต๊ะที่ต้องดู"), "the alert chip list must not duplicate the four floor summary pills");
+  assert.match(
+    page,
+    /session\s*&&\s*!canSell\s*&&\s*tab\s*!==\s*["']boardgame["']/,
+    "the sales-only readiness card must not consume the board-game workspace",
+  );
+});
+
 test("the register keeps a phone-sized floor plan instead of a one-table list", () => {
   assert.ok(PHONE_MEDIA, "pos.css must declare a phone breakpoint for the board-game floor");
 
@@ -135,26 +211,8 @@ test("the register keeps a phone-sized floor plan instead of a one-table list", 
   assert.ok(base, ".pos-bg-floor must declare a base track");
   assert.ok(phone, ".pos-bg-floor must declare a phone track");
 
-  // กฎของรีโป: `repeat(auto-fill, minmax(<px>, 1fr))` เปล่า ๆ ยืนกรานความกว้างขั้นต่ำแม้กล่อง
-  // จะแคบกว่านั้น แล้วล้นออกข้าง — ต้องห่อด้วย `min(<px>, 100%)` เสมอ
-  const trackPx = (value: string) => {
-    const match = /minmax\(\s*min\(\s*(\d+)px\s*,\s*100%\s*\)\s*,\s*1fr\s*\)/.exec(value);
-    assert.ok(match, `board-game floor track must be minmax(min(<px>, 100%), 1fr), got: ${value}`);
-    return Number(match![1]);
-  };
-
-  const basePx = trackPx(base!);
-  const phonePx = trackPx(phone!);
-  // วัดแล้ว: พื้นที่จริงของแผงคือ 270px ที่ vw=320 และ ~295px ที่ vw=375 · ราง 168px จึงได้
-  // คอลัมน์เดียวทั้งคู่ และ 132px ก็ยังไม่พอที่ 320 (132×2 + gap 8 = 272 > 270)
-  assert.ok(
-    phonePx * 2 + 8 <= 270,
-    `the phone track must fit two columns in the 270px pane measured at 320px (got ${phonePx}px)`,
-  );
-  assert.ok(
-    phonePx < basePx,
-    "a phone breakpoint that is not narrower than the base track changes nothing",
-  );
+  assert.match(base!, /repeat\(3,\s*minmax\(0,\s*1fr\)\)/, "the desktop floor must match the three-column design");
+  assert.match(phone!, /repeat\(2,\s*minmax\(0,\s*1fr\)\)/, "the phone floor must preserve a two-column map");
 });
 
 test("a row that pairs text with buttons gives way before it leaves the screen", () => {
@@ -191,7 +249,7 @@ test("an action button that fills its row wraps its label instead of painting ou
 
   // ⚠️ "อย่างน้อย N ปุ่มมีคลาสนี้" เป็นเทสที่ผ่านได้แม้ปุ่มหนึ่งจะหลุด · กฎจริงคือ **ทุก**
   // ปุ่มที่อยู่ในคอลัมน์ปุ่ม (ซึ่งยืดเต็มความกว้างโดยโครงสร้าง) ต้องตัดบรรทัดได้
-  const stacks = [...panel.matchAll(/<div className="pos-bg-actions-stack"/g)]
+  const stacks = [...panel.matchAll(/<div className="pos-bg-actions-stack[^"]*"/g)]
     .map((match) => divBodyAt(panel, match.index!));
   assert.ok(stacks.length >= 3, "the close / collect blocks must stack their actions");
   for (const stack of stacks) {

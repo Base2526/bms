@@ -58,10 +58,14 @@ Important paths:
 - `src/graphql/BmsGraphqlProvider.tsx`: Apollo HTTP/WS transport and auth headers.
 - `src/state/RealtimeContext.tsx`: reconnect, deduplication, batching, and degraded refresh.
 - `src/state/SessionContext.tsx`: cashier PIN held in React memory only.
+- `src/navigation/AppNavigator.tsx`: authenticated navigation shell. Bottom tabs contain only section
+  roots; checkout, receipts, table/session details, inventory, and other drill-down workflows are
+  pushed above the tabs so native transitions and Back behaviour stay consistent on phone/tablet.
 - `src/screens/boardGame/BoardGameScreen.tsx`: board-game floor, timed session, member, bill-group,
   alert, and game-loan workflow.
 - `src/screens/inventory/InventoryScreen.tsx`: branch transfer and stock-count workflow, reached from
-  the `งาน` tab so restaurant mode does not overload the bottom navigation.
+  `งาน`/`เพิ่มเติม` when the bar is full and exposed as its own bottom-tab destination on
+  non-restaurant tablets.
 - `src/state/{Catalog,Cart,Sales,Shift,Kitchen,IncomingOrders}Context.tsx`: authoritative workflow
   adapters.
 - `../../schema.graphql`: committed executable schema artifact used by codegen.
@@ -115,7 +119,8 @@ output.
 
 These are not replaced by GraphQL and remain separate rollout work:
 
-- camera scanning and verified Bluetooth/USB scanner integration;
+- verified global Bluetooth/USB scanner integration (the native one-shot camera scanner is live;
+  manual barcode/SKU input remains its explicit fallback);
 - ESC/POS printing, cash-drawer kick, and customer display hardware;
 - FCM/APNs push while the app is suspended or terminated;
 - persistence/sync policy for per-device alert preferences;
