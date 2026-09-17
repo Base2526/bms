@@ -308,6 +308,17 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_board_game_waitlist", name: "reserved_table_id" },
     ],
   },
+  {
+    // workspace อ่าน source/reminder ทุกครั้ง และ public directory อ่าน booking_enabled ทุกครั้ง
+    file: "10.1__bms_board_game_public_reservations.sql",
+    impact: "จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "source" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "guest_email" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "reminder_status" },
+      { kind: "column", table: "bms_board_game_public_locations", name: "booking_enabled" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

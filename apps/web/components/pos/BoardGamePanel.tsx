@@ -83,17 +83,20 @@ type ServiceCall = {
 type WaitlistEntry = {
   id: string; kind: 'WALK_IN' | 'RESERVATION'; serviceDate: string;
   queueNo: number | null; status: string; partySize: number;
-  guestName: string | null; guestPhone: string | null; note: string | null;
+  guestName: string | null; guestPhone: string | null; guestEmail: string | null; note: string | null;
   preferredAreaId: string | null; preferredAreaName: string | null;
   reservedFor: string | null; reservedDurationMinutes: number | null;
   reservedTableId: string | null; reservedTableCode: string | null;
   confirmedAt: string | null; checkedInAt: string | null;
+  source: 'STAFF' | 'PUBLIC'; reviewedAt: string | null; rejectionReason: string | null;
+  reminderStatus: string; reminderSentAt: string | null;
   seatedTableId: string | null; seatedTableCode: string | null; seatedSessionId: string | null;
   calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string;
 };
 type Waitlist = {
   entries: WaitlistEntry[]; waitingCount: number; calledCount: number;
-  confirmedReservationCount: number; waitingGuests: number; longestWaitMinutes: number;
+  confirmedReservationCount: number; requestedReservationCount: number;
+  waitingGuests: number; longestWaitMinutes: number;
   tables: Array<{ id: string; areaId: string; code: string; name: string; seats: number;
     availability: string; expectedAvailableAt: string | null;
     nextReservedAt: string | null; nextReservedUntil: string | null }>;
@@ -322,6 +325,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [reservationEditingId, setReservationEditingId] = useState('');
   const [reservationSearch, setReservationSearch] = useState('');
   const [reservationDate, setReservationDate] = useState('');
+  const [reviewTableByEntry, setReviewTableByEntry] = useState<Record<string, string>>({});
 
   // ฟอร์มเปิดโต๊ะ
   const [billingMode, setBillingMode] = useState<'OPEN_ENDED' | 'FIXED_DURATION'>('OPEN_ENDED');
@@ -612,12 +616,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     (entry) => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
   const allReservations = (workspace?.waitlist.entries ?? []).filter(
-    (entry) => entry.kind === 'RESERVATION' && entry.status === 'CONFIRMED',
+    (entry) => entry.kind === 'RESERVATION'
+      && (entry.status === 'REQUESTED' || entry.status === 'CONFIRMED'),
   );
   const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
   const reservations = allReservations.filter((entry) => {
     const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
-    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.reservedTableCode ?? ''}`
+    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.guestEmail ?? ''} ${entry.reservedTableCode ?? ''}`
       .toLocaleLowerCase('th-TH');
     return matchesDate && (!reservationNeedle || haystack.includes(reservationNeedle));
   });
@@ -662,6 +667,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             <span className="pos-bg-stat-pill">
               จองล่วงหน้า {workspace?.waitlist.confirmedReservationCount ?? 0}
             </span>
+            {(workspace?.waitlist.requestedReservationCount ?? 0) > 0 && <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">
+              คำขอออนไลน์ {workspace?.waitlist.requestedReservationCount ?? 0}
+            </span>}
           </div>
 
           <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
@@ -745,6 +753,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               <div className="pos-block-hint">ไม่พบรายการที่ตรงกับตัวกรอง</div>
             )}
             {reservations.map((entry) => {
+              const reviewTableId = reviewTableByEntry[entry.id] ?? '';
               const table = floorTables.find((item) => item.id === entry.reservedTableId) ?? null;
               const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
               const now = Date.now();
@@ -754,13 +763,44 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               return (
                 <div key={entry.id} className="pos-bg-row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
                   <div className="pos-bg-row-main">
-                    {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · โต๊ะ {entry.reservedTableCode || '-'}
+                    {entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}
+                    {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · โต๊ะ {entry.reservedTableCode || 'รอจัดโต๊ะ'}
                     <span style={{ color: 'var(--pos-muted)' }}>
                       {' · '}{entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'}
                       {' · '}{entry.reservedDurationMinutes ?? 0} นาที
+                      {entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
                     </span>
                   </div>
                   <div className="pos-bg-row-actions">
+                    {entry.status === 'REQUESTED' && <>
+                      <select aria-label="โต๊ะสำหรับยืนยันคำขอ" value={reviewTableId}
+                        onChange={(event) => setReviewTableByEntry(current => ({
+                          ...current, [entry.id]: event.target.value,
+                        }))}>
+                        <option value="">เลือกโต๊ะ</option>
+                        {floorTables.filter((item) => !item.blocked && item.seats >= entry.partySize).map((item) => (
+                          <option key={item.id} value={item.id}>{item.code} · {item.name} ({item.seats} ที่)</option>
+                        ))}
+                      </select>
+                      <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                        disabled={!reviewTableId || busy === `reservation-confirm-${entry.id}`}
+                        onClick={() => void run(`reservation-confirm-${entry.id}`, 'reservation.review', {
+                          entryId: entry.id, decision: 'CONFIRM', tableId: reviewTableId,
+                        }, () => {
+                          setReviewTableByEntry(current => ({ ...current, [entry.id]: '' }));
+                          setNotice('ยืนยันคำขอจองแล้ว');
+                        })}>
+                        ยืนยันคำขอ
+                      </button>
+                      <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                        disabled={busy === `reservation-reject-${entry.id}`}
+                        onClick={() => void run(`reservation-reject-${entry.id}`, 'reservation.review', {
+                          entryId: entry.id, decision: 'REJECT', reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
+                        }, () => setNotice('ปฏิเสธคำขอแล้ว'))}>
+                        ปฏิเสธ
+                      </button>
+                    </>}
+                    {entry.status === 'CONFIRMED' && <>
                     <button type="button" className="pos-ret-btn" onClick={() => {
                       setReservationEditingId(entry.id);
                       setReservationPartySize(String(entry.partySize));
@@ -802,6 +842,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                         ไม่มา
                       </button>
                     )}
+                    </>}
                   </div>
                 </div>
               );

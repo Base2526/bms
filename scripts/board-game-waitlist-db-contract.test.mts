@@ -20,12 +20,17 @@ import {
   checkInBoardGameReservation,
   closeBoardGameWaitlistEntry,
   listBoardGameWaitlist,
+  requestPublicBoardGameReservation,
+  getPublicBoardGameReservation,
+  cancelPublicBoardGameReservation,
+  reviewPublicBoardGameReservation,
   seatBoardGameWaitlistEntry,
   updateBoardGameReservation,
 } from "../apps/web/lib/bms/boardGameWaitlist.ts";
 
 const TAG = "bg-waitlist-test";
 let tenantId = "";
+let tenantSlug = "";
 let locationId = "";
 let otherLocationId = "";
 let deviceId = "";
@@ -68,9 +73,10 @@ async function reserve(tableId: string, reservedFor: string, partySize = 2) {
 }
 
 test("setup: a throwaway board-game cafe with two table capacities", async () => {
+  tenantSlug = `fake-${TAG}-${Date.now()}`;
   tenantId = (await query<{ id: string }>(
     `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
-    [`FAKE ${TAG}`, `fake-${TAG}-${Date.now()}`],
+    [`FAKE ${TAG}`, tenantSlug],
   )).rows[0].id;
   locationId = (await query<{ id: string }>(
     `INSERT INTO bms_locations (tenant_id, code, name, branch_code)
@@ -126,6 +132,13 @@ test("setup: a throwaway board-game cafe with two table capacities", async () =>
      VALUES ($1,'FAKE_GENERAL',$2,'GENERAL',60,60,30,0) RETURNING id`,
     [tenantId, `FAKE ${TAG} rate`],
   )).rows[0].id;
+  await query(
+    `INSERT INTO bms_board_game_public_locations
+       (tenant_id, location_id, public_visible, booking_enabled, latitude, longitude,
+        reservation_reminder_minutes)
+     VALUES ($1,$2,TRUE,TRUE,13.7563,100.5018,180)`,
+    [tenantId, locationId],
+  );
 });
 
 test("concurrent arrivals get one increasing branch/service-day sequence", async () => {
@@ -219,6 +232,42 @@ test("reservations lock one table window, reject overlap, and check in to the se
   });
 });
 
+test("public request owns no table until staff review and its opaque token can cancel", async () => {
+  const token = `public_${"a".repeat(40)}_${sequence++}`;
+  const reservedFor = futureIso(8);
+  const requested = await requestPublicBoardGameReservation({
+    tenantSlug, locationId, requestToken: token, reservedFor, durationMinutes: 120,
+    partySize: 3, guestName: "FAKE public guest", guestPhone: "0822222222",
+    guestEmail: "fake-public@example.invalid",
+  });
+  assert.equal(requested.status, "REQUESTED");
+  assert.equal(requested.reservedTableCode, null);
+  const replay = await requestPublicBoardGameReservation({
+    tenantSlug, locationId, requestToken: token, reservedFor, durationMinutes: 120,
+    partySize: 3, guestName: "FAKE public guest", guestPhone: "0822222222",
+    guestEmail: "fake-public@example.invalid",
+  });
+  assert.equal(replay.status, requested.status);
+  await assert.rejects(() => requestPublicBoardGameReservation({
+    tenantSlug, locationId, requestToken: token, reservedFor, durationMinutes: 120,
+    partySize: 4, guestName: "FAKE changed request", guestPhone: "0822222222",
+    guestEmail: "fake-public@example.invalid",
+  }), /ถูกใช้กับข้อมูลอื่นแล้ว/);
+  const publicRow = (await query<{ id: string }>(
+    `SELECT id FROM bms_board_game_waitlist
+      WHERE tenant_id = $1 AND guest_email = 'fake-public@example.invalid'`,
+    [tenantId],
+  )).rows[0];
+  const confirmed = await reviewPublicBoardGameReservation({
+    tenantId, locationId, actorUserId: staffId, idempotencyKey: key("public-confirm"),
+    entryId: publicRow.id, decision: "CONFIRM", tableId: largeTableId,
+  });
+  assert.equal(confirmed!.status, "CONFIRMED");
+  assert.equal(confirmed!.reservedTableId, largeTableId);
+  assert.equal((await getPublicBoardGameReservation(token)).reservedTableCode, "FAKE-LARGE");
+  assert.equal((await cancelPublicBoardGameReservation(token)).status, "CANCELLED");
+});
+
 test("capacity rejection rolls back, then seating opens and links the real session atomically", async () => {
   const entry = await add(4);
   const sessionCountBefore = Number((await query<{ n: string }>(
@@ -287,6 +336,7 @@ test("teardown: the throwaway cafe leaves nothing behind", async () => {
     "bms_board_game_idempotency_results",
     "bms_pos_shifts",
     "bms_pos_devices",
+    "bms_board_game_public_locations",
     "bms_store_profile",
     "bms_locations",
     "bms_audit_log",

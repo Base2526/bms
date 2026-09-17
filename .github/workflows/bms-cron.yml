@@ -60,6 +60,8 @@ jobs:
           # six-hour arrival window. Checked-in parties remain staff-managed WAITING/CALLED rows.
           - name: board-game-reservation-expiry
             path: /api/bms/board-game/reservations/expire
+          - name: board-game-reservation-reminders
+            path: /api/bms/board-game/reservations/remind
     steps:
       - name: POST ${{ matrix.job.name }}
         env:

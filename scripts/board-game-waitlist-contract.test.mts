@@ -9,6 +9,7 @@ const read = (relative: string) => readFileSync(path.join(root, relative), "utf8
 
 const migration = read("db/migrations/9.99__bms_board_game_waitlist.sql");
 const reservationMigration = read("db/migrations/10.0__bms_board_game_advance_reservations.sql");
+const publicMigration = read("db/migrations/10.1__bms_board_game_public_reservations.sql");
 const service = read("apps/web/lib/bms/boardGameWaitlist.ts");
 const cafe = read("apps/web/lib/bms/boardGameCafe.ts");
 const operations = read("apps/web/lib/bms/boardGamePosOperations.ts");
@@ -16,6 +17,9 @@ const graphql = read("apps/web/graphql/bmsPosDevice.ts");
 const browser = read("apps/web/components/pos/BoardGamePanel.tsx");
 const mobile = read("apps/mobile/src/screens/boardGame/BoardGameScreen.tsx");
 const expiryRoute = read("apps/web/app/api/bms/board-game/reservations/expire/route.ts");
+const reminderRoute = read("apps/web/app/api/bms/board-game/reservations/remind/route.ts");
+const publicRoute = read("apps/web/app/api/board-game/bookings/route.ts");
+const publicManageRoute = read("apps/web/app/api/board-game/bookings/[token]/route.ts");
 const cronWorkflow = read(".github/workflows/bms-cron.yml");
 const cleanup = read("apps/web/app/api/dev/fake/cleanup/route.ts");
 const platform = read("apps/web/lib/bms/platform.ts");
@@ -60,14 +64,14 @@ test("queue mutations stay in the shared POS command table and both registers ex
   for (const action of ["waitlist.add", "waitlist.call", "waitlist.close", "waitlist.seat"]) {
     assert.match(operations, new RegExp(`"${action.replace(".", "\\.")}"`));
   }
-  for (const action of ["reservation.add", "reservation.check_in", "reservation.update"]) {
+  for (const action of ["reservation.add", "reservation.check_in", "reservation.update", "reservation.review"]) {
     assert.match(operations, new RegExp(`"${action.replace(".", "\\.")}"`));
   }
   for (const mutation of [
     "bmsPosAddBoardGameWaitlistEntry", "bmsPosCallBoardGameWaitlistEntry",
     "bmsPosCloseBoardGameWaitlistEntry", "bmsPosSeatBoardGameWaitlistEntry",
     "bmsPosAddBoardGameReservation", "bmsPosCheckInBoardGameReservation",
-    "bmsPosUpdateBoardGameReservation",
+    "bmsPosUpdateBoardGameReservation", "bmsPosReviewBoardGameReservation",
   ]) {
     assert.match(graphql, new RegExp(mutation));
   }
@@ -82,6 +86,26 @@ test("queue mutations stay in the shared POS command table and both registers ex
   assert.match(mobile, /MobilePosAddBoardGameReservationDocument/);
   assert.match(mobile, /MobilePosCheckInBoardGameReservationDocument/);
   assert.match(mobile, /MobilePosUpdateBoardGameReservationDocument/);
+  assert.match(browser, /'reservation\.review'/);
+  assert.match(mobile, /MobilePosReviewBoardGameReservationDocument/);
+});
+
+test("10.1 public bookings are review requests with opaque management and bounded reminders", () => {
+  assert.match(publicMigration, /status = 'REQUESTED'[\s\S]*source = 'PUBLIC'[\s\S]*reserved_table_id IS NULL/);
+  assert.match(publicMigration, /public_manage_token_hash/);
+  assert.match(publicMigration, /booking_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(service, /requestPublicBoardGameReservation/);
+  assert.match(service, /reviewPublicBoardGameReservation/);
+  assert.match(service, /status = 'CONFIRMED'[\s\S]*reserved_table_id = \$4/);
+  assert.match(service, /FOR UPDATE SKIP LOCKED LIMIT 100/);
+  assert.match(service, /reminder_attempts < 3/);
+  assert.match(publicRoute, /rateLimit\(`board-game-public-booking:/);
+  assert.match(publicManageRoute, /cancelPublicBoardGameReservation/);
+  assert.match(reminderRoute, /authorizeCronRequest\(req\)/);
+  assert.match(reminderRoute, /recordJobRun\("board-game-reservation-reminders"/);
+  assert.match(cronWorkflow, /board-game-reservation-reminders[\s\S]*\/api\/bms\/board-game\/reservations\/remind/);
+  assert.doesNotMatch(service, /INSERT INTO bms_payments|INSERT INTO bms_pos_deposits/,
+    "public table requests and reminders must not create a parallel money path");
 });
 
 test("rescheduling remains serialized and stale confirmed bookings expire through guarded cron", () => {

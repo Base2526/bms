@@ -82,6 +82,7 @@ type PublicProfile = {
   locationId: string; publicVisible: boolean; displayName: string; summary: string | null;
   publicAddress: string | null; publicPhone: string | null; openingHours: string | null;
   latitude: number | null; longitude: number | null; publishRates: boolean; publishAvailability: boolean;
+  bookingEnabled: boolean; reservationReminderMinutes: number;
 };
 type MemberOption = { customerId: string; name: string; memberNo: string | null };
 type PassPlan = {
@@ -875,8 +876,13 @@ export default function BoardGamePage() {
                   <Space wrap size="large">
                     <Form.Item name="publishRates" valuePropName="checked" label={t("admin_board_game.publish_rates")}><Switch /></Form.Item>
                     <Form.Item name="publishAvailability" valuePropName="checked" label={t("admin_board_game.publish_availability")}><Switch /></Form.Item>
+                    <Form.Item name="bookingEnabled" valuePropName="checked" label={t("admin_board_game.booking_enabled")}><Switch /></Form.Item>
                     <Form.Item name="publicVisible" valuePropName="checked" label={t("admin_board_game.public_visible_location")}><Switch /></Form.Item>
                   </Space>
+                  <Form.Item name="reservationReminderMinutes" label={t("admin_board_game.reservation_reminder_minutes")}
+                    rules={[{ required: true }]}>
+                    <InputNumber min={30} max={10080} precision={0} />
+                  </Form.Item>
                   <Alert type="info" showIcon closable message={t("admin_board_game.discovery_privacy")} className={styles.discoveryNotice} />
                   <Button type="primary" onClick={() => void saveDiscovery()}>{t("admin_board_game.save_discovery")}</Button>
                 </Form>

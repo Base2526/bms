@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { EnvironmentOutlined, SearchOutlined } from "@ant-design/icons";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import type { PublicBoardGameCafe } from "@/lib/bms/boardGameCafe";
 import styles from "./page.module.css";
 
@@ -19,6 +19,10 @@ export default function BoardGameDirectoryView({
   const [search, setSearch] = useState("");
   const [state, setState] = useState<SearchState>("idle");
   const [nearby, setNearby] = useState(false);
+  const [bookingCafe, setBookingCafe] = useState<PublicBoardGameCafe | null>(null);
+  const [bookingBusy, setBookingBusy] = useState(false);
+  const [bookingError, setBookingError] = useState("");
+  const [bookingResult, setBookingResult] = useState<{ token: string; status: string } | null>(null);
   const copy = lang === "en" ? {
     title: "Board game cafes",
     subtitle: "Find published cafes, compare play rates and see aggregate table availability before you go.",
@@ -39,6 +43,21 @@ export default function BoardGameDirectoryView({
     privacy: "Your location is used only for this search and is not saved.",
     all: "All published cafes",
     nearbyTitle: "Nearest published cafes",
+    book: "Request a table",
+    bookingTitle: "Request a table",
+    bookingNote: "This is a request. The cafe will choose a suitable table and confirm it.",
+    name: "Booking name",
+    phone: "Phone",
+    email: "Email for confirmation and reminder",
+    when: "Date and time",
+    duration: "Duration (minutes)",
+    party: "Players",
+    note: "Note",
+    submit: "Send request",
+    close: "Close",
+    requested: "Request sent. Keep this page open until you save the management link.",
+    cancelRequest: "Cancel request",
+    cancelled: "Request cancelled",
   } : {
     title: "ค้นหาร้านบอร์ดเกม",
     subtitle: "ดูร้านที่เปิดเผยข้อมูล เปรียบเทียบค่าเล่น และเช็กจำนวนโต๊ะว่างแบบรวมก่อนเดินทาง",
@@ -59,7 +78,63 @@ export default function BoardGameDirectoryView({
     privacy: "ตำแหน่งของคุณใช้จัดเรียงผลการค้นหาครั้งนี้เท่านั้น และไม่ถูกบันทึก",
     all: "ร้านที่เผยแพร่ทั้งหมด",
     nearbyTitle: "ร้านที่ใกล้คุณที่สุด",
+    book: "ขอจองโต๊ะ",
+    bookingTitle: "ส่งคำขอจองโต๊ะ",
+    bookingNote: "รายการนี้ยังไม่ยืนยัน ร้านจะเลือกโต๊ะที่เหมาะสมและยืนยันอีกครั้ง",
+    name: "ชื่อผู้จอง",
+    phone: "เบอร์โทร",
+    email: "อีเมลรับผลยืนยันและแจ้งเตือน",
+    when: "วันและเวลา",
+    duration: "ระยะเวลา (นาที)",
+    party: "จำนวนผู้เล่น",
+    note: "หมายเหตุ",
+    submit: "ส่งคำขอ",
+    close: "ปิด",
+    requested: "ส่งคำขอแล้ว กรุณาเก็บลิงก์จัดการรายการนี้ไว้",
+    cancelRequest: "ยกเลิกคำขอ",
+    cancelled: "ยกเลิกคำขอแล้ว",
   };
+
+  async function submitBooking(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!bookingCafe) return;
+    setBookingBusy(true); setBookingError("");
+    try {
+      const form = new FormData(event.currentTarget);
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      const token = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+      const response = await fetch("/api/board-game/bookings", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tenantSlug: bookingCafe.tenantSlug, locationId: bookingCafe.locationId,
+          requestToken: token, guestName: form.get("guestName"), guestPhone: form.get("guestPhone"),
+          guestEmail: form.get("guestEmail"), reservedFor: new Date(String(form.get("reservedFor"))).toISOString(),
+          durationMinutes: Number(form.get("durationMinutes")), partySize: Number(form.get("partySize")),
+          note: form.get("note"),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`);
+      setBookingResult({ token, status: body.reservation.status });
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Unable to submit request");
+    } finally { setBookingBusy(false); }
+  }
+
+  async function cancelBooking() {
+    if (!bookingResult) return;
+    setBookingBusy(true); setBookingError("");
+    try {
+      const response = await fetch(`/api/board-game/bookings/${encodeURIComponent(bookingResult.token)}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "CANCEL" }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`);
+      setBookingResult(current => current ? { ...current, status: "CANCELLED" } : null);
+    } catch (error) { setBookingError(error instanceof Error ? error.message : "Unable to cancel"); }
+    finally { setBookingBusy(false); }
+  }
 
   const visible = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase();
@@ -157,11 +232,40 @@ export default function BoardGameDirectoryView({
             </section>}
             <div className={styles.actions}>
               {cafe.publicPhone && <a href={`tel:${cafe.publicPhone}`}>{copy.call} {cafe.publicPhone}</a>}
+              {cafe.bookingEnabled && <button type="button" onClick={() => {
+                setBookingCafe(cafe); setBookingResult(null); setBookingError("");
+              }}>{copy.book}</button>}
               <Link href={`/shop/${encodeURIComponent(cafe.tenantSlug)}`}>{copy.details}</Link>
             </div>
           </article>
         ))}
       </div> : <div className={styles.empty}>{copy.empty}</div>}
+
+      {bookingCafe && <div className={styles.modalBackdrop} role="presentation">
+        <section className={styles.bookingModal} role="dialog" aria-modal="true" aria-labelledby="booking-title">
+          <div className={styles.bookingHead}>
+            <div><h2 id="booking-title">{copy.bookingTitle} · {bookingCafe.displayName}</h2><p>{copy.bookingNote}</p></div>
+            <button type="button" onClick={() => setBookingCafe(null)}>{copy.close}</button>
+          </div>
+          {bookingResult ? <div className={styles.bookingResult}>
+            <strong>{bookingResult.status === "CANCELLED" ? copy.cancelled : copy.requested}</strong>
+            {bookingResult.status !== "CANCELLED" && <>
+              <input readOnly value={`${location.origin}/board-game/booking/${bookingResult.token}`} />
+              <button type="button" disabled={bookingBusy} onClick={cancelBooking}>{copy.cancelRequest}</button>
+            </>}
+          </div> : <form className={styles.bookingForm} onSubmit={submitBooking}>
+            <label>{copy.name}<input name="guestName" required maxLength={120} /></label>
+            <label>{copy.phone}<input name="guestPhone" type="tel" maxLength={40} /></label>
+            <label>{copy.email}<input name="guestEmail" type="email" required maxLength={254} /></label>
+            <label>{copy.when}<input name="reservedFor" type="datetime-local" required /></label>
+            <label>{copy.duration}<input name="durationMinutes" type="number" min={30} max={720} defaultValue={120} required /></label>
+            <label>{copy.party}<input name="partySize" type="number" min={1} max={500} defaultValue={2} required /></label>
+            <label className={styles.fullField}>{copy.note}<textarea name="note" maxLength={300} rows={2} /></label>
+            <button type="submit" disabled={bookingBusy}>{copy.submit}</button>
+          </form>}
+          {bookingError && <div className={styles.error} role="alert">{bookingError}</div>}
+        </section>
+      </div>}
     </div>
   );
 }

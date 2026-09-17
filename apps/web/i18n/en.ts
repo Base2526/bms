@@ -893,6 +893,8 @@ const en = {
     location_unavailable: "Current location is unavailable",
     publish_rates: "Show play rates",
     publish_availability: "Show aggregate table availability",
+    booking_enabled: "Accept online booking requests",
+    reservation_reminder_minutes: "Email reminder before booking (minutes)",
     public_visible_location: "Publish this branch",
     discovery_privacy: "The public page shows only these fields, active published rates, selected games, and aggregate availability. It never exposes customer names, arrival times, or table numbers.",
     save_discovery: "Save discovery profile",

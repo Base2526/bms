@@ -212,13 +212,15 @@ The first operational release includes:
     and atomic seating into the normal session path.
 15. Staff-managed advance reservations: a confirmed table/time window, overlap protection, arrival
     check-in, cancellation/no-show, and atomic seating into that same session path.
+16. Public reservation requests: opt-in per branch, staff review before a table is promised, opaque
+    customer cancellation, and retryable email reminders for confirmed bookings.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Public self-booking, reminders, reservation deposits, and advanced board-game analytics are later
-phases, as is automatic renewal of a member pass. Deposits and scheduled renewal need a payment
+Reservation deposits and advanced board-game analytics are later phases, as is automatic renewal of
+a member pass. Deposits and scheduled renewal need a payment
 contract this platform does not currently have, so they must extend the existing CRM/payment/report
 domains instead of inventing customer or money records inside this module.
 
@@ -272,9 +274,31 @@ The frequent cron calls `/api/bms/board-game/reservations/expire`. It is guarded
 `FOR UPDATE SKIP LOCKED`. A confirmed reservation still untouched six hours after its start becomes
 `NO_SHOW`; a checked-in `WAITING`/`CALLED` party is deliberately left for staff to handle.
 
-This is staff-operated booking on the browser and native POS. It does not expose guest self-booking,
-send reminders, or collect a deposit. Those require separate authenticated/public and payment
-contracts; a deposit must not be represented as a Product SKU or mixed into play-time billing.
+Staff-operated booking is available on the browser and native POS. Public requests and reminders use
+the separate contract below. A deposit must not be represented as a Product SKU or mixed into
+play-time billing.
+
+### Public reservation requests and reminders (`10.1`)
+
+Public booking is an explicit branch opt-in layered onto the published directory. A customer submits
+contact details and a requested time window, but receives `REQUESTED`, not a table promise. The row
+has no `reserved_table_id` until a PIN-authenticated staff member chooses a capacity-safe table;
+confirmation repeats the live-session and overlap checks under the same per-table advisory lock as a
+staff-created booking. Rejecting or cancelling a request never starts a session.
+
+The customer manages the request with a high-entropy token generated in the browser. Only its SHA-256
+hash is stored, and public reads return a bounded booking view rather than contact details or internal
+table ids. Both public endpoints are rate-limited.
+
+Confirmed public bookings snapshot the branch reminder lead time. The frequent cron claims due rows
+with `FOR UPDATE SKIP LOCKED`, sends through the configured email provider, and records `SENT` or a
+bounded `FAILED` reason with at most three attempts. A stale `SENDING` claim becomes retryable after
+30 minutes. Delivery is operational evidence only; the reservation row remains authoritative.
+
+`10.1` intentionally does not take a deposit. `bms_payments.order_id` is mandatory and the existing
+POS deposit aggregate reserves sellable stock. Pretending a table is a Product would corrupt stock,
+tax, refund, and reporting semantics. A later deposit phase must first add a generalized payable to
+the payment domain and define fixed/percentage, refund, cancellation, no-show, and tax policy.
 
 ## Dev/Test Fixtures
 

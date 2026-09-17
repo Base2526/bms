@@ -597,7 +597,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, and `10.0` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, `10.0`, and `10.1` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).
@@ -758,12 +758,19 @@ playable game library. The operating brief is
   uses `FOR UPDATE SKIP LOCKED` to mark untouched rows `NO_SHOW` six hours after their start, never a
   party already in `WAITING`/`CALLED`. Browser and native POS dispatch the same shared commands. Do
   not turn a reservation deposit into a Product SKU or a second board-game billing ledger.
+- **A public booking is a request until staff assigns a table (`10.1`).** A branch must opt in, the
+  public row starts as `REQUESTED` with no table id, and staff confirmation repeats the normal table
+  lock, capacity, live-session and overlap checks before becoming `CONFIRMED`. The raw customer
+  management token is never stored. Public endpoints are rate-limited and expose no contact data.
+  Reminder delivery claims rows with `FOR UPDATE SKIP LOCKED`, retries a bounded number of times and
+  never changes booking authority. Deposits remain unbuilt because current payments require an
+  order and current POS deposits reserve sellable stock; do not fake a table as a SKU.
 - **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
 - **Not built:** automatic renewal of a member pass (it needs a stored payment instrument this
-  platform does not have), public self-booking/reminders/reservation deposits, and dedicated
+  platform does not have), reservation deposits, and dedicated
   board-game profitability/utilization reports. Extend CRM/reporting/payment domains for these; do
   not create parallel customer or money ledgers.
 

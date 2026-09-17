@@ -54,6 +54,7 @@ import {
   checkInBoardGameReservation,
   closeBoardGameWaitlistEntry,
   listBoardGameWaitlist,
+  reviewPublicBoardGameReservation,
   seatBoardGameWaitlistEntry,
   updateBoardGameReservation,
 } from "./boardGameWaitlist";
@@ -169,7 +170,8 @@ export type BoardGamePosAction =
   | "waitlist.seat"
   | "reservation.add"
   | "reservation.check_in"
-  | "reservation.update";
+  | "reservation.update"
+  | "reservation.review";
 
 export type BoardGamePosActionSpec = {
   /** สิทธิ์หลักที่ต้องถือ — ตัวที่ผู้เรียกใช้ตอนตรวจ PIN */
@@ -330,6 +332,11 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     requiresOpenShift: false,
   },
   "reservation.update": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "reservation.review": {
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,
@@ -604,6 +611,22 @@ export async function runBoardGamePosMutation(
         guestName: text(input.guestName) || null,
         guestPhone: text(input.guestPhone) || null,
         note: text(input.note) || null,
+      }));
+    }
+    case "reservation.review": {
+      const decision = text(input.decision).toUpperCase();
+      if (decision !== "CONFIRM" && decision !== "REJECT") {
+        return badInput("ผลการพิจารณาต้องเป็น CONFIRM หรือ REJECT");
+      }
+      return callService(() => reviewPublicBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
+        decision,
+        tableId: decision === "CONFIRM" ? uuid(input.tableId, "โต๊ะที่จองไม่ถูกต้อง") : null,
+        reason: text(input.reason) || null,
       }));
     }
     case "participant.add": {

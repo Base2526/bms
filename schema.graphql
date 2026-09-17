@@ -2790,6 +2790,16 @@ input BmsPosBoardGameReservationAddInput {
   tableId: ID!
 }
 
+input BmsPosBoardGameReservationReviewInput {
+  cashierUserId: ID!
+  decision: String!
+  entryId: ID!
+  idempotencyKey: String!
+  pin: String!
+  reason: String
+  tableId: ID
+}
+
 input BmsPosBoardGameReservationUpdateInput {
   cashierUserId: ID!
   durationMinutes: Int!
@@ -3034,6 +3044,7 @@ type BmsPosBoardGameWaitlist {
   confirmedReservationCount: Int!
   entries: [BmsPosBoardGameWaitlistEntry!]!
   longestWaitMinutes: Int!
+  requestedReservationCount: Int!
   tables: [BmsPosBoardGameWaitlistTable!]!
   waitingCount: Int!
   waitingGuests: Int!
@@ -3072,6 +3083,7 @@ type BmsPosBoardGameWaitlistEntry {
   closedAt: String
   confirmedAt: String
   createdAt: String!
+  guestEmail: String
   guestName: String
   guestPhone: String
   id: ID!
@@ -3081,15 +3093,20 @@ type BmsPosBoardGameWaitlistEntry {
   preferredAreaId: ID
   preferredAreaName: String
   queueNo: Int
+  rejectionReason: String
+  reminderSentAt: String
+  reminderStatus: String!
   reservedDurationMinutes: Int
   reservedFor: String
   reservedTableCode: String
   reservedTableId: ID
+  reviewedAt: String
   seatedAt: String
   seatedSessionId: ID
   seatedTableCode: String
   seatedTableId: ID
   serviceDate: String!
+  source: String!
   status: String!
 }
 
@@ -7006,6 +7023,7 @@ type Mutation {
   bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): BmsPosRestaurantWaitlistActionResult! @deprecated(reason: "Use the named waitlist mutations")
   bmsPosReturn(input: BmsPosReturnInput!): BmsPosReturnActionResult!
   bmsPosReturnBoardGameCopy(input: BmsPosBoardGameReturnCopyInput!): BmsPosBoardGameLoan!
+  bmsPosReviewBoardGameReservation(input: BmsPosBoardGameReservationReviewInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
   bmsPosSeatBoardGameWaitlistEntry(input: BmsPosBoardGameWaitlistSeatInput!): BmsPosBoardGameWaitlistSeatResult!
   bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!

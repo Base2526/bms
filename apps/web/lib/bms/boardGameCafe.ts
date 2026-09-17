@@ -102,6 +102,8 @@ export type BoardGamePublicLocationProfile = {
   longitude: number | null;
   publishRates: boolean;
   publishAvailability: boolean;
+  bookingEnabled: boolean;
+  reservationReminderMinutes: number;
 };
 
 export type PublicBoardGameCafe = BoardGamePublicLocationProfile & {
@@ -2108,6 +2110,8 @@ function mapPublicLocationProfile(row: any): BoardGamePublicLocationProfile {
     longitude: row.longitude == null ? null : Number(row.longitude),
     publishRates: row.publish_rates == null ? true : Boolean(row.publish_rates),
     publishAvailability: row.publish_availability == null ? true : Boolean(row.publish_availability),
+    bookingEnabled: Boolean(row.booking_enabled),
+    reservationReminderMinutes: Number(row.reservation_reminder_minutes ?? 180),
   };
 }
 
@@ -2122,7 +2126,8 @@ export async function getBoardGamePublicLocationProfile(
             l.phone AS location_phone, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
-            profile.publish_rates, profile.publish_availability
+            profile.publish_rates, profile.publish_availability, profile.booking_enabled,
+            profile.reservation_reminder_minutes
        FROM bms_locations l
        LEFT JOIN bms_board_game_public_locations profile
          ON profile.tenant_id = l.tenant_id AND profile.location_id = l.id
@@ -2147,6 +2152,8 @@ export async function upsertBoardGamePublicLocationProfile(
     longitude?: number | string | null;
     publishRates?: boolean | null;
     publishAvailability?: boolean | null;
+    bookingEnabled?: boolean | null;
+    reservationReminderMinutes?: number | string | null;
   },
   actorUserId?: string | null
 ): Promise<BoardGamePublicLocationProfile> {
@@ -2171,6 +2178,12 @@ export async function upsertBoardGamePublicLocationProfile(
   }
   const publishRates = booleanOrDefault(input.publishRates, true, "สถานะแสดงเรทราคา");
   const publishAvailability = booleanOrDefault(input.publishAvailability, true, "สถานะแสดงโต๊ะว่าง");
+  const bookingEnabled = booleanOrDefault(input.bookingEnabled, false, "สถานะรับจองออนไลน์");
+  const reservationReminderMinutes = Number(input.reservationReminderMinutes ?? 180);
+  if (!Number.isInteger(reservationReminderMinutes)
+    || reservationReminderMinutes < 30 || reservationReminderMinutes > 10080) {
+    throw new Error("เวลาแจ้งเตือนต้องอยู่ระหว่าง 30 ถึง 10080 นาที");
+  }
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
@@ -2184,8 +2197,8 @@ export async function upsertBoardGamePublicLocationProfile(
       `INSERT INTO bms_board_game_public_locations
           (tenant_id, location_id, public_visible, display_name, summary,
            public_address, public_phone, opening_hours, latitude, longitude,
-           publish_rates, publish_availability)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           publish_rates, publish_availability, booking_enabled, reservation_reminder_minutes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (tenant_id, location_id) DO UPDATE SET
           public_visible = EXCLUDED.public_visible,
           display_name = EXCLUDED.display_name,
@@ -2197,16 +2210,21 @@ export async function upsertBoardGamePublicLocationProfile(
           longitude = EXCLUDED.longitude,
           publish_rates = EXCLUDED.publish_rates,
           publish_availability = EXCLUDED.publish_availability,
+          booking_enabled = EXCLUDED.booking_enabled,
+          reservation_reminder_minutes = EXCLUDED.reservation_reminder_minutes,
           updated_at = now()`,
       [
         tenantId, locationId, publicVisible, displayName, summary, publicAddress,
         publicPhone, openingHours, latitude, longitude, publishRates, publishAvailability,
+        bookingEnabled, reservationReminderMinutes,
       ]
     );
     await auditInTx(client, tenantId, actorUserId, "board_game.public_profile_upsert", locationId, {
       publicVisible,
       publishRates,
       publishAvailability,
+      bookingEnabled,
+      reservationReminderMinutes,
     });
     await client.query("COMMIT");
     return await getBoardGamePublicLocationProfile(tenantId, locationId);
@@ -2250,7 +2268,8 @@ export async function listPublicBoardGameCafes(input: {
     `SELECT profile.location_id, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
-            profile.publish_rates, profile.publish_availability,
+            profile.publish_rates, profile.publish_availability, profile.booking_enabled,
+            profile.reservation_reminder_minutes,
             location.name AS location_name, tenant.slug AS tenant_slug,
             tenant.name AS shop_name, store.logo_url,
             CASE WHEN profile.publish_availability THEN (

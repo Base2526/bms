@@ -59,6 +59,7 @@ import {
   MobilePosMoveBoardGameSeatingDocument,
   MobilePosRemoveBoardGameTabItemDocument,
   MobilePosReleaseBoardGameIdentityHoldDocument,
+  MobilePosReviewBoardGameReservationDocument,
   MobilePosReturnBoardGameCopyDocument,
   MobilePosTakeBoardGameIdentityHoldDocument,
   MobilePosUpdateBoardGameReservationDocument,
@@ -277,6 +278,7 @@ function BoardGameFloor({
   const [reservationEditingId, setReservationEditingId] = useState('');
   const [reservationSearch, setReservationSearch] = useState('');
   const [reservationDate, setReservationDate] = useState('');
+  const [reviewTableByEntry, setReviewTableByEntry] = useState<Record<string, string>>({});
   const [workingQueueId, setWorkingQueueId] = useState('');
   const callOperationKeys = useRef<Record<string, string>>({});
   const [acknowledgeCall] = useMutation(
@@ -291,6 +293,7 @@ function BoardGameFloor({
   const [addReservation] = useMutation(MobilePosAddBoardGameReservationDocument);
   const [checkInReservation] = useMutation(MobilePosCheckInBoardGameReservationDocument);
   const [updateReservation] = useMutation(MobilePosUpdateBoardGameReservationDocument);
+  const [reviewReservation] = useMutation(MobilePosReviewBoardGameReservationDocument);
   const { width, height } = useWindowDimensions();
   const isTablet = supportsTabletLayout(width, height, 760);
   const [selectedAreaId, setSelectedAreaId] = useState<string>('all');
@@ -327,12 +330,13 @@ function BoardGameFloor({
     entry => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
   const allReservations = (data?.waitlist.entries ?? []).filter(
-    entry => entry.kind === 'RESERVATION' && entry.status === 'CONFIRMED',
+    entry => entry.kind === 'RESERVATION'
+      && (entry.status === 'REQUESTED' || entry.status === 'CONFIRMED'),
   );
   const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
   const reservations = allReservations.filter(entry => {
     const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
-    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.reservedTableCode ?? ''}`
+    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.guestEmail ?? ''} ${entry.reservedTableCode ?? ''}`
       .toLocaleLowerCase('th-TH');
     return matchesDate && (!reservationNeedle || haystack.includes(reservationNeedle));
   });
@@ -711,7 +715,7 @@ function BoardGameFloor({
       {data ? (
         <Card style={{ gap: spacing.sm }}>
           <Text style={[typography.subtitle, { color: colors.text }]}>การจองล่วงหน้า</Text>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>ยืนยันอยู่ {data.waitlist.confirmedReservationCount} รายการ</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>ยืนยันอยู่ {data.waitlist.confirmedReservationCount} รายการ · รอพิจารณา {data.waitlist.requestedReservationCount} รายการ</Text>
           <View style={styles.wrap}>
             <TextInput accessibilityLabel="ค้นหารายการจอง" value={reservationSearch}
               onChangeText={setReservationSearch} placeholder="ชื่อ เบอร์โทร หรือโต๊ะ"
@@ -788,6 +792,7 @@ function BoardGameFloor({
             <Text style={[typography.caption, { color: colors.textMuted }]}>ไม่พบรายการที่ตรงกับตัวกรอง</Text>
           ) : null}
           {reservations.map(entry => {
+            const reviewTableId = reviewTableByEntry[entry.id] ?? '';
             const table = tables.find(item => item.id === entry.reservedTableId);
             const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
             const currentTime = Date.now();
@@ -798,11 +803,42 @@ function BoardGameFloor({
             return (
               <View key={entry.id} style={{ gap: spacing.xs }}>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · {entry.reservedTableCode || '-'}
+                  {entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}{entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · {entry.reservedTableCode || 'รอจัดโต๊ะ'}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  {entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'} · {entry.reservedDurationMinutes ?? 0} นาที
+                  {entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'} · {entry.reservedDurationMinutes ?? 0} นาที{entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
                 </Text>
+                {entry.status === 'REQUESTED' ? <>
+                  <View style={styles.wrap}>
+                    {tables.filter(item => !item.blocked && item.seats >= entry.partySize).map(item => (
+                      <Button key={item.id} label={`${item.code} (${item.seats})`}
+                        variant={reviewTableId === item.id ? 'primary' : 'secondary'}
+                        onPress={() => setReviewTableByEntry(current => ({
+                          ...current, [entry.id]: item.id,
+                        }))} />
+                    ))}
+                  </View>
+                  <View style={styles.wrap}>
+                    <Button label="ยืนยันคำขอ" disabled={!reviewTableId}
+                      loading={workingQueueId === `reservation-confirm-${entry.id}`}
+                      onPress={() => runQueueAction(`reservation-confirm-${entry.id}`, idempotencyKey =>
+                        reviewReservation({ variables: { input: {
+                          ...credentials!, idempotencyKey, entryId: entry.id,
+                          decision: 'CONFIRM', tableId: reviewTableId, reason: null,
+                        } } })
+                      ).then(success => {
+                        if (success) setReviewTableByEntry(current => ({ ...current, [entry.id]: '' }));
+                      }).catch(() => undefined)} />
+                    <Button label="ปฏิเสธ" variant="ghost"
+                      loading={workingQueueId === `reservation-reject-${entry.id}`}
+                      onPress={() => runQueueAction(`reservation-reject-${entry.id}`, idempotencyKey =>
+                        reviewReservation({ variables: { input: {
+                          ...credentials!, idempotencyKey, entryId: entry.id,
+                          decision: 'REJECT', tableId: null, reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
+                        } } })
+                      ).catch(() => undefined)} />
+                  </View>
+                </> : (
                 <View style={styles.wrap}>
                   <Button label="แก้ไข/เลื่อน" variant="secondary" onPress={() => {
                     setReservationEditingId(entry.id);
@@ -839,6 +875,7 @@ function BoardGameFloor({
                       ).catch(() => undefined)} />
                   ) : null}
                 </View>
+                )}
               </View>
             );
           })}

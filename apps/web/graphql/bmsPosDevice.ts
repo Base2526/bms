@@ -2133,6 +2133,16 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     note: String
   }
 
+  input BmsPosBoardGameReservationReviewInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    entryId: ID!
+    decision: String!
+    tableId: ID
+    reason: String
+  }
+
   input BmsPosBoardGameAddParticipantInput {
     cashierUserId: ID!
     pin: String!
@@ -2401,6 +2411,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     partySize: Int!
     guestName: String
     guestPhone: String
+    guestEmail: String
     note: String
     preferredAreaId: ID
     preferredAreaName: String
@@ -2410,6 +2421,11 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     reservedTableCode: String
     confirmedAt: String
     checkedInAt: String
+    source: String!
+    reviewedAt: String
+    rejectionReason: String
+    reminderStatus: String!
+    reminderSentAt: String
     seatedTableId: ID
     seatedTableCode: String
     seatedSessionId: ID
@@ -2436,6 +2452,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     waitingCount: Int!
     calledCount: Int!
     confirmedReservationCount: Int!
+    requestedReservationCount: Int!
     waitingGuests: Int!
     longestWaitMinutes: Int!
     tables: [BmsPosBoardGameWaitlistTable!]!
@@ -2796,6 +2813,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     ): BmsPosBoardGameWaitlistEntry!
     bmsPosUpdateBoardGameReservation(
       input: BmsPosBoardGameReservationUpdateInput!
+    ): BmsPosBoardGameWaitlistEntry!
+    bmsPosReviewBoardGameReservation(
+      input: BmsPosBoardGameReservationReviewInput!
     ): BmsPosBoardGameWaitlistEntry!
     bmsPosAddBoardGameParticipant(
       input: BmsPosBoardGameAddParticipantInput!
@@ -4875,6 +4895,15 @@ export const bmsPosDeviceResolvers = {
     ) {
       const access = await boardGamePosAccess(ctx, args.input, "reservation.update");
       return runBoardGamePosMutation(access.scope, access.actorUserId, "reservation.update", access.input);
+    },
+
+    async bmsPosReviewBoardGameReservation(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "reservation.review");
+      return runBoardGamePosMutation(access.scope, access.actorUserId, "reservation.review", access.input);
     },
 
     async bmsPosAddBoardGameParticipant(

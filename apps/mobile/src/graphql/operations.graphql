@@ -2019,6 +2019,7 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
       waitingCount
       calledCount
       confirmedReservationCount
+      requestedReservationCount
       waitingGuests
       longestWaitMinutes
       entries {
@@ -2030,6 +2031,7 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         partySize
         guestName
         guestPhone
+        guestEmail
         note
         preferredAreaId
         preferredAreaName
@@ -2039,6 +2041,11 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         reservedTableCode
         confirmedAt
         checkedInAt
+        source
+        reviewedAt
+        rejectionReason
+        reminderStatus
+        reminderSentAt
         seatedTableId
         seatedTableCode
         seatedSessionId
@@ -2071,6 +2078,7 @@ fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
   partySize
   guestName
   guestPhone
+  guestEmail
   note
   preferredAreaId
   preferredAreaName
@@ -2080,6 +2088,11 @@ fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
   reservedTableCode
   confirmedAt
   checkedInAt
+  source
+  reviewedAt
+  rejectionReason
+  reminderStatus
+  reminderSentAt
   seatedTableId
   seatedTableCode
   seatedSessionId
@@ -2128,6 +2141,12 @@ mutation MobilePosCheckInBoardGameReservation($input: BmsPosBoardGameWaitlistCal
 
 mutation MobilePosUpdateBoardGameReservation($input: BmsPosBoardGameReservationUpdateInput!) {
   bmsPosUpdateBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosReviewBoardGameReservation($input: BmsPosBoardGameReservationReviewInput!) {
+  bmsPosReviewBoardGameReservation(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }

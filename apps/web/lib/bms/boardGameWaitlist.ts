@@ -1,5 +1,7 @@
 import type { PoolClient } from "pg";
+import { createHash } from "node:crypto";
 import { getClient, query } from "@/lib/db";
+import { sendEmail } from "@/lib/mailer";
 import {
   openBoardGameSessionInTx,
   requireBoardGameCafeTenant,
@@ -14,7 +16,8 @@ import {
 import { beginTenantTx } from "./tenant";
 
 export type BoardGameWaitlistStatus =
-  | "CONFIRMED" | "WAITING" | "CALLED" | "SEATED" | "CANCELLED" | "NO_SHOW";
+  | "REQUESTED" | "CONFIRMED" | "WAITING" | "CALLED" | "SEATED" | "CANCELLED"
+  | "NO_SHOW" | "REJECTED";
 
 type WaitlistRow = {
   id: string;
@@ -25,6 +28,7 @@ type WaitlistRow = {
   party_size: number;
   guest_name: string | null;
   guest_phone: string | null;
+  guest_email: string | null;
   note: string | null;
   preferred_area_id: string | null;
   preferred_area_name: string | null;
@@ -34,6 +38,12 @@ type WaitlistRow = {
   reserved_table_code: string | null;
   confirmed_at: Date | string | null;
   checked_in_at: Date | string | null;
+  source: "STAFF" | "PUBLIC";
+  reviewed_at: Date | string | null;
+  rejection_reason: string | null;
+  reminder_status: "NONE" | "PENDING" | "SENDING" | "SENT" | "FAILED";
+  reminder_sent_at: Date | string | null;
+  public_request_hash?: string | null;
   seated_table_id: string | null;
   seated_table_code: string | null;
   seated_session_id: string | null;
@@ -49,9 +59,10 @@ const SERVICE_DATE_SQL = `(
 )::date`;
 
 const SELECT_COLUMNS = `w.id, w.kind, w.service_date, w.queue_no, w.status, w.party_size,
-  w.guest_name, w.guest_phone, w.note, w.preferred_area_id, area.name AS preferred_area_name,
+  w.guest_name, w.guest_phone, w.guest_email, w.note, w.preferred_area_id, area.name AS preferred_area_name,
   w.reserved_for, w.reserved_duration_minutes, w.reserved_table_id,
-  reserved_table.code AS reserved_table_code, w.confirmed_at, w.checked_in_at,
+  reserved_table.code AS reserved_table_code, w.confirmed_at, w.checked_in_at, w.source,
+  w.reviewed_at, w.rejection_reason, w.reminder_status, w.reminder_sent_at,
   w.seated_table_id, table_row.code AS seated_table_code, w.seated_session_id,
   w.called_at, w.seated_at, w.closed_at, w.created_at`;
 
@@ -78,6 +89,7 @@ function mapEntry(row: WaitlistRow) {
     partySize: Number(row.party_size),
     guestName: row.guest_name,
     guestPhone: row.guest_phone,
+    guestEmail: row.guest_email,
     note: row.note,
     preferredAreaId: row.preferred_area_id,
     preferredAreaName: row.preferred_area_name,
@@ -88,6 +100,11 @@ function mapEntry(row: WaitlistRow) {
     reservedTableCode: row.reserved_table_code,
     confirmedAt: iso(row.confirmed_at),
     checkedInAt: iso(row.checked_in_at),
+    source: row.source,
+    reviewedAt: iso(row.reviewed_at),
+    rejectionReason: row.rejection_reason,
+    reminderStatus: row.reminder_status,
+    reminderSentAt: iso(row.reminder_sent_at),
     seatedTableId: row.seated_table_id,
     seatedTableCode: row.seated_table_code,
     seatedSessionId: row.seated_session_id,
@@ -147,10 +164,10 @@ export async function listBoardGameWaitlist(tenantId: string, locationId: string
          ${SELECT_JOINS}
          LEFT JOIN bms_store_profile profile ON profile.tenant_id = w.tenant_id
         WHERE w.tenant_id = $1 AND w.location_id = $2
-          AND (w.status IN ('WAITING','CALLED')
+          AND (w.status IN ('WAITING','CALLED','REQUESTED')
             OR w.status = 'CONFIRMED'
             OR w.service_date = ${SERVICE_DATE_SQL})
-        ORDER BY (w.status IN ('WAITING','CALLED')) DESC,
+        ORDER BY (w.status = 'REQUESTED') DESC, (w.status IN ('WAITING','CALLED')) DESC,
                  (w.status = 'CONFIRMED') DESC, COALESCE(w.reserved_for, w.created_at), w.queue_no`,
       [tenantId, locationId],
     ),
@@ -202,6 +219,7 @@ export async function listBoardGameWaitlist(tenantId: string, locationId: string
     waitingCount: open.filter((entry) => entry.status === "WAITING").length,
     calledCount: open.filter((entry) => entry.status === "CALLED").length,
     confirmedReservationCount: entries.filter((entry) => entry.status === "CONFIRMED").length,
+    requestedReservationCount: entries.filter((entry) => entry.status === "REQUESTED").length,
     waitingGuests: open.reduce((sum, entry) => sum + entry.partySize, 0),
     longestWaitMinutes: open.length
       ? Math.max(...open.map((entry) => Math.max(0, Math.floor((Date.now() - Date.parse(entry.createdAt!)) / 60_000))))
@@ -230,6 +248,186 @@ function reservationInstant(value: unknown): Date {
     throw new Error("รับจองล่วงหน้าได้ไม่เกิน 366 วัน");
   }
   return parsed;
+}
+
+function sha256(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function publicToken(value: unknown): string {
+  const token = typeof value === "string" ? value.trim() : "";
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw new Error("รหัสคำขอจองไม่ถูกต้อง");
+  return token;
+}
+
+function emailAddress(value: unknown): string {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (email.length < 3 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("อีเมลไม่ถูกต้อง");
+  }
+  return email;
+}
+
+function publicReservationView(row: WaitlistRow & { location_name?: string | null }) {
+  return {
+    status: row.status,
+    partySize: Number(row.party_size),
+    reservedFor: iso(row.reserved_for),
+    reservedDurationMinutes: Number(row.reserved_duration_minutes),
+    locationName: row.location_name ?? null,
+    reservedTableCode: row.status === "CONFIRMED" ? row.reserved_table_code : null,
+    rejectionReason: row.status === "REJECTED" ? row.rejection_reason : null,
+  };
+}
+
+/** Public self-service creates a review request only; it never chooses or promises a table. */
+export async function requestPublicBoardGameReservation(input: {
+  tenantSlug: string; locationId: string; requestToken: string; reservedFor: string;
+  durationMinutes: number; partySize: number; guestName: string; guestPhone?: string | null;
+  guestEmail: string; note?: string | null;
+}) {
+  const token = publicToken(input.requestToken);
+  const tokenHash = sha256(token);
+  const reservedFor = reservationInstant(input.reservedFor);
+  const durationMinutes = positiveInteger(input.durationMinutes, "ระยะเวลาจอง", 720);
+  if (durationMinutes < 30) throw new Error("ระยะเวลาจองต้องอย่างน้อย 30 นาที");
+  const partySize = positiveInteger(input.partySize, "จำนวนผู้เล่น");
+  const guestName = boundedText(input.guestName, 120);
+  if (!guestName) throw new Error("กรุณาระบุชื่อผู้จอง");
+  const guestEmail = emailAddress(input.guestEmail);
+  const normalized = {
+    reservedFor: reservedFor.toISOString(), durationMinutes, partySize, guestName,
+    guestPhone: boundedText(input.guestPhone, 40), guestEmail, note: boundedText(input.note, 300),
+  };
+  const requestHash = sha256(JSON.stringify(normalized));
+  const tenant = await query<{ tenant_id: string }>(
+    `SELECT profile.tenant_id
+       FROM bms_board_game_public_locations profile
+       JOIN bms_tenants tenant ON tenant.id = profile.tenant_id AND tenant.active
+       JOIN bms_locations location
+         ON location.tenant_id = profile.tenant_id AND location.id = profile.location_id
+        AND location.active
+       JOIN bms_store_profile store
+         ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'
+      WHERE tenant.slug = $1 AND profile.location_id = $2
+        AND profile.public_visible AND profile.booking_enabled`,
+    [boundedText(input.tenantSlug, 120), input.locationId],
+  );
+  if (!tenant.rowCount) throw new Error("สาขานี้ยังไม่เปิดรับคำขอจองออนไลน์");
+  const tenantId = tenant.rows[0].tenant_id;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const existing = await client.query<WaitlistRow & { location_name: string }>(
+      `SELECT ${SELECT_COLUMNS}, w.public_request_hash, location.name AS location_name
+         FROM bms_board_game_waitlist w
+         ${SELECT_JOINS}
+         JOIN bms_locations location
+           ON location.tenant_id = w.tenant_id AND location.id = w.location_id
+        WHERE w.tenant_id = $1 AND w.location_id = $2 AND w.public_request_key_hash = $3`,
+      [tenantId, input.locationId, tokenHash],
+    );
+    if (existing.rowCount) {
+      if (existing.rows[0].public_request_hash !== requestHash) {
+        throw new Error("รหัสคำขอนี้ถูกใช้กับข้อมูลอื่นแล้ว");
+      }
+      await client.query("COMMIT");
+      return publicReservationView(existing.rows[0]);
+    }
+    const inserted = await client.query<{ id: string }>(
+      `WITH config AS (
+         SELECT profile.tenant_id, profile.location_id,
+                profile.reservation_reminder_minutes,
+                COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone
+           FROM bms_board_game_public_locations profile
+           JOIN bms_store_profile store
+             ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'
+           JOIN bms_tenants tenant ON tenant.id = profile.tenant_id AND tenant.active
+           JOIN bms_locations location
+             ON location.tenant_id = profile.tenant_id AND location.id = profile.location_id
+            AND location.active
+          WHERE profile.tenant_id = $1 AND profile.location_id = $2
+            AND profile.public_visible AND profile.booking_enabled
+       )
+       INSERT INTO bms_board_game_waitlist
+         (tenant_id, location_id, kind, source, service_date, status, party_size,
+          guest_name, guest_phone, guest_email, note, reserved_for, reserved_duration_minutes,
+          public_manage_token_hash, public_request_key_hash, public_request_hash, reminder_minutes_before,
+          reminder_status, created_by)
+       SELECT config.tenant_id, config.location_id, 'RESERVATION', 'PUBLIC',
+              (($3::timestamptz AT TIME ZONE config.timezone) - INTERVAL '4 hours')::date,
+              'REQUESTED', $5, $6, $7, $8, $9, $3, $4, $10, $10, $11,
+              config.reservation_reminder_minutes, 'NONE', NULL
+         FROM config
+       RETURNING id`,
+      [tenantId, input.locationId, reservedFor.toISOString(), durationMinutes, partySize,
+        guestName, normalized.guestPhone, guestEmail, normalized.note, tokenHash, requestHash],
+    );
+    if (!inserted.rowCount) throw new Error("สาขานี้ยังไม่เปิดรับคำขอจองออนไลน์");
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,'public:reservation','board_game.reservation_request',$2,$3::jsonb)`,
+      [tenantId, inserted.rows[0].id, JSON.stringify({ locationId: input.locationId,
+        reservedFor: reservedFor.toISOString(), durationMinutes, partySize })],
+    );
+    await client.query("COMMIT");
+    return getPublicBoardGameReservation(token);
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getPublicBoardGameReservation(tokenInput: string) {
+  const tokenHash = sha256(publicToken(tokenInput));
+  const result = await query<WaitlistRow & { location_name: string }>(
+    `SELECT ${SELECT_COLUMNS}, location.name AS location_name
+       FROM bms_board_game_waitlist w
+       ${SELECT_JOINS}
+       JOIN bms_locations location
+         ON location.tenant_id = w.tenant_id AND location.id = w.location_id
+      WHERE w.source = 'PUBLIC' AND w.public_manage_token_hash = $1`,
+    [tokenHash],
+  );
+  if (!result.rowCount) throw new Error("ไม่พบคำขอจองนี้");
+  return publicReservationView(result.rows[0]);
+}
+
+export async function cancelPublicBoardGameReservation(tokenInput: string) {
+  const tokenHash = sha256(publicToken(tokenInput));
+  const found = await query<{ tenant_id: string; id: string }>(
+    `SELECT tenant_id, id FROM bms_board_game_waitlist
+      WHERE source = 'PUBLIC' AND public_manage_token_hash = $1`,
+    [tokenHash],
+  );
+  if (!found.rowCount) throw new Error("ไม่พบคำขอจองนี้");
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, found.rows[0].tenant_id);
+    const updated = await client.query<{ id: string }>(
+      `UPDATE bms_board_game_waitlist
+          SET status = 'CANCELLED', closed_at = now(), reminder_status = 'NONE', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND source = 'PUBLIC'
+          AND status IN ('REQUESTED','CONFIRMED')
+       RETURNING id`,
+      [found.rows[0].tenant_id, found.rows[0].id],
+    );
+    if (!updated.rowCount) throw new Error("คำขอจองนี้ปิดไปแล้วและยกเลิกซ้ำไม่ได้");
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,'public:reservation','board_game.reservation_public_cancel',$2,'{}'::jsonb)`,
+      [found.rows[0].tenant_id, found.rows[0].id],
+    );
+    await client.query("COMMIT");
+    return getPublicBoardGameReservation(tokenInput);
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function addBoardGameReservation(input: {
@@ -408,7 +606,14 @@ export async function updateBoardGameReservation(input: {
               ),
               party_size = $7, guest_name = $8, guest_phone = $9, note = $10,
               reserved_for = $5::timestamptz, reserved_duration_minutes = $6,
-              reserved_table_id = $4, updated_by = $11, updated_at = now()
+              reserved_table_id = $4,
+              reminder_status = CASE WHEN source = 'PUBLIC' AND guest_email IS NOT NULL
+                                     THEN 'PENDING' ELSE reminder_status END,
+              reminder_attempts = CASE WHEN source = 'PUBLIC' THEN 0 ELSE reminder_attempts END,
+              reminder_claimed_at = CASE WHEN source = 'PUBLIC' THEN NULL ELSE reminder_claimed_at END,
+              reminder_sent_at = CASE WHEN source = 'PUBLIC' THEN NULL ELSE reminder_sent_at END,
+              reminder_error = CASE WHEN source = 'PUBLIC' THEN NULL ELSE reminder_error END,
+              updated_by = $11, updated_at = now()
         WHERE w.tenant_id = $1 AND w.location_id = $2 AND w.id = $3
           AND w.kind = 'RESERVATION' AND w.status = 'CONFIRMED'
        RETURNING w.id`,
@@ -431,6 +636,218 @@ export async function updateBoardGameReservation(input: {
   } finally {
     client.release();
   }
+}
+
+export async function reviewPublicBoardGameReservation(input: {
+  tenantId: string; locationId: string; actorUserId: string; idempotencyKey: string;
+  entryId: string; decision: "CONFIRM" | "REJECT"; tableId?: string | null;
+  reason?: string | null;
+}) {
+  const decision = String(input.decision).toUpperCase();
+  if (decision !== "CONFIRM" && decision !== "REJECT") throw new Error("ผลการพิจารณาไม่ถูกต้อง");
+  const tableId = decision === "CONFIRM" ? boundedText(input.tableId, 64) : null;
+  if (decision === "CONFIRM" && !tableId) throw new Error("กรุณาเลือกโต๊ะก่อนยืนยัน");
+  const reason = boundedText(input.reason, 300);
+  const idempotency = boardGameIdempotency("reservation.review", input.idempotencyKey, {
+    locationId: input.locationId, entryId: input.entryId, decision, tableId, reason,
+  });
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await requireBoardGameCafeTenant(client, input.tenantId);
+    const replay = await replayBoardGameResult<{ entryId: string }>(client, input.tenantId, idempotency);
+    if (replay) {
+      await client.query("COMMIT");
+      return getBoardGameWaitlistEntry(input.tenantId, replay.entryId);
+    }
+    const current = await client.query<{
+      party_size: number; reserved_for: Date | string; reserved_duration_minutes: number;
+    }>(
+      `SELECT party_size, reserved_for, reserved_duration_minutes
+         FROM bms_board_game_waitlist
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3
+          AND kind = 'RESERVATION' AND source = 'PUBLIC' AND status = 'REQUESTED'
+        FOR UPDATE`,
+      [input.tenantId, input.locationId, input.entryId],
+    );
+    if (!current.rowCount) throw new Error("คำขอนี้ถูกพิจารณาหรือปิดไปแล้ว");
+    if (decision === "REJECT") {
+      await client.query(
+        `UPDATE bms_board_game_waitlist
+            SET status = 'REJECTED', reviewed_at = now(), reviewed_by = $4,
+                rejection_reason = $5, closed_at = now(), updated_by = $4, updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
+        [input.tenantId, input.locationId, input.entryId, input.actorUserId, reason],
+      );
+    } else {
+      const reservedFor = reservationInstant(current.rows[0].reserved_for);
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `board-game-reservation:${input.tenantId}:${input.locationId}:${tableId}`,
+      ]);
+      const table = await client.query<{ seats: number }>(
+        `SELECT seats FROM bms_board_game_tables
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
+          FOR UPDATE`,
+        [input.tenantId, input.locationId, tableId],
+      );
+      if (!table.rowCount) throw new Error("ไม่พบโต๊ะที่เปิดรับจองในสาขานี้");
+      if (Number(table.rows[0].seats) < Number(current.rows[0].party_size)) {
+        throw new Error("โต๊ะนี้รองรับจำนวนผู้เล่นไม่พอ");
+      }
+      const liveConflict = await client.query(
+        `SELECT 1
+           FROM bms_board_game_seatings st
+           JOIN bms_board_game_sessions s
+             ON s.tenant_id = st.tenant_id AND s.seating_id = st.id
+          WHERE st.tenant_id = $1 AND st.location_id = $2 AND st.table_id = $3
+            AND st.status = 'ACTIVE' AND s.status IN ('OPEN','CLOSING')
+            AND (s.status = 'CLOSING' OR s.expected_end_at IS NULL OR s.expected_end_at > $4::timestamptz)
+          LIMIT 1`,
+        [input.tenantId, input.locationId, tableId, reservedFor.toISOString()],
+      );
+      if (liveConflict.rowCount) throw new Error("โต๊ะนี้ยังมี session ที่ยืนยันไม่ได้ว่าจะจบก่อนเวลาจอง");
+      const conflict = await client.query(
+        `SELECT 1 FROM bms_board_game_waitlist
+          WHERE tenant_id = $1 AND location_id = $2 AND reserved_table_id = $3 AND id <> $4
+            AND kind = 'RESERVATION' AND status IN ('CONFIRMED','WAITING','CALLED')
+            AND reserved_for < $5::timestamptz + make_interval(mins => $6)
+            AND reserved_for + make_interval(mins => reserved_duration_minutes) > $5::timestamptz
+          LIMIT 1`,
+        [input.tenantId, input.locationId, tableId, input.entryId, reservedFor.toISOString(),
+          Number(current.rows[0].reserved_duration_minutes)],
+      );
+      if (conflict.rowCount) throw new Error("โต๊ะนี้มีการจองที่เวลาทับกัน");
+      await client.query(
+        `UPDATE bms_board_game_waitlist
+            SET status = 'CONFIRMED', reserved_table_id = $4, confirmed_at = now(),
+                reviewed_at = now(), reviewed_by = $5, rejection_reason = NULL,
+                reminder_status = CASE WHEN guest_email IS NULL THEN 'NONE' ELSE 'PENDING' END,
+                updated_by = $5, updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
+        [input.tenantId, input.locationId, input.entryId, tableId, input.actorUserId],
+      );
+    }
+    await storeBoardGameResult(client, input.tenantId, idempotency, { entryId: input.entryId });
+    await auditInTx(client, input.tenantId, input.actorUserId,
+      `board_game.reservation_${decision === "CONFIRM" ? "confirm" : "reject"}`, input.entryId,
+      { locationId: input.locationId, tableId, reason });
+    await client.query("COMMIT");
+    return getBoardGameWaitlistEntry(input.tenantId, input.entryId);
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]!);
+}
+
+/** Claim first, send outside the transaction, then persist success/failure for bounded retries. */
+export async function sendDueBoardGameReservationReminders(now = new Date()) {
+  const tenants = await query<{ tenant_id: string }>(
+    `SELECT DISTINCT tenant_id FROM bms_board_game_waitlist
+      WHERE kind = 'RESERVATION' AND status = 'CONFIRMED' AND guest_email IS NOT NULL
+        AND reserved_for > $1::timestamptz
+        AND reserved_for - make_interval(mins => reminder_minutes_before) <= $1::timestamptz
+        AND (reminder_status IN ('PENDING','FAILED')
+          OR (reminder_status = 'SENDING' AND reminder_claimed_at < $1::timestamptz - INTERVAL '30 minutes'))
+        AND reminder_attempts < 3`,
+    [now],
+  );
+  let sentCount = 0;
+  let failedCount = 0;
+  for (const tenant of tenants.rows) {
+    const client = await getClient();
+    let claimed: Array<{
+      id: string; guest_email: string; guest_name: string | null; reserved_for: Date | string;
+      reserved_duration_minutes: number; table_code: string; location_name: string; shop_name: string;
+      timezone: string;
+    }> = [];
+    try {
+      await beginTenantTx(client, tenant.tenant_id);
+      const result = await client.query<typeof claimed[number]>(
+        `WITH due AS (
+           SELECT w.id
+             FROM bms_board_game_waitlist w
+            WHERE w.tenant_id = $1 AND w.kind = 'RESERVATION' AND w.status = 'CONFIRMED'
+              AND w.guest_email IS NOT NULL AND w.reserved_for > $2::timestamptz
+              AND w.reserved_for - make_interval(mins => w.reminder_minutes_before) <= $2::timestamptz
+              AND (w.reminder_status IN ('PENDING','FAILED') OR
+                (w.reminder_status = 'SENDING'
+                 AND w.reminder_claimed_at < $2::timestamptz - INTERVAL '30 minutes'))
+              AND w.reminder_attempts < 3
+            ORDER BY w.reserved_for
+            FOR UPDATE SKIP LOCKED LIMIT 100
+         ), claimed AS (
+           UPDATE bms_board_game_waitlist w
+              SET reminder_status = 'SENDING', reminder_claimed_at = $2,
+                  reminder_attempts = reminder_attempts + 1, reminder_error = NULL, updated_at = $2
+             FROM due WHERE w.tenant_id = $1 AND w.id = due.id
+           RETURNING w.*
+         )
+         SELECT claimed.id, claimed.guest_email, claimed.guest_name, claimed.reserved_for,
+                claimed.reserved_duration_minutes, table_row.code AS table_code,
+                location.name AS location_name, tenant.name AS shop_name,
+                COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone
+           FROM claimed
+           JOIN bms_board_game_tables table_row
+             ON table_row.tenant_id = claimed.tenant_id AND table_row.id = claimed.reserved_table_id
+           JOIN bms_locations location
+             ON location.tenant_id = claimed.tenant_id AND location.id = claimed.location_id
+           JOIN bms_tenants tenant ON tenant.id = claimed.tenant_id
+           JOIN bms_store_profile store ON store.tenant_id = claimed.tenant_id`,
+        [tenant.tenant_id, now],
+      );
+      claimed = result.rows;
+      await client.query("COMMIT");
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      console.error("[board-game-reservation] reminder claim failed", tenant.tenant_id, error);
+      failedCount += 1;
+    } finally {
+      client.release();
+    }
+    for (const row of claimed) {
+      let errorText: string | null = null;
+      try {
+        const when = new Date(row.reserved_for).toLocaleString("th-TH", { timeZone: row.timezone });
+        const salutation = row.guest_name ? `คุณ${escapeHtml(row.guest_name)}` : "ลูกค้า";
+        await sendEmail({
+          to: row.guest_email,
+          subject: `แจ้งเตือนการจองโต๊ะ ${row.shop_name}`,
+          text: `${row.shop_name}: จองโต๊ะวันที่ ${when}, ${row.reserved_duration_minutes} นาที, โต๊ะ ${row.table_code}`,
+          html: `<p>${salutation}</p><p>ขอแจ้งเตือนการจองโต๊ะที่ <strong>${escapeHtml(row.shop_name)}</strong> (${escapeHtml(row.location_name)})</p><p>เวลา ${escapeHtml(when)} · ${row.reserved_duration_minutes} นาที · โต๊ะ ${escapeHtml(row.table_code)}</p>`,
+        }, { tenantId: tenant.tenant_id, category: "other", triggeredBy: "system:cron" });
+      } catch (error) {
+        errorText = String((error as any)?.message ?? error).slice(0, 500);
+      }
+      const updateClient = await getClient();
+      try {
+        await beginTenantTx(updateClient, tenant.tenant_id);
+        await updateClient.query(
+          `UPDATE bms_board_game_waitlist
+              SET reminder_status = $3, reminder_sent_at = CASE WHEN $3 = 'SENT' THEN now() ELSE reminder_sent_at END,
+                  reminder_error = $4, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND reminder_status = 'SENDING'`,
+          [tenant.tenant_id, row.id, errorText ? "FAILED" : "SENT", errorText],
+        );
+        await updateClient.query("COMMIT");
+        if (errorText) failedCount += 1; else sentCount += 1;
+      } catch (error) {
+        try { await updateClient.query("ROLLBACK"); } catch {}
+        console.error("[board-game-reservation] reminder result failed", row.id, error);
+        failedCount += 1;
+      } finally {
+        updateClient.release();
+      }
+    }
+  }
+  return { sentCount, failedCount };
 }
 
 /**
@@ -462,7 +879,7 @@ export async function expireOverdueBoardGameReservations(now = new Date()) {
             LIMIT 200
          )
          UPDATE bms_board_game_waitlist w
-            SET status = 'NO_SHOW', closed_at = $2, updated_at = $2
+            SET status = 'NO_SHOW', closed_at = $2, reminder_status = 'NONE', updated_at = $2
            FROM due
           WHERE w.tenant_id = $1 AND w.id = due.id
          RETURNING w.id`,
@@ -517,7 +934,8 @@ export async function checkInBoardGameReservation(input: {
           FOR UPDATE
        )
        UPDATE bms_board_game_waitlist w
-          SET status = 'WAITING', checked_in_at = now(), updated_by = $4, updated_at = now(),
+          SET status = 'WAITING', checked_in_at = now(), reminder_status = 'NONE',
+              updated_by = $4, updated_at = now(),
               queue_no = COALESCE((SELECT max(existing.queue_no)
                                      FROM bms_board_game_waitlist existing
                                     WHERE existing.tenant_id = $1 AND existing.location_id = $2
@@ -636,6 +1054,7 @@ async function updateEntry(input: {
           SET status = $5,
               called_at = CASE WHEN $5 = 'CALLED' THEN COALESCE(called_at, now()) ELSE called_at END,
               closed_at = CASE WHEN $5 IN ('CANCELLED','NO_SHOW') THEN now() ELSE closed_at END,
+              reminder_status = CASE WHEN $5 IN ('CANCELLED','NO_SHOW') THEN 'NONE' ELSE reminder_status END,
               note = CASE WHEN $6::text IS NULL THEN note ELSE concat_ws(E'\\n', note, $6::text) END,
               updated_by = $4, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND location_id = $3
@@ -756,6 +1175,7 @@ export async function seatBoardGameWaitlistEntry(input: {
     await client.query(
       `UPDATE bms_board_game_waitlist
           SET status = 'SEATED', seated_table_id = $4, seated_session_id = $5,
+              reminder_status = 'NONE',
               seated_at = now(), closed_at = now(), updated_by = $6, updated_at = now()
         WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
       [input.tenantId, input.locationId, input.entryId, input.tableId, sessionId, input.actorUserId],

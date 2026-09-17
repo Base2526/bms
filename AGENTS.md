@@ -183,7 +183,7 @@ wrong, and update the doc in the same change.
   to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
   `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
-- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.0`)** — play time, sellable goods, and playable game
+- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.1`)** — play time, sellable goods, and playable game
   copies are three different domains. A billing group, never the table session, owns the frozen
   charge, snack tab and settling order. One group may close and pay while every other group keeps
   accruing time; the table remains occupied until no group is `OPEN` or `CLOSING`. A checked-out
@@ -218,8 +218,10 @@ wrong, and update the doc in the same change.
   windows and never create a clock, bill, order, or stock movement before seating. Check-in allocates
   a normal queue number; direct seating opens the existing session atomically. A reschedule is
   `CONFIRMED`-only and repeats the locked capacity/session/overlap checks; guarded cron expiry claims
-  stale confirmed rows with `SKIP LOCKED` and never closes a checked-in party. Public self-booking,
-  reminders and deposits are not implemented, and a deposit must never be faked as a Product SKU.
+  stale confirmed rows with `SKIP LOCKED` and never closes a checked-in party. Public booking
+  (`10.1`) is an opt-in `REQUESTED` row with no table until staff approves it under the same locks;
+  opaque-token cancellation and bounded retryable email reminders expose no customer data. Deposits
+  remain unimplemented and must never be faked as a Product SKU.
   Native POS derives its branch from the paired device, hands the billing-group id to the
   existing sale mutation, and must never submit its display-only time line as a Product SKU. Full detail:
   [business/board-game-cafe.md](docs/business/board-game-cafe.md) and
@@ -322,7 +324,7 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,208 leaf keys per language,
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,210 leaf keys per language,
    exact th↔en parity** re-counted recursively on 2026-09-15 — net **+50** against the same recursive
    count of `HEAD`: board-game one-group close and close-all, the seating move/merge controls, and the
    member-pass catalogue/sale/cancel screen in both languages;

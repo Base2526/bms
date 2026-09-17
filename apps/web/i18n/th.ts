@@ -895,6 +895,8 @@ const th = {
     location_unavailable: "ไม่สามารถอ่านตำแหน่งปัจจุบันได้",
     publish_rates: "แสดงเรทราคา",
     publish_availability: "แสดงจำนวนโต๊ะว่างแบบรวม",
+    booking_enabled: "เปิดรับคำขอจองออนไลน์",
+    reservation_reminder_minutes: "ส่งอีเมลเตือนก่อนเวลาจอง (นาที)",
     public_visible_location: "เปิดให้ค้นหาสาขานี้",
     discovery_privacy: "หน้าสาธารณะแสดงเฉพาะข้อมูลในส่วนนี้ เรทราคาที่เปิดใช้ เกมที่เลือกแสดง และจำนวนโต๊ะว่างแบบรวม โดยไม่แสดงชื่อลูกค้า เวลาเข้า หรือเลขโต๊ะ",
     save_discovery: "บันทึกหน้าค้นหา",

@@ -428,7 +428,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 93 mobile/POS input arguments are typed", () => {
+test("all 94 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -439,8 +439,8 @@ test("all 93 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    93,
-    "the mobile/POS surface must keep all 93 input-bearing operations",
+    94,
+    "the mobile/POS surface must keep all 94 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -451,11 +451,11 @@ test("all 93 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 139 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 140 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    139,
+    140,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
