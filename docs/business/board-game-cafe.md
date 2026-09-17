@@ -244,7 +244,7 @@ making the whole cleanup fail or deleting that history.
 
 ## Register surfaces (browser and native)
 
-### Guest service bell (`9.96`)
+### Guest service bell (`9.96`, scope hardened by `9.98`)
 
 An open board-game session can issue a session-scoped `/bg/[token]` QR from the native register.
 The guest can request game/rules help, report missing or damaged pieces, ask for food/drinks, request
@@ -260,6 +260,11 @@ send staff to the scan-time table. Only one active request may exist per session
 rate-limited and idempotent, and another request becomes available after staff completes the current
 one. Paying or cancelling the session revokes its guest token and expires any active calls in the
 same database transition.
+
+Issuing access and acknowledging/completing a call also consume the native register's stable
+idempotency key, including a request hash so reusing a key for different work is rejected. Database
+constraints bind token, session, branch and scan-time table as one tenant/branch chain; application
+checks remain in place for readable errors, but are not the only isolation boundary.
 
 `GAME_ISSUE` deliberately does not mark a copy damaged. After checking the physical game, staff use
 the existing return/condition workflow to choose `NEEDS_CHECK`, `MISSING_PARTS`, `DAMAGED`, or another

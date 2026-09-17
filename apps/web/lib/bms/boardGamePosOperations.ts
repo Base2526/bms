@@ -614,6 +614,7 @@ export async function runBoardGamePosMutation(
         locationId: scope.locationId,
         sessionId,
         actorUserId,
+        idempotencyKey: key,
       }));
     }
     case "service.acknowledge":
@@ -624,6 +625,7 @@ export async function runBoardGamePosMutation(
         callId: uuid(input.callId, "คำเรียกพนักงานไม่ถูกต้อง"),
         actorUserId,
         action: action === "service.acknowledge" ? "acknowledge" : "complete",
+        idempotencyKey: key,
       }));
     }
     case "copy.checkout": {

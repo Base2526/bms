@@ -1398,7 +1398,7 @@ test("RN receipts preserve the restaurant service-mode snapshot", () => {
  * บนแถบ 6 แท็บที่ป้ายถูกบีบจนอ่านยาก คนหน้าร้านจึงแยกไม่ออกว่าตัวไหนคืออะไร — นั่นคือเหตุที่
  * สองแท็บนั้นถูกยุบเป็น "งานเข้า" ตัวเดียว · ด่านนี้กันไม่ให้ความกำกวมแบบเดิมกลับมาโดยไม่มีใครเห็น
  */
-test("RN tab bar fits both the phone bar and the tablet rail", () => {
+test("RN tab bar fits both phone and tablet layouts", () => {
   const tabs = withoutComments(mobileMainTabs);
 
   // อ่านแถบออกมาเป็น "แท็บอะไรโผล่ตอนไหน" จากตัวโค้ดเอง ไม่ใช่จากลิสต์ที่เทสพิมพ์ไว้ —
@@ -1409,22 +1409,59 @@ test("RN tab bar fits both the phone bar and the tablet rail", () => {
     { name: "phone/restaurant", ctx: { mode: "restaurant", isTablet: false }, budget: 5 },
     { name: "phone/retail", ctx: { mode: "retail", isTablet: false }, budget: 5 },
     { name: "phone/board_game", ctx: { mode: "board_game_cafe", isTablet: false }, budget: 5 },
-    // รางสูงเต็มจอ 1366pt — ~64pt ต่อรายการ จึงมีที่ให้ปลายทางจริงโดยไม่ต้องซ่อนใต้ "เพิ่มเติม"
-    { name: "tablet/restaurant", ctx: { mode: "restaurant", isTablet: true }, budget: 10 },
-    { name: "tablet/retail", ctx: { mode: "retail", isTablet: true }, budget: 10 },
+    { name: "tablet/restaurant", ctx: { mode: "restaurant", isTablet: true }, budget: 5 },
+    { name: "tablet/retail", ctx: { mode: "retail", isTablet: true }, budget: 5 },
   ];
 
-  /** ประเมิน guard ของ JSX — รูปที่ไม่รู้จักต้องทำให้เทสแดง ไม่ใช่ถูกนับข้ามเงียบ ๆ */
+  /** ประเมิน guard ของ JSX แบบมีวงเล็บ — รูปที่ไม่รู้จักต้องทำให้เทสแดง */
   const evaluate = (expression: string, ctx: Ctx): boolean => {
+    const stripOuterParens = (raw: string): string => {
+      let text = raw.trim();
+      while (text.startsWith("(") && text.endsWith(")")) {
+        let depth = 0;
+        let wrapsWholeExpression = true;
+        for (let index = 0; index < text.length; index += 1) {
+          if (text[index] === "(") depth += 1;
+          if (text[index] === ")") depth -= 1;
+          if (depth === 0 && index < text.length - 1) {
+            wrapsWholeExpression = false;
+            break;
+          }
+        }
+        if (!wrapsWholeExpression) break;
+        text = text.slice(1, -1).trim();
+      }
+      return text;
+    };
+    const splitAtTopLevel = (raw: string, operator: "||" | "&&"): string[] => {
+      const parts: string[] = [];
+      let depth = 0;
+      let start = 0;
+      for (let index = 0; index < raw.length - 1; index += 1) {
+        if (raw[index] === "(") depth += 1;
+        if (raw[index] === ")") depth -= 1;
+        if (depth === 0 && raw.slice(index, index + 2) === operator) {
+          parts.push(raw.slice(start, index));
+          start = index + 2;
+          index += 1;
+        }
+      }
+      parts.push(raw.slice(start));
+      return parts;
+    };
     const term = (raw: string): boolean => {
-      const text = raw.trim().replace(/^\(|\)$/g, "").trim();
+      const text = stripOuterParens(raw);
+      const ors = splitAtTopLevel(text, "||");
+      if (ors.length > 1) return ors.some(term);
+      const ands = splitAtTopLevel(text, "&&");
+      if (ands.length > 1) return ands.every(term);
       const eq = text.match(/^mode (===|!==) '([a-z_]+)'$/);
       if (eq) return eq[1] === "===" ? ctx.mode === eq[2] : ctx.mode !== eq[2];
       if (text === "isTablet") return ctx.isTablet;
       if (text === "!isTablet") return !ctx.isTablet;
       return assert.fail(`guard ที่เทสยังไม่รู้จัก: ${raw}`);
     };
-    return expression.split("||").some(term);
+    return term(expression);
   };
 
   const seen: Record<string, { tab: string; icon: string }[]> = {};
@@ -1488,32 +1525,26 @@ test("RN tab bar fits both the phone bar and the tablet rail", () => {
     "ยุบแล้วต้องยังหาเจอ และต้องเปิดเหนือแท็บเพื่อให้มี Back มาตรฐาน",
   );
 
-  // แท็บเล็ต: รางมีที่ — ของที่ถูกยุบเพราะข้อจำกัดของแถบล่างต้องกลับมาเป็นปลายทางของตัวเอง
-  // ไม่งั้นคือคิดค่าผ่านทางเป็นจำนวนแตะโดยไม่ได้ประหยัดพื้นที่อะไร
-  for (const tab of ["ShiftTab", "InventoryTab", "CounterTab", "SupportTab"]) {
-    assert.equal(has("tablet/restaurant", tab), true, `รางต้องมี ${tab}`);
-    assert.equal(
-      has("phone/restaurant", tab),
-      false,
-      `${tab} ต้องไม่กินช่องบนแถบล่างของมือถือ`,
-    );
-  }
-  assert.equal(
-    has("tablet/restaurant", "OperationsTab"),
-    false,
-    "กางของออกมาแล้ว 'เพิ่มเติม' ไม่เหลืออะไรให้ถือ",
-  );
+  // ร้านทั่วไปบนแท็บเล็ตมีทางเข้าสต็อกตรง แต่ร้านอาหารยังเก็บงานที่ใช้ไม่บ่อยใต้ "เพิ่มเติม"
+  // เพื่อให้โครงนำทางมือถือ/แท็บเล็ตตรงกัน; จอที่มี sidebar ของตัวเองซ่อน bottom bar เมื่อเข้าไปแล้ว
+  assert.equal(has("tablet/retail", "InventoryTab"), true);
+  assert.equal(has("phone/retail", "InventoryTab"), false);
+  assert.equal(has("tablet/restaurant", "OperationsTab"), true);
+  assert.equal(has("tablet/restaurant", "ShiftTab"), false);
 
-  // ⚠️ แถบล่างเต็มความกว้างบนไอแพด 13" ยืดแท็บละ ~340pt จนไอคอนลอยกลางช่องว่าง
   assert.match(
     tabs,
-    /tabBarPosition: isTablet \? 'left' : 'bottom'/,
-    "แท็บเล็ตต้องใช้รางด้านซ้าย ไม่ใช่แถบล่างที่ถูกยืดเต็มจอ",
+    /tabBarPosition: 'bottom'/,
+    "shell กลางใช้ bottom tabs; จอ tablet ที่มี sidebar จะซ่อน shell นี้เฉพาะตอน active",
   );
   assert.match(
     tabs,
-    /tabBarVariant: isTablet \? 'material' : 'uikit'/,
-    "รางแนวตั้งต้องไม่ยืดเป็นช่องเท่า ๆ กันแบบแถบล่าง",
+    /tabBarVariant: 'uikit'/,
+  );
+  assert.match(
+    tabs,
+    /\['BoardGameTab', 'InventoryTab', 'ShiftTab'\]\.includes\([\s\S]*route\.name/,
+    "จอ tablet ที่วาด sidebar ของตัวเองต้องไม่ซ้อน bottom bar อีกชั้น",
   );
 
   // badge ที่นับของซึ่งกดเข้าไปจากแท็บนั้นไม่ถึง คือการส่งคนไปหาของที่ไม่มีอยู่

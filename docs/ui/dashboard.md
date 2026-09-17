@@ -179,11 +179,16 @@ Current per-report behavior:
 - **Inventory**: current stock snapshot + low/out-of-stock rows, including each row's **reorder
   point** (added 2026-08 — `listLowStock()` already selected it, it just wasn't in the output column
   list); ignores the date-range picker.
-- **Profit**: estimated gross profit only. Revenue comes from historical order-item snapshots, but
-  cost comes from the product's **current** `cost_price`, so this export must continue to present
-  itself as an estimate rather than an accounting-perfect historical profit statement. If any sold
-  SKU has no current cost, total cost/profit/margin are unavailable rather than treating that cost as
-  zero; the file includes known cost and missing-cost counts so the operator can repair the catalog.
+- **Profit**: estimated gross profit from immutable sale-time item/component cost snapshots. The
+  period keeps every receipt that was paid (including one later marked `RETURNED`), then subtracts
+  completed refund events, capped per order at merchandise revenue so refunded shipping/rounding
+  cannot make product revenue negative; settled POS returns reverse their proportional sale-time cost on the
+  settlement day, while full web/back-office returns reverse it on the return day (and POS-linked
+  orders are excluded from that second path to prevent a double reversal). Legacy rows reconstructed
+  by migration remain labelled `LEGACY_CURRENT`. If any
+  sale or returned line needed by the period has no cost evidence, total cost/profit/margin are
+  unavailable rather than treating that cost as zero; known cost and missing-cost counts remain
+  visible so the operator can repair the catalog.
 
 Every report type is defined once as a `ReportDoc` (title/subtitle/meta + one or more named sheets)
 in `lib/bms/documentGenerator.ts`'s `build*ReportDoc()` functions, then rendered by format-specific

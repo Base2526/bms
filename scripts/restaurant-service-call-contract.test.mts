@@ -34,6 +34,8 @@ test("public calls are bounded, idempotent and cannot repeat before acknowledgem
     "ทุกเครื่องที่โต๊ะเดียวกันต้องเห็นว่าโต๊ะเรียกแล้ว ไม่ใช่รู้เฉพาะ session ที่กด");
   assert.match(service, /ON CONFLICT \(tenant_id, session_id, idempotency_key\) DO NOTHING/);
   assert.match(service, /request\.code, request\.note, idempotencyKey/);
+  assert.match(service, /request_code !== request\.code/);
+  assert.match(service, /request_note !== request\.note/);
   assert.match(route, /"service-call-submit", 6/);
   assert.doesNotMatch(route, /tenantId\s*:\s*body/);
   assert.doesNotMatch(route, /locationId\s*:\s*body/);
@@ -48,6 +50,8 @@ test("staff lifecycle requires device, PIN, open shift and pos.sell", async () =
   assert.match(route, /authenticateRestaurantMutation\(req, body, "pos\.sell"\)/);
   assert.match(route, /locationId: auth\.device\.locationId/);
   assert.match(service, /"ACKNOWLEDGED" : "COMPLETED"/);
+  assert.match(service, /current\.rows\[0\]\.status === nextStatus/);
+  assert.match(service, /replayed: true/);
   assert.match(service, /restaurant\.service_call\.\$\{input\.action\}/);
   assert.match(service, /bms_audit_log/);
 });

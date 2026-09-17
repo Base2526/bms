@@ -1,5 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getClient, query } from "@/lib/db";
+import {
+  boardGameIdempotency,
+  replayBoardGameResult,
+  storeBoardGameResult,
+} from "./boardGameIdempotency";
+import { IdempotencyConflictError } from "./idempotencyErrors";
 import { beginTenantTx } from "./tenant";
 
 export const BOARD_GAME_SERVICE_CALL_CODES = [
@@ -64,7 +70,13 @@ export async function issueBoardGameGuestAccess(input: {
   locationId: string;
   sessionId: string;
   actorUserId: string;
+  idempotencyKey: string;
 }) {
+  const idempotency = boardGameIdempotency(
+    "service.access",
+    input.idempotencyKey,
+    { locationId: input.locationId, sessionId: input.sessionId }
+  );
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, {
@@ -87,6 +99,15 @@ export async function issueBoardGameGuestAccess(input: {
     );
     if (!session.rowCount)
       throw new Error("เปิดลิงก์เรียกพนักงานได้เฉพาะโต๊ะที่กำลังเล่นอยู่");
+    const replay = await replayBoardGameResult<{
+      token: string;
+      tableCode: string;
+      tableName: string;
+    }>(client, input.tenantId, idempotency);
+    if (replay) {
+      await client.query("COMMIT");
+      return replay;
+    }
     const existing = await client.query<{ public_token: string }>(
       `SELECT public_token FROM bms_board_game_guest_tokens
         WHERE tenant_id = $1 AND session_id = $2 AND active FOR UPDATE`,
@@ -119,12 +140,14 @@ export async function issueBoardGameGuestAccess(input: {
         ]
       );
     }
-    await client.query("COMMIT");
-    return {
+    const response = {
       token: value,
       tableCode: session.rows[0].table_code,
       tableName: session.rows[0].table_name,
     };
+    await storeBoardGameResult(client, input.tenantId, idempotency, response);
+    await client.query("COMMIT");
+    return response;
   } catch (error) {
     try {
       await client.query("ROLLBACK");
@@ -204,12 +227,26 @@ export async function createBoardGameServiceCall(input: {
     if (!stillOpen.rowCount) {
       throw new BoardGameGuestError("โต๊ะปิดแล้ว กรุณาติดต่อพนักงาน");
     }
-    const replay = await client.query<{ id: string; status: string }>(
-      `SELECT id, status FROM bms_board_game_service_calls
+    const replay = await client.query<{
+      id: string;
+      status: string;
+      request_code: string;
+      request_note: string | null;
+    }>(
+      `SELECT id, status, request_code, request_note FROM bms_board_game_service_calls
         WHERE tenant_id = $1 AND guest_token_id = $2 AND idempotency_key = $3`,
       [context.tenantId, context.guestTokenId, key]
     );
     if (replay.rowCount) {
+      if (
+        replay.rows[0].request_code !== normalized.code ||
+        replay.rows[0].request_note !== normalized.note
+      ) {
+        throw new IdempotencyConflictError(
+          "คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลคนละชุด — กรุณาสร้างคำขอใหม่",
+          "board_game.service_call.create"
+        );
+      }
       await client.query("COMMIT");
       return {
         callId: replay.rows[0].id,
@@ -324,13 +361,28 @@ export async function updateBoardGameServiceCall(input: {
   callId: string;
   actorUserId: string;
   action: "acknowledge" | "complete";
+  idempotencyKey: string;
 }) {
+  const idempotency = boardGameIdempotency(
+    `service.${input.action}`,
+    input.idempotencyKey,
+    { locationId: input.locationId, callId: input.callId }
+  );
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, {
       editorId: input.actorUserId,
     });
     const next = input.action === "acknowledge" ? "ACKNOWLEDGED" : "COMPLETED";
+    const replay = await replayBoardGameResult<{ id: string; status: string }>(
+      client,
+      input.tenantId,
+      idempotency
+    );
+    if (replay) {
+      await client.query("COMMIT");
+      return replay;
+    }
     const current = input.action === "acknowledge" ? "PENDING" : "ACKNOWLEDGED";
     const result = await client.query(
       `UPDATE bms_board_game_service_calls
@@ -363,8 +415,10 @@ export async function updateBoardGameServiceCall(input: {
         JSON.stringify({ locationId: input.locationId }),
       ]
     );
+    const response = { id: input.callId, status: next };
+    await storeBoardGameResult(client, input.tenantId, idempotency, response);
     await client.query("COMMIT");
-    return { id: input.callId, status: next };
+    return response;
   } catch (error) {
     try {
       await client.query("ROLLBACK");

@@ -79,3 +79,19 @@ test("ตารางที่โมดูล idempotency อ่านทุก�
     "เพิ่มไฟล์ migration ของตารางนี้เข้า MIGRATIONS แล้ว regenerate db/checks/schema-readiness.sql",
   );
 });
+
+test("ตาราง idempotency ของ Board Game ต้องถูกคุมด้วย readiness เช่นกัน", () => {
+  const source = readFileSync(
+    new URL("../apps/web/lib/bms/boardGameIdempotency.ts", import.meta.url),
+    "utf8",
+  );
+  const tables = [...source.matchAll(/(?:FROM|INSERT INTO)\s+([a-z_][a-z0-9_]*)/g)]
+    .map((match) => match[1]);
+  assert.ok(tables.length > 0, "ต้องอ่านชื่อตารางจากซอร์สได้จริง");
+  const covered = new Set(
+    MIGRATIONS.flatMap((migration) =>
+      migration.needs.map((need) => (need.kind === "table" ? need.name : need.table)),
+    ),
+  );
+  assert.deepEqual([...new Set(tables)].filter((table) => !covered.has(table)), []);
+});
