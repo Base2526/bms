@@ -103,7 +103,27 @@ test("profit uses immutable sale-time cost evidence and makes legacy reconstruct
   assert.match(profit, /oi\.cost_amount_snapshot/);
   assert.match(profit, /oi\.cost_snapshot_source='LEGACY_CURRENT'/);
   assert.match(profit, /SELECT SUM\(total_amount\) FROM eligible_orders/);
+  assert.match(profit, /FINANCIAL_ORDER_STATUSES/);
+  assert.match(profit, /bms_pos_refund_allocations/);
+  assert.match(profit, /bms_pos_return_items/);
+  assert.match(profit, /cost_amount_snapshot \* pri\.qty::numeric \/ NULLIF\(oi\.qty,0\)/);
+  assert.match(profit, /o\.status='RETURNED'/);
+  assert.match(profit, /NOT EXISTS \(\s*SELECT 1 FROM bms_pos_returns pr/);
+  assert.match(profit, /oi\.cost_amount_snapshot AS returned_cost/);
+  assert.match(profit, /oi\.id IS NOT NULL AND oi\.cost_amount_snapshot IS NULL/);
   assert.doesNotMatch(profit, /JOIN bms_products/);
+});
+
+test("sales totals retain returned receipts before subtracting refund events", () => {
+  const reports = read("apps/web/lib/bms/reports.ts");
+  const salesStart = reports.indexOf("export async function getSalesSummary");
+  const salesEnd = reports.indexOf("export async function getLifetimeSalesSummary");
+  const sales = reports.slice(salesStart, salesEnd);
+  assert.match(sales, /FINANCIAL_ORDER_STATUSES/);
+  assert.match(sales, /netRevenue: revenue - refundTotal/);
+  assert.match(sales, /PARTITION BY order_id ORDER BY occurred_at, event_id/);
+  assert.match(sales, /GREATEST\(LEAST\(amount, total_amount - COALESCE\(SUM\(amount\) OVER/);
+  assert.match(sales, /pr\.return_location_id AS location_id/);
 });
 
 test("management analytics reach GraphQL, the admin screen, and exported documents", () => {
@@ -122,6 +142,7 @@ test("management analytics reach GraphQL, the admin screen, and exported documen
   }
   assert.match(reports, /netPaymentAmount - netOrderAmount/);
   assert.match(reports, /FINANCIAL_ORDER_STATUSES = \[\.\.\.PAID, "RETURNED"\]/);
+  assert.match(reports, /o\.total_amount \+ COALESCE\(o\.shipping_fee,0\) \+ COALESCE\(o\.rounding_amount,0\)/);
   assert.match(page, /inventory_aging_desc/);
   assert.match(page, /supplier_performance_desc/);
 });

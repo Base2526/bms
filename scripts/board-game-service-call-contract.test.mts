@@ -69,12 +69,16 @@ test("board-game guest and staff call paths stay session, tenant, branch, and pe
   );
   assert.match(routeHelpers, /rateLimit\(/);
   assert.match(routeHelpers, /createHash\("sha256"\)/);
+  assert.match(routeHelpers, /isIdempotencyConflictError\(error\)/);
   assert.match(guestRoute, /requireBoardGameGuestRateLimit\(req, "submit", 6\)/);
 });
 
 test("board-game service-call storage has isolation, replay, expiry, and realtime contracts", async () => {
   const migration = await read(
     "db/migrations/9.96__bms_board_game_service_calls.sql",
+  );
+  const hardening = await read(
+    "db/migrations/9.98__bms_board_game_service_call_scope_hardening.sql",
   );
   const service = await read("apps/web/lib/bms/boardGameServiceCalls.ts");
 
@@ -99,6 +103,12 @@ test("board-game service-call storage has isolation, replay, expiry, and realtim
     /'board_game\.table_call\.created'[\s\S]*'board_game\.table_call\.status_changed'/,
   );
   assert.match(service, /replayed: true/);
+  assert.match(service, /replayBoardGameResult/);
+  assert.match(service, /storeBoardGameResult/);
+  assert.match(service, /request_code !== normalized\.code/);
+  assert.match(hardening, /bms_board_game_guest_tokens_session_scope_fkey/);
+  assert.match(hardening, /bms_board_game_service_calls_guest_scope_fkey/);
+  assert.match(hardening, /bms_board_game_service_calls_table_scope_fkey/);
   assert.match(
     migration,
     /request_note[\s\S]{0,160}length\(btrim\(request_note\)\)/,

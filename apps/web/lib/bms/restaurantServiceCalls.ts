@@ -54,12 +54,25 @@ export async function createRestaurantServiceCall(input: {
     );
     if (!valid.rowCount) throw new RestaurantCheckError("บิลโต๊ะปิดแล้ว กรุณาสแกน QR ใหม่");
 
-    const replay = await client.query<{ id: string; status: string }>(
-      `SELECT id, status FROM bms_restaurant_service_calls
+    const replay = await client.query<{
+      id: string;
+      status: string;
+      request_code: string;
+      request_note: string | null;
+    }>(
+      `SELECT id, status, request_code, request_note FROM bms_restaurant_service_calls
         WHERE tenant_id = $1 AND session_id = $2 AND idempotency_key = $3`,
       [session.tenantId, session.sessionId, idempotencyKey]
     );
     if (replay.rowCount) {
+      if (
+        replay.rows[0].request_code !== request.code ||
+        replay.rows[0].request_note !== request.note
+      ) {
+        throw new RestaurantCheckError(
+          "คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลคนละชุด กรุณาสร้างคำขอใหม่"
+        );
+      }
       await client.query("COMMIT");
       return { callId: replay.rows[0].id, status: replay.rows[0].status, replayed: true };
     }
@@ -84,12 +97,25 @@ export async function createRestaurantServiceCall(input: {
         request.code, request.note, idempotencyKey]
     );
     if (!created.rowCount) {
-      const concurrent = await client.query<{ id: string; status: string }>(
-        `SELECT id, status FROM bms_restaurant_service_calls
+      const concurrent = await client.query<{
+        id: string;
+        status: string;
+        request_code: string;
+        request_note: string | null;
+      }>(
+        `SELECT id, status, request_code, request_note FROM bms_restaurant_service_calls
           WHERE tenant_id = $1 AND session_id = $2 AND idempotency_key = $3`,
         [session.tenantId, session.sessionId, idempotencyKey]
       );
       if (!concurrent.rowCount) throw new RestaurantCheckError("ส่งคำขอไม่สำเร็จ กรุณาลองใหม่");
+      if (
+        concurrent.rows[0].request_code !== request.code ||
+        concurrent.rows[0].request_note !== request.note
+      ) {
+        throw new RestaurantCheckError(
+          "คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลคนละชุด กรุณาสร้างคำขอใหม่"
+        );
+      }
       await client.query("COMMIT");
       return { callId: concurrent.rows[0].id, status: concurrent.rows[0].status, replayed: true };
     }
@@ -181,6 +207,22 @@ export async function updateRestaurantServiceCall(input: {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
     const nextStatus = input.action === "acknowledge" ? "ACKNOWLEDGED" : "COMPLETED";
     const currentStatus = input.action === "acknowledge" ? "PENDING" : "ACKNOWLEDGED";
+    const current = await client.query<{ status: string }>(
+      `SELECT status FROM bms_restaurant_service_calls
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3
+        FOR UPDATE`,
+      [input.tenantId, input.locationId, input.callId]
+    );
+    if (!current.rowCount) {
+      throw new RestaurantCheckError("ไม่พบคำขอเรียกพนักงานในสาขานี้");
+    }
+    if (current.rows[0].status === nextStatus) {
+      await client.query("COMMIT");
+      return { id: input.callId, status: nextStatus, replayed: true };
+    }
+    if (current.rows[0].status !== currentStatus) {
+      throw new RestaurantCheckError("คำขอนี้ถูกรับหรือปิดงานไปแล้ว กรุณาโหลดใหม่");
+    }
     const updated = await client.query(
       `UPDATE bms_restaurant_service_calls
           SET status = $5,
@@ -201,7 +243,7 @@ export async function updateRestaurantServiceCall(input: {
         input.callId, JSON.stringify({ locationId: input.locationId })]
     );
     await client.query("COMMIT");
-    return { id: input.callId, status: nextStatus };
+    return { id: input.callId, status: nextStatus, replayed: false };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

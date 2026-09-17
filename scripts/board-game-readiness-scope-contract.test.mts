@@ -145,7 +145,7 @@ test("a board-game table cannot be opened or closed against a database the check
 
 test("the generated readiness SQL still carries every board-game migration", () => {
   const sql = read("db/checks/schema-readiness.sql");
-  for (const file of ["9.89", "9.90", "9.91", "9.92", "9.93", "9.94"]) {
+  for (const file of ["9.89", "9.90", "9.91", "9.92", "9.93", "9.94", "9.96"]) {
     has(sql, new RegExp(`'${file.replace(".", "\\.")}__`), `${file} หายจากไฟล์ที่ generate ไว้`);
   }
 });

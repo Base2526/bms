@@ -240,6 +240,7 @@ export const MIGRATIONS: Migration[] = [
       { kind: "table", name: "bms_board_game_session_games" },
       { kind: "table", name: "bms_board_game_titles" },
       { kind: "table", name: "bms_board_game_copies" },
+      { kind: "table", name: "bms_board_game_idempotency_results" },
     ],
   },
   {
@@ -279,6 +280,16 @@ export const MIGRATIONS: Migration[] = [
     file: "9.94__bms_board_game_branch_scope_and_identity_hardening.sql",
     impact: "ร้านบอร์ดเกมปิดบิล/เปิดหน้าแพ็กเกจไม่ได้ — โค้ดอ่านสาขา snapshot ของสิทธิ์ทุกครั้ง",
     needs: [{ kind: "column", table: "bms_board_game_member_passes", name: "location_id" }],
+  },
+  {
+    // หน้าแขกและทั้งสองเครื่องขายอ่านสองตารางนี้โดยตรง ไม่มี feature probe ระหว่าง request
+    // ฐานที่ขาด 9.96 จึงไม่ได้แค่ไม่มี badge แต่ route/GraphQL ล้มทันที
+    file: "9.96__bms_board_game_service_calls.sql",
+    impact: "ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้",
+    needs: [
+      { kind: "table", name: "bms_board_game_guest_tokens" },
+      { kind: "table", name: "bms_board_game_service_calls" },
+    ],
   },
 ];
 

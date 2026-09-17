@@ -71,7 +71,10 @@ test("AI stock checks can follow the exact branch selected for a restaurant orde
   assert.match(tools, /checkStockForBranch\(ec\.tenantId, product, size, locationId\)/);
   assert.match(tools, /checkStockForBranch\(ec\.tenantId, it\.sku, it\.size, requestedLocationId\)/);
   assert.match(tools, /INVALID_OR_INACTIVE_LOCATION[\s\S]{0,240}new ToolArgError/);
-  assert.match(stock, /findAlternativeProducts\(tenantId, \{ sku: product\.sku, size, locationId/);
+  assert.match(
+    stock,
+    /findAlternativeProducts\(tenantId, \{[\s\S]{0,160}sku: product\.sku,[\s\S]{0,80}size,[\s\S]{0,80}locationId/,
+  );
   assert.match(products, /locationId: input\.locationId/);
   assert.match(tools, /findAlternativeProducts\(ec\.tenantId, \{ sku, keyword, category, size, locationId, limit \}\)/);
 });

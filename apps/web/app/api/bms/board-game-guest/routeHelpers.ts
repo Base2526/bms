@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { BoardGameGuestError } from "@/lib/bms/boardGameServiceCalls";
+import { isIdempotencyConflictError } from "@/lib/bms/idempotencyErrors";
 import { rateLimit } from "@/lib/bms/rateLimit";
 
 export function boardGameGuestToken(req: NextRequest) {
@@ -38,7 +39,7 @@ export async function requireBoardGameGuestRateLimit(
 }
 
 export function boardGameGuestError(error: unknown) {
-  if (error instanceof BoardGameGuestError) {
+  if (error instanceof BoardGameGuestError || isIdempotencyConflictError(error)) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
   throw error;

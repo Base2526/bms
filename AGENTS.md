@@ -205,7 +205,7 @@ wrong, and update the doc in the same change.
   plan moved later and never covers a visit at another branch. Identity holds may be taken only while
   the session is `OPEN`; final POS settlement rechecks that no card is still held, and settlement
   locks session → billing group → order to match close/cancel.
-  A guest service bell (`9.96`) is session-scoped and operational only: it never changes time, bill,
+  A guest service bell (`9.96`, scope hardened by `9.98`) is session-scoped and operational only: it never changes time, bill,
   stock, or copy condition. Move/merge resolves the current table from seating, terminal sessions
   revoke the guest token and expire active calls, and a reported game issue still needs the existing
   copy-condition workflow after staff physically inspect it.

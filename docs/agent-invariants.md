@@ -590,7 +590,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83` and `9.89`–`9.94` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, and `9.98` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).

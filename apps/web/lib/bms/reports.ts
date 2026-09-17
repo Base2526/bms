@@ -5,7 +5,8 @@
 // getInventorySummary()     : สรุปสต็อก (มูลค่า, ใกล้หมด, หมด)
 // getTopSellingProducts()   : สินค้าขายดีในช่วงวันที่
 //
-// revenue นับเฉพาะออเดอร์ที่จ่ายแล้ว (PAID ขึ้นไป, ไม่นับ CANCELLED/RETURNED)
+// revenue นับใบเสร็จที่เคยจ่ายแล้ว รวม RETURNED ไว้เป็นยอดขายตั้งต้น แล้วหัก refund event
+// แยกต่างหาก มิฉะนั้นบิลคืนเต็มจะถูกลบสองครั้ง (หายจากยอดขายและถูกหักคืนเงินซ้ำ)
 // tenant-scoped ทุก query — ตรงกับหลักใน dashboard.ts
 // =============================================================
 
@@ -17,9 +18,8 @@ import { getLocation } from "./locations";
 import { normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
-// Reconciliation must retain an originally paid order after a full return. Its
-// receipt and refund remain in the payment ledger even though sales KPIs exclude
-// RETURNED from active sales.
+// A RETURNED order was still a paid receipt. Keep the receipt and its later
+// refund as separate financial events.
 const FINANCIAL_ORDER_STATUSES = [...PAID, "RETURNED"];
 const RETURN_REASON_PREFIX_RE = /^\[([A-Z_]+)\]\s*/;
 const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
@@ -86,33 +86,46 @@ export async function getSalesSummary(
           AND ($5::uuid IS NULL OR location_id = $5::uuid)
           AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
-      [tenantId, PAID, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
     ),
     query(
-      `WITH refund_events AS (
+      `WITH raw_refund_events AS (
          -- POS supports partial/split refunds, so the completed allocation is
          -- the money event. Counting its parent payment would miss partials
          -- and double-count a fully refunded split payment.
-         SELECT a.amount, COALESCE(a.completed_at, a.updated_at) AS occurred_at
+         SELECT pr.order_id, 'pos:' || a.id::text AS event_id, a.amount,
+                o.total_amount, pr.return_location_id AS location_id,
+                COALESCE(a.completed_at, a.updated_at) AS occurred_at
            FROM bms_pos_refund_allocations a
            JOIN bms_pos_returns pr ON pr.tenant_id=a.tenant_id AND pr.id=a.pos_return_id
+           JOIN bms_orders o ON o.tenant_id=pr.tenant_id AND o.id=pr.order_id
           WHERE a.tenant_id=$1 AND a.status='COMPLETED'
-            AND ($4::uuid IS NULL OR pr.return_location_id=$4::uuid)
          UNION ALL
-         -- Non-POS refundPayment() has no allocation and refunds the whole row.
-         SELECT p.amount, COALESCE(p.refunded_at,p.updated_at) AS occurred_at
+         SELECT p.order_id, 'payment:' || p.id::text AS event_id, p.amount,
+                o.total_amount, o.location_id,
+                COALESCE(p.refunded_at,p.updated_at) AS occurred_at
            FROM bms_payments p
            JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
           WHERE p.tenant_id=$1 AND p.status='REFUNDED'
-            AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
             AND NOT EXISTS (
               SELECT 1 FROM bms_pos_refund_allocations a
                WHERE a.tenant_id=p.tenant_id AND a.payment_id=p.id
             )
+       ), refund_events AS (
+         -- Payments and full POS refunds may include shipping/rounding while
+         -- this report's revenue is merchandise-only. Allocate each order's
+         -- refunds to merchandise first and never subtract above total_amount.
+         SELECT GREATEST(LEAST(amount, total_amount - COALESCE(SUM(amount) OVER (
+                  PARTITION BY order_id ORDER BY occurred_at, event_id
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ),0)),0) AS amount,
+                location_id, occurred_at
+           FROM raw_refund_events
        )
        SELECT COALESCE(SUM(amount),0) AS refund_total
          FROM refund_events
-        WHERE occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+        WHERE ($4::uuid IS NULL OR location_id=$4::uuid)
+          AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
       [tenantId, r.from, r.to, locationId || null]
     ),
@@ -127,7 +140,7 @@ export async function getSalesSummary(
           AND COALESCE(o.paid_at, o.created_at) >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND COALESCE(o.paid_at, o.created_at) < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY day ORDER BY day`,
-      [tenantId, PAID, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
     ),
     query(
       `SELECT status, COUNT(*)::int AS count
@@ -159,7 +172,7 @@ export async function getSalesSummary(
           AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY channel ORDER BY revenue DESC`,
-      [tenantId, PAID, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
     ),
   ]);
 
@@ -337,7 +350,7 @@ export async function getProfitSummary(
   locationId?: string | null
 ) {
   const r = range(from, to);
-  const [totals, byDay] = await Promise.all([
+  const [totals, salesByDay, refundsByDay, returnedCostsByDay] = await Promise.all([
     query(
       `WITH eligible_orders AS (
          SELECT id, total_amount
@@ -351,11 +364,14 @@ export async function getProfitSummary(
               COALESCE(SUM(oi.cost_amount_snapshot) FILTER (WHERE oi.cost_amount_snapshot IS NOT NULL), 0) AS known_cost,
               COUNT(oi.id) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_line_count,
               COUNT(DISTINCT oi.product_sku) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_sku_count,
+              COALESCE(ARRAY_AGG(DISTINCT oi.product_sku) FILTER (
+                WHERE oi.id IS NOT NULL AND oi.cost_amount_snapshot IS NULL
+              ), ARRAY[]::text[]) AS missing_cost_skus,
               COALESCE(SUM(oi.qty * oi.unit_price) FILTER (WHERE oi.cost_amount_snapshot IS NULL), 0) AS missing_cost_revenue,
               COUNT(oi.id) FILTER (WHERE oi.cost_snapshot_source='LEGACY_CURRENT')::int AS legacy_cost_line_count
          FROM eligible_orders o
          LEFT JOIN bms_order_items oi ON oi.tenant_id=$1 AND oi.order_id=o.id`,
-      [tenantId, PAID, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
     ),
     query(
       `WITH eligible_orders AS (
@@ -378,15 +394,125 @@ export async function getProfitSummary(
               COALESCE(SUM(known_cost),0) AS known_cost,
               COALESCE(SUM(missing_cost_line_count),0)::int AS missing_cost_line_count
          FROM order_cost GROUP BY day ORDER BY day`,
-      [tenantId, PAID, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
+    ),
+    query(
+      `WITH raw_refund_events AS (
+         SELECT pr.order_id, 'pos:' || a.id::text AS event_id, a.amount,
+                o.total_amount, pr.return_location_id AS location_id,
+                COALESCE(a.completed_at, a.updated_at) AS occurred_at
+           FROM bms_pos_refund_allocations a
+           JOIN bms_pos_returns pr ON pr.tenant_id=a.tenant_id AND pr.id=a.pos_return_id
+           JOIN bms_orders o ON o.tenant_id=pr.tenant_id AND o.id=pr.order_id
+          WHERE a.tenant_id=$1 AND a.status='COMPLETED'
+         UNION ALL
+         SELECT p.order_id, 'payment:' || p.id::text AS event_id, p.amount,
+                o.total_amount, o.location_id,
+                COALESCE(p.refunded_at,p.updated_at) AS occurred_at
+           FROM bms_payments p
+           JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+          WHERE p.tenant_id=$1 AND p.status='REFUNDED'
+            AND NOT EXISTS (
+              SELECT 1 FROM bms_pos_refund_allocations a
+               WHERE a.tenant_id=p.tenant_id AND a.payment_id=p.id
+            )
+       ), refund_events AS (
+         SELECT GREATEST(LEAST(amount, total_amount - COALESCE(SUM(amount) OVER (
+                  PARTITION BY order_id ORDER BY occurred_at, event_id
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ),0)),0) AS amount,
+                location_id, occurred_at
+           FROM raw_refund_events
+       )
+       SELECT (occurred_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
+              COALESCE(SUM(amount),0) AS refund_total
+         FROM refund_events
+        WHERE ($4::uuid IS NULL OR location_id=$4::uuid)
+          AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+        GROUP BY day ORDER BY day`,
+      [tenantId, r.from, r.to, locationId || null]
+    ),
+    query(
+      `WITH settled_pos_returns AS (
+         SELECT pr.id, pr.tenant_id, pr.return_location_id,
+                COALESCE(MAX(a.completed_at), pr.updated_at) AS occurred_at
+           FROM bms_pos_returns pr
+           LEFT JOIN bms_pos_refund_allocations a
+             ON a.tenant_id=pr.tenant_id AND a.pos_return_id=pr.id
+          WHERE pr.tenant_id=$1 AND pr.settlement_status='COMPLETED'
+          GROUP BY pr.id, pr.tenant_id, pr.return_location_id, pr.updated_at
+       ), returned_lines AS (
+         -- POS can return part of a line, possibly at another branch. Reverse
+         -- only the returned fraction once its refund settlement is complete.
+         SELECT pr.occurred_at, pr.return_location_id AS location_id,
+                oi.product_sku, oi.cost_amount_snapshot,
+                oi.cost_amount_snapshot * pri.qty::numeric / NULLIF(oi.qty,0) AS returned_cost,
+                pri.refund_amount AS missing_cost_revenue
+           FROM settled_pos_returns pr
+           JOIN bms_pos_return_items pri
+             ON pri.tenant_id=pr.tenant_id AND pri.pos_return_id=pr.id
+           JOIN bms_order_items oi
+             ON oi.tenant_id=pri.tenant_id AND oi.id=pri.order_item_id
+         UNION ALL
+         -- The web/back-office flow returns a whole order and creates no
+         -- bms_pos_returns row. Exclude POS-linked orders to avoid reversing a
+         -- full POS return through both paths.
+         SELECT COALESCE(o.returned_at,o.updated_at) AS occurred_at,
+                o.location_id, oi.product_sku, oi.cost_amount_snapshot,
+                oi.cost_amount_snapshot AS returned_cost,
+                oi.qty * oi.unit_price AS missing_cost_revenue
+           FROM bms_orders o
+           JOIN bms_order_items oi
+             ON oi.tenant_id=o.tenant_id AND oi.order_id=o.id
+          WHERE o.tenant_id=$1 AND o.status='RETURNED'
+            AND NOT EXISTS (
+              SELECT 1 FROM bms_pos_returns pr
+               WHERE pr.tenant_id=o.tenant_id AND pr.order_id=o.id
+            )
+       )
+       SELECT (occurred_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
+              COALESCE(SUM(returned_cost) FILTER (WHERE cost_amount_snapshot IS NOT NULL),0) AS returned_known_cost,
+              COUNT(*) FILTER (WHERE cost_amount_snapshot IS NULL)::int AS missing_cost_line_count,
+              COUNT(DISTINCT product_sku) FILTER (WHERE cost_amount_snapshot IS NULL)::int AS missing_cost_sku_count,
+              COALESCE(ARRAY_AGG(DISTINCT product_sku) FILTER (WHERE cost_amount_snapshot IS NULL), ARRAY[]::text[]) AS missing_cost_skus,
+              COALESCE(SUM(missing_cost_revenue) FILTER (WHERE cost_amount_snapshot IS NULL),0) AS missing_cost_revenue
+         FROM returned_lines
+        WHERE ($4::uuid IS NULL OR location_id=$4::uuid)
+          AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+        GROUP BY day ORDER BY day`,
+      [tenantId, r.from, r.to, locationId || null]
     ),
   ]);
 
-  const revenue = Number(totals.rows[0].revenue);
-  const knownCost = Number(totals.rows[0].known_cost);
-  const missingCostLineCount = Number(totals.rows[0].missing_cost_line_count);
-  const missingCostSkuCount = Number(totals.rows[0].missing_cost_sku_count);
-  const missingCostRevenue = Number(totals.rows[0].missing_cost_revenue);
+  const refundTotal = refundsByDay.rows.reduce(
+    (sum: number, row: any) => sum + Number(row.refund_total),
+    0
+  );
+  const returnedKnownCost = returnedCostsByDay.rows.reduce(
+    (sum: number, row: any) => sum + Number(row.returned_known_cost),
+    0
+  );
+  const revenue = Number(totals.rows[0].revenue) - refundTotal;
+  const knownCost = Number(totals.rows[0].known_cost) - returnedKnownCost;
+  const missingCostLineCount = Number(totals.rows[0].missing_cost_line_count)
+    + returnedCostsByDay.rows.reduce(
+      (sum: number, row: any) => sum + Number(row.missing_cost_line_count),
+      0
+    );
+  const missingCostSkus = new Set<string>(
+    (totals.rows[0].missing_cost_skus ?? []).map(String)
+  );
+  for (const row of returnedCostsByDay.rows) {
+    for (const sku of row.missing_cost_skus ?? []) missingCostSkus.add(String(sku));
+  }
+  const missingCostSkuCount = missingCostSkus.size;
+  const missingCostRevenue = Number(totals.rows[0].missing_cost_revenue)
+    + returnedCostsByDay.rows.reduce(
+      (sum: number, row: any) => sum + Number(row.missing_cost_revenue),
+      0
+    );
   const legacyCostLineCount = Number(totals.rows[0].legacy_cost_line_count);
   const complete = missingCostLineCount === 0;
   const authoritative = complete && legacyCostLineCount === 0;
@@ -397,8 +523,8 @@ export async function getProfitSummary(
     method: authoritative ? "sale_time_snapshot" as const : "mixed_evidence" as const,
     disclaimer: complete
       ? legacyCostLineCount > 0
-        ? `รายได้ใช้ออเดอร์สุทธิหลังส่วนลด (ไม่รวมค่าส่ง); ต้นทุนครบแต่มี ${legacyCostLineCount} บรรทัดย้อนหลังที่ reconstruct จากต้นทุนปัจจุบันตอน migration`
-        : "รายได้ใช้ออเดอร์สุทธิหลังส่วนลด (ไม่รวมค่าส่ง) และต้นทุนส่วนประกอบ/สินค้าที่ snapshot ณ เวลาขาย"
+        ? `รายได้หัก refund ที่ชำระแล้ว (ไม่รวมค่าส่ง); ต้นทุนหักสินค้าคืน POS ที่ settlement ครบและออเดอร์เว็บ/หลังบ้านที่คืนแล้ว แต่มี ${legacyCostLineCount} บรรทัดย้อนหลังที่ reconstruct จากต้นทุนปัจจุบันตอน migration`
+        : "รายได้หัก refund ที่ชำระแล้ว (ไม่รวมค่าส่ง) และต้นทุนหักสินค้าคืน POS ที่ settlement ครบ/ออเดอร์เว็บหรือหลังบ้านที่คืนแล้ว จาก snapshot ณ เวลาขาย"
       : `รายได้ใช้ออเดอร์สุทธิหลังส่วนลด แต่ยังคำนวณกำไรรวมไม่ได้ เพราะมี ${missingCostSkuCount} SKU ที่ไม่มีต้นทุน (${missingCostLineCount} บรรทัดขาย) — ห้ามตีต้นทุนที่หายเป็นศูนย์`,
     from: r.from,
     to: r.to,
@@ -413,16 +539,49 @@ export async function getProfitSummary(
     missingCostLineCount,
     missingCostSkuCount,
     missingCostRevenue,
-    byDay: byDay.rows.map((x: any) => ({
-      day: toISO(x.day),
-      revenue: Number(x.revenue),
-      cost: Number(x.missing_cost_line_count) === 0 ? Number(x.known_cost) : null,
-      knownCost: Number(x.known_cost),
-      profit: Number(x.missing_cost_line_count) === 0
-        ? Number(x.revenue) - Number(x.known_cost)
-        : null,
-      missingCostLineCount: Number(x.missing_cost_line_count),
-    })),
+    byDay: (() => {
+      const days = new Map<string, {
+        revenue: number;
+        knownCost: number;
+        missingCostLineCount: number;
+      }>();
+      const at = (dayValue: any) => {
+        const day = toISO(dayValue);
+        const current = days.get(day) ?? {
+          revenue: 0,
+          knownCost: 0,
+          missingCostLineCount: 0,
+        };
+        days.set(day, current);
+        return current;
+      };
+      for (const row of salesByDay.rows) {
+        const day = at(row.day);
+        day.revenue += Number(row.revenue);
+        day.knownCost += Number(row.known_cost);
+        day.missingCostLineCount += Number(row.missing_cost_line_count);
+      }
+      for (const row of refundsByDay.rows) {
+        at(row.day).revenue -= Number(row.refund_total);
+      }
+      for (const row of returnedCostsByDay.rows) {
+        const day = at(row.day);
+        day.knownCost -= Number(row.returned_known_cost);
+        day.missingCostLineCount += Number(row.missing_cost_line_count);
+      }
+      return [...days.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([day, value]) => ({
+          day,
+          revenue: value.revenue,
+          cost: value.missingCostLineCount === 0 ? value.knownCost : null,
+          knownCost: value.knownCost,
+          profit: value.missingCostLineCount === 0
+            ? value.revenue - value.knownCost
+            : null,
+          missingCostLineCount: value.missingCostLineCount,
+        }));
+    })(),
   };
 }
 
@@ -1232,7 +1391,7 @@ export async function getManagementReport(
     getProfitSummary(tenantId, previousFrom, previousTo, locationId),
     query(
       `SELECT
-         COALESCE((SELECT SUM(o.total_amount + COALESCE(o.shipping_fee,0))
+         COALESCE((SELECT SUM(o.total_amount + COALESCE(o.shipping_fee,0) + COALESCE(o.rounding_amount,0))
                      FROM bms_orders o
                     WHERE o.tenant_id=$1 AND o.status=ANY($5)
                       AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
@@ -1408,9 +1567,9 @@ export async function getManagementReport(
   const completedRefundAmount = Number(paymentRow.refunded ?? 0);
   const netPaymentAmount = receivedAmount - completedRefundAmount;
   const netOrderAmount = paidOrderAmount - completedRefundAmount;
-  // Both sides include shipping and retain originally paid RETURNED orders, then subtract refund
-  // events in the selected period. Comparing payment receipts with sales KPIs would create false
-  // mismatches because the latter deliberately exclude shipping and RETURNED status.
+  // Both sides include shipping/rounding and retain originally paid RETURNED orders, then subtract refund
+  // events in the selected period. Comparing them still exposes timing or linkage mismatches
+  // without erasing either side's financial events.
   const paymentDifference = netPaymentAmount - netOrderAmount;
   const expectedCash = Number(reconciliationRow.expected_cash ?? 0);
   const countedCash = Number(reconciliationRow.counted_cash ?? 0);
