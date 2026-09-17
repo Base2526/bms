@@ -159,6 +159,35 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
   if (action === "settle") {
     const parsed = parsePosPayments(body.payments);
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    let manualApproval: { amount: number; userId: string; reason: string } | null = null;
+    const requestedDiscount = Math.round(Number(body.manualDiscount ?? 0) * 100) / 100;
+    if (Number.isFinite(requestedDiscount) && requestedDiscount > 0) {
+      const reason = typeof body.discountReason === "string" ? body.discountReason.trim() : "";
+      if (!reason) return NextResponse.json({ error: "ส่วนลดหน้าร้านต้องระบุเหตุผล" }, { status: 400 });
+      if (reason.length > 200) return NextResponse.json({ error: "เหตุผลส่วนลดยาวเกินไป" }, { status: 400 });
+      const approverId = typeof body.discountApproverUserId === "string"
+        ? body.discountApproverUserId.trim()
+        : "";
+      const approverPin = typeof body.discountApproverPin === "string"
+        ? body.discountApproverPin
+        : "";
+      if (!approverId || !approverPin) {
+        return NextResponse.json({ error: "ส่วนลดหน้าร้านต้องให้ผู้มีสิทธิ์อนุมัติกด PIN" }, { status: 400 });
+      }
+      if (!isDistinctPosApprover(auth.actor.userId, approverId)) {
+        return NextResponse.json({ error: "ผู้อนุมัติส่วนลดต้องเป็นคนละคนกับพนักงานขาย" }, { status: 400 });
+      }
+      const approver = await verifyCashierPin(auth.device.tenantId, approverId, approverPin);
+      if (!approver.ok) {
+        return NextResponse.json({ error: "PIN ผู้อนุมัติไม่ถูกต้อง", reason: approver.reason }, { status: 403 });
+      }
+      if (!(await cashierHasPermission(auth.device.tenantId, approver.userId, "pos.discount.approve"))) {
+        return NextResponse.json({
+          error: await posPermissionDeniedMessage(auth.device.tenantId, "pos.discount.approve", { secondPerson: true }),
+        }, { status: 403 });
+      }
+      manualApproval = { amount: requestedDiscount, userId: approver.userId, reason };
+    }
     const result = await settleRestaurantCheck({
       ...common,
       deviceId: auth.device.id,
@@ -166,6 +195,11 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
       customerId: typeof body.customerId === "string" && body.customerId.trim()
         ? body.customerId.trim()
         : null,
+      couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
+      pointsToRedeem: Number.isFinite(Number(body.pointsToRedeem)) ? Number(body.pointsToRedeem) : null,
+      manualDiscount: manualApproval?.amount ?? null,
+      discountApprovedBy: manualApproval?.userId ?? null,
+      discountReason: manualApproval?.reason ?? null,
       payments: parsed.payments,
     });
     return NextResponse.json(result, { status: result.status === "SOLD" ? 200 : 409 });

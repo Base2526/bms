@@ -88,7 +88,7 @@ export async function getLoyaltySettings(tenantId: string): Promise<LoyaltySetti
   return res.rows[0] ? mapSettings(res.rows[0]) : DEFAULT_LOYALTY_SETTINGS;
 }
 
-async function getLoyaltySettingsInTx(client: PoolClient, tenantId: string): Promise<LoyaltySettings> {
+export async function getLoyaltySettingsInTx(client: PoolClient, tenantId: string): Promise<LoyaltySettings> {
   const res = await client.query(`SELECT ${SETTINGS_COLUMNS} FROM bms_loyalty_settings WHERE tenant_id = $1`, [tenantId]);
   return res.rows[0] ? mapSettings(res.rows[0]) : DEFAULT_LOYALTY_SETTINGS;
 }

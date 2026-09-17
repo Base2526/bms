@@ -3680,6 +3680,7 @@ export type SchemaBmsPosMemberPreviewInput = {
   lines: InputMaybe<Array<SchemaBmsPosSaleLineInput>>;
   manualDiscount: InputMaybe<Scalars['Float']['input']>;
   pointsToRedeem: InputMaybe<Scalars['Float']['input']>;
+  restaurantCheckId: InputMaybe<Scalars['ID']['input']>;
   subtotal: Scalars['Float']['input'];
 };
 
@@ -4243,16 +4244,22 @@ export type SchemaBmsPosRestaurantCheckActionInput = {
   approverPin: InputMaybe<Scalars['String']['input']>;
   approverUserId: InputMaybe<Scalars['ID']['input']>;
   cashierUserId: Scalars['ID']['input'];
+  couponCode: InputMaybe<Scalars['String']['input']>;
   customerId: InputMaybe<Scalars['ID']['input']>;
+  discountApproverPin: InputMaybe<Scalars['String']['input']>;
+  discountApproverUserId: InputMaybe<Scalars['ID']['input']>;
+  discountReason: InputMaybe<Scalars['String']['input']>;
   guestCount: InputMaybe<Scalars['Int']['input']>;
   itemId: InputMaybe<Scalars['ID']['input']>;
   itemIds: InputMaybe<Array<Scalars['ID']['input']>>;
   kitchenNote: InputMaybe<Scalars['String']['input']>;
+  manualDiscount: InputMaybe<Scalars['Float']['input']>;
   modifierCodes: InputMaybe<Array<Scalars['String']['input']>>;
   packCode: InputMaybe<Scalars['String']['input']>;
   packQty: InputMaybe<Scalars['Int']['input']>;
   payments: InputMaybe<Array<SchemaBmsPosPaymentInput>>;
   pin: Scalars['String']['input'];
+  pointsToRedeem: InputMaybe<Scalars['Float']['input']>;
   reason: InputMaybe<Scalars['String']['input']>;
   size: InputMaybe<Scalars['String']['input']>;
   sku: InputMaybe<Scalars['String']['input']>;
@@ -4676,9 +4683,15 @@ export type SchemaBmsPosRestaurantSetOrderingPausedInput = {
 
 export type SchemaBmsPosRestaurantSettleCheckInput = {
   cashierUserId: Scalars['ID']['input'];
+  couponCode: InputMaybe<Scalars['String']['input']>;
   customerId: InputMaybe<Scalars['ID']['input']>;
+  discountApproverPin: InputMaybe<Scalars['String']['input']>;
+  discountApproverUserId: InputMaybe<Scalars['ID']['input']>;
+  discountReason: InputMaybe<Scalars['String']['input']>;
+  manualDiscount: InputMaybe<Scalars['Float']['input']>;
   payments: Array<SchemaBmsPosPaymentInput>;
   pin: Scalars['String']['input'];
+  pointsToRedeem: InputMaybe<Scalars['Float']['input']>;
 };
 
 export type SchemaBmsPosRestaurantSplitCheckInput = {
@@ -11496,6 +11509,7 @@ export type BmsPosMemberPreviewInput = {
   lines: Array<BmsPosSaleLineInput> | null | undefined;
   manualDiscount: number | null | undefined;
   pointsToRedeem: number | null | undefined;
+  restaurantCheckId: string | number | null | undefined;
   subtotal: number;
 };
 
@@ -11702,9 +11716,15 @@ export type BmsPosRestaurantSetOrderingPausedInput = {
 
 export type BmsPosRestaurantSettleCheckInput = {
   cashierUserId: string | number;
+  couponCode: string | null | undefined;
   customerId: string | number | null | undefined;
+  discountApproverPin: string | null | undefined;
+  discountApproverUserId: string | number | null | undefined;
+  discountReason: string | null | undefined;
+  manualDiscount: number | null | undefined;
   payments: Array<BmsPosPaymentInput>;
   pin: string;
+  pointsToRedeem: number | null | undefined;
 };
 
 export type BmsPosRestaurantSplitCheckInput = {

@@ -3456,6 +3456,7 @@ input BmsPosMemberPreviewInput {
   lines: [BmsPosSaleLineInput!]
   manualDiscount: Float
   pointsToRedeem: Float
+  restaurantCheckId: ID
   subtotal: Float!
 }
 
@@ -3982,16 +3983,22 @@ input BmsPosRestaurantCheckActionInput {
   approverPin: String
   approverUserId: ID
   cashierUserId: ID!
+  couponCode: String
   customerId: ID
+  discountApproverPin: String
+  discountApproverUserId: ID
+  discountReason: String
   guestCount: Int
   itemId: ID
   itemIds: [ID!]
   kitchenNote: String
+  manualDiscount: Float
   modifierCodes: [String!]
   packCode: String
   packQty: Int
   payments: [BmsPosPaymentInput!]
   pin: String!
+  pointsToRedeem: Float
   reason: String
   size: String
   sku: String
@@ -4391,9 +4398,15 @@ input BmsPosRestaurantSetOrderingPausedInput {
 
 input BmsPosRestaurantSettleCheckInput {
   cashierUserId: ID!
+  couponCode: String
   customerId: ID
+  discountApproverPin: String
+  discountApproverUserId: ID
+  discountReason: String
+  manualDiscount: Float
   payments: [BmsPosPaymentInput!]!
   pin: String!
+  pointsToRedeem: Float
 }
 
 input BmsPosRestaurantSplitCheckInput {

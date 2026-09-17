@@ -130,6 +130,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       manualDiscount: manualDiscount?.amount ?? null,
       pointsToRedeem,
       boardGameBillingGroupId: null,
+      restaurantCheckId: null,
       lines: null,
       extraLines: null,
     }),

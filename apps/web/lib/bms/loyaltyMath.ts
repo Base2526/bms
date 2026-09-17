@@ -132,8 +132,10 @@ export function composeDiscounts(args: {
     ? pointsToDiscount(args.settings, redeemable)
     : { points: 0, discount: 0 };
 
-  // ส่วนลดจากแต้มต้องไม่เกินยอดที่เหลือหลังหักชั้นอื่น — ลูกค้าจ่าย 0 ได้ แต่ห้ามติดลบ
-  const beforePoints = round2(tierDiscount + couponDiscount + manualDiscount);
+  // ลำดับอำนาจคือ tier → coupon → points → manual จริงๆ: ส่วนลดมืออยู่ชั้นท้าย
+  // และต้องถูกตัดก่อนเมื่อชนเพดาน จึงห้ามนำ manual ไปหักออกจาก roomForPoints ล่วงหน้า
+  // ไม่งั้นบิลที่แต้ม+ส่วนลดมือชนเพดานจะหักแต้มน้อยลง ทั้งที่ควรลด manual ก่อน
+  const beforePoints = round2(tierDiscount + couponDiscount);
   const roomForPoints = Math.max(0, round2(Math.min(subtotal, cappedAt) - beforePoints));
   let pointsDiscount = Math.min(points.discount, roomForPoints);
   let pointsUsed = points.points;
@@ -144,7 +146,7 @@ export function composeDiscounts(args: {
     pointsDiscount = round2(units * args.settings.redeemBahtPerUnit);
   }
 
-  const raw = round2(beforePoints + pointsDiscount);
+  const raw = round2(beforePoints + pointsDiscount + manualDiscount);
   const totalDiscount = round2(Math.min(raw, cappedAt, subtotal));
 
   // ชนเพดานแล้วต้องตัดยอดของ "ชั้น" ให้ผลรวมเท่ากับ totalDiscount จริง ๆ

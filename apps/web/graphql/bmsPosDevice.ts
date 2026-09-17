@@ -69,6 +69,7 @@ import {
   parkSale,
   partiallyReturnPosSale,
   previewBoardGamePosPricing,
+  previewRestaurantPosPricing,
   recordCashMovement,
   recordNoSale,
   recordPosSale,
@@ -260,6 +261,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     couponCode: String
     manualDiscount: Float
     boardGameBillingGroupId: ID
+    restaurantCheckId: ID
     lines: [BmsPosSaleLineInput!]
     extraLines: [BmsPosExtraLineInput!]
   }
@@ -512,6 +514,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     approverUserId: ID
     approverPin: String
     customerId: ID
+    couponCode: String
+    pointsToRedeem: Float
+    manualDiscount: Float
+    discountReason: String
+    discountApproverUserId: ID
+    discountApproverPin: String
     payments: [BmsPosPaymentInput!]
   }
 
@@ -624,6 +632,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     cashierUserId: ID!
     pin: String!
     customerId: ID
+    couponCode: String
+    pointsToRedeem: Float
+    manualDiscount: Float
+    discountReason: String
+    discountApproverUserId: ID
+    discountApproverPin: String
     payments: [BmsPosPaymentInput!]!
   }
 
@@ -3579,6 +3593,25 @@ export const bmsPosDeviceResolvers = {
         Number.isFinite(manualRaw) && manualRaw > 0
           ? Math.round(manualRaw * 100) / 100
           : 0;
+      const restaurantCheckId = optionalUuidInput(
+        input.restaurantCheckId,
+        "บิลโต๊ะไม่ถูกต้อง",
+      );
+      if (restaurantCheckId) {
+        const preview = await previewRestaurantPosPricing({
+          tenantId: device.tenantId,
+          locationId: device.locationId,
+          checkId: restaurantCheckId,
+          customerId,
+          couponCode,
+          pointsToRedeem: pointsRequested,
+          manualDiscount,
+        });
+        return {
+          ...preview,
+          member: preview.member ? toPosMemberSummary(preview.member) : null,
+        };
+      }
       const boardGameBillingGroupId = optionalUuidInput(
         input.boardGameBillingGroupId,
         "กลุ่มบิลบอร์ดเกมไม่ถูกต้อง",
@@ -5417,11 +5450,36 @@ export const bmsPosDeviceResolvers = {
       if (action === "settle") {
         const parsed = parsePosPayments(input.payments);
         if (!parsed.ok) return badPosInput(parsed.error);
+        let manualApproval: { amount: number; userId: string; reason: string } | null = null;
+        const requestedDiscount = Math.round(Number(input.manualDiscount ?? 0) * 100) / 100;
+        if (Number.isFinite(requestedDiscount) && requestedDiscount > 0) {
+          const reason = textInput(input.discountReason);
+          if (!reason) return badPosInput("ส่วนลดหน้าร้านต้องระบุเหตุผล");
+          if (reason.length > 200) return badPosInput("เหตุผลส่วนลดยาวเกินไป");
+          const approver = await requirePosSecondPerson(
+            device,
+            actor.userId,
+            { userId: input.discountApproverUserId, pin: input.discountApproverPin },
+            "pos.discount.approve",
+            {
+              required: "ส่วนลดหน้าร้านต้องให้ผู้มีสิทธิ์อนุมัติกด PIN",
+              samePerson: "ผู้อนุมัติส่วนลดต้องเป็นคนละคนกับพนักงานขาย",
+            },
+          );
+          manualApproval = { amount: requestedDiscount, userId: approver.userId, reason };
+        }
         return settleRestaurantCheck({
           ...common,
           deviceId: device.id,
           shiftId: shift.id,
           customerId: optionalUuidInput(input.customerId, "ลูกค้าไม่ถูกต้อง"),
+          couponCode: textInput(input.couponCode) || null,
+          pointsToRedeem: Number.isFinite(Number(input.pointsToRedeem))
+            ? Number(input.pointsToRedeem)
+            : null,
+          manualDiscount: manualApproval?.amount ?? null,
+          discountApprovedBy: manualApproval?.userId ?? null,
+          discountReason: manualApproval?.reason ?? null,
           payments: parsed.payments,
         });
       }

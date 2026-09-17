@@ -228,7 +228,7 @@ Point redemption always rounds down to a whole configured redemption unit. For e
 ledger and the cached balance. The POS "all" action displays and submits the 3,000 points actually
 used rather than presenting the full 3,045 as if the remainder would be lost.
 
-`scripts/loyalty-contract.test.mts` (22 tests, no database):
+`scripts/loyalty-contract.test.mts` (31 tests, no database):
 
 ```bash
 node --experimental-strip-types --test scripts/loyalty-contract.test.mts
@@ -1634,6 +1634,17 @@ before the kitchen starts. Checkout settles that same order through `recordPosSa
 payments, drawer totals and tax documents therefore keep the normal POS source of truth. Restaurant
 kitchen tickets are attached to check items and appear before payment. Settlement does not enqueue a
 second copy of those tickets.
+
+Member tier, coupon, points redemption and approved manual discount are also applied to that same
+reserved order, not to a replacement order at the register. Preview reconstructs the discountable
+product subtotal from the order's immutable sale-time snapshot (`total + discount - extra lines`),
+so a menu-price edit after the kitchen round cannot change the guest's bill and service/extra lines
+remain non-discountable. Settlement locks the check and order, reserves the coupon, redeems the exact
+previewed points, writes the four discount-source rows and updates `amount_due` in one transaction
+before taking payment. A failed payment leaves those benefits frozen on the pending order; only an
+exact retry is accepted, while cancelling or rebuilding the reservation releases them through the
+normal order-cancellation path. Manual discount still requires a distinct second person's PIN with
+`pos.discount.approve` on both Web and React Native.
 
 The branch floor is maintained from `/admin/restaurant-floor`, behind an admin session and
 `restaurant.floor.manage`. An administrator selects a branch, creates and orders area tabs, manages

@@ -411,6 +411,22 @@ test("ชนเพดานแล้วส่วนลดมือถูกต�
   assert.equal(r.manualDiscount, 10);    // โดนตัด 40 จากชั้นนี้ทั้งหมด
   assert.equal(r.capped, true);
 });
+
+test("ชนเพดานแล้วรักษาสิทธิ์แต้มก่อนส่วนลดมือตามลำดับชั้น", () => {
+  const r = composeDiscounts({
+    settings: settings({ maxDiscountPct: 30 }),
+    subtotal: 100,
+    tier: null,
+    pointsRequested: 200, // 20 บาท
+    pointsAvailable: 200,
+    manualDiscount: 20,   // รวม 40 แต่เพดาน 30
+  });
+  assert.equal(r.pointsDiscount, 20);
+  assert.equal(r.pointsUsed, 200);
+  assert.equal(r.manualDiscount, 10);
+  assert.equal(r.totalDiscount, 30);
+  assert.equal(r.capped, true);
+});
 // =============================================================
 // "ทำไมบิลนี้ได้ +0 แต้ม" — เคสจริงจากหน้าร้าน 2026-09-08
 // -------------------------------------------------------------

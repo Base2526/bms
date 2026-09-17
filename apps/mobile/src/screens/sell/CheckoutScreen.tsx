@@ -100,6 +100,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const restaurantMember = restaurantCheckId
     ? restaurantMembers[restaurantCheckId] ?? null
     : null;
+  const [restaurantCoupon, setRestaurantCoupon] = useState<{ code: string } | null>(null);
+  const [restaurantPointsToRedeem, setRestaurantPointsToRedeem] = useState(0);
+  const [restaurantManualDiscount, setRestaurantManualDiscount] = useState<{
+    amount: number;
+    reason: string;
+    approverUserId: string;
+    approverName: string;
+    approverPin: string;
+  } | null>(null);
+  useEffect(() => {
+    setRestaurantCoupon(null);
+    setRestaurantPointsToRedeem(0);
+    setRestaurantManualDiscount(null);
+  }, [restaurantCheckId]);
   const setRestaurantMember = (member: PosMember | null) => {
     if (!restaurantCheckId) return;
     setRestaurantMembers(previous => ({
@@ -128,6 +142,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         source === 'board_game'
           ? boardGameParams?.boardGameBillingGroupId ?? null
           : null,
+      restaurantCheckId: null,
       customerId: cart.member?.id ?? null,
       pointsToRedeem: cart.pointsToRedeem,
       couponCode: cart.coupon?.code ?? null,
@@ -169,6 +184,25 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     notifyOnNetworkStatusChange: true,
   });
   const boardGamePreview = boardGamePricing.data?.bmsPosMemberPreview;
+  const restaurantPricing = useQuery(MobilePosMemberPreviewDocument, {
+    variables: {
+      input: {
+        subtotal: check?.amountDue ?? 0,
+        restaurantCheckId,
+        boardGameBillingGroupId: null,
+        customerId: activeMember?.id ?? null,
+        pointsToRedeem: restaurantPointsToRedeem,
+        couponCode: restaurantCoupon?.code ?? null,
+        manualDiscount: restaurantManualDiscount?.amount ?? null,
+        lines: null,
+        extraLines: null,
+      },
+    },
+    skip: source !== 'restaurant' || !session || !check || !restaurantCheckId,
+    fetchPolicy: 'network-only',
+    notifyOnNetworkStatusChange: true,
+  });
+  const restaurantPreview = restaurantPricing.data?.bmsPosMemberPreview;
   const restaurantItems = (check?.items ?? []).filter(
     item => item.status !== 'CANCELLED',
   );
@@ -221,30 +255,34 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ? check?.amountDue ?? 0
       : cart.subtotal + (boardGameBill?.totalDue ?? 0);
   const subtotal =
-    source === 'board_game' && boardGamePreview?.amountDue != null
+    source === 'restaurant' && restaurantPreview?.subtotal != null
+      ? restaurantPreview.subtotal
+      : source === 'board_game' && boardGamePreview?.amountDue != null
       ? round2(
           boardGamePreview.amountDue + (boardGamePreview.totalDiscount ?? 0),
         )
       : fallbackSubtotal;
   const payableBeforeRounding = round2(
-    source === 'restaurant'
-      ? subtotal
+    source === 'restaurant' && restaurantPreview?.amountDue != null
+      ? restaurantPreview.amountDue
       : source === 'board_game' && boardGamePreview?.amountDue != null
       ? boardGamePreview.amountDue
       : cart.total + (boardGameBill?.totalDue ?? 0),
   );
   const discounts =
-    source === 'restaurant'
+    source === 'restaurant' && restaurantPreview
       ? {
-          tierDiscount: 0,
-          couponDiscount: 0,
-          appliedManualDiscount: 0,
-          discountTotal: 0,
+          tierDiscount: restaurantPreview.tierDiscount ?? 0,
+          couponDiscount: restaurantPreview.couponDiscount ?? 0,
+          pointsDiscount: restaurantPreview.pointsDiscount ?? 0,
+          appliedManualDiscount: restaurantPreview.manualDiscount ?? 0,
+          discountTotal: restaurantPreview.totalDiscount ?? 0,
         }
       : source === 'board_game' && boardGamePreview
       ? {
           tierDiscount: boardGamePreview.tierDiscount ?? 0,
           couponDiscount: boardGamePreview.couponDiscount ?? 0,
+          pointsDiscount: boardGamePreview.pointsDiscount ?? 0,
           appliedManualDiscount: boardGamePreview.manualDiscount ?? 0,
           discountTotal: boardGamePreview.totalDiscount ?? 0,
         }
@@ -343,6 +381,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   );
   const discountPending =
     (source === 'retail' && cart.previewLoading) ||
+    (source === 'restaurant' && restaurantPricing.loading) ||
     (source === 'board_game' && boardGamePricing.loading);
   const itemCount = lines.reduce((n, l) => n + l.qty, 0);
   const serialsReady = lines.every(line => {
@@ -390,6 +429,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       boardGamePreview?.status === 'READY' &&
       boardGamePreview.amountDue != null &&
       !boardGamePricing.error);
+  const restaurantReady =
+    source !== 'restaurant' ||
+    (restaurantPreview?.status === 'READY' &&
+      restaurantPreview.amountDue != null &&
+      !restaurantPricing.error);
   // บิลบอร์ดเกมที่ไม่เหลือยอดต้องชำระ — settle ด้วย payment list ว่าง ไม่ใช่สร้าง CASH ฿0
   // ซึ่งทั้ง `validateMockPayments` (ต้องมียอด > 0) และ `recordPosSale` ปฏิเสธ
   //
@@ -432,6 +476,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     if (
       !canConfirmPayment ||
       !restaurantPaymentsValid ||
+      !restaurantReady ||
       !boardGameReady ||
       submittedRef.current ||
       !session
@@ -440,6 +485,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     submittedRef.current = true;
     setSubmitting(true);
     let confirmedBoardGamePreview = boardGamePreview;
+    let confirmedRestaurantPreview = restaurantPreview;
     // ⚠️ ตรวจราคาซ้ำก่อนส่ง — ตะกร้าถือกติกา ณ ตอนที่สแกน ร้านที่แก้ราคา/เปิด-ปิดโปรระหว่าง
     // ที่บิลค้างบนจอ (หรือบิลพักที่เพิ่งเรียกกลับ) จะทำให้ยอดที่จอโชว์ไม่ใช่ยอดที่ server คิด
     // แล้วบิลถูกทิ้งทั้งใบ · หยุดก่อนออกคีย์กันบิลซ้ำ เพื่อไม่ให้คีย์ถูกเผาทิ้งโดยเปล่าประโยชน์
@@ -509,6 +555,38 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         return;
       }
     }
+    if (source === 'restaurant') {
+      try {
+        const recheck = await restaurantPricing.refetch();
+        const latest = recheck.data?.bmsPosMemberPreview;
+        if (!latest || latest.status !== 'READY' || latest.amountDue == null) {
+          throw new Error(latest?.reason ?? latest?.couponError ?? 'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ');
+        }
+        const signature = (value: typeof latest | typeof restaurantPreview | undefined) =>
+          JSON.stringify({
+            amountDue: value?.amountDue ?? null,
+            subtotal: value?.subtotal ?? null,
+            totalDiscount: value?.totalDiscount ?? null,
+            pointsUsed: value?.pointsUsed ?? null,
+          });
+        confirmedRestaurantPreview = latest;
+        if (signature(latest) !== signature(restaurantPreview)) {
+          submittedRef.current = false;
+          setSubmitting(false);
+          setConfirmOpen(false);
+          setPaymentsTouched(false);
+          setPayments([{ id: 'payment-1', method: 'cash', amount: 0, tendered: 0 }]);
+          Alert.alert('ยอดบิลมีการเปลี่ยนแปลง', 'ยอดอาหาร ส่วนลด หรือแต้มเปลี่ยนไป · กรุณาตรวจและรับเงินใหม่');
+          return;
+        }
+      } catch (error) {
+        submittedRef.current = false;
+        setSubmitting(false);
+        setConfirmOpen(false);
+        Alert.alert('ตรวจยอดไม่สำเร็จ', error instanceof Error ? error.message : 'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ');
+        return;
+      }
+    }
     const paymentInput = settlementPayments.map(payment => ({
       method: payment.method.toUpperCase(),
       amount: payment.amount,
@@ -527,6 +605,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               cashierUserId: session.credentials.cashierUserId,
               pin: session.credentials.pin,
               customerId: activeMember?.id ?? null,
+              couponCode: restaurantCoupon?.code ?? null,
+              pointsToRedeem: confirmedRestaurantPreview?.pointsUsed ?? 0,
+              manualDiscount: restaurantManualDiscount?.amount ?? null,
+              discountReason: restaurantManualDiscount?.reason ?? null,
+              discountApproverUserId: restaurantManualDiscount?.approverUserId ?? null,
+              discountApproverPin: restaurantManualDiscount?.approverPin ?? null,
               payments: paymentInput,
             },
           },
@@ -1372,6 +1456,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     Boolean(check?.items.some(item => item.status === 'NEW')) ||
     !canConfirmPayment ||
     !restaurantPaymentsValid ||
+    !restaurantReady ||
     !boardGameReady ||
     !serialsReady ||
     !depositReady ||
@@ -1401,6 +1486,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             boardGamePreview?.reason ??
             boardGamePreview?.couponError ??
             'ยังตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ'}
+        </Text>
+      )}
+      {source === 'restaurant' && !discountPending && !restaurantReady && (
+        <Text style={[typography.captionStrong, { color: colors.danger }]}>
+          {restaurantPricing.error?.message ??
+            restaurantPreview?.reason ??
+            restaurantPreview?.couponError ??
+            'ยังตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ'}
         </Text>
       )}
     </>
@@ -1436,6 +1529,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               discount
             />
           )}
+          {discounts.pointsDiscount > 0 && (
+            <AmountRow
+              label="ส่วนลดจากแต้ม"
+              value={-discounts.pointsDiscount}
+              discount
+            />
+          )}
           {discounts.appliedManualDiscount > 0 && (
             <AmountRow
               label="ส่วนลดพิเศษ"
@@ -1461,22 +1561,34 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   );
 
   const adjustmentProps = {
-    memberOnly: source === 'restaurant',
+    memberOnly: false,
     amountOverride:
-      source === 'board_game'
+      source === 'restaurant'
+        ? restaurantPreview?.subtotal ?? check?.amountDue ?? 0
+        : source === 'board_game'
         ? boardGamePreview?.subtotal ?? cart.subtotal
         : undefined,
     pointsUsedOverride:
-      source === 'board_game' ? boardGamePreview?.pointsUsed ?? 0 : undefined,
+      source === 'restaurant'
+        ? restaurantPreview?.pointsUsed ?? 0
+        : source === 'board_game' ? boardGamePreview?.pointsUsed ?? 0 : undefined,
     previewLoadingOverride:
-      source === 'board_game' ? boardGamePricing.loading : undefined,
+      source === 'restaurant'
+        ? restaurantPricing.loading
+        : source === 'board_game' ? boardGamePricing.loading : undefined,
     previewErrorOverride:
-      source === 'board_game'
+      source === 'restaurant'
+        ? restaurantPricing.error?.message ??
+          restaurantPreview?.reason ??
+          restaurantPreview?.couponError ??
+          null
+        : source === 'board_game'
         ? boardGamePricing.error?.message ??
           boardGamePreview?.reason ??
           boardGamePreview?.couponError ??
           null
         : undefined,
+    hideExtra: source === 'restaurant',
   };
   const restaurantMemberSelection =
     source === 'restaurant'
@@ -1486,6 +1598,16 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           amount: total,
         }
       : undefined;
+  const restaurantBenefitsSelection = source === 'restaurant'
+    ? {
+        coupon: restaurantCoupon,
+        setCoupon: setRestaurantCoupon,
+        pointsToRedeem: restaurantPointsToRedeem,
+        setPointsToRedeem: setRestaurantPointsToRedeem,
+        manualDiscount: restaurantManualDiscount,
+        setManualDiscount: setRestaurantManualDiscount,
+      }
+    : undefined;
 
   return (
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
@@ -1524,6 +1646,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             <CheckoutAdjustmentsCard
               {...adjustmentProps}
               memberSelection={restaurantMemberSelection}
+              benefitsSelection={restaurantBenefitsSelection}
               presentation="horizontal"
             />
           </View>
@@ -1561,6 +1684,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             <CheckoutAdjustmentsCard
               {...adjustmentProps}
               memberSelection={restaurantMemberSelection}
+              benefitsSelection={restaurantBenefitsSelection}
               presentation="collapsed"
             />
             {paymentCard}
