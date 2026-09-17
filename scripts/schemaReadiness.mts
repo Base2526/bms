@@ -298,6 +298,16 @@ export const MIGRATIONS: Migration[] = [
     impact: "จอ Board Game POS และคิวรอโต๊ะใช้ไม่ได้ — workspace อ่านกระดานคิวทุกครั้ง",
     needs: [{ kind: "table", name: "bms_board_game_waitlist" }],
   },
+  {
+    // workspace อ่านชนิดและเวลาจองทุกครั้งหลัง 10.0 แม้ร้านจะยังไม่มี reservation สักแถว
+    file: "10.0__bms_board_game_advance_reservations.sql",
+    impact: "จอ Board Game POS ใช้ไม่ได้ — workspace อ่านคอลัมน์การจองทุกครั้ง",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "kind" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "reserved_for" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "reserved_table_id" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

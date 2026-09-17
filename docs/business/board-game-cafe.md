@@ -210,15 +210,17 @@ The first operational release includes:
 13. Identity holds: an encrypted record of the card held while a game box is out, erased when it goes back.
 14. Walk-in queue: branch/service-day queue numbers, call/no-show/cancel states, table-fit visibility,
     and atomic seating into the normal session path.
+15. Staff-managed advance reservations: a confirmed table/time window, overlap protection, arrival
+    check-in, cancellation/no-show, and atomic seating into that same session path.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Advanced board-game analytics and advance reservations are intentionally a later phase, as is
-automatic renewal of a member pass — renewing on a schedule needs a stored payment instrument this
-platform does not have, so today a pass is sold again by hand. They should extend the existing CRM
-and report domains instead of duplicating customer or payment records inside this module.
+Public self-booking, reminders, reservation deposits, and advanced board-game analytics are later
+phases, as is automatic renewal of a member pass. Deposits and scheduled renewal need a payment
+contract this platform does not currently have, so they must extend the existing CRM/payment/report
+domains instead of inventing customer or money records inside this module.
 
 ### Walk-in queue (`9.99`)
 
@@ -242,6 +244,26 @@ owned by their existing domains; the queue row is historical evidence for measur
 `scripts/board-game-waitlist-db-contract.test.mts` creates an isolated cafe tenant and proves queue
 number concurrency, replay conflicts, branch scope, capacity rollback, and atomic seating against a
 real local Postgres through the guarded DB-test runner.
+
+### Advance reservations (`10.0`)
+
+An advance reservation reuses `bms_board_game_waitlist` with `kind = 'RESERVATION'`; it is still the
+state before a real visit, not a second session or billing path. Staff choose one branch table, start
+time, expected duration, party size and bounded contact details. A table row plus a table-scoped
+advisory lock serialise booking, check-in and seating so two registers cannot promise overlapping
+windows. A live open-ended session blocks the table; a fixed session is eligible only when its
+expected end does not cross the requested start.
+
+A confirmed reservation can be checked in from two hours before until six hours after its start.
+Check-in changes it into the normal `WAITING` queue and allocates the service-day queue number in the
+same transaction. Staff may also seat it directly inside that arrival window; seating calls
+`openBoardGameSessionInTx()` and writes the session/table links atomically, exactly like a walk-in.
+Confirmed, waiting and called reservations continue to hold their requested window until seated,
+cancelled or marked no-show.
+
+This is staff-operated booking on the browser and native POS. It does not expose guest self-booking,
+send reminders, or collect a deposit. Those require separate authenticated/public and payment
+contracts; a deposit must not be represented as a Product SKU or mixed into play-time billing.
 
 ## Dev/Test Fixtures
 

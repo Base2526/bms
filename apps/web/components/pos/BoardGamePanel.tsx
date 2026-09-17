@@ -81,17 +81,22 @@ type ServiceCall = {
   createdAt: string;
 };
 type WaitlistEntry = {
-  id: string; serviceDate: string; queueNo: number; status: string; partySize: number;
+  id: string; kind: 'WALK_IN' | 'RESERVATION'; serviceDate: string;
+  queueNo: number | null; status: string; partySize: number;
   guestName: string | null; guestPhone: string | null; note: string | null;
   preferredAreaId: string | null; preferredAreaName: string | null;
+  reservedFor: string | null; reservedDurationMinutes: number | null;
+  reservedTableId: string | null; reservedTableCode: string | null;
+  confirmedAt: string | null; checkedInAt: string | null;
   seatedTableId: string | null; seatedTableCode: string | null; seatedSessionId: string | null;
   calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string;
 };
 type Waitlist = {
   entries: WaitlistEntry[]; waitingCount: number; calledCount: number;
-  waitingGuests: number; longestWaitMinutes: number;
+  confirmedReservationCount: number; waitingGuests: number; longestWaitMinutes: number;
   tables: Array<{ id: string; areaId: string; code: string; name: string; seats: number;
-    availability: string; expectedAvailableAt: string | null }>;
+    availability: string; expectedAvailableAt: string | null;
+    nextReservedAt: string | null; nextReservedUntil: string | null }>;
 };
 type Workspace = {
   floor: { areas: Area[]; tables: Table[] };
@@ -300,6 +305,12 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [queueGuestName, setQueueGuestName] = useState('');
   const [queueGuestPhone, setQueueGuestPhone] = useState('');
   const [seatingQueueId, setSeatingQueueId] = useState('');
+  const [reservationPartySize, setReservationPartySize] = useState('2');
+  const [reservationGuestName, setReservationGuestName] = useState('');
+  const [reservationGuestPhone, setReservationGuestPhone] = useState('');
+  const [reservationTime, setReservationTime] = useState('');
+  const [reservationDuration, setReservationDuration] = useState('120');
+  const [reservationTableId, setReservationTableId] = useState('');
 
   // ฟอร์มเปิดโต๊ะ
   const [billingMode, setBillingMode] = useState<'OPEN_ENDED' | 'FIXED_DURATION'>('OPEN_ENDED');
@@ -589,6 +600,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const openQueue = (workspace?.waitlist.entries ?? []).filter(
     (entry) => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
+  const reservations = (workspace?.waitlist.entries ?? []).filter(
+    (entry) => entry.kind === 'RESERVATION' && entry.status === 'CONFIRMED',
+  );
 
   return (
     <div className="pos-bg-workspace">
@@ -621,7 +635,123 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">
               คิว {workspace?.waitlist.waitingCount ?? 0} · {(workspace?.waitlist.waitingGuests ?? 0)} คน
             </span>
+            <span className="pos-bg-stat-pill">
+              จองล่วงหน้า {workspace?.waitlist.confirmedReservationCount ?? 0}
+            </span>
           </div>
+
+          <details className="pos-bg-section pos-bg-section--advanced" open={reservations.length > 0}>
+            <summary>การจองล่วงหน้า · {reservations.length} รายการ</summary>
+            <div className="pos-bg-form" style={{ marginTop: 10 }}>
+              <label className="pos-bg-field">
+                วันและเวลา
+                <input type="datetime-local" value={reservationTime}
+                  onChange={(e) => setReservationTime(e.target.value)} />
+              </label>
+              <label className="pos-bg-field pos-bg-field--num">
+                ระยะเวลา (นาที)
+                <input value={reservationDuration} inputMode="numeric"
+                  onChange={(e) => setReservationDuration(e.target.value)} />
+              </label>
+              <label className="pos-bg-field pos-bg-field--num">
+                จำนวนคน
+                <input value={reservationPartySize} inputMode="numeric"
+                  onChange={(e) => setReservationPartySize(e.target.value)} />
+              </label>
+              <label className="pos-bg-field">
+                โต๊ะ
+                <select value={reservationTableId} onChange={(e) => setReservationTableId(e.target.value)}>
+                  <option value="">เลือกโต๊ะ</option>
+                  {floorTables.filter((table) => !table.blocked).map((table) => (
+                    <option key={table.id} value={table.id}>{table.code} · {table.name} ({table.seats} ที่)</option>
+                  ))}
+                </select>
+              </label>
+              <label className="pos-bg-field">
+                ชื่อลูกค้า
+                <input value={reservationGuestName} onChange={(e) => setReservationGuestName(e.target.value)} />
+              </label>
+              <label className="pos-bg-field">
+                เบอร์โทร
+                <input value={reservationGuestPhone} onChange={(e) => setReservationGuestPhone(e.target.value)} />
+              </label>
+              <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                disabled={busy === 'reservation-add'}
+                onClick={() => {
+                  const partySize = Number(reservationPartySize);
+                  const durationMinutes = Number(reservationDuration);
+                  const instant = new Date(reservationTime);
+                  if (!reservationTableId || !reservationGuestName.trim() || !reservationGuestPhone.trim()
+                    || !Number.isInteger(partySize) || partySize < 1
+                    || !Number.isInteger(durationMinutes) || durationMinutes < 30
+                    || !Number.isFinite(instant.getTime())) {
+                    setError('ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาทีให้ครบ'); return;
+                  }
+                  void run('reservation-add', 'reservation.add', {
+                    tableId: reservationTableId, reservedFor: instant.toISOString(),
+                    durationMinutes, partySize, guestName: reservationGuestName,
+                    guestPhone: reservationGuestPhone,
+                  }, () => {
+                    setReservationPartySize('2'); setReservationGuestName('');
+                    setReservationGuestPhone(''); setReservationTime(''); setReservationTableId('');
+                    setNotice('ยืนยันการจองแล้ว');
+                  });
+                }}>
+                ยืนยันจอง
+              </button>
+            </div>
+            {reservations.map((entry) => {
+              const table = floorTables.find((item) => item.id === entry.reservedTableId) ?? null;
+              const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
+              const now = Date.now();
+              const canArrive = Number.isFinite(reservedAt)
+                && now >= reservedAt - 2 * 60 * 60_000 && now <= reservedAt + 6 * 60 * 60_000;
+              const canMarkNoShow = Number.isFinite(reservedAt) && now >= reservedAt;
+              return (
+                <div key={entry.id} className="pos-bg-row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
+                  <div className="pos-bg-row-main">
+                    {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · โต๊ะ {entry.reservedTableCode || '-'}
+                    <span style={{ color: 'var(--pos-muted)' }}>
+                      {' · '}{entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'}
+                      {' · '}{entry.reservedDurationMinutes ?? 0} นาที
+                    </span>
+                  </div>
+                  <div className="pos-bg-row-actions">
+                    <button type="button" className="pos-ret-btn"
+                      disabled={!canArrive || busy === `reservation-checkin-${entry.id}`}
+                      onClick={() => void run(`reservation-checkin-${entry.id}`, 'reservation.check_in',
+                        { entryId: entry.id }, () => setNotice('เช็กอินและออกเลขคิวแล้ว'))}>
+                      เช็กอิน
+                    </button>
+                    {canArrive && table && !table.openSession && !table.blocked && table.seats >= entry.partySize && (
+                      <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={() => {
+                        setSeatingQueueId(entry.id); setOpeningTable(table); selectTable(''); setSession(null);
+                        setDrafts([]); setNotice(`เตรียมเปิด ${table.code} ให้รายการจอง — ระบุผู้เล่นจริงก่อนเริ่มเวลา`);
+                      }}>
+                        นั่งโต๊ะ
+                      </button>
+                    )}
+                    <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                      disabled={busy === `reservation-cancel-${entry.id}`}
+                      onClick={() => void run(`reservation-cancel-${entry.id}`, 'waitlist.close', {
+                        entryId: entry.id, status: 'CANCELLED',
+                      }, () => setNotice('ยกเลิกการจองแล้ว'))}>
+                      ยกเลิก
+                    </button>
+                    {canMarkNoShow && (
+                      <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                        disabled={busy === `reservation-noshow-${entry.id}`}
+                        onClick={() => void run(`reservation-noshow-${entry.id}`, 'waitlist.close', {
+                          entryId: entry.id, status: 'NO_SHOW',
+                        }, () => setNotice('บันทึกว่าลูกค้าไม่มาแล้ว'))}>
+                        ไม่มา
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </details>
 
           <details className="pos-bg-section pos-bg-section--advanced" open={openQueue.length > 0}>
             <summary>

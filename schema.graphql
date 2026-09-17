@@ -2777,6 +2777,19 @@ input BmsPosBoardGameReleaseIdentityHoldInput {
   pin: String!
 }
 
+input BmsPosBoardGameReservationAddInput {
+  cashierUserId: ID!
+  durationMinutes: Int!
+  guestName: String
+  guestPhone: String
+  idempotencyKey: String!
+  note: String
+  partySize: Int!
+  pin: String!
+  reservedFor: String!
+  tableId: ID!
+}
+
 input BmsPosBoardGameReturnCopyInput {
   cashierUserId: ID!
   copyStatus: String
@@ -3004,6 +3017,7 @@ type BmsPosBoardGameTitle {
 
 type BmsPosBoardGameWaitlist {
   calledCount: Int!
+  confirmedReservationCount: Int!
   entries: [BmsPosBoardGameWaitlistEntry!]!
   longestWaitMinutes: Int!
   tables: [BmsPosBoardGameWaitlistTable!]!
@@ -3040,16 +3054,23 @@ input BmsPosBoardGameWaitlistCloseInput {
 
 type BmsPosBoardGameWaitlistEntry {
   calledAt: String
+  checkedInAt: String
   closedAt: String
+  confirmedAt: String
   createdAt: String!
   guestName: String
   guestPhone: String
   id: ID!
+  kind: String!
   note: String
   partySize: Int!
   preferredAreaId: ID
   preferredAreaName: String
-  queueNo: Int!
+  queueNo: Int
+  reservedDurationMinutes: Int
+  reservedFor: String
+  reservedTableCode: String
+  reservedTableId: ID
   seatedAt: String
   seatedSessionId: ID
   seatedTableCode: String
@@ -3083,6 +3104,8 @@ type BmsPosBoardGameWaitlistTable {
   expectedAvailableAt: String
   id: ID!
   name: String!
+  nextReservedAt: String
+  nextReservedUntil: String
   seats: Int!
 }
 
@@ -6895,6 +6918,7 @@ type Mutation {
   bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
   bmsPosAcknowledgeBoardGameServiceCall(input: BmsPosBoardGameServiceCallInput!): BmsPosBoardGameServiceCallActionResult!
   bmsPosAddBoardGameParticipant(input: BmsPosBoardGameAddParticipantInput!): BmsPosBoardGameParticipant!
+  bmsPosAddBoardGameReservation(input: BmsPosBoardGameReservationAddInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosAddBoardGameTabItem(input: BmsPosBoardGameTabAddInput!): BmsPosBoardGameTabActionResult!
   bmsPosAddBoardGameWaitlistEntry(input: BmsPosBoardGameWaitlistAddInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosAdjustBoardGameTiming(input: BmsPosBoardGameTimingInput!): BmsPosBoardGameSessionSummary!
@@ -6905,6 +6929,7 @@ type Mutation {
   bmsPosCancelStockCount(input: BmsPosStockCountActionInput!): BmsMobileStockCountActionResult!
   bmsPosCancelStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosCashMovement(input: BmsPosCashMovementInput!): BmsPosCashMovementActionResult!
+  bmsPosCheckInBoardGameReservation(input: BmsPosBoardGameWaitlistCallInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosCheckoutBoardGameCopy(input: BmsPosBoardGameCheckoutCopyInput!): BmsPosBoardGameLoan!
   bmsPosCloseBoardGameBillingGroup(input: BmsPosBoardGameBillingGroupActionInput!): BmsPosBoardGameBilling!
   bmsPosCloseBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameBilling!

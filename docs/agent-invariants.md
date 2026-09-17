@@ -597,7 +597,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, and `9.99` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, and `10.0` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).
@@ -745,14 +745,24 @@ playable game library. The operating brief is
   the queue row and calls `openBoardGameSessionInTx()` in the same tenant transaction that changes
   it to `SEATED` and links the real table/session. Never mark it seated first, duplicate the
   open-session SQL, or treat `expected_end_at` as a promised availability time.
+- **A reservation is a guarded pre-session window (`10.0`), not another visit or money path.** It
+  reuses the waitlist aggregate with `kind = 'RESERVATION'`, names one branch table and fixed time
+  window, and starts no clock, bill, order or inventory reservation. Booking, check-in and seating
+  take the table lock and reject overlapping `CONFIRMED`/`WAITING`/`CALLED` reservation windows.
+  Check-in is accepted only from two hours before through six hours after the start, allocates the
+  normal service-day queue number atomically and becomes `WAITING`; direct seating uses the same
+  arrival window and the existing `openBoardGameSessionInTx()` transaction. A live open-ended
+  session blocks a new booking, and a fixed session whose expected end crosses the requested start
+  blocks it too. Browser and native POS dispatch the same shared commands. Do not turn a reservation
+  deposit into a Product SKU or a second board-game billing ledger.
 - **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
 - **Not built:** automatic renewal of a member pass (it needs a stored payment instrument this
-  platform does not have), advance reservations/public booking, and dedicated board-game profitability/utilization
-  reports. Extend CRM/reporting/payment domains for these; do not create parallel customer or money
-  ledgers.
+  platform does not have), public self-booking/reminders/reservation deposits, and dedicated
+  board-game profitability/utilization reports. Extend CRM/reporting/payment domains for these; do
+  not create parallel customer or money ledgers.
 
 ## Product catalog: variants, sales surfaces, and stock policies
 

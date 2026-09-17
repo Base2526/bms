@@ -14,8 +14,10 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
 import {
+  addBoardGameReservation,
   addBoardGameWaitlistEntry,
   callBoardGameWaitlistEntry,
+  checkInBoardGameReservation,
   closeBoardGameWaitlistEntry,
   listBoardGameWaitlist,
   seatBoardGameWaitlistEntry,
@@ -51,6 +53,16 @@ async function add(partySize: number, idempotencyKey = key("add")) {
     partySize,
     guestName: `FAKE party ${sequence}`,
     preferredAreaId: areaId,
+  });
+}
+
+const futureIso = (hours: number) => new Date(Date.now() + hours * 60 * 60_000).toISOString();
+
+async function reserve(tableId: string, reservedFor: string, partySize = 2) {
+  return addBoardGameReservation({
+    tenantId, locationId, actorUserId: staffId, idempotencyKey: key("reserve"),
+    tableId, reservedFor, durationMinutes: 120, partySize,
+    guestName: `FAKE reservation ${sequence}`, guestPhone: "0800000000",
   });
 }
 
@@ -167,6 +179,34 @@ test("calling and closing stay branch scoped and terminal", async () => {
     }),
     /สถานะไม่อนุญาต|ปิดไปแล้ว/,
   );
+});
+
+test("reservations lock one table window, reject overlap, and check in to the service-day queue", async () => {
+  const reservedFor = futureIso(1);
+  const reservation = await reserve(largeTableId, reservedFor, 4);
+  assert.equal(reservation!.kind, "RESERVATION");
+  assert.equal(reservation!.status, "CONFIRMED");
+  assert.equal(reservation!.queueNo, null);
+  assert.equal(reservation!.reservedTableId, largeTableId);
+  await assert.rejects(
+    () => reserve(largeTableId, new Date(Date.parse(reservedFor) + 30 * 60_000).toISOString(), 2),
+    /เวลาทับกัน/,
+  );
+  const otherTable = await reserve(smallTableId, reservedFor, 2);
+  assert.equal(otherTable!.status, "CONFIRMED", "คนละโต๊ะจองเวลาเดียวกันได้");
+
+  const checkedIn = await checkInBoardGameReservation({
+    tenantId, locationId, actorUserId: staffId, entryId: reservation!.id,
+    idempotencyKey: key("check-in"),
+  });
+  assert.equal(checkedIn!.status, "WAITING");
+  assert.ok(checkedIn!.queueNo);
+  assert.ok(checkedIn!.checkedInAt);
+  await closeBoardGameWaitlistEntry({
+    tenantId, locationId, actorUserId: staffId, entryId: reservation!.id,
+    idempotencyKey: key("cancel-checked-in"), status: "CANCELLED",
+    reason: "FAKE free the table for the next contract",
+  });
 });
 
 test("capacity rejection rolls back, then seating opens and links the real session atomically", async () => {

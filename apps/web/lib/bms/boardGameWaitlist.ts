@@ -14,12 +14,13 @@ import {
 import { beginTenantTx } from "./tenant";
 
 export type BoardGameWaitlistStatus =
-  | "WAITING" | "CALLED" | "SEATED" | "CANCELLED" | "NO_SHOW";
+  | "CONFIRMED" | "WAITING" | "CALLED" | "SEATED" | "CANCELLED" | "NO_SHOW";
 
 type WaitlistRow = {
   id: string;
+  kind: "WALK_IN" | "RESERVATION";
   service_date: Date | string;
-  queue_no: number;
+  queue_no: number | null;
   status: BoardGameWaitlistStatus;
   party_size: number;
   guest_name: string | null;
@@ -27,6 +28,12 @@ type WaitlistRow = {
   note: string | null;
   preferred_area_id: string | null;
   preferred_area_name: string | null;
+  reserved_for: Date | string | null;
+  reserved_duration_minutes: number | null;
+  reserved_table_id: string | null;
+  reserved_table_code: string | null;
+  confirmed_at: Date | string | null;
+  checked_in_at: Date | string | null;
   seated_table_id: string | null;
   seated_table_code: string | null;
   seated_session_id: string | null;
@@ -41,8 +48,10 @@ const SERVICE_DATE_SQL = `(
   - INTERVAL '4 hours'
 )::date`;
 
-const SELECT_COLUMNS = `w.id, w.service_date, w.queue_no, w.status, w.party_size,
+const SELECT_COLUMNS = `w.id, w.kind, w.service_date, w.queue_no, w.status, w.party_size,
   w.guest_name, w.guest_phone, w.note, w.preferred_area_id, area.name AS preferred_area_name,
+  w.reserved_for, w.reserved_duration_minutes, w.reserved_table_id,
+  reserved_table.code AS reserved_table_code, w.confirmed_at, w.checked_in_at,
   w.seated_table_id, table_row.code AS seated_table_code, w.seated_session_id,
   w.called_at, w.seated_at, w.closed_at, w.created_at`;
 
@@ -51,7 +60,10 @@ const SELECT_JOINS = `LEFT JOIN bms_board_game_areas area
    AND area.id = w.preferred_area_id
   LEFT JOIN bms_board_game_tables table_row
     ON table_row.tenant_id = w.tenant_id AND table_row.location_id = w.location_id
-   AND table_row.id = w.seated_table_id`;
+   AND table_row.id = w.seated_table_id
+  LEFT JOIN bms_board_game_tables reserved_table
+    ON reserved_table.tenant_id = w.tenant_id AND reserved_table.location_id = w.location_id
+   AND reserved_table.id = w.reserved_table_id`;
 
 const iso = (value: Date | string | null) =>
   value == null ? null : value instanceof Date ? value.toISOString() : String(value);
@@ -59,8 +71,9 @@ const iso = (value: Date | string | null) =>
 function mapEntry(row: WaitlistRow) {
   return {
     id: row.id,
+    kind: row.kind,
     serviceDate: String(row.service_date).slice(0, 10),
-    queueNo: Number(row.queue_no),
+    queueNo: row.queue_no == null ? null : Number(row.queue_no),
     status: row.status,
     partySize: Number(row.party_size),
     guestName: row.guest_name,
@@ -68,6 +81,13 @@ function mapEntry(row: WaitlistRow) {
     note: row.note,
     preferredAreaId: row.preferred_area_id,
     preferredAreaName: row.preferred_area_name,
+    reservedFor: iso(row.reserved_for),
+    reservedDurationMinutes: row.reserved_duration_minutes == null
+      ? null : Number(row.reserved_duration_minutes),
+    reservedTableId: row.reserved_table_id,
+    reservedTableCode: row.reserved_table_code,
+    confirmedAt: iso(row.confirmed_at),
+    checkedInAt: iso(row.checked_in_at),
     seatedTableId: row.seated_table_id,
     seatedTableCode: row.seated_table_code,
     seatedSessionId: row.seated_session_id,
@@ -127,19 +147,28 @@ export async function listBoardGameWaitlist(tenantId: string, locationId: string
          ${SELECT_JOINS}
          LEFT JOIN bms_store_profile profile ON profile.tenant_id = w.tenant_id
         WHERE w.tenant_id = $1 AND w.location_id = $2
-          AND (w.status IN ('WAITING','CALLED') OR w.service_date = ${SERVICE_DATE_SQL})
-        ORDER BY (w.status IN ('WAITING','CALLED')) DESC, w.created_at, w.queue_no`,
+          AND (w.status IN ('WAITING','CALLED')
+            OR w.status = 'CONFIRMED'
+            OR w.service_date = ${SERVICE_DATE_SQL})
+        ORDER BY (w.status IN ('WAITING','CALLED')) DESC,
+                 (w.status = 'CONFIRMED') DESC, COALESCE(w.reserved_for, w.created_at), w.queue_no`,
       [tenantId, locationId],
     ),
     query<{
       id: string; area_id: string; code: string; name: string; seats: number;
       availability: "AVAILABLE" | "OCCUPIED" | "BLOCKED";
       expected_available_at: Date | string | null;
+      next_reserved_at: Date | string | null;
+      next_reserved_until: Date | string | null;
     }>(
       `SELECT t.id, t.area_id, t.code, t.name, t.seats,
               CASE WHEN t.blocked THEN 'BLOCKED'
                    WHEN st.id IS NULL THEN 'AVAILABLE' ELSE 'OCCUPIED' END AS availability,
-              active.expected_available_at
+              active.expected_available_at,
+              next_booking.reserved_for AS next_reserved_at,
+              next_booking.reserved_for
+                + make_interval(mins => next_booking.reserved_duration_minutes)
+                AS next_reserved_until
          FROM bms_board_game_tables t
          LEFT JOIN bms_board_game_seatings st
            ON st.tenant_id = t.tenant_id AND st.location_id = t.location_id
@@ -151,6 +180,16 @@ export async function listBoardGameWaitlist(tenantId: string, locationId: string
             WHERE s.tenant_id = st.tenant_id AND s.seating_id = st.id
               AND s.status IN ('OPEN','CLOSING')
          ) active ON st.id IS NOT NULL
+         LEFT JOIN LATERAL (
+           SELECT w.reserved_for, w.reserved_duration_minutes
+             FROM bms_board_game_waitlist w
+            WHERE w.tenant_id = t.tenant_id AND w.location_id = t.location_id
+              AND w.reserved_table_id = t.id AND w.kind = 'RESERVATION'
+              AND w.status = 'CONFIRMED'
+              AND w.reserved_for + make_interval(mins => w.reserved_duration_minutes) > now()
+            ORDER BY w.reserved_for
+            LIMIT 1
+         ) next_booking ON TRUE
         WHERE t.tenant_id = $1 AND t.location_id = $2 AND t.active
         ORDER BY t.sort_order, t.code`,
       [tenantId, locationId],
@@ -162,6 +201,7 @@ export async function listBoardGameWaitlist(tenantId: string, locationId: string
     entries,
     waitingCount: open.filter((entry) => entry.status === "WAITING").length,
     calledCount: open.filter((entry) => entry.status === "CALLED").length,
+    confirmedReservationCount: entries.filter((entry) => entry.status === "CONFIRMED").length,
     waitingGuests: open.reduce((sum, entry) => sum + entry.partySize, 0),
     longestWaitMinutes: open.length
       ? Math.max(...open.map((entry) => Math.max(0, Math.floor((Date.now() - Date.parse(entry.createdAt!)) / 60_000))))
@@ -174,8 +214,169 @@ export async function listBoardGameWaitlist(tenantId: string, locationId: string
       seats: Number(row.seats),
       availability: row.availability,
       expectedAvailableAt: iso(row.expected_available_at),
+      nextReservedAt: iso(row.next_reserved_at),
+      nextReservedUntil: iso(row.next_reserved_until),
     })),
   };
+}
+
+function reservationInstant(value: unknown): Date {
+  const parsed = new Date(String(value ?? ""));
+  const now = Date.now();
+  if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= now) {
+    throw new Error("เวลาจองต้องเป็นเวลาในอนาคต");
+  }
+  if (parsed.getTime() > now + 366 * 24 * 60 * 60_000) {
+    throw new Error("รับจองล่วงหน้าได้ไม่เกิน 366 วัน");
+  }
+  return parsed;
+}
+
+export async function addBoardGameReservation(input: {
+  tenantId: string; locationId: string; actorUserId: string; idempotencyKey: string;
+  tableId: string; reservedFor: string; durationMinutes: number; partySize: number;
+  guestName?: string | null; guestPhone?: string | null; note?: string | null;
+}) {
+  const partySize = positiveInteger(input.partySize, "จำนวนผู้เล่น");
+  const durationMinutes = positiveInteger(input.durationMinutes, "ระยะเวลาจอง", 720);
+  if (durationMinutes < 30) throw new Error("ระยะเวลาจองต้องอย่างน้อย 30 นาที");
+  const reservedFor = reservationInstant(input.reservedFor);
+  const normalized = {
+    locationId: input.locationId, tableId: input.tableId,
+    reservedFor: reservedFor.toISOString(), durationMinutes, partySize,
+    guestName: boundedText(input.guestName, 120),
+    guestPhone: boundedText(input.guestPhone, 40), note: boundedText(input.note, 300),
+  };
+  const idempotency = boardGameIdempotency("reservation.add", input.idempotencyKey, normalized);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await requireBoardGameCafeTenant(client, input.tenantId);
+    const replay = await replayBoardGameResult<{ entryId: string }>(client, input.tenantId, idempotency);
+    if (replay) {
+      await client.query("COMMIT");
+      return getBoardGameWaitlistEntry(input.tenantId, replay.entryId);
+    }
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `board-game-reservation:${input.tenantId}:${input.locationId}:${input.tableId}`,
+    ]);
+    const table = await client.query<{ seats: number }>(
+      `SELECT seats FROM bms_board_game_tables
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
+        FOR UPDATE`,
+      [input.tenantId, input.locationId, input.tableId],
+    );
+    if (!table.rowCount) throw new Error("ไม่พบโต๊ะที่เปิดรับจองในสาขานี้");
+    if (Number(table.rows[0].seats) < partySize) throw new Error("โต๊ะนี้รองรับจำนวนผู้เล่นไม่พอ");
+    const liveConflict = await client.query(
+      `SELECT 1
+         FROM bms_board_game_seatings st
+         JOIN bms_board_game_sessions s
+           ON s.tenant_id = st.tenant_id AND s.seating_id = st.id
+        WHERE st.tenant_id = $1 AND st.location_id = $2 AND st.table_id = $3
+          AND st.status = 'ACTIVE' AND s.status IN ('OPEN','CLOSING')
+          AND (s.status = 'CLOSING' OR s.expected_end_at IS NULL OR s.expected_end_at > $4::timestamptz)
+        LIMIT 1`,
+      [input.tenantId, input.locationId, input.tableId, reservedFor.toISOString()],
+    );
+    if (liveConflict.rowCount) {
+      throw new Error("โต๊ะนี้ยังมี session ที่ยืนยันไม่ได้ว่าจะจบก่อนเวลาจอง");
+    }
+    const conflict = await client.query(
+      `SELECT 1 FROM bms_board_game_waitlist
+        WHERE tenant_id = $1 AND location_id = $2 AND reserved_table_id = $3
+          AND kind = 'RESERVATION' AND status IN ('CONFIRMED','WAITING','CALLED')
+          AND reserved_for < $4::timestamptz + make_interval(mins => $5)
+          AND reserved_for + make_interval(mins => reserved_duration_minutes) > $4::timestamptz
+        LIMIT 1`,
+      [input.tenantId, input.locationId, input.tableId, reservedFor.toISOString(), durationMinutes],
+    );
+    if (conflict.rowCount) throw new Error("โต๊ะนี้มีการจองที่เวลาทับกัน");
+    const inserted = await client.query<{ id: string }>(
+      `WITH profile AS (
+         SELECT COALESCE(NULLIF(timezone, ''), 'Asia/Bangkok') AS timezone
+           FROM bms_store_profile WHERE tenant_id = $1
+       )
+       INSERT INTO bms_board_game_waitlist
+         (tenant_id, location_id, kind, service_date, queue_no, status, party_size,
+          guest_name, guest_phone, note, reserved_for, reserved_duration_minutes,
+          reserved_table_id, confirmed_at, created_by)
+       SELECT $1,$2,'RESERVATION',
+              (($4::timestamptz AT TIME ZONE profile.timezone) - INTERVAL '4 hours')::date,
+              NULL,'CONFIRMED',$6,$7,$8,$9,$4::timestamptz,$5,$3,now(),$10
+         FROM profile
+       RETURNING id`,
+      [input.tenantId, input.locationId, input.tableId, reservedFor.toISOString(), durationMinutes,
+        partySize, normalized.guestName, normalized.guestPhone, normalized.note, input.actorUserId],
+    );
+    if (!inserted.rowCount) throw new Error("ตั้งค่าร้านไม่ครบ จึงยังรับจองไม่ได้");
+    await storeBoardGameResult(client, input.tenantId, idempotency, { entryId: inserted.rows[0].id });
+    await auditInTx(client, input.tenantId, input.actorUserId,
+      "board_game.reservation_add", inserted.rows[0].id, {
+        locationId: input.locationId, tableId: input.tableId,
+        reservedFor: reservedFor.toISOString(), durationMinutes, partySize,
+      });
+    await client.query("COMMIT");
+    return getBoardGameWaitlistEntry(input.tenantId, inserted.rows[0].id);
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function checkInBoardGameReservation(input: {
+  tenantId: string; locationId: string; actorUserId: string;
+  entryId: string; idempotencyKey: string;
+}) {
+  const idempotency = boardGameIdempotency("reservation.check_in", input.idempotencyKey, {
+    locationId: input.locationId, entryId: input.entryId,
+  });
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await requireBoardGameCafeTenant(client, input.tenantId);
+    const replay = await replayBoardGameResult<{ entryId: string }>(client, input.tenantId, idempotency);
+    if (replay) {
+      await client.query("COMMIT");
+      return getBoardGameWaitlistEntry(input.tenantId, replay.entryId);
+    }
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `board-game-waitlist-number:${input.tenantId}:${input.locationId}`,
+    ]);
+    const updated = await client.query<{ id: string }>(
+      `WITH target AS (
+         SELECT w.id, w.service_date
+           FROM bms_board_game_waitlist w
+          WHERE w.tenant_id = $1 AND w.location_id = $2 AND w.id = $3
+            AND w.kind = 'RESERVATION' AND w.status = 'CONFIRMED'
+            AND w.reserved_for BETWEEN now() - INTERVAL '6 hours' AND now() + INTERVAL '2 hours'
+          FOR UPDATE
+       )
+       UPDATE bms_board_game_waitlist w
+          SET status = 'WAITING', checked_in_at = now(), updated_by = $4, updated_at = now(),
+              queue_no = COALESCE((SELECT max(existing.queue_no)
+                                     FROM bms_board_game_waitlist existing
+                                    WHERE existing.tenant_id = $1 AND existing.location_id = $2
+                                      AND existing.service_date = target.service_date), 0) + 1
+         FROM target
+        WHERE w.tenant_id = $1 AND w.id = target.id
+       RETURNING w.id`,
+      [input.tenantId, input.locationId, input.entryId, input.actorUserId],
+    );
+    if (!updated.rowCount) throw new Error("เช็กอินได้เฉพาะการจองที่ยืนยันและยังไม่ปิด");
+    await storeBoardGameResult(client, input.tenantId, idempotency, { entryId: input.entryId });
+    await auditInTx(client, input.tenantId, input.actorUserId,
+      "board_game.reservation_check_in", input.entryId, { locationId: input.locationId });
+    await client.query("COMMIT");
+    return getBoardGameWaitlistEntry(input.tenantId, input.entryId);
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function addBoardGameWaitlistEntry(input: {
@@ -277,7 +478,9 @@ async function updateEntry(input: {
               updated_by = $4, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND location_id = $3
           AND (($5 = 'CALLED' AND status = 'WAITING')
-            OR ($5 IN ('CANCELLED','NO_SHOW') AND status IN ('WAITING','CALLED')))
+            OR ($5 = 'CANCELLED' AND status IN ('CONFIRMED','WAITING','CALLED'))
+            OR ($5 = 'NO_SHOW' AND status IN ('CONFIRMED','WAITING','CALLED')
+                AND (kind = 'WALK_IN' OR reserved_for <= now())))
        RETURNING id`,
       [input.tenantId, input.entryId, input.locationId, input.actorUserId, targetStatus, reason],
     );
@@ -336,10 +539,13 @@ export async function seatBoardGameWaitlistEntry(input: {
       await client.query("COMMIT");
       return { entry: await getBoardGameWaitlistEntry(input.tenantId, replay.entryId), session: replay.session };
     }
-    const entry = await client.query<{ party_size: number }>(
-      `SELECT party_size FROM bms_board_game_waitlist
+    const entry = await client.query<{ party_size: number; reserved_table_id: string | null }>(
+      `SELECT party_size, reserved_table_id FROM bms_board_game_waitlist
         WHERE tenant_id = $1 AND location_id = $2 AND id = $3
-          AND status IN ('WAITING','CALLED')
+          AND (status IN ('WAITING','CALLED') OR (
+            status = 'CONFIRMED'
+            AND reserved_for BETWEEN now() - INTERVAL '6 hours' AND now() + INTERVAL '2 hours'
+          ))
         FOR UPDATE`,
       [input.tenantId, input.locationId, input.entryId],
     );
@@ -356,6 +562,20 @@ export async function seatBoardGameWaitlistEntry(input: {
     if (!table.rowCount) throw new Error("ไม่พบโต๊ะบอร์ดเกมที่เปิดใช้งานอยู่ในสาขานี้");
     if (Number(table.rows[0].seats) < input.participants.length) {
       throw new Error("โต๊ะนี้รองรับจำนวนผู้เล่นจริงไม่พอ");
+    }
+    const bookingConflict = await client.query(
+      `SELECT 1 FROM bms_board_game_waitlist
+        WHERE tenant_id = $1 AND location_id = $2 AND reserved_table_id = $3
+          AND id <> $4 AND kind = 'RESERVATION' AND status IN ('CONFIRMED','WAITING','CALLED')
+          AND reserved_for + make_interval(mins => reserved_duration_minutes) > now()
+          AND ($5::boolean OR reserved_for < now() + make_interval(mins => $6))
+        LIMIT 1`,
+      [input.tenantId, input.locationId, input.tableId, input.entryId,
+        (input.billingMode ?? "OPEN_ENDED") === "OPEN_ENDED",
+        input.expectedDurationMinutes ?? 0],
+    );
+    if (bookingConflict.rowCount) {
+      throw new Error("โต๊ะนี้มีการจองถัดไปและระยะเวลาเล่นอาจทับกัน");
     }
     const session = await openBoardGameSessionInTx(client, input.tenantId, {
       idempotencyKey: `waitlist-seat:${idempotency.requestHash}`,

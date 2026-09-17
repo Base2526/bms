@@ -48,8 +48,10 @@ import {
   updateBoardGameServiceCall,
 } from "./boardGameServiceCalls";
 import {
+  addBoardGameReservation,
   addBoardGameWaitlistEntry,
   callBoardGameWaitlistEntry,
+  checkInBoardGameReservation,
   closeBoardGameWaitlistEntry,
   listBoardGameWaitlist,
   seatBoardGameWaitlistEntry,
@@ -163,7 +165,9 @@ export type BoardGamePosAction =
   | "waitlist.add"
   | "waitlist.call"
   | "waitlist.close"
-  | "waitlist.seat";
+  | "waitlist.seat"
+  | "reservation.add"
+  | "reservation.check_in";
 
 export type BoardGamePosActionSpec = {
   /** สิทธิ์หลักที่ต้องถือ — ตัวที่ผู้เรียกใช้ตอนตรวจ PIN */
@@ -312,6 +316,16 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: true,
+  },
+  "reservation.add": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "reservation.check_in": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
   },
   "copy.checkout": {
     permission: "board_game.session.manage",
@@ -543,6 +557,30 @@ export async function runBoardGamePosMutation(
         alertBeforeMinutes: Number(input.alertBeforeMinutes ?? 15),
         participants: participants as never,
         note: text(input.note) || null,
+      }));
+    }
+    case "reservation.add": {
+      return callService(() => addBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        tableId: uuid(input.tableId, "โต๊ะที่จองไม่ถูกต้อง"),
+        reservedFor: text(input.reservedFor),
+        durationMinutes: Number(input.durationMinutes),
+        partySize: Number(input.partySize),
+        guestName: text(input.guestName) || null,
+        guestPhone: text(input.guestPhone) || null,
+        note: text(input.note) || null,
+      }));
+    }
+    case "reservation.check_in": {
+      return callService(() => checkInBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
+        idempotencyKey: key,
       }));
     }
     case "participant.add": {

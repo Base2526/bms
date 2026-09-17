@@ -147,7 +147,7 @@ production introspection. The artifact is generated from the executable schema w
 
 | Output contract | Operations |
 | --- | --- |
-| Typed (136) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
+| Typed (138) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
 | JSON compatibility (0) | None. |
 
 Every operation in the table above has typed arguments and a typed output tree; the count lives in

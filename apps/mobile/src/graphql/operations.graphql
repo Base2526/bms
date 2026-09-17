@@ -2018,10 +2018,12 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
     waitlist {
       waitingCount
       calledCount
+      confirmedReservationCount
       waitingGuests
       longestWaitMinutes
       entries {
         id
+        kind
         serviceDate
         queueNo
         status
@@ -2031,6 +2033,12 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         note
         preferredAreaId
         preferredAreaName
+        reservedFor
+        reservedDurationMinutes
+        reservedTableId
+        reservedTableCode
+        confirmedAt
+        checkedInAt
         seatedTableId
         seatedTableCode
         seatedSessionId
@@ -2047,6 +2055,8 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         seats
         availability
         expectedAvailableAt
+        nextReservedAt
+        nextReservedUntil
       }
     }
   }
@@ -2054,6 +2064,7 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
 
 fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
   id
+  kind
   serviceDate
   queueNo
   status
@@ -2063,6 +2074,12 @@ fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
   note
   preferredAreaId
   preferredAreaName
+  reservedFor
+  reservedDurationMinutes
+  reservedTableId
+  reservedTableCode
+  confirmedAt
+  checkedInAt
   seatedTableId
   seatedTableCode
   seatedSessionId
@@ -2094,6 +2111,18 @@ mutation MobilePosSeatBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistSeat
   bmsPosSeatBoardGameWaitlistEntry(input: $input) {
     entry { ...MobilePosBoardGameWaitlistEntryFields }
     session { ...MobilePosBoardGameSessionSummaryFields }
+  }
+}
+
+mutation MobilePosAddBoardGameReservation($input: BmsPosBoardGameReservationAddInput!) {
+  bmsPosAddBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosCheckInBoardGameReservation($input: BmsPosBoardGameWaitlistCallInput!) {
+  bmsPosCheckInBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
