@@ -291,6 +291,47 @@ export const MIGRATIONS: Migration[] = [
       { kind: "table", name: "bms_board_game_service_calls" },
     ],
   },
+  {
+    // workspace ของทั้งสองเครื่องขายอ่านกระดานคิวทุกครั้ง และเส้นพาไปนั่งเขียน session + คิว
+    // ในทรานแซกชันเดียว ฐานที่ไม่มีตารางนี้จึงเปิดจอ Board Game ไม่ได้เลย
+    file: "9.99__bms_board_game_waitlist.sql",
+    impact: "จอ Board Game POS และคิวรอโต๊ะใช้ไม่ได้ — workspace อ่านกระดานคิวทุกครั้ง",
+    needs: [{ kind: "table", name: "bms_board_game_waitlist" }],
+  },
+  {
+    // workspace อ่านชนิดและเวลาจองทุกครั้งหลัง 10.0 แม้ร้านจะยังไม่มี reservation สักแถว
+    file: "10.0__bms_board_game_advance_reservations.sql",
+    impact: "จอ Board Game POS ใช้ไม่ได้ — workspace อ่านคอลัมน์การจองทุกครั้ง",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "kind" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "reserved_for" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "reserved_table_id" },
+    ],
+  },
+  {
+    // workspace อ่าน source/reminder ทุกครั้ง และ public directory อ่าน booking_enabled ทุกครั้ง
+    file: "10.1__bms_board_game_public_reservations.sql",
+    impact: "จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "source" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "guest_email" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "reminder_status" },
+      { kind: "column", table: "bms_board_game_public_locations", name: "booking_enabled" },
+    ],
+  },
+  {
+    // POS, public status, payment review and reports all read these fields unconditionally.
+    file: "10.2__bms_board_game_reservation_completion.sql",
+    impact: "รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "deposit_status" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "customer_locale" },
+      { kind: "column", table: "bms_board_game_public_locations", name: "reservation_deposit_policy" },
+      { kind: "column", table: "bms_payments", name: "payable_type" },
+      { kind: "column", table: "bms_payments", name: "refunded_amount" },
+      { kind: "table", name: "bms_board_game_reservation_deposit_applications" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

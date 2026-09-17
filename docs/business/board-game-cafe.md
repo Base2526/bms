@@ -208,15 +208,116 @@ The first operational release includes:
 11. Floor moves: relocating a party to a free table and merging two occupied tables, without touching any bill.
 12. Member passes: monthly unlimited or hour-bundle contracts that cover play time when a bill is frozen.
 13. Identity holds: an encrypted record of the card held while a game box is out, erased when it goes back.
+14. Walk-in queue: branch/service-day queue numbers, call/no-show/cancel states, table-fit visibility,
+    and atomic seating into the normal session path.
+15. Staff-managed advance reservations: a confirmed table/time window, overlap protection, arrival
+    check-in, cancellation/no-show, and atomic seating into that same session path.
+16. Public reservation requests: opt-in per branch, staff review before a table is promised, opaque
+    customer cancellation, and retryable email reminders for confirmed bookings.
+17. Reservation completion: branch-local request time, bounded request expiry, immediate decision
+    email, customer status polling, configurable deposits, private slip review, and deposit credit
+    applied through the existing POS payment path.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Advanced board-game analytics and reservations/waitlists are intentionally a later phase, as is
-automatic renewal of a member pass — renewing on a schedule needs a stored payment instrument this
-platform does not have, so today a pass is sold again by hand. They should extend the existing CRM
-and report domains instead of duplicating customer or payment records inside this module.
+Advanced board-game analytics and automatic member-pass renewal remain later phases. Renewal needs a
+stored payment-instrument contract the platform does not currently have.
+
+### Walk-in queue (`9.99`)
+
+`bms_board_game_waitlist` owns only the time before a party receives a table. It is not a session,
+does not accrue play charges, and never reserves sellable stock. Queue numbers are scoped to a branch
+and its service day; an open row stays visible until staff seat, cancel, or mark it no-show.
+
+The queue is ordered by arrival, but seating is deliberately not strict FIFO: a free two-seat table
+cannot serve the six-person party at the head of the line. Both registers show compatible free tables
+while preserving arrival order and wait duration. An estimated table time comes from the current
+sessions' `expected_end_at` and is guidance, never a promise; guests may extend and merged seatings
+may contain several sessions.
+
+Seating a queue row locks it, opens the real board-game session through
+`openBoardGameSessionInTx()`, and records `SEATED` plus the session/table links in the same tenant
+transaction. A commit can therefore never leave a seated queue with no clock or an opened clock whose
+queue still says waiting. From that point onward seating, timing, bills, tabs and game loans remain
+owned by their existing domains; the queue row is historical evidence for measured waiting time.
+
+`scripts/board-game-waitlist-contract.test.mts` guards the static architecture in the pure suite.
+`scripts/board-game-waitlist-db-contract.test.mts` creates an isolated cafe tenant and proves queue
+number concurrency, replay conflicts, branch scope, capacity rollback, and atomic seating against a
+real local Postgres through the guarded DB-test runner.
+
+### Advance reservations (`10.0`)
+
+An advance reservation reuses `bms_board_game_waitlist` with `kind = 'RESERVATION'`; it is still the
+state before a real visit, not a second session or billing path. Staff choose one branch table, start
+time, expected duration, party size and bounded contact details. A table row plus a table-scoped
+advisory lock serialise booking, check-in and seating so two registers cannot promise overlapping
+windows. A live open-ended session blocks the table; a fixed session is eligible only when its
+expected end does not cross the requested start.
+
+A confirmed reservation can be checked in from two hours before until six hours after its start.
+Check-in changes it into the normal `WAITING` queue and allocates the service-day queue number in the
+same transaction. Staff may also seat it directly inside that arrival window; seating calls
+`openBoardGameSessionInTx()` and writes the session/table links atomically, exactly like a walk-in.
+Confirmed, waiting and called reservations continue to hold their requested window until seated,
+cancelled or marked no-show.
+
+Before check-in, staff may correct the contact, party size, table, start time and duration. A
+reschedule locks the reservation row, then locks the old and new table keys in sorted order before it
+re-runs capacity, live-session and overlap checks; editing therefore cannot bypass the promise made
+by creation or deadlock two registers swapping tables. Both registers can search by name, phone or
+table and filter the active list by service date.
+
+The frequent cron calls `/api/bms/board-game/reservations/expire`. It is guarded by
+`authorizeCronRequest()`, recorded through `recordJobRun()`, and claims due rows with
+`FOR UPDATE SKIP LOCKED`. A confirmed reservation still untouched six hours after its start becomes
+`NO_SHOW`; a checked-in `WAITING`/`CALLED` party is deliberately left for staff to handle.
+
+Staff-operated booking is available on the browser and native POS. Public requests and reminders use
+the separate contract below. A deposit must not be represented as a Product SKU or mixed into
+play-time billing.
+
+### Public reservation requests and reminders (`10.1`)
+
+Public booking is an explicit branch opt-in layered onto the published directory. A customer submits
+contact details and a requested time window, but receives `REQUESTED`, not a table promise. The row
+has no `reserved_table_id` until a PIN-authenticated staff member chooses a capacity-safe table;
+confirmation repeats the live-session and overlap checks under the same per-table advisory lock as a
+staff-created booking. Rejecting or cancelling a request never starts a session.
+
+The customer manages the request with a high-entropy token generated in the browser. Only its SHA-256
+hash is stored, and public reads return a bounded booking view rather than contact details or internal
+table ids. Both public endpoints are rate-limited.
+
+Confirmed public bookings snapshot the branch reminder lead time. The frequent cron claims due rows
+with `FOR UPDATE SKIP LOCKED`, sends through the configured email provider, and records `SENT` or a
+bounded `FAILED` reason with at most three attempts. A stale `SENDING` claim becomes retryable after
+30 minutes. Delivery is operational evidence only; the reservation row remains authoritative.
+
+### Reservation completion and deposits (`10.2`)
+
+The browser sends the requested wall-clock value unchanged and the service converts it with the
+published branch timezone. A stable browser-generated request token is reused after an uncertain
+response, so a retry returns the original row or rejects different request data instead of creating a
+second booking. Unreviewed requests expire at the earlier of their configured TTL or requested time.
+The customer status page polls and refreshes on focus; staff decisions are emailed immediately with
+bounded retry evidence, independently of the later booking reminder.
+
+A branch can require no deposit, a fixed amount, or a percentage of the estimated general play-time
+charge. The policy, amount, due time and cancellation refund cutoff are snapshotted when staff confirm
+the table. Customer proof is an image stored as a tenant-owned private file; the payment stays
+`PENDING` until a user with `payment.confirm` confirms it. An unpaid confirmed booking expires after
+its payment window, and check-in/seating require `NOT_REQUIRED` or `PAID`.
+
+The money remains in `bms_payments`: `payable_type = BOARD_GAME_RESERVATION` is the cash receipt,
+while a `RESERVATION_DEPOSIT` payment on the real POS order is an internal tender linked back to that
+receipt. `bms_board_game_reservation_deposit_applications` prevents one deposit from being used twice.
+Tax and loyalty use the real gross sale; only the amount collected at settlement is reduced. A timely
+cancellation creates a refund-pending state, a late cancellation/no-show forfeits it, and any balance
+left after all billing groups settle can be partially refunded in the same payment ledger. The deposit
+is never a Product SKU, never moves stock and never becomes a second board-game billing ledger.
 
 ## Dev/Test Fixtures
 
@@ -227,8 +328,8 @@ multiple billing groups, game titles/copies, active and returned loans, an issue
 unpublished public-profile draft. The full-shop provisioner runs the same fixture automatically when
 the selected archetype is `board_game_cafe`.
 
-`DELETE /api/dev/fake/cleanup` removes linked fake POS orders before sessions and then removes the
-library, floor, rates, and unpublished profile fixtures in foreign-key order. It does not delete a
+`DELETE /api/dev/fake/cleanup` removes linked fake POS orders and queue history before sessions, then
+removes the library, floor, rates, and unpublished profile fixtures in foreign-key order. It does not delete a
 public profile after an operator has published it. Fake staff accounts that were later used by
 protected business-history rows are reported as `usersSkippedReferenced` and retained instead of
 making the whole cleanup fail or deleting that history.

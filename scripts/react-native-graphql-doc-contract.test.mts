@@ -101,7 +101,7 @@ test("the typed/JSON coverage table matches the executable mobile schema exactly
     .flat().length;
   assert.equal(
     resolverCount,
-    132,
+    140,
     "the documented typed count must cover the complete mobile/POS surface",
   );
   assert.deepEqual(
@@ -109,6 +109,6 @@ test("the typed/JSON coverage table matches the executable mobile schema exactly
     [],
     "the executable schema must have no opaque output roots",
   );
-  assert.deepEqual(operationsInCoverageRow("Typed (132)"), []);
+  assert.deepEqual(operationsInCoverageRow("Typed (140)"), []);
   assert.deepEqual(operationsInCoverageRow("JSON compatibility (0)"), []);
 });

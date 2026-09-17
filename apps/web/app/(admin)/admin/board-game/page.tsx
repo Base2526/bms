@@ -82,6 +82,11 @@ type PublicProfile = {
   locationId: string; publicVisible: boolean; displayName: string; summary: string | null;
   publicAddress: string | null; publicPhone: string | null; openingHours: string | null;
   latitude: number | null; longitude: number | null; publishRates: boolean; publishAvailability: boolean;
+  bookingEnabled: boolean; reservationReminderMinutes: number;
+  timezone: string; reservationMinAdvanceMinutes: number; reservationRequestTtlMinutes: number;
+  reservationDepositPolicy: "NONE" | "FIXED" | "PERCENT";
+  reservationDepositAmount: number; reservationDepositPercent: number;
+  reservationDepositPaymentWindowMinutes: number; reservationDepositRefundCutoffHours: number;
 };
 type MemberOption = { customerId: string; name: string; memberNo: string | null };
 type PassPlan = {
@@ -557,9 +562,16 @@ export default function BoardGamePage() {
   async function saveDiscovery() {
     if (!locationId) return;
     const values = await discoveryForm.validateFields();
+    const normalized = {
+      ...values,
+      reservationDepositAmount: values.reservationDepositPolicy === "FIXED"
+        ? Number(values.reservationDepositAmount || 0) : 0,
+      reservationDepositPercent: values.reservationDepositPolicy === "PERCENT"
+        ? Number(values.reservationDepositPercent || 0) : 0,
+    };
     const data = await api<{ profile: PublicProfile }>("/api/bms/board-game/discovery", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...values, locationId }),
+      body: JSON.stringify({ ...normalized, locationId }),
     });
     discoveryForm.setFieldsValue(data.profile);
     message.success(t("admin_board_game.discovery_saved"));
@@ -875,8 +887,42 @@ export default function BoardGamePage() {
                   <Space wrap size="large">
                     <Form.Item name="publishRates" valuePropName="checked" label={t("admin_board_game.publish_rates")}><Switch /></Form.Item>
                     <Form.Item name="publishAvailability" valuePropName="checked" label={t("admin_board_game.publish_availability")}><Switch /></Form.Item>
+                    <Form.Item name="bookingEnabled" valuePropName="checked" label={t("admin_board_game.booking_enabled")}><Switch /></Form.Item>
                     <Form.Item name="publicVisible" valuePropName="checked" label={t("admin_board_game.public_visible_location")}><Switch /></Form.Item>
                   </Space>
+                  <Form.Item name="reservationReminderMinutes" label={t("admin_board_game.reservation_reminder_minutes")}
+                    rules={[{ required: true }]}>
+                    <InputNumber min={30} max={10080} precision={0} />
+                  </Form.Item>
+                  <div className={styles.formGrid}>
+                    <Form.Item name="reservationMinAdvanceMinutes" label={t("admin_board_game.reservation_min_advance_minutes")}
+                      rules={[{ required: true }]}><InputNumber min={30} max={43200} precision={0} /></Form.Item>
+                    <Form.Item name="reservationRequestTtlMinutes" label={t("admin_board_game.reservation_request_ttl_minutes")}
+                      rules={[{ required: true }]}><InputNumber min={30} max={10080} precision={0} /></Form.Item>
+                    <Form.Item name="reservationDepositPolicy" label={t("admin_board_game.reservation_deposit_policy")}
+                      rules={[{ required: true }]}>
+                      <Select options={[
+                        { value: "NONE", label: t("admin_board_game.deposit_none") },
+                        { value: "FIXED", label: t("admin_board_game.deposit_fixed") },
+                        { value: "PERCENT", label: t("admin_board_game.deposit_percent") },
+                      ]} />
+                    </Form.Item>
+                  </div>
+                  <Form.Item noStyle shouldUpdate={(a, b) => a.reservationDepositPolicy !== b.reservationDepositPolicy}>
+                    {({ getFieldValue }) => getFieldValue("reservationDepositPolicy") === "FIXED"
+                      ? <Form.Item name="reservationDepositAmount" label={t("admin_board_game.reservation_deposit_amount")}
+                          rules={[{ required: true }]}><InputNumber min={0.01} max={1000000} precision={2} /></Form.Item>
+                      : getFieldValue("reservationDepositPolicy") === "PERCENT"
+                        ? <Form.Item name="reservationDepositPercent" label={t("admin_board_game.reservation_deposit_percent")}
+                            rules={[{ required: true }]}><InputNumber min={0.01} max={100} precision={2} /></Form.Item>
+                        : <div />}
+                  </Form.Item>
+                  <div className={styles.formGrid}>
+                    <Form.Item name="reservationDepositPaymentWindowMinutes" label={t("admin_board_game.reservation_deposit_payment_window")}
+                      rules={[{ required: true }]}><InputNumber min={15} max={1440} precision={0} /></Form.Item>
+                    <Form.Item name="reservationDepositRefundCutoffHours" label={t("admin_board_game.reservation_deposit_refund_cutoff")}
+                      rules={[{ required: true }]}><InputNumber min={0} max={168} precision={0} /></Form.Item>
+                  </div>
                   <Alert type="info" showIcon closable message={t("admin_board_game.discovery_privacy")} className={styles.discoveryNotice} />
                   <Button type="primary" onClick={() => void saveDiscovery()}>{t("admin_board_game.save_discovery")}</Button>
                 </Form>

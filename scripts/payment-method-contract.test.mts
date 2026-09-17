@@ -27,7 +27,10 @@ function enumValues(source: string, enumName: string): string[] {
 
 test("GraphQL payment enum accepts every persisted payment method", () => {
   const paymentMethods = constArrayValues(paymentsSource, "PAYMENT_METHODS");
-  assert.deepEqual(enumValues(typeDefs, "BmsPaymentMethod").sort(), paymentMethods.sort());
+  assert.deepEqual(
+    enumValues(typeDefs, "BmsPaymentMethod").sort(),
+    [...paymentMethods, "RESERVATION_DEPOSIT"].sort(),
+  );
 });
 
 test("admin payment page can display POS and AR payment methods without enabling credit sale submission", () => {
@@ -35,6 +38,8 @@ test("admin payment page can display POS and AR payment methods without enabling
   for (const method of paymentMethods) {
     assert.match(paymentPage, new RegExp(`\\b${method}\\b`), `missing payment page handling for ${method}`);
   }
+  assert.match(paymentPage, /RESERVATION_DEPOSIT/,
+    "the internal reservation tender must still be displayable");
   const submitMethods = constArrayValues(paymentPage, "SUBMIT_METHODS");
   assert.deepEqual(submitMethods, paymentMethods.filter((method) => method !== "CREDIT"));
   assert.match(paymentPage, /CREDIT: t\("admin_payment\.method_credit"\)/);

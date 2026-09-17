@@ -2080,13 +2080,17 @@ type BmsPayment {
   method: BmsPaymentMethod!
   netAmount: Float!
   note: String
-  orderId: ID!
+  orderId: ID
   pendingRefundAmount: Float!
   refundedAt: String
   rejectedAt: String
+  reservationDepositStatus: String
+  reservationId: ID
   slipRef: String
   slipUrl: String
+  sourcePaymentId: ID
   status: BmsPaymentStatus!
+  targetType: String!
   updatedAt: String!
   verifiedBy: String
   verifyResult: String
@@ -2116,6 +2120,7 @@ enum BmsPaymentMethod {
   CASH
   CREDIT
   QR
+  RESERVATION_DEPOSIT
   STORE_CREDIT
   TIKTOK
   WALLET
@@ -2777,6 +2782,43 @@ input BmsPosBoardGameReleaseIdentityHoldInput {
   pin: String!
 }
 
+input BmsPosBoardGameReservationAddInput {
+  cashierUserId: ID!
+  durationMinutes: Int!
+  guestName: String
+  guestPhone: String
+  idempotencyKey: String!
+  note: String
+  partySize: Int!
+  pin: String!
+  reservedFor: String!
+  tableId: ID!
+}
+
+input BmsPosBoardGameReservationReviewInput {
+  cashierUserId: ID!
+  decision: String!
+  entryId: ID!
+  idempotencyKey: String!
+  pin: String!
+  reason: String
+  tableId: ID
+}
+
+input BmsPosBoardGameReservationUpdateInput {
+  cashierUserId: ID!
+  durationMinutes: Int!
+  entryId: ID!
+  guestName: String
+  guestPhone: String
+  idempotencyKey: String!
+  note: String
+  partySize: Int!
+  pin: String!
+  reservedFor: String!
+  tableId: ID!
+}
+
 input BmsPosBoardGameReturnCopyInput {
   cashierUserId: ID!
   copyStatus: String
@@ -3002,10 +3044,118 @@ type BmsPosBoardGameTitle {
   typicalMinutes: Int
 }
 
+type BmsPosBoardGameWaitlist {
+  calledCount: Int!
+  confirmedReservationCount: Int!
+  entries: [BmsPosBoardGameWaitlistEntry!]!
+  longestWaitMinutes: Int!
+  requestedReservationCount: Int!
+  tables: [BmsPosBoardGameWaitlistTable!]!
+  waitingCount: Int!
+  waitingGuests: Int!
+}
+
+input BmsPosBoardGameWaitlistAddInput {
+  cashierUserId: ID!
+  guestName: String
+  guestPhone: String
+  idempotencyKey: String!
+  note: String
+  partySize: Int!
+  pin: String!
+  preferredAreaId: ID
+}
+
+input BmsPosBoardGameWaitlistCallInput {
+  cashierUserId: ID!
+  entryId: ID!
+  idempotencyKey: String!
+  pin: String!
+}
+
+input BmsPosBoardGameWaitlistCloseInput {
+  cashierUserId: ID!
+  entryId: ID!
+  idempotencyKey: String!
+  pin: String!
+  reason: String
+  status: String!
+}
+
+type BmsPosBoardGameWaitlistEntry {
+  calledAt: String
+  checkedInAt: String
+  closedAt: String
+  confirmedAt: String
+  createdAt: String!
+  decisionNotificationStatus: String!
+  depositAmount: Float!
+  depositDueAt: String
+  depositPolicy: String!
+  depositRefundEligibleUntil: String
+  depositStatus: String!
+  guestEmail: String
+  guestName: String
+  guestPhone: String
+  id: ID!
+  kind: String!
+  note: String
+  partySize: Int!
+  preferredAreaId: ID
+  preferredAreaName: String
+  queueNo: Int
+  rejectionReason: String
+  reminderSentAt: String
+  reminderStatus: String!
+  reservedDurationMinutes: Int
+  reservedFor: String
+  reservedTableCode: String
+  reservedTableId: ID
+  reviewedAt: String
+  seatedAt: String
+  seatedSessionId: ID
+  seatedTableCode: String
+  seatedTableId: ID
+  serviceDate: String!
+  source: String!
+  status: String!
+}
+
+input BmsPosBoardGameWaitlistSeatInput {
+  alertBeforeMinutes: Int = 15
+  billingMode: String!
+  cashierUserId: ID!
+  entryId: ID!
+  expectedDurationMinutes: Int
+  idempotencyKey: String!
+  note: String
+  participants: [BmsPosBoardGameParticipantInput!]!
+  pin: String!
+  tableId: ID!
+}
+
+type BmsPosBoardGameWaitlistSeatResult {
+  entry: BmsPosBoardGameWaitlistEntry!
+  session: BmsPosBoardGameSessionSummary!
+}
+
+type BmsPosBoardGameWaitlistTable {
+  areaId: ID!
+  availability: String!
+  code: String!
+  expectedAvailableAt: String
+  id: ID!
+  name: String!
+  nextReservedAt: String
+  nextReservedUntil: String
+  seats: Int!
+}
+
 type BmsPosBoardGameWorkspace {
   floor: BmsPosBoardGameFloor!
   library: [BmsPosBoardGameTitle!]!
   rates: [BmsPosBoardGameRate!]!
+  waitlist: BmsPosBoardGameWaitlist!
 }
 
 type BmsPosBranchLowStockItem {
@@ -3466,6 +3616,7 @@ type BmsPosMemberPreviewResult {
   cappedAt: Float
   couponDiscount: Float
   couponError: String
+  grossAmountDue: Float
   loyaltyEnabled: Boolean
   manualDiscount: Float
   member: BmsPosMember
@@ -3478,6 +3629,7 @@ type BmsPosMemberPreviewResult {
   redeemBahtPerUnit: Float
   redeemMinPoints: Float
   redeemPointsPerUnit: Float
+  reservationDepositApplied: Float
   status: String
   subtotal: Float
   tierDiscount: Float
@@ -6810,17 +6962,22 @@ type Mutation {
   bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
   bmsPosAcknowledgeBoardGameServiceCall(input: BmsPosBoardGameServiceCallInput!): BmsPosBoardGameServiceCallActionResult!
   bmsPosAddBoardGameParticipant(input: BmsPosBoardGameAddParticipantInput!): BmsPosBoardGameParticipant!
+  bmsPosAddBoardGameReservation(input: BmsPosBoardGameReservationAddInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosAddBoardGameTabItem(input: BmsPosBoardGameTabAddInput!): BmsPosBoardGameTabActionResult!
+  bmsPosAddBoardGameWaitlistEntry(input: BmsPosBoardGameWaitlistAddInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosAdjustBoardGameTiming(input: BmsPosBoardGameTimingInput!): BmsPosBoardGameSessionSummary!
   bmsPosApplyStockCount(input: BmsPosStockCountActionInput!): BmsMobileStockCountActionResult!
   bmsPosBlindReturn(input: BmsPosBlindReturnInput!): BmsPosReturnActionResult!
+  bmsPosCallBoardGameWaitlistEntry(input: BmsPosBoardGameWaitlistCallInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosCancelBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameSessionSummary!
   bmsPosCancelStockCount(input: BmsPosStockCountActionInput!): BmsMobileStockCountActionResult!
   bmsPosCancelStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosCashMovement(input: BmsPosCashMovementInput!): BmsPosCashMovementActionResult!
+  bmsPosCheckInBoardGameReservation(input: BmsPosBoardGameWaitlistCallInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosCheckoutBoardGameCopy(input: BmsPosBoardGameCheckoutCopyInput!): BmsPosBoardGameLoan!
   bmsPosCloseBoardGameBillingGroup(input: BmsPosBoardGameBillingGroupActionInput!): BmsPosBoardGameBilling!
   bmsPosCloseBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameBilling!
+  bmsPosCloseBoardGameWaitlistEntry(input: BmsPosBoardGameWaitlistCloseInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosCollectAr(input: BmsPosCollectArInput!): BmsPosArReceiptResult!
   bmsPosCompleteBoardGameServiceCall(input: BmsPosBoardGameServiceCallInput!): BmsPosBoardGameServiceCallActionResult!
   bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): BmsPosCompleteRefundResult!
@@ -6879,11 +7036,14 @@ type Mutation {
   bmsPosRestaurantWaitlistAction(input: BmsPosRestaurantWaitlistActionInput!): BmsPosRestaurantWaitlistActionResult! @deprecated(reason: "Use the named waitlist mutations")
   bmsPosReturn(input: BmsPosReturnInput!): BmsPosReturnActionResult!
   bmsPosReturnBoardGameCopy(input: BmsPosBoardGameReturnCopyInput!): BmsPosBoardGameLoan!
+  bmsPosReviewBoardGameReservation(input: BmsPosBoardGameReservationReviewInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosSale(input: BmsPosSaleInput!): BmsPosSaleResult!
+  bmsPosSeatBoardGameWaitlistEntry(input: BmsPosBoardGameWaitlistSeatInput!): BmsPosBoardGameWaitlistSeatResult!
   bmsPosSendReceipt(input: BmsPosSendReceiptInput!): BmsPosReceiptDeliveryResult!
   bmsPosSendStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
   bmsPosTakeBoardGameIdentityHold(input: BmsPosBoardGameTakeIdentityHoldInput!): BmsPosBoardGameIdentityHold!
+  bmsPosUpdateBoardGameReservation(input: BmsPosBoardGameReservationUpdateInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!

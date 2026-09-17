@@ -700,6 +700,8 @@ type MemberPreview = {
   reason: string | null;
   subtotal: number;
   amountDue: number | null;
+  grossAmountDue?: number | null;
+  reservationDepositApplied?: number;
   tierDiscount: number;
   tierLabel: string | null;
   couponDiscount: number;
@@ -8759,6 +8761,9 @@ export default function PosPage() {
                     <span style={{ color: "var(--pos-muted)" }}> · อนุมัติโดย {approvedDiscount?.approverName ?? "—"}</span>
                   </div>
                 ) : null}
+                {(memberPreview?.reservationDepositApplied ?? 0) > 0 && (
+                  <div>ใช้มัดจำการจอง −฿{baht(memberPreview!.reservationDepositApplied!)}</div>
+                )}
                 {memberPreview?.capped && <div style={{ color: "#c9455a" }}>ส่วนลดถูกตัดเพราะชนเพดานของร้าน</div>}
               </div>
             )}

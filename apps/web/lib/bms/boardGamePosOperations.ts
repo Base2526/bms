@@ -47,6 +47,17 @@ import {
   listBoardGameServiceCalls,
   updateBoardGameServiceCall,
 } from "./boardGameServiceCalls";
+import {
+  addBoardGameReservation,
+  addBoardGameWaitlistEntry,
+  callBoardGameWaitlistEntry,
+  checkInBoardGameReservation,
+  closeBoardGameWaitlistEntry,
+  listBoardGameWaitlist,
+  reviewPublicBoardGameReservation,
+  seatBoardGameWaitlistEntry,
+  updateBoardGameReservation,
+} from "./boardGameWaitlist";
 import { isIdempotencyConflictError } from "./idempotencyErrors";
 import { isPosUuid } from "./posRouteHelpers";
 
@@ -152,7 +163,15 @@ export type BoardGamePosAction =
   | "identity.release"
   | "service.access"
   | "service.acknowledge"
-  | "service.complete";
+  | "service.complete"
+  | "waitlist.add"
+  | "waitlist.call"
+  | "waitlist.close"
+  | "waitlist.seat"
+  | "reservation.add"
+  | "reservation.check_in"
+  | "reservation.update"
+  | "reservation.review";
 
 export type BoardGamePosActionSpec = {
   /** สิทธิ์หลักที่ต้องถือ — ตัวที่ผู้เรียกใช้ตอนตรวจ PIN */
@@ -281,6 +300,47 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,
   },
+  // คิวเป็นงานจัดโต๊ะ ไม่แตะเงิน · ตอนพาไปนั่งเท่านั้นที่เปิด session จริงและจึงต้องมีกะ
+  "waitlist.add": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "waitlist.call": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "waitlist.close": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "waitlist.seat": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: true,
+  },
+  "reservation.add": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "reservation.check_in": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "reservation.update": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "reservation.review": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
   "copy.checkout": {
     permission: "board_game.session.manage",
     extraPermissions: () => ["board_game.library.view"],
@@ -390,12 +450,13 @@ async function loanAtScope(scope: BoardGamePosScope, value: unknown): Promise<st
 // ---------------------------------------------------------------------------
 
 export async function loadBoardGamePosWorkspace(scope: BoardGamePosScope) {
-  const [floor, rates, library] = await Promise.all([
+  const [floor, rates, library, waitlist] = await Promise.all([
     listBoardGameFloor(scope.tenantId, scope.locationId),
     listBoardGameTimeRates(scope.tenantId),
     listBoardGameLibrary(scope.tenantId, scope.locationId),
+    listBoardGameWaitlist(scope.tenantId, scope.locationId),
   ]);
-  return { floor, rates, library };
+  return { floor, rates, library, waitlist };
 }
 
 export async function loadBoardGamePosSession(scope: BoardGamePosScope, sessionIdInput: unknown) {
@@ -451,6 +512,122 @@ export async function runBoardGamePosMutation(
         },
         actorUserId,
       ));
+    }
+    case "waitlist.add": {
+      return callService(() => addBoardGameWaitlistEntry({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        partySize: Number(input.partySize),
+        guestName: text(input.guestName) || null,
+        guestPhone: text(input.guestPhone) || null,
+        note: text(input.note) || null,
+        preferredAreaId: optionalUuid(input.preferredAreaId, "โซนที่ต้องการไม่ถูกต้อง"),
+      }));
+    }
+    case "waitlist.call": {
+      return callService(() => callBoardGameWaitlistEntry({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        entryId: uuid(input.entryId, "คิวบอร์ดเกมไม่ถูกต้อง"),
+        idempotencyKey: key,
+      }));
+    }
+    case "waitlist.close": {
+      const status = text(input.status).toUpperCase();
+      if (status !== "CANCELLED" && status !== "NO_SHOW") {
+        return badInput("สถานะปิดคิวต้องเป็น CANCELLED หรือ NO_SHOW");
+      }
+      return callService(() => closeBoardGameWaitlistEntry({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        entryId: uuid(input.entryId, "คิวบอร์ดเกมไม่ถูกต้อง"),
+        idempotencyKey: key,
+        status,
+        reason: text(input.reason) || null,
+      }));
+    }
+    case "waitlist.seat": {
+      if (!scope.shiftId) return badInput("ต้องเปิดกะของเครื่องนี้ก่อน");
+      const participants = Array.isArray(input.participants)
+        ? input.participants.map(participantDraft)
+        : [];
+      return callService(() => seatBoardGameWaitlistEntry({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        deviceId: scope.deviceId,
+        shiftId: scope.shiftId!,
+        actorUserId,
+        entryId: uuid(input.entryId, "คิวบอร์ดเกมไม่ถูกต้อง"),
+        tableId: uuid(input.tableId, "โต๊ะบอร์ดเกมไม่ถูกต้อง"),
+        idempotencyKey: key,
+        billingMode: billingMode(input.billingMode),
+        expectedDurationMinutes: input.expectedDurationMinutes == null
+          ? null
+          : Number(input.expectedDurationMinutes),
+        alertBeforeMinutes: Number(input.alertBeforeMinutes ?? 15),
+        participants: participants as never,
+        note: text(input.note) || null,
+      }));
+    }
+    case "reservation.add": {
+      return callService(() => addBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        tableId: uuid(input.tableId, "โต๊ะที่จองไม่ถูกต้อง"),
+        reservedFor: text(input.reservedFor),
+        durationMinutes: Number(input.durationMinutes),
+        partySize: Number(input.partySize),
+        guestName: text(input.guestName) || null,
+        guestPhone: text(input.guestPhone) || null,
+        note: text(input.note) || null,
+      }));
+    }
+    case "reservation.check_in": {
+      return callService(() => checkInBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
+        idempotencyKey: key,
+      }));
+    }
+    case "reservation.update": {
+      return callService(() => updateBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
+        tableId: uuid(input.tableId, "โต๊ะที่จองไม่ถูกต้อง"),
+        reservedFor: text(input.reservedFor),
+        durationMinutes: Number(input.durationMinutes),
+        partySize: Number(input.partySize),
+        guestName: text(input.guestName) || null,
+        guestPhone: text(input.guestPhone) || null,
+        note: text(input.note) || null,
+      }));
+    }
+    case "reservation.review": {
+      const decision = text(input.decision).toUpperCase();
+      if (decision !== "CONFIRM" && decision !== "REJECT") {
+        return badInput("ผลการพิจารณาต้องเป็น CONFIRM หรือ REJECT");
+      }
+      return callService(() => reviewPublicBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
+        decision,
+        tableId: decision === "CONFIRM" ? uuid(input.tableId, "โต๊ะที่จองไม่ถูกต้อง") : null,
+        reason: text(input.reason) || null,
+      }));
     }
     case "participant.add": {
       const sessionId = await sessionAtScope(scope, input.sessionId);

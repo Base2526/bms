@@ -73,7 +73,21 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.93__bms_board_game_identity_holds.sql', 'table', 'bms_board_game_identity_holds', NULL, 'ร้านบอร์ดเกมปิดบิล/ยกเลิก/เปิดดูโต๊ะไม่ได้เลย — ด่านคืนบัตรอ่านตารางนี้ทุกครั้ง'),
     ('9.94__bms_board_game_branch_scope_and_identity_hardening.sql', 'column', 'bms_board_game_member_passes', 'location_id', 'ร้านบอร์ดเกมปิดบิล/เปิดหน้าแพ็กเกจไม่ได้ — โค้ดอ่านสาขา snapshot ของสิทธิ์ทุกครั้ง'),
     ('9.96__bms_board_game_service_calls.sql', 'table', 'bms_board_game_guest_tokens', NULL, 'ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้'),
-    ('9.96__bms_board_game_service_calls.sql', 'table', 'bms_board_game_service_calls', NULL, 'ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้')
+    ('9.96__bms_board_game_service_calls.sql', 'table', 'bms_board_game_service_calls', NULL, 'ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้'),
+    ('9.99__bms_board_game_waitlist.sql', 'table', 'bms_board_game_waitlist', NULL, 'จอ Board Game POS และคิวรอโต๊ะใช้ไม่ได้ — workspace อ่านกระดานคิวทุกครั้ง'),
+    ('10.0__bms_board_game_advance_reservations.sql', 'column', 'bms_board_game_waitlist', 'kind', 'จอ Board Game POS ใช้ไม่ได้ — workspace อ่านคอลัมน์การจองทุกครั้ง'),
+    ('10.0__bms_board_game_advance_reservations.sql', 'column', 'bms_board_game_waitlist', 'reserved_for', 'จอ Board Game POS ใช้ไม่ได้ — workspace อ่านคอลัมน์การจองทุกครั้ง'),
+    ('10.0__bms_board_game_advance_reservations.sql', 'column', 'bms_board_game_waitlist', 'reserved_table_id', 'จอ Board Game POS ใช้ไม่ได้ — workspace อ่านคอลัมน์การจองทุกครั้ง'),
+    ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_waitlist', 'source', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
+    ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_waitlist', 'guest_email', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
+    ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_waitlist', 'reminder_status', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
+    ('10.1__bms_board_game_public_reservations.sql', 'column', 'bms_board_game_public_locations', 'booking_enabled', 'จอ Board Game POS และหน้าขอจองออนไลน์ใช้ไม่ได้ — โค้ดอ่านสถานะคำขอ/แจ้งเตือนทุกครั้ง'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_waitlist', 'deposit_status', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_waitlist', 'customer_locale', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_public_locations', 'reservation_deposit_policy', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_payments', 'payable_type', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_payments', 'refunded_amount', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.2__bms_board_game_reservation_completion.sql', 'table', 'bms_board_game_reservation_deposit_applications', NULL, 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

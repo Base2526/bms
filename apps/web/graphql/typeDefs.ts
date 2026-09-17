@@ -1614,6 +1614,7 @@ export const typeDefs = /* GraphQL */ `
     WALLET
     STORE_CREDIT
     CREDIT
+    RESERVATION_DEPOSIT
   }
 
   enum BmsPaymentStatus {
@@ -1625,7 +1626,11 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsPayment {
     id: ID!
-    orderId: ID!
+    orderId: ID
+    targetType: String!
+    reservationId: ID
+    reservationDepositStatus: String
+    sourcePaymentId: ID
     method: BmsPaymentMethod!
     amount: Float!
     completedRefundAmount: Float!

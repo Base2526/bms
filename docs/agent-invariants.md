@@ -597,7 +597,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, and `9.98` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, `10.0`, `10.1`, and `10.2` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).
@@ -739,14 +739,49 @@ playable game library. The operating brief is
 - **Public discovery is explicit and aggregate-only.** Choosing the archetype never publishes a
   branch. Coordinates and `public_visible` must be set deliberately; the public route is rate-limited
   and returns no table ids, session ids, participant names, customer ids, or other operational data.
+- **A queue row is not a session (`9.99`).** It owns the branch/service-day queue number and the
+  wait before a party has a table; it never starts a clock, creates a bill, or reserves stock.
+  Arrival order stays visible but is not strict FIFO because table capacity matters. Seating locks
+  the queue row and calls `openBoardGameSessionInTx()` in the same tenant transaction that changes
+  it to `SEATED` and links the real table/session. Never mark it seated first, duplicate the
+  open-session SQL, or treat `expected_end_at` as a promised availability time.
+- **A reservation is a guarded pre-session window (`10.0`), not another visit or money path.** It
+  reuses the waitlist aggregate with `kind = 'RESERVATION'`, names one branch table and fixed time
+  window, and starts no clock, bill, order or inventory reservation. Booking, check-in and seating
+  take the table lock and reject overlapping `CONFIRMED`/`WAITING`/`CALLED` reservation windows.
+  Check-in is accepted only from two hours before through six hours after the start, allocates the
+  normal service-day queue number atomically and becomes `WAITING`; direct seating uses the same
+  arrival window and the existing `openBoardGameSessionInTx()` transaction. A live open-ended
+  session blocks a new booking, and a fixed session whose expected end crosses the requested start
+  blocks it too. Editing is allowed only while `CONFIRMED`; it locks the row and old/new table keys
+  in sorted order, then repeats the same capacity/session/overlap checks. The guarded frequent cron
+  uses `FOR UPDATE SKIP LOCKED` to mark untouched rows `NO_SHOW` six hours after their start, never a
+  party already in `WAITING`/`CALLED`. Browser and native POS dispatch the same shared commands. Do
+  not turn a reservation deposit into a Product SKU or a second board-game billing ledger.
+- **A public booking is a request until staff assigns a table (`10.1`).** A branch must opt in, the
+  public row starts as `REQUESTED` with no table id, and staff confirmation repeats the normal table
+  lock, capacity, live-session and overlap checks before becoming `CONFIRMED`. The raw customer
+  management token is never stored. Public endpoints are rate-limited and expose no contact data.
+  Reminder delivery claims rows with `FOR UPDATE SKIP LOCKED`, retries a bounded number of times and
+  never changes booking authority.
+- **Reservation completion stays in the payment domain (`10.2`).** Public `datetime-local` input is
+  interpreted in the branch timezone, the browser reuses one opaque request token across retries,
+  and stale `REQUESTED` rows expire. Confirmation snapshots the branch's NONE/FIXED/PERCENT deposit
+  policy; private slip evidence creates a `BOARD_GAME_RESERVATION` target in `bms_payments`, and only
+  normal `payment.confirm` authority changes it to paid. Check-in/seating require the deposit to be
+  paid or not required. At POS settlement a linked `RESERVATION_DEPOSIT` internal tender reduces only
+  cash to collect; gross tax/loyalty and the real board-game billing group/order stay authoritative.
+  Applications are immutable allocations that prevent reuse. Refundable cancellation and unused
+  remainders are refunded on the original payment; late cancellation/no-show forfeits them. Never
+  make a deposit a Product SKU, stock reservation, or parallel money ledger.
 - **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
 - **Not built:** automatic renewal of a member pass (it needs a stored payment instrument this
-  platform does not have), reservations/waitlists, and dedicated board-game profitability/utilization
-  reports. Extend CRM/reporting/payment domains for these; do not create parallel customer or money
-  ledgers.
+  platform does not have), and dedicated
+  board-game profitability/utilization reports. Extend CRM/reporting/payment domains for these; do
+  not create parallel customer or money ledgers.
 
 ## Product catalog: variants, sales surfaces, and stock policies
 

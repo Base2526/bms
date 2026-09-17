@@ -40,7 +40,7 @@ export type AppStackParamList = {
     | undefined;
   InventoryDetail: undefined;
   ShiftDetail: undefined;
-  BoardGameOpen: { tableId: string };
+  BoardGameOpen: { tableId: string; queueEntryId?: string };
   BoardGameDetail: { sessionId: string };
 };
 

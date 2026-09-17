@@ -119,6 +119,10 @@ export const bmsPaymentsResolvers = {
   // field resolvers — normalize snake_case + numeric/JSON
   BmsPayment: {
     orderId: (p: any) => p.order_id,
+    targetType: (p: any) => p.payable_type ?? "ORDER",
+    reservationId: (p: any) => p.board_game_reservation_id ?? null,
+    reservationDepositStatus: (p: any) => p.reservation_deposit_status ?? null,
+    sourcePaymentId: (p: any) => p.source_payment_id ?? null,
     slipUrl: (p: any) => p.slip_url ?? null,
     slipRef: (p: any) => p.slip_ref ?? null,
     verifiedBy: (p: any) => p.verified_by ?? null,

@@ -28,7 +28,10 @@
 }
 
 .nearButton,
-.actions a {
+.actions a,
+.actions button,
+.bookingForm button,
+.bookingResult button {
   min-height: 42px;
   border: 1px solid #266c55;
   border-radius: 6px;
@@ -43,6 +46,49 @@
   gap: 8px;
   text-decoration: none;
 }
+
+.actions button { font: inherit; }
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(8 18 14 / 58%);
+}
+
+.bookingModal {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border-radius: 10px;
+  padding: 20px;
+  background: #fff;
+  display: grid;
+  gap: 16px;
+}
+
+.bookingHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.bookingHead h2, .bookingHead p { margin: 0; }
+.bookingHead p { margin-top: 6px; color: #617069; }
+.bookingHead > button { border: 0; background: transparent; cursor: pointer; }
+
+.bookingForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.bookingForm label { display: grid; gap: 5px; color: #37443e; font-size: 13px; font-weight: 700; }
+.bookingForm input, .bookingForm textarea, .bookingResult input {
+  box-sizing: border-box; width: 100%; border: 1px solid #cfd8d4; border-radius: 6px;
+  padding: 10px; color: #18211d; background: #fff; font: inherit;
+}
+.fullField, .bookingForm > button { grid-column: 1 / -1; }
+.bookingResult { display: grid; gap: 12px; }
+.bookingPage { min-height: 60vh; display: grid; place-items: center; padding: 24px; }
+.bookingPage .bookingModal { border: 1px solid #d5ddd9; }
+.bookingPage h1, .bookingPage p { margin: 0; }
+.bookingPage button { min-height: 42px; border: 0; border-radius: 6px; padding: 0 15px;
+  color: #fff; background: #266c55; font-weight: 700; cursor: pointer; }
+.bookingStatus { color: #266c55; font-size: 18px; }
 
 .nearButton:disabled {
   cursor: wait;
@@ -234,6 +280,8 @@
   .grid {
     grid-template-columns: minmax(0, 1fr);
   }
+  .bookingForm { grid-template-columns: minmax(0, 1fr); }
+  .fullField, .bookingForm > button { grid-column: auto; }
 }
 
 @media (max-width: 480px) {

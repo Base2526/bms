@@ -183,7 +183,7 @@ wrong, and update the doc in the same change.
   to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
   `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
-- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`)** — play time, sellable goods, and playable game
+- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.2`)** — play time, sellable goods, and playable game
   copies are three different domains. A billing group, never the table session, owns the frozen
   charge, snack tab and settling order. One group may close and pay while every other group keeps
   accruing time; the table remains occupied until no group is `OPEN` or `CLOSING`. A checked-out
@@ -209,6 +209,22 @@ wrong, and update the doc in the same change.
   stock, or copy condition. Move/merge resolves the current table from seating, terminal sessions
   revoke the guest token and expire active calls, and a reported game issue still needs the existing
   copy-condition workflow after staff physically inspect it.
+  The walk-in queue (`9.99`) exists only before seating: it owns branch/service-day queue numbers,
+  never starts time or money, and seating opens the normal session and marks the queue `SEATED` in
+  one transaction. Arrival order is visible but table capacity means seating is not strict FIFO;
+  `expected_end_at` is an estimate, never a promised table time.
+  An advance reservation (`10.0`) is a fixed pre-session table window on that same waitlist
+  aggregate: booking/check-in/seating serialise on the table, reject overlapping active reservation
+  windows and never create a clock, bill, order, or stock movement before seating. Check-in allocates
+  a normal queue number; direct seating opens the existing session atomically. A reschedule is
+  `CONFIRMED`-only and repeats the locked capacity/session/overlap checks; guarded cron expiry claims
+  stale confirmed rows with `SKIP LOCKED` and never closes a checked-in party. Public booking
+  (`10.1`) is an opt-in `REQUESTED` row with no table until staff approves it under the same locks;
+  opaque-token cancellation and bounded retryable email reminders expose no customer data. `10.2`
+  interprets public times in the branch timezone, expires stale requests, records immediate decision
+  delivery, and carries configurable reservation deposits in `bms_payments`. The confirmed deposit is
+  applied once as an internal tender to the real POS order; unused/refundable money stays on the
+  original payment for refund. It is never a Product SKU, stock movement, or parallel billing ledger.
   Native POS derives its branch from the paired device, hands the billing-group id to the
   existing sale mutation, and must never submit its display-only time line as a Product SKU. Full detail:
   [business/board-game-cafe.md](docs/business/board-game-cafe.md) and
@@ -311,8 +327,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,208 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-15 — net **+50** against the same recursive
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,441 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-17 — net **+14** for board-game reservation
+   advance-time, request-expiry and deposit-policy controls plus payment-target labels; the preceding net **+50** against the same recursive
    count of `HEAD`: board-game one-group close and close-all, the seating move/merge controls, and the
    member-pass catalogue/sale/cancel screen in both languages;
    the preceding change is net **+2**:

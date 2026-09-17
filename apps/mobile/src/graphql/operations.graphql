@@ -455,6 +455,8 @@ query MobilePosMemberPreview($input: BmsPosMemberPreviewInput!) {
     reason
     subtotal
     amountDue
+    grossAmountDue
+    reservationDepositApplied
     netTotal
     totalDiscount
     tierDiscount
@@ -2015,6 +2017,151 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         conditionNote
       }
     }
+    waitlist {
+      waitingCount
+      calledCount
+      confirmedReservationCount
+      requestedReservationCount
+      waitingGuests
+      longestWaitMinutes
+      entries {
+        id
+        kind
+        serviceDate
+        queueNo
+        status
+        partySize
+        guestName
+        guestPhone
+        guestEmail
+        note
+        preferredAreaId
+        preferredAreaName
+        reservedFor
+        reservedDurationMinutes
+        reservedTableId
+        reservedTableCode
+        confirmedAt
+        checkedInAt
+        source
+        reviewedAt
+        rejectionReason
+        reminderStatus
+        reminderSentAt
+        decisionNotificationStatus
+        depositPolicy
+        depositAmount
+        depositStatus
+        depositDueAt
+        depositRefundEligibleUntil
+        seatedTableId
+        seatedTableCode
+        seatedSessionId
+        calledAt
+        seatedAt
+        closedAt
+        createdAt
+      }
+      tables {
+        id
+        areaId
+        code
+        name
+        seats
+        availability
+        expectedAvailableAt
+        nextReservedAt
+        nextReservedUntil
+      }
+    }
+  }
+}
+
+fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
+  id
+  kind
+  serviceDate
+  queueNo
+  status
+  partySize
+  guestName
+  guestPhone
+  guestEmail
+  note
+  preferredAreaId
+  preferredAreaName
+  reservedFor
+  reservedDurationMinutes
+  reservedTableId
+  reservedTableCode
+  confirmedAt
+  checkedInAt
+  source
+  reviewedAt
+  rejectionReason
+  reminderStatus
+  reminderSentAt
+  decisionNotificationStatus
+  depositPolicy
+  depositAmount
+  depositStatus
+  depositDueAt
+  depositRefundEligibleUntil
+  seatedTableId
+  seatedTableCode
+  seatedSessionId
+  calledAt
+  seatedAt
+  closedAt
+  createdAt
+}
+
+mutation MobilePosAddBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistAddInput!) {
+  bmsPosAddBoardGameWaitlistEntry(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosCallBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistCallInput!) {
+  bmsPosCallBoardGameWaitlistEntry(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosCloseBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistCloseInput!) {
+  bmsPosCloseBoardGameWaitlistEntry(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosSeatBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistSeatInput!) {
+  bmsPosSeatBoardGameWaitlistEntry(input: $input) {
+    entry { ...MobilePosBoardGameWaitlistEntryFields }
+    session { ...MobilePosBoardGameSessionSummaryFields }
+  }
+}
+
+mutation MobilePosAddBoardGameReservation($input: BmsPosBoardGameReservationAddInput!) {
+  bmsPosAddBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosCheckInBoardGameReservation($input: BmsPosBoardGameWaitlistCallInput!) {
+  bmsPosCheckInBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosUpdateBoardGameReservation($input: BmsPosBoardGameReservationUpdateInput!) {
+  bmsPosUpdateBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosReviewBoardGameReservation($input: BmsPosBoardGameReservationReviewInput!) {
+  bmsPosReviewBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 

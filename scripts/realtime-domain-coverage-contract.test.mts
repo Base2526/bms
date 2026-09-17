@@ -29,6 +29,8 @@ const MIGRATIONS = [
   "db/migrations/9.85__bms_realtime_remaining_business_events.sql",
   "db/migrations/9.86__bms_realtime_parked_sale_delete.sql",
   "db/migrations/9.96__bms_board_game_service_calls.sql",
+  "db/migrations/9.99__bms_board_game_waitlist.sql",
+  "db/migrations/10.2__bms_board_game_reservation_completion.sql",
 ];
 
 type DmlOperation = "INSERT" | "UPDATE" | "DELETE";
@@ -158,6 +160,7 @@ const CHILD_OF_AGGREGATE = [
   "bms_shipment_tracking_events", "bms_stock_count_items", "bms_stock_transfer_items",
   "bms_support_events", "bms_order_discounts", "bms_order_extra_lines",
   "bms_order_item_stock_consumption", "bms_stock_movements",
+  "bms_board_game_reservation_deposit_applications",
 ];
 
 /** ร่องรอย/ตัวชี้วัดของระบบ ไม่ใช่สถานะธุรกิจที่จอไหนเฝ้าดูอยู่ */
@@ -220,6 +223,9 @@ for (const [reason, tables] of [
 const OPERATION_EXEMPTIONS = new Map<string, string>([
   ["bms_messages:UPDATE", "outbound delivery metadata; conversation invalidation is emitted after delivery"],
   ["bms_orders:DELETE", "platform tenant teardown"],
+  ["bms_payments:DELETE", "reservation fixture cleanup and platform tenant teardown"],
+  ["bms_board_game_waitlist:DELETE", "fixture cleanup and platform tenant teardown"],
+  ["bms_pos_refund_allocations:DELETE", "reservation fixture cleanup and platform tenant teardown"],
   ["bms_pos_expenses:DELETE", "platform tenant teardown"],
   ["bms_pos_petty_cash_ledger:DELETE", "platform tenant teardown"],
   ["bms_pos_shifts:DELETE", "platform tenant teardown"],

@@ -181,6 +181,38 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
         AND (board_game_session_id IS NOT NULL OR board_game_billing_group_id IS NOT NULL)`,
     [tenantIds]
   );
+  // Reservation deposits (`10.2`) deliberately keep restrictive links between the public
+  // reservation, its cash receipt, and the internal order tender. A tenant purge is the one place
+  // where that evidence is intentionally removed, so unwind the graph from its leaves first.
+  await client.query(
+    `DELETE FROM bms_pos_refund_allocations allocation
+      USING bms_payments payment
+      WHERE allocation.tenant_id = ANY($1::uuid[])
+        AND payment.tenant_id = allocation.tenant_id AND payment.id = allocation.payment_id
+        AND payment.source_payment_id IS NOT NULL`,
+    [tenantIds]
+  );
+  await client.query(
+    `DELETE FROM bms_board_game_reservation_deposit_applications
+      WHERE tenant_id = ANY($1::uuid[])`,
+    [tenantIds]
+  );
+  await client.query(
+    `UPDATE bms_board_game_waitlist SET deposit_payment_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND deposit_payment_id IS NOT NULL`,
+    [tenantIds]
+  );
+  await client.query(
+    `DELETE FROM bms_payments
+      WHERE tenant_id = ANY($1::uuid[]) AND source_payment_id IS NOT NULL`,
+    [tenantIds]
+  );
+  await client.query(
+    `DELETE FROM bms_payments
+      WHERE tenant_id = ANY($1::uuid[]) AND payable_type = 'BOARD_GAME_RESERVATION'`,
+    [tenantIds]
+  );
+  await client.query(`DELETE FROM bms_board_game_waitlist WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_sessions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_titles WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Member passes (`9.92`) are a contract between the shop and one member, so they hold the
