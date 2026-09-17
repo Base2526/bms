@@ -4,8 +4,8 @@ import type { AssistantLocale, LocalizedText } from "./types";
  * Verified limits and traps — the rules that stop a confident wrong answer.
  *
  * These moved out of `/admin/manual`, where they were unreachable from chat: the assistant could
- * describe how to run a report but not that its profit figure applies today's cost to last
- * month's revenue, and could explain returns without knowing that cancel, return and refund are
+ * describe how to run a report but not which historical lines have reconstructed cost evidence,
+ * and could explain returns without knowing that cancel, return and refund are
  * three different things. A guide says what to do; these say what will bite.
  *
  * Same contract as the FAQ (faq.ts):
@@ -301,8 +301,8 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
         "ไทม์ไลน์แสดงได้ 200 แถวต่อแหล่ง — ลูกค้าที่มีกิจกรรมมากจะเห็นประวัติไม่ครบโดยไม่มีคำเตือน",
         "ปุ่มสลับ “แชทนี้เท่านั้น” กรองเฉพาะข้อมูลที่โหลดมาแล้ว ไม่ได้ดึงใหม่จากเซิร์ฟเวอร์",
         "เวลาตอบเฉลี่ยสูงเกินจริง — ไม่หักช่วงที่แชทค้างข้ามคืนก่อนลูกค้ากลับมา",
-        "รายงานกำไรใช้ต้นทุนปัจจุบันกับรายได้ในอดีต — เป็นค่าประมาณ ไม่ใช่งบกำไรขาดทุนย้อนหลังที่แม่นยำ",
-        "ต้องติดป้าย “ค่าประมาณ” เสมอ: คำแนะนำสั่งซื้อ · วันที่คาดว่าของจะหมด · ป้าย SLOW/DEAD · รายงานกำไร · มูลค่าสต็อก · คะแนนรักษาลูกค้า HOT/WARM/COOL · ข้อมูลเชิงลึกจาก AI · ใบแจ้งหนี้ที่ออกจากหน้าจอ",
+        "รายงานกำไรใช้ต้นทุน snapshot ณ เวลาขายสำหรับรายการใหม่ ส่วนข้อมูลเก่าที่ backfill จากต้นทุนปัจจุบันจะแสดงว่าเป็น reconstructed และถ้าต้นทุนขาดจะไม่ตีเป็นศูนย์",
+        "ต้องติดป้าย “ค่าประมาณ” เสมอ: คำแนะนำสั่งซื้อ · วันที่คาดว่าของจะหมด · ป้าย SLOW/DEAD · อายุสต็อกจากการเปลี่ยนล่าสุด · มูลค่าสต็อก · คะแนนรักษาลูกค้า HOT/WARM/COOL · ข้อมูลเชิงลึกจาก AI · ใบแจ้งหนี้ที่ออกจากหน้าจอ",
       ],
       [
         "Order totals exclude shipping — reading them as \\\"what the customer paid\\\" undercounts every order that had a delivery fee.",
@@ -311,8 +311,8 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
         "A timeline shows up to 200 rows per source — a very active customer can have missing history with no visible warning.",
         "The \\\"this chat only\\\" toggle filters what's already loaded — it does not fetch fresh data from the server.",
         "Average response time reads high because it doesn't subtract time a chat sat idle overnight.",
-        "The profit report applies today's cost to past revenue — it's an estimate, not an accurate historical P&L.",
-        "Always label as an estimate: reorder suggestions · projected stockout date · SLOW/DEAD tags · profit reports · stock value · retention HOT/WARM/COOL scores · AI-generated insights · invoices issued from the screen.",
+        "The profit report uses sale-time cost snapshots for new lines; legacy lines backfilled from current cost are marked reconstructed, and missing cost is never treated as zero.",
+        "Always label as an estimate: reorder suggestions · projected stockout date · SLOW/DEAD tags · inventory age based on last change · stock value · retention HOT/WARM/COOL scores · AI-generated insights · invoices issued from the screen.",
       ]
     ),
     aliases: lists(["ตัวเลขไหนเป็นค่าประมาณ", "ยอดออเดอร์รวมค่าส่งไหม", "มูลค่าสต็อกคิดจากอะไร", "รายงานกำไรเชื่อได้แค่ไหน"], ["which numbers are estimates", "does the order total include shipping", "stock value basis"]),
@@ -589,14 +589,14 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
       [
         "ช่วงเวลาเริ่มต้นของรายงานคือ 30 วันปฏิทินล่าสุดตามเวลาไทย — ช่วงที่ระบุเองก็ถูกแปลงเป็นขอบเขตวันไทยเสมอ",
         "รายได้ = ออเดอร์ PAID ขึ้นไปตาม paid_at · รายได้สุทธิ = รายได้ − ยอดคืนเงิน · การแยกตามช่องทางแสดงเฉพาะช่องทางที่มีออเดอร์จริง (ช่องทางหายไป = ยังไม่มีออเดอร์ ไม่ใช่ระบบพัง)",
-        "Export INVENTORY เป็นภาพสต็อก ณ ขณะนี้เสมอ ไม่สนใจช่วงวันที่ที่เลือก · Export PROFIT ใช้ต้นทุนปัจจุบันกับรายได้ในอดีต ต้องนำเสนอเป็นค่าประมาณเสมอ",
+        "Export INVENTORY เป็นภาพสต็อก ณ ขณะนี้เสมอ ไม่สนใจช่วงวันที่ที่เลือก · Export PROFIT ใช้ต้นทุน snapshot ตอนขาย รายการเก่าที่ backfill จะระบุว่า reconstructed และต้นทุนที่ขาดจะไม่ถูกตีเป็นศูนย์",
         "Digest ตั้งความถี่ DAILY/WEEKLY/MONTHLY ตามเวลาไทย ส่งได้ทางอีเมล, Slack (webhook URL เข้ารหัสเก็บ), LINE (ผ่าน OA ของร้านเอง) — เนื้อหาคือเฉพาะงวดที่เพิ่งจบไปแล้วเท่านั้น",
         "ตั้งค่าสรุปยอดขายไว้แล้วแต่ไม่ได้รับอะไรเลย มักแปลว่ายังไม่ได้ตั้งตารางเวลาส่งจริง ไม่ใช่ระบบพัง — บันทึกได้โดยไม่มี error แต่ไม่มีอีเมลออก",
       ],
       [
         "A report's default window is the last 30 calendar days in Thai time — even a custom range is converted to Thai day boundaries",
         "Revenue = orders PAID or later, by paid_at · net revenue = revenue − refunds · the channel breakdown only shows channels with real orders (a missing channel means no orders yet, not a bug)",
-        "The INVENTORY export is always a snapshot of right now — it ignores whatever date range is selected · the PROFIT export applies today's cost to past revenue and must always be presented as an estimate",
+        "The INVENTORY export is always a snapshot of right now — it ignores the selected date range · the PROFIT export uses sale-time cost snapshots, marks backfilled legacy lines as reconstructed, and never treats missing cost as zero",
         "The digest runs DAILY/WEEKLY/MONTHLY on Thai time, delivered by email, Slack (a webhook URL, stored encrypted), or LINE (through the shop's own OA account) — its content only ever covers the period that just closed",
         "A configured digest that never arrives usually means its schedule was never actually set, not that anything broke — saving the setting succeeds with no error, but nothing gets sent",
       ]

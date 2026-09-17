@@ -26,6 +26,7 @@ async function handlePOST(req: NextRequest) {
     reportType?: unknown;
     dateFrom?: unknown;
     dateTo?: unknown;
+    locationId?: unknown;
     format?: unknown;
     includeSummary?: unknown;
   };
@@ -35,6 +36,7 @@ async function handlePOST(req: NextRequest) {
       reportType: String(body.reportType ?? ""),
       dateFrom: typeof body.dateFrom === "string" ? body.dateFrom : null,
       dateTo: typeof body.dateTo === "string" ? body.dateTo : null,
+      locationId: typeof body.locationId === "string" ? body.locationId : null,
       format: String(body.format ?? ""),
       includeSummary: body.includeSummary !== false,
     });

@@ -14,7 +14,8 @@ async function handleGET(req: NextRequest) {
   const summary = await getPosReturnSummary(
     auth.tenantId,
     url.searchParams.get("from"),
-    url.searchParams.get("to")
+    url.searchParams.get("to"),
+    url.searchParams.get("locationId")
   );
   return NextResponse.json(summary);
 }

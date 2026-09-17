@@ -1076,7 +1076,7 @@ Output
 Input
 
 {
-    reportType,         // SALES | INVENTORY | PROFIT
+    reportType,         // SALES | INVENTORY | PROFIT | PRODUCTS | PAYMENTS | PURCHASES | CUSTOMERS | OPERATIONS | SPECIALIZED
     dateFrom?,          // YYYY-MM-DD, ใช้กับ SALES / PROFIT
     dateTo?,            // YYYY-MM-DD
     format,             // XLSX | CSV | PDF
@@ -1102,7 +1102,11 @@ Permission: report.view
 
 ข้อจำกัดสำคัญ:
 
-- `PROFIT` เป็น **ค่าประมาณ** เพราะ cost มาจาก `bms_products.cost_price` ปัจจุบัน ไม่ใช่ snapshot ณ วันขาย
+- `PROFIT` ใช้ `bms_order_items.cost_amount_snapshot`: รายการใหม่เป็นต้นทุนองค์ประกอบที่ resolve ณ เวลาขาย,
+  รายการเก่าที่ migration backfill จะติด `LEGACY_CURRENT`, และรายการที่ไม่มีต้นทุนจะคืน profit เป็น `null`
+  แทนการตีต้นทุนเป็นศูนย์ ต้องแสดง `disclaimer`/evidence state ในไฟล์เสมอ
+- `OPERATIONS` รวม previous-period comparison, reconciliation, inventory activity aging/cover และ discount signals;
+  `PURCHASES` รวม supplier fill rate/approximate lead time; `CUSTOMERS` รวม paid-customer segments
 - PDF ใช้ `pdfkit` font มาตรฐาน จึงยังไม่รองรับ Thai glyphs ครบ; heading/label ของเอกสารจงใจเป็น English
 - ดาวน์โหลดต้องผ่าน `/api/bms/reports/download/<id>` ซึ่งเช็ค tenant ownership ของ `bms_generated_reports`
   ก่อนเสมอ ไม่ใช้ `/api/files/<id>` ตรง ๆ

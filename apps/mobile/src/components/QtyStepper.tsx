@@ -21,7 +21,7 @@ export function QtyStepper({
   itemName,
   variant = 'solid',
 }: Props) {
-  const { colors, radius, typography } = useTheme();
+  const { colors, radius, typography, minTouchTarget } = useTheme();
   const solid = variant === 'solid';
 
   const bg = solid ? colors.primary : colors.surface2;
@@ -37,8 +37,11 @@ export function QtyStepper({
           qty > 1 ? `ลดจำนวน ${itemName}` : `เอา ${itemName} ออกจากตะกร้า`
         }
         onPress={onDecrement}
-        hitSlop={6}
-        style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.btn,
+          { width: minTouchTarget, height: minTouchTarget },
+          pressed && styles.pressed,
+        ]}
       >
         <Text style={[typography.subtitle, { color: fg }]}>−</Text>
       </Pressable>
@@ -51,8 +54,11 @@ export function QtyStepper({
         accessibilityRole="button"
         accessibilityLabel={`เพิ่มจำนวน ${itemName}`}
         onPress={onIncrement}
-        hitSlop={6}
-        style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.btn,
+          { width: minTouchTarget, height: minTouchTarget },
+          pressed && styles.pressed,
+        ]}
       >
         <Text style={[typography.subtitle, { color: fg }]}>+</Text>
       </Pressable>
@@ -63,8 +69,6 @@ export function QtyStepper({
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' },
   btn: {
-    width: 32,
-    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -281,7 +281,7 @@ function bodyOfTopLevelFunction(source: string, header: RegExp): string {
  */
 function boardGameDelegatedBody(body: string): string | null {
   const authorized =
-    /boardGamePosAccess\(\s*ctx\s*,\s*args\.input\s*,\s*"([a-z.]+)"\s*\)/.exec(
+    /boardGamePosAccess\(\s*ctx\s*,\s*args\.input\s*,\s*"([a-z.]+)"\s*,?\s*\)/.exec(
       body,
     );
   if (!authorized) return null;
@@ -428,7 +428,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 83 mobile/POS input arguments are typed", () => {
+test("all 86 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -439,8 +439,8 @@ test("all 83 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    83,
-    "the mobile/POS surface must keep all 83 input-bearing operations",
+    86,
+    "the mobile/POS surface must keep all 86 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -451,11 +451,11 @@ test("all 83 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 128 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 132 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    128,
+    132,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -1057,7 +1057,7 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   );
   assert.match(
     boardGame,
-    /<ScreenHeader[\s\S]{0,500}view\.kind === 'floor' \? undefined : \(\) => navigation\.goBack\(\)/,
+    /<ScreenHeader[\s\S]{0,500}onBack=\{\(\) => navigation\.goBack\(\)\}/,
     "pushed open-table and detail routes must expose the standard header back action",
   );
   assert.match(

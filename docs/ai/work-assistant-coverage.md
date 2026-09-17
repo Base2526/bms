@@ -56,7 +56,7 @@ honestly say both.
 
 | Area | Verified coverage | Important boundary |
 | --- | --- | --- |
-| Dashboard / Reports | KPIs, export XLSX/CSV/PDF, email proposal, scheduled-report explanation | Figures require live report tools; PDF headings remain English |
+| Dashboard / Reports | KPIs, branch-filtered Report Center, server-derived shop-archetype modules, export Sales/Inventory/Profit/Products/Payments/Purchases/Customers/Operations/Specialized as XLSX/CSV/PDF, email proposal, scheduled-report explanation | Figures require live report tools; pharmacy specialist reports deliberately exclude patient/clinical data; PDF headings remain English |
 | Inbox / Restock / Follow-up | Inbox operations, mentions, realtime diagnostics, restock and follow-up guides | Realtime diagnostics never contacts customers; holdout rows cannot be contacted |
 | Products / Packs / Labels | Catalog, stock, imports, packs and label guidance | Pack pieces/price are resolved server-side; AI never supplies them |
 | Orders / Payments / Shipping | Lifecycle reads and approved create/update/proposal tools | Shipment creation/tracking is available; Flash/Kerry booking stays MOCK; payment methods come from tenant configuration |
@@ -100,7 +100,7 @@ no page it reaches the honest empty answer.
 estimates, cancel vs return vs refund, coupon ordering, FEFO lots and snapshot counts, what is not
 supported yet, permissions by module, and the rest. A guide says what to do; these say what will
 bite, and without them the assistant could explain how to run a profit report while never
-mentioning that it applies today's cost to last month's revenue.
+distinguishing authoritative sale-time cost snapshots from reconstructed legacy rows.
 
 Each group names the guides it constrains, the Manual renders the same array, and
 `search_system_guides` returns the groups belonging to its two best-ranked guides — only two,

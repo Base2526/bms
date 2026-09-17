@@ -2128,6 +2128,52 @@ query MobilePosBoardGameCheckout(
   }
 }
 
+query MobilePosBoardGameServiceCalls($credentials: BmsPosCredentialsInput!) {
+  bmsPosBoardGameServiceCalls(credentials: $credentials) {
+    calls {
+      id
+      sessionId
+      tableId
+      tableCode
+      tableName
+      requestCode
+      requestNote
+      status
+      createdAt
+      acknowledgedAt
+      completedAt
+    }
+  }
+}
+
+mutation MobilePosIssueBoardGameGuestAccess(
+  $input: BmsPosBoardGameGuestAccessInput!
+) {
+  bmsPosIssueBoardGameGuestAccess(input: $input) {
+    token
+    tableCode
+    tableName
+  }
+}
+
+mutation MobilePosAcknowledgeBoardGameServiceCall(
+  $input: BmsPosBoardGameServiceCallInput!
+) {
+  bmsPosAcknowledgeBoardGameServiceCall(input: $input) {
+    id
+    status
+  }
+}
+
+mutation MobilePosCompleteBoardGameServiceCall(
+  $input: BmsPosBoardGameServiceCallInput!
+) {
+  bmsPosCompleteBoardGameServiceCall(input: $input) {
+    id
+    status
+  }
+}
+
 mutation MobilePosOpenBoardGameSession($input: BmsPosBoardGameOpenInput!) {
   bmsPosOpenBoardGameSession(input: $input) {
     ...MobilePosBoardGameSessionSummaryFields

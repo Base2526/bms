@@ -411,6 +411,15 @@ export type SchemaBmsArWriteOffResult = {
   status: Scalars['String']['output'];
 };
 
+export type SchemaBmsArchetypeReport = {
+  __typename?: 'BmsArchetypeReport';
+  boardGame: Maybe<SchemaBmsBoardGameOperationsReport>;
+  catalog: SchemaBmsCatalogControlReport;
+  pharmacy: Maybe<SchemaBmsPharmacyOperationsReport>;
+  profile: SchemaBmsReportProfile;
+  restaurant: Maybe<SchemaBmsRestaurantOperationsReport>;
+};
+
 export type SchemaBmsAssistantCitation = {
   __typename?: 'BmsAssistantCitation';
   accessNote: Maybe<Scalars['String']['output']>;
@@ -481,6 +490,26 @@ export type SchemaBmsBilling = {
   usage: SchemaBmsUsage;
 };
 
+export type SchemaBmsBoardGameOperationsReport = {
+  __typename?: 'BmsBoardGameOperationsReport';
+  activePassCount: Scalars['Int']['output'];
+  attentionCopyCount: Scalars['Int']['output'];
+  availableCopyCount: Scalars['Int']['output'];
+  avgPlayMinutes: Scalars['Float']['output'];
+  cancelledSessionCount: Scalars['Int']['output'];
+  checkedOutCopyCount: Scalars['Int']['output'];
+  copyCount: Scalars['Int']['output'];
+  guestCount: Scalars['Int']['output'];
+  minutePassCount: Scalars['Int']['output'];
+  openBillingGroupCount: Scalars['Int']['output'];
+  paidBillingGroupCount: Scalars['Int']['output'];
+  paidSessionCount: Scalars['Int']['output'];
+  remainingPassMinutes: Scalars['Int']['output'];
+  sessionCount: Scalars['Int']['output'];
+  settledAmount: Scalars['Float']['output'];
+  titleCount: Scalars['Int']['output'];
+};
+
 export type SchemaBmsBundleItem = {
   __typename?: 'BmsBundleItem';
   componentName: Scalars['String']['output'];
@@ -532,6 +561,27 @@ export type SchemaBmsCarrierBookingResult = {
   trackingNo: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsCatalogControlReport = {
+  __typename?: 'BmsCatalogControlReport';
+  activePackCount: Scalars['Int']['output'];
+  activeVariantCount: Scalars['Int']['output'];
+  alternatePackCount: Scalars['Int']['output'];
+  expiredLotCount: Scalars['Int']['output'];
+  expiredUnits: Scalars['Int']['output'];
+  expiringLotCount: Scalars['Int']['output'];
+  expiringUnits: Scalars['Int']['output'];
+  lotUnits: Scalars['Int']['output'];
+  lotsMissingExpiry: Scalars['Int']['output'];
+  multiVariantProductCount: Scalars['Int']['output'];
+  productsWithPacks: Scalars['Int']['output'];
+  productsWithVariants: Scalars['Int']['output'];
+  serialInStockCount: Scalars['Int']['output'];
+  serialReturnedCount: Scalars['Int']['output'];
+  serialSoldCount: Scalars['Int']['output'];
+  serialTrackedSkuCount: Scalars['Int']['output'];
+  stockedLotCount: Scalars['Int']['output'];
+};
+
 export type SchemaBmsChannelConfig = {
   __typename?: 'BmsChannelConfig';
   access_token_masked: Maybe<Scalars['String']['output']>;
@@ -577,6 +627,20 @@ export type SchemaBmsCommissionRuleInput = {
   percent: InputMaybe<Scalars['Float']['input']>;
   ref: InputMaybe<Scalars['String']['input']>;
   scope: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsControlReport = {
+  __typename?: 'BmsControlReport';
+  absoluteCashVariance: Scalars['Float']['output'];
+  cashIn: Scalars['Float']['output'];
+  cashOut: Scalars['Float']['output'];
+  closedShiftCount: Scalars['Int']['output'];
+  discountAmount: Scalars['Float']['output'];
+  noSaleCount: Scalars['Int']['output'];
+  stockMovements: Array<SchemaBmsReportBucket>;
+  voidAmount: Scalars['Float']['output'];
+  voidCount: Scalars['Int']['output'];
+  wastageQty: Scalars['Int']['output'];
 };
 
 export type SchemaBmsConvStatus =
@@ -892,6 +956,18 @@ export type SchemaBmsCustomerRecentOrder = {
   trackingNo: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsCustomerReport = {
+  __typename?: 'BmsCustomerReport';
+  anonymousOrders: Scalars['Int']['output'];
+  avgRevenuePerCustomer: Scalars['Float']['output'];
+  identifiedRevenue: Scalars['Float']['output'];
+  newCustomers: Scalars['Int']['output'];
+  purchasingCustomers: Scalars['Int']['output'];
+  repeatCustomers: Scalars['Int']['output'];
+  repeatRate: Scalars['Float']['output'];
+  totalCustomers: Scalars['Int']['output'];
+};
+
 export type SchemaBmsCustomerStats = {
   __typename?: 'BmsCustomerStats';
   avgOrderValue: Scalars['Float']['output'];
@@ -932,6 +1008,17 @@ export type SchemaBmsDashboard = {
   salesDaily: Array<SchemaBmsDailySales>;
   topCustomers: Array<SchemaBmsTopCustomer>;
   topProducts: Array<SchemaBmsTopProduct>;
+};
+
+export type SchemaBmsDiscountPerformance = {
+  __typename?: 'BmsDiscountPerformance';
+  beforeDiscountRevenue: Scalars['Float']['output'];
+  discountAmount: Scalars['Float']['output'];
+  discountRate: Scalars['Float']['output'];
+  discountedOrderCount: Scalars['Int']['output'];
+  netRevenue: Scalars['Float']['output'];
+  paidOrderCount: Scalars['Int']['output'];
+  promotionLineCount: Scalars['Int']['output'];
 };
 
 export type SchemaBmsDocLine = {
@@ -987,7 +1074,7 @@ export type SchemaBmsEtaxSummary = {
   accepted: Scalars['Int']['output'];
   enabled: Scalars['Boolean']['output'];
   failed: Scalars['Int']['output'];
-  /** ใบกำกับที่ออกแล้วแต่ยังไม่เคยเข้าคิว */
+  /**  ใบกำกับที่ออกแล้วแต่ยังไม่เคยเข้าคิว  */
   notQueued: Scalars['Int']['output'];
   pending: Scalars['Int']['output'];
   rejected: Scalars['Int']['output'];
@@ -1136,11 +1223,22 @@ export type SchemaBmsFollowupRunResult = {
   skipped: Scalars['Int']['output'];
 };
 
+export type SchemaBmsFulfillmentReport = {
+  __typename?: 'BmsFulfillmentReport';
+  avgDeliveryHours: Scalars['Float']['output'];
+  byStatus: Array<SchemaBmsReportBucket>;
+  deliveredCount: Scalars['Int']['output'];
+  exceptionCount: Scalars['Int']['output'];
+  inProgressCount: Scalars['Int']['output'];
+  shipmentCount: Scalars['Int']['output'];
+};
+
 export type SchemaBmsGenerateReportInput = {
   dateFrom: InputMaybe<Scalars['String']['input']>;
   dateTo: InputMaybe<Scalars['String']['input']>;
   format: Scalars['String']['input'];
   includeSummary: InputMaybe<Scalars['Boolean']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
   reportType: Scalars['String']['input'];
 };
 
@@ -1239,6 +1337,22 @@ export type SchemaBmsInventoryActionSummary = {
   windowDays: Scalars['Int']['output'];
 };
 
+export type SchemaBmsInventoryAgingReport = {
+  __typename?: 'BmsInventoryAgingReport';
+  age31To60Count: Scalars['Int']['output'];
+  age61To90Count: Scalars['Int']['output'];
+  age91To180Count: Scalars['Int']['output'];
+  age180PlusCount: Scalars['Int']['output'];
+  deadStockUnits: Scalars['Int']['output'];
+  deadStockValue: Scalars['Float']['output'];
+  estimatedDaysCover: Maybe<Scalars['Float']['output']>;
+  knownCostValue: Scalars['Float']['output'];
+  method: Scalars['String']['output'];
+  missingCostVariantCount: Scalars['Int']['output'];
+  stockUnits: Scalars['Int']['output'];
+  stockedVariantCount: Scalars['Int']['output'];
+};
+
 export type SchemaBmsInventoryDemandInput = {
   kind: SchemaBmsInventoryDemandKind;
   note: InputMaybe<Scalars['String']['input']>;
@@ -1276,10 +1390,14 @@ export type SchemaBmsInventoryPolicyInput = {
 export type SchemaBmsInventorySummary = {
   __typename?: 'BmsInventorySummary';
   availableUnits: Scalars['Int']['output'];
+  knownStockCostValue: Scalars['Float']['output'];
   lowStockCount: Scalars['Int']['output'];
+  missingCostVariantCount: Scalars['Int']['output'];
   outOfStockCount: Scalars['Int']['output'];
   reservedUnits: Scalars['Int']['output'];
   skuCount: Scalars['Int']['output'];
+  stockCostValue: Maybe<Scalars['Float']['output']>;
+  stockRetailValue: Scalars['Float']['output'];
   stockValue: Scalars['Float']['output'];
   totalUnits: Scalars['Int']['output'];
   variantCount: Scalars['Int']['output'];
@@ -1428,6 +1546,16 @@ export type SchemaBmsLabelShipTo = {
   address: Maybe<Scalars['String']['output']>;
   name: Maybe<Scalars['String']['output']>;
   phone: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsLiabilityReport = {
+  __typename?: 'BmsLiabilityReport';
+  arOutstandingAmount: Scalars['Float']['output'];
+  arOverdueAmount: Scalars['Float']['output'];
+  balanceMismatchCount: Scalars['Int']['output'];
+  loyaltyPoints: Scalars['Int']['output'];
+  loyaltyValue: Scalars['Float']['output'];
+  storeCreditAmount: Scalars['Float']['output'];
 };
 
 export type SchemaBmsLocation = {
@@ -1592,6 +1720,29 @@ export type SchemaBmsMailLogStats = {
   success: Scalars['Int']['output'];
   topErrorProvider: Maybe<Scalars['String']['output']>;
   total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsManagementReport = {
+  __typename?: 'BmsManagementReport';
+  archetype: SchemaBmsArchetypeReport;
+  branches: Array<SchemaBmsReportBranch>;
+  comparison: SchemaBmsPeriodComparison;
+  controls: SchemaBmsControlReport;
+  customerSegments: Array<SchemaBmsReportBucket>;
+  customers: SchemaBmsCustomerReport;
+  discountPerformance: SchemaBmsDiscountPerformance;
+  from: Scalars['String']['output'];
+  fulfillment: SchemaBmsFulfillmentReport;
+  inventoryAging: SchemaBmsInventoryAgingReport;
+  liabilities: SchemaBmsLiabilityReport;
+  locationId: Maybe<Scalars['ID']['output']>;
+  payments: SchemaBmsPaymentReport;
+  products: SchemaBmsReportProducts;
+  profit: SchemaBmsProfitSummary;
+  purchases: SchemaBmsPurchaseReport;
+  reconciliation: SchemaBmsReconciliationReport;
+  supplierPerformance: Array<SchemaBmsSupplierPerformance>;
+  to: Scalars['String']['output'];
 };
 
 export type SchemaBmsMe = {
@@ -2148,6 +2299,16 @@ export type SchemaBmsPaymentMethod =
   | 'TIKTOK'
   | 'WALLET';
 
+export type SchemaBmsPaymentReport = {
+  __typename?: 'BmsPaymentReport';
+  byMethod: Array<SchemaBmsReportBucket>;
+  byStatus: Array<SchemaBmsReportBucket>;
+  pendingAmount: Scalars['Float']['output'];
+  pendingCount: Scalars['Int']['output'];
+  receivedAmount: Scalars['Float']['output'];
+  refundedAmount: Scalars['Float']['output'];
+};
+
 export type SchemaBmsPaymentResult = {
   __typename?: 'BmsPaymentResult';
   message: Maybe<Scalars['String']['output']>;
@@ -2160,6 +2321,21 @@ export type SchemaBmsPaymentStatus =
   | 'PENDING'
   | 'REFUNDED'
   | 'REJECTED';
+
+export type SchemaBmsPeriodComparison = {
+  __typename?: 'BmsPeriodComparison';
+  currentNetRevenue: Scalars['Float']['output'];
+  currentOrderCount: Scalars['Int']['output'];
+  currentProfit: Maybe<Scalars['Float']['output']>;
+  orderChangePct: Maybe<Scalars['Float']['output']>;
+  previousFrom: Scalars['String']['output'];
+  previousNetRevenue: Scalars['Float']['output'];
+  previousOrderCount: Scalars['Int']['output'];
+  previousProfit: Maybe<Scalars['Float']['output']>;
+  previousTo: Scalars['String']['output'];
+  profitChangePct: Maybe<Scalars['Float']['output']>;
+  revenueChangePct: Maybe<Scalars['Float']['output']>;
+};
 
 /** 9.29 — หนึ่งแถวต่อ (บิล, สินค้า, ไซซ์) ที่เภสัชกรกด PIN อนุมัติจ่ายที่เคาน์เตอร์ */
 export type SchemaBmsPharmacistCounterAuthorization = {
@@ -2348,6 +2524,16 @@ export type SchemaBmsPharmacyLicenseUser = {
   isLicensedPharmacist: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
   pharmacistLicenseNo: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsPharmacyOperationsReport = {
+  __typename?: 'BmsPharmacyOperationsReport';
+  approvedPolicyCount: Scalars['Int']['output'];
+  draftPolicyCount: Scalars['Int']['output'];
+  missingPolicySkuCount: Scalars['Int']['output'];
+  pendingReviewPolicyCount: Scalars['Int']['output'];
+  policyCount: Scalars['Int']['output'];
+  retiredPolicyCount: Scalars['Int']['output'];
 };
 
 export type SchemaBmsPharmacyPolicyReadiness = {
@@ -2660,6 +2846,20 @@ export type SchemaBmsPosBoardGameFloor = {
   tables: Array<SchemaBmsPosBoardGameTable>;
 };
 
+export type SchemaBmsPosBoardGameGuestAccess = {
+  __typename?: 'BmsPosBoardGameGuestAccess';
+  tableCode: Scalars['String']['output'];
+  tableName: Scalars['String']['output'];
+  token: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosBoardGameGuestAccessInput = {
+  cashierUserId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
+  pin: Scalars['String']['input'];
+  sessionId: Scalars['ID']['input'];
+};
+
 /**
  * บัตรที่ร้านถือไว้ค้ำกล่องเกม (9.93)
  *
@@ -2797,6 +2997,39 @@ export type SchemaBmsPosBoardGameSeatingActionResult = {
   sessionIds: Array<Scalars['ID']['output']>;
   sourceSeatingId: Scalars['ID']['output'];
   toTableId: Scalars['ID']['output'];
+};
+
+export type SchemaBmsPosBoardGameServiceCall = {
+  __typename?: 'BmsPosBoardGameServiceCall';
+  acknowledgedAt: Maybe<Scalars['String']['output']>;
+  completedAt: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  requestCode: Scalars['String']['output'];
+  requestNote: Maybe<Scalars['String']['output']>;
+  sessionId: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+  tableCode: Scalars['String']['output'];
+  tableId: Scalars['ID']['output'];
+  tableName: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosBoardGameServiceCallActionResult = {
+  __typename?: 'BmsPosBoardGameServiceCallActionResult';
+  id: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosBoardGameServiceCallInput = {
+  callId: Scalars['ID']['input'];
+  cashierUserId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
+  pin: Scalars['String']['input'];
+};
+
+export type SchemaBmsPosBoardGameServiceCallsResult = {
+  __typename?: 'BmsPosBoardGameServiceCallsResult';
+  calls: Array<SchemaBmsPosBoardGameServiceCall>;
 };
 
 export type SchemaBmsPosBoardGameSession = {
@@ -3234,7 +3467,7 @@ export type SchemaBmsPosDeviceSummary = {
   scanner: SchemaBmsPosDeviceScanner;
 };
 
-/** token ค่าจริงคืนครั้งเดียวตอนออกเท่านั้น ฐานข้อมูลเก็บแต่ hash */
+/**  token ค่าจริงคืนครั้งเดียวตอนออกเท่านั้น ฐานข้อมูลเก็บแต่ hash  */
 export type SchemaBmsPosDeviceToken = {
   __typename?: 'BmsPosDeviceToken';
   token: Scalars['String']['output'];
@@ -5175,7 +5408,7 @@ export type SchemaBmsProductModifierInput = {
   sortOrder: InputMaybe<Scalars['Int']['input']>;
 };
 
-/** หน่วยขาย: สิ่งที่ลูกค้าซื้อจริงและมีบาร์โค้ดของตัวเอง (แผง / กล่อง) */
+/**  หน่วยขาย: สิ่งที่ลูกค้าซื้อจริงและมีบาร์โค้ดของตัวเอง (แผง / กล่อง)  */
 export type SchemaBmsProductPack = {
   __typename?: 'BmsProductPack';
   active: Scalars['Boolean']['output'];
@@ -5184,7 +5417,7 @@ export type SchemaBmsProductPack = {
   id: Scalars['ID']['output'];
   isBase: Scalars['Boolean']['output'];
   packCode: Scalars['String']['output'];
-  /** null = คิดจากราคาสินค้า × baseQty */
+  /**  null = คิดจากราคาสินค้า × baseQty  */
   price: Maybe<Scalars['Float']['output']>;
   productSku: Scalars['String']['output'];
   size: Maybe<Scalars['String']['output']>;
@@ -5207,7 +5440,7 @@ export type SchemaBmsProductPackInput = {
 export type SchemaBmsProductPackList = {
   __typename?: 'BmsProductPackList';
   packs: Array<SchemaBmsProductPack>;
-  /** ไซซ์ที่มีแถวสต็อกจริง */
+  /**  ไซซ์ที่มีแถวสต็อกจริง  */
   sizes: Array<Scalars['String']['output']>;
 };
 
@@ -5330,6 +5563,36 @@ export type SchemaBmsProductStockPolicyInput = {
   stockPolicy: InputMaybe<Scalars['String']['input']>;
 };
 
+export type SchemaBmsProfitDay = {
+  __typename?: 'BmsProfitDay';
+  cost: Maybe<Scalars['Float']['output']>;
+  day: Scalars['String']['output'];
+  knownCost: Scalars['Float']['output'];
+  missingCostLineCount: Scalars['Int']['output'];
+  profit: Maybe<Scalars['Float']['output']>;
+  revenue: Scalars['Float']['output'];
+};
+
+export type SchemaBmsProfitSummary = {
+  __typename?: 'BmsProfitSummary';
+  authoritative: Scalars['Boolean']['output'];
+  byDay: Array<SchemaBmsProfitDay>;
+  complete: Scalars['Boolean']['output'];
+  cost: Maybe<Scalars['Float']['output']>;
+  disclaimer: Scalars['String']['output'];
+  from: Scalars['String']['output'];
+  knownCost: Scalars['Float']['output'];
+  legacyCostLineCount: Scalars['Int']['output'];
+  marginPct: Maybe<Scalars['Float']['output']>;
+  method: Scalars['String']['output'];
+  missingCostLineCount: Scalars['Int']['output'];
+  missingCostRevenue: Scalars['Float']['output'];
+  missingCostSkuCount: Scalars['Int']['output'];
+  profit: Maybe<Scalars['Float']['output']>;
+  revenue: Scalars['Float']['output'];
+  to: Scalars['String']['output'];
+};
+
 export type SchemaBmsPurchaseItem = {
   __typename?: 'BmsPurchaseItem';
   qtyOrdered: Scalars['Int']['output'];
@@ -5366,6 +5629,16 @@ export type SchemaBmsPurchaseOrder = {
   supplier: Maybe<SchemaBmsSupplier>;
   total: Scalars['Float']['output'];
   updatedAt: Scalars['String']['output'];
+};
+
+export type SchemaBmsPurchaseReport = {
+  __typename?: 'BmsPurchaseReport';
+  byStatus: Array<SchemaBmsReportBucket>;
+  bySupplier: Array<SchemaBmsReportBucket>;
+  openAmount: Scalars['Float']['output'];
+  openCount: Scalars['Int']['output'];
+  orderedAmount: Scalars['Float']['output'];
+  poCount: Scalars['Int']['output'];
 };
 
 export type SchemaBmsPurchaseResult = {
@@ -5424,6 +5697,24 @@ export type SchemaBmsRecipeComponentInput = {
   sku: Scalars['String']['input'];
 };
 
+export type SchemaBmsReconciliationReport = {
+  __typename?: 'BmsReconciliationReport';
+  cashDifference: Scalars['Float']['output'];
+  completedRefundAmount: Scalars['Float']['output'];
+  countedCash: Scalars['Float']['output'];
+  expectedCash: Scalars['Float']['output'];
+  mismatchCount: Scalars['Int']['output'];
+  netOrderAmount: Scalars['Float']['output'];
+  netPaymentAmount: Scalars['Float']['output'];
+  paidOrderAmount: Scalars['Float']['output'];
+  paidOrderCount: Scalars['Int']['output'];
+  paymentDifference: Scalars['Float']['output'];
+  paymentReceivedAmount: Scalars['Float']['output'];
+  taxDocumentAmount: Scalars['Float']['output'];
+  taxDocumentCount: Scalars['Int']['output'];
+  varianceShiftCount: Scalars['Int']['output'];
+};
+
 export type SchemaBmsRecordStockCountItemInput = {
   countId: Scalars['ID']['input'];
   countedQty: Scalars['Int']['input'];
@@ -5446,6 +5737,22 @@ export type SchemaBmsReplacePriceTiersInput = {
   tiers: Array<SchemaBmsPriceTierRowInput>;
 };
 
+export type SchemaBmsReportBranch = {
+  __typename?: 'BmsReportBranch';
+  code: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  orders: Scalars['Int']['output'];
+  revenue: Scalars['Float']['output'];
+};
+
+export type SchemaBmsReportBucket = {
+  __typename?: 'BmsReportBucket';
+  amount: Scalars['Float']['output'];
+  count: Scalars['Int']['output'];
+  key: Scalars['String']['output'];
+};
+
 export type SchemaBmsReportChannelResult = {
   __typename?: 'BmsReportChannelResult';
   channel: Scalars['String']['output'];
@@ -5465,6 +5772,35 @@ export type SchemaBmsReportDelivery = {
   periodKey: Scalars['String']['output'];
   periodStart: Scalars['String']['output'];
   status: Scalars['String']['output'];
+};
+
+export type SchemaBmsReportProductPerformance = {
+  __typename?: 'BmsReportProductPerformance';
+  category: Maybe<Scalars['String']['output']>;
+  marginPct: Maybe<Scalars['Float']['output']>;
+  missingCost: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  profit: Maybe<Scalars['Float']['output']>;
+  qty: Scalars['Int']['output'];
+  revenue: Scalars['Float']['output'];
+  sku: Scalars['String']['output'];
+};
+
+export type SchemaBmsReportProducts = {
+  __typename?: 'BmsReportProducts';
+  activeSkuCount: Scalars['Int']['output'];
+  missingCostSkuCount: Scalars['Int']['output'];
+  slow: Array<SchemaBmsReportProductPerformance>;
+  soldSkuCount: Scalars['Int']['output'];
+  top: Array<SchemaBmsReportProductPerformance>;
+  unsoldSkuCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsReportProfile = {
+  __typename?: 'BmsReportProfile';
+  archetype: Maybe<Scalars['String']['output']>;
+  group: Scalars['String']['output'];
+  moduleKeys: Array<Scalars['String']['output']>;
 };
 
 export type SchemaBmsReportSubscription = {
@@ -5528,6 +5864,22 @@ export type SchemaBmsRestaurantFloorAdmin = {
   __typename?: 'BmsRestaurantFloorAdmin';
   areas: Array<SchemaBmsRestaurantArea>;
   tables: Array<SchemaBmsRestaurantTableAdmin>;
+};
+
+export type SchemaBmsRestaurantOperationsReport = {
+  __typename?: 'BmsRestaurantOperationsReport';
+  avgKitchenMinutes: Scalars['Float']['output'];
+  avgTableMinutes: Scalars['Float']['output'];
+  cancelledCheckCount: Scalars['Int']['output'];
+  cancelledTicketCount: Scalars['Int']['output'];
+  checkCount: Scalars['Int']['output'];
+  guestCount: Scalars['Int']['output'];
+  kitchenTicketCount: Scalars['Int']['output'];
+  paidCheckCount: Scalars['Int']['output'];
+  qrAcceptedCount: Scalars['Int']['output'];
+  qrRejectedCount: Scalars['Int']['output'];
+  qrSubmissionCount: Scalars['Int']['output'];
+  servedTicketCount: Scalars['Int']['output'];
 };
 
 export type SchemaBmsRestaurantTableAdmin = {
@@ -6119,6 +6471,19 @@ export type SchemaBmsSupplier = {
   name: Scalars['String']['output'];
   note: Maybe<Scalars['String']['output']>;
   phone: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsSupplierPerformance = {
+  __typename?: 'BmsSupplierPerformance';
+  avgLeadDays: Scalars['Float']['output'];
+  fillRate: Scalars['Float']['output'];
+  openPoCount: Scalars['Int']['output'];
+  orderedAmount: Scalars['Float']['output'];
+  orderedQty: Scalars['Int']['output'];
+  poCount: Scalars['Int']['output'];
+  receivedAmount: Scalars['Float']['output'];
+  receivedQty: Scalars['Int']['output'];
+  supplier: Scalars['String']['output'];
 };
 
 export type SchemaBmsSupplierProduct = {
@@ -6814,6 +7179,7 @@ export type SchemaMutation = {
   bmsPharmacyAssistantTest: SchemaBmsPharmacyAssistantResult;
   /** ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ) */
   bmsPharmacyDeleteClinicalEvidence: Scalars['Boolean']['output'];
+  bmsPosAcknowledgeBoardGameServiceCall: SchemaBmsPosBoardGameServiceCallActionResult;
   bmsPosAddBoardGameParticipant: SchemaBmsPosBoardGameParticipant;
   bmsPosAddBoardGameTabItem: SchemaBmsPosBoardGameTabActionResult;
   bmsPosAdjustBoardGameTiming: SchemaBmsPosBoardGameSessionSummary;
@@ -6827,12 +7193,14 @@ export type SchemaMutation = {
   bmsPosCloseBoardGameBillingGroup: SchemaBmsPosBoardGameBilling;
   bmsPosCloseBoardGameSession: SchemaBmsPosBoardGameBilling;
   bmsPosCollectAr: SchemaBmsPosArReceiptResult;
+  bmsPosCompleteBoardGameServiceCall: SchemaBmsPosBoardGameServiceCallActionResult;
   bmsPosCompleteRefund: SchemaBmsPosCompleteRefundResult;
   bmsPosCreateStockCount: SchemaBmsMobileStockCountActionResult;
   bmsPosCreateStockTransfer: SchemaBmsMobileStockTransferActionResult;
   bmsPosDeposit: SchemaBmsPosDepositActionResult;
   bmsPosEnrollMember: SchemaBmsPosEnrollMemberResult;
   bmsPosExpense: SchemaBmsPosExpenseActionResult;
+  bmsPosIssueBoardGameGuestAccess: SchemaBmsPosBoardGameGuestAccess;
   bmsPosKitchenTicketStatus: SchemaBmsPosKitchenTicketActionResult;
   bmsPosKitchenTicketsStatus: SchemaBmsPosKitchenTicketsActionResult;
   bmsPosLeaveBoardGameParticipant: SchemaBmsPosBoardGameParticipant;
@@ -7542,6 +7910,11 @@ export type SchemaMutationBmsPharmacyDeleteClinicalEvidenceArgs = {
 };
 
 
+export type SchemaMutationBmsPosAcknowledgeBoardGameServiceCallArgs = {
+  input: SchemaBmsPosBoardGameServiceCallInput;
+};
+
+
 export type SchemaMutationBmsPosAddBoardGameParticipantArgs = {
   input: SchemaBmsPosBoardGameAddParticipantInput;
 };
@@ -7607,6 +7980,11 @@ export type SchemaMutationBmsPosCollectArArgs = {
 };
 
 
+export type SchemaMutationBmsPosCompleteBoardGameServiceCallArgs = {
+  input: SchemaBmsPosBoardGameServiceCallInput;
+};
+
+
 export type SchemaMutationBmsPosCompleteRefundArgs = {
   input: SchemaBmsPosCompleteRefundInput;
 };
@@ -7634,6 +8012,11 @@ export type SchemaMutationBmsPosEnrollMemberArgs = {
 
 export type SchemaMutationBmsPosExpenseArgs = {
   input: SchemaBmsPosExpenseInput;
+};
+
+
+export type SchemaMutationBmsPosIssueBoardGameGuestAccessArgs = {
+  input: SchemaBmsPosBoardGameGuestAccessInput;
 };
 
 
@@ -9216,6 +9599,7 @@ export type SchemaQuery = {
   bmsMailLog: SchemaBmsMailLogPage;
   bmsMailLogEntry: Maybe<SchemaBmsMailLogEntry>;
   bmsMailLogStats: SchemaBmsMailLogStats;
+  bmsManagementReport: SchemaBmsManagementReport;
   bmsMe: SchemaBmsMe;
   bmsMember: Maybe<SchemaBmsMember>;
   bmsMemberDiscountPreview: SchemaBmsMemberDiscountPreview;
@@ -9251,6 +9635,7 @@ export type SchemaQuery = {
   bmsPharmacyProtocols: Array<SchemaBmsPharmacyProtocol>;
   bmsPosArAccount: SchemaBmsPosArAccountResult;
   bmsPosBoardGameCheckout: Maybe<SchemaBmsPosBoardGameCheckout>;
+  bmsPosBoardGameServiceCalls: SchemaBmsPosBoardGameServiceCallsResult;
   bmsPosBoardGameSession: Maybe<SchemaBmsPosBoardGameSession>;
   bmsPosBoardGameWorkspace: SchemaBmsPosBoardGameWorkspace;
   bmsPosCashMovements: SchemaBmsPosCashMovementsResult;
@@ -9617,6 +10002,11 @@ export type SchemaQueryBmsInventoryLotsArgs = {
 };
 
 
+export type SchemaQueryBmsInventorySummaryArgs = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
+};
+
+
 export type SchemaQueryBmsInventoryWastageArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
@@ -9663,6 +10053,13 @@ export type SchemaQueryBmsMailLogArgs = {
 
 export type SchemaQueryBmsMailLogEntryArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsManagementReportArgs = {
+  from: InputMaybe<Scalars['String']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  to: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -9805,6 +10202,11 @@ export type SchemaQueryBmsPosArAccountArgs = {
 export type SchemaQueryBmsPosBoardGameCheckoutArgs = {
   credentials: SchemaBmsPosCredentialsInput;
   id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsPosBoardGameServiceCallsArgs = {
+  credentials: SchemaBmsPosCredentialsInput;
 };
 
 
@@ -10084,6 +10486,7 @@ export type SchemaQueryBmsRevisionHistoryArgs = {
 
 export type SchemaQueryBmsSalesSummaryArgs = {
   from: InputMaybe<Scalars['String']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
   to: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -10159,6 +10562,7 @@ export type SchemaQueryBmsTaxDocumentsArgs = {
 export type SchemaQueryBmsTopSellingProductsArgs = {
   from: InputMaybe<Scalars['String']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
   to: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -10849,6 +11253,13 @@ export type BmsPosBoardGameCheckoutCopyInput = {
   sessionId: string | number;
 };
 
+export type BmsPosBoardGameGuestAccessInput = {
+  cashierUserId: string | number;
+  idempotencyKey: string;
+  pin: string;
+  sessionId: string | number;
+};
+
 export type BmsPosBoardGameLeaveParticipantInput = {
   cashierUserId: string | number;
   idempotencyKey: string;
@@ -10903,6 +11314,13 @@ export type BmsPosBoardGameSeatingActionInput = {
   pin: string;
   sessionId: string | number;
   targetTableId: string | number;
+};
+
+export type BmsPosBoardGameServiceCallInput = {
+  callId: string | number;
+  cashierUserId: string | number;
+  idempotencyKey: string;
+  pin: string;
 };
 
 export type BmsPosBoardGameSessionActionInput = {
@@ -12073,6 +12491,34 @@ export type MobilePosBoardGameCheckoutQueryVariables = Exact<{
 
 export type MobilePosBoardGameCheckoutQuery = { bmsPosBoardGameCheckout: { id: string, sessionId: string, groupNo: number, sessionGroupCount: number, tableCode: string, tableName: string, startedAt: string, endedAt: string, amountDue: number, tabAmount: number, tabItemCount: number, totalDue: number, chargeLineCount: number, passCoveredAmount: number } | null };
 
+export type MobilePosBoardGameServiceCallsQueryVariables = Exact<{
+  credentials: BmsPosCredentialsInput;
+}>;
+
+
+export type MobilePosBoardGameServiceCallsQuery = { bmsPosBoardGameServiceCalls: { calls: Array<{ id: string, sessionId: string, tableId: string, tableCode: string, tableName: string, requestCode: string, requestNote: string | null, status: string, createdAt: string, acknowledgedAt: string | null, completedAt: string | null }> } };
+
+export type MobilePosIssueBoardGameGuestAccessMutationVariables = Exact<{
+  input: BmsPosBoardGameGuestAccessInput;
+}>;
+
+
+export type MobilePosIssueBoardGameGuestAccessMutation = { bmsPosIssueBoardGameGuestAccess: { token: string, tableCode: string, tableName: string } };
+
+export type MobilePosAcknowledgeBoardGameServiceCallMutationVariables = Exact<{
+  input: BmsPosBoardGameServiceCallInput;
+}>;
+
+
+export type MobilePosAcknowledgeBoardGameServiceCallMutation = { bmsPosAcknowledgeBoardGameServiceCall: { id: string, status: string } };
+
+export type MobilePosCompleteBoardGameServiceCallMutationVariables = Exact<{
+  input: BmsPosBoardGameServiceCallInput;
+}>;
+
+
+export type MobilePosCompleteBoardGameServiceCallMutation = { bmsPosCompleteBoardGameServiceCall: { id: string, status: string } };
+
 export type MobilePosOpenBoardGameSessionMutationVariables = Exact<{
   input: BmsPosBoardGameOpenInput;
 }>;
@@ -12351,6 +12797,10 @@ export const MobilePosCancelStockCountDocument = {"kind":"Document","definitions
 export const MobilePosBoardGameWorkspaceDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameWorkspace"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameWorkspace"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"floor"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"areas"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tables"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"areaId"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"seats"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}},{"kind":"Field","name":{"kind":"Name","value":"blocked"}},{"kind":"Field","name":{"kind":"Name","value":"openSession"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"rates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"customerType"}},{"kind":"Field","name":{"kind":"Name","value":"pricePerHour"}},{"kind":"Field","name":{"kind":"Name","value":"minimumMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"roundingMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"graceMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}}]}},{"kind":"Field","name":{"kind":"Name","value":"library"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"minPlayers"}},{"kind":"Field","name":{"kind":"Name","value":"maxPlayers"}},{"kind":"Field","name":{"kind":"Name","value":"typicalMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"language"}},{"kind":"Field","name":{"kind":"Name","value":"publicVisible"}},{"kind":"Field","name":{"kind":"Name","value":"copies"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"copyCode"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"conditionNote"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosBoardGameWorkspaceQuery, MobilePosBoardGameWorkspaceQueryVariables>;
 export const MobilePosBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"currentOrderId"}},{"kind":"Field","name":{"kind":"Name","value":"chargeSnapshot"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"participantId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billableMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tabItems"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"modifierNames"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"addedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billable"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"minimumMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"roundingMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"graceMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupId"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupStatus"}},{"kind":"Field","name":{"kind":"Name","value":"joinedAt"}},{"kind":"Field","name":{"kind":"Name","value":"leftAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"games"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"copyId"}},{"kind":"Field","name":{"kind":"Name","value":"copyCode"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"checkedOutAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"copyStatus"}}]}},{"kind":"Field","name":{"kind":"Name","value":"identityHolds"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"loanId"}},{"kind":"Field","name":{"kind":"Name","value":"documentKind"}},{"kind":"Field","name":{"kind":"Name","value":"holderName"}},{"kind":"Field","name":{"kind":"Name","value":"documentNumberTail"}},{"kind":"Field","name":{"kind":"Name","value":"hasDocumentNumber"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"takenAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameSessionQuery, MobilePosBoardGameSessionQueryVariables>;
 export const MobilePosBoardGameCheckoutDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameCheckout"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameCheckout"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"sessionGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"tabItemCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalDue"}},{"kind":"Field","name":{"kind":"Name","value":"chargeLineCount"}},{"kind":"Field","name":{"kind":"Name","value":"passCoveredAmount"}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameCheckoutQuery, MobilePosBoardGameCheckoutQueryVariables>;
+export const MobilePosBoardGameServiceCallsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosBoardGameServiceCalls"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosBoardGameServiceCalls"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"requestCode"}},{"kind":"Field","name":{"kind":"Name","value":"requestNote"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"acknowledgedAt"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosBoardGameServiceCallsQuery, MobilePosBoardGameServiceCallsQueryVariables>;
+export const MobilePosIssueBoardGameGuestAccessDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosIssueBoardGameGuestAccess"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameGuestAccessInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosIssueBoardGameGuestAccess"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}}]}}]}}]} as unknown as DocumentNode<MobilePosIssueBoardGameGuestAccessMutation, MobilePosIssueBoardGameGuestAccessMutationVariables>;
+export const MobilePosAcknowledgeBoardGameServiceCallDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosAcknowledgeBoardGameServiceCall"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameServiceCallInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosAcknowledgeBoardGameServiceCall"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<MobilePosAcknowledgeBoardGameServiceCallMutation, MobilePosAcknowledgeBoardGameServiceCallMutationVariables>;
+export const MobilePosCompleteBoardGameServiceCallDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCompleteBoardGameServiceCall"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameServiceCallInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCompleteBoardGameServiceCall"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]} as unknown as DocumentNode<MobilePosCompleteBoardGameServiceCallMutation, MobilePosCompleteBoardGameServiceCallMutationVariables>;
 export const MobilePosOpenBoardGameSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosOpenBoardGameSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameOpenInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosOpenBoardGameSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosBoardGameSessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameSessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"seatingId"}},{"kind":"Field","name":{"kind":"Name","value":"sessionIds"}},{"kind":"Field","name":{"kind":"Name","value":"sessionCount"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"billingMode"}},{"kind":"Field","name":{"kind":"Name","value":"guestCount"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"expectedEndAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"alertBeforeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"alertStatus"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupCount"}},{"kind":"Field","name":{"kind":"Name","value":"awaitingPaymentCount"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]} as unknown as DocumentNode<MobilePosOpenBoardGameSessionMutation, MobilePosOpenBoardGameSessionMutationVariables>;
 export const MobilePosAddBoardGameParticipantDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosAddBoardGameParticipant"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameAddParticipantInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosAddBoardGameParticipant"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billable"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"joinedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobilePosAddBoardGameParticipantMutation, MobilePosAddBoardGameParticipantMutationVariables>;
 export const MobilePosCloseBoardGameBillingGroupDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCloseBoardGameBillingGroup"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosBoardGameBillingGroupActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCloseBoardGameBillingGroup"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}},{"kind":"Field","name":{"kind":"Name","value":"groups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"groupNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"amountDue"}},{"kind":"Field","name":{"kind":"Name","value":"tabAmount"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"currentOrderId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"participantId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"participantType"}},{"kind":"Field","name":{"kind":"Name","value":"billingGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"billableMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyRate"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosCloseBoardGameBillingGroupMutation, MobilePosCloseBoardGameBillingGroupMutationVariables>;

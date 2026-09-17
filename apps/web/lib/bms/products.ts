@@ -1688,7 +1688,7 @@ export async function setReorderPoint(
   }
 }
 
-export async function listLowStock(tenantId: string): Promise<
+export async function listLowStock(tenantId: string, locationId?: string | null): Promise<
   Array<VariantRow & { sku: string; name: string; available: number }>
 > {
   const res = await query<any>(
@@ -1700,10 +1700,11 @@ export async function listLowStock(tenantId: string): Promise<
        JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
        JOIN bms_locations loc ON loc.tenant_id = i.tenant_id AND loc.id = i.location_id
       WHERE i.tenant_id = $1
+        AND ($2::uuid IS NULL OR i.location_id=$2::uuid)
         AND (i.current_stock - i.reserved_stock) <= i.reorder_point
         AND p.active
       ORDER BY available ASC, loc.name, p.name`,
-    [tenantId]
+    [tenantId, locationId || null]
   );
   return res.rows;
 }

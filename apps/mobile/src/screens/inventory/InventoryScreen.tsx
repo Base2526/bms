@@ -43,6 +43,7 @@ import type { AppStackParamList } from '../../navigation/types';
 import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import { useTheme } from '../../theme/ThemeProvider';
+import { supportsTabletLayout } from '../../theme/useResponsive';
 
 type ViewMode = 'OVERVIEW' | 'TRANSFER' | 'COUNT';
 type DraftLine = { sku: string; size: string; qty: string };
@@ -513,8 +514,9 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { session } = useSession();
   const { mode: storeMode } = useStoreMode();
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 760 && Boolean(asTabRoot);
+  const { width, height } = useWindowDimensions();
+  const isTablet =
+    supportsTabletLayout(width, height, 760) && Boolean(asTabRoot);
   const credentials = session?.credentials;
   const [mode, setMode] = useState<ViewMode>('OVERVIEW');
   const [working, setWorking] = useState('');

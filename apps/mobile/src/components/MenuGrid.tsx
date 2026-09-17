@@ -221,11 +221,16 @@ export function MenuGrid({
             )}
             renderItem={({ item }) => (
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: category === item }}
+                accessibilityLabel={`หมวด ${item}`}
                 onPress={() => setCategory(item)}
                 style={{
+                  minHeight: 44,
                   paddingHorizontal: spacing.md,
                   paddingVertical: spacing.sm,
                   borderRadius: radius.pill,
+                  justifyContent: 'center',
                   backgroundColor:
                     category === item ? colors.primary : colors.surface2,
                 }}

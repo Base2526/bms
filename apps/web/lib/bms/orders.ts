@@ -219,6 +219,9 @@ export type CreatedLine = {
   modifierCodes?: string[] | null;
   /** snapshot ประเภท VAT ตอนขาย — สินค้าเปลี่ยนประเภททีหลังไม่กระทบใบที่ออกไปแล้ว */
   vatCategory?: string | null;
+  /** ต้นทุนรวมของบรรทัด ณ ตอนขาย; null = มีส่วนประกอบอย่างน้อยหนึ่งตัวไม่มีต้นทุน */
+  costAmountSnapshot: number | null;
+  costSnapshotSource: "CATALOG_AT_SALE" | "MISSING";
 };
 
 export type CreateOrderResult =
@@ -1074,10 +1077,28 @@ export async function createOrderInTx(
       );
     }
 
+    // Cost uses the exact immutable stock-consumption shape that reservation and
+    // settlement use. A recipe/bundle/modifier therefore snapshots component cost,
+    // while a direct sale snapshots its own product cost. Any missing component
+    // keeps the whole sold line unknown — never silently substitute zero.
+    const consumedSkus = Array.from(new Set(
+      resolvedConsumption.flatMap((consumption) => consumption.lines.map((line) => line.sku))
+    ));
+    const consumedCosts = consumedSkus.length === 0
+      ? { rows: [] as Array<{ sku: string; cost_price: string | null }> }
+      : await client.query<{ sku: string; cost_price: string | null }>(
+          `SELECT sku, cost_price FROM bms_products
+            WHERE tenant_id=$1 AND sku=ANY($2::text[])`,
+          [tenantId, consumedSkus]
+        );
+    const componentCostBySku = new Map(
+      consumedCosts.rows.map((row) => [row.sku, row.cost_price == null ? null : Number(row.cost_price)])
+    );
+
     for (const [itemIndex, it] of items.entries()) {
       // ดึงราคา (สินค้าต้อง active)
-      const prod = await client.query<{ price: string; name: string; vat_category: string }>(
-        `SELECT p.price, p.name, p.vat_category
+      const prod = await client.query<{ price: string; name: string; vat_category: string; cost_price: string | null }>(
+        `SELECT p.price, p.name, p.vat_category, p.cost_price
            FROM bms_products p
           WHERE p.tenant_id = $2 AND p.sku = $1 AND p.active
             AND EXISTS (
@@ -1118,6 +1139,14 @@ export async function createOrderInTx(
       ), 0);
       const soldUnitQty = packQty ?? it.qty;
       const modifierTotal = Math.round(modifierUnitPrice * soldUnitQty * 100) / 100;
+      const consumption = resolvedConsumption[itemIndex];
+      const costParts = consumption.lines.length > 0
+        ? consumption.lines.map((line) => ({ qty: line.qty, cost: componentCostBySku.get(line.sku) ?? null }))
+        : [{ qty: it.qty, cost: prod.rows[0].cost_price == null ? null : Number(prod.rows[0].cost_price) }];
+      const hasCompleteCost = costParts.every((part) => part.cost != null);
+      const costAmountSnapshot = hasCompleteCost
+        ? Math.round(costParts.reduce((sum, part) => sum + part.qty * Number(part.cost), 0) * 100) / 100
+        : null;
       // Keep unit_price × qty (or pack_unit_price × pack_qty) equal to the
       // taxable line amount consumed by documents, refunds and commission.
       const unitPrice = baseUnitPrice + (it.qty > 0 ? modifierTotal / it.qty : 0);
@@ -1161,6 +1190,8 @@ export async function createOrderInTx(
         packUnitPrice,
         modifierCodes: it.modifierCodes ?? [],
         vatCategory: prod.rows[0].vat_category ?? "UNKNOWN",
+        costAmountSnapshot,
+        costSnapshotSource: costAmountSnapshot == null ? "MISSING" : "CATALOG_AT_SALE",
       });
     }
 
@@ -1445,13 +1476,14 @@ export async function createOrderInTx(
       const insertedItem = await client.query<{ id: string }>(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price,
                                       receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price,
-                                      vat_category, stock_modifier_codes, stock_consumption_version)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $15, $9, $10, $11, $12, $13, $16, 1)
+                                      vat_category, stock_modifier_codes, stock_consumption_version,
+                                      cost_amount_snapshot, cost_snapshot_source)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $15, $9, $10, $11, $12, $13, $16, 1, $17, $18)
          RETURNING id`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
           locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
           ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot),
-          ln.modifierCodes ?? []]
+          ln.modifierCodes ?? [], ln.costAmountSnapshot, ln.costSnapshotSource]
       );
       await snapshotOrderItemConsumptionInTx(
         client,

@@ -81,6 +81,7 @@ export function SearchField({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="ล้างคำค้น"
+          hitSlop={4}
           onPress={() => {
             onChangeText('');
             inputRef.current?.focus();
@@ -104,9 +105,9 @@ const styles = StyleSheet.create({
   wrap: { position: 'relative', justifyContent: 'center' },
   clear: {
     position: 'absolute',
-    right: 4,
-    width: 36,
-    height: 34,
+    right: 2,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

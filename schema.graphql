@@ -371,6 +371,14 @@ type BmsArWriteOffResult {
   status: String!
 }
 
+type BmsArchetypeReport {
+  boardGame: BmsBoardGameOperationsReport
+  catalog: BmsCatalogControlReport!
+  pharmacy: BmsPharmacyOperationsReport
+  profile: BmsReportProfile!
+  restaurant: BmsRestaurantOperationsReport
+}
+
 type BmsAssistantCitation {
   accessNote: String
   accessRequirement: String!
@@ -434,6 +442,25 @@ type BmsBilling {
   usage: BmsUsage!
 }
 
+type BmsBoardGameOperationsReport {
+  activePassCount: Int!
+  attentionCopyCount: Int!
+  availableCopyCount: Int!
+  avgPlayMinutes: Float!
+  cancelledSessionCount: Int!
+  checkedOutCopyCount: Int!
+  copyCount: Int!
+  guestCount: Int!
+  minutePassCount: Int!
+  openBillingGroupCount: Int!
+  paidBillingGroupCount: Int!
+  paidSessionCount: Int!
+  remainingPassMinutes: Int!
+  sessionCount: Int!
+  settledAmount: Float!
+  titleCount: Int!
+}
+
 type BmsBundleItem {
   componentName: String!
   componentSize: String!
@@ -483,6 +510,26 @@ type BmsCarrierBookingResult {
   trackingNo: String
 }
 
+type BmsCatalogControlReport {
+  activePackCount: Int!
+  activeVariantCount: Int!
+  alternatePackCount: Int!
+  expiredLotCount: Int!
+  expiredUnits: Int!
+  expiringLotCount: Int!
+  expiringUnits: Int!
+  lotUnits: Int!
+  lotsMissingExpiry: Int!
+  multiVariantProductCount: Int!
+  productsWithPacks: Int!
+  productsWithVariants: Int!
+  serialInStockCount: Int!
+  serialReturnedCount: Int!
+  serialSoldCount: Int!
+  serialTrackedSkuCount: Int!
+  stockedLotCount: Int!
+}
+
 type BmsChannelConfig {
   access_token_masked: String
   active: Boolean!
@@ -524,6 +571,19 @@ input BmsCommissionRuleInput {
   percent: Float
   ref: String
   scope: String
+}
+
+type BmsControlReport {
+  absoluteCashVariance: Float!
+  cashIn: Float!
+  cashOut: Float!
+  closedShiftCount: Int!
+  discountAmount: Float!
+  noSaleCount: Int!
+  stockMovements: [BmsReportBucket!]!
+  voidAmount: Float!
+  voidCount: Int!
+  wastageQty: Int!
 }
 
 enum BmsConvStatus {
@@ -804,6 +864,17 @@ type BmsCustomerRecentOrder {
   trackingNo: String
 }
 
+type BmsCustomerReport {
+  anonymousOrders: Int!
+  avgRevenuePerCustomer: Float!
+  identifiedRevenue: Float!
+  newCustomers: Int!
+  purchasingCustomers: Int!
+  repeatCustomers: Int!
+  repeatRate: Float!
+  totalCustomers: Int!
+}
+
 type BmsCustomerStats {
   avgOrderValue: Float!
   avgResponseTimeSeconds: Int
@@ -840,6 +911,16 @@ type BmsDashboard {
   salesDaily: [BmsDailySales!]!
   topCustomers: [BmsTopCustomer!]!
   topProducts: [BmsTopProduct!]!
+}
+
+type BmsDiscountPerformance {
+  beforeDiscountRevenue: Float!
+  discountAmount: Float!
+  discountRate: Float!
+  discountedOrderCount: Int!
+  netRevenue: Float!
+  paidOrderCount: Int!
+  promotionLineCount: Int!
 }
 
 type BmsDocLine {
@@ -1030,11 +1111,21 @@ type BmsFollowupRunResult {
   skipped: Int!
 }
 
+type BmsFulfillmentReport {
+  avgDeliveryHours: Float!
+  byStatus: [BmsReportBucket!]!
+  deliveredCount: Int!
+  exceptionCount: Int!
+  inProgressCount: Int!
+  shipmentCount: Int!
+}
+
 input BmsGenerateReportInput {
   dateFrom: String
   dateTo: String
   format: String!
   includeSummary: Boolean
+  locationId: ID
   reportType: String!
 }
 
@@ -1124,6 +1215,21 @@ type BmsInventoryActionSummary {
   windowDays: Int!
 }
 
+type BmsInventoryAgingReport {
+  age31To60Count: Int!
+  age61To90Count: Int!
+  age91To180Count: Int!
+  age180PlusCount: Int!
+  deadStockUnits: Int!
+  deadStockValue: Float!
+  estimatedDaysCover: Float
+  knownCostValue: Float!
+  method: String!
+  missingCostVariantCount: Int!
+  stockUnits: Int!
+  stockedVariantCount: Int!
+}
+
 input BmsInventoryDemandInput {
   kind: BmsInventoryDemandKind!
   note: String
@@ -1160,10 +1266,14 @@ input BmsInventoryPolicyInput {
 
 type BmsInventorySummary {
   availableUnits: Int!
+  knownStockCostValue: Float!
   lowStockCount: Int!
+  missingCostVariantCount: Int!
   outOfStockCount: Int!
   reservedUnits: Int!
   skuCount: Int!
+  stockCostValue: Float
+  stockRetailValue: Float!
   stockValue: Float!
   totalUnits: Int!
   variantCount: Int!
@@ -1317,6 +1427,15 @@ type BmsLabelShipTo {
   phone: String
 }
 
+type BmsLiabilityReport {
+  arOutstandingAmount: Float!
+  arOverdueAmount: Float!
+  balanceMismatchCount: Int!
+  loyaltyPoints: Int!
+  loyaltyValue: Float!
+  storeCreditAmount: Float!
+}
+
 type BmsLocation {
   active: Boolean!
   address: String
@@ -1466,6 +1585,28 @@ type BmsMailLogStats {
   success: Int!
   topErrorProvider: String
   total: Int!
+}
+
+type BmsManagementReport {
+  archetype: BmsArchetypeReport!
+  branches: [BmsReportBranch!]!
+  comparison: BmsPeriodComparison!
+  controls: BmsControlReport!
+  customerSegments: [BmsReportBucket!]!
+  customers: BmsCustomerReport!
+  discountPerformance: BmsDiscountPerformance!
+  from: String!
+  fulfillment: BmsFulfillmentReport!
+  inventoryAging: BmsInventoryAgingReport!
+  liabilities: BmsLiabilityReport!
+  locationId: ID
+  payments: BmsPaymentReport!
+  products: BmsReportProducts!
+  profit: BmsProfitSummary!
+  purchases: BmsPurchaseReport!
+  reconciliation: BmsReconciliationReport!
+  supplierPerformance: [BmsSupplierPerformance!]!
+  to: String!
 }
 
 type BmsMe {
@@ -1980,6 +2121,15 @@ enum BmsPaymentMethod {
   WALLET
 }
 
+type BmsPaymentReport {
+  byMethod: [BmsReportBucket!]!
+  byStatus: [BmsReportBucket!]!
+  pendingAmount: Float!
+  pendingCount: Int!
+  receivedAmount: Float!
+  refundedAmount: Float!
+}
+
 type BmsPaymentResult {
   message: String
   paymentId: ID
@@ -1991,6 +2141,20 @@ enum BmsPaymentStatus {
   PENDING
   REFUNDED
   REJECTED
+}
+
+type BmsPeriodComparison {
+  currentNetRevenue: Float!
+  currentOrderCount: Int!
+  currentProfit: Float
+  orderChangePct: Float
+  previousFrom: String!
+  previousNetRevenue: Float!
+  previousOrderCount: Int!
+  previousProfit: Float
+  previousTo: String!
+  profitChangePct: Float
+  revenueChangePct: Float
 }
 
 """
@@ -2174,6 +2338,15 @@ type BmsPharmacyLicenseUser {
   isLicensedPharmacist: Boolean!
   name: String!
   pharmacistLicenseNo: String
+}
+
+type BmsPharmacyOperationsReport {
+  approvedPolicyCount: Int!
+  draftPolicyCount: Int!
+  missingPolicySkuCount: Int!
+  pendingReviewPolicyCount: Int!
+  policyCount: Int!
+  retiredPolicyCount: Int!
 }
 
 type BmsPharmacyPolicyReadiness {
@@ -2480,6 +2653,19 @@ type BmsPosBoardGameFloor {
   tables: [BmsPosBoardGameTable!]!
 }
 
+type BmsPosBoardGameGuestAccess {
+  tableCode: String!
+  tableName: String!
+  token: String!
+}
+
+input BmsPosBoardGameGuestAccessInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+  sessionId: ID!
+}
+
 """
 บัตรที่ร้านถือไว้ค้ำกล่องเกม (9.93)
 
@@ -2620,6 +2806,36 @@ type BmsPosBoardGameSeatingActionResult {
   sessionIds: [ID!]!
   sourceSeatingId: ID!
   toTableId: ID!
+}
+
+type BmsPosBoardGameServiceCall {
+  acknowledgedAt: String
+  completedAt: String
+  createdAt: String!
+  id: ID!
+  requestCode: String!
+  requestNote: String
+  sessionId: ID!
+  status: String!
+  tableCode: String!
+  tableId: ID!
+  tableName: String!
+}
+
+type BmsPosBoardGameServiceCallActionResult {
+  id: ID!
+  status: String!
+}
+
+input BmsPosBoardGameServiceCallInput {
+  callId: ID!
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+}
+
+type BmsPosBoardGameServiceCallsResult {
+  calls: [BmsPosBoardGameServiceCall!]!
 }
 
 type BmsPosBoardGameSession {
@@ -5034,6 +5250,34 @@ input BmsProductStockPolicyInput {
   stockPolicy: String
 }
 
+type BmsProfitDay {
+  cost: Float
+  day: String!
+  knownCost: Float!
+  missingCostLineCount: Int!
+  profit: Float
+  revenue: Float!
+}
+
+type BmsProfitSummary {
+  authoritative: Boolean!
+  byDay: [BmsProfitDay!]!
+  complete: Boolean!
+  cost: Float
+  disclaimer: String!
+  from: String!
+  knownCost: Float!
+  legacyCostLineCount: Int!
+  marginPct: Float
+  method: String!
+  missingCostLineCount: Int!
+  missingCostRevenue: Float!
+  missingCostSkuCount: Int!
+  profit: Float
+  revenue: Float!
+  to: String!
+}
+
 type BmsPurchaseItem {
   qtyOrdered: Int!
   qtyReceived: Int!
@@ -5068,6 +5312,15 @@ type BmsPurchaseOrder {
   supplier: BmsSupplier
   total: Float!
   updatedAt: String!
+}
+
+type BmsPurchaseReport {
+  byStatus: [BmsReportBucket!]!
+  bySupplier: [BmsReportBucket!]!
+  openAmount: Float!
+  openCount: Int!
+  orderedAmount: Float!
+  poCount: Int!
 }
 
 type BmsPurchaseResult {
@@ -5124,6 +5377,23 @@ input BmsRecipeComponentInput {
   sku: String!
 }
 
+type BmsReconciliationReport {
+  cashDifference: Float!
+  completedRefundAmount: Float!
+  countedCash: Float!
+  expectedCash: Float!
+  mismatchCount: Int!
+  netOrderAmount: Float!
+  netPaymentAmount: Float!
+  paidOrderAmount: Float!
+  paidOrderCount: Int!
+  paymentDifference: Float!
+  paymentReceivedAmount: Float!
+  taxDocumentAmount: Float!
+  taxDocumentCount: Int!
+  varianceShiftCount: Int!
+}
+
 input BmsRecordStockCountItemInput {
   countId: ID!
   countedQty: Int!
@@ -5145,6 +5415,20 @@ input BmsReplacePriceTiersInput {
   tiers: [BmsPriceTierRowInput!]!
 }
 
+type BmsReportBranch {
+  code: String!
+  locationId: ID!
+  name: String!
+  orders: Int!
+  revenue: Float!
+}
+
+type BmsReportBucket {
+  amount: Float!
+  count: Int!
+  key: String!
+}
+
 type BmsReportChannelResult {
   channel: String!
   error: String
@@ -5162,6 +5446,32 @@ type BmsReportDelivery {
   periodKey: String!
   periodStart: String!
   status: String!
+}
+
+type BmsReportProductPerformance {
+  category: String
+  marginPct: Float
+  missingCost: Boolean!
+  name: String!
+  profit: Float
+  qty: Int!
+  revenue: Float!
+  sku: String!
+}
+
+type BmsReportProducts {
+  activeSkuCount: Int!
+  missingCostSkuCount: Int!
+  slow: [BmsReportProductPerformance!]!
+  soldSkuCount: Int!
+  top: [BmsReportProductPerformance!]!
+  unsoldSkuCount: Int!
+}
+
+type BmsReportProfile {
+  archetype: String
+  group: String!
+  moduleKeys: [String!]!
 }
 
 type BmsReportSubscription {
@@ -5220,6 +5530,21 @@ type BmsRestaurantCancellationLoss {
 type BmsRestaurantFloorAdmin {
   areas: [BmsRestaurantArea!]!
   tables: [BmsRestaurantTableAdmin!]!
+}
+
+type BmsRestaurantOperationsReport {
+  avgKitchenMinutes: Float!
+  avgTableMinutes: Float!
+  cancelledCheckCount: Int!
+  cancelledTicketCount: Int!
+  checkCount: Int!
+  guestCount: Int!
+  kitchenTicketCount: Int!
+  paidCheckCount: Int!
+  qrAcceptedCount: Int!
+  qrRejectedCount: Int!
+  qrSubmissionCount: Int!
+  servedTicketCount: Int!
 }
 
 type BmsRestaurantTableAdmin {
@@ -5776,6 +6101,18 @@ type BmsSupplier {
   name: String!
   note: String
   phone: String
+}
+
+type BmsSupplierPerformance {
+  avgLeadDays: Float!
+  fillRate: Float!
+  openPoCount: Int!
+  orderedAmount: Float!
+  orderedQty: Int!
+  poCount: Int!
+  receivedAmount: Float!
+  receivedQty: Int!
+  supplier: String!
 }
 
 type BmsSupplierProduct {
@@ -6458,6 +6795,7 @@ type Mutation {
 
   """ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ)"""
   bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
+  bmsPosAcknowledgeBoardGameServiceCall(input: BmsPosBoardGameServiceCallInput!): BmsPosBoardGameServiceCallActionResult!
   bmsPosAddBoardGameParticipant(input: BmsPosBoardGameAddParticipantInput!): BmsPosBoardGameParticipant!
   bmsPosAddBoardGameTabItem(input: BmsPosBoardGameTabAddInput!): BmsPosBoardGameTabActionResult!
   bmsPosAdjustBoardGameTiming(input: BmsPosBoardGameTimingInput!): BmsPosBoardGameSessionSummary!
@@ -6471,12 +6809,14 @@ type Mutation {
   bmsPosCloseBoardGameBillingGroup(input: BmsPosBoardGameBillingGroupActionInput!): BmsPosBoardGameBilling!
   bmsPosCloseBoardGameSession(input: BmsPosBoardGameSessionActionInput!): BmsPosBoardGameBilling!
   bmsPosCollectAr(input: BmsPosCollectArInput!): BmsPosArReceiptResult!
+  bmsPosCompleteBoardGameServiceCall(input: BmsPosBoardGameServiceCallInput!): BmsPosBoardGameServiceCallActionResult!
   bmsPosCompleteRefund(input: BmsPosCompleteRefundInput!): BmsPosCompleteRefundResult!
   bmsPosCreateStockCount(input: BmsPosStockCountCreateInput!): BmsMobileStockCountActionResult!
   bmsPosCreateStockTransfer(input: BmsPosStockTransferCreateInput!): BmsMobileStockTransferActionResult!
   bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
   bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): BmsPosEnrollMemberResult!
   bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
+  bmsPosIssueBoardGameGuestAccess(input: BmsPosBoardGameGuestAccessInput!): BmsPosBoardGameGuestAccess!
   bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): BmsPosKitchenTicketActionResult!
   bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): BmsPosKitchenTicketsActionResult!
   bmsPosLeaveBoardGameParticipant(input: BmsPosBoardGameLeaveParticipantInput!): BmsPosBoardGameParticipant!
@@ -7014,7 +7354,7 @@ type Query {
   bmsInboxUnreadCount: Int!
   bmsInventoryActionCenter(coverageDays: Int = 30, limit: Int = 5, windowDays: Int = 30): BmsInventoryActionCenter!
   bmsInventoryLots(locationId: ID, productSku: String, size: String): [BmsInventoryLot!]!
-  bmsInventorySummary: BmsInventorySummary!
+  bmsInventorySummary(locationId: ID): BmsInventorySummary!
   bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
   bmsIsPlatformAdmin: Boolean!
   bmsJsConsoleEnabled: Boolean!
@@ -7037,6 +7377,7 @@ type Query {
   bmsMailLog(category: String, page: Int, pageSize: Int, provider: String, q: String, status: String, tenantId: ID): BmsMailLogPage!
   bmsMailLogEntry(id: ID!): BmsMailLogEntry
   bmsMailLogStats: BmsMailLogStats!
+  bmsManagementReport(from: String, locationId: ID, to: String): BmsManagementReport!
   bmsMe: BmsMe!
   bmsMember(customerId: ID!): BmsMember
   bmsMemberDiscountPreview(couponDiscount: Float, customerId: ID, pointsToRedeem: Int, subtotal: Float!): BmsMemberDiscountPreview!
@@ -7075,6 +7416,7 @@ type Query {
   bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
   bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): BmsPosArAccountResult!
   bmsPosBoardGameCheckout(credentials: BmsPosCredentialsInput!, id: ID!): BmsPosBoardGameCheckout
+  bmsPosBoardGameServiceCalls(credentials: BmsPosCredentialsInput!): BmsPosBoardGameServiceCallsResult!
   bmsPosBoardGameSession(credentials: BmsPosCredentialsInput!, id: ID!): BmsPosBoardGameSession
   bmsPosBoardGameWorkspace(credentials: BmsPosCredentialsInput!): BmsPosBoardGameWorkspace!
   bmsPosCashMovements: BmsPosCashMovementsResult!
@@ -7149,7 +7491,7 @@ type Query {
   bmsRevisionHistory(entityId: ID!, kind: BmsRevisionKind!, limit: Int = 50): [BmsRevisionEntry!]!
   bmsRolePermissions: [BmsRolePermissions!]!
   bmsSalesByTier: [BmsSalesByTierRow!]!
-  bmsSalesSummary(from: String, to: String): BmsSalesSummary!
+  bmsSalesSummary(from: String, locationId: ID, to: String): BmsSalesSummary!
   bmsShipment(id: ID!): BmsShipment
   bmsShipmentLabel(id: ID!): BmsShipmentLabel
   bmsShipmentTrackingEvents(limit: Int = 100, shipmentId: ID!): [BmsShipmentTrackingEvent!]!
@@ -7167,7 +7509,7 @@ type Query {
   bmsTaxDocuments(orderId: ID!): [BmsTaxDocument!]!
   bmsTaxSettings: BmsTaxSettings!
   bmsTenants: [BmsTenantRow!]!
-  bmsTopSellingProducts(from: String, limit: Int = 10, to: String): [BmsTopProduct!]!
+  bmsTopSellingProducts(from: String, limit: Int = 10, locationId: ID, to: String): [BmsTopProduct!]!
 
   """ชื่อสถานีที่ยังถูกใช้อยู่แต่ไม่มีแถวหลัก (ข้อมูลตกค้าง) — ปกติต้องว่าง"""
   bmsUnmappedKitchenStationNames: [String!]!

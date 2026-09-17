@@ -5,25 +5,54 @@
 // ใช้ service เดียวกับที่อื่น (lib/bms/reports) — permission report.view
 // =============================================================
 
-import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "@/lib/bms/reports";
+import {
+  getInventorySummary,
+  getManagementReport,
+  getSalesSummary,
+  getTopSellingProducts,
+} from "@/lib/bms/reports";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 
 export const bmsReportsResolvers = {
   Query: {
-    async bmsSalesSummary(_p: unknown, args: { from?: string; to?: string }, ctx: any) {
+    async bmsSalesSummary(_p: unknown, args: { from?: string; to?: string; locationId?: string }, ctx: any) {
       await requirePermission(ctx, "report.view");
-      return getSalesSummary(getTenantId(ctx), args.from ?? null, args.to ?? null);
+      return getSalesSummary(getTenantId(ctx), args.from ?? null, args.to ?? null, args.locationId ?? null);
     },
 
-    async bmsInventorySummary(_p: unknown, _a: unknown, ctx: any) {
+    async bmsInventorySummary(_p: unknown, args: { locationId?: string }, ctx: any) {
       await requirePermission(ctx, "report.view");
-      return getInventorySummary(getTenantId(ctx));
+      return getInventorySummary(getTenantId(ctx), args.locationId ?? null);
     },
 
-    async bmsTopSellingProducts(_p: unknown, args: { from?: string; to?: string; limit?: number }, ctx: any) {
+    async bmsTopSellingProducts(
+      _p: unknown,
+      args: { from?: string; to?: string; limit?: number; locationId?: string },
+      ctx: any
+    ) {
       await requirePermission(ctx, "report.view");
-      return getTopSellingProducts(getTenantId(ctx), args.from ?? null, args.to ?? null, args.limit ?? 10);
+      return getTopSellingProducts(
+        getTenantId(ctx),
+        args.from ?? null,
+        args.to ?? null,
+        args.limit ?? 10,
+        args.locationId ?? null
+      );
+    },
+
+    async bmsManagementReport(
+      _p: unknown,
+      args: { from?: string; to?: string; locationId?: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "report.view");
+      return getManagementReport(
+        getTenantId(ctx),
+        args.from ?? null,
+        args.to ?? null,
+        args.locationId ?? null
+      );
     },
   },
 };

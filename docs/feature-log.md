@@ -719,6 +719,24 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   `POST /api/bms/reports/send-digest` follows the same `x-cron-secret` pattern as the other two
   cron endpoints and is likewise **not yet scheduled**. See [docs/ui/dashboard.md](ui/dashboard.md)
   and [docs/architecture/api.md](architecture/api.md).
+- **Report Center expansion (2026-09-17)**: `/admin/reports` now composes tenant-scoped live facts for
+  branch performance, product/cost coverage, payment reconciliation, purchases/suppliers, customer
+  repeat behavior, fulfillment, POS controls and the shop-wide loyalty/store-credit/AR balances. The
+  shared exporter adds Products, Payments, Purchases, Customers and Operations to the original Sales,
+  Inventory and Profit files; branch filtering is carried through screen, POS-return REST reads and
+  generated files. Inventory now separates retail value from cost valuation and refuses to present
+  missing product cost as zero. A second layer is selected from the server-derived
+  `business_archetype`: restaurant table/kitchen/QR facts, pharmacy product-policy and expiry controls
+  (never patient or clinical-case data under `report.view`), board-game session/library/pass facts,
+  and retail/wholesale variant/pack/lot/serial/wastage/AR emphasis. `SPECIALIZED` exports that layer;
+  migration `9.95` expands the persisted generated-report type constraint.
+  Migration `9.97` adds immutable sale-time cost evidence to order lines (including resolved recipe,
+  bundle and modifier components), with legacy rows explicitly marked as reconstructed or missing.
+  The same report now adds like-for-like previous-period comparison, net-payment/cash/ledger
+  reconciliation, inventory activity aging and estimated cover, supplier fill rate and approximate
+  lead time, discount/promotion signals, and verified paid-customer segments. These facts are shared
+  by GraphQL, the admin screen and the downloadable documents; approximate methods are labeled and
+  no missing cost is silently converted to zero.
 - **Generated reports & document export (2026-08)**: `/admin/reports` now includes an **AI Report
   Generator** card that produces real XLSX/CSV/PDF files for Sales / Inventory / Profit, stores an
   append-only audit row in `bms_generated_reports` (migration `7.53`), and lets staff re-download
@@ -728,10 +746,10 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   surfaces. Files are persisted through the existing `files`/`STORAGE_DIR` mechanism via
   `persistBuffer()` (`lib/storage.ts`) but must be downloaded through the tenant-gated
   `/api/bms/reports/download/[id]` route rather than `/api/files/[id]`, because these exports may
-  contain business-sensitive data. Profit reports are explicitly **estimated** from current
-  `bms_products.cost_price` against historical `bms_order_items.unit_price` snapshots — no historical
-  cost snapshot exists yet — so the export and the optional AI executive summary must keep that
-  disclaimer. PDF output currently keeps headings in English because `pdfkit`'s default fonts do not
+  contain business-sensitive data. Profit reports use `bms_order_items.cost_amount_snapshot`: new
+  orders record resolved sale-time component cost, while migration `9.97` marks legacy backfill as
+  `LEGACY_CURRENT` and genuinely missing cost as `MISSING`. The screen/export disclose that evidence
+  state, and never turn missing cost into zero. PDF output currently keeps headings in English because `pdfkit`'s default fonts do not
   render Thai glyphs correctly; XLSX/CSV remain UTF-8 and handle Thai data today.
   **Fixed (2026-08)** — three fields were queried but silently dropped before reaching the output
   file: CSV export only ever wrote `doc.sheets[0]`, so a Sales report's "Top products"/"By

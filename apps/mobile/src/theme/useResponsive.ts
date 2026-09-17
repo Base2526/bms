@@ -5,11 +5,13 @@ import { useWindowDimensions } from 'react-native';
 // พอสำหรับนิ้ว ไม่ใช่ตัวเลขมาตรฐานของเว็บ
 const TABLET_BREAKPOINT = 700;
 const LARGE_TABLET_BREAKPOINT = 1000;
+const TABLET_SHORTEST_SIDE = 600;
 
 export interface Responsive {
   width: number;
   height: number;
   isTablet: boolean;
+  isLandscape: boolean;
   /** จำนวนคอลัมน์ของกริด (เมนู/ผังโต๊ะ/ตั๋วครัว) ตามความกว้างจอ */
   gridColumns: number;
 }
@@ -24,6 +26,23 @@ export function columnsForWidth(width: number): number {
   if (width >= LARGE_TABLET_BREAKPOINT) return 4;
   if (width >= TABLET_BREAKPOINT) return 3;
   return 2;
+}
+
+/**
+ * เลือก layout แบบแท็บเล็ตจากทั้งความกว้างปัจจุบันและด้านสั้นของอุปกรณ์
+ *
+ * เช็ก width อย่างเดียวไม่ได้: มือถือ Android แนวนอนจำนวนมากกว้างเกิน 700dp แล้วจะโดน
+ * sidebar/two-pane ของแท็บเล็ต ทั้งที่ด้านสั้นมีพื้นที่ไม่พอจนปุ่มและฟอร์มถูกบีบ
+ * `minimumWidth` เปิดให้จอที่ต้องการพื้นที่มากกว่าค่า shared ใช้เกณฑ์ 760dp เดิมได้
+ */
+export function supportsTabletLayout(
+  width: number,
+  height: number,
+  minimumWidth = TABLET_BREAKPOINT,
+): boolean {
+  return (
+    Math.min(width, height) >= TABLET_SHORTEST_SIDE && width >= minimumWidth
+  );
 }
 
 /**
@@ -46,7 +65,13 @@ export function useResponsive(): Responsive {
   const { width, height } = useWindowDimensions();
 
   const gridColumns = columnsForWidth(width);
-  const isTablet = width >= TABLET_BREAKPOINT;
+  const isTablet = supportsTabletLayout(width, height);
 
-  return { width, height, isTablet, gridColumns };
+  return {
+    width,
+    height,
+    isTablet,
+    isLandscape: width > height,
+    gridColumns,
+  };
 }

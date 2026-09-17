@@ -14,8 +14,15 @@
 import { query } from "@/lib/db";
 import { audit } from "./audit";
 import { persistBuffer } from "@/lib/storage";
-import { getSalesSummary, getInventorySummary, getTopSellingProducts, getProfitSummary } from "./reports";
+import {
+  getInventorySummary,
+  getManagementReport,
+  getProfitSummary,
+  getSalesSummary,
+  getTopSellingProducts,
+} from "./reports";
 import { listLowStock } from "./products";
+import { getLocation } from "./locations";
 import { resolveAiCredentials } from "./ai";
 import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
@@ -23,13 +30,29 @@ import {
   buildSalesReportDoc,
   buildInventoryReportDoc,
   buildProfitReportDoc,
+  buildProductsReportDoc,
+  buildPaymentsReportDoc,
+  buildPurchasesReportDoc,
+  buildCustomersReportDoc,
+  buildOperationsReportDoc,
+  buildSpecializedReportDoc,
   buildXlsx,
   buildCsv,
   buildPdf,
   type ReportDoc,
 } from "./documentGenerator";
 
-export const REPORT_TYPES = ["SALES", "INVENTORY", "PROFIT"] as const;
+export const REPORT_TYPES = [
+  "SALES",
+  "INVENTORY",
+  "PROFIT",
+  "PRODUCTS",
+  "PAYMENTS",
+  "PURCHASES",
+  "CUSTOMERS",
+  "OPERATIONS",
+  "SPECIALIZED",
+] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 export const REPORT_FORMATS = ["XLSX", "CSV", "PDF"] as const;
@@ -39,6 +62,7 @@ export type GenerateReportInput = {
   reportType: string;
   dateFrom?: string | null;
   dateTo?: string | null;
+  locationId?: string | null;
   format: string;
   includeSummary?: boolean;
 };
@@ -65,23 +89,41 @@ function assertFormat(v: string): ReportFormat {
   return v as ReportFormat;
 }
 
-async function collectReportDoc(tenantId: string, reportType: ReportType, dateFrom: string | null, dateTo: string | null): Promise<ReportDoc> {
+async function collectReportDoc(
+  tenantId: string,
+  reportType: ReportType,
+  dateFrom: string | null,
+  dateTo: string | null,
+  locationId: string | null
+): Promise<ReportDoc> {
   switch (reportType) {
     case "SALES": {
       const [summary, topProducts] = await Promise.all([
-        getSalesSummary(tenantId, dateFrom, dateTo),
-        getTopSellingProducts(tenantId, dateFrom, dateTo, 20),
+        getSalesSummary(tenantId, dateFrom, dateTo, locationId),
+        getTopSellingProducts(tenantId, dateFrom, dateTo, 20, locationId),
       ]);
       return buildSalesReportDoc({ summary, topProducts });
     }
     case "INVENTORY": {
-      const [summary, lowStock] = await Promise.all([getInventorySummary(tenantId), listLowStock(tenantId)]);
+      const [summary, lowStock] = await Promise.all([getInventorySummary(tenantId, locationId), listLowStock(tenantId, locationId)]);
       return buildInventoryReportDoc({ summary, lowStock });
     }
     case "PROFIT": {
-      const summary = await getProfitSummary(tenantId, dateFrom, dateTo);
+      const summary = await getProfitSummary(tenantId, dateFrom, dateTo, locationId);
       return buildProfitReportDoc({ summary });
     }
+    case "PRODUCTS":
+      return buildProductsReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
+    case "PAYMENTS":
+      return buildPaymentsReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
+    case "PURCHASES":
+      return buildPurchasesReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
+    case "CUSTOMERS":
+      return buildCustomersReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
+    case "OPERATIONS":
+      return buildOperationsReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
+    case "SPECIALIZED":
+      return buildSpecializedReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
   }
 }
 
@@ -143,9 +185,16 @@ export async function generateReport(
   const format = assertFormat(input.format);
   const dateFrom = input.dateFrom || null;
   const dateTo = input.dateTo || null;
+  const locationId = input.locationId || null;
   const includeSummary = input.includeSummary ?? true;
 
-  const doc = await collectReportDoc(tenantId, reportType, dateFrom, dateTo);
+  const location = locationId ? await getLocation(tenantId, locationId) : null;
+  if (locationId && !location) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
+  const doc = await collectReportDoc(tenantId, reportType, dateFrom, dateTo, locationId);
+  doc.meta.unshift({
+    label: "Branch scope",
+    value: location ? `${location.code} — ${location.name}` : "All branches",
+  });
   const summary = includeSummary ? await draftSummary(tenantId, doc) : null;
 
   let buf: Buffer;
@@ -164,13 +213,13 @@ export async function generateReport(
       tenantId,
       reportType,
       format,
-      JSON.stringify({ dateFrom, dateTo, includeSummary }),
+      JSON.stringify({ dateFrom, dateTo, locationId, includeSummary }),
       file.id,
       summary,
       ctx?.admin?.email || ctx?.admin?.id || "system",
     ]
   );
-  await audit(ctx, "report.generate", String(file.id), { reportType, format, dateFrom, dateTo });
+  await audit(ctx, "report.generate", String(file.id), { reportType, format, dateFrom, dateTo, locationId });
 
   return {
     fileId: file.id,

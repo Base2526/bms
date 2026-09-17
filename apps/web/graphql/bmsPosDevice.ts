@@ -28,6 +28,7 @@ import { getLocation, listLocations } from "@/lib/bms/locations";
 import {
   BOARD_GAME_POS_ACTIONS,
   loadBoardGamePosCheckout,
+  loadBoardGamePosServiceCalls,
   loadBoardGamePosSession,
   loadBoardGamePosWorkspace,
   runBoardGamePosMutation,
@@ -2189,6 +2190,49 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     returnNote: String
   }
 
+  input BmsPosBoardGameServiceCallInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    callId: ID!
+  }
+
+  input BmsPosBoardGameGuestAccessInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sessionId: ID!
+  }
+
+  type BmsPosBoardGameServiceCall {
+    id: ID!
+    sessionId: ID!
+    tableId: ID!
+    tableCode: String!
+    tableName: String!
+    requestCode: String!
+    requestNote: String
+    status: String!
+    createdAt: String!
+    acknowledgedAt: String
+    completedAt: String
+  }
+
+  type BmsPosBoardGameServiceCallsResult {
+    calls: [BmsPosBoardGameServiceCall!]!
+  }
+
+  type BmsPosBoardGameServiceCallActionResult {
+    id: ID!
+    status: String!
+  }
+
+  type BmsPosBoardGameGuestAccess {
+    token: String!
+    tableCode: String!
+    tableName: String!
+  }
+
   type BmsPosBoardGameRate {
     id: ID!
     code: String!
@@ -2539,6 +2583,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
       credentials: BmsPosCredentialsInput!
       id: ID!
     ): BmsPosBoardGameCheckout
+    bmsPosBoardGameServiceCalls(
+      credentials: BmsPosCredentialsInput!
+    ): BmsPosBoardGameServiceCallsResult!
   }
 
   extend type Mutation {
@@ -2635,6 +2682,15 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosReleaseBoardGameIdentityHold(
       input: BmsPosBoardGameReleaseIdentityHoldInput!
     ): BmsPosBoardGameIdentityHold!
+    bmsPosIssueBoardGameGuestAccess(
+      input: BmsPosBoardGameGuestAccessInput!
+    ): BmsPosBoardGameGuestAccess!
+    bmsPosAcknowledgeBoardGameServiceCall(
+      input: BmsPosBoardGameServiceCallInput!
+    ): BmsPosBoardGameServiceCallActionResult!
+    bmsPosCompleteBoardGameServiceCall(
+      input: BmsPosBoardGameServiceCallInput!
+    ): BmsPosBoardGameServiceCallActionResult!
     bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
     bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
     bmsPosRequestPharmacyReview(
@@ -3667,6 +3723,19 @@ export const bmsPosDeviceResolvers = {
         "checkout",
       );
       return loadBoardGamePosCheckout(scope, args.id);
+    },
+
+    async bmsPosBoardGameServiceCalls(
+      _parent: unknown,
+      args: { credentials: PosCashierCredentials },
+      ctx: any,
+    ) {
+      const { scope } = await boardGamePosAccess(
+        ctx,
+        args.credentials,
+        "workspace",
+      );
+      return { calls: await loadBoardGamePosServiceCalls(scope) };
     },
   },
 
@@ -4773,6 +4842,56 @@ export const bmsPosDeviceResolvers = {
         access.scope,
         access.actorUserId,
         "identity.release",
+        access.input,
+      );
+    },
+
+    async bmsPosIssueBoardGameGuestAccess(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "service.access");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "service.access",
+        access.input,
+      );
+    },
+
+    async bmsPosAcknowledgeBoardGameServiceCall(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(
+        ctx,
+        args.input,
+        "service.acknowledge",
+      );
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "service.acknowledge",
+        access.input,
+      );
+    },
+
+    async bmsPosCompleteBoardGameServiceCall(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(
+        ctx,
+        args.input,
+        "service.complete",
+      );
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "service.complete",
         access.input,
       );
     },

@@ -41,7 +41,13 @@ export type EmailReportResult = {
 const REPORT_LABEL_TH: Record<ReportType, string> = {
   SALES: "ยอดขาย",
   INVENTORY: "สต็อกสินค้า",
-  PROFIT: "กำไร (ประมาณการ)",
+  PROFIT: "กำไรขั้นต้น",
+  PRODUCTS: "ประสิทธิภาพสินค้า",
+  PAYMENTS: "การรับเงินและกระทบยอด",
+  PURCHASES: "จัดซื้อและซัพพลายเออร์",
+  CUSTOMERS: "ลูกค้า",
+  OPERATIONS: "ปฏิบัติการและการควบคุม",
+  SPECIALIZED: "รายงานเฉพาะประเภทร้าน",
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

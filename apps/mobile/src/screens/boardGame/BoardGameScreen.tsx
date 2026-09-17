@@ -7,14 +7,17 @@ import React, {
 } from 'react';
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { useMutation, useQuery } from '@apollo/client';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type {
@@ -32,6 +35,7 @@ import {
 } from '../../components/TabletMainNavigation';
 import {
   MobilePosAddBoardGameParticipantDocument,
+  MobilePosAcknowledgeBoardGameServiceCallDocument,
   MobilePosAddBoardGameTabItemDocument,
   MobilePosAdjustBoardGameTimingDocument,
   MobilePosBoardGameSessionDocument,
@@ -40,6 +44,8 @@ import {
   MobilePosCheckoutBoardGameCopyDocument,
   MobilePosCloseBoardGameBillingGroupDocument,
   MobilePosCloseBoardGameSessionDocument,
+  MobilePosCompleteBoardGameServiceCallDocument,
+  MobilePosIssueBoardGameGuestAccessDocument,
   MobilePosLeaveBoardGameParticipantDocument,
   MobilePosMergeBoardGameSeatingDocument,
   MobilePosMembersDocument,
@@ -63,8 +69,11 @@ import type {
 } from '../../navigation/types';
 import { getAppNavigation } from '../../navigation/parentNavigation';
 import { useSession } from '../../state/SessionContext';
+import { useDevice } from '../../state/DeviceContext';
+import { useBoardGameService } from '../../state/BoardGameServiceContext';
 import { useShift } from '../../state/ShiftContext';
 import { useTheme } from '../../theme/ThemeProvider';
+import { supportsTabletLayout } from '../../theme/useResponsive';
 
 type FloorProps = NativeStackScreenProps<BoardGameStackParamList, 'BoardGame'>;
 type OpenProps = NativeStackScreenProps<AppStackParamList, 'BoardGameOpen'>;
@@ -222,6 +231,7 @@ type BoardGameFloorProps = {
   now: number;
   onRetry: () => void;
   onOpen: (table: Table) => void;
+  onOpenSession: (sessionId: string) => void;
   onNavigateTab: (tab: TabletMainTab) => void;
 };
 
@@ -233,11 +243,23 @@ function BoardGameFloor({
   now,
   onRetry,
   onOpen,
+  onOpenSession,
   onNavigateTab,
 }: BoardGameFloorProps) {
   const { colors, scheme, spacing, typography } = useTheme();
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 760;
+  const { session } = useSession();
+  const { calls, pendingCount, refresh: refreshCalls } = useBoardGameService();
+  const [callsOpen, setCallsOpen] = useState(false);
+  const [workingCallId, setWorkingCallId] = useState('');
+  const callOperationKeys = useRef<Record<string, string>>({});
+  const [acknowledgeCall] = useMutation(
+    MobilePosAcknowledgeBoardGameServiceCallDocument,
+  );
+  const [completeCall] = useMutation(
+    MobilePosCompleteBoardGameServiceCallDocument,
+  );
+  const { width, height } = useWindowDimensions();
+  const isTablet = supportsTabletLayout(width, height, 760);
   const [selectedAreaId, setSelectedAreaId] = useState<string>('all');
   const areas = data?.floor.areas ?? [];
   const tables = data?.floor.tables ?? [];
@@ -267,6 +289,167 @@ function BoardGameFloor({
     scheme === 'dark' ? 'rgba(22, 119, 255, 0.18)' : '#eff6ff';
   const primaryTintStrong =
     scheme === 'dark' ? 'rgba(22, 119, 255, 0.28)' : '#dbeafe';
+  const credentials = session?.credentials;
+  const callLabel = (code: string) =>
+    ({
+      GAME_HELP: 'ช่วยสอนเกม',
+      GAME_ISSUE: 'ชิ้นส่วนขาด / เกมชำรุด',
+      FOOD_DRINK: 'อาหารหรือเครื่องดื่ม',
+      BILL: 'ขอคิดเงิน',
+      EXTEND_TIME: 'ขอต่อเวลา',
+      CLEANUP: 'น้ำหก / ทำความสะอาด',
+      OTHER: 'อื่น ๆ',
+    }[code] ?? code);
+  const handleCall = async (callId: string, status: string) => {
+    if (!credentials || workingCallId) return;
+    const action = status === 'PENDING' ? 'acknowledge' : 'complete';
+    const operationName = `${action}-${callId}`;
+    const idempotencyKey = (callOperationKeys.current[operationName] ??=
+      createIdempotencyKey(`board-call-${operationName}`));
+    setWorkingCallId(callId);
+    try {
+      if (status === 'PENDING') {
+        await acknowledgeCall({
+          variables: { input: { ...credentials, callId, idempotencyKey } },
+        });
+      } else {
+        await completeCall({
+          variables: { input: { ...credentials, callId, idempotencyKey } },
+        });
+      }
+      delete callOperationKeys.current[operationName];
+      await refreshCalls();
+    } catch (cause) {
+      Alert.alert(
+        'อัปเดตคำขอไม่สำเร็จ',
+        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+      );
+    } finally {
+      setWorkingCallId('');
+    }
+  };
+  const callBell = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`คำเรียกจากโต๊ะ ${pendingCount} รายการ`}
+      onPress={() => setCallsOpen(true)}
+      style={({ pressed }) => [
+        styles.callBell,
+        {
+          backgroundColor: pendingCount ? colors.dangerBg : colors.surface2,
+          opacity: pressed ? 0.75 : 1,
+        },
+      ]}
+    >
+      <Text style={styles.callBellGlyph}>🔔</Text>
+      {pendingCount > 0 ? (
+        <View style={[styles.callBadge, { backgroundColor: colors.danger }]}>
+          <Text style={styles.callBadgeText}>{pendingCount}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+  const callsModal = (
+    <Modal
+      transparent
+      visible={callsOpen}
+      animationType="fade"
+      onRequestClose={() => setCallsOpen(false)}
+    >
+      <View style={[styles.callOverlay, { backgroundColor: colors.overlay }]}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => setCallsOpen(false)}
+        />
+        <View
+          style={[
+            styles.callPanel,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.between}>
+            <View>
+              <Text style={[typography.title, { color: colors.text }]}>
+                คำเรียกจากโต๊ะ
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                รับทราบก่อน แล้วปิดงานเมื่อดูแลเสร็จ
+              </Text>
+            </View>
+            <Button
+              label="ปิด"
+              variant="ghost"
+              onPress={() => setCallsOpen(false)}
+            />
+          </View>
+          <ScrollView contentContainerStyle={{ gap: spacing.sm }}>
+            {calls.length === 0 ? (
+              <Text style={[typography.body, { color: colors.textMuted }]}>
+                ไม่มีโต๊ะรอพนักงาน
+              </Text>
+            ) : (
+              calls.map(call => (
+                <Card key={call.id} style={{ gap: spacing.sm }}>
+                  <View style={styles.between}>
+                    <View style={styles.flex}>
+                      <Text
+                        style={[typography.subtitle, { color: colors.text }]}
+                      >
+                        {call.tableCode} · {callLabel(call.requestCode)}
+                      </Text>
+                      <Text
+                        style={[
+                          typography.caption,
+                          { color: colors.textMuted },
+                        ]}
+                      >
+                        {call.requestNote ??
+                          (call.status === 'PENDING'
+                            ? 'ยังไม่มีพนักงานรับ'
+                            : 'พนักงานรับทราบแล้ว')}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        typography.captionStrong,
+                        {
+                          color:
+                            call.status === 'PENDING'
+                              ? colors.danger
+                              : colors.success,
+                        },
+                      ]}
+                    >
+                      {call.status === 'PENDING' ? 'รอรับ' : 'กำลังดูแล'}
+                    </Text>
+                  </View>
+                  <View style={styles.wrap}>
+                    <Button
+                      label="เปิดโต๊ะ"
+                      variant="secondary"
+                      onPress={() => {
+                        setCallsOpen(false);
+                        onOpenSession(call.sessionId);
+                      }}
+                    />
+                    <Button
+                      label={
+                        call.status === 'PENDING' ? 'รับทราบ' : 'เสร็จแล้ว'
+                      }
+                      loading={workingCallId === call.id}
+                      onPress={() =>
+                        handleCall(call.id, call.status).catch(() => undefined)
+                      }
+                    />
+                  </View>
+                </Card>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
   const statusVisual = (status: FloorStatus) => {
     switch (status) {
       case 'available':
@@ -465,6 +648,9 @@ function BoardGameFloor({
           const timer = table.openSession
             ? elapsedClockLabel(table.openSession.startedAt, now)
             : 'พร้อมใช้งาน';
+          const tableCallCount = calls.filter(call =>
+            table.openSession?.sessionIds?.includes(call.sessionId),
+          ).length;
           return (
             <View
               key={table.id}
@@ -507,6 +693,18 @@ function BoardGameFloor({
                     {statusLabel}
                   </Text>
                 </View>
+                {tableCallCount > 0 ? (
+                  <View
+                    style={[
+                      styles.tableCallBadge,
+                      { backgroundColor: colors.danger },
+                    ]}
+                  >
+                    <Text style={styles.tableCallBadgeText}>
+                      🔔 {tableCallCount}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Text
                 numberOfLines={1}
@@ -569,9 +767,12 @@ function BoardGameFloor({
           }}
         >
           <View>
-            <Text style={[typography.title, { color: colors.text }]}>
-              โต๊ะและเวลา
-            </Text>
+            <View style={styles.between}>
+              <Text style={[typography.title, { color: colors.text }]}>
+                โต๊ะและเวลา
+              </Text>
+              {callBell}
+            </View>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {branchDisplayLabel(branchName)}
             </Text>
@@ -579,6 +780,7 @@ function BoardGameFloor({
           {summary}
           <ScrollView
             horizontal
+            style={{ flexGrow: 0 }}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.phoneZoneRow}
           >
@@ -589,6 +791,7 @@ function BoardGameFloor({
           </ScrollView>
           {floorBody}
         </ScrollView>
+        {callsModal}
       </ScreenContainer>
     );
   }
@@ -684,6 +887,7 @@ function BoardGameFloor({
                 })}
               </Text>
             </View>
+            {callBell}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="รีเฟรชผังโต๊ะ"
@@ -705,6 +909,7 @@ function BoardGameFloor({
           {summary}
           {floorBody}
         </ScrollView>
+        {callsModal}
       </View>
     </ScreenContainer>
   );
@@ -712,7 +917,8 @@ function BoardGameFloor({
 
 function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const { colors, spacing, typography } = useTheme();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { target: deviceTarget } = useDevice();
   const { session } = useSession();
   const shift = useShift();
   const isFocused = useIsFocused();
@@ -734,6 +940,11 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [participants, setParticipants] = useState<ParticipantDraft[]>([]);
   const [returnNote, setReturnNote] = useState('');
+  const [guestAccess, setGuestAccess] = useState<{
+    token: string;
+    tableCode: string;
+    tableName: string;
+  } | null>(null);
   const [holderName, setHolderName] = useState('');
   const [documentNumber, setDocumentNumber] = useState('');
   const [documentKind, setDocumentKind] = useState('NATIONAL_ID');
@@ -783,6 +994,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   );
   const [releaseIdentityHold] = useMutation(
     MobilePosReleaseBoardGameIdentityHoldDocument,
+  );
+  const [issueGuestAccess, { loading: issuingGuestAccess }] = useMutation(
+    MobilePosIssueBoardGameGuestAccessDocument,
   );
 
   useEffect(() => {
@@ -1098,7 +1312,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     : billingMode === 'FIXED_DURATION' && !alertValid
     ? 'ระบุเวลาแจ้งเตือนระหว่าง 0–120 นาที'
     : null;
-  const wideOpenPanel = windowWidth >= 760;
+  const wideOpenPanel = supportsTabletLayout(windowWidth, windowHeight, 760);
 
   const submitOpenSession = () => {
     if (!openingTable || openBlockReason) return;
@@ -1143,6 +1357,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
           workspace.refetch().catch(() => undefined);
         }}
         onOpen={beginOpen}
+        onOpenSession={sessionId =>
+          navigation.push('BoardGameDetail', { sessionId })
+        }
         onNavigateTab={tab => navigation.navigate('Tabs', { screen: tab })}
       />
     );
@@ -1939,6 +2156,41 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   · {elapsedLabel(selectedSession.startedAt, now)}
                 </Text>
               </View>
+              {selectedSession.status === 'OPEN' ? (
+                <Button
+                  label="QR เรียกพนักงาน"
+                  variant="secondary"
+                  loading={issuingGuestAccess}
+                  onPress={() => {
+                    if (!credentials) return;
+                    issueGuestAccess({
+                      variables: {
+                        input: {
+                          ...credentials,
+                          idempotencyKey: retryKey(
+                            `guest-access-${selectedSession.id}`,
+                          ),
+                          sessionId: selectedSession.id,
+                        },
+                      },
+                    })
+                      .then(response => {
+                        const access =
+                          response.data?.bmsPosIssueBoardGameGuestAccess;
+                        if (!access) throw new Error('สร้าง QR ไม่สำเร็จ');
+                        setGuestAccess(access);
+                      })
+                      .catch(cause =>
+                        Alert.alert(
+                          'สร้าง QR ไม่สำเร็จ',
+                          cause instanceof Error
+                            ? cause.message
+                            : 'กรุณาลองใหม่',
+                        ),
+                      );
+                  }}
+                />
+              ) : null}
             </View>
             {selectedSession.expectedEndAt ? (
               <Text style={[typography.body, { color: colors.text }]}>
@@ -2821,6 +3073,63 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
           </Card>
         ) : null}
       </ScrollView>
+      <Modal
+        transparent
+        visible={Boolean(guestAccess)}
+        animationType="fade"
+        onRequestClose={() => setGuestAccess(null)}
+      >
+        <View style={[styles.callOverlay, { backgroundColor: colors.overlay }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setGuestAccess(null)}
+          />
+          {guestAccess && deviceTarget ? (
+            <View
+              style={[
+                styles.qrPanel,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[typography.title, { color: colors.text }]}>
+                QR เรียกพนักงาน
+              </Text>
+              <Text style={[typography.body, { color: colors.textMuted }]}>
+                ให้ลูกค้าที่ {guestAccess.tableName || guestAccess.tableCode}{' '}
+                สแกนจากเครื่องของตน
+              </Text>
+              <View style={styles.qrCanvas}>
+                <QRCode
+                  value={new URL(
+                    `/bg/${guestAccess.token}`,
+                    deviceTarget.serverUrl,
+                  ).toString()}
+                  size={220}
+                  backgroundColor="#ffffff"
+                  color="#0f172a"
+                />
+              </View>
+              <Button
+                label="แชร์ลิงก์"
+                fullWidth
+                onPress={() => {
+                  const url = new URL(
+                    `/bg/${guestAccess.token}`,
+                    deviceTarget.serverUrl,
+                  ).toString();
+                  Share.share({ message: url }).catch(() => undefined);
+                }}
+              />
+              <Button
+                label="ปิด"
+                variant="ghost"
+                fullWidth
+                onPress={() => setGuestAccess(null)}
+              />
+            </View>
+          ) : null}
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -2998,5 +3307,63 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  callBell: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callBellGlyph: { fontSize: 23 },
+  callBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
+  tableCallBadge: {
+    minHeight: 28,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableCallBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
+  callOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  callPanel: {
+    width: '100%',
+    maxWidth: 640,
+    maxHeight: '82%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    padding: 16,
+    gap: 16,
+  },
+  qrPanel: {
+    width: '100%',
+    maxWidth: 420,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    padding: 20,
+    gap: 14,
+    alignItems: 'stretch',
+  },
+  qrCanvas: {
+    alignSelf: 'center',
+    backgroundColor: '#ffffff',
+    padding: 14,
+    borderRadius: 14,
   },
 });

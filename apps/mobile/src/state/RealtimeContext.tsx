@@ -96,11 +96,12 @@ const RESTAURANT_SUBSCRIPTIONS: SubscriptionSpec[] = [
   },
   { document: MobileQrOrderChangedDocument, field: 'bmsQrOrderChanged' },
   { document: MobileWaitlistChangedDocument, field: 'bmsWaitlistChanged' },
-  {
-    document: MobileServiceCallChangedDocument,
-    field: 'bmsServiceCallChanged',
-  },
 ];
+
+const SERVICE_CALL_SUBSCRIPTION: SubscriptionSpec = {
+  document: MobileServiceCallChangedDocument,
+  field: 'bmsServiceCallChanged',
+};
 
 function RealtimeSubscription({
   spec,
@@ -145,6 +146,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const isRestaurant =
     bootstrap.data?.bmsPosSession.businessArchetype === 'restaurant' ||
     (verify.kind === 'OK' && verify.info.businessArchetype === 'restaurant');
+  const isBoardGame =
+    bootstrap.data?.bmsPosSession.businessArchetype === 'board_game_cafe' ||
+    (verify.kind === 'OK' &&
+      verify.info.businessArchetype === 'board_game_cafe');
 
   const reconcile = useCallback(() => {
     client.refetchQueries({ include: 'active' }).catch(() => undefined);
@@ -258,6 +263,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           onFailure={handleFailure}
         />
       ))}
+      <RealtimeSubscription
+        spec={SERVICE_CALL_SUBSCRIPTION}
+        enabled={enabled && (isRestaurant || isBoardGame)}
+        onEvent={handleEvent}
+        onFailure={handleFailure}
+      />
       {children}
     </RealtimeContext.Provider>
   );

@@ -62,6 +62,7 @@ import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
 import { useTheme } from '../../theme/ThemeProvider';
+import { supportsTabletLayout } from '../../theme/useResponsive';
 import type { OperationsStackParamList } from '../../navigation/types';
 import { getAppNavigation } from '../../navigation/parentNavigation';
 
@@ -112,8 +113,8 @@ export default function OperationsScreen({
   const navigation =
     useNavigation<NativeStackNavigationProp<OperationsStackParamList>>();
   const { colors, spacing, typography } = useTheme();
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 760;
+  const { width, height } = useWindowDimensions();
+  const isTablet = supportsTabletLayout(width, height, 760);
   const { session } = useSession();
   const { mode } = useStoreMode();
   const credentials = session?.credentials;
@@ -1899,9 +1900,9 @@ function OperationsPageHeader({
   subtitle: string;
   right?: React.ReactNode;
 }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { colors, typography } = useTheme();
-  const isTablet = width >= 760;
+  const isTablet = supportsTabletLayout(width, height, 760);
   return (
     <View style={styles.operationsHeader}>
       <View style={styles.operationsHeaderTitles}>

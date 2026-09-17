@@ -1477,15 +1477,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           boardGamePreview?.couponError ??
           null
         : undefined,
-    memberSelection:
-      source === 'restaurant'
-        ? {
-            member: restaurantMember,
-            setMember: setRestaurantMember,
-            amount: total,
-          }
-        : undefined,
   };
+  const restaurantMemberSelection =
+    source === 'restaurant'
+      ? {
+          member: restaurantMember,
+          setMember: setRestaurantMember,
+          amount: total,
+        }
+      : undefined;
 
   return (
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
@@ -1523,6 +1523,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             {linesCard}
             <CheckoutAdjustmentsCard
               {...adjustmentProps}
+              memberSelection={restaurantMemberSelection}
               presentation="horizontal"
             />
           </View>
@@ -1559,6 +1560,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             ) : null}
             <CheckoutAdjustmentsCard
               {...adjustmentProps}
+              memberSelection={restaurantMemberSelection}
               presentation="collapsed"
             />
             {paymentCard}

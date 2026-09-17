@@ -18,6 +18,7 @@ const COMMON_DASHBOARD_FIELDS = ["bmsDashboard", "bmsActionCenter", "bmsExecutiv
  */
 export const DOMAIN_FIELDS: Readonly<Record<string, readonly string[]>> = {
   restaurant: ["bmsRestaurant", "bmsKitchen", "bmsPosRestaurant", "bmsOrders", ...COMMON_DASHBOARD_FIELDS],
+  board_game: ["bmsBoardGame", "bmsPosBoardGame"],
   // ตั๋วครัวของร้านค้าปลีก (9.40/9.72) — กระดานเดียวกับร้านอาหาร แต่ไม่ได้แตะโต๊ะหรือบิล
   kitchen: ["bmsKitchen"],
   order: ["bmsOrder", "bmsOrders", "bmsCustomers", ...COMMON_DASHBOARD_FIELDS],

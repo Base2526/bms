@@ -8,6 +8,7 @@ import {
 import { useIncomingOrders } from '../state/IncomingOrdersContext';
 import { useKitchen } from '../state/KitchenContext';
 import { useRestaurantOperations } from '../state/RestaurantOperationsContext';
+import { useBoardGameService } from '../state/BoardGameServiceContext';
 
 /**
  * ตัวเฝ้าดูว่ามี "ของใหม่" เข้ามาไหม แล้วยิงแจ้งเตือน
@@ -25,6 +26,10 @@ export function OrderAlertWatcher() {
     activeWaitlistIds,
     initialized: restaurantOperationsInitialized,
   } = useRestaurantOperations();
+  const {
+    activeIds: boardGameServiceCallIds,
+    initialized: boardGameServiceInitialized,
+  } = useBoardGameService();
   return (
     <OrderAlertEffects
       pendingIds={pendingIds}
@@ -32,8 +37,10 @@ export function OrderAlertWatcher() {
       tickets={tickets}
       qrIds={pendingQrIds}
       serviceCallIds={pendingServiceCallIds}
+      boardGameServiceCallIds={boardGameServiceCallIds}
       waitlistIds={activeWaitlistIds}
       restaurantOperationsInitialized={restaurantOperationsInitialized}
+      boardGameServiceInitialized={boardGameServiceInitialized}
     />
   );
 }
@@ -44,16 +51,20 @@ export function OrderAlertEffects({
   tickets,
   qrIds = [],
   serviceCallIds = [],
+  boardGameServiceCallIds = [],
   waitlistIds = [],
   restaurantOperationsInitialized = true,
+  boardGameServiceInitialized = true,
 }: {
   pendingIds: string[];
   pendingCount: number;
   tickets: Array<{ id: string; status: string }>;
   qrIds?: string[];
   serviceCallIds?: string[];
+  boardGameServiceCallIds?: string[];
   waitlistIds?: string[];
   restaurantOperationsInitialized?: boolean;
+  boardGameServiceInitialized?: boolean;
 }) {
   const { settings, lastAlertAtMs, acknowledged } = useOrderAlerts();
 
@@ -63,6 +74,7 @@ export function OrderAlertEffects({
   const seenQr = useRef<Set<string> | null>(null);
   const seenServiceCalls = useRef<Set<string> | null>(null);
   const seenWaitlist = useRef<Set<string> | null>(null);
+  const seenBoardGameCalls = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     if (seenOrders.current === null) {
@@ -124,13 +136,34 @@ export function OrderAlertEffects({
     }
   }, [qrIds, restaurantOperationsInitialized, serviceCallIds, waitlistIds]);
 
+  useEffect(() => {
+    if (!boardGameServiceInitialized) {
+      seenBoardGameCalls.current = null;
+      return;
+    }
+    if (seenBoardGameCalls.current === null) {
+      seenBoardGameCalls.current = new Set(boardGameServiceCallIds);
+      return;
+    }
+    const fresh = newAlertIds(
+      seenBoardGameCalls.current,
+      boardGameServiceCallIds,
+    );
+    seenBoardGameCalls.current = new Set(boardGameServiceCallIds);
+    if (fresh.length > 0) {
+      resetOrderAlertAcknowledgement();
+      fireOrderAlert('service_call');
+    }
+  }, [boardGameServiceCallIds, boardGameServiceInitialized]);
+
   // ย้ำซ้ำตราบใดที่ยังไม่มีใครรับทราบ — ออร์เดอร์ที่ไม่มีใครเห็นคือออร์เดอร์ที่หาย
   useEffect(() => {
     const restaurantPendingCount =
       qrIds.length + serviceCallIds.length + waitlistIds.length;
     if (
       settings.repeatSeconds <= 0 ||
-      pendingCount + restaurantPendingCount === 0 ||
+      pendingCount + restaurantPendingCount + boardGameServiceCallIds.length ===
+        0 ||
       acknowledged
     ) {
       return;
@@ -138,7 +171,10 @@ export function OrderAlertEffects({
     const timer = setInterval(() => {
       if (
         shouldRepeatAlert({
-          pendingCount: pendingCount + restaurantPendingCount,
+          pendingCount:
+            pendingCount +
+            restaurantPendingCount +
+            boardGameServiceCallIds.length,
           lastAlertAtMs,
           nowMs: Date.now(),
           repeatSeconds: settings.repeatSeconds,
@@ -146,7 +182,7 @@ export function OrderAlertEffects({
         })
       ) {
         fireOrderAlert(
-          serviceCallIds.length > 0
+          serviceCallIds.length > 0 || boardGameServiceCallIds.length > 0
             ? 'service_call'
             : qrIds.length > 0
             ? 'qr_order'
@@ -159,6 +195,7 @@ export function OrderAlertEffects({
     return () => clearInterval(timer);
   }, [
     acknowledged,
+    boardGameServiceCallIds.length,
     lastAlertAtMs,
     pendingCount,
     qrIds.length,
