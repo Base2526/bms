@@ -753,8 +753,11 @@ playable game library. The operating brief is
   normal service-day queue number atomically and becomes `WAITING`; direct seating uses the same
   arrival window and the existing `openBoardGameSessionInTx()` transaction. A live open-ended
   session blocks a new booking, and a fixed session whose expected end crosses the requested start
-  blocks it too. Browser and native POS dispatch the same shared commands. Do not turn a reservation
-  deposit into a Product SKU or a second board-game billing ledger.
+  blocks it too. Editing is allowed only while `CONFIRMED`; it locks the row and old/new table keys
+  in sorted order, then repeats the same capacity/session/overlap checks. The guarded frequent cron
+  uses `FOR UPDATE SKIP LOCKED` to mark untouched rows `NO_SHOW` six hours after their start, never a
+  party already in `WAITING`/`CALLED`. Browser and native POS dispatch the same shared commands. Do
+  not turn a reservation deposit into a Product SKU or a second board-game billing ledger.
 - **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid

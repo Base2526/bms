@@ -21,6 +21,7 @@ import {
   closeBoardGameWaitlistEntry,
   listBoardGameWaitlist,
   seatBoardGameWaitlistEntry,
+  updateBoardGameReservation,
 } from "../apps/web/lib/bms/boardGameWaitlist.ts";
 
 const TAG = "bg-waitlist-test";
@@ -194,6 +195,15 @@ test("reservations lock one table window, reject overlap, and check in to the se
   );
   const otherTable = await reserve(smallTableId, reservedFor, 2);
   assert.equal(otherTable!.status, "CONFIRMED", "คนละโต๊ะจองเวลาเดียวกันได้");
+  const movedFor = futureIso(4);
+  const moved = await updateBoardGameReservation({
+    tenantId, locationId, actorUserId: staffId, entryId: otherTable!.id,
+    idempotencyKey: key("reschedule"), tableId: smallTableId, reservedFor: movedFor,
+    durationMinutes: 90, partySize: 2, guestName: "FAKE moved", guestPhone: "0811111111",
+  });
+  assert.equal(moved!.reservedFor, movedFor);
+  assert.equal(moved!.reservedDurationMinutes, 90);
+  assert.equal(moved!.guestName, "FAKE moved");
 
   const checkedIn = await checkInBoardGameReservation({
     tenantId, locationId, actorUserId: staffId, entryId: reservation!.id,

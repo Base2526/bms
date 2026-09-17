@@ -326,6 +326,168 @@ export async function addBoardGameReservation(input: {
   }
 }
 
+export async function updateBoardGameReservation(input: {
+  tenantId: string; locationId: string; actorUserId: string; idempotencyKey: string;
+  entryId: string; tableId: string; reservedFor: string; durationMinutes: number; partySize: number;
+  guestName?: string | null; guestPhone?: string | null; note?: string | null;
+}) {
+  const partySize = positiveInteger(input.partySize, "จำนวนผู้เล่น");
+  const durationMinutes = positiveInteger(input.durationMinutes, "ระยะเวลาจอง", 720);
+  if (durationMinutes < 30) throw new Error("ระยะเวลาจองต้องอย่างน้อย 30 นาที");
+  const reservedFor = reservationInstant(input.reservedFor);
+  const normalized = {
+    locationId: input.locationId, entryId: input.entryId, tableId: input.tableId,
+    reservedFor: reservedFor.toISOString(), durationMinutes, partySize,
+    guestName: boundedText(input.guestName, 120),
+    guestPhone: boundedText(input.guestPhone, 40), note: boundedText(input.note, 300),
+  };
+  const idempotency = boardGameIdempotency("reservation.update", input.idempotencyKey, normalized);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await requireBoardGameCafeTenant(client, input.tenantId);
+    const replay = await replayBoardGameResult<{ entryId: string }>(client, input.tenantId, idempotency);
+    if (replay) {
+      await client.query("COMMIT");
+      return getBoardGameWaitlistEntry(input.tenantId, replay.entryId);
+    }
+    const current = await client.query<{ reserved_table_id: string }>(
+      `SELECT reserved_table_id
+         FROM bms_board_game_waitlist
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3
+          AND kind = 'RESERVATION' AND status = 'CONFIRMED'
+        FOR UPDATE`,
+      [input.tenantId, input.locationId, input.entryId],
+    );
+    if (!current.rowCount) throw new Error("แก้ไขได้เฉพาะการจองที่ยืนยันและยังไม่เช็กอิน");
+    const tableIds = [...new Set([current.rows[0].reserved_table_id, input.tableId])].sort();
+    for (const tableId of tableIds) {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `board-game-reservation:${input.tenantId}:${input.locationId}:${tableId}`,
+      ]);
+    }
+    const table = await client.query<{ seats: number }>(
+      `SELECT seats FROM bms_board_game_tables
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
+        FOR UPDATE`,
+      [input.tenantId, input.locationId, input.tableId],
+    );
+    if (!table.rowCount) throw new Error("ไม่พบโต๊ะที่เปิดรับจองในสาขานี้");
+    if (Number(table.rows[0].seats) < partySize) throw new Error("โต๊ะนี้รองรับจำนวนผู้เล่นไม่พอ");
+    const liveConflict = await client.query(
+      `SELECT 1
+         FROM bms_board_game_seatings st
+         JOIN bms_board_game_sessions s
+           ON s.tenant_id = st.tenant_id AND s.seating_id = st.id
+        WHERE st.tenant_id = $1 AND st.location_id = $2 AND st.table_id = $3
+          AND st.status = 'ACTIVE' AND s.status IN ('OPEN','CLOSING')
+          AND (s.status = 'CLOSING' OR s.expected_end_at IS NULL OR s.expected_end_at > $4::timestamptz)
+        LIMIT 1`,
+      [input.tenantId, input.locationId, input.tableId, reservedFor.toISOString()],
+    );
+    if (liveConflict.rowCount) {
+      throw new Error("โต๊ะนี้ยังมี session ที่ยืนยันไม่ได้ว่าจะจบก่อนเวลาจอง");
+    }
+    const conflict = await client.query(
+      `SELECT 1 FROM bms_board_game_waitlist
+        WHERE tenant_id = $1 AND location_id = $2 AND reserved_table_id = $3 AND id <> $4
+          AND kind = 'RESERVATION' AND status IN ('CONFIRMED','WAITING','CALLED')
+          AND reserved_for < $5::timestamptz + make_interval(mins => $6)
+          AND reserved_for + make_interval(mins => reserved_duration_minutes) > $5::timestamptz
+        LIMIT 1`,
+      [input.tenantId, input.locationId, input.tableId, input.entryId,
+        reservedFor.toISOString(), durationMinutes],
+    );
+    if (conflict.rowCount) throw new Error("โต๊ะนี้มีการจองที่เวลาทับกัน");
+    const updated = await client.query<{ id: string }>(
+      `UPDATE bms_board_game_waitlist w
+          SET service_date = (
+                SELECT (($5::timestamptz AT TIME ZONE COALESCE(NULLIF(profile.timezone, ''), 'Asia/Bangkok'))
+                        - INTERVAL '4 hours')::date
+                  FROM bms_store_profile profile WHERE profile.tenant_id = w.tenant_id
+              ),
+              party_size = $7, guest_name = $8, guest_phone = $9, note = $10,
+              reserved_for = $5::timestamptz, reserved_duration_minutes = $6,
+              reserved_table_id = $4, updated_by = $11, updated_at = now()
+        WHERE w.tenant_id = $1 AND w.location_id = $2 AND w.id = $3
+          AND w.kind = 'RESERVATION' AND w.status = 'CONFIRMED'
+       RETURNING w.id`,
+      [input.tenantId, input.locationId, input.entryId, input.tableId,
+        reservedFor.toISOString(), durationMinutes, partySize, normalized.guestName,
+        normalized.guestPhone, normalized.note, input.actorUserId],
+    );
+    if (!updated.rowCount) throw new Error("รายการจองเปลี่ยนสถานะระหว่างแก้ไข กรุณาโหลดใหม่");
+    await storeBoardGameResult(client, input.tenantId, idempotency, { entryId: input.entryId });
+    await auditInTx(client, input.tenantId, input.actorUserId,
+      "board_game.reservation_update", input.entryId, {
+        locationId: input.locationId, previousTableId: current.rows[0].reserved_table_id,
+        tableId: input.tableId, reservedFor: reservedFor.toISOString(), durationMinutes, partySize,
+      });
+    await client.query("COMMIT");
+    return getBoardGameWaitlistEntry(input.tenantId, input.entryId);
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Close abandoned confirmed reservations after their six-hour arrival window. Each tenant commits
+ * independently and SKIP LOCKED makes overlapping cron runs harmless. This never touches a party
+ * that has checked in: staff still own the normal WAITING/CALLED lifecycle from that point onward.
+ */
+export async function expireOverdueBoardGameReservations(now = new Date()) {
+  const tenants = await query<{ tenant_id: string }>(
+    `SELECT DISTINCT tenant_id
+       FROM bms_board_game_waitlist
+      WHERE kind = 'RESERVATION' AND status = 'CONFIRMED'
+        AND reserved_for < $1::timestamptz - INTERVAL '6 hours'`,
+    [now],
+  );
+  let expiredCount = 0;
+  const failed: Array<{ tenantId: string; error: string }> = [];
+  for (const row of tenants.rows) {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, row.tenant_id);
+      const expired = await client.query<{ id: string }>(
+        `WITH due AS (
+           SELECT id FROM bms_board_game_waitlist
+            WHERE tenant_id = $1 AND kind = 'RESERVATION' AND status = 'CONFIRMED'
+              AND reserved_for < $2::timestamptz - INTERVAL '6 hours'
+            ORDER BY reserved_for
+            FOR UPDATE SKIP LOCKED
+            LIMIT 200
+         )
+         UPDATE bms_board_game_waitlist w
+            SET status = 'NO_SHOW', closed_at = $2, updated_at = $2
+           FROM due
+          WHERE w.tenant_id = $1 AND w.id = due.id
+         RETURNING w.id`,
+        [row.tenant_id, now],
+      );
+      if (expired.rowCount) {
+        await client.query(
+          `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+           VALUES ($1,'system:cron','board_game.reservation_expire','due',$2::jsonb)`,
+          [row.tenant_id, JSON.stringify({ count: expired.rowCount })],
+        );
+      }
+      await client.query("COMMIT");
+      expiredCount += expired.rowCount ?? 0;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      console.error("[board-game-reservation] expiry failed", row.tenant_id, error);
+      failed.push({ tenantId: row.tenant_id, error: String((error as any)?.message ?? error) });
+    } finally {
+      client.release();
+    }
+  }
+  return { expiredCount, failedCount: failed.length, failed };
+}
+
 export async function checkInBoardGameReservation(input: {
   tenantId: string; locationId: string; actorUserId: string;
   entryId: string; idempotencyKey: string;

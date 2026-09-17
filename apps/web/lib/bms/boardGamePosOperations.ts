@@ -55,6 +55,7 @@ import {
   closeBoardGameWaitlistEntry,
   listBoardGameWaitlist,
   seatBoardGameWaitlistEntry,
+  updateBoardGameReservation,
 } from "./boardGameWaitlist";
 import { isIdempotencyConflictError } from "./idempotencyErrors";
 import { isPosUuid } from "./posRouteHelpers";
@@ -167,7 +168,8 @@ export type BoardGamePosAction =
   | "waitlist.close"
   | "waitlist.seat"
   | "reservation.add"
-  | "reservation.check_in";
+  | "reservation.check_in"
+  | "reservation.update";
 
 export type BoardGamePosActionSpec = {
   /** สิทธิ์หลักที่ต้องถือ — ตัวที่ผู้เรียกใช้ตอนตรวจ PIN */
@@ -323,6 +325,11 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     requiresOpenShift: false,
   },
   "reservation.check_in": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "reservation.update": {
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,
@@ -581,6 +588,22 @@ export async function runBoardGamePosMutation(
         actorUserId,
         entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
         idempotencyKey: key,
+      }));
+    }
+    case "reservation.update": {
+      return callService(() => updateBoardGameReservation({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        actorUserId,
+        idempotencyKey: key,
+        entryId: uuid(input.entryId, "รายการจองไม่ถูกต้อง"),
+        tableId: uuid(input.tableId, "โต๊ะที่จองไม่ถูกต้อง"),
+        reservedFor: text(input.reservedFor),
+        durationMinutes: Number(input.durationMinutes),
+        partySize: Number(input.partySize),
+        guestName: text(input.guestName) || null,
+        guestPhone: text(input.guestPhone) || null,
+        note: text(input.note) || null,
       }));
     }
     case "participant.add": {

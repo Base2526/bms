@@ -2119,6 +2119,20 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     note: String
   }
 
+  input BmsPosBoardGameReservationUpdateInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    entryId: ID!
+    tableId: ID!
+    reservedFor: String!
+    durationMinutes: Int!
+    partySize: Int!
+    guestName: String
+    guestPhone: String
+    note: String
+  }
+
   input BmsPosBoardGameAddParticipantInput {
     cashierUserId: ID!
     pin: String!
@@ -2779,6 +2793,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     ): BmsPosBoardGameWaitlistEntry!
     bmsPosCheckInBoardGameReservation(
       input: BmsPosBoardGameWaitlistCallInput!
+    ): BmsPosBoardGameWaitlistEntry!
+    bmsPosUpdateBoardGameReservation(
+      input: BmsPosBoardGameReservationUpdateInput!
     ): BmsPosBoardGameWaitlistEntry!
     bmsPosAddBoardGameParticipant(
       input: BmsPosBoardGameAddParticipantInput!
@@ -4849,6 +4866,15 @@ export const bmsPosDeviceResolvers = {
     ) {
       const access = await boardGamePosAccess(ctx, args.input, "reservation.check_in");
       return runBoardGamePosMutation(access.scope, access.actorUserId, "reservation.check_in", access.input);
+    },
+
+    async bmsPosUpdateBoardGameReservation(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "reservation.update");
+      return runBoardGamePosMutation(access.scope, access.actorUserId, "reservation.update", access.input);
     },
 
     async bmsPosAddBoardGameParticipant(

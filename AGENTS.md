@@ -216,7 +216,9 @@ wrong, and update the doc in the same change.
   An advance reservation (`10.0`) is a fixed pre-session table window on that same waitlist
   aggregate: booking/check-in/seating serialise on the table, reject overlapping active reservation
   windows and never create a clock, bill, order, or stock movement before seating. Check-in allocates
-  a normal queue number; direct seating opens the existing session atomically. Public self-booking,
+  a normal queue number; direct seating opens the existing session atomically. A reschedule is
+  `CONFIRMED`-only and repeats the locked capacity/session/overlap checks; guarded cron expiry claims
+  stale confirmed rows with `SKIP LOCKED` and never closes a checked-in party. Public self-booking,
   reminders and deposits are not implemented, and a deposit must never be faked as a Product SKU.
   Native POS derives its branch from the paired device, hands the billing-group id to the
   existing sale mutation, and must never submit its display-only time line as a Product SKU. Full detail:

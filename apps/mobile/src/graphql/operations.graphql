@@ -2126,6 +2126,12 @@ mutation MobilePosCheckInBoardGameReservation($input: BmsPosBoardGameWaitlistCal
   }
 }
 
+mutation MobilePosUpdateBoardGameReservation($input: BmsPosBoardGameReservationUpdateInput!) {
+  bmsPosUpdateBoardGameReservation(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
 query MobilePosBoardGameSession(
   $credentials: BmsPosCredentialsInput!
   $id: ID!

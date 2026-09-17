@@ -15,6 +15,8 @@ const operations = read("apps/web/lib/bms/boardGamePosOperations.ts");
 const graphql = read("apps/web/graphql/bmsPosDevice.ts");
 const browser = read("apps/web/components/pos/BoardGamePanel.tsx");
 const mobile = read("apps/mobile/src/screens/boardGame/BoardGameScreen.tsx");
+const expiryRoute = read("apps/web/app/api/bms/board-game/reservations/expire/route.ts");
+const cronWorkflow = read(".github/workflows/bms-cron.yml");
 const cleanup = read("apps/web/app/api/dev/fake/cleanup/route.ts");
 const platform = read("apps/web/lib/bms/platform.ts");
 const dbContract = read("scripts/board-game-waitlist-db-contract.test.mts");
@@ -58,13 +60,14 @@ test("queue mutations stay in the shared POS command table and both registers ex
   for (const action of ["waitlist.add", "waitlist.call", "waitlist.close", "waitlist.seat"]) {
     assert.match(operations, new RegExp(`"${action.replace(".", "\\.")}"`));
   }
-  for (const action of ["reservation.add", "reservation.check_in"]) {
+  for (const action of ["reservation.add", "reservation.check_in", "reservation.update"]) {
     assert.match(operations, new RegExp(`"${action.replace(".", "\\.")}"`));
   }
   for (const mutation of [
     "bmsPosAddBoardGameWaitlistEntry", "bmsPosCallBoardGameWaitlistEntry",
     "bmsPosCloseBoardGameWaitlistEntry", "bmsPosSeatBoardGameWaitlistEntry",
     "bmsPosAddBoardGameReservation", "bmsPosCheckInBoardGameReservation",
+    "bmsPosUpdateBoardGameReservation",
   ]) {
     assert.match(graphql, new RegExp(mutation));
   }
@@ -75,8 +78,20 @@ test("queue mutations stay in the shared POS command table and both registers ex
   assert.match(mobile, /MobilePosSeatBoardGameWaitlistEntryDocument/);
   assert.match(browser, /'reservation\.add'/);
   assert.match(browser, /'reservation\.check_in'/);
+  assert.match(browser, /'reservation\.update'/);
   assert.match(mobile, /MobilePosAddBoardGameReservationDocument/);
   assert.match(mobile, /MobilePosCheckInBoardGameReservationDocument/);
+  assert.match(mobile, /MobilePosUpdateBoardGameReservationDocument/);
+});
+
+test("rescheduling remains serialized and stale confirmed bookings expire through guarded cron", () => {
+  assert.match(service, /boardGameIdempotency\("reservation\.update"/);
+  assert.match(service, /new Set\(\[current\.rows\[0\]\.reserved_table_id, input\.tableId\]\)\]\.sort\(\)/);
+  assert.match(service, /id <> \$4[\s\S]*reserved_for < \$5::timestamptz/);
+  assert.match(service, /FOR UPDATE SKIP LOCKED[\s\S]*SET status = 'NO_SHOW'/);
+  assert.match(expiryRoute, /authorizeCronRequest\(req\)/);
+  assert.match(expiryRoute, /recordJobRun\("board-game-reservation-expiry"/);
+  assert.match(cronWorkflow, /board-game-reservation-expiry[\s\S]*\/api\/bms\/board-game\/reservations\/expire/);
 });
 
 test("availability is capacity-aware guidance, not a promise", () => {

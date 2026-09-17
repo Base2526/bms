@@ -261,6 +261,17 @@ same transaction. Staff may also seat it directly inside that arrival window; se
 Confirmed, waiting and called reservations continue to hold their requested window until seated,
 cancelled or marked no-show.
 
+Before check-in, staff may correct the contact, party size, table, start time and duration. A
+reschedule locks the reservation row, then locks the old and new table keys in sorted order before it
+re-runs capacity, live-session and overlap checks; editing therefore cannot bypass the promise made
+by creation or deadlock two registers swapping tables. Both registers can search by name, phone or
+table and filter the active list by service date.
+
+The frequent cron calls `/api/bms/board-game/reservations/expire`. It is guarded by
+`authorizeCronRequest()`, recorded through `recordJobRun()`, and claims due rows with
+`FOR UPDATE SKIP LOCKED`. A confirmed reservation still untouched six hours after its start becomes
+`NO_SHOW`; a checked-in `WAITING`/`CALLED` party is deliberately left for staff to handle.
+
 This is staff-operated booking on the browser and native POS. It does not expose guest self-booking,
 send reminders, or collect a deposit. Those require separate authenticated/public and payment
 contracts; a deposit must not be represented as a Product SKU or mixed into play-time billing.

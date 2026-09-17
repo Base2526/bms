@@ -2790,6 +2790,20 @@ input BmsPosBoardGameReservationAddInput {
   tableId: ID!
 }
 
+input BmsPosBoardGameReservationUpdateInput {
+  cashierUserId: ID!
+  durationMinutes: Int!
+  entryId: ID!
+  guestName: String
+  guestPhone: String
+  idempotencyKey: String!
+  note: String
+  partySize: Int!
+  pin: String!
+  reservedFor: String!
+  tableId: ID!
+}
+
 input BmsPosBoardGameReturnCopyInput {
   cashierUserId: ID!
   copyStatus: String
@@ -6998,6 +7012,7 @@ type Mutation {
   bmsPosSendStockTransfer(input: BmsPosStockTransferActionInput!): BmsMobileStockTransferActionResult!
   bmsPosShift(input: BmsPosShiftInput!): BmsPosShiftActionResult!
   bmsPosTakeBoardGameIdentityHold(input: BmsPosBoardGameTakeIdentityHoldInput!): BmsPosBoardGameIdentityHold!
+  bmsPosUpdateBoardGameReservation(input: BmsPosBoardGameReservationUpdateInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!

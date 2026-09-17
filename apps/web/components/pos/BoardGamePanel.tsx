@@ -177,6 +177,14 @@ function timeLabel(value: string | null | undefined) {
   return parsed.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 }
 
+function localDateTimeInput(value: string | null | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function detailStatusLabel(session: SessionDetail, now: number) {
   if (session.status !== 'OPEN' || !session.expectedEndAt) return tableStateLabel(session);
   const remaining = Math.ceil((new Date(session.expectedEndAt).getTime() - now) / 60_000);
@@ -311,6 +319,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [reservationTime, setReservationTime] = useState('');
   const [reservationDuration, setReservationDuration] = useState('120');
   const [reservationTableId, setReservationTableId] = useState('');
+  const [reservationEditingId, setReservationEditingId] = useState('');
+  const [reservationSearch, setReservationSearch] = useState('');
+  const [reservationDate, setReservationDate] = useState('');
 
   // ฟอร์มเปิดโต๊ะ
   const [billingMode, setBillingMode] = useState<'OPEN_ENDED' | 'FIXED_DURATION'>('OPEN_ENDED');
@@ -600,9 +611,22 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const openQueue = (workspace?.waitlist.entries ?? []).filter(
     (entry) => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
-  const reservations = (workspace?.waitlist.entries ?? []).filter(
+  const allReservations = (workspace?.waitlist.entries ?? []).filter(
     (entry) => entry.kind === 'RESERVATION' && entry.status === 'CONFIRMED',
   );
+  const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
+  const reservations = allReservations.filter((entry) => {
+    const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
+    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.reservedTableCode ?? ''}`
+      .toLocaleLowerCase('th-TH');
+    return matchesDate && (!reservationNeedle || haystack.includes(reservationNeedle));
+  });
+
+  const resetReservationForm = () => {
+    setReservationEditingId(''); setReservationPartySize('2'); setReservationGuestName('');
+    setReservationGuestPhone(''); setReservationTime(''); setReservationDuration('120');
+    setReservationTableId('');
+  };
 
   return (
     <div className="pos-bg-workspace">
@@ -640,9 +664,19 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             </span>
           </div>
 
-          <details className="pos-bg-section pos-bg-section--advanced" open={reservations.length > 0}>
-            <summary>การจองล่วงหน้า · {reservations.length} รายการ</summary>
+          <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
+            <summary>การจองล่วงหน้า · {allReservations.length} รายการ</summary>
             <div className="pos-bg-form" style={{ marginTop: 10 }}>
+              <label className="pos-bg-field">
+                ค้นหารายการ
+                <input value={reservationSearch} placeholder="ชื่อ เบอร์โทร หรือโต๊ะ"
+                  onChange={(e) => setReservationSearch(e.target.value)} />
+              </label>
+              <label className="pos-bg-field">
+                วันที่แสดง
+                <input type="date" value={reservationDate}
+                  onChange={(e) => setReservationDate(e.target.value)} />
+              </label>
               <label className="pos-bg-field">
                 วันและเวลา
                 <input type="datetime-local" value={reservationTime}
@@ -676,7 +710,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 <input value={reservationGuestPhone} onChange={(e) => setReservationGuestPhone(e.target.value)} />
               </label>
               <button type="button" className="pos-ret-btn pos-ret-btn--open"
-                disabled={busy === 'reservation-add'}
+                disabled={busy === 'reservation-add' || busy === 'reservation-update'}
                 onClick={() => {
                   const partySize = Number(reservationPartySize);
                   const durationMinutes = Number(reservationDuration);
@@ -687,19 +721,29 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                     || !Number.isFinite(instant.getTime())) {
                     setError('ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาทีให้ครบ'); return;
                   }
-                  void run('reservation-add', 'reservation.add', {
+                  const updating = Boolean(reservationEditingId);
+                  void run(updating ? 'reservation-update' : 'reservation-add',
+                    updating ? 'reservation.update' : 'reservation.add', {
+                    ...(updating ? { entryId: reservationEditingId } : {}),
                     tableId: reservationTableId, reservedFor: instant.toISOString(),
                     durationMinutes, partySize, guestName: reservationGuestName,
                     guestPhone: reservationGuestPhone,
                   }, () => {
-                    setReservationPartySize('2'); setReservationGuestName('');
-                    setReservationGuestPhone(''); setReservationTime(''); setReservationTableId('');
-                    setNotice('ยืนยันการจองแล้ว');
+                    resetReservationForm();
+                    setNotice(updating ? 'แก้ไขการจองแล้ว' : 'ยืนยันการจองแล้ว');
                   });
                 }}>
-                ยืนยันจอง
+                {reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
               </button>
+              {reservationEditingId && (
+                <button type="button" className="pos-ret-btn" onClick={resetReservationForm}>
+                  เลิกแก้ไข
+                </button>
+              )}
             </div>
+            {allReservations.length > 0 && reservations.length === 0 && (
+              <div className="pos-block-hint">ไม่พบรายการที่ตรงกับตัวกรอง</div>
+            )}
             {reservations.map((entry) => {
               const table = floorTables.find((item) => item.id === entry.reservedTableId) ?? null;
               const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
@@ -717,6 +761,17 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                     </span>
                   </div>
                   <div className="pos-bg-row-actions">
+                    <button type="button" className="pos-ret-btn" onClick={() => {
+                      setReservationEditingId(entry.id);
+                      setReservationPartySize(String(entry.partySize));
+                      setReservationGuestName(entry.guestName ?? '');
+                      setReservationGuestPhone(entry.guestPhone ?? '');
+                      setReservationTime(localDateTimeInput(entry.reservedFor));
+                      setReservationDuration(String(entry.reservedDurationMinutes ?? 120));
+                      setReservationTableId(entry.reservedTableId ?? '');
+                    }}>
+                      แก้ไข/เลื่อน
+                    </button>
                     <button type="button" className="pos-ret-btn"
                       disabled={!canArrive || busy === `reservation-checkin-${entry.id}`}
                       onClick={() => void run(`reservation-checkin-${entry.id}`, 'reservation.check_in',

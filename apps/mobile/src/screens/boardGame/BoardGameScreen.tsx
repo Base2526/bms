@@ -61,6 +61,7 @@ import {
   MobilePosReleaseBoardGameIdentityHoldDocument,
   MobilePosReturnBoardGameCopyDocument,
   MobilePosTakeBoardGameIdentityHoldDocument,
+  MobilePosUpdateBoardGameReservationDocument,
   type MobilePosMembersQuery,
   type MobilePosBoardGameWorkspaceQuery,
 } from '../../graphql/generated';
@@ -129,6 +130,14 @@ function rateLabel(name: string, pricePerHour: number) {
   return /(?:฿|บาท)/.test(name)
     ? name
     : `${name} ฿${bahtLabel(pricePerHour)} / ชม.`;
+}
+
+function localDateTimeInput(value: string | null | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 /**
@@ -265,6 +274,9 @@ function BoardGameFloor({
   const [reservationTime, setReservationTime] = useState('');
   const [reservationDuration, setReservationDuration] = useState('120');
   const [reservationTableId, setReservationTableId] = useState('');
+  const [reservationEditingId, setReservationEditingId] = useState('');
+  const [reservationSearch, setReservationSearch] = useState('');
+  const [reservationDate, setReservationDate] = useState('');
   const [workingQueueId, setWorkingQueueId] = useState('');
   const callOperationKeys = useRef<Record<string, string>>({});
   const [acknowledgeCall] = useMutation(
@@ -278,6 +290,7 @@ function BoardGameFloor({
   const [closeWaitlistEntry] = useMutation(MobilePosCloseBoardGameWaitlistEntryDocument);
   const [addReservation] = useMutation(MobilePosAddBoardGameReservationDocument);
   const [checkInReservation] = useMutation(MobilePosCheckInBoardGameReservationDocument);
+  const [updateReservation] = useMutation(MobilePosUpdateBoardGameReservationDocument);
   const { width, height } = useWindowDimensions();
   const isTablet = supportsTabletLayout(width, height, 760);
   const [selectedAreaId, setSelectedAreaId] = useState<string>('all');
@@ -313,9 +326,21 @@ function BoardGameFloor({
   const openQueue = (data?.waitlist.entries ?? []).filter(
     entry => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
-  const reservations = (data?.waitlist.entries ?? []).filter(
+  const allReservations = (data?.waitlist.entries ?? []).filter(
     entry => entry.kind === 'RESERVATION' && entry.status === 'CONFIRMED',
   );
+  const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
+  const reservations = allReservations.filter(entry => {
+    const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
+    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.reservedTableCode ?? ''}`
+      .toLocaleLowerCase('th-TH');
+    return matchesDate && (!reservationNeedle || haystack.includes(reservationNeedle));
+  });
+  const resetReservationForm = () => {
+    setReservationEditingId(''); setReservationPartySize('2'); setReservationGuestName('');
+    setReservationGuestPhone(''); setReservationTime(''); setReservationDuration('120');
+    setReservationTableId('');
+  };
   const runQueueAction = async (
     operationName: string,
     action: (idempotencyKey: string) => Promise<unknown>,
@@ -688,6 +713,14 @@ function BoardGameFloor({
           <Text style={[typography.subtitle, { color: colors.text }]}>การจองล่วงหน้า</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>ยืนยันอยู่ {data.waitlist.confirmedReservationCount} รายการ</Text>
           <View style={styles.wrap}>
+            <TextInput accessibilityLabel="ค้นหารายการจอง" value={reservationSearch}
+              onChangeText={setReservationSearch} placeholder="ชื่อ เบอร์โทร หรือโต๊ะ"
+              placeholderTextColor={colors.textSoft}
+              style={[styles.input, { minWidth: 170, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
+            <TextInput accessibilityLabel="กรองวันที่จอง" value={reservationDate}
+              onChangeText={setReservationDate} placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textSoft}
+              style={[styles.input, { minWidth: 125, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
             <TextInput accessibilityLabel="วันเวลาจอง" value={reservationTime}
               onChangeText={setReservationTime} placeholder="2026-09-20T18:00"
               placeholderTextColor={colors.textSoft}
@@ -717,7 +750,8 @@ function BoardGameFloor({
                 onPress={() => setReservationTableId(table.id)} />
             ))}
           </View>
-          <Button label="ยืนยันจอง" loading={workingQueueId === 'reservation-add'}
+          <Button label={reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
+            loading={workingQueueId === 'reservation-add' || workingQueueId === 'reservation-update'}
             onPress={() => {
               const partySize = Number(reservationPartySize);
               const durationMinutes = Number(reservationDuration);
@@ -728,17 +762,31 @@ function BoardGameFloor({
                 || !Number.isFinite(instant.getTime())) {
                 Alert.alert('ข้อมูลจองไม่ครบ', 'ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาที'); return;
               }
-              runQueueAction('reservation-add', idempotencyKey => addReservation({ variables: { input: {
-                ...credentials!, idempotencyKey, tableId: reservationTableId,
+              const updating = Boolean(reservationEditingId);
+              const reservationInput = {
+                ...credentials!, tableId: reservationTableId,
                 reservedFor: instant.toISOString(), durationMinutes, partySize,
                 guestName: reservationGuestName.trim(), guestPhone: reservationGuestPhone.trim(), note: null,
-              } } })).then(success => {
+              };
+              runQueueAction(updating ? 'reservation-update' : 'reservation-add', idempotencyKey => {
+                if (updating) {
+                  return updateReservation({ variables: { input: {
+                    ...reservationInput, idempotencyKey, entryId: reservationEditingId,
+                  } } });
+                }
+                return addReservation({ variables: { input: { ...reservationInput, idempotencyKey } } });
+              }).then(success => {
                 if (success) {
-                  setReservationPartySize('2'); setReservationGuestName('');
-                  setReservationGuestPhone(''); setReservationTime(''); setReservationTableId('');
+                  resetReservationForm();
                 }
               }).catch(() => undefined);
             }} />
+          {reservationEditingId ? (
+            <Button label="เลิกแก้ไข" variant="secondary" onPress={resetReservationForm} />
+          ) : null}
+          {allReservations.length > 0 && reservations.length === 0 ? (
+            <Text style={[typography.caption, { color: colors.textMuted }]}>ไม่พบรายการที่ตรงกับตัวกรอง</Text>
+          ) : null}
           {reservations.map(entry => {
             const table = tables.find(item => item.id === entry.reservedTableId);
             const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
@@ -756,6 +804,15 @@ function BoardGameFloor({
                   {entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'} · {entry.reservedDurationMinutes ?? 0} นาที
                 </Text>
                 <View style={styles.wrap}>
+                  <Button label="แก้ไข/เลื่อน" variant="secondary" onPress={() => {
+                    setReservationEditingId(entry.id);
+                    setReservationPartySize(String(entry.partySize));
+                    setReservationGuestName(entry.guestName ?? '');
+                    setReservationGuestPhone(entry.guestPhone ?? '');
+                    setReservationTime(localDateTimeInput(entry.reservedFor));
+                    setReservationDuration(String(entry.reservedDurationMinutes ?? 120));
+                    setReservationTableId(entry.reservedTableId ?? '');
+                  }} />
                   <Button label="เช็กอิน" variant="secondary"
                     disabled={!canArrive}
                     loading={workingQueueId === `reservation-checkin-${entry.id}`}

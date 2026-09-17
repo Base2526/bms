@@ -56,6 +56,10 @@ jobs:
           # custom reset times instead of assuming every shop resets at 04:00 Bangkok.
           - name: menu-availability-reset
             path: /api/bms/menu-availability/reset
+          # Confirmed bookings that never arrived stop occupying the operations board after their
+          # six-hour arrival window. Checked-in parties remain staff-managed WAITING/CALLED rows.
+          - name: board-game-reservation-expiry
+            path: /api/bms/board-game/reservations/expire
     steps:
       - name: POST ${{ matrix.job.name }}
         env:
