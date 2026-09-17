@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { Button } from './Button';
 import { Card } from './Card';
 import {
@@ -24,6 +25,7 @@ import { useResponsive } from '../theme/useResponsive';
 import type { PosMember } from '../types/pos';
 
 type Tool = 'member' | 'points' | 'coupon' | 'discount' | 'extra';
+type Presentation = 'stacked' | 'horizontal' | 'collapsed';
 
 type MemberSelection = {
   member: PosMember | null;
@@ -38,6 +40,7 @@ export function CheckoutAdjustmentsCard({
   pointsUsedOverride,
   previewLoadingOverride,
   previewErrorOverride,
+  presentation = 'stacked',
 }: {
   memberOnly?: boolean;
   memberSelection?: MemberSelection;
@@ -45,6 +48,7 @@ export function CheckoutAdjustmentsCard({
   pointsUsedOverride?: number;
   previewLoadingOverride?: boolean;
   previewErrorOverride?: string | null;
+  presentation?: Presentation;
 }) {
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
@@ -65,17 +69,21 @@ export function CheckoutAdjustmentsCard({
   const [extraLabel, setExtraLabel] = useState('');
   const [extraAmount, setExtraAmount] = useState('');
   const [working, setWorking] = useState(false);
+  const [expanded, setExpanded] = useState(presentation === 'stacked');
   const [enrollMember] = useMutation(MobilePosEnrollMemberDocument);
   const selectedMember = memberSelection ? memberSelection.member : cart.member;
   const setSelectedMember = memberSelection
     ? memberSelection.setMember
     : cart.setMember;
-  const memberAmount = amountOverride ?? (memberSelection ? memberSelection.amount : cart.subtotal);
+  const memberAmount =
+    amountOverride ??
+    (memberSelection ? memberSelection.amount : cart.subtotal);
   const pointsUsed = pointsUsedOverride ?? cart.pointsUsed;
   const previewLoading = previewLoadingOverride ?? cart.previewLoading;
-  const previewError = previewErrorOverride === undefined
-    ? cart.previewError
-    : previewErrorOverride;
+  const previewError =
+    previewErrorOverride === undefined
+      ? cart.previewError
+      : previewErrorOverride;
 
   const members = useQuery(MobilePosMembersDocument, {
     variables: { q: search.trim() || null, amount: memberAmount },
@@ -96,6 +104,15 @@ export function CheckoutAdjustmentsCard({
   const rows = useMemo(() => {
     const allRows = [
       {
+        key: 'member' as const,
+        title: 'สมาชิก',
+        value: selectedMember
+          ? [selectedMember.name, selectedMember.memberNo]
+              .filter(Boolean)
+              .join(' · ')
+          : 'ค้นหาชื่อ เบอร์ หรือเลขสมาชิก',
+      },
+      {
         key: 'points' as const,
         title: 'ใช้แต้ม',
         // ⚠️ ต้องบอก "แต้มที่หักจริง" ที่ server ตอบกลับมา ไม่ใช่ตัวเลขที่แคชเชียร์พิมพ์ —
@@ -108,15 +125,6 @@ export function CheckoutAdjustmentsCard({
               : `ขอ ${cart.pointsToRedeem} · หักได้จริง ${pointsUsed} แต้ม`
             : `ใช้ได้ ${Math.floor(selectedMember.pointsUsable)} แต้ม`
           : 'เลือกสมาชิกก่อนใช้แต้ม',
-      },
-      {
-        key: 'member' as const,
-        title: 'สมาชิก',
-        value: selectedMember
-          ? [selectedMember.name, selectedMember.memberNo]
-              .filter(Boolean)
-              .join(' · ')
-          : 'ค้นหาชื่อ เบอร์ หรือเลขสมาชิก',
       },
       {
         key: 'extra' as const,
@@ -192,58 +200,166 @@ export function CheckoutAdjustmentsCard({
     close();
   };
 
+  const openTool = (nextTool: Tool) => {
+    setError('');
+    setTool(nextTool);
+    if (nextTool === 'coupon') {
+      setCouponCode(cart.coupon?.code ?? '');
+    }
+    if (nextTool === 'discount') {
+      setAmount(cart.manualDiscount?.amount.toString() ?? '');
+      setReason(cart.manualDiscount?.reason ?? '');
+      setApproverId(
+        cart.manualDiscount?.approverUserId ??
+          discountApprovers.find(item => item.hasPin)?.id ??
+          '',
+      );
+    }
+    if (nextTool === 'points') {
+      setPoints(String(cart.pointsToRedeem || 0));
+    }
+  };
+
+  const activeAdjustmentCount = memberOnly
+    ? Number(Boolean(selectedMember))
+    : [
+        selectedMember,
+        cart.pointsToRedeem > 0,
+        cart.extraLines.length > 0,
+        cart.coupon,
+        cart.manualDiscount,
+      ].filter(Boolean).length;
+
+  const visibleRows =
+    presentation === 'horizontal'
+      ? rows.filter(row => row.key !== 'extra')
+      : rows;
+  const rowButtons = visibleRows.map((row, index) => (
+    <Pressable
+      key={row.key}
+      accessibilityRole="button"
+      accessibilityLabel={`${row.title}: ${row.value}`}
+      onPress={() => openTool(row.key)}
+      style={({ pressed }) => [
+        presentation === 'horizontal' ? styles.horizontalTool : styles.toolRow,
+        {
+          minHeight: presentation === 'horizontal' ? 64 : 54,
+          borderTopWidth:
+            presentation === 'stacked' && index > 0
+              ? StyleSheet.hairlineWidth
+              : 0,
+          borderTopColor: colors.border,
+          backgroundColor:
+            presentation === 'horizontal' && pressed
+              ? colors.surface2
+              : 'transparent',
+          borderRadius: presentation === 'horizontal' ? radius.md : 0,
+        },
+      ]}
+    >
+      {presentation === 'horizontal' ? (
+        <AdjustmentIcon tool={row.key} color={colors.primary} />
+      ) : null}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          style={[typography.bodyStrong, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {row.title}
+        </Text>
+        {presentation !== 'horizontal' ? (
+          <Text
+            style={[typography.caption, { color: colors.textMuted }]}
+            numberOfLines={2}
+          >
+            {row.value}
+          </Text>
+        ) : null}
+      </View>
+      <Text style={[typography.subtitle, { color: colors.textMuted }]}>›</Text>
+    </Pressable>
+  ));
+
   return (
     <>
-      <Card>
-        <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-          {memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'}
-        </Text>
-        {rows.map((row, index) => (
+      <Card
+        style={
+          presentation === 'horizontal' ? styles.horizontalCard : undefined
+        }
+      >
+        {presentation === 'collapsed' ? (
           <Pressable
-            key={row.key}
             accessibilityRole="button"
-            onPress={() => {
-              setError('');
-              setTool(row.key);
-              if (row.key === 'coupon') {
-                setCouponCode(cart.coupon?.code ?? '');
-              }
-              if (row.key === 'discount') {
-                setAmount(cart.manualDiscount?.amount.toString() ?? '');
-                setReason(cart.manualDiscount?.reason ?? '');
-                setApproverId(
-                  cart.manualDiscount?.approverUserId ??
-                    discountApprovers.find(item => item.hasPin)?.id ??
-                    '',
-                );
-              }
-              if (row.key === 'points') {
-                setPoints(String(cart.pointsToRedeem || 0));
-              }
-            }}
-            style={[
-              styles.toolRow,
-              {
-                minHeight: 54,
-                borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
-                borderTopColor: colors.border,
-              },
-            ]}
+            accessibilityState={{ expanded }}
+            accessibilityLabel={
+              memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'
+            }
+            onPress={() => setExpanded(value => !value)}
+            style={styles.collapsedHeader}
           >
-            <View style={{ flex: 1 }}>
+            <View
+              style={[
+                styles.collapsedIcon,
+                { backgroundColor: colors.surface2 },
+              ]}
+            >
+              <AdjustmentIcon tool="coupon" color={colors.text} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                {row.title}
+                {memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {row.value}
+                {previewLoading
+                  ? 'กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…'
+                  : activeAdjustmentCount > 0
+                  ? `ใช้งานแล้ว ${activeAdjustmentCount} รายการ`
+                  : 'ยังไม่ได้ใช้'}
               </Text>
             </View>
             <Text style={[typography.subtitle, { color: colors.textMuted }]}>
-              ›
+              {expanded ? '⌃' : '›'}
             </Text>
           </Pressable>
-        ))}
-        {!memberOnly && previewLoading ? (
+        ) : presentation === 'stacked' ? (
+          <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+            {memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'}
+          </Text>
+        ) : null}
+        {presentation === 'horizontal' ? (
+          <View style={styles.horizontalTools}>
+            {rowButtons}
+            {!memberOnly ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="ค่าบริการหรือถุง"
+                onPress={() => openTool('extra')}
+                style={({ pressed }) => [
+                  styles.extraToolButton,
+                  {
+                    backgroundColor: pressed ? colors.surface2 : 'transparent',
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[typography.title, { color: colors.primary }]}>
+                  +
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : presentation === 'stacked' || expanded ? (
+          <View
+            style={
+              presentation === 'collapsed'
+                ? [styles.expandedRows, { borderTopColor: colors.border }]
+                : undefined
+            }
+          >
+            {rowButtons}
+          </View>
+        ) : null}
+        {!memberOnly && previewLoading && presentation !== 'collapsed' ? (
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…
           </Text>
@@ -644,6 +760,29 @@ export function CheckoutAdjustmentsCard({
   );
 }
 
+function AdjustmentIcon({ tool, color }: { tool: Tool; color: string }) {
+  const paths: Record<Tool, string> = {
+    member: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0H5Z',
+    points:
+      'm12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9L6.6 20l1-6.1-4.4-4.3 6.1-.9L12 3Z',
+    coupon: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Zm8 0v10',
+    discount:
+      'M7 17 17 7M7.5 8.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm9 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z',
+    extra: 'M12 5v14M5 12h14',
+  };
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      <Path
+        d={paths[tool]}
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 function FormInput({
   value,
   onChangeText,
@@ -707,5 +846,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  horizontalCard: {
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  horizontalTools: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  horizontalTool: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  extraToolButton: {
+    width: 44,
+    height: 44,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+  },
+  collapsedHeader: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  collapsedIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandedRows: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 8,
+    paddingTop: 4,
   },
 });

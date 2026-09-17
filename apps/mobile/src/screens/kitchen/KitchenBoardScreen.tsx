@@ -25,6 +25,7 @@ import {
 } from '../../lib/kitchenBoard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { KitchenStackParamList } from '../../navigation/types';
+import { getTabNavigation } from '../../navigation/parentNavigation';
 
 const STATUS_LABEL: Record<TicketStatus, { label: string; tone: StatusTone }> =
   {
@@ -99,7 +100,7 @@ export default function KitchenBoardScreen({ navigation }: Props) {
   return (
     <ScreenContainer>
       <OrderAlertBanner
-        onOpenQueue={() => navigation.getParent<any>()?.navigate('OrdersTab')}
+        onOpenQueue={() => getTabNavigation(navigation).navigate('OrdersTab')}
       />
       <View style={styles.headRow}>
         <Text style={[typography.title, { color: colors.text }]}>จอครัว</Text>
@@ -107,14 +108,19 @@ export default function KitchenBoardScreen({ navigation }: Props) {
           ค้างอยู่ {openCount} ใบ · จาก {visible.length} ใบบนกระดาน
         </Text>
       </View>
-      <Text style={[typography.caption, { color: error ? colors.danger : colors.textMuted }]}>
+      <Text
+        style={[
+          typography.caption,
+          { color: error ? colors.danger : colors.textMuted },
+        ]}
+      >
         {error
           ? `เชื่อมต่อครัวมีปัญหา: ${error}`
           : loading
-            ? 'กำลังอัปเดตงานครัว…'
-            : generatedAt
-              ? `อัปเดตล่าสุด ${new Date(generatedAt).toLocaleTimeString('th-TH')}`
-              : 'รอข้อมูลล่าสุดจากเซิร์ฟเวอร์'}
+          ? 'กำลังอัปเดตงานครัว…'
+          : generatedAt
+          ? `อัปเดตล่าสุด ${new Date(generatedAt).toLocaleTimeString('th-TH')}`
+          : 'รอข้อมูลล่าสุดจากเซิร์ฟเวอร์'}
       </Text>
 
       <FlatList
@@ -157,12 +163,16 @@ export default function KitchenBoardScreen({ navigation }: Props) {
         }}
       />
       <View style={[styles.bulkRow, { marginBottom: spacing.md }]}>
-        {([
-          ['NEW', 'PREPARING', 'เริ่มทั้งหมด'],
-          ['PREPARING', 'READY', 'พร้อมทั้งหมด'],
-          ['READY', 'SERVED', 'เสิร์ฟทั้งหมด'],
-        ] as const).map(([from, to, label]) => {
-          const ids = visible.filter(ticket => ticket.status === from).map(ticket => ticket.id);
+        {(
+          [
+            ['NEW', 'PREPARING', 'เริ่มทั้งหมด'],
+            ['PREPARING', 'READY', 'พร้อมทั้งหมด'],
+            ['READY', 'SERVED', 'เสิร์ฟทั้งหมด'],
+          ] as const
+        ).map(([from, to, label]) => {
+          const ids = visible
+            .filter(ticket => ticket.status === from)
+            .map(ticket => ticket.id);
           return (
             <Button
               key={from}
@@ -197,7 +207,9 @@ export default function KitchenBoardScreen({ navigation }: Props) {
           if (!item) return <View style={{ flex: 1 }} />;
           const status = STATUS_LABEL[item.status];
           const minutes = elapsedMinutes(item.createdAt, now);
-          const sla = stationSlas[item.stationId ?? item.station] ?? stationSlas[item.station];
+          const sla =
+            stationSlas[item.stationId ?? item.station] ??
+            stationSlas[item.station];
           const urgency = ticketUrgency(
             minutes,
             item.status,

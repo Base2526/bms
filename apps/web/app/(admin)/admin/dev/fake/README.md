@@ -54,7 +54,7 @@ prefix ของรหัสเครื่อง เพราะ scenario seede
 
 - ลงที่ **tenant default** (ส่ง `{ tenantId }` ใน body เพื่อระบุร้านอื่นได้) · Orders สูงสุด 10,000/ครั้ง ส่วน endpoint อื่นยังตรวจเพดานที่เหมาะกับชนิดข้อมูล
 - **Orders ไม่ขยับสต็อก** (ใช้เติม analytics) — ถ้าจะเทสต์ flow จ่าย/ส่งจริง ให้สั่งผ่าน Playground · สถานะเน้น revenue (COMPLETED/PAID/SHIPPED + CANCELLED/RETURNED)
-- **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: board-game POS orders → board-game sessions/library/floor/rates → orders + conversations (cascade items/payments/shipments/messages/notes) → products (cascade inventory) → customers · ข้ามตัวที่ยังมี order อ้างถึง และไม่ลบ discovery profile ที่พนักงานเผยแพร่แล้ว
+- **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: board-game POS orders → board-game sessions/library/floor/rates → orders + conversations (cascade items/payments/shipments/messages/notes) → products (cascade inventory) → customers · ข้ามสินค้า/ลูกค้าที่ order ยังอ้างถึง, ข้ามพนักงาน fake ที่ประวัติธุรกิจแบบห้ามลบยังอ้างถึง (รายงานจำนวนใน `usersSkippedReferenced`) และไม่ลบ discovery profile ที่พนักงานเผยแพร่แล้ว
 - BMS tables ไม่มีคอลัมน์ `fake_test` จึงใช้ marker `FAKE-` / tag `fake` แทน (ไม่ต้องแก้ schema)
 - ข้อความ outbound ของ conversation ที่มี `customer_ref` ขึ้นต้น `FAKE-` จะบันทึกใน Inbox เป็น simulated delivery (`meta.simulated = true`) โดยไม่เรียก LINE/Meta API และไม่แก้ Channel Health
 

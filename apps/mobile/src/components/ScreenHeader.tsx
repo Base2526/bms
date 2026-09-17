@@ -8,13 +8,20 @@ interface Props {
   subtitle?: string;
   /** ไม่ส่ง = ไม่มีปุ่มย้อนกลับ (หน้าที่เป็นรากของแท็บ) */
   onBack?: () => void;
+  roundBackButton?: boolean;
   right?: React.ReactNode;
 }
 
 // หัวจอที่มีปุ่มย้อนกลับของตัวเอง — navigator ทั้งแอปตั้ง `headerShown: false` ไว้เพราะจอขาย
 // ต้องการพื้นที่ทุกพิกเซล แต่หน้าที่ถูก push เข้ามา (บิลโต๊ะ/ชำระเงิน) ต้องมีทางออกเสมอ
 // ไม่งั้นเหลือแค่ปัดขอบจอซึ่งบนแท็บเล็ตที่วางในกล่องกันกระแทกทำได้ยาก
-export function ScreenHeader({ title, subtitle, onBack, right }: Props) {
+export function ScreenHeader({
+  title,
+  subtitle,
+  onBack,
+  roundBackButton = false,
+  right,
+}: Props) {
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
 
   return (
@@ -29,7 +36,7 @@ export function ScreenHeader({ title, subtitle, onBack, right }: Props) {
             {
               width: minTouchTarget,
               height: minTouchTarget,
-              borderRadius: radius.md,
+              borderRadius: roundBackButton ? minTouchTarget / 2 : radius.md,
               backgroundColor: pressed ? colors.surface2 : colors.surface,
               borderColor: colors.border,
             },

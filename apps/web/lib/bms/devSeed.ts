@@ -30,6 +30,7 @@ import {
   restaurantPackUnitName,
   type RestaurantSeedSet,
 } from "./restaurantCatalogSeed";
+import { allocateFakeStaffIdentities } from "./fakeStaffIdentity";
 
 const R = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(a: T[]): T => a[R(a.length)];
@@ -1890,16 +1891,6 @@ type FakeStaffTemplate = {
   role: "Manager" | "Sales" | "Warehouse" | "Cashier" | "Pharmacist";
 };
 
-const STAFF_NAMES = [
-  "ศิริพร วัฒนกิจ", "กิตติพงศ์ แสงทอง", "พิมพ์ชนก รัตนชัย", "ณัฐวุฒิ เจริญสุข",
-  "ชลธิชา อินทร์แก้ว", "ธนภัทร วงศ์ประเสริฐ", "ปวีณา บุญมี", "อาทิตย์ ตั้งวัฒนา",
-  "วรัญญา สุขใจ", "ภูริ เลิศวิไล", "มนัสวี ศรีสวัสดิ์", "ธีรภัทร์ แก้วกาญจน์",
-];
-const STAFF_EMAIL_ALIASES = [
-  "siriporn", "kittipong", "pimchanok", "nattawut", "chonticha", "thanapat",
-  "paweena", "atit", "waranya", "phuri", "manaswee", "teerapat",
-];
-
 function staffRolesForArchetype(archetype: ShopArchetype | null | undefined): FakeStaffTemplate["role"][] {
   switch (archetype) {
     case "pharmacy":
@@ -1941,6 +1932,20 @@ export async function seedFakeStaff(
     if (generatedBy != null) {
       await client.query(`SELECT set_config('app.editor_id', $1, true)`, [String(generatedBy)]);
     }
+    // Serialize fake-staff allocation per tenant. Without this lock, two seed
+    // requests can read the same occupied-name set and create lookalike rows.
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('bms.fake_staff'), hashtext($1::text))`,
+      [tenantId]
+    );
+    const existingFakeStaff = await client.query<{ name: string }>(
+      `SELECT name FROM users WHERE tenant_id = $1 AND fake_test = TRUE`,
+      [tenantId]
+    );
+    const identities = allocateFakeStaffIdentities(
+      count,
+      existingFakeStaff.rows.map((row) => row.name)
+    );
     const roleRows = await client.query<{ id: string; name: FakeStaffTemplate["role"] }>(
       `SELECT id, name FROM roles WHERE name = ANY($1::text[])`,
       [Array.from(new Set(roleSequence))]
@@ -1953,8 +1958,9 @@ export async function seedFakeStaff(
       const roleId = roleIds.get(role);
       if (!roleId) throw new Error(`ไม่พบ role ${role} สำหรับสร้างพนักงานทดสอบ`);
       const suffix = nanoid(6).toLowerCase();
-      const name = STAFF_NAMES[i % STAFF_NAMES.length];
-      const email = `${STAFF_EMAIL_ALIASES[i % STAFF_EMAIL_ALIASES.length]}+${suffix}@staff.bms.test`;
+      const identity = identities[i];
+      const name = identity.name;
+      const email = `${identity.emailAlias}+${suffix}@staff.bms.test`;
       const phone = `08${Math.floor(10000000 + Math.random() * 90000000)}`;
       const isPharmacist = role === "Pharmacist";
       const pharmacistLicenseNo = isPharmacist ? `ภ.${String(54000 + R(5000)).padStart(5, "0")}` : null;

@@ -20,11 +20,17 @@
 }
 
 .metrics > div {
-  border-left: 4px solid #32745e;
-  background: #f6f8f7;
-  padding: 12px 14px;
+  border: 1px solid #e3e8e6;
+  border-top: 4px solid #32745e;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
   min-width: 0;
 }
+
+.metrics > div:nth-child(2) { border-top-color: #337fb7; }
+.metrics > div:nth-child(3) { border-top-color: #d69a22; }
+.metrics > div:nth-child(4) { border-top-color: #c9473b; }
 
 .metrics span,
 .metrics strong {
@@ -42,7 +48,11 @@
 }
 
 .area {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #e3e8e6;
+  border-radius: 14px;
+  background: #fafcfb;
 }
 
 .area h4,
@@ -53,27 +63,43 @@
 
 .tableGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 .tableCard {
-  min-height: 126px;
+  min-height: 142px;
   border: 1px solid #cfd6d3;
-  border-radius: 6px;
+  border-radius: 12px;
   padding: 14px;
   background: #fff;
   color: #202723;
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
 }
 
 .tableCard:hover {
   border-color: #32745e;
   box-shadow: 0 2px 8px rgb(26 62 50 / 12%);
+  transform: translateY(-1px);
+}
+
+.tableCard:focus-visible {
+  outline: 3px solid rgb(50 116 94 / 22%);
+  outline-offset: 2px;
+}
+
+.tableCard:disabled {
+  cursor: not-allowed;
+}
+
+.tableCard:disabled:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .tableTop {
@@ -87,24 +113,67 @@
   overflow-wrap: anywhere;
 }
 
-.status_OPEN {
-  border-left: 5px solid #337fb7;
+.tableIdentity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
+.tableIdentity > span {
+  color: #68736e;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tableStatus {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.tableStatus i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: #3d8a68;
+  box-shadow: 0 0 0 3px rgb(61 138 104 / 12%);
+}
+
+.status_OPEN {
+  border-color: #99c2df;
+  background: #f7fbff;
+}
+
+.status_OPEN .tableStatus { color: #245f8a; }
+.status_OPEN .tableStatus i { background: #337fb7; box-shadow: 0 0 0 3px rgb(51 127 183 / 13%); }
+
 .status_CLOSING {
-  border-left: 5px solid #d69a22;
+  border-color: #e6c26f;
   background: #fffaf0;
 }
 
+.status_CLOSING .tableStatus { color: #8b6215; }
+.status_CLOSING .tableStatus i { background: #d69a22; box-shadow: 0 0 0 3px rgb(214 154 34 / 14%); }
+
 .status_BLOCKED {
-  border-left: 5px solid #89908d;
+  border-color: #d5d9d7;
   background: #f3f4f4;
   color: #6b716e;
 }
 
+.status_BLOCKED .tableStatus i { background: #89908d; box-shadow: none; }
+
 .status_AVAILABLE {
-  border-left: 5px solid #3d8a68;
+  border-color: #bad8cb;
 }
+
+.status_AVAILABLE .tableStatus { color: #2e7154; }
 
 .panel {
   padding: 4px 0 20px;
@@ -188,6 +257,45 @@
   margin-top: 12px;
 }
 
+/* รายละเอียดเวลาเล่น: งานหลักอยู่ข้างกันบนจอใหญ่ และปุ่มคิดเงินอยู่ใต้สรุปทันที
+   แทนโมดัลคอลัมน์เดียวที่ต้องเลื่อนผ่านทุกฟอร์มกว่าจะถึงปุ่มจบงาน */
+.sessionLayout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.sessionSummary,
+.sessionActions {
+  grid-column: 1 / -1;
+}
+
+.sessionSummary { order: -5; }
+
+.sessionActions {
+  order: -4;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #c9daf4;
+  border-radius: 10px;
+  background: #f6f9ff;
+}
+
+.sessionSection {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e3e8e6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sessionSection h5 { margin-top: 0; }
+.sessionParticipants,
+.sessionGames { order: -3; }
+.sessionIdentity { order: -2; grid-column: 1 / -1; }
+.sessionRelocate { order: 2; grid-column: 1 / -1; background: #fafcfb; }
+
 @media (max-width: 760px) {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -196,9 +304,15 @@
   .settingsGrid,
   .formGrid,
   .participantRow,
-  .coordinateRow {
+  .coordinateRow,
+  .sessionLayout {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .sessionSummary,
+  .sessionActions,
+  .sessionIdentity,
+  .sessionRelocate { grid-column: 1; }
 
   .coordinateRow > button {
     margin: -12px 0 20px;

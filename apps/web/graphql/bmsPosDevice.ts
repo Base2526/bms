@@ -158,6 +158,7 @@ import {
 import { setMenuTemporarilyUnavailable } from "@/lib/bms/menuAvailability";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
+import { getBranchStockOverview } from "@/lib/bms/stock";
 import {
   applyStockCount,
   cancelStockCount,
@@ -2008,6 +2009,21 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     transfers: [BmsMobileStockTransfer!]!
     destinations: [BmsLocation!]!
     deviceLocationId: ID!
+    summary: BmsPosBranchStockSummary!
+    lowStock: [BmsPosBranchLowStockItem!]!
+  }
+
+  type BmsPosBranchStockSummary {
+    sellableSkuCount: Int!
+    lowStockCount: Int!
+  }
+
+  type BmsPosBranchLowStockItem {
+    sku: String!
+    name: String!
+    size: String!
+    available: Int!
+    reorderPoint: Int!
   }
 
   type BmsPosStockCountsResult {
@@ -2073,7 +2089,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     reason: String
   }
 
-  """ปิดเฉพาะบิลหนึ่งกลุ่ม ขณะที่กลุ่มอื่นบนโต๊ะยังเล่นต่อได้ (Board Game Phase 3)"""
+  """
+  ปิดเฉพาะบิลหนึ่งกลุ่ม ขณะที่กลุ่มอื่นบนโต๊ะยังเล่นต่อได้ (Board Game Phase 3)
+  """
   input BmsPosBoardGameBillingGroupActionInput {
     cashierUserId: ID!
     pin: String!
@@ -2081,7 +2099,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     billingGroupId: ID!
   }
 
-  """ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91)"""
+  """
+  ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91)
+  """
   input BmsPosBoardGameSeatingActionInput {
     cashierUserId: ID!
     pin: String!
@@ -2090,13 +2110,17 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     targetTableId: ID!
   }
 
-  """เพิ่มสินค้าที่ส่งมอบแล้วเข้ากลุ่มบิล และจองสต็อกในสาขาของเครื่องทันที (9.90)"""
+  """
+  เพิ่มสินค้าที่ส่งมอบแล้วเข้ากลุ่มบิล และจองสต็อกในสาขาของเครื่องทันที (9.90)
+  """
   input BmsPosBoardGameTabAddInput {
     cashierUserId: ID!
     pin: String!
     idempotencyKey: String!
     billingGroupId: ID!
-    """บาร์โค้ดหรือ SKU — server เป็นผู้ resolve สินค้า ราคา และหน่วยขาย"""
+    """
+    บาร์โค้ดหรือ SKU — server เป็นผู้ resolve สินค้า ราคา และหน่วยขาย
+    """
     sku: String!
     size: String
     packCode: String
@@ -2105,7 +2129,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     note: String
   }
 
-  """เอาสินค้าออกจากกลุ่มบิล แต่เก็บแถว CANCELLED ไว้เป็นหลักฐาน (9.90)"""
+  """
+  เอาสินค้าออกจากกลุ่มบิล แต่เก็บแถว CANCELLED ไว้เป็นหลักฐาน (9.90)
+  """
   input BmsPosBoardGameTabRemoveInput {
     cashierUserId: ID!
     pin: String!
@@ -2123,7 +2149,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     copyId: ID!
   }
 
-  """รับบัตรไว้ค้ำกล่องเกม (9.93) — เลขไม่บังคับ และไม่เคยถูกส่งกลับออกมาทางใดเลย"""
+  """
+  รับบัตรไว้ค้ำกล่องเกม (9.93) — เลขไม่บังคับ และไม่เคยถูกส่งกลับออกมาทางใดเลย
+  """
   input BmsPosBoardGameTakeIdentityHoldInput {
     cashierUserId: ID!
     pin: String!
@@ -2131,14 +2159,18 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     sessionId: ID!
     documentKind: String!
     holderName: String!
-    """เข้ารหัสก่อนเก็บเสมอ · ปล่อยว่างได้เมื่อร้านเก็บแต่ตัวบัตรจริง"""
+    """
+    เข้ารหัสก่อนเก็บเสมอ · ปล่อยว่างได้เมื่อร้านเก็บแต่ตัวบัตรจริง
+    """
     documentNumber: String
     loanId: ID
     customerId: ID
     note: String
   }
 
-  """คืนบัตรให้ลูกค้า — ล้างชื่อ เลข และสี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน (9.93)"""
+  """
+  คืนบัตรให้ลูกค้า — ล้างชื่อ เลข และสี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน (9.93)
+  """
   input BmsPosBoardGameReleaseIdentityHoldInput {
     cashierUserId: ID!
     pin: String!
@@ -2282,7 +2314,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     loanId: ID
     customerId: ID
     documentKind: String!
-    """null หลังคืนบัตร — ชื่อถูกล้างไปพร้อมเลข"""
+    """
+    null หลังคืนบัตร — ชื่อถูกล้างไปพร้อมเลข
+    """
     holderName: String
     documentNumberTail: String
     hasDocumentNumber: Boolean!
@@ -2306,7 +2340,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     amount: Float!
   }
 
-  """รายการที่สั่งเข้าบิลระหว่างเล่น (9.90) — server จองสต็อกให้แล้วตั้งแต่ตอนเพิ่ม"""
+  """
+  รายการที่สั่งเข้าบิลระหว่างเล่น (9.90) — server จองสต็อกให้แล้วตั้งแต่ตอนเพิ่ม
+  """
   type BmsPosBoardGameTabItem {
     id: ID!
     sku: String!
@@ -2382,12 +2418,17 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     locationId: ID!
     tableId: ID!
     seatingId: ID!
-    currentOrderId: ID @deprecated(reason: "9.89 ย้ายบิลไปที่กลุ่ม — ใช้ billingGroups[].currentOrderId แทน โต๊ะหนึ่งมีได้หลายบิล")
+    currentOrderId: ID
+      @deprecated(
+        reason: "9.89 ย้ายบิลไปที่กลุ่ม — ใช้ billingGroups[].currentOrderId แทน โต๊ะหนึ่งมีได้หลายบิล"
+      )
     "กลุ่มบิลทั้งหมดของโต๊ะนี้ (9.89)"
     billingGroups: [BmsPosBoardGameBillingGroup!]!
     participants: [BmsPosBoardGameParticipant!]!
     games: [BmsPosBoardGameLoan!]!
-    """บัตรที่รับไว้ของโต๊ะนี้ (9.93) — ใบที่ยัง HELD บล็อกการปิดบิลใบสุดท้าย"""
+    """
+    บัตรที่รับไว้ของโต๊ะนี้ (9.93) — ใบที่ยัง HELD บล็อกการปิดบิลใบสุดท้าย
+    """
     identityHolds: [BmsPosBoardGameIdentityHold!]!
   }
 
@@ -2816,7 +2857,9 @@ async function boardGamePosAccess(
   for (const permission of spec.extraPermissions(input)) {
     await requirePosPermissionForActor(device, actor.userId, permission);
   }
-  const shift = spec.requiresOpenShift ? await requireOpenPosShift(device) : null;
+  const shift = spec.requiresOpenShift
+    ? await requireOpenPosShift(device)
+    : null;
   return {
     scope: {
       tenantId: device.tenantId,
@@ -3542,9 +3585,10 @@ export const bmsPosDeviceResolvers = {
     ) {
       const device = requirePosDevice(ctx);
       await requirePosCashier(device, args.credentials, "inventory.transfer");
-      const [transfers, locations] = await Promise.all([
+      const [transfers, locations, overview] = await Promise.all([
         listStockTransfers(device.tenantId, null, 200, null, device.locationId),
         listLocations(device.tenantId),
+        getBranchStockOverview(device.tenantId, device.locationId),
       ]);
       return {
         transfers: transfers.filter(
@@ -3556,6 +3600,11 @@ export const bmsPosDeviceResolvers = {
           (location) => location.active && location.id !== device.locationId,
         ),
         deviceLocationId: device.locationId,
+        summary: {
+          sellableSkuCount: overview.sellableSkuCount,
+          lowStockCount: overview.lowStockCount,
+        },
+        lowStock: overview.lowStock,
       };
     },
 
@@ -3586,7 +3635,11 @@ export const bmsPosDeviceResolvers = {
       args: { credentials: PosCashierCredentials },
       ctx: any,
     ) {
-      const { scope } = await boardGamePosAccess(ctx, args.credentials, "workspace");
+      const { scope } = await boardGamePosAccess(
+        ctx,
+        args.credentials,
+        "workspace",
+      );
       return loadBoardGamePosWorkspace(scope);
     },
 
@@ -3595,7 +3648,11 @@ export const bmsPosDeviceResolvers = {
       args: { credentials: PosCashierCredentials; id: string },
       ctx: any,
     ) {
-      const { scope } = await boardGamePosAccess(ctx, args.credentials, "session");
+      const { scope } = await boardGamePosAccess(
+        ctx,
+        args.credentials,
+        "session",
+      );
       return loadBoardGamePosSession(scope, args.id);
     },
 
@@ -3604,7 +3661,11 @@ export const bmsPosDeviceResolvers = {
       args: { credentials: PosCashierCredentials; id: string },
       ctx: any,
     ) {
-      const { scope } = await boardGamePosAccess(ctx, args.credentials, "checkout");
+      const { scope } = await boardGamePosAccess(
+        ctx,
+        args.credentials,
+        "checkout",
+      );
       return loadBoardGamePosCheckout(scope, args.id);
     },
   },
@@ -4513,7 +4574,11 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const access = await boardGamePosAccess(ctx, args.input, "participant.add");
+      const access = await boardGamePosAccess(
+        ctx,
+        args.input,
+        "participant.add",
+      );
       return runBoardGamePosMutation(
         access.scope,
         access.actorUserId,
@@ -4527,7 +4592,11 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const access = await boardGamePosAccess(ctx, args.input, "participant.leave");
+      const access = await boardGamePosAccess(
+        ctx,
+        args.input,
+        "participant.leave",
+      );
       return runBoardGamePosMutation(
         access.scope,
         access.actorUserId,
@@ -4695,7 +4764,11 @@ export const bmsPosDeviceResolvers = {
       args: { input: unknown },
       ctx: any,
     ) {
-      const access = await boardGamePosAccess(ctx, args.input, "identity.release");
+      const access = await boardGamePosAccess(
+        ctx,
+        args.input,
+        "identity.release",
+      );
       return runBoardGamePosMutation(
         access.scope,
         access.actorUserId,

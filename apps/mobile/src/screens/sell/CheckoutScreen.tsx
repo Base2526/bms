@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery } from '@apollo/client';
+import Svg, { Path } from 'react-native-svg';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
@@ -49,10 +51,10 @@ import {
   type MockPaymentInput,
   type MockPaymentMethod,
 } from '../../lib/paymentMath';
-import type { SellStackParamList } from '../../navigation/types';
+import type { AppStackParamList } from '../../navigation/types';
 import type { PosMember } from '../../types/pos';
 
-type Props = NativeStackScreenProps<SellStackParamList, 'Checkout'>;
+type Props = NativeStackScreenProps<AppStackParamList, 'Checkout'>;
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
@@ -69,7 +71,7 @@ const RESTAURANT_PAYMENT_METHODS: MockPaymentMethod[] = ['cash', 'qr', 'card'];
 
 export default function CheckoutScreen({ route, navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
-  const { isTablet } = useResponsive();
+  const { width, isTablet } = useResponsive();
   const cart = useCart();
   const { refresh: refreshSales } = useSales();
   const { session } = useSession();
@@ -221,8 +223,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const subtotal =
     source === 'board_game' && boardGamePreview?.amountDue != null
       ? round2(
-          boardGamePreview.amountDue +
-            (boardGamePreview.totalDiscount ?? 0),
+          boardGamePreview.amountDue + (boardGamePreview.totalDiscount ?? 0),
         )
       : fallbackSubtotal;
   const payableBeforeRounding = round2(
@@ -274,21 +275,33 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           payments,
         );
   const total = payableWithRounding(payableBeforeRounding, roundingDelta);
-  // แคชเชียร์แตะช่องชำระเงินเองแล้วหรือยัง — ตราบใดที่ยังไม่แตะ ยอดของช่องทางเดียวต้องเดินตาม
-  // ยอดสุทธิเสมอ
+  // ยอดของบิลที่จ่ายช่องทางเดียวต้องเดินตามยอดสุทธิเสมอ เพราะ layout ใหม่ไม่แสดงช่อง
+  // "ยอดช่องทางนี้" ซ้ำกับยอดบิลอีกแล้ว; `paymentsTouched` ใช้จำเฉพาะเงินสดที่รับจริง
+  // เพื่อไม่เขียนทับสิ่งที่แคชเชียร์พิมพ์เมื่อสิทธิ์หรือราคาเปลี่ยน
   //
   // ⚠️ หน้านี้แก้จำนวนสินค้า/ใส่สมาชิก/ใส่คูปองได้ **ในหน้าเดียวกับที่กรอกเงิน** ของเดิมตั้งยอด
   // ช่องทางไว้ครั้งเดียวตอน mount แล้วไม่ตามอีกเลย → ขยับจำนวนทีเดียวปุ่มยืนยันก็ล็อกด้วย
   // "ยังขาด ฿x" จนกว่าจะพิมพ์ยอดใหม่เองทุกครั้ง
   const [paymentsTouched, setPaymentsTouched] = useState(false);
   useEffect(() => {
-    if (paymentsTouched) return;
-    setPayments(prev =>
-      prev.length === 1 && prev[0].method === 'cash'
-        ? [{ ...prev[0], amount: total, tendered: total }]
-        : prev,
-    );
-  }, [paymentsTouched, total]);
+    if (saleMode !== 'SALE') return;
+    setPayments(prev => {
+      if (prev.length !== 1) return prev;
+      const payment = prev[0];
+      return [
+        {
+          ...payment,
+          amount: total,
+          tendered:
+            payment.method === 'cash'
+              ? paymentsTouched
+                ? payment.tendered
+                : total
+              : undefined,
+        },
+      ];
+    });
+  }, [paymentsTouched, saleMode, total]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
@@ -307,6 +320,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [pharmacistId, setPharmacistId] = useState('');
   const [pharmacistPin, setPharmacistPin] = useState('');
   const [pharmacistNote, setPharmacistNote] = useState('');
+  const [otherMethodsOpen, setOtherMethodsOpen] = useState(false);
+  const [splitOptionsOpen, setSplitOptionsOpen] = useState(false);
   useEffect(() => {
     if (source === 'retail') return;
     setSaleMode('SALE');
@@ -335,6 +350,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     const required = Math.round(line.qty * line.baseQty);
     return required > 0 && line.serials.filter(Boolean).length === required;
   });
+  const requiresPhoneLineEntry = lines.some(line => line.serialTracked);
   const creditApprovers = (
     bootstrap.data?.bmsPosSession.approvers ?? []
   ).filter(
@@ -449,11 +465,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       try {
         const recheck = await boardGamePricing.refetch();
         const latest = recheck.data?.bmsPosMemberPreview;
-        if (
-          !latest ||
-          latest.status !== 'READY' ||
-          latest.amountDue == null
-        ) {
+        if (!latest || latest.status !== 'READY' || latest.amountDue == null) {
           throw new Error(
             latest?.reason ??
               latest?.couponError ??
@@ -671,7 +683,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             'รับมัดจำแล้ว',
             `รับมัดจำ ฿${paymentTarget.toFixed(2)} สำเร็จ`,
           );
-          navigation.navigate('Menu');
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+          });
           return;
         }
         if (result?.status !== 'SOLD' || !result.orderId) {
@@ -686,7 +701,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       await refreshSales();
       idempotencyRef.current = null;
       setConfirmOpen(false);
-      navigation.replace('Receipt', { saleId: orderId });
+      navigation.replace('Receipt', { saleId: orderId, source });
     } catch (error) {
       setConfirmOpen(false);
       Alert.alert(
@@ -701,9 +716,31 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const linesCard = (
     <Card style={{ flex: 1 }}>
-      <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        รายการ ({itemCount})
-      </Text>
+      <View style={styles.line}>
+        <Text style={[typography.subtitle, { color: colors.text }]}>
+          รายการ ({itemCount})
+        </Text>
+        {source === 'retail' && lines.length > 0 ? (
+          <Button
+            label="ล้างรายการ"
+            variant="secondary"
+            onPress={() =>
+              Alert.alert(
+                'ล้างรายการทั้งหมด?',
+                'สินค้าทั้งหมดจะถูกนำออกจากบิล',
+                [
+                  { text: 'ยกเลิก', style: 'cancel' },
+                  {
+                    text: 'ล้างรายการ',
+                    style: 'destructive',
+                    onPress: cart.clear,
+                  },
+                ],
+              )
+            }
+          />
+        ) : null}
+      </View>
       {source === 'restaurant' &&
       check?.items.some(item => item.status === 'NEW') ? (
         <Text style={[typography.captionStrong, { color: colors.danger }]}>
@@ -713,17 +750,36 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <FlatList
         data={lines}
         keyExtractor={l => l.key}
-        ItemSeparatorComponent={() => (
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        )}
+        contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.md }}
         ListEmptyComponent={
           <Text style={[typography.body, { color: colors.textMuted }]}>
             ไม่มีรายการสำหรับชำระเงิน
           </Text>
         }
         renderItem={({ item }) => (
-          <View style={{ gap: spacing.sm }}>
+          <View
+            style={[
+              styles.cartLineCard,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+            ]}
+          >
             <View style={styles.line}>
+              <View
+                style={[
+                  styles.cartItemIcon,
+                  { backgroundColor: colors.surface2 },
+                ]}
+              >
+                <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M6 8h12l1 12H5L6 8Zm3 0V6a3 3 0 0 1 6 0v2"
+                    stroke={colors.textMuted}
+                    strokeWidth={1.8}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={[typography.body, { color: colors.text }]}>
                   {item.name}
@@ -841,19 +897,40 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     </Card>
   );
 
+  const primaryPaymentMethods = availablePaymentMethods.filter(method =>
+    (['cash', 'qr', 'card', 'bank_transfer'] as MockPaymentMethod[]).includes(
+      method,
+    ),
+  );
+  const otherPaymentMethods = availablePaymentMethods.filter(
+    method => !primaryPaymentMethods.includes(method),
+  );
+
   const paymentCard = (
-    <Card>
-      <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        แบ่งชำระ
-      </Text>
-      <Text style={[typography.caption, { color: colors.textMuted }]}>
-        ยอดและสิทธิ์จะถูกตรวจซ้ำที่เซิร์ฟเวอร์ก่อนบันทึก
-      </Text>
+    <Card
+      elevated={isTablet}
+      style={
+        isTablet
+          ? styles.paymentCard
+          : { ...styles.phonePaymentCard, backgroundColor: colors.bg }
+      }
+    >
+      {isTablet ? (
+        <Text style={[typography.title, { color: colors.text }]}>
+          รับชำระเงิน
+        </Text>
+      ) : null}
       {source === 'retail' ? (
-        <View style={[styles.methodRow, { marginTop: spacing.md }]}>
+        <View
+          style={[
+            styles.saleModeRow,
+            { marginTop: spacing.md, backgroundColor: colors.surface2 },
+          ]}
+        >
           <Button
             label="ขายปกติ"
             variant={saleMode === 'SALE' ? 'primary' : 'secondary'}
+            style={styles.saleModeButton}
             onPress={() => {
               setSaleMode('SALE');
               setPaymentsTouched(false);
@@ -870,6 +947,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <Button
             label="รับมัดจำ"
             variant={saleMode === 'DEPOSIT' ? 'primary' : 'secondary'}
+            style={styles.saleModeButton}
             onPress={() => {
               setSaleMode('DEPOSIT');
               setDepositAmount('');
@@ -949,15 +1027,24 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         </Text>
       ) : (
         <>
-          <ScrollView style={{ maxHeight: isTablet ? 360 : 260 }}>
-            {payments.map((payment, index) => (
-              <View
-                key={payment.id}
-                style={{ marginTop: spacing.md, gap: spacing.sm }}
-              >
+          {payments.map((payment, index) => {
+            const selectedIsOther = otherPaymentMethods.includes(
+              payment.method,
+            );
+            return (
+              <View key={payment.id} style={styles.paymentSection}>
                 <View style={styles.line}>
-                  <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                    ช่องทาง {index + 1}
+                  <Text
+                    style={[
+                      index === 0 ? typography.subtitle : typography.bodyStrong,
+                      { color: colors.text },
+                    ]}
+                  >
+                    {index === 0
+                      ? isTablet
+                        ? 'ช่องทางการชำระเงิน'
+                        : 'เลือกช่องทางชำระเงิน'
+                      : `ช่องทาง ${index + 1}`}
                   </Text>
                   {payments.length > 1 && (
                     <Button
@@ -973,15 +1060,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     />
                   )}
                 </View>
-                <View style={styles.methodRow}>
-                  {availablePaymentMethods.map(method => (
-                    <Button
+                <View
+                  style={[
+                    styles.paymentMethodGrid,
+                    isTablet && styles.tabletPaymentMethodGrid,
+                  ]}
+                >
+                  {(isTablet
+                    ? availablePaymentMethods
+                    : primaryPaymentMethods
+                  ).map(method => (
+                    <PaymentMethodButton
                       key={method}
-                      label={paymentMethodLabel(method)}
-                      accessibilityLabel={`เลือก${paymentMethodLabel(method)}`}
-                      variant={
-                        payment.method === method ? 'primary' : 'secondary'
-                      }
+                      method={method}
+                      selected={payment.method === method}
+                      tablet={isTablet}
                       onPress={() =>
                         updatePayment(payment.id, {
                           method,
@@ -993,14 +1086,104 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     />
                   ))}
                 </View>
-                <MoneyField
-                  label="ยอดช่องทางนี้"
-                  value={payment.amount}
-                  onChange={amount => updatePayment(payment.id, { amount })}
-                />
-                {payment.method === 'cash' ? (
+                {!isTablet && otherPaymentMethods.length > 0 ? (
                   <>
-                    <View style={styles.methodRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        expanded: otherMethodsOpen || selectedIsOther,
+                      }}
+                      onPress={() => setOtherMethodsOpen(value => !value)}
+                      style={({ pressed }) => [
+                        styles.otherMethodsRow,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: pressed
+                            ? colors.surface2
+                            : colors.surface,
+                        },
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            typography.bodyStrong,
+                            { color: colors.text },
+                          ]}
+                        >
+                          ช่องทางอื่น
+                        </Text>
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          {otherPaymentMethods
+                            .map(paymentMethodLabel)
+                            .join(' · ')}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          typography.subtitle,
+                          { color: colors.textMuted },
+                        ]}
+                      >
+                        {otherMethodsOpen || selectedIsOther ? '⌃' : '›'}
+                      </Text>
+                    </Pressable>
+                    {otherMethodsOpen || selectedIsOther ? (
+                      <View style={styles.paymentMethodGrid}>
+                        {otherPaymentMethods.map(method => (
+                          <PaymentMethodButton
+                            key={method}
+                            method={method}
+                            selected={payment.method === method}
+                            onPress={() =>
+                              updatePayment(payment.id, {
+                                method,
+                                reference: '',
+                                tendered: undefined,
+                              })
+                            }
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
+                {payments.length > 1 ? (
+                  <MoneyField
+                    label="ยอดช่องทางนี้"
+                    value={payment.amount}
+                    onChange={amount => updatePayment(payment.id, { amount })}
+                  />
+                ) : null}
+                {payment.method === 'cash' ? (
+                  <View
+                    style={[
+                      styles.cashPanel,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      รับเงิน
+                    </Text>
+                    <MoneyField
+                      label="เงินสดที่รับ"
+                      value={payment.tendered ?? 0}
+                      style={styles.cashInput}
+                      onChange={tendered =>
+                        updatePayment(payment.id, { tendered })
+                      }
+                    />
+                    <View style={styles.quickCashRow}>
                       {quickCashAmounts(payment.amount).map(amount => (
                         <Button
                           key={amount}
@@ -1011,32 +1194,30 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                             2,
                           )} บาท`}
                           variant="secondary"
+                          style={styles.quickCashButton}
                           onPress={() =>
                             updatePayment(payment.id, { tendered: amount })
                           }
                         />
                       ))}
                     </View>
-                    <MoneyField
-                      label="เงินสดที่รับ"
-                      value={payment.tendered ?? 0}
-                      onChange={tendered =>
-                        updatePayment(payment.id, { tendered })
-                      }
-                    />
-                    <Text
+                    <View
                       style={[
-                        typography.captionStrong,
-                        { color: colors.success },
+                        styles.changePanel,
+                        { backgroundColor: colors.successBg },
                       ]}
                     >
-                      เงินทอน ฿
-                      {calculateCashChange(
-                        payment.amount,
-                        payment.tendered ?? 0,
-                      ).toFixed(2)}
-                    </Text>
-                  </>
+                      <Text
+                        style={[typography.subtitle, { color: colors.success }]}
+                      >
+                        ✓ เงินทอน ฿
+                        {calculateCashChange(
+                          payment.amount,
+                          payment.tendered ?? 0,
+                        ).toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
                 ) : payment.method === 'credit' ? (
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
@@ -1058,19 +1239,38 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   />
                 )}
               </View>
-            ))}
-          </ScrollView>
-          <View style={[styles.methodRow, { marginTop: spacing.md }]}>
-            {availablePaymentMethods.map(method => (
+            );
+          })}
+          {saleMode === 'SALE' ? (
+            <View style={{ marginTop: spacing.md }}>
               <Button
-                key={method}
-                label={`+ ${paymentMethodLabel(method)}`}
-                accessibilityLabel={`เพิ่มช่องทาง${paymentMethodLabel(method)}`}
-                variant="secondary"
-                onPress={() => addPayment(method)}
+                label={
+                  splitOptionsOpen
+                    ? 'ซ่อนตัวเลือกแบ่งชำระ'
+                    : 'แบ่งชำระหลายช่องทาง'
+                }
+                variant="ghost"
+                fullWidth
+                onPress={() => setSplitOptionsOpen(value => !value)}
               />
-            ))}
-          </View>
+              {splitOptionsOpen ? (
+                <View style={styles.addPaymentGrid}>
+                  {availablePaymentMethods.map(method => (
+                    <Button
+                      key={method}
+                      label={`+ ${paymentMethodLabel(method)}`}
+                      accessibilityLabel={`เพิ่มช่องทาง${paymentMethodLabel(
+                        method,
+                      )}`}
+                      variant="secondary"
+                      style={styles.addPaymentButton}
+                      onPress={() => addPayment(method)}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </>
       )}
       {usesCredit ? (
@@ -1166,8 +1366,59 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     </Card>
   );
 
-  const totalAndActions = (
+  const confirmDisabled =
+    discountPending ||
+    lines.length === 0 ||
+    Boolean(check?.items.some(item => item.status === 'NEW')) ||
+    !canConfirmPayment ||
+    !restaurantPaymentsValid ||
+    !boardGameReady ||
+    !serialsReady ||
+    !depositReady ||
+    (usesCredit && !activeMember) ||
+    (Boolean(pharmacistId) &&
+      pharmacistId !== session?.cashier.id &&
+      !pharmacistPin);
+
+  const validationFeedback = (
     <>
+      {(zeroDueBoardGameBill ? [] : validation.errors).map(error => (
+        <Text
+          key={error}
+          style={[typography.captionStrong, { color: colors.danger }]}
+        >
+          {error}
+        </Text>
+      ))}
+      {discountPending && (
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          กำลังคำนวณส่วนลดกับเซิร์ฟเวอร์…
+        </Text>
+      )}
+      {source === 'board_game' && !discountPending && !boardGameReady && (
+        <Text style={[typography.captionStrong, { color: colors.danger }]}>
+          {boardGamePricing.error?.message ??
+            boardGamePreview?.reason ??
+            boardGamePreview?.couponError ??
+            'ยังตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ'}
+        </Text>
+      )}
+    </>
+  );
+
+  const confirmButton = (
+    <Button
+      label="ยืนยันการขาย"
+      accessibilityLabel="ยืนยันการขายพร้อมป้องกันกดซ้ำ"
+      fullWidth
+      loading={submitting}
+      disabled={confirmDisabled}
+      onPress={() => setConfirmOpen(true)}
+    />
+  );
+
+  const totalAndActions = (
+    <Card style={styles.summaryCard}>
       {discounts.discountTotal > 0 && (
         <View style={{ gap: spacing.xs, marginBottom: spacing.md }}>
           <AmountRow label="ยอดสินค้า" value={subtotal} />
@@ -1204,55 +1455,40 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <AmountRow label="ยอดสุทธิ" value={total} />
       <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />
       <AmountRow label="คงเหลือ" value={validation.remaining} />
-      {(zeroDueBoardGameBill ? [] : validation.errors).map(error => (
-        <Text
-          key={error}
-          style={[typography.captionStrong, { color: colors.danger }]}
-        >
-          {error}
-        </Text>
-      ))}
-      {/* ส่วนลดกำลังถูกคำนวณใหม่ที่เซิร์ฟเวอร์ — ยอดที่เห็นตอนนี้ยังเป็นของรอบก่อน
-          ปุ่มที่กดได้ระหว่างนี้คือปุ่มที่เก็บเงินตามยอดที่ยังไม่ใช่คำตอบสุดท้าย */}
-      {discountPending && (
-        <Text style={[typography.caption, { color: colors.textMuted }]}>
-          กำลังคำนวณส่วนลดกับเซิร์ฟเวอร์…
-        </Text>
-      )}
-      {source === 'board_game' && !discountPending && !boardGameReady && (
-        <Text style={[typography.captionStrong, { color: colors.danger }]}>
-          {boardGamePricing.error?.message ??
-            boardGamePreview?.reason ??
-            boardGamePreview?.couponError ??
-            'ยังตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ'}
-        </Text>
-      )}
-      <Button
-        label="ยืนยันการขาย"
-        accessibilityLabel="ยืนยันการขายพร้อมป้องกันกดซ้ำ"
-        fullWidth
-        loading={submitting}
-        disabled={
-          discountPending ||
-          lines.length === 0 ||
-          Boolean(check?.items.some(item => item.status === 'NEW')) ||
-          !canConfirmPayment ||
-          !restaurantPaymentsValid ||
-          !boardGameReady ||
-          !serialsReady ||
-          !depositReady ||
-          (usesCredit && !activeMember) ||
-          (Boolean(pharmacistId) &&
-            pharmacistId !== session?.cashier.id &&
-            !pharmacistPin)
-        }
-        onPress={() => setConfirmOpen(true)}
-      />
-    </>
+      {validationFeedback}
+      {confirmButton}
+    </Card>
   );
 
+  const adjustmentProps = {
+    memberOnly: source === 'restaurant',
+    amountOverride:
+      source === 'board_game'
+        ? boardGamePreview?.subtotal ?? cart.subtotal
+        : undefined,
+    pointsUsedOverride:
+      source === 'board_game' ? boardGamePreview?.pointsUsed ?? 0 : undefined,
+    previewLoadingOverride:
+      source === 'board_game' ? boardGamePricing.loading : undefined,
+    previewErrorOverride:
+      source === 'board_game'
+        ? boardGamePricing.error?.message ??
+          boardGamePreview?.reason ??
+          boardGamePreview?.couponError ??
+          null
+        : undefined,
+    memberSelection:
+      source === 'restaurant'
+        ? {
+            member: restaurantMember,
+            setMember: setRestaurantMember,
+            amount: total,
+          }
+        : undefined,
+  };
+
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
       <ScreenHeader
         title={
           source === 'restaurant'
@@ -1267,89 +1503,87 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             ? `ชำระโต๊ะ ${boardGameBill?.tableCode ?? '-'}`
             : 'ชำระเงิน'
         }
-        subtitle="ราคา สต็อก สิทธิ์ และผลชำระตรวจโดยเซิร์ฟเวอร์"
+        subtitle="ตรวจสอบรายการและรับชำระเงิน"
         onBack={() => navigation.goBack()}
+        right={
+          !isTablet ? (
+            <View
+              style={[styles.totalPill, { backgroundColor: colors.surface3 }]}
+            >
+              <Text style={[typography.bodyStrong, { color: colors.primary }]}>
+                ฿{total.toFixed(2)}
+              </Text>
+            </View>
+          ) : undefined
+        }
       />
       {isTablet ? (
         <View style={[styles.panes, { gap: spacing.lg }]}>
-          <View style={{ flex: 1 }}>{linesCard}</View>
-          <View style={{ width: 400, gap: spacing.md }}>
+          <View style={[styles.leftPane, { gap: spacing.md }]}>
+            {linesCard}
             <CheckoutAdjustmentsCard
-              memberOnly={source === 'restaurant'}
-              amountOverride={
-                source === 'board_game'
-                  ? boardGamePreview?.subtotal ?? cart.subtotal
-                  : undefined
-              }
-              pointsUsedOverride={
-                source === 'board_game'
-                  ? boardGamePreview?.pointsUsed ?? 0
-                  : undefined
-              }
-              previewLoadingOverride={
-                source === 'board_game' ? boardGamePricing.loading : undefined
-              }
-              previewErrorOverride={
-                source === 'board_game'
-                  ? boardGamePricing.error?.message ??
-                    boardGamePreview?.reason ??
-                    boardGamePreview?.couponError ??
-                    null
-                  : undefined
-              }
-              memberSelection={
-                source === 'restaurant'
-                  ? {
-                      member: restaurantMember,
-                      setMember: setRestaurantMember,
-                      amount: total,
-                    }
-                  : undefined
-              }
+              {...adjustmentProps}
+              presentation="horizontal"
             />
-            {paymentCard}
+          </View>
+          <View
+            style={{
+              width: Math.min(540, Math.max(460, width * 0.4)),
+              gap: spacing.md,
+            }}
+          >
+            <ScrollView
+              style={styles.tabletPaymentScroll}
+              contentContainerStyle={styles.tabletPaymentContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {paymentCard}
+            </ScrollView>
             {totalAndActions}
           </View>
         </View>
       ) : (
-        <>
-          <View style={{ flex: 1, marginBottom: spacing.md }}>{linesCard}</View>
-          <CheckoutAdjustmentsCard
-            memberOnly={source === 'restaurant'}
-            amountOverride={
-              source === 'board_game'
-                ? boardGamePreview?.subtotal ?? cart.subtotal
-                : undefined
-            }
-            pointsUsedOverride={
-              source === 'board_game'
-                ? boardGamePreview?.pointsUsed ?? 0
-                : undefined
-            }
-            previewLoadingOverride={
-              source === 'board_game' ? boardGamePricing.loading : undefined
-            }
-            previewErrorOverride={
-              source === 'board_game'
-                ? boardGamePricing.error?.message ??
-                  boardGamePreview?.reason ??
-                  boardGamePreview?.couponError ??
-                  null
-                : undefined
-            }
-            memberSelection={
-              source === 'restaurant'
-                ? {
-                    member: restaurantMember,
-                    setMember: setRestaurantMember,
-                    amount: total,
-                  }
-                : undefined
-            }
-          />
-          <View style={{ marginVertical: spacing.md }}>{paymentCard}</View>
-          {totalAndActions}
-        </>
+        <View style={styles.phoneLayout}>
+          <ScrollView
+            style={styles.phoneScroll}
+            contentContainerStyle={{
+              gap: spacing.md,
+              paddingBottom: spacing.lg,
+            }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {requiresPhoneLineEntry ? (
+              <View style={styles.phoneSerialLines}>{linesCard}</View>
+            ) : null}
+            <CheckoutAdjustmentsCard
+              {...adjustmentProps}
+              presentation="collapsed"
+            />
+            {paymentCard}
+            <View style={{ gap: spacing.xs }}>{validationFeedback}</View>
+          </ScrollView>
+          <View
+            style={[
+              styles.phoneFooter,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                ยอดสุทธิ
+              </Text>
+              <Text style={[typography.numeric, { color: colors.text }]}>
+                ฿{total.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.phoneConfirm}>{confirmButton}</View>
+          </View>
+        </View>
       )}
       <SaleConfirmationModal
         visible={confirmOpen}
@@ -1363,6 +1597,75 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         onConfirm={completeSale}
       />
     </ScreenContainer>
+  );
+}
+
+function PaymentMethodButton({
+  method,
+  selected,
+  tablet = false,
+  onPress,
+}: {
+  method: MockPaymentMethod;
+  selected: boolean;
+  tablet?: boolean;
+  onPress: () => void;
+}) {
+  const { colors, radius, typography } = useTheme();
+  const foreground = selected ? colors.primaryText : colors.text;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`เลือก${paymentMethodLabel(method)}`}
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.paymentMethodButton,
+        tablet && styles.tabletPaymentMethodButton,
+        {
+          borderRadius: radius.md,
+          borderColor: selected ? colors.primary : colors.border,
+          backgroundColor: selected ? colors.primary : colors.surface2,
+          opacity: pressed ? 0.84 : 1,
+        },
+      ]}
+    >
+      <PaymentMethodIcon method={method} color={foreground} />
+      <Text style={[typography.bodyStrong, { color: foreground }]}>
+        {paymentMethodLabel(method)}
+      </Text>
+    </Pressable>
+  );
+}
+
+function PaymentMethodIcon({
+  method,
+  color,
+}: {
+  method: MockPaymentMethod;
+  color: string;
+}) {
+  const paths: Record<MockPaymentMethod, string> = {
+    cash: 'M3 7h18v10H3V7Zm3 3h2m8 4h2m-6-5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+    qr: 'M4 4h5v5H4V4Zm11 0h5v5h-5V4ZM4 15h5v5H4v-5Zm11 0h2v2h-2v-2Zm3 0h2v5h-2v-5Zm-3 3h2v2h-2v-2Z',
+    card: 'M3 6h18v12H3V6Zm0 4h18M7 15h4',
+    bank_transfer: 'M3 10h18M5 10v8m4-8v8m6-8v8m4-8v8M2 20h20L12 4 2 10Z',
+    wallet:
+      'M4 7h15a2 2 0 0 1 2 2v9H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13v3m0 5h4',
+    store_credit: 'M4 10v10h16V10M3 10l2-6h14l2 6M8 20v-6h4v6m-8-10h16',
+    credit: 'M6 3h9l4 4v14H6V3Zm9 0v5h4M9 13h6m-6 4h6',
+  };
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      <Path
+        d={paths[method]}
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
@@ -1395,20 +1698,166 @@ function AmountRow({
 
 const styles = StyleSheet.create({
   panes: { flex: 1, flexDirection: 'row' },
+  leftPane: { flex: 1, minWidth: 0 },
   line: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 12,
+  cartLineCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+  },
+  cartItemIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   methodRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  paymentCard: {
+    paddingBottom: 16,
+  },
+  phonePaymentCard: {
+    padding: 0,
+    borderWidth: 0,
+  },
+  saleModeRow: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: 14,
+  },
+  saleModeButton: {
+    flex: 1,
+  },
+  paymentSection: {
+    gap: 10,
+    marginTop: 16,
+  },
+  paymentMethodGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tabletPaymentMethodGrid: {
+    gap: 10,
+  },
+  paymentMethodButton: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    minHeight: 72,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  tabletPaymentMethodButton: {
+    flexBasis: '22%',
+    minHeight: 88,
+    flexDirection: 'column',
+    gap: 6,
+  },
+  otherMethodsRow: {
+    minHeight: 58,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cashPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  cashInput: {
+    minHeight: 60,
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  quickCashRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickCashButton: {
+    flex: 1,
+    paddingHorizontal: 8,
+  },
+  changePanel: {
+    minHeight: 56,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  addPaymentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  addPaymentButton: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    paddingHorizontal: 8,
+  },
+  summaryCard: {
+    gap: 6,
+  },
+  tabletPaymentScroll: {
+    flex: 1,
+  },
+  tabletPaymentContent: {
+    paddingBottom: 2,
+  },
+  phoneLayout: {
+    flex: 1,
+    minHeight: 0,
+  },
+  phoneScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  phoneSerialLines: {
+    height: 360,
+  },
+  totalPill: {
+    minHeight: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  phoneFooter: {
+    minHeight: 84,
+    marginHorizontal: -16,
+    marginBottom: -16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8,
+  },
+  phoneConfirm: {
+    flex: 1.45,
   },
   input: {
     minHeight: 48,

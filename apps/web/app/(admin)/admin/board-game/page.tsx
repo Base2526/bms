@@ -620,10 +620,25 @@ export default function BoardGamePage() {
                       const session = table.openSession;
                       const status = tableStatus(table);
                       return (
-                        <button key={table.id} type="button" className={`${styles.tableCard} ${styles[`status_${status}`]}`}
+                        <button key={table.id} type="button" disabled={table.blocked}
+                          className={`${styles.tableCard} ${styles[`status_${status}`]}`}
                           onClick={() => session ? void refreshDetail(session.id) : !table.blocked && showOpen(table)}>
-                          <div className={styles.tableTop}><strong>{table.name}</strong><Tag>{table.seats} {t("admin_board_game.seats")}</Tag></div>
-                          {!session ? <span>{table.blocked ? t("admin_board_game.blocked") : t("admin_board_game.available")}</span> : (
+                          <div className={styles.tableTop}>
+                            <div className={styles.tableIdentity}>
+                              <span>{table.code}</span>
+                              <strong>{table.name}</strong>
+                            </div>
+                            <Tag>{table.seats} {t("admin_board_game.seats")}</Tag>
+                          </div>
+                          <div className={styles.tableStatus}>
+                            <i aria-hidden="true" />
+                            {table.blocked
+                              ? t("admin_board_game.blocked")
+                              : session
+                                ? t(`admin_board_game.session_${session.status.toLowerCase()}`)
+                                : t("admin_board_game.available")}
+                          </div>
+                          {!session ? null : (
                             <>
                               <span><ClockCircleOutlined /> {elapsed(session.startedAt)} {t("admin_board_game.minutes")}</span>
                               <span>{session.guestCount} {t("admin_board_game.people")}{session.expectedEndAt ? ` · ${t("admin_board_game.ends_at")} ${time(session.expectedEndAt)}` : ""}</span>
@@ -901,13 +916,13 @@ export default function BoardGamePage() {
         </Form>
       </Modal>
 
-      <Modal open={Boolean(detail)} title={detail ? t("admin_board_game.session_title", { table: floor.tables.find((row) => row.id === detail.tableId)?.name ?? "" }) : ""} footer={null} onCancel={() => { setDetail(null); setRelocateTargetId(""); }} width={820}>
-        {detailLoading || !detail ? <Spin /> : <Space direction="vertical" size="large" className={styles.full}>
+      <Modal open={Boolean(detail)} title={detail ? t("admin_board_game.session_title", { table: floor.tables.find((row) => row.id === detail.tableId)?.name ?? "" }) : ""} footer={null} onCancel={() => { setDetail(null); setRelocateTargetId(""); }} width={1040}>
+        {detailLoading || !detail ? <Spin /> : <div className={styles.sessionLayout}>
           {(() => {
             const currentTable = floor.tables.find((row) => row.id === detail.tableId);
             const sessionIds = currentTable?.openSession?.sessionIds ?? [detail.id];
             const targets = floor.tables.filter((row) => !row.blocked && row.id !== detail.tableId);
-            return <Space direction="vertical" className={styles.full}>
+            return <section className={`${styles.sessionSection} ${styles.sessionRelocate}`}>
               {sessionIds.length > 1 && <Space wrap>
                 <Typography.Text type="secondary">{t("admin_board_game.sessions_at_seating")}</Typography.Text>
                 {sessionIds.map((id, index) => <Button key={id} size="small"
@@ -934,15 +949,15 @@ export default function BoardGamePage() {
                   {t("admin_board_game.relocate_confirm")}
                 </Button>
               </Space>
-            </Space>;
+            </section>;
           })()}
-          <Descriptions size="small" column={{ xs: 1, sm: 2 }} items={[
+          <Descriptions className={styles.sessionSummary} bordered size="small" column={{ xs: 1, sm: 2, lg: 4 }} items={[
             { key: "status", label: t("common.status"), children: <Tag>{t(`admin_board_game.session_${detail.status.toLowerCase()}`)}</Tag> },
             { key: "start", label: t("admin_board_game.started_at"), children: time(detail.startedAt) },
             { key: "end", label: t("admin_board_game.ends_at"), children: time(detail.expectedEndAt) },
             { key: "amount", label: t("admin_board_game.amount_due"), children: `฿${detail.amountDue.toFixed(2)}` },
           ]} />
-          <div>
+          <section className={`${styles.sessionSection} ${styles.sessionParticipants}`}>
             <Typography.Title level={5}>{t("admin_board_game.participants")}</Typography.Title>
             <List size="small" dataSource={detail.participants} renderItem={(row) => <List.Item actions={row.billingGroupStatus === "OPEN" && !row.leftAt ? [<Button key="leave" onClick={() => void leaveParticipant(row.id)}>{t("admin_board_game.mark_left")}</Button>] : []}>
               <span>{row.displayName || t(`admin_board_game.type_${row.participantType.toLowerCase()}`)} · ฿{row.hourlyRate}/{t("admin_board_game.hour_short")} · {t("admin_board_game.bill_group")} {row.billingGroupNo}</span>
@@ -963,16 +978,16 @@ export default function BoardGamePage() {
               <Form.Item name="billingGroupNo" initialValue={1}><InputNumber min={1} max={20} /></Form.Item>
               <Button htmlType="submit" icon={<PlusOutlined />}>{t("admin_board_game.add_participant")}</Button>
             </Form>}
-          </div>
-          <div>
+          </section>
+          <section className={`${styles.sessionSection} ${styles.sessionGames}`}>
             <Typography.Title level={5}>{t("admin_board_game.games_at_table")}</Typography.Title>
             <List size="small" locale={{ emptyText: t("admin_board_game.no_games_at_table") }} dataSource={detail.games} renderItem={(game) => <List.Item actions={game.status === "CHECKED_OUT" ? [<Button key="return" icon={<SwapOutlined />} onClick={() => void returnGame(game.id)}>{t("admin_board_game.return_game")}</Button>] : []}>{game.title} · {game.copyCode} · {t(`admin_board_game.loan_${game.status.toLowerCase()}`)}</List.Item>} />
             {detail.status === "OPEN" && <Select showSearch optionFilterProp="label" className={styles.gameSelect} placeholder={t("admin_board_game.checkout_game")} options={availableCopies} onSelect={(copyId) => void checkoutGame(copyId)} />}
-          </div>
+          </section>
           {/* บัตรที่รับไว้ค้ำกล่องเกม (`9.93`)
               คืนบัตร = ล้างชื่อ/เลข/สี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน แถวที่เหลือตอบได้แค่ว่า
               "รับไว้แล้วคืนไปแล้ว ใครเป็นคนยื่นให้" ซึ่งเป็นคำถามที่ต้องตอบได้เมื่อลูกค้ากลับมาทวง */}
-          <div>
+          <section className={`${styles.sessionSection} ${styles.sessionIdentity}`}>
             <Typography.Title level={5}>{t("admin_board_game.identity_holds")}</Typography.Title>
             <List size="small" locale={{ emptyText: t("admin_board_game.identity_none") }}
               dataSource={detail.identityHolds}
@@ -1030,8 +1045,8 @@ export default function BoardGamePage() {
                 </Button>
               </Form>
             )}
-          </div>
-          <Space wrap>
+          </section>
+          <Space wrap className={styles.sessionActions}>
             {detail.billingGroups.length > 1 && detail.billingGroups
               .filter((group) => group.status === "OPEN")
               .map((group) => (
@@ -1057,7 +1072,7 @@ export default function BoardGamePage() {
               ))}
             {canCancel && <Button danger icon={<StopOutlined />} onClick={cancelSession}>{t("admin_board_game.cancel_session")}</Button>}
           </Space>
-        </Space>}
+        </div>}
       </Modal>
 
       <Modal open={Boolean(rateModal)} title={t("admin_board_game.rate_editor")} onCancel={() => setRateModal(null)} onOk={() => void saveRate()}>

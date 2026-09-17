@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
+import { deleteUnreferencedFakeUsers } from "@/lib/bms/devCleanup";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 async function handleDELETE(req: NextRequest) {
@@ -106,7 +107,7 @@ async function handleDELETE(req: NextRequest) {
     const resOrders = await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resConversations = await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resPosShifts = await query(`DELETE FROM bms_pos_shifts WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
-    const resUsers = await query('DELETE FROM users WHERE fake_test = true AND tenant_id = $1 RETURNING id', [tenantId]);
+    const resUsers = await deleteUnreferencedFakeUsers(tenantId);
     const resEvalRuns = await query('DELETE FROM bms_fake_eval_runs WHERE tenant_id = $1 RETURNING id', [tenantId]);
     const resPO = await query(`DELETE FROM bms_purchase_orders WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     // coupons ไม่มี FK ผูกกับ order แบบ RESTRICT (bms_orders.coupon_id → ON DELETE SET NULL) ลบตรงได้เลย
@@ -138,7 +139,7 @@ async function handleDELETE(req: NextRequest) {
     );
 
     const deleted =
-      resPosts.rows.length + resUsers.rows.length + resBoardGameOrders.rows.length + resBoardGameSessions.rows.length +
+      resPosts.rows.length + resUsers.deletedIds.length + resBoardGameOrders.rows.length + resBoardGameSessions.rows.length +
       resBoardGameSeatings.rows.length + resBoardGameProfiles.rows.length + resBoardGameCopies.rows.length + resBoardGameTitles.rows.length +
       resBoardGameTables.rows.length + resBoardGameAreas.rows.length + resBoardGameRates.rows.length +
       resBoardGameIdempotency.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
@@ -149,7 +150,8 @@ async function handleDELETE(req: NextRequest) {
       ok: true,
       deleted,
       posts: resPosts.rows.length,
-      users: resUsers.rows.length,
+      users: resUsers.deletedIds.length,
+      usersSkippedReferenced: resUsers.referencedIds.length,
       bmsBoardGameOrders: resBoardGameOrders.rows.length,
       bmsBoardGameSessions: resBoardGameSessions.rows.length,
       bmsBoardGameSeatings: resBoardGameSeatings.rows.length,

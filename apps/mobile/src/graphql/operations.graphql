@@ -1816,6 +1816,17 @@ query MobilePosStockTransfers($credentials: BmsPosCredentialsInput!) {
       name
       active
     }
+    summary {
+      sellableSkuCount
+      lowStockCount
+    }
+    lowStock {
+      sku
+      name
+      size
+      available
+      reorderPoint
+    }
     transfers {
       ...MobilePosStockTransferFields
     }

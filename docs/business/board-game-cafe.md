@@ -229,7 +229,9 @@ the selected archetype is `board_game_cafe`.
 
 `DELETE /api/dev/fake/cleanup` removes linked fake POS orders before sessions and then removes the
 library, floor, rates, and unpublished profile fixtures in foreign-key order. It does not delete a
-public profile after an operator has published it.
+public profile after an operator has published it. Fake staff accounts that were later used by
+protected business-history rows are reported as `usersSkippedReferenced` and retained instead of
+making the whole cleanup fail or deleting that history.
 
 ## UX Rules
 

@@ -359,6 +359,7 @@ test("board-game fake data covers the operator surface and cleans up in dependen
   const route = read("apps/web/app/api/dev/fake/bms-board-game/route.ts");
   const page = read("apps/web/app/(admin)/admin/dev/fake/page.tsx");
   const cleanup = read("apps/web/app/api/dev/fake/cleanup/route.ts");
+  const devCleanup = read("apps/web/lib/bms/devCleanup.ts");
   const provision = read("apps/web/app/api/dev/fake/provision-shop/route.ts");
 
   assert.match(seed, /export async function seedFakeBoardGameCafe/);
@@ -393,6 +394,11 @@ test("board-game fake data covers the operator surface and cleans up in dependen
     cleanup.indexOf("resBoardGameSessions") < cleanup.indexOf("resBoardGameCopies"),
     "cleanup must remove session loans before game copies"
   );
+  assert.match(cleanup, /deleteUnreferencedFakeUsers\(tenantId\)/);
+  assert.match(devCleanup, /FOR UPDATE/);
+  assert.match(devCleanup, /SAVEPOINT delete_fake_user/);
+  assert.match(devCleanup, /error\?\.code !== "23503"/);
+  assert.match(cleanup, /usersSkippedReferenced/);
 });
 
 test("public roadmap reflects completed board-game work and current mobile rollout", () => {

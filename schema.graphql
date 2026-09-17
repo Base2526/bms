@@ -2792,6 +2792,19 @@ type BmsPosBoardGameWorkspace {
   rates: [BmsPosBoardGameRate!]!
 }
 
+type BmsPosBranchLowStockItem {
+  available: Int!
+  name: String!
+  reorderPoint: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsPosBranchStockSummary {
+  lowStockCount: Int!
+  sellableSkuCount: Int!
+}
+
 type BmsPosCashMovement {
   actorName: String
   amount: Float!
@@ -4636,6 +4649,8 @@ input BmsPosStockTransferReceiveInput {
 type BmsPosStockTransfersResult {
   destinations: [BmsLocation!]!
   deviceLocationId: ID!
+  lowStock: [BmsPosBranchLowStockItem!]!
+  summary: BmsPosBranchStockSummary!
   transfers: [BmsMobileStockTransfer!]!
 }
 

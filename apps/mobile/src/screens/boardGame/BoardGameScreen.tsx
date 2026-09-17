@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,6 +25,11 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import {
+  TABLET_SIDEBAR_WIDTH,
+  TabletMainNavigation,
+  type TabletMainTab,
+} from '../../components/TabletMainNavigation';
 import {
   MobilePosAddBoardGameParticipantDocument,
   MobilePosAddBoardGameTabItemDocument,
@@ -51,33 +57,31 @@ import {
   isDecidedRejection,
   isStaleOperationConflict,
 } from '../../lib/operation';
-import type { BoardGameStackParamList } from '../../navigation/types';
+import type {
+  AppStackParamList,
+  BoardGameStackParamList,
+} from '../../navigation/types';
+import { getAppNavigation } from '../../navigation/parentNavigation';
 import { useSession } from '../../state/SessionContext';
 import { useShift } from '../../state/ShiftContext';
 import { useTheme } from '../../theme/ThemeProvider';
 
 type FloorProps = NativeStackScreenProps<BoardGameStackParamList, 'BoardGame'>;
-type OpenProps = NativeStackScreenProps<
-  BoardGameStackParamList,
-  'BoardGameOpen'
->;
-type DetailProps = NativeStackScreenProps<
-  BoardGameStackParamList,
-  'BoardGameDetail'
->;
+type OpenProps = NativeStackScreenProps<AppStackParamList, 'BoardGameOpen'>;
+type DetailProps = NativeStackScreenProps<AppStackParamList, 'BoardGameDetail'>;
 type BoardGameView =
   | { kind: 'floor' }
   | { kind: 'open'; tableId: string }
   | { kind: 'detail'; sessionId: string };
 type WorkspaceProps = {
-  navigation: NativeStackNavigationProp<
-    BoardGameStackParamList,
-    keyof BoardGameStackParamList
-  >;
+  navigation: NativeStackNavigationProp<AppStackParamList>;
   view: BoardGameView;
 };
 type Table =
   MobilePosBoardGameWorkspaceQuery['bmsPosBoardGameWorkspace']['floor']['tables'][number];
+type WorkspaceData =
+  MobilePosBoardGameWorkspaceQuery['bmsPosBoardGameWorkspace'];
+type FloorStatus = 'available' | 'playing' | 'ending' | 'overdue' | 'blocked';
 type ParticipantDraft = {
   key: string;
   customerId: string | null;
@@ -141,6 +145,43 @@ function elapsedLabel(startedAt: string | null | undefined, now: number) {
   return hours > 0 ? `${hours} ชม. ${minutes % 60} นาที` : `${minutes} นาที`;
 }
 
+function elapsedClockLabel(startedAt: string | null | undefined, now: number) {
+  if (!startedAt) return '--:--';
+  const minutes = Math.max(
+    0,
+    Math.floor((now - new Date(startedAt).getTime()) / 60000),
+  );
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(
+    minutes % 60,
+  ).padStart(2, '0')}`;
+}
+
+function tableTitle(table: Table) {
+  const trailingNumber = table.code.match(/(?:^|[-_\s])(\d{1,3})$/)?.[1];
+  return trailingNumber
+    ? `โต๊ะ ${trailingNumber.padStart(2, '0')}`
+    : table.code;
+}
+
+function branchDisplayLabel(branchName: string) {
+  return branchName.replace(/^BOOM\s+/, 'BOOM · ');
+}
+
+function areaDisplayLabel(areaName: string) {
+  return areaName
+    .replace(/^FAKE\s+/, '')
+    .replace(/\s+[A-Z0-9]{8}$/, '')
+    .trim();
+}
+
+function floorStatus(table: Table): FloorStatus {
+  if (table.blocked) return 'blocked';
+  if (!table.openSession) return 'available';
+  if (table.openSession.alertStatus === 'OVERDUE') return 'overdue';
+  if (table.openSession.alertStatus === 'ENDING_SOON') return 'ending';
+  return 'playing';
+}
+
 function alertLabel(status: string | null | undefined) {
   if (status === 'OVERDUE') return 'เกินเวลา';
   if (status === 'ENDING_SOON') return 'ใกล้หมดเวลา';
@@ -149,8 +190,9 @@ function alertLabel(status: string | null | undefined) {
 }
 
 export default function BoardGameScreen({ navigation }: FloorProps) {
+  const appNavigation = getAppNavigation(navigation);
   return (
-    <BoardGameWorkspace navigation={navigation} view={{ kind: 'floor' }} />
+    <BoardGameWorkspace navigation={appNavigation} view={{ kind: 'floor' }} />
   );
 }
 
@@ -169,6 +211,502 @@ export function BoardGameDetailScreen({ navigation, route }: DetailProps) {
       navigation={navigation}
       view={{ kind: 'detail', sessionId: route.params.sessionId }}
     />
+  );
+}
+
+type BoardGameFloorProps = {
+  data?: WorkspaceData;
+  loading: boolean;
+  errorMessage?: string;
+  branchName: string;
+  now: number;
+  onRetry: () => void;
+  onOpen: (table: Table) => void;
+  onNavigateTab: (tab: TabletMainTab) => void;
+};
+
+function BoardGameFloor({
+  data,
+  loading,
+  errorMessage,
+  branchName,
+  now,
+  onRetry,
+  onOpen,
+  onNavigateTab,
+}: BoardGameFloorProps) {
+  const { colors, scheme, spacing, typography } = useTheme();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 760;
+  const [selectedAreaId, setSelectedAreaId] = useState<string>('all');
+  const areas = data?.floor.areas ?? [];
+  const tables = data?.floor.tables ?? [];
+  const areaNameById = new Map(
+    areas.map(area => [area.id, areaDisplayLabel(area.name)] as const),
+  );
+  const areaOrder = new Map(areas.map((area, index) => [area.id, index]));
+  const visibleTables = (
+    selectedAreaId === 'all'
+      ? [...tables]
+      : tables.filter(table => table.areaId === selectedAreaId)
+  ).sort(
+    (left, right) =>
+      (areaOrder.get(left.areaId) ?? Number.MAX_SAFE_INTEGER) -
+        (areaOrder.get(right.areaId) ?? Number.MAX_SAFE_INTEGER) ||
+      left.code.localeCompare(right.code, 'th'),
+  );
+  const counts = tables.reduce(
+    (summary, table) => {
+      const status = floorStatus(table);
+      if (status !== 'blocked') summary[status] += 1;
+      return summary;
+    },
+    { available: 0, playing: 0, ending: 0, overdue: 0 },
+  );
+  const primaryTint =
+    scheme === 'dark' ? 'rgba(22, 119, 255, 0.18)' : '#eff6ff';
+  const primaryTintStrong =
+    scheme === 'dark' ? 'rgba(22, 119, 255, 0.28)' : '#dbeafe';
+  const statusVisual = (status: FloorStatus) => {
+    switch (status) {
+      case 'available':
+        return {
+          label: 'ว่าง',
+          color: colors.success,
+          backgroundColor: colors.successBg,
+          badgeBackground: scheme === 'dark' ? colors.successBg : '#d1fae5',
+          glyph: '●',
+        };
+      case 'ending':
+        return {
+          label: 'ใกล้ครบ',
+          color: colors.warning,
+          backgroundColor: colors.warningBg,
+          badgeBackground: scheme === 'dark' ? colors.warningBg : '#fef3c7',
+          glyph: '!',
+        };
+      case 'overdue':
+        return {
+          label: 'เกินเวลา',
+          color: colors.danger,
+          backgroundColor: colors.dangerBg,
+          badgeBackground: scheme === 'dark' ? colors.dangerBg : '#fee2e2',
+          glyph: '◷',
+        };
+      case 'blocked':
+        return {
+          label: 'ปิดใช้',
+          color: colors.textMuted,
+          backgroundColor: colors.surface2,
+          badgeBackground: colors.surface3,
+          glyph: '–',
+        };
+      default:
+        return {
+          label: 'กำลังเล่น',
+          color: colors.primary,
+          backgroundColor: primaryTint,
+          badgeBackground: primaryTintStrong,
+          glyph: '▶',
+        };
+    }
+  };
+  const summaryItems: Array<{
+    key: Exclude<FloorStatus, 'blocked'>;
+    label: string;
+    count: number;
+  }> = [
+    { key: 'available', label: 'ว่าง', count: counts.available },
+    { key: 'playing', label: 'กำลังเล่น', count: counts.playing },
+    { key: 'ending', label: 'ใกล้ครบ', count: counts.ending },
+    { key: 'overdue', label: 'เกินเวลา', count: counts.overdue },
+  ];
+
+  const zoneButton = (id: string, label: string) => {
+    const selected = selectedAreaId === id;
+    return (
+      <Pressable
+        key={id}
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        accessibilityLabel={`แสดงโซน ${label}`}
+        onPress={() => setSelectedAreaId(id)}
+        style={({ pressed }) => [
+          isTablet ? styles.tabletZoneButton : styles.phoneZoneButton,
+          {
+            backgroundColor: selected
+              ? isTablet
+                ? primaryTintStrong
+                : colors.primary
+              : isTablet
+              ? 'transparent'
+              : colors.surface2,
+            opacity: pressed ? 0.8 : 1,
+          },
+        ]}
+      >
+        {isTablet ? (
+          <View
+            style={[
+              styles.zoneBullet,
+              {
+                backgroundColor: selected ? colors.primary : colors.textSoft,
+              },
+            ]}
+          />
+        ) : null}
+        <Text
+          numberOfLines={1}
+          style={[
+            isTablet ? typography.bodyStrong : typography.captionStrong,
+            {
+              color: selected
+                ? isTablet
+                  ? colors.primary
+                  : colors.primaryText
+                : colors.textSecondary,
+            },
+          ]}
+        >
+          {label}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  const summary = (
+    <View style={styles.floorSummaryRow}>
+      {summaryItems.map(item => {
+        const visual = statusVisual(item.key);
+        return (
+          <View
+            key={item.key}
+            style={[
+              styles.floorSummaryCard,
+              {
+                backgroundColor: visual.backgroundColor,
+                padding: isTablet ? spacing.lg : spacing.sm,
+              },
+            ]}
+          >
+            <View style={styles.floorSummaryLabel}>
+              <View
+                style={[styles.statusGlyph, { backgroundColor: visual.color }]}
+              >
+                <Text style={styles.statusGlyphText}>{visual.glyph}</Text>
+              </View>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isTablet ? typography.bodyStrong : styles.summaryLabelPhone,
+                  { color: visual.color },
+                ]}
+              >
+                {item.label}
+              </Text>
+            </View>
+            <Text
+              style={[
+                isTablet ? typography.numeric : styles.summaryCountPhone,
+                { color: visual.color },
+              ]}
+            >
+              {item.count}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  const floorBody = (
+    <>
+      {loading && !data ? (
+        <Card>
+          <Text style={[typography.body, { color: colors.textMuted }]}>
+            กำลังโหลดผังโต๊ะ...
+          </Text>
+        </Card>
+      ) : null}
+      {errorMessage && !data ? (
+        <Card style={{ gap: spacing.sm }}>
+          <Text style={[typography.bodyStrong, { color: colors.danger }]}>
+            โหลดข้อมูล Board Game ไม่สำเร็จ
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            {errorMessage}
+          </Text>
+          <Button label="ลองใหม่" variant="secondary" onPress={onRetry} />
+        </Card>
+      ) : null}
+      {data && tables.length === 0 ? (
+        <Card>
+          <Text style={[typography.body, { color: colors.textMuted }]}>
+            ยังไม่มีโต๊ะ Board Game ในสาขานี้ กรุณาตั้งค่าผังจาก Admin
+          </Text>
+        </Card>
+      ) : null}
+      {data && tables.length > 0 && visibleTables.length === 0 ? (
+        <Card>
+          <Text style={[typography.body, { color: colors.textMuted }]}>
+            โซนนี้ยังไม่มีโต๊ะ
+          </Text>
+        </Card>
+      ) : null}
+      <View style={styles.floorTableGrid}>
+        {visibleTables.map(table => {
+          const status = floorStatus(table);
+          const visual = statusVisual(status);
+          const areaName = areaNameById.get(table.areaId);
+          const statusLabel =
+            table.openSession?.alertStatus === 'CLOSING'
+              ? 'รอชำระ'
+              : visual.label;
+          const timer = table.openSession
+            ? elapsedClockLabel(table.openSession.startedAt, now)
+            : 'พร้อมใช้งาน';
+          return (
+            <View
+              key={table.id}
+              style={[
+                styles.floorTableCard,
+                isTablet ? styles.floorTableCardTablet : null,
+                {
+                  backgroundColor: visual.backgroundColor,
+                  borderColor: visual.badgeBackground,
+                  width: isTablet ? '31.8%' : '100%',
+                },
+              ]}
+            >
+              <View style={styles.floorCardHeading}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isTablet ? typography.title : typography.subtitle,
+                    styles.flex,
+                    { color: colors.text },
+                  ]}
+                >
+                  {tableTitle(table)}
+                </Text>
+                <View
+                  style={[
+                    styles.floorStatusBadge,
+                    { backgroundColor: visual.badgeBackground },
+                  ]}
+                >
+                  <Text
+                    style={[styles.floorStatusDot, { color: visual.color }]}
+                  >
+                    {visual.glyph}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[typography.captionStrong, { color: visual.color }]}
+                  >
+                    {statusLabel}
+                  </Text>
+                </View>
+              </View>
+              <Text
+                numberOfLines={1}
+                style={[typography.caption, { color: colors.textMuted }]}
+              >
+                {areaName ? `${areaName} · ` : ''}
+                {table.seats} ที่นั่ง
+              </Text>
+              {isTablet && table.openSession?.startedAt ? (
+                <Text style={[typography.caption, { color: colors.textSoft }]}>
+                  เริ่มเล่น{' '}
+                  {new Date(table.openSession.startedAt).toLocaleTimeString(
+                    'th-TH',
+                    { hour: '2-digit', minute: '2-digit' },
+                  )}{' '}
+                  น.
+                </Text>
+              ) : null}
+              <View
+                style={[
+                  styles.floorCardFooter,
+                  isTablet ? styles.floorCardFooterTablet : null,
+                ]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    table.openSession
+                      ? typography.numeric
+                      : typography.bodyStrong,
+                    { color: visual.color },
+                  ]}
+                >
+                  {status === 'blocked' ? 'ไม่พร้อมใช้งาน' : timer}
+                </Text>
+                <Button
+                  label={table.openSession ? 'ดูโต๊ะ' : 'เปิดโต๊ะ'}
+                  variant={table.openSession ? 'secondary' : 'primary'}
+                  disabled={table.blocked}
+                  onPress={() => onOpen(table)}
+                  fullWidth={isTablet}
+                  style={isTablet ? undefined : styles.floorPhoneAction}
+                />
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </>
+  );
+
+  if (!isTablet) {
+    return (
+      <ScreenContainer>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            gap: spacing.md,
+            paddingBottom: spacing.xxl,
+          }}
+        >
+          <View>
+            <Text style={[typography.title, { color: colors.text }]}>
+              โต๊ะและเวลา
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {branchDisplayLabel(branchName)}
+            </Text>
+          </View>
+          {summary}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.phoneZoneRow}
+          >
+            {zoneButton('all', 'ทั้งหมด')}
+            {areas.map(area =>
+              zoneButton(area.id, areaDisplayLabel(area.name)),
+            )}
+          </ScrollView>
+          {floorBody}
+        </ScrollView>
+      </ScreenContainer>
+    );
+  }
+
+  return (
+    <ScreenContainer padded={false}>
+      <View style={styles.floorTabletShell}>
+        <View
+          style={[
+            styles.floorSidebar,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.floorSidebarContent}>
+            <Text style={[typography.title, { color: colors.text }]}>
+              Board Game
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {branchDisplayLabel(branchName)}
+            </Text>
+            <View style={styles.floorSidebarZones}>
+              {zoneButton('all', 'ทุกโซน')}
+              {areas.map(area =>
+                zoneButton(area.id, areaDisplayLabel(area.name)),
+              )}
+            </View>
+            <View
+              style={[
+                styles.sidebarDivider,
+                { backgroundColor: colors.border },
+              ]}
+            />
+            <View style={styles.floorLegend}>
+              {summaryItems.map(item => {
+                const visual = statusVisual(item.key);
+                return (
+                  <View key={item.key} style={styles.floorLegendRow}>
+                    <View
+                      style={[
+                        styles.legendDot,
+                        { backgroundColor: visual.color },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        typography.body,
+                        styles.flex,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      {item.count}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+          <TabletMainNavigation
+            activeTab="BoardGameTab"
+            onNavigate={onNavigateTab}
+          />
+        </View>
+        <ScrollView
+          style={styles.floorTabletMain}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            gap: spacing.lg,
+            padding: spacing.xl,
+            paddingBottom: spacing.xxl,
+          }}
+        >
+          <View style={styles.floorTabletHeader}>
+            <View style={styles.flex}>
+              <Text style={[typography.title, { color: colors.text }]}>
+                โต๊ะและเวลา
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {new Date(now).toLocaleDateString('th-TH', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}{' '}
+                เวลา{' '}
+                {new Date(now).toLocaleTimeString('th-TH', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="รีเฟรชผังโต๊ะ"
+              onPress={onRetry}
+              style={({ pressed }) => [
+                styles.floorRefresh,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <Text style={[typography.bodyStrong, { color: colors.primary }]}>
+                ↻ รีเฟรช
+              </Text>
+            </Pressable>
+          </View>
+          {summary}
+          {floorBody}
+        </ScrollView>
+      </View>
+    </ScreenContainer>
   );
 }
 
@@ -475,9 +1013,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   };
 
   const openBillingGroupCheckout = (billingGroupId: string) => {
-    navigation.getParent<any>()?.navigate('SellTab', {
-      screen: 'Checkout',
-      params: { source: 'board_game', boardGameBillingGroupId: billingGroupId },
+    navigation.navigate('Checkout', {
+      source: 'board_game',
+      boardGameBillingGroupId: billingGroupId,
     });
   };
 
@@ -564,7 +1102,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
 
   const submitOpenSession = () => {
     if (!openingTable || openBlockReason) return;
-    void run(`open-${openingTable.id}`, async () => {
+    run(`open-${openingTable.id}`, async () => {
       const response = await openSession({
         variables: {
           input: {
@@ -590,8 +1128,25 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       const id = result?.id ?? result?.sessionId;
       if (!id) throw new Error('เปิดโต๊ะไม่สำเร็จ');
       navigation.replace('BoardGameDetail', { sessionId: id });
-    });
+    }).catch(() => undefined);
   };
+
+  if (view.kind === 'floor') {
+    return (
+      <BoardGameFloor
+        data={data}
+        loading={workspace.loading}
+        errorMessage={workspace.error?.message}
+        branchName={session?.branch.name ?? '-'}
+        now={now}
+        onRetry={() => {
+          workspace.refetch().catch(() => undefined);
+        }}
+        onOpen={beginOpen}
+        onNavigateTab={tab => navigation.navigate('Tabs', { screen: tab })}
+      />
+    );
+  }
 
   return (
     <ScreenContainer>
@@ -601,12 +1156,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
             ? openingTable
               ? `เปิดโต๊ะ ${openingTable.code}`
               : 'เปิดโต๊ะ'
-            : view.kind === 'detail'
-            ? 'รายละเอียดโต๊ะ'
-            : 'Board Game'
+            : 'รายละเอียดโต๊ะ'
         }
         subtitle={`${session?.branch.name ?? '-'} · โต๊ะ เวลา ผู้เล่น และเกม`}
-        onBack={view.kind === 'floor' ? undefined : () => navigation.goBack()}
+        onBack={() => navigation.goBack()}
       />
       <ScrollView
         contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xxl }}
@@ -1346,7 +1899,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     variant="secondary"
                     fullWidth
                     onPress={() =>
-                      navigation.getParent<any>()?.navigate('ShiftTab')
+                      navigation.navigate('Tabs', { screen: 'ShiftTab' })
                     }
                   />
                 ) : null}
@@ -2267,89 +2820,6 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
             )}
           </Card>
         ) : null}
-
-        {!selectedSessionId && !openingTable
-          ? (data?.floor.areas ?? []).map(area => (
-              <View key={area.id} style={{ gap: spacing.sm }}>
-                <Text style={[typography.subtitle, { color: colors.text }]}>
-                  {area.name}
-                </Text>
-                <View style={styles.tableGrid}>
-                  {data?.floor.tables
-                    .filter(table => table.areaId === area.id)
-                    .map(table => {
-                      const alertStatus = table.openSession?.alertStatus;
-                      const tone = table.blocked
-                        ? colors.textMuted
-                        : alertStatus === 'OVERDUE'
-                        ? colors.danger
-                        : alertStatus === 'ENDING_SOON'
-                        ? colors.warning
-                        : table.openSession
-                        ? colors.primary
-                        : colors.success;
-                      return (
-                        <Card
-                          key={table.id}
-                          style={{ ...styles.tableCard, borderColor: tone }}
-                          elevated={false}
-                        >
-                          <Text
-                            style={[
-                              typography.subtitle,
-                              { color: colors.text },
-                            ]}
-                          >
-                            {table.code}
-                          </Text>
-                          <Text
-                            style={[
-                              typography.caption,
-                              { color: colors.textMuted },
-                            ]}
-                          >
-                            {table.name} · {table.seats} ที่นั่ง
-                          </Text>
-                          <Text
-                            style={[typography.captionStrong, { color: tone }]}
-                          >
-                            {table.blocked
-                              ? 'ปิดใช้'
-                              : table.openSession
-                              ? `${alertLabel(alertStatus)} · ${elapsedLabel(
-                                  table.openSession.startedAt,
-                                  now,
-                                )}`
-                              : 'ว่าง'}
-                          </Text>
-                          <Button
-                            label={
-                              table.openSession ? 'เปิดรายละเอียด' : 'เปิดโต๊ะ'
-                            }
-                            variant={
-                              table.openSession ? 'secondary' : 'primary'
-                            }
-                            disabled={table.blocked}
-                            onPress={() => beginOpen(table)}
-                            fullWidth
-                          />
-                        </Card>
-                      );
-                    })}
-                </View>
-              </View>
-            ))
-          : null}
-        {!selectedSessionId &&
-        !openingTable &&
-        data &&
-        data.floor.tables.length === 0 ? (
-          <Card>
-            <Text style={[typography.body, { color: colors.textMuted }]}>
-              ยังไม่มีโต๊ะ Board Game ในสาขานี้ กรุณาตั้งค่าผังจาก Admin
-            </Text>
-          </Card>
-        ) : null}
       </ScrollView>
     </ScreenContainer>
   );
@@ -2414,6 +2884,119 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   horizontalList: { gap: 8, paddingVertical: 4 },
-  tableGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  tableCard: { width: '48%', minWidth: 156, gap: 8 },
+  floorSummaryRow: { flexDirection: 'row', gap: 8 },
+  floorSummaryCard: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 14,
+    gap: 4,
+  },
+  floorSummaryLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  summaryLabelPhone: { fontSize: 11, fontWeight: '700', lineHeight: 15 },
+  summaryCountPhone: {
+    fontSize: 25,
+    fontWeight: '700',
+    lineHeight: 29,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  statusGlyph: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusGlyphText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 12,
+  },
+  phoneZoneRow: { gap: 8, paddingRight: 16 },
+  phoneZoneButton: {
+    minHeight: 40,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabletZoneButton: {
+    minHeight: 48,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  zoneBullet: { width: 8, height: 8, borderRadius: 4 },
+  floorTableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  floorTableCard: {
+    minWidth: 0,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    padding: 14,
+    gap: 7,
+  },
+  floorTableCardTablet: { minHeight: 208, padding: 16 },
+  floorCardHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  floorStatusBadge: {
+    maxWidth: '48%',
+    minHeight: 30,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  floorStatusDot: { fontSize: 12, fontWeight: '800', lineHeight: 16 },
+  floorCardFooter: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  floorCardFooterTablet: {
+    marginTop: 'auto',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  floorPhoneAction: { minWidth: 96, paddingHorizontal: 14 },
+  floorTabletShell: { flex: 1, flexDirection: 'row' },
+  floorSidebar: {
+    width: TABLET_SIDEBAR_WIDTH,
+    flexShrink: 0,
+    borderRightWidth: StyleSheet.hairlineWidth,
+  },
+  floorSidebarContent: { padding: 16 },
+  floorSidebarZones: { marginTop: 24, gap: 6 },
+  sidebarDivider: { height: StyleSheet.hairlineWidth, marginVertical: 20 },
+  floorLegend: { gap: 12 },
+  floorLegendRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  legendDot: { width: 12, height: 12, borderRadius: 6 },
+  floorTabletMain: { flex: 1 },
+  floorTabletHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  floorRefresh: {
+    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

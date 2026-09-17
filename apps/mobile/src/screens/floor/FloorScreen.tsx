@@ -28,6 +28,7 @@ import {
   useResponsive,
 } from '../../theme/useResponsive';
 import type { FloorStackParamList } from '../../navigation/types';
+import { getAppNavigation } from '../../navigation/parentNavigation';
 
 type Props = NativeStackScreenProps<FloorStackParamList, 'Floor'>;
 type FloorTable =
@@ -217,7 +218,7 @@ export default function FloorScreen({ navigation }: Props) {
       const opened = response.data?.bmsPosRestaurantOpenCheck.check;
       if (!opened) throw new Error('เปิดบิลกลับบ้านไม่สำเร็จ');
       await query.refetch();
-      navigation.navigate('CheckDetail', {
+      getAppNavigation(navigation).navigate('CheckDetail', {
         checkId: opened.id,
         serviceMode: 'TAKEAWAY',
       });
@@ -236,7 +237,7 @@ export default function FloorScreen({ navigation }: Props) {
       setBillPickerTable(table);
       return;
     }
-    navigation.navigate('CheckDetail', {
+    getAppNavigation(navigation).navigate('CheckDetail', {
       tableId: table.id,
       checkId: table.checks[0]?.id,
       serviceMode: 'DINE_IN',
@@ -504,7 +505,7 @@ export default function FloorScreen({ navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`บิลกลับบ้าน ${check.id.slice(0, 8)}`}
                 onPress={() =>
-                  navigation.navigate('CheckDetail', {
+                  getAppNavigation(navigation).navigate('CheckDetail', {
                     checkId: check.id,
                     serviceMode: 'TAKEAWAY',
                   })
@@ -678,7 +679,7 @@ export default function FloorScreen({ navigation }: Props) {
                     const tableId = billPickerTable?.id;
                     setBillPickerTable(null);
                     if (!tableId) return;
-                    navigation.navigate('CheckDetail', {
+                    getAppNavigation(navigation).navigate('CheckDetail', {
                       tableId,
                       checkId: check.id,
                       serviceMode: 'DINE_IN',

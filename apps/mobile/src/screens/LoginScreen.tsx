@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { useMutation, useQuery } from '@apollo/client';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -41,6 +49,7 @@ export default function LoginScreen({ navigation }: Props) {
     VerifyPosCashierDocument,
   );
   const [cashierId, setCashierId] = useState<string | null>(null);
+  const [cashierPickerOpen, setCashierPickerOpen] = useState(false);
   const [pin, setPin] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -72,54 +81,94 @@ export default function LoginScreen({ navigation }: Props) {
     isPosPinLengthValid(pin) && !!branch && !!cashier && !loading && !verifying;
 
   const branchCard = (
-    <Card style={{ marginBottom: spacing.md }}>
-      <Text
-        style={[
-          typography.captionStrong,
-          { color: colors.textMuted, marginBottom: spacing.sm },
-        ]}
-      >
-        สาขา
-      </Text>
-      <View style={styles.chipWrap}>
-        {branch ? (
-          <Chip label={branch.name} selected onPress={() => undefined} />
-        ) : (
-          <Text style={[typography.body, { color: colors.textMuted }]}>
-            {loading
-              ? 'กำลังอ่านสาขาจากเครื่อง…'
-              : 'ยังอ่านสาขาจากเครื่องไม่ได้'}
+    <Card
+      style={{
+        marginBottom: spacing.md,
+        padding: isTablet ? spacing.xl : spacing.lg,
+      }}
+    >
+      <View style={styles.fieldValueRow}>
+        <View style={styles.fieldText}>
+          <Text
+            style={[
+              typography.captionStrong,
+              { color: colors.textMuted, marginBottom: spacing.sm },
+            ]}
+          >
+            สาขา
           </Text>
-        )}
+          {branch ? (
+            <Text style={[typography.subtitle, { color: colors.text }]}>
+              {branch.name}
+            </Text>
+          ) : (
+            <Text style={[typography.body, { color: colors.textMuted }]}>
+              {loading
+                ? 'กำลังอ่านสาขาจากเครื่อง…'
+                : 'ยังอ่านสาขาจากเครื่องไม่ได้'}
+            </Text>
+          )}
+        </View>
+        {branch ? (
+          <View style={[styles.readOnlyHint, { gap: spacing.sm }]}>
+            <LockIcon color={colors.textMuted} />
+            <Text
+              style={[typography.caption, { color: colors.textMuted }]}
+              numberOfLines={2}
+            >
+              กำหนดจากเครื่องนี้
+            </Text>
+          </View>
+        ) : null}
       </View>
     </Card>
   );
 
   const cashierCard = (
-    <Card style={{ marginBottom: spacing.md }}>
-      <Text
-        style={[
-          typography.captionStrong,
-          { color: colors.textMuted, marginBottom: spacing.sm },
-        ]}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`เลือกผู้ปฏิบัติงาน${
+        cashier ? ` ปัจจุบัน ${cashier.name}` : ''
+      }`}
+      accessibilityState={{ disabled: cashiers.length === 0 }}
+      disabled={cashiers.length === 0}
+      onPress={() => setCashierPickerOpen(true)}
+      style={({ pressed }) => ({ opacity: pressed ? 0.82 : 1 })}
+    >
+      <Card
+        style={{
+          marginBottom: spacing.md,
+          padding: isTablet ? spacing.xl : spacing.lg,
+        }}
       >
-        ผู้ปฏิบัติงาน
-      </Text>
-      <View style={styles.chipWrap}>
-        {cashiers.map(item => (
-          <Chip
-            key={item.id}
-            label={item.name}
-            selected={item.id === cashier.id}
-            onPress={() => {
-              setCashierId(item.id);
-              setPin('');
-              setLoginError(null);
-            }}
-          />
-        ))}
-      </View>
-    </Card>
+        <Text
+          style={[
+            typography.captionStrong,
+            { color: colors.textMuted, marginBottom: spacing.sm },
+          ]}
+        >
+          ผู้ปฏิบัติงาน
+        </Text>
+        <View style={styles.operatorRow}>
+          <Text
+            style={[
+              typography.subtitle,
+              { color: cashier ? colors.text : colors.textMuted, flex: 1 },
+            ]}
+            numberOfLines={1}
+          >
+            {cashier?.name ??
+              (loading ? 'กำลังโหลดรายชื่อ…' : 'ยังไม่มีผู้ปฏิบัติงาน')}
+          </Text>
+          {cashiers.length > 0 ? <ChevronDownIcon color={colors.text} /> : null}
+        </View>
+        {cashiers.length > 0 ? (
+          <Text style={[typography.body, { color: colors.textMuted }]}>
+            แตะเพื่อเปลี่ยนผู้ปฏิบัติงาน
+          </Text>
+        ) : null}
+      </Card>
+    </Pressable>
   );
 
   const pinCard = (
@@ -209,61 +258,68 @@ export default function LoginScreen({ navigation }: Props) {
     </Card>
   );
 
+  const title = (
+    <Text
+      style={[
+        isTablet ? typography.displayLg : typography.title,
+        { color: colors.text, marginBottom: spacing.md },
+      ]}
+    >
+      เข้าใช้งานเครื่องขาย
+    </Text>
+  );
+
+  const deviceStrip = (
+    <DeviceStrip onPress={() => navigation.navigate('Settings')} />
+  );
+
   return (
-    <ScreenContainer>
-      <Text
-        style={[
-          typography.title,
-          { color: colors.text, marginBottom: spacing.md },
-        ]}
-      >
-        เข้าใช้งานเครื่องขาย
-      </Text>
-
-      {/* แถบนี้ตอบคำถาม "เครื่องนี้เป็นของร้านไหน" ตั้งแต่ก่อนใครกดอะไร และเป็นทางเดียว
-          ที่เข้าหน้าตั้งค่าได้ — วางไว้ที่นี่เพราะการจับคู่เกิดครั้งเดียวตอนตั้งเครื่อง
-          ไม่ใช่งานประจำวัน จึงไม่ควรกินที่บนแถบแท็บคู่กับ 4 จอที่ใช้ทุกวัน */}
-      <DeviceStrip onPress={() => navigation.navigate('Settings')} />
-
-      {/* แท็บเล็ต: เลือกสาขา/คนขายอยู่ซ้าย · แป้น PIN อยู่ขวา — ใช้ความกว้างจริงของจอแทนที่จะบีบ
-          เป็นคอลัมน์ขนาดมือถือกลางจอแล้วเหลือที่ว่างครึ่งล่างทั้งแผ่น */}
+    <ScreenContainer
+      style={
+        isTablet
+          ? { paddingHorizontal: spacing.xxl, paddingVertical: spacing.xl }
+          : undefined
+      }
+    >
       {isTablet ? (
-        <View style={[styles.panes, { gap: spacing.lg }]}>
-          <View style={{ flex: 1 }}>
+        <View style={[styles.panes, { gap: spacing.xxl }]}>
+          <View style={styles.identityPane}>
+            {title}
+            {deviceStrip}
             {branchCard}
             {cashierCard}
-            <Card>
-              <Text
-                style={[
-                  typography.captionStrong,
-                  { color: colors.textMuted, marginBottom: spacing.sm },
-                ]}
-              >
-                กำลังจะเข้าใช้งาน
-              </Text>
-              <Text style={[typography.subtitle, { color: colors.text }]}>
-                {cashier?.name ?? 'ยังไม่ได้เลือกพนักงาน'}
-              </Text>
-              <Text style={[typography.body, { color: colors.textMuted }]}>
-                {branch?.name ?? 'ไม่ทราบสาขา'} · {branch?.code ?? '—'} ·{' '}
-                {cashier?.role ?? '—'}
-              </Text>
-            </Card>
           </View>
-          <View style={{ width: 420 }}>{pinCard}</View>
+          <View style={styles.pinPane}>{pinCard}</View>
         </View>
       ) : (
-        <ScrollView
-          style={styles.phoneScroll}
-          contentContainerStyle={styles.phoneScrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator
-        >
-          {branchCard}
-          {cashierCard}
-          {pinCard}
-        </ScrollView>
+        <>
+          {title}
+          {deviceStrip}
+          <ScrollView
+            style={styles.phoneScroll}
+            contentContainerStyle={styles.phoneScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {branchCard}
+            {cashierCard}
+            {pinCard}
+          </ScrollView>
+        </>
       )}
+
+      <CashierPickerModal
+        visible={cashierPickerOpen}
+        cashiers={cashiers}
+        selectedId={cashier?.id ?? null}
+        onClose={() => setCashierPickerOpen(false)}
+        onSelect={item => {
+          setCashierId(item.id);
+          setPin('');
+          setLoginError(null);
+          setCashierPickerOpen(false);
+        }}
+      />
     </ScreenContainer>
   );
 }
@@ -272,6 +328,7 @@ export default function LoginScreen({ navigation }: Props) {
 // (เก็บ token ไว้ ≠ token ยังใช้ได้ · ตัวที่บอกได้คือ GraphQL bmsPosSession เท่านั้น)
 function DeviceStrip({ onPress }: { onPress: () => void }) {
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
+  const { isTablet } = useResponsive();
   const { status, target, verify } = useDevice();
 
   let label: string;
@@ -283,16 +340,7 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
     label = 'ยังไม่ได้จับคู่เครื่องกับร้าน — แตะเพื่อตั้งค่า';
     tone = 'bad';
   } else if (verify.kind === 'OK') {
-    const b = verify.info.branchName ?? 'ไม่ทราบสาขา';
-    const storeType =
-      verify.info.businessArchetype === 'restaurant'
-        ? 'ร้านอาหาร'
-        : verify.info.businessArchetype === 'pharmacy'
-        ? 'ร้านขายยา'
-        : 'ร้านทั่วไป';
-    label = `${storeType} · ${b} · เครื่อง ${
-      verify.info.deviceCode
-    } · ${displayHost(target.serverUrl)}`;
+    label = 'จับคู่เครื่องแล้ว';
     tone = 'ok';
   } else if (verify.kind === 'REJECTED') {
     label = `token ถูกยกเลิก — แตะเพื่อจับคู่ใหม่ (${displayHost(
@@ -343,7 +391,7 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
       style={({ pressed }) => [
         styles.strip,
         {
-          minHeight: minTouchTarget,
+          minHeight: Math.max(minTouchTarget, isTablet ? 64 : 52),
           borderRadius: radius.md,
           backgroundColor: bg,
           paddingHorizontal: spacing.md,
@@ -352,65 +400,266 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
         },
       ]}
     >
+      {tone === 'ok' ? (
+        <View style={[styles.checkCircle, { backgroundColor: fg }]}>
+          <Text style={[styles.checkMark, { color: colors.primaryText }]}>
+            ✓
+          </Text>
+        </View>
+      ) : null}
       <Text
         style={[typography.captionStrong, { color: fg, flex: 1 }]}
         numberOfLines={2}
       >
         {label}
       </Text>
-      <Text style={[typography.captionStrong, { color: fg }]}>ตั้งค่า ›</Text>
+      <Text style={[typography.captionStrong, { color: fg }]}>ตั้งค่า</Text>
     </Pressable>
   );
 }
 
-function Chip({
-  label,
-  selected,
-  onPress,
+function CashierPickerModal({
+  visible,
+  cashiers,
+  selectedId,
+  onClose,
+  onSelect,
 }: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
+  visible: boolean;
+  cashiers: PosSessionCashier[];
+  selectedId: string | null;
+  onClose: () => void;
+  onSelect: (cashier: PosSessionCashier) => void;
 }) {
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
+  const { isTablet } = useResponsive();
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={{
-        minHeight: minTouchTarget,
-        justifyContent: 'center',
-        paddingHorizontal: spacing.lg,
-        borderRadius: radius.pill,
-        backgroundColor: selected ? colors.primary : colors.surface2,
-        borderWidth: selected ? 0 : StyleSheet.hairlineWidth,
-        borderColor: colors.border,
-      }}
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      onRequestClose={onClose}
     >
-      <Text
+      <View
         style={[
-          typography.body,
-          { color: selected ? colors.primaryText : colors.text },
+          styles.pickerOverlay,
+          {
+            backgroundColor: colors.overlay,
+            justifyContent: isTablet ? 'center' : 'flex-end',
+            padding: isTablet ? spacing.xl : 0,
+          },
         ]}
       >
-        {label}
-      </Text>
-    </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ปิดรายการผู้ปฏิบัติงาน"
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+        <View
+          accessibilityViewIsModal
+          accessibilityLabel="เลือกผู้ปฏิบัติงาน"
+          style={[
+            styles.pickerPanel,
+            {
+              width: isTablet ? 520 : '100%',
+              maxHeight: isTablet ? '76%' : '72%',
+              padding: spacing.xl,
+              borderRadius: isTablet ? radius.lg : 0,
+              borderTopLeftRadius: radius.lg,
+              borderTopRightRadius: radius.lg,
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+            },
+          ]}
+        >
+          <View style={styles.pickerHeader}>
+            <View style={styles.pickerHeaderText}>
+              <Text style={[typography.title, { color: colors.text }]}>
+                เลือกผู้ปฏิบัติงาน
+              </Text>
+              <Text style={[typography.body, { color: colors.textMuted }]}>
+                เลือกชื่อของคุณ แล้วกรอก PIN เพื่อยืนยัน
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="ปิด"
+              onPress={onClose}
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.closeButton,
+                {
+                  minWidth: minTouchTarget,
+                  minHeight: minTouchTarget,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.surface2,
+                  opacity: pressed ? 0.72 : 1,
+                },
+              ]}
+            >
+              <Text style={[typography.subtitle, { color: colors.text }]}>
+                ×
+              </Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            style={{ marginTop: spacing.lg }}
+            contentContainerStyle={{ gap: spacing.sm }}
+            showsVerticalScrollIndicator={false}
+          >
+            {cashiers.map(item => {
+              const selected = item.id === selectedId;
+              return (
+                <Pressable
+                  key={item.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${item.name} ${item.role}`}
+                  onPress={() => onSelect(item)}
+                  style={({ pressed }) => [
+                    styles.cashierOption,
+                    {
+                      minHeight: Math.max(minTouchTarget, 60),
+                      paddingHorizontal: spacing.lg,
+                      paddingVertical: spacing.md,
+                      borderRadius: radius.md,
+                      borderColor: selected ? colors.primary : colors.border,
+                      backgroundColor: selected
+                        ? colors.surface2
+                        : colors.surface,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.fieldText}>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      {item.name}
+                    </Text>
+                    <Text
+                      style={[typography.caption, { color: colors.textMuted }]}
+                    >
+                      {item.role}
+                    </Text>
+                  </View>
+                  {selected ? (
+                    <View
+                      style={[
+                        styles.optionCheck,
+                        { backgroundColor: colors.primary },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.optionCheckText,
+                          { color: colors.primaryText },
+                        ]}
+                      >
+                        ✓
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function LockIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+      <Path
+        d="M5.5 7V5.5a3.5 3.5 0 0 1 7 0V7"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+      />
+      <Rect x={3.5} y={7} width={11} height={8.5} rx={2} fill={color} />
+      <Path
+        d="M9 10v2.4"
+        stroke="white"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function ChevronDownIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+      <Path
+        d="m5.5 8 5.5 5.5L16.5 8"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
 const styles = StyleSheet.create({
-  // alignItems: center — ทั้งสองแผงหุ้มเนื้อหาแล้วอยู่กลางแนวตั้ง ไม่ยืดเต็มความสูงจอไอแพด
-  panes: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  // ห่อบรรทัดแทน FlatList แนวนอน — บนแท็บเล็ตมีที่พอให้เห็นทุกตัวเลือกพร้อมกัน
-  // ไม่ต้องเลื่อนหาชื่อตัวเองตอนเข้ากะ
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  // รายชื่อพนักงานอาจยาวเกินจอมือถือ ต้องให้ทั้งรายชื่อและการ์ด PIN อยู่ใน scroll เดียวกัน
-  // flexGrow ทำให้พื้นที่เลื่อนกินความสูงที่เหลือของจอแม้รายชื่อมีเพียงไม่กี่คน
+  panes: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityPane: { flex: 0.92, minWidth: 0 },
+  pinPane: { flex: 1.08, minWidth: 0 },
+  fieldValueRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  fieldText: { flex: 1, minWidth: 0 },
+  readOnlyHint: {
+    maxWidth: '48%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  operatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
   phoneScroll: { flex: 1 },
   phoneScrollContent: { flexGrow: 1, paddingBottom: 24 },
   strip: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkMark: { fontSize: 20, lineHeight: 24, fontWeight: '700' },
   pinRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   pinDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
+  pickerOverlay: { flex: 1, alignItems: 'center' },
+  pickerPanel: { borderWidth: StyleSheet.hairlineWidth },
+  pickerHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  pickerHeaderText: { flex: 1, gap: 4 },
+  closeButton: { alignItems: 'center', justifyContent: 'center' },
+  cashierOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  optionCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionCheckText: { fontSize: 15, lineHeight: 18, fontWeight: '700' },
 });

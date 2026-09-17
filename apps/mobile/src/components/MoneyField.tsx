@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
+import { StyleProp, StyleSheet, TextInput, TextStyle } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
   value: number;
   onChange: (value: number) => void;
   editable?: boolean;
+  style?: StyleProp<TextStyle>;
 }
 
 /**
@@ -21,7 +22,13 @@ interface Props {
  * จึงเก็บ "ข้อความที่คนกำลังพิมพ์" ไว้ในตัวเอง แล้วรายงานออกไปเป็นตัวเลขเท่านั้น
  * และ sync กลับจาก prop เฉพาะตอนที่ค่าข้างนอกไม่ตรงกับสิ่งที่พิมพ์ไว้จริง ๆ
  */
-export function MoneyField({ label, value, onChange, editable = true }: Props) {
+export function MoneyField({
+  label,
+  value,
+  onChange,
+  editable = true,
+  style,
+}: Props) {
   const { colors, typography } = useTheme();
   const [text, setText] = useState(() => (value ? String(value) : ''));
 
@@ -56,6 +63,7 @@ export function MoneyField({ label, value, onChange, editable = true }: Props) {
         styles.input,
         typography.body,
         { borderColor: colors.border, color: colors.text },
+        style,
       ]}
     />
   );

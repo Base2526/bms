@@ -29,6 +29,7 @@ import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx
 import { parseScaleBarcode } from "./barcode";
 import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
+import { normalizePosReceiptName } from "./posReceiptDisplay";
 import { type PaymentMethod } from "./payments";
 import { orderRefundPaymentsForAllocation } from "@/lib/pos/refundAllocation";
 import { recordMovement, recordOrderMovements } from "./movements";
@@ -4104,7 +4105,7 @@ export async function listRecentPosSales(
     id: number;
     order_id: string;
     product_sku: string;
-    product_name: string;
+    product_name: string | null;
     size: string;
     pack_code: string | null;
     pack_qty: number | null;
@@ -4148,7 +4149,7 @@ export async function listRecentPosSales(
     const mapped = {
       orderItemId: line.id,
       sku: line.product_sku,
-      receiptName: line.product_name,
+      receiptName: normalizePosReceiptName(line.product_name, line.product_sku),
       size: line.size,
       packCode: line.pack_code ?? "BASE",
       baseQty: Math.max(1, Math.round(line.qty / Math.max(1, packQty))),
@@ -4337,7 +4338,7 @@ export async function listRecentPosSales(
     existing.push({
       orderItemId: Number(row.order_item_id),
       sku: String(row.product_sku),
-      receiptName: String(row.product_name),
+      receiptName: normalizePosReceiptName(row.product_name, row.product_sku),
       size: String(row.size),
       packQty: Number(row.pack_qty),
       refundAmount: Number(row.refund_amount),

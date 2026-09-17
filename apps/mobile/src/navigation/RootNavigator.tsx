@@ -8,7 +8,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { LinkingOptions } from '@react-navigation/native';
 import LoginScreen from '../screens/LoginScreen';
 import DeviceSettingsScreen from '../screens/settings/DeviceSettingsScreen';
-import { MainTabs } from './MainTabs';
+import { AppNavigator } from './AppNavigator';
 import { useTheme } from '../theme/ThemeProvider';
 import { useDevice } from '../state/DeviceContext';
 import { useSession } from '../state/SessionContext';
@@ -59,7 +59,7 @@ export function RootNavigator() {
     >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="Main" component={AppNavigator} />
         <Stack.Screen name="Settings" component={DeviceSettingsScreen} />
       </Stack.Navigator>
     </NavigationContainer>

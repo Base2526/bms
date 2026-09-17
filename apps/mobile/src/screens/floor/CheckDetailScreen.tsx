@@ -41,9 +41,9 @@ import { useSession } from '../../state/SessionContext';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import type { PosMenuItem } from '../../types/pos';
-import type { FloorStackParamList } from '../../navigation/types';
+import type { AppStackParamList } from '../../navigation/types';
 
-type Props = NativeStackScreenProps<FloorStackParamList, 'CheckDetail'>;
+type Props = NativeStackScreenProps<AppStackParamList, 'CheckDetail'>;
 type CheckAction = 'GUESTS' | 'MOVE' | 'SPLIT' | 'MERGE' | 'CANCEL';
 type MobilePane = 'MENU' | 'ORDER';
 
@@ -504,17 +504,11 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         }
         onPress={() => {
           if (!current) return;
-          navigation
-            .getParent()
-            ?.getParent<any>()
-            ?.navigate('SellTab', {
-              screen: 'Checkout',
-              params: {
-                source: 'restaurant',
-                tableId: route.params.tableId,
-                checkId: current.id,
-              },
-            });
+          navigation.navigate('Checkout', {
+            source: 'restaurant',
+            tableId: route.params.tableId,
+            checkId: current.id,
+          });
         }}
       />
     </Card>

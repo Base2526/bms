@@ -8,15 +8,39 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useSales } from '../../state/SalesContext';
 import { paymentMethodLabel } from '../../lib/paymentMath';
-import type { SellStackParamList } from '../../navigation/types';
+import type { AppStackParamList } from '../../navigation/types';
 
-type Props = NativeStackScreenProps<SellStackParamList, 'Receipt'>;
+type Props = NativeStackScreenProps<AppStackParamList, 'Receipt'>;
 
 export default function ReceiptScreen({ route, navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const { findSale } = useSales();
   const sale = findSale(route.params.saleId);
+  const leaveReceipt = () => {
+    if (route.params.source === 'board_game' && navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'Tabs',
+          params: {
+            screen:
+              route.params.source === 'restaurant' ? 'FloorTab' : 'SellTab',
+          },
+        },
+      ],
+    });
+  };
+  const leaveLabel =
+    route.params.source === 'board_game'
+      ? 'กลับรายละเอียดโต๊ะ'
+      : route.params.source === 'restaurant'
+      ? 'กลับผังโต๊ะ'
+      : 'ขายรายการใหม่';
 
   if (!sale) {
     return (
@@ -24,7 +48,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         <Text style={[typography.title, { color: colors.danger }]}>
           ไม่พบใบเสร็จ
         </Text>
-        <Button label="กลับไปขาย" onPress={() => navigation.navigate('Menu')} />
+        <Button label={leaveLabel} onPress={leaveReceipt} />
       </ScreenContainer>
     );
   }
@@ -112,11 +136,11 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         onPress={() => navigation.navigate('SalesHistory')}
       />
       <Button
-        label="ขายรายการใหม่"
-        accessibilityLabel="กลับไปเริ่มขายรายการใหม่"
+        label={leaveLabel}
+        accessibilityLabel={leaveLabel}
         fullWidth
         style={{ marginTop: spacing.sm }}
-        onPress={() => navigation.navigate('Menu')}
+        onPress={leaveReceipt}
       />
     </Card>
   );

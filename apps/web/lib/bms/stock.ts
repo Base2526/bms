@@ -12,7 +12,10 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { resolveDefaultLocationId, resolveDefaultLocationIdInTx } from "./locations";
+import {
+  resolveDefaultLocationId,
+  resolveDefaultLocationIdInTx,
+} from "./locations";
 import { recordMovement } from "./movements";
 import {
   findAlternativeProducts,
@@ -24,7 +27,13 @@ import { getVariantBasePrice, listSellablePacksForSize } from "./productPacks";
 
 export type StockAlternative = Pick<
   SellableProduct,
-  "sku" | "name" | "price" | "category" | "brand" | "availableTotal" | "availableSizes"
+  | "sku"
+  | "name"
+  | "price"
+  | "category"
+  | "brand"
+  | "availableTotal"
+  | "availableSizes"
 >;
 
 /**
@@ -105,8 +114,98 @@ export function findSize(text: string): string | null {
 
 export type ProductRow = { sku: string; name: string; price: string };
 
+export type BranchStockOverview = {
+  sellableSkuCount: number;
+  lowStockCount: number;
+  lowStock: Array<{
+    sku: string;
+    name: string;
+    size: string;
+    available: number;
+    reorderPoint: number;
+  }>;
+};
+
+/**
+ * ภาพรวมสต็อกที่ขายได้ของสาขาเครื่อง POS เท่านั้น
+ *
+ * RECIPE/NON_STOCK มี variant ใน catalog แต่สต็อกของ SKU หลักเป็นศูนย์โดยตั้งใจ จึงห้ามเอา
+ * มาปนใน "ใกล้หมด" ไม่เช่นนั้นร้านอาหาร/บอร์ดเกมจะเห็นเมนูปรุงสดเป็นของขาดทุกชิ้น
+ * locationId มาจาก device scope ที่ adapter ยืนยันแล้ว และทุก statement ยังผูก tenant ซ้ำ
+ */
+export async function getBranchStockOverview(
+  tenantId: string,
+  locationId: string,
+  limit = 8,
+): Promise<BranchStockOverview> {
+  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 50);
+  const inventoryCte = `
+    FROM bms_inventory i
+    JOIN bms_products p
+      ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+    LEFT JOIN bms_product_stock_policies policy
+      ON policy.tenant_id = i.tenant_id AND policy.product_sku = i.product_sku
+   WHERE i.tenant_id = $1
+     AND i.location_id = $2
+     AND p.active
+     AND EXISTS (
+       SELECT 1
+         FROM bms_product_sales_surfaces surface
+        WHERE surface.tenant_id = p.tenant_id
+          AND surface.product_sku = p.sku
+          AND surface.surface = 'RETAIL_POS'
+          AND surface.enabled
+     )
+     AND COALESCE(policy.stock_policy, 'DIRECT') NOT IN ('RECIPE', 'NON_STOCK')`;
+  const [summary, lowStock] = await Promise.all([
+    query<{ sellable_sku_count: number; low_stock_count: number }>(
+      `SELECT
+         COUNT(DISTINCT i.product_sku)
+           FILTER (WHERE (i.current_stock - i.reserved_stock) > 0)::int
+           AS sellable_sku_count,
+         COUNT(*)
+           FILTER (WHERE (i.current_stock - i.reserved_stock) <= i.reorder_point)::int
+           AS low_stock_count
+       ${inventoryCte}`,
+      [tenantId, locationId],
+    ),
+    query<{
+      sku: string;
+      name: string;
+      size: string;
+      available: number;
+      reorder_point: number;
+    }>(
+      `SELECT i.product_sku AS sku,
+              p.name,
+              i.size,
+              (i.current_stock - i.reserved_stock)::int AS available,
+              i.reorder_point::int AS reorder_point
+       ${inventoryCte}
+        AND (i.current_stock - i.reserved_stock) <= i.reorder_point
+      ORDER BY (i.current_stock - i.reserved_stock) ASC, p.name, i.size
+      LIMIT $3`,
+      [tenantId, locationId, boundedLimit],
+    ),
+  ]);
+  return {
+    sellableSkuCount: Number(summary.rows[0]?.sellable_sku_count ?? 0),
+    lowStockCount: Number(summary.rows[0]?.low_stock_count ?? 0),
+    lowStock: lowStock.rows.map((row) => ({
+      sku: row.sku,
+      name: row.name,
+      size: row.size,
+      available: Number(row.available),
+      reorderPoint: Number(row.reorder_point),
+    })),
+  };
+}
+
 /** Resolve against the shared active catalog search (name/SKU/barcode/category/brand/aliases). */
-export async function resolveProduct(tenantId: string, text: string): Promise<ProductRow | null> {
+export async function resolveProduct(
+  tenantId: string,
+  text: string,
+): Promise<ProductRow | null> {
   const product = await resolveSellableProduct(tenantId, text);
   return product
     ? { sku: product.sku, name: product.name, price: String(product.price) }
@@ -121,15 +220,17 @@ export async function checkStock(
   tenantId: string,
   productText: string,
   size: string | null,
-  requestedLocationId?: string | null
+  requestedLocationId?: string | null,
 ): Promise<StockResult> {
   const requested = requestedLocationId?.trim() || null;
   const locationId = requested
-    ? (await query<{ id: string }>(
-        `SELECT id FROM bms_locations
+    ? (
+        await query<{ id: string }>(
+          `SELECT id FROM bms_locations
           WHERE tenant_id = $1 AND id::text = $2 AND active`,
-        [tenantId, requested]
-      )).rows[0]?.id
+          [tenantId, requested],
+        )
+      ).rows[0]?.id
     : await resolveDefaultLocationId(tenantId);
   if (!locationId) throw new Error("INVALID_OR_INACTIVE_LOCATION");
   const product = await resolveProduct(tenantId, productText);
@@ -143,7 +244,10 @@ export async function checkStock(
     return { status: "NOT_FOUND", query: productText, alternatives: items };
   }
 
-  const menuState = await query<{ stock_policy: string; temporarily_unavailable: boolean }>(
+  const menuState = await query<{
+    stock_policy: string;
+    temporarily_unavailable: boolean;
+  }>(
     `SELECT COALESCE(policy.stock_policy, 'DIRECT') AS stock_policy,
             EXISTS (
               SELECT 1 FROM bms_product_menu_unavailability unavailable
@@ -156,12 +260,18 @@ export async function checkStock(
        LEFT JOIN bms_product_stock_policies policy
          ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
       WHERE p.tenant_id = $1 AND p.sku = $2`,
-    [tenantId, product.sku, locationId]
+    [tenantId, product.sku, locationId],
   );
   const policy = menuState.rows[0]?.stock_policy ?? "DIRECT";
   if (menuState.rows[0]?.temporarily_unavailable) {
-    return { status: "SOLD_OUT_TODAY", availability: "SOLD_OUT_TODAY", sku: product.sku,
-      name: product.name, price: Number(product.price), size };
+    return {
+      status: "SOLD_OUT_TODAY",
+      availability: "SOLD_OUT_TODAY",
+      sku: product.sku,
+      name: product.name,
+      price: Number(product.price),
+      size,
+    };
   }
   if (policy === "NON_STOCK" || policy === "RECIPE") {
     if (!size) {
@@ -183,14 +293,30 @@ export async function checkStock(
             AND shared.size IS NULL AND shared.is_base AND shared.active
           WHERE variant.tenant_id = $1 AND variant.product_sku = $2 AND variant.active
           ORDER BY variant.sort_order, variant.code`,
-        [tenantId, product.sku]
+        [tenantId, product.sku],
       );
-      return { status: "MENU_SIZE_REQUIRED", sku: product.sku, name: product.name,
-        price: Number(product.price), sizes: variants.rows.map((row) => ({ size: row.size, price: Number(row.price) })) };
+      return {
+        status: "MENU_SIZE_REQUIRED",
+        sku: product.sku,
+        name: product.name,
+        price: Number(product.price),
+        sizes: variants.rows.map((row) => ({
+          size: row.size,
+          price: Number(row.price),
+        })),
+      };
     }
-    const price = await getVariantBasePrice(tenantId, product.sku, size) ?? Number(product.price);
-    return { status: "AVAILABLE_TO_ORDER", availability: "AVAILABLE", sku: product.sku,
-      name: product.name, price, size };
+    const price =
+      (await getVariantBasePrice(tenantId, product.sku, size)) ??
+      Number(product.price);
+    return {
+      status: "AVAILABLE_TO_ORDER",
+      availability: "AVAILABLE",
+      sku: product.sku,
+      name: product.name,
+      price,
+      size,
+    };
   }
 
   if (!size) {
@@ -207,7 +333,7 @@ export async function checkStock(
           AND shared.size IS NULL AND shared.is_base AND shared.active
         WHERE i.tenant_id = $2 AND i.location_id = $3 AND i.product_sku = $1
         ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size)`,
-      [product.sku, tenantId, locationId]
+      [product.sku, tenantId, locationId],
     );
     const prices = res.rows.map((row) => Number(row.price));
     return {
@@ -215,17 +341,23 @@ export async function checkStock(
       sku: product.sku,
       name: product.name,
       price: prices.length ? Math.min(...prices) : Number(product.price),
-      sizes: res.rows.map((r) => ({ size: r.size, available: Number(r.available), price: Number(r.price) })),
+      sizes: res.rows.map((r) => ({
+        size: r.size,
+        available: Number(r.available),
+        price: Number(r.price),
+      })),
     };
   }
 
-  const price = await getVariantBasePrice(tenantId, product.sku, size) ?? Number(product.price);
+  const price =
+    (await getVariantBasePrice(tenantId, product.sku, size)) ??
+    Number(product.price);
 
   const res = await query<{ available: number }>(
     `SELECT (current_stock - reserved_stock) AS available
        FROM bms_inventory
       WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
-    [product.sku, size, tenantId, locationId]
+    [product.sku, size, tenantId, locationId],
   );
   const available = Number(res.rows[0]?.available ?? 0);
   if (available <= 0) {
@@ -235,9 +367,14 @@ export async function checkStock(
            FROM bms_inventory
           WHERE tenant_id = $2 AND location_id = $3 AND product_sku = $1
           ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size), size`,
-        [product.sku, tenantId, locationId]
+        [product.sku, tenantId, locationId],
       ),
-      findAlternativeProducts(tenantId, { sku: product.sku, size, locationId, limit: 3 }),
+      findAlternativeProducts(tenantId, {
+        sku: product.sku,
+        size,
+        locationId,
+        limit: 3,
+      }),
     ]);
     return {
       status: "OUT_OF_STOCK",
@@ -246,7 +383,10 @@ export async function checkStock(
       price,
       size,
       availableSizes: variants.rows
-        .map((variant) => ({ size: variant.size, available: Number(variant.available) }))
+        .map((variant) => ({
+          size: variant.size,
+          available: Number(variant.available),
+        }))
         .filter((variant) => variant.available > 0),
       alternatives: alternativeResult.alternatives,
     };
@@ -297,8 +437,20 @@ export async function checkStock(
 // =============================================================
 
 export type ReserveResult =
-  | { status: "RESERVED"; sku: string; size: string; qty: number; availableAfter: number }
-  | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
+  | {
+      status: "RESERVED";
+      sku: string;
+      size: string;
+      qty: number;
+      availableAfter: number;
+    }
+  | {
+      status: "INSUFFICIENT";
+      sku: string;
+      size: string;
+      available: number;
+      requested: number;
+    }
   | { status: "NOT_FOUND"; sku: string; size: string };
 
 export async function reserveStock(input: {
@@ -320,7 +472,9 @@ export async function reserveStock(input: {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-    const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
+    const locationId =
+      input.locationId ??
+      (await resolveDefaultLocationIdInTx(client, tenantId));
 
     // atomic reserve: สำเร็จเฉพาะเมื่อ available ของ "สาขานั้นของร้านนั้น" ยังพอ
     const upd = await client.query<{ available_after: number }>(
@@ -333,7 +487,7 @@ export async function reserveStock(input: {
           AND size = $4
           AND (current_stock - reserved_stock) >= $5
         RETURNING (current_stock - reserved_stock) AS available_after`,
-      [tenantId, locationId, sku, size, qty]
+      [tenantId, locationId, sku, size, qty],
     );
 
     if (upd.rowCount && upd.rows[0]) {
@@ -363,7 +517,7 @@ export async function reserveStock(input: {
       `SELECT (current_stock - reserved_stock) AS available
          FROM bms_inventory
         WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
-      [tenantId, locationId, sku, size]
+      [tenantId, locationId, sku, size],
     );
     await client.query("ROLLBACK");
     if (cur.rowCount === 0) return { status: "NOT_FOUND", sku, size };
@@ -375,7 +529,9 @@ export async function reserveStock(input: {
       requested: qty,
     };
   } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
     throw err;
   } finally {
     client.release();
@@ -398,7 +554,11 @@ export async function reserveStock(input: {
 // =============================================================
 
 /** สถานะบิลที่ยัง "ถือ" reserved_stock อยู่ — ปล่อยเมื่อ SHIPPED (ตัดของจริง) หรือ CANCELLED */
-export const RESERVATION_HOLDING_STATUSES = ["PENDING", "PAID", "PACKING"] as const;
+export const RESERVATION_HOLDING_STATUSES = [
+  "PENDING",
+  "PAID",
+  "PACKING",
+] as const;
 
 export type VariantReservationOrder = {
   orderId: string;
@@ -456,14 +616,14 @@ export async function listVariantReservations(
    * `null` = ทุกไซซ์ของ SKU นี้ — การ์ด "จองอยู่ N" ด้านบนเป็นยอดรวมทุกไซซ์ และเป็นตัวเลข
    * ที่คนกดก่อนเสมอ ถ้าตอบได้แค่รายไซซ์ คนที่กดตัวรวมจะไม่ได้คำตอบ
    */
-  size: string | null
+  size: string | null,
 ): Promise<VariantReservations> {
   const inv = await query<{ reserved_total: number }>(
     `SELECT COALESCE(SUM(reserved_stock), 0)::int AS reserved_total
        FROM bms_inventory
       WHERE tenant_id = $1 AND product_sku = $2
         AND ($3::text IS NULL OR size = $3)`,
-    [tenantId, sku, size]
+    [tenantId, sku, size],
   );
   const reservedTotal = Number(inv.rows[0]?.reserved_total ?? 0);
 
@@ -519,7 +679,13 @@ export async function listVariantReservations(
                l.name, l.branch_code, d.status
       ORDER BY MIN(o.created_at) DESC, v.size
       LIMIT $5`,
-    [tenantId, sku, size, [...RESERVATION_HOLDING_STATUSES], RESERVATION_LIST_LIMIT]
+    [
+      tenantId,
+      sku,
+      size,
+      [...RESERVATION_HOLDING_STATUSES],
+      RESERVATION_LIST_LIMIT,
+    ],
   );
 
   const orders: VariantReservationOrder[] = res.rows.map((r) => ({
@@ -537,12 +703,19 @@ export async function listVariantReservations(
     depositStatus: r.deposit_status,
     // pg คืน timestamptz เป็น Date — field เป็น String! ใน GraphQL ต้องแปลงที่นี่
     // ไม่งั้น serialize ได้ epoch number แล้วหน้าจอโชว์ Invalid Date
-    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    createdAt:
+      r.created_at instanceof Date
+        ? r.created_at.toISOString()
+        : String(r.created_at),
   }));
 
   // คิดยอดรวมจากทุกบิล ไม่ใช่จากรายการที่ถูกตัดด้วย LIMIT — ไม่งั้น "อธิบายไม่ได้"
   // จะพุ่งขึ้นเองเมื่อสินค้าตัวนั้นมีบิลค้างเกินเพดาน แล้วชี้ไปที่ปัญหาที่ไม่มีอยู่
-  const agg = await query<{ attributed_total: number; order_count: number; line_count: number }>(
+  const agg = await query<{
+    attributed_total: number;
+    order_count: number;
+    line_count: number;
+  }>(
     `SELECT COALESCE(SUM(g.qty), 0)::int    AS attributed_total,
             COUNT(DISTINCT g.order_id)::int AS order_count,
             COUNT(*)::int                   AS line_count
@@ -558,7 +731,7 @@ export async function listVariantReservations(
             AND o.status = ANY($4::text[])
           GROUP BY v.order_id, v.size
        ) g`,
-    [tenantId, sku, size, [...RESERVATION_HOLDING_STATUSES]]
+    [tenantId, sku, size, [...RESERVATION_HOLDING_STATUSES]],
   );
   const attributedTotal = Number(agg.rows[0]?.attributed_total ?? 0);
 
