@@ -208,15 +208,40 @@ The first operational release includes:
 11. Floor moves: relocating a party to a free table and merging two occupied tables, without touching any bill.
 12. Member passes: monthly unlimited or hour-bundle contracts that cover play time when a bill is frozen.
 13. Identity holds: an encrypted record of the card held while a game box is out, erased when it goes back.
+14. Walk-in queue: branch/service-day queue numbers, call/no-show/cancel states, table-fit visibility,
+    and atomic seating into the normal session path.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Advanced board-game analytics and reservations/waitlists are intentionally a later phase, as is
+Advanced board-game analytics and advance reservations are intentionally a later phase, as is
 automatic renewal of a member pass — renewing on a schedule needs a stored payment instrument this
 platform does not have, so today a pass is sold again by hand. They should extend the existing CRM
 and report domains instead of duplicating customer or payment records inside this module.
+
+### Walk-in queue (`9.99`)
+
+`bms_board_game_waitlist` owns only the time before a party receives a table. It is not a session,
+does not accrue play charges, and never reserves sellable stock. Queue numbers are scoped to a branch
+and its service day; an open row stays visible until staff seat, cancel, or mark it no-show.
+
+The queue is ordered by arrival, but seating is deliberately not strict FIFO: a free two-seat table
+cannot serve the six-person party at the head of the line. Both registers show compatible free tables
+while preserving arrival order and wait duration. An estimated table time comes from the current
+sessions' `expected_end_at` and is guidance, never a promise; guests may extend and merged seatings
+may contain several sessions.
+
+Seating a queue row locks it, opens the real board-game session through
+`openBoardGameSessionInTx()`, and records `SEATED` plus the session/table links in the same tenant
+transaction. A commit can therefore never leave a seated queue with no clock or an opened clock whose
+queue still says waiting. From that point onward seating, timing, bills, tabs and game loans remain
+owned by their existing domains; the queue row is historical evidence for measured waiting time.
+
+`scripts/board-game-waitlist-contract.test.mts` guards the static architecture in the pure suite.
+`scripts/board-game-waitlist-db-contract.test.mts` creates an isolated cafe tenant and proves queue
+number concurrency, replay conflicts, branch scope, capacity rollback, and atomic seating against a
+real local Postgres through the guarded DB-test runner.
 
 ## Dev/Test Fixtures
 
@@ -227,8 +252,8 @@ multiple billing groups, game titles/copies, active and returned loans, an issue
 unpublished public-profile draft. The full-shop provisioner runs the same fixture automatically when
 the selected archetype is `board_game_cafe`.
 
-`DELETE /api/dev/fake/cleanup` removes linked fake POS orders before sessions and then removes the
-library, floor, rates, and unpublished profile fixtures in foreign-key order. It does not delete a
+`DELETE /api/dev/fake/cleanup` removes linked fake POS orders and queue history before sessions, then
+removes the library, floor, rates, and unpublished profile fixtures in foreign-key order. It does not delete a
 public profile after an operator has published it. Fake staff accounts that were later used by
 protected business-history rows are reported as `usersSkippedReferenced` and retained instead of
 making the whole cleanup fail or deleting that history.

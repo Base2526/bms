@@ -597,7 +597,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, and `9.98` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, and `9.99` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).
@@ -739,12 +739,18 @@ playable game library. The operating brief is
 - **Public discovery is explicit and aggregate-only.** Choosing the archetype never publishes a
   branch. Coordinates and `public_visible` must be set deliberately; the public route is rate-limited
   and returns no table ids, session ids, participant names, customer ids, or other operational data.
+- **A queue row is not a session (`9.99`).** It owns the branch/service-day queue number and the
+  wait before a party has a table; it never starts a clock, creates a bill, or reserves stock.
+  Arrival order stays visible but is not strict FIFO because table capacity matters. Seating locks
+  the queue row and calls `openBoardGameSessionInTx()` in the same tenant transaction that changes
+  it to `SEATED` and links the real table/session. Never mark it seated first, duplicate the
+  open-session SQL, or treat `expected_end_at` as a promised availability time.
 - **Fake data remains removable.** `/api/dev/fake/bms-board-game` creates `FAKE`-marked areas, tables,
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
 - **Not built:** automatic renewal of a member pass (it needs a stored payment instrument this
-  platform does not have), reservations/waitlists, and dedicated board-game profitability/utilization
+  platform does not have), advance reservations/public booking, and dedicated board-game profitability/utilization
   reports. Extend CRM/reporting/payment domains for these; do not create parallel customer or money
   ledgers.
 

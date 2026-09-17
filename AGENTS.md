@@ -209,6 +209,10 @@ wrong, and update the doc in the same change.
   stock, or copy condition. Move/merge resolves the current table from seating, terminal sessions
   revoke the guest token and expire active calls, and a reported game issue still needs the existing
   copy-condition workflow after staff physically inspect it.
+  The walk-in queue (`9.99`) exists only before seating: it owns branch/service-day queue numbers,
+  never starts time or money, and seating opens the normal session and marks the queue `SEATED` in
+  one transaction. Arrival order is visible but table capacity means seating is not strict FIFO;
+  `expected_end_at` is an estimate, never a promised table time.
   Native POS derives its branch from the paired device, hands the billing-group id to the
   existing sale mutation, and must never submit its display-only time line as a Product SKU. Full detail:
   [business/board-game-cafe.md](docs/business/board-game-cafe.md) and

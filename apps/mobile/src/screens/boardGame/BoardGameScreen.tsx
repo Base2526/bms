@@ -35,21 +35,25 @@ import {
 } from '../../components/TabletMainNavigation';
 import {
   MobilePosAddBoardGameParticipantDocument,
+  MobilePosAddBoardGameWaitlistEntryDocument,
   MobilePosAcknowledgeBoardGameServiceCallDocument,
   MobilePosAddBoardGameTabItemDocument,
   MobilePosAdjustBoardGameTimingDocument,
   MobilePosBoardGameSessionDocument,
   MobilePosBoardGameWorkspaceDocument,
   MobilePosCancelBoardGameSessionDocument,
+  MobilePosCallBoardGameWaitlistEntryDocument,
   MobilePosCheckoutBoardGameCopyDocument,
   MobilePosCloseBoardGameBillingGroupDocument,
   MobilePosCloseBoardGameSessionDocument,
   MobilePosCompleteBoardGameServiceCallDocument,
+  MobilePosCloseBoardGameWaitlistEntryDocument,
   MobilePosIssueBoardGameGuestAccessDocument,
   MobilePosLeaveBoardGameParticipantDocument,
   MobilePosMergeBoardGameSeatingDocument,
   MobilePosMembersDocument,
   MobilePosOpenBoardGameSessionDocument,
+  MobilePosSeatBoardGameWaitlistEntryDocument,
   MobilePosMoveBoardGameSeatingDocument,
   MobilePosRemoveBoardGameTabItemDocument,
   MobilePosReleaseBoardGameIdentityHoldDocument,
@@ -80,7 +84,7 @@ type OpenProps = NativeStackScreenProps<AppStackParamList, 'BoardGameOpen'>;
 type DetailProps = NativeStackScreenProps<AppStackParamList, 'BoardGameDetail'>;
 type BoardGameView =
   | { kind: 'floor' }
-  | { kind: 'open'; tableId: string }
+  | { kind: 'open'; tableId: string; queueEntryId?: string }
   | { kind: 'detail'; sessionId: string };
 type WorkspaceProps = {
   navigation: NativeStackNavigationProp<AppStackParamList>;
@@ -209,7 +213,7 @@ export function BoardGameOpenScreen({ navigation, route }: OpenProps) {
   return (
     <BoardGameWorkspace
       navigation={navigation}
-      view={{ kind: 'open', tableId: route.params.tableId }}
+      view={{ kind: 'open', tableId: route.params.tableId, queueEntryId: route.params.queueEntryId }}
     />
   );
 }
@@ -230,7 +234,7 @@ type BoardGameFloorProps = {
   branchName: string;
   now: number;
   onRetry: () => void;
-  onOpen: (table: Table) => void;
+  onOpen: (table: Table, queueEntryId?: string) => void;
   onOpenSession: (sessionId: string) => void;
   onNavigateTab: (tab: TabletMainTab) => void;
 };
@@ -251,6 +255,9 @@ function BoardGameFloor({
   const { calls, pendingCount, refresh: refreshCalls } = useBoardGameService();
   const [callsOpen, setCallsOpen] = useState(false);
   const [workingCallId, setWorkingCallId] = useState('');
+  const [queuePartySize, setQueuePartySize] = useState('2');
+  const [queueGuestName, setQueueGuestName] = useState('');
+  const [workingQueueId, setWorkingQueueId] = useState('');
   const callOperationKeys = useRef<Record<string, string>>({});
   const [acknowledgeCall] = useMutation(
     MobilePosAcknowledgeBoardGameServiceCallDocument,
@@ -258,6 +265,9 @@ function BoardGameFloor({
   const [completeCall] = useMutation(
     MobilePosCompleteBoardGameServiceCallDocument,
   );
+  const [addWaitlistEntry] = useMutation(MobilePosAddBoardGameWaitlistEntryDocument);
+  const [callWaitlistEntry] = useMutation(MobilePosCallBoardGameWaitlistEntryDocument);
+  const [closeWaitlistEntry] = useMutation(MobilePosCloseBoardGameWaitlistEntryDocument);
   const { width, height } = useWindowDimensions();
   const isTablet = supportsTabletLayout(width, height, 760);
   const [selectedAreaId, setSelectedAreaId] = useState<string>('all');
@@ -290,6 +300,30 @@ function BoardGameFloor({
   const primaryTintStrong =
     scheme === 'dark' ? 'rgba(22, 119, 255, 0.28)' : '#dbeafe';
   const credentials = session?.credentials;
+  const openQueue = (data?.waitlist.entries ?? []).filter(
+    entry => entry.status === 'WAITING' || entry.status === 'CALLED',
+  );
+  const runQueueAction = async (
+    operationName: string,
+    action: (idempotencyKey: string) => Promise<unknown>,
+  ) => {
+    if (!credentials || workingQueueId) return;
+    const idempotencyKey = (callOperationKeys.current[operationName] ??=
+      createIdempotencyKey(`board-queue-${operationName}`));
+    setWorkingQueueId(operationName);
+    try {
+      await action(idempotencyKey);
+      delete callOperationKeys.current[operationName];
+      await onRetry();
+      return true;
+    } catch (cause) {
+      if (isDecidedRejection(cause)) delete callOperationKeys.current[operationName];
+      Alert.alert('อัปเดตคิวไม่สำเร็จ', cause instanceof Error ? cause.message : 'กรุณาลองใหม่');
+      return false;
+    } finally {
+      setWorkingQueueId('');
+    }
+  };
   const callLabel = (code: string) =>
     ({
       GAME_HELP: 'ช่วยสอนเกม',
@@ -636,6 +670,86 @@ function BoardGameFloor({
           </Text>
         </Card>
       ) : null}
+      {data ? (
+        <Card style={{ gap: spacing.sm }}>
+          <View style={styles.between}>
+            <View style={styles.flex}>
+              <Text style={[typography.subtitle, { color: colors.text }]}>คิวรอโต๊ะ</Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                รอ {data.waitlist.waitingCount} กลุ่ม · {data.waitlist.waitingGuests} คน · นานสุด {data.waitlist.longestWaitMinutes} นาที
+              </Text>
+            </View>
+          </View>
+          <View style={styles.wrap}>
+            <TextInput
+              accessibilityLabel="จำนวนคนในคิว"
+              keyboardType="number-pad"
+              value={queuePartySize}
+              onChangeText={setQueuePartySize}
+              placeholder="จำนวนคน"
+              placeholderTextColor={colors.textSoft}
+              style={[styles.input, { minWidth: 96, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
+            />
+            <TextInput
+              accessibilityLabel="ชื่อเรียกคิว"
+              value={queueGuestName}
+              onChangeText={setQueueGuestName}
+              placeholder="ชื่อเรียก"
+              placeholderTextColor={colors.textSoft}
+              style={[styles.input, { flex: 1, minWidth: 140, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
+            />
+            <Button
+              label="รับคิว"
+              loading={workingQueueId === 'add'}
+              onPress={() => {
+                const partySize = Number(queuePartySize);
+                if (!Number.isInteger(partySize) || partySize < 1 || partySize > 500) {
+                  Alert.alert('จำนวนคนไม่ถูกต้อง', 'ระบุจำนวนคนระหว่าง 1–500'); return;
+                }
+                runQueueAction('add', key => addWaitlistEntry({ variables: { input: {
+                  ...credentials!, idempotencyKey: key, partySize,
+                  guestName: queueGuestName.trim() || null,
+                  guestPhone: null, note: null, preferredAreaId: null,
+                } } })).then(success => {
+                  if (success) { setQueuePartySize('2'); setQueueGuestName(''); }
+                }).catch(() => undefined);
+              }}
+            />
+          </View>
+          {openQueue.length === 0 ? (
+            <Text style={[typography.body, { color: colors.textMuted }]}>ยังไม่มีคนรอ</Text>
+          ) : openQueue.map(entry => {
+            const fitting = tables.filter(table =>
+              !table.blocked && !table.openSession && table.seats >= entry.partySize,
+            );
+            return (
+              <View key={entry.id} style={{ gap: spacing.xs }}>
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>คิว {entry.queueNo} · {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน</Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>รอ {elapsedLabel(entry.createdAt, now)}{entry.status === 'CALLED' ? ' · เรียกแล้ว' : ''}</Text>
+                <View style={styles.wrap}>
+                  {fitting.slice(0, 4).map(table => (
+                    <Button key={table.id} label={`นั่ง ${table.code}`} variant="secondary"
+                      onPress={() => onOpen(table, entry.id)} />
+                  ))}
+                  {entry.status === 'WAITING' ? (
+                    <Button label="เรียก" variant="secondary" loading={workingQueueId === `call-${entry.id}`}
+                      onPress={() => runQueueAction(`call-${entry.id}`, key => callWaitlistEntry({ variables: { input: {
+                        ...credentials!, idempotencyKey: key, entryId: entry.id,
+                      } } })).catch(() => undefined)} />
+                  ) : null}
+                  <Button label={entry.status === 'CALLED' ? 'ไม่มา' : 'ยกเลิก'} variant="ghost"
+                    loading={workingQueueId === `close-${entry.id}`}
+                    onPress={() => runQueueAction(`close-${entry.id}`, key => closeWaitlistEntry({ variables: { input: {
+                      ...credentials!, idempotencyKey: key, entryId: entry.id,
+                      status: entry.status === 'CALLED' ? 'NO_SHOW' : 'CANCELLED',
+                      reason: null,
+                    } } })).catch(() => undefined)} />
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      ) : null}
       <View style={styles.floorTableGrid}>
         {visibleTables.map(table => {
           const status = floorStatus(table);
@@ -971,6 +1085,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     skip: !credentials || memberSearch.trim().length < 3,
   });
   const [openSession] = useMutation(MobilePosOpenBoardGameSessionDocument);
+  const [seatWaitlistEntry] = useMutation(MobilePosSeatBoardGameWaitlistEntryDocument);
   const [addParticipant] = useMutation(
     MobilePosAddBoardGameParticipantDocument,
   );
@@ -1017,6 +1132,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     view.kind === 'open'
       ? data?.floor.tables.find(table => table.id === view.tableId) ?? null
       : null;
+  const seatingQueueEntry = view.kind === 'open' && view.queueEntryId
+    ? data?.waitlist.entries.find(entry => entry.id === view.queueEntryId) ?? null
+    : null;
   const activeRates = useMemo(
     () => (data?.rates ?? []).filter(rate => rate.active),
     [data?.rates],
@@ -1215,7 +1333,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     if (memberRate) setParticipantRateId(memberRate.id);
   };
 
-  const beginOpen = (table: Table) => {
+  const beginOpen = (table: Table, queueEntryId?: string) => {
     if (table.blocked) return;
     if (table.openSession?.id) {
       navigation.push('BoardGameDetail', {
@@ -1223,7 +1341,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       });
       return;
     }
-    navigation.push('BoardGameOpen', { tableId: table.id });
+    navigation.push('BoardGameOpen', { tableId: table.id, queueEntryId });
   };
 
   const openBillingGroupCheckout = (billingGroupId: string) => {
@@ -1316,30 +1434,43 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
 
   const submitOpenSession = () => {
     if (!openingTable || openBlockReason) return;
-    run(`open-${openingTable.id}`, async () => {
-      const response = await openSession({
-        variables: {
-          input: {
-            ...inputCredentials,
-            idempotencyKey: retryKey(`open-${openingTable.id}`),
-            tableId: openingTable.id,
-            billingMode,
-            expectedDurationMinutes:
-              billingMode === 'FIXED_DURATION' ? durationValue : null,
-            alertBeforeMinutes: alertValue,
-            note: sessionNote.trim() || null,
-            participants: participants.map(item => ({
-              rateId: item.rateId,
-              customerId: item.customerId,
-              displayName: item.displayName || null,
-              participantType: item.participantType,
-              billingGroupNo: item.billingGroupNo,
-            })),
-          },
+    const operationName = seatingQueueEntry
+      ? `waitlist-seat-${seatingQueueEntry.id}`
+      : `open-${openingTable.id}`;
+    run(operationName, async () => {
+      const variables = {
+        input: {
+          ...inputCredentials,
+          idempotencyKey: retryKey(operationName),
+          tableId: openingTable.id,
+          billingMode,
+          expectedDurationMinutes:
+            billingMode === 'FIXED_DURATION' ? durationValue : null,
+          alertBeforeMinutes: alertValue,
+          note: sessionNote.trim() || null,
+          participants: participants.map(item => ({
+            rateId: item.rateId,
+            customerId: item.customerId,
+            displayName: item.displayName || null,
+            participantType: item.participantType,
+            billingGroupNo: item.billingGroupNo,
+          })),
         },
-      });
-      const result = response.data?.bmsPosOpenBoardGameSession;
-      const id = result?.id ?? result?.sessionId;
+      };
+      let id = '';
+      if (seatingQueueEntry) {
+        const response = await seatWaitlistEntry({
+            variables: {
+              input: { ...variables.input, entryId: seatingQueueEntry.id },
+            },
+          });
+        const result = response.data?.bmsPosSeatBoardGameWaitlistEntry.session;
+        id = result?.id ?? result?.sessionId ?? '';
+      } else {
+        const response = await openSession({ variables });
+        const result = response.data?.bmsPosOpenBoardGameSession;
+        id = result?.id ?? result?.sessionId ?? '';
+      }
       if (!id) throw new Error('เปิดโต๊ะไม่สำเร็จ');
       navigation.replace('BoardGameDetail', { sessionId: id });
     }).catch(() => undefined);
@@ -1371,7 +1502,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         title={
           view.kind === 'open'
             ? openingTable
-              ? `เปิดโต๊ะ ${openingTable.code}`
+              ? seatingQueueEntry
+                ? `พาคิว ${seatingQueueEntry.queueNo} ไปโต๊ะ ${openingTable.code}`
+                : `เปิดโต๊ะ ${openingTable.code}`
               : 'เปิดโต๊ะ'
             : 'รายละเอียดโต๊ะ'
         }

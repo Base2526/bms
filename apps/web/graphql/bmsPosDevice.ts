@@ -2066,6 +2066,46 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     note: String
   }
 
+  input BmsPosBoardGameWaitlistAddInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    partySize: Int!
+    guestName: String
+    guestPhone: String
+    note: String
+    preferredAreaId: ID
+  }
+
+  input BmsPosBoardGameWaitlistCloseInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    entryId: ID!
+    status: String!
+    reason: String
+  }
+
+  input BmsPosBoardGameWaitlistCallInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    entryId: ID!
+  }
+
+  input BmsPosBoardGameWaitlistSeatInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    entryId: ID!
+    tableId: ID!
+    billingMode: String!
+    expectedDurationMinutes: Int
+    alertBeforeMinutes: Int = 15
+    participants: [BmsPosBoardGameParticipantInput!]!
+    note: String
+  }
+
   input BmsPosBoardGameAddParticipantInput {
     cashierUserId: ID!
     pin: String!
@@ -2325,10 +2365,55 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     copies: [BmsPosBoardGameCopy!]!
   }
 
+  type BmsPosBoardGameWaitlistEntry {
+    id: ID!
+    serviceDate: String!
+    queueNo: Int!
+    status: String!
+    partySize: Int!
+    guestName: String
+    guestPhone: String
+    note: String
+    preferredAreaId: ID
+    preferredAreaName: String
+    seatedTableId: ID
+    seatedTableCode: String
+    seatedSessionId: ID
+    calledAt: String
+    seatedAt: String
+    closedAt: String
+    createdAt: String!
+  }
+
+  type BmsPosBoardGameWaitlistTable {
+    id: ID!
+    areaId: ID!
+    code: String!
+    name: String!
+    seats: Int!
+    availability: String!
+    expectedAvailableAt: String
+  }
+
+  type BmsPosBoardGameWaitlist {
+    entries: [BmsPosBoardGameWaitlistEntry!]!
+    waitingCount: Int!
+    calledCount: Int!
+    waitingGuests: Int!
+    longestWaitMinutes: Int!
+    tables: [BmsPosBoardGameWaitlistTable!]!
+  }
+
   type BmsPosBoardGameWorkspace {
     floor: BmsPosBoardGameFloor!
     rates: [BmsPosBoardGameRate!]!
     library: [BmsPosBoardGameTitle!]!
+    waitlist: BmsPosBoardGameWaitlist!
+  }
+
+  type BmsPosBoardGameWaitlistSeatResult {
+    entry: BmsPosBoardGameWaitlistEntry!
+    session: BmsPosBoardGameSessionSummary!
   }
 
   type BmsPosBoardGameParticipant {
@@ -2654,6 +2739,18 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosOpenBoardGameSession(
       input: BmsPosBoardGameOpenInput!
     ): BmsPosBoardGameSessionSummary!
+    bmsPosAddBoardGameWaitlistEntry(
+      input: BmsPosBoardGameWaitlistAddInput!
+    ): BmsPosBoardGameWaitlistEntry!
+    bmsPosCallBoardGameWaitlistEntry(
+      input: BmsPosBoardGameWaitlistCallInput!
+    ): BmsPosBoardGameWaitlistEntry!
+    bmsPosCloseBoardGameWaitlistEntry(
+      input: BmsPosBoardGameWaitlistCloseInput!
+    ): BmsPosBoardGameWaitlistEntry!
+    bmsPosSeatBoardGameWaitlistEntry(
+      input: BmsPosBoardGameWaitlistSeatInput!
+    ): BmsPosBoardGameWaitlistSeatResult!
     bmsPosAddBoardGameParticipant(
       input: BmsPosBoardGameAddParticipantInput!
     ): BmsPosBoardGameParticipant!
@@ -4669,6 +4766,42 @@ export const bmsPosDeviceResolvers = {
         "open",
         access.input,
       );
+    },
+
+    async bmsPosAddBoardGameWaitlistEntry(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "waitlist.add");
+      return runBoardGamePosMutation(access.scope, access.actorUserId, "waitlist.add", access.input);
+    },
+
+    async bmsPosCallBoardGameWaitlistEntry(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "waitlist.call");
+      return runBoardGamePosMutation(access.scope, access.actorUserId, "waitlist.call", access.input);
+    },
+
+    async bmsPosCloseBoardGameWaitlistEntry(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "waitlist.close");
+      return runBoardGamePosMutation(access.scope, access.actorUserId, "waitlist.close", access.input);
+    },
+
+    async bmsPosSeatBoardGameWaitlistEntry(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "waitlist.seat");
+      return runBoardGamePosMutation(access.scope, access.actorUserId, "waitlist.seat", access.input);
     },
 
     async bmsPosAddBoardGameParticipant(

@@ -80,11 +80,25 @@ type ServiceCall = {
   requestCode: string; requestNote: string | null; status: 'PENDING' | 'ACKNOWLEDGED';
   createdAt: string;
 };
+type WaitlistEntry = {
+  id: string; serviceDate: string; queueNo: number; status: string; partySize: number;
+  guestName: string | null; guestPhone: string | null; note: string | null;
+  preferredAreaId: string | null; preferredAreaName: string | null;
+  seatedTableId: string | null; seatedTableCode: string | null; seatedSessionId: string | null;
+  calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string;
+};
+type Waitlist = {
+  entries: WaitlistEntry[]; waitingCount: number; calledCount: number;
+  waitingGuests: number; longestWaitMinutes: number;
+  tables: Array<{ id: string; areaId: string; code: string; name: string; seats: number;
+    availability: string; expectedAvailableAt: string | null }>;
+};
 type Workspace = {
   floor: { areas: Area[]; tables: Table[] };
   rates: Rate[];
   library: Title[];
   serviceCalls: ServiceCall[];
+  waitlist: Waitlist;
 };
 
 type Participant = {
@@ -282,6 +296,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [detailTab, setDetailTab] = useState<'overview' | 'tab' | 'games'>('overview');
   const [showCloseChoices, setShowCloseChoices] = useState(false);
   const [guestLink, setGuestLink] = useState('');
+  const [queuePartySize, setQueuePartySize] = useState('2');
+  const [queueGuestName, setQueueGuestName] = useState('');
+  const [queueGuestPhone, setQueueGuestPhone] = useState('');
+  const [seatingQueueId, setSeatingQueueId] = useState('');
 
   // ฟอร์มเปิดโต๊ะ
   const [billingMode, setBillingMode] = useState<'OPEN_ENDED' | 'FIXED_DURATION'>('OPEN_ENDED');
@@ -487,6 +505,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
 
   function resetOpenForm() {
     setOpeningTable(null);
+    setSeatingQueueId('');
     setDrafts([]); setNote(''); setDraftName(''); setDraftGroup('1');
     setMemberQuery(''); setMembers([]); setSelectedMember(null);
     setBillingMode('OPEN_ENDED'); setDuration('120'); setAlertBefore('15');
@@ -567,6 +586,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const awaitingPaymentCount = floorTables.filter((table) =>
     table.openSession?.status === 'CLOSING' || (table.openSession?.awaitingPaymentCount ?? 0) > 0,
   ).length;
+  const openQueue = (workspace?.waitlist.entries ?? []).filter(
+    (entry) => entry.status === 'WAITING' || entry.status === 'CALLED',
+  );
 
   return (
     <div className="pos-bg-workspace">
@@ -596,7 +618,96 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             <span className="pos-bg-stat-pill">กำลังเล่น {playingCount}</span>
             <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">ต้องดู {attention.length}</span>
             <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">รอเก็บเงิน {awaitingPaymentCount}</span>
+            <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">
+              คิว {workspace?.waitlist.waitingCount ?? 0} · {(workspace?.waitlist.waitingGuests ?? 0)} คน
+            </span>
           </div>
+
+          <details className="pos-bg-section pos-bg-section--advanced" open={openQueue.length > 0}>
+            <summary>
+              คิวรอโต๊ะ {openQueue.length > 0
+                ? `· ${openQueue.length} กลุ่ม · รอนานสุด ${workspace?.waitlist.longestWaitMinutes ?? 0} นาที`
+                : '· ยังไม่มีคนรอ'}
+            </summary>
+            <div className="pos-bg-form" style={{ marginTop: 10 }}>
+              <label className="pos-bg-field pos-bg-field--num">
+                จำนวนคน
+                <input value={queuePartySize} inputMode="numeric"
+                  onChange={(e) => setQueuePartySize(e.target.value)} />
+              </label>
+              <label className="pos-bg-field">
+                ชื่อเรียก
+                <input value={queueGuestName} onChange={(e) => setQueueGuestName(e.target.value)} />
+              </label>
+              <label className="pos-bg-field">
+                เบอร์โทร (ไม่บังคับ)
+                <input value={queueGuestPhone} onChange={(e) => setQueueGuestPhone(e.target.value)} />
+              </label>
+              <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                disabled={busy === 'waitlist-add'}
+                onClick={() => {
+                  const partySize = Number(queuePartySize);
+                  if (!Number.isInteger(partySize) || partySize < 1 || partySize > 500) {
+                    setError('จำนวนคนต้องอยู่ระหว่าง 1–500'); return;
+                  }
+                  void run('waitlist-add', 'waitlist.add', {
+                    partySize, guestName: queueGuestName, guestPhone: queueGuestPhone,
+                  }, () => {
+                    setQueuePartySize('2'); setQueueGuestName(''); setQueueGuestPhone('');
+                    setNotice('เพิ่มคิวแล้ว');
+                  });
+                }}>
+                รับคิว
+              </button>
+            </div>
+
+            {openQueue.map((entry) => {
+              const fitting = floorTables.filter((table) =>
+                !table.blocked && !table.openSession && table.seats >= entry.partySize,
+              );
+              return (
+                <div key={entry.id} className="pos-bg-row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
+                  <div className="pos-bg-row-main">
+                    คิว {entry.queueNo} · {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน
+                    <span style={{ color: 'var(--pos-muted)' }}>
+                      {' · รอ '}{elapsedLabel(entry.createdAt, now)}
+                      {entry.status === 'CALLED' ? ' · เรียกแล้ว' : ''}
+                    </span>
+                    <div className="pos-chips" style={{ marginTop: 6 }}>
+                      {fitting.slice(0, 4).map((table) => (
+                        <button key={table.id} type="button" className="pos-chip"
+                          style={{ border: 'none', cursor: 'pointer' }}
+                          onClick={() => {
+                            setSeatingQueueId(entry.id); setOpeningTable(table); selectTable(''); setSession(null);
+                            setDrafts([]); setNotice(`เลือกโต๊ะ ${table.code} ให้คิว ${entry.queueNo} — ตรวจจำนวนจริงแล้วระบุผู้เล่น`);
+                          }}>
+                          นั่ง {table.code} ({table.seats})
+                        </button>
+                      ))}
+                      {fitting.length === 0 && <span className="pos-block-hint">ยังไม่มีโต๊ะที่รองรับ</span>}
+                    </div>
+                  </div>
+                  <div className="pos-bg-row-actions">
+                    {entry.status === 'WAITING' && (
+                      <button type="button" className="pos-ret-btn"
+                        disabled={busy === `waitlist-call-${entry.id}`}
+                        onClick={() => void run(`waitlist-call-${entry.id}`, 'waitlist.call', { entryId: entry.id },
+                          () => setNotice(`เรียกคิว ${entry.queueNo} แล้ว`))}>
+                        เรียก
+                      </button>
+                    )}
+                    <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                      disabled={busy === `waitlist-cancel-${entry.id}`}
+                      onClick={() => void run(`waitlist-cancel-${entry.id}`, 'waitlist.close', {
+                        entryId: entry.id, status: entry.status === 'CALLED' ? 'NO_SHOW' : 'CANCELLED',
+                      }, () => setNotice(entry.status === 'CALLED' ? 'บันทึกไม่มาตามเรียกแล้ว' : 'ยกเลิกคิวแล้ว'))}>
+                      {entry.status === 'CALLED' ? 'ไม่มา' : 'ยกเลิก'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </details>
       {/* ---------------- ผังโต๊ะ ---------------- */}
       {(workspace?.floor.areas ?? []).map((area) => (
         <div key={area.id} className="pos-bg-area">
@@ -620,6 +731,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                   className={`pos-bg-table ${tableTone} ${selected ? 'pos-bg-table--on' : ''}`.replace(/\s+/g, ' ').trim()}
                   onClick={() => {
                     setError(''); setNotice('');
+                    setSeatingQueueId('');
                     if (open) { selectTable(open.id); setOpeningTable(null); }
                     else { setOpeningTable(table); selectTable(''); setSession(null); }
                   }}
@@ -670,7 +782,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
       {openForm && (
         <div className="pos-bg-open-card">
           <div className="pos-shift-head">
-            <div className="pos-block-title">เปิดโต๊ะ {openingTable.code} · {openingTable.name}</div>
+            <div className="pos-block-title">
+              {seatingQueueId ? 'พาคิวไปนั่ง' : 'เปิดโต๊ะ'} {openingTable.code} · {openingTable.name}
+            </div>
             <button type="button" className="pos-ret-btn" onClick={resetOpenForm}>ปิด</button>
           </div>
 
@@ -769,8 +883,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           </div>
 
           <button type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-action" style={{ marginTop: 12 }}
-            disabled={busy === 'open' || drafts.length === 0}
-            onClick={() => void run('open', 'open', {
+            disabled={(busy === 'open' || busy === 'waitlist-seat') || drafts.length === 0}
+            onClick={() => void run(seatingQueueId ? 'waitlist-seat' : 'open', seatingQueueId ? 'waitlist.seat' : 'open', {
+              ...(seatingQueueId ? { entryId: seatingQueueId } : {}),
               tableId: openingTable.id,
               billingMode,
               expectedDurationMinutes: billingMode === 'FIXED_DURATION' ? Number(duration) || null : null,
@@ -784,13 +899,17 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               })),
             }, (data) => {
               resetOpenForm();
-              setNotice('เปิดโต๊ะแล้ว');
+              setNotice(seatingQueueId ? 'พาคิวไปนั่งและเปิดเวลาแล้ว' : 'เปิดโต๊ะแล้ว');
               // ไปยืนที่โต๊ะที่เพิ่งเปิดทันที — ขั้นถัดไปของคนหน้าเคาน์เตอร์คือยื่นกล่องเกม
               // และรับบัตร ซึ่งทั้งคู่ทำได้จากการ์ดของโต๊ะนั้นเท่านั้น
-              const openedId = typeof data?.result?.id === 'string' ? data.result.id : '';
+              const openedId = typeof data?.result?.id === 'string'
+                ? data.result.id
+                : typeof data?.result?.session?.id === 'string' ? data.result.session.id : '';
               if (openedId) selectTable(openedId);
             })}>
-            {busy === 'open' ? 'กำลังเปิด…' : `เปิดโต๊ะ (${drafts.length} คน)`}
+            {busy === 'open' || busy === 'waitlist-seat'
+              ? 'กำลังเปิด…'
+              : seatingQueueId ? `พาคิวไปนั่ง (${drafts.length} คน)` : `เปิดโต๊ะ (${drafts.length} คน)`}
           </button>
         </div>
       )}

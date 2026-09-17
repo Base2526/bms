@@ -179,7 +179,9 @@ test("an open shift is required exactly where the money lands in that shift", ()
   // เปิดโต๊ะประทับเครื่อง/กะลง session · ปิดเวลาคือการออกยอดให้กะนั้นเก็บเงิน
   // สั่ง/เอาของออกจากบิล (`9.90`) จองและปล่อยสต็อกจริงในกะนั้น จึงต้องมีกะเปิดเหมือนกัน
   // ที่เหลือเป็นการแก้รายการของโต๊ะที่เปิดไปแล้ว การบังคับกะจะทำให้แก้ข้ามกะไม่ได้
-  assert.deepEqual(requiring, ["close", "group.close", "open", "tab.add", "tab.remove"]);
+  assert.deepEqual(requiring, [
+    "close", "group.close", "open", "tab.add", "tab.remove", "waitlist.seat",
+  ]);
 });
 
 test("reading the floor needs the library, and an odd return needs the library owner", () => {

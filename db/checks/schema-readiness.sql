@@ -73,7 +73,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('9.93__bms_board_game_identity_holds.sql', 'table', 'bms_board_game_identity_holds', NULL, 'ร้านบอร์ดเกมปิดบิล/ยกเลิก/เปิดดูโต๊ะไม่ได้เลย — ด่านคืนบัตรอ่านตารางนี้ทุกครั้ง'),
     ('9.94__bms_board_game_branch_scope_and_identity_hardening.sql', 'column', 'bms_board_game_member_passes', 'location_id', 'ร้านบอร์ดเกมปิดบิล/เปิดหน้าแพ็กเกจไม่ได้ — โค้ดอ่านสาขา snapshot ของสิทธิ์ทุกครั้ง'),
     ('9.96__bms_board_game_service_calls.sql', 'table', 'bms_board_game_guest_tokens', NULL, 'ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้'),
-    ('9.96__bms_board_game_service_calls.sql', 'table', 'bms_board_game_service_calls', NULL, 'ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้')
+    ('9.96__bms_board_game_service_calls.sql', 'table', 'bms_board_game_service_calls', NULL, 'ลิงก์เรียกพนักงานร้านบอร์ดเกมและคิวเรียกพนักงานที่เครื่องขายใช้ไม่ได้'),
+    ('9.99__bms_board_game_waitlist.sql', 'table', 'bms_board_game_waitlist', NULL, 'จอ Board Game POS และคิวรอโต๊ะใช้ไม่ได้ — workspace อ่านกระดานคิวทุกครั้ง')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

@@ -44,6 +44,23 @@ async function handleDELETE(req: NextRequest) {
         RETURNING o.id`,
       [tenantId]
     );
+    const resBoardGameWaitlist = await query(
+      `DELETE FROM bms_board_game_waitlist w
+        WHERE w.tenant_id = $1
+          AND (
+            EXISTS (SELECT 1 FROM bms_board_game_sessions s
+                     WHERE s.tenant_id = w.tenant_id AND s.id = w.seated_session_id
+                       AND s.open_idempotency_key LIKE 'fake-open-%')
+            OR EXISTS (SELECT 1 FROM bms_board_game_tables t
+                       WHERE t.tenant_id = w.tenant_id AND t.id = w.seated_table_id
+                         AND t.code LIKE 'FAKE-%')
+            OR EXISTS (SELECT 1 FROM bms_board_game_areas a
+                       WHERE a.tenant_id = w.tenant_id AND a.id = w.preferred_area_id
+                         AND a.name LIKE 'FAKE %')
+          )
+        RETURNING w.id`,
+      [tenantId]
+    );
     const resBoardGameSessions = await query(
       `DELETE FROM bms_board_game_sessions s
         WHERE s.tenant_id = $1
@@ -139,7 +156,7 @@ async function handleDELETE(req: NextRequest) {
     );
 
     const deleted =
-      resPosts.rows.length + resUsers.deletedIds.length + resBoardGameOrders.rows.length + resBoardGameSessions.rows.length +
+      resPosts.rows.length + resUsers.deletedIds.length + resBoardGameOrders.rows.length + resBoardGameWaitlist.rows.length + resBoardGameSessions.rows.length +
       resBoardGameSeatings.rows.length + resBoardGameProfiles.rows.length + resBoardGameCopies.rows.length + resBoardGameTitles.rows.length +
       resBoardGameTables.rows.length + resBoardGameAreas.rows.length + resBoardGameRates.rows.length +
       resBoardGameIdempotency.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
@@ -153,6 +170,7 @@ async function handleDELETE(req: NextRequest) {
       users: resUsers.deletedIds.length,
       usersSkippedReferenced: resUsers.referencedIds.length,
       bmsBoardGameOrders: resBoardGameOrders.rows.length,
+      bmsBoardGameWaitlist: resBoardGameWaitlist.rows.length,
       bmsBoardGameSessions: resBoardGameSessions.rows.length,
       bmsBoardGameSeatings: resBoardGameSeatings.rows.length,
       bmsBoardGameProfiles: resBoardGameProfiles.rows.length,

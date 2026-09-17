@@ -36,7 +36,9 @@ export const NAMED_REALTIME_SUBSCRIPTIONS: Readonly<Record<string, readonly Real
   bmsIncomingOrderChanged: [
     "restaurant.customer_request.created", "restaurant.customer_request.accepted",
   ],
-  bmsWaitlistChanged: ["waitlist.changed"],
+  // Both restaurant and board-game queues mean "a party still has no table".  Consumers still
+  // receive only events allowed by each event's own permission rule.
+  bmsWaitlistChanged: ["waitlist.changed", "board_game.waitlist.changed"],
   // แยกจากคิวรอโต๊ะโดยตั้งใจ: การเรียกพนักงานเป็นงานของโต๊ะที่นั่งอยู่แล้ว
   // ส่วนคิวคือคนที่ยังไม่ได้โต๊ะ — จอคนละจอและคนละคนที่ต้องตอบสนอง
   bmsServiceCallChanged: [

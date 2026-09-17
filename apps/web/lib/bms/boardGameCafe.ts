@@ -970,7 +970,9 @@ export async function openBoardGameSession(
     posShiftId?: string | null;
     note?: string | null;
   },
-  actorUserId?: string | null
+  actorUserId?: string | null,
+  /** Existing tenant transaction used by queue seating. Omit everywhere else. */
+  transactionClient?: PoolClient,
 ) {
   const key = requestKey(input.idempotencyKey);
   const locationId = uuid(input.locationId, "locationId");
@@ -1003,9 +1005,12 @@ export async function openBoardGameSession(
       joinedAt: row.joinedAt ? optionalDate(row.joinedAt, "เวลาเข้าร่วม")?.toISOString() : null,
     })),
   });
-  const client = await getClient();
+  const ownsTransaction = transactionClient == null;
+  const client = transactionClient ?? await getClient();
   try {
-    await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
+    if (ownsTransaction) {
+      await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
+    }
     await requireBoardGameCafeTenant(client, tenantId);
     await lockIdempotencyKeyInTx(client, tenantId, "open", key);
     const replay = await client.query(
@@ -1019,7 +1024,7 @@ export async function openBoardGameSession(
     if (replay.rowCount) {
       if (replay.rows[0].open_request_hash !== hash)
         throw new IdempotencyConflictError(IDEMPOTENCY_CONFLICT_MESSAGE, "open");
-      await client.query("COMMIT");
+      if (ownsTransaction) await client.query("COMMIT");
       return mapSessionRow(replay.rows[0], true);
     }
     const table = await client.query(
@@ -1113,14 +1118,32 @@ export async function openBoardGameSession(
       billingGroupCount: groupIdByNo.size,
       seatingId,
     });
-    await client.query("COMMIT");
+    if (ownsTransaction) await client.query("COMMIT");
     return mapSessionRow(result.rows[0]);
   } catch (error) {
-    try { await client.query("ROLLBACK"); } catch {}
+    if (ownsTransaction) {
+      try { await client.query("ROLLBACK"); } catch {}
+    }
     throw error;
   } finally {
-    client.release();
+    if (ownsTransaction) client.release();
   }
+}
+
+/**
+ * Open a session inside the caller's tenant transaction.
+ *
+ * Queue seating uses this exact path so "SEATED" and the real timing/billing session either both
+ * commit or both disappear.  The caller owns BEGIN/COMMIT/ROLLBACK and must already have applied
+ * tenant context with `beginTenantTx()`.
+ */
+export function openBoardGameSessionInTx(
+  client: PoolClient,
+  tenantId: string,
+  input: Parameters<typeof openBoardGameSession>[1],
+  actorUserId?: string | null,
+) {
+  return openBoardGameSession(tenantId, input, actorUserId, client);
 }
 
 export async function addBoardGameParticipant(

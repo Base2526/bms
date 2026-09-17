@@ -181,6 +181,7 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
         AND (board_game_session_id IS NOT NULL OR board_game_billing_group_id IS NOT NULL)`,
     [tenantIds]
   );
+  await client.query(`DELETE FROM bms_board_game_waitlist WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_sessions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_titles WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Member passes (`9.92`) are a contract between the shop and one member, so they hold the

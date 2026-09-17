@@ -291,6 +291,13 @@ export const MIGRATIONS: Migration[] = [
       { kind: "table", name: "bms_board_game_service_calls" },
     ],
   },
+  {
+    // workspace ของทั้งสองเครื่องขายอ่านกระดานคิวทุกครั้ง และเส้นพาไปนั่งเขียน session + คิว
+    // ในทรานแซกชันเดียว ฐานที่ไม่มีตารางนี้จึงเปิดจอ Board Game ไม่ได้เลย
+    file: "9.99__bms_board_game_waitlist.sql",
+    impact: "จอ Board Game POS และคิวรอโต๊ะใช้ไม่ได้ — workspace อ่านกระดานคิวทุกครั้ง",
+    needs: [{ kind: "table", name: "bms_board_game_waitlist" }],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

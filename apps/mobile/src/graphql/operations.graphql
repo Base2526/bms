@@ -2015,6 +2015,85 @@ query MobilePosBoardGameWorkspace($credentials: BmsPosCredentialsInput!) {
         conditionNote
       }
     }
+    waitlist {
+      waitingCount
+      calledCount
+      waitingGuests
+      longestWaitMinutes
+      entries {
+        id
+        serviceDate
+        queueNo
+        status
+        partySize
+        guestName
+        guestPhone
+        note
+        preferredAreaId
+        preferredAreaName
+        seatedTableId
+        seatedTableCode
+        seatedSessionId
+        calledAt
+        seatedAt
+        closedAt
+        createdAt
+      }
+      tables {
+        id
+        areaId
+        code
+        name
+        seats
+        availability
+        expectedAvailableAt
+      }
+    }
+  }
+}
+
+fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
+  id
+  serviceDate
+  queueNo
+  status
+  partySize
+  guestName
+  guestPhone
+  note
+  preferredAreaId
+  preferredAreaName
+  seatedTableId
+  seatedTableCode
+  seatedSessionId
+  calledAt
+  seatedAt
+  closedAt
+  createdAt
+}
+
+mutation MobilePosAddBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistAddInput!) {
+  bmsPosAddBoardGameWaitlistEntry(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosCallBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistCallInput!) {
+  bmsPosCallBoardGameWaitlistEntry(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosCloseBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistCloseInput!) {
+  bmsPosCloseBoardGameWaitlistEntry(input: $input) {
+    ...MobilePosBoardGameWaitlistEntryFields
+  }
+}
+
+mutation MobilePosSeatBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistSeatInput!) {
+  bmsPosSeatBoardGameWaitlistEntry(input: $input) {
+    entry { ...MobilePosBoardGameWaitlistEntryFields }
+    session { ...MobilePosBoardGameSessionSummaryFields }
   }
 }
 
