@@ -325,6 +325,13 @@ export default function DesktopPosRenderer() {
     }));
   }, []);
 
+  const signOutCashier = useCallback(() => {
+    setCashier(null);
+    setPin("");
+    setCart([]);
+    sendFlow("SIGN_OUT");
+  }, [sendFlow]);
+
   const addProduct = async (code: string, size?: string | null) => {
     const clean = code.trim();
     if (!clean || busy || addProductPendingRef.current) return;
@@ -722,7 +729,7 @@ export default function DesktopPosRenderer() {
             </button>
           ))}
         </nav>
-        <button className={styles.signOut} onClick={() => { setCashier(null); setPin(""); setCart([]); sendFlow("SIGN_OUT"); }}>ออก</button>
+        <button className={styles.signOut} onClick={signOutCashier}>ออก</button>
       </aside>
 
       <section className={styles.workspace}>
@@ -733,8 +740,31 @@ export default function DesktopPosRenderer() {
           </div>
           <div className={styles.topMeta}>
             <span className={`${styles.connection} ${styles[connection]}`}><i />{connection === "online" ? "ออนไลน์" : connection === "checking" ? "กำลังเชื่อมต่อ" : "การเชื่อมต่อมีปัญหา"}</span>
-            <button onClick={() => openModule("sell")}>ฟังก์ชันขายทั้งหมด</button>
-            <button onClick={() => openModule("shift")}>{cashier?.name || cashier?.email}</button>
+            <details className={styles.accountMenu}>
+              <summary aria-label={`เมนูพนักงาน ${cashier?.name || cashier?.email || ""}`}>
+                <span className={styles.accountAvatar} aria-hidden="true">
+                  {(cashier?.name || cashier?.email || "พ").slice(0, 1)}
+                </span>
+                <span className={styles.accountCopy}>
+                  <strong>{cashier?.name || cashier?.email}</strong>
+                  <small>พนักงานขาย</small>
+                </span>
+                <span className={styles.accountChevron} aria-hidden="true">⌄</span>
+              </summary>
+              <div className={styles.accountPopover}>
+                <button onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  openModule("shift");
+                }}>ข้อมูลกะ</button>
+                <button onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  openModule("settings");
+                }}>ตั้งค่าเครื่อง</button>
+                <button className={styles.accountSignOut} onClick={signOutCashier}>
+                  ล็อก / เปลี่ยนพนักงาน
+                </button>
+              </div>
+            </details>
           </div>
         </header>
 

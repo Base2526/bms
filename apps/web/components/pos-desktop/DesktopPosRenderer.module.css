@@ -112,7 +112,6 @@
 .storeIdentity strong { display: block; font-size: 17px; }
 .storeIdentity span { display: block; margin-top: 3px; color: #748095; font-size: 12px; }
 .topMeta { gap: 10px; }
-.topMeta > button { min-width: 160px; }
 .connection {
   display: inline-flex;
   align-items: center;
@@ -128,6 +127,70 @@
 .connection.online i { background: #52c41a; box-shadow: 0 0 0 3px #f6ffed; }
 .connection.offline { color: #cf1322; background: #fff2f0; }
 .connection.offline i { background: #ff4d4f; }
+
+.accountMenu { position: relative; }
+.accountMenu > summary {
+  min-width: 210px;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  list-style: none;
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+.accountMenu > summary::-webkit-details-marker { display: none; }
+.accountMenu > summary:hover { border-color: #91caff; background: #f8fbff; }
+.accountMenu[open] > summary { border-color: #69b1ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.08); }
+.accountAvatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e6f4ff;
+  color: #1677ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+.accountCopy { min-width: 0; }
+.accountCopy strong,
+.accountCopy small { display: block; }
+.accountCopy strong { overflow: hidden; color: #1f2329; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.accountCopy small { margin-top: 2px; color: #7a8597; font-size: 10px; font-weight: 500; }
+.accountChevron { color: #7a8597; font-size: 15px; transition: transform 0.15s ease; }
+.accountMenu[open] .accountChevron { transform: rotate(180deg); }
+.accountPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid #dfe4ec;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(30, 42, 60, 0.16);
+}
+.accountPopover button {
+  width: 100%;
+  min-height: 38px !important;
+  display: block;
+  padding: 8px 10px !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #344054 !important;
+  text-align: left;
+}
+.accountPopover button:hover { background: #f3f7fc !important; }
+.accountPopover .accountSignOut { color: #cf1322 !important; }
 
 .content {
   min-width: 0;
@@ -457,6 +520,8 @@
   .catalogPane { min-height: 620px; }
   .checkoutPane { min-height: 680px; }
   .topMeta .connection { display: none; }
+  .accountMenu > summary { min-width: 52px; grid-template-columns: 34px auto; }
+  .accountCopy { display: none; }
   .productGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 

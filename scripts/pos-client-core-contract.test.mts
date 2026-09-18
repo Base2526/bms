@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   initialPosClientFlow,
@@ -9,6 +10,11 @@ import {
   validatePayments,
 } from "../packages/pos-client-core/src/payment.ts";
 import { selectPosCatalogCardVariant } from "../packages/pos-client-core/src/catalog.ts";
+
+const desktopRenderer = readFileSync(
+  new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),
+  "utf8",
+);
 
 test("desktop and native register flow requires a verified device, cashier PIN, and open shift", () => {
   let state = initialPosClientFlow(true);
@@ -72,4 +78,21 @@ test("catalog cards show stock for the same variant that clicking will sell", ()
   assert.equal(item453.variant?.size, "L");
   assert.equal(item453.available, 48);
   assert.notEqual(item42.available, 99, "the all-size total must not label the selected L variant");
+});
+
+test("desktop header keeps cashier identity without a permanent legacy-sales escape button", () => {
+  assert.doesNotMatch(
+    desktopRenderer,
+    />ฟังก์ชันขายทั้งหมด<\/button>/,
+    "the desktop renderer must have one obvious primary sales surface",
+  );
+  assert.match(desktopRenderer, /className=\{styles\.accountMenu\}/);
+  assert.match(desktopRenderer, />ข้อมูลกะ<\/button>/);
+  assert.match(desktopRenderer, />ตั้งค่าเครื่อง<\/button>/);
+  assert.match(desktopRenderer, /ล็อก \/ เปลี่ยนพนักงาน/);
+  assert.match(
+    desktopRenderer,
+    /สินค้านี้ต้องกรอก serial \/ น้ำหนัก \/ ตัวเลือกเพิ่มเติม[\s\S]*?openModule\("sell"\)/,
+    "advanced items must retain a contextual path to the full sales workflow",
+  );
 });
