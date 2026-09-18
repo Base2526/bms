@@ -152,6 +152,8 @@ type Draft = {
   billingGroupNo: number;
 };
 
+type FloorFilter = 'ALL' | 'AVAILABLE' | 'PLAYING' | 'ATTENTION' | 'PAYING';
+
 /**
  * ป้ายชนิดเอกสาร — ลิสต์เดียวกับ `BOARD_GAME_IDENTITY_KINDS` ของ service · ชนิดที่ server
  * ไม่รู้จักถูกแสดงเป็นรหัสดิบแทนการซ่อน เพราะบัตรที่ไม่มีป้ายคือบัตรที่หาไม่เจอในลิ้นชัก
@@ -257,6 +259,17 @@ function isTerminalSession(status: string) {
   return status === 'PAID' || status === 'CANCELLED';
 }
 
+function matchesFloorFilter(table: Table, filter: FloorFilter) {
+  const open = table.openSession;
+  if (filter === 'AVAILABLE') return !table.blocked && !open;
+  if (filter === 'PLAYING') return open?.status === 'OPEN';
+  if (filter === 'ATTENTION') return Boolean(open && open.alertStatus !== 'NORMAL');
+  if (filter === 'PAYING') return Boolean(open && (
+    open.status === 'CLOSING' || open.awaitingPaymentCount > 0
+  ));
+  return true;
+}
+
 /**
  * เงินของโต๊ะที่ "ตั้งไว้แล้วจริง ๆ" แยกจากเวลาที่ยังเดินอยู่
  *
@@ -277,7 +290,7 @@ function moneySoFar(groups: Array<{ status: string; amountDue: number; tabAmount
     if (group.status === 'OPEN') {
       stillPlaying = true;
       openTab += Number(group.tabAmount) || 0;
-    } else {
+    } else if (group.status === 'CLOSING') {
       settled += (Number(group.amountDue) || 0) + (Number(group.tabAmount) || 0);
     }
   }
@@ -320,8 +333,12 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  const [floorFilter, setFloorFilter] = useState<FloorFilter>('ALL');
   const [detailTab, setDetailTab] = useState<'overview' | 'tab' | 'games'>('overview');
   const [showCloseChoices, setShowCloseChoices] = useState(false);
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const closeChoicesRef = useRef<HTMLDivElement | null>(null);
+  const addParticipantRef = useRef<HTMLDivElement | null>(null);
   const [guestLink, setGuestLink] = useState('');
   const [queuePartySize, setQueuePartySize] = useState('2');
   const [queueGuestName, setQueueGuestName] = useState('');
@@ -442,7 +459,18 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   useEffect(() => {
     setDetailTab('overview');
     setShowCloseChoices(false);
+    setShowAddParticipant(false);
   }, [selectedId, openingTable?.id]);
+
+  useEffect(() => {
+    if (!showCloseChoices) return;
+    closeChoicesRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [showCloseChoices]);
+
+  useEffect(() => {
+    if (!showAddParticipant) return;
+    addParticipantRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [showAddParticipant]);
 
   // ฟอร์มเวลาเริ่มจากค่าที่ server ถืออยู่จริง · deps เป็น "ค่า" ไม่ใช่ object ของ session
   // รอบ poll ที่ได้ค่าเดิมจึงไม่ลบตัวเลขที่คนหน้าเครื่องกำลังพิมพ์ทิ้งกลางคัน
@@ -589,6 +617,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     });
   }
 
+  function requestSessionClose(activeSession: SessionDetail) {
+    if (activeSession.billingGroups.length > 1) {
+      setShowCloseChoices((current) => !current);
+      return;
+    }
+    closeSessionAndContinue(activeSession.id);
+  }
+
   if (!ready) {
     return (
       <div className="pos-card" style={{ padding: 16 }}>
@@ -631,6 +667,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const awaitingPaymentCount = floorTables.filter((table) =>
     table.openSession?.status === 'CLOSING' || (table.openSession?.awaitingPaymentCount ?? 0) > 0,
   ).length;
+  const participantGroups = (session?.billingGroups ?? [])
+    .map((group) => ({
+      group,
+      participants: (session?.participants ?? []).filter(
+        (participant) => participant.billingGroupId === group.id,
+      ),
+    }))
+    .filter(({ participants }) => participants.length > 0);
   const openQueue = (workspace?.waitlist.entries ?? []).filter(
     (entry) => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
@@ -662,7 +706,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           <div className="pos-bg-floor-head">
             <div>
               <div className="pos-block-title">ผังโต๊ะ</div>
-              <div className="pos-block-hint">แตะโต๊ะเพื่อดูหรือเริ่มเวลาเล่น</div>
+              <div className="pos-block-hint">ดูสถานะและเลือกโต๊ะเพื่อจัดการ</div>
             </div>
             <div className="pos-bg-floor-refresh">
               {/* ⚠️ จอที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอที่ข้อมูลถูกต้อง — ป้ายนี้อ่านจาก
@@ -676,42 +720,34 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           </div>
 
           <div className="pos-bg-floor-stats" aria-label="สรุปสถานะผังโต๊ะ">
-            <span className="pos-bg-stat-pill">ว่าง {availableCount}</span>
-            <span className="pos-bg-stat-pill">กำลังเล่น {playingCount}</span>
-            <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">ต้องดู {attention.length}</span>
-            <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">รอเก็บเงิน {awaitingPaymentCount}</span>
-            <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">
-              คิว {workspace?.waitlist.waitingCount ?? 0} · {(workspace?.waitlist.waitingGuests ?? 0)} คน
-            </span>
-            <span className="pos-bg-stat-pill">
-              จองล่วงหน้า {workspace?.waitlist.confirmedReservationCount ?? 0}
-            </span>
-            {(workspace?.waitlist.requestedReservationCount ?? 0) > 0 && <span className="pos-bg-stat-pill pos-bg-stat-pill--warn">
-              คำขอออนไลน์ {workspace?.waitlist.requestedReservationCount ?? 0}
-            </span>}
+            {([
+              ['ALL', 'ทั้งหมด', floorTables.length, ''],
+              ['AVAILABLE', 'ว่าง', availableCount, ''],
+              ['PLAYING', 'กำลังเล่น', playingCount, 'pos-bg-stat-pill--playing'],
+              ['ATTENTION', 'ต้องดู', attention.length, 'pos-bg-stat-pill--danger'],
+              ['PAYING', 'รอเก็บเงิน', awaitingPaymentCount, 'pos-bg-stat-pill--warn'],
+            ] as const).map(([value, label, count, tone]) => (
+              <button key={value} type="button" aria-pressed={floorFilter === value}
+                className={`pos-bg-stat-pill ${tone} ${floorFilter === value ? 'pos-bg-stat-pill--on' : ''}`.trim()}
+                onClick={() => setFloorFilter(value)}>
+                {label} {count}
+              </button>
+            ))}
           </div>
 
           {attention.length > 0 && (
             <div className={`pos-bg-attention ${overdueCount > 0 ? 'pos-bg-attention--critical' : ''}`.trim()} aria-label="โต๊ะที่ต้องดูตอนนี้">
               <div className="pos-bg-attention-head">
+                <span className="pos-bg-attention-icon" aria-hidden="true">!</span>
                 <div>
-                  <strong>โต๊ะที่ต้องดูตอนนี้</strong>
+                  <strong>ต้องดูตอนนี้ {attention.length} โต๊ะ</strong>
                   <span>เกินเวลา {overdueCount} · ใกล้หมดเวลา {endingSoonCount}</span>
                 </div>
-              </div>
-              <div className="pos-bg-attention-list">
-                {attention.map((table) => {
-                  const open = table.openSession!;
-                  return (
-                    <button key={`${open.id}-${open.alertStatus}`} type="button"
-                      className={`pos-bg-attention-item ${open.alertStatus === 'OVERDUE' ? 'pos-bg-attention-item--overdue' : 'pos-bg-attention-item--ending'}`.trim()}
-                      onClick={() => { selectTable(open.id); setOpeningTable(null); }}>
-                      <span>{table.code} · {table.name}</span>
-                      <b>{attentionLabel(open, now)}</b>
-                      <small>{open.guestCount} คน · ครบเวลา {timeLabel(open.expectedEndAt)}</small>
-                    </button>
-                  );
-                })}
+                <button type="button" className="pos-ret-btn pos-bg-attention-filter"
+                  aria-pressed={floorFilter === 'ATTENTION'}
+                  onClick={() => setFloorFilter(floorFilter === 'ATTENTION' ? 'ALL' : 'ATTENTION')}>
+                  {floorFilter === 'ATTENTION' ? 'แสดงทุกโต๊ะ' : 'เฉพาะโต๊ะเร่งด่วน →'}
+                </button>
               </div>
             </div>
           )}
@@ -982,15 +1018,21 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             })}
           </details>
       {/* ---------------- ผังโต๊ะ ---------------- */}
-      {(workspace?.floor.areas ?? []).map((area) => (
+      {(workspace?.floor.areas ?? []).map((area) => {
+        const areaTables = (tablesByArea.get(area.id) ?? []).filter(
+          (table) => matchesFloorFilter(table, floorFilter),
+        );
+        if (areaTables.length === 0) return null;
+        return (
         <div key={area.id} className="pos-bg-area">
           <div className="pos-bg-area-head">
             <div className="pos-bg-zone-title">
-              {area.name} · ว่าง {(tablesByArea.get(area.id) ?? []).filter((table) => !table.openSession && !table.blocked).length}
+              <strong>{area.name}</strong>
+              <span>ว่าง {(tablesByArea.get(area.id) ?? []).filter((table) => !table.openSession && !table.blocked).length}</span>
             </div>
           </div>
           <div className="pos-bg-floor">
-            {(tablesByArea.get(area.id) ?? []).map((table) => {
+            {areaTables.map((table) => {
               const open = table.openSession;
               const selected = open
                 ? (open.sessionIds ?? [open.id]).includes(selectedId)
@@ -1013,20 +1055,36 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                     else { setOpeningTable(table); selectTable(''); setSession(null); }
                   }}
                 >
-                  <div className="pos-bg-table-code">{table.code} · {table.name}</div>
+                  <div className="pos-bg-table-head">
+                    <div className="pos-bg-table-code">{table.name}</div>
+                    <span className={`pos-bg-table-badge ${open?.status === 'CLOSING' || (open?.awaitingPaymentCount ?? 0) > 0
+                      ? 'pos-bg-table-badge--paying'
+                      : open?.alertStatus === 'OVERDUE'
+                        ? 'pos-bg-table-badge--overdue'
+                        : open?.alertStatus === 'ENDING_SOON'
+                          ? 'pos-bg-table-badge--ending'
+                          : open ? 'pos-bg-table-badge--playing'
+                            : table.blocked ? 'pos-bg-table-badge--blocked' : 'pos-bg-table-badge--available'}`.trim()}>
+                      {table.blocked ? 'ปิดใช้งาน' : tableStateLabel(open)}
+                    </span>
+                  </div>
+                  <div className="pos-bg-table-id">{table.code}</div>
                   {open ? (
                     <div className="pos-bg-table-body">
-                      <div className="pos-bg-table-state">{tableStateLabel(open)} · {elapsedLabel(open.startedAt, now)}</div>
-                      {open.alertStatus !== 'NORMAL' && (
-                        <div className="pos-bg-table-alert">{attentionLabel(open, now)}</div>
-                      )}
+                      <div className={`pos-bg-table-state ${open.alertStatus === 'OVERDUE' ? 'pos-bg-table-state--danger' : ''}`.trim()}>
+                        <span aria-hidden="true">◷</span>
+                        {open.alertStatus !== 'NORMAL'
+                          ? `${elapsedLabel(open.startedAt, now)} · ${attentionLabel(open, now)}`
+                          : elapsedLabel(open.startedAt, now)}
+                      </div>
                       {/* ⚠️ ยอดขึ้นเฉพาะตอนมีบิลที่ปิดเวลาแล้วรอเก็บจริง — `amountDue` ของโต๊ะที่
                           ยังเล่นอยู่คือค่าเล่นที่ "ยังไม่ถูกแช่" ซึ่งเป็น 0 เสมอ ไม่ใช่ 0 เพราะไม่ติดเงิน */}
                       {open.awaitingPaymentCount > 0
                         ? <div className="pos-bg-table-money">฿{baht(open.amountDue)}</div>
                         : null}
-                      <div className="pos-bg-table-sub">
-                        {open.guestCount} คน · {open.billingGroupCount > 1 ? `แยก ${open.billingGroupCount} บิล` : 'บิลเดียว'}
+                      <div className="pos-bg-table-meta">
+                        <span>♟ {open.guestCount} คน</span>
+                        <span>▤ {open.billingGroupCount} กลุ่มบิล</span>
                         {open.awaitingPaymentCount > 0 ? ` · รอเก็บ ${open.awaitingPaymentCount}` : ''}
                       </div>
                       {(open.sessionCount ?? 1) > 1 && (
@@ -1037,8 +1095,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                     </div>
                   ) : (
                     <div className="pos-bg-table-body">
-                      <div className="pos-bg-table-state">{table.blocked ? 'ปิดใช้งาน' : 'ว่าง'}</div>
-                      <div className="pos-bg-table-sub">{table.seats} ที่นั่ง</div>
+                      <div className="pos-bg-table-meta"><span>♟ {table.seats} ที่นั่ง</span></div>
                     </div>
                   )}
                 </button>
@@ -1046,7 +1103,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             })}
           </div>
         </div>
-      ))}
+      );})}
+      {floorTables.length > 0 && floorTables.every((table) => !matchesFloorFilter(table, floorFilter)) && (
+        <div className="pos-bg-floor-empty">ไม่มีโต๊ะในสถานะที่เลือก</div>
+      )}
         </section>
 
         <section className="pos-card pos-bg-detail-pane" aria-label="รายละเอียดโต๊ะ">
@@ -1216,37 +1276,46 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
       {/* ---------------- โต๊ะที่เปิดอยู่ ---------------- */}
       {session && !isTerminalSession(session.status) && (
         <div className="pos-bg-session-card">
-          <div className="pos-shift-head pos-bg-session-head">
-            <div>
-              <div className={`pos-bg-session-state pos-bg-session-state--${session.alertStatus.toLowerCase()}`}>
-                {detailStatusLabel(session, now)}
+          <div className="pos-bg-session-head pos-bg-session-hero">
+            <div className="pos-bg-session-hero-top">
+              <div className="pos-bg-session-heading">
+                <div className="pos-block-title pos-bg-session-title">
+                  {activeTable?.name ?? 'โต๊ะที่เปิดอยู่'}
+                </div>
+                {activeTable && (
+                  <span className="pos-bg-zone-badge">{areaName.get(activeTable.areaId) ?? 'ไม่ระบุโซน'}</span>
+                )}
               </div>
-              <div className="pos-block-title pos-bg-session-title">
-                {activeTable ? `${activeTable.code} · ${activeTable.name}` : 'โต๊ะที่เปิดอยู่'}
-              </div>
-              <div className="pos-block-hint">
-                เริ่ม {timeLabel(session.startedAt)}
-                {session.expectedEndAt ? ` · ครบเวลา ${timeLabel(session.expectedEndAt)}` : ` · เล่นมาแล้ว ${elapsedLabel(session.startedAt, now)}`}
-                {activeTable ? ` · ${areaName.get(activeTable.areaId) ?? ''}` : ''}
+              <div className="pos-bg-session-badges">
+                {session.alertStatus !== 'NORMAL' && (
+                  <span className={`pos-bg-session-status pos-bg-session-status--${session.alertStatus.toLowerCase()}`}>
+                    {detailStatusLabel(session, now)}
+                  </span>
+                )}
+                <span className="pos-bg-session-status pos-bg-session-status--playing">
+                  {session.status === 'OPEN' ? 'กำลังเล่น' : tableStateLabel(session)}
+                </span>
               </div>
             </div>
-            {/* ⚠️ ห้ามพิมพ์ `session.amountDue` ก้อนเดียวแล้วเรียกมันว่า "ยอดถึงตอนนี้" —
-                ค่าเล่นของกลุ่มที่ยังเล่นอยู่ยังไม่ถูกแช่ จึงเป็น 0 · เลขที่ออกมาคือ
-                "เงินที่ตั้งไว้แล้ว" ไม่ใช่ "เงินที่ลูกค้าติดอยู่ตอนนี้" และสองอย่างนี้
-                ต่างกันเท่าค่าเล่นทั้งโต๊ะ */}
-            <div className="pos-bg-head-money">
-              <div style={{ fontSize: 12, color: 'var(--pos-muted)' }}>
-                {money.settled > 0 ? 'ยอดที่ปิดแล้ว รอเก็บเงิน' : 'ของที่สั่งไว้บนบิล'}
-              </div>
-              <div className="pos-bg-money">
-                ฿{baht(money.settled > 0 ? money.settled : money.openTab)}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--pos-muted)' }}>
-                {money.settled > 0 && money.openTab > 0
-                  ? `ของที่สั่งของกลุ่มที่ยังเล่น ฿${baht(money.openTab)}`
-                  : money.stillPlaying
-                    ? 'ค่าเล่นของกลุ่มที่ยังเล่นอยู่จะคิดตอนปิดเวลา'
-                    : 'ค่าเล่น + ของที่สั่ง'}
+            <div className="pos-bg-session-meta">
+              {activeTable?.code ? `${activeTable.code} · ` : ''}เริ่ม {timeLabel(session.startedAt)}
+              {session.expectedEndAt
+                ? ` · ครบเวลา ${timeLabel(session.expectedEndAt)}`
+                : ` · เล่นมาแล้ว ${elapsedLabel(session.startedAt, now)}`}
+            </div>
+
+            {/* ค่าเล่นของกลุ่ม OPEN ยังไม่ถูกแช่ จึงห้ามแสดง 0 เป็นยอดที่ต้องจ่าย */}
+            <div className="pos-bg-session-money-note">
+              <span className="pos-bg-session-money-icon" aria-hidden="true">▤</span>
+              <div>
+                <strong>{money.settled > 0 ? `ยอดที่ปิดแล้ว ฿${baht(money.settled)}` : 'ยอดจะคำนวณเมื่อหยุดเวลา'}</strong>
+                <span>
+                  {money.openTab > 0
+                    ? `ของที่สั่งในกลุ่มที่ยังเล่น ฿${baht(money.openTab)} · ค่าเล่นจะคิดตอนปิดเวลา`
+                    : money.stillPlaying
+                      ? 'ค่าเล่นของกลุ่มที่ยังเล่นอยู่จะคิดตอนปิดเวลา'
+                      : 'ค่าเล่นและของที่สั่งถูกปิดยอดแล้ว'}
+                </span>
               </div>
             </div>
           </div>
@@ -1258,7 +1327,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             <div><b>{session.identityHolds.filter((hold) => hold.status === 'HELD').length}</b><span>บัตรที่ถือ</span></div>
           </div>
 
-          <div className="pos-bg-section">
+          {detailTab === 'overview' && (
+          <div className="pos-bg-section pos-bg-section--service">
             <div className="pos-shift-head">
               <div>
                 <div className="pos-block-title">🔔 เรียกพนักงาน</div>
@@ -1306,6 +1376,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               </div>
             ))}
           </div>
+          )}
 
           <div className="pos-bg-detail-tabs" role="tablist" aria-label="งานของโต๊ะนี้">
             {([
@@ -1456,37 +1527,60 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           {/* ผู้เล่น */}
           <div className="pos-block pos-bg-section pos-bg-section--players">
             <div className="pos-bg-section-head">
-              <div className="pos-block-title">ผู้เล่น</div>
+              <div className="pos-block-title">รายชื่อผู้เล่น</div>
               <span>{session.participants.filter((p) => !p.leftAt).length} คนในโต๊ะ</span>
             </div>
-            {session.participants.map((participant) => (
-              <div key={participant.id} className="pos-bg-row">
-                <div className={`pos-bg-row-main ${participant.leftAt ? 'pos-bg-row-main--past' : ''}`.trim()}>
-                  {participant.displayName ?? 'ไม่ระบุชื่อ'}
-                  <span style={{ color: 'var(--pos-muted)' }}>
-                    {' · กลุ่ม '}{participant.billingGroupNo}
-                    {participant.billingGroupStatus === 'PAID' ? ' (จ่ายแล้ว)'
-                      : participant.billingGroupStatus === 'CLOSING' ? ' (รอเก็บเงิน)' : ''}
-                    {participant.billable ? ` · ฿${baht(participant.hourlyRate)}/ชม.` : ' · ไม่คิดเงิน'}
-                    {participant.leftAt ? ' · ออกแล้ว' : ''}
-                  </span>
-                </div>
-                {!participant.leftAt && participant.billingGroupStatus === 'OPEN' && (
-                  <button type="button" className="pos-ret-btn"
-                    disabled={busy === `leave-${participant.id}`}
-                    onClick={() => void run(`leave-${participant.id}`, 'participant.leave', {
-                      sessionId: session.id, participantId: participant.id,
-                    }, () => setNotice('บันทึกคนออกจากโต๊ะแล้ว'))}>
-                    ออกจากโต๊ะ
-                  </button>
-                )}
-              </div>
-            ))}
+            <div className="pos-bg-player-groups">
+              {participantGroups.map(({ group, participants }) => {
+                const activeParticipants = participants.filter((participant) => !participant.leftAt);
+                const billableRates = [...new Set(activeParticipants
+                  .filter((participant) => participant.billable)
+                  .map((participant) => participant.hourlyRate))];
+                return (
+                  <div key={group.id} className="pos-bg-player-group">
+                    <div className="pos-bg-player-group-head">
+                      <strong>› กลุ่มบิล {group.groupNo}</strong>
+                      <span>{activeParticipants.length} คน</span>
+                      <span className="pos-bg-player-rate">
+                        {billableRates.length === 1
+                          ? `฿${baht(billableRates[0])}/ชม.`
+                          : billableRates.length > 1 ? 'หลายอัตรา' : 'ไม่คิดเงิน'}
+                      </span>
+                    </div>
+                    {participants.map((participant, index) => (
+                      <div key={participant.id} className={`pos-bg-player-row ${participant.leftAt ? 'pos-bg-player-row--past' : ''}`.trim()}>
+                        <span className="pos-bg-player-index">{index + 1}</span>
+                        <div className="pos-bg-player-name">
+                          <strong>{participant.displayName ?? 'ไม่ระบุชื่อ'}</strong>
+                          <span>
+                            {participant.billable ? `฿${baht(participant.hourlyRate)}/ชม.` : 'ไม่คิดเงิน'}
+                            {participant.billingGroupStatus === 'PAID' ? ' · จ่ายแล้ว'
+                              : participant.billingGroupStatus === 'CLOSING' ? ' · รอเก็บเงิน' : ''}
+                            {participant.leftAt ? ' · ออกแล้ว' : ''}
+                          </span>
+                        </div>
+                        {!participant.leftAt && participant.billingGroupStatus === 'OPEN' && (
+                          <details className="pos-bg-player-menu">
+                            <summary aria-label={`จัดการ ${participant.displayName ?? 'ผู้เล่น'}`}>⋮</summary>
+                            <div>
+                              <button type="button" disabled={busy === `leave-${participant.id}`}
+                                onClick={() => void run(`leave-${participant.id}`, 'participant.leave', {
+                                  sessionId: session.id, participantId: participant.id,
+                                }, () => setNotice('บันทึกคนออกจากโต๊ะแล้ว'))}>
+                                ออกจากโต๊ะ
+                              </button>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
 
-            {session.status === 'OPEN' && (
-              <div className="pos-bg-quick-actions">
-              <details className="pos-bg-inline-disclosure">
-                <summary>+ เพิ่มผู้เล่น</summary>
+            {session.status === 'OPEN' && showAddParticipant && (
+              <div className="pos-bg-add-player-form" ref={addParticipantRef}>
                 <div className="pos-bg-form">
                 <label className="pos-bg-field">
                   เพิ่มผู้เล่น
@@ -1519,18 +1613,6 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                   เพิ่ม
                 </button>
                 </div>
-              </details>
-              <button type="button" className="pos-ret-btn pos-bg-secondary-action"
-                disabled={session.billingMode !== 'FIXED_DURATION' || busy === 'timing'}
-                title={session.billingMode === 'FIXED_DURATION' ? 'เพิ่มเวลาที่ซื้อไว้อีก 30 นาที' : 'โต๊ะเปิดยาวไม่จำเป็นต้องเพิ่มเวลา'}
-                onClick={() => void run('timing', 'timing', {
-                  sessionId: session.id,
-                  billingMode: 'FIXED_DURATION',
-                  expectedDurationMinutes: plannedMinutes(session) + 30,
-                  alertBeforeMinutes: Number(planAlert) || 0,
-                }, () => setNotice('เพิ่มเวลาให้อีก 30 นาทีแล้ว'))}>
-                +30 นาที
-              </button>
               </div>
             )}
           </div>
@@ -1774,7 +1856,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
           <div className="pos-block pos-bg-section pos-bg-section--checkout">
             <div className="pos-block-title">หยุดเวลา / เก็บเงิน</div>
             {showCloseChoices && session.billingGroups.length > 1 && session.billingGroups.some((group) => group.status === 'OPEN') && (
-              <div className="pos-bg-actions-stack pos-bg-close-choices">
+              <div className="pos-bg-actions-stack pos-bg-close-choices" ref={closeChoicesRef}>
                 <div className="pos-block-hint">
                   เลือกบิลที่ต้องการหยุดเวลาและเก็บเงิน · กลุ่มอื่นยังเล่นต่อได้
                 </div>
@@ -1805,18 +1887,12 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               {session.status === 'OPEN' && (
                 <button type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-primary-action pos-bg-action" disabled={busy === 'close'}
                   aria-expanded={session.billingGroups.length > 1 ? showCloseChoices : undefined}
-                  onClick={() => {
-                    if (session.billingGroups.length > 1) {
-                      setShowCloseChoices((current) => !current);
-                      return;
-                    }
-                    closeSessionAndContinue(session.id);
-                  }}>
+                  onClick={() => requestSessionClose(session)}>
                   {busy === 'close'
                     ? 'กำลังปิด…'
                     : session.billingGroups.length > 1
-                      ? 'หยุดเวลา แล้วเลือกบิลเก็บเงิน'
-                      : 'หยุดเวลา แล้วไปเก็บเงิน'}
+                      ? 'หยุดเวลาและเลือกบิล'
+                      : 'หยุดเวลาและตรวจบิล'}
                 </button>
               )}
             </div>
@@ -1852,6 +1928,34 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
             )}
 
           </div>
+
+          {session.status === 'OPEN' && (
+            <div className="pos-bg-session-sticky pos-bg-quick-actions" aria-label="คำสั่งด่วนของโต๊ะ">
+              <button type="button" className="pos-ret-btn pos-bg-secondary-action"
+                aria-expanded={showAddParticipant}
+                onClick={() => {
+                  setDetailTab('overview');
+                  setShowAddParticipant((current) => !current);
+                }}>
+                + เพิ่มผู้เล่น
+              </button>
+              <button type="button" className="pos-ret-btn pos-bg-secondary-action"
+                disabled={session.billingMode !== 'FIXED_DURATION' || busy === 'timing'}
+                title={session.billingMode === 'FIXED_DURATION' ? 'เพิ่มเวลาที่ซื้อไว้อีก 30 นาที' : 'โต๊ะเปิดยาวไม่จำเป็นต้องเพิ่มเวลา'}
+                onClick={() => void run('timing', 'timing', {
+                  sessionId: session.id,
+                  billingMode: 'FIXED_DURATION',
+                  expectedDurationMinutes: plannedMinutes(session) + 30,
+                  alertBeforeMinutes: Number(planAlert) || 0,
+                }, () => setNotice('เพิ่มเวลาให้อีก 30 นาทีแล้ว'))}>
+                +30 นาที
+              </button>
+              <button type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-primary-action"
+                disabled={busy === 'close'} onClick={() => requestSessionClose(session)}>
+                หยุดเวลาและตรวจบิล
+              </button>
+            </div>
+          )}
         </div>
       )}
         </section>

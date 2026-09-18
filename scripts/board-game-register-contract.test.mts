@@ -268,6 +268,59 @@ test("an open table is a scannable workspace instead of one long form", () => {
   );
 });
 
+test("the desktop floor follows the compact board-game operations mockup", () => {
+  assert.match(
+    panel,
+    /type FloorFilter = 'ALL' \| 'AVAILABLE' \| 'PLAYING' \| 'ATTENTION' \| 'PAYING'/,
+    "the status chips must filter the real floor instead of acting like decorative counters",
+  );
+  assert.match(
+    panel,
+    /matchesFloorFilter\(table, floorFilter\)/,
+    "every zone must render the selected floor filter",
+  );
+  assert.doesNotMatch(
+    panel,
+    /pos-bg-attention-list|pos-bg-attention-item/,
+    "urgent tables already exist on the floor and must not be duplicated in a second rail",
+  );
+  assert.match(
+    panel,
+    /เฉพาะโต๊ะเร่งด่วน →/,
+    "the compact alert banner must take the operator to the urgent-table filter",
+  );
+  assert.match(
+    panel,
+    /pos-bg-table-badge/,
+    "each floor card must expose its semantic state as a scannable badge",
+  );
+  assert.match(
+    panel,
+    /ยอดจะคำนวณเมื่อหยุดเวลา/,
+    "an open table must explain when play charges become authoritative instead of displaying zero",
+  );
+  assert.match(
+    panel,
+    /participantGroups\.map[\s\S]{0,2400}pos-bg-player-menu/,
+    "players must be grouped by bill and keep infrequent leave actions behind a compact menu",
+  );
+  assert.match(
+    panel,
+    /pos-bg-session-sticky pos-bg-quick-actions/,
+    "the selected table must keep its three primary actions reachable at the bottom edge",
+  );
+  assert.equal(
+    declaration(".pos-bg-session-sticky", "position"),
+    "sticky",
+    "the action bar must remain reachable while the selected table scrolls",
+  );
+  assert.equal(
+    declaration(".pos-bg-session-hero", "background"),
+    "#f4f8ff",
+    "the selected table summary must be visually separated from editable work",
+  );
+});
+
 test("time alerts stay useful at the deadline and after a session is extended", () => {
   for (const [surface, source] of [["browser POS", panel], ["admin", admin], ["native POS", mobile]] as const) {
     assert.match(
