@@ -18,6 +18,8 @@ authoritative; this app does not contain a database or a second settlement path.
 - specialised flows that have not yet moved into the new renderer (returns, PO receiving, deposits,
   shift management, settings, restaurant and board-game operations) hand off to the existing
   server-authoritative POS routes. Nothing is hidden or duplicated, and settlement still has one path;
+- rollout is backward compatible: the shell probes `/pos/app` and falls back to `/pos` only when a
+  paired pre-rollout server confirms that the new route is missing with HTTP 404;
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
   the desktop shell;
 - Windows NSIS, Linux AppImage/DEB, and macOS DMG package configuration.

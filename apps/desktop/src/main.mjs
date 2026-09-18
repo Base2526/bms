@@ -4,6 +4,7 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePairingInput } from "./pairing.mjs";
+import { MOBILE_POS_PATH, posEntryPathForStatus } from "./renderer-route.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
 
 const { app, BrowserWindow, ipcMain, net, safeStorage, shell } = electronMain;
@@ -200,7 +201,24 @@ async function showSetup() {
 }
 
 async function showPos() {
-  if (mainWindow && activePairing) await mainWindow.loadURL(new URL("/pos/app", activePairing.serverUrl).toString());
+  if (!mainWindow || !activePairing) return;
+  let entryPath = MOBILE_POS_PATH;
+  try {
+    const response = await net.fetch(new URL(MOBILE_POS_PATH, activePairing.serverUrl), {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+      headers: {
+        authorization: `Bearer ${activePairing.token}`,
+        "x-pos-device-token": activePairing.token,
+      },
+    });
+    entryPath = posEntryPathForStatus(response.status);
+  } catch {
+    // Preserve the new route for transient network failures. Chromium will show the real connection
+    // error and a retry can recover; fallback is only for a confirmed old-server 404.
+  }
+  await mainWindow.loadURL(new URL(entryPath, activePairing.serverUrl).toString());
 }
 
 async function verifyPairing(pairing) {
