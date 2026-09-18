@@ -28,6 +28,12 @@ import {
 } from "@pos-core/cartPricing";
 import { selectPosCatalogCardVariant } from "@pos-core/catalog";
 import {
+  isPosPinValid,
+  normalizePosPinInput,
+  POS_PIN_MAX_LENGTH,
+  visiblePosPinSlots,
+} from "@pos-core/posPin";
+import {
   POS_BOOTSTRAP_QUERY,
   POS_BOARD_GAME_CHECKOUT_QUERY,
   POS_CATALOG_QUERY,
@@ -726,20 +732,28 @@ export default function DesktopPosRenderer() {
                 ))}
               </select>
             </label>
-            <input
-              className={styles.pinInput}
-              type="password"
-              inputMode="numeric"
-              autoFocus
-              maxLength={12}
-              value={pin}
-              onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))}
-              placeholder="••••••"
-              aria-label="PIN พนักงาน"
-            />
-            <div className={styles.pinDots}>{Array.from({ length: 6 }, (_, index) => <i key={index} data-filled={index < pin.length} />)}</div>
+            <label className={styles.pinLabel}>PIN 4–8 หลัก
+              <span className={styles.pinEntry}>
+                <input
+                  className={styles.pinInput}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  autoFocus
+                  maxLength={POS_PIN_MAX_LENGTH}
+                  value={pin}
+                  onChange={(event) => setPin(normalizePosPinInput(event.target.value))}
+                  aria-label="PIN พนักงาน 4–8 หลัก"
+                />
+                <span className={styles.pinDots} aria-hidden="true">
+                  {Array.from({ length: visiblePosPinSlots(pin) }, (_, index) => (
+                    <i key={index} data-filled={index < pin.length} />
+                  ))}
+                </span>
+              </span>
+            </label>
             {error ? <p className={styles.errorBox}>{error}</p> : null}
-            <button className={styles.primaryButton} disabled={!cashierId || pin.length < 4 || busy}>
+            <button className={styles.primaryButton} disabled={!cashierId || !isPosPinValid(pin) || busy}>
               {busy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
             </button>
             <button type="button" className={styles.textButton} onClick={() => void unpair()}>เปลี่ยนเซิร์ฟเวอร์ / จับคู่ใหม่</button>

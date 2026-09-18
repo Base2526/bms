@@ -19,6 +19,7 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
+import { isPosPinValid } from "@pos-core/posPin";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
@@ -1041,7 +1042,7 @@ export async function setCashierPin(
   tenantId: string, userId: string, pin: string, actingUserId?: string | null
 ): Promise<void> {
   const clean = String(pin ?? "").trim();
-  if (!/^[0-9]{4,8}$/.test(clean)) throw new Error("PIN ต้องเป็นตัวเลข 4–8 หลัก");
+  if (!isPosPinValid(clean)) throw new Error("PIN ต้องเป็นตัวเลข 4–8 หลัก");
   const hash = await bcrypt.hash(clean, 10);
   const client = await getClient();
   try {
@@ -1121,7 +1122,12 @@ export async function verifyCashierPin(
     return { ok: false, reason: "LOCKED", lockedUntil: new Date(u.pos_pin_locked_until).toISOString() };
   }
 
-  const match = await bcrypt.compare(String(pin ?? ""), u.pos_pin_hash);
+  // ใช้ policy เดียวกับหน้าตั้งค่าและ client ทุกตัว แต่ยังนับ input ที่ผิดรูปแบบเป็น
+  // ความพยายามที่ล้มเหลว เพื่อไม่ให้ข้ามกลไก lockout ด้วยการส่งค่าที่ไม่ใช่ PIN
+  const suppliedPin = String(pin ?? "");
+  const match = isPosPinValid(suppliedPin)
+    ? await bcrypt.compare(suppliedPin, u.pos_pin_hash)
+    : false;
   if (!match) {
     // เพิ่มจากค่าปัจจุบันในฐานข้อมูลโดยตรง ไม่คำนวณจาก snapshot ที่อ่านก่อน bcrypt
     // เพราะ bcrypt เปิดหน้าต่างให้คำขอพร้อมกันหลายตัวอ่าน failures=0 เหมือนกัน แล้ว

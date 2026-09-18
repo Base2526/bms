@@ -526,10 +526,13 @@
 .loginForm { width: min(420px, 100%); }
 .loginForm h2 { margin: 6px 0 24px; font-size: 30px; }
 .loginForm select { margin-top: 4px; }
-.pinInput { width: 100%; height: 68px; margin-top: 14px; text-align: center; letter-spacing: .55em; font-size: 28px !important; }
-.pinDots { display: flex; justify-content: center; gap: 8px; margin: 12px 0 22px; }
-.pinDots i { width: 8px; height: 8px; border-radius: 50%; background: #d0d5dd; }
-.pinDots i[data-filled="true"] { background: #1677ff; }
+.pinLabel { margin: 18px 0 22px; }
+.pinEntry { position: relative; display: grid; place-items: center; width: 100%; height: 68px; margin-top: 7px; overflow: hidden; border: 1px solid #d9d9d9; border-radius: 10px; background: #fff; }
+.pinEntry:focus-within { border-color: #4096ff; box-shadow: 0 0 0 2px rgba(5, 145, 255, .1); }
+.pinInput { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; border: 0 !important; background: transparent !important; color: transparent !important; caret-color: transparent; box-shadow: none !important; }
+.pinDots { display: flex; justify-content: center; gap: 12px; pointer-events: none; }
+.pinDots i { width: 12px; height: 12px; border: 2px solid #98a2b3; border-radius: 50%; background: transparent; }
+.pinDots i[data-filled="true"] { border-color: #1677ff; background: #1677ff; }
 .loginForm .primaryButton,
 .shiftCard .primaryButton { width: 100%; min-height: 52px !important; }
 .textButton { width: 100%; margin-top: 7px; border-color: transparent !important; box-shadow: none !important; color: #657085 !important; }

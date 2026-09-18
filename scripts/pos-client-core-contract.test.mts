@@ -10,6 +10,13 @@ import {
   validatePayments,
 } from "../packages/pos-client-core/src/payment.ts";
 import { selectPosCatalogCardVariant } from "../packages/pos-client-core/src/catalog.ts";
+import {
+  isPosPinValid,
+  normalizePosPinInput,
+  POS_PIN_MAX_LENGTH,
+  POS_PIN_MIN_LENGTH,
+  visiblePosPinSlots,
+} from "../packages/pos-client-core/src/posPin.ts";
 
 const desktopRenderer = readFileSync(
   new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),
@@ -49,6 +56,19 @@ test("shared payment validation balances split tender and computes cash change",
   assert.equal(result.canConfirm, true);
   assert.equal(result.paidTotal, 250);
   assert.equal(calculateCashChange(100, 120), 20);
+});
+
+test("every POS client uses the shared numeric 4-8 digit PIN policy", () => {
+  assert.equal(POS_PIN_MIN_LENGTH, 4);
+  assert.equal(POS_PIN_MAX_LENGTH, 8);
+  assert.equal(isPosPinValid("0123"), true, "a leading zero is part of the PIN");
+  assert.equal(isPosPinValid("12345678"), true);
+  assert.equal(isPosPinValid("123"), false);
+  assert.equal(isPosPinValid("123456789"), false);
+  assert.equal(isPosPinValid("12a4"), false);
+  assert.equal(normalizePosPinInput("01a23-456789"), "01234567");
+  assert.equal(visiblePosPinSlots(""), 4);
+  assert.equal(visiblePosPinSlots("123456"), 6);
 });
 
 test("catalog cards show stock for the same variant that clicking will sell", () => {
