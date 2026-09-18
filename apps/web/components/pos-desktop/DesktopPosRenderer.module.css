@@ -425,7 +425,7 @@
 .paymentRows { margin-top: 12px; }
 .paymentRows > section { padding: 12px; border: 1px solid #e1e5eb; border-radius: 11px; background: #fcfcfd; }
 .paymentRows > section + section { margin-top: 8px; }
-.paymentRowHead { display: grid; grid-template-columns: minmax(105px, 0.8fr) minmax(120px, 1fr) auto; gap: 8px; align-items: end; }
+.paymentRowHead { display: grid; grid-template-columns: minmax(120px, 0.9fr) minmax(130px, 1fr) auto; gap: 10px; align-items: end; }
 .paymentRowHead label,
 .receivedInput,
 .referenceInput,
@@ -523,11 +523,12 @@
 .loginAside p { color: #cfe4ff; }
 .securityNote { max-width: 460px; padding: 14px 16px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; background: rgba(255,255,255,.08); color: #dcecff; font-size: 12px; }
 .loginPanel { display: grid; place-items: center; padding: 40px; }
-.loginForm { width: min(420px, 100%); }
-.loginForm h2 { margin: 6px 0 24px; font-size: 30px; }
+.loginForm { width: min(420px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.loginForm > .eyebrow { margin-bottom: -8px; }
+.loginForm h2 { margin: 0 0 4px; font-size: 30px; }
 .loginForm select { margin-top: 4px; }
-.pinLabel { margin: 18px 0 22px; }
-.pinEntry { position: relative; display: grid; place-items: center; width: 100%; height: 68px; margin-top: 7px; overflow: hidden; border: 1px solid #d9d9d9; border-radius: 10px; background: #fff; }
+.pinLabel { margin: 4px 0 0; }
+.pinEntry { position: relative; display: grid; place-items: center; width: 100%; height: 68px; margin-top: 2px; overflow: hidden; border: 1px solid #d9d9d9; border-radius: 10px; background: #fff; }
 .pinEntry:focus-within { border-color: #4096ff; box-shadow: 0 0 0 2px rgba(5, 145, 255, .1); }
 .pinInput { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; border: 0 !important; background: transparent !important; color: transparent !important; caret-color: transparent; box-shadow: none !important; }
 .pinDots { display: flex; justify-content: center; gap: 12px; pointer-events: none; }
@@ -535,6 +536,8 @@
 .pinDots i[data-filled="true"] { border-color: #1677ff; background: #1677ff; }
 .loginForm .primaryButton,
 .shiftCard .primaryButton { width: 100%; min-height: 52px !important; }
+.loginForm .primaryButton { margin-top: 4px; }
+.loginForm .textButton { margin-top: 0; }
 .textButton { width: 100%; margin-top: 7px; border-color: transparent !important; box-shadow: none !important; color: #657085 !important; }
 
 .stepBadge { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 18px; border-radius: 50%; background: #e6f4ff; color: #1677ff; font-size: 24px; font-weight: 700; }

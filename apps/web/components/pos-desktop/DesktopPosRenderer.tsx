@@ -479,6 +479,7 @@ export default function DesktopPosRenderer() {
     : "NONE";
   const rounding = cashRoundingForPayments(payableBeforeRounding, cashMode, payments);
   const total = payableWithRounding(payableBeforeRounding, rounding);
+  const paymentCount = payments.length;
 
   useEffect(() => {
     setPayments((current) => {
@@ -492,7 +493,7 @@ export default function DesktopPosRenderer() {
         },
       ];
     });
-  }, [total]);
+  }, [paymentCount, total]);
 
   const validation = useMemo(() => validatePayments(total, payments), [payments, total]);
   const zeroDueBoardGameBill = Boolean(boardGameCheckout && total === 0);
@@ -1066,13 +1067,17 @@ export default function DesktopPosRenderer() {
                 <div className={styles.paymentRows}>
                   {payments.map((payment, index) => (
                     <section key={payment.id}>
-                      <div className={styles.paymentRowHead}>
-                        <select value={payment.method} onChange={(event) => updatePayment(payment.id, { method: event.target.value as PosPaymentMethod, reference: event.target.value === "cash" ? undefined : "", tendered: event.target.value === "cash" ? payment.amount : undefined })}>
-                          {[...primaryMethods, "bank_transfer" as const].map((method) => <option key={method} value={method}>{paymentMethodLabel(method)}</option>)}
-                        </select>
-                        <label>ยอดช่องทางนี้<input inputMode="decimal" value={payment.amount || ""} onChange={(event) => updatePayment(payment.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></label>
-                        {payments.length > 1 ? <button className={styles.removePayment} onClick={() => setPayments((current) => current.filter((item) => item.id !== payment.id))}>ลบ</button> : null}
-                      </div>
+                      {payments.length > 1 ? (
+                        <div className={styles.paymentRowHead}>
+                          <label>ช่องทาง
+                            <select value={payment.method} onChange={(event) => updatePayment(payment.id, { method: event.target.value as PosPaymentMethod, reference: event.target.value === "cash" ? undefined : "", tendered: event.target.value === "cash" ? payment.amount : undefined })}>
+                              {[...primaryMethods, "bank_transfer" as const].map((method) => <option key={method} value={method}>{paymentMethodLabel(method)}</option>)}
+                            </select>
+                          </label>
+                          <label>ยอดช่องทางนี้<input inputMode="decimal" value={payment.amount || ""} onChange={(event) => updatePayment(payment.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></label>
+                          <button className={styles.removePayment} onClick={() => setPayments((current) => current.filter((item) => item.id !== payment.id))}>ลบ</button>
+                        </div>
+                      ) : null}
                       {payment.method === "cash" ? (
                         <>
                           <label className={styles.receivedInput}>รับเงินมา<input inputMode="decimal" value={payment.tendered ?? ""} onChange={(event) => updatePayment(payment.id, { tendered: Math.max(0, Number(event.target.value) || 0) })} /></label>

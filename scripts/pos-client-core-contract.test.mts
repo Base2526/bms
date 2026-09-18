@@ -117,3 +117,16 @@ test("desktop header keeps cashier identity without a permanent legacy-sales esc
     "advanced items must retain a contextual path to the full sales workflow",
   );
 });
+
+test("desktop checkout does not repeat the payment selector for a single tender", () => {
+  assert.match(
+    desktopRenderer,
+    /\{payments\.length > 1 \? \([\s\S]*?<select value=\{payment\.method\}/,
+    "the per-row method selector belongs only to split payments",
+  );
+  assert.match(
+    desktopRenderer,
+    /const paymentCount = payments\.length;[\s\S]*?\}, \[paymentCount, total\]\);/,
+    "returning from split to one tender must restore the authoritative total",
+  );
+});
