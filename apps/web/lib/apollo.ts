@@ -15,6 +15,7 @@ import { onError } from "@apollo/client/link/error";
 import { createUploadLink } from 'apollo-upload-client';
 
 import { addLog } from './log/log';
+import { readPosDeviceToken } from "./pos/deviceTokenClient";
 
 function backendLogout(reason?: string) {
   const time = new Date().toISOString();
@@ -189,7 +190,7 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
           await new Promise((resolve) => window.setTimeout(resolve, capped + jitter));
         },
         connectionParams: async () => {
-          const posToken = scope === "pos" ? window.localStorage.getItem("bms.pos.deviceToken") ?? "" : "";
+          const posToken = scope === "pos" ? await readPosDeviceToken() : "";
           const response = await fetch(`/api/bms/realtime/ticket?scope=${scope}`, {
             method: "POST",
             credentials: "include",

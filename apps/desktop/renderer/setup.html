@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'" />
+    <title>ตั้งค่า BMS POS</title>
+    <link rel="stylesheet" href="./setup.css" />
+  </head>
+  <body>
+    <main class="setup-shell">
+      <section class="setup-panel" aria-labelledby="setup-title">
+        <header class="brand-row">
+          <img src="./app-icon.svg" alt="" width="52" height="52" />
+          <div>
+            <div class="brand-name">BMS POS</div>
+            <div class="brand-subtitle">Windows Client</div>
+          </div>
+        </header>
+        <div class="intro">
+          <h1 id="setup-title">เชื่อมต่อเครื่องแคชเชียร์</h1>
+          <p>ใช้ลิงก์จับคู่จากหน้าเครื่อง POS ในระบบหลังบ้าน แอปจะตรวจสอบเซิร์ฟเวอร์ก่อนบันทึกเครื่องนี้</p>
+        </div>
+        <form id="pairing-form" novalidate>
+          <label for="server-url">Server URL</label>
+          <input id="server-url" name="serverUrl" type="url" autocomplete="url" inputmode="url" placeholder="https://shop.example.com" />
+          <div class="field-hint">เว้นว่างได้เมื่อวางลิงก์จับคู่แบบเต็ม</div>
+          <label for="pairing-input">ลิงก์จับคู่ หรือ Device Token</label>
+          <textarea id="pairing-input" name="pairingInput" rows="3" autocomplete="off" spellcheck="false" placeholder="https://shop.example.com/pos?t=pos_..."></textarea>
+          <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+          <button id="pair-button" type="submit">
+            <span class="button-label">เชื่อมต่อเครื่องนี้</span>
+            <span class="button-progress" hidden>กำลังตรวจสอบ...</span>
+          </button>
+        </form>
+        <footer>
+          <span>token ถูกเข้ารหัสด้วยบัญชี Windows ของเครื่องนี้</span>
+          <span id="app-version"></span>
+        </footer>
+      </section>
+    </main>
+    <script src="./setup.js"></script>
+  </body>
+</html>

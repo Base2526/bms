@@ -10,6 +10,7 @@ import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modi
 import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
+import { posDeviceStorageNamespace, readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import { posPaymentMethodLabel, receiptDocumentTitle,
   receiptLabel,
@@ -54,8 +55,7 @@ import styles from "./restaurant.module.css";
 /** เหตุการณ์ที่จอนี้เห็นจริง — หน้าตั้งค่าแสดงเฉพาะชุดนี้ ไม่ยื่นตัวเลือกที่ตั้งแล้วไม่มีผล */
 const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_NEW", "QR_PENDING", "FOOD_READY", "SLA_LATE"] as const;
 
-const TOKEN_KEY = "bms.pos.deviceToken";
-// จำ "ฉันยืนอยู่จอไหน / โต๊ะไหน" ไว้ข้ามการรีเฟรช — ต่อท้ายด้วย device token เพื่อผูกกับ
+// จำ "ฉันยืนอยู่จอไหน / โต๊ะไหน" ไว้ข้ามการรีเฟรช — ต่อท้ายด้วย namespace ของ device เพื่อผูกกับ
 // เครื่องนี้เครื่องเดียว (แบบเดียวกับ bms.pos.localTab. ของหน้าค้าปลีก) เครื่องอื่นที่ใช้
 // เบราว์เซอร์เดียวกัน — หรือเครื่องเดิมที่ถูก pair ใหม่ — จะไม่เห็นของกันและกัน
 //
@@ -482,6 +482,7 @@ export default function RestaurantPosPage() {
   const MENU_SOLD_OUT_REASONS = useMemo(() => menuSoldOutReasons(t), [t]);
   const KITCHEN_NOTE_SHORTCUTS = useMemo(() => kitchenNoteShortcuts(t), [t]);
   const [token, setToken] = useState("");
+  const [deviceStorageNamespace, setDeviceStorageNamespace] = useState("");
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [floor, setFloor] = useState<Floor>({ areas: [], tables: [] });
@@ -639,7 +640,17 @@ export default function RestaurantPosPage() {
   // (opacity 0) = กล่องอยู่ใน DOM ตำแหน่งถูก แต่มองไม่เห็นทั้งใบ
   const modalContainer = useCallback(() => rootRef.current ?? document.body, []);
 
-  useEffect(() => { setToken(window.localStorage.getItem(TOKEN_KEY) ?? ""); setReady(true); }, []);
+  useEffect(() => {
+    let disposed = false;
+    void readPosDeviceToken().then(async (nextToken) => {
+      const nextNamespace = nextToken ? await posDeviceStorageNamespace(nextToken) : "";
+      if (disposed) return;
+      setToken(nextToken);
+      setDeviceStorageNamespace(nextNamespace);
+      setReady(true);
+    });
+    return () => { disposed = true; };
+  }, []);
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel("bms-pos-display");
@@ -1167,7 +1178,7 @@ export default function RestaurantPosPage() {
    * เปิด /admin/kitchen แทนไม่ได้ ครัวจึงไม่มีทางหนีไปหน้าอื่น
    */
   useEffect(() => {
-    if (!token || localViewRestoredRef.current) return;
+    if (!deviceStorageNamespace || localViewRestoredRef.current) return;
     localViewRestoredRef.current = true;
     let fromUrl: RestaurantScreen | undefined;
     try {
@@ -1177,8 +1188,8 @@ export default function RestaurantPosPage() {
     let savedScreen: string | null = null;
     let savedCheckRaw: string | null = null;
     try {
-      savedScreen = window.localStorage.getItem(LOCAL_SCREEN_KEY_PREFIX + token);
-      savedCheckRaw = window.localStorage.getItem(LOCAL_CHECK_KEY_PREFIX + token);
+      savedScreen = window.localStorage.getItem(LOCAL_SCREEN_KEY_PREFIX + deviceStorageNamespace);
+      savedCheckRaw = window.localStorage.getItem(LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace);
     } catch { /* โหมดส่วนตัว */ }
     // ลิงก์ที่ปักหมุดไว้ชนะค่าที่จำไว้ — แต่ชนะแค่ "จอไหน" ไม่ใช่ข้ามการคืนบิลที่ทำอยู่
     if (fromUrl) setScreen(fromUrl);
@@ -1191,7 +1202,7 @@ export default function RestaurantPosPage() {
       const id = typeof saved.id === "string" ? saved.id : "";
       const savedAt = Number(saved.savedAt ?? 0);
       if (!id || !(savedAt > 0) || Date.now() - savedAt > LOCAL_CHECK_MAX_AGE_MS) {
-        window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + token);
+        window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace);
         setViewRestored(true);
         return;
       }
@@ -1204,16 +1215,16 @@ export default function RestaurantPosPage() {
         .catch(() => setCheck(null))
         .finally(() => setViewRestored(true));
     } catch { setViewRestored(true); /* ค่าที่จำไว้พัง = เริ่มใหม่ ไม่ใช่ทำให้เปิดจอไม่ได้ */ }
-  }, [token]);
+  }, [deviceStorageNamespace]);
   useEffect(() => {
-    if (!token || !viewRestored) return;
-    try { window.localStorage.setItem(LOCAL_SCREEN_KEY_PREFIX + token, screen); } catch { /* โหมดส่วนตัว */ }
-  }, [screen, token, viewRestored]);
+    if (!deviceStorageNamespace || !viewRestored) return;
+    try { window.localStorage.setItem(LOCAL_SCREEN_KEY_PREFIX + deviceStorageNamespace, screen); } catch { /* โหมดส่วนตัว */ }
+  }, [screen, deviceStorageNamespace, viewRestored]);
   // จำบิลที่กำลังทำอยู่ — เก็บแค่ id กับเวลา ไม่เก็บรายการ/ยอดเงิน (ยอดต้องมาจาก server
   // เสมอ · เวลาอัปเดตทุกครั้งที่บิลถูกโหลดใหม่ จึงเป็น "นับจากการแตะครั้งล่าสุด")
   useEffect(() => {
-    if (!token || !viewRestored) return;
-    const key = LOCAL_CHECK_KEY_PREFIX + token;
+    if (!deviceStorageNamespace || !viewRestored) return;
+    const key = LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace;
     try {
       if (check && isOpenCheckStatus(check.status)) {
         window.localStorage.setItem(key, JSON.stringify({ id: check.id, savedAt: Date.now() }));
@@ -1224,7 +1235,7 @@ export default function RestaurantPosPage() {
     // viewRestored อยู่ใน deps ด้วย ไม่ใช่แค่ในเงื่อนไข — บิลที่คืนไม่สำเร็จ (ถูกเก็บเงิน/
     // ยกเลิกไปแล้ว) ทำให้ check เป็น null ตั้งแต่ก่อนธงจะปัก ถ้าไม่ให้ effect วิ่งอีกรอบ
     // ตอนธงปัก คีย์ที่ตายแล้วจะค้างอยู่ตลอดไปและเสีย GET ทิ้งทุกครั้งที่เปิดจอ
-  }, [check, token, viewRestored]);
+  }, [check, deviceStorageNamespace, viewRestored]);
   // กรองจากเมนูที่โหลดไว้แล้วในเครื่อง ไม่ยิง API ซ้ำ — ค้นหาที่นี่เป็นตัวช่วยกรองกริด
   // ไม่ใช่ทางเดียวเหมือนเดิม (เมนูร้านอาหารมีไม่มาก พิมพ์ทุกครั้งเสียเวลาเปล่า)
   const menuStations = useMemo(() => {

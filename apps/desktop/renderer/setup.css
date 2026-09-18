@@ -1,0 +1,89 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  background: #eef2f5;
+  color: #17202a;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+
+.setup-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: linear-gradient(145deg, #e8f1f7 0%, #f5f7f8 48%, #edf1ef 100%);
+}
+
+.setup-panel {
+  width: min(100%, 560px);
+  background: #ffffff;
+  border: 1px solid #d9e0e5;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(21, 41, 56, 0.12);
+  padding: 32px;
+}
+
+.brand-row { display: flex; align-items: center; gap: 14px; }
+.brand-row img { border-radius: 12px; }
+.brand-name { font-size: 20px; font-weight: 700; }
+.brand-subtitle { margin-top: 2px; color: #60717f; font-size: 13px; }
+.intro { margin: 34px 0 26px; }
+h1 { margin: 0; font-size: 25px; line-height: 1.25; letter-spacing: 0; }
+.intro p { margin: 10px 0 0; color: #52626e; font-size: 14px; line-height: 1.6; }
+form { display: grid; }
+label { margin: 18px 0 7px; font-size: 13px; font-weight: 600; color: #263642; }
+label:first-child { margin-top: 0; }
+
+input, textarea {
+  width: 100%;
+  border: 1px solid #b8c4cc;
+  border-radius: 6px;
+  background: #fff;
+  color: #17202a;
+  font: inherit;
+  font-size: 15px;
+  padding: 11px 12px;
+  outline: none;
+}
+
+textarea { resize: vertical; min-height: 84px; }
+input:focus, textarea:focus { border-color: #2477a8; box-shadow: 0 0 0 3px rgba(36, 119, 168, 0.14); }
+.field-hint { margin-top: 5px; color: #74838e; font-size: 12px; }
+.status { margin-top: 16px; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
+.status.error { color: #8d1d1d; border: 1px solid #e7b6b6; background: #fff1f1; }
+
+button {
+  min-height: 46px;
+  margin-top: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: #2379a9;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover { background: #1c688f; }
+button:focus-visible { outline: 3px solid rgba(36, 119, 168, 0.3); outline-offset: 2px; }
+button:disabled { background: #8ba7b7; cursor: wait; }
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid #e5eaee;
+  color: #71808a;
+  font-size: 11px;
+}
+
+@media (max-width: 560px) {
+  .setup-shell { padding: 0; place-items: stretch; }
+  .setup-panel { min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; padding: 24px 20px; }
+  footer { margin-top: auto; flex-direction: column; }
+}

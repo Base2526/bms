@@ -58,6 +58,13 @@ import {
   requestPrinter,
   sendToPrinter,
 } from "@/lib/pos/printerClient";
+import {
+  clearPosDeviceToken,
+  hasDesktopPosBridge,
+  posDeviceStorageNamespace,
+  readPosDeviceToken,
+  writeBrowserPosDeviceToken,
+} from "@/lib/pos/deviceTokenClient";
 
 /**
  * แถบงานด้านซ้าย — จอ POS สูง 768px เป็นมาตรฐาน แกนตั้งจึงเป็นของหายาก
@@ -243,7 +250,6 @@ function PosHelp({ title, children, align = "left" }: {
   );
 }
 
-const TOKEN_KEY = "bms.pos.deviceToken";
 const LAST_RECEIPT_KEY = "bms.pos.lastReceipt";
 const PENDING_SALE_KEY = "bms.pos.pendingSale";
 const PENDING_DEPOSIT_SALE_KEY = "bms.pos.pendingDepositSale";
@@ -1306,6 +1312,7 @@ type IncomingRefund = { id: string; orderId: string; amount: number; method: str
 
 export default function PosPage() {
   const [token, setToken] = useState<string>("");
+  const [deviceStorageNamespace, setDeviceStorageNamespace] = useState<string>("");
   const [tokenInput, setTokenInput] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const receiptLanguageMode = session?.store?.receiptLanguageMode ?? "th";
@@ -1710,24 +1717,32 @@ export default function PosPage() {
     // จับคู่ผ่านลิงก์ได้: /pos?t=<token>
     // หน้าแอดมินให้ลิงก์เต็มไปเลย เพราะการก๊อป token เปล่า ๆ แล้วเอาไปวางในช่อง URL
     // เป็นสิ่งที่เกิดขึ้นจริง (เจอมาแล้ว) — วางลิงก์ในช่อง URL แล้วต้องทำงานเลย
-    const url = new URL(window.location.href);
-    setBoardGameCheckoutId((url.searchParams.get("boardGameBillingGroupId") ?? "").trim());
-    const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
-    if (fromUrl) {
-      window.localStorage.setItem(TOKEN_KEY, fromUrl);
-      window.dispatchEvent(new Event("bms-pos-device-token-changed"));
-      setToken(fromUrl);
-      // ล้าง token ออกจาก URL ทันที — ไม่ให้ค้างใน history/แถบที่อยู่ให้ใครเห็น
-      url.searchParams.delete("t");
-      url.searchParams.delete("token");
-      window.history.replaceState({}, "", url.pathname + url.search);
-      return;
-    }
-    setToken(window.localStorage.getItem(TOKEN_KEY) ?? "");
-    try {
-      const savedReceipt = window.localStorage.getItem(LAST_RECEIPT_KEY);
-      if (savedReceipt) setReceipt(JSON.parse(savedReceipt) as Receipt);
-    } catch {}
+    let disposed = false;
+    const initialize = async () => {
+      const url = new URL(window.location.href);
+      setBoardGameCheckoutId((url.searchParams.get("boardGameBillingGroupId") ?? "").trim());
+      const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
+      const browserPairingLink = fromUrl && !hasDesktopPosBridge();
+      if (browserPairingLink) {
+        writeBrowserPosDeviceToken(fromUrl);
+        // ล้าง token ออกจาก URL ทันที — ไม่ให้ค้างใน history/แถบที่อยู่ให้ใครเห็น
+        url.searchParams.delete("t");
+        url.searchParams.delete("token");
+        window.history.replaceState({}, "", url.pathname + url.search);
+      }
+      const nextToken = browserPairingLink ? fromUrl : await readPosDeviceToken();
+      const nextNamespace = nextToken ? await posDeviceStorageNamespace(nextToken) : "";
+      if (!disposed) {
+        setToken(nextToken);
+        setDeviceStorageNamespace(nextNamespace);
+      }
+      try {
+        const savedReceipt = window.localStorage.getItem(LAST_RECEIPT_KEY);
+        if (!disposed && savedReceipt) setReceipt(JSON.parse(savedReceipt) as Receipt);
+      } catch {}
+    };
+    void initialize();
+    return () => { disposed = true; };
   }, []);
 
   useEffect(() => {
@@ -1950,19 +1965,20 @@ export default function PosPage() {
     }
   }, [token, authHeaders]);
 
-  function unpair() {
-    window.localStorage.removeItem(TOKEN_KEY);
-    window.dispatchEvent(new Event("bms-pos-device-token-changed"));
+  async function unpair() {
     // เครื่องนี้เลิกจับคู่แล้ว — ดราฟต์ที่ผูกไว้กับ token เดิมไม่มีความหมายอีกต่อไป
     if (token) {
-      window.localStorage.removeItem(LOCAL_TAB_KEY_PREFIX + token);
-      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+      const namespace = await posDeviceStorageNamespace(token);
+      window.localStorage.removeItem(LOCAL_TAB_KEY_PREFIX + namespace);
+      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + namespace);
     }
     setToken("");
+    setDeviceStorageNamespace("");
     setTokenInput("");
     setSession(null);
     setTokenRejected(false);
     setSessionError("");
+    await clearPosDeviceToken();
   }
 
   useEffect(() => {
@@ -1977,17 +1993,17 @@ export default function PosPage() {
 
   // จำแท็บที่เลือกอยู่ไว้ข้ามการรีเฟรช — ไม่มีข้อมูลอ่อนไหว คืนค่าได้ตรง ๆ ไม่ต้องคิดอะไรต่อ
   useEffect(() => {
-    if (!token || !localDraftRestoredRef.current) return;
-    window.localStorage.setItem(LOCAL_TAB_KEY_PREFIX + token, tab);
-  }, [tab, token]);
+    if (!deviceStorageNamespace || !localDraftRestoredRef.current) return;
+    window.localStorage.setItem(LOCAL_TAB_KEY_PREFIX + deviceStorageNamespace, tab);
+  }, [tab, deviceStorageNamespace]);
 
   // จำตะกร้าที่กำลังขายไว้ข้ามการรีเฟรช/แท็บถูกดีดจาก memory — ปลอดภัยเพราะ
   // createOrder คิดราคาจาก catalog ปัจจุบันเสมอตอนกดจ่ายจริง (สูตรเดียวกับพักบิล)
   // ล้างทิ้งทันทีที่ตะกร้าว่าง ไม่ว่าจะว่างเพราะขายจบ/ล้าง/พักบิล/ยกเลิก — กันดราฟต์
   // ค้างเกินอายุของบิลที่จบไปแล้ว โดยไม่ต้องไปตามแก้ทุกจุดที่ setCart([]) เก็บอยู่
   useEffect(() => {
-    if (!token || !localDraftRestoredRef.current) return;
-    const key = LOCAL_CART_DRAFT_KEY_PREFIX + token;
+    if (!deviceStorageNamespace || !localDraftRestoredRef.current) return;
+    const key = LOCAL_CART_DRAFT_KEY_PREFIX + deviceStorageNamespace;
     if (cart.length === 0) {
       window.localStorage.removeItem(key);
       return;
@@ -2003,21 +2019,21 @@ export default function PosPage() {
     };
     window.localStorage.setItem(key, JSON.stringify(snapshot));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, member, pointsToRedeem, couponCode, extraLines, token, session?.shift?.id]);
+  }, [cart, member, pointsToRedeem, couponCode, extraLines, deviceStorageNamespace, session?.shift?.id]);
 
   // คืนตะกร้า+แท็บที่ค้างไว้ — ครั้งเดียวหลัง session โหลดเสร็จ ไม่ใช่ทุกครั้งที่ตะกร้าว่าง
   // (ไม่งั้นเคลียร์ตะกร้าเองก็จะโดนดึงดราฟต์เก่ากลับมาซ้ำ)
   useEffect(() => {
-    if (!token || !session || localDraftRestoredRef.current) return;
+    if (!deviceStorageNamespace || !session || localDraftRestoredRef.current) return;
     localDraftRestoredRef.current = true;
 
-    const savedTab = window.localStorage.getItem(LOCAL_TAB_KEY_PREFIX + token);
+    const savedTab = window.localStorage.getItem(LOCAL_TAB_KEY_PREFIX + deviceStorageNamespace);
     if (savedTab && POS_TABS.some((item) => item.key === savedTab)) {
       setTab(savedTab as PosTab);
     }
 
     if (cart.length > 0) return; // มีตะกร้าอยู่แล้ว (ไม่ควรเกิดตอน mount แต่กันไว้)
-    const raw = window.localStorage.getItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+    const raw = window.localStorage.getItem(LOCAL_CART_DRAFT_KEY_PREFIX + deviceStorageNamespace);
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as { savedAt?: number; shiftId?: string | null } & Record<string, unknown>;
@@ -2027,7 +2043,7 @@ export default function PosPage() {
       // กันตะกร้าของกะก่อนข้ามมาให้แคชเชียร์กะถัดไปเจอโดยไม่รู้ที่มา
       const shiftMatches = (parsed.shiftId ?? null) === (session?.shift?.id ?? null);
       if (!isFresh || !shiftMatches) {
-        window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+        window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + deviceStorageNamespace);
         return;
       }
       const snapshot = parseParkedCartSnapshot(parsed);
@@ -2035,10 +2051,10 @@ export default function PosPage() {
       restoreBillFromSnapshot({ ...snapshot, pharmacyReview: null });
       setNotice({ type: "ok", text: "กู้ตะกร้าที่ค้างไว้ก่อนหน้าคืนแล้ว — ตรวจรายการก่อนกดจ่ายอีกครั้ง" });
     } catch {
-      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + token);
+      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + deviceStorageNamespace);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, session]);
+  }, [deviceStorageNamespace, session]);
 
   useEffect(() => {
     if (!token) return;
@@ -6091,36 +6107,52 @@ export default function PosPage() {
             </div>
           </div>
         )}
-        <p style={{ color: "#666", fontSize: 14 }}>
-          {tokenRejected
-            ? "ถ้าออก token ใหม่มาแล้ว วางลิงก์หรือ token ตัวใหม่ที่นี่"
-            : "ใส่ token ที่ออกจากหน้าแอดมิน (ออกให้ครั้งเดียว ถ้าหายต้องออกใหม่)"}
-        </p>
-        <input
-          value={tokenInput}
-          onChange={(e) => setTokenInput(e.target.value)}
-          placeholder="pos_... หรือวางลิงก์จับคู่ทั้งลิงก์"
-          style={{ width: "100%", padding: 12, fontSize: 16, marginTop: 12 }}
-        />
-        <button
-          disabled={!tokenInput.trim()}
-          onClick={() => {
-            // ก๊อปมาทั้งลิงก์ก็รับ — ดึงเฉพาะค่า token ออกมาให้เอง
-            const raw = tokenInput.trim();
-            let t = raw;
-            const m = raw.match(/[?&](?:t|token)=([^&\s]+)/);
-            if (m) t = decodeURIComponent(m[1]);
-            else if (raw.includes("/")) t = raw.split("/").pop() ?? raw;
-            window.localStorage.setItem(TOKEN_KEY, t);
-            window.dispatchEvent(new Event("bms-pos-device-token-changed"));
-            setToken(t);
-            setTokenRejected(false);
-            setSessionError("");
-          }}
-          style={{ width: "100%", padding: 14, fontSize: 16, marginTop: 12 }}
-        >
-          จับคู่
-        </button>
+        {hasDesktopPosBridge() ? (
+          <>
+            <p style={{ color: "#666", fontSize: 14 }}>
+              กลับไปหน้าตั้งค่า Windows Client เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
+            </p>
+            <button
+              onClick={() => { void unpair(); }}
+              style={{ width: "100%", padding: 14, fontSize: 16, marginTop: 12 }}
+            >
+              ตั้งค่าแอปใหม่
+            </button>
+          </>
+        ) : (
+          <>
+            <p style={{ color: "#666", fontSize: 14 }}>
+              {tokenRejected
+                ? "ถ้าออก token ใหม่มาแล้ว วางลิงก์หรือ token ตัวใหม่ที่นี่"
+                : "ใส่ token ที่ออกจากหน้าแอดมิน (ออกให้ครั้งเดียว ถ้าหายต้องออกใหม่)"}
+            </p>
+            <input
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              placeholder="pos_... หรือวางลิงก์จับคู่ทั้งลิงก์"
+              style={{ width: "100%", padding: 12, fontSize: 16, marginTop: 12 }}
+            />
+            <button
+              disabled={!tokenInput.trim()}
+              onClick={() => {
+                // ก๊อปมาทั้งลิงก์ก็รับ — ดึงเฉพาะค่า token ออกมาให้เอง
+                const raw = tokenInput.trim();
+                let t = raw;
+                const m = raw.match(/[?&](?:t|token)=([^&\s]+)/);
+                if (m) t = decodeURIComponent(m[1]);
+                else if (raw.includes("/")) t = raw.split("/").pop() ?? raw;
+                if (!writeBrowserPosDeviceToken(t)) return;
+                setToken(t);
+                setDeviceStorageNamespace(t);
+                setTokenRejected(false);
+                setSessionError("");
+              }}
+              style={{ width: "100%", padding: 14, fontSize: 16, marginTop: 12 }}
+            >
+              จับคู่
+            </button>
+          </>
+        )}
         <p style={{ color: "#888", fontSize: 12, marginTop: 16 }}>
           เครื่องนี้จะจำ token ไว้จนกว่าจะกดเลิกจับคู่ — ไม่ต้องใส่ใหม่ทุกวัน
         </p>

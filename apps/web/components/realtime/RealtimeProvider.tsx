@@ -8,6 +8,7 @@ import type { RealtimeConnectionStatus } from "@/lib/apollo";
 import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
 import { queryNeedsRealtimeRefetch } from "./realtimeInvalidation";
+import { readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
 
 const REALTIME_EVENT_FIELDS = gql`
   fragment RealtimeEventFields on RealtimeEvent {
@@ -394,14 +395,18 @@ export function PosRealtimeProvider({ children }: { children: React.ReactNode })
   const [tokenGeneration, setTokenGeneration] = React.useState(0);
   const [enabled, setEnabled] = React.useState(false);
   React.useEffect(() => {
-    const refresh = () => {
-      setEnabled(Boolean(window.localStorage.getItem("bms.pos.deviceToken")));
+    let disposed = false;
+    const refresh = async () => {
+      const token = await readPosDeviceToken();
+      if (disposed) return;
+      setEnabled(Boolean(token));
       setTokenGeneration((value) => value + 1);
     };
-    refresh();
+    void refresh();
     window.addEventListener("storage", refresh);
     window.addEventListener("bms-pos-device-token-changed", refresh);
     return () => {
+      disposed = true;
       window.removeEventListener("storage", refresh);
       window.removeEventListener("bms-pos-device-token-changed", refresh);
     };

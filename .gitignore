@@ -3,6 +3,7 @@
 .env.*
 .next/
 dist/
+dist-smoke/
 build/
 out/
 .DS_Store
