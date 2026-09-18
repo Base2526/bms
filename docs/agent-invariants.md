@@ -293,6 +293,29 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   client timeout is an unknown result and must preserve that same key. A pending reference is
   not a receipt or tax document; `recordPosSale()` still commits payment, stock, audit and tax in
   the normal transaction, and the backend repeats every eligibility check.
+- **The desktop shell hosts the register; it never becomes one.** `apps/desktop/` is an Electron
+  window onto the same `/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual` routes the browser
+  register uses, shipped for Windows and Linux (the macOS build exists to exercise the shell, not to
+  certify a platform). It holds no database, no pricing, no settlement path and no permission of its
+  own. What it does own is the device credential: pairing verifies the token against the
+  device-scoped `/api/pos/session` before anything is stored, the token is encrypted at rest through
+  Electron `safeStorage` (DPAPI on Windows, Secret Service/KWallet on Linux, Keychain on macOS) in a
+  `0600` file written atomically, and the web renderer reads it through `window.bmsDesktop` instead
+  of `localStorage` (`apps/web/lib/pos/deviceTokenClient.ts`). Every IPC handler re-checks the
+  calling frame: `pair` and `app-info` answer only the local setup page, while `get-device-token`,
+  `get-storage-namespace` and `unpair` answer only a `/pos*` frame on the paired origin. Navigation
+  off that origin — and any window-open other than `/pos/display` or `/pos/manual` — is handed to the
+  system browser, and media permission is granted only for video on the paired origin. **Linux fails
+  closed:** `basic_text` is Electron's unencrypted fallback, so `secureStorageStatus()` treats it and
+  every unrecognised backend as unavailable and blocks pairing until GNOME Keyring/Secret Service or
+  KWallet is present. A keystore message always names the keystore of the running platform; one that
+  names the wrong one sends the cashier to a setting that does not exist. Pairing state is
+  deliberately not portable between platforms, because the keystores are different. Packages
+  (Windows NSIS, Linux AppImage/DEB x64, macOS DMG) are unsigned, there is no auto-update, and
+  `.github/workflows/desktop-linux.yml` uploads a build artifact rather than publishing a release.
+  Direct ESC/POS printing, cash-drawer control and offline tender are not in the shell. See
+  [apps/desktop/README.md](../apps/desktop/README.md) and
+  [business/pos.md § Desktop POS client](business/pos.md#desktop-pos-client-windows-and-linux).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.

@@ -10,6 +10,45 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Desktop POS client for Windows and Linux (2026-09-18)
+
+- `apps/desktop/` packages the POS surface that already exists as an installed application — an
+  Electron window onto `/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual` on the paired
+  server. It was deliberately built as a shell and not as a native register: a second register would
+  mean a second pricing and settlement path, and the whole value of the register is that
+  `recordPosSale()` is the only place money and stock move.
+- The one thing the shell owns is the device credential. A browser register keeps the device token
+  in `localStorage`, which is readable by anything with access to the profile; the desktop client
+  verifies the token against the device-scoped `/api/pos/session` before storing anything and then
+  encrypts it through Electron `safeStorage` — DPAPI on Windows, Secret Service/KWallet on Linux,
+  Keychain on macOS — into a `0600` file written atomically. The web page reads it back through
+  `window.bmsDesktop` (`apps/web/lib/pos/deviceTokenClient.ts`) and falls back to `localStorage` when
+  that bridge is absent, so one POS page serves both shells.
+- The IPC bridge checks which frame is calling rather than trusting the channel: `pair`/`app-info`
+  answer only the local setup page, and `get-device-token`/`get-storage-namespace`/`unpair` answer
+  only a `/pos*` frame on the paired origin. Navigation off that origin, and any window-open other
+  than the customer display or the cashier manual, is handed to the system browser; the renderer runs
+  sandboxed with context isolation and no Node integration, and camera permission is limited to video
+  on the paired origin.
+- Linux support fails closed rather than degrading. Electron falls back to a `basic_text` backend
+  when no desktop keyring exists, and storing a bearer token under it is not meaningfully different
+  from storing it in the clear, so `secureStorageStatus()` treats `basic_text` and every unrecognised
+  backend as unavailable and blocks pairing with a message naming GNOME Keyring/Secret Service or
+  KWallet. The keystore message is chosen per platform for the same reason a wrong one is worse than
+  none: it sends a cashier to a setting their machine does not have.
+- Packaging stops short of a release on purpose. Windows NSIS, Linux AppImage/DEB (x64) and a macOS
+  DMG are all unsigned with no auto-update channel, and `.github/workflows/desktop-linux.yml` lints,
+  tests and builds the Linux packages on a Linux runner — the only host where executable permissions,
+  desktop integration and launch behaviour can be checked together — then uploads them as a 14-day
+  artifact instead of publishing. Direct ESC/POS printing, cash-drawer control and offline tender are
+  not in the shell; receipt printing still goes through the browser print path.
+- The macOS build exists to exercise the shell when no Windows or Linux machine is available. A pass
+  there proves the POS surface, pairing flow, IPC allow-list and window security; it certifies
+  neither DPAPI, the NSIS installer, the Linux keyring check, nor AppImage/DEB packaging, and the
+  Electron smoke test asserts Windows labels from a stubbed preload on every host.
+
+---
+
 ## Admin menu search / command palette (2026-09-03)
 
 - Added a keyboard-triggered jump list (⌘K / Ctrl+K, plus a visible "ค้นหาเมนู" button in the

@@ -82,6 +82,59 @@ Verification for the client is `npm run lint`, `npm test -- --runInBand`, and
 directories and APKs are ignored; only source and lockfiles belong in Git. The detailed screen list,
 local setup and current exclusions live in [the mobile README](../../apps/mobile/README.md).
 
+## Desktop POS client (Windows and Linux)
+
+`apps/desktop/` is an Electron shell around the POS surface the browser register already uses —
+`/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual`, served by the paired backend. It ships
+as a Windows NSIS installer and Linux AppImage/DEB (x64); a macOS DMG exists so the shell can be
+exercised on a Mac, not as a supported register. The shell holds no database, no price list and no
+settlement path. A sale rung up in it is the same `recordPosSale()` transaction as one rung up in
+Chrome, and the app grants a cashier nothing extra.
+
+What it changes is where the device token lives. A browser register keeps it in `localStorage`; the
+desktop client pairs once — a full POS link, a bare `pos_...` token plus server URL, or a
+`bmspos://pair?t=…&h=…` link — rejects anything that is not HTTPS unless it is loopback, verifies
+the token against the device-scoped `/api/pos/session` **before** writing anything, then stores it
+encrypted by the operating system's keystore through Electron `safeStorage`: DPAPI on Windows,
+Secret Service or KWallet on Linux, Keychain on macOS. The encrypted file is written atomically with
+`0600` permissions under the app's user data directory. Because the keystores differ, a device
+paired on one platform cannot be read on another — the register has to pair again, which is
+expected, not a fault.
+
+The renderer never sees the file. `apps/web/lib/pos/deviceTokenClient.ts` reads the token through
+`window.bmsDesktop` when the bridge is present and falls back to `localStorage` otherwise, so the
+same POS page runs in both shells. Every IPC handler re-checks which frame is calling: `pair` and
+`app-info` answer only the local setup page, while `get-device-token`, `get-storage-namespace` and
+`unpair` answer only a `/pos*` frame on the paired origin. The window runs with context isolation, a
+sandboxed renderer and no Node integration; navigation away from the paired origin — and any
+window-open other than the customer display or the cashier manual — is handed to the system browser
+instead of being loaded in the shell, and camera permission is granted only for video on the paired
+origin. "Unpair" from the register clears the stored pairing and returns the window to the setup
+screen.
+
+**On Linux the shell fails closed.** Electron falls back to a `basic_text` backend when no desktop
+keyring is available, and that backend does not protect a bearer credential, so pairing is blocked —
+with a message telling the operator to enable GNOME Keyring/Secret Service or unlock KWallet —
+rather than silently storing a device token in the clear. The same rule rejects any backend the
+shell does not recognise; the message always names the keystore of the platform it is running on,
+because one that names the wrong one sends a cashier to a setting that does not exist on that
+machine.
+
+Packaging is deliberately short of a release: all three targets are unsigned, there is no
+auto-update channel, and `.github/workflows/desktop-linux.yml` lints, tests and builds the AppImage
+and DEB on a Linux runner and uploads them as a 14-day workflow artifact without signing or
+publishing anything. Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not
+part of the shell: it registers no USB or serial device handler, so the register's WebUSB path is
+unavailable inside it and receipts print through the same browser print dialog the web register
+falls back to. Linux release acceptance still needs a distro matrix (GNOME/KDE, Wayland/X11), CUPS receipt
+printing, keyboard-wedge scanners, a second customer display, suspend/reconnect, and the
+keyring-locked states.
+
+Verification for the shell is `npm run lint` and `npm test` (pairing and keystore-policy units) from
+`apps/desktop/`, plus `npm run test:smoke`, which launches Electron and asserts the setup screen.
+`npm run gate` does not run them. Setup and installer details live in
+[the desktop README](../../apps/desktop/README.md).
+
 ## Supported counter workflow
 
 1. An administrator creates an active location and POS device at `/admin/pos-devices`, issues its

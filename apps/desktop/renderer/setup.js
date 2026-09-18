@@ -6,9 +6,13 @@ const button = document.querySelector("#pair-button");
 const buttonLabel = button.querySelector(".button-label");
 const buttonProgress = button.querySelector(".button-progress");
 const version = document.querySelector("#app-version");
+const clientLabel = document.querySelector("#client-label");
+const securityNote = document.querySelector("#security-note");
+
+let storageBlocked = false;
 
 function setBusy(busy) {
-  button.disabled = busy;
+  button.disabled = busy || storageBlocked;
   serverInput.disabled = busy;
   pairingInput.disabled = busy;
   buttonLabel.hidden = busy;
@@ -40,4 +44,11 @@ form.addEventListener("submit", async (event) => {
 
 window.bmsDesktop.getAppInfo().then((info) => {
   if (info?.version) version.textContent = `v${info.version}`;
+  if (info?.clientLabel) clientLabel.textContent = info.clientLabel;
+  if (info?.securityNote) securityNote.textContent = info.securityNote;
+  if (info?.secureStorageReady === false) {
+    storageBlocked = true;
+    button.disabled = true;
+    showError(info.secureStorageError || "ระบบปฏิบัติการไม่มีที่เก็บ Device Token ที่ปลอดภัย");
+  }
 });

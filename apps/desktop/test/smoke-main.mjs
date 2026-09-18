@@ -31,13 +31,22 @@ async function run() {
       heading: document.querySelector('h1')?.textContent,
       fields: document.querySelectorAll('input, textarea').length,
       button: document.querySelector('button')?.textContent?.trim(),
+      clientLabel: document.querySelector('#client-label')?.textContent,
+      securityNote: document.querySelector('#security-note')?.textContent,
       overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
     })`);
     if (state.title !== "ตั้งค่า BMS POS" || state.heading !== "เชื่อมต่อเครื่องแคชเชียร์") {
       throw new Error(`Unexpected setup content: ${JSON.stringify(state)}`);
     }
-    if (state.fields !== 2 || !state.button?.includes("เชื่อมต่อเครื่องนี้") || state.overflowX || state.overflowY) {
+    if (
+      state.fields !== 2
+      || !state.button?.includes("เชื่อมต่อเครื่องนี้")
+      || state.clientLabel !== "Windows Client"
+      || !state.securityNote?.includes("Windows")
+      || state.overflowX
+      || state.overflowY
+    ) {
       throw new Error(`Invalid setup layout: ${JSON.stringify(state)}`);
     }
     await mkdir(outputDir, { recursive: true });

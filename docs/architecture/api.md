@@ -136,6 +136,12 @@ rejects an unknown or deactivated device with `401`). A device token identifies 
 person, so the acting human is a separate layer: `cashierUserId` + `pin` verified by
 `verifyCashierPin()` (bcrypt, 5 wrong PINs lock the user for 15 minutes) and the action permission by
 `cashierHasPermission()`. Read routes expose session, scan/search, and device-local recent/last sales.
+One header serves all three registers, and only the place the token rests differs: the browser keeps
+it in `localStorage`, the native app in `react-native-keychain`, and the desktop shell
+(`apps/desktop`) in the OS keystore, handing it to its renderer over IPC. The desktop shell also uses
+the read-only `GET /api/pos/session` as its pairing probe, so an unknown, revoked or re-issued token
+is rejected before anything is stored.
+
 Mutating routes verify both layers — `/api/pos/park` is the single deliberate exception:
 
 - `POST /api/pos/shift` — open/close the device drawer; close is blocked by pending refund settlement.
