@@ -1,7 +1,8 @@
 /* =============================================================
    จอขายหน้าร้าน — สไตล์เฉพาะ /pos
    -------------------------------------------------------------
-   เขียน CSS เองแทนใช้ antd เพราะจอขายมี component ไม่กี่ตัวแต่ต้องการ
+   ใช้ Ant Design 5 token/visual language แต่ยังเขียน CSS ของจอขายเอง เพราะมี component
+   ไม่กี่ตัวและต้องการ
    ปุ่มใหญ่กว่าปกติมาก (antd ออกแบบมาสำหรับเมาส์ ต้อง override แทบทุกจุด)
    และแท็บเล็ตหน้าร้านมักเป็นเครื่องเก่า — ไม่ควรโหลด component library
    ทั้งก้อนเพื่อใช้ปุ่มกับ input
@@ -13,29 +14,36 @@
    ============================================================= */
 
 .pos-root {
-  --pos-bg: #f2f3f5;
+  /* Ant Design 5-aligned semantic tokens.  The POS keeps its larger touch targets instead of
+     importing desktop-sized Ant controls, but every surface/state now speaks the same language. */
+  --pos-bg: #f5f7fa;
   --pos-surface: #ffffff;
-  --pos-sunken: #f7f8fa;
-  --pos-line: #e4e6ea;
-  --pos-line-strong: #cfd3d9;
-  --pos-text: #1b1d21;
-  --pos-muted: #6b7280;
-  --pos-accent: #1f6feb;
-  --pos-accent-bg: #e8f1ff;
-  --pos-money: #1a7f37;
-  --pos-money-bg: #e9f7ee;
-  --pos-warn: #9a6700;
-  --pos-warn-bg: #fff5d6;
-  --pos-danger: #b42318;
-  --pos-danger-bg: #fdeceb;
+  --pos-sunken: #fafafa;
+  --pos-line: #e5e7eb;
+  --pos-line-strong: #d9d9d9;
+  --pos-text: #1f1f1f;
+  --pos-muted: #667085;
+  --pos-accent: #1677ff;
+  --pos-accent-hover: #4096ff;
+  --pos-accent-active: #0958d9;
+  --pos-accent-bg: #e6f4ff;
+  --pos-money: #389e0d;
+  --pos-money-bg: #f6ffed;
+  --pos-warn: #ad6800;
+  --pos-warn-bg: #fffbe6;
+  --pos-danger: #cf1322;
+  --pos-danger-bg: #fff2f0;
   --pos-alt: #6f42c1;
   --pos-alt-bg: #f1ebfd;
-  --pos-radius: 10px;
+  --pos-radius: 8px;
+  --pos-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.035);
+  --pos-shadow-float: 0 8px 24px rgba(15, 23, 42, 0.10);
 
   min-height: 100vh;
   background: var(--pos-bg);
   color: var(--pos-text);
   font-size: 14px;
+  font-family: var(--font-pos), "IBM Plex Sans Thai", "Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* จอสัมผัส: กันเลือกข้อความค้างตอนกดรัว ๆ */
   user-select: none;
   -webkit-user-select: none;
@@ -68,11 +76,20 @@
   padding: 10px 14px;
   min-height: 44px;
   cursor: pointer;
-  transition: background 120ms ease, transform 60ms ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  transition: border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, background 120ms ease, transform 60ms ease;
 }
-:where(.pos-root) button:not(.ant-btn):hover:not(:disabled) { background: var(--pos-sunken); }
+:where(.pos-root) button:not(.ant-btn):hover:not(:disabled) {
+  border-color: var(--pos-accent-hover);
+  background: var(--pos-surface);
+  color: var(--pos-accent);
+}
 :where(.pos-root) button:not(.ant-btn):active:not(:disabled) { transform: scale(0.97); }
 :where(.pos-root) button:not(.ant-btn):disabled { opacity: 0.55; cursor: not-allowed; }
+:where(.pos-root) button:not(.ant-btn):focus-visible {
+  outline: 2px solid rgba(22, 119, 255, 0.32);
+  outline-offset: 2px;
+}
 
 .pos-root input,
 .pos-root select {
@@ -85,6 +102,18 @@
   min-height: 44px;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Ant components ที่เปิดจากหน้า POS ต้องใช้ face เดียวกับ shell ด้วย ไม่เช่นนั้น modal/tooltip
+   จะเด้งกลับไป system font แม้ข้อความรอบข้างเป็น Noto Sans Thai แล้ว. */
+.pos-root .ant-btn,
+.pos-root .ant-input,
+.pos-root .ant-input-number,
+.pos-root .ant-select,
+.pos-root .ant-modal,
+.pos-root .ant-message,
+.pos-root .ant-tooltip {
+  font-family: var(--font-pos), "IBM Plex Sans Thai", "Noto Sans Thai", sans-serif;
 }
 .pos-root input:focus,
 .pos-root select:focus {
@@ -108,9 +137,15 @@
 .pos-card {
   background: var(--pos-surface);
   border: 1px solid var(--pos-line);
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 12px;
+  box-shadow: var(--pos-shadow-card);
 }
+
+/* คู่มืออยู่ใน rail บนจอเครื่องขาย จึงไม่ลอยทับปุ่มรับชำระเหมือนเดิม.
+   มือถือยังใช้ปุ่มลอยเพราะ rail ถูกเปลี่ยนเป็นแถบล่างและพื้นที่แนวนอนไม่พอ. */
+.pos-guide-rail { margin-top: auto; }
+.pos-page + .pos-guide-floating { display: none !important; }
 
 /* โต๊ะ/เวลาเป็น workspace เต็มจอ: เมื่อปิดเวลาแล้ว component จะพาไปแท็บขายเอง
    การคงแผงชำระเงินว่าง ๆ ไว้ครึ่งจอทำให้ผังโต๊ะและทุกฟอร์มเล็กลงโดยไม่มีงานให้ทำตรงนั้น */
@@ -130,17 +165,16 @@
   background: transparent;
 }
 
-/* ---- หน้าขาย: รายการซ้าย / รับชำระขวา -----------------------------
-   โครงนี้ยึด mockup ที่อนุมัติ: 64/36, รายการสินค้าอ่านเป็นตาราง และงานรับเงิน
-   อยู่ในคอลัมน์ขวาเดียวตั้งแต่ยอดจนถึงปุ่มจบรายการ */
+/* ---- workspace สอง panel -------------------------------------------
+   ทุกแท็บใช้สัดส่วนเดิมของหน้าขาย: งานหลัก 64% / แผงขวา 36%. */
 .pos-main-grid--sell {
   grid-template-columns: minmax(0, 64fr) minmax(380px, 36fr) !important;
-  gap: 8px !important;
+  gap: 12px !important;
 }
 
-.pos-sale-basket,
+.pos-work-panel,
 .pos-sale-checkout {
-  padding: 12px;
+  padding: 14px;
   border-radius: 12px;
 }
 
@@ -155,19 +189,23 @@
 .pos-sale-totalbar {
   position: relative;
   z-index: 2;
-  padding: 4px 2px 10px;
+  margin: -14px -14px 0;
+  padding: 16px 16px 12px;
   border-bottom: 1px solid var(--pos-line);
-  background: var(--pos-surface);
+  border-radius: 12px 12px 0 0;
+  background: #f7fbff;
 }
-.pos-sale-total-label { color: var(--pos-muted); font-size: 13px; }
+.pos-sale-total-label { color: #344054; font-size: 13px; font-weight: 600; }
 .pos-sale-totalbar > .pos-total-row {
   align-items: flex-end;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--pos-line);
 }
 .pos-sale-totalbar .pos-total-value {
-  font-size: 30px;
-  font-weight: 500;
+  color: var(--pos-accent-active);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
 }
 .pos-sale-totalbar > .pos-sale-summary {
   margin-top: 0;
@@ -178,7 +216,7 @@
 .pos-sale-checkout-scroll {
   min-height: 0;
   overflow-y: auto;
-  padding: 0 3px 10px 0;
+  padding: 10px 3px 10px 0;
   scrollbar-gutter: stable;
 }
 
@@ -200,7 +238,7 @@
   margin-top: 8px;
   overflow: hidden;
   border: 1px solid var(--pos-line);
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--pos-surface);
 }
 .pos-root .pos-sale-customer-discount-toggle {
@@ -228,7 +266,7 @@
   height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--pos-accent-bg);
   color: var(--pos-accent);
 }
@@ -368,7 +406,7 @@
 
 .pos-sale-basket-head {
   min-height: 54px;
-  margin-top: 8px;
+  margin-top: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -376,10 +414,33 @@
   border-bottom: 1px solid var(--pos-line);
 }
 
-.pos-sale-basket-title { font-size: 15px; font-weight: 600; }
+.pos-sale-basket-title { font-size: 17px; font-weight: 600; letter-spacing: -0.1px; }
 .pos-sale-basket-meta { margin-top: 2px; color: var(--pos-muted); font-size: 12px; }
-.pos-sale-basket-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.pos-root .pos-sale-basket-actions button { min-height: 38px; padding: 7px 12px; font-size: 13px; }
+.pos-sale-basket-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.pos-root .pos-sale-basket-actions button {
+  min-height: 42px;
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pos-sale-action-icon { width: 18px; height: 18px; flex: none; }
+.pos-sale-basket-actions kbd,
+.pos-sale-footer-park kbd,
+.pos-scan-shortcut {
+  min-width: 28px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: #f0f5ff;
+  color: var(--pos-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
 .pos-root .pos-sale-basket-actions button[aria-pressed="true"] {
   border-color: var(--pos-warn);
   background: var(--pos-warn-bg);
@@ -402,21 +463,28 @@
 }
 
 .pos-sale-line-header {
-  padding: 10px 8px 7px;
+  margin-top: 8px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--pos-line);
+  border-radius: 8px 8px 0 0;
+  background: var(--pos-sunken);
   color: var(--pos-muted);
   font-size: 12px;
 }
 
 .pos-sale-line-header > :not(:first-child) { text-align: right; }
 .pos-sale-basket .pos-line-item {
-  min-height: 78px;
-  padding: 10px 8px;
-  border: 0;
-  border-bottom: 1px solid var(--pos-line);
-  border-radius: 0;
+  min-height: 86px;
+  margin-top: 8px;
+  padding: 12px 10px;
+  border: 1px solid var(--pos-line);
+  border-radius: 10px;
+  background: var(--pos-surface);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.045);
 }
-.pos-sale-basket .pos-line-item + .pos-line-item { margin-top: 0; }
+.pos-sale-basket .pos-line-item + .pos-line-item { margin-top: 8px; }
+.pos-line-product { min-width: 0; display: flex; align-items: flex-start; gap: 12px; }
+.pos-line-product-copy { min-width: 0; flex: 1; }
 .pos-line-unit-price {
   text-align: right;
   color: var(--pos-muted);
@@ -481,36 +549,42 @@
 .pos-sale-method-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px;
 }
 .pos-root .pos-sale-method {
   min-width: 0;
-  min-height: 36px;
-  padding: 5px 4px;
+  min-height: 42px;
+  padding: 7px 5px;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 .pos-root .pos-sale-method[aria-pressed="true"] {
-  border-color: #b5d4f4;
+  border-color: #69b1ff;
   background: var(--pos-accent-bg);
   color: var(--pos-accent);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(22, 119, 255, 0.08);
 }
+.pos-sale-method-icon { width: 16px; height: 16px; flex: none; }
 
 .pos-sale-cash { margin-top: 6px; }
 .pos-sale-checkout .pos-cash-field {
-  min-height: 42px;
-  padding: 2px 10px;
+  min-height: 50px;
+  padding: 4px 12px;
   border-radius: 8px;
 }
-.pos-sale-checkout .pos-cash-field input { padding: 3px 0; font-size: 22px; }
+.pos-sale-checkout .pos-cash-field input { padding: 3px 0; font-size: 24px; font-variant-numeric: tabular-nums; }
 .pos-sale-checkout .pos-quick {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   margin-top: 5px;
 }
 .pos-root .pos-sale-checkout .pos-quick button {
-  min-height: 32px;
-  padding: 4px 0;
+  min-height: 38px;
+  padding: 6px 0;
   font-size: 12px;
 }
 .pos-sale-checkout .pos-change { min-height: 38px; }
@@ -518,7 +592,7 @@
   border-radius: 8px;
   background: var(--pos-accent);
 }
-.pos-root .pos-sale-checkout .pos-pay:hover:not(:disabled) { background: #195fc8; }
+.pos-root .pos-sale-checkout .pos-pay:hover:not(:disabled) { background: var(--pos-accent-hover); color: #fff; }
 .pos-root .pos-sale-checkout .pos-pay:disabled {
   border: 1px solid var(--pos-line);
   background: var(--pos-sunken);
@@ -530,20 +604,30 @@
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   padding-top: 10px;
   border-top: 1px solid var(--pos-line);
   background: var(--pos-surface);
 }
 .pos-root .pos-sale-checkout-footer .pos-pay {
-  grid-column: 1 / -1;
   min-height: 48px;
   margin-top: 0 !important;
   padding: 12px 0;
   font-size: 15px;
   font-weight: 600;
 }
+.pos-root .pos-sale-footer-park {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+.pos-sale-footer-park > :first-child { justify-self: end; margin-inline-end: 7px; }
+.pos-sale-footer-park > kbd { justify-self: end; margin-inline-end: 38px; }
 .pos-sale-status {
   min-height: 40px;
   min-width: 0;
@@ -556,6 +640,17 @@
   background: var(--pos-sunken);
   font-size: 12px;
 }
+.pos-sale-status.is-blocked {
+  border: 1px solid #ffccc7;
+  background: var(--pos-danger-bg);
+  color: var(--pos-danger);
+  font-weight: 600;
+}
+.pos-sale-status.is-ready {
+  border: 1px solid #b7eb8f;
+  background: var(--pos-money-bg);
+  color: var(--pos-money);
+}
 .pos-sale-status span:last-child {
   min-width: 0;
   overflow: hidden;
@@ -563,6 +658,32 @@
   white-space: nowrap;
 }
 .pos-sale-bill-options { margin-top: 0; }
+.pos-sale-checkout-footer > .pos-sale-bill-options {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  z-index: 4;
+}
+.pos-sale-checkout-footer > .pos-sale-bill-options > summary {
+  width: 34px;
+  min-height: 32px;
+  padding: 0;
+  font-size: 0;
+}
+.pos-sale-checkout-footer > .pos-sale-bill-options > summary::before {
+  content: "•••";
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.pos-sale-checkout-footer > .pos-sale-bill-options .pos-sale-bill-options-body {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(360px, 50vh);
+  margin-top: 0;
+  box-shadow: var(--pos-shadow-float);
+}
 .pos-sale-bill-options > summary {
   min-height: 40px;
   padding: 9px 12px;
@@ -601,22 +722,22 @@
 /* ---- แถบบน ---- */
 .pos-topbar {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; flex-wrap: wrap; min-height: 68px;
+  gap: 12px; flex-wrap: wrap; min-height: 72px;
 }
 .pos-shop { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .pos-shop-mark {
-  width: 38px; height: 38px; border-radius: 10px; flex: none;
+  width: 42px; height: 42px; border-radius: 10px; flex: none;
   background: var(--pos-accent-bg); color: var(--pos-accent);
   display: flex; align-items: center; justify-content: center;
   font-size: 17px; font-weight: 600;
 }
 .pos-shop-name {
-  font-size: 15px; font-weight: 600;
+  font-size: 17px; font-weight: 650;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pos-chips { display: flex; gap: 5px; margin-top: 3px; flex-wrap: wrap; }
 .pos-chip {
-  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; padding: 3px 8px; border-radius: 6px;
   background: var(--pos-sunken); color: var(--pos-muted); white-space: nowrap;
 }
 .pos-chip--ok { background: var(--pos-money-bg); color: var(--pos-money); }
@@ -627,14 +748,16 @@
 /* ---- ตะกร้า ---- */
 .pos-scan {
   display: flex; align-items: center; gap: 10px;
-  border: 1px solid var(--pos-line-strong); border-radius: var(--pos-radius);
-  background: var(--pos-sunken); padding: 0 12px;
+  border: 1px solid #91caff; border-radius: 10px;
+  background: var(--pos-surface); padding: 0 12px;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.08);
 }
 .pos-scan input {
   flex: 1; border: none; background: transparent; box-shadow: none;
   font-size: 16px; padding: 13px 0; min-height: 48px;
 }
 .pos-scan input:focus { box-shadow: none; }
+.pos-scan-shortcut { flex: none; }
 
 /* ปุ่มกล้อง (โหมดเทส) — ทรงกลมล้วน ๆ ให้ต่างจากกรอบสี่เหลี่ยมของช่องยิง
    ต้องเขียนคู่กับ .pos-root ให้ specificity ชนะ `.pos-root button` ด้านบน
@@ -687,7 +810,7 @@
   background: var(--pos-sunken); border-radius: 12px; padding: 14px;
 }
 .pos-total-row { display: flex; align-items: baseline; justify-content: space-between; }
-.pos-total-value { font-size: 36px; font-weight: 700; line-height: 1; letter-spacing: -0.5px; }
+.pos-total-value { font-size: 36px; font-weight: 700; line-height: 1; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
 .pos-total-break {
   display: flex; justify-content: space-between;
   font-size: 12px; color: var(--pos-muted); margin-top: 3px;
@@ -715,7 +838,7 @@
 .pos-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .pos-root .pos-quick button { padding: 13px 0; font-size: 14px; font-weight: 500; }
 .pos-quick .pos-exact {
-  background: var(--pos-money-bg); border-color: var(--pos-money-bg);
+  background: var(--pos-money-bg); border-color: #b7eb8f;
   color: var(--pos-money); font-weight: 700;
 }
 .pos-quick .pos-clear { color: var(--pos-danger); }
@@ -733,7 +856,7 @@
 .pos-root .pos-pay:hover:not(:disabled) { background: #15682c; }
 .pos-root .pos-pay:disabled {
   background: var(--pos-sunken); color: var(--pos-muted);
-  border: 1px dashed var(--pos-line-strong); opacity: 1; font-weight: 600;
+  border: 1px solid var(--pos-line-strong); opacity: 1; font-weight: 600;
 }
 
 /* ---- หลังขายจบ ---- */
@@ -895,6 +1018,11 @@
   .pos-sale-checkout .pos-quick { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pos-root .pos-sale-checkout .pos-quick button { min-height: 40px; }
   .pos-sale-empty { min-height: 280px; }
+}
+
+@media (max-width: 767px) {
+  .pos-page .pos-guide-rail { display: none !important; }
+  .pos-page + .pos-guide-floating { display: flex !important; }
 }
 
 /* ---- แท็บคืนสินค้า: รายการบิล + ประวัติบิล -----------------------
@@ -1410,13 +1538,13 @@
 }
 .pos-bg-open-card { padding: 2px; }
 
-/* Master-detail ตามแบบ: ผัง 56% รายละเอียด 44% และเลื่อนแยกกัน */
+/* ผังโต๊ะใช้สัดส่วนเดียวกับหน้าขาย: ผัง 64% / รายละเอียด 36% */
 .pos-bg-master-detail {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(420px, 56fr) minmax(380px, 44fr);
-  gap: 10px;
+  grid-template-columns: minmax(420px, 64fr) minmax(380px, 36fr);
+  gap: 12px;
 }
 .pos-bg-master-pane,
 .pos-bg-detail-pane {

@@ -8,6 +8,7 @@ import React, {
 import {
   Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -17,6 +18,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import QRCode from 'react-native-qrcode-svg';
 import { useMutation, useQuery } from '@apollo/client';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -109,6 +113,7 @@ type ParticipantDraft = {
   billingGroupNo: number;
 };
 type Member = MobilePosMembersQuery['bmsPosMemberSearch']['members'][number];
+type ReservationPickerTarget = 'start-date' | 'start-time' | 'filter-date';
 
 const DURATION_PRESETS = [60, 90, 120, 180] as const;
 const ALERT_PRESETS = [5, 10, 15, 30] as const;
@@ -219,6 +224,47 @@ function parseReservationInstant(dateValue: string, timeValue: string) {
     time.minutes,
   );
   return Number.isFinite(instant.getTime()) ? instant : null;
+}
+
+function reservationDateValue(value: string) {
+  const parsed = parseReservationDateInput(value);
+  return parsed
+    ? new Date(parsed.year, parsed.month - 1, parsed.day, 12)
+    : new Date();
+}
+
+function reservationDateStorageValue(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(
+    2,
+    '0',
+  )}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
+function reservationDateDisplayValue(value: string) {
+  const parsed = parseReservationDateInput(value);
+  if (!parsed) return '';
+  return `${String(parsed.day).padStart(2, '0')}/${String(
+    parsed.month,
+  ).padStart(2, '0')}/${parsed.year + 543}`;
+}
+
+function reservationTimeValue(dateValue: string, timeValue: string) {
+  const parsedDate = parseReservationDateInput(dateValue);
+  const parsedTime = parseReservationTimeInput(timeValue);
+  const now = new Date();
+  return new Date(
+    parsedDate?.year ?? now.getFullYear(),
+    (parsedDate?.month ?? now.getMonth() + 1) - 1,
+    parsedDate?.day ?? now.getDate(),
+    parsedTime?.hours ?? now.getHours(),
+    parsedTime?.minutes ?? now.getMinutes(),
+  );
+}
+
+function reservationTimeStorageValue(value: Date) {
+  return `${String(value.getHours()).padStart(2, '0')}:${String(
+    value.getMinutes(),
+  ).padStart(2, '0')}`;
 }
 
 /**
@@ -375,6 +421,8 @@ function BoardGameFloor({
   const [reservationEditingId, setReservationEditingId] = useState('');
   const [reservationSearch, setReservationSearch] = useState('');
   const [reservationDate, setReservationDate] = useState('');
+  const [reservationPickerTarget, setReservationPickerTarget] =
+    useState<ReservationPickerTarget | null>(null);
   const [reviewTableByEntry, setReviewTableByEntry] = useState<
     Record<string, string>
   >({});
@@ -483,6 +531,31 @@ function BoardGameFloor({
     setReservationStartTime('');
     setReservationDuration('120');
     setReservationTableId('');
+  };
+  const reservationPickerMode =
+    reservationPickerTarget === 'start-time' ? 'time' : 'date';
+  const reservationPickerValue =
+    reservationPickerTarget === 'start-time'
+      ? reservationTimeValue(reservationStartDate, reservationStartTime)
+      : reservationDateValue(
+          reservationPickerTarget === 'filter-date'
+            ? reservationDate
+            : reservationStartDate,
+        );
+  const handleReservationPickerChange = (
+    event: DateTimePickerEvent,
+    selectedValue?: Date,
+  ) => {
+    const target = reservationPickerTarget;
+    if (Platform.OS === 'android') setReservationPickerTarget(null);
+    if (event.type === 'dismissed' || !selectedValue || !target) return;
+    if (target === 'start-time') {
+      setReservationStartTime(reservationTimeStorageValue(selectedValue));
+    } else if (target === 'filter-date') {
+      setReservationDate(reservationDateStorageValue(selectedValue));
+    } else {
+      setReservationStartDate(reservationDateStorageValue(selectedValue));
+    }
   };
   const runQueueAction = async (
     operationName: string,
@@ -1036,21 +1109,36 @@ function BoardGameFloor({
                 >
                   วันที่
                 </Text>
-                <TextInput
+                <Pressable
                   accessibilityLabel="วันที่จอง"
-                  value={reservationStartDate}
-                  onChangeText={setReservationStartDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textSoft}
-                  style={[
+                  accessibilityHint="แตะเพื่อเปิดปฏิทิน"
+                  accessibilityRole="button"
+                  onPress={() => setReservationPickerTarget('start-date')}
+                  style={({ pressed }) => [
                     styles.input,
+                    styles.reservationPickerTrigger,
                     {
                       borderColor: colors.border,
-                      color: colors.text,
                       backgroundColor: colors.surface,
+                      opacity: pressed ? 0.75 : 1,
                     },
                   ]}
-                />
+                >
+                  <Text
+                    style={[
+                      typography.body,
+                      {
+                        color: reservationStartDate
+                          ? colors.text
+                          : colors.textSoft,
+                      },
+                    ]}
+                  >
+                    {reservationDateDisplayValue(reservationStartDate) ||
+                      'เลือกวันที่'}
+                  </Text>
+                  <Text style={styles.reservationPickerGlyph}>📅</Text>
+                </Pressable>
               </View>
               <View style={styles.reservationTimeField}>
                 <Text
@@ -1061,21 +1149,35 @@ function BoardGameFloor({
                 >
                   เวลา
                 </Text>
-                <TextInput
+                <Pressable
                   accessibilityLabel="เวลาจอง"
-                  value={reservationStartTime}
-                  onChangeText={setReservationStartTime}
-                  placeholder="18:00"
-                  placeholderTextColor={colors.textSoft}
-                  style={[
+                  accessibilityHint="แตะเพื่อเปิดตัวเลือกเวลา"
+                  accessibilityRole="button"
+                  onPress={() => setReservationPickerTarget('start-time')}
+                  style={({ pressed }) => [
                     styles.input,
+                    styles.reservationPickerTrigger,
                     {
                       borderColor: colors.border,
-                      color: colors.text,
                       backgroundColor: colors.surface,
+                      opacity: pressed ? 0.75 : 1,
                     },
                   ]}
-                />
+                >
+                  <Text
+                    style={[
+                      typography.body,
+                      {
+                        color: reservationStartTime
+                          ? colors.text
+                          : colors.textSoft,
+                      },
+                    ]}
+                  >
+                    {reservationStartTime || 'เลือกเวลา'}
+                  </Text>
+                  <Text style={styles.reservationPickerGlyph}>🕒</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -1409,22 +1511,63 @@ function BoardGameFloor({
                   },
                 ]}
               />
-              <TextInput
-                accessibilityLabel="กรองวันที่จอง"
-                value={reservationDate}
-                onChangeText={setReservationDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textSoft}
-                style={[
-                  styles.input,
-                  styles.reservationDateInput,
-                  {
-                    borderColor: colors.border,
-                    color: colors.text,
-                    backgroundColor: colors.surface,
-                  },
-                ]}
-              />
+              <View style={styles.reservationFilterDateWrap}>
+                <Pressable
+                  accessibilityLabel="กรองวันที่จอง"
+                  accessibilityHint="แตะเพื่อเปิดปฏิทิน"
+                  accessibilityRole="button"
+                  onPress={() => setReservationPickerTarget('filter-date')}
+                  style={({ pressed }) => [
+                    styles.input,
+                    styles.reservationDateInput,
+                    styles.reservationPickerTrigger,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      typography.caption,
+                      {
+                        color: reservationDate ? colors.text : colors.textSoft,
+                      },
+                    ]}
+                  >
+                    {reservationDateDisplayValue(reservationDate) || 'วันที่'}
+                  </Text>
+                  {!reservationDate ? (
+                    <Text style={styles.reservationPickerGlyph}>📅</Text>
+                  ) : null}
+                </Pressable>
+                {reservationDate ? (
+                  <Pressable
+                    accessibilityLabel="ล้างตัวกรองวันที่"
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={() => setReservationDate('')}
+                    style={({ pressed }) => [
+                      styles.reservationDateClear,
+                      {
+                        backgroundColor: colors.surface2,
+                        opacity: pressed ? 0.65 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typography.bodyStrong,
+                        { color: colors.textMuted },
+                      ]}
+                    >
+                      ×
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           </View>
           {allReservations.length > 0 && reservations.length === 0 ? (
@@ -1979,6 +2122,61 @@ function BoardGameFloor({
     </>
   );
 
+  const reservationPicker = (
+    <>
+      {reservationPickerTarget && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={reservationPickerValue}
+          mode={reservationPickerMode}
+          display={reservationPickerMode === 'date' ? 'calendar' : 'clock'}
+          is24Hour
+          onChange={handleReservationPickerChange}
+        />
+      ) : null}
+      <Modal
+        transparent
+        visible={Boolean(reservationPickerTarget) && Platform.OS === 'ios'}
+        animationType="fade"
+        onRequestClose={() => setReservationPickerTarget(null)}
+      >
+        <View style={[styles.callOverlay, { backgroundColor: colors.overlay }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setReservationPickerTarget(null)}
+          />
+          <View
+            style={[
+              styles.reservationPickerPanel,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[typography.title, { color: colors.text }]}>
+              {reservationPickerMode === 'date' ? 'เลือกวันที่' : 'เลือกเวลา'}
+            </Text>
+            {reservationPickerTarget ? (
+              <DateTimePicker
+                value={reservationPickerValue}
+                mode={reservationPickerMode}
+                display={
+                  reservationPickerMode === 'date' ? 'inline' : 'spinner'
+                }
+                is24Hour
+                locale="th-TH"
+                themeVariant={scheme}
+                onChange={handleReservationPickerChange}
+              />
+            ) : null}
+            <Button
+              label="เสร็จสิ้น"
+              fullWidth
+              onPress={() => setReservationPickerTarget(null)}
+            />
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+
   if (!isTablet) {
     return (
       <ScreenContainer>
@@ -2016,6 +2214,7 @@ function BoardGameFloor({
           {floorBody}
         </ScrollView>
         {callsModal}
+        {reservationPicker}
       </ScreenContainer>
     );
   }
@@ -2135,6 +2334,7 @@ function BoardGameFloor({
           {floorBody}
         </ScrollView>
         {callsModal}
+        {reservationPicker}
       </View>
     </ScreenContainer>
   );
@@ -4406,6 +4606,21 @@ const styles = StyleSheet.create({
   reservationFieldRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   reservationField: { flex: 1, minWidth: 0, gap: 5 },
   reservationTimeField: { width: 112, flexShrink: 0, gap: 5 },
+  reservationPickerTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  reservationPickerGlyph: { fontSize: 16 },
+  reservationPickerPanel: {
+    width: '100%',
+    maxWidth: 420,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
   reservationOptionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -4479,7 +4694,22 @@ const styles = StyleSheet.create({
   },
   reservationFilterRow: { flexDirection: 'row', gap: 8 },
   reservationSearchInput: { flex: 1, minWidth: 0 },
-  reservationDateInput: { width: 122, flexShrink: 0 },
+  reservationFilterDateWrap: {
+    width: 142,
+    flexShrink: 0,
+    position: 'relative',
+  },
+  reservationDateInput: { width: '100%', paddingRight: 34 },
+  reservationDateClear: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   openPanel: { gap: 16 },
   openPanelWide: { flexDirection: 'row', alignItems: 'flex-start' },
   openForm: { flex: 1, minWidth: 0, gap: 12 },

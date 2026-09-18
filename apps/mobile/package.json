@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@apollo/client": "^3.14.0",
+    "@react-native-community/datetimepicker": "^9.2.1",
     "@react-native/assets-registry": "^0.87.1",
     "@react-native/new-app-screen": "0.87.1",
     "@react-navigation/bottom-tabs": "^7.18.18",

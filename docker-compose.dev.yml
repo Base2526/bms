@@ -107,6 +107,9 @@ services:
   caddy:
     ports:
       - "443:443"
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./apps/web/Caddyfile.local:/etc/caddy/Caddyfile:ro
 
 volumes:
   ws_node_modules:

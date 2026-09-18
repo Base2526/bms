@@ -41,6 +41,7 @@ import {
 } from "@/lib/pos/scanManager";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import {
   posPaymentMethodLabel,
   receiptDocumentTitle,
@@ -98,13 +99,13 @@ type PosTab = (typeof POS_TABS)[number]["key"];
  */
 function PosTabIcon({ tab }: { tab: PosTab }) {
   if (tab === "sell") {
-    // บาร์โค้ด = ขาย (ยิงของ)
+    // รถเข็น = งานขาย; ไอคอนบาร์โค้ดยังอยู่ที่ช่องยิงซึ่งบอก input mode โดยตรงกว่า
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <rect x="3" y="5" width="3.4" height="14" rx="1" />
-        <rect x="8.6" y="5" width="2" height="14" rx="1" />
-        <rect x="12" y="5" width="3.4" height="14" rx="1" />
-        <rect x="17.6" y="5" width="3.4" height="14" rx="1" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 4h2l2.1 10.2a2 2 0 002 1.6h7.7a2 2 0 001.9-1.4L21 7H6" />
+        <circle cx="10" cy="20" r="1.25" fill="currentColor" stroke="none" />
+        <circle cx="18" cy="20" r="1.25" fill="currentColor" stroke="none" />
       </svg>
     );
   }
@@ -189,6 +190,40 @@ function ScanBarcodeIcon() {
       <rect x="12.7" y="5" width="1.1" height="14" rx=".4" />
       <rect x="15.2" y="5" width="2.2" height="14" rx=".6" />
       <rect x="18.8" y="5" width="2.7" height="14" rx=".6" />
+    </svg>
+  );
+}
+
+/** Payment icons stay inline SVG so the register has the same shape on every OS/font. */
+function PaymentMethodIcon({ method }: { method: (typeof METHODS)[number]["key"] }) {
+  if (method === "CASH") {
+    return (
+      <svg className="pos-sale-method-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <circle cx="12" cy="12" r="2.6" />
+        <path d="M6 9h.01M18 15h.01" />
+      </svg>
+    );
+  }
+  if (method === "QR") {
+    return (
+      <svg className="pos-sale-method-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm9-2h3v3h-3v-3zm4 0h3v5h-2v3h-3v-5h2v-3zm-5 5h3v3h-3v-3z" />
+      </svg>
+    );
+  }
+  if (method === "CARD") {
+    return (
+      <svg className="pos-sale-method-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 9h18M7 15h4" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="pos-sale-method-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M5 7h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h11" />
+      <path d="M16 12h5v4h-5a2 2 0 010-4z" />
     </svg>
   );
 }
@@ -5099,6 +5134,30 @@ export default function PosPage() {
     if (tab === "stock" && !receiptModalOpen && !imagePreview) stockScanRef.current?.focus();
   }, [tab, receiptModalOpen, imagePreview]);
 
+  // shortcut ที่แสดงบนปุ่มต้องทำงานจริง: F2 พักบิล, F5 สลับโหมดเช็คของ.
+  // ปิดไว้เมื่อ dialog เปิดเพื่อไม่ให้คีย์เดียวทำงานทะลุกล่องยืนยัน/ใบเสร็จ.
+  useEffect(() => {
+    function onSaleShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (event.key === "F2") {
+        if (tab === "boardgame" || cart.length === 0 || hasPendingOrderWrite) return;
+        event.preventDefault();
+        setParkOpen(true);
+        return;
+      }
+      if (event.key === "F5") {
+        if (tab !== "sell") return;
+        event.preventDefault();
+        setLookupMode((current) => !current);
+        setLookup(null);
+        scanRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onSaleShortcut, true);
+    return () => window.removeEventListener("keydown", onSaleShortcut, true);
+  }, [cart.length, hasPendingOrderWrite, tab]);
+
   // แคชเชียร์คุมจอด้วยคีย์บอร์ดมือเดียว — Enter พิมพ์ / Esc ปิด
   // ดักแบบ capture เพราะช่องยิงบาร์โค้ดอาจยังโฟกัสค้างอยู่หลังบิล ถ้าปล่อยผ่าน
   // การยิงของชิ้นถัดไปตอน modal เปิดอยู่จะทั้งเพิ่มลงตะกร้าและสั่งพิมพ์พร้อมกัน
@@ -6177,13 +6236,13 @@ export default function PosPage() {
         .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
         /* หน้าไม่เลื่อนทั้งหน้า — ให้แต่ละคอลัมน์เลื่อนของตัวเอง ปุ่มชำระเงิน
            จึงอยู่ที่เดิมเสมอแม้ตะกร้าจะยาว */
-        .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; overflow: hidden; }
-        .pos-rail { width: 58px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 5px;
-                    background: #fff; border-right: 1px solid var(--pos-line, #eee); }
+        .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: hidden; }
+        .pos-rail { width: 64px; flex: none; display: flex; flex-direction: column; gap: 5px; padding: 12px 7px;
+                    background: #fff; border-right: 1px solid var(--pos-line, #e5e7eb); box-shadow: 1px 0 0 rgba(15,23,42,.02); }
         .pos-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-                           height: 56px; width: 100%; border-radius: 10px; font-size: 11px; white-space: nowrap;
-                           border: 1px solid transparent; background: transparent; color: #555; cursor: pointer; }
-        .pos-rail button[aria-current="true"] { background: #e8f0fe; color: #14509a; border-color: #b5d4f4; font-weight: 500; }
+                           height: 58px; width: 100%; border-radius: 8px; font-size: 11px; white-space: nowrap;
+                           border: 1px solid transparent; background: transparent; color: #475467; cursor: pointer; box-shadow: none; }
+        .pos-rail button[aria-current="true"] { background: #e6f4ff; color: #1677ff; border-color: #91caff; font-weight: 600; box-shadow: inset 3px 0 0 #1677ff; }
         /* ไอคอนเป็น SVG แล้ว — font-size คุมขนาดไม่ได้ ต้องกำหนดที่ตัว svg เอง
            display:block กัน baseline gap ที่ทำให้ไอคอนกับ label ห่างไม่เท่ากันทุกแท็บ */
         .pos-rail .pos-rail-icon { line-height: 1; display: flex; }
@@ -6302,6 +6361,7 @@ export default function PosPage() {
             )}
           </button>
         ))}
+        <PosGuideAssistant variant="rail" className="pos-guide-rail" />
       </nav>
 
       <div className="pos-body">
@@ -6433,9 +6493,9 @@ export default function PosPage() {
       )}
       <div
         className={`pos-main-grid${tab === "boardgame" ? " pos-main-grid--boardgame" : ""}${tab === "sell" ? " pos-main-grid--sell" : ""}`}
-        style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1, minHeight: 0 }}
+        style={{ display: "grid", gridTemplateColumns: "minmax(0,64fr) minmax(380px,36fr)", gap: 12, flex: 1, minHeight: 0 }}
       >
-      <section className={`pos-card pos-pane${tab === "sell" ? " pos-sale-basket" : ""}`}>
+      <section className={`pos-card pos-pane pos-work-panel${tab === "sell" ? " pos-sale-basket" : ""}`}>
       {tab === "returns" && (<>
       <div style={{ fontSize: 13 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -8018,6 +8078,11 @@ export default function PosPage() {
                 : "ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า แล้วกด Enter"
             }
           />
+          {session?.device.scanner.mode === "PREFIX" && (
+            <span className="pos-scan-shortcut" aria-label={`คีย์เริ่มสแกน ${session.device.scanner.prefixKey}`}>
+              {session.device.scanner.prefixKey}
+            </span>
+          )}
           {/* โหมดเทส — ไม่มีเครื่องสแกนจริงก็ยังทดสอบขายได้ด้วยกล้องมือถือ
               โผล่เฉพาะเบราว์เซอร์ที่รองรับจริง (เช็คหลัง mount ใน cameraScan.ts)
               ไอคอนล้วนทรงกลม: แยกจากกรอบสี่เหลี่ยมของช่องยิงให้อ่านเป็นปุ่มคนละหน้าที่
@@ -8128,14 +8193,24 @@ export default function PosPage() {
                 disabled={hasPendingOrderWrite || cart.length === 0}
                 onClick={() => setParkOpen(true)}
               >
-                พักบิล
+                <svg className="pos-sale-action-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+                <span>พักบิล</span>
+                <kbd>F2</kbd>
               </button>
               <button
                 type="button"
                 aria-pressed={lookupMode}
                 onClick={() => { setLookupMode((v) => !v); setLookup(null); scanRef.current?.focus(); }}
               >
-                {lookupMode ? "ออกจากโหมดเช็คของ" : "เช็คของ"}
+                <svg className="pos-sale-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M4 8l8-4 8 4-8 4z" />
+                  <path d="M4 8v8l8 4 8-4V8M12 12v8" />
+                </svg>
+                <span>{lookupMode ? "ออกจากโหมดเช็คของ" : "เช็คของ"}</span>
+                <kbd>F5</kbd>
               </button>
             </div>
           </div>
@@ -8192,7 +8267,14 @@ export default function PosPage() {
             )}
             {cart.map((l) => (
               <div key={l.key} className="pos-line-item">
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="pos-line-product">
+                  <ProductThumb
+                    url={l.imageUrl}
+                    alt={l.receiptName}
+                    size={52}
+                    onPreview={(url) => setImagePreview({ url, label: l.receiptName })}
+                  />
+                  <div className="pos-line-product-copy">
                   <div className="pos-line-name">
                     <span>{l.receiptName}</span>
                     {/* ไซซ์ต้องเห็นเสมอ: สินค้าตัวเดียวกันคนละไซซ์ (10 เม็ด / 100 เม็ด)
@@ -8258,6 +8340,7 @@ export default function PosPage() {
                       ))}
                     </div>
                   )}
+                  </div>
                 </div>
                 <div className="pos-line-unit-price">
                   ฿{baht(cartLineCharge(l, tierPriceByKey.get(l.key)).unitPrice)}
@@ -8729,9 +8812,8 @@ export default function PosPage() {
       </>)}
         </section>
 
-        <section className={`pos-card pos-pane${tab === "sell" ? " pos-sale-checkout" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
-          {tab === "sell" && (
-            <div className="pos-sale-totalbar">
+        <section className="pos-card pos-pane pos-sale-checkout" style={{ display: "flex", flexDirection: "column" }}>
+          <div className="pos-sale-totalbar">
               <div className="pos-total-row">
                 <span className="pos-sale-total-label">ยอดชำระ · {itemCount} ชิ้น</span>
                 <span className="pos-total-value">฿{baht(amountDue)}</span>
@@ -8743,10 +8825,9 @@ export default function PosPage() {
                 <div><span>ส่วนลด</span><strong>−฿{baht(discountTotal)}</strong></div>
                 <div className="pos-sale-summary-total"><span>ยอดสุทธิ</span><strong>฿{baht(amountDue)}</strong></div>
               </div>
-            </div>
-          )}
-          <div className={tab === "sell" ? "pos-sale-checkout-scroll" : undefined}>
-          <div className={`pos-total${tab === "sell" ? " pos-sale-adjustments" : ""}`}>
+          </div>
+          <div className="pos-sale-checkout-scroll">
+          <div className="pos-total pos-sale-adjustments">
             <div className="pos-total-row">
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
               <span className="pos-total-value">฿{baht(amountDue)}</span>
@@ -9289,6 +9370,7 @@ export default function PosPage() {
                       });
                     }}
                   >
+                    <PaymentMethodIcon method={m.key} />
                     {m.label}
                   </button>
                 );
@@ -9312,8 +9394,8 @@ export default function PosPage() {
                   ขายเชื่อ
                 </button>
               )}
-              <button className="pos-sale-method" onClick={addPaymentRow}>
-                + จ่ายผสม
+                <button className="pos-sale-method" onClick={addPaymentRow}>
+                  <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>+</span> จ่ายผสม
               </button>
               </div>
             </div>
@@ -9783,26 +9865,32 @@ export default function PosPage() {
           )}
 
           </div>
-          {tab !== "sell" && <div style={{ flex: 1 }} />}
-          {!justSold && (<div className={tab === "sell" ? "pos-sale-checkout-footer" : undefined}>
-          {/* ปุ่มเทาที่ยังโชว์ยอดเงินอ่านไม่ออกว่าติดอะไร — ให้มันบอกเหตุผลบนตัวเอง
-              เหตุผลจริงเคยอยู่ในข้อความตัวเล็กมุมขวาซึ่งไม่มีใครมอง */}
+          {!justSold && (<div className="pos-sale-checkout-footer">
+            <div className={`pos-sale-status ${payBlockedReason ? "is-blocked" : "is-ready"}`} role="status">
+              <span aria-hidden="true">{payBlockedReason ? "!" : "✓"}</span>
+              <span>{payBlockedReason ?? "เลือกวิธีชำระและระบุยอดรับเงิน"}</span>
+            </div>
+          {/* Alert อยู่ก่อน CTA ตามลำดับสายตาใน mockup; ตัวปุ่มยังบอกเหตุผลซ้ำเพื่อให้
+              disabled state อ่านได้ด้วยตัวเองสำหรับ screen reader และจอที่ซ่อน footer alert. */}
           <button
             className="pos-pay"
             disabled={payBlockedReason !== null || busy}
             onClick={() => void pay()}
-            style={{ marginTop: 12 }}
           >
             {busy ? "กำลังบันทึก…" : payBlockedReason ?? `รับชำระ ฿${baht(amountDue)}`}
           </button>
-          {tab === "sell" && (
-            <div className="pos-sale-status">
-              <span aria-hidden="true">✓</span>
-              <span>{payBlockedReason ?? "เลือกวิธีชำระและระบุยอดรับเงิน"}</span>
-            </div>
-          )}
-          <details className="pos-sale-bill-options" open={tab !== "sell"}>
-            <summary>{tab === "sell" ? "ตัวเลือกบิล" : "ตัวเลือกบิล · ล้างบิล / ค่าบริการ"}</summary>
+            <button
+              type="button"
+              className="pos-sale-footer-park"
+              disabled={hasPendingOrderWrite || cart.length === 0}
+              onClick={() => setParkOpen(true)}
+            >
+              <span aria-hidden="true">Ⅱ</span>
+              <span>พักบิล</span>
+              <kbd>F2</kbd>
+            </button>
+          <details className="pos-sale-bill-options">
+            <summary>ตัวเลือกบิล</summary>
             <div className="pos-sale-bill-options-body">
           <button
             className="pos-sale-clear-bill"

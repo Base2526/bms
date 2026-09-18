@@ -21,6 +21,8 @@ jest.mock('react-native-data-scanner', () => ({
   },
 }));
 
+jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+
 // QR rendering is an SVG detail; the smoke test only verifies provider/navigation wiring.
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 

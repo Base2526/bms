@@ -1,7 +1,7 @@
 {
   "name": "@bms/desktop-pos",
   "desktopName": "bms-pos.desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -24,7 +24,7 @@
     "pack:mac": "electron-builder --mac dmg --x64 --arm64"
   },
   "devDependencies": {
-    "electron": "44.4.2",
+    "electron": "43.7.2",
     "electron-builder": "26.15.3"
   },
   "engines": {
