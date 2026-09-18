@@ -16,8 +16,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/preload.cjs && node --check renderer/setup.js",
-    "test": "node --test test/pairing.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs",
+    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/zoom-policy.mjs && node --check src/preload.cjs && node --check renderer/setup.js",
+    "test": "node --test test/pairing.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/zoom-policy.test.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
     "pack:win": "electron-builder --win nsis",
     "pack:linux": "electron-builder --linux AppImage deb --x64",

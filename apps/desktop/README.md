@@ -23,6 +23,8 @@ authoritative; this app does not contain a database or a second settlement path.
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
   the desktop shell;
 - Windows NSIS, Linux AppImage/DEB, and macOS DMG package configuration.
+- fixed 100% renderer zoom on every platform and child POS window; Electron zoom shortcuts, wheel/
+  pinch zoom, and menu roles are disabled while OS accessibility magnifiers remain available.
 
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and offline tender are
 separate rollout milestones.

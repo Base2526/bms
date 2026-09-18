@@ -6,8 +6,9 @@ import { fileURLToPath } from "node:url";
 import { parsePairingInput } from "./pairing.mjs";
 import { MOBILE_POS_PATH, posEntryPathForStatus } from "./renderer-route.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
+import { desktopMenuTemplate, installFixedZoomPolicy } from "./zoom-policy.mjs";
 
-const { app, BrowserWindow, ipcMain, net, safeStorage, shell } = electronMain;
+const { app, BrowserWindow, ipcMain, Menu, net, safeStorage, shell } = electronMain;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
@@ -302,6 +303,13 @@ if (!singleInstance) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId("com.bms.pos.desktop");
+    app.on("web-contents-created", (_event, webContents) => {
+      installFixedZoomPolicy(webContents);
+    });
+    Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
+      process.platform,
+      process.env.BMS_POS_DESKTOP_DEVTOOLS === "1",
+    )));
     registerIpc();
     mainWindow = createMainWindow();
     activePairing = await readPairing();
