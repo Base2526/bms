@@ -154,11 +154,10 @@
   grid-template-columns: minmax(0, 1fr) !important;
 }
 
-.pos-main-grid--boardgame > .pos-pane:last-child {
-  display: none !important;
-}
-
-.pos-main-grid--boardgame > .pos-pane:first-child {
+/* แผงชำระเงิน render เฉพาะแท็บขายแล้ว จึงห้ามซ่อน :last-child ตรงนี้ —
+   ในแท็บบอร์ดเกม work panel เป็นทั้งลูกตัวแรกและตัวสุดท้าย การซ่อนตัวสุดท้าย
+   เท่ากับซ่อน BoardGamePanel ทั้งหน้า. เล็งชื่อ panel โดยตรงเพื่อไม่ผูกกับลำดับลูก. */
+.pos-main-grid--boardgame > .pos-work-panel {
   overflow: hidden;
   padding: 0;
   border: 0;
@@ -1797,7 +1796,7 @@
 }
 
 @media (max-width: 920px) {
-  .pos-main-grid--boardgame > .pos-pane:first-child { overflow-y: auto; }
+  .pos-main-grid--boardgame > .pos-work-panel { overflow-y: auto; }
   .pos-bg-workspace { height: auto; }
   .pos-bg-master-detail { grid-template-columns: minmax(0, 1fr); }
   .pos-bg-master-detail--selected .pos-bg-detail-pane { order: -1; }

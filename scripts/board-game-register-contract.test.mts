@@ -146,8 +146,18 @@ test("the board-game workspace uses the full register instead of leaving an empt
   );
   assert.equal(
     declaration(".pos-main-grid--boardgame > .pos-pane:last-child", "display"),
-    "none !important",
-    "the empty checkout pane must not keep taking half the board-game screen",
+    null,
+    "the single board-game work pane must never be hidden as the grid's last child",
+  );
+  assert.match(
+    page,
+    /\{tab\s*===\s*["']sell["']\s*&&\s*\(\s*<section className=["']pos-card pos-pane pos-sale-checkout["']/,
+    "the payment pane must be absent outside the sell tab instead of hidden by child position",
+  );
+  assert.equal(
+    declaration(".pos-main-grid--boardgame > .pos-work-panel", "overflow"),
+    "hidden",
+    "the visible board-game work panel must own the full-height embedded workspace",
   );
 });
 
@@ -159,8 +169,8 @@ test("an open table is a scannable workspace instead of one long form", () => {
   );
   assert.match(
     declaration(".pos-bg-master-detail", "grid-template-columns") ?? "",
-    /56fr[\s\S]*44fr/,
-    "the floor should keep slightly more room than the selected-table detail",
+    /64fr[\s\S]*36fr/,
+    "the floor should keep the same workspace/detail split as the sales screen",
   );
   assert.equal(
     declaration(".pos-bg-master-pane", "overflow-y"),
