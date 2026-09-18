@@ -55,6 +55,7 @@ const code = (source: string) => source
 const WRITE_WITHOUT_PIN = new Map([
   ["app/api/pos/park/route.ts", "พักบิล: ไม่แตะเงิน/สต็อก/เอกสาร"],
   ["app/api/pos/member/preview/route.ts", "อ่านอย่างเดียว: พรีวิวส่วนลดก่อนกดขาย"],
+  ["app/api/pos/diagnostics/events/route.ts", "บันทึกเหตุการณ์ของเครื่องเอง: ไม่แตะเงิน/สต็อก/เอกสาร และเหตุการณ์ที่ต้องรู้ที่สุดเกิดตอนยังไม่มีใครกรอก PIN"],
 ]);
 
 test("มี route ให้สแกนจริง (ตัวเดินไดเรกทอรีไม่พลาด)", () => {

@@ -27,6 +27,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const PANEL_PATH = "../apps/web/components/pos/BoardGamePanel.tsx";
 const CSS_PATH = "../apps/web/app/(pos)/pos/pos.css";
 const PAGE_PATH = "../apps/web/app/(pos)/pos/page.tsx";
+const ADMIN_PATH = "../apps/web/app/(admin)/admin/board-game/page.tsx";
+const MOBILE_PATH = "../apps/mobile/src/screens/boardGame/BoardGameScreen.tsx";
 
 function withoutComments(source: string): string {
   return source
@@ -39,6 +41,8 @@ function withoutComments(source: string): string {
 const panel = withoutComments(read(PANEL_PATH));
 const css = withoutComments(read(CSS_PATH));
 const page = withoutComments(read(PAGE_PATH));
+const admin = withoutComments(read(ADMIN_PATH));
+const mobile = withoutComments(read(MOBILE_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -195,11 +199,46 @@ test("an open table is a scannable workspace instead of one long form", () => {
     /showCloseChoices\s*&&[\s\S]{0,180}billingGroups\.length\s*>\s*1/,
     "split-bill choices must stay hidden until the primary action asks for them",
   );
-  assert.ok(!panel.includes("โต๊ะที่ต้องดู"), "the alert chip list must not duplicate the four floor summary pills");
+  // ⚠️ กฎคือ "ตัวนับอยู่ที่ pill ที่เดียว" ไม่ใช่ "ห้ามมีลิสต์โต๊ะที่ต้องดู" — pill ตอบได้แค่ว่า
+  // มีกี่โต๊ะ ตอบไม่ได้ว่าโต๊ะไหนและช้าไปเท่าไร ซึ่งเป็นคำถามที่คนหน้าเคาน์เตอร์ต้องตอบก่อนเดินไป
+  // ถ้าบล็อกนี้ถูกเรนเดอร์ มันจึงต้องบอกเวลาของโต๊ะนั้นเอง และกดแล้วต้องพาไปที่โต๊ะนั้นจริง
+  // ไม่ใช่แถวชิปที่พิมพ์ตัวเลขชุดเดิมซ้ำแล้วกดไม่ได้ (รูปที่ถูกถอดออกไปตอนทำจอ master/detail)
+  if (panel.includes("pos-bg-attention-list")) {
+    assert.match(
+      panel,
+      /pos-bg-attention-item[\s\S]{0,400}selectTable\(/,
+      "an attention entry must open that table, not only count it",
+    );
+    assert.match(
+      panel,
+      /pos-bg-attention-item[\s\S]{0,500}attentionLabel\(/,
+      "an attention entry must carry that table's own lateness instead of repeating the shared pill counts",
+    );
+    assert.match(
+      panel,
+      /function attentionLabel[\s\S]{0,400}expectedEndAt/,
+      "lateness must come from the session's expected end, not from the alert enum alone",
+    );
+  }
   assert.match(
     page,
     /session\s*&&\s*!canSell\s*&&\s*tab\s*!==\s*["']boardgame["']/,
     "the sales-only readiness card must not consume the board-game workspace",
+  );
+});
+
+test("time alerts stay useful at the deadline and after a session is extended", () => {
+  for (const [surface, source] of [["browser POS", panel], ["admin", admin], ["native POS", mobile]] as const) {
+    assert.match(
+      source,
+      /Math\.max\(1,\s*Math\.ceil\(Math\.abs\(remainingMs\)/,
+      `${surface} must show at least one overdue minute instead of \"0 minutes over\" at the deadline`,
+    );
+  }
+  assert.match(
+    mobile,
+    /const active = new Set<string>\(\)[\s\S]{0,900}notified\.current = active/,
+    "native alerts must forget a warning after an extension returns the session to normal",
   );
 });
 

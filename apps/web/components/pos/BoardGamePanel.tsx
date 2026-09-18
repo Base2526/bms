@@ -199,6 +199,15 @@ function detailStatusLabel(session: SessionDetail, now: number) {
   return `กำลังเล่น · เหลือ ${remaining} นาที`;
 }
 
+function attentionLabel(session: Pick<SessionSummary, 'expectedEndAt' | 'alertStatus'>, now: number) {
+  if (!session.expectedEndAt) return alertLabel(session.alertStatus);
+  const remainingMs = new Date(session.expectedEndAt).getTime() - now;
+  if (!Number.isFinite(remainingMs)) return alertLabel(session.alertStatus);
+  return remainingMs <= 0
+    ? `เกิน ${Math.max(1, Math.ceil(Math.abs(remainingMs) / 60_000))} นาที`
+    : `เหลือ ${Math.ceil(remainingMs / 60_000)} นาที`;
+}
+
 /**
  * นาทีที่ลูกค้าซื้อไว้ — คิดจากช่วง เริ่ม→สิ้นสุดที่คาด เพราะ server เก็บเป็นเวลาสิ้นสุด
  * ไม่ใช่จำนวนนาที · สูตรเดียวกับปุ่ม "เพิ่มเวลา 30 นาที" ของแอป RN
@@ -480,11 +489,19 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     return groups;
   }, [workspace]);
   const attention = useMemo(
-    () => (workspace?.floor.tables ?? []).filter(
-      (table) => table.openSession && table.openSession.alertStatus !== 'NORMAL',
-    ),
+    () => (workspace?.floor.tables ?? [])
+      .filter((table) => table.openSession && table.openSession.alertStatus !== 'NORMAL')
+      .sort((left, right) => {
+        const leftStatus = left.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
+        const rightStatus = right.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
+        if (leftStatus !== rightStatus) return leftStatus - rightStatus;
+        return new Date(left.openSession?.expectedEndAt ?? 0).getTime()
+          - new Date(right.openSession?.expectedEndAt ?? 0).getTime();
+      }),
     [workspace],
   );
+  const overdueCount = attention.filter((table) => table.openSession?.alertStatus === 'OVERDUE').length;
+  const endingSoonCount = attention.length - overdueCount;
 
   async function run(
     name: string,
@@ -673,6 +690,31 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               คำขอออนไลน์ {workspace?.waitlist.requestedReservationCount ?? 0}
             </span>}
           </div>
+
+          {attention.length > 0 && (
+            <div className={`pos-bg-attention ${overdueCount > 0 ? 'pos-bg-attention--critical' : ''}`.trim()} aria-label="โต๊ะที่ต้องดูตอนนี้">
+              <div className="pos-bg-attention-head">
+                <div>
+                  <strong>โต๊ะที่ต้องดูตอนนี้</strong>
+                  <span>เกินเวลา {overdueCount} · ใกล้หมดเวลา {endingSoonCount}</span>
+                </div>
+              </div>
+              <div className="pos-bg-attention-list">
+                {attention.map((table) => {
+                  const open = table.openSession!;
+                  return (
+                    <button key={`${open.id}-${open.alertStatus}`} type="button"
+                      className={`pos-bg-attention-item ${open.alertStatus === 'OVERDUE' ? 'pos-bg-attention-item--overdue' : 'pos-bg-attention-item--ending'}`.trim()}
+                      onClick={() => { selectTable(open.id); setOpeningTable(null); }}>
+                      <span>{table.code} · {table.name}</span>
+                      <b>{attentionLabel(open, now)}</b>
+                      <small>{open.guestCount} คน · ครบเวลา {timeLabel(open.expectedEndAt)}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
             <summary>การจองล่วงหน้า · {allReservations.length} รายการ</summary>
@@ -955,7 +997,11 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                 : openingTable?.id === table.id;
               const tableTone = open?.status === 'CLOSING' || (open?.awaitingPaymentCount ?? 0) > 0
                 ? 'pos-bg-table--paying'
-                : open ? 'pos-bg-table--playing' : '';
+                : open?.alertStatus === 'OVERDUE'
+                  ? 'pos-bg-table--overdue'
+                  : open?.alertStatus === 'ENDING_SOON'
+                    ? 'pos-bg-table--ending'
+                    : open ? 'pos-bg-table--playing' : '';
               return (
                 <button key={table.id} type="button" disabled={table.blocked}
                   aria-pressed={selected}
@@ -971,6 +1017,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
                   {open ? (
                     <div className="pos-bg-table-body">
                       <div className="pos-bg-table-state">{tableStateLabel(open)} · {elapsedLabel(open.startedAt, now)}</div>
+                      {open.alertStatus !== 'NORMAL' && (
+                        <div className="pos-bg-table-alert">{attentionLabel(open, now)}</div>
+                      )}
                       {/* ⚠️ ยอดขึ้นเฉพาะตอนมีบิลที่ปิดเวลาแล้วรอเก็บจริง — `amountDue` ของโต๊ะที่
                           ยังเล่นอยู่คือค่าเล่นที่ "ยังไม่ถูกแช่" ซึ่งเป็น 0 เสมอ ไม่ใช่ 0 เพราะไม่ติดเงิน */}
                       {open.awaitingPaymentCount > 0

@@ -47,6 +47,91 @@
   font-size: 24px;
 }
 
+.alertBoard {
+  margin: -4px 0 18px;
+  padding: 12px;
+  border: 1px solid #e6c26f;
+  border-radius: 12px;
+  background: #fffaf0;
+}
+
+.alertBoardCritical {
+  border-color: #e2a199;
+  background: #fff7f6;
+}
+
+.alertBoardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.alertBoardHead strong,
+.alertBoardHead span {
+  display: block;
+}
+
+.alertBoardHead strong {
+  color: #202723;
+}
+
+.alertBoardHead span {
+  color: #68736e;
+  font-size: 13px;
+}
+
+.alertList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.alertItem {
+  border: 1px solid #e3e8e6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+}
+
+.alertItem:hover,
+.alertItem:focus-visible {
+  border-color: #32745e;
+  box-shadow: 0 2px 8px rgb(26 62 50 / 12%);
+}
+
+.alertItem span,
+.alertItem b,
+.alertItem small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.alertItem b {
+  color: #8b6215;
+}
+
+.alertItemEndingSoon {
+  border-color: #e6c26f;
+}
+
+.alertItem small {
+  color: #68736e;
+}
+
+.alertItemOverdue {
+  border-color: #e2a199;
+}
+
+.alertItemOverdue b {
+  color: #b42318;
+}
+
 .area {
   margin-bottom: 18px;
   padding: 16px;
@@ -174,6 +259,22 @@
 }
 
 .status_AVAILABLE .tableStatus { color: #2e7154; }
+
+.alertEndingCard {
+  border-color: #e1b65c;
+  background: #fff8e8;
+}
+
+.alertEndingCard .tableStatus { color: #8b6215; }
+.alertEndingCard .tableStatus i { background: #d69a22; box-shadow: 0 0 0 3px rgb(214 154 34 / 14%); }
+
+.alertOverdueCard {
+  border-color: #df8b82;
+  background: #fff7f6;
+}
+
+.alertOverdueCard .tableStatus { color: #a83228; }
+.alertOverdueCard .tableStatus i { background: #c9473b; box-shadow: 0 0 0 3px rgb(201 71 59 / 14%); }
 
 .panel {
   padding: 4px 0 20px;

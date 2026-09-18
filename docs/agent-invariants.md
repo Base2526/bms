@@ -285,6 +285,14 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   money, stock, refund, pharmacy or tax rules. See
   [apps/mobile/README.md](../apps/mobile/README.md) and
   [business/pos.md § Native POS client](business/pos.md#native-pos-client).
+- **Native offline tender is a narrow cash recovery path, not a second settlement engine.** The
+  encrypted device queue accepts only plain retail cash sales without members, points, coupons,
+  manual discounts, serial/weighted/modifier items, pharmacy approval, credit, deposits,
+  restaurant checks or board-game groups. It stores no PIN, recovers the original idempotency key
+  before retrying, flushes serially and blocks shift close or device unpair while unresolved. A
+  client timeout is an unknown result and must preserve that same key. A pending reference is
+  not a receipt or tax document; `recordPosSale()` still commits payment, stock, audit and tax in
+  the normal transaction, and the backend repeats every eligibility check.
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.
@@ -707,6 +715,18 @@ playable game library. The operating brief is
   recomputing and nobody can say when it started. Fixtures must reach their state the way the
   system does — writing a balance with no matching ledger row makes the guard report a drift that
   is not real, and a guard that cries wolf is one nobody reads.
+- **Automatic pass renewal spends real store credit or creates nothing (`10.4`).** The funding credit
+  must be bound to the same CRM customer. A due cycle creates a new snapshotted pass, pass-ledger ISSUE,
+  confirmed member-pass payment and store-credit REDEEM in one transaction. Insufficient/expired credit
+  creates no entitlement and moves the agreement to `PAST_DUE`; retry keeps the same scheduled cycle.
+  Never pretend to charge a stored card until a verified provider/vault contract exists.
+- **Board-game offers discount frozen play time only (`10.3`).** The server automatically chooses the
+  cheapest eligible typed offer and compares it with pass coverage; they never stack, and ties preserve
+  the pass quota. A required SKU is only an eligibility condition on a real active tab line. It remains
+  a Product reservation/order/stock movement and must never be smuggled into a time package.
+- **POS explains the winner, not the catalogue.** Browser and native checkout read the frozen offer or
+  pass benefit from the billing-group snapshot and show one compact explanation. They never download
+  offer rules or recompute eligibility; renewal setup and complete offer management stay in Admin.
 - **Everything the open/read/close/cancel paths of a table touch is declared in
   `scripts/schemaReadiness.mts`.** `db/checks/schema-readiness.sql` is the only tool that runs on
   the production server (no Node there). "It is gated by the archetype anyway" is not a reason to
@@ -778,10 +798,9 @@ playable game library. The operating brief is
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
-- **Not built:** automatic renewal of a member pass (it needs a stored payment instrument this
-  platform does not have), and dedicated
-  board-game profitability/utilization reports. Extend CRM/reporting/payment domains for these; do
-  not create parallel customer or money ledgers.
+- **Not built:** stored-card renewal (store-credit renewal exists in `10.4`) and dedicated board-game
+  profitability/utilization reports. Extend CRM/reporting/payment domains for these; do not create
+  parallel customer or money ledgers.
 
 ## Product catalog: variants, sales surfaces, and stock policies
 

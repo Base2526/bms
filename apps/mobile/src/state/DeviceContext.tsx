@@ -15,6 +15,7 @@ import {
 } from '../graphql/generated';
 import type { PairingTarget } from '../lib/pairing';
 import { graphqlHttpUrl } from '../lib/realtime';
+import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
 
 // "เครื่องนี้เป็นของร้านไหน" — state ระดับแอป
 //
@@ -155,6 +156,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
       try {
+        const startedAt = Date.now();
         const res = await fetch(graphqlHttpUrl(candidate.serverUrl), {
           method: 'POST',
           headers: {
@@ -169,11 +171,34 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         if (seq !== verifySeq.current) return;
 
         if (res.status === 401) {
+          recordPosDiagnosticEvent(candidate, {
+            category: 'pos',
+            action: 'pos.device.verify',
+            status: 'error',
+            message: REJECTED_TOKEN_MESSAGE,
+            context: {
+              route: 'DeviceProvider.verifyTarget',
+              httpStatus: 401,
+              durationMs: Date.now() - startedAt,
+              errorCode: 'UNAUTHENTICATED',
+            },
+          });
           markAuthenticationRejected();
           setLastCheckedAt(Date.now());
           return;
         }
         if (!res.ok) {
+          recordPosDiagnosticEvent(candidate, {
+            category: 'pos',
+            action: 'pos.device.verify',
+            status: 'error',
+            message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
+            context: {
+              route: 'DeviceProvider.verifyTarget',
+              httpStatus: res.status,
+              durationMs: Date.now() - startedAt,
+            },
+          });
           settle({
             kind: 'SERVER_ERROR',
             message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
@@ -193,11 +218,34 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             error => error.extensions?.code === 'UNAUTHENTICATED',
           )
         ) {
+          recordPosDiagnosticEvent(candidate, {
+            category: 'pos',
+            action: 'pos.device.verify',
+            status: 'error',
+            message: REJECTED_TOKEN_MESSAGE,
+            context: {
+              route: 'DeviceProvider.verifyTarget',
+              durationMs: Date.now() - startedAt,
+              errorCode: 'UNAUTHENTICATED',
+            },
+          });
           markAuthenticationRejected();
           setLastCheckedAt(Date.now());
           return;
         }
         if (body?.errors?.length) {
+          recordPosDiagnosticEvent(candidate, {
+            category: 'pos',
+            action: 'pos.device.verify',
+            status: 'error',
+            message:
+              body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
+            context: {
+              route: 'DeviceProvider.verifyTarget',
+              durationMs: Date.now() - startedAt,
+              errorCode: body.errors[0]?.extensions?.code ?? 'GRAPHQL_ERROR',
+            },
+          });
           settle({
             kind: 'SERVER_ERROR',
             message:
@@ -208,6 +256,18 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         }
         const session = body?.data?.bmsPosSession;
         if (!session?.device) {
+          recordPosDiagnosticEvent(candidate, {
+            category: 'pos',
+            action: 'pos.device.verify',
+            status: 'error',
+            message:
+              'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
+            context: {
+              route: 'DeviceProvider.verifyTarget',
+              durationMs: Date.now() - startedAt,
+              errorCode: 'INVALID_POS_BOOTSTRAP',
+            },
+          });
           settle({
             kind: 'SERVER_ERROR',
             message:
@@ -217,6 +277,16 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        recordPosDiagnosticEvent(candidate, {
+          category: 'pos',
+          action: 'pos.device.verify',
+          status: 'success',
+          message: 'ตรวจเครื่อง POS กับเซิร์ฟเวอร์สำเร็จ',
+          context: {
+            route: 'DeviceProvider.verifyTarget',
+            durationMs: Date.now() - startedAt,
+          },
+        });
         settle({
           kind: 'OK',
           info: {
@@ -233,6 +303,21 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       } catch (e: any) {
         if (seq !== verifySeq.current) return;
         const aborted = e?.name === 'AbortError';
+        recordPosDiagnosticEvent(candidate, {
+          category: 'pos',
+          action: 'pos.device.verify',
+          status: 'error',
+          message: aborted
+            ? `ไม่ได้คำตอบภายใน ${VERIFY_TIMEOUT_MS / 1000} วินาที`
+            : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(e?.message ?? e)})`,
+          context: {
+            route: 'DeviceProvider.verifyTarget',
+            errorName: aborted ? 'AbortError' : String(e?.name ?? 'Error'),
+            errorCode: aborted
+              ? `TIMEOUT ${VERIFY_TIMEOUT_MS / 1000}s`
+              : undefined,
+          },
+        });
         settle({
           kind: 'OFFLINE',
           message: aborted
@@ -261,12 +346,14 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const pair = useCallback(
     async (next: PairingTarget) => {
       await savePairing(next);
+      // Set this before React can flush the PAIRED render; otherwise the startup effect can race
+      // pair() and send the same bootstrap verification twice.
+      verifiedOnce.current = true;
       setTarget(next);
       setStatus('PAIRED');
       setStoreError(null);
       // pair() ตรวจ candidate โดยตรง ไม่อ่าน target จาก closure รอบเก่า
       // (ก่อนแก้ การจับคู่ครั้งแรกไม่ verify อะไร และการเปลี่ยน token อาจ verify ตัวเก่า)
-      verifiedOnce.current = true;
       await verifyTarget(next);
     },
     [verifyTarget],

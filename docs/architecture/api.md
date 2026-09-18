@@ -254,6 +254,34 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   the kitchen tickets in **one** transaction, so a partially accepted round cannot exist. A menu
   marked sold out that day is refused at acceptance with the dish named, and acceptance is blocked
   while the check still holds staff-typed lines that were never sent.
+- `GET|POST /api/bms/board-game/offers` (`10.3`) — the play-time package/promotion catalogue.
+  `GET` needs only `board_game.session.manage` and is filtered to the branches the actor may see,
+  because the counter has to be able to explain a discounted bill; writing needs
+  `board_game.offer.manage` and re-checks branch access against **both** the offer's current branch
+  and the branch being assigned, so an edit cannot move another branch's offer to itself. Nothing
+  here applies a discount: the server picks the winning offer when a billing group is closed.
+- `GET|POST /api/bms/board-game/pass-renewals` (`10.4`) — automatic member-pass renewal agreements.
+  `GET` lists them for accessible branches on `board_game.session.manage`; `POST` carries `create`,
+  `pause`, `resume`, `cancel` or `retry` and needs `board_game.pass.manage` — every one changes what
+  the shop will take from a customer. Funding is store credit bound to the **same** member, so the
+  route resolves the branch from the pass or the agreement rather than from the body.
+- `POST /api/bms/board-game/pass-renewals/run` (`10.4`) — the guarded cron that charges due cycles.
+  `authorizeCronRequest()` + `recordJobRun()`; it creates the new pass, its ledger `ISSUE`, the
+  confirmed payment and the store-credit `REDEEM` in one transaction, and leaves the agreement
+  `PAST_DUE` (no entitlement) when the credit cannot cover it.
+- `POST /api/bms/board-game/reservations/{expire,remind}` (`10.0`, `10.1`) — the two reservation crons.
+  Both are cron-token only, claim due rows with `FOR UPDATE SKIP LOCKED`, and record a job run.
+  `expire` marks a confirmed booking `NO_SHOW` six hours after its start but deliberately leaves a
+  checked-in `WAITING`/`CALLED` party to staff; `remind` is a retryable projection (≤3 attempts,
+  bounded failure reason) and never authority for the booking itself.
+- `POST /api/board-game/bookings` · `GET|PATCH /api/board-game/bookings/[token]` ·
+  `POST /api/board-game/bookings/[token]/payment` (`10.1`, `10.2`) — the **public** booking surface,
+  opt-in per branch. A submission is `REQUESTED`, never a table promise: it holds no
+  `reserved_table_id` until PIN-authenticated staff confirm it under the same per-table advisory
+  lock and overlap checks a staff-created booking uses. The customer's manage token is stored only
+  as a SHA-256 hash, reads return a bounded booking view (no contact details, no internal table
+  ids), every endpoint is rate-limited per IP, and a deposit slip is re-encoded and size/pixel
+  bounded before it becomes a `PENDING` payment a human still has to verify.
 - `GET|POST /api/bms/board-game/identity` (`9.93`) — the card held while a game box is out. `GET`
   lists a table's cards, or what the branch is holding right now, with `board_game.session.manage`;
   `POST` carries `take`, `release` or `reveal`. Taking and returning use the same counter permission,
@@ -261,11 +289,15 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   reading a stored number is a different act from holding a card. Returning a card erases the name,
   the number and the last four in the same transaction; the row stays as proof it went back. The
   number itself never appears in any other response, only its last four characters.
-- `POST /api/pos/board-game` (`9.79`–`9.83`) — one PIN-bearing adapter for the register's
-  **table/time** tab: `workspace` (floor, time rates, playable library), `session`, and the writing
-  commands `open`, `participant.add`, `participant.leave`, `timing`, `tab.add`, `tab.remove`,
-  `seating.move`, `seating.merge`, `group.close`, `close`, `cancel`, `copy.checkout`,
-  `copy.return`, `identity.hold`, `identity.release`. **There is deliberately no `identity.reveal`
+- `POST /api/pos/board-game` (`9.79`–`9.83`, extended through `10.2`) — one PIN-bearing adapter for
+  the register's **table/time** tab: `workspace` (floor, time rates, playable library), `session`,
+  `checkout`, and the writing commands `open`, `participant.add`, `participant.leave`, `timing`,
+  `tab.add`, `tab.remove`, `seating.move`, `seating.merge`, `group.close`, `close`, `cancel`,
+  `copy.checkout`, `copy.return`, `identity.hold`, `identity.release`, the guest-bell pair
+  `service.access`/`service.acknowledge`/`service.complete` (`9.96`), the walk-in queue
+  `waitlist.add`/`waitlist.call`/`waitlist.close`/`waitlist.seat` (`9.99`), and the reservation
+  commands `reservation.add`/`reservation.check_in`/`reservation.update`/`reservation.review`
+  (`10.0`–`10.2`). **There is deliberately no `identity.reveal`
   here**: a register is a shared screen facing the customer, so reading a stored ID number back is
   back-office only — the native register (`bmsPosTakeBoardGameIdentityHold` /
   `bmsPosReleaseBoardGameIdentityHold`) has the same two commands and the same omission. Reads require a PIN too, because the floor carries member and guest names and the GraphQL equivalent (`bmsPosBoardGame*`) demands the same — which is why every
@@ -283,6 +315,13 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `sessionId`, `groupNo` and `sessionGroupCount` so the counter can see that another bill of the
   same table is still waiting. Device token only: it is the handoff target of the
   `/admin/board-game` link and loads before a cashier has typed a PIN.
+- `POST /api/pos/diagnostics/events` — bounded batches of register telemetry. Device token only and
+  rate-limited per device; tenant, branch and device come from the authenticated device and the
+  actor is recorded as `pos:<device id>`. This is one of the two documented `/api/pos` writes with
+  **no** cashier PIN (`pos-route-guard-contract` holds the exception and its reason): it moves no
+  money, stock or document, and the events worth having most — a rejected token, a failed
+  bootstrap, a dead network — happen before anyone has typed a PIN. Staff read them back through
+  `bmsPosDeviceDiagnostics`, which requires `support.logs.view`.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift

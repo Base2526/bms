@@ -19,6 +19,7 @@ import { useResponsive } from '../theme/useResponsive';
 import { useDevice } from '../state/DeviceContext';
 import { useSession } from '../state/SessionContext';
 import { displayHost } from '../lib/pairing';
+import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
 import {
   isPosPinLengthValid,
   POS_PIN_MAX_LENGTH,
@@ -35,11 +36,12 @@ import type {
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+const VERIFY_PIN_TIMEOUT_MS = 15_000;
 
 export default function LoginScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
-  const { status: pairStatus, verify } = useDevice();
+  const { status: pairStatus, target, verify } = useDevice();
   const { signIn } = useSession();
   const { data, loading, error, refetch } = useQuery(PosBootstrapDocument, {
     skip: pairStatus !== 'PAIRED' || verify.kind === 'REJECTED',
@@ -211,14 +213,35 @@ export default function LoginScreen({ navigation }: Props) {
         onPress={async () => {
           if (!branch || !cashier) return;
           setLoginError(null);
+          recordPosDiagnosticEvent(target, {
+            category: 'pos',
+            action: 'pos.cashier.verify',
+            status: 'info',
+            message: 'เริ่มตรวจ PIN พนักงาน',
+            context: { route: 'LoginScreen' },
+          });
+          const controller = new AbortController();
+          let verifyTimedOut = false;
+          const timeout = setTimeout(() => {
+            verifyTimedOut = true;
+            controller.abort();
+          }, VERIFY_PIN_TIMEOUT_MS);
           try {
             const result = await verifyCashier({
               variables: {
                 input: { cashierUserId: cashier.id, pin },
               },
+              context: { fetchOptions: { signal: controller.signal } },
             });
             const verified = result.data?.bmsPosVerifyCashier;
             if (!verified) throw new Error('เซิร์ฟเวอร์ไม่คืนข้อมูลพนักงาน');
+            recordPosDiagnosticEvent(target, {
+              category: 'pos',
+              action: 'pos.cashier.verify',
+              status: 'success',
+              message: 'ยืนยัน PIN พนักงานสำเร็จ',
+              context: { route: 'LoginScreen' },
+            });
             signIn(
               branch,
               {
@@ -230,12 +253,31 @@ export default function LoginScreen({ navigation }: Props) {
             );
             navigation.replace('Main');
           } catch (submitError) {
-            setLoginError(
-              submitError instanceof Error
-                ? submitError.message
-                : 'ตรวจ PIN ไม่สำเร็จ',
-            );
+            const timedOut =
+              verifyTimedOut ||
+              (submitError instanceof Error &&
+                submitError.name === 'AbortError');
+            const diagnosticMessage = timedOut
+              ? `ตรวจ PIN ไม่สำเร็จภายใน ${VERIFY_PIN_TIMEOUT_MS / 1000} วินาที`
+              : submitError instanceof Error
+              ? submitError.message
+              : 'ตรวจ PIN ไม่สำเร็จ';
+            recordPosDiagnosticEvent(target, {
+              category: 'pos',
+              action: 'pos.cashier.verify',
+              status: 'error',
+              message: diagnosticMessage,
+              context: {
+                route: 'LoginScreen',
+                errorName:
+                  submitError instanceof Error ? submitError.name : 'Error',
+                errorCode: timedOut ? 'PIN_VERIFY_TIMEOUT' : undefined,
+                durationMs: timedOut ? VERIFY_PIN_TIMEOUT_MS : undefined,
+              },
+            });
+            setLoginError(diagnosticMessage);
           } finally {
+            clearTimeout(timeout);
             setPin('');
           }
         }}

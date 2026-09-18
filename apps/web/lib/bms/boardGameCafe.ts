@@ -13,6 +13,10 @@ import {
   type BoardGamePassKind,
 } from "./boardGamePassCoverage";
 import {
+  applyBestBoardGameOffer,
+  eligibleBoardGameOffersInTx,
+} from "./boardGameOffers";
+import {
   refreshBoardGameSeatingInTx,
   refreshSessionFromGroupsInTx,
 } from "./boardGameSessionStatus";
@@ -66,6 +70,11 @@ export type BoardGameChargeLine = {
   passId?: string | null;
   coveredMinutes?: number;
   coveredAmount?: number;
+  /** โปรโมชันค่าเวลาที่ชนะการเปรียบเทียบกับ member pass ณ ตอนปิดบิล (`10.3`) */
+  offerId?: string | null;
+  offerCode?: string | null;
+  offerName?: string | null;
+  offerDiscountAmount?: number;
 };
 
 /**
@@ -2060,6 +2069,13 @@ export async function getBoardGameCheckoutForPos(
             -- 9.92: snapshot ก่อนหน้านั้นไม่มีคีย์นี้ · sum ข้าม NULL ให้เอง จึงได้ 0 ตามจริง
             (SELECT COALESCE(sum((line->>'coveredAmount')::numeric), 0)
                FROM jsonb_array_elements(g.charge_snapshot) line) AS pass_covered_amount,
+            -- 10.3: หนึ่งกลุ่มใช้ข้อเสนอได้หนึ่งรายการ จึงสรุปชื่อ/รหัสครั้งเดียว แต่รวมยอดลดจากทุกคน
+            (SELECT max(NULLIF(line->>'offerCode', ''))
+               FROM jsonb_array_elements(g.charge_snapshot) line) AS offer_code,
+            (SELECT max(NULLIF(line->>'offerName', ''))
+               FROM jsonb_array_elements(g.charge_snapshot) line) AS offer_name,
+            (SELECT COALESCE(sum((line->>'offerDiscountAmount')::numeric), 0)
+               FROM jsonb_array_elements(g.charge_snapshot) line) AS offer_discount_amount,
             s.started_at,
             t.code AS table_code, t.name AS table_name,
             (SELECT count(*) FROM bms_board_game_group_items i
@@ -2102,6 +2118,10 @@ export async function getBoardGameCheckoutForPos(
     chargeLineCount: Number(row.charge_line_count),
     // ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว — แคชเชียร์ต้องอธิบายได้ว่าทำไมค่าเล่นถึงถูกกว่าที่ลูกค้าคิด
     passCoveredAmount: money(Number(row.pass_covered_amount ?? 0)),
+    // แสดงเฉพาะข้อเสนอที่ชนะและถูกแช่ไว้ตอนปิดบิล ไม่ส่งรายการกติกาทั้งหมดไปทำให้จอขายรก
+    offerCode: row.offer_code ?? null,
+    offerName: row.offer_name ?? null,
+    offerDiscountAmount: money(Number(row.offer_discount_amount ?? 0)),
   };
 }
 
@@ -2913,6 +2933,15 @@ export async function cancelBoardGameMemberPass(
       [tenantId, passId, reason]
     );
     if (!result.rowCount) throw new Error("ไม่พบแพ็กเกจที่ยังใช้งานอยู่");
+    // การยกเลิกใบปัจจุบันต้องหยุดสัญญาต่ออายุด้วย ไม่งั้น cron สร้างใบใหม่กลับมาในวันหมดอายุ
+    // ทั้งที่พนักงานเพิ่งบันทึกว่าลูกค้าเลิกใช้แพ็กเกจแล้ว
+    await client.query(
+      `UPDATE bms_board_game_pass_renewals
+          SET status = 'CANCELLED', cancelled_at = now(), cancelled_by = $3,
+              cancel_reason = $4, version = version + 1, updated_at = now()
+        WHERE tenant_id = $1 AND source_pass_id = $2 AND status <> 'CANCELLED'`,
+      [tenantId, passId, actorUserId ?? null, `ยกเลิกพร้อมแพ็กเกจ: ${reason}`]
+    );
     await auditInTx(client, tenantId, actorUserId, "board_game.pass_cancel", passId, { reason });
     await client.query("COMMIT");
     return { ...mapMemberPass(result.rows[0]), customerName: null };
@@ -3102,7 +3131,7 @@ export async function calculateBoardGameGroupCharges(
   const passes = lockedPasses
     ?? await activePassesForGroupInTx(client, tenantId, billingGroupId, new Date(endedAt), { lock: false });
   const coverage = applyBoardGamePassCoverage(billable, passes);
-  const lines: BoardGameChargeLine[] = billable.map((entry, index) => ({
+  const passLines: BoardGameChargeLine[] = billable.map((entry, index) => ({
     participantId: entry.row.id,
     displayName: entry.row.display_name,
     participantType: entry.row.participant_type,
@@ -3116,7 +3145,33 @@ export async function calculateBoardGameGroupCharges(
     coveredMinutes: coverage[index].coveredMinutes,
     coveredAmount: coverage[index].coveredAmount,
   }));
-  return { lines, total: money(lines.reduce((sum, line) => sum + line.amount, 0)) };
+  const passTotal = money(passLines.reduce((sum, line) => sum + line.amount, 0));
+
+  // โปรโมชันและ pass เป็นสิทธิ์ค่าเวลาสองชนิดที่ไม่ซ้อนกัน: เลือกยอดที่ต่ำกว่าให้ลูกค้า
+  // อัตโนมัติ และเมื่อเสมอกันเลือกโปรโมชันเพื่อไม่เผาโควตา pass โดยไม่เกิดประโยชน์เพิ่ม
+  const offerContext = await eligibleBoardGameOffersInTx(client, tenantId, billingGroupId);
+  const offer = applyBestBoardGameOffer(
+    passLines.map((line) => ({
+      billableMinutes: line.billableMinutes,
+      grossAmount: Number(line.grossAmount ?? line.amount),
+    })),
+    offerContext.offers,
+    { at: new Date(endedAt), timezone: offerContext.timezone, productSkus: offerContext.productSkus },
+  );
+  if (!offer || offer.total > passTotal) return { lines: passLines, total: passTotal };
+
+  const offerLines: BoardGameChargeLine[] = passLines.map((line, index) => ({
+    ...line,
+    amount: offer.lines[index].amount,
+    passId: null,
+    coveredMinutes: 0,
+    coveredAmount: 0,
+    offerId: offer.lines[index].offerId,
+    offerCode: offer.lines[index].offerCode,
+    offerName: offer.lines[index].offerName,
+    offerDiscountAmount: offer.lines[index].offerDiscountAmount,
+  }));
+  return { lines: offerLines, total: offer.total };
 }
 
 async function closeOpenBillingGroupInTx(

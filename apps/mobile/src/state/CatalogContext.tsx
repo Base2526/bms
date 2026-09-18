@@ -16,6 +16,7 @@ import { normalizePriceTiers, normalizePromotion } from '../lib/cartPricing';
 import { useStoreMode } from './StoreModeContext';
 import { useDevice } from './DeviceContext';
 import { serverAssetUrl } from '../lib/realtime';
+import { runWithOperationTimeout } from '../lib/operation';
 
 interface CatalogContextValue {
   catalog: PosMenuCatalog;
@@ -128,15 +129,17 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       size: string | null = null,
       packCode: string | null = null,
     ): Promise<PosMenuItem> => {
-      const response = await scan({
-        variables: {
-          code: code.trim(),
-          size,
-          packCode,
-          surface:
-            mode === 'restaurant' ? 'RESTAURANT_POS' : 'RETAIL_POS',
-        },
-      });
+      const response = await runWithOperationTimeout(signal =>
+        scan({
+          variables: {
+            code: code.trim(),
+            size,
+            packCode,
+            surface: mode === 'restaurant' ? 'RESTAURANT_POS' : 'RETAIL_POS',
+          },
+          context: { fetchOptions: { signal } },
+        }),
+      );
       const item = response.data?.bmsPosScan;
       if (!item) throw new Error('ไม่พบสินค้าจากรหัสนี้');
       return {

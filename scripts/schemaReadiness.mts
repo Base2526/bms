@@ -332,6 +332,33 @@ export const MIGRATIONS: Migration[] = [
       { kind: "table", name: "bms_board_game_reservation_deposit_applications" },
     ],
   },
+  {
+    // Every board-game group close evaluates automatic offers before freezing the charge.
+    file: "10.3__bms_board_game_offers.sql",
+    impact: "ร้านบอร์ดเกมปิดบิลไม่ได้ — เส้นทางปิดบิลตรวจโปรโมชันค่าเวลาทุกครั้ง",
+    needs: [{ kind: "table", name: "bms_board_game_offers" }],
+  },
+  {
+    // The pass screen loads renewal agreements together with the pass catalogue.
+    file: "10.4__bms_board_game_pass_renewals.sql",
+    impact: "หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้",
+    needs: [
+      { kind: "table", name: "bms_board_game_pass_renewals" },
+      { kind: "table", name: "bms_board_game_pass_renewal_runs" },
+      { kind: "column", table: "bms_board_game_member_passes", name: "renewal_id" },
+      { kind: "column", table: "bms_payments", name: "board_game_member_pass_id" },
+      { kind: "column", table: "bms_store_credit_ledger", name: "board_game_member_pass_id" },
+    ],
+  },
+  {
+    // Offline cash settlement stamps both fields in the same transaction as payment, stock and tax.
+    file: "10.5__bms_pos_offline_tenders.sql",
+    impact: "ซิงก์รายการขายเงินสดออฟไลน์ไม่ได้ — settlement ต้องบันทึกเวลารับเงินและเวลาซิงก์พร้อมกัน",
+    needs: [
+      { kind: "column", table: "bms_orders", name: "pos_offline_tendered_at" },
+      { kind: "column", table: "bms_orders", name: "pos_offline_synced_at" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

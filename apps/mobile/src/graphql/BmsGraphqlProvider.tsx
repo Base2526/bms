@@ -29,6 +29,7 @@ import {
   type RealtimeTicketResponse,
 } from '../lib/realtime';
 import type { PairingTarget } from '../lib/pairing';
+import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
 
 interface BmsGraphqlTransportValue {
   realtimeStatus: MobileRealtimeStatus;
@@ -108,7 +109,8 @@ function makeClient(
     return forward(operation);
   });
 
-  const errorLink = onError(({ graphQLErrors, networkError }) => {
+  const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
+    const operationName = operation.operationName || 'anonymous';
     const unauthenticated =
       graphQLErrors?.some(
         error => error.extensions?.code === 'UNAUTHENTICATED',
@@ -116,6 +118,42 @@ function makeClient(
       (networkError &&
         'statusCode' in networkError &&
         networkError.statusCode === 401);
+    const networkStatus =
+      networkError && 'statusCode' in networkError
+        ? Number(networkError.statusCode)
+        : undefined;
+    if (target && graphQLErrors?.length) {
+      for (const error of graphQLErrors.slice(0, 3)) {
+        recordPosDiagnosticEvent(target, {
+          category: 'pos',
+          action: `graphql.${operationName}`,
+          status: 'error',
+          message: error.message,
+          context: {
+            route: 'ApolloLink.error',
+            errorCode:
+              typeof error.extensions?.code === 'string'
+                ? error.extensions.code
+                : 'GRAPHQL_ERROR',
+            httpStatus: networkStatus,
+          },
+        });
+      }
+    }
+    if (target && networkError) {
+      recordPosDiagnosticEvent(target, {
+        category: 'pos',
+        action: `network.${operationName}`,
+        status: 'error',
+        message: networkError.message,
+        context: {
+          route: 'ApolloLink.error',
+          errorName: networkError.name || 'NetworkError',
+          errorCode: unauthenticated ? 'UNAUTHENTICATED' : 'NETWORK_ERROR',
+          httpStatus: networkStatus,
+        },
+      });
+    }
     if (unauthenticated) reportAuthenticationRequired();
   });
 

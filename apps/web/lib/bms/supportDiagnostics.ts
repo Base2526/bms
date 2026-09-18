@@ -32,6 +32,20 @@ export type SupportEventInput = {
   context?: Record<string, unknown> | null;
 };
 
+export type PosDeviceDiagnosticEvent = {
+  id: string;
+  occurredAt: string;
+  receivedAt: string;
+  deviceId: string | null;
+  locationId: string | null;
+  actorId: string | null;
+  category: string;
+  action: string;
+  status: string | null;
+  message: string | null;
+  context: Record<string, unknown>;
+};
+
 function bounded(value: unknown, max: number): string | null {
   const text = String(value ?? "").trim();
   return text ? text.slice(0, max) : null;
@@ -118,12 +132,12 @@ export async function recordSupportEvents(input: {
         `INSERT INTO bms_support_events
            (tenant_id, client_event_id, occurred_at, actor_id, location_id, device_id, session_id,
             correlation_id, category, action, status, message, context)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12::jsonb)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
          ON CONFLICT (tenant_id, client_event_id) DO NOTHING`,
         [input.tenantId, eventId, occurredAt, input.actorId,
           locationId, deviceId, bounded(event.sessionId, 120),
           bounded(event.correlationId, 120), category, action, bounded(event.status, 40),
-          JSON.stringify(safeContext(event.context))]
+          bounded(event.message, 500), JSON.stringify(safeContext(event.context))]
       );
       inserted += result.rowCount ?? 0;
     }
@@ -135,6 +149,39 @@ export async function recordSupportEvents(input: {
   } finally {
     client.release();
   }
+}
+
+export async function listPosDeviceDiagnosticEvents(input: {
+  tenantId: string;
+  deviceId?: string | null;
+  limit?: number | null;
+}): Promise<PosDeviceDiagnosticEvent[]> {
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50) || 50));
+  const deviceId = safeUuid(input.deviceId);
+  const result = await query<any>(
+    `SELECT id, occurred_at, received_at, device_id, location_id, actor_id,
+            category, action, status, message, context
+       FROM bms_support_events
+      WHERE tenant_id = $1
+        AND category = 'pos'
+        AND ($2::uuid IS NULL OR device_id = $2::uuid)
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT $3`,
+    [input.tenantId, deviceId, safeLimit]
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    occurredAt: row.occurred_at?.toISOString?.() ?? row.occurred_at,
+    receivedAt: row.received_at?.toISOString?.() ?? row.received_at,
+    deviceId: row.device_id ?? null,
+    locationId: row.location_id ?? null,
+    actorId: row.actor_id ?? null,
+    category: row.category,
+    action: row.action,
+    status: row.status ?? null,
+    message: row.message ?? null,
+    context: safeDiagnosticValue(row.context) as Record<string, unknown>,
+  }));
 }
 
 /**

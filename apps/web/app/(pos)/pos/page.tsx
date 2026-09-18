@@ -5,7 +5,7 @@
 //   • ราคา/สต็อก มาจาก /api/pos/scan เท่านั้น
 //   • ยอดที่ส่งไปกับการชำระเงินเป็นยอดที่ "เครื่องเห็น" แต่ฝั่ง server คิดใหม่
 //     และปฏิเสธถ้าไม่ตรง (PAYMENT_MISMATCH) — เครื่องไม่ใช่ผู้ตัดสิน
-//   • ไม่มีโหมดออฟไลน์ตามที่ตกลงกันไว้: เน็ตหลุด = ขายไม่ได้ ไม่ใช่ขายแล้วค้างคิว
+//   • จอเว็บไม่มีโหมดออฟไลน์; native RN รองรับเฉพาะ retail cash แบบคิวเข้ารหัสและซิงก์ภายหลัง
 //
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
@@ -769,6 +769,8 @@ type Receipt = {
   referenceDocNo?: string | null;
   posDeviceId?: string | null;
   orderStatus?: string | null;
+  offlineTenderedAt?: string | null;
+  offlineSyncedAt?: string | null;
   /** 7.97 — บิลที่ถูกยกเลิก แสดงป้ายต่างจาก "คืนแล้ว" */
   voidedAt?: string | null;
   /** กะที่บิลนี้เกิด — void ได้เฉพาะบิลในกะที่ยังเปิดอยู่ */
@@ -947,6 +949,10 @@ type BoardGameCheckout = {
   tabAmount: number;
   /** ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (`9.92`) — บิลเก่ากว่านั้นไม่มีคีย์นี้ */
   passCoveredAmount?: number;
+  /** ข้อเสนอค่าเวลาที่ถูกเลือกตอนปิดบิล (`10.3`) — ไม่ส่งกติกาทั้งแคตตาล็อกมาที่ POS */
+  offerCode?: string | null;
+  offerName?: string | null;
+  offerDiscountAmount?: number;
   tabItemCount: number;
   totalDue: number;
   startedAt: string;
@@ -4371,6 +4377,8 @@ export default function PosPage() {
         receiptNo: data.sale.receiptNo ?? data.sale.docNo ?? null,
         billNo: data.sale.billNo ?? data.sale.docNo ?? null,
         orderStatus: data.sale.orderStatus ?? null,
+        offlineTenderedAt: data.sale.offlineTenderedAt ?? null,
+        offlineSyncedAt: data.sale.offlineSyncedAt ?? null,
         saleLocationId: data.sale.saleLocationId ?? null,
         posDeviceId: data.sale.posDeviceId ?? null,
         shiftId: data.sale.shiftId ?? null,
@@ -4460,6 +4468,8 @@ export default function PosPage() {
           saleLocationId: sale.saleLocationId ?? null,
           posDeviceId: sale.posDeviceId ?? null,
           orderStatus: sale.orderStatus ?? null,
+          offlineTenderedAt: sale.offlineTenderedAt ?? null,
+          offlineSyncedAt: sale.offlineSyncedAt ?? null,
           voidedAt: sale.voidedAt ?? null,
           shiftId: sale.shiftId ?? null,
           lines: (sale.lines ?? []).map((line: any, idx: number) => ({
@@ -8329,6 +8339,9 @@ export default function PosPage() {
                           {row.orderStatus && (
                             <span className={`pos-ret-pill pos-ret-pill--${statusKind}`}>{statusLabel}</span>
                           )}
+                          {row.offlineTenderedAt && (
+                            <span className="pos-ret-pill pos-ret-pill--ok">ออฟไลน์ · ซิงก์แล้ว</span>
+                          )}
                         </div>
                         {/* ย่อเหลือบรรทัดเดียว — รายการบิลมีไว้ให้ "หาบิลเจอ" ไม่ใช่ให้อ่านทั้งใบ
                             เลขอ้างอิงการชำระเงินอ่านได้ในใบเสร็จ ไม่ต้องกินที่ตรงนี้ */}
@@ -8741,6 +8754,12 @@ export default function PosPage() {
                 {(boardGameCheckout.passCoveredAmount ?? 0) > 0 && (
                   <span style={{ color: "var(--pos-muted)", fontSize: 12, display: "block" }}>
                     แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿{baht(boardGameCheckout.passCoveredAmount ?? 0)}
+                  </span>
+                )}
+                {(boardGameCheckout.offerDiscountAmount ?? 0) > 0 && (
+                  <span style={{ color: "var(--pos-money)", fontSize: 12, display: "block" }}>
+                    โปรโมชัน {boardGameCheckout.offerName ?? boardGameCheckout.offerCode ?? "ค่าเล่น"}
+                    {` ลดค่าเล่น ฿${baht(boardGameCheckout.offerDiscountAmount ?? 0)}`}
                   </span>
                 )}
               </div>

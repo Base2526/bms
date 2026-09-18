@@ -87,7 +87,15 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_board_game_public_locations', 'reservation_deposit_policy', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
     ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_payments', 'payable_type', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
     ('10.2__bms_board_game_reservation_completion.sql', 'column', 'bms_payments', 'refunded_amount', 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
-    ('10.2__bms_board_game_reservation_completion.sql', 'table', 'bms_board_game_reservation_deposit_applications', NULL, 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้')
+    ('10.2__bms_board_game_reservation_completion.sql', 'table', 'bms_board_game_reservation_deposit_applications', NULL, 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
+    ('10.3__bms_board_game_offers.sql', 'table', 'bms_board_game_offers', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้ — เส้นทางปิดบิลตรวจโปรโมชันค่าเวลาทุกครั้ง'),
+    ('10.4__bms_board_game_pass_renewals.sql', 'table', 'bms_board_game_pass_renewals', NULL, 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
+    ('10.4__bms_board_game_pass_renewals.sql', 'table', 'bms_board_game_pass_renewal_runs', NULL, 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
+    ('10.4__bms_board_game_pass_renewals.sql', 'column', 'bms_board_game_member_passes', 'renewal_id', 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
+    ('10.4__bms_board_game_pass_renewals.sql', 'column', 'bms_payments', 'board_game_member_pass_id', 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
+    ('10.4__bms_board_game_pass_renewals.sql', 'column', 'bms_store_credit_ledger', 'board_game_member_pass_id', 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
+    ('10.5__bms_pos_offline_tenders.sql', 'column', 'bms_orders', 'pos_offline_tendered_at', 'ซิงก์รายการขายเงินสดออฟไลน์ไม่ได้ — settlement ต้องบันทึกเวลารับเงินและเวลาซิงก์พร้อมกัน'),
+    ('10.5__bms_pos_offline_tenders.sql', 'column', 'bms_orders', 'pos_offline_synced_at', 'ซิงก์รายการขายเงินสดออฟไลน์ไม่ได้ — settlement ต้องบันทึกเวลารับเงินและเวลาซิงก์พร้อมกัน')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

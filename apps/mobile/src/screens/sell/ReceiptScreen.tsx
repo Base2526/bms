@@ -124,6 +124,11 @@ export default function ReceiptScreen({ route, navigation }: Props) {
       <Text style={[typography.captionStrong, { color: colors.success }]}>
         บันทึกบนเซิร์ฟเวอร์แล้ว
       </Text>
+      {sale.offlineTenderedAt ? (
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          รับเงินตอนออฟไลน์และซิงก์สำเร็จแล้ว
+        </Text>
+      ) : null}
       <Text style={[typography.body, { color: colors.textMuted }]}>
         เปิดดูหรือคืนสินค้าได้จากประวัติการขาย
       </Text>

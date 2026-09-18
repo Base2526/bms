@@ -20,6 +20,7 @@ type PayStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "REFUNDED";
 type PayMethod = "BANK_TRANSFER" | "QR" | "CARD" | "TIKTOK" | "CASH" | "WALLET" | "STORE_CREDIT" | "CREDIT" | "RESERVATION_DEPOSIT";
 type Payment = {
   id: string; orderId: string | null; targetType: string; reservationId: string | null;
+  memberPassId: string | null;
   reservationDepositStatus: string | null; sourcePaymentId: string | null;
   method: PayMethod; amount: number; status: PayStatus;
   completedRefundAmount: number; pendingRefundAmount: number; netAmount: number;
@@ -31,7 +32,7 @@ type Payment = {
 const Q_PAYMENTS = gql`
   query BmsPayments($search: String, $status: BmsPaymentStatus, $limit: Int) {
     bmsPayments(search: $search, status: $status, limit: $limit) {
-      id orderId targetType reservationId reservationDepositStatus sourcePaymentId
+      id orderId targetType reservationId memberPassId reservationDepositStatus sourcePaymentId
       method amount completedRefundAmount pendingRefundAmount netAmount
       status slipUrl slipRef verifyResult note verifiedBy createdAt updatedAt
     }
@@ -188,7 +189,7 @@ function PaymentManagement() {
           </Popconfirm>
         );
       }
-    } else if (r.status === "CONFIRMED" && !r.sourcePaymentId
+    } else if (r.status === "CONFIRMED" && !r.sourcePaymentId && !r.memberPassId
       && (!r.reservationId || r.reservationDepositStatus === "REFUND_PENDING")
       && r.completedRefundAmount <= 0 && r.pendingRefundAmount <= 0
       && can("payment.refund")) {
@@ -209,7 +210,9 @@ function PaymentManagement() {
         render: (_: unknown, r: Payment) => <Typography.Text code>
           {r.orderId
             ? `${t("admin_payment.target_order")} ${r.orderId.slice(0, 8)}`
-            : `${t("admin_payment.target_reservation")} ${r.reservationId?.slice(0, 8) ?? "-"}`}
+            : r.memberPassId
+              ? `${t("admin_payment.target_member_pass")} ${r.memberPassId.slice(0, 8)}`
+              : `${t("admin_payment.target_reservation")} ${r.reservationId?.slice(0, 8) ?? "-"}`}
         </Typography.Text> },
       { title: t("admin_payment.col_method"), dataIndex: "method", key: "method", width: 130,
         render: (m: PayMethod) => METHOD_LABEL[m] || m },
@@ -283,7 +286,9 @@ function PaymentManagement() {
                 { label: t("admin_payment.col_target"), value: <Typography.Text code>
                   {r.orderId
                     ? `${t("admin_payment.target_order")} ${r.orderId.slice(0, 8)}`
-                    : `${t("admin_payment.target_reservation")} ${r.reservationId?.slice(0, 8) ?? "-"}`}
+                    : r.memberPassId
+                      ? `${t("admin_payment.target_member_pass")} ${r.memberPassId.slice(0, 8)}`
+                      : `${t("admin_payment.target_reservation")} ${r.reservationId?.slice(0, 8) ?? "-"}`}
                 </Typography.Text> },
                 { label: t("admin_payment.col_amount"), value: <PaymentAmountBreakdown payment={r} /> },
                 {

@@ -553,9 +553,10 @@ async function setStatus(
     await beginTenantTx(client, tenantId);
     const locked = await client.query<{
       status: string; payable_type: string; board_game_reservation_id: string | null;
-      source_payment_id: string | null; amount: string; refunded_amount: string;
+      board_game_member_pass_id: string | null; source_payment_id: string | null;
+      amount: string; refunded_amount: string;
     }>(
-      `SELECT status, payable_type, board_game_reservation_id, source_payment_id,
+      `SELECT status, payable_type, board_game_reservation_id, board_game_member_pass_id, source_payment_id,
               amount, refunded_amount
          FROM bms_payments WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, paymentId],
@@ -566,6 +567,13 @@ async function setStatus(
       return false;
     }
     if (payment.source_payment_id) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    // A renewal payment spent store credit and created an entitlement in one transaction. The
+    // generic refund button knows neither whether that pass has been consumed nor which credit to
+    // restore, so accepting it here would mark money refunded without moving any money back.
+    if (to === "REFUNDED" && payment.payable_type === "BOARD_GAME_MEMBER_PASS") {
       await client.query("ROLLBACK");
       return false;
     }
@@ -682,7 +690,7 @@ export function refundPayment(tenantId: string, paymentId: string, actor?: strin
 // ---- read ----------------------------------------------------
 export async function getPayment(tenantId: string, id: string) {
   const res = await query(
-    `SELECT id, order_id, payable_type, board_game_reservation_id, source_payment_id,
+    `SELECT id, order_id, payable_type, board_game_reservation_id, board_game_member_pass_id, source_payment_id,
             refunded_amount,
             (SELECT deposit_status FROM bms_board_game_waitlist reservation
               WHERE reservation.tenant_id = bms_payments.tenant_id
@@ -718,7 +726,7 @@ export async function listPayments(
   const offset = Math.max(Number(opts.offset ?? 0), 0);
   const search = opts.search?.trim() || null;
   const res = await query(
-    `SELECT id, order_id, payable_type, board_game_reservation_id, source_payment_id,
+    `SELECT id, order_id, payable_type, board_game_reservation_id, board_game_member_pass_id, source_payment_id,
             refunded_amount,
             (SELECT deposit_status FROM bms_board_game_waitlist reservation
               WHERE reservation.tenant_id = bms_payments.tenant_id
@@ -749,6 +757,7 @@ export async function listPayments(
           OR id::text ILIKE '%' || $6 || '%'
           OR order_id::text ILIKE '%' || $6 || '%'
           OR COALESCE(board_game_reservation_id::text, '') ILIKE '%' || $6 || '%'
+          OR COALESCE(board_game_member_pass_id::text, '') ILIKE '%' || $6 || '%'
           OR method ILIKE '%' || $6 || '%'
           OR COALESCE(slip_ref, '') ILIKE '%' || $6 || '%'
           OR COALESCE(verified_by, '') ILIKE '%' || $6 || '%'

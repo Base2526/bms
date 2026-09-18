@@ -147,6 +147,35 @@ use (`8.9`): taking the money still goes through the existing POS sale, and the 
 which order paid for it. Cancelling a pass stops it covering anything; refunds go through the POS
 refund path like any other money.
 
+### Automatic pass renewal (`10.4`)
+
+Automatic renewal uses customer-bound store credit because the platform has no verified stored-card
+provider. Staff enable it from an active pass and record the member's consent. The agreement snapshots
+the sold terms and branch; each due cycle creates a **new** pass rather than extending or rewriting the
+old entitlement.
+
+The frequent guarded cron locks one agreement and its funding credit, then creates the pass, its ISSUE
+ledger row, a confirmed `BOARD_GAME_MEMBER_PASS` payment, and the store-credit REDEEM row in one
+transaction. If the credit is expired, belongs to somebody else, or has insufficient balance, no pass
+is created: the agreement becomes `PAST_DUE` and retries the same scheduled cycle later. Card charging
+must not be added until a real provider/vault and consent contract exists.
+
+### Packages and play-time promotions (`10.3`)
+
+Board-game offers are typed rules over the play-time charge: percentage off, fixed price per person,
+or fixed price for the billing group. They may be branch/date/weekday/time scoped, require a minimum
+duration or party size, and optionally require an exact SKU already present on the group's real tab.
+That SKU remains an ordinary Product line with normal reservation and stock movement; the offer never
+manufactures an included item or hides it in a time line.
+
+At billing-group close the server evaluates every eligible offer and compares the best result with
+member-pass coverage. The lower total wins; a tie chooses the offer so no pass quota is wasted. The
+winner and discount are frozen into each charge-snapshot line. The browser and native registers need
+no separate discount command because both consume that same frozen group amount.
+The register shows only that winning benefit (offer name and saved amount, or pass coverage) in the
+payment summary; the offer catalogue stays in Admin. The member-pass table likewise uses one compact
+renewal badge with the next date or current problem, while full controls remain in the renewal section.
+
 ### The card at the counter while a box is out (Phase 6)
 
 A cafe hands a two-thousand-baht boxed game to a stranger who sat down twenty minutes ago and holds
@@ -222,8 +251,9 @@ The public directory is `/board-game`. A branch stays private until a manager ex
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Advanced board-game analytics and automatic member-pass renewal remain later phases. Renewal needs a
-stored payment-instrument contract the platform does not currently have.
+Advanced board-game profitability and utilization analytics remain a later phase. Stored-card renewal
+also remains unavailable until the platform has a verified payment-instrument provider contract;
+`10.4` supports automatic renewal through customer-bound store credit only.
 
 ### Walk-in queue (`9.99`)
 

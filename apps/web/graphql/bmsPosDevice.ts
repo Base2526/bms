@@ -73,6 +73,7 @@ import {
   recordCashMovement,
   recordNoSale,
   recordPosSale,
+  recoverPosSaleByIdempotencyKey,
   requestPosPharmacyReview,
   resumeParkedSale,
   returnPosSale,
@@ -270,6 +271,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     cashierUserId: ID!
     pin: String!
     idempotencyKey: String!
+    offlineTenderedAt: String
     mode: String
     lines: [BmsPosSaleLineInput!]!
     boardGameBillingGroupId: ID
@@ -291,6 +293,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     pharmacistAuthorizationNote: String
     pharmacyApprovedAssessmentId: ID
     pharmacyReviewAssessmentId: ID
+  }
+
+  input BmsPosSaleRecoveryInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
   }
 
   input BmsPosShiftInput {
@@ -1238,6 +1246,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     paymentMethod: String
     paymentRef: String
     soldAt: String!
+    offlineTenderedAt: String
+    offlineSyncedAt: String
     cashierName: String
     discountLines: [BmsPosDiscountLine!]!
     payments: [BmsPosReceiptPayment!]!
@@ -2663,9 +2673,15 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     จึงต้องเดาเอง ซึ่งเป็นที่มาของข้อความที่บอกว่า "แพ็กเกจจ่ายให้" กับบิลที่ไม่มีแพ็กเกจเลย
     """
     passCoveredAmount: Float!
+    "โปรโมชันค่าเวลาที่ชนะ ณ ตอนปิดบิล (10.3) · null = ไม่มีโปรโมชัน"
+    offerCode: String
+    offerName: String
+    "ยอดค่าเล่นที่โปรโมชันช่วยลดแล้ว · 0 = ไม่มีโปรโมชัน"
+    offerDiscountAmount: Float!
   }
 
   extend type Query {
+    bmsPosSaleRecovery(input: BmsPosSaleRecoveryInput!): BmsPosSaleResult!
     bmsPosSession: BmsPosSessionResult!
     bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
     bmsPosScan(
@@ -3183,6 +3199,16 @@ export const bmsPosDeviceResolvers = {
     },
   },
   Query: {
+    async bmsPosSaleRecovery(_parent: unknown, args: { input: unknown }, ctx: any) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      await requirePosCashier(device, input, "pos.sell");
+      return recoverPosSaleByIdempotencyKey(
+        device.tenantId,
+        device.id,
+        textInput(input.idempotencyKey),
+      );
+    },
     async bmsPosSession(_parent: unknown, _args: unknown, ctx: any) {
       const device = requirePosDevice(ctx);
       const [
@@ -4120,6 +4146,7 @@ export const bmsPosDeviceResolvers = {
         shiftId,
         cashierUserId: actor.userId,
         idempotencyKey,
+        offlineTenderedAt: textInput(input.offlineTenderedAt) || null,
         mode,
         lines,
         boardGameBillingGroupId,

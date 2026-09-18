@@ -111,6 +111,7 @@ export type PosDevice = {
   scannerSuffixKey: string;
   scannerMaxGapMs: number;
   active: boolean;
+  lastSeenAt: string | null;
 };
 
 function hashToken(token: string): string {
@@ -171,13 +172,15 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
     scannerSuffixKey: r.scanner_suffix_key ?? "Enter",
     scannerMaxGapMs: Number(r.scanner_max_gap_ms ?? 80),
     active: r.active,
+    lastSeenAt: null,
   };
 }
 
 export async function listPosDevices(tenantId: string): Promise<PosDevice[]> {
   const res = await query<any>(
     `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
-            scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active
+            scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active,
+            last_seen_at
        FROM bms_pos_devices WHERE tenant_id = $1 ORDER BY code`,
     [tenantId]
   );
@@ -194,6 +197,7 @@ export async function listPosDevices(tenantId: string): Promise<PosDevice[]> {
     scannerSuffixKey: r.scanner_suffix_key ?? "Enter",
     scannerMaxGapMs: Number(r.scanner_max_gap_ms ?? 80),
     active: r.active,
+    lastSeenAt: r.last_seen_at?.toISOString?.() ?? r.last_seen_at ?? null,
   }));
 }
 
@@ -404,6 +408,7 @@ export async function upsertPosDevice(
       scannerSuffixKey: r.scanner_suffix_key,
       scannerMaxGapMs: Number(r.scanner_max_gap_ms),
       active: r.active,
+      lastSeenAt: null,
     };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -2109,6 +2114,8 @@ export type PosSaleInput = {
   cashierUserId: string;
   /** สร้างที่เครื่อง: {device}-{shift}-{seq} — ยิงซ้ำต้องได้บิลเดิม ไม่ใช่บิลใหม่ */
   idempotencyKey: string;
+  /** เวลาที่รับเงินจริงขณะเครื่องติดต่อ BMS ไม่ได้; ใช้เฉพาะ retail cash offline tender */
+  offlineTenderedAt?: string | null;
   /** SALE = รับเต็มยอดและส่งของทันที; DEPOSIT = จองของและรับมัดจำงวดแรก */
   mode?: "SALE" | "DEPOSIT";
   lines: PosSaleLine[];
@@ -2379,6 +2386,7 @@ export type PosSaleResult =
   | { status: "LOT_EXPIRED_OR_SHORT"; sku: string; size: string; sellable: number; requested: number }
   | { status: "INVALID_PACK"; sku: string; packCode: string }
   | { status: "PAYMENT_FAILED"; reason: string }
+  | { status: "OFFLINE_NOT_ALLOWED"; reason: string }
   | {
       status: "PAYMENT_MISMATCH";
       expected: number;
@@ -2439,6 +2447,10 @@ export type PosRecentReceipt = {
   paymentMethod: PaymentMethod | null;
   paymentRef: string | null;
   soldAt: string;
+  /** Cash acceptance time captured by the native register; null for an ordinary online sale. */
+  offlineTenderedAt: string | null;
+  /** Server commit time for an offline tender; present only after normal settlement succeeded. */
+  offlineSyncedAt: string | null;
   cashierName: string | null;
   /** ราคาส่ง/โปรโมชัน + ส่วนลดระดับบิล ตาม snapshot ตอนขาย */
   discountLines: PosReceiptDiscountLine[];
@@ -3365,6 +3377,35 @@ async function refreshUnknownPosOrderVatInTx(
   );
 }
 
+export function validateOfflinePosTender(
+  input: PosSaleInput,
+  requestedPayments: PosPaymentInput[],
+  nowMs = Date.now(),
+): string | null {
+  if (!input.offlineTenderedAt) return null;
+  const tenderedAt = new Date(input.offlineTenderedAt);
+  const ageMs = nowMs - tenderedAt.getTime();
+  if (!Number.isFinite(tenderedAt.getTime())) return "เวลาเก็บเงินออฟไลน์ไม่ถูกต้อง";
+  if (ageMs < -5 * 60_000) return "เวลาเก็บเงินออฟไลน์อยู่ในอนาคต";
+  if (
+    input.mode === "DEPOSIT" || input.salesSurface !== "RETAIL_POS" ||
+    Boolean(input.boardGameBillingGroupId)
+  ) return "รองรับออฟไลน์เฉพาะการขายปลีกปกติ";
+  if (requestedPayments.length !== 1 || requestedPayments[0]?.method !== "CASH") {
+    return "รายการออฟไลน์ต้องรับเงินสดช่องทางเดียว";
+  }
+  if (
+    input.customerId || input.couponCode || input.pointsToRedeem ||
+    input.extraLines?.length || input.manualDiscount || input.discountApprovedBy ||
+    input.creditApprovedBy || input.pharmacyApprovedAssessmentId ||
+    input.pharmacistCounterAuthorization || input.pharmacyReviewAssessmentId
+  ) return "รายการออฟไลน์ห้ามใช้สมาชิก แต้ม คูปอง ส่วนลด เครดิต หรือการอนุมัติพิเศษ";
+  if (input.lines.some((line) =>
+    Boolean(line.serials?.length || line.modifierCodes?.length || line.scaleBarcode)
+  )) return "รายการออฟไลน์ไม่รองรับ serial, modifier หรือสินค้าชั่งน้ำหนัก";
+  return null;
+}
+
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
   const { tenantId } = input;
   const isDeposit = input.mode === "DEPOSIT";
@@ -3400,6 +3441,8 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       ref: payment.ref?.trim() || null,
     }))
     .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
+  const offlineProblem = validateOfflinePosTender(input, requestedPayments);
+  if (offlineProblem) return { status: "OFFLINE_NOT_ALLOWED", reason: offlineProblem };
   // บิลที่ไม่มีวิธีชำระเลยคือบิลที่ไม่มีใครจ่าย — ยกเว้นทางเดียว: บิลค่าเล่นบอร์ดเกมที่
   // แพ็กเกจสมาชิกจ่ายให้ครบ (`9.92`) ยอดเป็น ฿0 จริง ๆ จึงไม่มีอะไรให้รับ · ปล่อยผ่านด่านนี้
   // แล้วให้ด่าน "ยอดชำระต้องเท่ายอดที่ต้องจ่าย" ตัดสินแทน — ส่งศูนย์มากับบิลที่ยังมียอดค้าง
@@ -3901,6 +3944,21 @@ async function finalizePosSale(args: {
     );
     if (!orderLock.rowCount) throw new Error("บิลไม่ตรงกับเครื่อง กะ หรือพนักงานผู้ขาย");
     const current = orderLock.rows[0];
+    if (input.offlineTenderedAt) {
+      const offlineStamp = await client.query(
+        `UPDATE bms_orders
+            SET pos_offline_tendered_at = COALESCE(pos_offline_tendered_at, $3::timestamptz),
+                pos_offline_synced_at = COALESCE(pos_offline_synced_at, now()),
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2
+            AND (pos_offline_tendered_at IS NULL
+              OR pos_offline_tendered_at = $3::timestamptz)`,
+        [input.tenantId, orderId, input.offlineTenderedAt],
+      );
+      if (!offlineStamp.rowCount) {
+        throw new Error("เวลาเก็บเงินออฟไลน์ไม่ตรงกับคำขอเดิม");
+      }
+    }
     if (input.restaurantCheckId) {
       if (!input.restaurantSettlementAttemptId) {
         throw new Error("บิลโต๊ะไม่มี settlement claim");
@@ -4238,7 +4296,13 @@ async function finalizePosSale(args: {
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'pos.sale', $3, $4)`,
-      [input.tenantId, input.cashierUserId, orderId, JSON.stringify({ shiftId: shift.id, deviceId: input.deviceId })]
+      [input.tenantId, input.cashierUserId, orderId, JSON.stringify({
+        shiftId: shift.id,
+        deviceId: input.deviceId,
+        ...(input.offlineTenderedAt
+          ? { offlineTenderedAt: input.offlineTenderedAt, offlineSynced: true }
+          : {}),
+      })]
     );
 
     // ตัวเลขสมาชิกที่ต้องพิมพ์บนใบเสร็จ — อ่านในทรานแซกชันเดียวกับที่เพิ่งเขียน
@@ -4337,7 +4401,7 @@ async function findPosOrderByIdempotencyKey(
 async function findSaleByIdempotencyKey(
   tenantId: string,
   deviceId: string,
-  shiftId: string,
+  shiftId: string | null,
   key: string
 ): Promise<(PosSaleResult & { status: "SOLD" }) | null> {
   const res = await query<{
@@ -4357,8 +4421,12 @@ async function findSaleByIdempotencyKey(
     points_balance: number | null;
     member_no: string | null;
     loyalty_enabled: boolean;
+    location_id: string;
+    pos_device_id: string;
+    pos_shift_id: string;
   }>(
-    `SELECT o.id, o.total_amount, o.shipping_fee, o.rounding_amount AS order_rounding,
+    `SELECT o.id, o.location_id, o.pos_device_id, o.pos_shift_id,
+            o.total_amount, o.shipping_fee, o.rounding_amount AS order_rounding,
             pay.cash_tendered, pay.cash_change,
             doc.doc_no, doc.vat_rate, doc.taxable_amount, doc.exempt_amount,
             doc.vat_amount, doc.rounding_amount,
@@ -4382,7 +4450,7 @@ async function findSaleByIdempotencyKey(
         AND doc.doc_type = 'ABBREVIATED' AND doc.cancelled_at IS NULL
       WHERE o.tenant_id = $1 AND o.idempotency_key = $2
         AND o.channel = 'pos' AND o.status IN ('COMPLETED','RETURNED')
-        AND o.pos_device_id = $3 AND o.pos_shift_id = $4
+        AND o.pos_device_id = $3 AND ($4::uuid IS NULL OR o.pos_shift_id = $4)
       LIMIT 1`,
     [tenantId, key, deviceId, shiftId]
   );
@@ -4394,6 +4462,9 @@ async function findSaleByIdempotencyKey(
   return {
     status: "SOLD",
     orderId: row.id,
+    saleLocationId: row.location_id,
+    posDeviceId: row.pos_device_id,
+    shiftId: row.pos_shift_id,
     total: Math.round((Number(row.total_amount) + Number(row.shipping_fee ?? 0) + rounding) * 100) / 100,
     cashTendered: row.cash_tendered == null ? null : Number(row.cash_tendered),
     cashChange: row.cash_change == null ? null : Number(row.cash_change),
@@ -4402,6 +4473,7 @@ async function findSaleByIdempotencyKey(
     roundingAmount: rounding,
     discountLines: await loadPosReceiptDiscountLines({ query }, tenantId, row.id),
     extraLines: await loadPosReceiptExtraLines({ query }, tenantId, row.id),
+    kitchenTickets: 0,
     // พิมพ์ซ้ำต้องบอกความจริงของ "ตอนขาย" ไม่ใช่ของการตั้งค่าวันนี้ — บิลที่ได้แต้ม
     // ไปแล้วยังโชว์แต้มแม้ร้านปิดโปรแกรมทีหลัง (กฎเดียวกับตอนขาย)
     ...(shouldPrintMemberPoints({
@@ -4416,6 +4488,20 @@ async function findSaleByIdempotencyKey(
       : { pointsEarned: null, pointsBalance: null }),
     replayed: true,
   };
+}
+
+/** ตรวจผลคำขอเดิมได้โดยไม่ต้องอาศัยว่ากะนั้นยังเปิดอยู่ */
+export async function recoverPosSaleByIdempotencyKey(
+  tenantId: string,
+  deviceId: string,
+  key: string,
+): Promise<PosSaleResult> {
+  const normalized = key.trim();
+  if (!normalized || normalized.length > 240) {
+    return { status: "PAYMENT_FAILED", reason: "idempotencyKey ไม่ถูกต้อง" };
+  }
+  return (await findSaleByIdempotencyKey(tenantId, deviceId, null, normalized))
+    ?? { status: "EMPTY" };
 }
 
 export async function getLatestPosSale(
@@ -4485,6 +4571,8 @@ export async function listRecentPosSales(
     member_phone: string | null;
     voided_at: Date | null;
     pos_shift_id: string | null;
+    pos_offline_tendered_at: Date | string | null;
+    pos_offline_synced_at: Date | string | null;
   }>(
     `SELECT o.id,
             o.channel,
@@ -4492,6 +4580,8 @@ export async function listRecentPosSales(
             o.pos_device_id,
             o.voided_at,
             o.pos_shift_id,
+            o.pos_offline_tendered_at,
+            o.pos_offline_synced_at,
             o.total_amount,
             o.discount_amount,
             o.shipping_fee,
@@ -4895,6 +4985,12 @@ export async function listRecentPosSales(
     // A restaurant reservation may be created hours before the customer pays. Receipt history
     // must show the settlement time, not the first kitchen round's reservation timestamp.
     soldAt: toISO(row.sold_at),
+    offlineTenderedAt: row.pos_offline_tendered_at
+      ? toISO(row.pos_offline_tendered_at)
+      : null,
+    offlineSyncedAt: row.pos_offline_synced_at
+      ? toISO(row.pos_offline_synced_at)
+      : null,
     cashierName: row.cashier_name ?? null,
     memberNo: row.member_no ?? null,
     memberName: row.member_no ? (row.member_name ?? null) : null,

@@ -121,6 +121,7 @@ export const bmsPaymentsResolvers = {
     orderId: (p: any) => p.order_id,
     targetType: (p: any) => p.payable_type ?? "ORDER",
     reservationId: (p: any) => p.board_game_reservation_id ?? null,
+    memberPassId: (p: any) => p.board_game_member_pass_id ?? null,
     reservationDepositStatus: (p: any) => p.reservation_deposit_status ?? null,
     sourcePaymentId: (p: any) => p.source_payment_id ?? null,
     slipUrl: (p: any) => p.slip_url ?? null,

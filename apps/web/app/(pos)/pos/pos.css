@@ -1336,7 +1336,62 @@
 
 .pos-bg-stat-pill--warn { color: var(--pos-warn); background: var(--pos-warn-bg); }
 
-.pos-bg-attention { padding: 10px 0 2px; border-top: 1px solid var(--pos-line); }
+.pos-bg-attention {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #e6c46d;
+  border-radius: 8px;
+  background: var(--pos-warn-bg);
+}
+.pos-bg-attention--critical {
+  border-color: #df8b82;
+  background: #fff7f6;
+}
+.pos-bg-attention-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pos-bg-attention-head strong,
+.pos-bg-attention-head span {
+  display: block;
+}
+.pos-bg-attention-head span {
+  color: var(--pos-muted);
+  font-size: 12px;
+}
+.pos-bg-attention-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px;
+}
+.pos-bg-attention-item {
+  border: 1px solid var(--pos-line);
+  border-radius: 8px;
+  background: var(--pos-card);
+  padding: 8px 10px;
+  color: var(--pos-text);
+  text-align: left;
+  display: grid;
+  gap: 2px;
+}
+.pos-bg-attention-item b {
+  color: var(--pos-warn);
+}
+.pos-bg-attention-item--ending {
+  border-color: #e6c46d;
+}
+.pos-bg-attention-item small {
+  color: var(--pos-muted);
+}
+.pos-bg-attention-item--overdue {
+  border-color: #df8b82;
+}
+.pos-bg-attention-item--overdue b {
+  color: var(--pos-danger);
+}
 .pos-bg-area { margin-top: 14px; }
 .pos-bg-area-head {
   display: flex;
@@ -1550,6 +1605,8 @@
   background: var(--pos-surface);
 }
 .pos-root .pos-bg-table--playing { border-color: #9fc4f8; background: var(--pos-accent-bg); }
+.pos-root .pos-bg-table--ending { border-color: #e6c46d; background: var(--pos-warn-bg); }
+.pos-root .pos-bg-table--overdue { border-color: #df8b82; background: var(--pos-danger-bg); }
 .pos-root .pos-bg-table--paying { border-color: #e6c46d; background: var(--pos-warn-bg); }
 .pos-root .pos-bg-table--on { padding: 9px; border: 2px solid var(--pos-accent); }
 .pos-bg-table:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1557,6 +1614,7 @@
 .pos-bg-table-sub { color: var(--pos-muted); font-size: 11px; }
 .pos-bg-table-body { margin-top: 6px; font-size: 12px; }
 .pos-bg-table-state { font-size: 12px; }
+.pos-bg-table-alert { margin-top: 3px; color: var(--pos-danger); font-size: 12px; font-weight: 650; }
 .pos-bg-table-money { margin-top: 8px; font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
 
 /* แถวรายการ: ข้อความซ้าย ปุ่มขวา — ปุ่มตกลงบรรทัดถัดไปเองเมื่อที่ไม่พอ

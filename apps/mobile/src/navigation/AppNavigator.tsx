@@ -11,6 +11,9 @@ import { SalesProvider } from '../state/SalesContext';
 import { sessionCashierName, useSession } from '../state/SessionContext';
 import { ShiftProvider } from '../state/ShiftContext';
 import { OrderAlertWatcher } from '../components/OrderAlertWatcher';
+import { OfflineStatusBanner } from '../components/OfflineStatusBanner';
+import { OfflineSalesProvider } from '../state/OfflineSalesContext';
+import { View } from 'react-native';
 import CheckoutScreen from '../screens/sell/CheckoutScreen';
 import ReceiptScreen from '../screens/sell/ReceiptScreen';
 import SaleDetailScreen from '../screens/sell/SaleDetailScreen';
@@ -48,66 +51,76 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
     >
       <SalesProvider>
         <ShiftProvider openedByName={sessionCashierName(session)}>
-          <CatalogProvider>
-            <CartProvider>
-              <KitchenProvider>
-                <IncomingOrdersProvider>
-                  <RestaurantOperationsProvider>
-                    <BoardGameServiceProvider>
-                      <OrderAlertWatcher />
-                    <Stack.Navigator screenOptions={{ headerShown: false }}>
-                      <Stack.Screen name="Tabs" component={MainTabs} />
-                      <Stack.Screen
-                        name="Checkout"
-                        component={CheckoutScreen}
-                      />
-                      <Stack.Screen name="Receipt" component={ReceiptScreen} />
-                      <Stack.Screen
-                        name="SalesHistory"
-                        component={SalesHistoryScreen}
-                      />
-                      <Stack.Screen
-                        name="SaleDetail"
-                        component={SaleDetailScreen}
-                      />
-                      <Stack.Screen
-                        name="CheckDetail"
-                        component={CheckDetailScreen}
-                      />
-                      <Stack.Screen name="RestaurantOps">
-                        {({ navigation, route }) => (
-                          <OperationsScreen
-                            section="RESTAURANT"
-                            locked
-                            initialRestaurantView={route.params?.initialView}
-                            onBack={() => navigation.goBack()}
-                          />
-                        )}
-                      </Stack.Screen>
-                      <Stack.Screen
-                        name="InventoryDetail"
-                        component={InventoryScreen}
-                      />
-                      <Stack.Screen name="ShiftDetail">
-                        {({ navigation }) => (
-                          <ShiftScreen onBack={() => navigation.goBack()} />
-                        )}
-                      </Stack.Screen>
-                      <Stack.Screen
-                        name="BoardGameOpen"
-                        component={BoardGameOpenScreen}
-                      />
-                      <Stack.Screen
-                        name="BoardGameDetail"
-                        component={BoardGameDetailScreen}
-                      />
-                      </Stack.Navigator>
-                    </BoardGameServiceProvider>
-                  </RestaurantOperationsProvider>
-                </IncomingOrdersProvider>
-              </KitchenProvider>
-            </CartProvider>
-          </CatalogProvider>
+          <OfflineSalesProvider>
+            <CatalogProvider>
+              <CartProvider>
+                <KitchenProvider>
+                  <IncomingOrdersProvider>
+                    <RestaurantOperationsProvider>
+                      <BoardGameServiceProvider>
+                        <OrderAlertWatcher />
+                        <View style={{ flex: 1 }}>
+                          <OfflineStatusBanner />
+                          <Stack.Navigator
+                            screenOptions={{ headerShown: false }}
+                          >
+                            <Stack.Screen name="Tabs" component={MainTabs} />
+                            <Stack.Screen
+                              name="Checkout"
+                              component={CheckoutScreen}
+                            />
+                            <Stack.Screen
+                              name="Receipt"
+                              component={ReceiptScreen}
+                            />
+                            <Stack.Screen
+                              name="SalesHistory"
+                              component={SalesHistoryScreen}
+                            />
+                            <Stack.Screen
+                              name="SaleDetail"
+                              component={SaleDetailScreen}
+                            />
+                            <Stack.Screen
+                              name="CheckDetail"
+                              component={CheckDetailScreen}
+                            />
+                            <Stack.Screen name="RestaurantOps">
+                              {({ navigation, route }) => (
+                                <OperationsScreen
+                                  section="RESTAURANT"
+                                  locked
+                                  initialRestaurantView={route.params?.initialView}
+                                  onBack={() => navigation.goBack()}
+                                />
+                              )}
+                            </Stack.Screen>
+                            <Stack.Screen
+                              name="InventoryDetail"
+                              component={InventoryScreen}
+                            />
+                            <Stack.Screen name="ShiftDetail">
+                              {({ navigation }) => (
+                                <ShiftScreen onBack={() => navigation.goBack()} />
+                              )}
+                            </Stack.Screen>
+                            <Stack.Screen
+                              name="BoardGameOpen"
+                              component={BoardGameOpenScreen}
+                            />
+                            <Stack.Screen
+                              name="BoardGameDetail"
+                              component={BoardGameDetailScreen}
+                            />
+                          </Stack.Navigator>
+                        </View>
+                      </BoardGameServiceProvider>
+                    </RestaurantOperationsProvider>
+                  </IncomingOrdersProvider>
+                </KitchenProvider>
+              </CartProvider>
+            </CatalogProvider>
+          </OfflineSalesProvider>
         </ShiftProvider>
       </SalesProvider>
     </RootNavigationActionsProvider>

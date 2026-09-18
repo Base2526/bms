@@ -38,7 +38,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
 | [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md) | Why each built feature works the way it does (EN · TH) |
 
-## Current status (2026-08)
+## Current status (2026-09)
 
 Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Flash/Kerry carriers**
 (🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
@@ -75,8 +75,10 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (48 capabilities, 106 guides, 20 FAQ answers, 21 limit groups/111
-rules — counts drift as features ship; re-check with the catalog module before quoting them) covering every Sidebar
+deterministic bilingual catalog (49 capabilities, 110 guides, 20 FAQ answers, 24 limit groups/139
+rules per language — counted from the catalog module on 2026-09-18; counts drift as features ship, so re-count
+before quoting them, and note the board-game queue/reservation/offer/renewal work is **not yet** in the catalog)
+covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
 no GraphQL/AI call, so a `pos_only` cashier is never pulled toward `/admin`. No new tool executes
 anything a permission did not already allow. The FAQ *and* the limits/traps moved out of
@@ -205,8 +207,9 @@ public `/board-game` directory. Settlement still uses the existing POS order/pay
 public discovery exposes only published profile data, rates, game highlights and aggregate table
 availability. The platform-admin fake seeder now creates a removable full operator dataset for this
 archetype, including members, alert states, split billing groups, loans/issues and an unpublished
-discovery draft. Monthly/yearly subscription contracts, encrypted identity-document storage and
-advanced board-game analytics remain a later CRM/reporting phase. See
+discovery draft. Member passes (`9.92`), encrypted identity holds (`9.93`) and automatic renewal
+(`10.4`) have since landed; board-game profitability/utilization analytics remain a later
+reporting phase. See
 [business/board-game-cafe.md](docs/business/board-game-cafe.md).
 
 **A board-game bill belongs to a group, not a table (`9.89`, 2026-09-15).** `9.80` put the money on
@@ -290,6 +293,74 @@ semantic field for idempotency. Identity holds can be taken only while a session
 POS settlement rechecks old held-card rows, and the settlement lock order is session → billing group
 → order to match close/cancel and remove the payment-time deadlock.
 
+**Reports that can be persisted, and profit that cannot be rewritten (`9.95`, `9.97`,
+2026-09-17).** `/admin/reports` grew past its original three exports, but
+`bms_generated_reports.report_type` still carried the `7.53` CHECK — the new management reports were
+generated and then refused at insert. `9.95` widens it. `9.97` is the larger rule: historical profit
+used to join **today's** `bms_products.cost_price`, so editing a cost silently rewrote last quarter.
+Each sold line now carries `cost_amount_snapshot` with a `cost_snapshot_source`; new sales are
+`CATALOG_AT_SALE` and rows reconstructed at migration time say so, because a reconstruction must
+never be presented as equally authoritative evidence.
+
+**A board-game guest can call staff without touching the bill (`9.96`, scope hardened by `9.98`,
+2026-09-17).** A table QR (`/bg/...`) raises a service call. It is operational work only: it never
+moves play time, a bill, stock, or a game-copy condition, and a reported game problem still goes
+through the existing loan/issue path. The call is session-scoped, so move/merge resolves the current
+table from the seating and a terminal session revokes the guest token and expires its open calls.
+`9.96` copied branch/session/token/table ids onto the call row for fast reads but proved only tenant
+ownership one pair at a time; `9.98` adds the composite constraints, so a future writer cannot
+assemble a session, token and table from three different branches of the same tenant.
+
+**A party without a table is its own state (`9.99`–`10.2`, 2026-09-17).** A board-game session only
+starts once a party has a real table, so everything before that lives in
+`bms_board_game_waitlist` — never a second clock, bill, stock reservation or POS path. A walk-in
+takes a queue number scoped to the branch **service day** (shop timezone, 04:00 by default), because
+a cafe open past midnight must not hand out queue 1 in front of people who have waited an hour.
+Seating locks the row and calls `openBoardGameSessionInTx()` in the same transaction, so a commit
+can never leave a seated queue with no clock. `10.0` adds advance reservations as the same row with
+`kind = 'RESERVATION'`, serialized per table by an advisory lock; check-in converts the promise into
+today's queue. `10.1` opens an explicit per-branch public request: the customer gets `REQUESTED`,
+not a table, until PIN-authenticated staff confirm it under the same overlap checks, the manage
+token is stored only as a SHA-256 hash, and reminder delivery is a retryable projection that is
+never authority for the booking. `10.2` completes it — branch-local time input, bounded
+request/payment expiry, decision-delivery evidence, and a reservation **deposit carried by the
+existing payment ledger**: a deposit is a liability until it is applied to a real POS order, never a
+Product SKU and never a second board-game money ledger.
+
+**A play-time package is chosen by the server, not by the register (`10.3`, 2026-09-18).**
+`bms_board_game_offers` holds typed rules over the frozen play-time charge only — percentage off,
+fixed price per person, or one fixed price for the billing group — optionally scoped by
+branch/date/weekday/time and gated on a minimum duration, party size, or an exact SKU that is
+**already on the group's real tab**. That SKU stays an ordinary Product line with its normal
+reservation and stock movement; an offer never manufactures an included item. At group close the
+server evaluates every eligible offer, compares the best result with member-pass coverage, and
+freezes the winner into the charge snapshot — they never stack, and a tie chooses the offer so no
+pass quota is burned. Both registers read that frozen amount and show one compact explanation; the
+catalogue is Admin-only (`board_game.offer.manage`). See
+[business/board-game-cafe.md](docs/business/board-game-cafe.md) and
+[agent-invariants.md § Board game cafe](docs/agent-invariants.md#board-game-cafe).
+
+**A member pass can renew itself, but only from real money (`10.4`, 2026-09-18).** The platform has
+no verified stored-card provider, so automatic renewal is deliberately funded by **store credit
+bound to the same CRM customer** — pretending to charge a card would be a promise the system cannot
+keep. Staff enable it from an active pass and record consent; the agreement snapshots the sold terms
+and branch, and each due cycle creates a **new** pass instead of extending the old entitlement. The
+frequent guarded cron (`/api/bms/board-game/pass-renewals/run`) locks one agreement and its funding
+credit, then writes the pass, its ledger `ISSUE`, a confirmed `BOARD_GAME_MEMBER_PASS` payment and
+the store-credit `REDEEM` in one transaction. Expired, foreign or insufficient credit creates no
+entitlement at all: the agreement becomes `PAST_DUE` and retries the same scheduled cycle. The
+generic payment-refund button refuses a renewal payment, because it knows neither whether the pass
+was used nor which credit to restore, and marking money refunded without moving any is worse than
+no button.
+
+**A register can say what went wrong on it (no migration, `support.logs.view`).**
+`POST /api/pos/diagnostics/events` accepts bounded batches of device telemetry on a device token,
+rate-limited per device, with tenant/branch/device derived from that token and the actor recorded as
+`pos:<device id>`. It deliberately needs **no cashier PIN**: it touches no money, stock or document,
+and the events worth having most — a rejected token, a failed bootstrap, a dead network — happen
+before anyone has typed one. Staff read them back through `bmsPosDeviceDiagnostics` on
+`/admin/pos-devices`, gated by `support.logs.view`.
+
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/
 POS surface is now generatable: `schema.graphql` is committed and pinned to the executable schema by
 `graphql-schema-artifact-contract`, every mobile/POS operation takes a named input object and returns
@@ -301,7 +372,7 @@ multiplexers (`bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift`) are
 business workflows retain compatibility routes until their parity tests land — see
 [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md).
 
-Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
+Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-09).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
 look done in code but need their migration first.

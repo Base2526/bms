@@ -428,7 +428,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 94 mobile/POS input arguments are typed", () => {
+test("all 95 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -439,8 +439,8 @@ test("all 94 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    94,
-    "the mobile/POS surface must keep all 94 input-bearing operations",
+    95,
+    "the mobile/POS surface must keep all 95 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -451,11 +451,11 @@ test("all 94 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 140 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 141 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    140,
+    141,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -1047,7 +1047,7 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   assert.match(boardGame, /\['ENDING_SOON', 'OVERDUE'\]/);
   assert.match(
     boardGame,
-    /for \(const table of data\?\.floor\.tables \?\? \[\]\)[\s\S]{0,700}pending\.push\([\s\S]{0,250}\n    \}\n\n    if \(pending\.length === 0\) return;/,
+    /for \(const table of data\?\.floor\.tables \?\? \[\]\)[\s\S]*?pending\.push\([\s\S]*?\n    \}\n    notified\.current = active;\n\n    if \(pending\.length === 0\) return;/,
     "time alerts must be collected and shown in one dialog instead of one alert per table",
   );
   assert.match(

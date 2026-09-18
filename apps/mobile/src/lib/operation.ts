@@ -1,10 +1,34 @@
 let operationSequence = 0;
 
+export const POS_OPERATION_TIMEOUT_MS = 15_000;
+
+/** Bound a GraphQL HTTP operation so a dropped connection cannot leave the counter spinning forever. */
+export async function runWithOperationTimeout<T>(
+  work: (signal: AbortSignal) => Promise<T>,
+  timeoutMs = POS_OPERATION_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await work(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+      throw new Error(`เซิร์ฟเวอร์ไม่ตอบภายใน ${seconds} วินาที`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Unique per user intent. Keep the returned value and reuse it when retrying an unknown outcome. */
 export function createIdempotencyKey(prefix: string): string {
   operationSequence = (operationSequence + 1) % 1_000_000;
   const random = Math.random().toString(36).slice(2, 12);
-  return `${prefix}-${Date.now().toString(36)}-${operationSequence.toString(36)}-${random}`;
+  return `${prefix}-${Date.now().toString(36)}-${operationSequence.toString(
+    36,
+  )}-${random}`;
 }
 
 export function resultFailure(

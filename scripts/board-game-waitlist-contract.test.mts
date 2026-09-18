@@ -96,6 +96,22 @@ test("queue mutations stay in the shared POS command table and both registers ex
   assert.match(mobile, /MobilePosReviewBoardGameReservationDocument/);
 });
 
+test("mobile normalizes human booking date/time before POS backend validates the instant", () => {
+  assert.match(mobile, /function parseReservationDateInput/);
+  assert.match(mobile, /year >= 2400 \? year - 543 : year/);
+  assert.match(mobile, /\^\\d\{8\}\$/);
+  assert.match(mobile, /function parseReservationTimeInput/);
+  assert.match(mobile, /\(\?:\:\|\\\.\)/);
+  assert.match(mobile, /วันที่จองไม่ถูกต้อง/);
+  assert.match(mobile, /เวลาจองไม่ถูกต้อง/);
+  assert.match(mobile, /parseReservationInstant\(\s*reservationStartDate,\s*reservationStartTime/);
+  assert.match(mobile, /reservedFor: instant\.toISOString\(\)/);
+  assert.match(service, /function reservationInstant\(value: unknown\): Date/);
+  assert.match(service, /new Date\(String\(value \?\? ""\)\)/);
+  assert.match(service, /เวลาจองต้องเป็นเวลาในอนาคต/);
+  assert.match(service, /รับจองล่วงหน้าได้ไม่เกิน 366 วัน/);
+});
+
 test("10.1 public bookings are review requests with opaque management and bounded reminders", () => {
   assert.match(publicMigration, /status = 'REQUESTED'[\s\S]*source = 'PUBLIC'[\s\S]*reserved_table_id IS NULL/);
   assert.match(publicMigration, /public_manage_token_hash/);

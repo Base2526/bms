@@ -123,6 +123,8 @@ fragment MobilePosReceiptFields on BmsPosReceipt {
   receiptNo
   billNo
   soldAt
+  offlineTenderedAt
+  offlineSyncedAt
   total
   orderStatus
   locationName
@@ -738,6 +740,21 @@ mutation MobilePosSale($input: BmsPosSaleInput!) {
     available
     requested
     serial
+    roundingAmount
+    replayed
+  }
+}
+
+query MobilePosSaleRecovery($input: BmsPosSaleRecoveryInput!) {
+  bmsPosSaleRecovery(input: $input) {
+    status
+    reason
+    orderId
+    receiptNo
+    billNo
+    total
+    cashTendered
+    cashChange
     roundingAmount
     replayed
   }
@@ -2116,50 +2133,70 @@ fragment MobilePosBoardGameWaitlistEntryFields on BmsPosBoardGameWaitlistEntry {
   createdAt
 }
 
-mutation MobilePosAddBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistAddInput!) {
+mutation MobilePosAddBoardGameWaitlistEntry(
+  $input: BmsPosBoardGameWaitlistAddInput!
+) {
   bmsPosAddBoardGameWaitlistEntry(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
-mutation MobilePosCallBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistCallInput!) {
+mutation MobilePosCallBoardGameWaitlistEntry(
+  $input: BmsPosBoardGameWaitlistCallInput!
+) {
   bmsPosCallBoardGameWaitlistEntry(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
-mutation MobilePosCloseBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistCloseInput!) {
+mutation MobilePosCloseBoardGameWaitlistEntry(
+  $input: BmsPosBoardGameWaitlistCloseInput!
+) {
   bmsPosCloseBoardGameWaitlistEntry(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
-mutation MobilePosSeatBoardGameWaitlistEntry($input: BmsPosBoardGameWaitlistSeatInput!) {
+mutation MobilePosSeatBoardGameWaitlistEntry(
+  $input: BmsPosBoardGameWaitlistSeatInput!
+) {
   bmsPosSeatBoardGameWaitlistEntry(input: $input) {
-    entry { ...MobilePosBoardGameWaitlistEntryFields }
-    session { ...MobilePosBoardGameSessionSummaryFields }
+    entry {
+      ...MobilePosBoardGameWaitlistEntryFields
+    }
+    session {
+      ...MobilePosBoardGameSessionSummaryFields
+    }
   }
 }
 
-mutation MobilePosAddBoardGameReservation($input: BmsPosBoardGameReservationAddInput!) {
+mutation MobilePosAddBoardGameReservation(
+  $input: BmsPosBoardGameReservationAddInput!
+) {
   bmsPosAddBoardGameReservation(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
-mutation MobilePosCheckInBoardGameReservation($input: BmsPosBoardGameWaitlistCallInput!) {
+mutation MobilePosCheckInBoardGameReservation(
+  $input: BmsPosBoardGameWaitlistCallInput!
+) {
   bmsPosCheckInBoardGameReservation(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
-mutation MobilePosUpdateBoardGameReservation($input: BmsPosBoardGameReservationUpdateInput!) {
+mutation MobilePosUpdateBoardGameReservation(
+  $input: BmsPosBoardGameReservationUpdateInput!
+) {
   bmsPosUpdateBoardGameReservation(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
 }
 
-mutation MobilePosReviewBoardGameReservation($input: BmsPosBoardGameReservationReviewInput!) {
+mutation MobilePosReviewBoardGameReservation(
+  $input: BmsPosBoardGameReservationReviewInput!
+) {
   bmsPosReviewBoardGameReservation(input: $input) {
     ...MobilePosBoardGameWaitlistEntryFields
   }
@@ -2272,6 +2309,9 @@ query MobilePosBoardGameCheckout(
     totalDue
     chargeLineCount
     passCoveredAmount
+    offerCode
+    offerName
+    offerDiscountAmount
   }
 }
 

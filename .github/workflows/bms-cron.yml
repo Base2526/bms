@@ -62,6 +62,9 @@ jobs:
             path: /api/bms/board-game/reservations/expire
           - name: board-game-reservation-reminders
             path: /api/bms/board-game/reservations/remind
+          # Renewal uses customer-bound store credit and is transactionally idempotent per cycle.
+          - name: board-game-pass-renewals
+            path: /api/bms/board-game/pass-renewals/run
     steps:
       - name: POST ${{ matrix.job.name }}
         env:

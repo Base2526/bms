@@ -99,6 +99,22 @@ type MemberPass = {
   kind: "UNLIMITED" | "MINUTES"; remainingMinutes: number | null; pricePaid: number;
   startsAt: string; expiresAt: string; status: "ACTIVE" | "EXPIRED" | "CANCELLED";
 };
+type BoardGameOffer = {
+  id: string; locationId: string | null; code: string; name: string;
+  kind: "TIME_PERCENT" | "TIME_FIXED_PER_PERSON" | "GROUP_FIXED";
+  percentOff: number | null; fixedPrice: number | null; minPlayers: number;
+  maxPlayers: number | null; minimumMinutes: number; requiredProductSku: string | null;
+  validFrom: string | null; validUntil: string | null; weekdays: number[];
+  startsLocalTime: string | null; endsLocalTime: string | null;
+  active: boolean; sortOrder: number; note: string | null;
+};
+type PassRenewal = {
+  id: string; customerId: string; customerName: string | null; sourcePassId: string;
+  planName: string; locationId: string | null; price: number; durationDays: number;
+  status: "ACTIVE" | "PAST_DUE" | "PAUSED" | "CANCELLED";
+  renewAt: string; nextAttemptAt: string; failureCount: number;
+  lastSuccessAt: string | null; lastError: string | null; creditCodeTail: string;
+};
 
 const emptyFloor: Floor = { areas: [], tables: [], openCounts: {} };
 const key = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
@@ -117,6 +133,7 @@ export default function BoardGamePage() {
   const canManageFloor = can("board_game.floor.manage");
   const canManageRate = can("board_game.rate.manage");
   const canManagePass = can("board_game.pass.manage");
+  const canManageOffer = can("board_game.offer.manage");
   const canRevealIdentity = can("board_game.identity.reveal");
   const canManageLibrary = can("board_game.library.manage");
   const canCancel = can("board_game.session.cancel");
@@ -156,8 +173,18 @@ export default function BoardGamePage() {
   const [issueForm] = Form.useForm();
   const [identityForm] = Form.useForm();
   const [heldCards, setHeldCards] = useState<IdentityHold[]>([]);
+  const [offers, setOffers] = useState<BoardGameOffer[]>([]);
+  const [offerModal, setOfferModal] = useState<BoardGameOffer | "new" | null>(null);
+  const [renewals, setRenewals] = useState<PassRenewal[]>([]);
+  const [offerForm] = Form.useForm();
+  const [renewalForm] = Form.useForm();
 
   const activeRates = useMemo(() => rates.filter((rate) => rate.active), [rates]);
+  const renewalByPassId = useMemo(() => new Map(
+    renewals
+      .filter((renewal) => renewal.status !== "CANCELLED")
+      .map((renewal) => [renewal.sourcePassId, renewal] as const),
+  ), [renewals]);
   const availableCopies = useMemo(() => library.flatMap((title) =>
     title.copies.filter((copy) => copy.status === "AVAILABLE").map((copy) => ({
       value: copy.id, label: `${title.title} · ${copy.copyCode}`,
@@ -174,6 +201,67 @@ export default function BoardGamePage() {
     setMemberPasses(data.passes);
     setPassOutstanding(data.outstanding ?? null);
   }, [canManageSession]);
+
+  const refreshOffersAndRenewals = useCallback(async () => {
+    if (!canManageSession) return;
+    const [offerData, renewalData] = await Promise.all([
+      api<{ offers: BoardGameOffer[] }>("/api/bms/board-game/offers"),
+      api<{ renewals: PassRenewal[] }>("/api/bms/board-game/pass-renewals"),
+    ]);
+    setOffers(offerData.offers);
+    setRenewals(renewalData.renewals);
+  }, [canManageSession]);
+
+  async function saveOffer(values: any) {
+    try {
+      await api("/api/bms/board-game/offers", {
+        method: "POST", body: JSON.stringify({
+          ...values,
+          validFrom: values.validFrom ? new Date(values.validFrom).toISOString() : null,
+          validUntil: values.validUntil ? new Date(values.validUntil).toISOString() : null,
+          id: offerModal === "new" ? null : offerModal?.id ?? null,
+          maxPlayers: values.maxPlayers || null,
+          percentOff: values.kind === "TIME_PERCENT" ? values.percentOff : null,
+          fixedPrice: values.kind === "TIME_PERCENT" ? null : values.fixedPrice,
+        }),
+      });
+      setOfferModal(null);
+      await refreshOffersAndRenewals();
+      message.success(t("common.saved"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.save_failed"));
+    }
+  }
+
+  async function createRenewal(values: any) {
+    try {
+      await api("/api/bms/board-game/pass-renewals", {
+        method: "POST", body: JSON.stringify({ ...values, action: "create" }),
+      });
+      renewalForm.resetFields();
+      await refreshOffersAndRenewals();
+      message.success(t("admin_board_game.renewal_created"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.save_failed"));
+    }
+  }
+
+  async function renewalAction(renewal: PassRenewal, action: "pause" | "resume" | "retry" | "cancel") {
+    let reason = "";
+    if (action === "cancel") {
+      reason = window.prompt(t("admin_board_game.renewal_cancel_reason"))?.trim() ?? "";
+      if (!reason) return;
+    }
+    try {
+      await api("/api/bms/board-game/pass-renewals", {
+        method: "POST", body: JSON.stringify({ action, renewalId: renewal.id, reason }),
+      });
+      await Promise.all([refreshOffersAndRenewals(), refreshPasses()]);
+      message.success(t("common.saved"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("common.save_failed"));
+    }
+  }
 
   async function savePlan(values: any) {
     try {
@@ -284,6 +372,7 @@ export default function BoardGamePage() {
 
   useEffect(() => { void refreshBase().catch((error) => message.error(String(error?.message ?? error))); }, [refreshBase]);
   useEffect(() => { void refreshPasses().catch(() => undefined); }, [refreshPasses]);
+  useEffect(() => { void refreshOffersAndRenewals().catch(() => undefined); }, [refreshOffersAndRenewals]);
   useEffect(() => { if (locationId) void refreshLocation(locationId); }, [locationId, refreshLocation]);
   useEffect(() => {
     if (locationId && canManageFloor) {
@@ -598,8 +687,34 @@ export default function BoardGamePage() {
   const locale = lang === "en" ? "en-GB" : "th-TH";
   const time = (value: string | null) => value ? new Date(value).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) : "-";
   const day = (value: string | null) => value ? new Date(value).toLocaleDateString(locale) : "-";
+  const localDateTimeInput = (value: string | null) => value
+    ? new Date(new Date(value).getTime() - new Date(value).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+    : null;
   const elapsed = (startedAt: string) => Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 60_000));
   const tableStatus = (table: FloorTable) => table.blocked ? "BLOCKED" : table.openSession?.status ?? "AVAILABLE";
+  const alertTables = floor.tables
+    .filter((table) => ["ENDING_SOON", "OVERDUE"].includes(table.openSession?.alertStatus ?? ""))
+    .sort((left, right) => {
+      const leftStatus = left.openSession?.alertStatus === "OVERDUE" ? 0 : 1;
+      const rightStatus = right.openSession?.alertStatus === "OVERDUE" ? 0 : 1;
+      if (leftStatus !== rightStatus) return leftStatus - rightStatus;
+      return new Date(left.openSession?.expectedEndAt ?? 0).getTime()
+        - new Date(right.openSession?.expectedEndAt ?? 0).getTime();
+    });
+  const alertCounts = alertTables.reduce((counts, table) => {
+    const status = table.openSession?.alertStatus;
+    if (status === "OVERDUE") counts.overdue += 1;
+    if (status === "ENDING_SOON") counts.endingSoon += 1;
+    return counts;
+  }, { overdue: 0, endingSoon: 0 });
+  const timeAlertLabel = (session: OpenSession) => {
+    if (!session.expectedEndAt) return t(`admin_board_game.alert_${session.alertStatus.toLowerCase()}`);
+    const remainingMs = new Date(session.expectedEndAt).getTime() - Date.now();
+    if (!Number.isFinite(remainingMs)) return t(`admin_board_game.alert_${session.alertStatus.toLowerCase()}`);
+    return remainingMs <= 0
+      ? t("admin_board_game.alert_over_by", { minutes: Math.max(1, Math.ceil(Math.abs(remainingMs) / 60_000)) })
+      : t("admin_board_game.alert_left", { minutes: Math.ceil(remainingMs / 60_000) });
+  };
 
   if (permissionsLoading) return <div className={styles.center}><Spin /></div>;
   if (!canManageSession) return <Alert type="error" showIcon closable message={t("common.no_permission")} />;
@@ -622,8 +737,38 @@ export default function BoardGamePage() {
                 <div><span>{t("admin_board_game.metric_available")}</span><strong>{floor.tables.filter((row) => tableStatus(row) === "AVAILABLE").length}</strong></div>
                 <div><span>{t("admin_board_game.metric_playing")}</span><strong>{floor.openCounts.OPEN ?? 0}</strong></div>
                 <div><span>{t("admin_board_game.metric_billing")}</span><strong>{floor.openCounts.CLOSING ?? 0}</strong></div>
-                <div><span>{t("admin_board_game.metric_alerts")}</span><strong>{floor.tables.filter((row) => ["ENDING_SOON", "OVERDUE"].includes(row.openSession?.alertStatus ?? "")).length}</strong></div>
+                <div><span>{t("admin_board_game.metric_alerts")}</span><strong>{alertTables.length}</strong></div>
               </div>
+              {alertTables.length > 0 && (
+                <section className={`${styles.alertBoard} ${alertCounts.overdue > 0 ? styles.alertBoardCritical : ""}`.trim()} aria-label={t("admin_board_game.alert_board_title")}>
+                  <div className={styles.alertBoardHead}>
+                    <div>
+                      <strong>{t("admin_board_game.alert_board_title")}</strong>
+                      <span>{t("admin_board_game.alert_board_summary", {
+                        overdue: alertCounts.overdue,
+                        ending: alertCounts.endingSoon,
+                      })}</span>
+                    </div>
+                    <Button size="small" icon={<ReloadOutlined />} onClick={() => void refreshLocation()} loading={loading}>
+                      {t("common.refresh")}
+                    </Button>
+                  </div>
+                  <div className={styles.alertList}>
+                    {alertTables.map((table) => {
+                      const session = table.openSession!;
+                      return (
+                        <button key={`${session.id}-${session.alertStatus}`} type="button"
+                          className={`${styles.alertItem} ${session.alertStatus === "OVERDUE" ? styles.alertItemOverdue : styles.alertItemEndingSoon}`.trim()}
+                          onClick={() => void refreshDetail(session.id)}>
+                          <span>{table.code} · {table.name}</span>
+                          <b>{timeAlertLabel(session)}</b>
+                          <small>{session.guestCount} {t("admin_board_game.people")} · {t("admin_board_game.ends_at")} {time(session.expectedEndAt)}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
               {floor.areas.map((area) => (
                 <section key={area.id} className={styles.area}>
                   <Typography.Title level={4}>{area.name}</Typography.Title>
@@ -631,9 +776,14 @@ export default function BoardGamePage() {
                     {floor.tables.filter((table) => table.areaId === area.id).map((table) => {
                       const session = table.openSession;
                       const status = tableStatus(table);
+                      const alertClass = session?.alertStatus === "OVERDUE"
+                        ? styles.alertOverdueCard
+                        : session?.alertStatus === "ENDING_SOON"
+                          ? styles.alertEndingCard
+                          : "";
                       return (
                         <button key={table.id} type="button" disabled={table.blocked}
-                          className={`${styles.tableCard} ${styles[`status_${status}`]}`}
+                          className={`${styles.tableCard} ${styles[`status_${status}`]} ${alertClass}`.trim()}
                           onClick={() => session ? void refreshDetail(session.id) : !table.blocked && showOpen(table)}>
                           <div className={styles.tableTop}>
                             <div className={styles.tableIdentity}>
@@ -654,7 +804,7 @@ export default function BoardGamePage() {
                             <>
                               <span><ClockCircleOutlined /> {elapsed(session.startedAt)} {t("admin_board_game.minutes")}</span>
                               <span>{session.guestCount} {t("admin_board_game.people")}{session.expectedEndAt ? ` · ${t("admin_board_game.ends_at")} ${time(session.expectedEndAt)}` : ""}</span>
-                              {session.alertStatus !== "NORMAL" && <b>{t(`admin_board_game.alert_${session.alertStatus.toLowerCase()}`)}</b>}
+                              {session.alertStatus !== "NORMAL" && <b>{timeAlertLabel(session)}</b>}
                               {session.status === "CLOSING" && <b>฿{session.amountDue.toFixed(2)}</b>}
                               {(session.sessionCount ?? 1) > 1 && <b>
                                 {t("admin_board_game.merged_session_count", { count: session.sessionCount ?? 1 })}
@@ -811,6 +961,53 @@ export default function BoardGamePage() {
                 </Form>
               </section>}
 
+              {canManagePass && <section className={styles.panel}>
+                <div className={styles.panelHeader}>
+                  <div>
+                    <Typography.Title level={4}>{t("admin_board_game.renewal_setup_title")}</Typography.Title>
+                    <Typography.Text type="secondary">{t("admin_board_game.renewal_setup_hint")}</Typography.Text>
+                  </div>
+                </div>
+                <Form form={renewalForm} layout="vertical" onFinish={createRenewal} style={{ marginTop: 12 }}>
+                  <Form.Item name="memberPassId" label={t("admin_board_game.renewal_source_pass")}
+                    rules={[{ required: true }]}>
+                    <Select showSearch optionFilterProp="label" options={memberPasses
+                      .filter((row) => row.status === "ACTIVE" && new Date(row.expiresAt).getTime() > Date.now())
+                      .map((row) => ({ value: row.id,
+                        label: `${row.customerName ?? row.customerId} · ${row.planName} · ${day(row.expiresAt)}` }))} />
+                  </Form.Item>
+                  <Form.Item name="storeCreditCode" label={t("admin_board_game.renewal_credit_code")}
+                    rules={[{ required: true }]}>
+                    <Input autoComplete="off" />
+                  </Form.Item>
+                  <Button type="primary" htmlType="submit">{t("admin_board_game.renewal_enable")}</Button>
+                </Form>
+              </section>}
+
+              <section className={`${styles.panel} ${styles.discoveryPanel}`}>
+                <div className={styles.panelHeader}>
+                  <Typography.Title level={4}>{t("admin_board_game.renewals_title")}</Typography.Title>
+                </div>
+                <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={renewals} columns={[
+                  { title: t("admin_board_game.member"), render: (_, row) => row.customerName ?? row.customerId },
+                  { title: t("admin_board_game.pass_plan"), dataIndex: "planName" },
+                  { title: t("admin_board_game.renewal_funding"), render: (_, row) => `•••• ${row.creditCodeTail}` },
+                  { title: t("admin_board_game.renewal_next"), render: (_, row) => day(row.renewAt) },
+                  { title: t("common.status"), render: (_, row) => <Tag color={row.status === "ACTIVE" ? "green" : row.status === "PAST_DUE" ? "red" : "default"}>
+                    {t(`admin_board_game.renewal_status_${row.status.toLowerCase()}`)}
+                  </Tag> },
+                  { title: t("admin_board_game.renewal_last_error"), render: (_, row) => row.lastError ?? "-" },
+                  { title: "", render: (_, row) => canManagePass && row.status !== "CANCELLED" ? <Space wrap>
+                    {row.status === "ACTIVE"
+                      ? <Button size="small" onClick={() => void renewalAction(row, "pause")}>{t("admin_board_game.renewal_pause")}</Button>
+                      : <Button size="small" onClick={() => void renewalAction(row, row.status === "PAST_DUE" ? "retry" : "resume")}>
+                          {t(row.status === "PAST_DUE" ? "admin_board_game.renewal_retry" : "admin_board_game.renewal_resume")}
+                        </Button>}
+                    <Button size="small" danger onClick={() => void renewalAction(row, "cancel")}>{t("common.cancel")}</Button>
+                  </Space> : null },
+                ]} />
+              </section>
+
               <section className={`${styles.panel} ${styles.discoveryPanel}`}>
                 <div className={styles.panelHeader}>
                   <Typography.Title level={4}>{t("admin_board_game.member_passes_title")}</Typography.Title>
@@ -834,7 +1031,24 @@ export default function BoardGamePage() {
                   { title: t("admin_board_game.pass_expires"), render: (_, row) => time(row.expiresAt) },
                   {
                     title: t("common.status"),
-                    render: (_, row) => <Tag>{t(`admin_board_game.pass_status_${row.status.toLowerCase()}`)}</Tag>,
+                    render: (_, row) => {
+                      const renewal = renewalByPassId.get(row.id);
+                      return <Space direction="vertical" size={2}>
+                        <Tag>{t(`admin_board_game.pass_status_${row.status.toLowerCase()}`)}</Tag>
+                        {renewal ? <>
+                          <Tag color={renewal.status === "ACTIVE" ? "green"
+                            : renewal.status === "PAST_DUE" ? "red" : "default"}>
+                            {t("admin_board_game.renewal_auto_badge")} · {t(`admin_board_game.renewal_status_${renewal.status.toLowerCase()}`)}
+                          </Tag>
+                          {renewal.status === "ACTIVE" && <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {t("admin_board_game.renewal_next")}: {day(renewal.renewAt)}
+                          </Typography.Text>}
+                          {renewal.status === "PAST_DUE" && renewal.lastError && <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                            {renewal.lastError}
+                          </Typography.Text>}
+                        </> : null}
+                      </Space>;
+                    },
                   },
                   { title: "", render: (_, row) => canManagePass && row.status === "ACTIVE"
                     ? <Button danger size="small" onClick={() => cancelPass(row)}>{t("common.cancel")}</Button>
@@ -842,6 +1056,39 @@ export default function BoardGamePage() {
                 ]} />
               </section>
             </div>
+          ) },
+          { key: "offers", label: t("admin_board_game.tab_offers"), forceRender: true, children: (
+            <section className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <Typography.Title level={4}>{t("admin_board_game.offers_title")}</Typography.Title>
+                  <Typography.Text type="secondary">{t("admin_board_game.offers_hint")}</Typography.Text>
+                </div>
+                {canManageOffer && <Button icon={<PlusOutlined />} onClick={() => {
+                  offerForm.resetFields();
+                  offerForm.setFieldsValue({ kind: "TIME_PERCENT", percentOff: 10, minPlayers: 1,
+                    minimumMinutes: 0, weekdays: [0,1,2,3,4,5,6], active: true, sortOrder: 0 });
+                  setOfferModal("new");
+                }}>{t("admin_board_game.offer_add")}</Button>}
+              </div>
+              <Table rowKey="id" size="small" pagination={false} dataSource={offers} columns={[
+                { title: t("admin_board_game.offer_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}</> },
+                { title: t("admin_board_game.offer_kind"), render: (_, row) => t(`admin_board_game.offer_kind_${row.kind.toLowerCase()}`) },
+                { title: t("admin_board_game.offer_value"), render: (_, row) => row.kind === "TIME_PERCENT" ? `${row.percentOff}%` : `฿${Number(row.fixedPrice).toFixed(2)}` },
+                { title: t("admin_board_game.offer_conditions"), render: (_, row) => [
+                  `${row.minPlayers}${row.maxPlayers ? `-${row.maxPlayers}` : "+"} ${t("admin_board_game.people")}`,
+                  row.minimumMinutes ? `${row.minimumMinutes} ${t("admin_board_game.minutes")}` : null,
+                  row.requiredProductSku || null,
+                ].filter(Boolean).join(" · ") },
+                { title: t("admin_board_game.pass_plan_branch"), render: (_, row) => row.locationId
+                  ? locations.find((location) => location.id === row.locationId)?.name ?? t("admin_board_game.pass_plan_branch_unknown")
+                  : t("admin_board_game.pass_plan_all_branches") },
+                { title: "", render: (_, row) => canManageOffer ? <Button aria-label={t("common.edit")} icon={<EditOutlined />}
+                  onClick={() => { offerForm.setFieldsValue({ ...row,
+                    validFrom: localDateTimeInput(row.validFrom), validUntil: localDateTimeInput(row.validUntil),
+                  }); setOfferModal(row); }} /> : null },
+              ]} />
+            </section>
           ) },
           { key: "settings", label: t("admin_board_game.tab_settings"), forceRender: true, children: (
             <div className={styles.settingsGrid}>
@@ -1121,6 +1368,50 @@ export default function BoardGamePage() {
         </div>}
       </Modal>
 
+      <Modal open={Boolean(offerModal)} title={t("admin_board_game.offer_editor")}
+        onCancel={() => setOfferModal(null)} onOk={() => void offerForm.submit()} width={720}>
+        <Form form={offerForm} layout="vertical" onFinish={saveOffer}>
+          <div className={styles.formGrid}>
+            <Form.Item name="name" label={t("admin_board_game.offer_name")} rules={[{ required: true }]}><Input /></Form.Item>
+            <Form.Item name="locationId" label={t("admin_board_game.pass_plan_branch")}>
+              <Select allowClear placeholder={t("admin_board_game.pass_plan_all_branches")}
+                options={locations.map((location) => ({ value: location.id, label: location.name }))} />
+            </Form.Item>
+          </div>
+          <div className={styles.formGrid}>
+            <Form.Item name="kind" label={t("admin_board_game.offer_kind")}>
+              <Select options={["TIME_PERCENT", "TIME_FIXED_PER_PERSON", "GROUP_FIXED"].map((value) => ({
+                value, label: t(`admin_board_game.offer_kind_${value.toLowerCase()}`),
+              }))} />
+            </Form.Item>
+            <Form.Item noStyle shouldUpdate={(prev, next) => prev.kind !== next.kind}>
+              {({ getFieldValue }) => getFieldValue("kind") === "TIME_PERCENT"
+                ? <Form.Item name="percentOff" label={t("admin_board_game.offer_percent")} rules={[{ required: true }]}><InputNumber min={0.01} max={100} /></Form.Item>
+                : <Form.Item name="fixedPrice" label={t("admin_board_game.offer_fixed_price")} rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>}
+            </Form.Item>
+          </div>
+          <div className={styles.formGrid}>
+            <Form.Item name="minPlayers" label={t("admin_board_game.offer_min_players")}><InputNumber min={1} max={100} /></Form.Item>
+            <Form.Item name="maxPlayers" label={t("admin_board_game.offer_max_players")}><InputNumber min={1} max={100} /></Form.Item>
+            <Form.Item name="minimumMinutes" label={t("admin_board_game.offer_min_minutes")}><InputNumber min={0} max={1440} /></Form.Item>
+          </div>
+          <Form.Item name="requiredProductSku" label={t("admin_board_game.offer_required_sku")}><Input /></Form.Item>
+          <Form.Item name="weekdays" label={t("admin_board_game.offer_weekdays")} rules={[{ required: true }]}>
+            <Select mode="multiple" options={[0,1,2,3,4,5,6].map((value) => ({
+              value, label: t(`admin_board_game.weekday_${value}`),
+            }))} />
+          </Form.Item>
+          <div className={styles.formGrid}>
+            <Form.Item name="startsLocalTime" label={t("admin_board_game.offer_starts_time")}><Input type="time" /></Form.Item>
+            <Form.Item name="endsLocalTime" label={t("admin_board_game.offer_ends_time")}><Input type="time" /></Form.Item>
+          </div>
+          <div className={styles.formGrid}>
+            <Form.Item name="validFrom" label={t("admin_board_game.offer_valid_from")}><Input type="datetime-local" /></Form.Item>
+            <Form.Item name="validUntil" label={t("admin_board_game.offer_valid_until")}><Input type="datetime-local" /></Form.Item>
+          </div>
+          <Form.Item name="active" label={t("common.active")} valuePropName="checked"><Switch /></Form.Item>
+        </Form>
+      </Modal>
       <Modal open={Boolean(rateModal)} title={t("admin_board_game.rate_editor")} onCancel={() => setRateModal(null)} onOk={() => void saveRate()}>
         <Form form={rateForm} layout="vertical" initialValues={{ customerType: "GENERAL", pricePerHour: 50, minimumMinutes: 60, roundingMinutes: 30, graceMinutes: 0, active: true, sortOrder: 0 }}>
           <Form.Item name="name" label={t("admin_board_game.rate_name")} rules={[{ required: true }]}><Input /></Form.Item>

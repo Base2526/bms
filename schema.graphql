@@ -2077,6 +2077,7 @@ type BmsPayment {
   confirmedAt: String
   createdAt: String!
   id: ID!
+  memberPassId: ID
   method: BmsPaymentMethod!
   netAmount: Float!
   note: String
@@ -2610,6 +2611,13 @@ type BmsPosBoardGameCheckout {
 
   """id ของกลุ่มบิล (9.89) ไม่ใช่ session"""
   id: ID!
+
+  """โปรโมชันค่าเวลาที่ชนะ ณ ตอนปิดบิล (10.3) · null = ไม่มีโปรโมชัน"""
+  offerCode: String
+
+  """ยอดค่าเล่นที่โปรโมชันช่วยลดแล้ว · 0 = ไม่มีโปรโมชัน"""
+  offerDiscountAmount: Float!
+  offerName: String
 
   """
   ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (9.92) · 0 = ไม่มีแพ็กเกจช่วยจ่าย
@@ -3369,6 +3377,7 @@ type BmsPosDevice {
   active: Boolean!
   code: String!
   id: ID!
+  lastSeenAt: String
   locationId: ID!
   name: String
   receiptPrefix: String
@@ -3378,6 +3387,20 @@ type BmsPosDevice {
   scannerPrefixKey: String!
   scannerSuffixKey: String!
   tenantId: ID!
+}
+
+type BmsPosDeviceDiagnosticEvent {
+  action: String!
+  actorId: String
+  category: String!
+  context: JSON!
+  deviceId: ID
+  id: ID!
+  locationId: ID
+  message: String
+  occurredAt: String!
+  receivedAt: String!
+  status: String
 }
 
 input BmsPosDeviceInput {
@@ -3896,6 +3919,8 @@ type BmsPosReceipt {
   memberName: String
   memberNo: String
   memberPhone: String
+  offlineSyncedAt: String
+  offlineTenderedAt: String
   orderId: ID!
   orderStatus: String!
   paymentMethod: String
@@ -4736,6 +4761,7 @@ input BmsPosSaleInput {
   lines: [BmsPosSaleLineInput!]!
   manualDiscount: Float
   mode: String
+  offlineTenderedAt: String
   payments: [BmsPosPaymentInput!]!
   pharmacistAuthorizationNote: String
   pharmacistAuthorizerPin: String
@@ -4757,6 +4783,12 @@ input BmsPosSaleLineInput {
   size: String!
   sku: String!
   unitName: String
+}
+
+input BmsPosSaleRecoveryInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
 }
 
 type BmsPosSaleResult {
@@ -7596,6 +7628,7 @@ type Query {
   bmsPosCashiers: [BmsPosCashier!]!
   bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
   bmsPosDeposits(q: String): BmsPosDepositsResult!
+  bmsPosDeviceDiagnostics(deviceId: ID, limit: Int = 50): [BmsPosDeviceDiagnosticEvent!]!
   bmsPosDevices: [BmsPosDevice!]!
   bmsPosExpenses(credentials: BmsPosCredentialsInput!): BmsPosExpensesResult!
   bmsPosKitchenTickets(limit: Int = 100, status: String): BmsPosKitchenTicketsResult!
@@ -7619,6 +7652,7 @@ type Query {
   bmsPosRestaurantWaitlist: BmsPosRestaurantWaitlistResult!
   bmsPosReturnAuditSummary(from: String, to: String): BmsPosReturnAuditSummaryResult!
   bmsPosReturnSummary(from: String, to: String): BmsPosReturnSummaryResult!
+  bmsPosSaleRecovery(input: BmsPosSaleRecoveryInput!): BmsPosSaleResult!
   bmsPosScan(code: String!, packCode: String, size: String, surface: String, withImage: Boolean = false): BmsPosScanResult!
   bmsPosSession: BmsPosSessionResult!
   bmsPosShiftHistory(credentials: BmsPosCredentialsInput!): BmsPosShiftHistoryResult!

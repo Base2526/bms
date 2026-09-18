@@ -183,7 +183,7 @@ wrong, and update the doc in the same change.
   to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
   `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
-- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.2`)** — play time, sellable goods, and playable game
+- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.4`)** — play time, sellable goods, and playable game
   copies are three different domains. A billing group, never the table session, owns the frozen
   charge, snack tab and settling order. One group may close and pay while every other group keeps
   accruing time; the table remains occupied until no group is `OPEN` or `CLOSING`. A checked-out
@@ -205,6 +205,9 @@ wrong, and update the doc in the same change.
   plan moved later and never covers a visit at another branch. Identity holds may be taken only while
   the session is `OPEN`; final POS settlement rechecks that no card is still held, and settlement
   locks session → billing group → order to match close/cancel.
+  `10.3` offers discount only play time and are selected server-side against pass coverage; a required
+  SKU must already be a real inventory-backed tab line. `10.4` renewal is store-credit-only: funding
+  belongs to the same member, and the new pass, payment and both ledgers commit together or not at all.
   A guest service bell (`9.96`, scope hardened by `9.98`) is session-scoped and operational only: it never changes time, bill,
   stock, or copy condition. Move/merge resolves the current table from seating, terminal sessions
   revoke the guest token and expire active calls, and a reported game issue still needs the existing
@@ -327,8 +330,10 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,445 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-18 — net **+4** for visible login and registration
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,499 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-18 — net **+54** against the same recursive
+   count of `HEAD`: board-game automatic pass renewal, typed play-time offers, member-pass payment
+   targets and the compact renewal badge in both languages; the preceding net **+4** for visible login and registration
    submit progress; the preceding net **+14** for board-game reservation
    advance-time, request-expiry and deposit-policy controls plus payment-target labels; the preceding net **+50** against the same recursive
    count of `HEAD`: board-game one-group close and close-all, the seating move/merge controls, and the
@@ -583,6 +588,11 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
+| `board-game-cafe-contract` · `board-game-register-contract` · `board-game-pos-parity-contract` | table/seating/billing-group source contracts and derived table status · the register's phone geometry and the money a running table may print · browser REST and native GraphQL reach the same command set through one permission table |
+| `board-game-pass-contract` · `board-game-identity-contract` · `board-game-offers-renewals-contract` | pass coverage math and quota spend at close · identity-hold purge/reveal gating · offer selection vs pass coverage, and renewal as one atomic entitlement + payment + credit-ledger write |
+| `board-game-waitlist-contract` · `board-game-service-call-contract` · `board-game-readiness-scope-contract` | queue/reservation state before a session, seating in one transaction · the guest bell moves nothing but staff attention · every table path is declared in `schemaReadiness` |
+| `pos-route-guard-contract` · `pos-approvals-contract` · `pos-cash-formula-contract` | every `/api/pos` route authenticates the device, writes verify a person's PIN unless the exception carries a live reason, and scope never comes from the body · approver lists match the permission the counter really checks · one drawer-expectation formula |
+| `support-diagnostics-contract` · `support-diagnostics-extra-contract` | tenant-scoped append-only events that never trust a tenant from the body, separately authorised export/send, and native POS telemetry attributed to the device and filtered server-side · the RLS/grant shape the fleet-wide retention job depends on, and a caller-supplied range answering 400 instead of paging ops |
 | `restaurant-pos-contract` | dine-in check/round/settlement source contracts: one settlement path, atomic round replacement, branch-scoped KDS, restaurant-specific permissions, server-owned modifier pricing |
 | `kitchen-board-contract` · `kitchen-station-contract` | ticket grouping/counting/SLA on the register KDS · station master (id-first matching, branch scope, name snapshot, active-but-retiring) |
 | `store-capability-gates-contract` | the capability switch list and every `isCapabilityEnabledInTx()` call site match exactly, in both directions |

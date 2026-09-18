@@ -11,6 +11,8 @@ import {
 import { createIdempotencyKey } from '../lib/operation';
 import type { CashMovementType } from '../lib/shiftMath';
 import { useSession } from './SessionContext';
+import { useDevice } from './DeviceContext';
+import { loadOfflineSales } from '../lib/offlineSales';
 
 export interface ShiftMovement {
   id: string;
@@ -80,6 +82,7 @@ export function ShiftProvider({
   openedByName?: string;
 }) {
   const { session } = useSession();
+  const { target } = useDevice();
   const credentials = session?.credentials;
   const bootstrap = useQuery(PosBootstrapDocument, {
     skip: !session,
@@ -194,6 +197,21 @@ export function ShiftProvider({
   const closeShift = useCallback(
     async (countedCashText: string) => {
       if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
+      let unresolved;
+      try {
+        unresolved = (await loadOfflineSales()).filter(
+          record =>
+            record.serverUrl === target?.serverUrl &&
+            record.branchId === session?.branch.id,
+        );
+      } catch (error) {
+        return error instanceof Error
+          ? `${error.message} · ยังปิดกะไม่ได้`
+          : 'ตรวจคิวออฟไลน์ไม่ได้ · ยังปิดกะไม่ได้';
+      }
+      if (unresolved.length > 0) {
+        return `ยังมีรายการออฟไลน์ ${unresolved.length} รายการ ต้องซิงก์หรือตรวจสอบก่อนปิดกะ`;
+      }
       const countedCash = Number(countedCashText);
       if (!Number.isFinite(countedCash) || countedCash < 0) {
         return 'ยอดเงินสดที่นับได้ต้องเป็นตัวเลขไม่ติดลบ';
@@ -222,7 +240,14 @@ export function ShiftProvider({
         return error instanceof Error ? error.message : 'ปิดกะไม่สำเร็จ';
       }
     },
-    [bootstrap, credentials, historyQuery, shiftMutation],
+    [
+      bootstrap,
+      credentials,
+      historyQuery,
+      session?.branch.id,
+      shiftMutation,
+      target?.serverUrl,
+    ],
   );
 
   const reopenShift = useCallback(
