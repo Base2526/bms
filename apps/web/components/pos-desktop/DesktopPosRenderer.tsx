@@ -29,6 +29,7 @@ import {
 import { selectPosCatalogCardVariant } from "@pos-core/catalog";
 import {
   POS_BOOTSTRAP_QUERY,
+  POS_BOARD_GAME_CHECKOUT_QUERY,
   POS_CATALOG_QUERY,
   POS_SALE_MUTATION,
   POS_SCAN_QUERY,
@@ -37,6 +38,7 @@ import {
   PosGraphqlError,
   posGraphqlRequest,
   type PosBootstrap,
+  type PosBoardGameCheckout,
   type PosCashier,
   type PosCatalogItem,
   type PosScanHit,
@@ -157,6 +159,9 @@ export default function DesktopPosRenderer() {
   const [query, setQuery] = useState("");
   const [scanCode, setScanCode] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
+  // A timed-play bill is a frozen billing group, not a synthetic product. Keep it outside
+  // the retail cart so collecting one group never consumes or discards a sale in progress.
+  const [boardGameCheckout, setBoardGameCheckout] = useState<PosBoardGameCheckout | null>(null);
   const [payments, setPayments] = useState<PosPaymentInput[]>([
     { id: "payment-1", method: "cash", amount: 0, tendered: 0 },
   ]);
@@ -310,6 +315,7 @@ export default function DesktopPosRenderer() {
     setBootstrap(null);
     setCashier(null);
     setPin("");
+    setBoardGameCheckout(null);
     sendFlow("UNPAIR");
   }, [sendFlow]);
 
@@ -317,6 +323,7 @@ export default function DesktopPosRenderer() {
     if (open) return;
     setBootstrap((current) => current ? { ...current, shift: null } : current);
     setCart([]);
+    setBoardGameCheckout(null);
     setActiveModule("mobile_sell");
     setFlow((current) => ({
       ...current,
@@ -329,8 +336,63 @@ export default function DesktopPosRenderer() {
     setCashier(null);
     setPin("");
     setCart([]);
+    setBoardGameCheckout(null);
     sendFlow("SIGN_OUT");
   }, [sendFlow]);
+
+  const openBoardGameCheckout = useCallback(async (billingGroupId: string) => {
+    if (!cashier || !pin || busy) return;
+    if (saleAttemptRef.current) {
+      setError("มีรายการรับชำระที่ยังไม่ทราบผล กรุณาลองบันทึกรายการเดิมให้จบก่อน");
+      setActiveModule("mobile_sell");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const data = await posGraphqlRequest<{
+        bmsPosBoardGameCheckout: PosBoardGameCheckout | null;
+      }>(token, POS_BOARD_GAME_CHECKOUT_QUERY, {
+        credentials: { cashierUserId: cashier.id, pin },
+        id: billingGroupId,
+      });
+      if (!data.bmsPosBoardGameCheckout) {
+        throw new Error("ไม่พบบิลกลุ่มนี้ หรือบิลถูกชำระจากเครื่องอื่นแล้ว");
+      }
+      const checkout = data.bmsPosBoardGameCheckout;
+      const checkoutCashMode = isCashRounding(bootstrap?.vat.cashRounding)
+        ? bootstrap.vat.cashRounding
+        : "NONE";
+      const checkoutPayment: PosPaymentInput = {
+        id: "payment-1",
+        method: "cash",
+        amount: checkout.totalDue,
+        tendered: checkout.totalDue,
+      };
+      const checkoutRounding = cashRoundingForPayments(
+        checkout.totalDue,
+        checkoutCashMode,
+        [checkoutPayment],
+      );
+      const checkoutTotal = payableWithRounding(checkout.totalDue, checkoutRounding);
+      setBoardGameCheckout(checkout);
+      setReceipt(null);
+      // Seed the authoritative amount before switching views. Waiting for the total-sync effect
+      // would paint one invalid "cash amount is zero" frame and make the checkout visibly flash.
+      setPayments([{ ...checkoutPayment, amount: checkoutTotal, tendered: checkoutTotal }]);
+      setActiveModule("mobile_sell");
+      sendFlow("START_CHECKOUT");
+      setConnection("online");
+    } catch (cause) {
+      setError(messageOf(cause));
+      setActiveModule("mobile_sell");
+      sendFlow("BACK_TO_CATALOG");
+      setConnection("offline");
+    } finally {
+      setBusy(false);
+    }
+  }, [bootstrap?.vat.cashRounding, busy, cashier, pin, sendFlow, token]);
 
   const addProduct = async (code: string, size?: string | null) => {
     const clean = code.trim();
@@ -394,8 +456,8 @@ export default function DesktopPosRenderer() {
     );
   };
 
-  const subtotal = useMemo(() => cartProductSubtotal(cart), [cart]);
-  const listSubtotal = useMemo(
+  const retailSubtotal = useMemo(() => cartProductSubtotal(cart), [cart]);
+  const retailListSubtotal = useMemo(
     () => Math.round(cart.reduce((sum, line) => {
       const packPrice = Number(line.packBasePrice ?? line.unitPrice ?? 0);
       const modifierPrice = Number(line.modifierUnitPrice ?? 0);
@@ -404,12 +466,13 @@ export default function DesktopPosRenderer() {
     }, 0) * 100) / 100,
     [cart],
   );
-  const pricingSavings = Math.max(0, Math.round((listSubtotal - subtotal) * 100) / 100);
+  const pricingSavings = Math.max(0, Math.round((retailListSubtotal - retailSubtotal) * 100) / 100);
+  const payableBeforeRounding = boardGameCheckout?.totalDue ?? retailSubtotal;
   const cashMode = isCashRounding(bootstrap?.vat.cashRounding)
     ? bootstrap.vat.cashRounding
     : "NONE";
-  const rounding = cashRoundingForPayments(subtotal, cashMode, payments);
-  const total = payableWithRounding(subtotal, rounding);
+  const rounding = cashRoundingForPayments(payableBeforeRounding, cashMode, payments);
+  const total = payableWithRounding(payableBeforeRounding, rounding);
 
   useEffect(() => {
     setPayments((current) => {
@@ -426,7 +489,30 @@ export default function DesktopPosRenderer() {
   }, [total]);
 
   const validation = useMemo(() => validatePayments(total, payments), [payments, total]);
-  const itemCount = cart.reduce((sum, line) => sum + line.qty, 0);
+  const zeroDueBoardGameBill = Boolean(boardGameCheckout && total === 0);
+  const canConfirmPayment = validation.canConfirm || zeroDueBoardGameBill;
+  const itemCount = boardGameCheckout ? 0 : cart.reduce((sum, line) => sum + line.qty, 0);
+  const billCountLabel = boardGameCheckout
+    ? "ค่าบริการ 1 รายการ"
+    : `${itemCount} ชิ้น`;
+  const boardGameBenefitAmount = boardGameCheckout
+    ? Math.max(0, boardGameCheckout.passCoveredAmount) + Math.max(0, boardGameCheckout.offerDiscountAmount)
+    : 0;
+  const boardGameGrossTime = boardGameCheckout
+    ? boardGameCheckout.amountDue + boardGameBenefitAmount
+    : 0;
+
+  const backFromCheckout = () => {
+    if (saleAttemptRef.current) return;
+    if (boardGameCheckout) {
+      setBoardGameCheckout(null);
+      setPayments([{ id: "payment-1", method: "cash", amount: 0, tendered: 0 }]);
+      setActiveModule("boardgame");
+    }
+    setError("");
+    setNotice("");
+    sendFlow("BACK_TO_CATALOG");
+  };
 
   const chooseMethod = (method: PosPaymentMethod) => {
     if (saleAttemptRef.current) return;
@@ -489,8 +575,8 @@ export default function DesktopPosRenderer() {
       idempotencyKey: key,
       offlineTenderedAt: null,
       mode: "SALE",
-      boardGameBillingGroupId: null,
-      lines: cart.map((line) => ({
+      boardGameBillingGroupId: boardGameCheckout?.id ?? null,
+      lines: (boardGameCheckout ? [] : cart).map((line) => ({
         sku: line.sku,
         size: line.size,
         packCode: line.packCode || null,
@@ -502,7 +588,7 @@ export default function DesktopPosRenderer() {
         scaleBarcode: line.scaleBarcode ?? null,
         serials: line.serials,
       })),
-      payments: payments.map((payment) => ({
+      payments: (zeroDueBoardGameBill ? [] : payments).map((payment) => ({
         method: payment.method.toUpperCase(),
         amount: payment.amount,
         cashTendered: payment.method === "cash" ? payment.tendered ?? payment.amount : null,
@@ -529,15 +615,15 @@ export default function DesktopPosRenderer() {
   });
 
   const submitSale = async () => {
-    if (!cashier || busy || !validation.canConfirm || cart.length === 0) return;
+    if (!cashier || busy || !canConfirmPayment || (!boardGameCheckout && cart.length === 0)) return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
       if (!saleAttemptRef.current) {
-        const current = await recheckCartPricing();
+        const current = boardGameCheckout ? true : await recheckCartPricing();
         if (!current) return;
-        const key = createIdempotencyKey("desktop-sale");
+        const key = createIdempotencyKey(boardGameCheckout ? "desktop-board-game-sale" : "desktop-sale");
         saleAttemptRef.current = { key, payload: buildSalePayload(key) };
       }
       const data = await posGraphqlRequest<{ bmsPosSale: SaleResult }>(
@@ -571,12 +657,15 @@ export default function DesktopPosRenderer() {
   };
 
   const newSale = () => {
-    setCart([]);
+    const completedBoardGameBill = Boolean(boardGameCheckout);
+    if (!completedBoardGameBill) setCart([]);
+    setBoardGameCheckout(null);
     setReceipt(null);
     setPayments([{ id: "payment-1", method: "cash", amount: 0, tendered: 0 }]);
     setError("");
     setNotice("");
     saleAttemptRef.current = null;
+    setActiveModule(completedBoardGameBill ? "boardgame" : "mobile_sell");
     sendFlow("NEW_SALE");
   };
 
@@ -693,7 +782,9 @@ export default function DesktopPosRenderer() {
           </dl>
           <div className={styles.receiptActions}>
             <button onClick={() => window.print()}>พิมพ์ใบเสร็จ</button>
-            <button className={styles.primaryButton} onClick={newSale}>ขายรายการใหม่</button>
+            <button className={styles.primaryButton} onClick={newSale}>
+              {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "ขายรายการใหม่"}
+            </button>
           </div>
         </section>
       </main>
@@ -773,6 +864,7 @@ export default function DesktopPosRenderer() {
                 onTabChange: followWorkspaceTab,
                 onShiftChange: followWorkspaceShift,
                 onUnpair: unpair,
+                onBoardGameCheckout: openBoardGameCheckout,
               }}>
                 <PosPage />
               </PosWorkspaceContext.Provider>
@@ -784,11 +876,56 @@ export default function DesktopPosRenderer() {
             {checkout ? (
               <>
                 <div className={styles.sectionHead}>
-                  <button className={styles.backButton} onClick={() => sendFlow("BACK_TO_CATALOG")}>← กลับไปแก้รายการ</button>
-                  <div><p className={styles.eyebrow}>ตรวจสอบก่อนรับเงิน</p><h1>สรุปรายการขาย</h1></div>
+                  <button className={styles.backButton} onClick={backFromCheckout}>
+                    ← {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "กลับไปแก้รายการ"}
+                  </button>
+                  <div>
+                    <p className={styles.eyebrow}>ตรวจสอบก่อนรับเงิน</p>
+                    <h1>{boardGameCheckout ? "สรุปบิลบอร์ดเกม" : "สรุปรายการขาย"}</h1>
+                  </div>
                 </div>
                 <div className={styles.orderSummary}>
-                  {cart.map((line) => (
+                  {boardGameCheckout ? (
+                    <>
+                      <article className={styles.serviceLine}>
+                        <div className={`${styles.productThumb} ${styles.serviceThumb}`} aria-hidden="true">◷</div>
+                        <div>
+                          <strong>
+                            ค่าเล่นบอร์ดเกม · {boardGameCheckout.tableName}
+                            {boardGameCheckout.sessionGroupCount > 1 ? ` · กลุ่ม ${boardGameCheckout.groupNo}` : ""}
+                          </strong>
+                          <span>
+                            {boardGameCheckout.chargeLineCount} คน · ปิดเวลา {new Date(boardGameCheckout.endedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+                        <strong>{money(boardGameCheckout.amountDue)}</strong>
+                      </article>
+                      {boardGameCheckout.tabItemCount > 0 ? (
+                        <article className={styles.serviceLine}>
+                          <div className={`${styles.productThumb} ${styles.serviceThumb}`} aria-hidden="true">▤</div>
+                          <div>
+                            <strong>สินค้าที่สั่งเข้าบิล</strong>
+                            <span>{boardGameCheckout.tabItemCount} รายการ · รวมจากแท็บของกลุ่มนี้</span>
+                          </div>
+                          <strong>{money(boardGameCheckout.tabAmount)}</strong>
+                        </article>
+                      ) : null}
+                      {boardGameBenefitAmount > 0 ? (
+                        <div className={styles.serviceBenefit}>
+                          <strong>
+                            {boardGameCheckout.offerDiscountAmount > 0
+                              ? `โปรโมชัน ${boardGameCheckout.offerName ?? boardGameCheckout.offerCode ?? "ค่าเล่น"}`
+                              : "ใช้แพ็กเกจสมาชิกแล้ว"}
+                          </strong>
+                          <span>
+                            {boardGameCheckout.offerDiscountAmount > 0
+                              ? `ลดค่าเล่น ${money(boardGameCheckout.offerDiscountAmount)}`
+                              : `แพ็กเกจครอบคลุมค่าเล่น ${money(boardGameCheckout.passCoveredAmount)}`}
+                          </span>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : cart.map((line) => (
                     <article key={line.key}>
                       <div className={styles.productThumb}>{line.imageUrl ? <img src={line.imageUrl} alt="" /> : line.name.slice(0, 1)}</div>
                       <div><strong>{line.name}</strong><span>{line.sku}{line.size ? ` · ${line.size}` : ""}</span></div>
@@ -797,8 +934,23 @@ export default function DesktopPosRenderer() {
                   ))}
                 </div>
                 <div className={styles.summaryTotals}>
-                  <div><span>ยอดสินค้าราคาป้าย</span><strong>{money(listSubtotal)}</strong></div>
-                  {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
+                  {boardGameCheckout ? (
+                    <>
+                      <div><span>ค่าเล่นก่อนสิทธิ์</span><strong>{money(boardGameGrossTime)}</strong></div>
+                      {boardGameBenefitAmount > 0 ? (
+                        <div className={styles.savingsRow}>
+                          <span>{boardGameCheckout.offerDiscountAmount > 0 ? "โปรโมชันค่าเล่น" : "แพ็กเกจสมาชิก"}</span>
+                          <strong>−{money(boardGameBenefitAmount)}</strong>
+                        </div>
+                      ) : null}
+                      {boardGameCheckout.tabItemCount > 0 ? <div><span>สินค้าที่สั่งเข้าบิล</span><strong>{money(boardGameCheckout.tabAmount)}</strong></div> : null}
+                    </>
+                  ) : (
+                    <>
+                      <div><span>ยอดสินค้าราคาป้าย</span><strong>{money(retailListSubtotal)}</strong></div>
+                      {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
+                    </>
+                  )}
                   {rounding !== 0 ? <div><span>ปัดเศษเงินสด</span><strong>{money(rounding)}</strong></div> : null}
                   <div className={styles.grandTotal}><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
                 </div>
@@ -851,7 +1003,7 @@ export default function DesktopPosRenderer() {
 
           <aside className={styles.checkoutPane}>
             <div className={styles.billHeader}>
-              <div><span>{checkout ? "ยอดชำระ" : "บิลปัจจุบัน"}</span><small>{itemCount} ชิ้น</small></div>
+              <div><span>{checkout ? "ยอดชำระ" : "บิลปัจจุบัน"}</span><small>{billCountLabel}</small></div>
               <strong>{money(total)}</strong>
             </div>
 
@@ -875,6 +1027,20 @@ export default function DesktopPosRenderer() {
               </>
             ) : (
               <div className={styles.paymentArea}>
+                {zeroDueBoardGameBill ? (
+                  <div className={styles.zeroDueNotice}>
+                    <span aria-hidden="true">✓</span>
+                    <div>
+                      <strong>บิลนี้ไม่ต้องรับเงินเพิ่ม</strong>
+                      <p>
+                        {boardGameCheckout?.passCoveredAmount
+                          ? `แพ็กเกจสมาชิกครอบคลุมค่าเล่น ${money(boardGameCheckout.passCoveredAmount)}`
+                          : "ยอดสุทธิของกลุ่มนี้เป็นศูนย์"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 <div className={styles.paymentTitle}><div><h2>วิธีชำระเงิน</h2><p>เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง</p></div><button onClick={addSplitPayment}>＋ จ่ายผสม</button></div>
                 <div className={styles.methodGrid}>
                   {primaryMethods.map((method) => (
@@ -906,10 +1072,12 @@ export default function DesktopPosRenderer() {
                     </section>
                   ))}
                 </div>
-                {(error || notice || validation.errors.length > 0) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice || validation.errors[0]?.replace("ทดสอบ", "")}</div> : null}
+                  </>
+                )}
+                {(error || notice || (!zeroDueBoardGameBill && validation.errors.length > 0)) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice || validation.errors[0]?.replace("ทดสอบ", "")}</div> : null}
                 <div className={styles.paymentFooter}>
-                  <div><span>{validation.remaining > 0 ? "ยังขาด" : "พร้อมรับชำระ"}</span><strong>{validation.remaining > 0 ? money(validation.remaining) : money(total)}</strong></div>
-                  <button className={styles.payButton} disabled={!validation.canConfirm || busy} onClick={() => void submitSale()}>{busy ? "กำลังบันทึก…" : saleAttemptRef.current ? "ลองบันทึกซ้ำด้วยรหัสเดิม" : `ยืนยันรับชำระ ${money(total)}`}</button>
+                  <div><span>{validation.remaining > 0 && !zeroDueBoardGameBill ? "ยังขาด" : zeroDueBoardGameBill ? "พร้อมปิดบิล" : "พร้อมรับชำระ"}</span><strong>{validation.remaining > 0 && !zeroDueBoardGameBill ? money(validation.remaining) : money(total)}</strong></div>
+                  <button className={styles.payButton} disabled={!canConfirmPayment || busy} onClick={() => void submitSale()}>{busy ? "กำลังบันทึก…" : saleAttemptRef.current ? "ลองบันทึกซ้ำด้วยรหัสเดิม" : zeroDueBoardGameBill ? "ยืนยันปิดบิล" : `ยืนยันรับชำระ ${money(total)}`}</button>
                 </div>
               </div>
             )}

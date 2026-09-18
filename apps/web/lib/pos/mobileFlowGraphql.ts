@@ -63,6 +63,30 @@ export const POS_SALE_MUTATION = `
   }
 `;
 
+export const POS_BOARD_GAME_CHECKOUT_QUERY = `
+  query DesktopPosBoardGameCheckout($credentials: BmsPosCredentialsInput!, $id: ID!) {
+    bmsPosBoardGameCheckout(credentials: $credentials, id: $id) {
+      id
+      sessionId
+      groupNo
+      sessionGroupCount
+      tableCode
+      tableName
+      startedAt
+      endedAt
+      amountDue
+      tabAmount
+      tabItemCount
+      totalDue
+      chargeLineCount
+      passCoveredAmount
+      offerCode
+      offerName
+      offerDiscountAmount
+    }
+  }
+`;
+
 export type PosCashier = {
   id: string;
   name: string | null;
@@ -129,6 +153,26 @@ export type PosScanHit = {
   promotion: { kind: string; buyQty: number; getQty: number | null; bundlePrice: number | null } | null;
   modifiers: Array<{ code: string; name: string; priceDelta: number; groupCode: string; groupName: string; selectionType: string; minSelect: number; maxSelect: number | null; defaultSelected: boolean }>;
   packs: Array<{ code: string; unitName: string; baseQty: number; price: number }>;
+};
+
+export type PosBoardGameCheckout = {
+  id: string;
+  sessionId: string;
+  groupNo: number;
+  sessionGroupCount: number;
+  tableCode: string;
+  tableName: string;
+  startedAt: string;
+  endedAt: string;
+  amountDue: number;
+  tabAmount: number;
+  tabItemCount: number;
+  totalDue: number;
+  chargeLineCount: number;
+  passCoveredAmount: number;
+  offerCode: string | null;
+  offerName: string | null;
+  offerDiscountAmount: number;
 };
 
 export class PosGraphqlError extends Error {

@@ -387,6 +387,24 @@
   border-bottom: 1px solid #eaedf2;
 }
 .productThumb { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 9px; background: #f1f5f9; color: #8ba6c8; overflow: hidden; }
+.serviceThumb {
+  background: #e6f4ff;
+  color: #1677ff;
+  font-size: 25px;
+  font-weight: 700;
+}
+.orderSummary .serviceLine > strong { color: #1f2329; text-align: right; }
+.serviceBenefit {
+  display: grid;
+  gap: 3px;
+  margin: 12px 2px;
+  padding: 12px 14px;
+  border: 1px solid #b7eb8f;
+  border-radius: 10px;
+  background: #f6ffed;
+  color: #237804;
+}
+.serviceBenefit span { font-size: 12px; }
 .orderSummary article div:nth-child(2) strong,
 .orderSummary article div:nth-child(2) span { display: block; }
 .orderSummary article div:nth-child(2) span { margin-top: 3px; color: #7a8598; font-size: 12px; }
@@ -427,6 +445,28 @@
 .paymentFooter { margin-top: auto; padding-top: 14px; }
 .paymentFooter > div { display: flex; justify-content: space-between; margin-bottom: 9px; color: #5f6b7e; }
 .paymentFooter > div strong { color: #1f2329; }
+.zeroDueNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #b7eb8f;
+  border-radius: 12px;
+  background: #f6ffed;
+  color: #237804;
+}
+.zeroDueNotice > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d9f7be;
+  font-weight: 800;
+}
+.zeroDueNotice strong { display: block; color: #135200; }
+.zeroDueNotice p { margin: 4px 0 0; font-size: 12px; }
 
 .noticeBox,
 .errorBox {

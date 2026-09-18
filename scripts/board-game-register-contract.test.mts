@@ -31,6 +31,8 @@ const ADMIN_PATH = "../apps/web/app/(admin)/admin/board-game/page.tsx";
 const MOBILE_PATH = "../apps/mobile/src/screens/boardGame/BoardGameScreen.tsx";
 const DESKTOP_RENDERER_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.tsx";
 const DESKTOP_CSS_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.module.css";
+const WORKSPACE_CONTEXT_PATH = "../apps/web/components/pos/PosWorkspaceContext.tsx";
+const MOBILE_FLOW_GRAPHQL_PATH = "../apps/web/lib/pos/mobileFlowGraphql.ts";
 
 function withoutComments(source: string): string {
   return source
@@ -47,6 +49,8 @@ const admin = withoutComments(read(ADMIN_PATH));
 const mobile = withoutComments(read(MOBILE_PATH));
 const desktopRenderer = withoutComments(read(DESKTOP_RENDERER_PATH));
 const desktopCss = withoutComments(read(DESKTOP_CSS_PATH));
+const workspaceContext = withoutComments(read(WORKSPACE_CONTEXT_PATH));
+const mobileFlowGraphql = withoutComments(read(MOBILE_FLOW_GRAPHQL_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -318,6 +322,44 @@ test("the desktop floor follows the compact board-game operations mockup", () =>
     declaration(".pos-bg-session-hero", "background"),
     "#f4f8ff",
     "the selected table summary must be visually separated from editable work",
+  );
+});
+
+test("desktop collects a frozen board-game group in its native checkout instead of the legacy sell pane", () => {
+  assert.match(
+    workspaceContext,
+    /onBoardGameCheckout\?:\s*\(billingGroupId:\s*string\)/,
+    "the embedded workspace needs an explicit handoff for a billing-group id",
+  );
+  assert.match(
+    page,
+    /embedded\s*&&\s*onBoardGameCheckout[\s\S]{0,160}onBoardGameCheckout\(billingGroupId\)/,
+    "the board-game panel must hand the frozen group to the desktop shell before switching legacy tabs",
+  );
+  assert.match(
+    mobileFlowGraphql,
+    /bmsPosBoardGameCheckout\(credentials:\s*\$credentials,\s*id:\s*\$id\)/,
+    "desktop must reload the authoritative frozen checkout, not copy an amount out of the table card",
+  );
+  assert.match(
+    desktopRenderer,
+    /boardGameBillingGroupId:\s*boardGameCheckout\?\.id\s*\?\?\s*null/,
+    "settlement must identify the billing group rather than inventing a product line",
+  );
+  assert.match(
+    desktopRenderer,
+    /lines:\s*\(boardGameCheckout\s*\?\s*\[\]\s*:\s*cart\)/,
+    "time and tab charges are server-owned; desktop must not submit them as Product SKUs",
+  );
+  assert.match(
+    desktopRenderer,
+    /ค่าเล่นบอร์ดเกม[\s\S]{0,500}chargeLineCount[\s\S]{0,500}tabItemCount/,
+    "the confirmation screen must explain the table/group service and its server-owned tab",
+  );
+  assert.match(
+    desktopRenderer,
+    /zeroDueBoardGameBill[\s\S]{0,400}canConfirmPayment/,
+    "a fully covered member-pass bill must still be closable with no payment rows",
   );
 });
 
