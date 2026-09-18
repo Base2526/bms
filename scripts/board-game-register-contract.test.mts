@@ -29,6 +29,8 @@ const CSS_PATH = "../apps/web/app/(pos)/pos/pos.css";
 const PAGE_PATH = "../apps/web/app/(pos)/pos/page.tsx";
 const ADMIN_PATH = "../apps/web/app/(admin)/admin/board-game/page.tsx";
 const MOBILE_PATH = "../apps/mobile/src/screens/boardGame/BoardGameScreen.tsx";
+const DESKTOP_RENDERER_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.tsx";
+const DESKTOP_CSS_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.module.css";
 
 function withoutComments(source: string): string {
   return source
@@ -43,6 +45,8 @@ const css = withoutComments(read(CSS_PATH));
 const page = withoutComments(read(PAGE_PATH));
 const admin = withoutComments(read(ADMIN_PATH));
 const mobile = withoutComments(read(MOBILE_PATH));
+const desktopRenderer = withoutComments(read(DESKTOP_RENDERER_PATH));
+const desktopCss = withoutComments(read(DESKTOP_CSS_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -181,6 +185,33 @@ test("an open table is a scannable workspace instead of one long form", () => {
     declaration(".pos-bg-detail-pane", "overflow-y"),
     "auto",
     "the selected-table detail must scroll without pushing the floor away",
+  );
+  assert.equal(
+    declaration(".pos-bg-workspace", "background"),
+    "var(--pos-bg)",
+    "the board-game workspace must expose a neutral gutter between its two cards",
+  );
+  for (const selector of [".pos-bg-master-pane", ".pos-bg-detail-pane"]) {
+    assert.equal(
+      declaration(selector, "border"),
+      "1px solid var(--pos-line)",
+      `${selector} must own its border instead of sharing one outer frame`,
+    );
+    assert.equal(
+      declaration(selector, "background"),
+      "var(--pos-surface)",
+      `${selector} must own an independent card background`,
+    );
+  }
+  assert.match(
+    desktopRenderer,
+    /activeModule\s*===\s*["']boardgame["'][\s\S]*?styles\.boardGameModuleHost/,
+    "the desktop shell must remove its shared outer card for the board-game workspace",
+  );
+  assert.match(
+    desktopCss,
+    /\.boardGameModuleHost\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/,
+    "the board-game desktop host must leave the gutter visible instead of painting one connected background",
   );
   assert.match(
     panel,

@@ -761,7 +761,9 @@ export default function DesktopPosRenderer() {
 
         {activeModule !== "mobile_sell" && activeModule !== "restaurant" ? (
           <div className={`${styles.content} ${styles.moduleContent}`}>
-            <section className={styles.moduleHost}>
+            <section
+              className={`${styles.moduleHost}${activeModule === "boardgame" ? ` ${styles.boardGameModuleHost}` : ""}`}
+            >
               <PosWorkspaceContext.Provider value={{
                 embedded: true,
                 initialTab: activeModule,

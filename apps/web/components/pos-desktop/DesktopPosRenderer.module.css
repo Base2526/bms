@@ -212,6 +212,13 @@
   box-shadow: 0 4px 16px rgba(30, 42, 60, 0.045);
 }
 
+.boardGameModuleHost {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .catalogPane,
 .checkoutPane {
   min-width: 0;
