@@ -295,9 +295,8 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   the normal transaction, and the backend repeats every eligibility check.
 - **The desktop shell hosts the register; it never becomes one.** `apps/desktop/` is an Electron
   window onto the same `/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual` routes the browser
-  register uses, shipped for Windows and Linux (the macOS build exists to exercise the shell, not to
-  certify a platform). It holds no database, no pricing, no settlement path and no permission of its
-  own. What it does own is the device credential: pairing verifies the token against the
+  register uses, shipped for Windows, Linux and macOS. It holds no database, no pricing, no
+  settlement path and no permission of its own. What it does own is the device credential: pairing verifies the token against the
   device-scoped `/api/pos/session` before anything is stored, the token is encrypted at rest through
   Electron `safeStorage` (DPAPI on Windows, Secret Service/KWallet on Linux, Keychain on macOS) in a
   `0600` file written atomically, and the web renderer reads it through `window.bmsDesktop` instead
@@ -310,12 +309,16 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   every unrecognised backend as unavailable and blocks pairing until GNOME Keyring/Secret Service or
   KWallet is present. A keystore message always names the keystore of the running platform; one that
   names the wrong one sends the cashier to a setting that does not exist. Pairing state is
-  deliberately not portable between platforms, because the keystores are different. Packages
-  (Windows NSIS, Linux AppImage/DEB x64, macOS DMG) are unsigned, there is no auto-update, and
-  `.github/workflows/desktop-linux.yml` uploads a build artifact rather than publishing a release.
-  Direct ESC/POS printing, cash-drawer control and offline tender are not in the shell. See
+  deliberately not portable between platforms, because the keystores are different. Every package
+  (Windows NSIS, Linux AppImage/DEB x64, macOS DMG for Intel and Apple Silicon) is unsigned with no
+  auto-update, so Gatekeeper blocks a first macOS launch and all three are internal-test builds
+  rather than a distribution channel; `desktop-linux.yml` and `desktop-macos.yml` build each
+  platform on its own runner and upload an artifact instead of publishing a release, and a platform
+  can only be certified by the runner that owns it — DPAPI, the Linux keyring check and Gatekeeper
+  are each invisible to the other two. Direct ESC/POS printing, cash-drawer control and offline
+  tender are not in the shell. See
   [apps/desktop/README.md](../apps/desktop/README.md) and
-  [business/pos.md § Desktop POS client](business/pos.md#desktop-pos-client-windows-and-linux).
+  [business/pos.md § Desktop POS client](business/pos.md#desktop-pos-client-windows-linux-and-macos).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.

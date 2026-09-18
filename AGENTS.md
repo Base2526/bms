@@ -42,7 +42,7 @@ wrong, and update the doc in the same change.
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
 | `apps/mobile/` | Bare React Native POS — secure device pairing, generated Apollo GraphQL reads/commands, cashier PIN/RBAC, and named WS invalidation for retail/restaurant/board-game/branch-inventory/shift workflows |
-| `apps/desktop/` | Electron POS shell for Windows/Linux (macOS is a test build) — first-run pairing, OS-keystore device token, origin-restricted IPC bridge; it hosts `/pos` and owns no business rule |
+| `apps/desktop/` | Electron POS shell for Windows/Linux/macOS — first-run pairing, OS-keystore device token, origin-restricted IPC bridge; it hosts `/pos` and owns no business rule |
 | `apps/ws/` · `packages/graphql-core/` | Subscription-only WebSocket gateway (no database connection, ever) · shared typeDefs/resolvers used by both web and ws |
 | `packages/realtime/` | The one realtime contract: event union + per-event audience/permission rules, topic builders, validation/redaction, ticket claims, `subscriptionAuth`, `NAMED_REALTIME_SUBSCRIPTIONS` |
 | `schema.graphql` | Committed SDL artifact used by in-repo RN codegen and external clients (`npm run schema:export`) |
@@ -165,7 +165,7 @@ wrong, and update the doc in the same change.
   after a configured positive prefix; timing/focus is never treated as proof of a scanner. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 - **The desktop shell is a window, not a register (`apps/desktop`)** — Electron hosts the
-  authoritative `/pos` surface on Windows and Linux (macOS is a test build only). It owns no schema,
+  authoritative `/pos` surface on Windows, Linux and macOS. It owns no schema,
   no price, no settlement and no permission: anything a cashier can do in it, a paired browser
   register can already do. What it does own is the credential — the device token is verified at
   pairing through `/api/pos/session`, stored through the OS keystore (`safeStorage`), and reachable
@@ -174,7 +174,9 @@ wrong, and update the doc in the same change.
   the system browser. **On Linux, pairing is refused when Electron selects `basic_text`** — an
   unencrypted fallback is not storage for a bearer credential — and a keystore message must name the
   keystore that machine actually has, because one naming the wrong one sends the cashier to a
-  setting that does not exist. Packages (NSIS · AppImage/DEB) are unsigned and carry no auto-update;
+  setting that does not exist. Every package (NSIS · AppImage/DEB · DMG for Intel and Apple Silicon)
+  is unsigned and carries no auto-update — Gatekeeper blocks a first launch, which makes these
+  internal-test builds rather than a distribution channel;
   never give the shell a second money path, offline tender, or an OS-level way around a server
   check. Detail: [apps/desktop/README.md](apps/desktop/README.md).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
@@ -641,9 +643,9 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 
   `apps/mobile` and `apps/desktop` each carry their own suite — Jest for the RN client, `node --test`
   for the desktop pairing/keystore units — and `gate.yml` runs neither, so run them from that app
-  when you touch it. `.github/workflows/desktop-linux.yml` lints and tests the desktop app and
-  builds the Linux AppImage/DEB on a Linux runner, uploads both as a 14-day artifact, and signs or
-  publishes nothing.
+  when you touch it. `.github/workflows/desktop-{linux,macos}.yml` lint and test the desktop app and
+  build that platform's packages on its own runner — a Linux runner for AppImage/DEB, a macOS runner
+  for the two DMGs — then upload a 14-day artifact. Neither signs, notarizes nor publishes.
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
   only. See [scripts/ai-eval/README.md](scripts/ai-eval/README.md).
