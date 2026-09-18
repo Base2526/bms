@@ -25,7 +25,7 @@ import {
   normalizePromotion,
   payableWithRounding,
   type PricedCartLine,
-} from "@mobile-pos/lib/cartPricing";
+} from "@pos-core/cartPricing";
 import {
   POS_BOOTSTRAP_QUERY,
   POS_CATALOG_QUERY,

@@ -12,8 +12,7 @@
     "paths": {
       "@/*": ["./*"],
       "@core/*": ["../../packages/graphql-core/src/*"],
-      "@pos-core/*": ["../../packages/pos-client-core/src/*"],
-      "@mobile-pos/*": ["../mobile/src/*"]
+      "@pos-core/*": ["../../packages/pos-client-core/src/*"]
     },
     "strict": true,
     "allowJs": true,

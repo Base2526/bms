@@ -55,7 +55,6 @@ const nextConfig = {
     // alias ไปที่แพ็กเกจ core (src) เพื่อ dev-hot-reload
     config.resolve.alias['@core'] = path.resolve(__dirname, '../../packages/graphql-core/src');
     config.resolve.alias['@pos-core'] = path.resolve(__dirname, '../../packages/pos-client-core/src');
-    config.resolve.alias['@mobile-pos'] = path.resolve(__dirname, '../mobile/src');
 
     // Shared NodeNext packages keep explicit `.js` specifiers so their compiled output runs in
     // Node ESM. Next consumes those packages from TypeScript source during development/build, so
