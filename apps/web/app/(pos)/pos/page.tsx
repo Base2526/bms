@@ -6546,7 +6546,13 @@ export default function PosPage() {
       )}
       <div
         className={`pos-main-grid${tab === "boardgame" ? " pos-main-grid--boardgame" : ""}${tab === "sell" ? " pos-main-grid--sell" : ""}`}
-        style={{ display: "grid", gridTemplateColumns: "minmax(0,64fr) minmax(380px,36fr)", gap: 12, flex: 1, minHeight: 0 }}
+        style={{
+          display: "grid",
+          gridTemplateColumns: tab === "sell" ? "minmax(0,64fr) minmax(380px,36fr)" : "minmax(0,1fr)",
+          gap: 12,
+          flex: 1,
+          minHeight: 0,
+        }}
       >
       <section className={`pos-card pos-pane pos-work-panel${tab === "sell" ? " pos-sale-basket" : ""}`}>
       {tab === "returns" && (<>
@@ -8865,6 +8871,7 @@ export default function PosPage() {
       </>)}
         </section>
 
+        {tab === "sell" && (
         <section className="pos-card pos-pane pos-sale-checkout" style={{ display: "flex", flexDirection: "column" }}>
           <div className="pos-sale-totalbar">
               <div className="pos-total-row">
@@ -10013,6 +10020,7 @@ export default function PosPage() {
           </details>
           </div>)}
         </section>
+        )}
       </div>
       </div>
       {modifierHit && (
