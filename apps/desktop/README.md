@@ -24,7 +24,8 @@ authoritative; this app does not contain a database or a second settlement path.
   the desktop shell;
 - Windows NSIS, Linux AppImage/DEB, and macOS DMG package configuration.
 - fixed 100% renderer zoom on every platform and child POS window; Electron zoom shortcuts, wheel/
-  pinch zoom, and menu roles are disabled while OS accessibility magnifiers remain available.
+  pinch zoom, macOS trackpad pinch at Chromium startup, and menu roles are disabled while OS
+  accessibility magnifiers remain available.
 
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and offline tender are
 separate rollout milestones.

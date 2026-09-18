@@ -13,10 +13,16 @@ export function isDesktopZoomShortcut(input) {
   return ZOOM_KEYS.has(input.key) || ZOOM_CODES.has(input.code);
 }
 
+/** Disable Chromium's native trackpad/touch pinch path before Electron becomes ready. */
+export function installGlobalZoomPolicy(app) {
+  app.commandLine.appendSwitch("disable-pinch");
+}
+
 /** Keep the register geometry deterministic while leaving OS-level magnifiers alone. */
 export function installFixedZoomPolicy(webContents) {
   const resetZoom = () => {
     if (typeof webContents.isDestroyed === "function" && webContents.isDestroyed()) return;
+    webContents.setZoomLevel?.(0);
     webContents.setZoomFactor(1);
   };
 

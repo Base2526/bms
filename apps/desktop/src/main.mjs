@@ -6,9 +6,15 @@ import { fileURLToPath } from "node:url";
 import { parsePairingInput } from "./pairing.mjs";
 import { MOBILE_POS_PATH, posEntryPathForStatus } from "./renderer-route.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
-import { desktopMenuTemplate, installFixedZoomPolicy } from "./zoom-policy.mjs";
+import {
+  desktopMenuTemplate,
+  installFixedZoomPolicy,
+  installGlobalZoomPolicy,
+} from "./zoom-policy.mjs";
 
 const { app, BrowserWindow, ipcMain, Menu, net, safeStorage, shell } = electronMain;
+
+installGlobalZoomPolicy(app);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
@@ -151,6 +157,7 @@ function createMainWindow() {
       nodeIntegration: false,
       sandbox: true,
       partition: "persist:bms-pos",
+      zoomFactor: 1,
     },
   });
 
@@ -184,6 +191,7 @@ function createMainWindow() {
               nodeIntegration: false,
               sandbox: true,
               partition: "persist:bms-pos",
+              zoomFactor: 1,
             },
           },
         };
