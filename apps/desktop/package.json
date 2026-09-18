@@ -1,18 +1,26 @@
 {
   "name": "@bms/desktop-pos",
+  "desktopName": "bms-pos.desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
-  "description": "Secure Windows desktop shell for the BMS POS web surface",
+  "description": "Secure desktop shell for the BMS POS web surface",
   "author": "BMS",
+  "homepage": "https://github.com/Base2526/bms",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Base2526/bms.git"
+  },
   "main": "src/main.mjs",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/preload.cjs && node --check renderer/setup.js",
-    "test": "node --test test/pairing.test.mjs",
+    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/secure-storage.mjs && node --check src/preload.cjs && node --check renderer/setup.js",
+    "test": "node --test test/pairing.test.mjs test/secure-storage.test.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
     "pack:win": "electron-builder --win nsis",
+    "pack:linux": "electron-builder --linux AppImage deb --x64",
     "pack:mac": "electron-builder --mac dmg"
   },
   "devDependencies": {
@@ -37,6 +45,20 @@
       "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
       "icon": "../web/public/icons/ios-icon-1024.png",
       "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "icon": "../web/public/icons/playstore-512.png",
+      "category": "Office",
+      "executableName": "bms-pos",
+      "artifactName": "BMS-POS-${version}-${arch}.${ext}",
+      "maintainer": "BMS",
+      "packageCategory": "utils",
+      "syncDesktopName": true,
+      "synopsis": "BMS point-of-sale desktop client"
     },
     "nsis": {
       "oneClick": false,

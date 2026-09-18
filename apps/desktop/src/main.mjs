@@ -4,6 +4,7 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePairingInput } from "./pairing.mjs";
+import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
 
 const { app, BrowserWindow, ipcMain, net, safeStorage, shell } = electronMain;
 
@@ -19,24 +20,28 @@ function configPath() {
   return path.join(app.getPath("userData"), "pairing.json");
 }
 
-// The OS keystore that backs safeStorage differs per platform: DPAPI on Windows, Keychain on
-// macOS. A message that names the wrong one sends the cashier to a setting that does not exist.
-function secureStoreUnavailableMessage() {
-  if (process.platform === "darwin") {
-    return "macOS Keychain ไม่พร้อมเข้ารหัสข้อมูลเครื่อง POS กรุณาปลดล็อก Keychain แล้วลองใหม่";
-  }
-  return "Windows ไม่พร้อมเข้ารหัสข้อมูลเครื่อง POS กรุณาล็อกอิน Windows แล้วลองใหม่";
+function currentSecureStorageStatus() {
+  const backend = process.platform === "linux"
+    ? safeStorage.getSelectedStorageBackend()
+    : null;
+  return {
+    backend,
+    ...secureStorageStatus({
+      platform: process.platform,
+      encryptionAvailable: safeStorage.isEncryptionAvailable(),
+      backend,
+    }),
+  };
 }
 
 function encryptedToken(token) {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error(secureStoreUnavailableMessage());
-  }
+  const storage = currentSecureStorageStatus();
+  if (!storage.ok) throw new Error(storage.error);
   return safeStorage.encryptString(token).toString("base64");
 }
 
 function decryptedToken(value) {
-  if (!safeStorage.isEncryptionAvailable()) return null;
+  if (!currentSecureStorageStatus().ok) return null;
   try {
     return safeStorage.decryptString(Buffer.from(value, "base64"));
   } catch {
@@ -218,6 +223,8 @@ async function verifyPairing(pairing) {
 function registerIpc() {
   ipcMain.handle("bms-pos:pair", async (event, input) => {
     if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์จับคู่เครื่อง" };
+    const storage = currentSecureStorageStatus();
+    if (!storage.ok) return { ok: false, error: storage.error };
     const parsed = parsePairingInput({ serverUrl: input?.serverUrl, pairingInput: input?.pairingInput });
     if (!parsed.ok) return parsed;
     const verified = await verifyPairing(parsed);
@@ -251,7 +258,16 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:app-info", async (event) => {
     if (!isSetupFrame(event)) return null;
-    return { version: app.getVersion(), platform: process.platform };
+    const storage = currentSecureStorageStatus();
+    return {
+      version: app.getVersion(),
+      platform: process.platform,
+      clientLabel: platformClientLabel(process.platform),
+      securityNote: platformSecurityNote(process.platform),
+      secureStorageReady: storage.ok,
+      secureStorageError: storage.ok ? null : storage.error,
+      secureStorageBackend: storage.backend,
+    };
   });
 }
 

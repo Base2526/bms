@@ -1173,9 +1173,26 @@ test("จอที่เปิดอยู่ถูกจำไว้ข้า�
     page,
     /LOCAL_SCREEN_KEY_PREFIX = "bms\.pos\.restaurantScreen\."/,
   );
-  // ผูกกับ device token — เบราว์เซอร์เดียวที่ pair หลายเครื่องต้องไม่เห็นค่าของกันและกัน
-  assert.match(page, /setItem\(LOCAL_SCREEN_KEY_PREFIX \+ token, screen\)/);
-  assert.match(page, /getItem\(LOCAL_SCREEN_KEY_PREFIX \+ token\)/);
+  // ผูกกับเครื่องที่ pair ไว้ — เบราว์เซอร์เดียวที่ pair หลายเครื่องต้องไม่เห็นค่าของกันและกัน ·
+  // ค่านั้นมาจาก posDeviceStorageNamespace(): เป็น device token เมื่อรันในเบราว์เซอร์ และเป็นแฮช
+  // ของ token เมื่อรันในเชลล์เดสก์ท็อป ซึ่งไม่เคยยื่น token ดิบให้ renderer · เทสตรึง **กฎ**
+  // ไม่ใช่ชื่อตัวแปร: ตรึงชื่อ `token` ไว้แล้วแดงตอนเปลี่ยนมาใช้ namespace ทั้งที่การันตีไม่ได้หาย
+  const keyOwners = [
+    ...page.matchAll(/LOCAL_(?:SCREEN|CHECK)_KEY_PREFIX \+ ([A-Za-z_$][\w$]*)/g),
+  ].map((match) => match[1]);
+  assert.ok(keyOwners.length >= 4, "ต้องมีทั้งการอ่านและการเขียนของทั้งสองคีย์");
+  assert.equal(
+    new Set(keyOwners).size,
+    1,
+    "ทุกคีย์ต้องต่อท้ายด้วยค่าเดียวกัน ไม่งั้นอ่านคนละช่องกับที่เขียน",
+  );
+  const owner = keyOwners[0];
+  assert.ok(
+    page.includes(`const [${owner}, `) && page.includes("await posDeviceStorageNamespace("),
+    "ค่าที่ใช้แยกเครื่องต้องมาจาก posDeviceStorageNamespace() ไม่ใช่ค่าคงที่ที่ทุกเครื่องใช้ร่วมกัน",
+  );
+  assert.ok(page.includes(`setItem(LOCAL_SCREEN_KEY_PREFIX + ${owner}, screen)`));
+  assert.ok(page.includes(`getItem(LOCAL_SCREEN_KEY_PREFIX + ${owner})`));
   // อ่านก่อนเขียนทับ: ค่าเริ่มต้น ("ORDER" / ไม่มีบิล) ต้องไม่ทับของที่จำไว้ก่อนใครได้อ่าน
   // ตรวจ **ทุก effect ที่เขียน** แยกกัน — เช็ครวมทั้งไฟล์จะเขียวได้ด้วย guard ของ effect อื่น
   assert.match(page, /localViewRestoredRef\.current = true/);
@@ -1200,7 +1217,7 @@ test("จอที่เปิดอยู่ถูกจำไว้ข้า�
     );
   }
   const persistCheck = page.indexOf(
-    "const key = LOCAL_CHECK_KEY_PREFIX + token;",
+    `const key = LOCAL_CHECK_KEY_PREFIX + ${owner};`,
   );
   assert.ok(persistCheck > 0, "หา effect ที่จำบิลไม่เจอ");
   assert.match(
