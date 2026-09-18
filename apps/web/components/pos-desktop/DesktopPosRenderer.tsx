@@ -130,6 +130,25 @@ function resolvedCartLine(hit: PosScanHit): CartLine {
   };
 }
 
+function preferredCatalogVariant(item: PosCatalogItem) {
+  const available = item.availableSizes.filter((variant) => Number(variant.available) > 0);
+  if (!available.length) return null;
+  return available.reduce((best, candidate) => {
+    const bestPrice = Number.isFinite(Number(best.price)) ? Number(best.price) : item.price;
+    const candidatePrice = Number.isFinite(Number(candidate.price))
+      ? Number(candidate.price)
+      : item.price;
+    if (candidatePrice !== bestPrice) return candidatePrice < bestPrice ? candidate : best;
+    return candidate.size.localeCompare(best.size, "th") < 0 ? candidate : best;
+  });
+}
+
+function catalogDisplayPrice(item: PosCatalogItem): number {
+  const variant = preferredCatalogVariant(item);
+  const price = Number(variant?.price ?? item.price);
+  return Number.isFinite(price) ? Math.max(0, price) : 0;
+}
+
 function NavIcon({ name }: { name: string }) {
   const icons: Record<string, string> = {
     sell: "▥",
@@ -161,11 +180,13 @@ export default function DesktopPosRenderer() {
   ]);
   const [receipt, setReceipt] = useState<SaleResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [addingProductKey, setAddingProductKey] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
   const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
+  const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendFlow = useCallback((event: PosClientEvent) => {
@@ -324,8 +345,9 @@ export default function DesktopPosRenderer() {
 
   const addProduct = async (code: string, size?: string | null) => {
     const clean = code.trim();
-    if (!clean || busy) return;
-    setBusy(true);
+    if (!clean || busy || addProductPendingRef.current) return;
+    addProductPendingRef.current = true;
+    setAddingProductKey(`${clean}\u0000${size ?? ""}`);
     setError("");
     setNotice("");
     try {
@@ -345,10 +367,21 @@ export default function DesktopPosRenderer() {
       if (Number(hit.available) <= 0) throw new Error("สินค้านี้ไม่มีสต็อกพร้อมขาย");
       const incoming = resolvedCartLine(hit);
       setCart((current) => {
-        const existing = current.find((line) => line.key === incoming.key);
-        if (!existing) return [...current, incoming];
-        if ((existing.qty + 1) * existing.baseQty > Number(hit.available)) return current;
-        return current.map((line) =>
+        // ราคาส่งและโปรโมชันบางแบบนับรวมทุกไซซ์ของ SKU เดียวกัน กฎจาก scan ล่าสุด
+        // จึงต้องอัปเดตทุกบรรทัดของ SKU นั้นเหมือน mobile client ก่อนคิดยอดใหม่
+        const synced = current.map((line) =>
+          line.sku === incoming.sku
+            ? {
+                ...line,
+                priceTiers: incoming.priceTiers,
+                promotion: incoming.promotion,
+              }
+            : line,
+        );
+        const existing = synced.find((line) => line.key === incoming.key);
+        if (!existing) return [...synced, incoming];
+        if ((existing.qty + 1) * existing.baseQty > Number(hit.available)) return synced;
+        return synced.map((line) =>
           line.key === incoming.key ? { ...line, qty: line.qty + 1 } : line,
         );
       });
@@ -356,7 +389,8 @@ export default function DesktopPosRenderer() {
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
-      setBusy(false);
+      addProductPendingRef.current = false;
+      setAddingProductKey("");
     }
   };
 
@@ -372,6 +406,16 @@ export default function DesktopPosRenderer() {
   };
 
   const subtotal = useMemo(() => cartProductSubtotal(cart), [cart]);
+  const listSubtotal = useMemo(
+    () => Math.round(cart.reduce((sum, line) => {
+      const packPrice = Number(line.packBasePrice ?? line.unitPrice ?? 0);
+      const modifierPrice = Number(line.modifierUnitPrice ?? 0);
+      return sum + (Number.isFinite(packPrice) ? packPrice : 0) * line.qty
+        + (Number.isFinite(modifierPrice) ? modifierPrice : 0) * line.qty;
+    }, 0) * 100) / 100,
+    [cart],
+  );
+  const pricingSavings = Math.max(0, Math.round((listSubtotal - subtotal) * 100) / 100);
   const cashMode = isCashRounding(bootstrap?.vat.cashRounding)
     ? bootstrap.vat.cashRounding
     : "NONE";
@@ -748,7 +792,8 @@ export default function DesktopPosRenderer() {
                   ))}
                 </div>
                 <div className={styles.summaryTotals}>
-                  <div><span>ยอดสินค้า</span><strong>{money(subtotal)}</strong></div>
+                  <div><span>ยอดสินค้าราคาป้าย</span><strong>{money(listSubtotal)}</strong></div>
+                  {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
                   {rounding !== 0 ? <div><span>ปัดเศษเงินสด</span><strong>{money(rounding)}</strong></div> : null}
                   <div className={styles.grandTotal}><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
                 </div>
@@ -759,7 +804,7 @@ export default function DesktopPosRenderer() {
                   <span className={styles.barcode}>▥</span>
                   <input autoFocus value={scanCode} onChange={(event) => setScanCode(event.target.value)} placeholder="ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter" />
                   <kbd>F12</kbd>
-                  <button disabled={!scanCode.trim() || busy}>เพิ่ม</button>
+                  <button disabled={!scanCode.trim() || busy || Boolean(addingProductKey)}>เพิ่ม</button>
                 </form>
                 <div className={styles.catalogHeader}>
                   <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
@@ -767,13 +812,24 @@ export default function DesktopPosRenderer() {
                 </div>
                 {(error || notice) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</div> : null}
                 <div className={styles.productGrid}>
-                  {catalog.map((item) => (
-                    <button key={item.sku} className={styles.productCard} disabled={item.availableTotal <= 0 || busy} onClick={() => void addProduct(item.sku, item.availableSizes[0]?.size)}>
+                  {catalog.map((item) => {
+                    const selectedVariant = preferredCatalogVariant(item);
+                    const addingKey = `${item.sku}\u0000${selectedVariant?.size ?? ""}`;
+                    return (
+                    <button
+                      key={item.sku}
+                      className={styles.productCard}
+                      disabled={item.availableTotal <= 0 || busy}
+                      aria-busy={addingProductKey === addingKey}
+                      data-adding={addingProductKey === addingKey}
+                      onClick={() => void addProduct(item.sku, selectedVariant?.size)}
+                    >
                       <div className={styles.productImage}>{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span>{item.name.slice(0, 1)}</span>}</div>
                       <strong>{item.name}</strong><small>{item.sku}</small>
-                      <div><b>{money(item.price)}</b><span className={item.availableTotal > 0 ? styles.stockOk : styles.stockOut}>{item.availableTotal > 0 ? `เหลือ ${item.availableTotal}` : "หมด"}</span></div>
+                      <div><b>{money(catalogDisplayPrice(item))}</b><span className={item.availableTotal > 0 ? styles.stockOk : styles.stockOut}>{item.availableTotal > 0 ? `เหลือ ${item.availableTotal}` : "หมด"}</span></div>
                     </button>
-                  ))}
+                    );
+                  })}
                   {!catalog.length && !busy ? <div className={styles.emptyCatalog}>ไม่พบสินค้า ลองค้นด้วยชื่อหรือยิงบาร์โค้ด</div> : null}
                 </div>
               </>
@@ -799,6 +855,7 @@ export default function DesktopPosRenderer() {
                   {!cart.length ? <div className={styles.emptyCart}><span>▥</span><strong>ยังไม่มีสินค้าในบิล</strong><p>ยิงบาร์โค้ดหรือเลือกสินค้าจากด้านซ้าย</p></div> : null}
                 </div>
                 <div className={styles.cartFooter}>
+                  {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ส่วนลดราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
                   <div><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
                   <button className={styles.payButton} disabled={!cart.length} onClick={() => sendFlow("START_CHECKOUT")}>ไปชำระเงิน <span>→</span></button>
                 </div>

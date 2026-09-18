@@ -130,6 +130,8 @@
 .connection.offline i { background: #ff4d4f; }
 
 .content {
+  min-width: 0;
+  width: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 64fr) minmax(390px, 36fr);
@@ -152,6 +154,7 @@
 
 .catalogPane,
 .checkoutPane {
+  min-width: 0;
   min-height: 0;
   background: #fff;
   border: 1px solid #e2e6ec;
@@ -195,6 +198,7 @@
 .eyebrow { margin: 0; color: #1677ff; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .productGrid {
+  min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -215,6 +219,7 @@
   overflow: hidden;
 }
 .productCard:hover:not(:disabled) { transform: translateY(-2px) !important; box-shadow: 0 8px 22px rgba(30, 42, 60, 0.09) !important; }
+.productCard[data-adding="true"] { border-color: #69b1ff !important; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1) !important; }
 .productImage {
   height: 112px;
   display: grid;
@@ -283,6 +288,10 @@
 .cartFooter { padding: 14px 16px 16px; border-top: 1px solid #e5e8ee; background: #fff; }
 .cartFooter > div { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
 .cartFooter > div strong { font-size: 22px; }
+.cartFooter .savingsRow,
+.summaryTotals .savingsRow { color: #389e0d; }
+.cartFooter .savingsRow strong,
+.summaryTotals .savingsRow strong { font-size: inherit; color: #389e0d; }
 .payButton {
   width: 100%;
   min-height: 56px !important;
