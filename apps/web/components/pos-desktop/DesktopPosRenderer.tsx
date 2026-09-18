@@ -45,6 +45,8 @@ import {
   hasDesktopPosBridge,
   readPosDeviceToken,
 } from "@/lib/pos/deviceTokenClient";
+import PosPage from "@/app/(pos)/pos/page";
+import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import styles from "./DesktopPosRenderer.module.css";
 
 type CartLine = PricedCartLine & {
@@ -83,6 +85,8 @@ const decidedCodes = new Set([
   "NOT_FOUND",
   "CONFLICT",
 ]);
+
+type DesktopModule = "mobile_sell" | "restaurant" | PosTab;
 
 const money = (value: number) =>
   new Intl.NumberFormat("th-TH", {
@@ -160,6 +164,7 @@ export default function DesktopPosRenderer() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
+  const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -285,14 +290,37 @@ export default function DesktopPosRenderer() {
     window.location.assign(tab === "restaurant" ? "/pos/restaurant" : `/pos?tab=${tab}`);
   };
 
-  const unpair = async () => {
+  const openModule = useCallback((module: DesktopModule) => {
+    if (module === "mobile_sell") sendFlow("BACK_TO_CATALOG");
+    setActiveModule(module);
+    setError("");
+    setNotice("");
+  }, [sendFlow]);
+
+  const followWorkspaceTab = useCallback((tab: PosTab) => {
+    setActiveModule(tab);
+  }, []);
+
+  const unpair = useCallback(async () => {
     await clearPosDeviceToken();
     setToken("");
     setBootstrap(null);
     setCashier(null);
     setPin("");
     sendFlow("UNPAIR");
-  };
+  }, [sendFlow]);
+
+  const followWorkspaceShift = useCallback((open: boolean) => {
+    if (open) return;
+    setBootstrap((current) => current ? { ...current, shift: null } : current);
+    setCart([]);
+    setActiveModule("mobile_sell");
+    setFlow((current) => ({
+      ...current,
+      shiftOpen: false,
+      stage: current.cashierAuthenticated ? "SHIFT_REQUIRED" : "CASHIER_LOGIN",
+    }));
+  }, []);
 
   const addProduct = async (code: string, size?: string | null) => {
     const clean = code.trim();
@@ -640,8 +668,8 @@ export default function DesktopPosRenderer() {
   }
 
   const checkout = flow.stage === "CHECKOUT";
-  const navItems = [
-    { key: "sell", label: "ขาย", enabled: true },
+  const navItems = ([
+    { key: "mobile_sell", label: "ขาย", enabled: true },
     { key: "restaurant", label: "โต๊ะ", enabled: bootstrap.businessArchetype === "restaurant" },
     { key: "boardgame", label: "บอร์ดเกม", enabled: bootstrap.businessArchetype === "board_game_cafe" },
     { key: "returns", label: "คืน", enabled: true },
@@ -649,7 +677,7 @@ export default function DesktopPosRenderer() {
     { key: "deposits", label: "มัดจำ", enabled: true },
     { key: "shift", label: "กะ", enabled: true },
     { key: "settings", label: "ตั้งค่า", enabled: true },
-  ].filter((item) => item.enabled);
+  ] satisfies Array<{ key: DesktopModule; label: string; enabled: boolean }>).filter((item) => item.enabled);
 
   return (
     <main className={`pos-desktop-app ${styles.shell}`}>
@@ -659,11 +687,11 @@ export default function DesktopPosRenderer() {
           {navItems.map((item) => (
             <button
               key={item.key}
-              className={item.key === "sell" ? styles.navActive : ""}
-              onClick={() => item.key === "sell" ? sendFlow("BACK_TO_CATALOG") : legacy(item.key)}
+              className={activeModule === item.key || (item.key === "mobile_sell" && activeModule === "sell") ? styles.navActive : ""}
+              onClick={() => item.key === "restaurant" ? legacy("restaurant") : openModule(item.key)}
               title={item.label}
             >
-              <NavIcon name={item.key} />
+              <NavIcon name={item.key === "mobile_sell" ? "sell" : item.key} />
               <small>{item.label}</small>
             </button>
           ))}
@@ -679,11 +707,29 @@ export default function DesktopPosRenderer() {
           </div>
           <div className={styles.topMeta}>
             <span className={`${styles.connection} ${styles[connection]}`}><i />{connection === "online" ? "ออนไลน์" : connection === "checking" ? "กำลังเชื่อมต่อ" : "การเชื่อมต่อมีปัญหา"}</span>
-            <button onClick={() => legacy("sell")}>ฟังก์ชันขายทั้งหมด</button>
-            <button onClick={() => legacy("shift")}>{cashier?.name || cashier?.email}</button>
+            <button onClick={() => openModule("sell")}>ฟังก์ชันขายทั้งหมด</button>
+            <button onClick={() => openModule("shift")}>{cashier?.name || cashier?.email}</button>
           </div>
         </header>
 
+        {activeModule !== "mobile_sell" && activeModule !== "restaurant" ? (
+          <div className={`${styles.content} ${styles.moduleContent}`}>
+            <section className={styles.moduleHost}>
+              <PosWorkspaceContext.Provider value={{
+                embedded: true,
+                initialTab: activeModule,
+                initialToken: token,
+                initialCashierId: cashier?.id ?? cashierId,
+                initialPin: pin,
+                onTabChange: followWorkspaceTab,
+                onShiftChange: followWorkspaceShift,
+                onUnpair: unpair,
+              }}>
+                <PosPage />
+              </PosWorkspaceContext.Provider>
+            </section>
+          </div>
+        ) : (
         <div className={styles.content}>
           <section className={styles.catalogPane}>
             {checkout ? (
@@ -719,7 +765,7 @@ export default function DesktopPosRenderer() {
                   <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อหรือ SKU" />
                 </div>
-                {(error || notice) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice}{notice ? <button onClick={() => legacy("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</div> : null}
+                {(error || notice) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</div> : null}
                 <div className={styles.productGrid}>
                   {catalog.map((item) => (
                     <button key={item.sku} className={styles.productCard} disabled={item.availableTotal <= 0 || busy} onClick={() => void addProduct(item.sku, item.availableSizes[0]?.size)}>
@@ -799,6 +845,7 @@ export default function DesktopPosRenderer() {
             )}
           </aside>
         </div>
+        )}
       </section>
       {!hasDesktopPosBridge() ? <div className={styles.browserBadge}>Browser preview · Electron จะเก็บ device token ใน OS keychain</div> : null}
     </main>
