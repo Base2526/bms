@@ -25,6 +25,7 @@ import { useResponsive } from '../../theme/useResponsive';
 import { useCart } from '../../state/CartContext';
 import { useSales } from '../../state/SalesContext';
 import { useSession } from '../../state/SessionContext';
+import { useShift } from '../../state/ShiftContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import {
   MobilePosBoardGameCheckoutDocument,
@@ -43,6 +44,7 @@ import {
   payableWithRounding,
 } from '../../lib/cartPricing';
 import { createIdempotencyKey } from '../../lib/operation';
+import { describeMobileSaleFailure } from '../../lib/saleFailureMessage';
 import {
   calculateCashChange,
   paymentMethodLabel,
@@ -75,6 +77,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const cart = useCart();
   const { refresh: refreshSales } = useSales();
   const { session } = useSession();
+  const { isOpen: isShiftOpen, loading: shiftLoading } = useShift();
   const { mode: storeMode } = useStoreMode();
   const restaurantParams =
     route.params?.source === 'restaurant' ? route.params : null;
@@ -250,6 +253,27 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         ...productLines,
       ]
     : productLines;
+  const confirmationItems = [
+    ...lines.map(item => ({
+      key: item.key,
+      name: item.name,
+      variantLabel:
+        item.sku === '__BOARD_GAME_TIME__'
+          ? undefined
+          : cartLineVariantLabel(item) || undefined,
+      qty: item.qty,
+      unitPrice: item.unitPrice,
+    })),
+    ...(source === 'retail'
+      ? cart.extraLines.map(line => ({
+          key: `extra-${line.id}`,
+          name: line.label,
+          variantLabel: 'รายการเพิ่มเติม',
+          qty: line.qty,
+          unitPrice: line.unitAmount,
+        }))
+      : []),
+  ];
   const fallbackSubtotal =
     source === 'restaurant'
       ? check?.amountDue ?? 0
@@ -619,7 +643,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         const result = response.data?.bmsPosRestaurantSettleCheck;
         if (result?.status !== 'SOLD' || !result.orderId) {
           throw new Error(
-            result?.reason ?? result?.status ?? 'ชำระบิลไม่สำเร็จ',
+            describeMobileSaleFailure(result, 'ชำระบิลไม่สำเร็จ'),
           );
         }
         orderId = result.orderId;
@@ -776,9 +800,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         }
         if (result?.status !== 'SOLD' || !result.orderId) {
           idempotencyRef.current = null;
-          throw new Error(
-            result?.reason ?? result?.status ?? 'บันทึกการขายไม่สำเร็จ',
-          );
+          throw new Error(describeMobileSaleFailure(result));
         }
         orderId = result.orderId;
         cart.clear();
@@ -1452,6 +1474,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   );
 
   const confirmDisabled =
+    shiftLoading ||
+    !isShiftOpen ||
     discountPending ||
     lines.length === 0 ||
     Boolean(check?.items.some(item => item.status === 'NEW')) ||
@@ -1468,6 +1492,19 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const validationFeedback = (
     <>
+      {!shiftLoading && !isShiftOpen ? (
+        <View style={{ gap: spacing.xs }}>
+          <Text style={[typography.captionStrong, { color: colors.danger }]}>
+            ยังไม่ได้เปิดกะของเครื่องนี้ กรุณาเปิดกะก่อนขาย
+          </Text>
+          <Button
+            label="ไปเปิดกะ"
+            accessibilityLabel="ไปหน้าเปิดกะก่อนขาย"
+            variant="secondary"
+            onPress={() => navigation.navigate('ShiftDetail')}
+          />
+        </View>
+      ) : null}
       {(zeroDueBoardGameBill ? [] : validation.errors).map(error => (
         <Text
           key={error}
@@ -1720,7 +1757,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         subtotal={subtotal}
         discountTotal={discounts.discountTotal}
         total={paymentTarget}
-        itemCount={itemCount}
+        items={confirmationItems}
         payments={settlementPayments}
         memberName={activeMember?.name}
         onCancel={() => setConfirmOpen(false)}

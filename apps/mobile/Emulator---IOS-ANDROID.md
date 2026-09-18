@@ -22,3 +22,47 @@ npm run ios -- --simulator "iPhone 17" --port 8082
 cd /Users/s0mkidd/Desktop/Projects/bms/apps/mobile
 npm start -- --port 8082
 ```
+
+
+ANDROID
+จากภาพ `8081` และ `8082` มี process รันอยู่แล้ว จึงขึ้น `EADDRINUSE` ครับ
+
+ใช้ 2 Terminal แบบนี้:
+
+Terminal 1 — Metro
+
+```bash
+cd /Users/s0mkidd/Desktop/Projects/bms/apps/mobile
+
+# ปิด Metro เก่าที่พอร์ต 8082
+lsof -tiTCP:8082 -sTCP:LISTEN | xargs kill
+
+# เปิด Metro ใหม่
+npm start -- --port 8082
+```
+
+Terminal 2 — Build และเปิดแอป
+
+```bash
+cd /Users/s0mkidd/Desktop/Projects/bms/apps/mobile/android
+
+./gradlew app:installDebug -PreactNativeDevServerPort=8082
+
+adb shell am force-stop com.bms.pos
+adb shell am start -n com.bms.pos/.MainActivity
+```
+
+ถ้ายังไม่ได้เปิด emulator:
+
+```bash
+ANDROID_SDK_ROOT=/Users/s0mkidd/Library/Android/sdk \
+/Users/s0mkidd/Library/Android/sdk/emulator/emulator \
+-avd Pixel_6a -no-snapshot-save
+```
+
+สำคัญ: อย่าใช้ Metro พอร์ต `8081` เพราะ Docker ของโปรเจกต์ใช้อยู่แล้ว ให้ใช้ `8082` และต้องใส่ `-PreactNativeDevServerPort=8082` ตอน build ด้วยครับ
+
+
+ANDROID Emolator
+Server: http://localhost:3000
+Token: วางเฉพาะค่า pos_...

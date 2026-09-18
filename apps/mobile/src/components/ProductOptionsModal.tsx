@@ -45,12 +45,58 @@ export function ProductOptionsModal({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!item) return;
-    setResolved(item);
-    setSelected(item.modifiers?.filter(modifier => modifier.defaultSelected).map(modifier => modifier.code) ?? []);
+    if (!item) {
+      setResolved(null);
+      return;
+    }
+    let cancelled = false;
+    // การ์ด catalog มีไว้แสดงผลเร็วและยังไม่มี snapshot ราคาส่ง/โปร/ตัวเลือกครบ
+    // แม้สินค้ามีไซซ์เดียวก็ต้อง resolve ก่อนเพิ่ม ไม่งั้นตอนกดยืนยันขายจะเป็นครั้งแรกที่ได้
+    // snapshot เต็ม แล้วระบบเข้าใจผิดว่า "ราคาเปลี่ยน" ทุกบิล
+    setResolved(null);
+    setSelected([]);
     setNote('');
     setError('');
-  }, [item]);
+    const hasPricingSnapshot =
+      item.basePrice != null &&
+      item.packBasePrice != null &&
+      item.priceTiers !== undefined &&
+      item.promotion !== undefined &&
+      item.modifiers !== undefined;
+    if (hasPricingSnapshot) {
+      setResolved(item);
+      setSelected(
+        item.modifiers
+          ?.filter(modifier => modifier.defaultSelected)
+          .map(modifier => modifier.code) ?? [],
+      );
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    resolveVariant(item.sku, item.size, item.packCode || null)
+      .then(next => {
+        if (cancelled) return;
+        setResolved(next);
+        setSelected(
+          next.modifiers
+            ?.filter(modifier => modifier.defaultSelected)
+            .map(modifier => modifier.code) ?? [],
+        );
+      })
+      .catch(cause => {
+        if (cancelled) return;
+        setError(
+          cause instanceof Error ? cause.message : 'โหลดราคาล่าสุดไม่สำเร็จ',
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item, resolveVariant]);
 
   const groups = useMemo(() => {
     const map = new Map<string, PosModifier[]>();

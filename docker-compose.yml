@@ -122,6 +122,7 @@ services:
       POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-}
       POSTGRES_POOL_IDLE_TIMEOUT_MS: ${POSTGRES_POOL_IDLE_TIMEOUT_MS:-}
       POSTGRES_POOL_CONNECT_TIMEOUT_MS: ${POSTGRES_POOL_CONNECT_TIMEOUT_MS:-}
+      POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-60000}
       # local (default) = ไฟล์อยู่บนดิสก์ของ instance นั้น — ใช้ได้เฉพาะตอนรัน instance เดียว
       # หรือหลาย instance บน host เดียวที่แชร์ volume เดียวกัน
       # s3 = ต้องใช้เมื่อ web กระจายข้ามเครื่อง (ดู lib/storageDrivers/s3.ts)

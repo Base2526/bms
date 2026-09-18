@@ -1,7 +1,7 @@
 'use client';
 import { Card, Form, Input, Button, message, Typography } from "antd";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { gql, useMutation } from '@apollo/client';
 import { useI18n } from "@/lib/i18nContext";
 
@@ -18,14 +18,18 @@ const LOGIN = gql`
 
 export default function AdminLoginPage(){
   const { t } = useI18n();
-  const [loading,setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+  const submitting = useRef(false);
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/admin";
 
   const [login, { loading: loadingLogin }] = useMutation(LOGIN);
+  const busy = loadingLogin || redirecting;
 
   const onFinish = async (values: { identifier: string; password: string }) => {
+      if (submitting.current) return;
+      submitting.current = true;
       const { identifier, password } = values;
 
       // เดาว่าเป็น email ถ้ามี '@' ไม่งั้นใช้ username
@@ -51,9 +55,12 @@ export default function AdminLoginPage(){
         // }
 
         message.success(t("admin_login.welcome", { name: res.user?.name || '' }));
+        setRedirecting(true);
         router.replace(next);
       } catch (err: any) {
         message.error(err?.message || t("admin_login.login_failed"));
+      } finally {
+        submitting.current = false;
       }
   };
 
@@ -68,15 +75,15 @@ export default function AdminLoginPage(){
         boxSizing: 'border-box',
       }}>
         <Card title={t("admin_login.title")} style={{width: '100%', maxWidth: 420}}>
-          <Form layout="vertical" onFinish={onFinish}>
+          <Form layout="vertical" onFinish={onFinish} disabled={busy} aria-busy={busy}>
             <Form.Item name="identifier" label={t("admin_login.identifier_label")} rules={[{required:true, message: t("admin_login.identifier_required")}]}>
               <Input autoFocus />
             </Form.Item>
             <Form.Item name="password" label={t("admin_login.password_label")} rules={[{required:true, message: t("admin_login.password_required")}]}>
               <Input.Password />
             </Form.Item>
-            <Button type="primary" htmlType="submit" block loading={loading}>
-              {t("admin_login.submit")}
+            <Button type="primary" htmlType="submit" block loading={busy}>
+              {busy ? t("admin_login.submitting") : t("admin_login.submit")}
             </Button>
           </Form>
           <Typography.Paragraph type="secondary" style={{marginTop:8,fontSize:12}}>

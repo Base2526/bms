@@ -1,5 +1,12 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
 import { useTheme } from '../theme/ThemeProvider';
@@ -15,7 +22,13 @@ interface Props {
   subtotal: number;
   discountTotal: number;
   total: number;
-  itemCount: number;
+  items: Array<{
+    key: string;
+    name: string;
+    variantLabel?: string;
+    qty: number;
+    unitPrice: number;
+  }>;
   payments: MockPaymentInput[];
   memberName?: string;
   onCancel: () => void;
@@ -33,7 +46,7 @@ export function SaleConfirmationModal({
   subtotal,
   discountTotal,
   total,
-  itemCount,
+  items,
   payments,
   memberName,
   onCancel,
@@ -42,6 +55,7 @@ export function SaleConfirmationModal({
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
+  const totalQuantity = items.reduce((sum, item) => sum + item.qty, 0);
 
   return (
     <Modal
@@ -89,127 +103,199 @@ export function SaleConfirmationModal({
             },
           ]}
         >
-          <View
-            style={[styles.checkCircle, { backgroundColor: colors.successBg }]}
+          <ScrollView
+            style={styles.bodyScroll}
+            contentContainerStyle={styles.bodyContent}
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.check, { color: colors.success }]}>✓</Text>
-          </View>
-
-          <Text
-            style={[
-              typography.title,
-              styles.centerText,
-              { color: colors.text, marginTop: spacing.md },
-            ]}
-          >
-            ยืนยันการขาย
-          </Text>
-          <Text
-            style={[
-              typography.body,
-              styles.centerText,
-              { color: colors.textMuted, marginTop: spacing.xs },
-            ]}
-          >
-            ตรวจสอบข้อมูลก่อนบันทึกการขาย
-          </Text>
-
-          <View
-            style={[
-              styles.summary,
-              {
-                marginTop: spacing.xl,
-                borderColor: colors.border,
-                borderRadius: radius.md,
-              },
-            ]}
-          >
-            {discountTotal > 0 && (
-              <>
-                <SummaryRow
-                  label="ยอดสินค้า"
-                  value={`฿${subtotal.toFixed(2)}`}
-                />
-                <View
-                  style={[styles.divider, { backgroundColor: colors.border }]}
-                />
-                <SummaryRow
-                  label="ส่วนลดรวม"
-                  value={`−฿${discountTotal.toFixed(2)}`}
-                  valueColor={colors.success}
-                />
-                <View
-                  style={[styles.divider, { backgroundColor: colors.border }]}
-                />
-              </>
-            )}
-            <SummaryRow
-              label="ยอดสุทธิ"
-              value={`฿${total.toFixed(2)}`}
-              strong
-            />
             <View
-              style={[styles.divider, { backgroundColor: colors.border }]}
-            />
-            {payments.map((payment, index) => (
-              <React.Fragment key={payment.id}>
-                <SummaryRow
-                  label={`ชำระ ${index + 1}`}
-                  value={`${paymentMethodLabel(payment.method)} ฿${payment.amount.toFixed(2)}`}
-                />
-                {payment.method === 'cash' ? (
-                  <SummaryRow
-                    label="เงินทอน"
-                    value={`฿${calculateCashChange(
-                      payment.amount,
-                      payment.tendered ?? 0,
-                    ).toFixed(2)}`}
-                  />
-                ) : (
-                  <SummaryRow
-                    label="เลขอ้างอิง"
-                    value={payment.reference?.trim() || '-'}
-                  />
-                )}
-                <View
-                  style={[styles.divider, { backgroundColor: colors.border }]}
-                />
-              </React.Fragment>
-            ))}
-            {memberName && (
-              <>
-                <View
-                  style={[styles.divider, { backgroundColor: colors.border }]}
-                />
-                <SummaryRow label="สมาชิก" value={memberName} />
-              </>
-            )}
-            <View
-              style={[styles.divider, { backgroundColor: colors.border }]}
-            />
-            <SummaryRow label="จำนวน" value={`${itemCount} รายการ`} />
-          </View>
-
-          <View
-            style={[
-              styles.notice,
-              {
-                marginTop: spacing.lg,
-                padding: spacing.md,
-                borderRadius: radius.md,
-                backgroundColor: colors.warningBg,
-              },
-            ]}
-          >
-            <Text
               style={[
-                typography.captionStrong,
-                { color: colors.warning, flex: 1 },
+                styles.checkCircle,
+                { backgroundColor: colors.successBg },
               ]}
             >
-              เมื่อยืนยันแล้ว หากต้องแก้ไขต้องทำรายการคืน
+              <Text style={[styles.check, { color: colors.success }]}>✓</Text>
+            </View>
+
+            <Text
+              style={[
+                typography.title,
+                styles.centerText,
+                { color: colors.text, marginTop: spacing.md },
+              ]}
+            >
+              ยืนยันการขาย
             </Text>
-          </View>
+            <Text
+              style={[
+                typography.body,
+                styles.centerText,
+                { color: colors.textMuted, marginTop: spacing.xs },
+              ]}
+            >
+              ตรวจสอบสินค้าและยอดเงินก่อนบันทึกการขาย
+            </Text>
+
+            <View
+              style={[
+                styles.items,
+                {
+                  marginTop: spacing.xl,
+                  borderColor: colors.border,
+                  borderRadius: radius.md,
+                },
+              ]}
+            >
+              <View style={[styles.itemsHeader, { padding: spacing.md }]}>
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  รายการขาย
+                </Text>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  {`${items.length} รายการ · รวม ${formatQuantity(
+                    totalQuantity,
+                  )} หน่วย`}
+                </Text>
+              </View>
+              {items.map((item, index) => (
+                <React.Fragment key={item.key}>
+                  {index > 0 ? (
+                    <View
+                      style={[
+                        styles.divider,
+                        { backgroundColor: colors.border },
+                      ]}
+                    />
+                  ) : null}
+                  <View style={[styles.itemRow, { padding: spacing.md }]}>
+                    <View style={styles.itemDescription}>
+                      <Text
+                        style={[typography.bodyStrong, { color: colors.text }]}
+                      >
+                        {item.name}
+                      </Text>
+                      {item.variantLabel ? (
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          {item.variantLabel}
+                        </Text>
+                      ) : null}
+                      <Text
+                        style={[typography.caption, { color: colors.textSoft }]}
+                      >
+                        {`${formatQuantity(
+                          item.qty,
+                        )} × ฿${item.unitPrice.toFixed(2)}`}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[typography.bodyStrong, { color: colors.text }]}
+                    >
+                      ฿{(item.qty * item.unitPrice).toFixed(2)}
+                    </Text>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+
+            <View
+              style={[
+                styles.summary,
+                {
+                  marginTop: spacing.lg,
+                  borderColor: colors.border,
+                  borderRadius: radius.md,
+                },
+              ]}
+            >
+              {discountTotal > 0 && (
+                <>
+                  <SummaryRow
+                    label="ยอดสินค้า"
+                    value={`฿${subtotal.toFixed(2)}`}
+                  />
+                  <View
+                    style={[styles.divider, { backgroundColor: colors.border }]}
+                  />
+                  <SummaryRow
+                    label="ส่วนลดรวม"
+                    value={`−฿${discountTotal.toFixed(2)}`}
+                    valueColor={colors.success}
+                  />
+                  <View
+                    style={[styles.divider, { backgroundColor: colors.border }]}
+                  />
+                </>
+              )}
+              <SummaryRow
+                label="ยอดสุทธิ"
+                value={`฿${total.toFixed(2)}`}
+                strong
+              />
+              <View
+                style={[styles.divider, { backgroundColor: colors.border }]}
+              />
+              {payments.map((payment, index) => (
+                <React.Fragment key={payment.id}>
+                  <SummaryRow
+                    label={`ชำระ ${index + 1}`}
+                    value={`${paymentMethodLabel(
+                      payment.method,
+                    )} ฿${payment.amount.toFixed(2)}`}
+                  />
+                  {payment.method === 'cash' ? (
+                    <SummaryRow
+                      label="เงินทอน"
+                      value={`฿${calculateCashChange(
+                        payment.amount,
+                        payment.tendered ?? 0,
+                      ).toFixed(2)}`}
+                    />
+                  ) : (
+                    <SummaryRow
+                      label="เลขอ้างอิง"
+                      value={payment.reference?.trim() || '-'}
+                    />
+                  )}
+                  <View
+                    style={[styles.divider, { backgroundColor: colors.border }]}
+                  />
+                </React.Fragment>
+              ))}
+              {memberName ? (
+                <SummaryRow label="สมาชิก" value={memberName} />
+              ) : null}
+            </View>
+
+            <View
+              style={[
+                styles.notice,
+                {
+                  marginTop: spacing.lg,
+                  padding: spacing.md,
+                  borderRadius: radius.md,
+                  backgroundColor: colors.warningBg,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.captionStrong,
+                  { color: colors.warning, flex: 1 },
+                ]}
+              >
+                เมื่อยืนยันแล้ว หากต้องแก้ไขต้องทำรายการคืน
+              </Text>
+            </View>
+          </ScrollView>
 
           <View
             style={[
@@ -239,6 +325,12 @@ export function SaleConfirmationModal({
       </View>
     </Modal>
   );
+}
+
+function formatQuantity(value: number): string {
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString('th-TH');
 }
 
 function SummaryRow({
@@ -278,6 +370,7 @@ const styles = StyleSheet.create({
   },
   card: {
     maxWidth: 520,
+    maxHeight: '94%',
     borderWidth: StyleSheet.hairlineWidth,
     shadowColor: '#000000',
     shadowOpacity: 0.18,
@@ -300,6 +393,32 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  bodyScroll: {
+    flexShrink: 1,
+  },
+  bodyContent: {
+    flexGrow: 0,
+  },
+  items: {
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  itemsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  itemDescription: {
+    flex: 1,
+    gap: 2,
   },
   summary: {
     overflow: 'hidden',

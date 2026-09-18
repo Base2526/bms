@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useCallback, useMemo, useState } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import { gql, useMutation } from "@apollo/client";
 import { Card, Checkbox, Form, Input, Button, Typography, message, Progress, Space } from "antd";
 
@@ -86,6 +86,7 @@ type RegisterStrings = {
   alreadyHave: string;
   signIn: string;
   submit: string;
+  submitting: string;
   success: string;
   failed: string;
   error: string;
@@ -154,6 +155,7 @@ function RegisterClientInner() {
       alreadyHave: t("register.already_have"),
       signIn: t("register.sign_in"),
       submit: t("register.submit"),
+      submitting: t("register.submitting"),
       success: t("register.success"),
       failed: t("register.failed"),
       error: t("register.error"),
@@ -161,6 +163,8 @@ function RegisterClientInner() {
     [t]
   );
   const [form] = Form.useForm();
+  const submitting = useRef(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const [password, setPassword] = useState("");
   const strength = useMemo(() => calcStrength(password), [password]);
@@ -170,6 +174,7 @@ function RegisterClientInner() {
   );
 
   const [mutate, { loading }] = useMutation(REGISTER_MUTATION);
+  const busy = loading || redirecting;
 
   const onPasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setPassword(e.target.value);
@@ -188,6 +193,8 @@ function RegisterClientInner() {
 
   const onSubmit = useCallback(
     async (values: any) => {
+      if (submitting.current) return;
+      submitting.current = true;
       try {
         const username = normalizeUsername(values.username);
 
@@ -202,12 +209,15 @@ function RegisterClientInner() {
         const res = await mutate({ variables: { input: payload } });
         if (res.data?.registerUser) {
           message.success(strings.success);
+          setRedirecting(true);
           window.location.href = "/login";
         } else {
           message.error(strings.failed);
         }
       } catch (e: any) {
         message.error(e?.message || strings.error);
+      } finally {
+        submitting.current = false;
       }
     },
     [mutate, strings.error, strings.failed, strings.success]
@@ -229,7 +239,7 @@ function RegisterClientInner() {
     <div style={OUTER_STYLE}>
       <Card style={CARD_STYLE}>
         {titleNode}
-        <Form form={form} layout="vertical" style={FORM_STYLE} onFinish={onSubmit} initialValues={{ agree: false }}>
+        <Form form={form} layout="vertical" style={FORM_STYLE} onFinish={onSubmit} initialValues={{ agree: false }} disabled={busy} aria-busy={busy}>
           <Form.Item
             name="username"
             label={strings.usernameLabel}
@@ -341,8 +351,8 @@ function RegisterClientInner() {
             <Text type="secondary">
               {strings.alreadyHave} <a href="/admin/login">{strings.signIn}</a>
             </Text>
-            <Button type="primary" htmlType="submit" loading={loading}>
-              {strings.submit}
+            <Button type="primary" htmlType="submit" loading={busy}>
+              {busy ? strings.submitting : strings.submit}
             </Button>
           </Space>
         </Form>

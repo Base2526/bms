@@ -24,6 +24,7 @@ import { useResponsive } from '../../theme/useResponsive';
 import { cartLineVariantLabel } from '../../lib/cartLine';
 import { useCart } from '../../state/CartContext';
 import { useCatalog } from '../../state/CatalogContext';
+import { useShift } from '../../state/ShiftContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import type { SellStackParamList } from '../../navigation/types';
 import {
@@ -155,6 +156,7 @@ export default function MenuScreen({ navigation }: Props) {
     resumeParkedBill,
     deleteParkedBill,
   } = useCart();
+  const { isOpen: isShiftOpen, loading: shiftLoading } = useShift();
   const { mode } = useStoreMode();
   const {
     catalog,
@@ -188,6 +190,14 @@ export default function MenuScreen({ navigation }: Props) {
   }, [lines]);
 
   const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const continueSale = () => {
+    const appNavigation = getAppNavigation(navigation);
+    if (!isShiftOpen) {
+      appNavigation.navigate('ShiftDetail');
+      return;
+    }
+    appNavigation.navigate('Checkout', { source: 'retail' });
+  };
 
   const grid = (
     <MenuGrid
@@ -416,15 +426,13 @@ export default function MenuScreen({ navigation }: Props) {
           </Text>
         </View>
         <Button
-          label="ไปหน้าชำระเงิน"
-          accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
-          fullWidth
-          disabled={cartCount === 0}
-          onPress={() =>
-            getAppNavigation(navigation).navigate('Checkout', {
-              source: 'retail',
-            })
+          label={isShiftOpen ? 'ไปหน้าชำระเงิน' : 'ไปเปิดกะ'}
+          accessibilityLabel={
+            isShiftOpen ? 'ไปหน้าชำระเงินตะกร้าปัจจุบัน' : 'ไปหน้าเปิดกะก่อนขาย'
           }
+          fullWidth
+          disabled={cartCount === 0 || shiftLoading}
+          onPress={continueSale}
         />
         <Button
           label={`บิลพัก${
@@ -480,14 +488,14 @@ export default function MenuScreen({ navigation }: Props) {
               </Text>
             </Pressable>
             <Button
-              label="ชำระเงิน"
-              accessibilityLabel="ไปหน้าชำระเงินตะกร้าปัจจุบัน"
-              disabled={cartCount === 0}
-              onPress={() =>
-                getAppNavigation(navigation).navigate('Checkout', {
-                  source: 'retail',
-                })
+              label={isShiftOpen ? 'ชำระเงิน' : 'เปิดกะ'}
+              accessibilityLabel={
+                isShiftOpen
+                  ? 'ไปหน้าชำระเงินตะกร้าปัจจุบัน'
+                  : 'ไปหน้าเปิดกะก่อนขาย'
               }
+              disabled={cartCount === 0 || shiftLoading}
+              onPress={continueSale}
             />
           </View>
         </>

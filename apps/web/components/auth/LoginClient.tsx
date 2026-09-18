@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import { gql, useMutation } from "@apollo/client";
 import { message, Typography } from "antd";
 import type { CredentialResponse } from "@react-oauth/google";
@@ -24,6 +24,7 @@ type LoginStrings = {
   passwordPlaceholder: string;
   passwordRequired: string;
   submit: string;
+  submitting: string;
   register: string;
   forgot: string;
   loginFailed: string;
@@ -93,6 +94,8 @@ function format(template: string, vars?: Record<string, string | number>) {
 
 function LoginClientInner({ nextPath }: Props) {
   const { t } = useI18n();
+  const submitting = useRef(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const strings: LoginStrings = useMemo(
     () => ({
@@ -107,6 +110,7 @@ function LoginClientInner({ nextPath }: Props) {
       passwordPlaceholder: t("login.password_placeholder"),
       passwordRequired: t("login.password_required"),
       submit: t("login.submit"),
+      submitting: t("login.submitting"),
       register: t("login.register"),
       forgot: t("login.forgot"),
       loginFailed: t("login.failed"),
@@ -126,6 +130,7 @@ function LoginClientInner({ nextPath }: Props) {
 
   const [login, { loading }] = useMutation(LOGIN);
   const [loginSocial, { loading: loadingSocial }] = useMutation(LOGIN_SOCIAL);
+  const busy = loading || loadingSocial || redirecting;
 
   const handleLoginSuccess = useCallback(
     (res: LoginOk) => {
@@ -136,6 +141,7 @@ function LoginClientInner({ nextPath }: Props) {
 
       const name = res.user?.name || "";
       message.success(format(strings.welcome, { name }));
+      setRedirecting(true);
       window.location.href = nextPath || "/";
     },
     [nextPath, strings.loginFailed, strings.welcome]
@@ -143,6 +149,8 @@ function LoginClientInner({ nextPath }: Props) {
 
   const onSubmit = useCallback(
     async (values: { identifier: string; password: string }) => {
+      if (submitting.current) return;
+      submitting.current = true;
       const { identifier, password } = values;
 
       const input = identifier.includes("@")
@@ -159,6 +167,8 @@ function LoginClientInner({ nextPath }: Props) {
         // eslint-disable-next-line no-console
         console.error(err);
         message.error(err?.message || strings.loginFailed);
+      } finally {
+        submitting.current = false;
       }
     },
     [handleLoginSuccess, login, strings.loginFailed]
@@ -166,6 +176,8 @@ function LoginClientInner({ nextPath }: Props) {
 
   const onGoogleSuccess = useCallback(
     async (credentialResponse: CredentialResponse) => {
+      if (submitting.current) return;
+      submitting.current = true;
       try {
         const accessToken = credentialResponse?.credential;
         if (!accessToken) {
@@ -190,6 +202,8 @@ function LoginClientInner({ nextPath }: Props) {
         // eslint-disable-next-line no-console
         console.error(err);
         message.error(err?.message || strings.googleFailed);
+      } finally {
+        submitting.current = false;
       }
     },
     [handleLoginSuccess, loginSocial, strings.googleFailed, strings.googleMissingCredential]
@@ -216,13 +230,14 @@ function LoginClientInner({ nextPath }: Props) {
           submitLabel={strings.submit}
           registerLabel={strings.register}
           forgotLabel={strings.forgot}
-          loading={loading}
+          loading={busy}
+          submittingLabel={strings.submitting}
           onSubmit={onSubmit}
         />
 
         <SocialLogin
           dividerLabel={strings.divider}
-          disabled={loadingSocial}
+          disabled={busy}
           onGoogleSuccess={onGoogleSuccess}
           onGoogleError={onGoogleError}
         />

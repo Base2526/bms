@@ -131,10 +131,10 @@
 }
 
 /* ---- หน้าขาย: รายการซ้าย / รับชำระขวา -----------------------------
-   โครงนี้ยึด mockup ที่อนุมัติ: 58/42, รายการสินค้าอ่านเป็นตาราง และงานรับเงิน
+   โครงนี้ยึด mockup ที่อนุมัติ: 64/36, รายการสินค้าอ่านเป็นตาราง และงานรับเงิน
    อยู่ในคอลัมน์ขวาเดียวตั้งแต่ยอดจนถึงปุ่มจบรายการ */
 .pos-main-grid--sell {
-  grid-template-columns: minmax(0, 58fr) minmax(360px, 42fr) !important;
+  grid-template-columns: minmax(0, 64fr) minmax(380px, 36fr) !important;
   gap: 8px !important;
 }
 
@@ -194,11 +194,102 @@
   background: transparent;
 }
 
+.pos-sale-customer-discount {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--pos-line);
+  border-radius: 9px;
+  background: var(--pos-surface);
+}
+.pos-root .pos-sale-customer-discount-toggle {
+  width: 100%;
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--pos-text);
+  text-align: left;
+  cursor: pointer;
+}
+.pos-root .pos-sale-customer-discount-toggle:hover { background: var(--pos-sunken); }
+.pos-root .pos-sale-customer-discount-toggle:focus-visible {
+  outline: 2px solid var(--pos-accent);
+  outline-offset: -2px;
+}
+.pos-sale-customer-discount-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--pos-accent-bg);
+  color: var(--pos-accent);
+}
+.pos-sale-customer-discount-icon svg { width: 18px; height: 18px; }
+.pos-sale-customer-discount-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pos-sale-customer-discount-copy strong { font-size: 13px; font-weight: 600; }
+.pos-sale-customer-discount-copy > span {
+  overflow: hidden;
+  color: var(--pos-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pos-sale-discount-chip {
+  max-width: 124px;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--pos-sunken);
+  color: var(--pos-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pos-sale-discount-chip.has-discount {
+  background: var(--pos-money-bg);
+  color: var(--pos-money);
+}
+.pos-sale-customer-discount-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--pos-accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pos-sale-customer-discount-action svg {
+  width: 15px;
+  height: 15px;
+  transition: transform 140ms ease;
+}
+.pos-sale-customer-discount.is-open .pos-sale-customer-discount-action svg { transform: rotate(180deg); }
+.pos-sale-customer-discount-body {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 10px 8px;
+  border-top: 1px solid var(--pos-line);
+  background: var(--pos-surface);
+}
+
 .pos-sale-discount-tools {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  padding: 10px 0;
+  gap: 6px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--pos-line);
 }
 .pos-sale-coupon,
@@ -251,11 +342,12 @@
   font-size: 12px;
   font-weight: 600;
 }
-.pos-sale-member {
+.pos-sale-customer-discount .pos-sale-member {
+  width: 100%;
   display: block;
   margin: 0;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--pos-line);
+  padding: 8px 0 0;
+  border-bottom: 0;
   color: var(--pos-text);
 }
 .pos-sale-member-heading {
@@ -347,6 +439,12 @@
 .pos-sale-empty-icon { margin-bottom: 4px; color: var(--pos-line-strong); font-size: 28px; }
 
 .pos-sale-checkout .pos-total { padding: 12px; }
+.pos-sale-checkout .pos-sale-adjustments {
+  width: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
 .pos-sale-summary {
   margin-top: 12px;
   padding-top: 9px;
@@ -371,9 +469,9 @@
   font-weight: 600;
 }
 
-.pos-sale-payment-methods { margin-top: 10px; }
+.pos-sale-payment-methods { margin-top: 6px; }
 .pos-sale-payment-head {
-  min-height: 28px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -383,13 +481,13 @@
 .pos-sale-method-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 .pos-root .pos-sale-method {
   min-width: 0;
-  min-height: 44px;
-  padding: 8px 6px;
-  font-size: 13px;
+  min-height: 36px;
+  padding: 5px 4px;
+  font-size: 12px;
 }
 .pos-root .pos-sale-method[aria-pressed="true"] {
   border-color: #b5d4f4;
@@ -398,9 +496,23 @@
   font-weight: 600;
 }
 
-.pos-sale-cash { margin-top: 12px; }
-.pos-sale-checkout .pos-cash-field { min-height: 54px; border-radius: 9px; }
-.pos-sale-checkout .pos-quick { gap: 6px; }
+.pos-sale-cash { margin-top: 6px; }
+.pos-sale-checkout .pos-cash-field {
+  min-height: 42px;
+  padding: 2px 10px;
+  border-radius: 8px;
+}
+.pos-sale-checkout .pos-cash-field input { padding: 3px 0; font-size: 22px; }
+.pos-sale-checkout .pos-quick {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 5px;
+}
+.pos-root .pos-sale-checkout .pos-quick button {
+  min-height: 32px;
+  padding: 4px 0;
+  font-size: 12px;
+}
 .pos-sale-checkout .pos-change { min-height: 38px; }
 .pos-root .pos-sale-checkout .pos-pay {
   border-radius: 8px;
@@ -777,6 +889,11 @@
   .pos-sale-basket .pos-line-item > :first-child { grid-column: 1 / -1; }
   .pos-line-unit-price { display: none; }
   .pos-sale-method-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pos-root .pos-sale-customer-discount-toggle { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .pos-sale-discount-chip { display: none; }
+  .pos-root .pos-sale-method { min-height: 42px; }
+  .pos-sale-checkout .pos-quick { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pos-root .pos-sale-checkout .pos-quick button { min-height: 40px; }
   .pos-sale-empty { min-height: 280px; }
 }
 
@@ -937,19 +1054,29 @@
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
 }
 .pos-root .pos-ret-btn:hover:not(:disabled) {
-  background: var(--pos-surface); border-color: var(--ret-accent); color: var(--ret-accent-ink);
+  background: var(--pos-surface);
+  border-color: var(--ret-accent, var(--pos-accent));
+  color: var(--ret-accent-ink, var(--pos-accent));
 }
 .pos-root .pos-ret-btn--primary {
-  background: var(--ret-accent); border-color: var(--ret-accent); color: #fff;
+  background: var(--ret-accent, var(--pos-accent));
+  border-color: var(--ret-accent, var(--pos-accent));
+  color: #fff;
 }
 .pos-root .pos-ret-btn--primary:hover:not(:disabled) {
-  background: #24806a; border-color: #24806a; color: #fff;
+  background: var(--ret-accent, var(--pos-accent));
+  border-color: var(--ret-accent, var(--pos-accent));
+  color: #fff;
 }
 /* ปุ่มที่กางส่วนขยายอยู่ ต้องบอกตัวเองว่า "ของที่เปิดอยู่คือของฉัน" */
 .pos-root .pos-ret-btn--open {
-  background: var(--ret-accent-bg); border-color: var(--ret-accent); color: var(--ret-accent-ink);
+  background: var(--ret-accent-bg, var(--pos-accent-bg));
+  border-color: var(--ret-accent, var(--pos-accent));
+  color: var(--ret-accent-ink, var(--pos-accent));
 }
-.pos-root .pos-ret-btn--open:hover:not(:disabled) { background: var(--ret-accent-bg); }
+.pos-root .pos-ret-btn--open:hover:not(:disabled) {
+  background: var(--ret-accent-bg, var(--pos-accent-bg));
+}
 .pos-root .pos-ret-btn--warn { color: var(--pos-warn); }
 .pos-root .pos-ret-btn--danger { color: var(--pos-danger); border-color: #e8bdb8; }
 .pos-root .pos-ret-btn--danger:hover:not(:disabled) {
