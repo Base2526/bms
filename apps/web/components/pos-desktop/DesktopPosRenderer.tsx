@@ -26,6 +26,7 @@ import {
   payableWithRounding,
   type PricedCartLine,
 } from "@pos-core/cartPricing";
+import { selectPosCatalogCardVariant } from "@pos-core/catalog";
 import {
   POS_BOOTSTRAP_QUERY,
   POS_CATALOG_QUERY,
@@ -128,25 +129,6 @@ function resolvedCartLine(hit: PosScanHit): CartLine {
     serialTracked: Boolean(hit.serialTracked),
     imageUrl: hit.imageUrl,
   };
-}
-
-function preferredCatalogVariant(item: PosCatalogItem) {
-  const available = item.availableSizes.filter((variant) => Number(variant.available) > 0);
-  if (!available.length) return null;
-  return available.reduce((best, candidate) => {
-    const bestPrice = Number.isFinite(Number(best.price)) ? Number(best.price) : item.price;
-    const candidatePrice = Number.isFinite(Number(candidate.price))
-      ? Number(candidate.price)
-      : item.price;
-    if (candidatePrice !== bestPrice) return candidatePrice < bestPrice ? candidate : best;
-    return candidate.size.localeCompare(best.size, "th") < 0 ? candidate : best;
-  });
-}
-
-function catalogDisplayPrice(item: PosCatalogItem): number {
-  const variant = preferredCatalogVariant(item);
-  const price = Number(variant?.price ?? item.price);
-  return Number.isFinite(price) ? Math.max(0, price) : 0;
 }
 
 function NavIcon({ name }: { name: string }) {
@@ -813,7 +795,8 @@ export default function DesktopPosRenderer() {
                 {(error || notice) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</div> : null}
                 <div className={styles.productGrid}>
                   {catalog.map((item) => {
-                    const selectedVariant = preferredCatalogVariant(item);
+                    const selection = selectPosCatalogCardVariant(item);
+                    const selectedVariant = selection.variant;
                     const addingKey = `${item.sku}\u0000${selectedVariant?.size ?? ""}`;
                     return (
                     <button
@@ -826,7 +809,14 @@ export default function DesktopPosRenderer() {
                     >
                       <div className={styles.productImage}>{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span>{item.name.slice(0, 1)}</span>}</div>
                       <strong>{item.name}</strong><small>{item.sku}</small>
-                      <div><b>{money(catalogDisplayPrice(item))}</b><span className={item.availableTotal > 0 ? styles.stockOk : styles.stockOut}>{item.availableTotal > 0 ? `เหลือ ${item.availableTotal}` : "หมด"}</span></div>
+                      <div>
+                        <b>{money(selection.price)}</b>
+                        <span className={selection.available > 0 ? styles.stockOk : styles.stockOut}>
+                          {selection.available > 0
+                            ? `เหลือ ${selection.available}${selectedVariant?.size ? ` · ${selectedVariant.size}` : ""}`
+                            : "หมด"}
+                        </span>
+                      </div>
                     </button>
                     );
                   })}

@@ -8,6 +8,7 @@ import {
   calculateCashChange,
   validatePayments,
 } from "../packages/pos-client-core/src/payment.ts";
+import { selectPosCatalogCardVariant } from "../packages/pos-client-core/src/catalog.ts";
 
 test("desktop and native register flow requires a verified device, cashier PIN, and open shift", () => {
   let state = initialPosClientFlow(true);
@@ -42,4 +43,33 @@ test("shared payment validation balances split tender and computes cash change",
   assert.equal(result.canConfirm, true);
   assert.equal(result.paidTotal, 250);
   assert.equal(calculateCashChange(100, 120), 20);
+});
+
+test("catalog cards show stock for the same variant that clicking will sell", () => {
+  const item42 = selectPosCatalogCardVariant({
+    price: 149,
+    availableTotal: 99,
+    availableSizes: [
+      { size: "S", available: 25, price: 149 },
+      { size: "M", available: 32, price: 149 },
+      { size: "L", available: 17, price: 149 },
+      { size: "XL", available: 25, price: 149 },
+    ],
+  });
+  const item453 = selectPosCatalogCardVariant({
+    price: 3_831,
+    availableTotal: 99,
+    availableSizes: [
+      { size: "S", available: 2, price: 3_831 },
+      { size: "M", available: 13, price: 3_831 },
+      { size: "L", available: 48, price: 3_831 },
+      { size: "XL", available: 36, price: 3_831 },
+    ],
+  });
+
+  assert.equal(item42.variant?.size, "L");
+  assert.equal(item42.available, 17);
+  assert.equal(item453.variant?.size, "L");
+  assert.equal(item453.available, 48);
+  assert.notEqual(item42.available, 99, "the all-size total must not label the selected L variant");
 });
