@@ -729,7 +729,6 @@ export default function DesktopPosRenderer() {
             </button>
           ))}
         </nav>
-        <button className={styles.signOut} onClick={signOutCashier}>ออก</button>
       </aside>
 
       <section className={styles.workspace}>
@@ -752,14 +751,6 @@ export default function DesktopPosRenderer() {
                 <span className={styles.accountChevron} aria-hidden="true">⌄</span>
               </summary>
               <div className={styles.accountPopover}>
-                <button onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  openModule("shift");
-                }}>ข้อมูลกะ</button>
-                <button onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  openModule("settings");
-                }}>ตั้งค่าเครื่อง</button>
                 <button className={styles.accountSignOut} onClick={signOutCashier}>
                   ล็อก / เปลี่ยนพนักงาน
                 </button>

@@ -41,8 +41,7 @@
   margin-top: 20px;
 }
 
-.rail nav button,
-.signOut {
+.rail nav button {
   width: 100%;
   min-height: 57px !important;
   display: grid;
@@ -64,8 +63,6 @@
   background: #e6f4ff !important;
   box-shadow: inset 3px 0 #1677ff !important;
 }
-.signOut { margin-top: auto; font-size: 12px; }
-
 .workspace {
   min-width: 0;
   height: 100vh;

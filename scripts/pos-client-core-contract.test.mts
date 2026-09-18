@@ -87,8 +87,9 @@ test("desktop header keeps cashier identity without a permanent legacy-sales esc
     "the desktop renderer must have one obvious primary sales surface",
   );
   assert.match(desktopRenderer, /className=\{styles\.accountMenu\}/);
-  assert.match(desktopRenderer, />ข้อมูลกะ<\/button>/);
-  assert.match(desktopRenderer, />ตั้งค่าเครื่อง<\/button>/);
+  assert.doesNotMatch(desktopRenderer, />ข้อมูลกะ<\/button>/);
+  assert.doesNotMatch(desktopRenderer, />ตั้งค่าเครื่อง<\/button>/);
+  assert.doesNotMatch(desktopRenderer, /className=\{styles\.signOut\}/);
   assert.match(desktopRenderer, /ล็อก \/ เปลี่ยนพนักงาน/);
   assert.match(
     desktopRenderer,
