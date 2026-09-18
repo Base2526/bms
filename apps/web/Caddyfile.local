@@ -63,3 +63,18 @@ jachoei.com {
 
    reverse_proxy web:3000
 }
+
+# Android Emulator keeps the paired origin as http://localhost:3000. ADB maps
+# that device port to host port 3001, where this listener preserves the single
+# origin contract while routing WebSocket upgrades to the database-free gateway.
+# docker-compose.dev.yml publishes this port on host loopback only.
+:3001 {
+   @ws {
+     path /graphql
+     header Connection *Upgrade*
+     header Upgrade websocket
+   }
+   reverse_proxy @ws ws:8080
+
+   reverse_proxy web:3000
+}

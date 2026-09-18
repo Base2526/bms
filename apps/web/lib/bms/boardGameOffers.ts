@@ -310,11 +310,10 @@ export async function eligibleBoardGameOffersInTx(
   billingGroupId: string,
 ): Promise<{ offers: BoardGameOffer[]; timezone: string; productSkus: Set<string> }> {
   const group = await client.query<{ location_id: string; timezone: string | null }>(
-    `SELECT s.location_id, p.timezone
+    `SELECT s.location_id, store.timezone
        FROM bms_board_game_billing_groups g
        JOIN bms_board_game_sessions s ON s.tenant_id = g.tenant_id AND s.id = g.session_id
-       LEFT JOIN bms_board_game_public_locations p
-         ON p.tenant_id = s.tenant_id AND p.location_id = s.location_id
+       LEFT JOIN bms_store_profile store ON store.tenant_id = s.tenant_id
       WHERE g.tenant_id = $1 AND g.id = $2`,
     [tenantId, billingGroupId],
   );

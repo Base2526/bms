@@ -64,8 +64,10 @@ ESC/POS/cash-drawer support.
 
 ## Build and test on macOS
 
-The macOS build produces unsigned disk images for Intel and Apple Silicon. It shares the same
-Electron shell as Windows and Linux, but must be built and exercised on a Mac.
+The macOS build produces unsigned disk images for Intel and Apple Silicon. It supports macOS 12
+(Monterey) or newer and shares the same Electron shell as Windows and Linux, but must be built and
+exercised on a Mac. Keep the Electron major below 44 while Monterey remains supported: Electron 44
+and newer require macOS 13.
 
 ```bash
 cd apps/desktop

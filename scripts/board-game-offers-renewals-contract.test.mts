@@ -105,6 +105,19 @@ test("offer application competes with member pass and snapshots the winner", () 
   assert.match(calculation, /offerDiscountAmount/);
 });
 
+test("offer eligibility reads the shop timezone from the tenant profile", () => {
+  const service = read("apps/web/lib/bms/boardGameOffers.ts");
+  assert.match(
+    service,
+    /SELECT s\.location_id, store\.timezone[\s\S]*?LEFT JOIN bms_store_profile store ON store\.tenant_id = s\.tenant_id/,
+  );
+  assert.doesNotMatch(
+    service,
+    /bms_board_game_public_locations\s+p[\s\S]*?p\.timezone/,
+    "public discovery has no timezone column; billing must use bms_store_profile",
+  );
+});
+
 test("automatic renewal is one atomic entitlement, payment, and credit-ledger write", () => {
   const migration = read("db/migrations/10.4__bms_board_game_pass_renewals.sql");
   const service = read("apps/web/lib/bms/boardGamePassRenewals.ts");

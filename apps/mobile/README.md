@@ -101,6 +101,12 @@ The paired origin must route both `/api/graphql` to the web service and WebSocke
 `/graphql` to the WS service. Port `3000` alone reaches Next.js HTTP but not the compose WS service
 on `8081`; use the local Caddy HTTPS origin for full GraphQL + realtime testing.
 
+For the Android Emulator dev stack, `docker-compose.dev.yml` also exposes Caddy on host loopback
+port `3001`. Run `adb reverse tcp:3000 tcp:3001` and keep the paired server as
+`http://localhost:3000`; the device sees one loopback origin while Caddy routes HTTP and WebSocket
+traffic to the correct services. The host port is deliberately bound to `127.0.0.1` so the device
+bearer token is not accepted over cleartext from the LAN.
+
 When the local Caddy endpoint uses an `mkcert` certificate, install its root CA into each newly
 created or reset iOS Simulator before pairing:
 
