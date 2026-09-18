@@ -88,7 +88,7 @@ export default function Page() {
           <Paragraph type="secondary">
             {t("shopSignup.tagline")}
           </Paragraph>
-          <Form form={form} layout="vertical" autoComplete="off">
+          <Form form={form} layout="vertical" autoComplete="off" disabled={loading} aria-busy={loading}>
             <Form.Item label={t("shopSignup.shop_name")} name="shopName" rules={[{ required: true, message: t("shopSignup.shop_name_required") }]}>
               <Input placeholder={t("shopSignup.shop_name_placeholder")} size="large" />
             </Form.Item>
@@ -123,7 +123,9 @@ export default function Page() {
             <Form.Item label={t("shopSignup.password")} name="password" rules={[{ required: true, min: 6, message: t("shopSignup.password_min") }]}>
               <Input.Password placeholder={t("shopSignup.password_placeholder")} />
             </Form.Item>
-            <Button type="primary" size="large" block loading={loading} onClick={submit}>{t("shopSignup.submit")}</Button>
+            <Button type="primary" size="large" block loading={loading} onClick={submit}>
+              {loading ? t("shopSignup.submitting") : t("shopSignup.submit")}
+            </Button>
             {loading && <Paragraph type="secondary" role="status" style={{ marginTop: 12 }}>{t("shopSignup.sending_verification")}</Paragraph>}
             {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginTop: 12 }} />}
           </Form>

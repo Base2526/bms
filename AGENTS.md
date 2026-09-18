@@ -327,8 +327,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,441 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-17 — net **+14** for board-game reservation
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,445 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-18 — net **+4** for visible login and registration
+   submit progress; the preceding net **+14** for board-game reservation
    advance-time, request-expiry and deposit-policy controls plus payment-target labels; the preceding net **+50** against the same recursive
    count of `HEAD`: board-game one-group close and close-all, the seating move/merge controls, and the
    member-pass catalogue/sale/cancel screen in both languages;

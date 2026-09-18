@@ -65,8 +65,8 @@ interface CartContextValue {
   clear: () => void;
   replaceForExchange: (lines: PosCartLine[], member: PosMember | null) => void;
   /**
-   * ยิงสแกนทุกบรรทัดซ้ำก่อนรับเงิน · `changed: true` = ราคาขยับ ยอดถูกอัปเดตแล้ว
-   * และ **ห้ามรับเงินรอบนั้น** — ต้องให้คนตรวจยอดใหม่ก่อน
+   * ยิงสแกนทุกบรรทัดซ้ำก่อนรับเงิน · `changed: true` = ยอดที่ต้องจ่ายขยับและถูกอัปเดตแล้ว
+   * จึง **ห้ามรับเงินรอบนั้น** — metadata ของราคาที่เปลี่ยนแต่ยอดบิลเท่าเดิมอัปเดตเงียบ ๆ ได้
    */
   refreshPricing: () => Promise<{ changed: boolean; error: string | null }>;
   member: PosMember | null;
@@ -540,7 +540,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
    * ค้างอยู่บนจอ (หรือบิลพักที่ถูกเรียกกลับมาทีหลัง) จะทำให้ยอดที่จอโชว์ไม่ใช่ยอดที่ server
    * คิดตอน commit แล้วบิลถูกทิ้งทั้งใบด้วย PAYMENT_MISMATCH โดยแคชเชียร์ไม่รู้สาเหตุ
    *
-   * `changed: true` = อัปเดตยอดให้แล้ว **ห้ามรับเงินรอบนี้** ต้องให้คนตรวจยอดใหม่ก่อน
+   * `changed: true` = ยอดที่ต้องจ่ายเปลี่ยนและอัปเดตแล้ว **ห้ามรับเงินรอบนี้**
+   * ต้องให้คนตรวจยอดใหม่ก่อน ส่วน snapshot ที่เปลี่ยนแต่ยอดเท่าเดิมไม่ควรขวางการขาย
    */
   const refreshPricing = useCallback(async (): Promise<{
     changed: boolean;
@@ -551,13 +552,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const failure = results.find(result => result.error);
     if (failure) return { changed: false, error: failure.error };
     const refreshed = results.map(result => result.line);
-    const changed = refreshed.some(
+    const pricingChanged = refreshed.some(
       (line, index) =>
         cartLinePricingSignature(line) !==
         cartLinePricingSignature(lines[index]),
     );
-    if (changed) setLines(refreshed);
-    return { changed, error: null };
+    // Catalog card รุ่นเก่าหรือ state ที่ค้างจาก hot reload อาจไม่มี snapshot ครบ การเติม
+    // basePrice/priceTiers จึงทำให้ signature ต่างทั้งที่ยอดขายไม่เปลี่ยนแม้แต่สตางค์
+    // อัปเดต snapshot ไว้เสมอ แต่หยุดให้รับเงินใหม่เฉพาะเมื่อยอดที่ลูกค้าต้องจ่ายเปลี่ยนจริง
+    const amountChanged =
+      cartProductSubtotal(refreshed) !== cartProductSubtotal(lines);
+    if (pricingChanged) setLines(refreshed);
+    return { changed: amountChanged, error: null };
   }, [lines, rescanLine]);
 
   const resumeParkedBill = useCallback(

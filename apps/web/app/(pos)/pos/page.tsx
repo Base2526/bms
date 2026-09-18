@@ -1421,6 +1421,9 @@ export default function PosPage() {
   const [couponCode, setCouponCode] = useState("");
   // แบบหน้าขายวางคูปองเป็น action รอง ไม่ใช่ช่องกรอกที่กินพื้นที่ทุกบิล
   const [couponOpen, setCouponOpen] = useState(false);
+  // ลูกค้า/คูปอง/ส่วนลดเป็นข้อมูลเสริมของบิล ไม่ควรเบียดวิธีรับเงินที่ใช้ทุกบิล
+  // ค่าเริ่มต้นจึงยุบไว้ แต่แถวสรุปยังบอกลูกค้าที่เลือกและยอดลดปัจจุบันเสมอ
+  const [customerDiscountOpen, setCustomerDiscountOpen] = useState(false);
   // ---- ส่วนลดมือ ----
   // เก็บ "ที่ขอ" แยกจาก "ที่อนุมัติแล้ว" โดยตั้งใจ: พนักงานพิมพ์จำนวนได้ตลอด แต่ยอด
   // จะเข้าไปคิดในพรีวิว/บิลก็ต่อเมื่อหัวหน้ากด PIN ผ่านแล้วเท่านั้น ถ้าใช้ตัวแปรเดียว
@@ -8778,6 +8781,37 @@ export default function PosPage() {
                 <span>ยอดก่อนปัดเศษ ฿{baht(payableBeforeRounding)} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
               </div>
             )}
+            <section className={`pos-sale-customer-discount${customerDiscountOpen ? " is-open" : ""}`}>
+              <button
+                type="button"
+                className="pos-sale-customer-discount-toggle"
+                aria-expanded={customerDiscountOpen}
+                aria-controls="pos-sale-customer-discount-body"
+                onClick={() => setCustomerDiscountOpen((open) => !open)}
+              >
+                <span className="pos-sale-customer-discount-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="9" cy="8" r="3" />
+                    <path d="M3.5 18c.5-3 2.3-4.7 5.5-4.7s5 1.7 5.5 4.7" />
+                    <path d="M16.5 8.5h4M18.5 6.5v4" />
+                  </svg>
+                </span>
+                <span className="pos-sale-customer-discount-copy">
+                  <strong>ลูกค้าและส่วนลด</strong>
+                  <span>{member ? `${member.name}${member.memberNo ? ` · ${member.memberNo}` : ""}` : "ยังไม่เลือกลูกค้า"}</span>
+                </span>
+                <span className={`pos-sale-discount-chip${discountTotal > 0 ? " has-discount" : ""}`}>
+                  {discountTotal > 0 ? `ลด ฿${baht(discountTotal)}` : "ไม่มีส่วนลด"}
+                </span>
+                <span className="pos-sale-customer-discount-action">
+                  {customerDiscountOpen ? "ย่อ" : "ขยาย"}
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="m6.5 8 3.5 3.5L13.5 8" />
+                  </svg>
+                </span>
+              </button>
+              {customerDiscountOpen && (
+                <div id="pos-sale-customer-discount-body" className="pos-sale-customer-discount-body">
             <div className="pos-sale-discount-tools">
             {/* คูปอง — แยกจากแถบสมาชิกเพราะใช้ได้ทั้งลูกค้าทั่วไปและสมาชิก
                 กฎของโค้ดตรวจที่ server ทั้งหมด จอไม่คิด % เอง */}
@@ -9124,6 +9158,9 @@ export default function PosPage() {
                 </div>
               )}
             </div>
+                </div>
+              )}
+            </section>
             {session?.vat.registered && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
                 <span>ราคารวม VAT {session.vat.rate}% แล้ว</span>
@@ -9366,7 +9403,7 @@ export default function PosPage() {
                   placeholder="0"
                 />
               </div>
-              <div className="pos-quick" style={{ marginTop: 8 }}>
+              <div className="pos-quick">
                 <button
                   onClick={() => updatePayment(payments[0].id, { tendered: String(amountDue), amount: String(amountDue) })}
                   disabled={amountDue <= 0}

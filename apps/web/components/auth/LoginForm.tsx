@@ -13,6 +13,7 @@ type Props = {
   passwordPlaceholder: string;
   passwordRequired: string;
   submitLabel: string;
+  submittingLabel: string;
   registerLabel: string;
   forgotLabel: string;
   loading?: boolean;
@@ -27,6 +28,7 @@ function LoginFormInner({
   passwordPlaceholder,
   passwordRequired,
   submitLabel,
+  submittingLabel,
   registerLabel,
   forgotLabel,
   loading,
@@ -44,7 +46,7 @@ function LoginFormInner({
   );
 
   return (
-    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={initialValues}>
+    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={initialValues} disabled={loading} aria-busy={loading}>
       <Form.Item label={usernameOrEmailLabel} name="identifier" rules={[{ required: true, message: usernameOrEmailRequired }]}>
         <Input placeholder={usernameOrEmailPlaceholder} autoComplete="username" />
       </Form.Item>
@@ -55,7 +57,7 @@ function LoginFormInner({
 
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <Button type="primary" htmlType="submit" loading={loading} block size="large">
-          {submitLabel}
+          {loading ? submittingLabel : submitLabel}
         </Button>
 
         <Space style={{ width: "100%", justifyContent: "space-between" }}>

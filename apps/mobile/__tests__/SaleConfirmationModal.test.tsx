@@ -26,7 +26,21 @@ describe('SaleConfirmationModal', () => {
               subtotal={160}
               discountTotal={20}
               total={140}
-              itemCount={4}
+              items={[
+                {
+                  key: 'tea-m',
+                  name: 'ชาไทย',
+                  variantLabel: 'ขนาด M · หวานน้อย',
+                  qty: 2,
+                  unitPrice: 50,
+                },
+                {
+                  key: 'cake',
+                  name: 'เค้กมะพร้าว',
+                  qty: 2,
+                  unitPrice: 30,
+                },
+              ]}
               payments={[
                 { id: 'cash', method: 'cash', amount: 140, tendered: 150 },
               ]}
@@ -46,7 +60,11 @@ describe('SaleConfirmationModal', () => {
     expect(text).toContain('฿140.00');
     expect(text).toContain('−฿20.00');
     expect(text).toContain('เงินสด');
-    expect(text).toContain('4 รายการ');
+    expect(text).toContain('ชาไทย');
+    expect(text).toContain('ขนาด M · หวานน้อย');
+    expect(text).toContain('เค้กมะพร้าว');
+    expect(text).toContain('2 รายการ · รวม 4 หน่วย');
+    expect(text).toContain('2 × ฿50.00');
     expect(text).toContain('หากต้องแก้ไขต้องทำรายการคืน');
 
     const buttons = renderer!.root.findAllByType(Button);

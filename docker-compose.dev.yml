@@ -78,6 +78,12 @@ services:
       REALTIME_RETENTION_SECONDS: ${REALTIME_RETENTION_SECONDS:-604800}
       REALTIME_FAILED_RETENTION_SECONDS: ${REALTIME_FAILED_RETENTION_SECONDS:-2592000}
       WS_TICKET_TTL_SECONDS: ${WS_TICKET_TTL_SECONDS:-60}
+      # Keep the explicit DB limits here as well as in the base compose file: this
+      # overlay is also inspected on its own by deployment/configuration checks.
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-}
+      POSTGRES_POOL_IDLE_TIMEOUT_MS: ${POSTGRES_POOL_IDLE_TIMEOUT_MS:-}
+      POSTGRES_POOL_CONNECT_TIMEOUT_MS: ${POSTGRES_POOL_CONNECT_TIMEOUT_MS:-}
+      POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-60000}
       # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
       MAIL_PROVIDER: ${MAIL_PROVIDER}
       GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}

@@ -225,7 +225,11 @@ export function BoardGameOpenScreen({ navigation, route }: OpenProps) {
   return (
     <BoardGameWorkspace
       navigation={navigation}
-      view={{ kind: 'open', tableId: route.params.tableId, queueEntryId: route.params.queueEntryId }}
+      view={{
+        kind: 'open',
+        tableId: route.params.tableId,
+        queueEntryId: route.params.queueEntryId,
+      }}
     />
   );
 }
@@ -272,13 +276,16 @@ function BoardGameFloor({
   const [reservationPartySize, setReservationPartySize] = useState('2');
   const [reservationGuestName, setReservationGuestName] = useState('');
   const [reservationGuestPhone, setReservationGuestPhone] = useState('');
-  const [reservationTime, setReservationTime] = useState('');
+  const [reservationStartDate, setReservationStartDate] = useState('');
+  const [reservationStartTime, setReservationStartTime] = useState('');
   const [reservationDuration, setReservationDuration] = useState('120');
   const [reservationTableId, setReservationTableId] = useState('');
   const [reservationEditingId, setReservationEditingId] = useState('');
   const [reservationSearch, setReservationSearch] = useState('');
   const [reservationDate, setReservationDate] = useState('');
-  const [reviewTableByEntry, setReviewTableByEntry] = useState<Record<string, string>>({});
+  const [reviewTableByEntry, setReviewTableByEntry] = useState<
+    Record<string, string>
+  >({});
   const [workingQueueId, setWorkingQueueId] = useState('');
   const callOperationKeys = useRef<Record<string, string>>({});
   const [acknowledgeCall] = useMutation(
@@ -287,13 +294,27 @@ function BoardGameFloor({
   const [completeCall] = useMutation(
     MobilePosCompleteBoardGameServiceCallDocument,
   );
-  const [addWaitlistEntry] = useMutation(MobilePosAddBoardGameWaitlistEntryDocument);
-  const [callWaitlistEntry] = useMutation(MobilePosCallBoardGameWaitlistEntryDocument);
-  const [closeWaitlistEntry] = useMutation(MobilePosCloseBoardGameWaitlistEntryDocument);
-  const [addReservation] = useMutation(MobilePosAddBoardGameReservationDocument);
-  const [checkInReservation] = useMutation(MobilePosCheckInBoardGameReservationDocument);
-  const [updateReservation] = useMutation(MobilePosUpdateBoardGameReservationDocument);
-  const [reviewReservation] = useMutation(MobilePosReviewBoardGameReservationDocument);
+  const [addWaitlistEntry] = useMutation(
+    MobilePosAddBoardGameWaitlistEntryDocument,
+  );
+  const [callWaitlistEntry] = useMutation(
+    MobilePosCallBoardGameWaitlistEntryDocument,
+  );
+  const [closeWaitlistEntry] = useMutation(
+    MobilePosCloseBoardGameWaitlistEntryDocument,
+  );
+  const [addReservation] = useMutation(
+    MobilePosAddBoardGameReservationDocument,
+  );
+  const [checkInReservation] = useMutation(
+    MobilePosCheckInBoardGameReservationDocument,
+  );
+  const [updateReservation] = useMutation(
+    MobilePosUpdateBoardGameReservationDocument,
+  );
+  const [reviewReservation] = useMutation(
+    MobilePosReviewBoardGameReservationDocument,
+  );
   const { width, height } = useWindowDimensions();
   const isTablet = supportsTabletLayout(width, height, 760);
   const [selectedAreaId, setSelectedAreaId] = useState<string>('all');
@@ -330,19 +351,30 @@ function BoardGameFloor({
     entry => entry.status === 'WAITING' || entry.status === 'CALLED',
   );
   const allReservations = (data?.waitlist.entries ?? []).filter(
-    entry => entry.kind === 'RESERVATION'
-      && (entry.status === 'REQUESTED' || entry.status === 'CONFIRMED'),
+    entry =>
+      entry.kind === 'RESERVATION' &&
+      (entry.status === 'REQUESTED' || entry.status === 'CONFIRMED'),
   );
   const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
   const reservations = allReservations.filter(entry => {
-    const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
-    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.guestEmail ?? ''} ${entry.reservedTableCode ?? ''}`
-      .toLocaleLowerCase('th-TH');
-    return matchesDate && (!reservationNeedle || haystack.includes(reservationNeedle));
+    const matchesDate =
+      !reservationDate || entry.serviceDate === reservationDate;
+    const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${
+      entry.guestEmail ?? ''
+    } ${entry.reservedTableCode ?? ''}`.toLocaleLowerCase('th-TH');
+    return (
+      matchesDate &&
+      (!reservationNeedle || haystack.includes(reservationNeedle))
+    );
   });
   const resetReservationForm = () => {
-    setReservationEditingId(''); setReservationPartySize('2'); setReservationGuestName('');
-    setReservationGuestPhone(''); setReservationTime(''); setReservationDuration('120');
+    setReservationEditingId('');
+    setReservationPartySize('2');
+    setReservationGuestName('');
+    setReservationGuestPhone('');
+    setReservationStartDate('');
+    setReservationStartTime('');
+    setReservationDuration('120');
     setReservationTableId('');
   };
   const runQueueAction = async (
@@ -359,8 +391,12 @@ function BoardGameFloor({
       await onRetry();
       return true;
     } catch (cause) {
-      if (isDecidedRejection(cause)) delete callOperationKeys.current[operationName];
-      Alert.alert('อัปเดตคิวไม่สำเร็จ', cause instanceof Error ? cause.message : 'กรุณาลองใหม่');
+      if (isDecidedRejection(cause))
+        delete callOperationKeys.current[operationName];
+      Alert.alert(
+        'อัปเดตคิวไม่สำเร็จ',
+        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+      );
       return false;
     } finally {
       setWorkingQueueId('');
@@ -713,172 +749,706 @@ function BoardGameFloor({
         </Card>
       ) : null}
       {data ? (
-        <Card style={{ gap: spacing.sm }}>
-          <Text style={[typography.subtitle, { color: colors.text }]}>การจองล่วงหน้า</Text>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>ยืนยันอยู่ {data.waitlist.confirmedReservationCount} รายการ · รอพิจารณา {data.waitlist.requestedReservationCount} รายการ</Text>
-          <View style={styles.wrap}>
-            <TextInput accessibilityLabel="ค้นหารายการจอง" value={reservationSearch}
-              onChangeText={setReservationSearch} placeholder="ชื่อ เบอร์โทร หรือโต๊ะ"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 170, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
-            <TextInput accessibilityLabel="กรองวันที่จอง" value={reservationDate}
-              onChangeText={setReservationDate} placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 125, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
-            <TextInput accessibilityLabel="วันเวลาจอง" value={reservationTime}
-              onChangeText={setReservationTime} placeholder="2026-09-20T18:00"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 175, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
-            <TextInput accessibilityLabel="ระยะเวลาจอง" keyboardType="number-pad"
-              value={reservationDuration} onChangeText={setReservationDuration} placeholder="นาที"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 88, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
-            <TextInput accessibilityLabel="จำนวนคนที่จอง" keyboardType="number-pad"
-              value={reservationPartySize} onChangeText={setReservationPartySize} placeholder="จำนวนคน"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 96, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
-            <TextInput accessibilityLabel="ชื่อลูกค้าที่จอง" value={reservationGuestName}
-              onChangeText={setReservationGuestName} placeholder="ชื่อลูกค้า"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 135, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
-            <TextInput accessibilityLabel="เบอร์โทรลูกค้าที่จอง" value={reservationGuestPhone}
-              onChangeText={setReservationGuestPhone} placeholder="เบอร์โทร"
-              placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 135, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]} />
+        <Card style={styles.reservationCard}>
+          <View style={styles.between}>
+            <View style={styles.flex}>
+              <Text style={[typography.subtitle, { color: colors.text }]}>
+                การจองล่วงหน้า
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                ยืนยันอยู่ {data.waitlist.confirmedReservationCount} รายการ ·
+                รอพิจารณา {data.waitlist.requestedReservationCount} รายการ
+              </Text>
+            </View>
+            {reservationEditingId ? (
+              <View
+                style={[
+                  styles.reservationEditBadge,
+                  { backgroundColor: primaryTintStrong },
+                ]}
+              >
+                <Text
+                  style={[typography.captionStrong, { color: colors.primary }]}
+                >
+                  กำลังแก้ไข
+                </Text>
+              </View>
+            ) : null}
           </View>
-          <Text style={[typography.captionStrong, { color: colors.text }]}>เลือกโต๊ะ</Text>
-          <View style={styles.wrap}>
-            {tables.filter(table => !table.blocked).map(table => (
-              <Button key={table.id} label={`${table.code} (${table.seats})`}
-                variant={reservationTableId === table.id ? 'primary' : 'secondary'}
-                onPress={() => setReservationTableId(table.id)} />
-            ))}
+
+          <View style={styles.reservationForm}>
+            <View style={styles.reservationFieldRow}>
+              <View style={styles.reservationField}>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  ชื่อลูกค้า
+                </Text>
+                <TextInput
+                  accessibilityLabel="ชื่อลูกค้าที่จอง"
+                  value={reservationGuestName}
+                  onChangeText={setReservationGuestName}
+                  placeholder="ชื่อผู้จอง"
+                  placeholderTextColor={colors.textSoft}
+                  style={[
+                    styles.input,
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                />
+              </View>
+              <View style={styles.reservationField}>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  เบอร์โทร
+                </Text>
+                <TextInput
+                  accessibilityLabel="เบอร์โทรลูกค้าที่จอง"
+                  keyboardType="phone-pad"
+                  value={reservationGuestPhone}
+                  onChangeText={setReservationGuestPhone}
+                  placeholder="เบอร์โทร"
+                  placeholderTextColor={colors.textSoft}
+                  style={[
+                    styles.input,
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.reservationFieldRow}>
+              <View style={styles.reservationField}>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  วันที่
+                </Text>
+                <TextInput
+                  accessibilityLabel="วันที่จอง"
+                  value={reservationStartDate}
+                  onChangeText={setReservationStartDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textSoft}
+                  style={[
+                    styles.input,
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                />
+              </View>
+              <View style={styles.reservationTimeField}>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  เวลา
+                </Text>
+                <TextInput
+                  accessibilityLabel="เวลาจอง"
+                  value={reservationStartTime}
+                  onChangeText={setReservationStartTime}
+                  placeholder="18:00"
+                  placeholderTextColor={colors.textSoft}
+                  style={[
+                    styles.input,
+                    {
+                      borderColor: colors.border,
+                      color: colors.text,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.reservationOptionsRow}>
+              <View style={styles.reservationDurationBlock}>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  ระยะเวลา (นาที)
+                </Text>
+                <View style={styles.reservationDurationRow}>
+                  {DURATION_PRESETS.map(minutes => {
+                    const selected = reservationDuration === String(minutes);
+                    return (
+                      <Pressable
+                        key={minutes}
+                        accessibilityRole="button"
+                        accessibilityLabel={`ระยะเวลา ${durationLabel(
+                          minutes,
+                        )}`}
+                        accessibilityState={{ selected }}
+                        onPress={() => setReservationDuration(String(minutes))}
+                        style={({ pressed }) => [
+                          styles.reservationDurationChip,
+                          {
+                            backgroundColor: selected
+                              ? colors.primary
+                              : colors.surface2,
+                            borderColor: selected
+                              ? colors.primary
+                              : colors.border,
+                            opacity: pressed ? 0.82 : 1,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            typography.captionStrong,
+                            {
+                              color: selected
+                                ? colors.primaryText
+                                : colors.text,
+                            },
+                          ]}
+                        >
+                          {minutes}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                  {!DURATION_PRESETS.some(
+                    minutes => reservationDuration === String(minutes),
+                  ) ? (
+                    <TextInput
+                      accessibilityLabel="ระยะเวลาจองเป็นนาที"
+                      keyboardType="number-pad"
+                      value={reservationDuration}
+                      onChangeText={setReservationDuration}
+                      placeholder="นาที"
+                      placeholderTextColor={colors.textSoft}
+                      style={[
+                        styles.reservationDurationInput,
+                        {
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.surface,
+                        },
+                      ]}
+                    />
+                  ) : null}
+                </View>
+              </View>
+              <View style={styles.reservationPartyBlock}>
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  จำนวนคน
+                </Text>
+                <View
+                  style={[
+                    styles.reservationStepper,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface2,
+                    },
+                  ]}
+                >
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="ลดจำนวนคน"
+                    onPress={() =>
+                      setReservationPartySize(
+                        String(
+                          Math.max(1, (Number(reservationPartySize) || 1) - 1),
+                        ),
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.reservationStepperButton,
+                      { opacity: pressed ? 0.55 : 1 },
+                    ]}
+                  >
+                    <Text style={[typography.subtitle, { color: colors.text }]}>
+                      −
+                    </Text>
+                  </Pressable>
+                  <TextInput
+                    accessibilityLabel="จำนวนคนที่จอง"
+                    keyboardType="number-pad"
+                    value={reservationPartySize}
+                    onChangeText={setReservationPartySize}
+                    style={[
+                      styles.reservationPartyInput,
+                      typography.bodyStrong,
+                      { color: colors.text },
+                    ]}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="เพิ่มจำนวนคน"
+                    onPress={() =>
+                      setReservationPartySize(
+                        String(
+                          Math.min(
+                            500,
+                            (Number(reservationPartySize) || 0) + 1,
+                          ),
+                        ),
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.reservationStepperButton,
+                      { opacity: pressed ? 0.55 : 1 },
+                    ]}
+                  >
+                    <Text style={[typography.subtitle, { color: colors.text }]}>
+                      +
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
           </View>
-          <Button label={reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
-            loading={workingQueueId === 'reservation-add' || workingQueueId === 'reservation-update'}
+
+          <Text style={[typography.captionStrong, { color: colors.text }]}>
+            เลือกโต๊ะ
+          </Text>
+          <View style={styles.reservationTableGrid}>
+            {tables
+              .filter(table => !table.blocked)
+              .map(table => {
+                const selected = reservationTableId === table.id;
+                const partySize = Number(reservationPartySize);
+                const disabled =
+                  Number.isInteger(partySize) && partySize > table.seats;
+                return (
+                  <Pressable
+                    key={table.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${tableTitle(table)} รองรับ ${
+                      table.seats
+                    } คน`}
+                    accessibilityState={{ selected, disabled }}
+                    disabled={disabled}
+                    onPress={() => setReservationTableId(table.id)}
+                    style={({ pressed }) => [
+                      styles.reservationTableTile,
+                      isTablet && styles.reservationTableTileTablet,
+                      {
+                        backgroundColor: selected
+                          ? primaryTintStrong
+                          : colors.surface2,
+                        borderColor: selected ? colors.primary : colors.border,
+                        opacity: disabled ? 0.42 : pressed ? 0.82 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        typography.bodyStrong,
+                        { color: selected ? colors.primary : colors.text },
+                      ]}
+                    >
+                      {tableTitle(table)}
+                    </Text>
+                    <Text
+                      style={[typography.caption, { color: colors.textMuted }]}
+                    >
+                      {table.seats} ที่นั่ง
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </View>
+          <Button
+            label={reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
+            fullWidth
+            loading={
+              workingQueueId === 'reservation-add' ||
+              workingQueueId === 'reservation-update'
+            }
             onPress={() => {
               const partySize = Number(reservationPartySize);
               const durationMinutes = Number(reservationDuration);
-              const instant = new Date(reservationTime);
-              if (!reservationTableId || !reservationGuestName.trim() || !reservationGuestPhone.trim()
-                || !Number.isInteger(partySize) || partySize < 1
-                || !Number.isInteger(durationMinutes) || durationMinutes < 30
-                || !Number.isFinite(instant.getTime())) {
-                Alert.alert('ข้อมูลจองไม่ครบ', 'ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาที'); return;
+              const instant = new Date(
+                `${reservationStartDate}T${reservationStartTime}`,
+              );
+              const selectedTable = tables.find(
+                table => table.id === reservationTableId,
+              );
+              if (
+                !reservationTableId ||
+                !reservationGuestName.trim() ||
+                !reservationGuestPhone.trim() ||
+                !Number.isInteger(partySize) ||
+                partySize < 1 ||
+                partySize > 500 ||
+                !Number.isInteger(durationMinutes) ||
+                durationMinutes < 30 ||
+                !Number.isFinite(instant.getTime()) ||
+                !selectedTable ||
+                selectedTable.blocked ||
+                selectedTable.seats < partySize
+              ) {
+                Alert.alert(
+                  'ข้อมูลจองไม่ครบ',
+                  'ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาที',
+                );
+                return;
               }
               const updating = Boolean(reservationEditingId);
               const reservationInput = {
-                ...credentials!, tableId: reservationTableId,
-                reservedFor: instant.toISOString(), durationMinutes, partySize,
-                guestName: reservationGuestName.trim(), guestPhone: reservationGuestPhone.trim(), note: null,
+                ...credentials!,
+                tableId: reservationTableId,
+                reservedFor: instant.toISOString(),
+                durationMinutes,
+                partySize,
+                guestName: reservationGuestName.trim(),
+                guestPhone: reservationGuestPhone.trim(),
+                note: null,
               };
-              runQueueAction(updating ? 'reservation-update' : 'reservation-add', idempotencyKey => {
-                if (updating) {
-                  return updateReservation({ variables: { input: {
-                    ...reservationInput, idempotencyKey, entryId: reservationEditingId,
-                  } } });
-                }
-                return addReservation({ variables: { input: { ...reservationInput, idempotencyKey } } });
-              }).then(success => {
-                if (success) {
-                  resetReservationForm();
-                }
-              }).catch(() => undefined);
-            }} />
+              runQueueAction(
+                updating ? 'reservation-update' : 'reservation-add',
+                idempotencyKey => {
+                  if (updating) {
+                    return updateReservation({
+                      variables: {
+                        input: {
+                          ...reservationInput,
+                          idempotencyKey,
+                          entryId: reservationEditingId,
+                        },
+                      },
+                    });
+                  }
+                  return addReservation({
+                    variables: {
+                      input: { ...reservationInput, idempotencyKey },
+                    },
+                  });
+                },
+              )
+                .then(success => {
+                  if (success) {
+                    resetReservationForm();
+                  }
+                })
+                .catch(() => undefined);
+            }}
+          />
           {reservationEditingId ? (
-            <Button label="เลิกแก้ไข" variant="secondary" onPress={resetReservationForm} />
+            <Button
+              label="เลิกแก้ไข"
+              variant="ghost"
+              fullWidth
+              onPress={resetReservationForm}
+            />
           ) : null}
+
+          <View
+            style={[
+              styles.reservationListHeader,
+              { borderTopColor: colors.border },
+            ]}
+          >
+            <Text style={[typography.captionStrong, { color: colors.text }]}>
+              รายการจอง
+            </Text>
+            <View style={styles.reservationFilterRow}>
+              <TextInput
+                accessibilityLabel="ค้นหารายการจอง"
+                value={reservationSearch}
+                onChangeText={setReservationSearch}
+                placeholder="ค้นหาชื่อ เบอร์ หรือโต๊ะ"
+                placeholderTextColor={colors.textSoft}
+                style={[
+                  styles.input,
+                  styles.reservationSearchInput,
+                  {
+                    borderColor: colors.border,
+                    color: colors.text,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              />
+              <TextInput
+                accessibilityLabel="กรองวันที่จอง"
+                value={reservationDate}
+                onChangeText={setReservationDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textSoft}
+                style={[
+                  styles.input,
+                  styles.reservationDateInput,
+                  {
+                    borderColor: colors.border,
+                    color: colors.text,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              />
+            </View>
+          </View>
           {allReservations.length > 0 && reservations.length === 0 ? (
-            <Text style={[typography.caption, { color: colors.textMuted }]}>ไม่พบรายการที่ตรงกับตัวกรอง</Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              ไม่พบรายการที่ตรงกับตัวกรอง
+            </Text>
           ) : null}
           {reservations.map(entry => {
             const reviewTableId = reviewTableByEntry[entry.id] ?? '';
-            const table = tables.find(item => item.id === entry.reservedTableId);
-            const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
+            const table = tables.find(
+              item => item.id === entry.reservedTableId,
+            );
+            const reservedAt = entry.reservedFor
+              ? Date.parse(entry.reservedFor)
+              : Number.NaN;
             const currentTime = Date.now();
-            const canArrive = Number.isFinite(reservedAt)
-              && currentTime >= reservedAt - 2 * 60 * 60_000
-              && currentTime <= reservedAt + 6 * 60 * 60_000;
-            const depositReady = entry.depositStatus === 'NOT_REQUIRED' || entry.depositStatus === 'PAID';
-            const canMarkNoShow = Number.isFinite(reservedAt) && currentTime >= reservedAt;
+            const canArrive =
+              Number.isFinite(reservedAt) &&
+              currentTime >= reservedAt - 2 * 60 * 60_000 &&
+              currentTime <= reservedAt + 6 * 60 * 60_000;
+            const depositReady =
+              entry.depositStatus === 'NOT_REQUIRED' ||
+              entry.depositStatus === 'PAID';
+            const canMarkNoShow =
+              Number.isFinite(reservedAt) && currentTime >= reservedAt;
             return (
               <View key={entry.id} style={{ gap: spacing.xs }}>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  {entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}{entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · {entry.reservedTableCode || 'รอจัดโต๊ะ'}
+                  {entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}
+                  {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน ·{' '}
+                  {entry.reservedTableCode || 'รอจัดโต๊ะ'}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  {entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'} · {entry.reservedDurationMinutes ?? 0} นาที{entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
+                  {entry.reservedFor
+                    ? new Date(entry.reservedFor).toLocaleString('th-TH')
+                    : '-'}{' '}
+                  · {entry.reservedDurationMinutes ?? 0} นาที
+                  {entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
                 </Text>
-                {entry.depositAmount > 0 ? <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  มัดจำ ฿{Number(entry.depositAmount).toFixed(2)} · {entry.depositStatus} · แจ้งผล {entry.decisionNotificationStatus}
-                </Text> : null}
-                {entry.status === 'REQUESTED' ? <>
+                {entry.depositAmount > 0 ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    มัดจำ ฿{Number(entry.depositAmount).toFixed(2)} ·{' '}
+                    {entry.depositStatus} · แจ้งผล{' '}
+                    {entry.decisionNotificationStatus}
+                  </Text>
+                ) : null}
+                {entry.status === 'REQUESTED' ? (
+                  <>
+                    <View style={styles.wrap}>
+                      {tables
+                        .filter(
+                          item =>
+                            !item.blocked && item.seats >= entry.partySize,
+                        )
+                        .map(item => (
+                          <Button
+                            key={item.id}
+                            label={`${item.code} (${item.seats})`}
+                            variant={
+                              reviewTableId === item.id
+                                ? 'primary'
+                                : 'secondary'
+                            }
+                            onPress={() =>
+                              setReviewTableByEntry(current => ({
+                                ...current,
+                                [entry.id]: item.id,
+                              }))
+                            }
+                          />
+                        ))}
+                    </View>
+                    <View style={styles.wrap}>
+                      <Button
+                        label="ยืนยันคำขอ"
+                        disabled={!reviewTableId}
+                        loading={
+                          workingQueueId === `reservation-confirm-${entry.id}`
+                        }
+                        onPress={() =>
+                          runQueueAction(
+                            `reservation-confirm-${entry.id}`,
+                            idempotencyKey =>
+                              reviewReservation({
+                                variables: {
+                                  input: {
+                                    ...credentials!,
+                                    idempotencyKey,
+                                    entryId: entry.id,
+                                    decision: 'CONFIRM',
+                                    tableId: reviewTableId,
+                                    reason: null,
+                                  },
+                                },
+                              }),
+                          )
+                            .then(success => {
+                              if (success)
+                                setReviewTableByEntry(current => ({
+                                  ...current,
+                                  [entry.id]: '',
+                                }));
+                            })
+                            .catch(() => undefined)
+                        }
+                      />
+                      <Button
+                        label="ปฏิเสธ"
+                        variant="ghost"
+                        loading={
+                          workingQueueId === `reservation-reject-${entry.id}`
+                        }
+                        onPress={() =>
+                          runQueueAction(
+                            `reservation-reject-${entry.id}`,
+                            idempotencyKey =>
+                              reviewReservation({
+                                variables: {
+                                  input: {
+                                    ...credentials!,
+                                    idempotencyKey,
+                                    entryId: entry.id,
+                                    decision: 'REJECT',
+                                    tableId: null,
+                                    reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
+                                  },
+                                },
+                              }),
+                          ).catch(() => undefined)
+                        }
+                      />
+                    </View>
+                  </>
+                ) : (
                   <View style={styles.wrap}>
-                    {tables.filter(item => !item.blocked && item.seats >= entry.partySize).map(item => (
-                      <Button key={item.id} label={`${item.code} (${item.seats})`}
-                        variant={reviewTableId === item.id ? 'primary' : 'secondary'}
-                        onPress={() => setReviewTableByEntry(current => ({
-                          ...current, [entry.id]: item.id,
-                        }))} />
-                    ))}
+                    <Button
+                      label="แก้ไข/เลื่อน"
+                      variant="secondary"
+                      onPress={() => {
+                        setReservationEditingId(entry.id);
+                        setReservationPartySize(String(entry.partySize));
+                        setReservationGuestName(entry.guestName ?? '');
+                        setReservationGuestPhone(entry.guestPhone ?? '');
+                        const localStart = localDateTimeInput(
+                          entry.reservedFor,
+                        );
+                        setReservationStartDate(localStart.slice(0, 10));
+                        setReservationStartTime(localStart.slice(11, 16));
+                        setReservationDuration(
+                          String(entry.reservedDurationMinutes ?? 120),
+                        );
+                        setReservationTableId(entry.reservedTableId ?? '');
+                      }}
+                    />
+                    <Button
+                      label="เช็กอิน"
+                      variant="secondary"
+                      disabled={!canArrive || !depositReady}
+                      loading={
+                        workingQueueId === `reservation-checkin-${entry.id}`
+                      }
+                      onPress={() =>
+                        runQueueAction(
+                          `reservation-checkin-${entry.id}`,
+                          idempotencyKey =>
+                            checkInReservation({
+                              variables: {
+                                input: {
+                                  ...credentials!,
+                                  idempotencyKey,
+                                  entryId: entry.id,
+                                },
+                              },
+                            }),
+                        ).catch(() => undefined)
+                      }
+                    />
+                    {canArrive &&
+                    table &&
+                    !table.blocked &&
+                    !table.openSession &&
+                    table.seats >= entry.partySize ? (
+                      <Button
+                        label="นั่งโต๊ะ"
+                        onPress={() => onOpen(table, entry.id)}
+                      />
+                    ) : null}
+                    <Button
+                      label="ยกเลิก"
+                      variant="ghost"
+                      loading={
+                        workingQueueId === `reservation-cancel-${entry.id}`
+                      }
+                      onPress={() =>
+                        runQueueAction(
+                          `reservation-cancel-${entry.id}`,
+                          idempotencyKey =>
+                            closeWaitlistEntry({
+                              variables: {
+                                input: {
+                                  ...credentials!,
+                                  idempotencyKey,
+                                  entryId: entry.id,
+                                  status: 'CANCELLED',
+                                  reason: null,
+                                },
+                              },
+                            }),
+                        ).catch(() => undefined)
+                      }
+                    />
+                    {canMarkNoShow ? (
+                      <Button
+                        label="ไม่มา"
+                        variant="ghost"
+                        loading={
+                          workingQueueId === `reservation-noshow-${entry.id}`
+                        }
+                        onPress={() =>
+                          runQueueAction(
+                            `reservation-noshow-${entry.id}`,
+                            idempotencyKey =>
+                              closeWaitlistEntry({
+                                variables: {
+                                  input: {
+                                    ...credentials!,
+                                    idempotencyKey,
+                                    entryId: entry.id,
+                                    status: 'NO_SHOW',
+                                    reason: null,
+                                  },
+                                },
+                              }),
+                          ).catch(() => undefined)
+                        }
+                      />
+                    ) : null}
                   </View>
-                  <View style={styles.wrap}>
-                    <Button label="ยืนยันคำขอ" disabled={!reviewTableId}
-                      loading={workingQueueId === `reservation-confirm-${entry.id}`}
-                      onPress={() => runQueueAction(`reservation-confirm-${entry.id}`, idempotencyKey =>
-                        reviewReservation({ variables: { input: {
-                          ...credentials!, idempotencyKey, entryId: entry.id,
-                          decision: 'CONFIRM', tableId: reviewTableId, reason: null,
-                        } } })
-                      ).then(success => {
-                        if (success) setReviewTableByEntry(current => ({ ...current, [entry.id]: '' }));
-                      }).catch(() => undefined)} />
-                    <Button label="ปฏิเสธ" variant="ghost"
-                      loading={workingQueueId === `reservation-reject-${entry.id}`}
-                      onPress={() => runQueueAction(`reservation-reject-${entry.id}`, idempotencyKey =>
-                        reviewReservation({ variables: { input: {
-                          ...credentials!, idempotencyKey, entryId: entry.id,
-                          decision: 'REJECT', tableId: null, reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
-                        } } })
-                      ).catch(() => undefined)} />
-                  </View>
-                </> : (
-                <View style={styles.wrap}>
-                  <Button label="แก้ไข/เลื่อน" variant="secondary" onPress={() => {
-                    setReservationEditingId(entry.id);
-                    setReservationPartySize(String(entry.partySize));
-                    setReservationGuestName(entry.guestName ?? '');
-                    setReservationGuestPhone(entry.guestPhone ?? '');
-                    setReservationTime(localDateTimeInput(entry.reservedFor));
-                    setReservationDuration(String(entry.reservedDurationMinutes ?? 120));
-                    setReservationTableId(entry.reservedTableId ?? '');
-                  }} />
-                  <Button label="เช็กอิน" variant="secondary"
-                    disabled={!canArrive || !depositReady}
-                    loading={workingQueueId === `reservation-checkin-${entry.id}`}
-                    onPress={() => runQueueAction(`reservation-checkin-${entry.id}`, idempotencyKey =>
-                      checkInReservation({ variables: { input: { ...credentials!, idempotencyKey, entryId: entry.id } } })
-                    ).catch(() => undefined)} />
-                  {canArrive && table && !table.blocked && !table.openSession && table.seats >= entry.partySize ? (
-                    <Button label="นั่งโต๊ะ" onPress={() => onOpen(table, entry.id)} />
-                  ) : null}
-                  <Button label="ยกเลิก" variant="ghost"
-                    loading={workingQueueId === `reservation-cancel-${entry.id}`}
-                    onPress={() => runQueueAction(`reservation-cancel-${entry.id}`, idempotencyKey =>
-                      closeWaitlistEntry({ variables: { input: {
-                        ...credentials!, idempotencyKey, entryId: entry.id, status: 'CANCELLED', reason: null,
-                      } } })
-                    ).catch(() => undefined)} />
-                  {canMarkNoShow ? (
-                    <Button label="ไม่มา" variant="ghost"
-                      loading={workingQueueId === `reservation-noshow-${entry.id}`}
-                      onPress={() => runQueueAction(`reservation-noshow-${entry.id}`, idempotencyKey =>
-                        closeWaitlistEntry({ variables: { input: {
-                          ...credentials!, idempotencyKey, entryId: entry.id, status: 'NO_SHOW', reason: null,
-                        } } })
-                      ).catch(() => undefined)} />
-                  ) : null}
-                </View>
                 )}
               </View>
             );
@@ -889,9 +1459,13 @@ function BoardGameFloor({
         <Card style={{ gap: spacing.sm }}>
           <View style={styles.between}>
             <View style={styles.flex}>
-              <Text style={[typography.subtitle, { color: colors.text }]}>คิวรอโต๊ะ</Text>
+              <Text style={[typography.subtitle, { color: colors.text }]}>
+                คิวรอโต๊ะ
+              </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                รอ {data.waitlist.waitingCount} กลุ่ม · {data.waitlist.waitingGuests} คน · นานสุด {data.waitlist.longestWaitMinutes} นาที
+                รอ {data.waitlist.waitingCount} กลุ่ม ·{' '}
+                {data.waitlist.waitingGuests} คน · นานสุด{' '}
+                {data.waitlist.longestWaitMinutes} นาที
               </Text>
             </View>
           </View>
@@ -903,7 +1477,15 @@ function BoardGameFloor({
               onChangeText={setQueuePartySize}
               placeholder="จำนวนคน"
               placeholderTextColor={colors.textSoft}
-              style={[styles.input, { minWidth: 96, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
+              style={[
+                styles.input,
+                {
+                  minWidth: 96,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  backgroundColor: colors.surface,
+                },
+              ]}
             />
             <TextInput
               accessibilityLabel="ชื่อเรียกคิว"
@@ -911,58 +1493,136 @@ function BoardGameFloor({
               onChangeText={setQueueGuestName}
               placeholder="ชื่อเรียก"
               placeholderTextColor={colors.textSoft}
-              style={[styles.input, { flex: 1, minWidth: 140, borderColor: colors.border, color: colors.text, backgroundColor: colors.surface }]}
+              style={[
+                styles.input,
+                {
+                  flex: 1,
+                  minWidth: 140,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  backgroundColor: colors.surface,
+                },
+              ]}
             />
             <Button
               label="รับคิว"
               loading={workingQueueId === 'add'}
               onPress={() => {
                 const partySize = Number(queuePartySize);
-                if (!Number.isInteger(partySize) || partySize < 1 || partySize > 500) {
-                  Alert.alert('จำนวนคนไม่ถูกต้อง', 'ระบุจำนวนคนระหว่าง 1–500'); return;
+                if (
+                  !Number.isInteger(partySize) ||
+                  partySize < 1 ||
+                  partySize > 500
+                ) {
+                  Alert.alert('จำนวนคนไม่ถูกต้อง', 'ระบุจำนวนคนระหว่าง 1–500');
+                  return;
                 }
-                runQueueAction('add', key => addWaitlistEntry({ variables: { input: {
-                  ...credentials!, idempotencyKey: key, partySize,
-                  guestName: queueGuestName.trim() || null,
-                  guestPhone: null, note: null, preferredAreaId: null,
-                } } })).then(success => {
-                  if (success) { setQueuePartySize('2'); setQueueGuestName(''); }
-                }).catch(() => undefined);
+                runQueueAction('add', key =>
+                  addWaitlistEntry({
+                    variables: {
+                      input: {
+                        ...credentials!,
+                        idempotencyKey: key,
+                        partySize,
+                        guestName: queueGuestName.trim() || null,
+                        guestPhone: null,
+                        note: null,
+                        preferredAreaId: null,
+                      },
+                    },
+                  }),
+                )
+                  .then(success => {
+                    if (success) {
+                      setQueuePartySize('2');
+                      setQueueGuestName('');
+                    }
+                  })
+                  .catch(() => undefined);
               }}
             />
           </View>
           {openQueue.length === 0 ? (
-            <Text style={[typography.body, { color: colors.textMuted }]}>ยังไม่มีคนรอ</Text>
-          ) : openQueue.map(entry => {
-            const fitting = tables.filter(table =>
-              !table.blocked && !table.openSession && table.seats >= entry.partySize,
-            );
-            return (
-              <View key={entry.id} style={{ gap: spacing.xs }}>
-                <Text style={[typography.bodyStrong, { color: colors.text }]}>คิว {entry.queueNo} · {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน</Text>
-                <Text style={[typography.caption, { color: colors.textMuted }]}>รอ {elapsedLabel(entry.createdAt, now)}{entry.status === 'CALLED' ? ' · เรียกแล้ว' : ''}</Text>
-                <View style={styles.wrap}>
-                  {fitting.slice(0, 4).map(table => (
-                    <Button key={table.id} label={`นั่ง ${table.code}`} variant="secondary"
-                      onPress={() => onOpen(table, entry.id)} />
-                  ))}
-                  {entry.status === 'WAITING' ? (
-                    <Button label="เรียก" variant="secondary" loading={workingQueueId === `call-${entry.id}`}
-                      onPress={() => runQueueAction(`call-${entry.id}`, key => callWaitlistEntry({ variables: { input: {
-                        ...credentials!, idempotencyKey: key, entryId: entry.id,
-                      } } })).catch(() => undefined)} />
-                  ) : null}
-                  <Button label={entry.status === 'CALLED' ? 'ไม่มา' : 'ยกเลิก'} variant="ghost"
-                    loading={workingQueueId === `close-${entry.id}`}
-                    onPress={() => runQueueAction(`close-${entry.id}`, key => closeWaitlistEntry({ variables: { input: {
-                      ...credentials!, idempotencyKey: key, entryId: entry.id,
-                      status: entry.status === 'CALLED' ? 'NO_SHOW' : 'CANCELLED',
-                      reason: null,
-                    } } })).catch(() => undefined)} />
+            <Text style={[typography.body, { color: colors.textMuted }]}>
+              ยังไม่มีคนรอ
+            </Text>
+          ) : (
+            openQueue.map(entry => {
+              const fitting = tables.filter(
+                table =>
+                  !table.blocked &&
+                  !table.openSession &&
+                  table.seats >= entry.partySize,
+              );
+              return (
+                <View key={entry.id} style={{ gap: spacing.xs }}>
+                  <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                    คิว {entry.queueNo} · {entry.guestName || 'ไม่ระบุชื่อ'} ·{' '}
+                    {entry.partySize} คน
+                  </Text>
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    รอ {elapsedLabel(entry.createdAt, now)}
+                    {entry.status === 'CALLED' ? ' · เรียกแล้ว' : ''}
+                  </Text>
+                  <View style={styles.wrap}>
+                    {fitting.slice(0, 4).map(table => (
+                      <Button
+                        key={table.id}
+                        label={`นั่ง ${table.code}`}
+                        variant="secondary"
+                        onPress={() => onOpen(table, entry.id)}
+                      />
+                    ))}
+                    {entry.status === 'WAITING' ? (
+                      <Button
+                        label="เรียก"
+                        variant="secondary"
+                        loading={workingQueueId === `call-${entry.id}`}
+                        onPress={() =>
+                          runQueueAction(`call-${entry.id}`, key =>
+                            callWaitlistEntry({
+                              variables: {
+                                input: {
+                                  ...credentials!,
+                                  idempotencyKey: key,
+                                  entryId: entry.id,
+                                },
+                              },
+                            }),
+                          ).catch(() => undefined)
+                        }
+                      />
+                    ) : null}
+                    <Button
+                      label={entry.status === 'CALLED' ? 'ไม่มา' : 'ยกเลิก'}
+                      variant="ghost"
+                      loading={workingQueueId === `close-${entry.id}`}
+                      onPress={() =>
+                        runQueueAction(`close-${entry.id}`, key =>
+                          closeWaitlistEntry({
+                            variables: {
+                              input: {
+                                ...credentials!,
+                                idempotencyKey: key,
+                                entryId: entry.id,
+                                status:
+                                  entry.status === 'CALLED'
+                                    ? 'NO_SHOW'
+                                    : 'CANCELLED',
+                                reason: null,
+                              },
+                            },
+                          }),
+                        ).catch(() => undefined)
+                      }
+                    />
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </Card>
       ) : null}
       <View style={styles.floorTableGrid}>
@@ -1300,7 +1960,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     skip: !credentials || memberSearch.trim().length < 3,
   });
   const [openSession] = useMutation(MobilePosOpenBoardGameSessionDocument);
-  const [seatWaitlistEntry] = useMutation(MobilePosSeatBoardGameWaitlistEntryDocument);
+  const [seatWaitlistEntry] = useMutation(
+    MobilePosSeatBoardGameWaitlistEntryDocument,
+  );
   const [addParticipant] = useMutation(
     MobilePosAddBoardGameParticipantDocument,
   );
@@ -1347,9 +2009,11 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     view.kind === 'open'
       ? data?.floor.tables.find(table => table.id === view.tableId) ?? null
       : null;
-  const seatingQueueEntry = view.kind === 'open' && view.queueEntryId
-    ? data?.waitlist.entries.find(entry => entry.id === view.queueEntryId) ?? null
-    : null;
+  const seatingQueueEntry =
+    view.kind === 'open' && view.queueEntryId
+      ? data?.waitlist.entries.find(entry => entry.id === view.queueEntryId) ??
+        null
+      : null;
   const activeRates = useMemo(
     () => (data?.rates ?? []).filter(rate => rate.active),
     [data?.rates],
@@ -1675,10 +2339,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       let id = '';
       if (seatingQueueEntry) {
         const response = await seatWaitlistEntry({
-            variables: {
-              input: { ...variables.input, entryId: seatingQueueEntry.id },
-            },
-          });
+          variables: {
+            input: { ...variables.input, entryId: seatingQueueEntry.id },
+          },
+        });
         const result = response.data?.bmsPosSeatBoardGameWaitlistEntry.session;
         id = result?.id ?? result?.sessionId ?? '';
       } else {
@@ -3492,6 +4156,92 @@ const styles = StyleSheet.create({
   },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   flex: { flex: 1, minWidth: 0 },
+  reservationCard: { gap: 12 },
+  reservationEditBadge: {
+    minHeight: 30,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reservationForm: { gap: 10 },
+  reservationFieldRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  reservationField: { flex: 1, minWidth: 0, gap: 5 },
+  reservationTimeField: { width: 112, flexShrink: 0, gap: 5 },
+  reservationOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  reservationDurationBlock: { flex: 1, minWidth: 0, gap: 5 },
+  reservationDurationRow: { flexDirection: 'row', gap: 4 },
+  reservationDurationChip: {
+    flex: 1,
+    minHeight: 42,
+    minWidth: 0,
+    paddingHorizontal: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reservationDurationInput: {
+    width: 68,
+    minHeight: 42,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 9,
+    paddingHorizontal: 8,
+    textAlign: 'center',
+  },
+  reservationPartyBlock: { width: 130, flexShrink: 0, gap: 5 },
+  reservationStepper: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  reservationStepperButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reservationPartyInput: {
+    width: 42,
+    height: 44,
+    paddingHorizontal: 2,
+    textAlign: 'center',
+  },
+  reservationTableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    gap: 8,
+  },
+  reservationTableTile: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    minWidth: 132,
+    minHeight: 52,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
+  reservationTableTileTablet: { flexBasis: '23%' },
+  reservationListHeader: {
+    marginTop: 2,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  reservationFilterRow: { flexDirection: 'row', gap: 8 },
+  reservationSearchInput: { flex: 1, minWidth: 0 },
+  reservationDateInput: { width: 122, flexShrink: 0 },
   openPanel: { gap: 16 },
   openPanelWide: { flexDirection: 'row', alignItems: 'flex-start' },
   openForm: { flex: 1, minWidth: 0, gap: 12 },

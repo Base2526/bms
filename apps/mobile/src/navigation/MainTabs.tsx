@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import { useIncomingOrders } from '../state/IncomingOrdersContext';
 import { useRestaurantOperations } from '../state/RestaurantOperationsContext';
@@ -25,6 +26,7 @@ import ShiftScreen from '../screens/shift/ShiftScreen';
 import OperationsScreen from '../screens/operations/OperationsScreen';
 import BoardGameScreen from '../screens/boardGame/BoardGameScreen';
 import InventoryScreen from '../screens/inventory/InventoryScreen';
+import { bottomTabBarLayout } from './tabBarLayout';
 
 import type {
   MainTabParamList,
@@ -135,6 +137,7 @@ export function MainTabs() {
 
 function TabsShell() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { isTablet } = useResponsive();
   const { mode } = useStoreMode();
   const { pendingCount } = useIncomingOrders();
@@ -174,7 +177,10 @@ function TabsShell() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          minHeight: 62,
+          // React Navigation ให้พื้นที่เนื้อหาเริ่มต้น 49dp แต่ tab item ของเราใช้ 56dp
+          // ถ้าปล่อยความสูงเดิม label จะล้นลงไปใน Android navigation bar แบบ 3 ปุ่ม
+          // จึงรักษาพื้นที่เนื้อหา 62dp แล้วบวก safe-area ของเครื่องจริงแยกต่างหาก
+          ...bottomTabBarLayout(insets.bottom),
           // ผัง Board Game, สต็อก, งาน และกะบน iPad มี sidebar ที่พาไปทุกส่วนหลักอยู่แล้ว
           // จึงใช้พื้นที่เต็มสูงเหมือน mockup; เมื่อออกไปแท็บอื่น bottom bar จะกลับมาเอง
           display:

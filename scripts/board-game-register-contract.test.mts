@@ -203,6 +203,19 @@ test("an open table is a scannable workspace instead of one long form", () => {
   );
 });
 
+test("board-game mode buttons remain visible outside the returns color scope", () => {
+  assert.match(
+    declaration(".pos-root .pos-ret-btn--primary", "background") ?? "",
+    /var\(--ret-accent,\s*var\(--pos-accent\)\)/,
+    "the selected billing mode must fall back to the POS accent when --ret-accent is out of scope",
+  );
+  assert.match(
+    declaration(".pos-root .pos-ret-btn--open", "background") ?? "",
+    /var\(--ret-accent-bg,\s*var\(--pos-accent-bg\)\)/,
+    "shared open-state buttons must not become transparent when return-only variables are absent",
+  );
+});
+
 test("the register keeps a phone-sized floor plan instead of a one-table list", () => {
   assert.ok(PHONE_MEDIA, "pos.css must declare a phone breakpoint for the board-game floor");
 
