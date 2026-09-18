@@ -82,13 +82,12 @@ Verification for the client is `npm run lint`, `npm test -- --runInBand`, and
 directories and APKs are ignored; only source and lockfiles belong in Git. The detailed screen list,
 local setup and current exclusions live in [the mobile README](../../apps/mobile/README.md).
 
-## Desktop POS client (Windows and Linux)
+## Desktop POS client (Windows, Linux and macOS)
 
 `apps/desktop/` is an Electron shell around the POS surface the browser register already uses —
 `/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual`, served by the paired backend. It ships
-as a Windows NSIS installer and Linux AppImage/DEB (x64); a macOS DMG exists so the shell can be
-exercised on a Mac, not as a supported register. The shell holds no database, no price list and no
-settlement path. A sale rung up in it is the same `recordPosSale()` transaction as one rung up in
+as a Windows NSIS installer, a Linux AppImage/DEB (x64), and a macOS disk image built for both Apple
+Silicon and Intel. The shell holds no database, no price list and no settlement path. A sale rung up in it is the same `recordPosSale()` transaction as one rung up in
 Chrome, and the app grants a cashier nothing extra.
 
 What it changes is where the device token lives. A browser register keeps it in `localStorage`; the
@@ -120,15 +119,22 @@ shell does not recognise; the message always names the keystore of the platform 
 because one that names the wrong one sends a cashier to a setting that does not exist on that
 machine.
 
-Packaging is deliberately short of a release: all three targets are unsigned, there is no
-auto-update channel, and `.github/workflows/desktop-linux.yml` lints, tests and builds the AppImage
-and DEB on a Linux runner and uploads them as a 14-day workflow artifact without signing or
-publishing anything. Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not
-part of the shell: it registers no USB or serial device handler, so the register's WebUSB path is
-unavailable inside it and receipts print through the same browser print dialog the web register
-falls back to. Linux release acceptance still needs a distro matrix (GNOME/KDE, Wayland/X11), CUPS receipt
-printing, keyboard-wedge scanners, a second customer display, suspend/reconnect, and the
-keyring-locked states.
+Packaging is deliberately short of a release: every target is unsigned and there is no auto-update
+channel, so macOS Gatekeeper blocks a first launch and an operator has to open the app from Finder
+or clear the quarantine flag — which is what makes all three internal-test builds rather than a way
+to distribute the register to a shop. Each platform is built by its own runner, because that is the
+only place its packaging can be checked: `.github/workflows/desktop-linux.yml` builds the AppImage
+and DEB on Linux, `.github/workflows/desktop-macos.yml` builds the two DMGs on macOS after the unit
+tests, lint and the Electron setup smoke test, and both upload a 14-day workflow artifact without
+signing, notarizing or publishing anything.
+
+Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not part of the shell:
+it registers no USB or serial device handler, so the register's WebUSB path is unavailable inside it
+and receipts print through the same browser print dialog the web register falls back to. Linux
+release acceptance still needs a distro matrix (GNOME/KDE, Wayland/X11), CUPS receipt printing,
+keyboard-wedge scanners, a second customer display, suspend/reconnect, and the keyring-locked
+states; a macOS rollout additionally needs an Apple Developer ID, notarization, and a decision about
+how a Mac register is updated.
 
 Verification for the shell is `npm run lint` and `npm test` (pairing and keystore-policy units) from
 `apps/desktop/`, plus `npm run test:smoke`, which launches Electron and asserts the setup screen.

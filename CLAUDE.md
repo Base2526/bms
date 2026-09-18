@@ -27,7 +27,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [board-game-cafe.md](docs/business/board-game-cafe.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter/native POS · Board Game Cafe · customer identity/inbox |
 | [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
-| [apps/desktop/README.md](apps/desktop/README.md) | Windows/Linux POS Electron shell: encrypted device pairing, installer builds, security boundary, and remaining hardware/release work |
+| [apps/desktop/README.md](apps/desktop/README.md) | Windows/Linux/macOS POS Electron shell: encrypted device pairing, installer builds, security boundary, and remaining hardware/release work |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
@@ -45,8 +45,8 @@ Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Fl
 (🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
 flag-gated off) · **e-Tax submission**
 (🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
-printing/cash-drawer** (🧪 written, never run against real hardware) · **Windows/Linux desktop POS
-client** (🧪 MVP shell — packages are unsigned, with no auto-update and no offline tender).
+printing/cash-drawer** (🧪 written, never run against real hardware) · **Windows/Linux/macOS desktop
+POS client** (🧪 MVP shell — every package is unsigned, with no auto-update and no offline tender).
 POS counter sale/return/refund
 and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
 bills + drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent
@@ -365,7 +365,7 @@ before anyone has typed one. Staff read them back through `bmsPosDeviceDiagnosti
 `/admin/pos-devices`, gated by `support.logs.view`.
 
 **A desktop register is a window onto `/pos`, not a second register (`apps/desktop`, no
-migration, no permission).** The Electron shell for Windows and Linux hosts the same authoritative
+migration, no permission).** The Electron shell for Windows, Linux and macOS hosts the same authoritative
 `/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual` routes: it carries no database, no
 pricing and no settlement path, and can do nothing a paired browser register cannot already do.
 What it does own is the credential — first-run pairing verifies the device token through
@@ -374,10 +374,12 @@ What it does own is the credential — first-run pairing verifies the device tok
 refuses any frame which is not the setup page or a paired `/pos` frame on the paired origin.
 **On Linux the shell fails closed**: Electron's `basic_text` fallback is not acceptable protection
 for a bearer credential, so pairing is blocked with an actionable message until Secret Service or
-KWallet is available. Packaging is Windows NSIS plus Linux AppImage/DEB (x64) — both unsigned;
-`.github/workflows/desktop-linux.yml` tests, lints and builds them into a 14-day workflow artifact
-and deliberately neither signs nor publishes a release. ESC/POS printing, cash-drawer control,
-auto-update and offline tender remain separate milestones — see
+KWallet is available. Packaging is Windows NSIS, Linux AppImage/DEB (x64) and macOS DMG for both
+Intel and Apple Silicon — **every one of them unsigned**, so macOS Gatekeeper blocks a first launch
+and these are internal-test builds, not a distribution channel. `desktop-linux.yml` and
+`desktop-macos.yml` lint, test and build their own platform on its own runner and upload a 14-day
+artifact; neither signs, notarizes nor publishes a release. Release signing/notarization, ESC/POS
+printing, cash-drawer control, auto-update and offline tender remain separate milestones — see
 [apps/desktop/README.md](apps/desktop/README.md).
 
 **Typed GraphQL surface for external clients (2026-09-11, no migration, no permission).** The mobile/

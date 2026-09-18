@@ -10,6 +10,24 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## macOS packages for the desktop POS client (2026-09-18)
+
+- The macOS build stopped being a way to exercise the shell and became a target of its own: a DMG
+  for Apple Silicon and one for Intel, built by `.github/workflows/desktop-macos.yml` on a macOS
+  runner after the unit tests, lint and the Electron setup smoke test. A Mac is the only host that
+  can produce a `.app`, and Gatekeeper behaviour, the system menu bar and the Keychain prompt cannot
+  be observed anywhere else, so the platform is built and judged by its own runner exactly as Linux
+  is.
+- Nothing about the security boundary changed — pairing, the Keychain-backed token, the frame-checked
+  IPC bridge and the origin-restricted navigation are the same code all three platforms run. What
+  changed is only what is produced and where.
+- The images stay unsigned with `CSC_IDENTITY_AUTO_DISCOVERY` off, which keeps the workflow
+  deterministic on a runner that holds no certificate, and keeps the result honest: Gatekeeper blocks
+  a first launch, so these are internal-test builds. Shipping a Mac register needs an Apple Developer
+  ID, notarization and an update story — decisions, not build flags.
+
+---
+
 ## Desktop POS client for Windows and Linux (2026-09-18)
 
 - `apps/desktop/` packages the POS surface that already exists as an installed application — an
