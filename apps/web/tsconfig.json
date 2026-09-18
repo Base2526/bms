@@ -11,7 +11,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@core/*": ["../../packages/graphql-core/src/*"]
+      "@core/*": ["../../packages/graphql-core/src/*"],
+      "@pos-core/*": ["../../packages/pos-client-core/src/*"],
+      "@mobile-pos/*": ["../mobile/src/*"]
     },
     "strict": true,
     "allowJs": true,

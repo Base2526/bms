@@ -2,9 +2,9 @@
  * ราคาของตะกร้าบนเครื่องขายมือถือ — ต้องได้เลขเดียวกับที่ `createOrderInTx()` คิดตอน commit
  *
  * ⚠️ นี่คือกฎเดียวกับ `apps/web/lib/bms/pricing.ts` + `apps/web/lib/pos/cashRounding.ts`
- * ที่ต้องคัดลอกมา เพราะ Metro ของ `apps/mobile` มี projectRoot เป็นโฟลเดอร์ตัวเอง
- * (ไม่มี watchFolders) จึง import ข้ามแอปไม่ได้ · `scripts/mobile-cart-pricing-contract.test.mts`
- * ป้อนอินพุตชุดเดียวกันเข้าทั้งสองฝั่งแล้วบังคับให้ได้ผลตรงกัน — แก้ฝั่งเว็บแล้วไม่แก้ที่นี่ = แดง
+ * และเป็น pure module ที่ทั้ง native mobile กับ desktop renderer ใช้ไฟล์เดียวกันโดยตรง
+ * (`@mobile-pos/lib/cartPricing`) · `scripts/mobile-cart-pricing-contract.test.mts` ยังป้อนอินพุต
+ * ชุดเดียวกันเข้าฝั่ง client/server เพื่อกัน drift — แก้กฎฝั่ง server แล้วไม่แก้ที่นี่ = แดง
  *
  * ทำไมต้องมี: `recordPosSale()` เทียบ "ผลรวมเงินที่เครื่องส่งมา" กับยอดที่ server คิดเอง
  * ถ้าต่างกันเกิน 1 สตางค์ **บิลถูกยกเลิกทิ้งทั้งใบ** (`PAYMENT_MISMATCH`) ต่อหน้าลูกค้า

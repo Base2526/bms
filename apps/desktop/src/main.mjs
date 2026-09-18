@@ -200,7 +200,7 @@ async function showSetup() {
 }
 
 async function showPos() {
-  if (mainWindow && activePairing) await mainWindow.loadURL(new URL("/pos", activePairing.serverUrl).toString());
+  if (mainWindow && activePairing) await mainWindow.loadURL(new URL("/pos/app", activePairing.serverUrl).toString());
 }
 
 async function verifyPairing(pairing) {

@@ -41,7 +41,7 @@ async function run() {
     }
     if (
       state.fields !== 2
-      || !state.button?.includes("เชื่อมต่อเครื่องนี้")
+      || !state.button?.includes("ตรวจสอบและเชื่อมต่อ")
       || state.clientLabel !== "Windows Client"
       || !state.securityNote?.includes("Windows")
       || state.overflowX

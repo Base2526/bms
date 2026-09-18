@@ -2062,8 +2062,13 @@ export default function PosPage() {
     if (!deviceStorageNamespace || !session || localDraftRestoredRef.current) return;
     localDraftRestoredRef.current = true;
 
+    // Desktop renderer ใหม่ส่งงานเฉพาะทางเข้าหน้าเดิมด้วย query นี้ จึงต้องให้ URL ที่ผู้ใช้
+    // เพิ่งกดชนะค่าแท็บที่จำไว้ ไม่เช่นนั้นกด "คืน" แล้วอาจกลับไปแท็บ "ขาย" จากครั้งก่อน.
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
     const savedTab = window.localStorage.getItem(LOCAL_TAB_KEY_PREFIX + deviceStorageNamespace);
-    if (savedTab && POS_TABS.some((item) => item.key === savedTab)) {
+    if (requestedTab && POS_TABS.some((item) => item.key === requestedTab)) {
+      setTab(requestedTab as PosTab);
+    } else if (savedTab && POS_TABS.some((item) => item.key === savedTab)) {
       setTab(savedTab as PosTab);
     }
 
@@ -6169,7 +6174,7 @@ export default function PosPage() {
         {hasDesktopPosBridge() ? (
           <>
             <p style={{ color: "#666", fontSize: 14 }}>
-              กลับไปหน้าตั้งค่า Windows Client เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
+              กลับไปหน้าตั้งค่า BMS POS Desktop เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
             </p>
             <button
               onClick={() => { void unpair(); }}
@@ -6400,6 +6405,14 @@ export default function PosPage() {
             แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {hasDesktopPosBridge() && (
+            <button
+              onClick={() => window.location.assign("/pos/app")}
+              style={{ flex: "none", height: 44, padding: "0 12px", color: "#1677ff" }}
+            >
+              ← หน้า POS ใหม่
+            </button>
+          )}
           <select
             ref={cashierSelectRef}
             value={cashierId}

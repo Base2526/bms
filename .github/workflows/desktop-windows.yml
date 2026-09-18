@@ -1,25 +1,24 @@
-name: Desktop Linux package
+name: Desktop Windows package
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - "apps/desktop/**"
-      - ".github/workflows/desktop-linux.yml"
+      - ".github/workflows/desktop-windows.yml"
   push:
     branches:
       - develop
-      - feat/linux-pos-client
     paths:
       - "apps/desktop/**"
-      - ".github/workflows/desktop-linux.yml"
+      - ".github/workflows/desktop-windows.yml"
 
 permissions:
   contents: read
 
 jobs:
-  package-linux:
-    runs-on: ubuntu-latest
+  package-windows:
+    runs-on: windows-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -45,18 +44,13 @@ jobs:
       - name: Check desktop sources
         run: npm run lint
 
-      - name: Smoke-test the Electron setup screen
-        run: xvfb-run -a npm run test:smoke
+      - name: Build NSIS installer
+        run: npm run pack:win
 
-      - name: Build AppImage and DEB
-        run: npm run pack:linux
-
-      - name: Upload Linux packages
+      - name: Upload unsigned Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: bms-pos-linux-${{ github.sha }}
+          name: bms-pos-windows-${{ github.sha }}
           if-no-files-found: error
-          path: |
-            apps/desktop/dist/*.AppImage
-            apps/desktop/dist/*.deb
+          path: apps/desktop/dist/*.exe
           retention-days: 14

@@ -146,6 +146,7 @@
    มือถือยังใช้ปุ่มลอยเพราะ rail ถูกเปลี่ยนเป็นแถบล่างและพื้นที่แนวนอนไม่พอ. */
 .pos-guide-rail { margin-top: auto; }
 .pos-page + .pos-guide-floating { display: none !important; }
+.pos-desktop-app + .pos-guide-floating { display: none !important; }
 
 /* โต๊ะ/เวลาเป็น workspace เต็มจอ: เมื่อปิดเวลาแล้ว component จะพาไปแท็บขายเอง
    การคงแผงชำระเงินว่าง ๆ ไว้ครึ่งจอทำให้ผังโต๊ะและทุกฟอร์มเล็กลงโดยไม่มีงานให้ทำตรงนั้น */

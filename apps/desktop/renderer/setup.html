@@ -10,33 +10,48 @@
   <body>
     <main class="setup-shell">
       <section class="setup-panel" aria-labelledby="setup-title">
-        <header class="brand-row">
-          <img src="./app-icon.svg" alt="" width="52" height="52" />
-          <div>
-            <div class="brand-name">BMS POS</div>
-            <div id="client-label" class="brand-subtitle">Desktop Client</div>
+        <aside class="setup-aside">
+          <header class="brand-row">
+            <img src="./app-icon.svg" alt="" width="52" height="52" />
+            <div>
+              <div class="brand-name">BMS POS</div>
+              <div id="client-label" class="brand-subtitle">Desktop Client</div>
+            </div>
+          </header>
+          <div class="aside-copy">
+            <div class="eyebrow">ตั้งค่าครั้งแรก</div>
+            <h2>เครื่องขายที่ปลอดภัย<br />บนทุกระบบปฏิบัติการ</h2>
+            <p>เชื่อมต่อกับระบบร้านเดิม โดยราคา สต็อก สิทธิ์ และการชำระเงินยังตรวจจากเซิร์ฟเวอร์ทุกครั้ง</p>
           </div>
-        </header>
-        <div class="intro">
-          <h1 id="setup-title">เชื่อมต่อเครื่องแคชเชียร์</h1>
-          <p>ใช้ลิงก์จับคู่จากหน้าเครื่อง POS ในระบบหลังบ้าน แอปจะตรวจสอบเซิร์ฟเวอร์ก่อนบันทึกเครื่องนี้</p>
+          <ol class="flow-steps">
+            <li class="active"><span>1</span><div><strong>เลือกเซิร์ฟเวอร์</strong><small>จับคู่เครื่องกับร้าน</small></div></li>
+            <li><span>2</span><div><strong>ใส่ PIN</strong><small>ยืนยันตัวพนักงาน</small></div></li>
+            <li><span>3</span><div><strong>เริ่มขาย</strong><small>เปิดกะและรับชำระ</small></div></li>
+          </ol>
+        </aside>
+        <div class="setup-content">
+          <div class="intro">
+            <div class="eyebrow">ขั้นตอนที่ 1 จาก 3</div>
+            <h1 id="setup-title">เชื่อมต่อเครื่องแคชเชียร์</h1>
+            <p>คัดลอกลิงก์จับคู่จากหน้า “เครื่อง POS” ในระบบหลังบ้าน แล้ววางด้านล่าง</p>
+          </div>
+          <form id="pairing-form" novalidate>
+            <label for="server-url">Server URL</label>
+            <input id="server-url" name="serverUrl" type="url" autocomplete="url" inputmode="url" placeholder="https://shop.example.com" />
+            <div class="field-hint">เว้นว่างได้เมื่อวางลิงก์จับคู่แบบเต็ม</div>
+            <label for="pairing-input">ลิงก์จับคู่ หรือ Device Token</label>
+            <textarea id="pairing-input" name="pairingInput" rows="3" autocomplete="off" spellcheck="false" placeholder="https://shop.example.com/pos?t=pos_..."></textarea>
+            <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+            <button id="pair-button" type="submit">
+              <span class="button-label">ตรวจสอบและเชื่อมต่อ</span>
+              <span class="button-progress" hidden>กำลังตรวจสอบ...</span>
+            </button>
+          </form>
+          <footer>
+            <span id="security-note">token ถูกเข้ารหัสด้วยที่เก็บข้อมูลปลอดภัยของระบบปฏิบัติการ</span>
+            <span id="app-version"></span>
+          </footer>
         </div>
-        <form id="pairing-form" novalidate>
-          <label for="server-url">Server URL</label>
-          <input id="server-url" name="serverUrl" type="url" autocomplete="url" inputmode="url" placeholder="https://shop.example.com" />
-          <div class="field-hint">เว้นว่างได้เมื่อวางลิงก์จับคู่แบบเต็ม</div>
-          <label for="pairing-input">ลิงก์จับคู่ หรือ Device Token</label>
-          <textarea id="pairing-input" name="pairingInput" rows="3" autocomplete="off" spellcheck="false" placeholder="https://shop.example.com/pos?t=pos_..."></textarea>
-          <div id="status" class="status" role="status" aria-live="polite" hidden></div>
-          <button id="pair-button" type="submit">
-            <span class="button-label">เชื่อมต่อเครื่องนี้</span>
-            <span class="button-progress" hidden>กำลังตรวจสอบ...</span>
-          </button>
-        </form>
-        <footer>
-          <span id="security-note">token ถูกเข้ารหัสด้วยที่เก็บข้อมูลปลอดภัยของระบบปฏิบัติการ</span>
-          <span id="app-version"></span>
-        </footer>
       </section>
     </main>
     <script src="./setup.js"></script>
