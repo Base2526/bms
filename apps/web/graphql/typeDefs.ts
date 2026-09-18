@@ -662,6 +662,21 @@ export const typeDefs = /* GraphQL */ `
     scannerSuffixKey: String!
     scannerMaxGapMs: Int!
     active: Boolean!
+    lastSeenAt: String
+  }
+
+  type BmsPosDeviceDiagnosticEvent {
+    id: ID!
+    occurredAt: String!
+    receivedAt: String!
+    deviceId: ID
+    locationId: ID
+    actorId: String
+    category: String!
+    action: String!
+    status: String
+    message: String
+    context: JSON!
   }
 
   input BmsPosDeviceInput {
@@ -1062,6 +1077,7 @@ export const typeDefs = /* GraphQL */ `
     bmsRestaurantFloorLocations: [BmsLocation!]!
     bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
     bmsPosDevices: [BmsPosDevice!]!
+    bmsPosDeviceDiagnostics(deviceId: ID, limit: Int = 50): [BmsPosDeviceDiagnosticEvent!]!
     # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
     bmsArAccounts(search: String, status: String, withBalanceOnly: Boolean, limit: Int = 200): [BmsArAccount!]!
     bmsArAccount(id: ID, customerId: ID): BmsArAccount
@@ -1629,6 +1645,7 @@ export const typeDefs = /* GraphQL */ `
     orderId: ID
     targetType: String!
     reservationId: ID
+    memberPassId: ID
     reservationDepositStatus: String
     sourcePaymentId: ID
     method: BmsPaymentMethod!

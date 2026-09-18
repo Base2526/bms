@@ -3,6 +3,7 @@ import {
   graphqlErrorCode,
   isDecidedRejection,
   isStaleOperationConflict,
+  runWithOperationTimeout,
 } from '../src/lib/operation';
 
 /**
@@ -19,13 +20,19 @@ describe('operation keys and server verdicts', () => {
   test('reads the first code the server attached, and nothing from a bare network failure', () => {
     expect(graphqlErrorCode(withCode('CONFLICT'))).toBe('CONFLICT');
     expect(graphqlErrorCode(new Error('Network request failed'))).toBeNull();
-    expect(graphqlErrorCode({ graphQLErrors: [{ extensions: null }] })).toBeNull();
-    expect(graphqlErrorCode({ graphQLErrors: [{ extensions: { code: '  ' } }] })).toBeNull();
+    expect(
+      graphqlErrorCode({ graphQLErrors: [{ extensions: null }] }),
+    ).toBeNull();
+    expect(
+      graphqlErrorCode({ graphQLErrors: [{ extensions: { code: '  ' } }] }),
+    ).toBeNull();
   });
 
   test('CONFLICT means the key belongs to a finished request — refetch, never blind-retry', () => {
     expect(isStaleOperationConflict(withCode('CONFLICT'))).toBe(true);
-    expect(isStaleOperationConflict(withCode('INTERNAL_SERVER_ERROR'))).toBe(false);
+    expect(isStaleOperationConflict(withCode('INTERNAL_SERVER_ERROR'))).toBe(
+      false,
+    );
     expect(isStaleOperationConflict(new Error('timeout'))).toBe(false);
   });
 
@@ -49,5 +56,17 @@ describe('operation keys and server verdicts', () => {
       createIdempotencyKey('inventory-create-transfer'),
     );
     expect(createIdempotencyKey('x').length).toBeGreaterThanOrEqual(8);
+  });
+
+  test('bounds a dropped operation and leaves the outcome unknown', async () => {
+    await expect(
+      runWithOperationTimeout(
+        signal =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('abort')));
+          }),
+        5,
+      ),
+    ).rejects.toThrow('เซิร์ฟเวอร์ไม่ตอบภายใน 1 วินาที');
   });
 });

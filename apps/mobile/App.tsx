@@ -13,6 +13,7 @@ import { DeviceProvider } from './src/state/DeviceContext';
 import { SessionProvider } from './src/state/SessionContext';
 import { StoreModeProvider } from './src/state/StoreModeContext';
 import { RealtimeProvider } from './src/state/RealtimeContext';
+import { ServerHealthProvider } from './src/state/ServerHealthContext';
 import { BmsGraphqlProvider } from './src/graphql/BmsGraphqlProvider';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
@@ -34,15 +35,17 @@ export default function App() {
             ไม่ใช่ของหน้าจอใดหน้าจอหนึ่ง และหน้า Login ต้องอ่านได้ก่อนเข้าแท็บ */}
         <DeviceProvider>
           <BmsGraphqlProvider>
-            <StoreModeProvider>
-              {/* SessionProvider อยู่นอก navigator — หน้า Login เป็นคนเขียน ส่วนแท็บข้างในเป็นคนอ่าน */}
-              <SessionProvider>
-                <RealtimeProvider>
-                  <ThemedStatusBar />
-                  <RootNavigator />
-                </RealtimeProvider>
-              </SessionProvider>
-            </StoreModeProvider>
+            <ServerHealthProvider>
+              <StoreModeProvider>
+                {/* SessionProvider อยู่นอก navigator — หน้า Login เป็นคนเขียน ส่วนแท็บข้างในเป็นคนอ่าน */}
+                <SessionProvider>
+                  <RealtimeProvider>
+                    <ThemedStatusBar />
+                    <RootNavigator />
+                  </RealtimeProvider>
+                </SessionProvider>
+              </StoreModeProvider>
+            </ServerHealthProvider>
           </BmsGraphqlProvider>
         </DeviceProvider>
       </ThemeProvider>

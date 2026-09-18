@@ -125,6 +125,30 @@ test("browser queue is scoped, idempotent and standalone POS can export/send", a
   assert.match(restaurant, /'restaurant\.item_remove'/);
 });
 
+test("native POS diagnostics are device-attributed and visible by server-side device filter", async () => {
+  const route = code(await read("apps/web/app/api/pos/diagnostics/events/route.ts"));
+  const service = code(await read("apps/web/lib/bms/supportDiagnostics.ts"));
+  const mobile = code(await read("apps/mobile/src/lib/supportDiagnostics.ts"));
+  const login = code(await read("apps/mobile/src/screens/LoginScreen.tsx"));
+  const admin = code(await read("apps/web/app/(admin)/admin/pos-devices/page.tsx"));
+
+  assert.match(route, /authenticatePosDevice\(token\)/);
+  assert.match(route, /locationId:\s*device\.locationId/);
+  assert.match(route, /deviceId:\s*device\.id/);
+  assert.match(route, /category:\s*"pos"/);
+  assert.doesNotMatch(route, /category:\s*event\?\.category/);
+  assert.match(service, /WHERE tenant_id = \$1[\s\S]*category = 'pos'[\s\S]*device_id = \$2::uuid/);
+  assert.match(admin, /bmsPosDeviceDiagnostics\(deviceId: \$diagnosticDeviceId, limit: 50\)/);
+  assert.doesNotMatch(mobile, /body:\s*JSON\.stringify\([^)]*(pin|token)/i);
+  assert.match(mobile, /Keychain\.setGenericPassword/);
+  assert.match(mobile, /MAX_QUEUE_EVENTS/);
+  assert.match(mobile, /scheduleRetry\(target\)/);
+  assert.match(mobile, /signal:\s*controller\.signal/);
+  assert.match(mobile, /clearTimeout\(timeout\)/);
+  assert.match(login, /message:\s*'เริ่มตรวจ PIN พนักงาน'/);
+  assert.match(login, /PIN_VERIFY_TIMEOUT/);
+});
+
 test("route errors are tenant-attributed without mixing throttle windows across shops", async () => {
   const routeError = code(await read("apps/web/lib/log/routeError.ts"));
   assert.match(routeError, /resolveErrorTenant/);

@@ -27,6 +27,8 @@ import { useSales } from '../../state/SalesContext';
 import { useSession } from '../../state/SessionContext';
 import { useShift } from '../../state/ShiftContext';
 import { useStoreMode } from '../../state/StoreModeContext';
+import { useOfflineSales } from '../../state/OfflineSalesContext';
+import { useServerHealth } from '../../state/ServerHealthContext';
 import {
   MobilePosBoardGameCheckoutDocument,
   MobilePosMemberPreviewDocument,
@@ -43,7 +45,11 @@ import {
   isCashRounding,
   payableWithRounding,
 } from '../../lib/cartPricing';
-import { createIdempotencyKey } from '../../lib/operation';
+import {
+  createIdempotencyKey,
+  isDecidedRejection,
+  runWithOperationTimeout,
+} from '../../lib/operation';
 import { describeMobileSaleFailure } from '../../lib/saleFailureMessage';
 import {
   calculateCashChange,
@@ -79,6 +85,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const { session } = useSession();
   const { isOpen: isShiftOpen, loading: shiftLoading } = useShift();
   const { mode: storeMode } = useStoreMode();
+  const offlineSales = useOfflineSales();
+  const serverHealth = useServerHealth();
   const restaurantParams =
     route.params?.source === 'restaurant' ? route.params : null;
   const boardGameParams =
@@ -103,7 +111,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const restaurantMember = restaurantCheckId
     ? restaurantMembers[restaurantCheckId] ?? null
     : null;
-  const [restaurantCoupon, setRestaurantCoupon] = useState<{ code: string } | null>(null);
+  const [restaurantCoupon, setRestaurantCoupon] = useState<{
+    code: string;
+  } | null>(null);
   const [restaurantPointsToRedeem, setRestaurantPointsToRedeem] = useState(0);
   const [restaurantManualDiscount, setRestaurantManualDiscount] = useState<{
     amount: number;
@@ -138,6 +148,22 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     skip: !session || !boardGameParams?.boardGameBillingGroupId,
   });
   const boardGameBill = boardGameCheckout.data?.bmsPosBoardGameCheckout;
+  const boardGameTimeBenefit =
+    boardGameBill && boardGameBill.offerDiscountAmount > 0
+      ? {
+          title: `โปรโมชัน ${
+            boardGameBill.offerName ?? boardGameBill.offerCode ?? 'ค่าเล่น'
+          }`,
+          detail: `ลดค่าเล่น ฿${boardGameBill.offerDiscountAmount.toFixed(2)}`,
+        }
+      : boardGameBill && boardGameBill.passCoveredAmount > 0
+      ? {
+          title: 'ใช้แพ็กเกจสมาชิกแล้ว',
+          detail: `แพ็กเกจจ่ายค่าเล่นให้ ฿${boardGameBill.passCoveredAmount.toFixed(
+            2,
+          )}`,
+        }
+      : null;
   const boardGamePricingInput = useMemo(
     () => ({
       subtotal: cart.subtotal,
@@ -283,8 +309,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ? restaurantPreview.subtotal
       : source === 'board_game' && boardGamePreview?.amountDue != null
       ? round2(
-          (boardGamePreview.grossAmountDue ?? boardGamePreview.amountDue)
-            + (boardGamePreview.totalDiscount ?? 0),
+          (boardGamePreview.grossAmountDue ?? boardGamePreview.amountDue) +
+            (boardGamePreview.totalDiscount ?? 0),
         )
       : fallbackSubtotal;
   const payableBeforeRounding = round2(
@@ -473,6 +499,56 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   // CASH ฿0 อยู่ · ไม่งั้นจอบอกว่า "ไม่มียอดต้องชำระ" แล้วหน้ายืนยันบอกว่ารับเงินสด ฿0 ทอน ฿0
   // ซึ่งเป็นจอที่ขัดกันเอง และเป็นเหตุที่คนเลิกเชื่อตัวเลขทั้งจอ
   const settlementPayments = zeroDueBoardGameBill ? [] : payments;
+  const paymentInput = settlementPayments.map(payment => ({
+    method: payment.method.toUpperCase(),
+    amount: payment.amount,
+    cashTendered:
+      payment.method === 'cash' ? payment.tendered ?? payment.amount : null,
+    ref: payment.reference?.trim() || null,
+  }));
+  const offlineEligible =
+    source === 'retail' &&
+    saleMode === 'SALE' &&
+    paymentInput.length === 1 &&
+    paymentInput[0]?.method === 'CASH' &&
+    !cart.member &&
+    !cart.coupon &&
+    cart.pointsUsed <= 0 &&
+    !cart.manualDiscount &&
+    cart.extraLines.length === 0 &&
+    !cart.pharmacyReview &&
+    !pharmacistId &&
+    !usesCredit &&
+    cart.lines.every(
+      line =>
+        !line.serialTracked &&
+        !line.scaleBarcode &&
+        line.modifierCodes.length === 0,
+    );
+
+  const offlinePayload = (
+    idempotencyKey: string,
+    offlineTenderedAt?: string,
+  ) => ({
+    idempotencyKey,
+    offlineTenderedAt: offlineTenderedAt ?? null,
+    mode: 'SALE' as const,
+    boardGameBillingGroupId: null,
+    lines: cart.lines.map(line => ({
+      sku: line.sku,
+      size: line.size,
+      packCode: line.packCode || null,
+      packQty: line.qty,
+      baseQty: line.baseQty,
+      packPrice: null,
+      unitName: line.unitName || null,
+      modifierCodes: line.modifierCodes,
+      scaleBarcode: line.scaleBarcode ?? null,
+      serials: line.serials,
+    })),
+    payments: paymentInput,
+    pointsToRedeem: 0 as const,
+  });
 
   const updatePayment = (id: string, patch: Partial<MockPaymentInput>) => {
     setPaymentsTouched(true);
@@ -509,6 +585,53 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       return;
     submittedRef.current = true;
     setSubmitting(true);
+    const serverReachable =
+      serverHealth.status === 'offline' ? false : await serverHealth.checkNow();
+    if (!serverReachable) {
+      if (!offlineEligible) {
+        submittedRef.current = false;
+        setSubmitting(false);
+        setConfirmOpen(false);
+        Alert.alert(
+          'รายการนี้ขายออฟไลน์ไม่ได้',
+          'โหมดออฟไลน์รองรับเฉพาะขายปลีกเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ',
+        );
+        return;
+      }
+      const idempotencyKey =
+        idempotencyRef.current ?? createIdempotencyKey('offline-sale');
+      idempotencyRef.current = idempotencyKey;
+      const tenderedAt = new Date().toISOString();
+      try {
+        await offlineSales.stage({
+          payload: offlinePayload(idempotencyKey, tenderedAt),
+          total,
+        });
+        await offlineSales.queue(idempotencyKey);
+        cart.clear();
+        idempotencyRef.current = null;
+        setConfirmOpen(false);
+        Alert.alert(
+          'รับเงินแล้ว · รอซิงก์',
+          `เลขอ้างอิงชั่วคราว ${idempotencyKey.slice(
+            -10,
+          )} · ยังไม่ใช่ใบเสร็จหรือใบกำกับภาษี`,
+        );
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+        });
+      } catch (error) {
+        Alert.alert(
+          'เก็บรายการออฟไลน์ไม่ได้',
+          error instanceof Error ? error.message : 'กรุณาอย่ารับเงินรายการนี้',
+        );
+      } finally {
+        submittedRef.current = false;
+        setSubmitting(false);
+      }
+      return;
+    }
     let confirmedBoardGamePreview = boardGamePreview;
     let confirmedRestaurantPreview = restaurantPreview;
     // ⚠️ ตรวจราคาซ้ำก่อนส่ง — ตะกร้าถือกติกา ณ ตอนที่สแกน ร้านที่แก้ราคา/เปิด-ปิดโปรระหว่าง
@@ -585,9 +708,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         const recheck = await restaurantPricing.refetch();
         const latest = recheck.data?.bmsPosMemberPreview;
         if (!latest || latest.status !== 'READY' || latest.amountDue == null) {
-          throw new Error(latest?.reason ?? latest?.couponError ?? 'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ');
+          throw new Error(
+            latest?.reason ??
+              latest?.couponError ??
+              'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ',
+          );
         }
-        const signature = (value: typeof latest | typeof restaurantPreview | undefined) =>
+        const signature = (
+          value: typeof latest | typeof restaurantPreview | undefined,
+        ) =>
           JSON.stringify({
             amountDue: value?.amountDue ?? null,
             subtotal: value?.subtotal ?? null,
@@ -600,46 +729,55 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           setSubmitting(false);
           setConfirmOpen(false);
           setPaymentsTouched(false);
-          setPayments([{ id: 'payment-1', method: 'cash', amount: 0, tendered: 0 }]);
-          Alert.alert('ยอดบิลมีการเปลี่ยนแปลง', 'ยอดอาหาร ส่วนลด หรือแต้มเปลี่ยนไป · กรุณาตรวจและรับเงินใหม่');
+          setPayments([
+            { id: 'payment-1', method: 'cash', amount: 0, tendered: 0 },
+          ]);
+          Alert.alert(
+            'ยอดบิลมีการเปลี่ยนแปลง',
+            'ยอดอาหาร ส่วนลด หรือแต้มเปลี่ยนไป · กรุณาตรวจและรับเงินใหม่',
+          );
           return;
         }
       } catch (error) {
         submittedRef.current = false;
         setSubmitting(false);
         setConfirmOpen(false);
-        Alert.alert('ตรวจยอดไม่สำเร็จ', error instanceof Error ? error.message : 'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ');
+        Alert.alert(
+          'ตรวจยอดไม่สำเร็จ',
+          error instanceof Error
+            ? error.message
+            : 'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ',
+        );
         return;
       }
     }
-    const paymentInput = settlementPayments.map(payment => ({
-      method: payment.method.toUpperCase(),
-      amount: payment.amount,
-      cashTendered:
-        payment.method === 'cash' ? payment.tendered ?? payment.amount : null,
-      ref: payment.reference?.trim() || null,
-    }));
+    let stagedRecovery = false;
     try {
       let orderId: string;
       if (source === 'restaurant') {
         if (!check) throw new Error('ไม่พบบิลโต๊ะสำหรับชำระเงิน');
-        const response = await settleCheck({
-          variables: {
-            checkId: check.id,
-            input: {
-              cashierUserId: session.credentials.cashierUserId,
-              pin: session.credentials.pin,
-              customerId: activeMember?.id ?? null,
-              couponCode: restaurantCoupon?.code ?? null,
-              pointsToRedeem: confirmedRestaurantPreview?.pointsUsed ?? 0,
-              manualDiscount: restaurantManualDiscount?.amount ?? null,
-              discountReason: restaurantManualDiscount?.reason ?? null,
-              discountApproverUserId: restaurantManualDiscount?.approverUserId ?? null,
-              discountApproverPin: restaurantManualDiscount?.approverPin ?? null,
-              payments: paymentInput,
+        const response = await runWithOperationTimeout(signal =>
+          settleCheck({
+            context: { fetchOptions: { signal } },
+            variables: {
+              checkId: check.id,
+              input: {
+                cashierUserId: session.credentials.cashierUserId,
+                pin: session.credentials.pin,
+                customerId: activeMember?.id ?? null,
+                couponCode: restaurantCoupon?.code ?? null,
+                pointsToRedeem: confirmedRestaurantPreview?.pointsUsed ?? 0,
+                manualDiscount: restaurantManualDiscount?.amount ?? null,
+                discountReason: restaurantManualDiscount?.reason ?? null,
+                discountApproverUserId:
+                  restaurantManualDiscount?.approverUserId ?? null,
+                discountApproverPin:
+                  restaurantManualDiscount?.approverPin ?? null,
+                payments: paymentInput,
+              },
             },
-          },
-        });
+          }),
+        );
         const result = response.data?.bmsPosRestaurantSettleCheck;
         if (result?.status !== 'SOLD' || !result.orderId) {
           throw new Error(
@@ -648,74 +786,86 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         }
         orderId = result.orderId;
       } else {
-        idempotencyRef.current ??= createIdempotencyKey('sale');
-        const response = await sell({
-          variables: {
-            input: {
-              cashierUserId: session.credentials.cashierUserId,
-              pin: session.credentials.pin,
-              idempotencyKey: idempotencyRef.current,
-              mode: saleMode,
-              boardGameBillingGroupId:
-                boardGameParams?.boardGameBillingGroupId ?? null,
-              lines: cart.lines.map(line => ({
-                sku: line.sku,
-                size: line.size,
-                packCode: line.packCode || null,
-                packQty: line.qty,
-                baseQty: line.baseQty,
-                packPrice: null,
-                unitName: line.unitName || null,
-                modifierCodes: line.modifierCodes,
-                scaleBarcode: line.scaleBarcode ?? null,
-                serials: line.serials,
-              })),
-              payments: paymentInput,
-              customerId: cart.member?.id ?? null,
-              couponCode: cart.coupon?.code ?? null,
-              // ⚠️ ส่งจำนวนแต้มที่ **พรีวิวบอกว่าจะหักจริง** ไม่ใช่ที่แคชเชียร์พิมพ์ —
-              // createOrderInTx ปฏิเสธทั้งบิลเมื่อหักได้ไม่เท่าที่ขอ (เศษแต้มที่ไม่ครบ
-              // หน่วยแลก ต่ำกว่าขั้นต่ำ หรือชนเพดานส่วนลดของบิล) และยอดที่จอโชว์ก็มาจาก
-              // พรีวิวตัวเดียวกันนี้อยู่แล้ว
-              pointsToRedeem:
-                source === 'board_game'
-                  ? confirmedBoardGamePreview?.pointsUsed ?? 0
-                  : cart.pointsUsed,
-              manualDiscount: cart.manualDiscount?.amount ?? null,
-              discountReason: cart.manualDiscount?.reason ?? null,
-              discountApproverUserId:
-                cart.manualDiscount?.approverUserId ?? null,
-              discountApproverPin: cart.manualDiscount?.approverPin ?? null,
-              extraLines: cart.extraLines.map(line => ({
-                label: line.label,
-                qty: line.qty,
-                unitAmount: line.unitAmount,
-              })),
-              creditApproverPin: creditApproverPin || null,
-              creditApproverUserId: creditApproverId || null,
-              depositCustomerNote:
-                saleMode === 'DEPOSIT' ? depositNote.trim() || null : null,
-              depositDueAt:
-                saleMode === 'DEPOSIT' ? depositDueAt.trim() || null : null,
-              pharmacistAuthorizationNote: pharmacistId
-                ? pharmacistNote.trim() || null
-                : null,
-              pharmacistAuthorizerPin:
-                pharmacistId && pharmacistId !== session.cashier.id
-                  ? pharmacistPin || null
+        const saleKey = idempotencyRef.current ?? createIdempotencyKey('sale');
+        idempotencyRef.current = saleKey;
+        if (offlineEligible && source === 'retail') {
+          await offlineSales.stage({
+            payload: offlinePayload(saleKey),
+            total,
+          });
+          stagedRecovery = true;
+        }
+        const response = await runWithOperationTimeout(signal =>
+          sell({
+            context: { fetchOptions: { signal } },
+            variables: {
+              input: {
+                cashierUserId: session.credentials.cashierUserId,
+                pin: session.credentials.pin,
+                idempotencyKey: saleKey,
+                offlineTenderedAt: null,
+                mode: saleMode,
+                boardGameBillingGroupId:
+                  boardGameParams?.boardGameBillingGroupId ?? null,
+                lines: cart.lines.map(line => ({
+                  sku: line.sku,
+                  size: line.size,
+                  packCode: line.packCode || null,
+                  packQty: line.qty,
+                  baseQty: line.baseQty,
+                  packPrice: null,
+                  unitName: line.unitName || null,
+                  modifierCodes: line.modifierCodes,
+                  scaleBarcode: line.scaleBarcode ?? null,
+                  serials: line.serials,
+                })),
+                payments: paymentInput,
+                customerId: cart.member?.id ?? null,
+                couponCode: cart.coupon?.code ?? null,
+                // ⚠️ ส่งจำนวนแต้มที่ **พรีวิวบอกว่าจะหักจริง** ไม่ใช่ที่แคชเชียร์พิมพ์ —
+                // createOrderInTx ปฏิเสธทั้งบิลเมื่อหักได้ไม่เท่าที่ขอ (เศษแต้มที่ไม่ครบ
+                // หน่วยแลก ต่ำกว่าขั้นต่ำ หรือชนเพดานส่วนลดของบิล) และยอดที่จอโชว์ก็มาจาก
+                // พรีวิวตัวเดียวกันนี้อยู่แล้ว
+                pointsToRedeem:
+                  source === 'board_game'
+                    ? confirmedBoardGamePreview?.pointsUsed ?? 0
+                    : cart.pointsUsed,
+                manualDiscount: cart.manualDiscount?.amount ?? null,
+                discountReason: cart.manualDiscount?.reason ?? null,
+                discountApproverUserId:
+                  cart.manualDiscount?.approverUserId ?? null,
+                discountApproverPin: cart.manualDiscount?.approverPin ?? null,
+                extraLines: cart.extraLines.map(line => ({
+                  label: line.label,
+                  qty: line.qty,
+                  unitAmount: line.unitAmount,
+                })),
+                creditApproverPin: creditApproverPin || null,
+                creditApproverUserId: creditApproverId || null,
+                depositCustomerNote:
+                  saleMode === 'DEPOSIT' ? depositNote.trim() || null : null,
+                depositDueAt:
+                  saleMode === 'DEPOSIT' ? depositDueAt.trim() || null : null,
+                pharmacistAuthorizationNote: pharmacistId
+                  ? pharmacistNote.trim() || null
                   : null,
-              pharmacistAuthorizerUserId: pharmacistId || null,
-              pharmacyApprovedAssessmentId:
-                cart.pharmacyReview?.canResume === true
-                  ? cart.pharmacyReview.assessmentId
-                  : null,
-              pharmacyReviewAssessmentId:
-                pharmacistId && cart.pharmacyReview
-                  ? cart.pharmacyReview.assessmentId
-                  : null,
+                pharmacistAuthorizerPin:
+                  pharmacistId && pharmacistId !== session.cashier.id
+                    ? pharmacistPin || null
+                    : null,
+                pharmacistAuthorizerUserId: pharmacistId || null,
+                pharmacyApprovedAssessmentId:
+                  cart.pharmacyReview?.canResume === true
+                    ? cart.pharmacyReview.assessmentId
+                    : null,
+                pharmacyReviewAssessmentId:
+                  pharmacistId && cart.pharmacyReview
+                    ? cart.pharmacyReview.assessmentId
+                    : null,
+              },
             },
-          },
-        });
+          }),
+        );
         const result = response.data?.bmsPosSale;
         if (
           result?.status === 'PHARMACY_REVIEW_REQUIRED' ||
@@ -799,10 +949,18 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           return;
         }
         if (result?.status !== 'SOLD' || !result.orderId) {
+          if (stagedRecovery) {
+            await offlineSales.discard(idempotencyRef.current);
+            stagedRecovery = false;
+          }
           idempotencyRef.current = null;
           throw new Error(describeMobileSaleFailure(result));
         }
         orderId = result.orderId;
+        if (stagedRecovery) {
+          await offlineSales.complete(idempotencyRef.current);
+          stagedRecovery = false;
+        }
         cart.clear();
       }
       await refreshSales();
@@ -811,6 +969,35 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       navigation.replace('Receipt', { saleId: orderId, source });
     } catch (error) {
       setConfirmOpen(false);
+      if (
+        stagedRecovery &&
+        idempotencyRef.current &&
+        !isDecidedRejection(error)
+      ) {
+        await offlineSales.queue(
+          idempotencyRef.current,
+          error instanceof Error ? error.message : 'ยังไม่ทราบผลการขาย',
+        );
+        cart.clear();
+        serverHealth.markOffline();
+        const reference = idempotencyRef.current.slice(-10);
+        idempotencyRef.current = null;
+        Alert.alert(
+          'รับเงินแล้ว · กำลังตรวจสอบผล',
+          `เลขอ้างอิงชั่วคราว ${reference} · ระบบจะตรวจรายการเดิมก่อนซิงก์และจะไม่สร้างบิลซ้ำ`,
+        );
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+        });
+        return;
+      }
+      if (stagedRecovery && idempotencyRef.current) {
+        await offlineSales
+          .discard(idempotencyRef.current)
+          .catch(() => undefined);
+        idempotencyRef.current = null;
+      }
       Alert.alert(
         'ขายไม่สำเร็จ',
         error instanceof Error ? error.message : 'กรุณาลองใหม่',
@@ -1550,6 +1737,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const totalAndActions = (
     <Card style={styles.summaryCard}>
+      {source === 'board_game' && boardGameTimeBenefit ? (
+        <View
+          style={[
+            styles.boardGameBenefit,
+            { backgroundColor: colors.successBg },
+          ]}
+        >
+          <Text style={[typography.captionStrong, { color: colors.success }]}>
+            {boardGameTimeBenefit.title}
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            {boardGameTimeBenefit.detail}
+          </Text>
+        </View>
+      ) : null}
       {discounts.discountTotal > 0 && (
         <View style={{ gap: spacing.xs, marginBottom: spacing.md }}>
           <AmountRow label="ยอดสินค้า" value={subtotal} />
@@ -1590,9 +1792,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <AmountRow label="ปัดเศษเงินสด" value={roundingDelta} />
         </>
       )}
-      {source === 'board_game' && (boardGamePreview?.reservationDepositApplied ?? 0) > 0 && (
-        <AmountRow label="ใช้มัดจำการจอง" value={-Number(boardGamePreview?.reservationDepositApplied ?? 0)} discount />
-      )}
+      {source === 'board_game' &&
+        (boardGamePreview?.reservationDepositApplied ?? 0) > 0 && (
+          <AmountRow
+            label="ใช้มัดจำการจอง"
+            value={-Number(boardGamePreview?.reservationDepositApplied ?? 0)}
+            discount
+          />
+        )}
       <AmountRow label="ยอดสุทธิ" value={total} />
       <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />
       <AmountRow label="คงเหลือ" value={validation.remaining} />
@@ -1612,11 +1819,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     pointsUsedOverride:
       source === 'restaurant'
         ? restaurantPreview?.pointsUsed ?? 0
-        : source === 'board_game' ? boardGamePreview?.pointsUsed ?? 0 : undefined,
+        : source === 'board_game'
+        ? boardGamePreview?.pointsUsed ?? 0
+        : undefined,
     previewLoadingOverride:
       source === 'restaurant'
         ? restaurantPricing.loading
-        : source === 'board_game' ? boardGamePricing.loading : undefined,
+        : source === 'board_game'
+        ? boardGamePricing.loading
+        : undefined,
     previewErrorOverride:
       source === 'restaurant'
         ? restaurantPricing.error?.message ??
@@ -1639,16 +1850,17 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           amount: total,
         }
       : undefined;
-  const restaurantBenefitsSelection = source === 'restaurant'
-    ? {
-        coupon: restaurantCoupon,
-        setCoupon: setRestaurantCoupon,
-        pointsToRedeem: restaurantPointsToRedeem,
-        setPointsToRedeem: setRestaurantPointsToRedeem,
-        manualDiscount: restaurantManualDiscount,
-        setManualDiscount: setRestaurantManualDiscount,
-      }
-    : undefined;
+  const restaurantBenefitsSelection =
+    source === 'restaurant'
+      ? {
+          coupon: restaurantCoupon,
+          setCoupon: setRestaurantCoupon,
+          pointsToRedeem: restaurantPointsToRedeem,
+          setPointsToRedeem: setRestaurantPointsToRedeem,
+          manualDiscount: restaurantManualDiscount,
+          setManualDiscount: setRestaurantManualDiscount,
+        }
+      : undefined;
 
   return (
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
@@ -1983,6 +2195,12 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     gap: 6,
+  },
+  boardGameBenefit: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 4,
   },
   tabletPaymentScroll: {
     flex: 1,

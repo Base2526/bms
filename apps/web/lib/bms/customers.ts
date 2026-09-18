@@ -708,6 +708,35 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
         WHERE tenant_id = $1 AND customer_id = $2`,
       [tenantId, mergeId, keepId]
     );
+    await client.query(
+      `UPDATE bms_board_game_member_passes SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    // A member may already have renewal enabled on the kept identity. Preserve that live agreement
+    // and close the duplicate before moving the rest, or the unique live-renewal rule would make the
+    // whole CRM merge fail after every earlier customer-owned module has already been locked.
+    await client.query(
+      `UPDATE bms_board_game_pass_renewals source
+          SET status = 'CANCELLED', cancelled_at = now(),
+              cancel_reason = 'ยกเลิกสัญญาซ้ำระหว่างรวมข้อมูลลูกค้า',
+              version = version + 1, updated_at = now()
+        WHERE source.tenant_id = $1 AND source.customer_id = $2
+          AND source.status IN ('ACTIVE','PAST_DUE','PAUSED')
+          AND EXISTS (
+            SELECT 1 FROM bms_board_game_pass_renewals destination
+             WHERE destination.tenant_id = $1 AND destination.customer_id = $3
+               AND destination.plan_code = source.plan_code
+               AND destination.location_id IS NOT DISTINCT FROM source.location_id
+               AND destination.status IN ('ACTIVE','PAST_DUE','PAUSED')
+          )`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_board_game_pass_renewals SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
     // Retention has one row per customer+period. Move every non-conflicting
     // case. When both identities already have a case for the same period, keep
     // both immutable histories attached to their original rows: deleting one

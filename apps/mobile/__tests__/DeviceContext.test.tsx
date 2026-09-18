@@ -273,7 +273,11 @@ describe('DeviceProvider', () => {
     await act(async () => {
       await device!.pair(TARGET);
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const graphqlCallCount = () =>
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith('/api/graphql'),
+      ).length;
+    expect(graphqlCallCount()).toBe(1);
 
     await act(async () => {
       device!.markAuthenticationRejected();
@@ -281,7 +285,7 @@ describe('DeviceProvider', () => {
     });
 
     expect(device!.verify.kind).toBe('REJECTED');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(graphqlCallCount()).toBe(1);
 
     await act(async () => {
       tree!.unmount();

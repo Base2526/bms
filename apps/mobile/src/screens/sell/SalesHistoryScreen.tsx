@@ -63,6 +63,9 @@ function SaleStatus({ sale }: { sale: SaleSnapshot }) {
   if (sale.returns.length > 0) {
     return <StatusPill label="คืนสินค้า" tone="warning" />;
   }
+  if (sale.offlineTenderedAt) {
+    return <StatusPill label="ขายออฟไลน์" tone="success" />;
+  }
   return <StatusPill label="ขายแล้ว" tone="success" />;
 }
 
@@ -414,7 +417,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                     style={[typography.caption, { color: colors.textMuted }]}
                     numberOfLines={1}
                   >
-                    {formatSaleTime(item.createdAt)}
+                    {formatSaleTime(item.offlineTenderedAt ?? item.createdAt)}
                   </Text>
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
@@ -497,7 +500,8 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                   style={[typography.caption, { color: colors.textMuted }]}
                   numberOfLines={1}
                 >
-                  {formatSaleTime(item.createdAt)} · {saleCustomerLabel(item)}
+                  {formatSaleTime(item.offlineTenderedAt ?? item.createdAt)} ·{' '}
+                  {saleCustomerLabel(item)}
                 </Text>
                 <Text
                   style={[typography.caption, { color: colors.textSoft }]}

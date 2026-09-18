@@ -1402,7 +1402,7 @@ const TH: ManualContent = {
   ],
   posBoundariesTitle: "ขอบเขตที่ต้องรู้ก่อนสอนทีม",
   posBoundaries: [
-    "POS เป็นระบบออนไลน์ ไม่รองรับขายแบบ offline-first; งานระหว่างล่มต้องจดและ reconcile ภายหลังตามขั้นตอนร้าน",
+    "POS เว็บยังต้องออนไลน์; Native POS รองรับออฟไลน์เฉพาะขายปลีกเงินสดแบบไม่มีสมาชิก/แต้ม/ส่วนลด/serial/สินค้าชั่ง/ร้านอาหาร/Board Game โดยคิวเข้ารหัสจะซิงก์ด้วย key เดิม และต้องเคลียร์รายการค้างก่อนปิดกะ",
     "กล้องมือถือเป็นโหมดทดสอบ และ ESC/POS/WebUSB ยังต้องทดสอบกับ printer แต่ละรุ่น; ไม่มี driver เครื่อง EDC",
     "Store credit/gift card มี service และ API แล้ว แต่ปุ่มรับด้วยเครดิตร้าน/ออกบัตรยังไม่ถูกต่อเข้าจอ POS ปัจจุบัน จึงอย่าสอนเป็นขั้นตอนหน้าร้านที่ใช้งานได้",
     "e-Tax ไม่ได้ส่งกรมสรรพากรอัตโนมัติ และ provider จริงยังต้องเปิด/ตรวจแยก; เอกสารภาษีในเครื่องยังต้องทวนกับผู้ทำบัญชี",
@@ -2613,7 +2613,7 @@ const EN: ManualContent = {
   ],
   posBoundariesTitle: "Boundaries to explain during training",
   posBoundaries: [
-    "The POS is online, not offline-first. Record outage work and reconcile it later using the shop's written procedure.",
+    "Web POS still requires a connection. Native POS can queue only plain retail cash sales without members, points, discounts, serials, weighted items, restaurant checks, or board-game bills; its encrypted queue reuses the original key and must be cleared before shift close.",
     "Camera scanning is a test mode, and ESC/POS/WebUSB must be tested per printer model. There is no EDC terminal driver.",
     "Store credit/gift card services and APIs exist, but issue/redeem controls are not connected to the current POS screen; do not train this as an available counter workflow.",
     "e-Tax is not automatically submitted to the Revenue Department and its live provider remains separately gated; verify local tax documents with the accountant.",

@@ -23,6 +23,7 @@ import {
   normalizeServerUrl,
   parsePairingInput,
 } from '../../lib/pairing';
+import { loadOfflineSales } from '../../lib/offlineSales';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -103,7 +104,27 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
     }
   }
 
-  function onUnpair() {
+  async function onUnpair() {
+    try {
+      const pending = (await loadOfflineSales()).filter(
+        record => record.serverUrl === target?.serverUrl,
+      );
+      if (pending.length > 0) {
+        Alert.alert(
+          'ยังเลิกจับคู่ไม่ได้',
+          `มีรายการรับเงินออฟไลน์ค้าง ${pending.length} รายการ กรุณาซิงก์หรือตรวจสอบให้เสร็จก่อน เพื่อไม่ให้ยอดขายหายจากเครื่องเดิม`,
+        );
+        return;
+      }
+    } catch (error) {
+      Alert.alert(
+        'ยังเลิกจับคู่ไม่ได้',
+        error instanceof Error
+          ? `${error.message} · ต้องตรวจคิวให้ได้ก่อน`
+          : 'ตรวจคิวออฟไลน์ไม่ได้ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+      );
+      return;
+    }
     Alert.alert(
       'เลิกจับคู่เครื่องนี้?',
       'เครื่องจะลืม token และใช้ขายไม่ได้จนกว่าจะจับคู่ใหม่ · token เดิมที่หน้าแอดมินยังใช้ได้อยู่ (ถ้ายังไม่ได้ออกใหม่)',

@@ -27,6 +27,8 @@ export interface SaleSnapshot {
   id: string;
   receiptNo: string;
   createdAt: string;
+  offlineTenderedAt: string | null;
+  offlineSyncedAt: string | null;
   source: 'retail' | 'restaurant';
   restaurantServiceMode: 'DINE_IN' | 'TAKEAWAY' | null;
   tableCode?: string;
@@ -101,6 +103,8 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
           id: receipt.orderId,
           receiptNo: receipt.receiptNo ?? receipt.billNo ?? receipt.orderId,
           createdAt: receipt.soldAt,
+          offlineTenderedAt: receipt.offlineTenderedAt,
+          offlineSyncedAt: receipt.offlineSyncedAt,
           source: receipt.restaurantServiceMode ? 'restaurant' : 'retail',
           restaurantServiceMode:
             receipt.restaurantServiceMode === 'DINE_IN' ||

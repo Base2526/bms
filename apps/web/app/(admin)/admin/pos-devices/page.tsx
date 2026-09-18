@@ -18,13 +18,16 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const Q = gql`
-  query PosSetup {
+  query PosSetup($includeDiagnostics: Boolean!, $diagnosticDeviceId: ID) {
     bmsLocations { id name branchCode isHeadOffice }
     bmsPosDevices {
       id locationId code name registeredPosNo receiptPrefix
-      scannerMode scannerPrefixKey scannerSuffixKey scannerMaxGapMs active
+      scannerMode scannerPrefixKey scannerSuffixKey scannerMaxGapMs active lastSeenAt
     }
     bmsPosStaff { id name email role isPharmacist hasPin posOnly }
+    bmsPosDeviceDiagnostics(deviceId: $diagnosticDeviceId, limit: 50) @include(if: $includeDiagnostics) {
+      id occurredAt receivedAt deviceId locationId actorId category action status message context
+    }
   }
 `;
 const M_UPSERT = gql`
@@ -46,7 +49,13 @@ type Device = {
   id: string; locationId: string; code: string; name: string | null;
   registeredPosNo: string | null; receiptPrefix: string | null; active: boolean;
   scannerMode: "FOCUS" | "PREFIX"; scannerPrefixKey: string;
-  scannerSuffixKey: string; scannerMaxGapMs: number;
+  scannerSuffixKey: string; scannerMaxGapMs: number; lastSeenAt: string | null;
+};
+
+type DiagnosticEvent = {
+  id: string; occurredAt: string; receivedAt: string; deviceId: string | null;
+  locationId: string | null; actorId: string | null; action: string;
+  status: string | null; message: string | null; context: Record<string, unknown>;
 };
 
 const SCANNER_PREFIX_OPTIONS = ["F9", ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`)
@@ -57,8 +66,11 @@ export default function PosDevicesPage() {
   const canDevices = can("pos.device.manage");
   const canPins = can("pos.pin.manage");
   const canStaff = can("pos.staff.manage");
+  const canDiagnostics = can("support.logs.view");
+  const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
   const { data, loading, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
+    variables: { includeDiagnostics: canDiagnostics, diagnosticDeviceId },
     skip: !canDevices && !canPins && !canStaff,
   });
 
@@ -81,7 +93,13 @@ export default function PosDevicesPage() {
   const locations = data?.bmsLocations ?? [];
   const devices: Device[] = data?.bmsPosDevices ?? [];
   const cashiers = data?.bmsPosStaff ?? [];
+  const diagnostics: DiagnosticEvent[] = data?.bmsPosDeviceDiagnostics ?? [];
   const locationName = (id: string) => locations.find((l: any) => l.id === id)?.name ?? "—";
+  const deviceLabel = (id: string | null | undefined) => {
+    const device = devices.find((item) => item.id === id);
+    return device ? `${device.code}${device.name ? ` · ${device.name}` : ""}` : "—";
+  };
+  const fmtDT = (value: string | null | undefined) => value ? new Date(value).toLocaleString("th-TH") : "—";
   // ลิงก์จับคู่: หน้าขายอ่าน ?t= แล้วเก็บลง localStorage และลบ query ออกจาก URL ทันที
   const pairUrl = issuedToken
     ? `${typeof window === "undefined" ? "" : window.location.origin}/pos?t=${encodeURIComponent(issuedToken)}`
@@ -202,6 +220,12 @@ export default function PosDevicesPage() {
                   render: (v: boolean) => (v ? <Tag color="green">ใช้งาน</Tag> : <Tag>ปิด</Tag>),
                 },
                 {
+                  title: "ติดต่อหลังบ้านล่าสุด",
+                  dataIndex: "lastSeenAt",
+                  width: 180,
+                  render: (v: string | null) => v ? fmtDT(v) : <span style={{ color: "#999" }}>ยังไม่เคยเห็น</span>,
+                },
+                {
                   title: "",
                   width: 190,
                   render: (_: unknown, d: Device) => (
@@ -234,6 +258,79 @@ export default function PosDevicesPage() {
           <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
             ออก token ใหม่ = ตัวเดิมใช้ไม่ได้ทันที (ใช้ตอนเครื่องหาย) · เอา token ไปใส่ที่จอขาย <a href="/pos">/pos</a> หรือ <a href="/pos/restaurant">/pos/restaurant</a> ตาม archetype ของร้าน
           </Typography.Paragraph>
+        </Card>
+      )}
+
+      {canDiagnostics && (
+        <Card
+          title="เหตุการณ์ล่าสุดจากเครื่อง POS"
+          extra={
+            <Space wrap>
+              <Select
+                allowClear
+                placeholder="ทุกเครื่อง"
+                style={{ width: 260 }}
+                value={diagnosticDeviceId ?? undefined}
+                onChange={(value) => setDiagnosticDeviceId(value ?? null)}
+                options={devices.map((device) => ({
+                  value: device.id,
+                  label: deviceLabel(device.id),
+                }))}
+              />
+              <Button onClick={() => void refetch()}>รีเฟรช</Button>
+            </Space>
+          }
+          loading={loading}
+        >
+          <Alert closable
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="ดูได้ว่าเครื่องไหนส่งเหตุการณ์อะไรกลับมา และสาเหตุที่ server/client รายงานคืออะไร"
+            description="รายการนี้มาจาก bms_support_events ของเครื่อง POS เท่านั้น ไม่เก็บ PIN, token, request body หรือข้อมูลบัตร"
+          />
+          <Table
+            size="small"
+            rowKey="id"
+            dataSource={diagnostics}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+            columns={[
+              { title: "เวลา", dataIndex: "occurredAt", width: 180, render: fmtDT },
+              { title: "เครื่อง", dataIndex: "deviceId", width: 180, render: deviceLabel },
+              {
+                title: "เหตุการณ์",
+                dataIndex: "action",
+                width: 220,
+                render: (value: string, row: DiagnosticEvent) => (
+                  <Space size={6} wrap>
+                    <Tag color={row.status === "success" ? "green" : row.status === "warning" ? "gold" : row.status === "error" ? "red" : "default"}>
+                      {row.status ?? "info"}
+                    </Tag>
+                    <span>{value}</span>
+                  </Space>
+                ),
+              },
+              {
+                title: "สาเหตุ / ข้อความ",
+                dataIndex: "message",
+                render: (value: string | null, row: DiagnosticEvent) => {
+                  const errorCode = row.context?.errorCode;
+                  const httpStatus = row.context?.httpStatus;
+                  return (
+                    <Space direction="vertical" size={0}>
+                      <span>{value || "—"}</span>
+                      {errorCode != null && (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          code: {String(errorCode)}
+                          {httpStatus != null ? ` · HTTP ${String(httpStatus)}` : ""}
+                        </Typography.Text>
+                      )}
+                    </Space>
+                  );
+                },
+              },
+            ]}
+          />
         </Card>
       )}
 

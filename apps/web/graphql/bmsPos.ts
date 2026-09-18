@@ -45,6 +45,7 @@ import {
   setPharmacyCounterSettings,
   listProductsNeedingPolicyReview,
 } from "@/lib/bms/pharmacy/policyReadiness";
+import { listPosDeviceDiagnosticEvents } from "@/lib/bms/supportDiagnostics";
 
 type ID_ = string;
 
@@ -58,6 +59,15 @@ export const bmsPosResolvers = {
     async bmsPosDevices(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "pos.device.manage");
       return listPosDevices(getTenantId(ctx));
+    },
+
+    async bmsPosDeviceDiagnostics(_p: unknown, args: { deviceId?: string | null; limit?: number | null }, ctx: any) {
+      await requirePermission(ctx, "support.logs.view");
+      return listPosDeviceDiagnosticEvents({
+        tenantId: getTenantId(ctx),
+        deviceId: args.deviceId ?? null,
+        limit: args.limit ?? 50,
+      });
     },
 
     /** พนักงานในร้าน + สถานะ PIN — ใช้ในหน้าตั้งค่า POS ฝั่งแอดมิน */

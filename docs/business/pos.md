@@ -1408,9 +1408,19 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
 - A `PENDING` or `PAID` sale can resume its settlement transaction. A completed key replays the
   original result. Keys tied to cancelled/returned terminal states cannot be reused as a new sale.
 - Returns also require an idempotency key based on the receipt and cumulative returned quantities.
-- This is not an offline POS. Search, sale, return, settlement, and shift actions require the BMS
-  server and PostgreSQL to be reachable. Keep a documented manual outage procedure and enter those
-  transactions only after connectivity returns.
+- This is not a general offline POS. Native POS may queue only a plain retail sale paid entirely in
+  cash, with no member, points, coupon, manual discount, serial/weighted/modifier item, pharmacy
+  approval, credit, deposit, restaurant check, or board-game billing group. The encrypted device
+  queue stores no PIN, recovers by the original idempotency key before retrying, flushes serially
+  under the original cashier while that device shift remains open,
+  and blocks shift close while unresolved. A rejected sync remains visible for review and can be
+  retried with the same key after its stock or pricing cause is corrected. The pending reference is
+  not a receipt or tax document. Scan, settlement and recovery requests have a bounded client wait;
+  a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing is
+  refused while its encrypted queue still contains accepted cash. Once committed, recent-sale views
+  on both native and web POS identify the bill as an offline tender that has synced;
+  payment, stock, audit and tax still commit only in the normal server transaction. Every other
+  search, sale, return, settlement, and shift action requires BMS and PostgreSQL to be reachable.
 
 ## Go-live checklist
 

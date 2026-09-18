@@ -147,7 +147,7 @@ production introspection. The artifact is generated from the executable schema w
 
 | Output contract | Operations |
 | --- | --- |
-| Typed (140) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
+| Typed (141) | Every mobile/POS query and mutation exported by bmsPosDevice and bmsMobileOperations; the executable-schema contract checks the exact set and recursively rejects nested `JSON`. |
 | JSON compatibility (0) | None. |
 
 Every operation in the table above has typed arguments and a typed output tree; the count lives in
@@ -571,6 +571,17 @@ oscillate `REJECTED -> CHECKING` and remount Login into a request loop. A timeou
 never clears the pairing or marks the token rejected.
 
 ## Offline queue
+
+The in-repository native client implements a bounded encrypted queue for one deliberately narrow
+case: a plain retail sale paid entirely in cash, with no member, points, coupon, manual discount,
+serial, weighted item, modifier, pharmacy approval, credit, deposit, restaurant check, or board-game
+billing group. It persists the request before the first send, never persists a PIN, recovers a
+completed result by idempotency key before retrying, flushes serially, and blocks shift close while
+anything remains pending or needs review. `offlineTenderedAt` is evidence of when cash was accepted;
+the normal server settlement remains the only path that commits payment, stock, audit, and tax.
+GraphQL scan/settlement/recovery calls are time-bounded with an abort signal, but a timed-out mutation
+remains an unknown outcome and is recovered with the same key. Unpair is blocked while accepted cash
+remains queued, and committed receipts expose tender/sync timestamps for operator verification.
 
 Only queue operations that are safe to replay. The rule is the `idempotencyKey`, not the screen.
 

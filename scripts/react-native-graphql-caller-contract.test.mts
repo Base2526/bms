@@ -68,9 +68,15 @@ test("RN money callers retain stable retry keys and filter second-person permiss
   const adjustments = read(
     "apps/mobile/src/components/CheckoutAdjustmentsCard.tsx"
   );
-  assert.match(
-    checkout,
-    /idempotencyRef\.current \?\?= createIdempotencyKey\('sale'\)/
+  // กฎคือ "คีย์ของการขายถูกออกครั้งเดียวแล้วเก็บไว้ใน ref" ไม่ใช่การสะกดด้วย `??=` —
+  // การยิงซ้ำต้องได้คีย์เดิมเสมอ ไม่ว่าจะเขียนเป็นบรรทัดเดียวหรือแยกอ่าน/เขียน
+  const mintsSaleKeyOnce =
+    /idempotencyRef\.current \?\?= createIdempotencyKey\('sale'\)/.test(checkout) ||
+    /const (\w+) = idempotencyRef\.current \?\? createIdempotencyKey\('sale'\);[\s\S]{0,120}idempotencyRef\.current = \1;/
+      .test(checkout);
+  assert.ok(
+    mintsSaleKeyOnce,
+    "the sale retry key must be minted once and kept in idempotencyRef, so a retry reuses it"
   );
   assert.match(detail, /returnKey\.current \?\?= createIdempotencyKey\(/);
   assert.match(detail, /'exchange-return'/);

@@ -160,7 +160,7 @@ const CHILD_OF_AGGREGATE = [
   "bms_shipment_tracking_events", "bms_stock_count_items", "bms_stock_transfer_items",
   "bms_support_events", "bms_order_discounts", "bms_order_extra_lines",
   "bms_order_item_stock_consumption", "bms_stock_movements",
-  "bms_board_game_reservation_deposit_applications",
+  "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",
 ];
 
 /** ร่องรอย/ตัวชี้วัดของระบบ ไม่ใช่สถานะธุรกิจที่จอไหนเฝ้าดูอยู่ */
@@ -195,7 +195,7 @@ const CONFIGURATION = [
   "bms_actions", "bms_pharmacy_clinical_evidence", "bms_pos_purchase_receipts",
   "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens",
   "bms_board_game_areas", "bms_board_game_public_locations", "bms_board_game_tables",
-  "bms_board_game_time_rates", "bms_board_game_titles",
+  "bms_board_game_time_rates", "bms_board_game_titles", "bms_board_game_offers",
   "bms_board_game_guest_tokens",
 ];
 
@@ -206,6 +206,7 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_board_game_billing_groups", "bms_board_game_group_items",
   "bms_board_game_seatings",
   "bms_board_game_pass_plans", "bms_board_game_member_passes", "bms_board_game_pass_ledger",
+  "bms_board_game_pass_renewals",
   "bms_board_game_identity_holds",
 ];
 

@@ -141,6 +141,86 @@ function localDateTimeInput(value: string | null | undefined) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+function christianYear(year: number) {
+  return year >= 2400 ? year - 543 : year;
+}
+
+function parseReservationDateInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  let year: number;
+  let month: number;
+  let day: number;
+  const separated = trimmed.match(
+    /^(\d{1,4})[/.-](\d{1,2})[/.-](\d{2,4})$/,
+  );
+  const compact = trimmed.replace(/\D/g, '');
+
+  if (separated) {
+    const first = Number(separated[1]);
+    const second = Number(separated[2]);
+    const thirdRaw = separated[3];
+    const third = Number(thirdRaw);
+    if (separated[1].length === 4 || first > 31) {
+      year = first;
+      month = second;
+      day = third;
+    } else {
+      day = first;
+      month = second;
+      year = thirdRaw.length === 2 ? 2000 + third : third;
+    }
+  } else if (/^\d{8}$/.test(compact)) {
+    const firstFour = Number(compact.slice(0, 4));
+    if (firstFour >= 1900 && firstFour <= 2600) {
+      year = firstFour;
+      month = Number(compact.slice(4, 6));
+      day = Number(compact.slice(6, 8));
+    } else {
+      day = Number(compact.slice(0, 2));
+      month = Number(compact.slice(2, 4));
+      year = Number(compact.slice(4, 8));
+    }
+  } else {
+    return null;
+  }
+
+  year = christianYear(year);
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+function parseReservationTimeInput(value: string) {
+  const match = value.trim().match(/^(\d{1,2})(?::|\.)(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return { hours, minutes };
+}
+
+function parseReservationInstant(dateValue: string, timeValue: string) {
+  const date = parseReservationDateInput(dateValue);
+  const time = parseReservationTimeInput(timeValue);
+  if (!date || !time) return null;
+  const instant = new Date(
+    date.year,
+    date.month - 1,
+    date.day,
+    time.hours,
+    time.minutes,
+  );
+  return Number.isFinite(instant.getTime()) ? instant : null;
+}
+
 /**
  * ป้ายชนิดเอกสาร (`9.93`) — ลิสต์เดียวกับ `BOARD_GAME_IDENTITY_KINDS` ของ service ·
  * ชนิดที่จอไม่รู้จักแสดงเป็นรหัสดิบแทนการซ่อน เพราะบัตรที่ไม่มีป้ายคือบัตรที่หาไม่เจอในลิ้นชัก
@@ -212,6 +292,18 @@ function alertLabel(status: string | null | undefined) {
   if (status === 'ENDING_SOON') return 'ใกล้หมดเวลา';
   if (status === 'CLOSING') return 'รอชำระ';
   return 'กำลังเล่น';
+}
+
+function attentionLabel(
+  session: NonNullable<Table['openSession']>,
+  now: number,
+) {
+  if (!session.expectedEndAt) return alertLabel(session.alertStatus);
+  const remainingMs = new Date(session.expectedEndAt).getTime() - now;
+  if (!Number.isFinite(remainingMs)) return alertLabel(session.alertStatus);
+  return remainingMs <= 0
+    ? `เกิน ${Math.max(1, Math.ceil(Math.abs(remainingMs) / 60000))} นาที`
+    : `เหลือ ${Math.ceil(remainingMs / 60000)} นาที`;
 }
 
 export default function BoardGameScreen({ navigation }: FloorProps) {
@@ -342,6 +434,21 @@ function BoardGameFloor({
     },
     { available: 0, playing: 0, ending: 0, overdue: 0 },
   );
+  const attentionTables = tables
+    .filter(table =>
+      ['ENDING_SOON', 'OVERDUE'].includes(
+        table.openSession?.alertStatus ?? '',
+      ),
+    )
+    .sort((left, right) => {
+      const leftStatus = left.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
+      const rightStatus = right.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
+      if (leftStatus !== rightStatus) return leftStatus - rightStatus;
+      return (
+        new Date(left.openSession?.expectedEndAt ?? 0).getTime() -
+        new Date(right.openSession?.expectedEndAt ?? 0).getTime()
+      );
+    });
   const primaryTint =
     scheme === 'dark' ? 'rgba(22, 119, 255, 0.18)' : '#eff6ff';
   const primaryTintStrong =
@@ -713,6 +820,94 @@ function BoardGameFloor({
       })}
     </View>
   );
+
+  const attentionBoard =
+    attentionTables.length > 0 ? (
+      <Card
+        style={{
+          gap: 10,
+          borderWidth: StyleSheet.hairlineWidth,
+          backgroundColor:
+            counts.overdue > 0 ? colors.dangerBg : colors.warningBg,
+          borderColor: counts.overdue > 0 ? colors.danger : colors.warning,
+        }}
+      >
+        <View style={styles.between}>
+          <View style={styles.flex}>
+            <Text style={[typography.bodyStrong, { color: colors.text }]}>
+              โต๊ะที่ต้องดูตอนนี้
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              เกินเวลา {counts.overdue} · ใกล้หมดเวลา {counts.ending}
+            </Text>
+          </View>
+          <Button label="รีเฟรช" variant="secondary" onPress={onRetry} />
+        </View>
+        <View style={styles.attentionList}>
+          {attentionTables.map(table => {
+            const sessionSummary = table.openSession!;
+            const sessionId = sessionSummary.id;
+            if (!sessionId) return null;
+            const overdue = sessionSummary.alertStatus === 'OVERDUE';
+            return (
+              <Pressable
+                key={`${sessionId}-${sessionSummary.alertStatus}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${table.code} ${table.name} ${attentionLabel(
+                  sessionSummary,
+                  now,
+                )}`}
+                onPress={() =>
+                  onOpenSession(sessionId)
+                }
+                style={({ pressed }) => [
+                  styles.attentionItem,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: overdue ? colors.danger : colors.warning,
+                    opacity: pressed ? 0.82 : 1,
+                  },
+                ]}
+              >
+                <View style={styles.flex}>
+                  <Text
+                    numberOfLines={1}
+                    style={[typography.bodyStrong, { color: colors.text }]}
+                  >
+                    {table.code} · {table.name}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      typography.caption,
+                      { color: colors.textMuted },
+                    ]}
+                  >
+                    {sessionSummary.guestCount} คน · ครบเวลา{' '}
+                    {sessionSummary.expectedEndAt
+                      ? new Date(
+                          sessionSummary.expectedEndAt,
+                        ).toLocaleTimeString('th-TH', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '-'}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    typography.bodyStrong,
+                    { color: overdue ? colors.danger : colors.warning },
+                  ]}
+                >
+                  {attentionLabel(sessionSummary, now)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Card>
+    ) : null;
 
   const floorBody = (
     <>
@@ -1092,8 +1287,29 @@ function BoardGameFloor({
             onPress={() => {
               const partySize = Number(reservationPartySize);
               const durationMinutes = Number(reservationDuration);
-              const instant = new Date(
-                `${reservationStartDate}T${reservationStartTime}`,
+              const parsedDate = parseReservationDateInput(
+                reservationStartDate,
+              );
+              const parsedTime = parseReservationTimeInput(
+                reservationStartTime,
+              );
+              if (!parsedDate) {
+                Alert.alert(
+                  'วันที่จองไม่ถูกต้อง',
+                  'ใช้รูปแบบ 2026-09-18, 18/09/2569 หรือ 18092569',
+                );
+                return;
+              }
+              if (!parsedTime) {
+                Alert.alert(
+                  'เวลาจองไม่ถูกต้อง',
+                  'ใช้รูปแบบ 18:00 หรือ 18.00',
+                );
+                return;
+              }
+              const instant = parseReservationInstant(
+                reservationStartDate,
+                reservationStartTime,
               );
               const selectedTable = tables.find(
                 table => table.id === reservationTableId,
@@ -1107,7 +1323,7 @@ function BoardGameFloor({
                 partySize > 500 ||
                 !Number.isInteger(durationMinutes) ||
                 durationMinutes < 30 ||
-                !Number.isFinite(instant.getTime()) ||
+                !instant ||
                 !selectedTable ||
                 selectedTable.blocked ||
                 selectedTable.seats < partySize
@@ -1712,6 +1928,24 @@ function BoardGameFloor({
                   น.
                 </Text>
               ) : null}
+              {table.openSession &&
+              ['ENDING_SOON', 'OVERDUE'].includes(
+                table.openSession.alertStatus ?? '',
+              ) ? (
+                <Text
+                  style={[
+                    typography.captionStrong,
+                    {
+                      color:
+                        table.openSession.alertStatus === 'OVERDUE'
+                          ? colors.danger
+                          : colors.warning,
+                    },
+                  ]}
+                >
+                  {attentionLabel(table.openSession, now)}
+                </Text>
+              ) : null}
               <View
                 style={[
                   styles.floorCardFooter,
@@ -1767,6 +2001,7 @@ function BoardGameFloor({
             </Text>
           </View>
           {summary}
+          {attentionBoard}
           <ScrollView
             horizontal
             style={{ flexGrow: 0 }}
@@ -1896,6 +2131,7 @@ function BoardGameFloor({
             </Pressable>
           </View>
           {summary}
+          {attentionBoard}
           {floorBody}
         </ScrollView>
         {callsModal}
@@ -2074,6 +2310,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       sessionId: string;
       status: string;
     }> = [];
+    const active = new Set<string>();
     for (const table of data?.floor.tables ?? []) {
       const current = table.openSession;
       if (
@@ -2082,14 +2319,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       )
         continue;
       const key = `${current.id}:${current.alertStatus}`;
+      active.add(key);
       if (notified.current.has(key)) continue;
-      notified.current.add(key);
       pending.push({
         table,
         sessionId: current.id,
         status: current.alertStatus ?? '',
       });
     }
+    notified.current = active;
 
     if (pending.length === 0) return;
 
@@ -4319,6 +4557,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     lineHeight: 12,
+  },
+  attentionList: { gap: 8 },
+  attentionItem: {
+    minHeight: 58,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   phoneZoneRow: { gap: 8, paddingRight: 16 },
   phoneZoneButton: {
