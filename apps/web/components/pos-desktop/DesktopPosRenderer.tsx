@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   initialPosClientFlow,
@@ -61,8 +62,6 @@ import {
   EMPTY_CUSTOMER_DISPLAY,
   type CustomerDisplayPayload,
 } from "@/lib/pos/customerDisplay";
-import PosPage from "@/app/(pos)/pos/page";
-import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import {
@@ -78,6 +77,24 @@ import {
 import { ALERT_KINDS, newAlertIds } from "@/lib/pos/orderAlertSound";
 import { copyTextToClipboard } from "@/lib/pos/clipboard";
 import styles from "./DesktopPosRenderer.module.css";
+
+const loadAdvancedPosModule = () => import("@/app/(pos)/pos/page");
+const loadBoardGameModule = () => import("@/components/pos/BoardGamePanel");
+const PosPage = dynamic(loadAdvancedPosModule, {
+  loading: () => <DesktopModuleLoading label="กำลังเปิดเครื่องมือขาย…" />,
+});
+const BoardGamePanel = dynamic(loadBoardGameModule, {
+  loading: () => <DesktopModuleLoading label="กำลังเปิดพื้นที่บอร์ดเกม…" />,
+});
+
+function DesktopModuleLoading({ label }: { label: string }) {
+  return (
+    <div className={styles.moduleLoading} role="status">
+      <span className={styles.catalogSpinner} aria-hidden="true" />
+      <strong>{label}</strong>
+    </div>
+  );
+}
 
 type CartLine = PricedCartLine & {
   key: string;
@@ -466,6 +483,22 @@ export default function DesktopPosRenderer() {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
   }, [flow.stage, loadCatalog, query, token]);
+
+  useEffect(() => {
+    if (flow.stage !== "CATALOG") return;
+    // Keep the first selling screen small, then warm the less common workspaces once the browser
+    // has breathing room. This preserves fast board-game/module switching without making their
+    // large UI dependencies part of the initial /pos/app execution path.
+    const preloadModules = () => {
+      void Promise.allSettled([loadAdvancedPosModule(), loadBoardGameModule()]);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(preloadModules, { timeout: 3_000 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timer = window.setTimeout(preloadModules, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [flow.stage]);
 
   const signIn = async (event: FormEvent) => {
     event.preventDefault();

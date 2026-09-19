@@ -150,6 +150,18 @@ test("desktop POS overlaps the first catalogue read with cashier PIN entry", () 
   );
 });
 
+test("desktop POS defers heavy secondary workspaces until after the selling screen", () => {
+  assert.doesNotMatch(desktopRenderer, /import PosPage from/);
+  assert.doesNotMatch(desktopRenderer, /import BoardGamePanel from/);
+  assert.match(desktopRenderer, /dynamic\(loadAdvancedPosModule/);
+  assert.match(desktopRenderer, /dynamic\(loadBoardGameModule/);
+  assert.match(
+    desktopRenderer,
+    /requestIdleCallback\(preloadModules, \{ timeout: 3_000 \}\)/,
+    "secondary chunks should warm after the primary catalogue becomes interactive",
+  );
+});
+
 test("desktop header keeps cashier identity without a permanent legacy-sales escape button", () => {
   assert.doesNotMatch(
     desktopRenderer,

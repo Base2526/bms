@@ -616,6 +616,14 @@
   animation: catalog-spin 0.7s linear infinite;
 }
 @keyframes catalog-spin { to { transform: rotate(360deg); } }
+.moduleLoading {
+  min-height: 280px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: #344054;
+}
 
 .checkoutPane {
   display: flex;
