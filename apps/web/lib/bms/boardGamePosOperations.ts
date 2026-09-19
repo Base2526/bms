@@ -162,6 +162,7 @@ export type BoardGamePosAction =
   | "identity.hold"
   | "identity.release"
   | "service.access"
+  | "service.calls"
   | "service.acknowledge"
   | "service.complete"
   | "waitlist.add"
@@ -286,6 +287,11 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     requiresOpenShift: false,
   },
   "service.access": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
+  },
+  "service.calls": {
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: false,

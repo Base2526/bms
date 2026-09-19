@@ -11,8 +11,12 @@
  * กับที่ GraphQL ของ RN เรียก — สิทธิ์ ด่านสาขา และการแปลง input จึงมีชุดเดียว
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { useLiveRefresh, usePageVisible } from '@/app/hooks/useLiveRefresh';
 import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
+import { copyTextToClipboard } from '@/lib/pos/clipboard';
+import PosDismissibleAlert from '@/components/pos/PosDismissibleAlert';
+import type { PosServiceCallNotice } from '@/components/pos/PosWorkspaceContext';
 
 type Props = {
   token: string;
@@ -25,6 +29,7 @@ type Props = {
    * การส่ง id ของโต๊ะไปจึงตอบไม่ได้ว่าแท็บขายต้องเก็บเงินใบไหน
    */
   onCheckout: (billingGroupId: string) => void;
+  onServiceCallsChange?: (calls: PosServiceCallNotice[]) => void;
 };
 
 type SessionSummary = {
@@ -313,7 +318,7 @@ function newKey() {
   return `bg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }: Props) {
+export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, onServiceCallsChange }: Props) {
   const ready = Boolean(token && cashierUserId && pin);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [session, setSession] = useState<SessionDetail | null>(null);
@@ -340,6 +345,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const closeChoicesRef = useRef<HTMLDivElement | null>(null);
   const addParticipantRef = useRef<HTMLDivElement | null>(null);
   const [guestLink, setGuestLink] = useState('');
+  const [guestLinkOpen, setGuestLinkOpen] = useState(false);
+  const [guestQrImage, setGuestQrImage] = useState('');
+  const [guestLinkCopyState, setGuestLinkCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [queuePartySize, setQueuePartySize] = useState('2');
   const [queueGuestName, setQueueGuestName] = useState('');
   const [queueGuestPhone, setQueueGuestPhone] = useState('');
@@ -395,9 +403,46 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
   const pageVisible = usePageVisible();
 
   const selectTable = useCallback((sessionId: string) => {
+    if (selectedIdRef.current !== sessionId) {
+      // Guest access belongs to a session. Never leave the previous table's QR visible after the
+      // operator selects another table, even though the old URL remains valid for that old session.
+      setGuestLink('');
+      setGuestQrImage('');
+      setGuestLinkOpen(false);
+      setGuestLinkCopyState('idle');
+    }
     selectedIdRef.current = sessionId;
     setSelectedId(sessionId);
   }, []);
+
+  useEffect(() => {
+    if (!guestLink) {
+      setGuestQrImage('');
+      return;
+    }
+    let active = true;
+    setGuestQrImage('');
+    void QRCode.toDataURL(guestLink, {
+      width: 520,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#111827ff', light: '#ffffffff' },
+    }).then((dataUrl) => {
+      if (active) setGuestQrImage(dataUrl);
+    }).catch(() => {
+      if (active) setGuestQrImage('');
+    });
+    return () => { active = false; };
+  }, [guestLink]);
+
+  useEffect(() => {
+    if (!guestLinkOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setGuestLinkOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [guestLinkOpen]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 15_000);
@@ -427,8 +472,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
 
   const loadWorkspace = useCallback(async (signal?: AbortSignal) => {
     const data = await call('workspace', {}, signal);
-    setWorkspace(data as unknown as Workspace);
-  }, [call]);
+    const next = data as unknown as Workspace;
+    setWorkspace(next);
+    onServiceCallsChange?.(next.serviceCalls.map((item) => ({ ...item, source: 'boardgame' })));
+  }, [call, onServiceCallsChange]);
 
   const loadSession = useCallback(async (sessionId: string, signal?: AbortSignal) => {
     if (!sessionId) { setSession(null); return; }
@@ -696,10 +743,53 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
     setReservationTableId('');
   };
 
+  const copyGuestLink = async () => {
+    setError('');
+    const copied = await copyTextToClipboard(guestLink);
+    setGuestLinkCopyState(copied ? 'copied' : 'error');
+  };
+
   return (
     <div className="pos-bg-workspace">
-      {error && <div className="pos-card" style={{ padding: 10, borderColor: '#e8bdb8', color: 'var(--pos-danger)' }}>{error}</div>}
-      {notice && <div className="pos-card" style={{ padding: 10, color: 'var(--pos-money)' }}>{notice}</div>}
+      {error && <PosDismissibleAlert key={error} className="pos-card" style={{ padding: 10, borderColor: '#e8bdb8', color: 'var(--pos-danger)' }} onClose={() => setError('')}>{error}</PosDismissibleAlert>}
+      {notice && <PosDismissibleAlert key={notice} className="pos-card" style={{ padding: 10, color: 'var(--pos-money)' }} role="status" onClose={() => setNotice('')}>{notice}</PosDismissibleAlert>}
+
+      {guestLinkOpen && guestLink && (
+        <div className="pos-bg-guest-link-backdrop" onPointerDown={(event) => {
+          if (event.target === event.currentTarget) setGuestLinkOpen(false);
+        }}>
+          <section className="pos-bg-guest-link-dialog" role="dialog" aria-modal="true" aria-labelledby="pos-bg-guest-link-title">
+            <header className="pos-bg-guest-link-head">
+              <div>
+                <h2 id="pos-bg-guest-link-title">QR เรียกพนักงาน</h2>
+                <p>{activeTable?.name || activeTable?.code || 'โต๊ะนี้'} · ให้ลูกค้าสแกนด้วยกล้องโทรศัพท์</p>
+              </div>
+              <button type="button" aria-label="ปิด" onClick={() => setGuestLinkOpen(false)}>×</button>
+            </header>
+            <div className="pos-bg-guest-link-body">
+              <div className="pos-bg-guest-qr">
+                {guestQrImage
+                  ? <img src={guestQrImage} alt={`QR เรียกพนักงานสำหรับ ${activeTable?.name || activeTable?.code || 'โต๊ะนี้'}`} />
+                  : <span>กำลังสร้าง QR…</span>}
+              </div>
+              <div className="pos-bg-guest-link-copy">
+                <label htmlFor="pos-bg-guest-link-value">ลิงก์ลูกค้า</label>
+                <div>
+                  <input id="pos-bg-guest-link-value" readOnly value={guestLink} onFocus={(event) => event.currentTarget.select()} />
+                  <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={() => void copyGuestLink()}>
+                    {guestLinkCopyState === 'copied' ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}
+                  </button>
+                </div>
+                {guestLinkCopyState === 'error' && <p role="alert">คัดลอกอัตโนมัติไม่ได้ — แตะลิงก์แล้วคัดลอกด้วยตนเอง</p>}
+              </div>
+            </div>
+            <footer className="pos-bg-guest-link-actions">
+              <a href={guestLink} target="_blank" rel="noreferrer">เปิดหน้าลูกค้า</a>
+              <button type="button" onClick={() => setGuestLinkOpen(false)}>ปิด</button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       <div className={`pos-bg-master-detail${openForm || session ? ' pos-bg-master-detail--selected' : ''}`}>
         <section className="pos-card pos-bg-master-pane" aria-label="ผังโต๊ะ">
@@ -1336,28 +1426,25 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
               </div>
               <button type="button" className="pos-ret-btn"
                 disabled={busy === 'service-access'}
-                onClick={() => void run('service-access', 'service.access', {
-                  sessionId: session.id,
-                }, (data) => {
-                  const publicToken = data?.result?.token;
-                  if (typeof publicToken !== 'string') return;
-                  setGuestLink(new URL(`/bg/${publicToken}`, window.location.origin).toString());
-                  setNotice('สร้างลิงก์เรียกพนักงานแล้ว');
-                })}>
-                {busy === 'service-access' ? 'กำลังสร้าง…' : 'สร้างลิงก์ลูกค้า'}
+                onClick={() => {
+                  if (guestLink) {
+                    setGuestLinkCopyState('idle');
+                    setGuestLinkOpen(true);
+                    return;
+                  }
+                  void run('service-access', 'service.access', {
+                    sessionId: session.id,
+                  }, (data) => {
+                    const publicToken = data?.result?.token;
+                    if (typeof publicToken !== 'string') return;
+                    setGuestLink(new URL(`/bg/${publicToken}`, window.location.origin).toString());
+                    setGuestLinkCopyState('idle');
+                    setGuestLinkOpen(true);
+                  });
+                }}>
+                {busy === 'service-access' ? 'กำลังสร้าง…' : guestLink ? 'เปิด QR / ลิงก์' : 'สร้าง QR / ลิงก์'}
               </button>
             </div>
-            {guestLink && (
-              <div className="pos-bg-row" style={{ marginTop: 8 }}>
-                <a href={guestLink} target="_blank" rel="noreferrer" className="pos-bg-row-main">
-                  เปิดหน้าลูกค้า / ใช้สร้าง QR
-                </a>
-                <button type="button" className="pos-ret-btn"
-                  onClick={() => void navigator.clipboard?.writeText(guestLink)}>
-                  คัดลอกลิงก์
-                </button>
-              </div>
-            )}
             {sessionCalls.map((item) => (
               <div key={item.id} className="pos-bg-row" style={{ marginTop: 8 }}>
                 <div className="pos-bg-row-main">

@@ -303,8 +303,14 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   of `localStorage` (`apps/web/lib/pos/deviceTokenClient.ts`). Every IPC handler re-checks the
   calling frame: `pair` and `app-info` answer only the local setup page, while `get-device-token`,
   `get-storage-namespace` and `unpair` answer only a `/pos*` frame on the paired origin. Navigation
-  off that origin — and any window-open other than `/pos/display` or `/pos/manual` — is handed to the
-  system browser, and media permission is granted only for video on the paired origin. **Linux fails
+  off that origin is handed to the system browser, `/pos/manual` is the only renderer-created child
+  window, and the main process owns the one `/pos/display` window on a configured non-cashier
+  display. That customer window shares the same storage partition only for same-origin
+  `BroadcastChannel`, carries no preload/IPC bridge, and never becomes a second register. The
+  payment QR on that display comes only from a bounded provider-issued `qrPayload` on a
+  configured PromptPay/QR receiving account. A visible PromptPay ID is never enough to synthesize
+  an EMV payload, and split tender displays only the amount assigned to QR. Media permission is
+  granted only for video on the paired origin. **Linux fails
   closed:** `basic_text` is Electron's unencrypted fallback, so `secureStorageStatus()` treats it and
   every unrecognised backend as unavailable and blocks pairing until GNOME Keyring/Secret Service or
   KWallet is present. A keystore message always names the keystore of the running platform; one that
@@ -1520,9 +1526,10 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-14
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **81 namespaces / 5,149 leaf keys per language**,
-  at exact th↔en parity — the latest +2 cover board-game fake-data guidance/summary; the preceding +24 cover board-game time alerts, member lookup and opt-in public
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-19
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **81 namespaces / 5,502 leaf keys per language**,
+  at exact th↔en parity — the latest +3 cover provider-issued POS payment-QR configuration guidance;
+  recent preceding milestones include +2 for board-game fake-data guidance/summary and +24 for board-game time alerts, member lookup and opt-in public
   nearby-store discovery; the earlier +6 are the global order-action and Inbox alert controls; the earlier +415
   are the complete bilingual restaurant POS surface in the
   new `pos_restaurant` namespace; `pos-restaurant-i18n-contract` now refuses hardcoded Thai UI copy

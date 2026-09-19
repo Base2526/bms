@@ -11,6 +11,7 @@ import {
   customerPaymentAccountLines,
   configuredPaymentAccounts,
   configuredPaymentMethodLabels,
+  configuredPosPaymentQr,
   hasConfiguredPaymentAccounts,
   supportsCustomerPaymentMethod,
 } from "../../apps/web/lib/bms/paymentConfiguration.ts";
@@ -74,6 +75,24 @@ test("customer payment methods must match a configured receiving account", () =>
     "โอนเข้าบัญชีธนาคาร",
     "พร้อมเพย์",
   ]);
+});
+
+test("POS customer display renders only a provider-issued QR payload", () => {
+  assert.equal(configuredPosPaymentQr([
+    { type: "PROMPTPAY", promptpayId: "0812345678" },
+  ]), null);
+  assert.deepEqual(configuredPosPaymentQr([
+    {
+      type: "PROMPTPAY",
+      promptpayId: "0812345678",
+      accountName: "Example Shop",
+      qrPayload: "000201-provider-issued-payload-6304ABCD",
+    },
+  ]), {
+    payload: "000201-provider-issued-payload-6304ABCD",
+    accountName: "Example Shop",
+    promptpayId: "0812345678",
+  });
 });
 
 test("unconfigured payment advice is removed without losing an order summary", () => {

@@ -662,6 +662,7 @@ test("admin and POS render the same bounded chair visual from the table seat cou
 
 test("restaurant register keeps settlement receipts and counter screens on the same device", async () => {
   const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const customerDisplay = code(await read("apps/web/lib/pos/customerDisplay.ts"));
   const route = code(
     await read("apps/web/app/api/pos/restaurant/checks/[id]/route.ts"),
   );
@@ -676,7 +677,9 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.match(page, /\/api\/pos\/cash-movement/);
   assert.match(page, /\/api\/pos\/no-sale/);
   assert.match(page, /\/api\/pos\/shift-report/);
-  assert.match(page, /new BroadcastChannel\("bms-pos-display"\)/);
+  assert.match(customerDisplay, /export const CUSTOMER_DISPLAY_CHANNEL = "bms-pos-display"/);
+  assert.match(page, /import \{[\s\S]*CUSTOMER_DISPLAY_CHANNEL,[\s\S]*\} from "@\/lib\/pos\/customerDisplay"/);
+  assert.match(page, /new BroadcastChannel\(CUSTOMER_DISPLAY_CHANNEL\)/);
   assert.match(page, /event\.data\?\.type === "hello"/);
   assert.match(
     page,

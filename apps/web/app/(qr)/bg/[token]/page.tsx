@@ -118,6 +118,10 @@ export default function BoardGameGuestPage() {
   const pending = calls.find((call) => call.status === "PENDING");
   const active =
     calls.find((call) => call.status === "ACKNOWLEDGED") ?? pending;
+  const activeOption = OPTIONS.find((option) => option.code === active?.requestCode);
+  const activeLabel = activeOption
+    ? th ? activeOption.th : activeOption.en
+    : active?.requestNote || (th ? "คำขอความช่วยเหลือ" : "Help request");
   const options = OPTIONS.filter(
     (option) =>
       !("fixedOnly" in option) || bootstrap?.billingMode === "FIXED_DURATION"
@@ -192,16 +196,20 @@ export default function BoardGameGuestPage() {
             <strong>
               {active.status === "ACKNOWLEDGED"
                 ? th
-                  ? "พนักงานรับทราบแล้ว"
-                  : "Staff acknowledged"
+                  ? "พนักงานกำลังไปที่โต๊ะ"
+                  : "Staff are coming to your table"
                 : th
-                ? "แจ้งพนักงานแล้ว"
-                : "Staff notified"}
+                ? "ส่งคำเรียกแล้ว"
+                : "Request sent"}
             </strong>
             <small>
-              {th
-                ? "กรุณารอสักครู่ พนักงานกำลังไปที่โต๊ะ"
-                : "Please wait. A staff member is coming."}
+              {active.status === "ACKNOWLEDGED"
+                ? th
+                  ? `${activeLabel} · ตอนนี้ไม่ต้องกดอะไร เมื่อดูแลเสร็จหน้านี้จะกลับมาให้เรียกใหม่`
+                  : `${activeLabel} · Nothing else to tap. This page will reset when staff finish.`
+                : th
+                ? `${activeLabel} · กรุณารอพนักงานกดรับเรื่อง`
+                : `${activeLabel} · Waiting for staff to accept the request.`}
             </small>
           </div>
         </section>

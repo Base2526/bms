@@ -41,7 +41,10 @@
             <div class="field-hint">เว้นว่างได้เมื่อวางลิงก์จับคู่แบบเต็ม</div>
             <label for="pairing-input">ลิงก์จับคู่ หรือ Device Token</label>
             <textarea id="pairing-input" name="pairingInput" rows="3" autocomplete="off" spellcheck="false" placeholder="https://shop.example.com/pos?t=pos_..."></textarea>
-            <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+            <div id="status" class="status" role="status" aria-live="polite" hidden>
+              <span id="status-message"></span>
+              <button id="status-close" class="status-close" type="button" aria-label="ปิดการแจ้งเตือน" title="ปิด">×</button>
+            </div>
             <button id="pair-button" type="submit">
               <span class="button-label">ตรวจสอบและเชื่อมต่อ</span>
               <span class="button-progress" hidden>กำลังตรวจสอบ...</span>

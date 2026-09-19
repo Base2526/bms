@@ -98,6 +98,9 @@ async function handlePOST(req: NextRequest) {
       ]);
       return NextResponse.json({ ...workspace, serviceCalls });
     }
+    if (action === "service.calls") {
+      return NextResponse.json({ serviceCalls: await loadBoardGamePosServiceCalls(scope) });
+    }
     if (action === "session") {
       return NextResponse.json({ session: await loadBoardGamePosSession(scope, body.sessionId) });
     }

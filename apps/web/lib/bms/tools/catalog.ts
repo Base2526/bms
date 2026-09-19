@@ -2894,7 +2894,16 @@ const getPaymentInfoTool: BmsTool = {
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => {
     const p = await getStoreProfile(ec.tenantId);
-    const paymentAccounts = configuredPaymentAccounts(p.paymentAccounts);
+    // The provider-issued QR payload is for the authenticated local POS display,
+    // not useful customer-chat context. Keep it out of the model/tool result.
+    const paymentAccounts = configuredPaymentAccounts(p.paymentAccounts).map((account) => ({
+      type: account.type,
+      bankName: account.bankName ?? null,
+      accountName: account.accountName ?? null,
+      accountNo: account.accountNo ?? null,
+      promptpayId: account.promptpayId ?? null,
+      note: account.note ?? null,
+    }));
     return {
       ok: true,
       data: {

@@ -10,6 +10,31 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Managed desktop customer display (2026-09-19)
+
+- Desktop register settings now model the normal counter topology explicitly: one cashier display
+  plus at most one read-only customer display. Electron discovers connected displays itself; the
+  operator chooses off, automatic external-display selection, or one remembered display instead of
+  entering a display count that becomes stale after a cable is moved.
+- The main process owns the dedicated `/pos/display` window, restores it after startup and display
+  hot-plug, and exposes only frame-checked list/configure/identify IPC. The customer window shares
+  the POS storage partition for same-origin `BroadcastChannel` but has no preload bridge and cannot
+  read the device credential.
+- `/pos/app` now publishes its live retail/board-game summary and the server result after payment.
+  The embedded legacy workspace suppresses its own publisher so opening Settings cannot replace the
+  real desktop cart with an empty one. Browser POS and restaurant POS keep using the same read-only
+  customer-display route and local channel.
+- The server-side renderer capability-checks the new bridge methods rather than treating the
+  presence of `window.bmsDesktop` as a version check. An older installed shell keeps the manual
+  display button and remains usable while the server rolls forward; managed selection appears after
+  installing desktop 0.2.3.
+- A PromptPay/QR receiving account may now store the exact static payload issued by its bank or
+  payment provider. Selecting QR at retail, restaurant, or board-game checkout renders that payload
+  on the customer display with the QR tender amount (including split payment); a PromptPay ID alone
+  is deliberately never converted into financial QR data.
+
+---
+
 ## macOS packages for the desktop POS client (2026-09-18)
 
 - The macOS build stopped being a way to exercise the shell and became a target of its own: a DMG

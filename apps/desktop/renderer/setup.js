@@ -2,6 +2,8 @@ const form = document.querySelector("#pairing-form");
 const serverInput = document.querySelector("#server-url");
 const pairingInput = document.querySelector("#pairing-input");
 const status = document.querySelector("#status");
+const statusMessage = document.querySelector("#status-message");
+const statusClose = document.querySelector("#status-close");
 const button = document.querySelector("#pair-button");
 const buttonLabel = button.querySelector(".button-label");
 const buttonProgress = button.querySelector(".button-progress");
@@ -20,10 +22,14 @@ function setBusy(busy) {
 }
 
 function showError(message) {
-  status.textContent = message;
+  statusMessage.textContent = message;
   status.className = "status error";
   status.hidden = false;
 }
+
+statusClose.addEventListener("click", () => {
+  status.hidden = true;
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();

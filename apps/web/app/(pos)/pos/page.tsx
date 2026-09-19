@@ -16,6 +16,8 @@ import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import BoardGamePanel from "@/components/pos/BoardGamePanel";
+import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
+import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
 import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
 import {
   applyPromotion,
@@ -54,6 +56,10 @@ import { appendSplitPaymentRow, rebalanceSplitPayments, type PosPaymentDraft } f
 import { isEnrollablePhone } from "@/lib/pos/memberEnroll";
 import { describePosFailure as describeFailure } from "@/lib/pos/failureMessage";
 import {
+  CUSTOMER_DISPLAY_CHANNEL,
+  type CustomerDisplayPayload,
+} from "@/lib/pos/customerDisplay";
+import {
   findRememberedPrinter,
   isWebUsbSupported,
   requestPrinter,
@@ -61,6 +67,7 @@ import {
 } from "@/lib/pos/printerClient";
 import {
   clearPosDeviceToken,
+  hasDesktopCustomerDisplayBridge,
   hasDesktopPosBridge,
   posDeviceStorageNamespace,
   readPosDeviceToken,
@@ -966,6 +973,7 @@ type Session = {
     address?: string | null;
     phone?: string | null;
     logoUrl?: string | null;
+    paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null;
   };
   surface?: "retail" | "restaurant";
   businessArchetype?: string | null;
@@ -1355,7 +1363,9 @@ export default function PosPage() {
     onTabChange,
     onShiftChange,
     onUnpair,
+    suppressCustomerDisplay,
     onBoardGameCheckout,
+    onServiceCallsChange,
   } = useContext(PosWorkspaceContext);
   const [token, setToken] = useState<string>(initialToken);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState<string>("");
@@ -3991,12 +4001,18 @@ export default function PosPage() {
    * เปิด/ปิดจอลูกค้าไม่ต้องตั้งค่าอะไร: ถ้าไม่มีใครฟัง postMessage ก็ไม่มีผลอะไร
    */
   const displayChannel = useRef<BroadcastChannel | null>(null);
+  const displayPayload = useRef<CustomerDisplayPayload | null>(null);
   useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return;
-    const ch = new BroadcastChannel("bms-pos-display");
+    if (suppressCustomerDisplay || typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
     displayChannel.current = ch;
+    ch.onmessage = (event) => {
+      if (event.data?.type === "hello" && displayPayload.current) {
+        ch.postMessage(displayPayload.current);
+      }
+    };
     return () => { ch.close(); displayChannel.current = null; };
-  }, []);
+  }, [suppressCustomerDisplay]);
 
   // บิลพักโหลดตอนเข้าแท็บขาย · เงินลิ้นชัก/ค่าใช้จ่ายตอนเข้าแท็บกะ · มัดจำตอนเข้าแท็บมัดจำ
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
@@ -4130,9 +4146,10 @@ export default function PosPage() {
     [payableBeforeRounding, roundingDelta]
   );
   useEffect(() => {
+    if (suppressCustomerDisplay) return;
     const ch = displayChannel.current;
     if (!ch) return;
-    ch.postMessage({
+    const payload = {
       lines: [
         ...cart.map((l) => ({
           name: l.receiptName,
@@ -4163,12 +4180,23 @@ export default function PosPage() {
       amountDue,
       memberName: member?.name ?? null,
       pointsEarned: null,
+      paymentQr: (() => {
+        const configuredQr = session?.store?.paymentQr;
+        const qrAmount = Math.round(payments
+          .filter((payment) => payment.method === "QR")
+          .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
+        return configuredQr && qrAmount > 0
+          ? { ...configuredQr, amount: qrAmount }
+          : null;
+      })(),
       // บิลที่ปิดแล้วค้างบนจอให้ลูกค้านับเงินทอนตาม จนกว่าจะเริ่มยิงบิลถัดไป
       finished: cart.length === 0 && justSold
         ? { total: justSold.total, tendered: null, change: justSold.change }
         : null,
-    });
-  }, [cart, extraLines, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
+    };
+    displayPayload.current = payload;
+    ch.postMessage(payload);
+  }, [suppressCustomerDisplay, cart, extraLines, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey, payments, session?.store?.paymentQr]);
 
   const pharmacyReviewOfferCartKey = useMemo(
     () => JSON.stringify(cart.map((line) => [line.key, line.packQty, line.size, line.packCode])),
@@ -6184,7 +6212,7 @@ export default function PosPage() {
           พนักงานขาย <b>ไม่ต้องใช้ลิงก์หรือ token นี้เลย</b> เปิดเครื่องมาก็เลือกชื่อตัวเองแล้วใส่ PIN ได้ทันที
         </div>
         {tokenRejected && (
-          <div style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8, margin: "12px 0" }}>
+          <PosDismissibleAlert style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8, margin: "12px 0" }}>
             <div style={{ fontWeight: 500 }}>ระบบไม่รับ token ของเครื่องนี้</div>
             <div style={{ marginTop: 4 }}>
               สาเหตุที่พบบ่อยที่สุดคือมีการกด &quot;ออก token&quot; ใหม่ให้เครื่องนี้ระหว่างที่จอขายเปิดอยู่ —
@@ -6206,7 +6234,7 @@ export default function PosPage() {
               )}
               <a href="/admin/pos-devices" style={{ padding: "8px 16px" }}>ไปออก token ใหม่</a>
             </div>
-          </div>
+          </PosDismissibleAlert>
         )}
         {hasDesktopPosBridge() ? (
           <>
@@ -6498,17 +6526,17 @@ export default function PosPage() {
       </header>
 
       {sessionError && !tokenRejected && (
-        <div style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8 }}>
+        <PosDismissibleAlert key={sessionError} style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8 }} onClose={() => setSessionError("")}>
           เชื่อมต่อไม่ได้: {sessionError} — ตรวจอินเทอร์เน็ตแล้วลอง{" "}
           <button onClick={() => void loadSession()} style={{ padding: "2px 10px" }}>เชื่อมต่อใหม่</button>
-        </div>
+        </PosDismissibleAlert>
       )}
 
       {/* บอกให้ชัดว่าขาดอะไรถึงยังขายไม่ได้ — เดิมจอเงียบ คนหน้าร้านเดาเองไม่ถูก
           ช่องเลือกผู้ขาย/PIN อยู่ในนี้เลย เพราะรีเฟรชหน้าทีไร PIN หายจากหน่วยความจำ
           ถ้าให้ไปหาในแท็บตั้งค่าคือเพิ่มคลิกให้กับสิ่งที่ต้องทำบ่อยที่สุดหลังรีเฟรช */}
       {session && !canSell && tab !== "boardgame" && (
-        <div style={{ background: "#fff", padding: 12, borderRadius: 8 }}>
+        <PosDismissibleAlert style={{ background: "#fff", padding: 12, borderRadius: 8 }}>
           <div style={{ fontWeight: 500, marginBottom: 6 }}>ยังขายไม่ได้ — เหลืออีก:</div>
           <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.9 }}>
             {!anyCashierHasPin && (
@@ -6525,25 +6553,25 @@ export default function PosPage() {
               </li>
             )}
           </ol>
-        </div>
+        </PosDismissibleAlert>
       )}
       {notice && (
-        <div className={`pos-note ${notice.type === "ok" ? "pos-note--ok" : "pos-note--err"}`}>
+        <PosDismissibleAlert key={`${notice.type}:${notice.text}`} className={`pos-note ${notice.type === "ok" ? "pos-note--ok" : "pos-note--err"}`} onClose={() => setNotice(null)}>
           {notice.text}
-        </div>
+        </PosDismissibleAlert>
       )}
       {/* เสียงที่ถูกเบราว์เซอร์บล็อกต้องเห็นได้ — ไม่งั้นแคชเชียร์อ่านว่า "ไม่มีออร์เดอร์เข้า"
           ทั้งที่จริงคือ "มีแต่ไม่มีเสียง" · เกิดทุกครั้งที่รีเฟรชหน้าหรือแท็บเล็ตรีบูต */}
       {alerts.blocked && session?.businessArchetype === "restaurant" && (
-        <div className="pos-note pos-note--err" role="status">
+        <PosDismissibleAlert className="pos-note pos-note--err" role="status">
           เสียงเตือนออร์เดอร์เข้าถูกบล็อกอยู่ · แตะที่หน้าจอหนึ่งครั้งเพื่อเปิดเสียง
-        </div>
+        </PosDismissibleAlert>
       )}
       {hasPendingOrderWrite && (
-        <div style={{ background: "#fff7e6", color: "#874d00", padding: 12, borderRadius: 8, border: "1px solid #ffd591" }}>
+        <PosDismissibleAlert style={{ background: "#fff7e6", color: "#874d00", padding: 12, borderRadius: 8, border: "1px solid #ffd591" }}>
           ล็อกรายการไว้เพื่อกู้รายการเดิม กรุณากด {hasPendingDepositSale ? "“สร้างบิล + รับมัดจำ”" : "“ชำระเงิน”"} ซ้ำ
           ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลหรือรับเงินซ้ำ
-        </div>
+        </PosDismissibleAlert>
       )}
       <div
         className={`pos-main-grid${tab === "boardgame" ? " pos-main-grid--boardgame" : ""}${tab === "sell" ? " pos-main-grid--sell" : ""}`}
@@ -6612,10 +6640,10 @@ export default function PosPage() {
                 ถ้ายังหาใบเสร็จไม่ได้จึงค่อยให้หัวหน้าอนุมัติคืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) ·
                 จ่ายเป็นเงินสดจากลิ้นชัก · ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
               </div>
-              <div style={{ background: "#fff7e6", border: "1px solid #ffd591", color: "#874d00", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
+              <PosDismissibleAlert style={{ background: "#fff7e6", border: "1px solid #ffd591", color: "#874d00", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>ขั้นที่ 2 — ถ้ายังหาใบเสร็จไม่เจอจริง ค่อยกรอกส่วนนี้เพื่อคืนไม่มีใบเสร็จ</div>
                 <div>ส่วนนี้ไม่ใช่ช่องค้นบิล ใช้กรอกเหตุผลและผู้อนุมัติก่อนกด “ยืนยันคืน + จ่ายเงินสด” เท่านั้น</div>
-              </div>
+              </PosDismissibleAlert>
               <div style={{ fontSize: 12, color: "#555", background: "#fafafa", border: "1px dashed #d9d9d9", borderRadius: 8, padding: "8px 10px" }}>
                 Scanner ตอนนี้ = รับของคืน · ถ้าต้องการหาใบเสร็จเดิม ให้ใช้ช่องค้นบิลด้านล่างได้ทั้งเลขใบเสร็จ,
                 order id, barcode สินค้า, SKU, รหัสสมาชิก หรือเบอร์โทร
@@ -6800,6 +6828,7 @@ export default function PosPage() {
             setBoardGameCheckoutId(billingGroupId);
             switchTab("sell");
           }}
+          onServiceCallsChange={onServiceCallsChange}
         />
       )}
 
@@ -6923,7 +6952,7 @@ export default function PosPage() {
             />
           </div>
           {(!stockReceiverId || !stockReceiverPin) && (
-            <div className="pos-note pos-note--err">เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์ purchase.receive ทุกครั้ง</div>
+            <PosDismissibleAlert className="pos-note pos-note--err">เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์ purchase.receive ทุกครั้ง</PosDismissibleAlert>
           )}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
@@ -7333,9 +7362,9 @@ export default function PosPage() {
 
               {/* ปิดกะขณะมีของค้างในตะกร้าไม่ได้ — บิลที่ยังไม่จบจะหายไปกับกะ */}
               {cart.length > 0 ? (
-                <div className="pos-note pos-note--warn">
+                <PosDismissibleAlert className="pos-note pos-note--warn">
                   ยังมีสินค้าค้างในตะกร้า — ปิดบิลให้จบหรือล้างบิลก่อนปิดกะ
-                </div>
+                </PosDismissibleAlert>
               ) : (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -7985,6 +8014,7 @@ export default function PosPage() {
 
       {tab === "settings" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {hasDesktopCustomerDisplayBridge() && <CustomerDisplaySettings />}
           {session?.businessArchetype === "restaurant" && (
             <div>
               <div style={{ fontWeight: 500, marginBottom: 8 }}>เสียงเตือนออร์เดอร์เข้า</div>
@@ -8030,13 +8060,15 @@ export default function PosPage() {
               )}
               {/* จอลูกค้า (8.6) — เปิดเป็นหน้าต่างใหม่แล้วลากไปจอที่สอง
                   ใช้ BroadcastChannel จึงต้องเป็นเบราว์เซอร์เดียวกัน ไม่ใช่เครื่องอื่น */}
-              <button
-                onClick={() => window.open("/pos/display", "bms-pos-display", "width=1024,height=768")}
-                style={{ padding: "8px 14px", fontSize: 13 }}
-                title="เปิดหน้าต่างสำหรับจอที่หันไปทางลูกค้า"
-              >
-                เปิดจอลูกค้า
-              </button>
+              {!hasDesktopCustomerDisplayBridge() && (
+                <button
+                  onClick={() => window.open("/pos/display", "bms-pos-display", "width=1024,height=768")}
+                  style={{ padding: "8px 14px", fontSize: 13 }}
+                  title="เปิดหน้าต่างสำหรับจอที่หันไปทางลูกค้า"
+                >
+                  เปิดจอลูกค้า
+                </button>
+              )}
               <button
                 onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}
                 style={{ padding: "8px 14px", fontSize: 13 }}
@@ -9736,7 +9768,7 @@ export default function PosPage() {
           </div>
 
           {pharmacyReviewLink && (
-            <div style={{
+            <PosDismissibleAlert style={{
               marginTop: 10,
               padding: "10px 12px",
               borderRadius: 10,
@@ -9804,7 +9836,7 @@ export default function PosPage() {
                   </div>
                 )}
               </div>
-            </div>
+            </PosDismissibleAlert>
           )}
 
           {/* เภสัชกรอนุมัติที่เครื่อง (9.29) — ทางหลักของร้านยาทั่วไป
@@ -9905,7 +9937,7 @@ export default function PosPage() {
           )}
 
           {pharmacyReviewOffer && !pharmacyReviewLink && (
-            <div style={{
+            <PosDismissibleAlert style={{
               marginTop: 10,
               padding: 12,
               borderRadius: 10,
@@ -9926,7 +9958,7 @@ export default function PosPage() {
               >
                 {pharmacyReviewBusy ? "กำลังส่งเคส…" : "ส่งเคสให้เภสัชกร + พักบิล"}
               </button>
-            </div>
+            </PosDismissibleAlert>
           )}
 
           </div>
@@ -10422,7 +10454,7 @@ export default function PosPage() {
           }}>
           <div style={{ width: 280, maxWidth: "100%" }}>
             {(!receipt.receiptType || receipt.receiptType === "sale") && activeReceiptRefundSummary?.hasReturnActivity && (
-              <div style={{
+              <PosDismissibleAlert style={{
                 marginBottom: 10, padding: "10px 12px", borderRadius: 8,
                 background: "#fff7e6", color: "#8a6100", fontSize: 12, lineHeight: 1.5,
               }}>
@@ -10432,7 +10464,7 @@ export default function PosPage() {
                 {activeReceiptRefundSummary.pendingRefundTotal > 0
                   ? <><br />ยังมีรอยืนยันคืนเงินจริง ฿{baht(activeReceiptRefundSummary.pendingRefundTotal)}</>
                   : null}
-              </div>
+              </PosDismissibleAlert>
             )}
           <ReceiptPaper payload={receiptPayloadOf(receipt)} />
           </div>

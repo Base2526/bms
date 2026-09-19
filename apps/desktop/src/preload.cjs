@@ -8,6 +8,18 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
   }),
   getDeviceToken: () => ipcRenderer.invoke("bms-pos:get-device-token"),
   getStorageNamespace: () => ipcRenderer.invoke("bms-pos:get-storage-namespace"),
+  getCustomerDisplayState: () => ipcRenderer.invoke("bms-pos:get-customer-display-state"),
+  setCustomerDisplayConfig: (input) => ipcRenderer.invoke("bms-pos:set-customer-display-config", {
+    mode: typeof input?.mode === "string" ? input.mode : "",
+    targetDisplayId: typeof input?.targetDisplayId === "string" ? input.targetDisplayId : null,
+  }),
+  identifyDisplays: () => ipcRenderer.invoke("bms-pos:identify-displays"),
+  onCustomerDisplayStateChanged: (listener) => {
+    if (typeof listener !== "function") return () => {};
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("bms-pos:customer-display-state-changed", handler);
+    return () => ipcRenderer.removeListener("bms-pos:customer-display-state-changed", handler);
+  },
   unpair: () => ipcRenderer.invoke("bms-pos:unpair"),
   getAppInfo: () => ipcRenderer.invoke("bms-pos:app-info"),
 });

@@ -3931,6 +3931,7 @@ export const typeDefs = /* GraphQL */ `
     accountName: String
     accountNo: String
     promptpayId: String
+    qrPayload: String
     note: String
   }
   input BmsPaymentAccountInput {
@@ -3939,6 +3940,7 @@ export const typeDefs = /* GraphQL */ `
     accountName: String
     accountNo: String
     promptpayId: String
+    qrPayload: String
     note: String
   }
   type BmsStoreProfile {

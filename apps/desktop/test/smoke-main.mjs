@@ -30,7 +30,8 @@ async function run() {
       title: document.title,
       heading: document.querySelector('h1')?.textContent,
       fields: document.querySelectorAll('input, textarea').length,
-      button: document.querySelector('button')?.textContent?.trim(),
+      button: document.querySelector('#pair-button')?.textContent?.trim(),
+      alertCloseLabel: document.querySelector('#status-close')?.getAttribute('aria-label'),
       clientLabel: document.querySelector('#client-label')?.textContent,
       securityNote: document.querySelector('#security-note')?.textContent,
       overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -42,6 +43,7 @@ async function run() {
     if (
       state.fields !== 2
       || !state.button?.includes("ตรวจสอบและเชื่อมต่อ")
+      || state.alertCloseLabel !== "ปิดการแจ้งเตือน"
       || state.clientLabel !== "Windows Client"
       || !state.securityNote?.includes("Windows")
       || state.overflowX

@@ -21,6 +21,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { copyTextToClipboard } from "../apps/web/lib/pos/clipboard.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -33,6 +34,8 @@ const DESKTOP_RENDERER_PATH = "../apps/web/components/pos-desktop/DesktopPosRend
 const DESKTOP_CSS_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.module.css";
 const WORKSPACE_CONTEXT_PATH = "../apps/web/components/pos/PosWorkspaceContext.tsx";
 const MOBILE_FLOW_GRAPHQL_PATH = "../apps/web/lib/pos/mobileFlowGraphql.ts";
+const CLIPBOARD_PATH = "../apps/web/lib/pos/clipboard.ts";
+const GUEST_SERVICE_CALL_PATH = "../apps/web/app/(qr)/bg/[token]/page.tsx";
 
 function withoutComments(source: string): string {
   return source
@@ -51,6 +54,8 @@ const desktopRenderer = withoutComments(read(DESKTOP_RENDERER_PATH));
 const desktopCss = withoutComments(read(DESKTOP_CSS_PATH));
 const workspaceContext = withoutComments(read(WORKSPACE_CONTEXT_PATH));
 const mobileFlowGraphql = withoutComments(read(MOBILE_FLOW_GRAPHQL_PATH));
+const clipboard = withoutComments(read(CLIPBOARD_PATH));
+const guestServiceCall = withoutComments(read(GUEST_SERVICE_CALL_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -211,6 +216,11 @@ test("an open table is a scannable workspace instead of one long form", () => {
     desktopRenderer,
     /activeModule\s*===\s*["']boardgame["'][\s\S]*?styles\.boardGameModuleHost/,
     "the desktop shell must remove its shared outer card for the board-game workspace",
+  );
+  assert.match(
+    desktopCss,
+    /\.content\.moduleContent\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    "an embedded module must remain full-width when the 1280px desktop breakpoint also matches .content",
   );
   assert.match(
     desktopCss,
@@ -547,6 +557,74 @@ test("the tab field the placeholder promises you can scan into actually submits"
   assert.ok(
     /onClick=\{\(\) => addTabItem\(group\.id\)\}/.test(panel),
     "the button must go through the same path as Enter, or the two will drift",
+  );
+});
+
+test("copying the guest link survives an Electron clipboard permission denial", () => {
+  assert.match(panel, /QRCode\.toDataURL\(guestLink/);
+  assert.match(panel, /role="dialog"/);
+  assert.match(panel, /aria-modal="true"/);
+  assert.match(panel, /readOnly value=\{guestLink\}/);
+  assert.match(panel, /copyTextToClipboard\(guestLink\)/);
+  assert.match(panel, /setGuestLinkCopyState\(copied \? 'copied' : 'error'\)/);
+  assert.doesNotMatch(panel, /navigator\.clipboard\?*\.writeText\(guestLink\)/);
+  assert.doesNotMatch(panel, /เปิดหน้าลูกค้า \/ ใช้สร้าง QR/);
+  assert.match(clipboard, /navigator\.clipboard\?\.writeText/);
+  assert.match(clipboard, /catch\s*\{/);
+  assert.match(clipboard, /document\.execCommand\("copy"\)/);
+  assert.match(clipboard, /finally\s*\{[\s\S]*textarea\.remove\(\)/);
+});
+
+test("clipboard helper falls back after writeText rejects instead of leaking the rejection", async () => {
+  const root = globalThis as typeof globalThis & Record<string, unknown>;
+  const priorWindow = Object.getOwnPropertyDescriptor(root, "window");
+  const priorDocument = Object.getOwnPropertyDescriptor(root, "document");
+  const priorNavigator = Object.getOwnPropertyDescriptor(root, "navigator");
+  let removed = false;
+  const textarea = {
+    value: "",
+    style: {} as Record<string, string>,
+    setAttribute() {},
+    focus() {},
+    select() {},
+    setSelectionRange() {},
+    remove() { removed = true; },
+  };
+  Object.defineProperty(root, "window", { configurable: true, value: {} });
+  Object.defineProperty(root, "document", {
+    configurable: true,
+    value: {
+      body: { appendChild() {} },
+      createElement: () => textarea,
+      execCommand: (command: string) => command === "copy",
+    },
+  });
+  Object.defineProperty(root, "navigator", {
+    configurable: true,
+    value: { clipboard: { writeText: async () => { throw new DOMException("denied", "NotAllowedError"); } } },
+  });
+  try {
+    assert.equal(await copyTextToClipboard("https://example.test/bg/token"), true);
+    assert.equal(textarea.value, "https://example.test/bg/token");
+    assert.equal(removed, true);
+  } finally {
+    if (priorWindow) Object.defineProperty(root, "window", priorWindow); else delete root.window;
+    if (priorDocument) Object.defineProperty(root, "document", priorDocument); else delete root.document;
+    if (priorNavigator) Object.defineProperty(root, "navigator", priorNavigator); else delete root.navigator;
+  }
+});
+
+test("guest and desktop explain the complete service-call lifecycle", () => {
+  assert.match(
+    desktopRenderer,
+    /call\.status === "PENDING" \? "รับเรื่อง" : "เสร็จสิ้น"/,
+    "acknowledged calls need an explicit staff completion step",
+  );
+  assert.match(desktopRenderer, /กำลังดำเนินการ/);
+  assert.match(
+    guestServiceCall,
+    /ตอนนี้ไม่ต้องกดอะไร เมื่อดูแลเสร็จหน้านี้จะกลับมาให้เรียกใหม่/,
+    "the guest screen must say who acts next and how the flow ends",
   );
 });
 

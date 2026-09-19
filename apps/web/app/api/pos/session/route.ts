@@ -18,6 +18,7 @@ import {
 } from "@/lib/bms/pos";
 import { getLocation } from "@/lib/bms/locations";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
+import { configuredPosPaymentQr } from "@/lib/bms/paymentConfiguration";
 import { getVatSettings } from "@/lib/bms/taxDocuments";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -81,6 +82,7 @@ async function handleGET(req: NextRequest) {
       address: store.address,
       phone: store.phone,
       logoUrl: store.logoUrl,
+      paymentQr: configuredPosPaymentQr(store.paymentAccounts),
     },
     surface: store.businessArchetype === "restaurant" ? "restaurant" : "retail",
     businessArchetype: store.businessArchetype ?? null,

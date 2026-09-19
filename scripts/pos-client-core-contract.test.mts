@@ -22,6 +22,26 @@ const desktopRenderer = readFileSync(
   new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),
   "utf8",
 );
+const restaurantRenderer = readFileSync(
+  new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url),
+  "utf8",
+);
+const retailRenderer = readFileSync(
+  new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url),
+  "utf8",
+);
+const boardGameRenderer = readFileSync(
+  new URL("../apps/web/components/pos/BoardGamePanel.tsx", import.meta.url),
+  "utf8",
+);
+const desktopDeviceClient = readFileSync(
+  new URL("../apps/web/lib/pos/deviceTokenClient.ts", import.meta.url),
+  "utf8",
+);
+const desktopMain = readFileSync(
+  new URL("../apps/desktop/src/main.mjs", import.meta.url),
+  "utf8",
+);
 
 test("desktop and native register flow requires a verified device, cashier PIN, and open shift", () => {
   let state = initialPosClientFlow(true);
@@ -118,6 +138,27 @@ test("desktop header keeps cashier identity without a permanent legacy-sales esc
   );
 });
 
+test("desktop rail provides professional help and real app-version diagnostics", () => {
+  assert.match(desktopRenderer, /ช่วยเหลือ/);
+  assert.match(desktopRenderer, /เกี่ยวกับ BMS POS/);
+  assert.match(
+    desktopRenderer,
+    /className=\{styles\.railFooter\}[\s\S]*?openDesktopInfoDialog\("help"\)[\s\S]*?openDesktopInfoDialog\("about"\)/,
+    "help and about belong at the bottom of the app rail, not inside the cashier account menu",
+  );
+  const accountPopover = desktopRenderer.slice(
+    desktopRenderer.indexOf('className={styles.accountPopover}'),
+    desktopRenderer.indexOf('</details>', desktopRenderer.indexOf('className={styles.accountPopover}')),
+  );
+  assert.doesNotMatch(accountPopover, /ช่วยเหลือ|เกี่ยวกับ BMS POS/);
+  assert.match(desktopRenderer, /window\.open\("\/pos\/manual"/);
+  assert.match(desktopRenderer, /readDesktopAppInfo\(\)/);
+  assert.match(desktopRenderer, /copyTextToClipboard\(diagnostic\)/);
+  assert.match(desktopRenderer, /role="dialog" aria-modal="true"/);
+  assert.match(desktopDeviceClient, /getAppInfo\?\(\): Promise<DesktopAppInfo \| null>/);
+  assert.match(desktopMain, /!isSetupFrame\(event\) && !isPairedPosFrame\(event\)/);
+});
+
 test("desktop checkout does not repeat the payment selector for a single tender", () => {
   assert.match(
     desktopRenderer,
@@ -129,4 +170,30 @@ test("desktop checkout does not repeat the payment selector for a single tender"
     /const paymentCount = payments\.length;[\s\S]*?\}, \[paymentCount, total\]\);/,
     "returning from split to one tender must restore the authoritative total",
   );
+});
+
+test("desktop POS alerts expose a close control on every operating surface", () => {
+  const restaurantAlerts = restaurantRenderer.match(/<Alert\b[\s\S]*?\/>/g) ?? [];
+  assert.ok(restaurantAlerts.length > 0, "restaurant POS should render operational alerts");
+  restaurantAlerts.forEach((alert, index) => {
+    assert.match(alert, /\bclosable\b/, `restaurant Alert ${index + 1} must expose a close button`);
+  });
+
+  assert.match(retailRenderer, /PosDismissibleAlert/);
+  assert.doesNotMatch(retailRenderer, /<div className="pos-note(?:\s|"|`)/);
+  assert.match(boardGameRenderer, /PosDismissibleAlert/);
+  assert.match(desktopRenderer, /PosDismissibleAlert/);
+  assert.match(desktopRenderer, /useOrderAlerts\(Boolean\(bootstrap && cashier\)\)/);
+  assert.match(desktopRenderer, /OrderAlertSettingsModal/);
+  assert.match(desktopRenderer, /styles\.alertBell/);
+  assert.match(desktopRenderer, /serviceCalls\.length > 0/);
+  assert.match(desktopRenderer, /\/api\/pos\/restaurant\/service-calls/);
+  assert.match(desktopRenderer, /action: completing \? "service\.complete" : "service\.acknowledge"/);
+  assert.match(desktopRenderer, /call\.status === "PENDING" \? "รับเรื่อง" : "เสร็จสิ้น"/);
+  assert.doesNotMatch(
+    desktopRenderer,
+    /setServiceCalls\(calls\.filter\(\(call\) => call\.status === "PENDING"\)\)/,
+    "acknowledged work must remain in the desktop bell until staff complete it",
+  );
+  assert.doesNotMatch(desktopRenderer, /<(?:div|p) className=\{styles\.(?:errorBox|noticeBox)\}/);
 });
