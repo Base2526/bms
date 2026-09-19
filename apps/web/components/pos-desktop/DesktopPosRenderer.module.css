@@ -34,12 +34,17 @@
 }
 
 .rail nav {
+  min-height: 0;
+  flex: 1;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 5px;
   margin-top: 20px;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
+.rail nav::-webkit-scrollbar { display: none; }
 
 .rail nav button {
   width: 100%;
@@ -63,6 +68,40 @@
   background: #e6f4ff !important;
   box-shadow: inset 3px 0 #1677ff !important;
 }
+.railFooter {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #edf0f4;
+}
+.railFooter button {
+  width: 100%;
+  min-height: 47px !important;
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  padding: 4px 2px !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #687386 !important;
+}
+.railFooter button > span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #526075;
+  font-size: 11px;
+  font-weight: 800;
+}
+.railFooter button small { font-size: 10px; font-weight: 600; }
+.railFooter button:hover { background: #f5f8fc !important; color: #1677ff !important; }
+.railFooter button:hover > span { border-color: #91caff; background: #e6f4ff; color: #1677ff; }
 .workspace {
   min-width: 0;
   height: 100vh;
@@ -124,6 +163,42 @@
 .connection.online i { background: #52c41a; box-shadow: 0 0 0 3px #f6ffed; }
 .connection.offline { color: #cf1322; background: #fff2f0; }
 .connection.offline i { background: #ff4d4f; }
+.connectionMenu { position: relative; }
+.connectionMenu > summary { list-style: none; cursor: pointer; }
+.connectionMenu > summary::-webkit-details-marker { display: none; }
+.connectionFallback {
+  border: 1px solid #ffd591;
+  background: #fffbe6;
+  color: #ad6800;
+}
+.connectionFallback i { background: #faad14; box-shadow: 0 0 0 3px #fff1b8; }
+.connectionInfo {
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+}
+.connectionPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 35;
+  width: 280px;
+  padding: 11px 12px;
+  border: 1px solid #ffe7ba;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(30, 42, 60, 0.16);
+}
+.connectionPopover strong,
+.connectionPopover span { display: block; }
+.connectionPopover strong { color: #874d00; font-size: 12px; }
+.connectionPopover span { margin-top: 4px; color: #667085; font-size: 11px; line-height: 1.5; }
 
 .alertMenu { position: relative; }
 .alertBell {
@@ -194,6 +269,7 @@
   font-weight: 800;
   line-height: 1;
 }
+.alertCountActive { background: #1677ff; }
 .alertPopover {
   position: absolute;
   top: calc(100% + 8px);
@@ -249,6 +325,7 @@
 }
 .alertItemMain:hover { background: #f8fbff !important; }
 .alertItemIcon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: #fff1f0; }
+.alertItem[data-status="ACKNOWLEDGED"] .alertItemIcon { background: #f6ffed; color: #389e0d; font-weight: 800; }
 .alertItemMain strong,
 .alertItemMain b,
 .alertItemMain small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -256,6 +333,7 @@
 .alertItemMain b { margin-top: 2px; color: #344054; font-size: 12px; font-weight: 600; }
 .alertItemMain small { margin-top: 3px; color: #7a8597; font-size: 10px; }
 .alertAccept { min-height: 36px !important; padding: 6px 10px !important; border-color: #91caff !important; background: #e6f4ff !important; box-shadow: none !important; color: #0958d9 !important; font-size: 11px !important; white-space: nowrap; }
+.alertComplete { border-color: #95de64 !important; background: #f6ffed !important; color: #237804 !important; }
 
 .accountMenu { position: relative; }
 .accountMenu > summary {
@@ -321,6 +399,78 @@
 .accountPopover button:hover { background: #f3f7fc !important; }
 .accountPopover .accountSignOut { color: #cf1322 !important; }
 
+.infoBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, .5);
+  backdrop-filter: blur(2px);
+}
+.infoDialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border: 1px solid #dfe4ec;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .24);
+}
+.infoDialogHead {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #edf0f4;
+}
+.infoDialogMark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+}
+.infoDialogHead h2 { margin: 0; color: #1f2329; font-size: 18px; }
+.infoDialogHead p { margin: 3px 0 0; color: #7a8597; font-size: 11px; }
+.infoDialogClose { min-width: 36px !important; min-height: 36px !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; color: #7a8597 !important; font-size: 24px !important; }
+.helpBody,
+.aboutBody { padding: 20px; }
+.helpQuickGrid { display: grid; gap: 9px; }
+.helpQuickGrid article { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; padding: 11px 12px; border: 1px solid #edf0f4; border-radius: 10px; background: #fafcff; }
+.helpQuickGrid article > span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: #e6f4ff; color: #1677ff; font-weight: 800; }
+.helpQuickGrid strong { color: #1f2329; font-size: 12px; }
+.helpQuickGrid p { margin: 3px 0 0; color: #667085; font-size: 11px; line-height: 1.5; }
+.helpSafety { margin-top: 12px; padding: 11px 12px; border: 1px solid #ffe58f; border-radius: 10px; background: #fffbe6; }
+.helpSafety strong { color: #874d00; font-size: 12px; }
+.helpSafety p { margin: 3px 0 0; color: #755100; font-size: 11px; line-height: 1.5; }
+.helpShortcuts { display: flex; gap: 14px; margin: 13px 0; color: #667085; font-size: 11px; }
+.helpShortcuts kbd { padding: 2px 6px; border: 1px solid #d9dee7; border-bottom-width: 2px; border-radius: 5px; background: #f8fafc; color: #344054; font-family: inherit; font-size: 10px; }
+.infoPrimary { width: 100%; min-height: 42px !important; border-color: #1677ff !important; background: #1677ff !important; color: #fff !important; font-weight: 700 !important; }
+.aboutHero { display: flex; align-items: center; gap: 12px; padding: 2px 0 16px; }
+.aboutHero > span { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; background: linear-gradient(145deg, #1677ff, #0958d9); color: #fff; font-size: 25px; font-weight: 800; }
+.aboutHero strong,
+.aboutHero small { display: block; }
+.aboutHero strong { color: #1f2329; font-size: 20px; }
+.aboutHero small { margin-top: 2px; color: #667085; font-size: 11px; }
+.aboutFacts { margin: 0; border: 1px solid #edf0f4; border-radius: 10px; overflow: hidden; }
+.aboutFacts > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 9px 11px; border-bottom: 1px solid #edf0f4; }
+.aboutFacts > div:last-child { border-bottom: 0; }
+.aboutFacts dt { color: #7a8597; font-size: 11px; }
+.aboutFacts dd { margin: 0; overflow-wrap: anywhere; color: #344054; font-size: 11px; font-weight: 650; text-align: right; }
+.aboutFacts dd[data-tone="online"] { color: #389e0d; }
+.aboutFacts dd[data-tone="fallback"],
+.aboutFacts dd[data-tone="checking"] { color: #ad6800; }
+.aboutFacts dd[data-tone="offline"] { color: #cf1322; }
+.aboutSecurity { margin: 12px 0 0; padding: 9px 11px; border-radius: 9px; background: #f6ffed; color: #237804; font-size: 10px; line-height: 1.5; }
+.aboutNote { margin: 11px 0; color: #7a8597; font-size: 10px; line-height: 1.5; }
+
 .content {
   min-width: 0;
   width: 100%;
@@ -330,7 +480,10 @@
   gap: 12px;
 }
 
-.moduleContent {
+/* ต้อง specificity สูงกว่า `.content` ใน breakpoint ด้านล่างด้วย — จอ Retina 2560px
+   ของ Electron มี viewport 1280 CSS px พอดี จึงเข้า media query แล้วเคยถูกแบ่งกลับเป็น
+   60/40 ทั้งที่ module มีลูกเพียง panel เดียว ส่งผลให้ครึ่งขวาของจอว่างเปล่า */
+.content.moduleContent {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -703,7 +856,7 @@
   .content { grid-template-columns: 1fr; overflow-y: auto; }
   .catalogPane { min-height: 620px; }
   .checkoutPane { min-height: 680px; }
-  .topMeta .connection { display: none; }
+  .topMeta .connection { padding-inline: 8px; }
   .accountMenu > summary { min-width: 52px; grid-template-columns: 34px auto; }
   .accountCopy { display: none; }
   .productGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

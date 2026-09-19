@@ -17,6 +17,7 @@ import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
+import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
 import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
 import {
   applyPromotion,
@@ -55,6 +56,10 @@ import { appendSplitPaymentRow, rebalanceSplitPayments, type PosPaymentDraft } f
 import { isEnrollablePhone } from "@/lib/pos/memberEnroll";
 import { describePosFailure as describeFailure } from "@/lib/pos/failureMessage";
 import {
+  CUSTOMER_DISPLAY_CHANNEL,
+  type CustomerDisplayPayload,
+} from "@/lib/pos/customerDisplay";
+import {
   findRememberedPrinter,
   isWebUsbSupported,
   requestPrinter,
@@ -62,6 +67,7 @@ import {
 } from "@/lib/pos/printerClient";
 import {
   clearPosDeviceToken,
+  hasDesktopCustomerDisplayBridge,
   hasDesktopPosBridge,
   posDeviceStorageNamespace,
   readPosDeviceToken,
@@ -967,6 +973,7 @@ type Session = {
     address?: string | null;
     phone?: string | null;
     logoUrl?: string | null;
+    paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null;
   };
   surface?: "retail" | "restaurant";
   businessArchetype?: string | null;
@@ -1356,6 +1363,7 @@ export default function PosPage() {
     onTabChange,
     onShiftChange,
     onUnpair,
+    suppressCustomerDisplay,
     onBoardGameCheckout,
     onServiceCallsChange,
   } = useContext(PosWorkspaceContext);
@@ -3993,12 +4001,18 @@ export default function PosPage() {
    * เปิด/ปิดจอลูกค้าไม่ต้องตั้งค่าอะไร: ถ้าไม่มีใครฟัง postMessage ก็ไม่มีผลอะไร
    */
   const displayChannel = useRef<BroadcastChannel | null>(null);
+  const displayPayload = useRef<CustomerDisplayPayload | null>(null);
   useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return;
-    const ch = new BroadcastChannel("bms-pos-display");
+    if (suppressCustomerDisplay || typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
     displayChannel.current = ch;
+    ch.onmessage = (event) => {
+      if (event.data?.type === "hello" && displayPayload.current) {
+        ch.postMessage(displayPayload.current);
+      }
+    };
     return () => { ch.close(); displayChannel.current = null; };
-  }, []);
+  }, [suppressCustomerDisplay]);
 
   // บิลพักโหลดตอนเข้าแท็บขาย · เงินลิ้นชัก/ค่าใช้จ่ายตอนเข้าแท็บกะ · มัดจำตอนเข้าแท็บมัดจำ
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
@@ -4132,9 +4146,10 @@ export default function PosPage() {
     [payableBeforeRounding, roundingDelta]
   );
   useEffect(() => {
+    if (suppressCustomerDisplay) return;
     const ch = displayChannel.current;
     if (!ch) return;
-    ch.postMessage({
+    const payload = {
       lines: [
         ...cart.map((l) => ({
           name: l.receiptName,
@@ -4165,12 +4180,23 @@ export default function PosPage() {
       amountDue,
       memberName: member?.name ?? null,
       pointsEarned: null,
+      paymentQr: (() => {
+        const configuredQr = session?.store?.paymentQr;
+        const qrAmount = Math.round(payments
+          .filter((payment) => payment.method === "QR")
+          .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
+        return configuredQr && qrAmount > 0
+          ? { ...configuredQr, amount: qrAmount }
+          : null;
+      })(),
       // บิลที่ปิดแล้วค้างบนจอให้ลูกค้านับเงินทอนตาม จนกว่าจะเริ่มยิงบิลถัดไป
       finished: cart.length === 0 && justSold
         ? { total: justSold.total, tendered: null, change: justSold.change }
         : null,
-    });
-  }, [cart, extraLines, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
+    };
+    displayPayload.current = payload;
+    ch.postMessage(payload);
+  }, [suppressCustomerDisplay, cart, extraLines, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey, payments, session?.store?.paymentQr]);
 
   const pharmacyReviewOfferCartKey = useMemo(
     () => JSON.stringify(cart.map((line) => [line.key, line.packQty, line.size, line.packCode])),
@@ -7988,6 +8014,7 @@ export default function PosPage() {
 
       {tab === "settings" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {hasDesktopCustomerDisplayBridge() && <CustomerDisplaySettings />}
           {session?.businessArchetype === "restaurant" && (
             <div>
               <div style={{ fontWeight: 500, marginBottom: 8 }}>เสียงเตือนออร์เดอร์เข้า</div>
@@ -8033,13 +8060,15 @@ export default function PosPage() {
               )}
               {/* จอลูกค้า (8.6) — เปิดเป็นหน้าต่างใหม่แล้วลากไปจอที่สอง
                   ใช้ BroadcastChannel จึงต้องเป็นเบราว์เซอร์เดียวกัน ไม่ใช่เครื่องอื่น */}
-              <button
-                onClick={() => window.open("/pos/display", "bms-pos-display", "width=1024,height=768")}
-                style={{ padding: "8px 14px", fontSize: 13 }}
-                title="เปิดหน้าต่างสำหรับจอที่หันไปทางลูกค้า"
-              >
-                เปิดจอลูกค้า
-              </button>
+              {!hasDesktopCustomerDisplayBridge() && (
+                <button
+                  onClick={() => window.open("/pos/display", "bms-pos-display", "width=1024,height=768")}
+                  style={{ padding: "8px 14px", fontSize: 13 }}
+                  title="เปิดหน้าต่างสำหรับจอที่หันไปทางลูกค้า"
+                >
+                  เปิดจอลูกค้า
+                </button>
+              )}
               <button
                 onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}
                 style={{ padding: "8px 14px", fontSize: 13 }}

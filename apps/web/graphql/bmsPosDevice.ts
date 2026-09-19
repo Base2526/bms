@@ -161,6 +161,7 @@ import {
 import { setMenuTemporarilyUnavailable } from "@/lib/bms/menuAvailability";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
+import { configuredPosPaymentQr } from "@/lib/bms/paymentConfiguration";
 import { getBranchStockOverview } from "@/lib/bms/stock";
 import {
   applyStockCount,
@@ -782,6 +783,13 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     address: String
     phone: String
     logoUrl: String
+    paymentQr: BmsPosPaymentQr
+  }
+
+  type BmsPosPaymentQr {
+    payload: String!
+    accountName: String
+    promptpayId: String
   }
 
   type BmsPosVatSettings {
@@ -3273,6 +3281,7 @@ export const bmsPosDeviceResolvers = {
           address: store.address,
           phone: store.phone,
           logoUrl: store.logoUrl,
+          paymentQr: configuredPosPaymentQr(store.paymentAccounts),
         },
         surface:
           store.businessArchetype === "restaurant" ? "restaurant" : "retail",

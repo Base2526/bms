@@ -32,6 +32,8 @@ export type PosWorkspaceOptions = {
   onTabChange?: (tab: PosTab) => void;
   onShiftChange?: (open: boolean) => void;
   onUnpair?: () => void | Promise<void>;
+  /** The desktop shell owns the customer-display payload while this legacy workspace is embedded. */
+  suppressCustomerDisplay?: boolean;
   /**
    * Desktop owns the mobile-style checkout screen. Embedded workspaces hand a frozen
    * board-game billing-group id back to that shell instead of opening the legacy sell pane.

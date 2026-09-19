@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  DEFAULT_CUSTOMER_DISPLAY_CONFIG,
+  normalizeCustomerDisplayConfig,
+  selectCustomerDisplay,
+} from "./display-policy.mjs";
 import { parsePairingInput } from "./pairing.mjs";
 import { MOBILE_POS_PATH, posEntryPathForStatus } from "./renderer-route.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
@@ -12,7 +17,7 @@ import {
   installGlobalZoomPolicy,
 } from "./zoom-policy.mjs";
 
-const { app, BrowserWindow, ipcMain, Menu, net, safeStorage, shell } = electronMain;
+const { app, BrowserWindow, ipcMain, Menu, net, safeStorage, screen, shell } = electronMain;
 
 installGlobalZoomPolicy(app);
 
@@ -23,9 +28,17 @@ const CONFIG_VERSION = 1;
 
 let mainWindow = null;
 let activePairing = null;
+let customerDisplayWindow = null;
+let customerDisplayWindowDisplayId = null;
+let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
+let displayReconcileTimer = null;
 
 function configPath() {
   return path.join(app.getPath("userData"), "pairing.json");
+}
+
+function customerDisplayConfigPath() {
+  return path.join(app.getPath("userData"), "customer-display.json");
 }
 
 function currentSecureStorageStatus() {
@@ -84,7 +97,26 @@ async function writePairing(pairing) {
 
 async function removePairing() {
   activePairing = null;
+  closeCustomerDisplayWindow();
   await rm(configPath(), { force: true });
+}
+
+async function readCustomerDisplayConfig() {
+  try {
+    return normalizeCustomerDisplayConfig(JSON.parse(
+      await readFile(customerDisplayConfigPath(), "utf8"),
+    ));
+  } catch (error) {
+    if (error?.code !== "ENOENT") console.error("Unable to read customer-display configuration");
+    return { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
+  }
+}
+
+async function writeCustomerDisplayConfig(config) {
+  const target = customerDisplayConfigPath();
+  const temporary = `${target}.tmp`;
+  await writeFile(temporary, JSON.stringify(config), { encoding: "utf8", mode: 0o600 });
+  await rename(temporary, target);
 }
 
 function isSetupFrame(event) {
@@ -100,6 +132,16 @@ function isPairedPosFrame(event) {
   try {
     const url = new URL(event.senderFrame.url);
     return url.origin === activePairing.serverUrl && isPosPath(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isPairedCashierFrame(event) {
+  if (!isPairedPosFrame(event)) return false;
+  try {
+    const pathname = new URL(event.senderFrame.url).pathname;
+    return pathname !== "/pos/display" && pathname !== "/pos/manual";
   } catch {
     return false;
   }
@@ -141,6 +183,156 @@ function setupWindowSecurity(targetSession) {
   });
 }
 
+function cashierDisplay() {
+  if (!mainWindow || mainWindow.isDestroyed()) return screen.getPrimaryDisplay();
+  return screen.getDisplayMatching(mainWindow.getBounds());
+}
+
+function isWaylandSession() {
+  return process.platform === "linux"
+    && String(process.env.XDG_SESSION_TYPE ?? "").toLowerCase() === "wayland";
+}
+
+function displaySummary(display, index, cashierDisplayId) {
+  return {
+    id: String(display.id),
+    label: String(display.label ?? "").trim() || `จอ ${index + 1}`,
+    primary: display.id === screen.getPrimaryDisplay().id,
+    cashier: String(display.id) === String(cashierDisplayId),
+    width: display.size.width,
+    height: display.size.height,
+    scaleFactor: display.scaleFactor,
+    rotation: display.rotation,
+  };
+}
+
+function currentCustomerDisplayState() {
+  const displays = screen.getAllDisplays();
+  const cashier = cashierDisplay();
+  const target = selectCustomerDisplay(displays, cashier.id, customerDisplayConfig);
+  return {
+    mode: customerDisplayConfig.mode,
+    targetDisplayId: customerDisplayConfig.targetDisplayId,
+    activeDisplayId: customerDisplayWindow && !customerDisplayWindow.isDestroyed()
+      ? customerDisplayWindowDisplayId
+      : null,
+    open: Boolean(customerDisplayWindow && !customerDisplayWindow.isDestroyed()),
+    cashierDisplayId: String(cashier.id),
+    displays: displays.map((display, index) => displaySummary(display, index, cashier.id)),
+    targetAvailable: Boolean(target),
+    positioningLimited: isWaylandSession(),
+  };
+}
+
+function broadcastCustomerDisplayState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("bms-pos:customer-display-state-changed", currentCustomerDisplayState());
+}
+
+function closeCustomerDisplayWindow() {
+  const window = customerDisplayWindow;
+  customerDisplayWindow = null;
+  customerDisplayWindowDisplayId = null;
+  if (window && !window.isDestroyed()) window.destroy();
+}
+
+function createCustomerDisplayWindow(targetDisplay) {
+  if (!activePairing) return;
+  const targetId = String(targetDisplay.id);
+  if (
+    customerDisplayWindow
+    && !customerDisplayWindow.isDestroyed()
+    && customerDisplayWindowDisplayId === targetId
+  ) {
+    try { customerDisplayWindow.setBounds(targetDisplay.bounds); } catch {}
+    return;
+  }
+  closeCustomerDisplayWindow();
+  const window = new BrowserWindow({
+    ...targetDisplay.bounds,
+    show: false,
+    // Wayland may ignore app-directed placement. Keep a native frame there so the operator can
+    // still move the window with the compositor instead of trapping a borderless window.
+    frame: isWaylandSession(),
+    skipTaskbar: !isWaylandSession(),
+    title: "BMS POS — จอลูกค้า",
+    backgroundColor: "#0b0b0c",
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: "persist:bms-pos",
+      zoomFactor: 1,
+    },
+  });
+  customerDisplayWindow = window;
+  customerDisplayWindowDisplayId = targetId;
+  setupWindowSecurity(window.webContents.session);
+  window.once("ready-to-show", () => {
+    if (window.isDestroyed()) return;
+    try { window.setBounds(targetDisplay.bounds); } catch {}
+    window.showInactive();
+  });
+  window.on("closed", () => {
+    if (customerDisplayWindow === window) {
+      customerDisplayWindow = null;
+      customerDisplayWindowDisplayId = null;
+      broadcastCustomerDisplayState();
+    }
+  });
+  window.webContents.on("will-navigate", (event, destination) => {
+    try {
+      const target = new URL(destination);
+      if (target.origin === activePairing?.serverUrl && target.pathname === "/pos/display") return;
+    } catch {}
+    event.preventDefault();
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  void window.loadURL(new URL("/pos/display", activePairing.serverUrl).toString()).catch(() => {});
+}
+
+function reconcileCustomerDisplay() {
+  if (!activePairing || customerDisplayConfig.mode === "off") {
+    closeCustomerDisplayWindow();
+    broadcastCustomerDisplayState();
+    return;
+  }
+  const displays = screen.getAllDisplays();
+  const target = selectCustomerDisplay(displays, cashierDisplay().id, customerDisplayConfig);
+  if (target) createCustomerDisplayWindow(target);
+  else closeCustomerDisplayWindow();
+  broadcastCustomerDisplayState();
+}
+
+function scheduleCustomerDisplayReconcile() {
+  if (displayReconcileTimer) clearTimeout(displayReconcileTimer);
+  displayReconcileTimer = setTimeout(() => {
+    displayReconcileTimer = null;
+    reconcileCustomerDisplay();
+  }, 200);
+}
+
+function identifyDisplays() {
+  const cashierId = cashierDisplay().id;
+  for (const [index, display] of screen.getAllDisplays().entries()) {
+    const role = display.id === cashierId ? "จอแคชเชียร์" : "จอที่เลือกได้";
+    const overlay = new BrowserWindow({
+      ...display.bounds,
+      show: false,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focusable: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    const html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;background:rgba(0,0,0,.48);font-family:system-ui,sans-serif;color:white;display:grid;place-items:center}.card{text-align:center;background:#1677ff;border:8px solid white;border-radius:44px;padding:42px 76px;box-shadow:0 20px 80px #0008}.number{font-size:140px;font-weight:800;line-height:1}.role{font-size:28px;margin-top:14px}</style><div class="card"><div class="number">${index + 1}</div><div class="role">${role}</div></div>`;
+    void overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => overlay.showInactive());
+    setTimeout(() => { if (!overlay.isDestroyed()) overlay.destroy(); }, 3000);
+  }
+}
+
 function createMainWindow() {
   const window = new BrowserWindow({
     width: 1366,
@@ -163,6 +355,11 @@ function createMainWindow() {
 
   setupWindowSecurity(window.webContents.session);
   window.once("ready-to-show", () => window.show());
+  window.on("move", scheduleCustomerDisplayReconcile);
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+    closeCustomerDisplayWindow();
+  });
 
   window.webContents.on("will-navigate", (event, destination) => {
     if (destination.startsWith("file:")) return;
@@ -177,9 +374,12 @@ function createMainWindow() {
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
-      const isPosUtility = activePairing
-        && target.origin === activePairing.serverUrl
-        && (target.pathname === "/pos/display" || target.pathname === "/pos/manual");
+      const isPairedOrigin = activePairing && target.origin === activePairing.serverUrl;
+      if (isPairedOrigin && target.pathname === "/pos/display") {
+        reconcileCustomerDisplay();
+        return { action: "deny" };
+      }
+      const isPosUtility = isPairedOrigin && target.pathname === "/pos/manual";
       if (isPosUtility) {
         return {
           action: "allow",
@@ -260,6 +460,7 @@ function registerIpc() {
       await writePairing(parsed);
       activePairing = { serverUrl: parsed.serverUrl, token: parsed.token };
       await showPos();
+      reconcileCustomerDisplay();
       return { ok: true };
     } catch {
       return { ok: false, error: "บันทึกการจับคู่แบบเข้ารหัสไม่สำเร็จ" };
@@ -284,7 +485,9 @@ function registerIpc() {
   });
 
   ipcMain.handle("bms-pos:app-info", async (event) => {
-    if (!isSetupFrame(event)) return null;
+    // Read-only build/runtime metadata is useful both before pairing and from the in-app About
+    // dialog. Keep the same strict frame allow-list as every credential-adjacent bridge method.
+    if (!isSetupFrame(event) && !isPairedPosFrame(event)) return null;
     const storage = currentSecureStorageStatus();
     return {
       version: app.getVersion(),
@@ -295,6 +498,37 @@ function registerIpc() {
       secureStorageError: storage.ok ? null : storage.error,
       secureStorageBackend: storage.backend,
     };
+  });
+
+  ipcMain.handle("bms-pos:get-customer-display-state", async (event) => {
+    if (!isPairedCashierFrame(event)) return null;
+    return currentCustomerDisplayState();
+  });
+
+  ipcMain.handle("bms-pos:set-customer-display-config", async (event, input) => {
+    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอลูกค้า" };
+    const next = normalizeCustomerDisplayConfig(input);
+    if (input?.mode !== next.mode) return { ok: false, error: "รูปแบบการตั้งค่าจอลูกค้าไม่ถูกต้อง" };
+    if (next.mode === "selected") {
+      const cashierId = String(cashierDisplay().id);
+      const selected = screen.getAllDisplays().find((display) => String(display.id) === next.targetDisplayId);
+      if (!selected) return { ok: false, error: "ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่" };
+      if (String(selected.id) === cashierId) return { ok: false, error: "จอหลักกำลังใช้เป็นจอแคชเชียร์ กรุณาเลือกจออื่น" };
+    }
+    try {
+      await writeCustomerDisplayConfig(next);
+      customerDisplayConfig = next;
+      reconcileCustomerDisplay();
+      return { ok: true, state: currentCustomerDisplayState() };
+    } catch {
+      return { ok: false, error: "บันทึกการตั้งค่าจอลูกค้าไม่สำเร็จ" };
+    }
+  });
+
+  ipcMain.handle("bms-pos:identify-displays", async (event) => {
+    if (!isPairedCashierFrame(event)) return { ok: false };
+    identifyDisplays();
+    return { ok: true };
   });
 }
 
@@ -320,15 +554,22 @@ if (!singleInstance) {
     )));
     registerIpc();
     mainWindow = createMainWindow();
+    customerDisplayConfig = await readCustomerDisplayConfig();
     activePairing = await readPairing();
-    if (activePairing) await showPos();
+    if (activePairing) {
+      await showPos();
+      reconcileCustomerDisplay();
+    }
     else await showSetup();
+    screen.on("display-added", scheduleCustomerDisplayReconcile);
+    screen.on("display-removed", scheduleCustomerDisplayReconcile);
+    screen.on("display-metrics-changed", scheduleCustomerDisplayReconcile);
   });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
-      void (activePairing ? showPos() : showSetup());
+      void (activePairing ? showPos().then(reconcileCustomerDisplay) : showSetup());
     }
   });
 

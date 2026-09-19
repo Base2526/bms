@@ -52,8 +52,15 @@ import {
 import {
   clearPosDeviceToken,
   hasDesktopPosBridge,
+  readDesktopAppInfo,
   readPosDeviceToken,
+  type DesktopAppInfo,
 } from "@/lib/pos/deviceTokenClient";
+import {
+  CUSTOMER_DISPLAY_CHANNEL,
+  EMPTY_CUSTOMER_DISPLAY,
+  type CustomerDisplayPayload,
+} from "@/lib/pos/customerDisplay";
 import PosPage from "@/app/(pos)/pos/page";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
@@ -63,7 +70,12 @@ import {
   type PosTab,
 } from "@/components/pos/PosWorkspaceContext";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
+import {
+  useRealtimeInvalidation,
+  useRealtimeStatus,
+} from "@/components/realtime/RealtimeProvider";
 import { ALERT_KINDS, newAlertIds } from "@/lib/pos/orderAlertSound";
+import { copyTextToClipboard } from "@/lib/pos/clipboard";
 import styles from "./DesktopPosRenderer.module.css";
 
 type CartLine = PricedCartLine & {
@@ -103,7 +115,15 @@ const decidedCodes = new Set([
   "CONFLICT",
 ]);
 
+const SERVICE_CALL_REALTIME_EVENTS = [
+  "restaurant.table_call.created",
+  "restaurant.table_call.status_changed",
+  "board_game.table_call.created",
+  "board_game.table_call.status_changed",
+] as const;
+
 type DesktopModule = "mobile_sell" | "restaurant" | PosTab;
+type DesktopInfoDialog = "help" | "about" | null;
 
 const money = (value: number) =>
   new Intl.NumberFormat("th-TH", {
@@ -118,8 +138,16 @@ function serviceCallLabel(call: PosServiceCallNotice): string {
     CUTLERY: "ขอช้อนส้อม",
     BILL: "เรียกเก็บเงิน",
     MENU_HELP: "ขอความช่วยเหลือเรื่องเมนู",
+    GAME_HELP: "ช่วยสอนหรืออธิบายเกม",
+    GAME_ISSUE: "ชิ้นส่วนขาด / เกมชำรุด",
+    FOOD_DRINK: "อาหารหรือเครื่องดื่ม",
+    EXTEND_TIME: "ขอต่อเวลา",
+    CLEANUP: "น้ำหก / ขอทำความสะอาด",
+    OTHER: "ขอความช่วยเหลืออื่น ๆ",
   };
-  return labels[call.requestCode] ?? call.requestNote ?? "เรียกพนักงาน";
+  const label = labels[call.requestCode];
+  if (label && call.requestNote) return `${label} · ${call.requestNote}`;
+  return label ?? call.requestNote ?? "เรียกพนักงาน";
 }
 
 function serviceCallAge(createdAt: string): string {
@@ -177,6 +205,8 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export default function DesktopPosRenderer() {
+  const desktopRootRef = useRef<HTMLElement | null>(null);
+  const accountMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [token, setToken] = useState("");
   const [flow, setFlow] = useState<PosClientFlowState>(() => initialPosClientFlow(true));
   const [bootstrap, setBootstrap] = useState<PosBootstrap | null>(null);
@@ -200,17 +230,110 @@ export default function DesktopPosRenderer() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
+  const { status: realtimeStatus } = useRealtimeStatus();
   // Reuse the established per-device alert store. The desktop shell exposes the control, but
   // notification rules and playback remain owned by the existing POS alert pipeline.
   const alerts = useOrderAlerts(Boolean(bootstrap && cashier));
   const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
   const [serviceCalls, setServiceCalls] = useState<PosServiceCallNotice[]>([]);
   const [serviceCallsBusy, setServiceCallsBusy] = useState("");
+  const [desktopInfoDialog, setDesktopInfoDialog] = useState<DesktopInfoDialog>(null);
+  const [desktopAppInfo, setDesktopAppInfo] = useState<DesktopAppInfo | null>(null);
+  const [desktopAppInfoLoaded, setDesktopAppInfoLoaded] = useState(false);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const pendingServiceCallCount = serviceCalls.filter((call) => call.status === "PENDING").length;
+  const acknowledgedServiceCallCount = serviceCalls.length - pendingServiceCallCount;
   const knownServiceCallIds = useRef<Set<string> | null>(null);
   const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
   const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customerDisplayChannelRef = useRef<BroadcastChannel | null>(null);
+  const customerDisplayPayloadRef = useRef<CustomerDisplayPayload>(EMPTY_CUSTOMER_DISPLAY);
+
+  // Native <details> gives the header popups keyboard semantics without another menu library, but
+  // it does not dismiss itself when the operator taps elsewhere. Delegate once at the desktop-app
+  // root so every present and future header popup follows the same rule while ordinary disclosures
+  // inside the selling modules keep their own open/closed state.
+  useEffect(() => {
+    const openPopups = () => Array.from(
+      desktopRootRef.current?.querySelectorAll<HTMLDetailsElement>(
+        'details[data-desktop-popup][open]',
+      ) ?? [],
+    );
+    const closePopups = (except?: HTMLDetailsElement) => {
+      for (const popup of openPopups()) {
+        if (popup !== except) popup.open = false;
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const open = openPopups();
+      if (open.some((popup) => popup.contains(target))) return;
+      closePopups();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const open = openPopups();
+      if (open.length === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closePopups();
+      open.at(-1)?.querySelector<HTMLElement>('summary')?.focus();
+    };
+    const onToggle = (event: Event) => {
+      const popup = event.target;
+      const root = desktopRootRef.current;
+      if (!(popup instanceof HTMLDetailsElement)
+        || !popup.open
+        || !popup.matches('details[data-desktop-popup]')
+        || !root?.contains(popup)) return;
+      closePopups(popup);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('toggle', onToggle, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('toggle', onToggle, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!desktopInfoDialog) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDesktopInfoDialog(null);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [desktopInfoDialog]);
+
+  useEffect(() => {
+    if (desktopInfoDialog !== "about" || desktopAppInfo) return;
+    let active = true;
+    void readDesktopAppInfo().then((info) => {
+      if (active) {
+        setDesktopAppInfo(info);
+        setDesktopAppInfoLoaded(true);
+      }
+    });
+    return () => { active = false; };
+  }, [desktopAppInfo, desktopInfoDialog]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
+    customerDisplayChannelRef.current = channel;
+    channel.onmessage = (event) => {
+      if (event.data?.type === "hello") channel.postMessage(customerDisplayPayloadRef.current);
+    };
+    return () => {
+      channel.close();
+      customerDisplayChannelRef.current = null;
+    };
+  }, []);
 
   const sendFlow = useCallback((event: PosClientEvent) => {
     setFlow((current) => transitionPosClientFlow(current, event));
@@ -346,99 +469,111 @@ export default function DesktopPosRenderer() {
   }, []);
 
   const acceptBoardGameServiceCalls = useCallback((calls: PosServiceCallNotice[]) => {
-    setServiceCalls(calls.filter((call) => call.status === "PENDING"));
+    setServiceCalls(calls);
   }, []);
 
-  // Restaurant calls must remain visible while the cashier works on another desktop module.
-  // Board-game calls are pushed up by BoardGamePanel instead, avoiding a duplicate workspace poll.
-  useEffect(() => {
-    if (bootstrap?.businessArchetype !== "restaurant" || !token || !cashier || !pin) return;
-    let stopped = false;
-    let controller: AbortController | null = null;
-    const refresh = async () => {
-      controller?.abort();
-      controller = new AbortController();
-      try {
+  // One authoritative loader serves both the realtime event and the bounded polling fallback.
+  // Previously the subscription received table-call events but only invalidated Apollo queries;
+  // this fetch-backed bell therefore waited for its next 10-second tick before it changed.
+  const refreshDesktopServiceCalls = useCallback(async (signal?: AbortSignal) => {
+    if (!token || !cashier || !pin) return;
+    try {
+      if (bootstrap?.businessArchetype === "restaurant") {
         const response = await fetch("/api/pos/restaurant/service-calls", {
           headers: { "x-pos-device-token": token },
           cache: "no-store",
-          signal: controller.signal,
+          signal,
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
-        if (!stopped) {
-          const rows = Array.isArray(data.calls) ? data.calls : [];
-          setServiceCalls(rows
-            .filter((call: PosServiceCallNotice) => call.status === "PENDING")
-            .map((call: PosServiceCallNotice) => ({ ...call, source: "restaurant" })));
+        if (!response.ok) {
+          throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
         }
-      } catch (cause) {
-        if (!stopped && !(cause instanceof DOMException && cause.name === "AbortError")) {
-          // Keep the last known calls visible; a transient refresh error must not clear real work.
-          console.error("[desktop-pos] service-call refresh failed", cause);
-        }
+        const rows = Array.isArray(data.calls) ? data.calls : [];
+        setServiceCalls(rows.map((call: PosServiceCallNotice) => ({
+          ...call,
+          source: "restaurant",
+        })));
+        return;
       }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => { stopped = true; controller?.abort(); window.clearInterval(timer); };
-  }, [bootstrap?.businessArchetype, cashier, pin, token]);
-
-  useEffect(() => {
-    if (bootstrap?.businessArchetype !== "board_game_cafe" || activeModule === "boardgame" || !token || !cashier || !pin) return;
-    let stopped = false;
-    let controller: AbortController | null = null;
-    const refresh = async () => {
-      controller?.abort();
-      controller = new AbortController();
-      try {
+      if (bootstrap?.businessArchetype === "board_game_cafe") {
         const response = await fetch("/api/pos/board-game", {
           method: "POST",
           headers: { "content-type": "application/json", "x-pos-device-token": token },
           body: JSON.stringify({ action: "service.calls", cashierUserId: cashier.id, pin }),
           cache: "no-store",
-          signal: controller.signal,
+          signal,
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
-        if (!stopped) {
-          const rows = Array.isArray(data.serviceCalls) ? data.serviceCalls : [];
-          setServiceCalls(rows
-            .filter((call: PosServiceCallNotice) => call.status === "PENDING")
-            .map((call: PosServiceCallNotice) => ({ ...call, source: "boardgame" })));
+        if (!response.ok) {
+          throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
         }
-      } catch (cause) {
-        if (!stopped && !(cause instanceof DOMException && cause.name === "AbortError")) {
-          console.error("[desktop-pos] board-game service-call refresh failed", cause);
-        }
+        const rows = Array.isArray(data.serviceCalls) ? data.serviceCalls : [];
+        setServiceCalls(rows.map((call: PosServiceCallNotice) => ({
+          ...call,
+          source: "boardgame",
+        })));
       }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => { stopped = true; controller?.abort(); window.clearInterval(timer); };
-  }, [activeModule, bootstrap?.businessArchetype, cashier, pin, token]);
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        // Keep the last known calls visible; a transient refresh error must not clear real work.
+        console.error("[desktop-pos] service-call refresh failed", cause);
+      }
+    }
+  }, [bootstrap?.businessArchetype, cashier, pin, token]);
+
+  useRealtimeInvalidation({
+    eventTypes: SERVICE_CALL_REALTIME_EVENTS,
+    onInvalidate: () => refreshDesktopServiceCalls(),
+    // A table call is a human waiting at the counter: refresh on the next task as soon as the WS
+    // event arrives. The 10-second timer below is reconciliation only, never the normal path.
+    debounceMs: 0,
+  });
 
   useEffect(() => {
-    const pendingIds = serviceCalls.map((call) => `${call.source}:${call.id}`);
+    if (!token || !cashier || !pin
+      || (bootstrap?.businessArchetype !== "restaurant"
+        && bootstrap?.businessArchetype !== "board_game_cafe")) return;
+    let controller: AbortController | null = null;
+    const refresh = () => {
+      controller?.abort();
+      controller = new AbortController();
+      void refreshDesktopServiceCalls(controller.signal);
+    };
+    refresh();
+    // Realtime is the fast path; this remains the fail-open reconciliation path.
+    const timer = window.setInterval(refresh, 10_000);
+    return () => { controller?.abort(); window.clearInterval(timer); };
+  }, [bootstrap?.businessArchetype, cashier, pin, refreshDesktopServiceCalls, token]);
+
+  useEffect(() => {
+    const pendingIds = serviceCalls
+      .filter((call) => call.status === "PENDING")
+      .map((call) => `${call.source}:${call.id}`);
     if (newAlertIds(knownServiceCallIds.current, pendingIds).length > 0) alerts.notify("QR_PENDING");
     knownServiceCallIds.current = new Set(pendingIds);
   }, [alerts, serviceCalls]);
 
-  const acknowledgeServiceCall = useCallback(async (call: PosServiceCallNotice) => {
+  const updateServiceCall = useCallback(async (call: PosServiceCallNotice) => {
     if (!cashier || !pin || serviceCallsBusy) return;
     setServiceCallsBusy(call.id);
+    const completing = call.status === "ACKNOWLEDGED";
     try {
       const response = call.source === "restaurant"
         ? await fetch("/api/pos/restaurant/service-calls", {
           method: "POST",
           headers: { "content-type": "application/json", "x-pos-device-token": token },
-          body: JSON.stringify({ action: "acknowledge", callId: call.id, cashierUserId: cashier.id, cashierPin: pin }),
+          body: JSON.stringify({
+            action: completing ? "complete" : "acknowledge",
+            callId: call.id,
+            cashierUserId: cashier.id,
+            cashierPin: pin,
+          }),
         })
         : await fetch("/api/pos/board-game", {
           method: "POST",
           headers: { "content-type": "application/json", "x-pos-device-token": token },
           body: JSON.stringify({
-            action: "service.acknowledge",
+            action: completing ? "service.complete" : "service.acknowledge",
             callId: call.id,
             cashierUserId: cashier.id,
             pin,
@@ -446,9 +581,19 @@ export default function DesktopPosRenderer() {
           }),
         });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "รับคำเรียกไม่สำเร็จ");
-      setServiceCalls((current) => current.filter((item) => !(item.id === call.id && item.source === call.source)));
-      setNotice(`รับทราบคำเรียกจาก ${call.tableName || call.tableCode} แล้ว`);
+      if (!response.ok) {
+        throw new Error(typeof data.error === "string"
+          ? data.error
+          : completing ? "ปิดงานไม่สำเร็จ" : "รับคำเรียกไม่สำเร็จ");
+      }
+      setServiceCalls((current) => completing
+        ? current.filter((item) => !(item.id === call.id && item.source === call.source))
+        : current.map((item) => item.id === call.id && item.source === call.source
+          ? { ...item, status: "ACKNOWLEDGED" }
+          : item));
+      setNotice(completing
+        ? `ปิดงานของ ${call.tableName || call.tableCode} แล้ว`
+        : `รับเรื่องจาก ${call.tableName || call.tableCode} แล้ว · กด “เสร็จสิ้น” หลังดูแลโต๊ะ`);
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -463,6 +608,12 @@ export default function DesktopPosRenderer() {
     }
     openModule("boardgame");
   }, [openModule]);
+
+  const openDesktopInfoDialog = useCallback((dialog: Exclude<DesktopInfoDialog, null>) => {
+    if (accountMenuRef.current) accountMenuRef.current.open = false;
+    setDiagnosticsCopied(false);
+    setDesktopInfoDialog(dialog);
+  }, []);
 
   const unpair = useCallback(async () => {
     await clearPosDeviceToken();
@@ -659,6 +810,69 @@ export default function DesktopPosRenderer() {
   const boardGameGrossTime = boardGameCheckout
     ? boardGameCheckout.amountDue + boardGameBenefitAmount
     : 0;
+
+  useEffect(() => {
+    const finished = receipt
+      ? {
+          total: receipt.total ?? total,
+          tendered: receipt.cashTendered,
+          change: receipt.cashChange,
+        }
+      : null;
+    const qrPaymentAmount = Math.round(payments
+      .filter((payment) => payment.method === "qr")
+      .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
+    const configuredQr = bootstrap?.store.paymentQr ?? null;
+    const payload: CustomerDisplayPayload = {
+      lines: boardGameCheckout
+        ? [{
+            name: boardGameCheckout.sessionGroupCount > 1
+              ? `บิลบอร์ดเกม · ${boardGameCheckout.tableName} · กลุ่ม ${boardGameCheckout.groupNo}`
+              : `บิลบอร์ดเกม · ${boardGameCheckout.tableName}`,
+            size: null,
+            qty: 1,
+            unitName: "",
+            amount: boardGameCheckout.totalDue + boardGameBenefitAmount,
+          }]
+        : cart.map((line) => ({
+            name: line.name,
+            size: line.size || null,
+            qty: line.qty,
+            unitName: line.unitName,
+            amount: Math.round((
+              Number(line.packBasePrice ?? line.unitPrice ?? 0)
+              + Number(line.modifierUnitPrice ?? 0)
+            ) * line.qty * 100) / 100,
+          })),
+      itemCount: boardGameCheckout ? 1 : itemCount,
+      total: boardGameCheckout
+        ? Math.round((payableBeforeRounding + boardGameBenefitAmount) * 100) / 100
+        : retailListSubtotal,
+      discountTotal: boardGameCheckout ? boardGameBenefitAmount : pricingSavings,
+      amountDue: receipt?.total ?? total,
+      memberName: null,
+      pointsEarned: null,
+      paymentQr: flow.stage === "CHECKOUT" && qrPaymentAmount > 0 && configuredQr
+        ? { ...configuredQr, amount: qrPaymentAmount }
+        : null,
+      finished,
+    };
+    customerDisplayPayloadRef.current = payload;
+    customerDisplayChannelRef.current?.postMessage(payload);
+  }, [
+    boardGameBenefitAmount,
+    boardGameCheckout,
+    cart,
+    bootstrap?.store.paymentQr,
+    flow.stage,
+    itemCount,
+    payments,
+    payableBeforeRounding,
+    pricingSavings,
+    receipt,
+    retailListSubtotal,
+    total,
+  ]);
 
   const backFromCheckout = () => {
     if (saleAttemptRef.current) return;
@@ -960,6 +1174,20 @@ export default function DesktopPosRenderer() {
   }
 
   const checkout = flow.stage === "CHECKOUT";
+  const connectionMode = connection === "offline" || realtimeStatus === "offline"
+    ? "offline"
+    : connection === "checking"
+      ? "checking"
+      : realtimeStatus === "connected"
+        ? "online"
+        : "fallback";
+  const connectionLabel = connectionMode === "offline"
+    ? "การเชื่อมต่อมีปัญหา"
+    : connectionMode === "checking"
+      ? "กำลังเชื่อมต่อ"
+      : connectionMode === "online"
+        ? "ออนไลน์"
+        : "ออนไลน์ · อัปเดตอัตโนมัติ";
   const navItems = ([
     { key: "mobile_sell", label: "ขาย", enabled: true },
     { key: "restaurant", label: "โต๊ะ", enabled: bootstrap.businessArchetype === "restaurant" },
@@ -972,7 +1200,7 @@ export default function DesktopPosRenderer() {
   ] satisfies Array<{ key: DesktopModule; label: string; enabled: boolean }>).filter((item) => item.enabled);
 
   return (
-    <main className={`pos-desktop-app ${styles.shell}`}>
+    <main ref={desktopRootRef} className={`pos-desktop-app ${styles.shell}`}>
       <aside className={styles.rail}>
         <div className={styles.railLogo}>B</div>
         <nav>
@@ -988,6 +1216,16 @@ export default function DesktopPosRenderer() {
             </button>
           ))}
         </nav>
+        <div className={styles.railFooter} aria-label="ข้อมูลและความช่วยเหลือ">
+          <button type="button" onClick={() => openDesktopInfoDialog("help")} title="ช่วยเหลือ">
+            <span aria-hidden="true">?</span>
+            <small>ช่วยเหลือ</small>
+          </button>
+          <button type="button" onClick={() => openDesktopInfoDialog("about")} title="เกี่ยวกับ BMS POS">
+            <span aria-hidden="true">i</span>
+            <small>เกี่ยวกับ</small>
+          </button>
+        </div>
       </aside>
 
       <section className={styles.workspace}>
@@ -997,44 +1235,77 @@ export default function DesktopPosRenderer() {
             <div><strong>{bootstrap.location?.name ?? "สาขาหลัก"}</strong><span>{bootstrap.device.registeredPosNo ?? bootstrap.device.code} · กะเปิดอยู่</span></div>
           </div>
           <div className={styles.topMeta}>
-            <span className={`${styles.connection} ${styles[connection]}`}><i />{connection === "online" ? "ออนไลน์" : connection === "checking" ? "กำลังเชื่อมต่อ" : "การเชื่อมต่อมีปัญหา"}</span>
-            <details className={styles.alertMenu}>
+            {connectionMode === "fallback" ? (
+              <details className={styles.connectionMenu} data-desktop-popup>
+                <summary
+                  className={`${styles.connection} ${styles.connectionFallback}`}
+                  aria-label={`${connectionLabel} กดเพื่อดูรายละเอียด`}
+                >
+                  <i />
+                  <span>{connectionLabel}</span>
+                  <span className={styles.connectionInfo} aria-hidden="true">i</span>
+                </summary>
+                <div className={styles.connectionPopover} role="status">
+                  <strong>ข้อมูลยังอัปเดตอัตโนมัติ</strong>
+                  <span>การอัปเดตทันทีขัดข้องชั่วคราว ระบบจะตรวจข้อมูลใหม่ตามรอบปกติ</span>
+                </div>
+              </details>
+            ) : (
+              <span className={`${styles.connection} ${styles[connectionMode]}`}>
+                <i />
+                <span>{connectionLabel}</span>
+              </span>
+            )}
+            <details className={styles.alertMenu} data-desktop-popup>
               <summary
                 className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
-                aria-label={`การแจ้งเตือน${serviceCalls.length ? ` ${serviceCalls.length} รายการ` : ""}`}
-                title={serviceCalls.length ? `มีลูกค้าเรียก ${serviceCalls.length} รายการ` : "การแจ้งเตือน"}
+                aria-label={`การแจ้งเตือน${pendingServiceCallCount ? ` รอรับ ${pendingServiceCallCount} รายการ` : ""}${acknowledgedServiceCallCount ? ` กำลังดำเนินการ ${acknowledgedServiceCallCount} รายการ` : ""}`}
+                title={serviceCalls.length
+                  ? `รอรับ ${pendingServiceCallCount} · กำลังดำเนินการ ${acknowledgedServiceCallCount}`
+                  : "การแจ้งเตือน"}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
                 </svg>
                 {!alerts.settings.enabled ? <span className={styles.alertBellSlash} aria-hidden="true" /> : null}
                 {serviceCalls.length > 0
-                  ? <span className={styles.alertCount} aria-hidden="true">{serviceCalls.length > 99 ? "99+" : serviceCalls.length}</span>
+                  ? <span className={`${styles.alertCount}${pendingServiceCallCount === 0 ? ` ${styles.alertCountActive}` : ""}`} aria-hidden="true">{serviceCalls.length > 99 ? "99+" : serviceCalls.length}</span>
                   : alerts.blocked ? <span className={styles.alertBellDot} aria-hidden="true" /> : null}
               </summary>
               <div className={styles.alertPopover}>
                 <div className={styles.alertPopoverHead}>
-                  <div><strong>การแจ้งเตือน</strong><small>{serviceCalls.length ? `ลูกค้าเรียก ${serviceCalls.length} รายการ` : "ไม่มีคำเรียกที่รอรับ"}</small></div>
+                  <div>
+                    <strong>การแจ้งเตือน</strong>
+                    <small>{serviceCalls.length
+                      ? `รอรับ ${pendingServiceCallCount} · กำลังดำเนินการ ${acknowledgedServiceCallCount}`
+                      : "ไม่มีคำเรียกที่ต้องดำเนินการ"}</small>
+                  </div>
                   <button type="button" onClick={() => setAlertSettingsOpen(true)} aria-label="ตั้งค่าเสียงแจ้งเตือน">⚙ ตั้งค่าเสียง</button>
                 </div>
                 <div className={styles.alertList}>
                   {serviceCalls.length === 0 ? (
-                    <div className={styles.alertEmpty}><span aria-hidden="true">✓</span><p>รับคำเรียกครบแล้ว</p></div>
+                    <div className={styles.alertEmpty}><span aria-hidden="true">✓</span><p>ไม่มีงานค้าง</p></div>
                   ) : serviceCalls.map((call) => (
-                    <article className={styles.alertItem} key={`${call.source}:${call.id}`}>
+                    <article className={styles.alertItem} data-status={call.status} key={`${call.source}:${call.id}`}>
                       <button type="button" className={styles.alertItemMain} onClick={() => openServiceCall(call)}>
-                        <span className={styles.alertItemIcon} aria-hidden="true">🔔</span>
-                        <span><strong>{call.tableName || call.tableCode}</strong><b>{serviceCallLabel(call)}</b><small>{serviceCallAge(call.createdAt)} · {call.source === "restaurant" ? "ร้านอาหาร" : "บอร์ดเกม"}</small></span>
+                        <span className={styles.alertItemIcon} aria-hidden="true">{call.status === "PENDING" ? "🔔" : "✓"}</span>
+                        <span>
+                          <strong>{call.tableName || call.tableCode}</strong>
+                          <b>{serviceCallLabel(call)}</b>
+                          <small>{call.status === "PENDING" ? "รอรับเรื่อง" : "กำลังดำเนินการ"} · {serviceCallAge(call.createdAt)} · {call.source === "restaurant" ? "ร้านอาหาร" : "บอร์ดเกม"}</small>
+                        </span>
                       </button>
-                      <button type="button" className={styles.alertAccept} disabled={serviceCallsBusy === call.id} onClick={() => void acknowledgeServiceCall(call)}>
-                        {serviceCallsBusy === call.id ? "กำลังรับ…" : "รับเรื่อง"}
+                      <button type="button" className={`${styles.alertAccept}${call.status === "ACKNOWLEDGED" ? ` ${styles.alertComplete}` : ""}`} disabled={serviceCallsBusy === call.id} onClick={() => void updateServiceCall(call)}>
+                        {serviceCallsBusy === call.id
+                          ? call.status === "PENDING" ? "กำลังรับ…" : "กำลังปิด…"
+                          : call.status === "PENDING" ? "รับเรื่อง" : "เสร็จสิ้น"}
                       </button>
                     </article>
                   ))}
                 </div>
               </div>
             </details>
-            <details className={styles.accountMenu}>
+            <details ref={accountMenuRef} className={styles.accountMenu} data-desktop-popup>
               <summary aria-label={`เมนูพนักงาน ${cashier?.name || cashier?.email || ""}`}>
                 <span className={styles.accountAvatar} aria-hidden="true">
                   {(cashier?.name || cashier?.email || "พ").slice(0, 1)}
@@ -1065,6 +1336,7 @@ export default function DesktopPosRenderer() {
                 initialToken: token,
                 initialCashierId: cashier?.id ?? cashierId,
                 initialPin: pin,
+                suppressCustomerDisplay: true,
                 onTabChange: followWorkspaceTab,
                 onShiftChange: followWorkspaceShift,
                 onUnpair: unpair,
@@ -1300,6 +1572,70 @@ export default function DesktopPosRenderer() {
         alerts={alerts}
         kinds={ALERT_KINDS}
       />
+      {desktopInfoDialog ? (
+        <div className={styles.infoBackdrop} onPointerDown={(event) => {
+          if (event.target === event.currentTarget) setDesktopInfoDialog(null);
+        }}>
+          <section className={styles.infoDialog} role="dialog" aria-modal="true" aria-labelledby="desktop-info-title">
+            <header className={styles.infoDialogHead}>
+              <div className={styles.infoDialogMark} aria-hidden="true">{desktopInfoDialog === "help" ? "?" : "B"}</div>
+              <div>
+                <h2 id="desktop-info-title">{desktopInfoDialog === "help" ? "ศูนย์ช่วยเหลือ" : "เกี่ยวกับ BMS POS"}</h2>
+                <p>{desktopInfoDialog === "help" ? "คำแนะนำสำหรับงานหน้าร้าน" : "ข้อมูลแอปและเครื่องที่กำลังใช้งาน"}</p>
+              </div>
+              <button autoFocus type="button" className={styles.infoDialogClose} aria-label="ปิด" onClick={() => setDesktopInfoDialog(null)}>×</button>
+            </header>
+
+            {desktopInfoDialog === "help" ? (
+              <div className={styles.helpBody}>
+                <section className={styles.helpQuickGrid}>
+                  <article><span>▥</span><div><strong>ขายสินค้า</strong><p>ยิงบาร์โค้ดหรือกด F12 เพื่อกลับไปช่องค้นหา จากนั้นตรวจยอดก่อนรับชำระ</p></div></article>
+                  <article><span>🔔</span><div><strong>ลูกค้าเรียก</strong><p>เปิดกระดิ่ง กด “รับเรื่อง” และกด “เสร็จสิ้น” หลังดูแลโต๊ะเรียบร้อย</p></div></article>
+                  <article><span>●</span><div><strong>สถานะระบบ</strong><p>เขียวคือ realtime ปกติ เหลืองกำลังใช้การอัปเดตสำรอง แดงให้ตรวจอินเทอร์เน็ต</p></div></article>
+                </section>
+                <div className={styles.helpSafety}>
+                  <strong>หากไม่ทราบผลหลังรับเงิน</strong>
+                  <p>อย่ากดรับชำระซ้ำทันที ให้ตรวจใบเสร็จและรายการล่าสุดก่อน เพื่อป้องกันการบันทึกซ้ำ</p>
+                </div>
+                <div className={styles.helpShortcuts}><span><kbd>F12</kbd> ค้นหา/ยิงสินค้า</span><span><kbd>Esc</kbd> ปิดหน้าต่าง</span></div>
+                <button type="button" className={styles.infoPrimary} onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}>เปิดคู่มือฉบับเต็ม</button>
+              </div>
+            ) : (
+              <div className={styles.aboutBody}>
+                <div className={styles.aboutHero}>
+                  <span>B</span>
+                  <div><strong>BMS POS</strong><small>{desktopAppInfo
+                    ? `Desktop v${desktopAppInfo.version}`
+                    : hasDesktopPosBridge()
+                      ? desktopAppInfoLoaded ? "ไม่พบข้อมูลเวอร์ชัน" : "กำลังอ่านเวอร์ชัน…"
+                      : "Browser preview"}</small></div>
+                </div>
+                <dl className={styles.aboutFacts}>
+                  <div><dt>ไคลเอนต์</dt><dd>{desktopAppInfo?.clientLabel ?? (hasDesktopPosBridge() ? "Desktop Client" : "Web Browser")}</dd></div>
+                  <div><dt>เครื่องขาย</dt><dd>{bootstrap.device.registeredPosNo ?? bootstrap.device.code}</dd></div>
+                  <div><dt>สาขา</dt><dd>{bootstrap.location?.name ?? "สาขาหลัก"}</dd></div>
+                  <div><dt>การเชื่อมต่อ</dt><dd data-tone={connectionMode}>{connectionLabel}</dd></div>
+                  <div><dt>เซิร์ฟเวอร์</dt><dd>{typeof window === "undefined" ? "-" : window.location.host}</dd></div>
+                </dl>
+                {desktopAppInfo?.securityNote ? <p className={styles.aboutSecurity}>⌾ {desktopAppInfo.securityNote}</p> : null}
+                <p className={styles.aboutNote}>ข้อมูลเวอร์ชันนี้ใช้ประกอบการแจ้งปัญหา และไม่มี Device Token หรือข้อมูลการชำระเงิน</p>
+                <button type="button" className={styles.infoPrimary} onClick={() => void (async () => {
+                  const diagnostic = [
+                    `BMS POS ${desktopAppInfo ? `Desktop v${desktopAppInfo.version}` : hasDesktopPosBridge() ? "Desktop (version unavailable)" : "Browser"}`,
+                    `Client: ${desktopAppInfo?.clientLabel ?? "Web Browser"}`,
+                    `Platform: ${desktopAppInfo?.platform ?? "browser"}`,
+                    `Register: ${bootstrap.device.registeredPosNo ?? bootstrap.device.code}`,
+                    `Branch: ${bootstrap.location?.name ?? "สาขาหลัก"}`,
+                    `Connection: ${connectionLabel}`,
+                    `Server: ${window.location.host}`,
+                  ].join("\n");
+                  setDiagnosticsCopied(await copyTextToClipboard(diagnostic));
+                })()}>{diagnosticsCopied ? "คัดลอกข้อมูลแล้ว ✓" : "คัดลอกข้อมูลระบบ"}</button>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
       {!hasDesktopPosBridge() ? <div className={styles.browserBadge}>Browser preview · Electron จะเก็บ device token ใน OS keychain</div> : null}
     </main>
   );

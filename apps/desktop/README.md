@@ -22,6 +22,11 @@ authoritative; this app does not contain a database or a second settlement path.
   paired pre-rollout server confirms that the new route is missing with HTTP 404;
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
   the desktop shell;
+- one register owns at most one customer-display window: settings can keep it off, automatically use
+  the first display other than the cashier screen, or remember one explicitly selected display;
+  hot-plug changes are reconciled, the customer window has no preload/IPC bridge, and `/pos/app`
+  publishes its cart and server-confirmed payment result over the existing same-device
+  `BroadcastChannel`;
 - Windows NSIS, Linux AppImage/DEB, and macOS DMG package configuration.
 - fixed 100% renderer zoom on every platform and child POS window; Electron zoom shortcuts, wheel/
   pinch zoom, macOS trackpad pinch at Chromium startup, and menu roles are disabled while OS
@@ -42,6 +47,27 @@ npm start
 
 `npm run gate` in `apps/web` does not run these; run them from this directory when you change the
 shell.
+
+## Customer display
+
+Connect the customer monitor as an **extended** desktop, not a mirrored screen. In the register,
+open **Settings → Customer display** and choose off, automatic, or a specific connected display.
+"Identify displays" places a temporary number on every screen. The shell detects display
+add/remove/metric changes and restores the configured customer window when its target is available.
+
+One register supports one cashier display plus at most one read-only customer display. Kitchen,
+queue and menu-board screens are separate devices/surfaces rather than third and fourth windows of
+the register. On Linux Wayland the compositor may refuse application-directed positioning; the
+settings page reports that limitation so the operator can move the window manually.
+
+The web renderer capability-checks these IPC methods. Older installed shells therefore keep the
+manual customer-display button instead of crashing when a newer server is deployed; automatic
+display selection appears after the desktop app itself is updated to 0.2.3 or newer.
+
+When the cashier selects QR payment, the display can show the exact provider-issued QR configured
+under **Admin → Settings → Receiving accounts**, together with the amount assigned to that QR
+tender. A PromptPay ID by itself is display text, not authority to invent an EMV payload, so no QR
+is generated until the shop supplies the real payload from its bank/payment provider.
 
 For local development, the setup screen accepts `http://localhost:<port>`. Non-loopback servers must
 use HTTPS because the device token is a bearer credential.

@@ -18,7 +18,7 @@ const Q = gql`
       receiptLanguageMode
       about address phone contactEmail website logoUrl taxId timezone country currency
       businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
-      paymentAccounts { type bankName accountName accountNo promptpayId note }
+      paymentAccounts { type bankName accountName accountNo promptpayId qrPayload note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
       enabledCarriers
       shippingMode shippingOriginProvince shippingOriginPostcode
@@ -139,7 +139,8 @@ export default function StoreProfileCard() {
         : (v.businessType ?? null);
       input.paymentAccounts = (v.paymentAccounts || []).map((a: any) => ({
         type: a.type || "BANK", bankName: a.bankName ?? null, accountName: a.accountName ?? null,
-        accountNo: a.accountNo ?? null, promptpayId: a.promptpayId ?? null, note: a.note ?? null,
+        accountNo: a.accountNo ?? null, promptpayId: a.promptpayId ?? null,
+        qrPayload: a.qrPayload ?? null, note: a.note ?? null,
       }));
       // Form.List rows can be half-filled while editing — drop those instead of
       // sending nulls the backend parser would silently discard anyway.
@@ -574,6 +575,21 @@ export default function StoreProfileCard() {
                             <Col xs={10} sm={4}><Form.Item name={[field.name, "promptpayId"]} noStyle><Input placeholder={t("admin_store_profile.promptpay_placeholder")} /></Form.Item></Col>
                             <Col xs={2} sm={1} style={{ textAlign: "center" }}>
                               <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                            </Col>
+                            <Col span={24}>
+                              <Form.Item
+                                name={[field.name, "qrPayload"]}
+                                label={t("admin_store_profile.qr_payload_label")}
+                                extra={t("admin_store_profile.qr_payload_extra")}
+                                style={{ margin: "8px 0 12px" }}
+                              >
+                                <Input.TextArea
+                                  rows={2}
+                                  maxLength={2048}
+                                  showCount
+                                  placeholder={t("admin_store_profile.qr_payload_placeholder")}
+                                />
+                              </Form.Item>
                             </Col>
                           </Row>
                         ))}

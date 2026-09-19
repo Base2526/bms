@@ -105,11 +105,15 @@ The renderer never sees the file. `apps/web/lib/pos/deviceTokenClient.ts` reads 
 same POS page runs in both shells. Every IPC handler re-checks which frame is calling: `pair` and
 `app-info` answer only the local setup page, while `get-device-token`, `get-storage-namespace` and
 `unpair` answer only a `/pos*` frame on the paired origin. The window runs with context isolation, a
-sandboxed renderer and no Node integration; navigation away from the paired origin — and any
-window-open other than the customer display or the cashier manual — is handed to the system browser
-instead of being loaded in the shell, and camera permission is granted only for video on the paired
-origin. "Unpair" from the register clears the stored pairing and returns the window to the setup
-screen.
+sandboxed renderer and no Node integration; navigation away from the paired origin is handed to the
+system browser and the cashier manual is the only renderer-created child window. The main process
+owns at most one `/pos/display` window, places it on an automatically chosen or explicitly selected
+non-cashier display, remembers that choice, and reconciles display hot-plug changes. Its partition is
+shared so the existing same-origin `BroadcastChannel` works, but it deliberately has no preload or
+IPC bridge. The `/pos/app` renderer publishes its active cart and the server-confirmed final/change
+figures into that channel; embedded legacy settings are not a second publisher. Camera permission is
+granted only for video on the paired origin. "Unpair" closes the customer window, clears the stored
+pairing and returns the cashier window to setup.
 
 **On Linux the shell fails closed.** Electron falls back to a `basic_text` backend when no desktop
 keyring is available, and that backend does not protect a bearer credential, so pairing is blocked —
@@ -825,8 +829,16 @@ the screen. It has no buttons and talks to no API, because customers reach out a
 It syncs over **`BroadcastChannel`, not a WebSocket**. The second screen is another window of the same
 browser on the same machine, hanging off the HDMI port, so messages never leave the device. That
 matters for one specific failure: if the shop's internet drops, a WebSocket-driven display freezes
-showing a stale total — the worst possible moment for the customer-facing number to be wrong. Nothing
-needs configuring; if no display window is open, the broadcast simply has no listener.
+showing a stale total — the worst possible moment for the customer-facing number to be wrong. If no
+display window is open, the broadcast simply has no listener.
+
+When a QR tender is selected, the same payload can include the amount assigned to that tender and a
+shop-configured payment QR. The QR bytes must be the exact static payload issued by the bank/payment
+provider and stored on a configured PromptPay/QR receiving account. The renderer only turns those
+bytes into an image; it never derives EMV/PromptPay data from the visible PromptPay ID. That keeps a
+display field from silently becoming payment authority and also makes split tender show the QR
+portion rather than the whole bill. Because a POS tender currently chooses a method, not an account,
+the first configured PromptPay/QR account with a payload is the deterministic display account.
 
 Only the last eight lines are shown. A customer is watching what was just scanned, and auto-scrolling
 a screen nobody can touch reads worse than truncating.

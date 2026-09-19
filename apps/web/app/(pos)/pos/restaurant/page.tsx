@@ -6,6 +6,10 @@ import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } 
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
+import {
+  CUSTOMER_DISPLAY_CHANNEL,
+  type CustomerDisplayPayload,
+} from "@/lib/pos/customerDisplay";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
 import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
@@ -90,7 +94,7 @@ const queueStatusLabels = (t: Translate): Record<string, string> => ({
   NO_SHOW: t("pos_restaurant.queue_no_show"),
 });
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
-type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
+type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null; paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
 type RestaurantServiceMode = "DINE_IN" | "TAKEAWAY";
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number;
   serviceMode?: RestaurantServiceMode;
@@ -250,16 +254,6 @@ function serviceModeLabel(
   return null;
 }
 type ShiftReport = { status: "OPEN" | "CLOSED"; openedAt: string; closedAt: string | null; salesTotal: number; billCount: number; returnCount: number; returnTotal: number; cashIn: number; cashOut: number; noSaleCount: number; expectedCash: number | null; expectedCashHidden: boolean; countedCash: number | null; cashVariance: number | null; byMethod: Array<{ method: string; count: number; amount: number }> };
-type CustomerDisplayPayload = {
-  lines: Array<{ name: string; size: string | null; qty: number; unitName: string; amount: number }>;
-  itemCount: number;
-  total: number;
-  discountTotal: number;
-  amountDue: number;
-  memberName: string | null;
-  pointsEarned: number | null;
-  finished: { total: number; tendered: number | null; change: number | null } | null;
-};
 // เหตุผลที่ครัวบอกจริงตอนของหมด — เก็บลงหลักฐานว่าปิดเพราะอะไร ไม่ใช่คำว่า "หมดวันนี้"
 // ซึ่งเป็นแค่การพูดซ้ำสิ่งที่สถานะบอกอยู่แล้ว
 const menuSoldOutReasons = (t: Translate) => [
@@ -653,7 +647,7 @@ export default function RestaurantPosPage() {
   }, []);
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
-    const channel = new BroadcastChannel("bms-pos-display");
+    const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
     displayChannel.current = channel;
     channel.onmessage = (event) => {
       if (event.data?.type === "hello" && displayPayloadRef.current) {
@@ -667,7 +661,7 @@ export default function RestaurantPosPage() {
       if (settlementReceipt) return;
       const empty: CustomerDisplayPayload = {
         lines: [], itemCount: 0, total: 0, discountTotal: 0, amountDue: 0,
-        memberName: null, pointsEarned: null, finished: null,
+        memberName: null, pointsEarned: null, paymentQr: null, finished: null,
       };
       displayPayloadRef.current = empty;
       displayChannel.current?.postMessage(empty);
@@ -687,11 +681,20 @@ export default function RestaurantPosPage() {
       amountDue: pricingPreview?.amountDue ?? check.amountDue,
       memberName: checkMember?.name ?? null,
       pointsEarned: null,
+      paymentQr: (() => {
+        const configuredQr = session?.store?.paymentQr;
+        const qrAmount = Math.round(payments
+          .filter((payment) => payment.method === "QR")
+          .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
+        return checkoutOpen && configuredQr && qrAmount > 0
+          ? { ...configuredQr, amount: qrAmount }
+          : null;
+      })(),
       finished: null,
     };
     displayPayloadRef.current = payload;
     displayChannel.current?.postMessage(payload);
-  }, [check, checkMember, pricingPreview, settlementReceipt]);
+  }, [check, checkMember, pricingPreview, settlementReceipt, checkoutOpen, payments, session?.store?.paymentQr]);
   useEffect(() => {
     if (!settlementReceipt) return;
     const payload: CustomerDisplayPayload = {
@@ -701,6 +704,7 @@ export default function RestaurantPosPage() {
       amountDue: settlementReceipt.result.total,
       memberName: settlementReceipt.member?.name ?? null,
       pointsEarned: settlementReceipt.result.pointsEarned,
+      paymentQr: null,
       finished: {
         total: settlementReceipt.result.total,
         tendered: settlementReceipt.result.cashTendered,

@@ -7,6 +7,12 @@ export type CustomerPaymentMethod =
   | "TIKTOK"
   | "CASH";
 
+export type PosPaymentQr = {
+  payload: string;
+  accountName: string | null;
+  promptpayId: string | null;
+};
+
 /**
  * วิธีชำระเงินที่ "ถามลูกค้าทางไกลได้" — ไม่รวม WALLET (7.87) เพราะ e-wallet
  * ที่หน้าร้านต้องยื่นเครื่อง/สแกนต่อหน้า ส่งลิงก์ให้ลูกค้ากดเองไม่ได้
@@ -34,6 +40,26 @@ export function configuredPaymentAccounts(accounts: PaymentAccount[]): PaymentAc
     if (type === "PROMPTPAY" || type === "QR") return Boolean(value(account.promptpayId));
     return Boolean(value(account.accountNo) || value(account.promptpayId) || value(account.note));
   });
+}
+
+/**
+ * Return the first provider-issued QR configured for an authenticated POS.
+ * This deliberately does not generate PromptPay/EMV data from an identifier:
+ * the configured payload remains the sole payment authority.
+ */
+export function configuredPosPaymentQr(accounts: PaymentAccount[]): PosPaymentQr | null {
+  for (const account of configuredPaymentAccounts(accounts)) {
+    const type = normalizedType(account);
+    const payload = value(account.qrPayload);
+    if ((type === "PROMPTPAY" || type === "QR") && payload) {
+      return {
+        payload: payload.slice(0, 2048),
+        accountName: value(account.accountName).slice(0, 160) || null,
+        promptpayId: value(account.promptpayId).slice(0, 80) || null,
+      };
+    }
+  }
+  return null;
 }
 
 export function hasConfiguredPaymentAccounts(accounts: PaymentAccount[]): boolean {

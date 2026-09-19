@@ -2103,6 +2103,7 @@ type BmsPaymentAccount {
   bankName: String
   note: String
   promptpayId: String
+  qrPayload: String
   type: String!
 }
 
@@ -2112,6 +2113,7 @@ input BmsPaymentAccountInput {
   bankName: String
   note: String
   promptpayId: String
+  qrPayload: String
   type: String!
 }
 
@@ -3841,6 +3843,12 @@ input BmsPosPaymentInput {
   ref: String
 }
 
+type BmsPosPaymentQr {
+  accountName: String
+  payload: String!
+  promptpayId: String
+}
+
 type BmsPosPendingRestaurantRefund {
   amount: Float!
   cancelledBy: String
@@ -5084,6 +5092,7 @@ type BmsPosStoreCreditSummary {
 type BmsPosStoreReceiptSettings {
   address: String
   logoUrl: String
+  paymentQr: BmsPosPaymentQr
   phone: String
   receiptLanguageMode: String!
   taxId: String

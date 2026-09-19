@@ -1,9 +1,54 @@
+export type DesktopCustomerDisplayMode = "off" | "auto" | "selected";
+
+export type DesktopDisplay = {
+  id: string;
+  label: string;
+  primary: boolean;
+  cashier: boolean;
+  width: number;
+  height: number;
+  scaleFactor: number;
+  rotation: number;
+};
+
+export type DesktopCustomerDisplayState = {
+  mode: DesktopCustomerDisplayMode;
+  targetDisplayId: string | null;
+  activeDisplayId: string | null;
+  open: boolean;
+  cashierDisplayId: string;
+  displays: DesktopDisplay[];
+  targetAvailable: boolean;
+  positioningLimited: boolean;
+};
+
+export type DesktopAppInfo = {
+  version: string;
+  platform: string;
+  clientLabel: string;
+  securityNote: string;
+  secureStorageReady: boolean;
+  secureStorageError: string | null;
+  secureStorageBackend: string | null;
+};
+
 declare global {
   interface Window {
     bmsDesktop?: {
       isDesktop: true;
       getDeviceToken(): Promise<string | null>;
       getStorageNamespace(): Promise<string | null>;
+      getAppInfo?(): Promise<DesktopAppInfo | null>;
+      /** Added in desktop 0.2.3; optional so a newer server remains usable from an older shell. */
+      getCustomerDisplayState?(): Promise<DesktopCustomerDisplayState | null>;
+      setCustomerDisplayConfig?(input: {
+        mode: DesktopCustomerDisplayMode;
+        targetDisplayId?: string | null;
+      }): Promise<{ ok: boolean; error?: string; state?: DesktopCustomerDisplayState }>;
+      identifyDisplays?(): Promise<{ ok: boolean }>;
+      onCustomerDisplayStateChanged?(
+        listener: (state: DesktopCustomerDisplayState) => void,
+      ): () => void;
       unpair(): Promise<{ ok: boolean }>;
     };
   }
@@ -53,6 +98,27 @@ export async function posDeviceStorageNamespace(token: string): Promise<string> 
 
 export function hasDesktopPosBridge(): boolean {
   return typeof window !== "undefined" && Boolean(window.bmsDesktop);
+}
+
+export async function readDesktopAppInfo(): Promise<DesktopAppInfo | null> {
+  if (typeof window === "undefined" || typeof window.bmsDesktop?.getAppInfo !== "function") return null;
+  try {
+    return await window.bmsDesktop.getAppInfo();
+  } catch {
+    return null;
+  }
+}
+
+export function hasDesktopCustomerDisplayBridge(): boolean {
+  if (typeof window === "undefined") return false;
+  const bridge = window.bmsDesktop;
+  return Boolean(
+    bridge
+    && typeof bridge.getCustomerDisplayState === "function"
+    && typeof bridge.setCustomerDisplayConfig === "function"
+    && typeof bridge.identifyDisplays === "function"
+    && typeof bridge.onCustomerDisplayStateChanged === "function"
+  );
 }
 
 export {};

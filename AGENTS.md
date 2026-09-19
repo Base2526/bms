@@ -346,8 +346,9 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,499 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-18 — net **+54** against the same recursive
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,502 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-19 — net **+3** for the provider-issued POS
+   payment-QR configuration guidance; the preceding net **+54** against the same recursive
    count of `HEAD`: board-game automatic pass renewal, typed play-time offers, member-pass payment
    targets and the compact renewal badge in both languages; the preceding net **+4** for visible login and registration
    submit progress; the preceding net **+14** for board-game reservation

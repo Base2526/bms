@@ -12,6 +12,8 @@ const schema = readFileSync(new URL("../packages/graphql-core/src/typeDefs.ts", 
 const resolvers = readFileSync(new URL("../packages/graphql-core/src/resolvers.ts", import.meta.url), "utf8");
 const ticketRoute = readFileSync(new URL("../apps/web/app/api/bms/realtime/ticket/route.ts", import.meta.url), "utf8");
 const clientProviders = readFileSync(new URL("../apps/web/app/ClientProviders.tsx", import.meta.url), "utf8");
+const desktopRenderer = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url), "utf8");
+const desktopCss = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.module.css", import.meta.url), "utf8");
 const mobileRealtime = readFileSync(new URL("../apps/mobile/src/lib/realtime.ts", import.meta.url), "utf8");
 const mobileRealtimeProvider = readFileSync(new URL("../apps/mobile/src/state/RealtimeContext.tsx", import.meta.url), "utf8");
 const mobileGraphqlProvider = readFileSync(new URL("../apps/mobile/src/graphql/BmsGraphqlProvider.tsx", import.meta.url), "utf8");
@@ -38,6 +40,38 @@ test("shared client layer exposes status, bounded dedup and batched invalidation
   assert.match(provider, /POS_REALTIME_SUBSCRIPTIONS/);
   assert.match(ticketRoute, /mintPosRealtimeTicket/);
   assert.match(ticketRoute, /x-pos-device-token/);
+});
+
+test("desktop POS keeps degraded realtime status in the header instead of covering the sale", () => {
+  assert.match(provider, /pathname === "\/pos\/app"/);
+  assert.match(desktopRenderer, /useRealtimeStatus\(\)/);
+  assert.match(desktopRenderer, /realtimeStatus === "connected"/);
+  assert.match(desktopRenderer, /ออนไลน์ · อัปเดตอัตโนมัติ/);
+  assert.match(desktopRenderer, /ข้อมูลยังอัปเดตอัตโนมัติ/);
+  assert.match(desktopCss, /\.connectionFallback\s*\{[\s\S]*?background:\s*#fffbe6/);
+  assert.match(desktopCss, /\.connectionPopover\s*\{[\s\S]*?position:\s*absolute/);
+});
+
+test("every desktop header popup closes outside, on Escape, and when a sibling opens", () => {
+  assert.match(desktopRenderer, /details\[data-desktop-popup\]\[open\]/);
+  assert.match(desktopRenderer, /document\.addEventListener\('pointerdown',\s*onPointerDown,\s*true\)/);
+  assert.match(desktopRenderer, /event\.key !== 'Escape'/);
+  assert.match(desktopRenderer, /document\.addEventListener\('toggle',\s*onToggle,\s*true\)/);
+  assert.match(desktopRenderer, /closePopups\(popup\)/);
+  assert.equal(
+    (desktopRenderer.match(/<details[^>]*data-desktop-popup/g) ?? []).length,
+    (desktopRenderer.match(/<details\s/g) ?? []).length,
+    "every desktop-shell details popup must opt into the shared dismissal behavior",
+  );
+});
+
+test("desktop service-call bell refreshes from realtime and keeps bounded polling as fallback", () => {
+  assert.match(desktopRenderer, /useRealtimeInvalidation\(\{/);
+  assert.match(desktopRenderer, /restaurant\.table_call\.created/);
+  assert.match(desktopRenderer, /board_game\.table_call\.created/);
+  assert.match(desktopRenderer, /onInvalidate:\s*\(\) => refreshDesktopServiceCalls\(\)/);
+  assert.match(desktopRenderer, /debounceMs:\s*0/);
+  assert.match(desktopRenderer, /window\.setInterval\(refresh,\s*10_000\)/);
 });
 
 test("every realtime event domain has a browser invalidation rule", () => {

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { gql, useApolloClient, useSubscription, type DocumentNode } from "@apollo/client";
+import { usePathname } from "next/navigation";
 
 import { BoundedEventDeduplicator, validateRealtimeEvent, type RealtimeEvent } from "../../../../packages/realtime/src/events";
 import type { RealtimeConnectionStatus } from "@/lib/apollo";
@@ -425,8 +426,13 @@ export function PosRealtimeProvider({ children }: { children: React.ReactNode })
 
 function PosRealtimeIndicator() {
   const { t } = useI18n();
+  const pathname = usePathname();
   const { status } = useRealtimeStatus();
-  if (status === "connected") return null;
+  // `/pos/app` has a persistent connection control in its own header. A second fixed banner at the
+  // bottom looked like a separate failure, covered the selling surface, and contradicted the green
+  // API status above it. Other POS surfaces still need this shared fallback because they do not own
+  // that desktop header.
+  if (status === "connected" || pathname === "/pos/app") return null;
   const key = status === "offline"
     ? "admin.realtime_offline"
     : status === "degraded"

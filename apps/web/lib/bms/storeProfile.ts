@@ -38,6 +38,12 @@ export type PaymentAccount = {
   accountName?: string | null;
   accountNo?: string | null;
   promptpayId?: string | null;
+  /**
+   * Exact static QR payload issued by the bank/payment provider. The POS only
+   * turns these bytes into a QR image; it must never synthesize a financial
+   * payload from promptpayId or other display fields.
+   */
+  qrPayload?: string | null;
   note?: string | null;
 };
 
@@ -294,6 +300,19 @@ export async function upsertStoreProfile(
     if (merged.emailFooterText != null) {
       merged.emailFooterText = merged.emailFooterText.trim().slice(0, 300) || null;
     }
+    // payment_accounts is JSONB, so bound and normalize the values here rather
+    // than allowing an admin form to persist an arbitrarily large QR payload.
+    // 2 KB is comfortably above normal merchant-presented EMV payloads while
+    // still small enough to render reliably on the customer display.
+    merged.paymentAccounts = (merged.paymentAccounts ?? []).slice(0, 20).map((account) => ({
+      type: String(account?.type ?? "BANK").trim().toUpperCase().slice(0, 40) || "BANK",
+      bankName: String(account?.bankName ?? "").trim().slice(0, 120) || null,
+      accountName: String(account?.accountName ?? "").trim().slice(0, 160) || null,
+      accountNo: String(account?.accountNo ?? "").trim().slice(0, 80) || null,
+      promptpayId: String(account?.promptpayId ?? "").trim().slice(0, 80) || null,
+      qrPayload: String(account?.qrPayload ?? "").trim().slice(0, 2048) || null,
+      note: String(account?.note ?? "").trim().slice(0, 300) || null,
+    }));
 
     await client.query(
       `INSERT INTO bms_store_profile (
