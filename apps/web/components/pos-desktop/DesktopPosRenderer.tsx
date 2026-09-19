@@ -57,9 +57,13 @@ import {
 import PosPage from "@/app/(pos)/pos/page";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
-import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
+import {
+  PosWorkspaceContext,
+  type PosServiceCallNotice,
+  type PosTab,
+} from "@/components/pos/PosWorkspaceContext";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
-import { ALERT_KINDS } from "@/lib/pos/orderAlertSound";
+import { ALERT_KINDS, newAlertIds } from "@/lib/pos/orderAlertSound";
 import styles from "./DesktopPosRenderer.module.css";
 
 type CartLine = PricedCartLine & {
@@ -107,6 +111,21 @@ const money = (value: number) =>
     currency: "THB",
     minimumFractionDigits: 2,
   }).format(value);
+
+function serviceCallLabel(call: PosServiceCallNotice): string {
+  const labels: Record<string, string> = {
+    WATER: "ขอน้ำ",
+    CUTLERY: "ขอช้อนส้อม",
+    BILL: "เรียกเก็บเงิน",
+    MENU_HELP: "ขอความช่วยเหลือเรื่องเมนู",
+  };
+  return labels[call.requestCode] ?? call.requestNote ?? "เรียกพนักงาน";
+}
+
+function serviceCallAge(createdAt: string): string {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60_000));
+  return minutes < 1 ? "เมื่อสักครู่" : `${minutes} นาทีที่แล้ว`;
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "เกิดข้อผิดพลาด กรุณาลองใหม่";
@@ -185,6 +204,9 @@ export default function DesktopPosRenderer() {
   // notification rules and playback remain owned by the existing POS alert pipeline.
   const alerts = useOrderAlerts(Boolean(bootstrap && cashier));
   const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
+  const [serviceCalls, setServiceCalls] = useState<PosServiceCallNotice[]>([]);
+  const [serviceCallsBusy, setServiceCallsBusy] = useState("");
+  const knownServiceCallIds = useRef<Set<string> | null>(null);
   const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
   const addProductPendingRef = useRef(false);
@@ -323,6 +345,125 @@ export default function DesktopPosRenderer() {
     setActiveModule(tab);
   }, []);
 
+  const acceptBoardGameServiceCalls = useCallback((calls: PosServiceCallNotice[]) => {
+    setServiceCalls(calls.filter((call) => call.status === "PENDING"));
+  }, []);
+
+  // Restaurant calls must remain visible while the cashier works on another desktop module.
+  // Board-game calls are pushed up by BoardGamePanel instead, avoiding a duplicate workspace poll.
+  useEffect(() => {
+    if (bootstrap?.businessArchetype !== "restaurant" || !token || !cashier || !pin) return;
+    let stopped = false;
+    let controller: AbortController | null = null;
+    const refresh = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const response = await fetch("/api/pos/restaurant/service-calls", {
+          headers: { "x-pos-device-token": token },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
+        if (!stopped) {
+          const rows = Array.isArray(data.calls) ? data.calls : [];
+          setServiceCalls(rows
+            .filter((call: PosServiceCallNotice) => call.status === "PENDING")
+            .map((call: PosServiceCallNotice) => ({ ...call, source: "restaurant" })));
+        }
+      } catch (cause) {
+        if (!stopped && !(cause instanceof DOMException && cause.name === "AbortError")) {
+          // Keep the last known calls visible; a transient refresh error must not clear real work.
+          console.error("[desktop-pos] service-call refresh failed", cause);
+        }
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { stopped = true; controller?.abort(); window.clearInterval(timer); };
+  }, [bootstrap?.businessArchetype, cashier, pin, token]);
+
+  useEffect(() => {
+    if (bootstrap?.businessArchetype !== "board_game_cafe" || activeModule === "boardgame" || !token || !cashier || !pin) return;
+    let stopped = false;
+    let controller: AbortController | null = null;
+    const refresh = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const response = await fetch("/api/pos/board-game", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-pos-device-token": token },
+          body: JSON.stringify({ action: "service.calls", cashierUserId: cashier.id, pin }),
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
+        if (!stopped) {
+          const rows = Array.isArray(data.serviceCalls) ? data.serviceCalls : [];
+          setServiceCalls(rows
+            .filter((call: PosServiceCallNotice) => call.status === "PENDING")
+            .map((call: PosServiceCallNotice) => ({ ...call, source: "boardgame" })));
+        }
+      } catch (cause) {
+        if (!stopped && !(cause instanceof DOMException && cause.name === "AbortError")) {
+          console.error("[desktop-pos] board-game service-call refresh failed", cause);
+        }
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { stopped = true; controller?.abort(); window.clearInterval(timer); };
+  }, [activeModule, bootstrap?.businessArchetype, cashier, pin, token]);
+
+  useEffect(() => {
+    const pendingIds = serviceCalls.map((call) => `${call.source}:${call.id}`);
+    if (newAlertIds(knownServiceCallIds.current, pendingIds).length > 0) alerts.notify("QR_PENDING");
+    knownServiceCallIds.current = new Set(pendingIds);
+  }, [alerts, serviceCalls]);
+
+  const acknowledgeServiceCall = useCallback(async (call: PosServiceCallNotice) => {
+    if (!cashier || !pin || serviceCallsBusy) return;
+    setServiceCallsBusy(call.id);
+    try {
+      const response = call.source === "restaurant"
+        ? await fetch("/api/pos/restaurant/service-calls", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-pos-device-token": token },
+          body: JSON.stringify({ action: "acknowledge", callId: call.id, cashierUserId: cashier.id, cashierPin: pin }),
+        })
+        : await fetch("/api/pos/board-game", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-pos-device-token": token },
+          body: JSON.stringify({
+            action: "service.acknowledge",
+            callId: call.id,
+            cashierUserId: cashier.id,
+            pin,
+            idempotencyKey: createIdempotencyKey("desktop-service-call"),
+          }),
+        });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "รับคำเรียกไม่สำเร็จ");
+      setServiceCalls((current) => current.filter((item) => !(item.id === call.id && item.source === call.source)));
+      setNotice(`รับทราบคำเรียกจาก ${call.tableName || call.tableCode} แล้ว`);
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setServiceCallsBusy("");
+    }
+  }, [cashier, pin, serviceCallsBusy, token]);
+
+  const openServiceCall = useCallback((call: PosServiceCallNotice) => {
+    if (call.source === "restaurant") {
+      legacy("restaurant");
+      return;
+    }
+    openModule("boardgame");
+  }, [openModule]);
+
   const unpair = useCallback(async () => {
     await clearPosDeviceToken();
     setToken("");
@@ -330,6 +471,7 @@ export default function DesktopPosRenderer() {
     setCashier(null);
     setPin("");
     setBoardGameCheckout(null);
+    setServiceCalls([]);
     sendFlow("UNPAIR");
   }, [sendFlow]);
 
@@ -351,6 +493,7 @@ export default function DesktopPosRenderer() {
     setPin("");
     setCart([]);
     setBoardGameCheckout(null);
+    setServiceCalls([]);
     sendFlow("SIGN_OUT");
   }, [sendFlow]);
 
@@ -855,19 +998,42 @@ export default function DesktopPosRenderer() {
           </div>
           <div className={styles.topMeta}>
             <span className={`${styles.connection} ${styles[connection]}`}><i />{connection === "online" ? "ออนไลน์" : connection === "checking" ? "กำลังเชื่อมต่อ" : "การเชื่อมต่อมีปัญหา"}</span>
-            <button
-              type="button"
-              className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
-              onClick={() => setAlertSettingsOpen(true)}
-              aria-label={alerts.settings.enabled ? "ตั้งค่าเสียงแจ้งเตือน (เปิดอยู่)" : "ตั้งค่าเสียงแจ้งเตือน (ปิดอยู่)"}
-              title={alerts.blocked ? "เสียงแจ้งเตือนถูกบล็อก — กดเพื่อตรวจสอบ" : alerts.settings.enabled ? "เสียงแจ้งเตือนเปิดอยู่" : "เสียงแจ้งเตือนปิดอยู่"}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
-              </svg>
-              {!alerts.settings.enabled ? <span className={styles.alertBellSlash} aria-hidden="true" /> : null}
-              {alerts.blocked ? <span className={styles.alertBellDot} aria-hidden="true" /> : null}
-            </button>
+            <details className={styles.alertMenu}>
+              <summary
+                className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
+                aria-label={`การแจ้งเตือน${serviceCalls.length ? ` ${serviceCalls.length} รายการ` : ""}`}
+                title={serviceCalls.length ? `มีลูกค้าเรียก ${serviceCalls.length} รายการ` : "การแจ้งเตือน"}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+                </svg>
+                {!alerts.settings.enabled ? <span className={styles.alertBellSlash} aria-hidden="true" /> : null}
+                {serviceCalls.length > 0
+                  ? <span className={styles.alertCount} aria-hidden="true">{serviceCalls.length > 99 ? "99+" : serviceCalls.length}</span>
+                  : alerts.blocked ? <span className={styles.alertBellDot} aria-hidden="true" /> : null}
+              </summary>
+              <div className={styles.alertPopover}>
+                <div className={styles.alertPopoverHead}>
+                  <div><strong>การแจ้งเตือน</strong><small>{serviceCalls.length ? `ลูกค้าเรียก ${serviceCalls.length} รายการ` : "ไม่มีคำเรียกที่รอรับ"}</small></div>
+                  <button type="button" onClick={() => setAlertSettingsOpen(true)} aria-label="ตั้งค่าเสียงแจ้งเตือน">⚙ ตั้งค่าเสียง</button>
+                </div>
+                <div className={styles.alertList}>
+                  {serviceCalls.length === 0 ? (
+                    <div className={styles.alertEmpty}><span aria-hidden="true">✓</span><p>รับคำเรียกครบแล้ว</p></div>
+                  ) : serviceCalls.map((call) => (
+                    <article className={styles.alertItem} key={`${call.source}:${call.id}`}>
+                      <button type="button" className={styles.alertItemMain} onClick={() => openServiceCall(call)}>
+                        <span className={styles.alertItemIcon} aria-hidden="true">🔔</span>
+                        <span><strong>{call.tableName || call.tableCode}</strong><b>{serviceCallLabel(call)}</b><small>{serviceCallAge(call.createdAt)} · {call.source === "restaurant" ? "ร้านอาหาร" : "บอร์ดเกม"}</small></span>
+                      </button>
+                      <button type="button" className={styles.alertAccept} disabled={serviceCallsBusy === call.id} onClick={() => void acknowledgeServiceCall(call)}>
+                        {serviceCallsBusy === call.id ? "กำลังรับ…" : "รับเรื่อง"}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </details>
             <details className={styles.accountMenu}>
               <summary aria-label={`เมนูพนักงาน ${cashier?.name || cashier?.email || ""}`}>
                 <span className={styles.accountAvatar} aria-hidden="true">
@@ -903,6 +1069,7 @@ export default function DesktopPosRenderer() {
                 onShiftChange: followWorkspaceShift,
                 onUnpair: unpair,
                 onBoardGameCheckout: openBoardGameCheckout,
+                onServiceCallsChange: acceptBoardGameServiceCalls,
               }}>
                 <PosPage />
               </PosWorkspaceContext.Provider>

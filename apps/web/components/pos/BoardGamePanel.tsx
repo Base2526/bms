@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveRefresh, usePageVisible } from '@/app/hooks/useLiveRefresh';
 import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
 import PosDismissibleAlert from '@/components/pos/PosDismissibleAlert';
+import type { PosServiceCallNotice } from '@/components/pos/PosWorkspaceContext';
 
 type Props = {
   token: string;
@@ -26,6 +27,7 @@ type Props = {
    * การส่ง id ของโต๊ะไปจึงตอบไม่ได้ว่าแท็บขายต้องเก็บเงินใบไหน
    */
   onCheckout: (billingGroupId: string) => void;
+  onServiceCallsChange?: (calls: PosServiceCallNotice[]) => void;
 };
 
 type SessionSummary = {
@@ -314,7 +316,7 @@ function newKey() {
   return `bg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }: Props) {
+export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, onServiceCallsChange }: Props) {
   const ready = Boolean(token && cashierUserId && pin);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [session, setSession] = useState<SessionDetail | null>(null);
@@ -428,8 +430,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
 
   const loadWorkspace = useCallback(async (signal?: AbortSignal) => {
     const data = await call('workspace', {}, signal);
-    setWorkspace(data as unknown as Workspace);
-  }, [call]);
+    const next = data as unknown as Workspace;
+    setWorkspace(next);
+    onServiceCallsChange?.(next.serviceCalls.map((item) => ({ ...item, source: 'boardgame' })));
+  }, [call, onServiceCallsChange]);
 
   const loadSession = useCallback(async (sessionId: string, signal?: AbortSignal) => {
     if (!sessionId) { setSession(null); return; }

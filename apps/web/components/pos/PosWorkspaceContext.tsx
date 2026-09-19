@@ -12,6 +12,17 @@ export type PosTab =
   | "shift"
   | "settings";
 
+export type PosServiceCallNotice = {
+  id: string;
+  source: "restaurant" | "boardgame";
+  tableCode: string;
+  tableName: string;
+  requestCode: string;
+  requestNote: string | null;
+  status: "PENDING" | "ACKNOWLEDGED";
+  createdAt: string;
+};
+
 export type PosWorkspaceOptions = {
   embedded: boolean;
   initialTab: PosTab;
@@ -26,6 +37,8 @@ export type PosWorkspaceOptions = {
    * board-game billing-group id back to that shell instead of opening the legacy sell pane.
    */
   onBoardGameCheckout?: (billingGroupId: string) => void | Promise<void>;
+  /** Feeds the persistent desktop notification bell without polling the board-game workspace twice. */
+  onServiceCallsChange?: (calls: PosServiceCallNotice[]) => void;
 };
 
 export const PosWorkspaceContext = createContext<PosWorkspaceOptions>({

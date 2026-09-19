@@ -1357,6 +1357,7 @@ export default function PosPage() {
     onShiftChange,
     onUnpair,
     onBoardGameCheckout,
+    onServiceCallsChange,
   } = useContext(PosWorkspaceContext);
   const [token, setToken] = useState<string>(initialToken);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState<string>("");
@@ -6801,6 +6802,7 @@ export default function PosPage() {
             setBoardGameCheckoutId(billingGroupId);
             switchTab("sell");
           }}
+          onServiceCallsChange={onServiceCallsChange}
         />
       )}
 
