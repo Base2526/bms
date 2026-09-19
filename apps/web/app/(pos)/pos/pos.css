@@ -1550,6 +1550,36 @@
   color: var(--pos-muted);
   text-align: center;
 }
+.pos-bg-floor-loading {
+  flex: 1;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 32px 18px;
+  border: 1px dashed var(--pos-line-strong);
+  border-radius: 12px;
+  color: var(--pos-muted);
+  text-align: center;
+}
+.pos-bg-floor-loading strong { color: var(--pos-text); }
+.pos-bg-floor-loading--error { border-color: #df8b82; background: var(--pos-danger-bg); }
+.pos-bg-floor-loading--error strong { color: var(--pos-danger); }
+.pos-bg-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--pos-line-strong);
+  border-top-color: var(--pos-accent);
+  border-radius: 999px;
+  animation: pos-bg-spin 0.8s linear infinite;
+}
+@keyframes pos-bg-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .pos-bg-loading-spinner { animation: none; border-top-color: var(--pos-line-strong); }
+}
 .pos-bg-open-card { padding: 2px; }
 
 /* ผังโต๊ะใช้สัดส่วนเดียวกับหน้าขาย: ผัง 64% / รายละเอียด 36% */

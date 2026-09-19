@@ -174,6 +174,29 @@ test("the board-game workspace uses the full register instead of leaving an empt
   );
 });
 
+test("desktop opens one board-game workspace without booting the legacy register beside it", () => {
+  assert.match(
+    desktopRenderer,
+    /activeModule\s*===\s*["']boardgame["']\s*\?[\s\S]{0,400}<BoardGamePanel/,
+    "desktop must mount the board-game workspace directly instead of making PosPage load session and receipt data first",
+  );
+  assert.doesNotMatch(
+    panel,
+    /void\s+loadWorkspace\(\)\.catch/,
+    "useLiveRefresh already performs the immediate load; a mount effect must not send the same workspace request again",
+  );
+  assert.match(
+    desktopRenderer,
+    /businessArchetype\s*===\s*["']board_game_cafe["']\s*&&\s*activeModule\s*===\s*["']boardgame["']/,
+    "the desktop reconciliation poll must stand down while the visible board-game workspace supplies service calls",
+  );
+  assert.match(
+    panel,
+    /กำลังโหลดผังโต๊ะ…/,
+    "the first render must report loading instead of presenting authoritative-looking zero counters",
+  );
+});
+
 test("an open table is a scannable workspace instead of one long form", () => {
   assert.equal(
     declaration(".pos-bg-master-detail", "display"),
