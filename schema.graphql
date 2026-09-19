@@ -2596,18 +2596,30 @@ input BmsPosBoardGameBillingGroupActionInput {
 }
 
 type BmsPosBoardGameChargeLine {
+  actualEndedAt: String
+  actualMinutes: Int
   amount: Float!
   billableMinutes: Int!
   billingGroupNo: Int!
+  chargedUntil: String
+  coveredAmount: Float
+  coveredMinutes: Int
   displayName: String
+  grossAmount: Float
   hourlyRate: Float!
+  joinedAt: String
+  offerDiscountAmount: Float
   participantId: ID!
   participantType: String!
+  rateCode: String
+  rateName: String
 }
 
 type BmsPosBoardGameCheckout {
   amountDue: Float!
+  billingMode: String!
   chargeLineCount: Int!
+  chargeLines: [BmsPosBoardGameChargeLine!]!
   endedAt: String!
   groupNo: Int!
 
@@ -2640,6 +2652,10 @@ type BmsPosBoardGameCheckout {
   """ยอดของที่สั่งไว้ระหว่างเล่น (9.90)"""
   tabAmount: Float!
   tabItemCount: Int!
+  tabItems: [BmsPosBoardGameCheckoutItem!]!
+
+  """ส่วนลดราคาส่ง/โปรโมชันของสินค้า เทียบจากราคาบนบรรทัดกับยอดสินค้าในบิล"""
+  tabPricingDiscountAmount: Float!
   tableCode: String!
   tableName: String!
 
@@ -2653,6 +2669,21 @@ input BmsPosBoardGameCheckoutCopyInput {
   idempotencyKey: String!
   pin: String!
   sessionId: ID!
+}
+
+"""
+รายการสินค้าบนบิลพร้อมราคาที่แช่ไว้ใน order ไม่ใช่ราคาปัจจุบันใน catalogue
+"""
+type BmsPosBoardGameCheckoutItem {
+  amount: Float!
+  id: ID!
+  packCode: String
+  productName: String!
+  quantity: Int!
+  size: String!
+  sku: String!
+  unitName: String
+  unitPrice: Float!
 }
 
 type BmsPosBoardGameCopy {
@@ -2756,6 +2787,8 @@ type BmsPosBoardGameParticipant {
   leftAt: String
   minimumMinutes: Int
   participantType: String
+  rateCode: String
+  rateName: String
   replayed: Boolean
   roundingMinutes: Int
 }

@@ -95,7 +95,9 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('10.4__bms_board_game_pass_renewals.sql', 'column', 'bms_payments', 'board_game_member_pass_id', 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
     ('10.4__bms_board_game_pass_renewals.sql', 'column', 'bms_store_credit_ledger', 'board_game_member_pass_id', 'หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้'),
     ('10.5__bms_pos_offline_tenders.sql', 'column', 'bms_orders', 'pos_offline_tendered_at', 'ซิงก์รายการขายเงินสดออฟไลน์ไม่ได้ — settlement ต้องบันทึกเวลารับเงินและเวลาซิงก์พร้อมกัน'),
-    ('10.5__bms_pos_offline_tenders.sql', 'column', 'bms_orders', 'pos_offline_synced_at', 'ซิงก์รายการขายเงินสดออฟไลน์ไม่ได้ — settlement ต้องบันทึกเวลารับเงินและเวลาซิงก์พร้อมกัน')
+    ('10.5__bms_pos_offline_tenders.sql', 'column', 'bms_orders', 'pos_offline_synced_at', 'ซิงก์รายการขายเงินสดออฟไลน์ไม่ได้ — settlement ต้องบันทึกเวลารับเงินและเวลาซิงก์พร้อมกัน'),
+    ('10.6__bms_board_game_receipt_evidence.sql', 'column', 'bms_board_game_session_participants', 'rate_code_snapshot', 'ร้านบอร์ดเกมเปิดโต๊ะ/เพิ่มผู้เล่น/เปิดรายละเอียดบิลไม่ได้ — โค้ดอ่านและเขียนป้ายเรท snapshot ทุกครั้ง'),
+    ('10.6__bms_board_game_receipt_evidence.sql', 'column', 'bms_board_game_session_participants', 'rate_name_snapshot', 'ร้านบอร์ดเกมเปิดโต๊ะ/เพิ่มผู้เล่น/เปิดรายละเอียดบิลไม่ได้ — โค้ดอ่านและเขียนป้ายเรท snapshot ทุกครั้ง')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL

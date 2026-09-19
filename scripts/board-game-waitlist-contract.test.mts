@@ -16,6 +16,7 @@ const cafe = read("apps/web/lib/bms/boardGameCafe.ts");
 const operations = read("apps/web/lib/bms/boardGamePosOperations.ts");
 const graphql = read("apps/web/graphql/bmsPosDevice.ts");
 const browser = read("apps/web/components/pos/BoardGamePanel.tsx");
+const browserCss = read("apps/web/app/(pos)/pos/pos.css");
 const mobile = read("apps/mobile/src/screens/boardGame/BoardGameScreen.tsx");
 const expiryRoute = read("apps/web/app/api/bms/board-game/reservations/expire/route.ts");
 const reminderRoute = read("apps/web/app/api/bms/board-game/reservations/remind/route.ts");
@@ -110,6 +111,23 @@ test("mobile normalizes human booking date/time before POS backend validates the
   assert.match(service, /new Date\(String\(value \?\? ""\)\)/);
   assert.match(service, /เวลาจองต้องเป็นเวลาในอนาคต/);
   assert.match(service, /รับจองล่วงหน้าได้ไม่เกิน 366 วัน/);
+});
+
+test("the browser register uses one calendar date for browsing and creating reservations", () => {
+  assert.match(browser, /role="grid" aria-label="ปฏิทินการจอง"/);
+  assert.match(browser, /calendarDays\(reservationMonth\)/);
+  assert.match(browser, /reservationsByDate\.get\(day\.key\)/,
+    "month cells must expose the reservations already occupying each day");
+  assert.match(browser, /setReservationDate\(day\.key\)/,
+    "clicking a calendar cell must select the day shown in the list and editor");
+  assert.match(browser, /new Date\(`\$\{reservationDate\}T\$\{reservationTime\}`\)/,
+    "the selected calendar day and explicit start time must form the reservation instant");
+  assert.doesNotMatch(browser, /type="datetime-local"/,
+    "the calendar must replace the ambiguous second date field, not sit beside it");
+  assert.match(browser, /setReservationDate\(date\)[\s\S]{0,160}setReservationTime\(localTimeInput/,
+    "editing an existing reservation must take the calendar to its day and preserve its time");
+  assert.match(browserCss, /\.pos-bg-reservation-calendar\s*\{[\s\S]*?grid-template-columns:\s*repeat\(7,/);
+  assert.match(browserCss, /\.pos-bg-reservation-day--selected/);
 });
 
 test("10.1 public bookings are review requests with opaque management and bounded reminders", () => {

@@ -59,6 +59,14 @@ export type BoardGameChargeLine = {
   displayName: string | null;
   participantType: BoardGameParticipantType;
   billingGroupNo: number;
+  /** ป้ายเรทที่แช่ตอนรับผู้เล่น — เปลี่ยนชื่อเรทภายหลังต้องไม่แก้ใบเสร็จเก่า */
+  rateCode?: string | null;
+  rateName?: string | null;
+  /** เวลาจริงกับเวลาที่ใช้คิดเงินแยกกัน เพราะแพ็กเกจแบบกำหนดเวลาหรือการปัดรอบอาจไม่เท่ากัน */
+  joinedAt?: string | null;
+  actualEndedAt?: string | null;
+  chargedUntil?: string | null;
+  actualMinutes?: number;
   billableMinutes: number;
   hourlyRate: number;
   /** ยอดที่ลูกค้าต้องจ่ายจริงหลังแพ็กเกจสมาชิกช่วยจ่ายแล้ว (`9.92`) */
@@ -270,6 +278,8 @@ function mapSessionRow(row: any, replayed = false) {
 
 type PreparedParticipant = {
   rateId: string | null;
+  rateCode: string | null;
+  rateName: string | null;
   customerId: string | null;
   displayName: string | null;
   participantType: BoardGameParticipantType;
@@ -284,6 +294,8 @@ type PreparedParticipant = {
 
 type BoardGameRateRow = {
   id: string;
+  code: string;
+  name: string;
   price_per_hour: string;
   customer_type: BoardGameParticipantType;
   minimum_minutes: number;
@@ -307,6 +319,13 @@ export function boardGameBillableMinutes(input: {
   return Math.max(Math.max(0, input.minimumMinutes), rounded);
 }
 
+function boardGameActualMinutes(startedAt: Date | string, endedAt: Date | string): number {
+  const start = new Date(startedAt).getTime();
+  const end = new Date(endedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.ceil((end - start) / 60000);
+}
+
 /** ใช้โดย `boardGameIdentity.ts` ด้วย — ทางเดียว ไม่มี import ย้อนกลับ (ด่านปิดบิลเป็น SQL ในไฟล์นี้) */
 export async function requireBoardGameCafeTenant(client: QueryClient, tenantId: string) {
   const result = await client.query<{ business_archetype: string | null }>(
@@ -328,7 +347,7 @@ async function prepareParticipantInTx(
   if (input.rateId) {
     const rateId = uuid(input.rateId, "rateId");
     const rateResult = await client.query<BoardGameRateRow>(
-      `SELECT id, price_per_hour, customer_type, minimum_minutes, rounding_minutes, grace_minutes
+      `SELECT id, code, name, price_per_hour, customer_type, minimum_minutes, rounding_minutes, grace_minutes
          FROM bms_board_game_time_rates
         WHERE tenant_id = $1 AND id = $2 AND active
         FOR SHARE`,
@@ -361,6 +380,8 @@ async function prepareParticipantInTx(
   const joinedAt = optionalDate(input.joinedAt, "เวลาเข้าร่วม") ?? defaultJoinedAt;
   return {
     rateId: rate?.id ?? null,
+    rateCode: rate?.code ?? null,
+    rateName: rate?.name ?? null,
     customerId,
     displayName: input.displayName ? requiredText(input.displayName, "ชื่อผู้เล่น", 100) : null,
     participantType: type,
@@ -383,16 +404,19 @@ async function insertParticipantInTx(
 ) {
   return client.query(
     `INSERT INTO bms_board_game_session_participants
-        (tenant_id, session_id, billing_group_id, rate_id, customer_id, display_name,
+        (tenant_id, session_id, billing_group_id, rate_id, rate_code_snapshot, rate_name_snapshot,
+         customer_id, display_name,
          participant_type, billable, hourly_rate_snapshot, minimum_minutes_snapshot,
          rounding_minutes_snapshot, grace_minutes_snapshot, billing_group_no, joined_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-     RETURNING id, display_name, participant_type, billable, hourly_rate_snapshot,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     RETURNING id, display_name, participant_type, billable, rate_code_snapshot, rate_name_snapshot,
+               hourly_rate_snapshot,
                minimum_minutes_snapshot, rounding_minutes_snapshot, grace_minutes_snapshot,
                billing_group_no, billing_group_id, joined_at, left_at`,
     [
-      tenantId, sessionId, billingGroupId, participant.rateId, participant.customerId,
-      participant.displayName, participant.participantType, participant.billable,
+      tenantId, sessionId, billingGroupId, participant.rateId, participant.rateCode,
+      participant.rateName, participant.customerId, participant.displayName,
+      participant.participantType, participant.billable,
       participant.hourlyRate, participant.minimumMinutes, participant.roundingMinutes,
       participant.graceMinutes, participant.billingGroupNo, participant.joinedAt,
     ]
@@ -1655,7 +1679,8 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
       [tenantId, sessionId]
     ),
     query(
-      `SELECT p.id, p.display_name, p.participant_type, p.billable, p.hourly_rate_snapshot,
+      `SELECT p.id, p.display_name, p.participant_type, p.billable,
+              p.rate_code_snapshot, p.rate_name_snapshot, p.hourly_rate_snapshot,
               p.minimum_minutes_snapshot, p.rounding_minutes_snapshot, p.grace_minutes_snapshot,
               g.group_no AS billing_group_no, p.billing_group_id, g.status AS billing_group_status,
               p.joined_at, p.left_at
@@ -1745,6 +1770,8 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
       displayName: participant.display_name,
       participantType: participant.participant_type,
       billable: Boolean(participant.billable),
+      rateCode: participant.rate_code_snapshot ?? null,
+      rateName: participant.rate_name_snapshot ?? null,
       hourlyRate: Number(participant.hourly_rate_snapshot),
       minimumMinutes: Number(participant.minimum_minutes_snapshot),
       roundingMinutes: Number(participant.rounding_minutes_snapshot),
@@ -2074,6 +2101,7 @@ export async function getBoardGameCheckoutForPos(
   await requireBoardGameCafeTenant({ query }, tenantId);
   const result = await query(
     `SELECT g.id, g.status, g.group_no, g.ended_at, g.amount_due, g.tab_amount, g.session_id,
+            g.current_order_id, g.charge_snapshot,
             jsonb_array_length(g.charge_snapshot) AS charge_line_count,
             -- 9.92: snapshot ก่อนหน้านั้นไม่มีคีย์นี้ · sum ข้าม NULL ให้เอง จึงได้ 0 ตามจริง
             (SELECT COALESCE(sum((line->>'coveredAmount')::numeric), 0)
@@ -2085,7 +2113,7 @@ export async function getBoardGameCheckoutForPos(
                FROM jsonb_array_elements(g.charge_snapshot) line) AS offer_name,
             (SELECT COALESCE(sum((line->>'offerDiscountAmount')::numeric), 0)
                FROM jsonb_array_elements(g.charge_snapshot) line) AS offer_discount_amount,
-            s.started_at,
+            s.billing_mode, s.started_at, s.expected_end_at,
             t.code AS table_code, t.name AS table_name,
             (SELECT count(*) FROM bms_board_game_group_items i
               WHERE i.tenant_id = g.tenant_id AND i.billing_group_id = g.id
@@ -2109,6 +2137,87 @@ export async function getBoardGameCheckoutForPos(
   );
   if (!result.rowCount) throw new Error("ไม่พบบิลเวลาเล่นที่รอชำระในสาขานี้");
   const row = result.rows[0];
+
+  // charge_snapshot รุ่นก่อน 10.6 ยังไม่มีเวลาเข้า/ออกและชื่อเรท แต่ participant ของกลุ่ม
+  // ยังเป็นหลักฐานเดิมอยู่ จึงเติมเฉพาะ field ที่ขาดเพื่อให้บิลเก่าเปิดดูได้ โดยไม่คำนวณยอดใหม่
+  // และไม่แตะ amount/billableMinutes ที่แช่ไว้แล้วเด็ดขาด
+  const participantEvidence = await query<any>(
+    `SELECT id, rate_code_snapshot, rate_name_snapshot, joined_at, left_at
+       FROM bms_board_game_session_participants
+      WHERE tenant_id = $1 AND billing_group_id = $2`,
+    [tenantId, billingGroupId]
+  );
+  const evidenceByParticipant = new Map(participantEvidence.rows.map((participant: any) => (
+    [participant.id, participant] as const
+  )));
+  const chargeLines: BoardGameChargeLine[] = (Array.isArray(row.charge_snapshot)
+    ? row.charge_snapshot : []).map((raw: any) => {
+    const evidence = evidenceByParticipant.get(raw.participantId);
+    const joinedAt = raw.joinedAt ?? iso(evidence?.joined_at) ?? null;
+    const actualEndedAt = raw.actualEndedAt ?? iso(evidence?.left_at ?? row.ended_at) ?? null;
+    const expectedEndAt = iso(row.expected_end_at);
+    const chargedUntil = raw.chargedUntil ?? (
+      row.billing_mode === "FIXED_DURATION"
+      && expectedEndAt
+      && actualEndedAt
+      && new Date(expectedEndAt).getTime() > new Date(actualEndedAt).getTime()
+        ? expectedEndAt
+        : actualEndedAt
+    );
+    return {
+      ...raw,
+      participantId: String(raw.participantId),
+      displayName: raw.displayName ?? null,
+      participantType: raw.participantType as BoardGameParticipantType,
+      billingGroupNo: Number(raw.billingGroupNo),
+      rateCode: raw.rateCode ?? evidence?.rate_code_snapshot ?? null,
+      rateName: raw.rateName ?? evidence?.rate_name_snapshot ?? null,
+      joinedAt,
+      actualEndedAt,
+      chargedUntil,
+      actualMinutes: raw.actualMinutes == null && joinedAt && actualEndedAt
+        ? boardGameActualMinutes(joinedAt, actualEndedAt)
+        : Number(raw.actualMinutes ?? 0),
+      billableMinutes: Number(raw.billableMinutes),
+      hourlyRate: Number(raw.hourlyRate),
+      amount: Number(raw.amount),
+      grossAmount: raw.grossAmount == null ? undefined : Number(raw.grossAmount),
+      coveredMinutes: raw.coveredMinutes == null ? undefined : Number(raw.coveredMinutes),
+      coveredAmount: raw.coveredAmount == null ? undefined : Number(raw.coveredAmount),
+      offerDiscountAmount: raw.offerDiscountAmount == null
+        ? undefined : Number(raw.offerDiscountAmount),
+    };
+  });
+
+  // ราคาสินค้าต้องมาจาก order snapshot ที่จองสต็อกให้ tab นี้แล้ว ไม่อ่านราคาปัจจุบันจาก
+  // catalog เพราะการเปลี่ยนราคากลางคันต้องไม่เปลี่ยนคำอธิบายบิลที่ลูกค้ากำลังจะจ่าย
+  // receipt_unit_price คือราคาที่แสดงบนใบเสร็จก่อนส่วนลดสินค้า ส่วนต่างจาก tab_amount
+  // ส่งแยกเป็น tabPricingDiscountAmount ด้านล่าง เพื่อให้รายการ + ส่วนลด = ยอดที่เก็บจริง
+  // โดยไม่แต่งราคาสุทธิต่อชิ้นขึ้นเอง (โปรบางชนิดจัดสรรต่อชิ้นไม่ได้อย่างซื่อตรง)
+  const tabItems = row.current_order_id ? await query<any>(
+    `SELECT oi.id::text AS id, oi.product_sku, oi.product_name, oi.size,
+            oi.pack_code, oi.pack_unit_name,
+            COALESCE(oi.pack_qty, oi.qty)::int AS quantity,
+            oi.receipt_unit_price AS unit_price,
+            round(oi.receipt_unit_price * COALESCE(oi.pack_qty, oi.qty), 2) AS amount
+       FROM bms_order_items oi
+      WHERE oi.tenant_id = $1 AND oi.order_id = $2
+      ORDER BY oi.id`,
+    [tenantId, row.current_order_id]
+  ) : { rows: [] as any[] };
+  const checkoutItems = tabItems.rows.map((item: any) => ({
+    id: item.id,
+    sku: item.product_sku,
+    productName: item.product_name,
+    size: item.size,
+    packCode: item.pack_code ?? null,
+    unitName: item.pack_unit_name ?? null,
+    quantity: Number(item.quantity),
+    unitPrice: Number(item.unit_price),
+    amount: Number(item.amount),
+  }));
+  const tabGrossAmount = money(checkoutItems.reduce((sum, item) => sum + item.amount, 0));
+  const tabPricingDiscountAmount = money(Math.max(0, tabGrossAmount - Number(row.tab_amount)));
   return {
     id: row.id,
     sessionId: row.session_id,
@@ -2116,15 +2225,19 @@ export async function getBoardGameCheckoutForPos(
     sessionGroupCount: Number(row.session_group_count),
     tableCode: row.table_code,
     tableName: row.table_name,
+    billingMode: row.billing_mode,
     startedAt: iso(row.started_at),
     endedAt: iso(row.ended_at),
     // ค่าเล่นกับของที่สั่งระหว่างเล่นเป็นคนละก้อน · เครื่องขายต้องเห็นทั้งสองแยกกัน
     // ไม่งั้นแคชเชียร์อธิบายยอดรวมให้ลูกค้าไม่ได้ว่ามาจากอะไรบ้าง
     amountDue: Number(row.amount_due),
     tabAmount: Number(row.tab_amount),
+    tabPricingDiscountAmount,
     totalDue: money(Number(row.amount_due) + Number(row.tab_amount)),
     tabItemCount: Number(row.tab_item_count),
-    chargeLineCount: Number(row.charge_line_count),
+    tabItems: checkoutItems,
+    chargeLineCount: chargeLines.length,
+    chargeLines,
     // ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว — แคชเชียร์ต้องอธิบายได้ว่าทำไมค่าเล่นถึงถูกกว่าที่ลูกค้าคิด
     passCoveredAmount: money(Number(row.pass_covered_amount ?? 0)),
     // แสดงเฉพาะข้อเสนอที่ชนะและถูกแช่ไว้ตอนปิดบิล ไม่ส่งรายการกติกาทั้งหมดไปทำให้จอขายรก
@@ -3105,8 +3218,10 @@ export async function calculateBoardGameGroupCharges(
   lockedPasses?: Map<string, BoardGamePassBudget>
 ): Promise<{ lines: BoardGameChargeLine[]; total: number }> {
   const rows = await client.query<any>(
-    `SELECT p.id, p.customer_id, p.display_name, p.participant_type, p.billable, p.hourly_rate_snapshot,
+    `SELECT p.id, p.customer_id, p.display_name, p.participant_type, p.billable,
+            p.rate_code_snapshot, p.rate_name_snapshot, p.hourly_rate_snapshot,
             g.group_no AS billing_group_no, p.joined_at,
+            COALESCE(p.left_at, $3::timestamptz) AS actual_end_at,
             CASE
               WHEN s.billing_mode = 'FIXED_DURATION'
                AND s.expected_end_at > COALESCE(p.left_at, $3::timestamptz)
@@ -3145,6 +3260,12 @@ export async function calculateBoardGameGroupCharges(
     displayName: entry.row.display_name,
     participantType: entry.row.participant_type,
     billingGroupNo: Number(entry.row.billing_group_no),
+    rateCode: entry.row.rate_code_snapshot ?? null,
+    rateName: entry.row.rate_name_snapshot ?? null,
+    joinedAt: iso(entry.row.joined_at),
+    actualEndedAt: iso(entry.row.actual_end_at),
+    chargedUntil: iso(entry.row.charge_end_at),
+    actualMinutes: boardGameActualMinutes(entry.row.joined_at, entry.row.actual_end_at),
     billableMinutes: entry.billableMinutes,
     hourlyRate: entry.hourlyRate,
     amount: coverage[index].amount,

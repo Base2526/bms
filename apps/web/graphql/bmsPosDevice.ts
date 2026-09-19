@@ -2501,6 +2501,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     displayName: String
     participantType: String
     billable: Boolean
+    rateCode: String
+    rateName: String
     hourlyRate: Float
     minimumMinutes: Int
     roundingMinutes: Int
@@ -2558,8 +2560,31 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     displayName: String
     participantType: String!
     billingGroupNo: Int!
+    rateCode: String
+    rateName: String
+    joinedAt: String
+    actualEndedAt: String
+    chargedUntil: String
+    actualMinutes: Int
     billableMinutes: Int!
     hourlyRate: Float!
+    amount: Float!
+    grossAmount: Float
+    coveredMinutes: Int
+    coveredAmount: Float
+    offerDiscountAmount: Float
+  }
+
+  """รายการสินค้าบนบิลพร้อมราคาที่แช่ไว้ใน order ไม่ใช่ราคาปัจจุบันใน catalogue"""
+  type BmsPosBoardGameCheckoutItem {
+    id: ID!
+    sku: String!
+    productName: String!
+    size: String!
+    packCode: String
+    unitName: String
+    quantity: Int!
+    unitPrice: Float!
     amount: Float!
   }
 
@@ -2664,15 +2689,20 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     sessionGroupCount: Int!
     "ยอดของที่สั่งไว้ระหว่างเล่น (9.90)"
     tabAmount: Float!
+    "ส่วนลดราคาส่ง/โปรโมชันของสินค้า เทียบจากราคาบนบรรทัดกับยอดสินค้าในบิล"
+    tabPricingDiscountAmount: Float!
     tabItemCount: Int!
     "ค่าเล่น + ของที่สั่งไว้ = ยอดที่ต้องเก็บจริง"
     totalDue: Float!
     tableCode: String!
     tableName: String!
+    billingMode: String!
     startedAt: String!
     endedAt: String!
     amountDue: Float!
     chargeLineCount: Int!
+    chargeLines: [BmsPosBoardGameChargeLine!]!
+    tabItems: [BmsPosBoardGameCheckoutItem!]!
     """
     ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (9.92) · 0 = ไม่มีแพ็กเกจช่วยจ่าย
 
