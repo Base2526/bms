@@ -321,6 +321,7 @@ function newKey() {
 export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, onServiceCallsChange }: Props) {
   const ready = Boolean(token && cashierUserId && pin);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [workspaceLoadError, setWorkspaceLoadError] = useState('');
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [selectedId, setSelectedId] = useState('');
   /**
@@ -474,6 +475,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
     const data = await call('workspace', {}, signal);
     const next = data as unknown as Workspace;
     setWorkspace(next);
+    setWorkspaceLoadError('');
     onServiceCallsChange?.(next.serviceCalls.map((item) => ({ ...item, source: 'boardgame' })));
   }, [call, onServiceCallsChange]);
 
@@ -487,16 +489,18 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
     enabled: ready,
     intervalMs: pageVisible ? 10_000 : 60_000,
     onRefresh: async (signal) => {
-      await loadWorkspace(signal);
+      try {
+        await loadWorkspace(signal);
+      } catch (cause) {
+        if (!signal.aborted) {
+          setWorkspaceLoadError(cause instanceof Error ? cause.message : 'โหลดผังโต๊ะไม่สำเร็จ');
+        }
+        throw cause;
+      }
       const open = selectedIdRef.current;
       if (open) await loadSession(open, signal);
     },
   });
-
-  useEffect(() => {
-    if (!ready) return;
-    void loadWorkspace().catch((e) => setError(e instanceof Error ? e.message : 'โหลดผังโต๊ะไม่สำเร็จ'));
-  }, [ready, loadWorkspace]);
 
   useEffect(() => {
     if (!ready || !selectedId) return;
@@ -687,7 +691,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
   const agoText = ago
     ? ago.unit === 'seconds' ? `${ago.value} วินาทีที่แล้ว` : `${ago.value} นาทีที่แล้ว`
     : 'ยังไม่เคยโหลดสำเร็จ';
-  const feedText = health === 'LIVE'
+  const initialLoadFailed = !workspace && (Boolean(workspaceLoadError) || feed.lastErrorAt !== null);
+  const initialLoadPending = !workspace && !initialLoadFailed;
+  const feedText = initialLoadPending
+    ? 'กำลังโหลดข้อมูลล่าสุด…'
+    : initialLoadFailed
+      ? 'ยังโหลดข้อมูลไม่ได้ — กดโหลดใหม่เพื่อลองอีกครั้ง'
+    : health === 'LIVE'
     ? `อัปเดตล่าสุด ${agoText}`
     : health === 'SLOW'
       ? `ข้อมูลช้ากว่าปกติ · ${agoText}`
@@ -792,7 +802,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
       )}
 
       <div className={`pos-bg-master-detail${openForm || session ? ' pos-bg-master-detail--selected' : ''}`}>
-        <section className="pos-card pos-bg-master-pane" aria-label="ผังโต๊ะ">
+        <section className="pos-card pos-bg-master-pane" aria-label="ผังโต๊ะ" aria-busy={initialLoadPending}>
           <div className="pos-bg-floor-head">
             <div>
               <div className="pos-block-title">ผังโต๊ะ</div>
@@ -803,13 +813,23 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                   เวลาที่โหลดสำเร็จครั้งล่าสุด ไม่ใช่จากนาฬิกาที่เดินต่อแม้เน็ตขาด */}
               <span className={`pos-bg-feed ${feedTone(health)}`.trim()}>{feedText}</span>
               <button type="button" className="pos-ret-btn" disabled={Boolean(busy)}
-                onClick={() => void loadWorkspace().catch((e) => setError(e?.message ?? 'โหลดไม่สำเร็จ'))}>
+                onClick={feed.refreshNow}>
                 โหลดใหม่
               </button>
             </div>
           </div>
 
-          <div className="pos-bg-floor-stats" aria-label="สรุปสถานะผังโต๊ะ">
+          {!workspace && (
+            <div className={`pos-bg-floor-loading${initialLoadFailed ? ' pos-bg-floor-loading--error' : ''}`} role="status">
+              {!initialLoadFailed && <span className="pos-bg-loading-spinner" aria-hidden="true" />}
+              <strong>{initialLoadFailed ? 'ยังโหลดผังโต๊ะไม่ได้' : 'กำลังโหลดผังโต๊ะ…'}</strong>
+              <span>{workspaceLoadError || (initialLoadFailed
+                ? 'เซิร์ฟเวอร์ตอบช้าหรือเชื่อมต่อไม่สำเร็จ — กดโหลดใหม่เพื่อลองอีกครั้ง'
+                : 'กำลังตรวจสถานะโต๊ะ คิว และคำเรียกล่าสุดจากเซิร์ฟเวอร์')}</span>
+            </div>
+          )}
+
+          {workspace && <div className="pos-bg-floor-stats" aria-label="สรุปสถานะผังโต๊ะ">
             {([
               ['ALL', 'ทั้งหมด', floorTables.length, ''],
               ['AVAILABLE', 'ว่าง', availableCount, ''],
@@ -823,7 +843,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                 {label} {count}
               </button>
             ))}
-          </div>
+          </div>}
 
           {attention.length > 0 && (
             <div className={`pos-bg-attention ${overdueCount > 0 ? 'pos-bg-attention--critical' : ''}`.trim()} aria-label="โต๊ะที่ต้องดูตอนนี้">
@@ -842,7 +862,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
             </div>
           )}
 
-          <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
+          {workspace && <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
             <summary>การจองล่วงหน้า · {allReservations.length} รายการ</summary>
             <div className="pos-bg-form" style={{ marginTop: 10 }}>
               <label className="pos-bg-field">
@@ -1020,9 +1040,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                 </div>
               );
             })}
-          </details>
+          </details>}
 
-          <details className="pos-bg-section pos-bg-section--advanced" open={openQueue.length > 0}>
+          {workspace && <details className="pos-bg-section pos-bg-section--advanced" open={openQueue.length > 0}>
             <summary>
               คิวรอโต๊ะ {openQueue.length > 0
                 ? `· ${openQueue.length} กลุ่ม · รอนานสุด ${workspace?.waitlist.longestWaitMinutes ?? 0} นาที`
@@ -1106,7 +1126,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                 </div>
               );
             })}
-          </details>
+          </details>}
       {/* ---------------- ผังโต๊ะ ---------------- */}
       {(workspace?.floor.areas ?? []).map((area) => {
         const areaTables = (tablesByArea.get(area.id) ?? []).filter(
@@ -1200,7 +1220,15 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
         </section>
 
         <section className="pos-card pos-bg-detail-pane" aria-label="รายละเอียดโต๊ะ">
-      {!openForm && !session && (
+      {!workspace ? (
+        <div className="pos-bg-detail-empty" role="status">
+          {!initialLoadFailed && <span className="pos-bg-loading-spinner" aria-hidden="true" />}
+          <div className="pos-block-title">{initialLoadFailed ? 'รอเชื่อมต่อผังโต๊ะ' : 'กำลังเตรียมข้อมูลโต๊ะ'}</div>
+          <div className="pos-block-hint">{initialLoadFailed
+            ? 'ใช้ปุ่มโหลดใหม่ด้านซ้ายเพื่อเชื่อมต่ออีกครั้ง'
+            : 'รายละเอียดจะพร้อมทันทีที่ผังโต๊ะโหลดสำเร็จ'}</div>
+        </div>
+      ) : !openForm && !session && (
         <div className="pos-bg-detail-empty">
           <div className="pos-bg-detail-empty-icon" aria-hidden="true">↖</div>
           <div className="pos-block-title">เลือกโต๊ะจากผัง</div>

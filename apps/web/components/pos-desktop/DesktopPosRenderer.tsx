@@ -62,6 +62,7 @@ import {
   type CustomerDisplayPayload,
 } from "@/lib/pos/customerDisplay";
 import PosPage from "@/app/(pos)/pos/page";
+import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import {
@@ -532,7 +533,11 @@ export default function DesktopPosRenderer() {
   useEffect(() => {
     if (!token || !cashier || !pin
       || (bootstrap?.businessArchetype !== "restaurant"
-        && bootstrap?.businessArchetype !== "board_game_cafe")) return;
+        && bootstrap?.businessArchetype !== "board_game_cafe")
+      // BoardGamePanel owns the visible workspace refresh and feeds the same bell through
+      // onServiceCallsChange. Keep realtime invalidation above active, but do not run a second
+      // ten-second reconciliation loop beside the workspace while this module is open.
+      || (bootstrap?.businessArchetype === "board_game_cafe" && activeModule === "boardgame")) return;
     let controller: AbortController | null = null;
     const refresh = () => {
       controller?.abort();
@@ -543,7 +548,7 @@ export default function DesktopPosRenderer() {
     // Realtime is the fast path; this remains the fail-open reconciliation path.
     const timer = window.setInterval(refresh, 10_000);
     return () => { controller?.abort(); window.clearInterval(timer); };
-  }, [bootstrap?.businessArchetype, cashier, pin, refreshDesktopServiceCalls, token]);
+  }, [activeModule, bootstrap?.businessArchetype, cashier, pin, refreshDesktopServiceCalls, token]);
 
   useEffect(() => {
     const pendingIds = serviceCalls
@@ -1330,21 +1335,31 @@ export default function DesktopPosRenderer() {
             <section
               className={`${styles.moduleHost}${activeModule === "boardgame" ? ` ${styles.boardGameModuleHost}` : ""}`}
             >
-              <PosWorkspaceContext.Provider value={{
-                embedded: true,
-                initialTab: activeModule,
-                initialToken: token,
-                initialCashierId: cashier?.id ?? cashierId,
-                initialPin: pin,
-                suppressCustomerDisplay: true,
-                onTabChange: followWorkspaceTab,
-                onShiftChange: followWorkspaceShift,
-                onUnpair: unpair,
-                onBoardGameCheckout: openBoardGameCheckout,
-                onServiceCallsChange: acceptBoardGameServiceCalls,
-              }}>
-                <PosPage />
-              </PosWorkspaceContext.Provider>
+              {activeModule === "boardgame" ? (
+                <BoardGamePanel
+                  token={token}
+                  cashierUserId={cashier?.id ?? cashierId}
+                  pin={pin}
+                  onCheckout={openBoardGameCheckout}
+                  onServiceCallsChange={acceptBoardGameServiceCalls}
+                />
+              ) : (
+                <PosWorkspaceContext.Provider value={{
+                  embedded: true,
+                  initialTab: activeModule,
+                  initialToken: token,
+                  initialCashierId: cashier?.id ?? cashierId,
+                  initialPin: pin,
+                  suppressCustomerDisplay: true,
+                  onTabChange: followWorkspaceTab,
+                  onShiftChange: followWorkspaceShift,
+                  onUnpair: unpair,
+                  onBoardGameCheckout: openBoardGameCheckout,
+                  onServiceCallsChange: acceptBoardGameServiceCalls,
+                }}>
+                  <PosPage />
+                </PosWorkspaceContext.Provider>
+              )}
             </section>
           </div>
         ) : (
