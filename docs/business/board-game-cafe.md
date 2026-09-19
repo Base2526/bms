@@ -90,7 +90,13 @@ billing groups — points at the seating it is currently sitting at.
   selected party is detached onto a new seating, so merging is not a one-way door.
 * **Merge** sends every party at this table into an occupied destination's seating and closes the
   source seating as `MERGED`. Several sessions then share one seating and appear as one card on the
-  floor, while each keeps its own clock, tab and bills.
+floor, while each keeps its own clock, tab and bills.
+
+Game loans and held identity documents keep that same session ownership. The register therefore
+loads every session sharing a merged seating, shows the combined assets grouped by the table where
+each visit opened, and still sends a new checkout/hold command only to the explicitly selected
+party. Changing that selection clears the previous detail immediately; a slow response for the old
+party must never put its command buttons back on screen.
 
 Neither command touches a session, billing group, tab row or order: ids, frozen charge lines and
 PENDING reservation orders survive both unchanged. Each command refuses the other's job — moving

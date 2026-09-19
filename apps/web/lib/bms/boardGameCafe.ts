@@ -1639,7 +1639,9 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
   await requireBoardGameCafeTenant({ query }, tenantId);
   const [session, participants, games, billingGroups, tabItems, identityHolds] = await Promise.all([
     query(
-      `SELECT s.id, s.location_id, st.table_id, s.seating_id, s.status, s.billing_mode,
+      `SELECT s.id, s.location_id, st.table_id, s.table_id AS origin_table_id,
+              origin_table.code AS origin_table_code, origin_table.name AS origin_table_name,
+              s.seating_id, s.status, s.billing_mode,
               s.guest_count, s.started_at, s.expected_end_at, s.ended_at, s.alert_before_minutes,
               (SELECT COALESCE(sum(g.amount_due + g.tab_amount), 0)
                  FROM bms_board_game_billing_groups g
@@ -1647,6 +1649,8 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
          FROM bms_board_game_sessions s
          JOIN bms_board_game_seatings st
            ON st.tenant_id = s.tenant_id AND st.id = s.seating_id
+         JOIN bms_board_game_tables origin_table
+           ON origin_table.tenant_id = s.tenant_id AND origin_table.id = s.table_id
         WHERE s.tenant_id = $1 AND s.id = $2`,
       [tenantId, sessionId]
     ),
@@ -1725,6 +1729,11 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
     ...mapSessionRow(row),
     locationId: row.location_id,
     tableId: row.table_id,
+    // `tableId` คือโต๊ะปัจจุบันจาก seating ส่วนสามช่องนี้คือโต๊ะที่ visit เปิดครั้งแรก
+    // ใช้แยกทรัพย์สินของแต่ละชุดบนจอหลังรวมโต๊ะ โดยไม่เขียนทับประวัติ session
+    originTableId: row.origin_table_id,
+    originTableCode: row.origin_table_code,
+    originTableName: row.origin_table_name,
     seatingId: row.seating_id,
     billingGroups: groups.map((group) => ({
       ...group,

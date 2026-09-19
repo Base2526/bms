@@ -36,6 +36,7 @@ const WORKSPACE_CONTEXT_PATH = "../apps/web/components/pos/PosWorkspaceContext.t
 const MOBILE_FLOW_GRAPHQL_PATH = "../apps/web/lib/pos/mobileFlowGraphql.ts";
 const CLIPBOARD_PATH = "../apps/web/lib/pos/clipboard.ts";
 const GUEST_SERVICE_CALL_PATH = "../apps/web/app/(qr)/bg/[token]/page.tsx";
+const CAFE_PATH = "../apps/web/lib/bms/boardGameCafe.ts";
 
 function withoutComments(source: string): string {
   return source
@@ -56,6 +57,7 @@ const workspaceContext = withoutComments(read(WORKSPACE_CONTEXT_PATH));
 const mobileFlowGraphql = withoutComments(read(MOBILE_FLOW_GRAPHQL_PATH));
 const clipboard = withoutComments(read(CLIPBOARD_PATH));
 const guestServiceCall = withoutComments(read(GUEST_SERVICE_CALL_PATH));
+const cafe = withoutComments(read(CAFE_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -302,6 +304,34 @@ test("an open table is a scannable workspace instead of one long form", () => {
     page,
     /session\s*&&\s*!canSell\s*&&\s*tab\s*!==\s*["']boardgame["']/,
     "the sales-only readiness card must not consume the board-game workspace",
+  );
+});
+
+test("merged tables keep every party's games visible without letting a stale session receive commands", () => {
+  assert.match(
+    panel,
+    /const selectTable[\s\S]{0,900}setSession\(null\)[\s\S]{0,900}setSelectedId\(sessionId\)/,
+    "selecting another party must hide the old session before the next detail request completes",
+  );
+  assert.match(
+    panel,
+    /requestVersion !== sessionRequestVersion\.current \|\| selectedIdRef\.current !== sessionId/,
+    "a late response from the previous table must not overwrite the current selection",
+  );
+  assert.match(
+    panel,
+    /Promise\.all\(ids\.map[\s\S]{0,1200}setSharedSessionDetails/,
+    "a merged seating must load every underlying session instead of showing only the selected party",
+  );
+  assert.match(panel, /seatingLoans\.map\(/, "the games tab must render the merged seating's loans");
+  assert.match(panel, /`เดิม \$\{detail\.originTableCode\}`/,
+    "party selectors must identify the original table");
+  assert.match(panel, /` · \$\{people\} คน · \$\{games\} เกม`/,
+    "party selectors must expose each party's game count");
+  assert.match(
+    cafe,
+    /s\.table_id AS origin_table_id[\s\S]{0,220}origin_table\.code AS origin_table_code/,
+    "session detail must preserve the opening table separately from the seating's current table",
   );
 });
 

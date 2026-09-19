@@ -29,13 +29,17 @@ import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyError
 import {
   addBoardGameGroupItem,
   cancelBoardGameSession,
+  checkoutBoardGameCopy,
   closeBoardGameBillingGroupForBilling,
   closeBoardGameSessionForBilling,
+  createBoardGameCopy,
+  createBoardGameTitle,
   getBoardGameSession,
   listBoardGameFloor,
   mergeBoardGameSeating,
   moveBoardGameSeating,
   openBoardGameSession,
+  returnBoardGameCopy,
 } from "../apps/web/lib/bms/boardGameCafe.ts";
 import { recordPosSale } from "../apps/web/lib/bms/pos.ts";
 
@@ -142,6 +146,8 @@ async function settleWholeTable(sessionId: string) {
 }
 
 let rateId = "";
+let firstCopyId = "";
+let secondCopyId = "";
 
 test("setup: a throwaway board-game cafe with four tables and a second branch", async () => {
   tenantId = (await query<{ id: string }>(
@@ -221,6 +227,19 @@ test("setup: a throwaway board-game cafe with four tables and a second branch", 
      VALUES ($1,'FAKE_GENERAL',$2,'GENERAL',60,60,30,0) RETURNING id`,
     [tenantId, `FAKE ${TAG} rate`]
   )).rows[0].id;
+  const title = await createBoardGameTitle(
+    tenantId, { title: `FAKE ${TAG} merged loans` }, staffId
+  );
+  firstCopyId = (await createBoardGameCopy(
+    tenantId,
+    { titleId: title.id, locationId, copyCode: `FAKE-${TAG}-COPY-1` },
+    staffId,
+  )).id;
+  secondCopyId = (await createBoardGameCopy(
+    tenantId,
+    { titleId: title.id, locationId, copyCode: `FAKE-${TAG}-COPY-2` },
+    staffId,
+  )).id;
 });
 
 test("opening a table claims a seating, and the vacated table is reopenable right after a move", async () => {
@@ -367,6 +386,71 @@ test("merging two occupied tables keeps two separate bills, and one payment does
   await settleWholeTable(guest.id);
   assert.equal((await seatingRow(hostSeating.id)).status, "CLOSED");
   assert.equal((await cardOf(tables.T1)).openSession, null, "จ่ายครบทุกชุดแล้วโต๊ะจึงว่าง");
+});
+
+test("moving two parties together keeps both game loans on their original sessions", async () => {
+  const first = await openParty(tables.T1, 4);
+  const second = await openParty(tables.T2, 4);
+  const firstLoan = await checkoutBoardGameCopy(
+    tenantId,
+    { sessionId: first.id, copyId: firstCopyId, idempotencyKey: key("loan-first") },
+    staffId,
+  );
+  const secondLoan = await checkoutBoardGameCopy(
+    tenantId,
+    { sessionId: second.id, copyId: secondCopyId, idempotencyKey: key("loan-second") },
+    staffId,
+  );
+
+  // จำลองหน้าร้าน: ย้ายชุดแรกไปโต๊ะว่าง แล้วรวมชุดที่สองเข้าที่โต๊ะปลายทาง
+  await moveBoardGameSeating(
+    tenantId, first.id, tables.T3, { idempotencyKey: key("move-first") }, staffId
+  );
+  await mergeBoardGameSeating(
+    tenantId, second.id, tables.T3, { idempotencyKey: key("merge-second") }, staffId
+  );
+
+  const loans = (await query<{
+    id: string; session_id: string; copy_id: string; status: string; returned_at: Date | null;
+  }>(
+    `SELECT id, session_id, copy_id, status, returned_at
+       FROM bms_board_game_session_games
+      WHERE tenant_id = $1 AND session_id = ANY($2::uuid[])
+      ORDER BY session_id, id`,
+    [tenantId, [first.id, second.id]],
+  )).rows;
+  assert.equal(loans.length, 2, "รวมโต๊ะแล้ว loan ทั้งสองใบต้องยังอยู่ครบ");
+  assert.deepEqual(
+    new Map(loans.map((loan) => [loan.session_id, [loan.id, loan.copy_id, loan.status, loan.returned_at]])),
+    new Map([
+      [first.id, [firstLoan.id, firstCopyId, "CHECKED_OUT", null]],
+      [second.id, [secondLoan.id, secondCopyId, "CHECKED_OUT", null]],
+    ]),
+    "การย้าย/รวมโต๊ะห้ามย้าย loan ข้าม session หรือคืนเกมให้เอง",
+  );
+
+  const firstDetail = await getBoardGameSession(tenantId, first.id);
+  const secondDetail = await getBoardGameSession(tenantId, second.id);
+  assert.equal(firstDetail.tableId, tables.T3);
+  assert.equal(secondDetail.tableId, tables.T3);
+  assert.equal(firstDetail.originTableId, tables.T1);
+  assert.equal(secondDetail.originTableId, tables.T2);
+  assert.equal(firstDetail.games[0]?.id, firstLoan.id);
+  assert.equal(secondDetail.games[0]?.id, secondLoan.id);
+  assert.deepEqual(
+    new Set((await cardOf(tables.T3)).openSession?.sessionIds ?? []),
+    new Set([first.id, second.id]),
+    "ผังโต๊ะต้องเปิดทางให้จอดึงรายละเอียดเกมของทั้งสอง session",
+  );
+
+  await returnBoardGameCopy(
+    tenantId, { loanId: firstLoan.id, idempotencyKey: key("return-first") }, staffId
+  );
+  await returnBoardGameCopy(
+    tenantId, { loanId: secondLoan.id, idempotencyKey: key("return-second") }, staffId
+  );
+  await settleWholeTable(first.id);
+  await settleWholeTable(second.id);
 });
 
 test("a merged table is not a one-way door: moving one party out detaches only that party", async () => {

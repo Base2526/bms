@@ -140,6 +140,9 @@ type SessionDetail = {
   startedAt: string | null; expectedEndAt: string | null; endedAt: string | null;
   alertBeforeMinutes: number; alertStatus: string; amountDue: number;
   tableId: string;
+  originTableId: string;
+  originTableCode: string;
+  originTableName: string;
   seatingId: string;
   billingGroups: BillingGroup[];
   participants: Participant[]; games: Loan[];
@@ -324,6 +327,12 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
   const [workspaceLoadError, setWorkspaceLoadError] = useState('');
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [selectedId, setSelectedId] = useState('');
+  const [sessionLoadingId, setSessionLoadingId] = useState('');
+  const sessionRequestVersion = useRef(0);
+  const [sharedSessionDetails, setSharedSessionDetails] = useState<Record<string, SessionDetail>>({});
+  const [sharedSessionsLoading, setSharedSessionsLoading] = useState(false);
+  const [sharedSessionsError, setSharedSessionsError] = useState('');
+  const sharedSessionsRequestVersion = useRef(0);
   /**
    * ⚠️ `run()` ถูกประกาศใหม่ทุก render จึงปิดทับ `selectedId` **ของ render นั้น** ·
    * callback `after` ที่ล้างการเลือก (ยกเลิกโต๊ะ) จึงถูกทับทันทีด้วยการโหลด session
@@ -405,6 +414,19 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
 
   const selectTable = useCallback((sessionId: string) => {
     if (selectedIdRef.current !== sessionId) {
+      // เปลี่ยน selection ต้องทำให้รายละเอียดเก่าหายจากจอทันที ไม่เช่นนั้นช่วงที่ request ใหม่
+      // ยังไม่ตอบ ปุ่มยืมเกม/รับบัตรจะยังยิงด้วย session ของโต๊ะก่อนหน้าได้
+      sessionRequestVersion.current += 1;
+      sharedSessionsRequestVersion.current += 1;
+      setSession(null);
+      setSessionLoadingId(sessionId);
+      setSharedSessionDetails({});
+      setSharedSessionsLoading(false);
+      setSharedSessionsError('');
+      setCopyId('');
+      setReturnNote('');
+      setIdLoanId('');
+      setSeatingTargetId('');
       // Guest access belongs to a session. Never leave the previous table's QR visible after the
       // operator selects another table, even though the old URL remains valid for that old session.
       setGuestLink('');
@@ -480,9 +502,26 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
   }, [call, onServiceCallsChange]);
 
   const loadSession = useCallback(async (sessionId: string, signal?: AbortSignal) => {
-    if (!sessionId) { setSession(null); return; }
-    const data = await call('session', { sessionId }, signal);
-    setSession((data.session ?? null) as SessionDetail | null);
+    if (!sessionId) {
+      sessionRequestVersion.current += 1;
+      setSession(null);
+      setSessionLoadingId('');
+      return;
+    }
+    const requestVersion = ++sessionRequestVersion.current;
+    if (selectedIdRef.current === sessionId) setSessionLoadingId(sessionId);
+    try {
+      const data = await call('session', { sessionId }, signal);
+      const next = (data.session ?? null) as SessionDetail | null;
+      if (next && next.id !== sessionId) throw new Error('ข้อมูลโต๊ะที่ตอบกลับไม่ตรงกับโต๊ะที่เลือก');
+      // request ของโต๊ะก่อนหน้าอาจตอบช้ากว่าหลังผู้ใช้สลับโต๊ะแล้ว — ห้ามให้มันทับจอใหม่
+      if (requestVersion !== sessionRequestVersion.current || selectedIdRef.current !== sessionId) return;
+      setSession(next);
+    } finally {
+      if (requestVersion === sessionRequestVersion.current && selectedIdRef.current === sessionId) {
+        setSessionLoadingId('');
+      }
+    }
   }, [call]);
 
   const feed = useLiveRefresh({
@@ -581,6 +620,48 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
   );
   const overdueCount = attention.filter((table) => table.openSession?.alertStatus === 'OVERDUE').length;
   const endingSoonCount = attention.length - overdueCount;
+  const activeTable = session
+    ? (workspace?.floor.tables ?? []).find((table) => table.id === session.tableId) ?? null
+    : null;
+  const activeSeating = activeTable?.openSession ?? null;
+  const sharedSessionKey = (activeSeating?.sessionIds ?? (session ? [session.id] : [])).join('|');
+
+  // หลังรวมโต๊ะ loan ยังเป็นของ session เดิม จึงต้องอ่านรายละเอียดของทุก session ที่แชร์
+  // seating เดียวกัน ไม่ใช่ตีความรายละเอียดของ session แรกว่าเป็นทรัพย์สินทั้งโต๊ะ
+  useEffect(() => {
+    const ids = sharedSessionKey ? sharedSessionKey.split('|') : [];
+    if (!session || ids.length <= 1) {
+      sharedSessionsRequestVersion.current += 1;
+      setSharedSessionDetails(session ? { [session.id]: session } : {});
+      setSharedSessionsLoading(false);
+      setSharedSessionsError('');
+      return;
+    }
+
+    const requestVersion = ++sharedSessionsRequestVersion.current;
+    let cancelled = false;
+    setSharedSessionDetails((current) => ({ ...current, [session.id]: session }));
+    setSharedSessionsLoading(true);
+    setSharedSessionsError('');
+    void Promise.all(ids.map(async (id) => {
+      if (id === session.id) return session;
+      const data = await call('session', { sessionId: id });
+      const detail = (data.session ?? null) as SessionDetail | null;
+      if (!detail || detail.id !== id) throw new Error('โหลดข้อมูลชุดลูกค้าที่รวมโต๊ะไม่ครบ');
+      return detail;
+    })).then((details) => {
+      if (cancelled || requestVersion !== sharedSessionsRequestVersion.current) return;
+      setSharedSessionDetails(Object.fromEntries(details.map((detail) => [detail.id, detail])));
+    }).catch((cause) => {
+      if (cancelled || requestVersion !== sharedSessionsRequestVersion.current) return;
+      setSharedSessionsError(cause instanceof Error ? cause.message : 'โหลดเกมของโต๊ะที่รวมกันไม่ครบ');
+    }).finally(() => {
+      if (!cancelled && requestVersion === sharedSessionsRequestVersion.current) {
+        setSharedSessionsLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [call, session, sharedSessionKey]);
 
   async function run(
     name: string,
@@ -704,16 +785,24 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
       : 'ยังไม่ได้ข้อมูลใหม่ — ตัวเลขบนจอนี้อาจไม่ตรงกับหน้าร้าน';
 
   const openForm = openingTable && !openingTable.openSession;
-  const activeTable = session
-    ? (workspace?.floor.tables ?? []).find((table) => table.id === session.tableId) ?? null
-    : null;
-  const activeSeating = activeTable?.openSession ?? null;
   const seatingTargets = (workspace?.floor.tables ?? []).filter(
     (table) => !table.blocked && table.id !== session?.tableId,
   );
   // `9.91`: โต๊ะที่ถูกรวมไว้ ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดที่เลือก ส่วนรวมโต๊ะพาไปทั้งโต๊ะ —
   // ปุ่มเดียวทำสองความหมาย จอจึงต้องบอกก่อนกด ไม่ใช่ให้รู้ตอนอีกชุดหายไปจากโต๊ะ
   const sharedSeating = (activeSeating?.sessionCount ?? 1) > 1;
+  const seatingSessionIds = activeSeating?.sessionIds ?? (session ? [session.id] : []);
+  const seatingSessions = seatingSessionIds
+    .map((id) => sharedSessionDetails[id] ?? (id === session?.id ? session : null))
+    .filter((detail): detail is SessionDetail => Boolean(detail));
+  const seatingLoans = seatingSessions.flatMap((detail) =>
+    detail.games.map((loan) => ({ detail, loan })),
+  );
+  const seatingHolds = seatingSessions.flatMap((detail) =>
+    detail.identityHolds.map((hold) => ({ detail, hold })),
+  );
+  const sharedSessionsReady = !sharedSeating
+    || (!sharedSessionsLoading && !sharedSessionsError && seatingSessions.length === seatingSessionIds.length);
   const money = moneySoFar(session?.billingGroups ?? []);
   const sessionCalls = (workspace?.serviceCalls ?? []).filter(
     (item) => item.sessionId === session?.id,
@@ -1228,6 +1317,12 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
             ? 'ใช้ปุ่มโหลดใหม่ด้านซ้ายเพื่อเชื่อมต่ออีกครั้ง'
             : 'รายละเอียดจะพร้อมทันทีที่ผังโต๊ะโหลดสำเร็จ'}</div>
         </div>
+      ) : !openForm && !session && selectedId && sessionLoadingId === selectedId ? (
+        <div className="pos-bg-detail-empty" role="status">
+          <span className="pos-bg-loading-spinner" aria-hidden="true" />
+          <div className="pos-block-title">กำลังโหลดรายละเอียดโต๊ะ</div>
+          <div className="pos-block-hint">ระหว่างนี้ระบบพักคำสั่งยืมเกมและรับบัตร เพื่อไม่ให้ลงผิดชุดลูกค้า</div>
+        </div>
       ) : !openForm && !session && (
         <div className="pos-bg-detail-empty">
           <div className="pos-bg-detail-empty-icon" aria-hidden="true">↖</div>
@@ -1439,10 +1534,16 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
           </div>
 
           <div className="pos-bg-session-summary" aria-label="สรุปโต๊ะ">
-            <div><b>{session.participants.filter((participant) => !participant.leftAt).length}</b><span>คน</span></div>
-            <div><b>{session.billingGroups.length}</b><span>กลุ่มบิล</span></div>
-            <div><b>{session.games.filter((loan) => !loan.returnedAt).length}</b><span>เกมยืม</span></div>
-            <div><b>{session.identityHolds.filter((hold) => hold.status === 'HELD').length}</b><span>บัตรที่ถือ</span></div>
+            <div><b>{activeSeating?.guestCount ?? session.participants.filter((participant) => !participant.leftAt).length}</b><span>คน</span></div>
+            <div><b>{activeSeating?.billingGroupCount ?? session.billingGroups.length}</b><span>กลุ่มบิล</span></div>
+            <div>
+              <b>{sharedSessionsReady ? seatingLoans.filter(({ loan }) => !loan.returnedAt).length : '…'}</b>
+              <span>เกมยืม{sharedSeating ? 'รวม' : ''}</span>
+            </div>
+            <div>
+              <b>{sharedSessionsReady ? seatingHolds.filter(({ hold }) => hold.status === 'HELD').length : '…'}</b>
+              <span>บัตรที่ถือ{sharedSeating ? 'รวม' : ''}</span>
+            </div>
           </div>
 
           {detailTab === 'overview' && (
@@ -1497,7 +1598,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
             {([
               ['overview', 'ภาพรวม'],
               ['tab', `ของในบิล${session.billingGroups.some((group) => group.tabItems.length > 0) ? ` (${session.billingGroups.reduce((sum, group) => sum + group.tabItems.length, 0)})` : ''}`],
-              ['games', `เกมและบัตร${session.games.some((loan) => !loan.returnedAt) || session.identityHolds.some((hold) => hold.status === 'HELD') ? ' •' : ''}`],
+              ['games', `เกมและบัตร${seatingLoans.some(({ loan }) => !loan.returnedAt) || seatingHolds.some(({ hold }) => hold.status === 'HELD') ? ' •' : ''}`],
             ] as const).map(([value, label]) => (
               <button key={value} type="button" role="tab" aria-selected={detailTab === value}
                 className={detailTab === value ? 'pos-bg-detail-tab pos-bg-detail-tab--on' : 'pos-bg-detail-tab'}
@@ -1511,14 +1612,24 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
           {(activeSeating?.sessionIds?.length ?? 0) > 1 && (
             <div className="pos-chips pos-bg-session-parties">
               <span className="pos-block-hint">ชุดลูกค้าที่โต๊ะนี้:</span>
-              {activeSeating!.sessionIds!.map((id, index) => (
-                <button key={id} type="button"
-                  className={`pos-chip ${id === session.id ? 'pos-chip--personal' : ''}`}
-                  style={{ border: 'none', cursor: 'pointer' }}
-                  onClick={() => selectTable(id)}>
-                  ชุด {index + 1}{id === session.id ? ' · กำลังดู' : ''}
-                </button>
-              ))}
+              {activeSeating!.sessionIds!.map((id, index) => {
+                const detail = sharedSessionDetails[id] ?? (id === session.id ? session : null);
+                const origin = detail?.originTableCode ? `เดิม ${detail.originTableCode}` : `ชุด ${index + 1}`;
+                const people = detail?.participants.filter((participant) => !participant.leftAt).length;
+                const games = detail?.games.filter((loan) => !loan.returnedAt).length;
+                return (
+                  <button key={id} type="button"
+                    className={`pos-chip ${id === session.id ? 'pos-chip--personal' : ''}`}
+                    style={{ border: 'none', cursor: 'pointer' }}
+                    onClick={() => selectTable(id)}>
+                    {origin}{detail ? ` · ${people} คน · ${games} เกม` : ' · กำลังโหลด'}
+                    {id === session.id ? ' · กำลังดู' : ''}
+                  </button>
+                );
+              })}
+              {sharedSessionsError && (
+                <span className="pos-block-hint" role="alert">โหลดทรัพย์สินรวมไม่ครบ · {sharedSessionsError}</span>
+              )}
             </div>
           )}
 
@@ -1833,13 +1944,23 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
           {/* เกมที่ยืมอยู่ */}
           {detailTab === 'games' && <>
           <div className="pos-block pos-bg-section pos-bg-section--games">
-            <div className="pos-block-title">เกมที่ยืม</div>
-            {session.games.length === 0 && <div className="pos-block-hint">ยังไม่ได้ยืมกล่องเกม</div>}
-            {session.games.map((loan) => (
+            <div className="pos-block-title">เกมที่ยืม{sharedSeating ? 'ทั้งหมดบนโต๊ะนี้' : ''}</div>
+            {sharedSessionsLoading && sharedSeating && (
+              <div className="pos-block-hint">กำลังตรวจเกมของทุกชุดลูกค้า…</div>
+            )}
+            {!sharedSessionsLoading && seatingLoans.length === 0 && (
+              <div className="pos-block-hint">ยังไม่ได้ยืมกล่องเกม</div>
+            )}
+            {seatingLoans.map(({ detail, loan }) => (
               <div key={loan.id} className="pos-bg-row">
                 <div className="pos-bg-row-main">
                   {loan.title ?? 'เกม'}
                   <span style={{ color: 'var(--pos-muted)' }}>{' · '}{loan.copyCode ?? '-'}{' · '}{loan.status}</span>
+                  {sharedSeating && (
+                    <span style={{ color: 'var(--pos-muted)' }}>
+                      {' · '}{detail.originTableCode ? `เดิม ${detail.originTableCode}` : 'ชุดลูกค้าเดิม'}
+                    </span>
+                  )}
                 </div>
                 {!loan.returnedAt && (
                   <div className="pos-bg-row-actions">
@@ -1863,7 +1984,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
             {session.status === 'OPEN' && (
               <div className="pos-bg-form">
                 <label className="pos-bg-field">
-                  ให้ยืมกล่องเกม
+                  ให้ยืมกล่องเกม{sharedSeating ? `แก่ชุดเดิม ${session.originTableCode}` : ''}
                   <select value={copyId} onChange={(e) => setCopyId(e.target.value)}>
                     <option value="">เลือกกล่องที่ว่าง</option>
                     {(workspace?.library ?? []).map((title) => (
@@ -1894,11 +2015,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
               **จอนี้ไม่มีทางอ่านเลขเต็ม** — จอเครื่องขายหันออกทางลูกค้าและแชร์กันทั้งกะ
               การอ่านเลขกลับออกมาอยู่ที่ /admin/board-game ซึ่งมีสิทธิ์ของตัวเอง */}
           <div className="pos-block pos-bg-section pos-bg-section--identity">
-            <div className="pos-block-title">บัตรที่รับไว้</div>
-            {session.identityHolds.filter((hold) => hold.status === 'HELD').length === 0 && (
+            <div className="pos-block-title">บัตรที่รับไว้{sharedSeating ? 'ทั้งหมดบนโต๊ะนี้' : ''}</div>
+            {sharedSessionsLoading && sharedSeating && (
+              <div className="pos-block-hint">กำลังตรวจบัตรของทุกชุดลูกค้า…</div>
+            )}
+            {!sharedSessionsLoading && seatingHolds.filter(({ hold }) => hold.status === 'HELD').length === 0 && (
               <div className="pos-block-hint">ไม่ได้ถือบัตรของโต๊ะนี้ไว้</div>
             )}
-            {session.identityHolds.map((hold) => (
+            {seatingHolds.map(({ detail, hold }) => (
               <div key={hold.id} className="pos-bg-row">
                 <div className="pos-bg-row-main">
                   {hold.status === 'RETURNED'
@@ -1910,6 +2034,11 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                           {hold.documentNumberTail ? ` · ลงท้าย ${hold.documentNumberTail}` : ' · ไม่ได้บันทึกเลข'}
                         </span>
                       </>}
+                  {sharedSeating && (
+                    <span style={{ color: 'var(--pos-muted)' }}>
+                      {' · '}{detail.originTableCode ? `เดิม ${detail.originTableCode}` : 'ชุดลูกค้าเดิม'}
+                    </span>
+                  )}
                 </div>
                 {hold.status === 'HELD' && (
                   <button type="button" className="pos-ret-btn" disabled={busy === `id-release-${hold.id}`}
@@ -1925,7 +2054,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
             {session.status === 'OPEN' && (
               <div className="pos-bg-form">
                 <label className="pos-bg-field">
-                  ชนิดบัตร
+                  ชนิดบัตร{sharedSeating ? ` · ชุดเดิม ${session.originTableCode}` : ''}
                   <select value={idKind} onChange={(e) => setIdKind(e.target.value)}>
                     {Object.entries(IDENTITY_KIND_LABEL).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
