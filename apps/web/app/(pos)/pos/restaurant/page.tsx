@@ -2165,7 +2165,7 @@ export default function RestaurantPosPage() {
   // สองสถานะนี้ไม่มีแถบซ้าย (ยังไม่มีอะไรให้สลับ) จึงใช้ .pagePlain ที่ไม่ใช่ grid สองคอลัมน์
   // ไม่งั้นเนื้อหาไปกองอยู่คอลัมน์ที่สองโดยเว้นช่องว่าง 64px ทางซ้ายไว้เฉย ๆ
   if (!ready || loading) return <main className={`${styles.page} ${styles.pagePlain}`}><div className={styles.empty}><Spin size="large" /></div></main>;
-  if (!token) return <main className={`${styles.page} ${styles.pagePlain}`}><Alert type="warning" showIcon message={t("pos_restaurant.no_token_title")} description={t("pos_restaurant.no_token_desc")} /></main>;
+  if (!token) return <main className={`${styles.page} ${styles.pagePlain}`}><Alert closable type="warning" showIcon message={t("pos_restaurant.no_token_title")} description={t("pos_restaurant.no_token_desc")} /></main>;
 
   // ป้ายในแถบกว้าง 64px ต้องสั้นพอไม่ตัดคำ ("สั่งอาหาร" เหลือ "สั่ง" แล้วอ่านเป็นคำอื่น)
   // ชื่อเต็มอยู่ที่ title/aria-label เพื่อให้ screen reader และ tooltip ยังได้ความหมายครบ
@@ -2214,12 +2214,12 @@ export default function RestaurantPosPage() {
           ปุ่มเปิดกะกดไม่ได้เพราะยังไม่ได้เลือกผู้ปฏิบัติงาน ซึ่งเป็นเหตุผลที่เห็นได้แค่จาก
           title ของปุ่ม (จอสัมผัสไม่มี hover ให้อ่าน) → พนักงานงงว่าต้องทำอะไรก่อน */}
       {!operatorReady
-        ? <Alert type="warning" showIcon message={t("pos_restaurant.no_operator_blocker")} />
-        : !session?.shift && <Alert type="warning" showIcon message={t("pos_restaurant.no_shift_blocker")} />}
+        ? <Alert closable type="warning" showIcon message={t("pos_restaurant.no_operator_blocker")} />
+        : !session?.shift && <Alert closable type="warning" showIcon message={t("pos_restaurant.no_shift_blocker")} />}
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError("")} />}
       {/* ⚠️ เสียงที่ถูกบล็อกต้อง "เห็นได้" — ของเดิมเงียบไปเฉย ๆ แล้วครัวอ่านว่าไม่มีออร์เดอร์เข้า
           เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ ซึ่งเกิดทุกครั้งที่รีเฟรชหน้า/แท็บเล็ตรีบูต */}
-      {alerts.blocked && <Alert type="warning" showIcon
+      {alerts.blocked && <Alert closable type="warning" showIcon
         message={t("pos_alerts.blocked_banner")}
         action={<Button size="small" onClick={() => alerts.preview(alerts.settings.tones.ORDER_NEW)}>{t("pos_alerts.blocked_action")}</Button>} />}
 
@@ -2346,9 +2346,9 @@ export default function RestaurantPosPage() {
                 <strong><span className={styles.baht}>฿</span>{money(item.estimatedUnitPrice * item.packQty)}</strong>
               </div>)}</div>
               <div className={styles.qrTotal}><span>{t("pos_restaurant.estimated_total")}</span><b><span className={styles.baht}>฿</span>{money(selectedQrSubmission.estimatedTotal)}</b></div>
-              {selectedQrSubmission.rejectionReason && <Alert type="error" showIcon message={t("pos_restaurant.qr_reject_reason")} description={selectedQrSubmission.rejectionReason} />}
+              {selectedQrSubmission.rejectionReason && <Alert closable type="error" showIcon message={t("pos_restaurant.qr_reject_reason")} description={selectedQrSubmission.rejectionReason} />}
               {selectedQrSubmission.status === "PENDING" && <>
-                <Alert type="info" showIcon message={t("pos_restaurant.qr_accept_once")} description={t("pos_restaurant.qr_accept_once_desc")} />
+                <Alert closable type="info" showIcon message={t("pos_restaurant.qr_accept_once")} description={t("pos_restaurant.qr_accept_once_desc")} />
                 <div className={styles.qrActions}>
                   <button type="button" className={`${styles.btn} ${styles.btnDanger}`} disabled={!operatorReady || !session?.shift} onClick={() => { setQrRejectReason(""); setQrRejectOpen(true); }}>{t("pos_restaurant.qr_rejected")}</button>
                   <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady || !session?.shift} onClick={() => void acceptQrSubmission(selectedQrSubmission)}>{t("pos_restaurant.qr_accept")}</button>
@@ -2830,7 +2830,7 @@ export default function RestaurantPosPage() {
     </Modal>
     <Modal title={t("pos_restaurant.operator")} open={operatorOpen} onCancel={() => setOperatorOpen(false)} onOk={() => setOperatorOpen(false)} okText={t("pos_restaurant.use_this_account")} okButtonProps={{ disabled: !operatorReady }} getContainer={modalContainer}>
       <div className={styles.modalGrid}>
-        <Alert type="info" showIcon message={t("pos_restaurant.operator_scope_note")} />
+        <Alert closable type="info" showIcon message={t("pos_restaurant.operator_scope_note")} />
         <label>{t("pos_restaurant.staff")}<select value={actorUserId} onChange={(event) => setActorUserId(event.target.value)}><option value="">{t("pos_restaurant.staff_select")}</option>{staff.map((person) => <option key={person.id} value={person.id} disabled={!person.hasPin}>{person.name ?? person.email ?? person.id}{person.hasPin ? "" : t("pos_restaurant.no_pin_yet")}</option>)}</select></label>
         <label>PIN<input value={actorPin} onChange={(event) => setActorPin(event.target.value)} type="password" inputMode="numeric" autoComplete="off" placeholder="PIN" /></label>
       </div>
@@ -2919,12 +2919,12 @@ export default function RestaurantPosPage() {
       okText={t("pos_restaurant.confirm_reject")} okButtonProps={{ danger: true, disabled: !qrRejectReason.trim() }}
       confirmLoading={working} getContainer={modalContainer}>
       <div className={styles.modalGrid}>
-        <Alert type="warning" showIcon message={t("pos_restaurant.reject_visible_note")} />
+        <Alert closable type="warning" showIcon message={t("pos_restaurant.reject_visible_note")} />
         <label>{t("pos_restaurant.reason_required")}<textarea rows={3} maxLength={300} value={qrRejectReason}
           onChange={(event) => setQrRejectReason(event.target.value)} placeholder={t("pos_restaurant.reject_reason_example")} /></label>
       </div>
     </Modal>
-    <Modal title={shiftModal === "OPEN" ? t("pos_restaurant.open_shift") : t("pos_restaurant.shift_close")} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okButtonProps={{ disabled: !operatorReady }} okText={shiftModal === "OPEN" ? t("pos_restaurant.open_shift") : t("pos_restaurant.confirm_close_shift")} getContainer={modalContainer}><div className={styles.modalGrid}><Alert type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? t("pos_restaurant.opening_float") : t("pos_restaurant.counted_cash")} /><label>{t("pos_restaurant.amount")}<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
+    <Modal title={shiftModal === "OPEN" ? t("pos_restaurant.open_shift") : t("pos_restaurant.shift_close")} open={Boolean(shiftModal)} onCancel={() => setShiftModal(null)} onOk={() => void changeShift()} confirmLoading={working} okButtonProps={{ disabled: !operatorReady }} okText={shiftModal === "OPEN" ? t("pos_restaurant.open_shift") : t("pos_restaurant.confirm_close_shift")} getContainer={modalContainer}><div className={styles.modalGrid}><Alert closable type={shiftModal === "OPEN" ? "info" : "warning"} message={shiftModal === "OPEN" ? t("pos_restaurant.opening_float") : t("pos_restaurant.counted_cash")} /><label>{t("pos_restaurant.amount")}<input type="number" min={0} step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} /></label></div></Modal>
     {/* กล่องนี้มีสองงานคนละชั้น: แถบสรุปคือ "งานของแคชเชียร์" (ทอนเท่าไร ครัวได้กี่ใบ
         คิดซ้ำหรือเปล่า) ส่วนกระดาษคือ "สิ่งที่ลูกค้าจะได้" — ยอด/ส่วนลด/VAT/แต้ม อยู่บน
         กระดาษที่เดียว ไม่ซ้ำกับแถบสรุป เพราะเลขเดียวกันสองที่คือจุดที่เริ่ม drift
@@ -2936,7 +2936,7 @@ export default function RestaurantPosPage() {
         <div className={styles.summaryGrid}><span>{t("pos_restaurant.change_due")}<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>{t("pos_restaurant.kitchen_tickets")}<b>{settlementReceipt.result.kitchenTickets}</b></span><span>{t("pos_restaurant.status")}<b>{settlementReceipt.result.replayed ? t("pos_restaurant.replayed") : t("pos_restaurant.amount_received")}</b></span></div>
         {receiptPayload(settlementReceipt)
           ? <ReceiptPaper payload={receiptPayload(settlementReceipt)!} />
-          : <Alert type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_retry_from_bills")} />}
+          : <Alert closable type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_retry_from_bills")} />}
         <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> {t("pos_restaurant.print_receipt")}</button></div>
         <button type="button" className={styles.btn} onClick={() => setSettlementReceipt(null)}>{t("pos_restaurant.back_to_floor")}</button>
       </div>}
@@ -2946,10 +2946,10 @@ export default function RestaurantPosPage() {
         บวกแล้ว **ไม่เท่ายอดรวม** โดยไม่มีอะไรอธิบาย — ตอนนี้เรนเดอร์กระดาษจริงทั้งใบแทน */}
     <Modal title={selectedReceipt && !("result" in selectedReceipt) ? selectedReceipt.docNo ?? t("pos_restaurant.bill_details") : t("pos_restaurant.bill_details")} open={Boolean(selectedReceipt)} onCancel={() => setSelectedReceipt(null)} footer={null} width={620} getContainer={modalContainer} destroyOnClose>
       {selectedReceipt && !("result" in selectedReceipt) && <div className={styles.modalGrid}>
-        {billHistoryNote(selectedReceipt, t) && <Alert type="warning" showIcon message={t("pos_restaurant.bill_history_message", { status: billHistoryNote(selectedReceipt, t) })} description={t("pos_restaurant.bill_history_description")} />}
+        {billHistoryNote(selectedReceipt, t) && <Alert closable type="warning" showIcon message={t("pos_restaurant.bill_history_message", { status: billHistoryNote(selectedReceipt, t) })} description={t("pos_restaurant.bill_history_description")} />}
         {receiptPayload(selectedReceipt)
           ? <ReceiptPaper payload={receiptPayload(selectedReceipt)!} />
-          : <Alert type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_incomplete_prices")} />}
+          : <Alert closable type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_incomplete_prices")} />}
         <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(selectedReceipt)}><PrinterOutlined /> {billHistoryNote(selectedReceipt, t) ? t("pos_restaurant.print_original_sale") : t("pos_restaurant.reprint")}</button></div>
       </div>}
     </Modal>
@@ -2964,7 +2964,7 @@ export default function RestaurantPosPage() {
         <Button key="send" type="primary" icon={<CustomerServiceOutlined />} loading={supportWorking === "send"} disabled={Boolean(supportWorking) || !supportConfirmed} onClick={() => void supportAction("send")}>{t("pos_restaurant.send_to_support")}</Button>,
       ]}
     >
-      <Alert type="info" showIcon message={t("pos_restaurant.support_scope")} />
+      <Alert closable type="info" showIcon message={t("pos_restaurant.support_scope")} />
       <Input.TextArea style={{ marginTop: 16 }} rows={4} maxLength={2000} showCount value={supportDescription} onChange={(event) => setSupportDescription(event.target.value)} placeholder={t("pos_restaurant.support_description_placeholder")} />
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{t("pos_restaurant.support_consent")}</Checkbox>
     </Modal>
@@ -3009,7 +3009,7 @@ export default function RestaurantPosPage() {
         {/* เงินทอนต้องเห็น "ตอนถือเงินลูกค้าอยู่ในมือ" ไม่ใช่หลังกดยืนยันไปแล้ว — หน้าค้าปลีก
             แสดงมาตลอด (`เงินทอนรายการนี้`) หน้านี้เคยให้แคชเชียร์คิดเองหรือรอดูในใบเสร็จ
             · ขึ้นเฉพาะตอนกรอกครบและไม่ติดกฎ ไม่งั้นจะโชว์เลขทอนของยอดที่ยังผิดอยู่ */}
-        {cashChangeOf(payment) != null && <span className={styles.cashChange}>{t("pos_restaurant.payment_change")} <b>฿{money(cashChangeOf(payment)!)}</b></span>}</label> : <label>{t("pos_restaurant.reference_no")}<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>{t("pos_restaurant.remove_payment_channel", { number: index + 1 })}</button>}</div>)}<button type="button" className={styles.btn} onClick={() => setPayments((current) => appendSplitPaymentRow(current, checkoutDue, `pay-${Date.now()}`))}>{t("pos_restaurant.add_payment_channel")}</button><Alert type={checkoutBlock ? "warning" : "success"} showIcon message={checkoutBlock ? t("pos_restaurant.payment_total_blocked", { amount: money(paymentTotal), reason: checkoutBlock }) : t("pos_restaurant.payment_total_complete", { amount: money(paymentTotal) })} /></div>}</Modal>
+        {cashChangeOf(payment) != null && <span className={styles.cashChange}>{t("pos_restaurant.payment_change")} <b>฿{money(cashChangeOf(payment)!)}</b></span>}</label> : <label>{t("pos_restaurant.reference_no")}<input value={payment.ref} onChange={(event) => setPayments((current) => current.map((row) => row.id === payment.id ? { ...row, ref: event.target.value } : row))} /></label>}{payments.length > 1 && <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => setPayments((current) => current.filter((row) => row.id !== payment.id))}>{t("pos_restaurant.remove_payment_channel", { number: index + 1 })}</button>}</div>)}<button type="button" className={styles.btn} onClick={() => setPayments((current) => appendSplitPaymentRow(current, checkoutDue, `pay-${Date.now()}`))}>{t("pos_restaurant.add_payment_channel")}</button><Alert closable type={checkoutBlock ? "warning" : "success"} showIcon message={checkoutBlock ? t("pos_restaurant.payment_total_blocked", { amount: money(paymentTotal), reason: checkoutBlock }) : t("pos_restaurant.payment_total_complete", { amount: money(paymentTotal) })} /></div>}</Modal>
     <Modal title={t("pos_restaurant.manage_check_title", { table: check?.tableName ?? "" })} open={moreOpen} onCancel={() => setMoreOpen(false)} footer={null} getContainer={modalContainer}>
       <div className={styles.sheetActions}>
         <button type="button" className={styles.btn}
@@ -3094,7 +3094,7 @@ export default function RestaurantPosPage() {
       okButtonProps={{ disabled: splitItemIds.length === 0 || splitItemIds.length >= splittableItems.length }}
       getContainer={modalContainer} destroyOnClose>
       <div className={styles.modalGrid}>
-        <Alert type="info" showIcon message={t("pos_restaurant.split_select_lines")}
+        <Alert closable type="info" showIcon message={t("pos_restaurant.split_select_lines")}
           description={t("pos_restaurant.split_description")} />
         <div className={styles.splitList}>
           {splittableItems.map((item) => {
@@ -3113,7 +3113,7 @@ export default function RestaurantPosPage() {
           })}
         </div>
         {splitItemIds.length >= splittableItems.length && splittableItems.length > 0 &&
-          <Alert type="warning" showIcon message={t("pos_restaurant.split_keep_one")} />}
+          <Alert closable type="warning" showIcon message={t("pos_restaurant.split_keep_one")} />}
       </div>
     </Modal>
     <Modal title={t("pos_restaurant.merge_check_title", { table: check?.tableName ?? "" })} open={mergeOpen} onCancel={() => setMergeOpen(false)}
@@ -3122,7 +3122,7 @@ export default function RestaurantPosPage() {
       <div className={styles.modalGrid}>
         {/* ⚠️ ห้ามเขียนว่า "โต๊ะจะว่างทันที" ลอย ๆ — รวมบิล 1 เข้าบิล 2 ของโต๊ะเดียวกัน
             โต๊ะนั้นยังมีคนนั่งอยู่ · ข้อความที่จริงเฉพาะบางกรณีคือข้อความที่สอนให้คนเลิกอ่าน */}
-        <Alert type="warning" showIcon message={t("pos_restaurant.merge_warning")}
+        <Alert closable type="warning" showIcon message={t("pos_restaurant.merge_warning")}
           description={t("pos_restaurant.merge_description")} />
         <label>{t("pos_restaurant.destination_check")}
           <select value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)}>
@@ -3157,9 +3157,9 @@ export default function RestaurantPosPage() {
       okText={t("pos_restaurant.open_table_now")} okButtonProps={{ disabled: !seatTableId }}
       getContainer={modalContainer} destroyOnClose>
       <div className={styles.modalGrid}>
-        <Alert type="info" showIcon message={t("pos_restaurant.seat_opens_check")}
+        <Alert closable type="info" showIcon message={t("pos_restaurant.seat_opens_check")}
           description={t("pos_restaurant.seat_guest_count_note")} />
-        {seatEntry?.preferredTableCode && <Alert type="warning" showIcon
+        {seatEntry?.preferredTableCode && <Alert closable type="warning" showIcon
           message={t("pos_restaurant.preferred_table", { table: seatEntry.preferredTableCode })}
           description={t("pos_restaurant.preferred_table_note")} />}
         <label>{t("pos_restaurant.free_table")}
@@ -3172,7 +3172,7 @@ export default function RestaurantPosPage() {
       </div>
     </Modal>
     <Modal title={t("pos_restaurant.move_table")} open={moveOpen} onCancel={() => setMoveOpen(false)} onOk={() => void action("move", { targetTableId }).then(() => setMoveOpen(false))} confirmLoading={working} okText={t("pos_restaurant.move")} getContainer={modalContainer}><div className={styles.modalGrid}><label>{t("pos_restaurant.destination_table")}<select value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>{availableTables.map((table) => <option key={table.id} value={table.id}>{table.name} · {table.code}</option>)}</select></label></div></Modal>
-    <Modal title={t("pos_restaurant.cancel_check_title", { table: check?.tableName ?? "" })} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText={t("pos_restaurant.confirm_cancel")} okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert type="warning" showIcon message={t("pos_restaurant.cancel_requires_approval")} description={t("pos_restaurant.cancel_approval_description")} />}<label>{t("pos_restaurant.cancel_reason_label")}<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder={t("pos_restaurant.cancel_reason_example")} /></label>{cancelNeedsApproval && <><label>{t("pos_restaurant.approver")}<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">{t("pos_restaurant.approver_select")}</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>{t("pos_restaurant.approver_pin")}<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert type="error" showIcon message={t("pos_restaurant.no_approver")} description={t("pos_restaurant.no_approver_description")} />}</>}</div></Modal>
+    <Modal title={t("pos_restaurant.cancel_check_title", { table: check?.tableName ?? "" })} open={cancelOpen} onCancel={() => setCancelOpen(false)} onOk={() => void cancelCheck()} confirmLoading={working} okText={t("pos_restaurant.confirm_cancel")} okButtonProps={{ danger: true }} getContainer={modalContainer}><div className={styles.modalGrid}>{cancelNeedsApproval && <Alert closable type="warning" showIcon message={t("pos_restaurant.cancel_requires_approval")} description={t("pos_restaurant.cancel_approval_description")} />}<label>{t("pos_restaurant.cancel_reason_label")}<textarea rows={3} maxLength={300} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder={t("pos_restaurant.cancel_reason_example")} /></label>{cancelNeedsApproval && <><label>{t("pos_restaurant.approver")}<select value={cancelApproverId} onChange={(event) => setCancelApproverId(event.target.value)}><option value="">{t("pos_restaurant.approver_select")}</option>{voidApprovers.map((person) => <option key={person.id} value={person.id}>{person.name || person.email || person.id}</option>)}</select></label><label>{t("pos_restaurant.approver_pin")}<input type="password" inputMode="numeric" autoComplete="off" value={cancelApproverPin} onChange={(event) => setCancelApproverPin(event.target.value)} /></label>{voidApprovers.length === 0 && <Alert closable type="error" showIcon message={t("pos_restaurant.no_approver")} description={t("pos_restaurant.no_approver_description")} />}</>}</div></Modal>
     <OrderAlertSettingsModal open={alertSettingsOpen} onClose={() => setAlertSettingsOpen(false)}
       alerts={alerts} kinds={RESTAURANT_ALERT_KINDS} />
   </main>;

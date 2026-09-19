@@ -484,6 +484,8 @@
 }
 .errorBox { border-color: #ffccc7; background: #fff2f0; color: #cf1322; }
 .noticeBox button { min-height: 34px !important; padding: 5px 8px !important; white-space: nowrap; }
+.noticeBox :global(.pos-alert-close),
+.errorBox :global(.pos-alert-close) { min-height: 28px !important; padding: 0 !important; }
 
 .centerPage,
 .loginPage {

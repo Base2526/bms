@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveRefresh, usePageVisible } from '@/app/hooks/useLiveRefresh';
 import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
+import PosDismissibleAlert from '@/components/pos/PosDismissibleAlert';
 
 type Props = {
   token: string;
@@ -698,8 +699,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout }
 
   return (
     <div className="pos-bg-workspace">
-      {error && <div className="pos-card" style={{ padding: 10, borderColor: '#e8bdb8', color: 'var(--pos-danger)' }}>{error}</div>}
-      {notice && <div className="pos-card" style={{ padding: 10, color: 'var(--pos-money)' }}>{notice}</div>}
+      {error && <PosDismissibleAlert key={error} className="pos-card" style={{ padding: 10, borderColor: '#e8bdb8', color: 'var(--pos-danger)' }} onClose={() => setError('')}>{error}</PosDismissibleAlert>}
+      {notice && <PosDismissibleAlert key={notice} className="pos-card" style={{ padding: 10, color: 'var(--pos-money)' }} role="status" onClose={() => setNotice('')}>{notice}</PosDismissibleAlert>}
 
       <div className={`pos-bg-master-detail${openForm || session ? ' pos-bg-master-detail--selected' : ''}`}>
         <section className="pos-card pos-bg-master-pane" aria-label="ผังโต๊ะ">

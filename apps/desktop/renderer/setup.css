@@ -75,8 +75,27 @@ input, textarea {
 textarea { resize: vertical; min-height: 84px; }
 input:focus, textarea:focus { border-color: #1677ff; box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.13); }
 .field-hint { margin-top: 5px; color: #8a94a6; font-size: 11px; }
-.status { margin-top: 13px; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+.status { position: relative; margin-top: 13px; border-radius: 8px; padding: 10px 42px 10px 12px; font-size: 12px; line-height: 1.45; }
 .status.error { color: #cf1322; border: 1px solid #ffccc7; background: #fff2f0; }
+.status-close {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .72;
+}
+.status-close:hover,
+.status-close:focus-visible { background: rgba(207, 19, 34, .08); opacity: 1; }
 
 button {
   min-height: 46px;

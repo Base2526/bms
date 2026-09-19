@@ -56,6 +56,7 @@ import {
 } from "@/lib/pos/deviceTokenClient";
 import PosPage from "@/app/(pos)/pos/page";
 import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
+import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import styles from "./DesktopPosRenderer.module.css";
 
 type CartLine = PricedCartLine & {
@@ -698,7 +699,9 @@ export default function DesktopPosRenderer() {
         <section className={styles.gateCard}>
           <div className={styles.spinner} />
           <h1>กำลังเชื่อมต่อเครื่องขาย</h1>
-          <p>{error || "ตรวจสอบเซิร์ฟเวอร์และสิทธิ์ของอุปกรณ์…"}</p>
+          {error
+            ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert>
+            : <p>ตรวจสอบเซิร์ฟเวอร์และสิทธิ์ของอุปกรณ์…</p>}
           {error ? (
             <div className={styles.gateActions}>
               <button className={styles.primaryButton} onClick={() => void bootstrapDevice()}>ลองอีกครั้ง</button>
@@ -753,7 +756,7 @@ export default function DesktopPosRenderer() {
                 </span>
               </span>
             </label>
-            {error ? <p className={styles.errorBox}>{error}</p> : null}
+            {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
             <button className={styles.primaryButton} disabled={!cashierId || !isPosPinValid(pin) || busy}>
               {busy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
             </button>
@@ -775,7 +778,7 @@ export default function DesktopPosRenderer() {
           <label>เงินสดตั้งต้น
             <div className={styles.moneyInput}><span>฿</span><input inputMode="decimal" value={openingFloat} onChange={(event) => setOpeningFloat(event.target.value)} /></div>
           </label>
-          {error ? <p className={styles.errorBox}>{error}</p> : null}
+          {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           <button className={styles.primaryButton} disabled={busy}>{busy ? "กำลังเปิดกะ…" : "เปิดกะและเริ่มขาย"}</button>
           <button type="button" className={styles.textButton} onClick={() => { setCashier(null); setPin(""); sendFlow("SIGN_OUT"); }}>เปลี่ยนพนักงาน</button>
         </form>
@@ -982,7 +985,7 @@ export default function DesktopPosRenderer() {
                   <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อหรือ SKU" />
                 </div>
-                {(error || notice) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</div> : null}
+                {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</PosDismissibleAlert> : null}
                 <div className={styles.productGrid}>
                   {catalog.map((item) => {
                     const selection = selectPosCatalogCardVariant(item);
@@ -1043,7 +1046,7 @@ export default function DesktopPosRenderer() {
             ) : (
               <div className={styles.paymentArea}>
                 {zeroDueBoardGameBill ? (
-                  <div className={styles.zeroDueNotice}>
+                  <PosDismissibleAlert className={styles.zeroDueNotice} role="status">
                     <span aria-hidden="true">✓</span>
                     <div>
                       <strong>บิลนี้ไม่ต้องรับเงินเพิ่ม</strong>
@@ -1053,7 +1056,7 @@ export default function DesktopPosRenderer() {
                           : "ยอดสุทธิของกลุ่มนี้เป็นศูนย์"}
                       </p>
                     </div>
-                  </div>
+                  </PosDismissibleAlert>
                 ) : (
                   <>
                 <div className={styles.paymentTitle}><div><h2>วิธีชำระเงิน</h2><p>เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง</p></div><button onClick={addSplitPayment}>＋ จ่ายผสม</button></div>
@@ -1093,7 +1096,7 @@ export default function DesktopPosRenderer() {
                 </div>
                   </>
                 )}
-                {(error || notice || (!zeroDueBoardGameBill && validation.errors.length > 0)) ? <div className={error ? styles.errorBox : styles.noticeBox}>{error || notice || validation.errors[0]?.replace("ทดสอบ", "")}</div> : null}
+                {(error || notice || (!zeroDueBoardGameBill && validation.errors.length > 0)) ? <PosDismissibleAlert key={error || notice || validation.errors[0]} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice || validation.errors[0]?.replace("ทดสอบ", "")}</PosDismissibleAlert> : null}
                 <div className={styles.paymentFooter}>
                   <div><span>{validation.remaining > 0 && !zeroDueBoardGameBill ? "ยังขาด" : zeroDueBoardGameBill ? "พร้อมปิดบิล" : "พร้อมรับชำระ"}</span><strong>{validation.remaining > 0 && !zeroDueBoardGameBill ? money(validation.remaining) : money(total)}</strong></div>
                   <button className={styles.payButton} disabled={!canConfirmPayment || busy} onClick={() => void submitSale()}>{busy ? "กำลังบันทึก…" : saleAttemptRef.current ? "ลองบันทึกซ้ำด้วยรหัสเดิม" : zeroDueBoardGameBill ? "ยืนยันปิดบิล" : `ยืนยันรับชำระ ${money(total)}`}</button>

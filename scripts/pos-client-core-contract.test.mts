@@ -22,6 +22,18 @@ const desktopRenderer = readFileSync(
   new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),
   "utf8",
 );
+const restaurantRenderer = readFileSync(
+  new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url),
+  "utf8",
+);
+const retailRenderer = readFileSync(
+  new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url),
+  "utf8",
+);
+const boardGameRenderer = readFileSync(
+  new URL("../apps/web/components/pos/BoardGamePanel.tsx", import.meta.url),
+  "utf8",
+);
 
 test("desktop and native register flow requires a verified device, cashier PIN, and open shift", () => {
   let state = initialPosClientFlow(true);
@@ -129,4 +141,18 @@ test("desktop checkout does not repeat the payment selector for a single tender"
     /const paymentCount = payments\.length;[\s\S]*?\}, \[paymentCount, total\]\);/,
     "returning from split to one tender must restore the authoritative total",
   );
+});
+
+test("desktop POS alerts expose a close control on every operating surface", () => {
+  const restaurantAlerts = restaurantRenderer.match(/<Alert\b[\s\S]*?\/>/g) ?? [];
+  assert.ok(restaurantAlerts.length > 0, "restaurant POS should render operational alerts");
+  restaurantAlerts.forEach((alert, index) => {
+    assert.match(alert, /\bclosable\b/, `restaurant Alert ${index + 1} must expose a close button`);
+  });
+
+  assert.match(retailRenderer, /PosDismissibleAlert/);
+  assert.doesNotMatch(retailRenderer, /<div className="pos-note(?:\s|"|`)/);
+  assert.match(boardGameRenderer, /PosDismissibleAlert/);
+  assert.match(desktopRenderer, /PosDismissibleAlert/);
+  assert.doesNotMatch(desktopRenderer, /<(?:div|p) className=\{styles\.(?:errorBox|noticeBox)\}/);
 });
