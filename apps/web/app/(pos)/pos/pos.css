@@ -1878,6 +1878,8 @@
 .pos-bg-player-name span { display: block; }
 .pos-bg-player-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .pos-bg-player-name span { margin-top: 1px; color: var(--pos-muted); font-size: 10px; }
+.pos-bg-player-name .pos-bg-player-rate-line { color: var(--pos-text); font-weight: 550; }
+.pos-bg-player-name .pos-bg-player-time-line { margin-top: 3px; font-variant-numeric: tabular-nums; }
 .pos-bg-player-menu { position: relative; }
 .pos-bg-player-menu > summary {
   width: 28px;
@@ -1954,6 +1956,8 @@
 .pos-bg-table-body { margin-top: 6px; font-size: 12px; }
 .pos-bg-table-state { display: flex; gap: 5px; align-items: center; color: var(--pos-muted); font-size: 11px; }
 .pos-bg-table-state--danger { color: var(--pos-danger); font-weight: 650; }
+.pos-bg-table-clock { margin-top: 3px; color: var(--pos-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.pos-bg-table-clock--danger { color: var(--pos-danger); font-weight: 650; }
 .pos-bg-table-money { margin-top: 6px; font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .pos-bg-table-meta { margin-top: 7px; display: flex; gap: 10px; flex-wrap: wrap; color: var(--pos-muted); font-size: 10px; }
 
@@ -1966,6 +1970,127 @@
 .pos-bg-row-main { font-size: 13px; flex: 1 1 60%; min-width: 0; }
 .pos-bg-row-main--past { opacity: 0.55; }
 .pos-bg-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ปฏิทินการจอง — วันคือแกนหลักของงาน ไม่ใช่ช่องกรองอีกช่องข้าง datetime-local
+   รายการจองของเดือนอยู่บนภาพเดียวกัน และการเลือกวันเป็นทั้งตัวกรองกับวันที่ของรายการใหม่ */
+.pos-bg-reservation-tools {
+  margin-top: 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pos-bg-reservation-tools > .pos-bg-field { flex: 1 1 260px; }
+.pos-bg-reservation-month-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+.pos-bg-reservation-month-actions strong {
+  min-width: 150px;
+  color: var(--pos-text);
+  font-size: 13px;
+  text-align: center;
+}
+.pos-root .pos-bg-reservation-month-actions > button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+.pos-bg-reservation-calendar {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.pos-bg-reservation-weekday {
+  padding: 4px 2px;
+  color: var(--pos-muted);
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
+}
+.pos-root .pos-bg-reservation-day {
+  min-width: 0;
+  min-height: 68px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 4px;
+  border: 1px solid var(--pos-line);
+  border-radius: 8px;
+  background: var(--pos-surface);
+  color: var(--pos-text);
+  text-align: left;
+  white-space: normal;
+  box-shadow: none;
+}
+.pos-root .pos-bg-reservation-day:hover:not(:disabled) {
+  border-color: #9cc7ff;
+  background: #f5f9ff;
+  box-shadow: none;
+}
+.pos-root .pos-bg-reservation-day--outside { color: #aab3c2; background: var(--pos-sunken); }
+.pos-root .pos-bg-reservation-day--today .pos-bg-reservation-day-number {
+  color: var(--pos-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pos-root .pos-bg-reservation-day--selected,
+.pos-root .pos-bg-reservation-day--selected:hover:not(:disabled) {
+  border-color: var(--pos-accent);
+  background: var(--pos-accent-bg);
+  box-shadow: inset 0 0 0 1px var(--pos-accent);
+}
+.pos-bg-reservation-day-number { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pos-bg-reservation-day-events { display: grid; gap: 2px; }
+.pos-bg-reservation-count {
+  overflow: hidden;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: #eaf8e8;
+  color: #237b20;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pos-bg-reservation-count--request { background: var(--pos-warn-bg); color: var(--pos-warn); }
+.pos-bg-reservation-editor {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--pos-line);
+  border-radius: 10px;
+  background: var(--pos-sunken);
+}
+.pos-bg-reservation-editor-head,
+.pos-bg-reservation-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pos-bg-reservation-editor-head > div > strong,
+.pos-bg-reservation-editor-head > div > span,
+.pos-bg-reservation-list-head > strong,
+.pos-bg-reservation-list-head > span { display: block; }
+.pos-bg-reservation-editor-head strong,
+.pos-bg-reservation-list-head strong { color: var(--pos-text); font-size: 13px; }
+.pos-bg-reservation-editor-head span,
+.pos-bg-reservation-list-head span { margin-top: 2px; color: var(--pos-muted); font-size: 11px; }
+.pos-bg-reservation-list-head {
+  margin-top: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--pos-line);
+}
 
 /* QR สำหรับลิงก์เรียกพนักงานเป็นผลลัพธ์ของคำสั่ง ไม่ใช่ข้อมูลรองในแถวเล็ก ๆ ของฟอร์ม:
    เปิดเป็น dialog เพื่อให้ยกโทรศัพท์สแกนได้ทันที และยังมี URL จริงให้คัดลอก/ส่งต่อได้ */
@@ -2078,6 +2203,10 @@
   .pos-bg-session-sticky .pos-bg-primary-action { grid-column: 1 / -1; }
   .pos-bg-player-group-head { grid-template-columns: minmax(0, 1fr) auto; }
   .pos-bg-player-rate { grid-column: 1 / -1; }
+  .pos-bg-reservation-month-actions { width: 100%; margin-left: 0; justify-content: space-between; }
+  .pos-bg-reservation-month-actions strong { min-width: 0; flex: 1 1 auto; }
+  .pos-root .pos-bg-reservation-day { min-height: 54px; padding: 4px 2px; border-radius: 6px; }
+  .pos-bg-reservation-count { padding-inline: 2px; font-size: 8px; }
 }
 
 @media (max-width: 920px) {

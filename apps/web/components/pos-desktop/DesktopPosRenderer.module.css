@@ -723,6 +723,64 @@
   color: #237804;
 }
 .serviceBenefit span { font-size: 12px; }
+.boardGameBreakdown { width: 100%; text-align: left; }
+.boardGameBreakdownSection { padding: 14px 2px; border-bottom: 1px solid #eaedf2; }
+.boardGameBreakdownHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+.boardGameBreakdownHead > div > strong,
+.boardGameBreakdownHead > div > span { display: block; }
+.boardGameBreakdownHead > div > strong { color: #1f2329; font-size: 14px; }
+.boardGameBreakdownHead > div > span { margin-top: 3px; color: #7a8598; font-size: 11px; }
+.boardGameBreakdownHead > strong { color: #0958d9; font-size: 15px; text-align: right; }
+.boardGameBreakdownRows { margin-top: 10px; border: 1px solid #e5e9f0; border-radius: 10px; overflow: hidden; }
+.boardGameBreakdownRow {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fff;
+}
+.boardGameBreakdownRow + .boardGameBreakdownRow,
+.boardGameProductRow + .boardGameProductRow { border-top: 1px solid #edf0f4; }
+.boardGamePersonIndex {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf4ff;
+  color: #3569aa;
+  font-size: 11px;
+  font-weight: 700;
+}
+.boardGameBreakdownRow > div > strong,
+.boardGameBreakdownRow > div > span,
+.boardGameBreakdownRow > div > em,
+.boardGameProductRow > div > strong,
+.boardGameProductRow > div > span { display: block; }
+.boardGameBreakdownRow > div > strong,
+.boardGameProductRow > div > strong { color: #1f2329; font-size: 12px; }
+.boardGameBreakdownRow > div > span,
+.boardGameProductRow > div > span { margin-top: 2px; color: #7a8598; font-size: 10px; }
+.boardGameBreakdownRow > div > em { margin-top: 3px; color: #389e0d; font-size: 10px; font-style: normal; }
+.boardGameBreakdownRow > strong,
+.boardGameProductRow > strong { text-align: right; font-size: 12px; }
+.boardGameProductRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fff;
+}
+.boardGameDiscountRow { background: #f6ffed; color: #237804; }
+.boardGameDiscountRow > div > strong,
+.boardGameDiscountRow > strong { color: #237804; }
 .orderSummary article div:nth-child(2) strong,
 .orderSummary article div:nth-child(2) span { display: block; }
 .orderSummary article div:nth-child(2) span { margin-top: 3px; color: #7a8598; font-size: 12px; }
@@ -876,6 +934,14 @@
 .receiptCard dt { color: #6f7b8e; }
 .receiptCard dd { margin: 0; font-weight: 700; }
 .receiptCard .changeRow { margin-top: 5px; padding-top: 13px; border-top: 1px solid #dde2e9; color: #237804; font-size: 18px; }
+.boardGameReceiptCard {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+.boardGameBreakdownReceipt { margin-top: 20px; }
+.boardGameBreakdownReceipt .boardGameBreakdownSection { padding-inline: 0; }
+.boardGameBreakdownReceipt + dl { margin-top: 16px; }
 .browserBadge { position: fixed; left: 90px; bottom: 6px; z-index: 9; padding: 4px 8px; border-radius: 5px; background: rgba(31,35,41,.78); color: #fff; font-size: 10px; }
 
 @media (max-width: 1280px) {
@@ -900,6 +966,6 @@
   .workspace,
   .browserBadge { display: none !important; }
   .centerPage { background: #fff; padding: 0; }
-  .receiptCard { box-shadow: none; border: 0; }
+  .receiptCard { width: 100%; max-height: none; overflow: visible; box-shadow: none; border: 0; }
   .receiptActions { display: none; }
 }

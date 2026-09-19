@@ -512,6 +512,15 @@ test("the checkout read is keyed by the bill and says whether the table has othe
   assert.equal(checkout.groupNo, 2);
   assert.equal(checkout.sessionGroupCount, 2, "พนักงานต้องรู้ว่าโต๊ะนี้ยังมีบิลอีกใบ");
   assert.equal(checkout.amountDue, Number(groups[1].amount_due));
+  assert.equal(checkout.chargeLines.length, 2, "checkout ต้องอธิบายค่าเล่นเป็นรายคน ไม่ใช่แค่ยอดรวม");
+  for (const line of checkout.chargeLines) {
+    assert.ok(line.rateName, "ชื่อเรทต้องถูกแช่ไว้เพื่อไม่ให้การเปลี่ยนชื่อแก้ใบเสร็จเก่า");
+    assert.ok(line.joinedAt, "ต้องมีเวลาเข้าของผู้เล่น");
+    assert.ok(line.actualEndedAt, "ต้องมีเวลาออก/เวลาปิดจริง");
+    assert.ok(line.chargedUntil, "ต้องมีเวลาสิ้นสุดที่ใช้คิดเงิน");
+    assert.ok(Number(line.actualMinutes) > 0);
+    assert.ok(line.billableMinutes > 0);
+  }
   // id ของโต๊ะไม่ใช่ id ของบิล — ส่งผิดตัวต้องหาไม่เจอ ไม่ใช่เดาให้
   await assert.rejects(
     () => getBoardGameCheckoutForPos(tenantId, locationId, session.id),
@@ -670,6 +679,12 @@ test("closing bills the tab and the play time together, on one order, with no un
   assert.ok(checkout.amountDue > 0, "ค่าเล่นต้องถูกแช่ไว้");
   assert.equal(checkout.totalDue, Math.round((checkout.amountDue + 50) * 100) / 100);
   assert.equal(checkout.tabItemCount, 1);
+  assert.equal(checkout.tabItems.length, 1, "checkout ต้องคืนสินค้าและราคา ไม่ใช่เฉพาะจำนวนรายการ");
+  assert.equal(checkout.tabItems[0].productName.includes("FAKE"), true);
+  assert.equal(checkout.tabItems[0].quantity, 2);
+  assert.equal(checkout.tabItems[0].amount, 50);
+  assert.equal(checkout.tabPricingDiscountAmount, 0,
+    "สินค้าที่ไม่มีโปรต้องไม่สร้างบรรทัดส่วนลดลวงบน checkout");
 
   // ระหว่างปิดเวลากับรับเงิน ของยังต้องถูกจองไว้ ไม่ใช่กลับไปว่างให้เครื่องอื่นขาย
   const held = await stock();

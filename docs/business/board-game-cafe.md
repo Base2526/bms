@@ -18,6 +18,14 @@ The register opens a board-game session, calculates time charges in the backend,
 products to the same bill, then settles through the existing POS/payment path. Board-game sessions do
 not create a second payment flow.
 
+The counter and printed receipt explain the same frozen evidence. Each closed participant line keeps
+the rate label, entry time, actual exit/close time, charged-through time, actual minutes, billable
+minutes and final amount. Actual and billable time are deliberately separate: minimums, grace,
+rounding and fixed-duration packages can make them differ. Product detail comes from the reserved
+order snapshot, never from today's catalogue price. Product promotions remain a separate visible
+discount so gross item lines reconcile to the tab amount instead of inventing a net per-unit price.
+A historical receipt must therefore remain the same after a rate or product is renamed.
+
 ### The bill belongs to a group, not to a table (`9.89`)
 
 `9.80` put the money on the *session*: one settlement key, one frozen `charge_snapshot`, one

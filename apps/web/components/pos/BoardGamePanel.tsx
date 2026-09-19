@@ -64,7 +64,14 @@ type BillingGroup = {
   tabAmount: number;
   endedAt: string | null;
   currentOrderId: string | null;
-  chargeSnapshot: Array<{ amount: number }>;
+  chargeSnapshot: Array<{
+    participantId: string; displayName: string | null; participantType: string;
+    rateCode: string | null; rateName: string | null;
+    joinedAt: string | null; actualEndedAt: string | null; chargedUntil: string | null;
+    actualMinutes: number | null; billableMinutes: number; hourlyRate: number;
+    amount: number; grossAmount: number | null; coveredAmount: number | null;
+    offerDiscountAmount: number | null;
+  }>;
   tabItems: TabItem[];
 };
 type Table = {
@@ -118,6 +125,7 @@ type Workspace = {
 
 type Participant = {
   id: string; displayName: string | null; participantType: string; billable: boolean;
+  rateCode: string | null; rateName: string | null;
   hourlyRate: number; billingGroupNo: number; billingGroupId: string;
   billingGroupStatus: string; joinedAt: string | null; leftAt: string | null;
 };
@@ -174,6 +182,17 @@ const IDENTITY_KIND_LABEL: Record<string, string> = {
   OTHER: 'อื่น ๆ',
 };
 
+const PARTICIPANT_TYPE_LABEL: Record<string, string> = {
+  GENERAL: 'ทั่วไป',
+  STUDENT: 'นักเรียน/นักศึกษา',
+  MEMBER: 'สมาชิก',
+  CHILD: 'เด็ก',
+  GUARDIAN: 'ผู้ปกครอง',
+  OBSERVER: 'ผู้สังเกตการณ์',
+  FOOD_ONLY: 'อาหารและเครื่องดื่มเท่านั้น',
+  CUSTOM: 'อัตราพิเศษ',
+};
+
 function baht(value: number) {
   return (Math.round((Number(value) || 0) * 100) / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -185,6 +204,27 @@ function elapsedLabel(startedAt: string | null | undefined, now: number) {
   return hours > 0 ? `${hours} ชม. ${minutes % 60} น.` : `${minutes} นาที`;
 }
 
+function minutesLabel(value: number | null | undefined) {
+  const minutes = Math.max(0, Math.round(Number(value) || 0));
+  const hours = Math.floor(minutes / 60);
+  if (hours <= 0) return `${minutes} นาที`;
+  return minutes % 60 ? `${hours} ชม. ${minutes % 60} นาที` : `${hours} ชม.`;
+}
+
+function durationBetweenLabel(startedAt: string | null | undefined, endedAt: string | null | undefined, now: number) {
+  if (!startedAt) return '-';
+  const start = new Date(startedAt).getTime();
+  const end = endedAt ? new Date(endedAt).getTime() : now;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return '-';
+  return minutesLabel(Math.max(0, Math.floor((end - start) / 60_000)));
+}
+
+function rateLabel(participant: Pick<Participant, 'rateName' | 'participantType' | 'billable' | 'hourlyRate'>) {
+  if (!participant.billable) return 'ไม่คิดเงิน';
+  const name = participant.rateName || PARTICIPANT_TYPE_LABEL[participant.participantType] || participant.participantType;
+  return `${name} · ฿${baht(participant.hourlyRate)}/ชม.`;
+}
+
 function timeLabel(value: string | null | undefined) {
   if (!value) return '-';
   const parsed = new Date(value);
@@ -192,12 +232,56 @@ function timeLabel(value: string | null | undefined) {
   return parsed.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 }
 
-function localDateTimeInput(value: string | null | undefined) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
+function localDateInput(value: string | Date | null | undefined) {
+  const date = value instanceof Date ? value : value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return '';
   const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function localTimeInput(value: string | Date | null | undefined) {
+  const date = value instanceof Date ? value : value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function dateFromInput(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day, 12);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function calendarMonthLabel(value: string) {
+  const date = dateFromInput(`${value}-01`);
+  return date?.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }) ?? 'กำลังเตรียมปฏิทิน';
+}
+
+function calendarDateLabel(value: string) {
+  const date = dateFromInput(value);
+  return date?.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) ?? 'เลือกวันที่';
+}
+
+function shiftCalendarMonth(value: string, amount: number) {
+  const date = dateFromInput(`${value}-01`) ?? new Date();
+  date.setMonth(date.getMonth() + amount, 1);
+  return localDateInput(date).slice(0, 7);
+}
+
+function calendarDays(value: string) {
+  const first = dateFromInput(`${value}-01`);
+  if (!first) return [];
+  const startOffset = (first.getDay() + 6) % 7; // จันทร์เป็นวันแรกเหมือนปฏิทินไทยหน้าร้าน
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12);
+  const cellCount = Math.ceil((startOffset + last.getDate()) / 7) * 7;
+  return Array.from({ length: cellCount }, (_, index) => {
+    const date = new Date(first.getFullYear(), first.getMonth(), index - startOffset + 1, 12);
+    return {
+      key: localDateInput(date),
+      day: date.getDate(),
+      inMonth: date.getMonth() === first.getMonth(),
+    };
+  });
 }
 
 function detailStatusLabel(session: SessionDetail, now: number) {
@@ -371,6 +455,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
   const [reservationEditingId, setReservationEditingId] = useState('');
   const [reservationSearch, setReservationSearch] = useState('');
   const [reservationDate, setReservationDate] = useState('');
+  const [reservationMonth, setReservationMonth] = useState('');
   const [reviewTableByEntry, setReviewTableByEntry] = useState<Record<string, string>>({});
 
   // ฟอร์มเปิดโต๊ะ
@@ -470,6 +555,12 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const today = localDateInput(new Date());
+    setReservationDate((current) => current || today);
+    setReservationMonth((current) => current || today.slice(0, 7));
   }, []);
 
   const call = useCallback(async (
@@ -829,6 +920,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
       && (entry.status === 'REQUESTED' || entry.status === 'CONFIRMED'),
   );
   const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
+  const reservationsByDate = new Map<string, WaitlistEntry[]>();
+  for (const entry of allReservations) {
+    const list = reservationsByDate.get(entry.serviceDate) ?? [];
+    list.push(entry);
+    reservationsByDate.set(entry.serviceDate, list);
+  }
+  const reservationCalendarDays = calendarDays(reservationMonth);
+  const todayKey = localDateInput(new Date());
   const reservations = allReservations.filter((entry) => {
     const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
     const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.guestEmail ?? ''} ${entry.reservedTableCode ?? ''}`
@@ -953,80 +1052,123 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
 
           {workspace && <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
             <summary>การจองล่วงหน้า · {allReservations.length} รายการ</summary>
-            <div className="pos-bg-form" style={{ marginTop: 10 }}>
+            <div className="pos-bg-reservation-tools">
               <label className="pos-bg-field">
                 ค้นหารายการ
                 <input value={reservationSearch} placeholder="ชื่อ เบอร์โทร หรือโต๊ะ"
                   onChange={(e) => setReservationSearch(e.target.value)} />
               </label>
-              <label className="pos-bg-field">
-                วันที่แสดง
-                <input type="date" value={reservationDate}
-                  onChange={(e) => setReservationDate(e.target.value)} />
-              </label>
-              <label className="pos-bg-field">
-                วันและเวลา
-                <input type="datetime-local" value={reservationTime}
-                  onChange={(e) => setReservationTime(e.target.value)} />
-              </label>
-              <label className="pos-bg-field pos-bg-field--num">
-                ระยะเวลา (นาที)
-                <input value={reservationDuration} inputMode="numeric"
-                  onChange={(e) => setReservationDuration(e.target.value)} />
-              </label>
-              <label className="pos-bg-field pos-bg-field--num">
-                จำนวนคน
-                <input value={reservationPartySize} inputMode="numeric"
-                  onChange={(e) => setReservationPartySize(e.target.value)} />
-              </label>
-              <label className="pos-bg-field">
-                โต๊ะ
-                <select value={reservationTableId} onChange={(e) => setReservationTableId(e.target.value)}>
-                  <option value="">เลือกโต๊ะ</option>
-                  {floorTables.filter((table) => !table.blocked).map((table) => (
-                    <option key={table.id} value={table.id}>{table.code} · {table.name} ({table.seats} ที่)</option>
-                  ))}
-                </select>
-              </label>
-              <label className="pos-bg-field">
-                ชื่อลูกค้า
-                <input value={reservationGuestName} onChange={(e) => setReservationGuestName(e.target.value)} />
-              </label>
-              <label className="pos-bg-field">
-                เบอร์โทร
-                <input value={reservationGuestPhone} onChange={(e) => setReservationGuestPhone(e.target.value)} />
-              </label>
-              <button type="button" className="pos-ret-btn pos-ret-btn--open"
-                disabled={busy === 'reservation-add' || busy === 'reservation-update'}
-                onClick={() => {
-                  const partySize = Number(reservationPartySize);
-                  const durationMinutes = Number(reservationDuration);
-                  const instant = new Date(reservationTime);
-                  if (!reservationTableId || !reservationGuestName.trim() || !reservationGuestPhone.trim()
-                    || !Number.isInteger(partySize) || partySize < 1
-                    || !Number.isInteger(durationMinutes) || durationMinutes < 30
-                    || !Number.isFinite(instant.getTime())) {
-                    setError('ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาทีให้ครบ'); return;
-                  }
-                  const updating = Boolean(reservationEditingId);
-                  void run(updating ? 'reservation-update' : 'reservation-add',
-                    updating ? 'reservation.update' : 'reservation.add', {
-                    ...(updating ? { entryId: reservationEditingId } : {}),
-                    tableId: reservationTableId, reservedFor: instant.toISOString(),
-                    durationMinutes, partySize, guestName: reservationGuestName,
-                    guestPhone: reservationGuestPhone,
-                  }, () => {
-                    resetReservationForm();
-                    setNotice(updating ? 'แก้ไขการจองแล้ว' : 'ยืนยันการจองแล้ว');
-                  });
-                }}>
-                {reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
-              </button>
-              {reservationEditingId && (
-                <button type="button" className="pos-ret-btn" onClick={resetReservationForm}>
-                  เลิกแก้ไข
+              <div className="pos-bg-reservation-month-actions">
+                <button type="button" className="pos-ret-btn" aria-label="เดือนก่อนหน้า"
+                  onClick={() => setReservationMonth((current) => shiftCalendarMonth(current, -1))}>‹</button>
+                <strong>{calendarMonthLabel(reservationMonth)}</strong>
+                <button type="button" className="pos-ret-btn" aria-label="เดือนถัดไป"
+                  onClick={() => setReservationMonth((current) => shiftCalendarMonth(current, 1))}>›</button>
+                <button type="button" className="pos-ret-btn" onClick={() => {
+                  const today = localDateInput(new Date());
+                  setReservationDate(today); setReservationMonth(today.slice(0, 7));
+                }}>วันนี้</button>
+              </div>
+            </div>
+
+            <div className="pos-bg-reservation-calendar" role="grid" aria-label="ปฏิทินการจอง">
+              {['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'].map((label) => (
+                <span key={label} className="pos-bg-reservation-weekday" role="columnheader">{label}</span>
+              ))}
+              {reservationCalendarDays.map((day) => {
+                const dayReservations = reservationsByDate.get(day.key) ?? [];
+                const requested = dayReservations.filter((entry) => entry.status === 'REQUESTED').length;
+                const confirmed = dayReservations.length - requested;
+                return (
+                  <button key={day.key} type="button" role="gridcell"
+                    aria-selected={reservationDate === day.key}
+                    aria-label={`${calendarDateLabel(day.key)} · ${dayReservations.length} รายการ`}
+                    className={`pos-bg-reservation-day ${!day.inMonth ? 'pos-bg-reservation-day--outside' : ''} ${reservationDate === day.key ? 'pos-bg-reservation-day--selected' : ''} ${todayKey === day.key ? 'pos-bg-reservation-day--today' : ''}`.trim()}
+                    onClick={() => { setReservationDate(day.key); setReservationMonth(day.key.slice(0, 7)); }}>
+                    <span className="pos-bg-reservation-day-number">{day.day}</span>
+                    <span className="pos-bg-reservation-day-events">
+                      {confirmed > 0 && <span className="pos-bg-reservation-count">✓ {confirmed}</span>}
+                      {requested > 0 && <span className="pos-bg-reservation-count pos-bg-reservation-count--request">รอ {requested}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pos-bg-reservation-editor">
+              <div className="pos-bg-reservation-editor-head">
+                <div>
+                  <strong>{reservationEditingId ? 'แก้ไขการจอง' : 'เพิ่มการจอง'}</strong>
+                  <span>{calendarDateLabel(reservationDate)}</span>
+                </div>
+                {reservationEditingId && (
+                  <button type="button" className="pos-ret-btn" onClick={resetReservationForm}>เลิกแก้ไข</button>
+                )}
+              </div>
+              <div className="pos-bg-form">
+                <label className="pos-bg-field pos-bg-field--num">
+                  เวลาเริ่ม
+                  <input type="time" value={reservationTime}
+                    onChange={(e) => setReservationTime(e.target.value)} />
+                </label>
+                <label className="pos-bg-field pos-bg-field--num">
+                  ระยะเวลา (นาที)
+                  <input value={reservationDuration} inputMode="numeric"
+                    onChange={(e) => setReservationDuration(e.target.value)} />
+                </label>
+                <label className="pos-bg-field pos-bg-field--num">
+                  จำนวนคน
+                  <input value={reservationPartySize} inputMode="numeric"
+                    onChange={(e) => setReservationPartySize(e.target.value)} />
+                </label>
+                <label className="pos-bg-field">
+                  โต๊ะ
+                  <select value={reservationTableId} onChange={(e) => setReservationTableId(e.target.value)}>
+                    <option value="">เลือกโต๊ะ</option>
+                    {floorTables.filter((table) => !table.blocked).map((table) => (
+                      <option key={table.id} value={table.id}>{table.code} · {table.name} ({table.seats} ที่)</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="pos-bg-field">
+                  ชื่อลูกค้า
+                  <input value={reservationGuestName} onChange={(e) => setReservationGuestName(e.target.value)} />
+                </label>
+                <label className="pos-bg-field">
+                  เบอร์โทร
+                  <input value={reservationGuestPhone} onChange={(e) => setReservationGuestPhone(e.target.value)} />
+                </label>
+                <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                  disabled={busy === 'reservation-add' || busy === 'reservation-update'}
+                  onClick={() => {
+                    const partySize = Number(reservationPartySize);
+                    const durationMinutes = Number(reservationDuration);
+                    const instant = new Date(`${reservationDate}T${reservationTime}`);
+                    if (!reservationTableId || !reservationGuestName.trim() || !reservationGuestPhone.trim()
+                      || !Number.isInteger(partySize) || partySize < 1
+                      || !Number.isInteger(durationMinutes) || durationMinutes < 30
+                      || !Number.isFinite(instant.getTime())) {
+                      setError('เลือกวันและเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาทีให้ครบ'); return;
+                    }
+                    const updating = Boolean(reservationEditingId);
+                    void run(updating ? 'reservation-update' : 'reservation-add',
+                      updating ? 'reservation.update' : 'reservation.add', {
+                      ...(updating ? { entryId: reservationEditingId } : {}),
+                      tableId: reservationTableId, reservedFor: instant.toISOString(),
+                      durationMinutes, partySize, guestName: reservationGuestName,
+                      guestPhone: reservationGuestPhone,
+                    }, () => {
+                      resetReservationForm();
+                      setNotice(updating ? 'แก้ไขการจองแล้ว' : 'ยืนยันการจองแล้ว');
+                    });
+                  }}>
+                  {reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
                 </button>
-              )}
+              </div>
+            </div>
+            <div className="pos-bg-reservation-list-head">
+              <strong>รายการวันที่เลือก</strong>
+              <span>{calendarDateLabel(reservationDate)} · {reservations.length} รายการ</span>
             </div>
             {allReservations.length > 0 && reservations.length === 0 && (
               <div className="pos-block-hint">ไม่พบรายการที่ตรงกับตัวกรอง</div>
@@ -1088,7 +1230,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                       setReservationPartySize(String(entry.partySize));
                       setReservationGuestName(entry.guestName ?? '');
                       setReservationGuestPhone(entry.guestPhone ?? '');
-                      setReservationTime(localDateTimeInput(entry.reservedFor));
+                      const date = entry.serviceDate || localDateInput(entry.reservedFor);
+                      setReservationDate(date);
+                      setReservationMonth(date.slice(0, 7));
+                      setReservationTime(localTimeInput(entry.reservedFor));
                       setReservationDuration(String(entry.reservedDurationMinutes ?? 120));
                       setReservationTableId(entry.reservedTableId ?? '');
                     }}>
@@ -1272,9 +1417,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                     <div className="pos-bg-table-body">
                       <div className={`pos-bg-table-state ${open.alertStatus === 'OVERDUE' ? 'pos-bg-table-state--danger' : ''}`.trim()}>
                         <span aria-hidden="true">◷</span>
-                        {open.alertStatus !== 'NORMAL'
-                          ? `${elapsedLabel(open.startedAt, now)} · ${attentionLabel(open, now)}`
-                          : elapsedLabel(open.startedAt, now)}
+                        {open.billingMode === 'FIXED_DURATION' && open.expectedEndAt
+                          ? `ซื้อ ${plannedMinutes(open)} นาที · ${timeLabel(open.startedAt)}–${timeLabel(open.expectedEndAt)}`
+                          : `เปิดยาว · เริ่ม ${timeLabel(open.startedAt)}`}
+                      </div>
+                      <div className={`pos-bg-table-clock ${open.alertStatus === 'OVERDUE' ? 'pos-bg-table-clock--danger' : ''}`.trim()}>
+                        เล่นมา {elapsedLabel(open.startedAt, now)}
+                        {open.expectedEndAt ? ` · ${attentionLabel(open, now)}` : ''}
                       </div>
                       {/* ⚠️ ยอดขึ้นเฉพาะตอนมีบิลที่ปิดเวลาแล้วรอเก็บจริง — `amountDue` ของโต๊ะที่
                           ยังเล่นอยู่คือค่าเล่นที่ "ยังไม่ถูกแช่" ซึ่งเป็น 0 เสมอ ไม่ใช่ 0 เพราะไม่ติดเงิน */}
@@ -1511,10 +1660,11 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
               </div>
             </div>
             <div className="pos-bg-session-meta">
-              {activeTable?.code ? `${activeTable.code} · ` : ''}เริ่ม {timeLabel(session.startedAt)}
-              {session.expectedEndAt
-                ? ` · ครบเวลา ${timeLabel(session.expectedEndAt)}`
-                : ` · เล่นมาแล้ว ${elapsedLabel(session.startedAt, now)}`}
+              {activeTable?.code ? `${activeTable.code} · ` : ''}
+              {session.billingMode === 'FIXED_DURATION' && session.expectedEndAt
+                ? `ซื้อไว้ ${plannedMinutes(session)} นาที · ${timeLabel(session.startedAt)}–${timeLabel(session.expectedEndAt)}`
+                : `เปิดยาว · คิดตามจริง · เริ่ม ${timeLabel(session.startedAt)}`}
+              {' · เล่นมาแล้ว '}{elapsedLabel(session.startedAt, now)}
             </div>
 
             {/* ค่าเล่นของกลุ่ม OPEN ยังไม่ถูกแช่ จึงห้ามแสดง 0 เป็นยอดที่ต้องจ่าย */}
@@ -1778,11 +1928,20 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
                         <span className="pos-bg-player-index">{index + 1}</span>
                         <div className="pos-bg-player-name">
                           <strong>{participant.displayName ?? 'ไม่ระบุชื่อ'}</strong>
-                          <span>
-                            {participant.billable ? `฿${baht(participant.hourlyRate)}/ชม.` : 'ไม่คิดเงิน'}
+                          <span className="pos-bg-player-rate-line">
+                            {rateLabel(participant)}
                             {participant.billingGroupStatus === 'PAID' ? ' · จ่ายแล้ว'
                               : participant.billingGroupStatus === 'CLOSING' ? ' · รอเก็บเงิน' : ''}
                             {participant.leftAt ? ' · ออกแล้ว' : ''}
+                          </span>
+                          <span className="pos-bg-player-time-line">
+                            {timeLabel(participant.joinedAt)}–{participant.leftAt ? timeLabel(participant.leftAt) : 'ตอนนี้'}
+                            {' · '}{durationBetweenLabel(participant.joinedAt, participant.leftAt, now)}
+                            {(() => {
+                              const frozen = group.chargeSnapshot.find((line) => line.participantId === participant.id);
+                              return frozen && frozen.billableMinutes !== frozen.actualMinutes
+                                ? ` · คิดเงิน ${minutesLabel(frozen.billableMinutes)}` : '';
+                            })()}
                           </span>
                         </div>
                         {!participant.leftAt && participant.billingGroupStatus === 'OPEN' && (

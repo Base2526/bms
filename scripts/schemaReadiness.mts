@@ -359,6 +359,17 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_orders", name: "pos_offline_synced_at" },
     ],
   },
+  {
+    // เปิด session และเพิ่มผู้เล่นเขียนป้ายเรท snapshot ทุกครั้ง ส่วนหน้ารายละเอียด/checkout
+    // อ่านมันเพื่ออธิบายบิลโดยไม่ย้อนกลับไปใช้ชื่อเรทปัจจุบัน · วางต่อจาก 10.5 เพื่อให้
+    // check-schema-readiness แนะนำลำดับ apply 10.4 → 10.5 → 10.6 อย่างถูกต้อง
+    file: "10.6__bms_board_game_receipt_evidence.sql",
+    impact: "ร้านบอร์ดเกมเปิดโต๊ะ/เพิ่มผู้เล่น/เปิดรายละเอียดบิลไม่ได้ — โค้ดอ่านและเขียนป้ายเรท snapshot ทุกครั้ง",
+    needs: [
+      { kind: "column", table: "bms_board_game_session_participants", name: "rate_code_snapshot" },
+      { kind: "column", table: "bms_board_game_session_participants", name: "rate_name_snapshot" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

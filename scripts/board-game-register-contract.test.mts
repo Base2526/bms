@@ -368,7 +368,7 @@ test("the desktop floor follows the compact board-game operations mockup", () =>
   );
   assert.match(
     panel,
-    /participantGroups\.map[\s\S]{0,2400}pos-bg-player-menu/,
+    /participantGroups\.map[\s\S]{0,4200}pos-bg-player-menu/,
     "players must be grouped by bill and keep infrequent leave actions behind a compact menu",
   );
   assert.match(
@@ -415,9 +415,21 @@ test("desktop collects a frozen board-game group in its native checkout instead 
     "time and tab charges are server-owned; desktop must not submit them as Product SKUs",
   );
   assert.match(
+    mobileFlowGraphql,
+    /chargeLines\s*\{[\s\S]{0,500}joinedAt[\s\S]{0,500}billableMinutes[\s\S]{0,500}tabItems\s*\{[\s\S]{0,300}unitPrice[\s\S]{0,200}amount/,
+    "checkout must request frozen per-person time evidence and server-priced tab lines",
+  );
+  assert.match(mobileFlowGraphql, /tabPricingDiscountAmount/,
+    "product promotions must stay visible instead of making item rows disagree with the payable total");
+  assert.match(
     desktopRenderer,
-    /ค่าเล่นบอร์ดเกม[\s\S]{0,500}chargeLineCount[\s\S]{0,500}tabItemCount/,
-    "the confirmation screen must explain the table/group service and its server-owned tab",
+    /function BoardGameBillBreakdown[\s\S]{0,4000}เล่นจริง[\s\S]{0,1000}คิดเงิน[\s\S]{0,2500}อาหารและเครื่องดื่ม[\s\S]{0,2500}ส่วนลดสินค้า/,
+    "the confirmation and receipt breakdown must explain actual time, billed time and tab products",
+  );
+  assert.match(
+    desktopRenderer,
+    /RECEIPT[\s\S]{0,900}BoardGameBillBreakdown/,
+    "the paid receipt screen must retain the same frozen breakdown shown before payment",
   );
   assert.match(
     desktopRenderer,

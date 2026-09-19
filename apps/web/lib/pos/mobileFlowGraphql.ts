@@ -72,10 +72,12 @@ export const POS_BOARD_GAME_CHECKOUT_QUERY = `
       sessionGroupCount
       tableCode
       tableName
+      billingMode
       startedAt
       endedAt
       amountDue
       tabAmount
+      tabPricingDiscountAmount
       tabItemCount
       totalDue
       chargeLineCount
@@ -83,6 +85,12 @@ export const POS_BOARD_GAME_CHECKOUT_QUERY = `
       offerCode
       offerName
       offerDiscountAmount
+      chargeLines {
+        participantId displayName participantType billingGroupNo rateCode rateName
+        joinedAt actualEndedAt chargedUntil actualMinutes billableMinutes hourlyRate amount
+        grossAmount coveredMinutes coveredAmount offerDiscountAmount
+      }
+      tabItems { id sku productName size packCode unitName quantity unitPrice amount }
     }
   }
 `;
@@ -166,10 +174,12 @@ export type PosBoardGameCheckout = {
   sessionGroupCount: number;
   tableCode: string;
   tableName: string;
+  billingMode: string;
   startedAt: string;
   endedAt: string;
   amountDue: number;
   tabAmount: number;
+  tabPricingDiscountAmount: number;
   tabItemCount: number;
   totalDue: number;
   chargeLineCount: number;
@@ -177,6 +187,36 @@ export type PosBoardGameCheckout = {
   offerCode: string | null;
   offerName: string | null;
   offerDiscountAmount: number;
+  chargeLines: Array<{
+    participantId: string;
+    displayName: string | null;
+    participantType: string;
+    billingGroupNo: number;
+    rateCode: string | null;
+    rateName: string | null;
+    joinedAt: string | null;
+    actualEndedAt: string | null;
+    chargedUntil: string | null;
+    actualMinutes: number | null;
+    billableMinutes: number;
+    hourlyRate: number;
+    amount: number;
+    grossAmount: number | null;
+    coveredMinutes: number | null;
+    coveredAmount: number | null;
+    offerDiscountAmount: number | null;
+  }>;
+  tabItems: Array<{
+    id: string;
+    sku: string;
+    productName: string;
+    size: string;
+    packCode: string | null;
+    unitName: string | null;
+    quantity: number;
+    unitPrice: number;
+    amount: number;
+  }>;
 };
 
 export class PosGraphqlError extends Error {

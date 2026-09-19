@@ -150,6 +150,139 @@ const money = (value: number) =>
     minimumFractionDigits: 2,
   }).format(value);
 
+const BOARD_GAME_PARTICIPANT_LABEL: Record<string, string> = {
+  GENERAL: "ทั่วไป",
+  STUDENT: "นักเรียน/นักศึกษา",
+  MEMBER: "สมาชิก",
+  CHILD: "เด็ก",
+  GUARDIAN: "ผู้ปกครอง",
+  OBSERVER: "ผู้สังเกตการณ์",
+  FOOD_ONLY: "อาหารและเครื่องดื่มเท่านั้น",
+  CUSTOM: "อัตราพิเศษ",
+};
+
+function boardGameTime(value: string | null): string {
+  if (!value) return "–";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "–";
+  return date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+}
+
+function boardGameDateTime(value: string | null): string {
+  if (!value) return "–";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "–";
+  return date.toLocaleString("th-TH", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function boardGameMinutes(value: number | null | undefined): string {
+  const minutes = Math.max(0, Math.round(Number(value) || 0));
+  const hours = Math.floor(minutes / 60);
+  if (!hours) return `${minutes} นาที`;
+  return minutes % 60 ? `${hours} ชม. ${minutes % 60} นาที` : `${hours} ชม.`;
+}
+
+function BoardGameBillBreakdown({
+  checkout,
+  receipt = false,
+}: {
+  checkout: PosBoardGameCheckout;
+  receipt?: boolean;
+}) {
+  return (
+    <div className={`${styles.boardGameBreakdown} ${receipt ? styles.boardGameBreakdownReceipt : ""}`.trim()}>
+      <section className={styles.boardGameBreakdownSection}>
+        <div className={styles.boardGameBreakdownHead}>
+          <div>
+            <strong>ค่าเวลาเล่น · {checkout.tableName}</strong>
+            <span>
+              {checkout.sessionGroupCount > 1 ? `กลุ่ม ${checkout.groupNo} · ` : ""}
+              {checkout.billingMode === "FIXED_DURATION" ? "ซื้อเวลาไว้ล่วงหน้า" : "คิดตามเวลาที่เล่นจริง"}
+              {` · ${boardGameDateTime(checkout.startedAt)}–${boardGameDateTime(checkout.endedAt)}`}
+            </span>
+          </div>
+          <strong>{money(checkout.amountDue)}</strong>
+        </div>
+        <div className={styles.boardGameBreakdownRows}>
+          {checkout.chargeLines.map((line, index) => {
+            const rateName = line.rateName
+              || BOARD_GAME_PARTICIPANT_LABEL[line.participantType]
+              || line.participantType;
+            const hasDifferentChargedEnd = Boolean(
+              line.chargedUntil && line.actualEndedAt
+              && new Date(line.chargedUntil).getTime() !== new Date(line.actualEndedAt).getTime()
+            );
+            const benefit = Math.max(0, Number(line.grossAmount ?? line.amount) - Number(line.amount));
+            return (
+              <div key={line.participantId} className={styles.boardGameBreakdownRow}>
+                <span className={styles.boardGamePersonIndex}>{index + 1}</span>
+                <div>
+                  <strong>{line.displayName || `ผู้เล่น ${index + 1}`}</strong>
+                  <span>
+                    {boardGameTime(line.joinedAt)}–{boardGameTime(line.actualEndedAt)}
+                    {' · เล่นจริง '}{boardGameMinutes(line.actualMinutes)}
+                  </span>
+                  <span>
+                    {rateName} · {money(line.hourlyRate)}/ชม.
+                    {' · คิดเงิน '}{boardGameMinutes(line.billableMinutes)}
+                    {hasDifferentChargedEnd ? ` ถึง ${boardGameTime(line.chargedUntil)}` : ""}
+                  </span>
+                  {benefit > 0 ? <em>สิทธิ์ช่วยลด {money(benefit)}</em> : null}
+                </div>
+                <strong>{money(line.amount)}</strong>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {checkout.tabItems.length > 0 ? (
+        <section className={styles.boardGameBreakdownSection}>
+          <div className={styles.boardGameBreakdownHead}>
+            <div>
+              <strong>อาหารและเครื่องดื่ม</strong>
+              <span>
+                {checkout.tabItems.length} บรรทัดในบิล
+                {checkout.tabItemCount !== checkout.tabItems.length
+                  ? ` · รวมจาก ${checkout.tabItemCount} รายการที่สั่ง` : ""}
+              </span>
+            </div>
+            <strong>{money(checkout.tabAmount)}</strong>
+          </div>
+          <div className={styles.boardGameBreakdownRows}>
+            {checkout.tabItems.map((item) => (
+              <div key={item.id} className={styles.boardGameProductRow}>
+                <div>
+                  <strong>{item.productName}</strong>
+                  <span>
+                    {item.size ? `${item.size} · ` : ""}
+                    {item.quantity} {item.unitName || "ชิ้น"} × {money(item.unitPrice)}
+                  </span>
+                </div>
+                <strong>{money(item.amount)}</strong>
+              </div>
+            ))}
+            {checkout.tabPricingDiscountAmount > 0 ? (
+              <div className={`${styles.boardGameProductRow} ${styles.boardGameDiscountRow}`.trim()}>
+                <div>
+                  <strong>ส่วนลดสินค้า</strong>
+                  <span>ราคาส่ง / โปรโมชันที่ระบบคำนวณให้</span>
+                </div>
+                <strong>−{money(checkout.tabPricingDiscountAmount)}</strong>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function serviceCallLabel(call: PosServiceCallNotice): string {
   const labels: Record<string, string> = {
     WATER: "ขอน้ำ",
@@ -917,6 +1050,8 @@ export default function DesktopPosRenderer() {
   const boardGameBenefitAmount = boardGameCheckout
     ? Math.max(0, boardGameCheckout.passCoveredAmount) + Math.max(0, boardGameCheckout.offerDiscountAmount)
     : 0;
+  const boardGameTabDiscountAmount = Math.max(0, boardGameCheckout?.tabPricingDiscountAmount ?? 0);
+  const boardGameTotalDiscountAmount = boardGameBenefitAmount + boardGameTabDiscountAmount;
   const boardGameGrossTime = boardGameCheckout
     ? boardGameCheckout.amountDue + boardGameBenefitAmount
     : 0;
@@ -933,17 +1068,27 @@ export default function DesktopPosRenderer() {
       .filter((payment) => payment.method === "qr")
       .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
     const configuredQr = bootstrap?.store.paymentQr ?? null;
-    const payload: CustomerDisplayPayload = {
-      lines: boardGameCheckout
-        ? [{
-            name: boardGameCheckout.sessionGroupCount > 1
-              ? `บิลบอร์ดเกม · ${boardGameCheckout.tableName} · กลุ่ม ${boardGameCheckout.groupNo}`
-              : `บิลบอร์ดเกม · ${boardGameCheckout.tableName}`,
-            size: null,
+    const boardGameDisplayLines = boardGameCheckout
+      ? [
+          ...boardGameCheckout.chargeLines.map((line, index) => ({
+            name: `ค่าเล่น · ${line.displayName || `ผู้เล่น ${index + 1}`}`,
+            size: `${boardGameMinutes(line.billableMinutes)} · ${line.rateName || BOARD_GAME_PARTICIPANT_LABEL[line.participantType] || line.participantType}`,
             qty: 1,
             unitName: "",
-            amount: boardGameCheckout.totalDue + boardGameBenefitAmount,
-          }]
+            amount: Number(line.grossAmount ?? line.amount),
+          })),
+          ...boardGameCheckout.tabItems.map((item) => ({
+            name: item.productName,
+            size: item.size || null,
+            qty: item.quantity,
+            unitName: item.unitName || "ชิ้น",
+            amount: item.amount,
+          })),
+        ]
+      : [];
+    const payload: CustomerDisplayPayload = {
+      lines: boardGameCheckout
+        ? boardGameDisplayLines
         : cart.map((line) => ({
             name: line.name,
             size: line.size || null,
@@ -954,11 +1099,11 @@ export default function DesktopPosRenderer() {
               + Number(line.modifierUnitPrice ?? 0)
             ) * line.qty * 100) / 100,
           })),
-      itemCount: boardGameCheckout ? 1 : itemCount,
+      itemCount: boardGameCheckout ? boardGameDisplayLines.length : itemCount,
       total: boardGameCheckout
-        ? Math.round((payableBeforeRounding + boardGameBenefitAmount) * 100) / 100
+        ? Math.round((payableBeforeRounding + boardGameTotalDiscountAmount) * 100) / 100
         : retailListSubtotal,
-      discountTotal: boardGameCheckout ? boardGameBenefitAmount : pricingSavings,
+      discountTotal: boardGameCheckout ? boardGameTotalDiscountAmount : pricingSavings,
       amountDue: receipt?.total ?? total,
       memberName: null,
       pointsEarned: null,
@@ -972,6 +1117,7 @@ export default function DesktopPosRenderer() {
   }, [
     boardGameBenefitAmount,
     boardGameCheckout,
+    boardGameTotalDiscountAmount,
     cart,
     bootstrap?.store.paymentQr,
     flow.stage,
@@ -1263,10 +1409,11 @@ export default function DesktopPosRenderer() {
   if (flow.stage === "RECEIPT" && receipt) {
     return (
       <main className={styles.centerPage}>
-        <section className={styles.receiptCard}>
+        <section className={`${styles.receiptCard} ${boardGameCheckout ? styles.boardGameReceiptCard : ""}`.trim()}>
           <div className={styles.successMark}>✓</div>
           <p className={styles.eyebrow}>ชำระเงินสำเร็จ</p>
           <h1>{money(receipt.total ?? total)}</h1>
+          {boardGameCheckout ? <BoardGameBillBreakdown checkout={boardGameCheckout} receipt /> : null}
           <dl>
             <div><dt>เลขที่ใบเสร็จ</dt><dd>{receipt.receiptNo || receipt.billNo || receipt.orderId}</dd></div>
             <div><dt>รับเงิน</dt><dd>{money(receipt.cashTendered ?? validation.paidTotal)}</dd></div>
@@ -1484,29 +1631,7 @@ export default function DesktopPosRenderer() {
                 <div className={styles.orderSummary}>
                   {boardGameCheckout ? (
                     <>
-                      <article className={styles.serviceLine}>
-                        <div className={`${styles.productThumb} ${styles.serviceThumb}`} aria-hidden="true">◷</div>
-                        <div>
-                          <strong>
-                            ค่าเล่นบอร์ดเกม · {boardGameCheckout.tableName}
-                            {boardGameCheckout.sessionGroupCount > 1 ? ` · กลุ่ม ${boardGameCheckout.groupNo}` : ""}
-                          </strong>
-                          <span>
-                            {boardGameCheckout.chargeLineCount} คน · ปิดเวลา {new Date(boardGameCheckout.endedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        <strong>{money(boardGameCheckout.amountDue)}</strong>
-                      </article>
-                      {boardGameCheckout.tabItemCount > 0 ? (
-                        <article className={styles.serviceLine}>
-                          <div className={`${styles.productThumb} ${styles.serviceThumb}`} aria-hidden="true">▤</div>
-                          <div>
-                            <strong>สินค้าที่สั่งเข้าบิล</strong>
-                            <span>{boardGameCheckout.tabItemCount} รายการ · รวมจากแท็บของกลุ่มนี้</span>
-                          </div>
-                          <strong>{money(boardGameCheckout.tabAmount)}</strong>
-                        </article>
-                      ) : null}
+                      <BoardGameBillBreakdown checkout={boardGameCheckout} />
                       {boardGameBenefitAmount > 0 ? (
                         <div className={styles.serviceBenefit}>
                           <strong>
@@ -1540,7 +1665,20 @@ export default function DesktopPosRenderer() {
                           <strong>−{money(boardGameBenefitAmount)}</strong>
                         </div>
                       ) : null}
-                      {boardGameCheckout.tabItemCount > 0 ? <div><span>สินค้าที่สั่งเข้าบิล</span><strong>{money(boardGameCheckout.tabAmount)}</strong></div> : null}
+                      {boardGameCheckout.tabItemCount > 0 ? (
+                        <>
+                          <div>
+                            <span>สินค้าก่อนส่วนลด</span>
+                            <strong>{money(boardGameCheckout.tabAmount + boardGameTabDiscountAmount)}</strong>
+                          </div>
+                          {boardGameTabDiscountAmount > 0 ? (
+                            <div className={styles.savingsRow}>
+                              <span>ราคาส่ง / โปรโมชันสินค้า</span>
+                              <strong>−{money(boardGameTabDiscountAmount)}</strong>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
                     </>
                   ) : (
                     <>
