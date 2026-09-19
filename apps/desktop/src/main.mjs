@@ -4,9 +4,17 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePairingInput } from "./pairing.mjs";
+import { MOBILE_POS_PATH, posEntryPathForStatus } from "./renderer-route.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
+import {
+  desktopMenuTemplate,
+  installFixedZoomPolicy,
+  installGlobalZoomPolicy,
+} from "./zoom-policy.mjs";
 
-const { app, BrowserWindow, ipcMain, net, safeStorage, shell } = electronMain;
+const { app, BrowserWindow, ipcMain, Menu, net, safeStorage, shell } = electronMain;
+
+installGlobalZoomPolicy(app);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
@@ -149,6 +157,7 @@ function createMainWindow() {
       nodeIntegration: false,
       sandbox: true,
       partition: "persist:bms-pos",
+      zoomFactor: 1,
     },
   });
 
@@ -182,6 +191,7 @@ function createMainWindow() {
               nodeIntegration: false,
               sandbox: true,
               partition: "persist:bms-pos",
+              zoomFactor: 1,
             },
           },
         };
@@ -200,7 +210,24 @@ async function showSetup() {
 }
 
 async function showPos() {
-  if (mainWindow && activePairing) await mainWindow.loadURL(new URL("/pos", activePairing.serverUrl).toString());
+  if (!mainWindow || !activePairing) return;
+  let entryPath = MOBILE_POS_PATH;
+  try {
+    const response = await net.fetch(new URL(MOBILE_POS_PATH, activePairing.serverUrl), {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+      headers: {
+        authorization: `Bearer ${activePairing.token}`,
+        "x-pos-device-token": activePairing.token,
+      },
+    });
+    entryPath = posEntryPathForStatus(response.status);
+  } catch {
+    // Preserve the new route for transient network failures. Chromium will show the real connection
+    // error and a retry can recover; fallback is only for a confirmed old-server 404.
+  }
+  await mainWindow.loadURL(new URL(entryPath, activePairing.serverUrl).toString());
 }
 
 async function verifyPairing(pairing) {
@@ -284,6 +311,13 @@ if (!singleInstance) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId("com.bms.pos.desktop");
+    app.on("web-contents-created", (_event, webContents) => {
+      installFixedZoomPolicy(webContents);
+    });
+    Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
+      process.platform,
+      process.env.BMS_POS_DESKTOP_DEVTOOLS === "1",
+    )));
     registerIpc();
     mainWindow = createMainWindow();
     activePairing = await readPairing();

@@ -1,11 +1,11 @@
 {
   "name": "@bms/desktop-pos",
   "desktopName": "bms-pos.desktop",
-  "version": "0.1.1",
+  "version": "0.2.2",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "description": "Secure desktop shell for the BMS POS web surface",
+  "description": "Secure Windows, Linux and macOS shell for the BMS mobile-flow POS renderer",
   "author": "BMS",
   "homepage": "https://github.com/Base2526/bms",
   "repository": {
@@ -16,8 +16,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/secure-storage.mjs && node --check src/preload.cjs && node --check renderer/setup.js",
-    "test": "node --test test/pairing.test.mjs test/secure-storage.test.mjs",
+    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/zoom-policy.mjs && node --check src/preload.cjs && node --check renderer/setup.js",
+    "test": "node --test test/pairing.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/zoom-policy.test.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
     "pack:win": "electron-builder --win nsis",
     "pack:linux": "electron-builder --linux AppImage deb --x64",

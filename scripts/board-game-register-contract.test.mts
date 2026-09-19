@@ -29,6 +29,10 @@ const CSS_PATH = "../apps/web/app/(pos)/pos/pos.css";
 const PAGE_PATH = "../apps/web/app/(pos)/pos/page.tsx";
 const ADMIN_PATH = "../apps/web/app/(admin)/admin/board-game/page.tsx";
 const MOBILE_PATH = "../apps/mobile/src/screens/boardGame/BoardGameScreen.tsx";
+const DESKTOP_RENDERER_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.tsx";
+const DESKTOP_CSS_PATH = "../apps/web/components/pos-desktop/DesktopPosRenderer.module.css";
+const WORKSPACE_CONTEXT_PATH = "../apps/web/components/pos/PosWorkspaceContext.tsx";
+const MOBILE_FLOW_GRAPHQL_PATH = "../apps/web/lib/pos/mobileFlowGraphql.ts";
 
 function withoutComments(source: string): string {
   return source
@@ -43,6 +47,10 @@ const css = withoutComments(read(CSS_PATH));
 const page = withoutComments(read(PAGE_PATH));
 const admin = withoutComments(read(ADMIN_PATH));
 const mobile = withoutComments(read(MOBILE_PATH));
+const desktopRenderer = withoutComments(read(DESKTOP_RENDERER_PATH));
+const desktopCss = withoutComments(read(DESKTOP_CSS_PATH));
+const workspaceContext = withoutComments(read(WORKSPACE_CONTEXT_PATH));
+const mobileFlowGraphql = withoutComments(read(MOBILE_FLOW_GRAPHQL_PATH));
 
 /**
  * กฎ CSS ทั้งไฟล์พร้อมเงื่อนไข media ของมัน — ต้องรวม body ของ **ทุกกฎ** ที่เล็ง selector
@@ -146,8 +154,18 @@ test("the board-game workspace uses the full register instead of leaving an empt
   );
   assert.equal(
     declaration(".pos-main-grid--boardgame > .pos-pane:last-child", "display"),
-    "none !important",
-    "the empty checkout pane must not keep taking half the board-game screen",
+    null,
+    "the single board-game work pane must never be hidden as the grid's last child",
+  );
+  assert.match(
+    page,
+    /\{tab\s*===\s*["']sell["']\s*&&\s*\(\s*<section className=["']pos-card pos-pane pos-sale-checkout["']/,
+    "the payment pane must be absent outside the sell tab instead of hidden by child position",
+  );
+  assert.equal(
+    declaration(".pos-main-grid--boardgame > .pos-work-panel", "overflow"),
+    "hidden",
+    "the visible board-game work panel must own the full-height embedded workspace",
   );
 });
 
@@ -159,8 +177,8 @@ test("an open table is a scannable workspace instead of one long form", () => {
   );
   assert.match(
     declaration(".pos-bg-master-detail", "grid-template-columns") ?? "",
-    /56fr[\s\S]*44fr/,
-    "the floor should keep slightly more room than the selected-table detail",
+    /64fr[\s\S]*36fr/,
+    "the floor should keep the same workspace/detail split as the sales screen",
   );
   assert.equal(
     declaration(".pos-bg-master-pane", "overflow-y"),
@@ -171,6 +189,33 @@ test("an open table is a scannable workspace instead of one long form", () => {
     declaration(".pos-bg-detail-pane", "overflow-y"),
     "auto",
     "the selected-table detail must scroll without pushing the floor away",
+  );
+  assert.equal(
+    declaration(".pos-bg-workspace", "background"),
+    "var(--pos-bg)",
+    "the board-game workspace must expose a neutral gutter between its two cards",
+  );
+  for (const selector of [".pos-bg-master-pane", ".pos-bg-detail-pane"]) {
+    assert.equal(
+      declaration(selector, "border"),
+      "1px solid var(--pos-line)",
+      `${selector} must own its border instead of sharing one outer frame`,
+    );
+    assert.equal(
+      declaration(selector, "background"),
+      "var(--pos-surface)",
+      `${selector} must own an independent card background`,
+    );
+  }
+  assert.match(
+    desktopRenderer,
+    /activeModule\s*===\s*["']boardgame["'][\s\S]*?styles\.boardGameModuleHost/,
+    "the desktop shell must remove its shared outer card for the board-game workspace",
+  );
+  assert.match(
+    desktopCss,
+    /\.boardGameModuleHost\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/,
+    "the board-game desktop host must leave the gutter visible instead of painting one connected background",
   );
   assert.match(
     panel,
@@ -224,6 +269,97 @@ test("an open table is a scannable workspace instead of one long form", () => {
     page,
     /session\s*&&\s*!canSell\s*&&\s*tab\s*!==\s*["']boardgame["']/,
     "the sales-only readiness card must not consume the board-game workspace",
+  );
+});
+
+test("the desktop floor follows the compact board-game operations mockup", () => {
+  assert.match(
+    panel,
+    /type FloorFilter = 'ALL' \| 'AVAILABLE' \| 'PLAYING' \| 'ATTENTION' \| 'PAYING'/,
+    "the status chips must filter the real floor instead of acting like decorative counters",
+  );
+  assert.match(
+    panel,
+    /matchesFloorFilter\(table, floorFilter\)/,
+    "every zone must render the selected floor filter",
+  );
+  assert.doesNotMatch(
+    panel,
+    /pos-bg-attention-list|pos-bg-attention-item/,
+    "urgent tables already exist on the floor and must not be duplicated in a second rail",
+  );
+  assert.match(
+    panel,
+    /เฉพาะโต๊ะเร่งด่วน →/,
+    "the compact alert banner must take the operator to the urgent-table filter",
+  );
+  assert.match(
+    panel,
+    /pos-bg-table-badge/,
+    "each floor card must expose its semantic state as a scannable badge",
+  );
+  assert.match(
+    panel,
+    /ยอดจะคำนวณเมื่อหยุดเวลา/,
+    "an open table must explain when play charges become authoritative instead of displaying zero",
+  );
+  assert.match(
+    panel,
+    /participantGroups\.map[\s\S]{0,2400}pos-bg-player-menu/,
+    "players must be grouped by bill and keep infrequent leave actions behind a compact menu",
+  );
+  assert.match(
+    panel,
+    /pos-bg-session-sticky pos-bg-quick-actions/,
+    "the selected table must keep its three primary actions reachable at the bottom edge",
+  );
+  assert.equal(
+    declaration(".pos-bg-session-sticky", "position"),
+    "sticky",
+    "the action bar must remain reachable while the selected table scrolls",
+  );
+  assert.equal(
+    declaration(".pos-bg-session-hero", "background"),
+    "#f4f8ff",
+    "the selected table summary must be visually separated from editable work",
+  );
+});
+
+test("desktop collects a frozen board-game group in its native checkout instead of the legacy sell pane", () => {
+  assert.match(
+    workspaceContext,
+    /onBoardGameCheckout\?:\s*\(billingGroupId:\s*string\)/,
+    "the embedded workspace needs an explicit handoff for a billing-group id",
+  );
+  assert.match(
+    page,
+    /embedded\s*&&\s*onBoardGameCheckout[\s\S]{0,160}onBoardGameCheckout\(billingGroupId\)/,
+    "the board-game panel must hand the frozen group to the desktop shell before switching legacy tabs",
+  );
+  assert.match(
+    mobileFlowGraphql,
+    /bmsPosBoardGameCheckout\(credentials:\s*\$credentials,\s*id:\s*\$id\)/,
+    "desktop must reload the authoritative frozen checkout, not copy an amount out of the table card",
+  );
+  assert.match(
+    desktopRenderer,
+    /boardGameBillingGroupId:\s*boardGameCheckout\?\.id\s*\?\?\s*null/,
+    "settlement must identify the billing group rather than inventing a product line",
+  );
+  assert.match(
+    desktopRenderer,
+    /lines:\s*\(boardGameCheckout\s*\?\s*\[\]\s*:\s*cart\)/,
+    "time and tab charges are server-owned; desktop must not submit them as Product SKUs",
+  );
+  assert.match(
+    desktopRenderer,
+    /ค่าเล่นบอร์ดเกม[\s\S]{0,500}chargeLineCount[\s\S]{0,500}tabItemCount/,
+    "the confirmation screen must explain the table/group service and its server-owned tab",
+  );
+  assert.match(
+    desktopRenderer,
+    /zeroDueBoardGameBill[\s\S]{0,400}canConfirmPayment/,
+    "a fully covered member-pass bill must still be closable with no payment rows",
   );
 });
 

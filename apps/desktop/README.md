@@ -3,7 +3,7 @@
 Windows, Linux and macOS desktop shell for the existing BMS POS surface. The backend remains
 authoritative; this app does not contain a database or a second settlement path.
 
-## Current milestone
+## Current milestone (0.2)
 
 - first-run server and device pairing;
 - pairing verification through the existing device-scoped `/api/pos/session` endpoint;
@@ -11,8 +11,21 @@ authoritative; this app does not contain a database or a second settlement path.
   or KWallet, and macOS Keychain); Linux refuses Electron's insecure `basic_text` fallback;
 - locked-down Electron window with context isolation, renderer sandboxing, origin checks, and a small
   allow-listed IPC bridge;
-- retail, restaurant, customer-display, and cashier-manual POS routes hosted in the desktop shell;
+- the new `/pos/app` renderer uses the same cashier/shift/catalog/scan/sale GraphQL operations and
+  platform-neutral flow, payment, pricing, timeout, and idempotency helpers as the iOS/Android client;
+- first-class desktop flow: device verification → cashier PIN → shift gate → catalogue/scan → cart →
+  payment/split payment → receipt;
+- specialised flows that have not yet moved into the new renderer (returns, PO receiving, deposits,
+  shift management, settings, restaurant and board-game operations) hand off to the existing
+  server-authoritative POS routes. Nothing is hidden or duplicated, and settlement still has one path;
+- rollout is backward compatible: the shell probes `/pos/app` and falls back to `/pos` only when a
+  paired pre-rollout server confirms that the new route is missing with HTTP 404;
+- retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
+  the desktop shell;
 - Windows NSIS, Linux AppImage/DEB, and macOS DMG package configuration.
+- fixed 100% renderer zoom on every platform and child POS window; Electron zoom shortcuts, wheel/
+  pinch zoom, macOS trackpad pinch at Chromium startup, and menu roles are disabled while OS
+  accessibility magnifiers remain available.
 
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and offline tender are
 separate rollout milestones.
@@ -130,3 +143,7 @@ DMGs are unsigned for the same reason and have no update channel either. A signe
 additionally needs an Apple Developer ID and notarization — the macOS workflow runs with
 `CSC_IDENTITY_AUTO_DISCOVERY` off so a runner holding no certificate still builds deterministically,
 which keeps every artifact internal-test only until those decisions are made.
+
+`.github/workflows/desktop-windows.yml` builds the NSIS installer on a Windows runner and uploads it
+as a 14-day internal-test artifact. Windows, Linux and macOS jobs intentionally package on their own
+operating systems; one host's passing build is not evidence for another host's keystore or installer.

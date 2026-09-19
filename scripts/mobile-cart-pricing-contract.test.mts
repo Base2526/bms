@@ -20,9 +20,9 @@ import { cashRoundingDelta as webCashRoundingDelta } from "../apps/web/lib/pos/c
  * ล้วน ๆ แปลว่าร้านที่ตั้งราคาส่ง (8.1) โปรโมชัน (8.7) หรือเปิดปัดเศษเงินสด (7.95)
  * **ขายจากมือถือไม่ได้เลยสักบิล**
  *
- * ⚠️ Metro ของ apps/mobile มี projectRoot เป็นโฟลเดอร์ตัวเอง (ไม่มี watchFolders) จึง import
- * จาก apps/web ไม่ได้ · กติกาจึงถูกคัดลอกไว้ และไฟล์นี้คือด่านที่บังคับให้สองสำเนาตอบเหมือนกัน
- * — ป้อนอินพุตชุดเดียวกันเข้าทั้งสองฝั่งแล้วเทียบผล ไม่ใช่สแกนว่า "มีคำนี้อยู่ในไฟล์"
+ * กติกาฝั่ง client อยู่ใน `packages/pos-client-core` และ Mobile re-export จากที่เดียวกันกับ
+ * Desktop renderer ส่วนไฟล์นี้ยังเป็นด่านเทียบ core กับกติกา authoritative ฝั่งเว็บโดยป้อน
+ * อินพุตชุดเดียวกัน ไม่ใช่สแกนว่า "มีคำนี้อยู่ในไฟล์"
  *
  * ⚠️ ต้องเป็น dynamic import — apps/mobile ไม่ได้ประกาศ "type": "module" ไฟล์จึงถูก tsx
  * แปลงเป็น CJS และ static named import ล้มตอน link ("does not provide an export named")

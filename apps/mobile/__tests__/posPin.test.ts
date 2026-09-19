@@ -1,5 +1,7 @@
 import {
+  isPosPinValid,
   isPosPinLengthValid,
+  normalizePosPinInput,
   POS_PIN_MAX_LENGTH,
   visiblePosPinSlots,
 } from '../src/lib/posPin';
@@ -17,5 +19,12 @@ describe('POS PIN presentation', () => {
     expect(visiblePosPinSlots('1234')).toBe(4);
     expect(visiblePosPinSlots('123456')).toBe(6);
     expect(visiblePosPinSlots('1'.repeat(POS_PIN_MAX_LENGTH + 1))).toBe(8);
+  });
+
+  test('normalizes every POS surface to numeric input capped at eight digits', () => {
+    expect(normalizePosPinInput('01a23-456789')).toBe('01234567');
+    expect(isPosPinValid('0123')).toBe(true);
+    expect(isPosPinValid('12345678')).toBe(true);
+    expect(isPosPinValid('123a')).toBe(false);
   });
 });

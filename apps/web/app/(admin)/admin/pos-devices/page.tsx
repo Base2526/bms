@@ -16,6 +16,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import {
+  isPosPinValid,
+  normalizePosPinInput,
+  POS_PIN_MAX_LENGTH,
+} from "@pos-core/posPin";
 
 const Q = gql`
   query PosSetup($includeDiagnostics: Boolean!, $diagnosticDeviceId: ID) {
@@ -141,6 +146,10 @@ export default function PosDevicesPage() {
 
   async function savePin(clear = false) {
     if (!pinFor) return;
+    if (!clear && !isPosPinValid(pinValue)) {
+      message.error("PIN ต้องเป็นตัวเลข 4–8 หลัก");
+      return;
+    }
     try {
       await setPin({ variables: { userId: pinFor.id, pin: clear ? null : pinValue } });
       message.success(clear ? "ล้าง PIN แล้ว" : "ตั้ง PIN แล้ว");
@@ -555,13 +564,16 @@ export default function PosDevicesPage() {
         confirmLoading={pinSaving}
         okText="บันทึก"
         cancelText="ยกเลิก"
+        okButtonProps={{ disabled: !isPosPinValid(pinValue) }}
       >
-        <InputNumber
-          value={pinValue === "" ? null : Number(pinValue)}
-          onChange={(v) => setPinValue(v == null ? "" : String(v))}
+        <Input.Password
+          value={pinValue}
+          onChange={(event) => setPinValue(normalizePosPinInput(event.target.value))}
           placeholder="ตัวเลข 4–8 หลัก"
           style={{ width: "100%" }}
-          controls={false}
+          inputMode="numeric"
+          maxLength={POS_PIN_MAX_LENGTH}
+          autoComplete="new-password"
         />
         <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
           บอก PIN กับพนักงานโดยตรง — ระบบไม่แสดงซ้ำและไม่บันทึกค่าจริงไว้ที่ไหน

@@ -9,7 +9,7 @@
 //
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
 import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
@@ -66,6 +66,7 @@ import {
   readPosDeviceToken,
   writeBrowserPosDeviceToken,
 } from "@/lib/pos/deviceTokenClient";
+import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
 
 /**
  * แถบงานด้านซ้าย — จอ POS สูง 768px เป็นมาตรฐาน แกนตั้งจึงเป็นของหายาก
@@ -87,7 +88,6 @@ const POS_TABS = [
   { key: "shift", label: "กะ" },
   { key: "settings", label: "ตั้งค่า" },
 ] as const;
-type PosTab = (typeof POS_TABS)[number]["key"];
 
 /**
  * ไอคอนต้องเป็น SVG ห้ามใช้ตัวอักษร
@@ -1346,7 +1346,18 @@ type IncomingRestaurantOrder = {
 type IncomingRefund = { id: string; orderId: string; amount: number; method: string; channel: string; customerRef: string | null; cancelledBy: string | null; createdAt: string };
 
 export default function PosPage() {
-  const [token, setToken] = useState<string>("");
+  const {
+    embedded,
+    initialTab,
+    initialToken,
+    initialCashierId,
+    initialPin,
+    onTabChange,
+    onShiftChange,
+    onUnpair,
+    onBoardGameCheckout,
+  } = useContext(PosWorkspaceContext);
+  const [token, setToken] = useState<string>(initialToken);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState<string>("");
   const [tokenInput, setTokenInput] = useState("");
   const [session, setSession] = useState<Session | null>(null);
@@ -1359,7 +1370,7 @@ export default function PosPage() {
   // token ที่เก็บไว้ใช้ไม่ได้แล้ว (เครื่องถูกปิด/ออก token ใหม่/ใส่ผิด)
   const [tokenRejected, setTokenRejected] = useState(false);
   const [loadingSession, setLoadingSession] = useState(true);
-  const [cashierId, setCashierId] = useState<string>("");
+  const [cashierId, setCashierId] = useState<string>(initialCashierId);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [scanCode, setScanCode] = useState("");
   const [hidCapturing, setHidCapturing] = useState(false);
@@ -1381,7 +1392,7 @@ export default function PosPage() {
   ]);
   // PIN อยู่ในหน่วยความจำเท่านั้น — ไม่ลง localStorage เพราะเครื่องหน้าร้าน
   // เปิดค้างทั้งวันและใครก็เปิด devtools ดูได้
-  const [pin, setPin] = useState<string>("");
+  const [pin, setPin] = useState<string>(initialPin);
   const [openingFloat, setOpeningFloat] = useState<string>("");
   const [countedCash, setCountedCash] = useState<string>("");
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -1393,7 +1404,7 @@ export default function PosPage() {
   const [modifierHit, setModifierHit] = useState<ScanHit | null>(null);
   const [selectedModifierCodes, setSelectedModifierCodes] = useState<string[]>([]);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
-  const [tab, setTab] = useState<PosTab>("sell");
+  const [tab, setTab] = useState<PosTab>(initialTab);
   const [incomingOrders, setIncomingOrders] = useState<IncomingRestaurantOrder[]>([]);
   const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
@@ -1417,6 +1428,24 @@ export default function PosPage() {
       return true;
     });
   }, [session?.businessArchetype]);
+
+  // Desktop renderer owns the persistent shell and authentication step. Keep this established
+  // workspace in sync with that shell instead of making the operator select themselves twice.
+  // The PIN still stays in memory only and every mutation is re-authorized by the server.
+  useEffect(() => {
+    if (!embedded) return;
+    setTab(initialTab);
+    setCashierId(initialCashierId);
+    setPin(initialPin);
+  }, [embedded, initialCashierId, initialPin, initialTab]);
+
+  useEffect(() => {
+    if (embedded) onTabChange?.(tab);
+  }, [embedded, onTabChange, tab]);
+
+  useEffect(() => {
+    if (embedded && session) onShiftChange?.(Boolean(session.shift));
+  }, [embedded, onShiftChange, session]);
   // ทุกบิลผูกกับคนนี้ — ต้องเห็นบนแถบบนตลอด ไม่ใช่ซ่อนอยู่ในแท็บตั้งค่า
   const currentCashierName = useMemo(() => {
     const found = (session?.cashiers ?? []).find((c) => c.id === cashierId);
@@ -1765,7 +1794,9 @@ export default function PosPage() {
         url.searchParams.delete("token");
         window.history.replaceState({}, "", url.pathname + url.search);
       }
-      const nextToken = browserPairingLink ? fromUrl : await readPosDeviceToken();
+      const nextToken = browserPairingLink
+        ? fromUrl
+        : initialToken || await readPosDeviceToken();
       const nextNamespace = nextToken ? await posDeviceStorageNamespace(nextToken) : "";
       if (!disposed) {
         setToken(nextToken);
@@ -1778,7 +1809,7 @@ export default function PosPage() {
     };
     void initialize();
     return () => { disposed = true; };
-  }, []);
+  }, [initialToken]);
 
   useEffect(() => {
     if (!session?.shift) return;
@@ -1976,7 +2007,7 @@ export default function PosPage() {
       // บัตรของขวัญ/ขายเชื่อ ยังอยู่ที่หน้านี้เท่านั้น ร้านอาหารก็ต้องทำงานเหล่านั้น
       // (ขายน้ำแพ็กกลับบ้าน รับของจาก PO ที่เคาน์เตอร์) · `?surface=retail` คือทางกลับนั้น
       // และปุ่มที่ /pos/restaurant เป็นตัวส่งมา
-      if (data.businessArchetype === "restaurant"
+      if (!embedded && data.businessArchetype === "restaurant"
           && new URLSearchParams(window.location.search).get("surface") !== "retail") {
         window.location.replace("/pos/restaurant");
         return;
@@ -1998,9 +2029,13 @@ export default function PosPage() {
     } finally {
       setLoadingSession(false);
     }
-  }, [token, authHeaders]);
+  }, [token, authHeaders, embedded]);
 
   async function unpair() {
+    if (embedded && onUnpair) {
+      await onUnpair();
+      return;
+    }
     // เครื่องนี้เลิกจับคู่แล้ว — ดราฟต์ที่ผูกไว้กับ token เดิมไม่มีความหมายอีกต่อไป
     if (token) {
       const namespace = await posDeviceStorageNamespace(token);
@@ -2062,8 +2097,15 @@ export default function PosPage() {
     if (!deviceStorageNamespace || !session || localDraftRestoredRef.current) return;
     localDraftRestoredRef.current = true;
 
+    // Desktop renderer ใหม่ส่งงานเฉพาะทางเข้าหน้าเดิมด้วย query นี้ จึงต้องให้ URL ที่ผู้ใช้
+    // เพิ่งกดชนะค่าแท็บที่จำไว้ ไม่เช่นนั้นกด "คืน" แล้วอาจกลับไปแท็บ "ขาย" จากครั้งก่อน.
+    const requestedTab = embedded
+      ? initialTab
+      : new URLSearchParams(window.location.search).get("tab");
     const savedTab = window.localStorage.getItem(LOCAL_TAB_KEY_PREFIX + deviceStorageNamespace);
-    if (savedTab && POS_TABS.some((item) => item.key === savedTab)) {
+    if (requestedTab && POS_TABS.some((item) => item.key === requestedTab)) {
+      setTab(requestedTab as PosTab);
+    } else if (savedTab && POS_TABS.some((item) => item.key === savedTab)) {
       setTab(savedTab as PosTab);
     }
 
@@ -2089,7 +2131,7 @@ export default function PosPage() {
       window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + deviceStorageNamespace);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceStorageNamespace, session]);
+  }, [deviceStorageNamespace, embedded, initialTab, session]);
 
   useEffect(() => {
     if (!token) return;
@@ -6169,7 +6211,7 @@ export default function PosPage() {
         {hasDesktopPosBridge() ? (
           <>
             <p style={{ color: "#666", fontSize: 14 }}>
-              กลับไปหน้าตั้งค่า Windows Client เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
+              กลับไปหน้าตั้งค่า BMS POS Desktop เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
             </p>
             <button
               onClick={() => { void unpair(); }}
@@ -6223,7 +6265,7 @@ export default function PosPage() {
   // และต้องประกาศ 100vh ก่อน 100dvh เพื่อให้เบราว์เซอร์เก่าที่ไม่รู้จัก dvh ตกมาใช้ vh
   return (
     <div
-      className="pos-page"
+      className={`pos-page${embedded ? " pos-page--embedded" : ""}`}
       style={{ display: "flex" }}
       onInputCapture={clearInvalidField}
       onChangeCapture={clearInvalidField}
@@ -6234,6 +6276,10 @@ export default function PosPage() {
            (แถบงานด้านล่าง) ถูกดันต่ำกว่าพื้นที่ที่มองเห็นจนตัวหนังสือโดนตัด
            dvh หดตามจริง จึงเป็นค่าที่ถูกสำหรับ app-shell ที่มีแถบติดขอบล่าง */
         .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
+        .pos-page--embedded { height: 100%; min-height: 0; background: transparent; }
+        .pos-page--embedded .pos-rail,
+        .pos-page--embedded .pos-topbar { display: none; }
+        .pos-page--embedded .pos-body { padding: 0; gap: 8px; }
         /* หน้าไม่เลื่อนทั้งหน้า — ให้แต่ละคอลัมน์เลื่อนของตัวเอง ปุ่มชำระเงิน
            จึงอยู่ที่เดิมเสมอแม้ตะกร้าจะยาว */
         .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: hidden; }
@@ -6400,6 +6446,14 @@ export default function PosPage() {
             แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {hasDesktopPosBridge() && (
+            <button
+              onClick={() => window.location.assign("/pos/app")}
+              style={{ flex: "none", height: 44, padding: "0 12px", color: "#1677ff" }}
+            >
+              ← หน้า POS ใหม่
+            </button>
+          )}
           <select
             ref={cashierSelectRef}
             value={cashierId}
@@ -6493,7 +6547,13 @@ export default function PosPage() {
       )}
       <div
         className={`pos-main-grid${tab === "boardgame" ? " pos-main-grid--boardgame" : ""}${tab === "sell" ? " pos-main-grid--sell" : ""}`}
-        style={{ display: "grid", gridTemplateColumns: "minmax(0,64fr) minmax(380px,36fr)", gap: 12, flex: 1, minHeight: 0 }}
+        style={{
+          display: "grid",
+          gridTemplateColumns: tab === "sell" ? "minmax(0,64fr) minmax(380px,36fr)" : "minmax(0,1fr)",
+          gap: 12,
+          flex: 1,
+          minHeight: 0,
+        }}
       >
       <section className={`pos-card pos-pane pos-work-panel${tab === "sell" ? " pos-sale-basket" : ""}`}>
       {tab === "returns" && (<>
@@ -6733,6 +6793,10 @@ export default function PosPage() {
           cashierUserId={cashierId}
           pin={pin}
           onCheckout={(billingGroupId) => {
+            if (embedded && onBoardGameCheckout) {
+              void onBoardGameCheckout(billingGroupId);
+              return;
+            }
             setBoardGameCheckoutId(billingGroupId);
             switchTab("sell");
           }}
@@ -8812,6 +8876,7 @@ export default function PosPage() {
       </>)}
         </section>
 
+        {tab === "sell" && (
         <section className="pos-card pos-pane pos-sale-checkout" style={{ display: "flex", flexDirection: "column" }}>
           <div className="pos-sale-totalbar">
               <div className="pos-total-row">
@@ -9960,6 +10025,7 @@ export default function PosPage() {
           </details>
           </div>)}
         </section>
+        )}
       </div>
       </div>
       {modifierHit && (
