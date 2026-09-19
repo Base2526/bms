@@ -591,6 +591,31 @@
 .stockOk { color: #389e0d; font-size: 11px; }
 .stockOut { color: #cf1322; font-size: 11px; }
 .emptyCatalog { grid-column: 1 / -1; align-self: center; text-align: center; color: #8a94a6; }
+.catalogStatus {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: center;
+  min-width: min(360px, 90%);
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 22px;
+  color: #667085;
+  text-align: center;
+}
+.catalogStatus strong { color: #253047; }
+.catalogStatus span:last-of-type { font-size: 13px; }
+.catalogStatus button { margin-top: 5px; color: #1677ff; }
+.catalogStatusError strong { color: #b42318; }
+.catalogSpinner {
+  width: 25px;
+  height: 25px;
+  border: 3px solid #d6e7ff;
+  border-top-color: #1677ff;
+  border-radius: 50%;
+  animation: catalog-spin 0.7s linear infinite;
+}
+@keyframes catalog-spin { to { transform: rotate(360deg); } }
 
 .checkoutPane {
   display: flex;

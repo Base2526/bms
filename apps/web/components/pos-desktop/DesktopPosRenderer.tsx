@@ -209,6 +209,7 @@ export default function DesktopPosRenderer() {
   const desktopRootRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [token, setToken] = useState("");
+  const tokenRef = useRef("");
   const [flow, setFlow] = useState<PosClientFlowState>(() => initialPosClientFlow(true));
   const [bootstrap, setBootstrap] = useState<PosBootstrap | null>(null);
   const [cashier, setCashier] = useState<PosCashier | null>(null);
@@ -216,6 +217,8 @@ export default function DesktopPosRenderer() {
   const [pin, setPin] = useState("");
   const [openingFloat, setOpeningFloat] = useState("0");
   const [catalog, setCatalog] = useState<PosCatalogItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const [query, setQuery] = useState("");
   const [scanCode, setScanCode] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -249,6 +252,13 @@ export default function DesktopPosRenderer() {
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
   const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const catalogRequestVersion = useRef(0);
+  const catalogRequestRef = useRef<{
+    token: string;
+    query: string;
+    promise: Promise<void>;
+  } | null>(null);
+  const catalogPrimedRef = useRef<{ token: string; at: number } | null>(null);
   const customerDisplayChannelRef = useRef<BroadcastChannel | null>(null);
   const customerDisplayPayloadRef = useRef<CustomerDisplayPayload>(EMPTY_CUSTOMER_DISPLAY);
 
@@ -340,15 +350,69 @@ export default function DesktopPosRenderer() {
     setFlow((current) => transitionPosClientFlow(current, event));
   }, []);
 
+  const loadCatalog = useCallback(
+    (q: string, tokenOverride?: string): Promise<void> => {
+      const requestToken = tokenOverride ?? tokenRef.current;
+      const normalizedQuery = q.trim();
+      if (!requestToken) return Promise.resolve();
+
+      // The device bootstrap starts the default catalogue while the cashier types their PIN.
+      // Reuse that exact request when the catalogue screen opens instead of sending the same
+      // always-fresh read twice. Search requests are not cached: a new query still reaches the
+      // server, and the monotonically increasing version prevents a slower old response from
+      // replacing a newer result.
+      const activeRequest = catalogRequestRef.current;
+      if (activeRequest
+        && activeRequest.token === requestToken
+        && activeRequest.query === normalizedQuery) {
+        return activeRequest.promise;
+      }
+
+      const version = ++catalogRequestVersion.current;
+      setCatalogLoading(true);
+      setCatalogError("");
+      const promise: Promise<void> = posGraphqlRequest<{
+        bmsPosCatalogSearch: { items: PosCatalogItem[] };
+      }>(requestToken, POS_CATALOG_QUERY, { q: normalizedQuery })
+        .then((data) => {
+          if (version !== catalogRequestVersion.current) return;
+          setCatalog(data.bmsPosCatalogSearch.items);
+          if (!normalizedQuery) {
+            catalogPrimedRef.current = { token: requestToken, at: Date.now() };
+          }
+          setConnection("online");
+        })
+        .catch((cause) => {
+          if (version !== catalogRequestVersion.current) return;
+          setConnection("offline");
+          setCatalogError(messageOf(cause));
+        })
+        .finally(() => {
+          if (catalogRequestRef.current?.promise === promise) {
+            catalogRequestRef.current = null;
+          }
+          if (version === catalogRequestVersion.current) {
+            setCatalogLoading(false);
+          }
+        });
+
+      catalogRequestRef.current = { token: requestToken, query: normalizedQuery, promise };
+      return promise;
+    },
+    [],
+  );
+
   const bootstrapDevice = useCallback(async () => {
     setConnection("checking");
     setError("");
     const nextToken = await readPosDeviceToken();
     if (!nextToken) {
+      tokenRef.current = "";
       setToken("");
       setFlow(initialPosClientFlow(false));
       return;
     }
+    tokenRef.current = nextToken;
     setToken(nextToken);
     try {
       const data = await posGraphqlRequest<{ bmsPosSession: PosBootstrap }>(
@@ -366,41 +430,42 @@ export default function DesktopPosRenderer() {
         return next;
       });
       setConnection("online");
+      // Catalogue reads require the paired device but not a cashier PIN. Starting this after the
+      // device has been verified overlaps network/DB time with PIN entry and removes a serial wait
+      // from the first selling screen without weakening any sale or stock authorization.
+      void loadCatalog("", nextToken);
     } catch (cause) {
       setConnection("offline");
       setError(messageOf(cause));
     }
-  }, []);
+  }, [loadCatalog]);
 
   useEffect(() => {
     void bootstrapDevice();
   }, [bootstrapDevice]);
 
-  const loadCatalog = useCallback(
-    async (q: string) => {
-      if (!token) return;
-      try {
-        const data = await posGraphqlRequest<{
-          bmsPosCatalogSearch: { items: PosCatalogItem[] };
-        }>(token, POS_CATALOG_QUERY, { q });
-        setCatalog(data.bmsPosCatalogSearch.items);
-        setConnection("online");
-      } catch (cause) {
-        setConnection("offline");
-        setError(messageOf(cause));
-      }
-    },
-    [token],
-  );
-
   useEffect(() => {
     if (flow.stage !== "CATALOG") return;
+    const normalizedQuery = query.trim();
+    const primed = catalogPrimedRef.current;
+    if (!normalizedQuery
+      && primed?.token === token
+      && Date.now() - primed.at < 15_000) {
+      catalogPrimedRef.current = null;
+      return;
+    }
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => void loadCatalog(query), 180);
+    searchTimer.current = setTimeout(() => {
+      void loadCatalog(normalizedQuery).finally(() => {
+        // If this joined the bootstrap request, consume its one-shot prime marker here so clearing
+        // a later search always performs a fresh authoritative read.
+        if (!normalizedQuery) catalogPrimedRef.current = null;
+      });
+    }, normalizedQuery ? 180 : 0);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [flow.stage, loadCatalog, query]);
+  }, [flow.stage, loadCatalog, query, token]);
 
   const signIn = async (event: FormEvent) => {
     event.preventDefault();
@@ -622,10 +687,17 @@ export default function DesktopPosRenderer() {
 
   const unpair = useCallback(async () => {
     await clearPosDeviceToken();
+    catalogRequestVersion.current += 1;
+    catalogRequestRef.current = null;
+    catalogPrimedRef.current = null;
+    tokenRef.current = "";
     setToken("");
     setBootstrap(null);
     setCashier(null);
     setPin("");
+    setCatalog([]);
+    setCatalogLoading(false);
+    setCatalogError("");
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("UNPAIR");
@@ -1460,7 +1532,17 @@ export default function DesktopPosRenderer() {
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อหรือ SKU" />
                 </div>
                 {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</PosDismissibleAlert> : null}
-                <div className={styles.productGrid}>
+                {catalog.length && catalogError ? (
+                  <PosDismissibleAlert
+                    key={catalogError}
+                    className={styles.errorBox}
+                    onClose={() => setCatalogError("")}
+                  >
+                    อัปเดตรายการสินค้าไม่สำเร็จ · {catalogError}
+                    <button onClick={() => void loadCatalog(query)}>ลองใหม่</button>
+                  </PosDismissibleAlert>
+                ) : null}
+                <div className={styles.productGrid} aria-busy={catalogLoading}>
                   {catalog.map((item) => {
                     const selection = selectPosCatalogCardVariant(item);
                     const selectedVariant = selection.variant;
@@ -1487,7 +1569,23 @@ export default function DesktopPosRenderer() {
                     </button>
                     );
                   })}
-                  {!catalog.length && !busy ? <div className={styles.emptyCatalog}>ไม่พบสินค้า ลองค้นด้วยชื่อหรือยิงบาร์โค้ด</div> : null}
+                  {!catalog.length && catalogLoading ? (
+                    <div className={styles.catalogStatus} role="status">
+                      <span className={styles.catalogSpinner} aria-hidden="true" />
+                      <strong>กำลังโหลดสินค้า…</strong>
+                      <span>กำลังตรวจราคาและสต็อกล่าสุดของสาขานี้</span>
+                    </div>
+                  ) : null}
+                  {!catalog.length && !catalogLoading && catalogError ? (
+                    <div className={`${styles.catalogStatus} ${styles.catalogStatusError}`} role="alert">
+                      <strong>โหลดรายการสินค้าไม่สำเร็จ</strong>
+                      <span>{catalogError}</span>
+                      <button onClick={() => void loadCatalog(query)}>ลองใหม่</button>
+                    </div>
+                  ) : null}
+                  {!catalog.length && !catalogLoading && !catalogError && !busy ? (
+                    <div className={styles.emptyCatalog}>ไม่พบสินค้า ลองค้นด้วยชื่อหรือยิงบาร์โค้ด</div>
+                  ) : null}
                 </div>
               </>
             )}

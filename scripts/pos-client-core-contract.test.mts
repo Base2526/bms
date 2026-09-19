@@ -120,6 +120,36 @@ test("catalog cards show stock for the same variant that clicking will sell", ()
   assert.notEqual(item42.available, 99, "the all-size total must not label the selected L variant");
 });
 
+test("desktop POS overlaps the first catalogue read with cashier PIN entry", () => {
+  assert.match(
+    desktopRenderer,
+    /setConnection\("online"\);[\s\S]*?void loadCatalog\("", nextToken\);/,
+    "the verified device should prime the catalogue before cashier authentication finishes",
+  );
+  assert.match(
+    desktopRenderer,
+    /activeRequest\.token === requestToken[\s\S]*?activeRequest\.query === normalizedQuery[\s\S]*?return activeRequest\.promise/,
+    "opening the selling screen must join an in-flight prime instead of duplicating it",
+  );
+  assert.match(
+    desktopRenderer,
+    /const version = \+\+catalogRequestVersion\.current[\s\S]*?version !== catalogRequestVersion\.current/,
+    "a slow old search must not overwrite a newer catalogue response",
+  );
+  assert.match(
+    desktopRenderer,
+    /normalizedQuery \? 180 : 0/,
+    "typing may be debounced, but the default catalogue must not receive an artificial delay",
+  );
+  assert.match(desktopRenderer, /aria-busy=\{catalogLoading\}/);
+  assert.match(desktopRenderer, /กำลังโหลดสินค้า…/);
+  assert.match(
+    desktopRenderer,
+    /!catalog\.length && !catalogLoading && !catalogError && !busy/,
+    "an in-flight or failed request must not be presented as an empty catalogue",
+  );
+});
+
 test("desktop header keeps cashier identity without a permanent legacy-sales escape button", () => {
   assert.doesNotMatch(
     desktopRenderer,
