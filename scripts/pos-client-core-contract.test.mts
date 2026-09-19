@@ -154,5 +154,8 @@ test("desktop POS alerts expose a close control on every operating surface", () 
   assert.doesNotMatch(retailRenderer, /<div className="pos-note(?:\s|"|`)/);
   assert.match(boardGameRenderer, /PosDismissibleAlert/);
   assert.match(desktopRenderer, /PosDismissibleAlert/);
+  assert.match(desktopRenderer, /useOrderAlerts\(Boolean\(bootstrap && cashier\)\)/);
+  assert.match(desktopRenderer, /OrderAlertSettingsModal/);
+  assert.match(desktopRenderer, /styles\.alertBell/);
   assert.doesNotMatch(desktopRenderer, /<(?:div|p) className=\{styles\.(?:errorBox|noticeBox)\}/);
 });

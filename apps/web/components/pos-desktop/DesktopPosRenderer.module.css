@@ -125,6 +125,53 @@
 .connection.offline { color: #cf1322; background: #fff2f0; }
 .connection.offline i { background: #ff4d4f; }
 
+.alertBell {
+  position: relative;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px !important;
+  display: grid;
+  place-items: center;
+  padding: 0 !important;
+  border: 1px solid #d9dee7 !important;
+  border-radius: 11px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  color: #7a8597 !important;
+}
+.alertBell:hover { border-color: #91caff !important; background: #f8fbff !important; color: #1677ff !important; }
+.alertBell svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.alertBellOn { color: #1677ff !important; background: #f8fbff !important; }
+.alertBellBlocked { border-color: #ff7875 !important; color: #cf1322 !important; background: #fff2f0 !important; }
+.alertBellDot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #ff4d4f;
+  box-sizing: content-box;
+}
+.alertBellSlash {
+  position: absolute;
+  width: 25px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(-45deg);
+}
+
 .accountMenu { position: relative; }
 .accountMenu > summary {
   min-width: 210px;

@@ -55,8 +55,11 @@ import {
   readPosDeviceToken,
 } from "@/lib/pos/deviceTokenClient";
 import PosPage from "@/app/(pos)/pos/page";
+import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
+import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
+import { ALERT_KINDS } from "@/lib/pos/orderAlertSound";
 import styles from "./DesktopPosRenderer.module.css";
 
 type CartLine = PricedCartLine & {
@@ -178,6 +181,10 @@ export default function DesktopPosRenderer() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
+  // Reuse the established per-device alert store. The desktop shell exposes the control, but
+  // notification rules and playback remain owned by the existing POS alert pipeline.
+  const alerts = useOrderAlerts(Boolean(bootstrap && cashier));
+  const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
   const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
   const addProductPendingRef = useRef(false);
@@ -848,6 +855,19 @@ export default function DesktopPosRenderer() {
           </div>
           <div className={styles.topMeta}>
             <span className={`${styles.connection} ${styles[connection]}`}><i />{connection === "online" ? "ออนไลน์" : connection === "checking" ? "กำลังเชื่อมต่อ" : "การเชื่อมต่อมีปัญหา"}</span>
+            <button
+              type="button"
+              className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
+              onClick={() => setAlertSettingsOpen(true)}
+              aria-label={alerts.settings.enabled ? "ตั้งค่าเสียงแจ้งเตือน (เปิดอยู่)" : "ตั้งค่าเสียงแจ้งเตือน (ปิดอยู่)"}
+              title={alerts.blocked ? "เสียงแจ้งเตือนถูกบล็อก — กดเพื่อตรวจสอบ" : alerts.settings.enabled ? "เสียงแจ้งเตือนเปิดอยู่" : "เสียงแจ้งเตือนปิดอยู่"}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+              </svg>
+              {!alerts.settings.enabled ? <span className={styles.alertBellSlash} aria-hidden="true" /> : null}
+              {alerts.blocked ? <span className={styles.alertBellDot} aria-hidden="true" /> : null}
+            </button>
             <details className={styles.accountMenu}>
               <summary aria-label={`เมนูพนักงาน ${cashier?.name || cashier?.email || ""}`}>
                 <span className={styles.accountAvatar} aria-hidden="true">
@@ -1107,6 +1127,12 @@ export default function DesktopPosRenderer() {
         </div>
         )}
       </section>
+      <OrderAlertSettingsModal
+        open={alertSettingsOpen}
+        onClose={() => setAlertSettingsOpen(false)}
+        alerts={alerts}
+        kinds={ALERT_KINDS}
+      />
       {!hasDesktopPosBridge() ? <div className={styles.browserBadge}>Browser preview · Electron จะเก็บ device token ใน OS keychain</div> : null}
     </main>
   );
