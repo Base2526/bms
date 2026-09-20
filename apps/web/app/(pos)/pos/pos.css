@@ -2105,7 +2105,7 @@
   padding: 10px 10px 10px 14px;
   display: grid;
   grid-template-columns: minmax(94px, .75fr) minmax(130px, 1.15fr) minmax(64px, .55fr)
-    minmax(130px, 1.2fr) minmax(76px, .65fr) minmax(280px, auto);
+    minmax(130px, 1.2fr) minmax(76px, .65fr) minmax(248px, 300px);
   align-items: center;
   gap: 10px;
   overflow: hidden;
@@ -2171,9 +2171,24 @@
 .pos-bg-reservation-card-actions {
   grid-column: 6;
   grid-row: 1 / span 2;
-  justify-content: flex-end;
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  justify-content: stretch;
 }
-.pos-bg-reservation-card-actions > select { min-width: 130px; }
+.pos-root .pos-bg-reservation-card-actions > button {
+  min-width: 0;
+  width: 100%;
+  padding-inline: 8px;
+  justify-content: center;
+}
+.pos-bg-reservation-card-actions > select {
+  min-width: 0;
+  width: 100%;
+  grid-column: 1 / -1;
+}
 .pos-bg-reservation-add-toggle {
   width: 100%;
   min-height: 46px;
@@ -2324,7 +2339,12 @@
     grid-template-columns: minmax(90px, .7fr) minmax(140px, 1.2fr) minmax(70px, .6fr)
       minmax(140px, 1fr) minmax(80px, .7fr);
   }
-  .pos-bg-reservation-card-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-end; }
+  .pos-bg-reservation-card-actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    width: min(100%, 360px);
+    justify-self: end;
+  }
   .pos-bg-reservation-card-note { grid-column: 2 / -1; }
 }
 
@@ -2345,6 +2365,6 @@
   .pos-bg-reservation-card-fact,
   .pos-bg-reservation-card-note,
   .pos-bg-reservation-card-actions { grid-column: 1 / -1; }
-  .pos-bg-reservation-card-actions { justify-content: stretch; }
+  .pos-bg-reservation-card-actions { width: 100%; justify-self: stretch; }
   .pos-bg-reservation-card-actions > * { flex: 1 1 120px; }
 }

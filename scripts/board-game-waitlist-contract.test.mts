@@ -148,6 +148,10 @@ test("the browser register uses one calendar date for browsing and creating rese
   assert.match(browser, /aria-expanded=\{reservationEditorOpen\}/);
   assert.match(browser, /เพิ่มการจองใหม่/);
   assert.match(browserCss, /\.pos-bg-reservation-card\s*\{/);
+  assert.match(browserCss, /\.pos-bg-reservation-card-actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    "reservation actions must stay in a bounded two-column grid instead of overflowing the card");
+  assert.doesNotMatch(browserCss, /minmax\(280px,\s*auto\)/,
+    "action labels must not set an unbounded intrinsic width that clips the master pane");
   assert.match(browserCss, /\.pos-bg-reservation-add-toggle\s*\{/);
 });
 
