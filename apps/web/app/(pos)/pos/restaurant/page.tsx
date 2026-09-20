@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
@@ -15,6 +16,17 @@ import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll"
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
 import { posDeviceStorageNamespace, readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
+import {
+  VERIFY_CASHIER_MUTATION,
+  posGraphqlRequest,
+  type PosCashier,
+} from "@/lib/pos/mobileFlowGraphql";
+import {
+  isPosPinValid,
+  normalizePosPinInput,
+  POS_PIN_MAX_LENGTH,
+} from "@pos-core/posPin";
+import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import { posPaymentMethodLabel, receiptDocumentTitle,
   receiptLabel,
@@ -75,8 +87,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT";
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT"];
+type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "OTHER";
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "OTHER"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -84,7 +96,7 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR",
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", other: "OTHER",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
@@ -467,6 +479,8 @@ const lineKitchenStates = (t: Translate): Record<string, { label: string; color:
 });
 
 export default function RestaurantPosPage() {
+  const router = useRouter();
+  const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
   const { lang, t } = useI18n();
   const uiLocale = lang === "en" ? "en-US" : "th-TH";
   // ชื่อเดิมทั้งสามตัวถูกสร้างต่อ render เพื่อให้จุดใช้งานที่เหลือไม่ต้องเปลี่ยน
@@ -511,16 +525,20 @@ export default function RestaurantPosPage() {
   const [check, setCheck] = useState<RestaurantCheck | null>(null);
   // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
   // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
-  const [screen, setScreen] = useState<RestaurantScreen>("ORDER");
+  const [screen, setScreen] = useState<RestaurantScreen>("FLOOR");
   // ต้องอ่านค่าที่จำไว้ให้เสร็จก่อน effect ที่เขียนทับจะเริ่มทำงาน — สลับลำดับกันแล้วค่า
-  // เริ่มต้น ("ORDER" / ไม่มีบิล) จะทับของที่จำไว้ตั้งแต่ก่อนที่ใครจะได้อ่านมัน
+  // เริ่มต้น ("FLOOR" / ไม่มีบิล) จะทับของที่จำไว้ตั้งแต่ก่อนที่ใครจะได้อ่านมัน
   // (กับดักเดียวกับ localDraftRestoredRef ของหน้าค้าปลีก)
   const localViewRestoredRef = useRef(false);
   // เป็น state ไม่ใช่ ref เพราะ effect ที่เขียนต้องรอ "คืนค่าเสร็จ" ไม่ใช่ "เริ่มคืนค่า" —
   // การคืนบิลเป็น async ถ้าไม่รอ effect ที่ลบบิลจะวิ่งไปก่อนแล้วลบค่าที่ยังไม่ได้อ่าน
   const [viewRestored, setViewRestored] = useState(false);
-  const [actorUserId, setActorUserId] = useState("");
-  const [actorPin, setActorPin] = useState("");
+  const [actorUserId, setActorUserId] = useState(() => rememberedOperator?.cashier.id ?? "");
+  const [actorPin, setActorPin] = useState(() => rememberedOperator?.pin ?? "");
+  const [operatorDraftId, setOperatorDraftId] = useState(() => rememberedOperator?.cashier.id ?? "");
+  const [operatorDraftPin, setOperatorDraftPin] = useState("");
+  const [operatorError, setOperatorError] = useState("");
+  const [operatorVerifying, setOperatorVerifying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -619,6 +637,7 @@ export default function RestaurantPosPage() {
   // จะ resolve ไม่ได้แล้วหายไปเงียบ ๆ (เห็นแค่ตัวเลขลอยไม่มีกรอบ) — ต้องส่ง getContainer
   // ให้ modal render อยู่ใต้ .page แทนเพื่อให้ยังเห็นตัวแปรพวกนี้
   const rootRef = useRef<HTMLElement>(null);
+  const accountMenuRef = useRef<HTMLDetailsElement>(null);
   const workingRef = useRef(false);
   const displayChannel = useRef<BroadcastChannel | null>(null);
   const displayPayloadRef = useRef<CustomerDisplayPayload | null>(null);
@@ -644,6 +663,32 @@ export default function RestaurantPosPage() {
       setReady(true);
     });
     return () => { disposed = true; };
+  }, []);
+  useEffect(() => {
+    if (!rememberedOperator) return;
+    setActorUserId(rememberedOperator.cashier.id);
+    setActorPin(rememberedOperator.pin);
+    setOperatorDraftId(rememberedOperator.cashier.id);
+    setOperatorDraftPin("");
+    setOperatorError("");
+  }, [rememberedOperator]);
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const menu = accountMenuRef.current;
+      if (!menu?.open || !(event.target instanceof Node) || menu.contains(event.target)) return;
+      menu.open = false;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !accountMenuRef.current?.open) return;
+      accountMenuRef.current.open = false;
+      accountMenuRef.current.querySelector<HTMLElement>("summary")?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
   }, []);
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -898,6 +943,17 @@ export default function RestaurantPosPage() {
   }, [check, t, uiLocale]);
   const operatorReady = Boolean(actorUserId && actorPin);
   const operatorName = staff.find((person) => person.id === actorUserId)?.name ?? staff.find((person) => person.id === actorUserId)?.email ?? "";
+  useEffect(() => {
+    if (!session || !actorUserId) return;
+    const actorStillAvailable = actorUserId
+      ? staff.some((person) => person.id === actorUserId && person.hasPin)
+      : false;
+    if (actorStillAvailable && actorPin) return;
+    clearOperator();
+    setActorUserId("");
+    setActorPin("");
+    setOperatorDraftId((current) => current || staff.find((person) => person.hasPin)?.id || "");
+  }, [actorPin, actorUserId, clearOperator, session, staff]);
   // เกณฑ์เดียวที่ใช้ทั้งคำเตือนและป้ายยอดเงิน: "มีบรรทัดที่ยังไม่ส่งครัวจริงไหม"
   // (เทียบ version กับ reservedVersion ตรง ๆ จะเตือนตั้งแต่บิลยังว่าง เพราะบิลใหม่มี
   // version = 0 แต่ reservedVersion = null) · ยอดที่แสดงยังเป็นตัวเลขจาก server เสมอ
@@ -994,7 +1050,69 @@ export default function RestaurantPosPage() {
     catch (cause) { const text = cause instanceof Error ? cause.message : String(cause); setError(text); message.error(text); }
     finally { workingRef.current = false; setWorking(false); }
   }
-  async function loadSession() { const data: Session = await json("/api/pos/session"); if (data.businessArchetype !== "restaurant") { window.location.replace("/pos?surface=retail"); return null; } setSession(data); setActorUserId((current) => current || data.cashiers.find((p) => p.hasPin)?.id || data.kitchenOperators.find((p) => p.hasPin)?.id || ""); return data; }
+  async function loadSession() {
+    const data: Session = await json("/api/pos/session");
+    if (data.businessArchetype !== "restaurant") {
+      router.replace(window.bmsDesktop ? "/pos/app" : "/pos?surface=retail");
+      return null;
+    }
+    setSession(data);
+    setOperatorDraftId((current) => current
+      || rememberedOperator?.cashier.id
+      || data.cashiers.find((person) => person.hasPin)?.id
+      || data.kitchenOperators.find((person) => person.hasPin)?.id
+      || "");
+    return data;
+  }
+  function openOperatorPicker() {
+    setOperatorDraftId(actorUserId || staff.find((person) => person.hasPin)?.id || "");
+    setOperatorDraftPin("");
+    setOperatorError("");
+    if (accountMenuRef.current) accountMenuRef.current.open = false;
+    setOperatorOpen(true);
+  }
+  async function verifyOperator() {
+    if (!operatorDraftId || !isPosPinValid(operatorDraftPin) || operatorVerifying) return;
+    setOperatorVerifying(true);
+    setOperatorError("");
+    try {
+      const data = await posGraphqlRequest<{ bmsPosVerifyCashier: PosCashier }>(
+        token,
+        VERIFY_CASHIER_MUTATION,
+        { input: { cashierUserId: operatorDraftId, pin: operatorDraftPin } },
+      );
+      setActorUserId(data.bmsPosVerifyCashier.id);
+      setActorPin(operatorDraftPin);
+      rememberOperator(data.bmsPosVerifyCashier, operatorDraftPin);
+      setOperatorDraftPin("");
+      setOperatorOpen(false);
+      message.success(t("pos_restaurant.operator_verified", {
+        name: data.bmsPosVerifyCashier.name || data.bmsPosVerifyCashier.email || t("pos_restaurant.operator"),
+      }));
+    } catch (cause) {
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setOperatorDraftPin("");
+      setOperatorError(text);
+    } finally {
+      setOperatorVerifying(false);
+    }
+  }
+  function lockOperator() {
+    clearOperator();
+    setActorUserId("");
+    setActorPin("");
+    setOperatorDraftId(staff.find((person) => person.hasPin)?.id || "");
+    setOperatorDraftPin("");
+    setOperatorError("");
+    if (accountMenuRef.current) accountMenuRef.current.open = false;
+    setOperatorOpen(true);
+  }
+  function openOtherWork(tab: "sell" | "returns" | "stock" | "deposits") {
+    const href = window.bmsDesktop
+      ? `/pos/app?module=${tab === "sell" ? "mobile_sell" : tab}&context=restaurant`
+      : `/pos?surface=retail&tab=${tab}&context=restaurant`;
+    router.push(href);
+  }
   async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
   async function loadWaitlist(signal?: AbortSignal) { setWaitlist(await json("/api/pos/restaurant/waitlist", { signal })); }
   /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
@@ -2197,7 +2315,17 @@ export default function RestaurantPosPage() {
         <span className={styles.railLabel} aria-hidden="true">{item.short}</span>
         {item.badge > 0 && <span className={styles.railBadge}>{item.badge}</span>}
       </button>)}
-      <div className={styles.railHelpSlot}>
+      {/* งานคืนสินค้า/รับของ/มัดจำยังต้องเข้าถึงได้ แต่ไม่ใช่งานประจำของร้านอาหาร
+          จึงอยู่กับ utility ด้านล่าง แยกจากจอสั่งอาหารและไม่แย่งพื้นที่บนหัวจอ */}
+      <div className={styles.railUtilitySlot}>
+        <button type="button" className={styles.railBtn}
+          onClick={() => setScreen("OTHER")}
+          aria-pressed={screen === "OTHER"}
+          title={t("pos_restaurant.retail_mode_hint")}
+          aria-label={t("pos_restaurant.retail_mode_hint")}>
+          <span className={styles.railIcon} aria-hidden="true"><ShopOutlined /></span>
+          <span className={styles.railLabel} aria-hidden="true">{t("pos_restaurant.retail_mode")}</span>
+        </button>
         <PosGuideAssistant variant="rail" className={styles.railBtn} />
       </div>
     </nav>
@@ -2205,12 +2333,36 @@ export default function RestaurantPosPage() {
       <header className={styles.topbar}>
         <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || t("pos_restaurant.operator")) : t("pos_restaurant.operator_none")}</p></div></div>
         <div className={styles.topActions}>
-          {/* PIN กรอกครั้งเดียวต่อกะ — ชื่อคนอยู่ใต้ชื่อร้าน ปุ่มนี้เปิดกล่องเลือกคน/กรอก PIN */}
-          <button type="button" className={styles.btn} onClick={() => setOperatorOpen(true)}>{operatorReady ? t("pos_restaurant.operator_change") : t("pos_restaurant.operator_select")}</button>
+          <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
+            <i aria-hidden="true" />
+            {session?.shift ? t("pos_restaurant.shift_open_status") : t("pos_restaurant.shift_closed_status")}
+          </span>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void refresh()} title={t("pos_restaurant.refresh")} aria-label={t("pos_restaurant.refresh")}><ReloadOutlined /></button>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setSupportOpen(true)} title={`Support Log (${localSupportEventCount(supportScope)})`} aria-label={`Support Log (${localSupportEventCount(supportScope)})`}><CustomerServiceOutlined /></button>
-          <button type="button" className={styles.btn} onClick={() => { window.location.href = "/pos?surface=retail"; }} title={t("pos_restaurant.retail_mode_hint")}><ShopOutlined /> {t("pos_restaurant.retail_mode")}</button>
           {!session?.shift && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady} title={operatorReady ? t("pos_restaurant.open_shift") : t("pos_restaurant.need_operator_pin")} onClick={() => setShiftModal("OPEN")}>{t("pos_restaurant.open_shift")}</button>}
+          {operatorReady ? (
+            <details ref={accountMenuRef} className={styles.accountMenu}>
+              <summary aria-label={t("pos_restaurant.operator_menu", { name: operatorName || t("pos_restaurant.operator") })}>
+                <span className={styles.accountAvatar} aria-hidden="true">{(operatorName || t("pos_restaurant.operator")).slice(0, 1)}</span>
+                <span className={styles.accountCopy}>
+                  <strong>{operatorName || t("pos_restaurant.operator")}</strong>
+                  <small>{t("pos_restaurant.operator_active")}</small>
+                </span>
+                <span className={styles.accountChevron} aria-hidden="true">⌄</span>
+              </summary>
+              <div className={styles.accountPopover}>
+                <div className={styles.accountStatus}>
+                  <span>{t("pos_restaurant.current_operator")}</span>
+                  <strong>{operatorName || t("pos_restaurant.operator")}</strong>
+                  <small>{session?.shift ? t("pos_restaurant.shift_stays_open_note") : t("pos_restaurant.shift_closed_status")}</small>
+                </div>
+                <button type="button" onClick={openOperatorPicker}>{t("pos_restaurant.operator_change")}</button>
+                <button type="button" className={styles.accountLock} onClick={lockOperator}>{t("pos_restaurant.operator_lock")}</button>
+              </div>
+            </details>
+          ) : (
+            <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={openOperatorPicker}>{t("pos_restaurant.operator_select")}</button>
+          )}
         </div>
       </header>
       {/* ลำดับความสำคัญของแบนเนอร์ตรงกับลำดับที่ต้องทำจริง: เลือกผู้ปฏิบัติงาน+PIN ก่อน
@@ -2226,6 +2378,28 @@ export default function RestaurantPosPage() {
       {alerts.blocked && <Alert closable type="warning" showIcon
         message={t("pos_alerts.blocked_banner")}
         action={<Button size="small" onClick={() => alerts.preview(alerts.settings.tones.ORDER_NEW)}>{t("pos_alerts.blocked_action")}</Button>} />}
+
+      {screen === "OTHER" && <section className={styles.otherWorkScreen}>
+        <div className={styles.otherWorkHead}>
+          <span className={styles.otherWorkMark} aria-hidden="true"><ShopOutlined /></span>
+          <div><h2>{t("pos_restaurant.other_work_title")}</h2><p>{t("pos_restaurant.other_work_subtitle")}</p></div>
+        </div>
+        <div className={styles.otherWorkGrid}>
+          <button type="button" onClick={() => openOtherWork("sell")}>
+            <WalletOutlined aria-hidden="true" /><span><strong>{t("pos_restaurant.other_work_sell")}</strong><small>{t("pos_restaurant.other_work_sell_desc")}</small></span><ArrowRightOutlined aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => openOtherWork("returns")}>
+            <ArrowLeftOutlined aria-hidden="true" /><span><strong>{t("pos_restaurant.other_work_returns")}</strong><small>{t("pos_restaurant.other_work_returns_desc")}</small></span><ArrowRightOutlined aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => openOtherWork("stock")}>
+            <DownloadOutlined aria-hidden="true" /><span><strong>{t("pos_restaurant.other_work_stock")}</strong><small>{t("pos_restaurant.other_work_stock_desc")}</small></span><ArrowRightOutlined aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => openOtherWork("deposits")}>
+            <FileTextOutlined aria-hidden="true" /><span><strong>{t("pos_restaurant.other_work_deposits")}</strong><small>{t("pos_restaurant.other_work_deposits_desc")}</small></span><ArrowRightOutlined aria-hidden="true" />
+          </button>
+        </div>
+        <p className={styles.otherWorkNote}>{t("pos_restaurant.other_work_note")}</p>
+      </section>}
 
       {/* กระดานคิว — สองรายการในจอเดียว: คนที่ยังรอ (เรียงตามลำดับที่ควรได้โต๊ะ) และ
           รายการที่ปิดไปแล้ววันนี้ · "รอมากี่นาที" เป็นตัวเลขที่ตัดสินว่าลูกค้าจะอยู่ต่อหรือเดินออก
@@ -2832,11 +3006,40 @@ export default function RestaurantPosPage() {
         </div>
       </div>}
     </Modal>
-    <Modal title={t("pos_restaurant.operator")} open={operatorOpen} onCancel={() => setOperatorOpen(false)} onOk={() => setOperatorOpen(false)} okText={t("pos_restaurant.use_this_account")} okButtonProps={{ disabled: !operatorReady }} getContainer={modalContainer}>
+    <Modal
+      title={operatorReady ? t("pos_restaurant.operator_change") : t("pos_restaurant.operator_sign_in")}
+      open={operatorOpen}
+      onCancel={() => { if (operatorReady) setOperatorOpen(false); }}
+      onOk={() => void verifyOperator()}
+      okText={t("pos_restaurant.use_this_account")}
+      confirmLoading={operatorVerifying}
+      okButtonProps={{ disabled: !operatorDraftId || !isPosPinValid(operatorDraftPin) }}
+      cancelButtonProps={{ style: operatorReady ? undefined : { display: "none" } }}
+      closable={operatorReady}
+      maskClosable={operatorReady}
+      keyboard={operatorReady}
+      getContainer={modalContainer}
+    >
       <div className={styles.modalGrid}>
         <Alert closable type="info" showIcon message={t("pos_restaurant.operator_scope_note")} />
-        <label>{t("pos_restaurant.staff")}<select value={actorUserId} onChange={(event) => setActorUserId(event.target.value)}><option value="">{t("pos_restaurant.staff_select")}</option>{staff.map((person) => <option key={person.id} value={person.id} disabled={!person.hasPin}>{person.name ?? person.email ?? person.id}{person.hasPin ? "" : t("pos_restaurant.no_pin_yet")}</option>)}</select></label>
-        <label>PIN<input value={actorPin} onChange={(event) => setActorPin(event.target.value)} type="password" inputMode="numeric" autoComplete="off" placeholder="PIN" /></label>
+        <label>{t("pos_restaurant.staff")}<select value={operatorDraftId} onChange={(event) => {
+          setOperatorDraftId(event.target.value);
+          setOperatorDraftPin("");
+          setOperatorError("");
+        }}><option value="">{t("pos_restaurant.staff_select")}</option>{staff.map((person) => <option key={person.id} value={person.id} disabled={!person.hasPin}>{person.name ?? person.email ?? person.id}{person.hasPin ? "" : t("pos_restaurant.no_pin_yet")}</option>)}</select></label>
+        <label>{t("pos_restaurant.operator_pin_label")}<input
+          value={operatorDraftPin}
+          onChange={(event) => { setOperatorDraftPin(normalizePosPinInput(event.target.value)); setOperatorError(""); }}
+          onKeyDown={(event) => { if (event.key === "Enter" && operatorDraftId && isPosPinValid(operatorDraftPin)) void verifyOperator(); }}
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={POS_PIN_MAX_LENGTH}
+          autoFocus
+          placeholder={t("pos_restaurant.operator_pin_placeholder")}
+        /></label>
+        {operatorError && <Alert closable type="error" showIcon message={operatorError} onClose={() => setOperatorError("")} />}
+        <small className={styles.operatorSecurityNote}>{t("pos_restaurant.operator_security_note")}</small>
       </div>
     </Modal>
     <Modal title={t("pos_restaurant.open_check_title", { table: openTable?.name ?? "" })} open={Boolean(openTable)} onCancel={() => setOpenTable(null)} onOk={() => void openCheck()} confirmLoading={working} okText={t("pos_restaurant.open_table")} getContainer={modalContainer}><div className={styles.modalGrid}><label>{t("pos_restaurant.guest_count")}<input type="number" min={1} max={500} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value))} /></label></div></Modal>

@@ -1716,6 +1716,23 @@ payments, drawer totals and tax documents therefore keep the normal POS source o
 kitchen tickets are attached to check items and appear before payment. Settlement does not enqueue a
 second copy of those tickets.
 
+The desktop shell and the restaurant surface share the already verified operator only through the
+common POS layout's React memory. A client-side route change therefore does not ask for the same PIN
+again, while refresh, app restart, explicit lock and unpair all discard it. The PIN is never written
+to local/session storage, a cookie or the URL, and every restaurant mutation still sends it to the
+existing server-side device, PIN, permission and open-shift guard. Changing staff verifies the new
+PIN before changing the active identity; merely selecting another name is not authentication.
+After the desktop shell verifies an operator for a restaurant tenant, a plain `/pos/app` entry opens
+the restaurant floor automatically. An explicit `module` deep-link is the exception: it represents
+an intentional choice from Other sales work and remains in that selected workspace.
+
+Restaurant-only navigation keeps uncommon retail work behind the **Other sales work** hub instead
+of presenting “retail mode” as a second primary mode. The hub deep-links to the existing sale,
+return, purchase-receipt and deposit workspaces; it does not copy their money or stock mutations.
+Restaurant shops retain the restaurant visual identity in those workspaces, and the table entry in
+the POS rail is the explicit route back. Browser and desktop routes both select the requested
+workspace directly while the normal server-side device, PIN and permission guards remain unchanged.
+
 Member tier, coupon, points redemption and approved manual discount are also applied to that same
 reserved order, not to a replacement order at the register. Preview reconstructs the discountable
 product subtotal from the order's immutable sale-time snapshot (`total + discount - extra lines`),
