@@ -944,6 +944,47 @@
 .boardGameBreakdownReceipt + dl { margin-top: 16px; }
 .browserBadge { position: fixed; left: 90px; bottom: 6px; z-index: 9; padding: 4px 8px; border-radius: 5px; background: rgba(31,35,41,.78); color: #fff; font-size: 10px; }
 
+/* ร้านอาหารยังเป็นร้านเดิมเมื่อเปิดคืนสินค้า/รับของ/มัดจำ — เปลี่ยน workflow ได้แต่
+   visual identity ต้องไม่เด้งกลับไปสีน้ำเงินจนพนักงานคิดว่าเข้าคนละระบบ */
+.restaurantTheme {
+  --pos-accent: #1f604c;
+  --pos-accent-hover: #2d745f;
+  --pos-accent-active: #174a3b;
+  --pos-accent-bg: #e8f3ee;
+}
+.restaurantTheme .railLogo,
+.restaurantTheme .brandMark,
+.restaurantTheme .infoPrimary,
+.restaurantTheme .primaryButton { border-color: #1f604c !important; background: #1f604c !important; }
+.restaurantTheme .railLogo,
+.restaurantTheme .brandMark { background: linear-gradient(145deg, #276e59, #174a3b) !important; box-shadow: 0 8px 22px rgba(31, 96, 76, .2); }
+.restaurantTheme .rail nav .navActive { color: #1f604c !important; border-color: #8ab8a7 !important; background: #e8f3ee !important; box-shadow: inset 3px 0 #1f604c !important; }
+.restaurantTheme .railFooter button:hover { color: #1f604c !important; }
+.restaurantTheme .railFooter button:hover > span,
+.restaurantTheme .accountAvatar,
+.restaurantTheme .helpQuickGrid article > span,
+.restaurantTheme .productThumb,
+.restaurantTheme .methodGrid .methodActive,
+.restaurantTheme .stepBadge { border-color: #8ab8a7 !important; background: #e8f3ee !important; color: #1f604c !important; }
+.restaurantTheme .storeMark,
+.restaurantTheme .eyebrow,
+.restaurantTheme .scanBar button,
+.restaurantTheme .barcode,
+.restaurantTheme .catalogStatus button,
+.restaurantTheme .paymentTitle > button { color: #1f604c !important; }
+.restaurantTheme .productCard b,
+.restaurantTheme .billHeader > strong,
+.restaurantTheme .summaryTotals .grandTotal strong,
+.restaurantTheme .receiptCard h1 { color: #174a3b !important; }
+.restaurantTheme .methodGrid .methodActive { border-color: #1f604c !important; }
+.restaurantTheme .primaryButton:hover:not(:disabled) { background: #2d745f !important; }
+.restaurantTheme :global(.pos-root) {
+  --pos-accent: #1f604c;
+  --pos-accent-hover: #2d745f;
+  --pos-accent-active: #174a3b;
+  --pos-accent-bg: #e8f3ee;
+}
+
 @media (max-width: 1280px) {
   .productGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .content { grid-template-columns: minmax(0, 60fr) minmax(370px, 40fr); }

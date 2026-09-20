@@ -180,6 +180,22 @@ test("desktop header keeps cashier identity without a permanent legacy-sales esc
   );
 });
 
+test("restaurant other-work modules keep the restaurant identity in the desktop shell", () => {
+  assert.match(desktopRenderer, /get\("module"\)/);
+  assert.match(desktopRenderer, /styles\.restaurantTheme/);
+  assert.match(desktopRenderer, /businessArchetype === "restaurant"/);
+  assert.match(
+    desktopRenderer,
+    /businessArchetype !== "restaurant"[\s\S]*?!cashier[\s\S]*?router\.replace\("\/pos\/restaurant"\)/,
+    "a verified restaurant operator should land on the floor instead of the retail home",
+  );
+  assert.match(
+    desktopRenderer,
+    /const requested = new URLSearchParams\(window\.location\.search\)\.get\("module"\);[\s\S]*?if \(requested\) return;/,
+    "explicit other-work deep-links must remain in the selected retail module",
+  );
+});
+
 test("desktop rail provides professional help and real app-version diagnostics", () => {
   assert.match(desktopRenderer, /ช่วยเหลือ/);
   assert.match(desktopRenderer, /เกี่ยวกับ BMS POS/);

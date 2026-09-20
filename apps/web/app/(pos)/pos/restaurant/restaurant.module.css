@@ -205,7 +205,13 @@
   font-variant-numeric: tabular-nums;
 }
 .railBtnActive .railBadge { background: var(--on-solid-soft); }
-.railHelpSlot { margin-top: auto; width: 100%; display: flex; justify-content: center; padding: 8px 0 2px; }
+.page .railUtilitySlot .railBtn[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--on-solid);
+}
+.railUtilitySlot {
+  margin-top: auto; width: 100%; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px; padding: 8px 0 2px; border-top: 1px solid var(--line-2);
+}
 
 .shell { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
 /* antd Spin แทรก wrapper สองชั้นระหว่าง shell กับเนื้อหา ถ้าไม่ต่อ flex ให้ทะลุ
@@ -221,6 +227,49 @@
 .title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.2; }
 .subtitle { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.2; }
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.shiftStatus {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px;
+  border-radius: 18px; background: var(--quiet); color: var(--ink-2); font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+}
+.shiftStatus i { width: 8px; height: 8px; border-radius: 50%; background: var(--grey); }
+.shiftStatusOpen { color: var(--green); }
+.shiftStatusOpen i { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
+
+.accountMenu { position: relative; }
+.accountMenu > summary {
+  min-width: 190px; min-height: 44px; padding: 5px 9px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer;
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) 16px; align-items: center; gap: 8px;
+  list-style: none;
+}
+.accountMenu > summary::-webkit-details-marker { display: none; }
+.accountMenu > summary:hover { background: var(--panel-2); border-color: var(--ink-3); }
+.accountMenu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.accountAvatar {
+  width: 34px; height: 34px; border-radius: 50%; background: var(--green-bg); color: var(--accent);
+  display: grid; place-items: center; font-weight: 700; font-size: 15px;
+}
+.accountCopy { min-width: 0; display: grid; line-height: 1.2; text-align: left; }
+.accountCopy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.accountCopy small { color: var(--ink-3); font-size: 10.5px; }
+.accountChevron { color: var(--ink-3); transition: transform .16s ease; }
+.accountMenu[open] .accountChevron { transform: rotate(180deg); }
+.accountPopover {
+  position: absolute; z-index: 40; top: calc(100% + 7px); right: 0; width: 260px;
+  padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel);
+  box-shadow: 0 12px 30px var(--shadow-1); display: grid; gap: 4px;
+}
+.accountStatus { display: grid; gap: 2px; padding: 8px 9px 10px; border-bottom: 1px solid var(--line-2); margin-bottom: 3px; }
+.accountStatus span, .accountStatus small { color: var(--ink-3); font-size: 11px; }
+.accountStatus strong { font-size: 14px; }
+.page .accountPopover button {
+  min-height: 42px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.page .accountPopover button:hover:not(:disabled) { background: var(--panel-2); }
+.page .accountPopover .accountLock { color: var(--red); }
+.operatorSecurityNote { color: var(--ink-3); font-size: 12px; line-height: 1.45; }
 
 .page .btn{
   font: inherit; font-size: 14px; height: 44px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line);
@@ -906,6 +955,26 @@
 .summaryGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .summaryGrid > span { display: grid; gap: 3px; padding: 10px; border-radius: 7px; background: var(--quiet); color: var(--ink-2); font-size: 12px; }
 .summaryGrid b { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+
+/* ---------- งานขายอื่น ---------- */
+.otherWorkScreen { min-height: 0; flex: 1; overflow-y: auto; padding: clamp(20px, 4vw, 48px); background: var(--ground); }
+.otherWorkHead { display: flex; align-items: center; gap: 16px; max-width: 920px; margin: 0 auto 22px; }
+.otherWorkHead h2 { margin: 0; font-size: clamp(22px, 2.6vw, 30px); }
+.otherWorkHead p { margin: 4px 0 0; color: var(--ink-2); }
+.otherWorkMark { width: 58px; height: 58px; flex: none; display: grid; place-items: center; border-radius: 14px; background: var(--green-bg); color: var(--accent); font-size: 25px; }
+.otherWorkGrid { max-width: 920px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.page .otherWorkGrid button {
+  min-height: 112px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 20px; align-items: center; gap: 12px;
+  padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer; box-shadow: 0 5px 18px var(--shadow-2);
+}
+.page .otherWorkGrid button:hover:not(:disabled) { border-color: var(--accent); background: var(--panel-2); transform: translateY(-1px); }
+.otherWorkGrid button > :first-child { width: 42px; height: 42px; padding: 10px; border-radius: 10px; background: var(--green-bg); color: var(--accent); }
+.otherWorkGrid button > span { min-width: 0; display: grid; gap: 4px; }
+.otherWorkGrid strong { font-size: 16px; }
+.otherWorkGrid small { color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
+.otherWorkGrid button > :last-child { color: var(--ink-3); }
+.otherWorkNote { max-width: 920px; margin: 16px auto 0; color: var(--ink-3); font-size: 12px; }
 /* min(240px, 100%) — เหตุผลเดียวกับ .serviceCallGrid (วัดจริงที่ 320px: ล้น 8px) */
 .receiptGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 10px; }
 .page .receiptCard { min-height: 112px; display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
@@ -983,6 +1052,10 @@
   .brand { margin-inline-end: 0; }
   .topbar .btn { flex: 1 1 auto; }
   .topbar .btnIcon { flex: 0 0 40px; }
+  .shiftStatus { display: none; }
+  .accountMenu { flex: 1 1 100%; }
+  .accountMenu > summary { width: 100%; }
+  .accountPopover { position: fixed; left: 62px; right: 8px; top: 70px; width: auto; }
   .strip { gap: 4px 14px; font-size: 13.5px; }
 
   /* บนมือถือ แถบซ้าย 64px กินพื้นที่ ~17% ของจอ — บีบลงแล้วคืนให้กริดเมนู
@@ -992,7 +1065,10 @@
   .page .railBtn .railIcon { font-size: 17px; }
   .page .railBtn .railLabel { font-size: 9.5px; }
   .railMark { width: 34px; height: 34px; font-size: 16px; margin-bottom: 6px; }
-  .railHelpSlot { padding-top: 6px; }
+  .railUtilitySlot { padding-top: 6px; }
+  .otherWorkScreen { padding: 16px 12px; }
+  .otherWorkGrid { grid-template-columns: 1fr; }
+  .page .otherWorkGrid button { min-height: 92px; }
 
   /* การ์ดเมนูต้องได้ 2 คอลัมน์บนมือถือ — ค่า 164px ของจอใหญ่ทำให้เหลือคอลัมน์เดียว
      (ที่ 375px เหลือพื้นที่กริด 263px ซึ่งไม่พอสำหรับ 164×2 + gap) */

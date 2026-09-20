@@ -954,6 +954,43 @@ test("restaurants keep a way back to the retail register", async () => {
   );
   assert.match(retail, /get\("surface"\) !== "retail"/);
   assert.match(restaurant, /\/pos\?surface=retail/);
+  // งานรองเปิด hub ใน shell ร้านอาหารก่อน แล้วค่อย deep-link ไป workflow เดิม
+  assert.doesNotMatch(restaurant, /className=\{styles\.topActions\}[\s\S]*?surface=retail/);
+  assert.match(restaurant, /className=\{styles\.railUtilitySlot\}[\s\S]*?onClick=\{\(\) => setScreen\("OTHER"\)\}/);
+  assert.match(restaurant, /module=\$\{tab === "sell" \? "mobile_sell" : tab\}&context=restaurant/);
+  assert.match(retail, /pos-page--restaurant-context/);
+  assert.match(retail, /กลับโต๊ะร้านอาหาร/);
+});
+
+test("the order rail stays usable before a check is selected", async () => {
+  const restaurant = code(
+    await read("apps/web/app/(pos)/pos/restaurant/page.tsx"),
+  );
+  // เปิดแอปครั้งแรกที่ผังโต๊ะได้ แต่เมื่อพนักงานตั้งใจกด “สั่ง” ต้องไม่ถูก effect
+  // ผลักกลับมาผังโต๊ะทันที — จอสั่งมีตัวเลือกบิลที่เปิดอยู่และปุ่มกลับไปเลือกโต๊ะอยู่แล้ว
+  assert.match(restaurant, /useState<RestaurantScreen>\("FLOOR"\)/);
+  assert.match(restaurant, /onClick=\{\(\) => setScreen\(item\.key\)\}/);
+  assert.doesNotMatch(
+    restaurant,
+    /screen === "ORDER" && !check[\s\S]{0,120}setScreen\("FLOOR"\)/,
+  );
+});
+
+test("desktop and restaurant share only an in-memory verified operator", async () => {
+  const provider = code(await read("apps/web/components/pos/PosOperatorSession.tsx"));
+  const layout = code(await read("apps/web/app/(pos)/pos/layout.tsx"));
+  const desktop = code(await read("apps/web/components/pos-desktop/DesktopPosRenderer.tsx"));
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+
+  assert.match(layout, /<PosOperatorSessionProvider>/);
+  assert.match(desktop, /rememberOperator\(data\.bmsPosVerifyCashier, pin\)/);
+  assert.match(desktop, /router\.push\("\/pos\/restaurant"\)/);
+  assert.match(restaurant, /rememberedOperator\?\.cashier\.id/);
+  assert.match(restaurant, /VERIFY_CASHIER_MUTATION[\s\S]*?rememberOperator\(data\.bmsPosVerifyCashier, operatorDraftPin\)/);
+  assert.match(restaurant, /setOperatorDraftId\(event\.target\.value\);[\s\S]*?setOperatorDraftPin\(""\)/);
+  assert.match(restaurant, /clearOperator\(\);[\s\S]*?setActorPin\(""\)/);
+  assert.doesNotMatch(provider, /localStorage|sessionStorage|document\.cookie/);
+  assert.match(restaurant, /useState<RestaurantScreen>\("FLOOR"\)/);
 });
 
 test("a rejected kitchen round tells staff what to do, not an HTTP code", async () => {

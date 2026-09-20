@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   initialPosClientFlow,
@@ -69,6 +70,7 @@ import {
   type PosServiceCallNotice,
   type PosTab,
 } from "@/components/pos/PosWorkspaceContext";
+import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import {
   useRealtimeInvalidation,
@@ -356,6 +358,10 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export default function DesktopPosRenderer() {
+  const router = useRouter();
+  const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
+  const rememberedOperatorRef = useRef(rememberedOperator);
+  rememberedOperatorRef.current = rememberedOperator;
   const desktopRootRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [token, setToken] = useState("");
@@ -411,6 +417,26 @@ export default function DesktopPosRenderer() {
   const catalogPrimedRef = useRef<{ token: string; at: number } | null>(null);
   const customerDisplayChannelRef = useRef<BroadcastChannel | null>(null);
   const customerDisplayPayloadRef = useRef<CustomerDisplayPayload>(EMPTY_CUSTOMER_DISPLAY);
+
+  useEffect(() => {
+    // “งานอื่น” จากร้านอาหารต้องลงโมดูลที่พนักงานเลือกไว้ ไม่ใช่เปิดหน้าขายทุกครั้ง
+    // query เป็นเพียง navigation hint; สิทธิ์และ PIN ยังตรวจที่ mutation เดิมทุกตัว
+    const requested = new URLSearchParams(window.location.search).get("module");
+    if (requested === "mobile_sell" || requested === "returns" || requested === "stock" || requested === "deposits") {
+      setActiveModule(requested);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (bootstrap?.businessArchetype !== "restaurant" || !cashier || !hasDesktopPosBridge()) return;
+    // A restaurant register's home is the floor, not the blue retail shell. Keep explicit module
+    // deep-links from the restaurant “other work” hub on this page; only a plain /pos/app entry
+    // continues to the restaurant operating surface. Client navigation intentionally preserves the
+    // in-memory verified operator, so the same human is not asked for the same PIN a second time.
+    const requested = new URLSearchParams(window.location.search).get("module");
+    if (requested) return;
+    router.replace("/pos/restaurant");
+  }, [bootstrap?.businessArchetype, cashier, router]);
 
   // Native <details> gives the header popups keyboard semantics without another menu library, but
   // it does not dismiss itself when the operator taps elsewhere. Delegate once at the desktop-app
@@ -571,11 +597,20 @@ export default function DesktopPosRenderer() {
       );
       setBootstrap(data.bmsPosSession);
       const first = data.bmsPosSession.cashiers.find((item) => item.hasPin);
-      setCashierId(first?.id ?? "");
+      const remembered = rememberedOperatorRef.current;
+      const restoredCashier = remembered
+        ? data.bmsPosSession.cashiers.find((item) => item.id === remembered.cashier.id && item.hasPin) ?? null
+        : null;
+      setCashierId(restoredCashier?.id ?? first?.id ?? "");
+      setCashier(restoredCashier);
+      setPin(restoredCashier && remembered ? remembered.pin : "");
       setFlow((current) => {
         let next = transitionPosClientFlow(current, "DEVICE_VERIFIED");
         if (data.bmsPosSession.shift?.status === "OPEN") {
           next = transitionPosClientFlow(next, "SHIFT_STATUS_OPEN");
+        }
+        if (restoredCashier) {
+          next = transitionPosClientFlow(next, "CASHIER_VERIFIED");
         }
         return next;
       });
@@ -645,6 +680,7 @@ export default function DesktopPosRenderer() {
         { input: { cashierUserId: cashierId, pin } },
       );
       setCashier(data.bmsPosVerifyCashier);
+      rememberOperator(data.bmsPosVerifyCashier, pin);
       sendFlow("CASHIER_VERIFIED");
     } catch (cause) {
       setPin("");
@@ -686,7 +722,11 @@ export default function DesktopPosRenderer() {
   };
 
   const legacy = (tab: string) => {
-    window.location.assign(tab === "restaurant" ? "/pos/restaurant" : `/pos?tab=${tab}`);
+    if (tab === "restaurant") {
+      router.push("/pos/restaurant");
+      return;
+    }
+    window.location.assign(`/pos?tab=${tab}`);
   };
 
   const openModule = useCallback((module: DesktopModule) => {
@@ -853,6 +893,7 @@ export default function DesktopPosRenderer() {
 
   const unpair = useCallback(async () => {
     await clearPosDeviceToken();
+    clearOperator();
     catalogRequestVersion.current += 1;
     catalogRequestRef.current = null;
     catalogPrimedRef.current = null;
@@ -867,7 +908,7 @@ export default function DesktopPosRenderer() {
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("UNPAIR");
-  }, [sendFlow]);
+  }, [clearOperator, sendFlow]);
 
   const followWorkspaceShift = useCallback((open: boolean) => {
     if (open) return;
@@ -883,13 +924,14 @@ export default function DesktopPosRenderer() {
   }, []);
 
   const signOutCashier = useCallback(() => {
+    clearOperator();
     setCashier(null);
     setPin("");
     setCart([]);
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("SIGN_OUT");
-  }, [sendFlow]);
+  }, [clearOperator, sendFlow]);
 
   const openBoardGameCheckout = useCallback(async (billingGroupId: string) => {
     if (!cashier || !pin || busy) return;
@@ -1400,7 +1442,7 @@ export default function DesktopPosRenderer() {
           </label>
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           <button className={styles.primaryButton} disabled={busy}>{busy ? "กำลังเปิดกะ…" : "เปิดกะและเริ่มขาย"}</button>
-          <button type="button" className={styles.textButton} onClick={() => { setCashier(null); setPin(""); sendFlow("SIGN_OUT"); }}>เปลี่ยนพนักงาน</button>
+          <button type="button" className={styles.textButton} onClick={signOutCashier}>เปลี่ยนพนักงาน</button>
         </form>
       </main>
     );
@@ -1457,7 +1499,7 @@ export default function DesktopPosRenderer() {
   ] satisfies Array<{ key: DesktopModule; label: string; enabled: boolean }>).filter((item) => item.enabled);
 
   return (
-    <main ref={desktopRootRef} className={`pos-desktop-app ${styles.shell}`}>
+    <main ref={desktopRootRef} className={`pos-desktop-app ${styles.shell}${bootstrap.businessArchetype === "restaurant" ? ` ${styles.restaurantTheme}` : ""}`}>
       <aside className={styles.rail}>
         <div className={styles.railLogo}>B</div>
         <nav>

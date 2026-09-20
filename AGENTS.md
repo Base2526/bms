@@ -346,8 +346,11 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,502 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-19 — net **+3** for the provider-issued POS
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**81 namespaces / 5,516 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-20 — net **+11** for the Restaurant POS
+   other-work hub, direct workflow navigation and consistent restaurant identity; the preceding net **+12** for the shared in-memory
+   Restaurant POS operator session, verified employee switching, lock/account menu and shift-status
+   guidance in both languages; the preceding net **+3** for the provider-issued POS
    payment-QR configuration guidance; the preceding net **+54** against the same recursive
    count of `HEAD`: board-game automatic pass renewal, typed play-time offers, member-pass payment
    targets and the compact renewal badge in both languages; the preceding net **+4** for visible login and registration

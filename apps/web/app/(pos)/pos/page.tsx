@@ -6293,7 +6293,7 @@ export default function PosPage() {
   // และต้องประกาศ 100vh ก่อน 100dvh เพื่อให้เบราว์เซอร์เก่าที่ไม่รู้จัก dvh ตกมาใช้ vh
   return (
     <div
-      className={`pos-page${embedded ? " pos-page--embedded" : ""}`}
+      className={`pos-page${embedded ? " pos-page--embedded" : ""}${session?.businessArchetype === "restaurant" ? " pos-page--restaurant-context" : ""}`}
       style={{ display: "flex" }}
       onInputCapture={clearInvalidField}
       onChangeCapture={clearInvalidField}
@@ -6304,6 +6304,10 @@ export default function PosPage() {
            (แถบงานด้านล่าง) ถูกดันต่ำกว่าพื้นที่ที่มองเห็นจนตัวหนังสือโดนตัด
            dvh หดตามจริง จึงเป็นค่าที่ถูกสำหรับ app-shell ที่มีแถบติดขอบล่าง */
         .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
+        .pos-page--restaurant-context {
+          --pos-accent: #1f604c; --pos-accent-hover: #2d745f;
+          --pos-accent-active: #174a3b; --pos-accent-bg: #e8f3ee;
+        }
         .pos-page--embedded { height: 100%; min-height: 0; background: transparent; }
         .pos-page--embedded .pos-rail,
         .pos-page--embedded .pos-topbar { display: none; }
@@ -6316,7 +6320,7 @@ export default function PosPage() {
         .pos-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
                            height: 58px; width: 100%; border-radius: 8px; font-size: 11px; white-space: nowrap;
                            border: 1px solid transparent; background: transparent; color: #475467; cursor: pointer; box-shadow: none; }
-        .pos-rail button[aria-current="true"] { background: #e6f4ff; color: #1677ff; border-color: #91caff; font-weight: 600; box-shadow: inset 3px 0 0 #1677ff; }
+        .pos-rail button[aria-current="true"] { background: var(--pos-accent-bg); color: var(--pos-accent); border-color: var(--pos-accent-hover); font-weight: 600; box-shadow: inset 3px 0 0 var(--pos-accent); }
         /* ไอคอนเป็น SVG แล้ว — font-size คุมขนาดไม่ได้ ต้องกำหนดที่ตัว svg เอง
            display:block กัน baseline gap ที่ทำให้ไอคอนกับ label ห่างไม่เท่ากันทุกแท็บ */
         .pos-rail .pos-rail-icon { line-height: 1; display: flex; }
@@ -6341,7 +6345,7 @@ export default function PosPage() {
         .pos-help { position: relative; display: inline-flex; margin-inline-start: 5px; vertical-align: middle; }
         .pos-help > summary { list-style: none; width: 22px; height: 22px; display: inline-flex;
           align-items: center; justify-content: center; border: 0; border-radius: 50%; cursor: pointer;
-          color: var(--pos-accent); background: #eef5ff; font-size: 15px; }
+          color: var(--pos-accent); background: var(--pos-accent-bg); font-size: 15px; }
         .pos-help > summary::-webkit-details-marker { display: none; }
         .pos-help > summary:focus-visible { outline: 2px solid var(--pos-accent); outline-offset: 2px; }
         .pos-help[open] > summary { color: #fff; background: var(--pos-accent); }
@@ -6474,6 +6478,14 @@ export default function PosPage() {
             แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {!embedded && session?.businessArchetype === "restaurant" && (
+            <button
+              onClick={() => window.location.assign("/pos/restaurant")}
+              style={{ flex: "none", height: 44, padding: "0 12px", color: "var(--pos-accent)" }}
+            >
+              ← กลับโต๊ะร้านอาหาร
+            </button>
+          )}
           {hasDesktopPosBridge() && (
             <button
               onClick={() => window.location.assign("/pos/app")}

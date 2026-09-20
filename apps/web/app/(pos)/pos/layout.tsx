@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { IBM_Plex_Sans_Thai } from "next/font/google";
 import "./pos.css";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
+import { PosOperatorSessionProvider } from "@/components/pos/PosOperatorSession";
 
 // โหลดและ self-host ฟอนต์จริงผ่าน Next แทนการระบุชื่อฟอนต์ที่เครื่องแคชเชียร์อาจไม่มี
 // IBM Plex Sans Thai คือ face ที่ใช้เป็น reference ใน mockup Ant: ทรงอักษรแคบและเป็นระบบกว่า
@@ -27,5 +28,12 @@ export const metadata = {
 };
 
 export default function PosLayout({ children }: { children: ReactNode }) {
-  return <div className={`pos-root ${posFont.variable}`}>{children}<PosGuideAssistant className="pos-guide-floating" /></div>;
+  return (
+    <PosOperatorSessionProvider>
+      <div className={`pos-root ${posFont.variable}`}>
+        {children}
+        <PosGuideAssistant className="pos-guide-floating" />
+      </div>
+    </PosOperatorSessionProvider>
+  );
 }
