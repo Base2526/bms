@@ -31,6 +31,11 @@ authoritative; this app does not contain a database or a second settlement path.
 - fixed 100% renderer zoom on every platform and child POS window; Electron zoom shortcuts, wheel/
   pinch zoom, macOS trackpad pinch at Chromium startup, and menu roles are disabled while OS
   accessibility magnifiers remain available.
+- across retail, Restaurant, and Board Game surfaces, `Command/Ctrl+R` refreshes authoritative data
+  inside the current content workspace without destroying the shell, operator PIN or shift context;
+  `Command/Ctrl+Shift+R` is labelled as the explicit full application reload for recovering a stuck
+  screen. The same explanation appears in the POS help surface, and older web deployments fall back
+  to a full reload when they do not expose the content-refresh bridge.
 
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and offline tender are
 separate rollout milestones.

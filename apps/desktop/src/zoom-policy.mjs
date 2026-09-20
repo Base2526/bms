@@ -40,10 +40,18 @@ export function installFixedZoomPolicy(webContents) {
   });
 }
 
-export function desktopMenuTemplate(platform, devToolsEnabled = false) {
+export function desktopMenuTemplate(platform, devToolsEnabled = false, actions = {}) {
   const viewSubmenu = [
-    { role: "reload" },
-    { role: "forceReload" },
+    {
+      label: "รีเฟรชข้อมูลหน้าปัจจุบัน",
+      accelerator: "CmdOrCtrl+R",
+      click: typeof actions.refreshData === "function" ? actions.refreshData : () => {},
+    },
+    {
+      label: "โหลดแอปใหม่ทั้งหมด (เมื่อหน้าค้าง)",
+      accelerator: "CmdOrCtrl+Shift+R",
+      click: typeof actions.reloadApplication === "function" ? actions.reloadApplication : () => {},
+    },
     ...(devToolsEnabled
       ? [{ type: "separator" }, { role: "toggleDevTools" }]
       : []),

@@ -111,6 +111,27 @@
   gap: 12px;
 }
 
+.contentRefreshOverlay {
+  z-index: 12;
+  grid-row: 2;
+  grid-column: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(22, 119, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(248, 251, 255, 0.88);
+  color: #344054;
+  text-align: center;
+  backdrop-filter: blur(2px);
+  cursor: wait;
+}
+.contentRefreshOverlay strong { font-size: 14px; }
+.contentRefreshOverlay small { color: #667085; font-size: 11px; }
+
 .topbar {
   display: flex;
   align-items: center;
@@ -148,58 +169,6 @@
 .storeIdentity strong { display: block; font-size: 17px; }
 .storeIdentity span { display: block; margin-top: 3px; color: #748095; font-size: 12px; }
 .topMeta { gap: 10px; }
-.connection {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  color: #667085;
-  background: #f5f7fa;
-  font-size: 12px;
-  font-weight: 600;
-}
-.connection i { width: 8px; height: 8px; border-radius: 50%; background: #98a2b3; }
-.connection.online i { background: #52c41a; box-shadow: 0 0 0 3px #f6ffed; }
-.connection.offline { color: #cf1322; background: #fff2f0; }
-.connection.offline i { background: #ff4d4f; }
-.connectionMenu { position: relative; }
-.connectionMenu > summary { list-style: none; cursor: pointer; }
-.connectionMenu > summary::-webkit-details-marker { display: none; }
-.connectionFallback {
-  border: 1px solid #ffd591;
-  background: #fffbe6;
-  color: #ad6800;
-}
-.connectionFallback i { background: #faad14; box-shadow: 0 0 0 3px #fff1b8; }
-.connectionInfo {
-  width: 15px;
-  height: 15px;
-  display: grid;
-  place-items: center;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  font-size: 10px;
-  font-style: normal;
-  line-height: 1;
-}
-.connectionPopover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 35;
-  width: 280px;
-  padding: 11px 12px;
-  border: 1px solid #ffe7ba;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgba(30, 42, 60, 0.16);
-}
-.connectionPopover strong,
-.connectionPopover span { display: block; }
-.connectionPopover strong { color: #874d00; font-size: 12px; }
-.connectionPopover span { margin-top: 4px; color: #667085; font-size: 11px; line-height: 1.5; }
-
 .alertMenu { position: relative; }
 .alertBell {
   position: relative;
@@ -450,7 +419,8 @@
 .helpSafety { margin-top: 12px; padding: 11px 12px; border: 1px solid #ffe58f; border-radius: 10px; background: #fffbe6; }
 .helpSafety strong { color: #874d00; font-size: 12px; }
 .helpSafety p { margin: 3px 0 0; color: #755100; font-size: 11px; line-height: 1.5; }
-.helpShortcuts { display: flex; gap: 14px; margin: 13px 0; color: #667085; font-size: 11px; }
+.helpShortcuts { display: grid; gap: 8px; margin: 13px 0; color: #667085; font-size: 11px; }
+.helpShortcuts span { display: flex; align-items: center; gap: 7px; }
 .helpShortcuts kbd { padding: 2px 6px; border: 1px solid #d9dee7; border-bottom-width: 2px; border-radius: 5px; background: #f8fafc; color: #344054; font-family: inherit; font-size: 10px; }
 .infoPrimary { width: 100%; min-height: 42px !important; border-color: #1677ff !important; background: #1677ff !important; color: #fff !important; font-weight: 700 !important; }
 .aboutHero { display: flex; align-items: center; gap: 12px; padding: 2px 0 16px; }
@@ -996,7 +966,6 @@
   .content { grid-template-columns: 1fr; overflow-y: auto; }
   .catalogPane { min-height: 620px; }
   .checkoutPane { min-height: 680px; }
-  .topMeta .connection { padding-inline: 8px; }
   .accountMenu > summary { min-width: 52px; grid-template-columns: 34px auto; }
   .accountCopy { display: none; }
   .productGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

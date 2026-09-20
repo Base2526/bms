@@ -29,6 +29,8 @@ export type PosWorkspaceOptions = {
   initialToken: string;
   initialCashierId: string;
   initialPin: string;
+  /** Increments when the Desktop shell requests an in-place authoritative refresh. */
+  refreshSignal?: number;
   onTabChange?: (tab: PosTab) => void;
   onShiftChange?: (open: boolean) => void;
   onUnpair?: () => void | Promise<void>;

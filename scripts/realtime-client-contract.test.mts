@@ -13,7 +13,9 @@ const resolvers = readFileSync(new URL("../packages/graphql-core/src/resolvers.t
 const ticketRoute = readFileSync(new URL("../apps/web/app/api/bms/realtime/ticket/route.ts", import.meta.url), "utf8");
 const clientProviders = readFileSync(new URL("../apps/web/app/ClientProviders.tsx", import.meta.url), "utf8");
 const desktopRenderer = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url), "utf8");
-const desktopCss = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.module.css", import.meta.url), "utf8");
+const posRealtimeCss = readFileSync(new URL("../apps/web/components/realtime/RealtimeProvider.module.css", import.meta.url), "utf8");
+const retailPos = readFileSync(new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url), "utf8");
+const restaurantPos = readFileSync(new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url), "utf8");
 const mobileRealtime = readFileSync(new URL("../apps/mobile/src/lib/realtime.ts", import.meta.url), "utf8");
 const mobileRealtimeProvider = readFileSync(new URL("../apps/mobile/src/state/RealtimeContext.tsx", import.meta.url), "utf8");
 const mobileGraphqlProvider = readFileSync(new URL("../apps/mobile/src/graphql/BmsGraphqlProvider.tsx", import.meta.url), "utf8");
@@ -42,14 +44,21 @@ test("shared client layer exposes status, bounded dedup and batched invalidation
   assert.match(ticketRoute, /x-pos-device-token/);
 });
 
-test("desktop POS keeps degraded realtime status in the header instead of covering the sale", () => {
+test("every operator POS uses one compact connection status instead of a blocking banner", () => {
+  assert.match(provider, /export function PosConnectionStatus/);
   assert.match(provider, /pathname === "\/pos\/app"/);
+  assert.match(provider, /pathname === "\/pos"/);
+  assert.match(provider, /pathname\.startsWith\("\/pos\/restaurant"\)/);
   assert.match(desktopRenderer, /useRealtimeStatus\(\)/);
   assert.match(desktopRenderer, /realtimeStatus === "connected"/);
-  assert.match(desktopRenderer, /ออนไลน์ · อัปเดตอัตโนมัติ/);
-  assert.match(desktopRenderer, /ข้อมูลยังอัปเดตอัตโนมัติ/);
-  assert.match(desktopCss, /\.connectionFallback\s*\{[\s\S]*?background:\s*#fffbe6/);
-  assert.match(desktopCss, /\.connectionPopover\s*\{[\s\S]*?position:\s*absolute/);
+  assert.match(desktopRenderer, /<PosConnectionStatus apiStatus=\{connection\}/);
+  assert.match(restaurantPos, /<PosConnectionStatus\s*\/>/);
+  assert.match(retailPos, /!embedded && <PosConnectionStatus\s*\/>/);
+  assert.match(provider, /pos_realtime\.fallback/);
+  assert.match(provider, /pos_realtime\.fallback_title/);
+  assert.match(posRealtimeCss, /\.posConnectionFallback\s*\{[\s\S]*?background:\s*#fffbe6/);
+  assert.match(posRealtimeCss, /\.posConnectionPopover\s*\{[\s\S]*?position:\s*absolute/);
+  assert.match(provider, /document\.addEventListener\("pointerdown", closeOutside\)/);
 });
 
 test("every desktop header popup closes outside, on Escape, and when a sibling opens", () => {

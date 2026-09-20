@@ -49,6 +49,8 @@ declare global {
       onCustomerDisplayStateChanged?(
         listener: (state: DesktopCustomerDisplayState) => void,
       ): () => void;
+      /** Desktop Command/Ctrl+R requests an authoritative data refresh without destroying React. */
+      onRefreshRequested?(listener: () => void): () => void;
       unpair(): Promise<{ ok: boolean }>;
     };
   }

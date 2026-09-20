@@ -162,6 +162,18 @@ test("desktop POS defers heavy secondary workspaces until after the selling scre
   );
 });
 
+test("desktop refresh uses one in-place contract across retail, restaurant, and board-game shops", () => {
+  for (const path of ["/pos", "/pos/app", "/pos/restaurant"]) {
+    assert.match(desktopMain, new RegExp(`contentRefreshRoutes[\\s\\S]*?${path.replaceAll("/", "\\/")}`));
+  }
+  assert.match(desktopRenderer, /window\.bmsDesktop\.onRefreshRequested/);
+  assert.match(desktopRenderer, /setContentRefreshSignal\(\(value\) => value \+ 1\)/);
+  assert.match(desktopRenderer, /refreshSignal=\{contentRefreshSignal\}/);
+  assert.match(boardGameRenderer, /feed\.refreshNow\(\)/);
+  assert.match(retailRenderer, /refreshSignal === handledRefreshSignal\.current/);
+  assert.match(desktopRenderer, /Command\/Ctrl \+ Shift \+ R[\s\S]*?โหลดแอปใหม่ทั้งหมด ใช้เมื่อหน้าค้าง/);
+});
+
 test("desktop header keeps cashier identity without a permanent legacy-sales escape button", () => {
   assert.doesNotMatch(
     desktopRenderer,

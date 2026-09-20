@@ -73,6 +73,7 @@ import {
 import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import {
+  PosConnectionStatus,
   useRealtimeInvalidation,
   useRealtimeStatus,
 } from "@/components/realtime/RealtimeProvider";
@@ -405,6 +406,9 @@ export default function DesktopPosRenderer() {
   const acknowledgedServiceCallCount = serviceCalls.length - pendingServiceCallCount;
   const knownServiceCallIds = useRef<Set<string> | null>(null);
   const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
+  const [contentRefreshSignal, setContentRefreshSignal] = useState(0);
+  const [contentRefreshing, setContentRefreshing] = useState(false);
+  const contentRefreshingRef = useRef(false);
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
   const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -792,6 +796,46 @@ export default function DesktopPosRenderer() {
       }
     }
   }, [bootstrap?.businessArchetype, cashier, pin, token]);
+
+  const refreshDesktopContent = useCallback(async () => {
+    const currentToken = tokenRef.current;
+    if (!currentToken || contentRefreshingRef.current) return;
+    // A refresh must never race a money/stock write or turn an unknown payment result into a new
+    // attempt. Keep the current screen intact and tell the operator why the shortcut was deferred.
+    if (busy || saleAttemptRef.current) {
+      setNotice("กำลังบันทึกรายการอยู่ — ระบบจะไม่รีเฟรชจนกว่างานนี้จะทราบผล");
+      return;
+    }
+    contentRefreshingRef.current = true;
+    setContentRefreshing(true);
+    setConnection("checking");
+    try {
+      const data = await posGraphqlRequest<{ bmsPosSession: PosBootstrap }>(
+        currentToken,
+        POS_BOOTSTRAP_QUERY,
+      );
+      setBootstrap(data.bmsPosSession);
+      await Promise.all([
+        loadCatalog(query, currentToken),
+        cashier && pin ? refreshDesktopServiceCalls() : Promise.resolve(),
+      ]);
+      // Child workspaces refresh their own authoritative source while keeping the desktop shell,
+      // verified operator and current navigation context mounted.
+      setContentRefreshSignal((value) => value + 1);
+      setConnection("online");
+    } catch (cause) {
+      setConnection("offline");
+      setError(`รีเฟรชข้อมูลไม่สำเร็จ: ${messageOf(cause)}`);
+    } finally {
+      contentRefreshingRef.current = false;
+      setContentRefreshing(false);
+    }
+  }, [busy, cashier, loadCatalog, pin, query, refreshDesktopServiceCalls]);
+
+  useEffect(() => {
+    if (typeof window.bmsDesktop?.onRefreshRequested !== "function") return;
+    return window.bmsDesktop.onRefreshRequested(() => { void refreshDesktopContent(); });
+  }, [refreshDesktopContent]);
 
   useRealtimeInvalidation({
     eventTypes: SERVICE_CALL_REALTIME_EVENTS,
@@ -1360,10 +1404,10 @@ export default function DesktopPosRenderer() {
       <main className={styles.centerPage}>
         <section className={styles.gateCard}>
           <div className={styles.spinner} />
-          <h1>กำลังเชื่อมต่อเครื่องขาย</h1>
+          <h1>กำลังโหลดแอปใหม่ทั้งหมด…</h1>
           {error
             ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert>
-            : <p>ตรวจสอบเซิร์ฟเวอร์และสิทธิ์ของอุปกรณ์…</p>}
+            : <p>กำลังเชื่อมต่อเครื่องขายและตรวจสอบข้อมูลล่าสุด กรุณารอสักครู่</p>}
           {error ? (
             <div className={styles.gateActions}>
               <button className={styles.primaryButton} onClick={() => void bootstrapDevice()}>ลองอีกครั้ง</button>
@@ -1534,27 +1578,7 @@ export default function DesktopPosRenderer() {
             <div><strong>{bootstrap.location?.name ?? "สาขาหลัก"}</strong><span>{bootstrap.device.registeredPosNo ?? bootstrap.device.code} · กะเปิดอยู่</span></div>
           </div>
           <div className={styles.topMeta}>
-            {connectionMode === "fallback" ? (
-              <details className={styles.connectionMenu} data-desktop-popup>
-                <summary
-                  className={`${styles.connection} ${styles.connectionFallback}`}
-                  aria-label={`${connectionLabel} กดเพื่อดูรายละเอียด`}
-                >
-                  <i />
-                  <span>{connectionLabel}</span>
-                  <span className={styles.connectionInfo} aria-hidden="true">i</span>
-                </summary>
-                <div className={styles.connectionPopover} role="status">
-                  <strong>ข้อมูลยังอัปเดตอัตโนมัติ</strong>
-                  <span>การอัปเดตทันทีขัดข้องชั่วคราว ระบบจะตรวจข้อมูลใหม่ตามรอบปกติ</span>
-                </div>
-              </details>
-            ) : (
-              <span className={`${styles.connection} ${styles[connectionMode]}`}>
-                <i />
-                <span>{connectionLabel}</span>
-              </span>
-            )}
+            <PosConnectionStatus apiStatus={connection} />
             <details className={styles.alertMenu} data-desktop-popup>
               <summary
                 className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
@@ -1634,6 +1658,7 @@ export default function DesktopPosRenderer() {
                   token={token}
                   cashierUserId={cashier?.id ?? cashierId}
                   pin={pin}
+                  refreshSignal={contentRefreshSignal}
                   onCheckout={openBoardGameCheckout}
                   onServiceCallsChange={acceptBoardGameServiceCalls}
                 />
@@ -1644,6 +1669,7 @@ export default function DesktopPosRenderer() {
                   initialToken: token,
                   initialCashierId: cashier?.id ?? cashierId,
                   initialPin: pin,
+                  refreshSignal: contentRefreshSignal,
                   suppressCustomerDisplay: true,
                   onTabChange: followWorkspaceTab,
                   onShiftChange: followWorkspaceShift,
@@ -1891,6 +1917,13 @@ export default function DesktopPosRenderer() {
           </aside>
         </div>
         )}
+        {contentRefreshing ? (
+          <div className={styles.contentRefreshOverlay} role="status" aria-live="polite">
+            <span className={styles.catalogSpinner} aria-hidden="true" />
+            <strong>กำลังรีเฟรชข้อมูลหน้าปัจจุบัน…</strong>
+            <small>เมนู ผู้ปฏิบัติงาน และกะจะยังคงอยู่</small>
+          </div>
+        ) : null}
       </section>
       <OrderAlertSettingsModal
         open={alertSettingsOpen}
@@ -1923,7 +1956,14 @@ export default function DesktopPosRenderer() {
                   <strong>หากไม่ทราบผลหลังรับเงิน</strong>
                   <p>อย่ากดรับชำระซ้ำทันที ให้ตรวจใบเสร็จและรายการล่าสุดก่อน เพื่อป้องกันการบันทึกซ้ำ</p>
                 </div>
-                <div className={styles.helpShortcuts}><span><kbd>F12</kbd> ค้นหา/ยิงสินค้า</span><span><kbd>Esc</kbd> ปิดหน้าต่าง</span></div>
+                <div className={styles.helpShortcuts}>
+                  <span><kbd>F12</kbd> ค้นหา/ยิงสินค้า</span>
+                  <span><kbd>Esc</kbd> ปิดหน้าต่าง</span>
+                  {hasDesktopPosBridge() ? <>
+                    <span><kbd>Command/Ctrl + R</kbd> รีเฟรชข้อมูลหน้าปัจจุบัน โดยไม่ออกจากพนักงาน</span>
+                    <span><kbd>Command/Ctrl + Shift + R</kbd> โหลดแอปใหม่ทั้งหมด ใช้เมื่อหน้าค้าง</span>
+                  </> : null}
+                </div>
                 <button type="button" className={styles.infoPrimary} onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}>เปิดคู่มือฉบับเต็ม</button>
               </div>
             ) : (

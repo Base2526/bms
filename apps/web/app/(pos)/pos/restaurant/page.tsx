@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
@@ -27,6 +28,7 @@ import {
   POS_PIN_MAX_LENGTH,
 } from "@pos-core/posPin";
 import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
+import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import { posPaymentMethodLabel, receiptDocumentTitle,
   receiptLabel,
@@ -56,6 +58,7 @@ import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
 import { useWakeLock } from "@/app/hooks/useWakeLock";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
+import { PosConnectionStatus } from "@/components/realtime/RealtimeProvider";
 import {
   alertPollIntervalMs,
   describeAgo,
@@ -67,6 +70,14 @@ import {
   type AlertRepeatState,
 } from "@/lib/pos/orderAlertSound";
 import styles from "./restaurant.module.css";
+
+// งานขายทั่วไปเป็นเครื่องมือชุดใหญ่และไม่ใช่เส้นทางหลักของร้านอาหาร จึงโหลดเมื่อพนักงาน
+// เปิด “งานอื่น” เท่านั้น แต่ยังเรนเดอร์อยู่ใต้ shell /pos/restaurant เดิม ไม่พากลับไป
+// /pos/app ซึ่งทำให้สี เมนู พนักงาน และบริบทการทำงานดูเหมือนเปลี่ยนเป็นอีกแอปหนึ่ง
+const RetailPosWorkspace = dynamic(() => import("@/app/(pos)/pos/page"), {
+  ssr: false,
+  loading: () => <div className={styles.otherWorkLoading}><Spin size="large" /></div>,
+});
 
 /** เหตุการณ์ที่จอนี้เห็นจริง — หน้าตั้งค่าแสดงเฉพาะชุดนี้ ไม่ยื่นตัวเลือกที่ตั้งแล้วไม่มีผล */
 const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_NEW", "QR_PENDING", "FOOD_READY", "SLA_LATE"] as const;
@@ -88,6 +99,8 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "OTHER";
+type OtherWorkTab = Extract<PosTab, "sell" | "returns" | "stock" | "deposits">;
+const OTHER_WORK_TABS: readonly OtherWorkTab[] = ["sell", "returns", "stock", "deposits"];
 const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "OTHER"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
@@ -526,6 +539,7 @@ export default function RestaurantPosPage() {
   // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
   // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
   const [screen, setScreen] = useState<RestaurantScreen>("FLOOR");
+  const [otherWorkTab, setOtherWorkTab] = useState<OtherWorkTab | null>(null);
   // ต้องอ่านค่าที่จำไว้ให้เสร็จก่อน effect ที่เขียนทับจะเริ่มทำงาน — สลับลำดับกันแล้วค่า
   // เริ่มต้น ("FLOOR" / ไม่มีบิล) จะทับของที่จำไว้ตั้งแต่ก่อนที่ใครจะได้อ่านมัน
   // (กับดักเดียวกับ localDraftRestoredRef ของหน้าค้าปลีก)
@@ -540,6 +554,7 @@ export default function RestaurantPosPage() {
   const [operatorError, setOperatorError] = useState("");
   const [operatorVerifying, setOperatorVerifying] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -639,6 +654,8 @@ export default function RestaurantPosPage() {
   const rootRef = useRef<HTMLElement>(null);
   const accountMenuRef = useRef<HTMLDetailsElement>(null);
   const workingRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
   const displayChannel = useRef<BroadcastChannel | null>(null);
   const displayPayloadRef = useRef<CustomerDisplayPayload | null>(null);
   const memberCheckIdRef = useRef<string | null>(null);
@@ -648,6 +665,10 @@ export default function RestaurantPosPage() {
   // of a newly selected table from inheriting the previous table's customer before the cleanup
   // effect below runs.
   const checkMember = memberCheckIdRef.current === (check?.id ?? null) ? selectedMember : null;
+  // จอฝั่งลูกค้าต้องมีเจ้าของเพียงคนเดียว: เมื่อเปิดงานขายทั่วไป workspace ที่ฝังจะส่ง
+  // ตะกร้าของมันเอง ส่วน shell ร้านอาหารหยุดตอบ hello/ส่งบิลโต๊ะชั่วคราว ไม่อย่างนั้นสอง
+  // BroadcastChannel จะผลัดกันเขียนคนละยอดบนจอลูกค้า
+  const embeddedOtherWorkActive = screen === "OTHER" && otherWorkTab !== null;
   // ⚠️ ต้องเป็น reference เดิมทุก render — ถ้าสร้าง closure ใหม่ทุกครั้ง antd จะเห็นว่า
   // container เปลี่ยน แล้ว portal ใหม่ซ้ำ ๆ จน animation ค้างที่ `ant-zoom-appear-start`
   // (opacity 0) = กล่องอยู่ใน DOM ตำแหน่งถูก แต่มองไม่เห็นทั้งใบ
@@ -691,6 +712,7 @@ export default function RestaurantPosPage() {
     };
   }, []);
   useEffect(() => {
+    if (embeddedOtherWorkActive) return;
     if (typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
     displayChannel.current = channel;
@@ -700,8 +722,9 @@ export default function RestaurantPosPage() {
       }
     };
     return () => { channel.close(); displayChannel.current = null; };
-  }, []);
+  }, [embeddedOtherWorkActive]);
   useEffect(() => {
+    if (embeddedOtherWorkActive) return;
     if (!check) {
       if (settlementReceipt) return;
       const empty: CustomerDisplayPayload = {
@@ -739,8 +762,9 @@ export default function RestaurantPosPage() {
     };
     displayPayloadRef.current = payload;
     displayChannel.current?.postMessage(payload);
-  }, [check, checkMember, pricingPreview, settlementReceipt, checkoutOpen, payments, session?.store?.paymentQr]);
+  }, [check, checkMember, pricingPreview, settlementReceipt, checkoutOpen, payments, session?.store?.paymentQr, embeddedOtherWorkActive]);
   useEffect(() => {
+    if (embeddedOtherWorkActive) return;
     if (!settlementReceipt) return;
     const payload: CustomerDisplayPayload = {
       lines: [], itemCount: 0,
@@ -758,7 +782,7 @@ export default function RestaurantPosPage() {
     };
     displayPayloadRef.current = payload;
     displayChannel.current?.postMessage(payload);
-  }, [settlementReceipt]);
+  }, [settlementReceipt, embeddedOtherWorkActive]);
   useEffect(() => {
     const checkId = check?.id ?? null;
     if (memberCheckIdRef.current === checkId) return;
@@ -1108,11 +1132,15 @@ export default function RestaurantPosPage() {
     setOperatorOpen(true);
   }
   function openOtherWork(tab: "sell" | "returns" | "stock" | "deposits") {
-    const href = window.bmsDesktop
-      ? `/pos/app?module=${tab === "sell" ? "mobile_sell" : tab}&context=restaurant`
-      : `/pos?surface=retail&tab=${tab}&context=restaurant`;
-    router.push(href);
+    setOtherWorkTab(tab);
   }
+  const followOtherWorkTab = useCallback((tab: PosTab) => {
+    if (OTHER_WORK_TABS.some((allowed) => allowed === tab)) setOtherWorkTab(tab as OtherWorkTab);
+    if (tab === "shift") {
+      setOtherWorkTab(null);
+      setScreen("SHIFT");
+    }
+  }, []);
   async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
   async function loadWaitlist(signal?: AbortSignal) { setWaitlist(await json("/api/pos/restaurant/waitlist", { signal })); }
   /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
@@ -1288,7 +1316,30 @@ export default function RestaurantPosPage() {
     return setMenuAvailability(item, item.availability !== "SOLD_OUT_TODAY", t("pos_restaurant.reported_by_kitchen"));
   }
   async function loadCheck(id: string) { const data = await json(`/api/pos/restaurant/checks/${id}`); setCheck(data.check); return data.check as RestaurantCheck; }
-  async function refresh() { if (!token) return; setLoading(true); try { if (!(await loadSession())) return; await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist()]); if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setLoading(false); } }
+  async function refresh() {
+    if (!token || refreshingRef.current || workingRef.current) return;
+    const preserveShell = Boolean(session);
+    refreshingRef.current = true;
+    if (preserveShell) setRefreshing(true);
+    else setLoading(true);
+    try {
+      if (!(await loadSession())) return;
+      await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist()]);
+      if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null));
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+      setLoading(false);
+    }
+  }
+  refreshRef.current = refresh;
+  useEffect(() => {
+    if (!window.bmsDesktop?.onRefreshRequested) return;
+    return window.bmsDesktop.onRefreshRequested(() => { void refreshRef.current(); });
+  }, []);
   useEffect(() => { if (token) void refresh(); else if (ready) setLoading(false); }, [token, ready]);
   /**
    * คืนจอ/โต๊ะที่ค้างไว้ — ครั้งเดียวหลังรู้ token ไม่ใช่ทุกครั้งที่ไม่มีบิล
@@ -2286,7 +2337,13 @@ export default function RestaurantPosPage() {
 
   // สองสถานะนี้ไม่มีแถบซ้าย (ยังไม่มีอะไรให้สลับ) จึงใช้ .pagePlain ที่ไม่ใช่ grid สองคอลัมน์
   // ไม่งั้นเนื้อหาไปกองอยู่คอลัมน์ที่สองโดยเว้นช่องว่าง 64px ทางซ้ายไว้เฉย ๆ
-  if (!ready || loading) return <main className={`${styles.page} ${styles.pagePlain}`}><div className={styles.empty}><Spin size="large" /></div></main>;
+  if (!ready || loading) return <main className={`${styles.page} ${styles.pagePlain}`}>
+    <div className={styles.appLoading} role="status" aria-live="polite">
+      <Spin size="large" />
+      <h1>{t("pos_restaurant.app_loading_title")}</h1>
+      <p>{t("pos_restaurant.app_loading_description")}</p>
+    </div>
+  </main>;
   if (!token) return <main className={`${styles.page} ${styles.pagePlain}`}><Alert closable type="warning" showIcon message={t("pos_restaurant.no_token_title")} description={t("pos_restaurant.no_token_desc")} /></main>;
 
   // ป้ายในแถบกว้าง 64px ต้องสั้นพอไม่ตัดคำ ("สั่งอาหาร" เหลือ "สั่ง" แล้วอ่านเป็นคำอื่น)
@@ -2302,7 +2359,7 @@ export default function RestaurantPosPage() {
     { key: "SHIFT" as const, short: t("pos_restaurant.rail_shift_short"), full: t("pos_restaurant.rail_shift"), icon: <SwapOutlined />, badge: 0 },
   ];
 
-  return <main className={styles.page} ref={rootRef}>
+  return <main className={styles.page} data-pos-theme="restaurant-classic" ref={rootRef}>
     {/* เมนูนำทางฝั่งซ้าย — ป้ายตัวเลขบอกงานค้างของจอนั้น (โต๊ะที่ยังไม่ส่งครัว / ตั๋วในครัว)
         เพื่อให้เห็นว่าต้องไปจอไหนต่อโดยไม่ต้องเข้าไปดูทีละจอ */}
     <nav className={styles.rail} aria-label={t("pos_restaurant.rail_aria")}>
@@ -2319,7 +2376,7 @@ export default function RestaurantPosPage() {
           จึงอยู่กับ utility ด้านล่าง แยกจากจอสั่งอาหารและไม่แย่งพื้นที่บนหัวจอ */}
       <div className={styles.railUtilitySlot}>
         <button type="button" className={styles.railBtn}
-          onClick={() => setScreen("OTHER")}
+          onClick={() => { setOtherWorkTab(null); setScreen("OTHER"); }}
           aria-pressed={screen === "OTHER"}
           title={t("pos_restaurant.retail_mode_hint")}
           aria-label={t("pos_restaurant.retail_mode_hint")}>
@@ -2333,11 +2390,12 @@ export default function RestaurantPosPage() {
       <header className={styles.topbar}>
         <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || t("pos_restaurant.operator")) : t("pos_restaurant.operator_none")}</p></div></div>
         <div className={styles.topActions}>
+          <PosConnectionStatus />
           <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
             <i aria-hidden="true" />
             {session?.shift ? t("pos_restaurant.shift_open_status") : t("pos_restaurant.shift_closed_status")}
           </span>
-          <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void refresh()} title={t("pos_restaurant.refresh")} aria-label={t("pos_restaurant.refresh")}><ReloadOutlined /></button>
+          <button type="button" className={`${styles.btn} ${styles.btnIcon}`} disabled={refreshing || working} onClick={() => void refresh()} title={t("pos_restaurant.refresh")} aria-label={t("pos_restaurant.refresh")}><ReloadOutlined /></button>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setSupportOpen(true)} title={`Support Log (${localSupportEventCount(supportScope)})`} aria-label={`Support Log (${localSupportEventCount(supportScope)})`}><CustomerServiceOutlined /></button>
           {!session?.shift && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady} title={operatorReady ? t("pos_restaurant.open_shift") : t("pos_restaurant.need_operator_pin")} onClick={() => setShiftModal("OPEN")}>{t("pos_restaurant.open_shift")}</button>}
           {operatorReady ? (
@@ -2365,6 +2423,7 @@ export default function RestaurantPosPage() {
           )}
         </div>
       </header>
+      <div className={styles.contentRegion} aria-busy={refreshing}>
       {/* ลำดับความสำคัญของแบนเนอร์ตรงกับลำดับที่ต้องทำจริง: เลือกผู้ปฏิบัติงาน+PIN ก่อน
           แล้วค่อยเปิดกะ — เดิมมีแบนเนอร์เดียว (no_shift_blocker) บอกว่า "เปิดกะก่อน" ทั้งที่
           ปุ่มเปิดกะกดไม่ได้เพราะยังไม่ได้เลือกผู้ปฏิบัติงาน ซึ่งเป็นเหตุผลที่เห็นได้แค่จาก
@@ -2379,7 +2438,7 @@ export default function RestaurantPosPage() {
         message={t("pos_alerts.blocked_banner")}
         action={<Button size="small" onClick={() => alerts.preview(alerts.settings.tones.ORDER_NEW)}>{t("pos_alerts.blocked_action")}</Button>} />}
 
-      {screen === "OTHER" && <section className={styles.otherWorkScreen}>
+      {screen === "OTHER" && !otherWorkTab && <section className={styles.otherWorkScreen}>
         <div className={styles.otherWorkHead}>
           <span className={styles.otherWorkMark} aria-hidden="true"><ShopOutlined /></span>
           <div><h2>{t("pos_restaurant.other_work_title")}</h2><p>{t("pos_restaurant.other_work_subtitle")}</p></div>
@@ -2399,6 +2458,31 @@ export default function RestaurantPosPage() {
           </button>
         </div>
         <p className={styles.otherWorkNote}>{t("pos_restaurant.other_work_note")}</p>
+      </section>}
+
+      {screen === "OTHER" && otherWorkTab && <section className={styles.otherWorkWorkspace}>
+        <div className={styles.otherWorkToolbar}>
+          <button type="button" className={styles.btn} onClick={() => setOtherWorkTab(null)}>
+            <ArrowLeftOutlined aria-hidden="true" /> {t("pos_restaurant.other_work_title")}
+          </button>
+          <div>
+            <h2>{t(`pos_restaurant.other_work_${otherWorkTab}`)}</h2>
+            <p>{t(`pos_restaurant.other_work_${otherWorkTab}_desc`)}</p>
+          </div>
+        </div>
+        <div className={styles.otherWorkHost}>
+          <PosWorkspaceContext.Provider value={{
+            embedded: true,
+            initialTab: otherWorkTab,
+            initialToken: token,
+            initialCashierId: actorUserId,
+            initialPin: actorPin,
+            onTabChange: followOtherWorkTab,
+            suppressCustomerDisplay: false,
+          }}>
+            <RetailPosWorkspace />
+          </PosWorkspaceContext.Provider>
+        </div>
       </section>}
 
       {/* กระดานคิว — สองรายการในจอเดียว: คนที่ยังรอ (เรียงตามลำดับที่ควรได้โต๊ะ) และ
@@ -2965,6 +3049,10 @@ export default function RestaurantPosPage() {
             </section>;
           })}</div>
         </section></Spin> : null}
+        {refreshing && <div className={styles.contentRefreshOverlay} role="status" aria-live="polite">
+          <Spin size="large" /><span>{t("pos_restaurant.refresh")}…</span>
+        </div>}
+      </div>
     </div>
 
     <Modal title={t("pos_restaurant.edit_guest_count_title", { table: check?.tableName ?? "" })} open={guestOpen} onCancel={() => setGuestOpen(false)} confirmLoading={working} okText={t("pos_restaurant.save")} getContainer={modalContainer}
