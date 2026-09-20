@@ -1,5 +1,19 @@
 const { contextBridge, ipcRenderer } = require("electron/renderer");
 
+const refreshListeners = new Set();
+ipcRenderer.on("bms-pos:refresh-data", (_event, requestId) => {
+  const listeners = Array.from(refreshListeners);
+  for (const listener of listeners) {
+    try { listener(); } catch {}
+  }
+  // Older web deployments do not register this listener. Tell the main process so it can fall
+  // back to a normal reload instead of turning Command/Ctrl+R into a shortcut that does nothing.
+  ipcRenderer.send("bms-pos:refresh-data-result", {
+    requestId,
+    handled: listeners.length > 0,
+  });
+});
+
 contextBridge.exposeInMainWorld("bmsDesktop", {
   isDesktop: true,
   pair: (input) => ipcRenderer.invoke("bms-pos:pair", {
@@ -19,6 +33,11 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on("bms-pos:customer-display-state-changed", handler);
     return () => ipcRenderer.removeListener("bms-pos:customer-display-state-changed", handler);
+  },
+  onRefreshRequested: (listener) => {
+    if (typeof listener !== "function") return () => {};
+    refreshListeners.add(listener);
+    return () => refreshListeners.delete(listener);
   },
   unpair: () => ipcRenderer.invoke("bms-pos:unpair"),
   getAppInfo: () => ipcRenderer.invoke("bms-pos:app-info"),

@@ -945,7 +945,7 @@ test("the check footer never claims a total the bill does not have", async () =>
   assert.doesNotMatch(page, /items\.reduce\(/);
 });
 
-test("restaurants keep a way back to the retail register", async () => {
+test("restaurant other-work stays inside the canonical restaurant shell", async () => {
   // คืนสินค้า / รับของเข้าคลัง / มัดจำ / บัตรของขวัญ / ขายเชื่อ อยู่ที่ /pos เท่านั้น
   // การ redirect แบบไม่มีทางออกทำให้ร้านอาหารทำงานเหล่านั้นไม่ได้เลย
   const retail = code(await read("apps/web/app/(pos)/pos/page.tsx"));
@@ -953,13 +953,36 @@ test("restaurants keep a way back to the retail register", async () => {
     await read("apps/web/app/(pos)/pos/restaurant/page.tsx"),
   );
   assert.match(retail, /get\("surface"\) !== "retail"/);
-  assert.match(restaurant, /\/pos\?surface=retail/);
-  // งานรองเปิด hub ใน shell ร้านอาหารก่อน แล้วค่อย deep-link ไป workflow เดิม
+  // งานรองเปิด hub ใน shell ร้านอาหารแล้วฝัง workflow เดิมไว้ข้างใน — ห้ามพาไป
+  // shell สีน้ำเงิน เพราะพนักงานจะเสียบริบทคน/กะและคิดว่าเข้าคนละระบบ
   assert.doesNotMatch(restaurant, /className=\{styles\.topActions\}[\s\S]*?surface=retail/);
-  assert.match(restaurant, /className=\{styles\.railUtilitySlot\}[\s\S]*?onClick=\{\(\) => setScreen\("OTHER"\)\}/);
-  assert.match(restaurant, /module=\$\{tab === "sell" \? "mobile_sell" : tab\}&context=restaurant/);
+  assert.match(restaurant, /className=\{styles\.railUtilitySlot\}[\s\S]*?setOtherWorkTab\(null\); setScreen\("OTHER"\)/);
+  assert.match(restaurant, /<PosWorkspaceContext\.Provider value=\{\{/);
+  assert.match(restaurant, /embedded:\s*true/);
+  assert.match(restaurant, /initialToken:\s*token/);
+  assert.match(restaurant, /initialCashierId:\s*actorUserId/);
+  assert.match(restaurant, /initialPin:\s*actorPin/);
+  assert.match(restaurant, /embeddedOtherWorkActive[\s\S]*?new BroadcastChannel/);
+  assert.match(restaurant, /suppressCustomerDisplay:\s*false/);
+  assert.doesNotMatch(restaurant, /\/pos\/app\?module=/);
+  assert.doesNotMatch(restaurant, /\/pos\?surface=retail&tab=/);
   assert.match(retail, /pos-page--restaurant-context/);
   assert.match(retail, /กลับโต๊ะร้านอาหาร/);
+});
+
+test("desktop refresh preserves the restaurant shell and blocks only its content", async () => {
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const css = code(await read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"));
+  const bridge = code(await read("apps/web/lib/pos/deviceTokenClient.ts"));
+  assert.match(bridge, /onRefreshRequested\?\(listener: \(\) => void\)/);
+  assert.match(restaurant, /window\.bmsDesktop\.onRefreshRequested\(\(\) => \{ void refreshRef\.current\(\); \}\)/);
+  assert.match(restaurant, /const preserveShell = Boolean\(session\)/);
+  assert.match(restaurant, /className=\{styles\.contentRegion\} aria-busy=\{refreshing\}/);
+  assert.match(restaurant, /refreshing && <div className=\{styles\.contentRefreshOverlay\}/);
+  assert.match(css, /\.contentRefreshOverlay\s*\{[\s\S]*?position: absolute; inset: 0/);
+  assert.match(restaurant, /className=\{styles\.appLoading\}[\s\S]*?app_loading_title[\s\S]*?app_loading_description/);
+  assert.match(css, /\.pagePlain\s*\{[\s\S]*?place-items: center/,
+    "full application reload must explain itself at the visual center, not show a lone top spinner");
 });
 
 test("the order rail stays usable before a check is selected", async () => {

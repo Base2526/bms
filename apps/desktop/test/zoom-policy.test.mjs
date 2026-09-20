@@ -68,3 +68,21 @@ test("application menus omit zoom roles on macOS, Windows, and Linux", () => {
     assert.match(roles, /togglefullscreen/);
   }
 });
+
+test("desktop menu separates data refresh from application reload", () => {
+  let refreshed = 0;
+  let reloaded = 0;
+  const template = desktopMenuTemplate("darwin", false, {
+    refreshData: () => { refreshed += 1; },
+    reloadApplication: () => { reloaded += 1; },
+  });
+  const view = template.find((item) => item.label === "View");
+  const refresh = view.submenu.find((item) => item.accelerator === "CmdOrCtrl+R");
+  const reload = view.submenu.find((item) => item.accelerator === "CmdOrCtrl+Shift+R");
+  assert.equal(refresh.label, "รีเฟรชข้อมูลหน้าปัจจุบัน");
+  assert.equal(reload.label, "โหลดแอปใหม่ทั้งหมด (เมื่อหน้าค้าง)");
+  refresh.click();
+  reload.click();
+  assert.equal(refreshed, 1);
+  assert.equal(reloaded, 1);
+});

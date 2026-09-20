@@ -22,6 +22,8 @@ type Props = {
   token: string;
   cashierUserId: string;
   pin: string;
+  /** Desktop content-refresh signal; omitted by browser and legacy callers. */
+  refreshSignal?: number;
   /**
    * ส่งบิลเวลาเล่นที่ปิดแล้วไปให้แท็บขายเก็บเงิน — เส้นเดียวกับที่ `/admin/board-game` ใช้
    *
@@ -405,7 +407,7 @@ function newKey() {
   return `bg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, onServiceCallsChange }: Props) {
+export default function BoardGamePanel({ token, cashierUserId, pin, refreshSignal = 0, onCheckout, onServiceCallsChange }: Props) {
   const ready = Boolean(token && cashierUserId && pin);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [workspaceLoadError, setWorkspaceLoadError] = useState('');
@@ -631,6 +633,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, onCheckout, 
       if (open) await loadSession(open, signal);
     },
   });
+
+  const handledRefreshSignal = useRef(refreshSignal);
+  useEffect(() => {
+    if (refreshSignal === handledRefreshSignal.current) return;
+    handledRefreshSignal.current = refreshSignal;
+    feed.refreshNow();
+  }, [feed.refreshNow, refreshSignal]);
 
   useEffect(() => {
     if (!ready || !selectedId) return;

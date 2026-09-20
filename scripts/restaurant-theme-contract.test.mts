@@ -103,6 +103,16 @@ test("พาเลตต์สว่างกับมืดประกาศ�
   }
 });
 
+test("shell ร้านอาหารเป็นเจ้าของ theme ของ workflow ที่ฝังและพร้อมสลับ preset", async () => {
+  const css = stripComments(await read(CSS));
+  const page = stripComments(await read(PAGE));
+  assert.match(page, /data-pos-theme="restaurant-classic"/);
+  assert.match(css, /\.page :global\(\.pos-page--restaurant-context\)[\s\S]*?--pos-accent: var\(--accent\)/);
+  for (const token of ["--pos-bg", "--pos-surface", "--pos-text", "--pos-accent-hover", "--pos-danger"]) {
+    assert.match(css, new RegExp(`${token}: var\\\(--`), `${token} ต้องชี้ผ่าน semantic token ของ shell`);
+  }
+});
+
 test("คู่สีที่ต้องอ่านจริงผ่านเกณฑ์ contrast — และโหมดมืดต้องไม่แย่กว่าโหมดสว่าง", async () => {
   const css = stripComments(await read(CSS));
   const light = palette(css, ".page {");

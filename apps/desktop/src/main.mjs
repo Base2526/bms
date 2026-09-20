@@ -32,6 +32,8 @@ let customerDisplayWindow = null;
 let customerDisplayWindowDisplayId = null;
 let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
 let displayReconcileTimer = null;
+let refreshRequestSequence = 0;
+let pendingRefreshRequest = null;
 
 function configPath() {
   return path.join(app.getPath("userData"), "pairing.json");
@@ -405,6 +407,41 @@ function createMainWindow() {
   return window;
 }
 
+function reloadMainApplication() {
+  if (pendingRefreshRequest) {
+    clearTimeout(pendingRefreshRequest.timer);
+    pendingRefreshRequest = null;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.reloadIgnoringCache();
+}
+
+function refreshMainWindowData() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  let current;
+  try { current = new URL(mainWindow.webContents.getURL()); } catch { reloadMainApplication(); return; }
+  // Every current cashier surface uses the same shortcut contract. Utility/customer windows are
+  // deliberately excluded: they are not the primary register workspace and must not acknowledge a
+  // refresh they cannot perform. Older deployments report `handled: false` and retain the full-
+  // reload fallback below.
+  const contentRefreshRoutes = new Set(["/pos", "/pos/app", "/pos/restaurant"]);
+  if (!activePairing || current.origin !== activePairing.serverUrl || !contentRefreshRoutes.has(current.pathname)) {
+    reloadMainApplication();
+    return;
+  }
+  if (pendingRefreshRequest) return;
+  const requestId = ++refreshRequestSequence;
+  const timer = setTimeout(() => {
+    if (pendingRefreshRequest?.requestId !== requestId) return;
+    pendingRefreshRequest = null;
+    // Backward compatibility: an older server does not know the new bridge event, so Command+R
+    // must still reload rather than silently doing nothing.
+    reloadMainApplication();
+  }, 500);
+  pendingRefreshRequest = { requestId, timer };
+  mainWindow.webContents.send("bms-pos:refresh-data", requestId);
+}
+
 async function showSetup() {
   if (mainWindow) await mainWindow.loadFile(SETUP_FILE);
 }
@@ -448,6 +485,13 @@ async function verifyPairing(pairing) {
 }
 
 function registerIpc() {
+  ipcMain.on("bms-pos:refresh-data-result", (event, result) => {
+    if (!isPairedCashierFrame(event) || !pendingRefreshRequest) return;
+    if (Number(result?.requestId) !== pendingRefreshRequest.requestId) return;
+    clearTimeout(pendingRefreshRequest.timer);
+    pendingRefreshRequest = null;
+    if (!result?.handled) reloadMainApplication();
+  });
   ipcMain.handle("bms-pos:pair", async (event, input) => {
     if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์จับคู่เครื่อง" };
     const storage = currentSecureStorageStatus();
@@ -551,6 +595,10 @@ if (!singleInstance) {
     Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
       process.platform,
       process.env.BMS_POS_DESKTOP_DEVTOOLS === "1",
+      {
+        refreshData: refreshMainWindowData,
+        reloadApplication: reloadMainApplication,
+      },
     )));
     registerIpc();
     mainWindow = createMainWindow();

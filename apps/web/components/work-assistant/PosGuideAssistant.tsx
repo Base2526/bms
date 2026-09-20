@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { POS_REGISTER_SUGGESTIONS, SYSTEM_GUIDES, searchAssistantKnowledge } from "@/lib/bms/assistantKnowledge";
 import { useI18n } from "@/lib/i18nContext";
+import { hasDesktopPosBridge } from "@/lib/pos/deviceTokenClient";
 
 /**
  * Deterministic POS-only guide surface. It deliberately makes no GraphQL/AI call:
@@ -75,6 +76,15 @@ export default function PosGuideAssistant({ variant = "floating", className }: {
               <button type="button" onClick={() => setOpen(false)} style={{ marginLeft: "auto", minWidth: 44, minHeight: 44 }}>×</button>
             </div>
             <p>{en ? "Ask how to use the POS. This guide does not access sales data or perform actions." : "ถามวิธีใช้ POS ได้ที่นี่ คู่มือนี้ไม่อ่านข้อมูลการขายและไม่ทำรายการแทน"}</p>
+            {hasDesktopPosBridge() ? (
+              <section style={{ margin: "12px 0", padding: "12px", border: "1px solid var(--line, #d9d9d9)", borderRadius: 8, background: "var(--panel-2, #f8fafc)" }} aria-label={en ? "Desktop refresh shortcuts" : "คีย์ลัดรีเฟรช Desktop"}>
+                <strong style={{ display: "block", marginBottom: 8 }}>{en ? "Desktop refresh shortcuts" : "รีเฟรชแบบไหน เมื่อไร"}</strong>
+                <div style={{ display: "grid", gap: 8, fontSize: 13, lineHeight: 1.5 }}>
+                  <span><kbd>Command/Ctrl + R</kbd> — {en ? "refresh the current screen's data without signing the operator out" : "รีเฟรชข้อมูลหน้าปัจจุบัน โดยไม่ออกจากพนักงานที่กำลังใช้งาน"}</span>
+                  <span><kbd>Command/Ctrl + Shift + R</kbd> — {en ? "reload the entire application; use this only to recover a stuck screen" : "โหลดแอปใหม่ทั้งหมด ใช้เมื่อหน้าค้างหรือการแสดงผลผิดปกติ"}</span>
+                </div>
+              </section>
+            ) : null}
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}

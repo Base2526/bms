@@ -5164,6 +5164,15 @@ const th = {
     ago_minutes: "{minutes} นาทีที่แล้ว",
     screen_awake: "จอจะไม่ดับระหว่างเปิดจอครัว",
   },
+  pos_realtime: {
+    online: "ออนไลน์",
+    checking: "กำลังเชื่อมต่อ",
+    offline: "การเชื่อมต่อมีปัญหา",
+    fallback: "ออนไลน์ · อัปเดตอัตโนมัติ",
+    open_details: "กดเพื่อดูรายละเอียด",
+    fallback_title: "ข้อมูลยังอัปเดตอัตโนมัติ",
+    fallback_description: "การอัปเดตทันทีขัดข้องชั่วคราว ระบบจะตรวจข้อมูลใหม่ตามรอบปกติ",
+  },
   pos_restaurant: {
     // จอครัว โมดัลต่าง ๆ และแผงใบเสร็จ
     manage_this: "จัดการใบนี้",
@@ -5388,6 +5397,8 @@ const th = {
     operator_change: "เปลี่ยนคน",
     operator_select: "เลือกผู้ปฏิบัติงาน",
     refresh: "รีเฟรช",
+    app_loading_title: "กำลังโหลดแอปใหม่ทั้งหมด…",
+    app_loading_description: "กำลังเชื่อมต่อเครื่องขายและตรวจสอบข้อมูลล่าสุด กรุณารอสักครู่",
     retail_mode: "งานอื่น",
     other_work_title: "งานขายอื่น",
     other_work_subtitle: "เลือกงานที่ต้องทำ ระบบจะเปิดเครื่องมือเดิมโดยใช้สาขา กะ และพนักงานคนปัจจุบัน",

@@ -1,0 +1,97 @@
+.posConnection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: #667085;
+  background: #f5f7fa;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.posConnectionDot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #98a2b3;
+}
+
+.posConnectionOnline .posConnectionDot {
+  background: #52c41a;
+  box-shadow: 0 0 0 3px #f6ffed;
+}
+
+.posConnectionOffline {
+  color: #cf1322;
+  background: #fff2f0;
+}
+
+.posConnectionOffline .posConnectionDot { background: #ff4d4f; }
+
+.posConnectionMenu { position: relative; }
+.posConnectionMenu > summary { list-style: none; cursor: pointer; }
+.posConnectionMenu > summary::-webkit-details-marker { display: none; }
+.posConnectionMenu > summary:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+
+.posConnectionFallback {
+  border: 1px solid #ffd591;
+  color: #ad6800;
+  background: #fffbe6;
+}
+
+.posConnectionFallback .posConnectionDot {
+  background: #faad14;
+  box-shadow: 0 0 0 3px #fff1b8;
+}
+
+.posConnectionInfo {
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.posConnectionPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1250;
+  width: min(280px, calc(100vw - 32px));
+  padding: 11px 12px;
+  border: 1px solid #ffe7ba;
+  border-radius: 10px;
+  color: #667085;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(30, 42, 60, 0.16);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.posConnectionPopover strong,
+.posConnectionPopover span { display: block; }
+.posConnectionPopover strong { color: #874d00; font-size: 12px; }
+.posConnectionPopover span { margin-top: 4px; }
+
+.posConnectionFloating {
+  position: fixed;
+  z-index: 1200;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 767px) {
+  .posConnectionPopover { position: fixed; top: auto; right: 12px; bottom: 58px; left: 12px; width: auto; }
+}

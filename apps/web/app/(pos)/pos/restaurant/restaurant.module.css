@@ -42,6 +42,8 @@
   --line: #c9cfc9;
   --line-2: #e1e5e0;
   --accent: #1f5340;
+  --accent-hover: #2d6b53;
+  --accent-active: #174332;
   --red: #c4472a;
   --red-bg: #fbe9e4;
   --amber: #a9721a;
@@ -73,6 +75,25 @@
   --tint-2: #fbe9e4;
   --tint-3: #fbf1de;
   --tint-4: #e4f0e9;
+  /* สะพานไป workflow เดิมของ POS: shell ร้านอาหารเป็นเจ้าของ theme เพียงจุดเดียว
+     และเปลี่ยน preset ได้ภายหลังด้วย data-pos-theme โดยไม่แตะ business component */
+  --pos-bg: var(--ground);
+  --pos-surface: var(--panel);
+  --pos-sunken: var(--quiet);
+  --pos-line: var(--line-2);
+  --pos-line-strong: var(--line);
+  --pos-text: var(--ink);
+  --pos-muted: var(--ink-3);
+  --pos-accent: var(--accent);
+  --pos-accent-hover: var(--accent-hover);
+  --pos-accent-active: var(--accent-active);
+  --pos-accent-bg: var(--green-bg);
+  --pos-money: var(--green);
+  --pos-money-bg: var(--green-bg);
+  --pos-warn: var(--amber);
+  --pos-warn-bg: var(--amber-bg);
+  --pos-danger: var(--red);
+  --pos-danger-bg: var(--red-bg);
   /* แอปเต็มจอ ไม่ใช่เอกสาร — ทั้งสายเคยเป็น min-height ซึ่งไม่ได้จำกัดความสูง
      กล่องจึงโตตามเนื้อหาไปเรื่อย ๆ แล้ว overflow:auto ของรายการในบิลไม่มีอะไรให้ล้น
      ผลคือทั้งหน้าเลื่อนแทนที่จะเลื่อนเฉพาะรายการ · dvh ไม่ใช่ vh เพราะแถบเบราว์เซอร์
@@ -112,6 +133,8 @@
   --line: #3b433f;
   --line-2: #2b322f;
   --accent: #54c398;
+  --accent-hover: #6bd0a9;
+  --accent-active: #3daf82;
   --red: #ff8f70;
   --red-bg: #3d2019;
   --amber: #e5b25a;
@@ -143,6 +166,8 @@
   --pos-text: var(--ink);
   --pos-muted: var(--ink-3);
   --pos-accent: var(--accent);
+  --pos-accent-hover: var(--accent-hover);
+  --pos-accent-active: var(--accent-active);
   --pos-accent-bg: rgba(84, 195, 152, .22);
   --pos-money: var(--green);
   --pos-money-bg: var(--green-bg);
@@ -152,6 +177,14 @@
   --pos-danger-bg: var(--red-bg);
   --pos-alt: #b79be8;
   --pos-alt-bg: #2c2440;
+}
+/* PosPage มี fallback สีร้านอาหารของตัวเองสำหรับกรณีเปิด /pos โดยตรง แต่เมื่อถูกฝัง
+   ใน shell นี้ ต้องรับ preset ของ shell เพื่อไม่ให้เขียวสองเฉดอยู่ในหน้าจอเดียว */
+.page :global(.pos-page--restaurant-context) {
+  --pos-accent: var(--accent);
+  --pos-accent-hover: var(--accent-hover);
+  --pos-accent-active: var(--accent-active);
+  --pos-accent-bg: var(--green-bg);
 }
 /* placeholder ของ pos.css เป็นค่าคงที่ (#9aa1ab) ตัวแปรจึงเอื้อมไม่ถึง */
 :global(html.dark) .page input::placeholder,
@@ -168,7 +201,18 @@
    โมดัลตัวใหม่ (วัดจริง: 1 โมดัล = หาย 175px · 3 โมดัล = หาย 233px จาก 820px)
    ประกาศแถวเดียว 100% แล้ว portal root ตกไปอยู่ implicit row สูง 0 ที่ overflow:hidden ตัดทิ้ง */
 .page { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 100%; overflow: hidden; }
-.pagePlain { display: block; overflow: auto; }
+.pagePlain { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: center; overflow: auto; }
+.appLoading {
+  width: min(440px, calc(100vw - 48px));
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 32px;
+  color: var(--ink-2);
+  text-align: center;
+}
+.appLoading h1 { margin: 8px 0 0; color: var(--ink); font-size: 20px; line-height: 1.35; }
+.appLoading p { max-width: 380px; margin: 0; font-size: 13px; line-height: 1.6; }
 .rail {
   background: var(--panel); border-inline-end: 1px solid var(--line);
   display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0;
@@ -214,6 +258,12 @@
 }
 
 .shell { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.contentRegion { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.contentRefreshOverlay {
+  position: absolute; inset: 0; z-index: 90; display: grid; place-content: center; justify-items: center; gap: 10px;
+  background: color-mix(in srgb, var(--panel) 84%, transparent); color: var(--ink-2); font-weight: 600;
+  backdrop-filter: blur(1px); cursor: wait;
+}
 /* antd Spin แทรก wrapper สองชั้นระหว่าง shell กับเนื้อหา ถ้าไม่ต่อ flex ให้ทะลุ
    แผงบิลจะสูงเท่าเนื้อหา แล้วปุ่ม "ส่งครัว/คิดเงิน" ไปลอยกลางจอแทนที่จะติดขอบล่าง */
 .floorWrap,
@@ -975,6 +1025,14 @@
 .otherWorkGrid small { color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
 .otherWorkGrid button > :last-child { color: var(--ink-3); }
 .otherWorkNote { max-width: 920px; margin: 16px auto 0; color: var(--ink-3); font-size: 12px; }
+.otherWorkWorkspace { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--ground); }
+.otherWorkToolbar { flex: none; min-height: 68px; display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.otherWorkToolbar .btn { flex: none; }
+.otherWorkToolbar h2 { margin: 0; font-size: 18px; }
+.otherWorkToolbar p { margin: 2px 0 0; color: var(--ink-2); font-size: 12px; }
+.otherWorkHost { flex: 1; min-height: 0; overflow: hidden; padding: 10px; }
+.otherWorkHost :global(.pos-page--embedded) { height: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--ground); overflow: hidden; }
+.otherWorkLoading { height: 100%; display: grid; place-items: center; }
 /* min(240px, 100%) — เหตุผลเดียวกับ .serviceCallGrid (วัดจริงที่ 320px: ล้น 8px) */
 .receiptGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 10px; }
 .page .receiptCard { min-height: 112px; display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }

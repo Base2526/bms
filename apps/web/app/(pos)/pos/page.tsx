@@ -74,6 +74,7 @@ import {
   writeBrowserPosDeviceToken,
 } from "@/lib/pos/deviceTokenClient";
 import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
+import { PosConnectionStatus } from "@/components/realtime/RealtimeProvider";
 
 /**
  * แถบงานด้านซ้าย — จอ POS สูง 768px เป็นมาตรฐาน แกนตั้งจึงเป็นของหายาก
@@ -1360,6 +1361,7 @@ export default function PosPage() {
     initialToken,
     initialCashierId,
     initialPin,
+    refreshSignal = 0,
     onTabChange,
     onShiftChange,
     onUnpair,
@@ -1415,6 +1417,7 @@ export default function PosPage() {
   const [selectedModifierCodes, setSelectedModifierCodes] = useState<string[]>([]);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
   const [tab, setTab] = useState<PosTab>(initialTab);
+  const handledRefreshSignal = useRef(refreshSignal);
   const [incomingOrders, setIncomingOrders] = useState<IncomingRestaurantOrder[]>([]);
   const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
@@ -2013,10 +2016,9 @@ export default function PosPage() {
         return;
       }
       const data: Session = await res.json();
-      // ร้านอาหารเริ่มที่หน้าโต๊ะ แต่ **ห้ามปิดทางกลับ** — คืนสินค้า/รับของเข้าคลัง/มัดจำ/
-      // บัตรของขวัญ/ขายเชื่อ ยังอยู่ที่หน้านี้เท่านั้น ร้านอาหารก็ต้องทำงานเหล่านั้น
-      // (ขายน้ำแพ็กกลับบ้าน รับของจาก PO ที่เคาน์เตอร์) · `?surface=retail` คือทางกลับนั้น
-      // และปุ่มที่ /pos/restaurant เป็นตัวส่งมา
+      // ร้านอาหารเริ่มที่ shell /pos/restaurant ซึ่งฝัง workspace นี้ไว้ใน “งานอื่น” แล้ว
+      // `?surface=retail` คงไว้เป็น deep-link รุ่นเก่า/ทางกู้ฉุกเฉินเท่านั้น ไม่ใช่ navigation
+      // ปกติ เพราะการสลับ shell ทำให้ identity ของร้านและบริบทผู้ปฏิบัติงานขาดตอน
       if (!embedded && data.businessArchetype === "restaurant"
           && new URLSearchParams(window.location.search).get("surface") !== "retail") {
         window.location.replace("/pos/restaurant");
@@ -4027,6 +4029,23 @@ export default function PosPage() {
     }
     if (tab === "deposits") void refreshDeposits();
   }, [token, tab, session?.shift?.id]);
+
+  useEffect(() => {
+    if (!embedded || refreshSignal === handledRefreshSignal.current) return;
+    handledRefreshSignal.current = refreshSignal;
+    // Refresh only the authoritative sources for the workspace that is currently visible. Drafts,
+    // scanned cart lines and approval/idempotency state stay mounted and are never discarded by a
+    // data refresh. The Desktop shell has already refreshed its own catalog and session summary.
+    void loadSession();
+    if (!token || !session?.shift) return;
+    if (tab === "sell") void refreshParked();
+    if (tab === "incoming") void refreshIncomingOrders();
+    if (tab === "shift") {
+      void refreshCashMoves();
+      void refreshExpenses();
+    }
+    if (tab === "deposits") void refreshDeposits();
+  }, [embedded, refreshSignal]);
 
   // แท็บที่ถูกซ่อนไปตามประเภทร้านต้องไม่ค้างเป็นแท็บที่เปิดอยู่ (เช่น ตัวที่จำไว้จากกะก่อน)
   // อ่านจากลิสต์เดียวกับที่แถบเมนูใช้ — สองลิสต์คือสองกติกาที่ drift กันได้
@@ -6305,6 +6324,8 @@ export default function PosPage() {
            dvh หดตามจริง จึงเป็นค่าที่ถูกสำหรับ app-shell ที่มีแถบติดขอบล่าง */
         .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
         .pos-page--restaurant-context {
+          /* ค่า fallback ใช้เฉพาะเมื่อเปิด /pos ตรง ๆ; เมื่อฝังใน /pos/restaurant
+             selector ของ shell จะส่ง semantic tokens ของ preset ปัจจุบันลงมาแทน */
           --pos-accent: #1f604c; --pos-accent-hover: #2d745f;
           --pos-accent-active: #174a3b; --pos-accent-bg: #e8f3ee;
         }
@@ -6478,6 +6499,7 @@ export default function PosPage() {
             แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {!embedded && <PosConnectionStatus />}
           {!embedded && session?.businessArchetype === "restaurant" && (
             <button
               onClick={() => window.location.assign("/pos/restaurant")}

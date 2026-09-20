@@ -10,6 +10,7 @@ import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
 import { queryNeedsRealtimeRefetch } from "./realtimeInvalidation";
 import { readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
+import styles from "./RealtimeProvider.module.css";
 
 const REALTIME_EVENT_FIELDS = gql`
   fragment RealtimeEventFields on RealtimeEvent {
@@ -424,38 +425,86 @@ export function PosRealtimeProvider({ children }: { children: React.ReactNode })
   );
 }
 
-function PosRealtimeIndicator() {
+export type PosApiConnectionStatus = "checking" | "online" | "offline";
+
+export function PosConnectionStatus({
+  apiStatus,
+}: {
+  apiStatus?: PosApiConnectionStatus;
+}) {
   const { t } = useI18n();
+  const menuRef = React.useRef<HTMLDetailsElement>(null);
+  const { status } = useRealtimeStatus();
+  const mode = apiStatus === "offline" || status === "offline"
+    ? "offline"
+    : apiStatus === "checking"
+      ? "checking"
+      : status === "connected"
+        ? "online"
+        : "fallback";
+
+  React.useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      const menu = menuRef.current;
+      if (menu?.open && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, []);
+
+  const label = mode === "offline"
+    ? t("pos_realtime.offline")
+    : mode === "checking"
+      ? t("pos_realtime.checking")
+      : mode === "online"
+        ? t("pos_realtime.online")
+        : t("pos_realtime.fallback");
+  const chipClass = `${styles.posConnection} ${
+    mode === "online" ? styles.posConnectionOnline
+      : mode === "offline" ? styles.posConnectionOffline
+        : mode === "fallback" ? styles.posConnectionFallback
+          : ""
+  }`.trim();
+
+  if (mode !== "fallback") {
+    return (
+      <span className={chipClass} role="status" aria-live="polite" data-pos-connection={mode}>
+        <i className={styles.posConnectionDot} aria-hidden="true" />
+        <span>{label}</span>
+      </span>
+    );
+  }
+
+  return (
+    <details ref={menuRef} className={styles.posConnectionMenu} data-pos-connection={mode}>
+      <summary className={chipClass} aria-label={`${label} ${t("pos_realtime.open_details")}`}>
+        <i className={styles.posConnectionDot} aria-hidden="true" />
+        <span>{label}</span>
+        <span className={styles.posConnectionInfo} aria-hidden="true">i</span>
+      </summary>
+      <div className={styles.posConnectionPopover} role="status">
+        <strong>{t("pos_realtime.fallback_title")}</strong>
+        <span>{t("pos_realtime.fallback_description")}</span>
+      </div>
+    </details>
+  );
+}
+
+function PosRealtimeIndicator() {
   const pathname = usePathname();
   const { status } = useRealtimeStatus();
-  // `/pos/app` has a persistent connection control in its own header. A second fixed banner at the
-  // bottom looked like a separate failure, covered the selling surface, and contradicted the green
-  // API status above it. Other POS surfaces still need this shared fallback because they do not own
-  // that desktop header.
-  if (status === "connected" || pathname === "/pos/app") return null;
-  const key = status === "offline"
-    ? "admin.realtime_offline"
-    : status === "degraded"
-      ? "admin.realtime_degraded"
-      : status === "reconnecting"
-        ? "admin.realtime_reconnecting"
-        : "admin.realtime_connecting";
+  // Operator surfaces own a persistent compact status control in their header. Customer display
+  // and manual pages intentionally stay quiet; an infrastructure message there is not actionable.
+  // Keep this fallback only for future POS routes that have not adopted the shared control yet.
+  const ownsStatusControl = pathname === "/pos"
+    || pathname === "/pos/app"
+    || pathname.startsWith("/pos/restaurant")
+    || pathname.startsWith("/pos/display")
+    || pathname.startsWith("/pos/manual");
+  if (status === "connected" || ownsStatusControl) return null;
   return (
-    <div role="status" aria-live="polite" style={{
-      position: "fixed",
-      zIndex: 1200,
-      left: "max(12px, env(safe-area-inset-left))",
-      right: "max(12px, env(safe-area-inset-right))",
-      bottom: "max(12px, env(safe-area-inset-bottom))",
-      border: "1px solid var(--app-border)",
-      borderRadius: 8,
-      padding: "8px 12px",
-      color: "var(--text-secondary)",
-      background: "var(--app-surface-2)",
-      boxShadow: "0 8px 24px rgba(var(--app-shadow-rgb), .18)",
-      fontSize: 13,
-    }}>
-      {t(key)}
+    <div className={styles.posConnectionFloating}>
+      <PosConnectionStatus />
     </div>
   );
 }

@@ -5162,6 +5162,15 @@ const en = {
     ago_minutes: "{minutes}m ago",
     screen_awake: "The screen stays awake while the kitchen board is open",
   },
+  pos_realtime: {
+    online: "Online",
+    checking: "Connecting",
+    offline: "Connection problem",
+    fallback: "Online · Auto refresh",
+    open_details: "Open connection details",
+    fallback_title: "Your data is still updating automatically",
+    fallback_description: "Instant updates are temporarily interrupted. The system continues checking for changes on its normal schedule.",
+  },
   pos_restaurant: {
     // จอครัว โมดัลต่าง ๆ และแผงใบเสร็จ
     manage_this: "Manage this one",
@@ -5387,6 +5396,8 @@ const en = {
     operator_change: "Change",
     operator_select: "Select the operator",
     refresh: "Refresh",
+    app_loading_title: "Reloading the entire application…",
+    app_loading_description: "Reconnecting the register and checking the latest data. Please wait.",
     retail_mode: "Other",
     other_work_title: "Other sales work",
     other_work_subtitle: "Choose a task. The existing tools open with the current branch, shift and operator.",
