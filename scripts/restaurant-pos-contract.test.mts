@@ -1001,19 +1001,50 @@ test("the order rail stays usable before a check is selected", async () => {
 
 test("desktop and restaurant share only an in-memory verified operator", async () => {
   const provider = code(await read("apps/web/components/pos/PosOperatorSession.tsx"));
+  const startup = code(await read("apps/web/components/pos/PosStartupPreparation.tsx"));
   const layout = code(await read("apps/web/app/(pos)/pos/layout.tsx"));
   const desktop = code(await read("apps/web/components/pos-desktop/DesktopPosRenderer.tsx"));
   const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
 
   assert.match(layout, /<PosOperatorSessionProvider>/);
-  assert.match(desktop, /rememberOperator\(data\.bmsPosVerifyCashier, pin\)/);
+  assert.match(layout, /<PosStartupPreparationProvider>/);
+  assert.match(desktop, /rememberOperator\(verified, pin\)/);
   assert.match(desktop, /router\.push\("\/pos\/restaurant"\)/);
   assert.match(restaurant, /rememberedOperator\?\.cashier\.id/);
   assert.match(restaurant, /VERIFY_CASHIER_MUTATION[\s\S]*?rememberOperator\(data\.bmsPosVerifyCashier, operatorDraftPin\)/);
   assert.match(restaurant, /setOperatorDraftId\(event\.target\.value\);[\s\S]*?setOperatorDraftPin\(""\)/);
   assert.match(restaurant, /clearOperator\(\);[\s\S]*?setActorPin\(""\)/);
   assert.doesNotMatch(provider, /localStorage|sessionStorage|document\.cookie/);
+  assert.doesNotMatch(startup, /localStorage|sessionStorage|document\.cookie/);
+  const restaurantSlot = startup.match(/type PreparedRestaurantSlot = \{([\s\S]*?)\};/)?.[1] ?? "";
+  const boardGameSlot = startup.match(/type PreparedBoardGameSlot = \{([\s\S]*?)\};/)?.[1] ?? "";
+  assert.doesNotMatch(restaurantSlot, /\bpin\b/);
+  assert.doesNotMatch(boardGameSlot, /\bpin\b/);
   assert.match(restaurant, /useState<RestaurantScreen>\("FLOOR"\)/);
+});
+
+test("every desktop shop finishes preparing its first workspace behind the PIN button", async () => {
+  const desktop = code(await read("apps/web/components/pos-desktop/DesktopPosRenderer.tsx"));
+  const startup = code(await read("apps/web/components/pos/PosStartupPreparation.tsx"));
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const boardGame = code(await read("apps/web/components/pos/BoardGamePanel.tsx"));
+
+  assert.match(desktop, /type LoginPhase = "idle" \| "verifying" \| "preparing"/);
+  assert.match(desktop, /กำลังตรวจสอบ PIN…/);
+  assert.match(desktop, /กำลังเตรียมหน้าร้าน…/);
+  assert.match(
+    desktop,
+    /businessArchetype === "restaurant"[\s\S]*?await prepareRestaurantWorkspace\(token\)/,
+  );
+  assert.match(
+    desktop,
+    /businessArchetype === "board_game_cafe"[\s\S]*?prepareBoardGameWorkspace\(token, verified\.id, pin\)/,
+  );
+  assert.match(desktop, /else \{[\s\S]*?await loadCatalog\("", token\)/);
+  assert.match(startup, /const PREPARED_TTL_MS = 15_000/);
+  assert.match(startup, /Promise\.all\(RESTAURANT_STARTUP_URLS\.map/);
+  assert.match(restaurant, /takeRestaurantStartupResponse\(token, url\)[\s\S]*?prepared !== undefined/);
+  assert.match(boardGame, /takeBoardGameWorkspace\(token, cashierUserId\)[\s\S]*?prepared !== undefined/);
 });
 
 test("a rejected kitchen round tells staff what to do, not an HTTP code", async () => {

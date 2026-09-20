@@ -71,6 +71,7 @@ import {
   type PosTab,
 } from "@/components/pos/PosWorkspaceContext";
 import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
+import { usePosStartupPreparation } from "@/components/pos/PosStartupPreparation";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import {
   PosConnectionStatus,
@@ -145,6 +146,7 @@ const SERVICE_CALL_REALTIME_EVENTS = [
 
 type DesktopModule = "mobile_sell" | "restaurant" | PosTab;
 type DesktopInfoDialog = "help" | "about" | null;
+type LoginPhase = "idle" | "verifying" | "preparing";
 
 const money = (value: number) =>
   new Intl.NumberFormat("th-TH", {
@@ -361,6 +363,11 @@ function NavIcon({ name }: { name: string }) {
 export default function DesktopPosRenderer() {
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
+  const {
+    prepareRestaurantWorkspace,
+    prepareBoardGameWorkspace,
+    clearPreparedWorkspaces,
+  } = usePosStartupPreparation();
   const rememberedOperatorRef = useRef(rememberedOperator);
   rememberedOperatorRef.current = rememberedOperator;
   const desktopRootRef = useRef<HTMLElement | null>(null);
@@ -372,6 +379,8 @@ export default function DesktopPosRenderer() {
   const [cashier, setCashier] = useState<PosCashier | null>(null);
   const [cashierId, setCashierId] = useState("");
   const [pin, setPin] = useState("");
+  const [loginPhase, setLoginPhase] = useState<LoginPhase>("idle");
+  const [verifiedLogin, setVerifiedLogin] = useState<PosCashier | null>(null);
   const [openingFloat, setOpeningFloat] = useState("0");
   const [catalog, setCatalog] = useState<PosCatalogItem[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -413,6 +422,7 @@ export default function DesktopPosRenderer() {
   const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const catalogRequestVersion = useRef(0);
+  const catalogLoadErrorRef = useRef("");
   const catalogRequestRef = useRef<{
     token: string;
     query: string;
@@ -421,6 +431,7 @@ export default function DesktopPosRenderer() {
   const catalogPrimedRef = useRef<{ token: string; at: number } | null>(null);
   const customerDisplayChannelRef = useRef<BroadcastChannel | null>(null);
   const customerDisplayPayloadRef = useRef<CustomerDisplayPayload>(EMPTY_CUSTOMER_DISPLAY);
+  const restaurantPreparedRef = useRef(false);
 
   useEffect(() => {
     // “งานอื่น” จากร้านอาหารต้องลงโมดูลที่พนักงานเลือกไว้ ไม่ใช่เปิดหน้าขายทุกครั้ง
@@ -439,8 +450,23 @@ export default function DesktopPosRenderer() {
     // in-memory verified operator, so the same human is not asked for the same PIN a second time.
     const requested = new URLSearchParams(window.location.search).get("module");
     if (requested) return;
-    router.replace("/pos/restaurant");
-  }, [bootstrap?.businessArchetype, cashier, router]);
+    let active = true;
+    setLoginPhase("preparing");
+    void (restaurantPreparedRef.current
+      ? Promise.resolve()
+      : prepareRestaurantWorkspace(token)
+    ).then(() => {
+      if (!active) return;
+      restaurantPreparedRef.current = true;
+      router.replace("/pos/restaurant");
+    }).catch((cause) => {
+      if (active) {
+        setError(messageOf(cause));
+        setLoginPhase("idle");
+      }
+    });
+    return () => { active = false; };
+  }, [bootstrap?.businessArchetype, cashier, prepareRestaurantWorkspace, router, token]);
 
   // Native <details> gives the header popups keyboard semantics without another menu library, but
   // it does not dismiss itself when the operator taps elsewhere. Delegate once at the desktop-app
@@ -551,6 +577,7 @@ export default function DesktopPosRenderer() {
       const version = ++catalogRequestVersion.current;
       setCatalogLoading(true);
       setCatalogError("");
+      catalogLoadErrorRef.current = "";
       const promise: Promise<void> = posGraphqlRequest<{
         bmsPosCatalogSearch: { items: PosCatalogItem[] };
       }>(requestToken, POS_CATALOG_QUERY, { q: normalizedQuery })
@@ -565,7 +592,9 @@ export default function DesktopPosRenderer() {
         .catch((cause) => {
           if (version !== catalogRequestVersion.current) return;
           setConnection("offline");
-          setCatalogError(messageOf(cause));
+          const text = messageOf(cause);
+          catalogLoadErrorRef.current = text;
+          setCatalogError(text);
         })
         .finally(() => {
           if (catalogRequestRef.current?.promise === promise) {
@@ -619,15 +648,23 @@ export default function DesktopPosRenderer() {
         return next;
       });
       setConnection("online");
-      // Catalogue reads require the paired device but not a cashier PIN. Starting this after the
-      // device has been verified overlaps network/DB time with PIN entry and removes a serial wait
-      // from the first selling screen without weakening any sale or stock authorization.
-      void loadCatalog("", nextToken);
+      if (data.bmsPosSession.businessArchetype === "restaurant") {
+        // Route code can warm while the operator types, but operational data is prepared only
+        // after the PIN is verified so every store follows the same visible login contract.
+        router.prefetch("/pos/restaurant");
+      } else if (data.bmsPosSession.businessArchetype === "board_game_cafe") {
+        void loadBoardGameModule();
+      } else {
+        // Retail catalogue reads require the paired device but not a cashier PIN. Starting this
+        // after device verification overlaps network/DB time with PIN entry; submit still joins
+        // and awaits this exact promise before revealing the first workspace.
+        void loadCatalog("", nextToken);
+      }
     } catch (cause) {
       setConnection("offline");
       setError(messageOf(cause));
     }
-  }, [loadCatalog]);
+  }, [loadCatalog, router]);
 
   useEffect(() => {
     void bootstrapDevice();
@@ -675,22 +712,52 @@ export default function DesktopPosRenderer() {
   const signIn = async (event: FormEvent) => {
     event.preventDefault();
     if (!cashierId || !pin || busy) return;
+    let verificationCompleted = verifiedLogin?.id === cashierId;
+    let keepPreparingUntilNavigation = false;
     setBusy(true);
     setError("");
     try {
-      const data = await posGraphqlRequest<{ bmsPosVerifyCashier: PosCashier }>(
-        token,
-        VERIFY_CASHIER_MUTATION,
-        { input: { cashierUserId: cashierId, pin } },
-      );
-      setCashier(data.bmsPosVerifyCashier);
-      rememberOperator(data.bmsPosVerifyCashier, pin);
+      let verified = verifiedLogin?.id === cashierId ? verifiedLogin : null;
+      if (!verified) {
+        setLoginPhase("verifying");
+        const data = await posGraphqlRequest<{ bmsPosVerifyCashier: PosCashier }>(
+          token,
+          VERIFY_CASHIER_MUTATION,
+          { input: { cashierUserId: cashierId, pin } },
+        );
+        verified = data.bmsPosVerifyCashier;
+        verificationCompleted = true;
+        setVerifiedLogin(verified);
+        rememberOperator(verified, pin);
+      }
+
+      setLoginPhase("preparing");
+      if (bootstrap?.businessArchetype === "restaurant") {
+        await prepareRestaurantWorkspace(token);
+        restaurantPreparedRef.current = true;
+        keepPreparingUntilNavigation = true;
+      } else if (bootstrap?.businessArchetype === "board_game_cafe") {
+        await Promise.all([
+          loadBoardGameModule(),
+          prepareBoardGameWorkspace(token, verified.id, pin),
+        ]);
+        setActiveModule("boardgame");
+      } else {
+        await loadCatalog("", token);
+        if (catalogLoadErrorRef.current) throw new Error(catalogLoadErrorRef.current);
+      }
+
+      setCashier(verified);
+      if (bootstrap?.businessArchetype === "restaurant") return;
       sendFlow("CASHIER_VERIFIED");
     } catch (cause) {
-      setPin("");
+      if (!verificationCompleted) setPin("");
       setError(messageOf(cause));
     } finally {
-      setBusy(false);
+      if (!keepPreparingUntilNavigation) {
+        setLoginPhase("idle");
+        setBusy(false);
+      }
     }
   };
 
@@ -938,13 +1005,17 @@ export default function DesktopPosRenderer() {
   const unpair = useCallback(async () => {
     await clearPosDeviceToken();
     clearOperator();
+    clearPreparedWorkspaces();
     catalogRequestVersion.current += 1;
     catalogRequestRef.current = null;
     catalogPrimedRef.current = null;
+    catalogLoadErrorRef.current = "";
     tokenRef.current = "";
     setToken("");
     setBootstrap(null);
     setCashier(null);
+    setVerifiedLogin(null);
+    setLoginPhase("idle");
     setPin("");
     setCatalog([]);
     setCatalogLoading(false);
@@ -952,7 +1023,7 @@ export default function DesktopPosRenderer() {
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("UNPAIR");
-  }, [clearOperator, sendFlow]);
+  }, [clearOperator, clearPreparedWorkspaces, sendFlow]);
 
   const followWorkspaceShift = useCallback((open: boolean) => {
     if (open) return;
@@ -969,13 +1040,16 @@ export default function DesktopPosRenderer() {
 
   const signOutCashier = useCallback(() => {
     clearOperator();
+    clearPreparedWorkspaces();
     setCashier(null);
+    setVerifiedLogin(null);
+    setLoginPhase("idle");
     setPin("");
     setCart([]);
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("SIGN_OUT");
-  }, [clearOperator, sendFlow]);
+  }, [clearOperator, clearPreparedWorkspaces, sendFlow]);
 
   const openBoardGameCheckout = useCallback(async (billingGroupId: string) => {
     if (!cashier || !pin || busy) return;
@@ -1436,7 +1510,13 @@ export default function DesktopPosRenderer() {
             <p className={styles.eyebrow}>เข้าสู่กะทำงาน</p>
             <h2>ใส่ PIN พนักงาน</h2>
             <label>พนักงาน
-              <select value={cashierId} onChange={(event) => setCashierId(event.target.value)}>
+              <select disabled={busy} value={cashierId} onChange={(event) => {
+                setCashierId(event.target.value);
+                setVerifiedLogin(null);
+                clearOperator();
+                clearPreparedWorkspaces();
+                setError("");
+              }}>
                 {bootstrap.cashiers.filter((item) => item.hasPin).map((item) => (
                   <option key={item.id} value={item.id}>{item.name || item.email || item.id}</option>
                 ))}
@@ -1450,9 +1530,19 @@ export default function DesktopPosRenderer() {
                   inputMode="numeric"
                   autoComplete="off"
                   autoFocus
+                  disabled={busy}
                   maxLength={POS_PIN_MAX_LENGTH}
                   value={pin}
-                  onChange={(event) => setPin(normalizePosPinInput(event.target.value))}
+                  onChange={(event) => {
+                    const nextPin = normalizePosPinInput(event.target.value);
+                    if (nextPin !== pin && verifiedLogin) {
+                      setVerifiedLogin(null);
+                      clearOperator();
+                      clearPreparedWorkspaces();
+                    }
+                    setPin(nextPin);
+                    setError("");
+                  }}
                   aria-label="PIN พนักงาน 4–8 หลัก"
                 />
                 <span className={styles.pinDots} aria-hidden="true">
@@ -1464,7 +1554,13 @@ export default function DesktopPosRenderer() {
             </label>
             {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
             <button className={styles.primaryButton} disabled={!cashierId || !isPosPinValid(pin) || busy}>
-              {busy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
+              {loginPhase === "verifying"
+                ? "กำลังตรวจสอบ PIN…"
+                : loginPhase === "preparing"
+                  ? "กำลังเตรียมหน้าร้าน…"
+                  : verifiedLogin && error
+                    ? "ลองเตรียมหน้าร้านอีกครั้ง"
+                    : "เข้าสู่ระบบ"}
             </button>
             <button type="button" className={styles.textButton} onClick={() => void unpair()}>เปลี่ยนเซิร์ฟเวอร์ / จับคู่ใหม่</button>
           </form>

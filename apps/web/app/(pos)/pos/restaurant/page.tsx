@@ -28,6 +28,7 @@ import {
   POS_PIN_MAX_LENGTH,
 } from "@pos-core/posPin";
 import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
+import { usePosStartupPreparation } from "@/components/pos/PosStartupPreparation";
 import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import { posPaymentMethodLabel, receiptDocumentTitle,
@@ -494,6 +495,7 @@ const lineKitchenStates = (t: Translate): Record<string, { label: string; color:
 export default function RestaurantPosPage() {
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
+  const { takeRestaurantStartupResponse } = usePosStartupPreparation();
   const { lang, t } = useI18n();
   const uiLocale = lang === "en" ? "en-US" : "th-TH";
   // ชื่อเดิมทั้งสามตัวถูกสร้างต่อ render เพื่อให้จุดใช้งานที่เหลือไม่ต้องเปลี่ยน
@@ -1030,6 +1032,10 @@ export default function RestaurantPosPage() {
   async function json(url: string, init?: RequestInit) {
     const startedAt = Date.now();
     const method = String(init?.method ?? "GET").toUpperCase();
+    if (method === "GET" && !init?.body) {
+      const prepared = takeRestaurantStartupResponse(token, url);
+      if (prepared !== undefined) return prepared;
+    }
     const response = await fetch(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" });
     const body = await response.json().catch(() => ({}));
     if (method !== "GET" || !response.ok) {

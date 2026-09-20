@@ -17,6 +17,7 @@ import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
 import { copyTextToClipboard } from '@/lib/pos/clipboard';
 import PosDismissibleAlert from '@/components/pos/PosDismissibleAlert';
 import type { PosServiceCallNotice } from '@/components/pos/PosWorkspaceContext';
+import { usePosStartupPreparation } from '@/components/pos/PosStartupPreparation';
 
 type Props = {
   token: string;
@@ -408,6 +409,7 @@ function newKey() {
 }
 
 export default function BoardGamePanel({ token, cashierUserId, pin, refreshSignal = 0, onCheckout, onServiceCallsChange }: Props) {
+  const { takeBoardGameWorkspace } = usePosStartupPreparation();
   const ready = Boolean(token && cashierUserId && pin);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [workspaceLoadError, setWorkspaceLoadError] = useState('');
@@ -570,6 +572,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
     payload: Record<string, unknown> = {},
     signal?: AbortSignal,
   ) => {
+    if (action === 'workspace' && Object.keys(payload).length === 0) {
+      const prepared = takeBoardGameWorkspace(token, cashierUserId);
+      if (prepared !== undefined) return prepared as Record<string, any>;
+    }
     const response = await fetch('/api/pos/board-game', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-pos-device-token': token },
@@ -584,7 +590,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
       throw Object.assign(new Error(message), { decided: response.status < 500 });
     }
     return data as Record<string, any>;
-  }, [cashierUserId, pin, token]);
+  }, [cashierUserId, pin, takeBoardGameWorkspace, token]);
 
   const loadWorkspace = useCallback(async (signal?: AbortSignal) => {
     const data = await call('workspace', {}, signal);
