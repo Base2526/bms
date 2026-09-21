@@ -157,6 +157,10 @@ function emitRealtimeStatus(status: RealtimeConnectionStatus, scope: WsScope) {
   window.dispatchEvent(new CustomEvent("bms-realtime-status", { detail: { status, scope } }));
 }
 
+function isExpectedTicketRotation(event: { code?: unknown; reason?: unknown }): boolean {
+  return event.code === 4403 && event.reason === "ticket expired";
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("backend-logout", resetRealtimeConnections);
   window.addEventListener("frontend-logout", resetRealtimeConnections);
@@ -210,8 +214,21 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
             addLog("info", "ws", "[ws] connected", { scope });
           },
           closed: (ev: any) => {
-            emitRealtimeStatus(navigator.onLine ? "reconnecting" : "offline", scope);
-            addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason });
+            // Tickets intentionally rotate after a short TTL. graphql-ws immediately obtains a
+            // fresh ticket and reconnects, so presenting that expected rotation as an outage makes
+            // the admin status banner enter/leave normal layout flow once a minute. Keep the last
+            // connected state during this brief hand-off; a failed retry still reaches `error` and
+            // reports degraded/offline normally.
+            const expectedTicketRotation = navigator.onLine && isExpectedTicketRotation(ev ?? {});
+            if (!expectedTicketRotation) {
+              emitRealtimeStatus(navigator.onLine ? "reconnecting" : "offline", scope);
+            }
+            addLog(expectedTicketRotation ? "info" : "warn", "ws", "[ws] closed", {
+              scope,
+              code: ev?.code,
+              reason: ev?.reason,
+              expectedTicketRotation,
+            });
           },
           error: (err: any) => {
             emitRealtimeStatus(navigator.onLine ? "degraded" : "offline", scope);

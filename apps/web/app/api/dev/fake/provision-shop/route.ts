@@ -47,16 +47,16 @@ async function handlePOST(req: NextRequest) {
   const restaurantSeedSet = normalizeRestaurantSeedSet(body?.restaurantSeedSet);
   const c = body?.counts ?? {};
   const counts = {
-    // One Administrator is provisioned separately, so 44 seeded staff = 45 total.
-    staff: clamp(c.staff, 44, 0, 59),
-    posDevices: clamp(c.posDevices, 6, 1, 12),
-    products: clamp(c.products, 1000, 1, 2000),
-    customers: clamp(c.customers, 2000, 1, 5000),
-    orders: clamp(c.orders, 10000, 800, 20000),
-    conversations: clamp(c.conversations, 500, 1, 2000),
-    purchase: clamp(c.purchase, 200, 1, 2000),
-    coupons: clamp(c.coupons, 36, 0, 200),
-    restockSubscriptions: clamp(c.restockSubscriptions, businessArchetype ? 200 : 0, 0, 1000),
+    // One Administrator is provisioned separately, so 22 seeded staff = 23 total.
+    staff: clamp(c.staff, 22, 0, 59),
+    posDevices: clamp(c.posDevices, 3, 1, 12),
+    products: clamp(c.products, 500, 1, 2000),
+    customers: clamp(c.customers, 1000, 1, 5000),
+    orders: clamp(c.orders, 5000, 800, 20000),
+    conversations: clamp(c.conversations, 250, 1, 2000),
+    purchase: clamp(c.purchase, 100, 1, 2000),
+    coupons: clamp(c.coupons, 18, 0, 200),
+    restockSubscriptions: clamp(c.restockSubscriptions, businessArchetype ? 100 : 0, 0, 1000),
   };
 
   let shop;
