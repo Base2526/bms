@@ -265,6 +265,15 @@ function calendarDateLabel(value: string) {
   return date?.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) ?? 'เลือกวันที่';
 }
 
+function reservationDateKey(entry: Pick<WaitlistEntry, 'serviceDate' | 'reservedFor'>) {
+  // Older servers returned PostgreSQL DATE through String(date).slice(0, 10), e.g. "Sun Sep 20".
+  // Fall back to the authoritative reservation instant so the calendar still exposes the booking
+  // while a rolling deployment has a mixture of old and new server processes.
+  return /^\d{4}-\d{2}-\d{2}$/.test(entry.serviceDate)
+    ? entry.serviceDate
+    : localDateInput(entry.reservedFor);
+}
+
 function shiftCalendarMonth(value: string, amount: number) {
   const date = dateFromInput(`${value}-01`) ?? new Date();
   date.setMonth(date.getMonth() + amount, 1);
@@ -457,6 +466,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const [reservationDuration, setReservationDuration] = useState('120');
   const [reservationTableId, setReservationTableId] = useState('');
   const [reservationEditingId, setReservationEditingId] = useState('');
+  const [reservationEditorOpen, setReservationEditorOpen] = useState(false);
   const [reservationSearch, setReservationSearch] = useState('');
   const [reservationDate, setReservationDate] = useState('');
   const [reservationMonth, setReservationMonth] = useState('');
@@ -937,14 +947,15 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
   const reservationsByDate = new Map<string, WaitlistEntry[]>();
   for (const entry of allReservations) {
-    const list = reservationsByDate.get(entry.serviceDate) ?? [];
+    const dateKey = reservationDateKey(entry);
+    const list = reservationsByDate.get(dateKey) ?? [];
     list.push(entry);
-    reservationsByDate.set(entry.serviceDate, list);
+    reservationsByDate.set(dateKey, list);
   }
   const reservationCalendarDays = calendarDays(reservationMonth);
   const todayKey = localDateInput(new Date());
   const reservations = allReservations.filter((entry) => {
-    const matchesDate = !reservationDate || entry.serviceDate === reservationDate;
+    const matchesDate = !reservationDate || reservationDateKey(entry) === reservationDate;
     const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${entry.guestEmail ?? ''} ${entry.reservedTableCode ?? ''}`
       .toLocaleLowerCase('th-TH');
     return matchesDate && (!reservationNeedle || haystack.includes(reservationNeedle));
@@ -953,7 +964,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const resetReservationForm = () => {
     setReservationEditingId(''); setReservationPartySize('2'); setReservationGuestName('');
     setReservationGuestPhone(''); setReservationTime(''); setReservationDuration('120');
-    setReservationTableId('');
+    setReservationTableId(''); setReservationEditorOpen(false);
   };
 
   const copyGuestLink = async () => {
@@ -1102,15 +1113,152 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                     onClick={() => { setReservationDate(day.key); setReservationMonth(day.key.slice(0, 7)); }}>
                     <span className="pos-bg-reservation-day-number">{day.day}</span>
                     <span className="pos-bg-reservation-day-events">
-                      {confirmed > 0 && <span className="pos-bg-reservation-count">✓ {confirmed}</span>}
-                      {requested > 0 && <span className="pos-bg-reservation-count pos-bg-reservation-count--request">รอ {requested}</span>}
+                      {confirmed > 0 && <span className="pos-bg-reservation-count">▣ จองแล้ว {confirmed}</span>}
+                      {requested > 0 && <span className="pos-bg-reservation-count pos-bg-reservation-count--request">◷ รอยืนยัน {requested}</span>}
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="pos-bg-reservation-editor">
+            <div className="pos-bg-reservation-list-head">
+              <strong>รายการจอง · {calendarDateLabel(reservationDate)}</strong>
+              <span className="pos-bg-reservation-total">{reservations.length} รายการ</span>
+            </div>
+            {allReservations.length > 0 && reservations.length === 0 && (
+              <div className="pos-block-hint">ไม่พบรายการที่ตรงกับตัวกรอง</div>
+            )}
+            {reservations.map((entry) => {
+              const reviewTableId = reviewTableByEntry[entry.id] ?? '';
+              const table = floorTables.find((item) => item.id === entry.reservedTableId) ?? null;
+              const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
+              const now = Date.now();
+              const canArrive = Number.isFinite(reservedAt)
+                && now >= reservedAt - 2 * 60 * 60_000 && now <= reservedAt + 6 * 60 * 60_000;
+              const depositReady = entry.depositStatus === 'NOT_REQUIRED' || entry.depositStatus === 'PAID';
+              const canMarkNoShow = Number.isFinite(reservedAt) && now >= reservedAt;
+              return (
+                <div key={entry.id}
+                  className={`pos-bg-reservation-card ${entry.status === 'REQUESTED' ? 'pos-bg-reservation-card--requested' : ''}`}>
+                  <div className="pos-bg-reservation-card-status">
+                    <span className={`pos-bg-reservation-status ${entry.status === 'REQUESTED' ? 'pos-bg-reservation-status--requested' : ''}`}>
+                      {entry.status === 'REQUESTED' ? '◷ รอยืนยัน' : '✓ ยืนยันแล้ว'}
+                    </span>
+                    <strong>{timeLabel(entry.reservedFor)}</strong>
+                  </div>
+                  <div className="pos-bg-reservation-card-person">
+                    <strong>{entry.guestName || 'ไม่ระบุชื่อ'}</strong>
+                    <span>โทร. {entry.guestPhone || '-'}</span>
+                    {entry.guestEmail && <span>{entry.guestEmail}</span>}
+                  </div>
+                  <div className="pos-bg-reservation-card-fact">
+                    <span aria-hidden="true">♙</span>
+                    <strong>{entry.partySize} คน</strong>
+                  </div>
+                  <div className="pos-bg-reservation-card-fact pos-bg-reservation-card-table">
+                    <span aria-hidden="true">▱</span>
+                    <span>โต๊ะ<br /><strong>{entry.reservedTableCode || 'รอจัดโต๊ะ'}</strong></span>
+                  </div>
+                  <div className="pos-bg-reservation-card-fact">
+                    <span aria-hidden="true">◷</span>
+                    <strong>{entry.reservedDurationMinutes ?? 0} นาที</strong>
+                  </div>
+                  {(entry.depositAmount > 0 || entry.source === 'PUBLIC') && (
+                    <div className="pos-bg-reservation-card-note">
+                      {entry.depositAmount > 0 ? `มัดจำ ฿${entry.depositAmount.toFixed(2)} (${entry.depositStatus})` : ''}
+                      {entry.source === 'PUBLIC' ? ` · แจ้งผล ${entry.decisionNotificationStatus}` : ''}
+                    </div>
+                  )}
+                  <div className="pos-bg-row-actions pos-bg-reservation-card-actions">
+                    {entry.status === 'REQUESTED' && <>
+                      <select aria-label="โต๊ะสำหรับยืนยันคำขอ" value={reviewTableId}
+                        onChange={(event) => setReviewTableByEntry(current => ({
+                          ...current, [entry.id]: event.target.value,
+                        }))}>
+                        <option value="">เลือกโต๊ะ</option>
+                        {floorTables.filter((item) => !item.blocked && item.seats >= entry.partySize).map((item) => (
+                          <option key={item.id} value={item.id}>{item.code} · {item.name} ({item.seats} ที่)</option>
+                        ))}
+                      </select>
+                      <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                        disabled={!reviewTableId || busy === `reservation-confirm-${entry.id}`}
+                        onClick={() => void run(`reservation-confirm-${entry.id}`, 'reservation.review', {
+                          entryId: entry.id, decision: 'CONFIRM', tableId: reviewTableId,
+                        }, () => {
+                          setReviewTableByEntry(current => ({ ...current, [entry.id]: '' }));
+                          setNotice('ยืนยันคำขอจองแล้ว');
+                        })}>
+                        ยืนยันคำขอ
+                      </button>
+                      <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                        disabled={busy === `reservation-reject-${entry.id}`}
+                        onClick={() => void run(`reservation-reject-${entry.id}`, 'reservation.review', {
+                          entryId: entry.id, decision: 'REJECT', reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
+                        }, () => setNotice('ปฏิเสธคำขอแล้ว'))}>
+                        ปฏิเสธ
+                      </button>
+                    </>}
+                    {entry.status === 'CONFIRMED' && <>
+                    <button type="button" className="pos-ret-btn" onClick={() => {
+                      setReservationEditingId(entry.id);
+                      setReservationPartySize(String(entry.partySize));
+                      setReservationGuestName(entry.guestName ?? '');
+                      setReservationGuestPhone(entry.guestPhone ?? '');
+                      const date = reservationDateKey(entry);
+                      setReservationDate(date);
+                      setReservationMonth(date.slice(0, 7));
+                      setReservationTime(localTimeInput(entry.reservedFor));
+                      setReservationDuration(String(entry.reservedDurationMinutes ?? 120));
+                      setReservationTableId(entry.reservedTableId ?? '');
+                      setReservationEditorOpen(true);
+                    }}>
+                      แก้ไข/เลื่อน
+                    </button>
+                    <button type="button" className="pos-ret-btn"
+                      disabled={!canArrive || !depositReady || busy === `reservation-checkin-${entry.id}`}
+                      onClick={() => void run(`reservation-checkin-${entry.id}`, 'reservation.check_in',
+                        { entryId: entry.id }, () => setNotice('เช็กอินและออกเลขคิวแล้ว'))}>
+                      เช็กอิน
+                    </button>
+                    {canArrive && table && !table.openSession && !table.blocked && table.seats >= entry.partySize && (
+                      <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={() => {
+                        setSeatingQueueId(entry.id); setOpeningTable(table); selectTable(''); setSession(null);
+                        setDrafts([]); setNotice(`เตรียมเปิด ${table.code} ให้รายการจอง — ระบุผู้เล่นจริงก่อนเริ่มเวลา`);
+                      }}>
+                        นั่งโต๊ะ
+                      </button>
+                    )}
+                    <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                      disabled={busy === `reservation-cancel-${entry.id}`}
+                      onClick={() => void run(`reservation-cancel-${entry.id}`, 'waitlist.close', {
+                        entryId: entry.id, status: 'CANCELLED',
+                      }, () => setNotice('ยกเลิกการจองแล้ว'))}>
+                      ยกเลิก
+                    </button>
+                    {canMarkNoShow && (
+                      <button type="button" className="pos-ret-btn pos-ret-btn--danger"
+                        disabled={busy === `reservation-noshow-${entry.id}`}
+                        onClick={() => void run(`reservation-noshow-${entry.id}`, 'waitlist.close', {
+                          entryId: entry.id, status: 'NO_SHOW',
+                        }, () => setNotice('บันทึกว่าลูกค้าไม่มาแล้ว'))}>
+                        ไม่มา
+                      </button>
+                    )}
+                    </>}
+                  </div>
+                </div>
+              );
+            })}
+            <button type="button" className="pos-bg-reservation-add-toggle"
+              aria-expanded={reservationEditorOpen}
+              onClick={() => {
+                if (reservationEditorOpen) resetReservationForm();
+                else setReservationEditorOpen(true);
+              }}>
+              <span>＋ {reservationEditingId ? 'แก้ไขการจอง' : 'เพิ่มการจองใหม่'}</span>
+              <span aria-hidden="true">{reservationEditorOpen ? '⌃' : '⌄'}</span>
+            </button>
+            {reservationEditorOpen && <div className="pos-bg-reservation-editor">
               <div className="pos-bg-reservation-editor-head">
                 <div>
                   <strong>{reservationEditingId ? 'แก้ไขการจอง' : 'เพิ่มการจอง'}</strong>
@@ -1180,115 +1328,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                   {reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
                 </button>
               </div>
-            </div>
-            <div className="pos-bg-reservation-list-head">
-              <strong>รายการวันที่เลือก</strong>
-              <span>{calendarDateLabel(reservationDate)} · {reservations.length} รายการ</span>
-            </div>
-            {allReservations.length > 0 && reservations.length === 0 && (
-              <div className="pos-block-hint">ไม่พบรายการที่ตรงกับตัวกรอง</div>
-            )}
-            {reservations.map((entry) => {
-              const reviewTableId = reviewTableByEntry[entry.id] ?? '';
-              const table = floorTables.find((item) => item.id === entry.reservedTableId) ?? null;
-              const reservedAt = entry.reservedFor ? Date.parse(entry.reservedFor) : Number.NaN;
-              const now = Date.now();
-              const canArrive = Number.isFinite(reservedAt)
-                && now >= reservedAt - 2 * 60 * 60_000 && now <= reservedAt + 6 * 60 * 60_000;
-              const depositReady = entry.depositStatus === 'NOT_REQUIRED' || entry.depositStatus === 'PAID';
-              const canMarkNoShow = Number.isFinite(reservedAt) && now >= reservedAt;
-              return (
-                <div key={entry.id} className="pos-bg-row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
-                  <div className="pos-bg-row-main">
-                    {entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}
-                    {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน · โต๊ะ {entry.reservedTableCode || 'รอจัดโต๊ะ'}
-                    <span style={{ color: 'var(--pos-muted)' }}>
-                      {' · '}{entry.reservedFor ? new Date(entry.reservedFor).toLocaleString('th-TH') : '-'}
-                      {' · '}{entry.reservedDurationMinutes ?? 0} นาที
-                      {entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
-                      {entry.depositAmount > 0 ? ` · มัดจำ ฿${entry.depositAmount.toFixed(2)} (${entry.depositStatus})` : ''}
-                      {entry.source === 'PUBLIC' ? ` · แจ้งผล ${entry.decisionNotificationStatus}` : ''}
-                    </span>
-                  </div>
-                  <div className="pos-bg-row-actions">
-                    {entry.status === 'REQUESTED' && <>
-                      <select aria-label="โต๊ะสำหรับยืนยันคำขอ" value={reviewTableId}
-                        onChange={(event) => setReviewTableByEntry(current => ({
-                          ...current, [entry.id]: event.target.value,
-                        }))}>
-                        <option value="">เลือกโต๊ะ</option>
-                        {floorTables.filter((item) => !item.blocked && item.seats >= entry.partySize).map((item) => (
-                          <option key={item.id} value={item.id}>{item.code} · {item.name} ({item.seats} ที่)</option>
-                        ))}
-                      </select>
-                      <button type="button" className="pos-ret-btn pos-ret-btn--open"
-                        disabled={!reviewTableId || busy === `reservation-confirm-${entry.id}`}
-                        onClick={() => void run(`reservation-confirm-${entry.id}`, 'reservation.review', {
-                          entryId: entry.id, decision: 'CONFIRM', tableId: reviewTableId,
-                        }, () => {
-                          setReviewTableByEntry(current => ({ ...current, [entry.id]: '' }));
-                          setNotice('ยืนยันคำขอจองแล้ว');
-                        })}>
-                        ยืนยันคำขอ
-                      </button>
-                      <button type="button" className="pos-ret-btn pos-ret-btn--danger"
-                        disabled={busy === `reservation-reject-${entry.id}`}
-                        onClick={() => void run(`reservation-reject-${entry.id}`, 'reservation.review', {
-                          entryId: entry.id, decision: 'REJECT', reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
-                        }, () => setNotice('ปฏิเสธคำขอแล้ว'))}>
-                        ปฏิเสธ
-                      </button>
-                    </>}
-                    {entry.status === 'CONFIRMED' && <>
-                    <button type="button" className="pos-ret-btn" onClick={() => {
-                      setReservationEditingId(entry.id);
-                      setReservationPartySize(String(entry.partySize));
-                      setReservationGuestName(entry.guestName ?? '');
-                      setReservationGuestPhone(entry.guestPhone ?? '');
-                      const date = entry.serviceDate || localDateInput(entry.reservedFor);
-                      setReservationDate(date);
-                      setReservationMonth(date.slice(0, 7));
-                      setReservationTime(localTimeInput(entry.reservedFor));
-                      setReservationDuration(String(entry.reservedDurationMinutes ?? 120));
-                      setReservationTableId(entry.reservedTableId ?? '');
-                    }}>
-                      แก้ไข/เลื่อน
-                    </button>
-                    <button type="button" className="pos-ret-btn"
-                      disabled={!canArrive || !depositReady || busy === `reservation-checkin-${entry.id}`}
-                      onClick={() => void run(`reservation-checkin-${entry.id}`, 'reservation.check_in',
-                        { entryId: entry.id }, () => setNotice('เช็กอินและออกเลขคิวแล้ว'))}>
-                      เช็กอิน
-                    </button>
-                    {canArrive && table && !table.openSession && !table.blocked && table.seats >= entry.partySize && (
-                      <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={() => {
-                        setSeatingQueueId(entry.id); setOpeningTable(table); selectTable(''); setSession(null);
-                        setDrafts([]); setNotice(`เตรียมเปิด ${table.code} ให้รายการจอง — ระบุผู้เล่นจริงก่อนเริ่มเวลา`);
-                      }}>
-                        นั่งโต๊ะ
-                      </button>
-                    )}
-                    <button type="button" className="pos-ret-btn pos-ret-btn--danger"
-                      disabled={busy === `reservation-cancel-${entry.id}`}
-                      onClick={() => void run(`reservation-cancel-${entry.id}`, 'waitlist.close', {
-                        entryId: entry.id, status: 'CANCELLED',
-                      }, () => setNotice('ยกเลิกการจองแล้ว'))}>
-                      ยกเลิก
-                    </button>
-                    {canMarkNoShow && (
-                      <button type="button" className="pos-ret-btn pos-ret-btn--danger"
-                        disabled={busy === `reservation-noshow-${entry.id}`}
-                        onClick={() => void run(`reservation-noshow-${entry.id}`, 'waitlist.close', {
-                          entryId: entry.id, status: 'NO_SHOW',
-                        }, () => setNotice('บันทึกว่าลูกค้าไม่มาแล้ว'))}>
-                        ไม่มา
-                      </button>
-                    )}
-                    </>}
-                  </div>
-                </div>
-              );
-            })}
+            </div>}
           </details>}
 
           {workspace && <details className="pos-bg-section pos-bg-section--advanced" open={openQueue.length > 0}>

@@ -71,7 +71,10 @@ const SERVICE_DATE_SQL = `(
   - INTERVAL '4 hours'
 )::date`;
 
-const SELECT_COLUMNS = `w.id, w.kind, w.service_date, w.queue_no, w.status, w.party_size,
+// PostgreSQL DATE has no timezone. Cast it to text before node-postgres can turn it into a
+// JavaScript Date: String(new Date(...)).slice(0, 10) produces "Sun Sep 20", which cannot match
+// the calendar's YYYY-MM-DD keys and makes a saved reservation disappear from its day.
+const SELECT_COLUMNS = `w.id, w.kind, w.service_date::text AS service_date, w.queue_no, w.status, w.party_size,
   w.guest_name, w.guest_phone, w.guest_email, w.note, w.preferred_area_id, area.name AS preferred_area_name,
   w.reserved_for, w.reserved_duration_minutes, w.reserved_table_id,
   reserved_table.code AS reserved_table_code, w.confirmed_at, w.checked_in_at, w.source,

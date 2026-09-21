@@ -114,12 +114,26 @@ test("mobile normalizes human booking date/time before POS backend validates the
 });
 
 test("the browser register uses one calendar date for browsing and creating reservations", () => {
+  assert.match(service, /w\.service_date::text AS service_date/,
+    "a PostgreSQL DATE must stay YYYY-MM-DD so saved bookings match the calendar key");
+  assert.doesNotMatch(service, /SELECT_COLUMNS = `[^`]*w\.service_date,/,
+    "letting node-postgres parse the service date as Date makes String(...).slice return a weekday label");
   assert.match(browser, /role="grid" aria-label="ปฏิทินการจอง"/);
   assert.match(browser, /calendarDays\(reservationMonth\)/);
+  assert.match(browser, /function reservationDateKey/);
+  assert.match(browser, /localDateInput\(entry\.reservedFor\)/,
+    "the calendar must recover from an old server's malformed service-date during rolling deploys");
   assert.match(browser, /reservationsByDate\.get\(day\.key\)/,
     "month cells must expose the reservations already occupying each day");
+  assert.match(browser, /จองแล้ว \{confirmed\}/);
+  assert.match(browser, /รอยืนยัน \{requested\}/);
   assert.match(browser, /setReservationDate\(day\.key\)/,
     "clicking a calendar cell must select the day shown in the list and editor");
+  assert.ok(
+    browser.indexOf('className="pos-bg-reservation-list-head"')
+      < browser.indexOf('className="pos-bg-reservation-editor"'),
+    "the selected day's booking details must appear before the create form instead of below the fold",
+  );
   assert.match(browser, /new Date\(`\$\{reservationDate\}T\$\{reservationTime\}`\)/,
     "the selected calendar day and explicit start time must form the reservation instant");
   assert.doesNotMatch(browser, /type="datetime-local"/,
@@ -128,6 +142,17 @@ test("the browser register uses one calendar date for browsing and creating rese
     "editing an existing reservation must take the calendar to its day and preserve its time");
   assert.match(browserCss, /\.pos-bg-reservation-calendar\s*\{[\s\S]*?grid-template-columns:\s*repeat\(7,/);
   assert.match(browserCss, /\.pos-bg-reservation-day--selected/);
+  assert.match(browser, /pos-bg-reservation-card-status/);
+  assert.match(browser, /โทร\. \{entry\.guestPhone \|\| '-'\}/,
+    "the selected-day card must expose the contact number instead of hiding it in edit mode");
+  assert.match(browser, /aria-expanded=\{reservationEditorOpen\}/);
+  assert.match(browser, /เพิ่มการจองใหม่/);
+  assert.match(browserCss, /\.pos-bg-reservation-card\s*\{/);
+  assert.match(browserCss, /\.pos-bg-reservation-card-actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    "reservation actions must stay in a bounded two-column grid instead of overflowing the card");
+  assert.doesNotMatch(browserCss, /minmax\(280px,\s*auto\)/,
+    "action labels must not set an unbounded intrinsic width that clips the master pane");
+  assert.match(browserCss, /\.pos-bg-reservation-add-toggle\s*\{/);
 });
 
 test("10.1 public bookings are review requests with opaque management and bounded reminders", () => {
