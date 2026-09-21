@@ -104,6 +104,12 @@ test("reconnect and focus reconcile through the registered authoritative refetch
   assert.match(provider, /refetchQueries/);
 });
 
+test("routine realtime ticket rotation does not flash the admin reconnect banner", () => {
+  assert.match(apollo, /event\.code === 4403 && event\.reason === "ticket expired"/);
+  assert.match(apollo, /if \(!expectedTicketRotation\) \{\s*emitRealtimeStatus/);
+  assert.match(apollo, /expectedTicketRotation \? "info" : "warn"/);
+});
+
 test("generic domain subscription is ticket-scoped and permission-filtered", () => {
   assert.match(schema, /realtimeEvent: RealtimeEvent!/);
   // ตัวตัดสินย้ายไป `packages/realtime/src/subscriptionAuth.ts` แล้ว เพื่อให้ทดสอบพฤติกรรมได้
