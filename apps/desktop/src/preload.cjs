@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
     serverUrl: typeof input?.serverUrl === "string" ? input.serverUrl : "",
     pairingInput: typeof input?.pairingInput === "string" ? input.pairingInput : "",
   }),
+  retryStartup: () => ipcRenderer.invoke("bms-pos:retry-startup"),
+  changeServer: () => ipcRenderer.invoke("bms-pos:change-server"),
   getDeviceToken: () => ipcRenderer.invoke("bms-pos:get-device-token"),
   getStorageNamespace: () => ipcRenderer.invoke("bms-pos:get-storage-namespace"),
   getCustomerDisplayState: () => ipcRenderer.invoke("bms-pos:get-customer-display-state"),

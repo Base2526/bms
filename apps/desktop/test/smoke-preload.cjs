@@ -2,6 +2,8 @@ const { contextBridge } = require("electron/renderer");
 
 contextBridge.exposeInMainWorld("bmsDesktop", {
   pair: async () => ({ ok: false, error: "smoke test" }),
+  retryStartup: async () => ({ ok: true }),
+  changeServer: async () => ({ ok: true }),
   getAppInfo: async () => ({
     version: "0.2.1",
     platform: "win32",

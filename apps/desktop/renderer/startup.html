@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'" />
+    <title>กำลังเปิด BMS POS</title>
+    <link rel="stylesheet" href="./startup.css" />
+  </head>
+  <body>
+    <main class="startup-shell">
+      <section class="startup-card" aria-live="polite">
+        <img src="./app-icon.svg" alt="" width="62" height="62" />
+        <div id="loading-state">
+          <div class="spinner" aria-hidden="true"></div>
+          <p class="eyebrow">BMS POS</p>
+          <h1>กำลังเชื่อมต่อเครื่องขาย</h1>
+          <p class="description">กำลังตรวจสอบเซิร์ฟเวอร์และเตรียมหน้าขาย กรุณารอสักครู่</p>
+        </div>
+        <div id="error-state" hidden>
+          <div class="error-mark" aria-hidden="true">!</div>
+          <p class="eyebrow">เปิดหน้าขายไม่สำเร็จ</p>
+          <h1>ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้</h1>
+          <p id="error-message" class="description">กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่</p>
+          <div class="actions">
+            <button id="retry-button" class="primary" type="button">ลองใหม่</button>
+            <button id="change-server-button" type="button">เปลี่ยนเซิร์ฟเวอร์</button>
+          </div>
+        </div>
+        <p class="safe-note">ยังไม่มีการขาย การชำระเงิน หรือการเปลี่ยนสต็อกในขั้นตอนนี้</p>
+      </section>
+    </main>
+    <script src="./startup.js"></script>
+  </body>
+</html>
