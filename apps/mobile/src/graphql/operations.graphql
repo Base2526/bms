@@ -1975,6 +1975,7 @@ fragment MobilePosBoardGameSessionSummaryFields on BmsPosBoardGameSessionSummary
   guestCount
   startedAt
   expectedEndAt
+  nextAlertAt
   endedAt
   alertBeforeMinutes
   alertStatus
@@ -2213,6 +2214,7 @@ query MobilePosBoardGameSession(
     guestCount
     startedAt
     expectedEndAt
+    nextAlertAt
     endedAt
     alertBeforeMinutes
     alertStatus
@@ -2264,6 +2266,8 @@ query MobilePosBoardGameSession(
       billingGroupStatus
       joinedAt
       leftAt
+      timeMode
+      plannedEndAt
     }
     games {
       id
@@ -2378,6 +2382,8 @@ mutation MobilePosAddBoardGameParticipant(
     hourlyRate
     billingGroupNo
     joinedAt
+    timeMode
+    plannedEndAt
     replayed
   }
 }
@@ -2408,6 +2414,34 @@ mutation MobilePosCloseBoardGameBillingGroup(
       hourlyRate
       amount
     }
+  }
+}
+
+mutation MobilePosMergeBoardGameBillingGroups(
+  $input: BmsPosBoardGameMergeBillingGroupsInput!
+) {
+  bmsPosMergeBoardGameBillingGroups(input: $input) {
+    sourceBillingGroupId
+    targetBillingGroupId
+    sessionId
+    tabAmount
+    replayed
+  }
+}
+
+mutation MobilePosDetachBoardGameBillingGroup(
+  $input: BmsPosBoardGameDetachBillingGroupInput!
+) {
+  bmsPosDetachBoardGameBillingGroup(input: $input) {
+    billingGroupId
+    sourceSessionId
+    sessionId
+    tableId
+    seatingId
+    activeCount
+    loanIds
+    identityHoldIds
+    replayed
   }
 }
 

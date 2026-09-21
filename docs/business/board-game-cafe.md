@@ -86,6 +86,33 @@ Both browser and native registers address checkout by `billingGroupId`. A group'
 already exist as the reservation for its snack tab, so `currentOrderId` is not evidence that payment
 finished; `CLOSING` is the authoritative "awaiting payment" state and `PAID` is the terminal one.
 
+### Flexible parties and billing groups (`10.7`)
+
+Table capacity is a warning boundary, not a hidden hard limit. Opening a table, adding a player,
+moving/merging a seating, and detaching a group all compare the resulting active headcount with
+`table.seats`. The server refuses an over-capacity request unless the operator explicitly sends
+`allowOverCapacity`; both registers show the count and ask for a second confirmation. The override is
+included in the idempotency hash and audit metadata so a retry cannot silently turn a refusal into an
+approval.
+
+Purchased time can belong to one participant rather than the whole visit. `time_mode` has three
+meanings: `ACTUAL` charges elapsed time, `SESSION_END` follows the visit's fixed end when staff adjust
+it, and `DURATION` snapshots that player's own `planned_end_at` from their join time. Billing uses the
+participant boundary, and floor alerts use the earliest live session/player boundary; no mutable
+"expired" flag becomes authority.
+
+Two open groups in the same session can be merged before either amount is frozen. The source
+participants and active tab rows move to the destination, both PENDING reservations are rebuilt in
+one transaction, and the source becomes `MERGED` with a pointer to the surviving group. A merged row
+is retained as history but never counts as another active/awaiting bill.
+
+One open group can also be detached to a free table. This creates a new seating and session, then
+moves the group, its participants, its PENDING tab order, and only the game loans/held documents the
+operator explicitly selected. The source session remains occupied by its other groups. Detaching the
+last group is rejected—ordinary seating move already expresses that operation without inventing a new
+visit. Group merge/detach is allowed only while the group is `OPEN`; a frozen or paid bill is never
+rewritten.
+
 ### Moving and merging tables without touching a bill (Phase 4)
 
 Through `9.90` the session owned `table_id`, so the floor could not record what a cafe actually
@@ -441,8 +468,9 @@ When the paired store archetype is `board_game_cafe`, `apps/mobile` shows a dedi
 tab. It reads the branch floor, rates, sessions, and playable-copy availability through generated
 device-scoped GraphQL operations. Staff can open an open-ended or fixed-duration session, choose
 existing members, assign participant bill groups, receive ending-soon/overdue popups, add time,
-record people leaving, add snacks and drinks to a group's tab or take them off again, and check game
-copies out or back in with an issue note. On a merged table the app lists the parties sharing the
+record people leaving, give a late player an independent purchased-time boundary, merge open groups
+for one checkout or detach one to a free table, add snacks and drinks to a group's tab or take them
+off again, and check game copies out or back in with an issue note. On a merged table the app lists the parties sharing the
 seating and makes the staff pick one before any command runs — a button that silently acts on
 whichever party the screen happened to select is a button that charges the wrong people.
 

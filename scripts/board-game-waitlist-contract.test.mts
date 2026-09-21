@@ -221,7 +221,8 @@ test("availability is capacity-aware guidance, not a promise", () => {
   assert.match(service, /expected_available_at/);
   assert.match(service, /st\.status = 'ACTIVE'/);
   assert.match(service, /SELECT seats FROM bms_board_game_tables[\s\S]*FOR UPDATE/);
-  assert.match(service, /โต๊ะนี้รองรับจำนวนผู้เล่นจริงไม่พอ/);
+  assert.match(service, /input\.allowOverCapacity !== true/);
+  assert.match(service, /กรุณายืนยันการใช้โต๊ะเกินความจุ/);
   assert.match(browser, /table\.seats >= entry\.partySize/);
   assert.match(mobile, /table\.seats >= entry\.partySize/);
 });

@@ -27,6 +27,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
 import {
+  addBoardGameParticipant,
   addBoardGameGroupItem,
   cancelBoardGameSession,
   checkoutBoardGameCopy,
@@ -388,6 +389,43 @@ test("merging two occupied tables keeps two separate bills, and one payment does
   assert.equal((await cardOf(tables.T1)).openSession, null, "จ่ายครบทุกชุดแล้วโต๊ะจึงว่าง");
 });
 
+test("adding a player after a seating merge counts every party sharing the table", async () => {
+  const host = await openParty(tables.T1, 3);
+  const guest = await openParty(tables.T2, 3);
+  await mergeBoardGameSeating(
+    tenantId, guest.id, tables.T1, { idempotencyKey: key("merge-capacity") }, staffId,
+  );
+
+  await assert.rejects(
+    () => addBoardGameParticipant(
+      tenantId,
+      {
+        sessionId: guest.id,
+        idempotencyKey: key("add-over-capacity"),
+        rateId,
+        displayName: "FAKE seventh player",
+      },
+      staffId,
+    ),
+    /การเพิ่มคนนี้จะเป็น 7 คน.*ยืนยันการใช้โต๊ะเกินความจุ/,
+  );
+  const added = await addBoardGameParticipant(
+    tenantId,
+    {
+      sessionId: guest.id,
+      idempotencyKey: key("add-over-capacity-confirmed"),
+      rateId,
+      displayName: "FAKE seventh player",
+      allowOverCapacity: true,
+    },
+    staffId,
+  );
+  assert.equal(added.displayName, "FAKE seventh player");
+
+  await settleWholeTable(host.id);
+  await settleWholeTable(guest.id);
+});
+
 test("moving two parties together keeps both game loans on their original sessions", async () => {
   const first = await openParty(tables.T1, 4);
   const second = await openParty(tables.T2, 4);
@@ -407,7 +445,9 @@ test("moving two parties together keeps both game loans on their original sessio
     tenantId, first.id, tables.T3, { idempotencyKey: key("move-first") }, staffId
   );
   await mergeBoardGameSeating(
-    tenantId, second.id, tables.T3, { idempotencyKey: key("merge-second") }, staffId
+    tenantId, second.id, tables.T3,
+    { idempotencyKey: key("merge-second"), allowOverCapacity: true },
+    staffId
   );
 
   const loans = (await query<{

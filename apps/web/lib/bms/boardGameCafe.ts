@@ -25,6 +25,7 @@ import { resolvePosScan } from "./pos";
 import { beginTenantTx } from "./tenant";
 
 export type BoardGameBillingMode = "OPEN_ENDED" | "FIXED_DURATION";
+export type BoardGameParticipantTimeMode = "ACTUAL" | "SESSION_END" | "DURATION";
 export type BoardGameSessionStatus = "OPEN" | "CLOSING" | "PAID" | "CANCELLED";
 export type BoardGameAlertStatus = "NORMAL" | "ENDING_SOON" | "OVERDUE";
 export type BoardGameParticipantType =
@@ -39,6 +40,8 @@ export type BoardGameParticipantInput = {
   customerId?: string | null;
   billingGroupNo?: number | null;
   joinedAt?: string | Date | null;
+  timeMode?: BoardGameParticipantTimeMode | null;
+  purchasedDurationMinutes?: number | null;
 };
 
 export type BoardGameTimeRate = {
@@ -92,7 +95,7 @@ export type BoardGameChargeLine = {
  * `billing_group_no` มีอยู่บนผู้เล่นและไหลไปถึงบรรทัดค่าเล่นก็จริง แต่ทุกกลุ่มถูกเก็บเงิน
  * ในออร์เดอร์ใบเดียวกัน "กลุ่มนี้จ่ายแล้วกลับก่อน" จึงไม่มีที่ให้บันทึก
  */
-export type BoardGameBillingGroupStatus = BoardGameSessionStatus;
+export type BoardGameBillingGroupStatus = BoardGameSessionStatus | "MERGED";
 
 export type BoardGameBillingGroup = {
   id: string;
@@ -253,14 +256,23 @@ function participantType(value: unknown, fallback: BoardGameParticipantType): Bo
 }
 
 function computedAlertStatus(row: any): BoardGameAlertStatus {
-  if (row.status !== "OPEN" || !row.expected_end_at) return "NORMAL";
-  const expected = new Date(row.expected_end_at).getTime();
+  const candidates = [row.expected_end_at, row.next_participant_end_at]
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  if (row.status !== "OPEN" || candidates.length === 0) return "NORMAL";
+  const expected = Math.min(...candidates);
   const now = Date.now();
   if (now >= expected) return "OVERDUE";
   return now >= expected - Number(row.alert_before_minutes ?? 15) * 60000 ? "ENDING_SOON" : "NORMAL";
 }
 
 function mapSessionRow(row: any, replayed = false) {
+  const nextAlertAt = [row.expected_end_at, row.next_participant_end_at]
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((value) => Number.isFinite(value.getTime()))
+    .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
   return {
     id: row.id,
     status: row.status as BoardGameSessionStatus,
@@ -268,6 +280,7 @@ function mapSessionRow(row: any, replayed = false) {
     guestCount: Number(row.guest_count),
     startedAt: iso(row.started_at),
     expectedEndAt: iso(row.expected_end_at),
+    nextAlertAt: nextAlertAt?.toISOString() ?? null,
     endedAt: iso(row.ended_at),
     alertBeforeMinutes: Number(row.alert_before_minutes ?? 15),
     alertStatus: computedAlertStatus(row),
@@ -290,6 +303,8 @@ type PreparedParticipant = {
   graceMinutes: number;
   billingGroupNo: number;
   joinedAt: Date;
+  timeMode: BoardGameParticipantTimeMode;
+  plannedEndAt: Date | null;
 };
 
 type BoardGameRateRow = {
@@ -341,7 +356,8 @@ async function prepareParticipantInTx(
   client: QueryClient,
   tenantId: string,
   input: BoardGameParticipantInput,
-  defaultJoinedAt: Date
+  defaultJoinedAt: Date,
+  timing?: { defaultMode?: BoardGameParticipantTimeMode; sessionExpectedEndAt?: Date | null }
 ): Promise<PreparedParticipant> {
   let rate: BoardGameRateRow | null = null;
   if (input.rateId) {
@@ -378,6 +394,20 @@ async function prepareParticipantInTx(
   }
 
   const joinedAt = optionalDate(input.joinedAt, "เวลาเข้าร่วม") ?? defaultJoinedAt;
+  const timeMode = (input.timeMode ?? timing?.defaultMode ?? "ACTUAL") as BoardGameParticipantTimeMode;
+  if (!(["ACTUAL", "SESSION_END", "DURATION"] as string[]).includes(timeMode)) {
+    throw new Error("รูปแบบเวลาของผู้เล่นไม่ถูกต้อง");
+  }
+  let plannedEndAt: Date | null = null;
+  if (timeMode === "SESSION_END") {
+    plannedEndAt = timing?.sessionExpectedEndAt ?? null;
+    if (!plannedEndAt || plannedEndAt <= joinedAt) {
+      throw new Error("เวลาสิ้นสุดของโต๊ะต้องอยู่หลังเวลาเข้าร่วม");
+    }
+  } else if (timeMode === "DURATION") {
+    const minutes = integerInRange(input.purchasedDurationMinutes, "เวลาที่ผู้เล่นซื้อ", 1, 1440);
+    plannedEndAt = new Date(joinedAt.getTime() + minutes * 60_000);
+  }
   return {
     rateId: rate?.id ?? null,
     rateCode: rate?.code ?? null,
@@ -392,6 +422,8 @@ async function prepareParticipantInTx(
     graceMinutes: billable ? Number(rate?.grace_minutes ?? 0) : 0,
     billingGroupNo: integerInRange(input.billingGroupNo ?? 1, "กลุ่มบิล", 1, 20),
     joinedAt,
+    timeMode,
+    plannedEndAt,
   };
 }
 
@@ -407,18 +439,20 @@ async function insertParticipantInTx(
         (tenant_id, session_id, billing_group_id, rate_id, rate_code_snapshot, rate_name_snapshot,
          customer_id, display_name,
          participant_type, billable, hourly_rate_snapshot, minimum_minutes_snapshot,
-         rounding_minutes_snapshot, grace_minutes_snapshot, billing_group_no, joined_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         rounding_minutes_snapshot, grace_minutes_snapshot, billing_group_no, joined_at,
+         time_mode, planned_end_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING id, display_name, participant_type, billable, rate_code_snapshot, rate_name_snapshot,
                hourly_rate_snapshot,
                minimum_minutes_snapshot, rounding_minutes_snapshot, grace_minutes_snapshot,
-               billing_group_no, billing_group_id, joined_at, left_at`,
+               billing_group_no, billing_group_id, joined_at, left_at, time_mode, planned_end_at`,
     [
       tenantId, sessionId, billingGroupId, participant.rateId, participant.rateCode,
       participant.rateName, participant.customerId, participant.displayName,
       participant.participantType, participant.billable,
       participant.hourlyRate, participant.minimumMinutes, participant.roundingMinutes,
       participant.graceMinutes, participant.billingGroupNo, participant.joinedAt,
+      participant.timeMode, participant.plannedEndAt,
     ]
   );
 }
@@ -911,6 +945,7 @@ export async function listBoardGameFloor(tenantId: string, locationId: string) {
               st.id AS seating_id,
               sa.session_id, sa.session_ids, sa.session_count, sa.status,
               sa.billing_mode, sa.guest_count, sa.started_at, sa.expected_end_at,
+              sa.next_alert_at,
               sa.alert_status,
               COALESCE(ga.amount_due, 0) AS amount_due,
               COALESCE(ga.group_count, 0) AS billing_group_count,
@@ -927,12 +962,49 @@ export async function listBoardGameFloor(tenantId: string, locationId: string) {
                   sum(s.guest_count)::integer AS guest_count,
                   min(s.started_at) AS started_at,
                   min(s.expected_end_at) FILTER (WHERE s.status = 'OPEN') AS expected_end_at,
+                  LEAST(
+                    min(s.expected_end_at) FILTER (WHERE s.status = 'OPEN'),
+                    (SELECT min(p.planned_end_at)
+                       FROM bms_board_game_session_participants p
+                       JOIN bms_board_game_billing_groups pg
+                         ON pg.tenant_id = p.tenant_id AND pg.id = p.billing_group_id
+                       JOIN bms_board_game_sessions ps
+                         ON ps.tenant_id = p.tenant_id AND ps.id = p.session_id
+                      WHERE p.tenant_id = st.tenant_id
+                        AND ps.seating_id = st.id AND ps.status = 'OPEN'
+                        AND p.left_at IS NULL AND p.planned_end_at IS NOT NULL
+                        AND pg.status = 'OPEN')
+                  ) AS next_alert_at,
                   CASE
                     WHEN bool_or(s.status = 'OPEN' AND s.expected_end_at IS NOT NULL
-                                 AND now() >= s.expected_end_at) THEN 'OVERDUE'
+                                 AND now() >= s.expected_end_at)
+                      OR EXISTS (
+                        SELECT 1 FROM bms_board_game_session_participants p
+                        JOIN bms_board_game_billing_groups pg
+                          ON pg.tenant_id = p.tenant_id AND pg.id = p.billing_group_id
+                        JOIN bms_board_game_sessions ps
+                          ON ps.tenant_id = p.tenant_id AND ps.id = p.session_id
+                        WHERE p.tenant_id = st.tenant_id
+                          AND ps.seating_id = st.id AND ps.status = 'OPEN'
+                          AND p.left_at IS NULL AND p.planned_end_at IS NOT NULL
+                          AND pg.status = 'OPEN' AND now() >= p.planned_end_at
+                      ) THEN 'OVERDUE'
                     WHEN bool_or(s.status = 'OPEN' AND s.expected_end_at IS NOT NULL
                                  AND now() >= s.expected_end_at
-                                   - make_interval(mins => s.alert_before_minutes)) THEN 'ENDING_SOON'
+                                   - make_interval(mins => s.alert_before_minutes))
+                      OR EXISTS (
+                        SELECT 1 FROM bms_board_game_session_participants p
+                        JOIN bms_board_game_billing_groups pg
+                          ON pg.tenant_id = p.tenant_id AND pg.id = p.billing_group_id
+                        JOIN bms_board_game_sessions ps
+                          ON ps.tenant_id = p.tenant_id AND ps.id = p.session_id
+                        WHERE p.tenant_id = st.tenant_id
+                          AND ps.seating_id = st.id AND ps.status = 'OPEN'
+                          AND p.left_at IS NULL AND p.planned_end_at IS NOT NULL
+                          AND pg.status = 'OPEN'
+                          AND now() >= p.planned_end_at
+                            - make_interval(mins => ps.alert_before_minutes)
+                      ) THEN 'ENDING_SOON'
                     ELSE 'NORMAL'
                   END AS alert_status
              FROM bms_board_game_sessions s
@@ -947,7 +1019,8 @@ export async function listBoardGameFloor(tenantId: string, locationId: string) {
              JOIN bms_board_game_billing_groups bg
                ON bg.tenant_id = s.tenant_id AND bg.session_id = s.id
             WHERE s.tenant_id = st.tenant_id AND s.seating_id = st.id
-              AND s.status IN ('OPEN', 'CLOSING') AND bg.status <> 'CANCELLED'
+              AND s.status IN ('OPEN', 'CLOSING')
+              AND bg.status NOT IN ('CANCELLED', 'MERGED')
          ) ga ON st.id IS NOT NULL
         WHERE t.tenant_id = $1 AND t.location_id = $2 AND t.active
         ORDER BY t.sort_order, t.code`,
@@ -988,6 +1061,7 @@ export async function listBoardGameFloor(tenantId: string, locationId: string) {
         guestCount: Number(row.guest_count),
         startedAt: iso(row.started_at),
         expectedEndAt: iso(row.expected_end_at),
+        nextAlertAt: iso(row.next_alert_at),
         alertStatus: row.alert_status ?? "NORMAL",
         amountDue: Number(row.amount_due),
         billingGroupCount: Number(row.billing_group_count),
@@ -1012,6 +1086,7 @@ export async function openBoardGameSession(
     posDeviceId?: string | null;
     posShiftId?: string | null;
     note?: string | null;
+    allowOverCapacity?: boolean | null;
   },
   actorUserId?: string | null,
   /** Existing tenant transaction used by queue seating. Omit everywhere else. */
@@ -1039,6 +1114,7 @@ export async function openBoardGameSession(
   const hash = requestHash({
     locationId, tableId, mode, expected, alertBeforeMinutes, startedAt: requestedStartedAt?.toISOString() ?? null,
     posDeviceId, posShiftId, note: normalizedNote,
+    allowOverCapacity: input.allowOverCapacity === true,
     participants: input.participants.map((row) => ({
       rateId: row.rateId ?? null,
       displayName: row.displayName?.trim() || null,
@@ -1046,6 +1122,8 @@ export async function openBoardGameSession(
       customerId: row.customerId ?? null,
       billingGroupNo: row.billingGroupNo ?? 1,
       joinedAt: row.joinedAt ? optionalDate(row.joinedAt, "เวลาเข้าร่วม")?.toISOString() : null,
+      timeMode: row.timeMode ?? null,
+      purchasedDurationMinutes: row.purchasedDurationMinutes ?? null,
     })),
   });
   const ownsTransaction = transactionClient == null;
@@ -1070,13 +1148,17 @@ export async function openBoardGameSession(
       if (ownsTransaction) await client.query("COMMIT");
       return mapSessionRow(replay.rows[0], true);
     }
-    const table = await client.query(
-      `SELECT 1 FROM bms_board_game_tables
+    const table = await client.query<{ seats: number }>(
+      `SELECT seats FROM bms_board_game_tables
         WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
         FOR UPDATE`,
       [tenantId, locationId, tableId]
     );
     if (!table.rowCount) throw new Error("ไม่พบโต๊ะบอร์ดเกมที่เปิดใช้งานอยู่");
+    const seats = Number(table.rows[0].seats);
+    if (input.participants.length > seats && input.allowOverCapacity !== true) {
+      throw new Error(`โต๊ะนี้มี ${seats} ที่นั่ง แต่กำลังเปิดให้ ${input.participants.length} คน — กรุณายืนยันการใช้โต๊ะเกินความจุ`);
+    }
     const occupied = await client.query(
       `SELECT 1 FROM bms_board_game_seatings
         WHERE tenant_id = $1 AND table_id = $2 AND status = 'ACTIVE'
@@ -1095,7 +1177,10 @@ export async function openBoardGameSession(
     }
     const preparedParticipants: PreparedParticipant[] = [];
     for (const participant of input.participants) {
-      const prepared = await prepareParticipantInTx(client, tenantId, participant, startedAt);
+      const prepared = await prepareParticipantInTx(client, tenantId, participant, startedAt, {
+        defaultMode: mode === "FIXED_DURATION" ? "SESSION_END" : "ACTUAL",
+        sessionExpectedEndAt: expectedEndAt,
+      });
       if (prepared.joinedAt < startedAt) throw new Error("เวลาเข้าร่วมต้องไม่ก่อนเวลาเปิดโต๊ะ");
       preparedParticipants.push(prepared);
     }
@@ -1160,6 +1245,8 @@ export async function openBoardGameSession(
       guestCount: preparedParticipants.length,
       billingGroupCount: groupIdByNo.size,
       seatingId,
+      capacity: seats,
+      overCapacity: preparedParticipants.length > seats,
     });
     if (ownsTransaction) await client.query("COMMIT");
     return mapSessionRow(result.rows[0]);
@@ -1191,7 +1278,11 @@ export function openBoardGameSessionInTx(
 
 export async function addBoardGameParticipant(
   tenantId: string,
-  input: BoardGameParticipantInput & { sessionId: string; idempotencyKey: string },
+  input: BoardGameParticipantInput & {
+    sessionId: string;
+    idempotencyKey: string;
+    allowOverCapacity?: boolean | null;
+  },
   actorUserId?: string | null
 ) {
   const sessionId = uuid(input.sessionId, "sessionId");
@@ -1205,6 +1296,9 @@ export async function addBoardGameParticipant(
     customerId: input.customerId ?? null,
     billingGroupNo: input.billingGroupNo ?? 1,
     joinedAt: requestedJoinedAt?.toISOString() ?? null,
+    timeMode: input.timeMode ?? null,
+    purchasedDurationMinutes: input.purchasedDurationMinutes ?? null,
+    allowOverCapacity: input.allowOverCapacity === true,
   });
   const client = await getClient();
   try {
@@ -1217,18 +1311,55 @@ export async function addBoardGameParticipant(
       await client.query("COMMIT");
       return { ...replay, replayed: true };
     }
-    const session = await client.query<{ id: string; started_at: Date; location_id: string }>(
-      `SELECT id, started_at, location_id FROM bms_board_game_sessions
-        WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'
+    const session = await client.query<{
+      id: string;
+      started_at: Date;
+      location_id: string;
+      billing_mode: BoardGameBillingMode;
+      expected_end_at: Date | null;
+      seats: number;
+      seating_id: string;
+    }>(
+      `SELECT s.id, s.started_at, s.location_id, s.billing_mode, s.expected_end_at,
+              t.seats, s.seating_id
+         FROM bms_board_game_sessions s
+         JOIN bms_board_game_seatings st
+           ON st.tenant_id = s.tenant_id AND st.id = s.seating_id
+         JOIN bms_board_game_tables t
+           ON t.tenant_id = st.tenant_id AND t.id = st.table_id
+        WHERE s.tenant_id = $1 AND s.id = $2 AND s.status = 'OPEN'
         FOR UPDATE`,
       [tenantId, sessionId]
     );
     if (!session.rowCount) throw new Error("ไม่พบ session ที่เปิดอยู่");
+    const sessionRow = session.rows[0];
+    // Count only after the shared seating/table rows above are locked. Keeping this in a second
+    // statement gives a waiter a fresh READ COMMITTED snapshot after another register commits;
+    // a subquery in the locking SELECT could retain the pre-wait count and approve two additions.
+    const activeGuests = await client.query<{ active_guests: number }>(
+      `SELECT count(*)::int AS active_guests
+         FROM bms_board_game_session_participants p
+         JOIN bms_board_game_sessions ps
+           ON ps.tenant_id = p.tenant_id AND ps.id = p.session_id
+         JOIN bms_board_game_billing_groups g
+           ON g.tenant_id = p.tenant_id AND g.id = p.billing_group_id
+        WHERE p.tenant_id = $1 AND ps.seating_id = $2 AND ps.status = 'OPEN'
+          AND p.left_at IS NULL AND g.status = 'OPEN'`,
+      [tenantId, sessionRow.seating_id]
+    );
+    const nextGuestCount = Number(activeGuests.rows[0]?.active_guests ?? 0) + 1;
+    if (nextGuestCount > Number(sessionRow.seats) && input.allowOverCapacity !== true) {
+      throw new Error(`โต๊ะนี้มี ${sessionRow.seats} ที่นั่ง การเพิ่มคนนี้จะเป็น ${nextGuestCount} คน — กรุณายืนยันการใช้โต๊ะเกินความจุ`);
+    }
     const prepared = await prepareParticipantInTx(
       client,
       tenantId,
       { ...input, joinedAt: requestedJoinedAt },
-      new Date()
+      new Date(),
+      {
+        defaultMode: sessionRow.billing_mode === "FIXED_DURATION" ? "SESSION_END" : "ACTUAL",
+        sessionExpectedEndAt: sessionRow.expected_end_at ? new Date(sessionRow.expected_end_at) : null,
+      }
     );
     if (prepared.joinedAt < new Date(session.rows[0].started_at)) throw new Error("เวลาเข้าร่วมต้องไม่ก่อนเวลาเปิดโต๊ะ");
     const billingGroupId = await resolveBillingGroupInTx(
@@ -1246,6 +1377,8 @@ export async function addBoardGameParticipant(
       billingGroupNo: Number(row.billing_group_no),
       billingGroupId: row.billing_group_id as string,
       joinedAt: iso(row.joined_at),
+      timeMode: row.time_mode as BoardGameParticipantTimeMode,
+      plannedEndAt: iso(row.planned_end_at),
       replayed: false,
     };
     await storeActionResultInTx(client, tenantId, "participant.add", key, hash, response);
@@ -1254,6 +1387,8 @@ export async function addBoardGameParticipant(
       participantType: prepared.participantType,
       billable: prepared.billable,
       billingGroupNo: prepared.billingGroupNo,
+      timeMode: prepared.timeMode,
+      overCapacity: nextGuestCount > Number(sessionRow.seats),
     });
     await client.query("COMMIT");
     return response;
@@ -1408,6 +1543,15 @@ export async function adjustBoardGameSessionTiming(
         WHERE tenant_id = $1 AND id = $2`,
       [tenantId, sessionId, mode, startedAt, expectedDuration, expectedEndAt, alertBeforeMinutes]
     );
+    await client.query(
+      `UPDATE bms_board_game_session_participants
+          SET time_mode = CASE WHEN $3::timestamptz IS NULL THEN 'ACTUAL' ELSE 'SESSION_END' END,
+              planned_end_at = $3::timestamptz,
+              updated_at = now()
+        WHERE tenant_id = $1 AND session_id = $2
+          AND time_mode = 'SESSION_END'`,
+      [tenantId, sessionId, expectedEndAt]
+    );
     const response = {
       sessionId,
       billingMode: mode as BoardGameBillingMode,
@@ -1449,7 +1593,7 @@ async function relocateBoardGameSeating(
   tenantId: string,
   sessionIdInput: string,
   targetTableIdInput: string,
-  input: { idempotencyKey: string },
+  input: { idempotencyKey: string; allowOverCapacity?: boolean | null },
   action: BoardGameSeatingAction,
   actorUserId?: string | null
 ) {
@@ -1457,7 +1601,7 @@ async function relocateBoardGameSeating(
   const targetTableId = uuid(targetTableIdInput, "targetTableId");
   const key = requestKey(input.idempotencyKey);
   const actionKey = `seating.${action}`;
-  const hash = requestHash({ sessionId, targetTableId });
+  const hash = requestHash({ sessionId, targetTableId, allowOverCapacity: input.allowOverCapacity === true });
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
@@ -1502,8 +1646,8 @@ async function relocateBoardGameSeating(
 
     // Lock the destination table before discovering its current seating. An opening request also
     // locks this row, so it cannot slip a new occupancy between our check and write.
-    const targetTable = await client.query<{ id: string }>(
-      `SELECT id FROM bms_board_game_tables
+    const targetTable = await client.query<{ id: string; seats: number }>(
+      `SELECT id, seats FROM bms_board_game_tables
         WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
         FOR UPDATE`,
       [tenantId, locationId, targetTableId]
@@ -1525,8 +1669,8 @@ async function relocateBoardGameSeating(
 
     // Match settlement's lock order: sessions first, seating second. Otherwise a payment could
     // hold the session while waiting for the seating as a merge held the seating waiting for it.
-    const sessionRows = await client.query<{ id: string; seating_id: string }>(
-      `SELECT id, seating_id FROM bms_board_game_sessions
+    const sessionRows = await client.query<{ id: string; seating_id: string; guest_count: number }>(
+      `SELECT id, seating_id, guest_count FROM bms_board_game_sessions
         WHERE tenant_id = $1
           AND seating_id = ANY($2::uuid[])
         ORDER BY id
@@ -1554,6 +1698,23 @@ async function relocateBoardGameSeating(
     const sourceSessionIds = sessionRows.rows
       .filter((row) => row.seating_id === sourceSeatingId)
       .map((row) => row.id);
+    const movingSessionIds = action === "move" && sourceSessionIds.length > 1
+      ? [sessionId]
+      : sourceSessionIds;
+    const destinationSessionIds = sessionRows.rows
+      .filter((row) => row.seating_id === destinationSeatingId)
+      .map((row) => row.id);
+    const capacitySessions = action === "merge"
+      ? [...new Set([...movingSessionIds, ...destinationSessionIds])]
+      : movingSessionIds;
+    const capacitySessionIds = new Set(capacitySessions);
+    const guestCount = sessionRows.rows.reduce(
+      (total, row) => total + (capacitySessionIds.has(row.id) ? Number(row.guest_count) : 0),
+      0,
+    );
+    if (guestCount > Number(targetTable.rows[0].seats) && input.allowOverCapacity !== true) {
+      throw new Error(`โต๊ะปลายทางมี ${targetTable.rows[0].seats} ที่นั่ง แต่จะมี ${guestCount} คน — กรุณายืนยันการใช้โต๊ะเกินความจุ`);
+    }
 
     let movedSeatingId = destinationSeatingId;
     let movedSessionIds = sourceSessionIds;
@@ -1622,7 +1783,11 @@ async function relocateBoardGameSeating(
       actorUserId,
       action === "move" ? "board_game.seating_move" : "board_game.seating_merge",
       movedSeatingId,
-      { sourceSeatingId, fromTableId, toTableId: targetTableId, sessionIds: movedSessionIds }
+      {
+        sourceSeatingId, fromTableId, toTableId: targetTableId, sessionIds: movedSessionIds,
+        guestCount, capacity: Number(targetTable.rows[0].seats),
+        overCapacity: guestCount > Number(targetTable.rows[0].seats),
+      }
     );
     await client.query("COMMIT");
     return response;
@@ -1638,7 +1803,7 @@ export function moveBoardGameSeating(
   tenantId: string,
   sessionId: string,
   targetTableId: string,
-  input: { idempotencyKey: string },
+  input: { idempotencyKey: string; allowOverCapacity?: boolean | null },
   actorUserId?: string | null
 ) {
   return relocateBoardGameSeating(
@@ -1650,12 +1815,204 @@ export function mergeBoardGameSeating(
   tenantId: string,
   sessionId: string,
   targetTableId: string,
-  input: { idempotencyKey: string },
+  input: { idempotencyKey: string; allowOverCapacity?: boolean | null },
   actorUserId?: string | null
 ) {
   return relocateBoardGameSeating(
     tenantId, sessionId, targetTableId, input, "merge", actorUserId
   );
+}
+
+/**
+ * แยกหนึ่งกลุ่มบิลออกจาก visit เดิมไปเป็น session ของตัวเองบนโต๊ะว่าง
+ * ผู้เล่น เวลา และ tab ตามกลุ่มไป; เกม/บัตรเป็นของ session จึงต้องเลือกอย่างชัดเจน
+ */
+export async function detachBoardGameBillingGroupToTable(
+  tenantId: string,
+  input: {
+    billingGroupId: string;
+    targetTableId: string;
+    loanIds?: string[] | null;
+    identityHoldIds?: string[] | null;
+    allowOverCapacity?: boolean | null;
+    idempotencyKey: string;
+  },
+  actorUserId?: string | null,
+) {
+  const billingGroupId = uuid(input.billingGroupId, "billingGroupId");
+  const targetTableId = uuid(input.targetTableId, "targetTableId");
+  const loanIds = [...new Set((input.loanIds ?? []).map((id) => uuid(id, "loanId")))].sort();
+  const holdIds = [...new Set((input.identityHoldIds ?? []).map((id) => uuid(id, "identityHoldId")))].sort();
+  const key = requestKey(input.idempotencyKey);
+  const hash = requestHash({ billingGroupId, targetTableId, loanIds, holdIds, allowOverCapacity: input.allowOverCapacity === true });
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, actorUserId ? { editorId: actorUserId } : undefined);
+    await requireBoardGameCafeTenant(client, tenantId);
+    const replay = await replayActionInTx<Record<string, unknown>>(
+      client, tenantId, "group.detach", key, hash
+    );
+    if (replay) { await client.query("COMMIT"); return { ...replay, replayed: true }; }
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+      [`board-game:${tenantId}:seating-floor`]
+    );
+    // Discover without locking, then take the established session -> group order used by close/pay.
+    // Group -> session here would deadlock with a cashier closing this group at the same moment.
+    const owner = await client.query<{ session_id: string }>(
+      `SELECT session_id FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, billingGroupId]
+    );
+    if (!owner.rowCount) throw new Error("ไม่พบกลุ่มบิลที่ยังเล่นอยู่");
+    const source = await client.query<{
+      id: string; seating_id: string; started_at: Date; pos_device_id: string | null;
+      pos_shift_id: string | null; alert_before_minutes: number;
+      billing_mode: BoardGameBillingMode; expected_duration_minutes: number | null;
+      expected_end_at: Date | null;
+    }>(
+      `SELECT id, seating_id, started_at, pos_device_id, pos_shift_id, alert_before_minutes,
+              billing_mode, expected_duration_minutes, expected_end_at
+         FROM bms_board_game_sessions
+        WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'
+        FOR UPDATE`,
+      [tenantId, owner.rows[0].session_id]
+    );
+    if (!source.rowCount) throw new Error("ชุดลูกค้าต้นทางไม่ได้เปิดอยู่แล้ว");
+    const group = await client.query<{
+      id: string; session_id: string; location_id: string; group_no: number; current_order_id: string | null;
+    }>(
+      `SELECT id, session_id, location_id, group_no, current_order_id
+         FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND id = $2 AND session_id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [tenantId, billingGroupId, owner.rows[0].session_id]
+    );
+    if (!group.rowCount) throw new Error("กลุ่มบิลถูกย้ายหรือปิดไปแล้ว กรุณาโหลดโต๊ะใหม่");
+    const groupRow = group.rows[0];
+    const otherGroup = await client.query(
+      `SELECT 1 FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND session_id = $2 AND id <> $3 AND status IN ('OPEN','CLOSING') LIMIT 1`,
+      [tenantId, groupRow.session_id, billingGroupId]
+    );
+    if (!otherGroup.rowCount) throw new Error("กลุ่มนี้เป็นกลุ่มสุดท้ายของโต๊ะ — ใช้คำสั่งย้ายโต๊ะปกติ");
+    const target = await client.query<{ seats: number }>(
+      `SELECT seats FROM bms_board_game_tables
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
+        FOR UPDATE`,
+      [tenantId, groupRow.location_id, targetTableId]
+    );
+    if (!target.rowCount) throw new Error("ไม่พบโต๊ะปลายทางที่เปิดใช้งานในสาขานี้");
+    const occupied = await client.query(
+      `SELECT 1 FROM bms_board_game_seatings
+        WHERE tenant_id = $1 AND location_id = $2 AND table_id = $3 AND status = 'ACTIVE'`,
+      [tenantId, groupRow.location_id, targetTableId]
+    );
+    if (occupied.rowCount) throw new Error("โต๊ะปลายทางมีลูกค้าอยู่แล้ว");
+    const people = await client.query<{ active_count: number }>(
+      `SELECT count(*) FILTER (WHERE left_at IS NULL)::int AS active_count
+         FROM bms_board_game_session_participants
+        WHERE tenant_id = $1 AND billing_group_id = $2`,
+      [tenantId, billingGroupId]
+    );
+    const activeCount = Number(people.rows[0]?.active_count ?? 0);
+    if (activeCount < 1) throw new Error("กลุ่มนี้ไม่มีผู้เล่นที่ยังอยู่บนโต๊ะ");
+    if (activeCount > Number(target.rows[0].seats) && input.allowOverCapacity !== true) {
+      throw new Error(`โต๊ะปลายทางมี ${target.rows[0].seats} ที่นั่ง แต่กลุ่มนี้มี ${activeCount} คน — กรุณายืนยันการใช้โต๊ะเกินความจุ`);
+    }
+    const validLoans = loanIds.length ? await client.query<{ id: string }>(
+      `SELECT id FROM bms_board_game_session_games
+        WHERE tenant_id = $1 AND session_id = $2 AND id = ANY($3::uuid[]) AND status = 'CHECKED_OUT'
+        FOR UPDATE`,
+      [tenantId, groupRow.session_id, loanIds]
+    ) : { rows: [], rowCount: 0 } as any;
+    if ((validLoans.rowCount ?? 0) !== loanIds.length) throw new Error("มีเกมที่เลือกไม่ได้อยู่กับโต๊ะต้นทางแล้ว");
+    const validHolds = holdIds.length ? await client.query<{ id: string; loan_id: string | null }>(
+      `SELECT id, loan_id FROM bms_board_game_identity_holds
+        WHERE tenant_id = $1 AND session_id = $2 AND id = ANY($3::uuid[]) AND status = 'HELD'
+        FOR UPDATE`,
+      [tenantId, groupRow.session_id, holdIds]
+    ) : { rows: [] as Array<{ id: string; loan_id: string | null }>, rowCount: 0 };
+    if ((validHolds.rowCount ?? 0) !== holdIds.length) throw new Error("มีบัตรที่เลือกไม่ได้อยู่กับโต๊ะต้นทางแล้ว");
+    const separatedHold = validHolds.rows.find(
+      (hold) => hold.loan_id && !loanIds.includes(hold.loan_id)
+    );
+    if (separatedHold) throw new Error("บัตรที่ผูกกับเกมต้องย้ายพร้อมเกมกล่องนั้น");
+    const seating = await client.query<{ id: string }>(
+      `INSERT INTO bms_board_game_seatings (tenant_id, location_id, table_id, opened_at)
+       VALUES ($1,$2,$3, now()) RETURNING id`,
+      [tenantId, groupRow.location_id, targetTableId]
+    );
+    const sourceRow = source.rows[0];
+    const sessionKey = createHash("sha256").update(`${key}:detached-session`).digest("hex");
+    const created = await client.query<{ id: string }>(
+      `INSERT INTO bms_board_game_sessions
+          (tenant_id, location_id, table_id, seating_id, pos_device_id, pos_shift_id,
+           billing_mode, guest_count, expected_duration_minutes, started_at, expected_end_at,
+           alert_before_minutes, note, opened_by, open_idempotency_key, open_request_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING id`,
+      [tenantId, groupRow.location_id, targetTableId, seating.rows[0].id,
+        sourceRow.pos_device_id, sourceRow.pos_shift_id, sourceRow.billing_mode, activeCount,
+        sourceRow.expected_duration_minutes,
+        sourceRow.started_at, sourceRow.expected_end_at,
+        sourceRow.alert_before_minutes,
+        `แยกกลุ่มบิล ${groupRow.group_no} จาก session ${groupRow.session_id}`,
+        actorUserId ?? null, sessionKey, hash]
+    );
+    const newSessionId = created.rows[0].id;
+    await client.query(
+      `UPDATE bms_board_game_billing_groups SET session_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, billingGroupId, newSessionId]
+    );
+    await client.query(
+      `UPDATE bms_board_game_session_participants SET session_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND billing_group_id = $2`,
+      [tenantId, billingGroupId, newSessionId]
+    );
+    if (groupRow.current_order_id) {
+      const movedOrder = await client.query(
+        `UPDATE bms_orders SET board_game_session_id = $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+        [tenantId, groupRow.current_order_id, newSessionId]
+      );
+      if (!movedOrder.rowCount) {
+        throw new Error("ใบจองของกลุ่มไม่ได้อยู่สถานะรอย้าย — ให้ผู้ดูแลตรวจบิลนี้ก่อน");
+      }
+    }
+    if (loanIds.length) await client.query(
+      `UPDATE bms_board_game_session_games SET session_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND session_id = $2 AND id = ANY($4::uuid[])`,
+      [tenantId, groupRow.session_id, newSessionId, loanIds]
+    );
+    const movedHolds = holdIds.length || loanIds.length ? await client.query<{ id: string }>(
+      `UPDATE bms_board_game_identity_holds SET session_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND session_id = $2 AND status = 'HELD'
+          AND (id = ANY($4::uuid[]) OR loan_id = ANY($5::uuid[]))
+        RETURNING id`,
+      [tenantId, groupRow.session_id, newSessionId, holdIds, loanIds]
+    ) : { rows: [] };
+    const movedHoldIds = movedHolds.rows.map((hold) => hold.id).sort();
+    await refreshSessionFromGroupsInTx(client, tenantId, groupRow.session_id);
+    await refreshSessionFromGroupsInTx(client, tenantId, newSessionId);
+    const response = {
+      billingGroupId, sourceSessionId: groupRow.session_id, sessionId: newSessionId,
+      tableId: targetTableId, seatingId: seating.rows[0].id, activeCount,
+      loanIds, identityHoldIds: movedHoldIds, replayed: false,
+    };
+    await storeActionResultInTx(client, tenantId, "group.detach", key, hash, response);
+    await auditInTx(client, tenantId, actorUserId, "board_game.billing_group_detach", billingGroupId, {
+      sourceSessionId: groupRow.session_id, sessionId: newSessionId, targetTableId,
+      activeCount, loanCount: loanIds.length, identityHoldCount: movedHoldIds.length,
+      overCapacity: activeCount > Number(target.rows[0].seats),
+    });
+    await client.query("COMMIT");
+    return response;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally { client.release(); }
 }
 
 export async function getBoardGameSession(tenantId: string, sessionIdInput: string) {
@@ -1667,6 +2024,13 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
               origin_table.code AS origin_table_code, origin_table.name AS origin_table_name,
               s.seating_id, s.status, s.billing_mode,
               s.guest_count, s.started_at, s.expected_end_at, s.ended_at, s.alert_before_minutes,
+              (SELECT min(p.planned_end_at)
+                 FROM bms_board_game_session_participants p
+                 JOIN bms_board_game_billing_groups pg
+                   ON pg.tenant_id = p.tenant_id AND pg.id = p.billing_group_id
+                WHERE p.tenant_id = s.tenant_id AND p.session_id = s.id
+                  AND p.left_at IS NULL AND p.planned_end_at IS NOT NULL
+                  AND pg.status = 'OPEN') AS next_participant_end_at,
               (SELECT COALESCE(sum(g.amount_due + g.tab_amount), 0)
                  FROM bms_board_game_billing_groups g
                 WHERE g.tenant_id = s.tenant_id AND g.session_id = s.id) AS amount_due
@@ -1683,7 +2047,7 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
               p.rate_code_snapshot, p.rate_name_snapshot, p.hourly_rate_snapshot,
               p.minimum_minutes_snapshot, p.rounding_minutes_snapshot, p.grace_minutes_snapshot,
               g.group_no AS billing_group_no, p.billing_group_id, g.status AS billing_group_status,
-              p.joined_at, p.left_at
+              p.joined_at, p.left_at, p.time_mode, p.planned_end_at
          FROM bms_board_game_session_participants p
          JOIN bms_board_game_billing_groups g
            ON g.tenant_id = p.tenant_id AND g.id = p.billing_group_id
@@ -1704,7 +2068,7 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
     query<BillingGroupRow>(
       `SELECT ${BILLING_GROUP_COLUMNS}
          FROM bms_board_game_billing_groups
-        WHERE tenant_id = $1 AND session_id = $2
+        WHERE tenant_id = $1 AND session_id = $2 AND status <> 'MERGED'
         ORDER BY group_no`,
       [tenantId, sessionId]
     ),
@@ -1781,6 +2145,8 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
       billingGroupStatus: participant.billing_group_status as BoardGameBillingGroupStatus,
       joinedAt: iso(participant.joined_at),
       leftAt: iso(participant.left_at),
+      timeMode: participant.time_mode as BoardGameParticipantTimeMode,
+      plannedEndAt: iso(participant.planned_end_at),
     })),
     games: games.rows.map((game: any) => ({
       id: game.id,
@@ -2086,6 +2452,124 @@ export async function removeBoardGameGroupItem(
   }
 }
 
+/** รวมสองกลุ่มที่ยังเล่นอยู่ให้เป็นบิลเดียวก่อนแช่ยอด */
+export async function mergeBoardGameBillingGroups(
+  tenantId: string,
+  input: {
+    sourceBillingGroupId: string;
+    targetBillingGroupId: string;
+    locationId: string;
+    deviceId: string;
+    shiftId: string;
+    idempotencyKey: string;
+  },
+  actorUserId: string,
+) {
+  const sourceId = uuid(input.sourceBillingGroupId, "sourceBillingGroupId");
+  const targetId = uuid(input.targetBillingGroupId, "targetBillingGroupId");
+  if (sourceId === targetId) throw new Error("กลุ่มต้นทางและปลายทางต้องเป็นคนละกลุ่ม");
+  const locationId = uuid(input.locationId, "locationId");
+  const deviceId = uuid(input.deviceId, "deviceId");
+  const shiftId = uuid(input.shiftId, "shiftId");
+  const key = requestKey(input.idempotencyKey);
+  const hash = requestHash({ sourceId, targetId, locationId });
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorUserId });
+    await requireBoardGameCafeTenant(client, tenantId);
+    const replay = await replayActionInTx<Record<string, unknown>>(
+      client, tenantId, "group.merge", key, hash
+    );
+    if (replay) { await client.query("COMMIT"); return { ...replay, replayed: true }; }
+    const owners = await client.query<{ id: string; session_id: string }>(
+      `SELECT id, session_id FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND location_id = $2 AND id = ANY($3::uuid[])`,
+      [tenantId, locationId, [sourceId, targetId]]
+    );
+    if (owners.rowCount !== 2) throw new Error("ไม่พบกลุ่มบิลทั้งสองในสาขานี้");
+    const sessionIds = [...new Set(owners.rows.map((row) => row.session_id))];
+    if (sessionIds.length !== 1) throw new Error("รวมบิลได้เฉพาะกลุ่มในชุดลูกค้าเดียวกัน");
+    const lockedSession = await client.query(
+      `SELECT id FROM bms_board_game_sessions
+        WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [tenantId, locationId, sessionIds[0]]
+    );
+    if (!lockedSession.rowCount) throw new Error("ชุดลูกค้านี้ไม่ได้เปิดอยู่แล้ว");
+    const groups = await client.query<{
+      id: string; session_id: string; group_no: number; status: string; version: number; location_id: string;
+    }>(
+      `SELECT id, session_id, group_no, status, version, location_id
+         FROM bms_board_game_billing_groups
+        WHERE tenant_id = $1 AND location_id = $2 AND id = ANY($3::uuid[])
+        ORDER BY id FOR UPDATE`,
+      [tenantId, locationId, [sourceId, targetId]]
+    );
+    if (groups.rowCount !== 2) throw new Error("กลุ่มบิลถูกย้ายหรือปิดไปแล้ว กรุณาโหลดโต๊ะใหม่");
+    const source = groups.rows.find((row) => row.id === sourceId)!;
+    const target = groups.rows.find((row) => row.id === targetId)!;
+    if (source.session_id !== target.session_id) throw new Error("รวมบิลได้เฉพาะกลุ่มในชุดลูกค้าเดียวกัน");
+    if (source.status !== "OPEN" || target.status !== "OPEN") {
+      throw new Error("รวมได้เฉพาะกลุ่มที่ยังเล่นอยู่และยังไม่ได้ปิดยอด");
+    }
+    // Tab add/remove already locks group -> shift while rebuilding its reservation. Keep the same
+    // order here; taking shift first would deadlock with a simultaneous tab edit holding a group.
+    const shift = await client.query(
+      `SELECT 1 FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND location_id = $2 AND device_id = $3 AND id = $4 AND status = 'OPEN'
+        FOR KEY SHARE`,
+      [tenantId, locationId, deviceId, shiftId]
+    );
+    if (!shift.rowCount) throw new Error("ต้องเปิดกะของเครื่องนี้ก่อนรวมบิล");
+    await client.query(
+      `UPDATE bms_board_game_group_items
+          SET billing_group_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND billing_group_id = $2 AND status = 'ACTIVE'`,
+      [tenantId, sourceId, targetId]
+    );
+    await client.query(
+      `UPDATE bms_board_game_session_participants
+          SET billing_group_id = $3, billing_group_no = $4, updated_at = now()
+        WHERE tenant_id = $1 AND billing_group_id = $2`,
+      [tenantId, sourceId, targetId, target.group_no]
+    );
+    await rebuildGroupReservationInTx(
+      client, tenantId,
+      { id: sourceId, locationId, version: Number(source.version) },
+      { userId: actorUserId, deviceId, shiftId }
+    );
+    const rebuilt = await rebuildGroupReservationInTx(
+      client, tenantId,
+      { id: targetId, locationId, version: Number(target.version) },
+      { userId: actorUserId, deviceId, shiftId }
+    );
+    await client.query(
+      `UPDATE bms_board_game_billing_groups
+          SET status = 'MERGED', merged_into_group_id = $3, ended_at = now(), closed_by = $4,
+              version = version + 1, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
+      [tenantId, sourceId, targetId, actorUserId]
+    );
+    await refreshSessionFromGroupsInTx(client, tenantId, source.session_id);
+    const response = {
+      sourceBillingGroupId: sourceId,
+      targetBillingGroupId: targetId,
+      sessionId: source.session_id,
+      tabAmount: rebuilt.tabAmount,
+      replayed: false,
+    };
+    await storeActionResultInTx(client, tenantId, "group.merge", key, hash, response);
+    await auditInTx(client, tenantId, actorUserId, "board_game.billing_group_merge", targetId, {
+      sourceBillingGroupId: sourceId,
+    });
+    await client.query("COMMIT");
+    return response;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally { client.release(); }
+}
+
 /**
  * บิลเวลาเล่นที่รอเก็บเงิน — คีย์ด้วย **กลุ่มบิล** ไม่ใช่โต๊ะ (`9.89`)
  *
@@ -2123,7 +2607,7 @@ export async function getBoardGameCheckoutForPos(
                JOIN bms_board_game_billing_groups og
                  ON og.tenant_id = os.tenant_id AND og.session_id = os.id
               WHERE os.tenant_id = s.tenant_id AND os.seating_id = s.seating_id
-                AND og.status <> 'CANCELLED') AS session_group_count
+                AND og.status NOT IN ('CANCELLED', 'MERGED')) AS session_group_count
        FROM bms_board_game_billing_groups g
        JOIN bms_board_game_sessions s
          ON s.tenant_id = g.tenant_id AND s.id = g.session_id
@@ -3223,9 +3707,8 @@ export async function calculateBoardGameGroupCharges(
             g.group_no AS billing_group_no, p.joined_at,
             COALESCE(p.left_at, $3::timestamptz) AS actual_end_at,
             CASE
-              WHEN s.billing_mode = 'FIXED_DURATION'
-               AND s.expected_end_at > COALESCE(p.left_at, $3::timestamptz)
-                THEN s.expected_end_at
+              WHEN p.planned_end_at > COALESCE(p.left_at, $3::timestamptz)
+                THEN p.planned_end_at
               ELSE COALESCE(p.left_at, $3::timestamptz)
             END AS charge_end_at,
             p.minimum_minutes_snapshot AS minimum_minutes,
@@ -3503,7 +3986,9 @@ export async function closeBoardGameSessionForBilling(
     const openGroups = groups.filter((group) => group.status === "OPEN");
 
     if (!openGroups.length) {
-      const settled = groups.filter((group) => group.status !== "CANCELLED");
+      const settled = groups.filter(
+        (group) => !["CANCELLED", "MERGED"].includes(group.status),
+      );
       if (!settled.length) throw new Error("session นี้ถูกยกเลิกไปแล้ว");
       // ยิงซ้ำของคำขอเดิม = กลุ่มถือคีย์ที่แตกจากคีย์นี้ · ไม่มีเลย = คนอื่นปิดไปก่อนแล้ว
       const mine = settled.filter(
@@ -3629,7 +4114,9 @@ export async function cancelBoardGameSession(
     if (groups.some((group) => group.status === "PAID")) {
       throw new Error("session ที่ชำระเงินแล้วไม่สามารถยกเลิกได้");
     }
-    const cancellable = groups.filter((group) => group.status !== "CANCELLED");
+    const cancellable = groups.filter(
+      (group) => !["CANCELLED", "MERGED"].includes(group.status),
+    );
     if (!cancellable.length) {
       // ยิงซ้ำของคำขอเดิม = กลุ่มถือคีย์ยกเลิกที่แตกจากคีย์นี้ · ไม่มีเลย = คนอื่นยกเลิกไปก่อนแล้ว
       const mine = groups.some(

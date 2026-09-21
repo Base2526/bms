@@ -1651,6 +1651,7 @@ export async function seatBoardGameWaitlistEntry(input: {
   alertBeforeMinutes?: number | null;
   participants: BoardGameParticipantInput[];
   note?: string | null;
+  allowOverCapacity?: boolean | null;
 }) {
   const idempotency = boardGameIdempotency("waitlist.seat", input.idempotencyKey, {
     locationId: input.locationId, entryId: input.entryId, tableId: input.tableId,
@@ -1659,6 +1660,7 @@ export async function seatBoardGameWaitlistEntry(input: {
     alertBeforeMinutes: input.alertBeforeMinutes ?? 15,
     participants: input.participants,
     note: boundedText(input.note, 300),
+    allowOverCapacity: input.allowOverCapacity === true,
   });
   const client = await getClient();
   try {
@@ -1693,8 +1695,13 @@ export async function seatBoardGameWaitlistEntry(input: {
       [input.tenantId, input.locationId, input.tableId],
     );
     if (!table.rowCount) throw new Error("ไม่พบโต๊ะบอร์ดเกมที่เปิดใช้งานอยู่ในสาขานี้");
-    if (Number(table.rows[0].seats) < input.participants.length) {
-      throw new Error("โต๊ะนี้รองรับจำนวนผู้เล่นจริงไม่พอ");
+    if (
+      Number(table.rows[0].seats) < input.participants.length &&
+      input.allowOverCapacity !== true
+    ) {
+      throw new Error(
+        `โต๊ะนี้มี ${table.rows[0].seats} ที่นั่ง แต่กำลังพาไปนั่ง ${input.participants.length} คน — กรุณายืนยันการใช้โต๊ะเกินความจุ`,
+      );
     }
     const bookingConflict = await client.query(
       `SELECT 1 FROM bms_board_game_waitlist
@@ -1721,6 +1728,7 @@ export async function seatBoardGameWaitlistEntry(input: {
       posDeviceId: input.deviceId,
       posShiftId: input.shiftId,
       note: boundedText(input.note, 300),
+      allowOverCapacity: input.allowOverCapacity,
     }, input.actorUserId);
     const sessionId = String((session as { id?: unknown }).id ?? "");
     if (!sessionId) throw new Error("เปิด session จากคิวไม่สำเร็จ");
@@ -1737,6 +1745,8 @@ export async function seatBoardGameWaitlistEntry(input: {
     await auditInTx(client, input.tenantId, input.actorUserId, "board_game.waitlist_seat", input.entryId, {
       tableId: input.tableId, sessionId, queuedPartySize: Number(entry.rows[0].party_size),
       actualPartySize: input.participants.length,
+      capacity: Number(table.rows[0].seats),
+      overCapacity: input.participants.length > Number(table.rows[0].seats),
     });
     await client.query("COMMIT");
     return { entry: await getBoardGameWaitlistEntry(input.tenantId, input.entryId), session };

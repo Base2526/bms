@@ -2538,6 +2538,7 @@ input BmsPosBlindReturnLineInput {
 }
 
 input BmsPosBoardGameAddParticipantInput {
+  allowOverCapacity: Boolean = false
   billingGroupNo: Int = 1
   cashierUserId: ID!
   customerId: ID
@@ -2545,8 +2546,10 @@ input BmsPosBoardGameAddParticipantInput {
   idempotencyKey: String!
   participantType: String
   pin: String!
+  purchasedDurationMinutes: Int
   rateId: ID
   sessionId: ID!
+  timeMode: String
 }
 
 type BmsPosBoardGameArea {
@@ -2593,6 +2596,26 @@ input BmsPosBoardGameBillingGroupActionInput {
   cashierUserId: ID!
   idempotencyKey: String!
   pin: String!
+}
+
+type BmsPosBoardGameBillingGroupDetachResult {
+  activeCount: Int!
+  billingGroupId: ID!
+  identityHoldIds: [ID!]!
+  loanIds: [ID!]!
+  replayed: Boolean!
+  seatingId: ID!
+  sessionId: ID!
+  sourceSessionId: ID!
+  tableId: ID!
+}
+
+type BmsPosBoardGameBillingGroupMergeResult {
+  replayed: Boolean!
+  sessionId: ID!
+  sourceBillingGroupId: ID!
+  tabAmount: Float!
+  targetBillingGroupId: ID!
 }
 
 type BmsPosBoardGameChargeLine {
@@ -2694,6 +2717,18 @@ type BmsPosBoardGameCopy {
   status: String!
 }
 
+"""แยกกลุ่มบิลหนึ่งกลุ่มไปเปิดเป็น session ใหม่บนโต๊ะว่าง"""
+input BmsPosBoardGameDetachBillingGroupInput {
+  allowOverCapacity: Boolean = false
+  billingGroupId: ID!
+  cashierUserId: ID!
+  idempotencyKey: String!
+  identityHoldIds: [ID!]
+  loanIds: [ID!]
+  pin: String!
+  targetTableId: ID!
+}
+
 type BmsPosBoardGameFloor {
   areas: [BmsPosBoardGameArea!]!
   tables: [BmsPosBoardGameTable!]!
@@ -2758,8 +2793,20 @@ type BmsPosBoardGameLoan {
   title: String
 }
 
+"""รวมสองกลุ่มที่ยัง OPEN ใน session เดียวกันให้เก็บเงินเป็นบิลเดียว"""
+input BmsPosBoardGameMergeBillingGroupsInput {
+  cashierUserId: ID!
+  idempotencyKey: String!
+  pin: String!
+  sourceBillingGroupId: ID!
+  targetBillingGroupId: ID!
+}
+
 input BmsPosBoardGameOpenInput {
   alertBeforeMinutes: Int = 15
+
+  """ยืนยันโดยพนักงานเมื่อจำนวนคนเกินที่นั่งของโต๊ะ"""
+  allowOverCapacity: Boolean = false
   billingMode: String!
   cashierUserId: ID!
   expectedDurationMinutes: Int
@@ -2787,10 +2834,12 @@ type BmsPosBoardGameParticipant {
   leftAt: String
   minimumMinutes: Int
   participantType: String
+  plannedEndAt: String
   rateCode: String
   rateName: String
   replayed: Boolean
   roundingMinutes: Int
+  timeMode: String
 }
 
 input BmsPosBoardGameParticipantInput {
@@ -2798,7 +2847,13 @@ input BmsPosBoardGameParticipantInput {
   customerId: ID
   displayName: String
   participantType: String
+  purchasedDurationMinutes: Int
   rateId: ID
+
+  """
+  ACTUAL = ตามเวลาจริง, SESSION_END = ตามเวลาชุดหลัก, DURATION = ซื้อเวลาแยกคน
+  """
+  timeMode: String
 }
 
 type BmsPosBoardGameRate {
@@ -2876,6 +2931,7 @@ input BmsPosBoardGameReturnCopyInput {
 ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91)
 """
 input BmsPosBoardGameSeatingActionInput {
+  allowOverCapacity: Boolean = false
   cashierUserId: ID!
   idempotencyKey: String!
   pin: String!
@@ -2941,6 +2997,9 @@ type BmsPosBoardGameSession {
   """บัตรที่รับไว้ของโต๊ะนี้ (9.93) — ใบที่ยัง HELD บล็อกการปิดบิลใบสุดท้าย"""
   identityHolds: [BmsPosBoardGameIdentityHold!]!
   locationId: ID!
+
+  """เวลาถัดไปที่ต้องเตือน อาจมาจากเวลาของผู้เล่นรายคน"""
+  nextAlertAt: String
   participants: [BmsPosBoardGameParticipant!]!
   seatingId: ID!
   startedAt: String!
@@ -2971,6 +3030,9 @@ type BmsPosBoardGameSessionSummary {
   expectedEndAt: String
   guestCount: Int
   id: ID
+
+  """เวลาถัดไปที่ต้องเตือน อาจมาจากเวลาของผู้เล่นรายคน"""
+  nextAlertAt: String
   replayed: Boolean
 
   """ที่นั่งจริงบนผัง (9.91) — หลาย session แชร์ค่านี้หลังรวมโต๊ะ"""
@@ -3166,6 +3228,7 @@ type BmsPosBoardGameWaitlistEntry {
 
 input BmsPosBoardGameWaitlistSeatInput {
   alertBeforeMinutes: Int = 15
+  allowOverCapacity: Boolean = false
   billingMode: String!
   cashierUserId: ID!
   entryId: ID!
@@ -7058,12 +7121,14 @@ type Mutation {
   bmsPosCreateStockCount(input: BmsPosStockCountCreateInput!): BmsMobileStockCountActionResult!
   bmsPosCreateStockTransfer(input: BmsPosStockTransferCreateInput!): BmsMobileStockTransferActionResult!
   bmsPosDeposit(input: BmsPosDepositInput!): BmsPosDepositActionResult!
+  bmsPosDetachBoardGameBillingGroup(input: BmsPosBoardGameDetachBillingGroupInput!): BmsPosBoardGameBillingGroupDetachResult!
   bmsPosEnrollMember(input: BmsPosEnrollMemberInput!): BmsPosEnrollMemberResult!
   bmsPosExpense(input: BmsPosExpenseInput!): BmsPosExpenseActionResult!
   bmsPosIssueBoardGameGuestAccess(input: BmsPosBoardGameGuestAccessInput!): BmsPosBoardGameGuestAccess!
   bmsPosKitchenTicketStatus(input: BmsPosKitchenTicketStatusInput!): BmsPosKitchenTicketActionResult!
   bmsPosKitchenTicketsStatus(input: BmsPosKitchenTicketsStatusInput!): BmsPosKitchenTicketsActionResult!
   bmsPosLeaveBoardGameParticipant(input: BmsPosBoardGameLeaveParticipantInput!): BmsPosBoardGameParticipant!
+  bmsPosMergeBoardGameBillingGroups(input: BmsPosBoardGameMergeBillingGroupsInput!): BmsPosBoardGameBillingGroupMergeResult!
   bmsPosMergeBoardGameSeating(input: BmsPosBoardGameSeatingActionInput!): BmsPosBoardGameSeatingActionResult!
   bmsPosMoveBoardGameSeating(input: BmsPosBoardGameSeatingActionInput!): BmsPosBoardGameSeatingActionResult!
   bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!

@@ -295,10 +295,11 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   reading a stored number is a different act from holding a card. Returning a card erases the name,
   the number and the last four in the same transaction; the row stays as proof it went back. The
   number itself never appears in any other response, only its last four characters.
-- `POST /api/pos/board-game` (`9.79`–`9.83`, extended through `10.2`) — one PIN-bearing adapter for
+- `POST /api/pos/board-game` (`9.79`–`9.83`, extended through `10.7`) — one PIN-bearing adapter for
   the register's **table/time** tab: `workspace` (floor, time rates, playable library), `session`,
   `checkout`, and the writing commands `open`, `participant.add`, `participant.leave`, `timing`,
-  `tab.add`, `tab.remove`, `seating.move`, `seating.merge`, `group.close`, `close`, `cancel`,
+  `tab.add`, `tab.remove`, `seating.move`, `seating.merge`, `group.merge`, `group.detach`,
+  `group.close`, `close`, `cancel`,
   `copy.checkout`, `copy.return`, `identity.hold`, `identity.release`, the guest-bell pair
   `service.access`/`service.acknowledge`/`service.complete` (`9.96`), the walk-in queue
   `waitlist.add`/`waitlist.call`/`waitlist.close`/`waitlist.seat` (`9.99`), and the reservation

@@ -160,7 +160,9 @@ test("reading the number is a permission of its own, and never at the register",
 test("a card must go back before the visit can end, through every exit a table has", () => {
   // ทางออกของโต๊ะมีสามทาง: ปิดกลุ่มสุดท้าย · ปิดทั้งโต๊ะ · ยกเลิกโต๊ะ
   // ขาดทางเดียวคือมีทางเลี่ยง — ยกเลิกโต๊ะที่ไม่ตรวจบัตรทำให้ด่านอีกสองทางไร้ความหมาย
-  const gates = [...cafe.matchAll(/bms_board_game_identity_holds[\s\S]{0,200}?status = 'HELD'/g)];
+  const gates = [...cafe.matchAll(
+    /const heldDocuments = await client\.query\([\s\S]{0,260}?bms_board_game_identity_holds[\s\S]{0,160}?status = 'HELD'/g,
+  )];
   assert.equal(gates.length, 3, "ด่านคืนบัตรต้องอยู่ครบทั้งสามทางออกของโต๊ะ");
   const thrown = [...cafe.matchAll(/heldDocuments\.rowCount\) throw new Error\("([^"]+)"/g)]
     .map((match) => match[1]);

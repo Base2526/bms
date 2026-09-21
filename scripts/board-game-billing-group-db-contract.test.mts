@@ -35,6 +35,8 @@ import {
   getBoardGameSession,
   leaveBoardGameParticipant,
   listBoardGameFloor,
+  mergeBoardGameBillingGroups,
+  detachBoardGameBillingGroupToTable,
   openBoardGameSession,
   removeBoardGameGroupItem,
 } from "../apps/web/lib/bms/boardGameCafe.ts";
@@ -52,6 +54,7 @@ let staffId = "";
 let areaId = "";
 let tableA = "";
 let tableB = "";
+let tableC = "";
 let rateId = "";
 
 let seq = 0;
@@ -154,6 +157,10 @@ test("setup: a throwaway board-game cafe with a register, an open shift and one 
   tableB = (await query<{ id: string }>(
     `INSERT INTO bms_board_game_tables (tenant_id, location_id, area_id, code, name, seats)
      VALUES ($1,$2,$3,'FAKE-T2',$4,4) RETURNING id`, [tenantId, locationId, areaId, `FAKE ${TAG} table 2`]
+  )).rows[0].id;
+  tableC = (await query<{ id: string }>(
+    `INSERT INTO bms_board_game_tables (tenant_id, location_id, area_id, code, name, seats)
+     VALUES ($1,$2,$3,'FAKE-T3',$4,2) RETURNING id`, [tenantId, locationId, areaId, `FAKE ${TAG} table 3`]
   )).rows[0].id;
   await query(
     `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
@@ -750,6 +757,157 @@ test("cancelling a table with a tab gives every reserved item back", async () =>
     tenantId, session.id, { idempotencyKey: key("cancel"), reason: "FAKE walked out" }, staffId
   );
   assert.deepEqual(await stock(), before, "ยกเลิกโต๊ะแล้วของที่จองไว้ต้องกลับมาขายได้ทั้งหมด");
+});
+
+test("capacity needs an explicit override and personal purchased time is frozen per player", async () => {
+  const participants = Array.from({ length: 5 }, (_, index) => ({
+    rateId,
+    displayName: `FAKE capacity ${index + 1}`,
+    billingGroupNo: 1,
+  }));
+  await assert.rejects(
+    () => openBoardGameSession(
+      tenantId,
+      {
+        idempotencyKey: key("capacity-refuse"), locationId, tableId: tableB,
+        posDeviceId: deviceId, posShiftId: shiftId, participants,
+      },
+      staffId,
+    ),
+    /4 ที่นั่ง.*5 คน/,
+  );
+  const startedAt = new Date(Date.now() - 10 * 60_000);
+  const session = await openBoardGameSession(
+    tenantId,
+    {
+      idempotencyKey: key("capacity-override"), locationId, tableId: tableB,
+      posDeviceId: deviceId, posShiftId: shiftId, allowOverCapacity: true,
+      startedAt,
+      participants: participants.map((participant, index) => index === 0 ? {
+        ...participant,
+        displayName: "FAKE personal 60",
+        timeMode: "DURATION" as const,
+        purchasedDurationMinutes: 60,
+        joinedAt: startedAt,
+      } : { ...participant, joinedAt: startedAt }),
+    },
+    staffId,
+  );
+  const detail = await getBoardGameSession(tenantId, session.id);
+  const personal = detail.participants.find((person) => person.displayName === "FAKE personal 60")!;
+  assert.equal(personal.timeMode, "DURATION");
+  assert.equal(
+    new Date(personal.plannedEndAt!).getTime(),
+    startedAt.getTime() + 60 * 60_000,
+  );
+  const closed = await closeBoardGameSessionForBilling(
+    tenantId,
+    session.id,
+    { idempotencyKey: key("close-personal"), endedAt: new Date() },
+    staffId,
+  );
+  assert.equal(
+    closed.lines.find((line) => line.participantId === personal.id)?.chargedUntil,
+    personal.plannedEndAt,
+    "closing early must still charge through the player's purchased boundary",
+  );
+  await payGroup(closed.groups[0].id, closed.groups[0].amountDue);
+});
+
+test("two open groups can merge into one bill before close", async () => {
+  const session = await openSplitTable(tableA, 4);
+  const groups = await groupRows(session.id);
+  await addSnack(groups[0].id, 1);
+  const cancelled = await addSnack(groups[1].id, 1);
+  await removeBoardGameGroupItem(
+    tenantId,
+    {
+      billingGroupId: groups[1].id, locationId, itemId: cancelled.itemId,
+      idempotencyKey: key("merge-cancelled-line"), reason: "FAKE keep source history",
+      deviceId, shiftId,
+    },
+    staffId,
+  );
+  await addSnack(groups[1].id, 2);
+  await mergeBoardGameBillingGroups(
+    tenantId,
+    {
+      sourceBillingGroupId: groups[1].id,
+      targetBillingGroupId: groups[0].id,
+      locationId, deviceId, shiftId, idempotencyKey: key("merge-groups"),
+    },
+    staffId,
+  );
+  const after = await groupRows(session.id);
+  assert.equal(after.find((group) => group.id === groups[1].id)?.status, "MERGED");
+  assert.equal(Number(after.find((group) => group.id === groups[0].id)?.tab_amount), 75);
+  const cancelledHistory = (await query<{ billing_group_id: string; status: string }>(
+    `SELECT billing_group_id, status FROM bms_board_game_group_items
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, cancelled.itemId],
+  )).rows[0];
+  assert.equal(cancelledHistory.status, "CANCELLED");
+  assert.equal(
+    cancelledHistory.billing_group_id,
+    groups[1].id,
+    "a cancelled source line stays with the merged source as audit history",
+  );
+  const detail = await getBoardGameSession(tenantId, session.id);
+  assert.equal(detail.billingGroups.length, 1, "merged history is not another active bill");
+  assert.ok(detail.participants.every((person) => person.billingGroupId === groups[0].id));
+  const closed = await closeBoardGameSessionForBilling(
+    tenantId, session.id, { idempotencyKey: key("close-merged") }, staffId,
+  );
+  assert.equal(closed.groups.length, 1);
+  await payGroup(closed.groups[0].id, money(closed.groups[0].amountDue + closed.groups[0].tabAmount));
+});
+
+test("one open group can detach to a free table while the other stays", async () => {
+  const startedAt = new Date(Date.now() - 10 * 60_000);
+  const session = await openBoardGameSession(
+    tenantId,
+    {
+      idempotencyKey: key("open-fixed-detach"), locationId, tableId: tableA,
+      billingMode: "FIXED_DURATION", expectedDurationMinutes: 120,
+      posDeviceId: deviceId, posShiftId: shiftId, startedAt,
+      participants: Array.from({ length: 4 }, (_, index) => ({
+        rateId,
+        displayName: `FAKE fixed detach ${index + 1}`,
+        billingGroupNo: index % 2 === 0 ? 1 : 2,
+      })),
+    },
+    staffId,
+  );
+  const groups = await groupRows(session.id);
+  const detached = await detachBoardGameBillingGroupToTable(
+    tenantId,
+    {
+      billingGroupId: groups[0].id,
+      targetTableId: tableC,
+      idempotencyKey: key("detach-group"),
+    },
+    staffId,
+  );
+  assert.notEqual(detached.sessionId, session.id);
+  const source = await getBoardGameSession(tenantId, session.id);
+  const moved = await getBoardGameSession(tenantId, detached.sessionId);
+  assert.equal(source.billingGroups.length, 1);
+  assert.equal(moved.billingGroups.length, 1);
+  assert.ok(source.participants.every((person) => person.billingGroupId === groups[1].id));
+  assert.ok(moved.participants.every((person) => person.billingGroupId === groups[0].id));
+  assert.equal(moved.tableId, tableC);
+  assert.equal(moved.billingMode, "FIXED_DURATION");
+  assert.equal(
+    moved.expectedEndAt,
+    source.expectedEndAt,
+    "detaching a group keeps the purchased table-time boundary and its alert context",
+  );
+  await cancelBoardGameSession(
+    tenantId, source.id, { idempotencyKey: key("cancel-source"), reason: "cleanup" }, staffId,
+  );
+  await cancelBoardGameSession(
+    tenantId, moved.id, { idempotencyKey: key("cancel-detached"), reason: "cleanup" }, staffId,
+  );
 });
 
 test("the session's own money columns stay untouched history", async () => {
