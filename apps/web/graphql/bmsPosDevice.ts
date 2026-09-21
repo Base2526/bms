@@ -2072,6 +2072,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     displayName: String
     participantType: String
     billingGroupNo: Int = 1
+    "ACTUAL = ตามเวลาจริง, SESSION_END = ตามเวลาชุดหลัก, DURATION = ซื้อเวลาแยกคน"
+    timeMode: String
+    purchasedDurationMinutes: Int
   }
 
   input BmsPosBoardGameOpenInput {
@@ -2084,6 +2087,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     alertBeforeMinutes: Int = 15
     participants: [BmsPosBoardGameParticipantInput!]!
     note: String
+    "ยืนยันโดยพนักงานเมื่อจำนวนคนเกินที่นั่งของโต๊ะ"
+    allowOverCapacity: Boolean = false
   }
 
   input BmsPosBoardGameWaitlistAddInput {
@@ -2124,6 +2129,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     alertBeforeMinutes: Int = 15
     participants: [BmsPosBoardGameParticipantInput!]!
     note: String
+    allowOverCapacity: Boolean = false
   }
 
   input BmsPosBoardGameReservationAddInput {
@@ -2173,6 +2179,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     displayName: String
     participantType: String
     billingGroupNo: Int = 1
+    timeMode: String
+    purchasedDurationMinutes: Int
+    allowOverCapacity: Boolean = false
   }
 
   input BmsPosBoardGameLeaveParticipantInput {
@@ -2211,6 +2220,27 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     billingGroupId: ID!
   }
 
+  """รวมสองกลุ่มที่ยัง OPEN ใน session เดียวกันให้เก็บเงินเป็นบิลเดียว"""
+  input BmsPosBoardGameMergeBillingGroupsInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    sourceBillingGroupId: ID!
+    targetBillingGroupId: ID!
+  }
+
+  """แยกกลุ่มบิลหนึ่งกลุ่มไปเปิดเป็น session ใหม่บนโต๊ะว่าง"""
+  input BmsPosBoardGameDetachBillingGroupInput {
+    cashierUserId: ID!
+    pin: String!
+    idempotencyKey: String!
+    billingGroupId: ID!
+    targetTableId: ID!
+    loanIds: [ID!]
+    identityHoldIds: [ID!]
+    allowOverCapacity: Boolean = false
+  }
+
   """
   ย้ายหรือรวมที่นั่งโดยคง session กลุ่มบิล tab และออร์เดอร์เดิมทั้งหมด (9.91)
   """
@@ -2220,6 +2250,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     idempotencyKey: String!
     sessionId: ID!
     targetTableId: ID!
+    allowOverCapacity: Boolean = false
   }
 
   """
@@ -2369,6 +2400,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     guestCount: Int
     startedAt: String
     expectedEndAt: String
+    "เวลาถัดไปที่ต้องเตือน อาจมาจากเวลาของผู้เล่นรายคน"
+    nextAlertAt: String
     endedAt: String
     alertBeforeMinutes: Int
     alertStatus: String
@@ -2513,6 +2546,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     billingGroupStatus: String
     joinedAt: String
     leftAt: String
+    timeMode: String
+    plannedEndAt: String
     replayed: Boolean
   }
 
@@ -2642,6 +2677,26 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     replayed: Boolean!
   }
 
+  type BmsPosBoardGameBillingGroupMergeResult {
+    sourceBillingGroupId: ID!
+    targetBillingGroupId: ID!
+    sessionId: ID!
+    tabAmount: Float!
+    replayed: Boolean!
+  }
+
+  type BmsPosBoardGameBillingGroupDetachResult {
+    billingGroupId: ID!
+    sourceSessionId: ID!
+    sessionId: ID!
+    tableId: ID!
+    seatingId: ID!
+    activeCount: Int!
+    loanIds: [ID!]!
+    identityHoldIds: [ID!]!
+    replayed: Boolean!
+  }
+
   type BmsPosBoardGameTabActionResult {
     itemId: ID!
     billingGroupId: ID!
@@ -2659,6 +2714,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     guestCount: Int!
     startedAt: String!
     expectedEndAt: String
+    "เวลาถัดไปที่ต้องเตือน อาจมาจากเวลาของผู้เล่นรายคน"
+    nextAlertAt: String
     endedAt: String
     alertBeforeMinutes: Int!
     alertStatus: String!
@@ -2894,6 +2951,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosCloseBoardGameBillingGroup(
       input: BmsPosBoardGameBillingGroupActionInput!
     ): BmsPosBoardGameBilling!
+    bmsPosMergeBoardGameBillingGroups(
+      input: BmsPosBoardGameMergeBillingGroupsInput!
+    ): BmsPosBoardGameBillingGroupMergeResult!
+    bmsPosDetachBoardGameBillingGroup(
+      input: BmsPosBoardGameDetachBillingGroupInput!
+    ): BmsPosBoardGameBillingGroupDetachResult!
     bmsPosMoveBoardGameSeating(
       input: BmsPosBoardGameSeatingActionInput!
     ): BmsPosBoardGameSeatingActionResult!
@@ -5054,6 +5117,34 @@ export const bmsPosDeviceResolvers = {
         access.scope,
         access.actorUserId,
         "group.close",
+        access.input,
+      );
+    },
+
+    async bmsPosMergeBoardGameBillingGroups(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "group.merge");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "group.merge",
+        access.input,
+      );
+    },
+
+    async bmsPosDetachBoardGameBillingGroup(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const access = await boardGamePosAccess(ctx, args.input, "group.detach");
+      return runBoardGamePosMutation(
+        access.scope,
+        access.actorUserId,
+        "group.detach",
         access.input,
       );
     },

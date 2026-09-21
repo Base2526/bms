@@ -180,7 +180,7 @@ test("an open shift is required exactly where the money lands in that shift", ()
   // สั่ง/เอาของออกจากบิล (`9.90`) จองและปล่อยสต็อกจริงในกะนั้น จึงต้องมีกะเปิดเหมือนกัน
   // ที่เหลือเป็นการแก้รายการของโต๊ะที่เปิดไปแล้ว การบังคับกะจะทำให้แก้ข้ามกะไม่ได้
   assert.deepEqual(requiring, [
-    "close", "group.close", "open", "tab.add", "tab.remove", "waitlist.seat",
+    "close", "group.close", "group.merge", "open", "tab.add", "tab.remove", "waitlist.seat",
   ]);
 });
 

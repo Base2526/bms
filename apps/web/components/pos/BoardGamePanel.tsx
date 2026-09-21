@@ -45,6 +45,7 @@ type SessionSummary = {
   guestCount: number;
   startedAt: string | null;
   expectedEndAt: string | null;
+  nextAlertAt: string | null;
   alertStatus: string;
   amountDue: number;
   billingGroupCount: number;
@@ -131,6 +132,7 @@ type Participant = {
   rateCode: string | null; rateName: string | null;
   hourlyRate: number; billingGroupNo: number; billingGroupId: string;
   billingGroupStatus: string; joinedAt: string | null; leftAt: string | null;
+  timeMode: 'ACTUAL' | 'SESSION_END' | 'DURATION'; plannedEndAt: string | null;
 };
 type Loan = {
   id: string; copyId: string; copyCode: string | null; title: string | null;
@@ -148,7 +150,7 @@ type IdentityHold = {
 };
 type SessionDetail = {
   id: string; status: string; billingMode: string; guestCount: number;
-  startedAt: string | null; expectedEndAt: string | null; endedAt: string | null;
+  startedAt: string | null; expectedEndAt: string | null; nextAlertAt: string | null; endedAt: string | null;
   alertBeforeMinutes: number; alertStatus: string; amountDue: number;
   tableId: string;
   originTableId: string;
@@ -169,6 +171,8 @@ type Draft = {
   displayName: string;
   rateId: string;
   billingGroupNo: number;
+  timeMode: 'ACTUAL' | 'SESSION_END' | 'DURATION';
+  purchasedDurationMinutes: number | null;
 };
 
 type FloorFilter = 'ALL' | 'AVAILABLE' | 'PLAYING' | 'ATTENTION' | 'PAYING';
@@ -297,17 +301,17 @@ function calendarDays(value: string) {
 }
 
 function detailStatusLabel(session: SessionDetail, now: number) {
-  if (session.status !== 'OPEN' || !session.expectedEndAt) return tableStateLabel(session);
-  const remaining = Math.ceil((new Date(session.expectedEndAt).getTime() - now) / 60_000);
+  if (session.status !== 'OPEN' || !session.nextAlertAt) return tableStateLabel(session);
+  const remaining = Math.ceil((new Date(session.nextAlertAt).getTime() - now) / 60_000);
   if (!Number.isFinite(remaining)) return tableStateLabel(session);
   if (remaining < 0) return `เกินเวลา · ${Math.abs(remaining)} นาที`;
   if (session.alertStatus === 'ENDING_SOON') return `ใกล้หมดเวลา · เหลือ ${remaining} นาที`;
   return `กำลังเล่น · เหลือ ${remaining} นาที`;
 }
 
-function attentionLabel(session: Pick<SessionSummary, 'expectedEndAt' | 'alertStatus'>, now: number) {
-  if (!session.expectedEndAt) return alertLabel(session.alertStatus);
-  const remainingMs = new Date(session.expectedEndAt).getTime() - now;
+function attentionLabel(session: Pick<SessionSummary, 'nextAlertAt' | 'alertStatus'>, now: number) {
+  if (!session.nextAlertAt) return alertLabel(session.alertStatus);
+  const remainingMs = new Date(session.nextAlertAt).getTime() - now;
   if (!Number.isFinite(remainingMs)) return alertLabel(session.alertStatus);
   return remainingMs <= 0
     ? `เกิน ${Math.max(1, Math.ceil(Math.abs(remainingMs) / 60_000))} นาที`
@@ -481,6 +485,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const [draftName, setDraftName] = useState('');
   const [draftRateId, setDraftRateId] = useState('');
   const [draftGroup, setDraftGroup] = useState('1');
+  const [draftTimeMode, setDraftTimeMode] = useState<'ACTUAL' | 'SESSION_END' | 'DURATION'>('ACTUAL');
+  const [draftPersonalMinutes, setDraftPersonalMinutes] = useState('60');
   const [memberQuery, setMemberQuery] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -496,6 +502,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const [tabSku, setTabSku] = useState('');
   const [tabQty, setTabQty] = useState('1');
   const [seatingTargetId, setSeatingTargetId] = useState('');
+  const [detachGroupId, setDetachGroupId] = useState('');
+  const [detachTargetId, setDetachTargetId] = useState('');
+  const [detachLoanIds, setDetachLoanIds] = useState<string[]>([]);
+  const [detachHoldIds, setDetachHoldIds] = useState<string[]>([]);
   const [idKind, setIdKind] = useState('NATIONAL_ID');
   const [idHolder, setIdHolder] = useState('');
   const [idNumber, setIdNumber] = useState('');
@@ -526,6 +536,10 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
       setReturnNote('');
       setIdLoanId('');
       setSeatingTargetId('');
+      setDetachGroupId('');
+      setDetachTargetId('');
+      setDetachLoanIds([]);
+      setDetachHoldIds([]);
       // Guest access belongs to a session. Never leave the previous table's QR visible after the
       // operator selects another table, even though the old URL remains valid for that old session.
       setGuestLink('');
@@ -729,8 +743,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
         const leftStatus = left.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
         const rightStatus = right.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
         if (leftStatus !== rightStatus) return leftStatus - rightStatus;
-        return new Date(left.openSession?.expectedEndAt ?? 0).getTime()
-          - new Date(right.openSession?.expectedEndAt ?? 0).getTime();
+        return new Date(left.openSession?.nextAlertAt ?? 0).getTime()
+          - new Date(right.openSession?.nextAlertAt ?? 0).getTime();
       }),
     [workspace],
   );
@@ -828,6 +842,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
     setOpeningTable(null);
     setSeatingQueueId('');
     setDrafts([]); setNote(''); setDraftName(''); setDraftGroup('1');
+    setDraftTimeMode('ACTUAL'); setDraftPersonalMinutes('60');
     setMemberQuery(''); setMembers([]); setSelectedMember(null);
     setBillingMode('OPEN_ENDED'); setDuration('120'); setAlertBefore('15');
   }
@@ -838,6 +853,16 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
     const name = selectedMember?.name?.trim() || draftName.trim();
     if (!name) { setError('ใส่ชื่อผู้เล่น หรือเลือกสมาชิกก่อน'); return; }
     const rate = rates.find((item) => item.id === rateId);
+    const timeMode = draftTimeMode === 'SESSION_END' && billingMode !== 'FIXED_DURATION'
+      ? 'ACTUAL'
+      : draftTimeMode;
+    const requestedMinutes = Number(draftPersonalMinutes);
+    const personalMinutes = timeMode === 'DURATION' && Number.isInteger(requestedMinutes)
+      ? requestedMinutes
+      : null;
+    if (timeMode === 'DURATION' && (!personalMinutes || personalMinutes < 1 || personalMinutes > 1440)) {
+      setError('ใส่เวลาที่ผู้เล่นซื้อ 1–1,440 นาที'); return;
+    }
     setDrafts((rows) => [...rows, {
       key: newKey(),
       customerId: selectedMember?.customerId ?? null,
@@ -845,6 +870,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
       displayName: name,
       rateId,
       billingGroupNo: Math.max(1, Number(draftGroup) || 1),
+      timeMode,
+      purchasedDurationMinutes: personalMinutes,
     }]);
     setDraftName(''); setSelectedMember(null); setMemberQuery(''); setMembers([]);
     if (rate) setDraftRateId(rate.id);
@@ -1478,7 +1505,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                       </div>
                       <div className={`pos-bg-table-clock ${open.alertStatus === 'OVERDUE' ? 'pos-bg-table-clock--danger' : ''}`.trim()}>
                         เล่นมา {elapsedLabel(open.startedAt, now)}
-                        {open.expectedEndAt ? ` · ${attentionLabel(open, now)}` : ''}
+                        {open.nextAlertAt ? ` · ${attentionLabel(open, now)}` : ''}
                       </div>
                       {/* ⚠️ ยอดขึ้นเฉพาะตอนมีบิลที่ปิดเวลาแล้วรอเก็บจริง — `amountDue` ของโต๊ะที่
                           ยังเล่นอยู่คือค่าเล่นที่ "ยังไม่ถูกแช่" ซึ่งเป็น 0 เสมอ ไม่ใช่ 0 เพราะไม่ติดเงิน */}
@@ -1486,7 +1513,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                         ? <div className="pos-bg-table-money">฿{baht(open.amountDue)}</div>
                         : null}
                       <div className="pos-bg-table-meta">
-                        <span>♟ {open.guestCount} คน</span>
+                        <span style={open.guestCount > table.seats ? { color: 'var(--pos-danger)', fontWeight: 700 } : undefined}>
+                          ♟ {open.guestCount}/{table.seats} คน{open.guestCount > table.seats ? ` · เกิน ${open.guestCount - table.seats}` : ''}
+                        </span>
                         <span>▤ {open.billingGroupCount} กลุ่มบิล</span>
                         {open.awaitingPaymentCount > 0 ? ` · รอเก็บ ${open.awaitingPaymentCount}` : ''}
                       </div>
@@ -1549,7 +1578,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
             {(['OPEN_ENDED', 'FIXED_DURATION'] as const).map((mode) => (
               <button key={mode} type="button"
                 className={`pos-ret-btn ${billingMode === mode ? 'pos-ret-btn--primary' : ''}`}
-                onClick={() => setBillingMode(mode)}>
+                onClick={() => { setBillingMode(mode); setDraftTimeMode(mode === 'FIXED_DURATION' ? 'SESSION_END' : 'ACTUAL'); }}>
                 {mode === 'OPEN_ENDED' ? 'เปิดยาว (คิดตามจริง)' : 'ซื้อเวลาไว้ล่วงหน้า'}
               </button>
             ))}
@@ -1598,6 +1627,18 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                 กลุ่มบิล
                 <input value={draftGroup} onChange={(e) => setDraftGroup(e.target.value)} inputMode="numeric" />
               </label>
+              <label className="pos-bg-field">
+                เวลาของผู้เล่น
+                <select value={draftTimeMode} onChange={(e) => setDraftTimeMode(e.target.value as typeof draftTimeMode)}>
+                  <option value="ACTUAL">คิดตามเวลาจริง</option>
+                  {billingMode === 'FIXED_DURATION' && <option value="SESSION_END">เล่นถึงเวลาของโต๊ะ</option>}
+                  <option value="DURATION">ซื้อเวลาจากตอนเข้า</option>
+                </select>
+              </label>
+              {draftTimeMode === 'DURATION' && <label className="pos-bg-field pos-bg-field--num">
+                นาทีที่ซื้อ
+                <input value={draftPersonalMinutes} onChange={(e) => setDraftPersonalMinutes(e.target.value)} inputMode="numeric" />
+              </label>}
               <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={addDraft}>เพิ่มผู้เล่น</button>
             </div>
 
@@ -1623,6 +1664,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                         {draft.displayName}
                         <span style={{ color: 'var(--pos-muted)' }}>
                           {' · '}{rate?.name ?? 'อัตราเริ่มต้น'}{' · กลุ่ม '}{draft.billingGroupNo}
+                          {' · '}{draft.timeMode === 'ACTUAL' ? 'คิดตามจริง' : draft.timeMode === 'SESSION_END' ? 'ถึงเวลาโต๊ะ' : `${draft.purchasedDurationMinutes} นาที`}
                           {draft.memberNo ? ` · สมาชิก ${draft.memberNo}` : ''}
                         </span>
                       </div>
@@ -1641,18 +1683,24 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
 
           <button type="button" className="pos-ret-btn pos-ret-btn--solid pos-bg-action" style={{ marginTop: 12 }}
             disabled={(busy === 'open' || busy === 'waitlist-seat') || drafts.length === 0}
-            onClick={() => void run(seatingQueueId ? 'waitlist-seat' : 'open', seatingQueueId ? 'waitlist.seat' : 'open', {
+            onClick={() => {
+              const overCapacity = drafts.length > openingTable.seats;
+              if (overCapacity && !window.confirm(`โต๊ะนี้มี ${openingTable.seats} ที่นั่ง แต่กำลังเปิดให้ ${drafts.length} คน ยืนยันใช้โต๊ะเกินความจุหรือไม่?`)) return;
+              void run(seatingQueueId ? 'waitlist-seat' : 'open', seatingQueueId ? 'waitlist.seat' : 'open', {
               ...(seatingQueueId ? { entryId: seatingQueueId } : {}),
               tableId: openingTable.id,
               billingMode,
               expectedDurationMinutes: billingMode === 'FIXED_DURATION' ? Number(duration) || null : null,
               alertBeforeMinutes: Number(alertBefore) || 0,
               note,
+              allowOverCapacity: overCapacity,
               participants: drafts.map((draft) => ({
                 rateId: draft.rateId || null,
                 customerId: draft.customerId,
                 displayName: draft.displayName,
                 billingGroupNo: draft.billingGroupNo,
+                timeMode: draft.timeMode,
+                purchasedDurationMinutes: draft.purchasedDurationMinutes,
               })),
             }, (data) => {
               resetOpenForm();
@@ -1663,7 +1711,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                 ? data.result.id
                 : typeof data?.result?.session?.id === 'string' ? data.result.session.id : '';
               if (openedId) selectTable(openedId);
-            })}>
+            }); }}>
             {busy === 'open' || busy === 'waitlist-seat'
               ? 'กำลังเปิด…'
               : seatingQueueId ? `พาคิวไปนั่ง (${drafts.length} คน)` : `เปิดโต๊ะ (${drafts.length} คน)`}
@@ -1739,7 +1787,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
           </div>
 
           <div className="pos-bg-session-summary" aria-label="สรุปโต๊ะ">
-            <div><b>{activeSeating?.guestCount ?? session.participants.filter((participant) => !participant.leftAt).length}</b><span>คน</span></div>
+            <div><b>{activeSeating?.guestCount ?? session.participants.filter((participant) => !participant.leftAt).length}{activeTable ? `/${activeTable.seats}` : ''}</b><span>{activeTable && (activeSeating?.guestCount ?? session.guestCount) > activeTable.seats ? 'คน · เกินความจุ' : 'คน'}</span></div>
             <div><b>{activeSeating?.billingGroupCount ?? session.billingGroups.length}</b><span>กลุ่มบิล</span></div>
             <div>
               <b>{sharedSessionsReady ? seatingLoans.filter(({ loan }) => !loan.returnedAt).length : '…'}</b>
@@ -1867,9 +1915,16 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                   const target = seatingTargets.find((table) => table.id === seatingTargetId);
                   if (!target) { setError('เลือกโต๊ะปลายทางก่อน'); return; }
                   const merging = Boolean(target.openSession);
+                  const movingGuests = sharedSeating && !merging
+                    ? session.guestCount
+                    : (activeSeating?.guestCount ?? session.guestCount);
+                  const resultingGuests = movingGuests + (merging ? Number(target.openSession?.guestCount ?? 0) : 0);
+                  const overCapacity = resultingGuests > target.seats;
+                  if (overCapacity && !window.confirm(`โต๊ะ ${target.code} มี ${target.seats} ที่นั่ง หลังทำรายการจะมี ${resultingGuests} คน ยืนยันใช้โต๊ะเกินความจุหรือไม่?`)) return;
                   void run('seating-relocate', merging ? 'seating.merge' : 'seating.move', {
                     sessionId: session.id,
                     targetTableId: target.id,
+                    allowOverCapacity: overCapacity,
                   }, () => {
                     setSeatingTargetId('');
                     setNotice(merging
@@ -1885,6 +1940,74 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
               </button>
             </div>
             </div>
+
+            {session.billingGroups.filter((group) => group.status === 'OPEN').length > 1 && (
+              <div className="pos-bg-advanced-group">
+                <div className="pos-block-title">แยกกลุ่มไปโต๊ะใหม่</div>
+                <div className="pos-block-hint">ย้ายเฉพาะผู้เล่น เวลา และ tab ของกลุ่มที่เลือกไปโต๊ะว่าง · เลือกเกมและบัตรที่ต้องตามกลุ่มไปให้ชัดเจน</div>
+                <div className="pos-bg-form">
+                  <label className="pos-bg-field">กลุ่มบิล
+                    <select value={detachGroupId} onChange={(e) => setDetachGroupId(e.target.value)}>
+                      <option value="">เลือกกลุ่ม</option>
+                      {session.billingGroups.filter((group) => group.status === 'OPEN').map((group) =>
+                        <option key={group.id} value={group.id}>กลุ่ม {group.groupNo}</option>)}
+                    </select>
+                  </label>
+                  <label className="pos-bg-field">โต๊ะว่างปลายทาง
+                    <select value={detachTargetId} onChange={(e) => setDetachTargetId(e.target.value)}>
+                      <option value="">เลือกโต๊ะ</option>
+                      {seatingTargets.filter((table) => !table.openSession).map((table) =>
+                        <option key={table.id} value={table.id}>{table.code} · {table.name} · {table.seats} ที่</option>)}
+                    </select>
+                  </label>
+                </div>
+                {session.games.some((loan) => loan.status === 'CHECKED_OUT') && <div className="pos-bg-split-list">
+                  <div className="pos-block-hint">เกมที่ย้ายตามไป</div>
+                  {session.games.filter((loan) => loan.status === 'CHECKED_OUT').map((loan) => <label key={loan.id}>
+                    <input type="checkbox" checked={detachLoanIds.includes(loan.id)} onChange={(e) => {
+                      setDetachLoanIds((ids) => e.target.checked ? [...new Set([...ids, loan.id])] : ids.filter((id) => id !== loan.id));
+                      if (!e.target.checked) {
+                        setDetachHoldIds((ids) => ids.filter((id) => session.identityHolds.find((hold) => hold.id === id)?.loanId !== loan.id));
+                      }
+                    }} />
+                    {' '}{loan.title} · {loan.copyCode}
+                  </label>)}
+                </div>}
+                {session.identityHolds.some((hold) => hold.status === 'HELD') && <div className="pos-bg-split-list">
+                  <div className="pos-block-hint">บัตรที่ย้ายตามไป</div>
+                  {session.identityHolds.filter((hold) => hold.status === 'HELD').map((hold) => <label key={hold.id}>
+                    <input type="checkbox" checked={detachHoldIds.includes(hold.id)} onChange={(e) => {
+                      setDetachHoldIds((ids) => e.target.checked ? [...new Set([...ids, hold.id])] : ids.filter((id) => id !== hold.id));
+                      if (e.target.checked && hold.loanId) {
+                        setDetachLoanIds((ids) => [...new Set([...ids, hold.loanId!])]);
+                      }
+                    }} />
+                    {' '}{hold.holderName ?? IDENTITY_KIND_LABEL[hold.documentKind] ?? hold.documentKind}
+                  </label>)}
+                </div>}
+                <button type="button" className="pos-ret-btn pos-ret-btn--open"
+                  disabled={!detachGroupId || !detachTargetId || busy === 'group-detach'}
+                  onClick={() => {
+                    const target = seatingTargets.find((table) => table.id === detachTargetId && !table.openSession);
+                    const group = session.billingGroups.find((item) => item.id === detachGroupId);
+                    if (!target || !group) { setError('เลือกกลุ่มและโต๊ะว่างปลายทางก่อน'); return; }
+                    const groupGuests = session.participants.filter((participant) => participant.billingGroupId === group.id && !participant.leftAt).length;
+                    const overCapacity = groupGuests > target.seats;
+                    if (overCapacity && !window.confirm(`โต๊ะ ${target.code} มี ${target.seats} ที่นั่ง แต่กลุ่มนี้มี ${groupGuests} คน ยืนยันหรือไม่?`)) return;
+                    if (!window.confirm(`แยกกลุ่ม ${group.groupNo} ไปโต๊ะ ${target.code} หรือไม่?`)) return;
+                    void run('group-detach', 'group.detach', {
+                      billingGroupId: group.id, targetTableId: target.id,
+                      loanIds: detachLoanIds, identityHoldIds: detachHoldIds,
+                      allowOverCapacity: overCapacity,
+                    }, (data) => {
+                      setDetachGroupId(''); setDetachTargetId(''); setDetachLoanIds([]); setDetachHoldIds([]);
+                      const newSessionId = typeof data?.result?.sessionId === 'string' ? data.result.sessionId : '';
+                      if (newSessionId) selectTable(newSessionId);
+                      setNotice(`แยกกลุ่ม ${group.groupNo} ไปโต๊ะ ${target.code} แล้ว`);
+                    });
+                  }}>ยืนยันแยกกลุ่มไปโต๊ะใหม่</button>
+              </div>
+            )}
 
             {session.status === 'OPEN' && (
               <div className="pos-bg-advanced-group">
@@ -1992,6 +2115,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                           <span className="pos-bg-player-time-line">
                             {timeLabel(participant.joinedAt)}–{participant.leftAt ? timeLabel(participant.leftAt) : 'ตอนนี้'}
                             {' · '}{durationBetweenLabel(participant.joinedAt, participant.leftAt, now)}
+                            {participant.plannedEndAt ? ` · ถึง ${timeLabel(participant.plannedEndAt)}` : ' · คิดตามจริง'}
                             {(() => {
                               const frozen = group.chargeSnapshot.find((line) => line.participantId === participant.id);
                               return frozen && frozen.billableMinutes !== frozen.actualMinutes
@@ -2040,14 +2164,35 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                   กลุ่มบิล
                   <input value={draftGroup} onChange={(e) => setDraftGroup(e.target.value)} inputMode="numeric" />
                 </label>
+                <label className="pos-bg-field">
+                  เวลา
+                  <select value={draftTimeMode} onChange={(e) => setDraftTimeMode(e.target.value as typeof draftTimeMode)}>
+                    <option value="ACTUAL">คิดตามจริง</option>
+                    {session.billingMode === 'FIXED_DURATION' && <option value="SESSION_END">ถึงเวลาของโต๊ะ</option>}
+                    <option value="DURATION">ซื้อเวลาจากตอนนี้</option>
+                  </select>
+                </label>
+                {draftTimeMode === 'DURATION' && <label className="pos-bg-field pos-bg-field--num">
+                  นาทีที่ซื้อ
+                  <input value={draftPersonalMinutes} onChange={(e) => setDraftPersonalMinutes(e.target.value)} inputMode="numeric" />
+                </label>}
                 <button type="button" className="pos-ret-btn pos-ret-btn--open" disabled={busy === 'add-participant'}
                   onClick={() => {
                     if (!draftName.trim()) { setError('ใส่ชื่อผู้เล่นก่อน'); return; }
+                    const nextGuestCount = (activeSeating?.guestCount ?? session.guestCount) + 1;
+                    const overCapacity = Boolean(activeTable && nextGuestCount > activeTable.seats);
+                    if (overCapacity && !window.confirm(`โต๊ะนี้มี ${activeTable?.seats ?? 0} ที่นั่ง การเพิ่มคนนี้จะเป็น ${nextGuestCount} คน ยืนยันหรือไม่?`)) return;
+                    const requestedMinutes = Number(draftPersonalMinutes);
+                    const personalMinutes = draftTimeMode === 'DURATION' && Number.isInteger(requestedMinutes) ? requestedMinutes : null;
+                    if (draftTimeMode === 'DURATION' && (!personalMinutes || personalMinutes < 1 || personalMinutes > 1440)) { setError('ใส่เวลาที่ซื้อ 1–1,440 นาที'); return; }
                     void run('add-participant', 'participant.add', {
                       sessionId: session.id,
                       displayName: draftName.trim(),
                       rateId: draftRateId || null,
                       billingGroupNo: Math.max(1, Number(draftGroup) || 1),
+                      timeMode: draftTimeMode,
+                      purchasedDurationMinutes: personalMinutes,
+                      allowOverCapacity: overCapacity,
                     }, () => { setDraftName(''); setNotice('เพิ่มผู้เล่นแล้ว'); });
                   }}>
                   เพิ่ม
@@ -2313,6 +2458,25 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
           {/* ปิดโต๊ะ / เก็บเงิน */}
           <div className="pos-block pos-bg-section pos-bg-section--checkout">
             <div className="pos-block-title">หยุดเวลา / เก็บเงิน</div>
+            {session.billingGroups.filter((group) => group.status === 'OPEN').length > 1 && (() => {
+              const openGroups = session.billingGroups.filter((group) => group.status === 'OPEN');
+              const target = openGroups[0];
+              return <div className="pos-bg-actions-stack" style={{ marginTop: 8 }}>
+                <div className="pos-block-hint">ลูกค้าต้องการใบเสร็จเดียว ให้รวมกลุ่มก่อนหยุดเวลา · ผู้เล่นและของบน tab จะไปอยู่บิลปลายทาง</div>
+                {openGroups.slice(1).map((source) => <button key={source.id} type="button"
+                  className="pos-ret-btn pos-bg-secondary-action pos-bg-action"
+                  disabled={busy === `group-merge-${source.id}`}
+                  onClick={() => {
+                    if (!window.confirm(`รวมกลุ่ม ${source.groupNo} เข้ากลุ่ม ${target.groupNo} เป็นบิลเดียวหรือไม่?`)) return;
+                    void run(`group-merge-${source.id}`, 'group.merge', {
+                      sourceBillingGroupId: source.id,
+                      targetBillingGroupId: target.id,
+                    }, () => setNotice(`รวมกลุ่ม ${source.groupNo} เข้ากลุ่ม ${target.groupNo} แล้ว`));
+                  }}>
+                  รวมกลุ่ม {source.groupNo} → กลุ่ม {target.groupNo}
+                </button>)}
+              </div>;
+            })()}
             {showCloseChoices && session.billingGroups.length > 1 && session.billingGroups.some((group) => group.status === 'OPEN') && (
               <div className="pos-bg-actions-stack pos-bg-close-choices" ref={closeChoicesRef}>
                 <div className="pos-block-hint">
@@ -2336,7 +2500,13 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                     </button>
                   ))}
                 <button type="button" className="pos-ret-btn pos-bg-secondary-action pos-bg-action"
-                  disabled={busy === 'close'} onClick={() => closeSessionAndContinue(session.id)}>
+                  disabled={busy === 'close'} onClick={() => {
+                    const openCount = session.billingGroups.filter((group) => group.status === 'OPEN').length;
+                    if (openCount > 1 && !window.confirm(
+                      `ปิดเวลาตอนนี้จะได้ ${openCount} บิลแยกกัน หากต้องการใบเสร็จเดียวให้ยกเลิกแล้วกดรวมกลุ่มก่อน ยืนยันปิดเป็นบิลแยกหรือไม่?`,
+                    )) return;
+                    closeSessionAndContinue(session.id);
+                  }}>
                   ปิดเวลาทุกกลุ่ม
                 </button>
               </div>
@@ -2393,6 +2563,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                 aria-expanded={showAddParticipant}
                 onClick={() => {
                   setDetailTab('overview');
+                  setDraftTimeMode(session.billingMode === 'FIXED_DURATION' ? 'SESSION_END' : 'ACTUAL');
                   setShowAddParticipant((current) => !current);
                 }}>
                 + เพิ่มผู้เล่น

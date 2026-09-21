@@ -370,6 +370,17 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_board_game_session_participants", name: "rate_name_snapshot" },
     ],
   },
+  {
+    // เปิด/อ่าน/คิดเงินผู้เล่นทุกคนแตะเวลารายคน และทุกหน้ารายละเอียดกรองกลุ่มที่รวมแล้ว
+    // โดยตรง จึงไม่มีทางเปิด feature บางส่วนเพื่อข้าม migration นี้อย่างซื่อตรงได้
+    file: "10.7__bms_board_game_flexible_groups.sql",
+    impact: "ร้านบอร์ดเกมเปิดโต๊ะ เพิ่มผู้เล่น ดูรายละเอียด หรือรวม/แยกกลุ่มบิลไม่ได้",
+    needs: [
+      { kind: "column", table: "bms_board_game_session_participants", name: "time_mode" },
+      { kind: "column", table: "bms_board_game_session_participants", name: "planned_end_at" },
+      { kind: "column", table: "bms_board_game_billing_groups", name: "merged_into_group_id" },
+    ],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

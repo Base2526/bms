@@ -428,7 +428,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 95 mobile/POS input arguments are typed", () => {
+test("all 97 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -439,8 +439,8 @@ test("all 95 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    95,
-    "the mobile/POS surface must keep all 95 input-bearing operations",
+    97,
+    "the mobile/POS surface must keep all 97 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -451,11 +451,11 @@ test("all 95 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 141 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 143 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    141,
+    143,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -1090,6 +1090,14 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   assert.match(boardGame, /navigate\('Tabs',\s*\{\s*screen: 'ShiftTab'\s*\}\)/);
   assert.match(boardGame, /MobilePosCloseBoardGameBillingGroupDocument/);
   assert.match(boardGame, /billingGroupId: group\.id/);
+  const boardGameSessionOperation = mobileGraphqlOperations.slice(
+    mobileGraphqlOperations.indexOf("query MobilePosBoardGameSession"),
+    mobileGraphqlOperations.indexOf("mutation MobilePosOpenBoardGameSession"),
+  );
+  assert.match(boardGameSessionOperation, /nextAlertAt/);
+  assert.match(boardGame, /selectedSession\.nextAlertAt/);
+  assert.match(boardGame, /loanIds: detachLoanIds/);
+  assert.match(boardGame, /identityHoldIds: detachHoldIds/);
   // `9.91`: โต๊ะที่รวมไว้มีหลายชุดนั่งร่วมกัน — จอต้องให้เลือกชุดก่อนทำรายการ ไม่งั้นทุกปุ่ม
   // ทำงานกับชุดที่ระบบเลือกให้เอง
   assert.match(boardGame, /seatingSessionIds\.map/);

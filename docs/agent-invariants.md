@@ -637,7 +637,7 @@ own dine-in service. Operator detail:
 ## Board game cafe
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
-and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, `10.0`, `10.1`, and `10.2` own timed play sessions, where a party is sitting,
+and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, and `10.0`–`10.7` own timed play sessions, where a party is sitting,
 what a bill settles, and the
 playable game library. The operating brief is
 [business/board-game-cafe.md](business/board-game-cafe.md).
@@ -678,6 +678,22 @@ playable game library. The operating brief is
   group cannot close until every copy is returned. Awaiting payment is `g.status = 'CLOSING'`, not
   `current_order_id IS NULL`—a group with tab items already has a PENDING reservation order before
   checkout.
+- **Capacity is an explicit staff override, never an accidental bypass (`10.7`).** Open, add-player,
+  seating move/merge and group detach all compare the resulting active headcount with `table.seats`.
+  Over-capacity requests require `allowOverCapacity = true` after the register shows the exact count;
+  the server includes that decision in idempotency and audit data. A client-side warning alone is not
+  a guard, and an unconditional server rejection does not match real tables that can add chairs.
+- **Purchased time may belong to a participant (`10.7`).** `ACTUAL` bills elapsed time,
+  `SESSION_END` follows the visit's adjustable fixed end, and `DURATION` snapshots an independent
+  `planned_end_at` from that participant's join time. Charge calculation and alerts read those
+  timestamps; they never persist a mutable expired flag. Changing the session end may update only
+  `SESSION_END` rows—rewriting `DURATION` would change something that person already bought.
+- **Open billing groups may merge or detach; frozen bills may not (`10.7`).** Merge moves the source
+  participants and active tab rows into a target group in the same session, rebuilds both stock
+  reservations atomically, and retains the source as `MERGED` history. Detach creates a new
+  session/seating on a free table and moves one group, its participants/order, and only explicitly
+  selected loans/holds. It requires another live group to remain in the source; the last group uses
+  normal seating move. Neither command may rewrite a `CLOSING`, `PAID`, or cancelled bill.
 - **The table belongs to a seating, the money to a session, and both statuses are derived (`9.91`).**
   A seating is the current physical occupancy: one `ACTIVE` seating owns one table (partial unique
   index), and several sessions may share it after a merge. A session is `OPEN` while any of its
@@ -765,9 +781,9 @@ playable game library. The operating brief is
   leave a migration out: once a shop *is* a board-game cafe every one of those paths reads those
   tables on every action, so an undeclared file makes the check answer "ready" for a database that
   cannot open a single table — which CLAUDE.md already calls worse than having no check.
-- **Alerts are a projection of time.** `ENDING_SOON` and `OVERDUE` are computed from `expected_end_at`,
-  `alert_before_minutes`, and current time. They are not a mutable status column and cannot replace a
-  fresh authoritative read.
+- **Alerts are a projection of time.** `ENDING_SOON` and `OVERDUE` are computed from the earliest live
+  session `expected_end_at` or participant `planned_end_at`, `alert_before_minutes`, and current time.
+  They are not a mutable status column and cannot replace a fresh authoritative read.
 - **Member identity comes from CRM.** A MEMBER participant references an existing customer/member;
   public/member-search responses expose only the bounded identity needed to select that member.
   An identity document held as collateral is a separate record (`9.93`), never a session note.

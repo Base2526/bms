@@ -22,6 +22,7 @@ import {
   checkoutBoardGameCopy,
   closeBoardGameBillingGroupForBilling,
   closeBoardGameSessionForBilling,
+  detachBoardGameBillingGroupToTable,
   getBoardGameCheckoutForPos,
   getBoardGameSession,
   leaveBoardGameParticipant,
@@ -32,6 +33,7 @@ import {
   locationOfBoardGameLoan,
   locationOfBoardGameSession,
   mergeBoardGameSeating,
+  mergeBoardGameBillingGroups,
   moveBoardGameSeating,
   openBoardGameSession,
   removeBoardGameGroupItem,
@@ -151,6 +153,8 @@ export type BoardGamePosAction =
   | "participant.leave"
   | "timing"
   | "group.close"
+  | "group.merge"
+  | "group.detach"
   | "seating.move"
   | "seating.merge"
   | "close"
@@ -232,6 +236,16 @@ export const BOARD_GAME_POS_ACTIONS: Record<BoardGamePosAction, BoardGamePosActi
     permission: "board_game.session.manage",
     extraPermissions: NO_EXTRA,
     requiresOpenShift: true,
+  },
+  "group.merge": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: true,
+  },
+  "group.detach": {
+    permission: "board_game.session.manage",
+    extraPermissions: NO_EXTRA,
+    requiresOpenShift: false,
   },
   // ย้าย/รวมโต๊ะเปลี่ยนเฉพาะตำแหน่งบนผัง ไม่แตะเงินหรือสต็อก จึงไม่บังคับกะเปิด
   // แต่ยังต้องยืนยัน PIN และสิทธิ์จัดการ session เหมือนทุกการเปลี่ยนผู้ที่นั่งอยู่จริง
@@ -408,6 +422,10 @@ function participantDraft(value: unknown) {
     displayName: text(row.displayName) || null,
     participantType: text(row.participantType) || undefined,
     billingGroupNo: Number(row.billingGroupNo ?? 1),
+    timeMode: text(row.timeMode).toUpperCase() || undefined,
+    purchasedDurationMinutes: row.purchasedDurationMinutes == null
+      ? null
+      : Number(row.purchasedDurationMinutes),
   };
 }
 
@@ -515,6 +533,7 @@ export async function runBoardGamePosMutation(
           posDeviceId: scope.deviceId,
           posShiftId: scope.shiftId,
           note: text(input.note) || null,
+          allowOverCapacity: input.allowOverCapacity === true,
         },
         actorUserId,
       ));
@@ -577,6 +596,7 @@ export async function runBoardGamePosMutation(
         alertBeforeMinutes: Number(input.alertBeforeMinutes ?? 15),
         participants: participants as never,
         note: text(input.note) || null,
+        allowOverCapacity: input.allowOverCapacity === true,
       }));
     }
     case "reservation.add": {
@@ -640,7 +660,7 @@ export async function runBoardGamePosMutation(
       const draft = participantDraft(input);
       return callService(() => addBoardGameParticipant(
         scope.tenantId,
-        { ...draft, sessionId, idempotencyKey: key } as never,
+        { ...draft, sessionId, idempotencyKey: key, allowOverCapacity: input.allowOverCapacity === true } as never,
         actorUserId,
       ));
     }
@@ -692,6 +712,38 @@ export async function runBoardGamePosMutation(
         actorUserId,
       ));
     }
+    case "group.merge": {
+      if (!scope.shiftId) return badInput("ต้องเปิดกะของเครื่องนี้ก่อน");
+      const sourceBillingGroupId = await billingGroupAtScope(scope, input.sourceBillingGroupId);
+      const targetBillingGroupId = await billingGroupAtScope(scope, input.targetBillingGroupId);
+      return callService(() => mergeBoardGameBillingGroups(
+        scope.tenantId,
+        {
+          sourceBillingGroupId,
+          targetBillingGroupId,
+          locationId: scope.locationId,
+          deviceId: scope.deviceId,
+          shiftId: scope.shiftId!,
+          idempotencyKey: key,
+        },
+        actorUserId,
+      ));
+    }
+    case "group.detach": {
+      const billingGroupId = await billingGroupAtScope(scope, input.billingGroupId);
+      return callService(() => detachBoardGameBillingGroupToTable(
+        scope.tenantId,
+        {
+          billingGroupId,
+          targetTableId: uuid(input.targetTableId, "โต๊ะปลายทางไม่ถูกต้อง"),
+          loanIds: Array.isArray(input.loanIds) ? input.loanIds.map((id) => uuid(id, "รายการยืมเกมไม่ถูกต้อง")) : [],
+          identityHoldIds: Array.isArray(input.identityHoldIds) ? input.identityHoldIds.map((id) => uuid(id, "รายการรับบัตรไม่ถูกต้อง")) : [],
+          allowOverCapacity: input.allowOverCapacity === true,
+          idempotencyKey: key,
+        },
+        actorUserId,
+      ));
+    }
     case "seating.move":
     case "seating.merge": {
       const sessionId = await sessionAtScope(scope, input.sessionId);
@@ -701,7 +753,7 @@ export async function runBoardGamePosMutation(
         scope.tenantId,
         sessionId,
         targetTableId,
-        { idempotencyKey: key },
+        { idempotencyKey: key, allowOverCapacity: input.allowOverCapacity === true },
         actorUserId,
       ));
     }

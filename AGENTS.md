@@ -199,7 +199,7 @@ wrong, and update the doc in the same change.
   to the current OPEN check, a customer submission stays PENDING, and only a device/PIN-authenticated
   `pos.sell` acceptance may add it and run the existing reservation + KDS transaction. Full detail:
   [business/pos.md § Restaurant POS](docs/business/pos.md).
-- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.4`)** — play time, sellable goods, and playable game
+- **Board game cafe (`9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.7`)** — play time, sellable goods, and playable game
   copies are three different domains. A billing group, never the table session, owns the frozen
   charge, snack tab and settling order. One group may close and pay while every other group keeps
   accruing time; the table remains occupied until no group is `OPEN` or `CLOSING`. A checked-out
@@ -224,6 +224,11 @@ wrong, and update the doc in the same change.
   `10.3` offers discount only play time and are selected server-side against pass coverage; a required
   SKU must already be a real inventory-backed tab line. `10.4` renewal is store-credit-only: funding
   belongs to the same member, and the new pass, payment and both ledgers commit together or not at all.
+  `10.7` treats capacity as a server-checked explicit override, lets each participant own an actual,
+  session-end or independent purchased-time boundary, and permits only OPEN billing groups to merge
+  or detach to a free table. Merge rebuilds both tab reservations atomically and retains a MERGED
+  history row; detach moves one group's people/order plus explicitly selected loans/holds into a new
+  session/seating and is rejected for the last group.
   A guest service bell (`9.96`, scope hardened by `9.98`) is session-scoped and operational only: it never changes time, bill,
   stock, or copy condition. Move/merge resolves the current table from seating, terminal sessions
   revoke the guest token and expire active calls, and a reported game issue still needs the existing

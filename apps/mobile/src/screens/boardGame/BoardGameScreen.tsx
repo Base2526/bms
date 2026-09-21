@@ -56,11 +56,13 @@ import {
   MobilePosCloseBoardGameWaitlistEntryDocument,
   MobilePosIssueBoardGameGuestAccessDocument,
   MobilePosLeaveBoardGameParticipantDocument,
+  MobilePosMergeBoardGameBillingGroupsDocument,
   MobilePosMergeBoardGameSeatingDocument,
   MobilePosMembersDocument,
   MobilePosOpenBoardGameSessionDocument,
   MobilePosSeatBoardGameWaitlistEntryDocument,
   MobilePosMoveBoardGameSeatingDocument,
+  MobilePosDetachBoardGameBillingGroupDocument,
   MobilePosRemoveBoardGameTabItemDocument,
   MobilePosReleaseBoardGameIdentityHoldDocument,
   MobilePosReviewBoardGameReservationDocument,
@@ -111,6 +113,8 @@ type ParticipantDraft = {
   rateId: string;
   participantType: string;
   billingGroupNo: number;
+  timeMode: 'ACTUAL' | 'SESSION_END' | 'DURATION';
+  purchasedDurationMinutes: number | null;
 };
 type Member = MobilePosMembersQuery['bmsPosMemberSearch']['members'][number];
 type ReservationPickerTarget = 'start-date' | 'start-time' | 'filter-date';
@@ -344,8 +348,8 @@ function attentionLabel(
   session: NonNullable<Table['openSession']>,
   now: number,
 ) {
-  if (!session.expectedEndAt) return alertLabel(session.alertStatus);
-  const remainingMs = new Date(session.expectedEndAt).getTime() - now;
+  if (!session.nextAlertAt) return alertLabel(session.alertStatus);
+  const remainingMs = new Date(session.nextAlertAt).getTime() - now;
   if (!Number.isFinite(remainingMs)) return alertLabel(session.alertStatus);
   return remainingMs <= 0
     ? `เกิน ${Math.max(1, Math.ceil(Math.abs(remainingMs) / 60000))} นาที`
@@ -493,8 +497,8 @@ function BoardGameFloor({
       const rightStatus = right.openSession?.alertStatus === 'OVERDUE' ? 0 : 1;
       if (leftStatus !== rightStatus) return leftStatus - rightStatus;
       return (
-        new Date(left.openSession?.expectedEndAt ?? 0).getTime() -
-        new Date(right.openSession?.expectedEndAt ?? 0).getTime()
+        new Date(left.openSession?.nextAlertAt ?? 0).getTime() -
+        new Date(right.openSession?.nextAlertAt ?? 0).getTime()
       );
     });
   const primaryTint =
@@ -2360,6 +2364,11 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const [participantName, setParticipantName] = useState('');
   const [participantRateId, setParticipantRateId] = useState('');
   const [participantGroup, setParticipantGroup] = useState('1');
+  const [participantTimeMode, setParticipantTimeMode] = useState<
+    'ACTUAL' | 'SESSION_END' | 'DURATION'
+  >('ACTUAL');
+  const [participantDurationMinutes, setParticipantDurationMinutes] =
+    useState('60');
   const [participantCount, setParticipantCount] = useState(1);
   const [memberSearch, setMemberSearch] = useState('');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -2377,6 +2386,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const [tabDrafts, setTabDrafts] = useState<
     Record<string, { sku: string; qty: string }>
   >({});
+  const [detachLoanIds, setDetachLoanIds] = useState<string[]>([]);
+  const [detachHoldIds, setDetachHoldIds] = useState<string[]>([]);
   const [working, setWorking] = useState('');
   const notified = useRef(new Set<string>());
   const operationKeys = useRef<Record<string, string>>({});
@@ -2409,6 +2420,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const [adjustTiming] = useMutation(MobilePosAdjustBoardGameTimingDocument);
   const [closeBillingGroup] = useMutation(
     MobilePosCloseBoardGameBillingGroupDocument,
+  );
+  const [mergeBillingGroups] = useMutation(
+    MobilePosMergeBoardGameBillingGroupsDocument,
+  );
+  const [detachBillingGroup] = useMutation(
+    MobilePosDetachBoardGameBillingGroupDocument,
   );
   const [closeSession] = useMutation(MobilePosCloseBoardGameSessionDocument);
   const [moveSeating] = useMutation(MobilePosMoveBoardGameSeatingDocument);
@@ -2461,6 +2478,20 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     }
   }, [activeRates, participantRateId]);
   const selectedSession = sessionQuery.data?.bmsPosBoardGameSession;
+  useEffect(() => {
+    setDetachLoanIds([]);
+    setDetachHoldIds([]);
+  }, [selectedSessionId]);
+  const selectedSessionBillingMode = selectedSession?.billingMode;
+  const selectedSessionDetailId = selectedSession?.id;
+  useEffect(() => {
+    if (!selectedSessionBillingMode) return;
+    setParticipantTimeMode(
+      selectedSessionBillingMode === 'FIXED_DURATION'
+        ? 'SESSION_END'
+        : 'ACTUAL',
+    );
+  }, [selectedSessionBillingMode, selectedSessionDetailId]);
   const selectedTable = data?.floor.tables.find(
     table => table.id === selectedSession?.tableId,
   );
@@ -2472,6 +2503,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const sharedSeating = (selectedTable?.openSession?.sessionCount ?? 1) > 1;
   const relocateTargets = (data?.floor.tables ?? []).filter(
     table => !table.blocked && table.id !== selectedSession?.tableId,
+  );
+  const openBillingGroups =
+    selectedSession?.billingGroups.filter(group => group.status === 'OPEN') ??
+    [];
+  const freeDetachTargets = relocateTargets.filter(
+    table => !table.openSession,
   );
   const availableCopies = useMemo(
     () =>
@@ -2617,8 +2654,18 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const addDraftParticipant = () => {
     const rate = activeRates.find(item => item.id === participantRateId);
     const group = Number(participantGroup);
+    const personalDuration = Number(participantDurationMinutes);
     if (!rate || !Number.isInteger(group) || group < 1 || group > 20) {
       Alert.alert('ข้อมูลผู้เล่นไม่ครบ', 'เลือกอัตราและระบุกลุ่มบิล 1-20');
+      return;
+    }
+    if (
+      participantTimeMode === 'DURATION' &&
+      (!Number.isInteger(personalDuration) ||
+        personalDuration < 1 ||
+        personalDuration > 1440)
+    ) {
+      Alert.alert('เวลาของผู้เล่นไม่ถูกต้อง', 'ระบุเวลา 1–1,440 นาที');
       return;
     }
     const count = selectedMember ? 1 : participantCount;
@@ -2632,6 +2679,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         rateId: rate.id,
         participantType: rate.customerType,
         billingGroupNo: group,
+        timeMode: participantTimeMode,
+        purchasedDurationMinutes:
+          participantTimeMode === 'DURATION' ? personalDuration : null,
       }));
       return [...previous, ...additions];
     });
@@ -2749,7 +2799,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     : null;
   const wideOpenPanel = supportsTabletLayout(windowWidth, windowHeight, 760);
 
-  const submitOpenSession = () => {
+  const performOpenSession = (allowOverCapacity: boolean) => {
     if (!openingTable || openBlockReason) return;
     const operationName = seatingQueueEntry
       ? `waitlist-seat-${seatingQueueEntry.id}`
@@ -2765,12 +2815,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
             billingMode === 'FIXED_DURATION' ? durationValue : null,
           alertBeforeMinutes: alertValue,
           note: sessionNote.trim() || null,
+          allowOverCapacity,
           participants: participants.map(item => ({
             rateId: item.rateId,
             customerId: item.customerId,
             displayName: item.displayName || null,
             participantType: item.participantType,
             billingGroupNo: item.billingGroupNo,
+            timeMode: item.timeMode,
+            purchasedDurationMinutes: item.purchasedDurationMinutes,
           })),
         },
       };
@@ -2791,6 +2844,90 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       if (!id) throw new Error('เปิดโต๊ะไม่สำเร็จ');
       navigation.replace('BoardGameDetail', { sessionId: id });
     }).catch(() => undefined);
+  };
+
+  const submitOpenSession = () => {
+    if (!openingTable || openBlockReason) return;
+    if (participants.length <= openingTable.seats) {
+      performOpenSession(false);
+      return;
+    }
+    Alert.alert(
+      'จำนวนคนเกินความจุโต๊ะ',
+      `${openingTable.code} มี ${openingTable.seats} ที่นั่ง แต่กำลังเปิดให้ ${participants.length} คน`,
+      [
+        { text: 'กลับ' },
+        {
+          text: 'ยืนยันเปิดโต๊ะ',
+          onPress: () => performOpenSession(true),
+        },
+      ],
+    );
+  };
+
+  const submitAdditionalParticipant = (allowOverCapacity = false) => {
+    if (!selectedSession) return;
+    const rate = activeRates.find(item => item.id === participantRateId);
+    if (!rate) {
+      Alert.alert('ข้อมูลผู้เล่นไม่ครบ', 'เลือกอัตราค่าบริการ');
+      return;
+    }
+    const personalDuration = Number(participantDurationMinutes);
+    if (
+      participantTimeMode === 'DURATION' &&
+      (!Number.isInteger(personalDuration) ||
+        personalDuration < 1 ||
+        personalDuration > 1440)
+    ) {
+      Alert.alert('เวลาของผู้เล่นไม่ถูกต้อง', 'ระบุเวลา 1–1,440 นาที');
+      return;
+    }
+    const operationName = `add-participant-${selectedSession.id}`;
+    const add = () =>
+      run(operationName, async () => {
+        await addParticipant({
+          variables: {
+            input: {
+              ...inputCredentials,
+              idempotencyKey: retryKey(operationName),
+              sessionId: selectedSession.id,
+              rateId: rate.id,
+              customerId: selectedMember?.customerId ?? null,
+              displayName: participantName.trim() || null,
+              participantType: rate.customerType,
+              billingGroupNo: Number(participantGroup),
+              timeMode: participantTimeMode,
+              purchasedDurationMinutes:
+                participantTimeMode === 'DURATION' ? personalDuration : null,
+              allowOverCapacity,
+            },
+          },
+        });
+        setParticipantName('');
+        setMemberSearch('');
+        setSelectedMember(null);
+      });
+    const nextGuestCount =
+      (selectedTable?.openSession?.guestCount ?? selectedSession.guestCount) + 1;
+    if (
+      !allowOverCapacity &&
+      selectedTable &&
+      nextGuestCount > selectedTable.seats
+    ) {
+      Alert.alert(
+        'จำนวนคนเกินความจุโต๊ะ',
+        `${selectedTable.code} มี ${selectedTable.seats} ที่นั่ง แต่จะมี ${nextGuestCount} คน`,
+        [
+          { text: 'กลับ' },
+          {
+            text: 'ยืนยันเพิ่มผู้เล่น',
+            onPress: () => submitAdditionalParticipant(true),
+          },
+        ],
+      );
+      return;
+    }
+    add().catch(() => undefined);
   };
 
   if (view.kind === 'floor') {
@@ -2929,7 +3066,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     variant={
                       billingMode === 'OPEN_ENDED' ? 'primary' : 'secondary'
                     }
-                    onPress={() => setBillingMode('OPEN_ENDED')}
+                    onPress={() => {
+                      setBillingMode('OPEN_ENDED');
+                      setParticipantTimeMode('ACTUAL');
+                    }}
                   />
                   <Button
                     label="ซื้อเวลาไว้ก่อน"
@@ -2937,7 +3077,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     variant={
                       billingMode === 'FIXED_DURATION' ? 'primary' : 'secondary'
                     }
-                    onPress={() => setBillingMode('FIXED_DURATION')}
+                    onPress={() => {
+                      setBillingMode('FIXED_DURATION');
+                      setParticipantTimeMode('SESSION_END');
+                    }}
                   />
                 </View>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
@@ -3297,6 +3440,56 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   </View>
                 </View>
 
+                <View style={styles.fieldBlock}>
+                  <Text
+                    style={[typography.captionStrong, { color: colors.text }]}
+                  >
+                    เวลาของผู้เล่นชุดนี้
+                  </Text>
+                  <View style={styles.wrap}>
+                    <Button
+                      label="ตามเวลาจริง"
+                      variant={
+                        participantTimeMode === 'ACTUAL'
+                          ? 'primary'
+                          : 'secondary'
+                      }
+                      onPress={() => setParticipantTimeMode('ACTUAL')}
+                    />
+                    {billingMode === 'FIXED_DURATION' ? (
+                      <Button
+                        label="ตามเวลาของโต๊ะ"
+                        variant={
+                          participantTimeMode === 'SESSION_END'
+                            ? 'primary'
+                            : 'secondary'
+                        }
+                        onPress={() => setParticipantTimeMode('SESSION_END')}
+                      />
+                    ) : null}
+                    <Button
+                      label="ซื้อเวลาแยกคน"
+                      variant={
+                        participantTimeMode === 'DURATION'
+                          ? 'primary'
+                          : 'secondary'
+                      }
+                      onPress={() => setParticipantTimeMode('DURATION')}
+                    />
+                  </View>
+                  {participantTimeMode === 'DURATION' ? (
+                    <TextInput
+                      accessibilityLabel="จำนวนนาทีของผู้เล่นชุดนี้"
+                      value={participantDurationMinutes}
+                      onChangeText={setParticipantDurationMinutes}
+                      placeholder="เช่น 60"
+                      placeholderTextColor={colors.textSoft}
+                      keyboardType="number-pad"
+                      style={inputStyle}
+                    />
+                  ) : null}
+                </View>
+
                 <Button
                   label={
                     participantCount > 1 && !selectedMember
@@ -3344,7 +3537,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                               {rate
                                 ? rateLabel(rate.name, rate.pricePerHour)
                                 : '-'}{' '}
-                              · บิล {participant.billingGroupNo}
+                              · บิล {participant.billingGroupNo} ·{' '}
+                              {participant.timeMode === 'DURATION'
+                                ? `${participant.purchasedDurationMinutes} นาที`
+                                : participant.timeMode === 'SESSION_END'
+                                ? 'ตามเวลาของโต๊ะ'
+                                : 'ตามเวลาจริง'}
                             </Text>
                           </View>
                           <Button
@@ -3642,10 +3840,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 />
               ) : null}
             </View>
-            {selectedSession.expectedEndAt ? (
+            {selectedSession.nextAlertAt ? (
               <Text style={[typography.body, { color: colors.text }]}>
-                หมดเวลา{' '}
-                {new Date(selectedSession.expectedEndAt).toLocaleTimeString(
+                รอบเวลาถัดไป{' '}
+                {new Date(selectedSession.nextAlertAt).toLocaleTimeString(
                   'th-TH',
                   { hour: '2-digit', minute: '2-digit' },
                 )}{' '}
@@ -3702,6 +3900,33 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
               {relocateTargets.map(target => {
                 const merging = Boolean(target.openSession);
                 const busyKey = `seating-${target.id}`;
+                const movingGuestCount = merging
+                  ? Number(
+                      selectedTable?.openSession?.guestCount ??
+                        selectedSession.guestCount,
+                    )
+                  : selectedSession.guestCount;
+                const targetGuestCount = merging
+                  ? Number(target.openSession?.guestCount ?? 0) +
+                    movingGuestCount
+                  : movingGuestCount;
+                const overCapacity = targetGuestCount > target.seats;
+                const relocate = (allowOverCapacity: boolean) => {
+                  const operation = merging ? mergeSeating : moveSeating;
+                  run(busyKey, async () => {
+                    await operation({
+                      variables: {
+                        input: {
+                          ...inputCredentials,
+                          idempotencyKey: retryKey(busyKey),
+                          sessionId: selectedSession.id,
+                          targetTableId: target.id,
+                          allowOverCapacity,
+                        },
+                      },
+                    });
+                  }).catch(() => undefined);
+                };
                 return (
                   <Button
                     key={target.id}
@@ -3729,21 +3954,21 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           {
                             text: 'ยืนยัน',
                             onPress: () => {
-                              run(busyKey, async () => {
-                                const relocate = merging
-                                  ? mergeSeating
-                                  : moveSeating;
-                                await relocate({
-                                  variables: {
-                                    input: {
-                                      ...inputCredentials,
-                                      idempotencyKey: retryKey(busyKey),
-                                      sessionId: selectedSession.id,
-                                      targetTableId: target.id,
+                              if (overCapacity) {
+                                Alert.alert(
+                                  'จำนวนคนเกินความจุโต๊ะ',
+                                  `${target.code} มี ${target.seats} ที่นั่ง แต่จะมี ${targetGuestCount} คน`,
+                                  [
+                                    { text: 'กลับ' },
+                                    {
+                                      text: 'ยืนยันอีกครั้ง',
+                                      onPress: () => relocate(true),
                                     },
-                                  },
-                                });
-                              });
+                                  ],
+                                );
+                                return;
+                              }
+                              relocate(false);
                             },
                           },
                         ],
@@ -3785,6 +4010,278 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     >
                       กลุ่มบิล
                     </Text>
+                    {openBillingGroups.length > 1 ? (
+                      <View style={{ gap: spacing.sm }}>
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textSoft },
+                          ]}
+                        >
+                          รวมกลุ่มก่อนปิดเพื่อชำระครั้งเดียว หรือแยกกลุ่มไปโต๊ะว่าง
+                        </Text>
+                        {openBillingGroups.slice(1).map(sourceGroup => {
+                          const targetGroup = openBillingGroups[0];
+                          const mergeKey = `merge-group-${sourceGroup.id}-${targetGroup.id}`;
+                          return (
+                            <Button
+                              key={mergeKey}
+                              label={`รวมกลุ่ม ${sourceGroup.groupNo} เข้ากลุ่ม ${targetGroup.groupNo}`}
+                              variant="secondary"
+                              loading={working === mergeKey}
+                              onPress={() =>
+                                Alert.alert(
+                                  'รวมเป็นบิลเดียว',
+                                  `ผู้เล่นและของบนบิลกลุ่ม ${sourceGroup.groupNo} จะย้ายเข้ากลุ่ม ${targetGroup.groupNo}`,
+                                  [
+                                    { text: 'กลับ' },
+                                    {
+                                      text: 'ยืนยันรวมบิล',
+                                      onPress: () =>
+                                        run(mergeKey, async () => {
+                                          await mergeBillingGroups({
+                                            variables: {
+                                              input: {
+                                                ...inputCredentials,
+                                                idempotencyKey:
+                                                  retryKey(mergeKey),
+                                                sourceBillingGroupId:
+                                                  sourceGroup.id,
+                                                targetBillingGroupId:
+                                                  targetGroup.id,
+                                              },
+                                            },
+                                          });
+                                        }),
+                                    },
+                                  ],
+                                )
+                              }
+                            />
+                          );
+                        })}
+                        {selectedSession.games.some(
+                          loan => loan.status === 'CHECKED_OUT',
+                        ) ||
+                        selectedSession.identityHolds.some(
+                          hold => hold.status === 'HELD',
+                        ) ? (
+                          <View style={{ gap: spacing.xs }}>
+                            <Text
+                              style={[
+                                typography.captionStrong,
+                                { color: colors.text },
+                              ]}
+                            >
+                              เกมและบัตรที่จะย้ายตามกลุ่ม
+                            </Text>
+                            <Text
+                              style={[
+                                typography.caption,
+                                { color: colors.textSoft },
+                              ]}
+                            >
+                              ไม่เลือก = ทรัพย์สินยังอยู่โต๊ะเดิม · บัตรที่ผูกกับเกมจะเลือกเกมให้อัตโนมัติ
+                            </Text>
+                            <View style={styles.wrap}>
+                              {selectedSession.games
+                                .filter(loan => loan.status === 'CHECKED_OUT')
+                                .map(loan => {
+                                  const selected = detachLoanIds.includes(
+                                    loan.id,
+                                  );
+                                  return (
+                                    <Pressable
+                                      key={`detach-loan-${loan.id}`}
+                                      accessibilityRole="checkbox"
+                                      accessibilityState={{ checked: selected }}
+                                      onPress={() => {
+                                        setDetachLoanIds(ids =>
+                                          selected
+                                            ? ids.filter(id => id !== loan.id)
+                                            : [...new Set([...ids, loan.id])],
+                                        );
+                                        if (selected) {
+                                          setDetachHoldIds(ids =>
+                                            ids.filter(
+                                              id =>
+                                                selectedSession.identityHolds.find(
+                                                  hold => hold.id === id,
+                                                )?.loanId !== loan.id,
+                                            ),
+                                          );
+                                        }
+                                      }}
+                                      style={[
+                                        styles.detachAssetChip,
+                                        {
+                                          backgroundColor: selected
+                                            ? colors.primary
+                                            : colors.surface2,
+                                          borderColor: selected
+                                            ? colors.primary
+                                            : colors.border,
+                                        },
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          typography.captionStrong,
+                                          {
+                                            color: selected
+                                              ? colors.primaryText
+                                              : colors.text,
+                                          },
+                                        ]}
+                                      >
+                                        เกม · {loan.title ?? loan.copyCode ?? 'ไม่ระบุชื่อ'}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              {selectedSession.identityHolds
+                                .filter(hold => hold.status === 'HELD')
+                                .map(hold => {
+                                  const selected = detachHoldIds.includes(
+                                    hold.id,
+                                  );
+                                  return (
+                                    <Pressable
+                                      key={`detach-hold-${hold.id}`}
+                                      accessibilityRole="checkbox"
+                                      accessibilityState={{ checked: selected }}
+                                      onPress={() => {
+                                        setDetachHoldIds(ids =>
+                                          selected
+                                            ? ids.filter(id => id !== hold.id)
+                                            : [...new Set([...ids, hold.id])],
+                                        );
+                                        if (!selected && hold.loanId) {
+                                          setDetachLoanIds(ids => [
+                                            ...new Set([...ids, hold.loanId!]),
+                                          ]);
+                                        }
+                                      }}
+                                      style={[
+                                        styles.detachAssetChip,
+                                        {
+                                          backgroundColor: selected
+                                            ? colors.primary
+                                            : colors.surface2,
+                                          borderColor: selected
+                                            ? colors.primary
+                                            : colors.border,
+                                        },
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          typography.captionStrong,
+                                          {
+                                            color: selected
+                                              ? colors.primaryText
+                                              : colors.text,
+                                          },
+                                        ]}
+                                      >
+                                        บัตร · {hold.holderName ?? hold.documentKind}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                            </View>
+                          </View>
+                        ) : null}
+                        {freeDetachTargets.length > 0 ? (
+                          <ScrollView
+                            horizontal
+                            style={{ flexGrow: 0 }}
+                            contentContainerStyle={styles.horizontalList}
+                          >
+                            {openBillingGroups.flatMap(group =>
+                              freeDetachTargets.map(target => {
+                                const detachKey = `detach-group-${group.id}-${target.id}`;
+                                const groupGuests = selectedSession.participants.filter(
+                                  participant =>
+                                    participant.billingGroupId === group.id &&
+                                    !participant.leftAt,
+                                ).length;
+                                const executeDetach = (
+                                  allowOverCapacity: boolean,
+                                ) =>
+                                  run(detachKey, async () => {
+                                    const response = await detachBillingGroup({
+                                      variables: {
+                                        input: {
+                                          ...inputCredentials,
+                                          idempotencyKey:
+                                            retryKey(detachKey),
+                                          billingGroupId: group.id,
+                                          targetTableId: target.id,
+                                          loanIds: detachLoanIds,
+                                          identityHoldIds: detachHoldIds,
+                                          allowOverCapacity,
+                                        },
+                                      },
+                                    });
+                                    const nextSessionId =
+                                      response.data
+                                        ?.bmsPosDetachBoardGameBillingGroup
+                                        .sessionId;
+                                    if (!nextSessionId)
+                                      throw new Error('แยกกลุ่มไม่สำเร็จ');
+                                    setDetachLoanIds([]);
+                                    setDetachHoldIds([]);
+                                    navigation.replace('BoardGameDetail', {
+                                      sessionId: nextSessionId,
+                                    });
+                                  });
+                                return (
+                                  <Button
+                                    key={detachKey}
+                                    label={`กลุ่ม ${group.groupNo} → ${target.code}`}
+                                    variant="secondary"
+                                    loading={working === detachKey}
+                                    onPress={() => {
+                                      const overCapacity =
+                                        groupGuests > target.seats;
+                                      Alert.alert(
+                                        `แยกกลุ่ม ${group.groupNo} ไป ${target.code}`,
+                                        `ย้ายผู้เล่น ${groupGuests} คน ของบนบิล เกม ${detachLoanIds.length} รายการ และบัตร ${detachHoldIds.length} รายการไปโต๊ะใหม่`,
+                                        [
+                                          { text: 'กลับ' },
+                                          {
+                                            text: 'ยืนยัน',
+                                            onPress: () => {
+                                              if (overCapacity) {
+                                                Alert.alert(
+                                                  'จำนวนคนเกินความจุโต๊ะ',
+                                                  `${target.code} มี ${target.seats} ที่นั่ง แต่กลุ่มนี้มี ${groupGuests} คน`,
+                                                  [
+                                                    { text: 'กลับ' },
+                                                    {
+                                                      text: 'ยืนยันอีกครั้ง',
+                                                      onPress: () =>
+                                                        executeDetach(true),
+                                                    },
+                                                  ],
+                                                );
+                                                return;
+                                              }
+                                              executeDetach(false);
+                                            },
+                                          },
+                                        ],
+                                      );
+                                    }}
+                                  />
+                                );
+                              }),
+                            )}
+                          </ScrollView>
+                        ) : null}
+                      </View>
+                    ) : null}
                     {selectedSession.billingGroups.map(group => (
                       <View key={group.id} style={styles.between}>
                         <Text
@@ -4023,6 +4520,17 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       {participant.participantType ?? '-'} · ฿
                       {(participant.hourlyRate ?? 0).toFixed(2)}/ชม. · บิล{' '}
                       {participant.billingGroupNo ?? 1}
+                      {participant.timeMode === 'DURATION' &&
+                      participant.plannedEndAt
+                        ? ` · ถึง ${new Date(
+                            participant.plannedEndAt,
+                          ).toLocaleTimeString('th-TH', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}`
+                        : participant.timeMode === 'SESSION_END'
+                        ? ' · ตามเวลาของโต๊ะ'
+                        : ' · ตามเวลาจริง'}
                       {participant.leftAt ? ' · ออกแล้ว' : ''}
                     </Text>
                     {!participant.leftAt &&
@@ -4102,6 +4610,52 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       : ''}
                   </Text>
                 ) : null}
+                <Text
+                  style={[typography.captionStrong, { color: colors.text }]}
+                >
+                  เวลาของผู้เล่นใหม่
+                </Text>
+                <View style={styles.wrap}>
+                  <Button
+                    label="ตามเวลาจริง"
+                    variant={
+                      participantTimeMode === 'ACTUAL'
+                        ? 'primary'
+                        : 'secondary'
+                    }
+                    onPress={() => setParticipantTimeMode('ACTUAL')}
+                  />
+                  {selectedSession.billingMode === 'FIXED_DURATION' ? (
+                    <Button
+                      label="ตามเวลาของโต๊ะ"
+                      variant={
+                        participantTimeMode === 'SESSION_END'
+                          ? 'primary'
+                          : 'secondary'
+                      }
+                      onPress={() => setParticipantTimeMode('SESSION_END')}
+                    />
+                  ) : null}
+                  <Button
+                    label="ซื้อเวลาแยกคน"
+                    variant={
+                      participantTimeMode === 'DURATION'
+                        ? 'primary'
+                        : 'secondary'
+                    }
+                    onPress={() => setParticipantTimeMode('DURATION')}
+                  />
+                </View>
+                {participantTimeMode === 'DURATION' ? (
+                  <TextInput
+                    value={participantDurationMinutes}
+                    onChangeText={setParticipantDurationMinutes}
+                    placeholder="จำนวนนาที เช่น 60"
+                    placeholderTextColor={colors.textSoft}
+                    keyboardType="number-pad"
+                    style={inputStyle}
+                  />
+                ) : null}
                 <View style={styles.row}>
                   <TextInput
                     value={participantName}
@@ -4124,33 +4678,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     loading={
                       working === `add-participant-${selectedSession.id}`
                     }
-                    onPress={() =>
-                      run(`add-participant-${selectedSession.id}`, async () => {
-                        const rate = activeRates.find(
-                          item => item.id === participantRateId,
-                        );
-                        if (!rate) throw new Error('เลือกอัตราค่าบริการ');
-                        await addParticipant({
-                          variables: {
-                            input: {
-                              ...inputCredentials,
-                              idempotencyKey: retryKey(
-                                `add-participant-${selectedSession.id}`,
-                              ),
-                              sessionId: selectedSession.id,
-                              rateId: rate.id,
-                              customerId: selectedMember?.customerId ?? null,
-                              displayName: participantName.trim() || null,
-                              participantType: rate.customerType,
-                              billingGroupNo: Number(participantGroup),
-                            },
-                          },
-                        });
-                        setParticipantName('');
-                        setMemberSearch('');
-                        setSelectedMember(null);
-                      })
-                    }
+                    onPress={() => submitAdditionalParticipant()}
                   />
                 </View>
 
@@ -4430,7 +4958,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   ) : null}
                   <Button
                     label={
-                      selectedSession.billingGroups.length > 1
+                      openBillingGroups.length > 1
                         ? 'ปิดเวลาทุกกลุ่ม'
                         : 'ปิดเวลา/คิดเงิน'
                     }
@@ -4438,11 +4966,16 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     onPress={() =>
                       Alert.alert(
                         'ปิดเวลาและคิดเงิน',
-                        'ระบบจะ freeze ค่าเวลาตามผู้เล่นและอัตราปัจจุบัน หลังจากนี้แก้รายการไม่ได้',
+                        openBillingGroups.length > 1
+                          ? `ระบบจะแช่ยอดเป็น ${openBillingGroups.length} บิลแยกกัน หากต้องการใบเสร็จเดียวให้กลับไปรวมกลุ่มก่อน`
+                          : 'ระบบจะ freeze ค่าเวลาตามผู้เล่นและอัตราปัจจุบัน หลังจากนี้แก้รายการไม่ได้',
                         [
                           { text: 'กลับ' },
                           {
-                            text: 'ยืนยัน',
+                            text:
+                              openBillingGroups.length > 1
+                                ? `ปิดแยก ${openBillingGroups.length} บิล`
+                                : 'ยืนยัน',
                             onPress: () => {
                               run(
                                 `close-session-${selectedSession.id}`,
@@ -4593,6 +5126,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  detachAssetChip: {
+    minHeight: 40,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
   flex: { flex: 1, minWidth: 0 },
   reservationCard: { gap: 12 },
   reservationEditBadge: {

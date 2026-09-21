@@ -98,7 +98,7 @@ test("board-game session detail fulfills its non-null alert contract", () => {
   assert.match(graphql, /type BmsPosBoardGameSession[\s\S]{0,260}alertBeforeMinutes: Int!/);
   assert.match(
     service,
-    /function mapSessionRow[\s\S]{0,500}alertBeforeMinutes:\s*Number\(row\.alert_before_minutes \?\? 15\)/,
+    /function mapSessionRow[\s\S]{0,900}alertBeforeMinutes:\s*Number\(row\.alert_before_minutes \?\? 15\)/,
     "the detail query must not null the whole session after a successful open",
   );
 });
@@ -582,4 +582,74 @@ test("the seating status formula lives once, next to the session's", () => {
     derived.filter((assignment) => assignment.startsWith("status")),
     ["status = 'MERGED'"],
   );
+});
+
+test("`10.7` persists participant time and merged-group history", () => {
+  const sql = read("db/migrations/10.7__bms_board_game_flexible_groups.sql");
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS time_mode TEXT NOT NULL DEFAULT 'ACTUAL'/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS planned_end_at TIMESTAMPTZ/);
+  assert.match(sql, /time_mode IN \('ACTUAL', 'SESSION_END', 'DURATION'\)/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS merged_into_group_id UUID/);
+  assert.match(sql, /status IN \('OPEN', 'CLOSING', 'PAID', 'CANCELLED', 'MERGED'\)/);
+  assert.match(sql, /FOREIGN KEY \(tenant_id, merged_into_group_id\)/);
+});
+
+test("capacity overrides and personal time are server rules, not UI-only hints", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const waitlist = read("apps/web/lib/bms/boardGameWaitlist.ts");
+  const open = functionBody(service, /export async function openBoardGameSession\(/);
+  const add = functionBody(service, /export async function addBoardGameParticipant\(/);
+  const relocate = functionBody(service, /async function relocateBoardGameSeating\(/);
+
+  for (const body of [open, add, relocate]) {
+    assert.match(body, /allowOverCapacity/);
+    assert.match(body, /seats/);
+  }
+  assert.match(waitlist, /input\.allowOverCapacity !== true/);
+  assert.match(add, /ps\.seating_id = \$2/);
+  assert.ok(
+    add.indexOf("FOR UPDATE") < add.indexOf("SELECT count(*)::int AS active_guests"),
+    "capacity must be counted after the shared seating/table lock is acquired",
+  );
+  assert.match(service, /timeMode === "DURATION"[\s\S]{0,260}purchasedDurationMinutes/);
+  assert.match(service, /WHEN p\.planned_end_at > COALESCE\(p\.left_at, \$3::timestamptz\)/);
+  assert.match(service, /AND time_mode = 'SESSION_END'/);
+  assert.match(service, /next_participant_end_at/);
+});
+
+test("open billing groups can merge or detach without rewriting frozen bills", () => {
+  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const merge = functionBody(service, /export async function mergeBoardGameBillingGroups\(/);
+  const detach = functionBody(service, /export async function detachBoardGameBillingGroupToTable\(/);
+
+  assert.match(merge, /source\.status !== "OPEN" \|\| target\.status !== "OPEN"/);
+  assert.ok(
+    merge.indexOf("FROM bms_board_game_sessions") < merge.indexOf("ORDER BY id FOR UPDATE"),
+    "group merge must lock session before groups",
+  );
+  assert.ok(
+    merge.indexOf("ORDER BY id FOR UPDATE") < merge.indexOf("FROM bms_pos_shifts"),
+    "group merge must keep the tab reservation lock order: groups before shift",
+  );
+  assert.match(merge, /UPDATE bms_board_game_group_items[\s\S]*billing_group_id = \$3[\s\S]*status = 'ACTIVE'/);
+  assert.match(merge, /UPDATE bms_board_game_session_participants[\s\S]*billing_group_id = \$3/);
+  assert.match(merge, /status = 'MERGED', merged_into_group_id = \$3/);
+  assert.ok(
+    [...merge.matchAll(/rebuildGroupReservationInTx\(/g)].length >= 2,
+    "both source and destination reservations must be rebuilt",
+  );
+
+  assert.match(detach, /id <> \$3 AND status IN \('OPEN','CLOSING'\)/);
+  assert.ok(
+    detach.indexOf("FROM bms_board_game_sessions") < detach.indexOf("session_id = $3 AND status = 'OPEN'"),
+    "group detach must lock session before its group",
+  );
+  assert.match(detach, /INSERT INTO bms_board_game_seatings/);
+  assert.match(detach, /INSERT INTO bms_board_game_sessions/);
+  assert.match(detach, /UPDATE bms_board_game_billing_groups SET session_id = \$3/);
+  assert.match(detach, /UPDATE bms_orders SET board_game_session_id = \$3/);
+  assert.match(detach, /if \(!movedOrder\.rowCount\)/);
+  assert.match(detach, /บัตรที่ผูกกับเกมต้องย้ายพร้อมเกมกล่องนั้น/);
+  assert.match(detach, /loanIds/);
+  assert.match(detach, /identityHoldIds/);
 });
