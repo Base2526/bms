@@ -8,6 +8,7 @@ const { app, BrowserWindow } = electronMain;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = path.join(__dirname, "../dist-smoke");
 const screenshotPath = path.join(outputDir, "setup.png");
+const startupScreenshotPath = path.join(outputDir, "startup-error.png");
 
 async function run() {
   const window = new BrowserWindow({
@@ -58,7 +59,57 @@ async function run() {
     );
     const image = await window.webContents.capturePage();
     await writeFile(screenshotPath, image.toPNG());
-    console.log(JSON.stringify({ ok: true, screenshotPath, state }));
+
+    console.log("smoke: loading startup renderer");
+    await window.loadFile(path.join(__dirname, "../renderer/startup.html"));
+    const loadingState = await window.webContents.executeJavaScript(`({
+      heading: document.querySelector('#loading-state h1')?.textContent,
+      loadingHidden: document.querySelector('#loading-state')?.hidden,
+      errorHidden: document.querySelector('#error-state')?.hidden
+    })`);
+    if (
+      loadingState.heading !== "กำลังเชื่อมต่อเครื่องขาย"
+      || loadingState.loadingHidden !== false
+      || loadingState.errorHidden !== true
+    ) {
+      throw new Error(`Invalid startup loading layout: ${JSON.stringify(loadingState)}`);
+    }
+
+    console.log("smoke: loading startup recovery renderer");
+    await window.loadFile(path.join(__dirname, "../renderer/startup.html"), {
+      query: {
+        state: "error",
+        message: "ทดสอบการเชื่อมต่อไม่สำเร็จ",
+      },
+    });
+    const startupState = await window.webContents.executeJavaScript(`({
+      title: document.title,
+      loadingHidden: document.querySelector('#loading-state')?.hidden,
+      errorHidden: document.querySelector('#error-state')?.hidden,
+      message: document.querySelector('#error-message')?.textContent,
+      retry: document.querySelector('#retry-button')?.textContent,
+      changeServer: document.querySelector('#change-server-button')?.textContent,
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
+    })`);
+    if (
+      startupState.title !== "กำลังเปิด BMS POS"
+      || startupState.loadingHidden !== true
+      || startupState.errorHidden !== false
+      || startupState.message !== "ทดสอบการเชื่อมต่อไม่สำเร็จ"
+      || startupState.retry !== "ลองใหม่"
+      || startupState.changeServer !== "เปลี่ยนเซิร์ฟเวอร์"
+      || startupState.overflowX
+      || startupState.overflowY
+    ) {
+      throw new Error(`Invalid startup recovery layout: ${JSON.stringify(startupState)}`);
+    }
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const startupImage = await window.webContents.capturePage();
+    await writeFile(startupScreenshotPath, startupImage.toPNG());
+    console.log(JSON.stringify({ ok: true, screenshotPath, startupScreenshotPath, state, loadingState, startupState }));
   } finally {
     window.destroy();
   }

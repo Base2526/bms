@@ -9,7 +9,11 @@ import {
   selectCustomerDisplay,
 } from "./display-policy.mjs";
 import { parsePairingInput } from "./pairing.mjs";
-import { MOBILE_POS_PATH, posEntryPathForStatus } from "./renderer-route.mjs";
+import {
+  MOBILE_POS_PATH,
+  POS_NAVIGATION_TIMEOUT_MS,
+  resolvePosEntryPath,
+} from "./renderer-route.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
 import {
   desktopMenuTemplate,
@@ -23,6 +27,7 @@ installGlobalZoomPolicy(app);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
+const STARTUP_FILE = path.join(__dirname, "../renderer/startup.html");
 const PRELOAD_FILE = path.join(__dirname, "preload.cjs");
 const CONFIG_VERSION = 1;
 
@@ -34,6 +39,7 @@ let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
 let displayReconcileTimer = null;
 let refreshRequestSequence = 0;
 let pendingRefreshRequest = null;
+let startupNavigation = null;
 
 function configPath() {
   return path.join(app.getPath("userData"), "pairing.json");
@@ -124,6 +130,14 @@ async function writeCustomerDisplayConfig(config) {
 function isSetupFrame(event) {
   try {
     return fileURLToPath(event.senderFrame.url) === SETUP_FILE;
+  } catch {
+    return false;
+  }
+}
+
+function isStartupFrame(event) {
+  try {
+    return fileURLToPath(event.senderFrame.url) === STARTUP_FILE;
   } catch {
     return false;
   }
@@ -356,11 +370,18 @@ function createMainWindow() {
   });
 
   setupWindowSecurity(window.webContents.session);
-  window.once("ready-to-show", () => window.show());
   window.on("move", scheduleCustomerDisplayReconcile);
   window.on("closed", () => {
-    if (mainWindow === window) mainWindow = null;
+    if (mainWindow === window) {
+      mainWindow = null;
+      startupNavigation = null;
+    }
     closeCustomerDisplayWindow();
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`Desktop POS renderer exited: ${details.reason}`);
+    if (!activePairing || window.isDestroyed()) return;
+    void showStartup("error", "หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่").catch(() => {});
   });
 
   window.webContents.on("will-navigate", (event, destination) => {
@@ -443,28 +464,85 @@ function refreshMainWindowData() {
 }
 
 async function showSetup() {
-  if (mainWindow) await mainWindow.loadFile(SETUP_FILE);
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await mainWindow.loadFile(SETUP_FILE);
+  mainWindow.show();
 }
 
-async function showPos() {
-  if (!mainWindow || !activePairing) return;
-  let entryPath = MOBILE_POS_PATH;
+async function showStartup(state = "loading", message = "", targetWindow = mainWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  await targetWindow.loadFile(STARTUP_FILE, {
+    query: {
+      state,
+      message,
+    },
+  });
+  targetWindow.show();
+}
+
+async function loadPosUrl(url, targetWindow = mainWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  let timer;
   try {
-    const response = await net.fetch(new URL(MOBILE_POS_PATH, activePairing.serverUrl), {
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        if (!targetWindow.isDestroyed()) targetWindow.webContents.stop();
+        reject(new Error("POS navigation timed out"));
+      }, POS_NAVIGATION_TIMEOUT_MS);
+    });
+    await Promise.race([targetWindow.loadURL(url), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function showPos(targetWindow = mainWindow) {
+  if (!targetWindow || targetWindow.isDestroyed() || !activePairing) return;
+  const pairing = activePairing;
+  const entryPath = await resolvePosEntryPath(async (signal) => {
+    const response = await net.fetch(new URL(MOBILE_POS_PATH, pairing.serverUrl), {
       method: "GET",
       cache: "no-store",
       redirect: "manual",
+      signal,
       headers: {
-        authorization: `Bearer ${activePairing.token}`,
-        "x-pos-device-token": activePairing.token,
+        authorization: `Bearer ${pairing.token}`,
+        "x-pos-device-token": pairing.token,
       },
     });
-    entryPath = posEntryPathForStatus(response.status);
-  } catch {
-    // Preserve the new route for transient network failures. Chromium will show the real connection
-    // error and a retry can recover; fallback is only for a confirmed old-server 404.
-  }
-  await mainWindow.loadURL(new URL(entryPath, activePairing.serverUrl).toString());
+    return response.status;
+  });
+  await loadPosUrl(new URL(entryPath, pairing.serverUrl).toString(), targetWindow);
+}
+
+function startPosNavigation() {
+  if (!activePairing || !mainWindow || mainWindow.isDestroyed()) return Promise.resolve();
+  if (startupNavigation) return startupNavigation;
+  const targetWindow = mainWindow;
+  const operation = (async () => {
+    try {
+      await showStartup("loading", "", targetWindow);
+      await showPos(targetWindow);
+      if (targetWindow.isDestroyed()) return;
+      reconcileCustomerDisplay();
+    } catch (error) {
+      console.error("Unable to open desktop POS", error);
+      try {
+        await showStartup(
+          "error",
+          "เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่",
+          targetWindow,
+        );
+      } catch (recoveryError) {
+        console.error("Unable to show desktop POS recovery", recoveryError);
+      }
+    }
+  })();
+  const wrappedOperation = operation.finally(() => {
+    if (startupNavigation === wrappedOperation) startupNavigation = null;
+  });
+  startupNavigation = wrappedOperation;
+  return wrappedOperation;
 }
 
 async function verifyPairing(pairing) {
@@ -503,8 +581,7 @@ function registerIpc() {
     try {
       await writePairing(parsed);
       activePairing = { serverUrl: parsed.serverUrl, token: parsed.token };
-      await showPos();
-      reconcileCustomerDisplay();
+      void startPosNavigation();
       return { ok: true };
     } catch {
       return { ok: false, error: "บันทึกการจับคู่แบบเข้ารหัสไม่สำเร็จ" };
@@ -514,6 +591,19 @@ function registerIpc() {
   ipcMain.handle("bms-pos:get-device-token", async (event) => {
     if (!isPairedPosFrame(event)) return null;
     return activePairing?.token ?? null;
+  });
+
+  ipcMain.handle("bms-pos:retry-startup", async (event) => {
+    if (!isStartupFrame(event) || !activePairing) return { ok: false };
+    void startPosNavigation();
+    return { ok: true };
+  });
+
+  ipcMain.handle("bms-pos:change-server", async (event) => {
+    if (!isStartupFrame(event)) return { ok: false };
+    await removePairing();
+    await showSetup();
+    return { ok: true };
   });
 
   ipcMain.handle("bms-pos:get-storage-namespace", async (event) => {
@@ -605,8 +695,7 @@ if (!singleInstance) {
     customerDisplayConfig = await readCustomerDisplayConfig();
     activePairing = await readPairing();
     if (activePairing) {
-      await showPos();
-      reconcileCustomerDisplay();
+      void startPosNavigation();
     }
     else await showSetup();
     screen.on("display-added", scheduleCustomerDisplayReconcile);
@@ -617,7 +706,7 @@ if (!singleInstance) {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
-      void (activePairing ? showPos().then(reconcileCustomerDisplay) : showSetup());
+      void (activePairing ? startPosNavigation() : showSetup());
     }
   });
 

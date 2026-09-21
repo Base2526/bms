@@ -4,6 +4,7 @@ import {
   LEGACY_POS_PATH,
   MOBILE_POS_PATH,
   posEntryPathForStatus,
+  resolvePosEntryPath,
 } from "../src/renderer-route.mjs";
 
 test("opens the mobile-flow renderer when the paired server has it", () => {
@@ -14,4 +15,24 @@ test("opens the mobile-flow renderer when the paired server has it", () => {
 
 test("falls back to the existing POS when a pre-rollout server returns 404", () => {
   assert.equal(posEntryPathForStatus(404), LEGACY_POS_PATH);
+});
+
+test("compatibility probe resolves the entry path", async () => {
+  assert.equal(await resolvePosEntryPath(async () => 200, 50), MOBILE_POS_PATH);
+  assert.equal(await resolvePosEntryPath(async () => 404, 50), LEGACY_POS_PATH);
+});
+
+test("a failed compatibility probe keeps the current renderer", async () => {
+  assert.equal(await resolvePosEntryPath(async () => {
+    throw new Error("network unavailable");
+  }, 50), MOBILE_POS_PATH);
+});
+
+test("a hanging compatibility probe times out and aborts without selecting the legacy route", async () => {
+  let aborted = false;
+  const entryPath = await resolvePosEntryPath((signal) => new Promise(() => {
+    signal.addEventListener("abort", () => { aborted = true; });
+  }), 10);
+  assert.equal(entryPath, MOBILE_POS_PATH);
+  assert.equal(aborted, true);
 });
