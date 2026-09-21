@@ -1,5 +1,5 @@
 .shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
   background: #f4f6f9;
@@ -10,7 +10,7 @@
 .rail {
   position: relative;
   z-index: 4;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -104,7 +104,7 @@
 .railFooter button:hover > span { border-color: #91caff; background: #e6f4ff; color: #1677ff; }
 .workspace {
   min-width: 0;
-  height: 100vh;
+  height: 100dvh;
   display: grid;
   grid-template-rows: 82px minmax(0, 1fr);
   padding: 12px 14px 14px;
@@ -273,7 +273,7 @@
   font-size: 11px !important;
   white-space: nowrap;
 }
-.alertList { max-height: min(430px, calc(100vh - 150px)); overflow-y: auto; }
+.alertList { max-height: min(430px, calc(100dvh - 150px)); overflow-y: auto; }
 .alertEmpty { display: grid; place-items: center; min-height: 150px; color: #8a95a6; }
 .alertEmpty span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #f6ffed; color: #389e0d; font-weight: 800; }
 .alertEmpty p { margin: -28px 0 0; font-size: 12px; }
@@ -380,7 +380,7 @@
 }
 .infoDialog {
   width: min(560px, 100%);
-  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
   border: 1px solid #dfe4ec;
   border-radius: 16px;
@@ -835,7 +835,7 @@
 
 .centerPage,
 .loginPage {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: radial-gradient(circle at 15% 15%, #edf6ff 0, transparent 34%), #f5f7fa;
 }
 .centerPage { display: grid; place-items: center; padding: 30px; }
@@ -906,7 +906,7 @@
 .receiptCard .changeRow { margin-top: 5px; padding-top: 13px; border-top: 1px solid #dde2e9; color: #237804; font-size: 18px; }
 .boardGameReceiptCard {
   width: min(760px, 100%);
-  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
 }
 .boardGameBreakdownReceipt { margin-top: 20px; }
