@@ -20,6 +20,7 @@
     "test": "node --test test/display-policy.test.mjs test/pairing.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/zoom-policy.test.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
     "pack:win": "electron-builder --win nsis",
+    "pack:win32": "electron-builder --win nsis --ia32",
     "pack:linux": "electron-builder --linux AppImage deb --x64",
     "pack:mac": "electron-builder --mac dmg --x64 --arm64"
   },
@@ -39,6 +40,7 @@
     "asar": true,
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "BMS-POS-Setup-${version}-${arch}.${ext}",
       "icon": "../web/public/icons/playstore-512.ico"
     },
     "mac": {

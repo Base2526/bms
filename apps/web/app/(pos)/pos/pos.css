@@ -39,7 +39,7 @@
   --pos-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.035);
   --pos-shadow-float: 0 8px 24px rgba(15, 23, 42, 0.10);
 
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--pos-bg);
   color: var(--pos-text);
   font-size: 14px;
@@ -2221,7 +2221,7 @@
 }
 .pos-bg-guest-link-dialog {
   width: min(460px, 100%);
-  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
   border: 1px solid var(--pos-line);
   border-radius: 16px;
@@ -2356,7 +2356,7 @@
   .pos-bg-floor-refresh { align-items: flex-end; flex-direction: column; }
   .pos-bg-feed { white-space: normal; text-align: right; }
   .pos-bg-guest-link-backdrop { padding: 10px; }
-  .pos-bg-guest-link-dialog { max-height: calc(100vh - 20px); }
+  .pos-bg-guest-link-dialog { max-height: calc(100dvh - 20px); }
   .pos-bg-guest-link-head,
   .pos-bg-guest-link-body { padding-inline: 14px; }
   .pos-bg-guest-link-copy > div { grid-template-columns: minmax(0, 1fr); }

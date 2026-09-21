@@ -226,6 +226,10 @@ function currentCustomerDisplayState() {
   };
 }
 
+function displayUsableBounds(display) {
+  return display.workArea ?? display.bounds;
+}
+
 function broadcastCustomerDisplayState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("bms-pos:customer-display-state-changed", currentCustomerDisplayState());
@@ -246,12 +250,12 @@ function createCustomerDisplayWindow(targetDisplay) {
     && !customerDisplayWindow.isDestroyed()
     && customerDisplayWindowDisplayId === targetId
   ) {
-    try { customerDisplayWindow.setBounds(targetDisplay.bounds); } catch {}
+    try { customerDisplayWindow.setBounds(displayUsableBounds(targetDisplay)); } catch {}
     return;
   }
   closeCustomerDisplayWindow();
   const window = new BrowserWindow({
-    ...targetDisplay.bounds,
+    ...displayUsableBounds(targetDisplay),
     show: false,
     // Wayland may ignore app-directed placement. Keep a native frame there so the operator can
     // still move the window with the compositor instead of trapping a borderless window.
@@ -273,7 +277,7 @@ function createCustomerDisplayWindow(targetDisplay) {
   setupWindowSecurity(window.webContents.session);
   window.once("ready-to-show", () => {
     if (window.isDestroyed()) return;
-    try { window.setBounds(targetDisplay.bounds); } catch {}
+    try { window.setBounds(displayUsableBounds(targetDisplay)); } catch {}
     window.showInactive();
   });
   window.on("closed", () => {
