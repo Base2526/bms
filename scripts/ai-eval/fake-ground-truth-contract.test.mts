@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { scoreFakeEvaluation } from "../../apps/web/lib/bms/fakeEvaluationScorer.ts";
 import { DEMO_SCENARIO_SHOPS, parseDemoScenarioKey } from "../../apps/web/lib/bms/demoScenarioSelection.ts";
+import {
+  FAKE_PHARMACY_ASSESSMENT_MARKER,
+  FAKE_PHARMACY_ASSESSMENT_SCENARIOS,
+  FAKE_PHARMACY_PROTOCOL_KEYS,
+} from "../../apps/web/lib/bms/devPharmacySeed.ts";
+
+const readRepoFile = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
 const cases = [
   {
@@ -69,6 +77,90 @@ test("every scenario preset keeps the realistic load-test contract", () => {
     assert.ok(shop.counts.purchase >= 140, shop.key);
     assert.ok(shop.counts.restockSubscriptions >= 160, shop.key);
   }
+});
+
+test("pharmacy demo defines the required deterministic fixture set", () => {
+  assert.equal(FAKE_PHARMACY_ASSESSMENT_MARKER, "FAKE-DEMO");
+  assert.deepEqual([...FAKE_PHARMACY_PROTOCOL_KEYS], ["headache", "cough", "diarrhea"]);
+  assert.deepEqual(
+    FAKE_PHARMACY_ASSESSMENT_SCENARIOS.map((scenario) => scenario.label),
+    ["normal-complete", "incomplete", "allergy-history", "high-risk-group", "emergency-red-flag"]
+  );
+});
+
+test("complete pharmacy fixtures answer the safety fields added by migration 7.83", () => {
+  const byLabel = new Map(FAKE_PHARMACY_ASSESSMENT_SCENARIOS.map((scenario) => [scenario.label, scenario]));
+  const normal = byLabel.get("normal-complete");
+  const allergy = byLabel.get("allergy-history");
+  const pregnancy = byLabel.get("high-risk-group");
+  const incomplete = byLabel.get("incomplete");
+
+  for (const scenario of [normal, pregnancy]) {
+    assert.ok(scenario);
+    assert.deepEqual(
+      ["has_fever", "neck_stiffness", "worst_ever", "neuro_symptoms", "recent_head_injury"]
+        .map((key) => scenario.structuredAnswers[key]),
+      ["NO", "NO", "NO", "NO", "NO"]
+    );
+  }
+  assert.equal(allergy?.structuredAnswers.blood_in_stool, "NO");
+  assert.equal(allergy?.structuredAnswers.high_fever, "NO");
+  assert.deepEqual(incomplete?.missingFields, [
+    "allergies",
+    "current_medications",
+    "blood_in_sputum",
+    "breathing_difficulty",
+    "chest_pain",
+  ]);
+  assert.doesNotMatch(normal?.aiSummary ?? "", /ไม่มีประวัติแพ้ยา/);
+});
+
+test("copied demo pharmacy protocols remain clinically inert", () => {
+  const source = readRepoFile("apps/web/lib/bms/devPharmacySeed.ts");
+  assert.match(source, /'DRAFT', FALSE, FALSE, NULL, NULL/);
+  assert.match(source, /DEFAULT_TENANT_ID/);
+  assert.match(source, /ON CONFLICT \(tenant_id, protocol_key, version\) DO NOTHING/);
+  assert.match(source, /pg_advisory_xact_lock\(hashtext\('bms\.fake_pharmacy_assessments'\)/);
+});
+
+test("pharmacy scenario seeds cases after staff and cleans cases before staff", () => {
+  const source = readRepoFile("apps/web/app/api/dev/fake/provision-demo-shops/route.ts");
+  const cleanupAssessment = source.indexOf("deleteFakePharmacyAssessments(tenantId)");
+  const cleanupStaff = source.indexOf("deleteUnreferencedFakeStaff(tenantId)");
+  const seedStaff = source.indexOf("await seedFakeStaff(");
+  const seedAssessment = source.indexOf("await seedFakePharmacyAssessments(shop.tenantId)");
+
+  assert.ok(cleanupAssessment >= 0 && cleanupAssessment < cleanupStaff);
+  assert.ok(seedStaff >= 0 && seedStaff < seedAssessment);
+  assert.doesNotMatch(source, /DELETE FROM users WHERE tenant_id = \$1 AND email LIKE/);
+});
+
+test("scenario staff cleanup preserves the demo Administrator", () => {
+  const cleanup = readRepoFile("apps/web/lib/bms/devCleanup.ts");
+  const provision = readRepoFile("apps/web/app/api/dev/fake/provision-demo-shops/route.ts");
+
+  assert.match(cleanup, /deleteUnreferencedFakeStaff/);
+  assert.match(cleanup, /email LIKE '%@staff\.bms\.test'/);
+  assert.match(provision, /deleteUnreferencedFakeStaff\(tenantId\)/);
+  assert.doesNotMatch(provision, /deleteUnreferencedFakeUsers\(tenantId\)/);
+});
+
+test("new pharmacy shops receive templates inside their provisioning transaction", () => {
+  const source = readRepoFile("apps/web/lib/bms/testShop.ts");
+  const ensureProtocols = source.indexOf("await ensureFakePharmacyProtocolsInTx(client, tenantId)");
+  const commit = source.indexOf('await client.query("COMMIT")');
+
+  assert.match(source, /businessArchetype === "pharmacy"/);
+  assert.ok(ensureProtocols >= 0 && ensureProtocols < commit);
+});
+
+test("global cleanup releases pharmacist references before deleting fake users", () => {
+  const source = readRepoFile("apps/web/app/api/dev/fake/cleanup/route.ts");
+  const cleanupAssessment = source.indexOf("deleteFakePharmacyAssessments(tenantId)");
+  const cleanupStaff = source.indexOf("deleteUnreferencedFakeUsers(tenantId)");
+
+  assert.ok(cleanupAssessment >= 0 && cleanupAssessment < cleanupStaff);
+  assert.match(source, /bmsPharmacyAssessments: resPharmacyAssessments/);
 });
 
 test("scores exact, tolerance, structured, ranking, policy, and abstention answers", () => {

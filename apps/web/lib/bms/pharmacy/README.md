@@ -302,11 +302,17 @@ saying so rather than claiming an unverified pass):
 ## Demo data
 
 `POST /api/dev/fake/bms-pharmacy-assessments` (same `requirePlatformAdminSeeder()`/
-`BMS_ALLOW_FAKE_SEED` gate as the other 9 fake-seed routes) creates the 5 required
+`BMS_ALLOW_FAKE_SEED` gate as the other fake-seed routes) creates the 5 required
 scenarios: normal-complete, incomplete, allergy-history, high-risk-group (pregnancy),
 emergency-red-flag. Marked with `channel_id = 'FAKE-DEMO'`; `DELETE` on the same route
-removes them. **Not yet wired into the `/admin/dev/fake` page's buttons or the global
-Cleanup action** — call it directly for now.
+removes them. The route is available from `/admin/dev/fake`; provisioning the Pharmacy
+scenario also creates these cases automatically, and the global Cleanup action removes
+them before deleting their assigned fake pharmacist.
+
+Migration 7.58 seeded the three sample protocols only for tenants that existed at migration
+time. A newly provisioned pharmacy demo therefore copies the latest `headache`, `cough`, and
+`diarrhea` templates from the system tenant. Copies always start as `DRAFT`, disabled, and not
+clinically approved; fixture creation never bypasses pharmacist review or enables clinical use.
 
 ## An approval is spent once
 

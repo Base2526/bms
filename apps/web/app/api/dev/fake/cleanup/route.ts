@@ -5,6 +5,7 @@ import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId }
 import { query } from "@/lib/db";
 import { deleteUnreferencedFakeUsers } from "@/lib/bms/devCleanup";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { deleteFakePharmacyAssessments } from "@/lib/bms/devPharmacySeed";
 
 async function handleDELETE(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
@@ -168,6 +169,8 @@ async function handleDELETE(req: NextRequest) {
     const resOrders = await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resConversations = await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resPosShifts = await query(`DELETE FROM bms_pos_shifts WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
+    // Fake pharmacy cases reference the seeded pharmacist with restrictive FKs.
+    const resPharmacyAssessments = await deleteFakePharmacyAssessments(tenantId);
     const resUsers = await deleteUnreferencedFakeUsers(tenantId);
     const resEvalRuns = await query('DELETE FROM bms_fake_eval_runs WHERE tenant_id = $1 RETURNING id', [tenantId]);
     const resPO = await query(`DELETE FROM bms_purchase_orders WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
@@ -204,7 +207,7 @@ async function handleDELETE(req: NextRequest) {
       resBoardGameSeatings.rows.length + resBoardGameProfiles.rows.length + resBoardGameCopies.rows.length + resBoardGameTitles.rows.length +
       resBoardGameTables.rows.length + resBoardGameAreas.rows.length + resBoardGameRates.rows.length +
       resBoardGameIdempotency.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
-      resPosShifts.rows.length + resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
+      resPosShifts.rows.length + resPharmacyAssessments + resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
       resSupportTickets.rows.length + resEvalRuns.rows.length;
 
     return NextResponse.json({
@@ -228,6 +231,7 @@ async function handleDELETE(req: NextRequest) {
       bmsOrders: resOrders.rows.length,
       bmsConversations: resConversations.rows.length,
       bmsPosShifts: resPosShifts.rows.length,
+      bmsPharmacyAssessments: resPharmacyAssessments,
       bmsPurchaseOrders: resPO.rows.length,
       bmsCoupons: resCoupons.rows.length,
       bmsSuppliers: resSuppliers.rows.length,

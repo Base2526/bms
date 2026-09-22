@@ -225,6 +225,7 @@ const OPERATION_EXEMPTIONS = new Map<string, string>([
   ["bms_messages:UPDATE", "outbound delivery metadata; conversation invalidation is emitted after delivery"],
   ["bms_orders:DELETE", "platform tenant teardown"],
   ["bms_payments:DELETE", "reservation fixture cleanup and platform tenant teardown"],
+  ["bms_pharmacy_assessments:DELETE", "dev fixture cleanup before replacing seeded pharmacists"],
   ["bms_board_game_waitlist:DELETE", "fixture cleanup and platform tenant teardown"],
   ["bms_pos_refund_allocations:DELETE", "reservation fixture cleanup and platform tenant teardown"],
   ["bms_pos_expenses:DELETE", "platform tenant teardown"],

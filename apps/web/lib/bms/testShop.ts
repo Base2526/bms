@@ -13,6 +13,7 @@ import { customAlphabet, nanoid } from "nanoid";
 import { DEFAULT_TENANT_ID } from "./tenant";
 import { archetypeToBusinessType, normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
 import { DEFAULT_LOCATION_CODE } from "./locations";
+import { ensureFakePharmacyProtocolsInTx } from "./devPharmacySeed";
 
 export type ProvisionTestShopResult = {
   tenantId: string;
@@ -98,6 +99,10 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
        VALUES ($1, $2, $3, 'Administrator', $4, $5, $6, true)`,
       [`Admin ${slug}`, adminEmail, adminEmail, roleId, tenantId, hash]
     );
+
+    if (businessArchetype === "pharmacy") {
+      await ensureFakePharmacyProtocolsInTx(client, tenantId);
+    }
 
     await client.query("COMMIT");
     return { tenantId, slug, name, adminEmail, adminPassword };
