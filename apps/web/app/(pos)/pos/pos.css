@@ -2099,13 +2099,29 @@
   color: var(--pos-accent) !important;
   font-weight: 700;
 }
+/* การจองล่วงหน้าเป็น **คอนเทนเนอร์ของตัวเอง** — การ์ดใบนี้อยู่ในแผงซ้ายของ master/detail
+   ซึ่งกว้างราว 62% ของจอ การวัดด้วย `@media` (= ความกว้างของ *จอ*) จึงตอบผิดเสมอ:
+   วัดจริงที่หน้าต่าง 1240px ของเครื่องเดสก์ท็อป แผงกว้าง 773 เหลือที่ให้การ์ด **728**
+   แต่กฎฐาน 6 คอลัมน์ต้องการ 818 → การ์ด `scrollWidth` 816 เทียบ `clientWidth` 726
+   แล้ว `overflow: hidden` **กลืนส่วนที่เกินทิ้งเงียบ ๆ** โดยหน้าไม่มี scroller แนวนอน
+   (`document.scrollWidth === 1240`) · ปุ่ม "เช็กอิน" ซึ่งเป็นทางเดียวที่เปลี่ยนการจอง
+   เป็นคิวจริง ถูกตัดหายไป 80 จาก 121px = **ปุ่มที่กดไม่ถึงเท่ากับไม่มีปุ่ม**
+   (รูปเดียวกับ "ปุ่มคืนแบบมีปัญหาหลุดออกนอกจอ" ที่เคยเจอเมื่อ 2026-09-16)
+
+   ⚠️ ห้ามเปลี่ยนกลับไปใช้ `@media` — จอกว้างไม่ได้แปลว่าแผงกว้าง และเดสก์ท็อปย่อหน้าต่างได้
+   ทุกขนาด · เกณฑ์ทุกตัวข้างล่างคิดจาก **ผลรวมความกว้างขั้นต่ำของคอลัมน์จริง** ไม่ใช่เลขกลม */
+.pos-bg-reservation-section {
+  container-type: inline-size;
+  container-name: pos-bg-reservation;
+}
 .pos-bg-reservation-card {
   position: relative;
   margin-top: 8px;
   padding: 10px 10px 10px 14px;
   display: grid;
-  grid-template-columns: minmax(94px, .75fr) minmax(130px, 1.15fr) minmax(64px, .55fr)
-    minmax(130px, 1.2fr) minmax(76px, .65fr) minmax(248px, 300px);
+  /* ฐาน = แคบสุด (2 คอลัมน์) แล้วค่อยกางออกเมื่อคอนเทนเนอร์กว้างพอจริง ๆ — เริ่มจากกว้างสุด
+     แล้วหดลงด้วย max-width แปลว่าคอนเทนเนอร์ที่ยังไม่ถูกประกาศจะได้เลย์เอาต์ที่ล้น */
+  grid-template-columns: minmax(90px, .75fr) minmax(0, 1.25fr);
   align-items: center;
   gap: 10px;
   overflow: hidden;
@@ -2163,18 +2179,23 @@
   white-space: nowrap;
   vertical-align: bottom;
 }
+.pos-bg-reservation-card-fact,
+.pos-bg-reservation-card-note,
+.pos-bg-reservation-card-actions { grid-column: 1 / -1; }
 .pos-bg-reservation-card-note {
-  grid-column: 2 / 6;
   color: var(--pos-muted);
   font-size: 10px;
 }
 .pos-bg-reservation-card-actions {
-  grid-column: 6;
-  grid-row: 1 / span 2;
   min-width: 0;
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* ปุ่มเลือกจำนวนคอลัมน์จากที่ที่มีจริง ไม่ใช่จากเลข 2 ที่ตั้งไว้ล่วงหน้า · `.pos-ret-btn`
+     เป็น `white-space: nowrap` ปุ่มที่ถูกบีบจึงไม่หดตาม ตัวหนังสือจะพ้นกรอบไปทับของข้าง ๆ
+     — 116px คือความกว้างที่ป้ายยาวสุด ("แก้ไข/เลื่อน") ยังวาดจบในกรอบของตัวเอง
+     ⚠️ `min(116px, 100%)` ต้องคงไว้เสมอตามกฎเดิมของรีโป: `minmax(116px, 1fr)` เปล่า ๆ
+     ยืนกรานความกว้างขั้นต่ำแม้กล่องจะแคบกว่านั้น แล้วล้นออกข้าง */
+  grid-template-columns: repeat(auto-fit, minmax(min(116px, 100%), 1fr));
   gap: 6px;
   justify-content: stretch;
 }
@@ -2189,6 +2210,36 @@
   width: 100%;
   grid-column: 1 / -1;
 }
+
+/* 5 คอลัมน์ · ขั้นต่ำของแถว = 90+140+70+140+80 = 520 + gap 40 = 560 และการ์ดกิน
+   padding 24 + เส้นขอบ 2 → คอนเทนเนอร์ต้องมี 586 · ตั้ง 600 ไว้ให้เหลือที่หายใจ */
+@container pos-bg-reservation (min-width: 600px) {
+  .pos-bg-reservation-card {
+    grid-template-columns: minmax(90px, .7fr) minmax(140px, 1.2fr) minmax(70px, .6fr)
+      minmax(140px, 1fr) minmax(80px, .7fr);
+  }
+  .pos-bg-reservation-card-fact { grid-column: auto; }
+  .pos-bg-reservation-card-note { grid-column: 2 / -1; }
+  .pos-bg-reservation-card-actions { width: min(100%, 360px); justify-self: end; }
+}
+
+/* 6 คอลัมน์ (กลุ่มปุ่มขึ้นไปอยู่แถวเดียวกับข้อมูล) · ขั้นต่ำ = 94+130+64+130+76+248 = 742
+   + gap 50 = 792 → คอนเทนเนอร์ต้องมี 818 · **นี่คือเลขที่หน้าต่าง 1240px ให้ไม่ถึง (728)**
+   จึงเป็นเกณฑ์ที่ทำให้ปุ่มหาย ถ้าใครจะขยับ ต้องวัดผลรวมคอลัมน์ใหม่ก่อน */
+@container pos-bg-reservation (min-width: 840px) {
+  .pos-bg-reservation-card {
+    grid-template-columns: minmax(94px, .75fr) minmax(130px, 1.15fr) minmax(64px, .55fr)
+      minmax(130px, 1.2fr) minmax(76px, .65fr) minmax(248px, 300px);
+  }
+  .pos-bg-reservation-card-note { grid-column: 2 / 6; }
+  .pos-bg-reservation-card-actions {
+    grid-column: 6;
+    grid-row: 1 / span 2;
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
 .pos-bg-reservation-add-toggle {
   width: 100%;
   min-height: 46px;
@@ -2335,17 +2386,8 @@
   .pos-bg-session-summary,
   .pos-bg-session-parties,
   .pos-bg-section--checkout { grid-column: 1; }
-  .pos-bg-reservation-card {
-    grid-template-columns: minmax(90px, .7fr) minmax(140px, 1.2fr) minmax(70px, .6fr)
-      minmax(140px, 1fr) minmax(80px, .7fr);
-  }
-  .pos-bg-reservation-card-actions {
-    grid-column: 1 / -1;
-    grid-row: auto;
-    width: min(100%, 360px);
-    justify-self: end;
-  }
-  .pos-bg-reservation-card-note { grid-column: 2 / -1; }
+  /* การ์ดการจองไม่มีกฎที่นี่โดยตั้งใจ — มันวัดจากคอนเทนเนอร์ของตัวเองแล้ว
+     (ดู `@container pos-bg-reservation` ข้างบน) จอกว้างไม่ได้แปลว่าแผงกว้าง */
 }
 
 @media (max-width: 520px) {
@@ -2361,10 +2403,4 @@
   .pos-bg-guest-link-body { padding-inline: 14px; }
   .pos-bg-guest-link-copy > div { grid-template-columns: minmax(0, 1fr); }
   .pos-bg-guest-link-actions { padding-inline: 14px; }
-  .pos-bg-reservation-card { grid-template-columns: minmax(90px, .75fr) minmax(0, 1.25fr); }
-  .pos-bg-reservation-card-fact,
-  .pos-bg-reservation-card-note,
-  .pos-bg-reservation-card-actions { grid-column: 1 / -1; }
-  .pos-bg-reservation-card-actions { width: 100%; justify-self: stretch; }
-  .pos-bg-reservation-card-actions > * { flex: 1 1 120px; }
 }

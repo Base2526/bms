@@ -1103,7 +1103,11 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
             </div>
           )}
 
-          {workspace && <details className="pos-bg-section pos-bg-section--advanced" open={allReservations.length > 0}>
+          {/* `pos-bg-reservation-section` = คอนเทนเนอร์ที่การ์ดการจองใช้วัดตัวเอง — แผงนี้กว้าง
+              ราว 62% ของจอ การวัดจากความกว้าง *จอ* จึงตัดปุ่ม "เช็กอิน" หายที่หน้าต่าง 1240px
+              (เหตุผลเต็มอยู่ข้าง `.pos-bg-reservation-section` ใน pos.css) */}
+          {workspace && <details className="pos-bg-section pos-bg-section--advanced pos-bg-reservation-section"
+            open={allReservations.length > 0}>
             <summary>การจองล่วงหน้า · {allReservations.length} รายการ</summary>
             <div className="pos-bg-reservation-tools">
               <label className="pos-bg-field">
