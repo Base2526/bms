@@ -705,3 +705,144 @@ test("the register says when it stopped getting fresh data", () => {
     "a stale feed must look different, not just read differently",
   );
 });
+
+/* ---------------------------------------------------------------------------
+ * การ์ดการจองล่วงหน้าต้องวัดจาก "แผงที่มันอยู่" ไม่ใช่ "ความกว้างของจอ"
+ * ---------------------------------------------------------------------------
+ * วัดจริงจาก dev server + pos.css ตัวจริง (2026-09-22) ก่อนแก้:
+ *
+ *   หน้าต่าง 1240px → แผงซ้ายกว้าง 773 เหลือที่ให้การ์ด 728 แต่กฎฐาน 6 คอลัมน์ต้องการ 818
+ *   → `scrollWidth` 816 เทียบ `clientWidth` 726 แล้ว `overflow: hidden` กลืน 90px ทิ้ง
+ *   → ปุ่ม "เช็กอิน" เหลือให้เห็น **31 จาก 121px** และหน้าไม่มี scroller แนวนอนให้เลื่อนไปหา
+ *   หน้าต่าง 1024px → แย่กว่า: ล้น **251px** และปุ่มทั้งสามใบเห็น **0px** ทั้งแถว
+ *
+ * ต้นเหตุคือ breakpoint เป็น `@media` (ความกว้าง *จอ*) ขณะที่การ์ดอยู่ในแผง 64fr ของ
+ * master/detail · จอกว้างไม่ได้แปลว่าแผงกว้าง — และเพราะแผงยุบเป็นคอลัมน์เดียวที่จอ ≤920
+ * ความจริงจึง **กลับหัว**: จอ 820 ให้แผงกว้าง 770 แต่จอ 1024 ให้แค่ 567
+ *
+ * เทสนี้ตรึง "กติกา" ไม่ใช่ตัวเลขพิกเซล เพราะชุด pure ไม่มีเบราว์เซอร์ · ตัวที่กันการถอยกลับ
+ * จริง ๆ คือข้อ 2: เกณฑ์ของแต่ละชั้นถูก **คำนวณจากคอลัมน์ของชั้นนั้นเอง** ในเทส ใครเพิ่ม
+ * คอลัมน์แล้วไม่ขยับเกณฑ์จะแดงทันที
+ * ------------------------------------------------------------------------- */
+
+/** กฎทุกตัวที่เล็ง selector ซึ่งมีคำนี้อยู่ (ไม่ว่าอยู่ใต้ media/container ไหน) */
+function rulesTargeting(fragment: string): CssRule[] {
+  return rules.filter((rule) => rule.selector.includes(fragment));
+}
+
+/** ผลรวมความกว้างขั้นต่ำของ `grid-template-columns` หนึ่งชุด (px) + จำนวนคอลัมน์ */
+function trackMinimums(value: string): { total: number; count: number } {
+  const tracks: number[] = [];
+  let rest = value;
+  const minmax = /minmax\(\s*([0-9.]+)px\s*,[^)]*\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = minmax.exec(value)) !== null) tracks.push(Number(match[1]));
+  rest = value.replace(minmax, " ");
+  for (const token of rest.split(/\s+/)) {
+    const px = /^([0-9.]+)px$/.exec(token.trim());
+    if (px) tracks.push(Number(px[1]));
+    else if (/^minmax\(\s*0\s*,/.test(token)) tracks.push(0);
+  }
+  // `minmax(0, …)` ไม่ถูกจับด้วย regex px ข้างบน — นับจากจำนวน minmax ทั้งหมดแทน
+  const declared = (value.match(/minmax\(/g) ?? []).length;
+  while (tracks.length < declared) tracks.push(0);
+  return { total: tracks.reduce((sum, n) => sum + n, 0), count: tracks.length };
+}
+
+test("the reservation card measures its own pane instead of the window", () => {
+  const cardRules = rulesTargeting("pos-bg-reservation-card");
+  assert.ok(cardRules.length > 0, "the reservation card must still be styled");
+
+  // 1. ไม่มีกฎของการ์ดตัวไหนอยู่ใต้ @media อีก — จอกว้างไม่ได้แปลว่าแผงกว้าง
+  const viewportScoped = cardRules
+    .filter((rule) => rule.media != null && /^@media[\s\S]*width/.test(rule.media))
+    .map((rule) => `${rule.media} { ${rule.selector} }`);
+  assert.deepEqual(
+    viewportScoped, [],
+    "การ์ดการจองต้องไม่มี breakpoint ที่วัดจากความกว้างจอ — ใช้ @container ของแผงเท่านั้น",
+  );
+
+  // 2. คอนเทนเนอร์ต้องถูกประกาศจริง ไม่ใช่แค่เขียน @container ลอย ๆ
+  assert.equal(
+    declaration(".pos-bg-reservation-section", "container-type"), "inline-size",
+    "แผงการจองต้องประกาศตัวเองเป็นคอนเทนเนอร์ ไม่งั้น @container ไม่มีอะไรให้วัด",
+  );
+  const containerName = declaration(".pos-bg-reservation-section", "container-name");
+  assert.ok(containerName, "คอนเทนเนอร์ต้องมีชื่อ เพื่อไม่ให้ไปแมตช์คอนเทนเนอร์ตัวอื่นโดยบังเอิญ");
+
+  // 3. ชื่อใน @container ต้องตรงกับชื่อที่ประกาศ — ชื่อที่พิมพ์ผิดจะ "ไม่แมตช์เงียบ ๆ"
+  //    แล้วตกกลับไปกฎฐาน ซึ่งเป็นอาการเดียวกับบั๊กเดิมทุกประการ
+  const containerScoped = cardRules.filter((rule) => rule.media?.startsWith("@container"));
+  assert.ok(containerScoped.length > 0, "ต้องมีชั้นที่กางการ์ดออกเมื่อแผงกว้างพอ");
+  for (const rule of containerScoped) {
+    assert.ok(
+      rule.media!.includes(containerName!),
+      `@container ต้องอ้างชื่อ "${containerName}" ที่ประกาศไว้จริง — พบ: ${rule.media}`,
+    );
+  }
+
+  // 4. จอต้องติดคลาสคอนเทนเนอร์ไว้ที่ section ของการจองจริง ๆ
+  assert.ok(
+    /pos-bg-section--advanced pos-bg-reservation-section/.test(panel),
+    "section การจองล่วงหน้าต้องเป็นตัวคอนเทนเนอร์เอง",
+  );
+});
+
+test("every reservation tier is only turned on once the pane can actually hold it", () => {
+  const base = rules.find(
+    (rule) => rule.media == null && rule.selector.trim() === ".pos-bg-reservation-card",
+  );
+  assert.ok(base, "ต้องมีกฎฐานของการ์ด");
+
+  const gap = Number(/(?:^|;)\s*gap\s*:\s*([0-9.]+)px/.exec(base!.body)?.[1]);
+  assert.ok(Number.isFinite(gap), "การ์ดต้องประกาศ gap เป็น px เพื่อให้คำนวณความกว้างที่ต้องใช้ได้");
+  const padding = /(?:^|;)\s*padding\s*:\s*([^;]+)/.exec(base!.body)?.[1] ?? "";
+  const paddingPx = (padding.match(/([0-9.]+)px/g) ?? []).map((n) => Number(n.replace("px", "")));
+  // padding: บน ขวา ล่าง ซ้าย — กินความกว้างเฉพาะซ้าย+ขวา · +2 คือเส้นขอบสองข้าง
+  const chrome = (paddingPx[1] ?? 0) + (paddingPx[3] ?? paddingPx[1] ?? 0) + 2;
+
+  const widthOf = (value: string) => {
+    const { total, count } = trackMinimums(value);
+    return total + Math.max(0, count - 1) * gap + chrome;
+  };
+
+  // กฎฐานต้องเป็นชั้น "แคบสุด" — คอนเทนเนอร์ที่ยังไม่มีใครประกาศ หรือเบราว์เซอร์ที่ไม่รู้จัก
+  // @container จะตกมาที่นี่ มันจึงต้องเป็นเลย์เอาต์ที่ **ลงโทรศัพท์ 320px ได้** ไม่ใช่ 6 คอลัมน์
+  const baseCols = /(?:^|;)\s*grid-template-columns\s*:([^;]+)/.exec(base!.body)?.[1] ?? "";
+  assert.ok(
+    widthOf(baseCols) <= 300,
+    `กฎฐานต้องพอดีแผงแคบสุด (320px ลบ padding) — ต้องใช้ ${widthOf(baseCols)}px`,
+  );
+
+  let checked = 0;
+  for (const rule of rulesTargeting("pos-bg-reservation-card")) {
+    if (!rule.media?.startsWith("@container")) continue;
+    const cols = /(?:^|;)\s*grid-template-columns\s*:([^;]+)/.exec(rule.body)?.[1];
+    if (!cols || rule.selector.trim() !== ".pos-bg-reservation-card") continue;
+    const threshold = Number(/min-width:\s*([0-9.]+)px/.exec(rule.media)?.[1]);
+    assert.ok(Number.isFinite(threshold), `ชั้นนี้ต้องเปิดด้วย min-width เป็น px — ${rule.media}`);
+    const needed = widthOf(cols);
+    assert.ok(
+      threshold >= needed,
+      `ชั้น ${rule.media} เปิด ${trackMinimums(cols).count} คอลัมน์ที่ต้องการ ${needed}px `
+      + `แต่เปิดตั้งแต่ ${threshold}px — ส่วนที่เกินจะถูก overflow:hidden กลืนทิ้งโดยไม่มีใครเห็น`,
+    );
+    checked += 1;
+  }
+  assert.ok(checked >= 2, `ต้องตรวจชั้นที่กางคอลัมน์อย่างน้อย 2 ชั้น (ตรวจได้ ${checked})`);
+});
+
+test("the reservation action row never squeezes a button narrower than its own label", () => {
+  // `.pos-ret-btn` เป็น white-space: nowrap — ปุ่มที่ถูกบีบไม่หดตาม ตัวหนังสือจะพ้นกรอบ
+  // ไปวาดทับของข้าง ๆ · จำนวนคอลัมน์จึงต้องมาจากที่ที่มีจริง ไม่ใช่เลขที่ตั้งไว้ล่วงหน้า
+  const value = declaration(".pos-bg-reservation-card-actions", "grid-template-columns") ?? "";
+  assert.match(
+    value, /repeat\(\s*auto-fit\s*,\s*minmax\(\s*min\(\s*[0-9.]+px\s*,\s*100%\s*\)/,
+    "แถวปุ่มต้องเป็น auto-fit + `min(<px>, 100%)` ตามกฎเดิมของรีโป — `minmax(<px>, 1fr)` "
+    + "เปล่า ๆ ยืนกรานความกว้างขั้นต่ำแม้กล่องจะแคบกว่านั้น แล้วล้นออกข้าง",
+  );
+  assert.equal(
+    declaration(".pos-root .pos-bg-reservation-card-actions > button", "min-width"), "0",
+    "ปุ่มต้องหดได้ภายในคอลัมน์ของตัวเอง",
+  );
+});
