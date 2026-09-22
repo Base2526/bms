@@ -8,19 +8,26 @@ import { getClient } from "@/lib/db";
  * Let those database policies decide per user instead of duplicating every current and future FK
  * in the dev cleanup route.
  */
-export async function deleteUnreferencedFakeUsers(tenantId: string) {
+type FakeUserCleanupResult = { deletedIds: string[]; referencedIds: string[] };
+
+async function deleteUnreferencedFakeUsersByScope(
+  tenantId: string,
+  scope: "all" | "seeded-staff"
+): Promise<FakeUserCleanupResult> {
   const client = await getClient();
   const deletedIds: string[] = [];
   const referencedIds: string[] = [];
+  const seededStaffOnly = scope === "seeded-staff";
 
   try {
     await client.query("BEGIN");
     const candidates = await client.query<{ id: string }>(
       `SELECT id FROM users
         WHERE fake_test = true AND tenant_id = $1
+          AND (NOT $2::boolean OR email LIKE '%@staff.bms.test')
         ORDER BY id
         FOR UPDATE`,
-      [tenantId]
+      [tenantId, seededStaffOnly]
     );
 
     // A seeded staff account may have been used in a real POS/operations flow after seeding.
@@ -53,4 +60,17 @@ export async function deleteUnreferencedFakeUsers(tenantId: string) {
   } finally {
     client.release();
   }
+}
+
+/** Cleanup used by the global fake-data action, including fixtures from the standalone user seeder. */
+export async function deleteUnreferencedFakeUsers(tenantId: string): Promise<FakeUserCleanupResult> {
+  return deleteUnreferencedFakeUsersByScope(tenantId, "all");
+}
+
+/**
+ * Replace scenario staff without deleting the demo shop's seeded Administrator account.
+ * Both are fake_test rows, but only seedFakeStaff() accounts use this controlled email suffix.
+ */
+export async function deleteUnreferencedFakeStaff(tenantId: string): Promise<FakeUserCleanupResult> {
+  return deleteUnreferencedFakeUsersByScope(tenantId, "seeded-staff");
 }

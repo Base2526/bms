@@ -18,6 +18,11 @@ import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { generateFakeGroundTruth } from "@/lib/bms/fakeEvaluation";
 import { DEMO_SCENARIO_SHOPS, parseDemoScenarioKey } from "@/lib/bms/demoScenarioSelection";
+import { deleteUnreferencedFakeStaff } from "@/lib/bms/devCleanup";
+import {
+  deleteFakePharmacyAssessments,
+  seedFakePharmacyAssessments,
+} from "@/lib/bms/devPharmacySeed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +37,8 @@ async function findExistingDemoTenant(slug: string): Promise<{ id: string; slug:
 
 async function cleanupDemoBusinessData(tenantId: string) {
   await query(`DELETE FROM bms_fake_eval_runs WHERE tenant_id = $1`, [tenantId]);
+  // Assessments hold restrictive pharmacist FKs. Remove this seed's cases before replacing fake staff.
+  await deleteFakePharmacyAssessments(tenantId);
   await query(`DELETE FROM bms_restock_subscriptions WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1`, [tenantId]);
@@ -45,7 +52,7 @@ async function cleanupDemoBusinessData(tenantId: string) {
         AND NOT EXISTS (SELECT 1 FROM bms_purchase_orders po WHERE po.supplier_id = s.id)`,
     [tenantId]
   );
-  await query(`DELETE FROM users WHERE tenant_id = $1 AND email LIKE '%@staff.bms.test'`, [tenantId]);
+  await deleteUnreferencedFakeStaff(tenantId);
   await query(
     `DELETE FROM bms_products p
       WHERE p.sku LIKE 'FAKE-%' AND p.tenant_id = $1
@@ -116,6 +123,9 @@ async function handlePOST(req: NextRequest) {
       guard.actor.id,
       demo.businessArchetype
     );
+    const pharmacy = demo.businessArchetype === "pharmacy"
+      ? await seedFakePharmacyAssessments(shop.tenantId)
+      : null;
     const deviceResult = await seedFakePosDevices(shop.tenantId, demo.counts.posDevices, guard.actor.id);
     const products = await seedFakeProducts(shop.tenantId, demo.counts.products, demo.businessArchetype);
     const customers = await seedFakeCustomers(shop.tenantId, demo.counts.customers);
@@ -145,6 +155,8 @@ async function handlePOST(req: NextRequest) {
         products: products.length,
         customers: customers.length,
         coupons: coupons.length,
+        pharmacyAssessments: pharmacy?.created.length ?? 0,
+        pharmacyProtocolsCreated: pharmacy?.protocolsCreated ?? 0,
         ...deviceResult.summary,
         ...orderResult.summary,
         ...convResult.summary,

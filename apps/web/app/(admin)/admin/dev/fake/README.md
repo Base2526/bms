@@ -30,12 +30,17 @@
 | `bms-purchase` | `POST /api/dev/fake/bms-purchase` | suppliers + PO + items (หลายสถานะ OPEN/PARTIAL/RECEIVED/CANCELLED) | Purchase | PO note `FAKE%` + supplier `FAKE %` |
 | `bms-ai-usage` | `POST /api/dev/fake/bms-ai-usage` | เพิ่มตัวนับ AI shared-key quota ของเดือนนี้ | Settings | แก้ `bms_ai_usage_monthly` โดยตรง |
 | `bms-board-game` | `POST /api/dev/fake/bms-board-game` | members + zones/tables + rates + sessions/bill groups + game library/loans/issues + private discovery draft | Board Game Tables, POS handoff, discovery settings | `FAKE` name/code/idempotency prefixes |
+| `bms-pharmacy-assessments` | `POST /api/dev/fake/bms-pharmacy-assessments` | เคส intake 5 สถานการณ์ + protocol template ที่ยังไม่อนุมัติเมื่อร้านยังไม่มี | Pharmacy Queue | `channel_id = 'FAKE-DEMO'` |
 
 **ลำดับแนะนำ:** Products → Customers → Orders → Conversations → Purchase → Members → Board Game Cafe
 (Orders/Conversations/Purchase สุ่มจาก products/customers ที่มีอยู่; Board Game Cafe ใช้ได้เฉพาะร้าน
 archetype `board_game_cafe` และจะสร้าง fake customers/members ขั้นต่ำให้เองเมื่อยังมีไม่พอ)
 
 หน้าสร้างร้านสถานการณ์บังคับเลือกจากรายการและสร้างได้ **ครั้งละ 1 ร้าน** เท่านั้น; API ต้องรับ `shopKey` เสมอและจะไม่ตีความ body ว่างเป็น “สร้างทั้งหมด” เพื่อป้องกันการสร้าง 7 ร้าน/70,000 ออเดอร์โดยไม่ตั้งใจ แต่ละร้านใช้ preset **สินค้า 1,000 รายการ + Inbox 450–700 ห้อง + ออเดอร์หลัก 10,000 บิล** โดยกระจายเท่ากัน 8 ช่องทาง (`pos`, `line`, `instagram`, `facebook`, `web`, `tiktok`, `shopee`, `lazada`) ช่องทางละ 1,250 บิล บิล POS เป็น `COMPLETED`, payment เป็น `CONFIRMED`, ไม่มี shipment และมีทั้งสมาชิกกับลูกค้าขาจร ส่วนออเดอร์ออนไลน์กระจายหลายสถานะ พร้อม payment/shipment ตามสถานะ
+
+ร้านสถานการณ์ Pharmacy จะสร้างเคส intake ทั้ง 5 สถานการณ์ให้อัตโนมัติด้วย หากเป็นร้านใหม่ระบบจะ
+คัดลอก protocol ตัวอย่างจากร้านระบบเป็น `DRAFT` ที่ยัง disabled และยังไม่ผ่านการรับรองทางคลินิก
+เสมอ จึงไม่ทำให้ fake seeder ข้ามขั้นตอนอนุมัติของเภสัชกร
 
 หลัง seed ร้านเต็มชุด ระบบสร้าง **Ground Truth** อัตโนมัติจากข้อมูลที่เขียนลงฐานสำเร็จจริง ไม่ได้
 คำนวณจากค่าที่ seeder ตั้งใจจะสร้าง เฉลยครอบคลุมยอดขาย/ช่องทาง/สินค้า/สต็อก/CRM/Inbox/POS/PO/
@@ -50,11 +55,14 @@ prefix ของรหัสเครื่อง เพราะ scenario seede
 
 ทีมงานของร้านสถานการณ์มีรวม 40–50 คนตามขนาดกิจการ (รวม Administrator) ใช้ role จริงของระบบ (`Manager`, `Sales`, `Warehouse`, `Cashier`, `Pharmacist`) ผู้ที่ขายหน้าร้านมี PIN และ Cashier เป็น `pos_only` ร้านยามีเภสัชกรหลายกะที่ตั้ง `is_licensed_pharmacist` พร้อมเลขใบอนุญาตจำลอง นอกจากนี้มีเครื่อง POS ที่จับคู่ token แล้ว 5–8 เครื่อง และ POS orders ทุกบิลผูกเครื่อง พนักงาน และกะย้อนหลัง โดยกะร้านยาผูกเภสัชกรเวรที่ผ่าน license gate จริง
 
+เมื่อสร้าง scenario เดิมซ้ำ ระบบลบเฉพาะบัญชีทีมงานที่ลงท้าย `@staff.bms.test`; บัญชี
+Administrator ของร้าน demo ต้องคงอยู่เพื่อให้ credentials ที่หน้า generator แสดงยังล็อกอินได้
+
 บัญชี staff ที่ seed ใช้รหัสผ่าน `password123` เฉพาะเครื่อง dev/test เท่านั้น ส่วน PIN ถูกสร้างแยกต่อคนและไม่เก็บค่า plaintext ในฐานข้อมูล สามารถตั้งใหม่ได้จาก `/admin/pos-devices` ก่อนทดสอบหน้าขายจริง
 
 - ลงที่ **tenant default** (ส่ง `{ tenantId }` ใน body เพื่อระบุร้านอื่นได้) · Orders สูงสุด 10,000/ครั้ง ส่วน endpoint อื่นยังตรวจเพดานที่เหมาะกับชนิดข้อมูล
 - **Orders ไม่ขยับสต็อก** (ใช้เติม analytics) — ถ้าจะเทสต์ flow จ่าย/ส่งจริง ให้สั่งผ่าน Playground · สถานะเน้น revenue (COMPLETED/PAID/SHIPPED + CANCELLED/RETURNED)
-- **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: board-game POS orders → board-game sessions/library/floor/rates → orders + conversations (cascade items/payments/shipments/messages/notes) → products (cascade inventory) → customers · ข้ามสินค้า/ลูกค้าที่ order ยังอ้างถึง, ข้ามพนักงาน fake ที่ประวัติธุรกิจแบบห้ามลบยังอ้างถึง (รายงานจำนวนใน `usersSkippedReferenced`) และไม่ลบ discovery profile ที่พนักงานเผยแพร่แล้ว
+- **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: board-game POS orders → board-game sessions/library/floor/rates → orders + conversations (cascade items/payments/shipments/messages/notes) → pharmacy assessments → users → products (cascade inventory) → customers · ข้ามสินค้า/ลูกค้าที่ order ยังอ้างถึง, ข้ามพนักงาน fake ที่ประวัติธุรกิจแบบห้ามลบยังอ้างถึง (รายงานจำนวนใน `usersSkippedReferenced`) และไม่ลบ discovery profile ที่พนักงานเผยแพร่แล้ว
 - BMS tables ไม่มีคอลัมน์ `fake_test` จึงใช้ marker `FAKE-` / tag `fake` แทน (ไม่ต้องแก้ schema)
 - ข้อความ outbound ของ conversation ที่มี `customer_ref` ขึ้นต้น `FAKE-` จะบันทึกใน Inbox เป็น simulated delivery (`meta.simulated = true`) โดยไม่เรียก LINE/Meta API และไม่แก้ Channel Health
 
