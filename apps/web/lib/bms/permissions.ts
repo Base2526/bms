@@ -171,6 +171,9 @@ export const BMS_PERMISSIONS = [
   // e-Tax นำส่งกรมสรรพากร — seed ที่ 7.94
   "etax.view",
   "etax.manage",
+  // เอกสารรายจ่าย: ภาษีซื้อ ค่าใช้จ่าย หัก ณ ที่จ่าย — seed ที่ 10.11 (Manager)
+  "expense.view",
+  "expense.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

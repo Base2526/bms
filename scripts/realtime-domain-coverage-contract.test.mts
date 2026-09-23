@@ -201,6 +201,7 @@ const CONFIGURATION = [
 
 /** Operational state whose owning page performs authoritative 15-second polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  "bms_expense_documents",
   "bms_board_game_copies", "bms_board_game_sessions",
   "bms_board_game_session_games", "bms_board_game_session_participants",
   "bms_board_game_billing_groups", "bms_board_game_group_items",
