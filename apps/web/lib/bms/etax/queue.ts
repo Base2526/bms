@@ -92,15 +92,18 @@ export async function enqueueTaxDocument(
 /** ดึงข้อมูลเอกสาร + รายการ มาประกอบ XML */
 async function loadDocumentData(tenantId: string, documentId: string): Promise<EtaxDocumentData | null> {
   const res = await query<any>(
-    `SELECT d.id, d.doc_type, d.doc_no, d.issue_date, d.order_id,
+    `SELECT d.id, d.doc_type, d.doc_no, d.issue_date::text AS issue_date, d.order_id,
             d.buyer_name, d.buyer_tax_id, d.buyer_branch_code, d.buyer_address,
             d.taxable_amount, d.exempt_amount, d.vat_amount, d.vat_rate, d.grand_total,
             prev.doc_no AS replaces_doc_no,
-            s.store_name, s.tax_id AS seller_tax_id, s.address AS seller_address,
+            -- ชื่อผู้ประกอบการคือ bms_tenants.name · store_name เลิกใช้ตั้งแต่ 7.17
+            COALESCE(NULLIF(btrim(t.name), ''), s.store_name) AS seller_name,
+            s.tax_id AS seller_tax_id, s.address AS seller_address,
             s.etax_operator_id,
             l.branch_code
        FROM bms_tax_documents d
        JOIN bms_locations l ON l.id = d.location_id
+       JOIN bms_tenants t ON t.id = d.tenant_id
        LEFT JOIN bms_store_profile s ON s.tenant_id = d.tenant_id
        LEFT JOIN bms_tax_documents prev ON prev.id = d.replaces_document_id
       WHERE d.tenant_id = $1 AND d.id = $2`,
@@ -120,10 +123,11 @@ async function loadDocumentData(tenantId: string, documentId: string): Promise<E
     documentId: d.id,
     docType: d.doc_type,
     docNo: d.doc_no,
-    issueDate: String(d.issue_date instanceof Date ? d.issue_date.toISOString().slice(0, 10) : d.issue_date).slice(0, 10),
+    // อ่านเป็น text จาก SQL — Date ของ pg + toISOString() ถอย 1 วันบนเครื่องที่ไม่ใช่ UTC
+    issueDate: String(d.issue_date).slice(0, 10),
     operatorId: d.etax_operator_id ?? null,
     seller: {
-      name: d.store_name ?? "",
+      name: d.seller_name ?? "",
       taxId: d.seller_tax_id ?? "",
       branchCode: d.branch_code ?? "00000",
       address: d.seller_address ?? null,

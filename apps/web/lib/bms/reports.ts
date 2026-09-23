@@ -1421,13 +1421,17 @@ export async function getManagementReport(
              AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
              AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
              AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS paid_order_count,
-         COALESCE((SELECT SUM(d.grand_total) FROM bms_tax_documents d
+         -- ใบลดหนี้ลดยอดที่ออกใบกำกับไป ต้องเป็นยอดลบ · เดิมบวกเข้าไป ร้านที่รับคืน
+         -- ของเยอะจะเห็นยอดใบกำกับสูงกว่ายอดรับเงินจริง แล้วช่องกระทบยอดไม่มีวันตรง
+         COALESCE((SELECT SUM(CASE WHEN d.doc_type = 'CREDIT_NOTE' THEN -d.grand_total ELSE d.grand_total END)
+                     FROM bms_tax_documents d
                    WHERE d.tenant_id=$1 AND d.cancelled_at IS NULL
                      AND ($4::uuid IS NULL OR d.location_id=$4::uuid)
                      AND d.issued_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
                      AND d.issued_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS tax_document_amount,
+         -- นับเฉพาะใบกำกับ (ใบย่อ/ใบเต็ม) ให้เทียบกับจำนวนบิลที่ชำระแล้วได้ตรง ๆ
          (SELECT COUNT(*)::int FROM bms_tax_documents d
-           WHERE d.tenant_id=$1 AND d.cancelled_at IS NULL
+           WHERE d.tenant_id=$1 AND d.cancelled_at IS NULL AND d.doc_type <> 'CREDIT_NOTE'
              AND ($4::uuid IS NULL OR d.location_id=$4::uuid)
              AND d.issued_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
              AND d.issued_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS tax_document_count,

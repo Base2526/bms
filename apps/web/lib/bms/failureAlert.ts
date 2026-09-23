@@ -74,7 +74,15 @@ export type BmsFailureCode =
   /** AI Pharmacy Intake: ผลลัพธ์จาก AI validate ไม่ผ่านซ้ำจนครบจำนวน retry */
   | "pharmacy_ai.validation_exhausted"
   /** AI Pharmacy Intake: บันทึกสถานะ emergency ไม่สำเร็จ แต่ยังส่งคำเตือนฉุกเฉินให้ลูกค้า */
-  | "pharmacy_intake.persistence_failed";
+  | "pharmacy_intake.persistence_failed"
+  /**
+   * รับคืนสินค้าสำเร็จแล้ว แต่ออกใบลดหนี้ไม่สำเร็จ
+   *
+   * ใบลดหนี้อยู่นอกทรานแซกชันการคืนโดยตั้งใจ (ของกลับเข้าคลังและเงินคืนไปแล้วจริง)
+   * เดิมความล้มเหลวมีแค่ console.error → VAT ขายที่รายงานสูงเกินจริงเท่ายอดคืน
+   * โดยไม่มีใครรู้ · incident นี้คือสัญญาณเดียวว่าต้องไปออกใบลดหนี้ให้บิลนั้น
+   */
+  | "tax.credit_note_failed";
 
 type CatalogEntry = {
   tier: FailureTier;
@@ -164,6 +172,12 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     shopTitle: "⚠️ บันทึกเคสฉุกเฉินของลูกค้าไม่สำเร็จ",
     shopMessage:
       "ลูกค้าได้รับคำแนะนำให้ติดต่อฉุกเฉินแล้ว แต่ระบบบันทึกสถานะเคสไม่สำเร็จ รบกวนเปิดแชทและติดตามลูกค้าทันที",
+  },
+  "tax.credit_note_failed": {
+    tier: "B",
+    shopTitle: "รับคืนสินค้าแล้ว แต่ออกใบลดหนี้ไม่สำเร็จ",
+    shopMessage:
+      "ของกลับเข้าคลังและคืนเงินลูกค้าเรียบร้อยแล้ว แต่ระบบออกใบลดหนี้ไม่สำเร็จ ภาษีขายของเดือนนี้จะสูงกว่าความจริงเท่ายอดที่คืน รบกวนเปิดรายงานภาษีขายแล้วตรวจรายการคืนที่ไม่มีใบลดหนี้",
   },
 };
 
