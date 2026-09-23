@@ -528,6 +528,152 @@ export function buildSpecializedReportDoc(data: ManagementReport): ReportDoc {
 
 // ---- format builders ----
 
+// ---- รายงานภาษีขาย (ประกอบ ภ.พ.30) ----
+//
+// หัวคอลัมน์เป็นภาษาไทยโดยตั้งใจ — เป็นเอกสารที่ส่งให้นักบัญชีไทย และออกได้เฉพาะ XLSX/CSV
+// (reportEngine ปฏิเสธ PDF ของรายงานนี้ เพราะ pdfkit แสดงภาษาไทยไม่ได้ ดูหัวไฟล์)
+
+const SALES_TAX_KIND_LABEL: Record<string, string> = {
+  FULL: "ใบกำกับภาษีเต็มรูป",
+  ABBREVIATED_DAY: "ใบกำกับภาษีอย่างย่อ (รวมรายวัน)",
+  CREDIT_NOTE: "ใบลดหนี้",
+};
+
+const SALES_TAX_EXCEPTION_LABEL: Record<string, string> = {
+  PAID_WITHOUT_TAX_DOCUMENT: "ชำระแล้วแต่ไม่มีใบกำกับภาษี",
+  RETURN_WITHOUT_CREDIT_NOTE: "รับคืนแล้วแต่ไม่มีใบลดหนี้",
+  FULL_REPLACES_OTHER_MONTH: "ใบเต็มออกแทนใบย่อของเดือนอื่น",
+};
+
+function establishmentLabel(e: { isHeadOffice: boolean; branchCode: string; name: string }): string {
+  return e.isHeadOffice ? `สำนักงานใหญ่ (${e.branchCode}) — ${e.name}` : `สาขาที่ ${e.branchCode} — ${e.name}`;
+}
+
+export function buildSalesTaxReportDoc(
+  report: import("./taxReports").SalesTaxReport,
+  formatDate: (iso: string) => string
+): ReportDoc {
+  const byId = new Map(report.establishments.map((e) => [e.locationId, e]));
+  const place = (id: string | null) => {
+    const e = id ? byId.get(id) : null;
+    return e ? establishmentLabel(e) : "";
+  };
+  const exceptionTotal = Object.values(report.exceptionCounts).reduce((a, b) => a + b, 0);
+
+  return {
+    title: "รายงานภาษีขาย",
+    subtitle: `${formatDate(report.period.from)} – ${formatDate(report.period.to)}`,
+    meta: [
+      { label: "ชื่อผู้ประกอบการ", value: report.seller.name },
+      { label: "เลขประจำตัวผู้เสียภาษี", value: report.seller.taxId ?? "(ยังไม่ได้ตั้งที่โปรไฟล์ร้าน)" },
+      { label: "จดทะเบียนภาษีมูลค่าเพิ่ม", value: report.seller.vatRegistered ? "จด" : "ไม่ได้จด" },
+      { label: "มูลค่าที่ต้องเสียภาษี (ก่อน VAT)", value: report.grandTotal.base.toFixed(2) },
+      { label: "ยอดขายที่ได้รับยกเว้น", value: report.grandTotal.exempt.toFixed(2) },
+      { label: "ภาษีขาย", value: report.grandTotal.vat.toFixed(2) },
+      { label: "จำนวนเอกสารที่นับยอด", value: String(report.grandTotal.documentCount) },
+      {
+        label: "รายการที่ต้องตรวจสอบ",
+        value: exceptionTotal === 0 ? "ไม่มี" : `${exceptionTotal} รายการ (ดูแผ่น "ต้องตรวจสอบ")`,
+      },
+      { label: "หมายเหตุ", value: "รายงานนี้ใช้ประกอบการยื่นภาษี ไม่ใช่แบบ ภ.พ.30 — ให้นักบัญชีตรวจก่อนยื่น" },
+    ],
+    sheets: [
+      {
+        name: "สรุปรายสถานประกอบการ",
+        columns: [
+          { key: "place", label: "สถานประกอบการ" },
+          { key: "documentCount", label: "จำนวนเอกสาร" },
+          { key: "base", label: "มูลค่าที่ต้องเสียภาษี" },
+          { key: "exempt", label: "ยอดขายที่ได้รับยกเว้น" },
+          { key: "vat", label: "ภาษีขาย" },
+          { key: "total", label: "รวม" },
+          { key: "rounding", label: "ปัดเศษเงินสด" },
+        ],
+        rows: report.totals.map((t) => ({ ...t, place: place(t.locationId) })),
+      },
+      {
+        name: "รายงานภาษีขาย",
+        columns: [
+          { key: "seq", label: "ลำดับ" },
+          { key: "date", label: "วันที่" },
+          { key: "docNo", label: "เลขที่เอกสาร" },
+          { key: "kind", label: "ประเภท" },
+          { key: "buyerName", label: "ชื่อผู้ซื้อ" },
+          { key: "buyerTaxId", label: "เลขประจำตัวผู้เสียภาษีผู้ซื้อ" },
+          { key: "buyerBranch", label: "สถานประกอบการผู้ซื้อ" },
+          { key: "place", label: "สถานประกอบการผู้ขาย" },
+          { key: "reference", label: "อ้างอิง" },
+          { key: "docCount", label: "จำนวนใบ" },
+          { key: "cancelledCount", label: "ใบที่ยกเลิกในช่วงเลข" },
+          { key: "base", label: "มูลค่าที่ต้องเสียภาษี" },
+          { key: "exempt", label: "ยกเว้นภาษี" },
+          { key: "vat", label: "ภาษีมูลค่าเพิ่ม" },
+          { key: "total", label: "รวม" },
+        ],
+        rows: report.rows.map((r, i) => ({
+          seq: i + 1,
+          date: formatDate(r.issueDate),
+          docNo: r.docNoFrom === r.docNoTo ? r.docNoFrom : `${r.docNoFrom} – ${r.docNoTo}`,
+          kind: SALES_TAX_KIND_LABEL[r.kind] ?? r.kind,
+          buyerName: r.kind === "ABBREVIATED_DAY" ? "ขายปลีก (ใบกำกับภาษีอย่างย่อ)" : r.buyerName ?? "",
+          buyerTaxId: r.buyerTaxId ?? "",
+          buyerBranch: r.buyerBranchCode
+            ? r.buyerBranchCode === "00000" ? "สำนักงานใหญ่" : `สาขาที่ ${r.buyerBranchCode}`
+            : "",
+          place: place(r.locationId),
+          reference: r.referenceDocNo ?? (r.deviceCode ? `เครื่อง ${r.deviceCode}` : ""),
+          docCount: r.docCount,
+          cancelledCount: r.cancelledCount,
+          base: r.base,
+          exempt: r.exempt,
+          vat: r.vat,
+          total: r.total,
+        })),
+      },
+      {
+        name: "ต้องตรวจสอบ",
+        columns: [
+          { key: "kind", label: "เรื่อง" },
+          { key: "at", label: "วันที่" },
+          { key: "place", label: "สถานประกอบการ" },
+          { key: "orderId", label: "เลขบิลในระบบ" },
+          { key: "reference", label: "อ้างอิง" },
+          { key: "amount", label: "ยอดเงิน" },
+          { key: "detail", label: "รายละเอียด" },
+        ],
+        rows: report.exceptions.map((x) => ({
+          kind: SALES_TAX_EXCEPTION_LABEL[x.kind] ?? x.kind,
+          at: formatDate(x.at.slice(0, 10)),
+          place: place(x.locationId),
+          orderId: x.orderId,
+          reference: x.reference ?? "",
+          amount: x.amount,
+          detail: x.detail ?? "",
+        })),
+      },
+      {
+        name: "เอกสารที่ยกเลิก",
+        columns: [
+          { key: "date", label: "วันที่ออก" },
+          { key: "docNo", label: "เลขที่เอกสาร" },
+          { key: "kind", label: "ประเภท" },
+          { key: "place", label: "สถานประกอบการ" },
+          { key: "reason", label: "เหตุผล" },
+          { key: "grandTotal", label: "ยอดเดิม" },
+        ],
+        rows: report.cancelled.map((c) => ({
+          date: formatDate(c.issueDate),
+          docNo: c.docNo,
+          kind: c.docType === "ABBREVIATED" ? "ใบกำกับภาษีอย่างย่อ" : c.docType === "FULL" ? "ใบกำกับภาษีเต็มรูป" : "ใบลดหนี้",
+          place: place(c.locationId),
+          reason: c.reason ?? "",
+          grandTotal: c.grandTotal,
+        })),
+      },
+    ],
+  };
+}
+
 /**
  * Excel sheet names forbid : \ / ? * [ ] and are capped at 31 chars — replace the forbidden
  * characters instead of just truncating, or `book_append_sheet` throws (hit this for real with

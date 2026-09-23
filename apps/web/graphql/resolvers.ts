@@ -71,6 +71,7 @@ import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
 import { bmsProductPriceTiersResolvers } from "@/graphql/bmsProductPriceTiers";
 import { bmsProductPromotionsResolvers } from "@/graphql/bmsProductPromotions";
+import { bmsTaxReportsResolvers } from "@/graphql/bmsTaxReports";
 import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
 import { bmsPosResolvers } from "@/graphql/bmsPos";
 import { bmsPosDeviceResolvers } from "@/graphql/bmsPosDevice";
@@ -2871,6 +2872,7 @@ const rawResolvers = {
     ...bmsCouponsResolvers.Query,
     ...bmsProductPriceTiersResolvers.Query,
     ...bmsProductPromotionsResolvers.Query,
+    ...bmsTaxReportsResolvers.Query,
     ...bmsMembershipResolvers.Query,
     ...bmsPosResolvers.Query,
     ...bmsPosDeviceResolvers.Query,

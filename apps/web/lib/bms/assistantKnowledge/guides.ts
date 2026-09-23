@@ -837,6 +837,44 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: lists(["ตัดหนี้สูญต้องมี ar.writeoff และเป็นการลดสินทรัพย์"], ["Write-off requires ar.writeoff and reduces an asset."]), relatedCapabilityIds: ["receivables.credit-sales"],
   },
   {
+    id: "tax.review-sales-report", module: "tax", pageId: "tax-documents", route: "/admin/tax-documents",
+    title: both("ดูรายงานภาษีขายและส่งออกให้นักบัญชี", "Review and export the sales tax report"),
+    summary: both(
+      "เลือกเดือนและสถานประกอบการ ตรวจรายการที่ต้องแก้ แล้วส่งออก XLSX ให้นักบัญชี",
+      "Pick the month and establishment, clear the items to check, then export XLSX for the accountant."
+    ),
+    aliases: aliases(
+      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30"],
+      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30"]
+    ),
+    requiredPermissions: ["tax.document.view"],
+    prerequisites: lists(
+      ["ร้านต้องตั้งว่าจด VAT และใส่เลขผู้เสียภาษีที่หน้าตั้งค่าร้าน", "ส่งออกไฟล์ต้องมีสิทธิ์ report.view"],
+      ["The shop must be VAT-registered with its tax ID set in store settings.", "Exporting the file also requires report.view."]
+    ),
+    steps: lists(
+      ["เปิดเมนูการเงิน › ภาษีขาย", "เลือกเดือนและสถานประกอบการ", "ตรวจการ์ด 'ต้องตรวจสอบ' ให้เหลือศูนย์หรืออธิบายได้", "กดส่งออกรายงานภาษีขาย (XLSX) แล้วส่งให้นักบัญชี"],
+      ["Open Finance › Sales tax.", "Choose the month and establishment.", "Clear or explain every item in the 'Check before sending' card.", "Export the sales tax report (XLSX) and send it to the accountant."]
+    ),
+    warnings: lists(
+      [
+        "แบ่งงวดตามวันที่ออกเอกสารเวลาไทย บิลหลังเที่ยงคืนอยู่ในวันใหม่",
+        "ใบกำกับอย่างย่อสรุปรายวันต่อเครื่องเป็นช่วงเลข ใบลดหนี้เป็นยอดลบ",
+        "บิลที่ชำระแล้วแต่ไม่มีใบกำกับ (เช่นออร์เดอร์ออนไลน์) ไม่ถูกนับในยอด — ดูที่รายการที่ต้องตรวจสอบ",
+        "รายงานนี้ไม่ใช่การยื่น ภ.พ.30 และยังไม่มีภาษีซื้อ",
+        "ส่งออกได้เฉพาะ XLSX/CSV เพราะ PDF ยังแสดงภาษาไทยไม่ได้",
+      ],
+      [
+        "Periods follow the Thai-time issue date; a bill after midnight belongs to the new day.",
+        "Abbreviated invoices are summarised per day per register as a number range; credit notes are negative.",
+        "Paid bills without a tax invoice (such as online orders) are not in the totals — see the items to check.",
+        "This report does not file PP.30 and does not include input VAT yet.",
+        "Only XLSX/CSV can be exported because PDF cannot render Thai yet.",
+      ]
+    ),
+    relatedCapabilityIds: ["tax.sales-report", "tax.documents"],
+  },
+  {
     id: "settings.configure-shop", module: "settings", pageId: "settings", route: "/admin/settings",
     title: both("ตั้งค่าร้านและช่องทาง", "Configure the shop and channels"), summary: both("ตั้งข้อมูลร้าน การรับเงิน ช่องทาง รายงาน และ AI จากหน้า Settings", "Configure store, payments, channels, reports, and AI from Settings."),
     aliases: aliases(["ตั้งค่าร้าน", "เชื่อมช่องทาง", "ตั้ง AI"], ["configure store", "connect channel", "configure AI"]), requiredPermissions: [],

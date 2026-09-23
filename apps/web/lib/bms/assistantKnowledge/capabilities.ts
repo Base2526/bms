@@ -344,6 +344,24 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     configurationDependencies: [], limitations: both("ปล่อยเชื่อ รับชำระ และตัดหนี้สูญใช้สิทธิ์แยกกัน", "Credit sale, collection, and write-off use separate permissions."),
   },
   {
+    id: "tax.sales-report", module: "tax",
+    title: both("รายงานภาษีขายรายเดือน", "Monthly sales tax report"),
+    description: both(
+      "สรุปใบกำกับภาษีขาย ใบลดหนี้ และ VAT รายสถานประกอบการ พร้อมรายการที่ต้องตรวจก่อนส่งนักบัญชี",
+      "Summarise output tax invoices, credit notes and VAT per establishment, with what to check before sending to the accountant."
+    ),
+    aliases: aliases(
+      ["รายงานภาษีขาย", "ภาษีขาย", "ภ.พ.30", "ภพ30", "ยื่นภาษีมูลค่าเพิ่ม", "ยื่น VAT", "สรุปใบกำกับรายเดือน", "ส่งยอดให้นักบัญชี"],
+      ["sales tax report", "output VAT", "PP30", "VAT return", "monthly tax invoices", "send figures to accountant"]
+    ),
+    status: "AVAILABLE", route: "/admin/tax-documents", requiredPermissions: ["tax.document.view"],
+    configurationDependencies: ["The shop must be VAT-registered for tax invoices to exist."],
+    limitations: both(
+      "เป็นรายงานประกอบการยื่น ไม่ใช่การยื่น ภ.พ.30 และยังไม่มีภาษีซื้อ — นักบัญชีต้องตรวจก่อนยื่น",
+      "It supports a PP.30 filing but does not file it, and input VAT is not recorded yet — an accountant must review before filing."
+    ),
+  },
+  {
     id: "restock.subscriptions", module: "restock",
     title: both("แจ้งเตือนสินค้าเข้า", "Restock subscriptions"),
     description: both("เก็บความต้องการสินค้าหมดและให้พนักงานตรวจคิวเมื่อของกลับเข้า", "Capture out-of-stock demand and let staff review the queue when stock returns."),

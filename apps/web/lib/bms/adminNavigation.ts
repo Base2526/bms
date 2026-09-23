@@ -262,6 +262,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "finance", workspace: "SHOP", visible: (ctx) => ctx.can("ar.view"),
   },
   {
+    id: "finance.tax-documents", route: "/admin/tax-documents", labelKey: "admin_nav.tax_documents",
+    section: "finance", workspace: "SHOP", visible: (ctx) => ctx.can("tax.document.view"),
+  },
+  {
     id: "finance.commission", route: "/admin/commission", labelKey: "admin_nav.commission",
     section: "finance", workspace: "SHOP", visible: (ctx) => ctx.can("commission.view"),
   },

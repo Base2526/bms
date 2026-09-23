@@ -38,6 +38,7 @@ function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string
     { value: "CUSTOMERS", label: t("admin_reports.report_type_customers") },
     { value: "OPERATIONS", label: t("admin_reports.report_type_operations") },
     { value: "SPECIALIZED", label: t("admin_reports.report_type_specialized", { archetype: localizedShopArchetypeLabel(archetype, t) }) },
+    { value: "VAT_SALES", label: t("admin_reports.report_type_vat_sales") },
   ];
   const FORMAT_OPTIONS = [
     { value: "XLSX", label: t("admin_reports.format_xlsx") },

@@ -343,6 +343,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "บันทึกใบอนุญาตเภสัชกรยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-licenses", origin: "coverage" },
   { q: "ดูตัวอย่างหน้าจอรีวิวของร้านยา", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.review-mockup", origin: "coverage" },
   { q: "ดูยอดลูกหนี้ค้างทั้งร้าน", locale: "th", context: GUIDES, expect: "answer", expectTop: "receivables.review", origin: "coverage" },
+  { q: "รายงานภาษีขายอยู่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "tax.review-sales-report", origin: "coverage" },
+  { q: "where is the monthly sales tax report", locale: "en", context: GUIDES, expect: "answer", expectTop: "tax.review-sales-report", origin: "coverage" },
   { q: "AI ตอบผิดต้องดูที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "ai-quality.review", origin: "coverage" },
   { q: "ทดลองคำถามกับ AI ก่อนใช้จริง", locale: "th", context: GUIDES, expect: "answer", expectTop: "ai.use-playground", origin: "coverage" },
   { q: "ตั้งสิทธิ์ให้แต่ละ role ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "permissions.explain", origin: "coverage" },
@@ -415,6 +417,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ระบบบันทึกเงินสดย่อยหน้าร้านได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.expenses", origin: "coverage" },
   { q: "ระบบคืนสินค้าหน้าร้านได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "pos.returns", origin: "coverage" },
   { q: "ระบบออกใบกำกับภาษีได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "tax.documents", origin: "coverage" },
+  { q: "ระบบทำรายงานภาษีขายได้ไหม", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "tax.sales-report", origin: "coverage" },
   {
     q: "ส่ง e-Tax ให้สรรพากรได้จริงหรือยัง", locale: "th", context: CAPABILITIES, expect: "answer",
     expectTop: "tax.etax", expectStatus: "BETA",

@@ -103,6 +103,7 @@ const ROUTES = {
   stockTransfers: "/admin/stock-transfers",
   stockCounts: "/admin/stock-counts",
   receivables: "/admin/receivables",
+  taxDocuments: "/admin/tax-documents",
   kitchen: "/admin/kitchen",
   restaurantFloor: "/admin/restaurant-floor",
   boardGame: "/admin/board-game",
@@ -764,6 +765,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     items: [
       { label: "Payment", href: ROUTES.payment, note: "ตรวจสลิป, confirm/reject และ refund ตามสิทธิ์" },
       { label: "ลูกหนี้การค้า", href: ROUTES.receivables, note: "ยอดค้างต่อลูกค้า อายุหนี้ และการรับชำระที่เคาน์เตอร์" },
+      { label: "ภาษีขาย", href: ROUTES.taxDocuments, note: "ใบกำกับภาษีรายเดือน รายงานภาษีขายประกอบ ภ.พ.30 และรายการที่ต้องตรวจก่อนส่งนักบัญชี" },
       { label: "Commission", href: ROUTES.commission, note: "อัตราคอม, ผลตามรอบ และ clawback หลัง return" },
       { label: "Reports", href: ROUTES.reports, note: "KPI ย้อนหลัง, รายงานยอดขาย/สต็อก และ AI Report Generator" },
     ],
@@ -1975,6 +1977,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     items: [
       { label: "Payment", href: ROUTES.payment, note: "Review slips, confirm/reject payments, and handle refunds when allowed" },
       { label: "Receivables", href: ROUTES.receivables, note: "Outstanding balance per customer, ageing, and counter collections" },
+      { label: "Sales tax", href: ROUTES.taxDocuments, note: "Monthly tax invoices, the sales tax report for PP.30, and what to check before sending to the accountant" },
       { label: "Commission", href: ROUTES.commission, note: "Commission rules, results, and clawbacks after returns" },
       { label: "Reports", href: ROUTES.reports, note: "Historical KPIs, sales/inventory reporting, and AI Report Generator" },
     ],
