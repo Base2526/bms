@@ -10,6 +10,7 @@ import {
 } from "./display-policy.mjs";
 import { parsePairingInput } from "./pairing.mjs";
 import {
+  cachedPosEntryPath,
   MOBILE_POS_PATH,
   POS_NAVIGATION_TIMEOUT_MS,
   resolvePosEntryPath,
@@ -84,7 +85,11 @@ async function readPairing() {
     if (raw?.version !== CONFIG_VERSION || typeof raw.serverUrl !== "string" || typeof raw.token !== "string") return null;
     const token = decryptedToken(raw.token);
     const parsed = token ? parsePairingInput({ serverUrl: raw.serverUrl, pairingInput: token }) : null;
-    return parsed?.ok ? { serverUrl: parsed.serverUrl, token: parsed.token } : null;
+    return parsed?.ok ? {
+      serverUrl: parsed.serverUrl,
+      token: parsed.token,
+      posEntryPath: cachedPosEntryPath(raw.posEntryPath),
+    } : null;
   } catch (error) {
     if (error?.code !== "ENOENT") console.error("Unable to read desktop pairing configuration");
     return null;
@@ -98,6 +103,7 @@ async function writePairing(pairing) {
     version: CONFIG_VERSION,
     serverUrl: pairing.serverUrl,
     token: encryptedToken(pairing.token),
+    posEntryPath: cachedPosEntryPath(pairing.posEntryPath),
   });
   await writeFile(temporary, payload, { encoding: "utf8", mode: 0o600 });
   await rename(temporary, target);
@@ -503,9 +509,10 @@ async function loadPosUrl(url, targetWindow = mainWindow) {
 async function showPos(targetWindow = mainWindow) {
   if (!targetWindow || targetWindow.isDestroyed() || !activePairing) return;
   const pairing = activePairing;
-  const entryPath = await resolvePosEntryPath(async (signal) => {
+  const probeEntryPath = () => resolvePosEntryPath(async (signal) => {
     const response = await net.fetch(new URL(MOBILE_POS_PATH, pairing.serverUrl), {
-      method: "GET",
+      // Compatibility needs one status code, not a second rendered copy of the application.
+      method: "HEAD",
       cache: "no-store",
       redirect: "manual",
       signal,
@@ -516,7 +523,42 @@ async function showPos(targetWindow = mainWindow) {
     });
     return response.status;
   });
+  const cachedEntryPath = cachedPosEntryPath(pairing.posEntryPath);
+  const entryPath = cachedEntryPath ?? await probeEntryPath();
   await loadPosUrl(new URL(entryPath, pairing.serverUrl).toString(), targetWindow);
+
+  if (!cachedEntryPath) {
+    if (activePairing === pairing) {
+      activePairing = { ...pairing, posEntryPath: entryPath };
+      void writePairing(activePairing).catch(() => {
+        console.error("Unable to cache desktop POS entry path");
+      });
+    }
+    return;
+  }
+
+  // Known servers open immediately. Refresh compatibility only for the next launch so an upgrade
+  // from the legacy route never tears down a cashier's active screen in the middle of a sale.
+  void probeEntryPath().then(async (freshEntryPath) => {
+    if (freshEntryPath === cachedEntryPath || activePairing !== pairing) return;
+    const refreshedPairing = { ...pairing, posEntryPath: freshEntryPath };
+    activePairing = refreshedPairing;
+    await writePairing(refreshedPairing);
+
+    // Upgrades wait until the next launch so they never replace an active legacy sale. A rollback
+    // is different: an exact 404 proves the cached mobile page cannot be a working register, so
+    // recover that invalid page immediately instead of making the cashier restart the app.
+    if (cachedEntryPath === MOBILE_POS_PATH && freshEntryPath === "/pos"
+      && !targetWindow.isDestroyed() && activePairing === refreshedPairing) {
+      let current;
+      try { current = new URL(targetWindow.webContents.getURL()); } catch { return; }
+      if (current.origin === pairing.serverUrl && current.pathname === MOBILE_POS_PATH) {
+        await loadPosUrl(new URL(freshEntryPath, pairing.serverUrl).toString(), targetWindow);
+      }
+    }
+  }).catch(() => {
+    // A transient background probe must not erase a working last-known route.
+  });
 }
 
 function startPosNavigation() {
@@ -584,7 +626,7 @@ function registerIpc() {
     if (!verified.ok) return verified;
     try {
       await writePairing(parsed);
-      activePairing = { serverUrl: parsed.serverUrl, token: parsed.token };
+      activePairing = { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
       void startPosNavigation();
       return { ok: true };
     } catch {

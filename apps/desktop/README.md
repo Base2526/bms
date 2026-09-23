@@ -22,8 +22,10 @@ authoritative; this app does not contain a database or a second settlement path.
   screen: the pharmacist review queue, pharmacist PIN at the counter and clinical evidence live only
   there, and the compact screen sends every pharmacy field as null. The customer display follows
   whichever workspace is visibly selling;
-- rollout is backward compatible: the shell probes `/pos/app` and falls back to `/pos` only when a
-  paired pre-rollout server confirms that the new route is missing with HTTP 404;
+- rollout is backward compatible: the first connection probes `/pos/app` with `HEAD` and falls back
+  to `/pos` only when a paired pre-rollout server confirms HTTP 404; the selected route is stored
+  beside the encrypted pairing so later launches open immediately, then refresh compatibility in
+  the background for the next launch without replacing an active cashier screen;
 - paired startup paints a local connection screen before probing the server, bounds the compatibility
   probe and page navigation with timeouts, and offers retry or re-pair recovery instead of leaving the
   native window on its background colour when the network or web deployment stalls;

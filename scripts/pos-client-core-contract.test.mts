@@ -163,6 +163,45 @@ test("desktop POS defers heavy secondary workspaces until after the selling scre
   );
 });
 
+test("full POS search keeps raw keystrokes outside the register-wide state", () => {
+  assert.match(retailRenderer, /const PosProductSearchInput = memo\(forwardRef/);
+  assert.match(retailRenderer, /defaultValue=""/);
+  assert.match(
+    retailRenderer,
+    /queryTimer\.current = window\.setTimeout\([\s\S]*?onQueryChange\(value\);[\s\S]*?180/,
+  );
+  assert.match(
+    retailRenderer,
+    /<PosProductSearchInput[\s\S]*?onQueryChange=\{setSearchTerm\}[\s\S]*?onSubmit=\{submitManualScan\}/,
+  );
+  assert.match(retailRenderer, /useImperativeHandle\(ref,[\s\S]*?clear/);
+  assert.match(
+    retailRenderer,
+    /const clear = useCallback\(\(\) => \{[\s\S]*?clearTimeout\(queryTimer\.current\)[\s\S]*?inputRef\.current\.value = "";[\s\S]*?onQueryChange\(""\)/,
+    "programmatic clears must cancel a pending debounced query instead of letting stale results reappear",
+  );
+  assert.doesNotMatch(retailRenderer, /const \[scanCode, setScanCode\] = useState/);
+});
+
+test("desktop startup reuses its compatible route without rendering the app twice", () => {
+  const showPos = desktopMain.slice(
+    desktopMain.indexOf("async function showPos"),
+    desktopMain.indexOf("function startPosNavigation"),
+  );
+  assert.match(showPos, /method: "HEAD"/);
+  assert.doesNotMatch(showPos, /method: "GET"/);
+  assert.match(
+    showPos,
+    /const cachedEntryPath = cachedPosEntryPath\(pairing\.posEntryPath\);\s*const entryPath = cachedEntryPath \?\? await probeEntryPath\(\);\s*await loadPosUrl/,
+  );
+  assert.match(showPos, /void probeEntryPath\(\)\.then/);
+  assert.match(
+    showPos,
+    /cachedEntryPath === MOBILE_POS_PATH && freshEntryPath === "\/pos"[\s\S]*?current\.pathname === MOBILE_POS_PATH[\s\S]*?await loadPosUrl/,
+    "a rollback that removes /pos/app must recover the cached mobile route without an app restart",
+  );
+});
+
 test("desktop refresh uses one in-place contract across retail, restaurant, and board-game shops", () => {
   for (const path of ["/pos", "/pos/app", "/pos/restaurant"]) {
     assert.match(desktopMain, new RegExp(`contentRefreshRoutes[\\s\\S]*?${path.replaceAll("/", "\\/")}`));
@@ -201,6 +240,31 @@ test("restaurant other-work modules keep the restaurant identity in the desktop 
     desktopRenderer,
     /businessArchetype !== "restaurant"[\s\S]*?!cashier[\s\S]*?router\.replace\("\/pos\/restaurant"\)/,
     "a verified restaurant operator should land on the floor instead of the retail home",
+  );
+  const floorHandoff = desktopRenderer.slice(
+    desktopRenderer.indexOf('if (bootstrap?.businessArchetype !== "restaurant" || !cashier'),
+    desktopRenderer.indexOf('router.replace("/pos/restaurant")'),
+  );
+  assert.ok(floorHandoff.length > 0, "the restaurant floor handoff effect must exist");
+  assert.ok(
+    !/hasDesktopPosBridge\(\)/.test(floorHandoff.split("\n")[0]),
+    "signIn leaves a restaurant login in 'preparing' until this handoff runs; gating it on the Electron bridge strands a browser register",
+  );
+  assert.match(desktopRenderer, /keepPreparingUntilNavigation = true/);
+  const signIn = desktopRenderer.slice(
+    desktopRenderer.indexOf("const signIn = async"),
+    desktopRenderer.indexOf("const openShift = async"),
+  );
+  assert.match(
+    signIn,
+    /const restaurantHome = bootstrap\?\.businessArchetype === "restaurant"[\s\S]*?!new URLSearchParams\(window\.location\.search\)\.get\("module"\)/,
+    "only a plain restaurant entry should wait for the floor navigation",
+  );
+  assert.match(signIn, /if \(restaurantHome\) \{[\s\S]*?keepPreparingUntilNavigation = true;/);
+  assert.match(
+    signIn,
+    /setCashier\(verified\);\s*if \(restaurantHome\) return;\s*sendFlow\("CASHIER_VERIFIED"\);/,
+    "restaurant other-work deep-links must finish the login flow instead of waiting for a redirect they intentionally skip",
   );
   assert.match(
     desktopRenderer,

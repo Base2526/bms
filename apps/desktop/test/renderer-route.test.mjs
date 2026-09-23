@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  cachedPosEntryPath,
   LEGACY_POS_PATH,
   MOBILE_POS_PATH,
   posEntryPathForStatus,
   resolvePosEntryPath,
 } from "../src/renderer-route.mjs";
+
+test("restores only a client-owned POS entry path", () => {
+  assert.equal(cachedPosEntryPath(MOBILE_POS_PATH), MOBILE_POS_PATH);
+  assert.equal(cachedPosEntryPath(LEGACY_POS_PATH), LEGACY_POS_PATH);
+  assert.equal(cachedPosEntryPath("/admin"), null);
+  assert.equal(cachedPosEntryPath(undefined), null);
+});
 
 test("opens the mobile-flow renderer when the paired server has it", () => {
   assert.equal(posEntryPathForStatus(200), MOBILE_POS_PATH);

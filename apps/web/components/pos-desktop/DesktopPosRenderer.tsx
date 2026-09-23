@@ -481,11 +481,14 @@ export default function DesktopPosRenderer() {
   }, []);
 
   useEffect(() => {
-    if (bootstrap?.businessArchetype !== "restaurant" || !cashier || !hasDesktopPosBridge()) return;
+    if (bootstrap?.businessArchetype !== "restaurant" || !cashier) return;
     // A restaurant register's home is the floor, not the blue retail shell. Keep explicit module
     // deep-links from the restaurant “other work” hub on this page; only a plain /pos/app entry
     // continues to the restaurant operating surface. Client navigation intentionally preserves the
     // in-memory verified operator, so the same human is not asked for the same PIN a second time.
+    // This must not depend on the Electron bridge: signIn() leaves the login in "preparing" for a
+    // restaurant and relies on this navigation to finish it, so a browser register would otherwise
+    // wait on "กำลังเตรียมหน้าร้าน…" forever with the button disabled.
     const requested = new URLSearchParams(window.location.search).get("module");
     if (requested) return;
     let active = true;
@@ -757,6 +760,8 @@ export default function DesktopPosRenderer() {
     if (!cashierId || !pin || busy) return;
     let verificationCompleted = verifiedLogin?.id === cashierId;
     let keepPreparingUntilNavigation = false;
+    const restaurantHome = bootstrap?.businessArchetype === "restaurant"
+      && !new URLSearchParams(window.location.search).get("module");
     setBusy(true);
     setError("");
     try {
@@ -775,7 +780,7 @@ export default function DesktopPosRenderer() {
       }
 
       setLoginPhase("preparing");
-      if (bootstrap?.businessArchetype === "restaurant") {
+      if (restaurantHome) {
         await prepareRestaurantWorkspace(token);
         restaurantPreparedRef.current = true;
         keepPreparingUntilNavigation = true;
@@ -794,7 +799,7 @@ export default function DesktopPosRenderer() {
       }
 
       setCashier(verified);
-      if (bootstrap?.businessArchetype === "restaurant") return;
+      if (restaurantHome) return;
       sendFlow("CASHIER_VERIFIED");
     } catch (cause) {
       if (!verificationCompleted) setPin("");
