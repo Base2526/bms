@@ -475,6 +475,34 @@ export type PosScanHit = {
   scaleBarcode?: string | null;
 };
 
+/**
+ * Whether a variant's own `bms_inventory` row is the real selling ceiling.
+ *
+ * A bundle (8.8) keeps its own row at 0 and consumes components; a RECIPE/NON_STOCK menu
+ * (9.40/9.52) keeps its own row at 0 by design and consumes ingredients or nothing. For those,
+ * `getPosVariantAvailable()` answers 0 even when the item is perfectly sellable, and a client that
+ * treats that 0 as "out of stock" refuses a sale the server would accept. Stock for them is still
+ * enforced where it always was: `createOrderInTx()` reserves components/ingredients at commit.
+ * An unknown SKU answers `true` so a caller never loosens a check because of a missing row.
+ */
+export async function isPosVariantStockTracked(
+  tenantId: string,
+  productSku: string,
+): Promise<boolean> {
+  const res = await query<{ tracked: boolean }>(
+    `SELECT NOT (
+              COALESCE(p.is_bundle, FALSE)
+              OR COALESCE(sp.stock_policy, 'DIRECT') IN ('RECIPE', 'NON_STOCK')
+            ) AS tracked
+       FROM bms_products p
+       LEFT JOIN bms_product_stock_policies sp
+         ON sp.tenant_id = p.tenant_id AND sp.product_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.sku = $2`,
+    [tenantId, productSku],
+  );
+  return res.rows[0]?.tracked ?? true;
+}
+
 /** Branch-scoped available stock used by POS transport adapters after a scan resolves the variant. */
 export async function getPosVariantAvailable(
   tenantId: string,

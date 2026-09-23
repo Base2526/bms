@@ -9,7 +9,7 @@
 //
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
-import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
 import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
@@ -925,6 +925,71 @@ type SearchItem = {
   imageUrl?: string | null;
 };
 
+/**
+ * Keep raw keystrokes outside the register-wide component. Barcode wedges still submit
+ * immediately on Enter, while human searches update the parent only after a short pause.
+ */
+type PosProductSearchInputHandle = {
+  focus: () => void;
+  clear: () => void;
+};
+
+const PosProductSearchInput = memo(forwardRef<PosProductSearchInputHandle, {
+  lookupMode: boolean;
+  onQueryChange: (value: string) => void;
+  onSubmit: (value: string) => void;
+}>(function PosProductSearchInput({ lookupMode, onQueryChange, onSubmit }, ref) {
+  const queryTimer = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const clear = useCallback(() => {
+    if (queryTimer.current) window.clearTimeout(queryTimer.current);
+    queryTimer.current = null;
+    if (inputRef.current) inputRef.current.value = "";
+    onQueryChange("");
+  }, [onQueryChange]);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus(),
+    clear,
+  }), [clear]);
+
+  useEffect(() => () => {
+    if (queryTimer.current) window.clearTimeout(queryTimer.current);
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      autoFocus
+      defaultValue=""
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        if (queryTimer.current) window.clearTimeout(queryTimer.current);
+        queryTimer.current = window.setTimeout(() => {
+          queryTimer.current = null;
+          onQueryChange(value);
+        }, 180);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        if (queryTimer.current) window.clearTimeout(queryTimer.current);
+        queryTimer.current = null;
+        const value = event.currentTarget.value;
+        clear();
+        onSubmit(value);
+      }}
+      placeholder={
+        lookupMode
+          ? "เช็คของ — ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า"
+          : "ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า แล้วกด Enter"
+      }
+    />
+  );
+}));
+PosProductSearchInput.displayName = "PosProductSearchInput";
+
 type PosPurchaseHeader = {
   id: string;
   status: "OPEN" | "PARTIAL";
@@ -1384,7 +1449,6 @@ export default function PosPage() {
   const [loadingSession, setLoadingSession] = useState(true);
   const [cashierId, setCashierId] = useState<string>(initialCashierId);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [scanCode, setScanCode] = useState("");
   const [hidCapturing, setHidCapturing] = useState(false);
   const keyboardWedgeStateRef = useRef<KeyboardWedgeState>(IDLE_KEYBOARD_WEDGE_STATE);
   const scanTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -1397,6 +1461,9 @@ export default function PosPage() {
     const run = () => handlerAtArrival(code, source, size);
     scanTaskQueueRef.current = scanTaskQueueRef.current.then(run, run);
   }, []);
+  const submitManualScan = useCallback((code: string) => {
+    enqueueScan(code, "manual");
+  }, [enqueueScan]);
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [payments, setPayments] = useState<PosPaymentDraft[]>([
@@ -1748,7 +1815,7 @@ export default function PosPage() {
   const [shiftReturnSummary, setShiftReturnSummary] = useState<{
     count: number; total: number; pendingCount: number; pendingTotal: number;
   }>({ count: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
-  const scanRef = useRef<HTMLInputElement>(null);
+  const scanRef = useRef<PosProductSearchInputHandle>(null);
   const stockScanRef = useRef<HTMLInputElement>(null);
   const hasPendingOrderWrite = hasPendingSale || hasPendingDepositSale;
   const pendingRefundTasks = useMemo(() => recentReceipts.flatMap((row) => {
@@ -4341,7 +4408,7 @@ export default function PosPage() {
     }
     const trimmed = code.trim();
     if (!trimmed || !token) return;
-    setScanCode("");
+    scanRef.current?.clear();
     try {
       const params = new URLSearchParams({ code: trimmed });
       if (size?.trim()) params.set("size", size.trim().toUpperCase());
@@ -4760,26 +4827,23 @@ export default function PosPage() {
     }
     let cancelled = false;
     setSearching(true);
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await fetch(`/api/pos/search?q=${encodeURIComponent(q)}`, {
-            headers: authHeaders,
-            cache: "no-store",
-          });
-          const data = await res.json().catch(() => ({ items: [] }));
-          if (cancelled) return;
-          setSearchResults(Array.isArray(data?.items) ? data.items : []);
-        } catch {
-          if (!cancelled) setSearchResults([]);
-        } finally {
-          if (!cancelled) setSearching(false);
-        }
-      })();
-    }, 180);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/pos/search?q=${encodeURIComponent(q)}`, {
+          headers: authHeaders,
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({ items: [] }));
+        if (cancelled) return;
+        setSearchResults(Array.isArray(data?.items) ? data.items : []);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    })();
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
   }, [searchTerm, token, authHeaders]);
 
@@ -5696,7 +5760,7 @@ export default function PosPage() {
         setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
         // บิลถัดไปเริ่มที่ฟอร์มเงินสดง่ายเสมอ ไม่ค้างโหมดจ่ายผสมจากบิลก่อน
         resetToSimpleCash();
-        setScanCode("");
+        scanRef.current?.clear();
         setSearchTerm("");
         setSearchResults([]);
         setRecentSalesQuery("");
@@ -8187,26 +8251,11 @@ export default function PosPage() {
               ตอนนี้: พิมพ์ไปก็ค้นชื่อให้ไปด้วย · Enter = ตีความเป็นบาร์โค้ด/รหัสตรง ๆ */}
           <div className="pos-scan">
           <ScanBarcodeIcon />
-          <input
+          <PosProductSearchInput
             ref={scanRef}
-            autoFocus
-            value={scanCode}
-            onChange={(e) => {
-              setScanCode(e.target.value);
-              setSearchTerm(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              // เครื่องสแกนเป็นคีย์บอร์ด: ยิงเสร็จมันเคาะ Enter ให้เอง
-              if (e.key === "Enter") {
-                enqueueScan(scanCode, "manual");
-                setSearchTerm("");
-              }
-            }}
-            placeholder={
-              lookupMode
-                ? "เช็คของ — ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า"
-                : "ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า แล้วกด Enter"
-            }
+            lookupMode={lookupMode}
+            onQueryChange={setSearchTerm}
+            onSubmit={submitManualScan}
           />
           {session?.device.scanner.mode === "PREFIX" && (
             <span className="pos-scan-shortcut" aria-label={`คีย์เริ่มสแกน ${session.device.scanner.prefixKey}`}>
@@ -8249,7 +8298,7 @@ export default function PosPage() {
                     const sizes = item.availableSizes.filter((v) => v.available > 0);
                     if (sizes.length === 1) {
                       enqueueScan(item.sku, "manual", sizes[0].size);
-                      setScanCode("");
+                      scanRef.current?.clear();
                       setSearchTerm("");
                       setSearchResults([]);
                     }
@@ -8286,7 +8335,7 @@ export default function PosPage() {
                           e.preventDefault();
                           e.stopPropagation();
                           enqueueScan(item.sku, "manual", variant.size);
-                          setScanCode("");
+                          scanRef.current?.clear();
                           setSearchTerm("");
                           setSearchResults([]);
                         }}
@@ -10033,7 +10082,7 @@ export default function PosPage() {
               resetToSimpleCash();
               clearBillCustomerState();
               setParkLabel("");
-              setScanCode("");
+              scanRef.current?.clear();
               setSearchTerm("");
               setSearchResults([]);
               setNotice(null);

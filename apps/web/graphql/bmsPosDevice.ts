@@ -49,6 +49,7 @@ import {
   getPosShiftReport,
   getPosShiftReturnSummary,
   getPosVariantAvailable,
+  isPosVariantStockTracked,
   blindReturnPosSale,
   cancelRestaurantOrderLines,
   cashierHasPermission,
@@ -886,6 +887,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     packs: [BmsPosPackOption!]!
     scaleBarcode: String
     available: Float!
+    """
+    False when available is not a selling ceiling: bundles and RECIPE/NON_STOCK menus keep
+    their own inventory row at 0 by design, and stock is enforced on components/ingredients when
+    the sale is committed. Clients must not refuse such an item because available is 0.
+    """
+    stockTracked: Boolean!
     imageUrl: String
   }
 
@@ -3449,13 +3456,14 @@ export const bmsPosDeviceResolvers = {
           scanCode: code,
         });
       }
-      const [available, imageUrl] = await Promise.all([
+      const [available, stockTracked, imageUrl] = await Promise.all([
         getPosVariantAvailable(
           device.tenantId,
           device.locationId,
           hit.sku,
           hit.size,
         ),
+        isPosVariantStockTracked(device.tenantId, hit.sku),
         args.withImage
           ? listPrimaryProductImages(device.tenantId, [hit.sku]).then(
               (images) => images.get(hit.sku) ?? null,
@@ -3465,6 +3473,7 @@ export const bmsPosDeviceResolvers = {
       return {
         ...hit,
         available,
+        stockTracked,
         ...(args.withImage ? { imageUrl: imageUrl ?? null } : {}),
       };
     },

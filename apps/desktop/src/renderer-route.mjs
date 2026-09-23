@@ -8,6 +8,11 @@ export function posEntryPathForStatus(status) {
   return status === 404 ? LEGACY_POS_PATH : MOBILE_POS_PATH;
 }
 
+/** Only paths selected by this client may be restored from disk. */
+export function cachedPosEntryPath(value) {
+  return value === MOBILE_POS_PATH || value === LEGACY_POS_PATH ? value : null;
+}
+
 /**
  * The compatibility probe must never hold the native window on an empty document. A failed or
  * slow probe is not evidence that the new renderer is absent, so retain the strict 404-only

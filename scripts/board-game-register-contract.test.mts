@@ -179,7 +179,7 @@ test("the board-game workspace uses the full register instead of leaving an empt
 test("desktop opens one board-game workspace without booting the legacy register beside it", () => {
   assert.match(
     desktopRenderer,
-    /activeModule\s*===\s*["']boardgame["']\s*\?[\s\S]{0,400}<BoardGamePanel/,
+    /shownModule\s*===\s*["']boardgame["']\s*\?[\s\S]{0,400}<BoardGamePanel/,
     "desktop must mount the board-game workspace directly instead of making PosPage load session and receipt data first",
   );
   assert.doesNotMatch(
