@@ -23,6 +23,7 @@ import {
 } from "./reports";
 import { listLowStock } from "./products";
 import { getSalesTaxReport } from "./taxReports";
+import { getStockLedger } from "./stockLedger";
 import { formatTaxDate } from "./taxReportMath";
 import { taxClockOf } from "./taxDocumentNumber";
 import { getLocation } from "./locations";
@@ -40,6 +41,7 @@ import {
   buildOperationsReportDoc,
   buildSpecializedReportDoc,
   buildSalesTaxReportDoc,
+  buildStockLedgerReportDoc,
   buildXlsx,
   buildCsv,
   buildPdf,
@@ -58,10 +60,12 @@ export const REPORT_TYPES = [
   "SPECIALIZED",
   // รายงานภาษีขายรายสถานประกอบการ ประกอบ ภ.พ.30 (ดู taxReports.ts)
   "VAT_SALES",
+  // รายงานสินค้าและวัตถุดิบรายสถานประกอบการ (ดู stockLedger.ts)
+  "STOCK_LEDGER",
 ] as const;
 
 /** รายงานที่หัวคอลัมน์/ข้อมูลเป็นภาษาไทยล้วน — pdfkit แสดงไม่ได้ (ดู documentGenerator.ts) */
-const THAI_ONLY_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES"]);
+const THAI_ONLY_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "STOCK_LEDGER"]);
 
 /** เดือนปัจจุบันตามเวลาไทย — ค่าปริยายของรายงานภาษีที่ต้องมีช่วงวันที่เสมอ */
 function currentTaxMonth(): { from: string; to: string } {
@@ -149,6 +153,15 @@ async function collectReportDoc(
         locationId,
       });
       return buildSalesTaxReportDoc(report, (iso) => formatTaxDate(iso, report.seller.calendarEra));
+    }
+    case "STOCK_LEDGER": {
+      const month = currentTaxMonth();
+      const report = await getStockLedger(tenantId, {
+        from: dateFrom ?? month.from,
+        to: dateTo ?? month.to,
+        locationId,
+      });
+      return buildStockLedgerReportDoc(report, (iso) => formatTaxDate(iso, "BE"));
     }
   }
 }

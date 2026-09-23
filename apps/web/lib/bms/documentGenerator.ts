@@ -674,6 +674,78 @@ export function buildSalesTaxReportDoc(
   };
 }
 
+// ---- รายงานสินค้าและวัตถุดิบ ----
+
+export function buildStockLedgerReportDoc(
+  report: import("./stockLedger").StockLedgerReport,
+  formatDate: (iso: string) => string
+): ReportDoc {
+  const byId = new Map(report.establishments.map((e) => [e.locationId, e]));
+  const place = (id: string) => {
+    const e = byId.get(id);
+    if (!e) return "";
+    return establishmentLabel(e);
+  };
+  return {
+    title: "รายงานสินค้าและวัตถุดิบ",
+    subtitle: `${formatDate(report.period.from)} – ${formatDate(report.period.to)}`,
+    meta: [
+      { label: "จำนวนรายการ", value: String(report.rows.length) },
+      { label: "หน่วย", value: "หน่วยฐานของสินค้า (ชิ้น/กรัม ฯลฯ) ไม่ใช่หน่วยขาย" },
+      {
+        label: "มูลค่าคงเหลือโดยประมาณ",
+        value: report.totalClosingValue == null
+          ? `คำนวณไม่ได้ — มี ${report.missingCostCount} รายการที่ยังไม่ได้ตั้งต้นทุน`
+          : report.totalClosingValue.toFixed(2),
+      },
+      { label: "วิธีคิดมูลค่า", value: "ต้นทุนปัจจุบันของสินค้า × จำนวนคงเหลือ (ไม่ใช่ FIFO/ถัวเฉลี่ย)" },
+      {
+        label: "ยอดยกมาที่ไม่มีหลักฐานการเคลื่อนไหว",
+        value: report.unrecordedCount === 0 ? "ไม่มี" : `${report.unrecordedCount} รายการ (ดูคอลัมน์ของแต่ละแถว)`,
+      },
+      {
+        label: "การปรับจากการนับที่ไม่ทราบทิศทาง",
+        value: report.unknownDirectionCount === 0 ? "ไม่มี" : `${report.unknownDirectionCount} รายการ (ไม่ถูกนับในยอดรับ/จ่าย)`,
+      },
+    ],
+    sheets: [
+      {
+        name: "สินค้าและวัตถุดิบ",
+        columns: [
+          { key: "place", label: "สถานประกอบการ" },
+          { key: "sku", label: "รหัสสินค้า" },
+          { key: "size", label: "ขนาด/รุ่น" },
+          { key: "productName", label: "ชื่อสินค้า" },
+          { key: "unit", label: "หน่วย" },
+          { key: "opening", label: "ยอดยกมา" },
+          { key: "openingUnrecorded", label: "ในยอดยกมา: ไม่มีหลักฐาน" },
+          { key: "purchased", label: "รับ: ซื้อ" },
+          { key: "returned", label: "รับ: ลูกค้าคืน" },
+          { key: "transferredIn", label: "รับ: โอนเข้า" },
+          { key: "countedUp", label: "รับ: นับเพิ่ม" },
+          { key: "adjustedIn", label: "รับ: ปรับเพิ่ม" },
+          { key: "totalIn", label: "รวมรับ" },
+          { key: "sold", label: "จ่าย: ขาย" },
+          { key: "transferredOut", label: "จ่าย: โอนออก" },
+          { key: "wasted", label: "จ่าย: ของเสีย" },
+          { key: "countedDown", label: "จ่าย: นับลด" },
+          { key: "adjustedOut", label: "จ่าย: ปรับลด" },
+          { key: "totalOut", label: "รวมจ่าย" },
+          { key: "closing", label: "คงเหลือ" },
+          { key: "unitCost", label: "ต้นทุน/หน่วย" },
+          { key: "closingValue", label: "มูลค่าคงเหลือ (ประมาณ)" },
+        ],
+        rows: report.rows.map((r) => ({
+          ...r,
+          place: place(r.locationId),
+          unitCost: r.unitCost ?? "",
+          closingValue: r.closingValue ?? "",
+        })),
+      },
+    ],
+  };
+}
+
 /**
  * Excel sheet names forbid : \ / ? * [ ] and are capped at 31 chars — replace the forbidden
  * characters instead of just truncating, or `book_append_sheet` throws (hit this for real with

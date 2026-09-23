@@ -483,6 +483,7 @@ export async function applyStockCount(input: {
         size: item.size,
         type: "COUNT_ADJUST",
         qty: Math.abs(delta),
+        direction: delta > 0 ? "IN" : "OUT",
         note: `นับสต็อก ${c.count_no}: ระบบ ${item.snapshot_qty} นับได้ ${item.counted_qty}`,
         actor: input.actorUserId,
       });

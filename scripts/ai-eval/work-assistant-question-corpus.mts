@@ -345,6 +345,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ดูยอดลูกหนี้ค้างทั้งร้าน", locale: "th", context: GUIDES, expect: "answer", expectTop: "receivables.review", origin: "coverage" },
   { q: "รายงานภาษีขายอยู่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "tax.review-sales-report", origin: "coverage" },
   { q: "where is the monthly sales tax report", locale: "en", context: GUIDES, expect: "answer", expectTop: "tax.review-sales-report", origin: "coverage" },
+  { q: "ทำรายงานสินค้าและวัตถุดิบยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "tax.review-sales-report", origin: "coverage" },
   { q: "AI ตอบผิดต้องดูที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "ai-quality.review", origin: "coverage" },
   { q: "ทดลองคำถามกับ AI ก่อนใช้จริง", locale: "th", context: GUIDES, expect: "answer", expectTop: "ai.use-playground", origin: "coverage" },
   { q: "ตั้งสิทธิ์ให้แต่ละ role ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "permissions.explain", origin: "coverage" },

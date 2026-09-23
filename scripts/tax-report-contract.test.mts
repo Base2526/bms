@@ -106,3 +106,28 @@ test("the tax document page is behind tax.document.view", () => {
   const gql = read("apps/web/graphql/bmsTaxReports.ts");
   assert.equal((gql.match(/requirePermission\(ctx, "tax\.document\.view"\)/g) ?? []).length, 3);
 });
+
+test("the goods report never counts reservations, quarantine or lost transfers as stock movement", () => {
+  const src = read("apps/web/lib/bms/stockLedger.ts");
+  const inTypes = /const IN_TYPES_SQL = `([^`]*)`/.exec(src)?.[1] ?? "";
+  const outTypes = /const OUT_TYPES_SQL = `([^`]*)`/.exec(src)?.[1] ?? "";
+  assert.ok(inTypes && outTypes);
+  for (const ignored of ["RESERVE", "RELEASE", "QUARANTINE_IN", "TRANSFER_LOST"]) {
+    assert.ok(!inTypes.includes(`'${ignored}'`) && !outTypes.includes(`'${ignored}'`), `${ignored} must not move the balance`);
+  }
+  for (const t of ["STOCK_IN", "RETURN", "TRANSFER_IN"]) assert.ok(inTypes.includes(`'${t}'`), t);
+  for (const t of ["STOCK_OUT", "SHIP", "TRANSFER_OUT", "WASTAGE"]) assert.ok(outTypes.includes(`'${t}'`), t);
+  assert.ok(/direction = 'IN'/.test(inTypes) && /direction = 'OUT'/.test(outTypes));
+  // ส่วนต่างที่ไม่มีหลักฐานต้องแสดงแยก ไม่ใช่กลืนเข้ายอดยกมาเงียบ ๆ
+  assert.ok(/openingUnrecorded: unrecorded/.test(src));
+});
+
+test("only stock counts write the direction column — every sale must keep working without 10.10", () => {
+  const src = read("apps/web/lib/bms/movements.ts");
+  const fn = src.slice(src.indexOf("export async function recordMovement"), src.indexOf("export async function recordOrderMovements"));
+  assert.ok(/if \(m\.direction\) \{[\s\S]*?direction\)[\s\S]*?return;\s*\}/.test(fn), "direction is inserted only when set");
+  const bulk = src.slice(src.indexOf("export async function recordOrderMovements"));
+  assert.ok(!/direction/.test(bulk.slice(0, bulk.indexOf("export async function listMovements"))));
+  const counts = read("apps/web/lib/bms/stockCounts.ts");
+  assert.ok(/type: "COUNT_ADJUST",\s*qty: Math\.abs\(delta\),\s*direction: delta > 0 \? "IN" : "OUT"/.test(counts));
+});

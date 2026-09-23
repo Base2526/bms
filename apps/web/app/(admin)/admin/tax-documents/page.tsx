@@ -129,10 +129,10 @@ export default function TaxDocumentsPage() {
     FULL_REPLACES_OTHER_MONTH: t("admin_tax_documents.exception_full_other_month"),
   };
 
-  const exportXlsx = async () => {
+  const exportXlsx = async (reportType: "VAT_SALES" | "STOCK_LEDGER") => {
     try {
       const res = await generate({
-        variables: { input: { reportType: "VAT_SALES", format: "XLSX", dateFrom: from, dateTo: to, locationId: locationId ?? null, includeSummary: false } },
+        variables: { input: { reportType, format: "XLSX", dateFrom: from, dateTo: to, locationId: locationId ?? null, includeSummary: false } },
       });
       const url = res.data?.bmsGenerateReport?.fileUrl;
       if (url) window.open(url, "_blank");
@@ -166,9 +166,14 @@ export default function TaxDocumentsPage() {
           {t("admin_tax_documents.refresh")}
         </Button>
         {can("report.view") && (
-          <Button type="primary" icon={<FileExcelOutlined />} loading={generating} onClick={exportXlsx}>
-            {t("admin_tax_documents.export_xlsx")}
-          </Button>
+          <>
+            <Button type="primary" icon={<FileExcelOutlined />} loading={generating} onClick={() => exportXlsx("VAT_SALES")}>
+              {t("admin_tax_documents.export_xlsx")}
+            </Button>
+            <Button icon={<FileExcelOutlined />} loading={generating} onClick={() => exportXlsx("STOCK_LEDGER")}>
+              {t("admin_tax_documents.export_stock_ledger")}
+            </Button>
+          </>
         )}
       </AdminPageHeader>
 

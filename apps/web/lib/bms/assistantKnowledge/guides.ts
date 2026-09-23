@@ -844,8 +844,8 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "Pick the month and establishment, clear the items to check, then export XLSX for the accountant."
     ),
     aliases: aliases(
-      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30"],
-      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30"]
+      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30", "รายงานสินค้าและวัตถุดิบ", "รายงานสินค้าคงเหลือรายสาขา"],
+      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30", "goods and materials report", "stock report per branch for tax"]
     ),
     requiredPermissions: ["tax.document.view"],
     prerequisites: lists(
@@ -863,6 +863,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
         "บิลที่ชำระแล้วแต่ไม่มีใบกำกับ (เช่นออร์เดอร์ออนไลน์) ไม่ถูกนับในยอด — ดูที่รายการที่ต้องตรวจสอบ",
         "รายงานนี้ไม่ใช่การยื่น ภ.พ.30 และยังไม่มีภาษีซื้อ",
         "ส่งออกได้เฉพาะ XLSX/CSV เพราะ PDF ยังแสดงภาษาไทยไม่ได้",
+        "รายงานสินค้าและวัตถุดิบนับเป็นหน่วยฐาน และมูลค่าคิดจากต้นทุนปัจจุบัน ไม่ใช่ FIFO/ถัวเฉลี่ย · ยอดยกมาที่ไม่มีหลักฐานการเคลื่อนไหวแสดงแยกเสมอ",
       ],
       [
         "Periods follow the Thai-time issue date; a bill after midnight belongs to the new day.",
@@ -870,6 +871,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
         "Paid bills without a tax invoice (such as online orders) are not in the totals — see the items to check.",
         "This report does not file PP.30 and does not include input VAT yet.",
         "Only XLSX/CSV can be exported because PDF cannot render Thai yet.",
+        "The goods and materials report counts base units and values stock at the current cost, not FIFO/average; opening stock without movement evidence is always shown separately.",
       ]
     ),
     relatedCapabilityIds: ["tax.sales-report", "tax.documents"],

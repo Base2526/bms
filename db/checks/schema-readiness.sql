@@ -100,7 +100,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('10.6__bms_board_game_receipt_evidence.sql', 'column', 'bms_board_game_session_participants', 'rate_name_snapshot', 'ร้านบอร์ดเกมเปิดโต๊ะ/เพิ่มผู้เล่น/เปิดรายละเอียดบิลไม่ได้ — โค้ดอ่านและเขียนป้ายเรท snapshot ทุกครั้ง'),
     ('10.7__bms_board_game_flexible_groups.sql', 'column', 'bms_board_game_session_participants', 'time_mode', 'ร้านบอร์ดเกมเปิดโต๊ะ เพิ่มผู้เล่น ดูรายละเอียด หรือรวม/แยกกลุ่มบิลไม่ได้'),
     ('10.7__bms_board_game_flexible_groups.sql', 'column', 'bms_board_game_session_participants', 'planned_end_at', 'ร้านบอร์ดเกมเปิดโต๊ะ เพิ่มผู้เล่น ดูรายละเอียด หรือรวม/แยกกลุ่มบิลไม่ได้'),
-    ('10.7__bms_board_game_flexible_groups.sql', 'column', 'bms_board_game_billing_groups', 'merged_into_group_id', 'ร้านบอร์ดเกมเปิดโต๊ะ เพิ่มผู้เล่น ดูรายละเอียด หรือรวม/แยกกลุ่มบิลไม่ได้')
+    ('10.7__bms_board_game_flexible_groups.sql', 'column', 'bms_board_game_billing_groups', 'merged_into_group_id', 'ร้านบอร์ดเกมเปิดโต๊ะ เพิ่มผู้เล่น ดูรายละเอียด หรือรวม/แยกกลุ่มบิลไม่ได้'),
+    ('10.10__bms_stock_movement_count_direction.sql', 'column', 'bms_stock_movements', 'direction', 'กดยืนยันผลการนับสต็อกไม่ได้ และรายงานสินค้าและวัตถุดิบเปิดไม่ได้ (การขายยังทำงานปกติ)')
 )
 SELECT r.*,
        CASE WHEN r.kind = 'table' THEN to_regclass('public.' || r.tbl) IS NOT NULL
