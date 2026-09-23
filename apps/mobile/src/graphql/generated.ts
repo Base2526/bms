@@ -5256,6 +5256,12 @@ export type SchemaBmsPosScanResult = {
   serialTracked: Scalars['Boolean']['output'];
   size: Scalars['String']['output'];
   sku: Scalars['String']['output'];
+  /**
+   * False when available is not a selling ceiling: bundles and RECIPE/NON_STOCK menus keep
+   * their own inventory row at 0 by design, and stock is enforced on components/ingredients when
+   * the sale is committed. Clients must not refuse such an item because available is 0.
+   */
+  stockTracked: Scalars['Boolean']['output'];
   unitName: Scalars['String']['output'];
 };
 

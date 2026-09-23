@@ -904,6 +904,15 @@
 .receiptCard dt { color: #6f7b8e; }
 .receiptCard dd { margin: 0; font-weight: 700; }
 .receiptCard .changeRow { margin-top: 5px; padding-top: 13px; border-top: 1px solid #dde2e9; color: #237804; font-size: 18px; }
+/* The saved bill as it will print. ReceiptPaper (pos.css) scrolls itself on screen and drops
+   the scroll for print, so this wrapper must not add a second scroll box. */
+.receiptPaperPreview { margin-top: 16px; text-align: left; }
+.receiptPaperStatus {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  color: #6f7b8e;
+}
 .boardGameReceiptCard {
   width: min(760px, 100%);
   max-height: calc(100dvh - 40px);

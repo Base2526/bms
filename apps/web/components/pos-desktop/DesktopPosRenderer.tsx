@@ -39,6 +39,7 @@ import {
   POS_BOOTSTRAP_QUERY,
   POS_BOARD_GAME_CHECKOUT_QUERY,
   POS_CATALOG_QUERY,
+  POS_LAST_SALE_QUERY,
   POS_SALE_MUTATION,
   POS_SCAN_QUERY,
   POS_SHIFT_MUTATION,
@@ -80,6 +81,10 @@ import {
 } from "@/components/realtime/RealtimeProvider";
 import { ALERT_KINDS, newAlertIds } from "@/lib/pos/orderAlertSound";
 import { copyTextToClipboard } from "@/lib/pos/clipboard";
+import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import type { ReceiptPayload } from "@/lib/pos/escpos";
+import { isReceiptLanguageMode } from "@/lib/pos/receiptI18n";
+import { receiptPayloadFromPosSale, type PosSaleReceiptRow } from "@/lib/pos/posSaleReceipt";
 import styles from "./DesktopPosRenderer.module.css";
 
 const loadAdvancedPosModule = () => import("@/app/(pos)/pos/page");
@@ -108,7 +113,18 @@ type CartLine = PricedCartLine & {
   serials: string[];
   serialTracked: boolean;
   imageUrl: string | null;
+  /** Branch stock from the last scan; a ceiling only when `stockTracked`. */
+  available: number;
+  stockTracked: boolean;
 };
+
+/**
+ * Items the compact screen cannot collect (serial, weight, options) go to the full sell workspace.
+ * The button that opens it is offered only with this notice: the compact cart does not move with
+ * it, so offering it beside an unrelated notice sends the cashier away from a bill in progress.
+ */
+const ADVANCED_ITEM_NOTICE =
+  "สินค้านี้ต้องกรอก serial / น้ำหนัก / ตัวเลือกเพิ่มเติม จึงต้องขายในหน้าขายแบบเต็มเพื่อไม่ข้ามการตรวจสอบ";
 
 type SaleResult = {
   status: string;
@@ -122,6 +138,8 @@ type SaleResult = {
   cashTendered: number | null;
   cashChange: number | null;
   roundingAmount: number | null;
+  pointsEarned: number | null;
+  pointsBalance: number | null;
 };
 
 type SalePayload = Record<string, unknown>;
@@ -343,6 +361,9 @@ function resolvedCartLine(hit: PosScanHit): CartLine {
     serials: [],
     serialTracked: Boolean(hit.serialTracked),
     imageUrl: hit.imageUrl,
+    available: Math.max(0, Number(hit.available) || 0),
+    // Older servers do not send the flag; keep their previous behaviour (treat stock as tracked).
+    stockTracked: hit.stockTracked !== false,
   };
 }
 
@@ -395,6 +416,10 @@ export default function DesktopPosRenderer() {
     { id: "payment-1", method: "cash", amount: 0, tendered: 0 },
   ]);
   const [receipt, setReceipt] = useState<SaleResult | null>(null);
+  // The paper comes from the saved bill, never from the cart on screen: the sale result carries
+  // no lines, discounts, tax-document number or VAT split. Null while it loads or when it failed.
+  const [receiptPaper, setReceiptPaper] = useState<ReceiptPayload | null>(null);
+  const [receiptPaperState, setReceiptPaperState] = useState<"idle" | "loading" | "failed">("idle");
   const [busy, setBusy] = useState(false);
   const [addingProductKey, setAddingProductKey] = useState("");
   const [notice, setNotice] = useState("");
@@ -1142,13 +1167,23 @@ export default function DesktopPosRenderer() {
       const hit = data.bmsPosScan;
       if (!hit) throw new Error("ไม่พบสินค้านี้");
       if (hit.serialTracked || hit.scaleBarcode || hit.modifiers.length > 0) {
-        setNotice(
-          "สินค้านี้ต้องกรอก serial / น้ำหนัก / ตัวเลือกเพิ่มเติม จึงเปิดในหน้าขายแบบเต็มเพื่อไม่ข้ามการตรวจสอบ",
-        );
+        setNotice(ADVANCED_ITEM_NOTICE);
         return;
       }
-      if (Number(hit.available) <= 0) throw new Error("สินค้านี้ไม่มีสต็อกพร้อมขาย");
       const incoming = resolvedCartLine(hit);
+      // A bundle or a RECIPE/NON_STOCK menu keeps its own inventory row at 0 by design; the
+      // server reserves its components/ingredients at commit. Only a tracked row is a ceiling.
+      if (incoming.stockTracked && incoming.available <= 0) {
+        throw new Error("สินค้านี้ไม่มีสต็อกพร้อมขาย");
+      }
+      const existingLine = cart.find((line) => line.key === incoming.key);
+      if (
+        existingLine
+        && incoming.stockTracked
+        && (existingLine.qty + 1) * existingLine.baseQty > incoming.available
+      ) {
+        throw new Error(`เพิ่มไม่ได้ สาขานี้เหลือ ${incoming.available} ${incoming.unitName}`);
+      }
       setCart((current) => {
         // ราคาส่งและโปรโมชันบางแบบนับรวมทุกไซซ์ของ SKU เดียวกัน กฎจาก scan ล่าสุด
         // จึงต้องอัปเดตทุกบรรทัดของ SKU นั้นเหมือน mobile client ก่อนคิดยอดใหม่
@@ -1163,9 +1198,13 @@ export default function DesktopPosRenderer() {
         );
         const existing = synced.find((line) => line.key === incoming.key);
         if (!existing) return [...synced, incoming];
-        if ((existing.qty + 1) * existing.baseQty > Number(hit.available)) return synced;
+        if (incoming.stockTracked && (existing.qty + 1) * existing.baseQty > incoming.available) {
+          return synced;
+        }
         return synced.map((line) =>
-          line.key === incoming.key ? { ...line, qty: line.qty + 1 } : line,
+          line.key === incoming.key
+            ? { ...line, qty: line.qty + 1, available: incoming.available }
+            : line,
         );
       });
       setScanCode("");
@@ -1179,6 +1218,17 @@ export default function DesktopPosRenderer() {
 
   const changeQty = (key: string, delta: number) => {
     if (saleAttemptRef.current) return;
+    const target = cart.find((line) => line.key === key);
+    if (
+      target
+      && delta > 0
+      && target.stockTracked
+      && (target.qty + delta) * target.baseQty > target.available
+    ) {
+      // The server would refuse this at payment with OUT_OF_STOCK; say it while the line is in hand.
+      setError(`เพิ่มไม่ได้ สาขานี้เหลือ ${target.available} ${target.unitName}`);
+      return;
+    }
     setCart((current) =>
       current.flatMap((line) => {
         if (line.key !== key) return [line];
@@ -1425,6 +1475,67 @@ export default function DesktopPosRenderer() {
     },
   });
 
+  const loadReceiptPaper = useCallback(async (sale: SaleResult) => {
+    if (!sale.orderId) return;
+    setReceiptPaper(null);
+    setReceiptPaperState("loading");
+    try {
+      const data = await posGraphqlRequest<{ bmsPosLastSale: PosSaleReceiptRow | null }>(
+        token,
+        POS_LAST_SALE_QUERY,
+      );
+      const row = data.bmsPosLastSale;
+      // The latest sale of this device must be the one just confirmed. Anything else would print
+      // another customer's bill, so fail visibly instead.
+      if (!row || row.orderId !== sale.orderId) throw new Error("receipt mismatch");
+      const languageMode = isReceiptLanguageMode(bootstrap?.store.receiptLanguageMode)
+        ? bootstrap.store.receiptLanguageMode
+        : "th";
+      setReceiptPaper(receiptPayloadFromPosSale(row, {
+        languageMode,
+        vatRegistered: Boolean(bootstrap?.vat.registered),
+        taxId: bootstrap?.store.taxId ?? null,
+        address: bootstrap?.store.address ?? null,
+        phone: bootstrap?.store.phone ?? null,
+        logoUrl: bootstrap?.store.logoUrl ?? null,
+        fallbackStoreName: bootstrap?.location?.name ?? null,
+        fallbackBranchCode: bootstrap?.location?.branchCode ?? null,
+        fallbackPosNo: bootstrap?.device.registeredPosNo ?? bootstrap?.device.code ?? null,
+      }, {
+        pointsEarned: sale.pointsEarned ?? null,
+        pointsBalance: sale.pointsBalance ?? null,
+      }));
+      setReceiptPaperState("idle");
+    } catch {
+      setReceiptPaperState("failed");
+    }
+  }, [bootstrap, token]);
+
+  /**
+   * globals.css hides the whole page while printing and reveals only #pos-receipt once the body
+   * carries this marker. Printing without it produces a blank sheet. rAF alone never fires in a
+   * hidden window, so a timeout races it and the dialog opens exactly once.
+   */
+  const printReceiptPaper = () => {
+    if (!receiptPaper) return;
+    document.body.setAttribute("data-pos-print-target", "receipt");
+    let fallbackTimer = 0;
+    const cleanup = () => {
+      document.body.removeAttribute("data-pos-print-target");
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    let printed = false;
+    const fire = () => {
+      if (printed) return;
+      printed = true;
+      window.print();
+      fallbackTimer = window.setTimeout(cleanup, 1_000);
+    };
+    window.requestAnimationFrame(fire);
+    window.setTimeout(fire, 120);
+  };
+
   const submitSale = async () => {
     if (!cashier || busy || !canConfirmPayment || (!boardGameCheckout && cart.length === 0)) return;
     setBusy(true);
@@ -1450,6 +1561,7 @@ export default function DesktopPosRenderer() {
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
       setConnection("online");
+      void loadReceiptPaper(data.bmsPosSale);
     } catch (cause) {
       const decided =
         cause instanceof PosGraphqlError &&
@@ -1472,6 +1584,8 @@ export default function DesktopPosRenderer() {
     if (!completedBoardGameBill) setCart([]);
     setBoardGameCheckout(null);
     setReceipt(null);
+    setReceiptPaper(null);
+    setReceiptPaperState("idle");
     setPayments([{ id: "payment-1", method: "cash", amount: 0, tendered: 0 }]);
     setError("");
     setNotice("");
@@ -1624,8 +1738,20 @@ export default function DesktopPosRenderer() {
             <div><dt>รับเงิน</dt><dd>{money(receipt.cashTendered ?? validation.paidTotal)}</dd></div>
             <div className={styles.changeRow}><dt>เงินทอน</dt><dd>{money(receipt.cashChange ?? 0)}</dd></div>
           </dl>
+          {receiptPaper ? (
+            <div className={styles.receiptPaperPreview}>
+              <ReceiptPaper payload={receiptPaper} />
+            </div>
+          ) : receiptPaperState === "failed" ? (
+            <p className={styles.receiptPaperStatus} role="alert">
+              บันทึกการขายสำเร็จแล้ว แต่ยังโหลดใบเสร็จไม่ได้
+              <button type="button" onClick={() => void loadReceiptPaper(receipt)}>ลองโหลดใบเสร็จอีกครั้ง</button>
+            </p>
+          ) : receiptPaperState === "loading" ? (
+            <p className={styles.receiptPaperStatus} role="status">กำลังโหลดใบเสร็จ…</p>
+          ) : null}
           <div className={styles.receiptActions}>
-            <button onClick={() => window.print()}>พิมพ์ใบเสร็จ</button>
+            <button disabled={!receiptPaper} onClick={printReceiptPaper}>พิมพ์ใบเสร็จ</button>
             <button className={styles.primaryButton} onClick={newSale}>
               {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "ขายรายการใหม่"}
             </button>
@@ -1889,7 +2015,7 @@ export default function DesktopPosRenderer() {
                   <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อหรือ SKU" />
                 </div>
-                {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice}{notice ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</PosDismissibleAlert> : null}
+                {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice}{!error && notice === ADVANCED_ITEM_NOTICE ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</PosDismissibleAlert> : null}
                 {catalog.length && catalogError ? (
                   <PosDismissibleAlert
                     key={catalogError}
@@ -1905,11 +2031,19 @@ export default function DesktopPosRenderer() {
                     const selection = selectPosCatalogCardVariant(item);
                     const selectedVariant = selection.variant;
                     const addingKey = `${item.sku}\u0000${selectedVariant?.size ?? ""}`;
+                    // The server decides sellability (isMenuSellable): a RECIPE/NON_STOCK menu is
+                    // AVAILABLE with a zero own-stock row, so availableTotal is not the gate.
+                    const sellable = item.availability === "AVAILABLE";
+                    const stockLabel = !sellable
+                      ? item.availability === "SOLD_OUT_TODAY" ? "หมดวันนี้" : "หมด"
+                      : selection.available > 0
+                        ? `เหลือ ${selection.available}${selectedVariant?.size ? ` · ${selectedVariant.size}` : ""}`
+                        : "พร้อมขาย";
                     return (
                     <button
                       key={item.sku}
                       className={styles.productCard}
-                      disabled={item.availableTotal <= 0 || busy}
+                      disabled={!sellable || busy}
                       aria-busy={addingProductKey === addingKey}
                       data-adding={addingProductKey === addingKey}
                       onClick={() => void addProduct(item.sku, selectedVariant?.size)}
@@ -1918,10 +2052,8 @@ export default function DesktopPosRenderer() {
                       <strong>{item.name}</strong><small>{item.sku}</small>
                       <div>
                         <b>{money(selection.price)}</b>
-                        <span className={selection.available > 0 ? styles.stockOk : styles.stockOut}>
-                          {selection.available > 0
-                            ? `เหลือ ${selection.available}${selectedVariant?.size ? ` · ${selectedVariant.size}` : ""}`
-                            : "หมด"}
+                        <span className={sellable ? styles.stockOk : styles.stockOut}>
+                          {stockLabel}
                         </span>
                       </div>
                     </button>
@@ -1970,7 +2102,7 @@ export default function DesktopPosRenderer() {
                 <div className={styles.cartFooter}>
                   {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ส่วนลดราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
                   <div><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
-                  <button className={styles.payButton} disabled={!cart.length} onClick={() => sendFlow("START_CHECKOUT")}>ไปชำระเงิน <span>→</span></button>
+                  <button className={styles.payButton} disabled={!cart.length} onClick={() => { setError(""); setNotice(""); sendFlow("START_CHECKOUT"); }}>ไปชำระเงิน <span>→</span></button>
                 </div>
               </>
             ) : (

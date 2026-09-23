@@ -35,7 +35,7 @@ export const POS_SCAN_QUERY = `
   query MobilePosScan($code: String!, $size: String, $packCode: String, $surface: String = "RETAIL_POS") {
     bmsPosScan(code: $code, size: $size, packCode: $packCode, surface: $surface, withImage: true) {
       sku size productName receiptName baseQty packCode unitName packPrice basePrice available
-      serialTracked scaleBarcode imageUrl
+      stockTracked serialTracked scaleBarcode imageUrl
       priceTiers { minQty scope size unitPrice discountPct }
       promotion { kind buyQty getQty bundlePrice }
       modifiers { code name priceDelta groupCode groupName selectionType minSelect maxSelect defaultSelected }
@@ -59,6 +59,20 @@ export const POS_SALE_MUTATION = `
       status reason orderId receiptNo billNo subtotal discount total cashTendered cashChange
       pointsUsed pointsEarned pointsBalance code available requested serial roundingAmount replayed
       blockers { sku status salePolicy requested maxQuantity }
+    }
+  }
+`;
+
+export const POS_LAST_SALE_QUERY = `
+  query DesktopPosLastSale {
+    bmsPosLastSale {
+      orderId receiptNo billNo docNo soldAt total cashierName branchCode locationName posLabel
+      posDeviceId shiftId saleLocationId roundingAmount paymentMethod paymentRef cashTendered
+      cashChange memberName memberNo
+      lines { receiptName size packQty packPrice }
+      payments { method amount ref cashTendered cashChange }
+      discountLines { label amount }
+      vat { rate vatAmount netBeforeVat exemptAmount roundingAmount }
     }
   }
 `;
@@ -128,8 +142,11 @@ export type PosBootstrap = {
   cashiers: PosCashier[];
   approvers: Array<PosCashier & { approvals: string[] }>;
   store: {
+    taxId: string | null;
     receiptLanguageMode: string;
     logoUrl: string | null;
+    address: string | null;
+    phone: string | null;
     paymentQr: { payload: string; accountName: string | null; promptpayId: string | null } | null;
   };
   surface: string;
@@ -158,6 +175,8 @@ export type PosScanHit = {
   packPrice: number;
   basePrice: number;
   available: number;
+  /** false = `available` is not a selling ceiling (bundle, RECIPE/NON_STOCK menu). */
+  stockTracked: boolean;
   serialTracked: boolean;
   scaleBarcode: string | null;
   imageUrl: string | null;
