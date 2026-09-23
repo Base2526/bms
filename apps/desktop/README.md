@@ -18,6 +18,10 @@ authoritative; this app does not contain a database or a second settlement path.
 - specialised flows that have not yet moved into the new renderer (returns, PO receiving, deposits,
   shift management, settings, restaurant and board-game operations) hand off to the existing
   server-authoritative POS routes. Nothing is hidden or duplicated, and settlement still has one path;
+- a **pharmacy** register always sells in the full sell workspace, never the compact `/pos/app` sell
+  screen: the pharmacist review queue, pharmacist PIN at the counter and clinical evidence live only
+  there, and the compact screen sends every pharmacy field as null. The customer display follows
+  whichever workspace is visibly selling;
 - rollout is backward compatible: the shell probes `/pos/app` and falls back to `/pos` only when a
   paired pre-rollout server confirms that the new route is missing with HTTP 404;
 - paired startup paints a local connection screen before probing the server, bounds the compatibility

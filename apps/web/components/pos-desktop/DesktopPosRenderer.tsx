@@ -415,6 +415,19 @@ export default function DesktopPosRenderer() {
   const acknowledgedServiceCallCount = serviceCalls.length - pendingServiceCallCount;
   const knownServiceCallIds = useRef<Set<string> | null>(null);
   const [activeModule, setActiveModule] = useState<DesktopModule>("mobile_sell");
+  // A pharmacy's sale gate (pharmacist review queue, pharmacist PIN at the counter, clinical
+  // evidence) exists only in the full sell workspace. The compact desktop sell screen sends every
+  // pharmacy field as null, so a regulated item would reach the server, be refused, and leave the
+  // cashier with no way forward. Pharmacy registers therefore always sell in the full workspace;
+  // every existing "go home" transition keeps writing "mobile_sell" and is mapped here once.
+  const pharmacyRegister = bootstrap?.businessArchetype === "pharmacy";
+  const shownModule: DesktopModule =
+    pharmacyRegister && activeModule === "mobile_sell" ? "sell" : activeModule;
+  // Whichever workspace is visibly selling owns the customer display. Two publishers on one
+  // BroadcastChannel would let the empty desktop cart overwrite the bill the customer is paying.
+  const desktopOwnsCustomerDisplay = shownModule !== "sell";
+  const desktopOwnsCustomerDisplayRef = useRef(desktopOwnsCustomerDisplay);
+  desktopOwnsCustomerDisplayRef.current = desktopOwnsCustomerDisplay;
   const [contentRefreshSignal, setContentRefreshSignal] = useState(0);
   const [contentRefreshing, setContentRefreshing] = useState(false);
   const contentRefreshingRef = useRef(false);
@@ -544,7 +557,9 @@ export default function DesktopPosRenderer() {
     const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
     customerDisplayChannelRef.current = channel;
     channel.onmessage = (event) => {
-      if (event.data?.type === "hello") channel.postMessage(customerDisplayPayloadRef.current);
+      if (event.data?.type === "hello" && desktopOwnsCustomerDisplayRef.current) {
+        channel.postMessage(customerDisplayPayloadRef.current);
+      }
     };
     return () => {
       channel.close();
@@ -654,6 +669,9 @@ export default function DesktopPosRenderer() {
         router.prefetch("/pos/restaurant");
       } else if (data.bmsPosSession.businessArchetype === "board_game_cafe") {
         void loadBoardGameModule();
+      } else if (data.bmsPosSession.businessArchetype === "pharmacy") {
+        // The full sell workspace is the pharmacy home; warm its chunk while the PIN is typed.
+        void loadAdvancedPosModule();
       } else {
         // Retail catalogue reads require the paired device but not a cashier PIN. Starting this
         // after device verification overlaps network/DB time with PIN entry; submit still joins
@@ -742,6 +760,9 @@ export default function DesktopPosRenderer() {
           prepareBoardGameWorkspace(token, verified.id, pin),
         ]);
         setActiveModule("boardgame");
+      } else if (bootstrap?.businessArchetype === "pharmacy") {
+        await loadAdvancedPosModule();
+        setActiveModule("sell");
       } else {
         await loadCatalog("", token);
         if (catalogLoadErrorRef.current) throw new Error(catalogLoadErrorRef.current);
@@ -1273,8 +1294,10 @@ export default function DesktopPosRenderer() {
       finished,
     };
     customerDisplayPayloadRef.current = payload;
+    if (!desktopOwnsCustomerDisplay) return;
     customerDisplayChannelRef.current?.postMessage(payload);
   }, [
+    desktopOwnsCustomerDisplay,
     boardGameBenefitAmount,
     boardGameCheckout,
     boardGameTotalDiscountAmount,
@@ -1646,7 +1669,7 @@ export default function DesktopPosRenderer() {
           {navItems.map((item) => (
             <button
               key={item.key}
-              className={activeModule === item.key || (item.key === "mobile_sell" && activeModule === "sell") ? styles.navActive : ""}
+              className={shownModule === item.key || (item.key === "mobile_sell" && shownModule === "sell") ? styles.navActive : ""}
               onClick={() => item.key === "restaurant" ? legacy("restaurant") : openModule(item.key)}
               title={item.label}
             >
@@ -1744,12 +1767,12 @@ export default function DesktopPosRenderer() {
           </div>
         </header>
 
-        {activeModule !== "mobile_sell" && activeModule !== "restaurant" ? (
+        {shownModule !== "mobile_sell" && shownModule !== "restaurant" ? (
           <div className={`${styles.content} ${styles.moduleContent}`}>
             <section
-              className={`${styles.moduleHost}${activeModule === "boardgame" ? ` ${styles.boardGameModuleHost}` : ""}`}
+              className={`${styles.moduleHost}${shownModule === "boardgame" ? ` ${styles.boardGameModuleHost}` : ""}`}
             >
-              {activeModule === "boardgame" ? (
+              {shownModule === "boardgame" ? (
                 <BoardGamePanel
                   token={token}
                   cashierUserId={cashier?.id ?? cashierId}
@@ -1761,12 +1784,12 @@ export default function DesktopPosRenderer() {
               ) : (
                 <PosWorkspaceContext.Provider value={{
                   embedded: true,
-                  initialTab: activeModule,
+                  initialTab: shownModule,
                   initialToken: token,
                   initialCashierId: cashier?.id ?? cashierId,
                   initialPin: pin,
                   refreshSignal: contentRefreshSignal,
-                  suppressCustomerDisplay: true,
+                  suppressCustomerDisplay: desktopOwnsCustomerDisplay,
                   onTabChange: followWorkspaceTab,
                   onShiftChange: followWorkspaceShift,
                   onUnpair: unpair,

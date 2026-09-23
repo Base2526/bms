@@ -267,3 +267,98 @@ test("desktop POS alerts expose a close control on every operating surface", () 
   );
   assert.doesNotMatch(desktopRenderer, /<(?:div|p) className=\{styles\.(?:errorBox|noticeBox)\}/);
 });
+
+/**
+ * A pharmacy register on the desktop shell must sell in the full workspace.
+ *
+ * The compact desktop sell screen (`/pos/app`, "mobile_sell") builds its sale payload with every
+ * pharmacy field hard-coded to null: no review-queue case, no pharmacist PIN, no counter
+ * authorization. For a pharmacy that means any regulated item is refused by the server and the
+ * cashier has no control on that screen to continue. The full sell workspace (the embedded
+ * `/pos` page) owns the pharmacist review queue, the pharmacist PIN card and clinical evidence,
+ * so the desktop shell maps a pharmacy's "home" to that workspace.
+ *
+ * The customer display follows whichever workspace is visibly selling. Two publishers on one
+ * BroadcastChannel would let the empty desktop cart overwrite the bill the customer is paying.
+ */
+
+// Comments in this file explain the rule with the same words the assertions look for.
+const pharmacyRenderer = desktopRenderer
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .split(/\r?\n/)
+  .map((line) => line.replace(/(^|\s)\/\/.*$/, "$1"))
+  .join("\n");
+
+const hasInRenderer = (re: RegExp, message: string) => assert.ok(re.test(pharmacyRenderer), message);
+const lacksInRenderer = (re: RegExp, message: string) => assert.ok(!re.test(pharmacyRenderer), message);
+
+function rendererBlock(startMarker: string, endMarker: string): string {
+  const start = pharmacyRenderer.indexOf(startMarker);
+  assert.ok(start >= 0, `marker not found: ${startMarker}`);
+  const end = pharmacyRenderer.indexOf(endMarker, start + startMarker.length);
+  assert.ok(end > start, `end marker not found after ${startMarker}: ${endMarker}`);
+  return pharmacyRenderer.slice(start, end);
+}
+
+test("the compact desktop sale still has no pharmacy controls, so a pharmacy must not use it", () => {
+  const payload = rendererBlock("const buildSalePayload", "const submitSale");
+  // This is the reason for the handoff. If the compact screen ever grows real pharmacy support,
+  // this assertion is the one to revisit, together with the mapping below.
+  assert.match(payload, /pharmacistAuthorizerUserId:\s*null/);
+  assert.match(payload, /pharmacyReviewAssessmentId:\s*null/);
+});
+
+test("a pharmacy register maps the compact sell home to the full sell workspace", () => {
+  hasInRenderer(
+    /const pharmacyRegister = bootstrap\?\.businessArchetype === "pharmacy";/,
+    "the handoff must be decided from the server-reported shop archetype",
+  );
+  hasInRenderer(
+    /const shownModule: DesktopModule =\s*pharmacyRegister && activeModule === "mobile_sell" \? "sell" : activeModule;/,
+    "every transition that writes mobile_sell must land a pharmacy on the full sell workspace",
+  );
+});
+
+test("the workspace that renders is the shown module, not the raw state", () => {
+  hasInRenderer(
+    /\{shownModule !== "mobile_sell" && shownModule !== "restaurant" \?/,
+    "the compact sell screen must not render for a pharmacy",
+  );
+  hasInRenderer(/initialTab: shownModule,/, "the embedded workspace must open on the tab that is shown");
+  lacksInRenderer(
+    /\{activeModule !== "mobile_sell" && activeModule !== "restaurant" \?/,
+    "rendering from the raw state bypasses the pharmacy mapping",
+  );
+  lacksInRenderer(/initialTab: activeModule,/, "the embedded workspace would open on the compact tab");
+});
+
+test("pharmacy sign-in prepares the full workspace instead of the compact catalogue", () => {
+  const signIn = rendererBlock("const signIn = async", "const openShift = async");
+  assert.match(
+    signIn,
+    /businessArchetype === "pharmacy"\) \{\s*await loadAdvancedPosModule\(\);\s*setActiveModule\("sell"\);/,
+  );
+});
+
+test("the customer display is owned by the workspace that is visibly selling", () => {
+  hasInRenderer(
+    /const desktopOwnsCustomerDisplay = shownModule !== "sell";/,
+    "the full sell workspace must own the display while it is shown",
+  );
+  hasInRenderer(
+    /suppressCustomerDisplay: desktopOwnsCustomerDisplay,/,
+    "the embedded workspace must publish while it is the one selling",
+  );
+  lacksInRenderer(
+    /suppressCustomerDisplay: true,/,
+    "a permanently suppressed embedded workspace leaves the customer display blank at a pharmacy",
+  );
+  hasInRenderer(
+    /customerDisplayPayloadRef\.current = payload;\s*if \(!desktopOwnsCustomerDisplay\) return;\s*customerDisplayChannelRef\.current\?\.postMessage\(payload\);/,
+    "the desktop cart must not overwrite the embedded bill on the display",
+  );
+  hasInRenderer(
+    /event\.data\?\.type === "hello" && desktopOwnsCustomerDisplayRef\.current/,
+    "a display that reconnects must not be answered with the idle desktop cart",
+  );
+});
