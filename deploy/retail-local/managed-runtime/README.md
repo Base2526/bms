@@ -94,3 +94,17 @@ Developer verification:
 node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
 (cd apps/desktop && npm test && npm run lint)
 ```
+
+Build the Ubuntu x64 bootstrap package with a trusted **public-key-only** keyring:
+
+```bash
+deploy/retail-local/managed-runtime/linux/build-deb.sh \
+  --keyring /secure/release/trusted-release-keys.json \
+  --manifest-url https://releases.example.com/retail-local/ubuntu-24.04/release.jws.json \
+  --version 0.2.0
+```
+
+The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`; it does not start
+the runtime or mutate shop data during `dpkg` installation. The setup command performs preflight and
+downloads only components authenticated by the packaged public key. A build with no
+`--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.

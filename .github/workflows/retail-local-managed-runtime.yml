@@ -47,6 +47,19 @@ jobs:
           node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
       - name: Build private WSL root filesystem image
         run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs
+      - name: Build and inspect Ubuntu x64 bootstrap package
+        run: |
+          mkdir -p "$RUNNER_TEMP/bms-signing" "$RUNNER_TEMP/bms-package"
+          node --input-type=module -e 'import {generateKeyPairSync} from "node:crypto"; import {writeFileSync} from "node:fs"; const {publicKey}=generateKeyPairSync("ed25519"); writeFileSync(process.argv[1],JSON.stringify({formatVersion:1,keys:{"ci-only":publicKey.export({type:"spki",format:"pem"}).toString()}}));' "$RUNNER_TEMP/bms-signing/keyring.json"
+          deploy/retail-local/managed-runtime/linux/build-deb.sh \
+            --keyring "$RUNNER_TEMP/bms-signing/keyring.json" \
+            --version 0.2.0-ci.1 --output-dir "$RUNNER_TEMP/bms-package"
+          package=$(find "$RUNNER_TEMP/bms-package" -name '*.deb' -type f -print -quit)
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package"
+          dpkg-deb --extract "$package" "$RUNNER_TEMP/bms-package/extracted"
+          "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" version
+          if grep -R -E 'BEGIN .*PRIVATE KEY' "$RUNNER_TEMP/bms-package/extracted"; then exit 1; fi
 
   windows-bootstrap:
     runs-on: windows-2022

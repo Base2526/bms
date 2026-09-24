@@ -168,3 +168,14 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   assert.match(windowsUninstall, /-EraseData[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*--unregister/);
   assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
 });
+
+test("Linux bootstrap package stays small and never packages a release private key", () => {
+  const builder = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
+  const setup = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-setup");
+  assert.match(builder, /CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build/);
+  assert.match(builder, /Architecture: amd64/);
+  assert.match(builder, /trusted-release-keys\.json/);
+  assert.doesNotMatch(builder, /private[-_]key|PRIVATE KEY|sign-release/);
+  assert.match(setup, /release-manifest-url/);
+  assert.match(setup, /exec "\$bundle_root\/install-managed-runtime\.sh"/);
+});
