@@ -12,6 +12,9 @@ BMS, not a second edition, price plan, database, settlement engine, or source of
 - On reconnect, Mobile recovers by the original idempotency key before retrying and submits serially
   through the existing server settlement path. The server repeats eligibility, price, stock, tax,
   shift, cashier, and permission checks before anything becomes a real bill.
+- The on-device Sync Center keeps pending, interrupted, and rejected items visible, supports retry
+  with the original key, and detects accidental queued-request mutation before replay. It does not
+  offer a discard action after cash has been accepted.
 - An offline reference is not a receipt or tax document. Those exist only after the Cloud transaction
   commits, and shift close or device unpair remains blocked while accepted cash is unresolved.
 
@@ -42,7 +45,8 @@ Before broadening the Hybrid claim, complete and verify each capability rather t
 as authority:
 
 1. Bring the encrypted queue and recovery UX to Desktop without adding a second settlement path.
-2. Add a manager-facing failed-sync review workflow that preserves the original idempotency key.
+2. Extend the Mobile device-local Sync Center into an authorized fleet/admin reconciliation view;
+   Mobile already preserves the original idempotency key and supports per-item review/retry.
 3. Verify ESC/POS printing and cash-drawer control on supported real hardware.
 4. Sign Windows releases, sign/notarize macOS releases, define Linux distribution trust, and provide a
    tested update channel.

@@ -20,6 +20,11 @@ import {
   type OfflineSalePayload,
   type OfflineSaleRecord,
 } from '../lib/offlineSales';
+import {
+  countOfflineQueue,
+  normalizeOfflineStateAfterRestart,
+  sortOfflineQueueOldestFirst,
+} from '../lib/offlineContinuity';
 import { isDecidedRejection, runWithOperationTimeout } from '../lib/operation';
 import { useDevice } from './DeviceContext';
 import { useSales } from './SalesContext';
@@ -44,6 +49,7 @@ interface OfflineSalesValue {
   discard: (idempotencyKey: string) => Promise<void>;
   syncNow: () => Promise<void>;
   retryReview: () => Promise<void>;
+  retryRecord: (id: string) => Promise<void>;
 }
 
 const OfflineSalesContext = createContext<OfflineSalesValue | null>(null);
@@ -69,10 +75,12 @@ export function OfflineSalesProvider({
 
   const visibleRecords = useMemo(
     () =>
-      records.filter(
-        record =>
-          record.serverUrl === target?.serverUrl &&
-          record.branchId === session?.branch.id,
+      sortOfflineQueueOldestFirst(
+        records.filter(
+          record =>
+            record.serverUrl === target?.serverUrl &&
+            record.branchId === session?.branch.id,
+        ),
       ),
     [records, session?.branch.id, target?.serverUrl],
   );
@@ -80,11 +88,12 @@ export function OfflineSalesProvider({
   const reload = useCallback(async () => {
     try {
       const loaded = await loadOfflineSales();
-      // STAGED surviving a process restart has an unknown outcome: the request may have left the app.
+      // STAGED/SYNCING surviving a process restart has an unknown outcome: the request may have
+      // left the app and even committed. Recovery must check the original key before retrying.
       const normalized = await Promise.all(
         loaded.map(async record => {
-          if (record.state !== 'STAGED') return record;
-          const next = { ...record, state: 'UNKNOWN' as const };
+          const next = normalizeOfflineStateAfterRestart(record);
+          if (next === record) return record;
           await putOfflineSale(next);
           return next;
         }),
@@ -149,16 +158,22 @@ export function OfflineSalesProvider({
     syncLock.current = true;
     setSyncing(true);
     try {
-      const candidates = (await loadOfflineSales())
-        .filter(
+      const candidates = sortOfflineQueueOldestFirst(
+        (await loadOfflineSales()).filter(
           record =>
             record.serverUrl === target?.serverUrl &&
             record.branchId === session.branch.id &&
-            (record.state === 'UNKNOWN' || record.state === 'STAGED'),
-        )
-        .sort((a, b) => a.tenderedAt.localeCompare(b.tenderedAt));
+            record.state !== 'NEEDS_REVIEW',
+        ),
+      );
       for (const record of candidates) {
         try {
+          setRecords(
+            await patchOfflineSale(record.id, {
+              state: 'SYNCING',
+              lastError: null,
+            }),
+          );
           const credentials = {
             cashierUserId: session.credentials.cashierUserId,
             pin: session.credentials.pin,
@@ -284,19 +299,32 @@ export function OfflineSalesProvider({
     await syncNow();
   }, [syncNow, visibleRecords]);
 
+  const retryRecord = useCallback(
+    async (id: string) => {
+      const record = visibleRecords.find(candidate => candidate.id === id);
+      if (!record) throw new Error('ไม่พบรายการออฟไลน์ในสาขานี้');
+      if (record.state === 'SYNCING') return;
+      setRecords(
+        await patchOfflineSale(record.id, {
+          state: 'UNKNOWN',
+          lastError: 'กำลังลองซิงก์ใหม่',
+        }),
+      );
+      await syncNow();
+    },
+    [syncNow, visibleRecords],
+  );
+
   useEffect(() => {
     if (health.status === 'online') syncNow().catch(() => undefined);
   }, [health.status, syncNow]);
 
-  const value = useMemo<OfflineSalesValue>(
-    () => ({
+  const value = useMemo<OfflineSalesValue>(() => {
+    const counts = countOfflineQueue(visibleRecords);
+    return {
       records: visibleRecords,
-      pendingCount: visibleRecords.filter(
-        record => record.state !== 'NEEDS_REVIEW',
-      ).length,
-      reviewCount: visibleRecords.filter(
-        record => record.state === 'NEEDS_REVIEW',
-      ).length,
+      pendingCount: counts.pending,
+      reviewCount: counts.review,
       syncing,
       storageError,
       stage,
@@ -305,19 +333,20 @@ export function OfflineSalesProvider({
       discard,
       syncNow,
       retryReview,
-    }),
-    [
-      complete,
-      discard,
-      queue,
-      retryReview,
-      stage,
-      storageError,
-      syncNow,
-      syncing,
-      visibleRecords,
-    ],
-  );
+      retryRecord,
+    };
+  }, [
+    complete,
+    discard,
+    queue,
+    retryReview,
+    retryRecord,
+    stage,
+    storageError,
+    syncNow,
+    syncing,
+    visibleRecords,
+  ]);
 
   return (
     <OfflineSalesContext.Provider value={value}>

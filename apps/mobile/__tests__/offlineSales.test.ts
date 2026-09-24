@@ -26,9 +26,9 @@ jest.mock('react-native-keychain', () => ({
   }),
 }));
 
-function record(): OfflineSaleRecord {
+function record(id = 'offline-sale-1'): OfflineSaleRecord {
   return {
-    id: 'offline-sale-1',
+    id,
     serverUrl: 'https://shop.example.com',
     branchId: 'branch-1',
     cashierUserId: 'cashier-1',
@@ -40,7 +40,7 @@ function record(): OfflineSaleRecord {
     lastError: null,
     updatedAt: '2026-09-18T10:00:00.000Z',
     payload: {
-      idempotencyKey: 'offline-sale-1',
+      idempotencyKey: id,
       offlineTenderedAt: '2026-09-18T10:00:00.000Z',
       mode: 'SALE',
       boardGameBillingGroupId: null,
@@ -89,6 +89,14 @@ describe('offline sale secure queue', () => {
       }),
     );
     expect(mockStoredPassword).not.toMatch(/pin/i);
+    expect(JSON.parse(mockStoredPassword ?? '{}')).toMatchObject({
+      version: 2,
+      records: [
+        {
+          requestFingerprint: expect.stringMatching(/^fnv1a32:[0-9a-f]{8}$/),
+        },
+      ],
+    });
     expect(await loadOfflineSales()).toHaveLength(1);
 
     await patchOfflineSale('offline-sale-1', {
@@ -105,5 +113,50 @@ describe('offline sale secure queue', () => {
     expect(Keychain.resetGenericPassword).toHaveBeenCalledWith({
       service: 'com.bms.pos.offline-sales.v1',
     });
+  });
+
+  test('detects a changed request before it can be replayed', async () => {
+    await putOfflineSale(record());
+    const envelope = JSON.parse(mockStoredPassword ?? '{}');
+    envelope.records[0].payload.payments[0].amount = 900;
+    mockStoredPassword = JSON.stringify(envelope);
+
+    await expect(loadOfflineSales()).rejects.toThrow(
+      'อ่านคิวรายการออฟไลน์ไม่ได้',
+    );
+  });
+
+  test('requires the integrity signal on a v2 queue', async () => {
+    await putOfflineSale(record());
+    const envelope = JSON.parse(mockStoredPassword ?? '{}');
+    delete envelope.records[0].requestFingerprint;
+    mockStoredPassword = JSON.stringify(envelope);
+
+    await expect(loadOfflineSales()).rejects.toThrow(
+      'อ่านคิวรายการออฟไลน์ไม่ได้',
+    );
+  });
+
+  test('reads a legacy v1 record and upgrades it on the next write', async () => {
+    mockStoredPassword = JSON.stringify({
+      version: 1,
+      records: [record(), record('offline-sale-2')],
+    });
+
+    expect(await loadOfflineSales()).toHaveLength(2);
+    await patchOfflineSale('offline-sale-1', { state: 'SYNCING' });
+
+    const upgraded = JSON.parse(mockStoredPassword ?? '{}');
+    expect(upgraded.version).toBe(2);
+    expect(upgraded.records).toEqual([
+      expect.objectContaining({
+        state: 'SYNCING',
+        requestFingerprint: expect.stringMatching(/^fnv1a32:[0-9a-f]{8}$/),
+      }),
+      expect.objectContaining({
+        id: 'offline-sale-2',
+        requestFingerprint: expect.stringMatching(/^fnv1a32:[0-9a-f]{8}$/),
+      }),
+    ]);
   });
 });

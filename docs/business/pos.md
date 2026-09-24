@@ -1520,8 +1520,12 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
   queue stores no PIN, recovers by the original idempotency key before retrying, flushes serially
   under the original cashier while that device shift remains open,
   and blocks shift close while unresolved. A rejected sync remains visible for review and can be
-  retried with the same key after its stock or pricing cause is corrected. The pending reference is
-  not a receipt or tax document. Scan, settlement and recovery requests have a bounded client wait;
+  retried with the same key after its stock or pricing cause is corrected. Mobile exposes these
+  states in a full-screen device-local Sync Center; accepted-cash rows cannot be discarded there.
+  Interrupted `STAGED`/`SYNCING` rows restart as unknown outcomes so recovery runs before replay, and
+  an integrity fingerprint detects accidental mutation of the encrypted request. The pending
+  reference is not a receipt or tax document. Scan, settlement and recovery requests have a bounded
+  client wait;
   a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing is
   refused while its encrypted queue still contains accepted cash. Once committed, recent-sale views
   on both native and web POS identify the bill as an offline tender that has synced;

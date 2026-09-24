@@ -1,11 +1,16 @@
 import * as Keychain from 'react-native-keychain';
+import {
+  OFFLINE_QUEUE_SCHEMA_VERSION,
+  offlineRequestFingerprint,
+  type OfflineQueueState,
+} from './offlineContinuity';
 
 const SERVICE = 'com.bms.pos.offline-sales.v1';
 const USERNAME = 'offline-sales';
 const MAX_RECORDS = 20;
 const MAX_BYTES = 128 * 1024;
 
-export type OfflineSaleQueueState = 'STAGED' | 'UNKNOWN' | 'NEEDS_REVIEW';
+export type OfflineSaleQueueState = OfflineQueueState;
 
 export interface OfflineSaleLineInput {
   sku: string;
@@ -47,6 +52,8 @@ export interface OfflineSaleRecord {
   tenderedAt: string;
   total: number;
   payload: OfflineSalePayload;
+  /** Integrity signal for the encrypted payload; optional only for v1 queue compatibility. */
+  requestFingerprint?: string;
   state: OfflineSaleQueueState;
   attempts: number;
   lastError: string | null;
@@ -54,7 +61,7 @@ export interface OfflineSaleRecord {
 }
 
 interface OfflineSaleEnvelope {
-  version: 1;
+  version: 1 | typeof OFFLINE_QUEUE_SCHEMA_VERSION;
   records: OfflineSaleRecord[];
 }
 
@@ -67,20 +74,62 @@ async function readUnlocked(): Promise<OfflineSaleRecord[]> {
     const parsed = JSON.parse(
       credential.password,
     ) as Partial<OfflineSaleEnvelope>;
-    return parsed.version === 1 && Array.isArray(parsed.records)
-      ? parsed.records
-      : [];
+    if (
+      (parsed.version !== 1 &&
+        parsed.version !== OFFLINE_QUEUE_SCHEMA_VERSION) ||
+      !Array.isArray(parsed.records)
+    ) {
+      return [];
+    }
+    for (const record of parsed.records) {
+      if (record.id !== record.payload?.idempotencyKey) {
+        throw new Error(
+          'คิวออฟไลน์มีรหัสรายการไม่ตรงกัน กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+        );
+      }
+      if (
+        parsed.version === OFFLINE_QUEUE_SCHEMA_VERSION &&
+        !record.requestFingerprint
+      ) {
+        throw new Error(
+          'คิวออฟไลน์ไม่มีข้อมูลตรวจสอบ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+        );
+      }
+      if (
+        record.requestFingerprint &&
+        record.requestFingerprint !== offlineRequestFingerprint(record.payload)
+      ) {
+        throw new Error(
+          'คิวออฟไลน์มีข้อมูลเปลี่ยนแปลง กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+        );
+      }
+    }
+    return parsed.records;
   } catch {
     throw new Error('อ่านคิวรายการออฟไลน์ไม่ได้ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง');
   }
 }
 
-async function writeUnlocked(records: OfflineSaleRecord[]): Promise<void> {
+async function writeUnlocked(
+  records: OfflineSaleRecord[],
+): Promise<OfflineSaleRecord[]> {
   if (records.length === 0) {
     await Keychain.resetGenericPassword({ service: SERVICE });
-    return;
+    return [];
   }
-  const envelope: OfflineSaleEnvelope = { version: 1, records };
+  const protectedRecords = records.map(record => {
+    if (record.id !== record.payload.idempotencyKey) {
+      throw new Error('รหัสรายการออฟไลน์ไม่ตรงกับคำขอขาย');
+    }
+    return {
+      ...record,
+      requestFingerprint: offlineRequestFingerprint(record.payload),
+    };
+  });
+  const envelope: OfflineSaleEnvelope = {
+    version: OFFLINE_QUEUE_SCHEMA_VERSION,
+    records: protectedRecords,
+  };
   const serialized = JSON.stringify(envelope);
   if (serialized.length > MAX_BYTES) {
     throw new Error(
@@ -91,6 +140,7 @@ async function writeUnlocked(records: OfflineSaleRecord[]): Promise<void> {
     service: SERVICE,
     accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
   });
+  return protectedRecords;
 }
 
 async function locked<T>(work: () => Promise<T>): Promise<T> {
@@ -109,6 +159,9 @@ export async function loadOfflineSales(): Promise<OfflineSaleRecord[]> {
 export async function putOfflineSale(
   record: OfflineSaleRecord,
 ): Promise<OfflineSaleRecord[]> {
+  if (record.id !== record.payload.idempotencyKey) {
+    throw new Error('รหัสรายการออฟไลน์ไม่ตรงกับคำขอขาย');
+  }
   return locked(async () => {
     const records = await readUnlocked();
     const index = records.findIndex(item => item.id === record.id);
@@ -120,14 +173,16 @@ export async function putOfflineSale(
     const next = [...records];
     if (index < 0) next.push(record);
     else next[index] = record;
-    await writeUnlocked(next);
-    return next;
+    return writeUnlocked(next);
   });
 }
 
 export async function patchOfflineSale(
   id: string,
-  patch: Partial<OfflineSaleRecord>,
+  patch: Omit<
+    Partial<OfflineSaleRecord>,
+    'id' | 'payload' | 'requestFingerprint' | 'serverUrl' | 'branchId'
+  >,
 ): Promise<OfflineSaleRecord[]> {
   return locked(async () => {
     const records = await readUnlocked();
@@ -137,12 +192,17 @@ export async function patchOfflineSale(
             ...record,
             ...patch,
             id: record.id,
+            payload: record.payload,
+            requestFingerprint:
+              record.requestFingerprint ??
+              offlineRequestFingerprint(record.payload),
+            serverUrl: record.serverUrl,
+            branchId: record.branchId,
             updatedAt: new Date().toISOString(),
           }
         : record,
     );
-    await writeUnlocked(next);
-    return next;
+    return writeUnlocked(next);
   });
 }
 
@@ -152,13 +212,12 @@ export async function removeOfflineSale(
   return locked(async () => {
     const records = await readUnlocked();
     const next = records.filter(record => record.id !== id);
-    await writeUnlocked(next);
-    return next;
+    return writeUnlocked(next);
   });
 }
 
 export function unresolvedOfflineSaleCount(
   records: OfflineSaleRecord[],
 ): number {
-  return records.filter(record => record.state !== 'NEEDS_REVIEW').length;
+  return records.length;
 }

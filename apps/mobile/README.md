@@ -26,9 +26,10 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   receiving, AR collection, store-credit lookup, and required second-person approval;
 - pharmacy counter authorization and parked pharmacist-review handoff/resume;
 - bounded GraphQL operations so a dropped connection cannot leave scan or payment spinning forever;
-- Emergency Offline Mode: an encrypted native queue for plain retail cash sales, with manual
-  sync/retry, original-cashier attribution, shift-close/unpair guards, and a synced badge in receipt
-  history;
+- Emergency Offline Mode: an encrypted native queue for plain retail cash sales, with a persisted
+  unknown/syncing/review state machine, request-integrity fingerprint, full-screen Sync Center,
+  per-item/manual retry, original-cashier attribution, shift-close/unpair guards, and a synced badge
+  in receipt history;
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
@@ -43,7 +44,8 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   foreground/reconnect recovery, and degraded polling.
 - separate HTTP/server reachability status plus a bounded encrypted recovery queue for eligible
   retail cash sales; the queue excludes PINs, syncs serially with the original idempotency key,
-  recovers a committed result before retrying, and blocks shift close while unresolved.
+  recovers a committed result before retrying, normalizes interrupted writes after process restart,
+  keeps rejected sales visible in the on-device Sync Center, and blocks shift close while unresolved.
 
 All tenant, location, device, and shift scope is server-derived. Money and stock operations retain
 their idempotency key across an unknown network result. Cash out, void, and manual discount filter the
