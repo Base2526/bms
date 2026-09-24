@@ -25,6 +25,15 @@ import { computeVat, unresolvedVatSkus, type VatCategory, type VatRounding, type
 import { cashRoundingDelta, isCashRounding, type CashRounding } from "@/lib/pos/cashRounding";
 import { invalidateStoreProfileCache } from "./storeProfile";
 import { enqueueTaxDocument } from "./etax/queue";
+import {
+  abbreviatedInvoicePrefix,
+  buildTaxDocNo,
+  creditNotePrefix,
+  fullInvoicePrefix,
+  taxClockOf,
+  type TaxClock,
+  type TaxDocLocation,
+} from "./taxDocumentNumber";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
 
@@ -56,9 +65,18 @@ export type TaxDocument = {
 function toISO(v: unknown): string {
   return v instanceof Date ? v.toISOString() : String(v);
 }
-function toDate(v: unknown): string {
-  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+/**
+ * `pg` คืนคอลัมน์ DATE เป็น Date ตอนเที่ยงคืน "เวลาท้องถิ่นของเครื่อง"
+ * `.toISOString()` จึงถอยไป 1 วันบนเครื่องที่อยู่ตะวันออกของ UTC (เช่นเครื่องในไทย)
+ * ต้องอ่านจากส่วนประกอบท้องถิ่น ไม่ใช่ UTC
+ */
+export function pgDateToIso(v: unknown): string {
+  if (v instanceof Date) {
+    return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+  }
+  return String(v).slice(0, 10);
 }
+const toDate = pgDateToIso;
 
 function mapDoc(r: any): TaxDocument {
   return {
@@ -121,15 +139,27 @@ async function nextSequenceInTx(
 }
 
 /**
- * ประกอบเลขเอกสาร: prefix + ปี(2หลัก) + เดือน + วัน + ลำดับ 4 หลัก
- * เลียนแบบใบวราภรณ์ (2512010004 = 25/12/01 ลำดับ 0004) เป็นค่าเริ่มต้น
- * ร้านที่มีรูปแบบของตัวเองตั้ง receipt_prefix ทับได้ และคอลัมน์เก็บเป็น TEXT
- * เพราะของจริงมีทั้ง KFC2522205 และ 006/8731
+ * เวลาของเอกสาร = `now()` ของทรานแซกชันนี้ (ตัวเดียวกับ DEFAULT ของ issued_at)
+ * แปลงเป็นวันที่ไทย — ไม่ใช้นาฬิกาของ Node เพราะสองนาฬิกาต่างกันได้ไม่กี่วินาที
+ * แล้วบิลตอน 23:59:59 จะได้ issued_at วันหนึ่งแต่ issue_date อีกวัน
  */
-function buildDocNo(prefix: string | null, date: Date, seq: number, era: "BE" | "CE"): string {
-  const year = (era === "BE" ? date.getFullYear() + 543 : date.getFullYear()) % 100;
-  const stamp = `${String(year).padStart(2, "0")}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-  return `${prefix ?? ""}${stamp}${String(seq).padStart(4, "0")}`;
+async function taxClockInTx(client: PoolClient): Promise<TaxClock> {
+  const res = await client.query<{ now: Date }>(`SELECT now() AS now`);
+  return taxClockOf(new Date(res.rows[0].now));
+}
+
+async function taxDocLocationInTx(
+  client: PoolClient,
+  tenantId: string,
+  locationId: string
+): Promise<TaxDocLocation> {
+  const res = await client.query<{ is_head_office: boolean; branch_code: string | null }>(
+    `SELECT is_head_office, branch_code FROM bms_locations WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, locationId]
+  );
+  const r = res.rows[0];
+  // ไม่พบสาขา = ปล่อยรูปแบบเดิม ให้ FK ของ INSERT เป็นคนปฏิเสธ
+  return { isHeadOffice: r?.is_head_office ?? true, branchCode: r?.branch_code ?? null };
 }
 
 // ---------------------------------------------------------------
@@ -367,27 +397,44 @@ export async function issueAbbreviatedInvoiceInTx(
   const missing = unresolvedVatSkus(lines);
   if (missing.length > 0) return { status: "VAT_CATEGORY_MISSING", skus: missing };
 
-  const now = new Date();
+  const clock = await taxClockInTx(client);
   const seq = await nextSequenceInTx(client, {
     tenantId, locationId, deviceId, docType: "ABBREVIATED",
-    periodKey: String(now.getFullYear()),
+    periodKey: String(clock.year),
   });
 
-  const prefixRes = deviceId
-    ? await client.query<{ receipt_prefix: string | null }>(
-        `SELECT receipt_prefix FROM bms_pos_devices WHERE tenant_id = $1 AND id = $2`, [tenantId, deviceId]
+  // เครื่องที่ prefix ซ้ำกับเครื่องอื่นของร้าน (รวมเครื่องที่ปิดไปแล้ว และหลายเครื่องที่
+  // ไม่ได้ตั้งเลย) ต้องได้เลขที่ไม่ชนกัน — ดู abbreviatedInvoicePrefix()
+  const deviceRes = deviceId
+    ? await client.query<{ receipt_prefix: string | null; code: string; shared: boolean }>(
+        `SELECT d.receipt_prefix, d.code,
+                EXISTS (
+                  SELECT 1 FROM bms_pos_devices o
+                   WHERE o.tenant_id = d.tenant_id AND o.id <> d.id
+                     AND btrim(COALESCE(o.receipt_prefix, '')) = btrim(COALESCE(d.receipt_prefix, ''))
+                ) AS shared
+           FROM bms_pos_devices d WHERE d.tenant_id = $1 AND d.id = $2`,
+        [tenantId, deviceId]
       )
     : null;
+  const device = deviceRes?.rows[0];
+  const prefix = device
+    ? abbreviatedInvoicePrefix({
+        receiptPrefix: device.receipt_prefix,
+        code: device.code,
+        sharedWithAnotherDevice: device.shared,
+      })
+    : null;
 
-  const docNo = buildDocNo(prefixRes?.rows[0]?.receipt_prefix ?? null, now, seq, settings.calendarEra);
+  const docNo = buildTaxDocNo(prefix, clock, seq, settings.calendarEra);
 
   const res = await client.query(
     `INSERT INTO bms_tax_documents
-       (tenant_id, location_id, order_id, device_id, doc_type, doc_no,
+       (tenant_id, location_id, order_id, device_id, doc_type, doc_no, issue_date,
         taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
-     VALUES ($1, $2, $3, $4, 'ABBREVIATED', $5, $6, $7, $8, $9, $10, $11, $12)
+     VALUES ($1, $2, $3, $4, 'ABBREVIATED', $5, $6::date, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
-    [tenantId, locationId, orderId, deviceId, docNo,
+    [tenantId, locationId, orderId, deviceId, docNo, clock.isoDate,
       breakdown.taxableAmount, breakdown.exemptAmount, breakdown.vatAmount,
       breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate, args.issuedBy ?? null]
   );
@@ -479,26 +526,27 @@ export async function issueFullTaxInvoice(args: {
     );
     const cancelled = abbr.rowCount ? mapDoc(abbr.rows[0]) : null;
 
-    const now = new Date();
+    const clock = await taxClockInTx(client);
     const seq = await nextSequenceInTx(client, {
       tenantId, locationId, deviceId: null, docType: "FULL",
-      periodKey: String(now.getFullYear()),
+      periodKey: String(clock.year),
     });
-    const docNo = buildDocNo(null, now, seq, settings.calendarEra);
+    const location = await taxDocLocationInTx(client, tenantId, locationId);
+    const docNo = buildTaxDocNo(fullInvoicePrefix(location), clock, seq, settings.calendarEra);
 
     const res = await client.query(
       `INSERT INTO bms_tax_documents
-         (tenant_id, location_id, order_id, doc_type, doc_no, replaces_document_id,
+         (tenant_id, location_id, order_id, doc_type, doc_no, issue_date, replaces_document_id,
           buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
           taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
-       VALUES ($1, $2, $3, 'FULL', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       VALUES ($1, $2, $3, 'FULL', $4, $18::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [tenantId, locationId, orderId, docNo, cancelled?.id ?? null,
         buyer.name.trim(), buyer.taxId.trim(), buyer.branchCode ?? "00000",
         buyer.address ?? null, buyer.phone ?? null,
         breakdown.taxableAmount, breakdown.exemptAmount, breakdown.vatAmount,
         breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate,
-        args.issuedBy ?? null]
+        args.issuedBy ?? null, clock.isoDate]
     );
 
     const full = mapDoc(res.rows[0]);
@@ -633,30 +681,31 @@ export async function issueCreditNote(args: {
       vat = Math.round(original.vatAmount * share * 100) / 100;
     }
 
-    const now = new Date();
+    const clock = await taxClockInTx(client);
     const seq = await nextSequenceInTx(client, {
       tenantId,
       locationId: original.locationId,
       deviceId: null,
       docType: "CREDIT_NOTE",
-      periodKey: String(now.getFullYear()),
+      periodKey: String(clock.year),
     });
-    const docNo = buildDocNo("CN", now, seq, settings.calendarEra);
+    const location = await taxDocLocationInTx(client, tenantId, original.locationId);
+    const docNo = buildTaxDocNo(creditNotePrefix(location), clock, seq, settings.calendarEra);
 
     const res = await client.query(
       `INSERT INTO bms_tax_documents
-         (tenant_id, location_id, order_id, doc_type, doc_no, references_document_id,
+         (tenant_id, location_id, order_id, doc_type, doc_no, issue_date, references_document_id,
           credit_reason, original_total,
           buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
           taxable_amount, exempt_amount, vat_amount, grand_total, vat_rate, issued_by)
-       VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $19::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING *`,
       [tenantId, original.locationId, orderId, docNo, original.id,
         args.returnRef ? `${args.reason} [${args.returnRef}]` : args.reason,
         original.grandTotal,
         original.buyerName, original.buyerTaxId, original.buyerBranchCode,
         original.buyerAddress, original.buyerPhone,
-        taxable, exempt, vat, amount, original.vatRate, args.issuedBy ?? null]
+        taxable, exempt, vat, amount, original.vatRate, args.issuedBy ?? null, clock.isoDate]
     );
 
     const note = mapDoc(res.rows[0]);

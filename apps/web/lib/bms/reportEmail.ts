@@ -48,6 +48,8 @@ const REPORT_LABEL_TH: Record<ReportType, string> = {
   CUSTOMERS: "ลูกค้า",
   OPERATIONS: "ปฏิบัติการและการควบคุม",
   SPECIALIZED: "รายงานเฉพาะประเภทร้าน",
+  VAT_SALES: "รายงานภาษีขาย",
+  STOCK_LEDGER: "รายงานสินค้าและวัตถุดิบ",
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

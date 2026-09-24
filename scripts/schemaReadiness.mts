@@ -381,6 +381,13 @@ export const MIGRATIONS: Migration[] = [
       { kind: "column", table: "bms_board_game_billing_groups", name: "merged_into_group_id" },
     ],
   },
+  {
+    // เขียนเฉพาะตอนปรับยอดจากการนับ (movements.ts ส่งคอลัมน์นี้เฉพาะแถวที่มีค่า)
+    // รายงานสินค้าและวัตถุดิบก็อ่านคอลัมน์นี้ทุกครั้ง
+    file: "10.10__bms_stock_movement_count_direction.sql",
+    impact: "กดยืนยันผลการนับสต็อกไม่ได้ และรายงานสินค้าและวัตถุดิบเปิดไม่ได้ (การขายยังทำงานปกติ)",
+    needs: [{ kind: "column", table: "bms_stock_movements", name: "direction" }],
+  },
 ];
 
 /** เรนเดอร์ตัวตรวจเป็น SQL ล้วน — ไม่ต่อฐาน ไม่ต้องมี env */

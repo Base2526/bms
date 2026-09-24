@@ -674,6 +674,31 @@ type BmsCouponSummary {
   topCoupons: [BmsTopCoupon!]!
 }
 
+input BmsCreateExpenseDocumentInput {
+  amountBeforeVat: Float!
+  category: String!
+  documentDate: String!
+  documentKind: String!
+  documentNo: String
+  evidenceFileId: Int
+  idempotencyKey: String!
+  locationId: ID!
+  note: String
+  paidAt: String
+  payeeAddress: String
+  payeeBranchCode: String
+  payeeName: String
+  payeeTaxId: String
+  payeeType: String
+  purchaseOrderId: ID
+  supplierId: ID
+  vatAmount: Float
+  vatClaimMonth: String
+  whtAmount: Float
+  whtIncomeType: String
+  whtRate: Float
+}
+
 input BmsCreateStockCountInput {
   locationId: ID!
   note: String
@@ -976,6 +1001,75 @@ type BmsEtaxSummary {
   pending: Int!
   rejected: Int!
   sent: Int!
+}
+
+type BmsExpenseDocument {
+  amountBeforeVat: Float!
+  branchCode: String!
+  category: String!
+  createdAt: String!
+  documentDate: String!
+  documentKind: String!
+  documentNo: String
+  evidenceFileId: Int
+  id: ID!
+  locationCode: String!
+  locationId: ID!
+  locationName: String!
+  note: String
+  paidAt: String
+  payeeAddress: String
+  payeeBranchCode: String
+  payeeName: String!
+  payeeTaxId: String
+  payeeType: String
+  purchaseOrderId: ID
+  status: String!
+  supplierId: ID
+  vatAmount: Float!
+  vatClaimMonth: String
+  voidReason: String
+  voidedAt: String
+  whtAmount: Float!
+  whtIncomeType: String
+  whtRate: Float
+}
+
+type BmsExpenseDocumentList {
+  rows: [BmsExpenseDocument!]!
+  total: Int!
+}
+
+input BmsExpenseDocumentListInput {
+  category: String
+  from: String!
+  includeVoid: Boolean
+  limit: Int
+  locationId: ID
+  offset: Int
+  search: String
+  to: String!
+}
+
+type BmsExpenseEstablishment {
+  branchCode: String!
+  code: String!
+  isHeadOffice: Boolean!
+  locationId: ID!
+  name: String!
+}
+
+type BmsExpenseTaxSummary {
+  grandTotal: BmsExpenseTaxTotal!
+  totals: [BmsExpenseTaxTotal!]!
+}
+
+type BmsExpenseTaxTotal {
+  documentCount: Int!
+  expenseBase: Float!
+  locationId: ID
+  vatPurchase: Float!
+  wht: Float!
 }
 
 type BmsExpiringLotItem {
@@ -6102,6 +6196,60 @@ type BmsSalesSummary {
   to: String!
 }
 
+type BmsSalesTaxEstablishmentTotal {
+  base: Float!
+  branchCode: String!
+  documentCount: Int!
+  exempt: Float!
+  locationId: ID!
+  rounding: Float!
+  total: Float!
+  vat: Float!
+}
+
+type BmsSalesTaxException {
+  amount: Float!
+  at: String!
+  detail: String
+  kind: String!
+  locationId: ID
+  orderId: ID!
+  reference: String
+}
+
+type BmsSalesTaxExceptionCounts {
+  fullReplacesOtherMonth: Int!
+  paidWithoutTaxDocument: Int!
+  returnWithoutCreditNote: Int!
+}
+
+type BmsSalesTaxGrandTotal {
+  base: Float!
+  documentCount: Int!
+  exempt: Float!
+  rounding: Float!
+  total: Float!
+  vat: Float!
+}
+
+input BmsSalesTaxReportInput {
+  from: String!
+  locationId: ID
+  to: String!
+}
+
+type BmsSalesTaxReportSummary {
+  cancelledCount: Int!
+  exceptionCounts: BmsSalesTaxExceptionCounts!
+  exceptions: [BmsSalesTaxException!]!
+  from: String!
+  grandTotal: BmsSalesTaxGrandTotal!
+  sellerTaxId: String
+  to: String!
+  totals: [BmsSalesTaxEstablishmentTotal!]!
+  vatRegistered: Boolean!
+}
+
 type BmsSeedPharmacyQueueDemoResult {
   assessmentId: ID
   assessmentIds: [ID!]!
@@ -6405,11 +6553,15 @@ type BmsStoreSummary {
 }
 
 type BmsSupplier {
+  address: String
+  branchCode: String
   email: String
+  entityType: String
   id: ID!
   name: String!
   note: String
   phone: String
+  taxId: String
 }
 
 type BmsSupplierPerformance {
@@ -6521,6 +6673,54 @@ type BmsTaxDocument {
   taxableAmount: Float!
   vatAmount: Float!
   vatRate: Float!
+}
+
+type BmsTaxDocumentList {
+  rows: [BmsTaxDocumentListRow!]!
+  total: Int!
+}
+
+input BmsTaxDocumentListInput {
+  docType: String
+  from: String!
+  includeCancelled: Boolean
+  limit: Int
+  locationId: ID
+  offset: Int
+  search: String
+  to: String!
+}
+
+type BmsTaxDocumentListRow {
+  base: Float!
+  branchCode: String!
+  buyerName: String
+  buyerTaxId: String
+  cancelledAt: String
+  cancelledReason: String
+  channel: String
+  deviceCode: String
+  docNo: String!
+  docType: String!
+  exempt: Float!
+  id: ID!
+  issueDate: String!
+  issuedAt: String!
+  locationCode: String!
+  locationId: ID!
+  orderId: ID!
+  referenceDocNo: String
+  rounding: Float!
+  total: Float!
+  vat: Float!
+}
+
+type BmsTaxEstablishment {
+  branchCode: String!
+  code: String!
+  isHeadOffice: Boolean!
+  locationId: ID!
+  name: String!
 }
 
 input BmsTaxInvoiceBuyerInput {
@@ -6753,6 +6953,11 @@ type BmsVerifyShopSignupResult {
   slug: String
   status: String!
   tenantId: ID
+}
+
+type BmsVoidExpenseDocumentResult {
+  id: ID!
+  status: String!
 }
 
 input BmsWorkAssistantInput {
@@ -7046,6 +7251,7 @@ type Mutation {
   bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
   bmsCompleteOrder(id: ID!): Boolean!
   bmsConfirmPayment(id: ID!): BmsPaymentResult!
+  bmsCreateExpenseDocument(input: BmsCreateExpenseDocumentInput!): BmsExpenseDocument!
   bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
   bmsCreateKitchenStation(input: BmsKitchenStationInput!): BmsKitchenStation!
   bmsCreateOrder(channel: String, couponCode: String, customerRef: String, items: [BmsOrderItemInput!]!, locationId: ID, preferredCarrier: BmsCarrier): BmsReorderResult!
@@ -7320,6 +7526,7 @@ type Mutation {
   bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!
   bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification
   bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
+  bmsVoidExpenseDocument(id: ID!, reason: String!): BmsVoidExpenseDocumentResult!
   bmsWorkAssistant(input: BmsWorkAssistantInput!): BmsWorkAssistantResult!
   bmsWriteOffArInvoice(invoiceId: ID!, reason: String!): BmsArWriteOffResult!
   bookmark(postId: ID!): ToggleBookmarkResult!
@@ -7662,6 +7869,10 @@ type Query {
   bmsDashboard: BmsDashboard!
   bmsEtaxSubmissions(limit: Int = 100, status: String): [BmsEtaxSubmission!]!
   bmsEtaxSummary: BmsEtaxSummary!
+  bmsExpenseDocuments(input: BmsExpenseDocumentListInput!): BmsExpenseDocumentList!
+  bmsExpenseEstablishments: [BmsExpenseEstablishment!]!
+  bmsExpenseSuppliers: [BmsSupplier!]!
+  bmsExpenseTaxSummary(from: String!, locationId: ID, to: String!): BmsExpenseTaxSummary!
   bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
   bmsFollowupAnalytics(windowDays: Int): BmsFollowupAnalytics!
   bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
@@ -7813,6 +8024,7 @@ type Query {
   bmsRolePermissions: [BmsRolePermissions!]!
   bmsSalesByTier: [BmsSalesByTierRow!]!
   bmsSalesSummary(from: String, locationId: ID, to: String): BmsSalesSummary!
+  bmsSalesTaxReport(input: BmsSalesTaxReportInput!): BmsSalesTaxReportSummary!
   bmsShipment(id: ID!): BmsShipment
   bmsShipmentLabel(id: ID!): BmsShipmentLabel
   bmsShipmentTrackingEvents(limit: Int = 100, shipmentId: ID!): [BmsShipmentTrackingEvent!]!
@@ -7827,7 +8039,9 @@ type Query {
   bmsSupplierProducts(limit: Int = 200, search: String, supplierId: ID!): [BmsSupplierProduct!]!
   bmsSuppliers: [BmsSupplier!]!
   bmsSupportTickets(page: Int, pageSize: Int, q: String, status: String, topic: String): BmsSupportTicketPage!
+  bmsTaxDocumentList(input: BmsTaxDocumentListInput!): BmsTaxDocumentList!
   bmsTaxDocuments(orderId: ID!): [BmsTaxDocument!]!
+  bmsTaxEstablishments: [BmsTaxEstablishment!]!
   bmsTaxSettings: BmsTaxSettings!
   bmsTenants: [BmsTenantRow!]!
   bmsTopSellingProducts(from: String, limit: Int = 10, locationId: ID, to: String): [BmsTopProduct!]!

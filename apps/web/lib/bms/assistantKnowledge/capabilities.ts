@@ -344,6 +344,33 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     configurationDependencies: [], limitations: both("ปล่อยเชื่อ รับชำระ และตัดหนี้สูญใช้สิทธิ์แยกกัน", "Credit sale, collection, and write-off use separate permissions."),
   },
   {
+    id: "tax.sales-report", module: "tax",
+    title: both("รายงานภาษีขายรายเดือน", "Monthly sales tax report"),
+    description: both(
+      "สรุปใบกำกับภาษีขาย ใบลดหนี้ และ VAT รายสถานประกอบการ พร้อมรายการที่ต้องตรวจก่อนส่งนักบัญชี",
+      "Summarise output tax invoices, credit notes and VAT per establishment, with what to check before sending to the accountant."
+    ),
+    aliases: aliases(
+      ["รายงานภาษีขาย", "ภาษีขาย", "ภ.พ.30", "ภพ30", "ยื่นภาษีมูลค่าเพิ่ม", "ยื่น VAT", "สรุปใบกำกับรายเดือน", "ส่งยอดให้นักบัญชี"],
+      ["sales tax report", "output VAT", "PP30", "VAT return", "monthly tax invoices", "send figures to accountant"]
+    ),
+    status: "AVAILABLE", route: "/admin/tax-documents", requiredPermissions: ["tax.document.view"],
+    configurationDependencies: ["The shop must be VAT-registered for tax invoices to exist."],
+    limitations: both(
+      "เป็นรายงานประกอบการยื่น ไม่ใช่การยื่น ภ.พ.30 · ภาษีซื้ออยู่หน้าเอกสารรายจ่ายแยกต่างหาก — นักบัญชีต้องตรวจก่อนยื่น",
+      "It supports a PP.30 filing but does not file it; input VAT is kept separately under Expenses & input VAT — an accountant must review before filing."
+    ),
+  },
+  {
+    id: "expense.documents", module: "expense",
+    title: both("เอกสารรายจ่ายและภาษีซื้อ", "Expense documents and input VAT"),
+    description: both("บันทึกหลักฐานรายจ่าย ภาษีซื้อ และภาษีหัก ณ ที่จ่ายรายสถานประกอบการ", "Record expense evidence, input VAT and withholding tax per establishment."),
+    aliases: aliases(["รายจ่าย", "ภาษีซื้อ", "หัก ณ ที่จ่าย", "ภงด 3", "ภงด 53"], ["expenses", "input VAT", "withholding tax", "PND 3", "PND 53"]),
+    status: "AVAILABLE", route: "/admin/expenses", requiredPermissions: ["expense.view"],
+    configurationDependencies: [],
+    limitations: both("ไม่ใช่แบบยื่นภาษี เอกสารผิดต้องยกเลิกพร้อมเหตุผล และนักบัญชีต้องตรวจก่อนยื่น", "This does not file taxes; incorrect documents must be voided with a reason, and an accountant must review before submission."),
+  },
+  {
     id: "restock.subscriptions", module: "restock",
     title: both("แจ้งเตือนสินค้าเข้า", "Restock subscriptions"),
     description: both("เก็บความต้องการสินค้าหมดและให้พนักงานตรวจคิวเมื่อของกลับเข้า", "Capture out-of-stock demand and let staff review the queue when stock returns."),

@@ -259,6 +259,13 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 
 ## POS and tax
 
+Expense evidence (`10.11`) is append-only financial history: creation uses an exact idempotency
+key plus request hash, and corrections set `VOID` with a reason instead of deleting a row. Supplier,
+purchase-order, location and private evidence-file references must belong to the same tenant. Input
+VAT is non-zero only for a tax invoice with document number and vendor tax ID; withholding requires
+payee type, tax ID, payment date and rate. These reports support an accountant but never claim to
+file PP.30, PND.3 or PND.53.
+
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
 shift report, `9.5` for retry-safe drawer movements, `9.7` for petty-cash expenses, `9.8` for
 sole-owner personal-funded expenses, and `9.9`–`9.10` for the branch petty-cash wallet) owns the counter

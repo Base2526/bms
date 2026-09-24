@@ -75,6 +75,8 @@ import { couponEligibilitySubtotal, merchantAbsorbApproval, type RestaurantCance
 import { RestaurantCheckError } from "./restaurantPosErrors";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { sendStaffMessage } from "./inbox";
+import { reportBmsFailure } from "./failureAlert";
+import { normalizeReceiptPrefix } from "./taxDocumentNumber";
 import {
   composeDiscounts,
   evaluatePointsEarn,
@@ -361,6 +363,31 @@ export async function upsertPosDevice(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: writeContext?.editorId });
+    // prefix คือส่วนเดียวของเลขใบกำกับอย่างย่อที่บอกว่ามาจากเครื่องไหน — สองเครื่องใช้
+    // prefix เดียวกัน เลขจะชนกันได้ (taxDocumentNumber.ts ต่อรหัสเครื่องให้เองเพื่อไม่ให้
+    // การขายล้ม แต่รูปแบบเลขจะเปลี่ยน) · ตรวจเฉพาะตอน "เปลี่ยน" prefix เท่านั้น
+    // เครื่องที่ซ้ำกันอยู่ก่อนแล้วต้องยังแก้ค่าอื่นได้
+    const nextPrefix = normalizeReceiptPrefix(input.receiptPrefix);
+    if (nextPrefix) {
+      const current = await client.query<{ receipt_prefix: string | null }>(
+        `SELECT receipt_prefix FROM bms_pos_devices WHERE tenant_id = $1 AND code = $2`,
+        [tenantId, input.code.trim()]
+      );
+      const changing = !current.rowCount || normalizeReceiptPrefix(current.rows[0].receipt_prefix) !== nextPrefix;
+      if (changing) {
+        const clash = await client.query<{ code: string }>(
+          `SELECT code FROM bms_pos_devices
+            WHERE tenant_id = $1 AND code <> $2 AND btrim(COALESCE(receipt_prefix, '')) = $3
+            LIMIT 1`,
+          [tenantId, input.code.trim(), nextPrefix]
+        );
+        if (clash.rowCount) {
+          throw new Error(
+            `prefix เลขใบเสร็จ "${nextPrefix}" ถูกใช้กับเครื่อง ${clash.rows[0].code} แล้ว — แต่ละเครื่องต้องใช้ prefix ไม่ซ้ำกัน`
+          );
+        }
+      }
+    }
     const res = await client.query<any>(
       `INSERT INTO bms_pos_devices
          (id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
@@ -5273,11 +5300,28 @@ async function ensurePosReturnCreditNote(input: {
       returnRef: input.posReturnId,
       returnedItems: input.returnedItems,
     });
-    return note.status === "ISSUED" || note.status === "ALREADY_ISSUED"
-      ? note.document.docNo
-      : null;
+    if (note.status === "ISSUED" || note.status === "ALREADY_ISSUED") return note.document.docNo;
+    // NOT_VAT_REGISTERED / NO_ORIGINAL_DOCUMENT เป็นเรื่องปกติ (ร้านไม่จด VAT หรือบิลขาย
+    // ก่อนจด VAT) · BAD_AMOUNT แปลว่ายอดคืนเกินใบกำกับเดิม ซึ่งไม่ควรเกิด ต้องมีคนดู
+    if (note.status === "BAD_AMOUNT") {
+      await reportBmsFailure({
+        tenantId: input.tenantId,
+        code: "tax.credit_note_failed",
+        error: note.reason,
+        surface: "staff",
+        meta: { orderId: input.orderId, posReturnId: input.posReturnId, status: note.status },
+      });
+    }
+    return null;
   } catch (e) {
     console.error("[POS] ออกใบลดหนี้ไม่สำเร็จ", input.orderId, e);
+    await reportBmsFailure({
+      tenantId: input.tenantId,
+      code: "tax.credit_note_failed",
+      error: e,
+      surface: "staff",
+      meta: { orderId: input.orderId, posReturnId: input.posReturnId },
+    });
     return null;
   }
 }

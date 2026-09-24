@@ -71,6 +71,8 @@ import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
 import { bmsProductPriceTiersResolvers } from "@/graphql/bmsProductPriceTiers";
 import { bmsProductPromotionsResolvers } from "@/graphql/bmsProductPromotions";
+import { bmsTaxReportsResolvers } from "@/graphql/bmsTaxReports";
+import { bmsExpenseDocumentsResolvers } from "@/graphql/bmsExpenseDocuments";
 import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
 import { bmsPosResolvers } from "@/graphql/bmsPos";
 import { bmsPosDeviceResolvers } from "@/graphql/bmsPosDevice";
@@ -2871,6 +2873,8 @@ const rawResolvers = {
     ...bmsCouponsResolvers.Query,
     ...bmsProductPriceTiersResolvers.Query,
     ...bmsProductPromotionsResolvers.Query,
+    ...bmsTaxReportsResolvers.Query,
+    ...bmsExpenseDocumentsResolvers.Query,
     ...bmsMembershipResolvers.Query,
     ...bmsPosResolvers.Query,
     ...bmsPosDeviceResolvers.Query,
@@ -2892,6 +2896,7 @@ const rawResolvers = {
     ...bmsRestockSubscriptionsResolvers.Query,
   },
   Mutation: {
+    ...bmsExpenseDocumentsResolvers.Mutation,
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
       
       console.log("[login]");

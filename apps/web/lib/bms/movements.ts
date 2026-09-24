@@ -22,6 +22,12 @@ export type MovementType =
   | "TRANSFER_LOST"
   | "WASTAGE";
 
+/**
+ * ทิศทางของ COUNT_ADJUST (10.10) — qty เป็นบวกเสมอ ชนิดอื่นบอกทิศทางด้วยตัว type เอง
+ * แต่การปรับจากการนับเป็นได้ทั้งเพิ่มและลด ถ้าไม่เก็บ รายงานรับเข้า/จ่ายออกสร้างจาก ledger ไม่ได้
+ */
+export type MovementDirection = "IN" | "OUT";
+
 export type MovementRow = {
   id: string;
   product_sku: string;
@@ -53,9 +59,29 @@ export async function recordMovement(
     refOrderId?: string | null;
     note?: string | null;
     actor?: string | null;
+    /** บังคับสำหรับ COUNT_ADJUST ห้ามใส่กับชนิดอื่น */
+    direction?: MovementDirection | null;
   }
 ): Promise<void> {
+  if (m.type === "COUNT_ADJUST" && !m.direction) {
+    throw new Error("COUNT_ADJUST ต้องระบุทิศทาง (IN/OUT)");
+  }
+  if (m.type !== "COUNT_ADJUST" && m.direction) {
+    throw new Error(`${m.type} บอกทิศทางด้วยตัวเองแล้ว ห้ามระบุ direction`);
+  }
   const locationId = m.locationId ?? (await resolveDefaultLocationIdInTx(client, m.tenantId));
+  // เขียนคอลัมน์ direction เฉพาะแถวที่มีค่า — การขาย/รับของ/โอนเรียกฟังก์ชันนี้ทุกบิล
+  // ฐานที่ยังไม่ apply 10.10 ต้องไม่ทำให้การขายทั้งระบบล้ม
+  if (m.direction) {
+    await client.query(
+      `INSERT INTO bms_stock_movements
+         (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, note, actor, direction)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [m.tenantId, locationId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null,
+        m.direction]
+    );
+    return;
+  }
   await client.query(
     `INSERT INTO bms_stock_movements
        (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, note, actor)

@@ -22,6 +22,10 @@ import {
   getTopSellingProducts,
 } from "./reports";
 import { listLowStock } from "./products";
+import { getSalesTaxReport } from "./taxReports";
+import { getStockLedger } from "./stockLedger";
+import { formatTaxDate } from "./taxReportMath";
+import { taxClockOf } from "./taxDocumentNumber";
 import { getLocation } from "./locations";
 import { resolveAiCredentials } from "./ai";
 import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
@@ -36,6 +40,8 @@ import {
   buildCustomersReportDoc,
   buildOperationsReportDoc,
   buildSpecializedReportDoc,
+  buildSalesTaxReportDoc,
+  buildStockLedgerReportDoc,
   buildXlsx,
   buildCsv,
   buildPdf,
@@ -52,7 +58,22 @@ export const REPORT_TYPES = [
   "CUSTOMERS",
   "OPERATIONS",
   "SPECIALIZED",
+  // รายงานภาษีขายรายสถานประกอบการ ประกอบ ภ.พ.30 (ดู taxReports.ts)
+  "VAT_SALES",
+  // รายงานสินค้าและวัตถุดิบรายสถานประกอบการ (ดู stockLedger.ts)
+  "STOCK_LEDGER",
 ] as const;
+
+/** รายงานที่หัวคอลัมน์/ข้อมูลเป็นภาษาไทยล้วน — pdfkit แสดงไม่ได้ (ดู documentGenerator.ts) */
+const THAI_ONLY_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "STOCK_LEDGER"]);
+
+/** เดือนปัจจุบันตามเวลาไทย — ค่าปริยายของรายงานภาษีที่ต้องมีช่วงวันที่เสมอ */
+function currentTaxMonth(): { from: string; to: string } {
+  const now = taxClockOf(new Date());
+  const last = new Date(Date.UTC(now.year, now.month, 0)).getUTCDate();
+  const mm = String(now.month).padStart(2, "0");
+  return { from: `${now.year}-${mm}-01`, to: `${now.year}-${mm}-${String(last).padStart(2, "0")}` };
+}
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 export const REPORT_FORMATS = ["XLSX", "CSV", "PDF"] as const;
@@ -124,6 +145,24 @@ async function collectReportDoc(
       return buildOperationsReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
     case "SPECIALIZED":
       return buildSpecializedReportDoc(await getManagementReport(tenantId, dateFrom, dateTo, locationId));
+    case "VAT_SALES": {
+      const month = currentTaxMonth();
+      const report = await getSalesTaxReport(tenantId, {
+        from: dateFrom ?? month.from,
+        to: dateTo ?? month.to,
+        locationId,
+      });
+      return buildSalesTaxReportDoc(report, (iso) => formatTaxDate(iso, report.seller.calendarEra));
+    }
+    case "STOCK_LEDGER": {
+      const month = currentTaxMonth();
+      const report = await getStockLedger(tenantId, {
+        from: dateFrom ?? month.from,
+        to: dateTo ?? month.to,
+        locationId,
+      });
+      return buildStockLedgerReportDoc(report, (iso) => formatTaxDate(iso, "BE"));
+    }
   }
 }
 
@@ -186,7 +225,11 @@ export async function generateReport(
   const dateFrom = input.dateFrom || null;
   const dateTo = input.dateTo || null;
   const locationId = input.locationId || null;
-  const includeSummary = input.includeSummary ?? true;
+  // สรุปด้วย AI ไม่มีประโยชน์กับรายงานภาษี และส่งตัวเลขภาษีของร้านออกไปหา provider เปล่า ๆ
+  const includeSummary = THAI_ONLY_REPORT_TYPES.has(reportType) ? false : input.includeSummary ?? true;
+  if (format === "PDF" && THAI_ONLY_REPORT_TYPES.has(reportType)) {
+    throw new Error("รายงานนี้ออกได้เฉพาะ XLSX หรือ CSV (PDF ยังแสดงภาษาไทยไม่ได้)");
+  }
 
   const location = locationId ? await getLocation(tenantId, locationId) : null;
   if (locationId && !location) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");

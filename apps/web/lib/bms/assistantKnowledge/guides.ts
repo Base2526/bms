@@ -368,7 +368,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "Nearby discovery exposes only branches explicitly published with shop-managed coordinates, never member or personal data.",
       "The floor refreshes after every command and every 15 seconds, so verify the latest amount and state before taking payment.",
     ]),
-    relatedCapabilityIds: [],
+    relatedCapabilityIds: ["expense.documents"],
   },
   {
     id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",
@@ -835,6 +835,57 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     aliases: aliases(["ยอดลูกหนี้ค้าง", "ลูกหนี้ทั้งร้าน", "ใครค้างชำระบ้าง", "อายุหนี้", "ดูหนี้ลูกค้า", "รับชำระหนี้", "ขายเชื่อ"], ["outstanding receivables", "who owes us money", "aging report", "customer debt", "collect receivable", "credit sale"]), requiredPermissions: ["ar.view"],
     prerequisites: lists(["รับชำระต้องมี ar.collect"], ["Collection requires ar.collect."]), steps: lists(["ค้นหาลูกหนี้", "ตรวจยอดและเอกสารอ้างอิง", "รับชำระตามช่องทาง", "ตรวจยอดคงเหลือ"], ["Find the account.", "Review balance and source documents.", "Collect through the selected method.", "Verify the remaining balance."]),
     warnings: lists(["ตัดหนี้สูญต้องมี ar.writeoff และเป็นการลดสินทรัพย์"], ["Write-off requires ar.writeoff and reduces an asset."]), relatedCapabilityIds: ["receivables.credit-sales"],
+  },
+  {
+    id: "tax.review-sales-report", module: "tax", pageId: "tax-documents", route: "/admin/tax-documents",
+    title: both("ดูรายงานภาษีขายและส่งออกให้นักบัญชี", "Review and export the sales tax report"),
+    summary: both(
+      "เลือกเดือนและสถานประกอบการ ตรวจรายการที่ต้องแก้ แล้วส่งออก XLSX ให้นักบัญชี",
+      "Pick the month and establishment, clear the items to check, then export XLSX for the accountant."
+    ),
+    aliases: aliases(
+      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30", "รายงานสินค้าและวัตถุดิบ", "รายงานสินค้าคงเหลือรายสาขา"],
+      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30", "goods and materials report", "stock report per branch for tax"]
+    ),
+    requiredPermissions: ["tax.document.view"],
+    prerequisites: lists(
+      ["ร้านต้องตั้งว่าจด VAT และใส่เลขผู้เสียภาษีที่หน้าตั้งค่าร้าน", "ส่งออกไฟล์ต้องมีสิทธิ์ report.view"],
+      ["The shop must be VAT-registered with its tax ID set in store settings.", "Exporting the file also requires report.view."]
+    ),
+    steps: lists(
+      ["เปิดเมนูการเงิน › ภาษีขาย", "เลือกเดือนและสถานประกอบการ", "ตรวจการ์ด 'ต้องตรวจสอบ' ให้เหลือศูนย์หรืออธิบายได้", "กดส่งออกรายงานภาษีขาย (XLSX) แล้วส่งให้นักบัญชี"],
+      ["Open Finance › Sales tax.", "Choose the month and establishment.", "Clear or explain every item in the 'Check before sending' card.", "Export the sales tax report (XLSX) and send it to the accountant."]
+    ),
+    warnings: lists(
+      [
+        "แบ่งงวดตามวันที่ออกเอกสารเวลาไทย บิลหลังเที่ยงคืนอยู่ในวันใหม่",
+        "ใบกำกับอย่างย่อสรุปรายวันต่อเครื่องเป็นช่วงเลข ใบลดหนี้เป็นยอดลบ",
+        "บิลที่ชำระแล้วแต่ไม่มีใบกำกับ (เช่นออร์เดอร์ออนไลน์) ไม่ถูกนับในยอด — ดูที่รายการที่ต้องตรวจสอบ",
+        "รายงานนี้ไม่ใช่การยื่น ภ.พ.30 · ภาษีซื้อบันทึกและตรวจแยกที่หน้า รายจ่ายและภาษีซื้อ",
+        "ส่งออกได้เฉพาะ XLSX/CSV เพราะ PDF ยังแสดงภาษาไทยไม่ได้",
+        "รายงานสินค้าและวัตถุดิบนับเป็นหน่วยฐาน และมูลค่าคิดจากต้นทุนปัจจุบัน ไม่ใช่ FIFO/ถัวเฉลี่ย · ยอดยกมาที่ไม่มีหลักฐานการเคลื่อนไหวแสดงแยกเสมอ",
+      ],
+      [
+        "Periods follow the Thai-time issue date; a bill after midnight belongs to the new day.",
+        "Abbreviated invoices are summarised per day per register as a number range; credit notes are negative.",
+        "Paid bills without a tax invoice (such as online orders) are not in the totals — see the items to check.",
+        "This report does not file PP.30; record and review input VAT separately on Expenses & input VAT.",
+        "Only XLSX/CSV can be exported because PDF cannot render Thai yet.",
+        "The goods and materials report counts base units and values stock at the current cost, not FIFO/average; opening stock without movement evidence is always shown separately.",
+      ]
+    ),
+    relatedCapabilityIds: ["tax.sales-report", "tax.documents"],
+  },
+  {
+    id: "expense.record-document", module: "expense", pageId: "expenses", route: "/admin/expenses",
+    title: both("บันทึกรายจ่าย ภาษีซื้อ และหัก ณ ที่จ่าย", "Record expenses, input VAT and withholding tax"),
+    summary: both("เก็บหลักฐานเงินจ่ายออกหนึ่งครั้งต่อเอกสาร พร้อมแยก VAT และภาษีหัก ณ ที่จ่าย", "Keep one cash-out event per supporting document, with input VAT and withholding tax separated."),
+    aliases: aliases(["รายจ่าย", "ภาษีซื้อ", "หัก ณ ที่จ่าย", "ภงด 3", "ภงด 53"], ["expense", "input VAT", "withholding tax", "PND 3", "PND 53"]),
+    requiredPermissions: ["expense.view"],
+    prerequisites: lists(["ผู้เพิ่มหรือยกเลิกเอกสารต้องมี expense.manage", "เตรียมเลขที่เอกสารและข้อมูลภาษีของผู้ขาย"], ["Creating or voiding requires expense.manage.", "Have the document number and vendor tax details ready."]),
+    steps: lists(["เปิด การเงินและรายงาน › รายจ่ายและภาษีซื้อ", "เลือกเดือนหรือสถานประกอบการ", "กดเพิ่มเอกสารรายจ่ายและกรอกข้อมูลจากหลักฐานจริง", "ตรวจยอดก่อน VAT ภาษีซื้อ และหัก ณ ที่จ่าย"], ["Open Finance & reports › Expenses & input VAT.", "Choose the month or establishment.", "Add an expense document using the actual evidence.", "Review the before-VAT, input-VAT and withholding totals."]),
+    warnings: lists(["VAT ขอคืนได้เฉพาะใบกำกับภาษีที่มีเลขที่เอกสารและเลขผู้เสียภาษีผู้ขาย", "เอกสารผิดต้องยกเลิกพร้อมเหตุผล ห้ามลบประวัติ", "รายงานนี้ไม่ใช่แบบยื่นภาษี ให้นักบัญชีตรวจก่อนยื่น"], ["Input VAT is claimable only from a tax invoice with its number and vendor tax ID.", "Void an incorrect document with a reason; do not erase its history.", "This is not a tax filing; an accountant must review it before submission."]),
+    relatedCapabilityIds: [],
   },
   {
     id: "settings.configure-shop", module: "settings", pageId: "settings", route: "/admin/settings",

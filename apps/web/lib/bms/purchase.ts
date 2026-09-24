@@ -762,7 +762,8 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
 // ---- suppliers ----------------------------------------------
 export async function listSuppliers(tenantId: string) {
   const res = await query(
-    `SELECT id, name, phone, email, note, created_at
+    `SELECT id, name, phone, email, note, tax_id AS "taxId", branch_code AS "branchCode",
+            address, entity_type AS "entityType", created_at
        FROM bms_suppliers WHERE tenant_id = $1 ORDER BY name`,
     [tenantId]
   );
