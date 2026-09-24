@@ -55,19 +55,21 @@ done
 
 web_ref="bms/retail-local-web:$version"
 ws_ref="bms/retail-local-ws:$version"
-postgres_ref="postgres:16-alpine"
-redis_ref="redis:7-alpine"
+postgres_ref="bms/retail-local-postgres:16-alpine-$version"
+redis_ref="bms/retail-local-redis:7-alpine-$version"
 
-docker buildx build --platform linux/amd64 --load \
+docker buildx build --platform linux/amd64 --provenance=false --load \
   --build-arg NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100 \
   --build-arg NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql \
   --build-arg NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql \
   --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS Retail Local' \
   -f "$repo_root/apps/web/Dockerfile" -t "$web_ref" "$repo_root"
-docker buildx build --platform linux/amd64 --load \
+docker buildx build --platform linux/amd64 --provenance=false --load \
   -f "$repo_root/apps/ws/Dockerfile" -t "$ws_ref" "$repo_root"
-docker pull --platform linux/amd64 "$postgres_ref"
-docker pull --platform linux/amd64 "$redis_ref"
+printf 'FROM postgres:16-alpine\n' | docker buildx build --platform linux/amd64 \
+  --provenance=false --load -f - -t "$postgres_ref" .
+printf 'FROM redis:7-alpine\n' | docker buildx build --platform linux/amd64 \
+  --provenance=false --load -f - -t "$redis_ref" .
 
 docker image save --output "$output_dir/web.artifact" "$web_ref"
 docker image save --output "$output_dir/ws.artifact" "$ws_ref"
