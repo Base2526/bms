@@ -179,3 +179,14 @@ test("Linux bootstrap package stays small and never packages a release private k
   assert.match(setup, /release-manifest-url/);
   assert.match(setup, /exec "\$bundle_root\/install-managed-runtime\.sh"/);
 });
+
+test("Linux release preparation builds all signed payload components before signing", () => {
+  const prepare = read("deploy/retail-local/managed-runtime/linux/prepare-release.sh");
+  for (const name of ["web", "ws", "postgres", "redis", "runtime", "compose", "desktop"]) {
+    assert.match(prepare, new RegExp(`${name}\\.artifact`));
+  }
+  assert.match(prepare, /docker buildx build --platform linux\/amd64 --load/);
+  assert.match(prepare, /docker image inspect --format '\{\{\.Id\}\}'/);
+  assert.match(prepare, /release-descriptor\.json[\s\S]*sign-release\.mjs/);
+  assert.match(prepare, /BMS_ALLOW_LOCAL_RELEASE_SIGNING=1/);
+});

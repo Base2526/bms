@@ -40,6 +40,7 @@ ARG DB_LOG_LEVELS
 ARG FCM_PROJECT_ID
 ARG FCM_CLIENT_EMAIL
 ARG FCM_PRIVATE_KEY
+ARG TARGETARCH
 
 ENV NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL
 ENV NEXT_PUBLIC_GRAPHQL_HTTP=$NEXT_PUBLIC_GRAPHQL_HTTP
@@ -70,7 +71,12 @@ RUN npm ci --include=optional
 
 RUN cd /app/packages/realtime && npm ci --omit=dev
 
-RUN npm install --os=linux --cpu=arm64 sharp --force --ignore-scripts=false || true
+RUN case "$TARGETARCH" in \
+      arm64) sharp_cpu=arm64 ;; \
+      amd64) sharp_cpu=x64 ;; \
+      *) echo "Unsupported Docker target architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+ && npm install --os=linux --cpu="$sharp_cpu" sharp --force --ignore-scripts=false
 RUN npm rebuild sharp --force || true
 
 COPY apps/web ./
