@@ -1,5 +1,10 @@
 # BMS Retail Local
 
+Commercial self-install development is tracked separately in
+[Retail Local Managed Runtime](retail-local-managed-runtime.md). It is an incubating Windows
+WSL2/Moby and Ubuntu systemd/Moby delivery layer; it does not replace the self-contained technical
+pilot package until its install, update, backup, restore, and failure-mode gates have evidence.
+
 `BMS Retail Local` is a deployment profile of the existing BMS codebase, not a second POS, database
 model, or settlement engine. The technical pilot runs one shop on one Windows host. Electron or a
 browser connects to `http://127.0.0.1:3100`; the same Web/API services remain authoritative for
@@ -120,4 +125,3 @@ Commercial self-install release still requires:
 Do not advertise Retail Local as generally available until those gates have evidence. In particular,
 do not describe the current Electron package as containing the server: it remains a keystore-backed
 client window around the authoritative local Web service.
-

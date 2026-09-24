@@ -1,0 +1,58 @@
+{
+  "formatVersion": 1,
+  "product": "BMS Retail Local Managed Runtime",
+  "architectures": ["x86_64"],
+  "minimumMemoryGiB": 8,
+  "minimumFreeDiskGiB": 8,
+  "recommendedFreeDiskGiB": 15,
+  "targets": [
+    {
+      "id": "windows-11-x64",
+      "platform": "windows",
+      "architecture": "x86_64",
+      "minimumBuild": 22000,
+      "supportLevel": "primary",
+      "requiresServicedOsRelease": true,
+      "runtime": "wsl2-moby"
+    },
+    {
+      "id": "windows-10-iot-enterprise-ltsc-2021-x64",
+      "platform": "windows",
+      "architecture": "x86_64",
+      "minimumBuild": 19044,
+      "maximumBuild": 19044,
+      "captionPattern": "Windows 10 IoT Enterprise LTSC 2021",
+      "supportLevel": "primary-appliance",
+      "supportUntil": "2032-01-13",
+      "runtime": "wsl2-moby"
+    },
+    {
+      "id": "windows-10-22h2-esu-x64",
+      "platform": "windows",
+      "architecture": "x86_64",
+      "minimumBuild": 19045,
+      "maximumBuild": 19045,
+      "supportLevel": "transition",
+      "requiresEsuEvidence": true,
+      "runtime": "wsl2-moby"
+    },
+    {
+      "id": "ubuntu-24.04-lts-x64",
+      "platform": "linux",
+      "distribution": "ubuntu",
+      "version": "24.04",
+      "architecture": "x86_64",
+      "supportLevel": "primary",
+      "runtime": "native-moby-systemd"
+    },
+    {
+      "id": "ubuntu-22.04-lts-x64",
+      "platform": "linux",
+      "distribution": "ubuntu",
+      "version": "22.04",
+      "architecture": "x86_64",
+      "supportLevel": "transition",
+      "runtime": "native-moby-systemd"
+    }
+  ]
+}

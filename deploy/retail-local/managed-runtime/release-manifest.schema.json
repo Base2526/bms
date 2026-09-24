@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bms.local/schemas/managed-runtime-release-envelope-v1.json",
+  "title": "BMS Retail Local Managed Runtime release envelope",
+  "description": "JWS-compatible Ed25519 envelope. Verify ASCII(protected + '.' + payload) before decoding the payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "protected", "payload", "signature"],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "protected": { "$ref": "#/$defs/base64url" },
+    "payload": { "$ref": "#/$defs/base64url" },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  },
+  "$defs": {
+    "base64url": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "minLength": 2
+    }
+  }
+}
