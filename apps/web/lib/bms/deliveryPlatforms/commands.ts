@@ -9,7 +9,7 @@ import { getDeliveryPlatformAdapter } from ".";
 import type { AdapterResult, DeliveryAdapterConfig, DeliveryProvider } from "./types";
 
 export const DELIVERY_COMMAND_TYPES = [
-  "ACCEPT_ORDER", "REJECT_ORDER", "MARK_READY", "CANCEL_ORDER",
+  "ACCEPT_ORDER", "REJECT_ORDER", "MARK_READY", "MARK_DISPATCHED", "CANCEL_ORDER",
   "PAUSE_STORE", "RESUME_STORE", "SET_ITEM_AVAILABILITY",
 ] as const;
 export type DeliveryCommandType = (typeof DELIVERY_COMMAND_TYPES)[number];
@@ -95,6 +95,7 @@ async function loadConfig(command: ClaimedCommand): Promise<{
       provider: row.provider,
       outboundEnabled: row.active && row.rollout_mode === "LIVE" && row.outbound_commands_enabled,
       config: {
+        integrationId: command.integration_id,
         environment: row.environment,
         clientId: row.client_id,
         clientSecret: decryptSecret(row.client_secret_encrypted),
@@ -144,6 +145,10 @@ async function executeCommand(command: ClaimedCommand): Promise<AdapterResult<{ 
       return base ? adapter.markReady(loaded.config, base) : {
         ok: false, code: "INVALID_RESPONSE", retryable: false, detail: "Command order identity is missing",
       };
+    case "MARK_DISPATCHED":
+      return base ? adapter.markDispatched(loaded.config, base) : {
+        ok: false, code: "INVALID_RESPONSE", retryable: false, detail: "Command order identity is missing",
+      };
     case "CANCEL_ORDER": {
       const reasonCode = stringField(command.desired_state, "reasonCode");
       return base && reasonCode ? adapter.cancelOrder(loaded.config, { ...base, reasonCode }) : {
@@ -179,9 +184,11 @@ async function finishCommand(command: ClaimedCommand, result: AdapterResult<{ st
       finalized = await client.query(
         `UPDATE bms_delivery_commands
             SET status = 'SUCCEEDED', completed_at = now(), provider_response_ref = $4,
+                provider_call_attempts = provider_call_attempts + $5,
                 claimed_at = NULL, claim_token = NULL, last_error = NULL, updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND claim_token = $3 AND status = 'PROCESSING'`,
-        [command.tenant_id, command.id, command.claim_token, result.providerReference ?? result.value.status],
+        [command.tenant_id, command.id, command.claim_token,
+          result.providerReference ?? result.value.status, result.providerAttempts ?? 0],
       );
     } else {
       const retry = result.retryable && command.attempts < 10;
@@ -192,12 +199,30 @@ async function finishCommand(command: ClaimedCommand, result: AdapterResult<{ st
         `UPDATE bms_delivery_commands
             SET status = $4,
                 next_retry_at = CASE WHEN $4 = 'RETRY' THEN now() + ($5 * interval '1 second') ELSE next_retry_at END,
+                provider_call_attempts = provider_call_attempts + $7,
                 claimed_at = NULL, claim_token = NULL, last_error = $6, updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND claim_token = $3 AND status = 'PROCESSING'`,
-        [command.tenant_id, command.id, command.claim_token, nextStatus, delaySeconds, result.detail.slice(0, 500)],
+        [command.tenant_id, command.id, command.claim_token, nextStatus, delaySeconds,
+          result.detail.slice(0, 500), result.providerAttempts ?? 0],
       );
     }
     if ((finalized.rowCount ?? 0) !== 1) throw new Error("DELIVERY_COMMAND_CLAIM_LOST");
+    if ((result.providerAttempts ?? 0) > 0) {
+      const healthStatus = result.ok ? "HEALTHY"
+        : result.code === "AUTH_FAILED" ? "AUTH_FAILED"
+        : result.code === "RATE_LIMITED" ? "RATE_LIMITED"
+        : result.code === "CONTRACT_BLOCKED" ? "CONTRACT_BLOCKED"
+        : "DEGRADED";
+      await client.query(
+        `UPDATE bms_delivery_integrations
+            SET health_status = CASE WHEN active THEN $3 ELSE 'DISABLED' END,
+                last_successful_check_at = CASE WHEN $3 = 'HEALTHY' THEN now() ELSE last_successful_check_at END,
+                last_error = CASE WHEN $3 = 'HEALTHY' THEN NULL ELSE $4 END,
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [command.tenant_id, command.integration_id, healthStatus, result.ok ? null : result.code],
+      );
+    }
     const commandTerminalProblem = !result.ok && !(result.retryable && command.attempts < 10);
     if (commandTerminalProblem && command.delivery_order_id) {
       const relatedOrder = await client.query<{ bms_order_id: string | null; location_id: string }>(
@@ -306,7 +331,7 @@ export async function runDeliveryCommandBatch(limit = 25) {
         ok: false,
         code: "PROVIDER_ERROR",
         retryable: true,
-        detail: error instanceof Error ? error.message : "Delivery command failed",
+        detail: "Delivery command failed",
       };
     }
     const outcome = await finishCommand(command, result);

@@ -1,6 +1,11 @@
 import { createHash, timingSafeEqual } from "crypto";
 
 import { DELIVERY_CAPABILITIES } from "./capabilities";
+import {
+  getFoodpandaAccessToken,
+  invalidateFoodpandaToken,
+  type FoodpandaAuthDependencies,
+} from "./foodpandaAuth";
 import { providerHttpFailure, runDeliveryCall } from "./safeCall";
 import type {
   AdapterResult,
@@ -10,6 +15,7 @@ import type {
   DeliveryCommandInput,
   DeliveryPlatformAdapter,
   DeliveryRejectInput,
+  DeliveryTransportType,
   NormalizedProviderOrder,
   VerifiedDeliveryWebhook,
 } from "./types";
@@ -17,6 +23,7 @@ import type {
 const CONTRACT = "https://developer.foodpanda.com/api-specifications";
 const ORDER_STATUSES = new Set(["RECEIVED", "READY_FOR_PICKUP", "DISPATCHED", "CANCELLED", "DELIVERED"]);
 const ORDER_TYPES = new Set(["DELIVERY", "PICKUP"]);
+const TRANSPORT_TYPES = new Set<DeliveryTransportType>(["LOGISTICS_DELIVERY", "VENDOR_DELIVERY"]);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -42,6 +49,10 @@ function invalid<T>(detail: string): AdapterResult<T> {
   return { ok: false, code: "INVALID_RESPONSE", retryable: false, detail };
 }
 
+function invalidTransport<T>(): AdapterResult<T> {
+  return { ok: false, code: "INVALID_TRANSPORT_TYPE", retryable: false, detail: "foodpanda transport_type is missing or unknown" };
+}
+
 function blocked<T>(detail: string): AdapterResult<T> {
   return { ok: false, code: "CONTRACT_BLOCKED", retryable: false, detail };
 }
@@ -60,35 +71,73 @@ function chainId(config: DeliveryAdapterConfig): string | null {
   return text(config.config.chainId);
 }
 
-function authHeaders(config: DeliveryAdapterConfig): HeadersInit | null {
-  if (!config.accessToken) return null;
-  return { Authorization: `Bearer ${config.accessToken}`, "Content-Type": "application/json" };
+export function normalizeFoodpandaTransportType(value: unknown): DeliveryTransportType | null {
+  const normalized = text(value)?.toUpperCase() as DeliveryTransportType | undefined;
+  return normalized && TRANSPORT_TYPES.has(normalized) ? normalized : null;
 }
 
-async function foodpandaJson(
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
+}
+
+export function canonicalFoodpandaPayloadHash(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+export async function foodpandaJson(
   config: DeliveryAdapterConfig,
   path: string,
   init: RequestInit = {},
+  dependencies: FoodpandaAuthDependencies = {},
 ): Promise<AdapterResult<unknown>> {
-  const headers = authHeaders(config);
-  if (!headers) {
-    return { ok: false, code: "UNCONFIGURED", retryable: false, detail: "foodpanda access token is missing" };
-  }
-  return runDeliveryCall(async (signal) => {
-    const response = await fetch(`${baseUrl(config)}${path}`, {
-      ...init,
-      headers: { ...headers, ...(init.headers ?? {}) },
-      signal,
+  const fetchImpl = dependencies.fetch ?? fetch;
+  const call = async (accessToken: string): Promise<AdapterResult<unknown>> => {
+    const result = await runDeliveryCall(async (signal) => {
+      const response = await fetchImpl(`${baseUrl(config)}${path}`, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+        },
+        signal,
+      });
+      if (!response.ok) return providerHttpFailure(response.status);
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.toLowerCase().includes("application/json")) return invalid("foodpanda returned a non-JSON response");
+      try {
+        return { ok: true, value: await response.json(), source: source(config) };
+      } catch {
+        return invalid("foodpanda returned malformed JSON");
+      }
     });
-    if (!response.ok) return providerHttpFailure(response.status);
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.toLowerCase().includes("application/json")) return invalid("foodpanda returned a non-JSON response");
-    try {
-      return { ok: true, value: await response.json(), source: source(config) };
-    } catch {
-      return invalid("foodpanda returned malformed JSON");
-    }
-  });
+    return { ...result, providerAttempts: 1 };
+  };
+
+  const token = await getFoodpandaAccessToken(config, dependencies);
+  if (!token.ok) return token;
+  const first = await call(token.value.accessToken);
+  const firstAttempts = (token.providerAttempts ?? 0) + (first.providerAttempts ?? 0);
+  if (first.ok || first.httpStatus !== 401 || token.value.cache === "LEGACY") {
+    return { ...first, providerAttempts: firstAttempts };
+  }
+
+  // A 401 is an authenticated rejection, so the provider did not execute the
+  // command. Invalidate the fleet cache and retry the same durable command once;
+  // its local idempotency key never changes and no wire header is invented.
+  await invalidateFoodpandaToken(config, dependencies);
+  const refreshed = await getFoodpandaAccessToken(config, { ...dependencies, forceRefresh: true });
+  if (!refreshed.ok) {
+    return { ...refreshed, providerAttempts: firstAttempts + (refreshed.providerAttempts ?? 0) };
+  }
+  const second = await call(refreshed.value.accessToken);
+  return {
+    ...second,
+    providerAttempts: firstAttempts + (refreshed.providerAttempts ?? 0) + (second.providerAttempts ?? 0),
+  };
 }
 
 export function normalizeFoodpandaOrder(payload: unknown, config?: DeliveryAdapterConfig): AdapterResult<NormalizedProviderOrder> {
@@ -98,8 +147,11 @@ export function normalizeFoodpandaOrder(payload: unknown, config?: DeliveryAdapt
   const payment = record(root.payment);
   const providerOrderId = text(root.order_id);
   const providerStoreId = text(client?.store_id);
-  const providerStatus = text(root.status);
+  const providerStatus = text(root.status)?.toUpperCase() ?? null;
   const orderType = text(root.order_type);
+  const transportType = normalizeFoodpandaTransportType(root.transport_type);
+  const sys = record(root.sys);
+  const providerVersion = iso(sys?.updated_at) ?? iso(sys?.created_at);
   const rawItems = Array.isArray(root.items) ? root.items : null;
   const configuredCurrency = config ? text(config.config.currency)?.toUpperCase() : null;
   const currency = text(root.currency)?.toUpperCase() ?? text(payment?.currency)?.toUpperCase() ?? configuredCurrency;
@@ -108,6 +160,8 @@ export function normalizeFoodpandaOrder(payload: unknown, config?: DeliveryAdapt
     return invalid("foodpanda order identity, store or status is invalid");
   }
   if (!orderType || !ORDER_TYPES.has(orderType)) return invalid("foodpanda order_type is invalid");
+  if (!transportType) return invalidTransport();
+  if (!providerVersion) return invalid("foodpanda order system revision is missing or invalid");
   if (!currency || !/^[A-Z]{3}$/.test(currency)) return invalid("foodpanda currency must be configured explicitly");
   if (!payment || !rawItems) return invalid("foodpanda payment or items are missing");
 
@@ -153,6 +207,9 @@ export function normalizeFoodpandaOrder(payload: unknown, config?: DeliveryAdapt
       providerDisplayNumber: text(root.order_code),
       providerStoreId,
       providerStatus,
+      providerVersion,
+      providerOccurredAt: providerVersion,
+      transportType,
       orderType: orderType as "DELIVERY" | "PICKUP",
       scheduled: root.isPreorder === true,
       acceptanceDeadlineAt: null,
@@ -198,16 +255,18 @@ function verifyFoodpandaWebhook(input: Parameters<DeliveryPlatformAdapter["verif
   const sys = record(root?.sys);
   const providerOrderId = text(root?.order_id);
   const providerStoreId = text(client?.store_id);
-  const providerStatus = text(root?.status);
+  const providerStatus = text(root?.status)?.toUpperCase() ?? null;
+  const transportType = normalizeFoodpandaTransportType(root?.transport_type);
   const occurredAt = iso(sys?.updated_at) ?? iso(sys?.created_at);
   if (!root || !providerOrderId || !providerStoreId || !providerStatus || !ORDER_STATUSES.has(providerStatus) || !occurredAt) {
     return invalid("foodpanda webhook identity, store, status or timestamp is invalid");
   }
-  const payloadHash = createHash("sha256").update(input.rawBody).digest("hex");
+  const payloadHash = canonicalFoodpandaPayloadHash(parsed);
   // The public webhook schema has no separate event id. Its documented order,
-  // status and system update timestamp form a deterministic revision identity;
-  // the payload hash distinguishes a conflicting same-timestamp delivery.
-  const externalEventId = `order:${providerOrderId}:${occurredAt}:${providerStatus}:${payloadHash.slice(0, 16)}`;
+  // status and system update timestamp form a deterministic logical revision.
+  // The canonical payload hash is stored separately so a changed redelivery of
+  // that same revision becomes a conflict instead of a brand-new event.
+  const externalEventId = `order:${providerOrderId}:${providerStatus}:${occurredAt}`;
   return {
     ok: true,
     source: source(input.config),
@@ -229,7 +288,7 @@ function verifyFoodpandaWebhook(input: Parameters<DeliveryPlatformAdapter["verif
         scheduled: root.isPreorder === true,
         estimatedDeliveryAt: iso(root.accepted_for),
         promisedFor: iso(root.promised_for),
-        transportType: text(root.transport_type),
+        transportType,
         occurredAt,
       },
     },
@@ -245,7 +304,7 @@ async function fetchRawOrder(config: DeliveryAdapterConfig, providerOrderId: str
 async function updateOrder(
   config: DeliveryAdapterConfig,
   input: DeliveryCommandInput,
-  status: "READY_FOR_PICKUP" | "CANCELLED",
+  status: "READY_FOR_PICKUP" | "DISPATCHED" | "CANCELLED",
   reasonCode?: string,
 ): Promise<AdapterResult<{ status: string }>> {
   const chain = chainId(config);
@@ -264,8 +323,9 @@ async function updateOrder(
     // deduplicates the durable command locally, but must not invent wire headers.
     { method: "PUT", body: JSON.stringify(body) },
   );
-  if (!result.ok) return result;
-  return { ok: true, value: { status }, source: source(config) };
+  const providerAttempts = (current.providerAttempts ?? 0) + (result.providerAttempts ?? 0);
+  if (!result.ok) return { ...result, providerAttempts };
+  return { ok: true, value: { status }, source: source(config), providerAttempts };
 }
 
 export const foodpandaAdapter: DeliveryPlatformAdapter = {
@@ -276,7 +336,9 @@ export const foodpandaAdapter: DeliveryPlatformAdapter = {
   normalizeOrder: normalizeFoodpandaOrder,
   async fetchOrder(config, input) {
     const result = await fetchRawOrder(config, input.providerOrderId);
-    return result.ok ? normalizeFoodpandaOrder(result.value, config) : result;
+    if (!result.ok) return result;
+    const normalized = normalizeFoodpandaOrder(result.value, config);
+    return { ...normalized, providerAttempts: result.providerAttempts };
   },
   async acceptOrder() {
     return blocked("foodpanda public Partner API does not document a distinct accept command");
@@ -287,11 +349,14 @@ export const foodpandaAdapter: DeliveryPlatformAdapter = {
   async markReady(config, input) {
     return updateOrder(config, input, "READY_FOR_PICKUP");
   },
+  async markDispatched(config, input) {
+    return updateOrder(config, input, "DISPATCHED");
+  },
   async cancelOrder(config, input: DeliveryCancelInput) {
     return updateOrder(config, input, "CANCELLED", input.reasonCode);
   },
   async pauseStore() {
-    return blocked("foodpanda public Partner API does not document a store pause endpoint");
+    return blocked("foodpanda Manage Outlet is public, but BMS keeps it blocked until retry and operational reason mapping are approved");
   },
   async setItemAvailability(config, input: DeliveryAvailabilityInput) {
     const chain = chainId(config);
@@ -305,7 +370,7 @@ export const foodpandaAdapter: DeliveryPlatformAdapter = {
       },
     );
     if (!result.ok) return result;
-    return { ok: true, value: { status: "QUEUED" }, source: source(config) };
+    return { ok: true, value: { status: "QUEUED" }, source: source(config), providerAttempts: result.providerAttempts };
   },
   async fetchMenu(config, providerStoreId) {
     const chain = chainId(config);

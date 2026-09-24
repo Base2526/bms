@@ -283,7 +283,14 @@ wrong, and update the doc in the same change.
   commit atomically, and every external call runs after commit through the command outbox. Desired
   pause, provider state and sync result remain separate. `PLATFORM_SETTLEMENT` is server-only and is
   never a checkout/POS/AI choice. Scheduled orders require an explicit prep lead; rider handoff
-  commits evidence, `PACKING -> SHIPPED` and stock movement together. GrabFood/LINE MAN remain
+  commits evidence, `PACKING -> SHIPPED` and stock movement together. Since `10.14`, foodpanda uses
+  OAuth client credentials with an encrypted shared-
+  Redis token cache and one bounded 401 refresh; logical webhook identity is separate from its
+  canonical payload hash; the worker re-locks and rechecks integration config/health after fetch;
+  provider/config currency and verified mapping price snapshots must match local authority; and
+  typed transport decides the only outbound lifecycle transition (`LOGISTICS_DELIVERY` ready,
+  `VENDOR_DELIVERY` dispatched only from committed handoff). Unknown transport or changed identity
+  is action-required, never inferred. GrabFood/LINE MAN remain
   contract-blocked until official partner webhook/onboarding contracts are reviewed; no live-ready
   claim is valid before sandbox, shadow, tax approval and a real settlement cycle. Full detail:
   [integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md).

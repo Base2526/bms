@@ -47,6 +47,7 @@ test("provider capabilities stay conservative and unavailable contracts fail clo
 test("foodpanda normalization rejects implicit currency and never invents provider idempotency headers", () => {
   const fixture = {
     order_id: "order-1", order_code: "A001", status: "RECEIVED", order_type: "DELIVERY",
+    transport_type: "LOGISTICS_DELIVERY", sys: { updated_at: "2026-09-24T09:55:00Z" },
     accepted_for: "2026-09-24T10:00:00Z",
     client: { store_id: "store-1" },
     payment: { sub_total: 100, order_total: 120 },
@@ -54,7 +55,7 @@ test("foodpanda normalization rejects implicit currency and never invents provid
   };
   assert.equal(normalizeFoodpandaOrder(fixture).ok, false);
   const normalized = normalizeFoodpandaOrder(fixture, {
-    environment: "SANDBOX", clientId: null, clientSecret: null, accessToken: "token",
+    integrationId: "integration-1", environment: "SANDBOX", clientId: null, clientSecret: null, accessToken: "token",
     refreshToken: null, webhookSecret: "secret", apiVersion: "v2", config: { currency: "THB" },
   });
   assert.equal(normalized.ok, true);

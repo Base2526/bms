@@ -24,6 +24,16 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.14__bms_delivery_platform_hardening.sql",
+    impact: "รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้",
+    needs: [
+      { kind: "column", table: "bms_delivery_integrations", name: "config_version" },
+      { kind: "column", table: "bms_delivery_orders", name: "transport_type" },
+      { kind: "column", table: "bms_delivery_events", name: "provider_call_attempts" },
+      { kind: "column", table: "bms_delivery_commands", name: "provider_call_attempts" },
+    ],
+  },
+  {
     file: "10.13__bms_tax_leak_guards.sql",
     impact: "ขายไม่ได้ทุกช่องทาง และออกเอกสารภาษีไม่ได้ — บิลใหม่เขียน/อ่านยอดจริงระดับบรรทัด",
     needs: [{ kind: "column", table: "bms_order_items", name: "line_amount" }],

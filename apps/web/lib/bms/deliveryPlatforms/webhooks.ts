@@ -27,6 +27,7 @@ export type DeliveryWebhookIntakeResult =
 
 function adapterConfig(row: IntegrationRow): DeliveryAdapterConfig {
   return {
+    integrationId: row.id,
     environment: row.environment,
     clientId: null,
     clientSecret: null,
@@ -102,10 +103,21 @@ async function storeVerifiedEvent(
   if (!inserted.rows[0]) {
     const existing = await client.query<{ id: string; payload_hash: string }>(
       `SELECT id, payload_hash FROM bms_delivery_events
-        WHERE tenant_id = $1 AND integration_id = $2 AND external_event_id = $3`,
+        WHERE tenant_id = $1 AND integration_id = $2 AND external_event_id = $3
+        FOR UPDATE`,
       [integration.tenant_id, integration.id, event.externalEventId],
     );
     if (!existing.rows[0] || existing.rows[0].payload_hash !== event.payloadHash) {
+      if (existing.rows[0]) {
+        await client.query(
+          `UPDATE bms_delivery_events
+              SET processing_status = 'ACTION_REQUIRED', error_code = 'WEBHOOK_PAYLOAD_CONFLICT',
+                  last_error = 'Provider reused a logical event id for a different payload',
+                  claimed_at = NULL, claim_token = NULL, processed_at = NULL, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2`,
+          [integration.tenant_id, existing.rows[0].id],
+        );
+      }
       return { status: "CONFLICT", detail: "Provider reused an event id for a different payload" };
     }
     await client.query(
@@ -155,10 +167,6 @@ export async function intakeDeliveryWebhook(input: {
   try {
     await beginTenantTx(client, integration.tenant_id);
     const result = await storeVerifiedEvent(client, integration, verified.value);
-    if (result.status === "CONFLICT") {
-      await client.query("ROLLBACK");
-      return result;
-    }
     await client.query("COMMIT");
     return result;
   } catch (error) {

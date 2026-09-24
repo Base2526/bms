@@ -7318,3 +7318,26 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - **ความเสี่ยง deploy:** `line_amount` ของ order เก่าถูก backfill จากหลักฐานเดิม จึงกู้ส่วนลดโปรรายบรรทัด
   ที่ไม่เคย persist ไม่ได้; ก่อน deploy ต้องตรวจ/จัดการ PENDING promo orders เดิม และต้องสำรอง/ตรวจ duplicate
   invoice ก่อน migration แม้ migration จะ fail closed อยู่แล้ว
+
+### Delivery platform hardening (`10.14`, 2026-09-24)
+
+- Foodpanda เปลี่ยน authority เป็น OAuth2 client credentials: token อายุสั้น cache แบบเข้ารหัสใน shared
+  Redis, มี TTL margin/refresh lock และ invalidate + retry provider operation เดิมหนึ่งครั้งเมื่อ 401;
+  static encrypted access token เดิมยังใช้ได้เฉพาะ compatibility
+- webhook ใช้ logical id (order/status/provider timestamp) แยกจาก canonical payload hash; id เดิม hash
+  ต่างกัน commit เป็น `WEBHOOK_PAYLOAD_CONFLICT` และ worker เก็บ initial event + latest fetch แยกกัน
+- worker re-lock integration หลัง fetch แล้วตรวจ active/rollout/health/credential/config version, ยืนยัน
+  order/store identity, currency ร้าน, mapping price snapshot และ typed transport ก่อนสร้าง order/payment/
+  reservation ใน transaction เดียว
+- Foodpanda logistics queue `READY_FOR_PICKUP` ตอน local ready; vendor delivery ไม่ส่ง ready และ queue
+  `DISPATCHED` เฉพาะ transaction handoff ที่ตัด stock สำเร็จ; network call ยังออกหลัง commit จาก command outbox
+- เพิ่ม DB contract ครอบ currency rollback/matching order+payment+reservation, advanced latest-state history,
+  kill switch ระหว่าง fetch และ payload conflict; เพิ่ม pure behavioral contract ครอบ OAuth/cache/401/dedup/
+  transport/redaction
+- **verify รอบนี้:** typecheck ผ่าน; focused pure **19/19** ผ่าน; production build ผ่าน **120/120** pages;
+  full pure **1,478/1,483** โดยแดง 5 baseline cases ชุดเดียวกับก่อนงาน (assistant guide 2,
+  board-game workspace, order alert pattern, delivery SQL relation scanner); focused DB runner
+  compile/เริ่มรันได้แต่ PostgreSQL `localhost:5432` ตอบ `ECONNREFUSED` จึงยังไม่ได้ apply/rollback
+  migration หรือยืนยัน DB behavior
+- production rollout ยังปิด: GrabFood/LINE MAN contract-blocked และ Foodpanda production ยังต้องผ่าน partner
+  webhook/onboarding, sandbox + shadow, tax approval และ settlement cycle จริง

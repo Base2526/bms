@@ -1048,7 +1048,7 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
   cancelled or already-shrunk line must both disappear from the counter's list and be measured
   correctly if it is still partly there.
 
-## Delivery platform integration (`10.12`)
+## Delivery platform integration (`10.12`, hardened by `10.14`)
 
 `lib/bms/deliveryPlatforms/`, the guarded `/api/bms/delivery/*` routes and migration `10.12` form the
 provider boundary for GrabFood, LINE MAN and foodpanda. Full capability, setup, finance, privacy,
@@ -1063,7 +1063,9 @@ runbook and rollout detail is in [integrations/delivery-platforms.md](integratio
   supplies either authority. Only `VERIFIED` item/variant/modifier mappings may create an order, and
   any missing/stale mapping rejects the whole basket to `ACTION_REQUIRED`—never a partial order.
 - **Inbox and outbox are durable and idempotent.** Verified webhooks write only a payload hash and
-  allowlisted operational pointers, then a leased worker creates the order/payment/reservation in one
+  allowlisted operational pointers. Logical event identity (order + status + provider revision) is
+  separate from the canonical payload hash: an identical replay is a duplicate, but changed content
+  under the same identity becomes action-required. A leased worker creates the order/payment/reservation in one
   tenant transaction. External provider calls run after commit from the command outbox. Desired
   pause state, provider state and sync state remain distinct; an unsupported capability is manual
   action, never a fake success.
@@ -1077,6 +1079,19 @@ runbook and rollout detail is in [integrations/delivery-platforms.md](integratio
   idempotency key, complete checklist and bag count are server-checked. Handoff, `PACKING -> SHIPPED`,
   stock movement, safe timeline and audit commit together. Provider delivery confirmation is a
   separate fact; a provider `DELIVERED` event completes only an order with local handoff evidence.
+- **Fetch-latest cannot erase history or outrun a kill switch.** The initial webhook and fetched
+  snapshot are separate timeline facts. After fetch, the worker re-locks the integration and rechecks
+  active/rollout/health, credential expiry and `config_version` before any local write. Provider
+  order/store identity must still match the verified pointer.
+- **Currency, mapping price and transport are typed authorities.** Provider/config currency must
+  match `bms_store_profile.currency` (legacy fallback `THB`), and each verified item mapping must have
+  the same provider price snapshot; either mismatch rejects the whole basket. Foodpanda logistics
+  sends `READY_FOR_PICKUP` at local ready, while vendor delivery sends only `DISPATCHED` from the
+  committed handoff outbox. Unknown transport never guesses.
+- **OAuth state is fleet-wide but not plaintext.** Foodpanda client credentials mint short-lived
+  tokens cached encrypted in shared Redis with expiry margin and a refresh lock. A 401 invalidates
+  and retries once. Provider HTTP attempts are counted separately from inbox/outbox lease attempts;
+  neither secrets nor bearer tokens enter logs or health rows.
 - **No customer PII leaks into kitchen or CRM.** Provider identity is not auto-merged. Raw webhook
   payloads and credentials are never logged or stored. Dispute evidence is private and tenant-bound.
 - **A missed acceptance deadline is a hard local stop, not a guessed provider action.** The leased

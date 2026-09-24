@@ -10,6 +10,7 @@ export type DeliveryCapability =
   | "acceptOrder"
   | "rejectOrder"
   | "markReady"
+  | "markDispatched"
   | "cancelOrder"
   | "pauseStore"
   | "setItemAvailability"
@@ -28,19 +29,23 @@ export type AdapterFailureCode =
   | "RATE_LIMITED"
   | "TIMEOUT"
   | "PROVIDER_ERROR"
-  | "INVALID_RESPONSE";
+  | "INVALID_RESPONSE"
+  | "INVALID_TRANSPORT_TYPE";
 
 export type AdapterResult<T> =
-  | { ok: true; value: T; source: AdapterSource; providerReference?: string }
+  | { ok: true; value: T; source: AdapterSource; providerReference?: string; providerAttempts?: number }
   | {
       ok: false;
       code: AdapterFailureCode;
       retryable: boolean;
       detail: string;
       httpStatus?: number;
+      providerAttempts?: number;
     };
 
 export interface DeliveryAdapterConfig {
+  /** Opaque local identity used only to namespace fleet-wide credential cache entries. */
+  integrationId: string | null;
   environment: DeliveryEnvironment;
   clientId: string | null;
   clientSecret: string | null;
@@ -50,6 +55,9 @@ export interface DeliveryAdapterConfig {
   apiVersion: string | null;
   config: Readonly<Record<string, unknown>>;
 }
+
+export const DELIVERY_TRANSPORT_TYPES = ["LOGISTICS_DELIVERY", "VENDOR_DELIVERY"] as const;
+export type DeliveryTransportType = (typeof DELIVERY_TRANSPORT_TYPES)[number];
 
 export interface DeliveryWebhookInput {
   rawBody: string;
@@ -107,6 +115,9 @@ export interface NormalizedProviderOrder {
   providerDisplayNumber: string | null;
   providerStoreId: string;
   providerStatus: string;
+  providerVersion: string | null;
+  providerOccurredAt: string | null;
+  transportType: DeliveryTransportType;
   orderType: "DELIVERY" | "PICKUP";
   scheduled: boolean;
   /** Provider-confirmed deadline for the merchant acceptance action, if its contract exposes one. */
@@ -155,6 +166,7 @@ export interface DeliveryPlatformAdapter {
   acceptOrder(config: DeliveryAdapterConfig, input: DeliveryCommandInput): Promise<AdapterResult<{ status: string }>>;
   rejectOrder(config: DeliveryAdapterConfig, input: DeliveryRejectInput): Promise<AdapterResult<{ status: string }>>;
   markReady(config: DeliveryAdapterConfig, input: DeliveryCommandInput): Promise<AdapterResult<{ status: string }>>;
+  markDispatched(config: DeliveryAdapterConfig, input: DeliveryCommandInput): Promise<AdapterResult<{ status: string }>>;
   cancelOrder(config: DeliveryAdapterConfig, input: DeliveryCancelInput): Promise<AdapterResult<{ status: string }>>;
   pauseStore(config: DeliveryAdapterConfig, input: DeliveryPauseInput): Promise<AdapterResult<{ status: string }>>;
   setItemAvailability(config: DeliveryAdapterConfig, input: DeliveryAvailabilityInput): Promise<AdapterResult<{ status: string }>>;
