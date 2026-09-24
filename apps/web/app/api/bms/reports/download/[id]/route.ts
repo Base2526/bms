@@ -31,7 +31,7 @@ async function handleGET(req: NextRequest, { params }: { params: { id: string } 
 
   // ต้องมีแถวใน bms_generated_reports ที่ tenant นี้เป็นเจ้าของ file_id นี้จริง — กัน enumerate
   // sequential file id ข้าม tenant (ต่างจาก /api/files/[id] ที่ไม่เช็คเลย)
-  const owned = await findGeneratedReportByFileId(auth.tenantId, fileId);
+  const owned = await findGeneratedReportByFileId(auth.tenantId, fileId, auth.ctx);
   if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const { rows } = await query<{ filename: string; original_name: string | null; mimetype: string | null; relpath: string; deleted_at: string | null }>(

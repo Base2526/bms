@@ -15,7 +15,7 @@ export const bmsReportEngineResolvers = {
   Query: {
     async bmsGeneratedReports(_p: unknown, args: { limit?: number }, ctx: any) {
       await requirePermission(ctx, "report.view");
-      return listGeneratedReports(getTenantId(ctx), args.limit ?? 50);
+      return listGeneratedReports(getTenantId(ctx), args.limit ?? 50, ctx);
     },
   },
   Mutation: {
@@ -24,6 +24,7 @@ export const bmsReportEngineResolvers = {
       try {
         return await generateReport(getTenantId(ctx), ctx, args.input);
       } catch (err: any) {
+        if (err instanceof GraphQLError && err.extensions?.code === "FORBIDDEN") throw err;
         throw new GraphQLError(err?.message || "สร้างรายงานไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
     },

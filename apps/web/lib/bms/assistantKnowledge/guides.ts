@@ -368,7 +368,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "Nearby discovery exposes only branches explicitly published with shop-managed coordinates, never member or personal data.",
       "The floor refreshes after every command and every 15 seconds, so verify the latest amount and state before taking payment.",
     ]),
-    relatedCapabilityIds: ["expense.documents"],
+    relatedCapabilityIds: [],
   },
   {
     id: "inventory.wastage", module: "inventory", pageId: "wastage", route: "/admin/wastage",

@@ -264,7 +264,13 @@ key plus request hash, and corrections set `VOID` with a reason instead of delet
 purchase-order, location and private evidence-file references must belong to the same tenant. Input
 VAT is non-zero only for a tax invoice with document number and vendor tax ID; withholding requires
 payee type, tax ID, payment date and rate. These reports support an accountant but never claim to
-file PP.30, PND.3 or PND.53.
+file PP.30, PND.3 or PND.53. Tax-document lists, sales-tax summaries, stock-ledger exports and the
+generated tax-report files themselves respect `bms_user_allowed_locations`; checking only the
+requested filter is insufficient because an omitted filter otherwise means every branch. A
+`VAT_SALES` export also requires `tax.document.view` in addition to the report engine's ordinary
+`report.view`, and that extra gate is repeated when listing, downloading or emailing the file. The
+generic `/api/files/[id]` route recognizes generated-report file ids and repeats these checks too;
+changing the URL must never bypass the dedicated report download route.
 
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
 shift report, `9.5` for retry-safe drawer movements, `9.7` for petty-cash expenses, `9.8` for

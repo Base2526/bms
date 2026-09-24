@@ -42,7 +42,8 @@ async function handlePOST(req: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "generate failed" }, { status: 400 });
+    const status = e?.extensions?.code === "FORBIDDEN" ? 403 : 400;
+    return NextResponse.json({ error: e?.message ?? "generate failed" }, { status });
   }
 }
 

@@ -152,6 +152,12 @@ test("assistant knowledge ids are unique and bilingual fields are complete", () 
   }
 });
 
+test("board-game guidance does not link to the unrelated expense-document capability", () => {
+  const guide = SYSTEM_GUIDES.find((entry) => entry.id === "board-game.run-cafe");
+  assert.ok(guide);
+  assert.ok(!guide.relatedCapabilityIds.includes("expense.documents"));
+});
+
 test("catalog permissions and admin routes resolve to real application contracts", () => {
   for (const entry of [...SYSTEM_CAPABILITIES, ...SYSTEM_GUIDES]) {
     for (const permission of entry.requiredPermissions) {

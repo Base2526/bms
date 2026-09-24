@@ -5,6 +5,8 @@ import { Readable } from "stream";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
 import { verifyUserSession } from "@/lib/auth/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { findGeneratedReportByFileId } from "@/lib/bms/reportEngine";
+import { requirePermission } from "@/lib/bms/permissions";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
@@ -219,6 +221,25 @@ async function handleGET(
         if (String(auth.tenantId) !== String(row.tenant_id)) {
           // 404 ไม่ใช่ 403 — ไม่บอกคนนอกร้านว่า id นี้มีไฟล์อยู่จริง
           return NextResponse.json({ error: "file not found" }, { status: 404 });
+        }
+
+        // Generated reports have a narrower contract than ordinary tenant-private files. In
+        // particular VAT_SALES can contain buyer tax identity and carries branch scope in
+        // bms_generated_reports.params. Without this recognition, changing the documented
+        // /api/bms/reports/download/{id} URL to /api/files/{id} bypasses every report guard.
+        const generated = await query(
+          `SELECT 1 FROM bms_generated_reports WHERE tenant_id = $1 AND file_id = $2 LIMIT 1`,
+          [auth.tenantId, id]
+        );
+        if (generated.rowCount) {
+          try {
+            await requirePermission(auth.ctx, "report.view");
+          } catch {
+            return NextResponse.json({ error: "file not found" }, { status: 404 });
+          }
+          if (!(await findGeneratedReportByFileId(auth.tenantId, id, auth.ctx))) {
+            return NextResponse.json({ error: "file not found" }, { status: 404 });
+          }
         }
       } else {
         // ไฟล์ที่ไม่มีเจ้าของ = ของฟีเจอร์ชุมชนเดิม/ไฟล์ส่วนตัวของผู้ใช้เว็บ
