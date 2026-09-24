@@ -17,6 +17,16 @@ export function describeMobileSaleFailure(
   switch (failure?.status) {
     case 'SHIFT_NOT_OPEN':
       return 'ยังไม่ได้เปิดกะของเครื่องนี้ กรุณาเปิดกะก่อนขาย';
+    case 'PAYMENT_MISMATCH':
+      return (
+        failure.reason?.trim() ||
+        'ยอดเงินที่รับไม่ตรงกับราคาที่ Server ตรวจได้ กรุณาให้ผู้จัดการกระทบยอด และห้ามรับเงินซ้ำ'
+      );
+    case 'LOT_EXPIRED_OR_SHORT':
+      return (
+        failure.reason?.trim() ||
+        'สต็อกพร้อมขายไม่พอหรือ Lot หมดอายุ กรุณาตรวจสต็อกก่อนลองซิงก์อีกครั้ง'
+      );
     default: {
       const reason = failure?.reason?.trim();
       if (reason) return reason;

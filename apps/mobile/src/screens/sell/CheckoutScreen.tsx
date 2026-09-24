@@ -508,6 +508,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   }));
   const offlineEligible =
     source === 'retail' &&
+    storeMode === 'general' &&
     saleMode === 'SALE' &&
     paymentInput.length === 1 &&
     paymentInput[0]?.method === 'CASH' &&
@@ -522,6 +523,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     cart.lines.every(
       line =>
         !line.serialTracked &&
+        line.serials.length === 0 &&
         !line.scaleBarcode &&
         line.modifierCodes.length === 0,
     );
@@ -594,7 +596,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setConfirmOpen(false);
         Alert.alert(
           'รายการนี้ขายออฟไลน์ไม่ได้',
-          'โหมดออฟไลน์รองรับเฉพาะขายปลีกเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ',
+          'โหมดออฟไลน์รองรับเฉพาะร้านทั่วไปที่ขายปลีกเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ',
         );
         return;
       }
@@ -602,11 +604,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         idempotencyRef.current ?? createIdempotencyKey('offline-sale');
       idempotencyRef.current = idempotencyKey;
       const tenderedAt = new Date().toISOString();
+      let staged = false;
       try {
         await offlineSales.stage({
           payload: offlinePayload(idempotencyKey, tenderedAt),
           total,
         });
+        staged = true;
         await offlineSales.queue(idempotencyKey);
         cart.clear();
         idempotencyRef.current = null;
@@ -622,6 +626,27 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
         });
       } catch (error) {
+        if (staged) {
+          // The accepted-cash row was durably staged before the state transition failed. Never
+          // invite the cashier to submit it again: the recovery provider can still reconcile the
+          // inactive STAGED row by its original idempotency key.
+          cart.clear();
+          idempotencyRef.current = null;
+          setConfirmOpen(false);
+          Alert.alert(
+            'รับเงินแล้ว · คิวต้องตรวจสอบ',
+            `${
+              error instanceof Error
+                ? error.message
+                : 'อัปเดตสถานะคิวออฟไลน์ไม่ได้'
+            } · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว`,
+          );
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+          });
+          return;
+        }
         Alert.alert(
           'เก็บรายการออฟไลน์ไม่ได้',
           error instanceof Error ? error.message : 'กรุณาอย่ารับเงินรายการนี้',
@@ -958,8 +983,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         }
         orderId = result.orderId;
         if (stagedRecovery) {
-          await offlineSales.complete(idempotencyRef.current);
+          // Server SOLD is authoritative. A local Keychain cleanup failure must leave the row for
+          // later recovery, not turn a completed sale into a misleading "ขายไม่สำเร็จ" result.
           stagedRecovery = false;
+          await offlineSales
+            .complete(idempotencyRef.current)
+            .catch(() => undefined);
         }
         cart.clear();
       }
@@ -974,17 +1003,29 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         idempotencyRef.current &&
         !isDecidedRejection(error)
       ) {
-        await offlineSales.queue(
-          idempotencyRef.current,
-          error instanceof Error ? error.message : 'ยังไม่ทราบผลการขาย',
-        );
+        let queueWarning: string | null = null;
+        try {
+          await offlineSales.queue(
+            idempotencyRef.current,
+            error instanceof Error ? error.message : 'ยังไม่ทราบผลการขาย',
+          );
+        } catch (queueError) {
+          queueWarning =
+            queueError instanceof Error
+              ? queueError.message
+              : 'อัปเดตสถานะคิวออฟไลน์ไม่ได้';
+        }
         cart.clear();
         serverHealth.markOffline();
         const reference = idempotencyRef.current.slice(-10);
         idempotencyRef.current = null;
         Alert.alert(
-          'รับเงินแล้ว · กำลังตรวจสอบผล',
-          `เลขอ้างอิงชั่วคราว ${reference} · ระบบจะตรวจรายการเดิมก่อนซิงก์และจะไม่สร้างบิลซ้ำ`,
+          queueWarning
+            ? 'รับเงินแล้ว · คิวต้องตรวจสอบ'
+            : 'รับเงินแล้ว · กำลังตรวจสอบผล',
+          queueWarning
+            ? `${queueWarning} · เลขอ้างอิง ${reference} · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว`
+            : `เลขอ้างอิงชั่วคราว ${reference} · ระบบจะตรวจรายการเดิมก่อนซิงก์และจะไม่สร้างบิลซ้ำ`,
         );
         navigation.reset({
           index: 0,

@@ -80,4 +80,17 @@ test("the sync center exposes recovery but no accepted-cash discard action", () 
   assert.match(center, /retryReview/);
   assert.match(center, /ยังไม่ใช่ใบเสร็จหรือเอกสารภาษี/);
   assert.doesNotMatch(center, /\bdiscard\b|removeOfflineSale|ลบทิ้ง/);
+
+  const provider = readFileSync(
+    new URL(
+      "../apps/mobile/src/state/OfflineSalesContext.tsx",
+      import.meta.url
+    ),
+    "utf8"
+  );
+  assert.match(
+    provider,
+    /record\.state !== 'STAGED'[\s\S]{0,120}!activeStages\.current\.has\(record\.id\)/
+  );
+  assert.match(provider, /record\.state !== 'NEEDS_REVIEW'/);
 });

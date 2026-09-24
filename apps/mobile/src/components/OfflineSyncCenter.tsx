@@ -3,6 +3,7 @@ import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { OfflineSaleRecord } from '../lib/offlineSales';
 import { useOfflineSales } from '../state/OfflineSalesContext';
 import { useServerHealth } from '../state/ServerHealthContext';
+import { useShift } from '../state/ShiftContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { Button } from './Button';
 import { Card } from './Card';
@@ -35,9 +36,11 @@ function reportFailure(error: unknown) {
 export function OfflineSyncCenter({ visible, onClose }: Props) {
   const { colors, spacing, typography } = useTheme();
   const health = useServerHealth();
+  const shift = useShift();
   const queue = useOfflineSales();
   const offline = health.status === 'offline';
-  const canSync = health.status === 'online';
+  const serverOnline = health.status === 'online';
+  const canSync = serverOnline && shift.isOpen;
 
   const syncPending = useCallback(() => {
     queue.syncNow().catch(reportFailure);
@@ -134,7 +137,7 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
           ) : null}
         </View>
 
-        {!canSync ? (
+        {!serverOnline || !shift.isOpen ? (
           <Text
             style={[
               typography.caption,
@@ -145,7 +148,9 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
               },
             ]}
           >
-            {offline
+            {!shift.isOpen
+              ? 'ยังซิงก์ไม่ได้เพราะไม่มีกะเปิดอยู่ กรุณาให้ผู้จัดการตรวจสอบกะเดิม ห้ามลงยอดเข้ากะใหม่'
+              : offline
               ? 'เครื่องยังออฟไลน์ — รายการจะอยู่ในคิวเข้ารหัสจนเชื่อมต่อได้'
               : 'กำลังตรวจการเชื่อมต่อ — ระบบจะเปิดการซิงก์เมื่อ Server พร้อม'}
           </Text>

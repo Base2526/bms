@@ -1523,9 +1523,12 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
   retried with the same key after its stock or pricing cause is corrected. Mobile exposes these
   states in a full-screen device-local Sync Center; accepted-cash rows cannot be discarded there.
   Interrupted `STAGED`/`SYNCING` rows restart as unknown outcomes so recovery runs before replay, and
-  an integrity fingerprint detects accidental mutation of the encrypted request. The pending
-  reference is not a receipt or tax document. Scan, settlement and recovery requests have a bounded
-  client wait;
+  a versioned integrity fingerprint binds the encrypted request to its device, branch, shift,
+  cashier, tender time and amount. Unknown queue formats and failed Keychain writes fail closed.
+  Mobile and server both reject pharmacy, restaurant, and board-game archetypes; the server also
+  rejects a tender time from before the current shift so an externally closed shift cannot silently
+  move accepted cash into the next one. The pending reference is not a receipt or tax document.
+  Scan, settlement and recovery requests have a bounded client wait;
   a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing is
   refused while its encrypted queue still contains accepted cash. Once committed, recent-sale views
   on both native and web POS identify the bill as an offline tender that has synced;

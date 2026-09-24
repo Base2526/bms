@@ -4,7 +4,7 @@
  * This module owns client recovery mechanics only. It never decides that a sale is valid: the
  * authoritative POS service repeats pricing, stock, tax, shift and permission checks on sync.
  */
-export const OFFLINE_QUEUE_SCHEMA_VERSION = 2 as const;
+export const OFFLINE_QUEUE_SCHEMA_VERSION = 3 as const;
 
 export type OfflineQueueState =
   | "STAGED"

@@ -26,6 +26,7 @@ import {
   sortOfflineQueueOldestFirst,
 } from '../lib/offlineContinuity';
 import { isDecidedRejection, runWithOperationTimeout } from '../lib/operation';
+import { describeMobileSaleFailure } from '../lib/saleFailureMessage';
 import { useDevice } from './DeviceContext';
 import { useSales } from './SalesContext';
 import { useServerHealth } from './ServerHealthContext';
@@ -68,10 +69,17 @@ export function OfflineSalesProvider({
   const [storageError, setStorageError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const syncLock = useRef(false);
+  const activeStages = useRef(new Set<string>());
   const [recover] = useLazyQuery(MobilePosSaleRecoveryDocument, {
     fetchPolicy: 'network-only',
   });
   const [sell] = useMutation(MobilePosSaleDocument);
+
+  const rememberStorageError = useCallback((error: unknown) => {
+    setStorageError(
+      error instanceof Error ? error.message : 'จัดการคิวออฟไลน์ไม่ได้',
+    );
+  }, []);
 
   const visibleRecords = useMemo(
     () =>
@@ -79,10 +87,11 @@ export function OfflineSalesProvider({
         records.filter(
           record =>
             record.serverUrl === target?.serverUrl &&
+            (!record.deviceId || record.deviceId === session?.deviceId) &&
             record.branchId === session?.branch.id,
         ),
       ),
-    [records, session?.branch.id, target?.serverUrl],
+    [records, session?.branch.id, session?.deviceId, target?.serverUrl],
   );
 
   const reload = useCallback(async () => {
@@ -115,41 +124,69 @@ export function OfflineSalesProvider({
     async ({ payload, total }: StageOfflineSaleInput) => {
       if (!target || !session)
         throw new Error('ไม่พบเครื่องหรือพนักงานที่กำลังใช้งาน');
+      if (!shift.id) throw new Error('ต้องเปิดกะก่อนรับเงินออฟไลน์');
       const now = new Date().toISOString();
-      const next = await putOfflineSale({
-        id: payload.idempotencyKey,
-        serverUrl: target.serverUrl,
-        branchId: session.branch.id,
-        cashierUserId: session.cashier.id,
-        cashierName: session.cashier.name,
-        tenderedAt: payload.offlineTenderedAt ?? now,
-        total,
-        payload,
-        state: 'STAGED',
-        attempts: 0,
-        lastError: null,
-        updatedAt: now,
-      });
-      setRecords(next);
-      setStorageError(null);
+      try {
+        const next = await putOfflineSale({
+          id: payload.idempotencyKey,
+          serverUrl: target.serverUrl,
+          deviceId: session.deviceId,
+          branchId: session.branch.id,
+          shiftId: shift.id,
+          cashierUserId: session.cashier.id,
+          cashierName: session.cashier.name,
+          tenderedAt: payload.offlineTenderedAt ?? now,
+          total,
+          payload,
+          state: 'STAGED',
+          attempts: 0,
+          lastError: null,
+          updatedAt: now,
+        });
+        activeStages.current.add(payload.idempotencyKey);
+        setRecords(next);
+        setStorageError(null);
+      } catch (error) {
+        rememberStorageError(error);
+        throw error;
+      }
     },
-    [session, target],
+    [rememberStorageError, session, shift.id, target],
   );
 
   const queue = useCallback(
     async (idempotencyKey: string, error?: string | null) => {
-      const next = await patchOfflineSale(idempotencyKey, {
-        state: 'UNKNOWN',
-        lastError: error ?? null,
-      });
-      setRecords(next);
+      try {
+        const next = await patchOfflineSale(idempotencyKey, {
+          state: 'UNKNOWN',
+          lastError: error ?? null,
+        });
+        setRecords(next);
+        setStorageError(null);
+      } catch (cause) {
+        rememberStorageError(cause);
+        throw cause;
+      } finally {
+        activeStages.current.delete(idempotencyKey);
+      }
     },
-    [],
+    [rememberStorageError],
   );
 
-  const complete = useCallback(async (idempotencyKey: string) => {
-    setRecords(await removeOfflineSale(idempotencyKey));
-  }, []);
+  const complete = useCallback(
+    async (idempotencyKey: string) => {
+      try {
+        setRecords(await removeOfflineSale(idempotencyKey));
+        setStorageError(null);
+      } catch (error) {
+        rememberStorageError(error);
+        throw error;
+      } finally {
+        activeStages.current.delete(idempotencyKey);
+      }
+    },
+    [rememberStorageError],
+  );
 
   const discard = complete;
 
@@ -162,10 +199,16 @@ export function OfflineSalesProvider({
         (await loadOfflineSales()).filter(
           record =>
             record.serverUrl === target?.serverUrl &&
+            (!record.deviceId || record.deviceId === session.deviceId) &&
             record.branchId === session.branch.id &&
+            // An active STAGED row belongs to the checkout call that is still in flight. A STAGED
+            // row whose checkout finished/failed is recoverable, as are UNKNOWN/SYNCING rows.
+            (record.state !== 'STAGED' ||
+              !activeStages.current.has(record.id)) &&
             record.state !== 'NEEDS_REVIEW',
         ),
       );
+      setStorageError(null);
       for (const record of candidates) {
         try {
           setRecords(
@@ -191,6 +234,16 @@ export function OfflineSalesProvider({
           );
           if (recovered.data?.bmsPosSaleRecovery.status === 'SOLD') {
             setRecords(await removeOfflineSale(record.id));
+            continue;
+          }
+          if (record.shiftId && record.shiftId !== shift.id) {
+            setRecords(
+              await patchOfflineSale(record.id, {
+                state: 'NEEDS_REVIEW',
+                lastError:
+                  'รายการนี้รับเงินในกะเดิมที่ปิดไปแล้ว ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ',
+              }),
+            );
             continue;
           }
           if (record.cashierUserId !== session.cashier.id) {
@@ -240,8 +293,10 @@ export function OfflineSalesProvider({
             await patchOfflineSale(record.id, {
               state: 'NEEDS_REVIEW',
               attempts: record.attempts + 1,
-              lastError:
-                result?.reason ?? result?.status ?? 'server ปฏิเสธรายการ',
+              lastError: describeMobileSaleFailure(
+                result,
+                'Server ปฏิเสธรายการออฟไลน์',
+              ),
             }),
           );
         } catch (error) {
@@ -271,6 +326,9 @@ export function OfflineSalesProvider({
         }
       }
       await refreshSales().catch(() => undefined);
+    } catch (error) {
+      rememberStorageError(error);
+      throw error;
     } finally {
       syncLock.current = false;
       setSyncing(false);
@@ -278,41 +336,55 @@ export function OfflineSalesProvider({
   }, [
     health,
     recover,
+    rememberStorageError,
     refreshSales,
     sell,
     session,
     shift.isOpen,
+    shift.id,
     target?.serverUrl,
   ]);
 
   const retryReview = useCallback(async () => {
-    const reviewRecords = visibleRecords.filter(
-      record => record.state === 'NEEDS_REVIEW',
-    );
-    for (const record of reviewRecords) {
-      await patchOfflineSale(record.id, {
-        state: 'UNKNOWN',
-        lastError: 'กำลังลองซิงก์ใหม่',
-      });
+    try {
+      const reviewRecords = visibleRecords.filter(
+        record => record.state === 'NEEDS_REVIEW',
+      );
+      for (const record of reviewRecords) {
+        await patchOfflineSale(record.id, {
+          state: 'UNKNOWN',
+          lastError: 'กำลังลองซิงก์ใหม่',
+        });
+      }
+      setRecords(await loadOfflineSales());
+      setStorageError(null);
+      await syncNow();
+    } catch (error) {
+      rememberStorageError(error);
+      throw error;
     }
-    setRecords(await loadOfflineSales());
-    await syncNow();
-  }, [syncNow, visibleRecords]);
+  }, [rememberStorageError, syncNow, visibleRecords]);
 
   const retryRecord = useCallback(
     async (id: string) => {
       const record = visibleRecords.find(candidate => candidate.id === id);
       if (!record) throw new Error('ไม่พบรายการออฟไลน์ในสาขานี้');
       if (record.state === 'SYNCING') return;
-      setRecords(
-        await patchOfflineSale(record.id, {
-          state: 'UNKNOWN',
-          lastError: 'กำลังลองซิงก์ใหม่',
-        }),
-      );
-      await syncNow();
+      try {
+        setRecords(
+          await patchOfflineSale(record.id, {
+            state: 'UNKNOWN',
+            lastError: 'กำลังลองซิงก์ใหม่',
+          }),
+        );
+        setStorageError(null);
+        await syncNow();
+      } catch (error) {
+        rememberStorageError(error);
+        throw error;
+      }
     },
-    [syncNow, visibleRecords],
+    [rememberStorageError, syncNow, visibleRecords],
   );
 
   useEffect(() => {

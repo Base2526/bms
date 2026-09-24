@@ -24,6 +24,7 @@ export interface PosSessionCashier {
 // PIN อยู่ใน React memory เฉพาะช่วงที่ cashier login และไม่ลง Keychain/AsyncStorage/log
 // เพราะ backend ต้องตรวจ credentials ซ้ำในทุกคำสั่งขาย เงิน สต็อก และครัว
 export interface PosSession {
+  deviceId: string;
   branch: PosSessionBranch;
   cashier: PosSessionCashier;
   credentials: { cashierUserId: string; pin: string };
@@ -33,6 +34,7 @@ export interface PosSession {
 interface SessionContextValue {
   session: PosSession | null;
   signIn: (
+    deviceId: string,
     branch: PosSessionBranch,
     cashier: PosSessionCashier,
     pin: string,
@@ -49,18 +51,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const previousPairingKey = useRef(pairingKey);
 
   useEffect(() => {
-    if (
-      status !== 'PAIRED' ||
-      previousPairingKey.current !== pairingKey
-    ) {
+    if (status !== 'PAIRED' || previousPairingKey.current !== pairingKey) {
       setSession(null);
     }
     previousPairingKey.current = pairingKey;
   }, [pairingKey, status]);
 
   const signIn = useCallback(
-    (branch: PosSessionBranch, cashier: PosSessionCashier, pin: string) => {
+    (
+      deviceId: string,
+      branch: PosSessionBranch,
+      cashier: PosSessionCashier,
+      pin: string,
+    ) => {
       setSession({
+        deviceId,
         branch,
         cashier,
         credentials: { cashierUserId: cashier.id, pin },

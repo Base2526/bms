@@ -13,8 +13,12 @@ BMS, not a second edition, price plan, database, settlement engine, or source of
   through the existing server settlement path. The server repeats eligibility, price, stock, tax,
   shift, cashier, and permission checks before anything becomes a real bill.
 - The on-device Sync Center keeps pending, interrupted, and rejected items visible, supports retry
-  with the original key, and detects accidental queued-request mutation before replay. It does not
-  offer a discard action after cash has been accepted.
+  with the original key, binds new rows to the accepting device/branch/shift, and detects accidental
+  queued-request or scope mutation before replay. Unknown queue formats and secure-storage write
+  failures fail closed. The Sync Center does not offer a discard action after cash has been accepted.
+- Both Mobile eligibility and the authoritative settlement service reject pharmacy, restaurant, and
+  board-game archetypes from this retail outage path. The server also refuses to attribute a tender
+  timestamp from before the current shift to a newly opened shift.
 - An offline reference is not a receipt or tax document. Those exist only after the Cloud transaction
   commits, and shift close or device unpair remains blocked while accepted cash is unresolved.
 
@@ -34,7 +38,9 @@ Emergency Offline Mode does not currently cover:
 - members, points, coupons, manual/approval discounts, deposits, or credit;
 - QR, card, transfer, wallet, store credit, or split payments;
 - weighted products, serial numbers, variants/modifiers requiring the excluded flow;
-- returns, voids, refunds, shift close, receiving, transfer, count, or other stock operations.
+- returns, voids, refunds, shift close, receiving, transfer, count, or other stock operations;
+- cold-start offline PIN login or an unrestricted offline product catalog; the cashier must already
+  be signed in with the original shift open and must have loaded the product snapshot before outage.
 
 The connected Cloud product supports many of those workflows; the list above is only the outage-mode
 boundary.

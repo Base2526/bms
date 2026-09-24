@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  validateOfflinePosArchetype,
   validateOfflinePosTender,
   type PosSaleInput,
   type PosPaymentInput,
@@ -11,7 +12,8 @@ const now = Date.parse("2026-09-18T10:00:00.000Z");
 const cash: PosPaymentInput[] = [
   { method: "CASH", amount: 100, cashTendered: 100, ref: null },
 ];
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const read = (path: string) =>
+  readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 function sale(overrides: Partial<PosSaleInput> = {}): PosSaleInput {
   return {
@@ -30,35 +32,93 @@ function sale(overrides: Partial<PosSaleInput> = {}): PosSaleInput {
 }
 
 test("offline tender accepts only a plain retail cash sale", () => {
-  assert.equal(validateOfflinePosTender(sale(), cash, now), null);
+  assert.equal(
+    validateOfflinePosTender(
+      sale(),
+      cash,
+      now,
+      Date.parse("2026-09-18T09:00:00.000Z")
+    ),
+    null
+  );
   const card: PosPaymentInput[] = [{ method: "CARD", amount: 100 }];
-  assert.match(validateOfflinePosTender(sale({ payments: card }), card, now) ?? "", /เงินสด/);
-  assert.match(validateOfflinePosTender(sale({ customerId: "member" }), cash, now) ?? "", /สมาชิก/);
   assert.match(
-    validateOfflinePosTender(sale({
-      lines: [{ sku: "FAKE-SKU", size: "STD", packQty: 1, serials: ["S1"] }],
-    }), cash, now) ?? "",
-    /serial/,
+    validateOfflinePosTender(sale({ payments: card }), card, now) ?? "",
+    /เงินสด/
   );
   assert.match(
-    validateOfflinePosTender(sale({
-      offlineTenderedAt: "2026-09-18T10:10:01.000Z",
-    }), cash, now) ?? "",
-    /อนาคต/,
+    validateOfflinePosTender(sale({ customerId: "member" }), cash, now) ?? "",
+    /สมาชิก/
+  );
+  assert.match(
+    validateOfflinePosTender(
+      sale({
+        lines: [{ sku: "FAKE-SKU", size: "STD", packQty: 1, serials: ["S1"] }],
+      }),
+      cash,
+      now
+    ) ?? "",
+    /serial/
+  );
+  assert.match(
+    validateOfflinePosTender(
+      sale({
+        offlineTenderedAt: "2026-09-18T10:10:01.000Z",
+      }),
+      cash,
+      now
+    ) ?? "",
+    /อนาคต/
+  );
+  assert.match(
+    validateOfflinePosTender(
+      sale({ offlineTenderedAt: "2026-09-18T09:49:59.000Z" }),
+      cash,
+      now,
+      Date.parse("2026-09-18T09:55:00.000Z")
+    ) ?? "",
+    /ก่อนกะปัจจุบัน/
   );
 });
 
 test("ordinary online sales do not enter the offline policy", () => {
   assert.equal(
-    validateOfflinePosTender(sale({ offlineTenderedAt: null, customerId: "member" }), cash, now),
-    null,
+    validateOfflinePosTender(
+      sale({ offlineTenderedAt: null, customerId: "member" }),
+      cash,
+      now
+    ),
+    null
+  );
+});
+
+test("specialized store archetypes cannot enter the retail offline path", () => {
+  assert.equal(validateOfflinePosArchetype(null), null);
+  assert.equal(validateOfflinePosArchetype("mini_mart"), null);
+  assert.match(validateOfflinePosArchetype("pharmacy") ?? "", /ไม่รองรับ/);
+  assert.match(validateOfflinePosArchetype("restaurant") ?? "", /ไม่รองรับ/);
+  assert.match(
+    validateOfflinePosArchetype("board_game_cafe") ?? "",
+    /ไม่รองรับ/
+  );
+
+  const checkout = read("apps/mobile/src/screens/sell/CheckoutScreen.tsx");
+  assert.match(
+    checkout,
+    /const offlineEligible =\s*source === 'retail' &&\s*storeMode === 'general'/
+  );
+  assert.match(
+    checkout,
+    /!line\.serialTracked &&\s*line\.serials\.length === 0/
   );
 });
 
 test("native recovery remains bounded, visible after commit, and cannot be hidden by unpair", () => {
   const operation = read("apps/mobile/src/lib/operation.ts");
   const sharedOperation = read("packages/pos-client-core/src/operation.ts");
-  const settings = read("apps/mobile/src/screens/settings/DeviceSettingsScreen.tsx");
+  const settings = read(
+    "apps/mobile/src/screens/settings/DeviceSettingsScreen.tsx"
+  );
   const receiptOperation = read("apps/mobile/src/graphql/operations.graphql");
   const service = read("apps/web/lib/bms/pos.ts");
 

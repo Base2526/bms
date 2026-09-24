@@ -71,6 +71,7 @@ export default function LoginScreen({ navigation }: Props) {
     [data],
   );
   const cashier = cashiers.find(item => item.id === cashierId) ?? cashiers[0];
+  const deviceId = data?.bmsPosSession.device.id ?? null;
 
   useEffect(() => {
     if (!cashierId && cashiers[0]) setCashierId(cashiers[0].id);
@@ -80,7 +81,12 @@ export default function LoginScreen({ navigation }: Props) {
   }, [cashierId, cashiers]);
 
   const canSubmit =
-    isPosPinLengthValid(pin) && !!branch && !!cashier && !loading && !verifying;
+    isPosPinLengthValid(pin) &&
+    !!deviceId &&
+    !!branch &&
+    !!cashier &&
+    !loading &&
+    !verifying;
 
   const branchCard = (
     <Card
@@ -211,7 +217,7 @@ export default function LoginScreen({ navigation }: Props) {
         fullWidth
         disabled={!canSubmit}
         onPress={async () => {
-          if (!branch || !cashier) return;
+          if (!deviceId || !branch || !cashier) return;
           setLoginError(null);
           recordPosDiagnosticEvent(target, {
             category: 'pos',
@@ -243,6 +249,7 @@ export default function LoginScreen({ navigation }: Props) {
               context: { route: 'LoginScreen' },
             });
             signIn(
+              deviceId,
               branch,
               {
                 id: verified.id,

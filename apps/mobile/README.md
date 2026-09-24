@@ -27,9 +27,9 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - pharmacy counter authorization and parked pharmacist-review handoff/resume;
 - bounded GraphQL operations so a dropped connection cannot leave scan or payment spinning forever;
 - Emergency Offline Mode: an encrypted native queue for plain retail cash sales, with a persisted
-  unknown/syncing/review state machine, request-integrity fingerprint, full-screen Sync Center,
-  per-item/manual retry, original-cashier attribution, shift-close/unpair guards, and a synced badge
-  in receipt history;
+  unknown/syncing/review state machine, device/branch/shift-bound request-integrity fingerprint,
+  full-screen Sync Center, per-item/manual retry, original-cashier attribution, fail-closed secure
+  storage, shift-close/unpair guards, and a synced badge in receipt history;
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
@@ -56,6 +56,13 @@ Emergency Offline Mode is intentionally limited to plain retail cash sales. Rest
 pharmacy, member/points/coupon, approval, serial/weighted/modifier, credit, deposit, split and
 non-cash workflows still require the server. A pending reference is not a receipt or tax document;
 those exist only after the normal backend settlement commits.
+
+Continuity currently assumes the app is already signed in, the original shift remains open, and the
+product/pricing snapshot needed for the cart was loaded before the outage. The encrypted queue
+survives a process restart, but restarting while still offline does not provide offline PIN login or
+an unrestricted local catalog. A server-rejected price or stock conflict remains unresolved until it
+is safely retried or handled through manager reconciliation; cash must never be accepted a second
+time for that reference.
 
 The files under `src/mocks/` and the old pure calculation helpers are test fixtures only. Runtime
 screens, components, and state providers do not import mock data.
