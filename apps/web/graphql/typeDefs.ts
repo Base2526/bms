@@ -1403,6 +1403,7 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     qty: Int!
     unit_price: Float!
+    line_amount: Float!
   }
 
   type BmsRestaurantCancellationLoss {

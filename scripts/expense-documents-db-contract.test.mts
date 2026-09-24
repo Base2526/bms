@@ -15,17 +15,22 @@ let locationId = "";
 let actorId = "";
 let documentId = "";
 
-test("setup finds a local tenant, branch and actor", async () => {
-  const row = (await query<{ tenant_id: string; location_id: string; actor_id: string }>(`
-    SELECT t.id AS tenant_id, l.id AS location_id, u.id AS actor_id
-      FROM bms_tenants t
-      JOIN bms_locations l ON l.tenant_id=t.id AND l.active
-      JOIN users u ON u.tenant_id=t.id
-     ORDER BY t.created_at, l.created_at, u.created_at LIMIT 1`)).rows[0];
-  assert.ok(row, "local test DB needs one tenant/location/user fixture");
-  tenantId = row.tenant_id;
-  locationId = row.location_id;
-  actorId = row.actor_id;
+test("setup creates its own VAT-registered tenant, branch and actor", async () => {
+  tenantId = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    [tag, `${tag.toLowerCase()}-${Date.now()}`]
+  )).rows[0].id;
+  await query(`INSERT INTO bms_store_profile (tenant_id,vat_registered,price_includes_vat,vat_rate) VALUES ($1,TRUE,TRUE,7)`, [tenantId]);
+  locationId = (await query<{ id: string }>(
+    `INSERT INTO bms_locations (tenant_id,code,name,branch_code,is_head_office,active)
+     VALUES ($1,'MAIN',$2,'00000',TRUE,TRUE) RETURNING id`, [tenantId, tag]
+  )).rows[0].id;
+  actorId = (await query<{ id: string }>(
+    `INSERT INTO users (name,username,email,role,role_id,tenant_id,password_hash,fake_test)
+     SELECT $2,$3,$3,'Administrator',r.id,$1,'x',TRUE FROM roles r
+      WHERE r.name='Administrator' ORDER BY r.id LIMIT 1 RETURNING id`,
+    [tenantId, tag, `${tag}@example.invalid`]
+  )).rows[0].id;
 });
 
 test("one document lands expense, input VAT and WHT in their own authority periods", async () => {
@@ -34,7 +39,7 @@ test("one document lands expense, input VAT and WHT in their own authority perio
     category: "PROFESSIONAL_FEE" as const,
     documentKind: "TAX_INVOICE" as const,
     payeeName: tag,
-    payeeTaxId: "0105555555555",
+    payeeTaxId: "0105555555554",
     payeeBranchCode: "00000",
     payeeType: "JURISTIC" as const,
     documentNo: tag,
@@ -82,6 +87,40 @@ test("one document lands expense, input VAT and WHT in their own authority perio
   assert.equal(listed.rows[0].id, documentId);
 });
 
+test("normalized invoice number and blank/head-office branch cannot claim twice", async () => {
+  await query(
+    `INSERT INTO bms_expense_documents
+       (tenant_id,location_id,category,document_kind,payee_name,payee_tax_id,payee_branch_code,
+        document_no,document_date,amount_before_vat,vat_amount,vat_claim_month,status)
+     VALUES ($1,$2,'OTHER','TAX_INVOICE',$3,'0105555555554',NULL,
+             ' ab- 123 ','2026-01-15',100,7,'2026-01-01','ACTIVE')`,
+    [tenantId, locationId, tag]
+  );
+  await assert.rejects(
+    createExpenseDocument(tenantId, actorId, {
+      locationId, category: "OTHER", documentKind: "TAX_INVOICE", payeeName: tag,
+      payeeTaxId: "0105555555554", payeeBranchCode: "00000", documentNo: "AB123",
+      documentDate: "2026-01-15", amountBeforeVat: 100, vatAmount: 7,
+      vatClaimMonth: "2026-01-01", idempotencyKey: `${tag}-duplicate`,
+    }),
+    /ใบนี้ถูกบันทึกแล้ว/
+  );
+});
+
+test("a non-VAT-registered shop cannot record positive input VAT", async () => {
+  await query(`UPDATE bms_store_profile SET vat_registered=FALSE WHERE tenant_id=$1`, [tenantId]);
+  await assert.rejects(
+    createExpenseDocument(tenantId, actorId, {
+      locationId, category: "OTHER", documentKind: "TAX_INVOICE", payeeName: tag,
+      payeeTaxId: "0105555555554", payeeBranchCode: "00000", documentNo: "OTHER-1",
+      documentDate: "2026-01-15", amountBeforeVat: 100, vatAmount: 7,
+      vatClaimMonth: "2026-01-01", idempotencyKey: `${tag}-not-vat`,
+    }),
+    /ไม่ได้จด VAT/
+  );
+  await query(`UPDATE bms_store_profile SET vat_registered=TRUE WHERE tenant_id=$1`, [tenantId]);
+});
+
 test("void preserves the row but removes it from active accounting totals", async () => {
   const result = await voidExpenseDocument(tenantId, actorId, documentId, "contract cleanup", [locationId]);
   assert.equal(result.status, "VOID");
@@ -95,9 +134,11 @@ test("void preserves the row but removes it from active accounting totals", asyn
 
 after(async () => {
   if (!tenantId) return;
-  if (documentId) {
-    await query(`DELETE FROM bms_audit_log WHERE tenant_id=$1 AND target=$2`, [tenantId,documentId]);
-    await query(`DELETE FROM bms_expense_documents_revisions WHERE tenant_id=$1 AND snapshot->>'id'=$2`, [tenantId,documentId]);
-    await query(`DELETE FROM bms_expense_documents WHERE tenant_id=$1 AND id=$2`, [tenantId,documentId]);
-  }
+  await query(`DELETE FROM bms_audit_log WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_expense_documents_revisions WHERE tenant_id=$1`, [tenantId]).catch(() => {});
+  await query(`DELETE FROM bms_expense_documents WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM users WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_locations WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_store_profile WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
 });

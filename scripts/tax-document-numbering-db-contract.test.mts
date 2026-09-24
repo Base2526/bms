@@ -35,16 +35,16 @@ let hqId = "";
 let branchId = "";
 const devices: Record<string, string> = {};
 
-async function newOrder(locationId: string): Promise<string> {
+async function newOrder(locationId: string, status = "COMPLETED"): Promise<string> {
   const orderId = (await query<{ id: string }>(
     `INSERT INTO bms_orders (tenant_id, channel, customer_ref, status, total_amount, location_id)
-     VALUES ($1,'pos',$2,'COMPLETED',107,$3) RETURNING id`,
-    [tenantId, `fake-${TAG}`, locationId]
+     VALUES ($1,'pos',$2,$4,107,$3) RETURNING id`,
+    [tenantId, `fake-${TAG}`, locationId, status]
   )).rows[0].id;
   await query(
     `INSERT INTO bms_order_items
-       (tenant_id, order_id, location_id, product_sku, size, qty, unit_price, receipt_unit_price, vat_category)
-     VALUES ($1,$2,$3,$4,$5,1,107,107,'V')`,
+       (tenant_id, order_id, location_id, product_sku, size, qty, unit_price, line_amount, receipt_unit_price, vat_category)
+     VALUES ($1,$2,$3,$4,$5,1,107,107,107,'V')`,
     [tenantId, orderId, locationId, SKU, SIZE]
   );
   return orderId;
@@ -120,6 +120,18 @@ test("two registers without a prefix issue on the same day without colliding", a
   assert.ok(a.docNo.endsWith("0001") && b.docNo.endsWith("0001"), "each register keeps its own sequence");
 });
 
+test("two transactions can create the first counter row concurrently", async () => {
+  devices.d = (await upsertPosDevice(tenantId, {
+    locationId: hqId, code: "POS-D", receiptPrefix: "D", active: true,
+  })).id;
+  const [first, second] = await Promise.all([
+    abbreviated(hqId, devices.d),
+    abbreviated(hqId, devices.d),
+  ]);
+  const suffixes = [first.docNo, second.docNo].map((docNo) => Number(docNo.slice(-4))).sort((a, b) => a - b);
+  assert.deepEqual(suffixes, [1, 2], "upsert must arbitrate the first row instead of racing on a plain INSERT");
+});
+
 test("a register with its own prefix keeps the familiar format", async () => {
   const c = await abbreviated(branchId, devices.c);
   assert.match(c.docNo, /^C\d{10}$/);
@@ -140,6 +152,19 @@ test("full invoices at the head office and a branch on the same day do not colli
   assert.equal(br.document.docNo.slice(-4), "0001");
 });
 
+test("a pending or voided order cannot receive a full tax invoice", async () => {
+  const buyer = { name: "FAKE buyer", taxId: "0105500000001" };
+  const pending = await issueFullTaxInvoice({
+    tenantId, orderId: await newOrder(hqId, "PENDING"), buyer,
+  });
+  assert.equal(pending.status, "ORDER_NOT_INVOICEABLE", JSON.stringify(pending));
+
+  const voidedOrderId = await newOrder(hqId);
+  await query(`UPDATE bms_orders SET voided_at = now() WHERE tenant_id = $1 AND id = $2`, [tenantId, voidedOrderId]);
+  const voided = await issueFullTaxInvoice({ tenantId, orderId: voidedOrderId, buyer });
+  assert.equal(voided.status, "ORDER_NOT_INVOICEABLE", JSON.stringify(voided));
+});
+
 test("a branch credit note carries the branch code", async () => {
   const doc = await abbreviated(branchId, devices.c);
   const note = await issueCreditNote({ tenantId, orderId: doc.orderId, amount: 50, reason: "FAKE return" });
@@ -157,7 +182,7 @@ test("every document's issue_date is the Thai date of its issued_at", async () =
        FROM bms_tax_documents WHERE tenant_id = $1`,
     [tenantId]
   );
-  assert.ok(res.rows[0].n >= 6);
+  assert.ok(res.rows[0].n >= 8);
   assert.equal(res.rows[0].wrong, 0);
   // และค่าที่แอปอ่านกลับมาต้องตรงกับฐาน (ไม่ถอยวันเพราะ toISOString)
   const row = await query<{ id: string; d: string }>(

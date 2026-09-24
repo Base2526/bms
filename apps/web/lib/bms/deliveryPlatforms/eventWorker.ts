@@ -33,13 +33,13 @@ type IntegrationContext = {
   environment: "SANDBOX" | "LIVE";
   active: boolean;
   rolloutMode: "OFF" | "SHADOW" | "LIVE";
-  healthStatus: string;
   clientId: string | null;
   clientSecret: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   webhookSecret: string | null;
   apiVersion: string | null;
+  configVersion: number;
   config: Record<string, unknown>;
 };
 
@@ -68,6 +68,7 @@ export type DeliveryEventBatchResult = {
 
 function configOf(context: IntegrationContext): DeliveryAdapterConfig {
   return {
+    integrationId: context.integrationId,
     environment: context.environment,
     clientId: context.clientId,
     clientSecret: context.clientSecret,
@@ -84,9 +85,9 @@ async function loadIntegrationContext(event: ClaimedEvent): Promise<IntegrationC
   try {
     await beginTenantTx(client, event.tenant_id);
     const result = await client.query<any>(
-      `SELECT provider, environment, active, rollout_mode, health_status, client_id,
+      `SELECT provider, environment, active, rollout_mode, client_id,
               client_secret_encrypted, access_token_encrypted, refresh_token_encrypted,
-              webhook_secret_encrypted, api_version, config
+              webhook_secret_encrypted, api_version, config_version, config
          FROM bms_delivery_integrations
         WHERE tenant_id = $1 AND id = $2`,
       [event.tenant_id, event.integration_id],
@@ -101,13 +102,13 @@ async function loadIntegrationContext(event: ClaimedEvent): Promise<IntegrationC
       environment: row.environment,
       active: row.active,
       rolloutMode: row.rollout_mode,
-      healthStatus: row.health_status,
       clientId: row.client_id,
       clientSecret: decryptSecret(row.client_secret_encrypted),
       accessToken: decryptSecret(row.access_token_encrypted),
       refreshToken: decryptSecret(row.refresh_token_encrypted),
       webhookSecret: decryptSecret(row.webhook_secret_encrypted),
       apiVersion: row.api_version,
+      configVersion: Number(row.config_version),
       config: row.config ?? {},
     };
   } catch (error) {
@@ -124,18 +125,27 @@ async function finishEventInTx(
   status: "PROCESSED" | "ACTION_REQUIRED" | "IGNORED_OLD",
   errorCode: string | null = null,
   error: string | null = null,
+  providerAttempts = 0,
 ) {
   const updated = await client.query(
     `UPDATE bms_delivery_events
         SET processing_status = $4, processed_at = CASE WHEN $4 IN ('PROCESSED','IGNORED_OLD') THEN now() ELSE NULL END,
-            error_code = $5, last_error = $6, claimed_at = NULL, claim_token = NULL, updated_at = now()
+            error_code = $5, last_error = $6,
+            provider_call_attempts = provider_call_attempts + $7,
+            claimed_at = NULL, claim_token = NULL, updated_at = now()
       WHERE tenant_id = $1 AND id = $2 AND claim_token = $3 AND processing_status = 'PROCESSING'`,
-    [event.tenant_id, event.id, event.claim_token, status, errorCode, error?.slice(0, 500) ?? null],
+    [event.tenant_id, event.id, event.claim_token, status, errorCode, error?.slice(0, 500) ?? null, providerAttempts],
   );
   if ((updated.rowCount ?? 0) !== 1) throw new Error("DELIVERY_EVENT_CLAIM_LOST");
 }
 
-async function markEventFailure(event: ClaimedEvent, retryable: boolean, code: string, detail: string) {
+async function markEventFailure(
+  event: ClaimedEvent,
+  retryable: boolean,
+  code: string,
+  detail: string,
+  providerAttempts = 0,
+) {
   const client = await getClient();
   try {
     await beginTenantTx(client, event.tenant_id);
@@ -145,7 +155,9 @@ async function markEventFailure(event: ClaimedEvent, retryable: boolean, code: s
       `UPDATE bms_delivery_events
           SET processing_status = $4,
               available_at = CASE WHEN $4 = 'RETRY' THEN now() + ($5 * interval '1 second') ELSE available_at END,
-              error_code = $6, last_error = $7, claimed_at = NULL, claim_token = NULL, updated_at = now()
+              error_code = $6, last_error = $7,
+              provider_call_attempts = provider_call_attempts + $8,
+              claimed_at = NULL, claim_token = NULL, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND claim_token = $3 AND processing_status = 'PROCESSING'`,
       [
         event.tenant_id,
@@ -155,9 +167,21 @@ async function markEventFailure(event: ClaimedEvent, retryable: boolean, code: s
         delaySeconds,
         code,
         detail.slice(0, 500),
+        providerAttempts,
       ],
     );
     if ((updated.rowCount ?? 0) !== 1) throw new Error("DELIVERY_EVENT_CLAIM_LOST");
+    if (providerAttempts > 0) {
+      const healthStatus = code === "AUTH_FAILED" ? "AUTH_FAILED"
+        : code === "RATE_LIMITED" ? "RATE_LIMITED" : "DEGRADED";
+      await client.query(
+        `UPDATE bms_delivery_integrations
+            SET health_status = CASE WHEN active THEN $3 ELSE 'DISABLED' END,
+                last_error = $4, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [event.tenant_id, event.integration_id, healthStatus, code],
+      );
+    }
     await client.query("COMMIT");
     return retry ? "RETRY" as const : "DEAD_LETTER" as const;
   } catch (error) {
@@ -166,6 +190,88 @@ async function markEventFailure(event: ClaimedEvent, retryable: boolean, code: s
   } finally {
     client.release();
   }
+}
+
+async function markEventActionRequired(
+  event: ClaimedEvent,
+  code: string,
+  detail: string,
+  providerAttempts = 0,
+) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, event.tenant_id);
+    await finishEventInTx(client, event, "ACTION_REQUIRED", code, detail, providerAttempts);
+    await client.query("COMMIT");
+    return "ACTION_REQUIRED" as const;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function recheckIntegrationInTx(
+  client: PoolClient,
+  context: IntegrationContext,
+  event: ClaimedEvent,
+  providerAttempts: number,
+): Promise<boolean> {
+  const result = await client.query<{
+    provider: DeliveryProvider;
+    environment: "SANDBOX" | "LIVE";
+    active: boolean;
+    rollout_mode: "OFF" | "SHADOW" | "LIVE";
+    health_status: string;
+    config_version: string | number;
+    credential_expires_at: Date | string | null;
+  }>(
+    `SELECT provider, environment, active, rollout_mode, health_status,
+            config_version, credential_expires_at
+       FROM bms_delivery_integrations
+      WHERE tenant_id = $1 AND id = $2
+      FOR UPDATE`,
+    [context.tenantId, context.integrationId],
+  );
+  const current = result.rows[0];
+  if (!current || !current.active || current.rollout_mode === "OFF") {
+    await finishEventInTx(client, event, "ACTION_REQUIRED", "INTEGRATION_DISABLED",
+      "Integration was disabled while the provider order was being fetched", providerAttempts);
+    return false;
+  }
+  if (current.provider !== context.provider || current.environment !== context.environment
+    || current.rollout_mode !== context.rolloutMode
+    || Number(current.config_version) !== context.configVersion) {
+    await finishEventInTx(client, event, "ACTION_REQUIRED", "INTEGRATION_CONFIG_CHANGED",
+      "Integration configuration changed while the provider order was being fetched", providerAttempts);
+    return false;
+  }
+  if (!["HEALTHY", "DEGRADED"].includes(current.health_status)) {
+    await finishEventInTx(client, event, "ACTION_REQUIRED", "INTEGRATION_UNHEALTHY",
+      "Integration health no longer permits delivery intake", providerAttempts);
+    return false;
+  }
+  if (current.credential_expires_at && Date.parse(String(current.credential_expires_at)) <= Date.now()) {
+    await finishEventInTx(client, event, "ACTION_REQUIRED", "CREDENTIAL_EXPIRED",
+      "Integration credentials expired before the local order write", providerAttempts);
+    return false;
+  }
+  if (providerAttempts > 0) {
+    await client.query(
+      `UPDATE bms_delivery_integrations
+          SET health_status = 'HEALTHY', last_successful_check_at = now(), last_error = NULL, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [context.tenantId, context.integrationId],
+    );
+    await client.query(
+      `UPDATE bms_delivery_events
+          SET provider_call_attempts = provider_call_attempts + $4, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND claim_token = $3 AND processing_status = 'PROCESSING'`,
+      [event.tenant_id, event.id, event.claim_token, providerAttempts],
+    );
+  }
+  return true;
 }
 
 async function resolveMappingsInTx(
@@ -202,8 +308,13 @@ async function resolveMappingsInTx(
 
   const mappings: Mapping[] = [];
   for (const line of order.items) {
-    const item = await client.query<{ product_sku: string; size: string; mapping_status: string }>(
-      `SELECT product_sku, size, mapping_status
+    const item = await client.query<{
+      product_sku: string;
+      size: string;
+      mapping_status: string;
+      provider_price_snapshot: string | null;
+    }>(
+      `SELECT product_sku, size, mapping_status, provider_price_snapshot
          FROM bms_delivery_menu_mappings
         WHERE tenant_id = $1 AND integration_id = $2 AND location_mapping_id = $3
           AND mapping_kind IN ('ITEM','VARIANT') AND provider_item_id = $4
@@ -217,6 +328,12 @@ async function resolveMappingsInTx(
     const mapped = item.rows[0];
     if (!mapped || mapped.mapping_status !== "VERIFIED") {
       return { ok: false, code: mapped?.mapping_status === "STALE" ? "STALE_MAPPING" : "UNMAPPED_ITEM", detail: `Item ${line.providerItemId} is not VERIFIED` };
+    }
+    if (mapped.provider_price_snapshot === null) {
+      return { ok: false, code: "MAPPING_PRICE_REQUIRED", detail: `Item ${line.providerItemId} has no verified provider price snapshot` };
+    }
+    if (Math.abs(Number(mapped.provider_price_snapshot) - line.unitPrice) > 0.01) {
+      return { ok: false, code: "MAPPING_PRICE_MISMATCH", detail: `Item ${line.providerItemId} price differs from its verified mapping snapshot` };
     }
     const modifierCodes: string[] = [];
     const modifierMappings: Mapping["modifierMappings"] = [];
@@ -250,17 +367,6 @@ function orderChannel(provider: DeliveryProvider): "grabfood" | "lineman" | "foo
   return provider.toLowerCase() as "grabfood" | "lineman" | "foodpanda";
 }
 
-function localStatus(providerStatus: string): string {
-  switch (providerStatus) {
-    case "RECEIVED": return "AWAITING_ACCEPTANCE";
-    case "READY_FOR_PICKUP": return "READY";
-    case "DISPATCHED": return "HANDED_OVER";
-    case "DELIVERED": return "COMPLETED";
-    case "CANCELLED": return "CANCELLED";
-    default: return "RECEIVED";
-  }
-}
-
 function providerStatusRank(status: string | null) {
   switch (status) {
     case "RECEIVED": return 10;
@@ -277,6 +383,7 @@ async function persistProviderOrderInTx(
   context: IntegrationContext,
   event: ClaimedEvent,
   order: NormalizedProviderOrder,
+  initialProviderStatus: string,
 ): Promise<"PROCESSED" | "ACTION_REQUIRED" | "IGNORED_OLD"> {
   const existing = await client.query<{
     id: string; provider_version: string | null; provider_status: string | null;
@@ -291,7 +398,7 @@ async function persistProviderOrderInTx(
   if (existing.rows[0]) {
     const current = existing.rows[0];
     const currentVersionMs = current.provider_version ? Date.parse(current.provider_version) : Number.NaN;
-    const incomingVersionMs = event.provider_version ? Date.parse(event.provider_version) : Number.NaN;
+    const incomingVersionMs = order.providerVersion ? Date.parse(order.providerVersion) : Number.NaN;
     const currentRank = providerStatusRank(current.provider_status);
     const incomingRank = providerStatusRank(order.providerStatus);
     const stateRegression = currentRank !== null && incomingRank !== null
@@ -302,7 +409,7 @@ async function persistProviderOrderInTx(
         `INSERT INTO bms_delivery_order_events
            (tenant_id, delivery_order_id, event_kind, actor_type, source, safe_detail, occurred_at)
          VALUES ($1,$2,'OLD_PROVIDER_EVENT','WEBHOOK',$3,$4::jsonb,COALESCE($5,now()))`,
-        [context.tenantId, current.id, context.provider, JSON.stringify({ providerStatus: order.providerStatus, stateRegression }), event.provider_occurred_at],
+        [context.tenantId, current.id, context.provider, JSON.stringify({ providerStatus: order.providerStatus, stateRegression }), order.providerOccurredAt],
       );
       await finishEventInTx(client, event, "IGNORED_OLD", "OLD_PROVIDER_EVENT");
       return "IGNORED_OLD";
@@ -313,13 +420,21 @@ async function persistProviderOrderInTx(
       `UPDATE bms_delivery_orders
           SET provider_status = $4, provider_version = $5, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND integration_id = $3`,
-      [context.tenantId, current.id, context.integrationId, order.providerStatus, event.provider_version],
+      [context.tenantId, current.id, context.integrationId, order.providerStatus, order.providerVersion],
     );
     await client.query(
       `INSERT INTO bms_delivery_order_events
          (tenant_id, delivery_order_id, event_kind, actor_type, source, safe_detail, occurred_at)
-       VALUES ($1,$2,'PROVIDER_STATUS','WEBHOOK',$3,$4::jsonb,COALESCE($5,now()))`,
-      [context.tenantId, current.id, context.provider, JSON.stringify({ providerStatus: order.providerStatus }), event.provider_occurred_at],
+       VALUES
+         ($1,$2,'INITIAL_PROVIDER_EVENT','WEBHOOK',$3,$4::jsonb,COALESCE($5,now())),
+         ($1,$2,'LATEST_PROVIDER_SNAPSHOT','JOB',$3,$6::jsonb,COALESCE($7,now()))`,
+      [
+        context.tenantId, current.id, context.provider,
+        JSON.stringify({ providerStatus: initialProviderStatus, providerVersion: event.provider_version }),
+        event.provider_occurred_at,
+        JSON.stringify({ providerStatus: order.providerStatus, providerVersion: order.providerVersion }),
+        order.providerOccurredAt,
+      ],
     );
     if (current.bms_order_id) {
       const now = new Date().toISOString();
@@ -373,14 +488,35 @@ async function persistProviderOrderInTx(
     return "PROCESSED";
   }
 
-  if (order.providerStatus !== "RECEIVED") {
+  if (initialProviderStatus !== "RECEIVED") {
     await finishEventInTx(
       client,
       event,
       "ACTION_REQUIRED",
       "UNKNOWN_ORDER_NON_INITIAL_EVENT",
-      `Received ${order.providerStatus} before the provider order existed locally`,
+      `Received initial status ${initialProviderStatus} before the provider order existed locally`,
     );
+    return "ACTION_REQUIRED";
+  }
+  if (order.providerStatus === "CANCELLED") {
+    await finishEventInTx(client, event, "ACTION_REQUIRED", "PROVIDER_CANCELLED_BEFORE_INTAKE",
+      "Provider cancelled the order before a local order could be created");
+    return "ACTION_REQUIRED";
+  }
+
+  const currency = await client.query<{ currency: string }>(
+    `SELECT COALESCE(NULLIF(upper(btrim(currency)), ''), 'THB') AS currency
+       FROM bms_store_profile
+      WHERE tenant_id = $1`,
+    [context.tenantId],
+  );
+  const storeCurrency = currency.rows[0]?.currency ?? "THB";
+  const providerCurrency = order.currency.trim().toUpperCase();
+  const configuredCurrency = typeof context.config.currency === "string"
+    ? context.config.currency.trim().toUpperCase() : null;
+  if (providerCurrency !== storeCurrency || (configuredCurrency && configuredCurrency !== storeCurrency)) {
+    await finishEventInTx(client, event, "ACTION_REQUIRED", "DELIVERY_CURRENCY_MISMATCH",
+      `Provider/config currency does not match store currency ${storeCurrency}`);
     return "ACTION_REQUIRED";
   }
 
@@ -409,10 +545,6 @@ async function persistProviderOrderInTx(
   let bmsOrderId: string | null = null;
   const orderItemIds = new Map<string, string[]>();
   if (context.rolloutMode === "LIVE") {
-    if (!["HEALTHY", "DEGRADED"].includes(context.healthStatus)) {
-      await finishEventInTx(client, event, "ACTION_REQUIRED", "INTEGRATION_UNHEALTHY", "Integration health does not permit live intake");
-      return "ACTION_REQUIRED";
-    }
     const items: OrderItemInput[] = resolved.mappings.map((mapping) => ({
       sku: mapping.sku,
       size: mapping.size,
@@ -467,23 +599,22 @@ async function persistProviderOrderInTx(
        tenant_id, integration_id, location_mapping_id, location_id, bms_order_id, provider, provider_order_id,
        provider_display_number, local_status, provider_status, provider_version, payment_status,
        order_type, acceptance_deadline_at, scheduled_fulfillment_at, start_preparation_at,
-       promised_ready_at, currency, customer_amount,
+       promised_ready_at, currency, customer_amount, transport_type,
        item_subtotal, delivery_fee, service_fee, small_order_fee, tax_amount,
        expected_settlement_amount, sanitized_metadata
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
                CASE WHEN $5::uuid IS NULL THEN 'UNVERIFIED' ELSE 'PLATFORM_CONFIRMED' END,
-               $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb)
+               $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb)
      RETURNING id`,
     [
       context.tenantId, context.integrationId, resolved.locationMappingId, resolved.locationId, bmsOrderId, context.provider,
-      order.providerOrderId, order.providerDisplayNumber, localStatus(order.providerStatus),
-      order.providerStatus, event.provider_version, order.orderType,
+      order.providerOrderId, order.providerDisplayNumber, "AWAITING_ACCEPTANCE",
+      order.providerStatus, order.providerVersion, order.orderType,
       order.acceptanceDeadlineAt, order.scheduled ? order.promisedFor : null, startPreparationAt,
       order.preparationTargetAt, order.currency,
-      order.customerAmount, order.itemSubtotal, order.deliveryFee, order.serviceFee,
+      order.customerAmount, order.transportType, order.itemSubtotal, order.deliveryFee, order.serviceFee,
       order.smallOrderFee, order.taxAmount, order.itemSubtotal,
       JSON.stringify({ rolloutMode: context.rolloutMode, sourceEventId: event.external_event_id,
-        transportType: event.sanitized_payload.transportType ?? null,
         estimatedDeliveryAt: order.estimatedDeliveryAt,
         promisedFulfillmentAt: order.promisedFor }),
     ],
@@ -501,7 +632,7 @@ async function persistProviderOrderInTx(
         mapping.line.providerItemId, mapping.line.providerVariantId,
         orderItemIds.get(`${mapping.sku}\u0000${mapping.size}`)?.shift() ?? null,
         mapping.line.name, mapping.line.quantity, mapping.line.unitPrice,
-        mapping.line.discountAmount, mapping.sku, mapping.size, event.provider_version,
+        mapping.line.discountAmount, mapping.sku, mapping.size, order.providerVersion,
       ],
     );
     for (const modifier of mapping.line.modifiers) {
@@ -520,13 +651,27 @@ async function persistProviderOrderInTx(
   await client.query(
     `INSERT INTO bms_delivery_order_events
        (tenant_id, delivery_order_id, event_kind, actor_type, source, safe_detail, occurred_at)
+     VALUES
+       ($1,$2,'INITIAL_PROVIDER_EVENT','WEBHOOK',$3,$4::jsonb,COALESCE($5,now())),
+       ($1,$2,'LATEST_PROVIDER_SNAPSHOT','JOB',$3,$6::jsonb,COALESCE($7,now()))`,
+    [
+      context.tenantId, delivery.rows[0].id, context.provider,
+      JSON.stringify({ providerStatus: initialProviderStatus, providerVersion: event.provider_version }),
+      event.provider_occurred_at,
+      JSON.stringify({ providerStatus: order.providerStatus, providerVersion: order.providerVersion }),
+      order.providerOccurredAt,
+    ],
+  );
+  await client.query(
+    `INSERT INTO bms_delivery_order_events
+       (tenant_id, delivery_order_id, event_kind, actor_type, source, safe_detail, occurred_at)
      VALUES ($1,$2,$3,'WEBHOOK',$4,$5::jsonb,COALESCE($6,now()))`,
     [
       context.tenantId, delivery.rows[0].id,
       context.rolloutMode === "SHADOW" ? "SHADOW_ORDER_CAPTURED" : "ORDER_CREATED",
       context.provider,
       JSON.stringify({ providerStatus: order.providerStatus, bmsOrderCreated: Boolean(bmsOrderId) }),
-      event.provider_occurred_at,
+      order.providerOccurredAt,
     ],
   );
   await client.query(
@@ -543,10 +688,10 @@ async function persistProviderOrderInTx(
   return "PROCESSED";
 }
 
-async function processClaimedEvent(event: ClaimedEvent) {
+export async function processClaimedDeliveryEvent(event: ClaimedEvent) {
   const context = await loadIntegrationContext(event);
   if (!context || !context.active || context.rolloutMode === "OFF") {
-    return markEventFailure(event, false, "INTEGRATION_DISABLED", "Integration is missing or disabled");
+    return markEventActionRequired(event, "INTEGRATION_DISABLED", "Integration is missing or disabled");
   }
   const providerOrderId = typeof event.sanitized_payload?.providerOrderId === "string"
     ? event.sanitized_payload.providerOrderId
@@ -555,16 +700,49 @@ async function processClaimedEvent(event: ClaimedEvent) {
     ? event.sanitized_payload.providerStoreId
     : null;
   if (!providerOrderId || !providerStoreId) {
-    return markEventFailure(event, false, "INVALID_EVENT_POINTER", "Sanitized event has no order/store identity");
+    return markEventActionRequired(event, "INVALID_EVENT_POINTER", "Sanitized event has no order/store identity");
+  }
+  const initialProviderStatus = typeof event.sanitized_payload?.providerStatus === "string"
+    ? event.sanitized_payload.providerStatus.trim().toUpperCase()
+    : "";
+  const initialTransportType = event.sanitized_payload?.transportType;
+  if (!initialProviderStatus) {
+    return markEventActionRequired(event, "INVALID_INITIAL_STATUS", "Sanitized event has no provider status");
+  }
+  if (context.provider === "FOODPANDA"
+    && initialTransportType !== "LOGISTICS_DELIVERY" && initialTransportType !== "VENDOR_DELIVERY") {
+    return markEventActionRequired(event, "INVALID_TRANSPORT_TYPE", "Foodpanda event has no recognized transport type");
   }
   const adapter = getDeliveryPlatformAdapter(context.provider);
   const fetched = await adapter.fetchOrder(configOf(context), { providerOrderId, providerStoreId });
-  if (!fetched.ok) return markEventFailure(event, fetched.retryable, fetched.code, fetched.detail);
+  if (!fetched.ok) {
+    if (fetched.code === "INVALID_TRANSPORT_TYPE") {
+      return markEventActionRequired(event, fetched.code, fetched.detail, fetched.providerAttempts ?? 0);
+    }
+    return markEventFailure(event, fetched.retryable, fetched.code, fetched.detail, fetched.providerAttempts ?? 0);
+  }
+  const providerAttempts = fetched.providerAttempts ?? 0;
 
   const client = await getClient();
   try {
     await beginTenantTx(client, event.tenant_id);
-    const outcome = await persistProviderOrderInTx(client, context, event, fetched.value);
+    if (!(await recheckIntegrationInTx(client, context, event, providerAttempts))) {
+      await client.query("COMMIT");
+      return "ACTION_REQUIRED" as const;
+    }
+    if (fetched.value.providerOrderId !== providerOrderId || fetched.value.providerStoreId !== providerStoreId) {
+      await finishEventInTx(client, event, "ACTION_REQUIRED", "PROVIDER_IDENTITY_MISMATCH",
+        "Fetched provider order/store identity does not match the verified webhook pointer");
+      await client.query("COMMIT");
+      return "ACTION_REQUIRED" as const;
+    }
+    if (context.provider === "FOODPANDA" && fetched.value.transportType !== initialTransportType) {
+      await finishEventInTx(client, event, "ACTION_REQUIRED", "TRANSPORT_TYPE_CHANGED",
+        "Provider transport type changed between webhook and fetched order");
+      await client.query("COMMIT");
+      return "ACTION_REQUIRED" as const;
+    }
+    const outcome = await persistProviderOrderInTx(client, context, event, fetched.value, initialProviderStatus);
     await client.query("COMMIT");
     return outcome;
   } catch (error) {
@@ -582,6 +760,7 @@ async function processClaimedEvent(event: ClaimedEvent) {
           "ACTION_REQUIRED",
           error instanceof DeliveryActionRequiredError ? error.code : "PRICE_MISMATCH",
           detail,
+          providerAttempts,
         );
         await followup.query("COMMIT");
         return "ACTION_REQUIRED" as const;
@@ -592,7 +771,7 @@ async function processClaimedEvent(event: ClaimedEvent) {
         followup.release();
       }
     }
-    return markEventFailure(event, true, "PROCESSING_ERROR", detail);
+    return markEventFailure(event, true, "PROCESSING_ERROR", "Delivery event processing failed", providerAttempts);
   } finally {
     client.release();
   }
@@ -612,7 +791,7 @@ export async function runDeliveryEventBatch(limit = 25): Promise<DeliveryEventBa
     deadLettered: 0,
   };
   for (const event of claimed.rows) {
-    const outcome = await processClaimedEvent(event);
+    const outcome = await processClaimedDeliveryEvent(event);
     if (outcome === "PROCESSED" || outcome === "IGNORED_OLD") result.processed += 1;
     else if (outcome === "ACTION_REQUIRED") result.actionRequired += 1;
     else if (outcome === "RETRY") result.retried += 1;

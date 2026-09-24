@@ -23,10 +23,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { query } from "../apps/web/lib/db.ts";
+import { getClient, query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
-import { resolvePosScan } from "../apps/web/lib/bms/pos.ts";
+import { resolvePosScan, upsertPosDevice } from "../apps/web/lib/bms/pos.ts";
 import { applyPromotion } from "../apps/web/lib/bms/pricing.ts";
+import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
+import {
+  getVatSettings,
+  issueAbbreviatedInvoiceInTx,
+  issueCreditNote,
+  type TaxDocument,
+} from "../apps/web/lib/bms/taxDocuments.ts";
 import { listProductPacks, upsertProductPack } from "../apps/web/lib/bms/productPacks.ts";
 import {
   listProductPromotions,
@@ -36,6 +43,7 @@ import {
 
 const TAG = "promo-test";
 const SKU = `FAKE-${TAG}-SKU`;
+const EXEMPT_SKU = `FAKE-${TAG}-EXEMPT`;
 const SIZE_S = "60ML";
 const SIZE_L = "150ML";
 
@@ -44,7 +52,32 @@ let locationId = "";
 /** สาขาที่สองที่ชุดนี้สร้างเอง (9.61) — ลบทิ้งตอน teardown */
 let branchId = "";
 let actorUserId = "";
+let deviceId = "";
 const created: string[] = [];
+
+const issueAbbreviated = async (orderId: string): Promise<TaxDocument> => {
+  await query(
+    `UPDATE bms_orders SET status='COMPLETED', paid_at=now() WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, orderId]
+  );
+  const settings = await getVatSettings(tenantId);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorUserId });
+    const issued = await issueAbbreviatedInvoiceInTx(client, {
+      tenantId, orderId, locationId, deviceId, issuedBy: actorUserId, settings,
+    });
+    assert.equal(issued.status, "ISSUED", JSON.stringify(issued));
+    if (issued.status !== "ISSUED") throw new Error("tax document not issued");
+    await client.query("COMMIT");
+    return issued.document;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+};
 
 const sell = async (lines: Array<{ size: string; qty: number }>, atLocationId?: string) => {
   const res = await createOrder({
@@ -80,13 +113,25 @@ const declareSalesSurfaces = async (sku: string, surfaces: string[]) => {
 };
 const ALL_SURFACES = ["RETAIL_POS", "RESTAURANT_POS", "ONLINE_ORDER", "PUBLIC_STOREFRONT", "CUSTOMER_AI"];
 
-test("setup: one product with ฿40 and ฿60 size prices", async () => {
-  tenantId = (await query<{ id: string }>(`SELECT id FROM bms_tenants ORDER BY created_at LIMIT 1`)).rows[0].id;
-  locationId = (await query<{ id: string }>(
-    `SELECT id FROM bms_locations WHERE tenant_id = $1 AND active
-      ORDER BY is_head_office DESC, created_at LIMIT 1`,
-    [tenantId]
+test("setup: an isolated tenant with one product at ฿40 and ฿60", async () => {
+  tenantId = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name,slug) VALUES ($1,$2) RETURNING id`,
+    [`FAKE ${TAG}`, `fake-${TAG}-${process.pid}`]
   )).rows[0].id;
+  await query(`INSERT INTO bms_store_profile (tenant_id,vat_registered,price_includes_vat) VALUES ($1,TRUE,TRUE)`, [tenantId]);
+  locationId = (await query<{ id: string }>(
+    `INSERT INTO bms_locations (tenant_id,code,name,branch_code,is_head_office,active)
+     VALUES ($1,'MAIN',$2,'00000',TRUE,TRUE) RETURNING id`, [tenantId, `FAKE ${TAG} HQ`]
+  )).rows[0].id;
+  actorUserId = (await query<{ id: string }>(
+    `INSERT INTO users (name,username,email,role,role_id,tenant_id,password_hash,fake_test)
+     SELECT $2,$3,$3,'Administrator',r.id,$1,'x',TRUE FROM roles r
+      WHERE r.name='Administrator' ORDER BY r.id LIMIT 1 RETURNING id`,
+    [tenantId, `FAKE ${TAG}`, `fake-${TAG}-${process.pid}@example.invalid`]
+  )).rows[0].id;
+  deviceId = (await upsertPosDevice(tenantId, {
+    locationId, code: "PROMO-POS", receiptPrefix: "PROMO", active: true,
+  })).id;
   await query(
     `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
      VALUES ($1,$2,$3,40,TRUE,'V')
@@ -94,6 +139,12 @@ test("setup: one product with ฿40 and ฿60 size prices", async () => {
     [tenantId, SKU, `FAKE ${TAG} product`]
   );
   await declareSalesSurfaces(SKU, ALL_SURFACES);
+  await query(
+    `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
+     VALUES ($1,$2,$3,25,TRUE,'N')`,
+    [tenantId, EXEMPT_SKU, `FAKE ${TAG} exempt product`]
+  );
+  await declareSalesSurfaces(EXEMPT_SKU, ALL_SURFACES);
   for (const size of [SIZE_S, SIZE_L]) {
     await query(
       `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
@@ -117,6 +168,21 @@ test("setup: one product with ฿40 and ฿60 size prices", async () => {
       active: true,
     });
   }
+  await query(
+    `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+     VALUES ($1,$2,$3,$4,500,0)`,
+    [tenantId, locationId, EXEMPT_SKU, SIZE_S]
+  );
+  await upsertProductPack(tenantId, {
+    productSku: EXEMPT_SKU,
+    size: SIZE_S,
+    packCode: "BASE",
+    unitName: "ชิ้น",
+    baseQty: 1,
+    price: 25,
+    isBase: true,
+    active: true,
+  });
   await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
 });
 
@@ -145,7 +211,62 @@ test("3 for 100: the remainder pays full price", async () => {
      VALUES ($1,$2,'N_FOR_PRICE',3,100)`,
     [tenantId, SKU]
   );
-  assert.equal((await sell([{ size: SIZE_S, qty: 3 }])).subtotal, 100);
+  const exact = await sell([{ size: SIZE_S, qty: 3 }]);
+  assert.equal(exact.subtotal, 100);
+  const stored = await query<{ charged: string; approximate: string }>(
+    `SELECT SUM(line_amount)::text AS charged, SUM(unit_price * qty)::text AS approximate
+       FROM bms_order_items WHERE tenant_id=$1 AND order_id=$2`, [tenantId, exact.orderId]
+  );
+  assert.equal(Number(stored.rows[0].charged), 100, "the tax/refund line amount must equal cash charged exactly");
+  assert.notEqual(Number(stored.rows[0].approximate), 100, "unit-price cents cannot represent 100 / 3 exactly");
+
+  const promoOnlyDoc = await issueAbbreviated(exact.orderId);
+  assert.equal(promoOnlyDoc.taxableAmount + promoOnlyDoc.exemptAmount + promoOnlyDoc.roundingAmount, 100);
+  assert.equal(promoOnlyDoc.grandTotal, 100);
+
+  const orderItem = await query<{ id: number }>(
+    `SELECT id FROM bms_order_items WHERE tenant_id=$1 AND order_id=$2`,
+    [tenantId, exact.orderId]
+  );
+  const returnId = (await query<{ id: string }>(
+    `INSERT INTO bms_pos_returns
+       (tenant_id, order_id, returned_by, return_mode, refund_amount, settlement_status, idempotency_key, is_void)
+     VALUES ($1,$2,$3,'PARTIAL',20,'COMPLETED',$4,FALSE) RETURNING id`,
+    [tenantId, exact.orderId, actorUserId, `${TAG}-partial-${process.pid}`]
+  )).rows[0].id;
+  const credit = await issueCreditNote({
+    tenantId,
+    orderId: exact.orderId,
+    amount: 20,
+    reason: "FAKE partial promotion return",
+    returnRef: returnId,
+    issuedBy: actorUserId,
+    returnedItems: [{ orderItemId: Number(orderItem.rows[0].id), refundAmount: 20 }],
+  });
+  assert.equal(credit.status, "ISSUED", JSON.stringify(credit));
+  if (credit.status === "ISSUED") {
+    assert.equal(credit.document.grandTotal, 20);
+    assert.equal(credit.document.taxableAmount + credit.document.exemptAmount, 20);
+  }
+
+  const mixed = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [
+      { sku: SKU, size: SIZE_S, qty: 3 },
+      { sku: EXEMPT_SKU, size: SIZE_S, qty: 2 },
+    ],
+  } as any);
+  assert.equal(mixed.status, "CREATED", JSON.stringify(mixed));
+  if (mixed.status !== "CREATED") throw new Error("mixed tax order was not created");
+  created.push(mixed.orderId);
+  assert.equal(mixed.subtotal, 150);
+  const mixedDoc = await issueAbbreviated(mixed.orderId);
+  assert.equal(mixedDoc.taxableAmount, 100);
+  assert.equal(mixedDoc.exemptAmount, 50);
+  assert.equal(mixedDoc.taxableAmount + mixedDoc.exemptAmount + mixedDoc.roundingAmount, mixed.total);
+
   assert.equal((await sell([{ size: SIZE_S, qty: 4 }])).subtotal, 140);
   assert.equal((await sell([{ size: SIZE_S, qty: 6 }])).subtotal, 200);
 });
@@ -257,10 +378,6 @@ test("a deactivated promotion does not apply, and only one can be active per pro
 // =============================================================
 
 test("setup 9.61: a second branch that stocks the same product", async () => {
-  actorUserId = (await query<{ id: string }>(
-    `SELECT id FROM users WHERE tenant_id = $1 ORDER BY created_at LIMIT 1`, [tenantId]
-  )).rows[0].id;
-
   // branch_code default คือ '00000' ซึ่งสงวนให้สำนักงานใหญ่ — ไม่ตั้งเอง = ชนทันที
   branchId = (await query<{ id: string }>(
     `INSERT INTO bms_locations (tenant_id, code, name, branch_code, is_head_office, active)
@@ -391,14 +508,18 @@ test("a promotion cannot point at another shop's branch", async () => {
 
 test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_product_promotions WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  await query(`DELETE FROM bms_etax_submissions WHERE tenant_id = $1`, [tenantId]).catch(() => {});
+  await query(`DELETE FROM bms_pos_returns WHERE tenant_id = $1`, [tenantId]);
+  await query(`DELETE FROM bms_tax_documents WHERE tenant_id = $1`, [tenantId]);
+  await query(`DELETE FROM bms_document_counters WHERE tenant_id = $1`, [tenantId]);
   if (created.length) {
     await query(`DELETE FROM bms_order_items WHERE order_id = ANY($1::uuid[])`, [created]);
     await query(`DELETE FROM bms_orders WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [tenantId, created]);
   }
-  await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
-  await query(`DELETE FROM bms_product_packs WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
-  await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
-  await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
+  await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, [SKU, EXEMPT_SKU]]);
+  await query(`DELETE FROM bms_product_packs WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, [SKU, EXEMPT_SKU]]);
+  await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, [SKU, EXEMPT_SKU]]);
+  await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`, [tenantId, [SKU, EXEMPT_SKU]]);
   if (branchId) {
     await query(`DELETE FROM bms_locations WHERE tenant_id = $1 AND id = $2`, [tenantId, branchId]);
   }
@@ -406,4 +527,10 @@ test("teardown: remove every row this suite created", async () => {
     `SELECT count(*) AS n FROM bms_locations WHERE tenant_id = $1 AND code LIKE 'FAKE-%'`, [tenantId]
   )).rows[0].n;
   assert.equal(Number(leftovers), 0, "สาขาทดสอบต้องไม่ค้างอยู่ในฐาน");
+  await query(`DELETE FROM bms_audit_log WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_pos_devices WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM users WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_locations WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_store_profile WHERE tenant_id=$1`, [tenantId]);
+  await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
 });

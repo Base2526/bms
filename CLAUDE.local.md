@@ -7284,3 +7284,60 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - **ยังไม่ได้ verify:** execute ทั้ง 99 branches ด้วย live authenticated DB data, generated React Native
   codegen/compile, production deployment และ behavior บนอุปกรณ์จริง · ยังไม่ได้ย้าย/ลบ REST callers
   และไม่ได้เปลี่ยนระบบเป็น WebSocket 100%; subscription/realtime transport อยู่นอก client-readiness brief นี้
+
+### Tax leak guards — Phase 1 (2026-09-24)
+
+- เพิ่ม migration `10.13`: เก็บ `bms_order_items.line_amount` เป็นยอดเงินจริงของแต่ละบรรทัด,
+  backfill หลักฐานเดิม, บังคับ non-negative/not-null และเปลี่ยน unique invoice ของภาษีซื้อเป็นเลขเอกสาร/
+  สาขาที่ normalize แล้ว โดย migration หยุดก่อนเปลี่ยน schema ถ้าพบข้อมูลซ้ำเดิม; backfill เปิด
+  `app.skip_revision` แบบ transaction-local เฉพาะ UPDATE แล้วคืนค่าทันทีเพื่อไม่ขยาย revision table
+- order creation กระจายยอดโปรราย SKU+size เป็นสตางค์ (เศษลงบรรทัดสุดท้าย) และทุกเส้นทางยอดขาย/
+  ภาษี/รายงานใช้ `line_amount`; `unit_price` เหลือเป็นราคาเฉลี่ยเพื่อแสดงผลและ
+  `receipt_unit_price` ยังเป็นราคาป้ายตามสัญญาเดิม
+- ใบกำกับภาษีเต็มออกได้เฉพาะบิล `COMPLETED` ที่ไม่ void/ไม่เคยคืน, audit อยู่ transaction เดียวกัน;
+  back-office return/cancel/refund ปฏิเสธบิลที่มีเอกสารภาษี active และชี้ให้คืนผ่าน POS เพื่อออกใบลดหนี้
+- ปิดการตั้งราคาไม่รวม VAT ทั้ง UI/service/readiness; ภาษีซื้อตรวจ checksum เลขผู้เสียภาษีไทย,
+  สาขา 5 หลัก, ร้านจด VAT, วันที่/เดือนขอเครดิต และ VAT 7% ภายใน tolerance 0.05 บาท;
+  document counter ใช้ atomic upsert แยก global/device scope
+- ปรับ Windows contract runner ให้เรียก local `tsx` ผ่าน Node โดยไม่ผ่าน `cmd.exe` เพื่อให้ full suite
+  ที่ยาวเกิน 8,191 ตัวอักษรรันได้; มี contract ตรึงพฤติกรรมนี้
+- **verify ก่อน mutation:** typecheck ผ่าน, focused pure contracts ผ่าน, schema export ผ่าน,
+  production build ผ่าน **120/120 pages**; pure suite ทั้งชุด **1,469/1,474** โดย 5 failures
+  เหมือน `develop` และอยู่นอก diff (assistant guide 2, board-game workspace, order alert pattern,
+  delivery SQL relation scanner)
+- **mutation test:** ทำให้เสียทีละจุดแล้ว contract แดงครบ **11 gates** — promo allocation,
+  tax reader ที่ต้องอ่าน `line_amount`, สถานะ/partial-return ของใบเต็ม, back-office document type,
+  VAT-exclusive setter, counter partial-index arbiter, cancelled-order exception report, checksum ภาษีซื้อ,
+  migration revision bypass และ Windows runner; mutation back-office รอบแรกหลุด จึงเพิ่ม assertion ให้ตรึง
+  ทั้ง `ABBREVIATED`/`FULL` แล้วทดสอบซ้ำจนแดง จากนั้น restore service files ตรง SHA-256 เดิม
+- **verify หลัง restore:** tax-leak **7/7**, expense-documents **12/12**, contract-runner **16/16**
+  และ typecheck ผ่าน; final pure suite **1,470/1,475** โดยยังแดงเฉพาะ 5 baseline cases ชุดเดิม
+- **DB ยังไม่ได้ verify:** local PostgreSQL `127.0.0.1:5432` ตอบ `ECONNREFUSED` และ Docker daemon
+  ไม่ทำงาน จึงยังไม่ได้ apply/rollback migration, รัน DB contracts หรือ SELECT ตรวจข้อมูลจริง;
+  read-only preflight สำหรับร้าน `price_includes_vat=false` และ invoice ซ้ำก็ยังอ่านไม่ได้
+- **ความเสี่ยง deploy:** `line_amount` ของ order เก่าถูก backfill จากหลักฐานเดิม จึงกู้ส่วนลดโปรรายบรรทัด
+  ที่ไม่เคย persist ไม่ได้; ก่อน deploy ต้องตรวจ/จัดการ PENDING promo orders เดิม และต้องสำรอง/ตรวจ duplicate
+  invoice ก่อน migration แม้ migration จะ fail closed อยู่แล้ว
+
+### Delivery platform hardening (`10.14`, 2026-09-24)
+
+- Foodpanda เปลี่ยน authority เป็น OAuth2 client credentials: token อายุสั้น cache แบบเข้ารหัสใน shared
+  Redis, มี TTL margin/refresh lock และ invalidate + retry provider operation เดิมหนึ่งครั้งเมื่อ 401;
+  static encrypted access token เดิมยังใช้ได้เฉพาะ compatibility
+- webhook ใช้ logical id (order/status/provider timestamp) แยกจาก canonical payload hash; id เดิม hash
+  ต่างกัน commit เป็น `WEBHOOK_PAYLOAD_CONFLICT` และ worker เก็บ initial event + latest fetch แยกกัน
+- worker re-lock integration หลัง fetch แล้วตรวจ active/rollout/health/credential/config version, ยืนยัน
+  order/store identity, currency ร้าน, mapping price snapshot และ typed transport ก่อนสร้าง order/payment/
+  reservation ใน transaction เดียว
+- Foodpanda logistics queue `READY_FOR_PICKUP` ตอน local ready; vendor delivery ไม่ส่ง ready และ queue
+  `DISPATCHED` เฉพาะ transaction handoff ที่ตัด stock สำเร็จ; network call ยังออกหลัง commit จาก command outbox
+- เพิ่ม DB contract ครอบ currency rollback/matching order+payment+reservation, advanced latest-state history,
+  kill switch ระหว่าง fetch และ payload conflict; เพิ่ม pure behavioral contract ครอบ OAuth/cache/401/dedup/
+  transport/redaction
+- **verify รอบนี้:** typecheck ผ่าน; focused pure **19/19** ผ่าน; production build ผ่าน **120/120** pages;
+  full pure **1,478/1,483** โดยแดง 5 baseline cases ชุดเดียวกับก่อนงาน (assistant guide 2,
+  board-game workspace, order alert pattern, delivery SQL relation scanner); focused DB runner
+  compile/เริ่มรันได้แต่ PostgreSQL `localhost:5432` ตอบ `ECONNREFUSED` จึงยังไม่ได้ apply/rollback
+  migration หรือยืนยัน DB behavior
+- production rollout ยังปิด: GrabFood/LINE MAN contract-blocked และ Foodpanda production ยังต้องผ่าน partner
+  webhook/onboarding, sandbox + shadow, tax approval และ settlement cycle จริง

@@ -21,8 +21,10 @@ export async function runDeliveryCall<T>(
     if (controller.signal.aborted) {
       return { ok: false, code: "TIMEOUT", retryable: true, detail: `Provider call timed out after ${bounded}ms` };
     }
-    const detail = error instanceof Error ? error.message : "Provider request failed";
-    return { ok: false, code: "PROVIDER_ERROR", retryable: true, detail: detail.slice(0, 500) };
+    // Fetch/runtime errors may echo request URLs or headers supplied by a
+    // third-party client. Keep durable health, command and event rows useful
+    // without ever copying credentials or bearer tokens into them.
+    return { ok: false, code: "PROVIDER_ERROR", retryable: true, detail: "Provider request failed" };
   } finally {
     clearTimeout(timer);
   }

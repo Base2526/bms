@@ -110,8 +110,8 @@ function mapDoc(r: any): TaxDocument {
 // ---------------------------------------------------------------
 
 /**
- * กันเลขถัดไปแบบ atomic — UPDATE ... RETURNING ล็อกแถวตัวนับให้เอง
- * สองเครื่องยิงพร้อมกันจะได้คนละเลขเสมอ
+ * กันเลขถัดไปแบบ atomic — UPSERT ผูกกับ partial unique index ที่ตรงกับ device_id
+ * สองทรานแซกชันที่สร้าง counter แถวแรกพร้อมกันจึงได้คนละเลขและไม่ชน 23505
  */
 async function nextSequenceInTx(
   client: PoolClient,
@@ -119,23 +119,29 @@ async function nextSequenceInTx(
 ): Promise<number> {
   const { tenantId, locationId, deviceId, docType, periodKey } = args;
 
-  const upd = await client.query<{ next_seq: string }>(
-    `UPDATE bms_document_counters
-        SET next_seq = next_seq + 1, updated_at = now()
-      WHERE tenant_id = $1 AND location_id = $2 AND doc_type = $4 AND period_key = $5
-        AND device_id IS NOT DISTINCT FROM $3::uuid
-      RETURNING next_seq - 1 AS next_seq`,
-    [tenantId, locationId, deviceId, docType, periodKey]
-  );
-  if (upd.rowCount) return Number(upd.rows[0].next_seq);
-
-  const ins = await client.query<{ next_seq: string }>(
-    `INSERT INTO bms_document_counters (tenant_id, location_id, device_id, doc_type, period_key, next_seq)
-     VALUES ($1, $2, $3, $4, $5, 2)
-     RETURNING 1 AS next_seq`,
-    [tenantId, locationId, deviceId, docType, periodKey]
-  );
-  return Number(ins.rows[0].next_seq);
+  // 7.88 has two partial unique indexes because device_id may be NULL. Name the
+  // matching predicate in each UPSERT so PostgreSQL can infer the real arbiter;
+  // UPDATE-then-INSERT allowed two first issuers to race into 23505.
+  const result = deviceId == null
+    ? await client.query<{ next_seq: string }>(
+        `INSERT INTO bms_document_counters
+           (tenant_id, location_id, device_id, doc_type, period_key, next_seq)
+         VALUES ($1,$2,NULL,$3,$4,2)
+         ON CONFLICT (tenant_id, location_id, doc_type, period_key) WHERE device_id IS NULL
+         DO UPDATE SET next_seq = bms_document_counters.next_seq + 1, updated_at = now()
+         RETURNING next_seq - 1 AS next_seq`,
+        [tenantId, locationId, docType, periodKey]
+      )
+    : await client.query<{ next_seq: string }>(
+        `INSERT INTO bms_document_counters
+           (tenant_id, location_id, device_id, doc_type, period_key, next_seq)
+         VALUES ($1,$2,$3,$4,$5,2)
+         ON CONFLICT (tenant_id, location_id, device_id, doc_type, period_key) WHERE device_id IS NOT NULL
+         DO UPDATE SET next_seq = bms_document_counters.next_seq + 1, updated_at = now()
+         RETURNING next_seq - 1 AS next_seq`,
+        [tenantId, locationId, deviceId, docType, periodKey]
+      );
+  return Number(result.rows[0].next_seq);
 }
 
 /**
@@ -236,6 +242,9 @@ export async function updateVatSettings(
   if (!isCashRounding(input.cashRounding)) {
     throw new Error(`วิธีปัดเศษเงินสดไม่ถูกต้อง: ${input.cashRounding}`);
   }
+  if (!input.priceIncludesVat) {
+    throw new Error("ขณะนี้ระบบรองรับเฉพาะราคาที่รวม VAT แล้ว เพราะทุกช่องทางเก็บเงินตามราคาสินค้าโดยไม่บวก VAT เพิ่ม");
+  }
 
   await query(
     `INSERT INTO bms_store_profile (
@@ -302,7 +311,7 @@ async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId:
   const res = await client.query<any>(
     `SELECT product_sku,
             vat_category,
-            COALESCE(pack_unit_price * pack_qty, unit_price * qty) AS amount,
+            line_amount AS amount,
             TRUE AS discount_eligible
        FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2
      UNION ALL
@@ -465,6 +474,7 @@ export type IssueFullResult =
   | { status: "NOT_VAT_REGISTERED" }
   | { status: "VAT_CATEGORY_MISSING"; skus: string[] }
   | { status: "ORDER_NOT_FOUND" }
+  | { status: "ORDER_NOT_INVOICEABLE"; reason: string }
   | { status: "BUYER_INCOMPLETE"; reason: string };
 
 /**
@@ -488,13 +498,37 @@ export async function issueFullTaxInvoice(args: {
   try {
     await beginTenantTx(client, tenantId, { editorId: args.issuedBy ?? null });
 
-    const ord = await client.query<{ location_id: string }>(
-      `SELECT location_id FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+    const ord = await client.query<{ location_id: string; status: string; voided_at: Date | null }>(
+      `SELECT location_id, status, voided_at
+         FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, orderId]
     );
     if (!ord.rowCount) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
+    }
+    if (ord.rows[0].status !== "COMPLETED" || ord.rows[0].voided_at != null) {
+      await client.query("ROLLBACK");
+      return {
+        status: "ORDER_NOT_INVOICEABLE",
+        reason: ord.rows[0].voided_at != null
+          ? "บิลถูก void แล้ว จึงออกใบกำกับภาษีเต็มรูปไม่ได้"
+          : `บิลสถานะ ${ord.rows[0].status} ยังไม่ใช่การขายที่เสร็จสมบูรณ์`,
+      };
+    }
+    // A partially returned sale needs credit-note accounting first. Rebuilding a
+    // full invoice from the original basket would overstate the remaining sale.
+    const returned = await client.query(
+      `SELECT 1 FROM bms_pos_returns
+        WHERE tenant_id = $1 AND order_id = $2 AND is_void = FALSE LIMIT 1`,
+      [tenantId, orderId]
+    );
+    if (returned.rowCount) {
+      await client.query("ROLLBACK");
+      return {
+        status: "ORDER_NOT_INVOICEABLE",
+        reason: "บิลนี้มีการคืนสินค้าบางส่วนแล้ว กรุณาใช้เอกสารเดิมและใบลดหนี้",
+      };
     }
     const locationId = ord.rows[0].location_id;
 
@@ -551,6 +585,15 @@ export async function issueFullTaxInvoice(args: {
 
     const full = mapDoc(res.rows[0]);
     await enqueueTaxDocument(tenantId, full.id, client);
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'tax.document.issue_full',$3,$4::jsonb)`,
+      [tenantId, args.issuedBy ?? "system", full.id, JSON.stringify({
+        orderId,
+        docNo: full.docNo,
+        replaces: cancelled?.docNo ?? null,
+      })]
+    );
     await client.query("COMMIT");
     return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled };
   } catch (err) {

@@ -54,7 +54,7 @@ export async function listDeliveryIntegrations(tenantId: string) {
     `SELECT i.id, i.provider, i.environment, i.rollout_mode, i.active,
             i.outbound_commands_enabled, i.client_id, i.client_secret_encrypted,
             i.access_token_encrypted, i.refresh_token_encrypted, i.webhook_secret_encrypted,
-            i.config, i.api_version, i.credential_expires_at, i.health_status,
+            i.config, i.api_version, i.config_version, i.credential_expires_at, i.health_status,
             i.last_successful_check_at, i.last_webhook_at, i.last_error,
             COUNT(DISTINCT lm.id)::integer AS location_count,
             COUNT(DISTINCT mm.id) FILTER (WHERE mm.mapping_status = 'VERIFIED')::integer AS verified_mapping_count,
@@ -87,6 +87,9 @@ export async function listDeliveryIntegrations(tenantId: string) {
     webhookSecretMasked: maskSecret(decryptSecret(row.webhook_secret_encrypted)),
     config: row.config ?? {},
     apiVersion: row.api_version,
+    configVersion: Number(row.config_version),
+    authenticationMode: row.provider === "FOODPANDA" && row.client_id && row.client_secret_encrypted
+      ? "OAUTH_CLIENT_CREDENTIALS" : row.access_token_encrypted ? "LEGACY_ACCESS_TOKEN" : "UNCONFIGURED",
     credentialExpiresAt: row.credential_expires_at,
     healthStatus: row.health_status,
     lastSuccessfulCheckAt: row.last_successful_check_at,
@@ -174,10 +177,18 @@ export async function upsertDeliveryIntegration(input: {
       refreshToken: secret(input.refreshToken, old?.refresh_token_encrypted ?? null),
       webhookSecret: secret(input.webhookSecret, old?.webhook_secret_encrypted ?? null),
     };
+    const foodpandaCredentialsReady = provider !== "FOODPANDA"
+      || Boolean(values.clientId && values.clientSecret)
+      || Boolean(values.accessToken); // encrypted legacy token: compatibility only
+    if (rolloutMode !== "OFF" && !foodpandaCredentialsReady) {
+      throw new Error("DELIVERY_FOODPANDA_OAUTH_CREDENTIALS_REQUIRED");
+    }
     if (rolloutMode !== "OFF" && (!values.webhookSecret || !apiVersion)) {
       throw new Error("DELIVERY_WEBHOOK_SECRET_AND_API_VERSION_REQUIRED");
     }
-    if (input.outboundCommandsEnabled && !values.accessToken) throw new Error("DELIVERY_ACCESS_TOKEN_REQUIRED");
+    if (input.outboundCommandsEnabled && provider !== "FOODPANDA" && !values.accessToken) {
+      throw new Error("DELIVERY_ACCESS_TOKEN_REQUIRED");
+    }
     const healthStatus = !input.active ? "DISABLED"
       : DELIVERY_CAPABILITIES[provider].webhookOrders === "VERIFIED" ? "DEGRADED" : "CONTRACT_BLOCKED";
     const saved = await client.query<{ id: string }>(
@@ -196,7 +207,8 @@ export async function upsertDeliveryIntegration(input: {
          webhook_secret_encrypted = EXCLUDED.webhook_secret_encrypted,
          config = EXCLUDED.config, api_version = EXCLUDED.api_version,
          credential_expires_at = EXCLUDED.credential_expires_at,
-         health_status = EXCLUDED.health_status, updated_by = EXCLUDED.updated_by, updated_at = now()
+         health_status = EXCLUDED.health_status, updated_by = EXCLUDED.updated_by,
+         config_version = bms_delivery_integrations.config_version + 1, updated_at = now()
        RETURNING id`,
       [input.id ?? null, input.tenantId, provider, environment, rolloutMode, input.active,
         input.outboundCommandsEnabled, values.clientId, values.clientSecret, values.accessToken,
@@ -246,6 +258,7 @@ export async function testDeliveryIntegration(tenantId: string, integrationId: s
   } finally { reader.release(); }
   if (!row) return { ok: false, code: "NOT_FOUND", detail: "Integration not found" };
   const config: DeliveryAdapterConfig = {
+    integrationId,
     environment: row.environment,
     clientId: row.client_id,
     clientSecret: decryptSecret(row.client_secret_encrypted),

@@ -113,7 +113,7 @@ async function loadDocumentData(tenantId: string, documentId: string): Promise<E
   if (!d) return null;
 
   const items = await query<any>(
-    `SELECT product_sku, product_name, size, qty, unit_price, vat_category,
+    `SELECT product_sku, product_name, size, qty, unit_price, line_amount, vat_category,
             pack_unit_name, pack_qty, pack_unit_price
        FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
     [tenantId, d.order_id]
@@ -144,8 +144,8 @@ async function loadDocumentData(tenantId: string, documentId: string): Promise<E
       name: r.product_name + (r.size && r.size !== "-" ? ` (${r.size})` : ""),
       qty: r.pack_qty ?? Number(r.qty),
       unitName: r.pack_unit_name ?? null,
-      unitPrice: Number(r.pack_unit_price ?? r.unit_price),
-      amount: Number(r.pack_unit_price ?? r.unit_price) * Number(r.pack_qty ?? r.qty),
+      unitPrice: Number(r.line_amount) / Number(r.pack_qty ?? r.qty),
+      amount: Number(r.line_amount),
       vatCategory: (r.vat_category ?? "UNKNOWN") as "V" | "N" | "UNKNOWN",
     })),
     taxableAmount: Number(d.taxable_amount),

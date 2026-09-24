@@ -2209,6 +2209,13 @@ const en = {
     modal_alert: "The system drafted this message from the latest stock data — you can edit or add to it before sending",
     resend_warning: "Resending may bother the customer; the system limits resends to once every 5 minutes after a successful send",
   },
+  admin_pos_readiness: {
+    vat_included: "VAT included",
+    vat_excluded_disabled: "VAT excluded (not yet supported)",
+    vat_included_only_reason: "Checkout charges the configured price without adding VAT, so VAT-inclusive pricing is required for payments and tax documents to reconcile.",
+    vat_exclusive_blocker_title: "Sales blocked: prices are configured before VAT",
+    vat_exclusive_blocker_description: "Change ‘Configured product prices’ to ‘VAT included’ and save. The system will not silently change an existing setting.",
+  },
   admin_products: {
     reserved_who_hint: "See which bills reserved this size",
     reserved_needs_order_view: "Requires the order.view permission to see which bills hold this stock",

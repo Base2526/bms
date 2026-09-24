@@ -52,7 +52,7 @@ export async function generateInvoice(tenantId: string, orderId: string): Promis
   if (!o) return null;
 
   const items = await query<any>(
-    `SELECT oi.product_sku, oi.size, oi.qty, oi.unit_price, COALESCE(oi.product_name, p.name) AS product_name
+    `SELECT oi.product_sku, oi.size, oi.qty, oi.unit_price, oi.line_amount, COALESCE(oi.product_name, p.name) AS product_name
        FROM bms_order_items oi
        JOIN bms_products p ON p.sku = oi.product_sku AND p.tenant_id = $1
       WHERE oi.order_id = $2
@@ -63,7 +63,7 @@ export async function generateInvoice(tenantId: string, orderId: string): Promis
   const lines: DocLine[] = items.rows.map((r) => {
     const unitPrice = Number(r.unit_price);
     const qty = Number(r.qty);
-    return { sku: r.product_sku, name: r.product_name ?? r.product_sku, size: r.size, qty, unitPrice, amount: unitPrice * qty };
+    return { sku: r.product_sku, name: r.product_name ?? r.product_sku, size: r.size, qty, unitPrice, amount: Number(r.line_amount) };
   });
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
 

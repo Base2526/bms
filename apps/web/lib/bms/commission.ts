@@ -161,9 +161,9 @@ export async function getCommissionReport(
               COALESCE(oi.pack_qty, oi.qty) AS qty,
               p.category,
               -- มูลค่ารายการหลังเกลี่ยส่วนลดทั้งบิลตามสัดส่วน
-              COALESCE(oi.pack_unit_price * oi.pack_qty, oi.unit_price * oi.qty)
-                * CASE WHEN SUM(COALESCE(oi.pack_unit_price * oi.pack_qty, oi.unit_price * oi.qty)) OVER (PARTITION BY o.id) > 0
-                       THEN 1 - (o.discount_amount / SUM(COALESCE(oi.pack_unit_price * oi.pack_qty, oi.unit_price * oi.qty)) OVER (PARTITION BY o.id))
+              oi.line_amount
+                * CASE WHEN SUM(oi.line_amount) OVER (PARTITION BY o.id) > 0
+                       THEN 1 - (o.discount_amount / SUM(oi.line_amount) OVER (PARTITION BY o.id))
                        ELSE 1 END                                        AS net_line,
               -- จำนวนที่ถูกคืนของรายการนี้
               COALESCE((

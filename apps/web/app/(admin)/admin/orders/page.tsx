@@ -43,7 +43,7 @@ import { useI18n } from "@/lib/i18nContext";
 type OrderStatus =
   | "PENDING" | "PAID" | "PACKING" | "SHIPPED" | "COMPLETED" | "CANCELLED" | "RETURNED";
 
-type OrderItem = { product_sku: string; product_name: string | null; size: string; qty: number; unit_price: number };
+type OrderItem = { product_sku: string; product_name: string | null; size: string; qty: number; unit_price: number; line_amount: number };
 type Order = {
   id: string;
   channel: string;
@@ -82,7 +82,7 @@ const Q_ORDERS = gql`
       id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code
       locationId locationName branchCode posDeviceName registeredPosNo posShiftId fulfillmentType promisedAt pendingRefundCount pendingRefundAmount pendingRefundSince created_at updated_at hasShippingAddress
       discountLines { source label amount pointsUsed }
-      items { product_sku product_name size qty unit_price }
+      items { product_sku product_name size qty unit_price line_amount }
     }
   }
 `;
@@ -378,7 +378,7 @@ const ITEM_COLUMNS = [
   { title: "Unit Price", dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
     render: (v: number) => money(v) },
   { title: "Line Total", key: "lt", width: 120, align: "right" as const,
-    render: (_: any, it: OrderItem) => money(it.qty * it.unit_price) },
+    render: (_: any, it: OrderItem) => money(it.line_amount) },
 ];
 
 /** เส้นทางออร์เดอร์ + รายการสินค้า + สรุปยอด — ใช้ทั้งแถวขยายของตาราง (desktop) และการ์ด (มือถือ) */

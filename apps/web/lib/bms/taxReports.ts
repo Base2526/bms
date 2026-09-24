@@ -448,29 +448,47 @@ export async function getSalesTaxReport(
       // คืนของที่บิลต้นทางมีใบกำกับ แต่ไม่มีใบลดหนี้ของการคืนครั้งนั้น
       // (ensurePosReturnCreditNote ใส่ [posReturnId] ท้าย credit_reason ทุกครั้ง)
       query<any>(
-        `SELECT r.id, r.order_id, o.location_id, r.refund_amount, r.created_at AS at,
+        `WITH inconsistent AS (
+           SELECT r.id::text AS ref, r.order_id, o.location_id, r.refund_amount AS amount,
+                  r.created_at AS at
+             FROM bms_pos_returns r
+             JOIN bms_orders o ON o.tenant_id = r.tenant_id AND o.id = r.order_id
+            WHERE r.tenant_id = $1 AND r.is_void = FALSE AND r.refund_amount > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM bms_tax_documents cn
+                 WHERE cn.tenant_id = r.tenant_id AND cn.order_id = r.order_id
+                   AND cn.doc_type = 'CREDIT_NOTE' AND cn.cancelled_at IS NULL
+                   AND cn.credit_reason LIKE '%[' || r.id::text || ']%'
+              )
+           UNION ALL
+           SELECT NULL::text AS ref, o.id AS order_id, o.location_id,
+                  o.total_amount AS amount,
+                  COALESCE(o.returned_at, o.cancelled_at, o.updated_at) AS at
+             FROM bms_orders o
+            WHERE o.tenant_id = $1 AND o.status IN ('RETURNED','CANCELLED')
+              AND EXISTS (
+                SELECT 1 FROM bms_tax_documents d
+                 WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+                   AND d.doc_type IN ('ABBREVIATED','FULL') AND d.cancelled_at IS NULL
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM bms_pos_returns r
+                 WHERE r.tenant_id = o.tenant_id AND r.order_id = o.id AND r.is_void = FALSE
+              )
+         )
+         SELECT ref AS id, order_id, location_id, amount AS refund_amount, at,
                 count(*) OVER () AS total_count
-           FROM bms_pos_returns r
-           JOIN bms_orders o ON o.tenant_id = r.tenant_id AND o.id = r.order_id
-          WHERE r.tenant_id = $1
-            AND r.is_void = FALSE
-            AND r.refund_amount > 0
-            AND ($4::uuid IS NULL OR o.location_id = $4::uuid)
-            AND ($6::uuid[] IS NULL OR o.location_id = ANY($6::uuid[]))
-            AND r.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND r.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+           FROM inconsistent
+          WHERE ($4::uuid IS NULL OR location_id = $4::uuid)
+            AND ($6::uuid[] IS NULL OR location_id = ANY($6::uuid[]))
+            AND at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND EXISTS (
               SELECT 1 FROM bms_tax_documents d
-               WHERE d.tenant_id = r.tenant_id AND d.order_id = r.order_id
-                 AND d.doc_type IN ('ABBREVIATED', 'FULL')
+               WHERE d.tenant_id = $1 AND d.order_id = inconsistent.order_id
+                 AND d.doc_type IN ('ABBREVIATED','FULL') AND d.cancelled_at IS NULL
             )
-            AND NOT EXISTS (
-              SELECT 1 FROM bms_tax_documents cn
-               WHERE cn.tenant_id = r.tenant_id AND cn.order_id = r.order_id
-                 AND cn.doc_type = 'CREDIT_NOTE' AND cn.cancelled_at IS NULL
-                 AND cn.credit_reason LIKE '%[' || r.id::text || ']%'
-            )
-          ORDER BY r.created_at
+          ORDER BY at
           LIMIT $5`,
         [tenantId, from, to, locationId, EXCEPTION_LIMIT, allowedLocationIds]
       ),
@@ -497,7 +515,7 @@ export async function getSalesTaxReport(
         at: iso(r.at),
         amount: Number(r.refund_amount),
         reference: r.id,
-        detail: null,
+        detail: r.id ? null : "ออร์เดอร์ถูกคืน/ยกเลิก แต่เอกสารภาษียังใช้งานอยู่",
       });
     }
   }

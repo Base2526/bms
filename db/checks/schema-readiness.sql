@@ -2,6 +2,11 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_integrations', 'config_version', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),
+    ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_orders', 'transport_type', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),
+    ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_events', 'provider_call_attempts', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),
+    ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_commands', 'provider_call_attempts', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),
+    ('10.13__bms_tax_leak_guards.sql', 'column', 'bms_order_items', 'line_amount', 'ขายไม่ได้ทุกช่องทาง และออกเอกสารภาษีไม่ได้ — บิลใหม่เขียน/อ่านยอดจริงระดับบรรทัด'),
     ('9.66__bms_restaurant_order_requests.sql', 'table', 'bms_restaurant_order_requests', NULL, 'แชทร้านอาหารรับคำขอก่อนตรวจสต็อกไม่ได้ และร้านเปิดคิวตรวจคำขอไม่ได้'),
     ('9.66__bms_restaurant_order_requests.sql', 'column', 'bms_orders', 'restaurant_request_instructions', 'แชทร้านอาหารรับคำขอก่อนตรวจสต็อกไม่ได้ และร้านเปิดคิวตรวจคำขอไม่ได้'),
     ('9.40__bms_multi_store_stock_capabilities.sql', 'table', 'bms_store_capabilities', NULL, 'ขายไม่ได้ทั้งระบบ (ทุกร้าน) — createOrder/POS อ่านรูปแบบสต็อกทุกบิล'),

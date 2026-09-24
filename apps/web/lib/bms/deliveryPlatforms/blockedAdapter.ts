@@ -30,6 +30,7 @@ export function contractBlockedAdapter(provider: "GRABFOOD" | "LINEMAN", officia
     acceptOrder: async (_config, _input: DeliveryCommandInput) => blocked(provider),
     rejectOrder: async (_config, _input: DeliveryRejectInput) => blocked(provider),
     markReady: async (_config, _input: DeliveryCommandInput) => blocked(provider),
+    markDispatched: async (_config, _input: DeliveryCommandInput) => blocked(provider),
     cancelOrder: async (_config, _input: DeliveryCancelInput) => blocked(provider),
     pauseStore: async (_config, _input: DeliveryPauseInput) => blocked(provider),
     setItemAvailability: async (_config, _input: DeliveryAvailabilityInput) => blocked(provider),

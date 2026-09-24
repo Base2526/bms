@@ -52,8 +52,8 @@ async function newOrder(locationId: string, status = "COMPLETED"): Promise<strin
   )).rows[0].id;
   await query(
     `INSERT INTO bms_order_items
-       (tenant_id, order_id, location_id, product_sku, size, qty, unit_price, receipt_unit_price, vat_category)
-     VALUES ($1,$2,$3,$4,$5,1,107,107,'V')`,
+       (tenant_id, order_id, location_id, product_sku, size, qty, unit_price, line_amount, receipt_unit_price, vat_category)
+     VALUES ($1,$2,$3,$4,$5,1,107,107,107,'V')`,
     [tenantId, id, locationId, SKU, SIZE]
   );
   return id;
@@ -130,7 +130,8 @@ test("setup: a VAT-registered shop with documents at two establishments", async 
   orders.a3 = (await abbreviated(hqId, devA)).orderId;
   // ใบที่สามลูกค้าขอใบเต็ม → ใบย่อถูกยกเลิก ใบเต็มนับแทน
   const full = await issueFullTaxInvoice({
-    tenantId, orderId: orders.a3, buyer: { name: "FAKE Co., Ltd.", taxId: "0105500000017", branchCode: "00002" },
+    tenantId, orderId: orders.a3, issuedBy: userId,
+    buyer: { name: "FAKE Co., Ltd.", taxId: "0105500000017", branchCode: "00002" },
   });
   assert.equal(full.status, "ISSUED", JSON.stringify(full));
 
@@ -145,6 +146,50 @@ test("setup: a VAT-registered shop with documents at two establishments", async 
   // ต้องตรวจสอบ: บิลที่ชำระแล้วไม่มีใบกำกับ + การคืนที่ไม่มีใบลดหนี้
   orders.noDoc = await newOrder(hqId, "PAID");
   await posReturn(orders.a1, 20, "without-note");
+
+  // Historical inconsistency: a legacy/back-office path marked an invoiced sale cancelled
+  // without cancelling its tax document or creating a POS return. The report must surface it.
+  orders.inconsistent = (await abbreviated(hqId, devA)).orderId;
+  await query(
+    `UPDATE bms_tax_documents
+        SET issue_date = $3::date - 1,
+            issued_at = (($3::date - 1)::timestamp + interval '12 hours') AT TIME ZONE 'Asia/Bangkok'
+      WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, orders.inconsistent, period.from]
+  );
+  await query(
+    `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, orders.inconsistent]
+  );
+});
+
+test("normal full-invoice issuance cancels the abbreviated document and audits atomically", async () => {
+  const docs = await query<{ doc_type: string; cancelled_at: Date | null }>(
+    `SELECT doc_type, cancelled_at FROM bms_tax_documents
+      WHERE tenant_id = $1 AND order_id = $2 ORDER BY issued_at`,
+    [tenantId, orders.a3]
+  );
+  assert.deepEqual(docs.rows.map((row) => row.doc_type), ["ABBREVIATED", "FULL"]);
+  assert.ok(docs.rows[0].cancelled_at, "the replaced abbreviated invoice must be cancelled");
+  const audit = await query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'tax.document.issue_full' AND meta->>'orderId' = $2`,
+    [tenantId, orders.a3]
+  );
+  assert.equal(audit.rows[0].n, 1);
+});
+
+test("a partially returned order cannot receive a full tax invoice", async () => {
+  const orderId = await newOrder(hqId);
+  await posReturn(orderId, 20, "before-full");
+  const result = await issueFullTaxInvoice({
+    tenantId,
+    orderId,
+    issuedBy: userId,
+    buyer: { name: "FAKE returned buyer", taxId: "0105500000017" },
+  });
+  assert.equal(result.status, "ORDER_NOT_INVOICEABLE", JSON.stringify(result));
 });
 
 test("abbreviated invoices are summarised per day per register as a number range", async () => {
@@ -208,9 +253,13 @@ test("the report lists what would make it incomplete", async () => {
   const noDoc = r.exceptions.filter((x) => x.kind === "PAID_WITHOUT_TAX_DOCUMENT");
   assert.deepEqual(noDoc.map((x) => x.orderId), [orders.noDoc]);
   const noNote = r.exceptions.filter((x) => x.kind === "RETURN_WITHOUT_CREDIT_NOTE");
-  assert.deepEqual(noNote.map((x) => x.orderId), [orders.a1], "the return that has a credit note is not flagged");
+  assert.deepEqual(
+    noNote.map((x) => x.orderId).sort(),
+    [orders.a1, orders.inconsistent].sort(),
+    "returns and historical cancelled/invoiced rows are flagged, but a return with a credit note is not"
+  );
   assert.equal(r.exceptionCounts.PAID_WITHOUT_TAX_DOCUMENT, 1);
-  assert.equal(r.exceptionCounts.RETURN_WITHOUT_CREDIT_NOTE, 1);
+  assert.equal(r.exceptionCounts.RETURN_WITHOUT_CREDIT_NOTE, 2);
   assert.equal(r.exceptionCounts.FULL_REPLACES_OTHER_MONTH, 0);
   assert.equal(r.cancelled.length, 1);
 });

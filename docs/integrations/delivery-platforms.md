@@ -1,7 +1,8 @@
 # Delivery platform integration
 
 This is the operational and engineering contract for GrabFood, LINE MAN and foodpanda. The durable
-foundation is migration `10.12`; provider code lives under `apps/web/lib/bms/deliveryPlatforms/`.
+foundation is migration `10.12`, with lifecycle hardening in `10.14`; provider code lives under
+`apps/web/lib/bms/deliveryPlatforms/`.
 The integration is deliberately fail-closed: having tables and screens does not mean a provider is
 certified for production.
 
@@ -9,12 +10,13 @@ certified for production.
 
 | Capability | GrabFood | LINE MAN | foodpanda |
 | --- | --- | --- | --- |
-| Public official source reviewed | [official Java SDK](https://github.com/grab/grabfood-api-sdk-java) | none for food-order/POS integration | [Partner API](https://developer.foodpanda.com/api-specifications) |
+| Public official source reviewed | [official Java SDK](https://github.com/grab/grabfood-api-sdk-java) | none for food-order/POS integration | [Partner API v2.0.2](https://developer.foodpanda.com/api-specifications), reviewed 2026-09-24 |
+| Authentication | partner confirmation required | not public | OAuth2 client credentials (`POST /v2/oauth/token`) verified |
 | Webhook/order normalization | partner confirmation required | not public | verified public schema; Partner Portal auth header still required |
 | Fetch order | partner confirmation required | not public | verified |
 | Accept/reject | SDK documents it; webhook/onboarding still blocks activation | not public | no distinct public accept; rejection mapping needs partner confirmation |
-| Ready | SDK documents it; activation blocked | not public | verified (`READY_FOR_PICKUP`) |
-| Store pause / item availability | SDK documents it; activation blocked | not public | pause not public / catalog availability verified |
+| Ready / dispatched | SDK documents it; activation blocked | not public | logistics: `READY_FOR_PICKUP`; vendor: `DISPATCHED` at local handoff |
+| Store pause / item availability | SDK documents it; activation blocked | not public | [Manage Outlet is public](https://developer.foodpanda.com/en/documentation/outlet-management-api-use-cases-endpoints-explained) but pause remains blocked pending operational/retry approval; catalog availability verified |
 | Settlement | not public | not public | not public |
 
 “Verified” means the request/response shape was checked against an official public contract. It does
@@ -22,6 +24,19 @@ not mean this deployment has credentials, market access, tax approval or product
 GrabFood and LINE MAN use contract-blocked adapters and make no network call. foodpanda uses the
 published sandbox (`sandbox.partner.deliveryhero.io`) and production host only; the webhook header
 name and optional prefix must be copied from the merchant's Partner Portal into non-secret config.
+The published Manage Outlet request is not enough to enable automatic pause: request/response,
+market reason mapping, timezone handling and safe retry semantics must all be approved first.
+
+Official sources reviewed on 2026-09-24:
+
+- [foodpanda Partner API specifications v2.0.2](https://developer.foodpanda.com/api-specifications):
+  OAuth client credentials, token lifetime, order/webhook schema, `transport_type`, order status update
+  matrix, retry count, system timestamps and item pricing.
+- [Manage Outlet API — use cases and endpoints](https://developer.foodpanda.com/en/documentation/outlet-management-api-use-cases-endpoints-explained):
+  public outlet status/reason/`closed_until` contract.
+- [Manage Outlet API — integration guide](https://developer.foodpanda.com/en/documentation/outlet-management-api-how-to-integrate):
+  public integration flow. It does not close BMS's market reason, timezone and safe retry policy gaps,
+  so automatic pause remains partner-confirmation-required.
 
 ## Authority and lifecycle
 
@@ -29,11 +44,23 @@ name and optional prefix must be copied from the merchant's Partner Portal into 
   a webhook body can never choose a tenant or branch.
 - Provider store id selects only a previously verified branch mapping. A menu line becomes a real
   order line only from a `VERIFIED` item/variant/modifier mapping.
-- Provider payloads are normalized inside adapters. The webhook inbox stores a hash and allowlisted
+- Provider payloads are normalized inside adapters. A logical webhook id is order + status + provider
+  revision/timestamp; a separately canonicalized payload hash detects a provider reusing that id with
+  changed content. Same id/same hash is a duplicate; same id/different hash is a durable
+  `WEBHOOK_PAYLOAD_CONFLICT`, never a second order. The inbox stores only the hash and allowlisted
   operational pointers, not the raw body, customer phone, address or credentials.
+- Fetch-latest never erases the verified webhook fact. The order timeline records both the initial
+  provider event and the latest fetched snapshot. A new local order still requires an initial
+  `RECEIVED`; a later fetched state does not manufacture local ready, handoff or completion evidence.
+- After the external fetch, the worker re-locks the integration and rechecks active/rollout/health,
+  credential expiry and `config_version` before any local write. A kill switch or credential/config
+  rotation therefore fails closed even when it happens during the network call.
 - The worker creates the BMS order, stock reservation, `PLATFORM_SETTLEMENT` payment, provider
   snapshot, timeline and audit in one tenant transaction. Any price, currency, mapping, hours,
   sold-out or stock failure rolls the entire write back.
+- Store currency comes from `bms_store_profile.currency` (legacy missing/blank profile values fall
+  back to `THB`). Both provider and configured currency must match it. Every mapped item also needs
+  a `provider_price_snapshot` matching the fetched unit price; one mismatch rejects the whole basket.
 - `PLATFORM_SETTLEMENT` is server-only. It is absent from checkout, POS tenders and AI tools.
   Customer payment and the later merchant payout are different accounting events.
 - A cashier accepts the paid order. Immediate orders create kitchen tickets at that boundary.
@@ -42,6 +69,9 @@ name and optional prefix must be copied from the merchant's Partner Portal into 
   foodpanda public `accepted_for` field is an estimated delivery timestamp, not an acceptance
   deadline or kitchen-ready target, so it is never reinterpreted as either; scheduled foodpanda
   intake remains action-required until the partner contract supplies the missing semantics.
+- `transport_type` is typed authority, not JSON metadata. For foodpanda logistics delivery, local
+  ready queues `READY_FOR_PICKUP`. For vendor delivery, local ready sends nothing; only the committed
+  local rider handoff queues `DISPATCHED`. Missing/unknown transport is action-required.
 - Ready and rider handoff are local facts even if the provider API is unavailable. Handoff records
   the device, user, bag count, complete checklist, limited pickup-code display and a hash, and cuts
   reserved/current stock in the same transaction. Provider acknowledgement remains distinct.
@@ -54,7 +84,12 @@ name and optional prefix must be copied from the merchant's Partner Portal into 
 1. Obtain the provider agreement, sandbox account, credentials, webhook contract, retry policy,
    status list, deadlines, cancellation/refund rules, rate limits, settlement sample, API version
    and data-retention terms.
-2. Create a `SANDBOX` integration in `OFF` mode. Secrets are encrypted with `BMS_SECRET_KEY`; list
+2. Create a `SANDBOX` integration in `OFF` mode. For foodpanda, configure OAuth client id + client
+   secret; a legacy encrypted access token remains compatibility-only. OAuth tokens use the provider's
+   `expires_in` with a safety margin and an encrypted fleet Redis cache protected by a short refresh
+   lock. A provider 401 invalidates that cache and retries the same durable operation once. Secrets
+   and bearer tokens are never written to logs, health text or PostgreSQL. Secrets at rest are
+   encrypted with `BMS_SECRET_KEY`; list
    APIs return only presence and a short mask. Arbitrary config keys containing `secret`, `token`,
    `password`, `credential` or `privateKey` are rejected.
 3. Map one provider store to one BMS location. Record the provider item/variant/modifier identifiers
@@ -71,7 +106,8 @@ name and optional prefix must be copied from the merchant's Partner Portal into 
    production integration may remain in `SHADOW` for comparison. Outbound commands have a separate
    kill switch.
 7. Rotate by sending only the new credential fields. Blank fields preserve the encrypted value.
-   Audit records which credential types changed, never their contents.
+   Each update advances `config_version`; in-flight workers detect the changed snapshot and stop
+   before local order creation. Audit records which credential types changed, never their contents.
 
 The admin surface is `/admin/delivery-platforms`. It is permission-gated and separates integration
 health, branch/menu mappings, operational incidents/timelines, and finance. Thai and English labels
@@ -86,8 +122,10 @@ provider controls become `MANUAL_PROVIDER_ACTION_REQUIRED`; the UI must tell sta
 provider tablet. Timed resume uses a version compare-and-set, rechecks restaurant hours, integration
 health and credential expiry, and cannot undo a newer manual pause.
 
-Provider calls always happen after commit through `bms_delivery_commands`. A timeout or transient
-failure stays retryable with the same local idempotency key. Contract-blocked commands become manual
+Provider calls always happen after commit through `bms_delivery_commands`. Local lease `attempts`
+and actual `provider_call_attempts` are separate counters; OAuth exchange and the bounded 401 retry
+never change the durable command idempotency identity. A timeout or transient failure stays
+retryable with the same local idempotency key. Contract-blocked commands become manual
 action, never success. During an outage POS and kitchen continue from committed local orders, while
 the provider state is visibly unconfirmed. There is no offline accept/reject: use the provider tablet
 and reconcile after BMS connectivity returns.
@@ -137,6 +175,8 @@ automatically issue an additional tax document for a platform order.
 - Kitchen and timeline surfaces receive no customer phone/address or raw provider payload.
 - Webhook authentication is constant-time and fail-closed, with a 256 KiB body ceiling and rate
   limit. Unknown authentication headers are not guessed.
+- OAuth bearer tokens are short-lived and cached encrypted in shared Redis; they are never stored as
+  plaintext in Redis/PostgreSQL or copied into error/health records.
 - Dispute files must use `private` visibility and carry a tenant binding.
 - Retention/anonymization periods come from the signed provider agreement. Until they are known,
   retain only the sanitized operational records needed for audit and do not add raw-payload storage.

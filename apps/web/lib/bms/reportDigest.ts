@@ -120,7 +120,7 @@ export async function computeSalesSummary(tenantId: string, periodStart: Date, p
       [tenantId, PAID_STATUSES, startIso, endIso]
     ),
     query<any>(
-      `SELECT oi.product_sku AS sku, p.name, SUM(oi.qty)::int AS qty, SUM(oi.qty * oi.unit_price) AS revenue
+      `SELECT oi.product_sku AS sku, p.name, SUM(oi.qty)::int AS qty, SUM(oi.line_amount) AS revenue
          FROM bms_order_items oi
          JOIN bms_orders o ON o.id = oi.order_id
          JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku

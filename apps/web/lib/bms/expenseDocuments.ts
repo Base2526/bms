@@ -43,6 +43,9 @@ export type ExpenseDocumentInput = {
 
 const taxIdRe = /^\d{13}$/;
 const branchRe = /^\d{5}$/;
+export const INPUT_VAT_RATE = 7;
+// Suppliers may round VAT per line before summing the invoice; allow at most five satang drift.
+export const INPUT_VAT_ROUNDING_TOLERANCE = 0.05;
 const clean = (v: string | null | undefined) => v?.trim() || null;
 const money = (v: number | null | undefined, name: string) => {
   const n = Number(v ?? 0);
@@ -50,6 +53,50 @@ const money = (v: number | null | undefined, name: string) => {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 };
 const isOneOf = <T extends string>(v: string, values: readonly T[]): v is T => values.includes(v as T);
+
+export function isValidThaiTaxId(value: string): boolean {
+  if (!taxIdRe.test(value)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i += 1) sum += Number(value[i]) * (13 - i);
+  return (11 - (sum % 11)) % 10 === Number(value[12]);
+}
+
+export function normalizeExpenseDocumentNo(value: string): string {
+  return value.toUpperCase().replace(/[\s-]+/g, "");
+}
+
+const bangkokIsoDate = (now: Date): string => new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+}).format(now);
+const monthIndex = (iso: string): number => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
+
+export function validateExpenseTaxDates(
+  documentDate: string,
+  vatClaimMonth: string | null | undefined,
+  now = new Date()
+): void {
+  const today = bangkokIsoDate(now);
+  if (documentDate > today) throw new Error("วันที่เอกสารต้องไม่เป็นวันในอนาคต (เวลาไทย)");
+  if (!vatClaimMonth) return;
+  const documentMonth = monthIndex(documentDate);
+  const claimMonth = monthIndex(vatClaimMonth);
+  const currentMonth = monthIndex(today);
+  if (claimMonth < documentMonth || claimMonth > documentMonth + 6 || claimMonth > currentMonth) {
+    throw new Error("เดือนที่ใช้สิทธิ์ภาษีซื้อต้องอยู่ตั้งแต่เดือนเอกสารถึงไม่เกิน 6 เดือนถัดไป และไม่เป็นเดือนอนาคต");
+  }
+}
+
+export function validateInputVatAmount(
+  amountBeforeVat: number,
+  vatAmount: number,
+  vatRate = INPUT_VAT_RATE
+): void {
+  if (vatAmount <= 0) return;
+  const expected = Math.round((amountBeforeVat * vatRate / 100 + Number.EPSILON) * 100) / 100;
+  if (Math.abs(vatAmount - expected) > INPUT_VAT_ROUNDING_TOLERANCE + Number.EPSILON) {
+    throw new Error(`ยอด VAT ไม่สอดคล้องกับฐานภาษี ${vatRate}% (คลาดเคลื่อนได้ไม่เกิน ${INPUT_VAT_ROUNDING_TOLERANCE.toFixed(2)} บาท)`);
+  }
+}
 
 function normalizedInput(input: ExpenseDocumentInput) {
   if (!input.locationId) throw new Error("ต้องระบุสถานประกอบการ");
@@ -76,10 +123,12 @@ function normalizedInput(input: ExpenseDocumentInput) {
   const key = clean(input.idempotencyKey);
   if (!key || key.length > 200) throw new Error("idempotencyKey ไม่ถูกต้อง");
   if (vatAmount > 0 && input.documentKind !== "TAX_INVOICE") throw new Error("ขอภาษีซื้อได้เฉพาะใบกำกับภาษี");
+  validateInputVatAmount(amountBeforeVat, vatAmount);
   if ((vatAmount > 0) !== Boolean(input.vatClaimMonth)) throw new Error("VAT และเดือนที่ใช้สิทธิ์ภาษีซื้อต้องระบุคู่กัน");
   if (input.vatClaimMonth && (input.vatClaimMonth.slice(8) !== "01" || input.vatClaimMonth.slice(0, 7) < input.documentDate.slice(0, 7))) {
     throw new Error("เดือนที่ใช้สิทธิ์ภาษีซื้อต้องเป็นวันแรกของเดือนและไม่ก่อนเดือนเอกสาร");
   }
+  validateExpenseTaxDates(input.documentDate, input.vatClaimMonth);
   if ((whtAmount > 0) !== Boolean(whtIncomeType)) throw new Error("ข้อมูลหัก ณ ที่จ่ายไม่ครบ");
   if (whtAmount > 0 && (whtRate == null || !input.paidAt)) throw new Error("หัก ณ ที่จ่ายต้องมีวันที่จ่ายและอัตรา");
   if (whtAmount === 0 && whtRate != null) throw new Error("ระบุอัตราหัก ณ ที่จ่ายได้เมื่อมียอดหักเท่านั้น");
@@ -178,12 +227,35 @@ export async function createExpenseDocument(tenantId: string, actorUserId: strin
     }
     const payeeName = n.payeeName ?? supplier?.name;
     const payeeTaxId = n.payeeTaxId ?? supplier?.tax_id ?? null;
+    const payeeBranchCode = n.payeeBranchCode ?? supplier?.branch_code ?? null;
     const payeeType = n.payeeType ?? supplier?.entity_type ?? null;
     if (!payeeName) throw new Error("ต้องระบุชื่อผู้ขายหรือผู้รับเงิน");
     if (n.documentKind === "TAX_INVOICE" && (!n.documentNo || !payeeTaxId)) throw new Error("ใบกำกับภาษีต้องมีเลขที่เอกสารและเลขผู้เสียภาษีผู้ขาย");
+    if (n.vatAmount > 0) {
+      if (!payeeTaxId || !isValidThaiTaxId(payeeTaxId)) {
+        throw new Error("ใบกำกับภาษีที่ขอภาษีซื้อต้องมีเลขผู้เสียภาษี 13 หลักที่ checksum ถูกต้อง");
+      }
+      if (!payeeBranchCode || !branchRe.test(payeeBranchCode)) {
+        throw new Error("ใบกำกับภาษีที่ขอภาษีซื้อต้องมีรหัสสาขา 5 หลัก (สำนักงานใหญ่ใช้ 00000)");
+      }
+      const vatProfile = await client.query<{ vat_registered: boolean }>(
+        `SELECT vat_registered FROM bms_store_profile WHERE tenant_id = $1`, [tenantId]
+      );
+      if (vatProfile.rows[0]?.vat_registered !== true) {
+        throw new Error("ร้านที่ไม่ได้จด VAT ไม่สามารถบันทึกยอดภาษีซื้อได้");
+      }
+    }
     if (n.whtAmount > 0 && (!payeeType || !payeeTaxId)) throw new Error("หัก ณ ที่จ่ายต้องมีประเภทและเลขผู้เสียภาษีผู้รับเงิน");
-    const values = [tenantId,n.locationId,n.category,n.documentKind,n.supplierId ?? null,payeeName,payeeTaxId,n.payeeBranchCode ?? supplier?.branch_code ?? null,n.payeeAddress ?? supplier?.address ?? null,payeeType,n.documentNo,n.documentDate,n.paidAt ?? null,n.amountBeforeVat,n.vatAmount,n.vatClaimMonth ?? null,n.whtIncomeType ?? null,n.whtRate ?? null,n.whtAmount,n.purchaseOrderId ?? null,n.evidenceFileId ?? null,n.note,actorUserId,n.idempotencyKey,requestHash];
-    const created = await client.query(`INSERT INTO bms_expense_documents (tenant_id,location_id,category,document_kind,supplier_id,payee_name,payee_tax_id,payee_branch_code,payee_address,payee_type,document_no,document_date,paid_at,amount_before_vat,vat_amount,vat_claim_month,wht_income_type,wht_rate,wht_amount,purchase_order_id,evidence_file_id,note,created_by,idempotency_key,request_hash) VALUES (${values.map((_,i)=>`$${i+1}`).join(",")}) RETURNING id`, values);
+    const values = [tenantId,n.locationId,n.category,n.documentKind,n.supplierId ?? null,payeeName,payeeTaxId,payeeBranchCode,n.payeeAddress ?? supplier?.address ?? null,payeeType,n.documentNo,n.documentDate,n.paidAt ?? null,n.amountBeforeVat,n.vatAmount,n.vatClaimMonth ?? null,n.whtIncomeType ?? null,n.whtRate ?? null,n.whtAmount,n.purchaseOrderId ?? null,n.evidenceFileId ?? null,n.note,actorUserId,n.idempotencyKey,requestHash];
+    const created = await client.query(
+      `INSERT INTO bms_expense_documents (tenant_id,location_id,category,document_kind,supplier_id,payee_name,payee_tax_id,payee_branch_code,payee_address,payee_type,document_no,document_date,paid_at,amount_before_vat,vat_amount,vat_claim_month,wht_income_type,wht_rate,wht_amount,purchase_order_id,evidence_file_id,note,created_by,idempotency_key,request_hash) VALUES (${values.map((_,i)=>`$${i+1}`).join(",")}) RETURNING id`,
+      values
+    ).catch((error: any) => {
+      if (error?.code === "23505" && error?.constraint === "uq_bms_expense_documents_tax_invoice_normalized") {
+        throw new Error("ใบนี้ถูกบันทึกแล้ว");
+      }
+      throw error;
+    });
     const id = created.rows[0].id;
     await insertAudit(client, tenantId, actorUserId, "expense.document.create", id, { category: n.category, documentKind: n.documentKind, locationId: n.locationId });
     const row = await client.query(`SELECT ${selectColumns} FROM bms_expense_documents d JOIN bms_locations l ON l.tenant_id=d.tenant_id AND l.id=d.location_id WHERE d.tenant_id=$1 AND d.id=$2`, [tenantId,id]);
