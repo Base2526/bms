@@ -80,6 +80,11 @@ test("a register with its own unique prefix keeps it; shared prefixes get the de
     abbreviatedInvoicePrefix({ receiptPrefix: " X ", code: "POS-02", sharedWithAnotherDevice: true }),
     "XPOS-02-"
   );
+  assert.equal(
+    abbreviatedInvoicePrefix({ receiptPrefix: " X ", code: "POS-01", sharedWithAnotherDevice: false }),
+    "X",
+    "a unique configured prefix must not put accidental spaces into an immutable document number"
+  );
 });
 
 test("taxDocuments.ts no longer reads the host clock for dates or numbers", () => {

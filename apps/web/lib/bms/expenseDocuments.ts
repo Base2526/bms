@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { query, runInTransaction } from "@/lib/db";
+import { isIsoCalendarDate } from "./taxReportMath";
 
 export const EXPENSE_CATEGORIES = [
   "INVENTORY", "RENT", "UTILITIES", "INTERNET", "ADVERTISING", "TRANSPORT",
@@ -40,7 +41,6 @@ export type ExpenseDocumentInput = {
   idempotencyKey: string;
 };
 
-const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 const taxIdRe = /^\d{13}$/;
 const branchRe = /^\d{5}$/;
 const clean = (v: string | null | undefined) => v?.trim() || null;
@@ -55,16 +55,24 @@ function normalizedInput(input: ExpenseDocumentInput) {
   if (!input.locationId) throw new Error("ต้องระบุสถานประกอบการ");
   if (!isOneOf(input.category, EXPENSE_CATEGORIES)) throw new Error("หมวดค่าใช้จ่ายไม่ถูกต้อง");
   if (!isOneOf(input.documentKind, EXPENSE_DOCUMENT_KINDS)) throw new Error("ชนิดเอกสารไม่ถูกต้อง");
-  if (!dateRe.test(input.documentDate)) throw new Error("documentDate ต้องเป็น YYYY-MM-DD");
-  if (input.paidAt && !dateRe.test(input.paidAt)) throw new Error("paidAt ต้องเป็น YYYY-MM-DD");
-  if (input.vatClaimMonth && !dateRe.test(input.vatClaimMonth)) throw new Error("vatClaimMonth ต้องเป็น YYYY-MM-DD");
+  if (!isIsoCalendarDate(input.documentDate)) throw new Error("documentDate ต้องเป็นวันที่จริงในรูปแบบ YYYY-MM-DD");
+  if (input.paidAt && !isIsoCalendarDate(input.paidAt)) throw new Error("paidAt ต้องเป็นวันที่จริงในรูปแบบ YYYY-MM-DD");
+  if (input.vatClaimMonth && !isIsoCalendarDate(input.vatClaimMonth)) throw new Error("vatClaimMonth ต้องเป็นวันที่จริงในรูปแบบ YYYY-MM-DD");
   const payeeTaxId = clean(input.payeeTaxId);
   const payeeBranchCode = clean(input.payeeBranchCode);
+  const payeeType = clean(input.payeeType as string | null | undefined);
+  const whtIncomeType = clean(input.whtIncomeType as string | null | undefined);
   if (payeeTaxId && !taxIdRe.test(payeeTaxId)) throw new Error("เลขผู้เสียภาษีผู้รับเงินต้องมี 13 หลัก");
   if (payeeBranchCode && !branchRe.test(payeeBranchCode)) throw new Error("รหัสสาขาผู้รับเงินต้องมี 5 หลัก");
+  if (payeeType && !isOneOf(payeeType, EXPENSE_PAYEE_TYPES)) throw new Error("ประเภทผู้รับเงินไม่ถูกต้อง");
+  if (whtIncomeType && !isOneOf(whtIncomeType, EXPENSE_WHT_TYPES)) throw new Error("ประเภทเงินได้หัก ณ ที่จ่ายไม่ถูกต้อง");
   const amountBeforeVat = money(input.amountBeforeVat, "ยอดก่อน VAT");
   const vatAmount = money(input.vatAmount, "VAT");
   const whtAmount = money(input.whtAmount, "ยอดหัก ณ ที่จ่าย");
+  const whtRate = input.whtRate == null ? null : Number(input.whtRate);
+  if (whtRate != null && (!Number.isFinite(whtRate) || whtRate <= 0 || whtRate > 100)) {
+    throw new Error("อัตราหัก ณ ที่จ่ายต้องมากกว่า 0 และไม่เกิน 100");
+  }
   const key = clean(input.idempotencyKey);
   if (!key || key.length > 200) throw new Error("idempotencyKey ไม่ถูกต้อง");
   if (vatAmount > 0 && input.documentKind !== "TAX_INVOICE") throw new Error("ขอภาษีซื้อได้เฉพาะใบกำกับภาษี");
@@ -72,14 +80,14 @@ function normalizedInput(input: ExpenseDocumentInput) {
   if (input.vatClaimMonth && (input.vatClaimMonth.slice(8) !== "01" || input.vatClaimMonth.slice(0, 7) < input.documentDate.slice(0, 7))) {
     throw new Error("เดือนที่ใช้สิทธิ์ภาษีซื้อต้องเป็นวันแรกของเดือนและไม่ก่อนเดือนเอกสาร");
   }
-  if ((whtAmount > 0) !== Boolean(input.whtIncomeType)) throw new Error("ข้อมูลหัก ณ ที่จ่ายไม่ครบ");
-  if (whtAmount > 0 && (!input.whtRate || !input.paidAt)) throw new Error("หัก ณ ที่จ่ายต้องมีวันที่จ่ายและอัตรา");
-  if (whtAmount === 0 && input.whtRate != null) throw new Error("ระบุอัตราหัก ณ ที่จ่ายได้เมื่อมียอดหักเท่านั้น");
+  if ((whtAmount > 0) !== Boolean(whtIncomeType)) throw new Error("ข้อมูลหัก ณ ที่จ่ายไม่ครบ");
+  if (whtAmount > 0 && (whtRate == null || !input.paidAt)) throw new Error("หัก ณ ที่จ่ายต้องมีวันที่จ่ายและอัตรา");
+  if (whtAmount === 0 && whtRate != null) throw new Error("ระบุอัตราหัก ณ ที่จ่ายได้เมื่อมียอดหักเท่านั้น");
   if (whtAmount > amountBeforeVat) throw new Error("ยอดหัก ณ ที่จ่ายต้องไม่เกินยอดก่อน VAT");
   return {
     ...input, payeeName: clean(input.payeeName), payeeTaxId, payeeBranchCode,
-    payeeAddress: clean(input.payeeAddress), documentNo: clean(input.documentNo), note: clean(input.note),
-    amountBeforeVat, vatAmount, whtAmount, idempotencyKey: key,
+    payeeAddress: clean(input.payeeAddress), payeeType, documentNo: clean(input.documentNo), note: clean(input.note),
+    amountBeforeVat, vatAmount, whtIncomeType, whtRate, whtAmount, idempotencyKey: key,
   };
 }
 
@@ -114,7 +122,7 @@ export async function listExpenseDocuments(tenantId: string, filter: {
   search?: string | null; includeVoid?: boolean; limit?: number; offset?: number;
   allowedLocationIds?: string[] | null;
 }) {
-  if (!dateRe.test(filter.from) || !dateRe.test(filter.to) || filter.from > filter.to) throw new Error("ช่วงวันที่ไม่ถูกต้อง");
+  if (!isIsoCalendarDate(filter.from) || !isIsoCalendarDate(filter.to) || filter.from > filter.to) throw new Error("ช่วงวันที่ไม่ถูกต้อง");
   const limit = Math.min(Math.max(Number(filter.limit) || 50, 1), 200);
   const offset = Math.max(Number(filter.offset) || 0, 0);
   const search = clean(filter.search) ?? "";
@@ -197,7 +205,7 @@ export async function voidExpenseDocument(tenantId: string, actorUserId: string,
 }
 
 export async function getExpenseTaxSummary(tenantId: string, input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }) {
-  if (!dateRe.test(input.from) || !dateRe.test(input.to) || input.from > input.to) throw new Error("ช่วงวันที่ไม่ถูกต้อง");
+  if (!isIsoCalendarDate(input.from) || !isIsoCalendarDate(input.to) || input.from > input.to) throw new Error("ช่วงวันที่ไม่ถูกต้อง");
   const res = await query(`
     SELECT location_id,
            count(*) FILTER (WHERE document_date BETWEEN $2::date AND $3::date)::int AS document_count,

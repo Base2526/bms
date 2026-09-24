@@ -17,6 +17,7 @@ import {
   taxAmountsOf,
   taxMonthOf,
 } from "../apps/web/lib/bms/taxReportMath.ts";
+import { buildCsv } from "../apps/web/lib/bms/documentGenerator.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root), "utf8");
@@ -60,6 +61,7 @@ test("dates are shown as DD/MM/YYYY in the shop's calendar era", () => {
 test("report periods are validated", () => {
   assert.deepEqual(assertTaxPeriod("2026-09-01", "2026-09-30"), { from: "2026-09-01", to: "2026-09-30" });
   assert.throws(() => assertTaxPeriod("2026-9-1", "2026-09-30"));
+  assert.throws(() => assertTaxPeriod("2026-02-31", "2026-03-01"));
   assert.throws(() => assertTaxPeriod("2026-09-30", "2026-09-01"));
   assert.throws(() => assertTaxPeriod("2024-01-01", "2026-01-01"));
 });
@@ -105,6 +107,58 @@ test("tax periods are cut by the Thai issue_date, never by the UTC issued_at", (
 test("the tax document page is behind tax.document.view", () => {
   const gql = read("apps/web/graphql/bmsTaxReports.ts");
   assert.equal((gql.match(/requirePermission\(ctx, "tax\.document\.view"\)/g) ?? []).length, 3);
+});
+
+test("tax reads, exports and generated files honour the actor's branch scope", () => {
+  const gql = read("apps/web/graphql/bmsTaxReports.ts");
+  const tax = read("apps/web/lib/bms/taxReports.ts");
+  const stock = read("apps/web/lib/bms/stockLedger.ts");
+  const engine = read("apps/web/lib/bms/reportEngine.ts");
+  const download = read("apps/web/app/api/bms/reports/download/[id]/route.ts");
+  const genericFile = read("apps/web/app/api/files/[id]/route.ts");
+  const email = read("apps/web/lib/bms/reportEmail.ts");
+  const reportsPage = read("apps/web/app/(admin)/admin/reports/page.tsx");
+
+  assert.match(gql, /listLocationsForUser/);
+  assert.match(gql, /allowedLocationIds: locations\.map/);
+  assert.match(tax, /allowedLocationIds/);
+  assert.match(tax, /d\.location_id = ANY\(\$8::uuid\[\]\)/);
+  assert.match(stock, /allowedLocationIds/);
+  assert.match(stock, /m\.location_id = ANY\(\$5::uuid\[\]\)/);
+  assert.match(engine, /LOCATION_SENSITIVE_REPORT_TYPES/);
+  assert.match(engine, /params->'locationIds'/);
+  assert.match(engine, /reportType === "VAT_SALES"[\s\S]{0,100}requirePermission\(ctx, "tax\.document\.view"\)/);
+  assert.match(engine, /report_type <> 'VAT_SALES' OR \$4::boolean/);
+  assert.match(download, /findGeneratedReportByFileId\(auth\.tenantId, fileId, auth\.ctx\)/);
+  assert.match(genericFile, /requirePermission\(auth\.ctx, "report\.view"\)/);
+  assert.match(genericFile, /findGeneratedReportByFileId\(auth\.tenantId, id, auth\.ctx\)/);
+  assert.match(email, /findGeneratedReportByFileId\(tenantId, input\.fileId, ctx\)/);
+  assert.match(reportsPage, /option\.value !== "VAT_SALES" \|\| can\("tax\.document\.view"\)/);
+});
+
+test("tax document pagination keeps the real total when an offset returns no rows", () => {
+  const tax = read("apps/web/lib/bms/taxReports.ts");
+  const start = tax.indexOf("export async function listTaxDocuments");
+  const list = tax.slice(start, tax.indexOf("// รายงานภาษีขาย", start));
+  assert.match(list, /SELECT count\(\*\)::text AS count FROM bms_tax_documents/);
+  assert.match(list, /total: Number\(count\.rows\[0\]\?\.count \?\? 0\)/);
+  assert.doesNotMatch(list, /count\(\*\) OVER \(\) AS total_count/);
+});
+
+test("CSV export neutralizes spreadsheet formulas without turning numeric credit notes into text", () => {
+  const csv = buildCsv({
+    title: "test",
+    subtitle: "test",
+    meta: [],
+    sheets: [{
+      name: "rows",
+      columns: [{ key: "buyer", label: "buyer" }, { key: "amount", label: "amount" }],
+      rows: [{ buyer: "=HYPERLINK(\"https://invalid.example\")", amount: -53.5 }],
+    }],
+  }).toString("utf8");
+  assert.match(csv, /'=HYPERLINK/);
+  assert.match(csv, /,-53\.5/);
+  assert.doesNotMatch(csv, /,'-53\.5/);
 });
 
 test("the goods report never counts reservations, quarantine or lost transfers as stock movement", () => {

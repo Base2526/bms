@@ -82,7 +82,7 @@ export async function emailGeneratedReport(
 
   // ต้องมีแถวใน bms_generated_reports ที่ tenant นี้เป็นเจ้าของ fileId นี้จริง — กัน enumerate
   // fileId ข้าม tenant (pattern เดียวกับ route ดาวน์โหลด)
-  const owned = await findGeneratedReportByFileId(tenantId, input.fileId);
+  const owned = await findGeneratedReportByFileId(tenantId, input.fileId, ctx);
   if (!owned) throw new Error("ไม่พบรายงานนี้ หรือไม่ใช่ของร้านนี้");
 
   const { rows } = await query<{

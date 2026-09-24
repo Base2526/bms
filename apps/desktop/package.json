@@ -38,9 +38,6 @@
     "directories": { "output": "dist" },
     "files": ["src/**/*", "renderer/**/*", "package.json"],
     "asar": true,
-    "electronDownload": {
-      "unsafelyDisableChecksums": true
-    },
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "artifactName": "BMS-POS-Setup-${version}-${arch}.${ext}",

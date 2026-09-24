@@ -78,9 +78,22 @@ export function formatTaxDate(isoDate: string, era: "BE" | "CE"): string {
 }
 
 /** ตรวจช่วงวันที่ของรายงาน — ต้องเป็น YYYY-MM-DD, from <= to, ไม่เกิน 400 วัน */
+export function isIsoCalendarDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year
+    && parsed.getUTCMonth() === month - 1
+    && parsed.getUTCDate() === day;
+}
+
 export function assertTaxPeriod(from: string, to: string): { from: string; to: string } {
-  const iso = /^\d{4}-\d{2}-\d{2}$/;
-  if (!iso.test(from) || !iso.test(to)) throw new Error("ช่วงวันที่ต้องเป็นรูปแบบ YYYY-MM-DD");
+  if (!isIsoCalendarDate(from) || !isIsoCalendarDate(to)) {
+    throw new Error("ช่วงวันที่ต้องเป็นวันที่จริงในรูปแบบ YYYY-MM-DD");
+  }
   const a = Date.parse(`${from}T00:00:00Z`);
   const b = Date.parse(`${to}T00:00:00Z`);
   if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error("วันที่ไม่ถูกต้อง");

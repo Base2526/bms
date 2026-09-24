@@ -69,16 +69,18 @@ const OUT_TYPES_SQL = `m.type IN ('STOCK_OUT','SHIP','TRANSFER_OUT','WASTAGE') O
 
 export async function getStockLedger(
   tenantId: string,
-  input: { from: string; to: string; locationId?: string | null }
+  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }
 ): Promise<StockLedgerReport> {
   const { from, to } = assertTaxPeriod(input.from, input.to);
   const locationId = input.locationId ?? null;
+  const allowedLocationIds = input.allowedLocationIds ?? null;
 
   const locRes = await query<any>(
     `SELECT id, code, name, branch_code, is_head_office FROM bms_locations
       WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
+        AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
       ORDER BY is_head_office DESC, branch_code, code`,
-    [tenantId, locationId]
+    [tenantId, locationId, allowedLocationIds]
   );
   if (locationId && !locRes.rowCount) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
 
@@ -95,6 +97,7 @@ export async function getStockLedger(
                    ELSE 0 END AS signed
          FROM bms_stock_movements m
         WHERE m.tenant_id = $1 AND ($4::uuid IS NULL OR m.location_id = $4::uuid)
+          AND ($5::uuid[] IS NULL OR m.location_id = ANY($5::uuid[]))
      ),
      agg AS (
        SELECT mv.location_id, mv.product_sku, mv.size,
@@ -130,7 +133,8 @@ export async function getStockLedger(
        SELECT location_id, product_sku, size FROM agg
        UNION
        SELECT location_id, product_sku, size FROM bms_inventory
-        WHERE tenant_id = $1 AND ($4::uuid IS NULL OR location_id = $4::uuid)
+         WHERE tenant_id = $1 AND ($4::uuid IS NULL OR location_id = $4::uuid)
+           AND ($5::uuid[] IS NULL OR location_id = ANY($5::uuid[]))
      )
      SELECT k.location_id, l.branch_code, k.product_sku, k.size,
             COALESCE(p.name, k.product_sku) AS product_name,
@@ -159,7 +163,7 @@ export async function getStockLedger(
        LEFT JOIN bms_products p ON p.tenant_id = $1 AND p.sku = k.product_sku
        LEFT JOIN bms_product_stock_policies sp ON sp.tenant_id = $1 AND sp.product_sku = k.product_sku
       ORDER BY l.is_head_office DESC, l.branch_code, k.product_sku, k.size`,
-    [tenantId, from, to, locationId]
+    [tenantId, from, to, locationId, allowedLocationIds]
   );
 
   const rows: StockLedgerRow[] = [];

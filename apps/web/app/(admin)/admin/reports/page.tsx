@@ -9,6 +9,7 @@ import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
 import { localizedShopArchetypeLabel } from "@/lib/bms/shopArchetypes";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 const { RangePicker } = DatePicker;
 
@@ -28,6 +29,7 @@ const M_GENERATE_REPORT = gql`
 
 function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string; to: string; locationId?: string; archetype?: string | null }) {
   const { t } = useI18n();
+  const { can } = useBmsPermissions();
   const REPORT_TYPE_OPTIONS = [
     { value: "SALES", label: t("admin_reports.report_type_sales") },
     { value: "INVENTORY", label: t("admin_reports.report_type_inventory") },
@@ -40,7 +42,7 @@ function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string
     { value: "SPECIALIZED", label: t("admin_reports.report_type_specialized", { archetype: localizedShopArchetypeLabel(archetype, t) }) },
     { value: "VAT_SALES", label: t("admin_reports.report_type_vat_sales") },
     { value: "STOCK_LEDGER", label: t("admin_reports.report_type_stock_ledger") },
-  ];
+  ].filter((option) => option.value !== "VAT_SALES" || can("tax.document.view"));
   const FORMAT_OPTIONS = [
     { value: "XLSX", label: t("admin_reports.format_xlsx") },
     { value: "CSV", label: t("admin_reports.format_csv") },

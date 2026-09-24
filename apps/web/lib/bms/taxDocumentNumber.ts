@@ -117,6 +117,6 @@ export function abbreviatedInvoicePrefix(device: {
   code: string;
   sharedWithAnotherDevice: boolean;
 }): string | null {
-  if (!device.sharedWithAnotherDevice) return device.receiptPrefix ?? null;
+  if (!device.sharedWithAnotherDevice) return normalizeReceiptPrefix(device.receiptPrefix) || null;
   return `${normalizeReceiptPrefix(device.receiptPrefix)}${device.code.trim()}-`;
 }

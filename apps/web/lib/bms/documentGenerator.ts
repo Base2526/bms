@@ -776,7 +776,11 @@ export function buildXlsx(doc: ReportDoc): Buffer {
 }
 
 function csvEscape(v: unknown): string {
-  const s = v == null ? "" : String(v);
+  const raw = v == null ? "" : String(v);
+  // ชื่อผู้ซื้อ/สินค้า/เลขเอกสารเป็นข้อมูลภายนอก เมื่อเปิด CSV ด้วย Excel ตัวอักษร
+  // = + - @ อาจถูกตีความเป็นสูตร/DDE ได้ · เติม apostrophe เฉพาะค่าที่เดิมเป็น string
+  // เพื่อให้ยอดติดลบที่เป็น number ยังเป็นตัวเลขสำหรับนักบัญชี
+  const s = typeof v === "string" && /^\s*[=+\-@]/.test(raw) ? `'${raw}` : raw;
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

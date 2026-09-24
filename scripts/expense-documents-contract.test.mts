@@ -25,6 +25,19 @@ test("input VAT and withholding evidence fail closed in the database", () => {
   assert.match(sql, /WHERE status = 'ACTIVE' AND document_kind = 'TAX_INVOICE'/);
 });
 
+test("expense input rejects impossible dates and unknown withholding classifications before SQL", () => {
+  const src = read("apps/web/lib/bms/expenseDocuments.ts");
+  assert.match(src, /isIsoCalendarDate\(input\.documentDate\)/);
+  assert.match(src, /isOneOf\(payeeType, EXPENSE_PAYEE_TYPES\)/);
+  assert.match(src, /isOneOf\(whtIncomeType, EXPENSE_WHT_TYPES\)/);
+  assert.match(src, /whtRate > 100/);
+});
+
+test("the tax feature never disables Electron download checksum verification", () => {
+  const pkg = read("apps/desktop/package.json");
+  assert.doesNotMatch(pkg, /unsafelyDisableChecksums/);
+});
+
 test("expense mutations use exact idempotency and transactional audit", () => {
   const src = read("apps/web/lib/bms/expenseDocuments.ts");
   assert.match(src, /request_hash/);

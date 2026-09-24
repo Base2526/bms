@@ -26,7 +26,8 @@ import { getSalesTaxReport } from "./taxReports";
 import { getStockLedger } from "./stockLedger";
 import { formatTaxDate } from "./taxReportMath";
 import { taxClockOf } from "./taxDocumentNumber";
-import { getLocation } from "./locations";
+import { getLocation, listLocationsForUser, userHasLocationScope } from "./locations";
+import { loadPermissions, requirePermission } from "./permissions";
 import { resolveAiCredentials } from "./ai";
 import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
@@ -115,7 +116,8 @@ async function collectReportDoc(
   reportType: ReportType,
   dateFrom: string | null,
   dateTo: string | null,
-  locationId: string | null
+  locationId: string | null,
+  allowedLocationIds: string[] | null
 ): Promise<ReportDoc> {
   switch (reportType) {
     case "SALES": {
@@ -151,6 +153,7 @@ async function collectReportDoc(
         from: dateFrom ?? month.from,
         to: dateTo ?? month.to,
         locationId,
+        allowedLocationIds,
       });
       return buildSalesTaxReportDoc(report, (iso) => formatTaxDate(iso, report.seller.calendarEra));
     }
@@ -160,6 +163,7 @@ async function collectReportDoc(
         from: dateFrom ?? month.from,
         to: dateTo ?? month.to,
         locationId,
+        allowedLocationIds,
       });
       return buildStockLedgerReportDoc(report, (iso) => formatTaxDate(iso, "BE"));
     }
@@ -214,6 +218,42 @@ const FORMAT_MIME: Record<ReportFormat, string> = {
   PDF: "application/pdf",
 };
 const FORMAT_EXT: Record<ReportFormat, string> = { XLSX: "xlsx", CSV: "csv", PDF: "pdf" };
+const LOCATION_SENSITIVE_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "STOCK_LEDGER"]);
+
+function actorUserId(ctx: any): string | null {
+  return ctx?.admin?.id == null ? null : String(ctx.admin.id);
+}
+
+/** null = ผู้ใช้นี้ไม่ได้ถูกจำกัดสาขา (หรือเป็นงานระบบที่ไม่มีตัวตนผู้ใช้) */
+async function allowedReportLocationIds(tenantId: string, ctx: any): Promise<string[] | null> {
+  const userId = actorUserId(ctx);
+  if (!userId || !(await userHasLocationScope(tenantId, userId))) return null;
+  return (await listLocationsForUser(tenantId, userId)).map((location) => location.id);
+}
+
+async function canViewSalesTaxReport(ctx: any): Promise<boolean> {
+  // งานระบบภายในที่ไม่มี admin context ใช้ service ได้ตามเดิม; ทุก HTTP/GraphQL/tool entry
+  // point ส่ง ctx มาและต้องผ่านสิทธิ์จริง
+  if (!ctx) return true;
+  return (await loadPermissions(ctx)).has("tax.document.view");
+}
+
+// รายงานภาษีสองชนิดมีข้อมูลรายสาขาที่ละเอียดกว่า report เดิม จึงห้ามผู้ใช้ที่ถูกจำกัด
+// สาขาเห็นไฟล์ all-branch/สาขาอื่นจาก history หรือเดา file id แล้วดาวน์โหลดตรง
+const GENERATED_REPORT_SCOPE_SQL = `(
+  report_type NOT IN ('VAT_SALES', 'STOCK_LEDGER')
+  OR $3::text[] IS NULL
+  OR params->>'locationId' = ANY($3::text[])
+  OR (
+    jsonb_typeof(params->'locationIds') = 'array'
+    AND jsonb_array_length(params->'locationIds') > 0
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(params->'locationIds') AS scoped(location_id)
+       WHERE NOT (scoped.location_id = ANY($3::text[]))
+    )
+  )
+)`;
+const GENERATED_REPORT_PERMISSION_SQL = `(report_type <> 'VAT_SALES' OR $4::boolean)`;
 
 export async function generateReport(
   tenantId: string,
@@ -230,13 +270,29 @@ export async function generateReport(
   if (format === "PDF" && THAI_ONLY_REPORT_TYPES.has(reportType)) {
     throw new Error("รายงานนี้ออกได้เฉพาะ XLSX หรือ CSV (PDF ยังแสดงภาษาไทยไม่ได้)");
   }
+  if (reportType === "VAT_SALES") await requirePermission(ctx, "tax.document.view");
 
+  const allowedLocationIds = await allowedReportLocationIds(tenantId, ctx);
+  if (locationId && allowedLocationIds && !allowedLocationIds.includes(locationId)) {
+    throw new Error("ไม่มีสิทธิ์สร้างรายงานของสาขานี้");
+  }
   const location = locationId ? await getLocation(tenantId, locationId) : null;
   if (locationId && !location) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
-  const doc = await collectReportDoc(tenantId, reportType, dateFrom, dateTo, locationId);
+  const doc = await collectReportDoc(
+    tenantId,
+    reportType,
+    dateFrom,
+    dateTo,
+    locationId,
+    LOCATION_SENSITIVE_REPORT_TYPES.has(reportType) ? allowedLocationIds : null
+  );
   doc.meta.unshift({
     label: "Branch scope",
-    value: location ? `${location.code} — ${location.name}` : "All branches",
+    value: location
+      ? `${location.code} — ${location.name}`
+      : allowedLocationIds && LOCATION_SENSITIVE_REPORT_TYPES.has(reportType)
+        ? `Assigned branches (${allowedLocationIds.length})`
+        : "All branches",
   });
   const summary = includeSummary ? await draftSummary(tenantId, doc) : null;
 
@@ -256,7 +312,15 @@ export async function generateReport(
       tenantId,
       reportType,
       format,
-      JSON.stringify({ dateFrom, dateTo, locationId, includeSummary }),
+      JSON.stringify({
+        dateFrom,
+        dateTo,
+        locationId,
+        includeSummary,
+        locationIds: LOCATION_SENSITIVE_REPORT_TYPES.has(reportType)
+          ? locationId ? [locationId] : allowedLocationIds
+          : undefined,
+      }),
       file.id,
       summary,
       ctx?.admin?.email || ctx?.admin?.id || "system",
@@ -273,12 +337,18 @@ export async function generateReport(
   };
 }
 
-export async function listGeneratedReports(tenantId: string, limit = 50) {
+export async function listGeneratedReports(tenantId: string, limit = 50, ctx?: any) {
+  const [allowedLocationIds, canViewSalesTax] = await Promise.all([
+    allowedReportLocationIds(tenantId, ctx),
+    canViewSalesTaxReport(ctx),
+  ]);
   const res = await query(
     `SELECT id, report_type, format, params, file_id, summary, generated_by, created_at
        FROM bms_generated_reports WHERE tenant_id = $1
+        AND ${GENERATED_REPORT_SCOPE_SQL}
+        AND ${GENERATED_REPORT_PERMISSION_SQL}
       ORDER BY created_at DESC LIMIT $2`,
-    [tenantId, Math.min(Math.max(limit, 1), 200)]
+    [tenantId, Math.min(Math.max(limit, 1), 200), allowedLocationIds, canViewSalesTax]
   );
   return res.rows.map((r: any) => ({
     id: r.id,
@@ -294,10 +364,18 @@ export async function listGeneratedReports(tenantId: string, limit = 50) {
 }
 
 /** ใช้โดย download route เพื่อยืนยันว่า fileId นี้เป็นของ tenant นี้จริง ก่อนจะเสิร์ฟไฟล์ */
-export async function findGeneratedReportByFileId(tenantId: string, fileId: number) {
+export async function findGeneratedReportByFileId(tenantId: string, fileId: number, ctx?: any) {
+  const [allowedLocationIds, canViewSalesTax] = await Promise.all([
+    allowedReportLocationIds(tenantId, ctx),
+    canViewSalesTaxReport(ctx),
+  ]);
   const res = await query(
-    `SELECT id, tenant_id, file_id FROM bms_generated_reports WHERE tenant_id = $1 AND file_id = $2 LIMIT 1`,
-    [tenantId, fileId]
+    `SELECT id, tenant_id, file_id FROM bms_generated_reports
+      WHERE tenant_id = $1 AND file_id = $2
+        AND ${GENERATED_REPORT_SCOPE_SQL}
+        AND ${GENERATED_REPORT_PERMISSION_SQL}
+      LIMIT 1`,
+    [tenantId, fileId, allowedLocationIds, canViewSalesTax]
   );
   return res.rows[0] ?? null;
 }

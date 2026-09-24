@@ -8,7 +8,7 @@
 import { GraphQLError } from "graphql/error";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
-import { listLocations } from "@/lib/bms/locations";
+import { listLocationsForUser } from "@/lib/bms/locations";
 import {
   getSalesTaxReport,
   listTaxDocuments,
@@ -19,6 +19,10 @@ function badInput(err: unknown, fallback: string): never {
   throw new GraphQLError(err instanceof Error && err.message ? err.message : fallback, {
     extensions: { code: "BAD_USER_INPUT" },
   });
+}
+
+async function taxLocationScope(ctx: any) {
+  return listLocationsForUser(getTenantId(ctx), String(ctx.admin.id));
 }
 
 export const bmsTaxReportsTypeDefs = /* GraphQL */ `
@@ -136,7 +140,7 @@ export const bmsTaxReportsResolvers = {
   Query: {
     async bmsTaxEstablishments(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "tax.document.view");
-      const rows = await listLocations(getTenantId(ctx));
+      const rows = await taxLocationScope(ctx);
       return rows.map((l) => ({
         locationId: l.id,
         code: l.code,
@@ -148,7 +152,14 @@ export const bmsTaxReportsResolvers = {
     async bmsTaxDocumentList(_p: unknown, args: { input: TaxDocumentListFilter }, ctx: any) {
       await requirePermission(ctx, "tax.document.view");
       try {
-        return await listTaxDocuments(getTenantId(ctx), args.input);
+        const locations = await taxLocationScope(ctx);
+        if (args.input.locationId && !locations.some((l) => l.id === args.input.locationId)) {
+          throw new Error("ไม่มีสิทธิ์ดูสถานประกอบการนี้");
+        }
+        return await listTaxDocuments(getTenantId(ctx), {
+          ...args.input,
+          allowedLocationIds: locations.map((l) => l.id),
+        });
       } catch (err) {
         badInput(err, "อ่านรายการใบกำกับไม่สำเร็จ");
       }
@@ -161,7 +172,14 @@ export const bmsTaxReportsResolvers = {
       await requirePermission(ctx, "tax.document.view");
       let report;
       try {
-        report = await getSalesTaxReport(getTenantId(ctx), args.input);
+        const locations = await taxLocationScope(ctx);
+        if (args.input.locationId && !locations.some((l) => l.id === args.input.locationId)) {
+          throw new Error("ไม่มีสิทธิ์ดูสถานประกอบการนี้");
+        }
+        report = await getSalesTaxReport(getTenantId(ctx), {
+          ...args.input,
+          allowedLocationIds: locations.map((l) => l.id),
+        });
       } catch (err) {
         badInput(err, "สร้างรายงานภาษีขายไม่สำเร็จ");
       }

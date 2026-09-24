@@ -48,6 +48,8 @@ export type TaxDocumentListFilter = {
   includeCancelled?: boolean;
   limit?: number;
   offset?: number;
+  /** ขอบเขตสาขาของคนอ่าน · null/undefined = ไม่จำกัด */
+  allowedLocationIds?: string[] | null;
 };
 
 export type TaxDocumentListRow = {
@@ -91,32 +93,45 @@ export async function listTaxDocuments(
   }
   const search = filter.search?.trim() ? `%${escapeLike(filter.search.trim())}%` : null;
 
-  const res = await query<any>(
-    `SELECT d.id, d.order_id, d.location_id, l.code AS location_code, l.branch_code,
-            dev.code AS device_code, d.doc_type, d.doc_no, d.issue_date::text AS issue_date,
-            d.issued_at, d.cancelled_at, d.cancelled_reason, d.buyer_name, d.buyer_tax_id,
-            ref.doc_no AS reference_doc_no, o.channel,
-            d.taxable_amount, d.exempt_amount, d.vat_amount, d.rounding_amount,
-            count(*) OVER () AS total_count
-       FROM bms_tax_documents d
-       JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
-       LEFT JOIN bms_pos_devices dev ON dev.tenant_id = d.tenant_id AND dev.id = d.device_id
-       LEFT JOIN bms_tax_documents ref
-              ON ref.tenant_id = d.tenant_id AND ref.id = COALESCE(d.references_document_id, d.replaces_document_id)
-       LEFT JOIN bms_orders o ON o.tenant_id = d.tenant_id AND o.id = d.order_id
-      WHERE d.tenant_id = $1
+  const params = [
+    tenantId, from, to, filter.locationId ?? null, docType, Boolean(filter.includeCancelled),
+    search, filter.allowedLocationIds ?? null, limit, offset,
+  ];
+  const where = `d.tenant_id = $1
         AND d.issue_date BETWEEN $2::date AND $3::date
         AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
         AND ($5::text IS NULL OR d.doc_type = $5::text)
         AND ($6::boolean OR d.cancelled_at IS NULL)
         AND ($7::text IS NULL OR d.doc_no ILIKE $7 ESCAPE '\\' OR d.buyer_name ILIKE $7 ESCAPE '\\'
              OR d.buyer_tax_id ILIKE $7 ESCAPE '\\')
+        AND ($8::uuid[] IS NULL OR d.location_id = ANY($8::uuid[]))`;
+  // Count separately: count(*) OVER() disappears with every row when OFFSET is past the last
+  // page, which used to report total=0 even though matching documents still existed.
+  const [res, count] = await Promise.all([
+    query<any>(
+      `SELECT d.id, d.order_id, d.location_id, l.code AS location_code, l.branch_code,
+            dev.code AS device_code, d.doc_type, d.doc_no, d.issue_date::text AS issue_date,
+            d.issued_at, d.cancelled_at, d.cancelled_reason, d.buyer_name, d.buyer_tax_id,
+            ref.doc_no AS reference_doc_no, o.channel,
+            d.taxable_amount, d.exempt_amount, d.vat_amount, d.rounding_amount
+       FROM bms_tax_documents d
+       JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
+       LEFT JOIN bms_pos_devices dev ON dev.tenant_id = d.tenant_id AND dev.id = d.device_id
+       LEFT JOIN bms_tax_documents ref
+              ON ref.tenant_id = d.tenant_id AND ref.id = COALESCE(d.references_document_id, d.replaces_document_id)
+       LEFT JOIN bms_orders o ON o.tenant_id = d.tenant_id AND o.id = d.order_id
+      WHERE ${where}
       ORDER BY d.issue_date DESC, d.issued_at DESC, d.doc_no DESC
-      LIMIT $8 OFFSET $9`,
-    [tenantId, from, to, filter.locationId ?? null, docType, Boolean(filter.includeCancelled), search, limit, offset]
-  );
+      LIMIT $9 OFFSET $10`,
+      params
+    ),
+    query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM bms_tax_documents d WHERE ${where}`,
+      params.slice(0, 8)
+    ),
+  ]);
   return {
-    total: res.rows.length ? Number(res.rows[0].total_count) : 0,
+    total: Number(count.rows[0]?.count ?? 0),
     rows: res.rows.map((r: any) => {
       const amounts = taxAmountsOf({
         docType: r.doc_type,
@@ -257,10 +272,11 @@ function amountsOfRow(r: DocRow): TaxAmounts {
 
 export async function getSalesTaxReport(
   tenantId: string,
-  input: { from: string; to: string; locationId?: string | null }
+  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }
 ): Promise<SalesTaxReport> {
   const { from, to } = assertTaxPeriod(input.from, input.to);
   const locationId = input.locationId ?? null;
+  const allowedLocationIds = input.allowedLocationIds ?? null;
 
   const [settings, sellerRes, locRes, docRes] = await Promise.all([
     getVatSettings(tenantId),
@@ -274,8 +290,9 @@ export async function getSalesTaxReport(
       `SELECT id, code, name, branch_code, is_head_office, address
          FROM bms_locations
         WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
+          AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
         ORDER BY is_head_office DESC, branch_code, code`,
-      [tenantId, locationId]
+      [tenantId, locationId, allowedLocationIds]
     ),
     query<DocRow>(
       `SELECT d.doc_type, d.location_id, l.branch_code, d.device_id, dev.code AS device_code,
@@ -290,8 +307,9 @@ export async function getSalesTaxReport(
         WHERE d.tenant_id = $1
           AND d.issue_date BETWEEN $2::date AND $3::date
           AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
+          AND ($5::uuid[] IS NULL OR d.location_id = ANY($5::uuid[]))
         ORDER BY d.issue_date, l.branch_code, d.issued_at, d.doc_no`,
-      [tenantId, from, to, locationId]
+      [tenantId, from, to, locationId, allowedLocationIds]
     ),
   ]);
 
@@ -415,6 +433,7 @@ export async function getSalesTaxReport(
             AND o.status = ANY($5::text[])
             AND o.total_amount > 0
             AND ($4::uuid IS NULL OR o.location_id = $4::uuid)
+            AND ($7::uuid[] IS NULL OR o.location_id = ANY($7::uuid[]))
             AND COALESCE(o.paid_at, o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(o.paid_at, o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND NOT EXISTS (
@@ -424,7 +443,7 @@ export async function getSalesTaxReport(
             )
           ORDER BY at
           LIMIT $6`,
-        [tenantId, from, to, locationId, PAID_ORDER_STATUSES, EXCEPTION_LIMIT]
+        [tenantId, from, to, locationId, PAID_ORDER_STATUSES, EXCEPTION_LIMIT, allowedLocationIds]
       ),
       // คืนของที่บิลต้นทางมีใบกำกับ แต่ไม่มีใบลดหนี้ของการคืนครั้งนั้น
       // (ensurePosReturnCreditNote ใส่ [posReturnId] ท้าย credit_reason ทุกครั้ง)
@@ -437,6 +456,7 @@ export async function getSalesTaxReport(
             AND r.is_void = FALSE
             AND r.refund_amount > 0
             AND ($4::uuid IS NULL OR o.location_id = $4::uuid)
+            AND ($6::uuid[] IS NULL OR o.location_id = ANY($6::uuid[]))
             AND r.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND r.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND EXISTS (
@@ -452,7 +472,7 @@ export async function getSalesTaxReport(
             )
           ORDER BY r.created_at
           LIMIT $5`,
-        [tenantId, from, to, locationId, EXCEPTION_LIMIT]
+        [tenantId, from, to, locationId, EXCEPTION_LIMIT, allowedLocationIds]
       ),
     ]);
 
@@ -493,10 +513,11 @@ export async function getSalesTaxReport(
       WHERE d.tenant_id = $1 AND d.doc_type = 'FULL' AND d.cancelled_at IS NULL
         AND d.issue_date BETWEEN $2::date AND $3::date
         AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
+        AND ($6::uuid[] IS NULL OR d.location_id = ANY($6::uuid[]))
         AND date_trunc('month', a.issue_date) <> date_trunc('month', d.issue_date)
       ORDER BY d.issue_date
       LIMIT $5`,
-    [tenantId, from, to, locationId, EXCEPTION_LIMIT]
+    [tenantId, from, to, locationId, EXCEPTION_LIMIT, allowedLocationIds]
   );
   exceptionCounts.FULL_REPLACES_OTHER_MONTH = replaced.rows.length ? Number(replaced.rows[0].total_count) : 0;
   for (const r of replaced.rows) {
